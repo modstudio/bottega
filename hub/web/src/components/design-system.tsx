@@ -2,8 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { trpc } from '@/trpc/client'
 import type { CSSProperties } from 'react'
 import type { ReactNode } from 'react'
-import { ChevronDown } from 'lucide-react'
 import { Button } from '@/components/button'
+import { Select, type SelectOption } from '@/components/select'
 import { cx } from '@/components/cx'
 import { clearFilters, setFilter, setHours, useWindowState, WINDOWS, type WindowHours } from '@/lib/window'
 import { collectedTime, relativeTime } from '@/lib/format'
@@ -36,23 +36,14 @@ export function LiveDot() { return <span className="live-dot" aria-label="Runnin
 function Filter({ kind, label, options, onOpenChange }: { kind: 'project' | 'agent'; label: string; options: string[]; onOpenChange?: (open: boolean) => void }) {
   const { filters } = useWindowState()
   const value = filters[kind]
-  return (
-    <div className="relative inline-flex">
-      <select
-        aria-label={label}
-        className="h-9 appearance-none border border-input bg-background py-0 pl-3 pr-8 text-[13px] font-medium hover:bg-accent hover:text-accent-foreground"
-        value={value}
-        onChange={(event) => setFilter(kind, event.target.value)}
-        onFocus={() => onOpenChange?.(true)}
-        onBlur={() => onOpenChange?.(false)}
-      >
-        <option value="">{label}</option>
-        {value && !options.includes(value) ? <option value={value}>{value} (no matches)</option> : null}
-        {options.map((option) => <option key={option} value={option}>{option}</option>)}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2" />
-    </div>
-  )
+  // A filter narrows with the window, so the applied value can leave its own
+  // option list. It stays selectable and says why, rather than reading "all".
+  const choices: SelectOption[] = [
+    { value: '', label },
+    ...(value && !options.includes(value) ? [{ value, label: value, note: 'no matches' }] : []),
+    ...options.map((option) => ({ value: option, label: option })),
+  ]
+  return <Select label={label} value={value} options={choices} onChange={(next) => setFilter(kind, next)} onOpenChange={onOpenChange} />
 }
 
 export function Segmented({ value, options, onChange, label }: { value: string; options: readonly { value: string; label: string }[]; onChange: (value: string) => void; label: string }) {

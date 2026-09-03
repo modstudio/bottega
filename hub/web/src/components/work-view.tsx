@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { ChevronRight } from 'lucide-react'
 import { EmptyState, LiveDot, PageHeader, ProjectMark, Segmented, StatRow, StatTile, WindowBar, projectVars, responseSubtitle, useProjectColors } from '@/components/design-system'
 import { Badge } from '@/components/badge'
@@ -146,7 +146,9 @@ export function TaskView({ name }: { name: WorkName }) {
   const options = name === 'flight'
     ? trpc.work.flight.queryOptions({ hours: window.hours, filters: window.filters })
     : trpc.work.done.queryOptions({ hours: window.hours, filters: window.filters })
-  const query = useQuery({ ...options, refetchInterval: menus ? false : 2000 })
+  // Keep the last result on screen while a new filter or window loads: a pending
+  // state here unmounts the toolbar, which destroys the control being used.
+  const query = useQuery({ ...options, placeholderData: keepPreviousData, refetchInterval: menus ? false : 2000 })
   const dropdown = (open: boolean) => setMenus((count) => Math.max(0, count + (open ? 1 : -1)))
   if (query.isPending) return <p className="text-muted-foreground">Loading {name}...</p>
   if (query.error) return <p className="text-destructive">{query.error.message}</p>
@@ -180,7 +182,7 @@ export function BoardView() {
   const [settings, setSettings] = useState(readBoardSettings)
   const [search, setSearch] = useState('')
   const [why, setWhy] = useState(false)
-  const query = useQuery({ ...trpc.work.board.queryOptions({ hours: window.hours, filters: window.filters }), refetchInterval: menus ? false : 2000 })
+  const query = useQuery({ ...trpc.work.board.queryOptions({ hours: window.hours, filters: window.filters }), placeholderData: keepPreviousData, refetchInterval: menus ? false : 2000 })
   const dropdown = (open: boolean) => setMenus((count) => Math.max(0, count + (open ? 1 : -1)))
   const remember = (next: Partial<typeof settings>) => setSettings((current) => {
     const value = { ...current, ...next }
