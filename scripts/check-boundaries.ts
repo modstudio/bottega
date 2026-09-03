@@ -8,9 +8,9 @@
  */
 import { Glob } from 'bun'
 import { readFileSync } from 'node:fs'
+import { CONCERNS } from '../shared/brand.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
-const CONCERNS = ['orchestrator', 'hub', 'ops', 'local-stack', 'port']
 const IMPORT = /(?:from|import|require\()\s*['"]([^'"]+)['"]/g
 
 const violations: string[] = []
