@@ -67,7 +67,7 @@ for (const args of [
   if (p.exitCode !== 0) throw new Error(p.stderr.toString())
 }
 
-const { db, reapStale, pendingForSession, unscoredCount, judgeability, STALE_AFTER_MS,
+const { db, nowIso, reapStale, pendingForSession, unscoredCount, judgeability, STALE_AFTER_MS,
         PENDING_BOOTSTRAP_MS, WEIGHT, weigh, label, FIDELITY_PENALTY, UNSCORED_WHERE,
         excludeSharedOutputRuns, SHARED_OUTPUT_REASON, applySchema, recordDuels, duelMatrices,
         parseRunIds } = await import('./db.ts')
@@ -82,7 +82,8 @@ const { runDetail, state } = await import('./serve.ts')
 const { classify, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOT_EVIDENCE, COOLS_DOWN,
         isNonAnswer, detectBlockers } = await import('./failure.ts')
 const { errorTail, preflight, detachedRunOptions, runFilePaths, pruneRuns, KEEP_RUN_FILES_DAYS,
-        grokMcpConnection, writingFailoverRefusal, run: runJob } = await import('./run.ts')
+        grokMcpConnection, writingFailoverRefusal, resolveSupersededTurn,
+        run: runJob } = await import('./run.ts')
 const run = runJob
 const { summary } = await import('./metric.ts')
 const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
@@ -3648,6 +3649,180 @@ describe('a writing worker must return evidence of completed work', () => {
 })
 
 describe('a conversation is one unit of work, not one per turn', () => {
+  const routingEvidenceIds = () => (db().query(
+    `SELECT r.id FROM run r LEFT JOIN score s ON s.run_id=r.id
+      WHERE r.status IN ('ok','failed','stale') AND r.probe=0
+        AND r.evidence_excluded IS NULL AND r.parent_run_id IS NULL
+        AND (s.delivery IS NOT NULL OR
+             (r.status IN ('failed','stale') AND s.delivery IS NULL))
+      ORDER BY r.id`,
+  ).all() as { id: number }[]).map((row) => row.id)
+
+  test('a three-turn chain resolves the intermediate asking turn end to end', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-three-turn-'))
+    const script = join(dir, `three-turn-${Math.random().toString(16).slice(2)}.ts`)
+    const promptPath = join(dir, `three-turn-${Math.random().toString(16).slice(2)}.prompt.txt`)
+    writeFileSync(join(repo, 'seed.txt'), 'seed\n')
+    for (const args of [['init'], ['add', 'seed.txt']]) {
+      const p = Bun.spawnSync(['git', ...args], { cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+    }
+    const committed = Bun.spawnSync([
+      'git', '-c', 'user.name=Orch Test', '-c', 'user.email=orch@example.invalid',
+      'commit', '-m', 'seed',
+    ], { cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
+    if (committed.exitCode !== 0) throw new Error(committed.stderr.toString())
+    const tree = createWorktree(repo, 137)
+
+    const agent = AGENTS.codex!
+    const originalBin = agent.bin
+    const originalResume = agent.resumeArgv
+    const originalReadsOut = agent.readsOut
+    const priorDepth = process.env.ORCH_DEPTH
+    agent.bin = process.execPath
+    agent.resumeArgv = () => [script]
+    agent.readsOut = false
+    process.env.ORCH_DEPTH = '0'
+
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+    writeFileSync(promptPath, 'original implementation spec')
+    db().query('UPDATE run SET prompt_path=? WHERE id=?').run(promptPath, root)
+    db().query(
+      `INSERT INTO question (run_id, asked_at, question, answer, answered_at)
+       VALUES (?,?,?,?,?)`,
+    ).run(root, nowIso(), 'first question?', 'first ruling', nowIso())
+
+    try {
+      writeFileSync(script, `process.stdout.write(${JSON.stringify(JSON.stringify(workerReply({
+        status: 'asking', summary: 'need a second ruling', files_changed: null,
+        questions: [{
+          question: 'second question?', options: ['one', 'two'], recommendation: 'one', why: null,
+        }],
+      })))})\n`)
+      const second = await runJob({
+        job: 'implement', prompt: 'continue', cwd: tree.path,
+        resume: {
+          parent: root, agent: 'codex', session: 'test-session', turn: 2,
+          sessionId: 'orch-test-session', worktree: tree,
+        },
+      })
+      expect(second.status).toBe('asking')
+      const question = db().query('SELECT id FROM question WHERE run_id=?').get(second.id) as { id: number }
+      db().query('UPDATE question SET answer=?, answered_at=? WHERE id=?')
+        .run('second ruling', nowIso(), question.id)
+
+      writeFileSync(script, `process.stdout.write(${JSON.stringify(JSON.stringify(workerReply()))})\n`)
+      const third = await runJob({
+        job: 'implement', prompt: 'finish', cwd: tree.path,
+        resume: {
+          parent: root, agent: 'codex', session: 'test-session', turn: 3,
+          sessionId: 'orch-test-session', worktree: tree,
+        },
+      })
+
+      expect(db().query(
+        'SELECT turn, status FROM run WHERE id=? OR parent_run_id=? ORDER BY turn',
+      ).all(root, root)).toEqual([
+        { turn: 1, status: 'ok' },
+        { turn: 2, status: 'ok' },
+        { turn: 3, status: 'ok' },
+      ])
+      expect(third.status).toBe('ok')
+    } finally {
+      agent.bin = originalBin
+      agent.resumeArgv = originalResume
+      agent.readsOut = originalReadsOut
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(script, { force: true })
+      rmSync(promptPath, { force: true })
+    }
+  })
+
+  test('superseding an answered child resolves it without changing routing evidence', () => {
+    const root = addRun({ agent: 'codex', job: 'implement' })
+    score(root, 'full', 'right')
+    const child = addRun({
+      agent: 'codex', job: 'implement', status: 'asking', parent: root, turn: 2,
+    })
+    // A score makes the independent child predicate load-bearing: changing
+    // only `asking` to `ok` would admit this row if parent_run_id stopped being
+    // part of the router's evidence rule.
+    score(child, 'full', 'right')
+    db().query(
+      `INSERT INTO question (run_id, asked_at, question, answer, answered_at)
+       VALUES (?,?,?,?,?)`,
+    ).run(child, nowIso(), 'which shape?', 'the ruled shape', nowIso())
+    addRun({ agent: 'codex', job: 'implement', parent: root, turn: 3 })
+    const before = routingEvidenceIds()
+
+    expect(resolveSupersededTurn(db(), root, 2)).toBe(1)
+
+    expect(db().query('SELECT status FROM run WHERE id=?').get(child)).toEqual({ status: 'ok' })
+    expect(routingEvidenceIds()).toEqual(before)
+    expect(candidates('implement').find((row) => row.agent === 'codex')?.evidence).toBe(1)
+  })
+
+  test('the one-shot migration is child-only, exact, dry-run first, and evidence-neutral', () => {
+    const root = addRun({ agent: 'codex', job: 'implement' })
+    score(root, 'full', 'right')
+    const matched = addRun({
+      agent: 'codex', job: 'implement', status: 'asking', parent: root, turn: 2,
+    })
+    score(matched, 'full', 'right')
+    db().query(
+      `INSERT INTO question (run_id, asked_at, question, answer, answered_at)
+       VALUES (?,?,?,?,?)`,
+    ).run(matched, nowIso(), 'which shape?', 'the ruled shape', nowIso())
+    addRun({ agent: 'codex', job: 'implement', parent: root, turn: 3 })
+
+    const unanswered = addRun({
+      agent: 'codex', job: 'implement', status: 'asking', parent: root, turn: 4,
+    })
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(unanswered, nowIso(), 'still waiting?')
+    addRun({ agent: 'codex', job: 'implement', parent: root, turn: 5 })
+
+    const noSuccessor = addRun({
+      agent: 'codex', job: 'implement', status: 'asking', parent: root, turn: 6,
+    })
+    db().query(
+      `INSERT INTO question (run_id, asked_at, question, answer, answered_at)
+       VALUES (?,?,?,?,?)`,
+    ).run(noSuccessor, nowIso(), 'latest question?', 'answered', nowIso())
+
+    const askingRoot = addRun({ agent: 'grok', job: 'implement', status: 'asking' })
+    db().query(
+      `INSERT INTO question (run_id, asked_at, question, answer, answered_at)
+       VALUES (?,?,?,?,?)`,
+    ).run(askingRoot, nowIso(), 'root question?', 'answered', nowIso())
+    addRun({ agent: 'grok', job: 'implement', parent: askingRoot, turn: 2 })
+    const before = routingEvidenceIds()
+    const script = new URL('../scripts/resolve-asking.ts', import.meta.url).pathname
+    const invoke = (...args: string[]) => Bun.spawnSync([process.execPath, script, ...args], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe',
+    })
+
+    const dry = invoke()
+    expect(dry.exitCode).toBe(0)
+    expect(dry.stdout.toString()).toContain(
+      `run ${matched}  root ${root}  status=asking  ` +
+      'reason="later turn exists on same root and this turn\'s question is answered"  -> ok',
+    )
+    expect(dry.stdout.toString()).not.toContain(`run ${unanswered} `)
+    expect(dry.stdout.toString()).not.toContain(`run ${noSuccessor} `)
+    expect(dry.stdout.toString()).not.toContain(`run ${askingRoot} `)
+    expect(db().query('SELECT status FROM run WHERE id=?').get(matched)).toEqual({ status: 'asking' })
+
+    const applied = invoke('--apply')
+    expect(applied.exitCode).toBe(0)
+    expect(applied.stdout.toString()).toContain('1 child row resolved — applied.')
+    expect(db().query('SELECT status FROM run WHERE id=?').get(matched)).toEqual({ status: 'ok' })
+    expect(db().query('SELECT status FROM run WHERE id=?').get(askingRoot)).toEqual({ status: 'asking' })
+    expect(routingEvidenceIds()).toEqual(before)
+  })
+
   test('turns of one run do not each count as evidence', () => {
     // A worker that asked two questions produces three rows. Counting each
     // would let an agent reach MIN_SAMPLE by being inquisitive rather than good.

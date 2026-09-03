@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, existsSync, writeFileSync, readdirSync, statSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
+import type { Database } from 'bun:sqlite'
 import {
   classify, notify, isNonAnswer, detectBlockers, NEEDS_HUMAN, NEEDS_HUMAN_TITLE,
 } from './failure.ts'
@@ -104,6 +105,26 @@ export const MAX_DEPTH = 1
 export const MAX_FAILOVER_ATTEMPTS = 3
 
 export const depth = () => Number(process.env.ORCH_DEPTH ?? 0)
+
+/** Mark only an answered child turn that now has a successor as completed. */
+export function resolveSupersededTurn(database: Database, rootId: number, turn: number): number {
+  return database.query(
+    `UPDATE run AS prior SET status='ok'
+      WHERE prior.parent_run_id=? AND prior.turn=? AND prior.status='asking'
+        AND EXISTS (
+          SELECT 1 FROM question q
+           WHERE q.run_id=prior.id AND q.answered_at IS NOT NULL
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM question q
+           WHERE q.run_id=prior.id AND q.answered_at IS NULL
+        )
+        AND EXISTS (
+          SELECT 1 FROM run later
+           WHERE later.parent_run_id=prior.parent_run_id AND later.turn>prior.turn
+        )`,
+  ).run(rootId, turn).changes
+}
 
 type FailoverAttempt = { id: number; agent: string }
 
@@ -859,6 +880,25 @@ export async function run(opts: {
         launchCwd, launchSeed, launchKey, launchBase, noFailover ? 1 : 0,
         opts.automaticFailover ? 1 : 0, process.pid,
       ) as { id: number })
+
+  /**
+   * A child that asked has finished that turn once its successor exists.
+   *
+   * The root is deliberately excluded: it carries the conversation's rolled-up
+   * outcome and is routing evidence, while a child is independently excluded
+   * from routing by `parent_run_id IS NULL`. `ok` records what happened without
+   * fabricating a failure or an operator stop: the worker fulfilled its
+   * contract by asking, the question was ruled on, and the conversation moved
+   * to a later turn.
+   *
+   * Match the row's own facts even though continueRun already refuses an open
+   * question. Keeping the answered-question and successor predicates here
+   * makes this write incapable of retiring a genuinely waiting turn when
+   * run() is called directly.
+   */
+  if (opts.resume) {
+    resolveSupersededTurn(db(), opts.resume.parent, opts.resume.turn - 1)
+  }
   const runToken = randomUUID()
   const declaredProject = opts.mcp ? projectAt(callerCwd) : null
   const mcpConnection: McpConnection | null = opts.mcp && declaredProject
