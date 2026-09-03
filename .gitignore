@@ -2,9 +2,9 @@ node_modules/
 .DS_Store
 
 # orchestrator: local state, never shared
-orchestrator/orch.db
-orchestrator/orch.db-shm
-orchestrator/orch.db-wal
+orch.db
+orch.db-shm
+orch.db-wal
 orchestrator/runs/
 
 *.pyc
@@ -41,9 +41,9 @@ orchestrator/.last-wake
 
 # hub: local state, never shared. hub.db holds a per-task record of this
 # machine's own work, and the settings the dashboard writes.
-hub/hub.db
-hub/hub.db-shm
-hub/hub.db-wal
+hub.db
+hub.db-shm
+hub.db-wal
 # Backups of it are the same private record, and the orchestrator's are already
 # ignored a few lines up - the pair had drifted.
 hub/hub.db.backup-*
