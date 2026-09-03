@@ -1174,6 +1174,12 @@ before, 160 of 160 after.
   use them, and codex needs `--approve-for-me` because `exec` defaults to
   `approval_policy=never` and refuses tool calls outright.
 
+  Grok discovers project MCP configuration but does not start a repo-local
+  server until that folder has been explicitly trusted. `--mcp` does not grant
+  that persistent trust: a run records the same-named project server's doctor
+  result, and `orch result` prints both the degradation and the exact opt-in
+  trust command. A healthy unrelated server such as `orch-ask` does not count.
+
   The capability flag says only that the client CAN speak MCP. So: `--mcp`
   means "this agent can use the servers it has". If a job needs a
   particular server, check that client's registration rather than assuming the

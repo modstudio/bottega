@@ -23,7 +23,7 @@ export function runDetail(id: number) {
   const row = db().query(
     `SELECT r.id, r.agent, r.job, r.cwd, r.latency_ms, r.vendor_tokens, r.status,
             r.failure_kind, r.probe, r.evidence_excluded, r.error,
-            r.prompt_path, r.output_path,
+            r.prompt_path, r.output_path, r.mcp, r.mcp_server, r.mcp_connected, r.mcp_error,
             s.delivery, s.quality, s.fidelity, s.note, s.scored_at
        FROM run r
        LEFT JOIN score s ON s.run_id = r.id WHERE r.id = ?`,

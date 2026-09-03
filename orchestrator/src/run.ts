@@ -100,6 +100,47 @@ export const MAX_DEPTH = 1
 
 export const depth = () => Number(process.env.ORCH_DEPTH ?? 0)
 
+export type McpConnection = {
+  server: string
+  connected: boolean | null
+  error: string | null
+}
+
+/**
+ * Ask the same client that will run the lens whether its project MCP can start.
+ * Grok gates repo-local MCP behind folder trust separately from permission
+ * mode; doctor checks discovery and the handshake without granting that trust.
+ */
+export function grokMcpConnection(
+  bin: string, cwd: string, server: string, env: Record<string, string>,
+): McpConnection {
+  const p = Bun.spawnSync([bin, 'mcp', 'doctor', server, '--json'], {
+    cwd, env, stdout: 'pipe', stderr: 'pipe',
+  })
+  const stdout = p.stdout.toString().trim()
+  const stderr = p.stderr.toString().trim()
+  try {
+    const report = JSON.parse(stdout) as {
+      servers?: { name?: string; healthy?: boolean; checks?: {
+        passed?: boolean; label?: string; detail?: string; hint?: string
+      }[] }[]
+    }
+    const found = report.servers?.find((candidate) => candidate.name === server)
+    if (found) {
+      const error = (found.checks ?? [])
+        .filter((check) => check.passed === false)
+        .map((check) => [check.label, check.detail, check.hint].filter(Boolean).join(': '))
+        .join('; ')
+      return { server, connected: found.healthy === true, error: error || null }
+    }
+  } catch { /* preserve the client's actual diagnostic below */ }
+  return {
+    server,
+    connected: false,
+    error: [stderr, stdout].filter(Boolean).join('\n') || `MCP server '${server}' was not reported`,
+  }
+}
+
 /**
  * Everything knowable BEFORE a row exists, checked where no row exists yet.
  *
@@ -628,6 +669,9 @@ export async function run(opts: {
         ].join('\n')
       })()
     : ''
+  const provenance = opts.job === 'review-lens'
+    ? 'Provenance: state the source you measured against.'
+    : ''
   const prompt = writesJob && !opts.resume
     ? [
         workerPreamble(opts.job),
@@ -638,7 +682,8 @@ export async function run(opts: {
     // A read-only worker gets a much shorter brief, and only on a first turn.
     : opts.resume
       ? (resumeReminder ? `${resumeReminder}\n\n---\n\n${originalPrompt}` : originalPrompt)
-      : [READONLY_PREAMBLE, docsSection, `---\n\n${originalPrompt}`].filter(Boolean).join('\n\n')
+      : [READONLY_PREAMBLE, provenance, docsSection, `---\n\n${originalPrompt}`]
+          .filter(Boolean).join('\n\n')
 
   // A resumed turn is NOT routed. The conversation lives inside one vendor's
   // session, so "which agent is best at this job" is not a question that can be
@@ -816,10 +861,25 @@ export async function run(opts: {
         injectedDocs.length,
       ) as { id: number })
   const runToken = randomUUID()
-  db().query('UPDATE run SET stack=?, model=?, run_token=?, mcp=?, schema_path=? WHERE id=?')
+  const declaredProject = opts.mcp ? projectAt(callerCwd) : null
+  const mcpConnection: McpConnection | null = opts.mcp && declaredProject
+    ? name === 'grok'
+      ? grokMcpConnection(a.bin, callerCwd, declaredProject.name, childEnv(a))
+      : {
+          server: declaredProject.name, connected: null,
+          error: `${name} does not expose an MCP connection diagnostic`,
+        }
+    : null
+  db().query(
+    `UPDATE run SET stack=?, model=?, run_token=?, mcp=?, mcp_server=?,
+                    mcp_connected=?, mcp_error=?, schema_path=? WHERE id=?`,
+  )
     .run(
       stackAt(callerCwd), opts.model ?? a.model, runToken,
-      opts.mcp ? 1 : 0, opts.schemaPath ?? null, claim.id,
+      opts.mcp ? 1 : 0, mcpConnection?.server ?? null,
+      mcpConnection?.connected == null ? null : mcpConnection.connected ? 1 : 0,
+      mcpConnection?.error ?? (opts.mcp ? 'no registered project identifies the canonical MCP server' : null),
+      opts.schemaPath ?? null, claim.id,
     )
 
   /**

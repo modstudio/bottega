@@ -466,9 +466,11 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
    * was.
    *
    * IT IS A CODEX LIMITATION, NOT THE SYSTEM'S, and that distinction was worth
-   * establishing rather than assuming. grok has no such conflict: its MCP comes
-   * from `~/.claude.json` natively, needing no approval flag, so nothing
-   * competes with its sandbox setting. Verified directly — with
+   * establishing rather than assuming. grok has no such conflict: it discovers
+   * Claude-compatible MCP configuration natively and needs no approval flag, so
+   * nothing competes with its sandbox setting. Repo-local servers are separately
+   * gated by Grok's persistent folder trust; run() diagnoses that gate but never
+   * grants trust as a side effect. Verified directly — with
    * `--permission-mode acceptEdits` it reported `ask_orchestrator` among its
    * tools AND wrote the requested file in the same run.
    *

@@ -131,6 +131,11 @@ export function applySchema(d: Database): void {
   // run with the same tools and contract. Not derived: a writing job always
   // uses MCP, and retry of those is refused rather than reconstructed.
   addColumn(d, 'run', 'mcp', 'INTEGER')
+  // A request is not evidence that the canonical source reached the worker.
+  // Keep the same-named project server and its observed connection separately.
+  addColumn(d, 'run', 'mcp_server', 'TEXT')
+  addColumn(d, 'run', 'mcp_connected', 'INTEGER')
+  addColumn(d, 'run', 'mcp_error', 'TEXT')
   addColumn(d, 'run', 'schema_path', 'TEXT')
   addColumn(d, 'run', 'docs_injected', 'INTEGER')
   // A per-run secret, so the globally-registered ask server can tell a real
@@ -423,6 +428,9 @@ const RUN_DDL = `CREATE TABLE run (
       evidence_excluded TEXT,
       agent_pid     INTEGER,
       mcp           INTEGER,
+      mcp_server    TEXT,
+      mcp_connected INTEGER,
+      mcp_error     TEXT,
       schema_path   TEXT,
       docs_injected INTEGER
     )`

@@ -16,7 +16,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
 import { projectAt, projectByName, projects } from './projects.ts'
 import { resolveBase, repoRootOf, removeBranch, unmergedBranch } from './worktree.ts'
-import { NOT_EVIDENCE, type FailureKind } from './failure.ts'
+import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
 import { WORKER_PREAMBLE, READONLY_PREAMBLE, contractConflicts } from './contract.ts'
 import { collectResult, collectWait } from './collect.ts'
 import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
@@ -589,6 +589,9 @@ function usage(): never {
   orch sweep [--older-than N] [--force] [--dry-run]
       reclaim finished runs' worktrees AND the databases behind them; keeps
       anything unscored, because its diff is the evidence you would judge from
+  orch reclassify-failures [--dry-run]
+      reclassify stored 'other' vendor quota/auth failures from their error text;
+      prints every matched row and before/after counts before writing
   orch doctor                   agents, local endpoint, routing at a glance
   orch project [list] [--json]  the register: where work lives, and what it is built from
       --json is the published surface other concerns read (never orch.db)
@@ -2601,6 +2604,86 @@ switch (cmd) {
     // outlives a rename.
     console.error('the dashboard moved: run `hub serve` (http://127.0.0.1:7778)')
     process.exit(1)
+
+  /**
+   * Re-run only the DEV-122 quota/auth signatures over old, unclassified
+   * failures. This is deliberately not a general reclassification: a stored
+   * failure is evidence, and changing its meaning on anything less than that
+   * row's own vendor error would rewrite the agent's record.
+   */
+  case 'reclassify-failures': {
+    type FailureRow = {
+      id: number; agent: string; job: string; status: string
+      failure_kind: string | null; error: string
+    }
+    type CountRow = { agent: string; failure_kind: string | null; count: number }
+
+    const all = db().query(
+      `SELECT id, agent, job, status, failure_kind, error
+         FROM run
+        WHERE status IN ('failed', 'stale')
+        ORDER BY id`,
+    ).all() as FailureRow[]
+    const matched = all.flatMap((row) => {
+      if (row.failure_kind !== 'other' || !row.error) return []
+      const kind = classify(row.error)
+      return kind === 'quota' || kind === 'auth' ? [{ row, kind }] : []
+    })
+
+    const counts = (rows: { agent: string; failure_kind: string | null }[]): CountRow[] => {
+      const grouped = new Map<string, CountRow>()
+      for (const row of rows) {
+        const key = JSON.stringify([row.agent, row.failure_kind])
+        const existing = grouped.get(key)
+        if (existing) existing.count++
+        else grouped.set(key, { agent: row.agent, failure_kind: row.failure_kind, count: 1 })
+      }
+      return [...grouped.values()].sort((a, b) =>
+        a.agent.localeCompare(b.agent) || (a.failure_kind ?? '').localeCompare(b.failure_kind ?? ''))
+    }
+    const printCounts = (label: string, rows: CountRow[]) => {
+      console.log(`${label} (all failed/stale rows)`)
+      if (!rows.length) console.log('  (none)')
+      for (const row of rows) {
+        console.log(`  ${row.agent}  ${row.failure_kind ?? 'null'}  ${row.count}`)
+      }
+    }
+
+    const before = counts(all)
+    const replacement = new Map(matched.map(({ row, kind }) => [row.id, kind]))
+    const projected = counts(all.map((row) => ({
+      agent: row.agent,
+      failure_kind: replacement.get(row.id) ?? row.failure_kind,
+    })))
+
+    printCounts('BEFORE', before)
+    console.log(`\nPLAN (${matched.length} matched row${matched.length === 1 ? '' : 's'})`)
+    for (const { row, kind } of matched) {
+      console.log(`run ${row.id}  ${row.agent}/${row.job}  [${row.status}]  other -> ${kind}`)
+      console.log(row.error)
+    }
+    console.log('')
+    printCounts('AFTER', projected)
+
+    if (has('dry-run')) {
+      console.log(`\n${matched.length} row${matched.length === 1 ? '' : 's'} would be reclassified — dry run, no writes.`)
+      break
+    }
+
+    const update = db().query(
+      `UPDATE run SET failure_kind = ?
+        WHERE id = ? AND status IN ('failed', 'stale')
+          AND failure_kind = 'other' AND error = ?`,
+    )
+    const apply = db().transaction(() => {
+      let changed = 0
+      for (const { row, kind } of matched) changed += update.run(kind, row.id, row.error).changes
+      return changed
+    })
+    const changed = apply()
+    console.log(`\n${changed} row${changed === 1 ? '' : 's'} reclassified.`)
+    break
+  }
 
   case 'doctor': {
     const { LOCAL_BASE_URL, LOCAL_MODEL, LOCAL_CONTEXT_TOKENS } =

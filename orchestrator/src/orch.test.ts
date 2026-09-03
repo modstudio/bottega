@@ -49,7 +49,7 @@ const { runDetail, state } = await import('./serve.ts')
 const { classify, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOT_EVIDENCE, COOLS_DOWN,
         isNonAnswer, detectBlockers } = await import('./failure.ts')
 const { errorTail, preflight, detachedRunOptions, runFilePaths, pruneRuns, KEEP_RUN_FILES_DAYS,
-        run: runJob } = await import('./run.ts')
+        grokMcpConnection, run: runJob } = await import('./run.ts')
 const run = runJob
 const { summary } = await import('./metric.ts')
 const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
@@ -426,6 +426,72 @@ describe('routing counts failures as evidence', () => {
     const c = candidates('review-lens').find((x) => x.agent === 'codex')!
     expect(c.score).toBeNull()
     expect(c.evidence).toBe(0)
+  })
+})
+
+describe('reclassify-failures', () => {
+  const CLI = new URL('cli.ts', import.meta.url).pathname
+  const runCli = (...args: string[]) => Bun.spawnSync([process.execPath, CLI, ...args], {
+    env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+    stdout: 'pipe', stderr: 'pipe',
+  })
+
+  test('reclassifies only failed rows whose own error has the DEV-122 signature', () => {
+    const startedAt = '2026-09-03T12:00:00.000Z'
+    const quotaError = 'Internal error: { "message": "API error (status 402 Payment Required): Grok Build usage exhausted" }\nfull stored detail'
+    const successful = addRun({
+      agent: 'grok', job: 'review-lens', status: 'ok', kind: 'other', startedAt,
+    })
+    score(successful, 'full', 'right')
+    const failed = addRun({
+      agent: 'grok', job: 'review-lens', status: 'failed', kind: 'other', startedAt,
+    })
+    const unrelated = addRun({
+      agent: 'grok', job: 'review-lens', status: 'stale', kind: 'other', startedAt,
+    })
+    db().query('UPDATE run SET error=? WHERE id=?').run(quotaError, successful)
+    db().query('UPDATE run SET error=? WHERE id=?').run(quotaError, failed)
+    db().query('UPDATE run SET error=? WHERE id=?').run('abandoned by architect', unrelated)
+
+    const before = candidates('review-lens').find((c) => c.agent === 'grok')!
+    expect(before.failures).toBe(2)
+    expect(before.evidence).toBe(3)
+
+    const dry = runCli('reclassify-failures', '--dry-run')
+    expect(dry.exitCode).toBe(0)
+    const dryOut = new TextDecoder().decode(dry.stdout)
+    expect(dryOut).toContain('BEFORE (all failed/stale rows)')
+    expect(dryOut).toContain('grok  other  2')
+    expect(dryOut).toContain(`run ${failed}  grok/review-lens  [failed]  other -> quota`)
+    expect(dryOut).toContain(quotaError)
+    expect(dryOut).toContain('AFTER (all failed/stale rows)')
+    expect(dryOut).toContain('grok  other  1')
+    expect(dryOut).toContain('grok  quota  1')
+    expect(dryOut).toContain('1 row would be reclassified — dry run, no writes.')
+    expect(db().query('SELECT failure_kind FROM run WHERE id=?').get(failed))
+      .toEqual({ failure_kind: 'other' })
+
+    const applied = runCli('reclassify-failures')
+    expect(applied.exitCode).toBe(0)
+    expect(new TextDecoder().decode(applied.stdout)).toContain('1 row reclassified.')
+    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(failed))
+      .toEqual({ status: 'failed', failure_kind: 'quota' })
+    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(successful))
+      .toEqual({ status: 'ok', failure_kind: 'other' })
+    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(unrelated))
+      .toEqual({ status: 'stale', failure_kind: 'other' })
+
+    const after = candidates('review-lens').find((c) => c.agent === 'grok')!
+    expect(after.failures).toBe(1)
+    expect(after.evidence).toBe(2)
+    expect(after.score).toBeCloseTo(
+      (weigh('full', 'right') + weigh('none', null)) / 2,
+    )
+
+    const again = runCli('reclassify-failures')
+    expect(again.exitCode).toBe(0)
+    expect(new TextDecoder().decode(again.stdout)).toContain('PLAN (0 matched rows)')
+    expect(new TextDecoder().decode(again.stdout)).toContain('0 rows reclassified.')
   })
 })
 
@@ -1402,6 +1468,80 @@ describe('run detail', () => {
       prompt: 'the whole prompt', output: 'the whole reply',
     })
     expect(detail).not.toHaveProperty('run_token')
+  })
+})
+
+describe('review-lens MCP provenance', () => {
+  test('reads Grok doctor as the same-named project connection', () => {
+    const doctor = join(dir, 'fake-grok-mcp-doctor.sh')
+    writeFileSync(doctor, `#!/bin/sh
+printf '%s' '{"servers":[{"name":"starship","healthy":false,"checks":[{"label":"folder untrusted","passed":false,"detail":"repo-local server not started","hint":"re-run with --trust"}]}]}'
+`)
+    chmodSync(doctor, 0o755)
+    expect(grokMcpConnection(doctor, dir, 'starship', { PATH: process.env.PATH ?? '' }))
+      .toEqual({
+        server: 'starship', connected: false,
+        error: 'folder untrusted: repo-local server not started: re-run with --trust',
+      })
+  })
+
+  test('records degradation and requires provenance in every lens prompt', async () => {
+    const script = join(dir, 'fake-grok-lens.sh')
+    writeFileSync(script, `#!/bin/sh
+if [ "$1" = "mcp" ]; then
+  printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"label":"folder untrusted","passed":false,"detail":"repo-local server not started","hint":"re-run with --trust"}]}]}'
+else
+  printf '%s\n' '{"type":"system","subtype":"init"}'
+  printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
+fi
+`)
+    chmodSync(script, 0o755)
+    const agent = AGENTS.grok!
+    const originalBin = agent.bin
+    const originalArgv = agent.argv
+    let sent = ''
+    agent.bin = script
+    agent.argv = ({ prompt }) => {
+      sent = prompt
+      return []
+    }
+    const cwd = process.cwd()
+    upsertProject({ name: 'fixture-project', path: cwd, settings: {} })
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      const result = await runJob({
+        job: 'review-lens', prompt: 'review this', cwd, agent: 'grok', mcp: true,
+      })
+      expect(sent).toContain('Provenance: state the source you measured against.')
+      expect(db().query(
+        'SELECT mcp_server, mcp_connected, mcp_error FROM run WHERE id=?',
+      ).get(result.id)).toEqual({
+        mcp_server: 'fixture-project', mcp_connected: 0,
+        mcp_error: 'folder untrusted: repo-local server not started: re-run with --trust',
+      })
+    } finally {
+      agent.bin = originalBin
+      agent.argv = originalArgv
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
+  test('orch result exposes degradation and the explicit trust command', () => {
+    const id = addRun({ agent: 'grok', job: 'review-lens' })
+    db().query(
+      `UPDATE run SET cwd=?, mcp=1, mcp_server='starship', mcp_connected=0,
+                      mcp_error='folder untrusted: repo-local server not started' WHERE id=?`,
+    ).run('/tmp/a lens tree', id)
+    const CLI = new URL('cli.ts', import.meta.url).pathname
+    const result = Bun.spawnSync([process.execPath, CLI, 'result', String(id)], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe',
+    })
+    const stderr = result.stderr.toString()
+    expect(result.exitCode).toBe(0)
+    expect(stderr).toContain('mcp:       starship NOT CONNECTED')
+    expect(stderr).toContain("trust:     grok --cwd '/tmp/a lens tree' --trust")
   })
 })
 

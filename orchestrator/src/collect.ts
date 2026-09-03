@@ -28,6 +28,26 @@ function evidenceNote(row: { evidence_excluded: string | null }): string {
     : ''
 }
 
+function shellArg(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`
+}
+
+function mcpNote(row: {
+  agent: string; cwd: string | null; mcp: number | null; mcp_server: string | null
+  mcp_connected: number | null; mcp_error: string | null
+}): string {
+  if (!row.mcp) return ''
+  const source = row.mcp_server ?? 'project MCP'
+  if (row.mcp_connected === 1) return `\n  mcp:       ${source} connected`
+  const state = row.mcp_connected === 0 ? 'NOT CONNECTED' : 'connection unknown'
+  let note = `\n  mcp:       ${source} ${state}`
+  if (row.mcp_error) note += ` — ${row.mcp_error}`
+  if (row.agent === 'grok' && row.cwd && /folder untrusted/i.test(row.mcp_error ?? '')) {
+    note += `\n  trust:     grok --cwd ${shellArg(row.cwd)} --trust`
+  }
+  return note
+}
+
 export function collectResult(
   database: Database, argv: string[], writesRepo: (job: string) => boolean = () => false,
 ): void {
@@ -35,13 +55,16 @@ export function collectResult(
   if (!id) throw new Error('orch result <run-id>')
   const row = database.query(
     `SELECT id, agent, job, status, latency_ms, vendor_tokens, output_path, error,
-            failure_kind, exit_code, parent_run_id, evidence_excluded, base_commit
+            failure_kind, exit_code, parent_run_id, evidence_excluded, base_commit,
+            cwd, mcp, mcp_server, mcp_connected, mcp_error
        FROM run WHERE id = ?`,
   ).get(id) as {
     id: number; agent: string; job: string; status: string; latency_ms: number | null
     vendor_tokens: number | null; output_path: string | null; error: string | null
     failure_kind: string | null; exit_code: number | null; parent_run_id: number | null
     evidence_excluded: string | null; base_commit: string | null
+    cwd: string | null; mcp: number | null; mcp_server: string | null
+    mcp_connected: number | null; mcp_error: string | null
   } | null
   if (!row) throw new Error(`no run ${id}`)
 
@@ -71,12 +94,14 @@ export function collectResult(
         : running
           ? `\n— run ${id} asking — resumed as run ${running.id}, which is still running`
           : `\n— run ${id} asking — recoverable: orch continue ${rootId}`) +
-      baseNote + evidenceNote(row),
+      baseNote + mcpNote(row) + evidenceNote(row),
     )
     return
   }
   if (!outcome.ok) {
-    console.error(`\n— run ${id} ${row.status}: ${failureReason(row)}` + baseNote + evidenceNote(row))
+    console.error(
+      `\n— run ${id} ${row.status}: ${failureReason(row)}` + baseNote + mcpNote(row) + evidenceNote(row),
+    )
     process.exit(1)
   }
   if (!argv.includes('--quiet')) {
@@ -84,7 +109,7 @@ export function collectResult(
       `\n— run ${row.id} · ${row.agent} · ${dur(row.latency_ms)}` +
         (row.vendor_tokens ? ` · ${row.vendor_tokens.toLocaleString()} vendor tokens` : '') +
         `\n  score it:  ${scoreHint(row.id, row.job, row.parent_run_id, writesRepo)}` +
-        baseNote + evidenceNote(row),
+        baseNote + mcpNote(row) + evidenceNote(row),
     )
   }
 }
