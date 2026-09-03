@@ -606,7 +606,7 @@ function usage(): never {
       reclaim finished runs' worktrees AND the databases behind them; keeps
       anything unscored, because its diff is the evidence you would judge from
   orch reclassify-failures [--dry-run]
-      reclassify stored 'other' vendor quota/auth failures from their error text;
+      reclassify stored unclassified vendor quota/auth failures from their error text;
       prints every matched row and before/after counts before writing
   orch doctor                   agents, local endpoint, routing at a glance
   orch project [list] [--json]  the register: where work lives, and what it is built from
@@ -2663,7 +2663,7 @@ switch (cmd) {
         ORDER BY id`,
     ).all() as FailureRow[]
     const matched = all.flatMap((row) => {
-      if (row.failure_kind !== 'other' || !row.error) return []
+      if ((row.failure_kind !== 'other' && row.failure_kind !== null) || !row.error) return []
       const kind = classify(row.error)
       return kind === 'quota' || kind === 'auth' ? [{ row, kind }] : []
     })
@@ -2697,7 +2697,7 @@ switch (cmd) {
     printCounts('BEFORE', before)
     console.log(`\nPLAN (${matched.length} matched row${matched.length === 1 ? '' : 's'})`)
     for (const { row, kind } of matched) {
-      console.log(`run ${row.id}  ${row.agent}/${row.job}  [${row.status}]  other -> ${kind}`)
+      console.log(`run ${row.id}  ${row.agent}/${row.job}  [${row.status}]  ${row.failure_kind ?? 'null'} -> ${kind}`)
       console.log(row.error)
     }
     console.log('')
@@ -2711,7 +2711,7 @@ switch (cmd) {
     const update = db().query(
       `UPDATE run SET failure_kind = ?
         WHERE id = ? AND status IN ('failed', 'stale')
-          AND failure_kind = 'other' AND error = ?`,
+          AND (failure_kind = 'other' OR failure_kind IS NULL) AND error = ?`,
     )
     const apply = db().transaction(() => {
       let changed = 0

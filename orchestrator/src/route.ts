@@ -37,9 +37,10 @@ export type Candidate = {
   eligible: boolean
   why: string
   /**
-   * Set when the agent's last run died of something only a run can detect —
-   * quota or stale auth — with how long ago. Never set for `unreachable`, which
-   * is measured directly on every routing decision and needs no waiting out.
+   * Set when the agent's most recent uncleared failure was something only a run
+   * can detect — quota or stale auth — with how long ago it finished. Never set
+   * for `unreachable`, which is measured directly on every routing decision and
+   * needs no waiting out.
    */
   cooling: string | null
 }
@@ -47,8 +48,8 @@ export type Candidate = {
 /**
  * How long to leave an agent alone after it runs out of quota or loses its
  * login. Nothing here can fix either, so continuing to route at it just
- * converts every job into a failed one. A single success clears the state on
- * its own, because only the most recent run is consulted.
+ * converts every job into a failed one. A success clears the state only when it
+ * finished after the most recent cooling failure.
  */
 export const COOLDOWN_MIN = 60
 
@@ -86,6 +87,11 @@ export const OUTPUT_RESERVE = 16_384
 /** NOT_EVIDENCE as a SQL list, so the two definitions cannot drift apart. */
 function notEvidenceSql(): string {
   return NOT_EVIDENCE.map((k) => `'${k}'`).join(', ')
+}
+
+/** COOLS_DOWN as a SQL list, so the query uses the canonical vocabulary. */
+function coolsDownSql(): string {
+  return COOLS_DOWN.map((k) => `'${k}'`).join(', ')
 }
 
 /**
@@ -317,8 +323,10 @@ export function candidates(
   const latByAgent = new Map<string, number[]>()
   for (const r of lat) latByAgent.set(r.agent, [...(latByAgent.get(r.agent) ?? []), r.latency_ms])
 
-  // Only the most recent run per agent matters: an agent that has since
-  // succeeded is working again, whatever happened before it.
+  // Completion order matters here, not id order. Ids are assigned at launch,
+  // so a later-id success can finish while an earlier-id fan-out sibling is
+  // still running and then dying on quota. That success cannot clear a failure
+  // which had not happened yet.
   //
   // PROBES ARE DELIBERATELY NOT EXCLUDED HERE, alone among the queries. A probe
   // is excluded everywhere that measures QUALITY, because "reply with ok" says
@@ -327,26 +335,42 @@ export function candidates(
   // a human has fixed the quota or the login, without waiting out the hour or
   // pretending a trivial reply was real work. Adding `AND probe = 0` here for
   // consistency would remove the only way to clear a cooldown.
-  const last = new Map(
+  const coolingByAgent = new Map(
     (db().query(
-      `SELECT agent, status, failure_kind,
-              (julianday('now') - julianday(started_at)) * 1440 AS mins_ago
-         FROM run r
-        WHERE r.id = (SELECT MAX(id) FROM run x WHERE x.agent = r.agent
-                        AND x.status IN ('ok','failed'))`,
-    ).all() as { agent: string; status: string; failure_kind: string | null; mins_ago: number }[])
+      `WITH terminal AS (
+         SELECT id, agent, status, failure_kind,
+                julianday(started_at) + latency_ms / 86400000.0 AS finished_at
+           FROM run
+          WHERE status IN ('ok','failed') AND latency_ms IS NOT NULL
+       ), cooling_failures AS (
+         SELECT id, agent, failure_kind, finished_at,
+                ROW_NUMBER() OVER (
+                  PARTITION BY agent ORDER BY finished_at DESC, id DESC
+                ) AS recency
+           FROM terminal
+          WHERE status = 'failed' AND failure_kind IN (${coolsDownSql()})
+       )
+       SELECT f.agent, f.failure_kind,
+              (julianday('now') - f.finished_at) * 1440 AS mins_ago
+         FROM cooling_failures f
+        WHERE f.recency = 1
+          AND (julianday('now') - f.finished_at) * 1440 < ?
+          AND NOT EXISTS (
+                SELECT 1 FROM terminal s
+                 WHERE s.agent = f.agent AND s.status = 'ok'
+                   AND s.finished_at > f.finished_at
+              )`,
+    ).all(COOLDOWN_MIN) as { agent: string; failure_kind: string; mins_ago: number }[])
       .map((r) => [r.agent, r]),
   )
 
   const result: Candidate[] = Object.keys(AGENTS).map((name) => {
     const a = AGENTS[name]!
     const currentModel = modelOverride ?? a.model
-    const l = last.get(name)
-    const cooling =
-      l && l.status === 'failed' && l.failure_kind &&
-      COOLS_DOWN.includes(l.failure_kind as never) && l.mins_ago < COOLDOWN_MIN
-        ? `${l.failure_kind} ${Math.round(l.mins_ago)}m ago`
-        : null
+    const failure = coolingByAgent.get(name)
+    const cooling = failure
+      ? `${failure.failure_kind} ${Math.round(failure.mins_ago)}m ago`
+      : null
     const h = hist.get(name)
     const agentEvidence = evidenceRows.filter((r) => r.agent === name)
     const modelEvidence = agentEvidence.filter((r) => r.model === currentModel)

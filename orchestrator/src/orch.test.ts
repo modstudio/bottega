@@ -336,15 +336,37 @@ describe('routing counts failures as evidence', () => {
   })
 
   test('quota opens the circuit, because only a run can tell you it has cleared', () => {
-    db().query(
-      `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head,
-                        status, failure_kind)
-       VALUES (datetime('now','-5 minutes'),'codex','craft','s',10,'h','failed','quota')`,
-    ).run()
+    addRun({
+      agent: 'codex', job: 'craft', status: 'failed', kind: 'quota',
+      startedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+    })
     const c = candidates('craft').find((x) => x.agent === 'codex')!
     expect(c.cooling).toContain('quota')
     expect(c.eligible).toBe(false)
     expect(c.why).toContain('vendor quota')
+  })
+
+  test('a later-id success finishing before quota failures does not mask them', () => {
+    // Exact fan-out shape from DEV-132: ids are launch order, not completion
+    // order. The success launches last but completes while its older siblings
+    // are still running; their later quota deaths must open the circuit.
+    const base = Date.now() - 10 * 60_000
+    addRun({
+      agent: 'grok', job: 'review-lens', status: 'failed', kind: 'quota',
+      startedAt: new Date(base).toISOString(), latency: 8 * 60_000,
+    })
+    addRun({
+      agent: 'grok', job: 'review-lens', status: 'failed', kind: 'quota',
+      startedAt: new Date(base + 1000).toISOString(), latency: 8 * 60_000,
+    })
+    addRun({
+      agent: 'grok', job: 'review-lens',
+      startedAt: new Date(base + 2000).toISOString(), latency: 2 * 60_000,
+    })
+
+    const c = candidates('review-lens').find((x) => x.agent === 'grok')!
+    expect(c.cooling).toContain('quota')
+    expect(c.eligible).toBe(false)
   })
 
   test('an outage is not a verdict — the room failed, not the agent', () => {
@@ -446,11 +468,15 @@ describe('reclassify-failures', () => {
     const failed = addRun({
       agent: 'grok', job: 'review-lens', status: 'failed', kind: 'other', startedAt,
     })
+    const nullKind = addRun({
+      agent: 'codex', job: 'review-lens', status: 'failed', startedAt,
+    })
     const unrelated = addRun({
       agent: 'grok', job: 'review-lens', status: 'stale', kind: 'other', startedAt,
     })
     db().query('UPDATE run SET error=? WHERE id=?').run(quotaError, successful)
     db().query('UPDATE run SET error=? WHERE id=?').run(quotaError, failed)
+    db().query('UPDATE run SET error=? WHERE id=?').run(quotaError, nullKind)
     db().query('UPDATE run SET error=? WHERE id=?').run('abandoned by architect', unrelated)
 
     const before = candidates('review-lens').find((c) => c.agent === 'grok')!
@@ -463,21 +489,24 @@ describe('reclassify-failures', () => {
     expect(dryOut).toContain('BEFORE (all failed/stale rows)')
     expect(dryOut).toContain('grok  other  2')
     expect(dryOut).toContain(`run ${failed}  grok/review-lens  [failed]  other -> quota`)
+    expect(dryOut).toContain(`run ${nullKind}  codex/review-lens  [failed]  null -> quota`)
     expect(dryOut).toContain(quotaError)
     expect(dryOut).toContain('AFTER (all failed/stale rows)')
     expect(dryOut).toContain('grok  other  1')
     expect(dryOut).toContain('grok  quota  1')
-    expect(dryOut).toContain('1 row would be reclassified — dry run, no writes.')
+    expect(dryOut).toContain('2 rows would be reclassified — dry run, no writes.')
     expect(db().query('SELECT failure_kind FROM run WHERE id=?').get(failed))
       .toEqual({ failure_kind: 'other' })
 
     const applied = runCli('reclassify-failures')
     expect(applied.exitCode).toBe(0)
-    expect(new TextDecoder().decode(applied.stdout)).toContain('1 row reclassified.')
+    expect(new TextDecoder().decode(applied.stdout)).toContain('2 rows reclassified.')
     expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(failed))
       .toEqual({ status: 'failed', failure_kind: 'quota' })
     expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(successful))
       .toEqual({ status: 'ok', failure_kind: 'other' })
+    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(nullKind))
+      .toEqual({ status: 'failed', failure_kind: 'quota' })
     expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(unrelated))
       .toEqual({ status: 'stale', failure_kind: 'other' })
 
@@ -1447,11 +1476,18 @@ describe('a probe proves an agent is alive without vouching for it', () => {
   test('a probe clears a cooldown, which is the only way to clear one early', () => {
     // Deliberate, and the one query that does not filter probes. Availability
     // is not quality: a human who tops up a quota needs a way to say so.
-    const failed = addRun({ agent: 'codex', job: 'craft', status: 'failed' })
+    const base = Date.now() - 10_000
+    const failed = addRun({
+      agent: 'codex', job: 'craft', status: 'failed',
+      startedAt: new Date(base).toISOString(), latency: 1000,
+    })
     db().query("UPDATE run SET failure_kind='quota' WHERE id=?").run(failed)
     expect(candidates('craft').find((c) => c.agent === 'codex')!.cooling).toContain('quota')
 
-    addRun({ agent: 'codex', job: 'craft', probe: 1 })  // succeeded, calibration
+    addRun({
+      agent: 'codex', job: 'craft', probe: 1,
+      startedAt: new Date(base + 2000).toISOString(), latency: 1000,
+    })  // succeeded later, calibration
     expect(candidates('craft').find((c) => c.agent === 'codex')!.cooling).toBeNull()
   })
 
