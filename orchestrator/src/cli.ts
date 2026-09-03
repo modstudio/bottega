@@ -2334,7 +2334,16 @@ switch (cmd) {
     if (agentFlag) { where.push('r.agent = ?'); args.push(agentFlag) }
     const onlyUnscored = has('unscored')
     const sinceFlag = flag('since')
-    if (sinceFlag) { where.push('r.started_at >= ?'); args.push(sinceFlag) }
+    if (sinceFlag) {
+      // A resumed chain belongs in the window when any of its turns executed
+      // there, even if the root turn predates the cutoff.
+      where.push(`EXISTS (
+        SELECT 1 FROM run turn
+         WHERE (turn.id = r.id OR turn.parent_run_id = r.id)
+           AND turn.started_at >= ?
+      )`)
+      args.push(sinceFlag)
+    }
     let rows = db().query(
       `SELECT r.id, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
               current_run.status, s.delivery, s.quality,
@@ -2368,8 +2377,14 @@ switch (cmd) {
         status: string; latency_ms: number | null; vendor_tokens: number | null
         route_reason: string | null
       }
+      const turns = json ? db().query(
+        `SELECT id, started_at, latency_ms, vendor_tokens, vendor_cost_usd, status, turn
+           FROM run WHERE id = ? OR parent_run_id = ?
+          ORDER BY turn, id`,
+      ).all(Number(r.id), Number(r.id)) : undefined
       return [{
         ...r, ...current,
+        ...(turns ? { turns } : {}),
         answer_agent: final.agent,
         failover_chain: chain.attempts.map((attempt) => attempt.agent),
       }]

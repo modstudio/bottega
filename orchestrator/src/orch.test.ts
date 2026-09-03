@@ -2803,6 +2803,39 @@ describe('detached run collection', () => {
     expect(json.out.trim().split('\n').map((line) => JSON.parse(line).id)).toEqual([root])
   })
 
+  test('runs JSON emits every execution interval in a resumed chain', () => {
+    const starts = [
+      '2026-09-01T12:00:00.000Z', '2026-09-01T12:10:00.000Z',
+      '2026-09-01T12:30:00.000Z', '2026-09-01T13:00:00.000Z',
+      '2026-09-01T13:40:00.000Z',
+    ]
+    const latencies = [63_855, 11_127, 200_636, 52_916, 704_156]
+    const tokens = [260_552, 62_612, 1_904_392, 261_452, 9_309_615]
+    const root = addRun({
+      agent: 'codex', job: 'implement', startedAt: starts[0], latency: latencies[0],
+    })
+    const ids = [root]
+    for (let turn = 2; turn <= 5; turn++) {
+      ids.push(addRun({
+        agent: 'codex', job: 'implement', parent: root, turn,
+        startedAt: starts[turn - 1], latency: latencies[turn - 1],
+      }))
+    }
+    ids.forEach((id, index) => db().query('UPDATE run SET vendor_tokens=? WHERE id=?')
+      .run(tokens[index], id))
+
+    // The root predates this window, but later execution in the chain does not.
+    const result = orch('runs', '--json', '--since', '2026-09-01T12:20:00.000Z')
+    expect(result.code).toBe(0)
+    const [row] = result.out.trim().split('\n').map((line) => JSON.parse(line))
+    expect(row.id).toBe(root)
+    expect(row.status).toBe('ok')
+    expect(row.turns.map((turn: { id: number }) => turn.id)).toEqual(ids)
+    expect(row.turns.reduce(
+      (sum: number, turn: { vendor_tokens: number }) => sum + turn.vendor_tokens, 0,
+    )).toBe(11_798_623)
+  })
+
   test('waiting on a failed run exits non-zero', () => {
     const id = insert('failed')
     db().query(

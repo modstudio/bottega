@@ -9,8 +9,8 @@ import {
   ratioSummary, spendGrid, endMs,
   boardTasks,
 } from './query.ts'
-import { human } from './interval.ts'
-import { readRuns } from './ingest/runs.ts'
+import { engagedMs, human } from './interval.ts'
+import { chainVendorTokens, executionSpans, readRuns } from './ingest/runs.ts'
 import { attribute, keyFromBranch, keyFromPromptFile } from './attribute.ts'
 import { promptLens } from './excerpt.ts'
 import { collectFast, collectSlow, watch, hoursAgo, leaseHolder, withLease } from './collect.ts'
@@ -450,18 +450,17 @@ export async function view(name: View, hours: number,
       // two-second redraw does not re-read a single file.
       if (!a.key) a.key = keyFromBranch(r.branch, a.project)
       if (!a.key) a.key = keyFromPromptFile(r.prompt_path, a.project)
-      const start = new Date(r.started_at).getTime()
-      const end = r.latency_ms == null ? now : start + r.latency_ms
       return {
         id: r.id, agent: r.agent, job: r.job,
         task: a.key, project: a.project ?? r.repo,
         at: r.started_at,
-        engaged: human(end - start),
+        engaged: human(engagedMs(executionSpans(r, now))),
         running: r.status === 'running',
         status: r.status,
         delivery: r.delivery ?? null,
         quality: r.quality ?? null,
-        tokens: r.vendor_tokens, costUsd: r.vendor_cost_usd,
+        tokens: chainVendorTokens(r),
+        costUsd: r.vendor_cost_usd,
         probe: !!r.probe,
         head: r.prompt_head,
         lens: promptLens(r.prompt_path),

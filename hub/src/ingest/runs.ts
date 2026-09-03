@@ -9,7 +9,17 @@ import { attribute, keyFromBranch, keyFromPromptFile } from '../attribute.ts'
  * "a database per concern" line stops being true, and the CLI is a published
  * interface that can keep working when the schema behind it moves.
  */
-type OrchRun = {
+export type OrchTurn = {
+  id: number
+  started_at: string
+  latency_ms: number | null
+  vendor_tokens: number | null
+  vendor_cost_usd: number | null
+  status: string
+  turn: number
+}
+
+export type OrchRun = {
   id: number
   started_at: string
   agent: string
@@ -30,6 +40,25 @@ type OrchRun = {
   /** Present only under --json; the runs view needs the verdict. */
   delivery?: string | null
   quality?: string | null
+  /** Every execution in a resumable chain, including the root turn. */
+  turns?: OrchTurn[]
+}
+
+export function executionSpans(r: OrchRun, now = Date.now()) {
+  return (r.turns ?? [r]).flatMap((turn) => {
+    const start = new Date(turn.started_at).getTime()
+    if (!Number.isFinite(start)) return []
+    if (turn.latency_ms == null && turn.status !== 'running') return []
+    const end = turn.latency_ms == null ? Math.max(now, start) : start + turn.latency_ms
+    return [{ start, end }]
+  })
+}
+
+export function chainVendorTokens(r: OrchRun): number | null {
+  const turns = r.turns ?? [r]
+  return turns.some((turn) => turn.vendor_tokens != null)
+    ? turns.reduce((sum, turn) => sum + (turn.vendor_tokens ?? 0), 0)
+    : null
 }
 
 const ORCH = new URL('../../../bin/orch', import.meta.url).pathname
@@ -74,6 +103,9 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
   const removeOtherStarts = d.query(
     `DELETE FROM interval WHERE source = 'orch' AND ref = ? AND start_at <> ?`,
   )
+  const clearChain = d.query(
+    `DELETE FROM interval WHERE source = 'orch' AND (ref = ? OR ref LIKE ?)`,
+  )
 
   let rows = 0
   let skipped = 0
@@ -83,23 +115,6 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
       // A probe is a smoke test — "reply with ok" — that did no work on
       // anything, so it is not engaged time on any task.
       if (r.probe) { skipped++; continue }
-      const start = new Date(r.started_at).getTime()
-      if (!Number.isFinite(start)) { skipped++; continue }
-
-      // A run still going has no latency yet, and skipping it was wrong: it is
-      // precisely the run the "working now" column exists to show. It runs to
-      // NOW, and the upsert corrects the end when the run finishes.
-      //
-      // A run that died without writing its outcome contributes no new span,
-      // but an earlier collect may have recorded it while it was running. Close
-      // that existing span or it would remain open and grow forever.
-      if (r.latency_ms == null && r.status !== 'running') {
-        close.run(`orch:${r.id}`)
-        skipped++
-        continue
-      }
-      const end = r.latency_ms == null ? Math.max(now, start) : start + r.latency_ms
-
       // The prompt head is searched for a key only as a last resort, and it is
       // genuinely useful here: a review pack names the task it reviews even
       // when the run happened in a plain checkout.
@@ -118,16 +133,30 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
         if (named) { a.key = named; a.via = 'prompt-file' }
       }
 
+      const turns = r.turns ?? [r]
+      if (r.turns) clearChain.run(`orch:${r.id}`, `orch:${r.id}:turn:%`)
+      for (const turn of turns) {
+        const ref = r.turns ? `orch:${r.id}:turn:${turn.id}` : `orch:${r.id}`
+        const start = new Date(turn.started_at).getTime()
+        if (!Number.isFinite(start)) { skipped++; continue }
 
-      stmt.run(
-        a.key, a.project, r.agent, r.job,
-        new Date(start).toISOString(),
-        new Date(end).toISOString(),
-        r.vendor_tokens ?? 0, r.vendor_cost_usd, `orch:${r.id}`, a.via,
-        r.latency_ms == null ? 1 : 0,
-      )
-      removeOtherStarts.run(`orch:${r.id}`, new Date(start).toISOString())
-      rows++
+        // A live turn grows to NOW until its measured latency arrives. A turn
+        // that stopped without a latency contributes no execution interval.
+        if (turn.latency_ms == null && turn.status !== 'running') {
+          if (!r.turns) close.run(ref)
+          skipped++
+          continue
+        }
+        const end = turn.latency_ms == null ? Math.max(now, start) : start + turn.latency_ms
+        stmt.run(
+          a.key, a.project, r.agent, r.job,
+          new Date(start).toISOString(), new Date(end).toISOString(),
+          turn.vendor_tokens ?? 0, turn.vendor_cost_usd, ref, a.via,
+          turn.latency_ms == null ? 1 : 0,
+        )
+        if (!r.turns) removeOtherStarts.run(ref, new Date(start).toISOString())
+        rows++
+      }
     }
   })
   write(runs)

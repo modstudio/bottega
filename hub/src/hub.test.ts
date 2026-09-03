@@ -19,7 +19,7 @@ const { projectColor, projectNames } = await import('./projects.ts')
 const { ingestTrackers, upsertTrackerTask, resolveAssigneeIds } =
   await import('./ingest/trackers.ts')
 const { createTask, showTask } = await import('./task.ts')
-const { ingestRuns } = await import('./ingest/runs.ts')
+const { chainVendorTokens, executionSpans, ingestRuns } = await import('./ingest/runs.ts')
 
 process.on('exit', () => {
   try { rmSync(testDir, { recursive: true, force: true }) } catch {}
@@ -101,6 +101,54 @@ describe('run ingest', () => {
     ).get() as { open: number }
     expect(interval.open).toBe(1)
     expect(result).toEqual({ rows: 1, skipped: 0 })
+  })
+
+  test('a resumed chain ingests each execution interval and conserves its tokens', async () => {
+    const starts = [
+      '2026-09-01T12:00:00.000Z', '2026-09-01T12:10:00.000Z',
+      '2026-09-01T12:30:00.000Z', '2026-09-01T13:00:00.000Z',
+      '2026-09-01T13:40:00.000Z',
+    ]
+    const latencies = [63_855, 11_127, 200_636, 52_916, 704_156]
+    const tokens = [260_552, 62_612, 1_904_392, 261_452, 9_309_615]
+    const turns = starts.map((started_at, index) => ({
+      id: [1168, 1169, 1173, 1210, 1217][index]!,
+      started_at,
+      latency_ms: latencies[index]!,
+      vendor_tokens: tokens[index]!,
+      vendor_cost_usd: null,
+      status: 'ok',
+      turn: index + 1,
+    }))
+
+    // Replace the legacy root-wide interval just as the first post-change
+    // collection must do for existing hub databases.
+    await ingestRunFixtures(runFixture({
+      id: 1168, started_at: starts[0], latency_ms: latencies[0], status: 'ok',
+    }))
+    const result = await ingestRunFixtures(runFixture({
+      id: 1168,
+      started_at: starts[0],
+      latency_ms: latencies[0],
+      vendor_tokens: tokens[0],
+      status: 'ok',
+      turns,
+    }))
+
+    const intervals = db().query(
+      `SELECT start_at, end_at, vendor_tokens, ref FROM interval
+        WHERE source = 'orch' AND ref LIKE 'orch:1168%' ORDER BY start_at`,
+    ).all() as { start_at: string; end_at: string; vendor_tokens: number; ref: string }[]
+    expect(result).toEqual({ rows: 5, skipped: 0 })
+    expect(intervals).toHaveLength(5)
+    expect(intervals.every((row) => row.ref.startsWith('orch:1168:turn:'))).toBe(true)
+    expect(intervals.reduce((sum, row) => sum + row.vendor_tokens, 0)).toBe(11_798_623)
+    expect(chainVendorTokens(runFixture({ turns }))).toBe(11_798_623)
+    expect(engagedMs(executionSpans(runFixture({ turns })))).toBe(1_032_690)
+    expect(engagedMs(intervals.map((row) => ({
+      start: at(row.start_at), end: at(row.end_at),
+    })))).toBe(1_032_690)
+    expect(human(1_032_690)).toBe('17m 13s')
   })
 })
 
