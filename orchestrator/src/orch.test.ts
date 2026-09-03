@@ -1974,6 +1974,20 @@ describe('reachability is a routing input, not a run outcome', () => {
   // which is exactly the state the rest of the suite expects.
   afterEach(() => resetLocalHealth())
 
+  // These assertions are about interpreting an endpoint's response, not about
+  // opening a listener. Repository workers cannot bind one: Bun reports that
+  // denial as EADDRINUSE even for port 0. Keep the fixture in-process so
+  // concurrent worktrees have no socket resource to contend over.
+  async function withFetchResponse<T>(response: Response, run: () => Promise<T>): Promise<T> {
+    const original = globalThis.fetch
+    globalThis.fetch = Object.assign(
+      () => Promise.resolve(response),
+      { preconnect: original.preconnect },
+    ) as typeof fetch
+    try { return await run() }
+    finally { globalThis.fetch = original }
+  }
+
   test('an endpoint nothing is listening on is not reachable', async () => {
     // Port 1 is refused immediately on any machine, so this is fast and does
     // not depend on the local model host being up — or down.
@@ -1984,25 +1998,23 @@ describe('reachability is a routing input, not a run outcome', () => {
   test('a 200 from the wrong service is not reachability', async () => {
     // The gotcha that cost real time: local 8000 is Docker Desktop's, and it
     // answers HTTP 200 with HTML. Status alone would have called that healthy.
-    const srv = Bun.serve({
-      port: 0,
-      fetch: () => new Response('<html>hello</html>', {
+    await withFetchResponse(
+      new Response('<html>hello</html>', {
         headers: { 'content-type': 'text/html' },
       }),
-    })
-    try {
-      const r = await localReachable(2000, `http://127.0.0.1:${srv.port}/v1`)
-      expect(r.ok).toBe(false)
-      expect(r.detail).toContain('something else owns this port')
-    } finally { srv.stop(true) }
+      async () => {
+        const r = await localReachable(2000, 'http://127.0.0.1:8000/v1')
+        expect(r.ok).toBe(false)
+        expect(r.detail).toContain('something else owns this port')
+      },
+    )
   })
 
   test('JSON that is not a model list is not an OpenAI endpoint either', async () => {
-    const srv = Bun.serve({ port: 0, fetch: () => Response.json({ hello: 'world' }) })
-    try {
-      const r = await localReachable(2000, `http://127.0.0.1:${srv.port}/v1`)
+    await withFetchResponse(Response.json({ hello: 'world' }), async () => {
+      const r = await localReachable(2000, 'http://127.0.0.1:8000/v1')
       expect(r.ok).toBe(false)
-    } finally { srv.stop(true) }
+    })
   })
 
   test('a dead endpoint makes the local agent unavailable, not "not installed"', async () => {
