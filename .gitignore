@@ -14,8 +14,16 @@ __pycache__/
 ops/logs/
 *.log
 
-# per-directory Claude state, not shared
-.claude/
+# per-directory Claude state, not shared.
+# settings.json and the port-feature skill shim are project config and must
+# be tracked; everything else under .claude/ (worktrees, local settings) is not.
+.claude/*
+!.claude/settings.json
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/port-feature/
+.claude/skills/port-feature/*
+!.claude/skills/port-feature/SKILL.md
 
 # orchestrator: bun installs typecheck deps locally; never shared
 orchestrator/node_modules/

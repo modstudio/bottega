@@ -10,7 +10,7 @@ import { Glob } from 'bun'
 import { readFileSync } from 'node:fs'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
-const CONCERNS = ['orchestrator', 'hub', 'ops', 'local-stack']
+const CONCERNS = ['orchestrator', 'hub', 'ops', 'local-stack', 'port']
 const IMPORT = /(?:from|import|require\()\s*['"]([^'"]+)['"]/g
 
 const violations: string[] = []

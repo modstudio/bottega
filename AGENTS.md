@@ -27,6 +27,7 @@ until the rename it existed to make cheap is a hunt through twenty files.
 | `ops/` | The machine itself: the morning refresh, launchd agents, brew upkeep. |
 | `hub/` | Every project's work in one view: what is in flight, what each task cost, and the daily report. Has its own canon. |
 | `local-stack/` | Serving models locally, and the local model host. |
+| `port/` | Cross-project feature porting: stages tasks in other projects, never implements them. Has its own canon. |
 | `shared/` | The only code any two concerns may both import. |
 
 **They do not reach into each other.** A concern imports from itself or from
@@ -55,7 +56,7 @@ with it. Summaries go through `orch`, which spends neither metered billing nor
 the Claude allotment — the one cost the orchestrator exists to avoid.
 
 So is the directory. `1b07f45` retired the concern but left 224K of Python, its
-logs and a still-tracked `config.json` on disk — a sixth concern that the table
+logs and a still-tracked `config.json` on disk — a seventh concern that the table
 above does not list and `bun run check` does not police, which is how a retired
 thing goes on quietly being part of the repo. Its 22 files are recoverable from
 `1b07f45^` if they are ever wanted.

@@ -61,5 +61,5 @@ export const PLATFORM_TAGLINE =
  * three independent copies of this list is how a fifth concern comes to be
  * policed by none of them.
  */
-export const CONCERNS = ['orchestrator', 'hub', 'ops', 'local-stack'] as const
+export const CONCERNS = ['orchestrator', 'hub', 'ops', 'local-stack', 'port'] as const
 export type Concern = (typeof CONCERNS)[number]

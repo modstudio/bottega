@@ -1,0 +1,44 @@
+{
+  "mcpServers": {
+    "starship": {
+      "type": "stdio",
+      "command": "/Users/shmuel/.claude/mcp/mcp-run",
+      "args": [
+        "starship"
+      ],
+      "env": {}
+    },
+    "stopal": {
+      "type": "stdio",
+      "command": "/Users/shmuel/.claude/mcp/mcp-run",
+      "args": [
+        "stopal"
+      ],
+      "env": {}
+    },
+    "alephbeis": {
+      "type": "stdio",
+      "command": "/Users/shmuel/.claude/mcp/mcp-run",
+      "args": [
+        "alephbeis"
+      ],
+      "env": {}
+    },
+    "youtrack-starship": {
+      "type": "stdio",
+      "command": "/Users/shmuel/.claude/mcp/mcp-run",
+      "args": [
+        "youtrack-starship"
+      ],
+      "env": {}
+    },
+    "youtrack-alephbeis": {
+      "type": "stdio",
+      "command": "/Users/shmuel/.claude/mcp/mcp-run",
+      "args": [
+        "youtrack-alephbeis"
+      ],
+      "env": {}
+    }
+  }
+}
