@@ -9,7 +9,8 @@
  *
  * The database is the seam. The suite builds one in a temp file via ORCH_DB
  * rather than touching orch.db, so a test run can never teach the real router
- * anything.
+ * anything. Run files go the same way: ORCH_RUNS points at a temp directory so
+ * concurrent copies of the suite in one checkout do not share filenames.
  */
 import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
@@ -53,6 +54,7 @@ const hermeticGitCommand =
  */
 const dir = mkdtempSync(join(tmpdir(), 'orch-test-'))
 process.env.ORCH_DB = join(dir, 'test.db')
+process.env.ORCH_RUNS = join(dir, 'runs')
 writeFileSync(join(dir, '.gitignore'), '*\n!.gitignore\n')
 for (const args of [
   ['init', '-b', 'main'],
@@ -82,7 +84,7 @@ const { runDetail, state } = await import('./serve.ts')
 const { classify, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOT_EVIDENCE, COOLS_DOWN,
         isNonAnswer, detectBlockers } = await import('./failure.ts')
 const { errorTail, preflight, detachedRunOptions, runFilePaths, pruneRuns, KEEP_RUN_FILES_DAYS,
-        grokMcpConnection, writingFailoverRefusal, resolveSupersededTurn,
+        RUNS_DIR, grokMcpConnection, writingFailoverRefusal, resolveSupersededTurn,
         gitObjectEnvironmentFor, run: runJob } = await import('./run.ts')
 const run = runJob
 const { summary } = await import('./metric.ts')
@@ -109,6 +111,7 @@ beforeEach(() => {
 
 afterAll(() => {
   delete process.env.ORCH_DB
+  delete process.env.ORCH_RUNS
   rmSync(dir, { recursive: true, force: true })
 })
 
@@ -2530,9 +2533,12 @@ describe('detached run collection', () => {
     const pending = orch('pending')
     expect(pending.out).toContain('security lens')
     expect(pending.out).not.toContain('one prompt')
-    const runsDir = new URL('../runs', import.meta.url).pathname
+    const runsDir = RUNS_DIR
     expect(recorded.prompt_path).toContain(`-${id}-`)
     expect(existsSync(recorded.prompt_path)).toBe(true)
+    expect(readdirSync(runsDir).filter(
+      (name) => name.includes(`-${id}-`) && name.endsWith('.prompt.txt'),
+    )).toHaveLength(1)
     for (const name of readdirSync(runsDir).filter((name) => name.includes(`-${id}-`))) {
       rmSync(join(runsDir, name), { force: true })
     }

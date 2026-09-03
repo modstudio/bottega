@@ -512,6 +512,13 @@ function branchOf(cwd: string): string | null {
  */
 export const KEEP_RUN_FILES_DAYS = 30
 
+/**
+ * Where prompt and output files live. Per-checkout by default; ORCH_RUNS
+ * redirects it, the same seam ORCH_DB is for the database. The suite sets that
+ * so two copies in one tree do not share filenames and delete each other's.
+ */
+export const RUNS_DIR = process.env.ORCH_RUNS ?? join(ROOT, 'runs')
+
 /** The names owned by one run; `unique` is its id once a row has been claimed. */
 export function runFilePaths(
   dir: string, clock: number, unique: number | string, agent: string, jobName: string,
@@ -763,7 +770,7 @@ export async function run(opts: {
   // and are read back afterwards instead.
   const vendorSession: string | null = opts.resume?.session ?? a.mintSession?.() ?? null
 
-  const runsDir = join(ROOT, 'runs')
+  const runsDir = RUNS_DIR
   mkdirSync(runsDir, { recursive: true })
   pruneRuns(runsDir)
   /**

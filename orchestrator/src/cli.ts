@@ -8,7 +8,7 @@ import { AGENTS, available, installed, ensureLocalHealth,
          lastWakeAttempt, readStrictCodexSchema } from './agents.ts'
 import { candidates, pick, scoreboard, MIN_SAMPLE } from './route.ts'
 import { guide } from './guide.ts'
-import { repoOf, preflight, KEEP_RUN_FILES_DAYS, runFilePaths, terminateRunProcesses,
+import { repoOf, preflight, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses,
          type DetachSpec } from './run.ts'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -325,7 +325,7 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
   // exists, and its seed was settled when that worktree was cut. Re-checking
   // would demand a `--seed` for a database that is already there.
   if (!spec.resume) preflight(jobName, cwd, spec.seed, spec.key, spec.base)
-  const runsDir = new URL('../runs', import.meta.url).pathname
+  const runsDir = RUNS_DIR
   mkdirSync(runsDir, { recursive: true })
   // Named by the clock alone, this collided: concurrent `orch do` calls for the
   // same job inside one millisecond wrote the SAME prompt file, and every one of
