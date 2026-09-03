@@ -296,16 +296,25 @@ export function createWithTool(
         "this project's worktree settings declare neither `create` nor `recipe`",
       )
     }
-    return createFromRecipe(tool, tool.recipe, repoRoot, runId, key)
+    return createFromRecipe(tool, tool.recipe, repoRoot, runId, key, baseRef)
+  }
+
+  if (baseRef && !tool.create.includes('{base}')) {
+    throw new Error(
+      `this project's command-based worktree path cannot honor --base because its create ` +
+      `template does not contain {base}`,
+    )
   }
 
   const branch = (tool.branch ?? 'orch/{id}')
     .replace(/\{id\}/g, String(runId))
     .replace(/\{key\}/g, key ?? '')
   const name = `orch-${runId}`
-  // A tool only receives the caller's base when its template asks for {base}.
-  // Some project tools deliberately resolve their own floor; changing the
-  // recorded base without changing what they create would make every diff lie.
+  // A command tool receives the caller's base only through {base}; the guard
+  // above refuses an explicit base when the template has no way to receive it.
+  // Without an explicit request, some tools deliberately resolve their own
+  // floor; HEAD is only the template default, and the created tree is inspected
+  // below before its base is recorded.
   const base = baseRef && tool.create.includes('{base}')
     ? resolveBase(repoRoot, baseRef)
     : git(['rev-parse', 'HEAD'], repoRoot)
@@ -399,8 +408,12 @@ export function createWithTool(
       leftover(path),
     )
   }
+  // A command without {base} may deliberately choose its own floor. Read the
+  // commit from the tree it actually created so the run record and every later
+  // diff name that floor rather than the caller checkout's incidental HEAD.
+  const actualBase = gitOk(['rev-parse', 'HEAD'], path) ?? base
   markWorktree(path, runId, repoRoot)
-  return { path, branch, base, repoRoot }
+  return { path, branch, base: actualBase, repoRoot }
 }
 
 export function createWorktree(cwd: string, runId: number, baseRef?: string): Worktree {
@@ -431,6 +444,7 @@ export function createWorktree(cwd: string, runId: number, baseRef?: string): Wo
  */
 function createFromRecipe(
   tool: WorktreeTool, recipe: Recipe, repoRoot: string, runId: number, key?: string,
+  baseRef?: string,
 ): Worktree {
   const branch = (tool.branch ?? 'orch/{id}')
     .replace(/\{id\}/g, String(runId))
@@ -443,10 +457,13 @@ function createFromRecipe(
     throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
   }
 
-  // The base is the project's to choose: two of these repos branch from
-  // origin/develop and one from local HEAD, and branching from the wrong one
-  // hands a worker a tree the spec does not describe.
-  const base = recipe.baseRef
+  // An explicit caller base wins. Without one, the base is the project's to
+  // choose: two of these repos branch from origin/develop and one from local
+  // HEAD, and branching from the wrong one hands a worker a tree the spec does
+  // not describe.
+  const base = baseRef
+    ? resolveBase(repoRoot, baseRef)
+    : recipe.baseRef
     ? (gitOk(['rev-parse', recipe.baseRef], repoRoot) ?? git(['rev-parse', 'HEAD'], repoRoot))
     : git(['rev-parse', 'HEAD'], repoRoot)
 

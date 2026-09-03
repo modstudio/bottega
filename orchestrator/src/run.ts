@@ -115,6 +115,7 @@ export function preflight(
   cwd: string,
   seed?: string,
   key?: string,
+  baseRef?: string,
   reusesWorktree = false,
 ): void {
   if (depth() >= MAX_DEPTH) {
@@ -147,6 +148,12 @@ export function preflight(
       `this project's worktree create command has no branch template.\n` +
       `Set the worktree branch key with:\n` +
       `  orch project set ${project!.name} --settings '{"worktree":{"branch":"<template>"}}'`,
+    )
+  }
+  if (baseRef && tool?.create && !tool.create.includes('{base}')) {
+    problems.push(
+      `this project's command-based worktree path cannot honor --base because its create ` +
+      `template does not contain {base}`,
     )
   }
   if (tool?.branch?.includes('{key}') && !key) {
@@ -511,7 +518,10 @@ export async function run(opts: {
   }
 }): Promise<RunResult> {
 
-  preflight(opts.job, opts.cwd ?? process.cwd(), opts.seed, opts.key, opts.resume?.worktree != null)
+  preflight(
+    opts.job, opts.cwd ?? process.cwd(), opts.seed, opts.key, opts.base,
+    opts.resume?.worktree != null,
+  )
   // Programmatic callers get the same ordering guarantee as the CLI: a bad
   // ref is refused before a run row or worktree exists.
   if (opts.base) {

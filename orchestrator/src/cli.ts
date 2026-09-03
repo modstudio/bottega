@@ -338,7 +338,7 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
   // A RESUME skips preflight: its agent was chosen long ago, its worktree
   // exists, and its seed was settled when that worktree was cut. Re-checking
   // would demand a `--seed` for a database that is already there.
-  if (!spec.resume) preflight(jobName, cwd, spec.seed, spec.key)
+  if (!spec.resume) preflight(jobName, cwd, spec.seed, spec.key, spec.base)
   const runsDir = new URL('../runs', import.meta.url).pathname
   mkdirSync(runsDir, { recursive: true })
   // Named by the clock alone, this collided: concurrent `orch do` calls for the
@@ -567,6 +567,7 @@ function usage(): never {
       --better-than <id>[,<id>] record this run winning a pairwise comparison
       --scorer <who>            a person judged it from a UI: records who, and
                                 is the gate's one named exception
+      --void                    retain the run and output, but exclude it from routing evidence
   orch recalibrate [--n 12]    re-score old outputs blind and measure agreement
       --scorer <who>            use the same scorer identity as orch score
       --force                   sample any scorer's old scores
@@ -866,12 +867,12 @@ switch (cmd) {
     }
     // Project-required inputs are knowable before the prompt is read. Checking
     // them afterwards made a missing key pay for stdin and run setup first.
-    preflight(jobName, process.cwd(), flag('seed'), flag('key'))
     const base = flag('base')
     if (base) {
       if (jobName !== 'implement') throw new Error('--base is only valid for the implement job')
       resolveBase(process.cwd(), base)
     }
+    preflight(jobName, process.cwd(), flag('seed'), flag('key'), base)
     const schema = flag('schema')
     // An unpinned run may route to Codex, so its schema has to be suitable
     // before detach() claims a row. An explicitly pinned non-Codex agent keeps
@@ -996,19 +997,21 @@ switch (cmd) {
     if (!id) usage()
     const row = db().query(
       `SELECT id, agent, job, status, latency_ms, vendor_tokens, output_path, error,
-              failure_kind, exit_code, parent_run_id, evidence_excluded
+              failure_kind, exit_code, parent_run_id, evidence_excluded, base_commit
          FROM run WHERE id = ?`,
     ).get(id) as {
       id: number; agent: string; job: string; status: string; latency_ms: number | null
       vendor_tokens: number | null; output_path: string | null; error: string | null
       failure_kind: string | null; exit_code: number | null; parent_run_id: number | null
       evidence_excluded: string | null
+      base_commit: string | null
     } | null
     if (!row) throw new Error(`no run ${id}`)
 
     // Exit 2 for "not finished", distinct from 1 for "failed". A poller has to
     // be able to tell "wait longer" from "stop waiting".
     const outcome = outcomeOf(row)
+    const baseNote = row.base_commit ? `\n  base:      ${row.base_commit}` : ''
     if (!outcome.terminal) {
       console.error(`run ${id} (${row.agent}/${row.job}) is still running`)
       process.exit(2)
@@ -1017,11 +1020,31 @@ switch (cmd) {
       console.log(readFileSync(row.output_path, 'utf8'))
     }
     if (row.status === 'asking') {
-      console.error(`\n— run ${id} ${outcome.line}` + evidenceNote(row))
+      const rootId = row.parent_run_id ?? row.id
+      const open = db().query(
+        `SELECT COUNT(*) n FROM question q JOIN run r ON r.id = q.run_id
+          WHERE (r.id = ? OR r.parent_run_id = ?) AND q.answered_at IS NULL`,
+      ).get(rootId, rootId) as { n: number }
+      const running = db().query(
+        `SELECT id FROM run
+          WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
+          ORDER BY turn DESC LIMIT 1`,
+      ).get(rootId, rootId) as { id: number } | null
+      console.error(
+        (open.n
+          ? `\n— run ${id} asking — waiting on a ruling: orch answer ${rootId} ...`
+          : running
+            ? `\n— run ${id} asking — resumed as run ${running.id}, which is still running`
+          : `\n— run ${id} asking — recoverable: orch continue ${rootId}`) +
+        baseNote +
+        evidenceNote(row),
+      )
       break
     }
     if (!outcome.ok) {
-      console.error(`\n— run ${id} ${row.status}: ${failureReason(row)}` + evidenceNote(row))
+      console.error(
+        `\n— run ${id} ${row.status}: ${failureReason(row)}` + baseNote + evidenceNote(row),
+      )
       process.exit(1)
     }
     if (!has('quiet')) {
@@ -1032,6 +1055,7 @@ switch (cmd) {
           // that a writing job has a fidelity axis. Hardcoded here, this line
           // printed `orch score <turn>` — the one command score refuses.
           `\n  score it:  ${scoreHint(row.id, row.job, row.parent_run_id)}` +
+          baseNote +
           evidenceNote(row),
       )
     }
@@ -1453,7 +1477,8 @@ switch (cmd) {
     const mine = !has('all')
     const rows = db().query(
       `SELECT q.id, q.run_id, q.question, q.options, q.recommendation, q.why,
-              r.agent, r.job, r.repo, r.status, r.session_id
+              r.agent, r.job, r.repo, r.status, r.session_id,
+              COALESCE(r.parent_run_id, r.id) root_id
          FROM question q JOIN run r ON r.id = q.run_id
         WHERE q.answered_at IS NULL ${mine ? 'AND r.session_id = ?' : ''}
         ORDER BY q.run_id, q.id`,
@@ -1461,28 +1486,58 @@ switch (cmd) {
       id: number; run_id: number; question: string; options: string | null
       recommendation: string | null; why: string | null
       agent: string; job: string; repo: string | null; status: string; session_id: string | null
+      root_id: number
     }[]
 
-    if (!rows.length) {
+    const recoverable = db().query(
+      `SELECT root.id, root.agent, root.job, root.repo
+         FROM run root
+        WHERE root.parent_run_id IS NULL AND root.status = 'asking'
+          ${mine ? 'AND root.session_id = ?' : ''}
+          AND NOT EXISTS (
+            SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
+             WHERE (owner.id = root.id OR owner.parent_run_id = root.id)
+               AND q.answered_at IS NULL
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM run active
+             WHERE active.parent_run_id = root.id AND active.status = 'running'
+          )
+        ORDER BY root.id`,
+    ).all(...(mine ? [sid] : [])) as {
+      id: number; agent: string; job: string; repo: string | null
+    }[]
+
+    if (!rows.length && !recoverable.length) {
       console.log(mine ? 'no questions waiting on you' : 'no open questions')
       break
     }
     let lastRun = -1
+    let lastRoot = -1
     for (const q of rows) {
       if (q.run_id !== lastRun) {
         console.log(`\nrun ${q.run_id} · ${q.agent}/${q.job}${q.repo ? ` · ${q.repo}` : ''} · ${q.status}`)
         lastRun = q.run_id
       }
+      lastRoot = q.root_id
       console.log(`  [q${q.id}] ${q.question}`)
       if (q.why) console.log(`        why: ${q.why}`)
       const opts = q.options ? (JSON.parse(q.options) as string[]) : []
       for (const o of opts) console.log(`        - ${o}`)
       if (q.recommendation) console.log(`        it would: ${q.recommendation}`)
     }
-    console.log(
-      `\nrule on them:  orch answer ${lastRun} "<ruling>"    (one per question, in order)` +
-      `\n               orch answer ${lastRun} --q<id> "<ruling>"`,
-    )
+    if (rows.length) {
+      console.log(
+        `\nrule on them:  orch answer ${lastRoot} "<ruling>"    (one per question, in order)` +
+        `\n               orch answer ${lastRoot} --q<id> "<ruling>"`,
+      )
+    }
+    for (const r of recoverable) {
+      console.log(
+        `\nrun ${r.id} · ${r.agent}/${r.job}${r.repo ? ` · ${r.repo}` : ''} · ` +
+        `asking, but no ruling is open — recoverable: orch continue ${r.id}`,
+      )
+    }
     break
   }
 
@@ -1497,25 +1552,23 @@ switch (cmd) {
    * guessing does not get used.
    */
   case 'answer': {
-    const id = Number(argv[1])
-    if (!id) usage()
+    const requestedId = Number(argv[1])
+    if (!requestedId) usage()
     const row = db().query(
-      `SELECT id, agent, job, cwd, worktree, branch, base_commit, vendor_session,
-              status, session_id, turn, parent_run_id
-         FROM run WHERE id = ?`,
-    ).get(id) as {
+      `SELECT root.id, root.agent, root.job, root.cwd, root.worktree, root.branch,
+              root.base_commit, root.vendor_session, root.status, root.session_id,
+              root.turn, root.parent_run_id
+         FROM run requested
+         JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
+        WHERE requested.id = ?`,
+    ).get(requestedId) as {
       id: number; agent: string; job: string; cwd: string | null
       worktree: string | null; branch: string | null; base_commit: string | null
       vendor_session: string | null; status: string; session_id: string | null
       turn: number; parent_run_id: number | null
     } | null
-    if (!row) throw new Error(`no run ${id}`)
-    // The root owns the conversation. Answering a child would chain off a turn
-    // rather than off the unit of work, and the roll-up would write the outcome
-    // to the wrong row.
-    if (row.parent_run_id) {
-      throw new Error(`run ${id} is turn ${row.turn} of run ${row.parent_run_id}; answer that one`)
-    }
+    if (!row) throw new Error(`no run ${requestedId}`)
+    const id = row.id
 
     /**
      * Questions are collected ACROSS THE WHOLE CHAIN, not just off the root.
@@ -1776,6 +1829,7 @@ switch (cmd) {
     if (!has('quiet')) {
       console.error(
         `\n— run ${id} · ${c.files.length} file(s) · +${c.insertions}/-${c.deletions}` +
+        `\n  base:     ${row.base_commit}` +
         `\n  worktree: ${row.worktree}` +
         // The ROOT owns the worktree. Discarding a child would clear that one
         // row's pointer and leave the root still naming a directory that had
@@ -2040,30 +2094,36 @@ switch (cmd) {
   }
 
   case 'score': {
-    const id = Number(argv[1])
-    if (!id) usage()
+    const requestedId = Number(argv[1])
+    if (!requestedId) usage()
     const row = db().query(
-      'SELECT id, agent, job, session_id, parent_run_id, failure_kind FROM run WHERE id = ?',
-    ).get(id) as
+      `SELECT root.id, root.agent, root.job, root.session_id, root.parent_run_id,
+              root.failure_kind
+         FROM run requested
+         JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
+        WHERE requested.id = ?`,
+    ).get(requestedId) as
       | { id: number; agent: string; job: string; session_id: string | null
           parent_run_id: number | null; failure_kind: FailureKind | null } | null
-    if (!row) throw new Error(`no run ${id}`)
+    if (!row) throw new Error(`no run ${requestedId}`)
+    const id = row.id
     if (row.agent === '(pending)') {
       throw new Error(`run ${id} cannot be scored: its agent is the placeholder '(pending)'`)
+    }
+    if (has('void')) {
+      db().query('UPDATE run SET evidence_excluded=? WHERE id=?')
+        .run('voided with orch score --void', id)
+      console.log(`voided run ${id}: retained run and output; excluded from routing evidence`)
+      break
     }
     if (row.failure_kind && NOT_EVIDENCE.includes(row.failure_kind)) {
       throw new Error(
         `run ${id} cannot be scored: failure kind '${row.failure_kind}' is not evidence`,
       )
     }
-    // A conversation is one unit of work and takes one verdict. Scoring a turn
-    // would judge a fragment, and the root is what routing actually reads.
-    if (row.parent_run_id) {
-      throw new Error(
-        `run ${id} is one turn of run ${row.parent_run_id}. Score the whole piece of work:\n` +
-        `  orch score ${row.parent_run_id} ...`,
-      )
-    }
+    // A conversation is one unit of work and takes one verdict. Any turn id
+    // resolves to the root, which is what routing reads and where the score is
+    // recorded.
     // Only the session that read the output may judge it. Enforced here because
     // stating it in AGENTS.md did not hold: see judgeability() for the two
     // sessions that each scored the other's runs inside an hour, both believing
@@ -2305,7 +2365,7 @@ switch (cmd) {
   }
 
   case 'runs': {
-    const where: string[] = []
+    const where: string[] = ['r.parent_run_id IS NULL']
     // Typed as the bindings SQLite actually accepts: `unknown[]` does not
     // satisfy the query signature, which is why this file never typechecked.
     const args: (string | number)[] = []
@@ -2319,10 +2379,17 @@ switch (cmd) {
     const json = has('json')
     const rows = db().query(
       `SELECT r.id, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
-              r.status, s.delivery, s.quality, COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason
+              current_run.status, s.delivery, s.quality,
+              COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason
               ${json ? ', r.cwd, r.session_id, r.vendor_cost_usd, r.probe, r.exit_code,'
                         + ' r.prompt_path, r.branch, r.branch_kept' : ''}
-         FROM run r LEFT JOIN score s ON s.run_id = r.id
+         FROM run r
+         JOIN run current_run ON current_run.id = (
+           SELECT member.id FROM run member
+            WHERE member.id = r.id OR member.parent_run_id = r.id
+            ORDER BY member.turn DESC, member.id DESC LIMIT 1
+         )
+         LEFT JOIN score s ON s.run_id = r.id
          ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
         ORDER BY r.id DESC LIMIT ?`,
     ).all(...args, Number(flag('limit') ?? (json ? 100000 : 20))) as Record<string, unknown>[]
@@ -2401,6 +2468,7 @@ switch (cmd) {
         }
       }
       if (g.untried.length) console.log(`  untried  ${g.untried.join(', ')}`)
+      for (const e of g.excluded) console.log(`  excluded ${e.agent}: ${e.why}`)
       console.log(`  routes to ${g.routesTo}   (${g.reason})`)
     }
 

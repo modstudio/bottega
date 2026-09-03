@@ -36,6 +36,8 @@ export type JobGuide = {
   routesTo: string
   reason: string
   tried: AgentOnJob[]
+  /** Agents the circuit breaker or a static capability rule removed. */
+  excluded: { agent: string; why: string }[]
 }
 
 /**
@@ -70,7 +72,8 @@ export function guide(onlyJob?: string): JobGuide[] {
   return Object.keys(JOBS)
     .filter((n) => !onlyJob || n === onlyJob)
     .map((name) => {
-      const eligible = candidates(name).filter((c) => c.eligible)
+      const all = candidates(name)
+      const eligible = all.filter((c) => c.eligible)
       const tried: AgentOnJob[] = eligible
         .map((c) => ({
           agent: c.agent,
@@ -108,6 +111,9 @@ export function guide(onlyJob?: string): JobGuide[] {
         routesTo: chosen.agent,
         reason: chosen.reason,
         tried,
+        excluded: all
+          .filter((c) => !c.eligible)
+          .map((c) => ({ agent: c.agent, why: c.why })),
       }
     })
 }

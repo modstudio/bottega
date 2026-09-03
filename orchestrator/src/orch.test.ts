@@ -135,6 +135,8 @@ describe('failure classification', () => {
 
   test('quota and auth are separated, because only one is fixed by waiting', () => {
     expect(classify('HTTP 429: rate limit exceeded')).toBe('quota')
+    expect(classify('HTTP 402')).toBe('quota')
+    expect(classify('balance exhausted')).toBe('quota')
     expect(classify('401 unauthorized')).toBe('auth')
     expect(NEEDS_HUMAN).toEqual(['quota', 'auth', 'unreachable'])
   })
@@ -151,13 +153,13 @@ describe('failure classification', () => {
   })
 
   test('what the room did is not evidence about the agent', () => {
-    // Every other kind is something the agent did. These three are not: a box
-    // switched off, an operator killing the process tree, and orch itself being
-    // wrong — a schema a validator rejected before the agent did any work, or a
-    // precondition orch should have checked before spending a run. None of them
-    // may be averaged in with the rest.
-    expect(NOT_EVIDENCE).toEqual(['unreachable', 'interrupted', 'harness', 'abandoned'])
-    for (const kind of ['quota', 'auth', 'timeout', 'denied', 'other']) {
+    // Vendor account failures, a box switched off, an operator killing the
+    // process tree, and orch itself being wrong are not capability evidence.
+    // None of them may be averaged in with the agent's actual work.
+    expect(NOT_EVIDENCE).toEqual([
+      'quota', 'auth', 'unreachable', 'interrupted', 'harness', 'abandoned',
+    ])
+    for (const kind of ['timeout', 'denied', 'other']) {
       expect(NOT_EVIDENCE).not.toContain(kind)
     }
   })
@@ -329,7 +331,7 @@ describe('routing counts failures as evidence', () => {
     expect(c.cooling).toBeNull()
   })
 
-  test('quota still cools, because only a run can tell you it has cleared', () => {
+  test('quota opens the circuit, because only a run can tell you it has cleared', () => {
     db().query(
       `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head,
                         status, failure_kind)
@@ -337,6 +339,8 @@ describe('routing counts failures as evidence', () => {
     ).run()
     const c = candidates('craft').find((x) => x.agent === 'codex')!
     expect(c.cooling).toContain('quota')
+    expect(c.eligible).toBe(false)
+    expect(c.why).toContain('vendor quota')
   })
 
   test('an outage is not a verdict — the room failed, not the agent', () => {
@@ -355,10 +359,18 @@ describe('routing counts failures as evidence', () => {
     expect(c.score).toBe(weigh('full', 'right'))
   })
 
-  test('every OTHER failure kind is still evidence, outage or not', () => {
-    // The exclusion is surgical. A quota failure needs a person too, and is
-    // still an honest fact about what this agent could do today.
-    for (const kind of ['quota', 'auth', 'timeout', 'denied', 'other']) {
+  test('vendor billing and auth failures are not evidence', () => {
+    for (const kind of ['quota', 'auth']) {
+      db().exec('DELETE FROM score; DELETE FROM run;')
+      addRun({ agent: 'codex', job: 'craft', status: 'failed', kind })
+      const c = candidates('craft').find((x) => x.agent === 'codex')!
+      expect(c.failures).toBe(0)
+      expect(c.evidence).toBe(0)
+    }
+  })
+
+  test('agent and harness failures remain evidence', () => {
+    for (const kind of ['timeout', 'denied', 'other']) {
       db().exec('DELETE FROM score; DELETE FROM run;')
       addRun({ agent: 'codex', job: 'craft', status: 'failed', kind })
       const c = candidates('craft').find((x) => x.agent === 'codex')!
@@ -863,17 +875,15 @@ describe('retry keeps the work on the same agent', () => {
     expect(row.retry_of).toBe(first)
   })
 
-  test('a quota failure and its retry both count, because both really happened', () => {
-    // A retry does not erase the failure. The agent did fail, and an hour of
-    // routing avoided it for good reason; hiding that would flatter the record.
-    const first = addRun({ agent: 'codex', job: 'craft', status: 'failed' })
+  test('a quota failure is retained but its successful retry is the only evidence', () => {
+    const first = addRun({ agent: 'codex', job: 'craft', status: 'failed', kind: 'quota' })
     const second = addRun({ agent: 'codex', job: 'craft' })
     db().query('UPDATE run SET retry_of=? WHERE id=?').run(first, second)
     score(second, 'full', 'right')
     const c = candidates('craft').find((x) => x.agent === 'codex')!
-    expect(c.failures).toBe(1)
+    expect(c.failures).toBe(0)
     expect(c.scored).toBe(1)
-    expect(c.evidence).toBe(2)
+    expect(c.evidence).toBe(1)
   })
 
   const CLI = new URL('cli.ts', import.meta.url).pathname
@@ -1010,7 +1020,7 @@ describe('retry keeps the work on the same agent', () => {
       .toEqual({ n: 0 })
   })
 
-  test('orch do prints the reason an MCP exclusion could not be met', () => {
+  test('orch do refuses when an MCP exclusion leaves nobody eligible', () => {
     const binDir = mkdtempSync(join(tmpdir(), 'orch-fake-grok-route-'))
     writeFileSync(join(binDir, 'grok'), '#!/bin/sh\necho ok\n')
     chmodSync(join(binDir, 'grok'), 0o755)
@@ -1019,9 +1029,10 @@ describe('retry keeps the work on the same agent', () => {
         ['do', 'mcp-query', 'answer', '--mcp', '--avoid', 'grok', '--follow'],
         { PATH: `${binDir}:${process.env.PATH ?? ''}` },
       )
-      expect(r.code).toBe(0)
+      expect(r.code).toBe(1)
+      expect(r.err).toContain('routing constraints leave no eligible agent')
       expect(r.err).toContain(
-        'excluded agents: codex: cannot make MCP tool calls without a writable sandbox',
+        'already ineligible: codex: cannot make MCP tool calls without a writable sandbox',
       )
     } finally {
       rmSync(binDir, { recursive: true, force: true })
@@ -1039,6 +1050,30 @@ describe('retry keeps the work on the same agent', () => {
 })
 
 describe('a destroyed output is not evidence about the agent', () => {
+  test('score --void retains the run, output, and score but removes routing evidence', () => {
+    const CLI = new URL('cli.ts', import.meta.url).pathname
+    const outputPath = join(dir, 'voided-output.txt')
+    writeFileSync(outputPath, 'the retained answer')
+    const id = addRun({ agent: 'codex', job: 'review-lens' })
+    db().query('UPDATE run SET output_path=? WHERE id=?').run(outputPath, id)
+    score(id, 'full', 'right')
+
+    const p = Bun.spawnSync([process.execPath, CLI, 'score', String(id), '--void'], {
+      env: {
+        ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+        CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+      },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(p.exitCode).toBe(0)
+    expect(new TextDecoder().decode(p.stdout)).toContain('retained run and output')
+    expect(readFileSync(outputPath, 'utf8')).toBe('the retained answer')
+    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id))
+      .toEqual({ evidence_excluded: 'voided with orch score --void' })
+    expect(db().query('SELECT COUNT(*) n FROM score WHERE run_id=?').get(id)).toEqual({ n: 1 })
+    expect(candidates('review-lens').find((c) => c.agent === 'codex')!.evidence).toBe(0)
+  })
+
   test('a scored collision is kept as a verdict and dropped from routing', () => {
     // The score stays: a person did judge what they were shown. It simply
     // stops counting, because what they were shown was another run's work.
@@ -1120,6 +1155,16 @@ describe('a probe proves an agent is alive without vouching for it', () => {
     const c = candidates('safety').find((x) => x.agent === 'codex')!
     expect(c.evidence).toBe(0)
     expect(c.score).toBeNull()
+  })
+
+  test('guide plainly reports an agent whose vendor circuit is open', () => {
+    const failed = addRun({ agent: 'codex', job: 'craft', status: 'failed' })
+    db().query("UPDATE run SET failure_kind='auth' WHERE id=?").run(failed)
+    const row = guide('craft')[0]!
+    expect(row.excluded).toContainEqual({
+      agent: 'codex',
+      why: expect.stringContaining('vendor auth'),
+    })
   })
 })
 
@@ -2067,10 +2112,12 @@ describe('detached run collection', () => {
     expect(contradictory.err).toContain('--agent grok contradicts --avoid grok')
   })
 
-  test('pick reports the same unmet-constraint reason a run records', () => {
+  test('pick refuses an unmet constraint instead of silently routing', () => {
     const r = orch('pick', 'review-lens', '--avoid', 'grok,codex')
-    expect(r.code).toBe(0)
-    expect(r.out).toContain('exclusions could not be met, so routing proceeded normally')
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('routing constraints leave no eligible agent')
+    expect(r.err).toContain('codex: --avoid named codex')
+    expect(r.err).toContain('grok: --avoid named grok')
   })
 
   test('jobs exposes fidelity only for writing jobs', () => {
@@ -2098,6 +2145,50 @@ describe('detached run collection', () => {
     expect(r.err).toContain(`not turn ${turn}`)
   })
 
+  test('a leaf id scores the root of its conversation', () => {
+    const root = insert('ok', 'implement')
+    const turn = insert('ok', 'implement')
+    db().query('UPDATE run SET session_id=? WHERE id IN (?,?)')
+      .run('orch-test-session', root, turn)
+    db().query('UPDATE run SET parent_run_id=?, turn=2 WHERE id=?').run(root, turn)
+
+    const r = orch('score', String(turn), 'full', 'right', 'faithful')
+    expect(r.code).toBe(0)
+    expect(r.out).toContain(`run ${root} (codex/implement) scored full right faithful`)
+    expect(db().query('SELECT run_id FROM score').all()).toEqual([{ run_id: root }])
+  })
+
+  test('a leaf id answers the open question in its conversation', () => {
+    const root = insert('running', 'implement')
+    const turn = insert('running', 'implement')
+    db().query('UPDATE run SET session_id=? WHERE id IN (?,?)')
+      .run('orch-test-session', root, turn)
+    db().query('UPDATE run SET parent_run_id=?, turn=2, pid=? WHERE id=?')
+      .run(root, process.pid, turn)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(turn, new Date().toISOString(), 'which shape?')
+
+    const r = orch('answer', String(turn), 'the existing shape')
+    expect(r.code).toBe(0)
+    expect(r.out).toContain('ruled on 1 question(s)')
+    expect(db().query('SELECT answer FROM question').get()).toEqual({ answer: 'the existing shape' })
+  })
+
+  test('inbox names the canonical root in its answer footer', () => {
+    const root = insert('asking', 'implement')
+    const turn = insert('asking', 'implement')
+    db().query('UPDATE run SET session_id=? WHERE id IN (?,?)')
+      .run('orch-test-session', root, turn)
+    db().query('UPDATE run SET parent_run_id=?, turn=2 WHERE id=?').run(root, turn)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(turn, new Date().toISOString(), 'which shape?')
+
+    const r = orch('inbox')
+    expect(r.code).toBe(0)
+    expect(r.out).toContain(`rule on them:  orch answer ${root} "<ruling>"`)
+    expect(r.out).not.toContain(`rule on them:  orch answer ${turn} "<ruling>"`)
+  })
+
   test('a flag value is not mistaken for a run id', () => {
     // `--timeout 300` was read as a fourth run to wait for, and wait duly
     // reported "300 ok" for a run that has never existed.
@@ -2123,10 +2214,37 @@ describe('detached run collection', () => {
     const output = join(dir, `asking-${id}.txt`)
     writeFileSync(output, 'I need a ruling.')
     db().query('UPDATE run SET output_path=? WHERE id=?').run(output, id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'which shape?')
     const r = orch('result', String(id))
     expect(r.code).toBe(0)
     expect(r.out).toContain('I need a ruling.')
-    expect(r.err).toContain('orch inbox')
+    expect(r.err).toContain(`waiting on a ruling: orch answer ${id}`)
+  })
+
+  test('inbox and result expose an asking chain with no open question as recoverable', () => {
+    const root = insert('asking', 'implement')
+    const turn = insert('asking', 'implement')
+    db().query('UPDATE run SET session_id=? WHERE id IN (?,?)')
+      .run('orch-test-session', root, turn)
+    db().query('UPDATE run SET parent_run_id=?, turn=2 WHERE id=?').run(root, turn)
+
+    const inbox = orch('inbox')
+    expect(inbox.code).toBe(0)
+    expect(inbox.out).toContain(`asking, but no ruling is open — recoverable: orch continue ${root}`)
+
+    const result = orch('result', String(turn))
+    expect(result.code).toBe(0)
+    expect(result.err).toContain(`asking — recoverable: orch continue ${root}`)
+    expect(result.err).not.toContain(`orch continue ${turn}`)
+  })
+
+  test('result surfaces the recorded base commit for a writing run', () => {
+    const id = insert('ok', 'implement')
+    db().query('UPDATE run SET base_commit=? WHERE id=?').run('base-commit-123', id)
+    const r = orch('result', String(id))
+    expect(r.code).toBe(0)
+    expect(r.err).toContain('base:      base-commit-123')
   })
 
   test('runs shows asking in the status column', () => {
@@ -2134,6 +2252,21 @@ describe('detached run collection', () => {
     const r = orch('runs')
     expect(r.code).toBe(0)
     expect(r.out).toMatch(new RegExp(`\\b${id}\\s+codex\\s+implement\\s+asking\\b`))
+  })
+
+  test('runs emits one canonical row per resume chain', () => {
+    const root = insert('asking', 'implement')
+    const turn = insert('running', 'implement')
+    db().query('UPDATE run SET parent_run_id=?, turn=2 WHERE id=?').run(root, turn)
+
+    const text = orch('runs')
+    expect(text.code).toBe(0)
+    expect(text.out).toMatch(new RegExp(`\\b${root}\\s+codex\\s+implement\\s+running\\b`))
+    expect(text.out).not.toMatch(new RegExp(`\\b${turn}\\s+codex\\s+implement\\s+running\\b`))
+
+    const json = orch('runs', '--json')
+    expect(json.code).toBe(0)
+    expect(json.out.trim().split('\n').map((line) => JSON.parse(line).id)).toEqual([root])
   })
 
   test('waiting on a failed run exits non-zero', () => {
@@ -2248,6 +2381,24 @@ describe('detached run collection', () => {
     expect(r.code).toBe(1)
     expect(r.err).toContain('--key <KEY-123>')
     expect(r.err).not.toContain('ENOENT')
+  })
+
+  test('an unsupported explicit base is rejected before submit creates a run', () => {
+    upsertProject({
+      name: 'cannot-base', path: process.cwd(),
+      settings: {
+        worktree: {
+          create: 'scripts/worktree create {branch}', branch: 'feature/{id}',
+        },
+      },
+    })
+    const r = orch(
+      'do', 'implement', '--base', 'HEAD', '--file', '/definitely/not/a/prompt',
+    )
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('command-based worktree path cannot honor --base')
+    expect(r.err).not.toContain('ENOENT')
+    expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(0)
   })
 
   test('project set refuses incomplete resulting settings without saving them', () => {
@@ -2930,6 +3081,29 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
     rmSync(repo, { recursive: true, force: true })
   })
 
+  test('preflight refuses an explicit base a command template cannot honor', () => {
+    const { repo } = scratchRepo()
+    upsertProject({
+      name: 'no-base-placeholder', path: realpathSync(repo),
+      settings: {
+        worktree: {
+          create: 'scripts/worktree create {branch}', branch: 'task/{id}',
+        },
+      },
+    })
+    try {
+      expect(() => fromRoot(() => preflight(
+        'implement', realpathSync(repo), undefined, undefined, 'main',
+      )))
+        .toThrow(
+          "this project's command-based worktree path cannot honor --base because its " +
+          'create template does not contain {base}',
+        )
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('preflight refuses shell metacharacters in a key', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-bad-key-'))
     upsertProject({
@@ -3198,6 +3372,86 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
     }
   })
 
+  test('a command tool records the base its worktree actually uses', () => {
+    const { repo, tree } = scratchRepo()
+    const custom = join(repo, 'elsewhere', 'self-based-746')
+    try {
+      git(repo, 'branch', 'tool-floor', 'main')
+      writeFileSync(join(repo, 'later.txt'), 'later\n')
+      git(repo, 'add', 'later.txt')
+      git(repo, 'commit', '-m', 'later')
+      const expected = resolveBase(repo, 'tool-floor')
+
+      const w = createWithTool(
+        {
+          create:
+            `git worktree add -b {branch} "${custom}" tool-floor >/dev/null && echo "${custom}"`,
+          remove: 'git worktree remove {path}',
+        },
+        tree, 746,
+      )
+
+      expect(w.base).toBe(expected)
+      expect(w.base).not.toBe(resolveBase(repo, 'main'))
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('an explicit base is refused when a command template cannot receive it', () => {
+    const { repo, tree } = scratchRepo()
+    try {
+      expect(() => createWithTool(
+        { create: 'echo nowhere', branch: 'task/{id}' }, tree, 747,
+        undefined, undefined, 'main',
+      )).toThrow('command-based worktree path cannot honor --base')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('an explicit base reaches the recipe path and overrides its default', () => {
+    const { repo, tree } = scratchRepo()
+    try {
+      git(repo, 'branch', 'requested-base', 'main')
+      writeFileSync(join(repo, 'later.txt'), 'later\n')
+      git(repo, 'add', 'later.txt')
+      git(repo, 'commit', '-m', 'later')
+      const expected = resolveBase(repo, 'requested-base')
+
+      const w = createWithTool(
+        { recipe: { baseRef: 'main' } }, tree, 748,
+        undefined, undefined, 'requested-base',
+      )
+
+      expect(w.base).toBe(expected)
+      expect(git(w.path, 'rev-parse', 'HEAD')).toBe(expected)
+      expect(existsSync(join(w.path, 'later.txt'))).toBe(false)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('diff surfaces the recorded base commit', () => {
+    const { repo } = scratchRepo()
+    const w = createWorktree(repo, 749, 'main')
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    db().query('UPDATE run SET worktree=?, branch=?, base_commit=? WHERE id=?')
+      .run(w.path, w.branch, w.base, id)
+    writeFileSync(join(w.path, 'kept.txt'), 'changed\n')
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const p = Bun.spawnSync([process.execPath, CLI, 'diff', String(id)], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(p.exitCode).toBe(0)
+      expect(p.stderr.toString()).toContain(`base:     ${w.base}`)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('discard uses a registered project remove template', () => {
     const { repo } = scratchRepo()
     const tree = createWorktree(repo, 880)
@@ -3458,24 +3712,18 @@ describe('fan-out routing exclusions', () => {
       { agents: ['grok'] }).agent).toBe('codex')
   })
 
-  test('exhausted exclusions degrade visibly instead of refusing', () => {
-    const p = pick('review-lens', undefined, 0, false, null, false,
-      { agents: ['grok', 'codex'] })
-    expect(['grok', 'codex']).toContain(p.agent)
-    expect(p.reason).toContain('exclusions could not be met')
+  test('exhausted exclusions refuse and name the cause', () => {
+    expect(() => pick('review-lens', undefined, 0, false, null, false,
+      { agents: ['grok', 'codex'] })).toThrow(
+        'excluded by constraint: codex: --avoid named codex; grok: --avoid named grok',
+      )
   })
 
-  test('degraded MCP routing names agents excluded by sandbox safety', () => {
-    const p = pick('mcp-query', undefined, 0, false, null, true,
-      { agents: ['grok'] })
-    expect(p.agent).toBe('grok')
-    expect(p.reason).toContain('exclusions could not be met, so routing proceeded normally')
-    expect(p.reason).toContain(
-      'excluded agents: codex: cannot make MCP tool calls without a writable sandbox',
+  test('exhausted MCP routing names agents excluded by sandbox safety', () => {
+    expect(() => pick('mcp-query', undefined, 0, false, null, true,
+      { agents: ['grok'] })).toThrow(
+      'already ineligible: codex: cannot make MCP tool calls without a writable sandbox',
     )
-    for (const c of candidates('mcp-query').filter((candidate) => !candidate.eligible)) {
-      expect(p.reason).toContain(`${c.agent}: ${c.why}`)
-    }
   })
 
   test('an explicit pin that is also avoided is refused', () => {
@@ -4794,4 +5042,3 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
     expect(out).toContain('Ask whether to load it')
   })
 })
-

@@ -6,12 +6,10 @@
  * announces itself - without this a quota-exhausted agent keeps being routed to
  * and keeps failing, silently, until the failures are noticed by accident.
  *
- * HONESTY ABOUT THESE PATTERNS: no agent here has actually run out of quota
- * yet, so none of the vendor-specific strings below are confirmed against a
- * real exhaustion. They are the generic shapes (HTTP 429, "quota", "usage
- * limit") plus what each vendor's docs suggest. That is why `other` is
- * reported rather than swallowed: the first real quota failure that classifies
- * as `other` is the signal to add its actual wording here.
+ * Grok's HTTP 402 / exhausted-balance response is observed in real runs. The
+ * remaining strings are deliberately generic shapes. That is why `other` is
+ * reported rather than swallowed: a real vendor failure that classifies as
+ * `other` is the signal to add its actual wording here.
  */
 export type FailureKind =
   | 'quota' | 'auth' | 'unreachable' | 'timeout' | 'denied' | 'interrupted'
@@ -69,7 +67,7 @@ const PATTERNS: [FailureKind, RegExp][] = [
   // scoreable evidence about the model.
   ['harness', /Invalid schema for response_format/i],
   // The plan is out. Distinct from `auth` because waiting fixes it.
-  ['quota', /\b(429|quota|usage limit|rate.?limit|too many requests|out of (?:credit|tokens)|insufficient (?:credit|quota|balance)|exceeded your|plan limit|monthly limit|upgrade your plan)\b/i],
+  ['quota', /\b(402|429|quota|usage limit|rate.?limit|too many requests|out of (?:credit|tokens)|insufficient (?:credit|quota|balance)|balance (?:exhausted|depleted)|exceeded your|plan limit|monthly limit|upgrade your plan)\b/i],
   // The login is stale. Waiting does not fix it; re-authenticating does.
   ['auth', /\b(401|403|unauthori[sz]ed|forbidden|not (?:logged in|authenticated)|invalid (?:api )?key|expired token|please (?:log|sign) in|re-?authenticate)\b/i],
   /**
@@ -205,9 +203,10 @@ export const COOLS_DOWN: FailureKind[] = ['quota', 'auth']
 /**
  * Kinds that must never count as evidence about an agent.
  *
- * Separate from NEEDS_HUMAN, which is about who can fix it: a quota failure
- * needs a person AND is honest evidence that this agent could not do the work
- * today. An unreachable endpoint is neither the agent's doing nor its record.
+ * Separate from NEEDS_HUMAN, which is about who can fix it. Quota and auth
+ * failures describe whether the vendor will serve this account right now, not
+ * whether the agent can do the work. An unreachable endpoint is likewise
+ * neither the agent's doing nor its record.
  *
  * An interrupted run is the same fact about the room. It cost grok its standing
  * on the job it is best at: on review-lens grok is stored at 76 ok against 14
@@ -217,7 +216,9 @@ export const COOLS_DOWN: FailureKind[] = ['quota', 'auth']
  * do` was invoked as a fact about the model, which is the identical mistake
  * `unreachable` was carved out to stop.
  */
-export const NOT_EVIDENCE: FailureKind[] = ['unreachable', 'interrupted', 'harness', 'abandoned']
+export const NOT_EVIDENCE: FailureKind[] = [
+  'quota', 'auth', 'unreachable', 'interrupted', 'harness', 'abandoned',
+]
 
 /**
  * Raise a macOS banner. Detached and never awaited: a notification that could

@@ -361,7 +361,11 @@ export function candidates(
     let eligible = true
     let why = ''
     const unavailable = unavailableReason(name)
-    if (unavailable) { eligible = false; why = unavailable }
+    if (cooling) {
+      eligible = false
+      why = `vendor ${cooling}; retry after ${COOLDOWN_MIN}m or run a successful probe to clear it`
+    }
+    else if (unavailable) { eligible = false; why = unavailable }
     else if (a.billing === 'metered') { eligible = false; why = 'metered billing' }
     else if (promptBytes > a.maxPromptBytes) {
       eligible = false
@@ -603,27 +607,36 @@ export function pick(
     eligible = safe
   }
   excluded.push(...cands.filter((c) => !c.eligible).map((c) => `${c.agent}: ${c.why}`))
-  if (eligible.length === 0) throw new Error(`no eligible agent for job "${jobName}"`)
-  /**
-   * Exclusions diversify a fan-out, but never turn useful review work into a
-   * refusal. If they consume the whole eligible set, route from the original
-   * set and record the unmet constraint where `orch runs` will expose it.
-   */
+  if (eligible.length === 0) {
+    throw new Error(
+      `no eligible agent for job "${jobName}"` +
+      (excluded.length ? `; excluded agents: ${excluded.join('; ')}` : ''),
+    )
+  }
+  /** Exclusions are instructions, not preferences. The caller must widen them. */
   const requested = new Set(avoid.agents ?? [])
   const models = new Set(avoid.models ?? [])
   const constrained = eligible.filter((c) =>
     !requested.has(c.agent) && !models.has(avoid.model ?? AGENTS[c.agent]!.model))
-  const degraded = constrained.length === 0 && (requested.size > 0 || models.size > 0)
-  if (constrained.length) eligible = constrained
-  const withConstraint = (reason: string) => degraded
-    ? `${reason}; exclusions could not be met, so routing proceeded normally` +
-      (excluded.length ? `; excluded agents: ${excluded.join('; ')}` : '')
-    : reason
-  // Skip agents that are out of quota or unauthenticated - but only while
-  // something else can take the work. Refusing to run at all is worse than
-  // trying an agent that may have recovered since.
-  const warm = eligible.filter((c) => !c.cooling)
-  const ok = warm.length ? warm : eligible
+  if (!constrained.length && (requested.size > 0 || models.size > 0)) {
+    const avoided = eligible.map((c) => {
+      const reasons = []
+      if (requested.has(c.agent)) reasons.push(`--avoid named ${c.agent}`)
+      if (models.has(avoid.model ?? AGENTS[c.agent]!.model)) {
+        reasons.push(`model ${avoid.model ?? AGENTS[c.agent]!.model} was excluded`)
+      }
+      return `${c.agent}: ${reasons.join(' and ')}`
+    })
+    throw new Error(
+      `routing constraints leave no eligible agent for job "${jobName}"; ` +
+      `excluded by constraint: ${avoided.join('; ')}` +
+      (excluded.length ? `; already ineligible: ${excluded.join('; ')}` : '') +
+      `. Widen --avoid or --distinct-from deliberately.`,
+    )
+  }
+  eligible = constrained
+  const withConstraint = (reason: string) => reason
+  const ok = eligible
 
   const proven = ok.filter((c) => c.evidence >= MIN_SAMPLE && c.score !== null)
   const unproven = ok.filter((c) => c.evidence < MIN_SAMPLE)
