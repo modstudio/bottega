@@ -562,27 +562,6 @@ export function pick(
   // of what someone consults it for.
   explore = true,
   stack?: string | null,
-  /**
-   * A READ-ONLY JOB THAT WANTS TOOLS MAY NOT BE GIVEN A WRITABLE DISK.
-   *
-   * On codex, MCP and the sandbox are mutually exclusive: `--approve-for-me` is
-   * required for tool calls and implies workspace-write. A read-only job cuts
-   * no worktree, so that writable disk IS the caller's live checkout — the one
-   * they are typing in. One session lost seven files of uncommitted work
-   * to exactly this: a review lens with --mcp, running in their checkout,
-   * reverted the tree to HEAD and then reported it "remains clean".
-   *
-   * Detection was already here and looked the wrong way (see dirtiedTree). This
-   * is the prevention: such a job routes only to an agent that can hold tools
-   * and a read-only sandbox at the same time. grok can; codex cannot.
-   *
-   * Isolating the run in a worktree instead was the other option and it is
-   * wrong for this job shape — a lens is usually reading the UNCOMMITTED work
-   * that a fresh worktree would not have, so isolation would silently change
-   * what is being reviewed. Removing the writable disk keeps the lens looking
-   * at the real tree, which is the whole point of a read-only job running there.
-   */
-  toolsWithoutWrite = false,
   /** Agents and effective models a fan-out has already used. */
   avoid: { agents?: string[]; models?: string[]; model?: string } = {},
 ): { agent: string; reason: string } {
@@ -601,35 +580,10 @@ export function pick(
     const c = cands.find((x) => x.agent === override)
     if (!c) throw new Error(`unknown agent "${override}"`)
     if (!c.eligible) throw new Error(`agent "${override}" not eligible for ${jobName}: ${c.why}`)
-    // An explicit --agent does NOT buy a writable disk on a read-only job. The
-    // caller is choosing an agent, not waiving the protection on their checkout.
-    if (toolsWithoutWrite && AGENTS[override]?.mcpImpliesWrite) {
-      throw new Error(
-        `agent "${override}" cannot make MCP tool calls without a writable sandbox, and ` +
-        `"${jobName}" is read-only so it runs in your checkout rather than a worktree. ` +
-        `Drop --mcp, or pick an agent that keeps tools and a read-only disk together.`,
-      )
-    }
     return { agent: override, reason: 'explicit --agent' }
   }
   let eligible = cands.filter((c) => c.eligible)
   const excluded: string[] = []
-  if (toolsWithoutWrite) {
-    const safe = eligible.filter((c) => {
-      if (!AGENTS[c.agent]?.mcpImpliesWrite) return true
-      excluded.push(`${c.agent}: cannot make MCP tool calls without a writable sandbox`)
-      return false
-    })
-    if (!safe.length) {
-      throw new Error(
-        `no agent can run the read-only job "${jobName}" with MCP tools without a writable ` +
-        `sandbox. On this machine only codex is affected: its --approve-for-me implies ` +
-        `workspace-write, and a read-only job cuts no worktree, so that disk is your own ` +
-        `checkout. Run it without --mcp, or use an agent that keeps both.`,
-      )
-    }
-    eligible = safe
-  }
   excluded.push(...cands.filter((c) => !c.eligible).map((c) => `${c.agent}: ${c.why}`))
   if (eligible.length === 0) {
     throw new Error(

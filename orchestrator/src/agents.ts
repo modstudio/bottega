@@ -56,10 +56,8 @@ export type Caps = {
 /**
  * How much of the machine an agent may use.
  *
- * `exec` is the one that needed a decision, and it is the user's: it removes
- * codex's sandbox for that run, so a review lens can run the project's own test
- * suite and reach Docker. That is not a small grant and is not sold as one —
- * an external agent gets a real shell in a registered checkout.
+ * `exec` remains available to non-repository jobs. Repository jobs never use
+ * it: their boundary is workspace-write in their own disposable worktree.
  *
  * The case for it is measured rather than argued. Four review runs in a single
  * session reported, unprompted, that they could execute nothing: the Docker
@@ -90,7 +88,7 @@ export type ArgvOpts = {
   schema?: string
   mcp?: boolean
   model?: string
-  /** Open the sandbox for editing. Only ever true for a job needing writesRepo. */
+  /** Open the sandbox for editing. True for every job that reads a repository. */
   write?: boolean
   /**
    * How much of the machine this run may use, from the project's register entry.
@@ -440,11 +438,8 @@ const rawReply = (stdout: string) => ({ text: stdout.trim(), tokens: null, costU
  * it already implies workspace-write. So a job that asks for `mcp` gets a
  * writable disk whether or not it asked for one.
  *
- * This comment used to add that such a job "still edits nothing it can keep",
- * which was FALSE and is exactly the kind of reassurance worth deleting: a
- * read-only job cuts no worktree, so the writable disk was the caller's own
- * checkout. `mcpImpliesWrite` now declares the entanglement and run() isolates
- * those runs the same way it isolates a writing job.
+ * Repository jobs are safe under that implication because run() gives each one
+ * a disposable worktree and grants only its linked metadata directory.
  */
 function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
   // -m always, never the config file's default: see Agent.model for why an
@@ -462,8 +457,7 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
    * worker that cannot ask guesses, which is the failure this whole system
    * exists to prevent.
    *
-   * So for CODEX this fixes review quality and leaves implementation where it
-   * was.
+   * All repository work now takes this bounded workspace-write path.
    *
    * IT IS A CODEX LIMITATION, NOT THE SYSTEM'S, and that distinction was worth
    * establishing rather than assuming. grok has no such conflict: it discovers

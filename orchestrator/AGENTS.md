@@ -102,6 +102,26 @@ stay distinguishable, which is why scores are a separate table and why
 `orch runs --unscored` exists. Delegation that is never scored is delegation
 you cannot tell is working.
 
+## Every repository run is disposable
+
+Any job that reads a repository runs in its own throwaway worktree. Before the
+agent starts, orch carries the caller's visible git state into that tree:
+committed branch work, staged and unstaged tracked changes, deletions, binary
+changes, and non-ignored untracked files. Ignored runtime state is provisioned
+by the project's worktree recipe instead of copied from another checkout.
+
+The worktree is the safety boundary. A repository agent gets workspace-write
+for that tree and only its linked-worktree git metadata directory; the main
+checkout, common refs and config, and sibling worktrees remain outside the
+writable roots. Do not use danger-full-access for a repository run. Jobs whose
+entire context is inline, including `summarize` and `review-lens-inline`, create
+no worktree.
+
+A review agent may edit and execute tests to verify a hypothesis. Those edits
+are scratch evidence, never a proposed patch: the review's findings are its
+product, and a review worktree diff must not be landed. No agent commits,
+pushes, or merges its worktree.
+
 ## Routing
 
 A job declares the capabilities it needs; an agent that lacks one is excluded

@@ -18,7 +18,7 @@ import { createInterface } from 'node:readline/promises'
 import { projectAt, projectByName, projects } from './projects.ts'
 import { resolveBase, repoRootOf, removeBranch, unmergedBranch } from './worktree.ts'
 import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
-import { WORKER_PREAMBLE, READONLY_PREAMBLE, contractConflicts } from './contract.ts'
+import { WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE, contractConflicts } from './contract.ts'
 import { collectResult, collectWait, resolveFailover, failoverSummary } from './collect.ts'
 import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
 
@@ -598,7 +598,7 @@ function usage(): never {
       one you want to add to without paying for its context again
       detaches by default; --follow watches the resumed turn here
       several questions: orch answer <id> --q<qid> "<ruling>" --q<qid> "<ruling>"
-  orch diff <id>                what a writing run actually changed, as a diff
+  orch diff <id>                inspect a run's worktree diff (review diffs are scratch)
   orch stop <id>                terminate a running run and leave its worktree intact
   orch discard <id> [--force]   delete that run's worktree and branch (the row stays)
   orch abandon <id> [--note "..."] [--force] retire an asking run and clean up its worktree
@@ -762,7 +762,9 @@ switch (cmd) {
     const jobName = argv[1]
     if (!jobName) throw new Error('orch contract <job>')
     const selected = job(jobName)
-    process.stdout.write((selected.needs.writesRepo ? WORKER_PREAMBLE : READONLY_PREAMBLE) + '\n')
+    process.stdout.write((selected.needs.writesRepo
+      ? WORKER_PREAMBLE
+      : selected.needs.readsRepo ? READONLY_PREAMBLE : NO_REPO_PREAMBLE) + '\n')
     break
   }
 
@@ -880,13 +882,6 @@ switch (cmd) {
     // its own schema dialect and reads the caller's original file unchanged.
     if (schema && (!flag('agent') || flag('agent') === 'codex')) readStrictCodexSchema(schema)
     const { avoid, distinctModels } = await routeConstraints(flag('agent'))
-    // Same reason, and a sharper one: without this the refusal happened inside
-    // the detached worker, so a combination that can never run still created a
-    // run row and reported itself as a startup crash. Routing without an
-    // explicit --agent needs no check here — pick() simply avoids those agents.
-    if (has('mcp') && !job(jobName).needs.writesRepo && flag('agent')) {
-      pick(jobName, flag('agent'), 0, false, null, true)
-    }
     if (!explicitRepo && !projectAt(process.cwd())) {
       console.error(
         `! this run will not be attributed to any project; use --repo <name> ` +
@@ -1729,7 +1724,7 @@ switch (cmd) {
       { id: number; worktree: string | null; branch: string | null
         base_commit: string | null; parent_run_id: number | null } | null
     if (!row) throw new Error(`no run ${id}`)
-    if (!row.worktree) throw new Error(`run ${id} wrote nothing: it is not an implementation run`)
+    if (!row.worktree) throw new Error(`run ${id} has no worktree`)
     if (!existsSync(row.worktree)) {
       throw new Error(`run ${id}'s worktree is gone (${row.worktree}) — discarded already?`)
     }
@@ -1741,6 +1736,13 @@ switch (cmd) {
       base: row.base_commit,
       repoRoot: repoRootOf(row.worktree) ?? row.worktree,
     })
+    const runKind = db().query('SELECT job FROM run WHERE id=?').get(id) as { job: string }
+    if (!JOBS[runKind.job]?.needs.writesRepo) {
+      console.error(
+        `WARNING: run ${id} is a review/read job. Its findings are the product; this diff ` +
+        `contains review input and scratch experiments and must not be landed.`,
+      )
+    }
     // write(), not console.log(): this output is piped into `git apply`, and a
     // newline added for readability is a byte the patch did not have.
     process.stdout.write(c.diff)
@@ -2552,7 +2554,7 @@ switch (cmd) {
     const { avoid, distinctModels } = await routeConstraints(flag('agent'))
     // explore=false: a report that spent the exploration coin would name a
     // different agent each time it was read.
-    const p = pick(jobName, flag('agent'), 0, false, stack, false,
+    const p = pick(jobName, flag('agent'), 0, false, stack,
       { agents: avoid, models: distinctModels })
     const ev = evidenceFor(jobName, 0, stack)
     console.log(

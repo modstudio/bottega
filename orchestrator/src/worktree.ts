@@ -22,7 +22,7 @@
  * and landing it is the architect's decision under the project's own ship
  * knobs — which an external agent has never read and cannot honour.
  */
-import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { db } from './db.ts'
 import { projectAt, type WorktreeTool } from './projects.ts'
@@ -133,6 +133,30 @@ function gitRaw(args: string[], cwd: string): string {
     cwd, env: { ...process.env, ...worktreeGitEnvironment(cwd) }, stdout: 'pipe', stderr: 'pipe',
   })
   return p.exitCode === 0 ? p.stdout.toString() : ''
+}
+
+/** Run git with byte-exact stdin, used to carry a working tree as a patch. */
+function gitInput(args: string[], cwd: string, input: Uint8Array): void {
+  if (cwdMissing(cwd)) throw new Error(`git ${args[0]}: ${cwd} does not exist`)
+  const p = Bun.spawnSync(['git', ...args], {
+    cwd, env: { ...process.env, ...worktreeGitEnvironment(cwd) },
+    stdin: input, stdout: 'pipe', stderr: 'pipe',
+  })
+  if (p.exitCode !== 0) {
+    throw new Error(`git ${args.join(' ')} failed: ${p.stderr.toString().trim() || `exit ${p.exitCode}`}`)
+  }
+}
+
+/** Byte-exact git output where failure must stop setup rather than look empty. */
+function gitBytes(args: string[], cwd: string): Buffer {
+  if (cwdMissing(cwd)) throw new Error(`git ${args[0]}: ${cwd} does not exist`)
+  const p = Bun.spawnSync(['git', ...args], {
+    cwd, env: { ...process.env, ...worktreeGitEnvironment(cwd) }, stdout: 'pipe', stderr: 'pipe',
+  })
+  if (p.exitCode !== 0) {
+    throw new Error(`git ${args.join(' ')} failed: ${p.stderr.toString().trim() || `exit ${p.exitCode}`}`)
+  }
+  return Buffer.from(p.stdout)
 }
 
 /**
@@ -255,12 +279,8 @@ export function orphanSafety(path: string, repoRoot: string, trunk: string): Orp
  * orphaned from its row. A timestamp or a slug would read better and would not
  * survive two runs of the same job in the same minute.
  *
- * Cut from HEAD rather than from the default branch. The architect has usually
- * staged something the worker needs to build on — that is the normal shape of
- * "implement this next piece" — and branching from `main` would hand the worker
- * a tree the spec does not describe. UNCOMMITTED work does not come along, and
- * that is stated rather than fixed: copying a dirty tree into a worktree is how
- * two checkouts start disagreeing about what the code is.
+ * The caller's visible state is transferred after creation by
+ * `carryWorkingState`; cutting the directory is only the first half of setup.
  */
 /**
  * Fill a project's command template and run it.
@@ -497,6 +517,43 @@ export function createWorktree(cwd: string, runId: number, baseRef?: string): Wo
   git(['worktree', 'add', '-b', branch, path, base], repoRoot)
   markWorktree(path, runId, repoRoot)
   return { path, branch, base, repoRoot }
+}
+
+/**
+ * Put the caller's complete visible git state into a newly cut tree.
+ *
+ * The patch is against the destination's actual base, not necessarily the
+ * caller's HEAD. That matters for project-owned worktree tools which choose
+ * their own floor: the resulting tracked files still exactly match what the
+ * caller was looking at, including committed branch work, staged changes,
+ * unstaged changes, deletions and binary files. Untracked, non-ignored paths
+ * are copied separately because no git diff can contain them.
+ *
+ * Ignored files are deliberately left to the project's worktree recipe. They
+ * are environment (dependencies, databases, generated .env files), not review
+ * input, and copying them would both defeat provisioning and turn one checkout's
+ * runtime state into another's.
+ */
+export function carryWorkingState(cwd: string, worktree: Worktree): void {
+  const patch = gitBytes(['diff', '--binary', '--full-index', worktree.base, '--'], cwd)
+  if (patch.byteLength) gitInput(['apply', '--binary', '--whitespace=nowarn', '-'], worktree.path, patch)
+
+  const untracked = gitBytes(['ls-files', '--others', '--exclude-standard', '-z'], cwd).toString()
+    .split('\0').filter(Boolean)
+  const otherWorktrees = (gitOk(['worktree', 'list', '--porcelain'], cwd) ?? '')
+    .split('\n').filter((line) => line.startsWith('worktree '))
+    .map((line) => realpathSync(line.slice('worktree '.length)))
+    .filter((path) => path !== realpathSync(cwd))
+  for (const relative of untracked) {
+    const source = join(cwd, relative)
+    const absoluteSource = realpathSync(source)
+    if (otherWorktrees.some((path) => absoluteSource === path || path.startsWith(`${absoluteSource}/`))) {
+      continue
+    }
+    const destination = join(worktree.path, relative)
+    mkdirSync(dirname(destination), { recursive: true })
+    cpSync(source, destination, { recursive: true, force: true, verbatimSymlinks: true })
+  }
 }
 
 /**

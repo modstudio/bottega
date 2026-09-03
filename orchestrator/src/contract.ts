@@ -452,33 +452,23 @@ export function isAsking(r: WorkerReply | null | undefined): boolean {
 }
 
 /**
- * What a READ-ONLY worker is told, and it is short on purpose.
- *
- * A read-only job runs in the caller's real checkout, not a worktree, because a
- * lens usually needs the uncommitted work a fresh tree would not have. The disk
- * is read-only now, so this is no longer the thing standing between a lens and
- * somebody's afternoon — but the sandbox stops a write, it does not stop an
- * agent from BELIEVING it should make one, and a formatter it thought it ran is
- * a finding it will report having verified.
- *
- * Named commands rather than a principle: a reviewer that has been told "do not
- * modify" still reaches for `lint:fix` to see what lint would say.
+ * What a review/read worker is told, and it is short on purpose.
  */
 export const READONLY_PREAMBLE = `
-YOU ARE READING, NOT CHANGING.
+You are working in your own disposable worktree. It contains the caller's
+working state, including committed branch work and uncommitted, non-ignored
+changes, captured when this run began.
 
-You are running in someone's REAL working checkout, which very likely holds
-uncommitted work — that is usually the whole point of what you were asked to
-look at. It is not a scratch copy and there is no worktree to throw away.
+Edit and test freely when that helps you verify a finding. Your findings are the
+deliverable, not your diff: every change you make here is scratch work and must
+never be treated as a proposed change to land. Do not commit, push, or merge.
+`.trim()
 
-Do not write to it. In particular do not run a formatter or a fixer to see what
-it would say: no \`lint:fix\`, no \`--write\`, no \`--fix\`, no \`prettier\`, no
-\`git checkout\`/\`restore\`/\`stash\`/\`reset\`/\`clean\`. Read the config and say
-what you believe it would report instead.
-
-Your disk is read-only, so an attempt will fail rather than damage anything. Say
-so plainly if that happens — a refused write is a fact worth reporting, not an
-obstacle to work around.
+/** Jobs whose whole input is inline do not pay for or claim a repository tree. */
+export const NO_REPO_PREAMBLE = `
+This job needs no repository, so you have no repository worktree for this run.
+Answer from the supplied context and requested tools, and do not make external
+changes.
 `.trim()
 
 export type ContractConflict = { line: number; text: string }

@@ -12,11 +12,11 @@ import { pick } from './route.ts'
 import { db, nowIso, ROOT, DB_PATH, sessionId } from './db.ts'
 import {
   createWorktree, createWithTool, toolFor, changesIn, repoRootOf, resolveBase, worktreeGitDir,
-  prepareWorktreeObjects, worktreeGitEnvironment, type Worktree,
+  prepareWorktreeObjects, worktreeGitEnvironment, carryWorkingState, removeFor, type Worktree,
 } from './worktree.ts'
 import { recipeNotes } from './recipe.ts'
 import {
-  workerPreamble, workerResumeGuard, READONLY_PREAMBLE, WORKER_SCHEMA,
+  workerPreamble, workerResumeGuard, READONLY_PREAMBLE, NO_REPO_PREAMBLE, WORKER_SCHEMA,
   parseWorkerReplyWithCount, isAsking,
   type WorkerReply,
 } from './contract.ts'
@@ -217,11 +217,10 @@ export function preflight(
   if (jobName === 'review-lens' && repoRootOf(cwd) === null) {
     throw new Error(
       `a review lens reads a change, and ${cwd} is not inside a git checkout, so there is no change to read.\n` +
-      `Run it from the checkout that holds the change. (Run 675 was launched from a scratchpad and reported ` +
-      `"0 of 0 files" as if that were a finding.)`,
+      `Run it from the checkout that holds the change.`,
     )
   }
-  if (!j.needs.writesRepo) return
+  if (!j.needs.readsRepo) return
   // A key and a seed exist to name and fill a NEW worktree. A resumed turn works in
   // the one its parent already has, so demanding them again blocks every ruling.
   if (reusesWorktree) return
@@ -392,56 +391,6 @@ function bindSignals() {
 }
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 16)
-
-/** `git status --porcelain`, or null where the question cannot be asked. */
-function porcelain(cwd: string): string | null {
-  try {
-    const p = Bun.spawnSync(['git', '-C', cwd, 'status', '--porcelain'],
-      { env: { ...process.env, ...worktreeGitEnvironment(cwd) }, stdout: 'pipe', stderr: 'ignore' })
-    return p.exitCode === 0 ? p.stdout.toString() : null
-  } catch { return null }
-}
-
-/**
- * What changed in a tree we are NOT managing, between two porcelain readings.
- *
- * Compared rather than merely checked for emptiness: these checkouts are dirty
- * most of the time, and "the tree has uncommitted changes" says nothing. What
- * matters is whether THIS run added any.
- */
-/**
- * What a read-only run did to a tree it was never supposed to touch.
- *
- * THIS WATCHED THE WRONG DIRECTION. It reported only lines that APPEARED, so a
- * run that created a stray file was caught and a run that DESTROYED work was
- * not — and destroying work is the harmful case. One session had seven
- * files of uncommitted review fixes in its checkout; a read-only lens ran, the
- * files went back to HEAD, and the run reported that "the tracked worktree
- * remains clean". Nothing in orch said a word, because clean is the absence of
- * lines and absence was all this function ignored.
- *
- * Both directions now, and vanished lines are named first: a file that stopped
- * being modified is uncommitted work that no longer exists, and there is no
- * reflog entry to recover it from.
- */
-function dirtiedTree(cwd: string, before: string | null): string | null {
-  if (before === null) return null
-  const after = porcelain(cwd)
-  if (after === null || after === before) return null
-  const lines = (s: string) => s.split('\n').filter((l) => l.trim())
-  const was = new Set(lines(before))
-  const now = new Set(lines(after))
-  const gone = [...was].filter((l) => !now.has(l))
-  const added = [...now].filter((l) => !was.has(l))
-  const out = [
-    ...(gone.length
-      ? ['UNCOMMITTED WORK THAT IS NO LONGER THERE — this is not recoverable:',
-         ...gone.slice(0, 20)]
-      : []),
-    ...(added.length ? ['appeared:', ...added.slice(0, 20)] : []),
-  ]
-  return out.length ? out.join('\n') : null
-}
 
 /** Codex reports "tokens used\n<n>" on stderr; other agents report nothing. */
 function parseVendorTokens(blob: string): number | null {
@@ -678,6 +627,7 @@ export async function run(opts: {
    * implementation contract forbids.
    */
   const writesJob = Boolean(job(opts.job).needs.writesRepo)
+  const repoJob = Boolean(job(opts.job).needs.readsRepo)
   const callerCwd = opts.cwd ?? process.cwd()
   // A RESUMED turn does not repeat the full preamble. The worker is still inside
   // the conversation that carried it, so re-sending all of it would spend tokens
@@ -703,7 +653,7 @@ export async function run(opts: {
    * does know are stated on its behalf.
    */
   const infra = (() => {
-    if (!writesJob) return ''
+    if (!repoJob) return ''
     const tool = toolFor(opts.cwd ?? process.cwd())
     if (!tool) return ''
     const generated = tool.recipe
@@ -747,7 +697,8 @@ export async function run(opts: {
     // A read-only worker gets a much shorter brief, and only on a first turn.
     : opts.resume
       ? (resumeReminder ? `${resumeReminder}\n\n---\n\n${originalPrompt}` : originalPrompt)
-      : [READONLY_PREAMBLE, provenance, docsSection, `---\n\n${originalPrompt}`]
+      : [repoJob ? READONLY_PREAMBLE : NO_REPO_PREAMBLE,
+          provenance, docsSection, `---\n\n${originalPrompt}`]
           .filter(Boolean).join('\n\n')
 
   // A resumed turn is NOT routed. The conversation lives inside one vendor's
@@ -759,57 +710,18 @@ export async function run(opts: {
     // The STACK steers the route: an agent strong on PHP and weak on a Vue
     // component is two different agents to a router, and only this tells them
     // apart. Backs off to job-wide evidence until a stack cell has earned it.
-    // The last argument is the guard: a read-only job asking for MCP tools must
-    // not be routed to an agent that can only have tools WITH a writable disk,
-    // because a read-only job runs in the caller's own checkout.
     : pick(opts.job, opts.agent, prompt.length, true, stackAt(callerCwd),
-           Boolean(opts.mcp) && !writesJob,
            { agents: opts.avoid, models: opts.distinctModels, model: opts.model })
   const a = AGENTS[name]!
 
-  /**
-   * Whether this job writes is read off the JOB, never off a flag.
-   *
-   * A caller cannot ask for a writable sandbox on a read-only job, because the
-   * only thing that opens one is the job's own declared `writesRepo`. That
-   * keeps the blast radius a property of the work rather than of whoever typed
-   * the command, and it is why `pick()` can be trusted to have excluded every
-   * agent that cannot write: eligibility and sandbox read the same field.
-   */
-  /**
-   * Whether this run gets a WRITABLE DISK, which is not the same question as
-   * whether the job writes.
-   *
-   * codex needs `--approve-for-me` to make MCP tool calls at all, and that flag
-   * implies workspace-write. So an `mcp-query` — nominally read-only — was
-   * being handed an editable copy of the caller's real checkout, with nothing
-   * in the flag list saying so. Anything that CAN write gets isolated, because
-   * the worktree is the actual protection and the sandbox flag is just how the
-   * agent was configured.
-   */
+  /** Whether the requested product is a diff, rather than review findings. */
   const usingMcp = (opts.mcp || writesJob) && a.caps.mcp
   /**
-   * ONLY A JOB THAT DECLARES `writesRepo` GETS A WORKTREE.
-   *
-   * This briefly also isolated any run whose sandbox happened to be writable —
-   * codex's `--approve-for-me`, required for MCP, implies workspace-write — on
-   * the reasoning that anything which CAN write should be contained. The
-   * reasoning was sound and the cure was far worse than the disease.
-   *
-   * A review lens uses MCP to fetch its own prompt, so it was suddenly
-   * "writing": in one Laravel app that meant invoking the project's full worktree
-   * tooling, which demands a database size and a ticket key. Six read-only
-   * lenses failed outright, and a job that had run fine all day stopped
-   * working. A read-only review does not need a database; it needs to read the
-   * tree the pack names.
-   *
-   * The residual risk is real and stated rather than fixed: an mcp job on codex
-   * has a writable sandbox pointed at the caller's checkout. What bounds it is
-   * that the job never asks the agent to change anything — and `dirtiedTree`
-   * below reports it if one does, which is a cheaper and more honest guard than
-   * provisioning a database to prevent an edit nobody requested.
+   * Every repository job gets writable scratch space. `writesJob` still means
+   * its requested product is a diff; `repoJob` means it needs an isolated tree
+   * in which it may test a hypothesis.
    */
-  const writes = writesJob
+  const writes = repoJob
 
   // Minted before the spawn when the agent lets us choose, so the resume handle
   // exists even for a worker that dies mid-turn. codex and qwen name their own
@@ -970,7 +882,7 @@ export async function run(opts: {
     )
 
   /**
-   * A writing worker never runs in the caller's checkout.
+   * A repository worker never runs in the caller's checkout.
    *
    * Cut AFTER the row exists, because the worktree is named by run id and the
    * id is what makes the mapping between a row and a directory total in both
@@ -992,29 +904,33 @@ export async function run(opts: {
    */
   let cwd = callerCwd
   try {
-    if (writes) {
-      // A job that WRITES must have a worktree, so a repository it cannot be
-      // cut from is a hard failure. A job that is merely writable-by-accident
-      // (mcp on codex) is isolated where possible and proceeds where not —
-      // refusing it would break every mcp-query run outside a git checkout to
-      // guard a hazard that only exists inside one.
+    if (repoJob) {
+      // A job that reads the repository must have a worktree, so a repository
+      // it cannot be cut from is a hard failure.
       const tool = toolFor(callerCwd)
+      const creating = !worktree
       if (!worktree && tool) {
         // The PROJECT owns its worktrees. A bare `git worktree add` here would
         // produce a directory with no .env, no vendor and no database, in which
         // every test the worker runs is meaningless and green.
         worktree = createWithTool(tool, callerCwd, claim.id, opts.seed, opts.key, opts.base)
-      } else if (!worktree && !writesJob && !repoRootOf(callerCwd)) {
-        console.error(
-          `orch: run ${claim.id} has a writable sandbox (mcp) but ${callerCwd} is not a ` +
-          'git repository, so it cannot be isolated in a worktree.',
-        )
       } else if (!worktree) {
         // INHERITED on a resume, and this is the point of the whole exercise:
         // the worker is mid-edit in that tree, and cutting a fresh one would
         // answer its question into an empty checkout and throw away everything
         // it had built.
         worktree = createWorktree(callerCwd, claim.id, opts.base)
+      }
+      if (worktree && creating) {
+        try {
+          carryWorkingState(callerCwd, worktree)
+        } catch (e) {
+          const cleanup = removeFor(worktree, worktree.repoRoot)
+          throw new Error(
+            `${String((e as Error)?.message ?? e)}\n` +
+            `incomplete worktree cleanup: ${cleanup.removed ? 'removed' : cleanup.detail}`,
+          )
+        }
       }
     }
     if (worktree) {
@@ -1035,7 +951,7 @@ export async function run(opts: {
   // Git normally writes new blobs into the common object database. Codex may
   // write only this worktree's metadata directory, so its objects live there
   // and read the repository's existing objects through a read-only alternate.
-  const gitObjectEnvironment = name === 'codex' && writesJob && worktree
+  const gitObjectEnvironment = name === 'codex' && repoJob && worktree
     ? prepareWorktreeObjects(worktree.path)
     : undefined
   const argvOpts = {
@@ -1061,27 +977,15 @@ export async function run(opts: {
      * than of whoever typed the command. See ProjectSettings.agentSandbox for
      * why a registered repository is the line.
      */
-    sandbox: ((): SandboxLevel => {
-      const p = projectAt(callerCwd)
-      return p ? (p.settings.agentSandbox ?? 'exec') : 'read-only'
-    })(),
+    sandbox: repoJob ? 'workspace-write' as SandboxLevel : 'read-only' as SandboxLevel,
     // Staging writes the linked worktree's index outside its checkout. Grant
     // that one metadata directory, never the common .git directory around it.
-    writableRoots: writesJob && worktree ? [worktreeGitDir(worktree.path)] : undefined,
+    writableRoots: repoJob && worktree ? [worktreeGitDir(worktree.path)] : undefined,
     gitObjectEnvironment,
   }
   const argv = opts.resume
     ? a.resumeArgv!({ ...argvOpts, session: opts.resume.session })
     : a.argv(argvOpts)
-
-  /**
-   * The checkout's state BEFORE a read-only run, so an unexpected edit is
-   * detectable afterwards. Cheap, and skipped entirely when the sandbox could
-   * not have written anything.
-   */
-  const dirtyBefore = !writesJob && usingMcp && a.mcpImpliesWrite
-    ? porcelain(callerCwd)
-    : null
 
   bindSignals()
 
@@ -1329,24 +1233,6 @@ export async function run(opts: {
      * into a failed one — the agent's work is already done by this point, and
      * the row has to be written whatever git says.
      */
-    /**
-     * Did a READ-ONLY run change the checkout it was pointed at?
-     *
-     * It should not have: nothing asked it to, and its job declares no write.
-     * But codex's MCP mode carries a writable sandbox it did not request, so
-     * the possibility exists and silence about it would be the worst answer.
-     * Cheap to ask — one `git status --porcelain` against a tree we are not
-     * managing — and only asked when the sandbox was actually writable.
-     */
-    if (!writesJob && usingMcp && a.mcpImpliesWrite) {
-      const dirty = dirtiedTree(callerCwd, dirtyBefore)
-      if (dirty) {
-        console.error(
-          `orch: run ${claim.id} was read-only but ${callerCwd} changed while it ran:\n${dirty}`,
-        )
-      }
-    }
-
     if (worktree) {
       try { changes = changesIn(worktree) } catch (e) {
         changes = null
@@ -1570,7 +1456,7 @@ export async function run(opts: {
         const originalPrompt = readFileSync(first.prompt_path, 'utf8')
         const next = pick(
           opts.job, undefined, originalPrompt.length, true,
-          stackAt(first.launch_cwd ?? callerCwd), Boolean(first.mcp) && !writesJob,
+          stackAt(first.launch_cwd ?? callerCwd),
           { agents: [...new Set([...(opts.avoid ?? []), ...tried])] },
         )
         console.error(

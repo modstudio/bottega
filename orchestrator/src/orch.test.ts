@@ -33,6 +33,17 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
  */
 const dir = mkdtempSync(join(tmpdir(), 'orch-test-'))
 process.env.ORCH_DB = join(dir, 'test.db')
+writeFileSync(join(dir, '.gitignore'), '*\n!.gitignore\n')
+for (const args of [
+  ['init', '-b', 'main'],
+  ['config', 'user.email', 'orch-test@example.invalid'],
+  ['config', 'user.name', 'Orch Test'],
+  ['add', '.gitignore'],
+  ['commit', '-m', 'test fixture'],
+]) {
+  const p = Bun.spawnSync(['git', ...args], { cwd: dir, stdout: 'pipe', stderr: 'pipe' })
+  if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+}
 
 const { db, reapStale, pendingForSession, unscoredCount, judgeability, STALE_AFTER_MS,
         PENDING_BOOTSTRAP_MS, WEIGHT, weigh, label, FIDELITY_PENALTY, UNSCORED_WHERE,
@@ -53,11 +64,11 @@ const { errorTail, preflight, detachedRunOptions, runFilePaths, pruneRuns, KEEP_
 const run = runJob
 const { summary } = await import('./metric.ts')
 const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
-        WORKER_PREAMBLE, LAND_PREAMBLE, workerPreamble, workerResumeGuard,
+        NO_REPO_PREAMBLE, WORKER_PREAMBLE, LAND_PREAMBLE, workerPreamble, workerResumeGuard,
         contractConflicts } = await import('./contract.ts')
 const { ask } = await import('./ask.ts')
 const { orphanSafety, repoRootOf, createWorktree, createWithTool, resolveBase, fillTool,
-        worktreeGitDir, prepareWorktreeObjects } = await import('./worktree.ts')
+        worktreeGitDir, prepareWorktreeObjects, carryWorkingState } = await import('./worktree.ts')
 const { AGENTS, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
         WAKE_COOLDOWN_MS, CODEX_EXEC_SANDBOX, strictCodexSchema } = await import('./agents.ts')
@@ -842,7 +853,9 @@ describe('job contracts are visible before submission', () => {
       const r = contract(name)
       expect(r.code).toBe(0)
       expect(r.out).toBe(
-        `${definition.needs.writesRepo ? WORKER_PREAMBLE : READONLY_PREAMBLE}\n`,
+        `${definition.needs.writesRepo
+          ? WORKER_PREAMBLE
+          : definition.needs.readsRepo ? READONLY_PREAMBLE : NO_REPO_PREAMBLE}\n`,
       )
       expect(r.err).toBe('')
     }
@@ -1178,25 +1191,6 @@ describe('retry keeps the work on the same agent', () => {
       .toEqual({ n: 0 })
   })
 
-  test('orch do refuses when an MCP exclusion leaves nobody eligible', () => {
-    const binDir = mkdtempSync(join(tmpdir(), 'orch-fake-grok-route-'))
-    writeFileSync(join(binDir, 'grok'), '#!/bin/sh\necho ok\n')
-    chmodSync(join(binDir, 'grok'), 0o755)
-    try {
-      const r = orch(
-        ['do', 'mcp-query', 'answer', '--mcp', '--avoid', 'grok', '--follow'],
-        { PATH: `${binDir}:${process.env.PATH ?? ''}` },
-      )
-      expect(r.code).toBe(1)
-      expect(r.err).toContain('routing constraints leave no eligible agent')
-      expect(r.err).toContain(
-        'already ineligible: codex: cannot make MCP tool calls without a writable sandbox',
-      )
-    } finally {
-      rmSync(binDir, { recursive: true, force: true })
-    }
-  })
-
   test('retry and continue give the same refusal when the chain has no session', () => {
     for (const command of ['retry', 'continue']) {
       const id = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
@@ -1211,6 +1205,7 @@ describe('quota failover is one bounded unit of work', () => {
   const CLI = new URL('cli.ts', import.meta.url).pathname
   const orch = (...args: string[]) => {
     const p = Bun.spawnSync([process.execPath, CLI, ...args], {
+      cwd: dir,
       env: {
         ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
         CLAUDE_CODE_SESSION_ID: 'orch-test-session',
@@ -1343,7 +1338,8 @@ describe('quota failover is one bounded unit of work', () => {
       expect(row.no_failover).toBe(1)
       expect(row.failure_kind).toBe('quota')
       expect(row.error).toContain('Failover refused: disabled by --no-failover')
-      expect(row.error).toContain('worktree (none — read-only job)')
+      expect(row.error).toContain('worktree ')
+      expect(row.error).not.toContain('(none — read-only job)')
     } finally {
       process.env.PATH = oldPath
       if (oldDepth === undefined) delete process.env.ORCH_DEPTH
@@ -1774,7 +1770,7 @@ fi
       sent = prompt
       return []
     }
-    const cwd = process.cwd()
+    const cwd = dir
     upsertProject({ name: 'fixture-project', path: cwd, settings: {} })
     const priorDepth = process.env.ORCH_DEPTH
     process.env.ORCH_DEPTH = '0'
@@ -2151,34 +2147,20 @@ describe('every agent is bounded', () => {
  * say. Driven through the real CLI, because the bugs worth catching here are in
  * argument parsing and process exit status, neither of which a unit call sees.
  */
-describe('a read-only job never gets a writable disk', () => {
+describe('a repository-reading job gets a disposable writable disk', () => {
   /**
    * One session had seven files of uncommitted review fixes in its
-   * checkout. A review lens ran there with --mcp — read-only jobs cut no
-   * worktree, so they run in the caller's tree — and codex's --approve-for-me
-   * implies workspace-write. The tree came back at HEAD, no stash, no commit,
-   * nothing in the reflog, and the run reported that it "remains clean".
+   * checkout. A review lens ran there with --mcp and codex's
+   * --approve-for-me implied workspace-write. The tree came back at HEAD, no
+   * stash, no commit, nothing in the reflog. The disposable worktree makes that
+   * permission safe instead of excluding the agent from the route.
    */
-  test('routing refuses an agent whose tools require a writable sandbox', () => {
-    expect(() => pick('review-lens', 'codex', 0, false, null, true))
-      .toThrow(/writable sandbox/)
+  test('the old caller-checkout MCP exclusion is no longer needed', () => {
+    expect(pick('review-lens', 'codex', 0, false, null).agent).toBe('codex')
   })
 
-  test('the same agent is fine for that job without tools', () => {
-    expect(pick('review-lens', 'codex', 0, false, null, false).agent).toBe('codex')
-  })
-
-  test('destroyed work is reported, not just new files', () => {
-    // dirtiedTree only ever reported lines that APPEARED, so a run that created
-    // a stray file was caught and one that reverted the tree was not. Absence
-    // was the whole signal and it was the half being ignored.
-    const before = ' M hub/src/a.ts\n M hub/src/b.ts'
-    const after = ''
-    const lines = (x: string) => x.split('\n').filter((l) => l.trim())
-    const was = new Set(lines(before))
-    const now = new Set(lines(after))
-    const gone = [...was].filter((l) => !now.has(l))
-    expect(gone).toHaveLength(2)
+  test('the same agent remains fine without tools', () => {
+    expect(pick('review-lens', 'codex', 0, false, null).agent).toBe('codex')
   })
 })
 
@@ -4314,7 +4296,7 @@ describe('pid stays the worker for the whole run', () => {
       grok.bin = script
       const reserved = addRun({ agent: '(pending)', job: 'file-question', status: 'running' })
       db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, reserved)
-      await run({ job: 'file-question', prompt: 'hello', agent: 'grok', reserveId: reserved })
+      await run({ job: 'file-question', prompt: 'hello', cwd: dir, agent: 'grok', reserveId: reserved })
       const row = db().query('SELECT pid, agent_pid FROM run WHERE id=?')
         .get(reserved) as { pid: number; agent_pid: number }
       expect(row.pid).toBe(process.pid)
@@ -4329,31 +4311,29 @@ describe('pid stays the worker for the whole run', () => {
 
 describe('fan-out routing exclusions', () => {
   test('avoid removes an agent while another eligible agent remains', () => {
-    expect(pick('review-lens', undefined, 0, false, null, false,
+    expect(pick('review-lens', undefined, 0, false, null,
       { agents: ['grok'] }).agent).toBe('codex')
   })
 
   test('exhausted exclusions refuse and name the cause', () => {
-    expect(() => pick('review-lens', undefined, 0, false, null, false,
+    expect(() => pick('review-lens', undefined, 0, false, null,
       { agents: ['grok', 'codex'] })).toThrow(
         'excluded by constraint: codex: --avoid named codex; grok: --avoid named grok',
       )
   })
 
-  test('exhausted MCP routing names agents excluded by sandbox safety', () => {
-    expect(() => pick('mcp-query', undefined, 0, false, null, true,
-      { agents: ['grok'] })).toThrow(
-      'already ineligible: codex: cannot make MCP tool calls without a writable sandbox',
-    )
+  test('MCP routing no longer excludes codex over the caller checkout', () => {
+    expect(pick('mcp-query', undefined, 0, false, null,
+      { agents: ['grok'] }).agent).toBe('codex')
   })
 
   test('an explicit pin that is also avoided is refused', () => {
-    expect(() => pick('review-lens', 'grok', 0, false, null, false,
+    expect(() => pick('review-lens', 'grok', 0, false, null,
       { agents: ['grok'] })).toThrow('contradicts')
   })
 
   test('distinct models exclude the agent currently using one', () => {
-    expect(pick('review-lens', undefined, 0, false, null, false,
+    expect(pick('review-lens', undefined, 0, false, null,
       { models: [AGENTS.grok!.model] }).agent).toBe('codex')
   })
 })
@@ -4619,7 +4599,7 @@ describe('grok reply parsing', () => {
     try {
       grok.bin = script
       const reserved = addRun({ agent: '(pending)', job: 'file-question', status: 'running' })
-      await expect(run({ job: 'file-question', prompt: 'hello', agent: 'grok', reserveId: reserved }))
+      await expect(run({ job: 'file-question', prompt: 'hello', cwd: dir, agent: 'grok', reserveId: reserved }))
         .rejects.toThrow('cancelled')
       const failed = db().query(
         'SELECT status, failure_kind, error, output_path, output_bytes FROM run WHERE id=?',
@@ -4636,7 +4616,7 @@ describe('grok reply parsing', () => {
 
       writeFileSync(script, `#!/bin/sh\nprintf '%s\\n' '${stdout}'\nkill -TERM $$\n`)
       const interrupted = addRun({ agent: '(pending)', job: 'file-question', status: 'running' })
-      await expect(run({ job: 'file-question', prompt: 'hello', agent: 'grok', reserveId: interrupted }))
+      await expect(run({ job: 'file-question', prompt: 'hello', cwd: dir, agent: 'grok', reserveId: interrupted }))
         .rejects.toThrow('cancelled')
       expect(db().query('SELECT status, failure_kind, error FROM run WHERE id=?').get(interrupted))
         .toEqual({ status: 'failed', failure_kind: 'interrupted', error: 'cancelled' })
@@ -5069,7 +5049,9 @@ describe('an agent gets the toolchain of a project someone registered', () => {
       git('add', 'kept.txt')
       git('commit', '-m', 'base')
       const tree = createWorktree(repo, 125)
+      const sibling = createWorktree(repo, 127)
       const ownGitDir = worktreeGitDir(tree.path)
+      const siblingGitDir = worktreeGitDir(sibling.path)
       const gitObjectEnvironment = prepareWorktreeObjects(tree.path)
       const argv = AGENTS.codex!.argv({
         prompt: 'p', out: '/tmp/o', mcp: true, write: true, writableRoots: [ownGitDir],
@@ -5081,9 +5063,59 @@ describe('an agent gets the toolchain of a project someone registered', () => {
       expect(JSON.parse(writable.split('=', 2)[1]!)).toEqual([ownGitDir])
       expect(ownGitDir).toBe(realpathSync(join(repo, '.git', 'worktrees', 'orch-125')))
       expect(writable).not.toContain(`${realpathSync(join(repo, '.git'))}"]`)
+      expect(writable).not.toContain(siblingGitDir)
+      expect(writable).not.toContain(join(repo, '.git', 'refs'))
+      expect(writable).not.toContain(join(repo, '.git', 'config'))
       for (const [key, value] of Object.entries(gitObjectEnvironment)) {
         expect(configs).toContain(`shell_environment_policy.set.${key}=${JSON.stringify(value)}`)
       }
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a new worktree receives the caller state without changing the caller', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-carry-state-'))
+    const git = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], { cwd: repo, stdout: 'pipe', stderr: 'pipe' })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+    }
+    try {
+      git('init', '-b', 'main')
+      git('config', 'user.email', 'orch-test@example.invalid')
+      git('config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, '.gitignore'), 'ignored.txt\n.claude/\n')
+      writeFileSync(join(repo, 'tracked.txt'), 'base\n')
+      writeFileSync(join(repo, 'unstaged.txt'), 'base\n')
+      writeFileSync(join(repo, 'binary.bin'), new Uint8Array([0, 1, 2, 3]))
+      writeFileSync(join(repo, 'deleted.txt'), 'delete me\n')
+      git('add', '.')
+      git('commit', '-m', 'base')
+      git('switch', '-c', 'topic')
+      writeFileSync(join(repo, 'branch.txt'), 'committed branch work\n')
+      git('add', 'branch.txt')
+      git('commit', '-m', 'topic work')
+
+      writeFileSync(join(repo, 'tracked.txt'), 'working state\n')
+      git('add', 'tracked.txt')
+      writeFileSync(join(repo, 'unstaged.txt'), 'unstaged working state\n')
+      writeFileSync(join(repo, 'binary.bin'), new Uint8Array([0, 255, 2, 128]))
+      rmSync(join(repo, 'deleted.txt'))
+      writeFileSync(join(repo, 'untracked.txt'), 'untracked\n')
+      writeFileSync(join(repo, 'ignored.txt'), 'runtime only\n')
+      const before = Bun.spawnSync(['git', 'status', '--porcelain'], { cwd: repo }).stdout.toString()
+
+      const tree = createWorktree(repo, 134)
+      carryWorkingState(repo, tree)
+
+      expect(readFileSync(join(tree.path, 'branch.txt'), 'utf8')).toBe('committed branch work\n')
+      expect(readFileSync(join(tree.path, 'tracked.txt'), 'utf8')).toBe('working state\n')
+      expect(readFileSync(join(tree.path, 'unstaged.txt'), 'utf8')).toBe('unstaged working state\n')
+      expect([...readFileSync(join(tree.path, 'binary.bin'))]).toEqual([0, 255, 2, 128])
+      expect(existsSync(join(tree.path, 'deleted.txt'))).toBe(false)
+      expect(readFileSync(join(tree.path, 'untracked.txt'), 'utf8')).toBe('untracked\n')
+      expect(existsSync(join(tree.path, 'ignored.txt'))).toBe(false)
+      expect(Bun.spawnSync(['git', 'status', '--porcelain'], { cwd: repo }).stdout.toString()).toBe(before)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
