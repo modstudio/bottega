@@ -93,6 +93,11 @@ function evidenceNote(row: { evidence_excluded: string | null }): string {
     : ''
 }
 
+/** A run id is a machine interface: callers feed it back to wait/result. */
+function printRunId(id: number): void {
+  process.stdout.write(`${id}\n`)
+}
+
 async function follow(id: number, quiet: boolean, exitOnFailure = true): Promise<string> {
   const deadline = Date.now() + FOLLOW_TIMEOUT_MS
   const q = db().query(
@@ -521,7 +526,7 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
 
 async function reportContinuedRun(childId: number, jobName: string): Promise<void> {
   if (has('detach') || !has('follow')) {
-    console.log(childId)
+    printRunId(childId)
     if (!has('quiet')) {
       console.error(
         `\n— ${jobName} runs detached; a foreground one dies with its shell.` +
@@ -952,7 +957,7 @@ switch (cmd) {
         repo: explicitRepo, base, avoid, distinctModels,
         noFailover: has('no-failover'),
       })
-      console.log(id)
+      printRunId(id)
       if (!has('quiet')) {
         console.error(`detached as run ${id}: orch wait ${id}, then orch result ${id}`)
       }

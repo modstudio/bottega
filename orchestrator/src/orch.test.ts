@@ -1206,7 +1206,10 @@ describe('retry keeps the work on the same agent', () => {
     db().query('UPDATE run SET vendor_session=?, cwd=? WHERE id=?')
       .run('retry-session', dir, id)
     try {
-      const r = orch(['retry', String(id)], { PATH: `${binDir}:${process.env.PATH ?? ''}` })
+      const r = orch(['retry', String(id)], {
+        PATH: `${binDir}:${process.env.PATH ?? ''}`,
+        FORCE_COLOR: '1',
+      })
       expect(r.code).toBe(0)
       const childId = Number(r.out.trim().split('\n')[0])
       expect(childId).toBeGreaterThan(0)
@@ -2528,11 +2531,11 @@ describe('detached run collection', () => {
         '--label', 'security lens', '--detach'],
       { cwd: dir, stdout: 'pipe', stderr: 'pipe', env: {
         ...process.env, PATH: `${binDir}:${process.env.PATH}`, ORCH_DB: process.env.ORCH_DB!,
-        ORCH_DEPTH: '0', CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+        ORCH_DEPTH: '0', CLAUDE_CODE_SESSION_ID: 'orch-test-session', FORCE_COLOR: '1',
       } },
     )
     expect(p.exitCode).toBe(0)
-    const id = Number(p.stdout.toString().trim().match(/\d+/)?.[0])
+    const id = Number(p.stdout.toString().trim())
     expect(id).toBeGreaterThan(0)
     expect(p.stderr.toString()).toContain(
       `detached as run ${id}: orch wait ${id}, then orch result ${id}`,
