@@ -99,6 +99,13 @@ export type ArgvOpts = {
    * at some directory nobody registered gets the narrowest thing that works.
    */
   sandbox?: SandboxLevel
+  /** Exact extra paths made writable inside Codex's workspace-write sandbox. */
+  writableRoots?: string[]
+  /** Worker-local writable objects plus the common read-only object database. */
+  gitObjectEnvironment?: {
+    GIT_OBJECT_DIRECTORY: string
+    GIT_ALTERNATE_OBJECT_DIRECTORIES: string
+  }
   /**
    * The conversation this turn belongs to.
    *
@@ -473,6 +480,14 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
    * so. What this note buys is that nobody re-derives the constraint and
    * concludes the system cannot do it.
    */
+  if (o.writableRoots?.length) {
+    a.push('-c', `sandbox_workspace_write.writable_roots=${JSON.stringify(o.writableRoots)}`)
+  }
+  if (o.gitObjectEnvironment) {
+    for (const [key, value] of Object.entries(o.gitObjectEnvironment)) {
+      a.push('-c', `shell_environment_policy.set.${key}=${JSON.stringify(value)}`)
+    }
+  }
   if (o.mcp) a.push('--approve-for-me')
   else if (o.sandbox === 'exec') a.push('-s', CODEX_EXEC_SANDBOX)
   else a.push('-s', o.write || o.sandbox === 'workspace-write' ? 'workspace-write' : 'read-only')

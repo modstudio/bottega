@@ -17,6 +17,7 @@ import { createInterface } from 'node:readline/promises'
 import { projectAt, projectByName, projects } from './projects.ts'
 import { resolveBase, repoRootOf, removeBranch, unmergedBranch } from './worktree.ts'
 import { NOT_EVIDENCE, type FailureKind } from './failure.ts'
+import { WORKER_PREAMBLE, READONLY_PREAMBLE, contractConflicts } from './contract.ts'
 
 /**
  * How long `orch do` watches a detached run before handing it back.
@@ -560,6 +561,8 @@ function usage(): never {
       --repo <name>             attribute work launched outside a registered project
       --follow                  block and watch the run instead of returning its id
 
+  orch contract <job>          print the preamble prepended to that job's prompt
+
   orch score <run-id> <none|partial|full> [wrong|mixed|right] [--note "..."]
       delivery first (did an answer arrive), then quality (was it right).
       'none' takes no quality — there was nothing to judge.
@@ -765,6 +768,14 @@ if (NEEDS_HEALTH.has(cmd ?? '')) await ensureLocalHealth()
 try {
 
 switch (cmd) {
+  case 'contract': {
+    const jobName = argv[1]
+    if (!jobName) throw new Error('orch contract <job>')
+    const selected = job(jobName)
+    process.stdout.write((selected.needs.writesRepo ? WORKER_PREAMBLE : READONLY_PREAMBLE) + '\n')
+    break
+  }
+
   case 'doc': {
     const { listDocs, getDoc, setDoc, removeDoc, exportDocs, importDocs, brief, docSubjects,
             listOpenResumes } =
@@ -894,6 +905,18 @@ switch (cmd) {
     }
     const prompt = await readPrompt()
     if (!prompt.trim()) throw new Error('empty prompt')
+    if (jobName === 'implement') {
+      const conflicts = contractConflicts(prompt)
+      if (conflicts.length) {
+        console.error(
+          '! implement spec may conflict with its no-commit/no-push/no-merge contract:',
+        )
+        for (const conflict of conflicts) {
+          console.error(`  line ${conflict.line}: ${conflict.text}`)
+        }
+        console.error('  The spec was not changed. Review it before the worker reaches this conflict.')
+      }
+    }
 
     // A fan-out cannot be run synchronously, and that is not a caller's problem
     // to solve.

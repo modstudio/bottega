@@ -231,6 +231,53 @@ answer, and you stop and wait. A blocker is something only the environment can
 fix, and you carry on without it and say so.
 `.trim()
 
+/**
+ * The contract for transferring an approved run into a commit.
+ *
+ * This MUST be visibly different from the implementation contract. A worker
+ * that has internalised the normal no-commit rule otherwise reaches the exact
+ * contradiction this job exists to remove and stops to ask whether it may do
+ * its only deliverable. Landing permits one narrow history operation while
+ * leaving push and merge decisions with the architect.
+ */
+export const LAND_PREAMBLE = WORKER_PREAMBLE
+  .replace(
+    `You are an implementation worker. Someone else — the architect — has designed
+this change, holds the whole picture, and will review what you produce. Your job
+is to implement the spec below faithfully. It is not to improve it.`,
+    `You are a landing worker. Someone else — the architect — has already designed
+and approved the change. Your job is to transfer the named run's exact diff to
+the named branch, run the specified gates, and commit it. It is not to implement,
+fix, or improve the change.`,
+  )
+  .replace(
+    `You are working in a throwaway git worktree cut for this run. Edit files freely.
+Do NOT commit, do NOT push, do NOT merge, and do not touch git history: the
+architect reads your diff and decides what happens to it.`,
+    `This is a DIFFERENT contract from implement. You are working in an isolated git
+worktree cut for this run, and landing requires a commit. You MAY retrieve and
+apply the named source run's diff, stage it, run the specified gates, and create
+the requested commit. Do NOT push and do NOT merge; those remain the architect's
+work. Do not otherwise alter git history.
+
+Before touching the tree, verify that the prompt identifies one source run number
+and one named target branch, and that both resolve. If either is missing,
+ambiguous, or cannot be resolved, stop and ask. Never infer either input and never
+half-land a change.`,
+  )
+
+/** The writing contract is selected by job, never by a caller-controlled flag. */
+export function workerPreamble(jobName: string): string {
+  return jobName === 'land' ? LAND_PREAMBLE : WORKER_PREAMBLE
+}
+
+/** The one history instruction a resumed landing conversation must not lose. */
+export function workerResumeGuard(jobName: string): string {
+  return jobName === 'land'
+    ? 'Do not push/merge. The requested landing commit is permitted and required.'
+    : 'Do not commit/push.'
+}
+
 /** The ruling, wrapped so a resumed worker knows what it is reading. */
 export function rulingPrompt(answers: { question: string; answer: string }[]): string {
   const body = answers
@@ -433,3 +480,27 @@ Your disk is read-only, so an attempt will fail rather than damage anything. Say
 so plainly if that happens — a refused write is a fact worth reporting, not an
 obstacle to work around.
 `.trim()
+
+export type ContractConflict = { line: number; text: string }
+
+/**
+ * Lines in an implementation spec that appear to tell the worker to change
+ * git history, contradicting the contract above.
+ *
+ * This is deliberately a warning, not a prompt rewrite: the author needs to
+ * see the conflict and the worker must still receive exactly what was sent.
+ * Explicit prohibitions are not conflicts, so a spec may repeat the contract's
+ * no-commit rule without producing noise.
+ */
+export function contractConflicts(spec: string): ContractConflict[] {
+  const gitAction = /\b(?:commits?|committed|committing|push(?:es|ed|ing)?|merges?|merged|merging)\b/i
+  const prohibition = /\b(?:do not|don't|never|must not|should not|may not|cannot|can't|without)\b[^.;]*\b(?:commits?|committed|committing|push(?:es|ed|ing)?|merges?|merged|merging)\b/i
+  const noAction = /\bno\s+(?:commits?|push(?:es)?|merges?)\b/i
+
+  return spec.split(/\r?\n/).flatMap((text, index) =>
+    text.split(/[.;]/).some((clause) =>
+      gitAction.test(clause) && !prohibition.test(clause) && !noAction.test(clause))
+      ? [{ line: index + 1, text }]
+      : [],
+  )
+}

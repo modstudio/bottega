@@ -11,11 +11,13 @@ import { job } from './jobs.ts'
 import { pick } from './route.ts'
 import { db, nowIso, ROOT, DB_PATH, sessionId } from './db.ts'
 import {
-  createWorktree, createWithTool, toolFor, changesIn, repoRootOf, resolveBase, type Worktree,
+  createWorktree, createWithTool, toolFor, changesIn, repoRootOf, resolveBase, worktreeGitDir,
+  prepareWorktreeObjects, worktreeGitEnvironment, type Worktree,
 } from './worktree.ts'
 import { recipeNotes } from './recipe.ts'
 import {
-  WORKER_PREAMBLE, READONLY_PREAMBLE, WORKER_SCHEMA, parseWorkerReplyWithCount, isAsking,
+  workerPreamble, workerResumeGuard, READONLY_PREAMBLE, WORKER_SCHEMA,
+  parseWorkerReplyWithCount, isAsking,
   type WorkerReply,
 } from './contract.ts'
 import { projectAt, stackAt } from './projects.ts'
@@ -292,7 +294,7 @@ const sha = (s: string) => createHash('sha256').update(s).digest('hex').slice(0,
 function porcelain(cwd: string): string | null {
   try {
     const p = Bun.spawnSync(['git', '-C', cwd, 'status', '--porcelain'],
-      { stdout: 'pipe', stderr: 'ignore' })
+      { env: { ...process.env, ...worktreeGitEnvironment(cwd) }, stdout: 'pipe', stderr: 'ignore' })
     return p.exitCode === 0 ? p.stdout.toString() : null
   } catch { return null }
 }
@@ -402,7 +404,7 @@ export function repoOf(cwd: string): string | null {
 function branchOf(cwd: string): string | null {
   try {
     const p = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'],
-      { stdout: 'pipe', stderr: 'ignore' })
+      { env: { ...process.env, ...worktreeGitEnvironment(cwd) }, stdout: 'pipe', stderr: 'ignore' })
     if (p.exitCode !== 0) return null
     const b = new TextDecoder().decode(p.stdout).trim()
     return b && b !== 'HEAD' ? b.slice(0, 200) : null
@@ -564,9 +566,10 @@ export async function run(opts: {
    * `.bound.txt`. Wrapping it further down would send a payload the database
    * no longer described.
    *
-   * Derived from `writesRepo` rather than declared per job: the contract is
-   * about not making decisions on someone else's behalf, and that is exactly
-   * the risk that arrives with the ability to change files.
+   * Whether a contract is required is derived from `writesRepo`: changing
+   * files is where guessing becomes costly. Its role prose is selected by job,
+   * because `land` deliberately permits the one commit that the ordinary
+   * implementation contract forbids.
    */
   const writesJob = Boolean(job(opts.job).needs.writesRepo)
   const callerCwd = opts.cwd ?? process.cwd()
@@ -621,13 +624,13 @@ export async function run(opts: {
           readFileSync(root.prompt_path, 'utf8').slice(0, 600),
           '',
           'Do not decide what the spec did not settle; ask.',
-          'Do not commit/push.',
+          workerResumeGuard(opts.job),
         ].join('\n')
       })()
     : ''
   const prompt = writesJob && !opts.resume
     ? [
-        WORKER_PREAMBLE,
+        workerPreamble(opts.job),
         infra ? `\nYOUR WORKTREE'S INFRASTRUCTURE\n\n${infra}` : '',
         docsSection ? `\n${docsSection}` : '',
         `\n---\n\nTHE SPEC\n\n${originalPrompt}`,
@@ -882,6 +885,12 @@ export async function run(opts: {
     throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
   }
 
+  // Git normally writes new blobs into the common object database. Codex may
+  // write only this worktree's metadata directory, so its objects live there
+  // and read the repository's existing objects through a read-only alternate.
+  const gitObjectEnvironment = name === 'codex' && writesJob && worktree
+    ? prepareWorktreeObjects(worktree.path)
+    : undefined
   const argvOpts = {
     prompt,
     out: outPath,
@@ -909,6 +918,10 @@ export async function run(opts: {
       const p = projectAt(callerCwd)
       return p ? (p.settings.agentSandbox ?? 'exec') : 'read-only'
     })(),
+    // Staging writes the linked worktree's index outside its checkout. Grant
+    // that one metadata directory, never the common .git directory around it.
+    writableRoots: writesJob && worktree ? [worktreeGitDir(worktree.path)] : undefined,
+    gitObjectEnvironment,
   }
   const argv = opts.resume
     ? a.resumeArgv!({ ...argvOpts, session: opts.resume.session })

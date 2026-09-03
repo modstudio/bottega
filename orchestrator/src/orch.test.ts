@@ -17,6 +17,7 @@ import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, exist
          realpathSync, mkdirSync, utimesSync, chmodSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 
@@ -51,9 +52,12 @@ const { errorTail, preflight, detachedRunOptions, runFilePaths, pruneRuns, KEEP_
         run: runJob } = await import('./run.ts')
 const run = runJob
 const { summary } = await import('./metric.ts')
-const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE } = await import('./contract.ts')
+const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
+        WORKER_PREAMBLE, LAND_PREAMBLE, workerPreamble, workerResumeGuard,
+        contractConflicts } = await import('./contract.ts')
 const { ask } = await import('./ask.ts')
-const { orphanSafety, repoRootOf, createWorktree, createWithTool, resolveBase, fillTool } = await import('./worktree.ts')
+const { orphanSafety, repoRootOf, createWorktree, createWithTool, resolveBase, fillTool,
+        worktreeGitDir, prepareWorktreeObjects } = await import('./worktree.ts')
 const { AGENTS, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
         WAKE_COOLDOWN_MS, CODEX_EXEC_SANDBOX, strictCodexSchema } = await import('./agents.ts')
@@ -721,6 +725,65 @@ describe('reading the verdict off the command line', () => {
 
   test('a boolean switch does not eat the word after it', () => {
     expect(words(['full', '--quiet', 'right'])).toEqual(['full', 'right'])
+  })
+})
+
+describe('job contracts are visible before submission', () => {
+  const CLI = new URL('cli.ts', import.meta.url).pathname
+  const contract = (jobName: string) => {
+    const p = Bun.spawnSync([process.execPath, CLI, 'contract', jobName], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    return {
+      code: p.exitCode,
+      out: new TextDecoder().decode(p.stdout),
+      err: new TextDecoder().decode(p.stderr),
+    }
+  }
+
+  test('contract prints the same preamble selected when a job is bound', () => {
+    for (const [name, definition] of Object.entries(JOBS)) {
+      const r = contract(name)
+      expect(r.code).toBe(0)
+      expect(r.out).toBe(
+        `${definition.needs.writesRepo ? WORKER_PREAMBLE : READONLY_PREAMBLE}\n`,
+      )
+      expect(r.err).toBe('')
+    }
+  })
+
+  test('contract rejects an unknown job', () => {
+    const r = contract('not-a-job')
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('unknown job "not-a-job"')
+  })
+
+  test('implement conflict warnings identify the original line', () => {
+    const spec = [
+      'Make the requested change.',
+      'Commit it using the DEV-126 prefix.',
+      'Then push the branch.',
+    ].join('\n')
+    expect(contractConflicts(spec)).toEqual([
+      { line: 2, text: 'Commit it using the DEV-126 prefix.' },
+      { line: 3, text: 'Then push the branch.' },
+    ])
+  })
+
+  test('repeating the contract prohibitions is not reported as a conflict', () => {
+    expect(contractConflicts([
+      'Do not commit, push, or merge.',
+      'Never push this branch.',
+      'Make the change without committing it.',
+      'There must be no commits.',
+    ].join('\n'))).toEqual([])
+  })
+
+  test('a prohibition does not hide a conflicting instruction later on its line', () => {
+    expect(contractConflicts('Do not commit. Push the branch instead.')).toEqual([
+      { line: 1, text: 'Do not commit. Push the branch instead.' },
+    ])
   })
 })
 
@@ -2911,8 +2974,7 @@ describe('a writing worker must return evidence of completed work', () => {
       cwd: repo, stdout: 'pipe', stderr: 'pipe',
     })
     if (committed.exitCode !== 0) throw new Error(committed.stderr.toString())
-    const base = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], { cwd: repo, stdout: 'pipe' })
-      .stdout.toString().trim()
+    const tree = createWorktree(repo, 76)
     writeFileSync(script, `process.stdout.write(${JSON.stringify(output)})\n`)
 
     const agent = AGENTS.codex!
@@ -2920,7 +2982,10 @@ describe('a writing worker must return evidence of completed work', () => {
     const origResume = agent.resumeArgv
     const origReadsOut = agent.readsOut
     agent.bin = process.execPath
-    agent.resumeArgv = () => [script]
+    agent.resumeArgv = (o) => {
+      expect(o.writableRoots).toEqual([worktreeGitDir(tree.path)])
+      return [script]
+    }
     agent.readsOut = false
     const priorDepth = process.env.ORCH_DEPTH
     process.env.ORCH_DEPTH = '0'
@@ -2930,11 +2995,11 @@ describe('a writing worker must return evidence of completed work', () => {
     db().query('UPDATE run SET prompt_path=? WHERE id=?').run(rootPrompt, parent)
     try {
       return await runJob({
-        job: 'implement', prompt: 'continue', cwd: repo,
+        job: 'implement', prompt: 'continue', cwd: tree.path,
         resume: {
           parent, agent: 'codex', session: 'test-session', turn: 2,
           sessionId: 'orch-test-session',
-          worktree: { path: repo, branch: 'DEV-76', base, repoRoot: repo },
+          worktree: tree,
         },
       })
     } finally {
@@ -3869,6 +3934,37 @@ describe('only an agent that can be resumed may be asked to escalate', () => {
     expect(j.needs.resumable).toBe(true)
   })
 
+  test('the two hand-rolled job shapes declare their actual bounds', () => {
+    const diagnose = JOBS.diagnose!
+    expect(diagnose.needs).toEqual({ readsRepo: true })
+    expect(diagnose.prefer).toEqual(['codex', 'grok'])
+    expect(diagnose.contextTokens).toBe(JOBS.understand!.contextTokens)
+
+    const land = JOBS.land!
+    expect(land.needs).toEqual({ readsRepo: true, writesRepo: true, resumable: true })
+    expect(land.prefer).toEqual(['codex'])
+    expect(land.contextTokens).toBe(JOBS.fix!.contextTokens)
+    expect(land.timeoutMs).toBe(30 * 60_000)
+  })
+
+  test('land gets its commit contract and other writing jobs keep no-commit', () => {
+    expect(workerPreamble('land')).toBe(LAND_PREAMBLE)
+    expect(LAND_PREAMBLE).toContain('DIFFERENT contract from implement')
+    expect(LAND_PREAMBLE).toContain('You MAY retrieve and')
+    expect(LAND_PREAMBLE).toContain('create\nthe requested commit')
+    expect(LAND_PREAMBLE).toContain('Do NOT push and do NOT merge')
+    expect(LAND_PREAMBLE).toContain('one source run number')
+    expect(LAND_PREAMBLE).toContain('one named target branch')
+    expect(LAND_PREAMBLE).not.toContain('Do NOT commit')
+
+    for (const name of ['implement', 'fix']) {
+      expect(workerPreamble(name)).toBe(WORKER_PREAMBLE)
+      expect(workerPreamble(name)).toContain('Do NOT commit')
+      expect(workerResumeGuard(name)).toBe('Do not commit/push.')
+    }
+    expect(workerResumeGuard('land')).toContain('landing commit is permitted and required')
+  })
+
   test('every agent claiming resumable can actually be resumed', () => {
     // The invariant agents.ts enforces at import, asserted here so the reason
     // is written down where it is checked: a flag in a help text is not a
@@ -4401,6 +4497,85 @@ describe('an agent gets the toolchain of a project someone registered', () => {
     const argv = AGENTS.codex!.argv({ prompt: 'p', out: '/tmp/o', sandbox: 'exec', mcp: true })
     expect(argv).toContain('--approve-for-me')
     expect(argv).not.toContain(CODEX_EXEC_SANDBOX)
+  })
+
+  test('a writing worktree grants codex only its own git metadata directory', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-codex-git-dir-'))
+    const git = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], { cwd: repo, stdout: 'pipe', stderr: 'pipe' })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+    }
+    try {
+      git('init', '-b', 'main')
+      git('config', 'user.email', 'orch-test@example.invalid')
+      git('config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'kept.txt'), 'base\n')
+      git('add', 'kept.txt')
+      git('commit', '-m', 'base')
+      const tree = createWorktree(repo, 125)
+      const ownGitDir = worktreeGitDir(tree.path)
+      const gitObjectEnvironment = prepareWorktreeObjects(tree.path)
+      const argv = AGENTS.codex!.argv({
+        prompt: 'p', out: '/tmp/o', mcp: true, write: true, writableRoots: [ownGitDir],
+        gitObjectEnvironment,
+      })
+      const configs = argv.filter((arg) => arg.includes('='))
+      const writable = configs.find((arg) => arg.startsWith('sandbox_workspace_write.'))!
+
+      expect(JSON.parse(writable.split('=', 2)[1]!)).toEqual([ownGitDir])
+      expect(ownGitDir).toBe(realpathSync(join(repo, '.git', 'worktrees', 'orch-125')))
+      expect(writable).not.toContain(`${realpathSync(join(repo, '.git'))}"]`)
+      for (const [key, value] of Object.entries(gitObjectEnvironment)) {
+        expect(configs).toContain(`shell_environment_policy.set.${key}=${JSON.stringify(value)}`)
+      }
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('orch diff resolves a new blob staged in the worker-local object database', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-isolated-objects-'))
+    const git = (cwd: string, args: string[], env: Record<string, string> = {}) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd, env: { ...process.env, ...env }, stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    try {
+      git(repo, ['init', '-b', 'main'])
+      git(repo, ['config', 'user.email', 'orch-test@example.invalid'])
+      git(repo, ['config', 'user.name', 'Orch Test'])
+      writeFileSync(join(repo, 'kept.txt'), 'base\n')
+      git(repo, ['add', 'kept.txt'])
+      git(repo, ['commit', '-m', 'base'])
+      const tree = createWorktree(repo, 126)
+      const objectEnv = prepareWorktreeObjects(tree.path)
+      const content = `worker-only-${randomUUID()}\n`
+      writeFileSync(join(tree.path, 'new.txt'), content)
+      git(tree.path, ['add', 'new.txt'], objectEnv)
+      const oid = git(tree.path, ['hash-object', 'new.txt'], objectEnv)
+
+      expect(existsSync(join(objectEnv.GIT_OBJECT_DIRECTORY, oid.slice(0, 2), oid.slice(2))))
+        .toBe(true)
+      expect(existsSync(join(repo, '.git', 'objects', oid.slice(0, 2), oid.slice(2))))
+        .toBe(false)
+
+      const id = addRun({ agent: 'codex', job: 'implement' })
+      db().query('UPDATE run SET worktree=?, branch=?, base_commit=? WHERE id=?')
+        .run(tree.path, tree.branch, tree.base, id)
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const diff = Bun.spawnSync([process.execPath, CLI, 'diff', String(id)], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+
+      expect(diff.exitCode).toBe(0)
+      expect(diff.stdout.toString()).toContain('diff --git a/new.txt b/new.txt')
+      expect(diff.stdout.toString()).toContain(`+${content.trim()}`)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
   })
 })
 

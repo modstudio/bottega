@@ -55,10 +55,49 @@ function cwdMissing(cwd: string): boolean {
   return !existsSync(cwd)
 }
 
+export type WorktreeObjectEnvironment = {
+  GIT_OBJECT_DIRECTORY: string
+  GIT_ALTERNATE_OBJECT_DIRECTORIES: string
+}
+
+/** Resolve linked-worktree metadata without invoking git (git itself uses this environment). */
+function linkedWorktreePaths(cwd: string): {
+  gitDir: string
+  commonDir: string
+  objects: string
+} | null {
+  const dotGit = join(cwd, '.git')
+  if (!existsSync(dotGit)) return null
+  let pointer: string
+  try { pointer = readFileSync(dotGit, 'utf8').trim() } catch { return null }
+  if (!pointer.startsWith('gitdir: ')) return null
+  const gitDir = realpathSync(resolve(cwd, pointer.slice('gitdir: '.length)))
+  const commonDir = realpathSync(resolve(gitDir, readFileSync(join(gitDir, 'commondir'), 'utf8').trim()))
+  const worktrees = realpathSync(join(commonDir, 'worktrees'))
+  if (dirname(gitDir) !== worktrees) {
+    throw new Error(
+      `refusing writable git directory ${gitDir}: expected one worktree below ${worktrees}`,
+    )
+  }
+  return { gitDir, commonDir, objects: join(gitDir, 'objects') }
+}
+
+/** Use the isolated object store after it has been provisioned for this worktree. */
+export function worktreeGitEnvironment(cwd: string): WorktreeObjectEnvironment | undefined {
+  const paths = linkedWorktreePaths(cwd)
+  if (!paths || !existsSync(paths.objects)) return undefined
+  return {
+    GIT_OBJECT_DIRECTORY: paths.objects,
+    GIT_ALTERNATE_OBJECT_DIRECTORIES: join(paths.commonDir, 'objects'),
+  }
+}
+
 /** A git invocation that throws with git's own words rather than a bare code. */
 function git(args: string[], cwd: string): string {
   if (cwdMissing(cwd)) throw new Error(`git ${args[0]}: ${cwd} does not exist`)
-  const p = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' })
+  const p = Bun.spawnSync(['git', ...args], {
+    cwd, env: { ...process.env, ...worktreeGitEnvironment(cwd) }, stdout: 'pipe', stderr: 'pipe',
+  })
   if (p.exitCode !== 0) {
     throw new Error(`git ${args.join(' ')} failed: ${p.stderr.toString().trim() || `exit ${p.exitCode}`}`)
   }
@@ -68,7 +107,9 @@ function git(args: string[], cwd: string): string {
 /** Same, but a failure is an answer rather than an error. */
 function gitOk(args: string[], cwd: string): string | null {
   if (cwdMissing(cwd)) return null
-  const p = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' })
+  const p = Bun.spawnSync(['git', ...args], {
+    cwd, env: { ...process.env, ...worktreeGitEnvironment(cwd) }, stdout: 'pipe', stderr: 'pipe',
+  })
   return p.exitCode === 0 ? p.stdout.toString().trim() : null
 }
 
@@ -88,7 +129,9 @@ function gitOk(args: string[], cwd: string): string | null {
  */
 function gitRaw(args: string[], cwd: string): string {
   if (cwdMissing(cwd)) return ''
-  const p = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' })
+  const p = Bun.spawnSync(['git', ...args], {
+    cwd, env: { ...process.env, ...worktreeGitEnvironment(cwd) }, stdout: 'pipe', stderr: 'pipe',
+  })
   return p.exitCode === 0 ? p.stdout.toString() : ''
 }
 
@@ -110,6 +153,28 @@ export function repoRootOf(cwd: string): string | null {
   )
   if (!common) return null
   return dirname(common)
+}
+
+/**
+ * The metadata directory belonging to THIS linked worktree, and no other git state.
+ *
+ * A writing worker needs its index so `git add`/`git rm`-aware gates can run,
+ * but granting the common `.git` directory would also expose refs, objects and
+ * the main checkout's config. Resolve the linked-worktree pointers, then require the
+ * result to be one immediate child of the common directory's `worktrees/`.
+ */
+export function worktreeGitDir(cwd: string): string {
+  const paths = linkedWorktreePaths(cwd)
+  if (!paths) throw new Error(`refusing writable git directory: ${cwd} is not a linked worktree`)
+  return paths.gitDir
+}
+
+/** Create the worker-local object database and describe how git must read it. */
+export function prepareWorktreeObjects(cwd: string): WorktreeObjectEnvironment {
+  const paths = linkedWorktreePaths(cwd)
+  if (!paths) throw new Error(`cannot isolate git objects: ${cwd} is not a linked worktree`)
+  mkdirSync(paths.objects, { recursive: true })
+  return worktreeGitEnvironment(cwd)!
 }
 
 export type OrphanSafety = {

@@ -631,12 +631,15 @@ freely and is *told* not to commit, push or merge: landing a change is the
 architect's decision under the project's own ship knobs, which an external agent
 has never read.
 
-That is an INSTRUCTION, not an enforcement, and the difference matters. Nothing
-in the sandbox stops a worker running `git commit` inside its own worktree, and
-no post-run check looks. What actually bounds the damage is the worktree and the
-branch: whatever it does lands somewhere disposable that nothing else builds on,
-and `orch discard` throws it away. Do not read "never commits" as a guarantee —
-read the diff. `orch diff <id>` is the deliverable — what it DID, as against `orch result`,
+The sandbox permits edits in the throwaway checkout and staging through that
+worktree's own `.git/worktrees/<name>/` metadata directory, so gates that inspect
+the index can run. New blobs go into an isolated object database inside that
+directory and read existing blobs from the common object database as a read-only
+alternate. It does not grant the common `.git` directory: the main checkout's
+refs, objects and config remain unwritable. Committing, pushing and
+merging are still forbidden by instruction, and no post-run check enforces that
+instruction. Do not read "never commits" as a guarantee — read the diff. `orch
+diff <id>` is the deliverable — what it DID, as against `orch result`,
 which is what it SAID. Those are different claims, and checking an agent's work
 against its own summary checks nothing.
 
@@ -1340,4 +1343,3 @@ too. The repo's `.githooks/commit-msg` refuses the same patterns for any commit
 made outside the tool. The harness appends these trailers by default and will
 keep trying; the rule is the house's, and the hook is what makes it hold.
 Enable the git side once per clone with `git config core.hooksPath .githooks`.
-

@@ -70,6 +70,13 @@ export const JOBS: Record<string, Job> = {
     prefer: ['grok', 'codex'],
     contextTokens: DEEP,
   },
+  diagnose: {
+    name: 'diagnose',
+    what: 'Investigate what is actually true before a spec exists. Correlate repository, database, and process evidence without changing anything.',
+    needs: { readsRepo: true },
+    prefer: ['codex', 'grok'],
+    contextTokens: DEEP,
+  },
   'review-lens': {
     name: 'review-lens',
     what: 'Review a change through one named dimension, under a fixed return contract.',
@@ -181,6 +188,21 @@ export const JOBS: Record<string, Job> = {
     prefer: ['codex'],
     contextTokens: ERRAND,
     // Narrower than `implement` by design, but still a build-and-verify cycle.
+    timeoutMs: 30 * 60_000,
+  },
+  /**
+   * Apply an already-produced run to a named branch and prove it passes before
+   * committing it. This is intentionally not `fix`: there is no code change to
+   * design or make, only an approved diff to transfer and verify. It still
+   * needs resumability because a missing or ambiguous source run or target
+   * branch must go back to the architect rather than be guessed.
+   */
+  land: {
+    name: 'land',
+    what: 'Apply one run’s diff to a named branch, run its gates, and commit it. Never push or merge.',
+    needs: { readsRepo: true, writesRepo: true, resumable: true },
+    prefer: ['codex'],
+    contextTokens: ERRAND,
     timeoutMs: 30 * 60_000,
   },
   'mcp-query': {
