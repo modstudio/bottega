@@ -27,6 +27,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { db, ROOT } from './db.ts'
 import { projectAt, type WorktreeTool } from './projects.ts'
 import { runRecipe, teardownRecipe, dbNameFor, type Recipe } from './recipe.ts'
+import { mainCheckoutOf } from '../../shared/git.ts'
 
 export type Worktree = {
   /** Where the worker actually runs. */
@@ -177,12 +178,7 @@ function gitBytes(args: string[], cwd: string): Buffer {
  * `.git`; the working tree sits next to it.
  */
 export function repoRootOf(cwd: string): string | null {
-  const common = gitOk(
-    ['rev-parse', '--path-format=absolute', '--git-common-dir'],
-    cwd,
-  )
-  if (!common) return null
-  return dirname(common)
+  return mainCheckoutOf(cwd, worktreeGitEnvironment(cwd))
 }
 
 /**

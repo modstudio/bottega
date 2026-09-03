@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { db, nextImportedTaskKey, nowIso } from './db.ts'
+import { db, nextImportedTaskKey, nowIso, requireDatabase } from './db.ts'
 import { readFileSync } from 'node:fs'
 import { ingestRuns } from './ingest/runs.ts'
 import { ingestTranscripts } from './ingest/transcripts.ts'
@@ -313,6 +313,15 @@ async function sendReport() {
  * orch has wrapped its dispatch this way for exactly this reason; hub had not.
  */
 try {
+
+// Collection and the two task-creation commands intentionally initialise a
+// machine's store. Every other data command is a query or mutation of existing
+// state and must not turn a missing store into a confident empty answer.
+const initialisesDatabase = cmd === 'collect'
+  || (cmd === 'task' && (argv[1] === 'new' || argv[1] === 'import'))
+const usesDatabase = cmd === 'collect' || cmd === 'tasks' || cmd === 'serve'
+  || cmd === 'task' || cmd === 'send'
+if (usesDatabase && !initialisesDatabase) requireDatabase()
 
 switch (cmd) {
   case 'collect':

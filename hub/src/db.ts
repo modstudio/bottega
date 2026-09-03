@@ -1,13 +1,31 @@
 import { Database } from 'bun:sqlite'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { mainCheckoutOf } from '../../shared/git.ts'
 
 export type { Project } from './projects.ts'
 
-const DB_PATH = process.env.HUB_DB ?? new URL('../hub.db', import.meta.url).pathname
+const checkout = new URL('../..', import.meta.url).pathname
+const mainCheckout = mainCheckoutOf(checkout)
+const DB_PATH = process.env.HUB_DB ?? (mainCheckout ? join(mainCheckout, 'hub', 'hub.db') : null)
 
 let handle: Database | null = null
 
+/** Refuse a query when there is no store to query; never manufacture an empty finding. */
+export function requireDatabase(): void {
+  if (!DB_PATH) {
+    throw new Error(`cannot resolve hub database: ${checkout} has no main git checkout`)
+  }
+  if (!existsSync(DB_PATH)) {
+    throw new Error(`hub database is absent at ${DB_PATH}; cannot answer from missing data`)
+  }
+}
+
 export function db(): Database {
   if (handle) return handle
+  if (!DB_PATH) {
+    throw new Error(`cannot resolve hub database: ${checkout} has no main git checkout`)
+  }
   handle = new Database(DB_PATH, { create: true })
   handle.exec('PRAGMA journal_mode = WAL')
   // A collect run and a serving dashboard write and read the same file, and a

@@ -11,8 +11,12 @@ const decoder = new TextDecoder()
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
 function hub(...args: string[]) {
+  return hubAt(database, ...args)
+}
+
+function hubAt(path: string, ...args: string[]) {
   const result = Bun.spawnSync(['bun', cli, ...args], {
-    env: { ...process.env, HUB_DB: database },
+    env: { ...process.env, HUB_DB: path },
     stdout: 'pipe',
     stderr: 'pipe',
   })
@@ -30,6 +34,17 @@ function show(key: string) {
 }
 
 describe('task CLI bodies', () => {
+  test('queries refuse an absent database instead of reporting an empty finding', () => {
+    const absent = join(dir, 'absent.db')
+    for (const args of [['task', 'show', 'DEV-154'], ['task', 'list'], ['tasks']]) {
+      const result = hubAt(absent, ...args)
+      expect(result.exitCode).toBe(1)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).toContain('hub database is absent')
+      expect(result.stderr).toContain('cannot answer from missing data')
+    }
+  })
+
   test('creates a task complete with an argv body in one command', () => {
     const created = hub('task', 'new', '--project', 'workshop', '--title', 'Complete task',
       '--body', 'The complete body')
