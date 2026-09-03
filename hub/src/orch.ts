@@ -40,6 +40,7 @@ async function orch(
     )
   }
   const proc = Bun.spawn([ORCH, ...args], {
+    env: { ...process.env },
     stdout: 'pipe',
     stderr: 'pipe',
     stdin: opts.stdin !== undefined ? Buffer.from(opts.stdin) : 'ignore',
