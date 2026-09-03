@@ -1,4 +1,4 @@
-import { expect, test, describe } from 'bun:test'
+import { expect, test, describe, spyOn } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -19,12 +19,90 @@ const { projectColor, projectNames } = await import('./projects.ts')
 const { ingestTrackers, upsertTrackerTask, resolveAssigneeIds } =
   await import('./ingest/trackers.ts')
 const { createTask, showTask } = await import('./task.ts')
+const { ingestRuns } = await import('./ingest/runs.ts')
 
 process.on('exit', () => {
   try { rmSync(testDir, { recursive: true, force: true }) } catch {}
 })
 
 const at = (iso: string) => new Date(iso).getTime()
+
+const runFixture = (overrides: Record<string, unknown> = {}) => ({
+  id: 9001,
+  started_at: '2026-09-03T00:00:00.000Z',
+  agent: 'grok',
+  job: 'implement',
+  repo: 'alpha',
+  cwd: '/fixtures/repos/alpha/.claude/worktrees/ALP-118',
+  session_id: null,
+  latency_ms: null,
+  vendor_tokens: null,
+  vendor_cost_usd: null,
+  prompt_head: 'Implement ALP-118',
+  prompt_path: null,
+  branch: 'ALP-118',
+  probe: 0,
+  status: 'running',
+  delivery: null,
+  quality: null,
+  ...overrides,
+})
+
+async function ingestRunFixtures(...runs: ReturnType<typeof runFixture>[]) {
+  const spawn = spyOn(Bun, 'spawn').mockImplementation((() => ({
+    stdout: new Blob([runs.map((run) => JSON.stringify(run)).join('\n')]),
+    stderr: new Blob(['']),
+    exited: Promise.resolve(0),
+  })) as unknown as typeof Bun.spawn)
+  try {
+    return await ingestRuns('2026-09-01T00:00:00.000Z')
+  } finally {
+    spawn.mockRestore()
+  }
+}
+
+describe('run ingest', () => {
+  test('routing replaces a pending reservation with the real interval', async () => {
+    await ingestRunFixtures(runFixture({ id: 9101, agent: '(pending)' }))
+    await ingestRunFixtures(runFixture({
+      id: 9101,
+      started_at: '2026-09-03T00:00:00.200Z',
+      agent: 'grok',
+      latency_ms: 5000,
+      status: 'delivered',
+    }))
+
+    const intervals = db().query(
+      `SELECT agent, start_at, open FROM interval WHERE source = 'orch' AND ref = 'orch:9101'`,
+    ).all() as { agent: string; start_at: string; open: number }[]
+    expect(intervals).toEqual([{
+      agent: 'grok',
+      start_at: '2026-09-03T00:00:00.200Z',
+      open: 0,
+    }])
+  })
+
+  test('a stale run closes the interval recorded while it was running', async () => {
+    await ingestRunFixtures(runFixture({ id: 9102 }))
+    const result = await ingestRunFixtures(runFixture({ id: 9102, status: 'stale' }))
+
+    const intervals = db().query(
+      `SELECT open FROM interval WHERE source = 'orch' AND ref = 'orch:9102'`,
+    ).all() as { open: number }[]
+    expect(intervals).toEqual([{ open: 0 }])
+    expect(result).toEqual({ rows: 0, skipped: 1 })
+  })
+
+  test('an in-flight run stays open', async () => {
+    const result = await ingestRunFixtures(runFixture({ id: 9103 }))
+
+    const interval = db().query(
+      `SELECT open FROM interval WHERE source = 'orch' AND ref = 'orch:9103'`,
+    ).get() as { open: number }
+    expect(interval.open).toBe(1)
+    expect(result).toEqual({ rows: 1, skipped: 0 })
+  })
+})
 
 describe('interval union', () => {
   test('a span on its own is its own length', () => {

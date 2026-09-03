@@ -68,6 +68,12 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
        via             = excluded.via,
        open            = excluded.open`,
   )
+  const close = d.query(
+    `UPDATE interval SET open = 0 WHERE source = 'orch' AND ref = ?`,
+  )
+  const removeOtherStarts = d.query(
+    `DELETE FROM interval WHERE source = 'orch' AND ref = ? AND start_at <> ?`,
+  )
 
   let rows = 0
   let skipped = 0
@@ -84,10 +90,14 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
       // precisely the run the "working now" column exists to show. It runs to
       // NOW, and the upsert corrects the end when the run finishes.
       //
-      // A run that died without writing its outcome would otherwise grow
-      // forever, so a run with no latency and a non-running status contributes
-      // nothing rather than an open-ended span.
-      if (r.latency_ms == null && r.status !== 'running') { skipped++; continue }
+      // A run that died without writing its outcome contributes no new span,
+      // but an earlier collect may have recorded it while it was running. Close
+      // that existing span or it would remain open and grow forever.
+      if (r.latency_ms == null && r.status !== 'running') {
+        close.run(`orch:${r.id}`)
+        skipped++
+        continue
+      }
       const end = r.latency_ms == null ? Math.max(now, start) : start + r.latency_ms
 
       // The prompt head is searched for a key only as a last resort, and it is
@@ -116,6 +126,7 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
         r.vendor_tokens ?? 0, r.vendor_cost_usd, `orch:${r.id}`, a.via,
         r.latency_ms == null ? 1 : 0,
       )
+      removeOtherStarts.run(`orch:${r.id}`, new Date(start).toISOString())
       rows++
     }
   })
