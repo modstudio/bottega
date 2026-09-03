@@ -5814,6 +5814,46 @@ describe('an agent gets the toolchain of a project someone registered', () => {
     }
   })
 
+  test('the shared-ref guard does not run project hooks in a scratch repository', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-project-hooks-'))
+    const scratch = mkdtempSync(join(tmpdir(), 'orch-unrelated-scratch-'))
+    const cleanConfig = { GIT_CONFIG_COUNT: '0' }
+    const git = (cwd: string, args: string[], env: Record<string, string> = cleanConfig) =>
+      Bun.spawnSync(['git', ...args], {
+        cwd, env: hermeticGitEnv(env), stdout: 'pipe', stderr: 'pipe',
+      })
+    try {
+      expect(git(repo, ['init', '-b', 'main']).exitCode).toBe(0)
+      expect(git(repo, ['config', 'user.email', 'orch-test@example.invalid']).exitCode).toBe(0)
+      expect(git(repo, ['config', 'user.name', 'Orch Test']).exitCode).toBe(0)
+      const projectHooks = join(repo, '.githooks')
+      mkdirSync(projectHooks)
+      writeFileSync(join(projectHooks, 'commit-msg'), '#!/bin/sh\nexit 1\n')
+      chmodSync(join(projectHooks, 'commit-msg'), 0o755)
+      expect(git(repo, ['config', 'core.hooksPath', '.githooks']).exitCode).toBe(0)
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      expect(git(repo, ['add', 'base.txt']).exitCode).toBe(0)
+      expect(git(repo, ['commit', '--no-verify', '-m', 'base']).exitCode).toBe(0)
+      const tree = createWorktree(repo, 156)
+
+      const guardEnv = prepareSharedRefGuard(tree.path)
+      expect(readdirSync(join(worktreeGitDir(tree.path), 'orch-hooks')))
+        .toEqual(['reference-transaction'])
+
+      expect(git(scratch, ['init', '-b', 'main'], guardEnv).exitCode).toBe(0)
+      expect(git(scratch, ['config', 'user.email', 'orch-test@example.invalid'], guardEnv).exitCode).toBe(0)
+      expect(git(scratch, ['config', 'user.name', 'Orch Test'], guardEnv).exitCode).toBe(0)
+      writeFileSync(join(scratch, 'fixture.txt'), 'fixture\n')
+      expect(git(scratch, ['add', 'fixture.txt'], guardEnv).exitCode).toBe(0)
+      const committed = git(scratch, ['commit', '-m', 'test fixture'], guardEnv)
+      expect(committed.exitCode).toBe(0)
+      expect(committed.stderr.toString()).toBe('')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(scratch, { recursive: true, force: true })
+    }
+  })
+
   test('a land commit is reachable from the common object store', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-land-common-objects-'))
     const git = (cwd: string, args: string[], env: Record<string, string> = {}) => {

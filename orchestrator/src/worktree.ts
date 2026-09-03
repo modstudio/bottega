@@ -22,7 +22,7 @@
  * worktree. No worker pushes.
  */
 import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, readFileSync, realpathSync,
-         readdirSync, symlinkSync, writeFileSync } from 'node:fs'
+         readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { db, ROOT } from './db.ts'
 import { projectAt, type WorktreeTool } from './projects.ts'
@@ -212,16 +212,19 @@ export function prepareSharedRefGuard(cwd: string): SharedRefGuardEnvironment {
   const hookDir = join(paths.gitDir, 'orch-hooks')
   mkdirSync(hookDir, { recursive: true })
 
+  // core.hooksPath is injected into the worker's process environment, not
+  // configured for this repository. It therefore reaches every scratch
+  // repository the worker touches. Project hooks such as commit-msg have no
+  // business running there (and workers do not commit here by contract), so
+  // this directory carries only the ref-update guard.
+  for (const name of readdirSync(hookDir)) {
+    if (name !== 'reference-transaction') rmSync(join(hookDir, name), { recursive: true, force: true })
+  }
+
   const configured = gitOk(['config', '--path', 'core.hooksPath'], cwd)
   const originalDir = configured
     ? (configured.startsWith('/') ? configured : resolve(cwd, configured))
     : join(paths.commonDir, 'hooks')
-  if (existsSync(originalDir) && realpathSync(originalDir) !== realpathSync(hookDir)) {
-    for (const name of readdirSync(originalDir)) {
-      if (name === 'reference-transaction' || existsSync(join(hookDir, name))) continue
-      symlinkSync(join(originalDir, name), join(hookDir, name))
-    }
-  }
 
   const guard = join(ROOT, 'hooks', 'reference-transaction')
   const originalReferenceHook = join(originalDir, 'reference-transaction')
