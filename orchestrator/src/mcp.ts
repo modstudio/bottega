@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
-import { docsMarkdown, getDoc, listDocs, setDoc } from './docs.ts'
+import { consumeDoc, docsMarkdown, getDoc, listDocs, setDoc } from './docs.ts'
 import { projectByName, projects } from './projects.ts'
 
 const text = (value: unknown) => ({
@@ -49,6 +49,13 @@ export function createDocsMcpServer(): McpServer {
     },
   }, async ({ scope, subject, slug, title, body }) =>
     text(setDoc({ scope, subject: subject ?? null, slug, title, body })))
+
+  server.registerTool('consume_doc', {
+    description: 'Mark an operator document consumed without rewriting its body.',
+    inputSchema: {
+      scope: z.string(), subject: z.string().nullable().optional(), slug: z.string(),
+    },
+  }, async ({ scope, subject, slug }) => text(consumeDoc(scope, subject ?? null, slug)))
 
   return server
 }

@@ -623,6 +623,7 @@ function usage(): never {
   orch doc list [--scope S] [--subject X] [--json]
       show <slug> --scope S [--subject X] [--json]
       set <slug> --scope S [--subject X] --title T (--file F | body on stdin) [--json]
+      consume <slug> --scope S [--subject X] [--json]
       rm <slug> --scope S [--subject X] [--json]
       subjects [--json]
       export <dir> | import <dir> | brief [--cwd P] | resumes [--cwd P]
@@ -773,7 +774,7 @@ switch (cmd) {
   }
 
   case 'doc': {
-    const { listDocs, getDoc, setDoc, removeDoc, exportDocs, importDocs, brief, docSubjects,
+    const { listDocs, getDoc, setDoc, consumeDoc, removeDoc, exportDocs, importDocs, brief, docSubjects,
             listOpenResumes } =
       await import('./docs.ts')
     const sub = argv[1] ?? 'list'
@@ -814,6 +815,16 @@ switch (cmd) {
       console.log(has('json') ? JSON.stringify(doc) : `set ${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`)
       break
     }
+    if (sub === 'consume') {
+      const slug = argv[2]
+      if (!slug || !scope) throw new Error('orch doc consume <slug> --scope S [--subject X]')
+      const result = consumeDoc(scope, subject, slug)
+      if (has('json')) { console.log(JSON.stringify(result)); break }
+      console.log(result.already_consumed
+        ? `already consumed ${result.scope}/${result.subject ?? '_'}/${result.slug}`
+        : `consumed ${result.scope}/${result.subject ?? '_'}/${result.slug}`)
+      break
+    }
     if (sub === 'rm') {
       const slug = argv[2]
       if (!slug || !scope) throw new Error('orch doc rm <slug> --scope S [--subject X]')
@@ -848,7 +859,7 @@ switch (cmd) {
       }
       break
     }
-    throw new Error(`unknown: orch doc ${sub}. Try list | show | set | rm | subjects | export | import | brief | resumes`)
+    throw new Error(`unknown: orch doc ${sub}. Try list | show | set | consume | rm | subjects | export | import | brief | resumes`)
   }
 
   case 'mcp': {

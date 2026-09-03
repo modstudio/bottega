@@ -95,7 +95,7 @@ const { orphanSafety, repoRootOf, createWorktree, createWithTool, resolveBase, f
 const { AGENTS, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
         WAKE_COOLDOWN_MS, CODEX_EXEC_SANDBOX, strictCodexSchema } = await import('./agents.ts')
-const { listDocs, getDoc, setDoc, removeDoc, docsForRun, exportDocs, importDocs, brief, docSubjects,
+const { listDocs, getDoc, setDoc, consumeDoc, removeDoc, docsForRun, exportDocs, importDocs, brief, docSubjects,
         listOpenResumes, parseResumeFrontmatter, resumeAge } =
   await import('./docs.ts')
 const { createDocsMcpServer } = await import('./mcp.ts')
@@ -6121,6 +6121,10 @@ describe('scoped operator docs', () => {
 
   test('MCP list_docs and get_doc work through linked in-memory transports', async () => {
     setDoc({ scope: 'global', subject: null, slug: 'mcp', title: 'MCP', body: 'Visible' })
+    setDoc({
+      scope: 'global', subject: null, slug: 'mcp-consume', title: 'MCP consume',
+      body: '---\nstatus: open\n---\n\nVisible\n',
+    })
     const server = createDocsMcpServer()
     const client = new Client({ name: 'orch-test', version: '1.0.0' })
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
@@ -6129,10 +6133,16 @@ describe('scoped operator docs', () => {
     try {
       const listed = await client.callTool({ name: 'list_docs', arguments: { scope: 'global' } })
       const fetched = await client.callTool({ name: 'get_doc', arguments: { scope: 'global', slug: 'mcp' } })
+      const consumed = await client.callTool({
+        name: 'consume_doc', arguments: { scope: 'global', slug: 'mcp-consume' },
+      })
       const listedText = ((listed as any).content[0] as { text: string }).text
       const fetchedText = ((fetched as any).content[0] as { text: string }).text
-      expect(JSON.parse(listedText)).toHaveLength(1)
+      const consumedText = ((consumed as any).content[0] as { text: string }).text
+      expect(JSON.parse(listedText)).toHaveLength(2)
       expect(JSON.parse(fetchedText).body).toBe('Visible')
+      expect(JSON.parse(consumedText)).toMatchObject({ already_consumed: false })
+      expect(getDoc('global', null, 'mcp-consume')?.body).toContain('status: consumed')
     } finally {
       await client.close()
       await server.close()
@@ -6184,6 +6194,45 @@ describe('scoped operator docs', () => {
     expect(r.code).toBe(0)
     expect(JSON.parse(r.out).body).toBe(body)
     expect(getDoc('global', null, 'round-trip')?.body).toBe(body)
+  })
+
+  test('orch doc consume stamps the session and preserves the document outside its fields', () => {
+    const body = '---\r\nstatus: open\r\nepic: demo\r\nproject: known\r\nwritten: 2026-09-03T00:00:00.000Z\r\n---\r\n\r\nNEXT ACTION  \r\n'
+    setDoc({ scope: 'global', subject: null, slug: 'take-it', title: 'Take it', body })
+    const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+    process.env.CLAUDE_CODE_SESSION_ID = 'consume-test-session'
+    try {
+      const r = orchCli(['doc', 'consume', 'take-it', '--scope', 'global', '--json'])
+      expect(r.code).toBe(0)
+      const result = JSON.parse(r.out)
+      expect(result.already_consumed).toBe(false)
+      const consumed = getDoc('global', null, 'take-it')!.body
+      expect(consumed).toMatch(/^---\r\nstatus: consumed\r\nconsumed: \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\r\nconsumed_by: consume-test-session\r\nepic:/)
+      expect(consumed.slice(consumed.indexOf('epic:'))).toBe(body.slice(body.indexOf('epic:')))
+      expect(parseResumeFrontmatter(consumed)).toMatchObject({
+        status: 'consumed', consumed_by: 'consume-test-session',
+      })
+    } finally {
+      if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+      else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+    }
+  })
+
+  test('orch doc consume reports an already-consumed document without rewriting it', () => {
+    const body = '---\nstatus: consumed\nconsumed: 2026-09-03T01:02:03.000Z\nconsumed_by: first-session\nepic: demo\n---\n\nBODY\n'
+    setDoc({ scope: 'global', subject: null, slug: 'taken', title: 'Taken', body })
+    const before = getDoc('global', null, 'taken')!
+    const r = orchCli(['doc', 'consume', 'taken', '--scope', 'global', '--json'])
+    expect(r.code).toBe(0)
+    expect(JSON.parse(r.out).already_consumed).toBe(true)
+    expect(getDoc('global', null, 'taken')).toEqual(before)
+  })
+
+  test('consumeDoc rejects documents without frontmatter or a status field', () => {
+    setDoc({ scope: 'global', subject: null, slug: 'plain', title: 'Plain', body: 'BODY\n' })
+    setDoc({ scope: 'global', subject: null, slug: 'statusless', title: 'Statusless', body: '---\nepic: demo\n---\nBODY\n' })
+    expect(() => consumeDoc('global', null, 'plain')).toThrow('has no YAML frontmatter')
+    expect(() => consumeDoc('global', null, 'statusless')).toThrow('has no status field')
   })
 
   const resumeBody = (status: string, written?: string) => {
@@ -6311,12 +6360,12 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
     const coldOut = cold.stdout.toString()
     expect(coldOut).toContain(listLine)
     expect(coldOut).toContain(
-      'Open resume brief `epic-name`. Ask whether to load it before fetching with get_doc; do not consume it unless the operator agrees.',
+      'Open resume brief `epic-name`. Ask whether to load it before fetching with get_doc; after they agree and it is loaded, run orch doc consume.',
     )
     expect(coldOut).not.toContain('SECRET BODY')
     const cont = runBrief({ cwd: '/w/known', source: 'clear' })
     expect(cont.stdout.toString()).toContain(
-      'Open resume brief `epic-name`. Offer to resume from it; fetch with get_doc only after they agree, then mark consumed with set_doc.',
+      'Open resume brief `epic-name`. Offer to resume from it; fetch with get_doc only after they agree, then run orch doc consume.',
     )
     const resumeSrc = runBrief({ cwd: '/w/known', source: 'resume' })
     expect(resumeSrc.stdout.toString()).toContain('Ask whether to load it')
@@ -6336,11 +6385,11 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
     })
     const cold = runBrief({ cwd: '/w/known', source: 'startup' })
     expect(cold.stdout.toString()).toContain(
-      'Open resume briefs above. Ask which (if any) to load before fetching with get_doc; do not consume unless they agree.',
+      'Open resume briefs above. Ask which (if any) to load before fetching with get_doc; after they agree and one is loaded, run orch doc consume.',
     )
     const cont = runBrief({ cwd: '/w/known', source: 'compact' })
     expect(cont.stdout.toString()).toContain(
-      'Open resume briefs above. Offer to resume from one of them; fetch with get_doc only after they agree, then mark consumed with set_doc.',
+      'Open resume briefs above. Offer to resume from one of them; fetch with get_doc only after they agree, then run orch doc consume.',
     )
   })
 

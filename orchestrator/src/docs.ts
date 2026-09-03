@@ -13,7 +13,7 @@ import {
   DOC_SCOPES, DOC_SCOPE_SUBJECT_KIND, type DocScope,
 } from '../../shared/docs.ts'
 import { AGENTS } from './agents.ts'
-import { db, nowIso } from './db.ts'
+import { db, nowIso, sessionId } from './db.ts'
 import { JOBS } from './jobs.ts'
 import { projectAt, projectByName } from './projects.ts'
 
@@ -122,6 +122,51 @@ export function removeDoc(scope: string, subject: string | null, slug: string): 
   ).run(scope, subject, slug).changes > 0
 }
 
+export type ConsumedDoc = Doc & { already_consumed: boolean }
+
+/**
+ * Consuming a resume changes metadata inside a body whose exact text is the
+ * recovery artifact. Patch only the three named fields instead of parsing and
+ * serializing YAML, which would rewrite unrelated whitespace and ordering.
+ */
+export function consumeDoc(scope: string, subject: string | null, slug: string): ConsumedDoc {
+  const doc = getDoc(scope, subject, slug)
+  if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
+
+  const frontmatter = doc.body.match(/^---(\r?\n)([\s\S]*?)(\r?\n)---(?=\r?\n|$)/)
+  if (!frontmatter) throw new Error(`${scope} doc "${slug}" has no YAML frontmatter`)
+  const newline = frontmatter[1]!
+  let yaml = frontmatter[2]!
+  const field = (name: string) =>
+    new RegExp(`(^|\\r?\\n)([ \\t]*${name}[ \\t]*:[ \\t]*)([^\\r\\n]*)(?=\\r?\\n|$)`, 'm')
+  const status = yaml.match(field('status'))
+  if (!status) throw new Error(`${scope} doc "${slug}" has no status field in its YAML frontmatter`)
+  const statusValue = status[3]!.trim().replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, '$1$2')
+  if (statusValue === 'consumed') return { ...doc, already_consumed: true }
+
+  yaml = yaml.replace(field('status'), `$1$2consumed`)
+  const consumedAt = nowIso()
+  const stamps = [
+    ['consumed', consumedAt],
+    ['consumed_by', String(sessionId())],
+  ] as const
+  const missing: string[] = []
+  for (const [name, value] of stamps) {
+    const pattern = field(name)
+    if (pattern.test(yaml)) yaml = yaml.replace(pattern, `$1$2${value}`)
+    else missing.push(`${name}: ${value}`)
+  }
+  if (missing.length) {
+    yaml = yaml.replace(field('status'), `$1$2$3${newline}${missing.join(newline)}`)
+  }
+
+  const contentStart = frontmatter.index! + 3 + newline.length
+  const body = doc.body.slice(0, contentStart) + yaml
+    + doc.body.slice(contentStart + frontmatter[2]!.length)
+  db().query('UPDATE doc SET body=?, updated_at=? WHERE id=?').run(body, consumedAt, doc.id)
+  return { ...getDoc(scope, subject, slug)!, already_consumed: false }
+}
+
 export function docsForRun(input: { job: string; cwd: string }): Doc[] {
   const project = projectAt(input.cwd)
   return [
@@ -143,7 +188,7 @@ export function brief(cwd: string): string {
   ])
 }
 
-const RESUME_FRONTMATTER_KEYS = ['status', 'epic', 'project', 'written', 'consumed'] as const
+const RESUME_FRONTMATTER_KEYS = ['status', 'epic', 'project', 'written', 'consumed', 'consumed_by'] as const
 export type ResumeFrontmatter = { [K in typeof RESUME_FRONTMATTER_KEYS[number]]?: string }
 
 /**

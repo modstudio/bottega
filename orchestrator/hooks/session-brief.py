@@ -42,20 +42,20 @@ def _resume_sentence(source, lines):
         if continuation:
             return (
                 f"Open resume brief `{slug}`. Offer to resume from it; "
-                "fetch with get_doc only after they agree, then mark consumed with set_doc."
+                "fetch with get_doc only after they agree, then run orch doc consume."
             )
         return (
             f"Open resume brief `{slug}`. Ask whether to load it before fetching with get_doc; "
-            "do not consume it unless the operator agrees."
+            "after they agree and it is loaded, run orch doc consume."
         )
     if continuation:
         return (
             "Open resume briefs above. Offer to resume from one of them; "
-            "fetch with get_doc only after they agree, then mark consumed with set_doc."
+            "fetch with get_doc only after they agree, then run orch doc consume."
         )
     return (
         "Open resume briefs above. Ask which (if any) to load before fetching with get_doc; "
-        "do not consume unless they agree."
+        "after they agree and one is loaded, run orch doc consume."
     )
 
 
