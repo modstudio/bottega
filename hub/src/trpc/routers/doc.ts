@@ -1,11 +1,12 @@
 import { TRPCError, initTRPC } from '@trpc/server'
 import { z } from 'zod'
+import { DOC_SCOPES } from '../../../../shared/docs.ts'
 import { docGet, docList, docRemove, docSet, docSubjects } from '../../orch.ts'
 import type { Context } from '../context.ts'
 
 const t = initTRPC.context<Context>().create()
 
-const scope = z.enum(['project', 'machine', 'agent', 'job', 'global'])
+const scope = z.enum(DOC_SCOPES)
 const subject = z.string().nullable()
 
 async function fromOrch<T>(fn: () => Promise<T>): Promise<T> {

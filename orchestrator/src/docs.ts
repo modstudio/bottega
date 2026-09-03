@@ -9,13 +9,15 @@
  */
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import {
+  DOC_SCOPES, DOC_SCOPE_SUBJECT_KIND, type DocScope,
+} from '../../shared/docs.ts'
 import { AGENTS } from './agents.ts'
 import { db, nowIso } from './db.ts'
 import { JOBS } from './jobs.ts'
 import { projectAt, projectByName } from './projects.ts'
 
-export const DOC_SCOPES = ['project', 'machine', 'agent', 'job', 'global', 'resume'] as const
-export type DocScope = typeof DOC_SCOPES[number]
+export { DOC_SCOPES, type DocScope }
 
 export type Doc = {
   id: number
@@ -39,18 +41,19 @@ function validate(scope: string, subject: string | null, slug: string): asserts 
   if (!/^[a-z0-9][a-z0-9-]*$/.test(slug) || slug.length > 64) {
     throw new Error('invalid slug; use 1-64 lowercase letters, digits, or hyphens, starting with a letter or digit')
   }
-  if (scope === 'machine' || scope === 'global') {
+  const subjectKind = DOC_SCOPE_SUBJECT_KIND[scope]
+  if (subjectKind === null) {
     if (subject !== null) throw new Error(`${scope} docs take no subject; remove --subject`)
     return
   }
   if (!subject) throw new Error(`${scope} docs require --subject; valid values: ${validSubjects(scope)}`)
-  if ((scope === 'project' || scope === 'resume') && !projectByName(subject)) {
+  if (subjectKind === 'project' && !projectByName(subject)) {
     throw new Error(`unknown project subject "${subject}"; valid values: ${validSubjects(scope)}`)
   }
-  if (scope === 'agent' && !AGENTS[subject]) {
+  if (subjectKind === 'agent' && !AGENTS[subject]) {
     throw new Error(`unknown agent subject "${subject}"; valid values: ${validSubjects(scope)}`)
   }
-  if (scope === 'job' && !JOBS[subject]) {
+  if (subjectKind === 'job' && !JOBS[subject]) {
     throw new Error(`unknown job subject "${subject}"; valid values: ${validSubjects(scope)}`)
   }
 }
@@ -63,10 +66,12 @@ export function docSubjects(): { project: string[]; agent: string[]; job: string
   }
 }
 
-function validSubjects(scope: 'project' | 'agent' | 'job' | 'resume'): string {
-  const values = (scope === 'project' || scope === 'resume')
+function validSubjects(scope: DocScope): string {
+  const subjectKind = DOC_SCOPE_SUBJECT_KIND[scope]
+  if (subjectKind === null) return '(none)'
+  const values = subjectKind === 'project'
     ? db().query('SELECT name FROM project ORDER BY name').all().map((r: any) => r.name)
-    : Object.keys(scope === 'agent' ? AGENTS : JOBS).sort()
+    : Object.keys(subjectKind === 'agent' ? AGENTS : JOBS).sort()
   return values.join(', ') || '(none)'
 }
 

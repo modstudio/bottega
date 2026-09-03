@@ -14,16 +14,18 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/tabs'
 import { queryClient, trpc } from '@/trpc/client'
 import { compactBytes, relativeTime } from '@/lib/format'
+import {
+  DOC_SCOPES, DOC_SCOPE_SUBJECT_KIND, type DocScope,
+} from '../../../../shared/docs.ts'
 
-export const DOC_SCOPES = ['project', 'machine', 'agent', 'job', 'global'] as const
-export type DocScope = (typeof DOC_SCOPES)[number]
+export { DOC_SCOPES, type DocScope }
 
 function isScope(value: string): value is DocScope {
   return (DOC_SCOPES as readonly string[]).includes(value)
 }
 
 function needsSubject(scope: DocScope) {
-  return scope === 'project' || scope === 'agent' || scope === 'job'
+  return DOC_SCOPE_SUBJECT_KIND[scope] !== null
 }
 
 function bodyBytes(body: string) {
@@ -72,7 +74,8 @@ function DocsList() {
     },
   })
 
-  const subjectOptions = needsSubject(scope) ? (subjects.data?.[scope] ?? []) : []
+  const subjectKind = DOC_SCOPE_SUBJECT_KIND[scope]
+  const subjectOptions = subjectKind === null ? [] : (subjects.data?.[subjectKind] ?? [])
 
   useEffect(() => {
     if (!needsSubject(scope)) {

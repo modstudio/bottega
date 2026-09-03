@@ -6,6 +6,7 @@
  * `orch` grew `--json` flags rather than hub growing a second connection.
  */
 import { existsSync } from 'node:fs'
+import type { DocScope } from '../../shared/docs.ts'
 import { refreshProjects, type RegisteredProject } from './projects.ts'
 /**
  * Resolved from THIS FILE's location, at module load.
@@ -152,7 +153,7 @@ export async function score(
   return out.trim()
 }
 
-export type DocScope = 'project' | 'machine' | 'agent' | 'job' | 'global'
+export type { DocScope }
 
 export type DocRow = {
   id: number

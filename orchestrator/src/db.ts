@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { DOC_SCOPES, DOC_SCOPE_SUBJECT_KIND } from '../../shared/docs.ts'
 
 export const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 export const DB_PATH = process.env.ORCH_DB ?? join(ROOT, 'orch.db')
@@ -467,9 +468,18 @@ const SCORE_DDL = `CREATE TABLE score (
       CHECK ((delivery = 'none') = (quality IS NULL))
     )`
 
+const sqlList = (values: readonly string[]) => values.map((value) => `'${value}'`).join(',')
+const DOC_SCOPE_SQL = sqlList(DOC_SCOPES)
+const DOC_SUBJECT_SCOPE_SQL = sqlList(
+  DOC_SCOPES.filter((scope) => DOC_SCOPE_SUBJECT_KIND[scope] !== null),
+)
+const DOC_SUBJECTLESS_SCOPE_SQL = sqlList(
+  DOC_SCOPES.filter((scope) => DOC_SCOPE_SUBJECT_KIND[scope] === null),
+)
+
 const DOC_DDL = `CREATE TABLE doc (
       id         INTEGER PRIMARY KEY,
-      scope      TEXT NOT NULL CHECK (scope IN ('project','machine','agent','job','global','resume')),
+      scope      TEXT NOT NULL CHECK (scope IN (${DOC_SCOPE_SQL})),
       subject    TEXT,
       slug       TEXT NOT NULL CHECK (
                    length(slug) <= 64 AND
@@ -480,8 +490,8 @@ const DOC_DDL = `CREATE TABLE doc (
       body       TEXT NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
-      CHECK ((scope IN ('machine','global') AND subject IS NULL) OR
-             (scope IN ('project','agent','job','resume') AND subject IS NOT NULL)),
+      CHECK ((scope IN (${DOC_SUBJECTLESS_SCOPE_SQL}) AND subject IS NULL) OR
+             (scope IN (${DOC_SUBJECT_SCOPE_SQL}) AND subject IS NOT NULL)),
       UNIQUE(scope, subject, slug)
     )`
 
