@@ -469,7 +469,7 @@ const SCORE_DDL = `CREATE TABLE score (
 
 const DOC_DDL = `CREATE TABLE doc (
       id         INTEGER PRIMARY KEY,
-      scope      TEXT NOT NULL CHECK (scope IN ('project','machine','agent','job','global')),
+      scope      TEXT NOT NULL CHECK (scope IN ('project','machine','agent','job','global','resume')),
       subject    TEXT,
       slug       TEXT NOT NULL CHECK (
                    length(slug) <= 64 AND
@@ -481,7 +481,7 @@ const DOC_DDL = `CREATE TABLE doc (
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       CHECK ((scope IN ('machine','global') AND subject IS NULL) OR
-             (scope IN ('project','agent','job') AND subject IS NOT NULL)),
+             (scope IN ('project','agent','job','resume') AND subject IS NOT NULL)),
       UNIQUE(scope, subject, slug)
     )`
 

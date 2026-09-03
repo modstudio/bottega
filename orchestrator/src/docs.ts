@@ -1,9 +1,10 @@
 /**
  * Operator documents are scoped facts about the installation around this router.
  * Global facts apply everywhere; project, agent, and job facts attach to one named
- * subject, while machine facts describe the host itself. Worker prompts receive
- * only global, job, and current-project documents; agent and machine notes serve
- * routing and architectural judgement instead. If an adopter needs text unchanged,
+ * subject; resume briefs attach to a project (the epic is the slug); machine facts
+ * describe the host itself. Worker prompts receive only global, job, and
+ * current-project documents; agent, machine, and resume notes serve routing and
+ * architectural judgement instead. If an adopter needs text unchanged,
  * it is canon in the repository; if it describes this estate, it belongs here.
  */
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
@@ -13,7 +14,7 @@ import { db, nowIso } from './db.ts'
 import { JOBS } from './jobs.ts'
 import { projectAt, projectByName } from './projects.ts'
 
-export const DOC_SCOPES = ['project', 'machine', 'agent', 'job', 'global'] as const
+export const DOC_SCOPES = ['project', 'machine', 'agent', 'job', 'global', 'resume'] as const
 export type DocScope = typeof DOC_SCOPES[number]
 
 export type Doc = {
@@ -43,7 +44,7 @@ function validate(scope: string, subject: string | null, slug: string): asserts 
     return
   }
   if (!subject) throw new Error(`${scope} docs require --subject; valid values: ${validSubjects(scope)}`)
-  if (scope === 'project' && !projectByName(subject)) {
+  if ((scope === 'project' || scope === 'resume') && !projectByName(subject)) {
     throw new Error(`unknown project subject "${subject}"; valid values: ${validSubjects(scope)}`)
   }
   if (scope === 'agent' && !AGENTS[subject]) {
@@ -62,8 +63,8 @@ export function docSubjects(): { project: string[]; agent: string[]; job: string
   }
 }
 
-function validSubjects(scope: 'project' | 'agent' | 'job'): string {
-  const values = scope === 'project'
+function validSubjects(scope: 'project' | 'agent' | 'job' | 'resume'): string {
+  const values = (scope === 'project' || scope === 'resume')
     ? db().query('SELECT name FROM project ORDER BY name').all().map((r: any) => r.name)
     : Object.keys(scope === 'agent' ? AGENTS : JOBS).sort()
   return values.join(', ') || '(none)'
@@ -135,6 +136,73 @@ export function brief(cwd: string): string {
     ...listDocs({ scope: 'global', subject: null }),
     ...(project ? listDocs({ scope: 'project', subject: project.name }) : []),
   ])
+}
+
+const RESUME_FRONTMATTER_KEYS = ['status', 'epic', 'project', 'written', 'consumed'] as const
+export type ResumeFrontmatter = { [K in typeof RESUME_FRONTMATTER_KEYS[number]]?: string }
+
+/**
+ * Status of a resume brief lives in the body's opening YAML, not in the
+ * address. A missing or unreadable block is not open.
+ */
+export function parseResumeFrontmatter(body: string): ResumeFrontmatter | null {
+  const match = body.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
+  if (!match) return null
+  const out: ResumeFrontmatter = {}
+  const known = new Set<string>(RESUME_FRONTMATTER_KEYS)
+  for (const line of match[1]!.split(/\r?\n/)) {
+    if (!line.trim()) continue
+    const kv = line.match(/^([A-Za-z][A-Za-z0-9_-]*):\s*(.*?)\s*$/)
+    if (!kv) return null
+    const key = kv[1]!
+    if (!known.has(key)) continue
+    let value = kv[2]!
+    if (
+      (value.startsWith('"') && value.endsWith('"') && value.length >= 2) ||
+      (value.startsWith("'") && value.endsWith("'") && value.length >= 2)
+    ) {
+      value = value.slice(1, -1)
+    }
+    out[key as keyof ResumeFrontmatter] = value
+  }
+  return out
+}
+
+/** Single largest unit: Ns, Nm, Nh, Nd. */
+export function resumeAge(fromMs: number, now = Date.now()): string {
+  const delta = Math.max(0, now - fromMs)
+  const s = Math.floor(delta / 1000)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h`
+  return `${Math.floor(h / 24)}d`
+}
+
+export type OpenResume = { slug: string; title: string; age: string; at: number }
+
+function resumeTimestampMs(written: string | undefined, createdAt: string): number {
+  if (written) {
+    const parsed = Date.parse(written)
+    if (!Number.isNaN(parsed)) return parsed
+  }
+  const fallback = Date.parse(createdAt)
+  return Number.isNaN(fallback) ? 0 : fallback
+}
+
+export function listOpenResumes(cwd: string, now = Date.now()): OpenResume[] {
+  const project = projectAt(cwd)
+  if (!project) return []
+  const open: OpenResume[] = []
+  for (const doc of listDocs({ scope: 'resume', subject: project.name })) {
+    const fm = parseResumeFrontmatter(doc.body)
+    if (!fm || fm.status !== 'open') continue
+    const at = resumeTimestampMs(fm.written, doc.created_at)
+    open.push({ slug: doc.slug, title: doc.title, age: resumeAge(at, now), at })
+  }
+  open.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug))
+  return open
 }
 
 export function exportDocs(dir: string): number {

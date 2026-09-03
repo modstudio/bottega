@@ -771,18 +771,21 @@ fail, it PASSES against the wrong tree.
 
 Operator docs are markdown facts about an installation, stored in `orch.db`
 rather than baked into code. `global` applies everywhere; `project`, `agent`,
-and `job` each name a registered subject; `machine` and `global` have no
-subject. The dividing test is portability: text every adopter needs unchanged
-is canon and stays in the repository, while text describing this estate is a
-doc.
+and `job` each name a registered subject; `resume` names a project as its
+subject (the epic is the slug); `machine` and `global` have no subject. The
+dividing test is portability: text every adopter needs unchanged is canon and
+stays in the repository, while text describing this estate is a doc.
 
 `orch doc list|show|set|rm` manages individual docs, `export|import` round-trips
-the scoped directory layout, and `brief` emits the SessionStart view. On a
+the scoped directory layout, `brief` emits the SessionStart operator-doc view,
+and `resumes` lists open resume briefs for the project containing `--cwd`. On a
 first run, global docs, docs for the job, and docs for the project containing
 the cwd are inserted after worktree infrastructure and before the supplied
 spec, so their bytes participate in routing. Resume turns do not repeat them.
 Agent docs describe vendors as observed here and belong to the router and
-architect; machine docs describe the host. Neither is injected into a worker.
+architect; machine docs describe the host. Resume briefs belong to the
+architect session. Neither agent, machine, nor resume docs are injected into a
+worker.
 
 `orch mcp` serves project and doc tools over stdio; `orch mcp --config` prints
 the registration object for `~/.claude.json` without changing it:
@@ -802,8 +805,12 @@ The MCP SDK is orchestrator's first runtime dependency because this server is
 part of the CLI rather than development tooling.
 
 `hooks/session-brief.py` fails open: it asks `orch doc brief` for the cwd and
-adds only successful output to a new session. Register it alongside the other
-hooks with an absolute path in Claude settings:
+adds only successful output to a new session, then `orch doc resumes` for the
+same cwd. When that list is non-empty it appends the list and one sentence —
+ask before loading on `startup`/`resume`, offer to resume on `clear`/`compact`/`fork`.
+It never fetches a brief body and never resumes anything itself. On any error,
+timeout, or missing binary it prints nothing and exits 0. Register it alongside
+the other hooks with an absolute path in Claude settings:
 
 ```json
 {
@@ -821,6 +828,35 @@ hooks with an absolute path in Claude settings:
   }
 }
 ```
+
+## Resume briefs
+
+A long architect session loses its thread at a `/clear` or a compaction.
+Claude Code's compaction is lossy in documented ways (it drops file paths and
+prior actions), and auto-compaction cannot be given custom instructions at all.
+So "where we are and what is next" lives outside the conversation, in the doc
+store, and is re-offered when a new session starts.
+
+A resume brief is a doc at `scope = resume`, `subject = <project>`,
+`slug = <epic>`. Status lives in the body's frontmatter, not in the address —
+a consumed brief keeps the same name so it stays readable. Frontmatter keys:
+`status` (`open` | `consumed`), `epic`, `project`, `written` (ISO 8601),
+`consumed` (ISO 8601, absent while open).
+
+**Writing.** At a task or epic boundary, draft the brief **in the conversation
+as markdown**, and write it only after the operator approves. Never
+draft-then-store-then-show; the approval must precede the write or it is
+theatre. This is the same rule as never writing a memory without showing the
+exact content first. Writes go through `set_doc`.
+
+**Brief contents.** Epic and task just finished; decisions made and the
+reasoning that produced them; open `orch` job ids and what each was asked to
+build; files and paths touched; and an explicit `NEXT ACTION` line.
+
+**Resuming.** The SessionStart hook lists open briefs; it does not inject a
+body. The agent reads the list, asks which (or offers the single one), fetches
+it with `get_doc`, then marks it consumed with `set_doc` — flipping `status`
+and stamping `consumed`. Declining must not consume anything.
 
 ## Cleaning up is a delay, not a prohibition
 

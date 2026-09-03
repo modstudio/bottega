@@ -618,7 +618,7 @@ function usage(): never {
       set <slug> --scope S [--subject X] --title T (--file F | body on stdin) [--json]
       rm <slug> --scope S [--subject X] [--json]
       subjects [--json]
-      export <dir> | import <dir> | brief [--cwd P]
+      export <dir> | import <dir> | brief [--cwd P] | resumes [--cwd P]
   orch mcp [--config]          serve project and doc tools over stdio
   orch jobs                     list job types
   orch agents                   list agents and availability
@@ -765,7 +765,8 @@ try {
 
 switch (cmd) {
   case 'doc': {
-    const { listDocs, getDoc, setDoc, removeDoc, exportDocs, importDocs, brief, docSubjects } =
+    const { listDocs, getDoc, setDoc, removeDoc, exportDocs, importDocs, brief, docSubjects,
+            listOpenResumes } =
       await import('./docs.ts')
     const sub = argv[1] ?? 'list'
     const scope = flag('scope')
@@ -832,7 +833,14 @@ switch (cmd) {
       process.stdout.write(brief(flag('cwd') ?? process.cwd()))
       break
     }
-    throw new Error(`unknown: orch doc ${sub}. Try list | show | set | rm | subjects | export | import | brief`)
+    if (sub === 'resumes') {
+      const rows = listOpenResumes(flag('cwd') ?? process.cwd())
+      for (const r of rows) {
+        console.log(`${r.slug.padEnd(24)} ${r.title.padEnd(24)} ${r.age}`)
+      }
+      break
+    }
+    throw new Error(`unknown: orch doc ${sub}. Try list | show | set | rm | subjects | export | import | brief | resumes`)
   }
 
   case 'mcp': {

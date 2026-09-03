@@ -57,7 +57,8 @@ const { orphanSafety, repoRootOf, createWorktree, createWithTool, resolveBase, f
 const { AGENTS, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
         WAKE_COOLDOWN_MS, CODEX_EXEC_SANDBOX, strictCodexSchema } = await import('./agents.ts')
-const { listDocs, getDoc, setDoc, removeDoc, docsForRun, exportDocs, importDocs, brief, docSubjects } =
+const { listDocs, getDoc, setDoc, removeDoc, docsForRun, exportDocs, importDocs, brief, docSubjects,
+        listOpenResumes, parseResumeFrontmatter, resumeAge } =
   await import('./docs.ts')
 const { createDocsMcpServer } = await import('./mcp.ts')
 
@@ -4317,6 +4318,23 @@ describe('canonical schema rebuild', () => {
       scored_by TEXT NOT NULL DEFAULT 'claude',
       CHECK ((delivery = 'none') = (quality IS NULL))
     )`
+  const OLD_DOC_DDL = `CREATE TABLE IF NOT EXISTS doc (
+      id         INTEGER PRIMARY KEY,
+      scope      TEXT NOT NULL CHECK (scope IN ('project','machine','agent','job','global')),
+      subject    TEXT,
+      slug       TEXT NOT NULL CHECK (
+                   length(slug) <= 64 AND
+                   slug GLOB '[a-z0-9]*' AND
+                   slug NOT GLOB '*[^a-z0-9-]*'
+                 ),
+      title      TEXT NOT NULL,
+      body       TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      CHECK ((scope IN ('machine','global') AND subject IS NULL) OR
+             (scope IN ('project','agent','job') AND subject IS NOT NULL)),
+      UNIQUE(scope, subject, slug)
+    )`
 
   const cols = (d: Database, table: string) =>
     (d.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name)
@@ -4373,6 +4391,37 @@ describe('canonical schema rebuild', () => {
     d.close()
   })
 
+  test('widening the doc scope CHECK preserves every row and triple', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'orch-schema-')), 'old-doc.db')
+    const d = new Database(path)
+    d.exec(OLD_DOC_DDL)
+    d.exec(`
+      INSERT INTO doc (scope, subject, slug, title, body, created_at, updated_at) VALUES
+        ('machine', NULL, 'host', 'Host', 'B', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'),
+        ('agent', 'codex', 'mcp', 'MCP', 'C', '2026-01-02T00:00:00.000Z', '2026-01-02T00:00:00.000Z')
+    `)
+    const before = d.query(
+      'SELECT id, scope, subject, slug, title, body, created_at, updated_at FROM doc ORDER BY id',
+    ).all()
+    const triples = d.query(
+      'SELECT scope, subject, slug FROM doc ORDER BY scope, subject, slug',
+    ).all()
+    applySchema(d)
+    expect(d.query(
+      'SELECT id, scope, subject, slug, title, body, created_at, updated_at FROM doc ORDER BY id',
+    ).all()).toEqual(before)
+    expect(d.query(
+      'SELECT scope, subject, slug FROM doc ORDER BY scope, subject, slug',
+    ).all()).toEqual(triples)
+    expect(before).toHaveLength(2)
+    expect(tableSql(d, 'doc')).toContain("'resume'")
+    d.exec(`INSERT INTO doc (scope, subject, slug, title, body, created_at, updated_at)
+            VALUES ('resume', 'known', 'epic', 'T', 'B', 't', 't')`)
+    expect(() => d.exec(`INSERT INTO doc (scope, subject, slug, title, body, created_at, updated_at)
+            VALUES ('resume', NULL, 'x', 'T', 'B', 't', 't')`)).toThrow()
+    d.close()
+  })
+
   test('opening twice is idempotent', () => {
     const path = join(mkdtempSync(join(tmpdir(), 'orch-schema-')), 'twice.db')
     const d = openOld(path)
@@ -4423,6 +4472,9 @@ describe('scoped operator docs', () => {
     expect(() => put('machine', 'host')).toThrow('remove --subject')
     expect(() => put('global', 'all')).toThrow('remove --subject')
     expect(() => put('project', null)).toThrow('require --subject')
+    expect(() => put('resume', null)).toThrow('require --subject')
+    expect(() => put('resume', 'missing')).toThrow('valid values: known')
+    expect(put('resume', 'known').scope).toBe('resume')
   })
 
   test('docsForRun orders global, job, then project and omits absent scopes', () => {
@@ -4433,6 +4485,7 @@ describe('scoped operator docs', () => {
     setDoc({ scope: 'global', subject: null, slug: 'global', title: 'Global', body: 'G' })
     setDoc({ scope: 'agent', subject: 'codex', slug: 'agent', title: 'Agent', body: 'A' })
     setDoc({ scope: 'machine', subject: null, slug: 'machine', title: 'Machine', body: 'M' })
+    setDoc({ scope: 'resume', subject: 'known', slug: 'epic', title: 'Resume', body: 'R' })
     expect(docsForRun({ job: 'file-question', cwd: '/w/known/src' }).map((d) => d.title))
       .toEqual(['Global', 'Job', 'Project'])
   })
@@ -4568,4 +4621,177 @@ describe('scoped operator docs', () => {
     expect(JSON.parse(r.out).body).toBe(body)
     expect(getDoc('global', null, 'round-trip')?.body).toBe(body)
   })
+
+  const resumeBody = (status: string, written?: string) => {
+    const writtenLine = written ? `written: ${written}\n` : ''
+    return `---\nstatus: ${status}\nepic: demo\nproject: known\n${writtenLine}---\n\nNEXT ACTION\n`
+  }
+
+  test('resumeAge uses a single largest unit', () => {
+    const now = Date.parse('2026-09-03T12:00:00.000Z')
+    expect(resumeAge(now, now)).toBe('0s')
+    expect(resumeAge(now - 20_000, now)).toBe('20s')
+    expect(resumeAge(now - 20 * 60_000, now)).toBe('20m')
+    expect(resumeAge(now - 3 * 3600_000, now)).toBe('3h')
+    expect(resumeAge(now - 3 * 86_400_000, now)).toBe('3d')
+    expect(resumeAge(now - 59_000, now)).toBe('59s')
+    expect(resumeAge(now - 60_000, now)).toBe('1m')
+    expect(resumeAge(now - 3600_000, now)).toBe('1h')
+    expect(resumeAge(now - 86_400_000, now)).toBe('1d')
+  })
+
+  test('parseResumeFrontmatter rejects a missing or broken block and keeps known keys', () => {
+    expect(parseResumeFrontmatter('no fence')).toBeNull()
+    expect(parseResumeFrontmatter('---\nstatus open\n---\n')).toBeNull()
+    expect(parseResumeFrontmatter(resumeBody('open', '2026-09-03T00:00:00.000Z'))).toEqual({
+      status: 'open', epic: 'demo', project: 'known', written: '2026-09-03T00:00:00.000Z',
+    })
+  })
+
+  test('listOpenResumes lists only open briefs for the cwd project, newest first', () => {
+    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    upsertProject({ name: 'other', path: '/w/other', stack: null, canon: true, settings: {} })
+    const now = Date.parse('2026-09-03T12:00:00.000Z')
+    setDoc({
+      scope: 'resume', subject: 'known', slug: 'older', title: 'Older epic',
+      body: resumeBody('open', '2026-09-01T12:00:00.000Z'),
+    })
+    setDoc({
+      scope: 'resume', subject: 'known', slug: 'newer', title: 'Newer epic',
+      body: resumeBody('open', '2026-09-03T11:40:00.000Z'),
+    })
+    setDoc({
+      scope: 'resume', subject: 'known', slug: 'done', title: 'Consumed',
+      body: resumeBody('consumed', '2026-09-03T11:50:00.000Z'),
+    })
+    setDoc({
+      scope: 'resume', subject: 'known', slug: 'broken', title: 'Broken',
+      body: 'not frontmatter',
+    })
+    setDoc({
+      scope: 'resume', subject: 'other', slug: 'elsewhere', title: 'Other project',
+      body: resumeBody('open', '2026-09-03T11:55:00.000Z'),
+    })
+    setDoc({
+      scope: 'project', subject: 'known', slug: 'not-a-resume', title: 'Project doc',
+      body: resumeBody('open', '2026-09-03T11:59:00.000Z'),
+    })
+    expect(listOpenResumes('/nowhere', now)).toEqual([])
+    expect(listOpenResumes('/w/known/src', now)).toEqual([
+      { slug: 'newer', title: 'Newer epic', age: '20m', at: Date.parse('2026-09-03T11:40:00.000Z') },
+      { slug: 'older', title: 'Older epic', age: '2d', at: Date.parse('2026-09-01T12:00:00.000Z') },
+    ])
+    expect(brief('/w/known/src')).not.toContain('Newer epic')
+  })
+
+  test('orch doc resumes prints padded columns and is silent when there are none', () => {
+    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    const empty = orchCli(['doc', 'resumes', '--cwd', '/w/known'])
+    expect(empty.code).toBe(0)
+    expect(empty.out).toBe('')
+    const unresolved = orchCli(['doc', 'resumes', '--cwd', '/nowhere'])
+    expect(unresolved.code).toBe(0)
+    expect(unresolved.out).toBe('')
+    setDoc({
+      scope: 'resume', subject: 'known', slug: 'epic-name', title: 'Title here',
+      body: resumeBody('open', new Date().toISOString()),
+    })
+    const listed = orchCli(['doc', 'resumes', '--cwd', '/w/known'])
+    expect(listed.code).toBe(0)
+    const age = listed.out.trim().split(/\s+/).pop()
+    expect(listed.out).toBe(`${'epic-name'.padEnd(24)} ${'Title here'.padEnd(24)} ${age}\n`)
+    expect(age).toMatch(/^\d+[smhd]$/)
+    expect(listed.out).not.toContain('scope')
+  })
 })
+
+describe('session-brief hook lists open resumes without injecting bodies', () => {
+  const hook = new URL('../hooks/session-brief.py', import.meta.url).pathname
+  const runBrief = (payload: object) => Bun.spawnSync(
+    ['python3', hook],
+    {
+      stdin: new TextEncoder().encode(JSON.stringify(payload)),
+      stdout: 'pipe', stderr: 'pipe',
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB! },
+    },
+  )
+  const resumeBody = (status: string, written: string) =>
+    `---\nstatus: ${status}\nepic: demo\nproject: known\nwritten: ${written}\n---\n\nSECRET BODY\nNEXT ACTION\n`
+
+  test('prints nothing when there are no open briefs', () => {
+    const p = runBrief({ cwd: '/w/known', source: 'startup' })
+    expect(p.exitCode).toBe(0)
+    expect(p.stdout.toString()).toBe('')
+    expect(p.stderr.toString()).toBe('')
+  })
+
+  test('malformed stdin exits zero and prints nothing', () => {
+    const p = Bun.spawnSync(['python3', hook], {
+      stdin: new TextEncoder().encode('{not json'),
+      stdout: 'pipe', stderr: 'pipe',
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB! },
+    })
+    expect(p.exitCode).toBe(0)
+    expect(p.stdout.toString()).toBe('')
+  })
+
+  test('one open brief: cold start asks, continuation offers, never dumps the body', () => {
+    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    setDoc({
+      scope: 'resume', subject: 'known', slug: 'epic-name', title: 'Title here',
+      body: resumeBody('open', '2026-09-03T00:00:00.000Z'),
+    })
+    const listLine = `${'epic-name'.padEnd(24)} ${'Title here'.padEnd(24)}`
+    const cold = runBrief({ cwd: '/w/known', source: 'startup' })
+    expect(cold.exitCode).toBe(0)
+    const coldOut = cold.stdout.toString()
+    expect(coldOut).toContain(listLine)
+    expect(coldOut).toContain(
+      'Open resume brief `epic-name`. Ask whether to load it before fetching with get_doc; do not consume it unless the operator agrees.',
+    )
+    expect(coldOut).not.toContain('SECRET BODY')
+    const cont = runBrief({ cwd: '/w/known', source: 'clear' })
+    expect(cont.stdout.toString()).toContain(
+      'Open resume brief `epic-name`. Offer to resume from it; fetch with get_doc only after they agree, then mark consumed with set_doc.',
+    )
+    const resumeSrc = runBrief({ cwd: '/w/known', source: 'resume' })
+    expect(resumeSrc.stdout.toString()).toContain('Ask whether to load it')
+    const fork = runBrief({ cwd: '/w/known', source: 'fork' })
+    expect(fork.stdout.toString()).toContain('Offer to resume from it')
+  })
+
+  test('several open briefs use the plural sentence', () => {
+    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    setDoc({
+      scope: 'resume', subject: 'known', slug: 'one', title: 'First',
+      body: resumeBody('open', '2026-09-03T01:00:00.000Z'),
+    })
+    setDoc({
+      scope: 'resume', subject: 'known', slug: 'two', title: 'Second',
+      body: resumeBody('open', '2026-09-03T02:00:00.000Z'),
+    })
+    const cold = runBrief({ cwd: '/w/known', source: 'startup' })
+    expect(cold.stdout.toString()).toContain(
+      'Open resume briefs above. Ask which (if any) to load before fetching with get_doc; do not consume unless they agree.',
+    )
+    const cont = runBrief({ cwd: '/w/known', source: 'compact' })
+    expect(cont.stdout.toString()).toContain(
+      'Open resume briefs above. Offer to resume from one of them; fetch with get_doc only after they agree, then mark consumed with set_doc.',
+    )
+  })
+
+  test('keeps the operator brief and appends resumes after it', () => {
+    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    setDoc({ scope: 'global', subject: null, slug: 'g', title: 'Global', body: 'G' })
+    setDoc({
+      scope: 'resume', subject: 'known', slug: 'epic-name', title: 'Title here',
+      body: resumeBody('open', '2026-09-03T00:00:00.000Z'),
+    })
+    const p = runBrief({ cwd: '/w/known', source: 'startup' })
+    const out = p.stdout.toString()
+    expect(out).toContain('## Global\n\nG')
+    expect(out.indexOf('## Global')).toBeLessThan(out.indexOf('epic-name'))
+    expect(out).toContain('Ask whether to load it')
+  })
+})
+
