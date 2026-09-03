@@ -103,6 +103,48 @@ describe('run ingest', () => {
     expect(result).toEqual({ rows: 1, skipped: 0 })
   })
 
+  test('a failover successor closes the execution interval it replaced', async () => {
+    await ingestRunFixtures(runFixture({ id: 9104 }))
+    await ingestRunFixtures(runFixture({
+      id: 9105,
+      retry_of: 9104,
+      started_at: '2026-09-03T00:01:00.000Z',
+    }))
+
+    const intervals = db().query(
+      `SELECT ref, open FROM interval
+        WHERE source = 'orch' AND ref IN ('orch:9104', 'orch:9105')
+        ORDER BY ref`,
+    ).all() as { ref: string; open: number }[]
+    expect(intervals).toEqual([
+      { ref: 'orch:9104', open: 0 },
+      { ref: 'orch:9105', open: 1 },
+    ])
+  })
+
+  test('a failover from a resumed turn closes that turn under its root ref', async () => {
+    const turns = [{
+      id: 9107,
+      started_at: '2026-09-03T00:00:00.000Z',
+      latency_ms: null,
+      vendor_tokens: null,
+      vendor_cost_usd: null,
+      status: 'running',
+      turn: 2,
+    }]
+    await ingestRunFixtures(runFixture({ id: 9106, turns }))
+    await ingestRunFixtures(runFixture({
+      id: 9108,
+      retry_of: 9107,
+      started_at: '2026-09-03T00:01:00.000Z',
+    }))
+
+    const prior = db().query(
+      `SELECT open FROM interval WHERE source = 'orch' AND ref = 'orch:9106:turn:9107'`,
+    ).get() as { open: number }
+    expect(prior.open).toBe(0)
+  })
+
   test('a resumed chain ingests each execution interval and conserves its tokens', async () => {
     const starts = [
       '2026-09-01T12:00:00.000Z', '2026-09-01T12:10:00.000Z',

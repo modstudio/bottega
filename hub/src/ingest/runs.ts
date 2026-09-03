@@ -40,6 +40,8 @@ export type OrchRun = {
   /** Present only under --json; the runs view needs the verdict. */
   delivery?: string | null
   quality?: string | null
+  /** The prior execution this retry or automatic failover replaced. */
+  retry_of?: number | null
   /** Every execution in a resumable chain, including the root turn. */
   turns?: OrchTurn[]
 }
@@ -106,6 +108,11 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
   const clearChain = d.query(
     `DELETE FROM interval WHERE source = 'orch' AND (ref = ? OR ref LIKE ?)`,
   )
+  const closeReplaced = d.query(
+    `UPDATE interval SET open = 0
+      WHERE source = 'orch' AND open = 1
+        AND (ref = ? OR ref LIKE ?)`,
+  )
 
   let rows = 0
   let skipped = 0
@@ -131,6 +138,15 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
       if (!a.key) {
         const named = keyFromPromptFile(r.prompt_path, a.project)
         if (named) { a.key = named; a.via = 'prompt-file' }
+      }
+
+      // Failover is a new root, not another turn of the run it replaces. The
+      // predecessor can therefore fall outside this collect's time window even
+      // while its successor is present. Close the predecessor from the handoff
+      // itself; waiting to see that old row again leaves its last open sample
+      // growing forever. retry_of may name either a root or a resumed child.
+      if (r.retry_of != null) {
+        closeReplaced.run(`orch:${r.retry_of}`, `orch:%:turn:${r.retry_of}`)
       }
 
       const turns = r.turns ?? [r]
