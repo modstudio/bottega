@@ -2661,11 +2661,51 @@ describe('detached run collection', () => {
   test('waiting on ok and asking runs succeeds and points to the inbox', () => {
     const ok = insert('ok')
     const asking = insert('asking', 'implement')
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(asking, new Date().toISOString(), 'which shape?')
     const r = orch('wait', String(ok), String(asking))
     expect(r.code).toBe(0)
     expect(r.out).toContain(`${ok}\tok`)
     expect(r.out).toContain(`${asking}\tasking`)
     expect(r.out).toContain('orch inbox')
+  })
+
+  test('wait names the root, not the asking tip, when a question is open', () => {
+    const root = insert('asking', 'implement')
+    const turn = insert('asking', 'implement')
+    db().query('UPDATE run SET parent_run_id=?, turn=2 WHERE id=?').run(root, turn)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(turn, new Date().toISOString(), 'which shape?')
+
+    const r = orch('wait', String(root))
+    expect(r.code).toBe(0)
+    expect(r.out).toContain(`${root}\tasking - orch inbox (or orch answer ${root})`)
+    expect(r.out).not.toContain(`orch answer ${turn}`)
+  })
+
+  test('wait keeps waiting when an asking tip has no open question but its root is running', () => {
+    const root = insert('running', 'implement')
+    const turn = insert('asking', 'implement')
+    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, root)
+    db().query('UPDATE run SET parent_run_id=?, turn=2 WHERE id=?').run(root, turn)
+
+    const r = orch('wait', String(root), '--timeout', '0')
+    expect(r.code).toBe(2)
+    expect(r.err).toContain(`still running after 0s: ${turn}`)
+    expect(r.out).not.toContain('asking')
+    expect(r.out).not.toContain('orch answer')
+  })
+
+  test('wait exposes an asking chain with no open question or running turn as recoverable', () => {
+    const root = insert('asking', 'implement')
+    const turn = insert('asking', 'implement')
+    db().query('UPDATE run SET parent_run_id=?, turn=2 WHERE id=?').run(root, turn)
+
+    const r = orch('wait', String(root))
+    expect(r.code).toBe(0)
+    expect(r.out).toContain(`${root}\tasking - recoverable: orch continue ${root}`)
+    expect(r.out).not.toContain(`orch continue ${turn}`)
+    expect(r.out).not.toContain('orch answer')
   })
 
   test('result on an asking run succeeds, prints its reply, and points to the inbox', () => {

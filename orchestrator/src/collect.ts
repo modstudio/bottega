@@ -9,6 +9,33 @@ export type FailoverAttempt = {
   error: string | null; failure_kind: string | null; exit_code: number | null
 }
 
+type AskingResolution =
+  | { state: 'open'; rootId: number }
+  | { state: 'running'; rootId: number; runningId: number }
+  | { state: 'recoverable'; rootId: number }
+
+/** Resolve what an `asking` status means across the whole conversation. */
+function resolveAsking(database: Database, runId: number): AskingResolution {
+  const member = database.query('SELECT id, parent_run_id FROM run WHERE id=?').get(runId) as
+    { id: number; parent_run_id: number | null } | null
+  if (!member) throw new Error(`no run ${runId}`)
+  const rootId = member.parent_run_id ?? member.id
+  const open = database.query(
+    `SELECT COUNT(*) n FROM question q JOIN run r ON r.id = q.run_id
+      WHERE (r.id = ? OR r.parent_run_id = ?) AND q.answered_at IS NULL`,
+  ).get(rootId, rootId) as { n: number }
+  if (open.n) return { state: 'open', rootId }
+
+  const running = database.query(
+    `SELECT id FROM run
+      WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
+      ORDER BY turn DESC, id DESC LIMIT 1`,
+  ).get(rootId, rootId) as { id: number } | null
+  return running
+    ? { state: 'running', rootId, runningId: running.id }
+    : { state: 'recoverable', rootId }
+}
+
 /** Resolve conversation turns backward, then failover successors forward. */
 export function resolveFailover(database: Database, requestedId: number): {
   requestedId: number; attempts: FailoverAttempt[]; finalId: number; settling: boolean
@@ -134,6 +161,7 @@ export function collectResult(
   } | null
   if (!row) throw new Error(`no run ${id}`)
 
+  const asking = row.status === 'asking' ? resolveAsking(database, row.id) : null
   const outcome = outcomeOf(row)
   const baseNote = row.base_commit ? `\n  base:      ${row.base_commit}` : ''
   if (!outcome.terminal || chain.settling) {
@@ -145,23 +173,13 @@ export function collectResult(
   }
   const chainNote = failoverSummary(chain.attempts)
   if (chainNote) console.error(`\n— ${chainNote}`)
-  if (row.status === 'asking') {
-    const rootId = row.parent_run_id ?? row.id
-    const open = database.query(
-      `SELECT COUNT(*) n FROM question q JOIN run r ON r.id = q.run_id
-        WHERE (r.id = ? OR r.parent_run_id = ?) AND q.answered_at IS NULL`,
-    ).get(rootId, rootId) as { n: number }
-    const running = database.query(
-      `SELECT id FROM run
-        WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
-        ORDER BY turn DESC LIMIT 1`,
-    ).get(rootId, rootId) as { id: number } | null
+  if (asking) {
     console.error(
-      (open.n
-        ? `\n— run ${id} asking — waiting on a ruling: orch answer ${rootId} ...`
-        : running
-          ? `\n— run ${id} asking — resumed as run ${running.id}, which is still running`
-          : `\n— run ${id} asking — recoverable: orch continue ${rootId}`) +
+      (asking.state === 'open'
+        ? `\n— run ${id} asking — waiting on a ruling: orch answer ${asking.rootId} ...`
+        : asking.state === 'running'
+          ? `\n— run ${id} asking — resumed as run ${asking.runningId}, which is still running`
+          : `\n— run ${id} asking — recoverable: orch continue ${asking.rootId}`) +
       baseNote + mcpNote(row) + evidenceNote(row),
     )
     return
@@ -205,7 +223,17 @@ export async function collectWait(
         id: number; status: string; error: string | null
         failure_kind: string | null; exit_code: number | null
       }
-      return { requestedId: id, row, chain, outcome: outcomeOf(row) }
+      const asking = row.status === 'asking' ? resolveAsking(database, row.id) : null
+      const outcome = asking?.state === 'running'
+        ? { terminal: false, ok: false, line: 'running' }
+        : asking?.state === 'open'
+          ? { terminal: true, ok: true,
+              line: `asking - orch inbox (or orch answer ${asking.rootId})` }
+          : asking?.state === 'recoverable'
+            ? { terminal: true, ok: true,
+                line: `asking - recoverable: orch continue ${asking.rootId}` }
+            : outcomeOf(row)
+      return { requestedId: id, row, chain, outcome }
     })
     const running = outcomes.filter(({ outcome, chain }) => !outcome.terminal || chain.settling)
     if (!running.length) {
