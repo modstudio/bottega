@@ -57,6 +57,10 @@ export type DetachSpec = {
   distinctModels?: string[]
   /** Retry only: the run this replaces, and the directory it ran in. */
   retryOf?: number; cwd?: string
+  /** Disable automatic quota/auth failover for this whole chain. */
+  noFailover?: boolean
+  /** Preserve the session that owns a successor root. */
+  ownerSession?: string | null
   /** Resume only: everything needed to continue a worker where it stopped. */
   resume?: {
     parent: number; agent: string; session: string; turn: number
@@ -71,18 +75,18 @@ export function detachedRunOptions(
 ) {
   const {
     agent, schema, mcp, model, probe, label, seed, key, repo, base, avoid,
-    distinctModels, retryOf, cwd, resume,
+    distinctModels, retryOf, cwd, noFailover, ownerSession, resume,
   } = spec
   // Adding a field to DetachSpec must fail typechecking until it is handled here.
   const consumed: Required<Record<keyof DetachSpec, unknown>> = {
     agent, schema, mcp, model, probe, label, seed, key, repo, base, avoid,
-    distinctModels, retryOf, cwd, resume,
+    distinctModels, retryOf, cwd, noFailover, ownerSession, resume,
   }
   void consumed
   return {
     job: jobName, prompt, reserveId,
     agent, schemaPath: schema, mcp, model, probe, label, seed, key, repo, base, avoid,
-    distinctModels, retryOf, cwd, resume,
+    distinctModels, retryOf, cwd, noFailover, ownerSession, resume,
   }
 }
 
@@ -97,8 +101,50 @@ export function detachedRunOptions(
  * the work is not the place to decide where.
  */
 export const MAX_DEPTH = 1
+export const MAX_FAILOVER_ATTEMPTS = 3
 
 export const depth = () => Number(process.env.ORCH_DEPTH ?? 0)
+
+type FailoverAttempt = { id: number; agent: string }
+
+/** Walk retry_of backward; parent_run_id is only the conversation axis within an attempt. */
+function failoverAttempts(id: number): FailoverAttempt[] {
+  const attempts: FailoverAttempt[] = []
+  let memberId: number | null = id
+  while (memberId) {
+    const member = db().query(
+      'SELECT id, agent, parent_run_id FROM run WHERE id=?',
+    ).get(memberId) as { id: number; agent: string; parent_run_id: number | null } | null
+    if (!member) break
+    const rootId = member.parent_run_id ?? member.id
+    const root = db().query(
+      'SELECT id, agent, retry_of, automatic_failover FROM run WHERE id=?',
+    ).get(rootId) as
+      { id: number; agent: string; retry_of: number | null; automatic_failover: number }
+    attempts.unshift({ id: root.id, agent: root.agent })
+    memberId = root.automatic_failover ? root.retry_of : null
+  }
+  return attempts
+}
+
+function appendFailoverRefusal(id: number, reason: string): void {
+  db().query(
+    `UPDATE run SET error=COALESCE(error || '\n', '') || ? WHERE id=?`,
+  ).run(`Failover refused: ${reason}`, id)
+}
+
+export function writingFailoverRefusal(
+  writesJob: boolean,
+  changes: import('./worktree.ts').Changes | null,
+  worktree: string,
+): string | null {
+  if (!writesJob) return null
+  if (changes && changes.files.length === 0) return null
+  const detail = changes
+    ? `${changes.files.length} changed file(s)`
+    : 'the worktree diff could not be read'
+  return `writing run has ${detail}; preserving worktree ${worktree} so two agents never share one diff`
+}
 
 export type McpConnection = {
   server: string
@@ -314,6 +360,22 @@ function childEnv(
  * a subscription keeps being spent on an answer no one will read.
  */
 const live = new Set<{ kill(sig?: number | string): void }>()
+
+/** Terminate the process pair recorded for a run, while allowing its coordinator to survive. */
+export function terminateRunProcesses(id: number, exclude: number[] = []): number[] {
+  const row = db().query('SELECT pid, agent_pid FROM run WHERE id=?').get(id) as
+    { pid: number | null; agent_pid: number | null } | null
+  if (!row) throw new Error(`no run ${id}`)
+  const skipped = new Set(exclude)
+  const pids = [...new Set([row.agent_pid, row.pid]
+    .filter((pid): pid is number => Boolean(pid) && !skipped.has(pid!)))]
+  for (const pid of pids) {
+    try { process.kill(pid, 'SIGTERM') } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e
+    }
+  }
+  return pids
+}
 let signalsBound = false
 
 function bindSignals() {
@@ -511,6 +573,9 @@ export async function run(opts: {
   repo?: string
   /** The run this one re-attempts, for `orch retry`. */
   retryOf?: number
+  noFailover?: boolean
+  ownerSession?: string | null
+  automaticFailover?: boolean
   /**
    * How much database the worker's worktree gets, where the project asks.
    *
@@ -814,6 +879,20 @@ export async function run(opts: {
 
   const started = Date.now()
   const head = originalPrompt.slice(0, 200).replace(/\s+/g, ' ')
+  const inheritedLaunch = opts.resume
+    ? db().query(
+        `SELECT launch_cwd, launch_seed, launch_key, launch_base, no_failover
+           FROM run WHERE id=?`,
+      ).get(opts.resume.parent) as {
+        launch_cwd: string | null; launch_seed: string | null; launch_key: string | null
+        launch_base: string | null; no_failover: number
+      }
+    : null
+  const launchCwd = inheritedLaunch?.launch_cwd ?? callerCwd
+  const launchSeed = inheritedLaunch?.launch_seed ?? opts.seed ?? null
+  const launchKey = inheritedLaunch?.launch_key ?? opts.key ?? null
+  const launchBase = inheritedLaunch?.launch_base ?? opts.base ?? null
+  const noFailover = inheritedLaunch ? !!inheritedLaunch.no_failover : !!opts.noFailover
   // A reserved row is FILLED IN, not inserted: the id is already in the
   // caller's hands and printed, so allocating a second one here would hand back
   // an id that never finishes.
@@ -828,7 +907,9 @@ export async function run(opts: {
         // every column that means something, and these mean the most.
         `UPDATE run SET started_at=?, agent=?, job=?, repo=?, cwd=?, prompt_sha=?,
                         prompt_bytes=?, prompt_head=?, label=?, status='running', probe=?, retry_of=?,
-                        route_reason=?, branch=?, parent_run_id=?, turn=?, vendor_session=?, docs_injected=?
+                        route_reason=?, branch=?, parent_run_id=?, turn=?, vendor_session=?, docs_injected=?,
+                        launch_cwd=?, launch_seed=?, launch_key=?, launch_base=?, no_failover=?,
+                        automatic_failover=?, pid=?
           WHERE id=? RETURNING id`,
       ).get(
         nowIso(), name, opts.job, opts.repo ?? repoOf(callerCwd), callerCwd, sha(prompt),
@@ -841,11 +922,15 @@ export async function run(opts: {
         // already knew the id.
         vendorSession,
         injectedDocs.length,
+        launchCwd, launchSeed, launchKey, launchBase, noFailover ? 1 : 0,
+        opts.automaticFailover ? 1 : 0, process.pid,
         opts.reserveId,
       ) as { id: number })
     : (db().query(
-        `INSERT INTO run (started_at, agent, job, repo, cwd, prompt_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of, route_reason, branch, parent_run_id, turn, vendor_session, docs_injected)
-         VALUES (?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?) RETURNING id`,
+        `INSERT INTO run (started_at, agent, job, repo, cwd, prompt_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of, route_reason, branch, parent_run_id, turn, vendor_session, docs_injected,
+                          launch_cwd, launch_seed, launch_key, launch_base, no_failover,
+                          automatic_failover, pid)
+         VALUES (?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       ).get(
         nowIso(), name, opts.job, opts.repo ?? repoOf(callerCwd), callerCwd,
         sha(prompt), prompt.length, head, opts.label ?? null,
@@ -854,11 +939,13 @@ export async function run(opts: {
         // judge, and letting a second session adopt it by answering a question
         // would be the ownership rule leaking through a new door — the same
         // door `--detach` had to be stopped from opening.
-        opts.resume ? opts.resume.sessionId : sessionId(),
+        opts.resume ? opts.resume.sessionId : (opts.ownerSession ?? sessionId()),
         opts.probe ? 1 : 0, opts.retryOf ?? null, reason, branchOf(callerCwd),
         opts.resume?.parent ?? null, opts.resume ? opts.resume.turn : 1,
         vendorSession,
         injectedDocs.length,
+        launchCwd, launchSeed, launchKey, launchBase, noFailover ? 1 : 0,
+        opts.automaticFailover ? 1 : 0, process.pid,
       ) as { id: number })
   const runToken = randomUUID()
   const declaredProject = opts.mcp ? projectAt(callerCwd) : null
@@ -1140,10 +1227,7 @@ export async function run(opts: {
     } else if (replyError) {
       status = 'failed'
       error = errorTail(replyError)
-      failureKind = replyError.split('\n').some((line) => line.trim().toLowerCase() === 'cancelled') &&
-        classify(replyError, exitCode, timedOut) === 'interrupted'
-        ? 'interrupted'
-        : 'other'
+      failureKind = classify(replyError, exitCode, timedOut)
     } else if (exitCode === 0 && isNonAnswer(output)) {
       // Exit 0 and non-empty, but what came back is the vendor saying it
       // failed. Recorded as the failure it is rather than stored as an answer:
@@ -1192,18 +1276,28 @@ export async function run(opts: {
       // is more honest than either 'ok' (it was interrupted) or a contract
       // complaint about a contract that was satisfied.
       status = 'failed'
+      const terminal = stderr.trim() || stdout.trim()
+      const terminalKind = classify(terminal, exitCode, timedOut)
+      failureKind = terminalKind
       error = errorTail(
-        `the worker completed and wrote its reply, then the process was killed ` +
+        (terminalKind === 'quota' || terminalKind === 'auth' ? `${terminal}\n` : '') +
+        `the worker completed and wrote its reply, then the process ended ` +
         `(exit ${exitCode}). Its work is in the worktree; resume or read the diff.`,
       )
-      failureKind = 'interrupted'
     } else if (writesJob && !contract) {
       // A writing run whose reply cannot be parsed has not reported what it
       // did, and its diff may be anything at all. Recording it `ok` would put
       // an unverifiable change set into the record as a completed one.
       status = 'failed'
-      error = errorTail(`reply did not match the worker contract:\n${output}`)
-      failureKind = 'other'
+      const terminal = stderr.trim() || output || stdout.trim()
+      const terminalKind = classify(terminal, exitCode, timedOut)
+      if (terminalKind === 'quota' || terminalKind === 'auth') {
+        error = errorTail(terminal)
+        failureKind = terminalKind
+      } else {
+        error = errorTail(`reply did not match the worker contract:\n${output}`)
+        failureKind = 'other'
+      }
     } else {
       status = exitCode === 0 && output ? 'ok' : 'failed'
       error = status === 'failed'
@@ -1429,14 +1523,91 @@ export async function run(opts: {
     }
   }
 
-  // Quota and auth stop the agent working until a person acts. Nothing
-  // downstream can route around that, so it is raised at the moment it happens
-  // rather than waiting to be noticed in a log.
+  // Quota and auth stop this agent working until a person acts. Notify at the
+  // moment it happens even though the failover path below can route around it.
   if (failureKind && NEEDS_HUMAN.includes(failureKind)) {
     notify(
       NEEDS_HUMAN_TITLE[failureKind]?.(name) ?? `${name} needs attention`,
       `${opts.job} failed. Routing will avoid it until it succeeds again.`,
     )
+  }
+
+  if (status === 'failed' && (failureKind === 'quota' || failureKind === 'auth')) {
+    // The vendor is normally gone already. This is deliberately the same PID
+    // termination primitive used by `orch stop`, excluding this coordinator:
+    // it still has to route and run the successor before it may exit.
+    terminateRunProcesses(claim.id, [process.pid])
+
+    const attempts = failoverAttempts(claim.id)
+    const tried = attempts.map((attempt) => attempt.agent)
+    const first = db().query(
+      `SELECT prompt_path, launch_cwd, launch_seed, launch_key, launch_base,
+              no_failover, session_id, mcp, schema_path, probe, label, repo, base_commit
+         FROM run WHERE id=?`,
+    ).get(attempts[0]!.id) as {
+      prompt_path: string | null; launch_cwd: string | null; launch_seed: string | null
+      launch_key: string | null; launch_base: string | null; no_failover: number
+      session_id: string | null; mcp: number | null; schema_path: string | null
+      probe: number; label: string | null; repo: string | null; base_commit: string | null
+    }
+    const treeName = worktree?.path ?? '(none — read-only job)'
+    if (first.no_failover || opts.noFailover) {
+      appendFailoverRefusal(claim.id, `disabled by --no-failover; worktree ${treeName}`)
+    } else if (writingFailoverRefusal(writesJob, changes, treeName)) {
+      appendFailoverRefusal(claim.id, writingFailoverRefusal(writesJob, changes, treeName)!)
+    } else if (attempts.length >= MAX_FAILOVER_ATTEMPTS) {
+      appendFailoverRefusal(
+        claim.id,
+        `the ${MAX_FAILOVER_ATTEMPTS}-attempt budget was spent; tried ${tried.join(', ')}; worktree ${treeName}`,
+      )
+    } else if (!first.prompt_path || !existsSync(first.prompt_path)) {
+      appendFailoverRefusal(
+        claim.id,
+        `the original prompt is no longer on disk; tried ${tried.join(', ')}; worktree ${treeName}`,
+      )
+    } else {
+      try {
+        const originalPrompt = readFileSync(first.prompt_path, 'utf8')
+        const next = pick(
+          opts.job, undefined, originalPrompt.length, true,
+          stackAt(first.launch_cwd ?? callerCwd), Boolean(first.mcp) && !writesJob,
+          { agents: [...new Set([...(opts.avoid ?? []), ...tried])] },
+        )
+        console.error(
+          `orch: run ${claim.id} failed over after ${name} ${failureKind}; ` +
+          `starting the same prompt on ${next.agent}`,
+        )
+        return await run({
+          job: opts.job,
+          prompt: originalPrompt,
+          agent: next.agent,
+          schemaPath: first.schema_path ?? undefined,
+          mcp: !!first.mcp,
+          probe: !!first.probe,
+          label: first.label ?? undefined,
+          cwd: first.launch_cwd ?? callerCwd,
+          repo: first.repo ?? undefined,
+          retryOf: claim.id,
+          noFailover: false,
+          ownerSession: first.session_id,
+          automaticFailover: true,
+          seed: first.launch_seed ?? undefined,
+          key: first.launch_key ?? undefined,
+          // Prefer the immutable cut point once a writing tree exists.
+          base: writesJob ? (first.base_commit ?? first.launch_base ?? undefined) : undefined,
+          avoid: opts.avoid,
+        })
+      } catch (e) {
+        const successor = db().query('SELECT id FROM run WHERE retry_of=?').get(claim.id)
+        // Once a successor exists its own terminal row is the explanation.
+        if (successor) throw e
+        appendFailoverRefusal(
+          claim.id,
+          `no eligible agent remains after trying ${tried.join(', ')}: ` +
+          `${String((e as Error)?.message ?? e)}; worktree ${treeName}`,
+        )
+      }
+    }
   }
 
   if (status === 'failed') {

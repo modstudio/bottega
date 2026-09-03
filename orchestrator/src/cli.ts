@@ -8,7 +8,8 @@ import { AGENTS, available, installed, ensureLocalHealth,
          lastWakeAttempt, readStrictCodexSchema } from './agents.ts'
 import { candidates, pick, scoreboard, MIN_SAMPLE } from './route.ts'
 import { guide } from './guide.ts'
-import { repoOf, preflight, KEEP_RUN_FILES_DAYS, runFilePaths, type DetachSpec } from './run.ts'
+import { repoOf, preflight, KEEP_RUN_FILES_DAYS, runFilePaths, terminateRunProcesses,
+         type DetachSpec } from './run.ts'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
@@ -18,7 +19,7 @@ import { projectAt, projectByName, projects } from './projects.ts'
 import { resolveBase, repoRootOf, removeBranch, unmergedBranch } from './worktree.ts'
 import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
 import { WORKER_PREAMBLE, READONLY_PREAMBLE, contractConflicts } from './contract.ts'
-import { collectResult, collectWait } from './collect.ts'
+import { collectResult, collectWait, resolveFailover, failoverSummary } from './collect.ts'
 import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
 
 /**
@@ -98,17 +99,20 @@ async function follow(id: number, quiet: boolean, exitOnFailure = true): Promise
             output_path, error, route_reason, evidence_excluded
        FROM run WHERE id = ?`)
   for (;;) {
-    const row = q.get(id) as {
+    const chain = resolveFailover(db(), id)
+    const row = q.get(chain.finalId) as {
       status: string; agent: string; job: string; parent_run_id: number | null
       latency_ms: number | null; vendor_tokens: number | null
       output_path: string | null; error: string | null; route_reason: string | null
       evidence_excluded: string | null
     } | null
-    const outcome = row ? outcomeOf({ id, ...row }) : null
-    if (row && outcome?.terminal) {
+    const outcome = row ? outcomeOf({ id: chain.finalId, ...row }) : null
+    if (row && outcome?.terminal && !chain.settling) {
       const out = row.output_path && existsSync(row.output_path)
         ? readFileSync(row.output_path, 'utf8') : ''
       if (out) console.log(out)
+      const failover = failoverSummary(chain.attempts)
+      if (failover) console.error(`\n— ${failover}`)
       /**
        * ASKING IS NOT A FAILURE, and printing it as one undoes the rename.
        *
@@ -123,15 +127,15 @@ async function follow(id: number, quiet: boolean, exitOnFailure = true): Promise
           `SELECT q.question FROM question q JOIN run r ON r.id = q.run_id
             WHERE (r.id = ? OR r.parent_run_id = ?) AND q.answered_at IS NULL
             ORDER BY q.id`,
-        ).all(id, id) as { question: string }[]
+        ).all(row.parent_run_id ?? chain.finalId, row.parent_run_id ?? chain.finalId) as { question: string }[]
         console.error(
           `\n— run ${id} · ${row.agent} · stopped to ask` +
           (row.latency_ms ? ` after ${dur(row.latency_ms)}` : '') + '\n' +
           open.map((q) => `  · ${q.question}`).join('\n') +
           `\n\n  ${outcome.line}` +
           `\n  orch inbox              the questions in full` +
-          `\n  orch answer ${id} ...   rule, and it resumes where it stopped` +
-          `\n  orch diff ${id}          what it changed before it asked`,
+          `\n  orch answer ${row.parent_run_id ?? chain.finalId} ...   rule, and it resumes where it stopped` +
+          `\n  orch diff ${row.parent_run_id ?? chain.finalId}          what it changed before it asked`,
         )
         return row.status
       }
@@ -148,7 +152,7 @@ async function follow(id: number, quiet: boolean, exitOnFailure = true): Promise
           (row.route_reason ? ` (${row.route_reason})` : '') +
           ` · ${dur(row.latency_ms ?? 0)}` +
           (row.vendor_tokens ? ` · ${row.vendor_tokens.toLocaleString()} vendor tokens` : '') +
-          `\n  score it:  ${scoreHint(id, row.job, row.parent_run_id)}` +
+          `\n  score it:  ${scoreHint(chain.finalId, row.job, row.parent_run_id)}` +
           evidenceNote(row),
       )
       return row.status
@@ -481,8 +485,19 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
   const prompt = message
     ?? 'Continue from where you stopped and finish the spec. If you reached a ' +
        'decision that is not yours, stop and ask as before.'
+  const launch = db().query(
+    `SELECT launch_cwd, launch_seed, launch_key, launch_base, no_failover
+       FROM run WHERE id=?`,
+  ).get(id) as {
+    launch_cwd: string | null; launch_seed: string | null; launch_key: string | null
+    launch_base: string | null; no_failover: number
+  }
   const childId = await detach(row.job, prompt, {
     cwd: latest.cwd ?? process.cwd(),
+    seed: launch.launch_seed ?? undefined,
+    key: launch.launch_key ?? undefined,
+    base: launch.launch_base ?? undefined,
+    noFailover: !!launch.no_failover,
     resume: {
       parent: id, agent: latest.agent, session: sessionFrom.vendor_session,
       turn: latest.turn + 1, sessionId: row.session_id,
@@ -537,6 +552,7 @@ function usage(): never {
       --key <KEY-123>           supply a required branch ticket key
       --repo <name>             attribute work launched outside a registered project
       --follow                  block and watch the run instead of returning its id
+      --no-failover             do not retry quota/auth deaths on another agent
 
   orch contract <job>          print the preamble prepended to that job's prompt
 
@@ -641,6 +657,7 @@ function doUsage(): never {
   --file <path>    read the prompt from a file instead of argv or stdin
   --detach         print the run id and return immediately (the default)
   --follow         block and watch the run instead of returning its id
+  --no-failover    do not retry quota/auth deaths on another agent
   --quiet          print only the reply or run id
 `)
   process.exit(0)
@@ -922,6 +939,7 @@ switch (cmd) {
         agent: flag('agent'), schema, label: flag('label'),
         mcp: has('mcp'), model: flag('model'), probe: has('probe'), seed: flag('seed'), key: flag('key'),
         repo: explicitRepo, base, avoid, distinctModels,
+        noFailover: has('no-failover'),
       })
       console.log(id)
       if (!has('quiet')) {
@@ -960,6 +978,7 @@ switch (cmd) {
       agent: flag('agent'), schema, label: flag('label'),
       mcp: has('mcp'), model: flag('model'), probe: has('probe'), seed: flag('seed'), key: flag('key'),
       repo: explicitRepo, base, avoid, distinctModels,
+      noFailover: has('no-failover'),
     })
 
     await follow(id, has('quiet'))
@@ -1953,11 +1972,7 @@ switch (cmd) {
       }
     })()
 
-    for (const pid of pids) {
-      try { process.kill(pid, 'SIGTERM') } catch (e) {
-        if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e
-      }
-    }
+    terminateRunProcesses(id)
     console.log(`stopped run ${id}`)
     break
   }
@@ -2305,7 +2320,7 @@ switch (cmd) {
   }
 
   case 'runs': {
-    const where: string[] = ['r.parent_run_id IS NULL']
+    const where: string[] = ['r.parent_run_id IS NULL', 'r.automatic_failover = 0']
     // Typed as the bindings SQLite actually accepts: `unknown[]` does not
     // satisfy the query signature, which is why this file never typechecked.
     const args: (string | number)[] = []
@@ -2313,11 +2328,11 @@ switch (cmd) {
     if (jobFlag) { where.push('r.job = ?'); args.push(jobFlag) }
     const agentFlag = flag('agent')
     if (agentFlag) { where.push('r.agent = ?'); args.push(agentFlag) }
-    if (has('unscored')) where.push(UNSCORED_WHERE)
+    const onlyUnscored = has('unscored')
     const sinceFlag = flag('since')
     if (sinceFlag) { where.push('r.started_at >= ?'); args.push(sinceFlag) }
     const json = has('json')
-    const rows = db().query(
+    let rows = db().query(
       `SELECT r.id, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
               current_run.status, s.delivery, s.quality,
               COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason
@@ -2332,7 +2347,30 @@ switch (cmd) {
          LEFT JOIN score s ON s.run_id = r.id
          ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
         ORDER BY r.id DESC LIMIT ?`,
-    ).all(...args, Number(flag('limit') ?? (json ? 100000 : 20))) as Record<string, unknown>[]
+    ).all(...args, 100000) as Record<string, unknown>[]
+
+    rows = rows.flatMap((r) => {
+      const chain = resolveFailover(db(), Number(r.id))
+      const final = chain.attempts.at(-1)!
+      if (onlyUnscored) {
+        const owed = db().query(
+          `SELECT 1 ok FROM run r LEFT JOIN score s ON s.run_id=r.id
+            WHERE r.id=? AND ${UNSCORED_WHERE}`,
+        ).get(final.rootId)
+        if (!owed) return []
+      }
+      const current = db().query(
+        'SELECT status, latency_ms, vendor_tokens, route_reason FROM run WHERE id=?',
+      ).get(final.id) as {
+        status: string; latency_ms: number | null; vendor_tokens: number | null
+        route_reason: string | null
+      }
+      return [{
+        ...r, ...current,
+        answer_agent: final.agent,
+        failover_chain: chain.attempts.map((attempt) => attempt.agent),
+      }]
+    }).slice(0, Number(flag('limit') ?? (json ? 100000 : 20)))
 
     // JSON Lines, so a consumer can stream it and a truncated read loses only
     // the last record. This is a published interface: `hub` reads it rather
@@ -2348,7 +2386,7 @@ switch (cmd) {
       const outcome = outcomeOf(r as OutcomeRow)
       const status = outcome.line.split(' - ', 1)[0]!
       console.log(
-        `${String(r.id).padStart(4)}  ${String(r.agent).padEnd(6)} ${String(r.job).padEnd(14)}` +
+        `${String(r.id).padStart(4)}  ${String((r.failover_chain as string[]).join('→')).padEnd(6)} ${String(r.job).padEnd(14)}` +
           // 'running' is not a failure, and a null latency is not zero seconds.
           ` ${String(r.status === 'failed' ? status.toUpperCase() : status).padEnd(10)}` +
           ` ${dur(r.latency_ms as number | null).padStart(8)}  ${String(r.prompt_head).slice(0, 60)}`,

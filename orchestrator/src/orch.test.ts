@@ -49,7 +49,7 @@ const { runDetail, state } = await import('./serve.ts')
 const { classify, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOT_EVIDENCE, COOLS_DOWN,
         isNonAnswer, detectBlockers } = await import('./failure.ts')
 const { errorTail, preflight, detachedRunOptions, runFilePaths, pruneRuns, KEEP_RUN_FILES_DAYS,
-        grokMcpConnection, run: runJob } = await import('./run.ts')
+        grokMcpConnection, writingFailoverRefusal, run: runJob } = await import('./run.ts')
 const run = runJob
 const { summary } = await import('./metric.ts')
 const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
@@ -1178,6 +1178,182 @@ describe('retry keeps the work on the same agent', () => {
   })
 })
 
+describe('quota failover is one bounded unit of work', () => {
+  const CLI = new URL('cli.ts', import.meta.url).pathname
+  const orch = (...args: string[]) => {
+    const p = Bun.spawnSync([process.execPath, CLI, ...args], {
+      env: {
+        ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+        CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+      },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    return { code: p.exitCode, out: p.stdout.toString(), err: p.stderr.toString() }
+  }
+
+  test('a quota death runs the original prompt on another agent and returns that answer', async () => {
+    const binDir = join(dir, 'failover-bin')
+    mkdirSync(binDir, { recursive: true })
+    writeFileSync(join(binDir, 'codex'), '#!/bin/sh\necho "HTTP 402: balance exhausted" >&2\nexit 1\n')
+    writeFileSync(
+      join(binDir, 'grok'),
+      '#!/bin/sh\nprintf \'{"type":"result","result":"successor answer"}\\n\'\n',
+    )
+    chmodSync(join(binDir, 'codex'), 0o755)
+    chmodSync(join(binDir, 'grok'), 0o755)
+    const oldPath = process.env.PATH
+    const oldDepth = process.env.ORCH_DEPTH
+    process.env.PATH = `${binDir}:${oldPath ?? ''}`
+    process.env.ORCH_DEPTH = '0'
+    try {
+      const result = await runJob({
+        job: 'understand', prompt: 'the exact original prompt', agent: 'codex', cwd: dir,
+        ownerSession: 'failover-owner',
+      })
+      expect(result.agent).toBe('grok')
+      expect(result.output).toBe('successor answer')
+      const rows = db().query(
+        'SELECT id, agent, status, failure_kind, retry_of, session_id FROM run ORDER BY id',
+      ).all() as {
+        id: number; agent: string; status: string; failure_kind: string | null
+        retry_of: number | null; session_id: string | null
+      }[]
+      expect(rows).toHaveLength(2)
+      expect(rows[0]).toMatchObject({ agent: 'codex', status: 'failed', failure_kind: 'quota' })
+      expect(rows[1]).toMatchObject({
+        agent: 'grok', status: 'ok', retry_of: rows[0]!.id, session_id: 'failover-owner',
+      })
+
+      const collected = orch('result', String(rows[0]!.id))
+      expect(collected.code).toBe(0)
+      expect(collected.out).toContain('successor answer')
+      expect(collected.err).toContain('codex died (quota:')
+      expect(collected.err).toContain('grok answered')
+      expect(pendingForSession('failover-owner').map((row) => row.id)).toEqual([rows[1]!.id])
+    } finally {
+      process.env.PATH = oldPath
+      if (oldDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = oldDepth
+    }
+  })
+
+  test('--no-failover holds and records a clear terminal explanation', async () => {
+    const binDir = join(dir, 'no-failover-bin')
+    mkdirSync(binDir, { recursive: true })
+    writeFileSync(join(binDir, 'codex'), '#!/bin/sh\necho "usage limit reached" >&2\nexit 1\n')
+    chmodSync(join(binDir, 'codex'), 0o755)
+    const oldPath = process.env.PATH
+    const oldDepth = process.env.ORCH_DEPTH
+    process.env.PATH = `${binDir}:${oldPath ?? ''}`
+    process.env.ORCH_DEPTH = '0'
+    try {
+      await expect(runJob({
+        job: 'understand', prompt: 'do not retry this', agent: 'codex', cwd: dir,
+        noFailover: true,
+      })).rejects.toThrow(/usage limit reached/)
+      const row = db().query(
+        'SELECT no_failover, failure_kind, error FROM run ORDER BY id DESC LIMIT 1',
+      ).get() as { no_failover: number; failure_kind: string; error: string }
+      expect(row.no_failover).toBe(1)
+      expect(row.failure_kind).toBe('quota')
+      expect(row.error).toContain('Failover refused: disabled by --no-failover')
+      expect(row.error).toContain('worktree (none — read-only job)')
+    } finally {
+      process.env.PATH = oldPath
+      if (oldDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = oldDepth
+    }
+  })
+
+  test('three quota deaths spend the attempt budget and name every agent', async () => {
+    const binDir = join(dir, 'budget-bin')
+    mkdirSync(binDir, { recursive: true })
+    for (const bin of ['codex', 'agy']) {
+      writeFileSync(join(binDir, bin), '#!/bin/sh\necho "HTTP 402: no balance" >&2\nexit 1\n')
+      chmodSync(join(binDir, bin), 0o755)
+    }
+    writeFileSync(
+      join(binDir, 'grok'),
+      '#!/bin/sh\nprintf \'{"type":"result","errors":["HTTP 402: no balance"]}\\n\'\n',
+    )
+    chmodSync(join(binDir, 'grok'), 0o755)
+    const oldPath = process.env.PATH
+    const oldDepth = process.env.ORCH_DEPTH
+    process.env.PATH = `${binDir}:${oldPath ?? ''}`
+    process.env.ORCH_DEPTH = '0'
+    try {
+      await expect(runJob({
+        job: 'review-lens-inline', prompt: 'bounded', agent: 'codex', cwd: dir,
+      })).rejects.toThrow()
+      const rows = db().query(
+        'SELECT id, agent, retry_of, error FROM run ORDER BY id',
+      ).all() as { id: number; agent: string; retry_of: number | null; error: string }[]
+      expect(rows).toHaveLength(3)
+      expect(rows.map((row) => row.agent)).toEqual(['codex', 'agy', 'grok'])
+      expect(rows[2]!.error).toContain('the 3-attempt budget was spent')
+      expect(rows[2]!.error).toContain('tried codex, agy, grok')
+    } finally {
+      process.env.PATH = oldPath
+      if (oldDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = oldDepth
+    }
+  })
+
+  test('a writing run with edits names and preserves its tree instead of failing over', () => {
+    const reason = writingFailoverRefusal(true, {
+      files: ['partial.ts'], diff: 'diff', insertions: 1, deletions: 0,
+    }, '/tmp/orch-42')
+    expect(reason).toBe(
+      'writing run has 1 changed file(s); preserving worktree /tmp/orch-42 ' +
+      'so two agents never share one diff',
+    )
+    expect(writingFailoverRefusal(true, {
+      files: [], diff: '', insertions: 0, deletions: 0,
+    }, '/tmp/orch-42')).toBeNull()
+    expect(writingFailoverRefusal(true, null, '/tmp/orch-42'))
+      .toContain('worktree diff could not be read')
+  })
+
+  test('a resumed turn can also fail over forward without confusing the two axes', () => {
+    const root = addRun({ agent: 'codex', job: 'understand', status: 'failed' })
+    const turn = addRun({
+      agent: 'codex', job: 'understand', status: 'failed', kind: 'quota', parent: root, turn: 2,
+    })
+    db().query("UPDATE run SET error='HTTP 402' WHERE id IN (?,?)").run(root, turn)
+    const successor = addRun({ agent: 'grok', job: 'understand', session: 's' })
+    db().query('UPDATE run SET retry_of=?, automatic_failover=1 WHERE id=?').run(turn, successor)
+    const output = join(dir, `combined-axes-${successor}.txt`)
+    writeFileSync(output, 'answer after resumed failure')
+    db().query('UPDATE run SET output_path=? WHERE id=?').run(output, successor)
+
+    const waited = orch('wait', String(root))
+    expect(waited.code).toBe(0)
+    expect(waited.out).toContain(`${root}\tok`)
+    expect(waited.out).toContain('codex died (quota: HTTP 402); grok answered')
+    const result = orch('result', String(root))
+    expect(result.out).toContain('answer after resumed failure')
+    expect(result.err).toContain('grok answered')
+    const listed = orch('runs')
+    expect(listed.out.match(new RegExp(`\\b${root}\\s+codex→grok`, 'g'))).toHaveLength(1)
+    expect(listed.out).not.toMatch(new RegExp(`\\b${successor}\\s+`))
+  })
+
+  test('a deliberate retry remains separate from an automatic failover chain', () => {
+    const first = addRun({ agent: 'codex', job: 'understand', status: 'failed', kind: 'quota' })
+    const retry = addRun({ agent: 'grok', job: 'understand' })
+    db().query('UPDATE run SET retry_of=? WHERE id=?').run(first, retry)
+    const original = orch('result', String(first))
+    expect(original.code).toBe(1)
+    expect(original.err).not.toContain('failover:')
+    const retried = orch('result', String(retry))
+    expect(retried.code).toBe(0)
+    expect(retried.err).not.toContain('failover:')
+    const listed = orch('runs')
+    expect(listed.out).toMatch(new RegExp(`\\b${first}\\s+codex\\s+`))
+    expect(listed.out).toMatch(new RegExp(`\\b${retry}\\s+grok\\s+`))
+  })
+})
+
 describe('a destroyed output is not evidence about the agent', () => {
   test('score --void retains the run, output, and score but removes routing evidence', () => {
     const CLI = new URL('cli.ts', import.meta.url).pathname
@@ -2168,12 +2344,14 @@ describe('detached run collection', () => {
     expect(detachedRunOptions('implement', 'prompt', 42, {
       agent: 'codex', schema: '/tmp/schema.json', mcp: true, model: 'model', probe: true,
       label: 'security lens', seed: 'small', key: 'DEV-63', repo: 'project', base: 'main', avoid: ['grok'],
-      distinctModels: ['other-model'], retryOf: 7, cwd: '/tmp/repo', resume,
+      distinctModels: ['other-model'], retryOf: 7, cwd: '/tmp/repo', noFailover: true,
+      ownerSession: 'owner', resume,
     })).toEqual({
       job: 'implement', prompt: 'prompt', reserveId: 42,
       agent: 'codex', schemaPath: '/tmp/schema.json', mcp: true, model: 'model', probe: true,
       label: 'security lens', seed: 'small', key: 'DEV-63', repo: 'project', base: 'main', avoid: ['grok'],
-      distinctModels: ['other-model'], retryOf: 7, cwd: '/tmp/repo', resume,
+      distinctModels: ['other-model'], retryOf: 7, cwd: '/tmp/repo', noFailover: true,
+      ownerSession: 'owner', resume,
     })
   })
 
@@ -2258,6 +2436,7 @@ describe('detached run collection', () => {
       for (const name of [
         '--agent', '--schema', '--mcp', '--model', '--label', '--probe', '--seed', '--key',
         '--repo', '--base', '--avoid', '--distinct-from', '--file', '--detach', '--follow', '--quiet',
+        '--no-failover',
       ]) expect(r.out).toContain(name)
     }
   })

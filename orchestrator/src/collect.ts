@@ -4,6 +4,71 @@ import { failureReason, outcomeOf } from './outcome.ts'
 
 export const COLLECTION_COMMANDS = new Set(['result', 'wait'])
 
+export type FailoverAttempt = {
+  rootId: number; id: number; agent: string; status: string
+  error: string | null; failure_kind: string | null; exit_code: number | null
+}
+
+/** Resolve conversation turns backward, then failover successors forward. */
+export function resolveFailover(database: Database, requestedId: number): {
+  requestedId: number; attempts: FailoverAttempt[]; finalId: number; settling: boolean
+} {
+  const member = database.query('SELECT id, parent_run_id FROM run WHERE id=?').get(requestedId) as
+    { id: number; parent_run_id: number | null } | null
+  if (!member) throw new Error(`no run ${requestedId}`)
+  let rootId = member.parent_run_id ?? member.id
+  for (;;) {
+    const root = database.query(
+      'SELECT retry_of, automatic_failover FROM run WHERE id=?',
+    ).get(rootId) as { retry_of: number | null; automatic_failover: number }
+    if (!root.retry_of || !root.automatic_failover) break
+    const prior = database.query('SELECT id, parent_run_id FROM run WHERE id=?').get(root.retry_of) as
+      { id: number; parent_run_id: number | null } | null
+    if (!prior) break
+    rootId = prior.parent_run_id ?? prior.id
+  }
+
+  const attempts: FailoverAttempt[] = []
+  for (;;) {
+    const latest = database.query(
+      `SELECT id, agent, status, error, failure_kind, exit_code
+         FROM run WHERE id=? OR parent_run_id=?
+        ORDER BY turn DESC, id DESC LIMIT 1`,
+    ).get(rootId, rootId) as Omit<FailoverAttempt, 'rootId'>
+    attempts.push({ rootId, ...latest })
+    const successor = database.query(
+      `SELECT id FROM run WHERE automatic_failover=1 AND retry_of IN
+         (SELECT id FROM run WHERE id=? OR parent_run_id=?)
+        ORDER BY id LIMIT 1`,
+    ).get(rootId, rootId) as { id: number } | null
+    if (!successor) break
+    rootId = successor.id
+  }
+  const last = attempts.at(-1)!
+  const pending = database.query('SELECT pid, no_failover FROM run WHERE id=?').get(last.id) as
+    { pid: number | null; no_failover: number }
+  let workerAlive = false
+  if (pending.pid) {
+    try { process.kill(pending.pid, 0); workerAlive = true } catch { /* terminal worker */ }
+  }
+  const settling = last.status === 'failed' &&
+    (last.failure_kind === 'quota' || last.failure_kind === 'auth') &&
+    !pending.no_failover && !last.error?.includes('Failover refused:') && workerAlive
+  return { requestedId, attempts, finalId: last.id, settling }
+}
+
+export function failoverSummary(attempts: FailoverAttempt[]): string {
+  if (attempts.length < 2) return ''
+  const deaths = attempts.slice(0, -1).map((attempt) =>
+    `${attempt.agent} died (${attempt.failure_kind ?? attempt.status}: ` +
+    `${(attempt.error ?? 'no error recorded').replace(/\s+/g, ' ').trim()})`)
+  const final = attempts.at(-1)!
+  const handoff = final.status === 'ok'
+    ? `${final.agent} answered`
+    : `${final.agent} took over and ended ${final.status}`
+  return `failover: ${deaths.join('; ')}; ${handoff}`
+}
+
 function dur(ms: number | null | undefined): string {
   if (ms == null) return '—'
   const t = ms / 1000
@@ -53,12 +118,13 @@ export function collectResult(
 ): void {
   const id = Number(argv[1])
   if (!id) throw new Error('orch result <run-id>')
+  const chain = resolveFailover(database, id)
   const row = database.query(
     `SELECT id, agent, job, status, latency_ms, vendor_tokens, output_path, error,
             failure_kind, exit_code, parent_run_id, evidence_excluded, base_commit,
             cwd, mcp, mcp_server, mcp_connected, mcp_error
        FROM run WHERE id = ?`,
-  ).get(id) as {
+  ).get(chain.finalId) as {
     id: number; agent: string; job: string; status: string; latency_ms: number | null
     vendor_tokens: number | null; output_path: string | null; error: string | null
     failure_kind: string | null; exit_code: number | null; parent_run_id: number | null
@@ -70,13 +136,15 @@ export function collectResult(
 
   const outcome = outcomeOf(row)
   const baseNote = row.base_commit ? `\n  base:      ${row.base_commit}` : ''
-  if (!outcome.terminal) {
+  if (!outcome.terminal || chain.settling) {
     console.error(`run ${id} (${row.agent}/${row.job}) is still running`)
     process.exit(2)
   }
   if (row.output_path && existsSync(row.output_path)) {
     console.log(readFileSync(row.output_path, 'utf8'))
   }
+  const chainNote = failoverSummary(chain.attempts)
+  if (chainNote) console.error(`\n— ${chainNote}`)
   if (row.status === 'asking') {
     const rootId = row.parent_run_id ?? row.id
     const open = database.query(
@@ -127,21 +195,24 @@ export async function collectWait(
   const timeoutAt = argv.indexOf('--timeout')
   const timeoutMs = Number(timeoutAt >= 0 ? argv[timeoutAt + 1] : 1800) * 1000
   const deadline = Date.now() + timeoutMs
-  const q = database.query(
-    `SELECT id, status, error, failure_kind, exit_code
-       FROM run WHERE id IN (${ids.map(() => '?').join(',')})`,
-  )
   for (;;) {
     beforePoll()
-    const rows = q.all(...ids) as {
-      id: number; status: string; error: string | null
-      failure_kind: string | null; exit_code: number | null
-    }[]
-    const outcomes = rows.map((row) => ({ row, outcome: outcomeOf(row) }))
-    const running = outcomes.filter(({ outcome }) => !outcome.terminal)
+    const outcomes = ids.map((id) => {
+      const chain = resolveFailover(database, id)
+      const row = database.query(
+        'SELECT id, status, error, failure_kind, exit_code FROM run WHERE id=?',
+      ).get(chain.finalId) as {
+        id: number; status: string; error: string | null
+        failure_kind: string | null; exit_code: number | null
+      }
+      return { requestedId: id, row, chain, outcome: outcomeOf(row) }
+    })
+    const running = outcomes.filter(({ outcome, chain }) => !outcome.terminal || chain.settling)
     if (!running.length) {
-      for (const { row, outcome } of outcomes) {
-        console.log(`${row.id}\t${outcome.line}`)
+      for (const { requestedId, row, outcome, chain } of outcomes) {
+        console.log(`${requestedId}\t${outcome.line}`)
+        const note = failoverSummary(chain.attempts)
+        if (note) console.log(`  ${note}`)
         if (!outcome.ok) console.log(`  ${failureReason(row)}`)
       }
       if (outcomes.some(({ outcome }) => !outcome.ok)) process.exit(1)

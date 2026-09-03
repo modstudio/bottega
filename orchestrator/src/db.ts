@@ -58,6 +58,17 @@ export function applySchema(d: Database): void {
   // dropped connection — should be retried on the SAME agent, not silently
   // re-routed to a different one; this is how the two are told apart later.
   addColumn(d, 'run', 'retry_of', 'INTEGER')
+  // Inputs a later process needs to start the same work from scratch. A
+  // failover may happen after an asking turn, when the original CLI flags are
+  // no longer in memory, so these belong with mcp and schema_path on the run.
+  addColumn(d, 'run', 'launch_cwd', 'TEXT')
+  addColumn(d, 'run', 'launch_seed', 'TEXT')
+  addColumn(d, 'run', 'launch_key', 'TEXT')
+  addColumn(d, 'run', 'launch_base', 'TEXT')
+  addColumn(d, 'run', 'no_failover', 'INTEGER NOT NULL DEFAULT 0')
+  // retry_of also serves the deliberate `orch retry` command. This flag says
+  // which linked rows were created by the automatic quota/auth policy.
+  addColumn(d, 'run', 'automatic_failover', 'INTEGER NOT NULL DEFAULT 0')
   // Why this agent was picked. Held only in memory before, which was fine
   // while `orch do` printed it itself - it no longer runs the agent in its
   // own process, so the row has to carry it.
@@ -407,6 +418,12 @@ const RUN_DDL = `CREATE TABLE run (
       pid           INTEGER,
       session_id    TEXT,
       retry_of      INTEGER,
+      launch_cwd    TEXT,
+      launch_seed   TEXT,
+      launch_key    TEXT,
+      launch_base   TEXT,
+      no_failover   INTEGER NOT NULL DEFAULT 0,
+      automatic_failover INTEGER NOT NULL DEFAULT 0,
       route_reason  TEXT,
       branch        TEXT,
       branch_kept   TEXT,
