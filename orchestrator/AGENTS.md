@@ -832,6 +832,42 @@ does not know it can serve its own branch on its own port will verify against
 whatever is already running — a different branch's bundle — and that does not
 fail, it PASSES against the wrong tree.
 
+## A tool that cannot see its data refuses
+
+It never reports emptiness as a finding. "No rows", "no task", "nothing to do"
+and "0 affected" are answers a tool may give ONLY when it has looked at the
+right data and found nothing there. When it cannot reach the data at all —
+wrong directory, a database it may not read or write, missing configuration —
+it exits nonzero and names the data it could not reach. The same holds for
+machine-readable output: a caller parsing a number must receive an error,
+never a zero.
+
+Four instances on 2026-09-03, all the same shape:
+
+- `hub task show DEV-153` from a worktree answers "no task DEV-153". hub.db is
+  gitignored so no worktree has one; hub opens an empty database and reports
+  the task as absent. Worker specs that told a worker to read its task body
+  from hub had therefore been running on whatever the inline spec said.
+  Nothing was built wrong only because those specs happened to be
+  self-contained. (DEV-154)
+- The DEV-137 migration script opened a worktree's empty orch.db and printed
+  "0 child rows would be resolved". A session nearly closed the task on that
+  number.
+- hub's docSet test believed it had isolated ORCH_DB, silently reached the
+  real database, and was revealed only by a permission error. The cause was
+  Bun.spawn inheriting the environment as of process start: the environment did
+  not fail to be READ, it failed to be PASSED. Those are indistinguishable from
+  the caller's side and have different fixes, which is what makes this an
+  instance of the rule rather than merely an example of it. (DEV-153)
+- orch printed a styled run id into a pipe, so callers parsed 0 or NaN instead
+  of failing. (DEV-152)
+
+Absence and failure are the two cases a caller cannot tell apart from a
+successful-looking empty result — and both of them look like good news. Every
+incident above was a session believing good news. That is why the burden sits
+on the tool to refuse, rather than on every caller to remember which empty
+answers are trustworthy.
+
 ## Docs
 
 Operator docs are markdown facts about an installation, stored in `orch.db`
