@@ -269,10 +269,12 @@ were green before it. Merge fast-forward only.
 
 Trunk can move while your gates run, because other sessions land too. If the
 fast-forward is refused for that reason, you have simply lost a race: rebase onto
-the new trunk, run the gates again, and try the merge again. Do this at most
-THREE times in total. Losing three races in a row is not a race any more, so stop
-and hand the work back. Never resolve a merge conflict unsupervised, and never
-force the merge.
+the new trunk, run the gates again, and try the merge again. The common-object
+guard runs before every merge can update trunk. Only a merge that passes that
+guard may be treated as a lost fast-forward race and retried; if the guard names
+a stranded object, stop immediately. Do this at most THREE times in total.
+Losing three races in a row is not a race any more, so stop and hand the work
+back. Never resolve a merge conflict unsupervised, and never force the merge.
 
 Before touching the tree, verify that the prompt identifies one source run number
 and one named target branch, and that both resolve. If either is missing,

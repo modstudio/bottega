@@ -13,7 +13,8 @@ import { pick } from './route.ts'
 import { db, nowIso, ROOT, DB_PATH, sessionId, resolveRootFromLastTurn } from './db.ts'
 import {
   createWorktree, createWithTool, toolFor, changesIn, repoRootOf, resolveBase, worktreeGitDir,
-  prepareWorktreeObjects, worktreeGitEnvironment, carryWorkingState, removeFor, type Worktree,
+  prepareWorktreeObjects, prepareSharedRefGuard, worktreeGitEnvironment, carryWorkingState,
+  removeFor, type Worktree,
   type WorktreeObjectEnvironment, validateSeedWithTool,
 } from './worktree.ts'
 import { recipeNotes } from './recipe.ts'
@@ -341,6 +342,7 @@ const ALLOW_ENV_PREFIX =
 
 function childEnv(
   a: (typeof AGENTS)[string], runId?: number, runToken?: string,
+  extra: Record<string, string> = {},
 ): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) {
@@ -380,7 +382,7 @@ function childEnv(
    * register.
    */
   env.ORCH_DB = DB_PATH
-  return { ...env, ...(a.env?.() ?? {}) }
+  return { ...env, ...(a.env?.() ?? {}), ...extra }
 }
 
 /**
@@ -1014,6 +1016,7 @@ export async function run(opts: {
   // write only this worktree's metadata directory, so its objects live there
   // and read the repository's existing objects through a read-only alternate.
   const gitObjectEnvironment = gitObjectEnvironmentFor(name, requestedJob, worktree)
+  const gitConfigEnvironment = worktree ? prepareSharedRefGuard(worktree.path) : undefined
   const argvOpts = {
     prompt,
     out: outPath,
@@ -1042,6 +1045,7 @@ export async function run(opts: {
     // that one metadata directory, never the common .git directory around it.
     writableRoots: repoJob && worktree ? [worktreeGitDir(worktree.path)] : undefined,
     gitObjectEnvironment,
+    gitConfigEnvironment,
   }
   const argv = opts.resume
     ? a.resumeArgv!({ ...argvOpts, session: opts.resume.session })
@@ -1073,7 +1077,7 @@ export async function run(opts: {
   try {
     const p = Bun.spawn([a.bin, ...argv], {
       cwd,
-      env: childEnv(a, claim.id, runToken),
+      env: childEnv(a, claim.id, runToken, gitConfigEnvironment),
       stdin: a.stdin ? new TextEncoder().encode(prompt) : 'ignore',
       stdout: 'pipe',
       stderr: 'pipe',

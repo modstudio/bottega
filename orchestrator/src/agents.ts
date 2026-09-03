@@ -104,6 +104,8 @@ export type ArgvOpts = {
     GIT_OBJECT_DIRECTORY: string
     GIT_ALTERNATE_OBJECT_DIRECTORIES: string
   }
+  /** Command-scoped git configuration enforced inside the worker's shell. */
+  gitConfigEnvironment?: Record<string, string>
   /**
    * The conversation this turn belongs to.
    *
@@ -481,6 +483,11 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
   }
   if (o.gitObjectEnvironment) {
     for (const [key, value] of Object.entries(o.gitObjectEnvironment)) {
+      a.push('-c', `shell_environment_policy.set.${key}=${JSON.stringify(value)}`)
+    }
+  }
+  if (o.gitConfigEnvironment) {
+    for (const [key, value] of Object.entries(o.gitConfigEnvironment)) {
       a.push('-c', `shell_environment_policy.set.${key}=${JSON.stringify(value)}`)
     }
   }

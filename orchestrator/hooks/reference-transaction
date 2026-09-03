@@ -1,0 +1,43 @@
+#!/bin/sh
+set -eu
+
+[ "${1-}" = prepared ] || exit 0
+
+transaction=$(mktemp "${TMPDIR:-/tmp}/orch-ref-transaction.XXXXXX")
+objects=$(mktemp "${TMPDIR:-/tmp}/orch-ref-objects.XXXXXX")
+common=$(mktemp "${TMPDIR:-/tmp}/orch-ref-common.XXXXXX")
+missing=$(mktemp "${TMPDIR:-/tmp}/orch-ref-missing.XXXXXX")
+trap 'rm -f "$transaction" "$objects" "$common" "$missing"' EXIT HUP INT TERM
+cat > "$transaction"
+
+zero=0000000000000000000000000000000000000000
+while read -r old new ref; do
+  case "$ref" in
+    HEAD|refs/bisect/*|refs/worktree/*|refs/rewritten/*) continue ;;
+  esac
+  [ "$new" = "$zero" ] && continue
+
+  : > "$objects"
+  if ! git rev-list --objects --no-object-names "$new" > "$objects"; then
+    echo "refusing shared ref update $ref: cannot enumerate objects reachable from $new" >&2
+    exit 1
+  fi
+  env -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES \
+    git cat-file --batch-check < "$objects" > "$common"
+  while read -r oid kind; do
+    [ -n "$oid" ] || continue
+    if [ "$kind" = missing ]; then
+      printf '%s %s\n' "$oid" "$ref" >> "$missing"
+    fi
+  done < "$common"
+done < "$transaction"
+
+[ ! -s "$missing" ] && exit 0
+
+while read -r oid ref; do
+  location=${GIT_OBJECT_DIRECTORY:-an alternate object store}
+  loose=${GIT_OBJECT_DIRECTORY:-}/$(printf '%s' "$oid" | cut -c1-2)/$(printf '%s' "$oid" | cut -c3-)
+  [ -n "${GIT_OBJECT_DIRECTORY:-}" ] && [ -f "$loose" ] && location=$loose
+  echo "refusing shared ref update $ref: stranded object $oid lives in $location, not the common object store" >&2
+done < "$missing"
+exit 1

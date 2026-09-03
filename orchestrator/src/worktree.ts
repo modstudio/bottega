@@ -21,9 +21,10 @@
  * may commit an approved diff and fast-forward it into trunk from its disposable
  * worktree. No worker pushes.
  */
-import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, readFileSync, realpathSync,
+         readdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
-import { db } from './db.ts'
+import { db, ROOT } from './db.ts'
 import { projectAt, type WorktreeTool } from './projects.ts'
 import { runRecipe, teardownRecipe, dbNameFor, type Recipe } from './recipe.ts'
 
@@ -57,6 +58,12 @@ function cwdMissing(cwd: string): boolean {
 export type WorktreeObjectEnvironment = {
   GIT_OBJECT_DIRECTORY: string
   GIT_ALTERNATE_OBJECT_DIRECTORIES: string
+}
+
+export type SharedRefGuardEnvironment = {
+  GIT_CONFIG_COUNT: string
+  GIT_CONFIG_KEY_0: string
+  GIT_CONFIG_VALUE_0: string
 }
 
 /** Resolve linked-worktree metadata without invoking git (git itself uses this environment). */
@@ -198,6 +205,45 @@ export function prepareWorktreeObjects(cwd: string): WorktreeObjectEnvironment {
   if (!paths) throw new Error(`cannot isolate git objects: ${cwd} is not a linked worktree`)
   mkdirSync(paths.objects, { recursive: true })
   return worktreeGitEnvironment(cwd)!
+}
+
+const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+
+/** Install the ref-update boundary without changing the shared repository config. */
+export function prepareSharedRefGuard(cwd: string): SharedRefGuardEnvironment {
+  const paths = linkedWorktreePaths(cwd)
+  if (!paths) throw new Error(`cannot guard shared refs: ${cwd} is not a linked worktree`)
+  const hookDir = join(paths.gitDir, 'orch-hooks')
+  mkdirSync(hookDir, { recursive: true })
+
+  const configured = gitOk(['config', '--path', 'core.hooksPath'], cwd)
+  const originalDir = configured
+    ? (configured.startsWith('/') ? configured : resolve(cwd, configured))
+    : join(paths.commonDir, 'hooks')
+  if (existsSync(originalDir) && realpathSync(originalDir) !== realpathSync(hookDir)) {
+    for (const name of readdirSync(originalDir)) {
+      if (name === 'reference-transaction' || existsSync(join(hookDir, name))) continue
+      symlinkSync(join(originalDir, name), join(hookDir, name))
+    }
+  }
+
+  const guard = join(ROOT, 'hooks', 'reference-transaction')
+  const originalReferenceHook = join(originalDir, 'reference-transaction')
+  const installed = join(hookDir, 'reference-transaction')
+  if (existsSync(originalReferenceHook)) {
+    // Both hooks consume stdin. The common-object guard must pass before the
+    // project's hook receives the same transaction bytes.
+    writeFileSync(installed, `#!/bin/sh\nset -eu\ninput=${shellQuote(join(hookDir, '.reference-transaction-input'))}.$$\ntrap 'rm -f "$input"' EXIT HUP INT TERM\ncat > "$input"\n${shellQuote(guard)} "$@" < "$input"\n${shellQuote(originalReferenceHook)} "$@" < "$input"\n`)
+    chmodSync(installed, 0o755)
+  } else if (!existsSync(installed)) {
+    symlinkSync(guard, installed)
+  }
+
+  return {
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'core.hooksPath',
+    GIT_CONFIG_VALUE_0: hookDir,
+  }
 }
 
 export type OrphanSafety = {

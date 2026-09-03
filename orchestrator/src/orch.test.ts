@@ -93,7 +93,8 @@ const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
         contractConflicts } = await import('./contract.ts')
 const { ask } = await import('./ask.ts')
 const { orphanSafety, repoRootOf, createWorktree, createWithTool, resolveBase, fillTool,
-        worktreeGitDir, prepareWorktreeObjects, carryWorkingState } = await import('./worktree.ts')
+        worktreeGitDir, prepareWorktreeObjects, prepareSharedRefGuard,
+        carryWorkingState } = await import('./worktree.ts')
 const { AGENTS, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
         WAKE_COOLDOWN_MS, CODEX_EXEC_SANDBOX, strictCodexSchema } = await import('./agents.ts')
@@ -5843,6 +5844,21 @@ describe('an agent gets the toolchain of a project someone registered', () => {
       expect(existsSync(join(
         isolatedEnv.GIT_OBJECT_DIRECTORY, privateCommit.slice(0, 2), privateCommit.slice(2),
       ))).toBe(true)
+
+      // Reproduce the dangerous operation itself. The proposed commit is
+      // readable to this worktree only; the prepared reference transaction
+      // must refuse before main changes, and diagnose both object and store.
+      const guarded = Bun.spawnSync([
+        'git', 'update-ref', 'refs/heads/main', privateCommit,
+      ], {
+        cwd: isolatedTree.path,
+        env: hermeticGitEnv({ ...isolatedEnv, ...prepareSharedRefGuard(isolatedTree.path) }),
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(guarded.exitCode).not.toBe(0)
+      expect(guarded.stderr.toString()).toContain(`stranded object ${privateCommit}`)
+      expect(guarded.stderr.toString()).toContain(isolatedEnv.GIT_OBJECT_DIRECTORY)
+      expect(git(repo, ['rev-parse', 'main'])).not.toBe(privateCommit)
 
       // Remove the deliberately broken fixture before checking repository
       // connectivity for the fixed case.
