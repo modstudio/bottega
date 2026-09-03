@@ -335,6 +335,45 @@ export function toolFor(cwd: string): WorktreeTool | null {
 }
 
 /**
+ * Ask the PROJECT'S OWN worktree tool whether a seed can succeed.
+ *
+ * `scripts/worktree resolve` is a capability, not a requirement of every
+ * project tool. The tool's usage text is its declaration that the subcommand
+ * exists; an older tool with no resolver gets no invented verdict from orch.
+ *
+ * The seed stays one argument deliberately. A project's tool owns the grammar
+ * inside it (including repeated bundles and per-project flags), just as its
+ * create template already does. Splitting or interpreting it here would make
+ * orch a second seed parser, which is the drift this gate exists to prevent.
+ */
+export function validateSeedWithTool(cwd: string, seed?: string): void {
+  if (!seed) return
+  // projectAt resolves a caller inside a nested worktree back to the registered
+  // main checkout, which is where the lifecycle tool and its live config live.
+  const repoRoot = projectAt(cwd)?.path
+  if (!repoRoot) return
+  const worktreeTool = join(repoRoot, 'scripts', 'worktree')
+  if (!existsSync(worktreeTool)) return
+
+  const usage = Bun.spawnSync([worktreeTool], {
+    cwd: repoRoot, stdout: 'pipe', stderr: 'pipe',
+  })
+  const advertised = `${usage.stdout.toString()}${usage.stderr.toString()}`
+  if (!/scripts\/worktree resolve(?:\s|\[)/.test(advertised)) return
+
+  const resolved = Bun.spawnSync([worktreeTool, 'resolve', seed], {
+    cwd: repoRoot, stdout: 'pipe', stderr: 'pipe',
+  })
+  if (resolved.exitCode === 0) return
+  const out = `${resolved.stdout.toString()}${resolved.stderr.toString()}`.trim()
+  const detail = out ? `:\n${out.slice(-1500)}` : ` (exit ${resolved.exitCode ?? 1})`
+  if (resolved.exitCode === 2) {
+    throw new Error(`the project's seed resolver rejected the seed${detail}`)
+  }
+  throw new Error(`the project's seed resolver could not validate the seed${detail}`)
+}
+
+/**
  * Cut a worktree using the PROJECT'S OWN tool.
  *
  * Not an optimisation and not politeness. In these repositories a checkout is a

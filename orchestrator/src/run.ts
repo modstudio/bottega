@@ -14,7 +14,7 @@ import { db, nowIso, ROOT, DB_PATH, sessionId, resolveRootFromLastTurn } from '.
 import {
   createWorktree, createWithTool, toolFor, changesIn, repoRootOf, resolveBase, worktreeGitDir,
   prepareWorktreeObjects, worktreeGitEnvironment, carryWorkingState, removeFor, type Worktree,
-  type WorktreeObjectEnvironment,
+  type WorktreeObjectEnvironment, validateSeedWithTool,
 } from './worktree.ts'
 import { recipeNotes } from './recipe.ts'
 import {
@@ -242,6 +242,7 @@ export function preflight(
   key?: string,
   baseRef?: string,
   reusesWorktree = false,
+  seedAlreadyValidated = false,
 ): void {
   if (depth() >= MAX_DEPTH) {
     throw new Error(
@@ -298,13 +299,8 @@ export function preflight(
       `  --seed <value>`,
     )
   }
-  if (tool?.seeds?.length && seed && !tool.seeds.includes(seed)) {
-    problems.push(
-      `unknown seed "${seed}"; this project lists:\n` +
-      `  --seed ${tool.seeds.join('\n  --seed ')}`,
-    )
-  }
   if (problems.length) throw new Error(problems.join('\n'))
+  if (tool?.create && !seedAlreadyValidated) validateSeedWithTool(cwd, seed)
 }
 
 /**
@@ -621,6 +617,7 @@ export async function run(opts: {
   preflight(
     opts.job, opts.cwd ?? process.cwd(), opts.seed, opts.key, opts.base,
     opts.resume?.worktree != null,
+    opts.reserveId !== undefined,
   )
   // Programmatic callers get the same ordering guarantee as the CLI: a bad
   // ref is refused before a run row or worktree exists.

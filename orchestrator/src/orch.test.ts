@@ -4285,6 +4285,12 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
       expect(render("cmd '{name}'", { name: value })).toBe("cmd 'two words'\\'' ; echo nope'")
       expect(render('cmd "{name}"', { name: value })).toBe("cmd \"two words' ; echo nope\"")
     }
+    expect(fillTool('scripts/worktree add {seed}', {
+      seed: '--full --budget-mb=2000',
+    })).toBe("scripts/worktree add '--full --budget-mb=2000'")
+    expect(fillTool('scripts/worktree add {seed}', {
+      seed: '--bundle=tanach --bundle=word-bank',
+    })).toBe("scripts/worktree add '--bundle=tanach --bundle=word-bank'")
   })
 
   test('registered create templates render safely for plain values', () => {
@@ -4347,19 +4353,107 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
     rmSync(repo, { recursive: true, force: true })
   })
 
-  test('preflight refuses a seed outside the listed choices', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-bad-seed-'))
+  test('preflight passes a project-specific seed spec intact to the project resolver', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-custom-seed-'))
+    mkdirSync(join(repo, 'scripts'), { recursive: true })
+    const received = join(repo, 'received-seed')
+    const tool = join(repo, 'scripts', 'worktree')
+    writeFileSync(tool, `#!/bin/sh
+if [ "$#" -eq 0 ]; then echo 'scripts/worktree resolve [seed]'; exit 0; fi
+if [ "$1" = resolve ]; then printf '%s\n' "$2" >> "${received}"; exit 0; fi
+exit 1
+`)
+    chmodSync(tool, 0o755)
     upsertProject({
-      name: 'bad-seed', path: repo,
+      name: 'custom-seed', path: repo,
       settings: {
         worktree: {
-          create: 'scripts/worktree create {seed}', branch: 'task/{id}', seeds: ['small', 'full'],
+          create: 'scripts/worktree create {seed}', branch: 'task/{id}',
+          seeds: ['none', 'minimal', 'full'],
         },
       },
     })
-    expect(() => fromRoot(() => preflight('implement', repo, 'medium'))).toThrow(
-      'unknown seed "medium"; this project lists:\n  --seed small\n  --seed full',
+    const seeds = [
+      '--full --budget-mb=2000', '--bundle=tanach --bundle=word-bank',
+      'none', 'minimal', 'full',
+    ]
+    for (const seed of seeds) {
+      expect(() => fromRoot(() => preflight('implement', repo, seed))).not.toThrow()
+    }
+    expect(readFileSync(received, 'utf8')).toBe(`${seeds.join('\n')}\n`)
+    rmSync(repo, { recursive: true, force: true })
+  })
+
+  test('a resolver refusal happens before a run row or worktree can exist', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-rejected-seed-'))
+    mkdirSync(join(repo, 'scripts'), { recursive: true })
+    const created = join(repo, 'create-ran')
+    const tool = join(repo, 'scripts', 'worktree')
+    writeFileSync(tool, `#!/bin/sh
+if [ "$#" -eq 0 ]; then echo 'scripts/worktree resolve [seed]'; exit 0; fi
+if [ "$1" = resolve ]; then echo 'over budget' >&2; exit 2; fi
+touch "${created}"
+`)
+    chmodSync(tool, 0o755)
+    upsertProject({
+      name: 'rejected-seed', path: repo,
+      settings: {
+        worktree: {
+          create: 'scripts/worktree create {seed}', branch: 'task/{id}', seeds: ['full'],
+        },
+      },
+    })
+    const started = performance.now()
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      await expect(runJob({ job: 'implement', prompt: 'change it', cwd: repo, seed: 'full' }))
+        .rejects.toThrow("the project's seed resolver rejected the seed:\nover budget")
+      expect(performance.now() - started).toBeLessThan(1000)
+      expect(existsSync(created)).toBe(false)
+      expect(existsSync(join(repo, '.claude', 'worktrees'))).toBe(false)
+      expect((db().query('SELECT COUNT(*) AS n FROM run').get() as { n: number }).n).toBe(0)
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a resolver failure is not treated as a successful check', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-unchecked-seed-'))
+    mkdirSync(join(repo, 'scripts'), { recursive: true })
+    const tool = join(repo, 'scripts', 'worktree')
+    writeFileSync(tool, `#!/bin/sh
+if [ "$#" -eq 0 ]; then echo 'scripts/worktree resolve [seed]'; exit 0; fi
+echo 'catalog unreachable' >&2
+exit 1
+`)
+    chmodSync(tool, 0o755)
+    upsertProject({
+      name: 'unchecked-seed', path: repo,
+      settings: { worktree: { create: 'scripts/worktree create {seed}', branch: 'task/{id}' } },
+    })
+    expect(() => fromRoot(() => preflight('implement', repo, 'minimal'))).toThrow(
+      "the project's seed resolver could not validate the seed:\ncatalog unreachable",
     )
+    rmSync(repo, { recursive: true, force: true })
+  })
+
+  test('a project whose worktree tool exposes no resolver still accepts its seed', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-no-resolver-'))
+    mkdirSync(join(repo, 'scripts'), { recursive: true })
+    const tool = join(repo, 'scripts', 'worktree')
+    writeFileSync(tool, `#!/bin/sh
+echo 'Usage: scripts/worktree create [seed]'
+`)
+    chmodSync(tool, 0o755)
+    upsertProject({
+      name: 'no-resolver', path: repo,
+      settings: { worktree: { create: 'scripts/worktree create {seed}', branch: 'task/{id}' } },
+    })
+    expect(() => fromRoot(() => preflight('implement', repo, '--anything=project-specific')))
+      .not.toThrow()
     rmSync(repo, { recursive: true, force: true })
   })
 

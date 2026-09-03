@@ -553,7 +553,7 @@ function usage(): never {
       --label <text>            name this run in listings and pending reminders
       --quiet                   print only the reply
       --probe                   a calibration run: recorded, but not routing evidence
-      --seed <name>             choose a required worktree database seed
+      --seed <spec>             choose a required project-specific database seed spec
       --key <KEY-123>           supply a required branch ticket key
       --repo <name>             attribute work launched outside a registered project
       --follow                  block and watch the run instead of returning its id
@@ -657,7 +657,7 @@ function doUsage(): never {
   --model <name>   override the selected agent's model
   --label <text>   name this run in listings and pending reminders
   --probe          record a calibration run that does not affect routing
-  --seed <name>    choose the database seed required by some projects
+  --seed <spec>    choose the project-specific database seed required by some projects
   --key <KEY-123>  supply the ticket key required by some branch templates
   --repo <name>    attribute a run launched outside a registered project
   --file <path>    read the prompt from a file instead of argv or stdin

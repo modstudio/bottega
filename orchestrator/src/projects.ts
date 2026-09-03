@@ -169,11 +169,14 @@ export type WorktreeTool = {
   /** Pattern accepted for a ticket key supplied with `--key`. */
   keyPattern?: string
   /**
-   * How much database, as this project spells it.
+   * Common database seed specs, as this project spells them.
    *
    * one application requires the choice with no default, having learned that the
    * default it used to take was silent and left every business table empty.
    * orch therefore refuses to guess: a project listing seeds must be given one.
+   * The list is not an allowlist. `--seed` may carry any project-specific spec;
+   * where the project exposes `scripts/worktree resolve`, that tool decides
+   * whether the spec is valid before orch creates anything.
    */
   seeds?: string[]
   /**

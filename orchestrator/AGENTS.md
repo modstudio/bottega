@@ -820,6 +820,13 @@ and offers no default, orch refuses to invent one: one application removed its d
 after finding it silent and leaving every business table empty, and reinstating
 it by omission would quietly undo that.
 
+The listed seeds are common choices, not an allowlist. `--seed` carries the
+project's whole spec through unchanged, including named bundles and flags that
+only that project understands. Before a row or worktree exists, orch asks an
+advertised `scripts/worktree resolve` to price that spec. Exit 0 accepts it,
+exit 2 rejects it, and exit 1 means it could not be checked and is also a hard
+stop; a project whose tool advertises no resolver passes through unvalidated.
+
 **The worker is told what it has, in the project's own words.** A worker that
 does not know it can serve its own branch on its own port will verify against
 whatever is already running — a different branch's bundle — and that does not
@@ -1263,7 +1270,7 @@ orch metric [collect]       Claude tokens per shipped task — the ratio this ex
 orch doctor                 agents, local endpoint, routing at a glance
 
 orch do implement "<spec>"  delegate a bounded change; it writes in its own worktree
-    --seed X                how much database, where the project asks
+    --seed SPEC             project-specific database spec, where the project asks
     --key KEY-123           a ticket key, where the project's branches carry one
 orch inbox                  design decisions a worker stopped to ask about
 orch answer <id> "<ruling>" rule on them, and resume the worker where it stopped
