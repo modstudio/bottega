@@ -573,6 +573,12 @@ function migrate(d: Database) {
       why           TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS spawn_at ON spawn(at);
+    -- One cheap write per CLI invocation says the session itself was recently
+    -- present. Worker pids cannot say that: asking workers exit by design.
+    CREATE TABLE IF NOT EXISTS session_seen (
+      session_id TEXT PRIMARY KEY,
+      last_seen  TEXT NOT NULL
+    );
     CREATE INDEX IF NOT EXISTS score_run ON score(run_id);
     CREATE UNIQUE INDEX IF NOT EXISTS score_one_per_run ON score(run_id);
     CREATE INDEX IF NOT EXISTS doc_scope_subject ON doc(scope, subject);
@@ -858,6 +864,22 @@ export const nowIso = () => new Date().toISOString()
  */
 export const sessionId = (): string | null =>
   process.env.CLAUDE_CODE_SESSION_ID ?? process.env.CLAUDE_CODE_BRIDGE_SESSION_ID ?? null
+
+/**
+ * A full hour covers the longest 45-minute implementation run plus the time
+ * needed to read its question. Beyond that, treating a quiet session as gone
+ * has the safe failure mode: another architect sees a ruling they may give.
+ */
+export const SESSION_LIVE_MS = 60 * 60 * 1000
+
+/** Stamp once at the CLI boundary, rather than making every database read write. */
+export function recordSessionSeen(sid: string | null = sessionId(), at = nowIso()): void {
+  if (!sid) return
+  db().query(
+    `INSERT INTO session_seen (session_id, last_seen) VALUES (?, ?)
+     ON CONFLICT(session_id) DO UPDATE SET last_seen = excluded.last_seen`,
+  ).run(sid, at)
+}
 
 /**
  * What "unscored" means, in one place.

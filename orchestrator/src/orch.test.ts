@@ -104,7 +104,7 @@ beforeEach(() => {
   // question cascades from run, but the delete order still matters: it is
   // listed first so a future FK-enforcing change cannot make this fail
   // mysteriously halfway through a suite.
-  db().exec('DELETE FROM doc; DELETE FROM question; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run; DELETE FROM project;')
+  db().exec('DELETE FROM doc; DELETE FROM question; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
 })
 
 afterAll(() => {
@@ -2681,6 +2681,92 @@ describe('detached run collection', () => {
     expect(r.code).toBe(0)
     expect(r.out).toContain(`rule on them:  orch answer ${root} "<ruling>"`)
     expect(r.out).not.toContain(`rule on them:  orch answer ${turn} "<ruling>"`)
+  })
+
+  test('inbox keeps own questions first and in their existing format', () => {
+    const own = insert('asking', 'implement')
+    const orphan = insert('asking', 'implement')
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('orch-test-session', own)
+    db().query('UPDATE run SET session_id=NULL WHERE id=?').run(orphan)
+    db().query('INSERT INTO question (run_id, asked_at, question, options, recommendation, why) VALUES (?,?,?,?,?,?)')
+      .run(own, new Date().toISOString(), 'own shape?', JSON.stringify(['one', 'two']), 'one', 'it fits')
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(orphan, new Date().toISOString(), 'orphan shape?')
+
+    const r = orch('inbox')
+    expect(r.code).toBe(0)
+    expect(r.out).toContain(`run ${own} · codex/implement · asking`)
+    expect(r.out).toContain('        why: it fits\n        - one\n        - two\n        it would: one')
+    expect(r.out.indexOf(`run ${own}`)).toBeLessThan(r.out.indexOf('waiting on a ruling that anyone may give:'))
+    expect(r.out).toContain(`rule on them:  orch answer ${own} "<ruling>"`)
+  })
+
+  test('inbox surfaces an orphaned question with everything needed to rule', () => {
+    const id = insert('asking', 'implement')
+    const askedAt = new Date(Date.now() - 90_000).toISOString()
+    db().query('UPDATE run SET session_id=?, repo=? WHERE id=?').run('gone-session', 'fixture-repo', id)
+    db().query('INSERT INTO question (run_id, asked_at, question, options, recommendation) VALUES (?,?,?,?,?)')
+      .run(id, askedAt, 'which shape?', JSON.stringify(['existing', 'new']), 'existing')
+
+    const r = orch('inbox')
+    expect(r.code).toBe(0)
+    expect(r.out).toContain('waiting on a ruling that anyone may give:')
+    expect(r.out).toContain(`run ${id} · answer ${id} · implement · codex · fixture-repo · waiting`)
+    expect(r.out).toContain('which shape?\n        - existing\n        - new')
+    expect(r.out).toContain('recommendation: existing')
+    expect(r.out).toContain(`orch answer ${id} --q`)
+  })
+
+  test('inbox does not claim a different recently-seen session is orphaned', () => {
+    const id = insert('asking', 'implement')
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('other-live-session', id)
+    db().query('INSERT INTO session_seen (session_id, last_seen) VALUES (?,?)')
+      .run('other-live-session', new Date().toISOString())
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'still owned?')
+
+    const r = orch('inbox')
+    expect(r.code).toBe(0)
+    expect(r.out).toBe('no questions waiting on you\n')
+  })
+
+  test('inbox --all keeps including another live session', () => {
+    const id = insert('asking', 'implement')
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('other-live-session', id)
+    db().query('INSERT INTO session_seen (session_id, last_seen) VALUES (?,?)')
+      .run('other-live-session', new Date().toISOString())
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'still owned?')
+
+    const r = orch('inbox', '--all')
+    expect(r.code).toBe(0)
+    expect(r.out).toContain(`run ${id} · codex/implement · asking`)
+    expect(r.out).toContain(`rule on them:  orch answer ${id} "<ruling>"`)
+    expect(r.out).not.toContain('waiting on a ruling that anyone may give:')
+  })
+
+  test('inbox --all --json publishes answer ids and session liveness', () => {
+    const live = insert('asking', 'implement')
+    const orphan = insert('asking', 'implement')
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('other-live-session', live)
+    db().query('UPDATE run SET session_id=NULL WHERE id=?').run(orphan)
+    db().query('INSERT INTO session_seen (session_id, last_seen) VALUES (?,?)')
+      .run('other-live-session', new Date().toISOString())
+    const askedAt = new Date().toISOString()
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(live, askedAt, 'live question')
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(orphan, askedAt, 'orphan question')
+
+    const r = orch('inbox', '--all', '--json')
+    expect(r.code).toBe(0)
+    const rows = JSON.parse(r.out) as Record<string, unknown>[]
+    expect(rows).toHaveLength(2)
+    expect(rows[0]).toMatchObject({
+      question_id: expect.any(Number), run_id: live, answer_id: live,
+      job: 'implement', agent: 'codex', repo: null, asked_at: askedAt, session_live: true,
+    })
+    expect(rows[1]).toMatchObject({ run_id: orphan, answer_id: orphan, session_live: false })
   })
 
   test('a flag value is not mistaken for a run id', () => {

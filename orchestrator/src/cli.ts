@@ -1,7 +1,7 @@
 import { db, nowIso, sessionId, judgeability, pendingForSession, unscoredCount, weigh,
          DELIVERY, QUALITY, FIDELITY, type Delivery, type Quality, type Fidelity,
          reapStale, pidAlive, STALE_AFTER_MS, UNSCORED_WHERE, recordDuels, duelMatrices,
-         parseRunIds } from './db.ts'
+         parseRunIds, recordSessionSeen, SESSION_LIVE_MS } from './db.ts'
 import { JOBS, job } from './jobs.ts'
 import { AGENTS, available, installed, ensureLocalHealth,
          unavailableReason, NEEDS_HEALTH, tryWake, wakeStatus,
@@ -172,6 +172,10 @@ async function follow(id: number, quiet: boolean, exitOnFailure = true): Promise
 
 const argv = process.argv.slice(2)
 const cmd = argv[0]
+
+// One invocation is one heartbeat. Keeping it at the process boundary avoids
+// turning the many read helpers below into competing writers.
+recordSessionSeen()
 
 /** Human-readable duration: seconds under a minute, then m/s, then h/m. */
 function dur(ms: number | null | undefined): string {
@@ -588,7 +592,7 @@ function usage(): never {
   orch blockers [--days N] [--json]
       what stopped agents verifying their work, ordered by recurrence
       --json is the published surface other concerns read (never orch.db)
-  orch inbox [--all]            design questions a worker is waiting on you to rule on
+  orch inbox [--all] [--json]   design questions a worker is waiting on you to rule on
   orch setup-ask                register the live ask channel with codex and grok
   orch answer <id> ["<ruling>"] rule from argv, --file, or stdin; resume detached
       --file <path>             read the ruling from a file
@@ -1381,19 +1385,44 @@ switch (cmd) {
   case 'inbox': {
     const sid = sessionId()
     const mine = !has('all')
-    const rows = db().query(
-      `SELECT q.id, q.run_id, q.question, q.options, q.recommendation, q.why,
+    const cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString()
+    const allRows = db().query(
+      `SELECT q.id, q.run_id, q.asked_at, q.question, q.options, q.recommendation, q.why,
               r.agent, r.job, r.repo, r.status, r.session_id,
-              COALESCE(r.parent_run_id, r.id) root_id
+              COALESCE(r.parent_run_id, r.id) root_id,
+              CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END session_live
          FROM question q JOIN run r ON r.id = q.run_id
-        WHERE q.answered_at IS NULL ${mine ? 'AND r.session_id = ?' : ''}
+         LEFT JOIN session_seen seen ON seen.session_id = r.session_id
+        WHERE q.answered_at IS NULL
         ORDER BY q.run_id, q.id`,
-    ).all(...(mine ? [sid] : [])) as {
-      id: number; run_id: number; question: string; options: string | null
+    ).all(cutoff) as {
+      id: number; run_id: number; asked_at: string; question: string; options: string | null
       recommendation: string | null; why: string | null
       agent: string; job: string; repo: string | null; status: string; session_id: string | null
-      root_id: number
+      root_id: number; session_live: number
     }[]
+    const rows = mine ? allRows.filter((q) => sid !== null && q.session_id === sid) : allRows
+    const orphaned = mine
+      ? allRows.filter((q) => (sid === null || q.session_id !== sid) && !q.session_live)
+      : []
+
+    if (has('json')) {
+      console.log(JSON.stringify([...rows, ...orphaned].map((q) => ({
+        question_id: q.id,
+        run_id: q.run_id,
+        answer_id: q.root_id,
+        job: q.job,
+        agent: q.agent,
+        repo: q.repo,
+        asked_at: q.asked_at,
+        session_live: Boolean(q.session_live),
+        question: q.question,
+        options: q.options ? JSON.parse(q.options) as string[] : [],
+        recommendation: q.recommendation,
+        why: q.why,
+      }))))
+      break
+    }
 
     const recoverable = db().query(
       `SELECT root.id, root.agent, root.job, root.repo
@@ -1414,7 +1443,7 @@ switch (cmd) {
       id: number; agent: string; job: string; repo: string | null
     }[]
 
-    if (!rows.length && !recoverable.length) {
+    if (!rows.length && !recoverable.length && !orphaned.length) {
       console.log(mine ? 'no questions waiting on you' : 'no open questions')
       break
     }
@@ -1443,6 +1472,21 @@ switch (cmd) {
         `\nrun ${r.id} · ${r.agent}/${r.job}${r.repo ? ` · ${r.repo}` : ''} · ` +
         `asking, but no ruling is open — recoverable: orch continue ${r.id}`,
       )
+    }
+    if (orphaned.length) {
+      console.log('\nwaiting on a ruling that anyone may give:')
+      for (const q of orphaned) {
+        console.log(
+          `\n  [q${q.id}] run ${q.run_id} · answer ${q.root_id} · ${q.job} · ${q.agent}` +
+          `${q.repo ? ` · ${q.repo}` : ''} · waiting ${dur(Date.now() - Date.parse(q.asked_at))}`,
+        )
+        console.log(`        ${q.question}`)
+        if (q.why) console.log(`        why: ${q.why}`)
+        const opts = q.options ? (JSON.parse(q.options) as string[]) : []
+        for (const o of opts) console.log(`        - ${o}`)
+        if (q.recommendation) console.log(`        recommendation: ${q.recommendation}`)
+        console.log(`        orch answer ${q.root_id} --q${q.id} "<ruling>"`)
+      }
     }
     break
   }
