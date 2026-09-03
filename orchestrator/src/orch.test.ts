@@ -21,6 +21,26 @@ import { randomUUID } from 'node:crypto'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 
+const gitRepositoryVariables = [
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_INDEX_FILE',
+] as const
+
+// A worker routes git objects into its own linked-worktree metadata. None of that
+// routing belongs to the scratch repositories built by this test process.
+for (const variable of gitRepositoryVariables) delete process.env[variable]
+
+const hermeticGitEnv = (extra: Record<string, string> = {}) => ({
+  ...process.env,
+  ...Object.fromEntries(gitRepositoryVariables.map((variable) => [variable, undefined])),
+  ...extra,
+})
+const hermeticGitCommand =
+  `env ${gitRepositoryVariables.map((variable) => `-u ${variable}`).join(' ')} git`
+
 /**
  * One database for the whole file, chosen before anything imports db.ts.
  *
@@ -41,7 +61,9 @@ for (const args of [
   ['add', '.gitignore'],
   ['commit', '-m', 'test fixture'],
 ]) {
-  const p = Bun.spawnSync(['git', ...args], { cwd: dir, stdout: 'pipe', stderr: 'pipe' })
+  const p = Bun.spawnSync(['git', ...args], {
+    cwd: dir, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+  })
   if (p.exitCode !== 0) throw new Error(p.stderr.toString())
 }
 
@@ -3110,7 +3132,9 @@ describe('detached run collection', () => {
   test('abandon does not delete a branch recorded by another run', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-abandon-'))
     const git = (...args: string[]) => {
-      const p = Bun.spawnSync(['git', ...args], { cwd: repo, stdout: 'pipe', stderr: 'pipe' })
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
       return p.stdout.toString().trim()
     }
@@ -3544,12 +3568,14 @@ describe('a writing worker must return evidence of completed work', () => {
     const script = join(dir, `worker-${Math.random().toString(16).slice(2)}.ts`)
     writeFileSync(join(repo, 'seed.txt'), 'seed\n')
     for (const args of [['init'], ['add', 'seed.txt']]) {
-      const p = Bun.spawnSync(['git', ...args], { cwd: repo, stdout: 'pipe', stderr: 'pipe' })
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     }
     const committed = Bun.spawnSync(['git', '-c', 'user.name=Orch Test',
       '-c', 'user.email=orch@example.invalid', 'commit', '-m', 'seed'], {
-      cwd: repo, stdout: 'pipe', stderr: 'pipe',
+      cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
     })
     if (committed.exitCode !== 0) throw new Error(committed.stderr.toString())
     const tree = createWorktree(repo, 76)
@@ -3677,7 +3703,9 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
    * therefore cds into a real nested worktree.
    */
   const git = (cwd: string, ...args: string[]) => {
-    const p = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' })
+    const p = Bun.spawnSync(['git', ...args], {
+      cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
     if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     return p.stdout.toString().trim()
   }
@@ -4002,7 +4030,9 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
       const expected = resolveBase(process.cwd(), 'main')
       const w = createWithTool(
         {
-          create: `git worktree add -b {branch} "${custom}" {base} >/dev/null && echo "${custom}"`,
+          create:
+            `${hermeticGitCommand} worktree add -b {branch} "${custom}" {base} >/dev/null && ` +
+            `echo "${custom}"`,
           remove: 'git worktree remove {path}',
         },
         process.cwd(), 746, undefined, undefined, 'main',
@@ -4028,7 +4058,8 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
       const w = createWithTool(
         {
           create:
-            `git worktree add -b {branch} "${custom}" tool-floor >/dev/null && echo "${custom}"`,
+            `${hermeticGitCommand} worktree add -b {branch} "${custom}" tool-floor ` +
+            `>/dev/null && echo "${custom}"`,
           remove: 'git worktree remove {path}',
         },
         tree, 746,
@@ -4380,7 +4411,9 @@ describe('fan-out routing exclusions', () => {
 
 describe('orphan worktrees keep anything unique', () => {
   const git = (cwd: string, ...args: string[]) => {
-    const p = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' })
+    const p = Bun.spawnSync(['git', ...args], {
+      cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
     if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     return p.stdout.toString().trim()
   }
@@ -4427,7 +4460,9 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     }
   }
   const git = (cwd: string, ...args: string[]) => {
-    const p = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' })
+    const p = Bun.spawnSync(['git', ...args], {
+      cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
     if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     return p.stdout.toString().trim()
   }
@@ -5078,7 +5113,9 @@ describe('an agent gets the toolchain of a project someone registered', () => {
   test('a writing worktree grants codex only its own git metadata directory', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-codex-git-dir-'))
     const git = (...args: string[]) => {
-      const p = Bun.spawnSync(['git', ...args], { cwd: repo, stdout: 'pipe', stderr: 'pipe' })
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     }
     try {
@@ -5117,7 +5154,9 @@ describe('an agent gets the toolchain of a project someone registered', () => {
   test('a new worktree receives the caller state without changing the caller', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-carry-state-'))
     const git = (...args: string[]) => {
-      const p = Bun.spawnSync(['git', ...args], { cwd: repo, stdout: 'pipe', stderr: 'pipe' })
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     }
     try {
@@ -5143,7 +5182,9 @@ describe('an agent gets the toolchain of a project someone registered', () => {
       rmSync(join(repo, 'deleted.txt'))
       writeFileSync(join(repo, 'untracked.txt'), 'untracked\n')
       writeFileSync(join(repo, 'ignored.txt'), 'runtime only\n')
-      const before = Bun.spawnSync(['git', 'status', '--porcelain'], { cwd: repo }).stdout.toString()
+      const before = Bun.spawnSync(['git', 'status', '--porcelain'], {
+        cwd: repo, env: hermeticGitEnv(),
+      }).stdout.toString()
 
       const tree = createWorktree(repo, 134)
       carryWorkingState(repo, tree)
@@ -5155,7 +5196,9 @@ describe('an agent gets the toolchain of a project someone registered', () => {
       expect(existsSync(join(tree.path, 'deleted.txt'))).toBe(false)
       expect(readFileSync(join(tree.path, 'untracked.txt'), 'utf8')).toBe('untracked\n')
       expect(existsSync(join(tree.path, 'ignored.txt'))).toBe(false)
-      expect(Bun.spawnSync(['git', 'status', '--porcelain'], { cwd: repo }).stdout.toString()).toBe(before)
+      expect(Bun.spawnSync(['git', 'status', '--porcelain'], {
+        cwd: repo, env: hermeticGitEnv(),
+      }).stdout.toString()).toBe(before)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
@@ -5165,7 +5208,7 @@ describe('an agent gets the toolchain of a project someone registered', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-isolated-objects-'))
     const git = (cwd: string, args: string[], env: Record<string, string> = {}) => {
       const p = Bun.spawnSync(['git', ...args], {
-        cwd, env: { ...process.env, ...env }, stdout: 'pipe', stderr: 'pipe',
+        cwd, env: hermeticGitEnv(env), stdout: 'pipe', stderr: 'pipe',
       })
       if (p.exitCode !== 0) throw new Error(p.stderr.toString())
       return p.stdout.toString().trim()
