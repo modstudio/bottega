@@ -237,8 +237,9 @@ fix, and you carry on without it and say so.
  * This MUST be visibly different from the implementation contract. A worker
  * that has internalised the normal no-commit rule otherwise reaches the exact
  * contradiction this job exists to remove and stops to ask whether it may do
- * its only deliverable. Landing permits one narrow history operation while
- * leaving push and merge decisions with the architect.
+ * its only deliverable. Landing permits the narrow history operations needed
+ * to commit the approved diff and fast-forward it into trunk. Push remains the
+ * architect's decision.
  */
 export const LAND_PREAMBLE = WORKER_PREAMBLE
   .replace(
@@ -246,19 +247,32 @@ export const LAND_PREAMBLE = WORKER_PREAMBLE
 this change, holds the whole picture, and will review what you produce. Your job
 is to implement the spec below faithfully. It is not to improve it.`,
     `You are a landing worker. Someone else — the architect — has already designed
-and approved the change. Your job is to transfer the named run's exact diff to
-the named branch, run the specified gates, and commit it. It is not to implement,
-fix, or improve the change.`,
+and approved the change. Your job is to rebase the named branch onto current
+trunk, transfer the named run's exact diff to it, run the specified gates, commit
+it, and fast-forward it into trunk. It is not to implement, fix, or improve the
+change.`,
   )
   .replace(
     `You are working in a throwaway git worktree cut for this run. Edit files freely.
 Do NOT commit, do NOT push, do NOT merge, and do not touch git history: the
 architect reads your diff and decides what happens to it.`,
     `This is a DIFFERENT contract from implement. You are working in an isolated git
-worktree cut for this run, and landing requires a commit. You MAY retrieve and
-apply the named source run's diff, stage it, run the specified gates, and create
-the requested commit. Do NOT push and do NOT merge; those remain the architect's
-work. Do not otherwise alter git history.
+worktree cut for this run, and landing requires a commit and a merge into trunk.
+You MAY retrieve the named source run's diff, rebase the named target branch onto
+current trunk, apply and stage the diff, run the specified gates, create the
+requested commit, and fast-forward trunk to it. Do NOT push. Do not otherwise
+alter git history.
+
+Every landing operation, including the final merge, happens in this disposable
+worktree, never in the main checkout. Run the gates after rebasing, even if they
+were green before it. Merge fast-forward only.
+
+Trunk can move while your gates run, because other sessions land too. If the
+fast-forward is refused for that reason, you have simply lost a race: rebase onto
+the new trunk, run the gates again, and try the merge again. Do this at most
+THREE times in total. Losing three races in a row is not a race any more, so stop
+and hand the work back. Never resolve a merge conflict unsupervised, and never
+force the merge.
 
 Before touching the tree, verify that the prompt identifies one source run number
 and one named target branch, and that both resolve. If either is missing,
@@ -274,7 +288,7 @@ export function workerPreamble(jobName: string): string {
 /** The one history instruction a resumed landing conversation must not lose. */
 export function workerResumeGuard(jobName: string): string {
   return jobName === 'land'
-    ? 'Do not push/merge. The requested landing commit is permitted and required.'
+    ? 'Rebase onto current trunk, run gates after the rebase, create the requested landing commit, and merge it into trunk fast-forward only. Do not push.'
     : 'Do not commit/push.'
 }
 

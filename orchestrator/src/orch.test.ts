@@ -4736,9 +4736,13 @@ describe('only an agent that can be resumed may be asked to escalate', () => {
   test('land gets its commit contract and other writing jobs keep no-commit', () => {
     expect(workerPreamble('land')).toBe(LAND_PREAMBLE)
     expect(LAND_PREAMBLE).toContain('DIFFERENT contract from implement')
-    expect(LAND_PREAMBLE).toContain('You MAY retrieve and')
-    expect(LAND_PREAMBLE).toContain('create\nthe requested commit')
-    expect(LAND_PREAMBLE).toContain('Do NOT push and do NOT merge')
+    expect(LAND_PREAMBLE).toContain('You MAY retrieve the named source run')
+    expect(LAND_PREAMBLE).toContain('create the\nrequested commit')
+    expect(LAND_PREAMBLE).toContain('fast-forward trunk to it')
+    expect(LAND_PREAMBLE).toContain('Run the gates after rebasing')
+    expect(LAND_PREAMBLE).toContain('Merge fast-forward only')
+    expect(LAND_PREAMBLE).toContain('Do NOT push')
+    expect(LAND_PREAMBLE).not.toContain('Do NOT merge')
     expect(LAND_PREAMBLE).toContain('one source run number')
     expect(LAND_PREAMBLE).toContain('one named target branch')
     expect(LAND_PREAMBLE).not.toContain('Do NOT commit')
@@ -4748,7 +4752,8 @@ describe('only an agent that can be resumed may be asked to escalate', () => {
       expect(workerPreamble(name)).toContain('Do NOT commit')
       expect(workerResumeGuard(name)).toBe('Do not commit/push.')
     }
-    expect(workerResumeGuard('land')).toContain('landing commit is permitted and required')
+    expect(workerResumeGuard('land')).toContain('merge it into trunk fast-forward only')
+    expect(workerResumeGuard('land')).toContain('Do not push')
   })
 
   test('every agent claiming resumable can actually be resumed', () => {

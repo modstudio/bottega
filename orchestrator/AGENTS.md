@@ -119,8 +119,11 @@ no worktree.
 
 A review agent may edit and execute tests to verify a hypothesis. Those edits
 are scratch evidence, never a proposed patch: the review's findings are its
-product, and a review worktree diff must not be landed. No agent commits,
-pushes, or merges its worktree.
+product, and a review worktree diff must not be landed. Implement, fix and
+review agents do not commit, push or merge. A land agent is the one exception:
+it commits an approved diff and fast-forwards it into trunk from its disposable
+worktree, after rebasing onto current trunk and running the gates there. It
+never pushes.
 
 ## Routing
 
@@ -646,19 +649,39 @@ to drop.
 
 ## Delegating implementation
 
-A worker gets a **throwaway git worktree**, a spec, and a contract. It edits
-freely and is *told* not to commit, push or merge: landing a change is the
-architect's decision under the project's own ship knobs, which an external agent
-has never read.
+An implement or fix worker gets a **throwaway git worktree**, a spec, and a
+contract. It edits freely and is *told* not to commit, push or merge: its diff is
+the thing the architect judges, and a commit would destroy that boundary.
+
+A land worker has a different contract because transfer is its whole job. It
+rebases its named branch onto current trunk, applies the approved diff, runs the
+gates after that rebase, commits it, and fast-forwards trunk to the commit. The
+merge is fast-forward only, and it never pushes.
+
+Trunk moves under a landing run, because sessions land concurrently: whoever is
+second finds a green gate that ran before the rebase the merge now needs. So a
+refused fast-forward is a lost race, not a verdict — rebase onto the new trunk,
+gate again, and retry, up to three attempts in total. Three losses in a row are
+no longer a race, and that is when the work needs judgement and comes back. A
+conflict is never resolved unsupervised.
+
+**Landing happens in the disposable worktree, never the main checkout.**
+DEV-120/121/122 were once landed in the main checkout; conflict markers were
+left in `cli.ts`, breaking `orch` for every session on the machine and stranding
+seven paid runs (DEV-129). Long runs also race a moving trunk — `0f8681b` became
+`512aaa9` inside one hour on 2026-09-03 — which is why rebasing first and proving
+the result with gates afterwards are part of landing rather than optional
+cleanup.
 
 The sandbox permits edits in the throwaway checkout and staging through that
 worktree's own `.git/worktrees/<name>/` metadata directory, so gates that inspect
 the index can run. New blobs go into an isolated object database inside that
 directory and read existing blobs from the common object database as a read-only
 alternate. It does not grant the common `.git` directory: the main checkout's
-refs, objects and config remain unwritable. Committing, pushing and
-merging are still forbidden by instruction, and no post-run check enforces that
-instruction. Do not read "never commits" as a guarantee — read the diff. `orch
+refs, objects and config remain unwritable. Committing, pushing and merging are
+still forbidden by instruction for implement, fix and review workers, and no
+post-run check enforces that instruction. Do not read "never commits" as a
+guarantee — read the diff. `orch
 diff <id>` is the deliverable — what it DID, as against `orch result`,
 which is what it SAID. Those are different claims, and checking an agent's work
 against its own summary checks nothing.
@@ -673,8 +696,20 @@ orch discard <id>               throw the worktree away (the row stays)
 
 `orch discard` and `orch abandon` remove the disposable worktree but keep its
 branch when that branch has commits not yet on the project's trunk; `--force`
-is the explicit instruction to delete it anyway. A worker never commits, so any
-commits on that branch are the architect's work in progress, not worker debris.
+is the explicit instruction to delete it anyway. Implement, fix and review
+workers never commit, so commits they leave are the architect's work in progress,
+not worker debris. A land worker's commit is expected and must already be on
+trunk before its worktree is discarded.
+
+## You file it, you fix it
+
+Filing a task is not a way to put work down. A session that discovers a defect
+while doing other work fixes it or delegates the fix in that same session;
+filing alone is reserved for work that is genuinely blocked or genuinely
+someone else's. A filed-and-unfixed defect is indistinguishable from a fixed one
+on the board, and the defects that survive are precisely the small environmental
+ones everyone learns to route around. That is how every worker on this machine
+ended up quietly handing back diffs containing a stray binary.
 
 **`writesRepo` is declared, never inferred from `readsRepo`.** Opening the
 sandbox is a separate flag on every agent that has one.

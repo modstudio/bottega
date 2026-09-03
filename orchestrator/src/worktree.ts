@@ -15,12 +15,11 @@
  * container respectively). Borrowing it costs nothing and keeps a delegated run
  * indistinguishable, on disk, from a parallel session doing the same work.
  *
- * WHAT THIS DELIBERATELY DOES NOT DO: commit, push, or merge. The repo canon is
- * explicit that a worktree belongs to one task and one session and that nothing
- * scheduled may mutate one behind its author's back; the same reasoning applies
- * to an agent. The worker leaves changes in the tree, orch captures the diff,
- * and landing it is the architect's decision under the project's own ship
- * knobs — which an external agent has never read and cannot honour.
+ * WHAT THIS DELIBERATELY DOES NOT DO ITSELF: commit, push, or merge. The worker's
+ * contract governs those operations. Implement and fix workers leave changes in
+ * the tree for the architect to judge through `orch diff`; a land worker alone
+ * may commit an approved diff and fast-forward it into trunk from its disposable
+ * worktree. No worker pushes.
  */
 import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'

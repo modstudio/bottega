@@ -199,7 +199,7 @@ export const JOBS: Record<string, Job> = {
    */
   land: {
     name: 'land',
-    what: 'Apply one run’s diff to a named branch, run its gates, and commit it. Never push or merge.',
+    what: 'Rebase a named branch onto current trunk, apply one run’s diff, run its gates, commit it, and fast-forward trunk. Never push.',
     needs: { readsRepo: true, writesRepo: true, resumable: true },
     prefer: ['codex'],
     contextTokens: ERRAND,
