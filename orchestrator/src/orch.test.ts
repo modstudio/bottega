@@ -3764,7 +3764,7 @@ describe('a conversation is one unit of work, not one per turn', () => {
     expect(candidates('implement').find((row) => row.agent === 'codex')?.evidence).toBe(1)
   })
 
-  test('the one-shot migration is child-only, exact, dry-run first, and evidence-neutral', () => {
+  test('resolution is child-only, exact, and evidence-neutral', () => {
     const root = addRun({ agent: 'codex', job: 'implement' })
     score(root, 'full', 'right')
     const matched = addRun({
@@ -3799,27 +3799,27 @@ describe('a conversation is one unit of work, not one per turn', () => {
     ).run(askingRoot, nowIso(), 'root question?', 'answered', nowIso())
     addRun({ agent: 'grok', job: 'implement', parent: askingRoot, turn: 2 })
     const before = routingEvidenceIds()
-    const script = new URL('../scripts/resolve-asking.ts', import.meta.url).pathname
-    const invoke = (...args: string[]) => Bun.spawnSync([process.execPath, script, ...args], {
-      env: { ...process.env, ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe',
-    })
+    const statusOf = (id: number) => db().query('SELECT status FROM run WHERE id=?').get(id)
 
-    const dry = invoke()
-    expect(dry.exitCode).toBe(0)
-    expect(dry.stdout.toString()).toContain(
-      `run ${matched}  root ${root}  status=asking  ` +
-      'reason="later turn exists on same root and this turn\'s question is answered"  -> ok',
-    )
-    expect(dry.stdout.toString()).not.toContain(`run ${unanswered} `)
-    expect(dry.stdout.toString()).not.toContain(`run ${noSuccessor} `)
-    expect(dry.stdout.toString()).not.toContain(`run ${askingRoot} `)
-    expect(db().query('SELECT status FROM run WHERE id=?').get(matched)).toEqual({ status: 'asking' })
+    // The bulk cutover script is gone; these are the boundaries of the rule it
+    // enforced, which now lives in the write path and is what must not drift.
+    expect(resolveSupersededTurn(db(), root, 2)).toBe(1)
+    expect(statusOf(matched)).toEqual({ status: 'ok' })
 
-    const applied = invoke('--apply')
-    expect(applied.exitCode).toBe(0)
-    expect(applied.stdout.toString()).toContain('1 child row resolved — applied.')
-    expect(db().query('SELECT status FROM run WHERE id=?').get(matched)).toEqual({ status: 'ok' })
-    expect(db().query('SELECT status FROM run WHERE id=?').get(askingRoot)).toEqual({ status: 'asking' })
+    // An unanswered question means the turn is still waiting, not superseded.
+    expect(resolveSupersededTurn(db(), root, 4)).toBe(0)
+    expect(statusOf(unanswered)).toEqual({ status: 'asking' })
+
+    // Nothing came after it, so nothing superseded it.
+    expect(resolveSupersededTurn(db(), root, 6)).toBe(0)
+    expect(statusOf(noSuccessor)).toEqual({ status: 'asking' })
+
+    // A root is addressed as nobody's child, so it can never be resolved this
+    // way however answered its question is. Giving it a terminal status would
+    // insert a judgement no scorer made — DEV-146.
+    expect(resolveSupersededTurn(db(), askingRoot, 1)).toBe(0)
+    expect(statusOf(askingRoot)).toEqual({ status: 'asking' })
+
     expect(routingEvidenceIds()).toEqual(before)
   })
 
