@@ -33,10 +33,12 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and the 
   hub tasks [--hours N]       what has been worked on, newest window first
   hub serve [--port 7778]     the dashboard
 
-  hub task new --project X --title "..." [--status Y] [--parent KEY] [--body "..."]
+  hub task new --project X --title "..." [--status Y] [--parent KEY]
+               [--body "..."|--body-file PATH]
   hub task list [--project X] [--status Y] [--parent KEY] [--json]
   hub task show <KEY> [--json]
-  hub task set <KEY> [--title "..."] [--status Y] [--parent KEY|--no-parent] [--body "..."]
+  hub task set <KEY> [--title "..."] [--status Y] [--parent KEY|--no-parent]
+               [--body "..."] [--force]
   hub task close <KEY>
   hub task comment <KEY> "..."
   hub task import <file.json> backfill from a clustered commit history
@@ -130,10 +132,18 @@ function task() {
     console.log(`${row.key.padEnd(10)} ${(row.status_category ?? '').padEnd(8)} ` +
                 `${row.project.padEnd(12)} ${row.title ?? ''}`)
   }
+  const newBody = () => {
+    if (has('body') && has('body-file')) {
+      throw new Error('--body and --body-file are mutually exclusive')
+    }
+    if (has('body-file')) return readFileSync(required('body-file'), 'utf8')
+    if (has('body')) return required('body')
+    return undefined
+  }
 
   if (sub === 'new') {
     const row = createTask({ project: required('project'), title: required('title'),
-      status: flag('status'), parent: flag('parent'), body: flag('body') })
+      status: flag('status'), parent: flag('parent'), body: newBody() })
     console.log(row.key)
     return
   }
@@ -164,7 +174,7 @@ function task() {
       ...(has('body') ? { body: required('body') } : {}),
     }
     if (!Object.keys(changes).length) throw new Error('hub task set requires a field to change')
-    printRow(setTask(argv[2] ?? '', changes))
+    printRow(setTask(argv[2] ?? '', changes, { force: has('force') }))
     return
   }
   if (sub === 'close') { printRow(closeTask(argv[2] ?? '')); return }

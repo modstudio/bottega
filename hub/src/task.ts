@@ -121,16 +121,24 @@ export function showTask(key: string): { task: TaskRow; comments: TaskComment[] 
 
 export function setTask(key: string, changes: {
   title?: string; status?: string; parent?: string | null; body?: string
-}): TaskRow {
+}, options: { force?: boolean } = {}): TaskRow {
   const upper = key.toUpperCase()
-  const current = showTask(upper).task
-  if (current.source !== 'local') throw new Error(`task ${upper} is not local`)
-  const category = changes.status === undefined ? current.status_category : status(changes.status)
-  const parent = changes.parent === undefined ? current.parent_key : changes.parent?.toUpperCase() ?? null
-  assertParent(parent)
-  const at = nowIso()
   const d = db()
   const write = d.transaction(() => {
+    const current = showTask(upper).task
+    if (current.source !== 'local') throw new Error(`task ${upper} is not local`)
+    if (changes.body !== undefined && current.body !== null && current.body !== '' && !options.force) {
+      throw new Error(
+        `task ${upper} already has a body:\n\n${current.body}\n\n` +
+        'Pass --force to overwrite it.',
+      )
+    }
+    const category = changes.status === undefined ? current.status_category : status(changes.status)
+    const parent = changes.parent === undefined
+      ? current.parent_key
+      : changes.parent?.toUpperCase() ?? null
+    assertParent(parent)
+    const at = nowIso()
     d.query(
       `UPDATE task SET title = ?, status = ?, status_category = ?, parent_key = ?, body = ?,
                        closed_at = CASE WHEN ? = 'done' THEN COALESCE(closed_at, ?) ELSE NULL END,
@@ -145,7 +153,9 @@ export function setTask(key: string, changes: {
       ).run(upper, at, current.status_category, category)
     }
   })
-  write()
+  // The body guard and update share the same write lock, so another setter
+  // cannot add a body between the check and the update.
+  write.immediate()
   return showTask(upper).task
 }
 
