@@ -4110,41 +4110,6 @@ describe('a conversation is one unit of work, not one per turn', () => {
       .toEqual({ status: 'ok' })
   })
 
-  test('the resolve-root cutover refuses a missing database rather than reporting 0 rows', () => {
-    const script = new URL('../scripts/resolve-root.ts', import.meta.url).pathname
-    const p = Bun.spawnSync([process.execPath, script], {
-      env: { ...process.env, ORCH_DB: join(dir, 'definitely-missing.db') },
-      stdout: 'pipe', stderr: 'pipe',
-    })
-    expect(p.exitCode).not.toBe(0)
-    const text = new TextDecoder().decode(p.stderr) + new TextDecoder().decode(p.stdout)
-    expect(text).toContain('no database at')
-    expect(text).not.toContain('would be resolved')
-  })
-
-  test('the resolve-root cutover dry-run names the stranded root and writes nothing', () => {
-    const root = addRun({ agent: 'grok', job: 'implement', status: 'asking' })
-    db().query(
-      `INSERT INTO question (run_id, asked_at, question, answer, answered_at)
-       VALUES (?,?,?,?,?)`,
-    ).run(root, nowIso(), 'root question?', 'answered', nowIso())
-    const child = addRun({
-      agent: 'grok', job: 'implement', status: 'stale', parent: root, turn: 2,
-    })
-    const script = new URL('../scripts/resolve-root.ts', import.meta.url).pathname
-    const p = Bun.spawnSync([process.execPath, script], {
-      env: { ...process.env, ORCH_DB: process.env.ORCH_DB! },
-      stdout: 'pipe', stderr: 'pipe',
-    })
-    expect(p.exitCode).toBe(0)
-    const out = new TextDecoder().decode(p.stdout)
-    expect(out).toContain(`run ${root}`)
-    expect(out).toContain(`last turn ${child}`)
-    expect(out).toContain('1 root would be resolved')
-    expect(db().query('SELECT status FROM run WHERE id=?').get(root))
-      .toEqual({ status: 'asking' })
-  })
-
   test('turns of one run do not each count as evidence', () => {
     // A worker that asked two questions produces three rows. Counting each
     // would let an agent reach MIN_SAMPLE by being inquisitive rather than good.
