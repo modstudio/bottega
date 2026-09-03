@@ -407,24 +407,110 @@ function runTool(
   return { ok: p.exitCode === 0, out, stdout }
 }
 
+function quoteAt(template: string, offset: number): "'" | '"' | null {
+  let quote: "'" | '"' | null = null
+  for (let i = 0; i < offset; i++) {
+    const char = template[i]
+    if (char === '\\' && quote !== "'") {
+      i++
+    } else if (char === "'" && quote !== '"') {
+      quote = quote === "'" ? null : "'"
+    } else if (char === '"' && quote !== "'") {
+      quote = quote === '"' ? null : '"'
+    }
+  }
+  return quote
+}
+
+function shSingleQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`
+}
+
+/**
+ * Split a seed the way the shell splits words, honouring quotes inside the spec.
+ *
+ * `--tables='a,b'` and a value containing a space stay one word. Whitespace
+ * splits; `;` and other operators do not — each resulting word is quoted
+ * before it reaches `sh -c`, so they never become shell syntax.
+ */
+export function shellWords(spec: string): string[] {
+  const words: string[] = []
+  let current = ''
+  let started = false
+  let quote: "'" | '"' | null = null
+  for (let i = 0; i < spec.length; i++) {
+    const char = spec[i]!
+    if (quote === "'") {
+      if (char === "'") quote = null
+      else current += char
+      continue
+    }
+    if (quote === '"') {
+      if (char === '"') {
+        quote = null
+      } else if (char === '\\' && i + 1 < spec.length && '"$`\\\n'.includes(spec[i + 1]!)) {
+        current += spec[++i]!
+      } else {
+        current += char
+      }
+      continue
+    }
+    if (char === "'" || char === '"') {
+      quote = char
+      started = true
+      continue
+    }
+    if (char === '\\' && i + 1 < spec.length) {
+      current += spec[++i]!
+      started = true
+      continue
+    }
+    if (char === ' ' || char === '\t' || char === '\n') {
+      if (started) {
+        words.push(current)
+        current = ''
+        started = false
+      }
+      continue
+    }
+    current += char
+    started = true
+  }
+  if (quote) throw new Error(`unclosed quote in seed: ${spec}`)
+  if (started) words.push(current)
+  return words
+}
+
+/**
+ * How a seed reaches the project's tool.
+ *
+ * The create template is the project's declaration of how it wants its seed
+ * delivered, not orch's. fillTool already tracks quote state so it can honour
+ * that: an unquoted `{seed}` means separate argv, a quoted `{seed}` means one
+ * value. Always-splitting would impose one project's calling convention on a
+ * project that does not share it.
+ *
+ * THE ARGV THE RESOLVER SEES EQUALS THE ARGV THE CREATE TEMPLATE PRODUCES
+ * for the same seed.
+ */
+export function seedArgv(template: string | undefined, seed: string): string[] {
+  if (!template) return [seed]
+  const offset = template.indexOf('{seed}')
+  if (offset < 0 || quoteAt(template, offset) !== null) return [seed]
+  return shellWords(seed)
+}
+
 /** Fill a trusted project command without running it. */
 export function fillTool(template: string, vars: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (placeholder, k: string, offset: number) => {
     const value = vars[k] ?? ''
-    let quote: "'" | '"' | null = null
-    for (let i = 0; i < offset; i++) {
-      const char = template[i]
-      if (char === '\\' && quote !== "'") {
-        i++
-      } else if (char === "'" && quote !== '"') {
-        quote = quote === "'" ? null : "'"
-      } else if (char === '"' && quote !== "'") {
-        quote = quote === '"' ? null : '"'
-      }
-    }
+    const quote = quoteAt(template, offset)
     if (quote === "'") return value.replace(/'/g, "'\\''")
     if (quote === '"') return value.replace(/[\\"$`]/g, '\\$&')
-    return `'${value.replace(/'/g, "'\\''")}'`
+    // Unquoted {seed} interpolates as separately quoted words, so a multi-option
+    // spec reaches the tool as multiple argv — the same list seedArgv produces.
+    if (k === 'seed') return seedArgv(template, value).map(shSingleQuote).join(' ')
+    return shSingleQuote(value)
   })
 }
 
@@ -447,16 +533,17 @@ export function toolFor(cwd: string): WorktreeTool | null {
  * project tool. The tool's usage text is its declaration that the subcommand
  * exists; an older tool with no resolver gets no invented verdict from orch.
  *
- * The seed stays one argument deliberately. A project's tool owns the grammar
- * inside it (including repeated bundles and per-project flags), just as its
- * create template already does. Splitting or interpreting it here would make
- * orch a second seed parser, which is the drift this gate exists to prevent.
+ * The argv after `resolve` is seedArgv of the create template: the same words
+ * the filled create command will pass. That is not orch parsing the seed
+ * grammar — it is delivering the spec the way the project declared it wants
+ * the spec delivered.
  */
 export function validateSeedWithTool(cwd: string, seed?: string): void {
   if (!seed) return
   // projectAt resolves a caller inside a nested worktree back to the registered
   // main checkout, which is where the lifecycle tool and its live config live.
-  const repoRoot = projectAt(cwd)?.path
+  const project = projectAt(cwd)
+  const repoRoot = project?.path
   if (!repoRoot) return
   const worktreeTool = join(repoRoot, 'scripts', 'worktree')
   if (!existsSync(worktreeTool)) return
@@ -467,16 +554,17 @@ export function validateSeedWithTool(cwd: string, seed?: string): void {
   const advertised = `${usage.stdout.toString()}${usage.stderr.toString()}`
   if (!/scripts\/worktree resolve(?:\s|\[)/.test(advertised)) return
 
-  const resolved = Bun.spawnSync([worktreeTool, 'resolve', seed], {
-    cwd: repoRoot, stdout: 'pipe', stderr: 'pipe',
-  })
+  const resolved = Bun.spawnSync(
+    [worktreeTool, 'resolve', ...seedArgv(project.settings.worktree?.create, seed)],
+    { cwd: repoRoot, stdout: 'pipe', stderr: 'pipe' },
+  )
   if (resolved.exitCode === 0) return
   const out = `${resolved.stdout.toString()}${resolved.stderr.toString()}`.trim()
   const detail = out ? `:\n${out.slice(-1500)}` : ` (exit ${resolved.exitCode ?? 1})`
   if (resolved.exitCode === 2) {
     throw new Error(`the project's seed resolver rejected the seed${detail}`)
   }
-  throw new Error(`the project's seed resolver could not validate the seed${detail}`)
+  throw new Error(`the project's seed resolver rejected the seed or could not check it${detail}`)
 }
 
 /**

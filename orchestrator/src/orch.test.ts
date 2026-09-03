@@ -93,7 +93,7 @@ const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
         contractConflicts } = await import('./contract.ts')
 const { ask } = await import('./ask.ts')
 const { orphanSafety, repoRootOf, createWorktree, createWithTool, resolveBase, fillTool,
-        worktreeGitDir, prepareWorktreeObjects, prepareSharedRefGuard,
+        seedArgv, shellWords, worktreeGitDir, prepareWorktreeObjects, prepareSharedRefGuard,
         carryWorkingState, withWorktreeCreateLock } = await import('./worktree.ts')
 const { AGENTS, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
@@ -149,6 +149,19 @@ function workerReply(overrides: Record<string, unknown> = {}): Record<string, un
     deviations: null, tests: { command: 'bun test', ran: true, passed: true, detail: null },
     blockers: null, ...overrides,
   }
+}
+
+/** The argv `sh -c` actually produces from a filled create command. */
+function argvOfFilled(command: string): string[] {
+  const p = Bun.spawnSync(['sh', '-c', `printf '%s\\0' ${command}`], {
+    stdout: 'pipe', stderr: 'pipe',
+  })
+  if (p.exitCode !== 0) {
+    throw new Error(p.stderr.toString().trim() || `exit ${p.exitCode}`)
+  }
+  const parts = p.stdout.toString().split('\0')
+  if (parts.at(-1) === '') parts.pop()
+  return parts
 }
 
 describe('failure classification', () => {
@@ -4291,10 +4304,13 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
     }
     expect(fillTool('scripts/worktree add {seed}', {
       seed: '--full --budget-mb=2000',
-    })).toBe("scripts/worktree add '--full --budget-mb=2000'")
+    })).toBe("scripts/worktree add '--full' '--budget-mb=2000'")
     expect(fillTool('scripts/worktree add {seed}', {
       seed: '--bundle=tanach --bundle=word-bank',
-    })).toBe("scripts/worktree add '--bundle=tanach --bundle=word-bank'")
+    })).toBe("scripts/worktree add '--bundle=tanach' '--bundle=word-bank'")
+    expect(fillTool("WORKTREE_SEED='{seed}' scripts/worktree add {branch}", {
+      seed: '--full --budget-mb=2000', branch: 'b',
+    })).toBe("WORKTREE_SEED='--full --budget-mb=2000' scripts/worktree add 'b'")
   })
 
   test('registered create templates render safely for plain values', () => {
@@ -4364,7 +4380,12 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
     const tool = join(repo, 'scripts', 'worktree')
     writeFileSync(tool, `#!/bin/sh
 if [ "$#" -eq 0 ]; then echo 'scripts/worktree resolve [seed]'; exit 0; fi
-if [ "$1" = resolve ]; then printf '%s\n' "$2" >> "${received}"; exit 0; fi
+if [ "$1" = resolve ]; then
+  shift
+  for arg in "$@"; do printf '%s\\n' "$arg" >> "${received}"; done
+  printf -- '---\\n' >> "${received}"
+  exit 0
+fi
 exit 1
 `)
     chmodSync(tool, 0o755)
@@ -4384,7 +4405,60 @@ exit 1
     for (const seed of seeds) {
       expect(() => fromRoot(() => preflight('implement', repo, seed))).not.toThrow()
     }
-    expect(readFileSync(received, 'utf8')).toBe(`${seeds.join('\n')}\n`)
+    expect(readFileSync(received, 'utf8')).toBe(
+      '--full\n--budget-mb=2000\n---\n' +
+      '--bundle=tanach\n--bundle=word-bank\n---\n' +
+      'none\n---\nminimal\n---\nfull\n---\n',
+    )
+    rmSync(repo, { recursive: true, force: true })
+  })
+
+  test('resolver argv equals create-template argv for a multi-word seed and a quoted space', () => {
+    const positional = "scripts/worktree add {branch} '' {seed} --name={name}"
+    const quoted = "WORKTREE_SEED='{seed}' scripts/worktree add {branch}"
+    const vars = { branch: 'b', name: 'n', base: '', key: '', path: '' }
+    for (const seed of ['--full --budget-mb=2000', "--tables='hello world'"]) {
+      const filled = fillTool(positional, { ...vars, seed })
+      const createArgv = argvOfFilled(filled)
+      const resolveArgv = seedArgv(positional, seed)
+      // create argv is: worktree, add, branch, empty-base, ...seed, --name=n
+      expect(createArgv.slice(4, -1)).toEqual(resolveArgv)
+    }
+    expect(shellWords('--full --budget-mb=2000')).toEqual(['--full', '--budget-mb=2000'])
+    expect(shellWords("--tables='hello world'")).toEqual(['--tables=hello world'])
+    expect(seedArgv(quoted, '--full --budget-mb=2000')).toEqual(['--full --budget-mb=2000'])
+    expect(seedArgv(quoted, "--tables='hello world'")).toEqual(["--tables='hello world'"])
+    expect(fillTool(quoted, { seed: '--full --budget-mb=2000', branch: 'b' }))
+      .toBe("WORKTREE_SEED='--full --budget-mb=2000' scripts/worktree add 'b'")
+  })
+
+  test('a quoted {seed} in the create template keeps the seed as one resolve argv', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-quoted-seed-'))
+    mkdirSync(join(repo, 'scripts'), { recursive: true })
+    const received = join(repo, 'received-seed')
+    const tool = join(repo, 'scripts', 'worktree')
+    writeFileSync(tool, `#!/bin/sh
+if [ "$#" -eq 0 ]; then echo 'scripts/worktree resolve [seed]'; exit 0; fi
+if [ "$1" = resolve ]; then
+  shift
+  for arg in "$@"; do printf '%s\\n' "$arg" >> "${received}"; done
+  exit 0
+fi
+exit 1
+`)
+    chmodSync(tool, 0o755)
+    upsertProject({
+      name: 'quoted-seed', path: repo,
+      settings: {
+        worktree: {
+          create: "WORKTREE_SEED='{seed}' scripts/worktree add {branch}",
+          branch: 'task/{id}',
+        },
+      },
+    })
+    expect(() => fromRoot(() => preflight('implement', repo, '--full --budget-mb=2000')))
+      .not.toThrow()
+    expect(readFileSync(received, 'utf8')).toBe('--full --budget-mb=2000\n')
     rmSync(repo, { recursive: true, force: true })
   })
 
@@ -4439,7 +4513,7 @@ exit 1
       settings: { worktree: { create: 'scripts/worktree create {seed}', branch: 'task/{id}' } },
     })
     expect(() => fromRoot(() => preflight('implement', repo, 'minimal'))).toThrow(
-      "the project's seed resolver could not validate the seed:\ncatalog unreachable",
+      "the project's seed resolver rejected the seed or could not check it:\ncatalog unreachable",
     )
     rmSync(repo, { recursive: true, force: true })
   })
