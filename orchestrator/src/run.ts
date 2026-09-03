@@ -14,6 +14,7 @@ import { db, nowIso, ROOT, DB_PATH, sessionId, resolveRootFromLastTurn } from '.
 import {
   createWorktree, createWithTool, toolFor, changesIn, repoRootOf, resolveBase, worktreeGitDir,
   prepareWorktreeObjects, prepareSharedRefGuard, worktreeGitEnvironment, carryWorkingState,
+  withWorktreeCreateLock,
   removeFor, type Worktree,
   type WorktreeObjectEnvironment, validateSeedWithTool,
 } from './worktree.ts'
@@ -973,28 +974,34 @@ export async function run(opts: {
       // it cannot be cut from is a hard failure.
       const tool = toolFor(callerCwd)
       const creating = !worktree
-      if (!worktree && tool) {
-        // The PROJECT owns its worktrees. A bare `git worktree add` here would
-        // produce a directory with no .env, no vendor and no database, in which
-        // every test the worker runs is meaningless and green.
-        worktree = createWithTool(tool, callerCwd, claim.id, opts.seed, opts.key, opts.base)
-      } else if (!worktree) {
-        // INHERITED on a resume, and this is the point of the whole exercise:
-        // the worker is mid-edit in that tree, and cutting a fresh one would
-        // answer its question into an empty checkout and throw away everything
-        // it had built.
-        worktree = createWorktree(callerCwd, claim.id, opts.base)
-      }
-      if (worktree && creating) {
-        try {
-          carryWorkingState(callerCwd, worktree)
-        } catch (e) {
-          const cleanup = removeFor(worktree, worktree.repoRoot)
-          throw new Error(
-            `${String((e as Error)?.message ?? e)}\n` +
-            `incomplete worktree cleanup: ${cleanup.removed ? 'removed' : cleanup.detail}`,
-          )
-        }
+      if (creating) {
+        const repoRoot = repoRootOf(callerCwd)
+        if (!repoRoot) throw new Error(`not a git repository: ${callerCwd}`)
+        worktree = withWorktreeCreateLock(repoRoot, () => {
+          let created: Worktree
+          if (tool) {
+            // The PROJECT owns its worktrees. A bare `git worktree add` here would
+            // produce a directory with no .env, no vendor and no database, in which
+            // every test the worker runs is meaningless and green.
+            created = createWithTool(tool, callerCwd, claim.id, opts.seed, opts.key, opts.base)
+          } else {
+            // INHERITED on a resume, and this is the point of the whole exercise:
+            // the worker is mid-edit in that tree, and cutting a fresh one would
+            // answer its question into an empty checkout and throw away everything
+            // it had built.
+            created = createWorktree(callerCwd, claim.id, opts.base)
+          }
+          try {
+            carryWorkingState(callerCwd, created)
+          } catch (e) {
+            const cleanup = removeFor(created, created.repoRoot)
+            throw new Error(
+              `${String((e as Error)?.message ?? e)}\n` +
+              `incomplete worktree cleanup: ${cleanup.removed ? 'removed' : cleanup.detail}`,
+            )
+          }
+          return created
+        })
       }
     }
     if (worktree) {

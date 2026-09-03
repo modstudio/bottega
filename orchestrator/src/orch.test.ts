@@ -94,7 +94,7 @@ const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
 const { ask } = await import('./ask.ts')
 const { orphanSafety, repoRootOf, createWorktree, createWithTool, resolveBase, fillTool,
         worktreeGitDir, prepareWorktreeObjects, prepareSharedRefGuard,
-        carryWorkingState } = await import('./worktree.ts')
+        carryWorkingState, withWorktreeCreateLock } = await import('./worktree.ts')
 const { AGENTS, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
         WAKE_COOLDOWN_MS, CODEX_EXEC_SANDBOX, strictCodexSchema } = await import('./agents.ts')
@@ -4530,7 +4530,8 @@ echo 'Usage: scripts/worktree create [seed]'
       const w = createWithTool(
         {
           create:
-            `mkdir -p "${custom}" && echo "${custom}" && ` +
+            `${hermeticGitCommand} worktree add -b {branch} "${custom}" HEAD >/dev/null && ` +
+            `echo "${custom}" && ` +
             `echo 'Database cloned.' >&2 && echo 'task status not written' >&2`,
         },
         process.cwd(),
@@ -4550,7 +4551,11 @@ echo 'Usage: scripts/worktree create [seed]'
     try {
       process.chdir(tree)
       const w = createWithTool(
-        { create: `mkdir -p "${custom}" && echo "${custom}"` },
+        {
+          create:
+            `${hermeticGitCommand} worktree add -b {branch} "${custom}" HEAD >/dev/null && ` +
+            `echo "${custom}"`,
+        },
         process.cwd(),
         657,
       )
@@ -4558,6 +4563,82 @@ echo 'Usage: scripts/worktree create [seed]'
       expect(existsSync(join(repo, '.claude', 'worktrees', 'orch-657'))).toBe(false)
     } finally {
       process.chdir(here)
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('separate processes serialize complete creation for the same project', async () => {
+    const { repo } = scratchRepo()
+    const overlap = join(repo, '.git', 'creation-overlap')
+    const module = new URL('worktree.ts', import.meta.url).href
+    const child = `
+      const { createWithTool } = await import(process.argv[1])
+      createWithTool({ create: process.argv[4], branch: 'orch/{id}' }, process.argv[2], Number(process.argv[3]))
+    `
+    const create =
+      `if ! mkdir "${overlap}"; then echo 'creations overlapped' >&2; exit 19; fi; ` +
+      `trap 'rmdir "${overlap}"' EXIT; sleep 0.15; ` +
+      `${hermeticGitCommand} worktree add -b {branch} "${repo}/.claude/worktrees/{name}" HEAD ` +
+      `>/dev/null && echo "${repo}/.claude/worktrees/{name}"`
+    try {
+      const children = [910, 911, 912, 913].map((id) => Bun.spawn(
+        [process.execPath, '-e', child, module, repo, String(id), create],
+        { env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' },
+      ))
+      const exits = await Promise.all(children.map((p) => p.exited))
+      expect(exits).toEqual([0, 0, 0, 0])
+      for (const id of [910, 911, 912, 913]) {
+        const path = join(repo, '.claude', 'worktrees', `orch-${id}`)
+        expect(git(path, 'status', '--porcelain=v1', '--untracked-files=all')).toBe('')
+        expect(git(path, 'diff', '--exit-code', 'HEAD', '--')).toBe('')
+        expect(git(path, 'diff', '--cached', '--exit-code', 'HEAD', '--')).toBe('')
+      }
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a stuck creation lock fails on a bounded wait and names its holder', () => {
+    const { repo } = scratchRepo()
+    const lock = join(repo, '.git', 'orch-worktree-create.lock')
+    try {
+      mkdirSync(lock)
+      writeFileSync(join(lock, 'owner'), '4242\n')
+      expect(() => withWorktreeCreateLock(repo, () => undefined, 20)).toThrow(
+        /timed out after 0\.02s waiting for this project's worktree creation lock \(holder pid 4242\)/,
+      )
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a tree whose disk contents disagree with HEAD is never returned', () => {
+    const { repo } = scratchRepo()
+    const path = join(repo, '.claude', 'worktrees', 'orch-914')
+    try {
+      expect(() => createWithTool({
+        branch: 'orch/{id}',
+        create:
+          `${hermeticGitCommand} worktree add -b {branch} "${path}" HEAD >/dev/null && ` +
+          `printf 'not HEAD\\n' > "${path}/kept.txt" && ` +
+          `printf 'from another tree\\n' > "${path}/contamination.txt" && echo "${path}"`,
+      }, repo, 914)).toThrow(/worktree verification failed:[\s\S]*kept\.txt[\s\S]*contamination\.txt/)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('an unreadable worktree index is a verification failure, not a clean tree', () => {
+    const { repo } = scratchRepo()
+    const path = join(repo, '.claude', 'worktrees', 'orch-915')
+    try {
+      expect(() => createWithTool({
+        branch: 'orch/{id}',
+        create:
+          `${hermeticGitCommand} worktree add -b {branch} "${path}" HEAD >/dev/null && ` +
+          `printf broken > "$(git -C "${path}" rev-parse --git-path index)" && echo "${path}"`,
+      }, repo, 915)).toThrow(/worktree verification failed: could not compare[\s\S]*index/)
+    } finally {
       rmSync(repo, { recursive: true, force: true })
     }
   })

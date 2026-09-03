@@ -205,6 +205,67 @@ export function prepareWorktreeObjects(cwd: string): WorktreeObjectEnvironment {
 
 const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 
+const WORKTREE_CREATE_LOCK_TIMEOUT_MS = 5 * 60_000
+const WORKTREE_CREATE_LOCK_POLL_MS = 100
+const heldWorktreeCreateLocks = new Set<string>()
+
+/**
+ * Serialize the whole worktree lifecycle for one repository across orch processes.
+ *
+ * The directory creation is the lock operation: mkdir is atomic even when the
+ * contenders are unrelated processes. The lock lives in the common git directory,
+ * so callers from the main checkout and any linked worktree contend on the same
+ * path, while unrelated projects do not. It deliberately surrounds project tools
+ * and recipes as well as orch's own git calls; a fetch inside a project recipe was
+ * the operation that exposed the original race.
+ */
+export function withWorktreeCreateLock<T>(
+  repoRoot: string, create: () => T, timeoutMs = WORKTREE_CREATE_LOCK_TIMEOUT_MS,
+): T {
+  const common = realpathSync(resolve(repoRoot, git(['rev-parse', '--git-common-dir'], repoRoot)))
+  const lock = join(common, 'orch-worktree-create.lock')
+  // run.ts holds the project lock around creation plus the caller-state carry.
+  // The public creation helpers also take it so direct callers remain safe;
+  // their nested acquisition is the same synchronous critical section.
+  if (heldWorktreeCreateLocks.has(lock)) return create()
+  const owner = join(lock, 'owner')
+  const deadline = Date.now() + timeoutMs
+  const sleeper = new Int32Array(new SharedArrayBuffer(4))
+
+  while (true) {
+    try {
+      mkdirSync(lock)
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+      if (Date.now() >= deadline) {
+        let heldBy = ''
+        try { heldBy = ` (holder pid ${readFileSync(owner, 'utf8').trim()})` } catch {}
+        throw new Error(
+          `timed out after ${timeoutMs / 1000}s waiting for ` +
+          `this project's worktree creation lock${heldBy}: ${lock}`,
+        )
+      }
+      Atomics.wait(sleeper, 0, 0, WORKTREE_CREATE_LOCK_POLL_MS)
+      continue
+    }
+    try {
+      writeFileSync(owner, `${process.pid}\n`)
+      heldWorktreeCreateLocks.add(lock)
+      break
+    } catch (e) {
+      rmSync(lock, { recursive: true, force: true })
+      throw e
+    }
+  }
+
+  try {
+    return create()
+  } finally {
+    heldWorktreeCreateLocks.delete(lock)
+    rmSync(lock, { recursive: true, force: true })
+  }
+}
+
 /** Install the ref-update boundary without changing the shared repository config. */
 export function prepareSharedRefGuard(cwd: string): SharedRefGuardEnvironment {
   const paths = linkedWorktreePaths(cwd)
@@ -445,6 +506,16 @@ export function createWithTool(
       `Choosing is the architect's call: it depends on what the task touches.`,
     )
   }
+  return withWorktreeCreateLock(
+    repoRoot,
+    () => createWithToolUnlocked(tool, repoRoot, runId, seed, key, baseRef),
+  )
+}
+
+function createWithToolUnlocked(
+  tool: WorktreeTool, repoRoot: string, runId: number, seed?: string, key?: string,
+  baseRef?: string,
+): Worktree {
   // The project's own naming rule wins where it has one. `orch/<id>` is fine
   // where nothing enforces a convention and is refused outright where something
   // does — imposing our name on a repository whose tooling reads branch names
@@ -580,14 +651,23 @@ export function createWithTool(
   // commit from the tree it actually created so the run record and every later
   // diff name that floor rather than the caller checkout's incidental HEAD.
   const actualBase = gitOk(['rev-parse', 'HEAD'], path) ?? base
-  markWorktree(path, runId, repoRoot)
-  return { path, branch, base: actualBase, repoRoot }
+  const worktree = { path, branch, base: actualBase, repoRoot }
+  try {
+    markWorktree(path, runId, repoRoot)
+    verifyFreshWorktree(worktree)
+  } catch (e) {
+    throw new Error(`${String((e as Error)?.message ?? e)}${leftover(path)}`)
+  }
+  return worktree
 }
 
 export function createWorktree(cwd: string, runId: number, baseRef?: string): Worktree {
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
+  return withWorktreeCreateLock(repoRoot, () => createWorktreeUnlocked(repoRoot, runId, baseRef))
+}
 
+function createWorktreeUnlocked(repoRoot: string, runId: number, baseRef?: string): Worktree {
   const base = baseRef ? resolveBase(repoRoot, baseRef) : git(['rev-parse', 'HEAD'], repoRoot)
   const dir = join(repoRoot, '.claude', 'worktrees')
   mkdirSync(dir, { recursive: true })
@@ -598,8 +678,40 @@ export function createWorktree(cwd: string, runId: number, baseRef?: string): Wo
     throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
   }
   git(['worktree', 'add', '-b', branch, path, base], repoRoot)
+  const worktree = { path, branch, base, repoRoot }
   markWorktree(path, runId, repoRoot)
-  return { path, branch, base, repoRoot }
+  verifyFreshWorktree(worktree)
+  return worktree
+}
+
+/** Refuse a newly created tree whose files or index do not exactly describe HEAD. */
+function verifyFreshWorktree(worktree: Worktree): void {
+  const head = git(['rev-parse', 'HEAD'], worktree.path)
+  if (head !== worktree.base) {
+    throw new Error(
+      `worktree verification failed: ${worktree.path} claims HEAD ${head}, ` +
+      `but was created for ${worktree.base}`,
+    )
+  }
+
+  // `status` compares HEAD, index and disk together and names non-ignored
+  // untracked paths. A corrupt index is a hard git failure here, not an empty
+  // answer, so the "unable to read <oid>" incident is made loud as well.
+  let status: string
+  try {
+    status = git(['status', '--porcelain=v1', '-z', '--untracked-files=all'], worktree.path)
+  } catch (e) {
+    throw new Error(
+      `worktree verification failed: could not compare ${worktree.path} with HEAD ${head}: ` +
+      String((e as Error)?.message ?? e),
+    )
+  }
+  if (status) {
+    const detail = status.split('\0').filter(Boolean).join('\n').slice(0, 1500)
+    throw new Error(
+      `worktree verification failed: ${worktree.path} does not agree with HEAD ${head}:\n${detail}`,
+    )
+  }
 }
 
 /**
@@ -684,6 +796,12 @@ function createFromRecipe(
     throw new Error(
       `worktree setup failed at "${failed.step}":\n${failed.detail.slice(-1200)}`,
     )
+  }
+  try {
+    verifyFreshWorktree(w)
+  } catch (e) {
+    removeFor(w, repoRoot)
+    throw e
   }
   return w
 }
