@@ -6328,6 +6328,10 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
       env: { ...process.env, ORCH_DB: process.env.ORCH_DB! },
     },
   )
+  const hookOutput = (p: ReturnType<typeof runBrief>) => JSON.parse(p.stdout.toString()) as {
+    hookSpecificOutput: { additionalContext: string }
+    systemMessage?: string
+  }
   const resumeBody = (status: string, written: string) =>
     `---\nstatus: ${status}\nepic: demo\nproject: known\nwritten: ${written}\n---\n\nSECRET BODY\nNEXT ACTION\n`
 
@@ -6357,20 +6361,22 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
     const listLine = `${'epic-name'.padEnd(24)} ${'Title here'.padEnd(24)}`
     const cold = runBrief({ cwd: '/w/known', source: 'startup' })
     expect(cold.exitCode).toBe(0)
-    const coldOut = cold.stdout.toString()
+    const coldOutput = hookOutput(cold)
+    const coldOut = coldOutput.hookSpecificOutput.additionalContext
     expect(coldOut).toContain(listLine)
     expect(coldOut).toContain(
       'Open resume brief `epic-name`. Ask whether to load it before fetching with get_doc; after they agree and it is loaded, run orch doc consume.',
     )
     expect(coldOut).not.toContain('SECRET BODY')
+    expect(coldOutput.systemMessage).toBe('Open resume brief: `epic-name`.')
     const cont = runBrief({ cwd: '/w/known', source: 'clear' })
-    expect(cont.stdout.toString()).toContain(
+    expect(hookOutput(cont).hookSpecificOutput.additionalContext).toContain(
       'Open resume brief `epic-name`. Offer to resume from it; fetch with get_doc only after they agree, then run orch doc consume.',
     )
     const resumeSrc = runBrief({ cwd: '/w/known', source: 'resume' })
-    expect(resumeSrc.stdout.toString()).toContain('Ask whether to load it')
+    expect(hookOutput(resumeSrc).hookSpecificOutput.additionalContext).toContain('Ask whether to load it')
     const fork = runBrief({ cwd: '/w/known', source: 'fork' })
-    expect(fork.stdout.toString()).toContain('Offer to resume from it')
+    expect(hookOutput(fork).hookSpecificOutput.additionalContext).toContain('Offer to resume from it')
   })
 
   test('several open briefs use the plural sentence', () => {
@@ -6384,11 +6390,13 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
       body: resumeBody('open', '2026-09-03T02:00:00.000Z'),
     })
     const cold = runBrief({ cwd: '/w/known', source: 'startup' })
-    expect(cold.stdout.toString()).toContain(
+    const coldOutput = hookOutput(cold)
+    expect(coldOutput.hookSpecificOutput.additionalContext).toContain(
       'Open resume briefs above. Ask which (if any) to load before fetching with get_doc; after they agree and one is loaded, run orch doc consume.',
     )
+    expect(coldOutput.systemMessage).toBe('Open resume briefs: `two`, `one`.')
     const cont = runBrief({ cwd: '/w/known', source: 'compact' })
-    expect(cont.stdout.toString()).toContain(
+    expect(hookOutput(cont).hookSpecificOutput.additionalContext).toContain(
       'Open resume briefs above. Offer to resume from one of them; fetch with get_doc only after they agree, then run orch doc consume.',
     )
   })
@@ -6401,7 +6409,7 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
       body: resumeBody('open', '2026-09-03T00:00:00.000Z'),
     })
     const p = runBrief({ cwd: '/w/known', source: 'startup' })
-    const out = p.stdout.toString()
+    const out = hookOutput(p).hookSpecificOutput.additionalContext
     expect(out).toContain('## Global\n\nG')
     expect(out.indexOf('## Global')).toBeLessThan(out.indexOf('epic-name'))
     expect(out).toContain('Ask whether to load it')

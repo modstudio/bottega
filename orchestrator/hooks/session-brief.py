@@ -60,7 +60,7 @@ def _resume_sentence(source, lines):
 
 
 def main() -> int:
-    brief_p = resumes_p = None
+    brief_p = resumes_p = inbox_p = None
     try:
         payload = json.load(sys.stdin)
         cwd = payload.get("cwd")
@@ -69,26 +69,66 @@ def main() -> int:
         orch = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "bin", "orch"))
         brief_p = _start(orch, "doc", "brief", "--cwd", cwd)
         resumes_p = _start(orch, "doc", "resumes", "--cwd", cwd)
+        inbox_p = _start(orch, "inbox", "--all", "--json")
         deadline = time.monotonic() + 10
         brief = _wait(brief_p, deadline)
         resumes = _wait(resumes_p, deadline)
-        if brief.returncode == 0:
-            sys.stdout.write(brief.stdout)
-        if resumes.returncode != 0:
+        inbox = _wait(inbox_p, deadline)
+
+        context = brief.stdout if brief.returncode == 0 else ""
+        lines = []
+        if resumes.returncode == 0:
+            lines = [ln for ln in resumes.stdout.splitlines() if ln.strip()]
+            if lines:
+                if context and not context.endswith("\n"):
+                    context += "\n"
+                text = resumes.stdout
+                context += text if text.endswith("\n") else text + "\n"
+                context += _resume_sentence(payload.get("source"), lines) + "\n"
+
+        question_count = orphaned_count = 0
+        if inbox.returncode == 0:
+            try:
+                questions = json.loads(inbox.stdout)
+                if not isinstance(questions, list) or not all(
+                    isinstance(item, dict) and isinstance(item.get("session_live"), bool)
+                    for item in questions
+                ):
+                    raise ValueError("invalid inbox JSON")
+                question_count = len(questions)
+                orphaned_count = sum(not item["session_live"] for item in questions)
+            except Exception:
+                question_count = orphaned_count = 0
+
+        notices = []
+        if question_count:
+            if orphaned_count:
+                noun = "question" if orphaned_count == 1 else "questions"
+                verb = "needs" if orphaned_count == 1 else "need"
+                notices.append(
+                    f"{orphaned_count} orphaned {noun} {verb} a ruling "
+                    f"({question_count} total)."
+                )
+            else:
+                noun = "question" if question_count == 1 else "questions"
+                notices.append(f"{question_count} {noun} waiting on a ruling.")
+        if lines:
+            slugs = ", ".join(f"`{line.split()[0]}`" for line in lines)
+            noun = "brief" if len(lines) == 1 else "briefs"
+            notices.append(f"Open resume {noun}: {slugs}.")
+
+        if not context and not notices:
             return 0
-        lines = [ln for ln in resumes.stdout.splitlines() if ln.strip()]
-        if not lines:
-            return 0
-        if brief.returncode == 0 and brief.stdout and not brief.stdout.endswith("\n"):
-            sys.stdout.write("\n")
-        text = resumes.stdout
-        sys.stdout.write(text if text.endswith("\n") else text + "\n")
-        sys.stdout.write(_resume_sentence(payload.get("source"), lines) + "\n")
+        output = {"hookSpecificOutput": {"additionalContext": context}}
+        if notices:
+            output["systemMessage"] = " ".join(notices)
+        sys.stdout.write(json.dumps(output) + "\n")
     except Exception:
         pass
     finally:
         _kill(brief_p)
         _kill(resumes_p)
+        _kill(inbox_p)
     return 0
 
 
