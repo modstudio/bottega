@@ -1266,6 +1266,63 @@ describe('quota failover is one bounded unit of work', () => {
     }
   })
 
+  test('runs, runs --json, and --follow report the same failover chain', () => {
+    const binDir = join(dir, 'failover-surfaces-bin')
+    mkdirSync(binDir, { recursive: true })
+    writeFileSync(join(binDir, 'codex'), '#!/bin/sh\necho "HTTP 402: balance exhausted" >&2\nexit 1\n')
+    writeFileSync(
+      join(binDir, 'grok'),
+      '#!/bin/sh\nprintf \'{"type":"result","result":"shared surface answer"}\\n\'\n',
+    )
+    chmodSync(join(binDir, 'codex'), 0o755)
+    chmodSync(join(binDir, 'grok'), 0o755)
+    const oldPath = process.env.PATH
+    process.env.PATH = `${binDir}:${oldPath ?? ''}`
+    try {
+      const followed = orch(
+        'do', 'understand', 'report one chain everywhere', '--agent', 'codex', '--follow',
+        '--key', 'DEV-133',
+      )
+      expect(followed.code).toBe(0)
+      expect(followed.out).toContain('shared surface answer')
+
+      const attempts = db().query(
+        'SELECT id, agent, retry_of FROM run ORDER BY id',
+      ).all() as { id: number; agent: string; retry_of: number | null }[]
+      expect(attempts).toHaveLength(2)
+      const [first, successor] = attempts as [typeof attempts[number], typeof attempts[number]]
+      expect(successor.retry_of).toBe(first.id)
+      db().query('UPDATE run SET vendor_tokens=?, vendor_cost_usd=? WHERE id=?')
+        .run(111, 0.11, first.id)
+      db().query('UPDATE run SET vendor_tokens=?, vendor_cost_usd=? WHERE id=?')
+        .run(222, 0.22, successor.id)
+
+      const human = orch('runs')
+      expect(human.code).toBe(0)
+      expect(human.out.match(new RegExp(`\\b${first.id}\\s+codex→grok`, 'g'))).toHaveLength(1)
+      expect(human.out).not.toMatch(new RegExp(`\\b${successor.id}\\s+`))
+
+      const json = orch('runs', '--json')
+      expect(json.code).toBe(0)
+      const listed = json.out.trim().split('\n').map((line) => JSON.parse(line)) as {
+        id: number; agent: string; retry_of: number | null; failover_chain: string[]
+        vendor_tokens: number; vendor_cost_usd: number
+      }[]
+      expect(listed.map((row) => row.id)).toEqual([successor.id, first.id])
+      expect(listed.map((row) => row.retry_of)).toEqual([first.id, null])
+      expect(listed.map((row) => [row.vendor_tokens, row.vendor_cost_usd]))
+        .toEqual([[222, 0.22], [111, 0.11]])
+      expect(listed.every((row) =>
+        JSON.stringify(row.failover_chain) === JSON.stringify(['codex', 'grok']),
+      )).toBe(true)
+
+      expect(followed.err).toContain(`run ${successor.id} · grok`)
+      expect(followed.err).not.toContain(`run ${first.id} · grok`)
+    } finally {
+      process.env.PATH = oldPath
+    }
+  })
+
   test('--no-failover holds and records a clear terminal explanation', async () => {
     const binDir = join(dir, 'no-failover-bin')
     mkdirSync(binDir, { recursive: true })

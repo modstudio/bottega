@@ -95,18 +95,18 @@ function evidenceNote(row: { evidence_excluded: string | null }): string {
 async function follow(id: number, quiet: boolean, exitOnFailure = true): Promise<string> {
   const deadline = Date.now() + FOLLOW_TIMEOUT_MS
   const q = db().query(
-    `SELECT status, agent, job, parent_run_id, latency_ms, vendor_tokens,
+    `SELECT id, status, agent, job, parent_run_id, latency_ms, vendor_tokens,
             output_path, error, route_reason, evidence_excluded
        FROM run WHERE id = ?`)
   for (;;) {
     const chain = resolveFailover(db(), id)
     const row = q.get(chain.finalId) as {
-      status: string; agent: string; job: string; parent_run_id: number | null
+      id: number; status: string; agent: string; job: string; parent_run_id: number | null
       latency_ms: number | null; vendor_tokens: number | null
       output_path: string | null; error: string | null; route_reason: string | null
       evidence_excluded: string | null
     } | null
-    const outcome = row ? outcomeOf({ id: chain.finalId, ...row }) : null
+    const outcome = row ? outcomeOf(row) : null
     if (row && outcome?.terminal && !chain.settling) {
       const out = row.output_path && existsSync(row.output_path)
         ? readFileSync(row.output_path, 'utf8') : ''
@@ -129,7 +129,7 @@ async function follow(id: number, quiet: boolean, exitOnFailure = true): Promise
             ORDER BY q.id`,
         ).all(row.parent_run_id ?? chain.finalId, row.parent_run_id ?? chain.finalId) as { question: string }[]
         console.error(
-          `\n— run ${id} · ${row.agent} · stopped to ask` +
+          `\n— run ${row.id} · ${row.agent} · stopped to ask` +
           (row.latency_ms ? ` after ${dur(row.latency_ms)}` : '') + '\n' +
           open.map((q) => `  · ${q.question}`).join('\n') +
           `\n\n  ${outcome.line}` +
@@ -141,14 +141,14 @@ async function follow(id: number, quiet: boolean, exitOnFailure = true): Promise
       }
       if (!outcome.ok) {
         if (exitOnFailure) {
-          console.error(`\n— run ${id} · ${row.agent} · ${row.status}: ${row.error ?? 'no output'}`)
+          console.error(`\n— run ${row.id} · ${row.agent} · ${row.status}: ${row.error ?? 'no output'}`)
           process.exit(1)
         }
         return row.status
       }
       if (quiet) return row.status
       console.error(
-        `\n— run ${id} · ${row.agent}` +
+        `\n— run ${row.id} · ${row.agent}` +
           (row.route_reason ? ` (${row.route_reason})` : '') +
           ` · ${dur(row.latency_ms ?? 0)}` +
           (row.vendor_tokens ? ` · ${row.vendor_tokens.toLocaleString()} vendor tokens` : '') +
@@ -2320,7 +2320,9 @@ switch (cmd) {
   }
 
   case 'runs': {
-    const where: string[] = ['r.parent_run_id IS NULL', 'r.automatic_failover = 0']
+    const json = has('json')
+    const where: string[] = ['r.parent_run_id IS NULL']
+    if (!json) where.push('r.automatic_failover = 0')
     // Typed as the bindings SQLite actually accepts: `unknown[]` does not
     // satisfy the query signature, which is why this file never typechecked.
     const args: (string | number)[] = []
@@ -2331,13 +2333,12 @@ switch (cmd) {
     const onlyUnscored = has('unscored')
     const sinceFlag = flag('since')
     if (sinceFlag) { where.push('r.started_at >= ?'); args.push(sinceFlag) }
-    const json = has('json')
     let rows = db().query(
       `SELECT r.id, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
               current_run.status, s.delivery, s.quality,
               COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason
               ${json ? ', r.cwd, r.session_id, r.vendor_cost_usd, r.probe, r.exit_code,'
-                        + ' r.prompt_path, r.branch, r.branch_kept' : ''}
+                        + ' r.prompt_path, r.branch, r.branch_kept, r.retry_of' : ''}
          FROM run r
          JOIN run current_run ON current_run.id = (
            SELECT member.id FROM run member
@@ -2359,7 +2360,7 @@ switch (cmd) {
         ).get(final.rootId)
         if (!owed) return []
       }
-      const current = db().query(
+      const current = json ? {} : db().query(
         'SELECT status, latency_ms, vendor_tokens, route_reason FROM run WHERE id=?',
       ).get(final.id) as {
         status: string; latency_ms: number | null; vendor_tokens: number | null
