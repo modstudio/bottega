@@ -1997,7 +1997,7 @@ describe('recalibrating the scorer', () => {
 
 describe('detached run collection', () => {
   const CLI = new URL('cli.ts', import.meta.url).pathname
-  const orch = (...args: string[]) => {
+  const orchInput = (args: string[], stdin?: string) => {
     const p = Bun.spawnSync([process.execPath, CLI, ...args], {
       // The suite may itself be run by an orch worker. CLI behavior under test
       // starts at the user boundary, not at the inherited delegation depth.
@@ -2005,6 +2005,7 @@ describe('detached run collection', () => {
         ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
         CLAUDE_CODE_SESSION_ID: 'orch-test-session',
       },
+      stdin: stdin !== undefined ? new TextEncoder().encode(stdin) : undefined,
       stdout: 'pipe', stderr: 'pipe',
     })
     return {
@@ -2013,6 +2014,7 @@ describe('detached run collection', () => {
       err: new TextDecoder().decode(p.stderr),
     }
   }
+  const orch = (...args: string[]) => orchInput(args)
   const insert = (status: string, job = 'file-question') => (db().query(
     `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status)
      VALUES (?, 'codex', ?, 'x', 1, 'x', ?) RETURNING id`,
@@ -2343,6 +2345,55 @@ describe('detached run collection', () => {
     expect(r.out).toContain(`${id}\tfailed\n  harness, exit 17: worktree creation failed`)
   })
 
+  test('result falls back to the run row and output when the full CLI cannot parse', () => {
+    const id = insert('ok')
+    const output = join(dir, `degraded-result-${id}.txt`)
+    writeFileSync(output, 'already-paid-for answer')
+    db().query('UPDATE run SET output_path=? WHERE id=?').run(output, id)
+
+    const shadow = join(dir, 'degraded-result-cli')
+    mkdirSync(shadow, { recursive: true })
+    for (const file of ['orch.ts', 'collect.ts', 'outcome.ts']) {
+      writeFileSync(join(shadow, file), readFileSync(new URL(file, import.meta.url).pathname, 'utf8'))
+    }
+    writeFileSync(join(shadow, 'cli.ts'), '<<<<<<< ours\n')
+
+    const r = Bun.spawnSync([process.execPath, join(shadow, 'orch.ts'), 'result', String(id), '--quiet'], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe',
+    })
+    const stdout = new TextDecoder().decode(r.stdout)
+    const stderr = new TextDecoder().decode(r.stderr)
+    expect(r.exitCode).toBe(0)
+    expect(stdout).toContain('already-paid-for answer')
+    expect(stderr).toContain('degraded collection mode')
+    expect(stderr).toContain('full CLI could not load')
+  })
+
+  test('wait falls back without loading the broken CLI graph', () => {
+    const ok = insert('ok')
+    const failed = insert('failed')
+    db().query("UPDATE run SET failure_kind='harness', error='agent stopped' WHERE id=?").run(failed)
+
+    const shadow = join(dir, 'degraded-wait-cli')
+    mkdirSync(shadow, { recursive: true })
+    for (const file of ['orch.ts', 'collect.ts', 'outcome.ts']) {
+      writeFileSync(join(shadow, file), readFileSync(new URL(file, import.meta.url).pathname, 'utf8'))
+    }
+    writeFileSync(join(shadow, 'cli.ts'), '<<<<<<< ours\n')
+
+    const r = Bun.spawnSync(
+      [process.execPath, join(shadow, 'orch.ts'), 'wait', String(ok), String(failed)],
+      { env: { ...process.env, ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe' },
+    )
+    const stdout = new TextDecoder().decode(r.stdout)
+    const stderr = new TextDecoder().decode(r.stderr)
+    expect(r.exitCode).toBe(1)
+    expect(stdout).toContain(`${ok}\tok`)
+    expect(stdout).toContain(`${failed}\tfailed`)
+    expect(stdout).toContain('harness: agent stopped')
+    expect(stderr).toContain('degraded collection mode')
+  })
+
   test('score refuses a harness-failed run even with force', () => {
     const id = insert('failed')
     db().query("UPDATE run SET failure_kind='harness' WHERE id=?").run(id)
@@ -2560,6 +2611,51 @@ describe('detached run collection', () => {
     expect(orch('inbox', '--all').out).not.toContain(`run ${id}`)
   })
 
+  test('stop terminates a running vendor and leaves its worktree intact', async () => {
+    const worktree = mkdtempSync(join(tmpdir(), 'orch-stop-'))
+    const vendor = Bun.spawn(['sleep', '30'])
+    const id = insert('running', 'implement')
+    db().query('UPDATE run SET agent_pid=?, worktree=? WHERE id=?')
+      .run(vendor.pid, worktree, id)
+
+    try {
+      const stopped = orch('stop', String(id))
+      expect(stopped.code).toBe(0)
+      expect(stopped.out).toContain(`stopped run ${id}`)
+      expect(await vendor.exited).not.toBe(0)
+      expect(db().query('SELECT status, error, failure_kind, worktree FROM run WHERE id=?').get(id))
+        .toEqual({
+          status: 'stopped', error: 'stopped by architect', failure_kind: null, worktree,
+        })
+      expect(existsSync(worktree)).toBe(true)
+      const candidate = candidates('implement').find((item) => item.agent === 'codex')!
+      expect(candidate.evidence).toBe(0)
+      expect(candidate.failures).toBe(0)
+    } finally {
+      try { vendor.kill() } catch { /* already stopped */ }
+      rmSync(worktree, { recursive: true, force: true })
+    }
+  })
+
+  test('stop refuses a run that is not running without changing it', () => {
+    const id = insert('ok')
+    const r = orch('stop', String(id))
+    expect(r.code).toBe(1)
+    expect(r.err).toContain(`run ${id} is ok, not running — nothing to stop`)
+    expect((db().query('SELECT status FROM run WHERE id=?').get(id) as { status: string }).status)
+      .toBe('ok')
+  })
+
+  test('stopping a running turn records the conversation root as stopped', () => {
+    const root = insert('asking', 'implement')
+    const turn = insert('running', 'implement')
+    db().query('UPDATE run SET parent_run_id=?, turn=2 WHERE id=?').run(root, turn)
+
+    expect(orch('stop', String(turn)).code).toBe(0)
+    expect(db().query('SELECT id, status FROM run WHERE id IN (?,?) ORDER BY id').all(root, turn))
+      .toEqual([{ id: root, status: 'stopped' }, { id: turn, status: 'stopped' }])
+  })
+
   test('abandon refuses a completed run without changing it', () => {
     const id = insert('ok')
     const r = orch('abandon', String(id))
@@ -2638,6 +2734,54 @@ describe('detached run collection', () => {
     expect((db().query('SELECT answer FROM question WHERE run_id=?').get(child) as
       { answer: string }).answer).toBe('use the first design')
     expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before)
+  })
+
+  test('answer reads a ruling from a file without shell interpretation', () => {
+    const id = insert('running', 'implement')
+    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'which names?')
+    const path = join(dir, `answer-${id}.txt`)
+    const ruling = 'Use $var and method(Param $x).\nKeep this line exactly.\n'
+    writeFileSync(path, ruling)
+
+    const r = orch('answer', String(id), '--file', path)
+
+    expect(r.code).toBe(0)
+    expect((db().query('SELECT answer FROM question WHERE run_id=?').get(id) as
+      { answer: string }).answer).toBe(ruling)
+  })
+
+  test('answer reads a ruling from stdin without shell interpretation', () => {
+    const id = insert('running', 'implement')
+    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'which names?')
+    const ruling = 'Use $var and method(Param $x).\nKeep this line exactly.\n'
+
+    const r = orchInput(['answer', String(id)], ruling)
+
+    expect(r.code).toBe(0)
+    expect((db().query('SELECT answer FROM question WHERE run_id=?').get(id) as
+      { answer: string }).answer).toBe(ruling)
+  })
+
+  test('a partial multi-question ruling names the single-command rule', () => {
+    const id = insert('running', 'implement')
+    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'first?')
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'second?')
+    const questions = db().query('SELECT id FROM question WHERE run_id=? ORDER BY id')
+      .all(id) as { id: number }[]
+
+    const r = orch('answer', String(id), `--q${questions[0]!.id}`, 'only one')
+
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('pass every --q<id> in a single command')
+    expect((db().query('SELECT COUNT(*) n FROM question WHERE answered_at IS NOT NULL').get() as
+      { n: number }).n).toBe(0)
   })
 
   test('answer resumes a durable root question when no child is running', async () => {

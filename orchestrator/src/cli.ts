@@ -1,4 +1,4 @@
-import { db, nowIso, sessionId, judgeability, pendingForSession, unscoredCount, weigh, label,
+import { db, nowIso, sessionId, judgeability, pendingForSession, unscoredCount, weigh,
          DELIVERY, QUALITY, FIDELITY, type Delivery, type Quality, type Fidelity,
          reapStale, pidAlive, STALE_AFTER_MS, UNSCORED_WHERE, recordDuels, duelMatrices,
          parseRunIds } from './db.ts'
@@ -18,6 +18,8 @@ import { projectAt, projectByName, projects } from './projects.ts'
 import { resolveBase, repoRootOf, removeBranch, unmergedBranch } from './worktree.ts'
 import { NOT_EVIDENCE, type FailureKind } from './failure.ts'
 import { WORKER_PREAMBLE, READONLY_PREAMBLE, contractConflicts } from './contract.ts'
+import { collectResult, collectWait } from './collect.ts'
+import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
 
 /**
  * How long `orch do` watches a detached run before handing it back.
@@ -87,31 +89,6 @@ function evidenceNote(row: { evidence_excluded: string | null }): string {
   return row.evidence_excluded
     ? `\n  not routing evidence: ${row.evidence_excluded}`
     : ''
-}
-
-type OutcomeRow = {
-  id: number
-  status: string
-  error?: string | null
-  failure_kind?: string | null
-  exit_code?: number | null
-  delivery?: unknown
-  quality?: unknown
-}
-
-/** The caller-facing meaning of a run status, shared by every reporting command. */
-function outcomeOf(row: OutcomeRow): { terminal: boolean; ok: boolean; line: string } {
-  if (row.status === 'running') return { terminal: false, ok: false, line: 'running' }
-  if (row.status === 'asking') {
-    return { terminal: true, ok: true, line: `asking - orch inbox (or orch answer ${row.id})` }
-  }
-  if (row.status === 'ok') {
-    const line = Object.hasOwn(row, 'delivery')
-      ? label(row.delivery as never, row.quality as never)
-      : 'ok'
-    return { terminal: true, ok: true, line }
-  }
-  return { terminal: true, ok: false, line: row.status }
 }
 
 async function follow(id: number, quiet: boolean, exitOnFailure = true): Promise<string> {
@@ -597,13 +574,16 @@ function usage(): never {
       --json is the published surface other concerns read (never orch.db)
   orch inbox [--all]            design questions a worker is waiting on you to rule on
   orch setup-ask                register the live ask channel with codex and grok
-  orch answer <id> "<ruling>"   rule, and resume detached (--follow to watch)
+  orch answer <id> ["<ruling>"] rule from argv, --file, or stdin; resume detached
+      --file <path>             read the ruling from a file
+      --follow                  watch the resumed turn here instead
   orch continue <id> ["<what next>"]
       carry on a chain with no open question - one that was interrupted, or
       one you want to add to without paying for its context again
       detaches by default; --follow watches the resumed turn here
       several questions: orch answer <id> --q<qid> "<ruling>" --q<qid> "<ruling>"
   orch diff <id>                what a writing run actually changed, as a diff
+  orch stop <id>                terminate a running run and leave its worktree intact
   orch discard <id> [--force]   delete that run's worktree and branch (the row stays)
   orch abandon <id> [--note "..."] [--force] retire an asking run and clean up its worktree
   orch sweep [--older-than N] [--force] [--dry-run]
@@ -661,16 +641,6 @@ function doUsage(): never {
   --quiet          print only the reply or run id
 `)
   process.exit(0)
-}
-
-/** The single-line failure summary shared by result and wait. */
-function failureReason(row: {
-  status: string; error: string | null; failure_kind: string | null; exit_code: number | null
-}): string {
-  const kind = row.failure_kind ?? row.status
-  const code = row.exit_code == null ? '' : `, exit ${row.exit_code}`
-  const error = (row.error ?? 'no error recorded').replace(/\s+/g, ' ').trim()
-  return `${kind}${code}: ${error}`
 }
 
 const projectNames = () => projects().map((p) => p.name).join(', ') || '(none)'
@@ -1016,116 +986,12 @@ switch (cmd) {
   }
 
   case 'result': {
-    const id = Number(argv[1])
-    if (!id) usage()
-    const row = db().query(
-      `SELECT id, agent, job, status, latency_ms, vendor_tokens, output_path, error,
-              failure_kind, exit_code, parent_run_id, evidence_excluded, base_commit
-         FROM run WHERE id = ?`,
-    ).get(id) as {
-      id: number; agent: string; job: string; status: string; latency_ms: number | null
-      vendor_tokens: number | null; output_path: string | null; error: string | null
-      failure_kind: string | null; exit_code: number | null; parent_run_id: number | null
-      evidence_excluded: string | null
-      base_commit: string | null
-    } | null
-    if (!row) throw new Error(`no run ${id}`)
-
-    // Exit 2 for "not finished", distinct from 1 for "failed". A poller has to
-    // be able to tell "wait longer" from "stop waiting".
-    const outcome = outcomeOf(row)
-    const baseNote = row.base_commit ? `\n  base:      ${row.base_commit}` : ''
-    if (!outcome.terminal) {
-      console.error(`run ${id} (${row.agent}/${row.job}) is still running`)
-      process.exit(2)
-    }
-    if (row.output_path && existsSync(row.output_path)) {
-      console.log(readFileSync(row.output_path, 'utf8'))
-    }
-    if (row.status === 'asking') {
-      const rootId = row.parent_run_id ?? row.id
-      const open = db().query(
-        `SELECT COUNT(*) n FROM question q JOIN run r ON r.id = q.run_id
-          WHERE (r.id = ? OR r.parent_run_id = ?) AND q.answered_at IS NULL`,
-      ).get(rootId, rootId) as { n: number }
-      const running = db().query(
-        `SELECT id FROM run
-          WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
-          ORDER BY turn DESC LIMIT 1`,
-      ).get(rootId, rootId) as { id: number } | null
-      console.error(
-        (open.n
-          ? `\n— run ${id} asking — waiting on a ruling: orch answer ${rootId} ...`
-          : running
-            ? `\n— run ${id} asking — resumed as run ${running.id}, which is still running`
-          : `\n— run ${id} asking — recoverable: orch continue ${rootId}`) +
-        baseNote +
-        evidenceNote(row),
-      )
-      break
-    }
-    if (!outcome.ok) {
-      console.error(
-        `\n— run ${id} ${row.status}: ${failureReason(row)}` + baseNote + evidenceNote(row),
-      )
-      process.exit(1)
-    }
-    if (!has('quiet')) {
-      console.error(
-        `\n— run ${row.id} · ${row.agent} · ${dur(row.latency_ms)}` +
-          (row.vendor_tokens ? ` · ${row.vendor_tokens.toLocaleString()} vendor tokens` : '') +
-          // Through the SHARED hint, which knows a turn is scored at its root and
-          // that a writing job has a fidelity axis. Hardcoded here, this line
-          // printed `orch score <turn>` — the one command score refuses.
-          `\n  score it:  ${scoreHint(row.id, row.job, row.parent_run_id)}` +
-          baseNote +
-          evidenceNote(row),
-      )
-    }
+    collectResult(db(), argv, (jobName) => Boolean(JOBS[jobName]?.needs.writesRepo))
     break
   }
 
   case 'wait': {
-    // A flag's VALUE is not a run id. `--timeout 300` was being read as a
-    // fourth run to wait for, and `orch wait` duly reported "300 ok" for a run
-    // that does not exist.
-    const rest = argv.slice(1)
-    const ids = rest
-      .filter((x, i) => /^\d+$/.test(x) && !VALUE_FLAGS.has(rest[i - 1] ?? ''))
-      .map(Number)
-    if (!ids.length) usage()
-    // BOUNDED, always. An unbounded poll against a run that died without
-    // writing its row waits for ever, which is the failure mode this command
-    // exists to remove rather than relocate.
-    const timeoutMs = Number(flag('timeout') ?? 1800) * 1000
-    const deadline = Date.now() + timeoutMs
-    const q = db().query(
-      `SELECT id, status, error, failure_kind, exit_code
-         FROM run WHERE id IN (${ids.map(() => '?').join(',')})`,
-    )
-    for (;;) {
-      reapStale()
-      const rows = q.all(...ids) as {
-        id: number; status: string; error: string | null
-        failure_kind: string | null; exit_code: number | null
-      }[]
-      const outcomes = rows.map((row) => ({ row, outcome: outcomeOf(row) }))
-      const running = outcomes.filter(({ outcome }) => !outcome.terminal)
-      if (!running.length) {
-        for (const { row, outcome } of outcomes) {
-          console.log(`${row.id}\t${outcome.line}`)
-          if (!outcome.ok) console.log(`  ${failureReason(row)}`)
-        }
-        if (outcomes.some(({ outcome }) => !outcome.ok)) process.exit(1)
-        break
-      }
-      if (Date.now() >= deadline) {
-        console.error(`still running after ${Math.round(timeoutMs / 1000)}s: ` +
-          running.map(({ row }) => row.id).join(', '))
-        process.exit(2)
-      }
-      await new Promise((r) => setTimeout(r, 2000))
-    }
+    await collectWait(db(), argv, reapStale)
     break
   }
 
@@ -1669,20 +1535,27 @@ switch (cmd) {
       for (const { q, given } of byId) answers.push({ question: q.question, answer: given! })
     } else {
       const positional = argv.slice(2).filter((x) => !x.startsWith('--'))
-      if (!positional.length) {
+      if (flag('file') || (!positional.length && !process.stdin.isTTY)) {
+        const given = await readPrompt()
+        if (!given.trim()) throw new Error('empty ruling')
+        answers.push({ question: open[0]!.question, answer: given })
+      } else if (!positional.length) {
         throw new Error(
           `run ${id} is waiting on ${open.length} question(s). ` +
-          `Rule with: orch answer ${id} --q${open[0]!.id} "<ruling>"`,
+          `Rule with: orch answer ${id} --q${open[0]!.id} "<ruling>", ` +
+          'or pass a ruling via --file or stdin.',
         )
+      } else {
+        open.forEach((q, i) => {
+          const given = positional[i]
+          if (given) answers.push({ question: q.question, answer: given })
+        })
       }
-      open.forEach((q, i) => {
-        const given = positional[i]
-        if (given) answers.push({ question: q.question, answer: given })
-      })
     }
     if (answers.length !== open.length) {
       throw new Error(
         `${open.length} question(s) open but ${answers.length} ruling(s) given. ` +
+        'For multiple questions, pass every --q<id> in a single command. ' +
         'A worker resumed with a question unanswered will guess, which is the ' +
         'one thing this is here to prevent.',
       )
@@ -2042,6 +1915,47 @@ switch (cmd) {
     }
 
     await discardWorktree(row as CleanupRow, ['running', 'asking'], 'discarded', has('force'))
+    break
+  }
+
+  case 'stop': {
+    const id = Number(argv[1])
+    if (!id) usage()
+    const row = db().query(
+      'SELECT id, status, pid, agent_pid, parent_run_id FROM run WHERE id = ?',
+    ).get(id) as {
+      id: number; status: string; pid: number | null; agent_pid: number | null
+      parent_run_id: number | null
+    } | null
+    if (!row) throw new Error(`no run ${id}`)
+    if (row.status !== 'running') {
+      throw new Error(`run ${id} is ${row.status}, not running — nothing to stop`)
+    }
+
+    const pids = [...new Set([row.agent_pid, row.pid].filter((pid): pid is number => Boolean(pid)))]
+    for (const pid of pids) {
+      try { process.kill(pid, 0) } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e
+      }
+    }
+
+    db().transaction(() => {
+      db().query(
+        "UPDATE run SET status='stopped', error='stopped by architect', failure_kind=NULL WHERE id=? AND status='running'",
+      ).run(id)
+      if (row.parent_run_id) {
+        db().query(
+          "UPDATE run SET status='stopped', error='stopped by architect', failure_kind=NULL WHERE id=?",
+        ).run(row.parent_run_id)
+      }
+    })()
+
+    for (const pid of pids) {
+      try { process.kill(pid, 'SIGTERM') } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e
+      }
+    }
+    console.log(`stopped run ${id}`)
     break
   }
 

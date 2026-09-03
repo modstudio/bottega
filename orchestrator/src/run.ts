@@ -1307,8 +1307,11 @@ export async function run(opts: {
 
     db().query(
       `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
-                      vendor_tokens=?, vendor_cost_usd=?, status=?, error=?,
-                      failure_kind=?, vendor_session=COALESCE(?, vendor_session) WHERE id=?`,
+                      vendor_tokens=?, vendor_cost_usd=?,
+                      status=CASE WHEN status='stopped' THEN status ELSE ? END,
+                      error=CASE WHEN status='stopped' THEN error ELSE ? END,
+                      failure_kind=CASE WHEN status='stopped' THEN failure_kind ELSE ? END,
+                      vendor_session=COALESCE(?, vendor_session) WHERE id=?`,
     ).run(
       Date.now() - started, exitCode, new TextEncoder().encode(output).byteLength, outPath, promptPath,
       vendorTokens, costUsd, status, error, failureKind, resolvedSession, claim.id,
@@ -1356,7 +1359,12 @@ export async function run(opts: {
      * with the children recording what each turn cost.
      */
     if (opts.resume) {
-      db().query('UPDATE run SET status=?, error=? WHERE id=?')
+      db().query(
+        `UPDATE run SET
+           status=CASE WHEN status='stopped' THEN status ELSE ? END,
+           error=CASE WHEN status='stopped' THEN error ELSE ? END
+         WHERE id=?`,
+      )
         .run(status, error, opts.resume.parent)
     }
   }

@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { DOC_SCOPES, DOC_SCOPE_SUBJECT_KIND } from '../../shared/docs.ts'
+export { label } from './outcome.ts'
 
 export const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 export const DB_PATH = process.env.ORCH_DB ?? join(ROOT, 'orch.db')
@@ -396,7 +397,7 @@ const RUN_DDL = `CREATE TABLE run (
       -- the run is still live in the sense that matters — its vendor session is
       -- sitting there holding everything it has read, waiting for a ruling.
       status        TEXT NOT NULL DEFAULT 'running'
-                    CHECK (status IN ('running','ok','failed','stale','asking')),
+                    CHECK (status IN ('running','ok','failed','stale','asking','stopped')),
       error         TEXT,
       pid           INTEGER,
       session_id    TEXT,
@@ -1129,14 +1130,6 @@ export const WEIGHT_MAX = 1
 export const DELIVERY: Delivery[] = ['none', 'partial', 'full']
 export const QUALITY: Quality[] = ['wrong', 'mixed', 'right']
 export const FIDELITY: Fidelity[] = ['drifted', 'partial', 'faithful']
-
-/** One short phrase for a column that has room for one. */
-export function label(delivery: Delivery | null, quality: Quality | null): string {
-  if (!delivery) return '—'
-  if (delivery === 'none') return 'no answer'
-  if (delivery === 'partial') return `part/${quality}`
-  return quality ?? '—'
-}
 
 /**
  * Whether the caller is allowed to judge a run.

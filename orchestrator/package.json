@@ -5,7 +5,7 @@
   "description": "Personal delegation layer: route work to external agents, score them per job type",
   "type": "module",
   "scripts": {
-    "orch": "bun src/cli.ts",
+    "orch": "bun src/orch.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },

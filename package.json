@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "check": "bun test ./.githooks/commit-msg.test.ts && cd orchestrator && bun install --silent && bun run typecheck && bun test && cd ../hub && bun install --silent && bun run typecheck && bun test && cd web && bun install --silent && bun run typecheck && bun run build && cd ../.. && bun scripts/check-boundaries.ts && bun scripts/check-brand.ts",
-    "orch": "bun orchestrator/src/cli.ts",
+    "orch": "bun orchestrator/src/orch.ts",
     "hub": "bun hub/src/cli.ts"
   },
   "devDependencies": {
