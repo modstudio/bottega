@@ -212,6 +212,62 @@ function keptBranchLine(branch: string, count: number, trunk: string, id: number
     `merge it, or orch discard ${id} --force to delete it`
 }
 
+/** A configured trunk, or nothing — never a guessed branch name. */
+function configuredTrunk(repoRoot: string): { project: string | null; trunk: string | null } {
+  const project = projectAt(repoRoot)
+  const trunk = project?.settings.trunk
+  return {
+    project: project?.name ?? null,
+    trunk: typeof trunk === 'string' && trunk.trim() ? trunk : null,
+  }
+}
+
+function missingTrunkError(project: string | null, repoRoot: string): Error {
+  return new Error(
+    project
+      ? `project ${project} has no trunk configured — set settings.trunk before this can tell merged from unique commits`
+      : `no trunk configured for ${repoRoot} (not a registered project)`,
+  )
+}
+
+const KEPT_ROW_LIMIT = 10
+
+function orphanKeepReason(detail: string): string {
+  return /^has commits not reachable from /.test(detail)
+    ? 'holds commits not on trunk'
+    : detail
+}
+
+function printSweepKept(
+  done: number,
+  kept: { line: string; reason: string }[],
+  dry: boolean,
+): void {
+  console.log(`\n${dry ? 'would reclaim' : 'reclaimed'} ${done}, kept ${kept.length}`)
+  const listAll = dry
+  const fits = kept.length <= KEPT_ROW_LIMIT
+  const showSummary = listAll || !fits
+  const showRows = listAll || fits
+  if (showSummary && kept.length > 0) {
+    const counts = new Map<string, number>()
+    for (const row of kept) counts.set(row.reason, (counts.get(row.reason) ?? 0) + 1)
+    const grouped = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    const width = String(grouped[0]![1]).length
+    for (const [reason, n] of grouped) {
+      console.log(`  ${String(n).padStart(width)}  ${reason}`)
+    }
+  }
+  if (showRows) {
+    for (const row of kept) console.log(`  ${row.line}`)
+  } else {
+    const parts = ['orch sweep --dry-run']
+    const older = flag('older-than')
+    if (older !== undefined) parts.push(`--older-than ${older}`)
+    if (has('force')) parts.push('--force')
+    console.log(`  ${parts.join(' ')} lists every kept row`)
+  }
+}
+
 function cleanupRepoRoot(row: {
   worktree?: string | null; cwd?: string | null; repo?: string | null
 }): string | null {
@@ -277,9 +333,12 @@ async function discardWorktree(
   const { removeFor, repoRootOf, unmergedBranch, restoreBranch } = await import('./worktree.ts')
   const repoRoot = repoRootOf(row.worktree) ?? projectAt(row.worktree)?.path ??
     repoRootOf(process.cwd()) ?? process.cwd()
-  const trunk = projectAt(repoRoot)?.settings.trunk ?? 'main'
-  const protectedBranch = !force && row.branch
-    ? unmergedBranch(repoRoot, row.branch, trunk) : null
+  const { project, trunk } = configuredTrunk(repoRoot)
+  let protectedBranch: ReturnType<typeof unmergedBranch> = null
+  if (!force && row.branch) {
+    if (!trunk) throw missingTrunkError(project, repoRoot)
+    protectedBranch = unmergedBranch(repoRoot, row.branch, trunk)
+  }
   const r = removeFor({
     path: row.worktree,
     branch: row.branch ?? `orch/${row.id}`,
@@ -291,7 +350,7 @@ async function discardWorktree(
   db().query('UPDATE run SET worktree = NULL, branch_kept = ? WHERE id = ?')
     .run(protectedBranch ? row.branch : null, row.id)
   console.log(`${verb} run ${row.id}'s worktree`)
-  if (protectedBranch && row.branch) {
+  if (protectedBranch && row.branch && trunk) {
     console.log(keptBranchLine(row.branch, protectedBranch.count, trunk, row.id))
   }
 }
@@ -614,7 +673,8 @@ function usage(): never {
   orch abandon <id> [--note "..."] [--force] retire an asking run and clean up its worktree
   orch sweep [--older-than N] [--force] [--dry-run]
       reclaim finished runs' worktrees AND the databases behind them; keeps
-      anything unscored, because its diff is the evidence you would judge from
+      anything unscored, because its diff is the evidence you would judge from.
+      more than ten kept rows are summarised by reason; --dry-run lists every row
   orch reclassify-failures [--dry-run]
       reclassify stored unclassified vendor quota/auth failures from their error text;
       prints every matched row and before/after counts before writing
@@ -1886,10 +1946,17 @@ switch (cmd) {
     const { projectAt } = await import('./projects.ts')
 
     let done = 0
-    const kept: string[] = []
+    const kept: { line: string; reason: string }[] = []
+    const keep = (line: string, reason: string) => { kept.push({ line, reason }) }
     for (const r of rows) {
-      if (r.age_days < days) { kept.push(`${r.id}  too recent (${r.age_days.toFixed(1)}d)`); continue }
-      if (!r.scored && !has('force')) { kept.push(`${r.id}  unscored — its diff is the evidence`); continue }
+      if (r.age_days < days) {
+        keep(`${r.id}  too recent (${r.age_days.toFixed(1)}d)`, 'under the age threshold')
+        continue
+      }
+      if (!r.scored && !has('force')) {
+        keep(`${r.id}  unscored — its diff is the evidence`, 'unscored — its diff is the evidence')
+        continue
+      }
       // Never reclaim a tree somebody else is still in. A project's own script
       // may name a directory by ticket key rather than by run, so several runs
       // legitimately share one — and one of them may be working right now.
@@ -1897,7 +1964,10 @@ switch (cmd) {
         `SELECT COUNT(*) AS n FROM run
           WHERE worktree = ? AND id <> ? AND status IN ('running','asking')`,
       ).get(r.worktree, r.id) as { n: number }
-      if (busy.n) { kept.push(`${r.id}  shared with ${busy.n} live run(s)`); continue }
+      if (busy.n) {
+        keep(`${r.id}  shared with ${busy.n} live run(s)`, 'shared with live run(s)')
+        continue
+      }
       if (dry) { console.log(`would reclaim ${r.id}  ${r.worktree}`); done++; continue }
 
       const repoRoot = repoRootOf(r.worktree) ?? projectAt(r.worktree)?.path ?? process.cwd()
@@ -1936,17 +2006,26 @@ switch (cmd) {
 
         const label = `orphan  ${path}`
         if (!isOrchWorktree(path, p.settings.worktree?.branch)) {
-          kept.push(`${label}  kept: not created by orch`)
+          keep(`${label}  kept: not created by orch`, 'not created by orch')
           continue
         }
         const marker = join(path, ORCH_RUN_MARKER)
         const ageDays = (Date.now() - statSync(existsSync(marker) ? marker : path).mtimeMs) / 86_400_000
         if (ageDays < days) {
-          kept.push(`${label}  too recent (${ageDays.toFixed(1)}d)`)
+          keep(`${label}  too recent (${ageDays.toFixed(1)}d)`, 'under the age threshold')
           continue
         }
-        const safe = orphanSafety(path, p.path, p.settings.trunk ?? 'main')
-        if (!safe.removable) { kept.push(`${label}  ${safe.detail}`); continue }
+        const trunk = typeof p.settings.trunk === 'string' && p.settings.trunk.trim()
+          ? p.settings.trunk : null
+        if (!trunk) {
+          keep(`${label}  no trunk configured — cannot prove reachability`, 'no trunk configured')
+          continue
+        }
+        const safe = orphanSafety(path, p.path, trunk)
+        if (!safe.removable) {
+          keep(`${label}  ${safe.detail}`, orphanKeepReason(safe.detail))
+          continue
+        }
         if (dry) { console.log(`would reclaim ${label}  ${safe.detail}`); done++; continue }
 
         const w = { path, branch: safe.branch, base: '', repoRoot: p.path }
@@ -1955,7 +2034,7 @@ switch (cmd) {
           console.log(`reclaimed ${label}  ${res.detail}`)
           done++
         } else {
-          kept.push(`${label}  removal refused`)
+          keep(`${label}  removal refused`, 'removal refused')
           console.error(`could not reclaim ${label}: ${res.detail}`)
         }
       }
@@ -1975,12 +2054,17 @@ switch (cmd) {
         const tool = p.settings.worktree
         if (!tool?.sweep) continue
         const out = sweepWithTool(tool, p.path)
-        if (out.trim()) console.log(`\n${p.name} sweep:\n${out.trim().split('\n').slice(-8).join('\n')}`)
+        if (!out.trim()) continue
+        const lines = out.trim().split('\n')
+        const omitted = Math.max(0, lines.length - 8)
+        console.log(`\n${p.name} sweep:\n${lines.slice(-8).join('\n')}`)
+        if (omitted) {
+          console.log(`  (${omitted} earlier line${omitted === 1 ? '' : 's'} omitted)`)
+        }
       }
     }
 
-    console.log(`\n${dry ? 'would reclaim' : 'reclaimed'} ${done}, kept ${kept.length}`)
-    for (const k of kept.slice(0, 10)) console.log(`  ${k}`)
+    printSweepKept(done, kept, dry)
     break
   }
 
@@ -2107,9 +2191,13 @@ switch (cmd) {
       console.log(`branch ${row.branch} cleanup skipped: repository root not found`)
       break
     }
-    const trunk = projectAt(repoRoot)?.settings.trunk ?? 'main'
-    const protectedBranch = !has('force') ? unmergedBranch(repoRoot, row.branch, trunk) : null
-    if (protectedBranch) {
+    const { project, trunk } = configuredTrunk(repoRoot)
+    let protectedBranch: ReturnType<typeof unmergedBranch> = null
+    if (!has('force')) {
+      if (!trunk) throw missingTrunkError(project, repoRoot)
+      protectedBranch = unmergedBranch(repoRoot, row.branch, trunk)
+    }
+    if (protectedBranch && trunk) {
       db().query('UPDATE run SET branch_kept=? WHERE id=?').run(row.branch, id)
       console.log(keptBranchLine(row.branch, protectedBranch.count, trunk, id))
       break

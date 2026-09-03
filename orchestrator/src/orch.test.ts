@@ -4852,7 +4852,7 @@ echo 'Usage: scripts/worktree create [seed]'
       'git branch -D "$2"\n')
     upsertProject({
       name: 'remove-tool', path: realpathSync(repo),
-      settings: { worktree: { remove: `sh "${script}" {path} {branch}` } },
+      settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
     })
     const id = addRun({ agent: 'codex', job: 'implement' })
     db().query('UPDATE run SET worktree=?, branch=? WHERE id=?')
@@ -4878,7 +4878,7 @@ echo 'Usage: scripts/worktree create [seed]'
     const tree = createWorktree(repo, 881)
     upsertProject({
       name: 'refusing-tool', path: realpathSync(repo),
-      settings: { worktree: { remove: "echo 'protected work' >&2; exit 7" } },
+      settings: { trunk: 'main', worktree: { remove: "echo 'protected work' >&2; exit 7" } },
     })
     const id = addRun({ agent: 'codex', job: 'implement' })
     db().query('UPDATE run SET worktree=?, branch=? WHERE id=?')
@@ -4908,9 +4908,16 @@ echo 'Usage: scripts/worktree create [seed]'
       .run(tree.path, tree.branch, id)
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
-      const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
-        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
-        stdout: 'pipe', stderr: 'pipe',
+      const env = { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' }
+      const refused = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
+        env, stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(refused.exitCode).not.toBe(0)
+      expect(refused.stderr.toString()).toContain('no trunk configured')
+      expect(existsSync(tree.path)).toBe(true)
+
+      const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id), '--force'], {
+        env, stdout: 'pipe', stderr: 'pipe',
       })
       expect(p.exitCode).toBe(0)
       expect(existsSync(tree.path)).toBe(false)
@@ -4933,7 +4940,7 @@ echo 'Usage: scripts/worktree create [seed]'
       'git branch -D "$2"\n')
     upsertProject({
       name: 'protected-tool', path: realpathSync(repo),
-      settings: { worktree: { remove: `sh "${script}" {path} {branch}` } },
+      settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
     })
     const id = addRun({ agent: 'codex', job: 'implement' })
     db().query('UPDATE run SET repo=?, cwd=?, worktree=?, branch=? WHERE id=?')
@@ -5001,6 +5008,7 @@ echo 'Usage: scripts/worktree create [seed]'
     git(tree.path, 'add', 'merged.txt')
     git(tree.path, 'commit', '-m', 'merged work')
     git(repo, 'merge', '--ff-only', tree.branch)
+    upsertProject({ name: 'merged-trunk', path: realpathSync(repo), settings: { trunk: 'main' } })
     const id = addRun({ agent: 'codex', job: 'implement' })
     db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
       .run(repo, tree.path, tree.branch, id)
@@ -5023,6 +5031,7 @@ echo 'Usage: scripts/worktree create [seed]'
     writeFileSync(join(tree.path, 'architect.txt'), 'work in progress\n')
     git(tree.path, 'add', 'architect.txt')
     git(tree.path, 'commit', '-m', 'architect work')
+    upsertProject({ name: 'abandon-trunk', path: realpathSync(repo), settings: { trunk: 'main' } })
     const id = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
     db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
       .run(repo, tree.path, tree.branch, id)
@@ -5040,6 +5049,48 @@ echo 'Usage: scripts/worktree create [seed]'
       expect(git(repo, 'branch', '--list', tree.branch)).toContain(tree.branch)
       expect(db().query('SELECT branch_kept FROM run WHERE id=?').get(id))
         .toEqual({ branch_kept: tree.branch })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('discard without a configured trunk refuses rather than assuming main', () => {
+    const { repo } = scratchRepo()
+    const tree = createWorktree(repo, 887)
+    upsertProject({ name: 'no-trunk-discard', path: realpathSync(repo), settings: {} })
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, id)
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(p.exitCode).not.toBe(0)
+      expect(p.stderr.toString()).toContain('no trunk configured')
+      expect(existsSync(tree.path)).toBe(true)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('abandon without a configured trunk refuses the merged-check rather than assuming main', () => {
+    const { repo } = scratchRepo()
+    const tree = createWorktree(repo, 888)
+    upsertProject({ name: 'no-trunk-abandon', path: realpathSync(repo), settings: {} })
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, id)
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const p = Bun.spawnSync([process.execPath, CLI, 'abandon', String(id)], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(p.exitCode).not.toBe(0)
+      expect(p.stderr.toString()).toContain('no trunk configured')
+      expect(existsSync(tree.path)).toBe(true)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
@@ -5190,7 +5241,7 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     git(repo, 'add', 'kept.txt')
     git(repo, 'commit', '-m', 'base')
     mkdirSync(join(repo, '.claude', 'worktrees'), { recursive: true })
-    upsertProject({ name: `sweep-${repo.split('/').pop()}`, path: repo })
+    upsertProject({ name: `sweep-${repo.split('/').pop()}`, path: repo, settings: { trunk: 'main' } })
     return repo
   }
 
@@ -5244,6 +5295,87 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
       expect(r.code).toBe(0)
       expect(r.out).toContain(`reclaimed orphan  ${tree}`)
       expect(existsSync(tree)).toBe(false)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('more than ten kept rows are summarised by reason; --dry-run lists every row', () => {
+    const recent: number[] = []
+    const unscored: number[] = []
+    const old = new Date(Date.now() - 3 * 86_400_000).toISOString()
+    for (let i = 0; i < 6; i++) {
+      const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+      db().query('UPDATE run SET worktree=? WHERE id=?').run(`/tmp/dev148-recent-${i}`, id)
+      recent.push(id)
+    }
+    for (let i = 0; i < 5; i++) {
+      const id = addRun({ agent: 'codex', job: 'implement', status: 'ok', startedAt: old })
+      db().query('UPDATE run SET worktree=? WHERE id=?').run(`/tmp/dev148-unscored-${i}`, id)
+      unscored.push(id)
+    }
+
+    const summarised = orch('sweep')
+    expect(summarised.code).toBe(0)
+    expect(summarised.out).toContain('reclaimed 0, kept 11')
+    expect(summarised.out).toContain('6  under the age threshold')
+    expect(summarised.out).toContain('5  unscored — its diff is the evidence')
+    expect(summarised.out).toContain('orch sweep --dry-run lists every kept row')
+    for (const id of recent) expect(summarised.out).not.toContain(`${id}  too recent`)
+    for (const id of unscored) expect(summarised.out).not.toContain(`${id}  unscored`)
+
+    const listed = orch('sweep', '--dry-run')
+    expect(listed.code).toBe(0)
+    expect(listed.out).toContain('would reclaim 0, kept 11')
+    expect(listed.out).toContain('6  under the age threshold')
+    expect(listed.out).toContain('5  unscored — its diff is the evidence')
+    expect(listed.out).not.toContain('lists every kept row')
+    for (const id of recent) expect(listed.out).toContain(`${id}  too recent`)
+    for (const id of unscored) expect(listed.out).toContain(`${id}  unscored — its diff is the evidence`)
+  })
+
+  test('an old marked orphan is kept when the project has no trunk', () => {
+    const repo = scratchRepo()
+    const name = `sweep-${repo.split('/').pop()}`
+    upsertProject({ name, path: repo, settings: {} })
+    const tree = join(repo, '.claude', 'worktrees', 'old-worker')
+    try {
+      git(repo, 'worktree', 'add', '-b', 'old-worker', tree, 'main')
+      writeFileSync(join(tree, '.orch-run'), `902\n${repo}\n`)
+      appendFileSync(resolve(tree, git(tree, 'rev-parse', '--git-path', 'info/exclude')), '.orch-run\n')
+      const old = new Date(Date.now() - 2 * 86_400_000)
+      utimesSync(join(tree, '.orch-run'), old, old)
+
+      const r = orch('sweep', '--older-than', '1')
+      expect(r.code).toBe(0)
+      expect(r.out).toContain(`orphan  ${tree}  no trunk configured — cannot prove reachability`)
+      expect(r.out).not.toContain(`reclaimed orphan  ${tree}`)
+      expect(existsSync(tree)).toBe(true)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a project sweep longer than eight lines says how many were omitted', () => {
+    const repo = scratchRepo()
+    const name = `sweep-${repo.split('/').pop()}`
+    const lines = Array.from({ length: 10 }, (_, i) => `L${String(i + 1).padStart(2, '0')}`)
+    upsertProject({
+      name, path: repo,
+      settings: {
+        trunk: 'main',
+        worktree: { sweep: `printf '%s\\n' ${lines.join(' ')}` },
+      },
+    })
+    try {
+      const r = orch('sweep')
+      expect(r.code).toBe(0)
+      expect(r.out).toContain(`${name} sweep:`)
+      expect(r.out).toContain('L03')
+      expect(r.out).toContain('L10')
+      expect(r.out).not.toContain('L01')
+      expect(r.out).not.toContain('L02')
+      expect(r.out).toContain('(2 earlier lines omitted)')
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
