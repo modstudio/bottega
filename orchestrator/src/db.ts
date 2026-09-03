@@ -928,8 +928,8 @@ export function recordSessionSeen(sid: string | null = sessionId(), at = nowIso(
  * the unit of work — the other two are turns inside it. Asking for a verdict on
  * each would demand three judgements for one implementation, and would let an
  * agent reach the routing threshold by being inquisitive rather than by being
- * good. The root row carries the chain's outcome (see the roll-up in run.ts),
- * so scoring the root scores the whole thing.
+ * good. The root row carries the chain's outcome (see the roll-up in run.ts
+ * and resolveRootFromLastTurn), so scoring the root scores the whole thing.
  */
 /**
  * Owed a judgement: never scored, OR scored before the conversation moved on.
@@ -1014,6 +1014,51 @@ export function pidAlive(pid: number | null): boolean {
 export const PENDING_BOOTSTRAP_MS = 60_000
 
 /**
+ * A root inherits the terminal status of the last turn of its chain.
+ *
+ * Counterpart of `resolveSupersededTurn` in run.ts, which is child-only and
+ * cannot touch a root: the root is routing evidence, and giving it a terminal
+ * status inserts a judgement. That is the point here, not an accident. A chain
+ * that ended stale is a real outcome of a real agent; hiding it would make the
+ * router's picture of that agent better than the truth.
+ *
+ * Chain structure only — no pid, no agent_pid, no process.kill. A worker exits
+ * when it stops to ask, so those are dead for every asking run including live
+ * ones. A root with an unanswered question is waiting, not stranded, and is
+ * left alone. A last turn that is still `asking` is recoverable (`orch
+ * continue`), not ended, so it is left alone too.
+ *
+ * Status only, not failure_kind: copying `abandoned` or `interrupted` onto the
+ * root would exclude it from routing via NOT_EVIDENCE, which is the dishonest
+ * write this rule exists to refuse.
+ */
+export function resolveRootFromLastTurn(database: Database, rootId: number): number {
+  return database.query(
+    `UPDATE run AS root
+        SET status = (
+          SELECT last.status FROM run last
+           WHERE last.id = root.id OR last.parent_run_id = root.id
+           ORDER BY last.turn DESC, last.id DESC
+           LIMIT 1
+        )
+      WHERE root.id = ?
+        AND root.parent_run_id IS NULL
+        AND root.status = 'asking'
+        AND NOT EXISTS (
+          SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
+           WHERE (owner.id = root.id OR owner.parent_run_id = root.id)
+             AND q.answered_at IS NULL
+        )
+        AND (
+          SELECT last.status FROM run last
+           WHERE last.id = root.id OR last.parent_run_id = root.id
+           ORDER BY last.turn DESC, last.id DESC
+           LIMIT 1
+        ) IN ('ok', 'failed', 'stale')`,
+  ).run(rootId).changes
+}
+
+/**
  * A run only writes its terminal state on the normal path, so a process that is
  * killed — or whose session ends — leaves its row claiming to be live for ever.
  * Those rows inflate "in flight" and hide in `--unscored`, so they are swept to
@@ -1080,6 +1125,14 @@ export function reapStale(d: Database = db()): number {
               error='abandoned: process gone, no terminal state recorded'
         WHERE id IN (${dead.map(() => '?').join(',')})`,
     ).run(...dead)
+  }
+  const ended = [...dead, ...abandonedBootstrap]
+  if (ended.length) {
+    const roots = d.query(
+      `SELECT DISTINCT COALESCE(parent_run_id, id) AS id FROM run
+        WHERE id IN (${ended.map(() => '?').join(',')})`,
+    ).all(...ended) as { id: number }[]
+    for (const { id } of roots) resolveRootFromLastTurn(d, id)
   }
   return dead.length + abandonedBootstrap.length
 }

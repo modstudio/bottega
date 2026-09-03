@@ -1,7 +1,8 @@
 import { db, nowIso, sessionId, judgeability, pendingForSession, unscoredCount, weigh,
          DELIVERY, QUALITY, FIDELITY, type Delivery, type Quality, type Fidelity,
          reapStale, pidAlive, STALE_AFTER_MS, UNSCORED_WHERE, recordDuels, duelMatrices,
-         parseRunIds, recordSessionSeen, SESSION_LIVE_MS } from './db.ts'
+         parseRunIds, recordSessionSeen, SESSION_LIVE_MS,
+         resolveRootFromLastTurn } from './db.ts'
 import { JOBS, job } from './jobs.ts'
 import { AGENTS, available, installed, ensureLocalHealth,
          unavailableReason, NEEDS_HEALTH, tryWake, wakeStatus,
@@ -2047,10 +2048,10 @@ switch (cmd) {
     const id = Number(argv[1])
     if (!id) usage()
     const row = db().query(
-      'SELECT id, status, repo, cwd, worktree, branch FROM run WHERE id = ?',
+      'SELECT id, status, repo, cwd, worktree, branch, parent_run_id FROM run WHERE id = ?',
     ).get(id) as {
       id: number; status: string; repo: string | null; cwd: string | null
-      worktree: string | null; branch: string | null
+      worktree: string | null; branch: string | null; parent_run_id: number | null
     } | null
     if (!row) throw new Error(`no run ${id}`)
     if (row.status !== 'asking') {
@@ -2069,6 +2070,7 @@ switch (cmd) {
           WHERE answered_at IS NULL AND run_id IN
             (SELECT id FROM run WHERE id=? OR parent_run_id=?)`,
       ).run(at, id, id)
+      resolveRootFromLastTurn(db(), row.parent_run_id ?? row.id)
     })()
     console.log(`abandoned run ${id}`)
 

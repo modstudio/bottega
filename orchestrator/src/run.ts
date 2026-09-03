@@ -10,7 +10,7 @@ import {
 } from './agents.ts'
 import { job, type Job } from './jobs.ts'
 import { pick } from './route.ts'
-import { db, nowIso, ROOT, DB_PATH, sessionId } from './db.ts'
+import { db, nowIso, ROOT, DB_PATH, sessionId, resolveRootFromLastTurn } from './db.ts'
 import {
   createWorktree, createWithTool, toolFor, changesIn, repoRootOf, resolveBase, worktreeGitDir,
   prepareWorktreeObjects, worktreeGitEnvironment, carryWorkingState, removeFor, type Worktree,
@@ -118,6 +118,8 @@ export const MAX_DEPTH = 1
 export const MAX_FAILOVER_ATTEMPTS = 3
 
 export const depth = () => Number(process.env.ORCH_DEPTH ?? 0)
+
+export { resolveRootFromLastTurn }
 
 /** Mark only an answered child turn that now has a successor as completed. */
 export function resolveSupersededTurn(database: Database, rootId: number, turn: number): number {
@@ -905,12 +907,14 @@ export async function run(opts: {
   /**
    * A child that asked has finished that turn once its successor exists.
    *
-   * The root is deliberately excluded: it carries the conversation's rolled-up
-   * outcome and is routing evidence, while a child is independently excluded
-   * from routing by `parent_run_id IS NULL`. `ok` records what happened without
-   * fabricating a failure or an operator stop: the worker fulfilled its
-   * contract by asking, the question was ruled on, and the conversation moved
-   * to a later turn.
+   * The root is deliberately excluded here: it carries the conversation's
+   * rolled-up outcome and is routing evidence, while a child is independently
+   * excluded from routing by `parent_run_id IS NULL`. `ok` records what
+   * happened without fabricating a failure or an operator stop: the worker
+   * fulfilled its contract by asking, the question was ruled on, and the
+   * conversation moved to a later turn. The root's counterpart is
+   * `resolveRootFromLastTurn`, which inherits the last turn's terminal status
+   * once the chain has ended.
    *
    * Match the row's own facts even though continueRun already refuses an open
    * question. Keeping the answered-question and successor predicates here
@@ -1465,6 +1469,7 @@ export async function run(opts: {
          WHERE id=?`,
       )
         .run(status, error, opts.resume.parent)
+      resolveRootFromLastTurn(db(), opts.resume.parent)
     }
   }
 

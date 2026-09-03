@@ -85,7 +85,7 @@ const { classify, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOT_EVIDENCE, COOLS_DOWN,
         isNonAnswer, detectBlockers } = await import('./failure.ts')
 const { errorTail, preflight, detachedRunOptions, runFilePaths, pruneRuns, KEEP_RUN_FILES_DAYS,
         RUNS_DIR, grokMcpConnection, writingFailoverRefusal, resolveSupersededTurn,
-        gitObjectEnvironmentFor, run: runJob } = await import('./run.ts')
+        resolveRootFromLastTurn, gitObjectEnvironmentFor, run: runJob } = await import('./run.ts')
 const run = runJob
 const { summary } = await import('./metric.ts')
 const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
@@ -614,6 +614,27 @@ describe('reapStale', () => {
     const id = addRun({ agent: 'grok', job: 'craft', status: 'running' })
     db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
     expect(reapStale(db())).toBe(0)
+  })
+
+  test('reaping a running child inherits stale onto an asking root as evidence', () => {
+    const root = addRun({ agent: 'grok', job: 'implement', status: 'asking' })
+    db().query(
+      `INSERT INTO question (run_id, asked_at, question, answer, answered_at)
+       VALUES (?,?,?,?,?)`,
+    ).run(root, nowIso(), 'answered', 'the ruling', nowIso())
+    const child = addRun({
+      agent: 'grok', job: 'implement', status: 'running', parent: root, turn: 2,
+    })
+    db().query('UPDATE run SET pid=? WHERE id=?').run(4194304, child)
+
+    expect(reapStale(db())).toBe(1)
+    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(child))
+      .toEqual({ status: 'stale', failure_kind: 'interrupted' })
+    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(root))
+      .toEqual({ status: 'stale', failure_kind: null })
+    const grok = candidates('implement').find((c) => c.agent === 'grok')!
+    expect(grok.failures).toBe(1)
+    expect(grok.evidence).toBe(1)
   })
 
   test('a pid-less (pending) row older than the bootstrap bound is failed/harness', () => {
@@ -3267,6 +3288,30 @@ describe('detached run collection', () => {
     expect(c.failures).toBe(0)
   })
 
+  test('abandoning a child inherits stale onto the asking root as routing evidence', () => {
+    const root = insert('asking', 'implement')
+    const child = insert('asking', 'implement')
+    db().query('UPDATE run SET parent_run_id=?, turn=2 WHERE id=?').run(root, child)
+    db().query(
+      `INSERT INTO question (run_id, asked_at, question, answer, answered_at)
+       VALUES (?,?,?,?,?)`,
+    ).run(root, new Date().toISOString(), 'root question?', 'answered', new Date().toISOString())
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(child, new Date().toISOString(), 'child question?')
+
+    const before = candidates('implement').find((candidate) => candidate.agent === 'codex')!
+    expect(before.evidence).toBe(0)
+
+    expect(orch('abandon', String(child)).code).toBe(0)
+    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(child))
+      .toEqual({ status: 'stale', failure_kind: 'abandoned' })
+    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(root))
+      .toEqual({ status: 'stale', failure_kind: null })
+    const after = candidates('implement').find((candidate) => candidate.agent === 'codex')!
+    expect(after.evidence).toBe(1)
+    expect(after.failures).toBe(1)
+  })
+
   test('abandon does not delete a branch recorded by another run', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-abandon-'))
     const git = (...args: string[]) => {
@@ -3952,12 +3997,152 @@ describe('a conversation is one unit of work, not one per turn', () => {
     expect(statusOf(noSuccessor)).toEqual({ status: 'asking' })
 
     // A root is addressed as nobody's child, so it can never be resolved this
-    // way however answered its question is. Giving it a terminal status would
-    // insert a judgement no scorer made — DEV-146.
+    // way however answered its question is. DEV-146 is the counterpart that
+    // inherits the last turn's terminal status onto the root; this function
+    // must still refuse, or the two rules fight.
     expect(resolveSupersededTurn(db(), askingRoot, 1)).toBe(0)
     expect(statusOf(askingRoot)).toEqual({ status: 'asking' })
 
     expect(routingEvidenceIds()).toEqual(before)
+  })
+
+  test('a stranded root inherits the last turn\'s terminal status and joins routing evidence', () => {
+    // The 1095 shape: root still asking, last turn stale, questions answered.
+    // DEV-137 pinned that child resolution must not move the evidence set.
+    // This is the opposite: the root becoming stale is a new judgement.
+    for (let i = 0; i < MIN_SAMPLE - 1; i++) {
+      addRun({ agent: 'grok', job: 'implement', status: 'failed', kind: 'other' })
+    }
+    const root = addRun({ agent: 'grok', job: 'implement', status: 'asking' })
+    score(root, 'none')
+    db().query(
+      `INSERT INTO question (run_id, asked_at, question, answer, answered_at)
+       VALUES (?,?,?,?,?)`,
+    ).run(root, nowIso(), 'root question?', 'answered', nowIso())
+    addRun({
+      agent: 'grok', job: 'implement', status: 'stale', parent: root, turn: 2, kind: 'abandoned',
+    })
+
+    const before = routingEvidenceIds()
+    expect(before).not.toContain(root)
+    const beforeGrok = candidates('implement').find((row) => row.agent === 'grok')!
+    expect(beforeGrok.evidence).toBe(MIN_SAMPLE - 1)
+
+    expect(resolveRootFromLastTurn(db(), root)).toBe(1)
+    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(root))
+      .toEqual({ status: 'stale', failure_kind: null })
+
+    const after = routingEvidenceIds()
+    expect(after).toEqual([...before, root].sort((a, b) => a - b))
+    const afterGrok = candidates('implement').find((row) => row.agent === 'grok')!
+    expect(afterGrok.evidence).toBe(MIN_SAMPLE)
+    expect(afterGrok.scored).toBe(1)
+  })
+
+  test('a root waiting on a ruling is not stranded', () => {
+    const root = addRun({ agent: 'grok', job: 'implement', status: 'asking' })
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(root, nowIso(), 'still waiting?')
+    addRun({
+      agent: 'grok', job: 'implement', status: 'stale', parent: root, turn: 2,
+    })
+    const before = routingEvidenceIds()
+
+    expect(resolveRootFromLastTurn(db(), root)).toBe(0)
+    expect(db().query('SELECT status FROM run WHERE id=?').get(root))
+      .toEqual({ status: 'asking' })
+    expect(routingEvidenceIds()).toEqual(before)
+  })
+
+  test('a recoverable root whose last turn is still asking is not ended', () => {
+    const root = addRun({ agent: 'grok', job: 'implement', status: 'asking' })
+    db().query(
+      `INSERT INTO question (run_id, asked_at, question, answer, answered_at)
+       VALUES (?,?,?,?,?)`,
+    ).run(root, nowIso(), 'answered, not continued', 'the ruling', nowIso())
+    addRun({
+      agent: 'grok', job: 'implement', status: 'asking', parent: root, turn: 2,
+    })
+    const before = routingEvidenceIds()
+
+    expect(resolveRootFromLastTurn(db(), root)).toBe(0)
+    expect(db().query('SELECT status FROM run WHERE id=?').get(root))
+      .toEqual({ status: 'asking' })
+    expect(routingEvidenceIds()).toEqual(before)
+  })
+
+  test('a root whose newest turn is still running is not ended', () => {
+    const root = addRun({ agent: 'grok', job: 'implement', status: 'asking' })
+    db().query(
+      `INSERT INTO question (run_id, asked_at, question, answer, answered_at)
+       VALUES (?,?,?,?,?)`,
+    ).run(root, nowIso(), 'answered', 'the ruling', nowIso())
+    addRun({
+      agent: 'grok', job: 'implement', status: 'running', parent: root, turn: 2,
+    })
+
+    expect(resolveRootFromLastTurn(db(), root)).toBe(0)
+    expect(db().query('SELECT status FROM run WHERE id=?').get(root))
+      .toEqual({ status: 'asking' })
+  })
+
+  test('the last turn\'s terminal status is inherited, not rewritten to ok', () => {
+    const failed = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+    db().query(
+      `INSERT INTO question (run_id, asked_at, question, answer, answered_at)
+       VALUES (?,?,?,?,?)`,
+    ).run(failed, nowIso(), 'which way?', 'that way', nowIso())
+    addRun({
+      agent: 'codex', job: 'implement', status: 'failed', parent: failed, turn: 2, kind: 'timeout',
+    })
+    expect(resolveRootFromLastTurn(db(), failed)).toBe(1)
+    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(failed))
+      .toEqual({ status: 'failed', failure_kind: null })
+
+    const succeeded = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+    db().query(
+      `INSERT INTO question (run_id, asked_at, question, answer, answered_at)
+       VALUES (?,?,?,?,?)`,
+    ).run(succeeded, nowIso(), 'which way?', 'that way', nowIso())
+    addRun({ agent: 'codex', job: 'implement', status: 'ok', parent: succeeded, turn: 2 })
+    expect(resolveRootFromLastTurn(db(), succeeded)).toBe(1)
+    expect(db().query('SELECT status FROM run WHERE id=?').get(succeeded))
+      .toEqual({ status: 'ok' })
+  })
+
+  test('the resolve-root cutover refuses a missing database rather than reporting 0 rows', () => {
+    const script = new URL('../scripts/resolve-root.ts', import.meta.url).pathname
+    const p = Bun.spawnSync([process.execPath, script], {
+      env: { ...process.env, ORCH_DB: join(dir, 'definitely-missing.db') },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(p.exitCode).not.toBe(0)
+    const text = new TextDecoder().decode(p.stderr) + new TextDecoder().decode(p.stdout)
+    expect(text).toContain('no database at')
+    expect(text).not.toContain('would be resolved')
+  })
+
+  test('the resolve-root cutover dry-run names the stranded root and writes nothing', () => {
+    const root = addRun({ agent: 'grok', job: 'implement', status: 'asking' })
+    db().query(
+      `INSERT INTO question (run_id, asked_at, question, answer, answered_at)
+       VALUES (?,?,?,?,?)`,
+    ).run(root, nowIso(), 'root question?', 'answered', nowIso())
+    const child = addRun({
+      agent: 'grok', job: 'implement', status: 'stale', parent: root, turn: 2,
+    })
+    const script = new URL('../scripts/resolve-root.ts', import.meta.url).pathname
+    const p = Bun.spawnSync([process.execPath, script], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB! },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(p.exitCode).toBe(0)
+    const out = new TextDecoder().decode(p.stdout)
+    expect(out).toContain(`run ${root}`)
+    expect(out).toContain(`last turn ${child}`)
+    expect(out).toContain('1 root would be resolved')
+    expect(db().query('SELECT status FROM run WHERE id=?').get(root))
+      .toEqual({ status: 'asking' })
   })
 
   test('turns of one run do not each count as evidence', () => {
