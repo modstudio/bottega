@@ -4835,7 +4835,20 @@ echo 'Usage: scripts/worktree create [seed]'
         stdout: 'pipe', stderr: 'pipe',
       })
       expect(p.exitCode).toBe(0)
+      expect(p.stdout.toString()).toContain(`base: ${w.base}`)
       expect(p.stderr.toString()).toContain(`base:     ${w.base}`)
+      const applyCheck = Bun.spawnSync(['git', 'apply', '--check', '-'], {
+        cwd: repo, env: hermeticGitEnv(), stdin: p.stdout, stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(applyCheck.exitCode).toBe(0)
+
+      const quiet = Bun.spawnSync([process.execPath, CLI, 'diff', String(id), '--quiet'], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(quiet.exitCode).toBe(0)
+      expect(quiet.stdout.toString()).toContain(`base: ${w.base}`)
+      expect(quiet.stderr.toString()).not.toContain(`base:     ${w.base}`)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }

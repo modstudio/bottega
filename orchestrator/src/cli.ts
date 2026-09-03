@@ -1873,8 +1873,11 @@ switch (cmd) {
         `contains review input and scratch experiments and must not be landed.`,
       )
     }
+    // A patch preamble is ignored by `git apply`, while keeping the base in the
+    // stdout artefact even under --quiet or when stderr is not captured.
+    process.stdout.write(`base: ${row.base_commit}\n`)
     // write(), not console.log(): this output is piped into `git apply`, and a
-    // newline added for readability is a byte the patch did not have.
+    // newline added to the diff for readability is a byte the patch did not have.
     process.stdout.write(c.diff)
     if (!has('quiet')) {
       console.error(
