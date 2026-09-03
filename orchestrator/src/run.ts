@@ -8,12 +8,13 @@ import {
 import {
   AGENTS, ensureLocalHealth, tryWake, readStrictCodexSchema, type SandboxLevel,
 } from './agents.ts'
-import { job } from './jobs.ts'
+import { job, type Job } from './jobs.ts'
 import { pick } from './route.ts'
 import { db, nowIso, ROOT, DB_PATH, sessionId } from './db.ts'
 import {
   createWorktree, createWithTool, toolFor, changesIn, repoRootOf, resolveBase, worktreeGitDir,
   prepareWorktreeObjects, worktreeGitEnvironment, carryWorkingState, removeFor, type Worktree,
+  type WorktreeObjectEnvironment,
 } from './worktree.ts'
 import { recipeNotes } from './recipe.ts'
 import {
@@ -42,6 +43,18 @@ export type RunResult = {
   contract: WorkerReply | null
   /** Terminal state, so a caller can tell `asking` from `ok` without re-reading the row. */
   status: string
+}
+
+/** Select where a repository job may write new git objects. */
+export function gitObjectEnvironmentFor(
+  agent: string,
+  requestedJob: Job,
+  worktree: Worktree | null,
+): WorktreeObjectEnvironment | undefined {
+  return agent === 'codex' && requestedJob.needs.readsRepo && worktree &&
+    !requestedJob.producesSharedCommit
+    ? prepareWorktreeObjects(worktree.path)
+    : undefined
 }
 
 export type DetachSpec = {
@@ -647,8 +660,9 @@ export async function run(opts: {
    * because `land` deliberately permits the one commit that the ordinary
    * implementation contract forbids.
    */
-  const writesJob = Boolean(job(opts.job).needs.writesRepo)
-  const repoJob = Boolean(job(opts.job).needs.readsRepo)
+  const requestedJob = job(opts.job)
+  const writesJob = Boolean(requestedJob.needs.writesRepo)
+  const repoJob = Boolean(requestedJob.needs.readsRepo)
   const callerCwd = opts.cwd ?? process.cwd()
   // A RESUMED turn does not repeat the full preamble. The worker is still inside
   // the conversation that carried it, so re-sending all of it would spend tokens
@@ -991,9 +1005,7 @@ export async function run(opts: {
   // Git normally writes new blobs into the common object database. Codex may
   // write only this worktree's metadata directory, so its objects live there
   // and read the repository's existing objects through a read-only alternate.
-  const gitObjectEnvironment = name === 'codex' && repoJob && worktree
-    ? prepareWorktreeObjects(worktree.path)
-    : undefined
+  const gitObjectEnvironment = gitObjectEnvironmentFor(name, requestedJob, worktree)
   const argvOpts = {
     prompt,
     out: outPath,

@@ -83,7 +83,7 @@ const { classify, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOT_EVIDENCE, COOLS_DOWN,
         isNonAnswer, detectBlockers } = await import('./failure.ts')
 const { errorTail, preflight, detachedRunOptions, runFilePaths, pruneRuns, KEEP_RUN_FILES_DAYS,
         grokMcpConnection, writingFailoverRefusal, resolveSupersededTurn,
-        run: runJob } = await import('./run.ts')
+        gitObjectEnvironmentFor, run: runJob } = await import('./run.ts')
 const run = runJob
 const { summary } = await import('./metric.ts')
 const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
@@ -5469,6 +5469,70 @@ describe('an agent gets the toolchain of a project someone registered', () => {
       expect(diff.exitCode).toBe(0)
       expect(diff.stdout.toString()).toContain('diff --git a/new.txt b/new.txt')
       expect(diff.stdout.toString()).toContain(`+${content.trim()}`)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a land commit is reachable from the common object store', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-land-common-objects-'))
+    const git = (cwd: string, args: string[], env: Record<string, string> = {}) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd, env: hermeticGitEnv(env), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    try {
+      git(repo, ['init', '-b', 'main'])
+      git(repo, ['config', 'user.email', 'orch-test@example.invalid'])
+      git(repo, ['config', 'user.name', 'Orch Test'])
+      writeFileSync(join(repo, 'kept.txt'), 'base\n')
+      git(repo, ['add', 'kept.txt'])
+      git(repo, ['commit', '-m', 'base'])
+
+      // Prove the old environment can reproduce the incident: the landing
+      // worktree reads its commit, while the checkout owning the common store
+      // cannot. This is the ablation that makes the positive assertion useful.
+      const isolatedTree = createWorktree(repo, 1490)
+      const isolatedEnv = gitObjectEnvironmentFor('codex', JOBS.implement!, isolatedTree)!
+      writeFileSync(join(isolatedTree.path, 'private.txt'), 'private\n')
+      git(isolatedTree.path, ['add', 'private.txt'], isolatedEnv)
+      git(isolatedTree.path, ['commit', '-m', 'private commit'], isolatedEnv)
+      const privateCommit = git(isolatedTree.path, ['rev-parse', 'HEAD'], isolatedEnv)
+      expect(() => git(repo, ['cat-file', '-t', privateCommit])).toThrow()
+      expect(existsSync(join(
+        isolatedEnv.GIT_OBJECT_DIRECTORY, privateCommit.slice(0, 2), privateCommit.slice(2),
+      ))).toBe(true)
+
+      // Remove the deliberately broken fixture before checking repository
+      // connectivity for the fixed case.
+      git(repo, ['worktree', 'remove', '--force', isolatedTree.path])
+      git(repo, ['update-ref', '-d', `refs/heads/${isolatedTree.branch}`])
+
+      const landingTree = createWorktree(repo, 1491)
+      expect(JOBS.land!.producesSharedCommit).toBe(true)
+      expect(JOBS.implement!.producesSharedCommit).not.toBe(true)
+      const landingEnv = gitObjectEnvironmentFor('codex', JOBS.land!, landingTree)
+      expect(landingEnv).toBeUndefined()
+      writeFileSync(join(landingTree.path, 'landed.txt'), 'shared\n')
+      git(landingTree.path, ['add', 'landed.txt'], landingEnv)
+      git(landingTree.path, ['commit', '-m', 'shared commit'], landingEnv)
+      const landingCommit = git(landingTree.path, ['rev-parse', 'HEAD'], landingEnv)
+
+      expect(git(repo, ['cat-file', '-t', landingCommit])).toBe('commit')
+      expect(existsSync(join(
+        repo, '.git', 'objects', landingCommit.slice(0, 2), landingCommit.slice(2),
+      ))).toBe(true)
+      expect(existsSync(join(
+        repo, '.git', 'worktrees', landingTree.branch, 'objects',
+        landingCommit.slice(0, 2), landingCommit.slice(2),
+      ))).toBe(false)
+
+      git(repo, ['update-ref', 'refs/heads/main', landingCommit])
+      expect(git(repo, ['log', '--oneline', '-1'])).toContain(landingCommit.slice(0, 7))
+      expect(() => git(repo, ['status', '--short'])).not.toThrow()
+      expect(git(repo, ['fsck', '--connectivity-only'])).not.toContain(landingCommit)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
