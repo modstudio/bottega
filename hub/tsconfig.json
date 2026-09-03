@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["bun"],
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    // Every internal import here is written with its .ts extension, because Bun
+    // runs the sources directly and there is no build step to rewrite them.
+    "allowImportingTsExtensions": true,
+    "noUnusedLocals": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src"]
+}

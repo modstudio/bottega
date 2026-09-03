@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.user.local-model-tunnel</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/ssh</string>
+    <string>-N</string>
+    <string>-L</string><string>8010:127.0.0.1:8000</string>
+    <!-- Reconnect a dead link rather than sitting on a half-open socket, and
+         fail fast instead of hanging when the host is unreachable. -->
+    <string>-o</string><string>ServerAliveInterval=30</string>
+    <string>-o</string><string>ServerAliveCountMax=3</string>
+    <string>-o</string><string>ExitOnForwardFailure=yes</string>
+    <string>-o</string><string>ConnectTimeout=15</string>
+    <!-- An unattended tunnel cannot depend on an interactive signing agent.
+         Pin it to a dedicated key which the remote host restricts to this one
+         port forward and no commands. -->
+    <string>-i</string><string>__HOME__/.ssh/local-model-tunnel</string>
+    <string>-o</string><string>IdentitiesOnly=yes</string>
+    <string>-o</string><string>IdentityAgent=none</string>
+    <string>__MODEL_HOST__</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <!-- ssh exits immediately when the host is down; without this launchd would
+       respawn it in a tight loop. -->
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>StandardOutPath</key><string>__HOME__/Library/Logs/local-model-tunnel/launchd.out.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/Library/Logs/local-model-tunnel/launchd.err.log</string>
+</dict>
+</plist>

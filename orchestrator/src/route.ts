@@ -1,0 +1,690 @@
+import { db, WEIGHT, FIDELITY_PENALTY, weigh } from './db.ts'
+import { AGENTS, unavailableReason } from './agents.ts'
+import { job, JOBS } from './jobs.ts'
+import { COOLS_DOWN, NOT_EVIDENCE } from './failure.ts'
+
+export type Candidate = {
+  agent: string
+  runs: number
+  /** Verdicts recorded against runs that produced an answer. */
+  scored: number
+  /**
+   * Failed or abandoned runs that nobody judged explicitly.
+   *
+   * Excludes a failure someone scored, because that already counts under
+   * `scored` — a run is one judgement, not two.
+   */
+  failures: number
+  /** Explicit judgements whose delivery was none, used by the exploration filter. */
+  none: number
+  /**
+   * Everything the router is entitled to count as a judgement about this agent:
+   * explicit verdicts plus unjudged failures. This, not `scored`, is what
+   * MIN_SAMPLE measures, and it never exceeds the number of runs behind it.
+   */
+  evidence: number
+  /** Configured model whose evidence is used, or null when the agent-level fallback is used. */
+  evidenceModel: string | null
+  /** Mean verdict weight, or null until anything has been judged. */
+  score: number | null
+  /** Score pulled toward the job-wide proven-agent mean by MIN_SAMPLE judgements. */
+  shrunk: number | null
+  /** Median run time for this job, robust to the one call that hung. */
+  latencyMs: number | null
+  tokens: number
+  costUsd: number
+  free: boolean
+  eligible: boolean
+  why: string
+  /**
+   * Set when the agent's last run died of something only a run can detect —
+   * quota or stale auth — with how long ago. Never set for `unreachable`, which
+   * is measured directly on every routing decision and needs no waiting out.
+   */
+  cooling: string | null
+}
+
+/**
+ * How long to leave an agent alone after it runs out of quota or loses its
+ * login. Nothing here can fix either, so continuing to route at it just
+ * converts every job into a failed one. A single success clears the state on
+ * its own, because only the most recent run is consulted.
+ */
+export const COOLDOWN_MIN = 60
+
+/** Below this many JUDGEMENTS — verdicts plus unjudged failures — a score is noise. */
+export const MIN_SAMPLE = 5
+
+/** Only this many of an agent's most recent judgements describe its current ability. */
+export const EVIDENCE_WINDOW = 40
+
+/**
+ * Room a job needs ON TOP OF its working set, for the model to answer in.
+ *
+ * The comparison used to be `job.contextTokens > agent.contextTokens`, which
+ * admits an agent whose window is EXACTLY the size of the working set. That
+ * reads as sufficient and is not: vLLM allows `max_model_len − prompt_tokens`
+ * for the reply, so an agent that can just barely hold the job has nothing left
+ * to say anything with. Run 279 is what that looks like — `finish_reason:
+ * length`, `content: None`, 409s and 325k tokens spent thinking with no room
+ * left to write the answer down.
+ *
+ * It went unnoticed because for most of this system's life the two numbers were
+ * far apart (64K agent, 128K job). Serving the local model at 131,072 made them
+ * equal, and equality silently re-admitted it to every deep job — the exact
+ * outcome the ceiling had been introduced to prevent.
+ *
+ * 16K is a FLOOR read off that failure, not a measurement: a reasoning model's
+ * think-then-answer for a review lens is comfortably five figures of tokens, and
+ * nothing here has ever produced a useful reply in less. The honest way to
+ * refine it is to record `finish_reason` per run and read the real distribution;
+ * until then it is deliberately generous, because being wrong in this direction
+ * costs an eligible agent and being wrong in the other costs a whole run.
+ */
+export const OUTPUT_RESERVE = 16_384
+
+/** NOT_EVIDENCE as a SQL list, so the two definitions cannot drift apart. */
+function notEvidenceSql(): string {
+  return NOT_EVIDENCE.map((k) => `'${k}'`).join(', ')
+}
+
+/**
+ * How often to spend a run on an agent that has not earned a score yet.
+ *
+ * Without this the first agent to reach MIN_SAMPLE is the only one that ever
+ * scores again, so it owns the job for ever — no rival can be discovered and its
+ * own decline cannot be noticed. Scoring exists to compare agents; a policy that
+ * stops gathering comparisons defeats it.
+ */
+export const EXPLORE_RATE = 0.25
+
+/** Keep testing proven challengers so a leader cannot hold the route forever. */
+export const STANDING_EXPLORE_RATE = 0.10
+
+/**
+ * The gap between two adjacent quality levels: right to mixed, mixed to wrong.
+ *
+ * Read off the matrix rather than written down, so it is still true if the
+ * weights move.
+ */
+export const QUALITY_STEP = weigh('full', 'right') - weigh('full', 'mixed')
+
+/**
+ * Score difference below which two agents are treated as equally good.
+ *
+ * One quality step over MIN_SAMPLE runs moves the mean by 0.5/5 = 0.1, so a gap
+ * smaller than that is not even one judgement's worth of evidence. Ranking on it
+ * would be ranking on noise, which is what lets the cheaper or faster agent win
+ * a tie honestly.
+ *
+ * This was `WEIGHT_MAX / MIN_SAMPLE / 2`, which gives the same 0.1 — by
+ * coincidence. WEIGHT_MAX/2 is 0.5 and one quality step is also 0.5, so the two
+ * agreed on today's numbers and would have parted company the moment anyone
+ * touched the matrix, with the comment above still confidently describing the
+ * old behaviour. A local review lens caught the smell and proposed scaling by
+ * the full spread instead (−0.5 to 1, so 0.15); that is a different intent
+ * again, and not the one written down. The band is one JUDGEMENT'S worth, so it
+ * is derived from a judgement step.
+ */
+export const NOISE_BAND = QUALITY_STEP / MIN_SAMPLE
+
+/**
+ * Build the SQL scoring expression from WEIGHT, so editing the matrix actually
+ * moves routing rather than only changing what the CLI prints.
+ *
+ * A searched CASE rather than a simple one, because the weight now depends on
+ * two columns. Unscored rows fall to the ELSE and contribute nothing, which is
+ * what the separate scored/evidence counts are for.
+ */
+export function weightCase(): string {
+  const arms: string[] = []
+  for (const [delivery, row] of Object.entries(WEIGHT)) {
+    if (typeof row === 'number') {
+      arms.push(`WHEN s.delivery = '${delivery}' THEN ${row}`)
+    } else {
+      for (const [quality, w] of Object.entries(row)) {
+        arms.push(`WHEN s.delivery = '${delivery}' AND s.quality = '${quality}' THEN ${w}`)
+      }
+    }
+  }
+  /**
+   * The fidelity penalty is added HERE, in SQL, and not only in `weigh()`.
+   *
+   * Otherwise the axis would exist everywhere a person looks and nowhere the
+   * router looks — which is the exact failure this file already carries a
+   * section about: `orch stats`, the dashboard and the router each held their
+   * own copy of the aggregate, and when one learned to count failures the
+   * others did not follow. Built from FIDELITY_PENALTY for the same reason the
+   * matrix above is built from WEIGHT: editing the constant has to move
+   * routing, not just the printout.
+   *
+   * COALESCE to zero, so every score recorded before the axis existed — and
+   * every read-only job, which is never judged on it — weighs exactly what it
+   * always did.
+   */
+  const pen = Object.entries(FIDELITY_PENALTY)
+    .map(([f, w]) => `WHEN s.fidelity = '${f}' THEN ${w}`)
+    .join(' ')
+  // CLAMPED TO THE SAME FLOOR as weigh(). Unclamped, partial/wrong/drifted
+  // weighs less than "nothing arrived", so an agent that delivered something
+  // unusable ranks below one that delivered nothing — and routing prefers the
+  // agent that cannot do the job. `MAX` here must mirror the Math.max there;
+  // two clamps that disagree is the drift this file already has a section about.
+  const floor = WEIGHT.none as number
+  return `MAX((CASE ${arms.join(' ')} ELSE 0 END) + (CASE ${pen} ELSE 0 END), ${floor})`
+}
+
+/**
+ * Median, exported because the guide needs the same one.
+ *
+ * Median rather than mean throughout: one call that hung should not decide
+ * anything. There were two identical copies of this; identical today is how a
+ * pair of copies always starts.
+ */
+export function median(xs: number[]): number | null {
+  if (xs.length === 0) return null
+  const v = [...xs].sort((a, b) => a - b)
+  const mid = v.length >> 1
+  return v.length % 2 ? v[mid]! : (v[mid - 1]! + v[mid]!) / 2
+}
+
+/**
+ * A run that produced nothing counts as `unusable`, because that is what it is.
+ *
+ * Filtering to `status='ok'` made failure invisible to routing: an agent that
+ * fails most of the time but scores well on the few that land looked perfect.
+ * `agy` on review-lens was one good verdict and two headless permission denials,
+ * and the router saw a flawless record — while `unusable`, the verdict this
+ * system already defines as "nothing came back to judge — a denied permission,
+ * an empty reply, the wrong shape entirely", sat right there describing it.
+ *
+ * So a failed or abandoned run is folded into the mean at the `unusable` weight
+ * rather than dropped. It costs the agent exactly what a human scoring the same
+ * outcome would have cost it, and no separate reliability term has to be
+ * invented or tuned.
+ */
+export function candidates(
+  jobName: string, promptBytes = 0, stack?: string | null, modelOverride?: string,
+): Candidate[] {
+  const j = job(jobName)
+  // probe = 0: calibration traffic is deliberately trivial, so counting it would
+  // let "reply with ok" vouch for an agent on real work.
+  //
+  // evidence_excluded IS NULL: a run whose output was destroyed by a bug of
+  // ours is not evidence about the agent. Clock-named files collided; several
+  // runs shared one output; the last to finish overwrote the rest; people then
+  // scored the survivor as if it were each of them. NULL counts; any text is
+  // the reason it does not. This is not `probe` — those were not calibration
+  // runs, and overloading that flag would make the register lie about what
+  // happened. The predicate lives HERE, next to the other evidence filters,
+  // because this is the one query the router, the stats command and the
+  // dashboard all share. A second copy is how they drifted last time.
+  const rows = db()
+    .query(
+      `SELECT r.agent AS agent,
+              SUM(CASE WHEN r.status = 'ok' THEN 1 ELSE 0 END) AS runs,
+              SUM(CASE WHEN s.delivery IS NOT NULL
+                        AND COALESCE(r.failure_kind, '') NOT IN (${notEvidenceSql()})
+                       THEN 1 ELSE 0 END) AS scored,
+              -- Only failures NOBODY JUDGED. A run contributes exactly one
+              -- judgement: an explicit score if it has one, otherwise the
+              -- implicit delivery=none that failing amounts to. Counting both
+              -- made a single failed-and-scored run worth two — the weight came
+              -- out the same, but the evidence count doubled, so an agent could
+              -- cross MIN_SAMPLE on half the runs it should have needed.
+              --
+              -- An UNREACHABLE endpoint is excluded outright. Every other
+              -- failure is evidence about the agent - it ran and could not
+              -- deliver - but a box that is switched off never ran at all, and
+              -- charging it to the model means an outage is indistinguishable
+              -- from incompetence. Eleven hours of a powered-down local host put two
+              -- of these against qwen-local on file-question, the one job it is
+              -- measurably best at.
+              --
+              -- The same list gates EXPLICIT scores. Seven codex harness
+              -- failures had been scored 'none' by hand and each counted as a
+              -- -0.5 judgement against codex on review-lens - the outage rule,
+              -- undone by whoever was tidying their pending list. A run that
+              -- is not evidence is not evidence whoever looks at it.
+              SUM(CASE WHEN r.status IN ('failed','stale') AND s.delivery IS NULL
+                        AND COALESCE(r.failure_kind, '') NOT IN (${notEvidenceSql()})
+                       THEN 1 ELSE 0 END) AS failures,
+              SUM(CASE WHEN COALESCE(r.failure_kind, '') NOT IN (${notEvidenceSql()})
+                       THEN ${weightCase()} ELSE 0 END) AS pts,
+              SUM(CASE WHEN r.status = 'ok' THEN COALESCE(r.vendor_tokens, 0) ELSE 0 END) AS tokens,
+              SUM(CASE WHEN r.status = 'ok' THEN COALESCE(r.vendor_cost_usd, 0) ELSE 0 END) AS cost
+         FROM run r LEFT JOIN score s ON s.run_id = r.id
+        -- Child turns are excluded: a conversation is ONE piece of evidence
+        -- about an agent, and its root row carries the outcome. Counting each
+        -- turn would let an agent cross MIN_SAMPLE by asking questions.
+        WHERE r.job = ? AND r.status IN ('ok','failed','stale') AND r.probe = 0
+          AND r.evidence_excluded IS NULL
+          AND r.parent_run_id IS NULL
+          ${stack ? 'AND r.stack = ?' : ''}
+        GROUP BY r.agent`,
+    )
+    .all(...(stack ? [jobName, stack] : [jobName])) as {
+      agent: string; runs: number; scored: number; failures: number
+      pts: number | null; tokens: number; cost: number
+    }[]
+  const hist = new Map(rows.map((r) => [r.agent, r]))
+
+  const evidenceRows = db()
+    .query(
+      `WITH judgements AS (
+         SELECT r.id, r.agent, r.model, r.started_at, r.status, s.delivery,
+                ${weightCase()} AS pts,
+                ROW_NUMBER() OVER (
+                  PARTITION BY r.agent ORDER BY r.started_at DESC, r.id DESC
+                ) AS recency
+           FROM run r LEFT JOIN score s ON s.run_id = r.id
+          WHERE r.job = ? AND r.status IN ('ok','failed','stale') AND r.probe = 0
+            AND r.evidence_excluded IS NULL
+            AND r.parent_run_id IS NULL
+            ${stack ? 'AND r.stack = ?' : ''}
+            AND COALESCE(r.failure_kind, '') NOT IN (${notEvidenceSql()})
+            AND (s.delivery IS NOT NULL OR
+                 (r.status IN ('failed','stale') AND s.delivery IS NULL))
+       )
+       SELECT agent, model, status, delivery, pts
+         FROM judgements WHERE recency <= ?`,
+    )
+    .all(...(stack
+      ? [jobName, stack, EVIDENCE_WINDOW]
+      : [jobName, EVIDENCE_WINDOW])) as {
+        agent: string; model: string | null; status: string
+        delivery: string | null; pts: number | null
+      }[]
+
+  type Evidence = { scored: number; failures: number; none: number; pts: number }
+  const aggregate = (rs: typeof evidenceRows): Evidence => ({
+    scored: rs.filter((r) => r.delivery !== null).length,
+    failures: rs.filter((r) => r.delivery === null).length,
+    none: rs.filter((r) => r.delivery === 'none').length,
+    pts: rs.reduce((sum, r) => sum + (r.pts ?? 0), 0),
+  })
+
+  const lat = db()
+    .query(
+      `SELECT agent, latency_ms FROM run
+        -- Latency is per TURN here, deliberately: "how long does this agent
+        -- take to answer" is a question about a turn, and a chain's total is a
+        -- question about how much the architect had to be asked.
+        WHERE job = ? AND status = 'ok' AND probe = 0 AND latency_ms IS NOT NULL
+          ${stack ? 'AND stack = ?' : ''}`,
+    )
+    .all(...(stack ? [jobName, stack] : [jobName])) as { agent: string; latency_ms: number }[]
+  const latByAgent = new Map<string, number[]>()
+  for (const r of lat) latByAgent.set(r.agent, [...(latByAgent.get(r.agent) ?? []), r.latency_ms])
+
+  // Only the most recent run per agent matters: an agent that has since
+  // succeeded is working again, whatever happened before it.
+  //
+  // PROBES ARE DELIBERATELY NOT EXCLUDED HERE, alone among the queries. A probe
+  // is excluded everywhere that measures QUALITY, because "reply with ok" says
+  // nothing about how good an agent is. Availability is a different question,
+  // and a probe answers it exactly: it is the one thing that can tell this tool
+  // a human has fixed the quota or the login, without waiting out the hour or
+  // pretending a trivial reply was real work. Adding `AND probe = 0` here for
+  // consistency would remove the only way to clear a cooldown.
+  const last = new Map(
+    (db().query(
+      `SELECT agent, status, failure_kind,
+              (julianday('now') - julianday(started_at)) * 1440 AS mins_ago
+         FROM run r
+        WHERE r.id = (SELECT MAX(id) FROM run x WHERE x.agent = r.agent
+                        AND x.status IN ('ok','failed'))`,
+    ).all() as { agent: string; status: string; failure_kind: string | null; mins_ago: number }[])
+      .map((r) => [r.agent, r]),
+  )
+
+  const result: Candidate[] = Object.keys(AGENTS).map((name) => {
+    const a = AGENTS[name]!
+    const currentModel = modelOverride ?? a.model
+    const l = last.get(name)
+    const cooling =
+      l && l.status === 'failed' && l.failure_kind &&
+      COOLS_DOWN.includes(l.failure_kind as never) && l.mins_ago < COOLDOWN_MIN
+        ? `${l.failure_kind} ${Math.round(l.mins_ago)}m ago`
+        : null
+    const h = hist.get(name)
+    const agentEvidence = evidenceRows.filter((r) => r.agent === name)
+    const modelEvidence = agentEvidence.filter((r) => r.model === currentModel)
+    const useModel = modelEvidence.length >= MIN_SAMPLE
+    const recent = aggregate(useModel ? modelEvidence : agentEvidence)
+    const scored = recent.scored
+    const failures = recent.failures
+    const evidence = scored + failures
+    const score = evidence > 0
+      ? (recent.pts + weigh('none', null) * failures) / evidence
+      : null
+    let eligible = true
+    let why = ''
+    const unavailable = unavailableReason(name)
+    if (unavailable) { eligible = false; why = unavailable }
+    else if (a.billing === 'metered') { eligible = false; why = 'metered billing' }
+    else if (promptBytes > a.maxPromptBytes) {
+      eligible = false
+      why = `prompt ${Math.round(promptBytes / 1024)}KB exceeds its ${Math.round(a.maxPromptBytes / 1024)}KB argv limit`
+    }
+    // A window too small for the job is a capability the agent lacks, not a
+    // quality it is weak at, so it is excluded here rather than ranked and
+    // slowly discovered. Waiting for the score to notice costs a real run every
+    // time: the local model was sent four review-lenses and an `understand`, and
+    // between them they spent forty minutes and 1.8M vendor tokens to produce
+    // three partial answers and two non-answers. The ceiling was knowable before
+    // any of them started.
+    else if (a.contextTokens < j.contextTokens + OUTPUT_RESERVE) {
+      eligible = false
+      why = `${Math.round(a.contextTokens / 1024)}K context is short of the ` +
+            `~${Math.round(j.contextTokens / 1024)}K this job's working set needs ` +
+            `plus ${Math.round(OUTPUT_RESERVE / 1024)}K to answer in`
+    }
+    else {
+      for (const [cap, need] of Object.entries(j.needs)) {
+        if (need && !a.caps[cap as keyof typeof a.caps]) { eligible = false; why = `lacks ${cap}`; break }
+      }
+    }
+    return {
+      agent: name,
+      runs: h?.runs ?? 0,
+      scored,
+      failures,
+      none: recent.none,
+      evidence,
+      evidenceModel: useModel ? currentModel : null,
+      score,
+      shrunk: null,
+      latencyMs: median(latByAgent.get(name) ?? []),
+      tokens: h?.tokens ?? 0,
+      costUsd: h?.cost ?? 0,
+      // A local or free agent spends no metered quota, so on a genuine tie it
+      // keeps the paid subscriptions in reserve for work that needs them.
+      free: a.billing === 'local' || a.billing === 'free',
+      eligible,
+      why,
+      cooling,
+    }
+  })
+
+  const provenScores = result
+    .filter((c) => c.evidence >= MIN_SAMPLE && c.score !== null)
+    .map((c) => c.score!)
+  const prior = provenScores.length
+    ? provenScores.reduce((sum, score) => sum + score, 0) / provenScores.length
+    : 0.5
+  for (const c of result) {
+    if (c.score !== null) {
+      c.shrunk = (c.score * c.evidence + MIN_SAMPLE * prior) / (c.evidence + MIN_SAMPLE)
+    }
+  }
+  return result
+}
+
+/** One row per job × agent that has any history, on the router's own maths. */
+export type Scored = Candidate & { job: string }
+
+/**
+ * Every job × agent cell, scored exactly the way routing scores it.
+ *
+ * `orch stats` and the dashboard matrix each had their own copy of this query,
+ * and both still filtered `status='ok'` after the router stopped: grok on
+ * review-lens read 96% in both views and 69% to the thing actually choosing,
+ * because 6 failures were invisible to the report and not to the decision. The
+ * stats command even carried a comment saying it deliberately shared the
+ * router's maths, which had stopped being true.
+ *
+ * So there is one implementation and the views call it. Ten small queries
+ * rather than one grouped one, which is the price of not having a second
+ * definition of the word "score".
+ */
+export function scoreboard(onlyJob?: string): Scored[] {
+  return Object.keys(JOBS)
+    .filter((j) => !onlyJob || j === onlyJob)
+    .flatMap((j) =>
+      candidates(j)
+        .filter((c) => c.runs > 0 || c.failures > 0)
+        .map((c) => ({ ...c, job: j })),
+    )
+}
+
+/**
+ * Pick by measured quality once there is enough signal, otherwise by the job's
+ * declared preference. A score from two runs is noise, and routing on it would
+ * lock in whichever agent happened to go first.
+ *
+ * Quality decides alone whenever the gap is real. Inside NOISE_BAND the
+ * evidence does not separate the agents, so the tie goes to the one that costs
+ * no quota, and then to the faster one — the two things measured on every run
+ * that are facts rather than judgements.
+ */
+/**
+ * Evidence for this job in this STACK, if there is enough of it, else for the
+ * job anywhere.
+ *
+ * Agents are not uniformly good: one may be strong on PHP and weak on a Vue
+ * component, and a router keyed only on job type averages those together into a
+ * number that is true of neither. Keying on stack lets the difference show.
+ *
+ * THE BACKOFF IS THE WHOLE DESIGN, and without it this would be a mistake.
+ * Routing already needs MIN_SAMPLE judgements before a score means anything,
+ * and splitting the key multiplies the cells: a corpus that supports a handful
+ * of job-level verdicts supports almost no stack-level ones, so every cell
+ * would starve permanently and routing would fall back to declared preference
+ * for ever — strictly worse than what it replaced. So the stack-specific cell
+ * is used only once it has earned MIN_SAMPLE on its own, and until then the
+ * job-wide evidence answers, exactly as it did before.
+ *
+ * Which level was used is returned, not inferred, because `orch pick` has to be
+ * able to say WHY — a recommendation drawn from four PHP runs and one drawn
+ * from thirty mixed ones deserve different amounts of trust, and only the
+ * router knows which it gave you.
+ */
+export function evidenceFor(
+  jobName: string, promptBytes: number, stack: string | null | undefined,
+  modelOverride?: string,
+): { cands: Candidate[]; level: 'stack' | 'job'; stack: string | null } {
+  if (stack) {
+    const scoped = candidates(jobName, promptBytes, stack, modelOverride)
+    // `!c.cooling` too: pick() discards a cooling agent AFTER this decision, so
+    // counting one here could narrow the scope on the strength of an agent that
+    // is then thrown away — leaving a scoped view with a single usable
+    // candidate, which is the very thing the two-agent rule exists to refuse.
+    const eligible = scoped.filter((c) => c.eligible && !c.cooling)
+    const proven = eligible.filter((c) => c.evidence >= MIN_SAMPLE && c.score !== null)
+    /**
+     * TWO proven agents, not one, and this is the subtle half of the rule.
+     *
+     * The point of the stack key is to COMPARE agents on that stack. One agent
+     * over the threshold is not a comparison — it is a narrower evidence base
+     * for a decision that would have been made anyway, and it is actively
+     * worse than the job-wide view: an agent with thirty job-wide judgements
+     * and three on this stack is demoted to "unproven" and loses to whichever
+     * one happened to accumulate five here first. That is the incumbency
+     * problem this file already solves for exploration, arriving by a
+     * different door.
+     *
+     * The exception is a job only one agent can do at all, where there is no
+     * comparison to lose and the narrower evidence is simply better evidence.
+     */
+    if (proven.length >= 2 || (eligible.length === 1 && proven.length === 1)) {
+      return { cands: scoped, level: 'stack', stack }
+    }
+  }
+  return {
+    cands: candidates(jobName, promptBytes, undefined, modelOverride),
+    level: 'job', stack: stack ?? null,
+  }
+}
+
+/** Failure-only history has already answered whether another run is worthwhile. */
+function worthExploring(c: Candidate): boolean {
+  return !(
+    (c.scored === 0 && c.failures > 0) ||
+    (c.scored > 0 && c.none === c.scored)
+  )
+}
+
+export function pick(
+  jobName: string,
+  override?: string,
+  promptBytes = 0,
+  // Reporting views pass false: a guide that consumed the exploration coin
+  // would name a different agent each time it was read, which is the opposite
+  // of what someone consults it for.
+  explore = true,
+  stack?: string | null,
+  /**
+   * A READ-ONLY JOB THAT WANTS TOOLS MAY NOT BE GIVEN A WRITABLE DISK.
+   *
+   * On codex, MCP and the sandbox are mutually exclusive: `--approve-for-me` is
+   * required for tool calls and implies workspace-write. A read-only job cuts
+   * no worktree, so that writable disk IS the caller's live checkout — the one
+   * they are typing in. One session lost seven files of uncommitted work
+   * to exactly this: a review lens with --mcp, running in their checkout,
+   * reverted the tree to HEAD and then reported it "remains clean".
+   *
+   * Detection was already here and looked the wrong way (see dirtiedTree). This
+   * is the prevention: such a job routes only to an agent that can hold tools
+   * and a read-only sandbox at the same time. grok can; codex cannot.
+   *
+   * Isolating the run in a worktree instead was the other option and it is
+   * wrong for this job shape — a lens is usually reading the UNCOMMITTED work
+   * that a fresh worktree would not have, so isolation would silently change
+   * what is being reviewed. Removing the writable disk keeps the lens looking
+   * at the real tree, which is the whole point of a read-only job running there.
+   */
+  toolsWithoutWrite = false,
+  /** Agents and effective models a fan-out has already used. */
+  avoid: { agents?: string[]; models?: string[]; model?: string } = {},
+): { agent: string; reason: string } {
+  const j = job(jobName)
+  const ev = evidenceFor(jobName, promptBytes, stack, avoid.model)
+  const cands = ev.cands
+  // Named in every reason below, so a route drawn from four PHP runs is never
+  // mistaken for one drawn from thirty mixed ones.
+  const stackScope = ev.level === 'stack' ? ` on ${ev.stack}` : ''
+  const scope = (c: Candidate) => stackScope +
+    (c.evidenceModel ? ` on model ${c.evidenceModel}` : ' across models')
+  if (override) {
+    if (avoid.agents?.includes(override)) {
+      throw new Error(`--agent ${override} contradicts --avoid ${override}`)
+    }
+    const c = cands.find((x) => x.agent === override)
+    if (!c) throw new Error(`unknown agent "${override}"`)
+    if (!c.eligible) throw new Error(`agent "${override}" not eligible for ${jobName}: ${c.why}`)
+    // An explicit --agent does NOT buy a writable disk on a read-only job. The
+    // caller is choosing an agent, not waiving the protection on their checkout.
+    if (toolsWithoutWrite && AGENTS[override]?.mcpImpliesWrite) {
+      throw new Error(
+        `agent "${override}" cannot make MCP tool calls without a writable sandbox, and ` +
+        `"${jobName}" is read-only so it runs in your checkout rather than a worktree. ` +
+        `Drop --mcp, or pick an agent that keeps tools and a read-only disk together.`,
+      )
+    }
+    return { agent: override, reason: 'explicit --agent' }
+  }
+  let eligible = cands.filter((c) => c.eligible)
+  const excluded: string[] = []
+  if (toolsWithoutWrite) {
+    const safe = eligible.filter((c) => {
+      if (!AGENTS[c.agent]?.mcpImpliesWrite) return true
+      excluded.push(`${c.agent}: cannot make MCP tool calls without a writable sandbox`)
+      return false
+    })
+    if (!safe.length) {
+      throw new Error(
+        `no agent can run the read-only job "${jobName}" with MCP tools without a writable ` +
+        `sandbox. On this machine only codex is affected: its --approve-for-me implies ` +
+        `workspace-write, and a read-only job cuts no worktree, so that disk is your own ` +
+        `checkout. Run it without --mcp, or use an agent that keeps both.`,
+      )
+    }
+    eligible = safe
+  }
+  excluded.push(...cands.filter((c) => !c.eligible).map((c) => `${c.agent}: ${c.why}`))
+  if (eligible.length === 0) throw new Error(`no eligible agent for job "${jobName}"`)
+  /**
+   * Exclusions diversify a fan-out, but never turn useful review work into a
+   * refusal. If they consume the whole eligible set, route from the original
+   * set and record the unmet constraint where `orch runs` will expose it.
+   */
+  const requested = new Set(avoid.agents ?? [])
+  const models = new Set(avoid.models ?? [])
+  const constrained = eligible.filter((c) =>
+    !requested.has(c.agent) && !models.has(avoid.model ?? AGENTS[c.agent]!.model))
+  const degraded = constrained.length === 0 && (requested.size > 0 || models.size > 0)
+  if (constrained.length) eligible = constrained
+  const withConstraint = (reason: string) => degraded
+    ? `${reason}; exclusions could not be met, so routing proceeded normally` +
+      (excluded.length ? `; excluded agents: ${excluded.join('; ')}` : '')
+    : reason
+  // Skip agents that are out of quota or unauthenticated - but only while
+  // something else can take the work. Refusing to run at all is worse than
+  // trying an agent that may have recovered since.
+  const warm = eligible.filter((c) => !c.cooling)
+  const ok = warm.length ? warm : eligible
+
+  const proven = ok.filter((c) => c.evidence >= MIN_SAMPLE && c.score !== null)
+  const unproven = ok.filter((c) => c.evidence < MIN_SAMPLE)
+
+  if (proven.length > 0) {
+    // Keep sampling agents that have no score yet, or the incumbent owns the job
+    // permanently and the table stops being evidence about anyone else.
+    //
+    // Exploration spends a real run, so it goes to an agent that might win, not
+    // to one already known not to work here. An agent whose only history is
+    // failure has been answered — repeating the question is not exploration, it
+    // is paying for the same "no" again.
+    const worthTrying = unproven.filter(worthExploring)
+    if (explore && worthTrying.length > 0 && Math.random() < EXPLORE_RATE) {
+      worthTrying.sort((a, b) => a.evidence - b.evidence)
+      const challenger = worthTrying[0]!
+      return {
+        agent: challenger.agent,
+        reason: withConstraint(
+          `challenger (${challenger.evidence}/${MIN_SAMPLE} judged${scope(challenger)}, exploring)`,
+        ),
+      }
+    }
+    proven.sort((a, b) => b.shrunk! - a.shrunk!)
+    const top = proven[0]!.shrunk!
+    const tied = proven.filter((c) => top - c.shrunk! <= NOISE_BAND)
+    tied.sort((a, b) =>
+      Number(b.free) - Number(a.free) ||
+      (a.latencyMs ?? Infinity) - (b.latencyMs ?? Infinity) ||
+      b.evidence - a.evidence)
+    const best = tied[0]!
+    if (explore && unproven.length === 0 && proven.length === ok.length &&
+        Math.random() < STANDING_EXPLORE_RATE) {
+      const challengers = proven
+        .filter((c) => c.agent !== best.agent && worthExploring(c))
+        .sort((a, b) => a.evidence - b.evidence)
+      const challenger = challengers[0]
+      if (challenger) {
+        return {
+          agent: challenger.agent,
+          reason: withConstraint(
+            `standing challenger (${challenger.evidence} judged${scope(challenger)}, exploring)`,
+          ),
+        }
+      }
+    }
+    const pct = `${(best.score! * 100).toFixed(0)}% (shrunk ${(best.shrunk! * 100).toFixed(0)}%) ` +
+      `over ${best.evidence} judged${scope(best)}` +
+      (best.failures ? ` (incl. ${best.failures} failed)` : '')
+    if (tied.length === 1) return { agent: best.agent, reason: withConstraint(`best score ${pct}`) }
+    const edge = best.free ? 'costs no quota' : `fastest at ${Math.round((best.latencyMs ?? 0) / 1000)}s`
+    return { agent: best.agent, reason: withConstraint(`${pct}, tied with ${tied.length - 1} other — ${edge}`) }
+  }
+  for (const name of j.prefer) {
+    const c = ok.find((x) => x.agent === name)
+    if (c) return {
+      agent: name,
+      reason: withConstraint(
+        `preference (only ${c.evidence} judged${scope(c)}, need ${MIN_SAMPLE})`,
+      ),
+    }
+  }
+  return { agent: ok[0]!.agent, reason: withConstraint('only eligible agent') }
+}

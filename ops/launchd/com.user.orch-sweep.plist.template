@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.orch-sweep</string>
+
+    <!-- Reclaim finished workers' worktrees, and the databases behind them.
+
+         A worktree is the cheap part. What accumulates is what the project's
+         setup provisioned to stand it up - a database of up to a few gigabytes,
+         a container, a port, a queue worker - and nothing was ever removing
+         those. Left alone, a machine fills with databases nobody can name.
+
+         DAILY, not hourly, and that is the whole design. `orch sweep` only
+         touches runs that are terminal, older than a day, and already scored,
+         because a failed run's half-finished tree is the most readable artefact
+         this system produces and an unscored run's diff is the evidence
+         somebody still owes a verdict on. A tighter clock would start deleting
+         work while it was still being read. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>__ROOT__/bin/orch</string>
+        <string>sweep</string>
+    </array>
+
+    <!-- 04:10: after the morning refresh has settled and long before anyone is
+         working, so a sweep never contends with a live worker for a database. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key><integer>4</integer>
+        <key>Minute</key><integer>10</integer>
+    </dict>
+
+    <!-- PATH is not inherited under launchd, and the sweep shells `git`, `bun`
+         and each project's own worktree script. Without this it fails on every
+         run, silently. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:__HOME__/.local/bin</string>
+        <key>HOME</key>
+        <string>__HOME__</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/orch-sweep.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/orch-sweep.log</string>
+</dict>
+</plist>

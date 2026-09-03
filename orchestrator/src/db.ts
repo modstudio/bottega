@@ -1,0 +1,1282 @@
+import { Database } from 'bun:sqlite'
+import { createHash } from 'node:crypto'
+import { mkdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+
+export const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
+export const DB_PATH = process.env.ORCH_DB ?? join(ROOT, 'orch.db')
+
+let handle: Database | null = null
+
+export function db(): Database {
+  if (handle) return handle
+  mkdirSync(dirname(DB_PATH), { recursive: true })
+  const d = new Database(DB_PATH, { create: true })
+  // Several `orch do` processes write concurrently during a fan-out. Without a
+  // busy timeout SQLite fails the moment it finds the file locked rather than
+  // waiting its turn, so a parallel launch loses most of its rows — the record
+  // of the very runs it was launching.
+  // wal_autocheckpoint defaults to 1000 pages, roughly 4MB. Nothing here writes
+  // anywhere near that in a session, so the default never fires: the log was
+  // measured at 1.4MB against an 80KB database, all of it uncheckpointed. A
+  // lower threshold folds pages back in as they accumulate, and the size limit
+  // lets the file shrink again once a checkpoint can restart it — `orch serve`
+  // holds a connection open for hours, and a long-lived reader blocks
+  // truncation but not the limit taking effect afterwards.
+  d.exec(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA busy_timeout = 15000;
+    PRAGMA synchronous = NORMAL;
+    PRAGMA foreign_keys = ON;
+    PRAGMA wal_autocheckpoint = 100;
+    PRAGMA journal_size_limit = 1048576;
+  `)
+  applySchema(d)
+  excludeSharedOutputRuns(d)
+  seedProjects(d)
+  handle = d
+  reapStale(d)
+  return d
+}
+
+/**
+ * CREATE TABLE plus every addColumn, then a one-time rebuild if the live
+ * sqlite_master DDL is not the canonical one. db() calls this after opening
+ * the file; tests call it on a fixture.
+ */
+export function applySchema(d: Database): void {
+  migrate(d)
+  addColumn(d, 'run', 'prompt_path', 'TEXT')
+  addColumn(d, 'run', 'pid', 'INTEGER')
+  addColumn(d, 'run', 'agent_pid', 'INTEGER')
+  addColumn(d, 'run', 'session_id', 'TEXT')
+  // A caller-supplied name for distinguishing sibling runs in a fan-out.
+  addColumn(d, 'run', 'label', 'TEXT')
+  // Which run this one re-attempts. A transient failure — a quota limit, a
+  // dropped connection — should be retried on the SAME agent, not silently
+  // re-routed to a different one; this is how the two are told apart later.
+  addColumn(d, 'run', 'retry_of', 'INTEGER')
+  // Why this agent was picked. Held only in memory before, which was fine
+  // while `orch do` printed it itself - it no longer runs the agent in its
+  // own process, so the row has to carry it.
+  addColumn(d, 'run', 'route_reason', 'TEXT')
+  // The branch the work was on. Free evidence that was being discarded: 53 of
+  // this estate's 60 branches carry a ticket key, and a branch name is a
+  // declaration in the same way a worktree path is.
+  addColumn(d, 'run', 'branch', 'TEXT')
+  // Set when cleanup removed the disposable worktree but deliberately retained
+  // an architect's commits because they have not reached the project's trunk.
+  addColumn(d, 'run', 'branch_kept', 'TEXT')
+  // Where a writing worker was put, and the branch it was given. A run that
+  // edited files is only readable afterwards if the tree it edited can be
+  // found again, and `orch discard` needs both to clean up.
+  addColumn(d, 'run', 'worktree', 'TEXT')
+  // The VENDOR's own id for the conversation, which is what makes an escalation
+  // affordable: answering a design question resumes the worker where it stopped
+  // instead of restarting it against the same files.
+  addColumn(d, 'run', 'vendor_session', 'TEXT')
+  // The commit the worktree was cut from. Without it the diff has no fixed
+  // floor: reading it against whatever HEAD happens to be later would show the
+  // worker's changes tangled with everything that landed since.
+  addColumn(d, 'run', 'base_commit', 'TEXT')
+  // A multi-turn implementation is ONE unit of work. The first turn is the
+  // root; every ruling that resumes it adds a child. Routing and scoring count
+  // the root alone — see `evidenceWhere` — because three turns of one
+  // conversation are one piece of evidence about an agent, and counting them
+  // separately would let an agent cross the routing threshold by asking a lot
+  // of questions.
+  addColumn(d, 'run', 'parent_run_id', 'INTEGER')
+  addColumn(d, 'run', 'turn', 'INTEGER NOT NULL DEFAULT 1')
+
+  /**
+   * FACTS ABOUT A WRITING RUN, recorded without anyone's opinion.
+   *
+   * These are the half of the judgement model that needs no judgement, and the
+   * literature is emphatic that they are the half that works: execution-based
+   * verification catches unfaithful implementation where a model reading a diff
+   * and pronouncing on it does not. A verdict is one person's reading; "the
+   * tests passed" and "it touched four files the spec never mentioned" are
+   * facts, they cost nothing to collect, and they are the ones that make the
+   * scores comparable across agents rather than across moods.
+   *
+   * Nullable throughout, because a read-only run has none of them and inventing
+   * a zero would put a fact in the table that nobody observed.
+   */
+  addColumn(d, 'run', 'files_changed', 'INTEGER')
+  addColumn(d, 'run', 'lines_added', 'INTEGER')
+  addColumn(d, 'run', 'lines_removed', 'INTEGER')
+  // What the worker SAYS about its own tests. Its claim, not our measurement —
+  // which is why it is stored beside the diff rather than instead of it.
+  addColumn(d, 'run', 'tests_ran', 'INTEGER')
+  addColumn(d, 'run', 'tests_passed', 'INTEGER')
+  // Deviations it owned up to, and questions it asked. Both are counted because
+  // the interesting ratio is between them: a worker that reports no deviations
+  // AND asked nothing on a genuinely ambiguous spec did not avoid the
+  // ambiguity, it resolved it silently.
+  addColumn(d, 'run', 'deviations', 'INTEGER')
+  addColumn(d, 'run', 'escalations', 'INTEGER')
+  // The stack this run's work was in, resolved when the run is recorded rather
+  // than joined at read time. A project can be re-registered with a different
+  // stack, and re-deriving old runs through the new value would rewrite history
+  // — evidence belongs to the stack it was actually gathered in.
+  addColumn(d, 'run', 'stack', 'TEXT')
+  // WHICH MODEL actually ran. An agent is a harness; the model is what is being
+  // judged, and both subscriptions carry more than one. Without this, changing
+  // a CLI's configured model silently rewrites the meaning of every score
+  // already recorded against that agent.
+  addColumn(d, 'run', 'model', 'TEXT')
+  // The caller's --mcp and --schema, so `orch retry` can re-send a read-only
+  // run with the same tools and contract. Not derived: a writing job always
+  // uses MCP, and retry of those is refused rather than reconstructed.
+  addColumn(d, 'run', 'mcp', 'INTEGER')
+  addColumn(d, 'run', 'schema_path', 'TEXT')
+  addColumn(d, 'run', 'docs_injected', 'INTEGER')
+  // A per-run secret, so the globally-registered ask server can tell a real
+  // worker from any other process that launched it with a guessed run id. A
+  // run id is an identifier and is printed in every listing; it was never a
+  // credential.
+  addColumn(d, 'run', 'run_token', 'TEXT')
+  /**
+   * THIS RUN IS NOT EVIDENCE ABOUT AN AGENT, and the text is why.
+   *
+   * Separate from `probe`, which means a deliberate calibration run. These
+   * were not that: a clock-based filename collided, several runs shared one
+   * output file, and the last to finish overwrote the rest. Anyone who then
+   * read `orch result` — and some who SCORED — was looking at another run's
+   * work. The verdict stays; it simply stops counting toward routing.
+   *
+   * NULL means it counts. Any text means it does not.
+   */
+  addColumn(d, 'run', 'evidence_excluded', 'TEXT')
+  // Runs AFTER every addColumn, so the rebuilt table carries the whole current
+  // column set rather than whatever migrate() happened to declare.
+  ensureCanonicalSchema(d)
+}
+
+/**
+ * Fill the project register ONCE, from what this database already knows.
+ *
+ * The register has to start somewhere, and asking a person to re-enter four
+ * projects the tool has recorded runs against for months would be a poor
+ * introduction.
+ *
+ * THIS IS DATA, NOT CODE, and that distinction is the whole point of the change
+ * — it would be easy to lose right here. The old regex was code that knew where
+ * projects live; this is a migration that runs once against one machine's
+ * history and leaves rows behind. A fresh checkout on somebody else's machine
+ * has no run history, seeds nothing, and starts with an empty register and
+ * `orch project add`, which is the intended experience rather than a degraded
+ * one.
+ *
+ * Skipped once anything is registered, so a person's own edits are never
+ * overwritten by a later reseed.
+ */
+function seedProjects(d: Database) {
+  const { n } = d.query('SELECT COUNT(*) AS n FROM project').get() as { n: number }
+  if (n > 0) return
+
+  // Distinct repos with each one's most recent working directory — the only
+  // record here of where that project actually sits on disk.
+  const rows = d.query(
+    `SELECT repo, cwd FROM run r
+      WHERE repo IS NOT NULL AND cwd IS NOT NULL
+        AND id = (SELECT MAX(id) FROM run x WHERE x.repo = r.repo AND x.cwd IS NOT NULL)`,
+  ).all() as { repo: string; cwd: string }[]
+
+  for (const { repo, cwd } of rows) {
+    /**
+     * Cut at a whole PATH COMPONENT, never at a string prefix.
+     *
+     * `/${repo}` matches inside `/Projects/application-1/src` and would seed the
+     * path `/Projects/application`, a directory that need not exist — after which
+     * every run from the real checkout resolves to no project at all. The
+     * numbered clones on the other machine make that the common case rather
+     * than a corner one.
+     */
+    const parts = cwd.split('/')
+    const at = parts.indexOf(repo)
+    const path = at === -1 ? cwd : parts.slice(0, at + 1).join('/')
+    try {
+      d.query(
+        `INSERT INTO project (name, path, stack, canon, settings) VALUES (?,?,?,1,'{}')
+         ON CONFLICT(name) DO NOTHING`,
+      ).run(repo, path, null)
+    } catch { /* a malformed row must not stop the rest seeding */ }
+  }
+}
+
+/**
+ * Let `status` hold 'blocked', on a database created before that existed.
+ *
+ * The CHECK is baked into the table definition and SQLite can only change one
+ * by rebuilding, which db.ts has until now deliberately refused to do: the
+ * comment beside the status column says a rebuild would have to drop the
+ * foreign key and put every score at risk to close a hole run() never actually
+ * fell through. That reasoning was right while the change bought nothing. It
+ * buys something now — without it, the first worker to stop and ask a design
+ * question dies on a constraint violation, and the escalation channel is
+ * unusable on the only database that has any history in it.
+ *
+ * THE DDL IS EDITED, NOT RETYPED. The new table comes from the existing
+ * `sqlite_master.sql` with one substring replaced, so every column, default and
+ * constraint that has accumulated since — thirteen of them added by addColumn —
+ * survives exactly as it was. Retyping the definition here would silently drop
+ * whichever column somebody forgets, and the copy would still succeed.
+ *
+ * The same shape as migrateScoreToMatrix, which did this once already and is
+ * the reason it is known to work: foreign keys off, one exclusive transaction,
+ * ids preserved so `score.run_id` still points where it did.
+ */
+/**
+ * A second widening, for the rename from `blocked` to `asking`.
+ *
+ * `blocked` was the wrong word and it collided with the `blocker` table,
+ * which means something close to the opposite: a blocker is an ENVIRONMENT
+ * problem stopping work, while this status is a worker doing exactly what it
+ * was asked to — stopping to get a decision it was told not to make alone. On
+ * a dashboard the two read as the same kind of red, and one of them is
+ * healthy.
+ *
+ * The old value stays legal so a database mid-upgrade is never invalid, and
+ * existing rows are renamed below.
+ */
+function normalizeSql(sql: string): string {
+  return sql.replace(/\s+/g, ' ').trim()
+}
+
+function schemaVersion(): string {
+  return createHash('sha256')
+    .update([RUN_DDL, SCORE_DDL, DOC_DDL].map(normalizeSql).join('\n'))
+    .digest('hex')
+}
+
+function liveTableSql(d: Database, name: string): string | null {
+  const row = d.query(
+    `SELECT sql FROM sqlite_master WHERE type='table' AND name=?`,
+  ).get(name) as { sql: string } | null
+  return row?.sql ?? null
+}
+
+function foreignKeysOn(d: Database): boolean {
+  const row = d.query('PRAGMA foreign_keys').get() as { foreign_keys: number } | null
+  return (row?.foreign_keys ?? 0) !== 0
+}
+
+function ensureCanonicalSchema(d: Database) {
+  const current = schemaVersion()
+  const stored = d.query(
+    `SELECT value FROM schema_meta WHERE key = 'schema'`,
+  ).get() as { value: string } | null
+  if (stored?.value === current) return
+
+  try {
+    d.query("UPDATE run SET status = 'asking' WHERE status = 'blocked'").run()
+  } catch {
+    // CHECK does not yet allow 'asking'; the rebuild copy rewrites them.
+  }
+
+  for (const [name, ddl] of [
+    ['run', RUN_DDL], ['score', SCORE_DDL], ['doc', DOC_DDL],
+  ] as const) {
+    const live = liveTableSql(d, name)
+    if (!live) continue
+    if (normalizeSql(live) === normalizeSql(ddl)) continue
+    rebuildTable(d, name, ddl)
+  }
+
+  d.query(
+    `INSERT INTO schema_meta (key, value) VALUES ('schema', ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+  ).run(current)
+}
+
+/**
+ * Rebuild `run` with one substring of its own DDL replaced.
+ *
+ * Shared by both widenings, because the risky part is identical and a second
+ * copy of it is a second chance to get the foreign key or the column list
+ * wrong. The DDL is EDITED rather than retyped so every column that has
+ * accumulated survives exactly as it was.
+ */
+function rebuildTable(d: Database, table: 'run' | 'score' | 'doc', canonical: string) {
+  const fkOn = foreignKeysOn(d)
+  d.exec('PRAGMA foreign_keys = OFF')
+  d.exec('BEGIN EXCLUSIVE')
+  try {
+    // The stored DDL is whatever SQLite recorded, which here is
+    // `CREATE TABLE IF NOT EXISTS "run" (` — quoted, and with the IF NOT
+    // EXISTS that migrate() wrote. Matching the leading clause with a pattern
+    // rather than a literal is what makes this survive all four spellings.
+    const newName = `${table}_new`
+    const ddl = canonical.replace(
+      /^\s*CREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?["'`\[]?\w+["'`\]]?/i,
+      `CREATE TABLE ${newName}`,
+    )
+    if (!ddl.startsWith(`CREATE TABLE ${newName}`)) {
+      throw new Error(`could not rename the ${table} table in its own DDL: ${canonical.slice(0, 80)}`)
+    }
+    d.exec(ddl)
+    const oldCols = new Set(
+      (d.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name),
+    )
+    const newCols = (d.query(`PRAGMA table_info(${newName})`).all() as { name: string }[])
+      .map((c) => c.name)
+    const common = newCols.filter((c) => oldCols.has(c))
+    const insertList = common.map((c) => `"${c}"`).join(', ')
+    const selectList = common.map((c) => {
+      if (table === 'run' && c === 'status') {
+        return `CASE WHEN "status" = 'blocked' THEN 'asking' ELSE "status" END`
+      }
+      return `"${c}"`
+    }).join(', ')
+    d.exec(`INSERT INTO ${newName} (${insertList}) SELECT ${selectList} FROM ${table}`)
+    d.exec(`DROP TABLE ${table}`)
+    d.exec(`ALTER TABLE ${newName} RENAME TO ${table}`)
+    if (table === 'run') {
+      d.exec('CREATE INDEX IF NOT EXISTS run_job_agent ON run(job, agent)')
+    } else if (table === 'score') {
+      d.exec(`
+        CREATE INDEX IF NOT EXISTS score_run ON score(run_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS score_one_per_run ON score(run_id);
+      `)
+    } else {
+      d.exec('CREATE INDEX IF NOT EXISTS doc_scope_subject ON doc(scope, subject)')
+    }
+    d.exec('COMMIT')
+  } catch (e) {
+    d.exec('ROLLBACK')
+    throw e
+  } finally {
+    if (fkOn) d.exec('PRAGMA foreign_keys = ON')
+  }
+}
+
+/**
+ * A run is one delegated call. A score is a judgment about it, recorded
+ * separately because the judgment usually arrives after the caller has read
+ * the output — and a run nobody judged must stay distinguishable from one
+ * judged poorly.
+ *
+ * Canonical DDL, stored without IF NOT EXISTS so sqlite_master on a fresh
+ * database matches it (SQLite strips IF NOT EXISTS from the recorded sql).
+ */
+const RUN_DDL = `CREATE TABLE run (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      started_at    TEXT NOT NULL,
+      agent         TEXT NOT NULL,
+      job           TEXT NOT NULL,
+      repo          TEXT,
+      cwd           TEXT,
+      prompt_sha    TEXT NOT NULL,
+      prompt_bytes  INTEGER NOT NULL,
+      prompt_head   TEXT NOT NULL,
+      label         TEXT,
+      latency_ms    INTEGER,
+      exit_code     INTEGER,
+      output_bytes  INTEGER,
+      output_path   TEXT,
+      prompt_path   TEXT,
+      vendor_tokens INTEGER,
+      -- only grok reports what a call cost; null everywhere else
+      vendor_cost_usd REAL,
+      -- a calibration probe: scored like any run, but never counted as evidence
+      probe         INTEGER NOT NULL DEFAULT 0,
+      -- quota | auth | timeout | denied | other; quota and auth need a person
+      failure_kind  TEXT,
+      -- Born running, not ok. A row is inserted before the agent is spawned, so
+      -- the honest default for one whose outcome nobody has written is "we do
+      -- not know yet". Defaulting to 'ok' meant any insert that omitted the
+      -- column would be counted as a success by routing without an agent ever
+      -- having answered. run() has always passed this explicitly, so the old
+      -- default never actually minted one — this closes it before it does.
+      -- 'asking' is not a failure. It is a worker that reached a decision it
+      -- was told not to make on its own, stopped, and asked. Routing must not
+      -- read it as either success or failure: nothing has been judged yet, and
+      -- the run is still live in the sense that matters — its vendor session is
+      -- sitting there holding everything it has read, waiting for a ruling.
+      status        TEXT NOT NULL DEFAULT 'running'
+                    CHECK (status IN ('running','ok','failed','stale','asking')),
+      error         TEXT,
+      pid           INTEGER,
+      session_id    TEXT,
+      retry_of      INTEGER,
+      route_reason  TEXT,
+      branch        TEXT,
+      branch_kept   TEXT,
+      worktree      TEXT,
+      vendor_session TEXT,
+      base_commit   TEXT,
+      parent_run_id INTEGER REFERENCES run(id),
+      turn          INTEGER NOT NULL DEFAULT 1,
+      files_changed INTEGER,
+      lines_added   INTEGER,
+      lines_removed INTEGER,
+      tests_ran     INTEGER,
+      tests_passed  INTEGER,
+      deviations    INTEGER,
+      escalations   INTEGER,
+      stack         TEXT,
+      model         TEXT,
+      run_token     TEXT,
+      evidence_excluded TEXT,
+      agent_pid     INTEGER,
+      mcp           INTEGER,
+      schema_path   TEXT,
+      docs_injected INTEGER
+    )`
+
+// A judgement has two axes, because the two ways a run disappoints you are
+// fixed by opposite things.
+//
+// DELIVERY is plumbing: did an answer arrive at all. When it did not, the
+// remedy is a bigger context window, a capability the agent lacks, a
+// sandbox that stopped denying it — or not sending that agent this job.
+// QUALITY is judgement: given that something arrived, was it right. The
+// remedy there is a smarter agent, and nothing else.
+//
+// One ordinal column could not tell them apart, so it did not: run 279 came
+// back as 57 bytes of vendor error and was recorded 'bad', indistinguishable
+// from a full answer that was simply wrong. 'unusable' existed for exactly
+// this and was offered nowhere anyone was actually scoring, so it was used
+// once in 58 judgements.
+const SCORE_DDL = `CREATE TABLE score (
+      id        INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id    INTEGER NOT NULL REFERENCES run(id) ON DELETE CASCADE,
+      delivery  TEXT NOT NULL CHECK (delivery IN ('none','partial','full')),
+      -- Null exactly when delivery is 'none': there was nothing to judge.
+      quality   TEXT CHECK (quality IN ('wrong','mixed','right')),
+      -- DID IT BUILD WHAT IT WAS ASKED TO BUILD?
+      --
+      -- The third axis, and it exists because the first two cannot see the
+      -- defining failure of a worker under an architect. An agent can return a
+      -- complete change set (delivery: full) of correct, working, tested code
+      -- (quality: right) that solves a DIFFERENT PROBLEM from the one specified
+      -- — because it read an ambiguity, resolved it silently, and built on its
+      -- own answer. Every existing cell scores that as a perfect run.
+      --
+      -- Null for every read-only job, which keeps the two-axis vocabulary
+      -- exactly as it was: a review lens has no spec to be faithful to, and
+      -- asking for a third verdict there would be friction with no payoff.
+      fidelity  TEXT CHECK (fidelity IS NULL OR fidelity IN ('drifted','partial','faithful')),
+      note      TEXT,
+      scored_at TEXT NOT NULL,
+      scored_by TEXT NOT NULL DEFAULT 'claude',
+      -- A table constraint, so it must follow every column. It is what makes
+      -- "nothing came back" and "came back wrong" different rows rather than a
+      -- convention someone has to remember.
+      CHECK ((delivery = 'none') = (quality IS NULL))
+    )`
+
+const DOC_DDL = `CREATE TABLE doc (
+      id         INTEGER PRIMARY KEY,
+      scope      TEXT NOT NULL CHECK (scope IN ('project','machine','agent','job','global')),
+      subject    TEXT,
+      slug       TEXT NOT NULL CHECK (
+                   length(slug) <= 64 AND
+                   slug GLOB '[a-z0-9]*' AND
+                   slug NOT GLOB '*[^a-z0-9-]*'
+                 ),
+      title      TEXT NOT NULL,
+      body       TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      CHECK ((scope IN ('machine','global') AND subject IS NULL) OR
+             (scope IN ('project','agent','job') AND subject IS NOT NULL)),
+      UNIQUE(scope, subject, slug)
+    )`
+
+function createIfNotExists(ddl: string): string {
+  return ddl.replace(/^CREATE TABLE /, 'CREATE TABLE IF NOT EXISTS ')
+}
+
+function migrate(d: Database) {
+  d.exec(createIfNotExists(RUN_DDL))
+  d.exec(createIfNotExists(SCORE_DDL))
+  d.exec(createIfNotExists(DOC_DDL))
+  d.exec(`
+    -- The ratio this whole layer exists to move: Claude tokens spent per unit of
+    -- shipped work. Kept as daily rows because the trend is what matters — the
+    -- absolute number rests on a rough denominator (a one-commit task and a
+    -- forty-commit task count the same).
+    CREATE TABLE IF NOT EXISTS metric (
+      day            TEXT PRIMARY KEY,
+      claude_tokens  INTEGER NOT NULL,
+      cache_read     INTEGER NOT NULL,
+      messages       INTEGER NOT NULL,
+      tasks          INTEGER NOT NULL,
+      -- Spend on the canon repos vs everywhere else. Work outside them ships no
+      -- task key, so counting it against a canon denominator inflates the ratio
+      -- against work it never touched.
+      canon_tokens   INTEGER NOT NULL DEFAULT 0,
+      other_tokens   INTEGER NOT NULL DEFAULT 0,
+      -- Denominators. No single one is trustworthy, so the ratio is reported
+      -- under several and agreement between them is the signal.
+      commits        INTEGER NOT NULL DEFAULT 0,
+      files          INTEGER NOT NULL DEFAULT 0,
+      lines_product  INTEGER NOT NULL DEFAULT 0,
+      lines_test     INTEGER NOT NULL DEFAULT 0,
+      lines_docs     INTEGER NOT NULL DEFAULT 0,
+      lines_config   INTEGER NOT NULL DEFAULT 0,
+      lines_generated INTEGER NOT NULL DEFAULT 0,
+      collected_at   TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS run_job_agent ON run(job, agent);
+    -- Written by the block-agent hook, not by orch itself: every Claude
+    -- subagent spawn, allowed or denied. Subagents are ~18% of Claude spend
+    -- here, and a gate that cannot report what it let through cannot be tuned.
+    CREATE TABLE IF NOT EXISTS spawn (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      at            TEXT NOT NULL,
+      session_id    TEXT,
+      cwd           TEXT,
+      event         TEXT,
+      subagent_type TEXT,
+      description   TEXT,
+      prompt_bytes  INTEGER,
+      decision      TEXT NOT NULL,
+      why           TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS spawn_at ON spawn(at);
+    CREATE INDEX IF NOT EXISTS score_run ON score(run_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS score_one_per_run ON score(run_id);
+    CREATE INDEX IF NOT EXISTS doc_scope_subject ON doc(scope, subject);
+  `)
+
+  d.exec(`
+    -- A relative judgement between two outputs from the same fan-out.
+    CREATE TABLE IF NOT EXISTS duel (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      job           TEXT NOT NULL,
+      winner_run_id INTEGER NOT NULL REFERENCES run(id) ON DELETE CASCADE,
+      loser_run_id  INTEGER NOT NULL REFERENCES run(id) ON DELETE CASCADE,
+      session_id    TEXT,
+      at            TEXT NOT NULL,
+      CHECK (winner_run_id <> loser_run_id),
+      UNIQUE (winner_run_id, loser_run_id)
+    );
+    CREATE INDEX IF NOT EXISTS duel_job ON duel(job);
+
+    -- A second reading of an old score, kept apart so measuring the scorer can
+    -- never rewrite the verdict the router actually learned from.
+    CREATE TABLE IF NOT EXISTS calibration (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id     INTEGER NOT NULL REFERENCES run(id) ON DELETE CASCADE,
+      delivery   TEXT NOT NULL CHECK (delivery IN ('none','partial','full')),
+      quality    TEXT CHECK (quality IN ('wrong','mixed','right')),
+      fidelity   TEXT CHECK (fidelity IS NULL OR fidelity IN ('drifted','partial','faithful')),
+      at         TEXT NOT NULL,
+      session_id TEXT,
+      CHECK ((delivery = 'none') = (quality IS NULL))
+    );
+
+    -- A design decision a worker refused to make on its own.
+    --
+    -- This table is the entire reason implementation can be delegated at all.
+    -- The standing objection to fanning out implementation is that parallel
+    -- workers make conflicting IMPLICIT decisions; the word doing the work
+    -- there is 'implicit'. A question recorded here is a decision that has been
+    -- made explicit and routed to the one place holding the whole design, which
+    -- is what turns "several agents guessing" into "several agents building to
+    -- one architect's rulings".
+    CREATE TABLE IF NOT EXISTS question (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id      INTEGER NOT NULL REFERENCES run(id) ON DELETE CASCADE,
+      asked_at    TEXT NOT NULL,
+      question    TEXT NOT NULL,
+      -- What the worker thinks the choices are, and which it would take. Asked
+      -- for because a question with no proposed answer makes the architect do
+      -- the reading the delegation was meant to avoid — and because a worker
+      -- that can name the options has usually understood the problem, which is
+      -- itself worth seeing.
+      options     TEXT,
+      recommendation TEXT,
+      why         TEXT,
+      answer      TEXT,
+      answered_at TEXT,
+      -- Which session ruled. Same reasoning as score.scored_by: a ruling is a
+      -- judgement, and an unattributed judgement cannot be audited.
+      answered_by TEXT
+    );
+    -- The projects this machine works on, as data rather than as code.
+    --
+    -- Everything here used to know four repository names and one person's home
+    -- directory. That is not wrong for one machine and makes the tool unusable
+    -- by anyone else: you cannot adopt a router whose notion of "a project" is
+    -- somebody else's filesystem.
+    CREATE TABLE IF NOT EXISTS project (
+      id       INTEGER PRIMARY KEY AUTOINCREMENT,
+      name     TEXT NOT NULL UNIQUE,
+      path     TEXT NOT NULL,
+      -- Coarse and SHARED on purpose: its job is to be the same string for two
+      -- projects an agent would find similar, so evidence about one is evidence
+      -- about the other. A precise per-project label would be an id with extra
+      -- steps.
+      stack    TEXT,
+      canon    INTEGER NOT NULL DEFAULT 1,
+      -- A blob, because what a project must declare is not knowable in advance
+      -- — a tracker's status vocabulary, a trunk branch name, a colour — and
+      -- each of those as a column is another thing the code has to know about.
+      settings TEXT
+    );
+    -- WHAT STOPPED A WORKER VERIFYING ITS WORK.
+    --
+    -- Separate from the question table, because they are answered by different
+    -- people:
+    -- a question needs the architect and the worker waits; a blocker needs the
+    -- ENVIRONMENT and the worker carries on without it. A blocker therefore
+    -- arrives alongside a COMPLETED run, which is exactly why nothing was
+    -- catching them — the run looked fine.
+    --
+    -- Four review runs in one session reported, in prose nobody could query,
+    -- that they could not run anything: a denied Docker socket, no PHP on the
+    -- host, a missing native binding. One downgraded its whole test verdict to
+    -- static review because of it. A blocker capping every review on this
+    -- machine looked identical to no blocker at all.
+    CREATE TABLE IF NOT EXISTS blocker (
+      id       INTEGER PRIMARY KEY AUTOINCREMENT,
+      run_id   INTEGER NOT NULL REFERENCES run(id) ON DELETE CASCADE,
+      at       TEXT NOT NULL,
+      what     TEXT NOT NULL,
+      why      TEXT,
+      impact   TEXT,
+      -- 'declared' came from the worker's structured reply; 'detected' was
+      -- recognised in its prose. Kept apart for the same reason measured and
+      -- claimed facts are: one is the worker's own account and the other is our
+      -- reading of it, and a reader deserves to know which.
+      source   TEXT NOT NULL CHECK (source IN ('declared','detected')),
+      -- A stable name for the KIND of blocker, so recurrence is countable
+      -- across runs, agents and projects. That count is the whole point: one
+      -- denied socket is an anecdote, forty is a machine to fix.
+      kind     TEXT
+    );
+    CREATE INDEX IF NOT EXISTS blocker_run ON blocker(run_id);
+    CREATE INDEX IF NOT EXISTS blocker_kind ON blocker(kind, at);
+    CREATE INDEX IF NOT EXISTS question_run ON question(run_id);
+    -- Open questions, which is the only query the inbox actually runs.
+    CREATE INDEX IF NOT EXISTS question_open ON question(answered_at) WHERE answered_at IS NULL;
+    CREATE TABLE IF NOT EXISTS schema_meta (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+  `)
+
+  migrateScoreToMatrix(d)
+  addColumn(d, 'score', 'fidelity', 'TEXT')
+
+  // The status DEFAULT and CHECK above apply to databases created from here on.
+  // An existing one keeps the old `DEFAULT 'ok'` and no CHECK: SQLite can only
+  // change either by rebuilding the table, and `score.run_id` cascades on
+  // delete, so a rebuild would have to drop the foreign key and put every score
+  // at risk to close a hole that run() has never actually fallen through — it
+  // has always passed status explicitly. Not worth the trade on a live file.
+
+  // Added after the table shipped, so existing databases need them grafted on.
+  addColumn(d, 'run', 'vendor_cost_usd', 'REAL')
+  addColumn(d, 'run', 'probe', 'INTEGER NOT NULL DEFAULT 0')
+  addColumn(d, 'run', 'failure_kind', 'TEXT')
+  for (const [c, decl] of [
+    ['canon_tokens', 'INTEGER NOT NULL DEFAULT 0'], ['other_tokens', 'INTEGER NOT NULL DEFAULT 0'],
+    ['commits', 'INTEGER NOT NULL DEFAULT 0'], ['files', 'INTEGER NOT NULL DEFAULT 0'],
+    ['lines_product', 'INTEGER NOT NULL DEFAULT 0'], ['lines_test', 'INTEGER NOT NULL DEFAULT 0'],
+    ['lines_docs', 'INTEGER NOT NULL DEFAULT 0'], ['lines_config', 'INTEGER NOT NULL DEFAULT 0'],
+    ['lines_generated', 'INTEGER NOT NULL DEFAULT 0'],
+  ] as const) addColumn(d, 'metric', c, decl)
+}
+
+/**
+ * Move a single-verdict score table onto the two axes.
+ *
+ * Runs once, on a database that still has the `verdict` column. The mapping is
+ * mechanical and preserves every weight exactly (see WEIGHT), so no agent's
+ * standing moves as a result of the migration itself.
+ *
+ * `unusable` becomes a delivery failure, which is what it always meant. The one
+ * thing that is NOT mechanical: a `bad` verdict whose own note says nothing came
+ * back is a delivery failure that had nowhere else to go, because the only
+ * vocabulary offered at the point of scoring was good/partial/bad. Those are
+ * corrected from the note rather than migrated as quality judgements, and the
+ * test for it is deliberately narrow — the note has to say so in as many words.
+ * Anything an existing note does not settle is left alone, and was reviewed by
+ * hand: run 264 moved to partial/right on the strength of its own note, and run
+ * 3 was left for the author to judge. There is no command for this — it was a
+ * one-time migration, and inventing a subcommand to justify a sentence would be
+ * the wrong way round.
+ */
+function migrateScoreToMatrix(d: Database) {
+  const cols = d.query(`PRAGMA table_info(score)`).all() as { name: string }[]
+  if (!cols.some((c) => c.name === 'verdict')) return  // already migrated
+  if (cols.some((c) => c.name === 'delivery')) return  // half-done; leave it alone
+
+  d.exec('PRAGMA foreign_keys = OFF')
+  d.exec('BEGIN EXCLUSIVE')
+  try {
+    d.exec(`
+      CREATE TABLE score_new (
+        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id    INTEGER NOT NULL REFERENCES run(id) ON DELETE CASCADE,
+        delivery  TEXT NOT NULL CHECK (delivery IN ('none','partial','full')),
+        quality   TEXT CHECK (quality IN ('wrong','mixed','right')),
+        note      TEXT,
+        scored_at TEXT NOT NULL,
+        scored_by TEXT NOT NULL DEFAULT 'claude',
+        CHECK ((delivery = 'none') = (quality IS NULL))
+      );
+      INSERT INTO score_new (id, run_id, delivery, quality, note, scored_at, scored_by)
+      SELECT id, run_id,
+             CASE
+               WHEN verdict = 'unusable' THEN 'none'
+               -- A verdict whose note says nothing came back. Narrow on purpose.
+               WHEN note LIKE '%nothing usable%'
+                 OR note LIKE '%zero output%'
+                 OR note LIKE '%no findings at all%' THEN 'none'
+               ELSE 'full'
+             END,
+             CASE
+               WHEN verdict = 'unusable' THEN NULL
+               WHEN note LIKE '%nothing usable%'
+                 OR note LIKE '%zero output%'
+                 OR note LIKE '%no findings at all%' THEN NULL
+               WHEN verdict = 'good'    THEN 'right'
+               WHEN verdict = 'partial' THEN 'mixed'
+               ELSE 'wrong'
+             END,
+             note, scored_at, scored_by
+      FROM score;
+      DROP TABLE score;
+    `)
+    d.exec('ALTER TABLE score_new RENAME TO score')
+    d.exec(`
+      CREATE INDEX IF NOT EXISTS score_run ON score(run_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS score_one_per_run ON score(run_id);
+    `)
+    d.exec('COMMIT')
+  } catch (e) {
+    d.exec('ROLLBACK')
+    throw e
+  } finally {
+    d.exec('PRAGMA foreign_keys = ON')
+  }
+}
+
+/** Columns added after the first schema shipped; SQLite has no IF NOT EXISTS for these. */
+function addColumn(d: Database, table: string, col: string, decl: string) {
+  const cols = d.query(`PRAGMA table_info(${table})`).all() as { name: string }[]
+  if (!cols.some((c) => c.name === col)) d.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`)
+}
+
+/**
+ * Why a collided output file cannot be routing evidence.
+ *
+ * The filename used to be `${Date.now()}-${agent}-${job}`, so runs that
+ * started in the same millisecond with the same agent and job wrote one
+ * file and the last to finish overwrote the rest. Commit 44f2db3 named
+ * files after the run id; the damage that remains is historical. Within a
+ * colliding group we cannot tell which run's output survived, so every
+ * member is excluded rather than guessing a winner.
+ */
+export const SHARED_OUTPUT_REASON =
+  'shared an output file with other runs; a clock-based name collision destroyed all but one, and we cannot tell which survived'
+
+/**
+ * Stamp every run whose output_path is shared with at least one other.
+ *
+ * Idempotent, and never overwrites a reason that is already there: a
+ * person who excluded a run for a different reason keeps their words.
+ * Returns how many rows this call actually wrote, so a backfill can be
+ * counted rather than guessed.
+ */
+export function excludeSharedOutputRuns(d: Database = db()): number {
+  const r = d.query(
+    `UPDATE run SET evidence_excluded = ?
+      WHERE evidence_excluded IS NULL
+        AND output_path IN (
+          SELECT output_path FROM run
+           WHERE output_path IS NOT NULL
+           GROUP BY output_path
+          HAVING COUNT(*) > 1
+        )`,
+  ).run(SHARED_OUTPUT_REASON)
+  return r.changes
+}
+
+export const nowIso = () => new Date().toISOString()
+
+/**
+ * Which Claude session made a call. Recorded so a session can be shown its own
+ * unscored backlog: nobody else can judge whether an answer was useful, because
+ * nobody else read it.
+ *
+ * CLAUDE_CODE_SESSION_ID is the one that is always set, and is the one that
+ * identifies a session uniquely. The two that used to be read here do not do
+ * that job:
+ *
+ *   - CLAUDE_SESSION_ID does not exist. It never has; the fallback was dead.
+ *   - CLAUDE_CODE_BRIDGE_SESSION_ID is set only while Remote Control is
+ *     connected, and is SHARED between sessions on the same bridge. Preferring
+ *     it recorded 26 of 66 runs with no session at all, and filed runs from a
+ *     concurrent session onto this one's backlog — which is how a delegated
+ *     agent came to be asked to score, and did score, work it had never read.
+ *
+ * The bridge id is still worth having for a claude.ai link, but it identifies a
+ * connection, not a session, so it is only a fallback.
+ */
+export const sessionId = (): string | null =>
+  process.env.CLAUDE_CODE_SESSION_ID ?? process.env.CLAUDE_CODE_BRIDGE_SESSION_ID ?? null
+
+/**
+ * What "unscored" means, in one place.
+ *
+ * A run is owed a judgement only if it produced an answer somebody could read:
+ * it succeeded, it is not a calibration probe, and nobody has judged it. A
+ * failed run is not owed one — failing is already an implicit `delivery=none` —
+ * and neither is a run still in flight.
+ *
+ * `orch doctor` and the dashboard card each subtracted a total score count from
+ * a total run count instead, which counts probes, in-flight runs, failures and
+ * abandoned rows as debt. They reported 28 unscored where `orch pending` — the
+ * command that actually tells you what to do about it — reported none.
+ */
+/**
+ * `parent_run_id IS NULL` is what keeps a conversation one thing to judge.
+ *
+ * A worker that asks two questions produces three rows, and only the first is
+ * the unit of work — the other two are turns inside it. Asking for a verdict on
+ * each would demand three judgements for one implementation, and would let an
+ * agent reach the routing threshold by being inquisitive rather than by being
+ * good. The root row carries the chain's outcome (see the roll-up in run.ts),
+ * so scoring the root scores the whole thing.
+ */
+/**
+ * Owed a judgement: never scored, OR scored before the conversation moved on.
+ *
+ * The second half was missing and it let the earliest turn win by accident. A
+ * chain is one unit of work and takes one verdict, so a session that scored a
+ * root after its first turn — faithful, it had stopped and asked — kept that
+ * verdict when turn two drifted and turn three corrected it. The drift became
+ * invisible to the router, not because anyone judged it kindly but because
+ * nothing asked again.
+ *
+ * Scores were already mutable (`ON CONFLICT DO UPDATE`), so the fix is not to
+ * allow re-scoring but to ASK for it: a verdict recorded before the chain's
+ * latest turn finished is stale, and stale is a kind of unscored.
+ */
+export const UNSCORED_WHERE =
+  `r.status = 'ok' AND COALESCE(r.probe, 0) = 0 AND r.parent_run_id IS NULL
+   AND COALESCE((SELECT c.status FROM run c WHERE c.parent_run_id = r.id
+                  ORDER BY c.turn DESC LIMIT 1), r.status) <> 'running'
+   AND (s.delivery IS NULL
+        OR s.scored_at < (SELECT MAX(COALESCE(c.started_at, ''))
+                            FROM run c WHERE c.parent_run_id = r.id))`
+
+/** Runs this session made that nobody has judged. */
+export function pendingForSession(sid: string | null) {
+  if (!sid) return []
+  return db().query(
+    `SELECT r.id, r.agent, r.job, r.repo, COALESCE(r.label, r.prompt_head) AS prompt_head
+       FROM run r LEFT JOIN score s ON s.run_id = r.id
+      WHERE r.session_id = ? AND ${UNSCORED_WHERE}
+      ORDER BY r.id`,
+  ).all(sid) as { id: number; agent: string; job: string; repo: string | null; prompt_head: string }[]
+}
+
+/** How many runs are owed a judgement, by the same rule, across every session. */
+export function unscoredCount(sinceIso?: string): number {
+  return (db().query(
+    `SELECT COUNT(*) n FROM run r LEFT JOIN score s ON s.run_id = r.id
+      WHERE ${UNSCORED_WHERE}${sinceIso ? ' AND r.started_at >= ?' : ''}`,
+  ).get(...(sinceIso ? [sinceIso] : [])) as { n: number }).n
+}
+
+/**
+ * A process that died mid-run leaves its row at 'running' for ever. Anything
+ * older than this is treated as abandoned rather than live, so the dashboard
+ * shows what is actually in flight.
+ */
+/**
+ * Raised from 30 minutes when jobs gained their own bounds.
+ *
+ * Every bound must sit below this, or a run still working is swept out from
+ * under a live process — which is why the suite asserts it. `implement` runs to
+ * 45 minutes because building and then verifying a real change takes longer
+ * than any review does.
+ *
+ * The cost of raising it is small: `reapStale` reaps a dead pid immediately
+ * whatever the age, so this cutoff only governs rows whose pid is unknown or
+ * recycled, and those are the cases where waiting longer is the safer error.
+ */
+export const STALE_AFTER_MS = 60 * 60 * 1000
+
+/** Test whether a recorded worker process still exists without touching it. */
+export function pidAlive(pid: number | null): boolean {
+  if (!pid) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * How long a pid-less `(pending)` row may sit before it is abandoned bootstrap.
+ *
+ * detach() inserts the reserved row, then spawns the worker, then records the
+ * pid. A spawn error or a parent death in that gap leaves agent='(pending)',
+ * status='running', no pid. That is not an agent run, and waiting for
+ * STALE_AFTER_MS classified those as stale/interrupted. After this bound they
+ * are failed/harness instead.
+ */
+export const PENDING_BOOTSTRAP_MS = 60_000
+
+/**
+ * A run only writes its terminal state on the normal path, so a process that is
+ * killed — or whose session ends — leaves its row claiming to be live for ever.
+ * Those rows inflate "in flight" and hide in `--unscored`, so they are swept to
+ * a distinct status rather than silently counted as either running or failed.
+ *
+ * Liveness is checked by PID where one was recorded — a dead process is dead
+ * now, not in thirty minutes. The age cutoff remains as a fallback for rows
+ * written before PIDs were stored, and for a PID that has been recycled.
+ *
+ * Returns how many were swept. Called opportunistically on open: cheap, and it
+ * means no separate cron has to remember.
+ */
+export function reapStale(d: Database = db()): number {
+  const cutoff = new Date(Date.now() - STALE_AFTER_MS).toISOString()
+  const bootstrapCutoff = new Date(Date.now() - PENDING_BOOTSTRAP_MS).toISOString()
+  const rows = d
+    .query(`SELECT id, pid, agent, started_at FROM run WHERE status='running'`)
+    .all() as { id: number; pid: number | null; agent: string; started_at: string }[]
+
+  const dead: number[] = []
+  const abandonedBootstrap: number[] = []
+  for (const r of rows) {
+    // A pid-less `(pending)` row is abandoned bootstrap, not an agent run.
+    // Checked before the hour cutoff so these are failed/harness rather than
+    // waiting for stale/interrupted.
+    if (!r.pid && r.agent === '(pending)' && r.started_at < bootstrapCutoff) {
+      abandonedBootstrap.push(r.id)
+      continue
+    }
+    // The age cutoff applies whatever the pid says. A pid is only evidence that
+    // SOME process is alive, not that it is still ours: pids are recycled, and a
+    // row old enough to be past the cutoff pointing at a live pid would
+    // otherwise stay `running` for ever on the strength of an unrelated
+    // process. Every agent's timeout is set below the cutoff, so a run that is
+    // genuinely still working always writes its own terminal state first.
+    if (r.started_at < cutoff) { dead.push(r.id); continue }
+    // signal 0 tests existence without touching the process.
+    if (r.pid && !pidAlive(r.pid)) dead.push(r.id)
+  }
+  if (abandonedBootstrap.length) {
+    d.query(
+      `UPDATE run SET status='failed', failure_kind='harness',
+              error='the worker process never started'
+        WHERE id IN (${abandonedBootstrap.map(() => '?').join(',')})`,
+    ).run(...abandonedBootstrap)
+  }
+  if (dead.length) {
+    // Stamped `interrupted`, which puts these under the same NOT_EVIDENCE rule as
+    // an exit-143 kill instead of leaving routing a second concept to know about.
+    //
+    // A reaped row can ONLY be an external kill, and the two facts that make that
+    // airtight are both already enforced: every agent's timeout is held below
+    // STALE_AFTER_MS (asserted in the suite), so a genuine hang is caught by the
+    // agent's own timer and recorded as `timeout` - which IS evidence - and
+    // run()'s try/finally writes a terminal row on any normal exit and on
+    // SIGTERM. Reaching here means neither could run: SIGKILL, or the parent's
+    // process group going down and taking the child with it.
+    //
+    // Run 521 is the worked example. A delegation in this very session was killed
+    // by the calling harness's command timeout and landed here - a fact about the
+    // caller, charged until now to qwen-local.
+    d.query(
+      `UPDATE run SET status='stale', failure_kind='interrupted',
+              error='abandoned: process gone, no terminal state recorded'
+        WHERE id IN (${dead.map(() => '?').join(',')})`,
+    ).run(...dead)
+  }
+  return dead.length + abandonedBootstrap.length
+}
+
+export type Delivery = 'none' | 'partial' | 'full'
+export type Quality = 'wrong' | 'mixed' | 'right'
+/** Did it build what it was asked to build, or something it decided on instead? */
+export type Fidelity = 'drifted' | 'partial' | 'faithful'
+
+/**
+ * What each cell of the matrix is worth to the router.
+ *
+ * Read down the rows: a run that never delivered is NEGATIVE, not merely zero,
+ * because it is a different kind of failure from a wrong answer. A wrong answer
+ * means the agent engaged with the job and got it wrong — it stays a reasonable
+ * candidate that happens to be weaker. Nothing arriving means a plumbing or
+ * capability mismatch, and that should actively push routing away rather than
+ * merely fail to pull it closer, or an agent that CANNOT do a job ranks level
+ * with one that does it badly.
+ *
+ * The three cells the old vocabulary could express keep their exact old values,
+ * so migrating changed no agent's standing:
+ *
+ *     good     -> full/right    1
+ *     partial  -> full/mixed    0.5
+ *     bad      -> full/wrong    0
+ *     unusable -> none         -0.5
+ *
+ * The partial-delivery row is new, and it is the row that was missing. Run 264
+ * lives there: it answered correctly but never fetched the step body it was
+ * told to follow, so the answer was right as far as it went and stopped early.
+ * Under one axis that was `partial`, the same score as an answer that arrived
+ * whole and was half wrong.
+ *
+ * Deliberately coarse. Three levels an axis is what a person can apply the same
+ * way twice, months apart, which matters more than resolution when the whole
+ * corpus is under a hundred judgements and five decide a route.
+ */
+export const WEIGHT: Record<Delivery, Record<Quality, number> | number> = {
+  none: -0.5,
+  partial: { wrong: -0.25, mixed: 0.25, right: 0.5 },
+  full: { wrong: 0, mixed: 0.5, right: 1 },
+}
+
+/**
+ * What FIDELITY costs when it is judged at all.
+ *
+ * A penalty rather than a third dimension of the matrix, and the shape is the
+ * argument. Delivery and quality are genuinely two questions about one event —
+ * did an answer arrive, and was it right — and the matrix exists because their
+ * combinations mean different things. Fidelity is not a third such question; it
+ * is a discount on an answer that is already good. Correct, working, tested
+ * code that solves a different problem is not "half right", it is right about
+ * the wrong thing, and the honest encoding is full marks minus what the drift
+ * cost.
+ *
+ * Half a judgement for total drift, matched to one quality step, because that
+ * is what it is worth: an implementation that solved the wrong problem is about
+ * as useful as one that solved the right problem badly, and both leave the
+ * architect with rework rather than with nothing.
+ *
+ * ESCALATING IS NOT DRIFT. A worker that stopped and asked, then built what it
+ * was told, is `faithful` and pays nothing — that promise is made explicitly in
+ * the preamble the worker reads, and it has to hold here or asking would cost
+ * something after all and nobody would ask.
+ */
+export const FIDELITY_PENALTY: Record<Fidelity, number> = {
+  faithful: 0,
+  partial: -0.25,
+  drifted: -0.5,
+}
+
+/**
+ * What one judgement is worth. Null quality is only legal with delivery 'none'.
+ *
+ * Fidelity is optional and absent for every read-only job, so the two-axis
+ * arithmetic is untouched by its introduction: an existing score with no
+ * fidelity weighs exactly what it always did, and no agent's standing moved
+ * when the column was added.
+ */
+export function weigh(
+  delivery: Delivery,
+  quality: Quality | null,
+  fidelity: Fidelity | null = null,
+): number {
+  const row = WEIGHT[delivery]
+  const base = typeof row === 'number' ? row : row[quality ?? 'wrong']
+  // An unknown level is not a zero penalty. `fidelity` is CHECK-constrained on
+  // a fresh database but was grafted onto existing ones with addColumn, which
+  // cannot carry a constraint — so a typo reaches here, and reading it as
+  // "no penalty" would quietly flatter a run nobody judged.
+  const pen = fidelity ? FIDELITY_PENALTY[fidelity] : 0
+  if (fidelity && pen === undefined) {
+    throw new Error(`unknown fidelity "${fidelity}": expected ${FIDELITY.join(' | ')}`)
+  }
+  /**
+   * NOTHING ARRIVING IS THE FLOOR, and the penalty must not dig under it.
+   *
+   * Unclamped, `partial/wrong/drifted` weighs -0.75 — worse than `none`, which
+   * is -0.5. That inverts the rule this matrix is built on: no answer is
+   * negative because the agent cannot do the job here, while a wrong answer is
+   * merely weak evidence that it engaged. An agent that delivered something
+   * unusable would rank BELOW one that delivered nothing at all, and routing
+   * would prefer the agent that cannot do the job.
+   */
+  return Math.max(base + pen, WEIGHT.none as number)
+}
+
+/** The best a judgement can be, so a percentage has a denominator. */
+export const WEIGHT_MAX = 1
+
+/**
+ * The vocabulary, in one place.
+ *
+ * The previous four-verdict scale had `unusable` in the schema and offered it
+ * nowhere anyone was scoring — the CLI hint, the run-completion line, the Stop
+ * hook and the gate's deny message all said `good|partial|bad`. It was used once
+ * in fifty-eight judgements, and a run that returned 57 bytes of vendor error
+ * was filed as a quality problem because nothing better was on offer. Exported
+ * from here so a level cannot exist that the prompts do not mention.
+ */
+export const DELIVERY: Delivery[] = ['none', 'partial', 'full']
+export const QUALITY: Quality[] = ['wrong', 'mixed', 'right']
+export const FIDELITY: Fidelity[] = ['drifted', 'partial', 'faithful']
+
+/** One short phrase for a column that has room for one. */
+export function label(delivery: Delivery | null, quality: Quality | null): string {
+  if (!delivery) return '—'
+  if (delivery === 'none') return 'no answer'
+  if (delivery === 'partial') return `part/${quality}`
+  return quality ?? '—'
+}
+
+/**
+ * Whether the caller is allowed to judge a run.
+ *
+ * The rule this enforces is already written down — "only that session can judge
+ * it, because only it read the output" — and being written down was not enough.
+ * Two sessions scored each other's runs within one hour on 2026-08-31, both by
+ * the same route: `orch do` prints a run id only when a long run FINISHES, so
+ * during a parallel fan-out you hold outputs with no ids, and "my second block
+ * of ids continues my first" is the obvious inference. It is wrong precisely
+ * when a concurrent session's runs have interleaved into the gap, which is the
+ * case nobody pictures. Neither session had any intent to score another's work.
+ *
+ * That is why `foreign` is worth blocking rather than merely warning: the error
+ * corrects a mistaken belief. Anyone who reads "run 331 was made by session X,
+ * you are session Y" and proceeds anyway is no longer making this mistake.
+ *
+ * The two unknown cases are deliberately NOT blocked. Refusing them would
+ * strand every run recorded before session ids existed, and every run scored
+ * from a plain shell — punishing missing evidence as though it were evidence of
+ * wrongdoing, and pushing people toward the override for honest reasons.
+ */
+export type Judgeability =
+  /** The caller made this run. */
+  | { verdict: 'own' }
+  /** The run predates session recording, or was made without the env var. */
+  | { verdict: 'unattributed' }
+  /** The caller has no session id, so ownership cannot be established. */
+  | { verdict: 'anonymous'; owner: string }
+  /** The run belongs to a different session, and both ids are known. */
+  | { verdict: 'foreign'; owner: string }
+
+export function judgeability(
+  runSession: string | null,
+  caller: string | null,
+): Judgeability {
+  if (!runSession) return { verdict: 'unattributed' }
+  if (!caller) return { verdict: 'anonymous', owner: runSession }
+  return runSession === caller
+    ? { verdict: 'own' }
+    : { verdict: 'foreign', owner: runSession }
+}
+
+export type DuelJobMatrix = {
+  job: string
+  agents: string[]
+  cells: Record<string, Record<string, { wins: number; losses: number }>>
+}
+
+export function parseRunIds(value: string, flagName: string): number[] {
+  if (!value) throw new Error(`${flagName} needs at least one run id`)
+  const ids = value.split(',').map((part) => {
+    if (!/^\d+$/.test(part) || Number(part) < 1) {
+      throw new Error(`${flagName} needs run ids separated by commas, got '${value}'`)
+    }
+    return Number(part)
+  })
+  if (new Set(ids).size !== ids.length) {
+    throw new Error(`${flagName} names the same run more than once`)
+  }
+  return ids
+}
+
+/** Record one winner against every named loser after validating the comparison. */
+export function recordDuels(
+  winnerRunId: number,
+  loserRunIds: number[],
+  callerSession: string | null,
+  at: string,
+  force = false,
+): void {
+  const ids = [winnerRunId, ...loserRunIds]
+  const rows = db().query(
+    `SELECT id, job, session_id FROM run WHERE id IN (${ids.map(() => '?').join(',')})`,
+  ).all(...ids) as { id: number; job: string; session_id: string | null }[]
+  const byId = new Map(rows.map((r) => [r.id, r]))
+  for (const id of ids) {
+    if (!byId.has(id)) throw new Error(`no run ${id}`)
+  }
+  const winner = byId.get(winnerRunId)!
+  for (const loserId of loserRunIds) {
+    if (loserId === winnerRunId) {
+      throw new Error(`run ${winnerRunId} cannot be better than itself`)
+    }
+    const loser = byId.get(loserId)!
+    if (loser.job !== winner.job) {
+      throw new Error(
+        `runs ${winnerRunId} and ${loserId} cannot be compared: ` +
+        `jobs differ (${winner.job} and ${loser.job})`,
+      )
+    }
+  }
+  if (!force) {
+    for (const row of rows) {
+      const owner = judgeability(row.session_id, callerSession)
+      if (owner.verdict === 'foreign') {
+        throw new Error(
+          `run ${row.id} was made by another session - you did not read its output.\n` +
+          `  its session:   ${owner.owner}\n` +
+          `  your session:  ${callerSession}\n\n` +
+          `Both runs in a duel must be scoreable by this session; --force overrides.`,
+        )
+      }
+    }
+  }
+  const insert = db().query(
+    `INSERT INTO duel (job, winner_run_id, loser_run_id, session_id, at)
+     VALUES (?,?,?,?,?) ON CONFLICT(winner_run_id, loser_run_id) DO NOTHING`,
+  )
+  db().transaction(() => {
+    for (const loserId of loserRunIds) {
+      insert.run(winner.job, winnerRunId, loserId, callerSession, at)
+    }
+  })()
+}
+
+/** The directed duel evidence, grouped into one agent-by-agent matrix per job. */
+export function duelMatrices(jobName?: string): DuelJobMatrix[] {
+  const rows = db().query(
+    `SELECT d.job, winner.agent AS winner, loser.agent AS loser, COUNT(*) AS n
+       FROM duel d
+       JOIN run winner ON winner.id = d.winner_run_id
+       JOIN run loser ON loser.id = d.loser_run_id
+      WHERE (? IS NULL OR d.job = ?)
+      GROUP BY d.job, winner.agent, loser.agent
+      ORDER BY d.job, winner.agent, loser.agent`,
+  ).all(jobName ?? null, jobName ?? null) as
+    { job: string; winner: string; loser: string; n: number }[]
+  const jobs = new Map<string, DuelJobMatrix>()
+  for (const row of rows) {
+    let matrix = jobs.get(row.job)
+    if (!matrix) {
+      matrix = { job: row.job, agents: [], cells: {} }
+      jobs.set(row.job, matrix)
+    }
+    for (const agent of [row.winner, row.loser]) {
+      if (!matrix.agents.includes(agent)) matrix.agents.push(agent)
+    }
+  }
+  for (const matrix of jobs.values()) {
+    matrix.agents.sort()
+    for (const a of matrix.agents) {
+      matrix.cells[a] = {}
+      for (const b of matrix.agents) matrix.cells[a]![b] = { wins: 0, losses: 0 }
+    }
+  }
+  for (const row of rows) {
+    const matrix = jobs.get(row.job)!
+    matrix.cells[row.winner]![row.loser]!.wins += row.n
+    matrix.cells[row.loser]![row.winner]!.losses += row.n
+  }
+  return [...jobs.values()]
+}

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.hub-collect</string>
+
+    <!-- One long-lived process that loops, NOT a job launchd respawns on a
+         timer. A 20-second StartInterval would pay bun's startup on every tick
+         to do 300ms of work, and the tracker leg would still need its own
+         slower clock. The loop keeps both cadences in one process. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>__REPO__/bin/hub</string>
+        <string>collect</string>
+        <string>--watch</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- PATH is not inherited under launchd, and the collector shells `orch`,
+         `git` and `bun`. Without this it fails on every tick, silently. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:__HOME__/.local/bin</string>
+        <key>HOME</key>
+        <string>__HOME__</string>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>__REPO__</string>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/hub/collect.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/hub/collect.log</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

@@ -1,0 +1,206 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap");
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-live: var(--live);
+  --color-alarm: var(--alarm);
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+:root {
+  --background: #ffffff;
+  --foreground: #0f0f0e;
+  --card: #ffffff;
+  --card-foreground: #0f0f0e;
+  --popover: #ffffff;
+  --popover-foreground: #0f0f0e;
+  --primary: #0f0f0e;
+  --primary-foreground: #ffffff;
+  --secondary: #ecece7;
+  --secondary-foreground: #0f0f0e;
+  --muted: #ecece7;
+  --muted-foreground: #55534e;
+  --accent: #ecece7;
+  --accent-foreground: #0f0f0e;
+  --destructive: #a81f12;
+  --destructive-foreground: #ffffff;
+  --border: #d2d0c9;
+  --input: #d2d0c9;
+  --ring: #0a5f73;
+  --live: #1a7f4b;
+  --alarm: #a81f12;
+  --radius: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0b0b0a;
+    --foreground: #efede6;
+    --card: #0b0b0a;
+    --card-foreground: #efede6;
+    --popover: #0b0b0a;
+    --popover-foreground: #efede6;
+    --primary: #efede6;
+    --primary-foreground: #0b0b0a;
+    --secondary: #1c1c19;
+    --secondary-foreground: #efede6;
+    --muted: #1c1c19;
+    --muted-foreground: #a5a196;
+    --accent: #1c1c19;
+    --accent-foreground: #efede6;
+    --destructive: #ff7b68;
+    --destructive-foreground: #0b0b0a;
+    --border: #2c2b27;
+    --input: #2c2b27;
+    --ring: #3fc5e8;
+    --live: #4cc98a;
+    --alarm: #ff7b68;
+  }
+}
+
+@layer base {
+  * { border-color: var(--border); }
+  html, body, #root { min-height: 100%; }
+  body {
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font: 12.5px/1.5 "IBM Plex Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, textarea, select { border-radius: 0; font: inherit; }
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  .shadow-sm, .shadow-lg { box-shadow: none; }
+}
+
+@keyframes live-pulse { 50% { opacity: 0.25; } }
+
+@media (prefers-reduced-motion: no-preference) {
+  .live-dot { animation: live-pulse 1.2s ease-in-out infinite; }
+}
+
+@layer components {
+  .page-header {
+    min-height: 56px;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .page-header h1 { font: 600 20px/1.15 "Inter", system-ui, sans-serif; }
+  .page-subtitle { margin-top: 3px; color: var(--muted-foreground); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .page-actions, .window-bar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+  .section-title { margin-top: 24px; margin-bottom: 12px; display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+  .section-title h2 { font: 600 15px/1.35 "Inter", system-ui, sans-serif; }
+  .section-title > span { color: var(--muted-foreground); font-size: 11px; }
+  .stat-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--border); margin-bottom: 24px; }
+  .stat-tile { min-height: 88px; padding: 12px 16px; border-right: 1px solid var(--border); }
+  .stat-tile:last-child { border-right: 0; }
+  .stat-row.two-rows { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .stat-row.two-rows .stat-tile:nth-child(3) { border-right: 0; }
+  .stat-row.two-rows .stat-tile:nth-child(-n+3) { border-bottom: 1px solid var(--border); }
+  .stat-figure { font-size: 28px; line-height: 1.15; font-weight: 600; }
+  .meta { color: var(--muted-foreground); font-size: 11px; }
+  .text-live { color: var(--live); }
+  .live-dot { display: inline-block; width: 6px; height: 6px; flex: none; border-radius: 999px; background: var(--live); }
+  .segmented { display: inline-flex; border: 1px solid var(--border); }
+  .segmented button { height: 32px; padding: 0 10px; border-right: 1px solid var(--border); background: var(--background); font-size: 12px; }
+  .segmented button:last-child { border-right: 0; }
+  .segmented button:hover, .segmented button[aria-pressed="true"] { background: var(--muted); }
+  .empty-state { border: 1px solid var(--border); padding: 32px; text-align: center; color: var(--muted-foreground); }
+  .prose-copy { max-width: 72ch; font-family: "Inter", system-ui, sans-serif; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .data-table-link { position: relative; }
+  .data-table-link .row-link::after { content: ""; position: absolute; inset: 0; }
+  .sign-bar { position: fixed; z-index: 30; right: 0; bottom: 0; left: 208px; border-top: 1px solid var(--border); background: var(--background); padding: 12px 32px; }
+}
+
+@media (max-width: 900px) {
+  .page-header { align-items: flex-start; padding: 10px 0; flex-direction: column; }
+  .page-actions { width: 100%; justify-content: flex-start; }
+  .stat-row { grid-template-columns: 1fr; }
+  .stat-tile { border-right: 0; border-bottom: 1px solid var(--border); }
+  .stat-tile:last-child { border-bottom: 0; }
+  .stat-row.two-rows { grid-template-columns: 1fr; }
+  .stat-row.two-rows .stat-tile { border-right: 0; border-bottom: 1px solid var(--border); }
+  .stat-row.two-rows .stat-tile:last-child { border-bottom: 0; }
+}
+
+/* prose-like markdown: existing variables, mono for code, tight headings, no extra colours */
+.markdown h1, .markdown h2, .markdown h3, .markdown h4, .markdown h5, .markdown h6 {
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 0.6em 0 0.3em;
+}
+.markdown h1 { font-size: 1.2rem; }
+.markdown h2 { font-size: 1.05rem; }
+.markdown h3 { font-size: 1rem; }
+.markdown p, .markdown ul, .markdown ol, .markdown pre, .markdown blockquote, .markdown table {
+  margin: 0.45em 0;
+}
+.markdown ul, .markdown ol { padding-left: 1.4em; }
+.markdown code, .markdown pre {
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+.markdown code {
+  background: var(--muted);
+  padding: 0.1em 0.28em;
+  font-size: 0.9em;
+}
+.markdown pre {
+  background: var(--muted);
+  padding: 0.7em 0.8em;
+  overflow: auto;
+}
+.markdown pre code {
+  background: none;
+  padding: 0;
+}
+.markdown a { color: inherit; text-decoration: underline; }
+.markdown blockquote {
+  border-left: 2px solid var(--border);
+  padding-left: 0.75em;
+}
+.markdown hr { border: 0; border-top: 1px solid var(--border); margin: 0.8em 0; }
+.markdown table { border-collapse: collapse; width: 100%; }
+.markdown th, .markdown td {
+  border: 1px solid var(--border);
+  padding: 0.2em 0.5em;
+  text-align: left;
+}
+.markdown th { font-weight: 600; }
+
+/* Project colour bars, from the register (see ProjectMark in design-system.tsx). */
+.proj { display: inline-block; border-left: 3px solid var(--pc, var(--border)); padding-left: 8px; font-weight: 600; white-space: nowrap; }
+.proj-card { border-left-width: 3px; border-left-color: var(--pc, var(--border)); }
+@media (prefers-color-scheme: dark) {
+  .proj { border-left-color: var(--pc-dark, var(--pc, var(--border))); }
+  .proj-card { border-left-color: var(--pc-dark, var(--pc, var(--border))); }
+}
