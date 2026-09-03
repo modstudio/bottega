@@ -47,6 +47,7 @@ function Filter({ kind, label, options, onOpenChange }: { kind: 'project' | 'age
         onBlur={() => onOpenChange?.(false)}
       >
         <option value="">{label}</option>
+        {value && !options.includes(value) ? <option value={value}>{value} (no matches)</option> : null}
         {options.map((option) => <option key={option} value={option}>{option}</option>)}
       </select>
       <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2" />

@@ -130,12 +130,13 @@ function TaskContent({ name, data }: { name: WorkName; data: TaskData }) {
   const tasks = data.rows.filter((row) => row.key)
   const loose = data.rows.filter((row) => !row.key)
   const filtered = Boolean(window.filters.agent || window.filters.project)
+  const hasRows = data.rows.length > 0
   return <>
     {tasks.length ? <TaskTable rows={tasks} /> : <EmptyState title={filtered ? 'No tasks match these filters.' : name === 'flight' ? 'No work is in flight.' : 'No tasks were completed in this window.'} hint={filtered ? 'Clear the filters or widen the window.' : name === 'flight' ? 'Work appears here when a task becomes active.' : 'Widen the window to see earlier completed work.'} />}
     {loose.length ? <section className="mt-7"><div className="mb-3 flex items-baseline gap-3"><h2 className="font-sans font-semibold">No ticket</h2><span className="text-muted-foreground">work these projects cannot attribute to a task</span></div><LooseTable rows={loose} /></section> : null}
     {data.dropped.length ? <p className="mt-5 max-w-4xl text-muted-foreground"><strong className="text-foreground">Not shown here:</strong> {data.dropped.map((item) => `${item.tasks} task${item.tasks === 1 ? '' : 's'} (${item.engaged}) ${item.reason}`).join('; ')}. In flight means being worked on right now, or marked active in its tracker.</p> : null}
-    {window.filters.agent ? <p className="mt-5 max-w-4xl text-muted-foreground"><strong className="text-foreground">Filtered to tasks {window.filters.agent} worked on.</strong> The rows are the whole task: engaged time is still the union of every agent and session on it, not {window.filters.agent}'s share.</p> : null}
-    <p className="mt-5 max-w-4xl text-muted-foreground"><strong className="text-foreground">Engaged time is the union of every agent's spans, never their sum.</strong> A session waiting on a delegated agent is not idle, and two agents at once did not take twice as long. That is why the estate total above is smaller than these rows added together.</p>
+    {tasks.length && window.filters.agent ? <p className="mt-5 max-w-4xl text-muted-foreground"><strong className="text-foreground">Filtered to tasks {window.filters.agent} worked on.</strong> The rows are the whole task: engaged time is still the union of every agent and session on it, not {window.filters.agent}'s share.</p> : null}
+    {hasRows ? <p className="mt-5 max-w-4xl text-muted-foreground"><strong className="text-foreground">Engaged time is the union of every agent's spans, never their sum.</strong> A session waiting on a delegated agent is not idle, and two agents at once did not take twice as long. That is why the estate total above is smaller than these rows added together.</p> : null}
   </>
 }
 
