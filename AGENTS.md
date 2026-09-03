@@ -71,3 +71,14 @@ session; a scheduled job mutating them behind the author's back would destroy
 more than it fixed. `ops/` refreshes main checkouts only.
 
 **After cloning:** `git config core.hooksPath .githooks`. The commit-msg hook there refuses AI attribution in commit messages; the matching Claude Code hook lives in `orchestrator/hooks/no-attribution.py`.
+
+## Tasks
+
+Work here is tracked in `hub`, and every task carries a `DEV-` key:
+`./bin/hub task list --project bottega`, `hub task new --project bottega --title "..."`.
+Branches and commit subjects cite the key, and `orch do` requires `--key`; work naming
+no key is recorded against the project with no task and the link cannot be recovered.
+
+**The project register is the authority** on key prefixes, worktree recipes and
+per-project notes — `orch project list --json`. Read it before concluding a project
+lacks something.
