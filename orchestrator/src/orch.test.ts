@@ -70,7 +70,7 @@ for (const args of [
 const { db, nowIso, reapStale, pendingForSession, unscoredCount, judgeability, STALE_AFTER_MS,
         PENDING_BOOTSTRAP_MS, WEIGHT, weigh, label, FIDELITY_PENALTY, UNSCORED_WHERE,
         excludeSharedOutputRuns, SHARED_OUTPUT_REASON, applySchema, recordDuels, duelMatrices,
-        parseRunIds } = await import('./db.ts')
+        parseRunIds, recordSessionSeen } = await import('./db.ts')
 const { candidates, weightCase, scoreboard, median, evidenceFor, pick,
         NOISE_BAND, QUALITY_STEP, MIN_SAMPLE, OUTPUT_RESERVE, EVIDENCE_WINDOW,
         STANDING_EXPLORE_RATE } = await import('./route.ts')
@@ -5743,6 +5743,101 @@ describe('a worker that narrates in its own reply shape', () => {
     ].map((value) => JSON.stringify(value)).join('\n'))
     expect(parsed.reply?.summary).toBe('quoted contract-shaped object')
     expect(parsed.contractObjects).toBe(2)
+  })
+})
+
+describe('read-only orchestrator database', () => {
+  const CLI = new URL('cli.ts', import.meta.url).pathname
+
+  const fixture = (withHeartbeat = true) => {
+    const fixtureDir = mkdtempSync(join(tmpdir(), 'orch-readonly-'))
+    const path = join(fixtureDir, 'orch.db')
+    const d = new Database(path)
+    applySchema(d)
+    if (!withHeartbeat) d.exec('DROP TABLE session_seen')
+    d.close()
+    return { fixtureDir, path }
+  }
+
+  const invoke = (path: string, command: 'jobs' | 'inbox') => Bun.spawnSync(
+    [process.execPath, CLI, command],
+    {
+      env: {
+        ...process.env,
+        ORCH_DB: path,
+        ORCH_DEPTH: '0',
+        CLAUDE_CODE_SESSION_ID: 'read-only-test-session',
+      },
+      stdout: 'pipe', stderr: 'pipe',
+    },
+  )
+
+  test('jobs and inbox serve reads without stamping a chmod-444 database', () => {
+    const { fixtureDir, path } = fixture()
+    chmodSync(path, 0o444)
+    try {
+      for (const command of ['jobs', 'inbox'] as const) {
+        const p = invoke(path, command)
+        expect(p.exitCode).toBe(0)
+        expect(p.stderr.toString()).toBe('')
+      }
+      const readonly = new Database(path, { readonly: true })
+      expect(readonly.query('SELECT COUNT(*) n FROM session_seen').get()).toEqual({ n: 0 })
+      readonly.close()
+    } finally {
+      chmodSync(path, 0o644)
+      rmSync(fixtureDir, { recursive: true, force: true })
+    }
+  })
+
+  test('a read-only database missing session_seen still serves jobs and inbox', () => {
+    const { fixtureDir, path } = fixture(false)
+    chmodSync(path, 0o444)
+    try {
+      for (const command of ['jobs', 'inbox'] as const) {
+        const p = invoke(path, command)
+        expect(p.exitCode).toBe(0)
+        expect(p.stderr.toString()).toBe('')
+      }
+      const readonly = new Database(path, { readonly: true })
+      expect(readonly.query(
+        `SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_seen'`,
+      ).get()).toBeNull()
+      readonly.close()
+    } finally {
+      chmodSync(path, 0o644)
+      rmSync(fixtureDir, { recursive: true, force: true })
+    }
+  })
+
+  test('a writable database keeps stamping the current session', () => {
+    const { fixtureDir, path } = fixture()
+    try {
+      for (const command of ['jobs', 'inbox'] as const) {
+        const p = invoke(path, command)
+        expect(p.exitCode).toBe(0)
+        expect(p.stderr.toString()).toBe('')
+      }
+      const writable = new Database(path)
+      expect(writable.query(
+        'SELECT session_id FROM session_seen WHERE session_id=?',
+      ).get('read-only-test-session')).toEqual({ session_id: 'read-only-test-session' })
+      writable.close()
+    } finally {
+      rmSync(fixtureDir, { recursive: true, force: true })
+    }
+  })
+
+  test('a failed heartbeat stamp never propagates', () => {
+    db().exec('DROP TABLE session_seen')
+    try {
+      expect(() => recordSessionSeen('heartbeat-failure-test')).not.toThrow()
+    } finally {
+      db().exec(`CREATE TABLE session_seen (
+        session_id TEXT PRIMARY KEY,
+        last_seen TEXT NOT NULL
+      )`)
+    }
   })
 })
 

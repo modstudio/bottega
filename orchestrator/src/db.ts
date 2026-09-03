@@ -9,6 +9,26 @@ export const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 export const DB_PATH = process.env.ORCH_DB ?? join(ROOT, 'orch.db')
 
 let handle: Database | null = null
+let writable: boolean | null = null
+
+/**
+ * Ask SQLite whether this connection can commit a write. The answer is
+ * process-wide because db() has one process-wide connection, and a failed
+ * probe must not turn every read into another attempted write.
+ */
+function databaseWritable(d: Database): boolean {
+  if (writable !== null) return writable
+  const probe = `__orch_write_probe_${process.pid}`
+  try {
+    // Committing the create matters: on WAL databases SQLite can prepare a
+    // write transaction against a chmod-444 main file and fail only at commit.
+    d.exec(`CREATE TABLE "${probe}" (value INTEGER); DROP TABLE "${probe}";`)
+    writable = true
+  } catch {
+    writable = false
+  }
+  return writable
+}
 
 export function db(): Database {
   if (handle) return handle
@@ -25,19 +45,20 @@ export function db(): Database {
   // lets the file shrink again once a checkpoint can restart it — `orch serve`
   // holds a connection open for hours, and a long-lived reader blocks
   // truncation but not the limit taking effect afterwards.
-  d.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA busy_timeout = 15000;
-    PRAGMA synchronous = NORMAL;
-    PRAGMA foreign_keys = ON;
-    PRAGMA wal_autocheckpoint = 100;
-    PRAGMA journal_size_limit = 1048576;
-  `)
-  applySchema(d)
-  excludeSharedOutputRuns(d)
-  seedProjects(d)
+  d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+  if (databaseWritable(d)) {
+    d.exec(`
+      PRAGMA journal_mode = WAL;
+      PRAGMA synchronous = NORMAL;
+      PRAGMA wal_autocheckpoint = 100;
+      PRAGMA journal_size_limit = 1048576;
+    `)
+    applySchema(d)
+    excludeSharedOutputRuns(d)
+    seedProjects(d)
+  }
   handle = d
-  reapStale(d)
+  if (writable) reapStale(d)
   return d
 }
 
@@ -872,13 +893,19 @@ export const sessionId = (): string | null =>
  */
 export const SESSION_LIVE_MS = 60 * 60 * 1000
 
-/** Stamp once at the CLI boundary, rather than making every database read write. */
+/** Stamp once at the CLI boundary; heartbeat failure must never break a read. */
 export function recordSessionSeen(sid: string | null = sessionId(), at = nowIso()): void {
   if (!sid) return
-  db().query(
-    `INSERT INTO session_seen (session_id, last_seen) VALUES (?, ?)
-     ON CONFLICT(session_id) DO UPDATE SET last_seen = excluded.last_seen`,
-  ).run(sid, at)
+  const d = db()
+  if (!writable) return
+  try {
+    d.query(
+      `INSERT INTO session_seen (session_id, last_seen) VALUES (?, ?)
+       ON CONFLICT(session_id) DO UPDATE SET last_seen = excluded.last_seen`,
+    ).run(sid, at)
+  } catch {
+    // Liveness is a convenience signal. A failed stamp cannot break a command.
+  }
 }
 
 /**

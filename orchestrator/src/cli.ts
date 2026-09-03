@@ -1386,16 +1386,25 @@ switch (cmd) {
     const sid = sessionId()
     const mine = !has('all')
     const cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString()
+    const hasSessionSeen = Boolean(db().query(
+      `SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_seen'`,
+    ).get())
+    const seenJoin = hasSessionSeen
+      ? 'LEFT JOIN session_seen seen ON seen.session_id = r.session_id'
+      : ''
+    const sessionLive = hasSessionSeen
+      ? 'CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END'
+      : '0'
     const allRows = db().query(
       `SELECT q.id, q.run_id, q.asked_at, q.question, q.options, q.recommendation, q.why,
               r.agent, r.job, r.repo, r.status, r.session_id,
               COALESCE(r.parent_run_id, r.id) root_id,
-              CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END session_live
+              ${sessionLive} session_live
          FROM question q JOIN run r ON r.id = q.run_id
-         LEFT JOIN session_seen seen ON seen.session_id = r.session_id
+         ${seenJoin}
         WHERE q.answered_at IS NULL
         ORDER BY q.run_id, q.id`,
-    ).all(cutoff) as {
+    ).all(...(hasSessionSeen ? [cutoff] : [])) as {
       id: number; run_id: number; asked_at: string; question: string; options: string | null
       recommendation: string | null; why: string | null
       agent: string; job: string; repo: string | null; status: string; session_id: string | null
