@@ -978,6 +978,40 @@ export function assertCallerAncestry(cwd: string, worktree: Worktree): void {
   }
 }
 
+export type CallerDrift = { callerHead: string; base: string; baseRef: string }
+
+/**
+ * Detect the ancestry mismatch before a repository run is dispatched.
+ *
+ * Project-owned worktree creation may choose a fresher floor than the caller's
+ * checkout. For a recipe that floor is declared directly. A command-based tool
+ * owns the choice, so its best pre-creation proxy is the registered trunk's
+ * upstream: that is the ref fetch advances while leaving the caller behind.
+ * Plain git worktrees need no preview because their default floor is HEAD.
+ */
+export function callerDrift(cwd: string, baseRef?: string): CallerDrift | null {
+  const project = projectAt(cwd)
+  const tool = project?.settings.worktree
+  if (!project || !tool) return null
+
+  let ref = baseRef
+  if (!ref && tool.recipe?.baseRef) ref = tool.recipe.baseRef
+  if (!ref && tool.create) {
+    const trunk = project.settings.trunk
+      ?? gitOk(['symbolic-ref', '--short', 'HEAD'], project.path)
+    if (!trunk) return null
+    ref = gitOk(['rev-parse', '--abbrev-ref', `${trunk}@{upstream}`], project.path)
+      ?? `origin/${trunk}`
+  }
+  if (!ref) return null
+
+  const base = gitOk(['rev-parse', '--verify', ref], project.path)
+  const callerHead = gitOk(['rev-parse', 'HEAD'], cwd)
+  if (!base || !callerHead) return null
+  if (gitOk(['merge-base', '--is-ancestor', base, callerHead], cwd) !== null) return null
+  return { callerHead, base, baseRef: ref }
+}
+
 /** Non-ignored uncommitted paths, including untracked files. False if git cannot answer. */
 export function checkoutHasUncommittedWork(cwd: string): boolean {
   return Boolean(gitOk(['status', '--porcelain', '--untracked-files=all'], cwd))

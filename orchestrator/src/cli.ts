@@ -18,7 +18,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
 import { projectAt, projectByName, projects } from './projects.ts'
 import { resolveBase, repoRootOf, removeBranch, unmergedBranch,
-         checkoutHasUncommittedWork } from './worktree.ts'
+         checkoutHasUncommittedWork, callerDrift } from './worktree.ts'
 import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
 import { WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE, contractConflicts } from './contract.ts'
 import { collectResult, collectWait, resolveFailover, failoverSummary } from './collect.ts'
@@ -97,6 +97,32 @@ function evidenceNote(row: { evidence_excluded: string | null }): string {
 /** A run id is a machine interface: callers feed it back to wait/result. */
 function printRunId(id: number): void {
   process.stdout.write(`${id}\n`)
+}
+
+/**
+ * Warn once per session and drift state, even when a fan-out starts several
+ * independent `orch do` processes. The marker is runtime state beside run
+ * artifacts, not repository state, and `wx` makes the first process the only
+ * one that prints.
+ */
+function warnCallerDrift(cwd: string, baseRef?: string): void {
+  const drift = callerDrift(cwd, baseRef)
+  if (!drift) return
+  const key = createHash('sha256').update(JSON.stringify([
+    sessionId() ?? 'no-session', realpathSync(cwd), drift.callerHead, drift.base,
+  ])).digest('hex')
+  const dir = join(RUNS_DIR, '.signals')
+  try {
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, `caller-drift-${key}`), '', { flag: 'wx' })
+  } catch {
+    return
+  }
+  console.error(
+    `! caller checkout HEAD ${drift.callerHead} is behind or diverged from ` +
+    `${drift.baseRef} (${drift.base}).\n` +
+    '  Update the caller checkout before dispatch; repository runs from it will be refused.',
+  )
 }
 
 async function follow(id: number, quiet: boolean, exitOnFailure = true): Promise<string> {
@@ -973,6 +999,7 @@ switch (cmd) {
       resolveBase(process.cwd(), base)
     }
     preflight(jobName, process.cwd(), flag('seed'), flag('key'), base)
+    if (requested.needs.readsRepo) warnCallerDrift(process.cwd(), base)
     const schema = flag('schema')
     // An unpinned run may route to Codex, so its schema has to be suitable
     // before detach() claims a row. An explicitly pinned non-Codex agent keeps
@@ -2779,6 +2806,7 @@ switch (cmd) {
     // reading a php verdict as a node one.
     const jobName = argv[1]
     if (!jobName) usage()
+    if (job(jobName).needs.readsRepo) warnCallerDrift(process.cwd())
     const { stackAt } = await import('./projects.ts')
     const { evidenceFor } = await import('./route.ts')
     const stack = flag('stack') ?? stackAt(process.cwd())

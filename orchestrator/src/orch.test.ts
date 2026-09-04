@@ -306,7 +306,7 @@ const { ask } = await import('./ask.ts')
 const { orphanSafety, repoRootOf, createWorktree, createWithTool, resolveBase, fillTool,
         seedArgv, shellWords, worktreeGitDir, prepareWorktreeObjects, prepareSharedRefGuard,
         carryWorkingState, withWorktreeCreateLock, withProjectLock, projectLockState,
-        unmergedBranch, assertCallerAncestry, checkoutHasUncommittedWork } = await import('./worktree.ts')
+        unmergedBranch, assertCallerAncestry, checkoutHasUncommittedWork, callerDrift } = await import('./worktree.ts')
 const { landingStatus, resolveLandingBranch } = await import('./landing.ts')
 const { AGENTS, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
@@ -3068,6 +3068,57 @@ describe('detached run collection', () => {
     const distinct = orch('pick', 'review-lens', '--distinct-from', String(prior))
     expect(distinct.code).toBe(0)
     expect(distinct.out).toContain('review-lens -> codex')
+  })
+
+  test('a drifted caller is signalled once before a fan-out, while an up-to-date one is quiet', () => {
+    mkdirSync(join(dir, 'early-drift-signal'))
+    const repo = realpathSync(join(dir, 'early-drift-signal'))
+    const git = (args: string[], stdin?: string) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+        stdin: stdin === undefined ? undefined : new TextEncoder().encode(stdin),
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    git(['init', '-b', 'main'])
+    git(['commit', '--allow-empty', '-m', 'base'])
+    const head = git(['rev-parse', 'HEAD'])
+    git(['update-ref', 'refs/remotes/origin/main', head])
+    upsertProject({
+      name: 'early-drift', path: repo,
+      settings: {
+        trunk: 'main',
+        worktree: { create: 'scripts/worktree create {branch}', branch: 'task/{id}' },
+      },
+    })
+
+    const pick = () => {
+      const p = Bun.spawnSync([process.execPath, CLI, 'pick', 'implement'], {
+        cwd: repo, stdout: 'pipe', stderr: 'pipe',
+        env: {
+          ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: 'early-drift-session',
+        },
+      })
+      return { code: p.exitCode, err: p.stderr.toString() }
+    }
+
+    const current = pick()
+    expect(current.code).toBe(0)
+    expect(current.err).not.toContain('caller checkout HEAD')
+
+    const tree = git(['rev-parse', 'HEAD^{tree}'])
+    const newer = git(['commit-tree', tree, '-p', head], 'newer base\n')
+    git(['update-ref', 'refs/remotes/origin/main', newer])
+    expect(callerDrift(repo)).toEqual({ callerHead: head, base: newer, baseRef: 'origin/main' })
+    const first = pick()
+    const sibling = pick()
+    expect(first.code).toBe(0)
+    expect(first.err).toContain(`caller checkout HEAD ${head} is behind or diverged`)
+    expect(first.err).toContain(`origin/main (${newer})`)
+    expect(sibling.code).toBe(0)
+    expect(sibling.err).not.toContain('caller checkout HEAD')
   })
 
   test('pick shares do validation for fan-out exclusions', () => {
