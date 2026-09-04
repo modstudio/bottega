@@ -178,6 +178,9 @@ export function applySchema(d: Database): void {
   addColumn(d, 'run', 'mcp_error', 'TEXT')
   addColumn(d, 'run', 'schema_path', 'TEXT')
   addColumn(d, 'run', 'docs_injected', 'INTEGER')
+  // Stable machine identity for findings-producing review jobs. A display label
+  // is deliberately not used as a calibration key.
+  addColumn(d, 'run', 'lens', 'TEXT')
   // A per-run secret, so the globally-registered ask server can tell a real
   // worker from any other process that launched it with a guessed run id. A
   // run id is an identifier and is printed in every listing; it was never a
@@ -418,6 +421,8 @@ const RUN_DDL = `CREATE TABLE run (
       prompt_bytes  INTEGER NOT NULL,
       prompt_head   TEXT NOT NULL,
       label         TEXT,
+      -- Stable calibration identity for findings-producing review jobs.
+      lens          TEXT,
       latency_ms    INTEGER,
       exit_code     INTEGER,
       output_bytes  INTEGER,
@@ -727,6 +732,40 @@ function migrate(d: Database) {
     CREATE INDEX IF NOT EXISTS blocker_run ON blocker(run_id);
     CREATE INDEX IF NOT EXISTS blocker_kind ON blocker(kind, at);
     CREATE INDEX IF NOT EXISTS question_run ON question(run_id);
+    CREATE TABLE IF NOT EXISTS review (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      recorded_at TEXT NOT NULL,
+      completed_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS review_lens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      review_id INTEGER NOT NULL REFERENCES review(id) ON DELETE CASCADE,
+      run_id INTEGER NOT NULL UNIQUE REFERENCES run(id) ON DELETE CASCADE,
+      lens TEXT NOT NULL,
+      agent TEXT NOT NULL,
+      model TEXT,
+      tree_inspected TEXT NOT NULL,
+      standards_read TEXT NOT NULL,
+      files_covered TEXT NOT NULL,
+      commands_run TEXT NOT NULL,
+      could_not_verify TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS review_finding (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      review_id INTEGER NOT NULL REFERENCES review(id) ON DELETE CASCADE,
+      review_lens_id INTEGER NOT NULL REFERENCES review_lens(id) ON DELETE CASCADE,
+      ordinal INTEGER NOT NULL,
+      severity TEXT NOT NULL,
+      location TEXT NOT NULL,
+      evidence TEXT NOT NULL,
+      proposed_correction TEXT NOT NULL,
+      disposition TEXT CHECK (disposition IS NULL OR disposition IN ('accepted','modified','rejected','skipped')),
+      rejection_category TEXT,
+      triaged_at TEXT,
+      UNIQUE(review_id, ordinal),
+      CHECK (disposition = 'rejected' OR rejection_category IS NULL)
+    );
+    CREATE INDEX IF NOT EXISTS review_calibration ON review_lens(lens, agent, model, review_id);
     -- Open questions, which is the only query the inbox actually runs.
     CREATE INDEX IF NOT EXISTS question_open ON question(answered_at) WHERE answered_at IS NULL;
     CREATE TABLE IF NOT EXISTS schema_meta (

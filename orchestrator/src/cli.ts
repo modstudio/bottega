@@ -24,6 +24,8 @@ import { WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE, contractConflicts
 import { collectResult, collectWait, resolveFailover, failoverSummary } from './collect.ts'
 import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
 import { validateCliArgs } from './args.ts'
+import { completeReview, DISPOSITIONS, parseReviewOutput, recordReviews,
+         reviewCalibration, triageFinding, type Disposition } from './review.ts'
 
 /**
  * How long `orch do` watches a detached run before handing it back.
@@ -253,7 +255,7 @@ const has = (n: string) => argv.includes(`--${n}`)
 /** Flags that consume the next argument. Anything else is a boolean switch. */
 const VALUE_FLAGS = new Set(['--agent', '--file', '--schema', '--model', '--note',
                              '--job', '--limit', '--port', '--days', '--window', '--timeout', '--scorer',
-                             '--seed', '--key', '--repo', '--base', '--avoid', '--distinct-from', '--label',
+                             '--seed', '--key', '--repo', '--base', '--avoid', '--distinct-from', '--label', '--lens', '--category',
                              '--better-than', '--n', '--scope', '--subject', '--title', '--cwd'])
 
 type CleanupRow = {
@@ -422,7 +424,7 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
   // A RESUME skips preflight: its agent was chosen long ago, its worktree
   // exists, and its seed was settled when that worktree was cut. Re-checking
   // would demand a `--seed` for a database that is already there.
-  if (!spec.resume) preflight(jobName, cwd, spec.seed, spec.key, spec.base)
+  if (!spec.resume) preflight(jobName, cwd, spec.seed, spec.key, spec.base, false, false, spec.lens)
   const runsDir = RUNS_DIR
   mkdirSync(runsDir, { recursive: true })
   // Named by the clock alone, this collided: concurrent `orch do` calls for the
@@ -657,6 +659,7 @@ function usage(): never {
       --mcp                     allow MCP tool calls
       --model <name>            override the agent's model
       --label <text>            name this run in listings and pending reminders
+      --lens <stable-id>        required identity for findings-producing review jobs
       --quiet                   print only the reply
       --probe                   a calibration run: recorded, but not routing evidence
       --seed <spec>             choose a required project-specific database seed spec
@@ -682,6 +685,11 @@ function usage(): never {
   orch result <run-id>          print a finished run's output; exit 2 if still running
   orch retry <run-id>           re-send a run's exact prompt to the SAME agent
       --agent <name>            ... or to a different one, deliberately
+  orch review record <run-id>... record completed lens outputs before triage
+  orch review triage <review-id> <finding> <accepted|modified|rejected|skipped>
+      --category <name>         required rejection category for rejected findings
+  orch review complete <review-id> mark a fully triaged review complete
+  orch review calibration <lens> <agent> <model> [--json]
   orch pending                  runs YOU made that are still unscored (exit 1 if any)
   orch runs [--job X] [--agent Y] [--limit N] [--unscored] [--since ISO] [--json]
       --json prints JSON Lines with cwd and session id: the interface hub reads
@@ -768,6 +776,7 @@ function doUsage(): never {
   --mcp            allow MCP tool calls
   --model <name>   override the selected agent's model
   --label <text>   name this run in listings and pending reminders
+  --lens <id>      stable identity required by findings-producing review jobs
   --probe          record a calibration run that does not affect routing
   --seed <spec>    choose the project-specific database seed required by some projects
   --key <KEY-123>  supply the ticket key required by some branch templates
@@ -1023,7 +1032,7 @@ switch (cmd) {
       if (jobName !== 'implement') throw new Error('--base is only valid for the implement job')
       resolveBase(process.cwd(), base)
     }
-    preflight(jobName, process.cwd(), flag('seed'), flag('key'), base)
+    preflight(jobName, process.cwd(), flag('seed'), flag('key'), base, false, false, flag('lens'))
     if (requested.needs.readsRepo) warnCallerDrift(process.cwd(), base)
     const schema = flag('schema')
     // An unpinned run may route to Codex, so its schema has to be suitable
@@ -1076,7 +1085,7 @@ switch (cmd) {
     const detachByDefault = !has('follow')
     if (has('detach') || detachByDefault) {
       const id = await detach(jobName, prompt, {
-        agent: flag('agent'), schema, label: flag('label'),
+        agent: flag('agent'), schema, label: flag('label'), lens: flag('lens'),
         mcp: has('mcp'), model: flag('model'), probe: has('probe'), seed: flag('seed'), key: flag('key'),
         repo: explicitRepo, base, avoid, distinctModels,
         noFailover: has('no-failover'), carry: has('carry'),
@@ -1116,7 +1125,7 @@ switch (cmd) {
      * genuinely stuck run still returns control rather than hanging for ever.
      */
     const id = await detach(jobName, prompt, {
-      agent: flag('agent'), schema, label: flag('label'),
+      agent: flag('agent'), schema, label: flag('label'), lens: flag('lens'),
       mcp: has('mcp'), model: flag('model'), probe: has('probe'), seed: flag('seed'), key: flag('key'),
       repo: explicitRepo, base, avoid, distinctModels,
       noFailover: has('no-failover'), carry: has('carry'),
@@ -1125,6 +1134,59 @@ switch (cmd) {
 
     await follow(id, has('quiet'))
     break
+  }
+
+  case 'review': {
+    const sub = argv[1]
+    if (sub === 'record') {
+      const runIds = argv.slice(2).map(Number)
+      if (!runIds.length || runIds.some((id) => !Number.isInteger(id) || id <= 0)) {
+        throw new Error('orch review record <run-id>...')
+      }
+      const entries = runIds.map((runId) => {
+        const row = db().query('SELECT output_path FROM run WHERE id=?').get(runId) as
+          { output_path: string | null } | null
+        if (!row?.output_path || !existsSync(row.output_path)) {
+          throw new Error(`run ${runId} has no recorded output`)
+        }
+        const output = parseReviewOutput(readFileSync(row.output_path, 'utf8'))
+        if (!output) throw new Error(`run ${runId} output does not satisfy the review contract`)
+        return { runId, output }
+      })
+      console.log(recordReviews(entries))
+      break
+    }
+    if (sub === 'triage') {
+      const reviewId = Number(argv[2])
+      const finding = Number(argv[3])
+      const disposition = argv[4] as Disposition
+      if (!reviewId || !finding || !DISPOSITIONS.includes(disposition)) {
+        throw new Error('orch review triage <review-id> <finding> <accepted|modified|rejected|skipped> [--category X]')
+      }
+      triageFinding(reviewId, finding, disposition, flag('category'))
+      console.log(`triaged review ${reviewId} finding ${finding}: ${disposition}`)
+      break
+    }
+    if (sub === 'complete') {
+      const reviewId = Number(argv[2])
+      if (!reviewId) throw new Error('orch review complete <review-id>')
+      completeReview(reviewId)
+      console.log(`completed review ${reviewId}`)
+      break
+    }
+    if (sub === 'calibration') {
+      const lens = argv[2]
+      const agent = argv[3]
+      const model = argv[4]
+      if (!lens || !agent || !model) throw new Error('orch review calibration <lens> <agent> <model> [--json]')
+      const calibration = reviewCalibration(lens, agent, model)
+      console.log(has('json') ? JSON.stringify(calibration) :
+        calibration.precision === null
+          ? `${lens}/${agent}: insufficient evidence (${calibration.triaged} triaged)`
+          : `${lens}/${agent}: ${calibration.precision.toFixed(2)} (${calibration.hits}/${calibration.triaged}, ${calibration.basis})`)
+      break
+    }
+    throw new Error('unknown: orch review. Try record | triage | complete | calibration')
   }
 
   // The dashboard surface, published for hub to render.
@@ -1163,11 +1225,11 @@ switch (cmd) {
     const id = Number(argv[1])
     if (!id) usage()
     const row = db().query(
-      'SELECT id, agent, job, cwd, prompt_path, probe, status, failure_kind, mcp, schema_path, model FROM run WHERE id = ?',
+      'SELECT id, agent, job, cwd, prompt_path, probe, status, failure_kind, mcp, schema_path, model, lens FROM run WHERE id = ?',
     ).get(id) as {
       id: number; agent: string; job: string; cwd: string | null
       prompt_path: string | null; probe: number; status: string; failure_kind: string | null
-      mcp: number | null; schema_path: string | null; model: string | null
+      mcp: number | null; schema_path: string | null; model: string | null; lens: string | null
     } | null
     if (!row) throw new Error(`no run ${id}`)
     // A writing job already has a worktree and a vendor session. Retry would
@@ -1208,6 +1270,7 @@ switch (cmd) {
       schema: row.schema_path ?? undefined,
       mcp: !!row.mcp,
       model: row.model ?? undefined,
+      lens: row.lens ?? undefined,
       probe: !!row.probe, retryOf: id, cwd: row.cwd ?? undefined,
     })
     console.error(`— run ${newId} is retry of ${id}`)

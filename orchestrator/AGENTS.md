@@ -128,6 +128,57 @@ rewrite history. Review agents do not commit, push or merge. A land agent alone
 may fast-forward trunk from its disposable worktree, after rebasing onto current
 trunk and running the gates there. It never pushes.
 
+## Review lenses and reviewer calibration
+
+A lens is one narrow, named viewpoint applied independently to the artifact. It
+owns one question, explicitly excludes questions owned by other lenses, reads
+the actual diff and checkout rather than the builder's conclusion, loads canon
+from its authoritative source, and returns evidence-bearing findings under the
+fixed review schema. Review work is read-only. Synthesis happens after the
+lenses, and evaluation is a separate act that re-derives each finding.
+
+Every findings-producing job requires `--lens <stable-id>`. This applies to
+`review-lens`, `review-lens-inline`, `safety`, and `craft`. `verify-claim` is not
+a lens: it answers one claim with true, false, or undecidable, so it keeps its
+answer contract and does not enter reviewer calibration.
+
+The review schema requires severity, location, evidence, and proposed
+correction for every finding. It also requires machine-readable provenance:
+tree inspected, standards read, effective model, files covered, commands run,
+and what could not be verified. An empty findings array with that coverage is a
+completed clean review; missing or malformed output is not.
+
+Reviews are recorded when they happen and begin incomplete. Triage is a later
+act by the architect: each finding becomes accepted, modified, rejected, or
+skipped, and a review may be completed only after every finding is triaged.
+Thus an untriaged review remains visible rather than becoming indistinguishable
+from one that never ran.
+
+Reviewer precision is:
+
+    hits      = accepted + modified
+    triaged   = accepted + modified + rejected
+    precision = hits / triaged
+
+Skipped findings do not enter either side. Precision is computed over the most
+recent 50 complete review runs and is null below the named evidence floor,
+never zero merely because evidence is absent. The three most frequent rejection
+categories travel with it. Calibration keys on stable lens plus the agent orch
+actually selected and records the effective model. A model-specific cell is
+preferred once it meets the floor; otherwise it falls back to the lens-agent
+aggregate, and remains null when that is below the floor too.
+The source projects' reviewer tiers do not transfer: orch routes external agent
+harnesses and records the exact effective model, which is the evidence key here.
+
+Orch appends the calibration line only after routing, because only then is the
+selected agent known, and before hashing and storing the bound prompt so the
+line sent remains auditable. Routing reserves space for that suffix when it
+tests argv prompt limits.
+
+Precision measures false positives among findings raised. It says nothing
+about defects the lens missed: recall requires seeded defects or escaped-defect
+attribution and is not claimed here.
+
 ## Routing
 
 A job declares the capabilities it needs; an agent that lacks one is excluded

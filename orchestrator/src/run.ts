@@ -25,10 +25,11 @@ import {
 } from './worktree.ts'
 import { recipeNotes } from './recipe.ts'
 import {
-  workerPreamble, workerResumeGuard, READONLY_PREAMBLE, NO_REPO_PREAMBLE, WORKER_SCHEMA,
+  workerPreamble, workerResumeGuard, READONLY_PREAMBLE, NO_REPO_PREAMBLE, WORKER_SCHEMA, REVIEW_SCHEMA,
   parseWorkerReplyWithCount, isAsking,
   type WorkerReply,
 } from './contract.ts'
+import { CALIBRATION_SUFFIX_RESERVE_BYTES, calibrationLine, reviewCalibration } from './review.ts'
 import { projectAt, stackAt } from './projects.ts'
 import { docsForRun, docsMarkdown } from './docs.ts'
 
@@ -67,6 +68,7 @@ export function gitObjectEnvironmentFor(
 export type DetachSpec = {
   agent?: string; schema?: string; mcp?: boolean; model?: string; probe?: boolean
   label?: string
+  lens?: string
   /** How much database the worktree gets, where the project asks for a choice. */
   seed?: string
   /** A ticket key, where the project's branch convention requires one. */
@@ -97,18 +99,18 @@ export function detachedRunOptions(
   jobName: string, prompt: string, reserveId: number, spec: DetachSpec,
 ) {
   const {
-    agent, schema, mcp, model, probe, label, seed, key, repo, base, avoid,
+    agent, schema, mcp, model, probe, label, lens, seed, key, repo, base, avoid,
     distinctModels, retryOf, cwd, noFailover, carry, ownerSession, resume,
   } = spec
   // Adding a field to DetachSpec must fail typechecking until it is handled here.
   const consumed: Required<Record<keyof DetachSpec, unknown>> = {
-    agent, schema, mcp, model, probe, label, seed, key, repo, base, avoid,
+    agent, schema, mcp, model, probe, label, lens, seed, key, repo, base, avoid,
     distinctModels, retryOf, cwd, noFailover, carry, ownerSession, resume,
   }
   void consumed
   return {
     job: jobName, prompt, reserveId,
-    agent, schemaPath: schema, mcp, model, probe, label, seed, key, repo, base, avoid,
+    agent, schemaPath: schema, mcp, model, probe, label, lens, seed, key, repo, base, avoid,
     distinctModels, retryOf, cwd, noFailover, carry, ownerSession, resume,
   }
 }
@@ -256,6 +258,7 @@ export function preflight(
   baseRef?: string,
   reusesWorktree = false,
   seedAlreadyValidated = false,
+  lens?: string,
 ): void {
   if (depth() >= MAX_DEPTH) {
     throw new Error(
@@ -265,6 +268,15 @@ export function preflight(
   }
   const j = job(jobName)
   const writesJob = Boolean(j.needs.writesRepo)
+  if (j.findings && !lens?.trim()) {
+    throw new Error(`${jobName} produces review findings and requires a stable lens identity.\n  --lens <id>`)
+  }
+  if (!j.findings && lens !== undefined) {
+    throw new Error('--lens is only valid for jobs whose output is review findings')
+  }
+  if (lens && !/^[a-z0-9][a-z0-9-]{0,63}$/.test(lens)) {
+    throw new Error(`lens "${lens}" must be a lowercase stable id of at most 64 characters`)
+  }
   if (jobName === 'review-lens' && repoRootOf(cwd) === null) {
     throw new Error(
       `a review lens reads a change, and ${cwd} is not inside a git checkout, so there is no change to read.\n` +
@@ -572,6 +584,8 @@ export async function run(opts: {
   probe?: boolean
   /** A caller-supplied name for distinguishing sibling runs in a fan-out. */
   label?: string
+  /** Stable identity used to calibrate findings-producing review jobs. */
+  lens?: string
   model?: string
   cwd?: string
   /** Explicit routing attribution when the caller is outside the registered project. */
@@ -641,6 +655,7 @@ export async function run(opts: {
     opts.job, opts.cwd ?? process.cwd(), opts.seed, opts.key, opts.base,
     opts.resume?.worktree != null,
     opts.reserveId !== undefined,
+    opts.lens,
   )
   // Programmatic callers get the same ordering guarantee as the CLI: a bad
   // ref is refused before a run row or worktree exists.
@@ -752,7 +767,7 @@ export async function run(opts: {
   const provenance = opts.job === 'review-lens'
     ? 'Provenance: state the source you measured against.'
     : ''
-  const prompt = writesJob && !opts.resume
+  let prompt = writesJob && !opts.resume
     ? [
         workerPreamble(opts.job),
         infra ? `\nYOUR WORKTREE'S INFRASTRUCTURE\n\n${infra}` : '',
@@ -775,9 +790,21 @@ export async function run(opts: {
     // The STACK steers the route: an agent strong on PHP and weak on a Vue
     // component is two different agents to a router, and only this tells them
     // apart. Backs off to job-wide evidence until a stack cell has earned it.
-    : pick(opts.job, opts.agent, prompt.length, true, stackAt(callerCwd),
+    : pick(opts.job, opts.agent,
+           Buffer.byteLength(prompt) + (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0),
+           true, stackAt(callerCwd),
            { agents: opts.avoid, models: opts.distinctModels, model: opts.model })
   const a = AGENTS[name]!
+  // Route first because the cell keys on the agent ACTUALLY selected. The
+  // suffix reserve above keeps argv eligibility honest; append before any
+  // prompt file, hash, or database prompt metadata is written.
+  if (requestedJob.findings && !opts.resume) {
+    const suffix = calibrationLine(reviewCalibration(opts.lens!, name, opts.model ?? a.model))
+    if (Buffer.byteLength(suffix) > CALIBRATION_SUFFIX_RESERVE_BYTES) {
+      throw new Error('review calibration line exceeded its reserved routing allowance')
+    }
+    prompt += `\n\n${suffix}`
+  }
 
   /** Whether the requested product is a diff, rather than review findings. */
   const usingMcp = (opts.mcp || writesJob) && a.caps.mcp
@@ -836,10 +863,11 @@ export async function run(opts: {
    * is a deliberate act by someone who wants a different contract, and silently
    * overriding it would make the flag a lie.
    */
-  const originalSchemaPath = writesJob && !opts.schemaPath
+  const generatedSchema = writesJob ? WORKER_SCHEMA : requestedJob.findings ? REVIEW_SCHEMA : null
+  const originalSchemaPath = generatedSchema && !opts.schemaPath
     ? (() => {
         const p = join(runsDir, `${stamp}.schema.json`)
-        writeFileSync(p, JSON.stringify(WORKER_SCHEMA, null, 2))
+        writeFileSync(p, JSON.stringify(generatedSchema, null, 2))
         return p
       })()
     : opts.schemaPath
@@ -890,7 +918,7 @@ export async function run(opts: {
           WHERE id=? RETURNING id`,
       ).get(
         nowIso(), name, opts.job, opts.repo ?? repoOf(callerCwd), callerCwd, sha(prompt),
-        prompt.length, head, opts.label ?? null, opts.probe ? 1 : 0, opts.retryOf ?? null, reason,
+        Buffer.byteLength(prompt), head, opts.label ?? null, opts.probe ? 1 : 0, opts.retryOf ?? null, reason,
         branchOf(callerCwd),
         opts.resume?.parent ?? null, opts.resume ? opts.resume.turn : 1,
         // Known before spawn: minted (grok) or inherited on resume. A SIGKILL
@@ -910,7 +938,7 @@ export async function run(opts: {
          VALUES (?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       ).get(
         nowIso(), name, opts.job, opts.repo ?? repoOf(callerCwd), callerCwd,
-        sha(prompt), prompt.length, head, opts.label ?? null,
+        sha(prompt), Buffer.byteLength(prompt), head, opts.label ?? null,
         // A resumed turn INHERITS the owning session rather than taking the
         // one that answered. The chain is one unit of work and one thing to
         // judge, and letting a second session adopt it by answering a question
@@ -957,14 +985,14 @@ export async function run(opts: {
     : null
   db().query(
     `UPDATE run SET stack=?, model=?, run_token=?, mcp=?, mcp_server=?,
-                    mcp_connected=?, mcp_error=?, schema_path=? WHERE id=?`,
+                    mcp_connected=?, mcp_error=?, schema_path=?, lens=? WHERE id=?`,
   )
     .run(
       stackAt(callerCwd), opts.model ?? a.model, runToken,
       opts.mcp ? 1 : 0, mcpConnection?.server ?? null,
       mcpConnection?.connected == null ? null : mcpConnection.connected ? 1 : 0,
       mcpConnection?.error ?? (opts.mcp ? 'no registered project identifies the canonical MCP server' : null),
-      opts.schemaPath ?? null, claim.id,
+      opts.schemaPath ?? null, opts.lens ?? null, claim.id,
     )
 
   /**
@@ -1632,13 +1660,13 @@ export async function run(opts: {
     const tried = attempts.map((attempt) => attempt.agent)
     const first = db().query(
       `SELECT prompt_path, launch_cwd, launch_seed, launch_key, launch_base,
-              no_failover, session_id, mcp, schema_path, probe, label, repo, base_commit
+              no_failover, session_id, mcp, schema_path, probe, label, lens, repo, base_commit
          FROM run WHERE id=?`,
     ).get(attempts[0]!.id) as {
       prompt_path: string | null; launch_cwd: string | null; launch_seed: string | null
       launch_key: string | null; launch_base: string | null; no_failover: number
       session_id: string | null; mcp: number | null; schema_path: string | null
-      probe: number; label: string | null; repo: string | null; base_commit: string | null
+      probe: number; label: string | null; lens: string | null; repo: string | null; base_commit: string | null
     }
     const treeName = worktree?.path ?? '(none — read-only job)'
     if (first.no_failover || opts.noFailover) {
@@ -1659,7 +1687,8 @@ export async function run(opts: {
       try {
         const originalPrompt = readFileSync(first.prompt_path, 'utf8')
         const next = pick(
-          opts.job, undefined, originalPrompt.length, true,
+          opts.job, undefined,
+          Buffer.byteLength(originalPrompt) + (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0), true,
           stackAt(first.launch_cwd ?? callerCwd),
           { agents: [...new Set([...(opts.avoid ?? []), ...tried])] },
         )
@@ -1675,6 +1704,7 @@ export async function run(opts: {
           mcp: !!first.mcp,
           probe: !!first.probe,
           label: first.label ?? undefined,
+          lens: first.lens ?? undefined,
           cwd: first.launch_cwd ?? callerCwd,
           repo: first.repo ?? undefined,
           retryOf: claim.id,

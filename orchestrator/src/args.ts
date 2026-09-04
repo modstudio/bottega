@@ -45,9 +45,21 @@ function commandShape(argv: string[]): { args: string[]; shape: CommandShape } |
     case 'mcp': return { args: argv.slice(1), shape: shape('orch mcp [--config]', 0, [], ['--config']) }
     case 'do': return { args: argv.slice(1), shape: shape(
       'orch do <job> [prompt] [--agent NAME] [--file PATH] [--schema PATH] [--model NAME]', Infinity,
-      ['--agent', '--avoid', '--distinct-from', '--base', '--file', '--schema', '--model', '--label', '--seed', '--key', '--repo'],
+      ['--agent', '--avoid', '--distinct-from', '--base', '--file', '--schema', '--model', '--label', '--lens', '--seed', '--key', '--repo'],
       ['--carry', '--mcp', '--quiet', '--probe', '--follow', '--detach', '--porcelain', '--no-failover', '--help'],
     ) }
+    case 'review': {
+      if (sub === 'record') return { args: argv.slice(2), shape: shape('orch review record <run-id>...', Infinity) }
+      if (sub === 'triage') return { args: argv.slice(2), shape: shape(
+        'orch review triage <review-id> <finding> <accepted|modified|rejected|skipped> [--category X]', 3,
+        ['--category'],
+      ) }
+      if (sub === 'complete') return { args: argv.slice(2), shape: shape('orch review complete <review-id>', 1) }
+      if (sub === 'calibration') return { args: argv.slice(2), shape: shape(
+        'orch review calibration <lens> <agent> <model> [--json]', 3, [], ['--json'],
+      ) }
+      return null
+    }
     case 'state': return { args: argv.slice(1), shape: shape('orch state [--days N]', 0, ['--days']) }
     case 'run': return { args: argv.slice(1), shape: shape('orch run <run-id>', 1) }
     case 'result': return { args: argv.slice(1), shape: shape('orch result <run-id> [--quiet]', 1, [], ['--quiet']) }

@@ -18,7 +18,7 @@ import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, exist
          realpathSync, mkdirSync, utimesSync, chmodSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
@@ -305,8 +305,10 @@ const { errorTail, preflight, detachedRunOptions, runFilePaths, pruneRuns, KEEP_
 const run = runJob
 const { summary } = await import('./metric.ts')
 const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
-        NO_REPO_PREAMBLE, WORKER_PREAMBLE, LAND_PREAMBLE, workerPreamble, workerResumeGuard,
+        NO_REPO_PREAMBLE, WORKER_PREAMBLE, LAND_PREAMBLE, REVIEW_SCHEMA, workerPreamble, workerResumeGuard,
         contractConflicts } = await import('./contract.ts')
+const { recordReview, recordReviews, triageFinding, completeReview, reviewCalibration, calibrationLine,
+        MIN_REVIEW_TRIAGED } = await import('./review.ts')
 const { ask } = await import('./ask.ts')
 const { orphanSafety, repoRootOf, createWorktree, createWithTool, resolveBase, fillTool,
         seedArgv, shellWords, worktreeGitDir, prepareWorktreeObjects, prepareSharedRefGuard,
@@ -330,7 +332,7 @@ beforeEach(() => {
   // question cascades from run, but the delete order still matters: it is
   // listed first so a future FK-enforcing change cannot make this fail
   // mysteriously halfway through a suite.
-  db().exec('DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc; DELETE FROM question; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
+  db().exec('DELETE FROM review_finding; DELETE FROM review_lens; DELETE FROM review; DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc; DELETE FROM question; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
 })
 
 afterAll(() => {
@@ -344,19 +346,167 @@ function addRun(o: {
   agent: string; job: string; status?: string; latency?: number; probe?: number
   kind?: string; parent?: number; turn?: number; session?: string | null; stack?: string
   model?: string; startedAt?: string
+  lens?: string
 }): number {
   return (db().query(
     `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head,
                       status, latency_ms, probe, failure_kind, parent_run_id, turn, session_id, stack,
-                      model)
-     VALUES (?,?,?,'sha',10,'head',?,?,?,?,?,?,?,?,?) RETURNING id`,
+                      model, lens)
+     VALUES (?,?,?,'sha',10,'head',?,?,?,?,?,?,?,?,?,?) RETURNING id`,
   ).get(
     o.startedAt ?? new Date().toISOString(), o.agent, o.job,
     o.status ?? 'ok', o.latency ?? 1000, o.probe ?? 0, o.kind ?? null,
     o.parent ?? null, o.turn ?? 1, o.session ?? null, o.stack ?? null,
-    o.model ?? AGENTS[o.agent]?.model ?? null,
+    o.model ?? AGENTS[o.agent]?.model ?? null, o.lens ?? null,
   ) as { id: number }).id
 }
+
+const reviewReply = (findings = 1) => ({
+  findings: Array.from({ length: findings }, (_, i) => ({
+    severity: 'major', location: `file.ts:${i + 1}`, evidence: `evidence ${i + 1}`,
+    proposed_correction: `fix ${i + 1}`,
+  })),
+  provenance: {
+    tree_inspected: 'abc123', standards_read: ['AGENTS.md'], model_used: 'reported-by-reviewer',
+    files_covered: ['file.ts'], commands_run: ['bun test'], could_not_verify: [],
+  },
+})
+
+describe('review discipline', () => {
+  test('findings jobs have stable identities and the structured coverage contract', () => {
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      for (const name of ['review-lens', 'review-lens-inline', 'safety', 'craft']) {
+        expect(JOBS[name]!.findings).toBe(true)
+        expect(() => preflight(name, process.cwd())).toThrow('requires a stable lens identity')
+      }
+      expect(JOBS['verify-claim']!.findings).not.toBe(true)
+      expect(() => preflight('verify-claim', process.cwd(), undefined, undefined, undefined,
+        false, false, 'claim')).toThrow('--lens is only valid')
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+    expect(REVIEW_SCHEMA.properties.provenance.required).toEqual([
+      'tree_inspected', 'standards_read', 'model_used', 'files_covered',
+      'commands_run', 'could_not_verify',
+    ])
+  })
+
+  test('records each lens before triage and derives runner and model from the orch run', () => {
+    const first = addRun({ agent: 'codex', job: 'review-lens', model: 'effective-a', lens: 'safety' })
+    const second = addRun({ agent: 'grok', job: 'craft', model: 'effective-b', lens: 'craft' })
+    const review = recordReviews([
+      { runId: first, output: reviewReply() }, { runId: second, output: reviewReply(0) },
+    ])
+    const rows = db().query(
+      `SELECT rl.run_id, rl.lens, rl.agent, rl.model, r.completed_at
+         FROM review_lens rl JOIN review r ON r.id=rl.review_id ORDER BY rl.run_id`,
+    ).all() as { run_id: number; lens: string; agent: string; model: string; completed_at: string | null }[]
+    expect(rows).toEqual([
+      { run_id: first, lens: 'safety', agent: 'codex', model: 'effective-a', completed_at: null },
+      { run_id: second, lens: 'craft', agent: 'grok', model: 'effective-b', completed_at: null },
+    ])
+    expect(() => completeReview(review)).toThrow('untriaged')
+    triageFinding(review, 1, 'accepted')
+    completeReview(review)
+    expect(db().query('SELECT completed_at FROM review WHERE id=?').get(review) as
+      { completed_at: string }).toHaveProperty('completed_at')
+  })
+
+  test('precision counts accepted and modified as hits, rejects as misses, and skips nothing', () => {
+    const make = (model: string, disposition: 'accepted' | 'modified' | 'rejected' | 'skipped', n: number) => {
+      const runId = addRun({ agent: 'codex', job: 'review-lens', model, lens: 'correctness' })
+      const reviewId = recordReview(runId, reviewReply(n))
+      for (let i = 1; i <= n; i++) triageFinding(reviewId, i, disposition,
+        disposition === 'rejected' ? 'not-a-defect' : undefined)
+      completeReview(reviewId)
+    }
+    make('old', 'accepted', 4)
+    make('old', 'modified', 3)
+    make('old', 'rejected', 3)
+    make('old', 'skipped', 8)
+    let c = reviewCalibration('correctness', 'codex', 'current')
+    expect(c).toMatchObject({ precision: 0.7, hits: 7, triaged: 10, basis: 'agent' })
+    expect(c.rejection_categories).toEqual([{ category: 'not-a-defect', count: 3 }])
+
+    make('current', 'accepted', MIN_REVIEW_TRIAGED - 1)
+    c = reviewCalibration('correctness', 'codex', 'current')
+    expect(c.basis).toBe('agent')
+    make('current', 'rejected', 1)
+    c = reviewCalibration('correctness', 'codex', 'current')
+    expect(c).toMatchObject({ precision: 0.9, hits: 9, triaged: 10, basis: 'model' })
+  })
+
+  test('below-floor and untriaged evidence report null, never zero', () => {
+    const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'efficiency' })
+    const reviewId = recordReview(runId, reviewReply(1))
+    triageFinding(reviewId, 1, 'rejected', 'false-positive')
+    expect(reviewCalibration('efficiency', 'codex', 'm').precision).toBeNull()
+    completeReview(reviewId)
+    const c = reviewCalibration('efficiency', 'codex', 'm')
+    expect(c.precision).toBeNull()
+    expect(calibrationLine(c)).toContain('no reliable precision yet')
+  })
+
+  test('uses only the most recent fifty complete reviews', () => {
+    const add = (disposition: 'accepted' | 'rejected') => {
+      const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'window' })
+      const reviewId = recordReview(runId, reviewReply(1))
+      triageFinding(reviewId, 1, disposition,
+        disposition === 'rejected' ? 'false-positive' : undefined)
+      completeReview(reviewId)
+    }
+    add('accepted')
+    for (let i = 0; i < 50; i++) add('rejected')
+    expect(reviewCalibration('window', 'codex', 'm')).toMatchObject({
+      precision: 0, hits: 0, triaged: 50, basis: 'model',
+    })
+  })
+
+  test('appends the selected agent calibration before hashing and storing its final prompt', async () => {
+    const agent = AGENTS.codex!
+    const original = { bin: agent.bin, argv: agent.argv, stdin: agent.stdin, readsOut: agent.readsOut }
+    let sent = ''
+    let sentSchema: string | undefined
+    const output = JSON.stringify(reviewReply(0))
+    try {
+      // Qualifying evidence exists for the selected agent and nowhere else.
+      const evidenceRun = addRun({ agent: 'codex', job: 'review-lens-inline',
+        model: agent.model, lens: 'bound-prompt' })
+      const evidenceReview = recordReview(evidenceRun, reviewReply(MIN_REVIEW_TRIAGED))
+      for (let i = 1; i <= MIN_REVIEW_TRIAGED; i++) triageFinding(evidenceReview, i, 'accepted')
+      completeReview(evidenceReview)
+
+      agent.bin = process.execPath
+      agent.stdin = false
+      agent.readsOut = false
+      agent.argv = ({ prompt, schema }) => {
+        sent = prompt
+        sentSchema = schema
+        return ['-e', `console.log(${JSON.stringify(output)})`]
+      }
+      process.env.ORCH_DEPTH = '0'
+      const result = await runJob({ job: 'review-lens-inline', prompt: 'inspect this pack',
+        agent: 'codex', lens: 'bound-prompt' })
+      expect(sent).toContain('precision 1.00 over 10 triaged findings')
+      expect(JSON.parse(readFileSync(sentSchema!, 'utf8'))).toEqual(REVIEW_SCHEMA)
+      const row = db().query('SELECT prompt_sha, prompt_path, lens FROM run WHERE id=?').get(result.id) as
+        { prompt_sha: string; prompt_path: string; lens: string }
+      const bound = readFileSync(row.prompt_path.replace(/\.prompt\.txt$/, '.bound.txt'), 'utf8')
+      expect(bound).toBe(sent)
+      expect(row.prompt_sha).toBe(createHash('sha256').update(sent).digest('hex').slice(0, 16))
+      expect(row.lens).toBe('bound-prompt')
+      expect(readFileSync(row.prompt_path, 'utf8')).toBe('inspect this pack')
+    } finally {
+      agent.bin = original.bin
+      agent.argv = original.argv
+      agent.stdin = original.stdin
+      agent.readsOut = original.readsOut
+    }
+  })
+})
 
 describe('porting data model', () => {
   test('stores pair progress and declined candidates with their reasons', () => {
@@ -1719,7 +1869,7 @@ describe('quota failover is one bounded unit of work', () => {
     process.env.ORCH_DEPTH = '0'
     try {
       await expect(runJob({
-        job: 'review-lens-inline', prompt: 'bounded', agent: 'codex', cwd: dir,
+        job: 'review-lens-inline', prompt: 'bounded', agent: 'codex', cwd: dir, lens: 'bounded',
       })).rejects.toThrow()
       const rows = db().query(
         'SELECT id, agent, retry_of, error FROM run ORDER BY id',
@@ -2132,7 +2282,7 @@ fi
       let runId: number | undefined
       try {
         await runJob({
-          job: 'review-lens', prompt: 'review this', cwd, agent: 'grok', mcp: true,
+          job: 'review-lens', prompt: 'review this', cwd, agent: 'grok', mcp: true, lens: 'mcp',
         })
       } catch (error) {
         runId = (error as Error & { runId?: number }).runId
@@ -2186,7 +2336,7 @@ fi
     process.env.ORCH_DEPTH = '0'
     try {
       const result = await runJob({
-        job: 'review-lens', prompt: 'review this', cwd, agent: 'grok', mcp: true,
+        job: 'review-lens', prompt: 'review this', cwd, agent: 'grok', mcp: true, lens: 'mcp',
       })
       expect(sent).toContain('Provenance: state the source you measured against.')
       expect(db().query(
@@ -2221,7 +2371,7 @@ printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
     process.env.ORCH_DEPTH = '0'
     try {
       const result = await runJob({
-        job: 'review-lens', prompt: 'review this', cwd: dir, agent: 'grok', mcp: false,
+        job: 'review-lens', prompt: 'review this', cwd: dir, agent: 'grok', mcp: false, lens: 'mcp',
       })
       expect(result.status).toBe('ok')
       expect(db().query(
@@ -2919,13 +3069,13 @@ describe('detached run collection', () => {
     }
     expect(detachedRunOptions('implement', 'prompt', 42, {
       agent: 'codex', schema: '/tmp/schema.json', mcp: true, model: 'model', probe: true,
-      label: 'security lens', seed: 'small', key: 'DEV-63', repo: 'project', base: 'main', avoid: ['grok'],
+      label: 'security lens', lens: 'security', seed: 'small', key: 'DEV-63', repo: 'project', base: 'main', avoid: ['grok'],
       distinctModels: ['other-model'], retryOf: 7, cwd: '/tmp/repo', noFailover: true, carry: true,
       ownerSession: 'owner', resume,
     })).toEqual({
       job: 'implement', prompt: 'prompt', reserveId: 42,
       agent: 'codex', schemaPath: '/tmp/schema.json', mcp: true, model: 'model', probe: true,
-      label: 'security lens', seed: 'small', key: 'DEV-63', repo: 'project', base: 'main', avoid: ['grok'],
+      label: 'security lens', lens: 'security', seed: 'small', key: 'DEV-63', repo: 'project', base: 'main', avoid: ['grok'],
       distinctModels: ['other-model'], retryOf: 7, cwd: '/tmp/repo', noFailover: true, carry: true,
       ownerSession: 'owner', resume,
     })
@@ -4818,8 +4968,8 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
     const priorDepth = process.env.ORCH_DEPTH
     try {
       process.env.ORCH_DEPTH = '0'
-      expect(() => preflight('review-lens', outside)).toThrow('not inside a git checkout')
-      expect(() => preflight('review-lens', repo)).not.toThrow()
+      expect(() => preflight('review-lens', outside, undefined, undefined, undefined, false, false, 'scope')).toThrow('not inside a git checkout')
+      expect(() => preflight('review-lens', repo, undefined, undefined, undefined, false, false, 'scope')).not.toThrow()
     } finally {
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
@@ -4915,8 +5065,8 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
         },
       },
     })
-    expect(() => fromRoot(() => preflight('review-lens', repo))).not.toThrow()
-    expect(() => fromRoot(() => preflight('review-lens', repo, 'small'))).not.toThrow()
+    expect(() => fromRoot(() => preflight('review-lens', repo, undefined, undefined, undefined, false, false, 'safety'))).not.toThrow()
+    expect(() => fromRoot(() => preflight('review-lens', repo, 'small', undefined, undefined, false, false, 'safety'))).not.toThrow()
     rmSync(repo, { recursive: true, force: true })
   })
 
@@ -6469,7 +6619,7 @@ describe('review-lens-inline has no checkout', () => {
       process.env.ORCH_DEPTH = '0'
 
       const inline = await runJob({
-        job: 'review-lens-inline', prompt: 'SELF_CONTAINED_FACT', cwd: repo, agent: 'codex',
+        job: 'review-lens-inline', prompt: 'SELF_CONTAINED_FACT', cwd: repo, agent: 'codex', lens: 'inline',
       })
       const inlineView = JSON.parse(inline.output) as {
         cwd: string; checkout: boolean; projectFile: boolean; receivedPack: boolean
@@ -6481,7 +6631,7 @@ describe('review-lens-inline has no checkout', () => {
       expect(inline.worktree).toBeNull()
 
       const repository = await runJob({
-        job: 'review-lens', prompt: 'inspect project-only.txt', cwd: repo, agent: 'codex',
+        job: 'review-lens', prompt: 'inspect project-only.txt', cwd: repo, agent: 'codex', lens: 'project',
       })
       const repositoryView = JSON.parse(repository.output) as {
         checkout: boolean; projectFile: boolean
@@ -7001,7 +7151,7 @@ describe('the sandbox an agent is launched with', () => {
       await runJob({ job: 'file-question', prompt: 'p', cwd: repo, agent: 'codex' })
       upsertProject({ name: 'sandbox-dispatch', path: repo })
       await runJob({ job: 'file-question', prompt: 'p', cwd: repo, agent: 'codex' })
-      await runJob({ job: 'review-lens-inline', prompt: 'p', cwd: repo, agent: 'codex' })
+      await runJob({ job: 'review-lens-inline', prompt: 'p', cwd: repo, agent: 'codex', lens: 'inline' })
 
       expect(launched).toEqual(['workspace-write', 'workspace-write', 'read-only'])
     } finally {

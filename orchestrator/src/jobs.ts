@@ -36,6 +36,8 @@ export type Job = {
    * still working.
    */
   timeoutMs?: number
+  /** This job returns independently triageable review findings. */
+  findings?: boolean
 }
 
 /**
@@ -101,6 +103,7 @@ export const JOBS: Record<string, Job> = {
     needs: { readsRepo: true },
     prefer: ['grok', 'codex'],
     contextTokens: DEEP,
+    findings: true,
   },
   'review-lens-inline': {
     name: 'review-lens-inline',
@@ -111,6 +114,7 @@ export const JOBS: Record<string, Job> = {
     needs: { readsRepo: false },
     prefer: ['agy', 'grok', 'codex'],
     contextTokens: ERRAND,
+    findings: true,
   },
   safety: {
     name: 'safety',
@@ -118,6 +122,7 @@ export const JOBS: Record<string, Job> = {
     needs: { readsRepo: true },
     prefer: ['codex'],
     contextTokens: DEEP,
+    findings: true,
   },
   craft: {
     name: 'craft',
@@ -125,6 +130,7 @@ export const JOBS: Record<string, Job> = {
     needs: { readsRepo: true },
     prefer: ['grok', 'codex'],
     contextTokens: DEEP,
+    findings: true,
   },
   'verify-claim': {
     name: 'verify-claim',
