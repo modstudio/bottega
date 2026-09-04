@@ -532,7 +532,7 @@ const { db, nowIso, reapStale, pendingForSession, unscoredCount, judgeability, S
         parseRunIds, recordSessionSeen } = await import('./db.ts')
 const { candidates, weightCase, scoreboard, median, evidenceFor, pick,
         NOISE_BAND, QUALITY_STEP, MIN_SAMPLE, OUTPUT_RESERVE, EVIDENCE_WINDOW,
-        STANDING_EXPLORE_RATE } = await import('./route.ts')
+        STANDING_EXPLORE_RATE, PROMPT_SIZE_BOUNDARY, promptSizeBucket } = await import('./route.ts')
 const { guide } = await import('./guide.ts')
 const { projects, projectAt, projectByName, stackAt, upsertProject } = await import('./projects.ts')
 const { dbNameFor, recipeNotes, runRecipe, fill } = await import('./recipe.ts')
@@ -873,14 +873,15 @@ function addRun(o: {
   kind?: string; parent?: number; turn?: number; session?: string | null; stack?: string
   model?: string; startedAt?: string
   lens?: string
+  promptBytes?: number
 }): number {
   return (db().query(
     `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head,
                       status, latency_ms, probe, failure_kind, parent_run_id, turn, session_id, stack,
                       model, lens)
-     VALUES (?,?,?,'sha',10,'head',?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+     VALUES (?,?,?,'sha',?,'head',?,?,?,?,?,?,?,?,?,?) RETURNING id`,
   ).get(
-    o.startedAt ?? new Date().toISOString(), o.agent, o.job,
+    o.startedAt ?? new Date().toISOString(), o.agent, o.job, o.promptBytes ?? 10,
     o.status ?? 'ok', o.latency ?? 1000, o.probe ?? 0, o.kind ?? null,
     o.parent ?? null, o.turn ?? 1, o.session ?? null, o.stack ?? null,
     o.model ?? AGENTS[o.agent]?.model ?? null, o.lens ?? null,
@@ -2516,7 +2517,8 @@ describe('one score, reported the same everywhere', () => {
     addRun({ agent: 'codex', job: 'craft', status: 'stale' })
     score(addRun({ agent: 'grok', job: 'safety' }), 'full', 'mixed' )
     for (const cell of scoreboard()) {
-      const c = candidates(cell.job).find((x) => x.agent === cell.agent)!
+      const promptBytes = cell.promptBucket === 'small' ? 0 : PROMPT_SIZE_BOUNDARY
+      const c = candidates(cell.job, promptBytes).find((x) => x.agent === cell.agent)!
       expect(cell.score).toBe(c.score)
       expect(cell.shrunk).toBe(c.shrunk)
       expect(cell.evidence).toBe(c.evidence)
@@ -3206,6 +3208,70 @@ describe('routing exploration', () => {
 })
 
 describe('routing evidence scope', () => {
+  test('prompt evidence is partitioned at the provisional 16 KiB boundary', () => {
+    expect(promptSizeBucket(PROMPT_SIZE_BOUNDARY - 1)).toBe('small')
+    expect(promptSizeBucket(PROMPT_SIZE_BOUNDARY)).toBe('large')
+
+    for (let i = 0; i < 2; i++) {
+      addRun({
+        agent: 'qwen-local', job: 'file-question', promptBytes: 119 * 1024,
+        latency: 945_000, status: 'failed', kind: 'timeout', startedAt: '2026-01-01T00:00:00Z',
+      })
+    }
+    for (let i = 0; i < 7; i++) {
+      score(addRun({
+        agent: 'qwen-local', job: 'file-question', promptBytes: 672, latency: 9_000,
+      }), 'full', 'right')
+      score(addRun({
+        agent: 'grok', job: 'file-question', promptBytes: 25 * 1024, latency: 163_000,
+      }), 'full', 'right')
+    }
+    for (let i = 0; i < 2; i++) {
+      score(addRun({
+        agent: 'qwen-local', job: 'file-question', promptBytes: 25 * 1024, latency: 653_000,
+      }), 'full', 'right')
+    }
+
+    const small = candidates('file-question', 672)
+    const large = candidates('file-question', 25 * 1024)
+    expect(small.find((c) => c.agent === 'qwen-local')).toMatchObject({
+      evidence: 7, latencyMs: 9_000,
+    })
+    expect(large.find((c) => c.agent === 'qwen-local')).toMatchObject({
+      evidence: 4, latencyMs: 653_000,
+    })
+    expect(large.find((c) => c.agent === 'grok')).toMatchObject({
+      evidence: 7, latencyMs: 163_000,
+    })
+    expect(pick('file-question', undefined, 25 * 1024, false).agent).toBe('grok')
+  })
+
+  test('guide defaults to every populated bucket and can narrow to one input size', () => {
+    score(addRun({
+      agent: 'codex', job: 'file-question', promptBytes: 672, latency: 18_300,
+    }), 'full', 'right')
+    score(addRun({
+      agent: 'grok', job: 'file-question', promptBytes: 25 * 1024, latency: 163_000,
+    }), 'full', 'right')
+
+    expect(guide('file-question').map((row) => row.promptBucket)).toEqual(['small', 'large'])
+    expect(guide('file-question', 25 * 1024).map((row) => row.promptBucket)).toEqual(['large'])
+
+    const cli = new URL('cli.ts', import.meta.url).pathname
+    const invoke = (...args: string[]) => Bun.spawnSync([process.execPath, cli, ...args], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    const all = new TextDecoder().decode(invoke('guide', '--job', 'file-question').stdout)
+    const large = new TextDecoder().decode(
+      invoke('guide', '--job', 'file-question', '--prompt-bytes', String(25 * 1024)).stdout,
+    )
+    expect(all).toContain('file-question [<16 KiB prompts]')
+    expect(all).toContain('file-question [>=16 KiB prompts]')
+    expect(large).not.toContain('file-question [<16 KiB prompts]')
+    expect(large).toContain('file-question [>=16 KiB prompts]')
+  })
+
   test('only the most recent evidence window counts in candidates and the scoreboard', () => {
     for (let i = 0; i < 5; i++) {
       score(addRun({ agent: 'codex', job: 'review-lens' }), 'full', 'wrong')

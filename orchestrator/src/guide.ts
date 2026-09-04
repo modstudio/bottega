@@ -1,6 +1,9 @@
 import { db } from './db.ts'
 import { JOBS } from './jobs.ts'
-import { candidates, pick, median, MIN_SAMPLE } from './route.ts'
+import {
+  candidates, pick, median, MIN_SAMPLE, PROMPT_SIZE_BOUNDARY,
+  promptBucketsForJob, promptSizeBucket, type PromptSizeBucket,
+} from './route.ts'
 
 export type AgentOnJob = {
   agent: string
@@ -23,6 +26,8 @@ export type AgentOnJob = {
 
 export type JobGuide = {
   job: string
+  /** Null only for an untried job when every populated bucket is requested. */
+  promptBucket: PromptSizeBucket | null
   what: string
   /** Highest-scoring agent tried, whether or not there is enough evidence. */
   best: AgentOnJob | null
@@ -49,7 +54,7 @@ export type JobGuide = {
  * than MIN_SAMPLE judgements a leader is whoever happened to go first, and
  * presenting that as a recommendation would launder a guess into a finding.
  */
-export function guide(onlyJob?: string): JobGuide[] {
+export function guide(onlyJob?: string, promptBytes?: number): JobGuide[] {
   // Scores come from candidates(), not from a second copy of the same SQL here.
   // There used to be one, and the two drifted the moment routing learned to
   // count failures: the router demoted an agent while the guide, still filtering
@@ -61,59 +66,75 @@ export function guide(onlyJob?: string): JobGuide[] {
       WHERE status='ok' AND probe=0 AND latency_ms IS NOT NULL`,
   ).all() as { job: string; agent: string; latency_ms: number; prompt_bytes: number }[]
 
-  const key = (j: string, a: string) => `${j} ${a}`
+  const key = (j: string, a: string, bucket: PromptSizeBucket) => `${j} ${a} ${bucket}`
   const samples = new Map<string, { lat: number[]; bytes: number[] }>()
   for (const r of raw) {
-    const e = samples.get(key(r.job, r.agent)) ?? { lat: [], bytes: [] }
+    const bucket = promptSizeBucket(r.prompt_bytes ?? 0)
+    const e = samples.get(key(r.job, r.agent, bucket)) ?? { lat: [], bytes: [] }
     e.lat.push(r.latency_ms)
     e.bytes.push(r.prompt_bytes ?? 0)
-    samples.set(key(r.job, r.agent), e)
+    samples.set(key(r.job, r.agent, bucket), e)
   }
   return Object.keys(JOBS)
     .filter((n) => !onlyJob || n === onlyJob)
-    .map((name) => {
-      const all = candidates(name)
-      const eligible = all.filter((c) => c.eligible)
-      const tried: AgentOnJob[] = eligible
-        .map((c) => ({
-          agent: c.agent,
-          runs: c.runs,
-          scored: c.scored,
-          failures: c.failures,
-          evidence: c.evidence,
-          score: c.score,
-          shrunk: c.shrunk,
-          latencyMs: c.latencyMs,
-          promptBytes: median(samples.get(key(name, c.agent))?.bytes ?? []) ?? 0,
-          costUsd: c.costUsd,
-        }))
-        // An agent that has only ever failed here has still been tried, and
-        // saying so is the useful part: it is the difference between "no answer
-        // yet" and "asked, and it cannot".
-        .filter((c) => c.runs > 0 || c.failures > 0)
+    .flatMap((name) => {
+      const populated = promptBucketsForJob(name)
+      const buckets: (PromptSizeBucket | null)[] = promptBytes === undefined
+        ? (populated.length ? populated : [null])
+        : [promptSizeBucket(promptBytes)]
+      return buckets.map((bucket) => {
+        const bucketBytes = bucket === 'large' ? PROMPT_SIZE_BOUNDARY : 0
+        const all = candidates(name, bucketBytes)
+        const eligible = all.filter((c) => c.eligible)
+        const tried: AgentOnJob[] = eligible
+          .map((c) => ({
+            agent: c.agent,
+            runs: c.runs,
+            scored: c.scored,
+            failures: c.failures,
+            evidence: c.evidence,
+            score: c.score,
+            shrunk: c.shrunk,
+            latencyMs: c.latencyMs,
+            promptBytes: bucket === null
+              ? 0
+              : median(samples.get(key(name, c.agent, bucket))?.bytes ?? []) ?? 0,
+            costUsd: c.costUsd,
+          }))
+          // An agent that has only ever failed here has still been tried, and
+          // saying so is the useful part: it is the difference between "no answer
+          // yet" and "asked, and it cannot".
+          .filter((c) => c.runs > 0 || c.failures > 0)
 
-      const judged = tried.filter((c) => c.score !== null)
-      const best = [...judged].sort((a, b) => b.shrunk! - a.shrunk! || b.evidence - a.evidence)[0] ?? null
-      // One agent tried is a measurement, not a race; leaving this null stops
-      // the caller crowning the winner of a field of one.
-      const quickest = tried.length > 1
-        ? ([...tried].filter((c) => c.latencyMs !== null).sort((a, b) => a.latencyMs! - b.latencyMs!)[0] ?? null)
-        : null
-      const chosen = pick(name, undefined, 0, false)
+        const judged = tried.filter((c) => c.score !== null)
+        const best = [...judged]
+          .sort((a, b) => b.shrunk! - a.shrunk! || b.evidence - a.evidence)[0] ?? null
+        // One agent tried is a measurement, not a race; leaving this null stops
+        // the caller crowning the winner of a field of one.
+        const quickest = tried.length > 1
+          ? ([...tried]
+              .filter((c) => c.latencyMs !== null)
+              .sort((a, b) => a.latencyMs! - b.latencyMs!)[0] ?? null)
+          : null
+        const chosen = pick(name, undefined, bucketBytes, false)
 
-      return {
-        job: name,
-        what: JOBS[name]!.what,
-        best,
-        quickest,
-        decided: !!best && best.evidence >= MIN_SAMPLE,
-        untried: eligible.filter((c) => !tried.some((t) => t.agent === c.agent)).map((c) => c.agent),
-        routesTo: chosen.agent,
-        reason: chosen.reason,
-        tried,
-        excluded: all
-          .filter((c) => !c.eligible)
-          .map((c) => ({ agent: c.agent, why: c.why })),
-      }
+        return {
+          job: name,
+          promptBucket: bucket,
+          what: JOBS[name]!.what,
+          best,
+          quickest,
+          decided: !!best && best.evidence >= MIN_SAMPLE,
+          untried: eligible
+            .filter((c) => !tried.some((t) => t.agent === c.agent))
+            .map((c) => c.agent),
+          routesTo: chosen.agent,
+          reason: chosen.reason,
+          tried,
+          excluded: all
+            .filter((c) => !c.eligible)
+            .map((c) => ({ agent: c.agent, why: c.why })),
+        }
+      })
     })
 }

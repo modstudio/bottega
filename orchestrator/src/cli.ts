@@ -7,7 +7,7 @@ import { JOBS, job } from './jobs.ts'
 import { AGENTS, available, installed, ensureLocalHealth,
          unavailableReason, NEEDS_HEALTH, tryWake, wakeStatus,
          lastWakeAttempt, readStrictCodexSchema } from './agents.ts'
-import { candidates, pick, scoreboard, MIN_SAMPLE } from './route.ts'
+import { candidates, pick, scoreboard, MIN_SAMPLE, promptSizeBucketLabel } from './route.ts'
 import { guide } from './guide.ts'
 import { repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses,
          type DetachSpec } from './run.ts'
@@ -715,7 +715,8 @@ function usage(): never {
       --id and --since cannot be combined
       --json                    print one JSON object per line, with cwd and session id: the interface hub reads
   orch stats [--job X]          success rate per agent per job
-  orch guide [--job X]          what to use for what: best, quickest, and what is still a guess
+  orch guide [--job X] [--prompt-bytes N]
+                                what to use for what, separated by prompt-size bucket
   orch spawns [--limit N]       what the subagent gate allowed and denied, and why
   orch pick <job>               show which agent would be chosen, and why
       --agent <name>            preview an explicit agent pin
@@ -3238,13 +3239,22 @@ switch (cmd) {
   }
 
   case 'guide': {
-    const gs = guide(flag('job'))
+    const rawPromptBytes = flag('prompt-bytes')
+    const promptBytes = rawPromptBytes === undefined ? undefined : Number(rawPromptBytes)
+    if (promptBytes !== undefined &&
+        (!/^\d+$/.test(rawPromptBytes!) || !Number.isSafeInteger(promptBytes))) {
+      throw new Error('--prompt-bytes must be a non-negative integer')
+    }
+    const gs = guide(flag('job'), promptBytes)
     const size = (b: number) => (b >= 1024 ? `${Math.round(b / 1024)}KB` : `${Math.round(b)}B`)
     const tradeoffs: string[] = []
     let decided = 0, provisional = 0, blank = 0
 
     for (const g of gs) {
-      console.log(`\n${g.job}  ${g.what}`)
+      const bucket = g.promptBucket === null
+        ? ''
+        : ` [${promptSizeBucketLabel(g.promptBucket)} prompts]`
+      console.log(`\n${g.job}${bucket}  ${g.what}`)
       if (!g.tried.length) {
         blank++
         console.log('  no runs yet - nothing to compare')
@@ -3278,7 +3288,7 @@ switch (cmd) {
         )
         if (g.best && g.quickest && g.best.agent !== g.quickest.agent) {
           tradeoffs.push(
-            `${g.job}: ${g.best.agent} judges best, ${g.quickest.agent} is ` +
+            `${g.job}${bucket}: ${g.best.agent} judges best, ${g.quickest.agent} is ` +
             `${dur(g.quickest.latencyMs)} vs ${dur(g.best.latencyMs)}`,
           )
         }
@@ -3293,9 +3303,8 @@ switch (cmd) {
       for (const t of tradeoffs) console.log(`    ${t}`)
     }
     console.log(
-      `\n  ${decided} job(s) decided by evidence, ${provisional} provisional, ${blank} with no runs.` +
-      `\n  Latency is only comparable alongside prompt size - a fast answer to a` +
-      `\n  small prompt is not a fast agent.`,
+      `\n  ${decided} bucket(s) decided by evidence, ${provisional} provisional, ${blank} with no runs.` +
+      `\n  Routing and latency evidence are separated at the provisional 16 KiB prompt boundary.`,
     )
     break
   }
@@ -3346,7 +3355,7 @@ switch (cmd) {
     const matrices = duelMatrices(flag('job'))
     if (!rows.length && !matrices.length) { console.log('no runs yet'); break }
     if (rows.length) {
-      console.log('job             agent        runs  judged    raw  shrunk  median    vendor tokens      cost')
+      console.log('job / prompt bucket            agent        runs  judged    raw  shrunk  median    vendor tokens      cost')
       for (const r of rows) {
         const score = r.score === null ? '—' : `${(r.score * 100).toFixed(0)}%`
         const shrunk = r.shrunk === null ? '—' : `${(r.shrunk * 100).toFixed(0)}%`
@@ -3355,7 +3364,8 @@ switch (cmd) {
         // left for someone to wonder why the percentage looks low.
         const judged = r.failures ? `${r.evidence}(${r.failures}f)` : String(r.evidence)
         console.log(
-          `${r.job.padEnd(15)} ${r.agent.padEnd(11)} ${String(r.runs).padStart(5)} ${judged.padStart(7)}` +
+          `${`${r.job} [${promptSizeBucketLabel(r.promptBucket)}]`.padEnd(30)} ` +
+            `${r.agent.padEnd(11)} ${String(r.runs).padStart(5)} ${judged.padStart(7)}` +
             ` ${score.padStart(6)} ${shrunk.padStart(7)} ${dur(r.latencyMs).padStart(8)} ${r.tokens.toLocaleString().padStart(17)}` +
             ` ${cost.padStart(9)}`,
         )

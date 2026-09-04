@@ -108,7 +108,7 @@ export function state(sinceDays: number | null = null) {
   // second query. This used to filter status='ok' and reported grok on
   // review-lens at 96% while the router, counting six failures, was using 69%.
   const matrix = scoreboard().map((c) => ({
-    job: c.job, agent: c.agent,
+    job: c.job, promptBucket: c.promptBucket, agent: c.agent,
     // `judged`, not `scored`: it counts failures too, and a key that keeps the
     // old name while changing meaning is how the page came to render
     // "36/32 scored" — more judgements than runs, which is nonsense on sight.

@@ -60,6 +60,45 @@ export const MIN_SAMPLE = 5
 export const EVIDENCE_WINDOW = 40
 
 /**
+ * The provisional boundary between small and large prompt evidence.
+ *
+ * Chosen from the observed file-question populations: small prompts topped out
+ * at about 2.3 KiB and the problematic large inputs began around 25 KiB, with
+ * no runs in between. 16 KiB sits in that wide empty gap, so the partition does
+ * not depend on a finely tuned number. Revisit it when a run lands in the gap.
+ */
+export const PROMPT_SIZE_BOUNDARY = 16 * 1024
+
+export type PromptSizeBucket = 'small' | 'large'
+
+export function promptSizeBucket(promptBytes: number): PromptSizeBucket {
+  return promptBytes < PROMPT_SIZE_BOUNDARY ? 'small' : 'large'
+}
+
+export function promptSizeBucketLabel(bucket: PromptSizeBucket): string {
+  return bucket === 'small' ? '<16 KiB' : '>=16 KiB'
+}
+
+function promptBucketSql(alias: string, promptBytes: number): string {
+  return promptSizeBucket(promptBytes) === 'small'
+    ? `${alias}.prompt_bytes < ${PROMPT_SIZE_BOUNDARY}`
+    : `${alias}.prompt_bytes >= ${PROMPT_SIZE_BOUNDARY}`
+}
+
+/** Populated buckets in stable size order; an untried job has none. */
+export function promptBucketsForJob(jobName: string): PromptSizeBucket[] {
+  const rows = db().query(
+    `SELECT DISTINCT CASE WHEN prompt_bytes < ? THEN 'small' ELSE 'large' END AS bucket
+       FROM run
+      WHERE job = ? AND status IN ('ok','failed','stale') AND probe = 0
+        AND evidence_excluded IS NULL AND parent_run_id IS NULL
+        AND agent != '(pending)'`,
+  ).all(PROMPT_SIZE_BOUNDARY, jobName) as { bucket: PromptSizeBucket }[]
+  const have = new Set(rows.map((row) => row.bucket))
+  return (['small', 'large'] as const).filter((bucket) => have.has(bucket))
+}
+
+/**
  * Room a job needs ON TOP OF its working set, for the model to answer in.
  *
  * The comparison used to be `job.contextTokens > agent.contextTokens`, which
@@ -267,6 +306,7 @@ export function candidates(
         WHERE r.job = ? AND r.status IN ('ok','failed','stale') AND r.probe = 0
           AND r.evidence_excluded IS NULL
           AND r.parent_run_id IS NULL
+          AND ${promptBucketSql('r', promptBytes)}
           ${stack ? 'AND r.stack = ?' : ''}
         GROUP BY r.agent`,
     )
@@ -288,6 +328,7 @@ export function candidates(
           WHERE r.job = ? AND r.status IN ('ok','failed','stale') AND r.probe = 0
             AND r.evidence_excluded IS NULL
             AND r.parent_run_id IS NULL
+            AND ${promptBucketSql('r', promptBytes)}
             ${stack ? 'AND r.stack = ?' : ''}
             AND COALESCE(r.failure_kind, '') NOT IN (${notEvidenceSql()})
             AND (s.delivery IS NOT NULL OR
@@ -318,6 +359,7 @@ export function candidates(
         -- take to answer" is a question about a turn, and a chain's total is a
         -- question about how much the architect had to be asked.
         WHERE job = ? AND status = 'ok' AND probe = 0 AND latency_ms IS NOT NULL
+          AND ${promptBucketSql('run', promptBytes)}
           ${stack ? 'AND stack = ?' : ''}`,
     )
     .all(...(stack ? [jobName, stack] : [jobName])) as { agent: string; latency_ms: number }[]
@@ -451,7 +493,7 @@ export function candidates(
 }
 
 /** One row per job × agent that has any history, on the router's own maths. */
-export type Scored = Candidate & { job: string }
+export type Scored = Candidate & { job: string; promptBucket: PromptSizeBucket }
 
 /**
  * Every job × agent cell, scored exactly the way routing scores it.
@@ -470,11 +512,11 @@ export type Scored = Candidate & { job: string }
 export function scoreboard(onlyJob?: string): Scored[] {
   return Object.keys(JOBS)
     .filter((j) => !onlyJob || j === onlyJob)
-    .flatMap((j) =>
-      candidates(j)
+    .flatMap((j) => promptBucketsForJob(j).flatMap((bucket) =>
+      candidates(j, bucket === 'small' ? 0 : PROMPT_SIZE_BOUNDARY)
         .filter((c) => c.runs > 0 || c.failures > 0)
-        .map((c) => ({ ...c, job: j })),
-    )
+        .map((c) => ({ ...c, job: j, promptBucket: bucket })),
+    ))
 }
 
 /**

@@ -112,9 +112,9 @@ export type OrchState = {
   live: { id: number; agent: string; job: string; repo: string | null; started_at: string
           prompt_head: string }[]
   stale: number
-  matrix: { job: string; agent: string; runs: number; judged: number; failures: number
+  matrix: { job: string; promptBucket: 'small' | 'large'; agent: string; runs: number; judged: number; failures: number
             pts: number; lat: number | null; toks: number | null }[]
-  guide: { job: string; best: unknown; quickest: unknown; untried: string[]
+  guide: { job: string; promptBucket: 'small' | 'large' | null; best: unknown; quickest: unknown; untried: string[]
            provisional?: boolean }[]
   health: OrchAgent[]
   totals: { runs: number; failed: number; stale_n: number; toks: number; scored: number }

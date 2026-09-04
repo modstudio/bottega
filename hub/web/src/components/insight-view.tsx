@@ -96,18 +96,21 @@ function GuideCell({ candidate, lead }: { candidate: unknown; lead: 'score' | 't
   return <><strong>{value.agent}</strong> <span className="text-muted-foreground">{lead === 'time' ? `${time} - ${score}` : `${score} - ${time}`}</span></>
 }
 
+const bucketLabel = (bucket: 'small' | 'large' | null) =>
+  bucket === 'small' ? '<16 KiB' : bucket === 'large' ? '>=16 KiB' : null
+
 function RoutingView({ data }: { data: RoutingData }) {
-  const jobs = [...new Set(data.matrix.map((cell) => cell.job))].sort()
+  const jobs = [...new Set(data.matrix.map((cell) => `${cell.job}:${cell.promptBucket}`))].sort()
   const agents = [...new Set(data.matrix.map((cell) => cell.agent))].sort()
-  const at = (job: string, agent: string) => data.matrix.find((cell) => cell.job === job && cell.agent === agent)
+  const at = (jobBucket: string, agent: string) => data.matrix.find((cell) => `${cell.job}:${cell.promptBucket}` === jobBucket && cell.agent === agent)
   const blockerLine = (value: string | null) => value && value.length > 160 ? `${value.slice(0, 157)}...` : value
   return <>
     <SectionHead title="What to use for what" detail={`${data.unscored} runs unscored - an unscored run teaches the router nothing`} />
-    <div className="overflow-x-auto border border-border"><Table><TableHeader><TableRow><TableHead>Job</TableHead><TableHead>Best by score</TableHead><TableHead>Quickest</TableHead><TableHead>Never tried</TableHead></TableRow></TableHeader><TableBody>{data.guide.map((row) => <TableRow key={row.job}><TableCell className="font-semibold">{row.job}</TableCell><TableCell><GuideCell candidate={row.best} lead="score" />{row.provisional ? <Badge variant="outline" className="ml-2">provisional</Badge> : null}</TableCell><TableCell><GuideCell candidate={row.quickest} lead="time" /></TableCell><TableCell className="text-muted-foreground">{row.untried?.join(', ') || '-'}</TableCell></TableRow>)}</TableBody></Table></div>
+    <div className="overflow-x-auto border border-border"><Table><TableHeader><TableRow><TableHead>Job / prompt bucket</TableHead><TableHead>Best by score</TableHead><TableHead>Quickest</TableHead><TableHead>Never tried</TableHead></TableRow></TableHeader><TableBody>{data.guide.map((row) => <TableRow key={`${row.job}:${row.promptBucket ?? 'empty'}`}><TableCell className="font-semibold">{row.job}{bucketLabel(row.promptBucket) ? ` [${bucketLabel(row.promptBucket)}]` : ''}</TableCell><TableCell><GuideCell candidate={row.best} lead="score" />{row.provisional ? <Badge variant="outline" className="ml-2">provisional</Badge> : null}</TableCell><TableCell><GuideCell candidate={row.quickest} lead="time" /></TableCell><TableCell className="text-muted-foreground">{row.untried?.join(', ') || '-'}</TableCell></TableRow>)}</TableBody></Table></div>
 
-    <SectionHead title="Score by agent and job" detail="the router's own scoreboard, over judgements not runs" />
-    <div className="overflow-x-auto border border-border"><Table><TableHeader><TableRow><TableHead>Job</TableHead>{agents.map((agent) => <TableHead key={agent} className="text-right">{agent}</TableHead>)}</TableRow></TableHeader><TableBody>{jobs.map((job) => <TableRow key={job}><TableCell className="font-semibold">{job}</TableCell>{agents.map((agent) => {
-      const cell = at(job, agent)
+    <SectionHead title="Score by agent, job and prompt bucket" detail="the router's own scoreboard, over judgements not runs" />
+    <div className="overflow-x-auto border border-border"><Table><TableHeader><TableRow><TableHead>Job / prompt bucket</TableHead>{agents.map((agent) => <TableHead key={agent} className="text-right">{agent}</TableHead>)}</TableRow></TableHeader><TableBody>{jobs.map((jobBucket) => <TableRow key={jobBucket}><TableCell className="font-semibold">{jobBucket.replace(':small', ' [<16 KiB]').replace(':large', ' [>=16 KiB]')}</TableCell>{agents.map((agent) => {
+      const cell = at(jobBucket, agent)
       if (!cell) return <TableCell key={agent} className="text-right text-muted-foreground">-</TableCell>
       const score = cell.judged ? cell.pts / cell.judged : null
       const title = `${cell.runs} runs, ${cell.failures} failed${cell.lat != null ? `, median ${formatMs(cell.lat)}` : ''}`

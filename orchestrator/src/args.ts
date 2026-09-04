@@ -166,7 +166,9 @@ function commandShape(argv: string[]): { args: string[]; shape: CommandShape } |
     ) }
     case 'recalibrate': return { args: argv.slice(1), shape: shape('orch recalibrate [--n N] [--scorer WHO] [--force]', 0, ['--n', '--scorer'], ['--force']) }
     case 'runs': return { args: argv.slice(1), shape: shape('orch runs [--id ID]... [--job X] [--agent Y] [--limit N] [--unscored] [--since ISO] [--json]', 0, ['--id', '--job', '--agent', '--limit', '--since'], ['--unscored', '--json']) }
-    case 'guide': return { args: argv.slice(1), shape: shape('orch guide [--job X]', 0, ['--job']) }
+    case 'guide': return { args: argv.slice(1), shape: shape(
+      'orch guide [--job X] [--prompt-bytes N]', 0, ['--job', '--prompt-bytes'],
+    ) }
     case 'spawns': return { args: argv.slice(1), shape: shape('orch spawns [--limit N]', 0, ['--limit']) }
     case 'stats': return { args: argv.slice(1), shape: shape('orch stats [--job X]', 0, ['--job']) }
     case 'pick': return { args: argv.slice(1), shape: shape('orch pick <job> [--agent NAME] [--avoid NAME] [--distinct-from IDS] [--stack STACK]', 1, ['--agent', '--avoid', '--distinct-from', '--stack']) }
