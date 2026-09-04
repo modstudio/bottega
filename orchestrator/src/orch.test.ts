@@ -2595,6 +2595,40 @@ describe('detached run collection', () => {
     }
   })
 
+  test("do help says when the current project's create template cannot carry a base", () => {
+    upsertProject({
+      name: 'cannot-base', path: process.cwd(),
+      settings: {
+        worktree: {
+          create: 'scripts/worktree create {branch}', branch: 'feature/{id}',
+        },
+      },
+    })
+
+    const r = orch('do', '--help')
+    expect(r.code).toBe(0)
+    expect(r.out).toContain(
+      "--base <ref>     base an implement worktree on this verified git ref " +
+      "(unsupported for this project's create template: no {base})",
+    )
+  })
+
+  test("do help does not warn when the current project's create template carries a base", () => {
+    upsertProject({
+      name: 'can-base', path: process.cwd(),
+      settings: {
+        worktree: {
+          create: 'scripts/worktree create {branch} {base}', branch: 'feature/{id}',
+        },
+      },
+    })
+
+    const r = orch('do', '--help')
+    expect(r.code).toBe(0)
+    expect(r.out).toContain('--base <ref>     base an implement worktree on this verified git ref')
+    expect(r.out).not.toContain('unsupported for this project')
+  })
+
   test('a Codex schema rejected in preflight leaves no run row', () => {
     const schema = join(dir, 'unsupported-codex-schema.json')
     writeFileSync(schema, JSON.stringify({
