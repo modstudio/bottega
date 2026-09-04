@@ -1036,7 +1036,15 @@ describe('port importer', () => {
       const sessionsBefore = db().query('SELECT COUNT(*) n FROM session_seen').get()
       const clean = run(source)
       expect(clean.exitCode).toBe(0)
-      expect(JSON.parse(clean.stdout.toString()).docs[0].bodyLength).toBeGreaterThan(0)
+      const cleanPlan = JSON.parse(clean.stdout.toString())
+      expect(cleanPlan.docs[0].bodyLength).toBeGreaterThan(0)
+      expect(cleanPlan.uncoveredSpans).toEqual([])
+      const human = Bun.spawnSync([process.execPath, CLI, 'port', 'import', source, '--dry-run'], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(human.exitCode).toBe(0)
+      expect(human.stdout.toString()).toContain('uncovered spans (0)')
       expect(listPairs()).toEqual([])
       expect(db().query('SELECT COUNT(*) n FROM session_seen').get()).toEqual(sessionsBefore)
 
@@ -1071,6 +1079,44 @@ describe('port importer', () => {
       expect(existsSync(absent)).toBe(false)
       expect(existsSync(`${absent}-wal`)).toBe(false)
       expect(existsSync(`${absent}-shm`)).toBe(false)
+    } finally { rmSync(source, { recursive: true, force: true }) }
+  })
+
+  test('CLI dry-run explains a WAL database whose shared-memory sidecar is absent', () => {
+    const source = mkdtempSync(join(tmpdir(), 'port-import-wal-invented-'))
+    const walPath = join(source, 'wal-copy.db')
+    try {
+      const contents = fixture()
+      for (const [name, body] of Object.entries({
+        'doctrine.md': contents.doctrine, 'differences.md': contents.differences,
+        'backports.md': contents.backports, 'refs.json': contents.refs,
+        'state.json': contents.state, 'projects.md': contents.projects,
+      })) writeFileSync(join(source, name), body)
+      const wal = new Database(walPath)
+      wal.exec(`
+        PRAGMA journal_mode = WAL;
+        CREATE TABLE project (
+          id INTEGER PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL,
+          stack TEXT, canon INTEGER NOT NULL, settings TEXT
+        );
+        PRAGMA wal_checkpoint(TRUNCATE);
+      `)
+      wal.close()
+      rmSync(`${walPath}-shm`, { force: true })
+      rmSync(`${walPath}-wal`, { force: true })
+      expect(existsSync(`${walPath}-shm`)).toBe(false)
+
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const run = Bun.spawnSync([process.execPath, CLI, 'port', 'import', source, '--dry-run', '--json'], {
+        env: { ...process.env, ORCH_DB: walPath, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(run.exitCode).toBe(1)
+      const why = JSON.parse(run.stdout.toString()).refusals[0].why
+      expect(why).toContain(`WAL-mode with no ${walPath}-shm sidecar`)
+      expect(why).toContain('PRAGMA wal_checkpoint(TRUNCATE)')
+      expect(why).toContain('Underlying error: SQLiteError: unable to open database file')
+      expect(existsSync(`${walPath}-shm`)).toBe(false)
+      expect(existsSync(`${walPath}-wal`)).toBe(false)
     } finally { rmSync(source, { recursive: true, force: true }) }
   })
 

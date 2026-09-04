@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { db } from './db.ts'
 import { setDoc } from './docs.ts'
 import {
@@ -615,18 +615,33 @@ export function sourceCoverage(plan: ImportPlan, files: ImportFiles): SourceCove
 
 export function projectsForDryRun(path: string): Project[] {
   if (!existsSync(path)) throw new Error(`orchestrator database does not exist: ${path}`)
-  const readonly = new Database(path, { readonly: true })
   try {
-    const rows = readonly.query('SELECT id, name, path, stack, canon, settings FROM project ORDER BY name').all() as {
-      id: number; name: string; path: string; stack: string | null; canon: number; settings: string | null
-    }[]
-    return rows.map((row) => {
-      let settings: Project['settings'] = {}
-      try { settings = row.settings ? JSON.parse(row.settings) : {} } catch { settings = {} }
-      return { ...row, canon: row.canon === 1, settings }
-    })
-  } finally {
-    readonly.close()
+    const readonly = new Database(path, { readonly: true })
+    try {
+      const rows = readonly.query('SELECT id, name, path, stack, canon, settings FROM project ORDER BY name').all() as {
+        id: number; name: string; path: string; stack: string | null; canon: number; settings: string | null
+      }[]
+      return rows.map((row) => {
+        let settings: Project['settings'] = {}
+        try { settings = row.settings ? JSON.parse(row.settings) : {} } catch { settings = {} }
+        return { ...row, canon: row.canon === 1, settings }
+      })
+    } finally {
+      readonly.close()
+    }
+  } catch (error) {
+    let walWithoutSharedMemory = false
+    try {
+      const header = readFileSync(path).subarray(0, 20)
+      walWithoutSharedMemory = header[18] === 2 && header[19] === 2 && !existsSync(`${path}-shm`)
+    } catch {}
+    if (!walWithoutSharedMemory) throw error
+    throw new Error(
+      `cannot read project register at ${path}: the database appears to be WAL-mode with no ${path}-shm sidecar, ` +
+      'so a read-only connection cannot open it. Copy the -wal and -shm files alongside the .db, or checkpoint ' +
+      'the source first with PRAGMA wal_checkpoint(TRUNCATE) before copying. ' +
+      `Underlying error: ${String(error)}`,
+    )
   }
 }
 

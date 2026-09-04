@@ -1071,7 +1071,7 @@ switch (cmd) {
     if (group === 'import') {
       const dir = argv[2]
       if (!dir) throw new Error('orch port import <dir> [--dry-run] [--replace] [--json]')
-      const { applyImport, ImportRefusalError, planImport, projectsForDryRun } =
+      const { applyImport, ImportRefusalError, planImport, projectsForDryRun, sourceCoverage } =
         await import('./porting-import.ts')
       const names = {
         doctrine: 'doctrine.md', differences: 'differences.md', backports: 'backports.md',
@@ -1111,10 +1111,12 @@ switch (cmd) {
               refusals: ioRefusals, exclusions: [] }
           : planImport(files, registered)
       }
+      const uncoveredSpans = sourceCoverage(plan, files)
       const visible = {
         ...plan,
         doctrine: plan.doctrine.map((row) => ({ ...row, bodyLength: row.body.length })),
         docs: plan.docs.map((row) => ({ ...row, bodyLength: row.body.length })),
+        uncoveredSpans,
       }
       const printPlan = () => {
         if (has('json')) { console.log(JSON.stringify(visible, null, 2)); return }
@@ -1145,6 +1147,10 @@ switch (cmd) {
         for (const exclusion of plan.exclusions) {
           console.log(`  ${exclusion.what} / ${exclusion.where} / ${exclusion.why}`)
           if (exclusion.value !== undefined) console.log(`    original value: ${exclusion.value}`)
+        }
+        console.log(`uncovered spans (${uncoveredSpans.length})`)
+        for (const span of uncoveredSpans) {
+          console.log(`  ${span.file} offset ${span.offset} / ${JSON.stringify(span.text)}`)
         }
       }
       if (has('dry-run')) {
