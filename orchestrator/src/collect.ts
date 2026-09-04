@@ -143,6 +143,10 @@ function mcpNote(row: {
 export function collectResult(
   database: Database, argv: string[], writesRepo: (job: string) => boolean = () => false,
 ): void {
+  const unknown = argv.slice(2).find((arg) => arg !== '--quiet')
+  if (unknown) {
+    throw new Error(`unrecognised argument: ${unknown}\nworking form: orch result <run-id> [--quiet]`)
+  }
   const id = Number(argv[1])
   if (!id) throw new Error('orch result <run-id>')
   const chain = resolveFailover(database, id)
@@ -206,6 +210,25 @@ export async function collectWait(
   database: Database, argv: string[], beforePoll: () => void = () => {},
 ): Promise<void> {
   const rest = argv.slice(1)
+  for (let i = 0; i < rest.length; i++) {
+    const arg = rest[i]!
+    if (/^\d+$/.test(arg)) continue
+    if (arg === '--timeout') {
+      const value = rest[i + 1]
+      if (value === undefined || value.startsWith('--')) {
+        throw new Error(
+          'argument --timeout needs a value\n' +
+          'working form: orch wait <run-id>... [--timeout SECONDS]',
+        )
+      }
+      i++
+      continue
+    }
+    throw new Error(
+      `unrecognised argument: ${arg}\n` +
+      'working form: orch wait <run-id>... [--timeout SECONDS]',
+    )
+  }
   const ids = rest
     .filter((x, i) => /^\d+$/.test(x) && !VALUE_FLAGS.has(rest[i - 1] ?? ''))
     .map(Number)

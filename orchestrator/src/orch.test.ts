@@ -3672,6 +3672,17 @@ describe('detached run collection', () => {
     })
   })
 
+  test('project set refuses positional settings, names the first extra, and shows the working form', () => {
+    upsertProject({ name: 'positional-settings', path: process.cwd() })
+    const r = orch('project', 'set', 'positional-settings', 'gate', 'bun run check')
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('unrecognised argument: gate')
+    expect(r.err).toContain(
+      'working form: orch project set <name> [--stack X] [--path P] [--canon|--no-canon] [--settings JSON] [--json]',
+    )
+    expect(projects().find((project) => project.name === 'positional-settings')?.settings).toEqual({})
+  })
+
   test('project add and set --json print the resulting register row', () => {
     const added = orch(
       'project', 'add', dir, '--name', 'json-row', '--stack', 'first', '--no-canon', '--json',

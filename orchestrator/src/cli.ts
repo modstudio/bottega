@@ -23,6 +23,7 @@ import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
 import { WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE, contractConflicts } from './contract.ts'
 import { collectResult, collectWait, resolveFailover, failoverSummary } from './collect.ts'
 import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
+import { validateCliArgs } from './args.ts'
 
 /**
  * How long `orch do` watches a detached run before handing it back.
@@ -848,9 +849,10 @@ async function readPrompt(): Promise<string> {
  * await is invisible until an outage. `run()` probes independently: it is called
  * programmatically too, and must be safe without this.
  */
-if (NEEDS_HEALTH.has(cmd ?? '')) await ensureLocalHealth()
-
 try {
+
+validateCliArgs(argv)
+if (NEEDS_HEALTH.has(cmd ?? '')) await ensureLocalHealth()
 
 switch (cmd) {
   case 'land': {
