@@ -1,0 +1,168 @@
+import { existsSync } from 'node:fs'
+import { db, sessionId } from './db.ts'
+import { projectAt, type Project } from './projects.ts'
+import {
+  prepareSharedRefGuard, projectLockState, repoRootOf, withProjectLock,
+  type SharedRefGuardEnvironment,
+} from './worktree.ts'
+
+const LANDING_LOCK = 'landing'
+const LANDING_LOCK_TIMEOUT_MS = 5 * 60_000
+
+function git(
+  cwd: string, args: string[], guard?: SharedRefGuardEnvironment,
+): string {
+  const p = Bun.spawnSync(['git', ...args], {
+    cwd, env: { ...process.env, ...guard }, stdout: 'pipe', stderr: 'pipe',
+  })
+  if (p.exitCode !== 0) {
+    throw new Error(`git ${args.join(' ')} failed: ${p.stderr.toString().trim() || `exit ${p.exitCode}`}`)
+  }
+  return p.stdout.toString().trim()
+}
+
+function gitOk(cwd: string, args: string[], guard?: SharedRefGuardEnvironment): boolean {
+  return Bun.spawnSync(['git', ...args], {
+    cwd, env: { ...process.env, ...guard }, stdout: 'ignore', stderr: 'ignore',
+  }).exitCode === 0
+}
+
+function registeredProject(cwd: string): { project: Project; repoRoot: string } {
+  const project = projectAt(cwd)
+  if (!project) throw new Error(`cannot land from ${cwd}: it is not inside a registered project`)
+  const repoRoot = repoRootOf(cwd)
+  if (!repoRoot) throw new Error(`cannot land from ${cwd}: it is not a git repository`)
+  return { project, repoRoot }
+}
+
+export function resolveLandingBranch(value: string): { branch: string; runId: number | null } {
+  if (!/^\d+$/.test(value)) return { branch: value, runId: null }
+  const runId = Number(value)
+  const row = db().query('SELECT branch FROM run WHERE id=?').get(runId) as { branch: string | null } | null
+  if (!row) throw new Error(`no run ${runId}`)
+  if (!row.branch) throw new Error(`run ${runId} has no branch and cannot be landed`)
+  return { branch: row.branch, runId }
+}
+
+function worktreeForBranch(repoRoot: string, branch: string): string | null {
+  const lines = git(repoRoot, ['worktree', 'list', '--porcelain']).split('\n')
+  let path: string | null = null
+  for (const line of lines) {
+    if (line.startsWith('worktree ')) path = line.slice('worktree '.length)
+    else if (line === `branch refs/heads/${branch}`) return path
+    else if (!line) path = null
+  }
+  return null
+}
+
+function runGate(project: Project, worktree: string, guard: SharedRefGuardEnvironment): void {
+  const gate = typeof project.settings.gate === 'string' ? project.settings.gate.trim() : ''
+  if (!gate) {
+    throw new Error(
+      `project ${project.name} has no landing gate configured — set settings.gate before landing`,
+    )
+  }
+  const before = git(worktree, ['status', '--porcelain=v1', '--untracked-files=all'], guard)
+  if (before) {
+    throw new Error(`refusing to gate a dirty worktree for ${project.name}:\n${before}`)
+  }
+  console.log(`gate ${project.name}: ${gate}`)
+  const p = Bun.spawnSync(['sh', '-lc', gate], {
+    cwd: worktree, env: { ...process.env, ...guard }, stdout: 'inherit', stderr: 'inherit',
+  })
+  if (p.exitCode !== 0) throw new Error(`landing gate failed with exit ${p.exitCode}: ${gate}`)
+  const after = git(worktree, ['status', '--porcelain=v1', '--untracked-files=all'], guard)
+  if (after) {
+    throw new Error(`landing gate changed the worktree; its result was not the commit being landed:\n${after}`)
+  }
+}
+
+function trunkCommit(repoRoot: string, trunk: string, guard?: SharedRefGuardEnvironment): string {
+  return git(repoRoot, ['rev-parse', '--verify', `refs/heads/${trunk}^{commit}`], guard)
+}
+
+function rebaseAndGate(
+  project: Project, repoRoot: string, worktree: string, branch: string, trunk: string,
+  trunkOid: string, guard: SharedRefGuardEnvironment,
+): string {
+  console.log(`rebase ${branch} onto ${trunk} at ${trunkOid}`)
+  git(worktree, ['rebase', trunkOid], guard)
+  const tip = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'], guard)
+  if (tip === trunkOid) throw new Error(`branch ${branch} has no commits to land after rebasing onto ${trunk}`)
+  runGate(project, worktree, guard)
+  return tip
+}
+
+function fastForward(
+  repoRoot: string, worktree: string, branch: string, trunk: string, tip: string, expected: string,
+  guard: SharedRefGuardEnvironment,
+): void {
+  if (!gitOk(repoRoot, ['merge-base', '--is-ancestor', expected, tip], guard)) {
+    throw new Error(`refusing to land ${branch}: ${tip} is not a fast-forward of ${trunk} at ${expected}`)
+  }
+  // The expected old value makes the ref update itself the lost-race check.
+  // The reference-transaction guard installed in this worktree runs before it
+  // and refuses any commit not reachable from the common object database.
+  git(worktree, [
+    'update-ref', `refs/heads/${trunk}`, tip, expected,
+  ], guard)
+}
+
+export function land(cwd: string, branch: string, timeoutMs = LANDING_LOCK_TIMEOUT_MS): string {
+  const { project, repoRoot } = registeredProject(cwd)
+  const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
+  if (!trunk) throw new Error(`project ${project.name} has no trunk configured — set settings.trunk before landing`)
+  const gate = typeof project.settings.gate === 'string' ? project.settings.gate.trim() : ''
+  if (!gate) throw new Error(`project ${project.name} has no landing gate configured — set settings.gate before landing`)
+  if (!gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])) {
+    throw new Error(`branch ${branch} does not exist in project ${project.name}`)
+  }
+  if (!gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${trunk}`])) {
+    throw new Error(`configured trunk ${trunk} does not exist in project ${project.name}`)
+  }
+  const worktree = worktreeForBranch(repoRoot, branch)
+  if (!worktree || !existsSync(worktree)) throw new Error(`branch ${branch} has no worktree and cannot be landed`)
+  if (branch === trunk || gitOk(repoRoot, [
+    'merge-base', '--is-ancestor', `refs/heads/${branch}`, `refs/heads/${trunk}`,
+  ])) {
+    throw new Error(`branch ${branch} is already merged into ${trunk}`)
+  }
+
+  const guard = prepareSharedRefGuard(worktree)
+  const recordedTrunk = trunkCommit(repoRoot, trunk, guard)
+  const optimisticTip = rebaseAndGate(
+    project, repoRoot, worktree, branch, trunk, recordedTrunk, guard,
+  )
+
+  return withProjectLock(repoRoot, LANDING_LOCK, { session: sessionId(), what: branch }, () => {
+    const currentTrunk = trunkCommit(repoRoot, trunk, guard)
+    if (currentTrunk === recordedTrunk) {
+      fastForward(repoRoot, worktree, branch, trunk, optimisticTip, recordedTrunk, guard)
+      console.log(`landed ${branch} at ${optimisticTip} onto ${trunk} (optimistic gate remained current)`)
+      return optimisticTip
+    }
+
+    console.log(`${trunk} moved from ${recordedTrunk} to ${currentTrunk}; re-gating ${branch} under the landing lock`)
+    const serializedTip = rebaseAndGate(
+      project, repoRoot, worktree, branch, trunk, currentTrunk, guard,
+    )
+    fastForward(repoRoot, worktree, branch, trunk, serializedTip, currentTrunk, guard)
+    console.log(`landed ${branch} at ${serializedTip} onto ${trunk} after serialized re-gate`)
+    return serializedTip
+  }, timeoutMs, true)
+}
+
+export function landingStatus(cwd: string): string {
+  const { project, repoRoot } = registeredProject(cwd)
+  const state = projectLockState(repoRoot, LANDING_LOCK)
+  const age = (since: string) => `${Math.max(0, Math.round((Date.now() - Date.parse(since)) / 1000))}s`
+  const holder = state.holder
+    ? `held by session ${state.holder.session ?? 'unknown'}, pid ${state.holder.pid}, ` +
+      `landing ${state.holder.what}, for ${age(state.holder.since)}`
+    : 'free'
+  const waiters = state.waiters.length
+    ? state.waiters.map((w) =>
+        `  session ${w.session ?? 'unknown'}, pid ${w.pid}, landing ${w.what}, waiting ${age(w.since)}`).join('\n')
+    : '  none'
+  return `${project.name} landing lock: ${holder}\nwaiters:\n${waiters}`
+}

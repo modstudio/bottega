@@ -209,14 +209,137 @@ const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 
 const WORKTREE_CREATE_LOCK_TIMEOUT_MS = 5 * 60_000
 const WORKTREE_CREATE_LOCK_POLL_MS = 100
-const heldWorktreeCreateLocks = new Set<string>()
+const heldProjectLocks = new Set<string>()
 
-function worktreeCreateLockOwner(owner: string): number | null {
+export type ProjectLockIdentity = {
+  session: string | null
+  what: string
+}
+
+export type ProjectLockParticipant = ProjectLockIdentity & {
+  pid: number
+  since: string
+}
+
+export type ProjectLockState = {
+  path: string
+  holder: ProjectLockParticipant | null
+  waiters: ProjectLockParticipant[]
+}
+
+function projectLockParticipant(path: string): ProjectLockParticipant | null {
   let value: string
-  try { value = readFileSync(owner, 'utf8').trim() } catch { return null }
-  if (!/^\d+$/.test(value)) return null
-  const pid = Number(value)
-  return Number.isSafeInteger(pid) && pid > 0 ? pid : null
+  try { value = readFileSync(path, 'utf8').trim() } catch { return null }
+  if (/^\d+$/.test(value)) {
+    const pid = Number(value)
+    return Number.isSafeInteger(pid) && pid > 0
+      ? { pid, session: null, what: 'worktree creation', since: new Date(0).toISOString() }
+      : null
+  }
+  try {
+    const parsed = JSON.parse(value) as Partial<ProjectLockParticipant>
+    return Number.isSafeInteger(parsed.pid) && Number(parsed.pid) > 0 &&
+      typeof parsed.what === 'string' && typeof parsed.since === 'string'
+      ? { pid: Number(parsed.pid), session: typeof parsed.session === 'string' ? parsed.session : null,
+          what: parsed.what, since: parsed.since }
+      : null
+  } catch { return null }
+}
+
+function projectLockPaths(repoRoot: string, name: string): {
+  lock: string; owner: string; waiters: string
+} {
+  if (!/^[a-z][a-z0-9-]*$/.test(name)) throw new Error(`invalid project lock name: ${name}`)
+  const common = realpathSync(resolve(repoRoot, git(['rev-parse', '--git-common-dir'], repoRoot)))
+  const lock = join(common, `orch-${name}.lock`)
+  return { lock, owner: join(lock, 'owner'), waiters: join(common, `orch-${name}.waiters`) }
+}
+
+/** Read coordination state without acquiring or changing the lock. */
+export function projectLockState(repoRoot: string, name: string): ProjectLockState {
+  const paths = projectLockPaths(repoRoot, name)
+  const waiters = existsSync(paths.waiters)
+    ? readdirSync(paths.waiters).flatMap((entry) => {
+        const participant = projectLockParticipant(join(paths.waiters, entry))
+        return participant && pidAlive(participant.pid) ? [participant] : []
+      }).sort((a, b) => a.since.localeCompare(b.since))
+    : []
+  return { path: paths.lock, holder: projectLockParticipant(paths.owner), waiters }
+}
+
+/**
+ * The mkdir lock shared by repository-wide operations.
+ *
+ * Names keep unrelated resources separate while retaining the proven atomic
+ * acquisition, bounded wait and dead-owner reclamation used for worktrees.
+ */
+export function withProjectLock<T>(
+  repoRoot: string, name: string, identity: ProjectLockIdentity, action: () => T,
+  timeoutMs = WORKTREE_CREATE_LOCK_TIMEOUT_MS, exposeWaiters = false,
+): T {
+  const paths = projectLockPaths(repoRoot, name)
+  if (heldProjectLocks.has(paths.lock)) return action()
+  const participant: ProjectLockParticipant = {
+    pid: process.pid, session: identity.session, what: identity.what, since: new Date().toISOString(),
+  }
+  const waiter = join(paths.waiters, `${process.pid}-${randomUUID()}`)
+  if (exposeWaiters) {
+    mkdirSync(paths.waiters, { recursive: true })
+    writeFileSync(waiter, `${JSON.stringify(participant)}\n`)
+  }
+  const deadline = Date.now() + timeoutMs
+  const sleeper = new Int32Array(new SharedArrayBuffer(4))
+
+  try {
+    while (true) {
+      try {
+        mkdirSync(paths.lock)
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+        const held = projectLockParticipant(paths.owner)
+        if (held !== null && !pidAlive(held.pid)) {
+          const stale = `${paths.lock}.stale-${process.pid}-${randomUUID()}`
+          try { renameSync(paths.lock, stale) } catch (renameError) {
+            if ((renameError as NodeJS.ErrnoException).code === 'ENOENT') continue
+            throw renameError
+          }
+          const label = name === 'worktree-create' ? 'worktree creation' : name
+          console.error(`orch: reclaimed ${label} lock from dead holder pid ${held.pid}: ${paths.lock}`)
+          rmSync(stale, { recursive: true, force: true })
+          continue
+        }
+        if (Date.now() >= deadline) {
+          const heldFor = held ? Math.max(0, Date.now() - Date.parse(held.since)) : null
+          const detail = name === 'worktree-create'
+            ? (held ? ` (holder pid ${held.pid})` : '')
+            : (held ? ` (holder session ${held.session ?? 'unknown'}, pid ${held.pid}, ` +
+                `landing ${held.what}, held for ${Math.round(heldFor! / 1000)}s)` : '')
+          const label = name === 'worktree-create' ? 'worktree creation' : name
+          throw new Error(`timed out after ${timeoutMs / 1000}s waiting for ` +
+            `this project's ${label} lock${detail}: ${paths.lock}`)
+        }
+        Atomics.wait(sleeper, 0, 0, WORKTREE_CREATE_LOCK_POLL_MS)
+        continue
+      }
+      try {
+        const holder = { ...participant, since: new Date().toISOString() }
+        writeFileSync(paths.owner, `${JSON.stringify(holder)}\n`)
+        heldProjectLocks.add(paths.lock)
+        if (exposeWaiters) rmSync(waiter, { force: true })
+        break
+      } catch (e) {
+        rmSync(paths.lock, { recursive: true, force: true })
+        throw e
+      }
+    }
+
+    try { return action() } finally {
+      heldProjectLocks.delete(paths.lock)
+      rmSync(paths.lock, { recursive: true, force: true })
+    }
+  } finally {
+    if (exposeWaiters) rmSync(waiter, { force: true })
+  }
 }
 
 /**
@@ -232,61 +355,8 @@ function worktreeCreateLockOwner(owner: string): number | null {
 export function withWorktreeCreateLock<T>(
   repoRoot: string, create: () => T, timeoutMs = WORKTREE_CREATE_LOCK_TIMEOUT_MS,
 ): T {
-  const common = realpathSync(resolve(repoRoot, git(['rev-parse', '--git-common-dir'], repoRoot)))
-  const lock = join(common, 'orch-worktree-create.lock')
-  // run.ts holds the project lock around creation plus the caller-state carry.
-  // The public creation helpers also take it so direct callers remain safe;
-  // their nested acquisition is the same synchronous critical section.
-  if (heldWorktreeCreateLocks.has(lock)) return create()
-  const owner = join(lock, 'owner')
-  const deadline = Date.now() + timeoutMs
-  const sleeper = new Int32Array(new SharedArrayBuffer(4))
-
-  while (true) {
-    try {
-      mkdirSync(lock)
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
-      const heldBy = worktreeCreateLockOwner(owner)
-      if (heldBy !== null && !pidAlive(heldBy)) {
-        const stale = `${lock}.stale-${process.pid}-${randomUUID()}`
-        try {
-          // Rename first: deleting the shared path could remove a lock acquired by
-          // another contender between the liveness check and cleanup.
-          renameSync(lock, stale)
-        } catch (renameError) {
-          if ((renameError as NodeJS.ErrnoException).code === 'ENOENT') continue
-          throw renameError
-        }
-        console.error(`orch: reclaimed worktree creation lock from dead holder pid ${heldBy}: ${lock}`)
-        rmSync(stale, { recursive: true, force: true })
-        continue
-      }
-      if (Date.now() >= deadline) {
-        throw new Error(
-          `timed out after ${timeoutMs / 1000}s waiting for ` +
-          `this project's worktree creation lock${heldBy === null ? '' : ` (holder pid ${heldBy})`}: ${lock}`,
-        )
-      }
-      Atomics.wait(sleeper, 0, 0, WORKTREE_CREATE_LOCK_POLL_MS)
-      continue
-    }
-    try {
-      writeFileSync(owner, `${process.pid}\n`)
-      heldWorktreeCreateLocks.add(lock)
-      break
-    } catch (e) {
-      rmSync(lock, { recursive: true, force: true })
-      throw e
-    }
-  }
-
-  try {
-    return create()
-  } finally {
-    heldWorktreeCreateLocks.delete(lock)
-    rmSync(lock, { recursive: true, force: true })
-  }
+  return withProjectLock(repoRoot, 'worktree-create',
+    { session: null, what: 'worktree creation' }, create, timeoutMs)
 }
 
 /** Install the ref-update boundary without changing the shared repository config. */

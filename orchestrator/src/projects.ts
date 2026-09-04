@@ -65,6 +65,8 @@ export type ProjectSettings = {
   states?: Record<string, 'backlog' | 'open' | 'active' | 'review' | 'done' | 'dropped'>
   /** What the trunk is called here. Several of these are `develop`, not `main`. */
   trunk?: string
+  /** The project's complete landing gate, run from the branch worktree. */
+  gate?: string
   /** Display colour, for anything that draws a project. */
   color?: string
   /**

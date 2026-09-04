@@ -40,6 +40,140 @@ const hermeticGitEnv = (extra: Record<string, string> = {}) => ({
   ...Object.fromEntries(gitRepositoryVariables.map((variable) => [variable, undefined])),
   ...extra,
 })
+
+describe('landing is gated on the exact commit that reaches trunk', () => {
+  const landingModule = new URL('landing.ts', import.meta.url).href
+  const worktreeModule = new URL('worktree.ts', import.meta.url).href
+  const g = (cwd: string, ...args: string[]) => {
+    const p = Bun.spawnSync(['git', ...args], {
+      cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+    return p.stdout.toString().trim()
+  }
+  const repoWithBranches = (branches: string[]) => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-land-')))
+    g(repo, 'init', '-b', 'main')
+    g(repo, 'config', 'user.email', 'orch-test@example.invalid')
+    g(repo, 'config', 'user.name', 'Orch Test')
+    writeFileSync(join(repo, 'base.txt'), 'base\n')
+    g(repo, 'add', 'base.txt')
+    g(repo, 'commit', '-m', 'base')
+    const trees: Record<string, string> = {}
+    for (const branch of branches) {
+      const tree = join(repo, 'trees', branch)
+      mkdirSync(join(repo, 'trees'), { recursive: true })
+      g(repo, 'worktree', 'add', '-b', branch, tree, 'main')
+      writeFileSync(join(tree, `${branch}.txt`), `${branch}\n`)
+      g(tree, 'add', `${branch}.txt`)
+      g(tree, 'commit', '-m', branch)
+      trees[branch] = tree
+    }
+    return { repo, trees }
+  }
+  const childLand = (repo: string, branch: string) => Bun.spawn(
+    [process.execPath, '-e',
+      `const { land } = await import(process.argv[1]); land(process.argv[2], process.argv[3])`,
+      landingModule, repo, branch],
+    { env: { ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB!, CLAUDE_CODE_SESSION_ID: branch },
+      stdout: 'pipe', stderr: 'pipe' },
+  )
+
+  test('two simultaneous landings both land and the stale gate is run again', async () => {
+    const { repo } = repoWithBranches(['first', 'second'])
+    const log = join(repo, 'gate.log')
+    const gate = join(repo, 'gate.sh')
+    writeFileSync(gate, `#!/bin/sh\nset -eu\nb=$(git branch --show-current)\nh=$(git rev-parse HEAD)\nprintf '%s %s\\n' "$b" "$h" >> '${log}'\nm='${repo}/first-gate-'$b\nif [ ! -e "$m" ]; then\n  touch "$m"\n  while [ ! -e '${repo}/first-gate-first' ] || [ ! -e '${repo}/first-gate-second' ]; do sleep 0.01; done\n  [ "$b" != second ] || sleep 0.2\nfi\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-pair', path: repo,
+      settings: { trunk: 'main', gate } })
+    try {
+      const first = childLand(repo, 'first')
+      const second = childLand(repo, 'second')
+      expect(await Promise.all([first.exited, second.exited])).toEqual([0, 0])
+      const rows = readFileSync(log, 'utf8').trim().split('\n').map((line) => line.split(' '))
+      expect(rows.filter(([branch]) => branch === 'first')).toHaveLength(1)
+      expect(rows.filter(([branch]) => branch === 'second')).toHaveLength(2)
+      const secondGates = rows.filter(([branch]) => branch === 'second').map(([, oid]) => oid)
+      expect(secondGates[0]).not.toBe(secondGates[1])
+      expect(g(repo, 'rev-parse', 'main')).toBe(secondGates[1])
+      expect(g(repo, 'show', 'main:first.txt')).toBe('first')
+      expect(g(repo, 'show', 'main:second.txt')).toBe('second')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a gate failure under the lock releases it for a waiting landing', async () => {
+    const { repo } = repoWithBranches(['fails', 'waits'])
+    const gate = join(repo, 'gate.sh')
+    writeFileSync(gate, `#!/bin/sh\nset -eu\nb=$(git branch --show-current)\nif [ "$b" = fails ]; then\n c='${repo}/fails-count'; n=0; [ ! -e "$c" ] || n=$(cat "$c"); n=$((n+1)); echo "$n" > "$c"\n if [ "$n" = 1 ]; then touch '${repo}/first-gate'; while [ ! -e '${repo}/trunk-moved' ]; do sleep 0.01; done\n else touch '${repo}/failing-under-lock'; sleep 0.15; exit 7; fi\nfi\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-failure', path: repo, settings: { trunk: 'main', gate } })
+    try {
+      const failing = childLand(repo, 'fails')
+      for (let i = 0; i < 200 && !existsSync(join(repo, 'first-gate')); i++) await Bun.sleep(5)
+      writeFileSync(join(repo, 'trunk.txt'), 'moved\n')
+      g(repo, 'add', 'trunk.txt')
+      g(repo, 'commit', '-m', 'move trunk')
+      writeFileSync(join(repo, 'trunk-moved'), '')
+      for (let i = 0; i < 200 && !existsSync(join(repo, 'failing-under-lock')); i++) await Bun.sleep(5)
+      const waiting = childLand(repo, 'waits')
+      expect(await failing.exited).not.toBe(0)
+      expect(await waiting.exited).toBe(0)
+      expect(g(repo, 'show', 'main:waits.txt')).toBe('waits')
+      expect(projectLockState(repo, 'landing').holder).toBeNull()
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a killed holder is reclaimed, and another project never waits on it', async () => {
+    const one = repoWithBranches([]).repo
+    const two = repoWithBranches([]).repo
+    const hold = `const { withProjectLock } = await import(process.argv[1]); ` +
+      `withProjectLock(process.argv[2], 'landing', {session:'dead-session',what:'dead-branch'}, ` +
+      `() => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10000), 1000, true)`
+    const child = Bun.spawn([process.execPath, '-e', hold, worktreeModule, one], {
+      env: { ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe',
+    })
+    try {
+      for (let i = 0; i < 200 && !projectLockState(one, 'landing').holder; i++) await Bun.sleep(5)
+      expect(projectLockState(one, 'landing').holder?.what).toBe('dead-branch')
+      const started = Date.now()
+      expect(withProjectLock(two, 'landing', { session: 'other', what: 'other-branch' }, () => 'ok', 50, true)).toBe('ok')
+      expect(Date.now() - started).toBeLessThan(50)
+      child.kill('SIGKILL')
+      await child.exited
+      expect(withProjectLock(one, 'landing', { session: 'next', what: 'next-branch' }, () => 'reclaimed', 500, true)).toBe('reclaimed')
+    } finally {
+      child.kill()
+      await child.exited
+      rmSync(one, { recursive: true, force: true })
+      rmSync(two, { recursive: true, force: true })
+    }
+  })
+
+  test('a project with no declared gate is refused before it can land', async () => {
+    const { repo } = repoWithBranches(['ungated'])
+    upsertProject({ name: 'landing-ungated', path: repo, settings: { trunk: 'main' } })
+    try {
+      const child = childLand(repo, 'ungated')
+      expect(await child.exited).not.toBe(0)
+      expect((await new Response(child.stderr).text())).toContain(
+        'project landing-ungated has no landing gate configured',
+      )
+      expect(() => g(repo, 'merge-base', '--is-ancestor', 'ungated', 'main')).toThrow()
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('run ids resolve explicitly and status reads holder and waiters without acquiring', () => {
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    db().query('UPDATE run SET branch=? WHERE id=?').run('DEV-181-branch', id)
+    expect(resolveLandingBranch(String(id))).toEqual({ branch: 'DEV-181-branch', runId: id })
+    expect(resolveLandingBranch('named-branch')).toEqual({ branch: 'named-branch', runId: null })
+    const { repo } = repoWithBranches([])
+    upsertProject({ name: 'landing-status', path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try { expect(landingStatus(repo)).toBe('landing-status landing lock: free\nwaiters:\n  none') }
+    finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+})
 const hermeticGitCommand =
   `env ${gitRepositoryVariables.map((variable) => `-u ${variable}`).join(' ')} git`
 
@@ -95,7 +229,8 @@ const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
 const { ask } = await import('./ask.ts')
 const { orphanSafety, repoRootOf, createWorktree, createWithTool, resolveBase, fillTool,
         seedArgv, shellWords, worktreeGitDir, prepareWorktreeObjects, prepareSharedRefGuard,
-        carryWorkingState, withWorktreeCreateLock } = await import('./worktree.ts')
+        carryWorkingState, withWorktreeCreateLock, withProjectLock, projectLockState } = await import('./worktree.ts')
+const { landingStatus, resolveLandingBranch } = await import('./landing.ts')
 const { AGENTS, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
         WAKE_COOLDOWN_MS, CODEX_EXEC_SANDBOX, strictCodexSchema } = await import('./agents.ts')

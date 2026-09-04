@@ -676,6 +676,8 @@ function usage(): never {
       detaches by default; --follow watches the resumed turn here
       several questions: orch answer <id> --q<qid> "<ruling>" --q<qid> "<ruling>"
   orch diff <id>                inspect a run's worktree diff (review diffs are scratch)
+  orch land <branch|run-id>     gate and fast-forward one explicit branch into configured trunk
+      --status                  show this project's landing lock without taking it
   orch stop <id>                terminate a running run and reclaim its worktree
   orch discard <id>             delete that run's worktree (the row stays)
       --force                   also delete a protected branch; bypass a refusing project tool
@@ -840,6 +842,20 @@ if (NEEDS_HEALTH.has(cmd ?? '')) await ensureLocalHealth()
 try {
 
 switch (cmd) {
+  case 'land': {
+    const { land, landingStatus, resolveLandingBranch } = await import('./landing.ts')
+    if (has('status')) {
+      console.log(landingStatus(process.cwd()))
+      break
+    }
+    const value = argv[1]
+    if (!value || value.startsWith('--')) throw new Error('orch land <branch|run-id> | orch land --status')
+    const target = resolveLandingBranch(value)
+    if (target.runId !== null) console.log(`run ${target.runId} resolves to branch ${target.branch}`)
+    land(process.cwd(), target.branch)
+    break
+  }
+
   case 'contract': {
     const jobName = argv[1]
     if (!jobName) throw new Error('orch contract <job>')
