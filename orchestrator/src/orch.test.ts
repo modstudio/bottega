@@ -111,10 +111,9 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
-  test('landing leaves a trunk checkout with genuine work untouched and says why', async () => {
+  test('landing reconciles around genuine tracked work without changing it', async () => {
     const { repo } = repoWithBranches(['dirty-landing'])
     writeFileSync(join(repo, 'base.txt'), 'work owned by another session\n')
-    const indexBefore = g(repo, 'write-tree')
     upsertProject({ name: 'landing-dirty-checkout', path: repo,
       settings: { trunk: 'main', gate: 'true' } })
     try {
@@ -122,13 +121,71 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       expect(await child.exited).toBe(0)
       const output = (await new Response(child.stdout).text()) +
         (await new Response(child.stderr).text())
-      expect(g(repo, 'rev-parse', 'HEAD')).toBe(g(repo, 'rev-parse', 'dirty-landing'))
-      expect(g(repo, 'write-tree')).toBe(indexBefore)
+      const tip = g(repo, 'rev-parse', 'dirty-landing')
+      expect(g(repo, 'rev-parse', 'HEAD')).toBe(tip)
+      expect(g(repo, 'write-tree')).toBe(g(repo, 'rev-parse', `${tip}^{tree}`))
       expect(readFileSync(join(repo, 'base.txt'), 'utf8')).toBe('work owned by another session\n')
-      expect(existsSync(join(repo, 'dirty-landing.txt'))).toBe(false)
-      expect(output).toContain('landing succeeded')
-      expect(output).toContain(`checkout ${repo} was left untouched because it holds work`)
-      expect(output).toContain('base.txt')
+      expect(readFileSync(join(repo, 'dirty-landing.txt'), 'utf8')).toBe('dirty-landing\n')
+      expect(g(repo, 'status', '--short')).toBe('M base.txt')
+      expect(output).toContain(`reconciled checkout ${repo}`)
+      expect(output).not.toContain('CONDITION:')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('an untracked file neither blocks reconciliation nor enters the index', async () => {
+    const { repo } = repoWithBranches(['untracked-landing'])
+    writeFileSync(join(repo, 'orch.db.bak-test'), 'litter\n')
+    upsertProject({ name: 'landing-untracked-checkout', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const child = childLand(repo, 'untracked-landing')
+      expect(await child.exited).toBe(0)
+      const output = (await new Response(child.stdout).text()) +
+        (await new Response(child.stderr).text())
+      const tip = g(repo, 'rev-parse', 'untracked-landing')
+      expect(g(repo, 'write-tree')).toBe(g(repo, 'rev-parse', `${tip}^{tree}`))
+      expect(readFileSync(join(repo, 'untracked-landing.txt'), 'utf8')).toBe('untracked-landing\n')
+      expect(g(repo, 'status', '--short')).toBe('?? orch.db.bak-test')
+      expect(output).toContain(`reconciled checkout ${repo}`)
+      expect(output).not.toContain('CONDITION:')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a conflicting staged-only version is anchored and recoverable without changing working bytes', async () => {
+    const { repo, trees } = repoWithBranches(['staged-landing'])
+    writeFileSync(join(trees['staged-landing']!, 'base.txt'), 'landed version\n')
+    g(trees['staged-landing']!, 'add', 'base.txt')
+    g(trees['staged-landing']!, 'commit', '-m', 'DEV-219 touch staged path')
+    writeFileSync(join(repo, 'base.txt'), 'staged version\n')
+    g(repo, 'add', 'base.txt')
+    const indexBefore = g(repo, 'write-tree')
+    writeFileSync(join(repo, 'base.txt'), 'base\n')
+    const workingBefore = readFileSync(join(repo, 'base.txt'))
+    expect(() => g(repo, 'rev-parse', '--verify', 'refs/stash')).toThrow()
+    upsertProject({ name: 'landing-staged-checkout', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const child = childLand(repo, 'staged-landing')
+      expect(await child.exited).toBe(0)
+      const output = (await new Response(child.stdout).text()) +
+        (await new Response(child.stderr).text())
+      const tip = g(repo, 'rev-parse', 'staged-landing')
+      expect(g(repo, 'write-tree')).toBe(g(repo, 'rev-parse', `${tip}^{tree}`))
+      expect(readFileSync(join(repo, 'base.txt'))).toEqual(workingBefore)
+      expect(output).toContain('CONDITION: landing succeeded')
+      expect(output).toContain('Review and reconcile this checkout before using or committing it.')
+      const preserved = output.match(/previous index is preserved at (refs\/orch\/preserved-index\/\S+) \(([0-9a-f]+)\)/)
+      expect(preserved).not.toBeNull()
+      expect(g(repo, 'rev-parse', preserved![1]!)).toBe(preserved![2]!)
+      expect(() => g(repo, 'rev-parse', '--verify', 'refs/stash')).toThrow()
+      const command = output.split('\n').find((line) => line.startsWith('git -C '))
+      expect(command).toBeDefined()
+      const recovery = Bun.spawnSync(['sh', '-lc', command!], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(recovery.exitCode).toBe(0)
+      expect(g(repo, 'write-tree')).toBe(indexBefore)
+      expect(readFileSync(join(repo, 'base.txt'))).toEqual(workingBefore)
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
@@ -144,13 +201,17 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       expect(await child.exited).toBe(0)
       const output = (await new Response(child.stdout).text()) +
         (await new Response(child.stderr).text())
-      expect(g(repo, 'write-tree')).toBe(staleIndex)
+      expect(g(repo, 'write-tree')).toBe(g(repo, 'rev-parse', 'HEAD^{tree}'))
       expect(readFileSync(join(repo, 'base.txt'), 'utf8')).toBe('work in the stale checkout\n')
       expect(existsSync(join(repo, 'prior-landing.txt'))).toBe(false)
       expect(existsSync(join(repo, 'next-landing.txt'))).toBe(false)
-      expect(output).toContain(`checkout ${repo} was left untouched because it holds work`)
+      expect(output).toContain(`checkout ${repo} could not be reconciled because it holds tracked work`)
       expect(output).toContain('prior-landing.txt')
       expect(output).toContain('base.txt')
+      expect(output).toContain('Recover that exact index with:')
+      expect(g(repo, 'status', '--short')).toContain(' D prior-landing.txt')
+      expect(g(repo, 'status', '--short')).toContain(' D next-landing.txt')
+      expect(staleIndex).not.toBe(g(repo, 'write-tree'))
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 

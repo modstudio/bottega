@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { db, sessionId } from './db.ts'
 import { projectAt, type Project } from './projects.ts'
 import {
@@ -56,25 +57,49 @@ function worktreesForBranch(repoRoot: string, branch: string): string[] {
   return matches
 }
 
-type CheckoutState = { path: string; cleanAtExpected: boolean; detail: string }
+type CheckoutState = {
+  path: string
+  trackedWork: boolean
+  indexAtExpected: boolean
+  detail: string
+  preservedIndex: string | null
+}
 
-function checkoutState(path: string, expected: string, afterRefUpdate = false): CheckoutState {
+function checkoutState(path: string, expected: string): CheckoutState {
   try {
-    const status = afterRefUpdate
-      ? [
-          git(path, ['diff', '--cached', '--name-status', expected, '--']),
-          git(path, ['diff', '--name-status', '--']),
-          git(path, ['ls-files', '--others', '--exclude-standard']),
-        ].filter(Boolean).join('\n')
-      : git(path, ['status', '--porcelain=v1', '--untracked-files=all'])
-    return { path, cleanAtExpected: status === '', detail: status || 'clean' }
+    const status = git(path, ['status', '--porcelain=v1', '--untracked-files=no'])
+    const indexAtExpected = git(path, ['write-tree']) === git(path, ['rev-parse', `${expected}^{tree}`])
+    return {
+      path, trackedWork: status !== '', indexAtExpected,
+      detail: status || 'clean', preservedIndex: null,
+    }
   } catch (error) {
     return {
       path,
-      cleanAtExpected: false,
+      trackedWork: true,
+      indexAtExpected: false,
       detail: error instanceof Error ? error.message : String(error),
+      preservedIndex: null,
     }
   }
+}
+
+function preserveIndex(checkout: CheckoutState, guard: SharedRefGuardEnvironment): string {
+  const preserved = git(checkout.path, [
+    'stash', 'create', `orch landing preservation for ${checkout.path}`,
+  ], guard)
+  if (!preserved) {
+    throw new Error(`git stash create returned no recovery object for tracked work in ${checkout.path}`)
+  }
+  return preserved
+}
+
+function recoveryRef(checkout: CheckoutState, preserved: string): string {
+  return `refs/orch/preserved-index/${Date.now()}-${randomUUID()}-${preserved.slice(0, 12)}`
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`
 }
 
 function reconcileTrunkCheckouts(
@@ -82,28 +107,36 @@ function reconcileTrunkCheckouts(
   guard: SharedRefGuardEnvironment,
 ): void {
   for (const checkout of checkouts) {
-    if (!checkout.cleanAtExpected) {
-      console.warn(
-        `landing succeeded, but checkout ${checkout.path} was left untouched because it holds work:\n${checkout.detail}`,
-      )
-      continue
-    }
-
-    // HEAD now resolves to tip because it is symbolic to trunk. Compare the
-    // index and worktree directly with the old commit so the ref movement's
-    // apparent revert is not mistaken for authored work.
-    const current = checkoutState(checkout.path, expected, true)
-
     try {
+      if (!checkout.indexAtExpected) {
+        throw new Error('checkout index held tracked work before landing')
+      }
       git(checkout.path, ['read-tree', '-m', '-u', expected, tip], guard)
+      if (git(checkout.path, ['write-tree'], guard) !== git(checkout.path, ['rev-parse', `${tip}^{tree}`], guard)) {
+        throw new Error('git did not leave the checkout index at the landed tree')
+      }
       console.log(`reconciled checkout ${checkout.path} to ${trunk} at ${tip}`)
     } catch (error) {
-      const detail = current.cleanAtExpected
-        ? checkoutState(checkout.path, expected, true).detail
-        : current.detail
+      const currentIndex = git(checkout.path, ['write-tree'], guard)
+      const preLandingIndex = checkout.preservedIndex
+        ? git(checkout.path, ['rev-parse', `${checkout.preservedIndex}^2^{tree}`], guard)
+        : null
+      const preserved = preLandingIndex === currentIndex
+        ? checkout.preservedIndex!
+        : preserveIndex({ ...checkout, trackedWork: true }, guard)
+      const ref = recoveryRef(checkout, preserved)
+      git(checkout.path, ['update-ref', ref, preserved, '0000000000000000000000000000000000000000'], guard)
+      // Index only: working-tree bytes are the person's state and must not move.
+      git(checkout.path, ['read-tree', '--reset', tip], guard)
+      const detail = checkout.trackedWork ? checkout.detail : 'git refused the checkout update'
+      const command = `git -C ${shellQuote(checkout.path)} read-tree ${shellQuote(`${preserved}^2`)}`
       console.warn(
-        `landing succeeded, but checkout ${checkout.path} was left untouched because it holds work:\n${detail}\n` +
-        `${error instanceof Error ? error.message : String(error)}`,
+        `CONDITION: landing succeeded, but checkout ${checkout.path} could not be reconciled because it holds tracked work:\n` +
+        `${detail}\n${error instanceof Error ? error.message : String(error)}\n` +
+        `Its working tree was left unchanged and its index now matches ${trunk} at ${tip}.\n` +
+        `The previous index is preserved at ${ref} (${preserved}).\n` +
+        `Recover that exact index with:\n${command}\n` +
+        `Review and reconcile this checkout before using or committing it.`,
       )
     }
   }
@@ -159,6 +192,12 @@ function fastForward(
   // and refuses any commit not reachable from the common object database.
   const trunkCheckouts = worktreesForBranch(repoRoot, trunk)
     .map((path) => checkoutState(path, expected))
+  // A tracked checkout may need its old index after HEAD moves. Prove that Git
+  // can capture it before advancing trunk; preservation failure leaves both
+  // trunk and the checkout untouched.
+  for (const checkout of trunkCheckouts) {
+    if (checkout.trackedWork) checkout.preservedIndex = preserveIndex(checkout, guard)
+  }
   git(worktree, [
     'update-ref', `refs/heads/${trunk}`, tip, expected,
   ], guard)
