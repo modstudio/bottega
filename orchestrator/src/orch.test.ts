@@ -6287,6 +6287,7 @@ echo 'Usage: scripts/worktree create [seed]'
     const script = join(repo, 'fake-remove.sh')
     writeFileSync(script,
       `printf '%s\n' "$@" > "${argvFile}"\n` +
+      "echo 'retained fixture resource' >&2\n" +
       'git worktree remove --force "$1"\n' +
       'git branch -D "$2"\n')
     upsertProject({
@@ -6306,6 +6307,8 @@ echo 'Usage: scripts/worktree create [seed]'
       expect(readFileSync(argvFile, 'utf8').trim().split('\n')).toEqual([
         tree.path, tree.branch,
       ])
+      expect(p.stdout.toString()).toContain('remove-tool remove:')
+      expect(p.stdout.toString()).toContain('retained fixture resource')
       expect(existsSync(tree.path)).toBe(false)
     } finally {
       rmSync(repo, { recursive: true, force: true })
@@ -6885,6 +6888,40 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
 
       const r = orch('sweep', '--older-than', '1')
       expect(r.code).toBe(0)
+      expect(r.out).toContain(`reclaimed orphan  ${tree}`)
+      expect(existsSync(tree)).toBe(false)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test("a successful project remove command's warning is attributed", () => {
+    const repo = scratchRepo()
+    const name = `sweep-${repo.split('/').pop()}`
+    const tree = join(repo, '.claude', 'worktrees', 'old-worker')
+    try {
+      git(repo, 'worktree', 'add', '-b', 'old-worker', tree, 'main')
+      writeFileSync(join(tree, '.orch-run'), `903\n${repo}\n`)
+      appendFileSync(resolve(tree, git(tree, 'rev-parse', '--git-path', 'info/exclude')), '.orch-run\n')
+      const old = new Date(Date.now() - 2 * 86_400_000)
+      utimesSync(join(tree, '.orch-run'), old, old)
+      upsertProject({
+        name, path: repo,
+        settings: {
+          trunk: 'main',
+          worktree: {
+            remove:
+              "echo 'retained fixture resource' >&2; " +
+              `${hermeticGitCommand} worktree remove --force {path}; ` +
+              `${hermeticGitCommand} branch -D {branch}`,
+          },
+        },
+      })
+
+      const r = orch('sweep', '--older-than', '1')
+      expect(r.code).toBe(0)
+      expect(r.out).toContain(`${name} remove:`)
+      expect(r.out).toContain('retained fixture resource')
       expect(r.out).toContain(`reclaimed orphan  ${tree}`)
       expect(existsSync(tree)).toBe(false)
     } finally {

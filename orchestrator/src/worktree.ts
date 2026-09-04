@@ -1201,7 +1201,7 @@ export function changesIn(w: Worktree): Changes {
  */
 export function removeWithTool(
   tool: WorktreeTool, w: Worktree, forceOrchTree = false, keepBranch = false,
-): { removed: boolean; detail: string } {
+): { removed: boolean; detail: string; output?: string } {
   const name = w.path.split('/').pop() ?? w.path
 
   // A recipe-built tree is torn down the same way it was made: bottega
@@ -1223,7 +1223,9 @@ export function removeWithTool(
   }
 
   const r = runTool(tool.remove, { name, branch: w.branch, path: w.path }, w.repoRoot)
-  if (r.ok && !existsSync(w.path)) return { removed: true, detail: w.path }
+  if (r.ok && !existsSync(w.path)) {
+    return { removed: true, detail: w.path, ...(r.out ? { output: r.out } : {}) }
+  }
 
   // The marker is the proof that orch made and owns this disposable checkout.
   // A project's removal guard can therefore be forced only when the operator
@@ -1269,9 +1271,15 @@ export function removeWithTool(
 /** Remove a tree through the lifecycle declared by its registered project. */
 export function removeFor(
   w: Worktree, repoRoot: string, forceOrchTree = false, keepBranch = false,
-): { removed: boolean; detail: string } {
-  const tool = projectAt(repoRoot)?.settings.worktree
-  return tool ? removeWithTool(tool, w, forceOrchTree, keepBranch) : removeWorktree(w, keepBranch)
+): { removed: boolean; detail: string; output?: string } {
+  const project = projectAt(repoRoot)
+  const tool = project?.settings.worktree
+  const result: { removed: boolean; detail: string; output?: string } = tool
+    ? removeWithTool(tool, w, forceOrchTree, keepBranch)
+    : removeWorktree(w, keepBranch)
+  return result.output
+    ? { ...result, output: `${project!.name} remove:\n${result.output}` }
+    : result
 }
 
 /** Reclaim orphans the project knows about — databases, containers, metadata. */

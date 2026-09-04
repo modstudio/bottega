@@ -389,6 +389,7 @@ async function discardWorktree(
   db().query('UPDATE run SET worktree = NULL, branch_kept = ? WHERE id = ?')
     .run(protectedBranch ? row.branch : null, row.id)
   console.log(`${verb} run ${row.id}'s worktree`)
+  if (r.output) console.log(r.output)
   if (protectedBranch && row.branch) {
     console.log(keptBranchLine(row.branch, protectedBranch.count, row.id))
   }
@@ -2421,6 +2422,7 @@ switch (cmd) {
       if (res.removed) {
         db().query('UPDATE run SET worktree = NULL WHERE id = ?').run(r.id)
         console.log(`reclaimed ${r.id}  ${res.detail}`)
+        if (res.output) console.log(res.output)
         done++
       } else {
         console.error(`could not reclaim ${r.id}: ${res.detail}`)
@@ -2477,6 +2479,7 @@ switch (cmd) {
         const res = removeFor(w, p.path)
         if (res.removed) {
           console.log(`reclaimed ${label}  ${res.detail}`)
+          if (res.output) console.log(res.output)
           done++
         } else {
           keep(`${label}  removal refused`, 'removal refused')
