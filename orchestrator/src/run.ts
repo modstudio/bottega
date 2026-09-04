@@ -20,6 +20,7 @@ import {
   createWorktree, createWithTool, toolFor, changesIn, repoRootOf, resolveBase, worktreeGitDir,
   prepareWorktreeObjects, prepareSharedRefGuard, worktreeGitEnvironment, carryWorkingState,
   workerSharedGitRoots,
+  contentTree,
   assertCallerAncestry, withWorktreeCreateLock,
   removeFor, type Worktree,
   type WorktreeObjectEnvironment, validateSeedWithTool,
@@ -47,7 +48,7 @@ export type RunResult = {
   /** Only grok reports what a call cost; null everywhere else. */
   costUsd: number | null
   outPath: string
-  /** Where a writing worker ran, and what it changed. Null for a read-only job. */
+  /** Where a repository worker ran, and what it changed. Null for a non-repository job. */
   worktree: Worktree | null
   changes: import('./worktree.ts').Changes | null
   /** The worker's structured reply, when the job carried a contract. */
@@ -1449,6 +1450,12 @@ export async function run(opts: {
   const outsideWriteBefore = snapshotRegisteredCheckouts()
 
   try {
+    if (repoJob) {
+      if (!worktree) throw new Error(`repository run ${claim.id} has no worktree to measure`)
+      const inputTree = contentTree(worktree.path)
+      const measured = db().query('UPDATE run SET input_tree=? WHERE id=?').run(inputTree, claim.id)
+      if (measured.changes !== 1) throw new Error(`run ${claim.id} could not record its input tree`)
+    }
     const p = Bun.spawn([a.bin, ...argv], {
       cwd,
       env: childEnv(a, claim.id, runToken, gitConfigEnvironment),

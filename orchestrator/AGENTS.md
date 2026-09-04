@@ -144,8 +144,9 @@ answer contract and does not enter reviewer calibration.
 
 The review schema requires severity, location, evidence, and proposed
 correction for every finding. It also requires machine-readable provenance:
-tree inspected, standards read, effective model, files covered, commands run,
-and what could not be verified. An empty findings array with that coverage is a
+standards read, effective model, files covered, commands run, and what could not
+be verified. Orch measures the reviewed tree at dispatch; an agent's optional
+claim about the tree is not consulted for coverage. An empty findings array with that coverage is a
 completed clean review; missing or malformed output is not.
 
 Reviews are recorded when they happen and begin incomplete. Triage is a later

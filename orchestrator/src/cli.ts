@@ -263,7 +263,7 @@ function flags(name: string): string[] {
 const has = (n: string) => argv.includes(`--${n}`)
 
 /** Flags that consume the next argument. Anything else is a boolean switch. */
-const VALUE_FLAGS = new Set(['--agent', '--file', '--schema', '--model', '--note', '--message',
+const VALUE_FLAGS = new Set(['--agent', '--file', '--schema', '--model', '--note', '--message', '--unreviewed',
                              '--id', '--job', '--limit', '--port', '--days', '--window', '--timeout', '--scorer',
                              '--seed', '--key', '--repo', '--base', '--avoid', '--distinct-from', '--label', '--lens', '--category',
                              '--better-than', '--n', '--scope', '--subject', '--title', '--cwd'])
@@ -760,6 +760,7 @@ function usage(): never {
   orch land <branch|run-id>     gate and fast-forward one explicit branch into configured trunk
       --message TEXT            amend the branch tip's message, then gate that commit
       --file PATH               same, reading the message from a file
+      --unreviewed REASON       land without matching review coverage and record why
       --status                  show this project's landing lock without taking it
   orch stop <id>                terminate a running run and reclaim its worktree
   orch discard <id>             delete that run's worktree (the row stays)
@@ -950,7 +951,7 @@ switch (cmd) {
     }
     const value = argv[1]
     if (!value || value.startsWith('--')) {
-      throw new Error('orch land <branch|run-id> [--message TEXT] [--file PATH] | orch land --status')
+      throw new Error('orch land <branch|run-id> [--message TEXT] [--file PATH] [--unreviewed REASON] | orch land --status')
     }
     const fromMessage = flag('message')
     const fromFile = flag('file')
@@ -962,7 +963,11 @@ switch (cmd) {
     const message = fromFile !== undefined ? readFileSync(fromFile, 'utf8') : fromMessage
     const target = resolveLandingBranch(value)
     if (target.runId !== null) console.log(`run ${target.runId} resolves to branch ${target.branch}`)
-    land(process.cwd(), target.branch, message === undefined ? {} : { message })
+    const unreviewed = flag('unreviewed')
+    land(process.cwd(), target.branch, {
+      ...(message === undefined ? {} : { message }),
+      ...(unreviewed === undefined ? {} : { unreviewed }),
+    })
     break
   }
 
@@ -3164,7 +3169,7 @@ switch (cmd) {
       `SELECT r.id, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
               current_run.status, s.delivery, s.quality,
               COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason
-              ${json ? ', r.cwd, r.session_id, r.vendor_cost_usd, r.probe, r.exit_code,'
+              ${json ? ', r.cwd, r.session_id, r.vendor_cost_usd, r.probe, r.exit_code, r.input_tree,'
                         + ' r.prompt_path, r.branch, r.branch_kept, r.retry_of' : ''}
          FROM run r
          JOIN run current_run ON current_run.id = (
@@ -3194,7 +3199,7 @@ switch (cmd) {
         route_reason: string | null
       }
       const turns = json ? db().query(
-        `SELECT id, started_at, latency_ms, vendor_tokens, vendor_cost_usd, status, turn
+        `SELECT id, started_at, latency_ms, vendor_tokens, vendor_cost_usd, status, turn, input_tree
            FROM run WHERE id = ? OR parent_run_id = ?
           ORDER BY turn, id`,
       ).all(Number(r.id), Number(r.id)) : undefined

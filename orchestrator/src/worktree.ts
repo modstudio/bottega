@@ -25,6 +25,7 @@ import { accessSync, appendFileSync, closeSync, constants, cpSync, existsSync,
          fchmodSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync,
          realpathSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
+import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { db, pidAlive, ROOT } from './db.ts'
 import { createHasPlaceholder, projectAt, type WorktreeCreate, type WorktreeTool } from './projects.ts'
@@ -122,6 +123,31 @@ function gitOk(args: string[], cwd: string): string | null {
     cwd, env: { ...process.env, ...worktreeGitEnvironment(cwd) }, stdout: 'pipe', stderr: 'pipe',
   })
   return p.exitCode === 0 ? p.stdout.toString().trim() : null
+}
+
+/** Measure the checkout's complete visible content without touching its index. */
+export function contentTree(cwd: string): string {
+  const temporary = join(tmpdir(), `orch-index-${process.pid}-${randomUUID()}`)
+  mkdirSync(temporary, { recursive: true })
+  const index = join(temporary, 'index')
+  const env = { ...process.env, ...worktreeGitEnvironment(cwd), GIT_INDEX_FILE: index }
+  try {
+    const add = Bun.spawnSync(['git', 'add', '-A', '.'], {
+      cwd, env, stdout: 'pipe', stderr: 'pipe',
+    })
+    if (add.exitCode !== 0) {
+      throw new Error(`git add -A . failed while measuring content tree: ${add.stderr.toString().trim() || `exit ${add.exitCode}`}`)
+    }
+    const write = Bun.spawnSync(['git', 'write-tree'], {
+      cwd, env, stdout: 'pipe', stderr: 'pipe',
+    })
+    if (write.exitCode !== 0) {
+      throw new Error(`git write-tree failed while measuring content tree: ${write.stderr.toString().trim() || `exit ${write.exitCode}`}`)
+    }
+    return write.stdout.toString().trim()
+  } finally {
+    rmSync(temporary, { recursive: true, force: true })
+  }
 }
 
 /** Read repository configuration without inheriting the worker config we return below. */

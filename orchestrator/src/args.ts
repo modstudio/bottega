@@ -58,9 +58,9 @@ function commandShape(argv: string[]): { args: string[]; shape: CommandShape } |
   switch (command) {
     case 'issue': return { args: argv.slice(1), shape: shape('orch issue <TASK-KEY>', 1) }
     case 'land': return { args: argv.slice(1), shape: shape(
-      'orch land <branch|run-id> [--message TEXT] [--file PATH] | orch land --status',
+      'orch land <branch|run-id> [--message TEXT] [--file PATH] [--unreviewed REASON] | orch land --status',
       hasArg(argv, '--status') ? 0 : 1,
-      ['--message', '--file'], ['--status'],
+      ['--message', '--file', '--unreviewed'], ['--status'],
     ) }
     case 'contract': return { args: argv.slice(1), shape: shape('orch contract <job>', 1) }
     case 'doc': {

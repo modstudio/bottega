@@ -202,6 +202,10 @@ export function applySchema(d: Database): void {
   // the worker was alive. `[]` means the check ran and found nothing; NULL is
   // reserved for old rows and runs that ended before observation could start.
   addColumn(d, 'run', 'outside_worktree_writes', 'TEXT')
+  // The complete worktree content presented to a repository worker, measured
+  // by orch immediately before the vendor process starts.
+  addColumn(d, 'run', 'input_tree', 'TEXT')
+  addColumn(d, 'review_lens', 'reviewed_tree', 'TEXT')
   // A completed target task must keep its provenance. NULL is still active;
   // an ISO timestamp is resolved, so absence never has to stand for completion.
   addColumn(d, 'port_ref', 'resolved_at', 'TEXT')
@@ -303,7 +307,8 @@ function normalizeSql(sql: string): string {
 
 function schemaVersion(): string {
   return createHash('sha256')
-    .update([RUN_DDL, SCORE_DDL, DOC_DDL].map(normalizeSql).join('\n'))
+    .update([RUN_DDL, SCORE_DDL, DOC_DDL, REVIEW_LENS_DDL, LANDING_OVERRIDE_DDL]
+      .map(normalizeSql).join('\n'))
     .digest('hex')
 }
 
@@ -334,6 +339,7 @@ function ensureCanonicalSchema(d: Database) {
 
   for (const [name, ddl] of [
     ['run', RUN_DDL], ['score', SCORE_DDL], ['doc', DOC_DDL],
+    ['review_lens', REVIEW_LENS_DDL], ['landing_override', LANDING_OVERRIDE_DDL],
   ] as const) {
     const live = liveTableSql(d, name)
     if (!live) continue
@@ -355,7 +361,11 @@ function ensureCanonicalSchema(d: Database) {
  * wrong. The DDL is EDITED rather than retyped so every column that has
  * accumulated survives exactly as it was.
  */
-function rebuildTable(d: Database, table: 'run' | 'score' | 'doc', canonical: string) {
+function rebuildTable(
+  d: Database,
+  table: 'run' | 'score' | 'doc' | 'review_lens' | 'landing_override',
+  canonical: string,
+) {
   const fkOn = foreignKeysOn(d)
   d.exec('PRAGMA foreign_keys = OFF')
   d.exec('BEGIN EXCLUSIVE')
@@ -396,8 +406,10 @@ function rebuildTable(d: Database, table: 'run' | 'score' | 'doc', canonical: st
         CREATE INDEX IF NOT EXISTS score_run ON score(run_id);
         CREATE UNIQUE INDEX IF NOT EXISTS score_one_per_run ON score(run_id);
       `)
-    } else {
+    } else if (table === 'doc') {
       d.exec('CREATE INDEX IF NOT EXISTS doc_scope_subject ON doc(scope, subject)')
+    } else if (table === 'review_lens') {
+      d.exec('CREATE INDEX IF NOT EXISTS review_calibration ON review_lens(lens, agent, model, review_id)')
     }
     d.exec('COMMIT')
   } catch (e) {
@@ -489,6 +501,7 @@ const RUN_DDL = `CREATE TABLE run (
       run_token     TEXT,
       evidence_excluded TEXT,
       outside_worktree_writes TEXT,
+      input_tree    TEXT,
       agent_pid     INTEGER,
       mcp           INTEGER,
       mcp_server    TEXT,
@@ -496,6 +509,32 @@ const RUN_DDL = `CREATE TABLE run (
       mcp_error     TEXT,
       schema_path   TEXT,
       docs_injected INTEGER
+    )`
+
+const REVIEW_LENS_DDL = `CREATE TABLE review_lens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      review_id INTEGER NOT NULL REFERENCES review(id) ON DELETE CASCADE,
+      run_id INTEGER NOT NULL UNIQUE REFERENCES run(id) ON DELETE CASCADE,
+      lens TEXT NOT NULL,
+      agent TEXT NOT NULL,
+      model TEXT,
+      tree_inspected TEXT,
+      reviewed_tree TEXT,
+      standards_read TEXT NOT NULL,
+      files_covered TEXT NOT NULL,
+      commands_run TEXT NOT NULL,
+      could_not_verify TEXT NOT NULL
+    )`
+
+const LANDING_OVERRIDE_DDL = `CREATE TABLE landing_override (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project TEXT NOT NULL,
+      branch TEXT NOT NULL,
+      tip TEXT NOT NULL,
+      tree TEXT NOT NULL,
+      reason TEXT NOT NULL CHECK (length(trim(reason)) > 0),
+      session_id TEXT,
+      at TEXT NOT NULL
     )`
 
 // A judgement has two axes, because the two ways a run disappoints you are
@@ -575,6 +614,7 @@ function migrate(d: Database) {
   d.exec(createIfNotExists(RUN_DDL))
   d.exec(createIfNotExists(SCORE_DDL))
   d.exec(createIfNotExists(DOC_DDL))
+  d.exec(createIfNotExists(LANDING_OVERRIDE_DDL))
   d.exec(`
     -- The ratio this whole layer exists to move: Claude tokens spent per unit of
     -- shipped work. Kept as daily rows because the trend is what matters — the
@@ -745,19 +785,7 @@ function migrate(d: Database) {
       recorded_at TEXT NOT NULL,
       completed_at TEXT
     );
-    CREATE TABLE IF NOT EXISTS review_lens (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      review_id INTEGER NOT NULL REFERENCES review(id) ON DELETE CASCADE,
-      run_id INTEGER NOT NULL UNIQUE REFERENCES run(id) ON DELETE CASCADE,
-      lens TEXT NOT NULL,
-      agent TEXT NOT NULL,
-      model TEXT,
-      tree_inspected TEXT NOT NULL,
-      standards_read TEXT NOT NULL,
-      files_covered TEXT NOT NULL,
-      commands_run TEXT NOT NULL,
-      could_not_verify TEXT NOT NULL
-    );
+    ${createIfNotExists(REVIEW_LENS_DDL)};
     CREATE TABLE IF NOT EXISTS review_finding (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       review_id INTEGER NOT NULL REFERENCES review(id) ON DELETE CASCADE,

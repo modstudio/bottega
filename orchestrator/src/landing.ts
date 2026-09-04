@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { db, sessionId } from './db.ts'
+import { db, nowIso, sessionId } from './db.ts'
 import { formatGitLocks } from './git-locks.ts'
 import { projectAt, type Project } from './projects.ts'
 import {
@@ -190,6 +190,83 @@ function rebaseAndGate(
   return tip
 }
 
+type ReviewCoverage = {
+  id: number
+  lenses: { lens: string; runId: number; tree: string | null }[]
+}
+
+function completedReviews(project: string): ReviewCoverage[] {
+  const rows = db().query(
+    `SELECT r.id, rl.lens, rl.run_id, rl.reviewed_tree
+       FROM review r
+       JOIN review_lens rl ON rl.review_id=r.id
+      WHERE r.completed_at IS NOT NULL AND EXISTS (
+        SELECT 1 FROM review_lens project_lens
+        JOIN run project_run ON project_run.id=project_lens.run_id
+        WHERE project_lens.review_id=r.id AND project_run.repo=?
+      )
+      ORDER BY r.id, rl.id`,
+  ).all(project) as { id: number; lens: string; run_id: number; reviewed_tree: string | null }[]
+  const grouped = new Map<number, ReviewCoverage>()
+  for (const row of rows) {
+    const review = grouped.get(row.id) ?? { id: row.id, lenses: [] }
+    review.lenses.push({ lens: row.lens, runId: row.run_id, tree: row.reviewed_tree })
+    grouped.set(row.id, review)
+  }
+  return [...grouped.values()]
+}
+
+function coverageText(project: string, candidateTree: string): string {
+  const reviews = completedReviews(project)
+  const lines = reviews.length
+    ? reviews.flatMap((review) => [
+        `review ${review.id} (${review.lenses.length > 0 &&
+          review.lenses.every((lens) => lens.tree === candidateTree)
+          ? 'covers' : 'does not cover'}):`,
+        ...review.lenses.map((lens) =>
+          `  ${lens.lens} (run ${lens.runId}): ${lens.tree ?? 'NULL'} ` +
+          (lens.tree === candidateTree ? '(matches)' : '(MISMATCH)')),
+      ])
+    : ['  none']
+  return `current tip tree: ${candidateTree}\n${lines.join('\n')}`
+}
+
+function requireReviewCoverage(project: Project, repoRoot: string, tip: string): string {
+  const candidateTree = git(repoRoot, ['rev-parse', `${tip}^{tree}`])
+  const reviews = completedReviews(project.name)
+  if (reviews.some((review) => review.lenses.length > 0 &&
+      review.lenses.every((lens) => lens.tree === candidateTree))) return candidateTree
+  throw new Error(
+    `refusing to land unreviewed content\ncandidate tree: ${candidateTree}\n` +
+    `${coverageText(project.name, candidateTree)}\n` +
+    'A rebase onto moved trunk changes the tree, so re-run the review lenses from the rebased branch ' +
+    '(with --carry) and record them.',
+  )
+}
+
+function authorizeLanding(
+  project: Project, repoRoot: string, branch: string, tip: string, unreviewed?: string,
+): void {
+  const reason = unreviewed?.trim()
+  if (unreviewed !== undefined && !reason) throw new Error('--unreviewed requires a non-empty reason')
+  if (reason) {
+    const tree = git(repoRoot, ['rev-parse', `${tip}^{tree}`])
+    console.error(
+      '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n' +
+      'UNREVIEWED LANDING OVERRIDE\n' +
+      `Trunk is receiving unreviewed content from ${branch}.\n` +
+      `tree: ${tree}\nreason: ${reason}\n` +
+      '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!',
+    )
+    db().query(
+      `INSERT INTO landing_override (project, branch, tip, tree, reason, session_id, at)
+       VALUES (?,?,?,?,?,?,?)`,
+    ).run(project.name, branch, tip, tree, reason, sessionId(), nowIso())
+    return
+  }
+  requireReviewCoverage(project, repoRoot, tip)
+}
+
 function fastForward(
   repoRoot: string, worktree: string, branch: string, trunk: string, tip: string, expected: string,
   guard: SharedRefGuardEnvironment,
@@ -217,7 +294,7 @@ function fastForward(
 export function land(
   cwd: string,
   branch: string,
-  options: { timeoutMs?: number; message?: string } = {},
+  options: { timeoutMs?: number; message?: string; unreviewed?: string } = {},
 ): string {
   const timeoutMs = options.timeoutMs ?? LANDING_LOCK_TIMEOUT_MS
   const { project, repoRoot } = registeredProject(cwd)
@@ -251,6 +328,7 @@ export function land(
   return withProjectLock(repoRoot, LANDING_LOCK, { session: sessionId(), what: branch }, () => {
     const currentTrunk = trunkCommit(repoRoot, trunk, guard)
     if (currentTrunk === recordedTrunk) {
+      authorizeLanding(project, repoRoot, branch, optimisticTip, options.unreviewed)
       fastForward(repoRoot, worktree, branch, trunk, optimisticTip, recordedTrunk, guard)
       console.log(`landed ${branch} at ${optimisticTip} onto ${trunk} (optimistic gate remained current)`)
       return optimisticTip
@@ -260,6 +338,7 @@ export function land(
     const serializedTip = rebaseAndGate(
       project, repoRoot, worktree, branch, trunk, currentTrunk, guard,
     )
+    authorizeLanding(project, repoRoot, branch, serializedTip, options.unreviewed)
     fastForward(repoRoot, worktree, branch, trunk, serializedTip, currentTrunk, guard)
     console.log(`landed ${branch} at ${serializedTip} onto ${trunk} after serialized re-gate`)
     return serializedTip
@@ -278,5 +357,9 @@ export function landingStatus(cwd: string): string {
     ? state.waiters.map((w) =>
         `  session ${w.session ?? 'unknown'}, pid ${w.pid}, landing ${w.what}, waiting ${age(w.since)}`).join('\n')
     : '  none'
-  return `${project.name} landing lock: ${holder}\nwaiters:\n${waiters}\n${formatGitLocks(repoRoot)}`
+  const branch = git(cwd, ['branch', '--show-current']) || '(detached)'
+  const tip = git(cwd, ['rev-parse', '--verify', 'HEAD^{commit}'])
+  const tree = git(cwd, ['rev-parse', `${tip}^{tree}`])
+  return `${project.name} landing lock: ${holder}\nwaiters:\n${waiters}\n${formatGitLocks(repoRoot)}` +
+    `\nreview coverage for ${branch}:\n${coverageText(project.name, tree)}`
 }

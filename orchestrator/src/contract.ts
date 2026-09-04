@@ -242,7 +242,7 @@ export const REVIEW_SCHEMA = {
     },
     provenance: {
       type: 'object', additionalProperties: false,
-      required: ['tree_inspected', 'standards_read', 'model_used', 'files_covered',
+      required: ['standards_read', 'model_used', 'files_covered',
         'commands_run', 'could_not_verify', 'canon_source'],
       properties: {
         tree_inspected: { type: 'string' },
@@ -260,7 +260,7 @@ export const REVIEW_SCHEMA = {
 export type ReviewReply = {
   findings: { severity: string; location: string; evidence: string; proposed_correction: string }[]
   provenance: {
-    tree_inspected: string; standards_read: string[]; model_used: string
+    tree_inspected?: string; standards_read: string[]; model_used: string
     files_covered: string[]; commands_run: string[]; could_not_verify: string[]
     canon_source: CanonSource
   }

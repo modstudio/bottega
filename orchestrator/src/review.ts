@@ -28,11 +28,15 @@ export function parseReviewReply(value: unknown): ReviewReply | null {
   if (!v || typeof v !== 'object' || Array.isArray(v) || !exactKeys(v, ['findings', 'provenance']) ||
       !Array.isArray(v.findings)) return null
   const p = v.provenance
-  if (!p || typeof p !== 'object' || Array.isArray(p) || !exactKeys(p, [
-    'tree_inspected', 'standards_read', 'model_used', 'files_covered', 'commands_run',
+  const provenanceKeys = [
+    'standards_read', 'model_used', 'files_covered', 'commands_run',
     'could_not_verify', 'canon_source',
-  ]) ||
-      typeof p.tree_inspected !== 'string' || typeof p.model_used !== 'string' ||
+  ]
+  if (!p || typeof p !== 'object' || Array.isArray(p) ||
+      !(exactKeys(p, provenanceKeys) || exactKeys(p, ['tree_inspected', ...provenanceKeys])) ||
+      (p.tree_inspected !== undefined && p.tree_inspected !== null &&
+        typeof p.tree_inspected !== 'string') ||
+      typeof p.model_used !== 'string' ||
       !isStrings(p.standards_read) || !isStrings(p.files_covered) ||
       !isStrings(p.commands_run) || !isStrings(p.could_not_verify) ||
       !isCanonSource(p.canon_source)) return null
@@ -40,6 +44,7 @@ export function parseReviewReply(value: unknown): ReviewReply | null {
       exactKeys(f, ['severity', 'location', 'evidence', 'proposed_correction']) &&
       typeof f.severity === 'string' && typeof f.location === 'string' &&
       typeof f.evidence === 'string' && typeof f.proposed_correction === 'string')) return null
+  if (p.tree_inspected === null) delete (p as Record<string, unknown>).tree_inspected
   return v as ReviewReply
 }
 
@@ -62,7 +67,7 @@ export function parseReviewOutput(text: string): ReviewReply | null {
 
 type RunRow = {
   id: number; agent: string; model: string | null; lens: string | null
-  job: string; status: string; output_path: string | null
+  job: string; status: string; output_path: string | null; input_tree: string | null
 }
 
 export function recordReviews(
@@ -71,7 +76,7 @@ export function recordReviews(
   if (!entries.length) throw new Error('a review requires at least one lens run')
   const runs = entries.map(({ runId }) => {
     const run = database.query(
-      'SELECT id, agent, model, lens, job, status, output_path FROM run WHERE id=?',
+      'SELECT id, agent, model, lens, job, status, output_path, input_tree FROM run WHERE id=?',
     ).get(runId) as RunRow | null
     if (!run) throw new Error(`no run ${runId}`)
     if (!job(run.job).findings) throw new Error(`run ${runId} job ${run.job} does not produce review findings`)
@@ -83,14 +88,22 @@ export function recordReviews(
     if (existing) throw new Error(`run ${runId} is already recorded in review ${existing.review_id}`)
     return run
   })
+  const measuredTrees = runs.filter((run) => run.input_tree !== null)
+  const distinctTrees = new Set(measuredTrees.map((run) => run.input_tree))
+  if (distinctTrees.size > 1) {
+    throw new Error(
+      `review lens runs measured different trees:\n${runs.map((run) =>
+        `run ${run.id}: ${run.input_tree ?? 'NULL'}`).join('\n')}`,
+    )
+  }
   const transaction = database.transaction(() => {
     const review = database.query('INSERT INTO review (recorded_at) VALUES (?) RETURNING id')
       .get(nowIso()) as { id: number }
     const insertLens = database.query(
       `INSERT INTO review_lens
-         (review_id, run_id, lens, agent, model, tree_inspected, standards_read,
+         (review_id, run_id, lens, agent, model, tree_inspected, reviewed_tree, standards_read,
           files_covered, commands_run, could_not_verify)
-       VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
     )
     const insert = database.query(
       `INSERT INTO review_finding
@@ -101,7 +114,8 @@ export function recordReviews(
     entries.forEach(({ output }, index) => {
       const run = runs[index]!
       const lens = insertLens.get(review.id, run.id, run.lens, run.agent, run.model,
-        output.provenance.tree_inspected, JSON.stringify(output.provenance.standards_read),
+        output.provenance.tree_inspected ?? null, run.input_tree,
+        JSON.stringify(output.provenance.standards_read),
         JSON.stringify(output.provenance.files_covered), JSON.stringify(output.provenance.commands_run),
         JSON.stringify(output.provenance.could_not_verify)) as { id: number }
       output.findings.forEach((finding) => insert.run(
