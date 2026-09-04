@@ -735,6 +735,8 @@ function migrate(d: Database) {
     );
   `)
 
+  migratePortSchema(d)
+
   migrateScoreToMatrix(d)
   addColumn(d, 'score', 'fidelity', 'TEXT')
 
@@ -756,6 +758,100 @@ function migrate(d: Database) {
     ['lines_docs', 'INTEGER NOT NULL DEFAULT 0'], ['lines_config', 'INTEGER NOT NULL DEFAULT 0'],
     ['lines_generated', 'INTEGER NOT NULL DEFAULT 0'],
   ] as const) addColumn(d, 'metric', c, decl)
+}
+
+/**
+ * Replace the abandoned port tables with the schema the feature actually uses.
+ *
+ * Those tables were never created by this file and no released code used them.
+ * The one database carrying them has no rows, so preserving their defective
+ * shapes would only make that database differ from a fresh installation.  Do
+ * still refuse to discard rows: an unexpectedly populated copy needs a
+ * deliberate data migration, not an automatic best guess.
+ */
+function migratePortSchema(d: Database) {
+  const legacy = (d.query(`PRAGMA table_info(port_ref)`).all() as { name: string }[])
+    .some((column) => column.name === 'source_projects')
+
+  if (legacy) {
+    for (const table of ['port_doctrine', 'port_ref', 'port_baseline', 'port_skipped']) {
+      const row = d.query(
+        `SELECT 1 AS present FROM sqlite_master WHERE type='table' AND name=?`,
+      ).get(table)
+      if (!row) continue
+      const count = d.query(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }
+      if (count.n !== 0) {
+        throw new Error(`cannot replace populated legacy ${table} table`)
+      }
+    }
+    d.exec(`
+      DROP TABLE IF EXISTS port_doctrine;
+      DROP TABLE IF EXISTS port_ref;
+      DROP TABLE IF EXISTS port_baseline;
+      DROP TABLE IF EXISTS port_skipped;
+    `)
+  }
+
+  d.exec(`
+    -- A directed source -> target relationship is the unit of scan progress.
+    -- Register ids survive renames; RESTRICT prevents removing a project while
+    -- feature state still depends on it.
+    CREATE TABLE IF NOT EXISTS port_pair (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE RESTRICT,
+      target_project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE RESTRICT,
+      created_at        TEXT NOT NULL,
+      CHECK (source_project_id <> target_project_id),
+      UNIQUE (source_project_id, target_project_id)
+    );
+    CREATE INDEX IF NOT EXISTS port_pair_target ON port_pair(target_project_id);
+
+    CREATE TABLE IF NOT EXISTS port_baseline (
+      pair_id       INTEGER PRIMARY KEY REFERENCES port_pair(id) ON DELETE CASCADE,
+      source_commit TEXT,
+      scanned_at    TEXT,
+      CHECK ((source_commit IS NULL) = (scanned_at IS NULL))
+    );
+
+    CREATE TABLE IF NOT EXISTS port_skip (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      pair_id    INTEGER NOT NULL REFERENCES port_pair(id) ON DELETE CASCADE,
+      candidate  TEXT NOT NULL,
+      reason     TEXT NOT NULL,
+      skipped_at TEXT NOT NULL,
+      UNIQUE (pair_id, candidate)
+    );
+    CREATE INDEX IF NOT EXISTS port_skip_pair ON port_skip(pair_id);
+
+    -- The target task owns the ledger entry. Source material is normalized
+    -- below it so several source projects never collapse into one JSON field.
+    CREATE TABLE IF NOT EXISTS port_ref (
+      task_key          TEXT PRIMARY KEY,
+      target_project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE RESTRICT,
+      note              TEXT NOT NULL,
+      created_at        TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS port_ref_target ON port_ref(target_project_id);
+
+    CREATE TABLE IF NOT EXISTS port_ref_source (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_key          TEXT NOT NULL REFERENCES port_ref(task_key) ON DELETE CASCADE,
+      source_project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE RESTRICT,
+      commits           TEXT NOT NULL,
+      paths             TEXT NOT NULL,
+      note              TEXT NOT NULL,
+      UNIQUE (task_key, source_project_id)
+    );
+    CREATE INDEX IF NOT EXISTS port_ref_source_task ON port_ref_source(task_key);
+
+    CREATE TABLE IF NOT EXISTS port_doctrine (
+      number     INTEGER PRIMARY KEY CHECK (number > 0),
+      title      TEXT NOT NULL,
+      body       TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      retired_at TEXT
+    );
+  `)
 }
 
 /**

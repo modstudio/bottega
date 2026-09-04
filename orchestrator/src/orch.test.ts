@@ -317,12 +317,15 @@ const { listDocs, getDoc, setDoc, consumeDoc, removeDoc, docsForRun, exportDocs,
         listOpenResumes, parseResumeFrontmatter, resumeAge } =
   await import('./docs.ts')
 const { createDocsMcpServer } = await import('./mcp.ts')
+const { listPairs, addPair, baselineForPair, setBaseline, listSkips, addSkip,
+        setLedgerRef, ledgerRef, listDoctrineRules, addDoctrineRule, retireDoctrineRule } =
+  await import('./porting.ts')
 
 beforeEach(() => {
   // question cascades from run, but the delete order still matters: it is
   // listed first so a future FK-enforcing change cannot make this fail
   // mysteriously halfway through a suite.
-  db().exec('DELETE FROM doc; DELETE FROM question; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
+  db().exec('DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc; DELETE FROM question; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
 })
 
 afterAll(() => {
@@ -349,6 +352,66 @@ function addRun(o: {
     o.model ?? AGENTS[o.agent]?.model ?? null,
   ) as { id: number }).id
 }
+
+describe('porting data model', () => {
+  test('stores pair progress and declined candidates with their reasons', () => {
+    upsertProject({ name: 'source-invented', path: '/w/source-invented',
+      settings: { keyPrefixes: ['SRC'] } })
+    upsertProject({ name: 'target-invented', path: '/w/target-invented',
+      settings: { keyPrefixes: ['TGT'] } })
+    const [source, target] = projects().sort((a, b) => a.name.localeCompare(b.name))
+    const pair = addPair(source!.id, target!.id, '2026-09-01T00:00:00.000Z')
+
+    expect(addPair(source!.id, target!.id).id).toBe(pair.id)
+    expect(listPairs()).toEqual([pair])
+    expect(baselineForPair(pair.id)).toEqual({
+      pair_id: pair.id, source_commit: null, scanned_at: null,
+    })
+    expect(setBaseline(pair.id, 'abc123', '2026-09-02T00:00:00.000Z')).toEqual({
+      pair_id: pair.id, source_commit: 'abc123', scanned_at: '2026-09-02T00:00:00.000Z',
+    })
+    addSkip(pair.id, 'candidate-one', 'not applicable', '2026-09-03T00:00:00.000Z')
+    expect(listSkips(pair.id)).toMatchObject([
+      { candidate: 'candidate-one', reason: 'not applicable' },
+    ])
+  })
+
+  test('keeps each ledger source project distinct and resolves the target by key prefix', () => {
+    upsertProject({ name: 'source-one-invented', path: '/w/source-one', settings: {} })
+    upsertProject({ name: 'source-two-invented', path: '/w/source-two', settings: {} })
+    upsertProject({ name: 'target-invented', path: '/w/target',
+      settings: { keyPrefixes: ['TGT'] } })
+    const byName = Object.fromEntries(projects().map((project) => [project.name, project]))
+
+    const ref = setLedgerRef({
+      taskKey: 'TGT-42', note: 'adapt this natively', createdAt: '2026-09-03T00:00:00.000Z',
+      sources: [
+        { source_project_id: byName['source-one-invented']!.id,
+          commits: ['aaa'], paths: ['src/a.ts'], note: 'first source' },
+        { source_project_id: byName['source-two-invented']!.id,
+          commits: ['bbb', 'ccc'], paths: ['src/b.ts'], note: 'second source' },
+      ],
+    })
+
+    expect(ref.target_project_id).toBe(byName['target-invented']!.id)
+    expect(ledgerRef('TGT-42')!.sources).toEqual([
+      { source_project_id: byName['source-one-invented']!.id,
+        commits: ['aaa'], paths: ['src/a.ts'], note: 'first source' },
+      { source_project_id: byName['source-two-invented']!.id,
+        commits: ['bbb', 'ccc'], paths: ['src/b.ts'], note: 'second source' },
+    ])
+    expect(() => setLedgerRef({ taskKey: 'NONE-1', note: '', sources: ref.sources }))
+      .toThrow('no registered project owns task key')
+  })
+
+  test('retires doctrine without freeing its stable number', () => {
+    addDoctrineRule(7, 'Invented rule', 'Keep the example invented.', '2026-09-01T00:00:00.000Z')
+    expect(retireDoctrineRule(7, '2026-09-02T00:00:00.000Z')).toBe(true)
+    expect(listDoctrineRules(false)).toEqual([])
+    expect(listDoctrineRules()).toMatchObject([{ number: 7, retired_at: '2026-09-02T00:00:00.000Z' }])
+    expect(() => addDoctrineRule(7, 'Replacement', 'Must not reuse seven.')).toThrow()
+  })
+})
 
 function score(
   runId: number, delivery: string, quality: string | null = null, fidelity: string | null = null,
@@ -7913,6 +7976,39 @@ describe('canonical schema rebuild', () => {
     const freshSql = tableSql(d, 'run')
     expect(freshSql.startsWith('CREATE TABLE run')).toBe(true)
     expect(freshSql.startsWith('CREATE TABLE "run"')).toBe(false)
+    d.close()
+  })
+
+  test('empty abandoned port tables are replaced rather than left beside the real schema', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'orch-schema-')), 'legacy-port.db')
+    const d = new Database(path)
+    d.exec(`
+      CREATE TABLE port_doctrine (n INTEGER PRIMARY KEY, title TEXT NOT NULL, body TEXT NOT NULL);
+      CREATE TABLE port_ref (
+        task_key TEXT PRIMARY KEY, target_project TEXT NOT NULL, source_projects TEXT NOT NULL,
+        source_note TEXT, commits TEXT NOT NULL, paths TEXT NOT NULL, notes TEXT,
+        created_at TEXT, resolved_at TEXT
+      );
+      CREATE TABLE port_baseline (
+        source_project TEXT NOT NULL, target_project TEXT NOT NULL,
+        baseline_sha TEXT, updated_at TEXT, PRIMARY KEY (source_project, target_project)
+      );
+      CREATE TABLE port_skipped (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, source_project TEXT NOT NULL,
+        target_project TEXT NOT NULL, feature TEXT NOT NULL, note TEXT, created_at TEXT,
+        UNIQUE (source_project, target_project, feature)
+      );
+    `)
+
+    applySchema(d)
+
+    expect(d.query(
+      `SELECT 1 FROM sqlite_master WHERE type='table' AND name='port_skipped'`,
+    ).get()).toBeNull()
+    expect(cols(d, 'port_ref')).toEqual(['task_key', 'target_project_id', 'note', 'created_at'])
+    expect(cols(d, 'port_ref_source')).toContain('source_project_id')
+    expect(cols(d, 'port_skip')).toContain('reason')
+    expect(cols(d, 'port_doctrine')).toContain('retired_at')
     d.close()
   })
 
