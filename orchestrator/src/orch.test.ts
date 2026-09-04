@@ -340,7 +340,7 @@ const { listPairs, addPair, baselineForPair, setBaseline, listSkips, addSkip,
         setLedgerRef, ledgerRef, listLedgerRefs, resolveLedgerRef,
         listDoctrineRules, addDoctrineRule, retireDoctrineRule } =
   await import('./porting.ts')
-const { applyImport, ImportRefusalError, planImport } = await import('./porting-import.ts')
+const { applyImport, ImportRefusalError, planImport, sourceCoverage } = await import('./porting-import.ts')
 const { parseFiledIssue, seedFromReport, boundedIssuePack, parseIssueReply,
         ISSUE_DIAGNOSIS_SCHEMA } = await import('./issue.ts')
 
@@ -946,7 +946,7 @@ describe('port importer', () => {
 
   test('a refusal makes apply all-or-nothing', () => {
     const plan = planImport(fixture(), registered())
-    plan.refusals.push({ what: 'bad row', where: 'fixture row', why: 'cannot resolve it' })
+    plan.refusals.push({ kind: 'refusal', what: 'bad row', where: 'fixture row', why: 'cannot resolve it' })
     expect(() => applyImport(plan)).toThrow(ImportRefusalError)
     expect(listPairs()).toEqual([])
     expect(listDoctrineRules()).toEqual([])
@@ -1044,7 +1044,10 @@ describe('port importer', () => {
       try {
         const missing = run(incomplete)
         expect(missing.exitCode).toBe(1)
-        expect(missing.stdout.toString()).toContain('refs.json')
+        const missingPlan = JSON.parse(missing.stdout.toString())
+        expect(missingPlan.refusals).toHaveLength(6)
+        expect(missingPlan.refusals.every((issue: any) => issue.what.startsWith('source file'))).toBe(true)
+        expect(missingPlan.refusals.map((issue: any) => issue.where)).toContain(join(incomplete, 'refs.json'))
       } finally { rmSync(incomplete, { recursive: true, force: true }) }
     } finally { rmSync(source, { recursive: true, force: true }) }
   })
@@ -1053,6 +1056,12 @@ describe('port importer', () => {
     const source = mkdtempSync(join(tmpdir(), 'port-import-readonly-invented-'))
     const absent = join(source, 'absent.db')
     try {
+      const contents = fixture()
+      for (const [name, body] of Object.entries({
+        'doctrine.md': contents.doctrine, 'differences.md': contents.differences,
+        'backports.md': contents.backports, 'refs.json': contents.refs,
+        'state.json': contents.state, 'projects.md': contents.projects,
+      })) writeFileSync(join(source, name), body)
       const CLI = new URL('cli.ts', import.meta.url).pathname
       const run = Bun.spawnSync([process.execPath, CLI, 'port', 'import', source, '--dry-run', '--json'], {
         env: { ...process.env, ORCH_DB: absent, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
@@ -1063,6 +1072,38 @@ describe('port importer', () => {
       expect(existsSync(`${absent}-wal`)).toBe(false)
       expect(existsSync(`${absent}-shm`)).toBe(false)
     } finally { rmSync(source, { recursive: true, force: true }) }
+  })
+
+  test('every non-whitespace source span in the real port files is accounted for', () => {
+    const names = {
+      doctrine: 'doctrine.md', differences: 'differences.md', backports: 'backports.md',
+      refs: 'refs.json', state: 'state.json', projects: 'projects.md',
+    } as const
+    const files = Object.fromEntries(Object.entries(names).map(([key, name]) => [
+      key, readFileSync(new URL(`../../port/${name}`, import.meta.url), 'utf8'),
+    ])) as Record<keyof typeof names, string>
+    const state = JSON.parse(files.state)
+    const projectNames = [...new Set(Object.keys(state.pairs).flatMap((pair) => pair.split('->')))] as string[]
+    const refs = JSON.parse(files.refs)
+    const prefixes = [...new Set(Object.keys(refs).filter((key) => !key.startsWith('_')).map((key) => key.split('-')[0]))]
+    const syntheticRegister = projectNames.map((name, index) => ({
+      id: index + 1, name, path: `/fixture/${index}`, stack: null, canon: false,
+      settings: index === 0 ? { keyPrefixes: prefixes } : {},
+    }))
+    const plan = planImport(files, syntheticRegister)
+    expect(plan.refusals).toEqual([])
+    expect(sourceCoverage(plan, files)).toEqual([])
+
+    plan.docs = plan.docs.filter((doc) => doc.slug !== 'port-import-source-context')
+    expect(sourceCoverage(plan, files)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ file: expect.stringMatching(/\.md$/), offset: expect.any(Number), text: expect.any(String) }),
+    ]))
+
+    const jsonPlan = planImport(files, syntheticRegister)
+    jsonPlan.docs = jsonPlan.docs.filter((doc) => doc.slug !== 'port-state-metadata')
+    expect(sourceCoverage(jsonPlan, files)).toContainEqual({ file: 'state.json', offset: 0, text: files.state })
+    jsonPlan.docs = planImport(files, syntheticRegister).docs.filter((doc) => doc.slug !== 'port-ref-metadata')
+    expect(sourceCoverage(jsonPlan, files)).toContainEqual({ file: 'refs.json', offset: 0, text: files.refs })
   })
 })
 

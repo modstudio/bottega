@@ -1078,28 +1078,39 @@ switch (cmd) {
         refs: 'refs.json', state: 'state.json', projects: 'projects.md',
       } as const
       const files = {} as Record<keyof typeof names, string>
-      const ioRefusals: { what: string; where: string; why: string }[] = []
+      const ioRefusals: { kind: 'refusal'; what: string; where: string; why: string }[] = []
       try {
         if (!statSync(dir).isDirectory()) throw new Error('not a directory')
         readdirSync(dir)
       } catch (error) {
-        ioRefusals.push({ what: 'source directory', where: dir, why: String(error) })
+        ioRefusals.push({ kind: 'refusal', what: 'source directory', where: dir, why: String(error) })
       }
       for (const [key, name] of Object.entries(names) as [keyof typeof names, string][]) {
         const path = join(dir, name)
         try { files[key] = readFileSync(path, 'utf8') }
         catch (error) {
           files[key] = ''
-          ioRefusals.push({ what: `source file "${name}"`, where: path, why: String(error) })
+          ioRefusals.push({ kind: 'refusal', what: `source file "${name}"`, where: path, why: String(error) })
         }
       }
-      let registered = [] as ReturnType<typeof projects>
-      try { registered = has('dry-run') ? projectsForDryRun(DB_PATH) : projects() }
-      catch (error) {
-        ioRefusals.push({ what: 'project register', where: DB_PATH, why: String(error) })
+      let plan
+      if (ioRefusals.length) {
+        plan = {
+          pairs: [], baselines: [], skips: [], refs: [], doctrine: [], docs: [],
+          refusals: ioRefusals, exclusions: [],
+        }
+      } else {
+        let registered: ReturnType<typeof projects>
+        try { registered = has('dry-run') ? projectsForDryRun(DB_PATH) : projects() }
+        catch (error) {
+          ioRefusals.push({ kind: 'refusal', what: 'project register', where: DB_PATH, why: String(error) })
+          registered = []
+        }
+        plan = ioRefusals.length
+          ? { pairs: [], baselines: [], skips: [], refs: [], doctrine: [], docs: [],
+              refusals: ioRefusals, exclusions: [] }
+          : planImport(files, registered)
       }
-      const plan = planImport(files, registered)
-      plan.refusals.unshift(...ioRefusals)
       const visible = {
         ...plan,
         doctrine: plan.doctrine.map((row) => ({ ...row, bodyLength: row.body.length })),
