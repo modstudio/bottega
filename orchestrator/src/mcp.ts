@@ -4,7 +4,9 @@ import { resolve } from 'node:path'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db, sessionId } from './db.ts'
-import { consumeDoc, docsMarkdown, getDoc, listDocMetadata, listDocs, setDoc } from './docs.ts'
+import {
+  consumeDoc, docsMarkdown, getDoc, getDocRevision, listDocMetadata, listDocRevisions, listDocs, setDoc,
+} from './docs.ts'
 import { projectAt, projectByName, projects } from './projects.ts'
 import {
   addDoctrineRule, addPair, addSkip, baselineForPair, ledgerRef, listDoctrineRules,
@@ -301,16 +303,37 @@ export function createDocsMcpServer(): McpServer {
     inputSchema: {
       scope: z.string(), subject: z.string().nullable().optional(), slug: z.string(),
       title: z.string(), body: z.string(),
+      reason: z.string({ error: 'reason is required: explain why this operator doc is changing' }).trim()
+        .min(1, 'reason is required: explain why this operator doc is changing'),
+      author: z.string().trim().min(1).optional(),
     },
-  }, async ({ scope, subject, slug, title, body }) =>
-    text(setDoc({ scope, subject: subject ?? null, slug, title, body })))
+  }, async ({ scope, subject, slug, title, body, reason, author }) =>
+    text(setDoc({ scope, subject: subject ?? null, slug, title, body, reason, author })))
 
   server.registerTool('consume_doc', {
-    description: 'Mark an operator document consumed without rewriting its body.',
+    description: 'Mark an operator document consumed by rewriting its YAML status/stamps and updated_at.',
     inputSchema: {
       scope: z.string(), subject: z.string().nullable().optional(), slug: z.string(),
     },
-  }, async ({ scope, subject, slug }) => text(consumeDoc(scope, subject ?? null, slug)))
+  }, async ({ scope, subject, slug }) => text(consumeDoc(
+    scope, subject ?? null, slug, { reason: 'consumed by session' },
+  )))
+
+  server.registerTool('list_doc_revisions', {
+    description: 'List revision metadata for one operator document, newest first; bodies are omitted.',
+    inputSchema: {
+      scope: z.string(), subject: z.string().nullable().optional(), slug: z.string(),
+    },
+  }, async ({ scope, subject, slug }) => text(listDocRevisions(scope, subject ?? null, slug)))
+
+  server.registerTool('get_doc_revision', {
+    description: 'Get one operator document revision, including its body.',
+    inputSchema: { id: z.number().int().positive() },
+  }, async ({ id }) => {
+    const revision = getDocRevision(id)
+    if (!revision) throw new Error(`no doc revision ${id}`)
+    return text(revision)
+  })
 
   server.registerTool('inspect_port_baseline', {
     description: 'Inspect scan progress for one registered source-to-target project pair.',

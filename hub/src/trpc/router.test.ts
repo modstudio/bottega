@@ -11,12 +11,13 @@ const docList = mock(async (_filters?: unknown) => [] as unknown[])
 const docGet = mock(async (_scope: string, _subject: string | null, _slug: string) =>
   ({}) as unknown)
 const docSet = mock(async (_input: unknown) => ({}) as unknown)
-const docRemove = mock(async (_scope: string, _subject: string | null, _slug: string) =>
+const docRemove = mock(async (_scope: string, _subject: string | null, _slug: string, _reason: string) =>
   ({ removed: false }))
+const docHistory = mock(async (_scope: string, _subject: string | null, _slug: string) => [] as unknown[])
 const docSubjects = mock(async () => ({ project: [] as string[], agent: [] as string[], job: [] as string[] }))
 
 mock.module('../orch.ts', () => ({
-  docList, docGet, docSet, docRemove, docSubjects,
+  docList, docGet, docSet, docRemove, docHistory, docSubjects,
 }))
 
 const { appRouter } = await import('./router.ts')
@@ -80,7 +81,7 @@ describe('doc router', () => {
   })
 
   test('set passes the input to docSet', async () => {
-    const input = { scope: 'global' as const, subject: null, slug: 'hello', title: 'Hello', body: 'Hi' }
+    const input = { scope: 'global' as const, subject: null, slug: 'hello', title: 'Hello', body: 'Hi', reason: 'updated' }
     docSet.mockResolvedValueOnce(row)
     const got = await caller.doc.set(input)
     expect(docSet).toHaveBeenCalledWith(input)
@@ -89,9 +90,25 @@ describe('doc router', () => {
 
   test('remove passes scope, subject and slug to docRemove', async () => {
     docRemove.mockResolvedValueOnce({ removed: true })
-    const got = await caller.doc.remove({ scope: 'global', subject: null, slug: 'hello' })
-    expect(docRemove).toHaveBeenCalledWith('global', null, 'hello')
+    const got = await caller.doc.remove({ scope: 'global', subject: null, slug: 'hello', reason: 'obsolete' })
+    expect(docRemove).toHaveBeenCalledWith('global', null, 'hello', 'obsolete')
     expect(got).toEqual({ removed: true })
+  })
+
+  test('set and remove require a non-empty reason, and history forwards the address', async () => {
+    await expect(caller.doc.set({
+      scope: 'global', subject: null, slug: 'hello', title: 'Hello', body: 'Hi', reason: ' ',
+    })).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    await expect(caller.doc.remove({
+      scope: 'global', subject: null, slug: 'hello', reason: '',
+    })).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    const revisions = [{
+      id: 1, op: 'create' as const, author: 'tester', reason: 'created',
+      at: '2026-09-04T00:00:00.000Z', bytes: 2,
+    }]
+    docHistory.mockResolvedValueOnce(revisions)
+    expect(await caller.doc.history({ scope: 'global', subject: null, slug: 'hello' })).toEqual(revisions)
+    expect(docHistory).toHaveBeenCalledWith('global', null, 'hello')
   })
 
   test('subjects returns what docSubjects returns', async () => {

@@ -105,6 +105,7 @@ function DocsList() {
       slug,
       title,
       body: '',
+      reason: 'created from hub',
     })
   }
 

@@ -729,9 +729,24 @@ const { gitLocks } = await import('./git-locks.ts')
 const { AGENTS, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
         WAKE_COOLDOWN_MS, CODEX_EXEC_SANDBOX, strictCodexSchema } = await import('./agents.ts')
-const { listDocs, listDocMetadata, getDoc, setDoc, consumeDoc, removeDoc, docsForRun, exportDocs, importDocs, brief, docSubjects,
-        listOpenResumes, parseResumeFrontmatter, resumeAge } =
+const { listDocs, listDocMetadata, getDoc, setDoc: writeDoc, consumeDoc: consumeDocument, removeDoc: deleteDoc,
+        docsForRun, exportDocs, importDocs: readDocs, brief, docSubjects,
+        listOpenResumes, parseResumeFrontmatter, resumeAge, listDocRevisions, getDocRevision, restoreDoc,
+        diffDocRevisions } =
   await import('./docs.ts')
+type TestDocInput = Parameters<typeof writeDoc>[0]
+const setDoc = (input: Omit<TestDocInput, 'reason'> & { reason?: string }) =>
+  writeDoc({ ...input, reason: input.reason ?? 'test write' })
+const consumeDoc = (
+  scope: string, subject: string | null, slug: string,
+  context: { reason: string; author?: string } = { reason: 'test consume' },
+) => consumeDocument(scope, subject, slug, context)
+const removeDoc = (
+  scope: string, subject: string | null, slug: string,
+  context: { reason: string; author?: string } = { reason: 'test delete' },
+) =>
+  deleteDoc(scope, subject, slug, context)
+const importDocs = (dir: string, context = { reason: 'test import' }) => readDocs(dir, context)
 const { createDocsMcpServer, fileIssue, duplicateCandidates } = await import('./mcp.ts')
 const { deadRunningProcessConditions, reconcileHub, monitorHistory } = await import('./monitor.ts')
 const { listPairs, addPair, baselineForPair, setBaseline, listSkips, addSkip,
@@ -948,7 +963,7 @@ beforeEach(() => {
   // question cascades from run, but the delete order still matters: it is
   // listed first so a future FK-enforcing change cannot make this fail
   // mysteriously halfway through a suite.
-  db().exec('DELETE FROM monitor_condition; DELETE FROM monitor_invocation; DELETE FROM landing_override; DELETE FROM review_finding; DELETE FROM review_lens; DELETE FROM review; DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc; DELETE FROM run_message; DELETE FROM question; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
+  db().exec('DELETE FROM monitor_condition; DELETE FROM monitor_invocation; DELETE FROM landing_override; DELETE FROM review_finding; DELETE FROM review_lens; DELETE FROM review; DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc_revision; DELETE FROM doc; DELETE FROM run_message; DELETE FROM question; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
 })
 
 afterAll(() => {
@@ -1616,6 +1631,9 @@ describe('port importer', () => {
       title: 'Port import exclusions',
       body: expect.stringContaining('Original value:\nOriginal text that must survive verbatim.'),
     })
+    expect(listDocRevisions('global', null, 'port-import-exclusions')[0]).toMatchObject({
+      op: 'import', author: 'port-import', reason: 'port import from source corpus',
+    })
   })
 
   test('a second import refuses existing data and replace atomically rewrites it', () => {
@@ -1627,6 +1645,8 @@ describe('port importer', () => {
     expect(listDoctrineRules().map((row) => row.number)).toEqual([2])
     expect(listPairs()).toHaveLength(1)
     expect(getDoc('global', null, 'port-doctrine-preface')?.body).toContain('New preface.')
+    expect(listDocRevisions('global', null, 'port-doctrine-preface').map((revision) => revision.op))
+      .toEqual(['import', 'delete', 'import'])
   })
 
   test('an importer-owned doc alone makes the destination non-empty', () => {
@@ -3599,8 +3619,8 @@ describe('run detail', () => {
     writeFileSync(outputPath, 'the whole reply')
     db().query(
       `UPDATE run SET vendor_tokens=?, failure_kind=?, evidence_excluded=?, error=?,
-                      prompt_path=?, output_path=?, run_token=? WHERE id=?`,
-    ).run(5678, 'timeout', 'not evidence', 'timed out', promptPath, outputPath, 'secret', id)
+                      prompt_path=?, output_path=?, run_token=?, doc_revisions=? WHERE id=?`,
+    ).run(5678, 'timeout', 'not evidence', 'timed out', promptPath, outputPath, 'secret', '[4,9]', id)
     score(id, 'partial', 'mixed')
     db().query('UPDATE score SET note=? WHERE run_id=?').run('read by hub', id)
 
@@ -3609,6 +3629,7 @@ describe('run detail', () => {
       id, agent: 'grok', job: 'craft', latency_ms: 1234, vendor_tokens: 5678,
       status: 'failed', failure_kind: 'timeout', probe: 1,
       evidence_excluded: 'not evidence', error: 'timed out',
+      doc_revisions: '[4,9]',
       delivery: 'partial', quality: 'mixed', note: 'read by hub',
       prompt: 'the whole prompt', output: 'the whole reply',
     })
@@ -4716,9 +4737,9 @@ describe('detached run collection', () => {
       { command: 'project set', args: ['project', 'set', 'json-added', '--stack', 'node', '--json'] },
       { command: 'doc list', args: ['doc', 'list', '--json'] },
       { command: 'doc show', args: ['doc', 'show', 'json-show', '--scope', 'global', '--json'] },
-      { command: 'doc set', args: ['doc', 'set', 'json-set', '--scope', 'global', '--title', 'Set', '--json'], stdin: 'body' },
+      { command: 'doc set', args: ['doc', 'set', 'json-set', '--scope', 'global', '--title', 'Set', '--reason', 'json test', '--json'], stdin: 'body' },
       { command: 'doc consume', args: ['doc', 'consume', 'json-consume', '--scope', 'global', '--json'] },
-      { command: 'doc rm', args: ['doc', 'rm', 'json-rm', '--scope', 'global', '--json'] },
+      { command: 'doc rm', args: ['doc', 'rm', 'json-rm', '--scope', 'global', '--reason', 'json test', '--json'] },
       { command: 'doc subjects', args: ['doc', 'subjects', '--json'] },
       { command: 'port baseline show', args: ['port', 'baseline', 'show', 'json-source', 'json-target', '--json'] },
       { command: 'port baseline set', args: ['port', 'baseline', 'set', 'json-source', 'json-target', 'abc', '--json'] },
@@ -11162,11 +11183,36 @@ describe('canonical schema rebuild', () => {
     ).all()).toEqual(triples)
     expect(before).toHaveLength(2)
     expect(tableSql(d, 'doc')).toContain("'resume'")
+    expect(cols(d, 'doc_revision')).toContain('reason')
+    expect(cols(d, 'run')).toContain('doc_revisions')
+    expect(d.query('SELECT doc_id, op, author, reason FROM doc_revision ORDER BY doc_id').all()).toEqual([
+      { doc_id: 1, op: 'backfill', author: 'migration', reason: 'state at DEV-256 migration' },
+      { doc_id: 2, op: 'backfill', author: 'migration', reason: 'state at DEV-256 migration' },
+    ])
+    applySchema(d)
+    expect(d.query('SELECT COUNT(*) AS n FROM doc_revision').get()).toEqual({ n: 2 })
     d.exec(`INSERT INTO doc (scope, subject, slug, title, body, created_at, updated_at)
             VALUES ('resume', 'known', 'epic', 'T', 'B', 't', 't')`)
     expect(() => d.exec(`INSERT INTO doc (scope, subject, slug, title, body, created_at, updated_at)
             VALUES ('resume', NULL, 'x', 'T', 'B', 't', 't')`)).toThrow()
     d.close()
+  })
+
+  test('doc address index rejects NULL-subject duplicates and migration names existing ids', () => {
+    const direct = new Database(':memory:')
+    applySchema(direct)
+    direct.exec(`INSERT INTO doc VALUES (1, 'global', NULL, 'hello', 'T', 'B', 't', 't')`)
+    expect(() => direct.exec(`INSERT INTO doc VALUES (2, 'global', NULL, 'hello', 'T', 'B', 't', 't')`)).toThrow()
+    direct.close()
+
+    const legacy = new Database(':memory:')
+    legacy.exec(OLD_DOC_DDL)
+    legacy.exec(`
+      INSERT INTO doc VALUES (7, 'global', NULL, 'hello', 'T', 'B', 't', 't');
+      INSERT INTO doc VALUES (9, 'global', NULL, 'hello', 'T', 'B', 't', 't');
+    `)
+    expect(() => applySchema(legacy)).toThrow('conflicting doc ids: 7,9')
+    legacy.close()
   })
 
   test('opening twice is idempotent', () => {
@@ -11204,6 +11250,64 @@ describe('scoped operator docs', () => {
     expect(second.body).toBe('two')
     expect(removeDoc('global', null, 'hello')).toBe(true)
     expect(getDoc('global', null, 'hello')).toBeNull()
+  })
+
+  test('create, set, consume, delete, and restore append complete state revisions', async () => {
+    const created = writeDoc({
+      scope: 'global', subject: null, slug: 'revision-life', title: 'First',
+      body: '---\nstatus: open\n---\n\none', author: 'creator', reason: 'create it',
+    })
+    writeDoc({
+      scope: 'global', subject: null, slug: 'revision-life', title: 'Second',
+      body: '---\nstatus: open\n---\n\ntwo', author: 'editor', reason: 'update it',
+    })
+    consumeDoc('global', null, 'revision-life', { author: 'consumer', reason: 'finish it' })
+    const beforeDelete = getDoc('global', null, 'revision-life')!
+    deleteDoc('global', null, 'revision-life', { author: 'deleter', reason: 'remove it' })
+    await Bun.sleep(2)
+    const restored = restoreDoc(
+      'global', null, 'revision-life', listDocRevisions('global', null, 'revision-life').at(-1)!.id,
+      { author: 'restorer', reason: 'bring it back' },
+    )
+    const revisions = listDocRevisions('global', null, 'revision-life').reverse()
+    expect(revisions.map((revision) => revision.op)).toEqual(['create', 'set', 'consume', 'delete', 'restore'])
+    expect(revisions.map((revision) => revision.author)).toEqual(['creator', 'editor', 'consumer', 'deleter', 'restorer'])
+    expect(revisions.map((revision) => revision.reason)).toEqual([
+      'create it', 'update it', 'finish it', 'remove it', 'bring it back',
+    ])
+    expect(getDocRevision(revisions[2]!.id)?.body).toContain('status: consumed')
+    expect(getDocRevision(revisions[3]!.id)?.body).toBe(beforeDelete.body)
+    expect(restored.body).toBe('---\nstatus: open\n---\n\none')
+    expect(restored.updated_at).not.toBe(created.updated_at)
+  })
+
+  test('write reasons are required and author defaults to the session or unknown', () => {
+    expect(() => writeDoc({
+      scope: 'global', subject: null, slug: 'no-reason', title: 'T', body: 'B', reason: '  ',
+    })).toThrow('reason is required')
+    expect(() => consumeDocument('global', null, 'missing', { reason: '' })).toThrow('reason is required')
+    expect(() => deleteDoc('global', null, 'missing', { reason: '\t' })).toThrow('reason is required')
+    expect(() => readDocs('/missing', { reason: ' ' })).toThrow('reason is required')
+
+    const before = process.env.CLAUDE_CODE_SESSION_ID
+    try {
+      process.env.CLAUDE_CODE_SESSION_ID = 'doc-session'
+      writeDoc({ scope: 'global', subject: null, slug: 'session-author', title: 'T', body: 'B', reason: 'test' })
+      delete process.env.CLAUDE_CODE_SESSION_ID
+      writeDoc({ scope: 'global', subject: null, slug: 'unknown-author', title: 'T', body: 'B', reason: 'test' })
+      expect(listDocRevisions('global', null, 'session-author')[0]!.author).toBe('doc-session')
+      expect(listDocRevisions('global', null, 'unknown-author')[0]!.author).toBe('unknown')
+    } finally {
+      if (before === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+      else process.env.CLAUDE_CODE_SESSION_ID = before
+    }
+  })
+
+  test('revision diff renders a one-line replacement', () => {
+    writeDoc({ scope: 'global', subject: null, slug: 'diffed', title: 'T', body: 'one\n', reason: 'first' })
+    writeDoc({ scope: 'global', subject: null, slug: 'diffed', title: 'T', body: 'two\n', reason: 'second' })
+    const [latest, previous] = listDocRevisions('global', null, 'diffed')
+    expect(diffDocRevisions(previous!.id, latest!.id)).toContain('-one\n+two')
   })
 
   test('scope, slug, and every subject rule name a usable fix', () => {
@@ -11299,11 +11403,14 @@ describe('scoped operator docs', () => {
     process.env.ORCH_DEPTH = '0'
     try {
       const first = await runJob({ job: 'file-question', prompt: 'FIRST SPEC', cwd: dir, agent: 'codex' })
-      const firstRow = db().query('SELECT prompt_path, docs_injected FROM run WHERE id=?').get(first.id) as
-        { prompt_path: string; docs_injected: number }
+      const firstRow = db().query('SELECT prompt_path, docs_injected, doc_revisions FROM run WHERE id=?').get(first.id) as
+        { prompt_path: string; docs_injected: number; doc_revisions: string }
       const bound = readFileSync(firstRow.prompt_path.replace(/\.prompt\.txt$/, '.bound.txt'), 'utf8')
       expect(bound).toContain('WHAT THE OPERATOR WANTS YOU TO KNOW\n\n## Global\n\nG\n\n## Job\n\nJ\n\n## Project\n\nP')
       expect(firstRow.docs_injected).toBe(3)
+      expect(JSON.parse(firstRow.doc_revisions)).toEqual(
+        docsForRun({ job: 'file-question', cwd: dir }).map((doc) => doc.revision_id),
+      )
       db().query('UPDATE run SET vendor_session=? WHERE id=?').run('docs-session', first.id)
       const resumed = await runJob({
         job: 'file-question', prompt: 'RULING', cwd: dir,
@@ -11311,8 +11418,9 @@ describe('scoped operator docs', () => {
           sessionId: 'owner', worktree: null },
       })
       expect(resumedPrompt).not.toContain('WHAT THE OPERATOR WANTS YOU TO KNOW')
-      expect((db().query('SELECT docs_injected FROM run WHERE id=?').get(resumed.id) as
-        { docs_injected: number }).docs_injected).toBe(0)
+      expect(db().query('SELECT docs_injected, doc_revisions FROM run WHERE id=?').get(resumed.id)).toEqual({
+        docs_injected: 0, doc_revisions: null,
+      })
     } finally {
       agent.bin = origBin
       agent.argv = origArgv
@@ -11340,6 +11448,22 @@ describe('scoped operator docs', () => {
       const consumed = await client.callTool({
         name: 'consume_doc', arguments: { scope: 'global', slug: 'mcp-consume' },
       })
+      const missingReason = await client.callTool({
+        name: 'set_doc', arguments: { scope: 'global', slug: 'bad', title: 'Bad', body: 'Bad' },
+      })
+      const set = await client.callTool({
+        name: 'set_doc', arguments: {
+          scope: 'global', slug: 'mcp-set', title: 'Set', body: 'state', reason: 'MCP round trip',
+        },
+      })
+      const setRow = JSON.parse(((set as any).content[0] as { text: string }).text)
+      const revisionList = await client.callTool({
+        name: 'list_doc_revisions', arguments: { scope: 'global', slug: 'mcp-set' },
+      })
+      const revisionRows = JSON.parse(((revisionList as any).content[0] as { text: string }).text)
+      const revision = await client.callTool({
+        name: 'get_doc_revision', arguments: { id: revisionRows[0].id },
+      })
       const listedText = ((listed as any).content[0] as { text: string }).text
       const fetchedText = ((fetched as any).content[0] as { text: string }).text
       const consumedText = ((consumed as any).content[0] as { text: string }).text
@@ -11353,6 +11477,11 @@ describe('scoped operator docs', () => {
       expect(JSON.parse(fetchedText).body).toBe('Visible')
       expect(JSON.parse(consumedText)).toMatchObject({ already_consumed: false })
       expect(getDoc('global', null, 'mcp-consume')?.body).toContain('status: consumed')
+      expect(missingReason.isError).toBe(true)
+      expect(((missingReason as any).content[0] as { text: string }).text).toContain('reason')
+      expect(setRow.body).toBe('state')
+      expect(revisionRows[0]).toMatchObject({ op: 'create', author: expect.any(String), reason: 'MCP round trip' })
+      expect(JSON.parse(((revision as any).content[0] as { text: string }).text).body).toBe('state')
     } finally {
       await client.close()
       await server.close()
@@ -11813,10 +11942,10 @@ describe('scoped operator docs', () => {
 
   test('orch doc rm --json reports whether a row was removed', () => {
     setDoc({ scope: 'global', subject: null, slug: 'gone', title: 'T', body: 'B' })
-    const hit = orchCli(['doc', 'rm', 'gone', '--scope', 'global', '--json'])
+    const hit = orchCli(['doc', 'rm', 'gone', '--scope', 'global', '--reason', 'test', '--json'])
     expect(hit.code).toBe(0)
     expect(JSON.parse(hit.out)).toEqual({ removed: true })
-    const miss = orchCli(['doc', 'rm', 'gone', '--scope', 'global', '--json'])
+    const miss = orchCli(['doc', 'rm', 'gone', '--scope', 'global', '--reason', 'test', '--json'])
     expect(miss.code).toBe(0)
     expect(JSON.parse(miss.out)).toEqual({ removed: false })
   })
@@ -11824,12 +11953,35 @@ describe('scoped operator docs', () => {
   test('orch doc set --json round-trips a body with quote, backtick and newline', () => {
     const body = "quote' backtick` newline\n"
     const r = orchCli(
-      ['doc', 'set', 'round-trip', '--scope', 'global', '--title', 'T', '--json'],
+      ['doc', 'set', 'round-trip', '--scope', 'global', '--title', 'T', '--reason', 'test', '--json'],
       body,
     )
     expect(r.code).toBe(0)
     expect(JSON.parse(r.out).body).toBe(body)
     expect(getDoc('global', null, 'round-trip')?.body).toBe(body)
+  })
+
+  test('orch doc history, diff, and restore operate on revisions without rewinding', () => {
+    writeDoc({ scope: 'global', subject: null, slug: 'cli-history', title: 'T', body: 'one\n', reason: 'first' })
+    writeDoc({ scope: 'global', subject: null, slug: 'cli-history', title: 'T', body: 'two\n', reason: 'second' })
+    const history = orchCli(['doc', 'history', 'global', '-', 'cli-history', '--json'])
+    expect(history.code).toBe(0)
+    const rows = JSON.parse(history.out)
+    expect(rows.map((row: any) => row.reason)).toEqual(['second', 'first'])
+    expect(rows[0]).toEqual({
+      id: expect.any(Number), op: 'set', author: expect.any(String), reason: 'second',
+      at: expect.any(String), bytes: 4,
+    })
+    const diff = orchCli(['doc', 'diff', 'global', '-', 'cli-history'])
+    expect(diff.code).toBe(0)
+    expect(diff.out).toContain('-one\n+two')
+    deleteDoc('global', null, 'cli-history', { reason: 'gone' })
+    const restored = orchCli([
+      'doc', 'restore', 'global', '-', 'cli-history', String(rows[1].id), '--reason', 'undo delete',
+    ])
+    expect(restored.code).toBe(0)
+    expect(getDoc('global', null, 'cli-history')?.body).toBe('one\n')
+    expect(listDocRevisions('global', null, 'cli-history')[0]?.op).toBe('restore')
   })
 
   test('orch doc consume stamps the session and preserves the document outside its fields', () => {

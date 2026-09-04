@@ -34,6 +34,26 @@ export type DocMetadata = Pick<Doc, 'id' | 'scope' | 'subject' | 'slug' | 'title
   bytes: number
 }
 
+export type DocRevisionOp = 'create' | 'set' | 'consume' | 'delete' | 'restore' | 'import' | 'backfill'
+export type DocRevision = {
+  id: number
+  doc_id: number
+  scope: DocScope
+  subject: string | null
+  slug: string
+  op: DocRevisionOp
+  title: string
+  body: string
+  author: string
+  reason: string
+  session_id: string | null
+  at: string
+}
+export type DocRevisionMetadata = Omit<DocRevision, 'title' | 'body' | 'session_id' | 'doc_id' | 'scope' | 'subject' | 'slug'> & {
+  bytes: number
+}
+export type DocWriteContext = { author?: string; reason: string }
+
 export type DocListFilters = {
   scope?: string
   subject?: string | null
@@ -156,29 +176,77 @@ export function getDoc(scope: string, subject: string | null, slug: string): Doc
   ).get(scope, subject, slug) as Doc | null
 }
 
-export function setDoc(input: {
-  scope: string; subject: string | null; slug: string; title: string; body: string
-}): Doc {
-  validate(input.scope, input.subject, input.slug)
-  const existing = getDoc(input.scope, input.subject, input.slug)
-  const at = nowIso()
-  if (existing) {
-    db().query('UPDATE doc SET title=?, body=?, updated_at=? WHERE id=?')
-      .run(input.title, input.body, at, existing.id)
-    return getDoc(input.scope, input.subject, input.slug)!
-  }
-  const id = (db().query(
-    `INSERT INTO doc (scope, subject, slug, title, body, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?) RETURNING id`,
-  ).get(input.scope, input.subject, input.slug, input.title, input.body, at, at) as { id: number }).id
-  return db().query('SELECT * FROM doc WHERE id=?').get(id) as Doc
+function writeIdentity(context: DocWriteContext): { author: string; reason: string; session: string | null } {
+  const reason = context.reason?.trim()
+  if (!reason) throw new Error('doc write reason is required; pass --reason on the CLI or reason through MCP/Hub')
+  const session = sessionId()
+  const author = (context.author ?? session ?? 'unknown').trim()
+  if (!author) throw new Error('doc write author must not be empty; omit it to use the session or unknown')
+  return { author, reason, session }
 }
 
-export function removeDoc(scope: string, subject: string | null, slug: string): boolean {
+function insertRevision(doc: Doc, op: DocRevisionOp, context: DocWriteContext, at: string): void {
+  const identity = writeIdentity(context)
+  db().query(
+    `INSERT INTO doc_revision
+       (doc_id, scope, subject, slug, op, title, body, author, reason, session_id, at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+  ).run(
+    doc.id, doc.scope, doc.subject, doc.slug, op, doc.title, doc.body,
+    identity.author, identity.reason, identity.session, at,
+  )
+}
+
+function setDocWithOp(input: {
+  scope: string; subject: string | null; slug: string; title: string; body: string
+} & DocWriteContext, requestedOp?: 'import'): Doc {
+  validate(input.scope, input.subject, input.slug)
+  writeIdentity(input)
+  return db().transaction(() => {
+    const existing = getDoc(input.scope, input.subject, input.slug)
+    const at = nowIso()
+    let doc: Doc
+    if (existing) {
+      db().query('UPDATE doc SET title=?, body=?, updated_at=? WHERE id=?')
+        .run(input.title, input.body, at, existing.id)
+      doc = getDoc(input.scope, input.subject, input.slug)!
+    } else {
+      const id = (db().query(
+        `INSERT INTO doc (scope, subject, slug, title, body, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?) RETURNING id`,
+      ).get(input.scope, input.subject, input.slug, input.title, input.body, at, at) as { id: number }).id
+      doc = db().query('SELECT * FROM doc WHERE id=?').get(id) as Doc
+    }
+    insertRevision(doc, requestedOp ?? (existing ? 'set' : 'create'), input, at)
+    return doc
+  })()
+}
+
+export function setDoc(input: {
+  scope: string; subject: string | null; slug: string; title: string; body: string
+} & DocWriteContext): Doc {
+  return setDocWithOp(input)
+}
+
+export function importDoc(input: {
+  scope: string; subject: string | null; slug: string; title: string; body: string
+} & DocWriteContext): Doc {
+  return setDocWithOp(input, 'import')
+}
+
+export function removeDoc(
+  scope: string, subject: string | null, slug: string, context: DocWriteContext,
+): boolean {
   validScope(scope)
-  return db().query(
-    'DELETE FROM doc WHERE scope = ? AND subject IS ? AND slug = ?',
-  ).run(scope, subject, slug).changes > 0
+  writeIdentity(context)
+  return db().transaction(() => {
+    const doc = getDoc(scope, subject, slug)
+    if (!doc) return false
+    const at = nowIso()
+    db().query('DELETE FROM doc WHERE id=?').run(doc.id)
+    insertRevision(doc, 'delete', context, at)
+    return true
+  })()
 }
 
 export type ConsumedDoc = Doc & { already_consumed: boolean }
@@ -188,7 +256,11 @@ export type ConsumedDoc = Doc & { already_consumed: boolean }
  * recovery artifact. Patch only the three named fields instead of parsing and
  * serializing YAML, which would rewrite unrelated whitespace and ordering.
  */
-export function consumeDoc(scope: string, subject: string | null, slug: string): ConsumedDoc {
+export function consumeDoc(
+  scope: string, subject: string | null, slug: string,
+  context: DocWriteContext,
+): ConsumedDoc {
+  writeIdentity(context)
   const doc = getDoc(scope, subject, slug)
   if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
 
@@ -207,7 +279,7 @@ export function consumeDoc(scope: string, subject: string | null, slug: string):
   const consumedAt = nowIso()
   const stamps = [
     ['consumed', consumedAt],
-    ['consumed_by', String(sessionId())],
+    ['consumed_by', sessionId() ?? 'unknown'],
   ] as const
   const missing: string[] = []
   for (const [name, value] of stamps) {
@@ -222,17 +294,28 @@ export function consumeDoc(scope: string, subject: string | null, slug: string):
   const contentStart = frontmatter.index! + 3 + newline.length
   const body = doc.body.slice(0, contentStart) + yaml
     + doc.body.slice(contentStart + frontmatter[2]!.length)
-  db().query('UPDATE doc SET body=?, updated_at=? WHERE id=?').run(body, consumedAt, doc.id)
-  return { ...getDoc(scope, subject, slug)!, already_consumed: false }
+  return db().transaction(() => {
+    db().query('UPDATE doc SET body=?, updated_at=? WHERE id=?').run(body, consumedAt, doc.id)
+    const result = getDoc(scope, subject, slug)!
+    insertRevision(result, 'consume', context, consumedAt)
+    return { ...result, already_consumed: false }
+  })()
 }
 
-export function docsForRun(input: { job: string; cwd: string }): Doc[] {
+export type InjectedDoc = Doc & { revision_id: number }
+
+export function docsForRun(input: { job: string; cwd: string }): InjectedDoc[] {
   const project = projectAt(input.cwd)
-  return [
+  const docs = [
     ...listDocs({ scope: 'global', subject: null }),
     ...listDocs({ scope: 'job', subject: input.job }),
     ...(project ? listDocs({ scope: 'project', subject: project.name }) : []),
   ]
+  const latest = db().query('SELECT MAX(id) AS id FROM doc_revision WHERE doc_id=?')
+  return docs.map((doc) => ({
+    ...doc,
+    revision_id: (latest.get(doc.id) as { id: number }).id,
+  }))
 }
 
 export function docsMarkdown(docs: Doc[]): string {
@@ -324,7 +407,8 @@ export function exportDocs(dir: string): number {
   return docs.length
 }
 
-export function importDocs(dir: string): number {
+export function importDocs(dir: string, context: DocWriteContext): number {
+  writeIdentity(context)
   let count = 0
   for (const scopeEntry of readdirSync(dir, { withFileTypes: true })) {
     if (!scopeEntry.isDirectory()) continue
@@ -342,10 +426,74 @@ export function importDocs(dir: string): number {
         try { title = JSON.parse(match[1]!) }
         catch { throw new Error(`${file.name}: title must be a YAML double-quoted string`) }
         if (typeof title !== 'string') throw new Error(`${file.name}: title must be a string`)
-        setDoc({ scope, subject, slug: file.name.slice(0, -3), title, body: match[2]! })
+        setDocWithOp({ scope, subject, slug: file.name.slice(0, -3), title, body: match[2]!, ...context }, 'import')
         count++
       }
     }
   }
   return count
+}
+
+export function listDocRevisions(scope: string, subject: string | null, slug: string): DocRevisionMetadata[] {
+  validate(scope, subject, slug)
+  return db().query(
+    `SELECT id, op, author, reason, at, length(CAST(body AS BLOB)) AS bytes
+       FROM doc_revision WHERE scope=? AND subject IS ? AND slug=? ORDER BY id DESC`,
+  ).all(scope, subject, slug) as DocRevisionMetadata[]
+}
+
+export function getDocRevision(id: number): DocRevision | null {
+  return db().query('SELECT * FROM doc_revision WHERE id=?').get(id) as DocRevision | null
+}
+
+export function restoreDoc(
+  scope: string, subject: string | null, slug: string, revisionId: number, context: DocWriteContext,
+): Doc {
+  validate(scope, subject, slug)
+  writeIdentity(context)
+  const revision = getDocRevision(revisionId)
+  if (!revision || revision.scope !== scope || revision.subject !== subject || revision.slug !== slug) {
+    throw new Error(`no revision ${revisionId} for ${scope}/${subject ?? '_'}/${slug}`)
+  }
+  return db().transaction(() => {
+    const existing = getDoc(scope, subject, slug)
+    const at = nowIso()
+    let doc: Doc
+    if (existing) {
+      db().query('UPDATE doc SET title=?, body=?, updated_at=? WHERE id=?')
+        .run(revision.title, revision.body, at, existing.id)
+      doc = getDoc(scope, subject, slug)!
+    } else {
+      db().query(
+        `INSERT INTO doc (scope, subject, slug, title, body, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?)`,
+      ).run(scope, subject, slug, revision.title, revision.body, at, at)
+      doc = getDoc(scope, subject, slug)!
+    }
+    insertRevision(doc, 'restore', context, at)
+    return doc
+  })()
+}
+
+export function diffDocRevisions(a: number, b: number): string {
+  const left = getDocRevision(a)
+  const right = getDocRevision(b)
+  if (!left) throw new Error(`no doc revision ${a}`)
+  if (!right) throw new Error(`no doc revision ${b}`)
+  const x = left.body.split('\n')
+  const y = right.body.split('\n')
+  const lengths = Array.from({ length: x.length + 1 }, () => new Array<number>(y.length + 1).fill(0))
+  for (let i = x.length - 1; i >= 0; i--) for (let j = y.length - 1; j >= 0; j--) {
+    lengths[i]![j] = x[i] === y[j] ? lengths[i + 1]![j + 1]! + 1
+      : Math.max(lengths[i + 1]![j]!, lengths[i]![j + 1]!)
+  }
+  const lines = [`--- revision-${a}`, `+++ revision-${b}`]
+  let i = 0; let j = 0
+  while (i < x.length || j < y.length) {
+    if (i < x.length && j < y.length && x[i] === y[j]) { lines.push(` ${x[i]}`); i++; j++ }
+    else if (j < y.length && (i === x.length || lengths[i]![j + 1]! > lengths[i + 1]![j]!)) {
+      lines.push(`+${y[j++]}`)
+    } else lines.push(`-${x[i++]}`)
+  }
+  return `${lines.join('\n')}\n`
 }

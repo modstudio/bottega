@@ -784,11 +784,14 @@ function usage(): never {
       remove <name>
   orch doc list [--scope S] [--subject X] [--json]  (--json: one JSON document)
       show <slug> --scope S [--subject X] [--json]  (--json: one JSON document)
-      set <slug> --scope S [--subject X] --title T (--file F | body on stdin) [--json]  (--json: one JSON document)
-      consume <slug> --scope S [--subject X] [--json]  (--json: one JSON document)
-      rm <slug> --scope S [--subject X] [--json]  (--json: one JSON document)
+      set <slug> --scope S [--subject X] --title T --reason TEXT [--author NAME] (--file F | body on stdin) [--json]  (--json: one JSON document)
+      consume <slug> --scope S [--subject X] [--reason TEXT] [--author NAME] [--json]  (--json: one JSON document)
+      rm <slug> --scope S [--subject X] --reason TEXT [--author NAME] [--json]  (--json: one JSON document)
+      history <scope> <subject|-> <slug> [--json]
+      diff <scope> <subject|-> <slug> [<rev-a> [<rev-b>]]
+      restore <scope> <subject|-> <slug> <rev> --reason TEXT [--author NAME]
       subjects [--json]  (--json: one JSON document)
-      export <dir> | import <dir> | brief [--cwd P] | resumes [--cwd P]
+      export <dir> | import <dir> --reason TEXT [--author NAME] | brief [--cwd P] | resumes [--cwd P]
   orch port baseline show <source> <target> [--json]  (--json: one JSON document)
       baseline set <source> <target> <commit> [--clear] [--json]  (--json: one JSON document)
       skip list <source> <target> [--json]  (--json: one JSON document)
@@ -983,7 +986,7 @@ switch (cmd) {
 
   case 'doc': {
     const { listDocs, getDoc, setDoc, consumeDoc, removeDoc, exportDocs, importDocs, brief, docSubjects,
-            listOpenResumes } =
+            listOpenResumes, listDocRevisions, diffDocRevisions, restoreDoc } =
       await import('./docs.ts')
     const sub = argv[1] ?? 'list'
     const scope = flag('scope')
@@ -1013,20 +1016,23 @@ switch (cmd) {
     if (sub === 'set') {
       const slug = argv[2]
       const title = flag('title')
-      if (!slug || !scope || title === undefined) {
-        throw new Error('orch doc set <slug> --scope S [--subject X] --title T (--file F | body on stdin)')
+      const reason = flag('reason')
+      if (!slug || !scope || title === undefined || !reason?.trim()) {
+        throw new Error('orch doc set <slug> --scope S [--subject X] --title T --reason TEXT (--file F | body on stdin)')
       }
       const body = flag('file') ? readFileSync(flag('file')!, 'utf8')
         : !process.stdin.isTTY ? await Bun.stdin.text()
         : (() => { throw new Error('no body: pass --file F or pipe markdown on stdin') })()
-      const doc = setDoc({ scope, subject, slug, title, body })
+      const doc = setDoc({ scope, subject, slug, title, body, reason, author: flag('author') })
       console.log(has('json') ? JSON.stringify(doc) : `set ${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`)
       break
     }
     if (sub === 'consume') {
       const slug = argv[2]
       if (!slug || !scope) throw new Error('orch doc consume <slug> --scope S [--subject X]')
-      const result = consumeDoc(scope, subject, slug)
+      const result = consumeDoc(scope, subject, slug, {
+        reason: flag('reason') ?? 'consumed by session', author: flag('author'),
+      })
       if (has('json')) { console.log(JSON.stringify(result)); break }
       console.log(result.already_consumed
         ? `already consumed ${result.scope}/${result.subject ?? '_'}/${result.slug}`
@@ -1035,8 +1041,9 @@ switch (cmd) {
     }
     if (sub === 'rm') {
       const slug = argv[2]
-      if (!slug || !scope) throw new Error('orch doc rm <slug> --scope S [--subject X]')
-      const removed = removeDoc(scope, subject, slug)
+      const reason = flag('reason')
+      if (!slug || !scope || !reason?.trim()) throw new Error('orch doc rm <slug> --scope S [--subject X] --reason TEXT')
+      const removed = removeDoc(scope, subject, slug, { reason, author: flag('author') })
       if (has('json')) { console.log(JSON.stringify({ removed })); break }
       console.log(removed ? `removed ${scope}/${subject ?? '_'}/${slug}` : `no ${scope} doc "${slug}"`)
       break
@@ -1052,8 +1059,47 @@ switch (cmd) {
     if (sub === 'export' || sub === 'import') {
       const dir = argv[2]
       if (!dir) throw new Error(`orch doc ${sub} <dir>`)
-      const count = sub === 'export' ? exportDocs(dir) : importDocs(dir)
+      const reason = flag('reason')
+      if (sub === 'import' && !reason?.trim()) throw new Error('orch doc import <dir> --reason TEXT [--author NAME]')
+      const count = sub === 'export' ? exportDocs(dir) : importDocs(dir, { reason: reason!, author: flag('author') })
       console.log(`${sub === 'export' ? 'exported' : 'imported'} ${count} docs`)
+      break
+    }
+    if (sub === 'history' || sub === 'diff' || sub === 'restore') {
+      const addressScope = argv[2]
+      const addressSubject = argv[3] === '-' ? null : argv[3]
+      const slug = argv[4]
+      if (!addressScope || argv[3] === undefined || !slug) {
+        throw new Error(`orch doc ${sub} <scope> <subject|-> <slug>${sub === 'restore' ? ' <rev> --reason TEXT' : ''}`)
+      }
+      const revisions = listDocRevisions(addressScope, addressSubject, slug)
+      if (sub === 'history') {
+        if (has('json')) console.log(JSON.stringify(revisions))
+        else for (const revision of revisions) {
+          console.log(`${revision.id}  ${revision.op.padEnd(8)} ${revision.author}  ${revision.at}  ${revision.bytes} bytes  ${revision.reason}`)
+        }
+        break
+      }
+      if (sub === 'diff') {
+        const a = argv[5] ? Number(argv[5]) : revisions[1]?.id
+        const b = argv[6] ? Number(argv[6]) : revisions[0]?.id
+        if (!a || !b) throw new Error('doc diff needs two revisions; this address has fewer than two')
+        const addressIds = new Set(revisions.map((revision) => revision.id))
+        if (!addressIds.has(a) || !addressIds.has(b)) {
+          throw new Error(`doc diff revisions must belong to ${addressScope}/${addressSubject ?? '_'}/${slug}`)
+        }
+        process.stdout.write(diffDocRevisions(a, b))
+        break
+      }
+      const revisionId = Number(argv[5])
+      const reason = flag('reason')
+      if (!revisionId || !reason?.trim()) {
+        throw new Error('orch doc restore <scope> <subject|-> <slug> <rev> --reason TEXT')
+      }
+      const restored = restoreDoc(addressScope, addressSubject, slug, revisionId, {
+        reason, author: flag('author'),
+      })
+      console.log(has('json') ? JSON.stringify(restored) : `restored ${addressScope}/${addressSubject ?? '_'}/${slug}`)
       break
     }
     if (sub === 'brief') {
@@ -1067,7 +1113,7 @@ switch (cmd) {
       }
       break
     }
-    throw new Error(`unknown: orch doc ${sub}. Try list | show | set | consume | rm | subjects | export | import | brief | resumes`)
+    throw new Error(`unknown: orch doc ${sub}. Try list | show | set | consume | rm | history | diff | restore | subjects | export | import | brief | resumes`)
   }
 
   case 'port': {
@@ -1188,7 +1234,7 @@ switch (cmd) {
         break
       }
       try {
-        applyImport(plan, { replace: has('replace') })
+        applyImport(plan, { replace: has('replace'), sourceLabel: dir })
       } catch (error) {
         if (!(error instanceof ImportRefusalError)) throw error
         plan.refusals.push(...error.refusals.filter((refusal) => !plan.refusals.includes(refusal)))

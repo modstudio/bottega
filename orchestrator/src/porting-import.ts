@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
 import { db } from './db.ts'
-import { setDoc } from './docs.ts'
+import { importDoc, listDocs, removeDoc } from './docs.ts'
 import {
   addDoctrineRule, addPair, addSkip, setBaseline, setLedgerRef,
 } from './porting.ts'
@@ -674,8 +674,14 @@ const GLOBAL_PORT_DOC_SLUGS = [
 ]
 const PROJECT_PORT_DOC_SLUGS = ['port-differences', 'port-backports']
 
-export function applyImport(plan: ImportPlan, options: { replace?: boolean } = {}): void {
+export function applyImport(
+  plan: ImportPlan, options: { replace?: boolean; sourceLabel?: string } = {},
+): void {
   if (plan.refusals.length) throw new ImportRefusalError(plan.refusals)
+  const context = {
+    author: 'port-import',
+    reason: `port import from ${options.sourceLabel ?? 'source corpus'}`,
+  }
   db().transaction(() => {
     const counts = db().query(`SELECT
       (SELECT COUNT(*) FROM port_pair) +
@@ -699,12 +705,11 @@ export function applyImport(plan: ImportPlan, options: { replace?: boolean } = {
     }
     if (options.replace) {
       db().exec('DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine;')
-      const globalPlaceholders = GLOBAL_PORT_DOC_SLUGS.map(() => '?').join(',')
-      const projectPlaceholders = PROJECT_PORT_DOC_SLUGS.map(() => '?').join(',')
-      db().query(`DELETE FROM doc WHERE
-        (scope='global' AND subject IS NULL AND slug IN (${globalPlaceholders})) OR
-        (scope='project' AND slug IN (${projectPlaceholders}))`)
-        .run(...GLOBAL_PORT_DOC_SLUGS, ...PROJECT_PORT_DOC_SLUGS)
+      for (const doc of listDocs()) {
+        const owned = (doc.scope === 'global' && GLOBAL_PORT_DOC_SLUGS.includes(doc.slug)) ||
+          (doc.scope === 'project' && PROJECT_PORT_DOC_SLUGS.includes(doc.slug))
+        if (owned) removeDoc(doc.scope, doc.subject, doc.slug, context)
+      }
     }
 
     const pairs = new Map<string, number>()
@@ -713,6 +718,6 @@ export function applyImport(plan: ImportPlan, options: { replace?: boolean } = {
     for (const row of plan.skips) addSkip(pairs.get(row.pairKey)!, row.candidate, row.reason)
     for (const row of plan.refs) setLedgerRef(row)
     for (const row of plan.doctrine) addDoctrineRule(row.number, row.title, row.body)
-    for (const row of plan.docs) setDoc(row)
+    for (const row of plan.docs) importDoc({ ...row, ...context })
   })()
 }

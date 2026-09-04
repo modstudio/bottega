@@ -67,11 +67,14 @@ function commandShape(argv: string[]): { args: string[]; shape: CommandShape } |
       const forms: Record<string, CommandShape> = {
         list: shape('orch doc list [--scope S] [--subject X] [--json]', 0, ['--scope', '--subject'], ['--json']),
         show: shape('orch doc show <slug> --scope S [--subject X] [--json]', 1, ['--scope', '--subject'], ['--json']),
-        set: shape('orch doc set <slug> --scope S [--subject X] --title T (--file F | body on stdin) [--json]', 1, ['--scope', '--subject', '--title', '--file'], ['--json']),
-        consume: shape('orch doc consume <slug> --scope S [--subject X] [--json]', 1, ['--scope', '--subject'], ['--json']),
-        rm: shape('orch doc rm <slug> --scope S [--subject X] [--json]', 1, ['--scope', '--subject'], ['--json']),
+        set: shape('orch doc set <slug> --scope S [--subject X] --title T --reason TEXT [--author NAME] (--file F | body on stdin) [--json]', 1, ['--scope', '--subject', '--title', '--file', '--reason', '--author'], ['--json']),
+        consume: shape('orch doc consume <slug> --scope S [--subject X] [--reason TEXT] [--author NAME] [--json]', 1, ['--scope', '--subject', '--reason', '--author'], ['--json']),
+        rm: shape('orch doc rm <slug> --scope S [--subject X] --reason TEXT [--author NAME] [--json]', 1, ['--scope', '--subject', '--reason', '--author'], ['--json']),
+        history: shape('orch doc history <scope> <subject|-> <slug> [--json]', 3, [], ['--json']),
+        diff: shape('orch doc diff <scope> <subject|-> <slug> [<rev-a> [<rev-b>]]', 5),
+        restore: shape('orch doc restore <scope> <subject|-> <slug> <rev> --reason TEXT [--author NAME]', 4, ['--reason', '--author']),
         subjects: shape('orch doc subjects [--json]', 0, [], ['--json']),
-        export: shape('orch doc export <dir>', 1), import: shape('orch doc import <dir>', 1),
+        export: shape('orch doc export <dir>', 1), import: shape('orch doc import <dir> --reason TEXT [--author NAME]', 1, ['--reason', '--author']),
         brief: shape('orch doc brief [--cwd P]', 0, ['--cwd']),
         resumes: shape('orch doc resumes [--cwd P]', 0, ['--cwd']),
       }

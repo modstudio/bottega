@@ -184,6 +184,16 @@ export type DocSetInput = {
   slug: string
   title: string
   body: string
+  reason: string
+}
+
+export type DocRevisionMetadata = {
+  id: number
+  op: 'create' | 'set' | 'consume' | 'delete' | 'restore' | 'import' | 'backfill'
+  author: string
+  reason: string
+  at: string
+  bytes: number
 }
 
 export type DocArgvInput = {
@@ -192,9 +202,10 @@ export type DocArgvInput = {
   slug?: string
   title?: string
   body?: string
+  reason?: string
 }
 
-export type DocOp = 'list' | 'get' | 'set' | 'remove' | 'subjects'
+export type DocOp = 'list' | 'get' | 'set' | 'remove' | 'history' | 'subjects'
 
 function subjectFlags(subject: string | null | undefined): string[] {
   return subject ? ['--subject', subject] : []
@@ -220,14 +231,18 @@ export function docArgv(op: DocOp, input: DocArgvInput = {}): string[] {
         'doc', 'set', input.slug!, '--scope', input.scope!,
         ...subjectFlags(input.subject),
         '--title', input.title!,
+        '--reason', input.reason!, '--author', 'hub-dashboard',
         '--json',
       ]
     case 'remove':
       return [
         'doc', 'rm', input.slug!, '--scope', input.scope!,
         ...subjectFlags(input.subject),
+        '--reason', input.reason!, '--author', 'hub-dashboard',
         '--json',
       ]
+    case 'history':
+      return ['doc', 'history', input.scope!, input.subject ?? '-', input.slug!, '--json']
     case 'subjects':
       return ['doc', 'subjects', '--json']
   }
@@ -242,8 +257,11 @@ export const docGet = (scope: string, subject: string | null, slug: string) =>
 export const docSet = (input: DocSetInput) =>
   orch(docArgv('set', input), 20_000, { stdin: input.body }) as Promise<DocRow>
 
-export const docRemove = (scope: string, subject: string | null, slug: string) =>
-  orch(docArgv('remove', { scope, subject, slug })) as Promise<{ removed: boolean }>
+export const docRemove = (scope: string, subject: string | null, slug: string, reason: string) =>
+  orch(docArgv('remove', { scope, subject, slug, reason })) as Promise<{ removed: boolean }>
+
+export const docHistory = (scope: string, subject: string | null, slug: string) =>
+  orch(docArgv('history', { scope, subject, slug })) as Promise<DocRevisionMetadata[]>
 
 export const docSubjects = () =>
   orch(docArgv('subjects')) as Promise<DocSubjects>

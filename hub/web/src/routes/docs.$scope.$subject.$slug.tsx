@@ -38,10 +38,19 @@ function DocPage() {
     }),
     enabled: scoped,
   })
+  const history = useQuery({
+    ...trpc.doc.history.queryOptions({
+      scope: (scoped ? scope : 'global') as DocScope,
+      subject,
+      slug,
+    }),
+    enabled: scoped,
+  })
 
   const [editing, setEditing] = useState(Boolean(edit))
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
+  const [reason, setReason] = useState('')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   useEffect(() => {
@@ -60,6 +69,7 @@ function DocPage() {
     onSuccess: async () => {
       await queryClient.invalidateQueries()
       setEditing(false)
+      setReason('')
       setConfirmingDelete(false)
       await navigate({
         to: '/docs/$scope/$subject/$slug',
@@ -84,6 +94,7 @@ function DocPage() {
       setBody(doc.data.body)
     }
     setEditing(false)
+    setReason('')
     setConfirmingDelete(false)
     void navigate({
       to: '/docs/$scope/$subject/$slug',
@@ -99,7 +110,8 @@ function DocPage() {
       return
     }
     if (!scoped) return
-    remove.mutate({ scope, subject, slug })
+    if (!reason.trim()) return
+    remove.mutate({ scope, subject, slug, reason })
   }
 
   if (!scoped) {
@@ -114,8 +126,9 @@ function DocPage() {
               className="font-sans text-[20px] font-semibold"
             /> : (doc.data?.title ?? slug)} subtitle={`${scope} \u00b7 ${subject ?? slug}`} actions={
         <div className="flex shrink-0 gap-2">
-          {editing ? <><Button size="sm" onClick={() => save.mutate({ scope, subject, slug, title, body })} disabled={save.isPending || !title}><Save size={14} />Save</Button><Button size="sm" variant="outline" onClick={cancelEdit}><X size={14} />Cancel</Button></> : <Button size="sm" variant="outline" onClick={() => { setConfirmingDelete(false); setEditing(true) }} disabled={!doc.data}><Pencil size={14} />Edit</Button>}
-          <Button size="sm" variant="destructive" onClick={onDelete} disabled={remove.isPending || !doc.data}><Trash2 size={14} />{confirmingDelete ? 'Confirm delete' : 'Delete'}</Button>
+          {(editing || confirmingDelete) ? <Input aria-label="Reason" placeholder="Reason (required)" value={reason} onChange={(e) => setReason(e.target.value)} className="w-52" /> : null}
+          {editing ? <><Button size="sm" onClick={() => save.mutate({ scope, subject, slug, title, body, reason })} disabled={save.isPending || !title || !reason.trim()}><Save size={14} />Save</Button><Button size="sm" variant="outline" onClick={cancelEdit}><X size={14} />Cancel</Button></> : <Button size="sm" variant="outline" onClick={() => { setConfirmingDelete(false); setReason(''); setEditing(true) }} disabled={!doc.data}><Pencil size={14} />Edit</Button>}
+          <Button size="sm" variant="destructive" onClick={onDelete} disabled={remove.isPending || !doc.data || (confirmingDelete && !reason.trim())}><Trash2 size={14} />{confirmingDelete ? 'Confirm delete' : 'Delete'}</Button>
         </div>} />
       {doc.isPending ? <p className="text-muted-foreground">Loading doc...</p> : null}
       {doc.error ? <p className="text-destructive">{doc.error.message}</p> : null}
@@ -136,6 +149,15 @@ function DocPage() {
       ) : null}
 
       {doc.data && !editing ? <div className="prose-copy"><Markdown content={doc.data.body} /></div> : null}
+      {doc.data && !editing ? <div className="mt-8 border-t border-border pt-4">
+        <h2 className="mb-3 text-sm font-semibold">History</h2>
+        {history.data?.map((revision) => <div key={revision.id} className="grid grid-cols-[5rem_6rem_1fr_auto] gap-3 border-b border-border py-2 text-xs">
+          <span>#{revision.id} {revision.op}</span>
+          <span>{revision.author}</span>
+          <span>{revision.reason}</span>
+          <span className="text-muted-foreground">{revision.at} · {revision.bytes} bytes</span>
+        </div>)}
+      </div> : null}
     </section>
   )
 }

@@ -178,6 +178,7 @@ export function applySchema(d: Database): void {
   addColumn(d, 'run', 'mcp_error', 'TEXT')
   addColumn(d, 'run', 'schema_path', 'TEXT')
   addColumn(d, 'run', 'docs_injected', 'INTEGER')
+  addColumn(d, 'run', 'doc_revisions', 'TEXT')
   // Stable machine identity for findings-producing review jobs. A display label
   // is deliberately not used as a calibration key.
   addColumn(d, 'run', 'lens', 'TEXT')
@@ -307,7 +308,7 @@ function normalizeSql(sql: string): string {
 
 function schemaVersion(): string {
   return createHash('sha256')
-    .update([RUN_DDL, SCORE_DDL, DOC_DDL, REVIEW_LENS_DDL, LANDING_OVERRIDE_DDL]
+    .update([RUN_DDL, SCORE_DDL, DOC_DDL, DOC_REVISION_DDL, REVIEW_LENS_DDL, LANDING_OVERRIDE_DDL]
       .map(normalizeSql).join('\n'))
     .digest('hex')
 }
@@ -338,7 +339,7 @@ function ensureCanonicalSchema(d: Database) {
   }
 
   for (const [name, ddl] of [
-    ['run', RUN_DDL], ['score', SCORE_DDL], ['doc', DOC_DDL],
+    ['run', RUN_DDL], ['score', SCORE_DDL], ['doc', DOC_DDL], ['doc_revision', DOC_REVISION_DDL],
     ['review_lens', REVIEW_LENS_DDL], ['landing_override', LANDING_OVERRIDE_DDL],
   ] as const) {
     const live = liveTableSql(d, name)
@@ -363,7 +364,7 @@ function ensureCanonicalSchema(d: Database) {
  */
 function rebuildTable(
   d: Database,
-  table: 'run' | 'score' | 'doc' | 'review_lens' | 'landing_override',
+  table: 'run' | 'score' | 'doc' | 'doc_revision' | 'review_lens' | 'landing_override',
   canonical: string,
 ) {
   const fkOn = foreignKeysOn(d)
@@ -407,7 +408,15 @@ function rebuildTable(
         CREATE UNIQUE INDEX IF NOT EXISTS score_one_per_run ON score(run_id);
       `)
     } else if (table === 'doc') {
-      d.exec('CREATE INDEX IF NOT EXISTS doc_scope_subject ON doc(scope, subject)')
+      d.exec(`
+        CREATE INDEX IF NOT EXISTS doc_scope_subject ON doc(scope, subject);
+        CREATE UNIQUE INDEX IF NOT EXISTS doc_address ON doc(scope, COALESCE(subject, ''), slug);
+      `)
+    } else if (table === 'doc_revision') {
+      d.exec(`
+        CREATE INDEX IF NOT EXISTS doc_revision_doc ON doc_revision(doc_id, id);
+        CREATE INDEX IF NOT EXISTS doc_revision_address ON doc_revision(scope, subject, slug, id);
+      `)
     } else if (table === 'review_lens') {
       d.exec('CREATE INDEX IF NOT EXISTS review_calibration ON review_lens(lens, agent, model, review_id)')
     }
@@ -508,7 +517,8 @@ const RUN_DDL = `CREATE TABLE run (
       mcp_connected INTEGER,
       mcp_error     TEXT,
       schema_path   TEXT,
-      docs_injected INTEGER
+      docs_injected INTEGER,
+      doc_revisions TEXT
     )`
 
 const REVIEW_LENS_DDL = `CREATE TABLE review_lens (
@@ -606,6 +616,27 @@ const DOC_DDL = `CREATE TABLE doc (
       UNIQUE(scope, subject, slug)
     )`
 
+const DOC_REVISION_DDL = `CREATE TABLE doc_revision (
+      id         INTEGER PRIMARY KEY,
+      doc_id     INTEGER NOT NULL,
+      scope      TEXT NOT NULL CHECK (scope IN (${DOC_SCOPE_SQL})),
+      subject    TEXT,
+      slug       TEXT NOT NULL CHECK (
+                   length(slug) <= 64 AND
+                   slug GLOB '[a-z0-9]*' AND
+                   slug NOT GLOB '*[^a-z0-9-]*'
+                 ),
+      op         TEXT NOT NULL CHECK (op IN ('create','set','consume','delete','restore','import','backfill')),
+      title      TEXT NOT NULL,
+      body       TEXT NOT NULL,
+      author     TEXT NOT NULL CHECK (length(trim(author)) > 0),
+      reason     TEXT NOT NULL CHECK (length(trim(reason)) > 0),
+      session_id TEXT,
+      at         TEXT NOT NULL,
+      CHECK ((scope IN (${DOC_SUBJECTLESS_SCOPE_SQL}) AND subject IS NULL) OR
+             (scope IN (${DOC_SUBJECT_SCOPE_SQL}) AND subject IS NOT NULL))
+    )`
+
 function createIfNotExists(ddl: string): string {
   return ddl.replace(/^CREATE TABLE /, 'CREATE TABLE IF NOT EXISTS ')
 }
@@ -614,6 +645,7 @@ function migrate(d: Database) {
   d.exec(createIfNotExists(RUN_DDL))
   d.exec(createIfNotExists(SCORE_DDL))
   d.exec(createIfNotExists(DOC_DDL))
+  d.exec(createIfNotExists(DOC_REVISION_DDL))
   d.exec(createIfNotExists(LANDING_OVERRIDE_DDL))
   d.exec(`
     -- The ratio this whole layer exists to move: Claude tokens spent per unit of
@@ -668,7 +700,30 @@ function migrate(d: Database) {
     CREATE INDEX IF NOT EXISTS score_run ON score(run_id);
     CREATE UNIQUE INDEX IF NOT EXISTS score_one_per_run ON score(run_id);
     CREATE INDEX IF NOT EXISTS doc_scope_subject ON doc(scope, subject);
+    CREATE INDEX IF NOT EXISTS doc_revision_doc ON doc_revision(doc_id, id);
+    CREATE INDEX IF NOT EXISTS doc_revision_address ON doc_revision(scope, subject, slug, id);
   `)
+
+  const duplicateAddresses = d.query(
+    `SELECT scope, subject, slug, group_concat(id, ',') AS ids
+       FROM doc GROUP BY scope, COALESCE(subject, ''), slug HAVING COUNT(*) > 1`,
+  ).all() as { scope: string; subject: string | null; slug: string; ids: string }[]
+  if (duplicateAddresses.length) {
+    const duplicate = duplicateAddresses[0]!
+    throw new Error(
+      `duplicate doc address ${duplicate.scope}/${duplicate.subject ?? '_'}/${duplicate.slug}; ` +
+      `conflicting doc ids: ${duplicate.ids}`,
+    )
+  }
+  d.exec("CREATE UNIQUE INDEX IF NOT EXISTS doc_address ON doc(scope, COALESCE(subject, ''), slug)")
+  d.query(
+    `INSERT INTO doc_revision
+       (doc_id, scope, subject, slug, op, title, body, author, reason, session_id, at)
+     SELECT d.id, d.scope, d.subject, d.slug, 'backfill', d.title, d.body,
+            'migration', 'state at DEV-256 migration', NULL, d.updated_at
+       FROM doc d
+      WHERE NOT EXISTS (SELECT 1 FROM doc_revision r WHERE r.doc_id = d.id)`,
+  ).run()
 
   d.exec(`
     -- A relative judgement between two outputs from the same fan-out.

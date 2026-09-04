@@ -1153,7 +1153,7 @@ export async function run(opts: {
         // every column that means something, and these mean the most.
         `UPDATE run SET started_at=?, agent=?, job=?, repo=?, cwd=?, prompt_sha=?,
                         prompt_bytes=?, prompt_head=?, label=?, status='running', probe=?, retry_of=?,
-                        route_reason=?, branch=?, parent_run_id=?, turn=?, vendor_session=?, docs_injected=?,
+                        route_reason=?, branch=?, parent_run_id=?, turn=?, vendor_session=?, docs_injected=?, doc_revisions=?,
                         launch_cwd=?, launch_seed=?, launch_key=?, launch_base=?, no_failover=?,
                         automatic_failover=?, pid=?
           WHERE id=? RETURNING id`,
@@ -1167,16 +1167,16 @@ export async function run(opts: {
         // to be the only write, and continue then refused a chain whose parent
         // already knew the id.
         vendorSession,
-        injectedDocs.length,
+        injectedDocs.length, opts.resume ? null : JSON.stringify(injectedDocs.map((doc) => doc.revision_id)),
         launchCwd, launchSeed, launchKey, launchBase, noFailover ? 1 : 0,
         opts.automaticFailover ? 1 : 0, process.pid,
         opts.reserveId,
       ) as { id: number })
     : (db().query(
-        `INSERT INTO run (started_at, agent, job, repo, cwd, prompt_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of, route_reason, branch, parent_run_id, turn, vendor_session, docs_injected,
+        `INSERT INTO run (started_at, agent, job, repo, cwd, prompt_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of, route_reason, branch, parent_run_id, turn, vendor_session, docs_injected, doc_revisions,
                           launch_cwd, launch_seed, launch_key, launch_base, no_failover,
                           automatic_failover, pid)
-         VALUES (?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+         VALUES (?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       ).get(
         nowIso(), name, opts.job, opts.repo ?? repoOf(callerCwd), callerCwd,
         sha(prompt), Buffer.byteLength(prompt), head, opts.label ?? null,
@@ -1189,7 +1189,7 @@ export async function run(opts: {
         opts.probe ? 1 : 0, opts.retryOf ?? null, reason, branchOf(callerCwd),
         opts.resume?.parent ?? null, opts.resume ? opts.resume.turn : 1,
         vendorSession,
-        injectedDocs.length,
+        injectedDocs.length, opts.resume ? null : JSON.stringify(injectedDocs.map((doc) => doc.revision_id)),
         launchCwd, launchSeed, launchKey, launchBase, noFailover ? 1 : 0,
         opts.automaticFailover ? 1 : 0, process.pid,
       ) as { id: number })

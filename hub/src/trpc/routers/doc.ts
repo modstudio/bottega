@@ -1,7 +1,7 @@
 import { TRPCError, initTRPC } from '@trpc/server'
 import { z } from 'zod'
 import { DOC_SCOPES } from '../../../../shared/docs.ts'
-import { docGet, docList, docRemove, docSet, docSubjects } from '../../orch.ts'
+import { docGet, docHistory, docList, docRemove, docSet, docSubjects } from '../../orch.ts'
 import type { Context } from '../context.ts'
 
 const t = initTRPC.context<Context>().create()
@@ -32,10 +32,14 @@ export const docRouter = t.router({
   set: t.procedure
     .input(z.object({
       scope, subject, slug: z.string(), title: z.string(), body: z.string(),
+      reason: z.string().trim().min(1, 'Reason is required'),
     }))
     .mutation(({ input }) => fromOrch(() => docSet(input))),
   remove: t.procedure
+    .input(z.object({ scope, subject, slug: z.string(), reason: z.string().trim().min(1, 'Reason is required') }))
+    .mutation(({ input }) => fromOrch(() => docRemove(input.scope, input.subject, input.slug, input.reason))),
+  history: t.procedure
     .input(z.object({ scope, subject, slug: z.string() }))
-    .mutation(({ input }) => fromOrch(() => docRemove(input.scope, input.subject, input.slug))),
+    .query(({ input }) => fromOrch(() => docHistory(input.scope, input.subject, input.slug))),
   subjects: t.procedure.query(() => fromOrch(() => docSubjects())),
 })

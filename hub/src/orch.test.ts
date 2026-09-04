@@ -36,31 +36,31 @@ describe('docArgv', () => {
   test('set without subject does not put the body in argv', () => {
     const body = "quote' backtick` newline\n"
     const argv = docArgv('set', {
-      scope: 'global', subject: null, slug: 'hello', title: 'Hi', body,
+      scope: 'global', subject: null, slug: 'hello', title: 'Hi', body, reason: 'why',
     })
     expect(argv).toEqual(
-      ['doc', 'set', 'hello', '--scope', 'global', '--title', 'Hi', '--json'],
+      ['doc', 'set', 'hello', '--scope', 'global', '--title', 'Hi', '--reason', 'why', '--author', 'hub-dashboard', '--json'],
     )
     expect(argv).not.toContain(body)
   })
 
   test('set with subject', () => {
     expect(docArgv('set', {
-      scope: 'agent', subject: 'codex', slug: 'notes', title: 'Notes',
+      scope: 'agent', subject: 'codex', slug: 'notes', title: 'Notes', reason: 'why',
     })).toEqual(
-      ['doc', 'set', 'notes', '--scope', 'agent', '--subject', 'codex', '--title', 'Notes', '--json'],
+      ['doc', 'set', 'notes', '--scope', 'agent', '--subject', 'codex', '--title', 'Notes', '--reason', 'why', '--author', 'hub-dashboard', '--json'],
     )
   })
 
   test('remove without subject', () => {
-    expect(docArgv('remove', { scope: 'machine', subject: null, slug: 'host' })).toEqual(
-      ['doc', 'rm', 'host', '--scope', 'machine', '--json'],
+    expect(docArgv('remove', { scope: 'machine', subject: null, slug: 'host', reason: 'why' })).toEqual(
+      ['doc', 'rm', 'host', '--scope', 'machine', '--reason', 'why', '--author', 'hub-dashboard', '--json'],
     )
   })
 
   test('remove with subject', () => {
-    expect(docArgv('remove', { scope: 'job', subject: 'implement', slug: 'notes' })).toEqual(
-      ['doc', 'rm', 'notes', '--scope', 'job', '--subject', 'implement', '--json'],
+    expect(docArgv('remove', { scope: 'job', subject: 'implement', slug: 'notes', reason: 'obsolete' })).toEqual(
+      ['doc', 'rm', 'notes', '--scope', 'job', '--subject', 'implement', '--reason', 'obsolete', '--author', 'hub-dashboard', '--json'],
     )
   })
 
@@ -77,12 +77,12 @@ describe('docSet stdin', () => {
     const body = "quote' backtick` newline\n"
     try {
       const row = await docSet({
-        scope: 'global', subject: null, slug: 'round-trip', title: 'T', body,
+        scope: 'global', subject: null, slug: 'round-trip', title: 'T', body, reason: 'test round trip',
       })
       expect(row.body).toBe(body)
       const got = await docGet('global', null, 'round-trip')
       expect(got.body).toBe(body)
-      const removed = await docRemove('global', null, 'round-trip')
+      const removed = await docRemove('global', null, 'round-trip', 'test cleanup')
       expect(removed).toEqual({ removed: true })
     } finally {
       if (prev === undefined) delete process.env.ORCH_DB
