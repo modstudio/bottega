@@ -33,6 +33,7 @@ import {
 import { CALIBRATION_SUFFIX_RESERVE_BYTES, calibrationLine, reviewCalibration } from './review.ts'
 import { createHasPlaceholder, projectAt, projects, stackAt } from './projects.ts'
 import { docsForRun, docsMarkdown } from './docs.ts'
+import { seedGuidance } from './args.ts'
 
 export type RunResult = {
   id: number
@@ -425,7 +426,7 @@ export function preflight(
   if (writesJob && tool?.seeds?.length && !effectiveSeed) {
     problems.push(
       `this project requires a database size for a new worktree, and has no default.\n` +
-      `  --seed ${tool.seeds.join('\n  --seed ')}\n\n` +
+      `${seedGuidance(tool.seeds)}\n\n` +
       `Choosing is the architect's call: it depends on what the task touches.`,
     )
   } else if (writesJob && createHasPlaceholder(tool?.create, 'seed') && !effectiveSeed) {

@@ -17,6 +17,40 @@ const shape = (
 
 const hasArg = (argv: string[], arg: string) => argv.includes(arg)
 
+export function flagValue(argv: string[], name: string): string | undefined {
+  const needle = `--${name}`
+  const index = argv.findIndex((value) => value === needle || value.startsWith(`${needle}=`))
+  if (index < 0) return undefined
+  const arg = argv[index]!
+  return arg === needle ? argv[index + 1] : arg.slice(needle.length + 1)
+}
+
+export function flagValues(argv: string[], name: string): string[] {
+  const needle = `--${name}`
+  return argv.flatMap((value, index) => {
+    if (value === needle) return [argv[index + 1]!]
+    if (value.startsWith(`${needle}=`)) return [value.slice(needle.length + 1)]
+    return []
+  })
+}
+
+function shellValue(value: string): string {
+  if (!/\s/.test(value)) return value
+  return `"${value.replace(/[\\"$`]/g, '\\$&')}"`
+}
+
+/** Every documented seed spelling is accepted by the CLI argument parser. */
+export function seedGuidance(seeds: string[]): string {
+  const forms = seeds.flatMap((seed) => {
+    const value = shellValue(seed)
+    return [`  --seed ${value}`, `  --seed=${value}`]
+  })
+  return forms.join('\n') +
+    `\nMulti-token seed specs must be quoted as one value, for example:\n` +
+    `  --seed "--bundle=catalog --budget-mb=700"\n` +
+    `  --seed="--bundle=catalog --budget-mb=700"`
+}
+
 /** Every word the human-facing CLI understands. */
 function commandShape(argv: string[]): { args: string[]; shape: CommandShape } | null {
   const command = argv[0]
@@ -156,10 +190,18 @@ export function validateCliArgs(argv: string[]): void {
   const positionals: string[] = []
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!
-    const takesValue = valueFlags.has(arg) || Boolean(expected.dynamicValueFlag?.test(arg))
+    const equals = arg.indexOf('=')
+    const flagName = equals >= 0 ? arg.slice(0, equals) : arg
+    const takesValue = valueFlags.has(flagName) || Boolean(expected.dynamicValueFlag?.test(flagName))
     if (takesValue) {
+      if (equals >= 0) {
+        if (equals === arg.length - 1) {
+          throw new Error(`argument ${flagName} needs a value\nworking form: ${expected.usage}`)
+        }
+        continue
+      }
       const value = args[i + 1]
-      if (value === undefined || value.startsWith('--')) {
+      if (value === undefined) {
         throw new Error(`argument ${arg} needs a value\nworking form: ${expected.usage}`)
       }
       i++

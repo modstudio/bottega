@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { validateCliArgs } from './args.ts'
+import { flagValue, seedGuidance, validateCliArgs } from './args.ts'
 
 describe('CLI argument recognition', () => {
   test('every command with legitimate positionals still accepts its documented shape', () => {
@@ -56,5 +56,49 @@ describe('CLI argument recognition', () => {
   test('a value flag without its value is refused before execution', () => {
     expect(() => validateCliArgs(['project', 'set', 'registered', '--settings']))
       .toThrow('argument --settings needs a value\nworking form: orch project set <name>')
+    expect(() => validateCliArgs(['project', 'set', 'registered', '--settings=']))
+      .toThrow('argument --settings needs a value\nworking form: orch project set <name>')
+  })
+
+  test('a known value flag consumes a dash-prefixed value', () => {
+    for (const seed of ['none', '--bundle=minimal', '--tables=account,order', '--full']) {
+      expect(() => validateCliArgs(['do', 'implement', '--seed', seed, 'make the change'])).not.toThrow()
+      expect(() => validateCliArgs(['do', 'implement', `--seed=${seed}`, 'make the change'])).not.toThrow()
+    }
+    expect(() => validateCliArgs([
+      'do', 'implement', '--seed', '--bundle=catalog --budget-mb=700', 'make the change',
+    ])).not.toThrow()
+    expect(() => validateCliArgs([
+      'do', 'implement', '--seed=--bundle=catalog --budget-mb=700', 'make the change',
+    ])).not.toThrow()
+    expect(() => validateCliArgs([
+      'do', 'implement', '--seed', ' --bundle=minimal', 'make the change',
+    ])).not.toThrow()
+  })
+
+  test('the no-seed guidance spells exactly the accepted starship forms', () => {
+    const seeds = ['none', '--bundle=minimal', '--tables=account,order', '--full']
+    expect(seedGuidance(seeds)).toBe(
+      `  --seed none\n  --seed=none\n` +
+      `  --seed --bundle=minimal\n  --seed=--bundle=minimal\n` +
+      `  --seed --tables=account,order\n  --seed=--tables=account,order\n` +
+      `  --seed --full\n  --seed=--full\n` +
+      `Multi-token seed specs must be quoted as one value, for example:\n` +
+      `  --seed "--bundle=catalog --budget-mb=700"\n` +
+      `  --seed="--bundle=catalog --budget-mb=700"`,
+    )
+    for (const seed of seeds) {
+      for (const args of [['--seed', seed], [`--seed=${seed}`]]) {
+        const argv = ['do', 'implement', ...args, 'make the change']
+        expect(() => validateCliArgs(argv)).not.toThrow()
+        expect(flagValue(argv, 'seed')).toBe(seed)
+      }
+    }
+    const multiToken = '--bundle=catalog --budget-mb=700'
+    for (const args of [['--seed', multiToken], [`--seed=${multiToken}`]]) {
+      const argv = ['do', 'implement', ...args, 'make the change']
+      expect(() => validateCliArgs(argv)).not.toThrow()
+      expect(flagValue(argv, 'seed')).toBe(multiToken)
+    }
   })
 })

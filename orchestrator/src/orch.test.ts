@@ -4450,6 +4450,38 @@ describe('detached run collection', () => {
     expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before)
   })
 
+  test('orch do accepts every documented starship seed spelling before execution', () => {
+    upsertProject({
+      name: 'starship-seed-grammar', path: process.cwd(),
+      settings: {
+        worktree: {
+          recipe: {}, branch: '{key}-orch-{id}',
+          seeds: ['none', '--bundle=minimal', '--tables=account,order', '--full'],
+        },
+      },
+    })
+    const missingPrompt = '/definitely/missing/DEV-242-prompt'
+    const before = (db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n
+    const spellings = [
+      ['--seed', 'none'],
+      ['--seed', '--bundle=minimal'],
+      ['--seed', '--tables=account,order'],
+      ['--seed', '--full'],
+      ['--seed=--bundle=minimal'],
+      ['--seed', ' --bundle=minimal'],
+    ]
+    for (const spelling of spellings) {
+      const result = orch(
+        'do', 'implement', ...spelling, '--key', 'DEV-242', '--file', missingPrompt,
+      )
+      expect(result.code, spelling.join(' ')).not.toBe(0)
+      expect(result.err, spelling.join(' ')).toContain(missingPrompt)
+      expect(result.err, spelling.join(' ')).not.toContain('unrecognised argument')
+      expect(result.err, spelling.join(' ')).not.toContain('needs a value')
+    }
+    expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before)
+  })
+
   test('--porcelain prints only a parseable run id on a successful dispatch', () => {
     const binDir = join(dir, 'porcelain-bin')
     mkdirSync(binDir, { recursive: true })
@@ -6354,7 +6386,10 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
       `this project's branch names must carry a ticket key ({key}-orch-{id}), and orch will ` +
       `not invent one.\n  --key <KEY-123>\n` +
       `this project requires a database size for a new worktree, and has no default.\n` +
-      `  --seed small\n  --seed full\n\n` +
+      `  --seed small\n  --seed=small\n  --seed full\n  --seed=full\n` +
+      `Multi-token seed specs must be quoted as one value, for example:\n` +
+      `  --seed "--bundle=catalog --budget-mb=700"\n` +
+      `  --seed="--bundle=catalog --budget-mb=700"\n\n` +
       `Choosing is the architect's call: it depends on what the task touches.`,
     )
     expect(() => fromRoot(() => preflight('implement', repo, 'small'))).toThrow(
@@ -6363,7 +6398,10 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
     )
     expect(() => fromRoot(() => preflight('implement', repo, undefined, 'DEV-61'))).toThrow(
       `this project requires a database size for a new worktree, and has no default.\n` +
-      `  --seed small\n  --seed full\n\n` +
+      `  --seed small\n  --seed=small\n  --seed full\n  --seed=full\n` +
+      `Multi-token seed specs must be quoted as one value, for example:\n` +
+      `  --seed "--bundle=catalog --budget-mb=700"\n` +
+      `  --seed="--bundle=catalog --budget-mb=700"\n\n` +
       `Choosing is the architect's call: it depends on what the task touches.`,
     )
     rmSync(repo, { recursive: true, force: true })

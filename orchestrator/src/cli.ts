@@ -23,7 +23,7 @@ import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
 import { WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE, contractConflicts } from './contract.ts'
 import { collectResult, collectWait, resolveFailover, failoverSummary } from './collect.ts'
 import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
-import { validateCliArgs } from './args.ts'
+import { flagValue, flagValues, validateCliArgs } from './args.ts'
 import { completeReview, DISPOSITIONS, parseReviewOutput, recordReviews,
          reviewCalibration, triageFinding, type Disposition } from './review.ts'
 
@@ -248,12 +248,10 @@ function dur(ms: number | null | undefined): string {
 }
 
 function flag(name: string): string | undefined {
-  const i = argv.indexOf(`--${name}`)
-  return i >= 0 ? argv[i + 1] : undefined
+  return flagValue(argv, name)
 }
 function flags(name: string): string[] {
-  const needle = `--${name}`
-  return argv.flatMap((value, index) => value === needle ? [argv[index + 1]!] : [])
+  return flagValues(argv, name)
 }
 const has = (n: string) => argv.includes(`--${n}`)
 
@@ -681,6 +679,7 @@ function usage(): never {
       --quiet                   print only the reply
       --probe                   a calibration run: recorded, but not routing evidence
       --seed <spec>             choose a required project-specific database seed spec
+      --seed=<spec>             same; quote a multi-token spec as one value in either form
       --key <KEY-123>           supply a required branch ticket key
       --repo <name>             attribute work launched outside a registered project
       --follow                  block and watch the run instead of returning its id
@@ -826,6 +825,7 @@ function doUsage(): never {
   --lens <id>      stable identity required by findings-producing review jobs
   --probe          record a calibration run that does not affect routing
   --seed <spec>    choose the project-specific database seed required by some projects
+  --seed=<spec>    same; quote a multi-token spec as one value in either form
   --key <KEY-123>  supply the ticket key required by some branch templates
   --repo <name>    attribute a run launched outside a registered project
   --file <path>    read the prompt from a file instead of argv or stdin
