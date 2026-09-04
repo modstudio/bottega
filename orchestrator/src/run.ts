@@ -1540,16 +1540,23 @@ export async function run(opts: {
       contractObjects = parsed.contractObjects
     }
 
-    if (timedOut && contract?.status === 'done') {
+    const completedReplyAtTimeout = contract?.status === 'done' ||
+      (!writesJob && !replyError && !!output && !isNonAnswer(output))
+    if (timedOut && completedReplyAtTimeout) {
       /**
        * IT FINISHED, AND THEN WE KILLED IT.
        *
-       * The agent wrote a complete reply and carried on — running the project's
-       * gates, in the case that found this: fifteen files, PHPStan and PHPUnit
-       * in Docker, then our twenty-minute bound fired. Recorded as a timeout,
-       * that reads as "produced nothing in twenty minutes" and charges the
-       * agent for work it had already delivered; the session only had the
-       * result because it happened to see it on stdout.
+       * A writing agent proves completion with its contract. A read-only
+       * agent's answer IS its output, and completeness belongs to the later
+       * delivery/quality judgement; requiring a writer-only contract here made
+       * every read-only wall kill look like no answer even when substantial
+       * work was already on disk.
+       *
+       * The writing case that first found this had completed fifteen files,
+       * PHPStan and PHPUnit in Docker before our twenty-minute bound fired.
+       * The read-only case produced a complete file-question answer before the
+       * same kind of kill. Recording either as a timeout reads as "produced
+       * nothing" and charges the agent for work it already delivered.
        *
        * The reply is on disk either way, so believe it. The kill is still
        * worth knowing about — the bound may be too short for this job — but it

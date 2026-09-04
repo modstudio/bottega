@@ -7691,6 +7691,97 @@ describe('pid stays the worker for the whole run', () => {
   })
 })
 
+describe('a wall kill does not erase a read-only answer', () => {
+  test('substantive output is judgeable and routing does not count it as delivery-none', async () => {
+    const script = join(dir, 'DEV-235-readonly-agent.ts')
+    writeFileSync(script, `#!/usr/bin/env bun
+process.stdout.write('The requested implementation is in orchestrator/src/run.ts:1542.\\n')
+process.on('SIGTERM', () => process.exit(143))
+setInterval(() => {}, 1_000)
+`)
+    chmodSync(script, 0o755)
+    const grok = AGENTS.grok!
+    const previousBin = grok.bin
+    const previousTimeout = grok.timeoutMs
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      grok.bin = script
+      grok.timeoutMs = 250
+      const result = await run({
+        job: 'file-question', prompt: 'where is the implementation?', cwd: dir,
+        agent: 'grok', noFailover: true,
+      })
+      const row = db().query(
+        'SELECT status, failure_kind, exit_code, output_bytes FROM run WHERE id=?',
+      ).get(result.id) as {
+        status: string; failure_kind: string | null; exit_code: number; output_bytes: number
+      }
+
+      expect(row).toMatchObject({ status: 'ok', failure_kind: null, exit_code: 143 })
+      expect(row.output_bytes).toBeGreaterThan(0)
+
+      // Before DEV-235 the rescue required contract?.status === 'done'. A
+      // read-only run has no worker contract, so this exact row was failed and
+      // candidates() immediately counted it as an implicit delivery=none.
+      let candidate = candidates('file-question').find((entry) => entry.agent === 'grok')!
+      expect(candidate).toMatchObject({ runs: 1, scored: 0, failures: 0, evidence: 0 })
+      expect(candidate.score).toBeNull()
+
+      score(result.id, 'full', 'right')
+      candidate = candidates('file-question').find((entry) => entry.agent === 'grok')!
+      expect(candidate).toMatchObject({ runs: 1, scored: 1, failures: 0, evidence: 1 })
+      expect(candidate.score).toBe(weigh('full', 'right'))
+    } finally {
+      grok.bin = previousBin
+      grok.timeoutMs = previousTimeout
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
+  test('a wall kill with no output remains a timeout and negative routing evidence', async () => {
+    const script = join(dir, 'DEV-235-empty-agent.ts')
+    writeFileSync(script, `#!/usr/bin/env bun
+process.on('SIGTERM', () => process.exit(143))
+setInterval(() => {}, 1_000)
+`)
+    chmodSync(script, 0o755)
+    const grok = AGENTS.grok!
+    const previousBin = grok.bin
+    const previousTimeout = grok.timeoutMs
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      grok.bin = script
+      grok.timeoutMs = 250
+      let runId: number | null = null
+      try {
+        await run({
+          job: 'file-question', prompt: 'where is the implementation?', cwd: dir,
+          agent: 'grok', noFailover: true,
+        })
+      } catch (error) {
+        runId = (error as Error & { runId?: number }).runId ?? null
+      }
+      expect(runId).not.toBeNull()
+      expect(db().query(
+        'SELECT status, failure_kind, exit_code, output_bytes FROM run WHERE id=?',
+      ).get(runId!)).toMatchObject({
+        status: 'failed', failure_kind: 'timeout', exit_code: 143, output_bytes: 0,
+      })
+      expect(candidates('file-question').find((entry) => entry.agent === 'grok'))
+        .toMatchObject({ runs: 0, scored: 0, failures: 1, evidence: 1,
+          score: weigh('none', null) })
+    } finally {
+      grok.bin = previousBin
+      grok.timeoutMs = previousTimeout
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+})
+
 describe('outside-worktree write observation', () => {
   const git = (cwd: string, ...args: string[]) => {
     const p = Bun.spawnSync(['git', ...args], {
