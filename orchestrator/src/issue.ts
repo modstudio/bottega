@@ -302,7 +302,7 @@ export async function workIssue(key: string): Promise<void> {
     writeFileSync(diagnosisSchema, JSON.stringify(ISSUE_DIAGNOSIS_SCHEMA, null, 2))
     await comment(issue.key, `Coordinator started isolated diagnosis; run label: issue ${issue.key} diagnosis.`)
     diagnosisRun = await run({ job: 'diagnose', prompt: diagnosisPrompt(issue), cwd: reporting.path,
-      schemaPath: diagnosisSchema, mcp: true, seed: seed ?? undefined,
+      schemaPath: diagnosisSchema, mcp: true, seed: seed ?? undefined, key: issue.key,
       label: `issue ${issue.key} diagnosis` })
     const diagnosis = parseIssueReply<Diagnosis>(diagnosisRun.output, ISSUE_DIAGNOSIS_SCHEMA)
     await comment(issue.key, `Issue diagnosis run ${diagnosisRun.id}: ${diagnosis.established_cause ?? diagnosis.outcome ?? diagnosis.status}. Evidence has been captured before release.`)

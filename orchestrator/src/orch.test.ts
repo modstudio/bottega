@@ -6659,7 +6659,7 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
     rmSync(repo, { recursive: true, force: true })
   })
 
-  test('read-only preflight selects the project-declared none seed', () => {
+  test('read-only preflight refuses a missing branch key before git sees a leading dash', () => {
     const { repo } = scratchRepo()
     upsertProject({
       name: 'read-only-arguments', path: repo,
@@ -6670,11 +6670,17 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
         },
       },
     })
-    expect(fromRoot(() => preflight(
+    expect(() => fromRoot(() => preflight(
       'review-lens', repo, undefined, undefined, undefined, false, false, 'safety',
+    ))).toThrow(
+      `this project's branch names must carry a ticket key ({key}-orch-{id}), and orch will ` +
+      `not invent one.\n  --key <KEY-123>`,
+    )
+    expect(fromRoot(() => preflight(
+      'review-lens', repo, undefined, 'DEV-264', undefined, false, false, 'safety',
     ))).toBe('none')
     expect(fromRoot(() => preflight(
-      'review-lens', repo, 'small', undefined, undefined, false, false, 'safety',
+      'review-lens', repo, 'small', 'DEV-264', undefined, false, false, 'safety',
     ))).toBe('small')
     rmSync(repo, { recursive: true, force: true })
   })

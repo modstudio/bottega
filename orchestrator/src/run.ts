@@ -388,10 +388,11 @@ export function preflight(
     )
   }
   if (!j.needs.readsRepo) return seed
-  // A key and a caller-selected seed are required only for a writing job's NEW
-  // worktree. A read-only job still passes a project-declared `none` explicitly:
-  // it is the settled answer for a job that provably needs no database. A resumed
-  // turn works in the tree its parent already has, so demanding them again blocks
+  // A key is required whenever a NEW worktree's branch template names it. A
+  // caller-selected seed is required only for a writing job's new worktree. A
+  // read-only job still passes a project-declared `none` explicitly: it is the
+  // settled answer for a job that provably needs no database. A resumed turn
+  // works in the tree its parent already has, so demanding either again blocks
   // every ruling.
   if (reusesWorktree) return seed
   const project = projectAt(cwd)
@@ -418,7 +419,7 @@ export function preflight(
       `arguments do not declare {base}`,
     )
   }
-  if (writesJob && tool?.branch?.includes('{key}') && !key) {
+  if (tool?.branch?.includes('{key}') && !key) {
     problems.push(
       `this project's branch names must carry a ticket key (${tool.branch}), and orch will ` +
       `not invent one.\n  --key <KEY-123>`,
