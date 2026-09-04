@@ -2561,6 +2561,51 @@ describe('hooks fail open visibly', () => {
 })
 
 describe('metric canon headline and calendar halves', () => {
+  test('counts each canon project only by all of its declared key prefixes', async () => {
+    const fixture = (name: string, subjects: string[], keyPrefixes?: string[]) => {
+      const repo = join(dir, `metric-${name}`)
+      mkdirSync(repo)
+      const git = (...args: string[]) => {
+        const p = Bun.spawnSync(['git', ...args], {
+          cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+        })
+        if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      }
+      git('init', '-b', 'main')
+      git('config', 'user.email', 'orch-test@example.invalid')
+      git('config', 'user.name', 'Orch Test')
+      for (const [i, subject] of subjects.entries()) {
+        writeFileSync(join(repo, `${i}.txt`), `${subject}\n`)
+        git('add', `${i}.txt`)
+        git('commit', '-m', subject)
+      }
+      upsertProject({ name, path: repo, canon: true, settings: { keyPrefixes } })
+      return repo
+    }
+
+    const repos = [
+      fixture('one-prefix', ['ONE-1 shipped'], ['ONE']),
+      fixture('several-prefixes', ['LEFT-2 shipped', 'RIGHT-3 shipped'], ['LEFT', 'RIGHT']),
+      fixture('no-prefixes', ['OLD-4 must not count']),
+    ]
+    db().exec('DELETE FROM metric')
+    try {
+      const collected = Bun.spawnSync([
+        process.execPath, new URL('cli.ts', import.meta.url).pathname,
+        'metric', 'collect', '--days', '1',
+      ], {
+        env: { ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB! },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(collected.exitCode).toBe(0)
+      const total = db().query('SELECT SUM(tasks) AS tasks FROM metric').get() as { tasks: number }
+      expect(total.tasks).toBe(3)
+    } finally {
+      db().exec('DELETE FROM metric')
+      for (const repo of repos) rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('headline uses canon totals and excluded days do not move the midpoint', () => {
     const day = (ago: number) => {
       const d = new Date()

@@ -30,7 +30,12 @@ const CLONE_ROOT = process.env.ORCH_CLONE_ROOT ?? `${process.env.HOME}/Projects`
  * reporting a newly-registered project's spend as untracked.
  */
 const canonRepos = (): string[] => projects().filter((p) => p.canon).map((p) => p.name)
-const KEY = /\b(ADN|STAR|STO|AB|SHUL)-\d+/g
+
+function keyPattern(prefixes: string[] | undefined): RegExp | null {
+  if (!prefixes?.length) return null
+  const alternatives = prefixes.map((prefix) => prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  return new RegExp(`\\b(?:${alternatives.join('|')})-\\d+`, 'g')
+}
 
 /** A calendar day in this machine's local timezone. */
 export function localDay(value: string | number | Date): string {
@@ -206,7 +211,8 @@ function activityByDay(since: string) {
     })
     return days.get(d)!
   }
-  for (const { name: repo, path } of projects().filter((p) => p.canon)) {
+  for (const { name: repo, path, settings } of projects().filter((p) => p.canon)) {
+    const key = keyPattern(settings.keyPrefixes)
     const proc = Bun.spawnSync(
       ['git', '-C', path, 'log', '--all', `--since=${since}`,
        '--numstat', '--pretty=format:%x00%cI%x09%H%x09%s'],
@@ -220,7 +226,7 @@ function activityByDay(since: string) {
         day = localDay(d)
         const row = get(day)
         row.commits++
-        for (const k of (subject ?? '').match(KEY) ?? []) row.tasks.add(`${repo}:${k}`)
+        for (const k of key ? (subject ?? '').match(key) ?? [] : []) row.tasks.add(`${repo}:${k}`)
         continue
       }
       if (!day) continue
