@@ -22,6 +22,7 @@ function commandShape(argv: string[]): { args: string[]; shape: CommandShape } |
   const command = argv[0]
   const sub = argv[1]
   switch (command) {
+    case 'issue': return { args: argv.slice(1), shape: shape('orch issue <TASK-KEY>', 1) }
     case 'land': return { args: argv.slice(1), shape: shape(
       'orch land <branch|run-id> | orch land --status', hasArg(argv, '--status') ? 0 : 1,
       [], ['--status'],

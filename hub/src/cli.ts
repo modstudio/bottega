@@ -17,6 +17,8 @@ import { human } from './interval.ts'
 import { serve } from './serve.ts'
 import { projectOf } from './attribute.ts'
 import { projects } from './projects.ts'
+import { Mcp, credentials } from './mcp.ts'
+import { createTrackerTask } from '../../shared/trackers.ts'
 
 const argv = process.argv.slice(2)
 const cmd = argv[0]
@@ -44,6 +46,7 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and the 
                [--body "..."] [--force]
   hub task close <KEY>
   hub task comment <KEY> "..."
+  hub task tracker-new --project X --title "..." --body "..."
   hub task doc new <KEY> --title "..." [--role handoff]
                [--body "..."|--body-file PATH]
   hub task doc list <KEY> [--json]
@@ -131,7 +134,7 @@ function tasks() {
   )
 }
 
-function task() {
+async function task() {
   const sub = argv[1]
   const required = (name: string) => {
     const value = flag(name)
@@ -208,6 +211,28 @@ function task() {
     const row = createTask({ project: required('project'), title: required('title'),
       status: flag('status'), parent: flag('parent'), body: newBody() })
     console.log(row.key)
+    return
+  }
+  if (sub === 'tracker-new') {
+    const project = projects().find((candidate) => candidate.name === required('project'))
+    if (!project) throw new Error(`unknown project '${required('project')}'`)
+    const tracker = project.settings.tracker
+    const env = tracker?.envPrefix ?? project.settings.envPrefix
+    if (!tracker || !env) throw new Error(`project ${project.name} has no usable tracker configured`)
+    const auth = credentials(env)
+    if (!auth) throw new Error(`credentials for ${project.name} tracker do not resolve`)
+    const status = tracker.openStatuses?.[0]
+    if (!status) throw new Error(`project ${project.name} has no open tracker status configured`)
+    const client = new Mcp(auth.url, auth.token)
+    await client.initialize()
+    const result = await createTrackerTask(client, project, {
+      title: required('title'), body: required('body'), status,
+    }) as any
+    const key = result?.key ?? result?.data?.humanKey ?? result?.task?.key
+    if (typeof key !== 'string' || !key.trim()) {
+      throw new Error(`tracker created a task but returned no task key: ${JSON.stringify(result)}`)
+    }
+    console.log(key.toUpperCase())
     return
   }
   if (sub === 'list') {
@@ -415,7 +440,7 @@ switch (cmd) {
     break
   case 'tasks': tasks(); break
   case 'serve': serve(Number(flag('port') ?? 7778)); break
-  case 'task': task(); break
+  case 'task': await task(); break
   case 'send': await sendReport(); break
   case undefined:
   case 'help':

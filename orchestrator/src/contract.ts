@@ -153,6 +153,54 @@ export type WorkerReply = {
   tests?: { command?: string | null; ran?: boolean; passed?: boolean | null; detail?: string | null } | null
 }
 
+const nullableString = { type: ['string', 'null'] } as const
+
+/** Structured evidence returned by the writing half of one filed issue. */
+export const ISSUE_WORKER_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  required: ['status', 'outcome', 'cause_location', 'cause_matched_report',
+    'established_cause', 'reproduction', 'before', 'after', 'plain_gate',
+    'worker_gate', 'blast_radius', 'branch', 'files_changed', 'questions',
+    'not_established', 'blockers', 'summary', 'deviations', 'tests'],
+  properties: {
+    status: { type: 'string', enum: ['done', 'asking', 'refused'] },
+    outcome: { type: ['string', 'null'], enum: ['fixed', 'not-a-defect', 'not-reproducible', 'could-not-attempt', null] },
+    cause_location: { type: ['string', 'null'], enum: ['orch-code', 'register-row', 'project-tool', null] },
+    cause_matched_report: { type: ['boolean', 'null'] },
+    established_cause: nullableString,
+    reproduction: {
+      type: 'object', additionalProperties: false,
+      required: ['command', 'base_commit', 'environment', 'seed'],
+      properties: {
+        command: { type: 'string' }, base_commit: { type: 'string' },
+        environment: { type: 'string' }, seed: nullableString,
+      },
+    },
+    before: nullableString, after: nullableString,
+    plain_gate: nullableString, worker_gate: nullableString,
+    blast_radius: { type: 'string' }, branch: nullableString,
+    files_changed: nullableStrings,
+    summary: { type: 'string' },
+    questions: WORKER_SCHEMA.properties.questions,
+    deviations: WORKER_SCHEMA.properties.deviations,
+    tests: WORKER_SCHEMA.properties.tests,
+    not_established: { type: 'string' },
+    blockers: WORKER_SCHEMA.properties.blockers,
+  },
+} as const
+
+export type IssueWorkerReply = WorkerReply & {
+  status: 'done' | 'asking' | 'refused'
+  outcome: 'fixed' | 'not-a-defect' | 'not-reproducible' | 'could-not-attempt' | null
+  cause_location: 'orch-code' | 'register-row' | 'project-tool' | null
+  cause_matched_report: boolean | null; established_cause: string | null
+  reproduction: { command: string; base_commit: string; environment: string; seed: string | null }
+  before: string | null; after: string | null; plain_gate: string | null
+  worker_gate: string | null; blast_radius: string; branch: string | null
+  files_changed: string[] | null
+  not_established: string
+}
+
 /**
  * The fixed product of every findings-producing review job.
  *
@@ -347,9 +395,22 @@ ambiguous, or cannot be resolved, stop and ask. Never infer either input and nev
 half-land a change.`,
   )
 
+export const ISSUE_WORKER_PREAMBLE = `${WORKER_PREAMBLE}
+
+ISSUE-WORKER RETURN CONTRACT
+
+For this job, the bound issue-worker schema replaces the generic JSON shape in
+WHAT TO REPORT. Return every issue field it requires: the four-valued outcome,
+cause location, whether it matched the report, established cause, reproduction
+recipe, before and after measurements, both gate results, blast radius, branch,
+questions, blockers, and what you could not establish. Keep the generic summary,
+files, deviations, and tests fields that the issue schema also requires.`
+
 /** The writing contract is selected by job, never by a caller-controlled flag. */
 export function workerPreamble(jobName: string): string {
-  return jobName === 'land' ? LAND_PREAMBLE : WORKER_PREAMBLE
+  return jobName === 'land' ? LAND_PREAMBLE
+    : jobName === 'issue-worker' ? ISSUE_WORKER_PREAMBLE
+    : WORKER_PREAMBLE
 }
 
 /** The one history instruction a resumed landing conversation must not lose. */
@@ -400,7 +461,7 @@ type JsonSchema = {
   additionalProperties?: boolean
 }
 
-function validatesSchema(value: unknown, schema: JsonSchema): boolean {
+export function validatesSchema(value: unknown, schema: JsonSchema): boolean {
   if (schema.anyOf && !schema.anyOf.some((choice) => validatesSchema(value, choice))) return false
   if (schema.enum && !schema.enum.some((item) => Object.is(item, value))) return false
 
@@ -435,9 +496,16 @@ function validatesSchema(value: unknown, schema: JsonSchema): boolean {
   return true
 }
 
-export type ParsedWorkerReply = { reply: WorkerReply | null; contractObjects: number }
+export type ContractReply = WorkerReply | IssueWorkerReply
+export type ParsedWorkerReply = { reply: ContractReply | null; contractObjects: number }
 
-export function parseWorkerReplyWithCount(text: string): ParsedWorkerReply {
+export function parseWorkerReplyWithCount(text: string): {
+  reply: WorkerReply | null; contractObjects: number
+}
+export function parseWorkerReplyWithCount(text: string, schema: JsonSchema): ParsedWorkerReply
+export function parseWorkerReplyWithCount(
+  text: string, schema: JsonSchema = WORKER_SCHEMA,
+): ParsedWorkerReply {
   const t = text.trim()
 
   /**
@@ -476,7 +544,7 @@ export function parseWorkerReplyWithCount(text: string): ParsedWorkerReply {
     }
   }
   objects.reverse()
-  const valid: WorkerReply[] = []
+  const valid: ContractReply[] = []
   for (const c of objects) {
     try {
       let o = JSON.parse(c)
@@ -510,14 +578,14 @@ export function parseWorkerReplyWithCount(text: string): ParsedWorkerReply {
        * Schema validation now supersedes that recovery policy: a malformed
        * nested value rejects this candidate before any part of it is acted on.
        */
-      if (validatesSchema(o, WORKER_SCHEMA)) valid.push(o as WorkerReply)
+      if (validatesSchema(o, schema)) valid.push(o as ContractReply)
     } catch { /* try the next shape */ }
   }
   return { reply: valid[0] ?? null, contractObjects: valid.length }
 }
 
 export function parseWorkerReply(text: string): WorkerReply | null {
-  return parseWorkerReplyWithCount(text).reply
+  return parseWorkerReplyWithCount(text).reply as WorkerReply | null
 }
 
 
@@ -528,7 +596,7 @@ export function parseWorkerReply(text: string): WorkerReply | null {
  * narrows the ELSE branches to `null` and every later `contract?.status`
  * becomes `never`, which is both wrong and confusing to read.
  */
-export function isAsking(r: WorkerReply | null | undefined): boolean {
+export function isAsking(r: ContractReply | null | undefined): boolean {
   return r?.status === 'asking'
 }
 

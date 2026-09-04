@@ -79,6 +79,14 @@ export const JOBS: Record<string, Job> = {
     prefer: ['codex', 'grok'],
     contextTokens: DEEP,
   },
+  'issue-worker': {
+    name: 'issue-worker',
+    what: 'Fix one independently diagnosed filed issue and return measured, structured evidence.',
+    needs: { readsRepo: true, writesRepo: true, resumable: true },
+    prefer: ['codex'],
+    contextTokens: DEEP,
+    timeoutMs: 45 * 60_000,
+  },
   'review-lens': {
     name: 'review-lens',
     what: 'Review a change through one named dimension, under a fixed return contract.',

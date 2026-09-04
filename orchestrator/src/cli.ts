@@ -680,6 +680,8 @@ function usage(): never {
       --follow                  block and watch the run instead of returning its id
       --no-failover             do not retry quota/auth deaths on another agent
 
+  orch issue <TASK-KEY>         reproduce, diagnose, fix and independently verify one filed issue
+
   orch contract <job>          print the preamble prepended to that job's prompt
 
   orch score <run-id> <none|partial|full> [wrong|mixed|right] [--note "..."]
@@ -1233,6 +1235,14 @@ switch (cmd) {
     }
     const { serveDocsMcp } = await import('./mcp.ts')
     await serveDocsMcp()
+    break
+  }
+
+  case 'issue': {
+    const key = argv[1]
+    if (!key) throw new Error('orch issue <TASK-KEY>')
+    const { workIssue } = await import('./issue.ts')
+    await workIssue(key.toUpperCase())
     break
   }
 

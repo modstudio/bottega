@@ -1200,7 +1200,7 @@ export function changesIn(w: Worktree): Changes {
  * how a machine fills up with databases nobody can name.
  */
 export function removeWithTool(
-  tool: WorktreeTool, w: Worktree, forceOrchTree = false,
+  tool: WorktreeTool, w: Worktree, forceOrchTree = false, keepBranch = false,
 ): { removed: boolean; detail: string } {
   const name = w.path.split('/').pop() ?? w.path
 
@@ -1219,7 +1219,7 @@ export function removeWithTool(
         if (!step.ok) console.error(`orch: ${step.step} failed: ${step.detail.slice(-200)}`)
       }
     }
-    return removeWorktree(w)
+    return removeWorktree(w, keepBranch)
   }
 
   const r = runTool(tool.remove, { name, branch: w.branch, path: w.path }, w.repoRoot)
@@ -1268,10 +1268,10 @@ export function removeWithTool(
 
 /** Remove a tree through the lifecycle declared by its registered project. */
 export function removeFor(
-  w: Worktree, repoRoot: string, forceOrchTree = false,
+  w: Worktree, repoRoot: string, forceOrchTree = false, keepBranch = false,
 ): { removed: boolean; detail: string } {
   const tool = projectAt(repoRoot)?.settings.worktree
-  return tool ? removeWithTool(tool, w, forceOrchTree) : removeWorktree(w)
+  return tool ? removeWithTool(tool, w, forceOrchTree, keepBranch) : removeWorktree(w, keepBranch)
 }
 
 /** Reclaim orphans the project knows about — databases, containers, metadata. */
@@ -1280,7 +1280,7 @@ export function sweepWithTool(tool: WorktreeTool, repoRoot: string): string {
   return runTool(tool.sweep, {}, repoRoot).out
 }
 
-export function removeWorktree(w: Worktree): { removed: boolean; detail: string } {
+export function removeWorktree(w: Worktree, keepBranch = false): { removed: boolean; detail: string } {
   // Already gone is a SUCCESS, not an error. A worktree deleted by hand, or one
   // in a scratch repository that has since been cleaned up, leaves a database
   // pointer that ought to be clearable — refusing would strand it for ever.
@@ -1295,7 +1295,7 @@ export function removeWorktree(w: Worktree): { removed: boolean; detail: string 
   // worktree produced exactly the orphan the comment warned about, announced
   // as a success.
   const gone = gitOk(['worktree', 'remove', '--force', w.path], w.repoRoot) !== null
-  gitOk(['branch', '-D', w.branch], w.repoRoot)
+  if (!keepBranch) gitOk(['branch', '-D', w.branch], w.repoRoot)
   // Prunes the administrative record if the directory went missing by other
   // means, so `git worktree list` does not accumulate ghosts.
   gitOk(['worktree', 'prune'], w.repoRoot)

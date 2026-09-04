@@ -4,7 +4,7 @@ import { validateCliArgs } from './args.ts'
 describe('CLI argument recognition', () => {
   test('every command with legitimate positionals still accepts its documented shape', () => {
     const commands = [
-      ['land', 'feature/DEV-185'], ['land', '--status'], ['contract', 'implement'],
+      ['land', 'feature/DEV-185'], ['land', '--status'], ['issue', 'DEV-175'], ['contract', 'implement'],
       ['doc', 'show', 'slug', '--scope', 'global'],
       ['doc', 'set', 'slug', '--scope', 'global', '--title', 'Title', '--file', 'body.md'],
       ['doc', 'consume', 'slug', '--scope', 'global'],

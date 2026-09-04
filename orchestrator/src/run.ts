@@ -25,7 +25,7 @@ import {
 } from './worktree.ts'
 import { recipeNotes } from './recipe.ts'
 import {
-  workerPreamble, workerResumeGuard, READONLY_PREAMBLE, NO_REPO_PREAMBLE, WORKER_SCHEMA, REVIEW_SCHEMA,
+  workerPreamble, workerResumeGuard, READONLY_PREAMBLE, NO_REPO_PREAMBLE, WORKER_SCHEMA, ISSUE_WORKER_SCHEMA, REVIEW_SCHEMA,
   parseWorkerReplyWithCount, isAsking,
   type WorkerReply,
 } from './contract.ts'
@@ -967,7 +967,9 @@ export async function run(opts: {
    * is a deliberate act by someone who wants a different contract, and silently
    * overriding it would make the flag a lie.
    */
-  const generatedSchema = writesJob ? WORKER_SCHEMA : requestedJob.findings ? REVIEW_SCHEMA : null
+  const generatedSchema = requestedJob.name === 'issue-worker'
+    ? ISSUE_WORKER_SCHEMA
+    : writesJob ? WORKER_SCHEMA : requestedJob.findings ? REVIEW_SCHEMA : null
   const originalSchemaPath = generatedSchema && !opts.schemaPath
     ? (() => {
         const p = join(runsDir, `${stamp}.schema.json`)
@@ -1396,8 +1398,10 @@ export async function run(opts: {
      * error can say what really happened.
      */
     if (writesJob && output) {
-      const parsed = parseWorkerReplyWithCount(output)
-      contract = parsed.reply
+      const parsed = parseWorkerReplyWithCount(
+        output, requestedJob.name === 'issue-worker' ? ISSUE_WORKER_SCHEMA : WORKER_SCHEMA,
+      )
+      contract = parsed.reply as WorkerReply | null
       contractObjects = parsed.contractObjects
     }
 
