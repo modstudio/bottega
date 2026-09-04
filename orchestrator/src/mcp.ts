@@ -6,6 +6,11 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { sessionId } from './db.ts'
 import { consumeDoc, docsMarkdown, getDoc, listDocs, setDoc } from './docs.ts'
 import { projectAt, projectByName, projects } from './projects.ts'
+import {
+  addDoctrineRule, addPair, addSkip, baselineForPair, ledgerRef, listDoctrineRules,
+  listLedgerRefs, listSkips, pairByProjects, removeLedgerRef, resolveLedgerRef,
+  retireDoctrineRule, setBaseline, setLedgerRef,
+} from './porting.ts'
 
 const text = (value: unknown) => ({
   content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value) }],
@@ -32,6 +37,30 @@ type FileIssueInput = {
   evidence: string
   not_established: string
 }
+
+function registeredProject(name: string) {
+  const project = projectByName(name)
+  if (!project) throw new Error(`unknown project "${name}"`)
+  return project
+}
+
+function registeredPair(source: string, target: string, create = false) {
+  const sourceProject = registeredProject(source)
+  const targetProject = registeredProject(target)
+  if (sourceProject.id === targetProject.id) {
+    throw new Error('a port source and target must be different projects')
+  }
+  const pair = pairByProjects(sourceProject.id, targetProject.id)
+    ?? (create ? addPair(sourceProject.id, targetProject.id) : null)
+  return { sourceProject, targetProject, pair }
+}
+
+const ledgerSourceSchema = z.object({
+  project: z.string().describe('Registered source project name.'),
+  commits: z.array(z.string()),
+  paths: z.array(z.string()),
+  note: z.string(),
+})
 
 async function fileIssue(input: FileIssueInput) {
   const session = sessionId()
@@ -128,6 +157,96 @@ export function createDocsMcpServer(): McpServer {
       scope: z.string(), subject: z.string().nullable().optional(), slug: z.string(),
     },
   }, async ({ scope, subject, slug }) => text(consumeDoc(scope, subject ?? null, slug)))
+
+  server.registerTool('inspect_port_baseline', {
+    description: 'Inspect scan progress for one registered source-to-target project pair.',
+    inputSchema: { source: z.string(), target: z.string() },
+  }, async ({ source, target }) => {
+    const { pair } = registeredPair(source, target)
+    return text(pair ? { pair, baseline: baselineForPair(pair.id) } : null)
+  })
+
+  server.registerTool('set_port_baseline', {
+    description: 'Set or clear scan progress for one registered source-to-target project pair.',
+    inputSchema: {
+      source: z.string(), target: z.string(), source_commit: z.string().nullable(),
+    },
+  }, async ({ source, target, source_commit }) => {
+    const { pair } = registeredPair(source, target, true)
+    return text({ pair, baseline: setBaseline(pair!.id, source_commit) })
+  })
+
+  server.registerTool('list_port_skips', {
+    description: 'List declined candidates and reasons for a registered project pair.',
+    inputSchema: { source: z.string(), target: z.string() },
+  }, async ({ source, target }) => {
+    const { pair } = registeredPair(source, target)
+    return text(pair ? listSkips(pair.id) : [])
+  })
+
+  server.registerTool('record_port_skip', {
+    description: 'Record a declined candidate and its reason for an existing project pair.',
+    inputSchema: {
+      source: z.string(), target: z.string(), candidate: z.string(), reason: z.string(),
+    },
+  }, async ({ source, target, candidate, reason }) => {
+    const { pair } = registeredPair(source, target)
+    if (!pair) throw new Error(`no port pair from "${source}" to "${target}"; set its baseline first`)
+    return text(addSkip(pair.id, candidate, reason))
+  })
+
+  server.registerTool('list_port_ledger_refs', {
+    description: 'List unresolved port ledger refs; include resolved refs only when requested.',
+    inputSchema: { include_resolved: z.boolean().optional() },
+  }, async ({ include_resolved }) => text(listLedgerRefs(include_resolved ?? false)))
+
+  server.registerTool('get_port_ledger_ref', {
+    description: 'Look up the source provenance recorded for a target task key.',
+    inputSchema: { task_key: z.string() },
+  }, async ({ task_key }) => text(ledgerRef(task_key)))
+
+  server.registerTool('set_port_ledger_ref', {
+    description: 'Record source projects, commits, paths, and notes for a staged target task.',
+    inputSchema: { task_key: z.string(), note: z.string(), sources: z.array(ledgerSourceSchema).min(1) },
+  }, async ({ task_key, note, sources }) => text(setLedgerRef({
+    taskKey: task_key,
+    note,
+    sources: sources.map((source) => ({
+      source_project_id: registeredProject(source.project).id,
+      commits: source.commits,
+      paths: source.paths,
+      note: source.note,
+    })),
+  })))
+
+  server.registerTool('resolve_port_ledger_ref', {
+    description: 'Mark a staged target task resolved while preserving its source provenance.',
+    inputSchema: { task_key: z.string() },
+  }, async ({ task_key }) => {
+    const ref = resolveLedgerRef(task_key)
+    if (!ref) throw new Error(`no port ledger ref for task "${task_key}"`)
+    return text(ref)
+  })
+
+  server.registerTool('delete_erroneous_port_ledger_ref', {
+    description: 'Correction only: permanently delete a port ledger ref that was recorded in error.',
+    inputSchema: { task_key: z.string() },
+  }, async ({ task_key }) => text({ removed: removeLedgerRef(task_key) }))
+
+  server.registerTool('list_port_doctrine', {
+    description: 'List active doctrine rules; include retired stable numbers only when requested.',
+    inputSchema: { include_retired: z.boolean().optional() },
+  }, async ({ include_retired }) => text(listDoctrineRules(include_retired ?? false)))
+
+  server.registerTool('add_port_doctrine_rule', {
+    description: 'Add a numbered porting doctrine rule. Retired numbers cannot be reused.',
+    inputSchema: { number: z.number().int().positive(), title: z.string(), body: z.string() },
+  }, async ({ number, title, body }) => text(addDoctrineRule(number, title, body)))
+
+  server.registerTool('retire_port_doctrine_rule', {
+    description: 'Retire a doctrine rule without freeing its stable number.',
+    inputSchema: { number: z.number().int().positive() },
+  }, async ({ number }) => text({ retired: retireDoctrineRule(number) }))
 
   server.registerTool('file_issue', {
     description: `File an actionable defect or suggestion against ${PLATFORM_SLUG} through hub.`,

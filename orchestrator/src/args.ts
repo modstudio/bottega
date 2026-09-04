@@ -42,6 +42,33 @@ function commandShape(argv: string[]): { args: string[]; shape: CommandShape } |
       if (!sub || !forms[sub]) return null
       return { args: argv.slice(2), shape: forms[sub] }
     }
+    case 'port': {
+      const action = argv[2]
+      const forms: Record<string, Record<string, CommandShape>> = {
+        baseline: {
+          show: shape('orch port baseline show <source> <target> [--json]', 2, [], ['--json']),
+          set: shape('orch port baseline set <source> <target> <commit> [--json] | --clear', 3, [], ['--clear', '--json']),
+        },
+        skip: {
+          list: shape('orch port skip list <source> <target> [--json]', 2, [], ['--json']),
+          add: shape('orch port skip add <source> <target> <candidate> --reason TEXT [--json]', 3, ['--reason'], ['--json']),
+        },
+        ref: {
+          list: shape('orch port ref list [--all] [--json]', 0, [], ['--all', '--json']),
+          show: shape('orch port ref show <task-key> [--json]', 1, [], ['--json']),
+          set: shape('orch port ref set <task-key> --sources JSON --note TEXT [--json]', 1, ['--sources', '--note'], ['--json']),
+          resolve: shape('orch port ref resolve <task-key> [--json]', 1, [], ['--json']),
+          'delete-error': shape('orch port ref delete-error <task-key> [--json]', 1, [], ['--json']),
+        },
+        doctrine: {
+          list: shape('orch port doctrine list [--all] [--json]', 0, [], ['--all', '--json']),
+          add: shape('orch port doctrine add <number> --title TEXT (--file F | body on stdin) [--json]', 1, ['--title', '--file'], ['--json']),
+          retire: shape('orch port doctrine retire <number> [--json]', 1, [], ['--json']),
+        },
+      }
+      if (!sub || !action || !forms[sub]?.[action]) return null
+      return { args: argv.slice(3), shape: forms[sub]![action]! }
+    }
     case 'mcp': return { args: argv.slice(1), shape: shape('orch mcp [--config]', 0, [], ['--config']) }
     case 'do': return { args: argv.slice(1), shape: shape(
       'orch do <job> [prompt] [--agent NAME] [--file PATH] [--schema PATH] [--model NAME]', Infinity,

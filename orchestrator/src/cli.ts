@@ -759,7 +759,19 @@ function usage(): never {
       rm <slug> --scope S [--subject X] [--json]
       subjects [--json]
       export <dir> | import <dir> | brief [--cwd P] | resumes [--cwd P]
-  orch mcp [--config]          serve project and doc tools over stdio
+  orch port baseline show <source> <target> [--json]
+      baseline set <source> <target> <commit> [--clear] [--json]
+      skip list <source> <target> [--json]
+      skip add <source> <target> <candidate> --reason TEXT [--json]
+      ref list [--all] [--json] | show <task-key> [--json]
+      ref set <task-key> --sources JSON --note TEXT [--json]
+          sources: [{"project":"name","commits":[...],"paths":[...],"note":"..."}]
+      ref resolve <task-key> [--json]
+      ref delete-error <task-key> [--json]   correction only; permanently deletes provenance
+      doctrine list [--all] [--json]
+      doctrine add <number> --title T (--file F | body on stdin) [--json]
+      doctrine retire <number> [--json]
+  orch mcp [--config]          serve project, doc, and port tools over stdio
   orch jobs                     list job types
   orch agents                   list agents and availability
 `)
@@ -1010,6 +1022,200 @@ switch (cmd) {
       break
     }
     throw new Error(`unknown: orch doc ${sub}. Try list | show | set | consume | rm | subjects | export | import | brief | resumes`)
+  }
+
+  case 'port': {
+    const {
+      addDoctrineRule, addPair, addSkip, baselineForPair, ledgerRef, listDoctrineRules,
+      listLedgerRefs, listSkips, pairByProjects, removeLedgerRef, resolveLedgerRef,
+      retireDoctrineRule, setBaseline, setLedgerRef,
+    } = await import('./porting.ts')
+    const group = argv[1]
+    const action = argv[2]
+    const namedProject = (name: string) => {
+      const project = projectByName(name)
+      if (!project) throw new Error(`unknown project "${name}". Registered: ${projectNames()}`)
+      return project
+    }
+    const namedPair = (sourceName: string, targetName: string, create = false) => {
+      const source = namedProject(sourceName)
+      const target = namedProject(targetName)
+      if (source.id === target.id) throw new Error('a port source and target must be different projects')
+      const pair = pairByProjects(source.id, target.id) ?? (create ? addPair(source.id, target.id) : null)
+      return { pair, source, target }
+    }
+    const output = (value: unknown, line: string) =>
+      console.log(has('json') ? JSON.stringify(value) : line)
+
+    if (group === 'baseline' && action === 'show') {
+      const sourceName = argv[3]
+      const targetName = argv[4]
+      if (!sourceName || !targetName) throw new Error('orch port baseline show <source> <target> [--json]')
+      const { pair } = namedPair(sourceName, targetName)
+      if (!pair) {
+        output(null, `no port pair from "${sourceName}" to "${targetName}"`)
+        break
+      }
+      const value = { pair, baseline: baselineForPair(pair.id) }
+      output(value, value.baseline?.source_commit
+        ? `${sourceName} -> ${targetName}  ${value.baseline.source_commit}  ${value.baseline.scanned_at}`
+        : `${sourceName} -> ${targetName}  no baseline`)
+      break
+    }
+
+    if (group === 'baseline' && action === 'set') {
+      const sourceName = argv[3]
+      const targetName = argv[4]
+      const commit = has('clear') ? null : argv[5]
+      if (!sourceName || !targetName || (!has('clear') && !commit)) {
+        throw new Error('orch port baseline set <source> <target> <commit> [--json] | --clear')
+      }
+      const { pair } = namedPair(sourceName, targetName, true)
+      const baseline = setBaseline(pair!.id, commit)
+      output({ pair, baseline }, commit
+        ? `set ${sourceName} -> ${targetName} baseline to ${commit}`
+        : `cleared ${sourceName} -> ${targetName} baseline`)
+      break
+    }
+
+    if (group === 'skip' && action === 'list') {
+      const sourceName = argv[3]
+      const targetName = argv[4]
+      if (!sourceName || !targetName) throw new Error('orch port skip list <source> <target> [--json]')
+      const { pair } = namedPair(sourceName, targetName)
+      const rows = pair ? listSkips(pair.id) : []
+      if (has('json')) { console.log(JSON.stringify(rows)); break }
+      for (const row of rows) console.log(`${row.candidate}  ${row.reason}  ${row.skipped_at}`)
+      break
+    }
+
+    if (group === 'skip' && action === 'add') {
+      const sourceName = argv[3]
+      const targetName = argv[4]
+      const candidate = argv[5]
+      const reason = flag('reason')
+      if (!sourceName || !targetName || !candidate || reason === undefined) {
+        throw new Error('orch port skip add <source> <target> <candidate> --reason TEXT [--json]')
+      }
+      const { pair } = namedPair(sourceName, targetName)
+      if (!pair) throw new Error(`no port pair from "${sourceName}" to "${targetName}"; set its baseline first`)
+      const row = addSkip(pair.id, candidate, reason)
+      output(row, `skipped ${candidate}: ${reason}`)
+      break
+    }
+
+    if (group === 'ref' && action === 'list') {
+      const rows = listLedgerRefs(has('all'))
+      if (has('json')) { console.log(JSON.stringify(rows)); break }
+      for (const row of rows) {
+        console.log(`${row.task_key}  ${row.sources.length} source(s)  ${row.resolved_at ?? 'unresolved'}  ${row.note}`)
+      }
+      break
+    }
+
+    if (group === 'ref' && action === 'show') {
+      const taskKey = argv[3]
+      if (!taskKey) throw new Error('orch port ref show <task-key> [--json]')
+      const ref = ledgerRef(taskKey)
+      if (!ref) throw new Error(`no port ledger ref for task "${taskKey}"`)
+      if (has('json')) { console.log(JSON.stringify(ref)); break }
+      console.log(`${ref.task_key}  ${ref.resolved_at ?? 'unresolved'}\n${ref.note}`)
+      for (const source of ref.sources) {
+        const project = projects().find((candidate) => candidate.id === source.source_project_id)
+        if (!project) throw new Error(`ledger ref ${taskKey} names unregistered project id ${source.source_project_id}`)
+        console.log(`  ${project.name}  commits=${source.commits.join(',')}  paths=${source.paths.join(',')}  ${source.note}`)
+      }
+      break
+    }
+
+    if (group === 'ref' && action === 'set') {
+      const taskKey = argv[3]
+      const sourceJson = flag('sources')
+      const note = flag('note')
+      if (!taskKey || sourceJson === undefined || note === undefined) {
+        throw new Error('orch port ref set <task-key> --sources JSON --note TEXT [--json]')
+      }
+      let raw: unknown
+      try { raw = JSON.parse(sourceJson) } catch (error) {
+        throw new Error(`--sources must be JSON: ${error}`)
+      }
+      if (!Array.isArray(raw) || raw.length === 0) {
+        throw new Error('--sources must be a non-empty JSON array')
+      }
+      const sources = raw.map((value, index) => {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+          throw new Error(`--sources[${index}] must be an object`)
+        }
+        const source = value as Record<string, unknown>
+        if (typeof source.project !== 'string' || !Array.isArray(source.commits) ||
+            !source.commits.every((item) => typeof item === 'string') ||
+            !Array.isArray(source.paths) || !source.paths.every((item) => typeof item === 'string') ||
+            typeof source.note !== 'string') {
+          throw new Error(`--sources[${index}] needs project, string-array commits, string-array paths, and note`)
+        }
+        return {
+          source_project_id: namedProject(source.project).id,
+          commits: source.commits as string[], paths: source.paths as string[], note: source.note,
+        }
+      })
+      const ref = setLedgerRef({ taskKey, note, sources })
+      output(ref, `recorded provenance for ${taskKey} from ${sources.length} source project(s)`)
+      break
+    }
+
+    if (group === 'ref' && action === 'resolve') {
+      const taskKey = argv[3]
+      if (!taskKey) throw new Error('orch port ref resolve <task-key> [--json]')
+      const ref = resolveLedgerRef(taskKey)
+      if (!ref) throw new Error(`no port ledger ref for task "${taskKey}"`)
+      output(ref, `resolved ${taskKey} at ${ref.resolved_at}`)
+      break
+    }
+
+    if (group === 'ref' && action === 'delete-error') {
+      const taskKey = argv[3]
+      if (!taskKey) throw new Error('orch port ref delete-error <task-key> [--json]')
+      const removed = removeLedgerRef(taskKey)
+      output({ removed }, removed
+        ? `permanently deleted erroneous ledger ref ${taskKey}`
+        : `no port ledger ref for task "${taskKey}"`)
+      break
+    }
+
+    if (group === 'doctrine' && action === 'list') {
+      const rows = listDoctrineRules(has('all'))
+      if (has('json')) { console.log(JSON.stringify(rows)); break }
+      for (const row of rows) {
+        console.log(`${String(row.number).padStart(3)}  ${row.retired_at ? `retired ${row.retired_at}` : 'active'}  ${row.title}`)
+      }
+      break
+    }
+
+    if (group === 'doctrine' && action === 'add') {
+      const number = Number(argv[3])
+      const title = flag('title')
+      if (!Number.isInteger(number) || number <= 0 || title === undefined) {
+        throw new Error('orch port doctrine add <number> --title TEXT (--file F | body on stdin) [--json]')
+      }
+      const body = flag('file') ? readFileSync(flag('file')!, 'utf8')
+        : !process.stdin.isTTY ? await Bun.stdin.text()
+        : (() => { throw new Error('no body: pass --file F or pipe text on stdin') })()
+      const rule = addDoctrineRule(number, title, body)
+      output(rule, `added doctrine ${number}: ${title}`)
+      break
+    }
+
+    if (group === 'doctrine' && action === 'retire') {
+      const number = Number(argv[3])
+      if (!Number.isInteger(number) || number <= 0) {
+        throw new Error('orch port doctrine retire <number> [--json]')
+      }
+      const retired = retireDoctrineRule(number)
+      output({ retired }, retired ? `retired doctrine ${number}` : `no active doctrine ${number}`)
+      break
+    }
+
+    throw new Error('unknown: orch port. Try baseline | skip | ref | doctrine')
   }
 
   case 'mcp': {

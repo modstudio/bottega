@@ -198,6 +198,9 @@ export function applySchema(d: Database): void {
    * NULL means it counts. Any text means it does not.
    */
   addColumn(d, 'run', 'evidence_excluded', 'TEXT')
+  // A completed target task must keep its provenance. NULL is still active;
+  // an ISO timestamp is resolved, so absence never has to stand for completion.
+  addColumn(d, 'port_ref', 'resolved_at', 'TEXT')
   // Runs AFTER every addColumn, so the rebuilt table carries the whole current
   // column set rather than whatever migrate() happened to declare.
   ensureCanonicalSchema(d)
@@ -886,7 +889,8 @@ function migratePortSchema(d: Database) {
       task_key          TEXT PRIMARY KEY,
       target_project_id INTEGER NOT NULL REFERENCES project(id) ON DELETE RESTRICT,
       note              TEXT NOT NULL,
-      created_at        TEXT NOT NULL
+      created_at        TEXT NOT NULL,
+      resolved_at       TEXT
     );
     CREATE INDEX IF NOT EXISTS port_ref_target ON port_ref(target_project_id);
 

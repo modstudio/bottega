@@ -326,7 +326,8 @@ const { listDocs, getDoc, setDoc, consumeDoc, removeDoc, docsForRun, exportDocs,
   await import('./docs.ts')
 const { createDocsMcpServer } = await import('./mcp.ts')
 const { listPairs, addPair, baselineForPair, setBaseline, listSkips, addSkip,
-        setLedgerRef, ledgerRef, listDoctrineRules, addDoctrineRule, retireDoctrineRule } =
+        setLedgerRef, ledgerRef, listLedgerRefs, resolveLedgerRef,
+        listDoctrineRules, addDoctrineRule, retireDoctrineRule } =
   await import('./porting.ts')
 
 beforeEach(() => {
@@ -682,6 +683,26 @@ describe('porting data model', () => {
     ])
     expect(() => setLedgerRef({ taskKey: 'NONE-1', note: '', sources: ref.sources }))
       .toThrow('no registered project owns task key')
+  })
+
+  test('resolution preserves provenance and default listings omit completed refs', () => {
+    upsertProject({ name: 'source-invented', path: '/w/source', settings: {} })
+    upsertProject({ name: 'target-invented', path: '/w/target',
+      settings: { keyPrefixes: ['TGT'] } })
+    const source = projects().find((project) => project.name === 'source-invented')!
+    setLedgerRef({
+      taskKey: 'TGT-42', note: 'provenance',
+      sources: [{ source_project_id: source.id, commits: ['abc'], paths: ['src/a.ts'], note: 'source' }],
+    })
+
+    expect(listLedgerRefs()).toHaveLength(1)
+    expect(resolveLedgerRef('TGT-42', '2026-09-04T00:00:00.000Z')).toMatchObject({
+      task_key: 'TGT-42', resolved_at: '2026-09-04T00:00:00.000Z',
+      sources: [{ commits: ['abc'], paths: ['src/a.ts'] }],
+    })
+    expect(listLedgerRefs()).toEqual([])
+    expect(listLedgerRefs(true)).toHaveLength(1)
+    expect(resolveLedgerRef('TGT-42', 'later')?.resolved_at).toBe('2026-09-04T00:00:00.000Z')
   })
 
   test('retires doctrine without freeing its stable number', () => {
@@ -8564,10 +8585,34 @@ describe('canonical schema rebuild', () => {
     expect(d.query(
       `SELECT 1 FROM sqlite_master WHERE type='table' AND name='port_skipped'`,
     ).get()).toBeNull()
-    expect(cols(d, 'port_ref')).toEqual(['task_key', 'target_project_id', 'note', 'created_at'])
+    expect(cols(d, 'port_ref')).toEqual([
+      'task_key', 'target_project_id', 'note', 'created_at', 'resolved_at',
+    ])
     expect(cols(d, 'port_ref_source')).toContain('source_project_id')
     expect(cols(d, 'port_skip')).toContain('reason')
     expect(cols(d, 'port_doctrine')).toContain('retired_at')
+    d.close()
+  })
+
+  test('adding ledger resolution state preserves existing provenance rows', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'orch-schema-')), 'pre-resolution-port.db')
+    const d = new Database(path)
+    d.exec(`
+      CREATE TABLE port_ref (
+        task_key TEXT PRIMARY KEY,
+        target_project_id INTEGER NOT NULL,
+        note TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      INSERT INTO port_ref VALUES ('TGT-9', 7, 'only copy', '2026-09-03T00:00:00.000Z');
+    `)
+
+    applySchema(d)
+
+    expect(d.query('SELECT * FROM port_ref WHERE task_key=?').get('TGT-9')).toEqual({
+      task_key: 'TGT-9', target_project_id: 7, note: 'only copy',
+      created_at: '2026-09-03T00:00:00.000Z', resolved_at: null,
+    })
     d.close()
   })
 
@@ -8919,6 +8964,93 @@ describe('scoped operator docs', () => {
       err: new TextDecoder().decode(p.stderr),
     }
   }
+
+  test('orch port exposes baseline, skip, ledger resolution, correction, and doctrine lifecycle', () => {
+    upsertProject({ name: 'source-invented', path: '/w/source', settings: {} })
+    upsertProject({ name: 'target-invented', path: '/w/target',
+      settings: { keyPrefixes: ['TGT'] } })
+
+    expect(orchCli(['port', 'baseline', 'set', 'source-invented', 'target-invented', 'abc']).code).toBe(0)
+    const baseline = orchCli(['port', 'baseline', 'show', 'source-invented', 'target-invented', '--json'])
+    expect(JSON.parse(baseline.out).baseline.source_commit).toBe('abc')
+    expect(orchCli(['port', 'skip', 'add', 'source-invented', 'target-invented', 'old-feature',
+      '--reason', 'superseded']).code).toBe(0)
+    expect(JSON.parse(orchCli(['port', 'skip', 'list', 'source-invented', 'target-invented', '--json']).out))
+      .toMatchObject([{ candidate: 'old-feature', reason: 'superseded' }])
+
+    const sources = JSON.stringify([
+      { project: 'source-invented', commits: ['abc'], paths: ['src/a.ts'], note: 'origin' },
+    ])
+    expect(orchCli(['port', 'ref', 'set', 'TGT-7', '--sources', sources, '--note', 'native task']).code).toBe(0)
+    const resolved = orchCli(['port', 'ref', 'resolve', 'TGT-7', '--json'])
+    expect(JSON.parse(resolved.out)).toMatchObject({ task_key: 'TGT-7', resolved_at: expect.any(String) })
+    expect(JSON.parse(orchCli(['port', 'ref', 'list', '--json']).out)).toEqual([])
+    expect(JSON.parse(orchCli(['port', 'ref', 'list', '--all', '--json']).out)).toHaveLength(1)
+    expect(orchCli(['port', 'ref', 'delete-error', 'TGT-7']).out).toContain('erroneous')
+    expect(ledgerRef('TGT-7')).toBeNull()
+
+    expect(orchCli(['port', 'doctrine', 'add', '4', '--title', 'Native', '--json'], 'Adapt natively.').code)
+      .toBe(0)
+    expect(orchCli(['port', 'doctrine', 'retire', '4']).code).toBe(0)
+    expect(JSON.parse(orchCli(['port', 'doctrine', 'list', '--json']).out)).toEqual([])
+    expect(JSON.parse(orchCli(['port', 'doctrine', 'list', '--all', '--json']).out))
+      .toMatchObject([{ number: 4, retired_at: expect.any(String) }])
+  })
+
+  test('orch port refuses unknown registered project names and task prefixes', () => {
+    upsertProject({ name: 'source-invented', path: '/w/source', settings: {} })
+    const unknown = orchCli(['port', 'baseline', 'show', 'source-invented', 'missing'])
+    expect(unknown.code).toBe(1)
+    expect(unknown.err).toContain('unknown project "missing"')
+    const sources = JSON.stringify([
+      { project: 'source-invented', commits: [], paths: [], note: '' },
+    ])
+    const prefix = orchCli(['port', 'ref', 'set', 'NONE-1', '--sources', sources, '--note', ''])
+    expect(prefix.code).toBe(1)
+    expect(prefix.err).toContain('no registered project owns task key')
+  })
+
+  test('MCP port tools use registered names and preserve resolved provenance', async () => {
+    upsertProject({ name: 'source-invented', path: '/w/source', settings: {} })
+    upsertProject({ name: 'target-invented', path: '/w/target',
+      settings: { keyPrefixes: ['TGT'] } })
+    const server = createDocsMcpServer()
+    const client = new Client({ name: 'orch-port-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+    const value = (result: any) => JSON.parse((result.content[0] as { text: string }).text)
+    try {
+      await client.callTool({ name: 'set_port_baseline', arguments: {
+        source: 'source-invented', target: 'target-invented', source_commit: 'abc',
+      } })
+      await client.callTool({ name: 'record_port_skip', arguments: {
+        source: 'source-invented', target: 'target-invented', candidate: 'old', reason: 'done elsewhere',
+      } })
+      await client.callTool({ name: 'set_port_ledger_ref', arguments: {
+        task_key: 'TGT-8', note: 'native', sources: [
+          { project: 'source-invented', commits: ['abc'], paths: ['src/a.ts'], note: 'origin' },
+        ],
+      } })
+      const resolved = await client.callTool({ name: 'resolve_port_ledger_ref',
+        arguments: { task_key: 'TGT-8' } })
+      expect(value(resolved)).toMatchObject({ task_key: 'TGT-8', resolved_at: expect.any(String) })
+      const active = await client.callTool({ name: 'list_port_ledger_refs', arguments: {} })
+      const all = await client.callTool({ name: 'list_port_ledger_refs',
+        arguments: { include_resolved: true } })
+      expect(value(active)).toEqual([])
+      expect(value(all)).toMatchObject([{ task_key: 'TGT-8', sources: [{ commits: ['abc'] }] }])
+      await client.callTool({ name: 'add_port_doctrine_rule',
+        arguments: { number: 5, title: 'Native', body: 'Adapt natively.' } })
+      await client.callTool({ name: 'retire_port_doctrine_rule', arguments: { number: 5 } })
+      const doctrine = await client.callTool({ name: 'list_port_doctrine',
+        arguments: { include_retired: true } })
+      expect(value(doctrine)).toMatchObject([{ number: 5, retired_at: expect.any(String) }])
+    } finally {
+      await client.close()
+      await server.close()
+    }
+  })
 
   test('orch doc subjects --json lists project, agent and job names', () => {
     upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })

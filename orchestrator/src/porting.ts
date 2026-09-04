@@ -34,6 +34,7 @@ export type LedgerRef = {
   target_project_id: number
   note: string
   created_at: string
+  resolved_at: string | null
   sources: LedgerSource[]
 }
 
@@ -151,8 +152,10 @@ export function ledgerRef(taskKey: string): LedgerRef | null {
   }
 }
 
-export function listLedgerRefs(): LedgerRef[] {
-  const keys = db().query('SELECT task_key FROM port_ref ORDER BY task_key').all() as { task_key: string }[]
+export function listLedgerRefs(includeResolved = false): LedgerRef[] {
+  const keys = db().query(
+    `SELECT task_key FROM port_ref${includeResolved ? '' : ' WHERE resolved_at IS NULL'} ORDER BY task_key`,
+  ).all() as { task_key: string }[]
   return keys.map(({ task_key }) => ledgerRef(task_key)!)
 }
 
@@ -191,6 +194,15 @@ export function setLedgerRef(input: {
 
 export function removeLedgerRef(taskKey: string): boolean {
   return db().query('DELETE FROM port_ref WHERE task_key=?').run(taskKey).changes > 0
+}
+
+export function resolveLedgerRef(taskKey: string, resolvedAt = nowIso()): LedgerRef | null {
+  const existing = ledgerRef(taskKey)
+  if (!existing || existing.resolved_at) return existing
+  db().query(
+    'UPDATE port_ref SET resolved_at=? WHERE task_key=? AND resolved_at IS NULL',
+  ).run(resolvedAt, taskKey)
+  return ledgerRef(taskKey)
 }
 
 export function listDoctrineRules(includeRetired = true): DoctrineRule[] {
