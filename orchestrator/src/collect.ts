@@ -131,7 +131,7 @@ function mcpNote(row: {
   if (!row.mcp) return ''
   const source = row.mcp_server ?? 'project MCP'
   if (row.mcp_connected === 1) return `\n  mcp:       ${source} connected`
-  const state = row.mcp_connected === 0 ? 'NOT CONNECTED' : 'connection unknown'
+  const state = row.mcp_connected === 0 ? 'NOT CONNECTED' : 'UNVERIFIED'
   let note = `\n  mcp:       ${source} ${state}`
   if (row.mcp_error) note += ` — ${row.mcp_error}`
   if (row.agent === 'grok' && row.cwd && /folder untrusted/i.test(row.mcp_error ?? '')) {

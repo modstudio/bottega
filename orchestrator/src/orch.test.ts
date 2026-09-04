@@ -299,7 +299,7 @@ const { JOBS } = await import('./jobs.ts')
 const { runDetail, state } = await import('./serve.ts')
 const { classify, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOT_EVIDENCE, COOLS_DOWN,
         isNonAnswer, detectBlockers } = await import('./failure.ts')
-const { errorTail, preflight, detachedRunOptions, runFilePaths, pruneRuns, KEEP_RUN_FILES_DAYS,
+const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePaths, pruneRuns, KEEP_RUN_FILES_DAYS,
         RUNS_DIR, grokMcpConnection, writingFailoverRefusal, resolveSupersededTurn,
         resolveRootFromLastTurn, gitObjectEnvironmentFor, run: runJob } = await import('./run.ts')
 const run = runJob
@@ -2366,6 +2366,31 @@ describe('run detail', () => {
 })
 
 describe('review-lens MCP provenance', () => {
+  test('preflightMcp refuses grok and lets a Codex pin through', () => {
+    const cwd = dir
+    upsertProject({ name: 'fixture-project', path: cwd, settings: {} })
+    const grok = AGENTS.grok!
+    const originalBin = grok.bin
+    grok.bin = join(dir, 'fake-grok-preflight-doctor.sh')
+    writeFileSync(grok.bin, `#!/bin/sh
+printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"label":"unavailable","passed":false,"detail":"server down"}]}]}'
+`)
+    chmodSync(grok.bin, 0o755)
+    try {
+      expect(() => preflightMcp({
+        mcp: true, cwd, job: 'review-lens', prompt: 'review this', agent: 'codex',
+      })).not.toThrow()
+      expect(() => preflightMcp({
+        mcp: true, cwd, job: 'review-lens', prompt: 'review this', agent: 'grok',
+      })).toThrow("MCP was requested, but server 'fixture-project' could not be attached")
+      expect(() => preflightMcp({
+        mcp: false, cwd, job: 'review-lens', prompt: 'review this', agent: 'grok',
+      })).not.toThrow()
+    } finally {
+      grok.bin = originalBin
+    }
+  })
+
   test('reads Grok doctor as the same-named project connection', () => {
     const doctor = join(dir, 'fake-grok-mcp-doctor.sh')
     writeFileSync(doctor, `#!/bin/sh
@@ -2379,14 +2404,26 @@ printf '%s' '{"servers":[{"name":"starship","healthy":false,"checks":[{"label":"
       })
   })
 
-  test('refuses a lens before the agent starts when its requested project MCP cannot attach', async () => {
+  test('a missing server names the ones doctor did report', () => {
+    const doctor = join(dir, 'fake-grok-mcp-available.sh')
+    writeFileSync(doctor, `#!/bin/sh
+printf '%s' '{"servers":[{"name":"orch","healthy":true,"checks":[]},{"name":"user-scope","healthy":true,"checks":[]}]}'
+`)
+    chmodSync(doctor, 0o755)
+    const result = grokMcpConnection(doctor, dir, 'starship', { PATH: process.env.PATH ?? '' })
+    expect(result.connected).toBe(false)
+    expect(result.error).toContain("MCP server 'starship' was not reported. Available: orch, user-scope")
+    expect(result.error).toContain('"name":"orch"')
+  })
+
+  test('refuses a grok lens at dispatch and leaves no run row when project MCP cannot attach', async () => {
     const script = join(dir, 'fake-grok-lens.sh')
     writeFileSync(script, `#!/bin/sh
 if [ "$1" = "mcp" ]; then
   printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"label":"folder untrusted","passed":false,"detail":"repo-local server not started","hint":"re-run with --trust"}]}]}'
 else
-  printf '%s\n' '{"type":"system","subtype":"init"}'
-  printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
+  echo should-not-launch >&2
+  exit 99
 fi
 `)
     chmodSync(script, 0o755)
@@ -2403,30 +2440,13 @@ fi
     upsertProject({ name: 'fixture-project', path: cwd, settings: {} })
     const priorDepth = process.env.ORCH_DEPTH
     process.env.ORCH_DEPTH = '0'
+    const before = (db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n
     try {
-      let runId: number | undefined
-      try {
-        await runJob({
-          job: 'review-lens', prompt: 'review this', cwd, agent: 'grok', mcp: true, lens: 'mcp',
-        })
-      } catch (error) {
-        runId = (error as Error & { runId?: number }).runId
-        expect(String(error)).toContain(
-          "MCP was requested, but server 'fixture-project' could not be attached",
-        )
-        expect(String(error)).toContain('The agent was not started.')
-      }
-      expect(runId).toBeDefined()
+      await expect(runJob({
+        job: 'review-lens', prompt: 'review this', cwd, agent: 'grok', mcp: true, lens: 'mcp',
+      })).rejects.toThrow("MCP was requested, but server 'fixture-project' could not be attached")
       expect(sent).toBe('')
-      expect(db().query(
-        `SELECT status, failure_kind, mcp_server, mcp_connected, mcp_error, output_path
-           FROM run WHERE id=?`,
-      ).get(runId!)).toEqual({
-        status: 'failed', failure_kind: 'harness',
-        mcp_server: 'fixture-project', mcp_connected: 0,
-        mcp_error: 'folder untrusted: repo-local server not started: re-run with --trust',
-        output_path: null,
-      })
+      expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before)
     } finally {
       agent.bin = originalBin
       agent.argv = originalArgv
@@ -2526,6 +2546,160 @@ printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
     expect(result.exitCode).toBe(0)
     expect(stderr).toContain('mcp:       starship NOT CONNECTED')
     expect(stderr).toContain("trust:     grok --cwd '/tmp/a lens tree' --trust")
+  })
+
+  test('orch result names an unverified attach distinctly from a confirmed one', () => {
+    const unverified = addRun({ agent: 'codex', job: 'review-lens' })
+    db().query(
+      `UPDATE run SET mcp=1, mcp_server='fixture-project', mcp_connected=NULL,
+                      mcp_error='codex does not expose an MCP connection diagnostic' WHERE id=?`,
+    ).run(unverified)
+    const confirmed = addRun({ agent: 'grok', job: 'review-lens' })
+    db().query(
+      `UPDATE run SET mcp=1, mcp_server='fixture-project', mcp_connected=1 WHERE id=?`,
+    ).run(confirmed)
+    const CLI = new URL('cli.ts', import.meta.url).pathname
+    const env = { ...process.env, ORCH_DB: process.env.ORCH_DB! }
+    const unknown = Bun.spawnSync([process.execPath, CLI, 'result', String(unverified)], {
+      env, stdout: 'pipe', stderr: 'pipe',
+    })
+    const known = Bun.spawnSync([process.execPath, CLI, 'result', String(confirmed)], {
+      env, stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(unknown.stderr.toString()).toContain('mcp:       fixture-project UNVERIFIED')
+    expect(unknown.stderr.toString()).not.toContain('connected')
+    expect(known.stderr.toString()).toContain('mcp:       fixture-project connected')
+    expect(known.stderr.toString()).not.toContain('UNVERIFIED')
+  })
+
+  test('a codex lens proceeds unverified even when grok doctor would refuse', async () => {
+    const grok = AGENTS.grok!
+    const codex = AGENTS.codex!
+    const grokBin = grok.bin
+    const grokArgv = grok.argv
+    const codexBin = codex.bin
+    const codexArgv = codex.argv
+    const codexReadsOut = codex.readsOut
+    grok.bin = join(dir, 'fake-grok-red-doctor.sh')
+    writeFileSync(grok.bin, `#!/bin/sh
+printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"label":"folder untrusted","passed":false,"detail":"repo-local server not started"}]}]}'
+exit 0
+`)
+    chmodSync(grok.bin, 0o755)
+    grok.argv = () => {
+      throw new Error('grok must not launch')
+    }
+    const script = join(dir, 'fake-codex-unverified-lens.sh')
+    writeFileSync(script, `#!/bin/sh
+printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"no findings"}}'
+printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}'
+`)
+    chmodSync(script, 0o755)
+    let sent = ''
+    codex.bin = script
+    codex.readsOut = false
+    codex.argv = ({ prompt }) => {
+      sent = prompt
+      return []
+    }
+    const cwd = dir
+    upsertProject({ name: 'fixture-project', path: cwd, settings: {} })
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      const result = await runJob({
+        job: 'review-lens', prompt: 'review this', cwd, agent: 'codex', mcp: true, lens: 'probe',
+      })
+      expect(result.status).toBe('ok')
+      expect(sent).toContain('Provenance: state the source you measured against.')
+      expect(db().query(
+        'SELECT mcp, mcp_server, mcp_connected, mcp_error FROM run WHERE id=?',
+      ).get(result.id)).toEqual({
+        mcp: 1, mcp_server: 'fixture-project', mcp_connected: null,
+        mcp_error: 'codex does not expose an MCP connection diagnostic',
+      })
+    } finally {
+      grok.bin = grokBin
+      grok.argv = grokArgv
+      codex.bin = codexBin
+      codex.argv = codexArgv
+      codex.readsOut = codexReadsOut
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
+  test('orch do refuses a proven-failed grok attach once, with no row', () => {
+    const cwd = realpathSync(dir)
+    upsertProject({ name: 'fixture-project', path: cwd, settings: {} })
+    const binDir = join(dir, 'mcp-dispatch-bin')
+    mkdirSync(binDir, { recursive: true })
+    writeFileSync(join(binDir, 'grok'), `#!/bin/sh
+if [ "$1" = "mcp" ]; then
+  printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"label":"unavailable","passed":false,"detail":"server down"}]}]}'
+  exit 0
+fi
+echo should-not-launch >&2
+exit 99
+`)
+    chmodSync(join(binDir, 'grok'), 0o755)
+    const CLI = new URL('cli.ts', import.meta.url).pathname
+    const before = (db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n
+    const result = Bun.spawnSync(
+      [process.execPath, CLI, 'do', 'review-lens', 'review this', '--mcp', '--agent', 'grok', '--lens', 'probe'],
+      {
+        cwd,
+        env: {
+          ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+          PATH: `${binDir}:${process.env.PATH ?? ''}`,
+        },
+        stdout: 'pipe', stderr: 'pipe',
+      },
+    )
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr.toString()).toContain(
+      "MCP was requested, but server 'fixture-project' could not be attached",
+    )
+    expect(result.stderr.toString()).toContain('unavailable: server down')
+    expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before)
+  })
+
+  test('a fan-out of grok --mcp against an unavailable server leaves zero rows', async () => {
+    const cwd = realpathSync(dir)
+    upsertProject({ name: 'fixture-project', path: cwd, settings: {} })
+    const binDir = join(dir, 'mcp-fanout-bin')
+    mkdirSync(binDir, { recursive: true })
+    writeFileSync(join(binDir, 'grok'), `#!/bin/sh
+if [ "$1" = "mcp" ]; then
+  printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"label":"unavailable","passed":false,"detail":"server down"}]}]}'
+  exit 0
+fi
+echo should-not-launch >&2
+exit 99
+`)
+    chmodSync(join(binDir, 'grok'), 0o755)
+    const CLI = new URL('cli.ts', import.meta.url).pathname
+    const before = (db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n
+    const env = {
+      ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+      CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+      PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    }
+    const children = [1, 2, 3].map((n) => Bun.spawn(
+      [process.execPath, CLI, 'do', 'review-lens', `lens ${n}`, '--mcp', '--agent', 'grok', '--lens', 'probe'],
+      { cwd, env, stdout: 'pipe', stderr: 'pipe' },
+    ))
+    const codes = await Promise.all(children.map(async (child) => {
+      const err = await new Response(child.stderr).text()
+      const code = await child.exited
+      return { code, err }
+    }))
+    expect(codes.every((row) => row.code === 1)).toBe(true)
+    expect(codes.every((row) => row.err.includes(
+      "MCP was requested, but server 'fixture-project' could not be attached",
+    ))).toBe(true)
+    expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before)
   })
 })
 

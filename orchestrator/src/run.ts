@@ -230,12 +230,89 @@ export function grokMcpConnection(
         .join('; ')
       return { server, connected: found.healthy === true, error: error || null }
     }
+    const available = (report.servers ?? [])
+      .map((candidate) => candidate.name)
+      .filter((name): name is string => Boolean(name))
+    const listed = available.length ? available.join(', ') : '(none)'
+    return {
+      server,
+      connected: false,
+      error: [
+        stderr, stdout,
+        `MCP server '${server}' was not reported. Available: ${listed}`,
+      ].filter(Boolean).join('\n'),
+    }
   } catch { /* preserve the client's actual diagnostic below */ }
   return {
     server,
     connected: false,
     error: [stderr, stdout].filter(Boolean).join('\n') || `MCP server '${server}' was not reported`,
   }
+}
+
+/**
+ * Who can prove attachment, and what they proved.
+ *
+ * A red grok probe is evidence about grok, not about the machine. Codex has no
+ * diagnostic, so it cannot prove failure and cannot prove success — that is
+ * unverified, not connected:false. Routing around grok's attach failure is
+ * DEV-194 and is not done here.
+ */
+function mcpConnectionFor(name: string, cwd: string, server: string): McpConnection {
+  if (name === 'grok') {
+    const grok = AGENTS.grok!
+    return grokMcpConnection(grok.bin, cwd, server, childEnv(grok))
+  }
+  return {
+    server,
+    connected: null,
+    error: `${name} does not expose an MCP connection diagnostic`,
+  }
+}
+
+function mcpAttachRefusal(connection: McpConnection): string | null {
+  if (connection.connected !== false) return null
+  return (
+    `MCP was requested, but server '${connection.server}' could not be attached` +
+    `${connection.error ? `: ${connection.error}` : '.'} The agent was not started.`
+  )
+}
+
+function probeRequestedMcp(mcp: boolean | undefined, agent: string, cwd: string): McpConnection | null {
+  if (!mcp) return null
+  const project = projectAt(cwd)
+  if (!project) return null
+  return mcpConnectionFor(agent, cwd, project.name)
+}
+
+/**
+ * Refuse a --mcp dispatch that routing would send to an agent whose attach
+ * we can prove failed — before a run row exists.
+ *
+ * Consults pick() for who will actually run. An unpinned job that prefers
+ * Codex is not refused because grok happens to be eligible; a pinned Codex
+ * dispatch is not refused because grok's doctor is red.
+ */
+export function preflightMcp(opts: {
+  mcp?: boolean
+  cwd: string
+  job: string
+  prompt: string
+  agent?: string
+  avoid?: string[]
+  distinctModels?: string[]
+  model?: string
+}): void {
+  if (!opts.mcp) return
+  if (!projectAt(opts.cwd)) return
+  const { agent: name } = pick(
+    opts.job, opts.agent, opts.prompt.length, true, stackAt(opts.cwd),
+    { agents: opts.avoid, models: opts.distinctModels, model: opts.model },
+  )
+  const connection = probeRequestedMcp(true, name, opts.cwd)
+  if (!connection) return
+  const why = mcpAttachRefusal(connection)
+  if (why) throw new Error(why)
 }
 
 /**
@@ -806,6 +883,22 @@ export async function run(opts: {
     prompt += `\n\n${suffix}`
   }
 
+  /**
+   * A proven-failed MCP attach is a dispatch that did not happen, not a run
+   * with a bad outcome. Probe after routing (a red grok doctor is evidence
+   * about grok, not about Codex) and before a row exists.
+   *
+   * A reserved placeholder was claimed by detach() after the same check; if
+   * routing here disagrees and grok cannot attach, delete that placeholder
+   * rather than converting a non-event into a failed row.
+   */
+  const mcpConnection = probeRequestedMcp(opts.mcp, name, callerCwd)
+  const mcpWhy = mcpConnection ? mcpAttachRefusal(mcpConnection) : null
+  if (mcpWhy) {
+    if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
+    throw new Error(mcpWhy)
+  }
+
   /** Whether the requested product is a diff, rather than review findings. */
   const usingMcp = (opts.mcp || writesJob) && a.caps.mcp
   /**
@@ -974,15 +1067,6 @@ export async function run(opts: {
     resolveSupersededTurn(db(), opts.resume.parent, opts.resume.turn - 1)
   }
   const runToken = randomUUID()
-  const declaredProject = opts.mcp ? projectAt(callerCwd) : null
-  const mcpConnection: McpConnection | null = opts.mcp && declaredProject
-    ? name === 'grok'
-      ? grokMcpConnection(a.bin, callerCwd, declaredProject.name, childEnv(a))
-      : {
-          server: declaredProject.name, connected: null,
-          error: `${name} does not expose an MCP connection diagnostic`,
-        }
-    : null
   db().query(
     `UPDATE run SET stack=?, model=?, run_token=?, mcp=?, mcp_server=?,
                     mcp_connected=?, mcp_error=?, schema_path=?, lens=? WHERE id=?`,
@@ -994,28 +1078,6 @@ export async function run(opts: {
       mcpConnection?.error ?? (opts.mcp ? 'no registered project identifies the canonical MCP server' : null),
       opts.schemaPath ?? null, opts.lens ?? null, claim.id,
     )
-
-  /**
-   * A known failed MCP handshake is a failed run, not a degraded one.
-   *
-   * Grok exposes this state through `mcp doctor`, so it is known before the
-   * vendor process starts. Stop at that boundary: once the caller requested
-   * MCP, letting the agent produce an answer without the named project server
-   * would present stale fallback data as a completed review.
-   *
-   * `null` remains distinct from `false`. Other clients do not expose a
-   * connection diagnostic, and an unknown state is not evidence that a server
-   * failed to attach.
-   */
-  if (mcpConnection?.connected === false) {
-    const why =
-      `MCP was requested, but server '${mcpConnection.server}' could not be attached` +
-      `${mcpConnection.error ? `: ${mcpConnection.error}` : '.'} The agent was not started.`
-    db().query(
-      `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
-    ).run(why, Date.now() - started, claim.id)
-    throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
-  }
 
   /**
    * A repository worker never runs in the caller's checkout.

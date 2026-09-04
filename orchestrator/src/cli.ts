@@ -9,7 +9,7 @@ import { AGENTS, available, installed, ensureLocalHealth,
          lastWakeAttempt, readStrictCodexSchema } from './agents.ts'
 import { candidates, pick, scoreboard, MIN_SAMPLE } from './route.ts'
 import { guide } from './guide.ts'
-import { repoOf, preflight, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses,
+import { repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses,
          type DetachSpec } from './run.ts'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -424,7 +424,17 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
   // A RESUME skips preflight: its agent was chosen long ago, its worktree
   // exists, and its seed was settled when that worktree was cut. Re-checking
   // would demand a `--seed` for a database that is already there.
-  if (!spec.resume) preflight(jobName, cwd, spec.seed, spec.key, spec.base, false, false, spec.lens)
+  if (!spec.resume) {
+    preflight(jobName, cwd, spec.seed, spec.key, spec.base, false, false, spec.lens)
+    // Who will run is knowable here, and a proven-failed grok attach must not
+    // leave a placeholder for the child to fail. Resume keeps the agent that
+    // already started; it is not a new dispatch.
+    preflightMcp({
+      mcp: spec.mcp, cwd, job: jobName, prompt,
+      agent: spec.agent, avoid: spec.avoid,
+      distinctModels: spec.distinctModels, model: spec.model,
+    })
+  }
   const runsDir = RUNS_DIR
   mkdirSync(runsDir, { recursive: true })
   // Named by the clock alone, this collided: concurrent `orch do` calls for the
