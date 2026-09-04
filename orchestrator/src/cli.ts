@@ -258,7 +258,7 @@ function flags(name: string): string[] {
 const has = (n: string) => argv.includes(`--${n}`)
 
 /** Flags that consume the next argument. Anything else is a boolean switch. */
-const VALUE_FLAGS = new Set(['--agent', '--file', '--schema', '--model', '--note',
+const VALUE_FLAGS = new Set(['--agent', '--file', '--schema', '--model', '--note', '--message',
                              '--id', '--job', '--limit', '--port', '--days', '--window', '--timeout', '--scorer',
                              '--seed', '--key', '--repo', '--base', '--avoid', '--distinct-from', '--label', '--lens', '--category',
                              '--better-than', '--n', '--scope', '--subject', '--title', '--cwd'])
@@ -751,6 +751,8 @@ function usage(): never {
       several questions: orch answer <id> --q<qid> "<ruling>" --q<qid> "<ruling>"
   orch diff <id>                inspect a run's worktree diff (review diffs are scratch)
   orch land <branch|run-id>     gate and fast-forward one explicit branch into configured trunk
+      --message TEXT            amend the branch tip's message, then gate that commit
+      --file PATH               same, reading the message from a file
       --status                  show this project's landing lock without taking it
   orch stop <id>                terminate a running run and reclaim its worktree
   orch discard <id>             delete that run's worktree (the row stays)
@@ -939,10 +941,20 @@ switch (cmd) {
       break
     }
     const value = argv[1]
-    if (!value || value.startsWith('--')) throw new Error('orch land <branch|run-id> | orch land --status')
+    if (!value || value.startsWith('--')) {
+      throw new Error('orch land <branch|run-id> [--message TEXT] [--file PATH] | orch land --status')
+    }
+    const fromMessage = flag('message')
+    const fromFile = flag('file')
+    if (fromMessage !== undefined && fromFile !== undefined) {
+      throw new Error(
+        'pass --message or --file, not both\nworking form: orch land <branch|run-id> [--message TEXT] [--file PATH]',
+      )
+    }
+    const message = fromFile !== undefined ? readFileSync(fromFile, 'utf8') : fromMessage
     const target = resolveLandingBranch(value)
     if (target.runId !== null) console.log(`run ${target.runId} resolves to branch ${target.branch}`)
-    land(process.cwd(), target.branch)
+    land(process.cwd(), target.branch, message === undefined ? {} : { message })
     break
   }
 

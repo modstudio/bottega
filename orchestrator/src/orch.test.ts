@@ -88,11 +88,13 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     }
     return { repo, trees }
   }
-  const childLand = (repo: string, branch: string) => Bun.spawn(
+  const childLand = (
+    repo: string, branch: string, options: { message?: string } = {}, extraEnv: Record<string, string> = {},
+  ) => Bun.spawn(
     [process.execPath, '-e',
-      `const { land } = await import(process.argv[1]); land(process.argv[2], process.argv[3])`,
-      landingModule, repo, branch],
-    { env: { ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB!, CLAUDE_CODE_SESSION_ID: branch },
+      `const { land } = await import(process.argv[1]); land(process.argv[2], process.argv[3], JSON.parse(process.argv[4]))`,
+      landingModule, repo, branch, JSON.stringify(options)],
+    { env: { ...hermeticGitEnv(extraEnv), ORCH_DB: process.env.ORCH_DB!, CLAUDE_CODE_SESSION_ID: branch },
       stdout: 'pipe', stderr: 'pipe' },
   )
 
@@ -325,6 +327,149 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     upsertProject({ name: 'landing-status', path: repo, settings: { trunk: 'main', gate: 'true' } })
     try { expect(landingStatus(repo)).toBe('landing-status landing lock: free\nwaiters:\n  none') }
     finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('amending the message happens before the gate and the gated commit is what reaches trunk', async () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-land-amend-')))
+    g(repo, 'init', '-b', 'main')
+    g(repo, 'config', 'user.email', 'orch-test@example.invalid')
+    g(repo, 'config', 'user.name', 'Orch Test')
+    appendFileSync(join(repo, '.git', 'info', 'exclude'), 'trees/\n')
+    writeFileSync(join(repo, 'base.txt'), 'base\n')
+    g(repo, 'add', 'base.txt')
+    g(repo, 'commit', '-m', 'base')
+    const branch = 'run-amend'
+    const tree = join(repo, 'trees', branch)
+    mkdirSync(join(repo, 'trees'), { recursive: true })
+    g(repo, 'worktree', 'add', '-b', branch, tree, 'main')
+    writeFileSync(join(tree, 'work.txt'), 'work\n')
+    g(tree, 'add', 'work.txt')
+    const authored = Bun.spawnSync(['git', 'commit', '-m', 'worker short message'], {
+      cwd: tree, env: hermeticGitEnv({
+        GIT_AUTHOR_NAME: 'Worker Identity',
+        GIT_AUTHOR_EMAIL: 'worker@example.invalid',
+        GIT_AUTHOR_DATE: '2026-01-15T12:00:00 +0000',
+        GIT_COMMITTER_NAME: 'Worker Identity',
+        GIT_COMMITTER_EMAIL: 'worker@example.invalid',
+        GIT_COMMITTER_DATE: '2026-01-15T12:00:00 +0000',
+      }), stdout: 'pipe', stderr: 'pipe',
+    })
+    if (authored.exitCode !== 0) throw new Error(authored.stderr.toString())
+    const before = g(tree, 'log', '-1', '--format=%H%n%an <%ae>%n%cn <%ce>%n%s')
+    const gate = join(repo, 'gate.sh')
+    writeFileSync(gate, `#!/bin/sh\nset -eu\ngit rev-parse HEAD > '${repo}/gated.oid'\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-amend', path: repo, settings: { trunk: 'main', gate } })
+    try {
+      const child = childLand(repo, branch, { message: 'architect fuller message' }, {
+        GIT_COMMITTER_NAME: 'Architect Identity',
+        GIT_COMMITTER_EMAIL: 'architect@example.invalid',
+        GIT_COMMITTER_DATE: '2026-09-04T18:00:00 +0000',
+      })
+      expect(await child.exited).toBe(0)
+      const gated = readFileSync(join(repo, 'gated.oid'), 'utf8').trim()
+      const landed = g(repo, 'rev-parse', 'refs/heads/main')
+      expect(gated).toBe(landed)
+      expect(g(repo, 'rev-parse', `refs/heads/${branch}`)).toBe(landed)
+      expect(g(repo, 'log', '-1', '--format=%an <%ae>', 'main'))
+        .toBe('Worker Identity <worker@example.invalid>')
+      expect(g(repo, 'log', '-1', '--format=%cn <%ce>', 'main'))
+        .toBe('Architect Identity <architect@example.invalid>')
+      expect(g(repo, 'log', '-1', '--format=%s', 'main')).toBe('architect fuller message')
+      expect(landed).not.toBe(before.split('\n')[0])
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('landing a run with a new message leaves the run branch reachable from trunk so discard does not keep it', async () => {
+    const { repo, trees } = repoWithBranches(['land-then-discard'])
+    const tree = trees['land-then-discard']!
+    upsertProject({
+      name: 'landing-then-discard', path: repo, settings: { trunk: 'main', gate: 'true' },
+    })
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
+      .run(repo, tree, 'land-then-discard', id)
+    const CLI = new URL('cli.ts', import.meta.url).pathname
+    const cliEnv = { ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' }
+    try {
+      const landed = Bun.spawnSync(
+        [process.execPath, CLI, 'land', String(id), '--message', 'architect fuller message'],
+        { cwd: repo, env: cliEnv, stdout: 'pipe', stderr: 'pipe' },
+      )
+      expect(landed.exitCode).toBe(0)
+      expect(g(repo, 'merge-base', '--is-ancestor', 'land-then-discard', 'main')).toBe('')
+      expect(g(repo, 'rev-parse', 'refs/heads/land-then-discard'))
+        .toBe(g(repo, 'rev-parse', 'refs/heads/main'))
+      const discarded = Bun.spawnSync(
+        [process.execPath, CLI, 'discard', String(id)],
+        { cwd: repo, env: cliEnv, stdout: 'pipe', stderr: 'pipe' },
+      )
+      expect(discarded.exitCode).toBe(0)
+      const discardOut = discarded.stdout.toString() + discarded.stderr.toString()
+      expect(discardOut).not.toContain('kept branch')
+      expect(discardOut).not.toContain('--force')
+      expect(g(repo, 'branch', '--list', 'land-then-discard')).toBe('')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('landing reads the amended message from --file', async () => {
+    const { repo } = repoWithBranches(['land-from-file'])
+    const body = join(repo, 'landing-message.txt')
+    writeFileSync(body, 'architect fuller message from a file\n')
+    upsertProject({
+      name: 'landing-from-file', path: repo, settings: { trunk: 'main', gate: 'true' },
+    })
+    const CLI = new URL('cli.ts', import.meta.url).pathname
+    try {
+      const landed = Bun.spawnSync(
+        [process.execPath, CLI, 'land', 'land-from-file', '--file', body],
+        { cwd: repo, env: { ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+          stdout: 'pipe', stderr: 'pipe' },
+      )
+      expect(landed.exitCode).toBe(0)
+      expect(g(repo, 'log', '-1', '--format=%s', 'main')).toBe('architect fuller message from a file')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('an empty landing message is refused before the branch moves', async () => {
+    const { repo } = repoWithBranches(['empty-message'])
+    const trunk = g(repo, 'rev-parse', 'refs/heads/main')
+    upsertProject({
+      name: 'landing-empty-message', path: repo, settings: { trunk: 'main', gate: 'true' },
+    })
+    try {
+      const child = childLand(repo, 'empty-message', { message: '   \n' })
+      expect(await child.exited).not.toBe(0)
+      expect((await new Response(child.stderr).text())).toContain('landing message is empty')
+      expect(g(repo, 'rev-parse', 'refs/heads/main')).toBe(trunk)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('amending refuses a dirty worktree and does not land', async () => {
+    const { repo, trees } = repoWithBranches(['dirty-amend'])
+    writeFileSync(join(trees['dirty-amend']!, 'dirty-amend.txt'), 'unstaged\n')
+    const trunk = g(repo, 'rev-parse', 'refs/heads/main')
+    upsertProject({
+      name: 'landing-dirty-amend', path: repo, settings: { trunk: 'main', gate: 'true' },
+    })
+    try {
+      const child = childLand(repo, 'dirty-amend', { message: 'architect fuller message' })
+      expect(await child.exited).not.toBe(0)
+      expect((await new Response(child.stderr).text())).toContain('refusing to amend a dirty worktree')
+      expect(g(repo, 'rev-parse', 'refs/heads/main')).toBe(trunk)
+      expect(g(repo, 'log', '-1', '--format=%s', 'dirty-amend')).toBe('dirty-amend')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('passing both --message and --file is refused', () => {
+    const CLI = new URL('cli.ts', import.meta.url).pathname
+    const p = Bun.spawnSync(
+      [process.execPath, CLI, 'land', '12', '--message', 'one', '--file', 'two'],
+      { env: { ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe' },
+    )
+    expect(p.exitCode).not.toBe(0)
+    expect(p.stderr.toString() + p.stdout.toString()).toContain('pass --message or --file, not both')
   })
 })
 const hermeticGitCommand =

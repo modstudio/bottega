@@ -168,6 +168,15 @@ function trunkCommit(repoRoot: string, trunk: string, guard?: SharedRefGuardEnvi
   return git(repoRoot, ['rev-parse', '--verify', `refs/heads/${trunk}^{commit}`], guard)
 }
 
+function amendLandingMessage(
+  worktree: string, message: string, guard: SharedRefGuardEnvironment,
+): void {
+  if (message.trim() === '') throw new Error('landing message is empty')
+  const dirty = git(worktree, ['status', '--porcelain=v1', '--untracked-files=all'], guard)
+  if (dirty) throw new Error(`refusing to amend a dirty worktree:\n${dirty}`)
+  git(worktree, ['commit', '--amend', '-m', message], guard)
+}
+
 function rebaseAndGate(
   project: Project, repoRoot: string, worktree: string, branch: string, trunk: string,
   trunkOid: string, guard: SharedRefGuardEnvironment,
@@ -204,7 +213,12 @@ function fastForward(
   reconcileTrunkCheckouts(trunkCheckouts, trunk, tip, expected, guard)
 }
 
-export function land(cwd: string, branch: string, timeoutMs = LANDING_LOCK_TIMEOUT_MS): string {
+export function land(
+  cwd: string,
+  branch: string,
+  options: { timeoutMs?: number; message?: string } = {},
+): string {
+  const timeoutMs = options.timeoutMs ?? LANDING_LOCK_TIMEOUT_MS
   const { project, repoRoot } = registeredProject(cwd)
   const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
   if (!trunk) throw new Error(`project ${project.name} has no trunk configured — set settings.trunk before landing`)
@@ -225,6 +239,9 @@ export function land(cwd: string, branch: string, timeoutMs = LANDING_LOCK_TIMEO
   }
 
   const guard = prepareSharedRefGuard(worktree)
+  // A message-only amend changes the commit hash. The gate must run on the
+  // commit that becomes trunk, so the message is rewritten before rebase.
+  if (options.message !== undefined) amendLandingMessage(worktree, options.message, guard)
   const recordedTrunk = trunkCommit(repoRoot, trunk, guard)
   const optimisticTip = rebaseAndGate(
     project, repoRoot, worktree, branch, trunk, recordedTrunk, guard,
