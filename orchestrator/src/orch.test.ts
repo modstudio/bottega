@@ -4938,10 +4938,77 @@ echo 'Usage: scripts/worktree create [seed]'
       })
       expect(p.exitCode).not.toBe(0)
       expect(p.stderr.toString()).toContain('protected work')
+      expect(p.stderr.toString()).toContain(
+        "Inspect and resolve the protected work with the project's own tooling",
+      )
+      expect(p.stderr.toString()).toContain(
+        "--force will not override a project tool's refusal unless the tree carries orch's " +
+        '.orch-run ownership marker',
+      )
+      expect(p.stderr.toString()).not.toContain('Look before overriding')
       expect(existsSync(tree.path)).toBe(true)
       const row = db().query('SELECT worktree FROM run WHERE id=?').get(id) as
         { worktree: string | null }
       expect(row.worktree).toBe(tree.path)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('discard --force does not override a project tool for a tree orch did not create', () => {
+    const { repo } = scratchRepo()
+    const path = join(repo, '.claude', 'worktrees', 'operator-tree')
+    git(repo, 'worktree', 'add', '-b', 'operator-tree', path, 'main')
+    writeFileSync(join(path, 'operator.txt'), 'protected work\n')
+    upsertProject({
+      name: 'refusing-operator-tool', path: realpathSync(repo),
+      settings: { worktree: { remove: "echo 'protected operator work' >&2; exit 7" } },
+    })
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    db().query('UPDATE run SET worktree=?, branch=? WHERE id=?')
+      .run(path, 'operator-tree', id)
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id), '--force'], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(p.exitCode).not.toBe(0)
+      expect(p.stderr.toString()).toContain('protected operator work')
+      expect(p.stderr.toString()).toContain(
+        "--force will not override a project tool's refusal unless the tree carries orch's " +
+        '.orch-run ownership marker',
+      )
+      expect(existsSync(path)).toBe(true)
+      expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
+        .toEqual({ worktree: path })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('discard --force removes a dirty orch-created tree after its project tool refuses', () => {
+    const { repo } = scratchRepo()
+    const tree = createWorktree(repo, 889)
+    writeFileSync(join(tree.path, 'scratch.txt'), 'worker scratch state\n')
+    upsertProject({
+      name: 'refusing-orch-tool', path: realpathSync(repo),
+      settings: { worktree: { remove: "echo 'dirty tree refused' >&2; exit 7" } },
+    })
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    db().query('UPDATE run SET worktree=?, branch=? WHERE id=?')
+      .run(tree.path, tree.branch, id)
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id), '--force'], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(p.exitCode).toBe(0)
+      expect(existsSync(tree.path)).toBe(false)
+      expect(git(repo, 'branch', '--list', tree.branch)).toBe('')
+      expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
+        .toEqual({ worktree: null })
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }

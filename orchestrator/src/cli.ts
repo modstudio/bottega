@@ -344,7 +344,7 @@ async function discardWorktree(
     branch: row.branch ?? `orch/${row.id}`,
     base: '',
     repoRoot,
-  }, repoRoot)
+  }, repoRoot, force)
   if (protectedBranch && row.branch) restoreBranch(repoRoot, row.branch, protectedBranch.tip)
   if (!r.removed) throw new Error(r.detail)
   db().query('UPDATE run SET worktree = NULL, branch_kept = ? WHERE id = ?')
@@ -676,7 +676,9 @@ function usage(): never {
       several questions: orch answer <id> --q<qid> "<ruling>" --q<qid> "<ruling>"
   orch diff <id>                inspect a run's worktree diff (review diffs are scratch)
   orch stop <id>                terminate a running run and leave its worktree intact
-  orch discard <id> [--force]   delete that run's worktree and branch (the row stays)
+  orch discard <id>             delete that run's worktree (the row stays)
+      --force                   also delete a protected branch; bypass a refusing project tool
+                                only for a tree marked as created by orch
   orch abandon <id> [--note "..."] [--force] retire an asking run and clean up its worktree
   orch sweep [--older-than N] [--force] [--dry-run]
       reclaim finished runs' worktrees AND the databases behind them; keeps

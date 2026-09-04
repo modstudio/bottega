@@ -991,7 +991,8 @@ export function changesIn(w: Worktree): Changes {
  * how a machine fills up with databases nobody can name.
  */
 export function removeWithTool(
-  tool: WorktreeTool, w: Worktree, ): { removed: boolean; detail: string } {
+  tool: WorktreeTool, w: Worktree, forceOrchTree = false,
+): { removed: boolean; detail: string } {
   const name = w.path.split('/').pop() ?? w.path
 
   // A recipe-built tree is torn down the same way it was made: bottega
@@ -1015,8 +1016,17 @@ export function removeWithTool(
   const r = runTool(tool.remove, { name, branch: w.branch, path: w.path }, w.repoRoot)
   if (r.ok && !existsSync(w.path)) return { removed: true, detail: w.path }
 
+  // The marker is the proof that orch made and owns this disposable checkout.
+  // A project's removal guard can therefore be forced only when the operator
+  // explicitly asked and this exact proof is still present. Names and branch
+  // templates also recognise old trees for sweep, but are deliberately not
+  // strong enough evidence for destructive fallback here.
+  if (forceOrchTree && existsSync(join(w.path, ORCH_RUN_MARKER))) {
+    return removeWorktree(w)
+  }
+
   /**
-   * A PROJECT'S REFUSAL IS FINAL. Never retry with force.
+   * A PROJECT'S REFUSAL IS FINAL UNLESS THE OPERATOR FORCES AN ORCH-OWNED TREE.
    *
    * This used to fall through to plain `git worktree remove --force` when the
    * tool exited non-zero, which is the ordinary orchestrator mistake and the
@@ -1027,7 +1037,7 @@ export function removeWithTool(
    * one is not. Our worker contract scopes a worker to commit-only, so a dirty
    * tree it left behind may be the ONLY copy of what it did.
    *
-   * Forcing past that automatically is the same class of act as a worker
+   * Forcing past that for an unmarked tree is the same class of act as a worker
    * pushing its own change: a destructive decision belonging to the architect,
    * taken by machinery on their behalf. So the refusal is surfaced instead. A
    * leftover worktree costs a directory and a database name, and the project's
@@ -1038,14 +1048,19 @@ export function removeWithTool(
     detail:
       `${w.path} was NOT removed — the project's own tool refused, and orch will not ` +
       `force past that:\n${r.out.slice(-600) || `exit code from ${tool.remove}`}\n\n` +
-      `Those refusals guard uncommitted work and unmerged branches. Look before overriding.`,
+      `Those refusals guard uncommitted work and unmerged branches. Inspect and resolve ` +
+      `the protected work with the project's own tooling, then run orch discard again. ` +
+      `--force will not override a project tool's refusal unless the tree carries orch's ` +
+      `${ORCH_RUN_MARKER} ownership marker.`,
   }
 }
 
 /** Remove a tree through the lifecycle declared by its registered project. */
-export function removeFor(w: Worktree, repoRoot: string): { removed: boolean; detail: string } {
+export function removeFor(
+  w: Worktree, repoRoot: string, forceOrchTree = false,
+): { removed: boolean; detail: string } {
   const tool = projectAt(repoRoot)?.settings.worktree
-  return tool ? removeWithTool(tool, w) : removeWorktree(w)
+  return tool ? removeWithTool(tool, w, forceOrchTree) : removeWorktree(w)
 }
 
 /** Reclaim orphans the project knows about — databases, containers, metadata. */
