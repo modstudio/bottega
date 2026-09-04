@@ -502,7 +502,7 @@ What hub reads is published deliberately, never by opening `orch.db`:
 ```
 orch state [--days N]   the whole payload: guide, matrix, health, totals, gate
 orch run <id>           one run's detail, prompt and reply included
-orch runs --json        the run list, with cwd and session id
+orch runs --json        the run list as one JSON object per line, with cwd and session id
 orch score --scorer W   a verdict from a UI, recording who gave it
 ```
 

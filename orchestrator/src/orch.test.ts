@@ -3473,6 +3473,71 @@ describe('detached run collection', () => {
      VALUES (?, 'codex', ?, 'x', 1, 'x', ?) RETURNING id`,
   ).get(new Date().toISOString(), job, status) as { id: number }).id
 
+  test('every --json surface has an enumerated and pinned output contract', () => {
+    upsertProject({ name: 'json-source', path: '/w/json-source', settings: {} })
+    upsertProject({ name: 'json-target', path: '/w/json-target',
+      settings: { keyPrefixes: ['TGT'] } })
+    setDoc({ scope: 'global', subject: null, slug: 'json-show', title: 'Show', body: 'body' })
+    setDoc({
+      scope: 'global', subject: null, slug: 'json-consume', title: 'Consume',
+      body: '---\nstatus: open\nepic: json\nproject: json-target\nwritten: 2026-09-04T00:00:00.000Z\n---\n\nNEXT ACTION\n',
+    })
+    setDoc({ scope: 'global', subject: null, slug: 'json-rm', title: 'Remove', body: 'body' })
+    const sources = JSON.stringify([
+      { project: 'json-source', commits: ['abc'], paths: ['src/a.ts'], note: 'origin' },
+    ])
+
+    const documents: { command: string; args: string[]; stdin?: string }[] = [
+      { command: 'review calibration', args: ['review', 'calibration', 'safety', 'codex', 'model', '--json'] },
+      { command: 'search', args: ['search', 'no-match', '--json'] },
+      { command: 'blockers', args: ['blockers', '--json'] },
+      { command: 'inbox', args: ['inbox', '--all', '--json'] },
+      { command: 'project list', args: ['project', 'list', '--json'] },
+      { command: 'project add', args: ['project', 'add', dir, '--name', 'json-added', '--no-canon', '--json'] },
+      { command: 'project set', args: ['project', 'set', 'json-added', '--stack', 'node', '--json'] },
+      { command: 'doc list', args: ['doc', 'list', '--json'] },
+      { command: 'doc show', args: ['doc', 'show', 'json-show', '--scope', 'global', '--json'] },
+      { command: 'doc set', args: ['doc', 'set', 'json-set', '--scope', 'global', '--title', 'Set', '--json'], stdin: 'body' },
+      { command: 'doc consume', args: ['doc', 'consume', 'json-consume', '--scope', 'global', '--json'] },
+      { command: 'doc rm', args: ['doc', 'rm', 'json-rm', '--scope', 'global', '--json'] },
+      { command: 'doc subjects', args: ['doc', 'subjects', '--json'] },
+      { command: 'port baseline show', args: ['port', 'baseline', 'show', 'json-source', 'json-target', '--json'] },
+      { command: 'port baseline set', args: ['port', 'baseline', 'set', 'json-source', 'json-target', 'abc', '--json'] },
+      { command: 'port skip list', args: ['port', 'skip', 'list', 'json-source', 'json-target', '--json'] },
+      { command: 'port skip add', args: ['port', 'skip', 'add', 'json-source', 'json-target', 'old', '--reason', 'superseded', '--json'] },
+      { command: 'port ref set', args: ['port', 'ref', 'set', 'TGT-210', '--sources', sources, '--note', 'native', '--json'] },
+      { command: 'port ref list', args: ['port', 'ref', 'list', '--all', '--json'] },
+      { command: 'port ref show', args: ['port', 'ref', 'show', 'TGT-210', '--json'] },
+      { command: 'port ref resolve', args: ['port', 'ref', 'resolve', 'TGT-210', '--json'] },
+      { command: 'port ref delete-error', args: ['port', 'ref', 'delete-error', 'TGT-210', '--json'] },
+      { command: 'port doctrine add', args: ['port', 'doctrine', 'add', '210', '--title', 'Native', '--json'], stdin: 'Adapt natively.' },
+      { command: 'port doctrine list', args: ['port', 'doctrine', 'list', '--all', '--json'] },
+      { command: 'port doctrine retire', args: ['port', 'doctrine', 'retire', '210', '--json'] },
+    ]
+
+    expect(documents).toHaveLength(25)
+    for (const surface of documents) {
+      const result = orchInput(surface.args, surface.stdin)
+      expect(result.code, surface.command).toBe(0)
+      expect(result.err, surface.command).toBe('')
+      expect(() => JSON.parse(result.out), surface.command).not.toThrow()
+    }
+
+    insert('ok')
+    insert('ok')
+    const runs = orch('runs', '--json')
+    expect(runs.code).toBe(0)
+    expect(runs.err).toBe('')
+    expect(() => JSON.parse(runs.out)).toThrow()
+    const lines = runs.out.trim().split('\n')
+    expect(lines).toHaveLength(2)
+    for (const line of lines) expect(JSON.parse(line)).toMatchObject({ id: expect.any(Number) })
+
+    const help = orch('--help').out
+    expect(help.match(/one JSON document/g)).toHaveLength(documents.length)
+    expect(help.match(/one JSON object per line/g)).toHaveLength(1)
+  })
+
   test('the detached spec mapping forwards every field to run', () => {
     const resume = {
       parent: 11, agent: 'codex', session: 'session', turn: 2, sessionId: 'owner',

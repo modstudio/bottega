@@ -708,12 +708,12 @@ function usage(): never {
   orch review triage <review-id> <finding> <accepted|modified|rejected|skipped>
       --category <name>         required rejection category for rejected findings
   orch review complete <review-id> mark a fully triaged review complete
-  orch review calibration <lens> <agent> <model> [--json]
+  orch review calibration <lens> <agent> <model> [--json]  (--json: one JSON document)
   orch pending                  runs YOU made that are still unscored (exit 1 if any)
   orch runs [--id ID]... [--job X] [--agent Y] [--limit N] [--unscored] [--since ISO] [--json]
       --id queries exactly those run ids; repeat it for a union of ids
       --id and --since cannot be combined
-      --json prints JSON Lines with cwd and session id: the interface hub reads
+      --json                    print one JSON object per line, with cwd and session id: the interface hub reads
   orch stats [--job X]          success rate per agent per job
   orch guide [--job X]          what to use for what: best, quickest, and what is still a guess
   orch spawns [--limit N]       what the subagent gate allowed and denied, and why
@@ -727,12 +727,13 @@ function usage(): never {
   orch search <query>           consult score notes, rulings, review findings, and saved outputs
       --limit <n>               compact results to return (default 20)
       --full                    include the complete matched records after choosing them
-      --json                    print one JSON object, including unavailable output count
+      --json                    print one JSON document, including unavailable output count
   orch metric [collect]         Claude tokens per shipped task (the ratio this exists to move)
   orch blockers [--days N] [--json]
       what stopped agents verifying their work, ordered by recurrence
-      --json is the published surface other concerns read (never orch.db)
+      --json                    print one JSON document (the published surface; never orch.db)
   orch inbox [--all] [--json]   design questions a worker is waiting on you to rule on
+      --json                    print one JSON document
   orch tell <id> ["<message>"]   queue non-authoritative context for a running worker
       --file <path>             read a long message from a file
   orch setup-ask                register the live ask channel with codex and grok
@@ -761,31 +762,32 @@ function usage(): never {
       prints every matched row and before/after counts before writing
   orch doctor                   agents, local endpoint, routing at a glance
   orch project [list] [--json]  the register: where work lives, and what it is built from
-      --json is the published surface other concerns read (never orch.db)
-      add <path> [--name X] [--stack Y] [--no-canon] [--json]
-      set <name> [--stack X] [--path P] [--canon|--no-canon] [--settings JSON] [--json]
+      --json                    print one JSON document (the published surface; never orch.db)
+      add <path> [--name X] [--stack Y] [--no-canon] [--json]  (--json: one JSON document)
+      set <name> [--stack X] [--path P] [--canon|--no-canon] [--settings JSON] [--json]  (--json: one JSON document)
           JSON null deletes that settings key; objects merge deeply
           --allow-incomplete    save a create command missing branch or seed configuration
       remove <name>
-  orch doc list [--scope S] [--subject X] [--json]
-      show <slug> --scope S [--subject X] [--json]
-      set <slug> --scope S [--subject X] --title T (--file F | body on stdin) [--json]
-      consume <slug> --scope S [--subject X] [--json]
-      rm <slug> --scope S [--subject X] [--json]
-      subjects [--json]
+  orch doc list [--scope S] [--subject X] [--json]  (--json: one JSON document)
+      show <slug> --scope S [--subject X] [--json]  (--json: one JSON document)
+      set <slug> --scope S [--subject X] --title T (--file F | body on stdin) [--json]  (--json: one JSON document)
+      consume <slug> --scope S [--subject X] [--json]  (--json: one JSON document)
+      rm <slug> --scope S [--subject X] [--json]  (--json: one JSON document)
+      subjects [--json]  (--json: one JSON document)
       export <dir> | import <dir> | brief [--cwd P] | resumes [--cwd P]
-  orch port baseline show <source> <target> [--json]
-      baseline set <source> <target> <commit> [--clear] [--json]
-      skip list <source> <target> [--json]
-      skip add <source> <target> <candidate> --reason TEXT [--json]
-      ref list [--all] [--json] | show <task-key> [--json]
-      ref set <task-key> --sources JSON --note TEXT [--json]
+  orch port baseline show <source> <target> [--json]  (--json: one JSON document)
+      baseline set <source> <target> <commit> [--clear] [--json]  (--json: one JSON document)
+      skip list <source> <target> [--json]  (--json: one JSON document)
+      skip add <source> <target> <candidate> --reason TEXT [--json]  (--json: one JSON document)
+      ref list [--all] [--json]  (--json: one JSON document)
+      ref show <task-key> [--json]  (--json: one JSON document)
+      ref set <task-key> --sources JSON --note TEXT [--json]  (--json: one JSON document)
           sources: [{"project":"name","commits":[...],"paths":[...],"note":"..."}]
-      ref resolve <task-key> [--json]
-      ref delete-error <task-key> [--json]   correction only; permanently deletes provenance
-      doctrine list [--all] [--json]
-      doctrine add <number> --title T (--file F | body on stdin) [--json]
-      doctrine retire <number> [--json]
+      ref resolve <task-key> [--json]  (--json: one JSON document)
+      ref delete-error <task-key> [--json]  (--json: one JSON document; correction only)
+      doctrine list [--all] [--json]  (--json: one JSON document)
+      doctrine add <number> --title T (--file F | body on stdin) [--json]  (--json: one JSON document)
+      doctrine retire <number> [--json]  (--json: one JSON document)
   orch mcp [--config]          serve project, doc, and port tools over stdio
   orch jobs                     list job types
   orch agents                   list agents and availability

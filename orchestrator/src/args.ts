@@ -32,7 +32,7 @@ function commandShape(argv: string[]): { args: string[]; shape: CommandShape } |
       const forms: Record<string, CommandShape> = {
         list: shape('orch doc list [--scope S] [--subject X] [--json]', 0, ['--scope', '--subject'], ['--json']),
         show: shape('orch doc show <slug> --scope S [--subject X] [--json]', 1, ['--scope', '--subject'], ['--json']),
-        set: shape('orch doc set <slug> --scope S [--subject X] --title T (--file F | body on stdin)', 1, ['--scope', '--subject', '--title', '--file'], ['--json']),
+        set: shape('orch doc set <slug> --scope S [--subject X] --title T (--file F | body on stdin) [--json]', 1, ['--scope', '--subject', '--title', '--file'], ['--json']),
         consume: shape('orch doc consume <slug> --scope S [--subject X] [--json]', 1, ['--scope', '--subject'], ['--json']),
         rm: shape('orch doc rm <slug> --scope S [--subject X] [--json]', 1, ['--scope', '--subject'], ['--json']),
         subjects: shape('orch doc subjects [--json]', 0, [], ['--json']),
