@@ -45,8 +45,14 @@ function easternTime(value: string, includeDay = false) {
 
 function Verdict({ row }: { row: RunRow }) {
   if (row.running) return <span className="inline-flex items-center gap-2 text-live"><LiveDot />running</span>
-  if (row.delivery) return <Badge variant={row.quality === 'wrong' ? 'destructive' : 'outline'}>{row.delivery}{row.quality ? ` / ${row.quality}` : ''}</Badge>
-  if (row.status !== 'ok') return <Badge variant="destructive">{row.status}</Badge>
+  if (row.delivery) {
+    const variant = row.quality === 'wrong' || row.delivery === 'none' ? 'danger'
+      : row.quality === 'mixed' || row.delivery === 'partial' ? 'warning'
+        : row.quality === 'right' || row.delivery === 'full' ? 'success'
+          : 'outline'
+    return <Badge variant={variant}>{row.delivery}{row.quality ? ` / ${row.quality}` : ''}</Badge>
+  }
+  if (row.status !== 'ok') return <Badge variant="danger">{row.status}</Badge>
   if (row.probe) return <span className="text-muted-foreground">probe</span>
   return <span>Unscored</span>
 }

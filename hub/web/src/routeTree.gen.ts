@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as BoardRouteImport } from './routes/board'
+import { Route as DesignRouteImport } from './routes/design'
 import { Route as DocsRouteImport } from './routes/docs'
 import { Route as DoneRouteImport } from './routes/done'
 import { Route as FlightRouteImport } from './routes/flight'
@@ -32,6 +33,11 @@ const IndexRoute = IndexRouteImport.update({
 const BoardRoute = BoardRouteImport.update({
   id: '/board',
   path: '/board',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DesignRoute = DesignRouteImport.update({
+  id: '/design',
+  path: '/design',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DocsRoute = DocsRouteImport.update({
@@ -98,6 +104,7 @@ const DocsScopeSubjectSlugRoute = DocsScopeSubjectSlugRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/board': typeof BoardRoute
+  '/design': typeof DesignRoute
   '/docs': typeof DocsRouteWithChildren
   '/done': typeof DoneRoute
   '/flight': typeof FlightRoute
@@ -114,6 +121,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/board': typeof BoardRoute
+  '/design': typeof DesignRoute
   '/docs': typeof DocsRouteWithChildren
   '/done': typeof DoneRoute
   '/flight': typeof FlightRoute
@@ -131,6 +139,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/board': typeof BoardRoute
+  '/design': typeof DesignRoute
   '/docs': typeof DocsRouteWithChildren
   '/done': typeof DoneRoute
   '/flight': typeof FlightRoute
@@ -149,6 +158,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/board'
+    | '/design'
     | '/docs'
     | '/done'
     | '/flight'
@@ -165,6 +175,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/board'
+    | '/design'
     | '/docs'
     | '/done'
     | '/flight'
@@ -181,6 +192,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/board'
+    | '/design'
     | '/docs'
     | '/done'
     | '/flight'
@@ -198,6 +210,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BoardRoute: typeof BoardRoute
+  DesignRoute: typeof DesignRoute
   DocsRoute: typeof DocsRouteWithChildren
   DoneRoute: typeof DoneRoute
   FlightRoute: typeof FlightRoute
@@ -223,6 +236,13 @@ declare module '@tanstack/react-router' {
       path: '/board'
       fullPath: '/board'
       preLoaderRoute: typeof BoardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/design': {
+      id: '/design'
+      path: '/design'
+      fullPath: '/design'
+      preLoaderRoute: typeof DesignRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/docs': {
@@ -347,6 +367,7 @@ const RunsRouteWithChildren = RunsRoute._addFileChildren(RunsRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BoardRoute: BoardRoute,
+  DesignRoute: DesignRoute,
   DocsRoute: DocsRouteWithChildren,
   DoneRoute: DoneRoute,
   FlightRoute: FlightRoute,

@@ -72,8 +72,10 @@ export function responseSubtitle(response: { collectedAt: string | null; activeA
  * (settings.color / settings.colorDark), so the app reads them from the same
  * project list every screen already loads.
  */
-export function useProjectColors(): Record<string, { light: string | null; dark: string | null }> {
-  const list = useQuery({ ...trpc.project.list.queryOptions(), staleTime: 60_000 })
+export type ProjectColors = Record<string, { light: string | null; dark: string | null }>
+
+export function useProjectColors(enabled = true): ProjectColors {
+  const list = useQuery({ ...trpc.project.list.queryOptions(), staleTime: 60_000, enabled })
   const out: Record<string, { light: string | null; dark: string | null }> = {}
   for (const project of list.data ?? []) {
     const settings = project.settings as { color?: string; colorDark?: string }
@@ -89,7 +91,8 @@ export function projectVars(colors: ReturnType<typeof useProjectColors>, name: s
 }
 
 /** A project name with its colour bar; "elsewhere" when the row has none. */
-export function ProjectMark({ name }: { name: string | null | undefined }) {
-  const colors = useProjectColors()
+export function ProjectMark({ name, colors: suppliedColors }: { name: string | null | undefined; colors?: ProjectColors }) {
+  const queriedColors = useProjectColors(!suppliedColors)
+  const colors = suppliedColors ?? queriedColors
   return <span className="proj" style={projectVars(colors, name)}>{name || 'elsewhere'}</span>
 }

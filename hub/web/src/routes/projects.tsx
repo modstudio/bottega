@@ -19,15 +19,15 @@ import { queryClient, trpc, type ProjectRow } from '@/trpc/client'
 function TrackerState({ project }: { project: ProjectRow }) {
   const status = project.trackerStatus
   if (status.state === 'not-configured') {
-    return <span className="text-muted-foreground">not configured</span>
+    return <Badge variant="outline">not configured</Badge>
   }
   if (status.state === 'unusable') {
     return <div>
-      <Badge variant="destructive">unusable</Badge>
+      <Badge variant="danger">unusable</Badge>
       <div className="mt-1 max-w-xs text-[11px] text-destructive">{status.error}</div>
     </div>
   }
-  return <div><Badge variant="outline">configured</Badge> <span>{status.label}</span></div>
+  return <div><Badge variant="success">configured</Badge> <span>{status.label}</span></div>
 }
 
 function worktreeMode(settings: ProjectRow['settings']) {
