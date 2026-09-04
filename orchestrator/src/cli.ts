@@ -741,7 +741,7 @@ function usage(): never {
       what stopped agents verifying their work, ordered by recurrence
       --json                    print one JSON document (the published surface; never orch.db)
   orch monitor [--backstop]     detect, record, report, and safely reconcile machine state
-      --history [--limit N]     query recorded invocations and condition ages
+      --history [--limit N]     query recorded invocations; --json emits one JSON document
       --json                    emit one JSON document; silent on a clean live pass
   orch inbox [--all] [--json]   design questions a worker is waiting on you to rule on
       --json                    print one JSON document

@@ -660,6 +660,11 @@ the cause` } }
 
 describe('operational monitor record', () => {
   test('pipes a complete large JSON report before returning its condition status', () => {
+    const hubDb = join(dir, 'monitor-large-report-hub.db')
+    const binDir = join(dir, 'monitor-large-report-bin')
+    mkdirSync(binDir)
+    writeFileSync(join(binDir, 'docker'), '#!/bin/sh\nexit 0\n')
+    chmodSync(join(binDir, 'docker'), 0o755)
     const prior = (db().query(
       `INSERT INTO monitor_invocation (started_at,finished_at,trigger,findings,errors)
        VALUES ('2026-09-04T00:00:00Z','2026-09-04T00:00:01Z','backstop',1,0) RETURNING id`,
@@ -677,7 +682,10 @@ describe('operational monitor record', () => {
 
     const cli = new URL('cli.ts', import.meta.url).pathname
     const run = Bun.spawnSync([process.execPath, cli, 'monitor', '--json'], {
-      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+      env: {
+        ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0', HUB_DB: hubDb,
+        PATH: `${binDir}:${process.env.PATH ?? ''}`,
+      },
       stdout: 'pipe', stderr: 'pipe',
     })
     const output = run.stdout.toString()
@@ -4453,13 +4461,14 @@ describe('recalibrating the scorer', () => {
 
 describe('detached run collection', () => {
   const CLI = new URL('cli.ts', import.meta.url).pathname
-  const orchInput = (args: string[], stdin?: string) => {
+  const orchInput = (args: string[], stdin?: string, extraEnv: Record<string, string> = {}) => {
     const p = Bun.spawnSync([process.execPath, CLI, ...args], {
       // The suite may itself be run by an orch worker. CLI behavior under test
       // starts at the user boundary, not at the inherited delegation depth.
       env: {
         ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
         CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+        ...extraEnv,
       },
       stdin: stdin !== undefined ? new TextEncoder().encode(stdin) : undefined,
       stdout: 'pipe', stderr: 'pipe',
@@ -4477,6 +4486,15 @@ describe('detached run collection', () => {
   ).get(new Date().toISOString(), job, status) as { id: number }).id
 
   test('every --json surface has an enumerated and pinned output contract', () => {
+    const monitorDb = join(dir, 'json-contract-orch.db')
+    const hubDb = join(dir, 'json-contract-hub.db')
+    const binDir = join(dir, 'json-contract-bin')
+    mkdirSync(binDir)
+    writeFileSync(join(binDir, 'docker'), '#!/bin/sh\nexit 0\n')
+    chmodSync(join(binDir, 'docker'), 0o755)
+    const monitorEnv = {
+      ORCH_DB: monitorDb, HUB_DB: hubDb, PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    }
     upsertProject({ name: 'json-source', path: '/w/json-source', settings: {} })
     upsertProject({ name: 'json-target', path: '/w/json-target',
       settings: { keyPrefixes: ['TGT'] } })
@@ -4490,7 +4508,9 @@ describe('detached run collection', () => {
       { project: 'json-source', commits: ['abc'], paths: ['src/a.ts'], note: 'origin' },
     ])
 
-    const documents: { command: string; args: string[]; stdin?: string }[] = [
+    const documents: {
+      command: string; args: string[]; stdin?: string; env?: Record<string, string>; code?: number
+    }[] = [
       { command: 'review calibration', args: ['review', 'calibration', 'safety', 'codex', 'model', '--json'] },
       { command: 'search', args: ['search', 'no-match', '--json'] },
       { command: 'blockers', args: ['blockers', '--json'] },
@@ -4516,12 +4536,15 @@ describe('detached run collection', () => {
       { command: 'port doctrine add', args: ['port', 'doctrine', 'add', '210', '--title', 'Native', '--json'], stdin: 'Adapt natively.' },
       { command: 'port doctrine list', args: ['port', 'doctrine', 'list', '--all', '--json'] },
       { command: 'port doctrine retire', args: ['port', 'doctrine', 'retire', '210', '--json'] },
+      { command: 'monitor history', args: ['monitor', '--history', '--json'], env: monitorEnv },
+      { command: 'monitor', args: ['monitor', '--json'], code: 1,
+        env: monitorEnv },
     ]
 
-    expect(documents).toHaveLength(25)
+    expect(documents).toHaveLength(27)
     for (const surface of documents) {
-      const result = orchInput(surface.args, surface.stdin)
-      expect(result.code, surface.command).toBe(0)
+      const result = orchInput(surface.args, surface.stdin, surface.env)
+      expect(result.code, surface.command).toBe(surface.code ?? 0)
       expect(result.err, surface.command).toBe('')
       expect(() => JSON.parse(result.out), surface.command).not.toThrow()
     }
@@ -4537,7 +4560,7 @@ describe('detached run collection', () => {
     for (const line of lines) expect(JSON.parse(line)).toMatchObject({ id: expect.any(Number) })
 
     const help = orch('--help').out
-    expect(help.match(/one JSON document/g)).toHaveLength(documents.length + 1)
+    expect(help.match(/one JSON document/g)).toHaveLength(documents.length)
     expect(help.match(/one JSON object per line/g)).toHaveLength(1)
   })
 
