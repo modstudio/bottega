@@ -76,6 +76,20 @@ more than it fixed. `ops/` refreshes main checkouts only.
 
 **After cloning:** `git config core.hooksPath .githooks`. The commit-msg hook there refuses AI attribution in commit messages; the matching Claude Code hook lives in `orchestrator/hooks/no-attribution.py`.
 
+**There is a remote, and landing does not use it.** `origin` is
+`modstudio/bottega`, private. For most of this repository's life there was none,
+and that was invisible until a day of landings went wrong on the only copy of the
+work that existed — a killed landing, a stripped ref guard, a staged revert and a
+stale ref lock, each operating on state nothing else held. Nothing was lost; the
+recovery from any of them going differently would have had nothing to recover
+from.
+
+So the remote is an OFF-MACHINE COPY, not a step in any workflow. `orch land`
+still merges fast-forward into local trunk and **never pushes**, and that is
+unchanged — pushing is a separate, deliberate act. A branch that has landed is
+safe from a bad reset only once someone has pushed it, and nothing does that for
+you.
+
 ## Tasks
 
 Work here is tracked in `hub`, and every task carries a `DEV-` key:
