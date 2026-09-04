@@ -55,7 +55,7 @@ describe('task CLI bodies', () => {
   })
 
   test('creates a task complete with an argv body in one command', () => {
-    const created = hub('task', 'new', '--project', 'workshop', '--title', 'Complete task',
+    const created = hub('task', 'new', '--project', 'alpha', '--title', 'Complete task',
       '--body', 'The complete body')
 
     expect(created.exitCode).toBe(0)
@@ -66,7 +66,7 @@ describe('task CLI bodies', () => {
     const path = join(dir, 'body.txt')
     writeFileSync(path, 'A body with\nmultiple lines.\n')
 
-    const created = hub('task', 'new', '--project', 'workshop', '--title', 'File body',
+    const created = hub('task', 'new', '--project', 'alpha', '--title', 'File body',
       '--body-file', path)
 
     expect(created.exitCode).toBe(0)
@@ -74,7 +74,7 @@ describe('task CLI bodies', () => {
   })
 
   test('refuses to replace a non-empty body and --force permits it', () => {
-    const created = hub('task', 'new', '--project', 'workshop', '--title', 'Guarded',
+    const created = hub('task', 'new', '--project', 'alpha', '--title', 'Guarded',
       '--body', 'Hand-written work that must survive')
     const refused = hub('task', 'set', created.stdout, '--body', 'Replacement')
 
@@ -89,11 +89,11 @@ describe('task CLI bodies', () => {
   })
 
   test('allows replacing an empty body but refuses a whitespace-only body', () => {
-    const empty = hub('task', 'new', '--project', 'workshop', '--title', 'Empty', '--body', '')
+    const empty = hub('task', 'new', '--project', 'alpha', '--title', 'Empty', '--body', '')
     expect(hub('task', 'set', empty.stdout, '--body', 'Now filled').exitCode).toBe(0)
     expect(show(empty.stdout).body).toBe('Now filled')
 
-    const whitespace = hub('task', 'new', '--project', 'workshop', '--title', 'Whitespace',
+    const whitespace = hub('task', 'new', '--project', 'alpha', '--title', 'Whitespace',
       '--body', '   \n')
     const refused = hub('task', 'set', whitespace.stdout, '--body', 'Replacement')
     expect(refused.exitCode).toBe(1)
@@ -104,7 +104,7 @@ describe('task CLI bodies', () => {
 
 describe('task CLI dash-leading values', () => {
   test('stores a title that begins with two dashes verbatim', () => {
-    const created = hub('task', 'new', '--project', 'workshop',
+    const created = hub('task', 'new', '--project', 'alpha',
       '--title', '--base is advertised unconditionally ...', '--body', '...')
 
     expect(created.exitCode).toBe(0)
@@ -115,7 +115,7 @@ describe('task CLI dash-leading values', () => {
   })
 
   test('stores a body that begins with a dash verbatim', () => {
-    const created = hub('task', 'new', '--project', 'workshop', '--title', 'Flag body',
+    const created = hub('task', 'new', '--project', 'alpha', '--title', 'Flag body',
       '--body', '--force is the override, not the default')
 
     expect(created.exitCode).toBe(0)
@@ -126,7 +126,7 @@ describe('task CLI dash-leading values', () => {
     const path = join(dir, '--dash-body.txt')
     writeFileSync(path, 'Body from a dash-leading path.\n')
 
-    const created = hub('task', 'new', '--project', 'workshop', '--title', 'Dash path',
+    const created = hub('task', 'new', '--project', 'alpha', '--title', 'Dash path',
       '--body-file', path)
 
     expect(created.exitCode).toBe(0)
@@ -134,7 +134,7 @@ describe('task CLI dash-leading values', () => {
   })
 
   test('task set keeps a dash-leading title', () => {
-    const created = hub('task', 'new', '--project', 'workshop', '--title', 'Before')
+    const created = hub('task', 'new', '--project', 'alpha', '--title', 'Before')
     const updated = hub('task', 'set', created.stdout, '--title', '--after the flag')
 
     expect(updated.exitCode).toBe(0)
@@ -142,7 +142,7 @@ describe('task CLI dash-leading values', () => {
   })
 
   test('an omitted title still reports as missing', () => {
-    const result = hub('task', 'new', '--project', 'workshop', '--body', '...')
+    const result = hub('task', 'new', '--project', 'alpha', '--body', '...')
 
     expect(result.exitCode).toBe(1)
     expect(result.stderr).toContain('--title is required')
@@ -158,7 +158,7 @@ describe('task CLI dash-leading values', () => {
 
 describe('task documents', () => {
   test('prints a reusable bare id even when color is forced', () => {
-    const task = hub('task', 'new', '--project', 'workshop', '--title', 'Bare document id')
+    const task = hub('task', 'new', '--project', 'alpha', '--title', 'Bare document id')
     const created = Bun.spawnSync(
       ['bun', cli, 'task', 'doc', 'new', task.stdout, '--title', 'Colorless value'],
       {
@@ -176,7 +176,7 @@ describe('task documents', () => {
   })
 
   test('creates several documents and keeps task show compact', () => {
-    const task = hub('task', 'new', '--project', 'workshop', '--title', 'Documented task',
+    const task = hub('task', 'new', '--project', 'alpha', '--title', 'Documented task',
       '--body', 'A short description.')
     const rulings = hub('task', 'doc', 'new', task.stdout, '--title', 'Rulings',
       '--body', 'Long ruling body that is read separately.')
@@ -197,7 +197,7 @@ describe('task documents', () => {
   })
 
   test('only known roles are accepted and a task has at most one document in a role', () => {
-    const task = hub('task', 'new', '--project', 'workshop', '--title', 'Role owner')
+    const task = hub('task', 'new', '--project', 'alpha', '--title', 'Role owner')
     expect(hub('task', 'doc', 'new', task.stdout, '--title', 'Question',
       '--role', 'request').stderr).toContain("invalid document role 'request'")
     expect(hub('task', 'doc', 'new', task.stdout, '--title', 'First',
@@ -210,7 +210,7 @@ describe('task documents', () => {
   })
 
   test('a body update requires the version read and atomically refuses a stale writer', () => {
-    const task = hub('task', 'new', '--project', 'workshop', '--title', 'Concurrent edits')
+    const task = hub('task', 'new', '--project', 'alpha', '--title', 'Concurrent edits')
     const created = hub('task', 'doc', 'new', task.stdout, '--title', 'Working notes',
       '--body', 'version one')
     const firstRead = document(created.stdout)
@@ -234,7 +234,7 @@ describe('task documents', () => {
   })
 
   test('lists metadata, edits metadata without resending a body, and removes one document', () => {
-    const task = hub('task', 'new', '--project', 'workshop', '--title', 'Document lifecycle')
+    const task = hub('task', 'new', '--project', 'alpha', '--title', 'Document lifecycle')
     const created = hub('task', 'doc', 'new', task.stdout, '--title', 'Notes', '--body', 'kept')
     const renamed = hub('task', 'doc', 'set', created.stdout, '--title', 'Findings',
       '--role', 'handoff')
