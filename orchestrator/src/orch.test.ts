@@ -4088,6 +4088,27 @@ describe('detached run collection', () => {
     expect(json.out.trim().split('\n').map((line) => JSON.parse(line).id)).toEqual([root])
   })
 
+  test('runs --id returns the union requested and reports unknown ids', () => {
+    const first = insert('ok', 'implement')
+    insert('ok', 'implement')
+    const second = insert('running', 'review-lens')
+    const unknown = second + 1000
+
+    const result = orch('runs', '--id', String(first), '--id', String(second),
+      '--id', String(unknown), '--json')
+    expect(result.code).toBe(0)
+    const rows = result.out.trim().split('\n').map((line) => JSON.parse(line))
+    expect(rows.map((row) => row.id)).toEqual([second, first, unknown])
+    expect(rows.at(-1)).toEqual({ id: unknown, status: 'unknown', unknown: true })
+  })
+
+  test('runs --id refuses a time window', () => {
+    const id = insert('ok', 'implement')
+    const result = orch('runs', '--id', String(id), '--since', '2026-09-01T00:00:00Z', '--json')
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('orch runs --id and --since cannot be combined')
+  })
+
   test('runs JSON emits every execution interval in a resumed chain', () => {
     const starts = [
       '2026-09-01T12:00:00.000Z', '2026-09-01T12:10:00.000Z',

@@ -250,11 +250,15 @@ function flag(name: string): string | undefined {
   const i = argv.indexOf(`--${name}`)
   return i >= 0 ? argv[i + 1] : undefined
 }
+function flags(name: string): string[] {
+  const needle = `--${name}`
+  return argv.flatMap((value, index) => value === needle ? [argv[index + 1]!] : [])
+}
 const has = (n: string) => argv.includes(`--${n}`)
 
 /** Flags that consume the next argument. Anything else is a boolean switch. */
 const VALUE_FLAGS = new Set(['--agent', '--file', '--schema', '--model', '--note',
-                             '--job', '--limit', '--port', '--days', '--window', '--timeout', '--scorer',
+                             '--id', '--job', '--limit', '--port', '--days', '--window', '--timeout', '--scorer',
                              '--seed', '--key', '--repo', '--base', '--avoid', '--distinct-from', '--label', '--lens', '--category',
                              '--better-than', '--n', '--scope', '--subject', '--title', '--cwd'])
 
@@ -705,7 +709,9 @@ function usage(): never {
   orch review complete <review-id> mark a fully triaged review complete
   orch review calibration <lens> <agent> <model> [--json]
   orch pending                  runs YOU made that are still unscored (exit 1 if any)
-  orch runs [--job X] [--agent Y] [--limit N] [--unscored] [--since ISO] [--json]
+  orch runs [--id ID]... [--job X] [--agent Y] [--limit N] [--unscored] [--since ISO] [--json]
+      --id queries exactly those run ids; repeat it for a union of ids
+      --id and --since cannot be combined
       --json prints JSON Lines with cwd and session id: the interface hub reads
   orch stats [--job X]          success rate per agent per job
   orch guide [--job X]          what to use for what: best, quickest, and what is still a guess
@@ -2946,6 +2952,26 @@ switch (cmd) {
     if (agentFlag) { where.push('r.agent = ?'); args.push(agentFlag) }
     const onlyUnscored = has('unscored')
     const sinceFlag = flag('since')
+    const requestedIds = [...new Set(flags('id').map((value) => {
+      const id = Number(value)
+      if (!Number.isInteger(id) || id <= 0) throw new Error(`invalid run id: ${value}`)
+      return id
+    }))]
+    if (requestedIds.length && sinceFlag) {
+      throw new Error('orch runs --id and --since cannot be combined')
+    }
+    if (requestedIds.length) {
+      const marks = requestedIds.map(() => '?').join(',')
+      // Runs normally presents one canonical row per resumed conversation. If
+      // a caller names a child turn, return that conversation rather than
+      // falsely reporting an existing run id as unknown.
+      where.push(`(r.id IN (${marks}) OR EXISTS (
+        SELECT 1 FROM run requested_turn
+         WHERE requested_turn.parent_run_id = r.id
+           AND requested_turn.id IN (${marks})
+      ))`)
+      args.push(...requestedIds, ...requestedIds)
+    }
     if (sinceFlag) {
       // A resumed chain belongs in the window when any of its turns executed
       // there, even if the root turn predates the cutoff.
@@ -3002,16 +3028,27 @@ switch (cmd) {
       }]
     }).slice(0, Number(flag('limit') ?? (json ? 100000 : 20)))
 
+    // Unknown means absent from orch, not merely absent from this presentation
+    // (for example because an id names a child turn or another filter excludes
+    // it). Omission and non-existence are different facts for machine callers.
+    const knownIds = requestedIds.length ? new Set(
+      (db().query(
+        `SELECT id FROM run WHERE id IN (${requestedIds.map(() => '?').join(',')})`,
+      ).all(...requestedIds) as { id: number }[]).map((row) => row.id),
+    ) : new Set<number>()
+    const unknownIds = requestedIds.filter((id) => !knownIds.has(id))
+
     // JSON Lines, so a consumer can stream it and a truncated read loses only
     // the last record. This is a published interface: `hub` reads it rather
     // than opening orch.db, because a database shared between two concerns is
     // how two concerns quietly become one.
     if (json) {
       for (const r of rows) console.log(JSON.stringify(r))
+      for (const id of unknownIds) console.log(JSON.stringify({ id, status: 'unknown', unknown: true }))
       break
     }
 
-    if (!rows.length) { console.log('no runs'); break }
+    if (!rows.length && !unknownIds.length) { console.log('no runs'); break }
     for (const r of rows) {
       const outcome = outcomeOf(r as OutcomeRow)
       const status = outcome.line.split(' - ', 1)[0]!
@@ -3026,6 +3063,7 @@ switch (cmd) {
       // here would leave the database honest and the human-facing command not.
       if (r.route_reason) console.log(`      route: ${String(r.route_reason)}`)
     }
+    for (const id of unknownIds) console.log(`${String(id).padStart(4)}  unknown run id`)
     break
   }
 

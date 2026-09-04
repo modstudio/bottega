@@ -19,6 +19,7 @@ import { projectOf } from './attribute.ts'
 import { projects } from './projects.ts'
 import { Mcp, credentials } from './mcp.ts'
 import { createTrackerTask } from '../../shared/trackers.ts'
+import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
 
 const argv = process.argv.slice(2)
 const cmd = argv[0]
@@ -37,6 +38,8 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and the 
                               database means only one process collects.
   hub tasks [--hours N]       what has been worked on, newest window first
   hub serve [--port 7778]     the dashboard
+  hub reconcile [--dry-run]   close open intervals whose orch runs are terminal
+                              using exact run ids, never an age or time window
 
   hub task new --project X --title "..." [--status Y] [--parent KEY]
                [--body "..."|--body-file PATH]
@@ -415,7 +418,7 @@ try {
 const initialisesDatabase = cmd === 'collect'
   || (cmd === 'task' && (argv[1] === 'new' || argv[1] === 'import'))
 const usesDatabase = cmd === 'collect' || cmd === 'tasks' || cmd === 'serve'
-  || cmd === 'task' || cmd === 'send'
+  || cmd === 'task' || cmd === 'send' || cmd === 'reconcile'
 if (usesDatabase && !initialisesDatabase) requireDatabase()
 
 switch (cmd) {
@@ -440,6 +443,7 @@ switch (cmd) {
     break
   case 'tasks': tasks(); break
   case 'serve': serve(Number(flag('port') ?? 7778)); break
+  case 'reconcile': printReconcile(await reconcileOpenIntervals({ dryRun: has('dry-run') })); break
   case 'task': await task(); break
   case 'send': await sendReport(); break
   case undefined:

@@ -126,7 +126,7 @@ function commandShape(argv: string[]): { args: string[]; shape: CommandShape } |
       4, ['--note', '--better-than', '--scorer'], ['--force', '--void'],
     ) }
     case 'recalibrate': return { args: argv.slice(1), shape: shape('orch recalibrate [--n N] [--scorer WHO] [--force]', 0, ['--n', '--scorer'], ['--force']) }
-    case 'runs': return { args: argv.slice(1), shape: shape('orch runs [--job X] [--agent Y] [--limit N] [--unscored] [--since ISO] [--json]', 0, ['--job', '--agent', '--limit', '--since'], ['--unscored', '--json']) }
+    case 'runs': return { args: argv.slice(1), shape: shape('orch runs [--id ID]... [--job X] [--agent Y] [--limit N] [--unscored] [--since ISO] [--json]', 0, ['--id', '--job', '--agent', '--limit', '--since'], ['--unscored', '--json']) }
     case 'guide': return { args: argv.slice(1), shape: shape('orch guide [--job X]', 0, ['--job']) }
     case 'spawns': return { args: argv.slice(1), shape: shape('orch spawns [--limit N]', 0, ['--limit']) }
     case 'stats': return { args: argv.slice(1), shape: shape('orch stats [--job X]', 0, ['--job']) }

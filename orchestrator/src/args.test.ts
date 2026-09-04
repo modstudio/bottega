@@ -35,6 +35,7 @@ describe('CLI argument recognition', () => {
       ['continue', '12', 'one more change'], ['diff', '12', '--quiet'], ['discard', '12', '--force'],
       ['stop', '12'], ['abandon', '12', '--note', 'superseded'],
       ['score', '12', 'full', 'right', 'faithful', '--note', 'good'],
+      ['runs', '--id', '12', '--id', '13', '--json'],
       ['pick', 'implement', '--distinct-from', '10,11'], ['metric', 'collect', '--days', '30'],
     ]
     for (const argv of commands) expect(() => validateCliArgs(argv)).not.toThrow()
