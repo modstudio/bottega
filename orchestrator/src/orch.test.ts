@@ -23,21 +23,26 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 
-const gitRepositoryVariables = [
+const gitEnvironmentVariables = [
   'GIT_OBJECT_DIRECTORY',
   'GIT_ALTERNATE_OBJECT_DIRECTORIES',
   'GIT_DIR',
   'GIT_WORK_TREE',
   'GIT_INDEX_FILE',
+  'GIT_CONFIG_COUNT',
+  'GIT_CONFIG_KEY_0',
+  'GIT_CONFIG_VALUE_0',
+  'ORCH_GUARDED_GIT_COMMON_DIR',
+  'ORCH_ALLOWED_GIT_REF',
 ] as const
 
-// A worker routes git objects into its own linked-worktree metadata. None of that
-// routing belongs to the scratch repositories built by this test process.
-for (const variable of gitRepositoryVariables) delete process.env[variable]
+// A worker routes git objects and ref hooks into its own linked-worktree metadata.
+// None of that routing belongs to the scratch repositories built by this test process.
+for (const variable of gitEnvironmentVariables) delete process.env[variable]
 
 const hermeticGitEnv = (extra: Record<string, string> = {}) => ({
   ...process.env,
-  ...Object.fromEntries(gitRepositoryVariables.map((variable) => [variable, undefined])),
+  ...Object.fromEntries(gitEnvironmentVariables.map((variable) => [variable, undefined])),
   ...extra,
 })
 
@@ -251,7 +256,7 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
   })
 })
 const hermeticGitCommand =
-  `env ${gitRepositoryVariables.map((variable) => `-u ${variable}`).join(' ')} git`
+  `env ${gitEnvironmentVariables.map((variable) => `-u ${variable}`).join(' ')} git`
 
 /**
  * One database for the whole file, chosen before anything imports db.ts.
@@ -7591,6 +7596,55 @@ describe('the sandbox an agent is launched with', () => {
     } finally {
       rmSync(repo, { recursive: true, force: true })
       rmSync(scratch, { recursive: true, force: true })
+    }
+  })
+
+  test('the shared-ref guard permits real rebase and merge bookkeeping', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-worker-porcelain-'))
+    const git = (cwd: string, args: string[], env: Record<string, string> = {}) =>
+      Bun.spawnSync(['git', ...args], {
+        cwd, env: hermeticGitEnv(env), stdout: 'pipe', stderr: 'pipe',
+      })
+    const ok = (cwd: string, args: string[], env: Record<string, string> = {}) => {
+      const p = git(cwd, args, env)
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    try {
+      ok(repo, ['init', '-b', 'main'])
+      ok(repo, ['config', 'user.email', 'orch-test@example.invalid'])
+      ok(repo, ['config', 'user.name', 'Orch Test'])
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      ok(repo, ['add', 'base.txt'])
+      ok(repo, ['commit', '-m', 'base'])
+
+      const tree = createWorktree(repo, 199)
+      const guard = prepareSharedRefGuard(tree.path, `refs/heads/${tree.branch}`)
+      writeFileSync(join(tree.path, 'worker-one.txt'), 'worker one\n')
+      ok(tree.path, ['add', 'worker-one.txt'], guard)
+      ok(tree.path, ['commit', '-m', 'worker one'], guard)
+      writeFileSync(join(repo, 'main-one.txt'), 'main one\n')
+      ok(repo, ['add', 'main-one.txt'])
+      ok(repo, ['commit', '-m', 'main one'])
+
+      const rebased = git(tree.path, ['rebase', 'main'], guard)
+      expect(rebased.exitCode).toBe(0)
+      expect(rebased.stderr.toString()).not.toContain('refusing shared ref update')
+      expect(ok(tree.path, ['merge-base', '--is-ancestor', 'main', 'HEAD'])).toBe('')
+
+      writeFileSync(join(repo, 'main-two.txt'), 'main two\n')
+      ok(repo, ['add', 'main-two.txt'])
+      ok(repo, ['commit', '-m', 'main two'])
+      writeFileSync(join(tree.path, 'worker-two.txt'), 'worker two\n')
+      ok(tree.path, ['add', 'worker-two.txt'], guard)
+      ok(tree.path, ['commit', '-m', 'worker two'], guard)
+
+      const merged = git(tree.path, ['merge', '--no-edit', 'main'], guard)
+      expect(merged.exitCode).toBe(0)
+      expect(merged.stderr.toString()).not.toContain('refusing shared ref update')
+      expect(ok(tree.path, ['rev-list', '--parents', '-n', '1', 'HEAD']).split(' ')).toHaveLength(3)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
     }
   })
 

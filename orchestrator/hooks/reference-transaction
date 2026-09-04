@@ -20,8 +20,13 @@ cat > "$transaction"
 
 zero=0000000000000000000000000000000000000000
 while read -r old new ref; do
+  # Top-level pseudo-refs live in this worktree's GIT_DIR. Ordinary refs/* are
+  # shared except Git's three explicitly per-worktree namespaces. A path such
+  # as worktrees/other/HEAD is not top-level and must remain governed.
   case "$ref" in
-    HEAD|AUTO_MERGE|refs/bisect/*|refs/worktree/*|refs/rewritten/*) continue ;;
+    refs/bisect/*|refs/worktree/*|refs/rewritten/*) continue ;;
+    refs/*|*/*) ;;
+    *) continue ;;
   esac
   if [ -n "$allowed_ref" ] && [ "$ref" != "$allowed_ref" ]; then
     echo "refusing shared ref update $ref: this worker may update only $allowed_ref" >&2
