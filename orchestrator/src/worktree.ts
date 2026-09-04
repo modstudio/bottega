@@ -22,9 +22,10 @@
  * worktree. No worker pushes.
  */
 import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, readFileSync, realpathSync,
-         readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+         readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { basename, dirname, join, resolve } from 'node:path'
-import { db, ROOT } from './db.ts'
+import { db, pidAlive, ROOT } from './db.ts'
 import { projectAt, type WorktreeTool } from './projects.ts'
 import { runRecipe, teardownRecipe, dbNameFor, type Recipe } from './recipe.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
@@ -210,6 +211,14 @@ const WORKTREE_CREATE_LOCK_TIMEOUT_MS = 5 * 60_000
 const WORKTREE_CREATE_LOCK_POLL_MS = 100
 const heldWorktreeCreateLocks = new Set<string>()
 
+function worktreeCreateLockOwner(owner: string): number | null {
+  let value: string
+  try { value = readFileSync(owner, 'utf8').trim() } catch { return null }
+  if (!/^\d+$/.test(value)) return null
+  const pid = Number(value)
+  return Number.isSafeInteger(pid) && pid > 0 ? pid : null
+}
+
 /**
  * Serialize the whole worktree lifecycle for one repository across orch processes.
  *
@@ -238,12 +247,25 @@ export function withWorktreeCreateLock<T>(
       mkdirSync(lock)
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+      const heldBy = worktreeCreateLockOwner(owner)
+      if (heldBy !== null && !pidAlive(heldBy)) {
+        const stale = `${lock}.stale-${process.pid}-${randomUUID()}`
+        try {
+          // Rename first: deleting the shared path could remove a lock acquired by
+          // another contender between the liveness check and cleanup.
+          renameSync(lock, stale)
+        } catch (renameError) {
+          if ((renameError as NodeJS.ErrnoException).code === 'ENOENT') continue
+          throw renameError
+        }
+        console.error(`orch: reclaimed worktree creation lock from dead holder pid ${heldBy}: ${lock}`)
+        rmSync(stale, { recursive: true, force: true })
+        continue
+      }
       if (Date.now() >= deadline) {
-        let heldBy = ''
-        try { heldBy = ` (holder pid ${readFileSync(owner, 'utf8').trim()})` } catch {}
         throw new Error(
           `timed out after ${timeoutMs / 1000}s waiting for ` +
-          `this project's worktree creation lock${heldBy}: ${lock}`,
+          `this project's worktree creation lock${heldBy === null ? '' : ` (holder pid ${heldBy})`}: ${lock}`,
         )
       }
       Atomics.wait(sleeper, 0, 0, WORKTREE_CREATE_LOCK_POLL_MS)
