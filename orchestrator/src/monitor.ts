@@ -46,6 +46,40 @@ function durationMs(value: string): number | null {
   return match ? Math.round(Number(match[1]) * units[match[2]]!) : null
 }
 
+function elapsedDetail(elapsedMs: number | null): string {
+  if (elapsedMs == null) return 'elapsed time unknown'
+  if (elapsedMs < 60_000) return `elapsed ${Math.round(elapsedMs / 1000)}s`
+  if (elapsedMs < 3_600_000) return `elapsed ${Math.round(elapsedMs / 60_000)}m`
+  return `elapsed ${(elapsedMs / 3_600_000).toFixed(1)}h`
+}
+
+/** Report vendor processes that vanished while their run still claims to be running. */
+export function deadRunningProcessConditions(clock = Date.now()): MonitorCondition[] {
+  const running = db().query(
+    `SELECT id, started_at, pid, agent_pid, output_bytes FROM run WHERE status='running'`,
+  ).all() as {
+    id: number; started_at: string; pid: number | null; agent_pid: number | null
+    output_bytes: number | null
+  }[]
+  return running.flatMap((run): MonitorCondition[] => {
+    // PID reuse makes this deliberately conservative: a reused pid looks live
+    // and is not reported. A vendor that has just exited during normal teardown
+    // is still an observed condition, not a repair trigger; carry the worker's
+    // liveness so the reader can distinguish that transient from a dead worker.
+    if (!run.agent_pid || pidAlive(run.agent_pid)) return []
+    const ageMs = age(run.started_at, clock)
+    const worker = run.pid && pidAlive(run.pid)
+      ? `worker pid ${run.pid} is still alive (the run may be in teardown)`
+      : run.pid ? `worker pid ${run.pid} is also gone` : 'worker pid was not recorded'
+    return [{
+      kind: 'dead-running-process', subject: `run:${run.id}`, since: run.started_at, ageMs,
+      detail: `run ${run.id} is running but agent pid ${run.agent_pid} is gone; ` +
+        `${worker}; ${elapsedDetail(ageMs)}; output ${run.output_bytes ?? 'unknown'} bytes`,
+      action: 'reported; disposition and status repair require intent',
+    }]
+  })
+}
+
 /** DEV-211 owns the repair. The monitor invokes its audited command and records its report. */
 export function reconcileHub(clock: number): { conditions: MonitorCondition[]; errors: string[] } {
   const p = Bun.spawnSync([HUB, 'reconcile'], { stdout: 'pipe', stderr: 'pipe' })
@@ -140,14 +174,7 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
     detail: `run ${run.id} is waiting on a ruling; session ${run.session_id ?? 'unknown'}`,
     action: 'reported; abandoning or resuming is an intent decision' })
 
-  const running = database.query(
-    `SELECT id, started_at, pid FROM run WHERE status='running'`,
-  ).all() as { id: number; started_at: string; pid: number | null }[]
-  for (const run of running) if (run.pid && !pidAlive(run.pid)) add({
-    kind: 'dead-running-process', subject: `run:${run.id}`, since: run.started_at,
-    detail: `run ${run.id} is running but pid ${run.pid} is gone`,
-    action: 'reported; status reconciliation is owned by the existing run reaper',
-  })
+  conditions.push(...deadRunningProcessConditions(clock))
 
   const stale = database.query(
     `SELECT id, started_at, error FROM run WHERE status='stale'`,

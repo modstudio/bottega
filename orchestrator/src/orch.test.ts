@@ -570,7 +570,7 @@ const { listDocs, listDocMetadata, getDoc, setDoc, consumeDoc, removeDoc, docsFo
         listOpenResumes, parseResumeFrontmatter, resumeAge } =
   await import('./docs.ts')
 const { createDocsMcpServer, fileIssue } = await import('./mcp.ts')
-const { reconcileHub, monitorHistory } = await import('./monitor.ts')
+const { deadRunningProcessConditions, reconcileHub, monitorHistory } = await import('./monitor.ts')
 const { listPairs, addPair, baselineForPair, setBaseline, listSkips, addSkip,
         setLedgerRef, ledgerRef, listLedgerRefs, resolveLedgerRef,
         listDoctrineRules, addDoctrineRule, retireDoctrineRule } =
@@ -659,6 +659,26 @@ the cause` } }
 })
 
 describe('operational monitor record', () => {
+  test('reports a running row whose agent process is gone with elapsed time and output size', () => {
+    const clock = Date.parse('2026-09-04T20:00:10Z')
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'running',
+      startedAt: '2026-09-04T20:00:00Z' })
+    // The live worker makes this a fixture the old worker-pid detector missed.
+    db().query('UPDATE run SET pid=?, agent_pid=?, output_bytes=? WHERE id=?')
+      .run(process.pid, 4_194_304, 53, id)
+
+    expect(deadRunningProcessConditions(clock)).toEqual([expect.objectContaining({
+      kind: 'dead-running-process', subject: `run:${id}`,
+      since: '2026-09-04T20:00:00Z', ageMs: 10_000,
+      detail: expect.stringContaining('worker pid'),
+      action: 'reported; disposition and status repair require intent',
+    })])
+    const [condition] = deadRunningProcessConditions(clock)
+    expect(condition!.detail).toContain('elapsed 10s')
+    expect(condition!.detail).toContain('output 53 bytes')
+    expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'running' })
+  })
+
   test('records condition ages and reads them back by invocation', () => {
     const invocation = (db().query(
       `INSERT INTO monitor_invocation (started_at,finished_at,trigger,findings,errors)
