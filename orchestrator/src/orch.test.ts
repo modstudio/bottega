@@ -569,7 +569,7 @@ const { AGENTS, localReachable, ensureLocalHealth, resetLocalHealth,
 const { listDocs, listDocMetadata, getDoc, setDoc, consumeDoc, removeDoc, docsForRun, exportDocs, importDocs, brief, docSubjects,
         listOpenResumes, parseResumeFrontmatter, resumeAge } =
   await import('./docs.ts')
-const { createDocsMcpServer, fileIssue } = await import('./mcp.ts')
+const { createDocsMcpServer, fileIssue, duplicateCandidates } = await import('./mcp.ts')
 const { deadRunningProcessConditions, reconcileHub, monitorHistory } = await import('./monitor.ts')
 const { listPairs, addPair, baselineForPair, setBaseline, listSkips, addSkip,
         setLedgerRef, ledgerRef, listLedgerRefs, resolveLedgerRef,
@@ -11013,6 +11013,12 @@ describe('scoped operator docs', () => {
       name: PLATFORM_SLUG, path: join(dir, 'registered-outside-cwd'), stack: 'typescript', canon: true,
       settings: { keyPrefixes: ['DEV'] },
     })
+    const prior = Bun.spawnSync([
+      new URL('../../bin/hub', import.meta.url).pathname,
+      'task', 'new', '--project', PLATFORM_SLUG,
+      '--title', '[SUGGESTION] Issue reporting needs a direct filing path',
+    ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
+    expect(prior.exitCode).toBe(0)
     const server = createDocsMcpServer()
     const client = new Client({ name: 'orch-test', version: '1.0.0' })
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
@@ -11033,8 +11039,13 @@ describe('scoped operator docs', () => {
       expect(filed.isError).not.toBe(true)
       const result = JSON.parse(((filed as any).content[0] as { text: string }).text)
       expect(result).toMatchObject({
-        key: 'DEV-1', kind: 'suggestion', reporter: 'session',
+        key: 'DEV-2', kind: 'suggestion', reporter: 'session',
         reporter_id: 'reporting-test-session', session: 'reporting-test-session', project: PLATFORM_SLUG,
+        duplicates: [{
+          key: 'DEV-1', status: 'open',
+          title: '[SUGGESTION] Issue reporting needs a direct filing path',
+          score: expect.any(Number),
+        }],
       })
       const shown = Bun.spawnSync([
         new URL('../../bin/hub', import.meta.url).pathname,
@@ -11052,9 +11063,77 @@ describe('scoped operator docs', () => {
       expect(task.body).not.toContain('Environment:')
       expect(task.body).toContain('EVIDENCE\norchestrator/src/mcp.ts:11')
       expect(task.body).toContain('WHAT IS NOT ESTABLISHED\nNo priority or assignee has been established')
+      expect(task.body).toContain(
+        'SUSPECTED DUPLICATES\n- DEV-1 [open] [SUGGESTION] Issue reporting needs a direct filing path',
+      )
+      expect(task.body).not.toContain(String(result.duplicates[0].score))
     } finally {
       await client.close()
       await server.close()
+      rmSync(hubDb, { force: true })
+      rmSync(`${hubDb}-shm`, { force: true })
+      rmSync(`${hubDb}-wal`, { force: true })
+      if (priorHubDb === undefined) delete process.env.HUB_DB
+      else process.env.HUB_DB = priorHubDb
+      if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+      else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+    }
+  })
+
+  test('duplicate title matching is deterministic, thresholded, and capped at three', () => {
+    const tasks = [
+      ['DEV-4', 'open', 'alpha beta gamma delta epsilon'],
+      ['DEV-3', 'done', 'alpha beta gamma delta zeta'],
+      ['DEV-2', 'active', 'alpha beta gamma delta eta'],
+      ['DEV-1', 'open', 'alpha beta gamma delta theta'],
+      ['DEV-5', 'open', 'unrelated words only'],
+    ].map(([key, status, title]) => ({ key: key!, project: PLATFORM_SLUG, status: status!, title: title! }))
+
+    expect(duplicateCandidates(tasks, 'alpha beta gamma delta')).toEqual([
+      expect.objectContaining({ key: 'DEV-1' }),
+      expect.objectContaining({ key: 'DEV-2' }),
+      expect.objectContaining({ key: 'DEV-3' }),
+    ])
+  })
+
+  test('file_issue files while making a failed duplicate search explicit in output and body', async () => {
+    const hubDb = join(dir, 'file-issue-search-failure-hub.db')
+    const priorHubDb = process.env.HUB_DB
+    const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+    process.env.HUB_DB = hubDb
+    process.env.CLAUDE_CODE_SESSION_ID = 'search-failure-session'
+    upsertProject({
+      name: PLATFORM_SLUG, path: process.cwd(), stack: 'typescript', canon: true,
+      settings: { keyPrefixes: ['DEV'] },
+    })
+    const realSpawn = Bun.spawn.bind(Bun)
+    const spawn = spyOn(Bun, 'spawn').mockImplementation(((args: string[], options: object) => {
+      if (args.includes('list')) {
+        return { stdout: '', stderr: 'duplicate search unavailable', exited: Promise.resolve(1) }
+      }
+      return realSpawn(args, options as any)
+    }) as any)
+    try {
+      const filed = await fileIssue({
+        kind: 'suggestion', what_happened: 'Preserve a report when duplicate search is unavailable',
+        expected: 'The report is filed and the failed search is explicit',
+        evidence: 'the search subprocess returned exit 1',
+        not_established: 'why the search subprocess failed',
+      }, { kind: 'session' }, PLATFORM_SLUG)
+      expect(filed).toMatchObject({
+        key: 'DEV-1', duplicate_search_error: 'duplicate search unavailable',
+      })
+      expect(filed).not.toHaveProperty('duplicates')
+      const shown = Bun.spawnSync([
+        new URL('../../bin/hub', import.meta.url).pathname,
+        'task', 'show', filed.key, '--json',
+      ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
+      expect(shown.exitCode).toBe(0)
+      expect(JSON.parse(shown.stdout.toString()).task.body).toContain(
+        'DUPLICATE SEARCH FAILED\nduplicate search unavailable',
+      )
+    } finally {
+      spawn.mockRestore()
       rmSync(hubDb, { force: true })
       rmSync(`${hubDb}-shm`, { force: true })
       rmSync(`${hubDb}-wal`, { force: true })

@@ -47,6 +47,88 @@ type FileIssueInput = {
   not_established: string
 }
 
+type HubTask = {
+  key: string
+  project: string
+  title: string | null
+  status: string | null
+}
+
+export type DuplicateCandidate = {
+  key: string
+  status: string | null
+  title: string
+  score: number
+}
+
+const DUPLICATE_STOP_WORDS = new Set(
+  'a an and are as at be by for from has have in into is it its of on or that the this to was were will with should before after not no'.split(' '),
+)
+
+// Provisional, measured against the real reports that prompted DEV-267:
+// DEV-209/DEV-210 scored 0.248, DEV-265/DEV-266 scored 0.227, and the best
+// unrelated result across those four searches scored 0.151.
+const DUPLICATE_THRESHOLD = 0.20
+const DUPLICATE_LIMIT = 3
+
+function titleTokens(title: string): Set<string> {
+  return new Set(
+    (title.toLowerCase().match(/[a-z0-9]+/g) ?? [])
+      .filter((token) => token.length > 1 && !DUPLICATE_STOP_WORDS.has(token)),
+  )
+}
+
+function titleSimilarity(left: string, right: string): number {
+  const a = titleTokens(left)
+  const b = titleTokens(right)
+  if (!a.size || !b.size) return 0
+  let intersection = 0
+  for (const token of a) if (b.has(token)) intersection++
+  return intersection / (a.size + b.size - intersection)
+}
+
+export function duplicateCandidates(tasks: HubTask[], title: string): DuplicateCandidate[] {
+  return tasks
+    .filter((task): task is HubTask & { title: string } => !!task.title)
+    .map((task) => ({
+      key: task.key,
+      status: task.status,
+      title: task.title,
+      score: titleSimilarity(title, task.title),
+    }))
+    .filter((candidate) => candidate.score >= DUPLICATE_THRESHOLD)
+    .sort((a, b) => b.score - a.score || a.key.localeCompare(b.key))
+    .slice(0, DUPLICATE_LIMIT)
+}
+
+async function hubOutput(args: string[]): Promise<string> {
+  const child = Bun.spawn([HUB, ...args], {
+    env: { ...process.env }, stdout: 'pipe', stderr: 'pipe',
+  })
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ])
+  if (exitCode !== 0) {
+    throw new Error(stderr.trim() || stdout.trim() || `hub exited ${exitCode}`)
+  }
+  return stdout
+}
+
+async function searchDuplicateIssues(title: string): Promise<
+  { duplicates: DuplicateCandidate[]; error: null } | { duplicates: null; error: string }
+> {
+  try {
+    const output = await hubOutput(['task', 'list', '--project', PLATFORM_SLUG, '--json'])
+    const tasks = JSON.parse(output) as HubTask[]
+    if (!Array.isArray(tasks)) throw new Error('hub task list returned a non-array JSON value')
+    return { duplicates: duplicateCandidates(tasks, title), error: null }
+  } catch (error) {
+    return { duplicates: null, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
 export type IssueReporter =
   | { kind: 'session' }
   | { kind: 'worker' }
@@ -113,6 +195,18 @@ export async function fileIssue(
     throw new Error(`cannot file issue: no registered project contains ${process.cwd()}`)
   }
   const type = input.kind.toUpperCase()
+  const title = `[${type}] ${input.what_happened}`
+  const duplicateSearch = await searchDuplicateIssues(title)
+  const duplicateRecord = duplicateSearch.duplicates?.length
+    ? [
+        '',
+        'SUSPECTED DUPLICATES',
+        ...duplicateSearch.duplicates.map((candidate) =>
+          `- ${candidate.key} [${candidate.status ?? 'unknown'}] ${candidate.title.replace(/\s+/g, ' ').trim()}`),
+      ]
+    : duplicateSearch.error
+      ? ['', 'DUPLICATE SEARCH FAILED', duplicateSearch.error]
+      : []
   const body = [
     `TYPE: ${type}`,
     ...(reporter.kind === 'session'
@@ -140,24 +234,23 @@ export async function fileIssue(
     '',
     'WHAT IS NOT ESTABLISHED',
     input.not_established,
+    ...duplicateRecord,
   ].join('\n')
-  const child = Bun.spawn([
-    HUB, 'task', 'new', '--project', PLATFORM_SLUG,
-    '--title', `[${type}] ${input.what_happened}`,
-    '--body', body,
-  ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
-  if (exitCode !== 0) {
-    throw new Error(`could not file issue through hub: ${stderr.trim() || stdout.trim() || `exit ${exitCode}`}`)
+  let stdout: string
+  try {
+    stdout = await hubOutput([
+      'task', 'new', '--project', PLATFORM_SLUG, '--title', title, '--body', body,
+    ])
+  } catch (error) {
+    throw new Error(`could not file issue through hub: ${error instanceof Error ? error.message : String(error)}`)
   }
   return { key: stdout.trim(), kind: input.kind, session, project: project.name,
     reporter: reporter.kind, reporter_id: reporterId,
     worker_run_id: reporter.kind === 'worker' ? reporterId : null,
-    monitor_invocation_id: reporter.kind === 'monitor' ? reporter.invocationId : null }
+    monitor_invocation_id: reporter.kind === 'monitor' ? reporter.invocationId : null,
+    ...(duplicateSearch.duplicates === null
+      ? { duplicate_search_error: duplicateSearch.error }
+      : { duplicates: duplicateSearch.duplicates }) }
 }
 
 export function createDocsMcpServer(): McpServer {
@@ -310,7 +403,7 @@ export function createDocsMcpServer(): McpServer {
   }, async ({ number }) => text({ retired: retireDoctrineRule(number) }))
 
   server.registerTool('file_issue', {
-    description: `File an actionable defect or suggestion against ${PLATFORM_SLUG} through hub.`,
+    description: `File an actionable defect or suggestion against ${PLATFORM_SLUG} through hub, returning likely duplicate tasks.`,
     inputSchema: z.discriminatedUnion('kind', [z.object({
       kind: z.literal('defect').describe('How the filed issue should be read.'),
       what_happened: requiredReportField(
