@@ -3,7 +3,7 @@ import {
   statSync, unlinkSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import type { Database } from 'bun:sqlite'
 import {
@@ -602,14 +602,48 @@ export function repoOf(cwd: string): string | null {
  * Read once, at claim time, and never allowed to fail a run: a directory that
  * is not a git repo, or a git that is slow, must cost nothing.
  */
-function branchOf(cwd: string): string | null {
+function gitContext(cwd: string, ...args: string[]): string | null {
   try {
-    const p = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'],
+    const p = Bun.spawnSync(['git', '-C', cwd, ...args],
       { env: { ...process.env, ...worktreeGitEnvironment(cwd) }, stdout: 'pipe', stderr: 'ignore' })
     if (p.exitCode !== 0) return null
-    const b = new TextDecoder().decode(p.stdout).trim()
-    return b && b !== 'HEAD' ? b.slice(0, 200) : null
+    const value = new TextDecoder().decode(p.stdout).trim()
+    return value ? value.slice(0, 200) : null
   } catch { return null }
+}
+
+function branchOf(cwd: string): string | null {
+  const branch = gitContext(cwd, 'rev-parse', '--abbrev-ref', 'HEAD')
+  return branch && branch !== 'HEAD' ? branch : null
+}
+
+/**
+ * Find one recorded ticket key in a deliberate context name.
+ *
+ * A name with no matching key is silent. A name with two is silent too: choosing
+ * between two real-looking addresses would be guessing, and a wrong attribution
+ * is worse than null. Project prefixes narrow the candidates where the register
+ * declares them; the worktree key pattern remains the final validity check.
+ */
+function keyIn(name: string, cwd: string): string | null {
+  const project = projectAt(cwd)
+  const prefixes = project?.settings.keyPrefixes
+  const prefix = prefixes?.length
+    ? `(?:${prefixes.map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`
+    : '[A-Z][A-Z0-9]+'
+  const candidates = name.match(new RegExp(`(?:^|[^A-Z0-9])(${prefix}-[0-9]+)(?=$|[^A-Z0-9])`, 'g'))
+    ?.map((candidate) => candidate.match(new RegExp(`(${prefix}-[0-9]+)`))?.[1])
+    .filter((candidate): candidate is string => Boolean(candidate)) ?? []
+  const keyPattern = project?.settings.worktree?.keyPattern ?? '^[A-Z][A-Z0-9]+-[0-9]+$'
+  const valid = [...new Set(candidates.filter((candidate) => new RegExp(keyPattern).test(candidate)))]
+  return valid.length === 1 ? valid[0]! : null
+}
+
+/** Attribution for a read-only root: worktree name first, then branch. */
+export function inferredReadOnlyKey(cwd: string): string | null {
+  const top = gitContext(cwd, 'rev-parse', '--show-toplevel')
+  const fromWorktree = top ? keyIn(basename(top), cwd) : null
+  return fromWorktree ?? keyIn(branchOf(cwd) ?? '', cwd)
 }
 
 /**
@@ -1001,7 +1035,11 @@ export async function run(opts: {
     : null
   const launchCwd = inheritedLaunch?.launch_cwd ?? callerCwd
   const launchSeed = inheritedLaunch?.launch_seed ?? seed ?? null
-  const launchKey = inheritedLaunch?.launch_key ?? opts.key ?? null
+  // A read-only run's key is an address on its record, not an input to the
+  // worktree lifecycle. Writing runs retain the explicit-key-only behaviour
+  // enforced by preflight and consumed below by createWithTool.
+  const attributedKey = writesJob ? (opts.key ?? null) : (opts.key ?? inferredReadOnlyKey(callerCwd))
+  const launchKey = inheritedLaunch?.launch_key ?? attributedKey
   const launchBase = inheritedLaunch?.launch_base ?? opts.base ?? null
   const noFailover = inheritedLaunch ? !!inheritedLaunch.no_failover : !!opts.noFailover
   // A reserved row is FILLED IN, not inserted: the id is already in the
