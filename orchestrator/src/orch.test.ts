@@ -910,6 +910,12 @@ describe('port importer', () => {
     })])
     expect(plan.docs.find((doc) => doc.slug === 'port-import-exclusions')?.body)
       .toContain('Original value:\none')
+
+    const missingSha = planImport(fixture({ state: JSON.stringify({ pairs: {
+      'alpha-invented->beta-invented': { scannedAt: null, skipped: [] },
+    } }) }), projects())
+    expect(missingSha.exclusions.find((issue) => issue.what === 'baseline')?.why)
+      .toBe('lastPortedSha is missing')
   })
 
   test('splits declared multi-sources, preserves qualifiers, and refuses unresolved sources and task prefixes', () => {
@@ -934,6 +940,12 @@ describe('port importer', () => {
       expect.objectContaining({ where: 'refs.json NONE-2', why: expect.stringContaining('no registered project') }),
       expect.objectContaining({ where: 'refs.json DUP-3', why: expect.stringContaining('several registered projects') }),
     ]))
+
+    const nonStringSource = planImport(fixture({ refs: JSON.stringify({
+      'ALP-4': { source: ['alpha-invented'], commits: [], paths: [], notes: '' },
+    }) }), projects())
+    expect(nonStringSource.refusals.find((issue) => issue.where === 'refs.json ALP-4')?.why)
+      .toBe('source must name registered projects')
   })
 
   test('records the deliberately unimported register-derived sections as one exclusion', () => {
@@ -951,6 +963,20 @@ describe('port importer', () => {
     expect(listPairs()).toEqual([])
     expect(listDoctrineRules()).toEqual([])
     expect(getDoc('global', null, 'port-category-map')).toBeNull()
+    const uncovered = sourceCoverage(plan, fixture())
+    expect(uncovered).toHaveLength(6)
+    expect(uncovered.map((gap) => gap.text)).toEqual(expect.arrayContaining(Object.values(fixture())))
+  })
+
+  test('a destination refusal makes the plan report its whole input uncovered', () => {
+    const files = fixture()
+    applyImport(planImport(files, registered()))
+    const refused = planImport(files, projects())
+    expect(() => applyImport(refused)).toThrow(ImportRefusalError)
+    expect(refused.refusals).toEqual([
+      expect.objectContaining({ what: 'existing port data', kind: 'refusal' }),
+    ])
+    expect(sourceCoverage(refused, files)).toHaveLength(6)
   })
 
   test('persists every exclusion and its original value inside the import transaction', () => {
@@ -1056,6 +1082,7 @@ describe('port importer', () => {
         expect(missingPlan.refusals).toHaveLength(6)
         expect(missingPlan.refusals.every((issue: any) => issue.what.startsWith('source file'))).toBe(true)
         expect(missingPlan.refusals.map((issue: any) => issue.where)).toContain(join(incomplete, 'refs.json'))
+        expect(missingPlan.uncoveredSpans).toHaveLength(6)
       } finally { rmSync(incomplete, { recursive: true, force: true }) }
     } finally { rmSync(source, { recursive: true, force: true }) }
   })
@@ -1139,6 +1166,29 @@ describe('port importer', () => {
     const plan = planImport(files, syntheticRegister)
     expect(plan.refusals).toEqual([])
     expect(sourceCoverage(plan, files)).toEqual([])
+
+    const wrongId = structuredClone(plan)
+    wrongId.refs[0]!.sources[0]!.source_project_id = 999999
+    expect(sourceCoverage(wrongId, files)).toContainEqual({ file: 'refs.json', offset: 0, text: files.refs })
+
+    const duplicatedSource = structuredClone(plan)
+    const multiSource = duplicatedSource.refs.find((ref) => ref.sources.length > 1)!
+    multiSource.sources[0] = structuredClone(multiSource.sources[1]!)
+    expect(sourceCoverage(duplicatedSource, files))
+      .toContainEqual({ file: 'refs.json', offset: 0, text: files.refs })
+
+    const repeatedSkipState = JSON.parse(files.state)
+    const [repeatedPairKey, repeatedPair] = Object.entries(repeatedSkipState.pairs as Record<string, any>)
+      .find(([, pair]: [string, any]) => Array.isArray(pair.skipped) && pair.skipped.length > 0)!
+    repeatedPair.skipped.push(structuredClone(repeatedPair.skipped[0]))
+    const repeatedSkipFiles = { ...files, state: JSON.stringify(repeatedSkipState) }
+    const missingRepeatedSkip = planImport(repeatedSkipFiles, syntheticRegister)
+    const repeatedRows = missingRepeatedSkip.skips
+      .map((skip, index) => ({ skip, index }))
+      .filter(({ skip }) => skip.pairKey === repeatedPairKey)
+    missingRepeatedSkip.skips.splice(repeatedRows.at(-1)!.index, 1)
+    expect(sourceCoverage(missingRepeatedSkip, repeatedSkipFiles))
+      .toContainEqual({ file: 'state.json', offset: 0, text: repeatedSkipFiles.state })
 
     plan.docs = plan.docs.filter((doc) => doc.slug !== 'port-import-source-context')
     expect(sourceCoverage(plan, files)).toEqual(expect.arrayContaining([

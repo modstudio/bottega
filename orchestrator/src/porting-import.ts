@@ -560,37 +560,49 @@ function jsonCoverage(plan: ImportPlan, files: ImportFiles): SourceCoverageGap[]
           issue.value === JSON.stringify({ lastPortedSha: sourceCommit, scannedAt }))
     if (!baselineCovered) return false
 
-    if (value.skipped === undefined) return true
+    if (value.skipped === undefined) return plan.skips.every((skip) => skip.pairKey !== pairKey)
     if (!Array.isArray(value.skipped)) return false
-    return value.skipped.every((skip) => {
+    const expectedSkips = value.skipped.map((skip) => {
       const candidate = typeof skip === 'string' ? skip : object(skip) ? skip.feature : undefined
       const reason = typeof skip === 'string'
         ? 'recorded in the source with no separate reason; the candidate text is the entire record'
         : object(skip) ? skip.reason : undefined
-      return typeof candidate === 'string' && typeof reason === 'string' &&
-        plan.skips.some((row) => row.pairKey === pairKey && row.candidate === candidate && row.reason === reason)
+      return { pairKey, candidate, reason }
     })
+    return expectedSkips.every((skip) => typeof skip.candidate === 'string' && typeof skip.reason === 'string') &&
+      JSON.stringify(expectedSkips) === JSON.stringify(plan.skips.filter((skip) => skip.pairKey === pairKey))
   })
   if (!state || !statePairsCovered || !stateSupplementCovered) {
     gaps.push({ file: 'state.json', offset: 0, text: files.state })
   }
 
   const refs = jsonObject(files.refs, 'refs.json', [])
+  const projectIds = new Map<string, number>()
+  let consistentProjectIds = true
+  for (const pair of plan.pairs) {
+    for (const [name, id] of [[pair.source, pair.sourceId], [pair.target, pair.targetId]] as const) {
+      if (projectIds.has(name) && projectIds.get(name) !== id) consistentProjectIds = false
+      projectIds.set(name, id)
+    }
+  }
   const metadata = refs ? Object.entries(refs).filter(([key]) => key.startsWith('_')) : []
   const metadataBody = metadata.map(([key, value]) => `${key}\n${originalValue(value)}`).join('\n\n')
   const refsCovered = refs && Object.entries(refs).filter(([key]) => !key.startsWith('_')).every(([taskKey, value]) => {
     if (!object(value) || typeof value.source !== 'string' || !Array.isArray(value.commits) ||
         !Array.isArray(value.paths) || typeof value.notes !== 'string') return false
     const row = plan.refs.find((ref) => ref.taskKey === taskKey)
-    if (!row || row.note !== value.notes || row.sources.length !== value.source.split(' + ').length) return false
-    if (!row.sources.every((source) =>
-      JSON.stringify(source.commits) === JSON.stringify(value.commits) &&
-      JSON.stringify(source.paths) === JSON.stringify(value.paths))) return false
-    const qualifiers = value.source.split(' + ').map((part) => {
-      const qualifier = part.indexOf(' (')
-      return qualifier < 0 ? '' : part.slice(qualifier)
+    if (!row || row.note !== value.notes || !consistentProjectIds) return false
+    const expectedSources = value.source.split(' + ').map((part) => {
+      const names = [...projectIds.keys()].filter((name) => part === name || part.startsWith(`${name} (`))
+      if (names.length !== 1) return null
+      const name = names[0]!
+      return {
+        source_project_id: projectIds.get(name), commits: value.commits, paths: value.paths,
+        note: part.slice(name.length),
+      }
     })
-    if (!qualifiers.every((note) => row.sources.some((source) => source.note === note))) return false
+    if (expectedSources.some((source) => source === null) ||
+        JSON.stringify(expectedSources) !== JSON.stringify(row.sources)) return false
     return Object.keys(value).filter((field) => !['source', 'commits', 'paths', 'notes'].includes(field))
       .every((field) => plan.exclusions.some((issue) =>
         issue.where === `refs.json ${taskKey}.${field}` && issue.value === originalValue(value[field])))
@@ -604,6 +616,10 @@ function jsonCoverage(plan: ImportPlan, files: ImportFiles): SourceCoverageGap[]
 }
 
 export function sourceCoverage(plan: ImportPlan, files: ImportFiles): SourceCoverageGap[] {
+  if (plan.refusals.length) {
+    return (Object.entries(files) as [keyof ImportFiles, string][])
+      .map(([file, text]) => ({ file: `${file}.${['refs', 'state'].includes(file) ? 'json' : 'md'}`, offset: 0, text }))
+  }
   const marks = markdownMarks(plan, files)
   const context = gapsFromMarks(files, marks)
   const contextDoc = plan.docs.find((doc) => doc.slug === 'port-import-source-context')
@@ -673,11 +689,13 @@ export function applyImport(plan: ImportPlan, options: { replace?: boolean } = {
         (scope='project' AND slug IN (${PROJECT_PORT_DOC_SLUGS.map(() => '?').join(',')}))) AS n`)
       .get(...GLOBAL_PORT_DOC_SLUGS, ...PROJECT_PORT_DOC_SLUGS) as { n: number }
     if (counts.n > 0 && !options.replace) {
-      throw new ImportRefusalError([{
+      const issue: ImportRefusal = {
         kind: 'refusal',
         what: 'existing port data', where: 'orch.db port_* tables or importer-owned docs',
         why: 'the importer requires an empty destination; pass --replace to replace port data and docs',
-      }])
+      }
+      plan.refusals.push(issue)
+      throw new ImportRefusalError([issue])
     }
     if (options.replace) {
       db().exec('DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine;')

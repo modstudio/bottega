@@ -1111,14 +1111,18 @@ switch (cmd) {
               refusals: ioRefusals, exclusions: [] }
           : planImport(files, registered)
       }
-      const uncoveredSpans = sourceCoverage(plan, files)
-      const visible = {
-        ...plan,
-        doctrine: plan.doctrine.map((row) => ({ ...row, bodyLength: row.body.length })),
-        docs: plan.docs.map((row) => ({ ...row, bodyLength: row.body.length })),
-        uncoveredSpans,
+      const visiblePlan = () => {
+        const uncoveredSpans = sourceCoverage(plan, files)
+        return {
+          ...plan,
+          doctrine: plan.doctrine.map((row) => ({ ...row, bodyLength: row.body.length })),
+          docs: plan.docs.map((row) => ({ ...row, bodyLength: row.body.length })),
+          uncoveredSpans,
+        }
       }
       const printPlan = () => {
+        const visible = visiblePlan()
+        const uncoveredSpans = visible.uncoveredSpans
         if (has('json')) { console.log(JSON.stringify(visible, null, 2)); return }
         console.log(`pairs (${plan.pairs.length})`)
         for (const row of plan.pairs) console.log(`  ${row.source} -> ${row.target}  ids ${row.sourceId}->${row.targetId}`)
@@ -1167,7 +1171,7 @@ switch (cmd) {
         process.exitCode = 1
         break
       }
-      if (has('json')) console.log(JSON.stringify(visible, null, 2))
+      if (has('json')) console.log(JSON.stringify(visiblePlan(), null, 2))
       else console.log(`imported ${plan.pairs.length} pairs, ${plan.refs.length} refs, ${plan.doctrine.length} doctrine rules, and ${plan.docs.length} docs`)
       break
     }
