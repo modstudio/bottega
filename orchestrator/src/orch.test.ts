@@ -325,8 +325,32 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     expect(resolveLandingBranch('named-branch')).toEqual({ branch: 'named-branch', runId: null })
     const { repo } = repoWithBranches([])
     upsertProject({ name: 'landing-status', path: repo, settings: { trunk: 'main', gate: 'true' } })
-    try { expect(landingStatus(repo)).toBe('landing-status landing lock: free\nwaiters:\n  none') }
+    try { expect(landingStatus(repo)).toBe('landing-status landing lock: free\nwaiters:\n  none\ngit locks:\n  none') }
     finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('status reports a stale ref lock with age, recoverable contents, resolved ref, and no live owner', () => {
+    const { repo } = repoWithBranches(['lock-source'])
+    upsertProject({ name: 'landing-git-lock', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
+    const lock = join(repo, '.git', 'refs', 'heads', 'main.lock')
+    const oid = g(repo, 'rev-parse', 'refs/heads/lock-source')
+    writeFileSync(lock, `${oid}\n`)
+    const stale = new Date(Date.now() - 71_000)
+    utimesSync(lock, stale, stale)
+    try {
+      const status = landingStatus(repo)
+      expect(status).toContain(`${lock} (age `)
+      expect(Number(status.match(/main\.lock \(age (\d+)s\)/)?.[1])).toBeGreaterThanOrEqual(70)
+      expect(status).toContain('target: refs/heads/main')
+      expect(status).toContain(`contents: ${oid} -> refs/heads/lock-source`)
+      expect(status).toContain('owner pid: none alive')
+      expect(readFileSync(lock, 'utf8')).toBe(`${oid}\n`)
+      expect(gitLocks(repo)).toEqual([expect.objectContaining({
+        path: lock, target: 'refs/heads/main', contents: oid,
+        contentRefs: ['refs/heads/lock-source'], ownerPids: [],
+      })])
+    } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
   test('amending the message happens before the gate and the gated commit is what reaches trunk', async () => {
@@ -538,6 +562,7 @@ const { orphanSafety, repoRootOf, createWorktree, createWithTool, resolveBase, f
         unmergedBranch, assertCallerAncestry, checkoutHasUncommittedWork, callerDrift,
         changesIn, removeFor } = await import('./worktree.ts')
 const { landingStatus, resolveLandingBranch } = await import('./landing.ts')
+const { gitLocks } = await import('./git-locks.ts')
 const { AGENTS, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
         WAKE_COOLDOWN_MS, CODEX_EXEC_SANDBOX, strictCodexSchema } = await import('./agents.ts')

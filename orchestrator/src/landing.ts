@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { db, sessionId } from './db.ts'
+import { formatGitLocks } from './git-locks.ts'
 import { projectAt, type Project } from './projects.ts'
 import {
   prepareSharedRefGuard, projectLockState, repoRootOf, withProjectLock,
@@ -277,5 +278,5 @@ export function landingStatus(cwd: string): string {
     ? state.waiters.map((w) =>
         `  session ${w.session ?? 'unknown'}, pid ${w.pid}, landing ${w.what}, waiting ${age(w.since)}`).join('\n')
     : '  none'
-  return `${project.name} landing lock: ${holder}\nwaiters:\n${waiters}`
+  return `${project.name} landing lock: ${holder}\nwaiters:\n${waiters}\n${formatGitLocks(repoRoot)}`
 }

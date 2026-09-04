@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db, nowIso, pidAlive, SESSION_LIVE_MS, UNSCORED_WHERE } from './db.ts'
 import { fileIssue } from './mcp.ts'
+import { gitLocks } from './git-locks.ts'
 import { projects } from './projects.ts'
 import { projectLockState } from './worktree.ts'
 
@@ -169,6 +170,24 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
           detail: `${project.name} ${lockName} lock belongs to dead pid ${state.holder.pid}`,
           action: 'reported; no standalone reclaim command exists', affectedProject: project.name })
       } catch (cause) { errors.push(`${project.name} lock inventory: ${String((cause as Error).message ?? cause)}`) }
+    }
+
+    try {
+      for (const lock of gitLocks(project.path, clock)) {
+        const owner = lock.ownerPids === null ? 'owner pid could not be inspected'
+          : lock.ownerPids.length ? `owner pid ${lock.ownerPids.join(', ')} is alive`
+          : 'no owning pid is alive'
+        const resolved = lock.contentRefs.length ? `; resolves to ${lock.contentRefs.join(', ')}` : ''
+        add({ kind: lock.ownerPids === null || lock.ownerPids.length ? 'git-lock' : 'dead-lock',
+          subject: lock.path,
+          since: lock.since,
+          detail: `${project.name} git lock targets ${lock.target ?? 'an unknown primitive'}; ` +
+            `contents ${lock.contents || '(empty)'}${resolved}; ${owner}`,
+          action: 'reported; lock and its recoverable contents were not removed',
+          affectedProject: project.name })
+      }
+    } catch (cause) {
+      errors.push(`${project.name} git lock inventory: ${String((cause as Error).message ?? cause)}`)
     }
 
     const root = join(project.path, '.claude', 'worktrees')
