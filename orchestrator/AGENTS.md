@@ -1118,6 +1118,43 @@ That is the incumbency problem this file already guards against for exploration,
 arriving through a different door. Below the bar, job-wide evidence answers
 exactly as before, and `orch pick` says which it used.
 
+## Project facts are declared, not inferred
+
+orch is project-agnostic. Every fact that differs by project belongs in that
+project's register row, declared in a shape the dispatcher can read and act on —
+not in orch's code, not in checked-in markdown, and not buried inside a string
+that something later greps.
+
+All four forms have already cost real work. Whether a project supports `--base`
+is decided by `create.includes('{base}')`, a substring search on a shell command
+string. Whether one `--seed` becomes one argument or several depends on whether
+the template's author happened to quote the placeholder, invisible at the call
+site and different by project. No project declared its trunk, so three consumers
+silently defaulted to `main` — including the sweep's own merged-check, the thing
+standing between a mis-aimed deletion and a lost run — although four of five
+projects do not have that branch. A porting feature put four project names, their
+product domains, directory layouts and tracker tool names into checked-in
+markdown beside 34 live task keys belonging to other projects.
+
+**An inferred capability fails at the moment of use; a declared one fails at
+registration.** The first costs a worktree, a vendor clone and someone's
+afternoon. The second costs a sentence when the project is set up.
+
+The reverse mistake is still the same defect. A fact that does not vary by
+project must not be copied into project settings: five copies go stale in four
+rows. Tracker tool names follow from the tracker protocol the register already
+records, so they belong to the shared protocol adapter rather than to every
+project using it.
+
+The mechanism depends on the case. The test is whether the fact varies **by
+project**; if it does not, it does not belong in a project row however
+project-shaped it looks. If the dispatcher must act on it — decide that
+something is possible, refuse early, or describe a capability honestly — it
+must be readable rather than deduced. Its shape is the smallest one that
+answers what the dispatcher actually asks, not the most general one. An
+argument list, an enum, a boolean or a shared protocol adapter can each be the
+right answer.
+
 ## The subagent gate
 
 A `PreToolUse` hook denies Claude-subagent spawns for work an external agent
