@@ -374,13 +374,14 @@ const { classify, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOT_EVIDENCE, COOLS_DOWN,
 const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePaths, pruneRuns, KEEP_RUN_FILES_DAYS,
         RUNS_DIR, grokMcpConnection, writingFailoverRefusal, resolveSupersededTurn,
         resolveRootFromLastTurn, gitObjectEnvironmentFor, inferredReadOnlyKey,
-        run: runJob } = await import('./run.ts')
+        canonSourceFor, canonSourceInstruction, run: runJob } = await import('./run.ts')
 const run = runJob
 const { summary } = await import('./metric.ts')
 const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
-        NO_REPO_PREAMBLE, WORKER_PREAMBLE, LAND_PREAMBLE, REVIEW_SCHEMA, ISSUE_WORKER_SCHEMA, workerPreamble, workerResumeGuard,
+        NO_REPO_PREAMBLE, WORKER_PREAMBLE, LAND_PREAMBLE, REVIEW_SCHEMA,
+        VERIFY_CLAIM_SCHEMA, ISSUE_WORKER_SCHEMA, workerPreamble, workerResumeGuard,
         contractConflicts } = await import('./contract.ts')
-const { recordReview, recordReviews, triageFinding, completeReview, reviewCalibration, calibrationLine,
+const { parseReviewReply, recordReview, recordReviews, triageFinding, completeReview, reviewCalibration, calibrationLine,
         MIN_REVIEW_TRIAGED } = await import('./review.ts')
 const { ask } = await import('./ask.ts')
 const { checkMessages, messageArchitect, messagesForRun } = await import('./mailbox.ts')
@@ -691,6 +692,7 @@ const reviewReply = (findings = 1) => ({
   provenance: {
     tree_inspected: 'abc123', standards_read: ['AGENTS.md'], model_used: 'reported-by-reviewer',
     files_covered: ['file.ts'], commands_run: ['bun test'], could_not_verify: [],
+    canon_source: 'live database' as const,
   },
 })
 
@@ -712,8 +714,21 @@ describe('review discipline', () => {
     }
     expect(REVIEW_SCHEMA.properties.provenance.required).toEqual([
       'tree_inspected', 'standards_read', 'model_used', 'files_covered',
-      'commands_run', 'could_not_verify',
+      'commands_run', 'could_not_verify', 'canon_source',
     ])
+    expect(REVIEW_SCHEMA.properties.provenance.properties.canon_source)
+      .toBe(VERIFY_CLAIM_SCHEMA.properties.provenance.properties.canon_source)
+    expect(VERIFY_CLAIM_SCHEMA.properties.verdict.enum).toEqual(['true', 'false', 'undecidable'])
+  })
+
+  test('review parsing requires one of the three canon provenance values', () => {
+    expect(parseReviewReply(reviewReply(0))?.provenance.canon_source).toBe('live database')
+    const missing = reviewReply(0) as Record<string, any>
+    delete missing.provenance.canon_source
+    expect(parseReviewReply(missing)).toBeNull()
+    expect(parseReviewReply({
+      ...reviewReply(0), provenance: { ...reviewReply(0).provenance, canon_source: 'connected' },
+    })).toBeNull()
   })
 
   test('records each lens before triage and derives runner and model from the orch run', () => {
@@ -3143,7 +3158,7 @@ fi
     }
   })
 
-  test('a lens proceeds unchanged when its requested project MCP attaches', async () => {
+  test('a connected lens receives live-database provenance in its assembled prompt', async () => {
     const script = join(dir, 'fake-grok-connected-lens.sh')
     writeFileSync(script, `#!/bin/sh
 if [ "$1" = "mcp" ]; then
@@ -3171,7 +3186,7 @@ fi
       const result = await runJob({
         job: 'review-lens', prompt: 'review this', cwd, agent: 'grok', mcp: true, lens: 'mcp',
       })
-      expect(sent).toContain('Provenance: state the source you measured against.')
+      expect(sent).toContain(canonSourceInstruction('live database'))
       expect(db().query(
         'SELECT mcp_server, mcp_connected FROM run WHERE id=?',
       ).get(result.id)).toEqual({
@@ -3185,7 +3200,7 @@ fi
     }
   })
 
-  test('a lens without --mcp is unaffected and does not run the MCP doctor', async () => {
+  test('a lens without --mcp receives mirror provenance and does not run the MCP doctor', async () => {
     const script = join(dir, 'fake-grok-no-mcp-lens.sh')
     writeFileSync(script, `#!/bin/sh
 if [ "$1" = "mcp" ]; then
@@ -3198,8 +3213,12 @@ printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
     const agent = AGENTS.grok!
     const originalBin = agent.bin
     const originalArgv = agent.argv
+    let sent = ''
     agent.bin = script
-    agent.argv = () => []
+    agent.argv = ({ prompt }) => {
+      sent = prompt
+      return []
+    }
     const priorDepth = process.env.ORCH_DEPTH
     process.env.ORCH_DEPTH = '0'
     try {
@@ -3207,6 +3226,7 @@ printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
         job: 'review-lens', prompt: 'review this', cwd: dir, agent: 'grok', mcp: false, lens: 'mcp',
       })
       expect(result.status).toBe('ok')
+      expect(sent).toContain(canonSourceInstruction('mirror'))
       expect(db().query(
         'SELECT mcp, mcp_server, mcp_connected, mcp_error FROM run WHERE id=?',
       ).get(result.id)).toEqual({
@@ -3260,7 +3280,7 @@ printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
     expect(known.stderr.toString()).not.toContain('UNVERIFIED')
   })
 
-  test('a codex lens proceeds unverified even when grok doctor would refuse', async () => {
+  test('a codex lens receives unknown provenance when its MCP attach cannot be diagnosed', async () => {
     const grok = AGENTS.grok!
     const codex = AGENTS.codex!
     const grokBin = grok.bin
@@ -3299,7 +3319,7 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_
         job: 'review-lens', prompt: 'review this', cwd, agent: 'codex', mcp: true, lens: 'probe',
       })
       expect(result.status).toBe('ok')
-      expect(sent).toContain('Provenance: state the source you measured against.')
+      expect(sent).toContain(canonSourceInstruction('unknown'))
       expect(db().query(
         'SELECT mcp, mcp_server, mcp_connected, mcp_error FROM run WHERE id=?',
       ).get(result.id)).toEqual({
@@ -3312,6 +3332,50 @@ printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_
       codex.bin = codexBin
       codex.argv = codexArgv
       codex.readsOut = codexReadsOut
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
+  test('maps all recorded connection states without flattening unknown', () => {
+    expect(canonSourceFor(true, { server: 'fixture-project', connected: true, error: null }, true))
+      .toBe('live database')
+    expect(canonSourceFor(true, { server: 'fixture-project', connected: false, error: 'down' }, true))
+      .toBe('mirror')
+    expect(canonSourceFor(true, { server: 'fixture-project', connected: null, error: 'no diagnostic' }, true))
+      .toBe('unknown')
+  })
+
+  test('verify-claim keeps its verdict contract and receives the same canon provenance', async () => {
+    const agent = AGENTS.grok!
+    const originalBin = agent.bin
+    const originalArgv = agent.argv
+    const script = join(dir, 'fake-grok-verify-claim.sh')
+    writeFileSync(script, `#!/bin/sh
+printf '%s\n' '{"type":"system","subtype":"init"}'
+printf '%s\n' '{"type":"result","subtype":"success","result":"{\\"verdict\\":\\"true\\",\\"provenance\\":{\\"canon_source\\":\\"mirror\\"}}"}'
+`)
+    chmodSync(script, 0o755)
+    let sent = ''
+    let sentSchema: string | undefined
+    agent.bin = script
+    agent.argv = ({ prompt, schema }) => {
+      sent = prompt
+      sentSchema = schema
+      return []
+    }
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      const result = await runJob({
+        job: 'verify-claim', prompt: 'verify this', cwd: dir, agent: 'grok', mcp: false,
+      })
+      expect(result.status).toBe('ok')
+      expect(sent).toContain(canonSourceInstruction('mirror'))
+      expect(JSON.parse(readFileSync(sentSchema!, 'utf8'))).toEqual(VERIFY_CLAIM_SCHEMA)
+    } finally {
+      agent.bin = originalBin
+      agent.argv = originalArgv
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
     }

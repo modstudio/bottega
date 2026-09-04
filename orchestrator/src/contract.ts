@@ -202,6 +202,20 @@ export type IssueWorkerReply = WorkerReply & {
 }
 
 /**
+ * Which authoritative canon source was available to a review run.
+ *
+ * Shared by both review contracts so a reader never has to translate two
+ * provenance dialects. `unknown` is deliberately distinct from either source:
+ * some clients expose no diagnostic and orch must not invent one for them.
+ */
+export const CANON_SOURCE_SCHEMA = {
+  type: 'string',
+  enum: ['live database', 'mirror', 'unknown'],
+} as const
+
+export type CanonSource = typeof CANON_SOURCE_SCHEMA.enum[number]
+
+/**
  * The fixed product of every findings-producing review job.
  *
  * An empty findings array is an explicit clean result, not silence. Provenance
@@ -229,7 +243,7 @@ export const REVIEW_SCHEMA = {
     provenance: {
       type: 'object', additionalProperties: false,
       required: ['tree_inspected', 'standards_read', 'model_used', 'files_covered',
-        'commands_run', 'could_not_verify'],
+        'commands_run', 'could_not_verify', 'canon_source'],
       properties: {
         tree_inspected: { type: 'string' },
         standards_read: { type: 'array', items: { type: 'string' } },
@@ -237,6 +251,7 @@ export const REVIEW_SCHEMA = {
         files_covered: { type: 'array', items: { type: 'string' } },
         commands_run: { type: 'array', items: { type: 'string' } },
         could_not_verify: { type: 'array', items: { type: 'string' } },
+        canon_source: CANON_SOURCE_SCHEMA,
       },
     },
   },
@@ -247,8 +262,25 @@ export type ReviewReply = {
   provenance: {
     tree_inspected: string; standards_read: string[]; model_used: string
     files_covered: string[]; commands_run: string[]; could_not_verify: string[]
+    canon_source: CanonSource
   }
 }
+
+/** verify-claim keeps its verdict contract; only its provenance is added. */
+export const VERIFY_CLAIM_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['verdict', 'provenance'],
+  properties: {
+    verdict: { type: 'string', enum: ['true', 'false', 'undecidable'] },
+    provenance: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['canon_source'],
+      properties: { canon_source: CANON_SOURCE_SCHEMA },
+    },
+  },
+} as const
 
 /**
  * The standing instructions a worker gets on top of its spec.

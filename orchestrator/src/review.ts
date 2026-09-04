@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { db, nowIso } from './db.ts'
-import { REVIEW_SCHEMA, type ReviewReply } from './contract.ts'
+import { CANON_SOURCE_SCHEMA, REVIEW_SCHEMA, type CanonSource, type ReviewReply } from './contract.ts'
 import { job } from './jobs.ts'
 
 export const REVIEW_WINDOW = 50
@@ -16,6 +16,8 @@ export type Disposition = typeof DISPOSITIONS[number]
 
 const isStrings = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((x) => typeof x === 'string')
+const isCanonSource = (v: unknown): v is CanonSource =>
+  typeof v === 'string' && (CANON_SOURCE_SCHEMA.enum as readonly string[]).includes(v)
 const exactKeys = (value: object, expected: string[]) => {
   const actual = Object.keys(value).sort()
   return actual.length === expected.length && actual.every((key, i) => key === [...expected].sort()[i])
@@ -27,11 +29,13 @@ export function parseReviewReply(value: unknown): ReviewReply | null {
       !Array.isArray(v.findings)) return null
   const p = v.provenance
   if (!p || typeof p !== 'object' || Array.isArray(p) || !exactKeys(p, [
-    'tree_inspected', 'standards_read', 'model_used', 'files_covered', 'commands_run', 'could_not_verify',
+    'tree_inspected', 'standards_read', 'model_used', 'files_covered', 'commands_run',
+    'could_not_verify', 'canon_source',
   ]) ||
       typeof p.tree_inspected !== 'string' || typeof p.model_used !== 'string' ||
       !isStrings(p.standards_read) || !isStrings(p.files_covered) ||
-      !isStrings(p.commands_run) || !isStrings(p.could_not_verify)) return null
+      !isStrings(p.commands_run) || !isStrings(p.could_not_verify) ||
+      !isCanonSource(p.canon_source)) return null
   if (!v.findings.every((f) => f && typeof f === 'object' && !Array.isArray(f) &&
       exactKeys(f, ['severity', 'location', 'evidence', 'proposed_correction']) &&
       typeof f.severity === 'string' && typeof f.location === 'string' &&

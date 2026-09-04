@@ -26,8 +26,9 @@ import {
 import { recipeNotes } from './recipe.ts'
 import {
   workerPreamble, workerResumeGuard, READONLY_PREAMBLE, NO_REPO_PREAMBLE, WORKER_SCHEMA, ISSUE_WORKER_SCHEMA, REVIEW_SCHEMA,
+  VERIFY_CLAIM_SCHEMA,
   parseWorkerReplyWithCount, isAsking,
-  type WorkerReply,
+  type CanonSource, type WorkerReply,
 } from './contract.ts'
 import { CALIBRATION_SUFFIX_RESERVE_BYTES, calibrationLine, reviewCalibration } from './review.ts'
 import { createHasPlaceholder, projectAt, stackAt } from './projects.ts'
@@ -202,6 +203,30 @@ export type McpConnection = {
   connected: boolean | null
   error: string | null
 }
+
+/** The provenance value orch can establish from this run's dispatch facts. */
+export function canonSourceFor(
+  mcpRequested: boolean,
+  connection: McpConnection | null,
+  mirrorAvailable: boolean,
+): CanonSource {
+  if (!mcpRequested) return mirrorAvailable ? 'mirror' : 'unknown'
+  if (connection?.connected === true) return 'live database'
+  if (connection?.connected === false) return 'mirror'
+  return 'unknown'
+}
+
+export function canonSourceInstruction(source: CanonSource): string {
+  return (
+    `Canon source provenance: set provenance.canon_source to "${source}" in your reply. ` +
+    'This reports the canon source available to this run, whether or not you consulted canon.'
+  )
+}
+
+const CANON_SOURCE_PROMPT_RESERVE_BYTES = Math.max(
+  ...(['live database', 'mirror', 'unknown'] as CanonSource[])
+    .map((source) => Buffer.byteLength(canonSourceInstruction(source))),
+) + 2
 
 /**
  * Ask the same client that will run the lens whether its project MCP can start.
@@ -886,9 +911,6 @@ export async function run(opts: {
         ].join('\n')
       })()
     : ''
-  const provenance = opts.job === 'review-lens'
-    ? 'Provenance: state the source you measured against.'
-    : ''
   let prompt = writesJob && !opts.resume
     ? [
         workerPreamble(opts.job),
@@ -900,8 +922,10 @@ export async function run(opts: {
     : opts.resume
       ? (resumeReminder ? `${resumeReminder}\n\n---\n\n${originalPrompt}` : originalPrompt)
       : [repoJob ? READONLY_PREAMBLE : NO_REPO_PREAMBLE,
-          provenance, docsSection, `---\n\n${originalPrompt}`]
+          docsSection, `---\n\n${originalPrompt}`]
           .filter(Boolean).join('\n\n')
+
+  const requiresCanonSource = requestedJob.findings || opts.job === 'verify-claim'
 
   // A resumed turn is NOT routed. The conversation lives inside one vendor's
   // session, so "which agent is best at this job" is not a question that can be
@@ -913,7 +937,8 @@ export async function run(opts: {
     // component is two different agents to a router, and only this tells them
     // apart. Backs off to job-wide evidence until a stack cell has earned it.
     : pick(opts.job, opts.agent,
-           Buffer.byteLength(prompt) + (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0),
+           Buffer.byteLength(prompt) + (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0) +
+             (requiresCanonSource ? CANON_SOURCE_PROMPT_RESERVE_BYTES : 0),
            true, stackAt(callerCwd),
            { agents: opts.avoid, models: opts.distinctModels, model: opts.model })
   const a = AGENTS[name]!
@@ -938,6 +963,10 @@ export async function run(opts: {
    * rather than converting a non-event into a failed row.
    */
   const mcpConnection = probeRequestedMcp(opts.mcp, name, callerCwd)
+  if (requiresCanonSource && !opts.resume) {
+    const source = canonSourceFor(Boolean(opts.mcp), mcpConnection, repoJob)
+    prompt += `\n\n${canonSourceInstruction(source)}`
+  }
   const mcpWhy = mcpConnection ? mcpAttachRefusal(mcpConnection) : null
   if (mcpWhy) {
     if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
@@ -1003,7 +1032,9 @@ export async function run(opts: {
    */
   const generatedSchema = requestedJob.name === 'issue-worker'
     ? ISSUE_WORKER_SCHEMA
-    : writesJob ? WORKER_SCHEMA : requestedJob.findings ? REVIEW_SCHEMA : null
+    : writesJob ? WORKER_SCHEMA
+      : requestedJob.findings ? REVIEW_SCHEMA
+        : requestedJob.name === 'verify-claim' ? VERIFY_CLAIM_SCHEMA : null
   const originalSchemaPath = generatedSchema && !opts.schemaPath
     ? (() => {
         const p = join(runsDir, `${stamp}.schema.json`)
