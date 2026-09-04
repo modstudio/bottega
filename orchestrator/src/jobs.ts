@@ -107,7 +107,10 @@ export const JOBS: Record<string, Job> = {
   'review-lens-inline': {
     name: 'review-lens-inline',
     what: 'Review a fully self-contained pack. Everything needed is in the prompt; nothing is fetched.',
-    needs: {},
+    // False is stronger than absence: this job is not merely able to work
+    // without a repository, its self-contained contract forbids being handed
+    // one. run() turns this declaration into an empty working directory.
+    needs: { readsRepo: false },
     prefer: ['agy', 'grok', 'codex'],
     contextTokens: ERRAND,
   },

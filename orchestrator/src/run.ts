@@ -1,4 +1,8 @@
-import { mkdirSync, readFileSync, existsSync, writeFileSync, readdirSync, statSync, unlinkSync } from 'node:fs'
+import {
+  mkdirSync, mkdtempSync, readFileSync, existsSync, writeFileSync, readdirSync, rmSync,
+  statSync, unlinkSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import type { Database } from 'bun:sqlite'
@@ -672,6 +676,7 @@ export async function run(opts: {
   const requestedJob = job(opts.job)
   const writesJob = Boolean(requestedJob.needs.writesRepo)
   const repoJob = Boolean(requestedJob.needs.readsRepo)
+  const forbidsRepo = requestedJob.needs.readsRepo === false
   const callerCwd = opts.cwd ?? process.cwd()
   // A RESUMED turn does not repeat the full preamble. The worker is still inside
   // the conversation that carried it, so re-sending all of it would spend tokens
@@ -958,6 +963,7 @@ export async function run(opts: {
   let worktree: Worktree | null = opts.resume?.worktree ?? null
   let carried: import('./worktree.ts').CarriedWorkingState | null = null
   let changes: import('./worktree.ts').Changes | null = null
+  let isolatedCwd: string | null = null
   /**
    * Cutting the worktree can FAIL, and the row already exists by now.
    *
@@ -971,7 +977,16 @@ export async function run(opts: {
   let cwd = callerCwd
   try {
     const creating = repoJob && !worktree
-    if (repoJob) {
+    if (forbidsRepo) {
+      // A self-contained job must not inherit the checkout it was launched
+      // from. Read-only controls mutation, not visibility; the incident this
+      // boundary closes was a reviewer reading the caller's HEAD and treating
+      // it as part of an inline pack. An empty directory gives the process no
+      // checkout at all, while launch_cwd retains project attribution.
+      isolatedCwd = mkdtempSync(join(tmpdir(), `orch-no-repo-${claim.id}-`))
+      cwd = isolatedCwd
+      db().query('UPDATE run SET cwd=? WHERE id=?').run(cwd, claim.id)
+    } else if (repoJob) {
       // A job that reads the repository must have a worktree, so a repository
       // it cannot be cut from is a hard failure.
       const tool = toolFor(callerCwd)
@@ -1059,6 +1074,7 @@ export async function run(opts: {
       cwd = worktree.path
     }
   } catch (e) {
+    if (isolatedCwd) rmSync(isolatedCwd, { recursive: true, force: true })
     const why = errorTail(String((e as Error)?.message ?? e))
     db().query(
       // 'harness': setting a worktree up is orch's job, and failing at it says
@@ -1343,6 +1359,11 @@ export async function run(opts: {
     if (timer) clearTimeout(timer)
     if (killer) clearTimeout(killer)
     if (proc) live.delete(proc)
+
+    // The directory contains no input and is useful only while the vendor is
+    // alive. Remove it after readSession has had the chance to derive any
+    // vendor-owned transcript location from cwd.
+    if (isolatedCwd) rmSync(isolatedCwd, { recursive: true, force: true })
 
     /**
      * The diff is read EVEN WHEN THE RUN FAILED, and that is the point.

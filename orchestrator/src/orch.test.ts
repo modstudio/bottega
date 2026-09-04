@@ -5675,6 +5675,11 @@ describe('only an agent that can be resumed may be asked to escalate', () => {
     expect(land.timeoutMs).toBe(30 * 60_000)
   })
 
+  test('inline review declares that repository access is forbidden', () => {
+    expect(JOBS['review-lens-inline']!.needs).toEqual({ readsRepo: false })
+    expect(JOBS['review-lens']!.needs).toEqual({ readsRepo: true })
+  })
+
   test('land gets its commit contract and other writing jobs keep no-commit', () => {
     expect(workerPreamble('land')).toBe(LAND_PREAMBLE)
     expect(LAND_PREAMBLE).toContain('DIFFERENT contract from implement')
@@ -5739,6 +5744,81 @@ describe('only an agent that can be resumed may be asked to escalate', () => {
     const a = AGENTS.codex!.resumeArgv!({ prompt: 'ruling', out: '/tmp/o', session: 'abc' })
     expect(a.indexOf('resume')).toBeGreaterThan(a.indexOf('--json'))
     expect(a[a.indexOf('resume') + 1]).toBe('abc')
+  })
+})
+
+describe('review-lens-inline has no checkout', () => {
+  test('runs from an empty directory while review-lens still receives the project tree', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-inline-boundary-'))
+    const script = join(dir, 'report-worker-cwd.ts')
+    const agent = AGENTS.codex!
+    const original = {
+      bin: agent.bin, argv: agent.argv, stdin: agent.stdin,
+      readsOut: agent.readsOut, parseReply: agent.parseReply,
+    }
+    const oldDepth = process.env.ORCH_DEPTH
+    const runGit = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+    }
+    try {
+      runGit('init', '-b', 'main')
+      runGit('config', 'user.email', 'orch-test@example.invalid')
+      runGit('config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'project-only.txt'), 'wrong tree evidence\n')
+      runGit('add', 'project-only.txt')
+      runGit('commit', '-m', 'fixture')
+      writeFileSync(script, [
+        "import { existsSync } from 'node:fs'",
+        "const prompt = await Bun.stdin.text()",
+        "console.log(JSON.stringify({",
+        "  cwd: process.cwd(),",
+        "  checkout: existsSync('.git'),",
+        "  projectFile: existsSync('project-only.txt'),",
+        "  receivedPack: prompt.includes('SELF_CONTAINED_FACT'),",
+        "}))",
+      ].join('\n'))
+      agent.bin = process.execPath
+      agent.argv = () => [script]
+      agent.stdin = true
+      agent.readsOut = false
+      agent.parseReply = undefined
+      process.env.ORCH_DEPTH = '0'
+
+      const inline = await runJob({
+        job: 'review-lens-inline', prompt: 'SELF_CONTAINED_FACT', cwd: repo, agent: 'codex',
+      })
+      const inlineView = JSON.parse(inline.output) as {
+        cwd: string; checkout: boolean; projectFile: boolean; receivedPack: boolean
+      }
+      expect(inlineView.checkout).toBe(false)
+      expect(inlineView.projectFile).toBe(false)
+      expect(inlineView.receivedPack).toBe(true)
+      expect(existsSync(inlineView.cwd)).toBe(false)
+      expect(inline.worktree).toBeNull()
+
+      const repository = await runJob({
+        job: 'review-lens', prompt: 'inspect project-only.txt', cwd: repo, agent: 'codex',
+      })
+      const repositoryView = JSON.parse(repository.output) as {
+        checkout: boolean; projectFile: boolean
+      }
+      expect(repositoryView.checkout).toBe(true)
+      expect(repositoryView.projectFile).toBe(true)
+      expect(repository.worktree?.path).toBeTruthy()
+    } finally {
+      agent.bin = original.bin
+      agent.argv = original.argv
+      agent.stdin = original.stdin
+      agent.readsOut = original.readsOut
+      agent.parseReply = original.parseReply
+      if (oldDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = oldDepth
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(script, { force: true })
+    }
   })
 })
 
