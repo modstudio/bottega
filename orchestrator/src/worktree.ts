@@ -820,6 +820,14 @@ function verifyFreshWorktree(worktree: Worktree): void {
  * runtime state into another's.
  */
 export function carryWorkingState(cwd: string, worktree: Worktree): void {
+  const callerHead = git(['rev-parse', 'HEAD'], cwd)
+  if (gitOk(['merge-base', '--is-ancestor', worktree.base, callerHead], cwd) === null) {
+    throw new Error(
+      `caller HEAD ${callerHead} is behind or diverged from the tree's base ${worktree.base}; ` +
+      `update the caller checkout so its HEAD descends from the tree's base, then retry`,
+    )
+  }
+
   const patch = gitBytes(['diff', '--binary', '--full-index', worktree.base, '--'], cwd)
   if (patch.byteLength) gitInput(['apply', '--binary', '--whitespace=nowarn', '-'], worktree.path, patch)
 

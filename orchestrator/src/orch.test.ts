@@ -6085,7 +6085,7 @@ describe('an agent gets the toolchain of a project someone registered', () => {
         cwd: repo, env: hermeticGitEnv(),
       }).stdout.toString()
 
-      const tree = createWorktree(repo, 134)
+      const tree = createWorktree(repo, 134, 'main')
       carryWorkingState(repo, tree)
 
       expect(readFileSync(join(tree.path, 'branch.txt'), 'utf8')).toBe('committed branch work\n')
@@ -6098,6 +6098,39 @@ describe('an agent gets the toolchain of a project someone registered', () => {
       expect(Bun.spawnSync(['git', 'status', '--porcelain'], {
         cwd: repo, env: hermeticGitEnv(),
       }).stdout.toString()).toBe(before)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test("a caller behind the tree's base is refused before its reversions are carried", () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-stale-caller-'))
+    const git = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    try {
+      git('init', '-b', 'main')
+      git('config', 'user.email', 'orch-test@example.invalid')
+      git('config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'tracked.txt'), 'caller base\n')
+      git('add', 'tracked.txt')
+      git('commit', '-m', 'caller base')
+      const callerHead = git('rev-parse', 'HEAD')
+      writeFileSync(join(repo, 'tracked.txt'), 'newer base\n')
+      git('commit', '-am', 'newer base')
+      const tree = createWorktree(repo, 135)
+      git('switch', '--detach', callerHead)
+
+      expect(() => carryWorkingState(repo, tree)).toThrow(
+        `caller HEAD ${callerHead} is behind or diverged from the tree's base ${tree.base}; ` +
+        `update the caller checkout so its HEAD descends from the tree's base, then retry`,
+      )
+      expect(readFileSync(join(tree.path, 'tracked.txt'), 'utf8')).toBe('newer base\n')
+      expect(git('-C', tree.path, 'status', '--porcelain')).toBe('')
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
