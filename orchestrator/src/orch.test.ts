@@ -1814,11 +1814,67 @@ printf '%s' '{"servers":[{"name":"starship","healthy":false,"checks":[{"label":"
       })
   })
 
-  test('records degradation and requires provenance in every lens prompt', async () => {
+  test('refuses a lens before the agent starts when its requested project MCP cannot attach', async () => {
     const script = join(dir, 'fake-grok-lens.sh')
     writeFileSync(script, `#!/bin/sh
 if [ "$1" = "mcp" ]; then
   printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"label":"folder untrusted","passed":false,"detail":"repo-local server not started","hint":"re-run with --trust"}]}]}'
+else
+  printf '%s\n' '{"type":"system","subtype":"init"}'
+  printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
+fi
+`)
+    chmodSync(script, 0o755)
+    const agent = AGENTS.grok!
+    const originalBin = agent.bin
+    const originalArgv = agent.argv
+    let sent = ''
+    agent.bin = script
+    agent.argv = ({ prompt }) => {
+      sent = prompt
+      return []
+    }
+    const cwd = dir
+    upsertProject({ name: 'fixture-project', path: cwd, settings: {} })
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      let runId: number | undefined
+      try {
+        await runJob({
+          job: 'review-lens', prompt: 'review this', cwd, agent: 'grok', mcp: true,
+        })
+      } catch (error) {
+        runId = (error as Error & { runId?: number }).runId
+        expect(String(error)).toContain(
+          "MCP was requested, but server 'fixture-project' could not be attached",
+        )
+        expect(String(error)).toContain('The agent was not started.')
+      }
+      expect(runId).toBeDefined()
+      expect(sent).toBe('')
+      expect(db().query(
+        `SELECT status, failure_kind, mcp_server, mcp_connected, mcp_error, output_path
+           FROM run WHERE id=?`,
+      ).get(runId!)).toEqual({
+        status: 'failed', failure_kind: 'harness',
+        mcp_server: 'fixture-project', mcp_connected: 0,
+        mcp_error: 'folder untrusted: repo-local server not started: re-run with --trust',
+        output_path: null,
+      })
+    } finally {
+      agent.bin = originalBin
+      agent.argv = originalArgv
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
+  test('a lens proceeds unchanged when its requested project MCP attaches', async () => {
+    const script = join(dir, 'fake-grok-connected-lens.sh')
+    writeFileSync(script, `#!/bin/sh
+if [ "$1" = "mcp" ]; then
+  printf '%s' '{"servers":[{"name":"fixture-project","healthy":true,"checks":[]}]}'
 else
   printf '%s\n' '{"type":"system","subtype":"init"}'
   printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
@@ -1844,10 +1900,44 @@ fi
       })
       expect(sent).toContain('Provenance: state the source you measured against.')
       expect(db().query(
-        'SELECT mcp_server, mcp_connected, mcp_error FROM run WHERE id=?',
+        'SELECT mcp_server, mcp_connected FROM run WHERE id=?',
       ).get(result.id)).toEqual({
-        mcp_server: 'fixture-project', mcp_connected: 0,
-        mcp_error: 'folder untrusted: repo-local server not started: re-run with --trust',
+        mcp_server: 'fixture-project', mcp_connected: 1,
+      })
+    } finally {
+      agent.bin = originalBin
+      agent.argv = originalArgv
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
+  test('a lens without --mcp is unaffected and does not run the MCP doctor', async () => {
+    const script = join(dir, 'fake-grok-no-mcp-lens.sh')
+    writeFileSync(script, `#!/bin/sh
+if [ "$1" = "mcp" ]; then
+  exit 99
+fi
+printf '%s\n' '{"type":"system","subtype":"init"}'
+printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
+`)
+    chmodSync(script, 0o755)
+    const agent = AGENTS.grok!
+    const originalBin = agent.bin
+    const originalArgv = agent.argv
+    agent.bin = script
+    agent.argv = () => []
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      const result = await runJob({
+        job: 'review-lens', prompt: 'review this', cwd: dir, agent: 'grok', mcp: false,
+      })
+      expect(result.status).toBe('ok')
+      expect(db().query(
+        'SELECT mcp, mcp_server, mcp_connected, mcp_error FROM run WHERE id=?',
+      ).get(result.id)).toEqual({
+        mcp: 0, mcp_server: null, mcp_connected: null, mcp_error: null,
       })
     } finally {
       agent.bin = originalBin

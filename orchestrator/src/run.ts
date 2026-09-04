@@ -952,6 +952,28 @@ export async function run(opts: {
     )
 
   /**
+   * A known failed MCP handshake is a failed run, not a degraded one.
+   *
+   * Grok exposes this state through `mcp doctor`, so it is known before the
+   * vendor process starts. Stop at that boundary: once the caller requested
+   * MCP, letting the agent produce an answer without the named project server
+   * would present stale fallback data as a completed review.
+   *
+   * `null` remains distinct from `false`. Other clients do not expose a
+   * connection diagnostic, and an unknown state is not evidence that a server
+   * failed to attach.
+   */
+  if (mcpConnection?.connected === false) {
+    const why =
+      `MCP was requested, but server '${mcpConnection.server}' could not be attached` +
+      `${mcpConnection.error ? `: ${mcpConnection.error}` : '.'} The agent was not started.`
+    db().query(
+      `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
+    ).run(why, Date.now() - started, claim.id)
+    throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
+  }
+
+  /**
    * A repository worker never runs in the caller's checkout.
    *
    * Cut AFTER the row exists, because the worktree is named by run id and the
