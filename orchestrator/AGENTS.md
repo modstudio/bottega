@@ -750,6 +750,11 @@ diff <id>` is the deliverable — what it DID, as against `orch result`,
 which is what it SAID. Those are different claims, and checking an agent's work
 against its own summary checks nothing.
 
+**Done describes the work, not the knowledge.** When you are about to derive
+something, ask whether a landed task already established it. Its comments,
+scoring notes and commit message keep the standing they had when written;
+consult that record instead of deriving it again.
+
 ```
 orch do implement "<spec>"      route, cut a worktree, build
 orch inbox                      decisions a worker stopped to ask about
