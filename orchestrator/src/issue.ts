@@ -113,6 +113,15 @@ export function boundedIssuePack(issue: FiledIssue): string {
   }, null, 2)
 }
 
+/** A task key created on orch's behalf must meet the same project rule as --key. */
+export function validatedTrackerTaskKey(value: string, project: Project): string {
+  const keyPattern = project.settings.worktree?.keyPattern ?? '^[A-Z][A-Z0-9]+-[0-9]+$'
+  if (!new RegExp(keyPattern).test(value)) {
+    throw new Error(`hub task tracker-new did not return a valid task key; returned ${JSON.stringify(value)}`)
+  }
+  return value
+}
+
 function jsonObjects(text: string): unknown[] {
   const out: unknown[] = []
   let depth = 0, start = -1, quoted = false, escaped = false
@@ -361,8 +370,8 @@ export async function workIssue(key: string): Promise<void> {
     if (!target) throw new Error('diagnosis did not resolve a registered target project')
     let branchKey = issue.key
     if (target.name !== PLATFORM_SLUG) {
-      branchKey = await hub(['task', 'tracker-new', '--project', target.name,
-        '--title', `[${issue.key}] ${issue.title}`, '--body', `Filed from ${issue.key}. ${diagnosis.established_cause ?? ''}`])
+      branchKey = validatedTrackerTaskKey(await hub(['task', 'tracker-new', '--project', target.name,
+        '--title', `[${issue.key}] ${issue.title}`, '--body', `Filed from ${issue.key}. ${diagnosis.established_cause ?? ''}`]), target)
       await comment(issue.key, `Linked fix task ${branchKey} in ${target.name}; that task records origin ${issue.key}.`)
     }
     const targetSeeds = target.settings.worktree?.seeds ?? []

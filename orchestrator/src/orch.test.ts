@@ -577,7 +577,7 @@ const { listPairs, addPair, baselineForPair, setBaseline, listSkips, addSkip,
   await import('./porting.ts')
 const { applyImport, ImportRefusalError, planImport, sourceCoverage } = await import('./porting-import.ts')
 const { parseFiledIssue, seedFromReport, boundedIssuePack, parseIssueReply,
-        ISSUE_DIAGNOSIS_SCHEMA } = await import('./issue.ts')
+        validatedTrackerTaskKey, ISSUE_DIAGNOSIS_SCHEMA } = await import('./issue.ts')
 
 describe('filed issue coordinator inputs', () => {
   const shown = { task: { key: 'DEV-9', title: '[DEFECT] broken', body: `TYPE: DEFECT
@@ -617,6 +617,15 @@ the cause` } }
     const project = { settings: { worktree: { seeds: ['none', 'full'] } } } as any
     expect(seedFromReport(project, 'ordinary shell')).toBeNull()
     expect(seedFromReport(project, 'compare none with full')).toBeNull()
+  })
+
+  test('validates tracker-new stdout with the target project key standard', () => {
+    const project = { settings: { worktree: { keyPattern: '^AB-[1-9][0-9]*$' } } } as any
+    expect(validatedTrackerTaskKey('AB-42', project)).toBe('AB-42')
+    expect(() => validatedTrackerTaskKey('', project))
+      .toThrow('hub task tracker-new did not return a valid task key; returned ""')
+    expect(() => validatedTrackerTaskKey('created task AB-42', project))
+      .toThrow('hub task tracker-new did not return a valid task key; returned "created task AB-42"')
   })
 
   test('takes the last structured diagnosis and requires what could not be established', () => {
