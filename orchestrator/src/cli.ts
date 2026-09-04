@@ -1,4 +1,4 @@
-import { db, nowIso, sessionId, judgeability, pendingForSession, unscoredCount, weigh,
+import { DB_PATH, db, nowIso, sessionId, judgeability, pendingForSession, unscoredCount, weigh,
          DELIVERY, QUALITY, FIDELITY, type Delivery, type Quality, type Fidelity,
          reapStale, pidAlive, STALE_AFTER_MS, UNSCORED_WHERE, recordDuels, duelMatrices,
          parseRunIds, recordSessionSeen, SESSION_LIVE_MS,
@@ -234,7 +234,8 @@ const cmd = argv[0]
 
 // One invocation is one heartbeat. Keeping it at the process boundary avoids
 // turning the many read helpers below into competing writers.
-recordSessionSeen()
+const readOnlyPortDryRun = cmd === 'port' && argv[1] === 'import' && argv.includes('--dry-run')
+if (!readOnlyPortDryRun) recordSessionSeen()
 
 /** Human-readable duration: seconds under a minute, then m/s, then h/m. */
 function dur(ms: number | null | undefined): string {
@@ -1070,7 +1071,8 @@ switch (cmd) {
     if (group === 'import') {
       const dir = argv[2]
       if (!dir) throw new Error('orch port import <dir> [--dry-run] [--replace] [--json]')
-      const { applyImport, ImportRefusalError, planImport } = await import('./porting-import.ts')
+      const { applyImport, ImportRefusalError, planImport, projectsForDryRun } =
+        await import('./porting-import.ts')
       const names = {
         doctrine: 'doctrine.md', differences: 'differences.md', backports: 'backports.md',
         refs: 'refs.json', state: 'state.json', projects: 'projects.md',
@@ -1091,7 +1093,12 @@ switch (cmd) {
           ioRefusals.push({ what: `source file "${name}"`, where: path, why: String(error) })
         }
       }
-      const plan = planImport(files, projects())
+      let registered = [] as ReturnType<typeof projects>
+      try { registered = has('dry-run') ? projectsForDryRun(DB_PATH) : projects() }
+      catch (error) {
+        ioRefusals.push({ what: 'project register', where: DB_PATH, why: String(error) })
+      }
+      const plan = planImport(files, registered)
       plan.refusals.unshift(...ioRefusals)
       const visible = {
         ...plan,
@@ -1122,6 +1129,11 @@ switch (cmd) {
         console.log(`refusals (${plan.refusals.length})`)
         for (const refusal of plan.refusals) {
           console.log(`  ${refusal.what} / ${refusal.where} / ${refusal.why}`)
+        }
+        console.log(`exclusions (${plan.exclusions.length})`)
+        for (const exclusion of plan.exclusions) {
+          console.log(`  ${exclusion.what} / ${exclusion.where} / ${exclusion.why}`)
+          if (exclusion.value !== undefined) console.log(`    original value: ${exclusion.value}`)
         }
       }
       if (has('dry-run')) {

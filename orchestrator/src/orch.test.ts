@@ -891,7 +891,7 @@ describe('port importer', () => {
       .not.toContain('Process body.')
   })
 
-  test('names incompatible baselines, reasonless skips, and every unmapped pair field', () => {
+  test('excludes incompatible baselines and unmapped fields while preserving bare skips losslessly', () => {
     const state = JSON.stringify({ pairs: {
       'alpha-invented->beta-invented': {
         lastPortedSha: null, scannedAt: '2026-01-01', skipped: ['bare candidate'],
@@ -899,35 +899,47 @@ describe('port importer', () => {
       },
     } })
     const plan = planImport(fixture({ state }), registered())
-    expect(plan.refusals.filter((r) => r.what.startsWith('pair field')).map((r) => r.what)).toEqual([
+    expect(plan.exclusions.filter((r) => r.what.startsWith('pair field')).map((r) => r.what)).toEqual([
       'pair field "note"', 'pair field "notes"', 'pair field "scope"', 'pair field "staged"',
     ])
-    expect(plan.refusals.find((r) => r.what === 'baseline')?.where)
+    expect(plan.exclusions.find((r) => r.what === 'baseline')?.where)
       .toBe('state.json pairs["alpha-invented->beta-invented"]')
-    expect(plan.refusals.find((r) => r.what.startsWith('skip'))?.why).toContain('no reason')
+    expect(plan.skips).toEqual([expect.objectContaining({
+      candidate: 'bare candidate',
+      reason: 'recorded in the source with no separate reason; the candidate text is the entire record',
+    })])
+    expect(plan.docs.find((doc) => doc.slug === 'port-import-exclusions')?.body)
+      .toContain('Original value:\none')
   })
 
-  test('refuses free-text sources and unknown or multiply-owned task prefixes by task key', () => {
+  test('splits declared multi-sources, preserves qualifiers, and refuses unresolved sources and task prefixes', () => {
     upsertProject({ name: 'alpha-invented', path: '/w/a', settings: { keyPrefixes: ['ALP'] } })
     upsertProject({ name: 'beta-invented', path: '/w/b', settings: { keyPrefixes: ['DUP'] } })
     upsertProject({ name: 'gamma-invented', path: '/w/c', settings: { keyPrefixes: ['DUP'] } })
     const refs = JSON.stringify({
       'ALP-1': { source: 'alpha-invented + beta-invented', commits: [], paths: [], notes: '' },
+      'ALP-2': { source: 'alpha-invented (concept); new mechanism', commits: [], paths: [], notes: '' },
+      'ALP-3': { source: 'missing-invented (unknown)', commits: [], paths: [], notes: '' },
       'NONE-2': { source: 'alpha-invented', commits: [], paths: [], notes: '' },
       'DUP-3': { source: 'alpha-invented', commits: [], paths: [], notes: '' },
     })
     const plan = planImport(fixture({ refs }), projects())
+    expect(plan.refs.find((ref) => ref.taskKey === 'ALP-1')?.sources.map((source) => source.source_project_id))
+      .toEqual([projects().find((p) => p.name === 'alpha-invented')!.id,
+        projects().find((p) => p.name === 'beta-invented')!.id])
+    expect(plan.refs.find((ref) => ref.taskKey === 'ALP-2')?.sources[0]?.note)
+      .toBe(' (concept); new mechanism')
     expect(plan.refusals).toEqual(expect.arrayContaining([
-      expect.objectContaining({ where: 'refs.json ALP-1', what: 'project "alpha-invented + beta-invented"' }),
+      expect.objectContaining({ where: 'refs.json ALP-3', what: 'project "missing-invented (unknown)"' }),
       expect.objectContaining({ where: 'refs.json NONE-2', why: expect.stringContaining('no registered project') }),
       expect.objectContaining({ where: 'refs.json DUP-3', why: expect.stringContaining('several registered projects') }),
     ]))
   })
 
-  test('records the deliberately unimported register-derived sections as one refusal', () => {
+  test('records the deliberately unimported register-derived sections as one exclusion', () => {
     const source = fixture({ projects: '# Projects\n\n## Resolving the workspace\nOld paths.\n\n## Stacks\nOld stacks.\n\n## Category map\nCategories.\n\n## Reference implementations (deepest instance = default port source)\nReferences.\n' })
     const plan = planImport(source, registered())
-    expect(plan.refusals.filter((r) => r.where === 'projects.md')).toEqual([
+    expect(plan.exclusions.filter((r) => r.where === 'projects.md')).toEqual([
       expect.objectContaining({ what: 'workspace and stack sections' }),
     ])
   })
@@ -941,6 +953,22 @@ describe('port importer', () => {
     expect(getDoc('global', null, 'port-category-map')).toBeNull()
   })
 
+  test('persists every exclusion and its original value inside the import transaction', () => {
+    const state = JSON.stringify({ pairs: {
+      'alpha-invented->beta-invented': {
+        lastPortedSha: 'abc', scannedAt: '2026-01-01', skipped: [],
+        note: 'Original text that must survive verbatim.',
+      },
+    } })
+    const plan = planImport(fixture({ state }), registered())
+    expect(plan.refusals).toEqual([])
+    applyImport(plan)
+    expect(getDoc('global', null, 'port-import-exclusions')).toMatchObject({
+      title: 'Port import exclusions',
+      body: expect.stringContaining('Original value:\nOriginal text that must survive verbatim.'),
+    })
+  })
+
   test('a second import refuses existing data and replace atomically rewrites it', () => {
     const plan = planImport(fixture(), registered())
     applyImport(plan)
@@ -950,6 +978,46 @@ describe('port importer', () => {
     expect(listDoctrineRules().map((row) => row.number)).toEqual([2])
     expect(listPairs()).toHaveLength(1)
     expect(getDoc('global', null, 'port-doctrine-preface')?.body).toContain('New preface.')
+  })
+
+  test('an importer-owned doc alone makes the destination non-empty', () => {
+    const plan = planImport(fixture(), registered())
+    setDoc({ scope: 'global', subject: null, slug: 'port-category-map', title: 'Existing', body: 'Keep me.' })
+    expect(() => applyImport(plan)).toThrow(ImportRefusalError)
+    expect(getDoc('global', null, 'port-category-map')).toMatchObject({ title: 'Existing', body: 'Keep me.' })
+    expect(listPairs()).toEqual([])
+  })
+
+  test('a late doctrine constraint failure rolls back every preceding write', () => {
+    const plan = planImport(fixture(), registered())
+    plan.doctrine.push({ ...plan.doctrine[0]!, title: 'Duplicate' })
+    expect(() => applyImport(plan)).toThrow()
+    expect(listPairs()).toEqual([])
+    expect(db().query('SELECT COUNT(*) n FROM port_baseline').get()).toEqual({ n: 0 })
+    expect(db().query('SELECT COUNT(*) n FROM port_skip').get()).toEqual({ n: 0 })
+    expect(db().query('SELECT COUNT(*) n FROM port_ref').get()).toEqual({ n: 0 })
+    expect(db().query('SELECT COUNT(*) n FROM port_ref_source').get()).toEqual({ n: 0 })
+    expect(listDoctrineRules()).toEqual([])
+    expect(listDocs().filter((doc) => doc.slug.startsWith('port-'))).toEqual([])
+  })
+
+  test('a late replacement failure restores all deleted prior data and docs', () => {
+    const original = planImport(fixture(), registered())
+    applyImport(original)
+    const priorPair = listPairs()
+    const priorBaseline = baselineForPair(priorPair[0]!.id)
+    const priorSkips = listSkips(priorPair[0]!.id)
+    const priorRef = ledgerRef('BET-7')
+    const priorDoc = getDoc('global', null, 'port-category-map')
+    const replacement = planImport(fixture(), projects())
+    replacement.doctrine.push({ ...replacement.doctrine[0]!, title: 'Duplicate' })
+    expect(() => applyImport(replacement, { replace: true })).toThrow()
+    expect(listPairs()).toEqual(priorPair)
+    expect(baselineForPair(priorPair[0]!.id)).toEqual(priorBaseline)
+    expect(listSkips(priorPair[0]!.id)).toEqual(priorSkips)
+    expect(ledgerRef('BET-7')).toEqual(priorRef)
+    expect(getDoc('global', null, 'port-category-map')).toEqual(priorDoc)
+    expect(listDoctrineRules()).toHaveLength(1)
   })
 
   test('CLI dry-run shows body lengths, writes nothing, and names a missing file', () => {
@@ -965,10 +1033,12 @@ describe('port importer', () => {
       const run = (path: string) => Bun.spawnSync([process.execPath, CLI, 'port', 'import', path, '--dry-run', '--json'], {
         env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
       })
+      const sessionsBefore = db().query('SELECT COUNT(*) n FROM session_seen').get()
       const clean = run(source)
       expect(clean.exitCode).toBe(0)
       expect(JSON.parse(clean.stdout.toString()).docs[0].bodyLength).toBeGreaterThan(0)
       expect(listPairs()).toEqual([])
+      expect(db().query('SELECT COUNT(*) n FROM session_seen').get()).toEqual(sessionsBefore)
 
       const incomplete = mkdtempSync(join(tmpdir(), 'port-import-missing-invented-'))
       try {
@@ -976,6 +1046,22 @@ describe('port importer', () => {
         expect(missing.exitCode).toBe(1)
         expect(missing.stdout.toString()).toContain('refs.json')
       } finally { rmSync(incomplete, { recursive: true, force: true }) }
+    } finally { rmSync(source, { recursive: true, force: true }) }
+  })
+
+  test('CLI dry-run refuses a nonexistent database without creating any SQLite files', () => {
+    const source = mkdtempSync(join(tmpdir(), 'port-import-readonly-invented-'))
+    const absent = join(source, 'absent.db')
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const run = Bun.spawnSync([process.execPath, CLI, 'port', 'import', source, '--dry-run', '--json'], {
+        env: { ...process.env, ORCH_DB: absent, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(run.exitCode).toBe(1)
+      expect(run.stdout.toString()).toContain('orchestrator database does not exist')
+      expect(existsSync(absent)).toBe(false)
+      expect(existsSync(`${absent}-wal`)).toBe(false)
+      expect(existsSync(`${absent}-shm`)).toBe(false)
     } finally { rmSync(source, { recursive: true, force: true }) }
   })
 })

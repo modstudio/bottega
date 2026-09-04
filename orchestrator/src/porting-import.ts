@@ -1,3 +1,5 @@
+import { Database } from 'bun:sqlite'
+import { existsSync } from 'node:fs'
 import { db } from './db.ts'
 import { setDoc } from './docs.ts'
 import {
@@ -5,7 +7,7 @@ import {
 } from './porting.ts'
 import type { Project } from './projects.ts'
 
-export type ImportRefusal = { what: string; where: string; why: string }
+export type ImportRefusal = { what: string; where: string; why: string; value?: string }
 
 export type ImportPlan = {
   pairs: { source: string; target: string; sourceId: number; targetId: number }[]
@@ -19,6 +21,7 @@ export type ImportPlan = {
   doctrine: { number: number; title: string; body: string }[]
   docs: { scope: string; subject: string | null; slug: string; title: string; body: string }[]
   refusals: ImportRefusal[]
+  exclusions: ImportRefusal[]
 }
 
 type ImportFiles = {
@@ -82,6 +85,10 @@ function resolveProject(
   return null
 }
 
+function originalValue(value: unknown): string {
+  return typeof value === 'string' ? value : JSON.stringify(value)
+}
+
 function targetForTaskKey(taskKey: string, registered: Project[], refusals: ImportRefusal[]): Project | null {
   const where = `refs.json ${taskKey}`
   const prefix = taskKey.match(/^([A-Za-z][A-Za-z0-9]*)-\d+$/)?.[1]
@@ -128,17 +135,19 @@ function parseState(text: string, plan: ImportPlan, byName: Map<string, Project[
 
     for (const field of ['note', 'notes', 'scope', 'staged']) {
       if (Object.hasOwn(value, field)) {
-        plan.refusals.push({
+        plan.exclusions.push({
           what: `pair field "${field}"`, where: `${where}.${field}`,
           why: 'the port schema has no column for this content',
+          value: originalValue(value[field]),
         })
       }
     }
     const knownPairFields = new Set(['lastPortedSha', 'scannedAt', 'skipped', 'note', 'notes', 'scope', 'staged'])
     for (const field of Object.keys(value).filter((candidate) => !knownPairFields.has(candidate))) {
-      plan.refusals.push({
+      plan.exclusions.push({
         what: `pair field "${field}"`, where: `${where}.${field}`,
         why: 'this field has no defined import destination',
+        value: originalValue(value[field]),
       })
     }
 
@@ -147,11 +156,15 @@ function parseState(text: string, plan: ImportPlan, byName: Map<string, Project[
     const validCommit = sourceCommit === null || typeof sourceCommit === 'string'
     const validScanned = scannedAt === null || scannedAt === undefined || typeof scannedAt === 'string'
     if (!validCommit || !validScanned) {
-      plan.refusals.push({ what: 'baseline', where, why: 'lastPortedSha and scannedAt must be strings or null' })
+      plan.exclusions.push({
+        what: 'baseline', where, why: 'lastPortedSha and scannedAt must be strings or null',
+        value: JSON.stringify({ lastPortedSha: sourceCommit, scannedAt }),
+      })
     } else if ((sourceCommit === null) !== (scannedAt == null)) {
-      plan.refusals.push({
+      plan.exclusions.push({
         what: 'baseline', where,
         why: 'source commit and scannedAt must either both be null or both be non-null',
+        value: JSON.stringify({ lastPortedSha: sourceCommit, scannedAt }),
       })
     } else if (sourceCommit === undefined) {
       plan.refusals.push({ what: 'baseline', where, why: 'lastPortedSha is missing' })
@@ -167,7 +180,12 @@ function parseState(text: string, plan: ImportPlan, byName: Map<string, Project[
     value.skipped.forEach((skip, index) => {
       const skipWhere = `${where}.skipped[${index}]`
       if (typeof skip === 'string') {
-        plan.refusals.push({ what: `skip "${skip}"`, where: skipWhere, why: 'a skip has no reason' })
+        if (source && target && source.id !== target.id) {
+          plan.skips.push({
+            pairKey, candidate: skip,
+            reason: 'recorded in the source with no separate reason; the candidate text is the entire record',
+          })
+        }
         return
       }
       if (!object(skip) || typeof skip.feature !== 'string' || typeof skip.reason !== 'string') {
@@ -197,11 +215,20 @@ function parseRefs(
       plan.refusals.push({ what: `ledger ref "${taskKey}"`, where, why: 'expected an object' })
       continue
     }
-    const source = typeof value.source === 'string'
-      ? resolveProject(value.source, where, byName, plan.refusals)
-      : null
+    const sources: { project: Project; note: string }[] = []
     if (typeof value.source !== 'string') {
       plan.refusals.push({ what: `ledger ref "${taskKey}"`, where, why: 'source must be one project name' })
+    } else {
+      for (const part of value.source.split(' + ')) {
+        const names = [...byName.keys()].filter((name) => part === name || part.startsWith(`${name} (`))
+        if (names.length !== 1) {
+          resolveProject(part, where, byName, plan.refusals)
+          continue
+        }
+        const name = names[0]!
+        const project = resolveProject(name, where, byName, plan.refusals)
+        if (project) sources.push({ project, note: part.slice(name.length) })
+      }
     }
     const commits = value.commits
     const paths = value.paths
@@ -218,18 +245,24 @@ function parseRefs(
     const unknown = Object.keys(value).filter((field) => !['source', 'commits', 'paths', 'notes'].includes(field))
     if (unknown.length) {
       for (const field of unknown) {
-        plan.refusals.push({
+        plan.exclusions.push({
           what: `ledger field "${field}"`, where: `${where}.${field}`,
           why: 'this field has no defined import destination',
+          value: originalValue(value[field]),
         })
       }
-      continue
     }
-    if (target && source) {
+    if (target && sources.length > 0 &&
+        new Set(sources.map((source) => source.project.id)).size === sources.length) {
       plan.refs.push({
         taskKey, note: notes,
-        sources: [{ source_project_id: source.id, commits, paths, note: '' }],
+        sources: sources.map((source) => ({
+          source_project_id: source.project.id, commits, paths, note: source.note,
+        })),
       })
+    } else if (sources.length > 1 &&
+               new Set(sources.map((source) => source.project.id)).size !== sources.length) {
+      plan.refusals.push({ what: `ledger ref "${taskKey}"`, where, why: 'a source project is named more than once' })
     }
   }
 }
@@ -333,16 +366,17 @@ function parseProjects(markdown: string, plan: ImportPlan): void {
     section.name === 'Resolving the workspace' || section.name.startsWith('Resolving the workspace (') ||
     section.name === 'Stacks')
   if (excluded.length) {
-    plan.refusals.push({
+    plan.exclusions.push({
       what: 'workspace and stack sections', where: 'projects.md',
       why: 'checkout layout, trunks, origins, and stacks are authoritative in the project register',
+      value: excluded.map((section) => section.body).join('\n\n'),
     })
   }
 }
 
 export function planImport(files: ImportFiles, registered: Project[]): ImportPlan {
   const plan: ImportPlan = {
-    pairs: [], baselines: [], skips: [], refs: [], doctrine: [], docs: [], refusals: [],
+    pairs: [], baselines: [], skips: [], refs: [], doctrine: [], docs: [], refusals: [], exclusions: [],
   }
   const byName = registeredByName(registered)
   parseState(files.state, plan, byName)
@@ -351,7 +385,33 @@ export function planImport(files: ImportFiles, registered: Project[]): ImportPla
   parseDifferences(files.differences, plan, byName)
   parseBackports(files.backports, plan, byName)
   parseProjects(files.projects, plan)
+  if (plan.exclusions.length) {
+    plan.docs.push({
+      scope: 'global', subject: null, slug: 'port-import-exclusions', title: 'Port import exclusions',
+      body: plan.exclusions.map((exclusion) =>
+        `${exclusion.what} / ${exclusion.where} / ${exclusion.why}` +
+        (exclusion.value === undefined ? '' : `\n\nOriginal value:\n${exclusion.value}`),
+      ).join('\n\n---\n\n'),
+    })
+  }
   return plan
+}
+
+export function projectsForDryRun(path: string): Project[] {
+  if (!existsSync(path)) throw new Error(`orchestrator database does not exist: ${path}`)
+  const readonly = new Database(path, { readonly: true })
+  try {
+    const rows = readonly.query('SELECT id, name, path, stack, canon, settings FROM project ORDER BY name').all() as {
+      id: number; name: string; path: string; stack: string | null; canon: number; settings: string | null
+    }[]
+    return rows.map((row) => {
+      let settings: Project['settings'] = {}
+      try { settings = row.settings ? JSON.parse(row.settings) : {} } catch { settings = {} }
+      return { ...row, canon: row.canon === 1, settings }
+    })
+  } finally {
+    readonly.close()
+  }
 }
 
 export class ImportRefusalError extends Error {
@@ -362,7 +422,7 @@ export class ImportRefusalError extends Error {
 
 const GLOBAL_PORT_DOC_SLUGS = [
   'port-doctrine-preface', 'port-stack-mapping', 'port-process-differences',
-  'port-differences-unassigned', 'port-category-map',
+  'port-differences-unassigned', 'port-category-map', 'port-import-exclusions',
 ]
 const PROJECT_PORT_DOC_SLUGS = ['port-differences', 'port-backports']
 
@@ -375,11 +435,15 @@ export function applyImport(plan: ImportPlan, options: { replace?: boolean } = {
       (SELECT COUNT(*) FROM port_skip) +
       (SELECT COUNT(*) FROM port_ref) +
       (SELECT COUNT(*) FROM port_ref_source) +
-      (SELECT COUNT(*) FROM port_doctrine) AS n`).get() as { n: number }
+      (SELECT COUNT(*) FROM port_doctrine) +
+      (SELECT COUNT(*) FROM doc WHERE
+        (scope='global' AND subject IS NULL AND slug IN (${GLOBAL_PORT_DOC_SLUGS.map(() => '?').join(',')})) OR
+        (scope='project' AND slug IN (${PROJECT_PORT_DOC_SLUGS.map(() => '?').join(',')}))) AS n`)
+      .get(...GLOBAL_PORT_DOC_SLUGS, ...PROJECT_PORT_DOC_SLUGS) as { n: number }
     if (counts.n > 0 && !options.replace) {
       throw new ImportRefusalError([{
-        what: 'existing port data', where: 'orch.db port_* tables',
-        why: 'the importer requires an empty destination; pass --replace to replace it',
+        what: 'existing port data', where: 'orch.db port_* tables or importer-owned docs',
+        why: 'the importer requires an empty destination; pass --replace to replace port data and docs',
       }])
     }
     if (options.replace) {
