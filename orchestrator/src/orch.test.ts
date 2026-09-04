@@ -8860,10 +8860,11 @@ describe('the sandbox an agent is launched with', () => {
 
       const first = prepareSharedRefGuard(tree.path, `refs/heads/${tree.branch}`)
       const installed = join(first.GIT_CONFIG_VALUE_0, 'reference-transaction')
-      expect(realpathSync(installed)).toBe(sharedGuard)
+      expect(readFileSync(installed)).toEqual(readFileSync(sharedGuard))
 
       const installedBefore = readFileSync(installed)
-      const entriesBefore = readdirSync(first.GIT_CONFIG_VALUE_0)
+      writeFileSync(join(first.GIT_CONFIG_VALUE_0,
+        '.reference-transaction-99999999-interrupted'), 'litter\n')
       process.env.GIT_CONFIG_COUNT = '1'
       process.env.GIT_CONFIG_KEY_0 = 'core.hooksPath'
       process.env.GIT_CONFIG_VALUE_0 = first.GIT_CONFIG_VALUE_0
@@ -8878,8 +8879,8 @@ describe('the sandbox an agent is launched with', () => {
       expect(second).toEqual(first)
       expect(readFileSync(sharedGuard)).toEqual(sharedBefore)
       expect(readFileSync(installed)).toEqual(installedBefore)
-      expect(readdirSync(first.GIT_CONFIG_VALUE_0)).toEqual(entriesBefore)
-      expect(realpathSync(installed)).toBe(sharedGuard)
+      expect(readdirSync(first.GIT_CONFIG_VALUE_0)).toEqual(['reference-transaction'])
+      expect(readFileSync(installed)).toEqual(readFileSync(sharedGuard))
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
@@ -8979,10 +8980,11 @@ describe('the sandbox an agent is launched with', () => {
     }
   })
 
-  test('a killed pre-atomic preparation leaves a broken wrapper that is repaired', () => {
+  test('a killed preparation never publishes a partial hooks directory', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-guard-killed-publication-'))
-    const git = (cwd: string, args: string[]) => Bun.spawnSync(['git', ...args], {
-      cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    const git = (cwd: string, args: string[], env: Record<string, string> = {}) =>
+      Bun.spawnSync(['git', ...args], {
+        cwd, env: hermeticGitEnv(env), stdout: 'pipe', stderr: 'pipe',
     })
     try {
       expect(git(repo, ['init', '-b', 'main']).exitCode).toBe(0)
@@ -8996,38 +8998,46 @@ describe('the sandbox an agent is launched with', () => {
       writeFileSync(projectHook, '#!/bin/sh\nexit 0\n')
       chmodSync(projectHook, 0o755)
       expect(git(repo, ['config', 'core.hooksPath', projectHooks]).exitCode).toBe(0)
-      const tree = createWorktree(repo, 231)
-      const guardEnv = prepareSharedRefGuard(tree.path, `refs/heads/${tree.branch}`)
-      const installed = join(guardEnv.GIT_CONFIG_VALUE_0, 'reference-transaction')
-      const completeWrapper = readFileSync(installed)
-      const candidate = join(repo, 'candidate-wrapper')
-      writeFileSync(candidate, completeWrapper)
-      rmSync(installed)
+      const module = new URL('worktree.ts', import.meta.url).href
+      const checkpoints = ['mkdir', 'cleanup', 'temporary-open', 'write', 'chmod', 'fsync', 'close']
+      for (const [index, checkpoint] of checkpoints.entries()) {
+        const tree = createWorktree(repo, 231 + index)
+        const gitDir = worktreeGitDir(tree.path)
+        const hookDir = join(gitDir, 'orch-hooks')
+        const ready = join(repo, `checkpoint-${checkpoint}`)
+        const child = Bun.spawn([process.execPath, '-e',
+          `const { prepareSharedRefGuard } = await import(process.argv[1]);
+           prepareSharedRefGuard(process.argv[2], process.argv[3]);`,
+          module, tree.path, `refs/heads/${tree.branch}`], {
+          cwd: tree.path,
+          env: hermeticGitEnv({
+            ORCH_TEST_REF_GUARD_CHECKPOINT: checkpoint,
+            ORCH_TEST_REF_GUARD_READY: ready,
+          }),
+          stdout: 'pipe', stderr: 'pipe',
+        })
+        const deadline = Date.now() + 5_000
+        while (!existsSync(ready) && Date.now() < deadline) await Bun.sleep(5)
+        expect(existsSync(ready)).toBe(true)
+        expect(existsSync(hookDir)).toBe(false)
+        child.kill('SIGKILL')
+        expect(await child.exited).not.toBe(0)
 
-      const killed = Bun.spawnSync([process.execPath, '-e',
-        `import { readFileSync, writeFileSync } from 'node:fs';
-         writeFileSync(process.argv[1], readFileSync(process.argv[2]));
-         process.kill(process.pid, 'SIGKILL')`, installed, candidate], {
-        cwd: tree.path, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
-      })
-      expect(killed.signalCode).toBe('SIGKILL')
-      expect(statSync(installed).mode & 0o111).toBe(0)
-
-      expect(prepareSharedRefGuard(tree.path, `refs/heads/${tree.branch}`)).toEqual(guardEnv)
-      expect(readFileSync(installed)).toEqual(completeWrapper)
-      expect(statSync(installed).mode & 0o111).toBe(0o111)
-      expect(readdirSync(guardEnv.GIT_CONFIG_VALUE_0)).toEqual(['reference-transaction'])
-      const forbidden = Bun.spawnSync(['git', 'update-ref', 'refs/heads/forbidden', 'HEAD'], {
-        cwd: tree.path, env: hermeticGitEnv(guardEnv), stdout: 'pipe', stderr: 'pipe',
-      })
-      expect(forbidden.exitCode).not.toBe(0)
-      expect(forbidden.stderr.toString()).toContain('this worker may update only')
+        const guardEnv = prepareSharedRefGuard(tree.path, `refs/heads/${tree.branch}`)
+        const forbidden = git(tree.path, [
+          'update-ref', 'refs/heads/forbidden', 'HEAD',
+        ], guardEnv)
+        expect(forbidden.exitCode).not.toBe(0)
+        expect(forbidden.stderr.toString()).toContain('this worker may update only')
+        expect(readdirSync(hookDir)).toEqual(['reference-transaction'])
+        expect(readdirSync(gitDir).filter(name => name.startsWith('.orch-hooks-'))).toEqual([])
+      }
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
   })
 
-  test('a recognized non-executable wrapper is broken, not an idempotent success', () => {
+  test('a wrapper delegating to a non-executable guard is rejected', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-guard-broken-mode-'))
     const git = (cwd: string, args: string[]) => Bun.spawnSync(['git', ...args], {
       cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
@@ -9047,12 +9057,20 @@ describe('the sandbox an agent is launched with', () => {
       const tree = createWorktree(repo, 232)
       const guardEnv = prepareSharedRefGuard(tree.path)
       const installed = join(guardEnv.GIT_CONFIG_VALUE_0, 'reference-transaction')
-      const wrapper = readFileSync(installed)
-      chmodSync(installed, 0o644)
+      const runningGuard = realpathSync(new URL('../hooks/reference-transaction', import.meta.url).pathname)
+      const delegatedGuard = join(repo, 'delegated-guard')
+      writeFileSync(delegatedGuard, readFileSync(runningGuard))
+      chmodSync(delegatedGuard, 0o644)
+      const wrapper = readFileSync(installed, 'utf8')
+        .replace(Buffer.from(runningGuard).toString('base64'),
+          Buffer.from(delegatedGuard).toString('base64'))
+        .replace(`'${runningGuard}' "$@"`, `'${delegatedGuard}' "$@"`)
+      writeFileSync(installed, wrapper)
+      chmodSync(installed, 0o755)
 
-      expect(prepareSharedRefGuard(tree.path)).toEqual(guardEnv)
-      expect(readFileSync(installed)).toEqual(wrapper)
-      expect(statSync(installed).mode & 0o111).toBe(0o111)
+      expect(() => prepareSharedRefGuard(tree.path)).toThrow(
+        `refusing to replace existing shared ref guard hook ${installed}`,
+      )
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }

@@ -22,8 +22,8 @@
  * disposable worktree. No worker pushes.
  */
 import { accessSync, appendFileSync, closeSync, constants, cpSync, existsSync,
-         fchmodSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync,
-         realpathSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+         fchmodSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync,
+         realpathSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, join, resolve } from 'node:path'
 import { db, pidAlive, ROOT } from './db.ts'
@@ -415,7 +415,7 @@ function installedRefGuard(installed: string, guard: string): InstalledRefGuard 
       return null
     }
   }
-  if (lstatSync(installed).isSymbolicLink() && sameFileBytes(installed, guard)) {
+  if (sameFileBytes(installed, guard)) {
     return { kind: 'guard', content, executable }
   }
   const text = content.toString()
@@ -424,53 +424,82 @@ function installedRefGuard(installed: string, guard: string): InstalledRefGuard 
   const wrappedGuard = Buffer.from(marker[1]!, 'base64').toString()
   const original = Buffer.from(marker[2]!, 'base64').toString()
   if (!sameFileBytes(wrappedGuard, guard)) return null
+  try { accessSync(wrappedGuard, constants.X_OK) } catch { return null }
   return text === sharedRefGuardWrapper(dirname(installed), wrappedGuard, original)
     ? { kind: 'wrapper', content, executable, wrappedGuard, original }
     : null
 }
 
-function publishRefGuardWrapper(installed: string, wrapper: string, repair: boolean): void {
-  const temporary = join(dirname(installed), `.reference-transaction-${process.pid}-${randomUUID()}`)
-  let fd: number | null = null
-  try {
-    fd = openSync(temporary, 'wx', 0o600)
-    writeFileSync(fd, wrapper)
-    fchmodSync(fd, 0o755)
-    fsyncSync(fd)
-    closeSync(fd)
-    fd = null
-    if (repair) {
-      // The known broken wrapper remains at the final path until this atomic
-      // replacement, so repair never opens a hook-free interval.
-      renameSync(temporary, installed)
-      return
-    }
-    try {
-      // A same-directory hard link is an atomic no-replace publication. The
-      // temporary name is removed only after the executable inode is visible.
-      linkSync(temporary, installed)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-      const winner = installedRefGuard(installed, realpathSync(join(ROOT, 'hooks', 'reference-transaction')))
-      const expectedOriginal = installedRefGuardFromContent(installed, wrapper)?.original
-      if (winner?.kind !== 'wrapper' || !winner.executable || winner.original !== expectedOriginal) {
-        throw new Error(`shared ref guard publication raced with an unsafe hook at ${installed}`)
-      }
-    }
-  } finally {
-    if (fd !== null) closeSync(fd)
-    rmSync(temporary, { force: true })
+const REF_GUARD_STAGE_PREFIX = '.orch-hooks-'
+
+function refGuardCheckpoint(name: string): void {
+  if (process.env.ORCH_TEST_REF_GUARD_CHECKPOINT !== name) return
+  const ready = process.env.ORCH_TEST_REF_GUARD_READY
+  if (!ready) return
+  writeFileSync(ready, `${name}\n`)
+  for (;;) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60_000)
+}
+
+function cleanupRefGuardLitter(gitDir: string, hookDir?: string): void {
+  for (const name of readdirSync(gitDir)) {
+    if (!name.startsWith(REF_GUARD_STAGE_PREFIX)) continue
+    const pid = Number(name.slice(REF_GUARD_STAGE_PREFIX.length).split('-', 1)[0])
+    if (Number.isInteger(pid) && pidAlive(pid)) continue
+    rmSync(join(gitDir, name), { recursive: true, force: true })
+  }
+  if (!hookDir || !pathEntryExists(hookDir) || !lstatSync(hookDir).isDirectory()) return
+  for (const name of readdirSync(hookDir)) {
+    const temporary = name.match(/^\.reference-transaction-(\d+)-/)
+    if (!temporary) continue
+    if (temporary && pidAlive(Number(temporary[1]))) continue
+    rmSync(join(hookDir, name), { recursive: true, force: true })
   }
 }
 
-function installedRefGuardFromContent(installed: string, content: string): InstalledRefGuard | null {
-  const marker = content.match(/^#!\/bin\/sh\n# orch shared-ref guard wrapper\n# guard-hook-base64: ([A-Za-z0-9+/=]+)\n# original-hook-base64: ([A-Za-z0-9+/=]+)\n/)
-  if (!marker) return null
-  const wrappedGuard = Buffer.from(marker[1]!, 'base64').toString()
-  const original = Buffer.from(marker[2]!, 'base64').toString()
-  return content === sharedRefGuardWrapper(dirname(installed), wrappedGuard, original)
-    ? { kind: 'wrapper', content: Buffer.from(content), executable: true, wrappedGuard, original }
-    : null
+function stageRefGuardDirectory(
+  gitDir: string, hookDir: string, guard: string, wrapper: string | null,
+): void {
+  const stage = join(gitDir, `${REF_GUARD_STAGE_PREFIX}${process.pid}-${randomUUID()}`)
+  const staged = join(stage, 'reference-transaction')
+  let fd: number | null = null
+  try {
+    mkdirSync(stage)
+    refGuardCheckpoint('mkdir')
+    cleanupRefGuardLitter(gitDir)
+    refGuardCheckpoint('cleanup')
+    fd = openSync(staged, 'wx', 0o600)
+    refGuardCheckpoint('temporary-open')
+    writeFileSync(fd, wrapper ?? readFileSync(guard))
+    refGuardCheckpoint('write')
+    fchmodSync(fd, 0o755)
+    refGuardCheckpoint('chmod')
+    fsyncSync(fd)
+    refGuardCheckpoint('fsync')
+    closeSync(fd)
+    fd = null
+    refGuardCheckpoint('close')
+    const directoryFd = openSync(stage, constants.O_RDONLY)
+    try {
+      fsyncSync(directoryFd)
+    } finally { closeSync(directoryFd) }
+    renameSync(stage, hookDir)
+  } finally {
+    if (fd !== null) closeSync(fd)
+    rmSync(stage, { recursive: true, force: true })
+  }
+}
+
+function verifiedSharedRefGuardEnvironment(
+  paths: { commonDir: string }, hookDir: string, guard: string, allowedRef?: string,
+): SharedRefGuardEnvironment {
+  const installed = join(hookDir, 'reference-transaction')
+  const verified = installedRefGuard(installed, guard)
+  if (!verified?.executable) {
+    throw new Error(
+      `refusing to expose unverified shared ref guard hooks path: ${hookDir}`,
+    )
+  }
+  return sharedRefGuardEnvironment(paths, hookDir, allowedRef)
 }
 
 /** Install the ref-update boundary without changing the shared repository config. */
@@ -483,6 +512,7 @@ export function prepareSharedRefGuard(
   if (pathEntryExists(hookDir) && realpathSync(hookDir) !== resolve(hookDir)) {
     throw new Error(`refusing shared ref guard hook directory symlink: ${hookDir}`)
   }
+  cleanupRefGuardLitter(paths.gitDir, hookDir)
 
   const configured = gitConfigOk(['config', '--path', 'core.hooksPath'], cwd)
   const originalDir = configured
@@ -494,7 +524,6 @@ export function prepareSharedRefGuard(
   const installed = join(hookDir, 'reference-transaction')
   const installedGuard = installedRefGuard(installed, guard)
   let wrapper: string | null = null
-  let repair = false
 
   if (pathEntryExists(originalReferenceHook)) {
     let original: string
@@ -520,12 +549,10 @@ export function prepareSharedRefGuard(
     wrapper = sharedRefGuardWrapper(hookDir, guard, original)
     if (installedGuard?.kind === 'wrapper' && installedGuard.original === original) {
       if (installedGuard.executable) {
-        return sharedRefGuardEnvironment(paths, hookDir, allowedRef)
+        return verifiedSharedRefGuardEnvironment(paths, hookDir, guard, allowedRef)
       }
-      wrapper = installedGuard.content.toString()
-      repair = true
     }
-    if (pathEntryExists(installed) && !repair) {
+    if (pathEntryExists(installed)) {
       let target = installed
       if (lstatSync(installed).isSymbolicLink()) {
         try { target = realpathSync(installed) } catch { target = '(dangling symlink)' }
@@ -534,13 +561,9 @@ export function prepareSharedRefGuard(
     }
   } else if (installedGuard !== null) {
     if (installedGuard.executable) {
-      return sharedRefGuardEnvironment(paths, hookDir, allowedRef)
+      return verifiedSharedRefGuardEnvironment(paths, hookDir, guard, allowedRef)
     }
-    if (installedGuard.kind === 'guard') {
-      throw new Error(`shared ref guard is not executable: ${realpathSync(installed)}`)
-    }
-    wrapper = installedGuard.content.toString()
-    repair = true
+    throw new Error(`shared ref guard is not executable: ${realpathSync(installed)}`)
   } else if (pathEntryExists(installed)) {
     throw new Error(`refusing to replace unrecognized shared ref guard hook ${installed}`)
   }
@@ -550,31 +573,26 @@ export function prepareSharedRefGuard(
   } catch {
     throw new Error(`cannot install shared ref guard: hook path is not writable: ${hookDir}`)
   }
-  mkdirSync(hookDir, { recursive: true })
-
   // core.hooksPath is injected into the worker's process environment, not
   // configured for this repository. It therefore reaches every scratch
   // repository the worker touches. Project hooks such as commit-msg have no
   // business running there, so this directory carries only the ref-update
   // guard. Worker commits do not accidentally inherit checkout-local hooks.
-  // The directory itself is shared repository metadata under .git/worktrees,
-  // so concurrent sessions can observe it even though the checkout is disposable.
-  for (const name of readdirSync(hookDir)) {
-    if (name === 'reference-transaction') continue
-    const temporary = name.match(/^\.reference-transaction-(\d+)-/)
-    if (temporary && pidAlive(Number(temporary[1]))) continue
-    rmSync(join(hookDir, name), { recursive: true, force: true })
+  // The complete directory is assembled and synced under a private sibling
+  // name. Only one rename publishes it at the path a worker may receive.
+  try {
+    stageRefGuardDirectory(paths.gitDir, hookDir, guard, wrapper)
+  } catch (error) {
+    if (!pathEntryExists(hookDir)) throw error
+    const winner = installedRefGuard(installed, guard)
+    const expectedOriginal = wrapper === null ? undefined : realpathSync(originalReferenceHook)
+    if (!winner?.executable || winner.kind !== (wrapper === null ? 'guard' : 'wrapper') ||
+        winner.original !== expectedOriginal) {
+      throw new Error(`shared ref guard publication raced with an unsafe hook at ${installed}`)
+    }
   }
 
-  if (wrapper !== null) {
-    // Both hooks consume stdin. The common-object guard must pass before the
-    // project's hook receives the same transaction bytes.
-    publishRefGuardWrapper(installed, wrapper, repair)
-  } else {
-    symlinkSync(guard, installed)
-  }
-
-  return sharedRefGuardEnvironment(paths, hookDir, allowedRef)
+  return verifiedSharedRefGuardEnvironment(paths, hookDir, guard, allowedRef)
 }
 
 function sharedRefGuardEnvironment(
