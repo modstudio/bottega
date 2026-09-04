@@ -125,7 +125,9 @@ function task() {
   const sub = argv[1]
   const required = (name: string) => {
     const value = flag(name)
-    if (value === undefined || value.startsWith('--')) throw new Error(`--${name} is required`)
+    // The next token is the value even when it begins with a dash. A title
+    // about a flag is the ordinary case; calling that "missing" is a lie.
+    if (value === undefined) throw new Error(`--${name} is required`)
     return value
   }
   const printRow = (row: ReturnType<typeof showTask>['task']) => {

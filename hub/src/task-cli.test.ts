@@ -30,7 +30,7 @@ function hubAt(path: string, ...args: string[]) {
 function show(key: string) {
   const result = hub('task', 'show', key, '--json')
   expect(result.exitCode).toBe(0)
-  return JSON.parse(result.stdout).task as { body: string | null }
+  return JSON.parse(result.stdout).task as { title: string | null; body: string | null }
 }
 
 describe('task CLI bodies', () => {
@@ -90,5 +90,59 @@ describe('task CLI bodies', () => {
     expect(refused.exitCode).toBe(1)
     expect(refused.stderr).toContain('--force')
     expect(show(whitespace.stdout).body).toBe('   \n')
+  })
+})
+
+describe('task CLI dash-leading values', () => {
+  test('stores a title that begins with two dashes verbatim', () => {
+    const created = hub('task', 'new', '--project', 'workshop',
+      '--title', '--base is advertised unconditionally ...', '--body', '...')
+
+    expect(created.exitCode).toBe(0)
+    expect(created.stderr).toBe('')
+    const row = show(created.stdout)
+    expect(row.title).toBe('--base is advertised unconditionally ...')
+    expect(row.body).toBe('...')
+  })
+
+  test('stores a body that begins with a dash verbatim', () => {
+    const created = hub('task', 'new', '--project', 'workshop', '--title', 'Flag body',
+      '--body', '--force is the override, not the default')
+
+    expect(created.exitCode).toBe(0)
+    expect(show(created.stdout).body).toBe('--force is the override, not the default')
+  })
+
+  test('reads a body file whose path begins with a dash', () => {
+    const path = join(dir, '--dash-body.txt')
+    writeFileSync(path, 'Body from a dash-leading path.\n')
+
+    const created = hub('task', 'new', '--project', 'workshop', '--title', 'Dash path',
+      '--body-file', path)
+
+    expect(created.exitCode).toBe(0)
+    expect(show(created.stdout).body).toBe('Body from a dash-leading path.\n')
+  })
+
+  test('task set keeps a dash-leading title', () => {
+    const created = hub('task', 'new', '--project', 'workshop', '--title', 'Before')
+    const updated = hub('task', 'set', created.stdout, '--title', '--after the flag')
+
+    expect(updated.exitCode).toBe(0)
+    expect(show(created.stdout).title).toBe('--after the flag')
+  })
+
+  test('an omitted title still reports as missing', () => {
+    const result = hub('task', 'new', '--project', 'workshop', '--body', '...')
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('--title is required')
+  })
+
+  test('an omitted project still reports as missing', () => {
+    const result = hub('task', 'new', '--title', '--base is advertised unconditionally ...')
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('--project is required')
   })
 })
