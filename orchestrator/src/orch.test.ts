@@ -1148,7 +1148,7 @@ const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePaths, pr
         RUNS_DIR, grokMcpConnection, writingFailoverRefusal, resolveSupersededTurn,
         resolveRootFromLastTurn, gitObjectEnvironmentFor, inferredReadOnlyKey,
         canonSourceFor, canonSourceInstruction, snapshotRegisteredCheckouts,
-        changedRegisteredCheckouts, run: runJob } = await import('./run.ts')
+        changedRegisteredCheckouts, retargetRepositoryPrompt, run: runJob } = await import('./run.ts')
 const run = runJob
 const { summary } = await import('./metric.ts')
 const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
@@ -9731,6 +9731,34 @@ describe('outside-worktree write observation', () => {
     }])
   })
 
+  test('an explicitly watched caller worktree is observed even when the register names its main checkout', () => {
+    const main = repository()
+    const caller = realpathSync(mkdtempSync(join(tmpdir(), 'orch-outside-caller-')))
+    git(main, 'worktree', 'add', '--detach', caller)
+    try {
+      expect(snapshotRegisteredCheckouts([{ project: 'watched-project', path: caller }]))
+        .toContainEqual({ project: 'watched-project', path: caller, status: '' })
+      writeFileSync(join(caller, 'written-by-run.txt'), 'outside\n')
+      expect(snapshotRegisteredCheckouts([{ project: 'watched-project', path: caller }]))
+        .toContainEqual({
+          project: 'watched-project', path: caller, status: '?? written-by-run.txt\u0000',
+        })
+    } finally {
+      git(main, 'worktree', 'remove', '--force', caller)
+      rmSync(main, { recursive: true, force: true })
+    }
+  })
+
+  test('caller paths in a review pack are retargeted to the disposable tree', () => {
+    expect(retargetRepositoryPrompt(
+      'inspect /repo/task/file.ts and run tests from /repo/task',
+      '/repo/task', '/repo/.claude/worktrees/orch-233',
+    )).toBe(
+      'inspect /repo/.claude/worktrees/orch-233/file.ts and run tests from ' +
+      '/repo/.claude/worktrees/orch-233',
+    )
+  })
+
   test('a real run records an external write and a clean run records none', async () => {
     const watched = repository()
     const script = join(dir, 'outside-write-agent.sh')
@@ -10180,6 +10208,7 @@ describe('review-lens-inline has no checkout', () => {
         "const prompt = await Bun.stdin.text()",
         "console.log(JSON.stringify({",
         "  cwd: process.cwd(),",
+        "  prompt,",
         "  checkout: existsSync('.git'),",
         "  projectFile: existsSync('project-only.txt'),",
         "  receivedPack: prompt.includes('SELF_CONTAINED_FACT'),",
@@ -10196,7 +10225,7 @@ describe('review-lens-inline has no checkout', () => {
         job: 'review-lens-inline', prompt: 'SELF_CONTAINED_FACT', cwd: repo, agent: 'codex', lens: 'inline',
       })
       const inlineView = JSON.parse(inline.output) as {
-        cwd: string; checkout: boolean; projectFile: boolean; receivedPack: boolean
+        cwd: string; prompt: string; checkout: boolean; projectFile: boolean; receivedPack: boolean
       }
       expect(inlineView.checkout).toBe(false)
       expect(inlineView.projectFile).toBe(false)
@@ -10207,14 +10236,17 @@ describe('review-lens-inline has no checkout', () => {
         .toEqual({ input_tree: null })
 
       const repository = await runJob({
-        job: 'review-lens', prompt: 'inspect project-only.txt', cwd: repo, agent: 'codex', lens: 'project',
+        job: 'review-lens', prompt: `inspect ${repo}/project-only.txt`,
+        cwd: repo, agent: 'codex', lens: 'project',
       })
       const repositoryView = JSON.parse(repository.output) as {
-        checkout: boolean; projectFile: boolean
+        prompt: string; checkout: boolean; projectFile: boolean
       }
       expect(repositoryView.checkout).toBe(true)
       expect(repositoryView.projectFile).toBe(true)
       expect(repository.worktree?.path).toBeTruthy()
+      expect(repositoryView.prompt).toContain(`${repository.worktree!.path}/project-only.txt`)
+      expect(repositoryView.prompt).not.toContain(`${repo}/project-only.txt`)
       expect(db().query('SELECT input_tree FROM run WHERE id=?').get(repository.id))
         .toEqual({ input_tree: runGit('rev-parse', 'HEAD^{tree}') })
 

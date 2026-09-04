@@ -653,6 +653,8 @@ export type OutsideWorktreeWrite = {
   after: string
 }
 
+type CheckoutToWatch = { project: string; path: string }
+
 /**
  * Cheap observation of registered main checkouts, outside a run's worktree.
  *
@@ -661,10 +663,16 @@ export type OutsideWorktreeWrite = {
  * A checkout that cannot be read is omitted rather than allowed to affect the
  * run; this is evidence collection, never enforcement.
  */
-export function snapshotRegisteredCheckouts(): CheckoutStatusSnapshot[] {
+export function snapshotRegisteredCheckouts(
+  additional: CheckoutToWatch[] = [],
+): CheckoutStatusSnapshot[] {
   const snapshots: CheckoutStatusSnapshot[] = []
   const seen = new Set<string>()
-  for (const project of projects()) {
+  const watched: CheckoutToWatch[] = [
+    ...projects().map(({ name, path }) => ({ project: name, path })),
+    ...additional,
+  ]
+  for (const project of watched) {
     if (seen.has(project.path)) continue
     seen.add(project.path)
     try {
@@ -678,10 +686,20 @@ export function snapshotRegisteredCheckouts(): CheckoutStatusSnapshot[] {
         },
       )
       if (p.exitCode !== 0) continue
-      snapshots.push({ project: project.name, path: project.path, status: p.stdout.toString() })
+      snapshots.push({ project: project.project, path: project.path, status: p.stdout.toString() })
     } catch { /* an unreadable checkout must never stop a run */ }
   }
   return snapshots
+}
+
+/**
+ * A pack is written before its disposable worktree exists, so callers naturally
+ * name the checkout they are standing in. That path is an address, not review
+ * content: once the tree has been copied, every occurrence must point at the
+ * copy or an agent following the pack escapes the isolation boundary.
+ */
+export function retargetRepositoryPrompt(prompt: string, caller: string, worktree: string): string {
+  return caller === worktree ? prompt : prompt.split(caller).join(worktree)
 }
 
 export function changedRegisteredCheckouts(
@@ -1388,6 +1406,13 @@ export async function run(opts: {
         claim.id,
       )
       cwd = worktree.path
+      prompt = retargetRepositoryPrompt(prompt, callerCwd, worktree.path)
+      // The original file remains the caller's resumable spec. The bound file
+      // and row describe what was actually sent after the worktree had an
+      // address, which is the evidence an audit needs.
+      writeFileSync(promptPath.replace(/\.prompt\.txt$/, '.bound.txt'), prompt)
+      db().query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE id=?')
+        .run(sha(prompt), Buffer.byteLength(prompt), claim.id)
     }
   } catch (e) {
     if (isolatedCwd) rmSync(isolatedCwd, { recursive: true, force: true })
@@ -1474,7 +1499,10 @@ export async function run(opts: {
   let failureKind: ReturnType<typeof classify> | null = null
   // Start after orch's own worktree and hook setup, immediately before the
   // vendor process: changes across this interval are attributable to the run.
-  const outsideWriteBefore = snapshotRegisteredCheckouts()
+  const callerWatch = repoJob
+    ? [{ project: opts.repo ?? repoOf(callerCwd) ?? '(caller)', path: callerCwd }]
+    : []
+  const outsideWriteBefore = snapshotRegisteredCheckouts(callerWatch)
 
   try {
     if (repoJob) {
@@ -1711,7 +1739,7 @@ export async function run(opts: {
 
     try {
       const outsideWrites = changedRegisteredCheckouts(
-        outsideWriteBefore, snapshotRegisteredCheckouts(),
+        outsideWriteBefore, snapshotRegisteredCheckouts(callerWatch),
       )
       db().query('UPDATE run SET outside_worktree_writes=? WHERE id=?')
         .run(JSON.stringify(outsideWrites), claim.id)
