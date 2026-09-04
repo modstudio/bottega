@@ -165,7 +165,10 @@ async function task() {
     if (action === 'new') {
       const document = createTaskDocument({ task: ref, title: required('title'),
         body: newBody(), role: flag('role') })
-      console.log(document.id)
+      // This is a value for the caller to pass back, not presentational output.
+      // Bun inspects a numeric console argument and ANSI-wraps it when
+      // FORCE_COLOR is set, even when NO_COLOR is set too.
+      console.log(String(document.id))
       return
     }
     if (action === 'list') {

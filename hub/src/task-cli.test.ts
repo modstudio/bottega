@@ -157,6 +157,24 @@ describe('task CLI dash-leading values', () => {
 })
 
 describe('task documents', () => {
+  test('prints a reusable bare id even when color is forced', () => {
+    const task = hub('task', 'new', '--project', 'workshop', '--title', 'Bare document id')
+    const created = Bun.spawnSync(
+      ['bun', cli, 'task', 'doc', 'new', task.stdout, '--title', 'Colorless value'],
+      {
+        env: { ...process.env, HUB_DB: database, FORCE_COLOR: '1', NO_COLOR: '1' },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+    )
+    const id = decoder.decode(created.stdout).trim()
+
+    expect(created.exitCode).toBe(0)
+    expect(id).toMatch(/^\d+$/)
+    expect(id).not.toContain('\x1b')
+    expect(document(id).title).toBe('Colorless value')
+  })
+
   test('creates several documents and keeps task show compact', () => {
     const task = hub('task', 'new', '--project', 'workshop', '--title', 'Documented task',
       '--body', 'A short description.')
