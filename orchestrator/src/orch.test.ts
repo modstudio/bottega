@@ -12,7 +12,7 @@
  * anything. Run files go the same way: ORCH_RUNS points at a temp directory so
  * concurrent copies of the suite in one checkout do not share filenames.
  */
-import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync,
          realpathSync, mkdirSync, utimesSync, chmodSync, readdirSync } from 'node:fs'
@@ -324,7 +324,8 @@ const { AGENTS, localReachable, ensureLocalHealth, resetLocalHealth,
 const { listDocs, getDoc, setDoc, consumeDoc, removeDoc, docsForRun, exportDocs, importDocs, brief, docSubjects,
         listOpenResumes, parseResumeFrontmatter, resumeAge } =
   await import('./docs.ts')
-const { createDocsMcpServer } = await import('./mcp.ts')
+const { createDocsMcpServer, fileIssue } = await import('./mcp.ts')
+const { reconcileHub, monitorHistory } = await import('./monitor.ts')
 const { listPairs, addPair, baselineForPair, setBaseline, listSkips, addSkip,
         setLedgerRef, ledgerRef, listLedgerRefs, resolveLedgerRef,
         listDoctrineRules, addDoctrineRule, retireDoctrineRule } =
@@ -402,11 +403,75 @@ the cause` } }
   })
 })
 
+describe('operational monitor record', () => {
+  test('records condition ages and reads them back by invocation', () => {
+    const invocation = (db().query(
+      `INSERT INTO monitor_invocation (started_at,finished_at,trigger,findings,errors)
+       VALUES ('2026-09-04T00:00:00Z','2026-09-04T00:00:01Z','backstop',1,0) RETURNING id`,
+    ).get() as { id: number }).id
+    db().query(
+      `INSERT INTO monitor_condition
+       (invocation_id,kind,subject,condition_since,age_ms,detail,action)
+       VALUES (?,?,?,?,?,?,?)`,
+    ).run(invocation, 'stale-run', 'run:7', '2026-09-03T08:00:00Z', 57_600_000,
+      'process is gone', 'reported')
+    expect(monitorHistory(1)).toEqual([expect.objectContaining({
+      id: invocation, trigger: 'backstop', findings: 1,
+      conditions: [expect.objectContaining({ kind: 'stale-run', subject: 'run:7', age_ms: 57_600_000 })],
+    })])
+  })
+
+  test('derives ghost interval ages from the audited hub reconcile command', () => {
+    const spawn = spyOn(Bun, 'spawnSync').mockReturnValue({ exitCode: 0,
+      stdout: Buffer.from('closed:\n  interval 747618  orch:1205  starship/STAR-1  agent codex  run 1205 is terminal (ok); removes 19h engaged time\nleft open:\n  none\n'),
+      stderr: Buffer.from(''), success: true } as any)
+    try {
+      const clock = Date.parse('2026-09-04T20:00:00Z')
+      expect(reconcileHub(clock).conditions).toEqual([expect.objectContaining({
+        kind: 'ghost-open-interval', subject: 'interval:747618', ageMs: 68_400_000,
+        action: 'reconciled through hub reconcile',
+      })])
+    } finally { spawn.mockRestore() }
+  })
+
+  test('files monitor provenance against a real invocation without a fake session', async () => {
+    const hubDb = join(dir, 'monitor-file-issue.db')
+    const priorHubDb = process.env.HUB_DB
+    const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+    process.env.HUB_DB = hubDb
+    delete process.env.CLAUDE_CODE_SESSION_ID
+    upsertProject({ name: PLATFORM_SLUG, path: process.cwd(), stack: 'typescript', canon: true,
+      settings: { keyPrefixes: ['DEV'] } })
+    const invocation = (db().query(
+      `INSERT INTO monitor_invocation (started_at,trigger) VALUES (?, 'backstop') RETURNING id`,
+    ).get(nowIso()) as { id: number }).id
+    try {
+      const filed = await fileIssue({ kind: 'defect', what_happened: 'A detector is unavailable',
+        expected: 'The detector has machine-readable state', reproduce_command: 'orch monitor',
+        environment: 'test monitor pass', evidence: `monitor invocation ${invocation}`,
+        not_established: 'The state contract is not designed',
+      }, { kind: 'monitor', invocationId: invocation, affectedProject: 'starship' })
+      expect(filed).toMatchObject({ reporter: 'monitor', monitor_invocation_id: invocation, session: null })
+      const shown = Bun.spawnSync([new URL('../../bin/hub', import.meta.url).pathname,
+        'task', 'show', filed.key, '--json'], { env: { ...process.env }, stdout: 'pipe' })
+      const task = JSON.parse(shown.stdout.toString()).task
+      expect(task.body).toContain('REPORTER KIND: MONITOR')
+      expect(task.body).toContain(`REPORTING MONITOR INVOCATION: ${invocation}`)
+      expect(task.body).toContain('AFFECTED PROJECT: starship')
+      expect(task.body).not.toContain('REPORTING SESSION:')
+    } finally {
+      rmSync(hubDb, { force: true }); rmSync(`${hubDb}-shm`, { force: true }); rmSync(`${hubDb}-wal`, { force: true })
+      if (priorHubDb === undefined) delete process.env.HUB_DB; else process.env.HUB_DB = priorHubDb
+      if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID; else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+    }
+  })
+})
+
 beforeEach(() => {
   // question cascades from run, but the delete order still matters: it is
   // listed first so a future FK-enforcing change cannot make this fail
   // mysteriously halfway through a suite.
-  db().exec('DELETE FROM review_finding; DELETE FROM review_lens; DELETE FROM review; DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc; DELETE FROM run_message; DELETE FROM question; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
+  db().exec('DELETE FROM monitor_condition; DELETE FROM monitor_invocation; DELETE FROM review_finding; DELETE FROM review_lens; DELETE FROM review; DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc; DELETE FROM run_message; DELETE FROM question; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
 })
 
 afterAll(() => {

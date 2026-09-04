@@ -732,6 +732,9 @@ function usage(): never {
   orch blockers [--days N] [--json]
       what stopped agents verifying their work, ordered by recurrence
       --json                    print one JSON document (the published surface; never orch.db)
+  orch monitor [--backstop]     detect, record, report, and safely reconcile machine state
+      --history [--limit N]     query recorded invocations and condition ages
+      --json                    emit the report as JSON; silent on a clean live pass
   orch inbox [--all] [--json]   design questions a worker is waiting on you to rule on
       --json                    print one JSON document
   orch tell <id> ["<message>"]   queue non-authoritative context for a running worker
@@ -1884,6 +1887,36 @@ switch (cmd) {
       `\ncarried on and said so. Each is capping what every run in that project can` +
       `\nverify, which is why they are ranked by how often they recur.`,
     )
+    break
+  }
+
+  case 'monitor': {
+    const { monitor, monitorHistory } = await import('./monitor.ts')
+    if (has('history')) {
+      const rows = monitorHistory(Number(flag('limit') ?? 20))
+      if (has('json')) console.log(JSON.stringify(rows))
+      else for (const row of rows as any[]) {
+        console.log(`monitor ${row.id}  ${row.started_at}  ${row.trigger}  ${row.findings} found, ${row.errors} errors`)
+        for (const condition of row.conditions) {
+          const old = condition.age_ms == null ? 'age unknown' : `${Math.round(condition.age_ms / 60_000)}m old`
+          console.log(`  ${condition.kind}  ${condition.subject}  ${old}  ${condition.action}`)
+        }
+      }
+      break
+    }
+    const result = await monitor(has('backstop') ? 'backstop' : 'invoked')
+    if (has('json')) console.log(JSON.stringify(result))
+    else if (result.conditions.length || result.errors.length) {
+      console.log(`monitor ${result.id}: ${result.conditions.length} condition(s), ${result.errors.length} observation error(s)`)
+      for (const condition of result.conditions) {
+        const old = condition.ageMs == null ? 'age unknown' : `${Math.round(condition.ageMs / 60_000)}m old`
+        console.log(`  ${condition.kind}  ${condition.subject}  ${old}\n    ${condition.detail}\n    ${condition.action}${condition.issueKey ? `; ${condition.issueKey}` : ''}`)
+      }
+      for (const error of result.errors) console.error(`  observation failed: ${error}`)
+    }
+    // Branchable by hooks and automation: 0 clean, 2 conditions, 1 incomplete observation.
+    if (result.errors.length) process.exitCode = 1
+    else if (result.conditions.length) process.exitCode = 2
     break
   }
 

@@ -1429,6 +1429,7 @@ orch do <job> [prompt]      route, run, record  (--file, stdin, --agent, --schem
 orch score <id> <none|partial|full> [wrong|mixed|right] [--better-than <id>[,<id>]]
                                                          delivery, quality, and optional duels
 orch runs [--unscored]      what ran, what is unjudged
+orch monitor                detect and record stuck machine state; --history reads prior passes
 orch search <query>         consult notes, rulings, findings, and saved outputs
 orch stats [--job X]        score, median latency, vendor tokens and cost per agent per job
 orch guide [--job X]        what to use for what: best, quickest, and what is still a guess

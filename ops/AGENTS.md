@@ -8,6 +8,9 @@ never take a destructive guess.
   checkout** of each family and nothing else.
 - `launchd/` — templates, installed location-independently by `install.sh`.
   Brew upkeep at 06:00, project refresh at 06:30.
+- `com.user.orch-monitor` — a provisional four-hour operational-state
+  backstop. Its queryable record lives in orch.db; launchd output is only a
+  process log.
 
 **Depth is asked, not assumed.** Each project gets the deepest refresh its own
 `scripts/sync/main` advertises — `--full`, else `--refresh`, else flag-less.

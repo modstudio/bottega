@@ -10,8 +10,13 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$REPO/.." && pwd)"
 AGENTS_DIR="$HOME/Library/LaunchAgents"
 UID_NUM="$(id -u)"
+# Provisional: today's stale runs were 16-40h old and ghost intervals 19h old,
+# so four hours catches every measured case without hourly noise. Each pass
+# records condition ages; revisit this after a week of that evidence.
+PROVISIONAL_MONITOR_BACKSTOP_SECONDS=$((4 * 60 * 60))
 
-mkdir -p "$AGENTS_DIR" "$HOME/Library/Logs/brew-upgrade" "$HOME/Library/Logs/projects-refresh"
+mkdir -p "$AGENTS_DIR" "$HOME/Library/Logs/brew-upgrade" "$HOME/Library/Logs/projects-refresh" \
+  "$HOME/Library/Logs/orch-monitor"
 
 for tmpl in "$REPO"/launchd/*.plist.template; do
   label="$(basename "$tmpl" .plist.template)"
@@ -35,6 +40,7 @@ for tmpl in "$REPO"/launchd/*.plist.template; do
   #   __MODEL_HOST__ -> the configured SSH alias
   sed -e "s#__REPO__#${REPO}#g" -e "s#__ROOT__#${ROOT}#g" \
       -e "s#__HOME__#${HOME}#g" \
+      -e "s#__MONITOR_BACKSTOP_SECONDS__#${PROVISIONAL_MONITOR_BACKSTOP_SECONDS}#g" \
       -e "s#__MODEL_HOST__#${LOCAL_MODEL_HOST:-}#g" "$tmpl" > "$target"
 
   # Load it.
@@ -44,5 +50,5 @@ done
 
 echo
 echo "Active agents:"
-launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|orch-sweep' \
+launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|orch-sweep|orch-monitor' \
   || echo "  (none found)"

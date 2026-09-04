@@ -3,7 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { resolve } from 'node:path'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { sessionId } from './db.ts'
+import { db, sessionId } from './db.ts'
 import { consumeDoc, docsMarkdown, getDoc, listDocs, setDoc } from './docs.ts'
 import { projectAt, projectByName, projects } from './projects.ts'
 import {
@@ -22,6 +22,12 @@ const requiredReportField = (field: string, belongs: string) =>
   z.string({ error: `${field} is required: ${belongs}` }).trim()
     .min(1, `${field} is required: ${belongs}`)
 
+const reporterFields = {
+  reporter_kind: z.enum(['session', 'monitor']).optional(),
+  monitor_invocation_id: z.number().int().positive().optional(),
+  affected_project: z.string().trim().min(1).optional(),
+}
+
 type FileIssueInput = {
   kind: 'defect'
   what_happened: string
@@ -37,6 +43,10 @@ type FileIssueInput = {
   evidence: string
   not_established: string
 }
+
+export type IssueReporter =
+  | { kind: 'session' }
+  | { kind: 'monitor'; invocationId: number; affectedProject: string }
 
 function registeredProject(name: string) {
   const project = projectByName(name)
@@ -62,9 +72,19 @@ const ledgerSourceSchema = z.object({
   note: z.string(),
 })
 
-async function fileIssue(input: FileIssueInput) {
-  const session = sessionId()
-  if (!session) throw new Error('cannot file issue: the reporting session is not available')
+export async function fileIssue(input: FileIssueInput, reporter: IssueReporter = { kind: 'session' }) {
+  if (reporter.kind !== 'session' && reporter.kind !== 'monitor') {
+    throw new Error('unknown issue reporter kind')
+  }
+  const session = reporter.kind === 'session' ? sessionId() : null
+  if (reporter.kind === 'session' && !session) {
+    throw new Error('cannot file issue: the reporting session is not available')
+  }
+  if (reporter.kind === 'monitor') {
+    const invocation = db().query('SELECT id FROM monitor_invocation WHERE id=?')
+      .get(reporter.invocationId)
+    if (!invocation) throw new Error(`no monitor invocation ${reporter.invocationId}`)
+  }
   const project = projectAt(process.cwd())
   if (!project) {
     throw new Error(`cannot file issue: no registered project contains ${process.cwd()}`)
@@ -72,7 +92,10 @@ async function fileIssue(input: FileIssueInput) {
   const type = input.kind.toUpperCase()
   const body = [
     `TYPE: ${type}`,
-    `REPORTING SESSION: ${session}`,
+    ...(reporter.kind === 'session'
+      ? [`REPORTER KIND: SESSION`, `REPORTING SESSION: ${session}`]
+      : [`REPORTER KIND: MONITOR`, `REPORTING MONITOR INVOCATION: ${reporter.invocationId}`,
+        `AFFECTED PROJECT: ${reporter.affectedProject}`]),
     `REPORTING PROJECT: ${project.name}`,
     '',
     'WHAT HAPPENED',
@@ -106,7 +129,9 @@ async function fileIssue(input: FileIssueInput) {
   if (exitCode !== 0) {
     throw new Error(`could not file issue through hub: ${stderr.trim() || stdout.trim() || `exit ${exitCode}`}`)
   }
-  return text({ key: stdout.trim(), kind: input.kind, session, project: project.name })
+  return { key: stdout.trim(), kind: input.kind, session, project: project.name,
+    reporter: reporter.kind,
+    monitor_invocation_id: reporter.kind === 'monitor' ? reporter.invocationId : null }
 }
 
 export function createDocsMcpServer(): McpServer {
@@ -270,6 +295,7 @@ export function createDocsMcpServer(): McpServer {
       not_established: requiredReportField(
         'not_established', 'state what remains uncertain or has not been demonstrated',
       ),
+      ...reporterFields,
     }), z.object({
       kind: z.literal('suggestion').describe('How the filed issue should be read.'),
       what_happened: requiredReportField(
@@ -284,8 +310,27 @@ export function createDocsMcpServer(): McpServer {
       not_established: requiredReportField(
         'not_established', 'state what remains uncertain or has not been demonstrated',
       ),
+      ...reporterFields,
     })]),
-  }, fileIssue)
+  }, async (input) => {
+    const kind = input.reporter_kind ?? 'session'
+    if (kind === 'monitor' && !input.monitor_invocation_id) {
+      throw new Error('monitor_invocation_id is required for reporter_kind monitor')
+    }
+    if (kind === 'monitor' && !input.affected_project) {
+      throw new Error('affected_project is required for reporter_kind monitor')
+    }
+    if (kind === 'session' && input.monitor_invocation_id) {
+      throw new Error('monitor_invocation_id is only valid for reporter_kind monitor')
+    }
+    if (kind === 'session' && input.affected_project) {
+      throw new Error('affected_project is only valid for reporter_kind monitor')
+    }
+    const { reporter_kind: _kind, monitor_invocation_id: _id, affected_project: _project, ...issue } = input
+    const reporter: IssueReporter = kind === 'monitor'
+      ? { kind, invocationId: input.monitor_invocation_id!, affectedProject: input.affected_project! } : { kind }
+    return text(await fileIssue(issue, reporter))
+  })
 
   return server
 }

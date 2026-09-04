@@ -789,6 +789,32 @@ function migrate(d: Database) {
     CREATE INDEX IF NOT EXISTS run_message_root ON run_message(root_run_id, id);
     CREATE INDEX IF NOT EXISTS run_message_unread
       ON run_message(root_run_id, direction, read_at) WHERE read_at IS NULL;
+    -- One monitor pass is durable even when it finds nothing: empty passes are
+    -- the denominator needed to decide whether its provisional schedule is too
+    -- eager. Conditions retain their observed age rather than asking a later
+    -- query to reconstruct it from mutable state.
+    CREATE TABLE IF NOT EXISTS monitor_invocation (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      started_at  TEXT NOT NULL,
+      finished_at TEXT,
+      trigger     TEXT NOT NULL CHECK (trigger IN ('invoked','backstop')),
+      findings    INTEGER,
+      errors      INTEGER
+    );
+    CREATE TABLE IF NOT EXISTS monitor_condition (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      invocation_id   INTEGER NOT NULL REFERENCES monitor_invocation(id) ON DELETE CASCADE,
+      kind             TEXT NOT NULL,
+      subject          TEXT NOT NULL,
+      condition_since  TEXT,
+      age_ms           INTEGER,
+      detail           TEXT NOT NULL,
+      action           TEXT NOT NULL,
+      issue_key        TEXT,
+      UNIQUE(invocation_id, kind, subject)
+    );
+    CREATE INDEX IF NOT EXISTS monitor_condition_kind
+      ON monitor_condition(kind, invocation_id);
     CREATE TABLE IF NOT EXISTS schema_meta (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL

@@ -107,6 +107,10 @@ function commandShape(argv: string[]): { args: string[]; shape: CommandShape } |
     case 'ask-server': return { args: argv.slice(1), shape: shape('orch ask-server', 0) }
     case 'setup-ask': return { args: argv.slice(1), shape: shape('orch setup-ask', 0) }
     case 'blockers': return { args: argv.slice(1), shape: shape('orch blockers [--days N] [--json]', 0, ['--days'], ['--json']) }
+    case 'monitor': return { args: argv.slice(1), shape: shape(
+      'orch monitor [--backstop|--history] [--limit N] [--json]', 0, ['--limit'],
+      ['--backstop', '--history', '--json'],
+    ) }
     case 'inbox': return { args: argv.slice(1), shape: shape('orch inbox [--all] [--json]', 0, [], ['--all', '--json']) }
     case 'answer': return { args: argv.slice(1), shape: shape(
       'orch answer <id> ["<ruling>"] [--file PATH] [--q<ID> "<ruling>"] [--follow]', Infinity,

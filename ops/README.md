@@ -7,6 +7,7 @@ Unattended daily maintenance for the machine, run by `launchd`.
 | Homebrew upgrade | 06:00 | `brew update`, `upgrade`, then `cleanup`, non-interactively |
 | Projects refresh | 06:30 | each project's own `scripts/sync/main` |
 | Local model tunnel | always, when configured | SSH local forwarding, kept alive |
+| Orch monitor | every 4 hours (provisional) | record and report stuck operational state |
 
 None has a TTY, so interactive prompts are skipped. If the machine is asleep at
 the scheduled time, launchd runs the job on the next wake.
