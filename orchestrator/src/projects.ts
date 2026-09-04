@@ -22,7 +22,6 @@
  * evidence about the other.
  */
 import { db } from './db.ts'
-import type { SandboxLevel } from './agents.ts'
 
 export type Project = {
   id: number
@@ -71,27 +70,6 @@ export type ProjectSettings = {
   gate?: string
   /** Display colour, for anything that draws a project. */
   color?: string
-  /**
-   * How much of the machine an agent working here may actually use.
-   *
-   * `exec` lets it run the project's real toolchain — containers, package
-   * managers, the test suite. Without it a review lens reasons from source and
-   * says so: four runs in one session reported they could not execute anything
-   * (a denied Docker socket, no PHP on the host), and one downgraded its entire
-   * test verdict to "static review". It still found real defects; it would have
-   * found more.
-   *
-   * Defaults to `exec` for a REGISTERED project, deliberately. The register is
-   * the list of repositories this machine's owner works in, and an agent
-   * invited into one is being asked to do the work that repository requires —
-   * one registered project's own rule is that everything runs through Docker. Anywhere
-   * unregistered stays read-only, because "a directory an agent was pointed at"
-   * is a different proposition from "a project someone registered".
-   *
-   * A setting rather than a constant precisely so it can be narrowed per
-   * project without a code change.
-   */
-  agentSandbox?: SandboxLevel
   /**
    * How THIS project makes a worktree, and how it takes one down.
    *

@@ -1153,13 +1153,9 @@ export async function run(opts: {
     write: writes,
     session: vendorSession ?? undefined,
     /**
-     * A registered project's agents get its toolchain; anywhere else does not.
-     *
-     * Resolved HERE, from the register, and never taken from a caller's flag —
-     * a flag would let any invocation widen its own sandbox, and the whole
-     * point of the boundary is that this is a property of the PROJECT rather
-     * than of whoever typed the command. See ProjectSettings.agentSandbox for
-     * why a registered repository is the line.
+     * A repository job writes inside its own disposable worktree; anything
+     * else stays read-only. The job's declared `readsRepo` is the only input —
+     * a caller flag would let any invocation widen its own sandbox.
      */
     sandbox: repoJob ? 'workspace-write' as SandboxLevel : 'read-only' as SandboxLevel,
     // Staging writes the linked worktree's index outside its checkout. Grant

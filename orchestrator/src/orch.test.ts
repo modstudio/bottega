@@ -4283,6 +4283,7 @@ describe('a writing worker must return evidence of completed work', () => {
     const origReadsOut = agent.readsOut
     agent.bin = process.execPath
     agent.resumeArgv = (o) => {
+      expect(o.sandbox).toBe('workspace-write')
       expect(o.writableRoots).toEqual([worktreeGitDir(tree.path)])
       return [script]
     }
@@ -6827,19 +6828,60 @@ describe('what stopped an agent is reported, not silently worked around', () => 
   })
 })
 
-describe('an agent gets the toolchain of a project someone registered', () => {
-  test('a registered project executes; an unregistered directory does not', () => {
-    // The boundary is the register, not a flag: a repository someone
-    // deliberately registered is one whose toolchain the work requires, and a
-    // directory an agent merely got pointed at is not.
-    upsertProject({ name: 'mine', path: '/w/mine' })
-    expect(projectAt('/w/mine')?.settings.agentSandbox).toBeUndefined()
-    expect(projectAt('/somewhere/else')).toBeNull()
-  })
+describe('the sandbox an agent is launched with', () => {
+  test('follows the job, not a project register entry', async () => {
+    // The register used to declare agentSandbox and default registered
+    // projects to exec. Dispatch stopped reading it in 0f8681b and kept
+    // handing every repository job workspace-write. A round-trip through
+    // the register is the test that missed that, so this watches the
+    // argv the agent is actually launched with.
+    const repo = mkdtempSync(join(tmpdir(), 'orch-sandbox-dispatch-'))
+    const script = join(dir, 'sandbox-dispatch-worker.ts')
+    writeFileSync(script, 'process.stdout.write("ok")\n')
+    const agent = AGENTS.codex!
+    const original = {
+      bin: agent.bin, argv: agent.argv, readsOut: agent.readsOut, stdin: agent.stdin,
+    }
+    const launched: Array<string | undefined> = []
+    const oldDepth = process.env.ORCH_DEPTH
+    const runGit = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+    }
+    try {
+      runGit('init', '-b', 'main')
+      runGit('config', 'user.email', 'orch-test@example.invalid')
+      runGit('config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'seed.txt'), 'seed\n')
+      runGit('add', 'seed.txt')
+      runGit('commit', '-m', 'fixture')
+      agent.bin = process.execPath
+      agent.stdin = false
+      agent.readsOut = false
+      agent.argv = (o) => {
+        launched.push(o.sandbox)
+        return [script]
+      }
+      process.env.ORCH_DEPTH = '0'
 
-  test('a project can narrow itself without a code change', () => {
-    upsertProject({ name: 'careful', path: '/w/careful', settings: { agentSandbox: 'read-only' } })
-    expect(projectAt('/w/careful')!.settings.agentSandbox).toBe('read-only')
+      await runJob({ job: 'file-question', prompt: 'p', cwd: repo, agent: 'codex' })
+      upsertProject({ name: 'sandbox-dispatch', path: repo })
+      await runJob({ job: 'file-question', prompt: 'p', cwd: repo, agent: 'codex' })
+      await runJob({ job: 'review-lens-inline', prompt: 'p', cwd: repo, agent: 'codex' })
+
+      expect(launched).toEqual(['workspace-write', 'workspace-write', 'read-only'])
+    } finally {
+      agent.bin = original.bin
+      agent.argv = original.argv
+      agent.readsOut = original.readsOut
+      agent.stdin = original.stdin
+      if (oldDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = oldDepth
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(script, { force: true })
+    }
   })
 
   test('exec is what the widest level actually asks codex for', () => {

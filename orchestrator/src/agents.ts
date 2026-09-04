@@ -67,9 +67,9 @@ export type Caps = {
  * projects losing their build to one missing binding — which is what turned it
  * from an anecdote into a decision worth making.
  *
- * The boundary is the REGISTER. A project someone deliberately registered is a
- * repository they work in and whose toolchain the work requires; a directory an
- * agent merely got pointed at is not, and stays read-only.
+ * The boundary is the JOB. A repository job gets workspace-write in a
+ * disposable worktree; a job that does not read a repository stays read-only.
+ * Isolation is the worktree, not a per-project vendor-sandbox knob.
  */
 export type SandboxLevel = 'read-only' | 'workspace-write' | 'exec'
 
@@ -91,10 +91,11 @@ export type ArgvOpts = {
   /** Open the sandbox for editing. True for every job that reads a repository. */
   write?: boolean
   /**
-   * How much of the machine this run may use, from the project's register entry.
+   * How much of the machine this run may use.
    *
-   * Absent means no project was resolved, which is read-only — an agent pointed
-   * at some directory nobody registered gets the narrowest thing that works.
+   * Repository jobs get workspace-write in their disposable worktree. Anything
+   * else is read-only. `exec` remains available when a non-repository job
+   * passes it explicitly.
    */
   sandbox?: SandboxLevel
   /** Exact extra paths made writable inside Codex's workspace-write sandbox. */
