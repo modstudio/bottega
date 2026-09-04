@@ -1067,6 +1067,82 @@ switch (cmd) {
     const output = (value: unknown, line: string) =>
       console.log(has('json') ? JSON.stringify(value) : line)
 
+    if (group === 'import') {
+      const dir = argv[2]
+      if (!dir) throw new Error('orch port import <dir> [--dry-run] [--replace] [--json]')
+      const { applyImport, ImportRefusalError, planImport } = await import('./porting-import.ts')
+      const names = {
+        doctrine: 'doctrine.md', differences: 'differences.md', backports: 'backports.md',
+        refs: 'refs.json', state: 'state.json', projects: 'projects.md',
+      } as const
+      const files = {} as Record<keyof typeof names, string>
+      const ioRefusals: { what: string; where: string; why: string }[] = []
+      try {
+        if (!statSync(dir).isDirectory()) throw new Error('not a directory')
+        readdirSync(dir)
+      } catch (error) {
+        ioRefusals.push({ what: 'source directory', where: dir, why: String(error) })
+      }
+      for (const [key, name] of Object.entries(names) as [keyof typeof names, string][]) {
+        const path = join(dir, name)
+        try { files[key] = readFileSync(path, 'utf8') }
+        catch (error) {
+          files[key] = ''
+          ioRefusals.push({ what: `source file "${name}"`, where: path, why: String(error) })
+        }
+      }
+      const plan = planImport(files, projects())
+      plan.refusals.unshift(...ioRefusals)
+      const visible = {
+        ...plan,
+        doctrine: plan.doctrine.map((row) => ({ ...row, bodyLength: row.body.length })),
+        docs: plan.docs.map((row) => ({ ...row, bodyLength: row.body.length })),
+      }
+      const printPlan = () => {
+        if (has('json')) { console.log(JSON.stringify(visible, null, 2)); return }
+        console.log(`pairs (${plan.pairs.length})`)
+        for (const row of plan.pairs) console.log(`  ${row.source} -> ${row.target}  ids ${row.sourceId}->${row.targetId}`)
+        console.log(`baselines (${plan.baselines.length})`)
+        for (const row of plan.baselines) console.log(`  ${row.pairKey}  ${row.sourceCommit ?? 'null'}  ${row.scannedAt ?? 'null'}`)
+        console.log(`skips (${plan.skips.length})`)
+        for (const row of plan.skips) console.log(`  ${row.pairKey}  ${row.candidate}  reason=${row.reason}`)
+        console.log(`refs (${plan.refs.length})`)
+        for (const row of plan.refs) {
+          console.log(`  ${row.taskKey}  note=${JSON.stringify(row.note)}`)
+          for (const source of row.sources) {
+            console.log(`    source_project_id=${source.source_project_id} commits=${JSON.stringify(source.commits)} paths=${JSON.stringify(source.paths)} note=${JSON.stringify(source.note)}`)
+          }
+        }
+        console.log(`doctrine (${plan.doctrine.length})`)
+        for (const row of plan.doctrine) console.log(`  ${row.number}  ${row.title}  body length=${row.body.length}`)
+        console.log(`docs (${plan.docs.length})`)
+        for (const row of plan.docs) {
+          console.log(`  ${row.scope}/${row.subject ?? '_'}/${row.slug}  ${row.title}  body length=${row.body.length}`)
+        }
+        console.log(`refusals (${plan.refusals.length})`)
+        for (const refusal of plan.refusals) {
+          console.log(`  ${refusal.what} / ${refusal.where} / ${refusal.why}`)
+        }
+      }
+      if (has('dry-run')) {
+        printPlan()
+        if (plan.refusals.length) process.exitCode = 1
+        break
+      }
+      try {
+        applyImport(plan, { replace: has('replace') })
+      } catch (error) {
+        if (!(error instanceof ImportRefusalError)) throw error
+        plan.refusals.push(...error.refusals.filter((refusal) => !plan.refusals.includes(refusal)))
+        printPlan()
+        process.exitCode = 1
+        break
+      }
+      if (has('json')) console.log(JSON.stringify(visible, null, 2))
+      else console.log(`imported ${plan.pairs.length} pairs, ${plan.refs.length} refs, ${plan.doctrine.length} doctrine rules, and ${plan.docs.length} docs`)
+      break
+    }
+
     if (group === 'baseline' && action === 'show') {
       const sourceName = argv[3]
       const targetName = argv[4]
@@ -1235,7 +1311,7 @@ switch (cmd) {
       break
     }
 
-    throw new Error('unknown: orch port. Try baseline | skip | ref | doctrine')
+    throw new Error('unknown: orch port. Try import | baseline | skip | ref | doctrine')
   }
 
   case 'mcp': {

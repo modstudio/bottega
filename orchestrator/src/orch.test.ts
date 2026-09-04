@@ -340,6 +340,7 @@ const { listPairs, addPair, baselineForPair, setBaseline, listSkips, addSkip,
         setLedgerRef, ledgerRef, listLedgerRefs, resolveLedgerRef,
         listDoctrineRules, addDoctrineRule, retireDoctrineRule } =
   await import('./porting.ts')
+const { applyImport, ImportRefusalError, planImport } = await import('./porting-import.ts')
 const { parseFiledIssue, seedFromReport, boundedIssuePack, parseIssueReply,
         ISSUE_DIAGNOSIS_SCHEMA } = await import('./issue.ts')
 
@@ -858,6 +859,124 @@ describe('porting data model', () => {
     expect(listDoctrineRules(false)).toEqual([])
     expect(listDoctrineRules()).toMatchObject([{ number: 7, retired_at: '2026-09-02T00:00:00.000Z' }])
     expect(() => addDoctrineRule(7, 'Replacement', 'Must not reuse seven.')).toThrow()
+  })
+})
+
+describe('port importer', () => {
+  const registered = () => {
+    upsertProject({ name: 'alpha-invented', path: '/w/alpha-invented', settings: { keyPrefixes: ['ALP'] } })
+    upsertProject({ name: 'beta-invented', path: '/w/beta-invented', settings: { keyPrefixes: ['BET'] } })
+    return projects()
+  }
+  const fixture = (overrides: Partial<Record<'doctrine' | 'differences' | 'backports' | 'refs' | 'state' | 'projects', string>> = {}) => ({
+    doctrine: '# Doctrine\n\nPreface text.\n\n1. **Keep the whole rule** Opening sentence.\nContinuation line.\nA known final item at the end of the rule.\n',
+    differences: '# Differences\n\n## Stack mapping (how to translate, not a reason to skip)\nMap body.\n\n## Per-project uniques\n\n### alpha-invented\nAlpha body.\n\n### Shared deployment constraint\nUnassigned body.\n\n### beta-invented\nBeta body.\n\n## Process differences\nProcess body.\n',
+    backports: '# Backports\n\n## -> alpha-invented\n' + 'A long backport body. '.repeat(20) + '\nKnown final checkbox.\n\n## -> beta-invented\nBeta backport.\n',
+    refs: JSON.stringify({ 'BET-7': { source: 'alpha-invented', commits: ['abc'], paths: ['src/a.ts'], notes: 'Native notes.' } }),
+    state: JSON.stringify({ pairs: { 'alpha-invented->beta-invented': { lastPortedSha: 'abc', scannedAt: '2026-01-01', skipped: [{ feature: 'old feature', reason: 'superseded', raiseAgain: false }] } } }),
+    projects: '# Projects\n\n## Category map\nCategories.\n\n## Reference implementations (deepest instance = default port source)\nReferences.\n',
+    ...overrides,
+  })
+
+  test('plans complete long sections and classifies an unmatched differences heading globally', () => {
+    const plan = planImport(fixture(), registered())
+    expect(plan.refusals).toEqual([])
+    const backport = plan.docs.find((doc) => doc.subject === 'alpha-invented' && doc.slug === 'port-backports')!
+    expect(backport.body.length).toBeGreaterThan(backport.body.indexOf('\n') + 300)
+    expect(backport.body).toContain('Known final checkbox.')
+    expect(plan.doctrine[0]!.body).toContain('A known final item at the end of the rule.')
+    expect(plan.docs.find((doc) => doc.slug === 'port-differences-unassigned')?.body)
+      .toContain('Shared deployment constraint')
+    expect(plan.docs.find((doc) => doc.subject === 'beta-invented' && doc.slug === 'port-differences')?.body)
+      .not.toContain('Process body.')
+  })
+
+  test('names incompatible baselines, reasonless skips, and every unmapped pair field', () => {
+    const state = JSON.stringify({ pairs: {
+      'alpha-invented->beta-invented': {
+        lastPortedSha: null, scannedAt: '2026-01-01', skipped: ['bare candidate'],
+        note: 'one', notes: 'two', scope: ['src'], staged: ['ALP-1'],
+      },
+    } })
+    const plan = planImport(fixture({ state }), registered())
+    expect(plan.refusals.filter((r) => r.what.startsWith('pair field')).map((r) => r.what)).toEqual([
+      'pair field "note"', 'pair field "notes"', 'pair field "scope"', 'pair field "staged"',
+    ])
+    expect(plan.refusals.find((r) => r.what === 'baseline')?.where)
+      .toBe('state.json pairs["alpha-invented->beta-invented"]')
+    expect(plan.refusals.find((r) => r.what.startsWith('skip'))?.why).toContain('no reason')
+  })
+
+  test('refuses free-text sources and unknown or multiply-owned task prefixes by task key', () => {
+    upsertProject({ name: 'alpha-invented', path: '/w/a', settings: { keyPrefixes: ['ALP'] } })
+    upsertProject({ name: 'beta-invented', path: '/w/b', settings: { keyPrefixes: ['DUP'] } })
+    upsertProject({ name: 'gamma-invented', path: '/w/c', settings: { keyPrefixes: ['DUP'] } })
+    const refs = JSON.stringify({
+      'ALP-1': { source: 'alpha-invented + beta-invented', commits: [], paths: [], notes: '' },
+      'NONE-2': { source: 'alpha-invented', commits: [], paths: [], notes: '' },
+      'DUP-3': { source: 'alpha-invented', commits: [], paths: [], notes: '' },
+    })
+    const plan = planImport(fixture({ refs }), projects())
+    expect(plan.refusals).toEqual(expect.arrayContaining([
+      expect.objectContaining({ where: 'refs.json ALP-1', what: 'project "alpha-invented + beta-invented"' }),
+      expect.objectContaining({ where: 'refs.json NONE-2', why: expect.stringContaining('no registered project') }),
+      expect.objectContaining({ where: 'refs.json DUP-3', why: expect.stringContaining('several registered projects') }),
+    ]))
+  })
+
+  test('records the deliberately unimported register-derived sections as one refusal', () => {
+    const source = fixture({ projects: '# Projects\n\n## Resolving the workspace\nOld paths.\n\n## Stacks\nOld stacks.\n\n## Category map\nCategories.\n\n## Reference implementations (deepest instance = default port source)\nReferences.\n' })
+    const plan = planImport(source, registered())
+    expect(plan.refusals.filter((r) => r.where === 'projects.md')).toEqual([
+      expect.objectContaining({ what: 'workspace and stack sections' }),
+    ])
+  })
+
+  test('a refusal makes apply all-or-nothing', () => {
+    const plan = planImport(fixture(), registered())
+    plan.refusals.push({ what: 'bad row', where: 'fixture row', why: 'cannot resolve it' })
+    expect(() => applyImport(plan)).toThrow(ImportRefusalError)
+    expect(listPairs()).toEqual([])
+    expect(listDoctrineRules()).toEqual([])
+    expect(getDoc('global', null, 'port-category-map')).toBeNull()
+  })
+
+  test('a second import refuses existing data and replace atomically rewrites it', () => {
+    const plan = planImport(fixture(), registered())
+    applyImport(plan)
+    expect(() => applyImport(plan)).toThrow(ImportRefusalError)
+    const replacement = planImport(fixture({ doctrine: '# Doctrine\n\nNew preface.\n\n2. **Replacement rule** Replacement body.\n' }), projects())
+    applyImport(replacement, { replace: true })
+    expect(listDoctrineRules().map((row) => row.number)).toEqual([2])
+    expect(listPairs()).toHaveLength(1)
+    expect(getDoc('global', null, 'port-doctrine-preface')?.body).toContain('New preface.')
+  })
+
+  test('CLI dry-run shows body lengths, writes nothing, and names a missing file', () => {
+    registered()
+    const source = mkdtempSync(join(tmpdir(), 'port-import-invented-'))
+    try {
+      for (const [name, body] of Object.entries(fixture())) writeFileSync(join(source, `${name}.json`), body)
+      // Markdown inputs have their source filenames rather than the fixture object's uniform suffix.
+      for (const name of ['doctrine', 'differences', 'backports', 'projects'] as const) {
+        writeFileSync(join(source, `${name}.md`), fixture()[name])
+      }
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const run = (path: string) => Bun.spawnSync([process.execPath, CLI, 'port', 'import', path, '--dry-run', '--json'], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
+      })
+      const clean = run(source)
+      expect(clean.exitCode).toBe(0)
+      expect(JSON.parse(clean.stdout.toString()).docs[0].bodyLength).toBeGreaterThan(0)
+      expect(listPairs()).toEqual([])
+
+      const incomplete = mkdtempSync(join(tmpdir(), 'port-import-missing-invented-'))
+      try {
+        const missing = run(incomplete)
+        expect(missing.exitCode).toBe(1)
+        expect(missing.stdout.toString()).toContain('refs.json')
+      } finally { rmSync(incomplete, { recursive: true, force: true }) }
+    } finally { rmSync(source, { recursive: true, force: true }) }
   })
 })
 
