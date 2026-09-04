@@ -675,7 +675,7 @@ function usage(): never {
       detaches by default; --follow watches the resumed turn here
       several questions: orch answer <id> --q<qid> "<ruling>" --q<qid> "<ruling>"
   orch diff <id>                inspect a run's worktree diff (review diffs are scratch)
-  orch stop <id>                terminate a running run and leave its worktree intact
+  orch stop <id>                terminate a running run and reclaim its worktree
   orch discard <id>             delete that run's worktree (the row stays)
       --force                   also delete a protected branch; bypass a refusing project tool
                                 only for a tree marked as created by orch
@@ -2112,10 +2112,12 @@ switch (cmd) {
     const id = Number(argv[1])
     if (!id) usage()
     const row = db().query(
-      'SELECT id, status, pid, agent_pid, parent_run_id FROM run WHERE id = ?',
+      `SELECT id, status, pid, agent_pid, parent_run_id, repo, cwd, worktree, branch
+         FROM run WHERE id = ?`,
     ).get(id) as {
       id: number; status: string; pid: number | null; agent_pid: number | null
-      parent_run_id: number | null
+      parent_run_id: number | null; repo: string | null; cwd: string | null
+      worktree: string | null; branch: string | null
     } | null
     if (!row) throw new Error(`no run ${id}`)
     if (row.status !== 'running') {
@@ -2140,8 +2142,20 @@ switch (cmd) {
       }
     })()
 
-    terminateRunProcesses(id)
+    // The coordinator owns setup and final recording. Killing it inside the
+    // creation window strands the project tool's directory before it can be
+    // attributed or reclaimed. Stop the vendor, but let the coordinator see
+    // the stopped row and finish cleanup.
+    terminateRunProcesses(id, row.pid ? [row.pid] : [])
     console.log(`stopped run ${id}`)
+    if (row.worktree) {
+      const stoppedWorktree = row.worktree
+      await discardWorktree(row as CleanupRow, ['running', 'asking'], 'discarded', true)
+      if (row.parent_run_id) {
+        db().query('UPDATE run SET worktree=NULL WHERE id=? AND worktree=?')
+          .run(row.parent_run_id, stoppedWorktree)
+      }
+    }
     break
   }
 

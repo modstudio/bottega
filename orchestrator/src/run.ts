@@ -969,27 +969,47 @@ export async function run(opts: {
    */
   let cwd = callerCwd
   try {
+    const creating = repoJob && !worktree
     if (repoJob) {
       // A job that reads the repository must have a worktree, so a repository
       // it cannot be cut from is a hard failure.
       const tool = toolFor(callerCwd)
-      const creating = !worktree
       if (creating) {
         const repoRoot = repoRootOf(callerCwd)
         if (!repoRoot) throw new Error(`not a git repository: ${callerCwd}`)
+        const recordWorktree = (created: Worktree) => {
+          const result = db().query(
+            'UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id=?',
+          ).run(created.path, created.path, created.branch, created.base, claim.id)
+          if (result.changes !== 1) throw new Error(`run ${claim.id} could not record its worktree`)
+        }
         worktree = withWorktreeCreateLock(repoRoot, () => {
           let created: Worktree
           if (tool) {
             // The PROJECT owns its worktrees. A bare `git worktree add` here would
             // produce a directory with no .env, no vendor and no database, in which
             // every test the worker runs is meaningless and green.
-            created = createWithTool(tool, callerCwd, claim.id, opts.seed, opts.key, opts.base)
+            created = createWithTool(
+              tool, callerCwd, claim.id, opts.seed, opts.key, opts.base, recordWorktree,
+            )
           } else {
             // INHERITED on a resume, and this is the point of the whole exercise:
             // the worker is mid-edit in that tree, and cutting a fresh one would
             // answer its question into an empty checkout and throw away everything
             // it had built.
-            created = createWorktree(callerCwd, claim.id, opts.base)
+            created = createWorktree(callerCwd, claim.id, opts.base, recordWorktree)
+          }
+          const current = db().query('SELECT status FROM run WHERE id=?').get(claim.id) as
+            { status: string }
+          if (current.status === 'stopped') {
+            const cleanup = removeFor(created, created.repoRoot)
+            if (cleanup.removed) {
+              db().query('UPDATE run SET worktree=NULL WHERE id=?').run(claim.id)
+            }
+            throw new Error(
+              `run ${claim.id} was stopped during worktree creation; cleanup: ` +
+              `${cleanup.removed ? 'removed' : cleanup.detail}`,
+            )
           }
           try {
             carryWorkingState(callerCwd, created)
@@ -1005,8 +1025,10 @@ export async function run(opts: {
       }
     }
     if (worktree) {
-      db().query('UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id=?')
-        .run(worktree.path, worktree.path, worktree.branch, worktree.base, claim.id)
+      if (!creating) {
+        db().query('UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id=?')
+          .run(worktree.path, worktree.path, worktree.branch, worktree.base, claim.id)
+      }
       cwd = worktree.path
     }
   } catch (e) {
@@ -1014,7 +1036,11 @@ export async function run(opts: {
     db().query(
       // 'harness': setting a worktree up is orch's job, and failing at it says
       // nothing whatever about the agent that was about to be given it.
-      `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
+      `UPDATE run SET
+         status=CASE WHEN status='stopped' THEN status ELSE 'failed' END,
+         error=CASE WHEN status='stopped' THEN error ELSE ? END,
+         failure_kind=CASE WHEN status='stopped' THEN failure_kind ELSE 'harness' END,
+         latency_ms=? WHERE id=?`,
     ).run(why, Date.now() - started, claim.id)
     throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
   }

@@ -338,6 +338,8 @@ export type OrphanSafety = {
 
 export const ORCH_RUN_MARKER = '.orch-run'
 
+export type RecordWorktree = (worktree: Worktree) => void
+
 /** Mark a tree as orch-owned without asking the project to track orch metadata. */
 function markWorktree(path: string, runId: number, repoRoot: string): void {
   writeFileSync(join(path, ORCH_RUN_MARKER), `${runId}\n${repoRoot}\n`)
@@ -346,6 +348,29 @@ function markWorktree(path: string, runId: number, repoRoot: string): void {
   if (!existing.split('\n').includes(ORCH_RUN_MARKER)) {
     appendFileSync(exclude, `${existing && !existing.endsWith('\n') ? '\n' : ''}${ORCH_RUN_MARKER}\n`)
   }
+}
+
+/**
+ * Give a newly-created directory an owner before any later setup can fail.
+ *
+ * The database pointer deliberately comes before the marker. If recording
+ * succeeds and marking fails, the run still names the directory and explicit
+ * cleanup can reclaim it. The reverse order recreates the orphan this boundary
+ * exists to prevent. A failed record tears the new tree down immediately.
+ */
+function attributeWorktree(
+  worktree: Worktree, runId: number, record?: RecordWorktree,
+): void {
+  try {
+    record?.(worktree)
+  } catch (e) {
+    const cleanup = removeFor(worktree, worktree.repoRoot)
+    throw new Error(
+      `${String((e as Error)?.message ?? e)}\n` +
+      `unrecorded worktree cleanup: ${cleanup.removed ? 'removed' : cleanup.detail}`,
+    )
+  }
+  markWorktree(worktree.path, runId, worktree.repoRoot)
 }
 
 /** Recognise current markers and the naming schemes used before markers existed. */
@@ -608,6 +633,7 @@ export function validateSeedWithTool(cwd: string, seed?: string): void {
  */
 export function createWithTool(
   tool: WorktreeTool, cwd: string, runId: number, seed?: string, key?: string, baseRef?: string,
+  record?: RecordWorktree,
 ): Worktree {
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
@@ -620,13 +646,13 @@ export function createWithTool(
   }
   return withWorktreeCreateLock(
     repoRoot,
-    () => createWithToolUnlocked(tool, repoRoot, runId, seed, key, baseRef),
+    () => createWithToolUnlocked(tool, repoRoot, runId, seed, key, baseRef, record),
   )
 }
 
 function createWithToolUnlocked(
   tool: WorktreeTool, repoRoot: string, runId: number, seed?: string, key?: string,
-  baseRef?: string,
+  baseRef?: string, record?: RecordWorktree,
 ): Worktree {
   // The project's own naming rule wins where it has one. `orch/<id>` is fine
   // where nothing enforces a convention and is refused outright where something
@@ -647,7 +673,7 @@ function createWithToolUnlocked(
         "this project's worktree settings declare neither `create` nor `recipe`",
       )
     }
-    return createFromRecipe(tool, tool.recipe, repoRoot, runId, key, baseRef)
+    return createFromRecipe(tool, tool.recipe, repoRoot, runId, key, baseRef, record)
   }
 
   if (baseRef && !tool.create.includes('{base}')) {
@@ -765,7 +791,7 @@ function createWithToolUnlocked(
   const actualBase = gitOk(['rev-parse', 'HEAD'], path) ?? base
   const worktree = { path, branch, base: actualBase, repoRoot }
   try {
-    markWorktree(path, runId, repoRoot)
+    attributeWorktree(worktree, runId, record)
     verifyFreshWorktree(worktree)
   } catch (e) {
     throw new Error(`${String((e as Error)?.message ?? e)}${leftover(path)}`)
@@ -773,13 +799,19 @@ function createWithToolUnlocked(
   return worktree
 }
 
-export function createWorktree(cwd: string, runId: number, baseRef?: string): Worktree {
+export function createWorktree(
+  cwd: string, runId: number, baseRef?: string, record?: RecordWorktree,
+): Worktree {
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
-  return withWorktreeCreateLock(repoRoot, () => createWorktreeUnlocked(repoRoot, runId, baseRef))
+  return withWorktreeCreateLock(
+    repoRoot, () => createWorktreeUnlocked(repoRoot, runId, baseRef, record),
+  )
 }
 
-function createWorktreeUnlocked(repoRoot: string, runId: number, baseRef?: string): Worktree {
+function createWorktreeUnlocked(
+  repoRoot: string, runId: number, baseRef?: string, record?: RecordWorktree,
+): Worktree {
   const base = baseRef ? resolveBase(repoRoot, baseRef) : git(['rev-parse', 'HEAD'], repoRoot)
   const dir = join(repoRoot, '.claude', 'worktrees')
   mkdirSync(dir, { recursive: true })
@@ -791,7 +823,7 @@ function createWorktreeUnlocked(repoRoot: string, runId: number, baseRef?: strin
   }
   git(['worktree', 'add', '-b', branch, path, base], repoRoot)
   const worktree = { path, branch, base, repoRoot }
-  markWorktree(path, runId, repoRoot)
+  attributeWorktree(worktree, runId, record)
   verifyFreshWorktree(worktree)
   return worktree
 }
@@ -881,7 +913,7 @@ export function carryWorkingState(cwd: string, worktree: Worktree): void {
  */
 function createFromRecipe(
   tool: WorktreeTool, recipe: Recipe, repoRoot: string, runId: number, key?: string,
-  baseRef?: string,
+  baseRef?: string, record?: RecordWorktree,
 ): Worktree {
   const branch = (tool.branch ?? 'orch/{id}')
     .replace(/\{id\}/g, String(runId))
@@ -906,7 +938,7 @@ function createFromRecipe(
 
   git(['worktree', 'add', '-b', branch, path, base], repoRoot)
   const w: Worktree = { path, branch, base, repoRoot }
-  markWorktree(path, runId, repoRoot)
+  attributeWorktree(w, runId, record)
 
   const dbName = dbNameFor(repoRoot.split('/').pop() ?? 'app', runId)
   const steps = runRecipe(recipe, path, dbName, String(recipe.serve ? portFor(runId) : ''))

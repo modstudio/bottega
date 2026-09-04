@@ -3277,12 +3277,12 @@ describe('detached run collection', () => {
     expect(orch('inbox', '--all').out).not.toContain(`run ${id}`)
   })
 
-  test('stop terminates a running vendor and leaves its worktree intact', async () => {
-    const worktree = mkdtempSync(join(tmpdir(), 'orch-stop-'))
+  test('stop terminates a running vendor and reclaims its recorded worktree', async () => {
     const vendor = Bun.spawn(['sleep', '30'])
     const id = insert('running', 'implement')
-    db().query('UPDATE run SET agent_pid=?, worktree=? WHERE id=?')
-      .run(vendor.pid, worktree, id)
+    const worktree = createWorktree(dir, id)
+    db().query('UPDATE run SET agent_pid=?, cwd=?, worktree=?, branch=? WHERE id=?')
+      .run(vendor.pid, worktree.path, worktree.path, worktree.branch, id)
 
     try {
       const stopped = orch('stop', String(id))
@@ -3291,15 +3291,15 @@ describe('detached run collection', () => {
       expect(await vendor.exited).not.toBe(0)
       expect(db().query('SELECT status, error, failure_kind, worktree FROM run WHERE id=?').get(id))
         .toEqual({
-          status: 'stopped', error: 'stopped by architect', failure_kind: null, worktree,
+          status: 'stopped', error: 'stopped by architect', failure_kind: null, worktree: null,
         })
-      expect(existsSync(worktree)).toBe(true)
+      expect(existsSync(worktree.path)).toBe(false)
       const candidate = candidates('implement').find((item) => item.agent === 'codex')!
       expect(candidate.evidence).toBe(0)
       expect(candidate.failures).toBe(0)
     } finally {
       try { vendor.kill() } catch { /* already stopped */ }
-      rmSync(worktree, { recursive: true, force: true })
+      if (existsSync(worktree.path)) rmSync(worktree.path, { recursive: true, force: true })
     }
   })
 
@@ -4671,6 +4671,96 @@ echo 'Usage: scripts/worktree create [seed]'
       expect(existsSync(join(repo, '.claude', 'worktrees', 'orch-657'))).toBe(false)
     } finally {
       process.chdir(here)
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a project-created tree is recorded before its ownership marker is written', () => {
+    const { repo } = scratchRepo()
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const custom = join(repo, 'elsewhere', `orch-${id}`)
+    try {
+      const w = createWithTool(
+        {
+          create:
+            `${hermeticGitCommand} worktree add -b {branch} "${custom}" HEAD >/dev/null && ` +
+            `echo "${custom}"`,
+        },
+        repo, id, undefined, undefined, undefined,
+        (created) => {
+          expect(existsSync(created.path)).toBe(true)
+          expect(existsSync(join(created.path, '.orch-run'))).toBe(false)
+          db().query('UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id=?')
+            .run(created.path, created.path, created.branch, created.base, id)
+        },
+      )
+      expect(existsSync(join(w.path, '.orch-run'))).toBe(true)
+      expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
+        .toEqual({ worktree: custom })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a project-created tree is removed when its run cannot record it', () => {
+    const { repo } = scratchRepo()
+    const custom = join(repo, 'elsewhere', 'orch-920')
+    try {
+      expect(() => createWithTool(
+        {
+          create:
+            `${hermeticGitCommand} worktree add -b {branch} "${custom}" HEAD >/dev/null && ` +
+            `echo "${custom}"`,
+        },
+        repo, 920, undefined, undefined, undefined,
+        () => { throw new Error('database write failed') },
+      )).toThrow(/database write failed[\s\S]*unrecorded worktree cleanup: removed/)
+      expect(existsSync(custom)).toBe(false)
+      expect(git(repo, 'branch', '--list', 'orch/920')).toBe('')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a stop between recording and marking leaves no project-created orphan', () => {
+    const { repo } = scratchRepo()
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const custom = join(repo, 'elsewhere', `orch-${id}`)
+    let stopped: { code: number; err: string } | null = null
+    try {
+      let failure = ''
+      try {
+        createWithTool(
+          {
+            create:
+              `${hermeticGitCommand} worktree add -b {branch} "${custom}" HEAD >/dev/null && ` +
+              `echo "${custom}"`,
+          },
+          repo, id, undefined, undefined, undefined,
+          (created) => {
+            db().query('UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id=?')
+              .run(created.path, created.path, created.branch, created.base, id)
+            const p = Bun.spawnSync(
+              [process.execPath, new URL('cli.ts', import.meta.url).pathname, 'stop', String(id)],
+              {
+                env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+                stdout: 'pipe', stderr: 'pipe',
+              },
+            )
+            stopped = { code: p.exitCode, err: p.stderr.toString() }
+          },
+        )
+      } catch (e) {
+        failure = String((e as Error).message ?? e)
+      }
+      expect(failure).not.toBe('')
+      expect(stopped).not.toBeNull()
+      expect(stopped!.err).toBe('')
+      expect(stopped!.code).toBe(0)
+      expect(existsSync(custom)).toBe(false)
+      expect(db().query('SELECT status, worktree FROM run WHERE id=?').get(id))
+        .toEqual({ status: 'stopped', worktree: null })
+    } finally {
       rmSync(repo, { recursive: true, force: true })
     }
   })
