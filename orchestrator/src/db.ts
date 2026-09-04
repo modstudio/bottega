@@ -768,6 +768,24 @@ function migrate(d: Database) {
     CREATE INDEX IF NOT EXISTS review_calibration ON review_lens(lens, agent, model, review_id);
     -- Open questions, which is the only query the inbox actually runs.
     CREATE INDEX IF NOT EXISTS question_open ON question(answered_at) WHERE answered_at IS NULL;
+    -- Non-authoritative context exchanged while a worker is still running.
+    -- One table serves both directions so a run's complete conversation is
+    -- ordered by one clock and one id. read_at is the receipt: NULL means only
+    -- queued, never delivered.
+    CREATE TABLE IF NOT EXISTS run_message (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      direction      TEXT NOT NULL CHECK (direction IN ('to_worker','from_worker')),
+      root_run_id     INTEGER NOT NULL REFERENCES run(id) ON DELETE CASCADE,
+      run_id          INTEGER NOT NULL REFERENCES run(id) ON DELETE CASCADE,
+      sender_session  TEXT,
+      body            TEXT NOT NULL CHECK (length(trim(body)) > 0),
+      created_at      TEXT NOT NULL,
+      read_at         TEXT,
+      delivery        TEXT NOT NULL CHECK (delivery IN ('architect_cli','worker_tool'))
+    );
+    CREATE INDEX IF NOT EXISTS run_message_root ON run_message(root_run_id, id);
+    CREATE INDEX IF NOT EXISTS run_message_unread
+      ON run_message(root_run_id, direction, read_at) WHERE read_at IS NULL;
     CREATE TABLE IF NOT EXISTS schema_meta (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL

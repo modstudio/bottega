@@ -21,6 +21,7 @@ describe('CLI argument recognition', () => {
       ['project', 'remove', 'project'],
       ['answer', '12', 'first ruling', 'second ruling'],
       ['answer', '12', '--q31', 'first ruling', '--q32', 'second ruling'],
+      ['tell', '12', 'context', 'for', 'the worker'], ['tell', '12', '--file', 'note.md'],
       ['continue', '12', 'one more change'], ['diff', '12', '--quiet'], ['discard', '12', '--force'],
       ['stop', '12'], ['abandon', '12', '--note', 'superseded'],
       ['score', '12', 'full', 'right', 'faithful', '--note', 'good'],

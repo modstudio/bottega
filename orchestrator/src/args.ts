@@ -83,6 +83,9 @@ function commandShape(argv: string[]): { args: string[]; shape: CommandShape } |
       'orch answer <id> ["<ruling>"] [--file PATH] [--q<ID> "<ruling>"] [--follow]', Infinity,
       ['--file'], ['--follow', '--detach', '--quiet'], { dynamicValueFlag: /^--q\d+$/ },
     ) }
+    case 'tell': return { args: argv.slice(1), shape: shape(
+      'orch tell <run-id> ["<message>"] [--file PATH]', Infinity, ['--file'],
+    ) }
     case 'continue': return { args: argv.slice(1), shape: shape('orch continue <id> ["<what next>"] [--follow]', 2, [], ['--follow', '--detach', '--quiet']) }
     case 'diff': return { args: argv.slice(1), shape: shape('orch diff <id> [--quiet]', 1, [], ['--quiet']) }
     case 'sweep': return { args: argv.slice(1), shape: shape('orch sweep [--older-than N] [--force] [--dry-run]', 0, ['--older-than'], ['--force', '--dry-run']) }

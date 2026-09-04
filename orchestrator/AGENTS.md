@@ -1439,6 +1439,7 @@ orch do implement "<spec>"  delegate a bounded change; it writes in its own work
     --seed SPEC             project-specific database spec, where the project asks
     --key KEY-123           a ticket key, where the project's branches carry one
 orch inbox                  design decisions a worker stopped to ask about
+orch tell <id> ["..."]       queue non-authoritative context; --file for long notes
 orch answer <id> "<ruling>" rule on them, and resume the worker where it stopped
 orch continue <id> ["..."]  carry on a chain with no open question
 orch diff <id>              what a writing run actually changed
@@ -1447,6 +1448,12 @@ orch sweep                  reclaim finished runs' worktrees and their databases
 orch project [add|set|remove]  the register: where work lives, and its stack
 orch setup-ask              register the live ask channel with codex and grok
 ```
+
+**Run messages are context, not rulings.** A worker can send one without
+stopping, and `orch tell` queues one for the worker to read at a voluntary
+checkpoint. The run ledger says `read_at: null` until the receiving side really
+reads it; queued is never reported as delivered. A message cannot close an open
+question or relax the escalation contract.
 
 **`answer` and `continue` are different questions.** `answer` is for a worker
 waiting on a ruling, and refuses a chain with nothing open. `continue` is for a

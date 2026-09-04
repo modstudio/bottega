@@ -310,6 +310,7 @@ const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
 const { recordReview, recordReviews, triageFinding, completeReview, reviewCalibration, calibrationLine,
         MIN_REVIEW_TRIAGED } = await import('./review.ts')
 const { ask } = await import('./ask.ts')
+const { checkMessages, messageArchitect, messagesForRun } = await import('./mailbox.ts')
 const { orphanSafety, repoRootOf, createWorktree, createWithTool, resolveBase, fillTool,
         seedArgv, shellWords, worktreeGitDir, prepareWorktreeObjects, prepareSharedRefGuard,
         workerSharedGitRoots,
@@ -332,7 +333,7 @@ beforeEach(() => {
   // question cascades from run, but the delete order still matters: it is
   // listed first so a future FK-enforcing change cannot make this fail
   // mysteriously halfway through a suite.
-  db().exec('DELETE FROM review_finding; DELETE FROM review_lens; DELETE FROM review; DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc; DELETE FROM question; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
+  db().exec('DELETE FROM review_finding; DELETE FROM review_lens; DELETE FROM review; DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc; DELETE FROM run_message; DELETE FROM question; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
 })
 
 afterAll(() => {
@@ -505,6 +506,130 @@ describe('review discipline', () => {
       agent.stdin = original.stdin
       agent.readsOut = original.readsOut
     }
+  })
+})
+
+describe('run mailbox', () => {
+  const mailboxOrchInput = (args: string[], stdin?: string, extraEnv: Record<string, string> = {}) => {
+    const p = Bun.spawnSync([process.execPath, new URL('cli.ts', import.meta.url).pathname, ...args], {
+      cwd: dir,
+      env: {
+        ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+        CLAUDE_CODE_SESSION_ID: 'orch-test-session', ...extraEnv,
+      },
+      stdin: stdin === undefined ? undefined : new TextEncoder().encode(stdin),
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    return { code: p.exitCode, out: p.stdout.toString(), err: p.stderr.toString() }
+  }
+  const mailboxOrch = (...args: string[]) => mailboxOrchInput(args)
+
+  test('queues inbound context and receipts it only when the worker checks', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    db().query('UPDATE run SET vendor_session=?, run_token=? WHERE id=?')
+      .run('worker-session', 'token', root)
+
+    const told = mailboxOrch('tell', String(root), 'keep the public shape unchanged')
+    expect(told.code).toBe(0)
+    expect(told.out).toContain('it has not been read')
+    const queued = messagesForRun(root)[0]!
+    expect(queued).toMatchObject({
+      direction: 'to_worker', root_run_id: root, run_id: root,
+      body: 'keep the public shape unchanged', read_at: null, delivery: 'architect_cli',
+    })
+
+    const read = checkMessages(root)
+    expect(read).toHaveLength(1)
+    expect(read[0]!.read_at).not.toBeNull()
+    expect(checkMessages(root)).toEqual([])
+  })
+
+  test('an unread note stays queued and cannot close an open question', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    db().query(
+      `INSERT INTO question (run_id, asked_at, question)
+       VALUES (?, ?, 'which interface?')`,
+    ).run(root, new Date().toISOString())
+
+    expect(mailboxOrch('tell', String(root), 'background context only').code).toBe(0)
+    expect(messagesForRun(root)[0]!.read_at).toBeNull()
+    expect(db().query(
+      'SELECT answer, answered_at FROM question WHERE run_id=?',
+    ).get(root)).toEqual({ answer: null, answered_at: null })
+    expect((db().query('SELECT status FROM run WHERE id=?').get(root) as { status: string }).status)
+      .toBe('running')
+  })
+
+  test('tell reads long context from a file without shell interpretation', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const path = join(dir, 'mailbox-long-note.txt')
+    const body = 'keep `literal` and $VALUE\nsecond paragraph\n'
+    writeFileSync(path, body)
+    expect(mailboxOrch('tell', String(root), '--file', path).code).toBe(0)
+    expect(messagesForRun(root)[0]!.body).toBe(body)
+  })
+
+  test('a worker sends outbound without stopping and it is visible on run detail', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    db().query('UPDATE run SET vendor_session=? WHERE id=?').run('worker-session', root)
+
+    const sent = messageArchitect(root, 'the implementation is taking a narrower shape')
+    expect(sent).toMatchObject({
+      direction: 'from_worker', root_run_id: root, run_id: root,
+      sender_session: 'worker-session', read_at: null, delivery: 'worker_tool',
+    })
+    expect((db().query('SELECT status FROM run WHERE id=?').get(root) as { status: string }).status)
+      .toBe('running')
+
+    const detail = JSON.parse(mailboxOrch('run', String(root)).out)
+    expect(detail.messages[0].body).toBe('the implementation is taking a narrower shape')
+    expect(detail.messages[0].read_at).not.toBeNull()
+  })
+
+  test('the worker MCP tools send outbound and read inbound at a checkpoint', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    db().query('UPDATE run SET vendor_session=?, run_token=? WHERE id=?')
+      .run('worker-session', 'mailbox-token', root)
+    expect(mailboxOrch('tell', String(root), 'new context').code).toBe(0)
+    const calls = [
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: {
+        name: 'message_orchestrator', arguments: { body: 'progress without stopping' },
+      } },
+      { jsonrpc: '2.0', id: 2, method: 'tools/call', params: {
+        name: 'check_orchestrator_messages', arguments: {},
+      } },
+    ].map((line) => JSON.stringify(line)).join('\n') + '\n'
+    const result = mailboxOrchInput(['ask-server'], calls, {
+      ORCH_RUN_ID: String(root), ORCH_RUN_TOKEN: 'mailbox-token',
+    })
+    expect(result.code).toBe(0)
+    const replies = result.out.trim().split('\n').map((line) => JSON.parse(line))
+    expect(replies[0].result.content[0].text).toContain('Keep working')
+    expect(replies[1].result.content[0].text).toContain('[message')
+    expect(replies[1].result.content[0].text).toContain('new context')
+    expect(replies[1].result.content[0].text).toContain('non-authoritative context')
+    expect(messagesForRun(root)).toHaveLength(2)
+    expect(messagesForRun(root).find((message) => message.direction === 'to_worker')!.read_at)
+      .not.toBeNull()
+    expect((db().query('SELECT status FROM run WHERE id=?').get(root) as { status: string }).status)
+      .toBe('running')
+  })
+
+  test('tell targets the active child turn while retaining the conversation root', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+    const child = addRun({
+      agent: 'codex', job: 'implement', status: 'running', parent: root, turn: 2,
+    })
+    expect(mailboxOrch('tell', String(root), 'context for turn two').code).toBe(0)
+    expect(messagesForRun(child)[0]).toMatchObject({ root_run_id: root, run_id: child })
+  })
+
+  test('tell refuses a finished conversation instead of claiming a queue', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+    const told = mailboxOrch('tell', String(root), 'too late')
+    expect(told.code).toBe(1)
+    expect(told.err).toContain('has no running turn — no message was queued')
+    expect(messagesForRun(root)).toEqual([])
   })
 })
 

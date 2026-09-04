@@ -708,6 +708,8 @@ function usage(): never {
       what stopped agents verifying their work, ordered by recurrence
       --json is the published surface other concerns read (never orch.db)
   orch inbox [--all] [--json]   design questions a worker is waiting on you to rule on
+  orch tell <id> ["<message>"]   queue non-authoritative context for a running worker
+      --file <path>             read a long message from a file
   orch setup-ask                register the live ask channel with codex and grok
   orch answer <id> ["<ruling>"] rule from argv, --file, or stdin; resume detached
       --file <path>             read the ruling from a file
@@ -1211,6 +1213,28 @@ switch (cmd) {
     break
   }
 
+  case 'tell': {
+    const id = Number(argv[1])
+    if (!id) usage()
+    const f = flag('file')
+    const positional = argv.slice(2).filter((a, i, all) =>
+      !a.startsWith('--') && all[i - 1] !== '--file')
+    if (f && positional.length) {
+      throw new Error('pass the message either positionally or with --file, not both')
+    }
+    const body = f ? readFileSync(f, 'utf8')
+      : positional.length ? positional.join(' ')
+      : !process.stdin.isTTY ? await Bun.stdin.text()
+      : (() => { throw new Error('no message: pass it as an argument, via --file, or on stdin') })()
+    const { tellRun } = await import('./mailbox.ts')
+    const message = tellRun(id, body)
+    console.log(
+      `queued message ${message.id} for run ${message.root_run_id} ` +
+      `(turn ${message.run_id}); it has not been read`,
+    )
+    break
+  }
+
   case 'result': {
     collectResult(db(), argv, (jobName) => Boolean(JOBS[jobName]?.needs.writesRepo))
     break
@@ -1302,8 +1326,8 @@ switch (cmd) {
   /**
    * The stdio MCP server a worker calls back into. Not for humans.
    *
-   * Registered once per agent (`orch setup-ask`), so it appears in the worker's
-   * tool list as `ask_orchestrator` and can be called mid-task. It speaks
+   * Registered once per agent (`orch setup-ask`), so its ask, message, and
+   * checkpoint tools can be called mid-task. It speaks
    * JSON-RPC on stdin/stdout and must therefore print NOTHING else, which is
    * why it is a subcommand rather than a flag on an existing one — a stray
    * banner or hint on stdout is a protocol violation the client reports as a
@@ -1507,7 +1531,8 @@ switch (cmd) {
       )
     }
     console.log(
-      '\nA worker can now call ask_orchestrator mid-task instead of ending its turn.' +
+      '\nA worker can now call ask_orchestrator, message_orchestrator, and ' +
+      'check_orchestrator_messages mid-task.' +
       '\nAgents without it fall back to returning status "asking", which still works.',
     )
     break

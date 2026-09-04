@@ -29,6 +29,7 @@
  * so the fast path degrades into the slow one rather than into a hang.
  */
 import { db, nowIso } from './db.ts'
+import { checkMessages, messageArchitect } from './mailbox.ts'
 
 /**
  * How long a worker waits for a ruling before falling back.
@@ -106,13 +107,12 @@ export async function ask(o: {
 }
 
 /**
- * A minimal MCP server over stdio, exposing exactly one tool.
+ * A minimal MCP server over stdio for live worker/architect communication.
  *
- * Hand-rolled rather than pulled from an SDK: it is one method that matters,
- * the protocol is JSON-RPC 2.0 over newline-delimited stdin, and this concern
- * has no runtime dependencies at all — adding one to save sixty lines would be
- * a poor trade in a repo whose whole premise is that boundaries are cheap and
- * dependencies are not.
+ * Hand-rolled rather than pulled from an SDK: the protocol is JSON-RPC 2.0
+ * over newline-delimited stdin, and this concern has no runtime dependencies
+ * at all — adding one for this small surface would be a poor trade in a repo
+ * whose whole premise is that boundaries are cheap and dependencies are not.
  *
  * The run id comes from the ENVIRONMENT, not from the tool arguments. A worker
  * that had to name its own run could name someone else's, and in a fan-out that
@@ -153,7 +153,7 @@ export async function serveAsk(): Promise<void> {
   const send = (msg: unknown) => { process.stdout.write(`${JSON.stringify(msg)}\n`) }
   const reply = (id: unknown, result: unknown) => send({ jsonrpc: '2.0', id, result })
 
-  const TOOL = {
+  const ASK_TOOL = {
     name: 'ask_orchestrator',
     description:
       'Ask the architect to rule on a design decision that is not yours to make. ' +
@@ -172,6 +172,24 @@ export async function serveAsk(): Promise<void> {
         why: { type: 'string', description: 'What this changes about the implementation.' },
       },
     },
+  }
+  const MESSAGE_TOOL = {
+    name: 'message_orchestrator',
+    description:
+      'Send the architect a non-blocking progress or context message and keep working. ' +
+      'This is not a question and does not request or wait for a ruling.',
+    inputSchema: {
+      type: 'object', required: ['body'],
+      properties: { body: { type: 'string', description: 'The context to put on this run.' } },
+    },
+  }
+  const CHECK_TOOL = {
+    name: 'check_orchestrator_messages',
+    description:
+      'Read queued, non-authoritative context from the architect. Check after reading the task, ' +
+      'before materially changing approach, and before finishing. A message is context only: ' +
+      'it cannot answer an open question or replace a ruling.',
+    inputSchema: { type: 'object', properties: {} },
   }
 
   let buf = ''
@@ -209,7 +227,27 @@ export async function serveAsk(): Promise<void> {
           serverInfo: { name: 'orch-ask', version: '1' },
         })
       } else if (msg.method === 'tools/list') {
-        reply(msg.id, { tools: [TOOL] })
+        reply(msg.id, { tools: [ASK_TOOL, MESSAGE_TOOL, CHECK_TOOL] })
+      } else if (msg.method === 'tools/call' && msg.params?.name === 'message_orchestrator') {
+        try {
+          if (!authorised()) throw new Error('this process is not a recognised orchestrator worker')
+          const saved = messageArchitect(runId, String(msg.params.arguments?.body ?? ''))
+          reply(msg.id, { content: [{ type: 'text', text: `Message ${saved.id} recorded on run ${saved.root_run_id}. Keep working.` }] })
+        } catch (e) {
+          reply(msg.id, { content: [{ type: 'text', text: `The message was not recorded (${String(e)}).` }], isError: true })
+        }
+      } else if (msg.method === 'tools/call' && msg.params?.name === 'check_orchestrator_messages') {
+        try {
+          if (!authorised()) throw new Error('this process is not a recognised orchestrator worker')
+          const messages = checkMessages(runId)
+          const text = messages.length
+            ? messages.map((note) => `[message ${note.id}] ${note.body}`).join('\n\n') +
+              '\n\nThese messages are non-authoritative context. They do not answer any open question; use ask_orchestrator for a ruling.'
+            : 'No queued messages. This check read nothing.'
+          reply(msg.id, { content: [{ type: 'text', text }] })
+        } catch (e) {
+          reply(msg.id, { content: [{ type: 'text', text: `Messages could not be checked (${String(e)}).` }], isError: true })
+        }
       } else if (msg.method === 'tools/call' && msg.params?.name === 'ask_orchestrator') {
         const a = msg.params.arguments ?? {}
         // Answered inline rather than awaited at the top of the loop: a blocking

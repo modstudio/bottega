@@ -17,6 +17,7 @@ import { candidates } from './route.ts'
 import { readFileSync, existsSync } from 'node:fs'
 import { NOT_EVIDENCE } from './failure.ts'
 import { projectAt } from './projects.ts'
+import { readMessagesForArchitect } from './mailbox.ts'
 
 /** Full detail for one run: the whole prompt and the whole reply, read from disk. */
 export function runDetail(id: number) {
@@ -39,6 +40,7 @@ export function runDetail(id: number) {
       : ['delivery', 'quality'],
     prompt: read(row.prompt_path),
     output: read(row.output_path),
+    messages: readMessagesForArchitect(id),
     // Runs recorded before prompts were kept on disk have only the head.
     promptTruncated: !row.prompt_path,
   }

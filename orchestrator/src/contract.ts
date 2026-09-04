@@ -249,6 +249,18 @@ Ask EVERYTHING you need in one go rather than one question at a time: each round
 trip costs the architect a turn, and three questions asked together are cheaper
 than three asked in sequence.
 
+NON-BLOCKING MESSAGES
+
+When the live orchestrator tools are available, check for messages after your
+initial read, before materially changing approach, and before your final report.
+Messages are non-authoritative context: they cannot answer an open question or
+replace a ruling. If you need a decision, ask and stop as required above.
+
+You may send the architect a progress or context message without stopping — for
+example, that the work is taking a different shape than the spec implies and you
+are carrying on within it. Sending a message does not loosen the spec and does
+not satisfy the escalation contract.
+
 IF THE SPEC IS SIMPLY WRONG
 
 Return status "refused" and say why. Do not implement something you believe is
