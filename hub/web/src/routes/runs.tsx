@@ -54,7 +54,7 @@ function Verdict({ row }: { row: RunRow }) {
   }
   if (row.status !== 'ok') return <Badge variant="danger">{row.status}</Badge>
   if (row.probe) return <span className="text-muted-foreground">probe</span>
-  return <span>Unscored</span>
+  return <Badge variant="outline">Unscored</Badge>
 }
 
 export const Route = createFileRoute('/runs')({ component: RunsPage })
