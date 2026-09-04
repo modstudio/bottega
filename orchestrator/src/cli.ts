@@ -205,29 +205,13 @@ const VALUE_FLAGS = new Set(['--agent', '--file', '--schema', '--model', '--note
                              '--seed', '--key', '--repo', '--base', '--avoid', '--distinct-from', '--label',
                              '--better-than', '--n', '--scope', '--subject', '--title', '--cwd'])
 
-type CleanupRow = { id: number; worktree: string; branch: string | null }
+type CleanupRow = {
+  id: number; worktree: string; branch: string | null; base_commit: string | null
+}
 
-function keptBranchLine(branch: string, count: number, trunk: string, id: number): string {
-  return `kept branch ${branch}: ${count} commit(s) not on ${trunk} — ` +
+function keptBranchLine(branch: string, count: number, id: number): string {
+  return `kept branch ${branch}: ${count} commit(s) reachable only from this branch — ` +
     `merge it, or orch discard ${id} --force to delete it`
-}
-
-/** A configured trunk, or nothing — never a guessed branch name. */
-function configuredTrunk(repoRoot: string): { project: string | null; trunk: string | null } {
-  const project = projectAt(repoRoot)
-  const trunk = project?.settings.trunk
-  return {
-    project: project?.name ?? null,
-    trunk: typeof trunk === 'string' && trunk.trim() ? trunk : null,
-  }
-}
-
-function missingTrunkError(project: string | null, repoRoot: string): Error {
-  return new Error(
-    project
-      ? `project ${project} has no trunk configured — set settings.trunk before this can tell merged from unique commits`
-      : `no trunk configured for ${repoRoot} (not a registered project)`,
-  )
 }
 
 const KEPT_ROW_LIMIT = 10
@@ -333,11 +317,9 @@ async function discardWorktree(
   const { removeFor, repoRootOf, unmergedBranch, restoreBranch } = await import('./worktree.ts')
   const repoRoot = repoRootOf(row.worktree) ?? projectAt(row.worktree)?.path ??
     repoRootOf(process.cwd()) ?? process.cwd()
-  const { project, trunk } = configuredTrunk(repoRoot)
   let protectedBranch: ReturnType<typeof unmergedBranch> = null
   if (!force && row.branch) {
-    if (!trunk) throw missingTrunkError(project, repoRoot)
-    protectedBranch = unmergedBranch(repoRoot, row.branch, trunk)
+    protectedBranch = unmergedBranch(repoRoot, row.branch, row.base_commit)
   }
   const r = removeFor({
     path: row.worktree,
@@ -350,8 +332,8 @@ async function discardWorktree(
   db().query('UPDATE run SET worktree = NULL, branch_kept = ? WHERE id = ?')
     .run(protectedBranch ? row.branch : null, row.id)
   console.log(`${verb} run ${row.id}'s worktree`)
-  if (protectedBranch && row.branch && trunk) {
-    console.log(keptBranchLine(row.branch, protectedBranch.count, trunk, row.id))
+  if (protectedBranch && row.branch) {
+    console.log(keptBranchLine(row.branch, protectedBranch.count, row.id))
   }
 }
 
@@ -2123,10 +2105,10 @@ switch (cmd) {
     const id = Number(argv[1])
     if (!id) usage()
     const row = db().query(
-      'SELECT id, repo, cwd, worktree, branch, branch_kept FROM run WHERE id = ?',
+      'SELECT id, repo, cwd, worktree, branch, branch_kept, base_commit FROM run WHERE id = ?',
     ).get(id) as {
       id: number; repo: string | null; cwd: string | null; worktree: string | null
-      branch: string | null; branch_kept: string | null
+      branch: string | null; branch_kept: string | null; base_commit: string | null
     } | null
     if (!row) throw new Error(`no run ${id}`)
     if (!row.worktree) {
@@ -2151,12 +2133,13 @@ switch (cmd) {
     const id = Number(argv[1])
     if (!id) usage()
     const row = db().query(
-      `SELECT id, status, pid, agent_pid, parent_run_id, repo, cwd, worktree, branch
+      `SELECT id, status, pid, agent_pid, parent_run_id, repo, cwd, worktree, branch,
+              base_commit
          FROM run WHERE id = ?`,
     ).get(id) as {
       id: number; status: string; pid: number | null; agent_pid: number | null
       parent_run_id: number | null; repo: string | null; cwd: string | null
-      worktree: string | null; branch: string | null
+      worktree: string | null; branch: string | null; base_commit: string | null
     } | null
     if (!row) throw new Error(`no run ${id}`)
     if (row.status !== 'running') {
@@ -2202,10 +2185,11 @@ switch (cmd) {
     const id = Number(argv[1])
     if (!id) usage()
     const row = db().query(
-      'SELECT id, status, repo, cwd, worktree, branch, parent_run_id FROM run WHERE id = ?',
+      'SELECT id, status, repo, cwd, worktree, branch, parent_run_id, base_commit FROM run WHERE id = ?',
     ).get(id) as {
       id: number; status: string; repo: string | null; cwd: string | null
       worktree: string | null; branch: string | null; parent_run_id: number | null
+      base_commit: string | null
     } | null
     if (!row) throw new Error(`no run ${id}`)
     if (row.status !== 'asking') {
@@ -2256,15 +2240,13 @@ switch (cmd) {
       console.log(`branch ${row.branch} cleanup skipped: repository root not found`)
       break
     }
-    const { project, trunk } = configuredTrunk(repoRoot)
     let protectedBranch: ReturnType<typeof unmergedBranch> = null
     if (!has('force')) {
-      if (!trunk) throw missingTrunkError(project, repoRoot)
-      protectedBranch = unmergedBranch(repoRoot, row.branch, trunk)
+      protectedBranch = unmergedBranch(repoRoot, row.branch, row.base_commit)
     }
-    if (protectedBranch && trunk) {
+    if (protectedBranch) {
       db().query('UPDATE run SET branch_kept=? WHERE id=?').run(row.branch, id)
-      console.log(keptBranchLine(row.branch, protectedBranch.count, trunk, id))
+      console.log(keptBranchLine(row.branch, protectedBranch.count, id))
       break
     }
     const removed = removeBranch(repoRoot, row.branch)

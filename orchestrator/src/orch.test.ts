@@ -229,7 +229,8 @@ const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
 const { ask } = await import('./ask.ts')
 const { orphanSafety, repoRootOf, createWorktree, createWithTool, resolveBase, fillTool,
         seedArgv, shellWords, worktreeGitDir, prepareWorktreeObjects, prepareSharedRefGuard,
-        carryWorkingState, withWorktreeCreateLock, withProjectLock, projectLockState } = await import('./worktree.ts')
+        carryWorkingState, withWorktreeCreateLock, withProjectLock, projectLockState,
+        unmergedBranch } = await import('./worktree.ts')
 const { landingStatus, resolveLandingBranch } = await import('./landing.ts')
 const { AGENTS, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
@@ -5449,14 +5450,7 @@ echo 'Usage: scripts/worktree create [seed]'
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
       const env = { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' }
-      const refused = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
-        env, stdout: 'pipe', stderr: 'pipe',
-      })
-      expect(refused.exitCode).not.toBe(0)
-      expect(refused.stderr.toString()).toContain('no trunk configured')
-      expect(existsSync(tree.path)).toBe(true)
-
-      const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id), '--force'], {
+      const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
         env, stdout: 'pipe', stderr: 'pipe',
       })
       expect(p.exitCode).toBe(0)
@@ -5493,7 +5487,7 @@ echo 'Usage: scripts/worktree create [seed]'
       })
       expect(p.exitCode).toBe(0)
       expect(p.stdout.toString()).toContain(
-        `kept branch ${tree.branch}: 1 commit(s) not on main — merge it, or ` +
+        `kept branch ${tree.branch}: 1 commit(s) reachable only from this branch — merge it, or ` +
         `orch discard ${id} --force to delete it`,
       )
       expect(existsSync(tree.path)).toBe(false)
@@ -5583,7 +5577,7 @@ echo 'Usage: scripts/worktree create [seed]'
       })
       expect(p.exitCode).toBe(0)
       expect(p.stdout.toString()).toContain(
-        `kept branch ${tree.branch}: 1 commit(s) not on main — merge it, or ` +
+        `kept branch ${tree.branch}: 1 commit(s) reachable only from this branch — merge it, or ` +
         `orch discard ${id} --force to delete it`,
       )
       expect(git(repo, 'branch', '--list', tree.branch)).toContain(tree.branch)
@@ -5594,7 +5588,7 @@ echo 'Usage: scripts/worktree create [seed]'
     }
   })
 
-  test('discard without a configured trunk refuses rather than assuming main', () => {
+  test('discard without a configured trunk still deletes a branch with no unique commits', () => {
     const { repo } = scratchRepo()
     const tree = createWorktree(repo, 887)
     upsertProject({ name: 'no-trunk-discard', path: realpathSync(repo), settings: {} })
@@ -5607,15 +5601,16 @@ echo 'Usage: scripts/worktree create [seed]'
         env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
         stdout: 'pipe', stderr: 'pipe',
       })
-      expect(p.exitCode).not.toBe(0)
-      expect(p.stderr.toString()).toContain('no trunk configured')
-      expect(existsSync(tree.path)).toBe(true)
+      expect(p.exitCode).toBe(0)
+      expect(p.stdout.toString()).not.toContain('kept branch')
+      expect(existsSync(tree.path)).toBe(false)
+      expect(git(repo, 'branch', '--list', tree.branch)).toBe('')
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
   })
 
-  test('abandon without a configured trunk refuses the merged-check rather than assuming main', () => {
+  test('abandon without a configured trunk still deletes a branch with no unique commits', () => {
     const { repo } = scratchRepo()
     const tree = createWorktree(repo, 888)
     upsertProject({ name: 'no-trunk-abandon', path: realpathSync(repo), settings: {} })
@@ -5628,9 +5623,101 @@ echo 'Usage: scripts/worktree create [seed]'
         env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
         stdout: 'pipe', stderr: 'pipe',
       })
-      expect(p.exitCode).not.toBe(0)
-      expect(p.stderr.toString()).toContain('no trunk configured')
-      expect(existsSync(tree.path)).toBe(true)
+      expect(p.exitCode).toBe(0)
+      expect(p.stdout.toString()).not.toContain('kept branch')
+      expect(existsSync(tree.path)).toBe(false)
+      expect(git(repo, 'branch', '--list', tree.branch)).toBe('')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('discard does not keep a branch merely ahead of a stale local trunk', () => {
+    const { repo } = scratchRepo()
+    writeFileSync(join(repo, 'upstream.txt'), 'upstream\n')
+    git(repo, 'add', 'upstream.txt')
+    git(repo, 'commit', '-m', 'upstream')
+    const originTip = git(repo, 'rev-parse', 'HEAD')
+    git(repo, 'update-ref', 'refs/remotes/origin/main', originTip)
+    git(repo, 'reset', '--hard', 'HEAD~1')
+    upsertProject({
+      name: 'stale-trunk', path: realpathSync(repo), settings: { trunk: 'main' },
+    })
+    const tree = createWorktree(repo, 890, 'origin/main')
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.base, id)
+    try {
+      expect(git(repo, 'rev-list', '--count', `main..${tree.branch}`)).not.toBe('0')
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(p.exitCode).toBe(0)
+      expect(p.stdout.toString()).not.toContain('kept branch')
+      expect(existsSync(tree.path)).toBe(false)
+      expect(git(repo, 'branch', '--list', tree.branch)).toBe('')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('discard still keeps unique commits when the local trunk is stale', () => {
+    const { repo } = scratchRepo()
+    writeFileSync(join(repo, 'upstream.txt'), 'upstream\n')
+    git(repo, 'add', 'upstream.txt')
+    git(repo, 'commit', '-m', 'upstream')
+    const originTip = git(repo, 'rev-parse', 'HEAD')
+    git(repo, 'update-ref', 'refs/remotes/origin/main', originTip)
+    git(repo, 'reset', '--hard', 'HEAD~1')
+    upsertProject({
+      name: 'stale-trunk-unique', path: realpathSync(repo), settings: { trunk: 'main' },
+    })
+    const tree = createWorktree(repo, 891, 'origin/main')
+    writeFileSync(join(tree.path, 'architect.txt'), 'work in progress\n')
+    git(tree.path, 'add', 'architect.txt')
+    git(tree.path, 'commit', '-m', 'architect work')
+    const tip = git(tree.path, 'rev-parse', 'HEAD')
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.base, id)
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(p.exitCode).toBe(0)
+      expect(p.stdout.toString()).toContain(
+        `kept branch ${tree.branch}: 1 commit(s) reachable only from this branch`,
+      )
+      expect(git(repo, 'rev-parse', tree.branch)).toBe(tip)
+      expect(db().query('SELECT branch_kept FROM run WHERE id=?').get(id))
+        .toEqual({ branch_kept: tree.branch })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('unmergedBranch counts only commits reachable from nowhere else', () => {
+    const { repo } = scratchRepo()
+    writeFileSync(join(repo, 'upstream.txt'), 'upstream\n')
+    git(repo, 'add', 'upstream.txt')
+    git(repo, 'commit', '-m', 'upstream')
+    const originTip = git(repo, 'rev-parse', 'HEAD')
+    git(repo, 'update-ref', 'refs/remotes/origin/main', originTip)
+    git(repo, 'reset', '--hard', 'HEAD~1')
+    const tree = createWorktree(repo, 892, 'origin/main')
+    try {
+      expect(unmergedBranch(repo, tree.branch, tree.base)).toBe(null)
+      expect(unmergedBranch(repo, tree.branch, null)).toBe(null)
+      writeFileSync(join(tree.path, 'unique.txt'), 'only here\n')
+      git(tree.path, 'add', 'unique.txt')
+      git(tree.path, 'commit', '-m', 'unique')
+      const tip = git(tree.path, 'rev-parse', 'HEAD')
+      expect(unmergedBranch(repo, tree.branch, tree.base)).toEqual({ count: 1, tip })
+      expect(unmergedBranch(repo, tree.branch, null)).toEqual({ count: 1, tip })
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }

@@ -1242,14 +1242,24 @@ export function removeBranch(repoRoot: string, branch: string): boolean {
 
 export type UnmergedBranch = { count: number; tip: string }
 
-/** Commits a local branch has that the project's trunk does not. */
+/**
+ * Commits reachable only from this local branch — deleting it would lose them.
+ *
+ * Counted from the recorded cut, not against a trunk ref: a local trunk goes
+ * stale, and commits already on another branch, remote, or tag are not lost
+ * by deleting this one. A missing base (rows that predate the column) drops
+ * that term; unique commits are still counted.
+ */
 export function unmergedBranch(
-  repoRoot: string, branch: string, trunk: string,
+  repoRoot: string, branch: string, baseCommit: string | null,
 ): UnmergedBranch | null {
   const ref = `refs/heads/${branch}`
   if (gitOk(['show-ref', '--verify', '--quiet', ref], repoRoot) === null) return null
   const tip = git(['rev-parse', ref], repoRoot)
-  const count = Number(git(['rev-list', '--count', `${trunk}..${ref}`], repoRoot))
+  const args = ['rev-list', '--count', branch]
+  if (baseCommit) args.push(`^${baseCommit}`)
+  args.push('--not', `--exclude=${branch}`, '--branches', '--remotes', '--tags')
+  const count = Number(git(args, repoRoot))
   return count > 0 ? { count, tip } : null
 }
 
