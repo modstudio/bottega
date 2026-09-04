@@ -21,6 +21,7 @@ import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 
 const gitRepositoryVariables = [
   'GIT_OBJECT_DIRECTORY',
@@ -7413,6 +7414,93 @@ describe('scoped operator docs', () => {
     } finally {
       await client.close()
       await server.close()
+    }
+  })
+
+  test('MCP file_issue refuses a call missing evidence with an actionable message', async () => {
+    const server = createDocsMcpServer()
+    const client = new Client({ name: 'orch-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+    try {
+      const filed = await client.callTool({
+        name: 'file_issue',
+        arguments: {
+          kind: 'defect',
+          what_happened: 'The command failed',
+          expected: 'The command should succeed',
+          reproduce_command: 'bun test',
+          environment: 'macOS test fixture',
+          not_established: 'The underlying cause is not established',
+        },
+      })
+      expect(filed.isError).toBe(true)
+      const message = ((filed as any).content[0] as { text: string }).text
+      expect(message).toContain('evidence is required')
+      expect(message).toContain('run ids, file:line pointers, or measured output')
+    } finally {
+      await client.close()
+      await server.close()
+    }
+  })
+
+  test(`MCP file_issue files a fully attributed ${PLATFORM_SLUG} task through hub`, async () => {
+    const hubDb = join(dir, 'file-issue-hub.db')
+    const priorHubDb = process.env.HUB_DB
+    const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+    process.env.HUB_DB = hubDb
+    process.env.CLAUDE_CODE_SESSION_ID = 'reporting-test-session'
+    upsertProject({
+      name: PLATFORM_SLUG, path: process.cwd(), stack: 'typescript', canon: true,
+      settings: { keyPrefixes: ['DEV'] },
+    })
+    const server = createDocsMcpServer()
+    const client = new Client({ name: 'orch-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+    try {
+      const filed = await client.callTool({
+        name: 'file_issue',
+        arguments: {
+          kind: 'suggestion',
+          what_happened: 'Issue reports need a direct filing path',
+          expected: `A report should land on the ${PLATFORM_SLUG} board`,
+          reproduce_command: 'orch mcp',
+          environment: `A session working in the ${PLATFORM_SLUG} checkout`,
+          evidence: 'orchestrator/src/mcp.ts:11 had only project and document tools',
+          not_established: 'No priority or assignee has been established',
+        },
+      })
+      expect(filed.isError).not.toBe(true)
+      const result = JSON.parse(((filed as any).content[0] as { text: string }).text)
+      expect(result).toMatchObject({
+        key: 'DEV-1', kind: 'suggestion', session: 'reporting-test-session', project: PLATFORM_SLUG,
+      })
+      const shown = Bun.spawnSync([
+        new URL('../../bin/hub', import.meta.url).pathname,
+        'task', 'show', result.key, '--json',
+      ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
+      expect(shown.exitCode).toBe(0)
+      const task = JSON.parse(shown.stdout.toString()).task
+      expect(task.title).toBe('[SUGGESTION] Issue reports need a direct filing path')
+      expect(task.project).toBe(PLATFORM_SLUG)
+      expect(task.body).toContain('TYPE: SUGGESTION')
+      expect(task.body).toContain('REPORTING SESSION: reporting-test-session')
+      expect(task.body).toContain(`REPORTING PROJECT: ${PLATFORM_SLUG}`)
+      expect(task.body).toContain('EVIDENCE\norchestrator/src/mcp.ts:11')
+      expect(task.body).toContain('WHAT IS NOT ESTABLISHED\nNo priority or assignee has been established')
+    } finally {
+      await client.close()
+      await server.close()
+      rmSync(hubDb, { force: true })
+      rmSync(`${hubDb}-shm`, { force: true })
+      rmSync(`${hubDb}-wal`, { force: true })
+      if (priorHubDb === undefined) delete process.env.HUB_DB
+      else process.env.HUB_DB = priorHubDb
+      if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+      else process.env.CLAUDE_CODE_SESSION_ID = priorSession
     }
   })
 
