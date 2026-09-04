@@ -17,7 +17,8 @@ import { createHash } from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
 import { projectAt, projectByName, projects } from './projects.ts'
-import { resolveBase, repoRootOf, removeBranch, unmergedBranch } from './worktree.ts'
+import { resolveBase, repoRootOf, removeBranch, unmergedBranch,
+         checkoutHasUncommittedWork } from './worktree.ts'
 import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
 import { WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE, contractConflicts } from './contract.ts'
 import { collectResult, collectWait, resolveFailover, failoverSummary } from './collect.ts'
@@ -600,6 +601,7 @@ function usage(): never {
       --avoid <agent>[,...]     route to any other agent when possible
       --distinct-from <id>[,...] avoid models used by earlier fan-out runs
       --base <ref>              ${baseHelp('base an implement worktree on this git ref')}
+      --carry                   carry this checkout's uncommitted work into the worker (off by default)
       --file <path>             read the prompt from a file
       --schema <path>           bind JSON schema (Codex normalizes it to OpenAI strict mode)
       --mcp                     allow MCP tool calls
@@ -711,6 +713,7 @@ function doUsage(): never {
   --avoid <name,...> exclude agents while routing, unless none remain
   --distinct-from <id,...> exclude models used by earlier runs, unless none remain
   --base <ref>     ${baseHelp('base an implement worktree on this verified git ref')}
+  --carry          carry this checkout's uncommitted work into the worker (off by default)
   --schema <path>  require JSON schema; Codex normalizes it to OpenAI strict mode
   --mcp            allow MCP tool calls
   --model <name>   override the selected agent's model
@@ -957,7 +960,7 @@ switch (cmd) {
     if (porcelain && has('follow')) {
       throw new Error('--porcelain cannot be combined with --follow')
     }
-    job(jobName)
+    const requested = job(jobName)
     const explicitRepo = flag('repo')
     if (explicitRepo && !projectByName(explicitRepo)) {
       throw new Error(`unknown repo "${explicitRepo}". Registered: ${projectNames()}`)
@@ -980,6 +983,13 @@ switch (cmd) {
       console.error(
         `! this run will not be attributed to any project; use --repo <name> ` +
         `(registered: ${projectNames()})`,
+      )
+    }
+    if (!porcelain && !has('carry') && requested.needs.readsRepo &&
+        checkoutHasUncommittedWork(process.cwd())) {
+      console.error(
+        '! this checkout has uncommitted work that will not be carried into the worker.\n' +
+        '  pass --carry to send it with the run.',
       )
     }
     const prompt = await readPrompt()
@@ -1028,7 +1038,7 @@ switch (cmd) {
         agent: flag('agent'), schema, label: flag('label'),
         mcp: has('mcp'), model: flag('model'), probe: has('probe'), seed: flag('seed'), key: flag('key'),
         repo: explicitRepo, base, avoid, distinctModels,
-        noFailover: has('no-failover'),
+        noFailover: has('no-failover'), carry: has('carry'),
       })
       printRunId(id)
       if (!has('quiet') && !porcelain) {
@@ -1067,7 +1077,7 @@ switch (cmd) {
       agent: flag('agent'), schema, label: flag('label'),
       mcp: has('mcp'), model: flag('model'), probe: has('probe'), seed: flag('seed'), key: flag('key'),
       repo: explicitRepo, base, avoid, distinctModels,
-      noFailover: has('no-failover'),
+      noFailover: has('no-failover'), carry: has('carry'),
     })
 
     await follow(id, has('quiet'))

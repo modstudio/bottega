@@ -306,7 +306,7 @@ const { ask } = await import('./ask.ts')
 const { orphanSafety, repoRootOf, createWorktree, createWithTool, resolveBase, fillTool,
         seedArgv, shellWords, worktreeGitDir, prepareWorktreeObjects, prepareSharedRefGuard,
         carryWorkingState, withWorktreeCreateLock, withProjectLock, projectLockState,
-        unmergedBranch } = await import('./worktree.ts')
+        unmergedBranch, assertCallerAncestry, checkoutHasUncommittedWork } = await import('./worktree.ts')
 const { landingStatus, resolveLandingBranch } = await import('./landing.ts')
 const { AGENTS, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
@@ -1121,6 +1121,14 @@ describe('job contracts are visible before submission', () => {
       err: new TextDecoder().decode(p.stderr),
     }
   }
+
+  test('the read-only contract names inherited work without claiming it is always present', () => {
+    expect(READONLY_PREAMBLE).toContain('fresh checkout of this')
+    expect(READONLY_PREAMBLE).toContain("run's base commit")
+    expect(READONLY_PREAMBLE).toContain('If the caller chose to carry their uncommitted work into it')
+    expect(READONLY_PREAMBLE).toContain('do not report it as your change')
+    expect(READONLY_PREAMBLE).not.toContain("It contains the caller's")
+  })
 
   test('contract prints the same preamble selected when a job is bound', () => {
     for (const [name, definition] of Object.entries(JOBS)) {
@@ -2843,13 +2851,13 @@ describe('detached run collection', () => {
     expect(detachedRunOptions('implement', 'prompt', 42, {
       agent: 'codex', schema: '/tmp/schema.json', mcp: true, model: 'model', probe: true,
       label: 'security lens', seed: 'small', key: 'DEV-63', repo: 'project', base: 'main', avoid: ['grok'],
-      distinctModels: ['other-model'], retryOf: 7, cwd: '/tmp/repo', noFailover: true,
+      distinctModels: ['other-model'], retryOf: 7, cwd: '/tmp/repo', noFailover: true, carry: true,
       ownerSession: 'owner', resume,
     })).toEqual({
       job: 'implement', prompt: 'prompt', reserveId: 42,
       agent: 'codex', schemaPath: '/tmp/schema.json', mcp: true, model: 'model', probe: true,
       label: 'security lens', seed: 'small', key: 'DEV-63', repo: 'project', base: 'main', avoid: ['grok'],
-      distinctModels: ['other-model'], retryOf: 7, cwd: '/tmp/repo', noFailover: true,
+      distinctModels: ['other-model'], retryOf: 7, cwd: '/tmp/repo', noFailover: true, carry: true,
       ownerSession: 'owner', resume,
     })
   })
@@ -2937,7 +2945,7 @@ describe('detached run collection', () => {
       for (const name of Object.keys(JOBS)) expect(r.out).toContain(name)
       for (const name of [
         '--agent', '--schema', '--mcp', '--model', '--label', '--probe', '--seed', '--key',
-        '--repo', '--base', '--avoid', '--distinct-from', '--file', '--detach', '--follow', '--quiet',
+        '--repo', '--base', '--carry', '--avoid', '--distinct-from', '--file', '--detach', '--follow', '--quiet',
         '--no-failover', '--porcelain',
       ]) expect(r.out).toContain(name)
     }
@@ -6917,12 +6925,208 @@ describe('an agent gets the toolchain of a project someone registered', () => {
         `caller HEAD ${callerHead} is behind or diverged from the tree's base ${tree.base}; ` +
         `update the caller checkout so its HEAD descends from the tree's base, then retry`,
       )
+      expect(() => assertCallerAncestry(repo, tree)).toThrow(
+        `caller HEAD ${callerHead} is behind or diverged from the tree's base ${tree.base}; ` +
+        `update the caller checkout so its HEAD descends from the tree's base, then retry`,
+      )
       expect(readFileSync(join(tree.path, 'tracked.txt'), 'utf8')).toBe('newer base\n')
       expect(git('-C', tree.path, 'status', '--porcelain')).toBe('')
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
   })
+
+  test('a default launch with a dirty checkout carries nothing and tells the operator', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-carry-default-off-'))
+    const binDir = mkdtempSync(join(tmpdir(), 'orch-carry-default-off-bin-'))
+    const git = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+    }
+    const reply = JSON.stringify({
+      type: 'result', subtype: 'success', result: JSON.stringify(workerReply()),
+      total_cost_usd: 0, usage: { input_tokens: 1, output_tokens: 1 },
+    })
+    writeFileSync(join(binDir, 'grok'), `#!/bin/sh\nprintf '%s\\n' '${reply}'\n`)
+    chmodSync(join(binDir, 'grok'), 0o755)
+    try {
+      git('init', '-b', 'main')
+      git('config', 'user.email', 'orch-test@example.invalid')
+      git('config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, '.gitignore'), '.claude/\n')
+      writeFileSync(join(repo, 'kept.txt'), 'base\n')
+      git('add', '.gitignore', 'kept.txt')
+      git('commit', '-m', 'base')
+      writeFileSync(join(repo, 'kept.txt'), 'dirty tracked\n')
+      writeFileSync(join(repo, 'new.txt'), 'dirty untracked\n')
+      expect(checkoutHasUncommittedWork(repo)).toBe(true)
+
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const launched = Bun.spawnSync(
+        [process.execPath, CLI, 'do', 'implement', 'leave the dirt behind', '--agent', 'grok', '--follow'],
+        {
+          cwd: repo,
+          env: {
+            ...process.env, PATH: `${binDir}:${process.env.PATH}`,
+            ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+            CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+          },
+          stdout: 'pipe', stderr: 'pipe',
+        },
+      )
+      expect(launched.exitCode).toBe(0)
+      expect(launched.stderr.toString()).toContain(
+        'this checkout has uncommitted work that will not be carried into the worker',
+      )
+      expect(launched.stderr.toString()).toContain('pass --carry to send it with the run')
+
+      const row = db().query(
+        `SELECT worktree, carry_happened, carry_tracked_paths, carry_untracked_paths
+           FROM run ORDER BY id DESC LIMIT 1`,
+      ).get() as {
+        worktree: string; carry_happened: number
+        carry_tracked_paths: string; carry_untracked_paths: string
+      }
+      expect(row.carry_happened).toBe(0)
+      expect(JSON.parse(row.carry_tracked_paths)).toEqual([])
+      expect(JSON.parse(row.carry_untracked_paths)).toEqual([])
+      expect(readFileSync(join(row.worktree, 'kept.txt'), 'utf8')).toBe('base\n')
+      expect(existsSync(join(row.worktree, 'new.txt'))).toBe(false)
+    } finally {
+      rmSync(binDir, { recursive: true, force: true })
+      rmSync(repo, { recursive: true, force: true })
+    }
+  }, 20_000)
+
+  test('an explicit --carry launch with a dirty checkout carries and records as before', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-carry-opt-in-'))
+    const binDir = mkdtempSync(join(tmpdir(), 'orch-carry-opt-in-bin-'))
+    const git = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+    }
+    const reply = JSON.stringify({
+      type: 'result', subtype: 'success', result: JSON.stringify(workerReply()),
+      total_cost_usd: 0, usage: { input_tokens: 1, output_tokens: 1 },
+    })
+    writeFileSync(join(binDir, 'grok'), `#!/bin/sh\nprintf '%s\\n' '${reply}'\n`)
+    chmodSync(join(binDir, 'grok'), 0o755)
+    try {
+      git('init', '-b', 'main')
+      git('config', 'user.email', 'orch-test@example.invalid')
+      git('config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, '.gitignore'), '.claude/\n')
+      writeFileSync(join(repo, 'kept.txt'), 'base\n')
+      git('add', '.gitignore', 'kept.txt')
+      git('commit', '-m', 'base')
+      writeFileSync(join(repo, 'kept.txt'), 'carried tracked\n')
+      writeFileSync(join(repo, 'new.txt'), 'carried untracked\n')
+
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const launched = Bun.spawnSync(
+        [process.execPath, CLI, 'do', 'implement', 'send the dirt', '--agent', 'grok', '--carry', '--follow'],
+        {
+          cwd: repo,
+          env: {
+            ...process.env, PATH: `${binDir}:${process.env.PATH}`,
+            ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+            CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+          },
+          stdout: 'pipe', stderr: 'pipe',
+        },
+      )
+      expect(launched.exitCode).toBe(0)
+      expect(launched.stderr.toString()).not.toContain('will not be carried')
+
+      const row = db().query(
+        `SELECT id, worktree, carry_happened, carry_tracked_paths, carry_untracked_paths
+           FROM run ORDER BY id DESC LIMIT 1`,
+      ).get() as {
+        id: number; worktree: string; carry_happened: number
+        carry_tracked_paths: string; carry_untracked_paths: string
+      }
+      expect(row.carry_happened).toBe(1)
+      expect(JSON.parse(row.carry_tracked_paths)).toEqual(['kept.txt'])
+      expect(JSON.parse(row.carry_untracked_paths)).toEqual(['new.txt'])
+      expect(readFileSync(join(row.worktree, 'kept.txt'), 'utf8')).toBe('carried tracked\n')
+      expect(readFileSync(join(row.worktree, 'new.txt'), 'utf8')).toBe('carried untracked\n')
+
+      const shown = Bun.spawnSync(
+        [process.execPath, CLI, 'diff', String(row.id), '--quiet'],
+        { env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe' },
+      )
+      expect(shown.stdout.toString()).toContain('carry: 1 tracked path(s), 1 untracked path(s)')
+      expect(shown.stdout.toString()).toContain('carry tracked: "kept.txt"')
+      expect(shown.stdout.toString()).toContain('carry untracked: "new.txt"')
+    } finally {
+      rmSync(binDir, { recursive: true, force: true })
+      rmSync(repo, { recursive: true, force: true })
+    }
+  }, 20_000)
+
+  test('a behind caller is refused whether or not carrying was requested', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-stale-caller-launch-'))
+    const git = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    const agent = AGENTS.grok!
+    const originalBin = agent.bin
+    const originalArgv = agent.argv
+    const priorDepth = process.env.ORCH_DEPTH
+    const fakeAgent = join(dir, 'carry-behind-agent.sh')
+    const reply = JSON.stringify({
+      type: 'result', subtype: 'success', result: JSON.stringify(workerReply()),
+      total_cost_usd: 0, usage: { input_tokens: 1, output_tokens: 1 },
+    })
+    writeFileSync(fakeAgent, `#!/bin/sh\nprintf '%s\\n' '${reply}'\n`)
+    chmodSync(fakeAgent, 0o755)
+    agent.bin = fakeAgent
+    agent.argv = () => []
+    process.env.ORCH_DEPTH = '0'
+    try {
+      git('init', '-b', 'main')
+      git('config', 'user.email', 'orch-test@example.invalid')
+      git('config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'tracked.txt'), 'caller base\n')
+      git('add', 'tracked.txt')
+      git('commit', '-m', 'caller base')
+      const callerHead = git('rev-parse', 'HEAD')
+      writeFileSync(join(repo, 'tracked.txt'), 'newer base\n')
+      git('commit', '-am', 'newer base')
+      const newer = git('rev-parse', 'HEAD')
+      git('switch', '--detach', callerHead)
+
+      for (const carry of [undefined, true] as const) {
+        await expect(runJob({
+          job: 'implement', prompt: 'should not revert', cwd: repo, agent: 'grok',
+          base: newer, carry,
+        })).rejects.toThrow(
+          `caller HEAD ${callerHead} is behind or diverged from the tree's base ${newer}`,
+        )
+        expect(readFileSync(join(repo, 'tracked.txt'), 'utf8')).toBe('caller base\n')
+        const leftover = existsSync(join(repo, '.claude', 'worktrees'))
+          ? readdirSync(join(repo, '.claude', 'worktrees'))
+          : []
+        expect(leftover.filter((name) => name.startsWith('orch-'))).toEqual([])
+      }
+    } finally {
+      agent.bin = originalBin
+      agent.argv = originalArgv
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(fakeAgent, { force: true })
+      rmSync(repo, { recursive: true, force: true })
+    }
+  }, 20_000)
+
   test('every turn in a three-turn chain declares the inherited carry audit', async () => {
     const makeRepo = () => {
       const repo = mkdtempSync(join(tmpdir(), 'orch-carry-chain-'))
@@ -6962,7 +7166,9 @@ describe('an agent gets the toolchain of a project someone registered', () => {
     process.env.ORCH_DEPTH = '0'
 
     const chain = async (repo: string) => {
-      const first = await runJob({ job: 'implement', prompt: 'carry audit', cwd: repo, agent: 'grok' })
+      const first = await runJob({
+        job: 'implement', prompt: 'carry audit', cwd: repo, agent: 'grok', carry: true,
+      })
       const tree = first.worktree!
       const second = await runJob({
         job: 'implement', prompt: 'turn two', cwd: tree.path,

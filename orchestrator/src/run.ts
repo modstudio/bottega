@@ -18,7 +18,7 @@ import { db, nowIso, ROOT, DB_PATH, sessionId, resolveRootFromLastTurn } from '.
 import {
   createWorktree, createWithTool, toolFor, changesIn, repoRootOf, resolveBase, worktreeGitDir,
   prepareWorktreeObjects, prepareSharedRefGuard, worktreeGitEnvironment, carryWorkingState,
-  withWorktreeCreateLock,
+  assertCallerAncestry, withWorktreeCreateLock,
   removeFor, type Worktree,
   type WorktreeObjectEnvironment, validateSeedWithTool,
 } from './worktree.ts'
@@ -79,6 +79,8 @@ export type DetachSpec = {
   retryOf?: number; cwd?: string
   /** Disable automatic quota/auth failover for this whole chain. */
   noFailover?: boolean
+  /** Carry the caller's uncommitted work into a newly cut worktree. Opt-in. */
+  carry?: boolean
   /** Preserve the session that owns a successor root. */
   ownerSession?: string | null
   /** Resume only: everything needed to continue a worker where it stopped. */
@@ -95,18 +97,18 @@ export function detachedRunOptions(
 ) {
   const {
     agent, schema, mcp, model, probe, label, seed, key, repo, base, avoid,
-    distinctModels, retryOf, cwd, noFailover, ownerSession, resume,
+    distinctModels, retryOf, cwd, noFailover, carry, ownerSession, resume,
   } = spec
   // Adding a field to DetachSpec must fail typechecking until it is handled here.
   const consumed: Required<Record<keyof DetachSpec, unknown>> = {
     agent, schema, mcp, model, probe, label, seed, key, repo, base, avoid,
-    distinctModels, retryOf, cwd, noFailover, ownerSession, resume,
+    distinctModels, retryOf, cwd, noFailover, carry, ownerSession, resume,
   }
   void consumed
   return {
     job: jobName, prompt, reserveId,
     agent, schemaPath: schema, mcp, model, probe, label, seed, key, repo, base, avoid,
-    distinctModels, retryOf, cwd, noFailover, ownerSession, resume,
+    distinctModels, retryOf, cwd, noFailover, carry, ownerSession, resume,
   }
 }
 
@@ -588,6 +590,12 @@ export async function run(opts: {
   avoid?: string[]
   distinctModels?: string[]
   /**
+   * Carry the caller's uncommitted work into a newly cut worktree.
+   *
+   * Opt-in, default off. See the call site in this function for why.
+   */
+  carry?: boolean
+  /**
    * A row already claimed by the caller, to be filled in rather than inserted.
    *
    * `orch do --detach` needs to print a run id BEFORE the work starts, which it
@@ -1050,7 +1058,22 @@ export async function run(opts: {
             )
           }
           try {
-            carried = carryWorkingState(callerCwd, created)
+            // Carrying is opt-in, default off. That will look wrong: the
+            // function exists so an architect iterating on unfinished work can
+            // dispatch a run and have the worker see it. The asymmetry is what
+            // decides it. Not carrying fails as a worker that lacks context and
+            // says so — visible, recoverable, cheap. Carrying fails as another
+            // author's half-finished work inside a diff that is then judged,
+            // scored and possibly landed as the worker's — silent, and it
+            // corrupts the evidence the whole system runs on. The case the
+            // function exists for is still there: pass --carry.
+            //
+            // The ancestry guard is orthogonal: a behind-or-diverged caller is
+            // refused whether or not carrying was requested.
+            assertCallerAncestry(callerCwd, created)
+            carried = opts.carry
+              ? carryWorkingState(callerCwd, created)
+              : { base: created.base, tracked: [], untracked: [] }
           } catch (e) {
             const cleanup = removeFor(created, created.repoRoot)
             throw new Error(
@@ -1650,6 +1673,7 @@ export async function run(opts: {
           // Prefer the immutable cut point once a writing tree exists.
           base: writesJob ? (first.base_commit ?? first.launch_base ?? undefined) : undefined,
           avoid: opts.avoid,
+          carry: opts.carry,
         })
       } catch (e) {
         const successor = db().query('SELECT id FROM run WHERE retry_of=?').get(claim.id)

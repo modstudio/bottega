@@ -471,9 +471,9 @@ export function isAsking(r: WorkerReply | null | undefined): boolean {
  * What a review/read worker is told, and it is short on purpose.
  */
 export const READONLY_PREAMBLE = `
-You are working in your own disposable worktree. It contains the caller's
-working state, including committed branch work and uncommitted, non-ignored
-changes, captured when this run began.
+You are working in your own disposable worktree. It is a fresh checkout of this
+run's base commit. If the caller chose to carry their uncommitted work into it,
+that work is present and is not yours: do not report it as your change.
 
 Edit and test freely when that helps you verify a finding. Your findings are the
 deliverable, not your diff: every change you make here is scratch work and must

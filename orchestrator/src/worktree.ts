@@ -504,7 +504,8 @@ export function orphanSafety(path: string, repoRoot: string, trunk: string): Orp
  * survive two runs of the same job in the same minute.
  *
  * The caller's visible state is transferred after creation by
- * `carryWorkingState`; cutting the directory is only the first half of setup.
+ * `carryWorkingState` only when the launch opted in; cutting the directory is
+ * the first half of setup either way.
  */
 /**
  * Fill a project's command template and run it.
@@ -931,6 +932,14 @@ function verifyFreshWorktree(worktree: Worktree): void {
 /**
  * Put the caller's complete visible git state into a newly cut tree.
  *
+ * Opt-in at the launch. The default is off, and that will look wrong: this
+ * function exists so an architect iterating on unfinished work can dispatch a
+ * run and have the worker see it. The asymmetry is what decides the default.
+ * Not carrying fails as a worker that lacks context and says so — visible,
+ * recoverable, cheap. Carrying fails as another author's half-finished work
+ * inside a diff that is then judged, scored and possibly landed as the
+ * worker's — silent, and it corrupts the evidence the whole system runs on.
+ *
  * The patch is against the destination's actual base, not necessarily the
  * caller's HEAD. That matters for project-owned worktree tools which choose
  * their own floor: the resulting tracked files still exactly match what the
@@ -952,7 +961,14 @@ export type CarriedWorkingState = {
   untracked: string[]
 }
 
-export function carryWorkingState(cwd: string, worktree: Worktree): CarriedWorkingState {
+/**
+ * Refuse a caller whose HEAD does not descend from the tree's base.
+ *
+ * Orthogonal to whether carrying was requested. A behind-or-diverged caller
+ * applying a patch would revert the tree; opting in does not license that, and
+ * opting out does not skip the check.
+ */
+export function assertCallerAncestry(cwd: string, worktree: Worktree): void {
   const callerHead = git(['rev-parse', 'HEAD'], cwd)
   if (gitOk(['merge-base', '--is-ancestor', worktree.base, callerHead], cwd) === null) {
     throw new Error(
@@ -960,6 +976,15 @@ export function carryWorkingState(cwd: string, worktree: Worktree): CarriedWorki
       `update the caller checkout so its HEAD descends from the tree's base, then retry`,
     )
   }
+}
+
+/** Non-ignored uncommitted paths, including untracked files. False if git cannot answer. */
+export function checkoutHasUncommittedWork(cwd: string): boolean {
+  return Boolean(gitOk(['status', '--porcelain', '--untracked-files=all'], cwd))
+}
+
+export function carryWorkingState(cwd: string, worktree: Worktree): CarriedWorkingState {
+  assertCallerAncestry(cwd, worktree)
 
   const patch = gitBytes(['diff', '--binary', '--full-index', worktree.base, '--'], cwd)
   const tracked = gitBytes(['diff', '--name-only', '-z', worktree.base, '--'], cwd).toString()
