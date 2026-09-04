@@ -613,6 +613,7 @@ function usage(): never {
       --detach                  print a run id and return at once (the default); collect with
                                 'orch wait' and 'orch result'. This is how a
                                 fan-out is done: N detaches, one wait.
+      --porcelain               print exactly the run id, for machine callers
       --agent <name>            force an agent instead of routing
       --avoid <agent>[,...]     route to any other agent when possible
       --distinct-from <id>[,...] avoid models used by earlier fan-out runs
@@ -736,6 +737,7 @@ function doUsage(): never {
   --repo <name>    attribute a run launched outside a registered project
   --file <path>    read the prompt from a file instead of argv or stdin
   --detach         print the run id and return immediately (the default)
+  --porcelain      print exactly the run id, for machine callers
   --follow         block and watch the run instead of returning its id
   --no-failover    do not retry quota/auth deaths on another agent
   --quiet          print only the reply or run id
@@ -953,6 +955,10 @@ switch (cmd) {
     const jobName = argv[1]
     if (!jobName) usage()
     if (jobName === '--help' || jobName === '-h') doUsage()
+    const porcelain = has('porcelain')
+    if (porcelain && has('follow')) {
+      throw new Error('--porcelain cannot be combined with --follow')
+    }
     job(jobName)
     const explicitRepo = flag('repo')
     if (explicitRepo && !projectByName(explicitRepo)) {
@@ -972,7 +978,7 @@ switch (cmd) {
     // its own schema dialect and reads the caller's original file unchanged.
     if (schema && (!flag('agent') || flag('agent') === 'codex')) readStrictCodexSchema(schema)
     const { avoid, distinctModels } = await routeConstraints(flag('agent'))
-    if (!explicitRepo && !projectAt(process.cwd())) {
+    if (!porcelain && !explicitRepo && !projectAt(process.cwd())) {
       console.error(
         `! this run will not be attributed to any project; use --repo <name> ` +
         `(registered: ${projectNames()})`,
@@ -982,7 +988,7 @@ switch (cmd) {
     if (!prompt.trim()) throw new Error('empty prompt')
     if (jobName === 'implement') {
       const conflicts = contractConflicts(prompt)
-      if (conflicts.length) {
+      if (conflicts.length && !porcelain) {
         console.error(
           '! implement spec may conflict with its no-commit/no-push/no-merge contract:',
         )
@@ -1027,10 +1033,10 @@ switch (cmd) {
         noFailover: has('no-failover'),
       })
       printRunId(id)
-      if (!has('quiet')) {
+      if (!has('quiet') && !porcelain) {
         console.error(`detached as run ${id}: orch wait ${id}, then orch result ${id}`)
       }
-      if (detachByDefault && !has('detach') && !has('quiet')) {
+      if (detachByDefault && !has('detach') && !has('quiet') && !porcelain) {
         console.error(
           `\n— ${jobName} detached by default; collect it when it finishes.` +
           `\n  orch wait ${id}      then:  orch result ${id}` +

@@ -2680,9 +2680,53 @@ describe('detached run collection', () => {
       for (const name of [
         '--agent', '--schema', '--mcp', '--model', '--label', '--probe', '--seed', '--key',
         '--repo', '--base', '--avoid', '--distinct-from', '--file', '--detach', '--follow', '--quiet',
-        '--no-failover',
+        '--no-failover', '--porcelain',
       ]) expect(r.out).toContain(name)
     }
+  })
+
+  test('a missing required dispatch flag exits non-zero without claiming a run', () => {
+    upsertProject({
+      name: 'requires-seed', path: process.cwd(),
+      settings: {
+        worktree: {
+          create: 'scripts/worktree create {branch} {seed}', branch: 'task/{id}',
+          seeds: ['small', 'full'],
+        },
+      },
+    })
+    const before = (db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n
+    const r = orch('do', 'implement', 'make the change', '--porcelain')
+    expect(r.code).not.toBe(0)
+    expect(r.out).toBe('')
+    expect(r.err).toContain('this project requires a database size')
+    expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before)
+  })
+
+  test('--porcelain prints only a parseable run id on a successful dispatch', () => {
+    const binDir = join(dir, 'porcelain-bin')
+    mkdirSync(binDir, { recursive: true })
+    writeFileSync(join(binDir, 'codex'), '#!/bin/sh\nprintf \'answer\'\n')
+    chmodSync(join(binDir, 'codex'), 0o755)
+    const p = Bun.spawnSync(
+      [process.execPath, CLI, 'do', 'file-question', 'one prompt', '--agent', 'codex', '--porcelain'],
+      { cwd: dir, stdout: 'pipe', stderr: 'pipe', env: {
+        ...process.env, PATH: `${binDir}:${process.env.PATH}`, ORCH_DB: process.env.ORCH_DB!,
+        ORCH_DEPTH: '0', CLAUDE_CODE_SESSION_ID: 'orch-test-session', FORCE_COLOR: '1',
+      } },
+    )
+    const stdout = p.stdout.toString()
+    expect(p.exitCode).toBe(0)
+    expect(stdout).toMatch(/^\d+\n$/)
+    expect(Number(stdout.trim())).toBeGreaterThan(0)
+    expect(p.stderr.toString()).toBe('')
+  })
+
+  test('--porcelain refuses --follow because following cannot print only an id', () => {
+    const r = orch('do', 'file-question', 'one prompt', '--porcelain', '--follow')
+    expect(r.code).not.toBe(0)
+    expect(r.out).toBe('')
+    expect(r.err).toContain('--porcelain cannot be combined with --follow')
   })
 
   test("do help says when the current project's create template cannot carry a base", () => {
