@@ -126,6 +126,29 @@ function warnCallerDrift(cwd: string, baseRef?: string): void {
   )
 }
 
+/**
+ * Printed AFTER the run is claimed, because the id does not exist before then
+ * and a warning that cannot name the run reads as a refusal.
+ *
+ * The whole text has to say the run started. A pre-claim warning plus a later
+ * line is two messages; a reader who only sees the first still stops.
+ */
+function warnImplementContractConflicts(
+  conflicts: ReturnType<typeof contractConflicts>,
+  runId: number,
+): void {
+  if (!conflicts.length) return
+  console.error(
+    '! implement spec may conflict with its no-push/no-merge/no-rewrite contract:',
+  )
+  for (const conflict of conflicts) {
+    console.error(`  line ${conflict.line}: ${conflict.text}`)
+  }
+  console.error(
+    `  The spec was not changed. Run ${runId} has started; review the spec before the worker reaches this conflict.`,
+  )
+}
+
 async function follow(id: number, quiet: boolean, exitOnFailure = true): Promise<string> {
   const deadline = Date.now() + FOLLOW_TIMEOUT_MS
   const q = db().query(
@@ -1023,18 +1046,7 @@ switch (cmd) {
     }
     const prompt = await readPrompt()
     if (!prompt.trim()) throw new Error('empty prompt')
-    if (jobName === 'implement') {
-      const conflicts = contractConflicts(prompt)
-      if (conflicts.length && !porcelain) {
-        console.error(
-          '! implement spec may conflict with its no-push/no-merge/no-rewrite contract:',
-        )
-        for (const conflict of conflicts) {
-          console.error(`  line ${conflict.line}: ${conflict.text}`)
-        }
-        console.error('  The spec was not changed. Review it before the worker reaches this conflict.')
-      }
-    }
+    const conflicts = jobName === 'implement' ? contractConflicts(prompt) : []
 
     // A fan-out cannot be run synchronously, and that is not a caller's problem
     // to solve.
@@ -1069,6 +1081,7 @@ switch (cmd) {
         repo: explicitRepo, base, avoid, distinctModels,
         noFailover: has('no-failover'), carry: has('carry'),
       })
+      if (!porcelain) warnImplementContractConflicts(conflicts, id)
       printRunId(id)
       if (!has('quiet') && !porcelain) {
         console.error(`detached as run ${id}: orch wait ${id}, then orch result ${id}`)
@@ -1108,6 +1121,7 @@ switch (cmd) {
       repo: explicitRepo, base, avoid, distinctModels,
       noFailover: has('no-failover'), carry: has('carry'),
     })
+    warnImplementContractConflicts(conflicts, id)
 
     await follow(id, has('quiet'))
     break

@@ -3052,6 +3052,46 @@ describe('detached run collection', () => {
     expect(p.stderr.toString()).toBe('')
   })
 
+  const conflictingImplement = (extra: string[]) => {
+    const binDir = join(dir, `conflict-warn-bin-${extra.join('-') || 'human'}`)
+    mkdirSync(binDir, { recursive: true })
+    writeFileSync(join(binDir, 'codex'), '#!/bin/sh\nprintf \'answer\'\n')
+    chmodSync(join(binDir, 'codex'), 0o755)
+    return Bun.spawnSync(
+      [process.execPath, CLI, 'do', 'implement',
+        'Make the change.\nThen push the branch.', '--agent', 'codex', ...extra],
+      { cwd: dir, stdout: 'pipe', stderr: 'pipe', env: {
+        ...process.env, PATH: `${binDir}:${process.env.PATH}`, ORCH_DB: process.env.ORCH_DB!,
+        ORCH_DEPTH: '0', CLAUDE_CODE_SESSION_ID: 'orch-test-session', FORCE_COLOR: '1',
+      } },
+    )
+  }
+
+  test('an implement contract conflict names the started run on stderr', () => {
+    const p = conflictingImplement([])
+    expect(p.exitCode).toBe(0)
+    const stdout = p.stdout.toString()
+    expect(stdout).toMatch(/^\d+\n$/)
+    const id = Number(stdout.trim())
+    expect(id).toBeGreaterThan(0)
+    const err = p.stderr.toString()
+    expect(err).toContain('implement spec may conflict with its no-push/no-merge/no-rewrite contract')
+    expect(err).toContain('line 2: Then push the branch.')
+    expect(err).toContain(`The spec was not changed. Run ${id} has started;`)
+    expect(err).toContain('review the spec before the worker reaches this conflict')
+  })
+
+  test('--porcelain with an implement contract conflict still prints only the run id', () => {
+    const p = conflictingImplement(['--porcelain'])
+    const stdout = p.stdout.toString()
+    expect(p.exitCode).toBe(0)
+    expect(stdout).toMatch(/^\d+\n$/)
+    expect(Number(stdout.trim())).toBeGreaterThan(0)
+    expect(p.stderr.toString()).toBe('')
+    expect(stdout).not.toContain('may conflict')
+    expect(stdout).not.toContain('has started')
+  })
+
   test('--porcelain refuses --follow because following cannot print only an id', () => {
     const r = orch('do', 'file-question', 'one prompt', '--porcelain', '--follow')
     expect(r.code).not.toBe(0)
