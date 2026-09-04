@@ -16,7 +16,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from '
 import { Database } from 'bun:sqlite'
 import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync,
          realpathSync, mkdirSync, utimesSync, chmodSync, readdirSync, statSync,
-         symlinkSync } from 'node:fs'
+         symlinkSync, copyFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
@@ -11152,14 +11152,18 @@ describe('scoped operator docs', () => {
 
 describe('session-brief hook lists open resumes without injecting bodies', () => {
   const hook = new URL('../hooks/session-brief.py', import.meta.url).pathname
-  const runBrief = (payload: object) => Bun.spawnSync(
-    ['python3', hook],
-    {
-      stdin: new TextEncoder().encode(JSON.stringify(payload)),
-      stdout: 'pipe', stderr: 'pipe',
-      env: { ...process.env, ORCH_DB: process.env.ORCH_DB! },
-    },
-  )
+  const heartbeat = new URL('../hooks/orch-heartbeat.sh', import.meta.url).pathname
+  const runBrief = (payload: object, extraEnv: Record<string, string> = {}) => {
+    const { CLAUDE_CODE_SESSION_ID: _drop, ...rest } = process.env
+    return Bun.spawnSync(
+      ['python3', hook],
+      {
+        stdin: new TextEncoder().encode(JSON.stringify(payload)),
+        stdout: 'pipe', stderr: 'pipe',
+        env: { ...rest, ORCH_DB: process.env.ORCH_DB!, ...extraEnv },
+      },
+    )
+  }
   const hookOutput = (p: ReturnType<typeof runBrief>) => JSON.parse(p.stdout.toString()) as {
     hookSpecificOutput: { hookEventName: string, additionalContext: string }
     systemMessage?: string
@@ -11167,11 +11171,27 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
   const resumeBody = (status: string, written: string) =>
     `---\nstatus: ${status}\nepic: demo\nproject: known\nwritten: ${written}\n---\n\nSECRET BODY\nNEXT ACTION\n`
 
-  test('prints nothing when there are no open briefs', () => {
-    const p = runBrief({ cwd: '/w/known', source: 'startup' })
-    expect(p.exitCode).toBe(0)
-    expect(p.stdout.toString()).toBe('')
-    expect(p.stderr.toString()).toBe('')
+  test('prints nothing on compact, clear and fork when there are no open briefs', () => {
+    for (const source of ['compact', 'clear', 'fork']) {
+      const p = runBrief({ cwd: '/w/known', source, session_id: 'sid-compact' })
+      expect(p.exitCode).toBe(0)
+      expect(p.stdout.toString()).toBe('')
+      expect(p.stderr.toString()).toBe('')
+    }
+  })
+
+  test('startup and resume with no briefs hand over the heartbeat arm command', () => {
+    for (const source of ['startup', 'resume']) {
+      const p = runBrief({ cwd: '/w/known', source, session_id: 'sid-arm' })
+      expect(p.exitCode).toBe(0)
+      expect(p.stderr.toString()).toBe('')
+      const out = hookOutput(p)
+      expect(out.hookSpecificOutput.hookEventName).toBe('SessionStart')
+      expect(out.hookSpecificOutput.additionalContext).toBe(
+        `Arm under Monitor: ${heartbeat} sid-arm\n`,
+      )
+      expect(out.systemMessage).toBeUndefined()
+    }
   })
 
   test('malformed stdin exits zero and prints nothing', () => {
@@ -11246,5 +11266,102 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
     expect(out).toContain('## Global\n\nG')
     expect(out.indexOf('## Global')).toBeLessThan(out.indexOf('epic-name'))
     expect(out).toContain('Ask whether to load it')
+  })
+
+  test('startup with the script present and no session id prints nothing', () => {
+    const p = runBrief({ cwd: '/w/known', source: 'startup' })
+    expect(p.exitCode).toBe(0)
+    expect(p.stdout.toString()).toBe('')
+    expect(p.stderr.toString()).toBe('')
+  })
+
+  test('payload session_id wins over CLAUDE_CODE_SESSION_ID', () => {
+    const p = runBrief(
+      { cwd: '/w/known', source: 'startup', session_id: 'from-payload' },
+      { CLAUDE_CODE_SESSION_ID: 'from-env' },
+    )
+    expect(hookOutput(p).hookSpecificOutput.additionalContext).toBe(
+      `Arm under Monitor: ${heartbeat} from-payload\n`,
+    )
+  })
+
+  test('falls back to CLAUDE_CODE_SESSION_ID when the payload has no session_id', () => {
+    const p = runBrief(
+      { cwd: '/w/known', source: 'startup' },
+      { CLAUDE_CODE_SESSION_ID: 'from-env' },
+    )
+    expect(hookOutput(p).hookSpecificOutput.additionalContext).toBe(
+      `Arm under Monitor: ${heartbeat} from-env\n`,
+    )
+  })
+
+  const runCopiedBrief = (opts: { payload: object, heartbeat: 'missing' | 'non-executable' }) => {
+    const root = mkdtempSync(join(tmpdir(), 'session-brief-heartbeat-'))
+    const hooksDir = join(root, 'orchestrator', 'hooks')
+    mkdirSync(hooksDir, { recursive: true })
+    mkdirSync(join(root, 'bin'), { recursive: true })
+    copyFileSync(hook, join(hooksDir, 'session-brief.py'))
+    writeFileSync(join(root, 'bin', 'orch'), '#!/bin/sh\nexit 1\n')
+    chmodSync(join(root, 'bin', 'orch'), 0o755)
+    const copiedHeartbeat = join(hooksDir, 'orch-heartbeat.sh')
+    if (opts.heartbeat === 'non-executable') {
+      writeFileSync(copiedHeartbeat, '#!/bin/sh\nexit 0\n')
+      chmodSync(copiedHeartbeat, 0o644)
+    }
+    const { CLAUDE_CODE_SESSION_ID: _drop, ...rest } = process.env
+    const p = Bun.spawnSync(['python3', join(hooksDir, 'session-brief.py')], {
+      stdin: new TextEncoder().encode(JSON.stringify(opts.payload)),
+      stdout: 'pipe', stderr: 'pipe',
+      env: { ...rest, ORCH_DB: process.env.ORCH_DB! },
+    })
+    return { p, heartbeat: copiedHeartbeat, root }
+  }
+
+  test('missing heartbeat is a notice on both channels, not a block', () => {
+    const { p, heartbeat: missingPath, root } = runCopiedBrief({
+      payload: { cwd: '/w/known', source: 'startup', session_id: 'sid-missing' },
+      heartbeat: 'missing',
+    })
+    try {
+      expect(p.exitCode).toBe(0)
+      const out = hookOutput(p)
+      const msg = `Heartbeat missing or not executable: ${missingPath}`
+      expect(out.hookSpecificOutput.additionalContext).toBe(msg + '\n')
+      expect(out.systemMessage).toBe(msg)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('non-executable heartbeat is a notice on both channels, not a block', () => {
+    const { p, heartbeat: blockedPath, root } = runCopiedBrief({
+      payload: { cwd: '/w/known', source: 'startup', session_id: 'sid-nox' },
+      heartbeat: 'non-executable',
+    })
+    try {
+      expect(p.exitCode).toBe(0)
+      const out = hookOutput(p)
+      const msg = `Heartbeat missing or not executable: ${blockedPath}`
+      expect(out.hookSpecificOutput.additionalContext).toBe(msg + '\n')
+      expect(out.systemMessage).toBe(msg)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('missing heartbeat still notices when session id is absent', () => {
+    const { p, heartbeat: missingPath, root } = runCopiedBrief({
+      payload: { cwd: '/w/known', source: 'startup' },
+      heartbeat: 'missing',
+    })
+    try {
+      expect(p.exitCode).toBe(0)
+      const out = hookOutput(p)
+      const msg = `Heartbeat missing or not executable: ${missingPath}`
+      expect(out.hookSpecificOutput.additionalContext).toBe(msg + '\n')
+      expect(out.systemMessage).toBe(msg)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })

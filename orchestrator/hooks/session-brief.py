@@ -117,6 +117,29 @@ def main() -> int:
             noun = "brief" if len(lines) == 1 else "briefs"
             notices.append(f"Open resume {noun}: {slugs}.")
 
+        # Verify the heartbeat and hand over a ready-to-run Monitor command.
+        # Do not launch it here: a hook cannot call Monitor, and backgrounding
+        # it would send output nowhere while the session looked covered.
+        # Compact/clear/fork already had their chance; re-handing is wallpaper.
+        if payload.get("source") in ("startup", "resume"):
+            heartbeat = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "orch-heartbeat.sh")
+            )
+            if not os.access(heartbeat, os.X_OK):
+                msg = f"Heartbeat missing or not executable: {heartbeat}"
+                if context and not context.endswith("\n"):
+                    context += "\n"
+                context += msg + "\n"
+                notices.append(msg)
+            else:
+                # The payload's own session_id first, then the env var Claude always sets.
+                sid = payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID")
+                if sid:
+                    line = f"Arm under Monitor: {heartbeat} {sid}"
+                    if context and not context.endswith("\n"):
+                        context += "\n"
+                    context += line + "\n"
+
         if not context and not notices:
             return 0
         output = {
