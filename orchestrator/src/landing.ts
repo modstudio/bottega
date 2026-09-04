@@ -246,7 +246,7 @@ function requireReviewCoverage(project: Project, repoRoot: string, tip: string):
 
 function authorizeLanding(
   project: Project, repoRoot: string, branch: string, tip: string, unreviewed?: string,
-): void {
+): { project: string; branch: string; tip: string; tree: string; reason: string } | null {
   const reason = unreviewed?.trim()
   if (unreviewed !== undefined && !reason) throw new Error('--unreviewed requires a non-empty reason')
   if (reason) {
@@ -258,13 +258,23 @@ function authorizeLanding(
       `tree: ${tree}\nreason: ${reason}\n` +
       '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!',
     )
-    db().query(
-      `INSERT INTO landing_override (project, branch, tip, tree, reason, session_id, at)
-       VALUES (?,?,?,?,?,?,?)`,
-    ).run(project.name, branch, tip, tree, reason, sessionId(), nowIso())
-    return
+    return { project: project.name, branch, tip, tree, reason }
   }
   requireReviewCoverage(project, repoRoot, tip)
+  return null
+}
+
+function recordLandingOverride(
+  override: { project: string; branch: string; tip: string; tree: string; reason: string } | null,
+): void {
+  if (!override) return
+  db().query(
+    `INSERT INTO landing_override (project, branch, tip, tree, reason, session_id, at)
+     VALUES (?,?,?,?,?,?,?)`,
+  ).run(
+    override.project, override.branch, override.tip, override.tree, override.reason,
+    sessionId(), nowIso(),
+  )
 }
 
 function fastForward(
@@ -328,8 +338,9 @@ export function land(
   return withProjectLock(repoRoot, LANDING_LOCK, { session: sessionId(), what: branch }, () => {
     const currentTrunk = trunkCommit(repoRoot, trunk, guard)
     if (currentTrunk === recordedTrunk) {
-      authorizeLanding(project, repoRoot, branch, optimisticTip, options.unreviewed)
+      const override = authorizeLanding(project, repoRoot, branch, optimisticTip, options.unreviewed)
       fastForward(repoRoot, worktree, branch, trunk, optimisticTip, recordedTrunk, guard)
+      recordLandingOverride(override)
       console.log(`landed ${branch} at ${optimisticTip} onto ${trunk} (optimistic gate remained current)`)
       return optimisticTip
     }
@@ -338,8 +349,9 @@ export function land(
     const serializedTip = rebaseAndGate(
       project, repoRoot, worktree, branch, trunk, currentTrunk, guard,
     )
-    authorizeLanding(project, repoRoot, branch, serializedTip, options.unreviewed)
+    const override = authorizeLanding(project, repoRoot, branch, serializedTip, options.unreviewed)
     fastForward(repoRoot, worktree, branch, trunk, serializedTip, currentTrunk, guard)
+    recordLandingOverride(override)
     console.log(`landed ${branch} at ${serializedTip} onto ${trunk} after serialized re-gate`)
     return serializedTip
   }, timeoutMs, true)

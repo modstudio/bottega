@@ -443,6 +443,36 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  test('a failed fast-forward does not record an announced override', async () => {
+    const { repo } = repoWithBranches(['override-refused'])
+    const project = 'landing-override-refused'
+    const hooks = join(repo, '.git', 'reject-main-hooks')
+    mkdirSync(hooks)
+    const hook = join(hooks, 'reference-transaction')
+    writeFileSync(hook, [
+      '#!/bin/sh',
+      '[ "$1" = prepared ] || exit 0',
+      'while read old new ref; do',
+      '  [ "$ref" != refs/heads/main ] || exit 1',
+      'done',
+      'exit 0',
+      '',
+    ].join('\n'))
+    chmodSync(hook, 0o755)
+    g(repo, 'config', 'core.hooksPath', hooks)
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const trunk = g(repo, 'rev-parse', 'main')
+      const child = childLand(repo, 'override-refused', { unreviewed: 'emergency' })
+      expect(await child.exited).not.toBe(0)
+      expect(await new Response(child.stderr).text()).toContain('UNREVIEWED LANDING OVERRIDE')
+      expect(g(repo, 'rev-parse', 'main')).toBe(trunk)
+      expect(db().query(
+        'SELECT id FROM landing_override WHERE branch=?',
+      ).get('override-refused')).toBeNull()
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   test('run ids resolve explicitly and status reads holder and waiters without acquiring', () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     db().query('UPDATE run SET branch=? WHERE id=?').run('DEV-181-branch', id)
@@ -8877,7 +8907,7 @@ describe('issue blast-radius review tree', () => {
 })
 
 describe('content tree measurement', () => {
-  test('includes visible working content, ignores ignored files, and never changes the index', () => {
+  test('keeps tracked ignored files, includes visible dirt, and measures tracked deletions', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-content-tree-'))
     const g = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
@@ -8890,23 +8920,94 @@ describe('content tree measurement', () => {
       g('init', '-b', 'main')
       g('config', 'user.email', 'orch-test@example.invalid')
       g('config', 'user.name', 'Orch Test')
-      writeFileSync(join(repo, '.gitignore'), 'ignored.txt\n')
       writeFileSync(join(repo, 'tracked.txt'), 'base\n')
+      writeFileSync(join(repo, 'secret.txt'), 'tracked secret\n')
       g('add', '.')
       g('commit', '-m', 'base')
-      writeFileSync(join(repo, 'staged.txt'), 'staged\n')
-      g('add', 'staged.txt')
+      writeFileSync(join(repo, '.gitignore'), 'secret.txt\nignored.txt\n')
+      g('add', '.gitignore')
+      g('commit', '-m', 'ignore tracked secret later')
+      expect(g('status', '--porcelain=v1')).toBe('')
+      expect(contentTree(repo)).toBe(g('rev-parse', 'HEAD^{tree}'))
+
       const indexBefore = g('write-tree')
-      writeFileSync(join(repo, 'tracked.txt'), 'working\n')
+      rmSync(join(repo, 'tracked.txt'))
       writeFileSync(join(repo, 'visible.txt'), 'visible\n')
       writeFileSync(join(repo, 'ignored.txt'), 'ignored\n')
       const measured = contentTree(repo)
       expect(measured).not.toBe(g('rev-parse', 'HEAD^{tree}'))
       expect(g('write-tree')).toBe(indexBefore)
       expect(g('ls-tree', '-r', '--name-only', measured).split('\n')).toEqual([
-        '.gitignore', 'staged.txt', 'tracked.txt', 'visible.txt',
+        '.gitignore', 'secret.txt', 'visible.txt',
       ])
     } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a measurement failure before vendor spawn is a harness failure with the git message', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-content-tree-failure-'))
+    const g = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    const agent = AGENTS.codex!
+    const vendorMarker = join(repo, 'vendor-started')
+    const original = { bin: agent.bin, argv: agent.argv, stdin: agent.stdin,
+      readsOut: agent.readsOut, parseReply: agent.parseReply }
+    const oldDepth = process.env.ORCH_DEPTH
+    try {
+      g('init', '-b', 'main')
+      g('config', 'user.email', 'orch-test@example.invalid')
+      g('config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'tracked.txt'), 'base\n')
+      g('add', '.')
+      g('commit', '-m', 'base')
+      agent.bin = process.execPath
+      agent.argv = () => {
+        const paths = g('worktree', 'list', '--porcelain').split('\n')
+          .filter((line) => line.startsWith('worktree '))
+          .map((line) => line.slice('worktree '.length))
+        const worker = paths.find((path) => realpathSync(path) !== realpathSync(repo))
+        if (!worker) throw new Error('test did not find worker worktree')
+        const pointer = readFileSync(join(worker, '.git'), 'utf8').trim()
+        const gitDir = resolve(worker, pointer.slice('gitdir: '.length))
+        writeFileSync(join(gitDir, 'HEAD'), 'ref: refs/heads/missing-measurement-head\n')
+        return ['-e', `await Bun.write(${JSON.stringify(vendorMarker)}, 'started')`]
+      }
+      agent.stdin = false
+      agent.readsOut = false
+      agent.parseReply = undefined
+      process.env.ORCH_DEPTH = '0'
+
+      let runId: number | undefined
+      try {
+        await runJob({
+          job: 'review-lens', prompt: 'measurement must fail', cwd: repo,
+          agent: 'codex', lens: 'measurement-failure',
+        })
+      } catch (error) {
+        runId = (error as Error & { runId?: number }).runId
+      }
+      expect(runId).toBeNumber()
+      const row = db().query('SELECT status, failure_kind, error FROM run WHERE id=?').get(runId!) as
+        { status: string; failure_kind: string; error: string }
+      expect(row.status).toBe('failed')
+      expect(row.failure_kind).toBe('harness')
+      expect(row.error).toContain('git read-tree HEAD failed while measuring content tree')
+      expect(row.error).not.toContain('at contentTree')
+      expect(existsSync(vendorMarker)).toBe(false)
+    } finally {
+      agent.bin = original.bin
+      agent.argv = original.argv
+      agent.stdin = original.stdin
+      agent.readsOut = original.readsOut
+      agent.parseReply = original.parseReply
+      if (oldDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = oldDepth
+      rmSync(repo, { recursive: true, force: true })
+    }
   })
 })
 
@@ -10851,6 +10952,21 @@ describe('canonical schema rebuild', () => {
       commands_run TEXT NOT NULL,
       could_not_verify TEXT NOT NULL
     )`
+  const LIVE_REVIEW_FINDING_DDL = `CREATE TABLE review_finding (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      review_id INTEGER NOT NULL REFERENCES review(id) ON DELETE CASCADE,
+      review_lens_id INTEGER NOT NULL REFERENCES review_lens(id) ON DELETE CASCADE,
+      ordinal INTEGER NOT NULL,
+      severity TEXT NOT NULL,
+      location TEXT NOT NULL,
+      evidence TEXT NOT NULL,
+      proposed_correction TEXT NOT NULL,
+      disposition TEXT CHECK (disposition IS NULL OR disposition IN ('accepted','modified','rejected','skipped')),
+      rejection_category TEXT,
+      triaged_at TEXT,
+      UNIQUE(review_id, ordinal),
+      CHECK (disposition = 'rejected' OR rejection_category IS NULL)
+    )`
 
   const cols = (d: Database, table: string) =>
     (d.query(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name)
@@ -10863,10 +10979,12 @@ describe('canonical schema rebuild', () => {
 
   function openOld(path: string): Database {
     const d = new Database(path)
+    d.exec('PRAGMA foreign_keys=ON')
     d.exec(OLD_RUN_DDL)
     d.exec(OLD_SCORE_DDL)
     d.exec('CREATE TABLE review (id INTEGER PRIMARY KEY AUTOINCREMENT, recorded_at TEXT NOT NULL, completed_at TEXT)')
     d.exec(OLD_REVIEW_LENS_DDL)
+    d.exec(LIVE_REVIEW_FINDING_DDL)
     d.exec(
       `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status)
        VALUES ('2026-01-01T00:00:00.000Z', 'codex', 'implement', 'sha', 10, 'keep-me', 'blocked')`,
@@ -10877,6 +10995,7 @@ describe('canonical schema rebuild', () => {
     )
     d.exec("INSERT INTO review VALUES (1, '2026-01-01T00:00:00.000Z', NULL)")
     d.exec("INSERT INTO review_lens VALUES (1, 1, 1, 'legacy', 'codex', 'old', 'claimed', '[]', '[]', '[]', '[]')")
+    d.exec("INSERT INTO review_finding (review_id,review_lens_id,ordinal,severity,location,evidence,proposed_correction) VALUES (1,1,1,'major','old.ts:1','retained evidence','fix it')")
     applySchema(d)
     return d
   }
@@ -10894,7 +11013,23 @@ describe('canonical schema rebuild', () => {
     expect(d.query('SELECT fidelity FROM score WHERE run_id=1').get()).toEqual({ fidelity: 'faithful' })
     expect(d.query('SELECT tree_inspected, reviewed_tree FROM review_lens WHERE id=1').get())
       .toEqual({ tree_inspected: 'claimed', reviewed_tree: null })
-    expect(() => d.exec('UPDATE review_lens SET tree_inspected=NULL WHERE id=1')).not.toThrow()
+    expect((d.query('PRAGMA table_info(review_lens)').all() as { name: string; notnull: number }[])
+      .find((column) => column.name === 'tree_inspected')?.notnull).toBe(0)
+    const uniqueIndexes = (d.query('PRAGMA index_list(review_lens)').all() as
+      { name: string; unique: number }[]).filter((index) => index.unique === 1)
+    expect(uniqueIndexes.some((index) =>
+      (d.query(`PRAGMA index_info(${index.name})`).all() as { name: string }[])
+        .map((column) => column.name).join(',') === 'run_id')).toBe(true)
+    expect(d.query(
+      `SELECT rf.evidence, rl.tree_inspected
+         FROM review_finding rf JOIN review_lens rl ON rl.id=rf.review_lens_id
+        WHERE rf.id=1`,
+    ).get()).toEqual({ evidence: 'retained evidence', tree_inspected: 'claimed' })
+    expect(d.query('PRAGMA foreign_key_check').all()).toEqual([])
+    expect(() => d.query(
+      `INSERT INTO landing_override (project,branch,tip,tree,reason,at)
+       VALUES ('p','b','tip','tree',?,'now')`,
+    ).run('   ')).toThrow()
     expect(() => d.exec("UPDATE run SET status='blocked' WHERE id=1")).toThrow()
     expect(() => d.exec("UPDATE score SET fidelity='typo' WHERE run_id=1")).toThrow()
     d.close()

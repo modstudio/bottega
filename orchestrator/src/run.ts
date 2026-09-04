@@ -1667,8 +1667,8 @@ export async function run(opts: {
     // Spawn refused, a pipe broke, the output file could not be written. The row
     // exists and must not be left claiming to run.
     status = 'failed'
-    error = errorTail(String((e as Error)?.stack ?? e))
-    failureKind = 'other'
+    error = errorTail(proc ? String((e as Error)?.stack ?? e) : String((e as Error)?.message ?? e))
+    failureKind = proc ? 'other' : 'harness'
   } finally {
     if (timer) clearTimeout(timer)
     if (killer) clearTimeout(killer)

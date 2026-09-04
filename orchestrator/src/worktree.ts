@@ -132,6 +132,12 @@ export function contentTree(cwd: string): string {
   const index = join(temporary, 'index')
   const env = { ...process.env, ...worktreeGitEnvironment(cwd), GIT_INDEX_FILE: index }
   try {
+    const read = Bun.spawnSync(['git', 'read-tree', 'HEAD'], {
+      cwd, env, stdout: 'pipe', stderr: 'pipe',
+    })
+    if (read.exitCode !== 0) {
+      throw new Error(`git read-tree HEAD failed while measuring content tree: ${read.stderr.toString().trim() || `exit ${read.exitCode}`}`)
+    }
     const add = Bun.spawnSync(['git', 'add', '-A', '.'], {
       cwd, env, stdout: 'pipe', stderr: 'pipe',
     })
