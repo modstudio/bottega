@@ -1,25 +1,11 @@
 import { dirname, resolve } from 'node:path'
+import type { TrackerProject, TrackerSettings } from '../../shared/trackers.ts'
+
+export type { StatusCategory, TrackerSettings } from '../../shared/trackers.ts'
 
 export type Project = string
 
-export type StatusCategory = 'open' | 'active' | 'review' | 'done' | 'dropped'
-
-export type TrackerSettings = {
-  kind?: string
-  protocol?: 'workspace-mcp' | 'cursor-mcp' | 'array-mcp' | string
-  /**
-   * How a workspace-mcp tracker resolves an assignee id to a name.
-   * `person-lookup` (the default) calls `person-lookup-tool`; `task-detail`
-   * calls `get-task-tool` and reads the assignee from the task for servers
-   * that have no person tool.
-   */
-  assigneeLookup?: 'person-lookup' | 'task-detail'
-  envPrefix?: string
-  openStatuses?: string[]
-  states?: Record<string, 'backlog' | StatusCategory>
-}
-
-export type RegisteredProject = {
+export type RegisteredProject = TrackerProject & {
   id: number
   name: Project
   path: string
