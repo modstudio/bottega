@@ -23,9 +23,12 @@ const requiredReportField = (field: string, belongs: string) =>
     .min(1, `${field} is required: ${belongs}`)
 
 const reporterFields = {
-  reporter_kind: z.enum(['session', 'monitor']).optional(),
+  reporter_kind: z.enum(['session', 'worker', 'monitor']).optional()
+    .describe('Omit for the calling session; worker identity is derived from the orch run environment.'),
   monitor_invocation_id: z.number().int().positive().optional(),
   affected_project: z.string().trim().min(1).optional(),
+  reporting_project: z.string().trim().min(1).optional()
+    .describe('Registered project name. Omit to derive it from the current working directory.'),
 }
 
 type FileIssueInput = {
@@ -46,6 +49,7 @@ type FileIssueInput = {
 
 export type IssueReporter =
   | { kind: 'session' }
+  | { kind: 'worker' }
   | { kind: 'monitor'; invocationId: number; affectedProject: string }
 
 function registeredProject(name: string) {
@@ -72,20 +76,39 @@ const ledgerSourceSchema = z.object({
   note: z.string(),
 })
 
-export async function fileIssue(input: FileIssueInput, reporter: IssueReporter = { kind: 'session' }) {
-  if (reporter.kind !== 'session' && reporter.kind !== 'monitor') {
+export async function fileIssue(
+  input: FileIssueInput,
+  reporter: IssueReporter = { kind: 'session' },
+  reportingProject?: string,
+) {
+  if (reporter.kind !== 'session' && reporter.kind !== 'worker' && reporter.kind !== 'monitor') {
     throw new Error('unknown issue reporter kind')
   }
   const session = reporter.kind === 'session' ? sessionId() : null
   if (reporter.kind === 'session' && !session) {
     throw new Error('cannot file issue: the reporting session is not available')
   }
-  if (reporter.kind === 'monitor') {
+  let reporterId: string | number = session ?? ''
+  if (reporter.kind === 'worker') {
+    // Identity is observed from the launcher's environment, never accepted as
+    // a tool argument. The token proves this process belongs to that run.
+    const runId = Number(process.env.ORCH_RUN_ID ?? 0)
+    const token = process.env.ORCH_RUN_TOKEN ?? ''
+    const run = runId
+      ? db().query('SELECT id, run_token FROM run WHERE id=?').get(runId) as
+        { id: number; run_token: string | null } | null
+      : null
+    if (!run || (run.run_token && run.run_token !== token)) {
+      throw new Error('cannot file issue: the reporting worker is not available')
+    }
+    reporterId = run.id
+  } else if (reporter.kind === 'monitor') {
     const invocation = db().query('SELECT id FROM monitor_invocation WHERE id=?')
       .get(reporter.invocationId)
     if (!invocation) throw new Error(`no monitor invocation ${reporter.invocationId}`)
+    reporterId = reporter.invocationId
   }
-  const project = projectAt(process.cwd())
+  const project = reportingProject ? registeredProject(reportingProject) : projectAt(process.cwd())
   if (!project) {
     throw new Error(`cannot file issue: no registered project contains ${process.cwd()}`)
   }
@@ -94,8 +117,10 @@ export async function fileIssue(input: FileIssueInput, reporter: IssueReporter =
     `TYPE: ${type}`,
     ...(reporter.kind === 'session'
       ? [`REPORTER KIND: SESSION`, `REPORTING SESSION: ${session}`]
-      : [`REPORTER KIND: MONITOR`, `REPORTING MONITOR INVOCATION: ${reporter.invocationId}`,
-        `AFFECTED PROJECT: ${reporter.affectedProject}`]),
+      : reporter.kind === 'worker'
+        ? [`REPORTER KIND: WORKER`, `REPORTING WORKER RUN: ${reporterId}`]
+        : [`REPORTER KIND: MONITOR`, `REPORTING MONITOR INVOCATION: ${reporter.invocationId}`,
+          `AFFECTED PROJECT: ${reporter.affectedProject}`]),
     `REPORTING PROJECT: ${project.name}`,
     '',
     'WHAT HAPPENED',
@@ -130,7 +155,8 @@ export async function fileIssue(input: FileIssueInput, reporter: IssueReporter =
     throw new Error(`could not file issue through hub: ${stderr.trim() || stdout.trim() || `exit ${exitCode}`}`)
   }
   return { key: stdout.trim(), kind: input.kind, session, project: project.name,
-    reporter: reporter.kind,
+    reporter: reporter.kind, reporter_id: reporterId,
+    worker_run_id: reporter.kind === 'worker' ? reporterId : null,
     monitor_invocation_id: reporter.kind === 'monitor' ? reporter.invocationId : null }
 }
 
@@ -333,13 +359,15 @@ export function createDocsMcpServer(): McpServer {
     if (kind === 'session' && input.monitor_invocation_id) {
       throw new Error('monitor_invocation_id is only valid for reporter_kind monitor')
     }
-    if (kind === 'session' && input.affected_project) {
+    if (kind !== 'monitor' && input.affected_project) {
       throw new Error('affected_project is only valid for reporter_kind monitor')
     }
-    const { reporter_kind: _kind, monitor_invocation_id: _id, affected_project: _project, ...issue } = input
+    const { reporter_kind: _kind, monitor_invocation_id: _id, affected_project: _project,
+      reporting_project: _reportingProject, ...issue } = input
     const reporter: IssueReporter = kind === 'monitor'
-      ? { kind, invocationId: input.monitor_invocation_id!, affectedProject: input.affected_project! } : { kind }
-    return text(await fileIssue(issue, reporter))
+      ? { kind, invocationId: input.monitor_invocation_id!, affectedProject: input.affected_project! }
+      : { kind }
+    return text(await fileIssue(issue, reporter, input.reporting_project))
   })
 
   return server

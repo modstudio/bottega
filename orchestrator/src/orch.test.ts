@@ -671,8 +671,11 @@ describe('operational monitor record', () => {
         expected: 'The detector has machine-readable state', reproduce_command: 'orch monitor',
         environment: 'test monitor pass', evidence: `monitor invocation ${invocation}`,
         not_established: 'The state contract is not designed',
-      }, { kind: 'monitor', invocationId: invocation, affectedProject: 'starship' })
-      expect(filed).toMatchObject({ reporter: 'monitor', monitor_invocation_id: invocation, session: null })
+      }, { kind: 'monitor', invocationId: invocation, affectedProject: 'starship' }, PLATFORM_SLUG)
+      expect(filed).toMatchObject({
+        reporter: 'monitor', reporter_id: invocation,
+        monitor_invocation_id: invocation, session: null, project: PLATFORM_SLUG,
+      })
       const shown = Bun.spawnSync([new URL('../../bin/hub', import.meta.url).pathname,
         'task', 'show', filed.key, '--json'], { env: { ...process.env }, stdout: 'pipe' })
       const task = JSON.parse(shown.stdout.toString()).task
@@ -10649,6 +10652,32 @@ describe('scoped operator docs', () => {
     }
   })
 
+  test('MCP file_issue refuses an unknown reporter kind', async () => {
+    const server = createDocsMcpServer()
+    const client = new Client({ name: 'orch-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+    try {
+      const filed = await client.callTool({
+        name: 'file_issue',
+        arguments: {
+          kind: 'suggestion',
+          what_happened: 'An unrecognised process wants to file',
+          expected: 'Only established reporter kinds can file',
+          evidence: 'reporter_kind was synthetic',
+          not_established: 'No identity contract exists for the synthetic kind',
+          reporter_kind: 'synthetic',
+        },
+      })
+      expect(filed.isError).toBe(true)
+      expect(((filed as any).content[0] as { text: string }).text).toContain('reporter_kind')
+    } finally {
+      await client.close()
+      await server.close()
+    }
+  })
+
   test(`MCP file_issue files a fully attributed ${PLATFORM_SLUG} task through hub`, async () => {
     const hubDb = join(dir, 'file-issue-hub.db')
     const priorHubDb = process.env.HUB_DB
@@ -10656,7 +10685,7 @@ describe('scoped operator docs', () => {
     process.env.HUB_DB = hubDb
     process.env.CLAUDE_CODE_SESSION_ID = 'reporting-test-session'
     upsertProject({
-      name: PLATFORM_SLUG, path: process.cwd(), stack: 'typescript', canon: true,
+      name: PLATFORM_SLUG, path: join(dir, 'registered-outside-cwd'), stack: 'typescript', canon: true,
       settings: { keyPrefixes: ['DEV'] },
     })
     const server = createDocsMcpServer()
@@ -10673,12 +10702,14 @@ describe('scoped operator docs', () => {
           expected: `A report should land on the ${PLATFORM_SLUG} board`,
           evidence: 'orchestrator/src/mcp.ts:11 had only project and document tools',
           not_established: 'No priority or assignee has been established',
+          reporting_project: PLATFORM_SLUG,
         },
       })
       expect(filed.isError).not.toBe(true)
       const result = JSON.parse(((filed as any).content[0] as { text: string }).text)
       expect(result).toMatchObject({
-        key: 'DEV-1', kind: 'suggestion', session: 'reporting-test-session', project: PLATFORM_SLUG,
+        key: 'DEV-1', kind: 'suggestion', reporter: 'session',
+        reporter_id: 'reporting-test-session', session: 'reporting-test-session', project: PLATFORM_SLUG,
       })
       const shown = Bun.spawnSync([
         new URL('../../bin/hub', import.meta.url).pathname,
@@ -10706,6 +10737,78 @@ describe('scoped operator docs', () => {
       else process.env.HUB_DB = priorHubDb
       if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
       else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+    }
+  })
+
+  test('MCP file_issue derives worker provenance from the authenticated run environment', async () => {
+    const hubDb = join(dir, 'worker-file-issue-hub.db')
+    const priorHubDb = process.env.HUB_DB
+    const priorRunId = process.env.ORCH_RUN_ID
+    const priorRunToken = process.env.ORCH_RUN_TOKEN
+    process.env.HUB_DB = hubDb
+    upsertProject({
+      name: PLATFORM_SLUG, path: process.cwd(), stack: 'typescript', canon: true,
+      settings: { keyPrefixes: ['DEV'] },
+    })
+    const runId = addRun({ agent: 'codex', job: 'implement' })
+    db().query('UPDATE run SET run_token=? WHERE id=?').run('worker-file-token', runId)
+    process.env.ORCH_RUN_ID = String(runId)
+    process.env.ORCH_RUN_TOKEN = 'worker-file-token'
+    const server = createDocsMcpServer()
+    const client = new Client({ name: 'orch-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+    try {
+      const arguments_ = {
+        kind: 'defect' as const,
+        what_happened: 'A worker observed a reproducible failure',
+        expected: 'The worker can preserve its finding directly',
+        reproduce_command: 'bun test',
+        environment: 'orch worker test fixture',
+        evidence: `run ${runId} observed exit 1`,
+        not_established: 'The underlying cause is not established',
+        reporter_kind: 'worker' as const,
+        reporting_project: PLATFORM_SLUG,
+      }
+      process.env.ORCH_RUN_TOKEN = 'not-the-worker-token'
+      const refused = await client.callTool({ name: 'file_issue', arguments: arguments_ })
+      expect(refused.isError).toBe(true)
+      expect(((refused as any).content[0] as { text: string }).text)
+        .toContain('reporting worker is not available')
+      process.env.ORCH_RUN_TOKEN = 'worker-file-token'
+      const filed = await client.callTool({
+        name: 'file_issue',
+        arguments: arguments_,
+      })
+      expect(filed.isError).not.toBe(true)
+      const result = JSON.parse(((filed as any).content[0] as { text: string }).text)
+      expect(result).toMatchObject({
+        key: 'DEV-1', reporter: 'worker', reporter_id: runId,
+        worker_run_id: runId, session: null, project: PLATFORM_SLUG,
+      })
+      const shown = Bun.spawnSync([
+        new URL('../../bin/hub', import.meta.url).pathname,
+        'task', 'show', result.key, '--json',
+      ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
+      expect(shown.exitCode).toBe(0)
+      const task = JSON.parse(shown.stdout.toString()).task
+      expect(task.body).toContain('REPORTER KIND: WORKER')
+      expect(task.body).toContain(`REPORTING WORKER RUN: ${runId}`)
+      expect(task.body).toContain(`REPORTING PROJECT: ${PLATFORM_SLUG}`)
+      expect(task.body).not.toContain('REPORTING SESSION:')
+    } finally {
+      await client.close()
+      await server.close()
+      rmSync(hubDb, { force: true })
+      rmSync(`${hubDb}-shm`, { force: true })
+      rmSync(`${hubDb}-wal`, { force: true })
+      if (priorHubDb === undefined) delete process.env.HUB_DB
+      else process.env.HUB_DB = priorHubDb
+      if (priorRunId === undefined) delete process.env.ORCH_RUN_ID
+      else process.env.ORCH_RUN_ID = priorRunId
+      if (priorRunToken === undefined) delete process.env.ORCH_RUN_TOKEN
+      else process.env.ORCH_RUN_TOKEN = priorRunToken
     }
   })
 

@@ -249,7 +249,7 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
         evidence: `monitor invocation ${invocation}; ${condition.kind} ${condition.subject}; ${condition.detail}`,
         not_established: 'The missing interface design and remediation policy are not established by the monitor.',
       }, { kind: 'monitor', invocationId: invocation,
-        affectedProject: condition.affectedProject ?? PLATFORM_SLUG })
+        affectedProject: condition.affectedProject ?? PLATFORM_SLUG }, PLATFORM_SLUG)
       condition.issueKey = filed.key
       database.query('UPDATE monitor_condition SET issue_key=? WHERE invocation_id=? AND kind=? AND subject=?')
         .run(filed.key, invocation, condition.kind, condition.subject)
