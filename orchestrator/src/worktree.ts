@@ -65,6 +65,7 @@ export type SharedRefGuardEnvironment = {
   GIT_CONFIG_COUNT: string
   GIT_CONFIG_KEY_0: string
   GIT_CONFIG_VALUE_0: string
+  ORCH_GUARDED_GIT_COMMON_DIR: string
 }
 
 /** Resolve linked-worktree metadata without invoking git (git itself uses this environment). */
@@ -293,7 +294,7 @@ export function prepareSharedRefGuard(cwd: string): SharedRefGuardEnvironment {
   if (existsSync(originalReferenceHook)) {
     // Both hooks consume stdin. The common-object guard must pass before the
     // project's hook receives the same transaction bytes.
-    writeFileSync(installed, `#!/bin/sh\nset -eu\ninput=${shellQuote(join(hookDir, '.reference-transaction-input'))}.$$\ntrap 'rm -f "$input"' EXIT HUP INT TERM\ncat > "$input"\n${shellQuote(guard)} "$@" < "$input"\n${shellQuote(originalReferenceHook)} "$@" < "$input"\n`)
+    writeFileSync(installed, `#!/bin/sh\nset -eu\nprotected_common=\${ORCH_GUARDED_GIT_COMMON_DIR:-}\n[ -n "$protected_common" ] || exit 0\ncurrent_common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || exit 0\ncurrent_common=$(cd "$current_common" 2>/dev/null && pwd -P) || exit 0\n[ "$current_common" = "$protected_common" ] || exit 0\ninput=${shellQuote(join(hookDir, '.reference-transaction-input'))}.$$\ntrap 'rm -f "$input"' EXIT HUP INT TERM\ncat > "$input"\n${shellQuote(guard)} "$@" < "$input"\n${shellQuote(originalReferenceHook)} "$@" < "$input"\n`)
     chmodSync(installed, 0o755)
   } else if (!existsSync(installed)) {
     symlinkSync(guard, installed)
@@ -303,6 +304,7 @@ export function prepareSharedRefGuard(cwd: string): SharedRefGuardEnvironment {
     GIT_CONFIG_COUNT: '1',
     GIT_CONFIG_KEY_0: 'core.hooksPath',
     GIT_CONFIG_VALUE_0: hookDir,
+    ORCH_GUARDED_GIT_COMMON_DIR: paths.commonDir,
   }
 }
 

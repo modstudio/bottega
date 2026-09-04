@@ -6135,6 +6135,8 @@ describe('an agent gets the toolchain of a project someone registered', () => {
       expect(git(repo, ['add', 'base.txt']).exitCode).toBe(0)
       expect(git(repo, ['commit', '--no-verify', '-m', 'base']).exitCode).toBe(0)
       const tree = createWorktree(repo, 156)
+      writeFileSync(join(projectHooks, 'reference-transaction'), '#!/bin/sh\nexit 1\n')
+      chmodSync(join(projectHooks, 'reference-transaction'), 0o755)
 
       const guardEnv = prepareSharedRefGuard(tree.path)
       expect(readdirSync(join(worktreeGitDir(tree.path), 'orch-hooks')))
@@ -6148,6 +6150,31 @@ describe('an agent gets the toolchain of a project someone registered', () => {
       const committed = git(scratch, ['commit', '-m', 'test fixture'], guardEnv)
       expect(committed.exitCode).toBe(0)
       expect(committed.stderr.toString()).toBe('')
+
+      const scratchTree = createWorktree(scratch, 165)
+      const scratchObjects = prepareWorktreeObjects(scratchTree.path)
+      writeFileSync(join(scratchTree.path, 'private.txt'), 'scratch-private\n')
+      expect(git(scratchTree.path, ['add', 'private.txt'], {
+        ...guardEnv, ...scratchObjects,
+      }).exitCode).toBe(0)
+      const privateCommit = git(scratchTree.path, ['commit', '-m', 'private fixture'], {
+        ...guardEnv, ...scratchObjects,
+      })
+      expect(privateCommit.exitCode).toBe(0)
+      expect(privateCommit.stderr.toString()).toBe('')
+      const privateOid = git(scratchTree.path, ['rev-parse', 'HEAD'], scratchObjects)
+        .stdout.toString().trim()
+      expect(existsSync(join(
+        scratchObjects.GIT_OBJECT_DIRECTORY, privateOid.slice(0, 2), privateOid.slice(2),
+      ))).toBe(true)
+      expect(existsSync(join(
+        scratch, '.git', 'objects', privateOid.slice(0, 2), privateOid.slice(2),
+      ))).toBe(false)
+      const updated = git(scratchTree.path, [
+        'update-ref', 'refs/heads/scratch-private', privateOid,
+      ], { ...guardEnv, ...scratchObjects })
+      expect(updated.exitCode).toBe(0)
+      expect(updated.stderr.toString()).toBe('')
     } finally {
       rmSync(repo, { recursive: true, force: true })
       rmSync(scratch, { recursive: true, force: true })

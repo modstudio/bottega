@@ -3,6 +3,12 @@ set -eu
 
 [ "${1-}" = prepared ] || exit 0
 
+protected_common=${ORCH_GUARDED_GIT_COMMON_DIR:-}
+[ -n "$protected_common" ] || exit 0
+current_common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || exit 0
+current_common=$(cd "$current_common" 2>/dev/null && pwd -P) || exit 0
+[ "$current_common" = "$protected_common" ] || exit 0
+
 transaction=$(mktemp "${TMPDIR:-/tmp}/orch-ref-transaction.XXXXXX")
 objects=$(mktemp "${TMPDIR:-/tmp}/orch-ref-objects.XXXXXX")
 common=$(mktemp "${TMPDIR:-/tmp}/orch-ref-common.XXXXXX")
