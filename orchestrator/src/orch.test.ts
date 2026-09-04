@@ -4673,8 +4673,71 @@ describe('detached run collection', () => {
     expect(first.code).toBe(0)
     expect(first.err).toContain(`caller checkout HEAD ${head} is behind or diverged`)
     expect(first.err).toContain(`origin/main (${newer})`)
+    expect(first.err).toContain('repository runs from it are still dispatched')
+    expect(first.err).not.toContain('will be refused')
     expect(sibling.code).toBe(0)
     expect(sibling.err).not.toContain('caller checkout HEAD')
+  })
+
+  test('a drifted caller still dispatches, and --porcelain still prints only the run id', () => {
+    mkdirSync(join(dir, 'drift-dispatch'))
+    const repo = realpathSync(join(dir, 'drift-dispatch'))
+    const git = (args: string[], stdin?: string) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+        stdin: stdin === undefined ? undefined : new TextEncoder().encode(stdin),
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    git(['init', '-b', 'main'])
+    git(['commit', '--allow-empty', '-m', 'base'])
+    const head = git(['rev-parse', 'HEAD'])
+    git(['update-ref', 'refs/remotes/origin/main', head])
+    upsertProject({
+      name: 'drift-dispatch', path: repo,
+      settings: {
+        trunk: 'main',
+        worktree: { create: declaredCreate('scripts/worktree', ['create', '{branch}']), branch: 'task/{id}' },
+      },
+    })
+    const tree = git(['rev-parse', 'HEAD^{tree}'])
+    const newer = git(['commit-tree', tree, '-p', head], 'newer base\n')
+    git(['update-ref', 'refs/remotes/origin/main', newer])
+    expect(callerDrift(repo)).toEqual({ callerHead: head, base: newer, baseRef: 'origin/main' })
+
+    const binDir = join(dir, 'drift-dispatch-bin')
+    mkdirSync(binDir, { recursive: true })
+    writeFileSync(join(binDir, 'codex'), '#!/bin/sh\nprintf \'answer\'\n')
+    chmodSync(join(binDir, 'codex'), 0o755)
+
+    const dispatch = (extra: string[], session: string) => Bun.spawnSync(
+      [process.execPath, CLI, 'do', 'file-question', 'what is here', '--agent', 'codex', ...extra],
+      {
+        cwd: repo, stdout: 'pipe', stderr: 'pipe',
+        env: {
+          ...process.env, PATH: `${binDir}:${process.env.PATH}`,
+          ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: session,
+        },
+      },
+    )
+
+    const human = dispatch([], 'drift-dispatch-human')
+    expect(human.exitCode).toBe(0)
+    expect(human.stdout.toString()).toMatch(/^\d+\n$/)
+    expect(human.stderr.toString()).toContain(`caller checkout HEAD ${head} is behind or diverged`)
+    expect(human.stderr.toString()).toContain('repository runs from it are still dispatched')
+    expect(human.stderr.toString()).not.toContain('will be refused')
+
+    const porcelain = dispatch(['--porcelain'], 'drift-dispatch-porcelain')
+    expect(porcelain.exitCode).toBe(0)
+    expect(porcelain.stdout.toString()).toMatch(/^\d+\n$/)
+    expect(Number(porcelain.stdout.toString().trim())).toBeGreaterThan(0)
+    expect(porcelain.stderr.toString()).toContain(`caller checkout HEAD ${head} is behind or diverged`)
+    expect(porcelain.stderr.toString()).toContain('repository runs from it are still dispatched')
+    expect(porcelain.stderr.toString()).not.toContain('will be refused')
+    expect(porcelain.stdout.toString()).not.toContain('behind or diverged')
   })
 
   test('pick shares do validation for fan-out exclusions', () => {

@@ -124,7 +124,7 @@ function warnCallerDrift(cwd: string, baseRef?: string): void {
   console.error(
     `! caller checkout HEAD ${drift.callerHead} is behind or diverged from ` +
     `${drift.baseRef} (${drift.base}).\n` +
-    '  Update the caller checkout before dispatch; repository runs from it will be refused.',
+    '  Update the caller checkout; repository runs from it are still dispatched.',
   )
 }
 
