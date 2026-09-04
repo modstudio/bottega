@@ -4859,6 +4859,22 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
     rmSync(repo, { recursive: true, force: true })
   })
 
+  test('read-only preflight does not require a writing job\'s key or seed', () => {
+    const { repo } = scratchRepo()
+    upsertProject({
+      name: 'read-only-arguments', path: repo,
+      settings: {
+        worktree: {
+          create: 'scripts/worktree create {branch} {seed}', branch: '{key}-orch-{id}',
+          seeds: ['small', 'full'],
+        },
+      },
+    })
+    expect(() => fromRoot(() => preflight('review-lens', repo))).not.toThrow()
+    expect(() => fromRoot(() => preflight('review-lens', repo, 'small'))).not.toThrow()
+    rmSync(repo, { recursive: true, force: true })
+  })
+
   test('fill shell-quotes unquoted values and respects existing quotes', () => {
     const value = "two words' ; echo nope"
     for (const render of [fill, fillTool]) {

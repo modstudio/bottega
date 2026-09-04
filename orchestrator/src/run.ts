@@ -264,6 +264,7 @@ export function preflight(
     )
   }
   const j = job(jobName)
+  const writesJob = Boolean(j.needs.writesRepo)
   if (jobName === 'review-lens' && repoRootOf(cwd) === null) {
     throw new Error(
       `a review lens reads a change, and ${cwd} is not inside a git checkout, so there is no change to read.\n` +
@@ -271,8 +272,10 @@ export function preflight(
     )
   }
   if (!j.needs.readsRepo) return
-  // A key and a seed exist to name and fill a NEW worktree. A resumed turn works in
-  // the one its parent already has, so demanding them again blocks every ruling.
+  // A key and a seed are required only for a writing job's NEW worktree. Read-only
+  // jobs may still receive either value, but they do not write a branch or database
+  // whose contents the architect must settle. A resumed turn works in the tree its
+  // parent already has, so demanding them again blocks every ruling.
   if (reusesWorktree) return
   const project = projectAt(cwd)
   const tool = project?.settings.worktree ?? null
@@ -294,19 +297,19 @@ export function preflight(
       `template does not contain {base}`,
     )
   }
-  if (tool?.branch?.includes('{key}') && !key) {
+  if (writesJob && tool?.branch?.includes('{key}') && !key) {
     problems.push(
       `this project's branch names must carry a ticket key (${tool.branch}), and orch will ` +
       `not invent one.\n  --key <KEY-123>`,
     )
   }
-  if (tool?.seeds?.length && !seed) {
+  if (writesJob && tool?.seeds?.length && !seed) {
     problems.push(
       `this project requires a database size for a new worktree, and has no default.\n` +
       `  --seed ${tool.seeds.join('\n  --seed ')}\n\n` +
       `Choosing is the architect's call: it depends on what the task touches.`,
     )
-  } else if (tool?.create?.includes('{seed}') && !seed) {
+  } else if (writesJob && tool?.create?.includes('{seed}') && !seed) {
     problems.push(
       `this project's worktree create command contains {seed}, so a seed is required.\n` +
       `  --seed <value>`,
