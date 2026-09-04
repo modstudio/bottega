@@ -374,7 +374,8 @@ const { classify, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOT_EVIDENCE, COOLS_DOWN,
 const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePaths, pruneRuns, KEEP_RUN_FILES_DAYS,
         RUNS_DIR, grokMcpConnection, writingFailoverRefusal, resolveSupersededTurn,
         resolveRootFromLastTurn, gitObjectEnvironmentFor, inferredReadOnlyKey,
-        canonSourceFor, canonSourceInstruction, run: runJob } = await import('./run.ts')
+        canonSourceFor, canonSourceInstruction, snapshotRegisteredCheckouts,
+        changedRegisteredCheckouts, run: runJob } = await import('./run.ts')
 const run = runJob
 const { summary } = await import('./metric.ts')
 const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
@@ -390,7 +391,7 @@ const { orphanSafety, repoRootOf, createWorktree, createWithTool, resolveBase, f
         workerSharedGitRoots,
         carryWorkingState, withWorktreeCreateLock, withProjectLock, projectLockState,
         unmergedBranch, assertCallerAncestry, checkoutHasUncommittedWork, callerDrift,
-        changesIn } = await import('./worktree.ts')
+        changesIn, removeFor } = await import('./worktree.ts')
 const { landingStatus, resolveLandingBranch } = await import('./landing.ts')
 const { AGENTS, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
@@ -7503,6 +7504,86 @@ describe('pid stays the worker for the whole run', () => {
       grok.bin = previous
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+})
+
+describe('outside-worktree write observation', () => {
+  const git = (cwd: string, ...args: string[]) => {
+    const p = Bun.spawnSync(['git', ...args], {
+      cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+    return p.stdout.toString().trim()
+  }
+
+  const repository = () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-outside-write-')))
+    git(repo, 'init', '-b', 'main')
+    git(repo, 'config', 'user.email', 'orch-test@example.invalid')
+    git(repo, 'config', 'user.name', 'Orch Test')
+    writeFileSync(join(repo, 'tracked.txt'), 'base\n')
+    git(repo, 'add', 'tracked.txt')
+    git(repo, 'commit', '-m', 'fixture')
+    return repo
+  }
+
+  test('the comparison names a changed checkout and ignores an unchanged one', () => {
+    const before = [
+      { project: 'one', path: '/one', status: '' },
+      { project: 'two', path: '/two', status: ' M existing' },
+    ]
+    expect(changedRegisteredCheckouts(before, [
+      { project: 'one', path: '/one', status: '?? new.txt\0' },
+      { project: 'two', path: '/two', status: ' M existing' },
+    ])).toEqual([{
+      project: 'one', path: '/one', before: '', after: '?? new.txt\0',
+    }])
+  })
+
+  test('a real run records an external write and a clean run records none', async () => {
+    const watched = repository()
+    const script = join(dir, 'outside-write-agent.sh')
+    writeFileSync(script, `#!/bin/sh
+if [ -n "$ORCH_TEST_EXTERNAL_WRITE" ]; then printf 'outside\\n' > "$ORCH_TEST_EXTERNAL_WRITE"; fi
+printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"answer"}'
+`)
+    chmodSync(script, 0o755)
+    upsertProject({ name: 'watched-project', path: watched })
+    const grok = AGENTS.grok!
+    const previousBin = grok.bin
+    const priorDepth = process.env.ORCH_DEPTH
+    const priorTarget = process.env.ORCH_TEST_EXTERNAL_WRITE
+    process.env.ORCH_DEPTH = '0'
+    try {
+      grok.bin = script
+      process.env.ORCH_TEST_EXTERNAL_WRITE = join(watched, 'written-by-run.txt')
+      const dirty = await run({ job: 'file-question', prompt: 'write outside', cwd: dir, agent: 'grok' })
+      const recorded = db().query('SELECT outside_worktree_writes FROM run WHERE id=?')
+        .get(dirty.id) as { outside_worktree_writes: string }
+      expect(JSON.parse(recorded.outside_worktree_writes)).toEqual([{
+        project: 'watched-project', path: watched,
+        before: '', after: '?? written-by-run.txt\u0000',
+      }])
+      if (dirty.worktree) expect(removeFor(dirty.worktree, dirty.worktree.repoRoot).removed).toBe(true)
+
+      rmSync(join(watched, 'written-by-run.txt'))
+      delete process.env.ORCH_TEST_EXTERNAL_WRITE
+      const clean = await run({ job: 'file-question', prompt: 'stay clean', cwd: dir, agent: 'grok' })
+      const cleanRecorded = db().query('SELECT outside_worktree_writes FROM run WHERE id=?')
+        .get(clean.id) as { outside_worktree_writes: string }
+      expect(JSON.parse(cleanRecorded.outside_worktree_writes)).toEqual([])
+      expect(snapshotRegisteredCheckouts()).toEqual([
+        { project: 'watched-project', path: watched, status: '' },
+      ])
+      if (clean.worktree) expect(removeFor(clean.worktree, clean.worktree.repoRoot).removed).toBe(true)
+    } finally {
+      grok.bin = previousBin
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      if (priorTarget === undefined) delete process.env.ORCH_TEST_EXTERNAL_WRITE
+      else process.env.ORCH_TEST_EXTERNAL_WRITE = priorTarget
+      rmSync(watched, { recursive: true, force: true })
     }
   })
 })

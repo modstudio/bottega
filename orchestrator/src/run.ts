@@ -31,7 +31,7 @@ import {
   type CanonSource, type WorkerReply,
 } from './contract.ts'
 import { CALIBRATION_SUFFIX_RESERVE_BYTES, calibrationLine, reviewCalibration } from './review.ts'
-import { createHasPlaceholder, projectAt, stackAt } from './projects.ts'
+import { createHasPlaceholder, projectAt, projects, stackAt } from './projects.ts'
 import { docsForRun, docsMarkdown } from './docs.ts'
 
 export type RunResult = {
@@ -635,6 +635,68 @@ function gitContext(cwd: string, ...args: string[]): string | null {
     const value = new TextDecoder().decode(p.stdout).trim()
     return value ? value.slice(0, 200) : null
   } catch { return null }
+}
+
+export type CheckoutStatusSnapshot = {
+  project: string
+  path: string
+  status: string
+}
+
+export type OutsideWorktreeWrite = {
+  project: string
+  path: string
+  before: string
+  after: string
+}
+
+/**
+ * Cheap observation of registered main checkouts, outside a run's worktree.
+ *
+ * Porcelain status deliberately bounds the check: it sees tracked and
+ * untracked working-tree changes without hashing every file in every project.
+ * A checkout that cannot be read is omitted rather than allowed to affect the
+ * run; this is evidence collection, never enforcement.
+ */
+export function snapshotRegisteredCheckouts(): CheckoutStatusSnapshot[] {
+  const snapshots: CheckoutStatusSnapshot[] = []
+  const seen = new Set<string>()
+  for (const project of projects()) {
+    if (seen.has(project.path)) continue
+    seen.add(project.path)
+    try {
+      const p = Bun.spawnSync(
+        ['git', '-C', project.path, 'status', '--porcelain=v1', '-z', '--untracked-files=all'],
+        {
+          // Status may otherwise take an optional lock to refresh index stat
+          // data. Observation must not itself write to a watched checkout.
+          env: { ...process.env, ...worktreeGitEnvironment(project.path), GIT_OPTIONAL_LOCKS: '0' },
+          stdout: 'pipe', stderr: 'ignore',
+        },
+      )
+      if (p.exitCode !== 0) continue
+      snapshots.push({ project: project.name, path: project.path, status: p.stdout.toString() })
+    } catch { /* an unreadable checkout must never stop a run */ }
+  }
+  return snapshots
+}
+
+export function changedRegisteredCheckouts(
+  before: CheckoutStatusSnapshot[], after: CheckoutStatusSnapshot[],
+): OutsideWorktreeWrite[] {
+  const prior = new Map(before.map((snapshot) => [snapshot.path, snapshot]))
+  const changes: OutsideWorktreeWrite[] = []
+  for (const current of after) {
+    const original = prior.get(current.path)
+    if (!original || original.status === current.status) continue
+    changes.push({
+      project: current.project,
+      path: current.path,
+      before: original.status,
+      after: current.status,
+    })
+  }
+  return changes
 }
 
 function branchOf(cwd: string): string | null {
@@ -1379,6 +1441,9 @@ export async function run(opts: {
   let status = 'failed'
   let error: string | null = null
   let failureKind: ReturnType<typeof classify> | null = null
+  // Start after orch's own worktree and hook setup, immediately before the
+  // vendor process: changes across this interval are attributable to the run.
+  const outsideWriteBefore = snapshotRegisteredCheckouts()
 
   try {
     const p = Bun.spawn([a.bin, ...argv], {
@@ -1591,6 +1656,18 @@ export async function run(opts: {
     if (timer) clearTimeout(timer)
     if (killer) clearTimeout(killer)
     if (proc) live.delete(proc)
+
+    try {
+      const outsideWrites = changedRegisteredCheckouts(
+        outsideWriteBefore, snapshotRegisteredCheckouts(),
+      )
+      db().query('UPDATE run SET outside_worktree_writes=? WHERE id=?')
+        .run(JSON.stringify(outsideWrites), claim.id)
+    } catch (e) {
+      // Observation is never enforcement. Even its own database write may not
+      // replace the worker's actual outcome with a monitoring failure.
+      console.error(`orch: could not record outside-worktree writes for run ${claim.id}: ${e}`)
+    }
 
     // The directory contains no input and is useful only while the vendor is
     // alive. Remove it after readSession has had the chance to derive any

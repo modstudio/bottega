@@ -198,6 +198,10 @@ export function applySchema(d: Database): void {
    * NULL means it counts. Any text means it does not.
    */
   addColumn(d, 'run', 'evidence_excluded', 'TEXT')
+  // JSON changes in registered main-checkout porcelain state observed while
+  // the worker was alive. `[]` means the check ran and found nothing; NULL is
+  // reserved for old rows and runs that ended before observation could start.
+  addColumn(d, 'run', 'outside_worktree_writes', 'TEXT')
   // A completed target task must keep its provenance. NULL is still active;
   // an ISO timestamp is resolved, so absence never has to stand for completion.
   addColumn(d, 'port_ref', 'resolved_at', 'TEXT')
@@ -484,6 +488,7 @@ const RUN_DDL = `CREATE TABLE run (
       model         TEXT,
       run_token     TEXT,
       evidence_excluded TEXT,
+      outside_worktree_writes TEXT,
       agent_pid     INTEGER,
       mcp           INTEGER,
       mcp_server    TEXT,
