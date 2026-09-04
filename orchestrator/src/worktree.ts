@@ -26,7 +26,7 @@ import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, readFileSync,
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, join, resolve } from 'node:path'
 import { db, pidAlive, ROOT } from './db.ts'
-import { projectAt, type WorktreeTool } from './projects.ts'
+import { createHasPlaceholder, projectAt, type WorktreeCreate, type WorktreeTool } from './projects.ts'
 import { runRecipe, teardownRecipe, dbNameFor, type Recipe } from './recipe.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
 
@@ -521,20 +521,49 @@ export function orphanSafety(path: string, repoRoot: string, trunk: string): Orp
  * the first half of setup either way.
  */
 /**
- * Fill a project's command template and run it.
- *
- * `sh -c`, deliberately: these templates are written by whoever registered the
- * project, they are configuration rather than input, and they need a shell
- * because that is how their own documentation spells them
- * (`WORKTREE_SEED=... scripts/worktree add ...`). Anything reaching here that
- * a stranger could influence would be a different problem entirely — a project
- * row is as trusted as the code in the checkout it points at.
+ * Fill and run a trusted shell declaration. Create reaches this only through
+ * the registration-validated pipeline escape hatch; remove and sweep remain
+ * lifecycle shell templates outside DEV-182's create-command migration.
  */
-function runTool(
+function runShellTool(
   template: string, vars: Record<string, string>, cwd: string,
 ): { ok: boolean; out: string; stdout: string } {
   const cmd = fillTool(template, vars)
   const p = Bun.spawnSync(['sh', '-c', cmd], { cwd, stdout: 'pipe', stderr: 'pipe' })
+  const stdout = p.stdout.toString()
+  const out = `${stdout}${p.stderr.toString()}`.trim()
+  return { ok: p.exitCode === 0, out, stdout }
+}
+
+function fillArg(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{(\w+)\}/g, (_placeholder, key: string) => vars[key] ?? '')
+}
+
+/** Render the declared process argv. Empty strings remain real argv entries. */
+export function createArgv(
+  create: WorktreeCreate, vars: Record<string, string>,
+): string[] {
+  if ('pipeline' in create) return ['sh', '-c', fillTool(create.pipeline, vars)]
+  const args: string[] = []
+  for (const arg of create.args) {
+    if (typeof arg === 'string') {
+      args.push(fillArg(arg, vars))
+    } else if ('expand' in arg) {
+      // The only call to shellWords: splitting is possible only when the
+      // declaration visibly selects the explicit seed-expansion argument.
+      args.push(...expandedSeed(vars[arg.expand] ?? ''))
+    } else if (vars[arg.omitWhenEmpty]) {
+      args.push(fillArg(arg.value, vars))
+    }
+  }
+  return [create.command, ...args]
+}
+
+function runCreateTool(
+  create: WorktreeCreate, vars: Record<string, string>, cwd: string,
+): { ok: boolean; out: string; stdout: string } {
+  const argv = createArgv(create, vars)
+  const p = Bun.spawnSync(argv, { cwd, stdout: 'pipe', stderr: 'pipe' })
   const stdout = p.stdout.toString()
   const out = `${stdout}${p.stderr.toString()}`.trim()
   return { ok: p.exitCode === 0, out, stdout }
@@ -563,10 +592,10 @@ function shSingleQuote(value: string): string {
  * Split a seed the way the shell splits words, honouring quotes inside the spec.
  *
  * `--tables='a,b'` and a value containing a space stay one word. Whitespace
- * splits; `;` and other operators do not — each resulting word is quoted
- * before it reaches `sh -c`, so they never become shell syntax.
+ * splits; `;` and other operators remain ordinary characters in the resulting
+ * argv because the structured create path never invokes a shell.
  */
-export function shellWords(spec: string): string[] {
+function shellWords(spec: string): string[] {
   const words: string[] = []
   let current = ''
   let started = false
@@ -614,23 +643,21 @@ export function shellWords(spec: string): string[] {
   return words
 }
 
+function expandedSeed(seed: string): string[] {
+  return shellWords(seed)
+}
+
 /**
  * How a seed reaches the project's tool.
  *
- * The create template is the project's declaration of how it wants its seed
- * delivered, not orch's. fillTool already tracks quote state so it can honour
- * that: an unquoted `{seed}` means separate argv, a quoted `{seed}` means one
- * value. Always-splitting would impose one project's calling convention on a
- * project that does not share it.
- *
- * THE ARGV THE RESOLVER SEES EQUALS THE ARGV THE CREATE TEMPLATE PRODUCES
- * for the same seed.
+ * Expansion is declaration-driven. A normal argument passes the seed once;
+ * only the explicit `{ expand: 'seed' }` form enters expandedSeed.
  */
-export function seedArgv(template: string | undefined, seed: string): string[] {
-  if (!template) return [seed]
-  const offset = template.indexOf('{seed}')
-  if (offset < 0 || quoteAt(template, offset) !== null) return [seed]
-  return shellWords(seed)
+export function seedArgv(create: WorktreeCreate | undefined, seed: string): string[] {
+  if (!create || !('command' in create)) return [seed]
+  return create.args.some((arg) => typeof arg === 'object' && 'expand' in arg)
+    ? expandedSeed(seed)
+    : [seed]
 }
 
 /** Fill a trusted project command without running it. */
@@ -640,9 +667,6 @@ export function fillTool(template: string, vars: Record<string, string>): string
     const quote = quoteAt(template, offset)
     if (quote === "'") return value.replace(/'/g, "'\\''")
     if (quote === '"') return value.replace(/[\\"$`]/g, '\\$&')
-    // Unquoted {seed} interpolates as separately quoted words, so a multi-option
-    // spec reaches the tool as multiple argv — the same list seedArgv produces.
-    if (k === 'seed') return seedArgv(template, value).map(shSingleQuote).join(' ')
     return shSingleQuote(value)
   })
 }
@@ -666,8 +690,8 @@ export function toolFor(cwd: string): WorktreeTool | null {
  * project tool. The tool's usage text is its declaration that the subcommand
  * exists; an older tool with no resolver gets no invented verdict from orch.
  *
- * The argv after `resolve` is seedArgv of the create template: the same words
- * the filled create command will pass. That is not orch parsing the seed
+ * The argv after `resolve` is seedArgv of the create declaration: the same words
+ * the create command will pass. That is not orch parsing the seed
  * grammar — it is delivering the spec the way the project declared it wants
  * the spec delivered.
  */
@@ -760,10 +784,10 @@ function createWithToolUnlocked(
     return createFromRecipe(tool, tool.recipe, repoRoot, runId, key, baseRef, record)
   }
 
-  if (baseRef && !tool.create.includes('{base}')) {
+  if (baseRef && !createHasPlaceholder(tool.create, 'base')) {
     throw new Error(
       `this project's command-based worktree path cannot honor --base because its create ` +
-      `template does not contain {base}`,
+      `arguments do not declare {base}`,
     )
   }
 
@@ -776,11 +800,11 @@ function createWithToolUnlocked(
   // Without an explicit request, some tools deliberately resolve their own
   // floor; HEAD is only the template default, and the created tree is inspected
   // below before its base is recorded.
-  const base = baseRef && tool.create.includes('{base}')
+  const base = baseRef && createHasPlaceholder(tool.create, 'base')
     ? resolveBase(repoRoot, baseRef)
     : git(['rev-parse', 'HEAD'], repoRoot)
   const vars = { branch, name, base, seed: seed ?? '', key: key ?? '', path: '' }
-  const r = runTool(tool.create, vars, repoRoot)
+  const r = runCreateTool(tool.create, vars, repoRoot)
   if (!r.ok) throw new Error(`the project's worktree tool failed:\n${r.out.slice(-1500)}`)
 
   /**
@@ -1222,7 +1246,7 @@ export function removeWithTool(
     return removeWorktree(w, keepBranch)
   }
 
-  const r = runTool(tool.remove, { name, branch: w.branch, path: w.path }, w.repoRoot)
+  const r = runShellTool(tool.remove, { name, branch: w.branch, path: w.path }, w.repoRoot)
   if (r.ok && !existsSync(w.path)) {
     return { removed: true, detail: w.path, ...(r.out ? { output: r.out } : {}) }
   }
@@ -1285,7 +1309,7 @@ export function removeFor(
 /** Reclaim orphans the project knows about — databases, containers, metadata. */
 export function sweepWithTool(tool: WorktreeTool, repoRoot: string): string {
   if (!tool.sweep) return ''
-  return runTool(tool.sweep, {}, repoRoot).out
+  return runShellTool(tool.sweep, {}, repoRoot).out
 }
 
 export function removeWorktree(w: Worktree, keepBranch = false): { removed: boolean; detail: string } {

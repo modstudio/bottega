@@ -16,7 +16,7 @@ import { join, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
-import { projectAt, projectByName, projects } from './projects.ts'
+import { createHasPlaceholder, projectAt, projectByName, projects } from './projects.ts'
 import { resolveBase, repoRootOf, removeBranch, unmergedBranch,
          checkoutHasUncommittedWork, callerDrift } from './worktree.ts'
 import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
@@ -653,8 +653,8 @@ async function reportContinuedRun(childId: number, jobName: string): Promise<voi
 
 function baseHelp(description: string): string {
   const create = projectAt(process.cwd())?.settings.worktree?.create
-  return create && !create.includes('{base}')
-    ? `${description} (unsupported for this project's create template: no {base})`
+  return create && !createHasPlaceholder(create, 'base')
+    ? `${description} (unsupported for this project's create arguments: no {base})`
     : description
 }
 
@@ -1621,7 +1621,7 @@ switch (cmd) {
    */
   case 'project': {
     const { projects, upsertProject, removeProject, sniffStack, projectByName,
-            worktreeWarnings } = await import('./projects.ts')
+            worktreeWarnings, validateProjectSettings } = await import('./projects.ts')
     const sub = argv[1] ?? 'list'
 
     if (sub === 'list') {
@@ -1738,6 +1738,8 @@ switch (cmd) {
         canon: has('no-canon') ? false : has('canon') ? true : p.canon,
         settings,
       }
+      const malformed = validateProjectSettings(candidate.settings)
+      if (malformed.length) throw new Error(malformed.join('\n'))
       const incomplete = worktreeWarnings(candidate).filter((w) =>
         w.startsWith('has a create command but no branch template') ||
         w.startsWith('has a create command with a {seed} placeholder but no seeds list'))

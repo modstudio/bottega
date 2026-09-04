@@ -30,7 +30,7 @@ import {
   type WorkerReply,
 } from './contract.ts'
 import { CALIBRATION_SUFFIX_RESERVE_BYTES, calibrationLine, reviewCalibration } from './review.ts'
-import { projectAt, stackAt } from './projects.ts'
+import { createHasPlaceholder, projectAt, stackAt } from './projects.ts'
 import { docsForRun, docsMarkdown } from './docs.ts'
 
 export type RunResult = {
@@ -385,10 +385,10 @@ export function preflight(
       `  orch project set ${project!.name} --settings '{"worktree":{"branch":"<template>"}}'`,
     )
   }
-  if (baseRef && tool?.create && !tool.create.includes('{base}')) {
+  if (baseRef && tool?.create && !createHasPlaceholder(tool.create, 'base')) {
     problems.push(
       `this project's command-based worktree path cannot honor --base because its create ` +
-      `template does not contain {base}`,
+      `arguments do not declare {base}`,
     )
   }
   if (writesJob && tool?.branch?.includes('{key}') && !key) {
@@ -403,9 +403,9 @@ export function preflight(
       `  --seed ${tool.seeds.join('\n  --seed ')}\n\n` +
       `Choosing is the architect's call: it depends on what the task touches.`,
     )
-  } else if (writesJob && tool?.create?.includes('{seed}') && !effectiveSeed) {
+  } else if (writesJob && createHasPlaceholder(tool?.create, 'seed') && !effectiveSeed) {
     problems.push(
-      `this project's worktree create command contains {seed}, so a seed is required.\n` +
+      `this project's worktree create arguments contain {seed}, so a seed is required.\n` +
       `  --seed <value>`,
     )
   } else if (!writesJob && tool?.seeds?.length && !effectiveSeed) {

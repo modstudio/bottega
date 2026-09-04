@@ -98,16 +98,34 @@ export type ProjectSettings = {
 }
 
 /**
- * A project's own worktree lifecycle, as commands.
+ * One argument in a project's create command.
  *
- * Templates rather than arguments, because these tools do not agree on argument
- * order and never will: one takes the seed in the environment
- * (`WORKTREE_SEED=...`), another takes it positionally. A template lets each
- * project spell its own call, and keeps orch from encoding one project's
- * grammar as everybody's.
- *
- * Placeholders: `{branch}` `{name}` `{base}` `{seed}` `{path}`.
+ * A string is always passed, including when one of its placeholders is empty.
+ * The other two forms make the exceptional behaviours visible at the argument
+ * that requests them: omission names the empty value that removes the argument,
+ * and expansion is the one deliberate boundary where a seed string becomes
+ * several argv entries.
  */
+export type WorktreeCreateArg = string | {
+  value: string
+  omitWhenEmpty: 'branch' | 'name' | 'base' | 'seed' | 'key' | 'path'
+} | {
+  expand: 'seed'
+}
+
+export type WorktreeCreate = {
+  command: string
+  args: WorktreeCreateArg[]
+} | {
+  /**
+   * Narrow escape hatch for the one lifecycle tool whose input is piped JSON.
+   * Registration refuses this form unless it contains a real pipeline; an
+   * ordinary command must use command plus args.
+   */
+  pipeline: string
+}
+
+/** A project's own worktree lifecycle, as declared commands. */
 export type WorktreeTool = {
   /**
    * Creates and fully provisions one. Must print the created path.
@@ -117,7 +135,7 @@ export type WorktreeTool = {
    * whole point of a project being able to adopt this rather than write its
    * fourth several-hundred-line worktree script.
    */
-  create?: string
+  create?: WorktreeCreate
   /**
    * What this project's worktree NEEDS, for bottega to provide it.
    *
@@ -247,6 +265,108 @@ export function removeProject(name: string): boolean {
   return db().query('DELETE FROM project WHERE name = ?').run(name).changes > 0
 }
 
+const CREATE_VARS = new Set(['branch', 'name', 'base', 'seed', 'key', 'path'])
+
+function placeholders(template: string): string[] {
+  return [...template.matchAll(/\{(\w+)\}/g)].map((match) => match[1]!)
+}
+
+function hasPipelineOperator(template: string): boolean {
+  let quote: "'" | '"' | null = null
+  for (let i = 0; i < template.length; i++) {
+    const char = template[i]
+    if (char === '\\' && quote !== "'") {
+      i++
+    } else if (char === "'" && quote !== '"') {
+      quote = quote === "'" ? null : "'"
+    } else if (char === '"' && quote !== "'") {
+      quote = quote === '"' ? null : '"'
+    } else if (char === '|' && quote === null && template[i + 1] !== '|') {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * Refuse malformed lifecycle declarations while the operator is registering
+ * them, before a worker is waiting on a vendor clone to discover the mistake.
+ */
+export function validateProjectSettings(settings: ProjectSettings): string[] {
+  const create = settings.worktree?.create as unknown
+  if (create === undefined) return []
+  const at = 'worktree.create'
+  if (typeof create === 'string') {
+    return [`${at} must be an object with command and args; shell strings are not commands`]
+  }
+  if (!create || typeof create !== 'object' || Array.isArray(create)) {
+    return [`${at} must be an object with command and args`]
+  }
+  const value = create as Record<string, unknown>
+  if ('pipeline' in value) {
+    if (Object.keys(value).length !== 1 || typeof value.pipeline !== 'string' || !value.pipeline.trim()) {
+      return [`${at}.pipeline must be the declaration's only key and must be a non-empty string`]
+    }
+    if (!hasPipelineOperator(value.pipeline)) {
+      return [`${at}.pipeline is only for a command that uses a pipe; use command and args`]
+    }
+    const unknown = placeholders(value.pipeline).find((name) => !CREATE_VARS.has(name))
+    if (unknown) return [`${at}.pipeline contains unknown placeholder {${unknown}}`]
+    const capability = placeholders(value.pipeline).find((name) => name === 'base' || name === 'seed')
+    return capability
+      ? [`${at}.pipeline cannot declare {${capability}} semantics; use command and args`]
+      : []
+  }
+  const problems: string[] = []
+  if (typeof value.command !== 'string' || !value.command.trim()) {
+    problems.push(`${at}.command must be a non-empty string`)
+  } else if (/\s/.test(value.command)) {
+    problems.push(`${at}.command must name one executable; put each argument in args`)
+  } else if (/(^|\/)(?:ba|z|da)?sh$/.test(value.command) &&
+             Array.isArray(value.args) && value.args.includes('-c')) {
+    problems.push(`${at} may not disguise a shell string as ${value.command} -c; use command and args`)
+  }
+  if (!Array.isArray(value.args)) {
+    problems.push(`${at}.args must be an array`)
+    return problems
+  }
+  if (Object.keys(value).some((key) => key !== 'command' && key !== 'args')) {
+    problems.push(`${at} may contain only command and args`)
+  }
+  value.args.forEach((arg, index) => {
+    const argAt = `${at}.args[${index}]`
+    if (typeof arg === 'string') {
+      const unknown = placeholders(arg).find((name) => !CREATE_VARS.has(name))
+      if (unknown) problems.push(`${argAt} contains unknown placeholder {${unknown}}`)
+      return
+    }
+    if (!arg || typeof arg !== 'object' || Array.isArray(arg)) {
+      problems.push(`${argAt} must be a string, omit-when-empty argument, or seed expansion`)
+      return
+    }
+    const item = arg as Record<string, unknown>
+    if ('expand' in item) {
+      if (Object.keys(item).length !== 1 || item.expand !== 'seed') {
+        problems.push(`${argAt}.expand must be exactly "seed"`)
+      }
+      return
+    }
+    const variable = item.omitWhenEmpty
+    if (Object.keys(item).some((key) => key !== 'value' && key !== 'omitWhenEmpty') ||
+        typeof item.value !== 'string' || typeof variable !== 'string' ||
+        !CREATE_VARS.has(variable)) {
+      problems.push(`${argAt} must have a string value and one valid omitWhenEmpty variable`)
+      return
+    }
+    if (!placeholders(item.value).includes(variable)) {
+      problems.push(`${argAt}.value must contain {${variable}}, the value named by omitWhenEmpty`)
+    }
+    const unknown = placeholders(item.value).find((name) => !CREATE_VARS.has(name))
+    if (unknown) problems.push(`${argAt}.value contains unknown placeholder {${unknown}}`)
+  })
+  return problems
+}
+
 /**
  * Guess a stack by looking at what a checkout contains.
  *
@@ -297,6 +417,7 @@ export function worktreeWarnings(p: Project): string[] {
   const w = p.settings.worktree
   if (!w) return []
   const out: string[] = []
+  out.push(...validateProjectSettings(p.settings))
   if (w.create && !w.remove) {
     out.push('has a create command but no remove: orch cannot tear down what it makes')
   }
@@ -319,9 +440,22 @@ export function worktreeWarnings(p: Project): string[] {
     out.push('has a create command but no branch template, so runs get orch/<id> - '
       + 'which a project enforcing a branch format will reject')
   }
-  if (w.create?.includes('{seed}') && !w.seeds?.length) {
+  if (createHasPlaceholder(w.create, 'seed') && !w.seeds?.length) {
     out.push('has a create command with a {seed} placeholder but no seeds list, so orch cannot '
       + 'say which values are valid')
   }
   return out
+}
+
+/** Capabilities declared by structured argv, never inferred from shell text. */
+export function createHasPlaceholder(
+  create: WorktreeCreate | undefined,
+  variable: 'branch' | 'name' | 'base' | 'seed' | 'key' | 'path',
+): boolean {
+  if (!create || typeof create !== 'object' || !('command' in create)) return false
+  return create.args.some((arg) => {
+    if (typeof arg === 'string') return placeholders(arg).includes(variable)
+    if ('expand' in arg) return arg.expand === variable
+    return placeholders(arg.value).includes(variable)
+  })
 }

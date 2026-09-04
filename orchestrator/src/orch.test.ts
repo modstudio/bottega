@@ -22,6 +22,16 @@ import { createHash, randomUUID } from 'node:crypto'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import type { WorktreeCreate, WorktreeCreateArg } from './projects.ts'
+
+const declaredCreate = (command: string, args: WorktreeCreateArg[]): WorktreeCreate =>
+  ({ command, args })
+
+// Some lifecycle tests need compound shell setup in a scratch repository. The
+// production registration path refuses this shape; these tests bypass the
+// register deliberately because the compound script is their fixture.
+const compoundCreate = (script: string): WorktreeCreate =>
+  ({ command: 'sh', args: ['-c', script] })
 
 const gitEnvironmentVariables = [
   'GIT_OBJECT_DIRECTORY',
@@ -293,7 +303,7 @@ const { candidates, weightCase, scoreboard, median, evidenceFor, pick,
         NOISE_BAND, QUALITY_STEP, MIN_SAMPLE, OUTPUT_RESERVE, EVIDENCE_WINDOW,
         STANDING_EXPLORE_RATE } = await import('./route.ts')
 const { guide } = await import('./guide.ts')
-const { projects, projectAt, stackAt, upsertProject } = await import('./projects.ts')
+const { projects, projectAt, projectByName, stackAt, upsertProject } = await import('./projects.ts')
 const { dbNameFor, recipeNotes, runRecipe, fill } = await import('./recipe.ts')
 const { JOBS } = await import('./jobs.ts')
 const { runDetail, state } = await import('./serve.ts')
@@ -312,7 +322,7 @@ const { recordReview, recordReviews, triageFinding, completeReview, reviewCalibr
 const { ask } = await import('./ask.ts')
 const { checkMessages, messageArchitect, messagesForRun } = await import('./mailbox.ts')
 const { orphanSafety, repoRootOf, createWorktree, createWithTool, resolveBase, fillTool,
-        seedArgv, shellWords, worktreeGitDir, prepareWorktreeObjects, prepareSharedRefGuard,
+        seedArgv, createArgv, worktreeGitDir, prepareWorktreeObjects, prepareSharedRefGuard,
         workerSharedGitRoots,
         carryWorkingState, withWorktreeCreateLock, withProjectLock, projectLockState,
         unmergedBranch, assertCallerAncestry, checkoutHasUncommittedWork, callerDrift,
@@ -865,19 +875,6 @@ function workerReply(overrides: Record<string, unknown> = {}): Record<string, un
     deviations: null, tests: { command: 'bun test', ran: true, passed: true, detail: null },
     blockers: null, ...overrides,
   }
-}
-
-/** The argv `sh -c` actually produces from a filled create command. */
-function argvOfFilled(command: string): string[] {
-  const p = Bun.spawnSync(['sh', '-c', `printf '%s\\0' ${command}`], {
-    stdout: 'pipe', stderr: 'pipe',
-  })
-  if (p.exitCode !== 0) {
-    throw new Error(p.stderr.toString().trim() || `exit ${p.exitCode}`)
-  }
-  const parts = p.stdout.toString().split('\0')
-  if (parts.at(-1) === '') parts.pop()
-  return parts
 }
 
 describe('failure classification', () => {
@@ -3716,7 +3713,7 @@ describe('detached run collection', () => {
       name: 'requires-seed', path: process.cwd(),
       settings: {
         worktree: {
-          create: 'scripts/worktree create {branch} {seed}', branch: 'task/{id}',
+          create: declaredCreate('scripts/worktree', ['create', '{branch}', '{seed}']), branch: 'task/{id}',
           seeds: ['small', 'full'],
         },
       },
@@ -3800,7 +3797,7 @@ describe('detached run collection', () => {
       name: 'cannot-base', path: process.cwd(),
       settings: {
         worktree: {
-          create: 'scripts/worktree create {branch}', branch: 'feature/{id}',
+          create: declaredCreate('scripts/worktree', ['create', '{branch}']), branch: 'feature/{id}',
         },
       },
     })
@@ -3809,7 +3806,7 @@ describe('detached run collection', () => {
     expect(r.code).toBe(0)
     expect(r.out).toContain(
       "--base <ref>     base an implement worktree on this verified git ref " +
-      "(unsupported for this project's create template: no {base})",
+      "(unsupported for this project's create arguments: no {base})",
     )
   })
 
@@ -3818,7 +3815,7 @@ describe('detached run collection', () => {
       name: 'can-base', path: process.cwd(),
       settings: {
         worktree: {
-          create: 'scripts/worktree create {branch} {base}', branch: 'feature/{id}',
+          create: declaredCreate('scripts/worktree', ['create', '{branch}', '{base}']), branch: 'feature/{id}',
         },
       },
     })
@@ -3889,7 +3886,7 @@ describe('detached run collection', () => {
       name: 'early-drift', path: repo,
       settings: {
         trunk: 'main',
-        worktree: { create: 'scripts/worktree create {branch}', branch: 'task/{id}' },
+        worktree: { create: declaredCreate('scripts/worktree', ['create', '{branch}']), branch: 'task/{id}' },
       },
     })
 
@@ -4440,7 +4437,7 @@ describe('detached run collection', () => {
       name: 'cannot-base', path: process.cwd(),
       settings: {
         worktree: {
-          create: 'scripts/worktree create {branch}', branch: 'feature/{id}',
+          create: declaredCreate('scripts/worktree', ['create', '{branch}']), branch: 'feature/{id}',
         },
       },
     })
@@ -4457,7 +4454,7 @@ describe('detached run collection', () => {
     upsertProject({ name: 'warned', path: process.cwd() })
     const r = orch(
       'project', 'set', 'warned', '--settings',
-      JSON.stringify({ worktree: { create: 'scripts/worktree create {branch} {seed}' } }),
+      JSON.stringify({ worktree: { create: declaredCreate('scripts/worktree', ['create', '{branch}', '{seed}']) } }),
     )
     expect(r.code).toBe(1)
     expect(r.err).toContain('has a create command but no branch template')
@@ -4471,7 +4468,7 @@ describe('detached run collection', () => {
     upsertProject({ name: 'warned', path: process.cwd() })
     const r = orch(
       'project', 'set', 'warned', '--settings',
-      JSON.stringify({ worktree: { create: 'scripts/worktree create {branch} {seed}' } }),
+      JSON.stringify({ worktree: { create: declaredCreate('scripts/worktree', ['create', '{branch}', '{seed}']) } }),
       '--allow-incomplete',
     )
     expect(r.code).toBe(0)
@@ -4480,8 +4477,40 @@ describe('detached run collection', () => {
     const saved = db().query('SELECT settings FROM project WHERE name=?').get('warned') as
       { settings: string }
     expect(JSON.parse(saved.settings)).toEqual({
-      worktree: { create: 'scripts/worktree create {branch} {seed}' },
+      worktree: { create: declaredCreate('scripts/worktree', ['create', '{branch}', '{seed}']) },
     })
+  })
+
+  test('project set refuses legacy and malformed create declarations at registration', () => {
+    upsertProject({ name: 'malformed-create', path: process.cwd() })
+    for (const [create, message] of [
+      ['scripts/worktree create {branch}', 'shell strings are not commands'],
+      [{ command: 'scripts/worktree create', args: ['{branch}'] }, 'must name one executable'],
+      [{ command: 'sh', args: ['-c', 'scripts/worktree create {branch}'] }, 'may not disguise a shell string'],
+      [{ pipeline: 'scripts/worktree create {branch}' }, 'only for a command that uses a pipe'],
+      [{ command: 'scripts/worktree', args: [{ value: '--base={base}', omitWhenEmpty: 'seed' }] },
+        'value must contain {seed}'],
+    ] as const) {
+      const r = orch(
+        'project', 'set', 'malformed-create', '--settings',
+        JSON.stringify({ worktree: { create } }), '--allow-incomplete',
+      )
+      expect(r.code).toBe(1)
+      expect(r.err).toContain(message)
+      expect(projectByName('malformed-create')!.settings).toEqual({})
+    }
+  })
+
+  test('project set admits the pipeline escape only for an actual pipeline', () => {
+    upsertProject({ name: 'pipeline-create', path: process.cwd() })
+    const pipeline = `printf '{"name":"{name}"}' | bun scripts/worktree.ts create`
+    const r = orch(
+      'project', 'set', 'pipeline-create', '--settings',
+      JSON.stringify({ worktree: { create: { pipeline }, branch: 'task/{id}' } }),
+      '--allow-incomplete',
+    )
+    expect(r.code).toBe(0)
+    expect(projectByName('pipeline-create')!.settings.worktree?.create).toEqual({ pipeline })
   })
 
   test('project set settings null deletes that key during a deep merge', () => {
@@ -5544,7 +5573,7 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
     const repo = mkdtempSync(join(tmpdir(), 'orch-no-branch-'))
     upsertProject({
       name: 'no-branch', path: repo,
-      settings: { worktree: { create: 'scripts/worktree create {branch}' } },
+      settings: { worktree: { create: declaredCreate('scripts/worktree', ['create', '{branch}']) } },
     })
     expect(() => fromRoot(() => preflight('implement', repo))).toThrow(
       'orch project set no-branch --settings \'{"worktree":{"branch":"<template>"}}\'',
@@ -5558,7 +5587,7 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
       name: 'no-base-placeholder', path: realpathSync(repo),
       settings: {
         worktree: {
-          create: 'scripts/worktree create {branch}', branch: 'task/{id}',
+          create: declaredCreate('scripts/worktree', ['create', '{branch}']), branch: 'task/{id}',
         },
       },
     })
@@ -5568,7 +5597,7 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
       )))
         .toThrow(
           "this project's command-based worktree path cannot honor --base because its " +
-          'create template does not contain {base}',
+          'create arguments do not declare {base}',
         )
     } finally {
       rmSync(repo, { recursive: true, force: true })
@@ -5592,7 +5621,7 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
       name: 'missing-arguments', path: repo,
       settings: {
         worktree: {
-          create: 'scripts/worktree create {branch} {seed}', branch: '{key}-orch-{id}',
+          create: declaredCreate('scripts/worktree', ['create', '{branch}', '{seed}']), branch: '{key}-orch-{id}',
           seeds: ['small', 'full'],
         },
       },
@@ -5622,7 +5651,7 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
       name: 'read-only-arguments', path: repo,
       settings: {
         worktree: {
-          create: 'scripts/worktree create {branch} {seed}', branch: '{key}-orch-{id}',
+          create: declaredCreate('scripts/worktree', ['create', '{branch}', '{seed}']), branch: '{key}-orch-{id}',
           seeds: ['none', 'small', 'full'],
         },
       },
@@ -5643,7 +5672,7 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
       name: 'read-only-no-none', path: repo,
       settings: {
         worktree: {
-          create: 'scripts/worktree create {branch} {seed}', branch: 'task/{id}',
+          create: declaredCreate('scripts/worktree', ['create', '{branch}', '{seed}']), branch: 'task/{id}',
           seeds: ['small', 'full'],
         },
       },
@@ -5662,7 +5691,7 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
     const { repo } = scratchRepo()
     upsertProject({
       name: 'read-only-unseeded', path: repo,
-      settings: { worktree: { create: 'scripts/worktree create {branch}', branch: 'task/{id}' } },
+      settings: { worktree: { create: declaredCreate('scripts/worktree', ['create', '{branch}']), branch: 'task/{id}' } },
     })
     expect(fromRoot(() => preflight(
       'review-lens', repo, undefined, undefined, undefined, false, false, 'safety',
@@ -5677,73 +5706,40 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
       expect(render("cmd '{name}'", { name: value })).toBe("cmd 'two words'\\'' ; echo nope'")
       expect(render('cmd "{name}"', { name: value })).toBe("cmd \"two words' ; echo nope\"")
     }
-    expect(fillTool('scripts/worktree add {seed}', {
-      seed: '--full --budget-mb=2000',
-    })).toBe("scripts/worktree add '--full' '--budget-mb=2000'")
-    expect(fillTool('scripts/worktree add {seed}', {
-      seed: '--bundle=tanach --bundle=word-bank',
-    })).toBe("scripts/worktree add '--bundle=tanach' '--bundle=word-bank'")
-    expect(fillTool("WORKTREE_SEED='{seed}' scripts/worktree add {branch}", {
-      seed: '--full --budget-mb=2000', branch: 'b',
-    })).toBe("WORKTREE_SEED='--full --budget-mb=2000' scripts/worktree add 'b'")
   })
 
-  test('registered create templates render safely for plain values', () => {
-    const root = mkdtempSync(join(tmpdir(), 'orch-render-templates-'))
-    const fixtures = [
-      { name: 'array-tool', create: 'echo \'{"cwd":"\'"$PWD"\'","name":"{name}"}\' | bun run scripts/worktree.ts create' },
-      { name: 'positional-tool', create: "scripts/worktree add {branch} '' {seed} --name={name} && echo $PWD/.claude/worktrees/{name}" },
-      { name: 'registered-only' },
-      { name: 'environment-tool', create: "WORKTREE_NAME_OVERRIDE={name} WORKTREE_SEED={seed} scripts/worktree add {branch}" },
-      { name: 'quoted-tool', create: 'bun run worktree create "{branch}"' },
-    ]
-    for (const fixture of fixtures) {
-      upsertProject({
-        name: fixture.name,
-        path: join(root, fixture.name),
-        settings: fixture.create ? { worktree: { create: fixture.create } } : {},
-      })
-    }
+  test('structured create declarations render argv without a shell', () => {
     const vars = {
       branch: 'technical/DEV-70-orch-804', seed: 'none', name: 'orch-804',
-      path: '/tmp/orch-804', base: 'main', key: 'DEV-70',
+      path: '/tmp/orch-804', base: '', key: 'DEV-70',
     }
-    const rendered = projects().map((project) => ({
-      name: project.name,
-      create: project.settings.worktree?.create
-        ? fillTool(project.settings.worktree.create, vars)
-        : null,
-    }))
-    try {
-      expect(rendered).toEqual([
-      {
-        name: 'array-tool',
-        create: 'echo \'{"cwd":"\'"$PWD"\'","name":"orch-804"}\' | bun run scripts/worktree.ts create',
-      },
-      {
-        name: 'environment-tool',
-        create: "WORKTREE_NAME_OVERRIDE='orch-804' WORKTREE_SEED='none' scripts/worktree add 'technical/DEV-70-orch-804'",
-      },
-      {
-        name: 'positional-tool',
-        create: "scripts/worktree add 'technical/DEV-70-orch-804' '' 'none' --name='orch-804' && echo $PWD/.claude/worktrees/'orch-804'",
-      },
-      { name: 'quoted-tool', create: 'bun run worktree create "technical/DEV-70-orch-804"' },
-      { name: 'registered-only', create: null },
-      ])
-    } finally {
-      rmSync(root, { recursive: true, force: true })
-    }
+    expect(createArgv(declaredCreate('scripts/worktree', [
+      'add', '{branch}', '{base}', { expand: 'seed' }, '--name={name}',
+    ]), vars)).toEqual([
+      'scripts/worktree', 'add', 'technical/DEV-70-orch-804', '', 'none', '--name=orch-804',
+    ])
+    expect(createArgv(declaredCreate('bun', [
+      'run', 'worktree', 'create', '{branch}',
+      { value: '--base={base}', omitWhenEmpty: 'base' },
+    ]), vars)).toEqual([
+      'bun', 'run', 'worktree', 'create', 'technical/DEV-70-orch-804',
+    ])
+    expect(createArgv(declaredCreate('bun', [
+      'run', 'worktree', 'create', '{branch}',
+      { value: '--base={base}', omitWhenEmpty: 'base' },
+    ]), { ...vars, base: 'abc123' })).toEqual([
+      'bun', 'run', 'worktree', 'create', 'technical/DEV-70-orch-804', '--base=abc123',
+    ])
   })
 
   test('preflight refuses a create placeholder without --seed even when no seeds are listed', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-no-seed-'))
     upsertProject({
       name: 'no-seed', path: repo,
-      settings: { worktree: { create: 'scripts/worktree create {seed}', branch: 'task/{id}' } },
+      settings: { worktree: { create: declaredCreate('scripts/worktree', ['create', '{seed}']), branch: 'task/{id}' } },
     })
     expect(() => fromRoot(() => preflight('implement', repo))).toThrow(
-      'contains {seed}, so a seed is required',
+      'contain {seed}, so a seed is required',
     )
     rmSync(repo, { recursive: true, force: true })
   })
@@ -5768,7 +5764,7 @@ exit 1
       name: 'custom-seed', path: repo,
       settings: {
         worktree: {
-          create: 'scripts/worktree create {seed}', branch: 'task/{id}',
+          create: declaredCreate('scripts/worktree', ['create', { expand: 'seed' }]), branch: 'task/{id}',
           seeds: ['none', 'minimal', 'full'],
         },
       },
@@ -5788,26 +5784,24 @@ exit 1
     rmSync(repo, { recursive: true, force: true })
   })
 
-  test('resolver argv equals create-template argv for a multi-word seed and a quoted space', () => {
-    const positional = "scripts/worktree add {branch} '' {seed} --name={name}"
-    const quoted = "WORKTREE_SEED='{seed}' scripts/worktree add {branch}"
+  test('resolver argv equals the explicitly expanded create argv', () => {
+    const positional = declaredCreate('scripts/worktree', [
+      'add', '{branch}', '{base}', { expand: 'seed' }, '--name={name}',
+    ])
+    const scalar = declaredCreate('env', [
+      'WORKTREE_SEED={seed}', 'scripts/worktree', 'add', '{branch}', '{base}',
+    ])
     const vars = { branch: 'b', name: 'n', base: '', key: '', path: '' }
     for (const seed of ['--full --budget-mb=2000', "--tables='hello world'"]) {
-      const filled = fillTool(positional, { ...vars, seed })
-      const createArgv = argvOfFilled(filled)
+      const rendered = createArgv(positional, { ...vars, seed })!
       const resolveArgv = seedArgv(positional, seed)
-      // create argv is: worktree, add, branch, empty-base, ...seed, --name=n
-      expect(createArgv.slice(4, -1)).toEqual(resolveArgv)
+      expect(rendered.slice(4, -1)).toEqual(resolveArgv)
     }
-    expect(shellWords('--full --budget-mb=2000')).toEqual(['--full', '--budget-mb=2000'])
-    expect(shellWords("--tables='hello world'")).toEqual(['--tables=hello world'])
-    expect(seedArgv(quoted, '--full --budget-mb=2000')).toEqual(['--full --budget-mb=2000'])
-    expect(seedArgv(quoted, "--tables='hello world'")).toEqual(["--tables='hello world'"])
-    expect(fillTool(quoted, { seed: '--full --budget-mb=2000', branch: 'b' }))
-      .toBe("WORKTREE_SEED='--full --budget-mb=2000' scripts/worktree add 'b'")
+    expect(seedArgv(scalar, '--full --budget-mb=2000')).toEqual(['--full --budget-mb=2000'])
+    expect(seedArgv(scalar, "--tables='hello world'")).toEqual(["--tables='hello world'"])
   })
 
-  test('a quoted {seed} in the create template keeps the seed as one resolve argv', () => {
+  test('a scalar seed argument keeps the seed as one resolve argv', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-quoted-seed-'))
     mkdirSync(join(repo, 'scripts'), { recursive: true })
     const received = join(repo, 'received-seed')
@@ -5826,7 +5820,7 @@ exit 1
       name: 'quoted-seed', path: repo,
       settings: {
         worktree: {
-          create: "WORKTREE_SEED='{seed}' scripts/worktree add {branch}",
+          create: declaredCreate('env', ['WORKTREE_SEED={seed}', 'scripts/worktree', 'add', '{branch}']),
           branch: 'task/{id}',
         },
       },
@@ -5852,7 +5846,7 @@ touch "${created}"
       name: 'rejected-seed', path: repo,
       settings: {
         worktree: {
-          create: 'scripts/worktree create {seed}', branch: 'task/{id}', seeds: ['full'],
+          create: declaredCreate('scripts/worktree', ['create', '{seed}']), branch: 'task/{id}', seeds: ['full'],
         },
       },
     })
@@ -5885,7 +5879,7 @@ exit 1
     chmodSync(tool, 0o755)
     upsertProject({
       name: 'unchecked-seed', path: repo,
-      settings: { worktree: { create: 'scripts/worktree create {seed}', branch: 'task/{id}' } },
+      settings: { worktree: { create: declaredCreate('scripts/worktree', ['create', '{seed}']), branch: 'task/{id}' } },
     })
     expect(() => fromRoot(() => preflight('implement', repo, 'minimal'))).toThrow(
       "the project's seed resolver rejected the seed or could not check it:\ncatalog unreachable",
@@ -5903,7 +5897,7 @@ echo 'Usage: scripts/worktree create [seed]'
     chmodSync(tool, 0o755)
     upsertProject({
       name: 'no-resolver', path: repo,
-      settings: { worktree: { create: 'scripts/worktree create {seed}', branch: 'task/{id}' } },
+      settings: { worktree: { create: declaredCreate('scripts/worktree', ['create', '{seed}']), branch: 'task/{id}' } },
     })
     expect(() => fromRoot(() => preflight('implement', repo, '--anything=project-specific')))
       .not.toThrow()
@@ -5916,7 +5910,7 @@ echo 'Usage: scripts/worktree create [seed]'
       name: 'good-tool', path: repo,
       settings: {
         worktree: {
-          create: 'scripts/worktree create {branch} {seed}', branch: 'task/{id}',
+          create: declaredCreate('scripts/worktree', ['create', '{branch}', '{seed}']), branch: 'task/{id}',
           seeds: ['small', 'full'],
         },
       },
@@ -5974,10 +5968,10 @@ echo 'Usage: scripts/worktree create [seed]'
     const tool = {
       branch: 'orch/{id}',
       seeds: ['none', 'full'],
-      create:
+      create: compoundCreate(
         `printf '%s' {seed} > "${received}" && ` +
         `${hermeticGitCommand} worktree add -b {branch} "${path}" HEAD >/dev/null && ` +
-        `echo "${path}"`,
+        `echo "${path}"`),
     }
     upsertProject({ name: 'read-only-tool-seed', path: repo, settings: { worktree: tool } })
     try {
@@ -6003,10 +5997,10 @@ echo 'Usage: scripts/worktree create [seed]'
       process.chdir(tree)
       const w = createWithTool(
         {
-          create:
+          create: compoundCreate(
             `${hermeticGitCommand} worktree add -b {branch} "${custom}" HEAD >/dev/null && ` +
             `echo "${custom}" && ` +
-            `echo 'Database cloned.' >&2 && echo 'task status not written' >&2`,
+            `echo 'Database cloned.' >&2 && echo 'task status not written' >&2`),
         },
         process.cwd(),
         735,
@@ -6026,9 +6020,9 @@ echo 'Usage: scripts/worktree create [seed]'
       process.chdir(tree)
       const w = createWithTool(
         {
-          create:
+          create: compoundCreate(
             `${hermeticGitCommand} worktree add -b {branch} "${custom}" HEAD >/dev/null && ` +
-            `echo "${custom}"`,
+            `echo "${custom}"`),
         },
         process.cwd(),
         657,
@@ -6048,9 +6042,9 @@ echo 'Usage: scripts/worktree create [seed]'
     try {
       const w = createWithTool(
         {
-          create:
+          create: compoundCreate(
             `${hermeticGitCommand} worktree add -b {branch} "${custom}" HEAD >/dev/null && ` +
-            `echo "${custom}"`,
+            `echo "${custom}"`),
         },
         repo, id, undefined, undefined, undefined,
         (created) => {
@@ -6074,9 +6068,9 @@ echo 'Usage: scripts/worktree create [seed]'
     try {
       expect(() => createWithTool(
         {
-          create:
+          create: compoundCreate(
             `${hermeticGitCommand} worktree add -b {branch} "${custom}" HEAD >/dev/null && ` +
-            `echo "${custom}"`,
+            `echo "${custom}"`),
         },
         repo, 920, undefined, undefined, undefined,
         () => { throw new Error('database write failed') },
@@ -6098,9 +6092,9 @@ echo 'Usage: scripts/worktree create [seed]'
       try {
         createWithTool(
           {
-            create:
+            create: compoundCreate(
               `${hermeticGitCommand} worktree add -b {branch} "${custom}" HEAD >/dev/null && ` +
-              `echo "${custom}"`,
+              `echo "${custom}"`),
           },
           repo, id, undefined, undefined, undefined,
           (created) => {
@@ -6137,16 +6131,16 @@ echo 'Usage: scripts/worktree create [seed]'
     const module = new URL('worktree.ts', import.meta.url).href
     const child = `
       const { createWithTool } = await import(process.argv[1])
-      createWithTool({ create: process.argv[4], branch: 'orch/{id}' }, process.argv[2], Number(process.argv[3]))
+      createWithTool({ create: JSON.parse(process.argv[4]), branch: 'orch/{id}' }, process.argv[2], Number(process.argv[3]))
     `
-    const create =
+    const create = compoundCreate(
       `if ! mkdir "${overlap}"; then echo 'creations overlapped' >&2; exit 19; fi; ` +
       `trap 'rmdir "${overlap}"' EXIT; sleep 0.15; ` +
       `${hermeticGitCommand} worktree add -b {branch} "${repo}/.claude/worktrees/{name}" HEAD ` +
-      `>/dev/null && echo "${repo}/.claude/worktrees/{name}"`
+      `>/dev/null && echo "${repo}/.claude/worktrees/{name}"`)
     try {
       const children = [910, 911, 912, 913].map((id) => Bun.spawn(
-        [process.execPath, '-e', child, module, repo, String(id), create],
+        [process.execPath, '-e', child, module, repo, String(id), JSON.stringify(create)],
         { env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' },
       ))
       const exits = await Promise.all(children.map((p) => p.exited))
@@ -6248,10 +6242,10 @@ echo 'Usage: scripts/worktree create [seed]'
     try {
       expect(() => createWithTool({
         branch: 'orch/{id}',
-        create:
+        create: compoundCreate(
           `${hermeticGitCommand} worktree add -b {branch} "${path}" HEAD >/dev/null && ` +
           `printf 'not HEAD\\n' > "${path}/kept.txt" && ` +
-          `printf 'from another tree\\n' > "${path}/contamination.txt" && echo "${path}"`,
+          `printf 'from another tree\\n' > "${path}/contamination.txt" && echo "${path}"`),
       }, repo, 914)).toThrow(/worktree verification failed:[\s\S]*kept\.txt[\s\S]*contamination\.txt/)
     } finally {
       rmSync(repo, { recursive: true, force: true })
@@ -6264,9 +6258,9 @@ echo 'Usage: scripts/worktree create [seed]'
     try {
       expect(() => createWithTool({
         branch: 'orch/{id}',
-        create:
+        create: compoundCreate(
           `${hermeticGitCommand} worktree add -b {branch} "${path}" HEAD >/dev/null && ` +
-          `printf broken > "$(git -C "${path}" rev-parse --git-path index)" && echo "${path}"`,
+          `printf broken > "$(git -C "${path}" rev-parse --git-path index)" && echo "${path}"`),
       }, repo, 915)).toThrow(/worktree verification failed: could not compare[\s\S]*index/)
     } finally {
       rmSync(repo, { recursive: true, force: true })
@@ -6281,7 +6275,7 @@ echo 'Usage: scripts/worktree create [seed]'
       expect(() => createWithTool(
         {
           branch: 'technical/{key}-orch-{id}',
-          create: `echo "${join(repo, 'missing-tree')}"`,
+          create: declaredCreate('echo', [join(repo, 'missing-tree')]),
           remove: 'scripts/worktree remove {branch}',
         },
         process.cwd(), 735, undefined, 'STO-993',
@@ -6301,9 +6295,9 @@ echo 'Usage: scripts/worktree create [seed]'
       const expected = resolveBase(process.cwd(), 'main')
       const w = createWithTool(
         {
-          create:
+          create: compoundCreate(
             `${hermeticGitCommand} worktree add -b {branch} "${custom}" {base} >/dev/null && ` +
-            `echo "${custom}"`,
+            `echo "${custom}"`),
           remove: 'git worktree remove {path}',
         },
         process.cwd(), 746, undefined, undefined, 'main',
@@ -6328,9 +6322,9 @@ echo 'Usage: scripts/worktree create [seed]'
 
       const w = createWithTool(
         {
-          create:
+          create: compoundCreate(
             `${hermeticGitCommand} worktree add -b {branch} "${custom}" tool-floor ` +
-            `>/dev/null && echo "${custom}"`,
+            `>/dev/null && echo "${custom}"`),
           remove: 'git worktree remove {path}',
         },
         tree, 746,
@@ -6347,7 +6341,7 @@ echo 'Usage: scripts/worktree create [seed]'
     const { repo, tree } = scratchRepo()
     try {
       expect(() => createWithTool(
-        { create: 'echo nowhere', branch: 'task/{id}' }, tree, 747,
+        { create: declaredCreate('echo', ['nowhere']), branch: 'task/{id}' }, tree, 747,
         undefined, undefined, 'main',
       )).toThrow('command-based worktree path cannot honor --base')
     } finally {
