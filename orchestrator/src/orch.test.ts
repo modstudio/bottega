@@ -1266,10 +1266,13 @@ describe('operational monitor record', () => {
        VALUES (?,?,?,?,?,?,?,?)`,
     ).run(prior, 'detector-unavailable', 'tasks-waiting-on-ruling',
       '2026-09-04T00:00:00Z', 0, 'already filed', 'reported', 'DEV-test')
-    for (let i = 0; i < 450; i++) addRun({
-      agent: 'codex', job: 'implement', status: 'stale',
-      startedAt: '2026-09-04T00:00:00Z',
-    })
+    let lastRunId = 0
+    for (let i = 0; i < 750; i++) {
+      lastRunId = addRun({
+        agent: 'codex', job: 'implement', status: 'stale',
+        startedAt: '2026-09-04T00:00:00Z',
+      })
+    }
 
     const cli = new URL('cli.ts', import.meta.url).pathname
     const run = Bun.spawnSync([process.execPath, cli, 'monitor', '--json'], {
@@ -1282,8 +1285,44 @@ describe('operational monitor record', () => {
     const output = run.stdout.toString()
     expect(output.length).toBeGreaterThan(65_536)
     const report = JSON.parse(output) as { conditions: unknown[]; errors: unknown[] }
-    expect(report.conditions.length).toBeGreaterThanOrEqual(450)
+    expect(report.conditions.length).toBeGreaterThanOrEqual(750)
     expect(run.exitCode).toBe(report.errors.length ? 1 : report.conditions.length ? 2 : 0)
+
+    const human = Bun.spawnSync([process.execPath, cli, 'monitor'], {
+      env: {
+        ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0', HUB_DB: hubDb,
+        PATH: `${binDir}:${process.env.PATH ?? ''}`,
+      },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    const humanOutput = human.stdout.toString()
+    expect(humanOutput.length).toBeGreaterThan(65_536)
+    expect(humanOutput).toContain(`stale-run  run:${lastRunId} `)
+    expect([1, 2]).toContain(human.exitCode)
+  })
+
+  test('pipes a complete large monitor history JSON document', () => {
+    const invocation = (db().query(
+      `INSERT INTO monitor_invocation (started_at,finished_at,trigger,findings,errors)
+       VALUES ('2026-09-04T00:00:00Z','2026-09-04T00:00:01Z','backstop',1,0) RETURNING id`,
+    ).get() as { id: number }).id
+    const detail = 'history-detail-'.repeat(5_500)
+    db().query(
+      `INSERT INTO monitor_condition
+       (invocation_id,kind,subject,condition_since,age_ms,detail,action)
+       VALUES (?,?,?,?,?,?,?)`,
+    ).run(invocation, 'stale-run', 'run:large-history', '2026-09-03T08:00:00Z', 57_600_000,
+      detail, 'reported')
+
+    const cli = new URL('cli.ts', import.meta.url).pathname
+    const run = Bun.spawnSync([process.execPath, cli, 'monitor', '--history', '--json'], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    const output = run.stdout.toString()
+    expect(output.length).toBeGreaterThan(65_536)
+    expect(JSON.parse(output)[0].conditions[0].detail).toBe(detail)
+    expect(run.exitCode).toBe(0)
   })
 
   test('reports a running row whose agent process is gone with elapsed time and output size', () => {
@@ -2224,6 +2263,48 @@ describe('port importer', () => {
         expect(missingPlan.refusals.map((issue: any) => issue.where)).toContain(join(incomplete, 'refs.json'))
         expect(missingPlan.uncoveredSpans).toHaveLength(6)
       } finally { rmSync(incomplete, { recursive: true, force: true }) }
+    } finally { rmSync(source, { recursive: true, force: true }) }
+  })
+
+  test('CLI dry-run pipes a complete large JSON refusal plan', () => {
+    registered()
+    const source = mkdtempSync(join(tmpdir(), 'port-import-large-refusal-invented-'))
+    try {
+      const contents = fixture({
+        refs: JSON.stringify({
+          'BET-7': {
+            source: 'missing-invented', commits: [], paths: [], notes: 'unresolved source',
+          },
+        }),
+        state: JSON.stringify({ pairs: {
+          'alpha-invented->beta-invented': {
+            lastPortedSha: 'abc', scannedAt: '2026-01-01', skipped: [],
+            note: 'large-excluded-value-'.repeat(3_500),
+          },
+        } }),
+      })
+      for (const [name, body] of Object.entries({
+        'doctrine.md': contents.doctrine, 'differences.md': contents.differences,
+        'backports.md': contents.backports, 'refs.json': contents.refs,
+        'state.json': contents.state, 'projects.md': contents.projects,
+      })) writeFileSync(join(source, name), body)
+
+      const cli = new URL('cli.ts', import.meta.url).pathname
+      const run = Bun.spawnSync(
+        [process.execPath, cli, 'port', 'import', source, '--dry-run', '--json'],
+        {
+          env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+          stdout: 'pipe', stderr: 'pipe',
+        },
+      )
+      const output = run.stdout.toString()
+      expect(output.length).toBeGreaterThan(65_536)
+      const plan = JSON.parse(output)
+      expect(plan.refusals).toContainEqual(expect.objectContaining({
+        what: 'project "missing-invented"',
+      }))
+      expect(plan.exclusions[0].value).toHaveLength('large-excluded-value-'.length * 3_500)
+      expect(run.exitCode).toBe(1)
     } finally { rmSync(source, { recursive: true, force: true }) }
   })
 

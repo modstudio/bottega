@@ -1275,10 +1275,10 @@ switch (cmd) {
           uncoveredSpans,
         }
       }
-      const printPlan = () => {
+      const printPlan = async () => {
         const visible = visiblePlan()
         const uncoveredSpans = visible.uncoveredSpans
-        if (has('json')) { console.log(JSON.stringify(visible, null, 2)); return }
+        if (has('json')) { await writeStdout(`${JSON.stringify(visible, null, 2)}\n`); return }
         console.log(`pairs (${plan.pairs.length})`)
         for (const row of plan.pairs) console.log(`  ${row.source} -> ${row.target}  ids ${row.sourceId}->${row.targetId}`)
         console.log(`baselines (${plan.baselines.length})`)
@@ -1313,7 +1313,7 @@ switch (cmd) {
         }
       }
       if (has('dry-run')) {
-        printPlan()
+        await printPlan()
         if (plan.refusals.length) process.exitCode = 1
         break
       }
@@ -1322,7 +1322,7 @@ switch (cmd) {
       } catch (error) {
         if (!(error instanceof ImportRefusalError)) throw error
         plan.refusals.push(...error.refusals.filter((refusal) => !plan.refusals.includes(refusal)))
-        printPlan()
+        await printPlan()
         process.exitCode = 1
         break
       }
@@ -2244,7 +2244,7 @@ switch (cmd) {
     const { monitor, monitorHistory } = await import('./monitor.ts')
     if (has('history')) {
       const rows = monitorHistory(Number(flag('limit') ?? 20))
-      if (has('json')) console.log(JSON.stringify(rows))
+      if (has('json')) await writeStdout(`${JSON.stringify(rows)}\n`)
       else for (const row of rows as any[]) {
         console.log(`monitor ${row.id}  ${row.started_at}  ${row.trigger}  ${row.findings} found, ${row.errors} errors`)
         for (const condition of row.conditions) {
@@ -2257,15 +2257,16 @@ switch (cmd) {
     const result = await monitor(has('backstop') ? 'backstop' : 'invoked')
     if (has('json')) await writeStdout(`${JSON.stringify(result)}\n`)
     else {
-      console.log(`canon: ${result.canon.findings} stale references in ${result.canon.docs} docs`)
+      const lines = [`canon: ${result.canon.findings} stale references in ${result.canon.docs} docs`]
       if (result.conditions.length || result.errors.length) {
-      console.log(`monitor ${result.id}: ${result.conditions.length} condition(s), ${result.errors.length} observation error(s)`)
-      for (const condition of result.conditions) {
-        const old = condition.ageMs == null ? 'age unknown' : `${Math.round(condition.ageMs / 60_000)}m old`
-        console.log(`  ${condition.kind}  ${condition.subject}  ${old}\n    ${condition.detail}\n    ${condition.action}${condition.issueKey ? `; ${condition.issueKey}` : ''}`)
+        lines.push(`monitor ${result.id}: ${result.conditions.length} condition(s), ${result.errors.length} observation error(s)`)
+        for (const condition of result.conditions) {
+          const old = condition.ageMs == null ? 'age unknown' : `${Math.round(condition.ageMs / 60_000)}m old`
+          lines.push(`  ${condition.kind}  ${condition.subject}  ${old}\n    ${condition.detail}\n    ${condition.action}${condition.issueKey ? `; ${condition.issueKey}` : ''}`)
+        }
+        for (const error of result.errors) console.error(`  observation failed: ${error}`)
       }
-      for (const error of result.errors) console.error(`  observation failed: ${error}`)
-      }
+      await writeStdout(`${lines.join('\n')}\n`)
     }
     // Branchable by hooks and automation: 0 clean, 2 conditions, 1 incomplete observation.
     if (result.errors.length) process.exitCode = 1
