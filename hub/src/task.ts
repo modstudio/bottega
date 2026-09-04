@@ -1,5 +1,6 @@
 import { db, nowIso } from './db.ts'
 import { projects, type StatusCategory } from './projects.ts'
+import { randomBytes } from 'node:crypto'
 
 export const TASK_STATUSES = ['open', 'active', 'review', 'done', 'dropped'] as const
 
@@ -21,6 +22,37 @@ export type TaskRow = {
 }
 
 export type TaskComment = { id: number; task_key: string; body: string; created_at: string }
+
+export const TASK_DOCUMENT_ROLES = ['handoff'] as const
+export type TaskDocumentRole = typeof TASK_DOCUMENT_ROLES[number]
+export type TaskDocumentSummary = {
+  id: number
+  task_key: string
+  role: TaskDocumentRole | null
+  title: string
+  updated_at: string
+}
+export type TaskDocument = TaskDocumentSummary & {
+  body: string
+  version: string
+  created_at: string
+}
+
+const documentVersion = () => randomBytes(8).toString('hex')
+
+function documentRole(value: string | null | undefined): TaskDocumentRole | null {
+  if (value == null) return null
+  if (!(TASK_DOCUMENT_ROLES as readonly string[]).includes(value)) {
+    throw new Error(`invalid document role '${value}': expected ${TASK_DOCUMENT_ROLES.join('|')}`)
+  }
+  return value as TaskDocumentRole
+}
+
+function documentId(value: number | string): number {
+  const id = typeof value === 'number' ? value : Number(value)
+  if (!Number.isSafeInteger(id) || id < 1) throw new Error(`invalid document id '${value}'`)
+  return id
+}
 
 function status(value: string | undefined): StatusCategory {
   const candidate = value ?? 'open'
@@ -108,7 +140,9 @@ export function listTasks(filters: {
   ).all(...values)
 }
 
-export function showTask(key: string): { task: TaskRow; comments: TaskComment[] } {
+export function showTask(key: string): {
+  task: TaskRow; comments: TaskComment[]; documents: TaskDocumentSummary[]
+} {
   const upper = key.toUpperCase()
   const task = db().query<TaskRow, [string]>(`SELECT * FROM task WHERE key = ?`).get(upper)
   if (!task) throw new Error(`no task ${upper}`)
@@ -116,7 +150,7 @@ export function showTask(key: string): { task: TaskRow; comments: TaskComment[] 
     `SELECT id, task_key, body, created_at FROM task_comment
       WHERE task_key = ? ORDER BY created_at, id`,
   ).all(upper)
-  return { task, comments }
+  return { task, comments, documents: listTaskDocuments(upper) }
 }
 
 export function setTask(key: string, changes: {
@@ -171,4 +205,87 @@ export function commentTask(key: string, body: string): TaskComment {
   ).run(upper, body, at)
   db().query(`UPDATE task SET updated_at = ?, last_seen = ? WHERE key = ?`).run(at, at, upper)
   return { id: Number(result.lastInsertRowid), task_key: upper, body, created_at: at }
+}
+
+export function listTaskDocuments(key: string): TaskDocumentSummary[] {
+  const upper = key.toUpperCase()
+  const task = db().query<{ key: string }, [string]>(`SELECT key FROM task WHERE key = ?`).get(upper)
+  if (!task) throw new Error(`no task ${upper}`)
+  return db().query<TaskDocumentSummary, [string]>(
+    `SELECT id, task_key, role, title, updated_at FROM task_document
+      WHERE task_key = ? ORDER BY created_at, id`,
+  ).all(upper)
+}
+
+export function getTaskDocument(idValue: number | string): TaskDocument {
+  const id = documentId(idValue)
+  const document = db().query<TaskDocument, [number]>(
+    `SELECT id, task_key, role, title, body, version, created_at, updated_at
+       FROM task_document WHERE id = ?`,
+  ).get(id)
+  if (!document) throw new Error(`no task document ${id}`)
+  return document
+}
+
+export function createTaskDocument(input: {
+  task: string; title: string; body?: string; role?: string
+}): TaskDocument {
+  const upper = input.task.toUpperCase()
+  const task = showTask(upper).task
+  if (task.source !== 'local') throw new Error(`task ${upper} is not local`)
+  const at = nowIso()
+  const result = db().query(
+    `INSERT INTO task_document (task_key, role, title, body, version, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(upper, documentRole(input.role), input.title, input.body ?? '', documentVersion(), at, at)
+  return getTaskDocument(Number(result.lastInsertRowid))
+}
+
+export function updateTaskDocument(idValue: number | string, changes: {
+  title?: string; body?: string; role?: string | null; expectedVersion?: string
+}): TaskDocument {
+  const id = documentId(idValue)
+  const d = db()
+  const write = d.transaction(() => {
+    const current = getTaskDocument(id)
+    const task = showTask(current.task_key).task
+    if (task.source !== 'local') throw new Error(`task ${current.task_key} is not local`)
+    const role = changes.role === undefined ? current.role : documentRole(changes.role)
+    const at = nowIso()
+
+    if (changes.body !== undefined) {
+      if (!changes.expectedVersion) {
+        throw new Error('a body update requires --version from `hub task doc show`')
+      }
+      const result = d.query(
+        `UPDATE task_document
+            SET title = ?, role = ?, body = ?, version = ?, updated_at = ?
+          WHERE id = ? AND version = ?`,
+      ).run(changes.title ?? current.title, role, changes.body, documentVersion(), at,
+            id, changes.expectedVersion)
+      if (result.changes !== 1) {
+        throw new Error(`task document ${id} changed since version ${changes.expectedVersion}; read it again`)
+      }
+    } else {
+      d.query(
+        `UPDATE task_document SET title = ?, role = ?, updated_at = ? WHERE id = ?`,
+      ).run(changes.title ?? current.title, role, at, id)
+    }
+  })
+  write.immediate()
+  return getTaskDocument(id)
+}
+
+export function deleteTaskDocument(idValue: number | string): TaskDocument {
+  const id = documentId(idValue)
+  const d = db()
+  let removed: TaskDocument | null = null
+  const write = d.transaction(() => {
+    removed = getTaskDocument(id)
+    const task = showTask(removed.task_key).task
+    if (task.source !== 'local') throw new Error(`task ${removed.task_key} is not local`)
+    d.query(`DELETE FROM task_document WHERE id = ?`).run(id)
+  })
+  write.immediate()
+  return removed!
 }

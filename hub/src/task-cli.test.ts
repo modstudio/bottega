@@ -33,6 +33,15 @@ function show(key: string) {
   return JSON.parse(result.stdout).task as { title: string | null; body: string | null }
 }
 
+function document(id: string) {
+  const result = hub('task', 'doc', 'show', id, '--json')
+  expect(result.exitCode).toBe(0)
+  return JSON.parse(result.stdout) as {
+    id: number; task_key: string; role: string | null; title: string
+    body: string; version: string
+  }
+}
+
 describe('task CLI bodies', () => {
   test('queries refuse an absent database instead of reporting an empty finding', () => {
     const absent = join(dir, 'absent.db')
@@ -144,5 +153,83 @@ describe('task CLI dash-leading values', () => {
 
     expect(result.exitCode).toBe(1)
     expect(result.stderr).toContain('--project is required')
+  })
+})
+
+describe('task documents', () => {
+  test('creates several documents and keeps task show compact', () => {
+    const task = hub('task', 'new', '--project', 'workshop', '--title', 'Documented task',
+      '--body', 'A short description.')
+    const rulings = hub('task', 'doc', 'new', task.stdout, '--title', 'Rulings',
+      '--body', 'Long ruling body that is read separately.')
+    const handoff = hub('task', 'doc', 'new', task.stdout, '--title', 'Resume here',
+      '--role', 'handoff', '--body', 'Full workflow context.')
+
+    expect(rulings.exitCode).toBe(0)
+    expect(handoff.exitCode).toBe(0)
+    expect(document(rulings.stdout).body).toBe('Long ruling body that is read separately.')
+    expect(document(handoff.stdout).role).toBe('handoff')
+
+    const shown = hub('task', 'show', task.stdout)
+    expect(shown.stdout).toContain(`documents:`)
+    expect(shown.stdout).toContain(`${rulings.stdout}  Rulings — hub task doc show ${rulings.stdout}`)
+    expect(shown.stdout).toContain(`${handoff.stdout} [handoff]  Resume here`)
+    expect(shown.stdout).not.toContain('Long ruling body that is read separately.')
+    expect(shown.stdout).not.toContain('Full workflow context.')
+  })
+
+  test('only known roles are accepted and a task has at most one document in a role', () => {
+    const task = hub('task', 'new', '--project', 'workshop', '--title', 'Role owner')
+    expect(hub('task', 'doc', 'new', task.stdout, '--title', 'Question',
+      '--role', 'request').stderr).toContain("invalid document role 'request'")
+    expect(hub('task', 'doc', 'new', task.stdout, '--title', 'First',
+      '--role', 'handoff').exitCode).toBe(0)
+
+    const duplicate = hub('task', 'doc', 'new', task.stdout, '--title', 'Second',
+      '--role', 'handoff')
+    expect(duplicate.exitCode).toBe(1)
+    expect(duplicate.stderr).toContain('UNIQUE constraint failed')
+  })
+
+  test('a body update requires the version read and atomically refuses a stale writer', () => {
+    const task = hub('task', 'new', '--project', 'workshop', '--title', 'Concurrent edits')
+    const created = hub('task', 'doc', 'new', task.stdout, '--title', 'Working notes',
+      '--body', 'version one')
+    const firstRead = document(created.stdout)
+
+    const withoutVersion = hub('task', 'doc', 'set', created.stdout, '--body', 'unguarded')
+    expect(withoutVersion.exitCode).toBe(1)
+    expect(withoutVersion.stderr).toContain('requires --version')
+
+    const changed = hub('task', 'doc', 'set', created.stdout, '--body', 'version two',
+      '--version', firstRead.version)
+    expect(changed.exitCode).toBe(0)
+    const secondRead = document(created.stdout)
+    expect(secondRead.body).toBe('version two')
+    expect(secondRead.version).not.toBe(firstRead.version)
+
+    const stale = hub('task', 'doc', 'set', created.stdout, '--body', 'lost update',
+      '--version', firstRead.version)
+    expect(stale.exitCode).toBe(1)
+    expect(stale.stderr).toContain('changed since version')
+    expect(document(created.stdout).body).toBe('version two')
+  })
+
+  test('lists metadata, edits metadata without resending a body, and removes one document', () => {
+    const task = hub('task', 'new', '--project', 'workshop', '--title', 'Document lifecycle')
+    const created = hub('task', 'doc', 'new', task.stdout, '--title', 'Notes', '--body', 'kept')
+    const renamed = hub('task', 'doc', 'set', created.stdout, '--title', 'Findings',
+      '--role', 'handoff')
+    expect(renamed.exitCode).toBe(0)
+    expect(document(created.stdout)).toMatchObject({ title: 'Findings', body: 'kept', role: 'handoff' })
+
+    const listed = hub('task', 'doc', 'list', task.stdout, '--json')
+    expect(JSON.parse(listed.stdout)).toEqual([
+      expect.objectContaining({ id: Number(created.stdout), title: 'Findings', role: 'handoff' }),
+    ])
+    expect(listed.stdout).not.toContain('kept')
+
+    expect(hub('task', 'doc', 'rm', created.stdout).exitCode).toBe(0)
+    expect(hub('task', 'doc', 'list', task.stdout).stdout).toBe('no documents')
   })
 })

@@ -210,6 +210,33 @@ function migrate(d: Database) {
 
     CREATE INDEX IF NOT EXISTS task_comment_task ON task_comment(task_key, created_at);
   `)
+
+  // Long-form working material belongs beside a task, not inside its short
+  // description. Most documents are deliberately untyped. A role exists only
+  // when a consumer must locate one particular document without guessing from
+  // its title; handoff is the first such consumer.
+  d.run(`
+    CREATE TABLE IF NOT EXISTS task_document (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_key   TEXT NOT NULL REFERENCES task(key) ON DELETE CASCADE,
+      role       TEXT CHECK (role IN ('handoff')),
+      title      TEXT NOT NULL,
+      body       TEXT NOT NULL,
+      -- This is an optimistic-concurrency token, not retained history. A body
+      -- replacement compares and writes it in one SQL statement so two
+      -- sessions cannot both pass a check in application code and overwrite.
+      version    TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `)
+
+  d.exec(`
+    CREATE INDEX IF NOT EXISTS task_document_task
+      ON task_document(task_key, created_at, id);
+    CREATE UNIQUE INDEX IF NOT EXISTS task_document_one_role
+      ON task_document(task_key, role) WHERE role IS NOT NULL;
+  `)
 }
 
 /** Columns added after the first schema shipped; SQLite has no IF NOT EXISTS here. */

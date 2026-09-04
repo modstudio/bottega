@@ -7,7 +7,10 @@ import { ingestGit } from './ingest/git.ts'
 import { ingestTrackers } from './ingest/trackers.ts'
 import { tasksInWindow, estateEngagedMs, rollUpDays } from './query.ts'
 import { watch, withLease } from './collect.ts'
-import { closeTask, commentTask, createTask, listTasks, setTask, showTask } from './task.ts'
+import {
+  closeTask, commentTask, createTask, createTaskDocument, deleteTaskDocument,
+  getTaskDocument, listTaskDocuments, listTasks, setTask, showTask, updateTaskDocument,
+} from './task.ts'
 import { gather, summarise, renderHtml, renderText, send, recordSend } from './report.ts'
 import { getReport } from './settings.ts'
 import { human } from './interval.ts'
@@ -41,6 +44,13 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and the 
                [--body "..."] [--force]
   hub task close <KEY>
   hub task comment <KEY> "..."
+  hub task doc new <KEY> --title "..." [--role handoff]
+               [--body "..."|--body-file PATH]
+  hub task doc list <KEY> [--json]
+  hub task doc show <ID> [--json]
+  hub task doc set <ID> [--title "..."] [--role handoff|--no-role]
+               [--body "..."|--body-file PATH] [--version TOKEN]
+  hub task doc rm <ID>
   hub task import <file.json> backfill from a clustered commit history
 
   hub send [--dry-run]        the daily report; --dry-run prints it instead
@@ -143,6 +153,57 @@ function task() {
     return undefined
   }
 
+  if (sub === 'doc' || sub === 'document') {
+    const action = argv[2]
+    const ref = argv[3] ?? ''
+    if (action === 'new') {
+      const document = createTaskDocument({ task: ref, title: required('title'),
+        body: newBody(), role: flag('role') })
+      console.log(document.id)
+      return
+    }
+    if (action === 'list') {
+      const documents = listTaskDocuments(ref)
+      if (has('json')) console.log(JSON.stringify(documents))
+      else if (!documents.length) console.log('no documents')
+      else for (const document of documents) {
+        const role = document.role ? ` [${document.role}]` : ''
+        console.log(`${document.id}${role}  ${document.title}`)
+      }
+      return
+    }
+    if (action === 'show') {
+      const document = getTaskDocument(ref)
+      if (has('json')) console.log(JSON.stringify(document))
+      else {
+        console.log(`${document.id}  ${document.task_key}${document.role ? ` [${document.role}]` : ''}  ${document.title}`)
+        console.log(`version: ${document.version}`)
+        if (document.body) console.log(`\n${document.body}`)
+      }
+      return
+    }
+    if (action === 'set') {
+      if (has('role') && has('no-role')) throw new Error('--role and --no-role are mutually exclusive')
+      const body = newBody()
+      const changes = {
+        ...(has('title') ? { title: required('title') } : {}),
+        ...(has('role') ? { role: required('role') } : has('no-role') ? { role: null } : {}),
+        ...(body !== undefined ? { body } : {}),
+        ...(has('version') ? { expectedVersion: required('version') } : {}),
+      }
+      if (!Object.keys(changes).length) throw new Error('hub task doc set requires a field to change')
+      const document = updateTaskDocument(ref, changes)
+      console.log(`${document.id} updated; version ${document.version}`)
+      return
+    }
+    if (action === 'rm') {
+      const document = deleteTaskDocument(ref)
+      console.log(`${document.id} removed from ${document.task_key}`)
+      return
+    }
+    throw new Error('hub task doc: expected new | list | show | set | rm')
+  }
+
   if (sub === 'new') {
     const row = createTask({ project: required('project'), title: required('title'),
       status: flag('status'), parent: flag('parent'), body: newBody() })
@@ -163,6 +224,13 @@ function task() {
       printRow(shown.task)
       if (shown.task.parent_key) console.log(`parent: ${shown.task.parent_key}`)
       if (shown.task.body) console.log(`\n${shown.task.body}`)
+      if (shown.documents.length) {
+        console.log('\ndocuments:')
+        for (const document of shown.documents) {
+          const role = document.role ? ` [${document.role}]` : ''
+          console.log(`  ${document.id}${role}  ${document.title} — hub task doc show ${document.id}`)
+        }
+      }
       for (const comment of shown.comments) console.log(`\n${comment.created_at}  ${comment.body}`)
     }
     return
