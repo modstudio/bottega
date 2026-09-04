@@ -424,8 +424,10 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
   // A RESUME skips preflight: its agent was chosen long ago, its worktree
   // exists, and its seed was settled when that worktree was cut. Re-checking
   // would demand a `--seed` for a database that is already there.
+  const seed = spec.resume
+    ? spec.seed
+    : preflight(jobName, cwd, spec.seed, spec.key, spec.base, false, false, spec.lens)
   if (!spec.resume) {
-    preflight(jobName, cwd, spec.seed, spec.key, spec.base, false, false, spec.lens)
     // Who will run is knowable here, and a proven-failed grok attach must not
     // leave a placeholder for the child to fail. Resume keeps the agent that
     // already started; it is not a new dispatch.
@@ -493,7 +495,7 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
      * catch, turning a broken sibling into a recorded failure with a reason.
      */
     new URL('exec.ts', import.meta.url).pathname,
-    String(id), promptPath, jobName, JSON.stringify(spec),
+    String(id), promptPath, jobName, JSON.stringify({ ...spec, seed }),
   ]
   const spawnOpts = {
     cwd,
@@ -1250,7 +1252,9 @@ switch (cmd) {
       if (jobName !== 'implement') throw new Error('--base is only valid for the implement job')
       resolveBase(process.cwd(), base)
     }
-    preflight(jobName, process.cwd(), flag('seed'), flag('key'), base, false, false, flag('lens'))
+    const seed = preflight(
+      jobName, process.cwd(), flag('seed'), flag('key'), base, false, false, flag('lens'),
+    )
     if (requested.needs.readsRepo) warnCallerDrift(process.cwd(), base)
     const schema = flag('schema')
     // An unpinned run may route to Codex, so its schema has to be suitable
@@ -1304,7 +1308,7 @@ switch (cmd) {
     if (has('detach') || detachByDefault) {
       const id = await detach(jobName, prompt, {
         agent: flag('agent'), schema, label: flag('label'), lens: flag('lens'),
-        mcp: has('mcp'), model: flag('model'), probe: has('probe'), seed: flag('seed'), key: flag('key'),
+        mcp: has('mcp'), model: flag('model'), probe: has('probe'), seed, key: flag('key'),
         repo: explicitRepo, base, avoid, distinctModels,
         noFailover: has('no-failover'), carry: has('carry'),
       })
@@ -1344,7 +1348,7 @@ switch (cmd) {
      */
     const id = await detach(jobName, prompt, {
       agent: flag('agent'), schema, label: flag('label'), lens: flag('lens'),
-      mcp: has('mcp'), model: flag('model'), probe: has('probe'), seed: flag('seed'), key: flag('key'),
+      mcp: has('mcp'), model: flag('model'), probe: has('probe'), seed, key: flag('key'),
       repo: explicitRepo, base, avoid, distinctModels,
       noFailover: has('no-failover'), carry: has('carry'),
     })

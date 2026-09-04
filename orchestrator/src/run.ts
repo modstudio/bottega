@@ -336,7 +336,7 @@ export function preflight(
   reusesWorktree = false,
   seedAlreadyValidated = false,
   lens?: string,
-): void {
+): string | undefined {
   if (depth() >= MAX_DEPTH) {
     throw new Error(
       `refusing to delegate at depth ${depth()}: this process is itself a delegated agent. ` +
@@ -360,14 +360,19 @@ export function preflight(
       `Run it from the checkout that holds the change.`,
     )
   }
-  if (!j.needs.readsRepo) return
-  // A key and a seed are required only for a writing job's NEW worktree. Read-only
-  // jobs may still receive either value, but they do not write a branch or database
-  // whose contents the architect must settle. A resumed turn works in the tree its
-  // parent already has, so demanding them again blocks every ruling.
-  if (reusesWorktree) return
+  if (!j.needs.readsRepo) return seed
+  // A key and a caller-selected seed are required only for a writing job's NEW
+  // worktree. A read-only job still passes a project-declared `none` explicitly:
+  // it is the settled answer for a job that provably needs no database. A resumed
+  // turn works in the tree its parent already has, so demanding them again blocks
+  // every ruling.
+  if (reusesWorktree) return seed
   const project = projectAt(cwd)
   const tool = project?.settings.worktree ?? null
+  // `none` is a project-declared seed, not an orch default. Matching the exact
+  // literal keeps this inference narrow: another project-specific label is not
+  // silently reinterpreted as "no database" merely because it sounds similar.
+  const effectiveSeed = seed ?? (!writesJob && tool?.seeds?.includes('none') ? 'none' : undefined)
   const keyPattern = tool?.keyPattern ?? '^[A-Z][A-Z0-9]+-[0-9]+$'
   const problems: string[] = []
   if (key && !new RegExp(keyPattern).test(key)) {
@@ -392,20 +397,26 @@ export function preflight(
       `not invent one.\n  --key <KEY-123>`,
     )
   }
-  if (writesJob && tool?.seeds?.length && !seed) {
+  if (writesJob && tool?.seeds?.length && !effectiveSeed) {
     problems.push(
       `this project requires a database size for a new worktree, and has no default.\n` +
       `  --seed ${tool.seeds.join('\n  --seed ')}\n\n` +
       `Choosing is the architect's call: it depends on what the task touches.`,
     )
-  } else if (writesJob && tool?.create?.includes('{seed}') && !seed) {
+  } else if (writesJob && tool?.create?.includes('{seed}') && !effectiveSeed) {
     problems.push(
       `this project's worktree create command contains {seed}, so a seed is required.\n` +
       `  --seed <value>`,
     )
+  } else if (!writesJob && tool?.seeds?.length && !effectiveSeed) {
+    problems.push(
+      `project ${project!.name} requires an explicit seed, but its seed list has no ` +
+      `"none" option for a read-only job that needs no database.`,
+    )
   }
   if (problems.length) throw new Error(problems.join('\n'))
-  if (tool?.create && !seedAlreadyValidated) validateSeedWithTool(cwd, seed)
+  if (tool?.create && !seedAlreadyValidated) validateSeedWithTool(cwd, effectiveSeed)
+  return effectiveSeed
 }
 
 /**
@@ -728,7 +739,7 @@ export async function run(opts: {
   }
 }): Promise<RunResult> {
 
-  preflight(
+  const seed = preflight(
     opts.job, opts.cwd ?? process.cwd(), opts.seed, opts.key, opts.base,
     opts.resume?.worktree != null,
     opts.reserveId !== undefined,
@@ -987,7 +998,7 @@ export async function run(opts: {
       }
     : null
   const launchCwd = inheritedLaunch?.launch_cwd ?? callerCwd
-  const launchSeed = inheritedLaunch?.launch_seed ?? opts.seed ?? null
+  const launchSeed = inheritedLaunch?.launch_seed ?? seed ?? null
   const launchKey = inheritedLaunch?.launch_key ?? opts.key ?? null
   const launchBase = inheritedLaunch?.launch_base ?? opts.base ?? null
   const noFailover = inheritedLaunch ? !!inheritedLaunch.no_failover : !!opts.noFailover
@@ -1134,7 +1145,7 @@ export async function run(opts: {
             // produce a directory with no .env, no vendor and no database, in which
             // every test the worker runs is meaningless and green.
             created = createWithTool(
-              tool, callerCwd, claim.id, opts.seed, opts.key, opts.base, recordWorktree,
+              tool, callerCwd, claim.id, seed, opts.key, opts.base, recordWorktree,
             )
           } else {
             // INHERITED on a resume, and this is the point of the whole exercise:

@@ -5243,11 +5243,11 @@ describe('a conversation is one unit of work, not one per turn', () => {
 })
 
 describe('a worktree is resolved against the main checkout, not the caller cwd', () => {
-  const fromRoot = (fn: () => void) => {
+  const fromRoot = <T>(fn: () => T): T => {
     const priorDepth = process.env.ORCH_DEPTH
     try {
       process.env.ORCH_DEPTH = '0'
-      fn()
+      return fn()
     } finally {
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
@@ -5374,19 +5374,57 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
     rmSync(repo, { recursive: true, force: true })
   })
 
-  test('read-only preflight does not require a writing job\'s key or seed', () => {
+  test('read-only preflight selects the project-declared none seed', () => {
     const { repo } = scratchRepo()
     upsertProject({
       name: 'read-only-arguments', path: repo,
       settings: {
         worktree: {
           create: 'scripts/worktree create {branch} {seed}', branch: '{key}-orch-{id}',
+          seeds: ['none', 'small', 'full'],
+        },
+      },
+    })
+    expect(fromRoot(() => preflight(
+      'review-lens', repo, undefined, undefined, undefined, false, false, 'safety',
+    ))).toBe('none')
+    expect(fromRoot(() => preflight(
+      'review-lens', repo, 'small', undefined, undefined, false, false, 'safety',
+    ))).toBe('small')
+    rmSync(repo, { recursive: true, force: true })
+  })
+
+  test('read-only preflight refuses a seeded project without none before creating a tree', () => {
+    const { repo } = scratchRepo()
+    const trees = join(repo, '.claude', 'worktrees')
+    upsertProject({
+      name: 'read-only-no-none', path: repo,
+      settings: {
+        worktree: {
+          create: 'scripts/worktree create {branch} {seed}', branch: 'task/{id}',
           seeds: ['small', 'full'],
         },
       },
     })
-    expect(() => fromRoot(() => preflight('review-lens', repo, undefined, undefined, undefined, false, false, 'safety'))).not.toThrow()
-    expect(() => fromRoot(() => preflight('review-lens', repo, 'small', undefined, undefined, false, false, 'safety'))).not.toThrow()
+    const before = readdirSync(trees).sort()
+    expect(() => fromRoot(() => preflight(
+      'review-lens', repo, undefined, undefined, undefined, false, false, 'safety',
+    ))).toThrow(
+      'project read-only-no-none requires an explicit seed, but its seed list has no "none" option',
+    )
+    expect(readdirSync(trees).sort()).toEqual(before)
+    rmSync(repo, { recursive: true, force: true })
+  })
+
+  test('read-only preflight leaves a project without listed seeds unaffected', () => {
+    const { repo } = scratchRepo()
+    upsertProject({
+      name: 'read-only-unseeded', path: repo,
+      settings: { worktree: { create: 'scripts/worktree create {branch}', branch: 'task/{id}' } },
+    })
+    expect(fromRoot(() => preflight(
+      'review-lens', repo, undefined, undefined, undefined, false, false, 'safety',
+    ))).toBeUndefined()
     rmSync(repo, { recursive: true, force: true })
   })
 
@@ -5683,6 +5721,31 @@ echo 'Usage: scripts/worktree create [seed]'
       expect(git(w.path, 'check-ignore', '.orch-run')).toBe('.orch-run')
     } finally {
       process.chdir(here)
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a read-only job passes its preflight-selected none seed to the project tool', () => {
+    const { repo } = scratchRepo()
+    const received = join(repo, 'received-seed')
+    const path = join(repo, '.claude', 'worktrees', 'orch-658')
+    const tool = {
+      branch: 'orch/{id}',
+      seeds: ['none', 'full'],
+      create:
+        `printf '%s' {seed} > "${received}" && ` +
+        `${hermeticGitCommand} worktree add -b {branch} "${path}" HEAD >/dev/null && ` +
+        `echo "${path}"`,
+    }
+    upsertProject({ name: 'read-only-tool-seed', path: repo, settings: { worktree: tool } })
+    try {
+      const seed = fromRoot(() => preflight(
+        'review-lens', repo, undefined, undefined, undefined, false, false, 'safety',
+      ))
+      const w = createWithTool(tool, repo, 658, seed)
+      expect(w.path).toBe(path)
+      expect(readFileSync(received, 'utf8')).toBe('none')
+    } finally {
       rmSync(repo, { recursive: true, force: true })
     }
   })
