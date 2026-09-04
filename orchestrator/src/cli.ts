@@ -715,6 +715,10 @@ function usage(): never {
   orch state [--days N]         the dashboard payload as JSON (what hub renders)
       the dashboard itself is 'hub serve' - this concern routes and scores
   orch run <run-id>             one run's detail as JSON, prompt and output included
+  orch search <query>           consult score notes, rulings, review findings, and saved outputs
+      --limit <n>               compact results to return (default 20)
+      --full                    include the complete matched records after choosing them
+      --json                    print one JSON object, including unavailable output count
   orch metric [collect]         Claude tokens per shipped task (the ratio this exists to move)
   orch blockers [--days N] [--json]
       what stopped agents verifying their work, ordered by recurrence
@@ -1430,6 +1434,37 @@ switch (cmd) {
     const d = runDetail(id)
     if (!d) throw new Error(`no run ${id}`)
     console.log(JSON.stringify(d))
+    break
+  }
+
+  case 'search': {
+    const query = argv[1]
+    if (!query) usage()
+    const limitText = flag('limit')
+    const limit = limitText === undefined ? 20 : Number(limitText)
+    const { searchRecords } = await import('./search.ts')
+    const found = searchRecords(db(), query, limit, has('full'))
+    if (has('json')) {
+      console.log(JSON.stringify(found))
+      break
+    }
+    if (!found.results.length) {
+      console.log(`no record matches for "${found.query}"`)
+    } else {
+      for (const result of found.results) {
+        const task = result.task_key ? ` · ${result.task_key}` : ''
+        console.log(
+          `${result.source} ${result.record_id} · run ${result.run_id}${task} · ${result.match}\n` +
+          (result.content === undefined ? `  ${result.snippet}` : result.content),
+        )
+      }
+      if (found.truncated) console.log(`\nmore matches omitted; increase --limit to see them`)
+    }
+    if (found.unavailable_outputs) {
+      console.log(
+        `\n${found.unavailable_outputs} saved run output${found.unavailable_outputs === 1 ? ' is' : 's are'} no longer available and could not be searched`,
+      )
+    }
     break
   }
 

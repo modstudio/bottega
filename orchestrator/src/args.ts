@@ -89,6 +89,7 @@ function commandShape(argv: string[]): { args: string[]; shape: CommandShape } |
     }
     case 'state': return { args: argv.slice(1), shape: shape('orch state [--days N]', 0, ['--days']) }
     case 'run': return { args: argv.slice(1), shape: shape('orch run <run-id>', 1) }
+    case 'search': return { args: argv.slice(1), shape: shape('orch search <file|function|task-key|text> [--limit N] [--full] [--json]', 1, ['--limit'], ['--full', '--json']) }
     case 'result': return { args: argv.slice(1), shape: shape('orch result <run-id> [--quiet]', 1, [], ['--quiet']) }
     case 'wait': return { args: argv.slice(1), shape: shape('orch wait <run-id>... [--timeout SECONDS]', Infinity, ['--timeout']) }
     case 'retry': return { args: argv.slice(1), shape: shape('orch retry <run-id> [--agent NAME] [--follow] [--quiet]', 1, ['--agent'], ['--follow', '--detach', '--quiet']) }
