@@ -1055,6 +1055,33 @@ wrong thing.
 exactly that, and it has to hold in the arithmetic or asking would cost
 something after all — which returns us to silent guessing.
 
+The preamble's cost argument makes the value of an escalation depend on
+the question being right, and that understates it. A worker told to
+reconcile a stale checkout after a landing, using a specific git primitive,
+declined the ruling and wrote down why. Its stated reason was true but not
+the important one; its own proposed alternative was also wrong — it
+narrowed a race rather than closing it. By both of the usual measures the
+escalation failed. It is nevertheless the only reason a silent no-op was
+not landed. Two sessions had ruled on the primitive, one had tested it, the
+other had independently confirmed it, and both were wrong for the same
+reason: they tested a state the code would never face. The worker's refusal
+is what made someone test again. Nothing about its question was correct
+except that it stopped the work.
+
+**The value of an escalation is the interruption, not the correctness of
+the question.** A worker that stops on a mistaken concern has still put a
+second pair of eyes on a decision at the moment before it became expensive.
+A worker that guesses correctly has not.
+
+An escalation is never marked down for being wrong — not on fidelity, which
+the canon already protects, and not on quality either. If asking is only
+safe when the question turns out to be right, workers learn to ask only
+when certain, and certainty is the state in which asking is least needed.
+
+An architect who overrules an escalation should say what made the concern
+reasonable. A worker whose objection is dismissed without acknowledgement
+learns the objection was noise.
+
 **Required on a writing job that delivered something.** `delivery: none` takes
 no fidelity, for the same reason it takes no quality: nothing arrived to be
 faithful to. Everywhere else the word is demanded, because optional it would go
