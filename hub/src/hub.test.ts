@@ -15,8 +15,8 @@ const { spendingSpans } = await import('./ingest/transcripts.ts')
 const { db } = await import('./db.ts')
 const { gather, renderHtml, renderText } = await import('./report.ts')
 const { easternTime } = await import('./time.ts')
-const { projectColor, projectNames } = await import('./projects.ts')
-const { ingestTrackers, upsertTrackerTask, resolveAssigneeIds } =
+const { projectColor, projectNames, trackerPresentation } = await import('./projects.ts')
+const { ingestTrackers, upsertTrackerTask, resolveAssigneeIds, trackerRegistrations } =
   await import('./ingest/trackers.ts')
 const { createTask, showTask } = await import('./task.ts')
 const { chainVendorTokens, executionSpans, ingestRuns } = await import('./ingest/runs.ts')
@@ -418,6 +418,41 @@ describe('tracker register', () => {
     const results = await ingestTrackers()
     expect(results.map((result) => result.project)).toEqual(['alpha'])
     expect(results[0]!.skipped).toContain('FIXTURE_NO_CREDENTIALS_MCP_URL')
+  })
+
+  test('an unusable tracker remains an error beside a usable source', () => {
+    const rows = [
+      {
+        id: 1, name: 'working', path: '/working', stack: null, canon: true,
+        settings: { tracker: { protocol: 'array-mcp', envPrefix: 'WORKING' } },
+      },
+      {
+        id: 2, name: 'broken', path: '/broken', stack: null, canon: true,
+        settings: { tracker: { protocol: 'future-mcp', envPrefix: 'BROKEN' } },
+      },
+    ]
+    const registrations = trackerRegistrations(rows)
+
+    expect(registrations).toHaveLength(2)
+    expect(registrations[0]).toMatchObject({ project: 'working', source: { env: 'WORKING' } })
+    expect(registrations[1]).toEqual({
+      project: 'broken',
+      error: 'project broken tracker has unrecognised protocol future-mcp',
+    })
+  })
+
+  test('presentation distinguishes configured, unusable, and absent trackers', () => {
+    expect(trackerPresentation({ name: 'working', settings: {
+      tracker: { protocol: 'array-mcp', envPrefix: 'WORKING' },
+    } })).toEqual({ state: 'configured', label: 'array-mcp', error: null })
+    expect(trackerPresentation({ name: 'adanim', settings: {
+      tracker: { kind: 'adanim', protocol: 'array-mcp' },
+    } })).toEqual({
+      state: 'unusable', label: 'adanim',
+      error: 'project adanim tracker is missing envPrefix',
+    })
+    expect(trackerPresentation({ name: 'untracked', settings: {} }))
+      .toEqual({ state: 'not-configured', label: 'none', error: null })
   })
 })
 

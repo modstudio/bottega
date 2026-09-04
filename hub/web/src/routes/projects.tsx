@@ -16,14 +16,18 @@ import {
 } from '@/components/table'
 import { queryClient, trpc, type ProjectRow } from '@/trpc/client'
 
-function trackerKind(settings: ProjectRow['settings']) {
-  const tracker = settings.tracker as Record<string, unknown> | undefined
-  if (!tracker) return 'none'
-  const trackerKind = typeof tracker.kind === 'string' ? tracker.kind : null
-  const protocol = typeof tracker.protocol === 'string' ? tracker.protocol : null
-  const kind = trackerKind || protocol
-  if (trackerKind && protocol && trackerKind !== protocol) return `${trackerKind} (${protocol})`
-  return kind || 'configured'
+function TrackerState({ project }: { project: ProjectRow }) {
+  const status = project.trackerStatus
+  if (status.state === 'not-configured') {
+    return <span className="text-muted-foreground">not configured</span>
+  }
+  if (status.state === 'unusable') {
+    return <div>
+      <Badge variant="destructive">unusable</Badge>
+      <div className="mt-1 max-w-xs text-[11px] text-destructive">{status.error}</div>
+    </div>
+  }
+  return <div><Badge variant="outline">configured</Badge> <span>{status.label}</span></div>
 }
 
 function worktreeMode(settings: ProjectRow['settings']) {
@@ -97,7 +101,7 @@ function ProjectsPage() {
                   <TableCell className="px-3 py-2">{project.stack ?? '-'}</TableCell>
                   <TableCell className="max-w-sm truncate px-3 py-2 text-muted-foreground">{project.path}</TableCell>
                   <TableCell className="px-3 py-2">{project.canon ? <Badge variant="outline">canon</Badge> : '-'}</TableCell>
-                  <TableCell className="px-3 py-2">{trackerKind(project.settings)}</TableCell>
+                  <TableCell className="px-3 py-2"><TrackerState project={project} /></TableCell>
                   <TableCell className="px-3 py-2">{worktreeMode(project.settings)}</TableCell>
                   <TableCell><ChevronRight size={14} className="text-muted-foreground" /></TableCell>
                 </TableRow>

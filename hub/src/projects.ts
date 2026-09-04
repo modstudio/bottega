@@ -1,5 +1,7 @@
 import { dirname, resolve } from 'node:path'
-import type { TrackerProject, TrackerSettings } from '../../shared/trackers.ts'
+import {
+  trackerSourceFor, type TrackerProject, type TrackerSettings,
+} from '../../shared/trackers.ts'
 
 export type { StatusCategory, TrackerSettings } from '../../shared/trackers.ts'
 
@@ -47,6 +49,32 @@ export function projects(): RegisteredProject[] {
 }
 
 export const projectNames = () => projects().map((project) => project.name)
+
+export type TrackerPresentation = {
+  state: 'not-configured' | 'configured' | 'unusable'
+  label: string
+  error: string | null
+}
+
+/** Describe whether the register row can actually produce a tracker source. */
+export function trackerPresentation(project: TrackerProject): TrackerPresentation {
+  const tracker = project.settings.tracker
+  if (!tracker) return { state: 'not-configured', label: 'none', error: null }
+  try {
+    trackerSourceFor(project)
+    const kind = tracker.kind || tracker.protocol || 'configured'
+    const label = tracker.kind && tracker.protocol && tracker.kind !== tracker.protocol
+      ? `${tracker.kind} (${tracker.protocol})`
+      : kind
+    return { state: 'configured', label, error: null }
+  } catch (cause) {
+    return {
+      state: 'unusable',
+      label: tracker.kind || tracker.protocol || 'tracker',
+      error: cause instanceof Error ? cause.message : String(cause),
+    }
+  }
+}
 
 /** The common parent of every main checkout, for numbered-clone attribution. */
 export function projectRoot(): string | null {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  createTrackerTask, type ToolCaller, type TrackerProject,
+  createTrackerTask, trackerSourceFor, type ToolCaller, type TrackerProject,
 } from '../../../shared/trackers.ts'
 
 const task = { title: 'Move the adapter', body: 'Protocol-neutral body', status: 'todo' }
@@ -74,5 +74,29 @@ describe('tracker create protocols', () => {
     await expect(createTrackerTask(fixture.caller, project('future', 'future-mcp'), task))
       .rejects.toThrow('tracker protocol future-mcp has no create support')
     expect(fixture.calls).toEqual([])
+  })
+})
+
+describe('tracker source construction', () => {
+  test('names a project whose tracker is missing envPrefix', () => {
+    expect(() => trackerSourceFor({
+      name: 'adanim', settings: { tracker: { protocol: 'array-mcp' } },
+    })).toThrow('project adanim tracker is missing envPrefix')
+  })
+
+  test('names an unrecognised protocol', () => {
+    expect(() => trackerSourceFor({
+      name: 'future', settings: { tracker: { protocol: 'future-mcp', envPrefix: 'FUTURE' } },
+    })).toThrow('project future tracker has unrecognised protocol future-mcp')
+  })
+
+  test('a correctly configured tracker still builds', () => {
+    expect(trackerSourceFor(project('working', 'array-mcp'))).toMatchObject({
+      project: 'working', env: 'FIXTURE',
+    })
+  })
+
+  test('a project with no tracker remains intentionally absent', () => {
+    expect(trackerSourceFor(project('untracked'))).toBeNull()
   })
 })

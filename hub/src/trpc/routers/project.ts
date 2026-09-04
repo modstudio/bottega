@@ -1,7 +1,7 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { projectAdd, projectRemove, projectSet } from '../../orch.ts'
-import { projects } from '../../projects.ts'
+import { projects, trackerPresentation } from '../../projects.ts'
 import type { Context } from '../context.ts'
 
 const t = initTRPC.context<Context>().create()
@@ -41,7 +41,10 @@ export function createProjectRouter(writes: ProjectWrites) {
   }
 
   return t.router({
-    list: t.procedure.query(() => projects()),
+    list: t.procedure.query(() => projects().map((project) => ({
+      ...project,
+      trackerStatus: trackerPresentation(project),
+    }))),
     add: t.procedure.input(addInput).mutation(({ input }) =>
       badRequest(() => writes.add(input))),
     set: t.procedure.input(setInput).mutation(({ input }) => {

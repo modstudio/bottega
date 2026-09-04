@@ -31,9 +31,31 @@ async function resolveCached(
   return out
 }
 
-const SOURCES = projects()
-  .map((project) => trackerSourceFor(project, resolveCached))
-  .filter((source): source is TrackerSource => source !== null)
+type TrackerRegistration =
+  | { project: Project; source: TrackerSource; error?: never }
+  | { project: Project; source?: never; error: string }
+
+/** Keep invalid tracker declarations as failures instead of filtering them away. */
+export function trackerRegistrations(
+  rows: ReturnType<typeof projects>,
+): TrackerRegistration[] {
+  const registrations: TrackerRegistration[] = []
+  for (const project of rows) {
+    if (!project.settings.tracker) continue
+    try {
+      const source = trackerSourceFor(project, resolveCached)
+      if (source) registrations.push({ project: project.name, source })
+    } catch (cause) {
+      registrations.push({
+        project: project.name,
+        error: cause instanceof Error ? cause.message : String(cause),
+      })
+    }
+  }
+  return registrations
+}
+
+const TRACKERS = trackerRegistrations(projects())
 
 export type TrackerResult = {
   project: Project
@@ -45,7 +67,7 @@ export type TrackerResult = {
   error?: string
 }
 
-export const trackerProjects = () => SOURCES.map((source) => source.project)
+export const trackerProjects = () => TRACKERS.map((tracker) => tracker.project)
 
 type ExistingTask = {
   project: string
@@ -95,7 +117,7 @@ export async function ingestTrackers(
 ): Promise<TrackerResult[]> {
   const d = db()
   const at = nowIso()
-  const sources = only ? SOURCES.filter((source) => only.has(source.project)) : SOURCES
+  const trackers = only ? TRACKERS.filter((tracker) => only.has(tracker.project)) : TRACKERS
 
   // Only keys whose category was already OBSERVED count as having a previous
   // state. A git-seeded row knows a key and nothing else, so treating its null
@@ -132,10 +154,17 @@ export async function ingestTrackers(
      VALUES (?,?,?,?)`,
   )
 
-  const results = await Promise.all(sources.map(async (s): Promise<{
+  const results = await Promise.all(trackers.map(async (tracker): Promise<{
     result: TrackerResult
     filled: number
   }> => {
+    if ('error' in tracker) {
+      return {
+        result: { project: tracker.project, tasks: 0, changed: 0, error: tracker.error },
+        filled: 0,
+      }
+    }
+    const s = tracker.source
     const creds = credentials(s.env)
     if (!creds) {
       return { result: { project: s.project, tasks: 0, changed: 0,

@@ -55,6 +55,11 @@ describe('project.list', () => {
           states: { started: 'active', completed: 'done' },
         },
       },
+      trackerStatus: {
+        state: 'configured',
+        label: 'workspace-mcp',
+        error: null,
+      },
     })
   })
 })

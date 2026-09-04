@@ -18,7 +18,9 @@ import { state as orchState } from './orch.ts'
 import { getReport, secretStatus } from './settings.ts'
 import { gather, lastSends, summarise, renderHtml, renderText, send as sendMail, recordSend } from './report.ts'
 import { human as humanMs } from './interval.ts'
-import { projectNames, projects, type RegisteredProject } from './projects.ts'
+import {
+  projectNames, projects, trackerPresentation, type RegisteredProject,
+} from './projects.ts'
 
 type OrchBlocker = {
   kind: string | null
@@ -117,11 +119,7 @@ function presentRegister(rows: RegisteredProject[]) {
     const worktree = create ? 'create' : recipe ? 'recipe' : 'neither'
     const notes = typeof wt?.notes === 'string' && wt.notes.trim() ? wt.notes : null
     const tracker = p.settings.tracker
-    const kind = tracker?.kind || tracker?.protocol || null
-    const trackerLabel = !tracker ? 'none'
-      : tracker.kind && tracker.protocol && tracker.kind !== tracker.protocol
-        ? `${tracker.kind} (${tracker.protocol})`
-        : kind || 'configured'
+    const trackerStatus = trackerPresentation(p)
     return {
       name: p.name,
       path: p.path,
@@ -130,7 +128,11 @@ function presentRegister(rows: RegisteredProject[]) {
       prefixes: p.settings.keyPrefixes ?? [],
       color: p.settings.color ?? null,
       colorDark: p.settings.colorDark ?? null,
-      tracker: trackerLabel,
+      tracker: trackerStatus.state === 'unusable'
+        ? `${trackerStatus.label} — unusable: ${trackerStatus.error}`
+        : trackerStatus.label,
+      trackerState: trackerStatus.state,
+      trackerError: trackerStatus.error,
       worktree,
       notes,
       commands: {
