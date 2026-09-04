@@ -15,7 +15,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync,
-         realpathSync, mkdirSync, utimesSync, chmodSync, readdirSync } from 'node:fs'
+         realpathSync, mkdirSync, utimesSync, chmodSync, readdirSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
@@ -8757,20 +8757,43 @@ describe('the sandbox an agent is launched with', () => {
       expect(git(repo, ['config', 'user.email', 'orch-test@example.invalid']).exitCode).toBe(0)
       expect(git(repo, ['config', 'user.name', 'Orch Test']).exitCode).toBe(0)
       const projectHooks = join(repo, '.githooks')
+      const actualProjectHooks = join(repo, '.actual-hooks')
       mkdirSync(projectHooks)
+      mkdirSync(actualProjectHooks)
       writeFileSync(join(projectHooks, 'commit-msg'), '#!/bin/sh\nexit 1\n')
       chmodSync(join(projectHooks, 'commit-msg'), 0o755)
-      expect(git(repo, ['config', 'core.hooksPath', '.githooks']).exitCode).toBe(0)
+      expect(git(repo, ['config', 'core.hooksPath', projectHooks]).exitCode).toBe(0)
       writeFileSync(join(repo, 'base.txt'), 'base\n')
       expect(git(repo, ['add', 'base.txt']).exitCode).toBe(0)
       expect(git(repo, ['commit', '--no-verify', '-m', 'base']).exitCode).toBe(0)
       const tree = createWorktree(repo, 156)
-      writeFileSync(join(projectHooks, 'reference-transaction'), '#!/bin/sh\nexit 1\n')
-      chmodSync(join(projectHooks, 'reference-transaction'), 0o755)
+      const actualReferenceHook = join(actualProjectHooks, 'reference-transaction')
+      writeFileSync(actualReferenceHook, '#!/bin/sh\nexit 1\n')
+      chmodSync(actualReferenceHook, 0o755)
+      symlinkSync(actualReferenceHook, join(projectHooks, 'reference-transaction'))
 
       const guardEnv = prepareSharedRefGuard(tree.path, `refs/heads/${tree.branch}`)
       expect(readdirSync(join(worktreeGitDir(tree.path), 'orch-hooks')))
         .toEqual(['reference-transaction'])
+      const installedWrapper = readFileSync(
+        join(worktreeGitDir(tree.path), 'orch-hooks', 'reference-transaction'), 'utf8',
+      )
+      expect(installedWrapper).toContain(Buffer.from(realpathSync(actualReferenceHook)).toString('base64'))
+      expect(installedWrapper).not.toContain(Buffer.from(
+        join(projectHooks, 'reference-transaction'),
+      ).toString('base64'))
+      const installedReferenceHook = join(
+        worktreeGitDir(tree.path), 'orch-hooks', 'reference-transaction',
+      )
+      expect(installedWrapper).not.toContain(
+        `'${installedReferenceHook}' "$@"`,
+      )
+      expect(git(tree.path, ['config', 'core.hooksPath', guardEnv.GIT_CONFIG_VALUE_0]).exitCode)
+        .toBe(0)
+      expect(prepareSharedRefGuard(tree.path, `refs/heads/${tree.branch}`)).toEqual(guardEnv)
+      expect(readFileSync(
+        join(worktreeGitDir(tree.path), 'orch-hooks', 'reference-transaction'), 'utf8',
+      )).toBe(installedWrapper)
 
       expect(git(scratch, ['init', '-b', 'main'], guardEnv).exitCode).toBe(0)
       expect(git(scratch, ['config', 'user.email', 'orch-test@example.invalid'], guardEnv).exitCode).toBe(0)
@@ -8808,6 +8831,129 @@ describe('the sandbox an agent is launched with', () => {
     } finally {
       rmSync(repo, { recursive: true, force: true })
       rmSync(scratch, { recursive: true, force: true })
+    }
+  })
+
+  test('shared-ref guard preparation is idempotent under its inherited hooks path', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-guard-idempotent-'))
+    const git = (cwd: string, args: string[]) => Bun.spawnSync(['git', ...args], {
+      cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    const sharedGuard = realpathSync(new URL('../hooks/reference-transaction', import.meta.url).pathname)
+    const sharedBefore = readFileSync(sharedGuard)
+    try {
+      expect(git(repo, ['init', '-b', 'main']).exitCode).toBe(0)
+      expect(git(repo, ['config', 'user.email', 'orch-test@example.invalid']).exitCode).toBe(0)
+      expect(git(repo, ['config', 'user.name', 'Orch Test']).exitCode).toBe(0)
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      expect(git(repo, ['add', 'base.txt']).exitCode).toBe(0)
+      expect(git(repo, ['commit', '-m', 'base']).exitCode).toBe(0)
+      const tree = createWorktree(repo, 225)
+
+      const first = prepareSharedRefGuard(tree.path, `refs/heads/${tree.branch}`)
+      const installed = join(first.GIT_CONFIG_VALUE_0, 'reference-transaction')
+      expect(realpathSync(installed)).toBe(sharedGuard)
+      expect(git(tree.path, ['config', 'core.hooksPath', first.GIT_CONFIG_VALUE_0]).exitCode).toBe(0)
+
+      const installedBefore = readFileSync(installed)
+      const entriesBefore = readdirSync(first.GIT_CONFIG_VALUE_0)
+      const second = prepareSharedRefGuard(tree.path, `refs/heads/${tree.branch}`)
+      expect(second).toEqual(first)
+      expect(readFileSync(sharedGuard)).toEqual(sharedBefore)
+      expect(readFileSync(installed)).toEqual(installedBefore)
+      expect(readdirSync(first.GIT_CONFIG_VALUE_0)).toEqual(entriesBefore)
+      expect(realpathSync(installed)).toBe(sharedGuard)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('shared-ref guard refuses a self-referencing original without changing it', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-guard-self-reference-'))
+    const git = (cwd: string, args: string[]) => Bun.spawnSync(['git', ...args], {
+      cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    try {
+      expect(git(repo, ['init', '-b', 'main']).exitCode).toBe(0)
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      expect(git(repo, ['add', 'base.txt']).exitCode).toBe(0)
+      expect(git(repo, ['-c', 'user.email=orch-test@example.invalid',
+        '-c', 'user.name=Orch Test', 'commit', '-m', 'base']).exitCode).toBe(0)
+      const tree = createWorktree(repo, 226)
+      const hookDir = join(worktreeGitDir(tree.path), 'orch-hooks')
+      const installed = join(hookDir, 'reference-transaction')
+      mkdirSync(hookDir)
+      writeFileSync(installed, '#!/bin/sh\necho original\n')
+      chmodSync(installed, 0o755)
+      expect(git(tree.path, ['config', 'core.hooksPath', hookDir]).exitCode).toBe(0)
+      const before = readFileSync(installed)
+
+      expect(() => prepareSharedRefGuard(tree.path)).toThrow(
+        `refusing shared ref guard wrapper: original hook resolves to its own path ${installed}`,
+      )
+      expect(readFileSync(installed)).toEqual(before)
+      expect(readdirSync(hookDir)).toEqual(['reference-transaction'])
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('shared-ref guard refuses a project hook symlinked to the tracked guard', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-guard-shared-symlink-'))
+    const git = (cwd: string, args: string[]) => Bun.spawnSync(['git', ...args], {
+      cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    const sharedGuard = realpathSync(new URL('../hooks/reference-transaction', import.meta.url).pathname)
+    const sharedBefore = readFileSync(sharedGuard)
+    try {
+      expect(git(repo, ['init', '-b', 'main']).exitCode).toBe(0)
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      expect(git(repo, ['add', 'base.txt']).exitCode).toBe(0)
+      expect(git(repo, ['-c', 'user.email=orch-test@example.invalid',
+        '-c', 'user.name=Orch Test', 'commit', '-m', 'base']).exitCode).toBe(0)
+      const tree = createWorktree(repo, 227)
+      const projectHooks = join(repo, '.githooks')
+      mkdirSync(projectHooks)
+      symlinkSync(sharedGuard, join(projectHooks, 'reference-transaction'))
+      expect(git(tree.path, ['config', 'core.hooksPath', projectHooks]).exitCode).toBe(0)
+      const hookDir = join(worktreeGitDir(tree.path), 'orch-hooks')
+
+      expect(() => prepareSharedRefGuard(tree.path)).toThrow(
+        `resolves to tracked shared guard ${sharedGuard}`,
+      )
+      expect(existsSync(hookDir)).toBe(false)
+      expect(readFileSync(sharedGuard)).toEqual(sharedBefore)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('shared-ref guard refuses an unwritable hook path without cleaning it', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-guard-unwritable-'))
+    const git = (cwd: string, args: string[]) => Bun.spawnSync(['git', ...args], {
+      cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    let hookDir: string | null = null
+    try {
+      expect(git(repo, ['init', '-b', 'main']).exitCode).toBe(0)
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      expect(git(repo, ['add', 'base.txt']).exitCode).toBe(0)
+      expect(git(repo, ['-c', 'user.email=orch-test@example.invalid',
+        '-c', 'user.name=Orch Test', 'commit', '-m', 'base']).exitCode).toBe(0)
+      const tree = createWorktree(repo, 228)
+      hookDir = join(worktreeGitDir(tree.path), 'orch-hooks')
+      mkdirSync(hookDir)
+      writeFileSync(join(hookDir, 'leave-alone'), 'sentinel\n')
+      chmodSync(hookDir, 0o555)
+
+      expect(() => prepareSharedRefGuard(tree.path)).toThrow(
+        `cannot install shared ref guard: hook path is not writable: ${hookDir}`,
+      )
+      expect(readdirSync(hookDir)).toEqual(['leave-alone'])
+      expect(readFileSync(join(hookDir, 'leave-alone'), 'utf8')).toBe('sentinel\n')
+    } finally {
+      if (hookDir) chmodSync(hookDir, 0o755)
+      rmSync(repo, { recursive: true, force: true })
     }
   })
 
