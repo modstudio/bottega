@@ -1425,9 +1425,9 @@ export const sessionId = (): string | null =>
   process.env.CLAUDE_CODE_SESSION_ID ?? process.env.CLAUDE_CODE_BRIDGE_SESSION_ID ?? null
 
 /**
- * A full hour covers the longest 45-minute implementation run plus the time
- * needed to read its question. Beyond that, treating a quiet session as gone
- * has the safe failure mode: another architect sees a ruling they may give.
+ * A session seen inside this window is known live. A session outside it is
+ * UNKNOWN, not dead: this row records orch activity, not the owning process.
+ * Silence therefore never transfers its authority to another session.
  */
 export const SESSION_LIVE_MS = 60 * 60 * 1000
 

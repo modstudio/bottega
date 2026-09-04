@@ -6256,6 +6256,17 @@ describe('detached run collection', () => {
     }
   }
   const orch = (...args: string[]) => orchInput(args)
+  const orchFrom = (cwd: string, session: string, ...args: string[]) => {
+    const p = Bun.spawnSync([process.execPath, CLI, ...args], {
+      cwd,
+      env: {
+        ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+        CLAUDE_CODE_SESSION_ID: session,
+      },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    return { code: p.exitCode, out: p.stdout.toString(), err: p.stderr.toString() }
+  }
   const insert = (status: string, job = 'file-question') => (db().query(
     `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status)
      VALUES (?, 'codex', ?, 'x', 1, 'x', ?) RETURNING id`,
@@ -6873,7 +6884,7 @@ describe('detached run collection', () => {
     expect(r.out).not.toContain(`rule on them:  orch answer ${turn} "<ruling>"`)
   })
 
-  test('inbox keeps own questions first and in their existing format', () => {
+  test('inbox keeps own questions in their existing format outside a registered project', () => {
     const own = insert('asking', 'implement')
     const orphan = insert('asking', 'implement')
     db().query('UPDATE run SET session_id=? WHERE id=?').run('orch-test-session', own)
@@ -6887,40 +6898,45 @@ describe('detached run collection', () => {
     expect(r.code).toBe(0)
     expect(r.out).toContain(`run ${own} · codex/implement · asking`)
     expect(r.out).toContain('        why: it fits\n        - one\n        - two\n        it would: one')
-    expect(r.out.indexOf(`run ${own}`)).toBeLessThan(r.out.indexOf('waiting on a ruling that anyone may give:'))
     expect(r.out).toContain(`rule on them:  orch answer ${own} "<ruling>"`)
+    expect(r.out).not.toContain(`run ${orphan}`)
   })
 
-  test('inbox surfaces an orphaned question with everything needed to rule', () => {
+  test('project inbox exposes a foreign question without adopting it', () => {
     const id = insert('asking', 'implement')
     const askedAt = new Date(Date.now() - 90_000).toISOString()
     db().query('UPDATE run SET session_id=?, repo=? WHERE id=?').run('gone-session', 'fixture-repo', id)
+    upsertProject({ name: 'fixture-repo', path: realpathSync(dir), settings: {} })
     db().query('INSERT INTO question (run_id, asked_at, question, options, recommendation) VALUES (?,?,?,?,?)')
       .run(id, askedAt, 'which shape?', JSON.stringify(['existing', 'new']), 'existing')
 
-    const r = orch('inbox')
+    const r = orchFrom(realpathSync(dir), 'orch-test-session', 'inbox')
     expect(r.code).toBe(0)
-    expect(r.out).toContain('waiting on a ruling that anyone may give:')
-    expect(r.out).toContain(`run ${id} · answer ${id} · implement · codex · fixture-repo · waiting`)
+    expect(r.out).toContain('visible here, but owned by another session:')
+    expect(r.out).toContain(`run ${id} · implement · codex · fixture-repo · owner gone-session · liveness unknown`)
     expect(r.out).toContain('which shape?\n        - existing\n        - new')
     expect(r.out).toContain('recommendation: existing')
-    expect(r.out).toContain(`orch answer ${id} --q`)
+    expect(r.out).toContain('only the owning session may rule')
+    expect(r.out).not.toContain(`orch answer ${id}`)
   })
 
-  test('inbox does not claim a different recently-seen session is orphaned', () => {
+  test('project inbox reports a recently-seen foreign owner as live, without authority', () => {
     const id = insert('asking', 'implement')
-    db().query('UPDATE run SET session_id=? WHERE id=?').run('other-live-session', id)
+    upsertProject({ name: 'fixture-repo', path: realpathSync(dir), settings: {} })
+    db().query('UPDATE run SET session_id=?, repo=? WHERE id=?')
+      .run('other-live-session', 'fixture-repo', id)
     db().query('INSERT INTO session_seen (session_id, last_seen) VALUES (?,?)')
       .run('other-live-session', new Date().toISOString())
     db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
       .run(id, new Date().toISOString(), 'still owned?')
 
-    const r = orch('inbox')
+    const r = orchFrom(realpathSync(dir), 'orch-test-session', 'inbox')
     expect(r.code).toBe(0)
-    expect(r.out).toBe('no questions waiting on you\n')
+    expect(r.out).toContain('owner other-live-session · liveness live')
+    expect(r.out).not.toContain(`orch answer ${id}`)
   })
 
-  test('inbox --all keeps including another live session', () => {
+  test('inbox --all keeps another live session visible but not answerable', () => {
     const id = insert('asking', 'implement')
     db().query('UPDATE run SET session_id=? WHERE id=?').run('other-live-session', id)
     db().query('INSERT INTO session_seen (session_id, last_seen) VALUES (?,?)')
@@ -6930,12 +6946,12 @@ describe('detached run collection', () => {
 
     const r = orch('inbox', '--all')
     expect(r.code).toBe(0)
-    expect(r.out).toContain(`run ${id} · codex/implement · asking`)
-    expect(r.out).toContain(`rule on them:  orch answer ${id} "<ruling>"`)
-    expect(r.out).not.toContain('waiting on a ruling that anyone may give:')
+    expect(r.out).toContain(`run ${id} · implement · codex`)
+    expect(r.out).toContain('visible here, but owned by another session:')
+    expect(r.out).not.toContain(`orch answer ${id}`)
   })
 
-  test('inbox --all --json publishes answer ids and session liveness', () => {
+  test('inbox --all --json reports live or unknown without asserting death', () => {
     const live = insert('asking', 'implement')
     const orphan = insert('asking', 'implement')
     db().query('UPDATE run SET session_id=? WHERE id=?').run('other-live-session', live)
@@ -6954,9 +6970,61 @@ describe('detached run collection', () => {
     expect(rows).toHaveLength(2)
     expect(rows[0]).toMatchObject({
       question_id: expect.any(Number), run_id: live, answer_id: live,
-      job: 'implement', agent: 'codex', repo: null, asked_at: askedAt, session_live: true,
+      job: 'implement', agent: 'codex', repo: null, asked_at: askedAt,
+      session_live: true, session_liveness: 'live', can_answer: false,
     })
-    expect(rows[1]).toMatchObject({ run_id: orphan, answer_id: orphan, session_live: false })
+    expect(rows[1]).toMatchObject({
+      run_id: orphan, answer_id: orphan, session_live: null,
+      session_liveness: 'unknown', can_answer: false,
+    })
+  })
+
+  test('bare inbox scopes visibility by checkout while ownership stays session-scoped', () => {
+    // BEFORE: cwd was not a term in the filter, so both invocations rendered
+    // both stale-owner questions under the adoptable heading. AFTER: the same
+    // database viewed from each registered checkout shows only that project.
+    const alphaPath = join(dir, 'alpha-checkout')
+    const betaPath = join(dir, 'beta-checkout')
+    mkdirSync(alphaPath); mkdirSync(betaPath)
+    const alpha = realpathSync(alphaPath)
+    const beta = realpathSync(betaPath)
+    upsertProject({ name: 'alpha', path: alpha, settings: {} })
+    upsertProject({ name: 'beta', path: beta, settings: {} })
+    const alphaRun = insert('asking', 'implement')
+    const betaRun = insert('asking', 'implement')
+    db().query('UPDATE run SET session_id=?, repo=? WHERE id=?')
+      .run('alpha-owner', 'alpha', alphaRun)
+    db().query('UPDATE run SET session_id=?, repo=? WHERE id=?')
+      .run('beta-owner', 'beta', betaRun)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(alphaRun, new Date().toISOString(), 'alpha decision?')
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(betaRun, new Date().toISOString(), 'beta decision?')
+
+    const fromAlpha = orchFrom(alpha, 'reader', 'inbox')
+    const fromBeta = orchFrom(beta, 'reader', 'inbox')
+    expect(fromAlpha.out).toContain('alpha decision?')
+    expect(fromAlpha.out).not.toContain('beta decision?')
+    expect(fromBeta.out).toContain('beta decision?')
+    expect(fromBeta.out).not.toContain('alpha decision?')
+    expect(fromAlpha.out).not.toContain(`orch answer ${alphaRun}`)
+    expect(fromBeta.out).not.toContain(`orch answer ${betaRun}`)
+  })
+
+  test('answer rejects a fixture ruling from a non-owning session without writing it', () => {
+    // BEFORE: answer had no session gate; this exact foreign ruling was written
+    // and the worker resumed under an architect who did not own its spec.
+    const id = insert('asking', 'implement')
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('owning-session', id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'which shape?')
+
+    const r = orch('answer', String(id), 'foreign ruling')
+    expect(r.code).toBe(1)
+    expect(r.err).toContain(`run ${id} is owned by session owning-session`)
+    expect(r.err).toContain('current session orch-test-session cannot rule')
+    expect(db().query('SELECT answer, answered_at FROM question WHERE run_id=?').get(id))
+      .toEqual({ answer: null, answered_at: null })
   })
 
   test('a flag value is not mistaken for a run id', () => {
@@ -7916,6 +7984,7 @@ describe('detached run collection', () => {
       agent: 'codex', job: 'implement', status: 'running', parent: root, turn: 2,
     })
     db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, child)
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('orch-test-session', root)
     db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
       .run(child, new Date().toISOString(), 'which design?')
     const before = (db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n
@@ -7931,7 +8000,8 @@ describe('detached run collection', () => {
 
   test('answer reads a ruling from a file without shell interpretation', () => {
     const id = insert('running', 'implement')
-    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
+    db().query('UPDATE run SET pid=?, session_id=? WHERE id=?')
+      .run(process.pid, 'orch-test-session', id)
     db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
       .run(id, new Date().toISOString(), 'which names?')
     const path = join(dir, `answer-${id}.txt`)
@@ -7947,7 +8017,8 @@ describe('detached run collection', () => {
 
   test('answer reads a ruling from stdin without shell interpretation', () => {
     const id = insert('running', 'implement')
-    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
+    db().query('UPDATE run SET pid=?, session_id=? WHERE id=?')
+      .run(process.pid, 'orch-test-session', id)
     db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
       .run(id, new Date().toISOString(), 'which names?')
     const ruling = 'Use $var and method(Param $x).\nKeep this line exactly.\n'
@@ -8179,7 +8250,8 @@ describe('detached run collection', () => {
 
   test('a partial multi-question ruling names the single-command rule', () => {
     const id = insert('running', 'implement')
-    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
+    db().query('UPDATE run SET pid=?, session_id=? WHERE id=?')
+      .run(process.pid, 'orch-test-session', id)
     db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
       .run(id, new Date().toISOString(), 'first?')
     db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
@@ -8201,6 +8273,7 @@ describe('detached run collection', () => {
     writeFileSync(prompt, 'original implementation spec')
     db().query('UPDATE run SET vendor_session=?, prompt_path=? WHERE id=?')
       .run('test-session', prompt, root)
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('orch-test-session', root)
     db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
       .run(root, new Date().toISOString(), 'which design?')
     const before = (db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n
@@ -8312,6 +8385,7 @@ describe('detached run collection', () => {
       agent: 'codex', job: 'implement', status: 'running', parent: root, turn: 2,
     })
     db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, child)
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('orch-test-session', root)
     const insertQuestion = db().query(
       'INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)',
     )
@@ -16967,6 +17041,21 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
     expect(out.systemMessage).toStartWith('operator brief refused: canon pack is ')
     expect(out.hookSpecificOutput.additionalContext).toContain('Arm under Monitor:')
     expect(out.hookSpecificOutput.additionalContext).not.toContain('x'.repeat(100))
+  })
+
+  test('an old last-seen value is reported as unknown, never orphaned', () => {
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('quiet-owner', id)
+    db().query('INSERT INTO session_seen (session_id, last_seen) VALUES (?,?)')
+      .run('quiet-owner', '2026-09-01T00:00:00.000Z')
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'quiet decision?')
+
+    const p = runBrief({ cwd: '/w/known', source: 'compact', session_id: 'reader' })
+    expect(p.exitCode).toBe(0)
+    const out = hookOutput(p)
+    expect(out.systemMessage).toBe('1 question has unknown owner liveness (1 total).')
+    expect(out.systemMessage).not.toContain('orphaned')
   })
 
   test('malformed stdin exits zero and prints nothing', () => {

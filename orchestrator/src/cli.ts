@@ -2280,9 +2280,9 @@ switch (cmd) {
    * already moved on — and here it is worse, because a worker waiting for a
    * ruling is holding a whole session open with everything it read still in it.
    *
-   * Defaults to this session's own runs, for the same reason scoring does: the
-   * architect who wrote the spec is the one who can rule on it. `--all` is
-   * there because a question can outlive the session that provoked it.
+   * Defaults to questions for the project containing cwd, because that is the
+   * useful visibility scope. Authority is narrower: only the session that
+   * dispatched a run can answer it. `--all` widens visibility, never ownership.
    */
   /**
    * The stdio MCP server a worker calls back into. Not for humans.
@@ -2615,6 +2615,7 @@ switch (cmd) {
   case 'inbox': {
     const sid = sessionId()
     const mine = !has('all')
+    const project = mine ? projectAt(process.cwd()) : null
     const cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString()
     const hasSessionSeen = Boolean(db().query(
       `SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_seen'`,
@@ -2622,14 +2623,14 @@ switch (cmd) {
     const seenJoin = hasSessionSeen
       ? 'LEFT JOIN session_seen seen ON seen.session_id = r.session_id'
       : ''
-    const sessionLive = hasSessionSeen
+    const sessionRecent = hasSessionSeen
       ? 'CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END'
       : '0'
     const allRows = db().query(
       `SELECT q.id, q.run_id, q.asked_at, q.question, q.options, q.recommendation, q.why,
               r.agent, r.job, r.repo, r.status, r.session_id,
               COALESCE(r.parent_run_id, r.id) root_id,
-              ${sessionLive} session_live
+              ${sessionRecent} session_recent
          FROM question q JOIN run r ON r.id = q.run_id
          ${seenJoin}
         WHERE q.answered_at IS NULL
@@ -2638,15 +2639,22 @@ switch (cmd) {
       id: number; run_id: number; asked_at: string; question: string; options: string | null
       recommendation: string | null; why: string | null
       agent: string; job: string; repo: string | null; status: string; session_id: string | null
-      root_id: number; session_live: number
+      root_id: number; session_recent: number
     }[]
-    const rows = mine ? allRows.filter((q) => sid !== null && q.session_id === sid) : allRows
-    const orphaned = mine
-      ? allRows.filter((q) => (sid === null || q.session_id !== sid) && !q.session_live)
-      : []
+    // The default is a VIEW of the project containing cwd. Ownership remains
+    // the session that dispatched the run; choosing what is visible must never
+    // silently make it answerable. Outside a registered project, retain the
+    // old session-scoped fallback rather than guessing a project from the path.
+    const rows = mine
+      ? project
+        ? allRows.filter((q) => q.repo === project.name)
+        : allRows.filter((q) => sid !== null && q.session_id === sid)
+      : allRows
+    const owned = rows.filter((q) => sid !== null && q.session_id === sid)
+    const visible = rows.filter((q) => sid === null || q.session_id !== sid)
 
     if (has('json')) {
-      console.log(JSON.stringify([...rows, ...orphaned].map((q) => ({
+      console.log(JSON.stringify(rows.map((q) => ({
         question_id: q.id,
         run_id: q.run_id,
         answer_id: q.root_id,
@@ -2654,7 +2662,11 @@ switch (cmd) {
         agent: q.agent,
         repo: q.repo,
         asked_at: q.asked_at,
-        session_live: Boolean(q.session_live),
+        // Kept as a nullable compatibility field: false used to assert death,
+        // which a last-seen timestamp cannot establish.
+        session_live: q.session_recent ? true : null,
+        session_liveness: q.session_recent ? 'live' : 'unknown',
+        can_answer: sid !== null && q.session_id === sid,
         question: q.question,
         options: q.options ? JSON.parse(q.options) as string[] : [],
         recommendation: q.recommendation,
@@ -2667,7 +2679,11 @@ switch (cmd) {
       `SELECT root.id, root.agent, root.job, root.repo
          FROM run root
         WHERE root.parent_run_id IS NULL AND root.status = 'asking'
-          ${mine ? 'AND root.session_id = ?' : ''}
+          ${mine
+            ? project
+              ? 'AND root.repo = ? AND root.session_id = ?'
+              : 'AND root.session_id = ?'
+            : 'AND root.session_id = ?'}
           AND NOT EXISTS (
             SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
              WHERE (owner.id = root.id OR owner.parent_run_id = root.id)
@@ -2678,17 +2694,18 @@ switch (cmd) {
              WHERE active.parent_run_id = root.id AND active.status = 'running'
           )
         ORDER BY root.id`,
-    ).all(...(mine ? [sid] : [])) as {
+    ).all(...(project && mine ? [project.name, sid] : [sid])) as {
       id: number; agent: string; job: string; repo: string | null
     }[]
 
-    if (!rows.length && !recoverable.length && !orphaned.length) {
-      console.log(mine ? 'no questions waiting on you' : 'no open questions')
+    if (!rows.length && !recoverable.length) {
+      console.log(mine && project ? `no open questions for ${project.name}`
+        : mine ? 'no questions waiting on you' : 'no open questions')
       break
     }
     let lastRun = -1
     let lastRoot = -1
-    for (const q of rows) {
+    for (const q of owned) {
       if (q.run_id !== lastRun) {
         console.log(`\nrun ${q.run_id} · ${q.agent}/${q.job}${q.repo ? ` · ${q.repo}` : ''} · ${q.status}`)
         lastRun = q.run_id
@@ -2700,7 +2717,7 @@ switch (cmd) {
       for (const o of opts) console.log(`        - ${o}`)
       if (q.recommendation) console.log(`        it would: ${q.recommendation}`)
     }
-    if (rows.length) {
+    if (owned.length) {
       console.log(
         `\nrule on them:  orch answer ${lastRoot} "<ruling>"    (one per question, in order)` +
         `\n               orch answer ${lastRoot} --q<id> "<ruling>"`,
@@ -2712,19 +2729,21 @@ switch (cmd) {
         `asking, but no ruling is open — recoverable: orch continue ${r.id}`,
       )
     }
-    if (orphaned.length) {
-      console.log('\nwaiting on a ruling that anyone may give:')
-      for (const q of orphaned) {
+    if (visible.length) {
+      console.log('\nvisible here, but owned by another session:')
+      for (const q of visible) {
+        const liveness = q.session_recent ? 'live' : 'unknown'
         console.log(
-          `\n  [q${q.id}] run ${q.run_id} · answer ${q.root_id} · ${q.job} · ${q.agent}` +
-          `${q.repo ? ` · ${q.repo}` : ''} · waiting ${dur(Date.now() - Date.parse(q.asked_at))}`,
+          `\n  [q${q.id}] run ${q.run_id} · ${q.job} · ${q.agent}` +
+          `${q.repo ? ` · ${q.repo}` : ''} · owner ${q.session_id ?? 'unknown'} · ` +
+          `liveness ${liveness} · waiting ${dur(Date.now() - Date.parse(q.asked_at))}`,
         )
         console.log(`        ${q.question}`)
         if (q.why) console.log(`        why: ${q.why}`)
         const opts = q.options ? (JSON.parse(q.options) as string[]) : []
         for (const o of opts) console.log(`        - ${o}`)
         if (q.recommendation) console.log(`        recommendation: ${q.recommendation}`)
-        console.log(`        orch answer ${q.root_id} --q${q.id} "<ruling>"`)
+        console.log('        only the owning session may rule; visibility does not transfer authority')
       }
     }
     break
@@ -2787,6 +2806,17 @@ switch (cmd) {
         asked.n
           ? `run ${id} has already been ruled on; its current status is ${row.status}`
           : `run ${id} has no questions to answer; its current status is ${row.status}`,
+      )
+    }
+
+    // A last-seen timeout used to make a question appear adoptable, and this
+    // command then accepted the adoption. Only the architect session that
+    // dispatched the conversation has standing to change its specification.
+    const callerSession = sessionId()
+    if (!row.session_id || callerSession !== row.session_id) {
+      throw new Error(
+        `run ${id} is owned by session ${row.session_id ?? 'unknown'}; ` +
+        `current session ${callerSession ?? 'unknown'} cannot rule on its questions`,
       )
     }
 

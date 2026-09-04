@@ -86,19 +86,22 @@ def main() -> int:
                 context += text if text.endswith("\n") else text + "\n"
                 context += _resume_sentence(payload.get("source"), lines) + "\n"
 
-        question_count = orphaned_count = 0
+        question_count = unknown_count = 0
         if inbox.returncode == 0:
             try:
                 questions = json.loads(inbox.stdout)
                 if not isinstance(questions, list) or not all(
-                    isinstance(item, dict) and isinstance(item.get("session_live"), bool)
+                    isinstance(item, dict)
+                    and item.get("session_liveness") in ("live", "unknown")
                     for item in questions
                 ):
                     raise ValueError("invalid inbox JSON")
                 question_count = len(questions)
-                orphaned_count = sum(not item["session_live"] for item in questions)
+                unknown_count = sum(
+                    item["session_liveness"] == "unknown" for item in questions
+                )
             except Exception:
-                question_count = orphaned_count = 0
+                question_count = unknown_count = 0
 
         notices = []
         if brief.returncode != 0:
@@ -107,11 +110,11 @@ def main() -> int:
             if first:
                 notices.append(f"operator brief refused: {first}")
         if question_count:
-            if orphaned_count:
-                noun = "question" if orphaned_count == 1 else "questions"
-                verb = "needs" if orphaned_count == 1 else "need"
+            if unknown_count:
+                noun = "question" if unknown_count == 1 else "questions"
+                verb = "has" if unknown_count == 1 else "have"
                 notices.append(
-                    f"{orphaned_count} orphaned {noun} {verb} a ruling "
+                    f"{unknown_count} {noun} {verb} unknown owner liveness "
                     f"({question_count} total)."
                 )
             else:

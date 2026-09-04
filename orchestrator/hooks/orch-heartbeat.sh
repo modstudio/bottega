@@ -48,8 +48,9 @@ prev_key=""
 since_emit=0
 
 for ((i = 1; i <= MAX; i++)); do
-  # Session-scoped by design: bare `orch inbox` shows only questions this session
-  # is answerable for, which is the scope a per-session heartbeat wants.
+  # Bare `orch inbox` is project-scoped for visibility. Count only rows whose
+  # `can_answer` flag says this session owns them; visibility never transfers
+  # the authority a per-session heartbeat is reporting.
   # Query first, THEN parse. A previous version piped `orch` straight into
   # python under `set -o pipefail`; a non-zero exit from `orch` collapsed into
   # the empty fallback, which reads as "no runs" and exits CLEAR. A transient
@@ -75,7 +76,8 @@ try:
     d = json.load(sys.stdin)
 except Exception:
     print(0); raise SystemExit
-print(len(d if isinstance(d, list) else d.get("questions", d.get("items", []))))
+rows = d if isinstance(d, list) else d.get("questions", d.get("items", []))
+print(sum(bool(item.get("can_answer")) for item in rows if isinstance(item, dict)))
 ' 2>/dev/null) || asking=0
   asking=${asking:-0}
 
