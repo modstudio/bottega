@@ -100,7 +100,7 @@ export type ArgvOpts = {
   sandbox?: SandboxLevel
   /** Exact extra paths made writable inside Codex's workspace-write sandbox. */
   writableRoots?: string[]
-  /** Worker-local writable objects plus the common read-only object database. */
+  /** Object-store override used to isolate scratch objects for read-only repository jobs. */
   gitObjectEnvironment?: {
     GIT_OBJECT_DIRECTORY: string
     GIT_ALTERNATE_OBJECT_DIRECTORIES: string

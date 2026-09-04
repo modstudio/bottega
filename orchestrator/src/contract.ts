@@ -176,8 +176,10 @@ this change, holds the whole picture, and will review what you produce. Your job
 is to implement the spec below faithfully. It is not to improve it.
 
 You are working in a throwaway git worktree cut for this run. Edit files freely.
-Do NOT commit, do NOT push, do NOT merge, and do not touch git history: the
-architect reads your diff and decides what happens to it.
+You MAY commit changes to your own throwaway branch: commits make your units of
+work and authorship visible to the architect. Do NOT push, do NOT merge into
+trunk, and do not rewrite history. The architect reads your branch diff and
+decides what happens to it.
 
 WHEN YOU REACH A DECISION THAT IS NOT YOURS
 
@@ -235,10 +237,10 @@ fix, and you carry on without it and say so.
  * The contract for transferring an approved run into a commit.
  *
  * This MUST be visibly different from the implementation contract. A worker
- * that has internalised the normal no-commit rule otherwise reaches the exact
+ * that has internalised the normal no-merge rule otherwise reaches the exact
  * contradiction this job exists to remove and stops to ask whether it may do
  * its only deliverable. Landing permits the narrow history operations needed
- * to commit the approved diff and fast-forward it into trunk. Push remains the
+ * to rebase the approved diff and fast-forward it into trunk. Push remains the
  * architect's decision.
  */
 export const LAND_PREAMBLE = WORKER_PREAMBLE
@@ -254,8 +256,10 @@ change.`,
   )
   .replace(
     `You are working in a throwaway git worktree cut for this run. Edit files freely.
-Do NOT commit, do NOT push, do NOT merge, and do not touch git history: the
-architect reads your diff and decides what happens to it.`,
+You MAY commit changes to your own throwaway branch: commits make your units of
+work and authorship visible to the architect. Do NOT push, do NOT merge into
+trunk, and do not rewrite history. The architect reads your branch diff and
+decides what happens to it.`,
     `This is a DIFFERENT contract from implement. You are working in an isolated git
 worktree cut for this run, and landing requires a commit and a merge into trunk.
 You MAY retrieve the named source run's diff, rebase the named target branch onto
@@ -291,7 +295,7 @@ export function workerPreamble(jobName: string): string {
 export function workerResumeGuard(jobName: string): string {
   return jobName === 'land'
     ? 'Rebase onto current trunk, run gates after the rebase, create the requested landing commit, and merge it into trunk fast-forward only. Do not push.'
-    : 'Do not commit/push.'
+    : 'You may commit to your own throwaway branch. Do not push, merge into trunk, or rewrite history.'
 }
 
 /** The ruling, wrapped so a resumed worker knows what it is reading. */
@@ -490,18 +494,19 @@ changes.
 export type ContractConflict = { line: number; text: string }
 
 /**
- * Lines in an implementation spec that appear to tell the worker to change
- * git history, contradicting the contract above.
+ * Lines in an implementation spec that appear to tell the worker to publish,
+ * merge, or rewrite history, contradicting the contract above.
  *
  * This is deliberately a warning, not a prompt rewrite: the author needs to
  * see the conflict and the worker must still receive exactly what was sent.
  * Explicit prohibitions are not conflicts, so a spec may repeat the contract's
- * no-commit rule without producing noise.
+ * restrictions without producing noise. Committing to the run branch is not a
+ * conflict: the worker contract now permits and encourages it.
  */
 export function contractConflicts(spec: string): ContractConflict[] {
-  const gitAction = /\b(?:commits?|committed|committing|push(?:es|ed|ing)?|merges?|merged|merging)\b/i
-  const prohibition = /\b(?:do not|don't|never|must not|should not|may not|cannot|can't|without)\b[^.;]*\b(?:commits?|committed|committing|push(?:es|ed|ing)?|merges?|merged|merging)\b/i
-  const noAction = /\bno\s+(?:commits?|push(?:es)?|merges?)\b/i
+  const gitAction = /\b(?:push(?:es|ed|ing)?|merges?|merged|merging|rebas(?:e|es|ed|ing)|reset(?:s|ting)?|amend(?:s|ed|ing)?)\b/i
+  const prohibition = /\b(?:do not|don't|never|must not|should not|may not|cannot|can't|without)\b[^.;]*\b(?:push(?:es|ed|ing)?|merges?|merged|merging|rebas(?:e|es|ed|ing)|reset(?:s|ting)?|amend(?:s|ed|ing)?)\b/i
+  const noAction = /\bno\s+(?:push(?:es)?|merges?|rebases?|resets?|amendments?)\b/i
 
   return spec.split(/\r?\n/).flatMap((text, index) =>
     text.split(/[.;]/).some((clause) =>

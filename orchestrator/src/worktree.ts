@@ -16,10 +16,10 @@
  * indistinguishable, on disk, from a parallel session doing the same work.
  *
  * WHAT THIS DELIBERATELY DOES NOT DO ITSELF: commit, push, or merge. The worker's
- * contract governs those operations. Implement and fix workers leave changes in
- * the tree for the architect to judge through `orch diff`; a land worker alone
- * may commit an approved diff and fast-forward it into trunk from its disposable
- * worktree. No worker pushes.
+ * contract governs those operations. Implement and fix workers may commit on
+ * their own run branch and leave all changes there for the architect to judge
+ * through `orch diff`; a land worker alone may fast-forward trunk from its
+ * disposable worktree. No worker pushes.
  */
 import { appendFileSync, chmodSync, cpSync, existsSync, mkdirSync, readFileSync, realpathSync,
          readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -67,6 +67,7 @@ export type SharedRefGuardEnvironment = {
   GIT_CONFIG_KEY_0: string
   GIT_CONFIG_VALUE_0: string
   ORCH_GUARDED_GIT_COMMON_DIR: string
+  ORCH_ALLOWED_GIT_REF?: string
 }
 
 /** Resolve linked-worktree metadata without invoking git (git itself uses this environment). */
@@ -360,7 +361,9 @@ export function withWorktreeCreateLock<T>(
 }
 
 /** Install the ref-update boundary without changing the shared repository config. */
-export function prepareSharedRefGuard(cwd: string): SharedRefGuardEnvironment {
+export function prepareSharedRefGuard(
+  cwd: string, allowedRef?: string,
+): SharedRefGuardEnvironment {
   const paths = linkedWorktreePaths(cwd)
   if (!paths) throw new Error(`cannot guard shared refs: ${cwd} is not a linked worktree`)
   const hookDir = join(paths.gitDir, 'orch-hooks')
@@ -369,8 +372,8 @@ export function prepareSharedRefGuard(cwd: string): SharedRefGuardEnvironment {
   // core.hooksPath is injected into the worker's process environment, not
   // configured for this repository. It therefore reaches every scratch
   // repository the worker touches. Project hooks such as commit-msg have no
-  // business running there (and workers do not commit here by contract), so
-  // this directory carries only the ref-update guard.
+  // business running there, so this directory carries only the ref-update
+  // guard. Worker commits do not accidentally inherit checkout-local hooks.
   for (const name of readdirSync(hookDir)) {
     if (name !== 'reference-transaction') rmSync(join(hookDir, name), { recursive: true, force: true })
   }
@@ -397,7 +400,17 @@ export function prepareSharedRefGuard(cwd: string): SharedRefGuardEnvironment {
     GIT_CONFIG_KEY_0: 'core.hooksPath',
     GIT_CONFIG_VALUE_0: hookDir,
     ORCH_GUARDED_GIT_COMMON_DIR: paths.commonDir,
+    ...(allowedRef ? { ORCH_ALLOWED_GIT_REF: allowedRef } : {}),
   }
+}
+
+/** Common immutable objects plus the run branch's ref/reflog directories are the only shared writes. */
+export function workerSharedGitRoots(cwd: string, branch: string): string[] {
+  const paths = linkedWorktreePaths(cwd)
+  if (!paths) throw new Error(`cannot resolve shared git roots: ${cwd} is not a linked worktree`)
+  const ref = resolve(paths.commonDir, 'refs', 'heads', ...branch.split('/'))
+  const reflog = resolve(paths.commonDir, 'logs', 'refs', 'heads', ...branch.split('/'))
+  return [join(paths.commonDir, 'objects'), dirname(ref), dirname(reflog)]
 }
 
 export type OrphanSafety = {
@@ -1134,9 +1147,9 @@ export type Changes = {
  * way this could silently under-report, so it is handled first rather than
  * discovered later.
  *
- * Staging is not committing. The index is scratch state inside a throwaway
- * checkout; nothing here writes a commit, and the branch stays exactly as
- * `createWorktree` left it.
+ * Staging is also what makes a mixed committed/uncommitted result one complete
+ * patch. The comparison is against the immutable run base, so commits on the
+ * run branch and working-tree changes are captured together.
  */
 export function changesIn(w: Worktree): Changes {
   git(['add', '-A'], w.path)
@@ -1166,12 +1179,11 @@ export function changesIn(w: Worktree): Changes {
 /**
  * Delete a worktree and its branch.
  *
- * `--force` because the tree is dirty by construction — the worker's changes
- * are staged and uncommitted, which is exactly what git refuses to discard
- * without being told to. That is the right default for git and the wrong one
- * here: the whole point of the directory is that it is disposable, and a
- * removal that silently fails leaves the run's changes on disk with nothing
- * pointing at them.
+ * `--force` because a worker may leave staged or unstaged changes even when it
+ * also committed. Unique commits are protected separately by `unmergedBranch`:
+ * ordinary discard keeps their branch and names `--force`, while a run that
+ * committed nothing still discards routinely. A removal that silently fails
+ * leaves changes on disk with nothing pointing at them.
  *
  * Never called automatically on failure. A failed implementation run is the
  * case where the half-finished tree is most worth reading, and a cleanup that
@@ -1231,8 +1243,10 @@ export function removeWithTool(
    * irreplaceable. One project's tool will not remove a tree with uncommitted changes
    * without `--force`, and uses `git branch -d` so an unmerged branch survives
    * — both deliberate, because a leftover branch is recoverable and a deleted
-   * one is not. Our worker contract scopes a worker to commit-only, so a dirty
-   * tree it left behind may be the ONLY copy of what it did.
+   * one is not. Orch ownership, proved by the marker, is what permits an
+   * operator-requested forced fallback; whether the worker committed is no
+   * longer part of that proof. A dirty tree it left behind may still be the
+   * ONLY copy of work it did not commit.
    *
    * Forcing past that for an unmarked tree is the same class of act as a worker
    * pushing its own change: a destructive decision belonging to the architect,

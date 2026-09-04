@@ -305,8 +305,10 @@ const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
 const { ask } = await import('./ask.ts')
 const { orphanSafety, repoRootOf, createWorktree, createWithTool, resolveBase, fillTool,
         seedArgv, shellWords, worktreeGitDir, prepareWorktreeObjects, prepareSharedRefGuard,
+        workerSharedGitRoots,
         carryWorkingState, withWorktreeCreateLock, withProjectLock, projectLockState,
-        unmergedBranch, assertCallerAncestry, checkoutHasUncommittedWork, callerDrift } = await import('./worktree.ts')
+        unmergedBranch, assertCallerAncestry, checkoutHasUncommittedWork, callerDrift,
+        changesIn } = await import('./worktree.ts')
 const { landingStatus, resolveLandingBranch } = await import('./landing.ts')
 const { AGENTS, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
@@ -1156,7 +1158,6 @@ describe('job contracts are visible before submission', () => {
       'Then push the branch.',
     ].join('\n')
     expect(contractConflicts(spec)).toEqual([
-      { line: 2, text: 'Commit it using the DEV-126 prefix.' },
       { line: 3, text: 'Then push the branch.' },
     ])
   })
@@ -4079,7 +4080,8 @@ describe('vendor_session is recorded before the agent runs', () => {
       expect(sent).toBe([
         'REMINDER FROM THE ORIGINAL SPEC', '', 's'.repeat(600), '',
         'Do not decide what the spec did not settle; ask.',
-        'Do not commit/push.', '', '---', '', 'the resumed-turn message',
+        'You may commit to your own throwaway branch. Do not push, merge into trunk, or rewrite history.',
+        '', '---', '', 'the resumed-turn message',
       ].join('\n'))
       expect(readFileSync((db().query('SELECT prompt_path FROM run WHERE id=?').get(result.id) as
         { prompt_path: string }).prompt_path, 'utf8')).toBe('the resumed-turn message')
@@ -4284,7 +4286,9 @@ describe('a writing worker must return evidence of completed work', () => {
     agent.bin = process.execPath
     agent.resumeArgv = (o) => {
       expect(o.sandbox).toBe('workspace-write')
-      expect(o.writableRoots).toEqual([worktreeGitDir(tree.path)])
+      expect(o.writableRoots).toEqual([
+        worktreeGitDir(tree.path), ...workerSharedGitRoots(tree.path, tree.branch),
+      ])
       return [script]
     }
     agent.readsOut = false
@@ -6229,7 +6233,7 @@ describe('only an agent that can be resumed may be asked to escalate', () => {
     expect(JOBS['review-lens']!.needs).toEqual({ readsRepo: true })
   })
 
-  test('land gets its commit contract and other writing jobs keep no-commit', () => {
+  test('writing workers may commit only land may merge into trunk', () => {
     expect(workerPreamble('land')).toBe(LAND_PREAMBLE)
     expect(LAND_PREAMBLE).toContain('DIFFERENT contract from implement')
     expect(LAND_PREAMBLE).toContain('You MAY retrieve the named source run')
@@ -6245,8 +6249,12 @@ describe('only an agent that can be resumed may be asked to escalate', () => {
 
     for (const name of ['implement', 'fix']) {
       expect(workerPreamble(name)).toBe(WORKER_PREAMBLE)
-      expect(workerPreamble(name)).toContain('Do NOT commit')
-      expect(workerResumeGuard(name)).toBe('Do not commit/push.')
+      expect(workerPreamble(name)).toContain('MAY commit changes to your own throwaway branch')
+      expect(workerPreamble(name)).toContain('Do NOT push')
+      expect(workerPreamble(name)).toContain('do NOT merge into\ntrunk')
+      expect(workerPreamble(name)).toContain('do not rewrite history')
+      expect(workerResumeGuard(name)).toContain('may commit to your own throwaway branch')
+      expect(workerResumeGuard(name)).toContain('Do not push, merge into trunk, or rewrite history')
     }
     expect(workerResumeGuard('land')).toContain('merge it into trunk fast-forward only')
     expect(workerResumeGuard('land')).toContain('Do not push')
@@ -6902,7 +6910,7 @@ describe('the sandbox an agent is launched with', () => {
     expect(argv).not.toContain(CODEX_EXEC_SANDBOX)
   })
 
-  test('a writing worktree grants codex only its own git metadata directory', () => {
+  test('a writing worktree grants codex its metadata, common objects, and run-ref directory', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-codex-git-dir-'))
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
@@ -6921,23 +6929,24 @@ describe('the sandbox an agent is launched with', () => {
       const sibling = createWorktree(repo, 127)
       const ownGitDir = worktreeGitDir(tree.path)
       const siblingGitDir = worktreeGitDir(sibling.path)
-      const gitObjectEnvironment = prepareWorktreeObjects(tree.path)
+      const sharedRoots = workerSharedGitRoots(tree.path, tree.branch)
       const argv = AGENTS.codex!.argv({
-        prompt: 'p', out: '/tmp/o', mcp: true, write: true, writableRoots: [ownGitDir],
-        gitObjectEnvironment,
+        prompt: 'p', out: '/tmp/o', mcp: true, write: true,
+        writableRoots: [ownGitDir, ...sharedRoots],
       })
       const configs = argv.filter((arg) => arg.includes('='))
       const writable = configs.find((arg) => arg.startsWith('sandbox_workspace_write.'))!
 
-      expect(JSON.parse(writable.split('=', 2)[1]!)).toEqual([ownGitDir])
+      expect(JSON.parse(writable.split('=', 2)[1]!)).toEqual([ownGitDir, ...sharedRoots])
       expect(ownGitDir).toBe(realpathSync(join(repo, '.git', 'worktrees', 'orch-125')))
       expect(writable).not.toContain(`${realpathSync(join(repo, '.git'))}"]`)
       expect(writable).not.toContain(siblingGitDir)
-      expect(writable).not.toContain(join(repo, '.git', 'refs'))
+      expect(sharedRoots).toContain(join(realpathSync(join(repo, '.git')), 'objects'))
+      expect(sharedRoots).toContain(join(realpathSync(join(repo, '.git')), 'refs', 'heads', 'orch'))
+      expect(sharedRoots).toContain(join(realpathSync(join(repo, '.git')), 'logs', 'refs', 'heads', 'orch'))
+      expect(writable).not.toContain(`${join(realpathSync(join(repo, '.git')), 'refs', 'heads')}"]`)
       expect(writable).not.toContain(join(repo, '.git', 'config'))
-      for (const [key, value] of Object.entries(gitObjectEnvironment)) {
-        expect(configs).toContain(`shell_environment_policy.set.${key}=${JSON.stringify(value)}`)
-      }
+      expect(configs.some((arg) => arg.includes('GIT_OBJECT_DIRECTORY'))).toBe(false)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
@@ -7423,7 +7432,7 @@ describe('the sandbox an agent is launched with', () => {
       writeFileSync(join(projectHooks, 'reference-transaction'), '#!/bin/sh\nexit 1\n')
       chmodSync(join(projectHooks, 'reference-transaction'), 0o755)
 
-      const guardEnv = prepareSharedRefGuard(tree.path)
+      const guardEnv = prepareSharedRefGuard(tree.path, `refs/heads/${tree.branch}`)
       expect(readdirSync(join(worktreeGitDir(tree.path), 'orch-hooks')))
         .toEqual(['reference-transaction'])
 
@@ -7466,7 +7475,7 @@ describe('the sandbox an agent is launched with', () => {
     }
   })
 
-  test('a land commit is reachable from the common object store', () => {
+  test('worker commits are durable while the guard protects every other ref', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-land-common-objects-'))
     const git = (cwd: string, args: string[], env: Record<string, string> = {}) => {
       const p = Bun.spawnSync(['git', ...args], {
@@ -7487,7 +7496,7 @@ describe('the sandbox an agent is launched with', () => {
       // worktree reads its commit, while the checkout owning the common store
       // cannot. This is the ablation that makes the positive assertion useful.
       const isolatedTree = createWorktree(repo, 1490)
-      const isolatedEnv = gitObjectEnvironmentFor('codex', JOBS.implement!, isolatedTree)!
+      const isolatedEnv = gitObjectEnvironmentFor('codex', JOBS['review-lens']!, isolatedTree)!
       writeFileSync(join(isolatedTree.path, 'private.txt'), 'private\n')
       git(isolatedTree.path, ['add', 'private.txt'], isolatedEnv)
       git(isolatedTree.path, ['commit', '-m', 'private commit'], isolatedEnv)
@@ -7518,8 +7527,6 @@ describe('the sandbox an agent is launched with', () => {
       git(repo, ['update-ref', '-d', `refs/heads/${isolatedTree.branch}`])
 
       const landingTree = createWorktree(repo, 1491)
-      expect(JOBS.land!.producesSharedCommit).toBe(true)
-      expect(JOBS.implement!.producesSharedCommit).not.toBe(true)
       const landingEnv = gitObjectEnvironmentFor('codex', JOBS.land!, landingTree)
       expect(landingEnv).toBeUndefined()
       writeFileSync(join(landingTree.path, 'landed.txt'), 'shared\n')
@@ -7528,6 +7535,39 @@ describe('the sandbox an agent is launched with', () => {
       const landingCommit = git(landingTree.path, ['rev-parse', 'HEAD'], landingEnv)
 
       expect(git(repo, ['cat-file', '-t', landingCommit])).toBe('commit')
+
+      const workerTree = createWorktree(repo, 1492)
+      expect(gitObjectEnvironmentFor('codex', JOBS.implement!, workerTree)).toBeUndefined()
+      writeFileSync(join(workerTree.path, 'worker.txt'), 'committed\n')
+      git(workerTree.path, ['add', 'worker.txt'])
+      const workerGuard = prepareSharedRefGuard(
+        workerTree.path, `refs/heads/${workerTree.branch}`,
+      )
+      git(workerTree.path, ['commit', '-m', 'worker commit'], workerGuard)
+      const workerCommit = git(workerTree.path, ['rev-parse', 'HEAD'])
+      const captured = changesIn(workerTree)
+      expect(captured.files).toEqual(['worker.txt'])
+      expect(captured.diff).toContain('+committed')
+      expect(writingFailoverRefusal(true, captured, workerTree.path)).toContain(
+        'writing run has 1 changed file(s)',
+      )
+
+      const trunkAttempt = Bun.spawnSync([
+        'git', 'update-ref', 'refs/heads/main', workerCommit,
+      ], {
+        cwd: workerTree.path,
+        env: hermeticGitEnv(workerGuard), stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(trunkAttempt.exitCode).not.toBe(0)
+      expect(trunkAttempt.stderr.toString()).toContain(
+        `refusing shared ref update refs/heads/main: this worker may update only ` +
+        `refs/heads/${workerTree.branch}`,
+      )
+      expect(git(repo, ['rev-parse', 'main'])).not.toBe(workerCommit)
+
+      git(repo, ['worktree', 'remove', '--force', workerTree.path])
+      expect(git(repo, ['rev-parse', workerTree.branch])).toBe(workerCommit)
+      expect(git(repo, ['cat-file', '-t', workerCommit])).toBe('commit')
       expect(existsSync(join(
         repo, '.git', 'objects', landingCommit.slice(0, 2), landingCommit.slice(2),
       ))).toBe(true)

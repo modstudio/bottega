@@ -18,6 +18,7 @@ import { db, nowIso, ROOT, DB_PATH, sessionId, resolveRootFromLastTurn } from '.
 import {
   createWorktree, createWithTool, toolFor, changesIn, repoRootOf, resolveBase, worktreeGitDir,
   prepareWorktreeObjects, prepareSharedRefGuard, worktreeGitEnvironment, carryWorkingState,
+  workerSharedGitRoots,
   assertCallerAncestry, withWorktreeCreateLock,
   removeFor, type Worktree,
   type WorktreeObjectEnvironment, validateSeedWithTool,
@@ -51,14 +52,14 @@ export type RunResult = {
   status: string
 }
 
-/** Select where a repository job may write new git objects. */
+/** Read-only repository jobs isolate scratch objects; writing jobs need durable commits. */
 export function gitObjectEnvironmentFor(
   agent: string,
   requestedJob: Job,
   worktree: Worktree | null,
 ): WorktreeObjectEnvironment | undefined {
   return agent === 'codex' && requestedJob.needs.readsRepo && worktree &&
-    !requestedJob.producesSharedCommit
+    !requestedJob.needs.writesRepo
     ? prepareWorktreeObjects(worktree.path)
     : undefined
 }
@@ -182,6 +183,10 @@ export function writingFailoverRefusal(
   changes: import('./worktree.ts').Changes | null,
   worktree: string,
 ): string | null {
+  // "Clean" means no change from this run's immutable base, not an empty
+  // porcelain status. A worker may commit normally now; changesIn includes
+  // those commits, and handing that branch to a second agent would mix two
+  // authors' work in the one diff this guard exists to protect.
   if (!writesJob) return null
   if (changes && changes.files.length === 0) return null
   const detail = changes
@@ -1133,11 +1138,16 @@ export async function run(opts: {
     throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
   }
 
-  // Git normally writes new blobs into the common object database. Codex may
-  // write only this worktree's metadata directory, so its objects live there
-  // and read the repository's existing objects through a read-only alternate.
+  // Read-only Codex jobs keep scratch objects in this worktree's metadata and
+  // read existing objects through a common-store alternate. Writing jobs use
+  // the common store so commits survive removal of the disposable tree.
   const gitObjectEnvironment = gitObjectEnvironmentFor(name, requestedJob, worktree)
-  const gitConfigEnvironment = worktree ? prepareSharedRefGuard(worktree.path) : undefined
+  const gitConfigEnvironment = worktree
+    ? prepareSharedRefGuard(
+        worktree.path,
+        writesJob && requestedJob.name !== 'land' ? `refs/heads/${worktree.branch}` : undefined,
+      )
+    : undefined
   const argvOpts = {
     prompt,
     out: outPath,
@@ -1158,9 +1168,13 @@ export async function run(opts: {
      * a caller flag would let any invocation widen its own sandbox.
      */
     sandbox: repoJob ? 'workspace-write' as SandboxLevel : 'read-only' as SandboxLevel,
-    // Staging writes the linked worktree's index outside its checkout. Grant
-    // that one metadata directory, never the common .git directory around it.
-    writableRoots: repoJob && worktree ? [worktreeGitDir(worktree.path)] : undefined,
+    // Every repository job may write its own linked metadata. A writing worker
+    // additionally writes immutable common objects and its run branch ref and
+    // reflog; the reference hook refuses every other ref by exact name.
+    writableRoots: repoJob && worktree
+      ? [worktreeGitDir(worktree.path),
+          ...(writesJob ? workerSharedGitRoots(worktree.path, worktree.branch) : [])]
+      : undefined,
     gitObjectEnvironment,
     gitConfigEnvironment,
   }

@@ -1027,7 +1027,7 @@ switch (cmd) {
       const conflicts = contractConflicts(prompt)
       if (conflicts.length && !porcelain) {
         console.error(
-          '! implement spec may conflict with its no-commit/no-push/no-merge contract:',
+          '! implement spec may conflict with its no-push/no-merge/no-rewrite contract:',
         )
         for (const conflict of conflicts) {
           console.error(`  line ${conflict.line}: ${conflict.text}`)

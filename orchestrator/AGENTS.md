@@ -111,19 +111,22 @@ changes, and non-ignored untracked files. Ignored runtime state is provisioned
 by the project's worktree recipe instead of copied from another checkout.
 
 The worktree is the safety boundary. A repository agent gets workspace-write
-for that tree and only its linked-worktree git metadata directory; the main
-checkout, common refs and config, and sibling worktrees remain outside the
-writable roots. Do not use danger-full-access for a repository run. Jobs whose
+for that tree and its linked-worktree git metadata directory. A writing worker
+also gets the common object store, whose content-addressed objects are immutable
+and additive, and the directories holding its own run-branch ref and reflog.
+The ref guard permits only that exact branch; the main checkout, trunk and
+config remain outside its authority. Do not use danger-full-access for a
+repository run. Jobs whose
 entire context is inline, including `summarize` and `review-lens-inline`, create
 no worktree.
 
 A review agent may edit and execute tests to verify a hypothesis. Those edits
 are scratch evidence, never a proposed patch: the review's findings are its
-product, and a review worktree diff must not be landed. Implement, fix and
-review agents do not commit, push or merge. A land agent is the one exception:
-it commits an approved diff and fast-forwards it into trunk from its disposable
-worktree, after rebasing onto current trunk and running the gates there. It
-never pushes.
+product, and a review worktree diff must not be landed. Implement and fix agents
+may commit to their own run branch; they may not push, merge into trunk, or
+rewrite history. Review agents do not commit, push or merge. A land agent alone
+may fast-forward trunk from its disposable worktree, after rebasing onto current
+trunk and running the gates there. It never pushes.
 
 ## Routing
 
@@ -650,8 +653,18 @@ to drop.
 ## Delegating implementation
 
 An implement or fix worker gets a **throwaway git worktree**, a spec, and a
-contract. It edits freely and is *told* not to commit, push or merge: its diff is
-the thing the architect judges, and a commit would destroy that boundary.
+contract. It edits freely and may commit to its own branch, because commits make
+units of work and authorship visible. It may not push, merge into trunk, or
+rewrite history. The branch diff is still the thing the architect judges.
+
+This is an authorship boundary, not ceremony. A run once returned with four
+thousand lines of another session's uncommitted work carried into its tree, and
+the result looked exactly like worker scope creep until somebody recognised the
+code. Had the worker committed its own units, the carried content would have
+remained outside those commits and the contamination would have been structural
+rather than a matter of recognition. `changesIn` stages everything and diffs
+against the immutable run base, so committed and uncommitted work still appear
+together in `orch diff` while their authorship remains visible in history.
 
 A land worker has a different contract because transfer is its whole job. It
 rebases its named branch onto current trunk, applies the approved diff, runs the
@@ -675,13 +688,13 @@ cleanup.
 
 The sandbox permits edits in the throwaway checkout and staging through that
 worktree's own `.git/worktrees/<name>/` metadata directory, so gates that inspect
-the index can run. New blobs go into an isolated object database inside that
-directory and read existing blobs from the common object database as a read-only
-alternate. It does not grant the common `.git` directory: the main checkout's
-refs, objects and config remain unwritable. Committing, pushing and merging are
-still forbidden by instruction for implement, fix and review workers, and no
-post-run check enforces that instruction. Do not read "never commits" as a
-guarantee — read the diff. `orch
+the index can run. Writing workers put new objects in the common object store:
+objects are content-addressed, immutable and additive, so their commits remain
+readable after the worktree is removed. Their only other shared write is the
+directories containing the run branch ref and reflog, and the
+reference-transaction guard refuses every ref except that exact branch by name.
+Trunk remains mechanically protected even when every object is already common.
+Read-only jobs keep scratch objects isolated in their worktree metadata. `orch
 diff <id>` is the deliverable — what it DID, as against `orch result`,
 which is what it SAID. Those are different claims, and checking an agent's work
 against its own summary checks nothing.
@@ -695,11 +708,13 @@ orch discard <id>               throw the worktree away (the row stays)
 ```
 
 `orch discard` and `orch abandon` remove the disposable worktree but keep its
-branch when that branch has commits not yet on the project's trunk; `--force`
-is the explicit instruction to delete it anyway. Implement, fix and review
-workers never commit, so commits they leave are the architect's work in progress,
-not worker debris. A land worker's commit is expected and must already be on
-trunk before its worktree is discarded.
+branch when that branch has commits reachable from nowhere else; `--force` is
+the explicit instruction to delete it anyway. The refusal names both the commit
+count and that command. A run that committed nothing still discards routinely.
+Once worker commits land anywhere else they stop being unique, so their run
+branch also discards routinely. Abandoned unique commits remain because they
+are real, judgeable work, not worker debris. A land worker's commit is expected
+and must already be on trunk before its worktree is discarded.
 
 ## You file it, you fix it
 

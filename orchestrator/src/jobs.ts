@@ -36,8 +36,6 @@ export type Job = {
    * still working.
    */
   timeoutMs?: number
-  /** This job's product is a commit that every checkout must be able to read. */
-  producesSharedCommit?: boolean
 }
 
 /**
@@ -209,7 +207,6 @@ export const JOBS: Record<string, Job> = {
     prefer: ['codex'],
     contextTokens: ERRAND,
     timeoutMs: 30 * 60_000,
-    producesSharedCommit: true,
   },
   'mcp-query': {
     name: 'mcp-query',
