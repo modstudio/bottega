@@ -393,7 +393,7 @@ const { landingStatus, resolveLandingBranch } = await import('./landing.ts')
 const { AGENTS, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
         WAKE_COOLDOWN_MS, CODEX_EXEC_SANDBOX, strictCodexSchema } = await import('./agents.ts')
-const { listDocs, getDoc, setDoc, consumeDoc, removeDoc, docsForRun, exportDocs, importDocs, brief, docSubjects,
+const { listDocs, listDocMetadata, getDoc, setDoc, consumeDoc, removeDoc, docsForRun, exportDocs, importDocs, brief, docSubjects,
         listOpenResumes, parseResumeFrontmatter, resumeAge } =
   await import('./docs.ts')
 const { createDocsMcpServer, fileIssue } = await import('./mcp.ts')
@@ -9917,6 +9917,27 @@ describe('scoped operator docs', () => {
       .toEqual(['Global', 'Job', 'Project'])
   })
 
+  test('metadata listing omits bodies and supports discovery filters without widening exact matches', () => {
+    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    setDoc({ scope: 'project', subject: 'known', slug: 'mcp-scope', title: 'MCP Scope', body: 'first' })
+    setDoc({ scope: 'agent', subject: 'codex', slug: 'capabilities', title: 'Capabilities', body: 'MCP scoping details' })
+    setDoc({ scope: 'global', subject: null, slug: 'other', title: 'Other', body: 'é' })
+    db().query('UPDATE doc SET updated_at=? WHERE slug=?').run('2026-09-01T00:00:00.000Z', 'other')
+    db().query('UPDATE doc SET updated_at=? WHERE slug=?').run('2026-09-03T00:00:00.000Z', 'mcp-scope')
+    db().query('UPDATE doc SET updated_at=? WHERE slug=?').run('2026-09-02T00:00:00.000Z', 'capabilities')
+
+    expect(listDocMetadata({ scope: 'project' }).map((d) => d.slug)).toEqual(['mcp-scope'])
+    expect(listDocMetadata({ subject: 'known' }).map((d) => d.slug)).toEqual(['mcp-scope'])
+    expect(listDocMetadata({ match: 'mCp ScOpE' }).map((d) => d.slug)).toEqual(['mcp-scope'])
+    expect(listDocMetadata({ bodyMatch: 'mCp ScOpInG' }).map((d) => d.slug)).toEqual(['capabilities'])
+    expect(listDocMetadata({ scopes: ['agent', 'project'] }).map((d) => d.scope)).toEqual(['agent', 'project'])
+    expect(listDocMetadata({ updatedAtOrder: 'asc' }).map((d) => d.slug))
+      .toEqual(['other', 'capabilities', 'mcp-scope'])
+    expect(listDocMetadata().find((d) => d.slug === 'other')).toMatchObject({ bytes: 2 })
+    expect(listDocMetadata()).not.toContainKeys(['body', 'created_at'])
+    expect(() => listDocMetadata({ scope: 'global', scopes: ['global'] })).toThrow('scope or scopes')
+  })
+
   test('export and import preserve title and markdown body', () => {
     upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
     setDoc({ scope: 'global', subject: null, slug: 'quoted', title: 'A "title"', body: '# Body\n\nText\n' })
@@ -10002,7 +10023,13 @@ describe('scoped operator docs', () => {
       const listedText = ((listed as any).content[0] as { text: string }).text
       const fetchedText = ((fetched as any).content[0] as { text: string }).text
       const consumedText = ((consumed as any).content[0] as { text: string }).text
-      expect(JSON.parse(listedText)).toHaveLength(2)
+      const listedRows = JSON.parse(listedText)
+      expect(listedRows).toHaveLength(2)
+      expect(listedRows[0]).toEqual({
+        id: expect.any(Number), scope: 'global', subject: null, slug: 'mcp', title: 'MCP',
+        bytes: 7, updated_at: expect.any(String),
+      })
+      expect(listedRows[0]).not.toHaveProperty('body')
       expect(JSON.parse(fetchedText).body).toBe('Visible')
       expect(JSON.parse(consumedText)).toMatchObject({ already_consumed: false })
       expect(getDoc('global', null, 'mcp-consume')?.body).toContain('status: consumed')

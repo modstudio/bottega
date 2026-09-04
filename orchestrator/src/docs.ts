@@ -30,6 +30,19 @@ export type Doc = {
   updated_at: string
 }
 
+export type DocMetadata = Pick<Doc, 'id' | 'scope' | 'subject' | 'slug' | 'title' | 'updated_at'> & {
+  bytes: number
+}
+
+export type DocListFilters = {
+  scope?: string
+  subject?: string | null
+  scopes?: string[]
+  match?: string
+  bodyMatch?: string
+  updatedAtOrder?: 'asc' | 'desc'
+}
+
 function validScope(scope: string): asserts scope is DocScope {
   if (!DOC_SCOPES.includes(scope as DocScope)) {
     throw new Error(`unknown doc scope "${scope}"; valid scopes: ${DOC_SCOPES.join(', ')}`)
@@ -88,6 +101,52 @@ export function listDocs(filters: { scope?: string; subject?: string | null } = 
     `SELECT * FROM doc${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ` +
     'ORDER BY scope, COALESCE(subject, \'\'), slug',
   ).all(...values) as Doc[]
+}
+
+/** A browseable projection: body contents are fetched only through getDoc. */
+export function listDocMetadata(filters: DocListFilters = {}): DocMetadata[] {
+  if (filters.scope !== undefined) validScope(filters.scope)
+  if (filters.scopes !== undefined) {
+    for (const scope of filters.scopes) validScope(scope)
+  }
+  if (filters.scope !== undefined && filters.scopes !== undefined) {
+    throw new Error('use scope or scopes, not both')
+  }
+
+  const where: string[] = []
+  const values: any[] = []
+  if (filters.scope !== undefined) { where.push('scope = ?'); values.push(filters.scope) }
+  if (filters.scopes !== undefined) {
+    if (filters.scopes.length === 0) where.push('0')
+    else {
+      where.push(`scope IN (${filters.scopes.map(() => '?').join(', ')})`)
+      values.push(...filters.scopes)
+    }
+  }
+  if (filters.subject !== undefined) {
+    where.push(filters.subject === null ? 'subject IS NULL' : 'subject = ?')
+    if (filters.subject !== null) values.push(filters.subject)
+  }
+  if (filters.match !== undefined) {
+    where.push(`(
+      instr(lower(title), lower(?)) > 0 OR
+      instr(lower(slug), lower(?)) > 0 OR
+      instr(lower(COALESCE(subject, '')), lower(?)) > 0
+    )`)
+    values.push(filters.match, filters.match, filters.match)
+  }
+  if (filters.bodyMatch !== undefined) {
+    where.push('instr(lower(body), lower(?)) > 0')
+    values.push(filters.bodyMatch)
+  }
+
+  const order = filters.updatedAtOrder
+    ? `updated_at ${filters.updatedAtOrder.toUpperCase()}, scope, COALESCE(subject, ''), slug`
+    : "scope, COALESCE(subject, ''), slug"
+  return db().query(
+    `SELECT id, scope, subject, slug, title, length(CAST(body AS BLOB)) AS bytes, updated_at
+     FROM doc${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${order}`,
+  ).all(...values) as DocMetadata[]
 }
 
 export function getDoc(scope: string, subject: string | null, slug: string): Doc | null {

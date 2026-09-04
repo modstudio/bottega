@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db, sessionId } from './db.ts'
-import { consumeDoc, docsMarkdown, getDoc, listDocs, setDoc } from './docs.ts'
+import { consumeDoc, docsMarkdown, getDoc, listDocMetadata, listDocs, setDoc } from './docs.ts'
 import { projectAt, projectByName, projects } from './projects.ts'
 import {
   addDoctrineRule, addPair, addSkip, baselineForPair, ledgerRef, listDoctrineRules,
@@ -152,9 +152,19 @@ export function createDocsMcpServer(): McpServer {
   })
 
   server.registerTool('list_docs', {
-    description: 'List operator documents, optionally filtered by scope and subject.',
-    inputSchema: { scope: z.string().optional(), subject: z.string().nullable().optional() },
-  }, async ({ scope, subject }) => text(listDocs({ scope, subject })))
+    description: 'List operator document metadata without bodies. Use get_doc to fetch one body.',
+    inputSchema: {
+      scope: z.string().optional().describe('Exact scope match.'),
+      subject: z.string().nullable().optional().describe('Exact subject match.'),
+      scopes: z.array(z.string()).optional().describe('Exact match against any of these scopes.'),
+      match: z.string().optional().describe('Case-insensitive substring match on title, slug, or subject.'),
+      body_match: z.string().optional().describe('Case-insensitive substring match on body; bodies stay omitted.'),
+      updated_at_order: z.enum(['asc', 'desc']).optional()
+        .describe('Order by updated_at; omit for scope, subject, slug order.'),
+    },
+  }, async ({ scope, subject, scopes, match, body_match, updated_at_order }) => text(listDocMetadata({
+    scope, subject, scopes, match, bodyMatch: body_match, updatedAtOrder: updated_at_order,
+  })))
 
   server.registerTool('get_doc', {
     description: 'Get one operator document.',
