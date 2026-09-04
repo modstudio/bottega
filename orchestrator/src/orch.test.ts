@@ -9353,7 +9353,7 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
     },
   )
   const hookOutput = (p: ReturnType<typeof runBrief>) => JSON.parse(p.stdout.toString()) as {
-    hookSpecificOutput: { additionalContext: string }
+    hookSpecificOutput: { hookEventName: string, additionalContext: string }
     systemMessage?: string
   }
   const resumeBody = (status: string, written: string) =>
@@ -9386,6 +9386,7 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
     const cold = runBrief({ cwd: '/w/known', source: 'startup' })
     expect(cold.exitCode).toBe(0)
     const coldOutput = hookOutput(cold)
+    expect(coldOutput.hookSpecificOutput.hookEventName).toBe('SessionStart')
     const coldOut = coldOutput.hookSpecificOutput.additionalContext
     expect(coldOut).toContain(listLine)
     expect(coldOut).toContain(

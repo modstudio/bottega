@@ -119,7 +119,12 @@ def main() -> int:
 
         if not context and not notices:
             return 0
-        output = {"hookSpecificOutput": {"additionalContext": context}}
+        output = {
+            "hookSpecificOutput": {
+                "hookEventName": "SessionStart",
+                "additionalContext": context,
+            }
+        }
         if notices:
             output["systemMessage"] = " ".join(notices)
         sys.stdout.write(json.dumps(output) + "\n")
