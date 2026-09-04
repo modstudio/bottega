@@ -17,15 +17,23 @@ const requiredReportField = (field: string, belongs: string) =>
   z.string({ error: `${field} is required: ${belongs}` }).trim()
     .min(1, `${field} is required: ${belongs}`)
 
-async function fileIssue(input: {
-  kind: 'defect' | 'suggestion'
+type FileIssueInput = {
+  kind: 'defect'
   what_happened: string
   expected: string
   reproduce_command: string
   environment: string
   evidence: string
   not_established: string
-}) {
+} | {
+  kind: 'suggestion'
+  what_happened: string
+  expected: string
+  evidence: string
+  not_established: string
+}
+
+async function fileIssue(input: FileIssueInput) {
   const session = sessionId()
   if (!session) throw new Error('cannot file issue: the reporting session is not available')
   const project = projectAt(process.cwd())
@@ -43,10 +51,12 @@ async function fileIssue(input: {
     '',
     'EXPECTED INSTEAD',
     input.expected,
-    '',
-    'HOW TO REPRODUCE',
-    `Command: ${input.reproduce_command}`,
-    `Environment: ${input.environment}`,
+    ...(input.kind === 'defect' ? [
+      '',
+      'HOW TO REPRODUCE',
+      `Command: ${input.reproduce_command}`,
+      `Environment: ${input.environment}`,
+    ] : []),
     '',
     'EVIDENCE',
     input.evidence,
@@ -121,8 +131,8 @@ export function createDocsMcpServer(): McpServer {
 
   server.registerTool('file_issue', {
     description: `File an actionable defect or suggestion against ${PLATFORM_SLUG} through hub.`,
-    inputSchema: {
-      kind: z.enum(['defect', 'suggestion']).describe('How the filed issue should be read.'),
+    inputSchema: z.discriminatedUnion('kind', [z.object({
+      kind: z.literal('defect').describe('How the filed issue should be read.'),
       what_happened: requiredReportField(
         'what_happened', 'state the observed behavior or proposed change',
       ),
@@ -141,7 +151,21 @@ export function createDocsMcpServer(): McpServer {
       not_established: requiredReportField(
         'not_established', 'state what remains uncertain or has not been demonstrated',
       ),
-    },
+    }), z.object({
+      kind: z.literal('suggestion').describe('How the filed issue should be read.'),
+      what_happened: requiredReportField(
+        'what_happened', 'state the observed behavior or proposed change',
+      ),
+      expected: requiredReportField(
+        'expected', 'state what should have happened or what the suggestion should achieve',
+      ),
+      evidence: requiredReportField(
+        'evidence', 'provide concrete run ids, file:line pointers, or measured output',
+      ),
+      not_established: requiredReportField(
+        'not_established', 'state what remains uncertain or has not been demonstrated',
+      ),
+    })]),
   }, fileIssue)
 
   return server
