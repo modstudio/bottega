@@ -44,15 +44,69 @@ export function resolveLandingBranch(value: string): { branch: string; runId: nu
   return { branch: row.branch, runId }
 }
 
-function worktreeForBranch(repoRoot: string, branch: string): string | null {
+function worktreesForBranch(repoRoot: string, branch: string): string[] {
   const lines = git(repoRoot, ['worktree', 'list', '--porcelain']).split('\n')
   let path: string | null = null
+  const matches: string[] = []
   for (const line of lines) {
     if (line.startsWith('worktree ')) path = line.slice('worktree '.length)
-    else if (line === `branch refs/heads/${branch}`) return path
+    else if (line === `branch refs/heads/${branch}` && path) matches.push(path)
     else if (!line) path = null
   }
-  return null
+  return matches
+}
+
+type CheckoutState = { path: string; cleanAtExpected: boolean; detail: string }
+
+function checkoutState(path: string, expected: string, afterRefUpdate = false): CheckoutState {
+  try {
+    const status = afterRefUpdate
+      ? [
+          git(path, ['diff', '--cached', '--name-status', expected, '--']),
+          git(path, ['diff', '--name-status', '--']),
+          git(path, ['ls-files', '--others', '--exclude-standard']),
+        ].filter(Boolean).join('\n')
+      : git(path, ['status', '--porcelain=v1', '--untracked-files=all'])
+    return { path, cleanAtExpected: status === '', detail: status || 'clean' }
+  } catch (error) {
+    return {
+      path,
+      cleanAtExpected: false,
+      detail: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
+
+function reconcileTrunkCheckouts(
+  checkouts: CheckoutState[], trunk: string, tip: string, expected: string,
+  guard: SharedRefGuardEnvironment,
+): void {
+  for (const checkout of checkouts) {
+    if (!checkout.cleanAtExpected) {
+      console.warn(
+        `landing succeeded, but checkout ${checkout.path} was left untouched because it holds work:\n${checkout.detail}`,
+      )
+      continue
+    }
+
+    // HEAD now resolves to tip because it is symbolic to trunk. Compare the
+    // index and worktree directly with the old commit so the ref movement's
+    // apparent revert is not mistaken for authored work.
+    const current = checkoutState(checkout.path, expected, true)
+
+    try {
+      git(checkout.path, ['read-tree', '-m', '-u', expected, tip], guard)
+      console.log(`reconciled checkout ${checkout.path} to ${trunk} at ${tip}`)
+    } catch (error) {
+      const detail = current.cleanAtExpected
+        ? checkoutState(checkout.path, expected, true).detail
+        : current.detail
+      console.warn(
+        `landing succeeded, but checkout ${checkout.path} was left untouched because it holds work:\n${detail}\n` +
+        `${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+  }
 }
 
 function runGate(project: Project, worktree: string, guard: SharedRefGuardEnvironment): void {
@@ -103,9 +157,12 @@ function fastForward(
   // The expected old value makes the ref update itself the lost-race check.
   // The reference-transaction guard installed in this worktree runs before it
   // and refuses any commit not reachable from the common object database.
+  const trunkCheckouts = worktreesForBranch(repoRoot, trunk)
+    .map((path) => checkoutState(path, expected))
   git(worktree, [
     'update-ref', `refs/heads/${trunk}`, tip, expected,
   ], guard)
+  reconcileTrunkCheckouts(trunkCheckouts, trunk, tip, expected, guard)
 }
 
 export function land(cwd: string, branch: string, timeoutMs = LANDING_LOCK_TIMEOUT_MS): string {
@@ -120,7 +177,7 @@ export function land(cwd: string, branch: string, timeoutMs = LANDING_LOCK_TIMEO
   if (!gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${trunk}`])) {
     throw new Error(`configured trunk ${trunk} does not exist in project ${project.name}`)
   }
-  const worktree = worktreeForBranch(repoRoot, branch)
+  const worktree = worktreesForBranch(repoRoot, branch)[0] ?? null
   if (!worktree || !existsSync(worktree)) throw new Error(`branch ${branch} has no worktree and cannot be landed`)
   if (branch === trunk || gitOk(repoRoot, [
     'merge-base', '--is-ancestor', `refs/heads/${branch}`, `refs/heads/${trunk}`,

@@ -56,6 +56,7 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     g(repo, 'init', '-b', 'main')
     g(repo, 'config', 'user.email', 'orch-test@example.invalid')
     g(repo, 'config', 'user.name', 'Orch Test')
+    appendFileSync(join(repo, '.git', 'info', 'exclude'), 'trees/\n')
     writeFileSync(join(repo, 'base.txt'), 'base\n')
     g(repo, 'add', 'base.txt')
     g(repo, 'commit', '-m', 'base')
@@ -78,6 +79,81 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     { env: { ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB!, CLAUDE_CODE_SESSION_ID: branch },
       stdout: 'pipe', stderr: 'pipe' },
   )
+
+  test('landing reconciles a clean checkout of trunk to the landed commit', async () => {
+    const { repo } = repoWithBranches(['clean-landing'])
+    upsertProject({ name: 'landing-clean-checkout', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const child = childLand(repo, 'clean-landing')
+      expect(await child.exited).toBe(0)
+      const tip = g(repo, 'rev-parse', 'refs/heads/main')
+      expect(g(repo, 'rev-parse', 'HEAD')).toBe(tip)
+      expect(g(repo, 'write-tree')).toBe(g(repo, 'rev-parse', `${tip}^{tree}`))
+      expect(readFileSync(join(repo, 'clean-landing.txt'), 'utf8')).toBe('clean-landing\n')
+      expect(g(repo, 'status', '--porcelain=v1', '--untracked-files=all')).toBe('')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('landing leaves a trunk checkout with genuine work untouched and says why', async () => {
+    const { repo } = repoWithBranches(['dirty-landing'])
+    writeFileSync(join(repo, 'base.txt'), 'work owned by another session\n')
+    const indexBefore = g(repo, 'write-tree')
+    upsertProject({ name: 'landing-dirty-checkout', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const child = childLand(repo, 'dirty-landing')
+      expect(await child.exited).toBe(0)
+      const output = (await new Response(child.stdout).text()) +
+        (await new Response(child.stderr).text())
+      expect(g(repo, 'rev-parse', 'HEAD')).toBe(g(repo, 'rev-parse', 'dirty-landing'))
+      expect(g(repo, 'write-tree')).toBe(indexBefore)
+      expect(readFileSync(join(repo, 'base.txt'), 'utf8')).toBe('work owned by another session\n')
+      expect(existsSync(join(repo, 'dirty-landing.txt'))).toBe(false)
+      expect(output).toContain('landing succeeded')
+      expect(output).toContain(`checkout ${repo} was left untouched because it holds work`)
+      expect(output).toContain('base.txt')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a previously stale and dirty trunk checkout is treated as holding work', async () => {
+    const { repo } = repoWithBranches(['prior-landing', 'next-landing'])
+    const staleIndex = g(repo, 'write-tree')
+    g(repo, 'update-ref', 'refs/heads/main', 'refs/heads/prior-landing', 'HEAD')
+    writeFileSync(join(repo, 'base.txt'), 'work in the stale checkout\n')
+    upsertProject({ name: 'landing-stale-dirty-checkout', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const child = childLand(repo, 'next-landing')
+      expect(await child.exited).toBe(0)
+      const output = (await new Response(child.stdout).text()) +
+        (await new Response(child.stderr).text())
+      expect(g(repo, 'write-tree')).toBe(staleIndex)
+      expect(readFileSync(join(repo, 'base.txt'), 'utf8')).toBe('work in the stale checkout\n')
+      expect(existsSync(join(repo, 'prior-landing.txt'))).toBe(false)
+      expect(existsSync(join(repo, 'next-landing.txt'))).toBe(false)
+      expect(output).toContain(`checkout ${repo} was left untouched because it holds work`)
+      expect(output).toContain('prior-landing.txt')
+      expect(output).toContain('base.txt')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('two-tree reconciliation refuses staged work on a touched file', () => {
+    const { repo } = repoWithBranches(['read-tree-landing'])
+    try {
+      const oldTrunk = g(repo, 'rev-parse', 'HEAD')
+      const tip = g(repo, 'rev-parse', 'refs/heads/read-tree-landing')
+      g(repo, 'update-ref', 'refs/heads/main', tip, oldTrunk)
+      writeFileSync(join(repo, 'read-tree-landing.txt'), 'locally staged work\n')
+      g(repo, 'add', 'read-tree-landing.txt')
+      const indexBefore = g(repo, 'write-tree')
+
+      expect(() => g(repo, 'read-tree', '-m', '-u', oldTrunk, tip)).toThrow()
+      expect(g(repo, 'write-tree')).toBe(indexBefore)
+      expect(readFileSync(join(repo, 'read-tree-landing.txt'), 'utf8'))
+        .toBe('locally staged work\n')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
 
   test('two simultaneous landings both land and the stale gate is run again', async () => {
     const { repo } = repoWithBranches(['first', 'second'])
