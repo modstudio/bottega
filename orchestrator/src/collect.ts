@@ -141,6 +141,24 @@ function mcpNote(row: {
   return note
 }
 
+function partialOutputDocument(row: {
+  id: number; status: string
+  failure_kind: string | null; exit_code: number | null
+}, output: string): string {
+  let partialOutput: unknown = output
+  try { partialOutput = JSON.parse(output) } catch { /* Preserve non-JSON output as text. */ }
+  return JSON.stringify({
+    run: {
+      id: row.id,
+      status: row.status,
+      complete: false,
+      failure_kind: row.failure_kind,
+      exit_code: row.exit_code,
+    },
+    partial_output: partialOutput,
+  }, null, 2)
+}
+
 export function collectResult(
   database: Database, argv: string[], writesRepo: (job: string) => boolean = () => false,
 ): void {
@@ -173,8 +191,16 @@ export function collectResult(
     console.error(`run ${id} (${row.agent}/${row.job}) is still running`)
     process.exit(2)
   }
-  if (row.output_path && existsSync(row.output_path)) {
-    console.log(readFileSync(row.output_path, 'utf8'))
+  const output = row.output_path && existsSync(row.output_path)
+    ? readFileSync(row.output_path, 'utf8')
+    : null
+  if (!outcome.ok) {
+    if (output !== null) {
+      console.error(`\n— INCOMPLETE partial output from run ${row.id} (${row.status}) follows`)
+      console.log(partialOutputDocument(row, output))
+    }
+  } else if (output !== null) {
+    console.log(output)
   }
   const chainNote = failoverSummary(chain.attempts)
   if (chainNote) console.error(`\n— ${chainNote}`)

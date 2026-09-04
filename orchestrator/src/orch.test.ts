@@ -5535,6 +5535,36 @@ describe('detached run collection', () => {
     expect(r.out).toContain(`${id}\tfailed\n  harness, exit 17: worktree creation failed`)
   })
 
+  test('a failed run wraps partial JSON so it cannot parse as a completed review', () => {
+    const id = insert('failed', 'review-lens')
+    const output = join(dir, `failed-partial-${id}.txt`)
+    const partial = {
+      findings: [],
+      provenance: { tree_inspected: 'Found two invalidators.', could_not_verify: [] },
+    }
+    writeFileSync(output, JSON.stringify(partial))
+    db().query(
+      `UPDATE run SET output_path=?, error='agent died', failure_kind='interrupted', exit_code=1
+        WHERE id=?`,
+    ).run(output, id)
+
+    const r = orch('result', String(id))
+
+    expect(r.code).toBe(1)
+    expect(r.err).toContain(`INCOMPLETE partial output from run ${id} (failed) follows`)
+    expect(r.err).toContain(`run ${id} failed: interrupted, exit 1: agent died`)
+    const shown = JSON.parse(r.out)
+    expect(shown).toEqual({
+      run: {
+        id, status: 'failed', complete: false,
+        failure_kind: 'interrupted', exit_code: 1,
+      },
+      partial_output: partial,
+    })
+    expect(shown.findings).toBeUndefined()
+    expect(JSON.parse(readFileSync(output, 'utf8'))).toEqual(partial)
+  })
+
   test('result falls back to the run row and output when the full CLI cannot parse', () => {
     const id = insert('ok')
     const output = join(dir, `degraded-result-${id}.txt`)
