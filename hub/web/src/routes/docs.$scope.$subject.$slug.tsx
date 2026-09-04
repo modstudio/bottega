@@ -151,6 +151,7 @@ function DocPage() {
       {doc.data && !editing ? <div className="prose-copy"><Markdown content={doc.data.body} /></div> : null}
       {doc.data && !editing ? <div className="mt-8 border-t border-border pt-4">
         <h2 className="mb-3 text-sm font-semibold">History</h2>
+        {history.error ? <p className="text-destructive">{history.error.message}</p> : null}
         {history.data?.map((revision) => <div key={revision.id} className="grid grid-cols-[5rem_6rem_1fr_auto] gap-3 border-b border-border py-2 text-xs">
           <span>#{revision.id} {revision.op}</span>
           <span>{revision.author}</span>

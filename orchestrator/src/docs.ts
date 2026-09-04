@@ -69,11 +69,15 @@ function validScope(scope: string): asserts scope is DocScope {
   }
 }
 
-function validate(scope: string, subject: string | null, slug: string): asserts scope is DocScope {
+function validateHistoricAddress(scope: string, slug: string): asserts scope is DocScope {
   validScope(scope)
   if (!/^[a-z0-9][a-z0-9-]*$/.test(slug) || slug.length > 64) {
     throw new Error('invalid slug; use 1-64 lowercase letters, digits, or hyphens, starting with a letter or digit')
   }
+}
+
+function validate(scope: string, subject: string | null, slug: string): asserts scope is DocScope {
+  validateHistoricAddress(scope, slug)
   const subjectKind = DOC_SCOPE_SUBJECT_KIND[scope]
   if (subjectKind === null) {
     if (subject !== null) throw new Error(`${scope} docs take no subject; remove --subject`)
@@ -260,6 +264,7 @@ export function consumeDoc(
   scope: string, subject: string | null, slug: string,
   context: DocWriteContext,
 ): ConsumedDoc {
+  validate(scope, subject, slug)
   writeIdentity(context)
   const doc = getDoc(scope, subject, slug)
   if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
@@ -312,10 +317,13 @@ export function docsForRun(input: { job: string; cwd: string }): InjectedDoc[] {
     ...(project ? listDocs({ scope: 'project', subject: project.name }) : []),
   ]
   const latest = db().query('SELECT MAX(id) AS id FROM doc_revision WHERE doc_id=?')
-  return docs.map((doc) => ({
-    ...doc,
-    revision_id: (latest.get(doc.id) as { id: number }).id,
-  }))
+  return docs.map((doc) => {
+    const revisionId = (latest.get(doc.id) as { id: number | null }).id
+    if (revisionId === null) {
+      throw new Error(`doc ${doc.scope}/${doc.subject ?? '_'}/${doc.slug} has no revision; refusing run`)
+    }
+    return { ...doc, revision_id: revisionId }
+  })
 }
 
 export function docsMarkdown(docs: Doc[]): string {
@@ -435,7 +443,7 @@ export function importDocs(dir: string, context: DocWriteContext): number {
 }
 
 export function listDocRevisions(scope: string, subject: string | null, slug: string): DocRevisionMetadata[] {
-  validate(scope, subject, slug)
+  validateHistoricAddress(scope, slug)
   return db().query(
     `SELECT id, op, author, reason, at, length(CAST(body AS BLOB)) AS bytes
        FROM doc_revision WHERE scope=? AND subject IS ? AND slug=? ORDER BY id DESC`,
@@ -449,7 +457,7 @@ export function getDocRevision(id: number): DocRevision | null {
 export function restoreDoc(
   scope: string, subject: string | null, slug: string, revisionId: number, context: DocWriteContext,
 ): Doc {
-  validate(scope, subject, slug)
+  validateHistoricAddress(scope, slug)
   writeIdentity(context)
   const revision = getDocRevision(revisionId)
   if (!revision || revision.scope !== scope || revision.subject !== subject || revision.slug !== slug) {

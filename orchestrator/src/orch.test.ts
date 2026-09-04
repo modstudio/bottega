@@ -697,7 +697,7 @@ const { candidates, weightCase, scoreboard, median, evidenceFor, pick,
         NOISE_BAND, QUALITY_STEP, MIN_SAMPLE, OUTPUT_RESERVE, EVIDENCE_WINDOW,
         STANDING_EXPLORE_RATE, PROMPT_SIZE_BOUNDARY, promptSizeBucket } = await import('./route.ts')
 const { guide } = await import('./guide.ts')
-const { projects, projectAt, projectByName, stackAt, upsertProject } = await import('./projects.ts')
+const { projects, projectAt, projectByName, stackAt, upsertProject, removeProject } = await import('./projects.ts')
 const { dbNameFor, recipeNotes, runRecipe, fill } = await import('./recipe.ts')
 const { JOBS } = await import('./jobs.ts')
 const { runDetail, state } = await import('./serve.ts')
@@ -11310,6 +11310,23 @@ describe('scoped operator docs', () => {
     expect(diffDocRevisions(previous!.id, latest!.id)).toContain('-one\n+two')
   })
 
+  test('history and restore survive removal of the addressed project', () => {
+    upsertProject({ name: 'former', path: '/w/former', stack: null, canon: true, settings: {} })
+    setDoc({
+      scope: 'project', subject: 'former', slug: 'historic', title: 'Historic', body: 'kept',
+    })
+    removeDoc('project', 'former', 'historic')
+    expect(removeProject('former')).toBe(true)
+
+    expect(listDocRevisions('project', 'former', 'historic').map((revision) => revision.op))
+      .toEqual(['delete', 'create'])
+    expect(restoreDoc(
+      'project', 'former', 'historic',
+      listDocRevisions('project', 'former', 'historic').find((revision) => revision.op === 'create')!.id,
+      { reason: 'restore after unregistering' },
+    )).toMatchObject({ id: expect.any(Number), scope: 'project', subject: 'former', slug: 'historic', body: 'kept' })
+  })
+
   test('scope, slug, and every subject rule name a usable fix', () => {
     upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
     const put = (scope: string, subject: string | null, slug = 'ok') =>
@@ -11339,6 +11356,15 @@ describe('scoped operator docs', () => {
     setDoc({ scope: 'resume', subject: 'known', slug: 'epic', title: 'Resume', body: 'R' })
     expect(docsForRun({ job: 'file-question', cwd: '/w/known/src' }).map((d) => d.title))
       .toEqual(['Global', 'Job', 'Project'])
+  })
+
+  test('docsForRun refuses a document whose provenance was bypassed', () => {
+    db().query(
+      `INSERT INTO doc (scope, subject, slug, title, body, created_at, updated_at)
+       VALUES ('global', NULL, 'untracked', 'Untracked', 'body', ?, ?)`,
+    ).run('2026-09-05T00:00:00.000Z', '2026-09-05T00:00:00.000Z')
+    expect(() => docsForRun({ job: 'file-question', cwd: '/elsewhere' }))
+      .toThrow('doc global/_/untracked has no revision; refusing run')
   })
 
   test('metadata listing omits bodies and supports discovery filters without widening exact matches', () => {
