@@ -282,7 +282,7 @@ function probeRequestedMcp(mcp: boolean | undefined, agent: string, cwd: string)
   if (!mcp) return null
   const project = projectAt(cwd)
   if (!project) return null
-  return mcpConnectionFor(agent, cwd, project.name)
+  return mcpConnectionFor(agent, cwd, project.settings.mcpServer ?? project.name)
 }
 
 /**

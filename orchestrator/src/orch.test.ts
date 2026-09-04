@@ -2484,6 +2484,25 @@ printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"l
     }
   })
 
+  test('preflightMcp reads an explicit MCP server name from the project register', () => {
+    const cwd = dir
+    upsertProject({ name: 'fixture-project', path: cwd, settings: { mcpServer: 'orch' } })
+    const grok = AGENTS.grok!
+    const originalBin = grok.bin
+    grok.bin = join(dir, 'fake-grok-configured-server-doctor.sh')
+    writeFileSync(grok.bin, `#!/bin/sh
+printf '%s' '{"servers":[{"name":"orch","healthy":false,"checks":[{"label":"unavailable","passed":false,"detail":"server down"}]}]}'
+`)
+    chmodSync(grok.bin, 0o755)
+    try {
+      expect(() => preflightMcp({
+        mcp: true, cwd, job: 'review-lens', prompt: 'review this', agent: 'grok',
+      })).toThrow("MCP was requested, but server 'orch' could not be attached")
+    } finally {
+      grok.bin = originalBin
+    }
+  })
+
   test('reads Grok doctor as the same-named project connection', () => {
     const doctor = join(dir, 'fake-grok-mcp-doctor.sh')
     writeFileSync(doctor, `#!/bin/sh
@@ -2552,7 +2571,7 @@ fi
     const script = join(dir, 'fake-grok-connected-lens.sh')
     writeFileSync(script, `#!/bin/sh
 if [ "$1" = "mcp" ]; then
-  printf '%s' '{"servers":[{"name":"fixture-project","healthy":true,"checks":[]}]}'
+  printf '%s' '{"servers":[{"name":"orch","healthy":true,"checks":[]}]}'
 else
   printf '%s\n' '{"type":"system","subtype":"init"}'
   printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
@@ -2569,7 +2588,7 @@ fi
       return []
     }
     const cwd = dir
-    upsertProject({ name: 'fixture-project', path: cwd, settings: {} })
+    upsertProject({ name: 'fixture-project', path: cwd, settings: { mcpServer: 'orch' } })
     const priorDepth = process.env.ORCH_DEPTH
     process.env.ORCH_DEPTH = '0'
     try {
@@ -2580,7 +2599,7 @@ fi
       expect(db().query(
         'SELECT mcp_server, mcp_connected FROM run WHERE id=?',
       ).get(result.id)).toEqual({
-        mcp_server: 'fixture-project', mcp_connected: 1,
+        mcp_server: 'orch', mcp_connected: 1,
       })
     } finally {
       agent.bin = originalBin

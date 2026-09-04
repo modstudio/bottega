@@ -54,6 +54,8 @@ export type Project = {
 export type ProjectSettings = {
   /** Ticket-key prefixes whose committed tasks count as this project's shipped work. */
   keyPrefixes?: string[]
+  /** MCP server this project's agents attach to. Defaults to the project name. */
+  mcpServer?: string
   /**
    * How this tracker's task states map onto the vocabulary used here.
    *
