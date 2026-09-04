@@ -10413,6 +10413,25 @@ describe('scoped operator docs', () => {
     expect(prefix.err).toContain('no registered project owns task key')
   })
 
+  test('nested command errors name the recognized group and list its verbs', () => {
+    expect(orchCli(['port', 'doctrine', 'show', '7'])).toMatchObject({
+      code: 1,
+      err: expect.stringContaining('unknown: orch port doctrine show. Try list | add | retire'),
+    })
+    expect(orchCli(['port', 'ref'])).toMatchObject({
+      code: 1,
+      err: expect.stringContaining('unknown: orch port ref. Try list | show | set | resolve | delete-error'),
+    })
+    expect(orchCli(['review', 'inspect'])).toMatchObject({
+      code: 1,
+      err: expect.stringContaining('unknown: orch review inspect. Try record | triage | complete | calibration'),
+    })
+    expect(orchCli(['review'])).toMatchObject({
+      code: 1,
+      err: expect.stringContaining('unknown: orch review. Try record | triage | complete | calibration'),
+    })
+  })
+
   test('MCP port tools use registered names and preserve resolved provenance', async () => {
     upsertProject({ name: 'source-invented', path: '/w/source', settings: {} })
     upsertProject({ name: 'target-invented', path: '/w/target',

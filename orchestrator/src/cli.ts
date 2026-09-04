@@ -1344,6 +1344,15 @@ switch (cmd) {
       break
     }
 
+    const portVerbs: Record<string, string> = {
+      baseline: 'show | set',
+      skip: 'list | add',
+      ref: 'list | show | set | resolve | delete-error',
+      doctrine: 'list | add | retire',
+    }
+    if (group && portVerbs[group]) {
+      throw new Error(`unknown: orch port ${group}${action ? ` ${action}` : ''}. Try ${portVerbs[group]}`)
+    }
     throw new Error('unknown: orch port. Try import | baseline | skip | ref | doctrine')
   }
 
@@ -1543,7 +1552,7 @@ switch (cmd) {
           : `${lens}/${agent}: ${calibration.precision.toFixed(2)} (${calibration.hits}/${calibration.triaged}, ${calibration.basis})`)
       break
     }
-    throw new Error('unknown: orch review. Try record | triage | complete | calibration')
+    throw new Error(`unknown: orch review${sub ? ` ${sub}` : ''}. Try record | triage | complete | calibration`)
   }
 
   // The dashboard surface, published for hub to render.
