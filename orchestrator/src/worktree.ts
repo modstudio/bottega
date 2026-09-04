@@ -541,8 +541,14 @@ function fillArg(template: string, vars: Record<string, string>): string {
 
 /** Render the declared process argv. Empty strings remain real argv entries. */
 export function createArgv(
-  create: WorktreeCreate, vars: Record<string, string>,
+  stored: WorktreeCreate | string, vars: Record<string, string>,
 ): string[] {
+  // TOLERANT READ, STRICT WRITE. A legacy row becomes the equivalent shell
+  // declaration in memory; validateProjectSettings still refuses anyone
+  // trying to register that row shape again. This is a migration ramp, not a
+  // permanent format: remove it once every authoritative `project list --json`
+  // reports zero string-valued worktree.create declarations.
+  const create: WorktreeCreate = typeof stored === 'string' ? { pipeline: stored } : stored
   if ('pipeline' in create) return ['sh', '-c', fillTool(create.pipeline, vars)]
   const args: string[] = []
   for (const arg of create.args) {
@@ -560,7 +566,7 @@ export function createArgv(
 }
 
 function runCreateTool(
-  create: WorktreeCreate, vars: Record<string, string>, cwd: string,
+  create: WorktreeCreate | string, vars: Record<string, string>, cwd: string,
 ): { ok: boolean; out: string; stdout: string } {
   const argv = createArgv(create, vars)
   const p = Bun.spawnSync(argv, { cwd, stdout: 'pipe', stderr: 'pipe' })
@@ -653,7 +659,12 @@ function expandedSeed(seed: string): string[] {
  * Expansion is declaration-driven. A normal argument passes the seed once;
  * only the explicit `{ expand: 'seed' }` form enters expandedSeed.
  */
-export function seedArgv(create: WorktreeCreate | undefined, seed: string): string[] {
+export function seedArgv(create: WorktreeCreate | string | undefined, seed: string): string[] {
+  if (typeof create === 'string') {
+    const offset = create.indexOf('{seed}')
+    if (offset < 0 || quoteAt(create, offset) !== null) return [seed]
+    return expandedSeed(seed)
+  }
   if (!create || !('command' in create)) return [seed]
   return create.args.some((arg) => typeof arg === 'object' && 'expand' in arg)
     ? expandedSeed(seed)
@@ -667,6 +678,9 @@ export function fillTool(template: string, vars: Record<string, string>): string
     const quote = quoteAt(template, offset)
     if (quote === "'") return value.replace(/'/g, "'\\''")
     if (quote === '"') return value.replace(/[\\"$`]/g, '\\$&')
+    // Compatibility for stored string declarations only. New declarations
+    // reach expansion through the explicit argument kind instead.
+    if (k === 'seed') return seedArgv(template, value).map(shSingleQuote).join(' ')
     return shSingleQuote(value)
   })
 }

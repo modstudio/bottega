@@ -5732,6 +5732,70 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
     ])
   })
 
+  test('legacy reads and migrated declarations invoke all four tools identically', () => {
+    const root = mkdtempSync(join(tmpdir(), 'orch-legacy-create-'))
+    const bin = join(root, 'bin')
+    const scripts = join(root, 'scripts')
+    const capture = join(root, 'capture.json')
+    mkdirSync(bin)
+    mkdirSync(scripts)
+    const recorder = `#!${process.execPath}
+import { appendFileSync } from 'node:fs'
+const input = await Bun.stdin.text()
+appendFileSync(process.env.CAPTURE, JSON.stringify({
+  argv: process.argv.slice(2),
+  name: process.env.WORKTREE_NAME_OVERRIDE ?? null,
+  seed: process.env.WORKTREE_SEED ?? null,
+  input,
+}) + '\\n')
+`
+    writeFileSync(join(bin, 'bun'), recorder)
+    writeFileSync(join(scripts, 'worktree'), recorder)
+    chmodSync(join(bin, 'bun'), 0o755)
+    chmodSync(join(scripts, 'worktree'), 0o755)
+
+    const old = {
+      adanim: 'echo \'{"cwd":"\'"$PWD"\'","name":"{name}"}\' | bun run scripts/worktree.ts create',
+      alephbeis: "scripts/worktree add {branch} '{base}' {seed} --name={name} && echo $PWD/.claude/worktrees/{name}",
+      starship: "WORKTREE_NAME_OVERRIDE={name} WORKTREE_SEED='{seed}' scripts/worktree add {branch} '{base}'",
+      stopal: 'bun run worktree create "{branch}"',
+    }
+    const migrated = {
+      adanim: { pipeline: old.adanim },
+      alephbeis: declaredCreate('scripts/worktree', [
+        'add', '{branch}', '{base}', { expand: 'seed' }, '--name={name}',
+      ]),
+      starship: declaredCreate('env', [
+        'WORKTREE_NAME_OVERRIDE={name}', 'WORKTREE_SEED={seed}',
+        'scripts/worktree', 'add', '{branch}', '{base}',
+      ]),
+      stopal: declaredCreate('bun', ['run', 'worktree', 'create', '{branch}']),
+    }
+    const invoke = (create: WorktreeCreate | string, vars: Record<string, string>) => {
+      writeFileSync(capture, '')
+      const result = Bun.spawnSync(createArgv(create, vars), {
+        cwd: root,
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}`, CAPTURE: capture },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(result.exitCode).toBe(0)
+      return readFileSync(capture, 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+    }
+    try {
+      for (const base of ['', 'abc123']) {
+        const vars = {
+          branch: 'technical/DEV-182-orch-1519', name: 'orch-1519',
+          seed: '--full --budget-mb=2000', base, key: 'DEV-182', path: '',
+        }
+        for (const project of Object.keys(old) as (keyof typeof old)[]) {
+          expect(invoke(old[project], vars)).toEqual(invoke(migrated[project], vars))
+        }
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   test('preflight refuses a create placeholder without --seed even when no seeds are listed', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-no-seed-'))
     upsertProject({

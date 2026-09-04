@@ -449,10 +449,14 @@ export function worktreeWarnings(p: Project): string[] {
 
 /** Capabilities declared by structured argv, never inferred from shell text. */
 export function createHasPlaceholder(
-  create: WorktreeCreate | undefined,
+  create: WorktreeCreate | string | undefined,
   variable: 'branch' | 'name' | 'base' | 'seed' | 'key' | 'path',
 ): boolean {
-  if (!create || typeof create !== 'object' || !('command' in create)) return false
+  // Legacy rows remain readable during the register migration. Registration
+  // still refuses this shape; this substring inference exists only on the
+  // compatibility ramp and disappears with its last stored string.
+  if (typeof create === 'string') return create.includes(`{${variable}}`)
+  if (!create || !('command' in create)) return false
   return create.args.some((arg) => {
     if (typeof arg === 'string') return placeholders(arg).includes(variable)
     if ('expand' in arg) return arg.expand === variable
