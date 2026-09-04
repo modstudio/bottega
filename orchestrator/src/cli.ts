@@ -102,6 +102,13 @@ function printRunId(id: number): void {
   process.stdout.write(`${id}\n`)
 }
 
+/** A command must not finish while a machine-readable stdout write is still buffered. */
+function writeStdout(output: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    process.stdout.write(output, (error) => error ? reject(error) : resolve())
+  })
+}
+
 /**
  * Warn once per session and drift state, even when a fan-out starts several
  * independent `orch do` processes. The marker is runtime state beside run
@@ -735,7 +742,7 @@ function usage(): never {
       --json                    print one JSON document (the published surface; never orch.db)
   orch monitor [--backstop]     detect, record, report, and safely reconcile machine state
       --history [--limit N]     query recorded invocations and condition ages
-      --json                    emit the report as JSON; silent on a clean live pass
+      --json                    emit one JSON document; silent on a clean live pass
   orch inbox [--all] [--json]   design questions a worker is waiting on you to rule on
       --json                    print one JSON document
   orch tell <id> ["<message>"]   queue non-authoritative context for a running worker
@@ -2038,7 +2045,7 @@ switch (cmd) {
       break
     }
     const result = await monitor(has('backstop') ? 'backstop' : 'invoked')
-    if (has('json')) console.log(JSON.stringify(result))
+    if (has('json')) await writeStdout(`${JSON.stringify(result)}\n`)
     else if (result.conditions.length || result.errors.length) {
       console.log(`monitor ${result.id}: ${result.conditions.length} condition(s), ${result.errors.length} observation error(s)`)
       for (const condition of result.conditions) {

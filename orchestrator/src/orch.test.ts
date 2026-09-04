@@ -659,6 +659,34 @@ the cause` } }
 })
 
 describe('operational monitor record', () => {
+  test('pipes a complete large JSON report before returning its condition status', () => {
+    const prior = (db().query(
+      `INSERT INTO monitor_invocation (started_at,finished_at,trigger,findings,errors)
+       VALUES ('2026-09-04T00:00:00Z','2026-09-04T00:00:01Z','backstop',1,0) RETURNING id`,
+    ).get() as { id: number }).id
+    db().query(
+      `INSERT INTO monitor_condition
+       (invocation_id,kind,subject,condition_since,age_ms,detail,action,issue_key)
+       VALUES (?,?,?,?,?,?,?,?)`,
+    ).run(prior, 'detector-unavailable', 'tasks-waiting-on-ruling',
+      '2026-09-04T00:00:00Z', 0, 'already filed', 'reported', 'DEV-test')
+    for (let i = 0; i < 450; i++) addRun({
+      agent: 'codex', job: 'implement', status: 'stale',
+      startedAt: '2026-09-04T00:00:00Z',
+    })
+
+    const cli = new URL('cli.ts', import.meta.url).pathname
+    const run = Bun.spawnSync([process.execPath, cli, 'monitor', '--json'], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    const output = run.stdout.toString()
+    expect(output.length).toBeGreaterThan(65_536)
+    const report = JSON.parse(output) as { conditions: unknown[]; errors: unknown[] }
+    expect(report.conditions.length).toBeGreaterThanOrEqual(450)
+    expect(run.exitCode).toBe(report.errors.length ? 1 : report.conditions.length ? 2 : 0)
+  })
+
   test('reports a running row whose agent process is gone with elapsed time and output size', () => {
     const clock = Date.parse('2026-09-04T20:00:10Z')
     const id = addRun({ agent: 'codex', job: 'implement', status: 'running',
@@ -4509,7 +4537,7 @@ describe('detached run collection', () => {
     for (const line of lines) expect(JSON.parse(line)).toMatchObject({ id: expect.any(Number) })
 
     const help = orch('--help').out
-    expect(help.match(/one JSON document/g)).toHaveLength(documents.length)
+    expect(help.match(/one JSON document/g)).toHaveLength(documents.length + 1)
     expect(help.match(/one JSON object per line/g)).toHaveLength(1)
   })
 
