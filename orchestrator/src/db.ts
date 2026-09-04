@@ -88,7 +88,7 @@ export function applySchema(d: Database): void {
   addColumn(d, 'run', 'launch_base', 'TEXT')
   addColumn(d, 'run', 'no_failover', 'INTEGER NOT NULL DEFAULT 0')
   // retry_of also serves the deliberate `orch retry` command. This flag says
-  // which linked rows were created by the automatic quota/auth policy.
+  // which linked rows were created by the automatic vendor-failure policy.
   addColumn(d, 'run', 'automatic_failover', 'INTEGER NOT NULL DEFAULT 0')
   // Why this agent was picked. Held only in memory before, which was fine
   // while `orch do` printed it itself - it no longer runs the agent in its
@@ -440,7 +440,7 @@ const RUN_DDL = `CREATE TABLE run (
       vendor_cost_usd REAL,
       -- a calibration probe: scored like any run, but never counted as evidence
       probe         INTEGER NOT NULL DEFAULT 0,
-      -- quota | auth | timeout | denied | other; quota and auth need a person
+      -- Classified by failure.ts; quota, auth and unreachable need a person.
       failure_kind  TEXT,
       -- Born running, not ok. A row is inserted before the agent is spawned, so
       -- the honest default for one whose outcome nobody has written is "we do

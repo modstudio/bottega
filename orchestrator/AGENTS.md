@@ -527,7 +527,7 @@ usage or balance subcommand - so exhaustion cannot be seen coming. It is caught
 on the failure instead.
 
 Every failure is classified: **quota**, **auth**, **unreachable**, **timeout**,
-**denied**, or **other**. Quota, auth and unreachable are the three a person has
+**denied**, **content refusal**, or **other**. Quota, auth and unreachable are the three a person has
 to act on, because nothing downstream can route around them, so each raises a
 macOS notification at the moment it happens rather than waiting to be found in a
 log.
@@ -551,20 +551,25 @@ answers it exactly. `orch doctor` prints this when anything is cooling, because
 that is where someone looks. Adding `AND probe = 0` there for consistency would
 remove the only way out.
 
-## An outage is not a verdict
+A vendor **content refusal** fails over immediately, but neither cools the
+agent nor counts as routing evidence. It describes the vendor's policy for the
+shape of that prompt, not the agent's competence or its availability for an
+unrelated job. Keeping it distinct from a headless tool-permission `denied`
+makes security-shaped prompts countable without teaching the router a false
+quality verdict.
 
-**`unreachable` is the one failure kind that is not evidence about the agent.**
-Every other kind is something the agent did: it ran out of plan, it lost its
-login, it was denied a permission, it answered wrongly. A box that is switched
-off never ran at all. Folding that into the mean lets an unplugged machine teach
-the router that the local model is bad at the job it is measurably best at.
+## Infrastructure and policy failures are not verdicts
+
+**`unreachable` is not evidence about the agent.** A box that is switched off
+never ran at all. Folding that into the mean lets an unplugged machine teach the
+router that the local model is bad at the job it is measurably best at.
 
 The incident is recorded in `orch doc show local-model-host-incidents --scope machine`.
 
 So the rule is: **`unreachable` is excluded from the evidence count entirely.**
-Not weighted down, excluded. It is the only kind treated this way, and the
-exclusion is deliberately surgical — a quota failure needs a person too, and is
-still an honest fact about what that agent could do that day.
+Not weighted down, excluded. Content refusals are excluded too, for the distinct
+policy reason above; quota, auth, interrupted, harness and abandoned failures
+are likewise excluded where they say nothing about the agent's competence.
 
 **`unreachable` tells a person but does not cool the agent down.** A cooldown is
 for a condition that CANNOT BE OBSERVED WITHOUT SPENDING A RUN — quota and stale

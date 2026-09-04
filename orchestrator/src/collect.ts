@@ -79,7 +79,8 @@ export function resolveFailover(database: Database, requestedId: number): {
     try { process.kill(pending.pid, 0); workerAlive = true } catch { /* terminal worker */ }
   }
   const settling = last.status === 'failed' &&
-    (last.failure_kind === 'quota' || last.failure_kind === 'auth') &&
+    (last.failure_kind === 'quota' || last.failure_kind === 'auth' ||
+      last.failure_kind === 'content_refusal') &&
     !pending.no_failover && !last.error?.includes('Failover refused:') && workerAlive
   return { requestedId, attempts, finalId: last.id, settling }
 }

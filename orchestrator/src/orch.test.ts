@@ -538,7 +538,7 @@ const { projects, projectAt, projectByName, stackAt, upsertProject } = await imp
 const { dbNameFor, recipeNotes, runRecipe, fill } = await import('./recipe.ts')
 const { JOBS } = await import('./jobs.ts')
 const { runDetail, state } = await import('./serve.ts')
-const { classify, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOT_EVIDENCE, COOLS_DOWN,
+const { classify, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOT_EVIDENCE, COOLS_DOWN, FAILS_OVER,
         isNonAnswer, detectBlockers } = await import('./failure.ts')
 const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePaths, pruneRuns, KEEP_RUN_FILES_DAYS,
         RUNS_DIR, grokMcpConnection, writingFailoverRefusal, resolveSupersededTurn,
@@ -1633,6 +1633,15 @@ describe('failure classification', () => {
     expect(classify('the command was auto-denied by headless mode')).toBe('denied')
   })
 
+  test("Codex's cybersecurity policy message is a content refusal", () => {
+    const refusal = [
+      'This content was flagged for possible cybersecurity risk. If this seems wrong, try',
+      'rephrasing your request. To get authorized for security work, join the Trusted',
+      'Access for Cyber program: https://chatgpt.com/cyber',
+    ].join(' ')
+    expect(classify(refusal)).toBe('content_refusal')
+  })
+
   test('quota and auth are separated, because only one is fixed by waiting', () => {
     expect(classify('HTTP 429: rate limit exceeded')).toBe('quota')
     expect(classify('HTTP 402')).toBe('quota')
@@ -1657,7 +1666,7 @@ describe('failure classification', () => {
     // process tree, and orch itself being wrong are not capability evidence.
     // None of them may be averaged in with the agent's actual work.
     expect(NOT_EVIDENCE).toEqual([
-      'quota', 'auth', 'unreachable', 'interrupted', 'harness', 'abandoned',
+      'quota', 'auth', 'unreachable', 'content_refusal', 'interrupted', 'harness', 'abandoned',
     ])
     for (const kind of ['timeout', 'denied', 'other']) {
       expect(NOT_EVIDENCE).not.toContain(kind)
@@ -1685,6 +1694,13 @@ describe('failure classification', () => {
     // and the same command run detached would not have produced it.
     expect(COOLS_DOWN).not.toContain('interrupted')
     expect(NEEDS_HUMAN).not.toContain('interrupted')
+  })
+
+  test('a content refusal fails over without cooling or paging', () => {
+    expect(FAILS_OVER).toContain('content_refusal')
+    expect(NOT_EVIDENCE).toContain('content_refusal')
+    expect(COOLS_DOWN).not.toContain('content_refusal')
+    expect(NEEDS_HUMAN).not.toContain('content_refusal')
   })
 
   test('unreachable tells a person but does not cool the agent down', () => {
@@ -2717,7 +2733,7 @@ describe('retry keeps the work on the same agent', () => {
   })
 })
 
-describe('quota failover is one bounded unit of work', () => {
+describe('vendor failure failover is one bounded unit of work', () => {
   const CLI = new URL('cli.ts', import.meta.url).pathname
   const orch = (...args: string[]) => {
     const p = Bun.spawnSync([process.execPath, CLI, ...args], {
@@ -2770,6 +2786,56 @@ describe('quota failover is one bounded unit of work', () => {
       expect(collected.err).toContain('codex died (quota:')
       expect(collected.err).toContain('grok answered')
       expect(pendingForSession('failover-owner').map((row) => row.id)).toEqual([rows[1]!.id])
+    } finally {
+      process.env.PATH = oldPath
+      if (oldDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = oldDepth
+    }
+  })
+
+  test('a vendor content refusal is recorded distinctly and fails over', async () => {
+    const binDir = join(dir, 'content-refusal-bin')
+    mkdirSync(binDir, { recursive: true })
+    writeFileSync(join(binDir, 'codex'), [
+      '#!/bin/sh',
+      'echo "This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. To get authorized for security work, join the Trusted Access for Cyber program: https://chatgpt.com/cyber" >&2',
+      'exit 1',
+      '',
+    ].join('\n'))
+    writeFileSync(
+      join(binDir, 'grok'),
+      '#!/bin/sh\nprintf \'{"type":"result","result":"review completed"}\\n\'\n',
+    )
+    chmodSync(join(binDir, 'codex'), 0o755)
+    chmodSync(join(binDir, 'grok'), 0o755)
+    const oldPath = process.env.PATH
+    const oldDepth = process.env.ORCH_DEPTH
+    process.env.PATH = `${binDir}:${oldPath ?? ''}`
+    process.env.ORCH_DEPTH = '0'
+    try {
+      const result = await runJob({
+        job: 'understand', prompt: 'review the defensive guard', agent: 'codex', cwd: dir,
+      })
+      expect(result.agent).toBe('grok')
+      expect(result.output).toBe('review completed')
+      const rows = db().query(
+        'SELECT id, agent, status, failure_kind, retry_of FROM run ORDER BY id',
+      ).all() as {
+        id: number; agent: string; status: string; failure_kind: string | null
+        retry_of: number | null
+      }[]
+      expect(rows).toHaveLength(2)
+      expect(rows[0]).toMatchObject({
+        agent: 'codex', status: 'failed', failure_kind: 'content_refusal', retry_of: null,
+      })
+      expect(rows[1]).toMatchObject({
+        agent: 'grok', status: 'ok', failure_kind: null, retry_of: rows[0]!.id,
+      })
+
+      const candidate = candidates('understand').find((item) => item.agent === 'codex')!
+      expect(candidate.failures).toBe(0)
+      expect(candidate.evidence).toBe(0)
+      expect(candidate.cooling).toBeNull()
     } finally {
       process.env.PATH = oldPath
       if (oldDepth === undefined) delete process.env.ORCH_DEPTH

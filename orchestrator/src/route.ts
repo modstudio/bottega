@@ -239,12 +239,13 @@ export function candidates(
               -- out the same, but the evidence count doubled, so an agent could
               -- cross MIN_SAMPLE on half the runs it should have needed.
               --
-              -- An UNREACHABLE endpoint is excluded outright. Every other
-              -- failure is evidence about the agent - it ran and could not
-              -- deliver - but a box that is switched off never ran at all, and
-              -- charging it to the model means an outage is indistinguishable
-              -- from incompetence. Eleven hours of a powered-down local host put two
-              -- of these against qwen-local on file-question, the one job it is
+              -- An UNREACHABLE endpoint is excluded outright: a box that is
+              -- switched off never ran at all, and charging it to the model
+              -- makes an outage indistinguishable from incompetence. A
+              -- CONTENT_REFUSAL is excluded for the parallel reason that it
+              -- records vendor policy for a prompt class, not competence.
+              -- Eleven hours of a powered-down local host put two failures
+              -- against qwen-local on file-question, the one job it is
               -- measurably best at.
               --
               -- The same list gates EXPLICIT scores. Seven codex harness

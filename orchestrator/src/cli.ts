@@ -683,7 +683,7 @@ function usage(): never {
       --key <KEY-123>           supply a required branch ticket key
       --repo <name>             attribute work launched outside a registered project
       --follow                  block and watch the run instead of returning its id
-      --no-failover             do not retry quota/auth deaths on another agent
+      --no-failover             do not retry vendor failures on another agent
 
   orch issue <TASK-KEY>         reproduce, diagnose, fix and independently verify one filed issue
 
@@ -832,7 +832,7 @@ function doUsage(): never {
   --detach         print the run id and return immediately (the default)
   --porcelain      print exactly the run id, for machine callers
   --follow         block and watch the run instead of returning its id
-  --no-failover    do not retry quota/auth deaths on another agent
+  --no-failover    do not retry vendor failures on another agent
   --quiet          print only the reply or run id
 `)
   process.exit(0)

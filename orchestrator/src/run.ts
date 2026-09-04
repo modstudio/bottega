@@ -8,6 +8,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { Database } from 'bun:sqlite'
 import {
   classify, notify, isNonAnswer, detectBlockers, NEEDS_HUMAN, NEEDS_HUMAN_TITLE,
+  FAILS_OVER,
 } from './failure.ts'
 import {
   AGENTS, ensureLocalHealth, tryWake, readStrictCodexSchema, type SandboxLevel,
@@ -82,7 +83,7 @@ export type DetachSpec = {
   distinctModels?: string[]
   /** Retry only: the run this replaces, and the directory it ran in. */
   retryOf?: number; cwd?: string
-  /** Disable automatic quota/auth failover for this whole chain. */
+  /** Disable automatic vendor-failure failover for this whole chain. */
   noFailover?: boolean
   /** Carry the caller's uncommitted work into a newly cut worktree. Opt-in. */
   carry?: boolean
@@ -1629,7 +1630,7 @@ export async function run(opts: {
       const terminalKind = classify(terminal, exitCode, timedOut)
       failureKind = terminalKind
       error = errorTail(
-        (terminalKind === 'quota' || terminalKind === 'auth' ? `${terminal}\n` : '') +
+        (FAILS_OVER.includes(terminalKind) ? `${terminal}\n` : '') +
         `the worker completed and wrote its reply, then the process ended ` +
         `(exit ${exitCode}). Its work is in the worktree; resume or read the diff.`,
       )
@@ -1640,7 +1641,7 @@ export async function run(opts: {
       status = 'failed'
       const terminal = stderr.trim() || output || stdout.trim()
       const terminalKind = classify(terminal, exitCode, timedOut)
-      if (terminalKind === 'quota' || terminalKind === 'auth') {
+      if (FAILS_OVER.includes(terminalKind)) {
         error = errorTail(terminal)
         failureKind = terminalKind
       } else {
@@ -1881,7 +1882,7 @@ export async function run(opts: {
     )
   }
 
-  if (status === 'failed' && (failureKind === 'quota' || failureKind === 'auth')) {
+  if (status === 'failed' && failureKind && FAILS_OVER.includes(failureKind)) {
     // The vendor is normally gone already. This is deliberately the same PID
     // termination primitive used by `orch stop`, excluding this coordinator:
     // it still has to route and run the successor before it may exit.

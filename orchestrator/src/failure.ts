@@ -12,7 +12,8 @@
  * `other` is the signal to add its actual wording here.
  */
 export type FailureKind =
-  | 'quota' | 'auth' | 'unreachable' | 'timeout' | 'denied' | 'interrupted'
+  | 'quota' | 'auth' | 'unreachable' | 'timeout' | 'denied' | 'content_refusal'
+  | 'interrupted'
   /**
    * ORCH's own fault: a bad schema, a missing flag, a precondition it should
    * have checked before spending a run. Set at the point in the code that knows
@@ -88,6 +89,12 @@ const PATTERNS: [FailureKind, RegExp][] = [
    */
   ['unreachable', /\b(connection error|connection refused|ECONNREFUSED|EHOSTUNREACH|ENETUNREACH|no route to host|could ?n[o']?t connect|unable to connect|failed to connect|network is unreachable|host is down)\b/i],
   ['timeout', /\b(timeout|timed out|deadline exceeded|ETIMEDOUT|connection reset)\b/i],
+  // The vendor declined the prompt itself. This is distinct from `denied`,
+  // where the headless harness could not grant a tool permission: a content
+  // refusal is a fact about vendor policy and the prompt's shape, and would
+  // happen on any machine. The exact wording was observed from Codex on three
+  // defensive reviews of guards, hooks, permission boundaries and sandboxes.
+  ['content_refusal', /\bcontent was flagged for possible cybersecurity risk\b/i],
   // Headless cannot answer a permission prompt, so the tool call is auto-denied.
   //
   // A bare `approval` used to be one of these alternatives, and it matched the
@@ -200,13 +207,17 @@ export const NEEDS_HUMAN_TITLE: Record<string, (agent: string) => string> = {
  */
 export const COOLS_DOWN: FailureKind[] = ['quota', 'auth']
 
+/** Failures where another vendor should receive the same prompt immediately. */
+export const FAILS_OVER: FailureKind[] = ['quota', 'auth', 'content_refusal']
+
 /**
  * Kinds that must never count as evidence about an agent.
  *
  * Separate from NEEDS_HUMAN, which is about who can fix it. Quota and auth
  * failures describe whether the vendor will serve this account right now, not
  * whether the agent can do the work. An unreachable endpoint is likewise
- * neither the agent's doing nor its record.
+ * neither the agent's doing nor its record. A content refusal describes vendor
+ * policy for a prompt class, not the agent's competence at the job.
  *
  * An interrupted run is the same fact about the room. It cost grok its standing
  * on the job it is best at: on review-lens grok is stored at 76 ok against 14
@@ -217,7 +228,7 @@ export const COOLS_DOWN: FailureKind[] = ['quota', 'auth']
  * `unreachable` was carved out to stop.
  */
 export const NOT_EVIDENCE: FailureKind[] = [
-  'quota', 'auth', 'unreachable', 'interrupted', 'harness', 'abandoned',
+  'quota', 'auth', 'unreachable', 'content_refusal', 'interrupted', 'harness', 'abandoned',
 ]
 
 /**
