@@ -1858,10 +1858,14 @@ switch (cmd) {
     const id = Number(argv[1])
     if (!id) usage()
     const row = db().query(
-      'SELECT id, worktree, branch, base_commit, parent_run_id FROM run WHERE id = ?',
+      `SELECT id, worktree, branch, base_commit, parent_run_id, carry_happened,
+              carry_base_commit, carry_tracked_paths, carry_untracked_paths
+         FROM run WHERE id = ?`,
     ).get(id) as
       { id: number; worktree: string | null; branch: string | null
-        base_commit: string | null; parent_run_id: number | null } | null
+        base_commit: string | null; parent_run_id: number | null; carry_happened: number | null
+        carry_base_commit: string | null; carry_tracked_paths: string | null
+        carry_untracked_paths: string | null } | null
     if (!row) throw new Error(`no run ${id}`)
     if (!row.worktree) throw new Error(`run ${id} has no worktree`)
     if (!existsSync(row.worktree)) {
@@ -1885,6 +1889,19 @@ switch (cmd) {
     // A patch preamble is ignored by `git apply`, while keeping the base in the
     // stdout artefact even under --quiet or when stderr is not captured.
     process.stdout.write(`base: ${row.base_commit}\n`)
+    if (row.carry_happened !== null && row.carry_base_commit &&
+        row.carry_tracked_paths !== null && row.carry_untracked_paths !== null) {
+      const tracked = JSON.parse(row.carry_tracked_paths) as string[]
+      const untracked = JSON.parse(row.carry_untracked_paths) as string[]
+      process.stdout.write(
+        row.carry_happened
+          ? `carry: ${tracked.length} tracked path(s), ${untracked.length} untracked path(s)\n` +
+            `carry base: ${row.carry_base_commit}\n` +
+            tracked.map((path) => `carry tracked: ${JSON.stringify(path)}\n`).join('') +
+            untracked.map((path) => `carry untracked: ${JSON.stringify(path)}\n`).join('')
+          : `carry: none (0 tracked paths, 0 untracked paths)\ncarry base: ${row.carry_base_commit}\n`,
+      )
+    }
     // write(), not console.log(): this output is piped into `git apply`, and a
     // newline added to the diff for readability is a byte the patch did not have.
     process.stdout.write(c.diff)

@@ -6309,7 +6309,7 @@ describe('an agent gets the toolchain of a project someone registered', () => {
       }).stdout.toString()
 
       const tree = createWorktree(repo, 134, 'main')
-      carryWorkingState(repo, tree)
+      const carried = carryWorkingState(repo, tree)
 
       expect(readFileSync(join(tree.path, 'branch.txt'), 'utf8')).toBe('committed branch work\n')
       expect(readFileSync(join(tree.path, 'tracked.txt'), 'utf8')).toBe('working state\n')
@@ -6318,6 +6318,13 @@ describe('an agent gets the toolchain of a project someone registered', () => {
       expect(existsSync(join(tree.path, 'deleted.txt'))).toBe(false)
       expect(readFileSync(join(tree.path, 'untracked.txt'), 'utf8')).toBe('untracked\n')
       expect(existsSync(join(tree.path, 'ignored.txt'))).toBe(false)
+      expect(carried).toEqual({
+        base: tree.base,
+        // branch.txt is committed branch work. The tree is cut from main, so the
+        // carry legitimately brings it forward — and the audit must say so.
+        tracked: ['binary.bin', 'branch.txt', 'deleted.txt', 'tracked.txt', 'unstaged.txt'],
+        untracked: ['untracked.txt'],
+      })
       expect(Bun.spawnSync(['git', 'status', '--porcelain'], {
         cwd: repo, env: hermeticGitEnv(),
       }).stdout.toString()).toBe(before)
@@ -6358,6 +6365,126 @@ describe('an agent gets the toolchain of a project someone registered', () => {
       rmSync(repo, { recursive: true, force: true })
     }
   })
+  test('every turn in a three-turn chain declares the inherited carry audit', async () => {
+    const makeRepo = () => {
+      const repo = mkdtempSync(join(tmpdir(), 'orch-carry-chain-'))
+      const git = (...args: string[]) => {
+        const p = Bun.spawnSync(['git', ...args], {
+          cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+        })
+        if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      }
+      git('init', '-b', 'main')
+      git('config', 'user.email', 'orch-test@example.invalid')
+      git('config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, '.gitignore'), '.claude/\n')
+      writeFileSync(join(repo, 'kept.txt'), 'base\n')
+      git('add', '.gitignore', 'kept.txt')
+      git('commit', '-m', 'base')
+      return repo
+    }
+    const dirty = makeRepo()
+    const clean = makeRepo()
+    const applyRepo = mkdtempSync(join(tmpdir(), 'orch-carry-apply-'))
+    const agent = AGENTS.grok!
+    const originalBin = agent.bin
+    const originalArgv = agent.argv
+    const originalResume = agent.resumeArgv
+    const priorDepth = process.env.ORCH_DEPTH
+    const fakeAgent = join(dir, 'carry-chain-agent.sh')
+    const reply = JSON.stringify({
+      type: 'result', subtype: 'success', result: JSON.stringify(workerReply()),
+      total_cost_usd: 0, usage: { input_tokens: 1, output_tokens: 1 },
+    })
+    writeFileSync(fakeAgent, `#!/bin/sh\nprintf '%s\\n' '${reply}'\n`)
+    chmodSync(fakeAgent, 0o755)
+    agent.bin = fakeAgent
+    agent.argv = () => []
+    agent.resumeArgv = () => []
+    process.env.ORCH_DEPTH = '0'
+
+    const chain = async (repo: string) => {
+      const first = await runJob({ job: 'implement', prompt: 'carry audit', cwd: repo, agent: 'grok' })
+      const tree = first.worktree!
+      const second = await runJob({
+        job: 'implement', prompt: 'turn two', cwd: tree.path,
+        resume: {
+          parent: first.id, agent: 'grok', session: 'carry-session', turn: 2,
+          sessionId: 'orch-test-session', worktree: tree,
+        },
+      })
+      const third = await runJob({
+        job: 'implement', prompt: 'turn three', cwd: tree.path,
+        resume: {
+          parent: first.id, agent: 'grok', session: 'carry-session', turn: 3,
+          sessionId: 'orch-test-session', worktree: tree,
+        },
+      })
+      return { ids: [first.id, second.id, third.id], tree }
+    }
+
+    try {
+      writeFileSync(join(dirty, 'kept.txt'), 'carried tracked\n')
+      writeFileSync(join(dirty, 'new.txt'), 'carried untracked\n')
+      const dirtyChain = await chain(dirty)
+      const dirtyRows = db().query(
+        `SELECT carry_happened, carry_base_commit, carry_tracked_paths, carry_untracked_paths
+           FROM run WHERE id IN (?,?,?) ORDER BY turn`,
+      ).all(...dirtyChain.ids) as Array<{
+        carry_happened: number; carry_base_commit: string
+        carry_tracked_paths: string; carry_untracked_paths: string
+      }>
+      expect(dirtyRows).toHaveLength(3)
+      for (const row of dirtyRows) {
+        expect(row.carry_happened).toBe(1)
+        expect(row.carry_base_commit).toBe(dirtyChain.tree.base)
+        expect(JSON.parse(row.carry_tracked_paths)).toEqual(['kept.txt'])
+        expect(JSON.parse(row.carry_untracked_paths)).toEqual(['new.txt'])
+      }
+
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const shown = Bun.spawnSync(
+        [process.execPath, CLI, 'diff', String(dirtyChain.ids[2]), '--quiet'],
+        { env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe' },
+      )
+      expect(shown.exitCode).toBe(0)
+      const output = shown.stdout.toString()
+      expect(output.match(/^base: /gm)).toHaveLength(1)
+      expect(output).toContain('carry: 1 tracked path(s), 1 untracked path(s)')
+      expect(output).toContain('carry tracked: "kept.txt"')
+      expect(output).toContain('carry untracked: "new.txt"')
+      const cloned = Bun.spawnSync(['git', 'clone', '--quiet', dirty, applyRepo], {
+        env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(cloned.exitCode).toBe(0)
+      const applies = Bun.spawnSync(['git', 'apply', '--check', '-'], {
+        cwd: applyRepo, env: hermeticGitEnv(), stdin: shown.stdout, stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(applies.exitCode).toBe(0)
+
+      const cleanChain = await chain(clean)
+      for (const id of cleanChain.ids) {
+        const cleanShown = Bun.spawnSync([process.execPath, CLI, 'diff', String(id), '--quiet'], {
+          env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+          stdout: 'pipe', stderr: 'pipe',
+        })
+        expect(cleanShown.exitCode).toBe(0)
+        expect(cleanShown.stdout.toString()).toContain(
+          'carry: none (0 tracked paths, 0 untracked paths)',
+        )
+      }
+    } finally {
+      agent.bin = originalBin
+      agent.argv = originalArgv
+      agent.resumeArgv = originalResume
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(fakeAgent, { force: true })
+      rmSync(dirty, { recursive: true, force: true })
+      rmSync(clean, { recursive: true, force: true })
+      rmSync(applyRepo, { recursive: true, force: true })
+    }
+  }, 20_000)
 
   test('orch diff resolves a new blob staged in the worker-local object database', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-isolated-objects-'))

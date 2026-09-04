@@ -113,6 +113,14 @@ export function applySchema(d: Database): void {
   // floor: reading it against whatever HEAD happens to be later would show the
   // worker's changes tangled with everything that landed since.
   addColumn(d, 'run', 'base_commit', 'TEXT')
+  // What the caller's checkout contributed before the worker started. The
+  // boolean is explicit so a clean carry is recorded rather than confused with
+  // an old/read-only row that has no carry audit. Paths are JSON because git
+  // permits names that cannot be represented safely by a separator.
+  addColumn(d, 'run', 'carry_happened', 'INTEGER')
+  addColumn(d, 'run', 'carry_base_commit', 'TEXT')
+  addColumn(d, 'run', 'carry_tracked_paths', 'TEXT')
+  addColumn(d, 'run', 'carry_untracked_paths', 'TEXT')
   // A multi-turn implementation is ONE unit of work. The first turn is the
   // root; every ruling that resumes it adds a child. Routing and scoring count
   // the root alone — see `evidenceWhere` — because three turns of one
@@ -451,6 +459,10 @@ const RUN_DDL = `CREATE TABLE run (
       worktree      TEXT,
       vendor_session TEXT,
       base_commit   TEXT,
+      carry_happened INTEGER,
+      carry_base_commit TEXT,
+      carry_tracked_paths TEXT,
+      carry_untracked_paths TEXT,
       parent_run_id INTEGER REFERENCES run(id),
       turn          INTEGER NOT NULL DEFAULT 1,
       files_changed INTEGER,

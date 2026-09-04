@@ -873,7 +873,16 @@ function verifyFreshWorktree(worktree: Worktree): void {
  * input, and copying them would both defeat provisioning and turn one checkout's
  * runtime state into another's.
  */
-export function carryWorkingState(cwd: string, worktree: Worktree): void {
+export type CarriedWorkingState = {
+  /** The commit the tracked patch was computed against. */
+  base: string
+  /** Paths represented by the git patch applied to the new tree. */
+  tracked: string[]
+  /** Non-ignored untracked paths copied outside the patch. */
+  untracked: string[]
+}
+
+export function carryWorkingState(cwd: string, worktree: Worktree): CarriedWorkingState {
   const callerHead = git(['rev-parse', 'HEAD'], cwd)
   if (gitOk(['merge-base', '--is-ancestor', worktree.base, callerHead], cwd) === null) {
     throw new Error(
@@ -883,6 +892,8 @@ export function carryWorkingState(cwd: string, worktree: Worktree): void {
   }
 
   const patch = gitBytes(['diff', '--binary', '--full-index', worktree.base, '--'], cwd)
+  const tracked = gitBytes(['diff', '--name-only', '-z', worktree.base, '--'], cwd).toString()
+    .split('\0').filter(Boolean)
   if (patch.byteLength) gitInput(['apply', '--binary', '--whitespace=nowarn', '-'], worktree.path, patch)
 
   const untracked = gitBytes(['ls-files', '--others', '--exclude-standard', '-z'], cwd).toString()
@@ -891,6 +902,7 @@ export function carryWorkingState(cwd: string, worktree: Worktree): void {
     .split('\n').filter((line) => line.startsWith('worktree '))
     .map((line) => realpathSync(line.slice('worktree '.length)))
     .filter((path) => path !== realpathSync(cwd))
+  const copied: string[] = []
   for (const relative of untracked) {
     const source = join(cwd, relative)
     const absoluteSource = realpathSync(source)
@@ -900,7 +912,9 @@ export function carryWorkingState(cwd: string, worktree: Worktree): void {
     const destination = join(worktree.path, relative)
     mkdirSync(dirname(destination), { recursive: true })
     cpSync(source, destination, { recursive: true, force: true, verbatimSymlinks: true })
+    copied.push(relative)
   }
+  return { base: worktree.base, tracked, untracked: copied }
 }
 
 /**

@@ -956,6 +956,7 @@ export async function run(opts: {
    * writes it terminal, so the failure is recorded rather than silent.
    */
   let worktree: Worktree | null = opts.resume?.worktree ?? null
+  let carried: import('./worktree.ts').CarriedWorkingState | null = null
   let changes: import('./worktree.ts').Changes | null = null
   /**
    * Cutting the worktree can FAIL, and the row already exists by now.
@@ -1012,7 +1013,7 @@ export async function run(opts: {
             )
           }
           try {
-            carryWorkingState(callerCwd, created)
+            carried = carryWorkingState(callerCwd, created)
           } catch (e) {
             const cleanup = removeFor(created, created.repoRoot)
             throw new Error(
@@ -1025,10 +1026,36 @@ export async function run(opts: {
       }
     }
     if (worktree) {
-      if (!creating) {
-        db().query('UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id=?')
-          .run(worktree.path, worktree.path, worktree.branch, worktree.base, claim.id)
+
+      if (!carried && opts.resume) {
+        const inherited = db().query(
+          `SELECT carry_base_commit, carry_tracked_paths, carry_untracked_paths
+             FROM run WHERE id=?`,
+        ).get(opts.resume.parent) as {
+          carry_base_commit: string | null
+          carry_tracked_paths: string | null
+          carry_untracked_paths: string | null
+        } | null
+        if (inherited?.carry_base_commit && inherited.carry_tracked_paths !== null &&
+            inherited.carry_untracked_paths !== null) {
+          carried = {
+            base: inherited.carry_base_commit,
+            tracked: JSON.parse(inherited.carry_tracked_paths),
+            untracked: JSON.parse(inherited.carry_untracked_paths),
+          }
+        }
       }
+      db().query(
+        `UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=?, carry_happened=?,
+                        carry_base_commit=?, carry_tracked_paths=?, carry_untracked_paths=? WHERE id=?`,
+      ).run(
+        worktree.path, worktree.path, worktree.branch, worktree.base,
+        carried ? (carried.tracked.length + carried.untracked.length > 0 ? 1 : 0) : null,
+        carried?.base ?? null,
+        carried ? JSON.stringify(carried.tracked) : null,
+        carried ? JSON.stringify(carried.untracked) : null,
+        claim.id,
+      )
       cwd = worktree.path
     }
   } catch (e) {
