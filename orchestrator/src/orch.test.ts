@@ -1147,14 +1147,14 @@ describe('port importer', () => {
     } finally { rmSync(source, { recursive: true, force: true }) }
   })
 
-  test('every non-whitespace source span in the real port files is accounted for', () => {
-    const names = {
-      doctrine: 'doctrine.md', differences: 'differences.md', backports: 'backports.md',
-      refs: 'refs.json', state: 'state.json', projects: 'projects.md',
-    } as const
-    const files = Object.fromEntries(Object.entries(names).map(([key, name]) => [
-      key, readFileSync(new URL(`../../port/${name}`, import.meta.url), 'utf8'),
-    ])) as Record<keyof typeof names, string>
+  test('every non-whitespace source span in synthetic port files is accounted for', () => {
+    const files = fixture({
+      refs: JSON.stringify({
+        _format: 'invented ledger shape',
+        'BET-7': { source: 'alpha-invented', commits: ['abc'], paths: ['src/a.ts'], notes: 'Native notes.' },
+        'BET-8': { source: 'alpha-invented + beta-invented', commits: ['def'], paths: ['src/b.ts'], notes: 'Two sources.' },
+      }),
+    })
     const state = JSON.parse(files.state)
     const projectNames = [...new Set(Object.keys(state.pairs).flatMap((pair) => pair.split('->')))] as string[]
     const refs = JSON.parse(files.refs)

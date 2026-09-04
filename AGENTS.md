@@ -27,8 +27,11 @@ until the rename it existed to make cheap is a hunt through twenty files.
 | `ops/` | The machine itself: the morning refresh, launchd agents, brew upkeep. |
 | `hub/` | Every project's work in one view: what is in flight, what each task cost, and the daily report. Has its own canon. |
 | `local-stack/` | Serving models locally, and the local model host. |
-| `port/` | Cross-project feature porting: stages tasks in other projects, never implements them. Has its own canon. |
 | `shared/` | The only code any two concerns may both import. |
+
+Cross-project porting used to be its own concern at `port/`. The directory
+is gone. The ledger, pairs, baselines, skips and doctrine now live in
+`orch.db` and are reached through `orch port` and the MCP tools.
 
 **They do not reach into each other.** A concern imports from itself or from
 `shared/`, and `shared/` imports from nobody. `bun run check` enforces it,
