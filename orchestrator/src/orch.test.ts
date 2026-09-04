@@ -15,7 +15,8 @@
 import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync,
-         realpathSync, mkdirSync, utimesSync, chmodSync, readdirSync, symlinkSync } from 'node:fs'
+         realpathSync, mkdirSync, utimesSync, chmodSync, readdirSync, statSync,
+         symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
@@ -8788,9 +8789,16 @@ describe('the sandbox an agent is launched with', () => {
       expect(installedWrapper).not.toContain(
         `'${installedReferenceHook}' "$@"`,
       )
-      expect(git(tree.path, ['config', 'core.hooksPath', guardEnv.GIT_CONFIG_VALUE_0]).exitCode)
-        .toBe(0)
-      expect(prepareSharedRefGuard(tree.path, `refs/heads/${tree.branch}`)).toEqual(guardEnv)
+      process.env.GIT_CONFIG_COUNT = '1'
+      process.env.GIT_CONFIG_KEY_0 = 'core.hooksPath'
+      process.env.GIT_CONFIG_VALUE_0 = guardEnv.GIT_CONFIG_VALUE_0
+      try {
+        expect(prepareSharedRefGuard(tree.path, `refs/heads/${tree.branch}`)).toEqual(guardEnv)
+      } finally {
+        delete process.env.GIT_CONFIG_COUNT
+        delete process.env.GIT_CONFIG_KEY_0
+        delete process.env.GIT_CONFIG_VALUE_0
+      }
       expect(readFileSync(
         join(worktreeGitDir(tree.path), 'orch-hooks', 'reference-transaction'), 'utf8',
       )).toBe(installedWrapper)
@@ -8853,16 +8861,243 @@ describe('the sandbox an agent is launched with', () => {
       const first = prepareSharedRefGuard(tree.path, `refs/heads/${tree.branch}`)
       const installed = join(first.GIT_CONFIG_VALUE_0, 'reference-transaction')
       expect(realpathSync(installed)).toBe(sharedGuard)
-      expect(git(tree.path, ['config', 'core.hooksPath', first.GIT_CONFIG_VALUE_0]).exitCode).toBe(0)
 
       const installedBefore = readFileSync(installed)
       const entriesBefore = readdirSync(first.GIT_CONFIG_VALUE_0)
-      const second = prepareSharedRefGuard(tree.path, `refs/heads/${tree.branch}`)
+      process.env.GIT_CONFIG_COUNT = '1'
+      process.env.GIT_CONFIG_KEY_0 = 'core.hooksPath'
+      process.env.GIT_CONFIG_VALUE_0 = first.GIT_CONFIG_VALUE_0
+      let second: ReturnType<typeof prepareSharedRefGuard> | undefined
+      try {
+        second = prepareSharedRefGuard(tree.path, `refs/heads/${tree.branch}`)
+      } finally {
+        delete process.env.GIT_CONFIG_COUNT
+        delete process.env.GIT_CONFIG_KEY_0
+        delete process.env.GIT_CONFIG_VALUE_0
+      }
       expect(second).toEqual(first)
       expect(readFileSync(sharedGuard)).toEqual(sharedBefore)
       expect(readFileSync(installed)).toEqual(installedBefore)
       expect(readdirSync(first.GIT_CONFIG_VALUE_0)).toEqual(entriesBefore)
       expect(realpathSync(installed)).toBe(sharedGuard)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('shared-ref guard config reads ignore an inherited worker hooks path', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-guard-hostile-config-'))
+    const git = (cwd: string, args: string[]) => Bun.spawnSync(['git', ...args], {
+      cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    try {
+      expect(git(repo, ['init', '-b', 'main']).exitCode).toBe(0)
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      expect(git(repo, ['add', 'base.txt']).exitCode).toBe(0)
+      expect(git(repo, ['-c', 'user.email=orch-test@example.invalid',
+        '-c', 'user.name=Orch Test', 'commit', '-m', 'base']).exitCode).toBe(0)
+      const projectHooks = join(repo, 'project-hooks')
+      const hostileHooks = join(repo, 'hostile-hooks')
+      mkdirSync(projectHooks)
+      mkdirSync(hostileHooks)
+      const projectHook = join(projectHooks, 'reference-transaction')
+      const hostileHook = join(hostileHooks, 'reference-transaction')
+      writeFileSync(projectHook, '#!/bin/sh\necho project\n')
+      writeFileSync(hostileHook, '#!/bin/sh\necho hostile\n')
+      chmodSync(projectHook, 0o755)
+      chmodSync(hostileHook, 0o755)
+      expect(git(repo, ['config', 'core.hooksPath', projectHooks]).exitCode).toBe(0)
+      const tree = createWorktree(repo, 229)
+
+      process.env.GIT_CONFIG_COUNT = '1'
+      process.env.GIT_CONFIG_KEY_0 = 'core.hooksPath'
+      process.env.GIT_CONFIG_VALUE_0 = hostileHooks
+      let guardEnv: ReturnType<typeof prepareSharedRefGuard> | undefined
+      try {
+        guardEnv = prepareSharedRefGuard(tree.path)
+      } finally {
+        delete process.env.GIT_CONFIG_COUNT
+        delete process.env.GIT_CONFIG_KEY_0
+        delete process.env.GIT_CONFIG_VALUE_0
+      }
+      const wrapper = readFileSync(join(guardEnv!.GIT_CONFIG_VALUE_0, 'reference-transaction'), 'utf8')
+      expect(wrapper).toContain(Buffer.from(realpathSync(projectHook)).toString('base64'))
+      expect(wrapper).not.toContain(Buffer.from(realpathSync(hostileHook)).toString('base64'))
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('shared-ref guard recognition is independent of the running checkout path', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-guard-other-checkout-'))
+    const git = (cwd: string, args: string[]) => Bun.spawnSync(['git', ...args], {
+      cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    try {
+      expect(git(repo, ['init', '-b', 'main']).exitCode).toBe(0)
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      expect(git(repo, ['add', 'base.txt']).exitCode).toBe(0)
+      expect(git(repo, ['-c', 'user.email=orch-test@example.invalid',
+        '-c', 'user.name=Orch Test', 'commit', '-m', 'base']).exitCode).toBe(0)
+      const tree = createWorktree(repo, 230)
+      const hookDir = join(worktreeGitDir(tree.path), 'orch-hooks')
+      const installed = join(hookDir, 'reference-transaction')
+      const otherCheckoutGuard = join(repo, 'other-checkout', 'orchestrator', 'hooks',
+        'reference-transaction')
+      mkdirSync(join(repo, 'other-checkout', 'orchestrator', 'hooks'), { recursive: true })
+      writeFileSync(otherCheckoutGuard, readFileSync(
+        new URL('../hooks/reference-transaction', import.meta.url).pathname,
+      ))
+      chmodSync(otherCheckoutGuard, 0o755)
+      mkdirSync(hookDir)
+      symlinkSync(otherCheckoutGuard, installed)
+
+      const guardEnv = prepareSharedRefGuard(tree.path)
+      expect(guardEnv.GIT_CONFIG_VALUE_0).toBe(hookDir)
+      expect(realpathSync(installed)).toBe(realpathSync(otherCheckoutGuard))
+
+      rmSync(installed)
+      const projectHooks = join(repo, 'project-hooks')
+      mkdirSync(projectHooks)
+      const projectHook = join(projectHooks, 'reference-transaction')
+      writeFileSync(projectHook, '#!/bin/sh\nexit 0\n')
+      chmodSync(projectHook, 0o755)
+      expect(git(repo, ['config', 'core.hooksPath', projectHooks]).exitCode).toBe(0)
+      prepareSharedRefGuard(tree.path)
+      const runningGuard = realpathSync(new URL('../hooks/reference-transaction', import.meta.url).pathname)
+      const otherWrapper = readFileSync(installed, 'utf8')
+        .replace(Buffer.from(runningGuard).toString('base64'),
+          Buffer.from(realpathSync(otherCheckoutGuard)).toString('base64'))
+        .replace(`'${runningGuard}' "$@"`, `'${realpathSync(otherCheckoutGuard)}' "$@"`)
+      writeFileSync(installed, otherWrapper)
+      chmodSync(installed, 0o755)
+
+      expect(prepareSharedRefGuard(tree.path)).toEqual(guardEnv)
+      expect(readFileSync(installed, 'utf8')).toBe(otherWrapper)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a killed pre-atomic preparation leaves a broken wrapper that is repaired', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-guard-killed-publication-'))
+    const git = (cwd: string, args: string[]) => Bun.spawnSync(['git', ...args], {
+      cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    try {
+      expect(git(repo, ['init', '-b', 'main']).exitCode).toBe(0)
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      expect(git(repo, ['add', 'base.txt']).exitCode).toBe(0)
+      expect(git(repo, ['-c', 'user.email=orch-test@example.invalid',
+        '-c', 'user.name=Orch Test', 'commit', '-m', 'base']).exitCode).toBe(0)
+      const projectHooks = join(repo, 'project-hooks')
+      mkdirSync(projectHooks)
+      const projectHook = join(projectHooks, 'reference-transaction')
+      writeFileSync(projectHook, '#!/bin/sh\nexit 0\n')
+      chmodSync(projectHook, 0o755)
+      expect(git(repo, ['config', 'core.hooksPath', projectHooks]).exitCode).toBe(0)
+      const tree = createWorktree(repo, 231)
+      const guardEnv = prepareSharedRefGuard(tree.path, `refs/heads/${tree.branch}`)
+      const installed = join(guardEnv.GIT_CONFIG_VALUE_0, 'reference-transaction')
+      const completeWrapper = readFileSync(installed)
+      const candidate = join(repo, 'candidate-wrapper')
+      writeFileSync(candidate, completeWrapper)
+      rmSync(installed)
+
+      const killed = Bun.spawnSync([process.execPath, '-e',
+        `import { readFileSync, writeFileSync } from 'node:fs';
+         writeFileSync(process.argv[1], readFileSync(process.argv[2]));
+         process.kill(process.pid, 'SIGKILL')`, installed, candidate], {
+        cwd: tree.path, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(killed.signalCode).toBe('SIGKILL')
+      expect(statSync(installed).mode & 0o111).toBe(0)
+
+      expect(prepareSharedRefGuard(tree.path, `refs/heads/${tree.branch}`)).toEqual(guardEnv)
+      expect(readFileSync(installed)).toEqual(completeWrapper)
+      expect(statSync(installed).mode & 0o111).toBe(0o111)
+      expect(readdirSync(guardEnv.GIT_CONFIG_VALUE_0)).toEqual(['reference-transaction'])
+      const forbidden = Bun.spawnSync(['git', 'update-ref', 'refs/heads/forbidden', 'HEAD'], {
+        cwd: tree.path, env: hermeticGitEnv(guardEnv), stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(forbidden.exitCode).not.toBe(0)
+      expect(forbidden.stderr.toString()).toContain('this worker may update only')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a recognized non-executable wrapper is broken, not an idempotent success', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-guard-broken-mode-'))
+    const git = (cwd: string, args: string[]) => Bun.spawnSync(['git', ...args], {
+      cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    try {
+      expect(git(repo, ['init', '-b', 'main']).exitCode).toBe(0)
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      expect(git(repo, ['add', 'base.txt']).exitCode).toBe(0)
+      expect(git(repo, ['-c', 'user.email=orch-test@example.invalid',
+        '-c', 'user.name=Orch Test', 'commit', '-m', 'base']).exitCode).toBe(0)
+      const projectHooks = join(repo, 'project-hooks')
+      mkdirSync(projectHooks)
+      const projectHook = join(projectHooks, 'reference-transaction')
+      writeFileSync(projectHook, '#!/bin/sh\nexit 0\n')
+      chmodSync(projectHook, 0o755)
+      expect(git(repo, ['config', 'core.hooksPath', projectHooks]).exitCode).toBe(0)
+      const tree = createWorktree(repo, 232)
+      const guardEnv = prepareSharedRefGuard(tree.path)
+      const installed = join(guardEnv.GIT_CONFIG_VALUE_0, 'reference-transaction')
+      const wrapper = readFileSync(installed)
+      chmodSync(installed, 0o644)
+
+      expect(prepareSharedRefGuard(tree.path)).toEqual(guardEnv)
+      expect(readFileSync(installed)).toEqual(wrapper)
+      expect(statSync(installed).mode & 0o111).toBe(0o111)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('concurrent shared-ref guard preparations publish one complete executable wrapper', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-guard-concurrent-'))
+    const git = (cwd: string, args: string[]) => Bun.spawnSync(['git', ...args], {
+      cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    try {
+      expect(git(repo, ['init', '-b', 'main']).exitCode).toBe(0)
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      expect(git(repo, ['add', 'base.txt']).exitCode).toBe(0)
+      expect(git(repo, ['-c', 'user.email=orch-test@example.invalid',
+        '-c', 'user.name=Orch Test', 'commit', '-m', 'base']).exitCode).toBe(0)
+      const projectHooks = join(repo, 'project-hooks')
+      mkdirSync(projectHooks)
+      const projectHook = join(projectHooks, 'reference-transaction')
+      writeFileSync(projectHook, '#!/bin/sh\nexit 0\n')
+      chmodSync(projectHook, 0o755)
+      expect(git(repo, ['config', 'core.hooksPath', projectHooks]).exitCode).toBe(0)
+      const tree = createWorktree(repo, 233)
+      const barrier = join(repo, 'start-preparation')
+      const module = new URL('worktree.ts', import.meta.url).href
+      const child = () => Bun.spawn([process.execPath, '-e',
+        `import { existsSync } from 'node:fs';
+         while (!existsSync(process.argv[2])) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+         const { prepareSharedRefGuard } = await import(process.argv[1]);
+         prepareSharedRefGuard(process.argv[3]);`, module, barrier, tree.path], {
+        cwd: tree.path, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      const first = child()
+      const second = child()
+      writeFileSync(barrier, 'go\n')
+      const [firstExit, secondExit] = await Promise.all([first.exited, second.exited])
+      expect(firstExit).toBe(0)
+      expect(secondExit).toBe(0)
+      const hookDir = join(worktreeGitDir(tree.path), 'orch-hooks')
+      const installed = join(hookDir, 'reference-transaction')
+      expect(statSync(installed).mode & 0o111).toBe(0o111)
+      expect(readdirSync(hookDir)).toEqual(['reference-transaction'])
+      expect(readFileSync(installed, 'utf8')).toContain(
+        Buffer.from(realpathSync(projectHook)).toString('base64'),
+      )
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
