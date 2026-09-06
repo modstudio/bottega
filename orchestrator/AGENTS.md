@@ -741,8 +741,6 @@ sessions have used the split twice.
 
 ## The lifecycle: states, locks and the invariants they protect
 
-Grok trust left for a removed orch worktree is harmless residue: each tree path carries a unique run id and never recurs, so sweep reports the entry for manual pruning and never edits Grok's store.
-
 A run: `reserved → attached → running → asking → ok | failed | stopped | stale`; a chain inherits its last turn's state.
 
 A branch: `cut → built → reviewed → rebased → landed | abandoned`; a rebase invalidates the review's exact match, and the pin or the four-fact carry re-establishes it.
@@ -765,6 +763,9 @@ The invariants are:
   constrained party can delete is advisory; it is published under the common
   git dir, which is not a writable root, and dispatch refuses a run whose guard
   path falls inside one (DEV-248).
+- **Orch never edits a vendor's trust store.** Grok trust left for a removed
+  orch worktree is residue, not a hazard: each tree path carries a unique run id
+  and never recurs, so sweep reports the entry for manual pruning (DEV-194).
 - **Every write transaction is IMMEDIATE; a deferred transaction that later writes is a lock-upgrade race under concurrent dispatch.**
 - **A resume is always possible on a stale checkout.** The caller-at-trunk check
   stops a new dispatch from stale input; it must never apply to a chain resuming
