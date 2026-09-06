@@ -494,8 +494,8 @@ switch (cmd) {
     if (!rows.length) { console.log('no open rulings'); break }
     for (const row of rows) {
       console.log(
-        `${(row.task_key ?? '(untracked)').padEnd(12)} session ${row.session_id ?? 'unknown'}  ` +
-        `since ${row.asked_at}  age ${human(row.age)}`,
+        `question ${row.question_id}  ${(row.task_key ?? '(untracked)').padEnd(12)} ` +
+        `session ${row.session_id ?? 'unknown'}  since ${row.asked_at}  age ${human(row.age)}`,
       )
     }
     break

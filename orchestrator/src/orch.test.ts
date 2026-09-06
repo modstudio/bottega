@@ -1193,7 +1193,7 @@ const { createDocsMcpServer, fileIssue } = await import('./mcp.ts')
 const { setWorkflow, promoteWorkflow } = await import('./workflows.ts')
 const { compilePack, compileBrief, checkDoc, CanonBudgetError, recordPack, diffPack,
         allInjectChecks } = await import('./canon.ts')
-const { deadRunningProcessConditions, reconcileHub, rulingConditions, monitorHistory } =
+const { deadRunningProcessConditions, reconcileHub, rulingConditions, monitorHistory, monitor } =
   await import('./monitor.ts')
 const { listPairs, addPair, baselineForPair, setBaseline, listSkips, addSkip,
         setLedgerRef, ledgerRef, listLedgerRefs, resolveLedgerRef,
@@ -1425,8 +1425,8 @@ describe('operational monitor record', () => {
       stdout: Buffer.from(JSON.stringify({
         stale_after: '1h',
         questions: [
-          { task_key: 'DEV-215', session_id: 'sess-1', asked_at: '2026-09-04T18:00:00.000Z', age: 7_200_000 },
-          { task_key: 'DEV-1', session_id: 'sess-2', asked_at: '2026-09-04T19:30:00.000Z', age: 1_800_000 },
+          { question_id: 11, task_key: 'DEV-215', session_id: 'sess-1', asked_at: '2026-09-04T18:00:00.000Z', age: 7_200_000 },
+          { question_id: 12, task_key: 'DEV-1', session_id: 'sess-2', asked_at: '2026-09-04T19:30:00.000Z', age: 1_800_000 },
         ],
       })),
       stderr: Buffer.from(''), success: true } as any)
@@ -1434,13 +1434,63 @@ describe('operational monitor record', () => {
       const clock = Date.parse('2026-09-04T20:00:00.000Z')
       expect(rulingConditions(clock)).toEqual({
         conditions: [expect.objectContaining({
-          kind: 'task-waiting-on-ruling', subject: 'task:DEV-215',
+          kind: 'task-waiting-on-ruling', subject: 'question:11',
           since: '2026-09-04T18:00:00.000Z', ageMs: 7_200_000,
           detail: 'task DEV-215 waiting on a ruling; session sess-1',
           action: 'reported; it does not answer',
         })],
         errors: [],
       })
+    } finally { spawn.mockRestore() }
+  })
+
+  test('two sessions stale on one task are two conditions and do not collide', async () => {
+    const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((cmd: string[]) => {
+      const argv = cmd.map(String)
+      if (argv.includes('rulings')) {
+        return { exitCode: 0, stdout: Buffer.from(JSON.stringify({
+          stale_after: '1h',
+          questions: [
+            { question_id: 101, task_key: 'DEV-1896', session_id: 'sess-D', asked_at: '2026-09-04T18:00:00.000Z', age: 7_200_000 },
+            { question_id: 102, task_key: 'DEV-1896', session_id: 'sess-E', asked_at: '2026-09-04T18:10:00.000Z', age: 6_600_000 },
+          ],
+        })), stderr: Buffer.from(''), success: true }
+      }
+      return { exitCode: 0, stdout: Buffer.from(''), stderr: Buffer.from(''), success: true }
+    }) as unknown as typeof Bun.spawnSync)
+    try {
+      const clock = Date.parse('2026-09-04T20:00:00.000Z')
+      const result = await monitor('invoked', clock)
+      expect(result.conditions.filter((c) => c.kind === 'task-waiting-on-ruling')).toEqual([
+        expect.objectContaining({ subject: 'question:101', detail: expect.stringContaining('session sess-D') }),
+        expect.objectContaining({ subject: 'question:102', detail: expect.stringContaining('session sess-E') }),
+      ])
+      expect(result.conditions.filter((c) => c.kind === 'task-waiting-on-ruling')
+        .map((c) => c.detail)).toEqual([
+        expect.stringContaining('task DEV-1896'),
+        expect.stringContaining('task DEV-1896'),
+      ])
+    } finally { spawn.mockRestore() }
+  })
+
+  test('two untracked questions from one session are two conditions', async () => {
+    const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((cmd: string[]) => {
+      const argv = cmd.map(String)
+      if (argv.includes('rulings')) {
+        return { exitCode: 0, stdout: Buffer.from(JSON.stringify({
+          stale_after: '1h',
+          questions: [
+            { question_id: 201, task_key: null, session_id: 'sess-U', asked_at: '2026-09-04T18:00:00.000Z', age: 7_200_000 },
+            { question_id: 202, task_key: null, session_id: 'sess-U', asked_at: '2026-09-04T18:05:00.000Z', age: 6_900_000 },
+          ],
+        })), stderr: Buffer.from(''), success: true }
+      }
+      return { exitCode: 0, stdout: Buffer.from(''), stderr: Buffer.from(''), success: true }
+    }) as unknown as typeof Bun.spawnSync)
+    try {
+      const result = await monitor('invoked', Date.parse('2026-09-04T20:00:00.000Z'))
+      expect(result.conditions.filter((c) => c.kind === 'task-waiting-on-ruling').map((c) => c.subject))
+        .toEqual(['question:201', 'question:202'])
     } finally { spawn.mockRestore() }
   })
 
@@ -6335,6 +6385,14 @@ describe('detached run collection', () => {
     const json = orch('runs', '--json', '--since', cutoff)
     expect(json.code).toBe(0)
     expect(json.out.trim().split('\n').map((line) => JSON.parse(line).id)).toEqual([old])
+  })
+
+  test('runs --json publishes the root launch_key', () => {
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+    db().query('UPDATE run SET launch_key=? WHERE id=?').run('DEV-7777', id)
+    const json = orch('runs', '--json', '--id', String(id))
+    expect(json.code).toBe(0)
+    expect(JSON.parse(json.out.trim().split('\n')[0]!).launch_key).toBe('DEV-7777')
   })
 
   test('waiting on a failed run exits non-zero', () => {

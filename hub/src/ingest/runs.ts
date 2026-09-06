@@ -1,5 +1,5 @@
 import { db, nowIso } from '../db.ts'
-import { attribute, keyFromBranch, keyFromPromptFile } from '../attribute.ts'
+import { attribute, keyFromBranch, keyFromPromptFile, projectOf, projectOfKey } from '../attribute.ts'
 
 /**
  * Delegated agent runs, as intervals.
@@ -53,6 +53,8 @@ export type OrchRun = {
   turns?: OrchTurn[]
   /** Root and turns, open and answered. Absent on older orch builds. */
   questions?: OrchQuestion[]
+  /** The explicit task the run was started for. Absent on historical rows. */
+  launch_key?: string | null
 }
 
 function rootRef(id: number) {
@@ -192,22 +194,31 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
       // A probe is a smoke test — "reply with ok" — that did no work on
       // anything, so it is not engaged time on any task.
       if (r.probe === 1) { skipped++; continue }
-      // The prompt head is searched for a key only as a last resort, and it is
-      // genuinely useful here: a review pack names the task it reviews even
-      // when the run happened in a plain checkout.
-      const a = attribute({ cwd: r.cwd, prompts: [r.prompt_head] })
-      // The FULL prompt before the commit window, because it is direct evidence
-      // and the window is an inference. Where both fired they disagreed every
-      // single time, and the prompt was right every single time.
-      // The branch first: it was named before the work started, where a prompt
-      // only mentions a ticket in passing.
-      if (!a.key) {
-        const b = keyFromBranch(r.branch, a.project)
-        if (b) { a.key = b; a.via = 'branch' }
-      }
-      if (!a.key) {
-        const named = keyFromPromptFile(r.prompt_path, a.project)
-        if (named) { a.key = named; a.via = 'prompt-file' }
+      // launch_key is the task orch was started for. It beats every inference
+      // — worktree, branch, prompt file, prompt prose — and those run only
+      // when the field is absent, which is historical rows from before orch
+      // recorded one.
+      const launchKey = typeof r.launch_key === 'string' && r.launch_key.trim()
+        ? r.launch_key.trim().toUpperCase() : null
+      let a
+      if (launchKey) {
+        const owner = projectOfKey(launchKey)
+        a = { project: owner ?? projectOf(r.cwd), key: launchKey, via: 'launch_key' as const }
+      } else {
+        a = attribute({ cwd: r.cwd, prompts: [r.prompt_head] })
+        // The FULL prompt before the commit window, because it is direct evidence
+        // and the window is an inference. Where both fired they disagreed every
+        // single time, and the prompt was right every single time.
+        // The branch first: it was named before the work started, where a prompt
+        // only mentions a ticket in passing.
+        if (!a.key) {
+          const b = keyFromBranch(r.branch, a.project)
+          if (b) { a.key = b; a.via = 'branch' }
+        }
+        if (!a.key) {
+          const named = keyFromPromptFile(r.prompt_path, a.project)
+          if (named) { a.key = named; a.via = 'prompt-file' }
+        }
       }
 
       // Failover is a new root, not another turn of the run it replaces. The

@@ -23,6 +23,7 @@ export function rulingsStaleAfter(): string {
 }
 
 export type OpenRuling = {
+  question_id: number
   task_key: string | null
   session_id: string | null
   asked_at: string
@@ -30,13 +31,17 @@ export type OpenRuling = {
 }
 
 export function listOpenRulings(now = Date.now()): OpenRuling[] {
-  const rows = db().query<{ task_key: string | null; session_id: string | null; asked_at: string }, []>(
-    `SELECT task_key, session_id, asked_at FROM question
-      WHERE answered_at IS NULL ORDER BY asked_at, question_id`,
+  const rows = db().query<{
+    question_id: number; task_key: string | null; session_id: string | null; asked_at: string
+  }, []>(
+    `SELECT question_id, task_key, session_id, asked_at FROM question
+      WHERE answered_at IS NULL
+      ORDER BY task_key IS NULL, task_key, question_id`,
   ).all()
   return rows.map((row) => {
     const at = Date.parse(row.asked_at)
     return {
+      question_id: row.question_id,
       task_key: row.task_key,
       session_id: row.session_id,
       asked_at: row.asked_at,

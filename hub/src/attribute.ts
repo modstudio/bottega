@@ -85,7 +85,7 @@ export type Attribution = {
   project: Project | null
   key: string | null
   /** How the key was decided — recorded so a wrong one is diagnosable. */
-  via: 'worktree' | 'commit' | 'prompt' | 'branch' | 'prompt-file' | 'sibling-leg' | null
+  via: 'launch_key' | 'worktree' | 'commit' | 'prompt' | 'branch' | 'prompt-file' | 'sibling-leg' | null
 }
 
 /**

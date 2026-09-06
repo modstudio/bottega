@@ -152,16 +152,39 @@ const stamp = (key: string) =>
     .run(key, JSON.stringify(nowIso()))
 
 /**
+ * How far back the fast runs collect looks.
+ *
+ * The rolling two-hour window is the ceiling when collection is current. If
+ * the last successful ingest (collect.runs.at) is older than that, --since
+ * is that watermark so a gap is caught up rather than skipped.
+ */
+export function runsSince(now = Date.now()): string {
+  const windowStart = new Date(now - 2 * 3600_000).toISOString()
+  const row = db().query<{ value: string }, []>(
+    `SELECT value FROM setting WHERE key = 'collect.runs.at'`,
+  ).get()
+  if (!row) return windowStart
+  let last: string
+  try {
+    const parsed = JSON.parse(row.value)
+    last = typeof parsed === 'string' ? parsed : row.value
+  } catch { last = row.value }
+  if (!Number.isFinite(Date.parse(last))) return windowStart
+  return last < windowStart ? last : windowStart
+}
+
+/**
  * The cheap legs: what changed in the last couple of hours.
  *
  * Two hours rather than the whole window because a span that changed is a
  * recent one, and re-reading thirty days every twenty seconds would burn the
- * machine re-deriving rows that cannot have moved.
+ * machine re-deriving rows that cannot have moved. A missed collect looks
+ * further back, to collect.runs.at, so an answer older than two hours is
+ * not skipped.
  */
 export async function collectFast() {
-  const since = hoursAgo(2)
-  await ingestRuns(since)
-  await ingestTranscripts(since)
+  await ingestRuns(runsSince())
+  await ingestTranscripts(hoursAgo(2))
   rollUpDays()
   stamp('collect.at')
 }

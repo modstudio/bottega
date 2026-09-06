@@ -22,6 +22,7 @@ const { ingestTrackers, upsertTrackerTask, resolveAssigneeIds, trackerRegistrati
 const { createTask, duplicateCandidates, duplicateScore, showTask } = await import('./task.ts')
 const { chainVendorTokens, executionSpans, ingestRuns } = await import('./ingest/runs.ts')
 const { listOpenRulings, rulingsPayload, rulingsStaleAfter } = await import('./rulings.ts')
+const { runsSince } = await import('./collect.ts')
 
 process.on('exit', () => {
   try { rmSync(testDir, { recursive: true, force: true }) } catch {}
@@ -273,11 +274,11 @@ describe('run ingest', () => {
     const clock = Date.parse('2026-09-04T20:00:00.000Z')
     expect(listOpenRulings(clock).filter((row) => row.session_id === 'sess-b')).toEqual([
       {
-        task_key: 'ALP-118', session_id: 'sess-b',
+        question_id: 20, task_key: 'ALP-118', session_id: 'sess-b',
         asked_at: '2026-09-04T18:50:00.000Z', age: 4_200_000,
       },
       {
-        task_key: 'ALP-118', session_id: 'sess-b',
+        question_id: 21, task_key: 'ALP-118', session_id: 'sess-b',
         asked_at: '2026-09-04T19:00:00.000Z', age: 3_600_000,
       },
     ])
@@ -360,6 +361,57 @@ describe('run ingest', () => {
     const result = await ingestRunFixtures(runFixture({ id: 9701, probe: 1 }))
     expect(result).toEqual({ rows: 0, skipped: 1 })
     expect(db().query(`SELECT 1 FROM interval WHERE ref = 'orch:9701'`).get()).toBeNull()
+  })
+
+  test('launch_key beats a contradicting prompt', async () => {
+    await ingestRunFixtures(runFixture({
+      id: 9801,
+      cwd: '/fixtures/repos/alpha',
+      prompt_head: 'Implement ALP-2000',
+      launch_key: 'ALP-7777',
+      latency_ms: 1000,
+      status: 'ok',
+    }))
+    const interval = db().query(
+      `SELECT task_key, via FROM interval WHERE ref = 'orch:9801'`,
+    ).get() as { task_key: string; via: string }
+    expect(interval).toEqual({ task_key: 'ALP-7777', via: 'launch_key' })
+  })
+
+  test('runsSince keeps the two-hour window when collection is current', () => {
+    db().query(`INSERT INTO setting (key, value) VALUES ('collect.runs.at', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+      .run(JSON.stringify('2026-09-04T11:00:00.000Z'))
+    expect(runsSince(Date.parse('2026-09-04T12:00:00.000Z'))).toBe('2026-09-04T10:00:00.000Z')
+  })
+
+  test('an answer recorded during a collector gap is ingested on the next collect', async () => {
+    await ingestRunFixtures(runFixture({
+      id: 9901,
+      session_id: 'sess-gap',
+      questions: [
+        { id: 61, run_id: 9901, asked_at: '2026-09-04T06:00:00.000Z', answered_at: null },
+      ],
+    }))
+    db().query(`INSERT INTO setting (key, value) VALUES ('collect.runs.at', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+      .run(JSON.stringify('2026-09-04T07:00:00.000Z'))
+
+    const clock = Date.parse('2026-09-04T12:00:00.000Z')
+    expect(runsSince(clock)).toBe('2026-09-04T07:00:00.000Z')
+
+    await ingestRunFixtures(runFixture({
+      id: 9901,
+      session_id: 'sess-gap',
+      questions: [
+        { id: 61, run_id: 9901, asked_at: '2026-09-04T06:00:00.000Z',
+          answered_at: '2026-09-04T07:30:00.000Z' },
+      ],
+    }))
+    const row = db().query(
+      `SELECT answered_at FROM question WHERE question_id = 61`,
+    ).get() as { answered_at: string }
+    expect(row.answered_at).toBe('2026-09-04T07:30:00.000Z')
   })
 })
 

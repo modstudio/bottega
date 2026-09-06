@@ -3446,7 +3446,7 @@ switch (cmd) {
               s.delivery, s.quality,
               COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason
               ${json ? ', r.cwd, r.session_id, r.vendor_cost_usd, r.probe, r.exit_code, r.input_tree,'
-                        + ' r.prompt_path, r.branch, r.branch_kept, r.retry_of' : ''}
+                        + ' r.prompt_path, r.branch, r.branch_kept, r.retry_of, r.launch_key' : ''}
          FROM run r
          JOIN run current_run ON current_run.id = (
            SELECT member.id FROM run member

@@ -83,6 +83,7 @@ export function deadRunningProcessConditions(clock = Date.now()): MonitorConditi
 }
 
 type HubRuling = {
+  question_id: number
   task_key: string | null
   session_id: string | null
   asked_at: string
@@ -110,19 +111,20 @@ export function rulingConditions(clock = Date.now()): { conditions: MonitorCondi
   }
   const threshold = durationMs(payload.stale_after ?? '1h') ?? 3_600_000
   const conditions = payload.questions.flatMap((row): MonitorCondition[] => {
+    if (typeof row.question_id !== 'number' || !Number.isFinite(row.question_id)) return []
     const ageMs = age(row.asked_at, clock)
     if (ageMs == null || ageMs < threshold) return []
     const task = row.task_key ?? '(untracked)'
     const session = row.session_id ?? 'unknown'
     return [{
       kind: 'task-waiting-on-ruling',
-      subject: row.task_key ? `task:${row.task_key}` : `session:${session}`,
+      subject: `question:${row.question_id}`,
       since: row.asked_at,
       ageMs,
       detail: `task ${task} waiting on a ruling; session ${session}`,
       action: 'reported; it does not answer',
     }]
-  })
+  }).sort((a, b) => a.detail.localeCompare(b.detail) || a.subject.localeCompare(b.subject))
   return { conditions, errors: [] }
 }
 

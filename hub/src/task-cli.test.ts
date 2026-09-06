@@ -396,7 +396,8 @@ describe('rulings CLI', () => {
       task_key: created.stdout, session_id: 'sess-cli', asked_at: '2026-09-04T19:00:00.000Z',
     })])
     expect(payload.questions.every((q) =>
-      ['task_key', 'session_id', 'asked_at', 'age'].every((key) => key in q),
+      ['question_id', 'task_key', 'session_id', 'asked_at', 'age'].every((key) => key in q),
     )).toBe(true)
+    expect(payload.questions[0]).toEqual(expect.objectContaining({ question_id: 1 }))
   })
 })
