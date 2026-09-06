@@ -1612,6 +1612,11 @@ const hermeticGitCommand =
 const dir = mkdtempSync(join(tmpdir(), 'orch-test-'))
 process.env.ORCH_DB = join(dir, 'test.db')
 process.env.ORCH_RUNS = join(dir, 'runs')
+const originalTestSandbox = process.env.ORCH_SANDBOX
+// Existing fake-agent integration tests write capture artifacts outside their
+// disposable trees. Profile construction and live SRT behaviour have dedicated
+// coverage; these tests exercise their original subject on the host seam.
+process.env.ORCH_SANDBOX = 'host'
 const hermeticHome = join(dir, 'home')
 mkdirSync(hermeticHome)
 const { scrubbedGitEnv, targetGitEnvironment } = await import('./worktree.ts')
@@ -2204,6 +2209,8 @@ beforeEach(() => {
 afterAll(() => {
   delete process.env.ORCH_DB
   delete process.env.ORCH_RUNS
+  if (originalTestSandbox === undefined) delete process.env.ORCH_SANDBOX
+  else process.env.ORCH_SANDBOX = originalTestSandbox
   if (originalTestPath === undefined) delete process.env.PATH
   else process.env.PATH = originalTestPath
   rmSync(dir, { recursive: true, force: true })
@@ -4276,7 +4283,7 @@ describe('failure classification', () => {
     // None of them may be averaged in with the agent's actual work.
     expect(NOT_EVIDENCE).toEqual([
       'quota', 'auth', 'unreachable', 'content_refusal', 'interrupted', 'truncated', 'escaped',
-      'confinement_unverified', 'harness', 'abandoned',
+      'confinement_unverified', 'sandbox_denied', 'harness', 'abandoned',
     ])
     for (const kind of ['timeout', 'denied', 'other']) {
       expect(NOT_EVIDENCE).not.toContain(kind)
@@ -10185,7 +10192,7 @@ describe('detached run collection', () => {
       'delivery', 'error', 'exit_code', 'failover_chain', 'failure_kind', 'head_commit', 'id',
       'input_tree', 'job', 'latency_ms', 'launch_key', 'probe', 'prompt_head',
       'prompt_path', 'quality', 'questions', 'repo', 'requested_id', 'resolved_from', 'retry_of', 'review_ref', 'route_reason',
-      'session_id', 'started_at', 'status', 'turns', 'vendor_cost_usd', 'vendor_tokens',
+      'sandbox', 'session_id', 'started_at', 'status', 'turns', 'vendor_cost_usd', 'vendor_tokens',
     ].sort())
 
     const listed = orch('runs')

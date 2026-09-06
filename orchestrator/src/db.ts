@@ -847,6 +847,8 @@ const RUN_DDL = `CREATE TABLE run (
       no_failover   INTEGER NOT NULL DEFAULT 0,
       automatic_failover INTEGER NOT NULL DEFAULT 0,
       route_reason  TEXT,
+      -- host or srt; null on rows created before sandbox selection existed
+      sandbox       TEXT CHECK (sandbox IN ('host','srt')),
       branch        TEXT,
       branch_kept   TEXT,
       branch_kept_tip TEXT,

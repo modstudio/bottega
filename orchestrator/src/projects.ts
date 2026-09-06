@@ -52,6 +52,12 @@ export type Project = {
 }
 
 export type ProjectSettings = {
+  /**
+   * Paths a read-only worker must not read. Absolute paths are used as-is,
+   * `~` expands to the operator home, and relative paths resolve from this
+   * project's registered main checkout (never from a disposable worktree).
+   */
+  secretPaths?: string[]
   /** Ticket-key prefixes whose committed tasks count as this project's shipped work. */
   keyPrefixes?: string[]
   /** MCP server this project's agents attach to. Defaults to the project name. */
@@ -339,6 +345,12 @@ export function validateProjectSettings(settings: ProjectSettings): string[] {
       new Set(['path', 'base']),
     ),
   ]
+  if (settings.secretPaths !== undefined && (
+    !Array.isArray(settings.secretPaths) ||
+    settings.secretPaths.some((path) => typeof path !== 'string' || !path.trim())
+  )) {
+    problems.push('secretPaths must be an array of non-empty path strings')
+  }
   const readonly = settings.worktree?.readonly_create
   if (readonly && !createHasPlaceholder(readonly, 'path')) {
     problems.push('worktree.readonly_create must contain {path}')

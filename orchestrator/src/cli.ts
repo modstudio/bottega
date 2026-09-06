@@ -1345,6 +1345,7 @@ function usage(): never {
           JSON null deletes that settings key; objects merge deeply
           worktree.readonly_create may provision detached read-only trees at {path} and {base}
           worktree.readonly_notes says what a detached read-only tree can and cannot run
+          secretPaths lists sandbox-denied paths; absolute, ~-prefixed, or relative to the main checkout
           worktree.readonly_remove optionally tears them down and receives {path} only
           --allow-incomplete    save a create command missing branch or seed configuration
       remove <name>
@@ -5198,7 +5199,7 @@ switch (cmd) {
       `SELECT r.id, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
               current_run.status, current_run.failure_kind, current_run.error,
               s.delivery, s.quality,
-              COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason
+              COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason, r.sandbox
               ${json ? ', r.cwd, r.session_id, r.vendor_cost_usd, r.probe, r.exit_code, r.input_tree, r.head_commit, r.review_ref,'
                         + ' r.prompt_path, r.branch, r.branch_kept, r.branch_kept_tip, r.retry_of, r.launch_key' : ''}
          FROM run r
@@ -5230,7 +5231,7 @@ switch (cmd) {
         route_reason: string | null; probe: number; output_path: string | null
       }
       const turns = json ? db().query(
-        `SELECT id, started_at, latency_ms, vendor_tokens, vendor_cost_usd, status, turn, input_tree
+        `SELECT id, started_at, latency_ms, vendor_tokens, vendor_cost_usd, status, turn, input_tree, sandbox
            FROM run WHERE id = ? OR parent_run_id = ?
           ORDER BY turn, id`,
       ).all(Number(r.id), Number(r.id)) : undefined
@@ -5707,6 +5708,7 @@ switch (cmd) {
     const doctorFindings = findingsForPack(doctorPack).reduce((n, row) => n + row.findings.length, 0)
     const { CANON_EVALS, currentCanonEvalSha, latestCanonEvals } = await import('./evals.ts')
     const latestEvals = latestCanonEvals()
+    const { srtInstalled, SRT_BIN } = await import('./sandbox.ts')
     console.log(`canon          ${doctorFindings} finding(s) in ${doctorPack.bytes}/${doctorPack.budgetBytes} bytes`)
     console.log('canon evals')
     for (const ev of CANON_EVALS) {
@@ -5754,6 +5756,13 @@ switch (cmd) {
         )
       }
     }
+    const srtAgents = Object.values(AGENTS)
+      .filter((agent) => agent.name !== 'codex' && agent.caps.readsRepo)
+      .map((agent) => agent.name)
+    console.log(
+      `sandbox        srt ${srtInstalled() ? 'installed' : 'NOT INSTALLED'} at ${SRT_BIN}`,
+    )
+    console.log(`sandbox agents ${srtAgents.join(', ') || '(none)'} (read-only repository jobs)`)
     console.log(`\nlocal endpoint  ${LOCAL_BASE_URL || '(ORCH_LOCAL_BASE_URL unset)'}`)
     console.log(`local model     ${LOCAL_MODEL}`)
     console.log(`reachable       ${r.ok ? 'yes' : 'NO'} — ${r.detail}`)

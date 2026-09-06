@@ -12,6 +12,7 @@ import {
 } from './failure.ts'
 import {
   AGENTS, ensureLocalHealth, tryWake, readStrictCodexSchema, minimumCliVersionRefusal,
+  LOCAL_BASE_URL,
   type SandboxLevel,
 } from './agents.ts'
 import { job, type Job } from './jobs.ts'
@@ -52,6 +53,7 @@ import { resolveRunsDirectory } from './database-location.ts'
 import { resolveLandingBranch } from './landing.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES } from './result-output.ts'
 import { addedGrokTrustHeadings, grokTrustHeadings } from './grok-trust.ts'
+import { selectReadonlySandbox, SRT_BIN } from './sandbox.ts'
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
 
@@ -2232,6 +2234,36 @@ export async function run(opts: {
     ? a.resumeArgv!({ ...argvOpts, session: opts.resume.session })
     : a.argv(argvOpts)
 
+  const sandboxSelection = selectReadonlySandbox({
+    agent: name,
+    readsRepo: repoJob,
+    writesRepo: writesJob,
+    worktree: worktree?.path ?? null,
+    runsDir,
+    project: projectAt(callerCwd),
+    readonlyNotes: toolFor(callerCwd)?.readonly_notes,
+    override: process.env.ORCH_SANDBOX,
+    path: process.env.PATH,
+    localBaseUrl: LOCAL_BASE_URL,
+  })
+  const srtSettingsPath = sandboxSelection.profile
+    ? join(runsDir, `${stamp}.srt.json`)
+    : null
+  if (srtSettingsPath) writeFileSync(srtSettingsPath, JSON.stringify(sandboxSelection.profile, null, 2))
+  const launchArgv = sandboxSelection.sandbox === 'srt'
+    ? [SRT_BIN, '--settings', srtSettingsPath!, '--', a.bin, ...argv]
+    : [a.bin, ...argv]
+  const sandboxRouteReason = sandboxSelection.reason
+    ? `${reason}; sandbox host: ${sandboxSelection.reason}`
+    : reason
+  db().query('UPDATE run SET sandbox=?, route_reason=? WHERE id=?')
+    .run(sandboxSelection.sandbox, sandboxRouteReason, claim.id)
+  if (sandboxSelection.reason) {
+    const header = `sandbox host: ${sandboxSelection.reason}`
+    mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${header}` : header
+    console.error(`orch: run ${claim.id} ${header}`)
+  }
+
   bindSignals()
 
   // Declared out here because the `finally` has to be able to write a terminal
@@ -2293,7 +2325,7 @@ export async function run(opts: {
         .run(inputTree, headCommit, claim.id)
       if (measured.changes !== 1) throw new Error(`run ${claim.id} could not record its input tree`)
     }
-    const p = Bun.spawn([a.bin, ...argv], {
+    const p = Bun.spawn(launchArgv, {
       cwd,
       env: childEnv(a, claim.id, runToken, gitConfigEnvironment),
       stdin: a.stdin ? new TextEncoder().encode(prompt) : 'ignore',
@@ -2546,6 +2578,7 @@ export async function run(opts: {
     // alive. Remove it after readSession has had the chance to derive any
     // vendor-owned transcript location from cwd.
     if (isolatedCwd) rmSync(isolatedCwd, { recursive: true, force: true })
+    if (srtSettingsPath) rmSync(srtSettingsPath, { force: true })
 
     /**
      * The diff is read EVEN WHEN THE RUN FAILED, and that is the point.

@@ -20,6 +20,8 @@ export type FailureKind =
   | 'escaped'
   /** Orch could not verify a watched checkout's before/after status. */
   | 'confinement_unverified'
+  /** Sandbox Runtime denied a read the job needed. */
+  | 'sandbox_denied'
   /**
    * ORCH's own fault: a bad schema, a missing flag, a precondition it should
    * have checked before spending a run. Set at the point in the code that knows
@@ -35,6 +37,7 @@ export type FailureKind =
   | 'other'
 
 const PATTERNS: [FailureKind, RegExp][] = [
+  ['sandbox_denied', /(?:sandbox(?:-exec)?[^\n]*(?:deny|denied)[^\n]*(?:\/Users\/|\/home\/|~\/)|(?:\/Users\/|\/home\/|~\/)[^\n]*(?:operation not permitted|sandbox[^\n]*denied)|operation not permitted[^\n]*(?:\/Users\/|\/home\/|~\/))/i],
   /**
    * Exit codes observed in run.exit_code, grouped by failure_kind and agent on
    * 2026-09-02. Vendor documentation names none of these behaviours; these are
@@ -245,7 +248,7 @@ export const FAILS_OVER: FailureKind[] = [
  */
 export const NOT_EVIDENCE: FailureKind[] = [
   'quota', 'auth', 'unreachable', 'content_refusal', 'interrupted', 'truncated', 'escaped',
-  'confinement_unverified', 'harness', 'abandoned',
+  'confinement_unverified', 'sandbox_denied', 'harness', 'abandoned',
 ]
 
 /**
