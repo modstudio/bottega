@@ -17,7 +17,7 @@ import { AGENTS, available, installed, ensureLocalHealth,
 import { candidates, pick, scoreboard, MIN_SAMPLE, promptSizeBucketLabel } from './route.ts'
 import { guide } from './guide.ts'
 import { repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses,
-         implicitReviewWarning, packedResumePrompt, type DetachSpec, type McpRequest } from './run.ts'
+         implicitReviewWarning, packedResumePrompt, mcpRequestFromStored, type DetachSpec, type McpRequest } from './run.ts'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync, unlinkSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, timingSafeEqual } from 'node:crypto'
@@ -1123,11 +1123,12 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
     }
   }
   const launch = db().query(
-    `SELECT launch_cwd, launch_seed, launch_key, launch_base, no_failover
+    `SELECT launch_cwd, launch_seed, launch_key, launch_base, no_failover, mcp, mcp_error, lens
        FROM run WHERE id=?`,
   ).get(id) as {
     launch_cwd: string | null; launch_seed: string | null; launch_key: string | null
-    launch_base: string | null; no_failover: number
+    launch_base: string | null; no_failover: number; mcp: number | null; mcp_error: string | null
+    lens: string | null
   }
   authority = writeTransaction(() => adoptRunMutation(authority, 'continue'))
   const childId = await detach(row.job, prompt, {
@@ -1136,6 +1137,8 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
     key: launch.launch_key ?? undefined,
     base: launch.launch_base ?? undefined,
     noFailover: !!launch.no_failover,
+    mcp: mcpRequestFromStored(launch.mcp, launch.mcp_error),
+    lens: launch.lens ?? undefined,
     resume: {
       parent: id, agent: sessionFrom.agent, session: sessionFrom.vendor_session,
       turn: latest.turn + 1, sessionId: authority.owner,
@@ -2772,7 +2775,7 @@ switch (cmd) {
     const newId = await detach(row.job, retryPrompt, {
       agent,
       schema: row.schema_path ?? undefined,
-      mcp: row.mcp ? (row.mcp_error?.startsWith('mirror:') ? 'prefer' : 'require') : undefined,
+      mcp: mcpRequestFromStored(row.mcp, row.mcp_error),
       model: row.model ?? undefined,
       lens: row.lens ?? undefined,
       probe: !!row.probe, retryOf: id, cwd: row.cwd ?? undefined,

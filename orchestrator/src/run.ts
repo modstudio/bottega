@@ -1,6 +1,6 @@
 import {
   mkdirSync, mkdtempSync, readFileSync, existsSync, writeFileSync, readdirSync, rmSync,
-  realpathSync, statSync, unlinkSync, symlinkSync,
+  realpathSync, statSync, unlinkSync, symlinkSync, readlinkSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative } from 'node:path'
@@ -282,6 +282,21 @@ export function requestedMcpMode(request: McpRequest | undefined): McpMode | nul
   return request ? 'require' : null
 }
 
+/** Existing run.mcp stores none=0, require=1, and prefer=2. */
+export function storedMcpRequest(request: McpRequest | undefined): number {
+  const mode = requestedMcpMode(request)
+  return mode === 'prefer' ? 2 : mode === 'require' ? 1 : 0
+}
+
+/** Read the tri-state request while preserving compatibility with older mirror rows. */
+export function mcpRequestFromStored(
+  stored: number | null, error: string | null = null,
+): McpMode | undefined {
+  if (stored === 2) return 'prefer'
+  if (stored === 1) return error?.startsWith('mirror:') ? 'prefer' : 'require'
+  return undefined
+}
+
 type McpConfigPreflight = { header: string | null; error: string | null }
 
 /** Put cwd-discovered project MCP config at the address the vendor will inspect. */
@@ -298,6 +313,36 @@ export function provisionMcpConfig(worktree: string, checkout: string): McpConfi
   const link = relative(dirname(target), source)
   symlinkSync(link, target)
   return { header: `MCP preflight: linked .mcp.json -> ${link}`, error: null }
+}
+
+/** Keep orch's cwd-discovery link outside trees and patches attributed to the worker. */
+function withoutProvisionedMcpConfig<T>(
+  worktree: string, link: string | null, measure: () => T,
+): T {
+  if (link === null) return measure()
+  const target = join(worktree, '.mcp.json')
+  if (existsSync(target)) unlinkSync(target)
+  try {
+    return measure()
+  } finally {
+    if (existsSync(target)) unlinkSync(target)
+    symlinkSync(link, target)
+  }
+}
+
+/** A resumed turn inherits the root's infrastructure link, not worker content. */
+function inheritedProvisionedMcpConfigLink(runId: number, worktree: string): string | null {
+  const row = db().query('SELECT output_path FROM run WHERE id=?').get(runId) as
+    { output_path: string | null } | null
+  if (!row?.output_path || !existsSync(row.output_path)) return null
+  if (!readFileSync(row.output_path, 'utf8').startsWith('MCP preflight: linked .mcp.json -> ')) {
+    return null
+  }
+  try {
+    return readlinkSync(join(worktree, '.mcp.json'))
+  } catch {
+    return null
+  }
 }
 
 /** The provenance value orch can establish from this run's dispatch facts. */
@@ -437,11 +482,6 @@ export function preflightMcp(opts: {
   )
   const selected = AGENTS[name]!
   if (selected.caps.discoversMcpFromCwd && job(opts.job).needs.readsRepo) {
-    if (!existsSync(join(project.path, '.mcp.json')) && mode === 'require') {
-      throw new Error(
-        `MCP was requested, but ${project.path}/.mcp.json is missing. The agent was not started.`,
-      )
-    }
     return
   }
   const connection = probeRequestedMcp(mode, name, opts.cwd)
@@ -1474,12 +1514,12 @@ export async function run(opts: {
    */
   const mcpMode = requestedMcpMode(opts.mcp)
   const deferredCwdMcpPreflight = Boolean(
-    mcpMode && repoJob && a.caps.discoversMcpFromCwd && !opts.resume && projectAt(callerCwd),
+    mcpMode && repoJob && a.caps.discoversMcpFromCwd && projectAt(callerCwd),
   )
   let mcpConnection = deferredCwdMcpPreflight
     ? null
     : probeRequestedMcp(opts.mcp, name, callerCwd)
-  if (requiresCanonSource && !opts.resume && !deferredCwdMcpPreflight) {
+  if (requiresCanonSource && !deferredCwdMcpPreflight) {
     const source = canonSourceFor(Boolean(mcpMode), mcpConnection, repoJob)
     prompt += `\n\n${canonSourceInstruction(source)}`
   }
@@ -1673,7 +1713,7 @@ export async function run(opts: {
   )
     .run(
       stackAt(callerCwd), opts.model ?? a.model, runToken,
-      mcpMode ? 1 : 0, mcpConnection?.server ?? null,
+      storedMcpRequest(opts.mcp), mcpConnection?.server ?? null,
       mcpConnection?.connected == null ? null : mcpConnection.connected ? 1 : 0,
       mcpConnection?.error ?? (mcpMode ? 'no registered project identifies the canonical MCP server' : null),
       opts.schemaPath ?? null, opts.lens ?? null, claim.id,
@@ -1692,6 +1732,7 @@ export async function run(opts: {
   let carried: import('./worktree.ts').CarriedWorkingState | null = null
   let changes: import('./worktree.ts').Changes | null = null
   let isolatedCwd: string | null = null
+  let provisionedMcpConfigLink: string | null = null
   let retargetDiagnostic: string | null = null
   let mcpSetupHeader: string | null = null
   /**
@@ -1881,8 +1922,14 @@ export async function run(opts: {
     if (deferredCwdMcpPreflight) {
       const project = projectAt(callerCwd)
       if (!project) throw new Error(`no registered project identifies MCP configuration for ${callerCwd}`)
+      const inheritedLink = opts.resume
+        ? inheritedProvisionedMcpConfigLink(opts.resume.parent, cwd)
+        : null
       const config = provisionMcpConfig(cwd, project.path)
       mcpSetupHeader = config.header
+      provisionedMcpConfigLink = config.header === null
+        ? inheritedLink
+        : readlinkSync(join(cwd, '.mcp.json'))
       const server = project.settings.mcpServer ?? project.name
       mcpConnection = config.error
         ? { server, connected: false, error: config.error }
@@ -2011,7 +2058,9 @@ export async function run(opts: {
   try {
     if (repoJob) {
       if (!worktree) throw new Error(`repository run ${claim.id} has no worktree to measure`)
-      const inputTree = contentTree(worktree.path)
+      const inputTree = withoutProvisionedMcpConfig(
+        worktree.path, provisionedMcpConfigLink, () => contentTree(worktree.path),
+      )
       const headCommit = gitContext(worktree.path, 'rev-parse', '--verify', 'HEAD^{commit}')
       const measured = db().query('UPDATE run SET input_tree=?, head_commit=? WHERE id=?')
         .run(inputTree, headCommit, claim.id)
@@ -2274,7 +2323,11 @@ export async function run(opts: {
      * the row has to be written whatever git says.
      */
     if (worktree) {
-      try { changes = changesIn(worktree) } catch (e) {
+      try {
+        changes = withoutProvisionedMcpConfig(
+          worktree.path, provisionedMcpConfigLink, () => changesIn(worktree),
+        )
+      } catch (e) {
         changes = null
         console.error(`orch: could not read the diff for run ${claim.id}: ${e}`)
       }
@@ -2500,13 +2553,13 @@ export async function run(opts: {
     const tried = attempts.map((attempt) => attempt.agent)
     const first = db().query(
       `SELECT prompt_path, launch_cwd, launch_seed, launch_key, launch_base,
-              no_failover, session_id, mcp, schema_path, probe, label, lens, repo,
+              no_failover, session_id, mcp, mcp_error, schema_path, probe, label, lens, repo,
               base_commit, head_commit, review_ref
          FROM run WHERE id=?`,
     ).get(attempts[0]!.id) as {
       prompt_path: string | null; launch_cwd: string | null; launch_seed: string | null
       launch_key: string | null; launch_base: string | null; no_failover: number
-      session_id: string | null; mcp: number | null; schema_path: string | null
+      session_id: string | null; mcp: number | null; mcp_error: string | null; schema_path: string | null
       probe: number; label: string | null; lens: string | null; repo: string | null
       base_commit: string | null; head_commit: string | null; review_ref: string | null
     }
@@ -2543,7 +2596,7 @@ export async function run(opts: {
           prompt: originalPrompt,
           agent: next.agent,
           schemaPath: first.schema_path ?? undefined,
-          mcp: !!first.mcp,
+          mcp: mcpRequestFromStored(first.mcp, first.mcp_error),
           probe: !!first.probe,
           label: first.label ?? undefined,
           lens: first.lens ?? undefined,

@@ -6395,6 +6395,108 @@ fi
       expect(result.output).toContain('MCP preflight: linked .mcp.json -> ../../../.mcp.json')
       expect(lstatSync(join(result.worktree!.path, '.mcp.json')).isSymbolicLink()).toBe(true)
       expect(realpathSync(join(result.worktree!.path, '.mcp.json'))).toBe(join(repo, '.mcp.json'))
+      const measured = db().query('SELECT input_tree, changed_paths FROM run WHERE id=?')
+        .get(result.id) as { input_tree: string; changed_paths: string }
+      const treeFiles = Bun.spawnSync(['git', 'ls-tree', '-r', '--name-only', measured.input_tree], {
+        cwd: result.worktree!.path, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      }).stdout.toString().trim().split('\n')
+      expect(treeFiles).not.toContain('.mcp.json')
+      expect(JSON.parse(measured.changed_paths ?? '[]')).not.toContain('.mcp.json')
+    } finally {
+      agent.bin = original.bin; agent.argv = original.argv
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('uses a real MCP config supplied by the project worktree recipe without a checkout copy', async () => {
+    const repo = mcpRepo(false)
+    writeFileSync(join(repo, '.gitignore'), '.mcp.json\n')
+    Bun.spawnSync(['git', 'add', '.gitignore'], { cwd: repo, env: hermeticGitEnv() })
+    Bun.spawnSync(['git', 'commit', '-m', 'ignore recipe config'], { cwd: repo, env: hermeticGitEnv() })
+    const recipeTree = join(repo, '.claude', 'worktrees', 'recipe-mcp')
+    upsertProject({
+      name: 'fixture-project', path: repo,
+      settings: {
+        worktree: {
+          branch: 'orch/{id}',
+          create: compoundCreate(
+            `${hermeticGitCommand} worktree add -b {branch} "${recipeTree}" HEAD >/dev/null && ` +
+            `printf '{}\\n' > "${join(recipeTree, '.mcp.json')}" && echo "${recipeTree}"`,
+          ),
+        },
+      },
+    })
+    const script = join(dir, 'fake-grok-recipe-mcp.sh')
+    writeFileSync(script, `#!/bin/sh
+if [ "$1" = "mcp" ]; then
+  test -f .mcp.json && test ! -L .mcp.json || exit 97
+  printf '%s' '{"servers":[{"name":"fixture-project","healthy":true,"checks":[]}]}'
+else
+  printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
+fi
+`)
+    chmodSync(script, 0o755)
+    const agent = AGENTS.grok!
+    const original = { bin: agent.bin, argv: agent.argv }
+    agent.bin = script; agent.argv = () => []
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      const result = await runJob({
+        job: 'review-lens', prompt: 'review this', cwd: repo,
+        agent: 'grok', mcp: 'require', lens: 'mcp-cwd',
+      })
+      expect(result.status).toBe('ok')
+      expect(lstatSync(join(result.worktree!.path, '.mcp.json')).isSymbolicLink()).toBe(false)
+    } finally {
+      agent.bin = original.bin; agent.argv = original.argv
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('measures a real MCP config carried from the caller worktree', async () => {
+    const repo = mcpRepo(false)
+    const caller = join(repo, '.claude', 'worktrees', 'caller-mcp')
+    mkdirSync(dirname(caller), { recursive: true })
+    const added = Bun.spawnSync(['git', 'worktree', 'add', '-b', 'caller-mcp', caller, 'HEAD'], {
+      cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    if (added.exitCode !== 0) throw new Error(added.stderr.toString())
+    writeFileSync(join(caller, '.mcp.json'), '{}\n')
+    const script = join(dir, 'fake-grok-carried-mcp.sh')
+    writeFileSync(script, `#!/bin/sh
+if [ "$1" = "mcp" ]; then
+  test -f .mcp.json && test ! -L .mcp.json || exit 97
+  printf '%s' '{"servers":[{"name":"fixture-project","healthy":true,"checks":[]}]}'
+else
+  printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
+fi
+`)
+    chmodSync(script, 0o755)
+    const agent = AGENTS.grok!
+    const original = { bin: agent.bin, argv: agent.argv }
+    agent.bin = script; agent.argv = () => []
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      const result = await runJob({
+        job: 'review-lens', prompt: 'review this', cwd: caller, carry: true,
+        agent: 'grok', mcp: 'require', lens: 'mcp-cwd',
+      })
+      expect(result.status).toBe('ok')
+      expect(lstatSync(join(result.worktree!.path, '.mcp.json')).isSymbolicLink()).toBe(false)
+      expect(result.changes!.files).toContain('.mcp.json')
+      const inputTree = (db().query('SELECT input_tree FROM run WHERE id=?').get(result.id) as {
+        input_tree: string
+      }).input_tree
+      const treeFiles = Bun.spawnSync(['git', 'ls-tree', '-r', '--name-only', inputTree], {
+        cwd: result.worktree!.path, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      }).stdout.toString().trim().split('\n')
+      expect(treeFiles).toContain('.mcp.json')
     } finally {
       agent.bin = original.bin; agent.argv = original.argv
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
@@ -6466,6 +6568,87 @@ fi
     }
   })
 
+  test('continue inherits prefer mode, re-probes, and keeps a mirror turn explicit', async () => {
+    const repo = mcpRepo(true)
+    const binDir = mkdtempSync(join(tmpdir(), 'orch-grok-prefer-continue-'))
+    const script = join(binDir, 'grok')
+    writeFileSync(script, `#!/bin/sh
+if [ "$1" = "mcp" ]; then
+  printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"label":"unavailable","passed":false,"detail":"server down"}]}]}'
+else
+  printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
+fi
+`)
+    chmodSync(script, 0o755)
+    const agent = AGENTS.grok!
+    const original = { bin: agent.bin, argv: agent.argv }
+    agent.bin = script; agent.argv = () => []
+    const priorDepth = process.env.ORCH_DEPTH
+    const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+    process.env.ORCH_DEPTH = '0'
+    process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
+    try {
+      const root = await runJob({
+        job: 'review-lens', prompt: 'review this', cwd: repo,
+        agent: 'grok', mcp: 'prefer', lens: 'mcp-cwd',
+      })
+      expect((db().query('SELECT mcp FROM run WHERE id=?').get(root.id) as { mcp: number }).mcp)
+        .toBe(2)
+      agent.bin = original.bin; agent.argv = original.argv
+      const continued = Bun.spawnSync([
+        process.execPath, new URL('cli.ts', import.meta.url).pathname,
+        'continue', String(root.id), 'review once more',
+      ], {
+        cwd: repo,
+        env: {
+          ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+          PATH: `${binDir}:${process.env.PATH ?? ''}`,
+        },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(continued.exitCode).toBe(0)
+      const childId = Number(continued.stdout.toString().replace(/\u001B\[[0-9;]*m/g, '').trim().split('\n')[0])
+      expect(childId).toBeGreaterThan(0)
+      const invoke = (...args: string[]) => Bun.spawnSync([
+        process.execPath, new URL('cli.ts', import.meta.url).pathname, ...args,
+      ], {
+        cwd: repo,
+        env: {
+          ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+          PATH: `${binDir}:${process.env.PATH ?? ''}`,
+        },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      const waited = invoke('wait', String(childId), '--timeout', '15')
+      if (waited.exitCode !== 0) {
+        throw new Error(`stdout: ${waited.stdout.toString()}\nstderr: ${waited.stderr.toString()}`)
+      }
+      expect(waited.exitCode).toBe(0)
+      expect(db().query(
+        'SELECT parent_run_id, mcp, mcp_connected, mcp_error FROM run WHERE id=?',
+      ).get(childId)).toEqual({
+        parent_run_id: root.id, mcp: 2, mcp_connected: 0,
+        mcp_error: 'mirror: unavailable: server down',
+      })
+      const collected = invoke('result', String(childId))
+      expect(collected.stderr.toString()).toContain('MIRROR — not the live database')
+      const bound = db().query('SELECT prompt_path FROM run WHERE id=?').get(childId) as
+        { prompt_path: string }
+      expect(readFileSync(bound.prompt_path.replace(/\.prompt\.txt$/, '.bound.txt'), 'utf8'))
+        .toContain(canonSourceInstruction('mirror'))
+    } finally {
+      agent.bin = original.bin; agent.argv = original.argv
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+      else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+      rmSync(binDir, { recursive: true, force: true })
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('preflightMcp defers cwd-discovered attachment until the worker tree exists', () => {
     const cwd = dir
     upsertProject({ name: 'fixture-project', path: cwd, settings: {} })
@@ -6491,7 +6674,7 @@ printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"l
     }
   })
 
-  test('preflightMcp only requires the checkout config before a cwd-discovered worker tree exists', () => {
+  test('preflightMcp leaves cwd-discovered config decisions until the worker tree exists', () => {
     const cwd = dir
     upsertProject({ name: 'fixture-project', path: cwd, settings: { mcpServer: 'orch' } })
     const grok = AGENTS.grok!
@@ -6502,6 +6685,10 @@ printf '%s' '{"servers":[{"name":"orch","healthy":false,"checks":[{"label":"unav
 `)
     chmodSync(grok.bin, 0o755)
     try {
+      expect(() => preflightMcp({
+        mcp: true, cwd, job: 'review-lens', prompt: 'review this', agent: 'grok',
+      })).not.toThrow()
+      rmSync(join(cwd, '.mcp.json'), { force: true })
       expect(() => preflightMcp({
         mcp: true, cwd, job: 'review-lens', prompt: 'review this', agent: 'grok',
       })).not.toThrow()
