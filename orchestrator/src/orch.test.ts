@@ -18,7 +18,7 @@ import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, exist
          realpathSync, mkdirSync, utimesSync, chmodSync, readdirSync, statSync,
          symlinkSync, copyFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
@@ -10081,6 +10081,70 @@ describe('projects are data, not code', () => {
       expect(existsSync(join(tree, 'orchestrator', 'orch.db'))).toBe(false)
     } finally {
       rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('an unreadable common directory is recovered from the linked worktree pointer for either binary', () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-db-pointer-')))
+    const tree = join(repo, 'tree')
+    const databasePath = join(repo, 'orchestrator', 'orch.db')
+    const override = join(repo, 'override.db')
+    const git = (cwd: string, ...args: string[]) => {
+      const result = Bun.spawnSync(['git', ...args], {
+        cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+    }
+    try {
+      git(repo, 'init', '-b', 'main')
+      git(repo, 'config', 'user.email', 'orch-test@example.invalid')
+      git(repo, 'config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'tracked'), 'fixture\n')
+      git(repo, 'add', 'tracked')
+      git(repo, 'commit', '-m', 'fixture')
+      git(repo, 'worktree', 'add', '-b', 'test-tree', tree, 'main')
+      mkdirSync(join(repo, 'orchestrator'))
+      writeFileSync(databasePath, 'fixture')
+      chmodSync(join(repo, '.git'), 0o000)
+
+      for (const binaryRoot of [
+        join(repo, 'orchestrator'),
+        join(repo, '.claude', 'worktrees', 'local', 'orchestrator'),
+      ]) {
+        expect(resolveDatabase(tree, {}, binaryRoot)).toMatchObject({
+          path: databasePath, method: 'git-pointer',
+        })
+        expect(resolveDatabase(tree, { ORCH_DB: override }, binaryRoot)).toMatchObject({
+          path: override, method: 'ORCH_DB',
+        })
+      }
+    } finally {
+      chmodSync(join(repo, '.git'), 0o755)
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a bare repository is its own root and never borrows its parent database', () => {
+    const parent = realpathSync(mkdtempSync(join(tmpdir(), 'orch-db-bare-')))
+    const bare = join(parent, 'repository.git')
+    const wrong = join(parent, 'orchestrator', 'orch.db')
+    const right = join(bare, 'orchestrator', 'orch.db')
+    try {
+      const initialized = Bun.spawnSync(['git', 'init', '--bare', bare], {
+        env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(initialized.exitCode).toBe(0)
+      mkdirSync(dirname(wrong), { recursive: true })
+      writeFileSync(wrong, 'wrong database')
+      const absent = resolveDatabase(bare, {}, '/work/.claude/worktrees/local/orchestrator')
+      expect(absent).toMatchObject({ path: right, method: 'git-common-dir', tried: [right] })
+      expect(existsSync(absent.path)).toBe(false)
+      mkdirSync(dirname(right), { recursive: true })
+      writeFileSync(right, 'right database')
+      expect(resolveDatabase(bare, {}, '/work/.claude/worktrees/local/orchestrator'))
+        .toMatchObject({ path: right, method: 'git-common-dir' })
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
     }
   })
 
