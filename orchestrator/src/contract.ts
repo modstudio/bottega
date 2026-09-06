@@ -729,23 +729,82 @@ export type ContractConflict = { line: number; text: string }
  * Explicit prohibitions are not conflicts, so a spec may repeat the contract's
  * restrictions without producing noise. Committing to the run branch is not a
  * conflict: the worker contract now permits and encourages it.
+ *
+ * Git-sense is mechanical: first-word push/rebase/amend (after numbering,
+ * bullets, or then/and/now/please); a verb preceded by `git `; a clause-wide
+ * git object; or main/branch/trunk/master in action-relative position.
+ * Continuation lines join onto the previous line before clauses are tested.
  */
+const GIT_ACTION_SOURCE = String.raw`\b(?:push(?:es|ed|ing)?|merges?|merged|merging|rebas(?:e|es|ed|ing)|reset(?:s|ting)?|amend(?:s|ed|ing)?)\b`
+const GIT_ACTION = new RegExp(GIT_ACTION_SOURCE, 'i')
+const GIT_PREFIXED = new RegExp(String.raw`\bgit ${GIT_ACTION_SOURCE.slice(2)}`, 'i')
+const GIT_OBJECT = /\b(?:git|origin|remote|upstream|HEAD|commit|ref|tag|PR|pull request|force)\b|(?<![\w-])(?:--force|-f)(?![\w-])/i
+const POSITION_WORD = '(?:main|branch|trunk|master)'
+const THE_POSITION = new RegExp(String.raw`^\s+the\s+${POSITION_WORD}\b`, 'i')
+const PREP_POSITION = new RegExp(String.raw`\b(?:onto|into|to)\s+(?:the\s+)?${POSITION_WORD}\b`, 'i')
+const IMPERATIVE = /^(?:push|rebase|amend)$/i
+const FILLER = /^(?:then|and|now|please)$/i
+const JOIN_PREPOSITION = /^(?:to|onto|into|from|off|on|with)$/i
+const CLAUSE_PREFIX = /^(?:\d+[.)]|[-*•])\s+/
+
+function firstWord(text: string): string | null {
+  const match = text.trim().match(/^[A-Za-z]+/)
+  return match ? match[0] : null
+}
+
+/** Continuation lines glue onto the previous physical line before clause tests. */
+function isContinuationLine(text: string): boolean {
+  const word = firstWord(text)
+  return word !== null && (/^[a-z]/.test(word) || JOIN_PREPOSITION.test(word))
+}
+
+function stripImperativePrefix(clause: string): string {
+  let rest = clause.trim().replace(CLAUSE_PREFIX, '')
+  const word = firstWord(rest)
+  if (word && FILLER.test(word)) rest = rest.trim().slice(word.length)
+  return rest
+}
+
+function isFirstWordImperative(clause: string): boolean {
+  const word = firstWord(stripImperativePrefix(clause))
+  return word !== null && IMPERATIVE.test(word)
+}
+
+function hasActionRelativeObject(clause: string): boolean {
+  for (const match of clause.matchAll(new RegExp(GIT_ACTION_SOURCE, 'gi'))) {
+    const after = clause.slice(match.index + match[0].length)
+    if (THE_POSITION.test(after) || PREP_POSITION.test(after)) return true
+  }
+  return false
+}
+
+function isGitSense(clause: string): boolean {
+  return isFirstWordImperative(clause)
+    || GIT_PREFIXED.test(clause)
+    || GIT_OBJECT.test(clause)
+    || hasActionRelativeObject(clause)
+}
+
 export function contractConflicts(spec: string): ContractConflict[] {
-  const gitAction = /\b(?:push(?:es|ed|ing)?|merges?|merged|merging|rebas(?:e|es|ed|ing)|reset(?:s|ting)?|amend(?:s|ed|ing)?)\b/i
   const prohibition = /\b(?:do not|don't|never|must not|should not|may not|cannot|can't|without)\b[^.;]*\b(?:push(?:es|ed|ing)?|merges?|merged|merging|rebas(?:e|es|ed|ing)|reset(?:s|ting)?|amend(?:s|ed|ing)?)\b/i
   const noAction = /\bno\s+(?:push(?:es)?|merges?|rebases?|resets?|amendments?)\b/i
-  // Third condition: the verb is used in a git sense — same sentence as a git
-  // object/command word, or preceded by `git ` literally.
-  const gitObject = /\b(?:git|branch|trunk|main|master|origin|remote|upstream|HEAD|commit|ref|tag|PR|pull request|force)\b|(?<![\w-])(?:--force|-f)(?![\w-])/i
-  const gitPrefixed = /\bgit (?:push(?:es|ed|ing)?|merges?|merged|merging|rebas(?:e|es|ed|ing)|reset(?:s|ting)?|amend(?:s|ed|ing)?)\b/i
 
-  return spec.split(/\r?\n/).flatMap((text, index) =>
-    text.split(/[.;]/).some((clause) =>
-      gitAction.test(clause)
-      && (gitObject.test(clause) || gitPrefixed.test(clause))
+  const groups: { line: number, text: string, folded: string }[] = []
+  for (const [index, text] of spec.split(/\r?\n/).entries()) {
+    if (groups.length > 0 && isContinuationLine(text)) {
+      groups[groups.length - 1].folded += ` ${text}`
+    } else {
+      groups.push({ line: index + 1, text, folded: text })
+    }
+  }
+
+  return groups.flatMap(({ line, text, folded }) =>
+    folded.split(/[.;]/).some((clause) =>
+      GIT_ACTION.test(clause)
+      && isGitSense(clause)
       && !prohibition.test(clause)
       && !noAction.test(clause))
-      ? [{ line: index + 1, text }]
+      ? [{ line, text }]
       : [],
   )
 }
