@@ -11289,17 +11289,23 @@ describe('scoped operator docs', () => {
     expect(() => deleteDoc('global', null, 'missing', { reason: '\t' })).toThrow('reason is required')
     expect(() => readDocs('/missing', { reason: ' ' })).toThrow('reason is required')
 
+    // sessionId() also falls back to the Remote Control bridge id, which is set
+    // in a real Claude shell; clear both or the "unknown" branch never runs.
     const before = process.env.CLAUDE_CODE_SESSION_ID
+    const bridgeBefore = process.env.CLAUDE_CODE_BRIDGE_SESSION_ID
     try {
       process.env.CLAUDE_CODE_SESSION_ID = 'doc-session'
       writeDoc({ scope: 'global', subject: null, slug: 'session-author', title: 'T', body: 'B', reason: 'test' })
       delete process.env.CLAUDE_CODE_SESSION_ID
+      delete process.env.CLAUDE_CODE_BRIDGE_SESSION_ID
       writeDoc({ scope: 'global', subject: null, slug: 'unknown-author', title: 'T', body: 'B', reason: 'test' })
       expect(listDocRevisions('global', null, 'session-author')[0]!.author).toBe('doc-session')
       expect(listDocRevisions('global', null, 'unknown-author')[0]!.author).toBe('unknown')
     } finally {
       if (before === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
       else process.env.CLAUDE_CODE_SESSION_ID = before
+      if (bridgeBefore === undefined) delete process.env.CLAUDE_CODE_BRIDGE_SESSION_ID
+      else process.env.CLAUDE_CODE_BRIDGE_SESSION_ID = bridgeBefore
     }
   })
 
