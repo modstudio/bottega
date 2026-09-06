@@ -3,7 +3,7 @@ import {
   statSync, unlinkSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import type { Database } from 'bun:sqlite'
 import {
@@ -640,6 +640,19 @@ function gitContext(cwd: string, ...args: string[]): string | null {
   } catch { return null }
 }
 
+function checkoutRootAsAddressed(cwd: string): string | null {
+  try {
+    const p = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--show-prefix'], {
+      env: { ...process.env, ...worktreeGitEnvironment(cwd) }, stdout: 'pipe', stderr: 'ignore',
+    })
+    if (p.exitCode !== 0) return null
+    const prefix = new TextDecoder().decode(p.stdout).trim()
+    let root = cwd
+    for (const _segment of prefix.split('/').filter(Boolean)) root = dirname(root)
+    return root
+  } catch { return null }
+}
+
 export type CheckoutStatusSnapshot = {
   project: string
   path: string
@@ -699,7 +712,22 @@ export function snapshotRegisteredCheckouts(
  * copy or an agent following the pack escapes the isolation boundary.
  */
 export function retargetRepositoryPrompt(prompt: string, caller: string, worktree: string): string {
-  return caller === worktree ? prompt : prompt.split(caller).join(worktree)
+  if (caller === worktree) return prompt
+  let cursor = 0
+  let rewritten = ''
+  while (cursor < prompt.length) {
+    const occurrence = prompt.indexOf(caller, cursor)
+    if (occurrence === -1) return rewritten + prompt.slice(cursor)
+    const after = prompt[occurrence + caller.length]
+    if (after === undefined || after === '/') {
+      rewritten += prompt.slice(cursor, occurrence) + worktree
+      cursor = occurrence + caller.length
+    } else {
+      rewritten += prompt.slice(cursor, occurrence + caller.length)
+      cursor = occurrence + caller.length
+    }
+  }
+  return rewritten
 }
 
 export function changedRegisteredCheckouts(
@@ -1406,7 +1434,9 @@ export async function run(opts: {
         claim.id,
       )
       cwd = worktree.path
-      prompt = retargetRepositoryPrompt(prompt, callerCwd, worktree.path)
+      const callerRoot = checkoutRootAsAddressed(callerCwd)
+      if (!callerRoot) throw new Error(`could not resolve caller checkout root: ${callerCwd}`)
+      prompt = retargetRepositoryPrompt(prompt, callerRoot, worktree.path)
       // The original file remains the caller's resumable spec. The bound file
       // and row describe what was actually sent after the worktree had an
       // address, which is the evidence an audit needs.

@@ -9749,14 +9749,14 @@ describe('outside-worktree write observation', () => {
     }
   })
 
-  test('caller paths in a review pack are retargeted to the disposable tree', () => {
+  test('caller paths in a review pack are retargeted at filesystem boundaries', () => {
     expect(retargetRepositoryPrompt(
-      'inspect /repo/task/file.ts and run tests from /repo/task',
-      '/repo/task', '/repo/.claude/worktrees/orch-233',
-    )).toBe(
-      'inspect /repo/.claude/worktrees/orch-233/file.ts and run tests from ' +
-      '/repo/.claude/worktrees/orch-233',
-    )
+      '/repo/subdir/subject.txt', '/repo', '/worktree',
+    )).toBe('/worktree/subdir/subject.txt')
+    expect(retargetRepositoryPrompt('/repo', '/repo', '/worktree')).toBe('/worktree')
+    expect(retargetRepositoryPrompt(
+      '/repo-archive/subject.txt', '/repo', '/worktree',
+    )).toBe('/repo-archive/subject.txt')
   })
 
   test('a real run records an external write and a clean run records none', async () => {
@@ -10199,9 +10199,11 @@ describe('review-lens-inline has no checkout', () => {
       runGit('init', '-b', 'main')
       runGit('config', 'user.email', 'orch-test@example.invalid')
       runGit('config', 'user.name', 'Orch Test')
+      mkdirSync(join(repo, 'subdir'))
       writeFileSync(join(repo, '.gitignore'), 'ignored.txt\n')
       writeFileSync(join(repo, 'project-only.txt'), 'wrong tree evidence\n')
-      runGit('add', '.gitignore', 'project-only.txt')
+      writeFileSync(join(repo, 'subdir', 'subject.txt'), 'nested evidence\n')
+      runGit('add', '.gitignore', 'project-only.txt', 'subdir/subject.txt')
       runGit('commit', '-m', 'fixture')
       writeFileSync(script, [
         "import { existsSync } from 'node:fs'",
@@ -10249,6 +10251,14 @@ describe('review-lens-inline has no checkout', () => {
       expect(repositoryView.prompt).not.toContain(`${repo}/project-only.txt`)
       expect(db().query('SELECT input_tree FROM run WHERE id=?').get(repository.id))
         .toEqual({ input_tree: runGit('rev-parse', 'HEAD^{tree}') })
+
+      const nested = await runJob({
+        job: 'review-lens', prompt: `inspect ${repo}/subdir/subject.txt`,
+        cwd: join(repo, 'subdir'), agent: 'codex', lens: 'nested',
+      })
+      const nestedView = JSON.parse(nested.output) as { prompt: string }
+      expect(nestedView.prompt).toContain(`${nested.worktree!.path}/subdir/subject.txt`)
+      expect(nestedView.prompt).not.toContain(`${nested.worktree!.path}/subject.txt`)
 
       writeFileSync(join(repo, 'project-only.txt'), 'carried tracked evidence\n')
       writeFileSync(join(repo, 'carried.txt'), 'carried untracked evidence\n')
