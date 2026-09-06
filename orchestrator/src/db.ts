@@ -166,7 +166,9 @@ export function auditRunMutation(
   ).run(authority.runId, authority.rootId, action, authority.actor, nowIso(), reason)
 }
 
-const ADOPTING_ACTIONS = ['answer', 'tell', 'stop', 'abandon', 'discard', 'void', 'continue'] as const
+const ADOPTING_ACTIONS = [
+  'answer', 'tell', 'stop', 'abandon', 'discard', 'void', 'continue', 'score',
+] as const
 type AdoptingAction = typeof ADOPTING_ACTIONS[number]
 
 /** Atomically claim an unowned chain before an authoritative mutation. */

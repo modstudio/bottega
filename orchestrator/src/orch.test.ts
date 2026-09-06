@@ -771,7 +771,10 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
           process.execPath, new URL('cli.ts', import.meta.url).pathname, ...args,
         ], {
           cwd: repo,
-          env: { ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+          env: {
+            ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+            CLAUDE_CODE_SESSION_ID: 'review-pin-owner',
+          },
           stdout: 'pipe', stderr: 'pipe',
         })
         expect(result.exitCode).toBe(0)
@@ -3666,7 +3669,9 @@ describe('who may judge a run', () => {
   test('each authoritative action adopts once, then refuses another session', () => {
     const prior = process.env.CLAUDE_CODE_SESSION_ID
     try {
-      for (const action of ['answer', 'tell', 'stop', 'abandon', 'discard', 'void', 'continue'] as const) {
+      for (const action of [
+        'answer', 'tell', 'stop', 'abandon', 'discard', 'void', 'continue', 'score',
+      ] as const) {
         const id = addRun({ agent: 'codex', job: 'implement' })
         process.env.CLAUDE_CODE_SESSION_ID = 'session-A'
         const adopted = adoptRunMutation(authorizeRunMutation(id, action), action)
@@ -7699,6 +7704,40 @@ describe('detached run collection', () => {
     expect(result.exitCode).toBe(1)
     expect(result.stderr.toString()).toContain('no session identity is present to score it')
     expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
+  })
+
+  test('the first score adopts an unowned root and refuses foreign rescore and void', () => {
+    const id = insert('ok', 'file-question')
+    db().query('UPDATE run SET session_id=NULL WHERE id=?').run(id)
+
+    const first = orchInput(['score', String(id), 'full', 'right'], undefined, {
+      CLAUDE_CODE_SESSION_ID: 'session-A',
+    })
+    expect(first.code).toBe(0)
+    expect(db().query('SELECT session_id FROM run WHERE id=?').get(id))
+      .toEqual({ session_id: 'session-A' })
+    expect(db().query(
+      `SELECT action, actor_session, reason FROM run_mutation_audit
+        WHERE root_id=? ORDER BY rowid`,
+    ).all(id)).toEqual([
+      { action: 'adopt', actor_session: 'session-A', reason: 'before score' },
+      { action: 'score', actor_session: 'session-A', reason: null },
+    ])
+
+    const rescore = orchInput(['score', String(id), 'partial', 'mixed'], undefined, {
+      CLAUDE_CODE_SESSION_ID: 'session-B',
+    })
+    expect(rescore.code).toBe(1)
+    expect(rescore.err).toContain('its session:   session-A')
+    const voided = orchInput(['score', String(id), '--void'], undefined, {
+      CLAUDE_CODE_SESSION_ID: 'session-B',
+    })
+    expect(voided.code).toBe(1)
+    expect(voided.err).toContain(`run ${id} is owned by session session-A`)
+    expect(db().query('SELECT delivery, quality FROM score WHERE run_id=?').get(id))
+      .toEqual({ delivery: 'full', quality: 'right' })
+    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id))
+      .toEqual({ evidence_excluded: null })
   })
 
   test('score drops a habitual fidelity word for a review lens and records two axes', () => {

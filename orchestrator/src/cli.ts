@@ -3906,6 +3906,7 @@ switch (cmd) {
     }
     const scorer = flag('scorer')
     const dashboardAuthorized = dashboardScoreAuthorized(scorer)
+    let scoreAuthority = runMutationActor(id)
     const owner = judgeability(row.session_id, sessionId())
     let voidAuthority: RootAuthority | null = null
     if (has('void')) {
@@ -4081,6 +4082,7 @@ switch (cmd) {
     const wasScored = Boolean(db().query('SELECT 1 FROM score WHERE run_id=?').get(id))
     const scoredAt = nowIso()
     const saveScore = db().transaction(() => {
+      if (!dashboardAuthorized) scoreAuthority = adoptRunMutation(scoreAuthority, 'score')
       if (reviewGrade) gradeReviewLens(id, reviewGrade.output, reviewGrade.grades)
       db().query(
         `INSERT INTO score (run_id, delivery, quality, fidelity, note, scored_at, scored_by)
@@ -4099,7 +4101,7 @@ switch (cmd) {
       ).run(id, delivery, quality ?? null, scoredFidelity ?? null, flag('note') ?? null, scoredAt,
             scorer ?? process.env.ORCH_SCORER ?? 'claude')
       auditRunMutation(
-        runMutationActor(id), wasScored ? 'rescore' : 'score', auditReason(),
+        scoreAuthority, wasScored ? 'rescore' : 'score', auditReason(),
       )
     })
     saveScore()
