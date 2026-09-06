@@ -17,7 +17,8 @@ import { AGENTS, available, installed, ensureLocalHealth,
 import { candidates, pick, scoreboard, MIN_SAMPLE, promptSizeBucketLabel } from './route.ts'
 import { guide } from './guide.ts'
 import { repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses,
-         implicitReviewWarning, packedResumePrompt, mcpRequestFromStored, type DetachSpec, type McpRequest } from './run.ts'
+         implicitReviewWarning, packedResumePrompt, mcpRequestFromStored, storedMcpRequest,
+         type DetachSpec, type McpRequest } from './run.ts'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync, unlinkSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, timingSafeEqual } from 'node:crypto'
@@ -909,9 +910,9 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
   const claimed = writeTransaction(() => {
     const inserted = db().query(
       `INSERT INTO run (started_at, agent, job, repo, cwd, prompt_sha, prompt_bytes,
-                      prompt_head, label, status, session_id, probe, parent_run_id, turn,
+                      prompt_head, label, status, session_id, probe, parent_run_id, turn, mcp,
                       vendor_session)
-       SELECT ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?
+       SELECT ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (
           EXISTS (SELECT 1 FROM run root WHERE root.id = ? AND root.status NOT IN ('stopped','stale'))
           AND NOT EXISTS (
@@ -925,7 +926,7 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
       createHash('sha256').update(prompt).digest('hex').slice(0, 16),
       prompt.length, prompt.slice(0, 200).replace(/\s+/g, ' '), spec.label ?? null,
       sessionId(), spec.probe ? 1 : 0, spec.resume?.parent ?? null,
-      spec.resume?.turn ?? 1, spec.resume?.session ?? null,
+      spec.resume?.turn ?? 1, storedMcpRequest(spec.mcp), spec.resume?.session ?? null,
       spec.resume?.parent ?? null, spec.resume?.parent ?? null,
       spec.resume?.parent ?? null, spec.resume?.parent ?? null,
     ) as { id: number } | null

@@ -16,7 +16,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from '
 import { Database } from 'bun:sqlite'
 import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync,
          realpathSync, mkdirSync, utimesSync, chmodSync, readdirSync, statSync,
-         symlinkSync, copyFileSync, openSync, closeSync, lstatSync } from 'node:fs'
+         symlinkSync, copyFileSync, openSync, closeSync, lstatSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
@@ -1360,7 +1360,7 @@ const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePaths, pr
         canonSourceFor, canonSourceInstruction, snapshotRegisteredCheckouts,
         changedRegisteredCheckouts, checkoutAliases, checkoutCaseSensitivity,
         retargetRepositoryPrompt, retargetRepositoryPromptForDispatch,
-        packedResumePrompt, resolveReviewTarget, implicitReviewWarning,
+        packedResumePrompt, resolveReviewTarget, implicitReviewWarning, mcpRequestFromStored,
         run: runJob } = await import('./run.ts')
 const run = runJob
 const {
@@ -5104,7 +5104,7 @@ describe('retry keeps the work on the same agent', () => {
     }
   })
 
-  test('retry of a read-only run produces a child whose bound prompt contains the preamble exactly once', () => {
+  test('prefer persists through read-only retry and the bound prompt contains the preamble once', () => {
     const original = 'What does bar.ts do?'
     const promptPath = join(dir, 'retry-original.prompt.txt')
     writeFileSync(promptPath, original)
@@ -5117,7 +5117,8 @@ describe('retry keeps the work on the same agent', () => {
     }))
     const id = addRun({ agent: 'grok', job: 'file-question', status: 'failed' })
     db().query(
-      `UPDATE run SET prompt_path=?, mcp=1, schema_path=?, model=?, cwd=? WHERE id=?`,
+      `UPDATE run SET prompt_path=?, mcp=2, mcp_error='mirror: original attach failed',
+                      schema_path=?, model=?, cwd=? WHERE id=?`,
     ).run(promptPath, schemaPath, 'retry-model', dir, id)
 
     const binDir = mkdtempSync(join(tmpdir(), 'orch-fake-grok-retry-'))
@@ -5135,7 +5136,7 @@ describe('retry keeps the work on the same agent', () => {
       } | null
       expect(child).not.toBeNull()
       expect(child!.agent).toBe('grok')
-      expect(child!.mcp).toBe(1)
+      expect(child!.mcp).toBe(2)
       expect(child!.schema_path).toBe(schemaPath)
       expect(child!.model).toBe('retry-model')
       expect(readFileSync(child!.prompt_path, 'utf8')).toBe(original)
@@ -5470,7 +5471,7 @@ describe('vendor failure failover is one bounded unit of work', () => {
     }
   })
 
-  test('a quota death runs the original prompt on another agent and returns that answer', async () => {
+  test('prefer persists through automatic failover and the successor returns the answer', async () => {
     const binDir = join(dir, 'failover-bin')
     mkdirSync(binDir, { recursive: true })
     writeFileSync(join(binDir, 'codex'), '#!/bin/sh\necho "HTTP 402: balance exhausted" >&2\nexit 1\n')
@@ -5487,21 +5488,22 @@ describe('vendor failure failover is one bounded unit of work', () => {
     try {
       const result = await runJob({
         job: 'understand', prompt: 'the exact original prompt', agent: 'codex', cwd: dir,
-        ownerSession: 'failover-owner',
+        ownerSession: 'failover-owner', mcp: 'prefer',
       })
       expect(result.agent).toBe('grok')
       expect(result.output).toBe('successor answer')
       const rows = db().query(
-        'SELECT id, agent, status, failure_kind, retry_of, session_id FROM run ORDER BY id',
+        'SELECT id, agent, status, failure_kind, retry_of, session_id, mcp FROM run ORDER BY id',
       ).all() as {
         id: number; agent: string; status: string; failure_kind: string | null
-        retry_of: number | null; session_id: string | null
+        retry_of: number | null; session_id: string | null; mcp: number
       }[]
       expect(rows).toHaveLength(2)
       expect(rows[0]).toMatchObject({ agent: 'codex', status: 'failed', failure_kind: 'quota' })
       expect(rows[1]).toMatchObject({
         agent: 'grok', status: 'ok', retry_of: rows[0]!.id, session_id: 'failover-owner',
       })
+      expect(rows.map((row) => row.mcp)).toEqual([2, 2])
 
       const collected = orch('result', String(rows[0]!.id))
       expect(collected.code).toBe(0)
@@ -6350,6 +6352,15 @@ describe('review-lens MCP provenance', () => {
       .toThrow('--mcp=prefer')
   })
 
+  test.each([
+    [0, null, undefined],
+    [1, null, 'require'],
+    [2, null, 'prefer'],
+    [1, 'mirror: legacy attach failed', 'prefer'],
+  ] as const)('reads stored MCP request %i with error %s as %s', (stored, error, expected) => {
+    expect(mcpRequestFromStored(stored, error)).toBe(expected)
+  })
+
   const mcpRepo = (withConfig: boolean) => {
     const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-mcp-cwd-')))
     const git = (...args: string[]) => {
@@ -6402,6 +6413,43 @@ fi
       }).stdout.toString().trim().split('\n')
       expect(treeFiles).not.toContain('.mcp.json')
       expect(JSON.parse(measured.changed_paths ?? '[]')).not.toContain('.mcp.json')
+    } finally {
+      agent.bin = original.bin; agent.argv = original.argv
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('keeps and measures a real MCP config that replaces the provisioned link', async () => {
+    const repo = mcpRepo(true)
+    const script = join(dir, 'fake-grok-replaces-mcp-link.sh')
+    writeFileSync(script, `#!/bin/sh
+if [ "$1" = "mcp" ]; then
+  test -L .mcp.json || exit 97
+  printf '%s' '{"servers":[{"name":"fixture-project","healthy":true,"checks":[]}]}'
+else
+  rm .mcp.json
+  printf '%s\n' '{"worker":true}' > .mcp.json
+  printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
+fi
+`)
+    chmodSync(script, 0o755)
+    const agent = AGENTS.grok!
+    const original = { bin: agent.bin, argv: agent.argv }
+    agent.bin = script; agent.argv = () => []
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      const result = await runJob({
+        job: 'review-lens', prompt: 'review this', cwd: repo,
+        agent: 'grok', mcp: 'require', lens: 'mcp-cwd',
+      })
+      expect(result.status).toBe('ok')
+      expect(lstatSync(join(result.worktree!.path, '.mcp.json')).isSymbolicLink()).toBe(false)
+      expect(readFileSync(join(result.worktree!.path, '.mcp.json'), 'utf8'))
+        .toBe('{"worker":true}\n')
+      expect(result.changes!.files).toContain('.mcp.json')
     } finally {
       agent.bin = original.bin; agent.argv = original.argv
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
@@ -6568,7 +6616,7 @@ fi
     }
   })
 
-  test('continue inherits prefer mode, re-probes, and keeps a mirror turn explicit', async () => {
+  test('continue without parent output inherits prefer, re-probes, and keeps MIRROR explicit', async () => {
     const repo = mcpRepo(true)
     const binDir = mkdtempSync(join(tmpdir(), 'orch-grok-prefer-continue-'))
     const script = join(binDir, 'grok')
@@ -6594,6 +6642,8 @@ fi
       })
       expect((db().query('SELECT mcp FROM run WHERE id=?').get(root.id) as { mcp: number }).mcp)
         .toBe(2)
+      unlinkSync(root.outPath)
+      expect(existsSync(root.outPath)).toBe(false)
       agent.bin = original.bin; agent.argv = original.argv
       const continued = Bun.spawnSync([
         process.execPath, new URL('cli.ts', import.meta.url).pathname,
@@ -6627,11 +6677,18 @@ fi
       }
       expect(waited.exitCode).toBe(0)
       expect(db().query(
-        'SELECT parent_run_id, mcp, mcp_connected, mcp_error FROM run WHERE id=?',
+        'SELECT parent_run_id, mcp, mcp_connected, mcp_error, input_tree FROM run WHERE id=?',
       ).get(childId)).toEqual({
         parent_run_id: root.id, mcp: 2, mcp_connected: 0,
         mcp_error: 'mirror: unavailable: server down',
+        input_tree: expect.any(String),
       })
+      const child = db().query('SELECT input_tree FROM run WHERE id=?').get(childId) as
+        { input_tree: string }
+      const childTree = Bun.spawnSync(['git', 'ls-tree', '-r', '--name-only', child.input_tree], {
+        cwd: root.worktree!.path, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      }).stdout.toString().trim().split('\n')
+      expect(childTree).not.toContain('.mcp.json')
       const collected = invoke('result', String(childId))
       expect(collected.stderr.toString()).toContain('MIRROR — not the live database')
       const bound = db().query('SELECT prompt_path FROM run WHERE id=?').get(childId) as
@@ -8311,7 +8368,9 @@ describe('detached run collection', () => {
 
   test('detach with a bad execPath marks the reserved row failed/harness', () => {
     upsertProject({ name: 'spawn-fail', path: process.cwd() })
-    const r = Bun.spawnSync([process.execPath, CLI, 'do', 'file-question', '--repo', 'spawn-fail', 'hello'], {
+    const r = Bun.spawnSync([
+      process.execPath, CLI, 'do', 'file-question', '--repo', 'spawn-fail', '--mcp=prefer', 'hello',
+    ], {
       env: {
         ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
         CLAUDE_CODE_SESSION_ID: 'orch-test-session',
@@ -8321,14 +8380,18 @@ describe('detached run collection', () => {
     })
     expect(r.exitCode).not.toBe(0)
     const row = db().query(
-      'SELECT agent, status, failure_kind, error, pid FROM run ORDER BY id DESC LIMIT 1',
-    ).get() as { agent: string; status: string; failure_kind: string; error: string; pid: number | null }
+      'SELECT agent, status, failure_kind, error, pid, mcp FROM run ORDER BY id DESC LIMIT 1',
+    ).get() as {
+      agent: string; status: string; failure_kind: string; error: string
+      pid: number | null; mcp: number
+    }
     expect(row.agent).toBe('(pending)')
     expect(row.status).toBe('failed')
     expect(row.failure_kind).toBe('harness')
     expect(row.error).toContain('spawn failed')
     expect(row.error).toContain('/definitely/not-an-orch-exec-DEV-73')
     expect(row.pid).toBeNull()
+    expect(row.mcp).toBe(2)
   })
 
   test('a detached run has exactly one prompt file', () => {
@@ -20723,12 +20786,18 @@ describe('scoped operator docs', () => {
     try {
       expect(() => compilePack({ job: 'understand', cwd: dir })).toThrow(CanonBudgetError)
       let message = ''
-      try { await runJob({ job: 'understand', prompt: 'never spawned', cwd: dir, agent: 'codex' }) }
+      try {
+        await runJob({
+          job: 'understand', prompt: 'never spawned', cwd: dir, agent: 'codex', mcp: 'prefer',
+        })
+      }
       catch (cause) { message = (cause as Error).message }
       expect(message).toContain('global/_/large')
       expect(message.indexOf('global/_/large')).toBeLessThan(message.indexOf('global/_/small'))
-      const row = db().query('SELECT status,failure_kind,error FROM run ORDER BY id DESC LIMIT 1').get() as any
-      expect(row).toMatchObject({ status: 'failed', failure_kind: 'harness' })
+      const row = db().query(
+        'SELECT status,failure_kind,error,mcp FROM run ORDER BY id DESC LIMIT 1',
+      ).get() as any
+      expect(row).toMatchObject({ status: 'failed', failure_kind: 'harness', mcp: 2 })
       expect(row.error).toContain('mark a document demand')
     } finally {
       JOBS.understand!.packBytes = old

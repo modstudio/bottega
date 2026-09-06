@@ -1,6 +1,6 @@
 import {
   mkdirSync, mkdtempSync, readFileSync, existsSync, writeFileSync, readdirSync, rmSync,
-  realpathSync, statSync, unlinkSync, symlinkSync, readlinkSync,
+  realpathSync, statSync, unlinkSync, symlinkSync, readlinkSync, lstatSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative } from 'node:path'
@@ -321,25 +321,27 @@ function withoutProvisionedMcpConfig<T>(
 ): T {
   if (link === null) return measure()
   const target = join(worktree, '.mcp.json')
-  if (existsSync(target)) unlinkSync(target)
+  try {
+    if (!lstatSync(target).isSymbolicLink() || readlinkSync(target) !== link) return measure()
+  } catch {
+    return measure()
+  }
+  unlinkSync(target)
   try {
     return measure()
   } finally {
-    if (existsSync(target)) unlinkSync(target)
     symlinkSync(link, target)
   }
 }
 
-/** A resumed turn inherits the root's infrastructure link, not worker content. */
-function inheritedProvisionedMcpConfigLink(runId: number, worktree: string): string | null {
-  const row = db().query('SELECT output_path FROM run WHERE id=?').get(runId) as
-    { output_path: string | null } | null
-  if (!row?.output_path || !existsSync(row.output_path)) return null
-  if (!readFileSync(row.output_path, 'utf8').startsWith('MCP preflight: linked .mcp.json -> ')) {
-    return null
-  }
+/** Recognise only the checkout link orch itself would provision in this worktree. */
+function existingProvisionedMcpConfigLink(worktree: string, checkout: string): string | null {
+  const target = join(worktree, '.mcp.json')
+  const expected = relative(dirname(target), join(checkout, '.mcp.json'))
   try {
-    return readlinkSync(join(worktree, '.mcp.json'))
+    return lstatSync(target).isSymbolicLink() && readlinkSync(target) === expected
+      ? expected
+      : null
   } catch {
     return null
   }
@@ -1433,11 +1435,11 @@ export async function run(opts: {
       ).run(message, failedId)
       else failedId = (db().query(
         `INSERT INTO run (started_at,agent,job,repo,cwd,prompt_sha,prompt_bytes,prompt_head,
-          status,session_id,failure_kind,error,docs_injected)
-         VALUES (?,'(pending)',?,?,?,?,?,?,'failed',?,'harness',?,0) RETURNING id`,
+          status,session_id,failure_kind,error,docs_injected,mcp)
+         VALUES (?,'(pending)',?,?,?,?,?,?,'failed',?,'harness',?,0,?) RETURNING id`,
       ).get(nowIso(), opts.job, opts.repo ?? repoOf(callerCwd), callerCwd, sha(originalPrompt),
         Buffer.byteLength(originalPrompt), originalPrompt.slice(0, 200).replace(/\s+/g, ' '),
-        opts.ownerSession ?? sessionId(), message) as { id: number }).id
+        opts.ownerSession ?? sessionId(), message, storedMcpRequest(opts.mcp)) as { id: number }).id
       throw Object.assign(new Error(`run ${failedId} could not start: ${message}`), { runId: failedId })
     }
   }
@@ -1923,7 +1925,7 @@ export async function run(opts: {
       const project = projectAt(callerCwd)
       if (!project) throw new Error(`no registered project identifies MCP configuration for ${callerCwd}`)
       const inheritedLink = opts.resume
-        ? inheritedProvisionedMcpConfigLink(opts.resume.parent, cwd)
+        ? existingProvisionedMcpConfigLink(cwd, project.path)
         : null
       const config = provisionMcpConfig(cwd, project.path)
       mcpSetupHeader = config.header
