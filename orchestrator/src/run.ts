@@ -28,7 +28,7 @@ import {
   targetGitEnvironment,
   workerSharedGitRoots,
   contentTree,
-  assertCallerAncestry, withWorktreeCreateLock,
+  assertCallerAncestry, withWorktreeCreateLock, withWorktreeLease,
   removeFor, type Worktree,
   type WorktreeObjectEnvironment, validateSeedWithTool,
 } from './worktree.ts'
@@ -651,29 +651,50 @@ export function preflight(
   return effectiveSeed
 }
 
+function realpathOrSpelled(path: string): string {
+  try { return realpathSync(path) } catch { return path }
+}
+
+function recordedRunIdsForWorktree(path: string): number[] {
+  const real = realpathOrSpelled(path)
+  const rows = real === path
+    ? db().query('SELECT id FROM run WHERE worktree = ?').all(path) as { id: number }[]
+    : db().query('SELECT id FROM run WHERE worktree = ? OR worktree = ?').all(path, real) as { id: number }[]
+  return [...new Set(rows.map((row) => row.id))]
+}
+
 /**
- * --base of an unmerged recorded tip, or --cwd of a recorded run's worktree,
- * names a chain's own tree. The caller-at-trunk check is for a new dispatch
- * from a checkout, not that form (DEV-318).
+ * The caller-at-trunk exemption is granted from explicit resume identity only:
+ * the chain being resumed, or a --base / --cwd that resolves to exactly one
+ * recorded run's worktree path or branch tip. Equality is realpath or commit,
+ * never a suffix, and never a table scan (DEV-318).
  */
-function namesRecordedRunTree(cwd: string, baseRef?: string): boolean {
-  let realCwd: string | null = null
-  try { realCwd = realpathSync(cwd) } catch { /* keep the spelled path */ }
-  const rows = db().query(
-    `SELECT worktree, cwd, branch FROM run
-      WHERE worktree IS NOT NULL OR cwd IS NOT NULL OR branch IS NOT NULL`,
-  ).all() as { worktree: string | null; cwd: string | null; branch: string | null }[]
-  for (const row of rows) {
-    for (const path of [row.worktree, row.cwd]) {
-      if (!path) continue
-      if (path === cwd || (realCwd !== null && path === realCwd)) return true
-      try { if (realpathSync(path) === (realCwd ?? cwd)) return true } catch { /* gone */ }
-    }
-    if (baseRef && row.branch && (row.branch === baseRef || baseRef.endsWith(`/${row.branch}`))) {
-      return true
-    }
+export function namesRecordedRunTree(opts: {
+  cwd: string
+  explicitCwd?: boolean
+  base?: string
+  resume?: { parent: number; worktree: { path: string } | null }
+}): boolean {
+  if (opts.resume) {
+    const row = db().query('SELECT worktree FROM run WHERE id = ?').get(opts.resume.parent) as
+      { worktree: string | null } | null
+    const recorded = row?.worktree ?? opts.resume.worktree?.path
+    if (!recorded) return false
+    return realpathOrSpelled(recorded) === realpathOrSpelled(opts.cwd)
   }
-  return false
+  if (opts.explicitCwd) return recordedRunIdsForWorktree(opts.cwd).length === 1
+  if (!opts.base) return false
+  const ids = new Set(
+    (db().query('SELECT id FROM run WHERE branch = ?').all(opts.base) as { id: number }[])
+      .map((row) => row.id),
+  )
+  try {
+    const oid = resolveBase(opts.cwd, opts.base)
+    for (const row of db().query('SELECT id FROM run WHERE head_commit = ?').all(oid) as { id: number }[]) {
+      ids.add(row.id)
+    }
+  } catch { /* --base is not a commit here */ }
+  return ids.size === 1
 }
 
 /**
@@ -1970,7 +1991,9 @@ export async function run(opts: {
             // need not descend from the caller. An overlay still comes only
             // from that branch's own checkout, where the ancestry guard remains
             // the protection against carrying reversions onto a newer tip.
-            if ((!reviewTarget || opts.carry) && !namesRecordedRunTree(callerCwd, opts.base)) {
+            if ((!reviewTarget || opts.carry) && !namesRecordedRunTree({
+              cwd: callerCwd, explicitCwd: opts.cwd !== undefined, base: opts.base, resume: opts.resume,
+            })) {
               assertCallerAncestry(callerCwd, created)
             }
             carried = opts.carry
@@ -2028,7 +2051,11 @@ export async function run(opts: {
         )
       }
       if (opts.resume) {
-        withWorktreeCreateLock(inheritedWorktree.repoRoot, recordWorktree)
+        withWorktreeLease(
+          inheritedWorktree.repoRoot, inheritedWorktree.path,
+          { session: sessionId(), what: `resume ${claim.id}` },
+          () => withWorktreeCreateLock(inheritedWorktree.repoRoot, recordWorktree),
+        )
       } else {
         recordWorktree()
       }

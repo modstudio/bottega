@@ -8,7 +8,7 @@ import {
 describe('CLI argument recognition', () => {
   test('every parser top-level command is recognised as canon, including nested commands', () => {
     const commands = [
-      'issue', 'land', 'contract', 'doc', 'canon', 'port', 'mcp', 'do', 'review', 'state', 'run',
+      'init-db', 'migrate', 'issue', 'land', 'contract', 'doc', 'canon', 'port', 'mcp', 'do', 'review', 'state', 'run',
       'search', 'result', 'wait', 'retry', 'project', 'ask-server', 'setup-ask', 'blockers', 'monitor',
       'inbox', 'answer', 'tell', 'continue', 'diff', 'sweep', 'discard', 'stop', 'abandon', 'score',
       'recalibrate', 'routing-backtest', 'runs', 'guide', 'spawns', 'stats', 'pick', 'pending', 'metric', 'serve',

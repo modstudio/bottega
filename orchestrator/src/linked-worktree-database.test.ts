@@ -140,8 +140,11 @@ describe('linked-worktree database protection', () => {
 
   test('explicit ORCH_DB locates a copy and allows writes but not schema migration from a linked binary', () => {
     const explicit = join(fixtureRoot, 'explicit.db')
-    const init = invoke(linkedCli, linked, ['init-db'], explicit)
-    expect(init.exitCode).toBe(0)
+    const refused = invoke(linkedCli, linked, ['init-db'], explicit)
+    expect(refused.exitCode).not.toBe(0)
+    expect(refused.stderr.toString()).toContain('cleared by: orch migrate')
+    const init = invoke(mainCli, main, ['init-db'], explicit)
+    expect(init.exitCode, init.stderr.toString()).toBe(0)
     const store = new Database(explicit)
     store.query(
       `INSERT INTO run
@@ -157,7 +160,7 @@ describe('linked-worktree database protection', () => {
     )
     expect(score.exitCode).toBe(0)
     expect(score.stderr.toString()).toContain('invariant: Only the main checkout\'s binary migrates the store.')
-    expect(score.stderr.toString()).toContain('cleared by: orch init-db')
+    expect(score.stderr.toString()).toContain('cleared by: orch migrate')
     const checked = new Database(explicit, { readonly: true })
     expect(checked.query('SELECT delivery, quality, fidelity FROM score WHERE run_id=1').get())
       .toEqual({ delivery: 'full', quality: 'right', fidelity: 'faithful' })

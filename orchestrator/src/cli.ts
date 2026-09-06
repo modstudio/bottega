@@ -28,7 +28,7 @@ import { createInterface } from 'node:readline/promises'
 import { createHasPlaceholder, projectAt, projectByName, projects } from './projects.ts'
 import { branchTip, restoreBranch, resolveBase, repoRootOf, removeBranch, removeFor, unmergedBranch,
          checkoutHasUncommittedWork, callerDrift, projectLockState,
-         withCleanupLock as takeCleanupLock,
+         withCleanupLock as takeCleanupLock, withWorktreeLease,
          targetGitEnvironment, type Worktree } from './worktree.ts'
 import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
 import { WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE,
@@ -308,7 +308,7 @@ const cmd = argv[0]
 const readOnlyInvocation =
   (cmd === 'port' && argv[1] === 'import' && argv.includes('--dry-run')) ||
   (cmd === 'review' && argv[1] === 'coverage-audit')
-if (!readOnlyInvocation && cmd !== 'init-db') recordSessionSeen()
+if (!readOnlyInvocation && cmd !== 'init-db' && cmd !== 'migrate') recordSessionSeen()
 
 /** Human-readable duration: seconds under a minute, then m/s, then h/m. */
 function dur(ms: number | null | undefined): string {
@@ -600,9 +600,15 @@ function evidenceOwningBranchOwners(
   })
 }
 
-function withCleanupLock<T>(repoRoot: string, what: string, action: () => T): T {
-  return takeCleanupLock(
+function withCleanupLock<T>(
+  repoRoot: string, what: string, worktreePath: string | null | undefined, action: () => T,
+): T {
+  const run = () => takeCleanupLock(
     repoRoot, { session: sessionId(), what: `cleanup ${what}` }, action, 5 * 60_000,
+  )
+  if (!worktreePath) return run()
+  return withWorktreeLease(
+    repoRoot, worktreePath, { session: sessionId(), what: `tree ${what}` }, run, 5 * 60_000,
   )
 }
 
@@ -750,7 +756,7 @@ function discardWorktree(
     throw new SharedWorktreeEvidenceError(row.worktree, preliminarySharers)
   }
   const repoRoot = cleanupRepoRoot(row) ?? process.cwd()
-  withCleanupLock(repoRoot, `${row.id}`, () => {
+  withCleanupLock(repoRoot, `${row.id}`, row.worktree, () => {
     const sharers = evidenceOwningWorktreeSharers(row)
     if (sharers.length) {
       throw new SharedWorktreeEvidenceError(row.worktree, sharers)
@@ -1343,6 +1349,7 @@ function usage(): never {
           --allow-incomplete    save a create command missing branch or seed configuration
       remove <name>
   orch init-db                  create the database for a fresh main checkout
+  orch migrate                  apply the canonical schema from the main-checkout binary
   orch doc list [--scope S] [--subject X] [--json]  (--json: one JSON document)
       show <slug> --scope S [--subject X] [--json]  (--json: one JSON document)
       set <slug> --scope S [--subject X] --title T --reason TEXT [--author NAME] [--delivery inject|demand] (--file F | body on stdin) [--json]  (--json: one JSON document)
@@ -1615,6 +1622,18 @@ switch (cmd) {
   case 'init-db': {
     const { initializeDatabase } = await import('./db.ts')
     console.log(`initialized ${initializeDatabase()}`)
+    break
+  }
+
+  case 'migrate': {
+    const { migrateDatabase } = await import('./db.ts')
+    const migrated = migrateDatabase()
+    if (migrated.changes.length === 0) {
+      console.log(`schema already current: ${migrated.path}`)
+    } else {
+      console.log(`migrated ${migrated.path}`)
+      for (const change of migrated.changes) console.log(`  added ${change}`)
+    }
     break
   }
 
@@ -4007,7 +4026,7 @@ switch (cmd) {
         base: r.base_commit ?? '', repoRoot, source: r.worktree_source ?? undefined,
       }
       try {
-        withCleanupLock(repoRoot, `sweep run ${r.id}`, () => {
+        withCleanupLock(repoRoot, `sweep run ${r.id}`, r.worktree, () => {
           const lockedSharers = evidenceOwningWorktreeSharers(r)
           if (lockedSharers.length) {
             const owners = lockedSharers.map((owner) =>
@@ -4166,7 +4185,7 @@ switch (cmd) {
         }
         const runId = orchRunId(entry.name)
         try {
-          withCleanupLock(p.path, `sweep ${label}`, () => {
+          withCleanupLock(p.path, `sweep ${label}`, path, () => {
             const ownerRow = { id: runId ?? -1, repo: p.name, branch: safe.branch }
             const worktreeRow = { id: runId ?? -1, worktree: path }
             const sharersBefore = evidenceOwningWorktreeSharers(worktreeRow)
@@ -4266,7 +4285,7 @@ switch (cmd) {
         if (!tool?.sweep) continue
         let result: ReturnType<typeof sweepWithTool>
         try {
-          result = withCleanupLock(p.path, `project sweep for ${p.name}`, () =>
+          result = withCleanupLock(p.path, `project sweep for ${p.name}`, null, () =>
             sweepWithTool(tool, p.path))
         } catch (error) {
           cleanupFailed = true
@@ -4389,7 +4408,7 @@ switch (cmd) {
       }
       const repoRoot = cleanupRepoRoot(row)
       if (!repoRoot) throw new Error(`run ${id}'s repository root was not found`)
-      withCleanupLock(repoRoot, `discard kept branch for run ${id}`, () => {
+      withCleanupLock(repoRoot, `discard kept branch for run ${id}`, null, () => {
         const ownerRow = { id: row.id, repo: row.repo, branch: row.branch_kept }
         const ownersBefore = evidenceOwningBranchOwners(ownerRow, repoRoot)
         if (ownersBefore.length) {
@@ -4609,7 +4628,7 @@ switch (cmd) {
       console.log(`branch ${cleanupRow.branch} cleanup skipped: repository root not found`)
       break
     }
-    withCleanupLock(repoRoot, `abandon run ${id}`, () => {
+    withCleanupLock(repoRoot, `abandon run ${id}`, cleanupRow.worktree, () => {
       const ownersBefore = evidenceOwningBranchOwners(cleanupRow, repoRoot)
       if (ownersBefore.length) {
         console.log(`branch ${cleanupRow.branch} left because run ${ownersBefore[0]!.id} records it`)

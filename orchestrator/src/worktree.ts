@@ -358,10 +358,35 @@ function lockLabel(name: string): string {
 function waiterEntries(waitersDir: string): { name: string; participant: ProjectLockParticipant }[] {
   if (!existsSync(waitersDir)) return []
   return readdirSync(waitersDir).flatMap((name) => {
+    if (name.startsWith('.')) return []
     const participant = projectLockParticipant(join(waitersDir, name))
     return participant && pidAlive(participant.pid) ? [{ name, participant }] : []
-  }).sort((a, b) => a.participant.since.localeCompare(b.participant.since)
-    || a.name.localeCompare(b.name))
+  }).sort((a, b) => a.name.localeCompare(b.name))
+}
+
+function nextWaiterTicket(waitersDir: string): string {
+  const lock = join(waitersDir, '.ticket.lock')
+  const file = join(waitersDir, '.ticket')
+  const sleeper = new Int32Array(new SharedArrayBuffer(4))
+  for (;;) {
+    try {
+      mkdirSync(lock)
+      break
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      Atomics.wait(sleeper, 0, 0, 10)
+    }
+  }
+  try {
+    let n = 0
+    try { n = Number(readFileSync(file, 'utf8').trim()) } catch { n = 0 }
+    if (!Number.isSafeInteger(n) || n < 0) n = 0
+    n += 1
+    writeFileSync(file, `${n}\n`)
+    return String(n).padStart(16, '0')
+  } finally {
+    rmSync(lock, { recursive: true, force: true })
+  }
 }
 
 /** Read coordination state without acquiring or changing the lock. */
@@ -387,6 +412,7 @@ export function reclaimStaleProjectLock(
   const reason = staleProjectLockHolder(holder)
   if (reason === null) return null
   const classified = holder.incarnation
+  reclaimCheckpoint()
   const stale = `${paths.lock}.stale-${process.pid}-${randomUUID()}`
   try { renameSync(paths.lock, stale) } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
@@ -420,9 +446,9 @@ export function withProjectLock<T>(
     pid: process.pid, startTime: processStartTime(process.pid), incarnation,
     session: identity.session, what: identity.what, since: new Date().toISOString(),
   }
-  const waiterName = `${process.pid}-${incarnation}`
-  const waiter = join(paths.waiters, waiterName)
   mkdirSync(paths.waiters, { recursive: true })
+  const waiterName = `${nextWaiterTicket(paths.waiters)}-${process.pid}-${incarnation}`
+  const waiter = join(paths.waiters, waiterName)
   writeFileSync(waiter, `${JSON.stringify(participant)}\n`)
   const deadline = Date.now() + timeoutMs
   const sleeper = new Int32Array(new SharedArrayBuffer(4))
@@ -513,6 +539,34 @@ export function withCleanupLock<T>(
   timeoutMs = WORKTREE_CREATE_LOCK_TIMEOUT_MS,
 ): T {
   return withProjectLock(repoRoot, 'cleanup', identity, action, timeoutMs, true)
+}
+
+export function worktreeLeaseName(worktreePath: string): string {
+  let real = worktreePath
+  try { real = realpathSync(worktreePath) } catch { /* the spelled path still keys the artifact */ }
+  return `tree-${createHash('sha256').update(real).digest('hex').slice(0, 16)}`
+}
+
+/**
+ * Per-artifact lease. Holders take this first and the purpose lock second so
+ * attachment, landing and cleanup of one tree cannot interleave, and cannot
+ * deadlock with the purpose locks.
+ */
+export function withWorktreeLease<T>(
+  repoRoot: string, worktreePath: string, identity: ProjectLockIdentity, action: () => T,
+  timeoutMs = WORKTREE_CREATE_LOCK_TIMEOUT_MS,
+): T {
+  return withProjectLock(repoRoot, worktreeLeaseName(worktreePath), identity, action, timeoutMs)
+}
+
+function reclaimCheckpoint(): void {
+  if (process.env.ORCH_TEST_LOCK_RECLAIM_CHECKPOINT !== 'classified') return
+  const ready = process.env.ORCH_TEST_LOCK_RECLAIM_READY
+  const release = process.env.ORCH_TEST_LOCK_RECLAIM_RELEASE
+  if (!ready || !release) return
+  writeFileSync(ready, 'classified\n')
+  const sleeper = new Int32Array(new SharedArrayBuffer(4))
+  while (!existsSync(release)) Atomics.wait(sleeper, 0, 0, 10)
 }
 
 const REF_GUARD_WRAPPER_MARKER = '# orch shared-ref guard wrapper\n'

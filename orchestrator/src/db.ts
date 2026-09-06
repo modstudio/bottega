@@ -48,12 +48,12 @@ export const LINKED_WORKTREE_WRITE_REFUSAL =
   'refusing to write the live store from a linked worktree; set ORCH_DB explicitly ' +
   '(a copy for experiments, or the live path to insist)\n' +
   'invariant: Only the main checkout\'s binary migrates the store.\n' +
-  'cleared by: orch init-db'
+  'cleared by: orch migrate'
 
 export const LINKED_WORKTREE_SCHEMA_REFUSAL =
   'refusing to migrate the store from a linked-worktree binary; run it from the main checkout\n' +
   'invariant: Only the main checkout\'s binary migrates the store.\n' +
-  'cleared by: orch init-db'
+  'cleared by: orch migrate'
 
 export const linkedWorktreeReadOnly =
   DATABASE_RESOLUTION.linkedWorktreeBinary && DATABASE_RESOLUTION.method !== 'ORCH_DB'
@@ -119,6 +119,9 @@ export function db(writable = false): Database {
     d.close()
     throw new Error(missingDatabaseMessage(registeredMissing))
   }
+  if (DATABASE_RESOLUTION.linkedWorktreeBinary && runTableMissingLabel(d)) {
+    throw new Error(LINKED_WORKTREE_SCHEMA_REFUSAL)
+  }
   if (!linkedWorktreeReadOnly && databaseWritable(d)) {
     d.exec(`
       PRAGMA journal_mode = WAL;
@@ -127,7 +130,7 @@ export function db(writable = false): Database {
       PRAGMA journal_size_limit = 1048576;
     `)
     if (DATABASE_RESOLUTION.linkedWorktreeBinary) {
-      if (linkedBinaryMustNotMigrate(d)) console.error(LINKED_WORKTREE_SCHEMA_REFUSAL)
+      if (canonicalSchemaMismatch(d)) console.error(LINKED_WORKTREE_SCHEMA_REFUSAL)
     } else {
       applySchema(d)
     }
@@ -135,8 +138,6 @@ export function db(writable = false): Database {
     seedProjects(d)
   } else if (linkedWorktreeReadOnly && canonicalSchemaMismatch(d)) {
     console.error('warning: canonical schema mismatch; opened the live store read-only')
-    console.error(LINKED_WORKTREE_SCHEMA_REFUSAL)
-  } else if (DATABASE_RESOLUTION.linkedWorktreeBinary && linkedBinaryMustNotMigrate(d)) {
     console.error(LINKED_WORKTREE_SCHEMA_REFUSAL)
   }
   handle = d
@@ -161,7 +162,7 @@ export function writeTransaction<T>(fn: () => T, database: Database = db()): T {
 
 /** The sole path that may create the orchestrator database. */
 export function initializeDatabase(): string {
-  if (linkedWorktreeReadOnly) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
+  if (DATABASE_RESOLUTION.linkedWorktreeBinary) throw new Error(LINKED_WORKTREE_SCHEMA_REFUSAL)
   if (existsSync(DB_PATH)) throw new Error(`refusing to initialize: orchestrator database already exists: ${DB_PATH}`)
   if (!DATABASE_RESOLUTION.initializable) {
     throw new Error(`refusing to initialize from a worktree binary: ${DB_PATH}\nrun orch init-db from the main checkout`)
@@ -177,6 +178,57 @@ export function initializeDatabase(): string {
     d.close()
   }
   return DB_PATH
+}
+
+/** Fixture-only: apply the canonical schema without the production write-authority check. */
+export function applySchemaForFixture(d: Database): void {
+  applySchema(d)
+}
+
+/** Fixture-only: create or open a scratch store by applying the schema directly. */
+export function bootstrapFixtureStore(path: string): string {
+  mkdirSync(dirname(path), { recursive: true })
+  const d = new Database(path, { create: true })
+  try {
+    d.exec('PRAGMA foreign_keys = ON;')
+    applySchemaForFixture(d)
+    excludeSharedOutputRuns(d)
+    seedProjects(d)
+  } finally {
+    d.close()
+  }
+  return path
+}
+
+function schemaInventory(d: Database): string[] {
+  const tables = d.query(
+    `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
+  ).all() as { name: string }[]
+  const items: string[] = []
+  for (const table of tables) {
+    const cols = d.query(`PRAGMA table_info(${table.name})`).all() as { name: string }[]
+    for (const col of cols) items.push(`${table.name}.${col.name}`)
+  }
+  return items
+}
+
+/** Main-checkout binary only: open the store and apply the canonical schema. */
+export function migrateDatabase(): { path: string; changes: string[] } {
+  if (DATABASE_RESOLUTION.linkedWorktreeBinary) throw new Error(LINKED_WORKTREE_SCHEMA_REFUSAL)
+  if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
+  const d = new Database(DB_PATH, { readwrite: true, create: false })
+  try {
+    d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+    const before = schemaInventory(d)
+    applySchema(d)
+    excludeSharedOutputRuns(d)
+    seedProjects(d)
+    const after = new Set(schemaInventory(d))
+    const changes = [...after].filter((item) => !before.includes(item)).sort()
+    return { path: DB_PATH, changes }
+  } finally {
+    d.close()
+  }
 }
 
 function runMutationAuthority(database: Database, runId: number): RootAuthority {
@@ -578,8 +630,7 @@ function canonicalSchemaMismatch(d: Database): boolean {
   }
 }
 
-function linkedBinaryMustNotMigrate(d: Database): boolean {
-  if (canonicalSchemaMismatch(d)) return true
+function runTableMissingLabel(d: Database): boolean {
   try {
     const columns = d.query('PRAGMA table_info(run)').all() as { name: string }[]
     return !columns.some((column) => column.name === 'label')

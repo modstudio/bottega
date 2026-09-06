@@ -796,6 +796,13 @@ protects the trunk decision and ref update; cleanup protects ownership checks
 and removal. **One lock per purpose.** Creation, landing and cleanup are three
 purposes. Their sharing was the cause of DEV-316, closed in chunk 3 (`5cb76a2`).
 
+Attachment, landing and cleanup of the **same** worktree also take a
+per-artifact lease named `tree-<hash>` of that path
+(`worktree.ts:withWorktreeLease`). The lease is always first and the purpose
+lock second, so the three purposes cannot interleave on one tree and cannot
+deadlock. Landing holds the lease for its whole critical path, including the
+gate that sits outside `orch-landing.lock`.
+
 The invariants are:
 
 - **The guard lives outside every root the worker can write.** A guard the
@@ -814,17 +821,31 @@ The invariants are:
 - **A resume is always possible on a stale checkout.** The caller-at-trunk check
   stops a new dispatch from stale input; it must never apply to a chain resuming
   in its own worktree, nor to `--base` / `--cwd` forms that name a recorded run's
-  tree. Resume attachment takes the creation lock only for attribution.
+  tree. The exemption is granted from explicit resume identity only: the chain
+  being resumed (`opts.resume`) whose recorded worktree is the caller cwd, or a
+  `--base` / `--cwd` that resolves to exactly one recorded run's worktree path or
+  branch tip (equality on realpath or on the commit, never a suffix, never a
+  table scan). A stale new dispatch from a checkout that merely happens to be
+  some other run's recorded cwd is not exempt. Resume attachment takes the
+  creation lock only for attribution, and takes the per-artifact lease first.
 - **Only the main checkout's binary migrates the store.** `ORCH_DB` locates a
   store; it never authorises a linked-worktree binary to migrate it.
   `database-location.ts:resolveDatabase` separates location from write authority.
-  `db.ts:adoptRunMutation` governs chain ownership, not schema authority.
+  `db.ts:initializeDatabase` and `db.ts:migrateDatabase` refuse when
+  `DATABASE_RESOLUTION.linkedWorktreeBinary` regardless of how the path was
+  chosen. `orch migrate` (main-checkout binary only) opens the store, runs
+  `applySchema`, and prints what changed; a missing `run.label` stops before any
+  query that needs that column. Tests bootstrap scratch stores through
+  `db.ts:applySchemaForFixture` / `bootstrapFixtureStore`, never the production
+  authority path. `db.ts:adoptRunMutation` governs chain ownership, not schema
+  authority.
 - **Landing holds its lock only for the trunk re-check, guard verification and
   fast-forward, never for a gate.** A gate is long and proves a commit without
   owning trunk. A moved trunk releases the lock, re-gates, and re-acquires.
 - **A lock waiter is served in arrival order.** Otherwise a stream of short
   holders can starve a long waiter. `worktree.ts:withProjectLock` records waiters
-  and acquisition consults their order.
+  whose names start with a monotonic ticket taken under mkdir-atomic discipline
+  and acquisition consults that order.
 - **Every refusal names the invariant it protects and the command that clears
   it.** A refusal without both leaves an operator unable to distinguish safety
   from mechanism or to recover without reading source.
@@ -838,21 +859,24 @@ The invariants are:
   before removal. Liveness classification parses process identity strictly and
   treats malformed or locale-dependent output as unknown, never stale.
 - **A failed landing leaves the branch worktree as it found it.** Failure must
-  not turn a retry into recovery work. `landing.ts:rebaseAndGate` records the
-  branch tip and index before it rebases and restores them when the gate or the
-  rebase fails.
+  not turn a retry into recovery work. Landing refuses before any rebase when
+  the branch worktree has uncommitted tracked changes or a rebase in progress,
+  naming this invariant and `git -C <tree> stash` / `git -C <tree> rebase --abort`.
+  `landing.ts:rebaseAndGate` then records the branch tip and index before it
+  rebases and restores HEAD, the branch ref and the index without `--force`
+  when the gate or the rebase fails, so restore only ever runs on a clean tree.
 
 | gap | invariant violated | code path (file:function) | what chunk 3 changes |
 |---|---|---|---|
-| DEV-314 | only the main-checkout binary migrates | `database-location.ts:resolveDatabase`; `db.ts:applySchema`, `rebuildTable` | closed in chunk 3 (`5cb76a2`): location is `ORCH_DB`; schema writes stay with the main-checkout binary. |
-| DEV-316 | one lock per purpose; FIFO waiters | `worktree.ts:withWorktreeCreateLock`, `withProjectLock`; `cli.ts:withCleanupLock` | closed in chunk 3 (`5cb76a2`): `orch-create.lock`, `orch-landing.lock`, `orch-cleanup.lock`; waiters served in arrival order. |
-| DEV-318 | a chain resumes in its own stale checkout | `cli.ts:continueRun`, `detach`; `run.ts:preflight`, `run`; `worktree.ts:assertCallerAncestry` | closed in chunk 3 (`5cb76a2`): resume and recorded-tree `--base`/`--cwd` skip caller-at-trunk; resume takes the create lock only. |
-| DEV-224 review 142/143: replacement race | reclaim only the classified acquisition | `worktree.ts:reclaimStaleProjectLock` | closed in chunk 3 (`5cb76a2`): incarnation id fenced after rename. |
+| DEV-314 | only the main-checkout binary migrates | `database-location.ts:resolveDatabase`; `db.ts:applySchema`, `rebuildTable`, `initializeDatabase`, `migrateDatabase` | closed in chunk 3 (`5cb76a2`, round 2): location is `ORCH_DB`; `initializeDatabase` refuses a linked-worktree binary regardless of path; `orch migrate` is the operator command; fixtures call `applySchemaForFixture`. |
+| DEV-316 | one lock per purpose; FIFO waiters; per-artifact lease | `worktree.ts:withWorktreeCreateLock`, `withProjectLock`, `withWorktreeLease`; `cli.ts:withCleanupLock`; `landing.ts:land` | closed in chunk 3 (`5cb76a2`, round 2): three purpose locks; lease first, purpose lock second; waiter names start with a monotonic ticket. |
+| DEV-318 | a chain resumes in its own stale checkout | `cli.ts:continueRun`, `detach`; `run.ts:preflight`, `run`, `namesRecordedRunTree`; `worktree.ts:assertCallerAncestry` | closed in chunk 3 (`5cb76a2`, round 2): exemption from explicit resume identity only; query by the identity in hand; stale new dispatch from a recorded cwd is not exempt. |
+| DEV-224 review 142/143: replacement race | reclaim only the classified acquisition | `worktree.ts:reclaimStaleProjectLock` | closed in chunk 3 (`5cb76a2`, round 2): incarnation id fenced after rename; env-driven pause after classification before removal. |
 | DEV-224 review 142: locale-dependent birth time | a live holder is never classified stale by observer locale | `worktree.ts:processStartTime`, `staleProjectLockHolder` | closed in chunk 3 (`5cb76a2`): `LC_ALL=C` birth string; legacy null startTime is liveness-only. |
 | DEV-224 review 143: malformed process output | indeterminate liveness cannot prove staleness | `worktree.ts:processStartTime`, `staleProjectLockHolder` | closed in chunk 3 (`5cb76a2`): strict parse; malformed output is unknown, never stale. |
 | DEV-224 review 142/143: staged guard stub | guard bytes and mode equal HEAD before fast-forward | `landing.ts:sharedGuardResidue`, `restoreSharedGuard`, `land` | closed in chunk 3 (`5cb76a2`): compare and restore from HEAD, then verify before the ref update. |
 | DEV-224 review 143: inherited Git environment | guard repair addresses the source repository's objects | `landing.ts:inspectionGit`, `restoreSharedGuard` | closed in chunk 3 (`5cb76a2`): hermetic `scrubbedGitEnv` for inspection and repair. |
-| failed landing residue | a failed landing leaves the branch worktree as it found it | `landing.ts:rebaseAndGate` | closed in chunk 3 (`5cb76a2`): restore tip and index on rebase or gate failure. |
+| failed landing residue | a failed landing leaves the branch worktree as it found it | `landing.ts:rebaseAndGate`, `assertLandingWorktreeReady` | closed in chunk 3 (`5cb76a2`, round 2): refuse dirty tracked / rebase-in-progress before rebase; restore HEAD, ref and index without `--force`. |
 | `orch land --status` hang | status answers without a lock and without scanning refs | `landing.ts:landingStatus` | closed in chunk 3 (`5cb76a2`): lock-state only; coverage and git-lock scans are separate. |
 
 Chunk 3 landed the candidates from DEV-224-orch-2185 (reviews 142/143), taking the helper names and the conservative null-startTime fallback, and rejecting the classify-before-rename reclaim, index-based guard diff/restore, and locale-dependent `ps` parse.

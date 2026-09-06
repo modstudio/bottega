@@ -98,11 +98,8 @@ if (firstEvaluation) {
 if (firstEvaluation) fixtureGlobal.__orchLifecycleBase = git(repo, 'rev-parse', 'HEAD')
 const fixtureBase = fixtureGlobal.__orchLifecycleBase!
 if (firstEvaluation) {
-  const initialized = Bun.spawnSync([process.execPath, cli, 'init-db'], {
-    cwd: repo, env: gitEnv({ ORCH_DB: storePath, ORCH_DEPTH: '0' }),
-    stdout: 'pipe', stderr: 'pipe',
-  })
-  if (initialized.exitCode !== 0) throw new Error(initialized.stderr.toString())
+  const { bootstrapFixtureStore } = await import('./db.ts')
+  bootstrapFixtureStore(storePath)
 }
 
 function store<T>(action: (database: Database) => T): T {
@@ -130,6 +127,7 @@ const refusalSiteNames = [
   'caller ancestry', 'missing trunk setting', 'missing gate setting',
   'branch does not exist', 'configured trunk does not exist',
   'branch has no worktree', 'branch is already merged', 'rebase leaves no commits',
+  'uncommitted tracked changes', 'rebase in progress',
 ] as const
 const refusalCaseName = (site: string) =>
   `Every refusal names the invariant it protects and the command that clears it: ${site}`
@@ -231,6 +229,21 @@ function addBranch(name: string): string {
   git(tree, 'commit', '-m', `DEV-321 ${name}`)
   return tree
 }
+function snapshotTree(tree: string) {
+  const index = git(tree, 'rev-parse', '--path-format=absolute', '--git-path', 'index')
+  const listed = git(tree, 'ls-files', '-c', '-o', '--exclude-standard').split('\n').filter(Boolean)
+  const files: Record<string, string> = {}
+  for (const name of listed) {
+    const path = join(tree, name)
+    if (existsSync(path)) files[name] = readFileSync(path, 'utf8')
+  }
+  return {
+    head: git(tree, 'rev-parse', 'HEAD'),
+    index: existsSync(index) ? readFileSync(index) : null,
+    files,
+    porcelain: git(tree, 'status', '--porcelain=v1', '--untracked-files=all'),
+  }
+}
 function childLand(branch: string, extra: Record<string, string> = {}) {
   return Bun.spawn([process.execPath, '-e',
     `const {land}=await import(process.argv[1]);land(process.argv[2],process.argv[3],{unreviewed:'DEV-321 harness',timeoutMs:5000})`,
@@ -280,7 +293,8 @@ test('Every write transaction is IMMEDIATE; a deferred transaction that later wr
     rmSync(scratch, { force: true })
     rmSync(scratchRuns, { recursive: true, force: true })
     const env = { ORCH_DB: scratch, ORCH_RUNS: scratchRuns, ORCH_EXEC_PATH: '/usr/bin/true' }
-    expect((await result(invoke(['init-db'], repo, env))).code).toBe(0)
+    const { bootstrapFixtureStore } = await import('./db.ts')
+    bootstrapFixtureStore(scratch)
     const n = 3 + rng.int(5)
     const seed = new Database(scratch)
     const asking = seed.query(`INSERT INTO run (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id) VALUES (datetime('now'),'codex','file-question','q',1,'q','asking','lifecycle-harness') RETURNING id`).get() as { id: number }
@@ -371,11 +385,37 @@ test(caseName.fifo, async () => {
   }
 }, 15_000)
 
+test('A resume is always possible on a stale checkout: a stale new dispatch from the main checkout refuses', async () => {
+  const { namesRecordedRunTree } = await import('./run.ts')
+  store((database) => database.query(`INSERT INTO run (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,cwd,repo) VALUES (datetime('now'),'codex','file-question','p',1,'p','ok','lifecycle-harness',?, 'lifecycle-fixture')`).run(repo))
+  const tree = addBranch('stale-new')
+  writeFileSync(join(repo, 'advance-stale.txt'), 'advance\n')
+  git(repo, 'add', 'advance-stale.txt')
+  git(repo, 'commit', '-m', 'DEV-321 advance after recorded cwd')
+  git(repo, 'reset', '--hard', fixtureBase)
+  expect(namesRecordedRunTree({ cwd: repo })).toBe(false)
+  expect(namesRecordedRunTree({ cwd: repo, explicitCwd: true })).toBe(false)
+  expect(namesRecordedRunTree({ cwd: repo, base: 'stale-new' })).toBe(false)
+  const r = Bun.spawnSync([process.execPath, '-e',
+    `const{assertCallerAncestry}=await import(process.argv[1]);assertCallerAncestry(process.argv[2],JSON.parse(process.argv[3]))`,
+    worktreeModule, repo, JSON.stringify({ path: tree, branch: 'stale-new', base: git(tree, 'rev-parse', 'HEAD'), repoRoot: repo })],
+    { env: gitEnv({ ORCH_DB: storePath }), stdout: 'pipe', stderr: 'pipe' })
+  expect(r.exitCode).not.toBe(0)
+  expect(r.stderr.toString()).toMatch(invariantLine)
+}, 15_000)
+
 test('A resume is always possible on a stale checkout: recorded worktree skips caller ancestry', async () => {
   const tree = addBranch('resume-stale')
   const base = git(tree, 'rev-parse', 'HEAD')
   writeFileSync(join(repo, 'advance.txt'), 'advance\n'); git(repo, 'add', 'advance.txt'); git(repo, 'commit', '-m', 'DEV-321 advance trunk')
   const inserted = store((database) => database.query(`INSERT INTO run (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,vendor_session,cwd,worktree,branch,base_commit,repo,turn) VALUES (datetime('now'),'codex','file-question','r',1,'r','ok','lifecycle-harness','vendor-session',?,?,?,?, 'lifecycle-fixture',1) RETURNING id`).get(tree, tree, 'resume-stale', base) as { id: number })
+  const { namesRecordedRunTree } = await import('./run.ts')
+  expect(namesRecordedRunTree({
+    cwd: tree, resume: { parent: inserted.id, worktree: { path: tree } },
+  })).toBe(true)
+  expect(namesRecordedRunTree({ cwd: tree, explicitCwd: true })).toBe(true)
+  expect(namesRecordedRunTree({ cwd: repo, base: 'resume-stale' })).toBe(true)
+  expect(namesRecordedRunTree({ cwd: repo, base: 'origin/resume-stale' })).toBe(false)
   const resumed = await result(invoke(['continue', String(inserted.id), 'continue', '--detach'], repo,
     { ORCH_EXEC_PATH: '/usr/bin/true' }))
   expect(resumed.code, `${seedMessage()}\n${resumed.err}`).toBe(0)
@@ -438,9 +478,20 @@ test(caseName.migration, async () => {
   const columns = checked.query('PRAGMA table_info(run)').all() as { name: string }[]; checked.close()
   violation(caseName.migration, seedMessage(), () => {
     expect(columns.some((column) => column.name === 'label')).toBe(false)
+    expect(read.exitCode).not.toBe(0)
     expect(read.stderr.toString()).toMatch(invariantLine)
-    expect(read.stderr.toString()).toMatch(clearingLine)
+    expect(read.stderr.toString()).toMatch(/cleared by: orch migrate/)
+    expect(read.stderr.toString()).not.toContain('no such column: r.label')
   })
+  const migrated = Bun.spawnSync([process.execPath, join(copy, 'orchestrator/src/cli.ts'), 'migrate'], {
+    cwd: copy, env: gitEnv({ ORCH_DB: scratch, ORCH_DEPTH: '0' }), stdout: 'pipe', stderr: 'pipe',
+  })
+  expect(migrated.exitCode, migrated.stderr.toString()).toBe(0)
+  expect(migrated.stdout.toString()).toContain('run.label')
+  const restored = new Database(scratch, { readonly: true })
+  const restoredCols = restored.query('PRAGMA table_info(run)').all() as { name: string }[]
+  restored.close()
+  expect(restoredCols.some((column) => column.name === 'label')).toBe(true)
 }, 20_000)
 
 test(caseName.landingGate, async () => {
@@ -476,7 +527,7 @@ test(caseName.failedLanding, async () => {
 }, 15_000)
 
 test('A reclaim removes exactly the acquisition it classified as stale', async () => {
-  const { reclaimStaleProjectLock, withProjectLock } = await import('./worktree.ts')
+  const { withProjectLock } = await import('./worktree.ts')
   const deadPid = 2_147_483_647
   const lock = join(git(repo, 'rev-parse', '--path-format=absolute', '--git-common-dir'), 'orch-landing.lock')
   mkdirSync(lock, { recursive: true })
@@ -484,15 +535,39 @@ test('A reclaim removes exactly the acquisition it classified as stale', async (
     pid: deadPid, startTime: null, incarnation: 'classified-a',
     session: 'dead', what: 'stale-holder', since: new Date(0).toISOString(),
   })}\n`)
-  const first = reclaimStaleProjectLock(repo, 'landing')
-  expect(first?.holder.incarnation).toBe('classified-a')
-  expect(existsSync(lock)).toBe(false)
-  expect(withProjectLock(repo, 'landing', { session: 'live', what: 'replacement' }, () => {
+  const ready = join(fixture, 'reclaim-ready')
+  const release = join(fixture, 'reclaim-release')
+  const done = join(fixture, 'reclaim-done')
+  rmSync(ready, { force: true }); rmSync(release, { force: true }); rmSync(done, { force: true })
+  const child = Bun.spawn([process.execPath, '-e',
+    `const{writeFileSync}=await import('node:fs');const{reclaimStaleProjectLock}=await import(process.argv[1]);const result=reclaimStaleProjectLock(process.argv[2],'landing');writeFileSync(process.argv[3],JSON.stringify(result))`,
+    worktreeModule, repo, done], {
+    env: gitEnv({
+      ORCH_DB: storePath,
+      ORCH_TEST_LOCK_RECLAIM_CHECKPOINT: 'classified',
+      ORCH_TEST_LOCK_RECLAIM_READY: ready,
+      ORCH_TEST_LOCK_RECLAIM_RELEASE: release,
+    }),
+    stdout: 'pipe', stderr: 'pipe',
+  })
+  await waitFor(ready)
+  rmSync(lock, { recursive: true, force: true })
+  const liveIncarnation = withProjectLock(repo, 'landing', { session: 'live', what: 'replacement' }, () => {
     const live = JSON.parse(readFileSync(join(lock, 'owner'), 'utf8')) as { incarnation: string }
-    expect(reclaimStaleProjectLock(repo, 'landing')).toBeNull()
+    writeFileSync(release, '')
+    const sleeper = new Int32Array(new SharedArrayBuffer(4))
+    const deadline = Date.now() + 5000
+    while (!existsSync(done)) {
+      if (Date.now() >= deadline) throw new Error(`reclaim child did not finish\n${seedMessage()}`)
+      Atomics.wait(sleeper, 0, 0, 10)
+    }
     expect(JSON.parse(readFileSync(join(lock, 'owner'), 'utf8')).incarnation).toBe(live.incarnation)
-    return 'held'
-  }, 2000, true)).toBe('held')
+    return live.incarnation
+  }, 8000, true)
+  expect(liveIncarnation).toBeDefined()
+  expect(JSON.parse(readFileSync(done, 'utf8'))).toBeNull()
+  const reclaimed = await result(child)
+  expect(reclaimed.code, reclaimed.err).toBe(0)
   expect(existsSync(lock)).toBe(false)
 }, 15_000)
 
@@ -528,6 +603,17 @@ const refusalCases = [
     writeFileSync(join(repo, 'same.txt'), 'same\n'); git(repo, 'add', 'same.txt'); git(repo, 'commit', '-m', 'DEV-321 trunk copy')
     return refusedLand('empty-after-rebase')
   }],
+  ['uncommitted tracked changes', () => {
+    const tree = addBranch('dirty-tracked')
+    writeFileSync(join(tree, 'dirty-tracked.txt'), 'edited\n')
+    return refusedLand('dirty-tracked')
+  }],
+  ['rebase in progress', () => {
+    const tree = addBranch('rebase-in-progress')
+    const gitDir = git(tree, 'rev-parse', '--path-format=absolute', '--git-dir')
+    mkdirSync(join(gitDir, 'rebase-merge'))
+    return refusedLand('rebase-in-progress')
+  }],
 ] as const
 
 for (const [index, [site, trigger]] of refusalCases.entries()) {
@@ -553,29 +639,89 @@ test(caseName.linkedRefusal, async () => {
 }, 15_000)
 
 test('The guard on disk is verified against HEAD before fast-forward', async () => {
-  const { sharedGuardResidue, restoreSharedGuard } = await import('./landing.ts')
-  const copy = join(fixture, 'guard-head')
-  rmSync(copy, { recursive: true, force: true })
-  mkdirSync(join(copy, 'orchestrator', 'hooks'), { recursive: true })
+  mkdirSync(join(repo, 'orchestrator', 'hooks'), { recursive: true })
   const hook = join(sourceRoot, 'orchestrator', 'hooks', 'reference-transaction')
-  writeFileSync(join(copy, 'orchestrator', 'hooks', 'reference-transaction'), readFileSync(hook))
-  git(copy, 'init', '-b', 'main')
-  git(copy, 'config', 'user.email', 'guard@example.invalid')
-  git(copy, 'config', 'user.name', 'Guard')
-  git(copy, 'add', '.')
-  git(copy, 'commit', '-m', 'DEV-321 tracked guard')
-  const root = join(copy, 'orchestrator')
-  expect(sharedGuardResidue(root)).toBeNull()
-  const staged = join(copy, 'orchestrator', 'hooks', 'reference-transaction')
+  const staged = join(repo, 'orchestrator', 'hooks', 'reference-transaction')
+  writeFileSync(staged, readFileSync(hook))
+  git(repo, 'add', 'orchestrator/hooks/reference-transaction')
+  git(repo, 'commit', '-m', 'DEV-321 tracked guard')
+  addBranch('guard-land')
   writeFileSync(staged, '#!/bin/sh\nexit 0\n')
-  git(copy, 'add', 'orchestrator/hooks/reference-transaction')
-  const residue = sharedGuardResidue(root)
-  expect(residue).not.toBeNull()
-  restoreSharedGuard(root)
-  expect(sharedGuardResidue(root)).toBeNull()
+  git(repo, 'add', 'orchestrator/hooks/reference-transaction')
+  const order = join(fixture, 'landing-order.log')
+  rmSync(order, { force: true })
+  const trunkBefore = git(repo, 'rev-parse', 'HEAD')
+  const landed = await result(childLand('guard-land', { ORCH_TEST_LANDING_ORDER: order }))
+  expect(landed.code, landed.err).toBe(0)
   expect(readFileSync(staged)).toEqual(readFileSync(hook))
-  expect(git(copy, 'status', '--porcelain', '--', 'orchestrator/hooks/reference-transaction')).toBe('')
+  expect(git(repo, 'status', '--porcelain', '--', 'orchestrator/hooks/reference-transaction')).toBe('')
+  expect(git(repo, 'rev-parse', 'HEAD')).not.toBe(trunkBefore)
+  expect(readFileSync(order, 'utf8').trim().split('\n')).toEqual(['guard-verify', 'fast-forward'])
 }, 15_000)
+
+test('Landing versus cleanup of one tree take a per-artifact lease', async () => {
+  const tree = addBranch('lease-tree')
+  const ready = join(fixture, 'lease-land-ready')
+  const release = join(fixture, 'lease-land-release')
+  rmSync(ready, { force: true }); rmSync(release, { force: true })
+  const gate = join(fixture, 'lease-gate.ts')
+  writeFileSync(gate, `#!/usr/bin/env bun\nimport{writeFileSync,existsSync}from'node:fs'\nwriteFileSync('${ready}','')\nwhile(!existsSync('${release}'))await Bun.sleep(5)\n`)
+  chmodSync(gate, 0o755); configure(gate)
+  const lander = childLand('lease-tree')
+  await waitFor(ready)
+  const cleanupLog = join(timelines, 'lease-cleanup.jsonl')
+  const cleanup = Bun.spawn([process.execPath, '-e',
+    `const{appendFileSync}=await import('node:fs');const{withWorktreeLease,withCleanupLock}=await import(process.argv[1]);const[repo,tree,file]=process.argv.slice(2);const log=e=>appendFileSync(file,JSON.stringify({at:new Date().toISOString(),event:e,actor:'cleanup'})+'\\n');log('lock-wait');withWorktreeLease(repo,tree,{session:'cleanup',what:'cleanup'},()=>{withCleanupLock(repo,{session:'cleanup',what:'cleanup'},()=>{log('lock-held')},5000);log('lock-released')},5000)`,
+    worktreeModule, repo, tree, cleanupLog], {
+    env: gitEnv({ ORCH_DB: storePath }), stdout: 'pipe', stderr: 'pipe',
+  })
+  const waitedUntil = Date.now() + 5000
+  while (!events('lease-cleanup').some((e) => e.event === 'lock-wait')) {
+    if (Date.now() >= waitedUntil) throw new Error(`cleanup never waited on the tree lease\n${seedMessage()}`)
+    await Bun.sleep(5)
+  }
+  const heldDuringGate = events('lease-cleanup').some((e) => e.event === 'lock-held')
+  writeFileSync(release, '')
+  const landed = await result(lander)
+  const cleaned = await result(cleanup)
+  expect(landed.code, landed.err).toBe(0)
+  expect(cleaned.code, cleaned.err).toBe(0)
+  expect(heldDuringGate, seedMessage()).toBe(false)
+  expect(events('lease-cleanup').some((e) => e.event === 'lock-held')).toBe(true)
+}, 20_000)
+
+test('A failed landing leaves uncommitted tracked and untracked carry byte-identical', async () => {
+  const cases: { name: string; setup: (tree: string) => void; refuseBeforeRebase: boolean }[] = [
+    { name: 'unstaged', setup: (tree) => { writeFileSync(join(tree, 'unstaged.txt'), 'unstaged-bytes\n'); git(tree, 'add', 'unstaged.txt'); git(tree, 'commit', '-m', 'DEV-321 track'); writeFileSync(join(tree, 'unstaged.txt'), 'unstaged-edited\n') }, refuseBeforeRebase: true },
+    { name: 'staged', setup: (tree) => { writeFileSync(join(tree, 'staged.txt'), 'staged-bytes\n'); git(tree, 'add', 'staged.txt') }, refuseBeforeRebase: true },
+    { name: 'mixed', setup: (tree) => { writeFileSync(join(tree, 'mixed.txt'), 'mixed-base\n'); git(tree, 'add', 'mixed.txt'); git(tree, 'commit', '-m', 'DEV-321 mixed'); writeFileSync(join(tree, 'mixed.txt'), 'mixed-staged\n'); git(tree, 'add', 'mixed.txt'); writeFileSync(join(tree, 'mixed.txt'), 'mixed-unstaged\n') }, refuseBeforeRebase: true },
+    { name: 'untracked', setup: (tree) => { writeFileSync(join(tree, 'untracked.txt'), 'untracked-bytes\n') }, refuseBeforeRebase: false },
+  ]
+  for (const item of cases) {
+    const tree = addBranch(`carry-${item.name}`)
+    item.setup(tree)
+    const before = snapshotTree(tree)
+    if (!item.refuseBeforeRebase) configure('false')
+    const landed = await result(childLand(`carry-${item.name}`))
+    const after = snapshotTree(tree)
+    expect(landed.code, `${item.name}\n${landed.err}`).not.toBe(0)
+    expect(after, item.name).toEqual(before)
+    if (item.refuseBeforeRebase) {
+      expect(landed.err).toMatch(invariantLine)
+      expect(landed.err).toMatch(clearingLine)
+    }
+    git(repo, 'reset', '--hard', fixtureBase)
+    for (const line of git(repo, 'worktree', 'list', '--porcelain').split('\n')) {
+      if (!line.startsWith('worktree ')) continue
+      const path = line.slice('worktree '.length)
+      if (path !== repo) git(repo, 'worktree', 'remove', '--force', path)
+    }
+    for (const branch of git(repo, 'for-each-ref', '--format=%(refname:short)', 'refs/heads').split('\n').filter(Boolean)) {
+      if (branch !== 'main') git(repo, 'branch', '-D', branch)
+    }
+    configure('true')
+  }
+}, 30_000)
 
 test('Hermetic git in the gate is an observation; the lifecycle invariant does not cover the gate', async () => {
   addBranch('gate-environment')

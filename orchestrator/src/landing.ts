@@ -6,7 +6,7 @@ import { db, liveRunCount, nowIso, sessionId, writableDb, ROOT } from './db.ts'
 import { projectAt, type Project } from './projects.ts'
 import {
   contentTree, prepareSharedRefGuard, projectLockState, repoRootOf, withProjectLock,
-  targetGitEnvironment, scrubbedGitEnv, type SharedRefGuardEnvironment,
+  withWorktreeLease, targetGitEnvironment, scrubbedGitEnv, type SharedRefGuardEnvironment,
 } from './worktree.ts'
 
 const LANDING_LOCK = 'landing'
@@ -86,19 +86,28 @@ export function restoreSharedGuard(root = ROOT): SharedGuardResidue | null {
   return residue
 }
 
+function landingOrder(step: string): void {
+  const log = process.env.ORCH_TEST_LANDING_ORDER
+  if (!log) return
+  writeFileSync(log, `${step}\n`, { flag: 'a' })
+}
+
 function verifyGuardBeforeFastForward(repoRoot: string): void {
-  const binaryRepo = repoRootOf(ROOT)
-  if (!binaryRepo) return
-  try {
-    if (realpathSync(binaryRepo) !== realpathSync(repoRoot)) return
-  } catch { return }
-  restoreSharedGuard()
-  if (sharedGuardResidue()) {
-    throw namedError(
-      'shared reference-transaction guard differs from HEAD before fast-forward',
-      INVARIANT_GUARD_HEAD,
-      'git checkout HEAD -- orchestrator/hooks/reference-transaction',
-    )
+  landingOrder('guard-verify')
+  const roots = new Set<string>()
+  for (const candidate of [join(repoRoot, 'orchestrator'), ROOT]) {
+    try { roots.add(realpathSync(candidate)) } catch { /* no orchestrator dir in this repo */ }
+  }
+  for (const root of roots) {
+    if (!sharedGuardResidue(root)) continue
+    restoreSharedGuard(root)
+    if (sharedGuardResidue(root)) {
+      throw namedError(
+        'shared reference-transaction guard differs from HEAD before fast-forward',
+        INVARIANT_GUARD_HEAD,
+        'git checkout HEAD -- orchestrator/hooks/reference-transaction',
+      )
+    }
   }
 }
 
@@ -481,10 +490,31 @@ function rebaseInProgress(worktree: string, guard: SharedRefGuardEnvironment): b
   return existsSync(join(gitDir, 'rebase-merge')) || existsSync(join(gitDir, 'rebase-apply'))
 }
 
+function assertLandingWorktreeReady(
+  worktree: string, branch: string, guard: SharedRefGuardEnvironment,
+): void {
+  if (rebaseInProgress(worktree, guard)) {
+    throw namedError(
+      `refusing to land ${branch}: a rebase is in progress in ${worktree}`,
+      INVARIANT_FAILED_LANDING,
+      `git -C ${shellQuote(worktree)} rebase --abort`,
+    )
+  }
+  const dirty = git(worktree, ['status', '--porcelain=v1', '--untracked-files=no'], guard)
+  if (dirty) {
+    throw namedError(
+      `refusing to land ${branch}: uncommitted tracked changes in ${worktree}`,
+      INVARIANT_FAILED_LANDING,
+      `git -C ${shellQuote(worktree)} stash`,
+    )
+  }
+}
+
 function rebaseAndGate(
   project: Project, repoRoot: string, worktree: string, branch: string, trunk: string,
   trunkOid: string, guard: SharedRefGuardEnvironment,
 ): string {
+  assertLandingWorktreeReady(worktree, branch, guard)
   const headBefore = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'], guard)
   const gitDir = git(worktree, ['rev-parse', '--path-format=absolute', '--git-dir'], guard)
   const indexPath = join(gitDir, 'index')
@@ -494,8 +524,10 @@ function rebaseAndGate(
     const detail = cause instanceof Error ? cause.message : String(cause)
     try {
       if (rebaseInProgress(worktree, guard)) git(worktree, ['rebase', '--abort'], guard)
+      const headNow = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'], guard)
+      if (headNow !== headBefore) git(worktree, ['reset', '--keep', headBefore], guard)
       git(worktree, ['update-ref', `refs/heads/${branch}`, headBefore], guard)
-      git(worktree, ['checkout', '--force', branch], guard)
+      git(worktree, ['checkout', branch], guard)
       if (indexBackup && existsSync(indexBackup)) copyFileSync(indexBackup, indexPath)
     } catch (restoreError) {
       return namedError(
@@ -919,6 +951,7 @@ function fastForward(
   for (const checkout of trunkCheckouts) {
     if (checkout.trackedWork) checkout.preservedIndex = preserveIndex(checkout, guard)
   }
+  landingOrder('fast-forward')
   git(worktree, [
     'update-ref', `refs/heads/${trunk}`, tip, expected,
   ], guard)
@@ -981,60 +1014,63 @@ export function land(
     )
   }
 
-  const guard = prepareSharedRefGuard(worktree)
-  // A message-only amend changes the commit hash. The gate must run on the
-  // commit that becomes trunk, so the message is rewritten before rebase.
-  if (options.message !== undefined) amendLandingMessage(worktree, options.message, guard)
-  const recordedTrunk = trunkCommit(repoRoot, trunk, guard)
-  if (options.unreviewed === undefined) {
-    authorizeLanding(
-      project, repoRoot, worktree, branch,
-      git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'], guard), recordedTrunk,
-      options.runId, options.unreviewed,
-    )
-  }
-  let gatedTrunk = recordedTrunk
-  let tip = rebaseAndGate(
-    project, repoRoot, worktree, branch, trunk, recordedTrunk, guard,
-  )
-  let losses = 0
-  while (true) {
-    const outcome = withProjectLock(repoRoot, LANDING_LOCK, { session: sessionId(), what: branch }, () => {
-      verifyGuardBeforeFastForward(repoRoot)
-      const currentTrunk = trunkCommit(repoRoot, trunk, guard)
-      if (currentTrunk === gatedTrunk) {
-        const authorization = authorizeLanding(
-          project, repoRoot, worktree, branch, tip, gatedTrunk,
-          options.runId, options.unreviewed,
-        )
-        fastForward(repoRoot, worktree, branch, trunk, tip, gatedTrunk, guard)
-        recordLandingOverride(authorization.override)
-        recordReviewCarry(authorization.carry)
-        return { kind: 'landed' as const, tip, currentTrunk }
-      }
-      return { kind: 'moved' as const, tip, currentTrunk }
-    }, timeoutMs, true)
-    if (outcome.kind === 'landed') {
-      const how = losses === 0
-        ? 'optimistic gate remained current'
-        : 'after re-gate outside the landing lock'
-      console.log(`landed ${branch} at ${outcome.tip} onto ${trunk} (${how})`)
-      return outcome.tip
-    }
-    losses += 1
-    if (losses >= 2) {
-      throw namedError(
-        `refusing to land ${branch}: ${trunk} moved again to ${outcome.currentTrunk} after re-gate`,
-        INVARIANT_LOCK_SCOPE,
-        `orch land ${branch}`,
+  return withWorktreeLease(repoRoot, worktree, { session: sessionId(), what: `land ${branch}` }, () => {
+    const guard = prepareSharedRefGuard(worktree)
+    assertLandingWorktreeReady(worktree, branch, guard)
+    // A message-only amend changes the commit hash. The gate must run on the
+    // commit that becomes trunk, so the message is rewritten before rebase.
+    if (options.message !== undefined) amendLandingMessage(worktree, options.message, guard)
+    const recordedTrunk = trunkCommit(repoRoot, trunk, guard)
+    if (options.unreviewed === undefined) {
+      authorizeLanding(
+        project, repoRoot, worktree, branch,
+        git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'], guard), recordedTrunk,
+        options.runId, options.unreviewed,
       )
     }
-    console.log(
-      `${trunk} moved from ${gatedTrunk} to ${outcome.currentTrunk}; re-gating ${branch} outside the landing lock`,
+    let gatedTrunk = recordedTrunk
+    let tip = rebaseAndGate(
+      project, repoRoot, worktree, branch, trunk, recordedTrunk, guard,
     )
-    gatedTrunk = outcome.currentTrunk
-    tip = rebaseAndGate(project, repoRoot, worktree, branch, trunk, gatedTrunk, guard)
-  }
+    let losses = 0
+    while (true) {
+      const outcome = withProjectLock(repoRoot, LANDING_LOCK, { session: sessionId(), what: branch }, () => {
+        verifyGuardBeforeFastForward(repoRoot)
+        const currentTrunk = trunkCommit(repoRoot, trunk, guard)
+        if (currentTrunk === gatedTrunk) {
+          const authorization = authorizeLanding(
+            project, repoRoot, worktree, branch, tip, gatedTrunk,
+            options.runId, options.unreviewed,
+          )
+          fastForward(repoRoot, worktree, branch, trunk, tip, gatedTrunk, guard)
+          recordLandingOverride(authorization.override)
+          recordReviewCarry(authorization.carry)
+          return { kind: 'landed' as const, tip, currentTrunk }
+        }
+        return { kind: 'moved' as const, tip, currentTrunk }
+      }, timeoutMs, true)
+      if (outcome.kind === 'landed') {
+        const how = losses === 0
+          ? 'optimistic gate remained current'
+          : 'after re-gate outside the landing lock'
+        console.log(`landed ${branch} at ${outcome.tip} onto ${trunk} (${how})`)
+        return outcome.tip
+      }
+      losses += 1
+      if (losses >= 2) {
+        throw namedError(
+          `refusing to land ${branch}: ${trunk} moved again to ${outcome.currentTrunk} after re-gate`,
+          INVARIANT_LOCK_SCOPE,
+          `orch land ${branch}`,
+        )
+      }
+      console.log(
+        `${trunk} moved from ${gatedTrunk} to ${outcome.currentTrunk}; re-gating ${branch} outside the landing lock`,
+      )
+      gatedTrunk = outcome.currentTrunk
+      tip = rebaseAndGate(project, repoRoot, worktree, branch, trunk, gatedTrunk, guard)
+    }
+  }, timeoutMs)
 }
 
 export function landingReviewCoverage(cwd: string): string {

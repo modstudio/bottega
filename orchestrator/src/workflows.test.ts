@@ -3,7 +3,7 @@ import { Database } from 'bun:sqlite'
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { applySchema, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP,
+import { applySchema, bootstrapFixtureStore, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP,
   REVIEW_REPRODUCED } from './db.ts'
 import { composeWorkflow, exportWorkflows, forkWorkflow, getWorkflowStep, importWorkflows,
   listWorkflows, promoteWorkflow, retireWorkflow, setWorkflow, showWorkflow,
@@ -83,7 +83,7 @@ describe('workflow CLI', () => {
     writeFileSync(definitionPath,JSON.stringify(definition))
     const cli=new URL('./cli.ts',import.meta.url).pathname
     const run=(args:string[])=>{const p=Bun.spawnSync([process.execPath,cli,...args],{env:{...process.env,ORCH_DB:databasePath},stdout:'pipe',stderr:'pipe'});return {code:p.exitCode,out:p.stdout.toString(),err:p.stderr.toString()}}
-    expect(Bun.spawnSync([process.execPath,new URL('./orch.ts',import.meta.url).pathname,'init-db'],{env:{...process.env,ORCH_DB:databasePath},stdout:'pipe',stderr:'pipe'}).exitCode).toBe(0)
+    bootstrapFixtureStore(databasePath)
     expect(run(['workflow','set','choose','--file',definitionPath,'--reason','create']).code).toBe(0)
     expect(run(['workflow','promote','choose','1','--reason','publish']).code).toBe(0)
     const needs=run(['workflow','compose','choose','--json']);expect(needs.code).toBe(2);expect(JSON.parse(needs.out).needs).toEqual({mode:[{slug:'default',title:'Default',entry:'Choose this mode?'}],arguments:['key']})

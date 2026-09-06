@@ -16,7 +16,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from '
 import { Database } from 'bun:sqlite'
 import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync,
          realpathSync, mkdirSync, utimesSync, chmodSync, readdirSync, statSync,
-         symlinkSync, copyFileSync, openSync, closeSync, lstatSync, unlinkSync, renameSync } from 'node:fs'
+         symlinkSync, copyFileSync, cpSync, openSync, closeSync, lstatSync, unlinkSync, renameSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
@@ -1579,7 +1579,7 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     try {
       const child = childLand(repo, 'dirty-amend', { message: 'architect fuller message' })
       expect(await child.exited).not.toBe(0)
-      expect((await new Response(child.stderr).text())).toContain('refusing to amend a dirty worktree')
+      expect((await new Response(child.stderr).text())).toContain('uncommitted tracked changes')
       expect(g(repo, 'rev-parse', 'refs/heads/main')).toBe(trunk)
       expect(g(repo, 'log', '-1', '--format=%s', 'dirty-amend')).toBe('dirty-amend')
     } finally { rmSync(repo, { recursive: true, force: true }) }
@@ -1650,8 +1650,8 @@ const { db, nowIso, reapStale, pendingForSession, unscoredCount, judgeability, S
         PENDING_BOOTSTRAP_MS, WEIGHT, weigh, label, FIDELITY_PENALTY, UNSCORED_WHERE,
         excludeSharedOutputRuns, SHARED_OUTPUT_REASON, applySchema, recordDuels, duelMatrices,
         parseRunIds, recordSessionSeen, GENERIC_QUESTION_TOKENS,
-        initializeDatabase, authorizeRunMutation, adoptRunMutation, sessionId } = await import('./db.ts')
-initializeDatabase()
+        bootstrapFixtureStore, authorizeRunMutation, adoptRunMutation, sessionId } = await import('./db.ts')
+bootstrapFixtureStore(process.env.ORCH_DB!)
 const { candidates, weightCase, scoreboard, median, evidenceFor, pick,
         NOISE_BAND, QUALITY_STEP, MIN_SAMPLE, OUTPUT_RESERVE, EVIDENCE_WINDOW,
         STANDING_EXPLORE_RATE, PROMPT_SIZE_BOUNDARY, promptSizeBucket, betaContribution,
@@ -8915,11 +8915,7 @@ describe('detached run collection', () => {
     const monitorEnv = {
       ORCH_DB: monitorDb, HUB_DB: hubDb, PATH: `${binDir}:${process.env.PATH ?? ''}`,
     }
-    const initialized = Bun.spawnSync(
-      [process.execPath, new URL('orch.ts', import.meta.url).pathname, 'init-db'],
-      { env: { ...process.env, ...monitorEnv }, stdout: 'pipe', stderr: 'pipe' },
-    )
-    expect(initialized.exitCode).toBe(0)
+    bootstrapFixtureStore(monitorDb)
     upsertProject({ name: 'json-source', path: '/w/json-source', settings: {} })
     upsertProject({ name: 'json-target', path: '/w/json-target',
       settings: { keyPrefixes: ['TGT'] } })
@@ -9033,10 +9029,7 @@ describe('detached run collection', () => {
       ORCH_EXEC_PATH: '/usr/bin/true',
       CLAUDE_CODE_SESSION_ID: 'orch-test-session',
     }
-    const initialized = Bun.spawnSync([process.execPath, CLI, 'init-db'], {
-      env, stdout: 'pipe', stderr: 'pipe',
-    })
-    expect(initialized.exitCode, initialized.stderr.toString()).toBe(0)
+    bootstrapFixtureStore(store)
 
     const children = [1, 2, 3].map((n) => Bun.spawn(
       [process.execPath, CLI, 'do', 'file-question', `concurrent ${n}`, '--agent', 'codex', '--detach'],
@@ -19295,10 +19288,7 @@ describe('projects are data, not code', () => {
       writeFileSync(join(repo, 'tracked'), 'fixture\n')
       git(repo, 'add', 'tracked')
       git(repo, 'commit', '-m', 'fixture')
-      const initialized = Bun.spawnSync([process.execPath, entry, 'init-db'], {
-        cwd: repo, env: { ...hermeticGitEnv(), ORCH_DB: databasePath }, stdout: 'pipe', stderr: 'pipe',
-      })
-      expect(initialized.exitCode).toBe(0)
+      bootstrapFixtureStore(databasePath)
       const fixture = new Database(databasePath)
       fixture.query('INSERT INTO project (name,path,stack,canon,settings) VALUES (?,?,?,?,?)')
         .run(PLATFORM_SLUG, repo, 'typescript', 1, '{}')
@@ -19379,14 +19369,31 @@ describe('projects are data, not code', () => {
 
   test('init-db is the explicit creation path and refuses an existing database', () => {
     const root = mkdtempSync(join(tmpdir(), 'orch-init-db-'))
+    const copy = join(root, 'main')
     const fresh = join(root, 'orchestrator', 'orch.db')
-    const entry = new URL('orch.ts', import.meta.url).pathname
+    const sourceRoot = join(dirname(new URL(import.meta.url).pathname), '../..')
+    mkdirSync(join(copy, 'orchestrator'), { recursive: true })
+    cpSync(join(sourceRoot, 'orchestrator', 'src'), join(copy, 'orchestrator', 'src'), { recursive: true })
+    cpSync(join(sourceRoot, 'shared'), join(copy, 'shared'), { recursive: true })
+    symlinkSync(join(sourceRoot, 'orchestrator', 'node_modules'), join(copy, 'orchestrator', 'node_modules'))
+    const git = (cwd: string, ...args: string[]) => {
+      const result = Bun.spawnSync(['git', ...args], {
+        cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+    }
+    git(copy, 'init', '-b', 'main')
+    git(copy, 'config', 'user.email', 'orch-test@example.invalid')
+    git(copy, 'config', 'user.name', 'Orch Test')
+    git(copy, 'add', '.')
+    git(copy, 'commit', '-m', 'DEV-321 main-checkout init-db')
+    const entry = join(copy, 'orchestrator', 'src', 'orch.ts')
     const invoke = (...args: string[]) => Bun.spawnSync([process.execPath, entry, ...args], {
-      env: { ...hermeticGitEnv(), ORCH_DB: fresh, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
+      cwd: copy, env: { ...hermeticGitEnv(), ORCH_DB: fresh, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
     })
     try {
       const created = invoke('init-db')
-      expect(created.exitCode).toBe(0)
+      expect(created.exitCode, created.stderr.toString()).toBe(0)
       expect(created.stdout.toString()).toContain(fresh)
       expect(existsSync(fresh)).toBe(true)
       const second = invoke('init-db')
