@@ -20,13 +20,18 @@ function gateFailureLines(output: string): string[] {
     /^\s*\(fail\)\s+/.test(line) || /^\s*\d+\s+fail(?:s|ed)?\b/.test(line))
 }
 
+function stripAnsi(value: string): string {
+  return value.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '')
+}
+
 export function gateFailureSummary(
   output: string, outputPath: string, liveRuns: number, truncated = false,
 ): string {
   const lines = output.split('\n')
   if (lines.at(-1) === '') lines.pop()
   const failures = gateFailureLines(output)
-  const timeout = /timed out after \d+ms/i.test(output)
+  const timeout = output.split('\n').some((line) =>
+    /^\s*\^ this test timed out after \d+ms\.\s*$/.test(stripAnsi(line)))
   return [
     truncated
       ? 'gate output (TRUNCATED after 5 s: a process the gate left behind still held its ' +

@@ -162,6 +162,20 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     return id
   }
 
+  test('only bun\'s complete timeout line reports machine load', () => {
+    const unrelated = gateFailureSummary(
+      'backup timed out after 10ms\n1 fail\n', '/tmp/gate.log', 7,
+    )
+    expect(unrelated).not.toContain('gate timeout under load')
+    const bun = gateFailureSummary(
+      '\u001b[31m  ^ this test timed out after 5000ms.\u001b[0m\n1 fail\n',
+      '/tmp/gate.log', 7,
+    )
+    expect(bun).toContain(
+      'gate timeout under load: 7 orch runs live (running + asking) machine-wide',
+    )
+  })
+
   test('landing reconciles a clean checkout of trunk to the landed commit', async () => {
     const { repo } = repoWithBranches(['clean-landing'])
     upsertProject({ name: 'landing-clean-checkout', path: repo,
@@ -455,7 +469,7 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     writeFileSync(gate, [
       '#!/bin/sh',
       "echo '(fail) deeply buried timeout test [5001.00ms]'",
-      "echo 'error: Test timed out after 5000ms'",
+      "echo '^ this test timed out after 5000ms.'",
       "i=1; while [ \"$i\" -le 900 ]; do echo \"(pass) later test $i\"; i=$((i+1)); done",
       "echo '1 fail'",
       'exit 7',
@@ -1568,7 +1582,7 @@ const { orphanSafety, repoRootOf, createWorktree, createWithTool, createReadOnly
         carryWorkingState, withWorktreeCreateLock, withProjectLock, projectLockState,
         unmergedBranch, assertCallerAncestry, checkoutHasUncommittedWork, callerDrift,
         changesIn, contentTree, removeFor, branchTip } = await import('./worktree.ts')
-const { land, landingStatus, resolveLandingBranch } = await import('./landing.ts')
+const { gateFailureSummary, land, landingStatus, resolveLandingBranch } = await import('./landing.ts')
 const { gitLocks } = await import('./git-locks.ts')
 const { AGENTS, ARGV_PROMPT_BYTES, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
