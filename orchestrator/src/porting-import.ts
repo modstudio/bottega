@@ -718,6 +718,12 @@ export function applyImport(
     for (const row of plan.skips) addSkip(pairs.get(row.pairKey)!, row.candidate, row.reason)
     for (const row of plan.refs) setLedgerRef(row)
     for (const row of plan.doctrine) addDoctrineRule(row.number, row.title, row.body)
-    for (const row of plan.docs) importDoc({ ...row, ...context })
+    const demand = new Set([
+      'port-category-map', 'port-import-exclusions', 'port-import-source-context',
+      'port-ref-metadata', 'port-state-metadata',
+    ])
+    for (const row of plan.docs) importDoc({
+      ...row, delivery: demand.has(row.slug) ? 'demand' : 'inject', ...context,
+    })
   })()
 }

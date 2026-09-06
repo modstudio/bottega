@@ -11,7 +11,7 @@ def _start(orch, *args):
     return subprocess.Popen(
         [orch, *args],
         stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
         text=True,
     )
 
@@ -29,7 +29,7 @@ def _kill(proc):
 def _wait(proc, deadline):
     try:
         stdout, _ = proc.communicate(timeout=max(0, deadline - time.monotonic()))
-        return subprocess.CompletedProcess(proc.args, proc.returncode, stdout or "", None)
+        return subprocess.CompletedProcess(proc.args, proc.returncode, stdout or "", _ or "")
     except Exception:
         _kill(proc)
         return subprocess.CompletedProcess(proc.args, -1, "", None)
@@ -101,6 +101,11 @@ def main() -> int:
                 question_count = orphaned_count = 0
 
         notices = []
+        if brief.returncode != 0:
+            first = next((line.strip() for line in (brief.stderr or "").splitlines() if line.strip()),
+                         None)
+            if first:
+                notices.append(f"operator brief refused: {first}")
         if question_count:
             if orphaned_count:
                 noun = "question" if orphaned_count == 1 else "questions"

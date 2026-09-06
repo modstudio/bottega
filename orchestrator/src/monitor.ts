@@ -6,6 +6,7 @@ import { fileIssue } from './mcp.ts'
 import { gitLocks } from './git-locks.ts'
 import { projects } from './projects.ts'
 import { projectLockState } from './worktree.ts'
+import { allInjectChecks, storedPackDrift } from './canon.ts'
 
 const HUB = new URL('../../bin/hub', import.meta.url).pathname
 
@@ -27,6 +28,7 @@ export type MonitorResult = {
   trigger: 'invoked' | 'backstop'
   conditions: MonitorCondition[]
   errors: string[]
+  canon: { findings: number; docs: number }
 }
 
 const age = (since: string | null, clock: number) => {
@@ -153,6 +155,11 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
   const invocation = invocationRow.id
   const conditions: MonitorCondition[] = []
   const errors: string[] = []
+  const canonRows = allInjectChecks()
+  const canon = {
+    findings: canonRows.reduce((n, row) => n + row.findings.filter((finding) => finding.kind !== 'unchecked').length, 0),
+    docs: canonRows.filter((row) => row.findings.some((finding) => finding.kind !== 'unchecked')).length,
+  }
   const add = (condition: Omit<MonitorCondition, 'ageMs'> & { ageMs?: number | null }) =>
     conditions.push({ ...condition, ageMs: condition.ageMs ?? age(condition.since, clock) })
 
@@ -252,6 +259,12 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
   conditions.push(...docker.conditions)
   errors.push(...docker.errors)
 
+  for (const drift of storedPackDrift()) add({
+    kind: 'canon-pack-drift', subject: `${drift.job}/${drift.project ?? '_'}`, since: null,
+    detail: `${drift.removed.length} docs removed; ${drift.bytesDelta} bytes versus stored pack`,
+    action: 'reported; dispatch is not blocked by pack drift',
+  })
+
   // File the missing task-state detector once. Repeating the known gap on every
   // pass would make a healthy monitor incapable of the silence hooks require.
   const taskDetectorFiled = database.query(
@@ -305,7 +318,7 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
   const finishedAt = nowIso()
   database.query('UPDATE monitor_invocation SET finished_at=?, findings=?, errors=? WHERE id=?')
     .run(finishedAt, conditions.length, errors.length, invocation)
-  return { id: invocation, startedAt, finishedAt, trigger, conditions, errors }
+  return { id: invocation, startedAt, finishedAt, trigger, conditions, errors, canon }
 }
 
 export function monitorHistory(limit = 20): unknown[] {

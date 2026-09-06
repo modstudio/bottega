@@ -16,6 +16,7 @@ import { AGENTS } from './agents.ts'
 import { db, nowIso, sessionId } from './db.ts'
 import { JOBS } from './jobs.ts'
 import { projectAt, projectByName } from './projects.ts'
+import { compileBrief } from './canon.ts'
 
 export { DOC_SCOPES, type DocScope }
 
@@ -26,6 +27,7 @@ export type Doc = {
   slug: string
   title: string
   body: string
+  delivery: 'inject' | 'demand'
   created_at: string
   updated_at: string
 }
@@ -203,6 +205,7 @@ function insertRevision(doc: Doc, op: DocRevisionOp, context: DocWriteContext, a
 
 function setDocWithOp(input: {
   scope: string; subject: string | null; slug: string; title: string; body: string
+  delivery?: 'inject' | 'demand'
 } & DocWriteContext, requestedOp?: 'import'): Doc {
   validate(input.scope, input.subject, input.slug)
   writeIdentity(input)
@@ -211,14 +214,14 @@ function setDocWithOp(input: {
     const at = nowIso()
     let doc: Doc
     if (existing) {
-      db().query('UPDATE doc SET title=?, body=?, updated_at=? WHERE id=?')
-        .run(input.title, input.body, at, existing.id)
+      db().query('UPDATE doc SET title=?, body=?, delivery=?, updated_at=? WHERE id=?')
+        .run(input.title, input.body, input.delivery ?? existing.delivery, at, existing.id)
       doc = getDoc(input.scope, input.subject, input.slug)!
     } else {
       const id = (db().query(
-        `INSERT INTO doc (scope, subject, slug, title, body, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?) RETURNING id`,
-      ).get(input.scope, input.subject, input.slug, input.title, input.body, at, at) as { id: number }).id
+        `INSERT INTO doc (scope, subject, slug, title, body, delivery, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?) RETURNING id`,
+      ).get(input.scope, input.subject, input.slug, input.title, input.body, input.delivery ?? 'inject', at, at) as { id: number }).id
       doc = db().query('SELECT * FROM doc WHERE id=?').get(id) as Doc
     }
     insertRevision(doc, requestedOp ?? (existing ? 'set' : 'create'), input, at)
@@ -228,12 +231,14 @@ function setDocWithOp(input: {
 
 export function setDoc(input: {
   scope: string; subject: string | null; slug: string; title: string; body: string
+  delivery?: 'inject' | 'demand'
 } & DocWriteContext): Doc {
   return setDocWithOp(input)
 }
 
 export function importDoc(input: {
   scope: string; subject: string | null; slug: string; title: string; body: string
+  delivery?: 'inject' | 'demand'
 } & DocWriteContext): Doc {
   return setDocWithOp(input, 'import')
 }
@@ -315,7 +320,7 @@ export function docsForRun(input: { job: string; cwd: string }): InjectedDoc[] {
     ...listDocs({ scope: 'global', subject: null }),
     ...listDocs({ scope: 'job', subject: input.job }),
     ...(project ? listDocs({ scope: 'project', subject: project.name }) : []),
-  ]
+  ].filter((doc) => doc.delivery === 'inject')
   const latest = db().query('SELECT MAX(id) AS id FROM doc_revision WHERE doc_id=?')
   return docs.map((doc) => {
     const revisionId = (latest.get(doc.id) as { id: number | null }).id
@@ -331,11 +336,7 @@ export function docsMarkdown(docs: Doc[]): string {
 }
 
 export function brief(cwd: string): string {
-  const project = projectAt(cwd)
-  return docsMarkdown([
-    ...listDocs({ scope: 'global', subject: null }),
-    ...(project ? listDocs({ scope: 'project', subject: project.name }) : []),
-  ])
+  return compileBrief(cwd).markdown
 }
 
 const RESUME_FRONTMATTER_KEYS = ['status', 'epic', 'project', 'written', 'consumed', 'consumed_by'] as const

@@ -788,7 +788,7 @@ function usage(): never {
       remove <name>
   orch doc list [--scope S] [--subject X] [--json]  (--json: one JSON document)
       show <slug> --scope S [--subject X] [--json]  (--json: one JSON document)
-      set <slug> --scope S [--subject X] --title T --reason TEXT [--author NAME] (--file F | body on stdin) [--json]  (--json: one JSON document)
+      set <slug> --scope S [--subject X] --title T --reason TEXT [--author NAME] [--delivery inject|demand] (--file F | body on stdin) [--json]  (--json: one JSON document)
       consume <slug> --scope S [--subject X] [--reason TEXT] [--author NAME] [--json]  (--json: one JSON document)
       rm <slug> --scope S [--subject X] --reason TEXT [--author NAME] [--json]  (--json: one JSON document)
       history <scope> <subject|-> <slug> [--json]
@@ -806,6 +806,8 @@ function usage(): never {
       compose <slug> [--mode M] [--arg k=v]... [--json]  (--json: one JSON document)
       step <slug> <step-slug> [--arg k=v]... [--json]  (--json: one JSON document)
       export <dir> | import <dir> --reason TEXT [--author NAME]
+  orch canon check [--cwd P] [--job J] [--all] [--json]
+  orch canon diff [--cwd P] [--job J] [--json]
   orch port baseline show <source> <target> [--json]  (--json: one JSON document)
       baseline set <source> <target> <commit> [--clear] [--json]  (--json: one JSON document)
       skip list <source> <target> [--json]  (--json: one JSON document)
@@ -1010,11 +1012,11 @@ switch (cmd) {
       const rows = listDocs({ scope, ...(has('subject') ? { subject } : {}) })
       if (has('json')) { console.log(JSON.stringify(rows)); break }
       if (!rows.length) break
-      console.log('scope    subject          slug                     title                    bytes  updated')
+      console.log('scope    subject          slug                     title                    delivery  bytes  updated')
       for (const d of rows) {
         console.log(
           `${d.scope.padEnd(8)} ${(d.subject ?? '-').padEnd(16)} ${d.slug.padEnd(24)} ` +
-          `${d.title.padEnd(24)} ${String(Buffer.byteLength(d.body)).padStart(6)}  ${d.updated_at}`,
+          `${d.title.padEnd(24)} ${d.delivery.padEnd(8)} ${String(Buffer.byteLength(d.body)).padStart(6)}  ${d.updated_at}`,
         )
       }
       break
@@ -1038,8 +1040,20 @@ switch (cmd) {
       const body = flag('file') ? readFileSync(flag('file')!, 'utf8')
         : !process.stdin.isTTY ? await Bun.stdin.text()
         : (() => { throw new Error('no body: pass --file F or pipe markdown on stdin') })()
-      const doc = setDoc({ scope, subject, slug, title, body, reason, author: flag('author') })
-      console.log(has('json') ? JSON.stringify(doc) : `set ${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`)
+      const delivery = flag('delivery')
+      if (delivery !== undefined && delivery !== 'inject' && delivery !== 'demand') {
+        throw new Error('--delivery must be inject or demand')
+      }
+      const doc = setDoc({ scope, subject, slug, title, body, reason, author: flag('author'),
+        delivery: delivery as 'inject' | 'demand' | undefined })
+      const { checkDoc, repoRootForDoc } = await import('./canon.ts')
+      const root = repoRootForDoc(doc)
+      const warnings = root ? checkDoc(body, { repoRoot: root }) : []
+      if (has('json')) console.log(JSON.stringify({ ...doc, warnings }))
+      else {
+        console.log(`set ${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`)
+        for (const warning of warnings) console.error(`warning: ${warning.message}`)
+      }
       break
     }
     if (sub === 'consume') {
@@ -1129,6 +1143,42 @@ switch (cmd) {
       break
     }
     throw new Error(`unknown: orch doc ${sub}. Try list | show | set | consume | rm | history | diff | restore | subjects | export | import | brief | resumes`)
+  }
+
+  case 'canon': {
+    const { allInjectChecks, compilePack, diffPack, findingsForPack } = await import('./canon.ts')
+    const sub = argv[1]
+    const cwd = flag('cwd') ?? process.cwd()
+    const jobName = flag('job') ?? 'understand'
+    if (sub === 'check') {
+      const pack = compilePack({ job: jobName, cwd })
+      const rows = has('all') ? allInjectChecks() : findingsForPack(pack)
+      const findings = rows.flatMap((row) => row.findings.map((finding) => ({ doc: row.doc, ...finding })))
+      const result = { pack: { job: pack.job, project: pack.project, bytes: pack.bytes,
+        budgetBytes: pack.budgetBytes, sha256: pack.sha256 }, docs: rows, findings }
+      if (has('json')) console.log(JSON.stringify(result))
+      else {
+        console.log(`canon: ${pack.bytes}/${pack.budgetBytes} bytes`)
+        for (const row of rows.filter((row) => row.findings.length)) {
+          console.log(`${row.doc.scope}/${row.doc.subject ?? '_'}/${row.doc.slug} revision ${row.doc.revisionId}`)
+          for (const finding of row.findings) console.log(`  ${finding.kind}: ${finding.message}`)
+        }
+      }
+      if (findings.length) process.exitCode = 1
+      break
+    }
+    if (sub === 'diff') {
+      const result = diffPack({ job: jobName, cwd })
+      if (has('json')) console.log(JSON.stringify(result))
+      else {
+        console.log(`canon ${result.job}/${result.project ?? '_'}: ${result.bytesDelta >= 0 ? '+' : ''}${result.bytesDelta} bytes`)
+        for (const doc of result.added) console.log(`  added ${doc.scope}/${doc.subject ?? '_'}/${doc.slug} revision ${doc.revisionId}`)
+        for (const doc of result.removed) console.log(`  removed ${doc.scope}/${doc.subject ?? '_'}/${doc.slug} revision ${doc.revisionId}`)
+        for (const doc of result.changed) console.log(`  changed ${doc.slug} revision ${doc.fromRevision} -> ${doc.toRevision}`)
+      }
+      break
+    }
+    throw new Error('unknown: orch canon. Try check | diff')
   }
 
   case 'port': {
@@ -2173,13 +2223,16 @@ switch (cmd) {
     }
     const result = await monitor(has('backstop') ? 'backstop' : 'invoked')
     if (has('json')) await writeStdout(`${JSON.stringify(result)}\n`)
-    else if (result.conditions.length || result.errors.length) {
+    else {
+      console.log(`canon: ${result.canon.findings} stale references in ${result.canon.docs} docs`)
+      if (result.conditions.length || result.errors.length) {
       console.log(`monitor ${result.id}: ${result.conditions.length} condition(s), ${result.errors.length} observation error(s)`)
       for (const condition of result.conditions) {
         const old = condition.ageMs == null ? 'age unknown' : `${Math.round(condition.ageMs / 60_000)}m old`
         console.log(`  ${condition.kind}  ${condition.subject}  ${old}\n    ${condition.detail}\n    ${condition.action}${condition.issueKey ? `; ${condition.issueKey}` : ''}`)
       }
       for (const error of result.errors) console.error(`  observation failed: ${error}`)
+      }
     }
     // Branchable by hooks and automation: 0 clean, 2 conditions, 1 incomplete observation.
     if (result.errors.length) process.exitCode = 1
@@ -3716,6 +3769,10 @@ switch (cmd) {
     // status column and the routing table below it cannot contradict
     // each other.
     const r = await ensureLocalHealth()
+    const { compilePack, findingsForPack } = await import('./canon.ts')
+    const doctorPack = compilePack({ job: 'understand', cwd: process.cwd() })
+    const doctorFindings = findingsForPack(doctorPack).reduce((n, row) => n + row.findings.length, 0)
+    console.log(`canon          ${doctorFindings} finding(s) in ${doctorPack.bytes}/${doctorPack.budgetBytes} bytes`)
     console.log('agents')
     for (const a of Object.values(AGENTS)) {
       const cool = candidates('summarize').find((c) => c.agent === a.name)?.cooling

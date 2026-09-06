@@ -14,6 +14,7 @@ import {
   retireDoctrineRule, setBaseline, setLedgerRef,
 } from './porting.ts'
 import { composeWorkflow, getWorkflowStep, listWorkflows } from './workflows.ts'
+import { checkDoc, repoRootForDoc } from './canon.ts'
 
 const text = (value: unknown) => ({
   content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value) }],
@@ -324,12 +325,16 @@ export function createDocsMcpServer(): McpServer {
     inputSchema: {
       scope: z.string(), subject: z.string().nullable().optional(), slug: z.string(),
       title: z.string(), body: z.string(),
+      delivery: z.enum(['inject', 'demand']).optional(),
       reason: z.string({ error: 'reason is required: explain why this operator doc is changing' }).trim()
         .min(1, 'reason is required: explain why this operator doc is changing'),
       author: z.string().trim().min(1).optional(),
     },
-  }, async ({ scope, subject, slug, title, body, reason, author }) =>
-    text(setDoc({ scope, subject: subject ?? null, slug, title, body, reason, author })))
+  }, async ({ scope, subject, slug, title, body, delivery, reason, author }) => {
+    const doc = setDoc({ scope, subject: subject ?? null, slug, title, body, delivery, reason, author })
+    const root = repoRootForDoc(doc)
+    return text({ ...doc, warnings: root ? checkDoc(body, { repoRoot: root }) : [] })
+  })
 
   server.registerTool('consume_doc', {
     description: 'Mark an operator document consumed by rewriting its YAML status/stamps and updated_at.',

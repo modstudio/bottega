@@ -179,6 +179,12 @@ export function applySchema(d: Database): void {
   addColumn(d, 'run', 'schema_path', 'TEXT')
   addColumn(d, 'run', 'docs_injected', 'INTEGER')
   addColumn(d, 'run', 'doc_revisions', 'TEXT')
+  addColumn(d, 'run', 'canon_sha', 'TEXT')
+  const hadDocDelivery = (d.query("PRAGMA table_info('doc')").all() as { name: string }[])
+    .some((column) => column.name === 'delivery')
+  addColumn(d, 'doc', 'delivery', "TEXT NOT NULL DEFAULT 'inject'")
+  if (!hadDocDelivery) d.query(`UPDATE doc SET delivery='demand' WHERE scope='global' AND slug IN
+    ('port-category-map','port-import-exclusions','port-import-source-context','port-ref-metadata','port-state-metadata')`).run()
   // Stable machine identity for findings-producing review jobs. A display label
   // is deliberately not used as a calibration key.
   addColumn(d, 'run', 'lens', 'TEXT')
@@ -308,7 +314,7 @@ function normalizeSql(sql: string): string {
 
 function schemaVersion(): string {
   return createHash('sha256')
-    .update([RUN_DDL, SCORE_DDL, DOC_DDL, DOC_REVISION_DDL, REVIEW_LENS_DDL, LANDING_OVERRIDE_DDL]
+    .update([RUN_DDL, SCORE_DDL, DOC_DDL, DOC_REVISION_DDL, CANON_PACK_DDL, REVIEW_LENS_DDL, LANDING_OVERRIDE_DDL]
       .map(normalizeSql).join('\n'))
     .digest('hex')
 }
@@ -518,7 +524,8 @@ const RUN_DDL = `CREATE TABLE run (
       mcp_error     TEXT,
       schema_path   TEXT,
       docs_injected INTEGER,
-      doc_revisions TEXT
+      doc_revisions TEXT,
+      canon_sha     TEXT
     )`
 
 const REVIEW_LENS_DDL = `CREATE TABLE review_lens (
@@ -609,11 +616,25 @@ const DOC_DDL = `CREATE TABLE doc (
                  ),
       title      TEXT NOT NULL,
       body       TEXT NOT NULL,
+      delivery   TEXT NOT NULL DEFAULT 'inject' CHECK (delivery IN ('inject','demand')),
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       CHECK ((scope IN (${DOC_SUBJECTLESS_SCOPE_SQL}) AND subject IS NULL) OR
              (scope IN (${DOC_SUBJECT_SCOPE_SQL}) AND subject IS NOT NULL)),
       UNIQUE(scope, subject, slug)
+    )`
+
+const CANON_PACK_DDL = `CREATE TABLE canon_pack (
+      id            INTEGER PRIMARY KEY,
+      job           TEXT NOT NULL,
+      project       TEXT,
+      sha256        TEXT NOT NULL,
+      bytes         INTEGER NOT NULL,
+      doc_count     INTEGER NOT NULL,
+      doc_revisions TEXT NOT NULL,
+      compiled_at   TEXT NOT NULL,
+      findings      INTEGER NOT NULL,
+      UNIQUE(job, project)
     )`
 
 const DOC_REVISION_DDL = `CREATE TABLE doc_revision (
@@ -646,6 +667,7 @@ function migrate(d: Database) {
   d.exec(createIfNotExists(SCORE_DDL))
   d.exec(createIfNotExists(DOC_DDL))
   d.exec(createIfNotExists(DOC_REVISION_DDL))
+  d.exec(createIfNotExists(CANON_PACK_DDL))
   d.exec(createIfNotExists(LANDING_OVERRIDE_DDL))
   d.exec(`
     -- The ratio this whole layer exists to move: Claude tokens spent per unit of
@@ -702,6 +724,7 @@ function migrate(d: Database) {
     CREATE INDEX IF NOT EXISTS doc_scope_subject ON doc(scope, subject);
     CREATE INDEX IF NOT EXISTS doc_revision_doc ON doc_revision(doc_id, id);
     CREATE INDEX IF NOT EXISTS doc_revision_address ON doc_revision(scope, subject, slug, id);
+    CREATE UNIQUE INDEX IF NOT EXISTS canon_pack_address ON canon_pack(job, COALESCE(project, ''));
   `)
 
   const duplicateAddresses = d.query(

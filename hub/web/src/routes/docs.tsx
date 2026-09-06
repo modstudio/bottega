@@ -56,6 +56,7 @@ function DocsList() {
   const [subject, setSubject] = useState('')
   const [slug, setSlug] = useState('')
   const [title, setTitle] = useState('')
+  const [delivery, setDelivery] = useState<'inject' | 'demand'>('inject')
 
   const create = useMutation({
     ...trpc.doc.set.mutationOptions(),
@@ -106,6 +107,7 @@ function DocsList() {
       title,
       body: '',
       reason: 'created from hub',
+      delivery,
     })
   }
 
@@ -116,6 +118,7 @@ function DocsList() {
           setSubject('')
           setSlug('')
           setTitle('')
+          setDelivery('inject')
           create.reset()
           setCreating(true)
         }}>
@@ -149,6 +152,7 @@ function DocsList() {
                 <TableHead className="h-9 px-3">Subject</TableHead>
                 <TableHead className="h-9 px-3">Slug</TableHead>
                 <TableHead className="h-9 px-3">Title</TableHead>
+                <TableHead className="h-9 px-3">Delivery</TableHead>
                 <TableHead className="num">Size</TableHead>
                 <TableHead className="h-9 px-3">Updated</TableHead>
                 <TableHead />
@@ -164,6 +168,7 @@ function DocsList() {
                   <TableCell className="px-3 py-2 text-muted-foreground">{doc.subject ?? '-'}</TableCell>
                   <TableCell className="max-w-48 truncate font-semibold" title={doc.slug}><Link className="row-link" to="/docs/$scope/$subject/$slug" params={{ scope: doc.scope, subject: doc.subject ?? '_', slug: doc.slug }}>{doc.slug}</Link></TableCell>
                   <TableCell className="px-3 py-2">{doc.title}</TableCell>
+                  <TableCell className="px-3 py-2">{doc.delivery}</TableCell>
                   <TableCell className="num">{compactBytes(bodyBytes(doc.body))}</TableCell>
                   <TableCell className="text-muted-foreground">{relativeTime(doc.updated_at)}</TableCell>
                   <TableCell><ChevronRight size={14} className="text-muted-foreground" /></TableCell>
@@ -213,6 +218,14 @@ function DocsList() {
           <label className="block text-sm">
             <span className="text-muted-foreground">Title</span>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} />
+          </label>
+          <label className="block text-sm">
+            <span className="text-muted-foreground">Delivery</span>
+            <select className={selectClass} value={delivery}
+              onChange={(e) => setDelivery(e.target.value as 'inject' | 'demand')}>
+              <option value="inject">inject</option>
+              <option value="demand">demand</option>
+            </select>
           </label>
           {create.error ? <p className="text-destructive">{create.error.message}</p> : null}
           <DialogFooter>

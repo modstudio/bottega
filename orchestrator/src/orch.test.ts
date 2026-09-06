@@ -749,6 +749,7 @@ const removeDoc = (
 const importDocs = (dir: string, context = { reason: 'test import' }) => readDocs(dir, context)
 const { createDocsMcpServer, fileIssue, duplicateCandidates } = await import('./mcp.ts')
 const { setWorkflow, promoteWorkflow } = await import('./workflows.ts')
+const { compilePack, compileBrief, checkDoc, CanonBudgetError, recordPack, diffPack } = await import('./canon.ts')
 const { deadRunningProcessConditions, reconcileHub, monitorHistory } = await import('./monitor.ts')
 const { listPairs, addPair, baselineForPair, setBaseline, listSkips, addSkip,
         setLedgerRef, ledgerRef, listLedgerRefs, resolveLedgerRef,
@@ -964,7 +965,7 @@ beforeEach(() => {
   // question cascades from run, but the delete order still matters: it is
   // listed first so a future FK-enforcing change cannot make this fail
   // mysteriously halfway through a suite.
-  db().exec('DELETE FROM monitor_condition; DELETE FROM monitor_invocation; DELETE FROM landing_override; DELETE FROM review_finding; DELETE FROM review_lens; DELETE FROM review; DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc_revision; DELETE FROM doc; DELETE FROM run_message; DELETE FROM question; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
+  db().exec('DELETE FROM canon_pack; DELETE FROM monitor_condition; DELETE FROM monitor_invocation; DELETE FROM landing_override; DELETE FROM review_finding; DELETE FROM review_lens; DELETE FROM review; DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc_revision; DELETE FROM doc; DELETE FROM run_message; DELETE FROM question; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
 })
 
 afterAll(() => {
@@ -11210,6 +11211,9 @@ describe('canonical schema rebuild', () => {
     expect(tableSql(d, 'doc')).toContain("'resume'")
     expect(cols(d, 'doc_revision')).toContain('reason')
     expect(cols(d, 'run')).toContain('doc_revisions')
+    expect(cols(d, 'run')).toContain('canon_sha')
+    expect(cols(d, 'doc')).toContain('delivery')
+    expect(cols(d, 'canon_pack')).toContain('doc_revisions')
     expect(d.query('SELECT doc_id, op, author, reason FROM doc_revision ORDER BY doc_id').all()).toEqual([
       { doc_id: 1, op: 'backfill', author: 'migration', reason: 'state at DEV-256 migration' },
       { doc_id: 2, op: 'backfill', author: 'migration', reason: 'state at DEV-256 migration' },
@@ -11226,8 +11230,8 @@ describe('canonical schema rebuild', () => {
   test('doc address index rejects NULL-subject duplicates and migration names existing ids', () => {
     const direct = new Database(':memory:')
     applySchema(direct)
-    direct.exec(`INSERT INTO doc VALUES (1, 'global', NULL, 'hello', 'T', 'B', 't', 't')`)
-    expect(() => direct.exec(`INSERT INTO doc VALUES (2, 'global', NULL, 'hello', 'T', 'B', 't', 't')`)).toThrow()
+    direct.exec(`INSERT INTO doc VALUES (1, 'global', NULL, 'hello', 'T', 'B', 'inject', 't', 't')`)
+    expect(() => direct.exec(`INSERT INTO doc VALUES (2, 'global', NULL, 'hello', 'T', 'B', 'inject', 't', 't')`)).toThrow()
     direct.close()
 
     const legacy = new Database(':memory:')
@@ -11237,6 +11241,21 @@ describe('canonical schema rebuild', () => {
       INSERT INTO doc VALUES (9, 'global', NULL, 'hello', 'T', 'B', 't', 't');
     `)
     expect(() => applySchema(legacy)).toThrow('conflicting doc ids: 7,9')
+    legacy.close()
+  })
+
+  test('delivery migration marks only the five importer metadata slugs demand', () => {
+    const legacy = new Database(':memory:')
+    legacy.exec(OLD_DOC_DDL)
+    const insert = legacy.query(`INSERT INTO doc
+      (scope,subject,slug,title,body,created_at,updated_at) VALUES ('global',NULL,?,'T','B','t','t')`)
+    for (const slug of ['port-category-map', 'port-import-exclusions', 'port-import-source-context',
+      'port-ref-metadata', 'port-state-metadata', 'ordinary']) insert.run(slug)
+    applySchema(legacy)
+    expect(legacy.query("SELECT slug FROM doc WHERE delivery='demand' ORDER BY slug").all())
+      .toEqual(['port-category-map', 'port-import-exclusions', 'port-import-source-context',
+        'port-ref-metadata', 'port-state-metadata'].map((slug) => ({ slug })))
+    expect(legacy.query("SELECT delivery FROM doc WHERE slug='ordinary'").get()).toEqual({ delivery: 'inject' })
     legacy.close()
   })
 
@@ -11407,6 +11426,86 @@ describe('scoped operator docs', () => {
       .toEqual(['Global', 'Job', 'Project'])
   })
 
+  test('delivery is round-tripped and demand docs never enter a compiled pack', () => {
+    upsertProject({ name: 'known', path: dir, stack: null, canon: true, settings: {} })
+    setDoc({ scope: 'global', subject: null, slug: 'injected', title: 'Injected', body: 'é' })
+    setDoc({ scope: 'global', subject: null, slug: 'demand', title: 'Demand', body: 'large', delivery: 'demand' })
+    setDoc({ scope: 'job', subject: 'understand', slug: 'job', title: 'Job', body: 'J' })
+    setDoc({ scope: 'project', subject: 'known', slug: 'project', title: 'Project', body: 'P' })
+    const pack = compilePack({ job: 'understand', cwd: dir })
+    expect(pack.docs.map((doc) => doc.title)).toEqual(['Injected', 'Job', 'Project'])
+    expect(pack.docs.every((doc) => doc.revisionId > 0)).toBe(true)
+    expect(pack.bytes).toBe(Buffer.byteLength(pack.markdown))
+    expect(pack.sha256).toHaveLength(64)
+    expect(getDoc('global', null, 'demand')?.delivery).toBe('demand')
+    expect(docsForRun({ job: 'understand', cwd: dir }).map((doc) => doc.slug)).not.toContain('demand')
+  })
+
+  test('budget refusal lists every document largest-first and run records harness before spawn', async () => {
+    setDoc({ scope: 'global', subject: null, slug: 'small', title: 'Small', body: 'x' })
+    setDoc({ scope: 'global', subject: null, slug: 'large', title: 'Large', body: 'x'.repeat(80) })
+    const old = JOBS.understand!.packBytes
+    const oldDepth = process.env.ORCH_DEPTH
+    JOBS.understand!.packBytes = 32
+    process.env.ORCH_DEPTH = '0'
+    try {
+      expect(() => compilePack({ job: 'understand', cwd: dir })).toThrow(CanonBudgetError)
+      let message = ''
+      try { await runJob({ job: 'understand', prompt: 'never spawned', cwd: dir, agent: 'codex' }) }
+      catch (cause) { message = (cause as Error).message }
+      expect(message).toContain('global/_/large')
+      expect(message.indexOf('global/_/large')).toBeLessThan(message.indexOf('global/_/small'))
+      const row = db().query('SELECT status,failure_kind,error FROM run ORDER BY id DESC LIMIT 1').get() as any
+      expect(row).toMatchObject({ status: 'failed', failure_kind: 'harness' })
+      expect(row.error).toContain('mark a document demand')
+    } finally {
+      JOBS.understand!.packBytes = old
+      if (oldDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = oldDepth
+    }
+  })
+
+  test('brief has its own 64 KiB refusal', () => {
+    setDoc({ scope: 'global', subject: null, slug: 'too-big', title: 'Large', body: 'x'.repeat(70 * 1024) })
+    expect(() => compileBrief(dir)).toThrow(CanonBudgetError)
+  })
+
+  test('checkDoc validates tracked paths, commands, jobs and scripts from backticked tokens', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'canon-check-'))
+    try {
+      mkdirSync(join(repo, 'scripts'))
+      writeFileSync(join(repo, 'scripts', 'tracked.ts'), '')
+      writeFileSync(join(repo, 'scripts', 'present.ts'), '')
+      writeFileSync(join(repo, 'package.json'), JSON.stringify({ scripts: { check: 'true' } }))
+      Bun.spawnSync(['git', 'init'], { cwd: repo })
+      Bun.spawnSync(['git', 'add', 'scripts/tracked.ts', 'package.json'], { cwd: repo })
+      const findings = checkDoc([
+        '`scripts/tracked.ts` `scripts/present.ts` `scripts/<x>.ts` `dist/generated.js`',
+        '`orch doc` `orch nosuch` `orch do understand` `orch do fake-job`',
+        '`bun run check` `bun run nosuch`',
+      ].join('\n'), { repoRoot: repo })
+      expect(findings.map((finding) => [finding.kind, finding.token])).toEqual([
+        ['path', 'scripts/present.ts'], ['orch-command', 'orch nosuch'],
+        ['job', 'orch do fake-job'], ['bun-script', 'bun run nosuch'],
+      ])
+      expect(checkDoc('body', { repoRoot: join(repo, 'missing') })[0]?.kind).toBe('unchecked')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('canon pack upsert and diff retain removed docs, revisions, and byte delta', () => {
+    setDoc({ scope: 'global', subject: null, slug: 'one', title: 'One', body: 'one' })
+    setDoc({ scope: 'global', subject: null, slug: 'two', title: 'Two', body: 'two' })
+    recordPack(compilePack({ job: 'understand', cwd: dir }))
+    removeDoc('global', null, 'two')
+    setDoc({ scope: 'global', subject: null, slug: 'one', title: 'One', body: 'changed' })
+    const diff = diffPack({ job: 'understand', cwd: dir })
+    expect(diff.removed.map((doc) => doc.slug)).toEqual(['two'])
+    expect(diff.changed[0]).toMatchObject({ fromRevision: expect.any(Number), toRevision: expect.any(Number) })
+    expect(diff.bytesDelta).not.toBe(0)
+    recordPack(diff.current)
+    expect(db().query('SELECT COUNT(*) n FROM canon_pack').get()).toEqual({ n: 1 })
+  })
+
   test('docsForRun refuses a document whose provenance was bypassed', () => {
     db().query(
       `INSERT INTO doc (scope, subject, slug, title, body, created_at, updated_at)
@@ -11459,6 +11558,39 @@ describe('scoped operator docs', () => {
     expect(brief('/w/known/src')).toBe('## Global\n\nG\n\n## Project\n\nP')
   })
 
+  test('doc CLI delivery round-trips and validation warnings do not refuse the write', () => {
+    const CLI = new URL('cli.ts', import.meta.url).pathname
+    const p = Bun.spawnSync([process.execPath, CLI, 'doc', 'set', 'cli-demand', '--scope', 'global',
+      '--title', 'CLI', '--delivery', 'demand', '--reason', 'test', '--json'], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+      stdin: new TextEncoder().encode('`orch nosuch`'), stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(p.exitCode).toBe(0)
+    const result = JSON.parse(p.stdout.toString())
+    expect(result).toMatchObject({ delivery: 'demand', warnings: [{ kind: 'orch-command' }] })
+    expect(getDoc('global', null, 'cli-demand')?.body).toBe('`orch nosuch`')
+  })
+
+  test('canon check publishes JSON and exits one only when findings exist', () => {
+    const CLI = new URL('cli.ts', import.meta.url).pathname
+    const invoke = () => Bun.spawnSync([process.execPath, CLI, 'canon', 'check', '--cwd', dir,
+      '--job', 'understand', '--json'], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    setDoc({ scope: 'global', subject: null, slug: 'bad', title: 'Bad', body: '`orch nosuch`' })
+    const bad = invoke()
+    expect(bad.exitCode).toBe(1)
+    expect(JSON.parse(bad.stdout.toString())).toMatchObject({
+      pack: { job: 'understand', bytes: expect.any(Number), budgetBytes: 96 * 1024 },
+      findings: [{ kind: 'orch-command', token: 'orch nosuch' }],
+    })
+    setDoc({ scope: 'global', subject: null, slug: 'bad', title: 'Good', body: '`orch doc`' })
+    const good = invoke()
+    expect(good.exitCode).toBe(0)
+    expect(JSON.parse(good.stdout.toString()).findings).toEqual([])
+  })
+
   test('first-turn bound prompts inject docs and count them; resumes do neither', async () => {
     upsertProject({ name: 'known', path: dir, stack: null, canon: true, settings: {} })
     setDoc({ scope: 'global', subject: null, slug: 'g', title: 'Global', body: 'G' })
@@ -11478,14 +11610,17 @@ describe('scoped operator docs', () => {
     process.env.ORCH_DEPTH = '0'
     try {
       const first = await runJob({ job: 'file-question', prompt: 'FIRST SPEC', cwd: dir, agent: 'codex' })
-      const firstRow = db().query('SELECT prompt_path, docs_injected, doc_revisions FROM run WHERE id=?').get(first.id) as
-        { prompt_path: string; docs_injected: number; doc_revisions: string }
+      const firstRow = db().query('SELECT prompt_path, docs_injected, doc_revisions, canon_sha FROM run WHERE id=?').get(first.id) as
+        { prompt_path: string; docs_injected: number; doc_revisions: string; canon_sha: string }
       const bound = readFileSync(firstRow.prompt_path.replace(/\.prompt\.txt$/, '.bound.txt'), 'utf8')
       expect(bound).toContain('WHAT THE OPERATOR WANTS YOU TO KNOW\n\n## Global\n\nG\n\n## Job\n\nJ\n\n## Project\n\nP')
       expect(firstRow.docs_injected).toBe(3)
       expect(JSON.parse(firstRow.doc_revisions)).toEqual(
         docsForRun({ job: 'file-question', cwd: dir }).map((doc) => doc.revision_id),
       )
+      expect(firstRow.canon_sha).toHaveLength(64)
+      expect(db().query('SELECT sha256,doc_count FROM canon_pack WHERE job=?').get('file-question'))
+        .toEqual({ sha256: firstRow.canon_sha, doc_count: 3 })
       db().query('UPDATE run SET vendor_session=? WHERE id=?').run('docs-session', first.id)
       const resumed = await runJob({
         job: 'file-question', prompt: 'RULING', cwd: dir,
@@ -11528,7 +11663,8 @@ describe('scoped operator docs', () => {
       })
       const set = await client.callTool({
         name: 'set_doc', arguments: {
-          scope: 'global', slug: 'mcp-set', title: 'Set', body: 'state', reason: 'MCP round trip',
+          scope: 'global', slug: 'mcp-set', title: 'Set', body: '`orch nosuch`',
+          delivery: 'demand', reason: 'MCP round trip',
         },
       })
       const setRow = JSON.parse(((set as any).content[0] as { text: string }).text)
@@ -11554,9 +11690,11 @@ describe('scoped operator docs', () => {
       expect(getDoc('global', null, 'mcp-consume')?.body).toContain('status: consumed')
       expect(missingReason.isError).toBe(true)
       expect(((missingReason as any).content[0] as { text: string }).text).toContain('reason')
-      expect(setRow.body).toBe('state')
+      expect(setRow.body).toBe('`orch nosuch`')
+      expect(setRow.delivery).toBe('demand')
+      expect(setRow.warnings[0]).toMatchObject({ kind: 'orch-command' })
       expect(revisionRows[0]).toMatchObject({ op: 'create', author: expect.any(String), reason: 'MCP round trip' })
-      expect(JSON.parse(((revision as any).content[0] as { text: string }).text).body).toBe('state')
+      expect(JSON.parse(((revision as any).content[0] as { text: string }).text).body).toBe('`orch nosuch`')
     } finally {
       await client.close()
       await server.close()
@@ -12249,6 +12387,16 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
       )
       expect(out.systemMessage).toBeUndefined()
     }
+  })
+
+  test('a refused operator brief is fail-open and visible in systemMessage', () => {
+    setDoc({ scope: 'global', subject: null, slug: 'oversize', title: 'Oversize', body: 'x'.repeat(70 * 1024) })
+    const p = runBrief({ cwd: dir, source: 'startup', session_id: 'sid-budget' })
+    expect(p.exitCode).toBe(0)
+    const out = hookOutput(p)
+    expect(out.systemMessage).toStartWith('operator brief refused: canon pack is ')
+    expect(out.hookSpecificOutput.additionalContext).toContain('Arm under Monitor:')
+    expect(out.hookSpecificOutput.additionalContext).not.toContain('x'.repeat(100))
   })
 
   test('malformed stdin exits zero and prints nothing', () => {

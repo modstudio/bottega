@@ -52,7 +52,7 @@ export function seedGuidance(seeds: string[]): string {
 }
 
 /** Every word the human-facing CLI understands. */
-function commandShape(argv: string[]): { args: string[]; shape: CommandShape } | null {
+export function commandShape(argv: string[]): { args: string[]; shape: CommandShape } | null {
   const command = argv[0]
   const sub = argv[1]
   switch (command) {
@@ -67,7 +67,7 @@ function commandShape(argv: string[]): { args: string[]; shape: CommandShape } |
       const forms: Record<string, CommandShape> = {
         list: shape('orch doc list [--scope S] [--subject X] [--json]', 0, ['--scope', '--subject'], ['--json']),
         show: shape('orch doc show <slug> --scope S [--subject X] [--json]', 1, ['--scope', '--subject'], ['--json']),
-        set: shape('orch doc set <slug> --scope S [--subject X] --title T --reason TEXT [--author NAME] (--file F | body on stdin) [--json]', 1, ['--scope', '--subject', '--title', '--file', '--reason', '--author'], ['--json']),
+        set: shape('orch doc set <slug> --scope S [--subject X] --title T --reason TEXT [--author NAME] [--delivery inject|demand] (--file F | body on stdin) [--json]', 1, ['--scope', '--subject', '--title', '--file', '--reason', '--author', '--delivery'], ['--json']),
         consume: shape('orch doc consume <slug> --scope S [--subject X] [--reason TEXT] [--author NAME] [--json]', 1, ['--scope', '--subject', '--reason', '--author'], ['--json']),
         rm: shape('orch doc rm <slug> --scope S [--subject X] --reason TEXT [--author NAME] [--json]', 1, ['--scope', '--subject', '--reason', '--author'], ['--json']),
         history: shape('orch doc history <scope> <subject|-> <slug> [--json]', 3, [], ['--json']),
@@ -77,6 +77,14 @@ function commandShape(argv: string[]): { args: string[]; shape: CommandShape } |
         export: shape('orch doc export <dir>', 1), import: shape('orch doc import <dir> --reason TEXT [--author NAME]', 1, ['--reason', '--author']),
         brief: shape('orch doc brief [--cwd P]', 0, ['--cwd']),
         resumes: shape('orch doc resumes [--cwd P]', 0, ['--cwd']),
+      }
+      if (!sub || !forms[sub]) return null
+      return { args: argv.slice(2), shape: forms[sub] }
+    }
+    case 'canon': {
+      const forms: Record<string, CommandShape> = {
+        check: shape('orch canon check [--cwd P] [--job J] [--all] [--json]', 0, ['--cwd', '--job'], ['--all', '--json']),
+        diff: shape('orch canon diff [--cwd P] [--job J] [--json]', 0, ['--cwd', '--job'], ['--json']),
       }
       if (!sub || !forms[sub]) return null
       return { args: argv.slice(2), shape: forms[sub] }
@@ -201,6 +209,13 @@ function commandShape(argv: string[]): { args: string[]; shape: CommandShape } |
     case 'agents': return { args: argv.slice(1), shape: shape('orch agents', 0) }
     default: return null
   }
+}
+
+/** Ask the parser itself whether a top-level word has any accepted command shape. */
+export function isCliCommand(name: string): boolean {
+  return [
+    [name], [name, 'list'], [name, 'baseline', 'show'],
+  ].some((argv) => commandShape(argv) !== null)
 }
 
 export function validateCliArgs(argv: string[]): void {

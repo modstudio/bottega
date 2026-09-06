@@ -33,6 +33,7 @@ export const docRouter = t.router({
     .input(z.object({
       scope, subject, slug: z.string(), title: z.string(), body: z.string(),
       reason: z.string().trim().min(1, 'Reason is required'),
+      delivery: z.enum(['inject', 'demand']).optional(),
     }))
     .mutation(({ input }) => fromOrch(() => docSet(input))),
   remove: t.procedure

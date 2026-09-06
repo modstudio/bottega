@@ -22,6 +22,8 @@ export type Job = {
    * observed so far are 64K-and-fails and no-ceiling-and-works.
    */
   contextTokens: number
+  /** Maximum UTF-8 bytes of compiled operator canon injected into a first turn. */
+  packBytes?: number
   /**
    * How long THIS job may take, overriding the agent's own bound.
    *
@@ -39,6 +41,8 @@ export type Job = {
   /** This job returns independently triageable review findings. */
   findings?: boolean
 }
+
+export const DEFAULT_PACK_BYTES = 96 * 1024
 
 /**
  * A short bounded errand: one question, a handful of files, an answer.
@@ -242,6 +246,7 @@ export const JOBS: Record<string, Job> = {
  * should fail like one.
  */
 for (const [jobName, j] of Object.entries(JOBS)) {
+  j.packBytes ??= DEFAULT_PACK_BYTES
   for (const agent of j.prefer) {
     if (!(agent in AGENTS)) {
       throw new Error(

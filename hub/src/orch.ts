@@ -163,6 +163,7 @@ export type DocRow = {
   slug: string
   title: string
   body: string
+  delivery: 'inject' | 'demand'
   created_at: string
   updated_at: string
 }
@@ -185,6 +186,7 @@ export type DocSetInput = {
   title: string
   body: string
   reason: string
+  delivery?: 'inject' | 'demand'
 }
 
 export type DocRevisionMetadata = {
@@ -203,6 +205,7 @@ export type DocArgvInput = {
   title?: string
   body?: string
   reason?: string
+  delivery?: 'inject' | 'demand'
 }
 
 export type DocOp = 'list' | 'get' | 'set' | 'remove' | 'history' | 'subjects'
@@ -232,6 +235,7 @@ export function docArgv(op: DocOp, input: DocArgvInput = {}): string[] {
         ...subjectFlags(input.subject),
         '--title', input.title!,
         '--reason', input.reason!, '--author', 'hub-dashboard',
+        ...(input.delivery ? ['--delivery', input.delivery] : []),
         '--json',
       ]
     case 'remove':

@@ -50,6 +50,7 @@ function DocPage() {
   const [editing, setEditing] = useState(Boolean(edit))
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
+  const [delivery, setDelivery] = useState<'inject' | 'demand'>('inject')
   const [reason, setReason] = useState('')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
 
@@ -61,6 +62,7 @@ function DocPage() {
     if (doc.data) {
       setTitle(doc.data.title)
       setBody(doc.data.body)
+      setDelivery(doc.data.delivery)
     }
   }, [doc.data])
 
@@ -92,6 +94,7 @@ function DocPage() {
     if (doc.data) {
       setTitle(doc.data.title)
       setBody(doc.data.body)
+      setDelivery(doc.data.delivery)
     }
     setEditing(false)
     setReason('')
@@ -127,7 +130,7 @@ function DocPage() {
             /> : (doc.data?.title ?? slug)} subtitle={`${scope} \u00b7 ${subject ?? slug}`} actions={
         <div className="flex shrink-0 gap-2">
           {(editing || confirmingDelete) ? <Input aria-label="Reason" placeholder="Reason (required)" value={reason} onChange={(e) => setReason(e.target.value)} className="w-52" /> : null}
-          {editing ? <><Button size="sm" onClick={() => save.mutate({ scope, subject, slug, title, body, reason })} disabled={save.isPending || !title || !reason.trim()}><Save size={14} />Save</Button><Button size="sm" variant="outline" onClick={cancelEdit}><X size={14} />Cancel</Button></> : <Button size="sm" variant="outline" onClick={() => { setConfirmingDelete(false); setReason(''); setEditing(true) }} disabled={!doc.data}><Pencil size={14} />Edit</Button>}
+          {editing ? <><Button size="sm" onClick={() => save.mutate({ scope, subject, slug, title, body, delivery, reason })} disabled={save.isPending || !title || !reason.trim()}><Save size={14} />Save</Button><Button size="sm" variant="outline" onClick={cancelEdit}><X size={14} />Cancel</Button></> : <Button size="sm" variant="outline" onClick={() => { setConfirmingDelete(false); setReason(''); setEditing(true) }} disabled={!doc.data}><Pencil size={14} />Edit</Button>}
           <Button size="sm" variant="destructive" onClick={onDelete} disabled={remove.isPending || !doc.data || (confirmingDelete && !reason.trim())}><Trash2 size={14} />{confirmingDelete ? 'Confirm delete' : 'Delete'}</Button>
         </div>} />
       {doc.isPending ? <p className="text-muted-foreground">Loading doc...</p> : null}
@@ -136,7 +139,15 @@ function DocPage() {
       {remove.error ? <p className="text-destructive">{remove.error.message}</p> : null}
 
       {doc.data && editing ? (
-        <div className="grid grid-cols-2 gap-0 border border-border">
+        <div>
+          <label className="mb-3 block max-w-xs text-sm">
+            <span className="text-muted-foreground">Delivery</span>
+            <select className="flex h-10 w-full border border-input bg-background px-3 py-2 text-sm focus-visible:ring-2 focus-visible:ring-ring"
+              value={delivery} onChange={(e) => setDelivery(e.target.value as 'inject' | 'demand')}>
+              <option value="inject">inject</option><option value="demand">demand</option>
+            </select>
+          </label>
+          <div className="grid grid-cols-2 gap-0 border border-border">
           <Textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
@@ -144,6 +155,7 @@ function DocPage() {
           />
           <div className="min-h-[60vh] overflow-auto p-3">
             <Markdown content={body} />
+          </div>
           </div>
         </div>
       ) : null}
