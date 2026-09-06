@@ -424,7 +424,7 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
     case 'routing-backtest': return { args: argv.slice(1), shape: shape('orch routing-backtest [--job X] [--seed N] [--json]', 0, ['--job', '--seed'], ['--json']) }
     case 'runs': return { args: argv.slice(1), shape: shape('orch runs [--id ID]... [--job X] [--agent Y] [--limit N] [--unscored] [--since ISO] [--json]', 0, ['--id', '--job', '--agent', '--limit', '--since'], ['--unscored', '--json']) }
     case 'guide': return { args: argv.slice(1), shape: shape(
-      'orch guide [--job X] [--prompt-bytes N]', 0, ['--job', '--prompt-bytes'],
+      'orch guide [--job X] [--prompt-bytes N] [--lens LENS]', 0, ['--job', '--prompt-bytes', '--lens'],
     ) }
     case 'spawns': return { args: argv.slice(1), shape: shape('orch spawns [--limit N]', 0, ['--limit']) }
     case 'stats': return { args: argv.slice(1), shape: shape('orch stats [--job X]', 0, ['--job']) }

@@ -19433,6 +19433,96 @@ describe('routing narrows to a stack only when that buys a comparison', () => {
   })
 })
 
+describe('findings routing narrows to a lens only when that buys a comparison', () => {
+  const judgedLensRun = (
+    agent: string, lens: string, quality: 'wrong' | 'mixed' | 'right', recorded = true,
+  ) => {
+    const runId = addRun({ agent, job: 'review-lens', lens })
+    if (recorded) recordReview(runId, reviewReply(0))
+    score(runId, 'full', quality)
+    return runId
+  }
+
+  test('two proven lens cells can route the same job to different agents', () => {
+    for (let i = 0; i < MIN_SAMPLE; i++) {
+      judgedLensRun('codex', 'correctness', 'right')
+      judgedLensRun('grok', 'correctness', 'wrong')
+      judgedLensRun('codex', 'migration-safety', 'wrong')
+      judgedLensRun('grok', 'migration-safety', 'right')
+    }
+    const correctness = pick('review-lens', undefined, 0, false, null, {}, false, 'correctness')
+    const migration = pick('review-lens', undefined, 0, false, null, {}, false, 'migration-safety')
+    expect(correctness.agent).toBe('codex')
+    expect(correctness.reason).toContain('lens correctness cell')
+    expect(migration.agent).toBe('grok')
+    expect(migration.reason).toContain('lens migration-safety cell')
+
+    const cli = new URL('cli.ts', import.meta.url).pathname
+    const correctnessCli = Bun.spawnSync(
+      [process.execPath, cli, 'pick', 'review-lens', '--lens', 'correctness'],
+      { env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe' },
+    )
+    const migrationCli = Bun.spawnSync(
+      [process.execPath, cli, 'pick', 'review-lens', '--lens', 'migration-safety'],
+      { env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe' },
+    )
+    expect(correctnessCli.exitCode).toBe(0)
+    expect(correctnessCli.stdout.toString()).toContain('review-lens -> codex')
+    expect(correctnessCli.stdout.toString()).toContain('deciding cell: lens correctness')
+    expect(migrationCli.exitCode).toBe(0)
+    expect(migrationCli.stdout.toString()).toContain('review-lens -> grok')
+    expect(migrationCli.stdout.toString()).toContain('deciding cell: lens migration-safety')
+  })
+
+  test('one proven agent on a lens backs off to the job-wide cell', () => {
+    for (let i = 0; i < MIN_SAMPLE; i++) {
+      judgedLensRun('codex', 'correctness', 'wrong')
+      judgedLensRun('grok', 'unrecorded', 'right', false)
+    }
+    const ev = evidenceFor('review-lens', 0, null, undefined, 'correctness')
+    expect(ev.level).toBe('job')
+    expect(ev.scoped!.find((candidate) => candidate.agent === 'codex')!.evidence).toBe(MIN_SAMPLE)
+    const routed = pick('review-lens', undefined, 0, false, null, {}, false, 'correctness')
+    expect(routed.agent).toBe('grok')
+    expect(routed.reason).toContain('job-wide cell')
+  })
+
+  test('a scored run without a recorded review lens contributes only job-wide', () => {
+    judgedLensRun('codex', 'correctness', 'right', false)
+    const ev = evidenceFor('review-lens', 0, null, undefined, 'correctness')
+    expect(ev.job.find((candidate) => candidate.agent === 'codex')!.evidence).toBe(1)
+    expect(ev.scoped!.find((candidate) => candidate.agent === 'codex')!.evidence).toBe(0)
+  })
+
+  test('guide names the deciding cell and reports lens and job-wide counts', () => {
+    for (let i = 0; i < MIN_SAMPLE; i++) {
+      judgedLensRun('codex', 'correctness', 'right')
+      judgedLensRun('grok', 'correctness', 'mixed')
+    }
+    const row = guide('review-lens', 0, 'correctness')[0]!
+    expect(row.reason).toContain('lens correctness cell')
+    expect(row.evidenceCells).toEqual([
+      { name: 'lens correctness', counts: expect.arrayContaining([
+        { agent: 'codex', evidence: MIN_SAMPLE }, { agent: 'grok', evidence: MIN_SAMPLE },
+      ]) },
+      { name: 'job-wide', counts: expect.arrayContaining([
+        { agent: 'codex', evidence: MIN_SAMPLE }, { agent: 'grok', evidence: MIN_SAMPLE },
+      ]) },
+    ])
+    const cli = Bun.spawnSync([
+      process.execPath, new URL('cli.ts', import.meta.url).pathname,
+      'guide', '--job', 'review-lens', '--prompt-bytes', '0', '--lens', 'correctness',
+    ], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(cli.exitCode).toBe(0)
+    expect(cli.stdout.toString()).toContain('evidence lens correctness: codex=5, grok=5')
+    expect(cli.stdout.toString()).toContain('evidence job-wide: codex=5, grok=5')
+    expect(cli.stdout.toString()).toContain('lens correctness cell')
+  })
+})
+
 
 describe('the fidelity penalty cannot sink below "nothing arrived"', () => {
   test('a delivered answer never ranks below a non-delivery', () => {

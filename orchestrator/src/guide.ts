@@ -1,7 +1,7 @@
 import { db } from './db.ts'
 import { JOBS } from './jobs.ts'
 import {
-  candidates, pick, median, MIN_SAMPLE, PROMPT_SIZE_BOUNDARY,
+  candidates, evidenceFor, pick, median, MIN_SAMPLE, PROMPT_SIZE_BOUNDARY,
   promptBucketsForJob, promptSizeBucket, type PromptSizeBucket,
 } from './route.ts'
 
@@ -40,6 +40,8 @@ export type JobGuide = {
   /** Where a run goes by default. Exploration can still divert a share elsewhere. */
   routesTo: string
   reason: string
+  /** Evidence cells considered for this route, including the job-wide backoff. */
+  evidenceCells: { name: string; counts: { agent: string; evidence: number }[] }[]
   tried: AgentOnJob[]
   /** Agents the circuit breaker or a static capability rule removed. */
   excluded: { agent: string; why: string }[]
@@ -54,7 +56,7 @@ export type JobGuide = {
  * than MIN_SAMPLE judgements a leader is whoever happened to go first, and
  * presenting that as a recommendation would launder a guess into a finding.
  */
-export function guide(onlyJob?: string, promptBytes?: number): JobGuide[] {
+export function guide(onlyJob?: string, promptBytes?: number, lens?: string): JobGuide[] {
   // Scores come from candidates(), not from a second copy of the same SQL here.
   // There used to be one, and the two drifted the moment routing learned to
   // count failures: the router demoted an agent while the guide, still filtering
@@ -84,7 +86,8 @@ export function guide(onlyJob?: string, promptBytes?: number): JobGuide[] {
         : [promptSizeBucket(promptBytes)]
       return buckets.map((bucket) => {
         const bucketBytes = bucket === 'large' ? PROMPT_SIZE_BOUNDARY : 0
-        const all = candidates(name, bucketBytes)
+        const ev = evidenceFor(name, bucketBytes, null, undefined, lens)
+        const all = ev.cands
         const eligible = all.filter((c) => c.eligible)
         const tried: AgentOnJob[] = eligible
           .map((c) => ({
@@ -116,7 +119,16 @@ export function guide(onlyJob?: string, promptBytes?: number): JobGuide[] {
               .filter((c) => c.latencyMs !== null)
               .sort((a, b) => a.latencyMs! - b.latencyMs!)[0] ?? null)
           : null
-        const chosen = pick(name, undefined, bucketBytes, false)
+        const chosen = pick(name, undefined, bucketBytes, false, null, {}, false, lens)
+        const counts = (rows: ReturnType<typeof candidates>) => rows
+          .filter((candidate) => candidate.evidence > 0)
+          .map((candidate) => ({ agent: candidate.agent, evidence: candidate.evidence }))
+        const evidenceCells = ev.scoped && ev.lens
+          ? [
+              { name: `lens ${ev.lens}`, counts: counts(ev.scoped) },
+              { name: 'job-wide', counts: counts(ev.job) },
+            ]
+          : [{ name: ev.level === 'stack' ? `stack ${ev.stack}` : 'job-wide', counts: counts(ev.job) }]
 
         return {
           job: name,
@@ -130,6 +142,7 @@ export function guide(onlyJob?: string, promptBytes?: number): JobGuide[] {
             .map((c) => c.agent),
           routesTo: chosen.agent,
           reason: chosen.reason,
+          evidenceCells,
           tried,
           excluded: all
             .filter((c) => !c.eligible)

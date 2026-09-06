@@ -246,6 +246,14 @@ unknown cell; an unknown is not zero. Precision never reaches across a real
 quality gap, because false-positive rate is supporting evidence, not a
 replacement for whether the agent did the job well.
 
+Findings jobs route on the named lens once at least two eligible agents each
+have five judgements in that lens cell; with only one eligible agent, its five
+judgements suffice. Until then they use the job-wide cell, so correctness and
+migration-safety can separate where evidence supports a comparison without
+starving either into a premature preference. A lens cell never combines with a
+stack cell, and a run enters it only after its lens has been recorded with the
+review; unrecorded runs remain job-wide evidence.
+
 A failing behavioural canon eval closes exploration for the default eval agent
 until that eval passes. It does not erase proven routing evidence and it does
 not override an explicit `--agent`: the failure says not to spend experimental

@@ -1270,7 +1270,7 @@ function usage(): never {
       --id and --since cannot be combined
       --json                    print one JSON object per line, with cwd, session id and questions: the interface hub reads
   orch stats [--job X]          success rate per agent per job
-  orch guide [--job X] [--prompt-bytes N]
+  orch guide [--job X] [--prompt-bytes N] [--lens LENS]
                                 what to use for what, separated by prompt-size bucket
   orch spawns [--limit N]       what the subagent gate allowed and denied, and why
   orch pick <job>               show which agent would be chosen, and why
@@ -5309,7 +5309,7 @@ switch (cmd) {
         (!/^\d+$/.test(rawPromptBytes!) || !Number.isSafeInteger(promptBytes))) {
       throw new Error('--prompt-bytes must be a non-negative integer')
     }
-    const gs = guide(flag('job'), promptBytes)
+    const gs = guide(flag('job'), promptBytes, flag('lens'))
     const size = (b: number) => (b >= 1024 ? `${Math.round(b / 1024)}KB` : `${Math.round(b)}B`)
     const tradeoffs: string[] = []
     let decided = 0, provisional = 0, blank = 0
@@ -5359,6 +5359,14 @@ switch (cmd) {
       }
       if (g.untried.length) console.log(`  untried  ${g.untried.join(', ')}`)
       for (const e of g.excluded) console.log(`  excluded ${e.agent}: ${e.why}`)
+      for (const cell of g.evidenceCells) {
+        console.log(
+          `  evidence ${cell.name}: ` +
+          (cell.counts.length
+            ? cell.counts.map((row) => `${row.agent}=${row.evidence}`).join(', ')
+            : 'no judgements'),
+        )
+      }
       console.log(`  routes to ${g.routesTo}   (${g.reason})`)
     }
 
@@ -5464,13 +5472,21 @@ switch (cmd) {
     const { avoid, distinctModels } = await routeConstraints(flag('agent'))
     // explore=false: a report that spent the exploration coin would name a
     // different agent each time it was read.
+    const lens = flag('lens')
     const p = pick(jobName, flag('agent'), 0, false, stack,
-      { agents: avoid, models: distinctModels }, false, flag('lens'))
-    const ev = evidenceFor(jobName, 0, stack)
+      { agents: avoid, models: distinctModels }, false, lens)
+    const ev = evidenceFor(jobName, 0, stack, undefined, lens)
+    const counts = (rows: typeof ev.cands) => rows
+      .filter((candidate) => candidate.evidence > 0)
+      .map((candidate) => `${candidate.agent}=${candidate.evidence}`)
+      .join(', ') || 'no judgements'
     console.log(
       `${jobName} -> ${p.agent}   (${p.reason})\n` +
-      `  evidence: ${ev.level === 'stack' ? `${ev.stack} only` : 'all stacks'}` +
-      `${stack && ev.level === 'job' ? ` (too little on ${stack} to compare agents there)` : ''}\n`,
+      `  deciding cell: ${ev.level === 'lens' ? `lens ${ev.lens}` : ev.level === 'stack' ? `stack ${ev.stack}` : 'job-wide'}\n` +
+      (ev.scoped && ev.lens
+        ? `  lens ${ev.lens} evidence: ${counts(ev.scoped)}\n  job-wide evidence: ${counts(ev.job)}\n`
+        : `  evidence: ${ev.level === 'stack' ? `${ev.stack} only` : 'all stacks'}` +
+          `${stack && ev.level === 'job' ? ` (too little on ${stack} to compare agents there)` : ''}\n`),
     )
     for (const c of ev.cands) {
       console.log(

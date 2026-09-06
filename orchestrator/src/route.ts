@@ -378,7 +378,7 @@ export function median(xs: number[]): number | null {
  */
 export function candidates(
   jobName: string, promptBytes = 0, stack?: string | null, modelOverride?: string,
-  coolingProbeAgent?: string,
+  coolingProbeAgent?: string, lens?: string | null,
 ): Candidate[] {
   const j = job(jobName)
   // probe = 0: calibration traffic is deliberately trivial, so counting it would
@@ -437,9 +437,10 @@ export function candidates(
           AND r.parent_run_id IS NULL
           AND ${promptBucketSql('r', promptBytes)}
           ${stack ? 'AND r.stack = ?' : ''}
+          ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_id = r.id AND rl.lens = ?)' : ''}
         GROUP BY r.agent`,
     )
-    .all(...(stack ? [jobName, stack] : [jobName])) as {
+    .all(jobName, ...(stack ? [stack] : []), ...(lens ? [lens] : [])) as {
       agent: string; runs: number; scored: number; failures: number
       pts: number | null; tokens: number; cost: number
     }[]
@@ -454,9 +455,10 @@ export function candidates(
           AND r.evidence_excluded IS NULL
           AND r.parent_run_id IS NULL
           AND ${promptBucketSql('r', promptBytes)}
-          ${stack ? 'AND r.stack = ?' : ''}`,
+          ${stack ? 'AND r.stack = ?' : ''}
+          ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_id = r.id AND rl.lens = ?)' : ''}`,
     )
-    .all(...(stack ? [jobName, stack] : [jobName])) as {
+    .all(jobName, ...(stack ? [stack] : []), ...(lens ? [lens] : [])) as {
       id: number; agent: string; model: string | null; startedAt: string; status: string
       failureKind: string | null; delivery: string | null; pts: number | null
     }[]).filter(isRoutingEvidence)
@@ -477,9 +479,10 @@ export function candidates(
         -- question about how much the architect had to be asked.
         WHERE job = ? AND status = 'ok' AND probe = 0 AND latency_ms IS NOT NULL
           AND ${promptBucketSql('run', promptBytes)}
-          ${stack ? 'AND stack = ?' : ''}`,
+          ${stack ? 'AND stack = ?' : ''}
+          ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_id = run.id AND rl.lens = ?)' : ''}`,
     )
-    .all(...(stack ? [jobName, stack] : [jobName])) as { agent: string; latency_ms: number }[]
+    .all(jobName, ...(stack ? [stack] : []), ...(lens ? [lens] : [])) as { agent: string; latency_ms: number }[]
   const latByAgent = new Map<string, number[]>()
   for (const r of lat) latByAgent.set(r.agent, [...(latByAgent.get(r.agent) ?? []), r.latency_ms])
 
@@ -645,8 +648,8 @@ export function scoreboard(onlyJob?: string): Scored[] {
  * that are facts rather than judgements.
  */
 /**
- * Evidence for this job in this STACK, if there is enough of it, else for the
- * job anywhere.
+ * Evidence for this job in one optional dimension, if there is enough of it,
+ * else for the job anywhere.
  *
  * Agents are not uniformly good: one may be strong on PHP and weak on a Vue
  * component, and a router keyed only on job type averages those together into a
@@ -668,10 +671,25 @@ export function scoreboard(onlyJob?: string): Scored[] {
  */
 export function evidenceFor(
   jobName: string, promptBytes: number, stack: string | null | undefined,
-  modelOverride?: string,
-): { cands: Candidate[]; level: 'stack' | 'job'; stack: string | null } {
-  if (stack) {
-    const scoped = candidates(jobName, promptBytes, stack, modelOverride)
+  modelOverride?: string, lens?: string | null,
+): {
+  cands: Candidate[]
+  level: 'lens' | 'stack' | 'job'
+  stack: string | null
+  lens: string | null
+  scoped: Candidate[] | null
+  job: Candidate[]
+} {
+  const requested = lens?.trim() && job(jobName).findings
+    ? { level: 'lens' as const, value: lens.trim() }
+    : stack
+      ? { level: 'stack' as const, value: stack }
+      : null
+  const jobWide = candidates(jobName, promptBytes, undefined, modelOverride)
+  if (requested) {
+    const scoped = requested.level === 'lens'
+      ? candidates(jobName, promptBytes, undefined, modelOverride, undefined, requested.value)
+      : candidates(jobName, promptBytes, requested.value, modelOverride)
     // `!c.cooling` too: pick() discards a cooling agent AFTER this decision, so
     // counting one here could narrow the scope on the strength of an agent that
     // is then thrown away — leaving a scoped view with a single usable
@@ -694,12 +712,23 @@ export function evidenceFor(
      * comparison to lose and the narrower evidence is simply better evidence.
      */
     if (proven.length >= 2 || (eligible.length === 1 && proven.length === 1)) {
-      return { cands: scoped, level: 'stack', stack }
+      return {
+        cands: scoped, level: requested.level,
+        stack: requested.level === 'stack' ? requested.value : null,
+        lens: requested.level === 'lens' ? requested.value : null,
+        scoped, job: jobWide,
+      }
+    }
+    return {
+      cands: jobWide, level: 'job',
+      stack: requested.level === 'stack' ? requested.value : null,
+      lens: requested.level === 'lens' ? requested.value : null,
+      scoped, job: jobWide,
     }
   }
   return {
-    cands: candidates(jobName, promptBytes, undefined, modelOverride),
-    level: 'job', stack: stack ?? null,
+    cands: jobWide, level: 'job', stack: stack ?? null, lens: null,
+    scoped: null, job: jobWide,
   }
 }
 
@@ -777,12 +806,14 @@ export function pick(
   lens?: string,
 ): { agent: string; reason: string } {
   const j = job(jobName)
-  const ev = evidenceFor(jobName, promptBytes, stack, avoid.model)
+  const ev = evidenceFor(jobName, promptBytes, stack, avoid.model, lens)
   const cands = ev.cands
   // Named in every reason below, so a route drawn from four PHP runs is never
   // mistaken for one drawn from thirty mixed ones.
-  const stackScope = ev.level === 'stack' ? ` on ${ev.stack}` : ''
-  const scope = (c: Candidate) => stackScope +
+  const evidenceCell = ev.level === 'lens'
+    ? `lens ${ev.lens} cell`
+    : ev.level === 'stack' ? `stack ${ev.stack} cell` : 'job-wide cell'
+  const scope = (c: Candidate) => ` in ${evidenceCell}` +
     (c.evidenceModel ? ` on model ${c.evidenceModel}` : ' across models')
   if (override) {
     if (avoid.agents?.includes(override)) {
@@ -794,7 +825,7 @@ export function pick(
     const probeCandidates = probe
       ? candidates(
           jobName, promptBytes, ev.level === 'stack' ? ev.stack : undefined,
-          avoid.model, override,
+          avoid.model, override, ev.level === 'lens' ? ev.lens : undefined,
         )
       : cands
     const c = probeCandidates.find((x) => x.agent === override)
@@ -868,7 +899,7 @@ export function pick(
     ),
   }
   if (selected.mode === 'only') {
-    return { agent: chosen.agent, reason: withConstraint(`${policy}; only eligible agent`) }
+    return { agent: chosen.agent, reason: withConstraint(`${policy}; only eligible agent in ${evidenceCell}`) }
   }
   const pct = `${(chosen.score! * 100).toFixed(0)}% (shrunk ${(chosen.shrunk! * 100).toFixed(0)}%) ` +
     `over ${chosen.evidence} judged${scope(chosen)}` +
