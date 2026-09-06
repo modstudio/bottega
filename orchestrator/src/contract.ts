@@ -758,9 +758,9 @@ ${INFRASTRUCTURE_RECOVERY}
 You may file with file_issue a defect you find OUTSIDE the artifact under
 review — a broken tool, a wrong doc, a failure in another path. A finding about
 the artifact goes in your findings array and nowhere else: the architect fixes
-it in the next round, and a task for it outlives the fix. When you do file, do
-not leave it only as a mailbox note where it depends on somebody reading this
-run to be discovered.
+it in the next round, and a task for it outlives the fix. When you do file,
+do not leave it only as a mailbox note, where it depends on somebody reading
+this run to be discovered.
 `.trim()
 
 /** Jobs whose whole input is inline do not pay for or claim a repository tree. */

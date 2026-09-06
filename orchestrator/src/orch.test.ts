@@ -4805,6 +4805,7 @@ describe('job contracts are visible before submission', () => {
   test('writing and reading workers file findings instead of leaving only mailbox notes', () => {
     for (const preamble of [WORKER_PREAMBLE, READONLY_PREAMBLE]) {
       expect(preamble).toContain('file_issue')
+      expect(preamble).toContain('OUTSIDE')
       expect(preamble).toContain('do not leave it only as')
       expect(preamble).toContain('a mailbox note')
     }
