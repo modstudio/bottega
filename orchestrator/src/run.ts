@@ -15,7 +15,7 @@ import {
 } from './agents.ts'
 import { job, type Job } from './jobs.ts'
 import { pick } from './route.ts'
-import { db, nowIso, ROOT, DB_PATH, sessionId, resolveRootFromLastTurn } from './db.ts'
+import { db, nowIso, DB_PATH, sessionId, resolveRootFromLastTurn } from './db.ts'
 import {
   createWorktree, createWithTool, toolFor, changesIn, repoRootOf, resolveBase, worktreeGitDir,
   prepareWorktreeObjects, prepareSharedRefGuard, worktreeGitEnvironment, carryWorkingState,
@@ -36,6 +36,7 @@ import { CALIBRATION_SUFFIX_RESERVE_BYTES, calibrationLine, reviewCalibration } 
 import { createHasPlaceholder, projectAt, projects, stackAt } from './projects.ts'
 import { compilePack, recordPack } from './canon.ts'
 import { seedGuidance } from './args.ts'
+import { resolveRunsDirectory } from './database-location.ts'
 
 export type RunResult = {
   id: number
@@ -511,12 +512,9 @@ function childEnv(
   /**
    * THE REAL DATABASE, not the one beside whatever checkout the worker is in.
    *
-   * `ORCH_DB` defaults to `orch.db` next to the running `cli.ts`, and a worker
-   * runs inside a worktree — which has its own `orchestrator/` directory and no
-   * database, `orch.db` being untracked. So a worker asking the orchestrator
-   * anything got a freshly created, empty file: `orch project list --json`
-   * answered `[]`, and a worker reading that would conclude this machine has no
-   * projects rather than that it was looking in the wrong place.
+   * The parent has already resolved the one database through ORCH_DB, git's
+   * common directory, or the main binary. Passing the absolute result keeps a
+   * detached worker on that same file even after its cwd changes to a worktree.
    *
    * Reported by a worker that checked the command before building on it, which
    * is exactly the behaviour the contract asks for and exactly how this was
@@ -753,11 +751,11 @@ export function inferredReadOnlyKey(cwd: string): string | null {
 export const KEEP_RUN_FILES_DAYS = 30
 
 /**
- * Where prompt and output files live. Per-checkout by default; ORCH_RUNS
- * redirects it, the same seam ORCH_DB is for the database. The suite sets that
- * so two copies in one tree do not share filenames and delete each other's.
+ * Where prompt and output files live. By default they sit beside the resolved
+ * database, so a worktree cannot strand its evidence when it is swept.
+ * ORCH_RUNS remains the deliberate override used by the suite.
  */
-export const RUNS_DIR = process.env.ORCH_RUNS ?? join(ROOT, 'runs')
+export const RUNS_DIR = resolveRunsDirectory()
 
 /** The names owned by one run; `unique` is its id once a row has been claimed. */
 export function runFilePaths(

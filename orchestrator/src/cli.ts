@@ -1,4 +1,4 @@
-import { DB_PATH, db, nowIso, sessionId, judgeability, pendingForSession, unscoredCount, weigh,
+import { DATABASE_RESOLUTION, DB_PATH, db, nowIso, sessionId, judgeability, pendingForSession, unscoredCount, weigh,
          DELIVERY, QUALITY, FIDELITY, type Delivery, type Quality, type Fidelity,
          reapStale, pidAlive, STALE_AFTER_MS, UNSCORED_WHERE, recordDuels, duelMatrices,
          parseRunIds, recordSessionSeen, SESSION_LIVE_MS,
@@ -786,6 +786,7 @@ function usage(): never {
           JSON null deletes that settings key; objects merge deeply
           --allow-incomplete    save a create command missing branch or seed configuration
       remove <name>
+  orch init-db                  create the database for a fresh main checkout
   orch doc list [--scope S] [--subject X] [--json]  (--json: one JSON document)
       show <slug> --scope S [--subject X] [--json]  (--json: one JSON document)
       set <slug> --scope S [--subject X] --title T --reason TEXT [--author NAME] [--delivery inject|demand] (--file F | body on stdin) [--json]  (--json: one JSON document)
@@ -3779,6 +3780,12 @@ switch (cmd) {
     const doctorPack = compilePack({ job: 'understand', cwd: process.cwd() })
     const doctorFindings = findingsForPack(doctorPack).reduce((n, row) => n + row.findings.length, 0)
     console.log(`canon          ${doctorFindings} finding(s) in ${doctorPack.bytes}/${doctorPack.budgetBytes} bytes`)
+    db()
+    console.log(`database       ${DB_PATH}`)
+    console.log(`resolved by    ${DATABASE_RESOLUTION.method}`)
+    if (DATABASE_RESOLUTION.registeredPath && DATABASE_RESOLUTION.registeredPath !== DB_PATH) {
+      console.log(`registered     ${DATABASE_RESOLUTION.registeredPath}  (resolved path won)`)
+    }
     console.log('agents')
     for (const a of Object.values(AGENTS)) {
       const cool = candidates('summarize').find((c) => c.agent === a.name)?.cooling

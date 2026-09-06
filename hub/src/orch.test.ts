@@ -76,6 +76,11 @@ describe('docSet stdin', () => {
     process.env.ORCH_DB = join(dir, 'orch.db')
     const body = "quote' backtick` newline\n"
     try {
+      const initialized = Bun.spawnSync(
+        [new URL('../../bin/orch', import.meta.url).pathname, 'init-db'],
+        { env: process.env, stdout: 'pipe', stderr: 'pipe' },
+      )
+      expect(initialized.exitCode).toBe(0)
       const row = await docSet({
         scope: 'global', subject: null, slug: 'round-trip', title: 'T', body, reason: 'test round trip',
       })

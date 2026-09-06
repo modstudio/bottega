@@ -1,12 +1,12 @@
 import { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { DOC_SCOPES, DOC_SCOPE_SUBJECT_KIND } from '../../shared/docs.ts'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { DATABASE_RESOLUTION, DB_PATH, missingDatabaseMessage } from './database-location.ts'
 export { label } from './outcome.ts'
-
-export const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
-export const DB_PATH = process.env.ORCH_DB ?? join(ROOT, 'orch.db')
+export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
 
 let handle: Database | null = null
 let writable: boolean | null = null
@@ -32,8 +32,8 @@ function databaseWritable(d: Database): boolean {
 
 export function db(): Database {
   if (handle) return handle
-  mkdirSync(dirname(DB_PATH), { recursive: true })
-  const d = new Database(DB_PATH, { create: true })
+  if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
+  const d = new Database(DB_PATH, { readwrite: true, create: false })
   // Several `orch do` processes write concurrently during a fan-out. Without a
   // busy timeout SQLite fails the moment it finds the file locked rather than
   // waiting its turn, so a parallel launch loses most of its rows — the record
@@ -57,9 +57,28 @@ export function db(): Database {
     excludeSharedOutputRuns(d)
     seedProjects(d)
   }
+  const registered = d.query('SELECT path FROM project WHERE name = ?').get(PLATFORM_SLUG) as
+    { path: string } | null
+  DATABASE_RESOLUTION.registeredPath = registered ? join(registered.path, 'orchestrator', 'orch.db') : null
   handle = d
   if (writable) reapStale(d)
   return d
+}
+
+/** The sole path that may create the orchestrator database. */
+export function initializeDatabase(): string {
+  if (existsSync(DB_PATH)) throw new Error(`refusing to initialize: orchestrator database already exists: ${DB_PATH}`)
+  mkdirSync(dirname(DB_PATH), { recursive: true })
+  const d = new Database(DB_PATH, { create: true })
+  try {
+    d.exec('PRAGMA foreign_keys = ON;')
+    applySchema(d)
+    excludeSharedOutputRuns(d)
+    seedProjects(d)
+  } finally {
+    d.close()
+  }
+  return DB_PATH
 }
 
 /**

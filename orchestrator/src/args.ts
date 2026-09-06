@@ -56,6 +56,7 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
   const command = argv[0]
   const sub = argv[1]
   switch (command) {
+    case 'init-db': return { args: argv.slice(1), shape: shape('orch init-db', 0) }
     case 'issue': return { args: argv.slice(1), shape: shape('orch issue <TASK-KEY>', 1) }
     case 'land': return { args: argv.slice(1), shape: shape(
       'orch land <branch|run-id> [--message TEXT] [--file PATH] [--unreviewed REASON] | orch land --status',
