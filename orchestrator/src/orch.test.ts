@@ -1351,7 +1351,9 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
   })
 
   test('landing binds confinement failures to the selected or current chain', async () => {
-    const { repo, trees } = repoWithBranches(['escaped-root', 'escaped-turn', 'reused'])
+    const { repo, trees } = repoWithBranches([
+      'escaped-root', 'escaped-turn', 'discarded-owner', 'reused', 'unowned',
+    ])
     const project = 'landing-escaped'
     upsertProject({ name: project, path: repo,
       settings: { trunk: 'main', gate: 'true' } })
@@ -1386,6 +1388,18 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
         expect(g(repo, 'rev-parse', 'main')).toBe(trunk)
       }
 
+      const discarded = addRun({ agent: 'grok', job: 'implement', repo: project })
+      db().query('UPDATE run SET branch=?, worktree=NULL, branch_kept=? WHERE id=?')
+        .run('discarded-owner', 'discarded-owner', discarded)
+      const unresolved = childLand(
+        trees['discarded-owner']!, 'discarded-owner', { unreviewed: 'must not bypass ownership' },
+      )
+      expect(await unresolved.exited).not.toBe(0)
+      expect(await new Response(unresolved.stderr).text()).toContain(
+        'cannot resolve the owning chain of discarded-owner; ' +
+        'land by run id, or discard the stale chains',
+      )
+
       const old = addRun({
         agent: 'grok', job: 'implement', status: 'failed', kind: 'escaped', repo: project,
       })
@@ -1396,6 +1410,10 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       const reused = childLand(trees.reused!, 'reused', { unreviewed: 'current chain is safe' })
       expect(await reused.exited).toBe(0)
       expect(g(repo, 'rev-parse', 'main')).toBe(g(repo, 'rev-parse', 'reused'))
+
+      const unowned = childLand(trees.unowned!, 'unowned', { unreviewed: 'no recorded owner' })
+      expect(await unowned.exited).toBe(0)
+      expect(g(repo, 'rev-parse', 'main')).toBe(g(repo, 'rev-parse', 'unowned'))
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
@@ -16954,6 +16972,64 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
       if (priorInside === undefined) delete process.env.ORCH_TEST_INSIDE_WRITE
       else process.env.ORCH_TEST_INSIDE_WRITE = priorInside
       rmSync(watched, { recursive: true, force: true })
+    }
+  })
+
+  test('a moved registered checkout is warned and excluded from the frozen watch set', async () => {
+    const movedParent = mkdtempSync(join(tmpdir(), 'orch-moved-project-'))
+    const moved = join(movedParent, 'missing-at-launch')
+    const script = join(dir, 'create-moved-project-agent.sh')
+    writeFileSync(script, `#!/bin/sh
+mkdir -p "$ORCH_TEST_MOVED_PROJECT"
+printf 'created after launch\n' > "$ORCH_TEST_MOVED_PROJECT/file.txt"
+printf '%s\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"answer"}'
+`)
+    chmodSync(script, 0o755)
+    upsertProject({ name: 'moved-project', path: moved })
+    const grok = AGENTS.grok!
+    const previousBin = grok.bin
+    const priorDepth = process.env.ORCH_DEPTH
+    const priorMoved = process.env.ORCH_TEST_MOVED_PROJECT
+    const originalError = console.error
+    const warnings: string[] = []
+    process.env.ORCH_DEPTH = '0'
+    process.env.ORCH_TEST_MOVED_PROJECT = moved
+    try {
+      grok.bin = script
+      console.error = (...args: unknown[]) => warnings.push(args.join(' '))
+      const result = await run({
+        job: 'file-question', prompt: 'proceed despite moved checkout', cwd: dir, agent: 'grok',
+      })
+      const row = db().query(
+        'SELECT status, failure_kind, outside_worktree_writes FROM run WHERE id=?',
+      ).get(result.id) as {
+        status: string; failure_kind: string | null; outside_worktree_writes: string
+      }
+      expect(row).toMatchObject({ status: 'ok', failure_kind: null })
+      expect(JSON.parse(row.outside_worktree_writes)).toEqual([])
+      expect(warnings.filter((line) => line.includes('confinement watch skipped'))).toEqual([
+        expect.stringContaining(
+          `confinement watch skipped moved-project at ${moved}:`,
+        ),
+      ])
+      expect(warnings[0]).toContain('fix the register with orch project set')
+      if (result.worktree) expect(removeFor(result.worktree, result.worktree.repoRoot).removed).toBe(true)
+
+      rmSync(moved, { recursive: true, force: true })
+      warnings.length = 0
+      const noTree = await run({
+        job: 'summarize', prompt: 'no checkout required', cwd: dir, agent: 'grok',
+      })
+      expect(noTree.worktree).toBeNull()
+      expect(warnings.some((line) => line.includes('confinement watch skipped'))).toBe(false)
+    } finally {
+      console.error = originalError
+      grok.bin = previousBin
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      if (priorMoved === undefined) delete process.env.ORCH_TEST_MOVED_PROJECT
+      else process.env.ORCH_TEST_MOVED_PROJECT = priorMoved
+      rmSync(movedParent, { recursive: true, force: true })
     }
   })
 

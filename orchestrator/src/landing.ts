@@ -666,14 +666,26 @@ function authorizeLanding(
     if (!selected) throw new Error(`no run ${runId}`)
     rootId = selected.root_id
   } else {
-    const owner = db().query(
+    const recorded = db().query(
       `SELECT id, worktree FROM run
-        WHERE parent_run_id IS NULL AND repo=? AND branch=? AND worktree=?
-        ORDER BY id DESC LIMIT 1`,
-    ).get(project.name, branch, worktree) as { id: number; worktree: string } | null
-    rootId = owner && git(owner.worktree, ['rev-parse', '--verify', 'HEAD^{commit}']) === tip
-      ? owner.id
-      : null
+        WHERE parent_run_id IS NULL AND repo=? AND branch=?
+          AND (worktree IS NOT NULL OR branch_kept=?)
+        ORDER BY id DESC`,
+    ).all(project.name, branch, branch) as { id: number; worktree: string | null }[]
+    const owners = recorded.filter((candidate) => {
+      if (!candidate.worktree || candidate.worktree !== worktree) return false
+      try {
+        return git(candidate.worktree, ['rev-parse', '--verify', 'HEAD^{commit}']) === tip
+      } catch {
+        return false
+      }
+    })
+    if (recorded.length && owners.length !== 1) {
+      throw new Error(
+        `cannot resolve the owning chain of ${branch}; land by run id, or discard the stale chains`,
+      )
+    }
+    rootId = owners[0]?.id ?? null
   }
   const unsafe = rootId === null ? null : db().query(
     `SELECT id, failure_kind FROM run

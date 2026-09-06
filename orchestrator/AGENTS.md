@@ -549,9 +549,11 @@ An **escaped** failure means the worker changed the porcelain status of a
 registered checkout or the caller checkout outside its own worktree. It is
 not evidence about the agent because the writer is not established, never
 fails over to another vendor, and landing that chain is refused even with
-`--unreviewed`. **Confinement unverified** means a checkout in the fixed watch
-set could not be sampled before or after the run; it has the same terminal and
+`--unreviewed`. **Confinement unverified** means a checkout in the frozen watch
+set could not be sampled after the run; it has the same terminal and
 landing-blocking effect, but records an observer failure rather than a change.
+A checkout unavailable before launch is excluded with a warning that names the
+stale register entry.
 
 **Routing then avoids that agent for an hour**, unless it is the only one left -
 refusing to run is worse than trying an agent that may have recovered. Only the
@@ -777,10 +779,11 @@ The invariants are:
   orch worktree is residue, not a hazard: each tree path carries a unique run id
   and never recurs, so sweep reports the entry for manual pruning (DEV-194).
 - **Every write transaction is IMMEDIATE; a deferred transaction that later writes is a lock-upgrade race under concurrent dispatch.**
-- **A persistent porcelain-status change in a registered main checkout or a
-  distinct caller checkout during a run fails that run and blocks its landing;**
-  unregistered paths, ignored paths, writes reverted before exit, clean-to-clean
-  commits and writes after exit are not seen, and the writer is not identified.
+- **A persistent porcelain-status change in a registered main checkout that was
+  sampleable at launch, or a distinct sampleable caller checkout, during a run
+  fails that run and blocks its landing;** unregistered or launch-unsampleable
+  paths, ignored paths, writes reverted before exit, clean-to-clean commits and
+  writes after exit are not seen, and the writer is not identified.
 - **A resume is always possible on a stale checkout.** The caller-at-trunk check
   stops a new dispatch from stale input; it must never apply to a chain resuming
   in its own worktree. `run.ts:run` currently attaches a resume under the shared

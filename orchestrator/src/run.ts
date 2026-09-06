@@ -922,23 +922,37 @@ type CheckoutSample = {
   failures: CheckoutSampleFailure[]
 }
 
+type CheckoutCandidates = {
+  watched: CheckoutToWatch[]
+  failures: CheckoutSampleFailure[]
+}
+
 function checkoutWatchSet(
   additional: CheckoutToWatch[] = [], activeWorktree?: string,
-): CheckoutToWatch[] {
+): CheckoutCandidates {
   const active = activeWorktree ? realpathSync(activeWorktree) : null
   const watched: CheckoutToWatch[] = []
+  const failures: CheckoutSampleFailure[] = []
   const seen = new Set<string>()
   for (const checkout of [
     ...projects().map(({ name, path }) => ({ project: name, path })),
     ...additional,
   ]) {
-    let canonical = checkout.path
-    try { canonical = realpathSync(checkout.path) } catch { /* sampling reports the git error */ }
+    let canonical: string
+    try {
+      canonical = realpathSync(checkout.path)
+    } catch (error) {
+      failures.push({
+        ...checkout,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      continue
+    }
     if (canonical === active || seen.has(canonical)) continue
     seen.add(canonical)
     watched.push({ project: checkout.project, path: canonical })
   }
-  return watched
+  return { watched, failures }
 }
 
 function sampleCheckouts(watched: CheckoutToWatch[]): CheckoutSample {
@@ -984,7 +998,7 @@ function sampleCheckouts(watched: CheckoutToWatch[]): CheckoutSample {
 export function snapshotRegisteredCheckouts(
   additional: CheckoutToWatch[] = [],
 ): CheckoutStatusSnapshot[] {
-  return sampleCheckouts(checkoutWatchSet(additional)).snapshots
+  return sampleCheckouts(checkoutWatchSet(additional).watched).snapshots
 }
 
 /**
@@ -2170,14 +2184,22 @@ export async function run(opts: {
   // Start after orch's own worktree and hook setup, immediately before the
   // vendor process. The interval establishes when a change happened, not who
   // wrote it: an architect or concurrent landing can change a watched checkout.
-  const callerWatch = repoJob && !opts.resume
+  const callerWatch = worktree && !opts.resume
     ? [{ project: opts.repo ?? repoOf(callerCwd) ?? '(caller)', path: callerCwd }]
     : []
-  const watchedCheckouts = checkoutWatchSet(callerWatch, worktree?.path)
-  const beforeSample = sampleCheckouts(watchedCheckouts)
-  confinementFailures = beforeSample.failures.map((failure) => ({
-    ...failure, error: `before snapshot: ${failure.error}`,
-  }))
+  const candidates = worktree
+    ? checkoutWatchSet(callerWatch, worktree.path)
+    : { watched: [], failures: [] }
+  const sampledBefore = sampleCheckouts(candidates.watched)
+  const skipped = [...candidates.failures, ...sampledBefore.failures]
+  for (const failure of skipped) {
+    console.error(
+      `confinement watch skipped ${failure.project} at ${failure.path}: ${failure.error}; ` +
+      'fix the register with orch project set',
+    )
+  }
+  const beforeSample = { snapshots: sampledBefore.snapshots, failures: [] }
+  const watchedCheckouts = beforeSample.snapshots.map(({ project, path }) => ({ project, path }))
 
   try {
     if (repoJob) {
