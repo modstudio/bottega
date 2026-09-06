@@ -49,6 +49,7 @@ const runFixture = (overrides: Record<string, unknown> = {}) => ({
   status: 'running',
   delivery: null,
   quality: null,
+  questions: [],
   ...overrides,
 })
 
@@ -364,6 +365,35 @@ describe('run ingest', () => {
     expect(db().query(`SELECT 1 FROM interval WHERE ref = 'orch:9701'`).get()).toBeNull()
   })
 
+  test('a probe that reaches asking still records its question', async () => {
+    const result = await ingestRunFixtures(runFixture({
+      id: 5,
+      probe: 1,
+      status: 'asking',
+      session_id: 'sess-probe',
+      launch_key: 'DEV-3000',
+      questions: [
+        { id: 4, run_id: 5, asked_at: '2026-09-04T19:00:00.000Z', answered_at: null },
+      ],
+    }))
+    expect(result).toEqual({ rows: 0, skipped: 1 })
+    expect(db().query(`SELECT 1 FROM interval WHERE ref = 'orch:5'`).get()).toBeNull()
+    expect(db().query(
+      `SELECT question_id, task_key, session_id, asked_at, answered_at
+         FROM question WHERE session_id = 'sess-probe'`,
+    ).get()).toEqual({
+      question_id: 4, task_key: 'DEV-3000', session_id: 'sess-probe',
+      asked_at: '2026-09-04T19:00:00.000Z', answered_at: null,
+    })
+    const clock = Date.parse('2026-09-04T20:00:00.000Z')
+    expect(listOpenRulings(clock).filter((row) => row.session_id === 'sess-probe')).toEqual([
+      {
+        question_id: 4, task_key: 'DEV-3000', session_id: 'sess-probe',
+        asked_at: '2026-09-04T19:00:00.000Z', age: 3_600_000,
+      },
+    ])
+  })
+
   test('launch_key beats a contradicting prompt', async () => {
     await ingestRunFixtures(runFixture({
       id: 9801,
@@ -469,6 +499,16 @@ describe('run ingest', () => {
     expect(collectRunsAt()).toBe(prior)
     expect(db().query(`SELECT 1 FROM interval WHERE ref = 'orch:10101'`).get()).toBeNull()
     expect(db().query(`SELECT 1 FROM question WHERE root_ref = 'orch:10101'`).get()).toBeNull()
+  })
+
+  test('a complete run lacking only questions is a contract violation', async () => {
+    const prior = collectRunsAt()
+    const row = { ...runFixture({ id: 10105 }) }
+    delete (row as { questions?: unknown }).questions
+    await expect(ingestStdout(`${JSON.stringify(row)}\n`)).rejects.toThrow('line 1 missing questions')
+    expect(collectRunsAt()).toBe(prior)
+    expect(db().query(`SELECT 1 FROM interval WHERE ref = 'orch:10105'`).get()).toBeNull()
+    expect(db().query(`SELECT 1 FROM question WHERE root_ref = 'orch:10105'`).get()).toBeNull()
   })
 
   test('a question missing answered_at refuses the batch', async () => {

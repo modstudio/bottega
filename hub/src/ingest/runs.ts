@@ -51,8 +51,8 @@ export type OrchRun = {
   retry_of?: number | null
   /** Every execution in a resumable chain, including the root turn. */
   turns?: OrchTurn[]
-  /** Root and turns, open and answered. Absent on older orch builds. */
-  questions?: OrchQuestion[]
+  /** Root and turns, open and answered. Empty when the run asked none. */
+  questions: OrchQuestion[]
   /** The explicit task the run was started for. Absent on historical rows. */
   launch_key?: string | null
 }
@@ -113,8 +113,6 @@ export function runsContractGap(value: unknown): string | null {
   for (const field of ['id', 'agent', 'job', 'status', 'started_at'] as const) {
     if (!present(row[field], field === 'id' ? 'number' : 'string')) return field
   }
-  // Absent questions is older orch. Null, or anything that is not an array, is not.
-  if (!Object.hasOwn(row, 'questions')) return null
   if (!Array.isArray(row.questions)) return 'questions'
   const published = publishedRunIds(row)
   for (let i = 0; i < row.questions.length; i++) {
@@ -218,9 +216,6 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
   const now = Date.now()
   const write = d.transaction((batch: OrchRun[]) => {
     for (const r of batch) {
-      // A probe is a smoke test — "reply with ok" — that did no work on
-      // anything, so it is not engaged time on any task.
-      if (r.probe === 1) { skipped++; continue }
       // launch_key is the task orch was started for. It beats every inference
       // — worktree, branch, prompt file, prompt prose — and those run only
       // when the field is absent, which is historical rows from before orch
@@ -248,6 +243,26 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
         }
       }
 
+      const root = rootRef(r.id)
+      const hasTurns = Boolean(r.turns)
+      deleteRootQuestions.run(root)
+      for (const q of r.questions) {
+        upsertQuestion.run(
+          q.id,
+          runRef(r.id, q.run_id, hasTurns),
+          root,
+          a.key,
+          r.session_id,
+          q.asked_at,
+          q.answered_at,
+        )
+      }
+
+      // A probe is a smoke test — "reply with ok" — that did no work on
+      // anything, so it is not engaged time on any task. A question on it is
+      // still a request for a ruling.
+      if (r.probe === 1) { skipped++; continue }
+
       // Failover is a new root, not another turn of the run it replaces. The
       // predecessor can therefore fall outside this collect's time window even
       // while its successor is present. Close the predecessor from the handoff
@@ -255,23 +270,6 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
       // growing forever. retry_of may name either a root or a resumed child.
       if (r.retry_of != null) {
         closeReplaced.run(`orch:${r.retry_of}`, `orch:%:turn:${r.retry_of}`)
-      }
-
-      if (r.questions) {
-        const root = rootRef(r.id)
-        const hasTurns = Boolean(r.turns)
-        deleteRootQuestions.run(root)
-        for (const q of r.questions) {
-          upsertQuestion.run(
-            q.id,
-            runRef(r.id, q.run_id, hasTurns),
-            root,
-            a.key,
-            r.session_id,
-            q.asked_at,
-            q.answered_at,
-          )
-        }
       }
 
       const turns = r.turns ?? [r]
