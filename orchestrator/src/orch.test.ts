@@ -6463,16 +6463,19 @@ fi
     writeFileSync(join(repo, '.gitignore'), '.mcp.json\n')
     Bun.spawnSync(['git', 'add', '.gitignore'], { cwd: repo, env: hermeticGitEnv() })
     Bun.spawnSync(['git', 'commit', '-m', 'ignore recipe config'], { cwd: repo, env: hermeticGitEnv() })
-    const recipeTree = join(repo, '.claude', 'worktrees', 'recipe-mcp')
+    const recipeCreate = join(dir, 'create-recipe-mcp.sh')
+    writeFileSync(recipeCreate, `#!/bin/sh
+${hermeticGitCommand} worktree add --detach "$1" "$2" >/dev/null
+printf '{}\\n' > "$1/.mcp.json"
+echo "$1"
+`)
+    chmodSync(recipeCreate, 0o755)
     upsertProject({
       name: 'fixture-project', path: repo,
       settings: {
         worktree: {
           branch: 'orch/{id}',
-          create: compoundCreate(
-            `${hermeticGitCommand} worktree add -b {branch} "${recipeTree}" HEAD >/dev/null && ` +
-            `printf '{}\\n' > "${join(recipeTree, '.mcp.json')}" && echo "${recipeTree}"`,
-          ),
+          readonly_create: declaredCreate(recipeCreate, ['{path}', '{base}']),
         },
       },
     })
