@@ -481,12 +481,18 @@ function installedRefGuard(installed: string, guard: string): InstalledRefGuard 
 
 const REF_GUARD_STAGE_PREFIX = '.orch-hooks-'
 
-function refGuardRunId(cwd: string): number {
+const UNMARKED_GUARD_PREFIX = 'unmarked-'
+
+/**
+ * The guard directory's name. A tree orch cut carries its run id in the
+ * marker; a tree built by hand (the lifecycle harness, an operator landing a
+ * branch from a tree orch did not cut) has none and gets a per-process key,
+ * reclaimed as litter once that process is gone. Refusing here would leave a
+ * hand-made tree UNGUARDED at the point the guard matters most.
+ */
+function refGuardOwner(cwd: string): string {
   const value = markedWorktreeRunId(cwd)
-  if (value === null) {
-    throw new Error(`cannot publish shared ref guard: ${cwd} has no valid ${ORCH_RUN_MARKER} run id`)
-  }
-  return value
+  return value === null ? `${UNMARKED_GUARD_PREFIX}${process.pid}-${randomUUID()}` : String(value)
 }
 
 function markedWorktreeRunId(cwd: string): number | null {
@@ -508,6 +514,12 @@ function cleanupRefGuardLitter(gitDir: string, hookDir?: string): void {
   for (const name of readdirSync(gitDir)) {
     if (name.startsWith(REF_GUARD_STAGE_PREFIX)) {
       const pid = Number(name.slice(REF_GUARD_STAGE_PREFIX.length).split('-', 1)[0])
+      if (Number.isInteger(pid) && pidAlive(pid)) continue
+      rmSync(join(gitDir, name), { recursive: true, force: true })
+      continue
+    }
+    if (name.startsWith(UNMARKED_GUARD_PREFIX)) {
+      const pid = Number(name.slice(UNMARKED_GUARD_PREFIX.length).split('-', 1)[0])
       if (Number.isInteger(pid) && pidAlive(pid)) continue
       rmSync(join(gitDir, name), { recursive: true, force: true })
       continue
@@ -582,7 +594,7 @@ export function prepareSharedRefGuard(
 ): SharedRefGuardEnvironment {
   const paths = linkedWorktreePaths(cwd)
   if (!paths) throw new Error(`cannot guard shared refs: ${cwd} is not a linked worktree`)
-  const hookDir = join(paths.commonDir, 'orch-guards', String(refGuardRunId(cwd)))
+  const hookDir = join(paths.commonDir, 'orch-guards', refGuardOwner(cwd))
   if (pathEntryExists(hookDir) && realpathSync(hookDir) !== resolve(hookDir)) {
     throw new Error(`refusing shared ref guard hook directory symlink: ${hookDir}`)
   }
