@@ -2543,7 +2543,20 @@ export async function run(opts: {
        * of work, holding where that work has got to, with the children recording
        * what each turn cost.
        */
-      if (opts.resume) resolveRootFromLastTurn(db(), opts.resume.parent)
+      if (opts.resume) {
+        // A resumed turn that stopped to ask reopens the conversation: the root
+        // goes back to asking with no failure kind, because the chain has not
+        // ended. The resolver below only writes terminal outcomes, so an asking
+        // turn must be rolled here or an ok/failed root would keep looking
+        // finished while a question waits (lens run 2277).
+        if (status === 'asking') {
+          db().query(
+            `UPDATE run SET status='asking', error=?, failure_kind=NULL
+              WHERE id=? AND parent_run_id IS NULL AND status NOT IN ('stopped', 'stale')`,
+          ).run(error, opts.resume.parent)
+        }
+        resolveRootFromLastTurn(db(), opts.resume.parent)
+      }
     })
   }
 

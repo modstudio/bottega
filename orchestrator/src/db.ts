@@ -1823,7 +1823,8 @@ export function chainTerminationAt(database: Database, memberId: number): string
  * stranded-root repair; the unanswered-question and last-terminal-turn guards
  * now protect that case without blocking ordinary resumed roll-up. `stopped`
  * and `stale` roots remain locked because those lifecycle decisions must not
- * be undone by a worker finishing concurrently.
+ * be undone by a worker finishing concurrently, and a `running` root is a live
+ * first turn that a stale child row must never overwrite (lens run 2277).
  *
  * The terminal turn's error and failure_kind are part of that state and travel
  * with its status. The deliberate kind exception is a stale or abandoned child: DEV-146
@@ -1859,7 +1860,7 @@ export function resolveRootFromLastTurn(database: Database, rootId: number): num
         )
       WHERE root.id = ?
         AND root.parent_run_id IS NULL
-        AND root.status NOT IN ('stopped', 'stale')
+        AND root.status IN ('asking', 'ok', 'failed')
         AND NOT EXISTS (
           SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
            WHERE (owner.id = root.id OR owner.parent_run_id = root.id)
