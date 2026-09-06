@@ -1647,7 +1647,7 @@ export async function run(opts: {
                         prompt_bytes=?, prompt_head=?, label=?, status='running', probe=?, retry_of=?,
                         route_reason=?, branch=?, parent_run_id=?, turn=?, vendor_session=?, docs_injected=?, doc_revisions=?, canon_sha=?,
                         launch_cwd=?, launch_seed=?, launch_key=?, launch_base=?, no_failover=?,
-                        automatic_failover=?, review_ref=?, pid=?
+                        automatic_failover=?, review_ref=?, pid=?, mcp=?
           WHERE id=? RETURNING id`,
       ).get(
         nowIso(), name, opts.job, opts.repo ?? repoOf(callerCwd), callerCwd, sha(prompt),
@@ -1662,14 +1662,14 @@ export async function run(opts: {
         pack?.docs.length ?? 0, pack ? JSON.stringify(pack.docs.map((doc) => doc.revisionId)) : null,
         pack?.sha256 ?? null,
         launchCwd, launchSeed, launchKey, launchBase, noFailover ? 1 : 0,
-        opts.automaticFailover ? 1 : 0, opts.review ?? null, process.pid,
+        opts.automaticFailover ? 1 : 0, opts.review ?? null, process.pid, storedMcpRequest(opts.mcp),
         opts.reserveId,
       ) as { id: number })
     : (db().query(
         `INSERT INTO run (started_at, agent, job, repo, cwd, prompt_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of, route_reason, branch, parent_run_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
                           launch_cwd, launch_seed, launch_key, launch_base, no_failover,
-                          automatic_failover, review_ref, pid)
-         VALUES (?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+                          automatic_failover, review_ref, pid, mcp)
+         VALUES (?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       ).get(
         nowIso(), name, opts.job, opts.repo ?? repoOf(callerCwd), callerCwd,
         sha(prompt), Buffer.byteLength(prompt), head, opts.label ?? null,
@@ -1685,7 +1685,7 @@ export async function run(opts: {
         pack?.docs.length ?? 0, pack ? JSON.stringify(pack.docs.map((doc) => doc.revisionId)) : null,
         pack?.sha256 ?? null,
         launchCwd, launchSeed, launchKey, launchBase, noFailover ? 1 : 0,
-        opts.automaticFailover ? 1 : 0, opts.review ?? null, process.pid,
+        opts.automaticFailover ? 1 : 0, opts.review ?? null, process.pid, storedMcpRequest(opts.mcp),
       ) as { id: number })
 
   /**
