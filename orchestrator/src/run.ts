@@ -784,10 +784,10 @@ function pathRootAt(
     : candidate === root
   if (!equal) return false
   const after = prompt[offset + root.length]
-  if (after === undefined || after === '/' || /\s/.test(after) || /['"`]/.test(after)) return true
-  let end = offset + root.length
-  while (end < prompt.length && !/[\s'"`]/.test(prompt[end]!)) end++
-  return !existsSync(prompt.slice(offset, end))
+  if (after === undefined || after === '/' || /\s/.test(after)) return true
+  if (/[A-Za-z0-9]/.test(after)) return false
+  const next = prompt[offset + root.length + 1]
+  return next === undefined || /\s/.test(next) || !/[A-Za-z0-9]/.test(next)
 }
 
 function hasPathStartBoundary(prompt: string, offset: number): boolean {
@@ -820,9 +820,14 @@ function invalidRetargeting(
     : null
 }
 
-function uriAuthorityEnd(prompt: string, offset: number): number | null {
+function uriSkipEnd(prompt: string, offset: number): number | null {
   const scheme = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.exec(prompt.slice(offset))
   if (!scheme) return null
+  if (!scheme[0].toLowerCase().startsWith('file:')) {
+    let end = offset + scheme[0].length
+    while (end < prompt.length && !/[\s'"`)\]}>]/.test(prompt[end]!)) end++
+    return end
+  }
   const authority = offset + scheme[0].length
   const path = prompt.indexOf('/', authority)
   return path === -1 ? prompt.length : path
@@ -850,10 +855,10 @@ export function retargetRepositoryPrompt(
   let rewritten = ''
   let cursor = 0
   while (cursor < prompt.length) {
-    const authorityEnd = uriAuthorityEnd(prompt, cursor)
-    if (authorityEnd !== null) {
-      rewritten += prompt.slice(cursor, authorityEnd)
-      cursor = authorityEnd
+    const uriEnd = uriSkipEnd(prompt, cursor)
+    if (uriEnd !== null) {
+      rewritten += prompt.slice(cursor, uriEnd)
+      cursor = uriEnd
       continue
     }
     if (!hasPathStartBoundary(prompt, cursor)) {

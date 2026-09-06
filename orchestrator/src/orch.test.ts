@@ -9770,7 +9770,7 @@ describe('outside-worktree write observation', () => {
       .toBe(`${worktree}/subdir/subject.txt`)
     expect(retargetedPrompt(caller, caller, worktree)).toBe(worktree)
     expect(retargetedPrompt(`${caller}-archive/subject.txt`, caller, worktree))
-      .toBe(`${worktree}-archive/subject.txt`)
+      .toBe(`${caller}-archive/subject.txt`)
     expect(retargetedPrompt(`word${caller}/subject.txt`, caller, worktree))
       .toBe(`word${caller}/subject.txt`)
     for (const prefix of ['', ' ', '\n', '"', "'", '`', '=', ':', ',', '(', '[', '{', '<']) {
@@ -9791,7 +9791,7 @@ describe('outside-worktree write observation', () => {
     expect(retargetedPrompt(
       '/repo, /repo) /repo: /repo. /repo-archive /repo.git /repo-\n/repo\nnext',
       '/repo', '/wt',
-    )).toBe('/wt, /wt) /wt: /wt. /wt-archive /wt.git /wt-\n/wt\nnext')
+    )).toBe('/wt, /wt) /wt: /wt. /repo-archive /repo.git /wt-\n/wt\nnext')
 
     const shorterTarget = retargetedPrompt(
       '/repo/main/file', '/repo/main', '/repo', false, ['/repo'],
@@ -9806,6 +9806,10 @@ describe('outside-worktree write observation', () => {
     expect(retargetedPrompt(
       'https://repo/file file:///repo/file', '/repo', '/wt',
     )).toBe('https://repo/file file:///wt/file')
+    expect(retargetedPrompt(
+      'https://example.test/repo/f file:///repo/f "https://host/repo/f" (ssh://host/repo/f)',
+      '/repo', '/wt',
+    )).toBe('https://example.test/repo/f file:///wt/f "https://host/repo/f" (ssh://host/repo/f)')
 
     const first = retargetedPrompt('/repo/file', '/repo', '/repo/wt', false, [])
     expect(first).toBe('/repo/wt/file')
@@ -9849,22 +9853,23 @@ describe('outside-worktree write observation', () => {
     }
   })
 
-  test('filesystem siblings are not mistaken for prose delimiters', () => {
+  test('suffix boundaries are lexical and independent of filesystem state', () => {
     const parent = mkdtempSync(join(tmpdir(), 'orch-retarget-boundary-'))
     const caller = join(parent, 'repo')
     const worktree = join(parent, 'wt')
     mkdirSync(caller)
     mkdirSync(worktree)
-    for (const suffix of ['-archive', '@archive', ',archive', ':archive', '.git']) {
-      const sibling = `${caller}${suffix}`
-      mkdirSync(sibling)
-      writeFileSync(join(sibling, 'subject.txt'), 'sibling\n')
-    }
     try {
-      const siblings = ['-archive', '@archive', ',archive', ':archive', '.git']
-        .map((suffix) => `${caller}${suffix}/subject.txt`).join(' ')
-      expect(retargetedPrompt(`${siblings} ${caller}.`, caller, worktree))
-        .toBe(`${siblings} ${worktree}.`)
+      const prompt = `Inspect ${caller}. ${caller}, ${caller}/sub ` +
+        `${caller}@archive ${caller}-archive/f ${caller}.git ${caller}.x ` +
+        `${caller}_archive ${caller},archive ${caller}:archive ${caller}+archive word${caller}/f`
+      const expected = `Inspect ${worktree}. ${worktree}, ${worktree}/sub ` +
+        `${caller}@archive ${caller}-archive/f ${caller}.git ${caller}.x ` +
+        `${caller}_archive ${caller},archive ${caller}:archive ${caller}+archive word${caller}/f`
+      expect(retargetedPrompt(prompt, caller, worktree)).toBe(expected)
+      mkdirSync(`${caller}.`)
+      mkdirSync(`${caller}-archive`)
+      expect(retargetedPrompt(prompt, caller, worktree)).toBe(expected)
     } finally {
       rmSync(parent, { recursive: true, force: true })
     }
