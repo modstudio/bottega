@@ -6008,6 +6008,61 @@ describe('routing backtest statistics', () => {
     expect(row.thompsonSelections).toEqual({ codex: 5, grok: 4 })
   })
 
+  test('scoring NOT_EVIDENCE failures changes no replay trajectory', () => {
+    const ids: number[] = []
+    for (let i = 0; i < 6; i++) {
+      ids.push(addRun({
+        agent: 'grok', job: 'fix', status: 'failed', kind: 'unreachable',
+        startedAt: `2026-01-0${i + 1}T00:00:00.000Z`,
+      }))
+    }
+    const before = routingBacktestEnsemble('fix').trajectories.map((trajectory) => trajectory.jobs)
+    const insert = db().query(
+      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?,'none',NULL,?,'test')`,
+    )
+    for (const [i, id] of ids.entries()) {
+      insert.run(id, `2026-01-0${i + 1}T01:00:00.000Z`)
+    }
+    const after = routingBacktestEnsemble('fix').trajectories.map((trajectory) => trajectory.jobs)
+    expect(after).toEqual(before)
+  })
+
+  test('late-scored pre-window model evidence gives replay the production pick', () => {
+    const insert = db().query(
+      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?,?,?,?, 'test')`,
+    )
+    const base = Date.parse('2026-01-01T00:00:00.000Z')
+    const currentModel = AGENTS.codex!.model
+    for (let i = 0; i < MIN_SAMPLE; i++) {
+      const startedAt = new Date(base + i * 86_400_000).toISOString()
+      const id = addRun({ agent: 'codex', job: 'fix', model: currentModel, startedAt })
+      insert.run(id, 'full', 'wrong', new Date(base + 50 * 86_400_000).toISOString())
+    }
+    for (let i = 0; i < EVIDENCE_WINDOW; i++) {
+      const startedAt = new Date(base + (MIN_SAMPLE + i) * 86_400_000).toISOString()
+      const id = addRun({ agent: 'codex', job: 'fix', model: 'older-model', startedAt })
+      insert.run(id, 'full', 'right', new Date(Date.parse(startedAt) + 3_600_000).toISOString())
+    }
+
+    const seed = 1
+    const before = routingBacktest('fix', seed).jobs[0]!.currentSelections
+    const production = pick('fix', undefined, 0, false).agent
+    addRun({
+      agent: production, job: 'fix', model: AGENTS[production]!.model,
+      startedAt: new Date(base + 51 * 86_400_000).toISOString(),
+    })
+    const after = routingBacktest('fix', seed).jobs[0]!.currentSelections
+    const agents = new Set([...Object.keys(before), ...Object.keys(after)])
+    const replay = [...agents].find((agent) => (after[agent] ?? 0) - (before[agent] ?? 0) === 1)
+
+    expect(candidates('fix').find((candidate) => candidate.agent === 'codex')).toMatchObject({
+      evidence: EVIDENCE_WINDOW, evidenceModel: null, score: 1,
+    })
+    expect(replay).toBe(production)
+  })
+
   test("the replay's incumbent choice equals pick() when tied unproven challengers decide", () => {
     const insert = db().query(
       `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)

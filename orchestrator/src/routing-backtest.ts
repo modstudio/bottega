@@ -1,10 +1,10 @@
 import { AGENTS } from './agents.ts'
 import { chainTerminationAt, db, weigh } from './db.ts'
-import { COOLS_DOWN, NOT_EVIDENCE } from './failure.ts'
+import { COOLS_DOWN } from './failure.ts'
 import { JOBS } from './jobs.ts'
 import {
-  COOLDOWN_MIN, EVIDENCE_WINDOW, MIN_SAMPLE, OUTPUT_RESERVE, PROMPT_SIZE_BOUNDARY,
-  currentPolicySelection, median, thompsonRank,
+  COOLDOWN_MIN, MIN_SAMPLE, OUTPUT_RESERVE, PROMPT_SIZE_BOUNDARY,
+  currentPolicySelection, isRoutingEvidence, median, routingEvidenceWindow, thompsonRank,
 } from './route.ts'
 
 export const ROUTING_BACKTEST_SEED = 287
@@ -106,11 +106,11 @@ function cellsFor(event: Event, history: History, operations: OperationalEvent[]
   const build = (stack?: string | null) => Object.keys(AGENTS)
     .filter((agent) => staticEligible(agent, event.job, event.promptBytes) && !cooling(agent, event, operations, cooldowns))
     .map((agent) => {
-      let evidence = sameBucket.filter((e) => e.agent === agent && (!stack || e.stack === stack))
       const currentModel = AGENTS[agent]!.model
-      const modelEvidence = evidence.filter((e) => e.model === currentModel)
-      if (modelEvidence.length >= MIN_SAMPLE) evidence = modelEvidence
-      evidence = evidence.slice(-EVIDENCE_WINDOW)
+      const window = routingEvidenceWindow(
+        sameBucket.filter((e) => !stack || e.stack === stack), agent, currentModel,
+      )
+      const evidence = window.rows
       const scored = evidence.filter((event) => event.scored).length
       return {
         agent, events: evidence, scored,
@@ -182,12 +182,9 @@ function events(includeVoided = false): Event[] {
     // Scored evidence did not exist until the person recorded the judgement.
     // An eligible unjudged failure existed when its chain terminated. Every
     // dispatch remains a decision even when it never becomes evidence.
-    const evidenceAt = row.scoredAt ?? (
-      ['failed', 'stale'].includes(row.status) &&
-      !NOT_EVIDENCE.includes(row.failureKind as typeof NOT_EVIDENCE[number])
-        ? chainTerminationAt(database, row.id)
-        : null
-    )
+    const evidenceAt = isRoutingEvidence({
+      status: row.status, delivery: row.delivery, failureKind: row.failureKind,
+    }) ? row.scoredAt ?? chainTerminationAt(database, row.id) : null
     return {
       id: row.id, agent: row.agent, job: row.job, stack: row.stack, model: row.model,
       promptBytes: row.promptBytes, startedAt: row.startedAt, latencyMs: row.latencyMs,

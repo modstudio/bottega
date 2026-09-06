@@ -128,6 +128,43 @@ function notEvidenceSql(): string {
   return NOT_EVIDENCE.map((k) => `'${k}'`).join(', ')
 }
 
+export type RoutingEvidenceInput = {
+  status: string
+  delivery: string | null
+  failureKind: string | null
+}
+
+/** The production quality-evidence predicate, shared with causal replay. */
+export function isRoutingEvidence(row: RoutingEvidenceInput): boolean {
+  if (!['ok', 'failed', 'stale'].includes(row.status)) return false
+  if (NOT_EVIDENCE.includes(row.failureKind as typeof NOT_EVIDENCE[number])) return false
+  return row.delivery !== null || ['failed', 'stale'].includes(row.status)
+}
+
+type RoutingWindowRow = {
+  id: number
+  agent: string
+  model: string | null
+  startedAt: string
+}
+
+/**
+ * Production's evidence window: dispatch chronology first, then model choice.
+ * A late judgement does not make an old dispatch recent, and pre-window rows
+ * cannot be pulled back in merely because they use the current model.
+ */
+export function routingEvidenceWindow<T extends RoutingWindowRow>(
+  rows: T[], agent: string, currentModel: string,
+): { rows: T[]; evidenceModel: string | null } {
+  const recent = rows.filter((row) => row.agent === agent)
+    .sort((a, b) => b.startedAt.localeCompare(a.startedAt) || b.id - a.id)
+    .slice(0, EVIDENCE_WINDOW)
+  const modelRows = recent.filter((row) => row.model === currentModel)
+  return modelRows.length >= MIN_SAMPLE
+    ? { rows: modelRows, evidenceModel: currentModel }
+    : { rows: recent, evidenceModel: null }
+}
+
 /** COOLS_DOWN as a SQL list, so the query uses the canonical vocabulary. */
 function coolsDownSql(): string {
   return COOLS_DOWN.map((k) => `'${k}'`).join(', ')
@@ -377,33 +414,21 @@ export function candidates(
     }[]
   const hist = new Map(rows.map((r) => [r.agent, r]))
 
-  const evidenceRows = db()
+  const evidenceRows = (db()
     .query(
-      `WITH judgements AS (
-         SELECT r.id, r.agent, r.model, r.started_at, r.status, s.delivery,
-                ${weightCase()} AS pts,
-                ROW_NUMBER() OVER (
-                  PARTITION BY r.agent ORDER BY r.started_at DESC, r.id DESC
-                ) AS recency
-           FROM run r LEFT JOIN score s ON s.run_id = r.id
-          WHERE r.job = ? AND r.status IN ('ok','failed','stale') AND r.probe = 0
-            AND r.evidence_excluded IS NULL
-            AND r.parent_run_id IS NULL
-            AND ${promptBucketSql('r', promptBytes)}
-            ${stack ? 'AND r.stack = ?' : ''}
-            AND COALESCE(r.failure_kind, '') NOT IN (${notEvidenceSql()})
-            AND (s.delivery IS NOT NULL OR
-                 (r.status IN ('failed','stale') AND s.delivery IS NULL))
-       )
-       SELECT agent, model, status, delivery, pts
-         FROM judgements WHERE recency <= ?`,
+      `SELECT r.id, r.agent, r.model, r.started_at AS startedAt, r.status,
+              r.failure_kind AS failureKind, s.delivery, ${weightCase()} AS pts
+         FROM run r LEFT JOIN score s ON s.run_id = r.id
+        WHERE r.job = ? AND r.status IN ('ok','failed','stale') AND r.probe = 0
+          AND r.evidence_excluded IS NULL
+          AND r.parent_run_id IS NULL
+          AND ${promptBucketSql('r', promptBytes)}
+          ${stack ? 'AND r.stack = ?' : ''}`,
     )
-    .all(...(stack
-      ? [jobName, stack, EVIDENCE_WINDOW]
-      : [jobName, EVIDENCE_WINDOW])) as {
-        agent: string; model: string | null; status: string
-        delivery: string | null; pts: number | null
-      }[]
+    .all(...(stack ? [jobName, stack] : [jobName])) as {
+      id: number; agent: string; model: string | null; startedAt: string; status: string
+      failureKind: string | null; delivery: string | null; pts: number | null
+    }[]).filter(isRoutingEvidence)
 
   type Evidence = { scored: number; failures: number; none: number; pts: number }
   const aggregate = (rs: typeof evidenceRows): Evidence => ({
@@ -476,10 +501,8 @@ export function candidates(
       ? `${failure.failure_kind} ${Math.round(failure.mins_ago)}m ago`
       : null
     const h = hist.get(name)
-    const agentEvidence = evidenceRows.filter((r) => r.agent === name)
-    const modelEvidence = agentEvidence.filter((r) => r.model === currentModel)
-    const useModel = modelEvidence.length >= MIN_SAMPLE
-    const recent = aggregate(useModel ? modelEvidence : agentEvidence)
+    const window = routingEvidenceWindow(evidenceRows, name, currentModel)
+    const recent = aggregate(window.rows)
     const scored = recent.scored
     const failures = recent.failures
     const evidence = scored + failures
@@ -524,7 +547,7 @@ export function candidates(
       failures,
       none: recent.none,
       evidence,
-      evidenceModel: useModel ? currentModel : null,
+      evidenceModel: window.evidenceModel,
       score,
       shrunk: null,
       latencyMs: median(latByAgent.get(name) ?? []),
