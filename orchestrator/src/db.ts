@@ -1818,15 +1818,28 @@ export function chainTerminationAt(database: Database, memberId: number): string
  * left alone. A last turn that is still `asking` is recoverable (`orch
  * continue`), not ended, so it is left alone too.
  *
- * Status only, not failure_kind: copying `abandoned` or `interrupted` onto the
- * root would exclude it from routing via NOT_EVIDENCE, which is the dishonest
- * write this rule exists to refuse.
+ * The terminal turn's failure_kind is part of that state and travels with its
+ * status. The deliberate exception is a stale or abandoned child: DEV-146
+ * established that stranding or abandoning a chain inserts a judgement on the
+ * root, while copying the child's NOT_EVIDENCE kind would erase that judgement
+ * from routing. Those lifecycle outcomes therefore retain the root's kind.
  */
 export function resolveRootFromLastTurn(database: Database, rootId: number): number {
   return database.query(
     `UPDATE run AS root
         SET status = (
           SELECT last.status FROM run last
+           WHERE last.id = root.id OR last.parent_run_id = root.id
+           ORDER BY last.turn DESC, last.id DESC
+           LIMIT 1
+        ),
+            failure_kind = (
+          SELECT CASE
+                   WHEN last.status = 'stale' OR last.failure_kind = 'abandoned'
+                     THEN root.failure_kind
+                   ELSE last.failure_kind
+                 END
+            FROM run last
            WHERE last.id = root.id OR last.parent_run_id = root.id
            ORDER BY last.turn DESC, last.id DESC
            LIMIT 1

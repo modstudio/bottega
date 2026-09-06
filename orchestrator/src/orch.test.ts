@@ -12900,7 +12900,7 @@ describe('a conversation is one unit of work, not one per turn', () => {
       .toEqual({ status: 'asking' })
   })
 
-  test('the last turn\'s terminal status is inherited, not rewritten to ok', () => {
+  test('a plain failed turn inherits its terminal status and failure kind', () => {
     const failed = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
     db().query(
       `INSERT INTO question (run_id, asked_at, question, answer, answered_at)
@@ -12911,7 +12911,7 @@ describe('a conversation is one unit of work, not one per turn', () => {
     })
     expect(resolveRootFromLastTurn(db(), failed)).toBe(1)
     expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(failed))
-      .toEqual({ status: 'failed', failure_kind: null })
+      .toEqual({ status: 'failed', failure_kind: 'timeout' })
 
     const succeeded = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
     db().query(
@@ -12922,6 +12922,27 @@ describe('a conversation is one unit of work, not one per turn', () => {
     expect(resolveRootFromLastTurn(db(), succeeded)).toBe(1)
     expect(db().query('SELECT status FROM run WHERE id=?').get(succeeded))
       .toEqual({ status: 'ok' })
+  })
+
+  test('a resumed truncation stays excluded when the last turn resolves its root', () => {
+    const root = addRun({ agent: 'grok', job: 'understand', status: 'asking' })
+    db().query(
+      `INSERT INTO question (run_id, asked_at, question, answer, answered_at)
+       VALUES (?,?,?,?,?)`,
+    ).run(root, nowIso(), 'continue?', 'continue', nowIso())
+    addRun({
+      agent: 'grok', job: 'understand', status: 'failed', parent: root, turn: 2,
+      kind: 'truncated',
+    })
+
+    const before = candidates('understand').find((row) => row.agent === 'grok')!
+    expect(before.evidence).toBe(0)
+    expect(resolveRootFromLastTurn(db(), root)).toBe(1)
+    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(root))
+      .toEqual({ status: 'failed', failure_kind: 'truncated' })
+    const after = candidates('understand').find((row) => row.agent === 'grok')!
+    expect(after.evidence).toBe(before.evidence)
+    expect(after.failures).toBe(before.failures)
   })
 
   test('turns of one run do not each count as evidence', () => {
