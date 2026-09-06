@@ -11242,7 +11242,7 @@ echo 'Usage: scripts/worktree create [seed]'
         stdout: 'pipe', stderr: 'pipe',
       })
       expect(p.exitCode).toBe(1)
-      expect(p.stderr.toString()).toContain(`evidence for run ${unscored}`)
+      expect(p.stderr.toString()).toContain(`run ${unscored} is failed and unscored`)
       expect(existsSync(tree)).toBe(true)
       expect(db().query('SELECT COUNT(*) n FROM run WHERE worktree=?').get(tree)).toEqual({ n: 3 })
       expect(db().query('SELECT COUNT(*) n FROM run_mutation_audit').get()).toEqual({ n: 0 })

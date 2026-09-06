@@ -3326,7 +3326,7 @@ switch (cmd) {
         keep(`${r.id}  too recent (${r.age_days.toFixed(1)}d)`, 'under the age threshold')
         continue
       }
-      if (!r.scored) {
+      if (!r.scored && !has('force')) {
         keep(`${r.id}  unscored — its diff is the evidence`, 'unscored — its diff is the evidence')
         continue
       }
