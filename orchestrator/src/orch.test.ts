@@ -18392,7 +18392,7 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
       const out = hookOutput(p)
       expect(out.hookSpecificOutput.hookEventName).toBe('SessionStart')
       expect(out.hookSpecificOutput.additionalContext).toBe(
-        `Arm under Monitor: ${heartbeat} sid-arm\n`,
+        `Arm under Monitor from the main checkout: ${heartbeat} sid-arm\n`,
       )
       expect(out.systemMessage).toBeUndefined()
     }
@@ -18405,7 +18405,7 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
     const out = hookOutput(p)
     expect(out.systemMessage).toStartWith('operator brief refused: canon pack is ')
     expect(out.systemMessage).not.toContain('\x1b[')
-    expect(out.hookSpecificOutput.additionalContext).toContain('Arm under Monitor:')
+    expect(out.hookSpecificOutput.additionalContext).toContain('Arm under Monitor from the main checkout:')
     expect(out.hookSpecificOutput.additionalContext).not.toContain('x'.repeat(100))
   })
 
@@ -18655,7 +18655,7 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
       { CLAUDE_CODE_SESSION_ID: 'from-env' },
     )
     expect(hookOutput(p).hookSpecificOutput.additionalContext).toBe(
-      `Arm under Monitor: ${heartbeat} from-payload\n`,
+      `Arm under Monitor from the main checkout: ${heartbeat} from-payload\n`,
     )
   })
 
@@ -18665,7 +18665,7 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
       { CLAUDE_CODE_SESSION_ID: 'from-env' },
     )
     expect(hookOutput(p).hookSpecificOutput.additionalContext).toBe(
-      `Arm under Monitor: ${heartbeat} from-env\n`,
+      `Arm under Monitor from the main checkout: ${heartbeat} from-env\n`,
     )
   })
 
@@ -18746,10 +18746,22 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
 describe('architect heartbeat session scope', () => {
   const heartbeat = new URL('../hooks/orch-heartbeat.sh', import.meta.url).pathname
 
+  const fixture = (orchBody: string) => {
+    const root = mkdtempSync(join(tmpdir(), 'heartbeat-fixture-'))
+    const hooks = join(root, 'orchestrator', 'hooks')
+    mkdirSync(hooks, { recursive: true })
+    mkdirSync(join(root, 'bin'), { recursive: true })
+    const copiedHeartbeat = join(hooks, 'orch-heartbeat.sh')
+    copyFileSync(heartbeat, copiedHeartbeat)
+    chmodSync(copiedHeartbeat, 0o755)
+    const fakeOrch = join(root, 'bin', 'orch')
+    writeFileSync(fakeOrch, orchBody)
+    chmodSync(fakeOrch, 0o755)
+    return { root, heartbeat: copiedHeartbeat }
+  }
+
   test('the explicit SID overrides the inherited session and uses the machine-wide inbox', () => {
-    const root = mkdtempSync(join(tmpdir(), 'heartbeat-session-scope-'))
-    const fakeOrch = join(root, 'orch')
-    writeFileSync(fakeOrch, `#!/bin/sh
+    const f = fixture(`#!/bin/sh
 if [ "$1" = "inbox" ]; then
   if [ "$2" != "--all" ] || [ "$3" != "--json" ]; then exit 19; fi
   if [ "$CLAUDE_CODE_SESSION_ID" = "payload-owner" ]; then
@@ -18763,12 +18775,11 @@ else
   exit 20
 fi
 `)
-    chmodSync(fakeOrch, 0o755)
     try {
-      const p = Bun.spawnSync([heartbeat, 'payload-owner', '0', '1'], {
+      const p = Bun.spawnSync([f.heartbeat, 'payload-owner', '0', '1'], {
         stdout: 'pipe', stderr: 'pipe',
         env: {
-          ...process.env, PATH: `${root}:${process.env.PATH ?? ''}`,
+          ...process.env,
           CLAUDE_CODE_SESSION_ID: 'environment-owner',
         },
       })
@@ -18776,21 +18787,19 @@ fi
       expect(p.stdout.toString()).toContain('BLOCKED - 1 question(s) waiting on you')
       expect(p.stdout.toString()).not.toContain('nothing needed from you')
     } finally {
-      rmSync(root, { recursive: true, force: true })
+      rmSync(f.root, { recursive: true, force: true })
     }
   })
 
   test('malformed inbox or run observations report degraded, never zero', () => {
     for (const malformed of ['inbox', 'runs', 'empty-runs']) {
-      const root = mkdtempSync(join(tmpdir(), `heartbeat-malformed-${malformed}-`))
-      const fakeOrch = join(root, 'orch')
       const inbox = malformed === 'inbox' ? 'not-json' : '[]'
       const runs = malformed === 'runs'
         ? 'not-json'
         : malformed === 'empty-runs'
           ? ''
         : '{"id":7,"job":"implement","agent":"codex","status":"ok","session_id":"other","started_at":"2026-09-05T00:00:00.000Z"}'
-      writeFileSync(fakeOrch, `#!/bin/sh
+      const f = fixture(`#!/bin/sh
 if [ "$1" = "inbox" ]; then
   echo '${inbox}'
 elif [ "$1" = "runs" ]; then
@@ -18799,19 +18808,120 @@ else
   exit 20
 fi
 `)
-      chmodSync(fakeOrch, 0o755)
       try {
-        const p = Bun.spawnSync([heartbeat, 'payload-owner', '0', '1'], {
+        const p = Bun.spawnSync([f.heartbeat, 'payload-owner', '0', '1'], {
           stdout: 'pipe', stderr: 'pipe',
-          env: { ...process.env, PATH: `${root}:${process.env.PATH ?? ''}` },
+          env: process.env,
         })
         expect(p.exitCode).toBe(0)
         expect(p.stdout.toString()).toContain('DEGRADED - orch observation failed')
         expect(p.stdout.toString()).toContain('State unknown; NOT concluding clear')
         expect(p.stdout.toString()).not.toContain('nothing needed from you')
       } finally {
-        rmSync(root, { recursive: true, force: true })
+        rmSync(f.root, { recursive: true, force: true })
       }
+    }
+  })
+
+  test('first-sight terminal runs report once, with harness failures distinguished', () => {
+    const harness = addRun({ agent: 'codex', job: 'implement', status: 'failed', latency: 1500 })
+    const failed = addRun({ agent: 'grok', job: 'fix', status: 'failed', latency: 1500 })
+    const live = addRun({ agent: 'agy', job: 'craft', status: 'running' })
+    db().query("UPDATE run SET session_id='heartbeat-owner', failure_kind='harness', error='caller HEAD behind base' WHERE id=?").run(harness)
+    db().query("UPDATE run SET session_id='heartbeat-owner', failure_kind='other', error='agent failed' WHERE id=?").run(failed)
+    db().query("UPDATE run SET session_id='heartbeat-owner', latency_ms=NULL WHERE id=?").run(live)
+
+    const p = Bun.spawnSync([heartbeat, 'heartbeat-owner', '0', '2'], {
+      stdout: 'pipe', stderr: 'pipe', env: process.env,
+    })
+    expect(p.exitCode).toBe(0)
+    const out = p.stdout.toString()
+    expect(out).toContain(`HARNESS-REFUSED ${harness}/implement codex harness 1.5s caller HEAD behind base`)
+    expect(out).toContain(`FAILED ${failed}/fix grok other 1.5s agent failed`)
+    expect(out.indexOf(`HARNESS-REFUSED ${harness}/implement`)).toBe(out.lastIndexOf(`HARNESS-REFUSED ${harness}/implement`))
+    expect(out.indexOf(`FAILED ${failed}/fix`)).toBe(out.lastIndexOf(`FAILED ${failed}/fix`))
+  })
+
+  test('first sight seeds old terminal runs silently and reports only recent ones', () => {
+    const now = Date.now()
+    const old = addRun({
+      agent: 'codex', job: 'implement', status: 'failed', latency: 1500,
+      startedAt: new Date(now - 60 * 60_000 - 1500).toISOString(),
+    })
+    const recent = addRun({
+      agent: 'grok', job: 'fix', status: 'failed', latency: 1500,
+      startedAt: new Date(now - 30_000 - 1500).toISOString(),
+    })
+    const live = addRun({ agent: 'agy', job: 'craft', status: 'running' })
+    for (const id of [old, recent]) {
+      db().query("UPDATE run SET session_id='heartbeat-recency', failure_kind='other', error='agent failed' WHERE id=?").run(id)
+    }
+    db().query("UPDATE run SET session_id='heartbeat-recency', latency_ms=NULL WHERE id=?").run(live)
+
+    const p = Bun.spawnSync([heartbeat, 'heartbeat-recency', '0', '2'], {
+      stdout: 'pipe', stderr: 'pipe', env: process.env,
+    })
+    expect(p.exitCode).toBe(0)
+    const out = p.stdout.toString()
+    expect(out).not.toContain(`FAILED ${old}/implement`)
+    expect(out.match(new RegExp(`FAILED ${recent}/fix`, 'g'))).toHaveLength(1)
+  })
+
+  test('a run that finishes between ticks reports FINISHED once', async () => {
+    const finishing = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const live = addRun({ agent: 'agy', job: 'craft', status: 'running' })
+    for (const id of [finishing, live]) {
+      db().query("UPDATE run SET session_id='heartbeat-finisher', latency_ms=NULL WHERE id=?").run(id)
+    }
+    const p = Bun.spawn([heartbeat, 'heartbeat-finisher', '0', '3'], {
+      stdout: 'pipe', stderr: 'pipe', env: process.env,
+    })
+    const reader = p.stdout.getReader()
+    const decoder = new TextDecoder()
+    let out = ''
+    while (!out.includes('WAITING')) {
+      const chunk = await reader.read()
+      if (chunk.done) break
+      out += decoder.decode(chunk.value, { stream: true })
+    }
+    expect(out).toContain('WAITING')
+    db().query("UPDATE run SET status='ok', latency_ms=2300 WHERE id=?").run(finishing)
+    for (;;) {
+      const chunk = await reader.read()
+      if (chunk.done) break
+      out += decoder.decode(chunk.value, { stream: true })
+    }
+    out += decoder.decode()
+    expect(await p.exited).toBe(0)
+    expect(out.match(new RegExp(`FINISHED ${finishing}/implement codex 2\\.3s`, 'g'))).toHaveLength(1)
+  })
+
+  test('uses the absolute sibling orch and reports removal of its pinned launch directory', () => {
+    const f = fixture(`#!/bin/sh
+if [ "$1" = "inbox" ]; then
+  root=$(cd "$(dirname "$0")/.." && pwd)
+  echo '[]'
+  rm -rf "$root"
+  exit 0
+fi
+exit 20
+`)
+    const decoy = mkdtempSync(join(tmpdir(), 'heartbeat-path-decoy-'))
+    writeFileSync(join(decoy, 'orch'), '#!/bin/sh\necho PATH_ORCH_USED\nexit 0\n')
+    chmodSync(join(decoy, 'orch'), 0o755)
+    const p = Bun.spawnSync([f.heartbeat, 'owner', '0', '2'], {
+      stdout: 'pipe', stderr: 'pipe',
+      env: { ...process.env, PATH: `${decoy}:${process.env.PATH ?? ''}` },
+    })
+    try {
+      expect(p.exitCode).toBe(2)
+      expect(p.stdout.toString()).toBe(
+        'DEGRADED: launch directory removed; re-arm from the main checkout\n',
+      )
+      expect(p.stdout.toString()).not.toContain('PATH_ORCH_USED')
+    } finally {
+      rmSync(f.root, { recursive: true, force: true })
+      rmSync(decoy, { recursive: true, force: true })
     }
   })
 })

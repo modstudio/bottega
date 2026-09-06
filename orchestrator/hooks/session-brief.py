@@ -169,7 +169,7 @@ def main() -> int:
             else:
                 # The payload's own session_id first, then the env var Claude always sets.
                 if sid:
-                    line = f"Arm under Monitor: {heartbeat} {sid}"
+                    line = f"Arm under Monitor from the main checkout: {heartbeat} {sid}"
                     if context and not context.endswith("\n"):
                         context += "\n"
                     context += line + "\n"
