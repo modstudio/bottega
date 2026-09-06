@@ -1818,8 +1818,15 @@ export function chainTerminationAt(database: Database, memberId: number): string
  * left alone. A last turn that is still `asking` is recoverable (`orch
  * continue`), not ended, so it is left alone too.
  *
- * The terminal turn's failure_kind is part of that state and travels with its
- * status. The deliberate exception is a stale or abandoned child: DEV-146
+ * The root may be `asking` after the first turn, or `ok`/`failed` while a
+ * later resumed turn finishes. The old asking-only guard was part of DEV-146's
+ * stranded-root repair; the unanswered-question and last-terminal-turn guards
+ * now protect that case without blocking ordinary resumed roll-up. `stopped`
+ * and `stale` roots remain locked because those lifecycle decisions must not
+ * be undone by a worker finishing concurrently.
+ *
+ * The terminal turn's error and failure_kind are part of that state and travel
+ * with its status. The deliberate kind exception is a stale or abandoned child: DEV-146
  * established that stranding or abandoning a chain inserts a judgement on the
  * root, while copying the child's NOT_EVIDENCE kind would erase that judgement
  * from routing. Those lifecycle outcomes therefore retain the root's kind.
@@ -1829,6 +1836,12 @@ export function resolveRootFromLastTurn(database: Database, rootId: number): num
     `UPDATE run AS root
         SET status = (
           SELECT last.status FROM run last
+           WHERE last.id = root.id OR last.parent_run_id = root.id
+           ORDER BY last.turn DESC, last.id DESC
+           LIMIT 1
+        ),
+            error = (
+          SELECT last.error FROM run last
            WHERE last.id = root.id OR last.parent_run_id = root.id
            ORDER BY last.turn DESC, last.id DESC
            LIMIT 1
@@ -1846,7 +1859,7 @@ export function resolveRootFromLastTurn(database: Database, rootId: number): num
         )
       WHERE root.id = ?
         AND root.parent_run_id IS NULL
-        AND root.status = 'asking'
+        AND root.status NOT IN ('stopped', 'stale')
         AND NOT EXISTS (
           SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
            WHERE (owner.id = root.id OR owner.parent_run_id = root.id)

@@ -11028,8 +11028,9 @@ describe('detached run collection', () => {
     expect(c.failures).toBe(0)
   })
 
-  test('abandoning a child inherits stale onto the asking root as routing evidence', () => {
-    const root = insert('asking', 'implement')
+  test('abandoning a resumed turn keeps the root\'s prior failure kind', () => {
+    const root = insert('failed', 'implement')
+    db().query("UPDATE run SET failure_kind='timeout', error='timed out' WHERE id=?").run(root)
     const child = insert('asking', 'implement')
     db().query('UPDATE run SET parent_run_id=?, turn=2 WHERE id=?').run(root, child)
     db().query(
@@ -11040,13 +11041,15 @@ describe('detached run collection', () => {
       .run(child, new Date().toISOString(), 'child question?')
 
     const before = candidates('implement').find((candidate) => candidate.agent === 'codex')!
-    expect(before.evidence).toBe(0)
+    expect(before.evidence).toBe(1)
 
     expect(orch('abandon', String(child)).code).toBe(0)
     expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(child))
       .toEqual({ status: 'stale', failure_kind: 'abandoned' })
-    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(root))
-      .toEqual({ status: 'stale', failure_kind: null })
+    expect(db().query('SELECT status, error, failure_kind FROM run WHERE id=?').get(root))
+      .toEqual({
+        status: 'stale', error: 'abandoned by architect', failure_kind: 'timeout',
+      })
     const after = candidates('implement').find((candidate) => candidate.agent === 'codex')!
     expect(after.evidence).toBe(1)
     expect(after.failures).toBe(1)
@@ -12653,6 +12656,45 @@ describe('a conversation is one unit of work, not one per turn', () => {
       ORDER BY r.id`,
   ).all() as { id: number }[]).map((row) => row.id)
 
+  const resumeWithGrok = async (root: number, stdout: string) => {
+    const script = join(dir, `resumed-grok-${root}-${Math.random().toString(16).slice(2)}.ts`)
+    writeFileSync(script, `process.stdout.write(${JSON.stringify(stdout)})\n`)
+    const grok = AGENTS.grok!
+    const previous = {
+      bin: grok.bin, resumeArgv: grok.resumeArgv, stdin: grok.stdin, readsOut: grok.readsOut,
+    }
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      grok.bin = process.execPath
+      grok.resumeArgv = () => [script]
+      grok.stdin = false
+      grok.readsOut = false
+      try {
+        return {
+          result: await runJob({
+            job: 'understand', prompt: 'continue', cwd: dir, noFailover: true,
+            resume: {
+              parent: root, agent: 'grok', session: 'test-session', turn: 2,
+              sessionId: 'orch-test-session', worktree: null,
+            },
+          }),
+          error: null,
+        }
+      } catch (error) {
+        return { result: null, error: error as Error }
+      }
+    } finally {
+      grok.bin = previous.bin
+      grok.resumeArgv = previous.resumeArgv
+      grok.stdin = previous.stdin
+      grok.readsOut = previous.readsOut
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(script, { force: true })
+    }
+  }
+
   test('a three-turn chain resolves the intermediate asking turn end to end', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-three-turn-'))
     const script = join(dir, `three-turn-${Math.random().toString(16).slice(2)}.ts`)
@@ -12924,25 +12966,70 @@ describe('a conversation is one unit of work, not one per turn', () => {
       .toEqual({ status: 'ok' })
   })
 
-  test('a resumed truncation stays excluded when the last turn resolves its root', () => {
+  test('a resumed truncation rolls up through run and stays excluded', async () => {
     const root = addRun({ agent: 'grok', job: 'understand', status: 'asking' })
-    db().query(
-      `INSERT INTO question (run_id, asked_at, question, answer, answered_at)
-       VALUES (?,?,?,?,?)`,
-    ).run(root, nowIso(), 'continue?', 'continue', nowIso())
-    addRun({
-      agent: 'grok', job: 'understand', status: 'failed', parent: root, turn: 2,
-      kind: 'truncated',
-    })
-
     const before = candidates('understand').find((row) => row.agent === 'grok')!
     expect(before.evidence).toBe(0)
-    expect(resolveRootFromLastTurn(db(), root)).toBe(1)
-    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(root))
-      .toEqual({ status: 'failed', failure_kind: 'truncated' })
+
+    const outcome = await resumeWithGrok(root, [
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'truncated-resume' }),
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          content: [{ type: 'thinking', text: 'the findings survived in the transcript' }],
+          stop_reason: 'max_tokens',
+        },
+      }),
+      JSON.stringify({
+        type: 'result', subtype: 'error_during_execution', result: '', stop_reason: 'max_tokens',
+        errors: ['response truncated by max_tokens'],
+      }),
+    ].join('\n') + '\n')
+    expect(outcome.error?.message).toContain('response truncated at output ceiling (max_tokens)')
+    expect(db().query(
+      'SELECT status, error, failure_kind FROM run WHERE id=?',
+    ).get(root)).toEqual({
+      status: 'failed', error: 'response truncated at output ceiling (max_tokens)',
+      failure_kind: 'truncated',
+    })
     const after = candidates('understand').find((row) => row.agent === 'grok')!
     expect(after.evidence).toBe(before.evidence)
     expect(after.failures).toBe(before.failures)
+  })
+
+  test('a resumed quota failure rolls up through run and stays excluded', async () => {
+    const root = addRun({ agent: 'grok', job: 'understand', status: 'asking' })
+    const before = candidates('understand').find((row) => row.agent === 'grok')!
+
+    const outcome = await resumeWithGrok(root, JSON.stringify({
+      type: 'result', subtype: 'error_during_execution', errors: ['HTTP 402: no balance'],
+    }) + '\n')
+    expect(outcome.error?.message).toContain('HTTP 402: no balance')
+    expect(db().query(
+      'SELECT status, error, failure_kind FROM run WHERE id=?',
+    ).get(root)).toEqual({
+      status: 'failed', error: expect.stringContaining('HTTP 402: no balance'), failure_kind: 'quota',
+    })
+    const after = candidates('understand').find((row) => row.agent === 'grok')!
+    expect(after.evidence).toBe(before.evidence)
+    expect(after.failures).toBe(before.failures)
+  })
+
+  test('a successful resumed turn clears an earlier timeout from the root', async () => {
+    const root = addRun({ agent: 'grok', job: 'understand', status: 'failed', kind: 'timeout' })
+    db().query("UPDATE run SET error='timed out' WHERE id=?").run(root)
+    score(root, 'full', 'right')
+
+    const outcome = await resumeWithGrok(root, JSON.stringify({
+      type: 'result', subtype: 'success', result: 'finished after resuming',
+    }) + '\n')
+    expect(outcome.error).toBeNull()
+    expect(outcome.result?.status).toBe('ok')
+    expect(db().query(
+      'SELECT status, error, failure_kind FROM run WHERE id=?',
+    ).get(root)).toEqual({ status: 'ok', error: null, failure_kind: null })
+    expect(routingEvidenceIds()).toContain(root)
+    expect(candidates('understand').find((row) => row.agent === 'grok')!.evidence).toBe(1)
   })
 
   test('turns of one run do not each count as evidence', () => {

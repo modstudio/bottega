@@ -16,7 +16,9 @@ import {
 } from './agents.ts'
 import { job, type Job } from './jobs.ts'
 import { pick } from './route.ts'
-import { db, nowIso, DB_PATH, sessionId, resolveRootFromLastTurn, writableDb } from './db.ts'
+import {
+  db, nowIso, DB_PATH, sessionId, resolveRootFromLastTurn, writableDb, writeTransaction,
+} from './db.ts'
 import {
   createWorktree, createWithTool, createReadOnlyWorktree, createReadOnlyWithTool,
   toolFor, changesIn, repoRootOf, resolveBase, resolveReadOnlyBase, worktreeGitDir,
@@ -2484,70 +2486,65 @@ export async function run(opts: {
       console.error(`orch: could not record blockers for run ${claim.id}: ${e}`)
     }
 
-    db().query(
-      `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
-                      vendor_tokens=?, vendor_cost_usd=?,
-                      status=CASE WHEN status='stopped' THEN status ELSE ? END,
-                      error=CASE WHEN status='stopped' THEN error ELSE ? END,
-                      failure_kind=CASE WHEN status='stopped' THEN failure_kind ELSE ? END,
-                      vendor_session=COALESCE(?, vendor_session) WHERE id=?`,
-    ).run(
-      Date.now() - started, exitCode, new TextEncoder().encode(output).byteLength, outPath, promptPath,
-      vendorTokens, costUsd, status, error, failureKind, resolvedSession, claim.id,
-    )
-
-    /**
-     * The facts, recorded without anyone's opinion.
-     *
-     * Half of them are MEASURED (what the diff actually contains) and half are
-     * CLAIMED (what the worker says about its own tests and deviations), and
-     * they are stored side by side deliberately: the interesting signal is
-     * where the two disagree. A worker reporting `tests.passed` beside a diff
-     * that touches no test file has told you something, and no verdict is
-     * needed to see it.
-     */
-    if (writesJob) {
+    writeTransaction(() => {
       db().query(
-        `UPDATE run SET files_changed=?, changed_paths=?, lines_added=?, lines_removed=?,
-                        tests_ran=?, tests_passed=?, deviations=?, escalations=? WHERE id=?`,
+        `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
+                        vendor_tokens=?, vendor_cost_usd=?,
+                        status=CASE WHEN status='stopped' THEN status ELSE ? END,
+                        error=CASE WHEN status='stopped' THEN error ELSE ? END,
+                        failure_kind=CASE WHEN status='stopped' THEN failure_kind ELSE ? END,
+                        vendor_session=COALESCE(?, vendor_session) WHERE id=?`,
       ).run(
-        changes?.files.length ?? null,
-        changes ? JSON.stringify(changes.files) : null,
-        changes?.insertions ?? null,
-        changes?.deletions ?? null,
-        contract?.tests ? (contract.tests.ran ? 1 : 0) : null,
-        contract?.tests?.passed === undefined ? null : contract.tests.passed ? 1 : 0,
-        contract?.deviations?.length ?? null,
-        acceptedQuestions.length,
-        claim.id,
+        Date.now() - started, exitCode, new TextEncoder().encode(output).byteLength, outPath, promptPath,
+        vendorTokens, costUsd, status, error, failureKind, resolvedSession, claim.id,
       )
-    }
 
-    /**
-     * THE ROOT CARRIES THE CHAIN'S OUTCOME. This is the line that makes a
-     * multi-turn conversation one unit of work rather than three.
-     *
-     * Without it the arithmetic goes wrong in both directions at once. A chain
-     * that ends well is root=`blocked` plus child=`ok`, so nothing is ever
-     * offered for scoring — the root is not `ok` and the child is excluded from
-     * evidence — and an implementation that succeeded would teach the router
-     * nothing. Meanwhile the blocked root would sit in the inbox for ever,
-     * still looking like a question nobody answered.
-     *
-     * Rolling the state up here means every existing query keeps working
-     * untouched: one row per unit of work, holding where that work has got to,
-     * with the children recording what each turn cost.
-     */
-    if (opts.resume) {
-      db().query(
-        `UPDATE run SET
-           status=CASE WHEN status='stopped' THEN status ELSE ? END,
-           error=CASE WHEN status='stopped' THEN error ELSE ? END
-         WHERE id=?`,
-      )
-        .run(status, error, opts.resume.parent)
-      resolveRootFromLastTurn(db(), opts.resume.parent)
-    }
+      /**
+       * The facts, recorded without anyone's opinion.
+       *
+       * Half of them are MEASURED (what the diff actually contains) and half are
+       * CLAIMED (what the worker says about its own tests and deviations), and
+       * they are stored side by side deliberately: the interesting signal is
+       * where the two disagree. A worker reporting `tests.passed` beside a diff
+       * that touches no test file has told you something, and no verdict is
+       * needed to see it.
+       */
+      if (writesJob) {
+        db().query(
+          `UPDATE run SET files_changed=?, changed_paths=?, lines_added=?, lines_removed=?,
+                          tests_ran=?, tests_passed=?, deviations=?, escalations=? WHERE id=?`,
+        ).run(
+          changes?.files.length ?? null,
+          changes ? JSON.stringify(changes.files) : null,
+          changes?.insertions ?? null,
+          changes?.deletions ?? null,
+          contract?.tests ? (contract.tests.ran ? 1 : 0) : null,
+          contract?.tests?.passed === undefined ? null : contract.tests.passed ? 1 : 0,
+          contract?.deviations?.length ?? null,
+          acceptedQuestions.length,
+          claim.id,
+        )
+      }
+
+      /**
+       * THE ROOT CARRIES THE CHAIN'S OUTCOME. This is the line that makes a
+       * multi-turn conversation one unit of work rather than three.
+       *
+       * Without it the arithmetic goes wrong in both directions at once. A chain
+       * that ends well is root=`blocked` plus child=`ok`, so nothing is ever
+       * offered for scoring — the root is not `ok` and the child is excluded from
+       * evidence — and an implementation that succeeded would teach the router
+       * nothing. Meanwhile the blocked root would sit in the inbox for ever,
+       * still looking like a question nobody answered.
+       *
+       * The child terminal write and this roll-up share one transaction, so the
+       * root can only inherit the terminal state written immediately above.
+       * Every existing query therefore keeps working untouched: one row per unit
+       * of work, holding where that work has got to, with the children recording
+       * what each turn cost.
+       */
+      if (opts.resume) resolveRootFromLastTurn(db(), opts.resume.parent)
+    })
   }
 
   // Quota and auth stop this agent working until a person acts. Notify at the
