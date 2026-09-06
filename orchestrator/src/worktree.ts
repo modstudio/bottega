@@ -1302,6 +1302,7 @@ export function createReadOnlyWithTool(
   if (existsSync(path)) throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
   const vars = { path, base }
   assertCreateVarsAvailable(tool.readonly_create, vars)
+  const branchesBefore = localBranchTips(repoRoot)
   const result = runCreateTool(tool.readonly_create, vars, repoRoot, targetGitEnvironment(cwd))
   let branch = ''
   try {
@@ -1317,14 +1318,45 @@ export function createReadOnlyWithTool(
     return worktree
   } catch (error) {
     if (!existsSync(path)) throw error
+    const previousTip = branch ? branchesBefore.get(branch) : undefined
     const cleanup = removeReadOnlyTree(tool, {
       path, branch, base, repoRoot, source: 'readonly_recipe',
-    })
+    }, previousTip !== undefined)
+    if (cleanup.removed && branch && previousTip !== undefined) {
+      const restored = restoreBranchToTip(repoRoot, branch, previousTip)
+      if (!restored.ok) {
+        cleanup.removed = false
+        cleanup.detail = `${cleanup.detail}; could not restore pre-existing branch ${branch} ` +
+          `to ${previousTip}: ${restored.error}`
+      }
+    }
     throw new Error(
       `${error instanceof Error ? error.message : String(error)}\n` +
       `cleanup: ${cleanup.removed ? 'removed' : cleanup.detail}`,
     )
   }
+}
+
+function localBranchTips(repoRoot: string): Map<string, string> {
+  const lines = git(['for-each-ref', '--format=%(refname:short) %(objectname)', 'refs/heads/'], repoRoot)
+  return new Map(lines.split('\n').filter(Boolean).map((line) => {
+    const split = line.lastIndexOf(' ')
+    return [line.slice(0, split), line.slice(split + 1)]
+  }))
+}
+
+function restoreBranchToTip(
+  repoRoot: string, branch: string, tip: string,
+): { ok: true } | { ok: false; error: string } {
+  const current = branchTip(repoRoot, branch)
+  if (current === tip) return { ok: true }
+  const expected = current ?? '0000000000000000000000000000000000000000'
+  const p = Bun.spawnSync(['git', 'update-ref', `refs/heads/${branch}`, tip, expected], {
+    cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
+  })
+  return p.exitCode === 0
+    ? { ok: true }
+    : { ok: false, error: p.stderr.toString().trim() || `exit ${p.exitCode}` }
 }
 
 /** Refuse a newly created tree whose files or index do not exactly describe HEAD. */

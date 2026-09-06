@@ -1390,7 +1390,7 @@ const { orphanSafety, repoRootOf, createWorktree, createWithTool, createReadOnly
         workerSharedGitRoots,
         carryWorkingState, withWorktreeCreateLock, withProjectLock, projectLockState,
         unmergedBranch, assertCallerAncestry, checkoutHasUncommittedWork, callerDrift,
-        changesIn, contentTree, removeFor } = await import('./worktree.ts')
+        changesIn, contentTree, removeFor, branchTip } = await import('./worktree.ts')
 const { landingStatus, resolveLandingBranch } = await import('./landing.ts')
 const { gitLocks } = await import('./git-locks.ts')
 const { AGENTS, ARGV_PROMPT_BYTES, localReachable, ensureLocalHealth, resetLocalHealth,
@@ -12691,6 +12691,32 @@ exec git worktree add --detach "$1" "$2"
         .toThrow(/created attached branch bad-readonly-661[\s\S]*cleanup: removed/)
       expect(existsSync(path)).toBe(false)
       expect(readFileSync(removed, 'utf8')).toBe('invoked')
+      expect(branchTip(repo, 'bad-readonly-661')).toBeNull()
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('readonly_create cleanup restores a pre-existing attached branch to its original tip', () => {
+    const { repo } = scratchRepo()
+    const path = join(repo, '.claude', 'worktrees', 'orch-663')
+    const branch = 'preserved-readonly-663'
+    const originalTip = git(repo, 'rev-parse', 'HEAD')
+    git(repo, 'branch', branch, originalTip)
+    writeFileSync(join(repo, 'later.txt'), 'later\n')
+    git(repo, 'add', 'later.txt')
+    git(repo, 'commit', '-m', 'later base')
+    const base = git(repo, 'rev-parse', 'HEAD')
+    const tool = {
+      readonly_create: declaredCreate(
+        'git', ['worktree', 'add', '-B', branch, '{path}', '{base}'],
+      ),
+    }
+    try {
+      expect(() => createReadOnlyWithTool(tool, repo, 663, base))
+        .toThrow(new RegExp(`created attached branch ${branch}[\\s\\S]*cleanup: removed`))
+      expect(existsSync(path)).toBe(false)
+      expect(branchTip(repo, branch)).toBe(originalTip)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
