@@ -641,7 +641,13 @@ export function hasRealQuestions(r: ContractReply | null | undefined): boolean {
   if (!isAsking(r) || !r?.questions?.length) return false
   const generic = new Set<string>(GENERIC_QUESTION_TOKENS)
   return r.questions.every((item) => {
-    const question = item.question.trim()
+    // Format characters are invisible but are not whitespace, so trim() leaves
+    // U+200B ZERO WIDTH SPACE and U+2060 WORD JOINER looking like content.
+    // Punctuation is stripped only at the edges: punctuation inside a real
+    // sentence remains part of the question, while `(placeholder)!` reduces to
+    // the generic token it is disguising.
+    const question = item.question.replace(/\p{Cf}/gu, '').trim()
+      .replace(/^\p{P}+|\p{P}+$/gu, '').trim()
     return question.length > 0 && !generic.has(question.toLowerCase()) && !!item.why?.trim()
   })
 }

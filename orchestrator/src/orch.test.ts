@@ -6689,6 +6689,14 @@ describe('a worker that stops to ask is not a worker that failed', () => {
         question: token, options: null, recommendation: null, why: 'a claimed reason',
       }]))).toBe(false)
     }
+    for (const disguised of ['(placeholder)!', '[TBD]', 'TODO?', '...question...']) {
+      expect(hasRealQuestions(asking([{
+        question: disguised, options: null, recommendation: null, why: 'a claimed reason',
+      }]))).toBe(false)
+    }
+    expect(hasRealQuestions(asking([{
+      question: '\u200B\u2060', options: null, recommendation: null, why: 'a claimed reason',
+    }]))).toBe(false)
     expect(hasRealQuestions(asking([
       {
         question: 'which table?', options: null, recommendation: null,
@@ -6837,6 +6845,26 @@ describe('a writing worker must return evidence of completed work', () => {
     } catch (e) { failure = e as Error & { runId?: number } }
     expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(failure!.runId!))
       .toEqual({ status: 'failed', failure_kind: 'contract' })
+  })
+
+  test('punctuated generic and invisible-only questions fail in the run path', async () => {
+    for (const question of ['(placeholder)!', '\u200B\u2060']) {
+      let failure: Error & { runId?: number } | null = null
+      try {
+        await runInCleanTree(JSON.stringify(workerReply({
+          status: 'asking', files_changed: null, tests: null,
+          questions: [{
+            question, options: null, recommendation: null, why: 'a claimed reason',
+          }],
+        })))
+      } catch (e) { failure = e as Error & { runId?: number } }
+      expect(failure?.runId).toBeDefined()
+      const id = failure!.runId!
+      expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(id))
+        .toEqual({ status: 'failed', failure_kind: 'contract' })
+      expect((db().query('SELECT COUNT(*) n FROM question WHERE run_id=?').get(id) as { n: number }).n)
+        .toBe(0)
+    }
   })
 
   test('a real question and why are accepted and recorded as before', async () => {
