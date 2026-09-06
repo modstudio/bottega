@@ -7,12 +7,13 @@ import sys
 import time
 
 
-def _start(orch, *args):
+def _start(orch, *args, env=None):
     return subprocess.Popen(
         [orch, *args],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        env=env,
     )
 
 
@@ -66,10 +67,14 @@ def main() -> int:
         cwd = payload.get("cwd")
         if not cwd:
             return 0
+        sid = payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID")
         orch = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "bin", "orch"))
         brief_p = _start(orch, "doc", "brief", "--cwd", cwd)
         resumes_p = _start(orch, "doc", "resumes", "--cwd", cwd)
-        inbox_p = _start(orch, "inbox", "--all", "--json")
+        inbox_env = os.environ.copy()
+        if sid:
+            inbox_env["CLAUDE_CODE_SESSION_ID"] = sid
+        inbox_p = _start(orch, "inbox", "--all", "--json", env=inbox_env)
         deadline = time.monotonic() + 10
         brief = _wait(brief_p, deadline)
         resumes = _wait(resumes_p, deadline)
@@ -86,22 +91,25 @@ def main() -> int:
                 context += text if text.endswith("\n") else text + "\n"
                 context += _resume_sentence(payload.get("source"), lines) + "\n"
 
-        question_count = unknown_count = 0
+        answerable_count = foreign_count = unknown_count = 0
+        inbox_invalid = False
         if inbox.returncode == 0:
             try:
                 questions = json.loads(inbox.stdout)
                 if not isinstance(questions, list) or not all(
                     isinstance(item, dict)
                     and item.get("session_liveness") in ("live", "unknown")
+                    and isinstance(item.get("can_answer"), bool)
                     for item in questions
                 ):
                     raise ValueError("invalid inbox JSON")
-                question_count = len(questions)
+                answerable_count = sum(item["can_answer"] for item in questions)
+                foreign_count = len(questions) - answerable_count
                 unknown_count = sum(
                     item["session_liveness"] == "unknown" for item in questions
                 )
             except Exception:
-                question_count = unknown_count = 0
+                inbox_invalid = True
 
         notices = []
         if brief.returncode != 0:
@@ -109,17 +117,20 @@ def main() -> int:
                          None)
             if first:
                 notices.append(f"operator brief refused: {first}")
-        if question_count:
-            if unknown_count:
-                noun = "question" if unknown_count == 1 else "questions"
-                verb = "has" if unknown_count == 1 else "have"
-                notices.append(
-                    f"{unknown_count} {noun} {verb} unknown owner liveness "
-                    f"({question_count} total)."
-                )
-            else:
-                noun = "question" if question_count == 1 else "questions"
-                notices.append(f"{question_count} {noun} waiting on a ruling.")
+        if inbox_invalid:
+            notices.append("Inbox response was invalid; question state is unknown.")
+        if answerable_count:
+            noun = "question" if answerable_count == 1 else "questions"
+            notices.append(f"{answerable_count} {noun} waiting on your ruling.")
+        if foreign_count:
+            noun = "question" if foreign_count == 1 else "questions"
+            notices.append(
+                f"{foreign_count} other-session {noun} visible; only their owners may rule."
+            )
+        if unknown_count:
+            noun = "question" if unknown_count == 1 else "questions"
+            verb = "has" if unknown_count == 1 else "have"
+            notices.append(f"{unknown_count} visible {noun} {verb} unknown owner liveness.")
         if lines:
             slugs = ", ".join(f"`{line.split()[0]}`" for line in lines)
             noun = "brief" if len(lines) == 1 else "briefs"
@@ -141,7 +152,6 @@ def main() -> int:
                 notices.append(msg)
             else:
                 # The payload's own session_id first, then the env var Claude always sets.
-                sid = payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID")
                 if sid:
                     line = f"Arm under Monitor: {heartbeat} {sid}"
                     if context and not context.endswith("\n"):

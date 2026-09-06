@@ -6951,6 +6951,23 @@ describe('detached run collection', () => {
     expect(r.out).not.toContain(`orch answer ${id}`)
   })
 
+  test('inbox --all shows a foreign recoverable root without offering authority', () => {
+    const id = insert('asking', 'implement')
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('other-session', id)
+
+    const r = orch('inbox', '--all')
+    expect(r.code).toBe(0)
+    expect(r.out).toContain(`run ${id} · codex/implement`)
+    expect(r.out).toContain('owner other-session · visible only')
+    expect(r.out).toContain('only the owning session may continue it')
+    expect(r.out).not.toContain(`recoverable: orch continue ${id}`)
+
+    const continued = orch('continue', String(id))
+    expect(continued.code).toBe(1)
+    expect(continued.err).toContain(`run ${id} is owned by session other-session`)
+    expect(continued.err).toContain('current session orch-test-session cannot continue it')
+  })
+
   test('inbox --all --json reports live or unknown without asserting death', () => {
     const live = insert('asking', 'implement')
     const orphan = insert('asking', 'implement')
@@ -6975,7 +6992,7 @@ describe('detached run collection', () => {
     })
     expect(rows[1]).toMatchObject({
       run_id: orphan, answer_id: orphan, session_live: null,
-      session_liveness: 'unknown', can_answer: false,
+      session_liveness: 'unknown', can_answer: true,
     })
   })
 
@@ -7025,6 +7042,24 @@ describe('detached run collection', () => {
     expect(r.err).toContain('current session orch-test-session cannot rule')
     expect(db().query('SELECT answer, answered_at FROM question WHERE run_id=?').get(id))
       .toEqual({ answer: null, answered_at: null })
+  })
+
+  test('answer permits an unowned question, warns, and records the answering session', () => {
+    const id = insert('running', 'implement')
+    db().query('UPDATE run SET session_id=NULL, pid=? WHERE id=?').run(process.pid, id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'which shape?')
+
+    const r = orch('answer', String(id), 'the existing shape')
+    expect(r.code).toBe(0)
+    expect(r.err).toContain(`run ${id} is unowned`)
+    expect(r.err).toContain('session orch-test-session may rule')
+    expect(db().query(
+      'SELECT answer, answered_by, answered_at FROM question WHERE run_id=?',
+    ).get(id)).toEqual({
+      answer: 'the existing shape', answered_by: 'orch-test-session',
+      answered_at: expect.any(String),
+    })
   })
 
   test('a flag value is not mistaken for a run id', () => {
@@ -17054,8 +17089,59 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
     const p = runBrief({ cwd: '/w/known', source: 'compact', session_id: 'reader' })
     expect(p.exitCode).toBe(0)
     const out = hookOutput(p)
-    expect(out.systemMessage).toBe('1 question has unknown owner liveness (1 total).')
+    expect(out.systemMessage).toBe(
+      '1 other-session question visible; only their owners may rule. ' +
+      '1 visible question has unknown owner liveness.',
+    )
     expect(out.systemMessage).not.toContain('orphaned')
+    expect(out.systemMessage).not.toContain('waiting on your ruling')
+  })
+
+  test('machine-wide questions distinguish this session rulings from foreign visibility', () => {
+    const own = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+    const foreign = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('brief-owner', own)
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('other-owner', foreign)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(own, new Date().toISOString(), 'own decision?')
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(foreign, new Date().toISOString(), 'foreign decision?')
+
+    const p = runBrief({ cwd: '/w/known', source: 'compact', session_id: 'brief-owner' })
+    expect(p.exitCode).toBe(0)
+    const out = hookOutput(p)
+    expect(out.systemMessage).toContain('1 question waiting on your ruling.')
+    expect(out.systemMessage).toContain(
+      '1 other-session question visible; only their owners may rule.',
+    )
+  })
+
+  test('a successful malformed inbox response reports unknown state, not zero questions', () => {
+    const root = mkdtempSync(join(tmpdir(), 'session-brief-invalid-inbox-'))
+    const hooksDir = join(root, 'orchestrator', 'hooks')
+    mkdirSync(hooksDir, { recursive: true })
+    mkdirSync(join(root, 'bin'), { recursive: true })
+    copyFileSync(hook, join(hooksDir, 'session-brief.py'))
+    const fakeOrch = join(root, 'bin', 'orch')
+    writeFileSync(
+      fakeOrch,
+      '#!/bin/sh\nif [ "$1" = "inbox" ]; then echo "not-json"; fi\nexit 0\n',
+    )
+    chmodSync(fakeOrch, 0o755)
+    try {
+      const p = Bun.spawnSync(['python3', join(hooksDir, 'session-brief.py')], {
+        stdin: new TextEncoder().encode(JSON.stringify({
+          cwd: '/w/known', source: 'compact', session_id: 'reader',
+        })),
+        stdout: 'pipe', stderr: 'pipe', env: process.env,
+      })
+      expect(p.exitCode).toBe(0)
+      expect(JSON.parse(p.stdout.toString()).systemMessage).toBe(
+        'Inbox response was invalid; question state is unknown.',
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   test('malformed stdin exits zero and prints nothing', () => {
@@ -17224,6 +17310,44 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
       const msg = `Heartbeat missing or not executable: ${missingPath}`
       expect(out.hookSpecificOutput.additionalContext).toBe(msg + '\n')
       expect(out.systemMessage).toBe(msg)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('architect heartbeat session scope', () => {
+  const heartbeat = new URL('../hooks/orch-heartbeat.sh', import.meta.url).pathname
+
+  test('the explicit SID overrides the inherited session and uses the machine-wide inbox', () => {
+    const root = mkdtempSync(join(tmpdir(), 'heartbeat-session-scope-'))
+    const fakeOrch = join(root, 'orch')
+    writeFileSync(fakeOrch, `#!/bin/sh
+if [ "$1" = "inbox" ]; then
+  if [ "$2" != "--all" ] || [ "$3" != "--json" ]; then exit 19; fi
+  if [ "$CLAUDE_CODE_SESSION_ID" = "payload-owner" ]; then
+    echo '[{"can_answer":true}]'
+  else
+    echo '[{"can_answer":false}]'
+  fi
+elif [ "$1" = "runs" ]; then
+  echo '{"id":7,"job":"implement","agent":"codex","status":"asking","session_id":"payload-owner","started_at":"2026-09-05T00:00:00.000Z"}'
+else
+  exit 20
+fi
+`)
+    chmodSync(fakeOrch, 0o755)
+    try {
+      const p = Bun.spawnSync([heartbeat, 'payload-owner', '0', '1'], {
+        stdout: 'pipe', stderr: 'pipe',
+        env: {
+          ...process.env, PATH: `${root}:${process.env.PATH ?? ''}`,
+          CLAUDE_CODE_SESSION_ID: 'environment-owner',
+        },
+      })
+      expect(p.exitCode).toBe(0)
+      expect(p.stdout.toString()).toContain('BLOCKED - 1 question(s) waiting on you')
+      expect(p.stdout.toString()).not.toContain('nothing needed from you')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

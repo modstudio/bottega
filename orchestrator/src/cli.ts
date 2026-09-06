@@ -824,6 +824,13 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
   if (row.parent_run_id) {
     throw new Error(`run ${id} is a turn of run ${row.parent_run_id}; continue that one`)
   }
+  const callerSession = sessionId()
+  if (row.session_id && callerSession !== row.session_id) {
+    throw new Error(
+      `run ${id} is owned by session ${row.session_id}; ` +
+      `current session ${callerSession ?? 'unknown'} cannot continue it`,
+    )
+  }
   const open = db().query(
     `SELECT COUNT(*) n FROM question q JOIN run r ON r.id = q.run_id
       WHERE (r.id = ? OR r.parent_run_id = ?) AND q.answered_at IS NULL`,
@@ -833,6 +840,12 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
   // with an open question guesses — the single thing this design exists to
   // prevent.
   if (open.n) throw new Error(`run ${id} is waiting on ${open.n} question(s): orch answer ${id} ...`)
+  if (!row.session_id) {
+    console.error(
+      `run ${id} is unowned; session ${callerSession ?? 'unknown'} is continuing it ` +
+      'without an established owner',
+    )
+  }
 
   const latest = db().query(
     `SELECT id, agent, vendor_session, turn, cwd, worktree, branch, base_commit
@@ -2650,8 +2663,9 @@ switch (cmd) {
         ? allRows.filter((q) => q.repo === project.name)
         : allRows.filter((q) => sid !== null && q.session_id === sid)
       : allRows
-    const owned = rows.filter((q) => sid !== null && q.session_id === sid)
-    const visible = rows.filter((q) => sid === null || q.session_id !== sid)
+    const canAnswer = (owner: string | null) => owner === null || (sid !== null && owner === sid)
+    const answerable = rows.filter((q) => canAnswer(q.session_id))
+    const visible = rows.filter((q) => !canAnswer(q.session_id))
 
     if (has('json')) {
       console.log(JSON.stringify(rows.map((q) => ({
@@ -2666,7 +2680,7 @@ switch (cmd) {
         // which a last-seen timestamp cannot establish.
         session_live: q.session_recent ? true : null,
         session_liveness: q.session_recent ? 'live' : 'unknown',
-        can_answer: sid !== null && q.session_id === sid,
+        can_answer: canAnswer(q.session_id),
         question: q.question,
         options: q.options ? JSON.parse(q.options) as string[] : [],
         recommendation: q.recommendation,
@@ -2676,14 +2690,14 @@ switch (cmd) {
     }
 
     const recoverable = db().query(
-      `SELECT root.id, root.agent, root.job, root.repo
+      `SELECT root.id, root.agent, root.job, root.repo, root.session_id
          FROM run root
         WHERE root.parent_run_id IS NULL AND root.status = 'asking'
           ${mine
             ? project
-              ? 'AND root.repo = ? AND root.session_id = ?'
+              ? 'AND root.repo = ?'
               : 'AND root.session_id = ?'
-            : 'AND root.session_id = ?'}
+            : ''}
           AND NOT EXISTS (
             SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
              WHERE (owner.id = root.id OR owner.parent_run_id = root.id)
@@ -2694,8 +2708,8 @@ switch (cmd) {
              WHERE active.parent_run_id = root.id AND active.status = 'running'
           )
         ORDER BY root.id`,
-    ).all(...(project && mine ? [project.name, sid] : [sid])) as {
-      id: number; agent: string; job: string; repo: string | null
+    ).all(...(mine ? project ? [project.name] : [sid] : [])) as {
+      id: number; agent: string; job: string; repo: string | null; session_id: string | null
     }[]
 
     if (!rows.length && !recoverable.length) {
@@ -2705,7 +2719,7 @@ switch (cmd) {
     }
     let lastRun = -1
     let lastRoot = -1
-    for (const q of owned) {
+    for (const q of answerable) {
       if (q.run_id !== lastRun) {
         console.log(`\nrun ${q.run_id} · ${q.agent}/${q.job}${q.repo ? ` · ${q.repo}` : ''} · ${q.status}`)
         lastRun = q.run_id
@@ -2716,18 +2730,32 @@ switch (cmd) {
       const opts = q.options ? (JSON.parse(q.options) as string[]) : []
       for (const o of opts) console.log(`        - ${o}`)
       if (q.recommendation) console.log(`        it would: ${q.recommendation}`)
+      if (q.session_id === null) {
+        console.log('        unowned — any session may rule, and the answering identity is recorded')
+      }
     }
-    if (owned.length) {
+    if (answerable.length) {
       console.log(
         `\nrule on them:  orch answer ${lastRoot} "<ruling>"    (one per question, in order)` +
         `\n               orch answer ${lastRoot} --q<id> "<ruling>"`,
       )
     }
     for (const r of recoverable) {
-      console.log(
-        `\nrun ${r.id} · ${r.agent}/${r.job}${r.repo ? ` · ${r.repo}` : ''} · ` +
-        `asking, but no ruling is open — recoverable: orch continue ${r.id}`,
-      )
+      if (canAnswer(r.session_id)) {
+        console.log(
+          `\nrun ${r.id} · ${r.agent}/${r.job}${r.repo ? ` · ${r.repo}` : ''} · ` +
+          `asking, but no ruling is open — recoverable: orch continue ${r.id}`,
+        )
+        if (r.session_id === null) {
+          console.log('        unowned — any session may continue it')
+        }
+      } else {
+        console.log(
+          `\nrun ${r.id} · ${r.agent}/${r.job}${r.repo ? ` · ${r.repo}` : ''} · ` +
+          `asking, but no ruling is open · owner ${r.session_id} · visible only; ` +
+          'only the owning session may continue it',
+        )
+      }
     }
     if (visible.length) {
       console.log('\nvisible here, but owned by another session:')
@@ -2813,10 +2841,16 @@ switch (cmd) {
     // command then accepted the adoption. Only the architect session that
     // dispatched the conversation has standing to change its specification.
     const callerSession = sessionId()
-    if (!row.session_id || callerSession !== row.session_id) {
+    if (row.session_id && callerSession !== row.session_id) {
       throw new Error(
-        `run ${id} is owned by session ${row.session_id ?? 'unknown'}; ` +
+        `run ${id} is owned by session ${row.session_id}; ` +
         `current session ${callerSession ?? 'unknown'} cannot rule on its questions`,
+      )
+    }
+    if (!row.session_id) {
+      console.error(
+        `run ${id} is unowned; session ${callerSession ?? 'unknown'} may rule, ` +
+        'and that answering identity will be recorded',
       )
     }
 
@@ -2976,7 +3010,8 @@ switch (cmd) {
     const upd = db().query(
       'UPDATE question SET answer=?, answered_at=?, answered_by=? WHERE id=?',
     )
-    open.forEach((q, i) => upd.run(answers[i]!.answer, now, sessionId(), q.id))
+    const answeredBy = callerSession ?? 'anonymous (no session id)'
+    open.forEach((q, i) => upd.run(answers[i]!.answer, now, answeredBy, q.id))
 
     if (ownersLive) {
       // Delivered. The worker's own tool call is polling this row and will

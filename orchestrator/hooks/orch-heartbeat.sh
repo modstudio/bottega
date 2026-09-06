@@ -48,16 +48,16 @@ prev_key=""
 since_emit=0
 
 for ((i = 1; i <= MAX; i++)); do
-  # Bare `orch inbox` is project-scoped for visibility. Count only rows whose
-  # `can_answer` flag says this session owns them; visibility never transfers
-  # the authority a per-session heartbeat is reporting.
+  # The heartbeat is session-scoped, not checkout-scoped. Ask for the complete
+  # visible set, and make the explicit SID the identity used to derive
+  # `can_answer`; the inherited environment may name a different session.
   # Query first, THEN parse. A previous version piped `orch` straight into
   # python under `set -o pipefail`; a non-zero exit from `orch` collapsed into
   # the empty fallback, which reads as "no runs" and exits CLEAR. A transient
   # orch failure would therefore announce all-clear while work was still
   # running - the precise failure this file exists to prevent. Distinguish
   # "orch said nothing" from "orch did not answer".
-  inbox_raw=$(orch inbox --json 2>/dev/null); inbox_rc=$?
+  inbox_raw=$(CLAUDE_CODE_SESSION_ID="$SID" orch inbox --all --json 2>/dev/null); inbox_rc=$?
   runs_raw=$(orch runs --limit 200 --json 2>/dev/null); runs_rc=$?
 
   if [ "$inbox_rc" -ne 0 ] || [ "$runs_rc" -ne 0 ]; then
