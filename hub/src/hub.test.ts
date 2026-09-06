@@ -517,6 +517,11 @@ describe('local task tracker', () => {
       .toThrow(`orch project set nested --settings '{"keyPrefixes":["ABC"]}'`)
   })
 
+  test('refuses an unusable title at the shared creation boundary', () => {
+    expect(() => createTask({ project: 'workshop', title: '' })).toThrow('task title is required')
+    expect(() => createTask({ project: 'workshop', title: ' \n ' })).toThrow('task title is required')
+  })
+
   test('stores a parent and exposes the child through the same task row', () => {
     const parent = createTask({ project: 'workshop', title: 'Parent' })
     const child = createTask({ project: 'workshop', title: 'Child', parent: parent.key })

@@ -108,17 +108,15 @@ describe('task CLI bodies', () => {
     expect(show(created.stdout).body).toBe('Replacement')
   })
 
-  test('allows replacing an empty body but refuses a whitespace-only body', () => {
-    const empty = newTask('--project', 'alpha', '--title', 'Empty', '--body', '')
+  test('allows filling an absent body but refuses a whitespace-only required body value', () => {
+    const empty = newTask('--project', 'alpha', '--title', 'Empty')
     expect(hub('task', 'set', empty.stdout, '--body', 'Now filled').exitCode).toBe(0)
     expect(show(empty.stdout).body).toBe('Now filled')
 
     const whitespace = newTask('--project', 'alpha', '--title', 'Whitespace',
       '--body', '   \n')
-    const refused = hub('task', 'set', whitespace.stdout, '--body', 'Replacement')
-    expect(refused.exitCode).toBe(1)
-    expect(refused.stderr).toContain('--force')
-    expect(show(whitespace.stdout).body).toBe('   \n')
+    expect(whitespace.exitCode).toBe(1)
+    expect(whitespace.stderr).toContain('--body is required')
   })
 })
 
@@ -199,6 +197,28 @@ describe('task duplicate guard', () => {
     const shown = hubAt(rollbackDatabase, 'task', 'list', '--project', 'workshop', '--json')
     const rows = JSON.parse(shown.stdout) as { title: string | null }[]
     expect(rows.map((row) => row.title)).toEqual([firstTitle])
+  })
+
+  test('refuses empty and whitespace-only titles before a body can bypass matching', () => {
+    const titleDatabase = join(dir, 'required-title.db')
+    const seed = hubAt(titleDatabase, 'task', 'new', '--project', 'workshop',
+      '--title', 'Known report', '--body', 'identical evidence body',
+      '--allow-duplicate', 'hub required title test seed')
+    expect(seed.exitCode).toBe(0)
+
+    for (const title of ['', '  \n  ']) {
+      const refused = hubAt(titleDatabase, 'task', 'new', '--project', 'workshop',
+        '--title', title, '--body', 'identical evidence body')
+      expect(refused.exitCode).toBe(1)
+      expect(refused.stderr).toContain('--title is required')
+    }
+    const listed = hubAt(titleDatabase, 'task', 'list', '--project', 'workshop', '--json')
+    expect(JSON.parse(listed.stdout)).toHaveLength(1)
+
+    const filed = hubAt(titleDatabase, 'task', 'new', '--project', 'workshop',
+      '--title', 'Document how daily email typography behaves in Outlook',
+      '--body', 'identical evidence body')
+    expect(filed.exitCode).toBe(0)
   })
 
 })

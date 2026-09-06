@@ -134,6 +134,7 @@ export function createTask(input: {
   allowDuplicateReason?: string
   afterDuplicateSearch?: () => void
 } = {}): TaskRow {
+  if (!input.title.trim()) throw new Error('task title is required')
   const project = registeredProject(input.project)
   const prefix = project.settings.keyPrefixes?.[0]
   if (!prefix) {
