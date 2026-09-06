@@ -784,11 +784,10 @@ function pathRootAt(
     : candidate === root
   if (!equal) return false
   const after = prompt[offset + root.length]
-  if (after === undefined || after === '/' || /\s/.test(after)) return true
-  if ((after === '.' || after === '-') &&
-      (prompt[offset + root.length + 1] === undefined ||
-       /\s/.test(prompt[offset + root.length + 1]!))) return true
-  return !/[A-Za-z0-9_.-]/.test(after)
+  if (after === undefined || after === '/' || /\s/.test(after) || /['"`]/.test(after)) return true
+  let end = offset + root.length
+  while (end < prompt.length && !/[\s'"`]/.test(prompt[end]!)) end++
+  return !existsSync(prompt.slice(offset, end))
 }
 
 function hasPathStartBoundary(prompt: string, offset: number): boolean {
@@ -829,13 +828,13 @@ function uriAuthorityEnd(prompt: string, offset: number): number | null {
   return path === -1 ? prompt.length : path
 }
 
-export function retargetRepositoryPromptResult(
+export function retargetRepositoryPrompt(
   prompt: string, callers: string | string[], worktree: string,
-  caseInsensitive = false, worktreeAliases: string[] = [worktree],
+  caseInsensitive: boolean, protectedWorktreeRoots: string[],
 ): RetargetResult {
   const callerList = (Array.isArray(callers) ? callers : [callers])
   if (callerList.every((root) => root === '')) return { prompt, diagnostic: null }
-  const rawTargets = [worktree, ...worktreeAliases]
+  const rawTargets = [worktree, ...protectedWorktreeRoots]
   const invalid = invalidRetargeting(callerList, rawTargets, caseInsensitive)
   if (invalid) return { prompt, diagnostic: invalid }
   const aliases: RetargetAlias[] = [
@@ -874,13 +873,16 @@ export function retargetRepositoryPromptResult(
   return { prompt: rewritten, diagnostic: null }
 }
 
-export function retargetRepositoryPrompt(
+/** A dispatch may consume only a determinate retargeting result. */
+export function retargetRepositoryPromptForDispatch(
   prompt: string, callers: string | string[], worktree: string,
-  caseInsensitive = false, worktreeAliases: string[] = [worktree],
+  caseInsensitive: boolean, protectedWorktreeRoots: string[],
 ): string {
-  return retargetRepositoryPromptResult(
-    prompt, callers, worktree, caseInsensitive, worktreeAliases,
-  ).prompt
+  const result = retargetRepositoryPrompt(
+    prompt, callers, worktree, caseInsensitive, protectedWorktreeRoots,
+  )
+  if (result.diagnostic) throw new Error(result.diagnostic)
+  return result.prompt
 }
 
 export function changedRegisteredCheckouts(
@@ -1220,7 +1222,11 @@ export async function run(opts: {
   // asked any more — re-routing would resume a session the new agent has never
   // seen. Recorded with a reason that says so, rather than an empty one.
   const { agent: name, reason } = opts.resume
-    ? { agent: opts.resume.agent, reason: `resumed run ${opts.resume.parent} (turn ${opts.resume.turn})` }
+    ? {
+        agent: opts.resume.agent,
+        reason: `resumed run ${opts.resume.parent} (turn ${opts.resume.turn}); ` +
+          'repository path retargeting not applied because the turn is already bound to its worktree',
+      }
     // The STACK steers the route: an agent strong on PHP and weak on a Vue
     // component is two different agents to a router, and only this tells them
     // apart. Backs off to job-wide evidence until a stack cell has earned it.
@@ -1588,19 +1594,30 @@ export async function run(opts: {
         claim.id,
       )
       cwd = worktree.path
-      const caller = checkoutAliases(callerCwd)
-      if (!caller) throw new Error(`could not resolve caller checkout root: ${callerCwd}`)
-      retargetDiagnostic = caller.diagnostic
-      let realWorktree = worktree.path
-      try { realWorktree = realpathSync(worktree.path) } catch { /* the Git spelling remains valid */ }
-      const worktreeRoots = [...new Set([
-        worktree.path, gitTopLevel(worktree.path) ?? worktree.path, realWorktree,
-      ])]
-      const retargeted = retargetRepositoryPromptResult(
-        prompt, caller.roots, worktree.path, caller.caseInsensitive, worktreeRoots,
-      )
-      prompt = retargeted.prompt
-      retargetDiagnostic = [retargetDiagnostic, retargeted.diagnostic].filter(Boolean).join('\n') || null
+      if (!opts.resume) {
+        const caller = checkoutAliases(callerCwd)
+        if (!caller) throw new Error(`could not resolve caller checkout root: ${callerCwd}`)
+        retargetDiagnostic = caller.diagnostic
+        // The project's worktree tool decides where the tree lives. Protect
+        // that whole declared directory, obtained from the path it returned,
+        // so a later turn cannot rebind an older sibling worktree beneath the
+        // same root into the current destination.
+        const declaredWorktreeRoot = dirname(worktree.path)
+        let canonicalWorktreeRoot = declaredWorktreeRoot
+        try { canonicalWorktreeRoot = realpathSync(declaredWorktreeRoot) } catch {
+          /* the tool's spelling remains a valid protected address */
+        }
+        try {
+          prompt = retargetRepositoryPromptForDispatch(
+            prompt, caller.roots, worktree.path, caller.caseInsensitive,
+            [...new Set([declaredWorktreeRoot, canonicalWorktreeRoot])],
+          )
+        } catch (error) {
+          throw new Error([
+            String((error as Error)?.message ?? error), caller.diagnostic,
+          ].filter(Boolean).join('\n'))
+        }
+      }
       // The original file remains the caller's resumable spec. The bound file
       // and row describe what was actually sent after the worktree had an
       // address, which is the evidence an audit needs.

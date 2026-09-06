@@ -1149,8 +1149,15 @@ const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePaths, pr
         resolveRootFromLastTurn, gitObjectEnvironmentFor, inferredReadOnlyKey,
         canonSourceFor, canonSourceInstruction, snapshotRegisteredCheckouts,
         changedRegisteredCheckouts, checkoutAliases, checkoutCaseSensitivity,
-        retargetRepositoryPrompt, retargetRepositoryPromptResult, run: runJob } = await import('./run.ts')
+        retargetRepositoryPrompt, retargetRepositoryPromptForDispatch,
+        run: runJob } = await import('./run.ts')
 const run = runJob
+const retargetedPrompt = (
+  prompt: string, callers: string | string[], worktree: string,
+  caseInsensitive = false, protectedWorktreeRoots: string[] = [],
+) => retargetRepositoryPrompt(
+  prompt, callers, worktree, caseInsensitive, protectedWorktreeRoots,
+).prompt
 const { summary } = await import('./metric.ts')
 const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
         NO_REPO_PREAMBLE, WORKER_PREAMBLE, LAND_PREAMBLE, REVIEW_SCHEMA,
@@ -7612,12 +7619,17 @@ describe('a writing worker must return evidence of completed work', () => {
     }
     expect(failure?.message).toContain('reported done with no change and no test run')
     expect(failure?.runId).toBeDefined()
-    const row = db().query('SELECT status, error, files_changed FROM run WHERE id=?')
-      .get(failure!.runId!) as { status: string; error: string; files_changed: number }
+    const row = db().query('SELECT status, error, files_changed, route_reason FROM run WHERE id=?')
+      .get(failure!.runId!) as {
+        status: string; error: string; files_changed: number; route_reason: string
+      }
     expect(row.status).toBe('failed')
     expect(row.files_changed).toBe(0)
     expect(row.error).toContain('reported done with no change and no test run')
-    expect(row.error).toContain('review path retargeting indeterminate: alias has both source and target roles')
+    expect(row.error).not.toContain('review path retargeting indeterminate:')
+    expect(row.route_reason).toContain(
+      'repository path retargeting not applied because the turn is already bound to its worktree',
+    )
   })
 
   test('run 1743 placeholder shape is a visible contract failure with no question', async () => {
@@ -9754,76 +9766,118 @@ describe('outside-worktree write observation', () => {
   test('caller paths in a review pack are retargeted at filesystem boundaries', () => {
     const caller = '/repo with [meta]*'
     const worktree = `${caller}/.claude/worktrees/orch-1`
-    expect(retargetRepositoryPrompt(`${caller}/subdir/subject.txt`, `${caller}/`, worktree))
+    expect(retargetedPrompt(`${caller}/subdir/subject.txt`, `${caller}/`, worktree))
       .toBe(`${worktree}/subdir/subject.txt`)
-    expect(retargetRepositoryPrompt(caller, caller, worktree)).toBe(worktree)
-    expect(retargetRepositoryPrompt(`${caller}-archive/subject.txt`, caller, worktree))
-      .toBe(`${caller}-archive/subject.txt`)
-    expect(retargetRepositoryPrompt(`word${caller}/subject.txt`, caller, worktree))
+    expect(retargetedPrompt(caller, caller, worktree)).toBe(worktree)
+    expect(retargetedPrompt(`${caller}-archive/subject.txt`, caller, worktree))
+      .toBe(`${worktree}-archive/subject.txt`)
+    expect(retargetedPrompt(`word${caller}/subject.txt`, caller, worktree))
       .toBe(`word${caller}/subject.txt`)
     for (const prefix of ['', ' ', '\n', '"', "'", '`', '=', ':', ',', '(', '[', '{', '<']) {
-      expect(retargetRepositoryPrompt(`${prefix}${caller}/subject.txt`, caller, worktree))
+      expect(retargetedPrompt(`${prefix}${caller}/subject.txt`, caller, worktree))
         .toBe(`${prefix}${worktree}/subject.txt`)
     }
     const bound = `read ${worktree}/subject.txt`
-    expect(retargetRepositoryPrompt(bound, caller, worktree)).toBe(bound)
-    expect(retargetRepositoryPrompt('unchanged', '', worktree)).toBe('unchanged')
-    expect(retargetRepositoryPrompt('/subject.txt', '/', '/worktree')).toBe('/subject.txt')
-    expect(retargetRepositoryPrompt('/', '/', '/worktree')).toBe('/')
-    expect(retargetRepositoryPrompt(
+    expect(retargetedPrompt(bound, caller, worktree)).toBe(bound)
+    expect(retargetedPrompt('unchanged', '', worktree)).toBe('unchanged')
+    expect(retargetedPrompt('/subject.txt', '/', '/worktree')).toBe('/subject.txt')
+    expect(retargetedPrompt('/', '/', '/worktree')).toBe('/')
+    expect(retargetedPrompt(
       '/repo\nline [meta]*/subject.txt', '/repo\nline [meta]*', '/worktree',
     )).toBe('/worktree/subject.txt')
   })
 
   test('path ends, alias specificity, URI authorities, and malformed aliases are one rule', () => {
-    expect(retargetRepositoryPrompt(
+    expect(retargetedPrompt(
       '/repo, /repo) /repo: /repo. /repo-archive /repo.git /repo-\n/repo\nnext',
       '/repo', '/wt',
-    )).toBe('/wt, /wt) /wt: /wt. /repo-archive /repo.git /wt-\n/wt\nnext')
+    )).toBe('/wt, /wt) /wt: /wt. /wt-archive /wt.git /wt-\n/wt\nnext')
 
-    const shorterTarget = retargetRepositoryPrompt(
+    const shorterTarget = retargetedPrompt(
       '/repo/main/file', '/repo/main', '/repo', false, ['/repo'],
     )
     expect(shorterTarget).toBe('/repo/file')
-    expect(retargetRepositoryPrompt(
-      retargetRepositoryPrompt(shorterTarget, '/repo/main', '/repo', false, ['/repo']),
+    expect(retargetedPrompt(
+      retargetedPrompt(shorterTarget, '/repo/main', '/repo', false, ['/repo']),
       '/repo/main', '/repo', false, ['/repo'],
     )).toBe(shorterTarget)
-    expect(retargetRepositoryPrompt('/repo/file', '/repo', '/', false, ['/']))
+    expect(retargetedPrompt('/repo/file', '/repo', '/', false, ['/']))
       .toBe('/file')
-    expect(retargetRepositoryPrompt(
+    expect(retargetedPrompt(
       'https://repo/file file:///repo/file', '/repo', '/wt',
     )).toBe('https://repo/file file:///wt/file')
 
-    const first = retargetRepositoryPrompt('/repo/file', '/repo', '/repo/wt', false, [])
+    const first = retargetedPrompt('/repo/file', '/repo', '/repo/wt', false, [])
     expect(first).toBe('/repo/wt/file')
-    const second = retargetRepositoryPrompt(first, '/repo', '/repo/wt', false, [])
-    expect(retargetRepositoryPrompt(second, '/repo', '/repo/wt', false, [])).toBe(first)
-    const aliased = retargetRepositoryPrompt(
+    const second = retargetedPrompt(first, '/repo', '/repo/wt', false, [])
+    expect(retargetedPrompt(second, '/repo', '/repo/wt', false, [])).toBe(first)
+    const aliased = retargetedPrompt(
       '/repo/file', '/repo', '/repo/wt', false, ['/repo/wt-alias'],
     )
     expect(aliased).toBe('/repo/wt/file')
-    expect(retargetRepositoryPrompt(
+    expect(retargetedPrompt(
       aliased, '/repo', '/repo/wt', false, ['/repo/wt-alias'],
     )).toBe(aliased)
-    expect(retargetRepositoryPrompt('//repo/file', '/repo', '/wt')).toBe('//wt/file')
+    expect(retargetedPrompt('//repo/file', '/repo', '/wt')).toBe('//wt/file')
 
-    expect(retargetRepositoryPromptResult('/repo/file', '/repo', '')).toEqual({
+    expect(retargetRepositoryPrompt('/repo/file', '/repo', '', false, [])).toEqual({
       prompt: '/repo/file',
       diagnostic: 'review path retargeting indeterminate: destination is empty',
     })
-    expect(retargetRepositoryPromptResult('//repo ///repo', '/', '/wt')).toEqual({
+    expect(retargetRepositoryPrompt('//repo ///repo', '/', '/wt', false, [])).toEqual({
       prompt: '//repo ///repo',
       diagnostic: 'review path retargeting indeterminate: caller alias is filesystem root (/)',
     })
-    expect(retargetRepositoryPromptResult('//repo/file', '//repo', '/wt')).toEqual({
+    expect(retargetRepositoryPrompt('//repo/file', '//repo', '/wt', false, [])).toEqual({
       prompt: '//repo/file',
       diagnostic: 'review path retargeting indeterminate: unsupported alias //repo',
     })
-    expect(retargetRepositoryPromptResult('/repo/file', '/repo/', '/repo')).toEqual({
+    expect(retargetRepositoryPrompt('/repo/file', '/repo/', '/repo', false, [])).toEqual({
       prompt: '/repo/file',
       diagnostic: 'review path retargeting indeterminate: alias has both source and target roles (/repo)',
     })
+    const refused: Array<[string, string, string, boolean, string[]]> = [
+      ['/repo/file', '/repo', '', false, []],
+      ['//repo ///repo', '/', '/wt', false, []],
+      ['//repo/file', '//repo', '/wt', false, []],
+      ['/repo/file', '/repo/', '/repo', false, []],
+    ]
+    for (const args of refused) {
+      expect(() => retargetRepositoryPromptForDispatch(...args)).toThrow(
+        'review path retargeting indeterminate:',
+      )
+    }
+  })
+
+  test('filesystem siblings are not mistaken for prose delimiters', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'orch-retarget-boundary-'))
+    const caller = join(parent, 'repo')
+    const worktree = join(parent, 'wt')
+    mkdirSync(caller)
+    mkdirSync(worktree)
+    for (const suffix of ['-archive', '@archive', ',archive', ':archive', '.git']) {
+      const sibling = `${caller}${suffix}`
+      mkdirSync(sibling)
+      writeFileSync(join(sibling, 'subject.txt'), 'sibling\n')
+    }
+    try {
+      const siblings = ['-archive', '@archive', ',archive', ':archive', '.git']
+        .map((suffix) => `${caller}${suffix}/subject.txt`).join(' ')
+      expect(retargetedPrompt(`${siblings} ${caller}.`, caller, worktree))
+        .toBe(`${siblings} ${worktree}.`)
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  test('the project worktree root protects every disposable tree from rebinding', () => {
+    const caller = '/repo'
+    const root = `${caller}/.claude/worktrees`
+    const firstWorktree = `${root}/a`
+    const secondWorktree = `${root}/b`
+    const first = retargetedPrompt(`${caller}/file`, caller, firstWorktree, false, [root])
+    expect(first).toBe(`${firstWorktree}/file`)
+    expect(retargetedPrompt(first, caller, secondWorktree, false, [root])).toBe(first)
   })
 
   test('all checkout aliases follow the checkout filesystem case behavior', () => {
@@ -9837,13 +9891,13 @@ describe('outside-worktree write observation', () => {
       expect(checkout!.roots).toContain(realpathSync(repo))
       const prompt = checkout!.roots
         .map((root) => `${root.replace(/\/+$/, '')}/subject.txt`).join('\n')
-      expect(retargetRepositoryPrompt(
+      expect(retargetedPrompt(
         prompt, checkout!.roots, '/worktree', checkout!.caseInsensitive,
       )).toBe(checkout!.roots.map(() => '/worktree/subject.txt').join('\n'))
 
       const uppercase = realpathSync(repo).toUpperCase()
       const expected = checkout!.caseInsensitive ? '/worktree/subject.txt' : `${uppercase}/subject.txt`
-      expect(retargetRepositoryPrompt(
+      expect(retargetedPrompt(
         `${uppercase}/subject.txt`, checkout!.roots, '/worktree', checkout!.caseInsensitive,
       )).toBe(expected)
     } finally {
@@ -11813,11 +11867,12 @@ describe('the sandbox an agent is launched with', () => {
       writeFileSync(join(dirty, 'new.txt'), 'carried untracked\n')
       const dirtyChain = await chain(dirty)
       const dirtyRows = db().query(
-        `SELECT carry_happened, carry_base_commit, carry_tracked_paths, carry_untracked_paths
+        `SELECT carry_happened, carry_base_commit, carry_tracked_paths, carry_untracked_paths,
+                route_reason
            FROM run WHERE id IN (?,?,?) ORDER BY turn`,
       ).all(...dirtyChain.ids) as Array<{
         carry_happened: number; carry_base_commit: string
-        carry_tracked_paths: string; carry_untracked_paths: string
+        carry_tracked_paths: string; carry_untracked_paths: string; route_reason: string
       }>
       expect(dirtyRows).toHaveLength(3)
       for (const row of dirtyRows) {
@@ -11826,6 +11881,12 @@ describe('the sandbox an agent is launched with', () => {
         expect(JSON.parse(row.carry_tracked_paths)).toEqual(['kept.txt'])
         expect(JSON.parse(row.carry_untracked_paths)).toEqual(['new.txt'])
       }
+      expect(dirtyRows[1]!.route_reason).toContain(
+        'repository path retargeting not applied because the turn is already bound to its worktree',
+      )
+      expect(dirtyRows[2]!.route_reason).toContain(
+        'repository path retargeting not applied because the turn is already bound to its worktree',
+      )
 
       const CLI = new URL('cli.ts', import.meta.url).pathname
       const shown = Bun.spawnSync(
