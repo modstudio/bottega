@@ -19126,6 +19126,11 @@ process.stdout.write(JSON.stringify(body))
       ).get(first[0]!.runId!)).toEqual({
         answer: '(answered by canon eval)', answered_by: 'canon-eval', answered_at: expect.any(String),
       })
+      expect(db().query(
+        'SELECT run_id, root_id, action FROM run_mutation_audit WHERE run_id=?',
+      ).get(first[0]!.runId!)).toEqual({
+        run_id: first[0]!.runId, root_id: first[0]!.runId, action: 'canon-eval',
+      })
 
       const cli = new URL('cli.ts', import.meta.url).pathname
       const inbox = Bun.spawnSync([process.execPath, cli, 'inbox', '--all', '--json'], {

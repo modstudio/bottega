@@ -13,7 +13,7 @@ import {
   hasRealQuestions, isAsking, parseWorkerReply, realQuestions,
   type ReviewReply, type WorkerReply,
 } from './contract.ts'
-import { db, nowIso } from './db.ts'
+import { auditRunMutation, db, nowIso, runMutationActor } from './db.ts'
 import { JOBS } from './jobs.ts'
 import { parseReviewOutput, parseReviewReply } from './review.ts'
 import { run } from './run.ts'
@@ -346,15 +346,18 @@ function insertEval(row: {
  */
 function terminaliseJudgedProbe(runId: number): void {
   const answeredAt = nowIso()
-  db().query(
+  const answered = db().query(
     `UPDATE question
         SET answer='(answered by canon eval)', answered_at=?, answered_by='canon-eval'
       WHERE run_id=? AND answered_at IS NULL`,
   ).run(answeredAt, runId)
-  db().query(
+  const terminalised = db().query(
     `UPDATE run SET status='ok', error=NULL, failure_kind=NULL
       WHERE id=? AND status='asking' AND probe=1`,
   ).run(runId)
+  if (answered.changes || terminalised.changes) {
+    auditRunMutation(runMutationActor(runId), 'canon-eval')
+  }
 }
 
 export async function runCanonEvals(opts: {

@@ -33,7 +33,7 @@ const sqlValues = (values: readonly string[]) => values.map((value) => `'${value
 
 export const RUN_MUTATION_ACTIONS = [
   'adopt', 'answer', 'tell', 'stop', 'abandon', 'discard', 'sweep', 'reap', 'void', 'score', 'rescore',
-  'retry', 'continue', 'reclassify',
+  'retry', 'continue', 'reclassify', 'canon-eval',
 ] as const
 export type RunMutationAction = typeof RUN_MUTATION_ACTIONS[number]
 const RUN_MUTATION_ACTION_SQL = RUN_MUTATION_ACTIONS.map((action) => `'${action}'`).join(',')
@@ -515,6 +515,7 @@ function normalizeSql(sql: string): string {
 function schemaVersion(): string {
   return createHash('sha256')
     .update([RUN_DDL, SCORE_DDL, DOC_DDL, DOC_REVISION_DDL, CANON_PACK_DDL, CANON_EVAL_DDL,
+      RUN_MUTATION_AUDIT_DDL,
       REVIEW_LENS_DDL, REVIEW_FINDING_DDL, LANDING_OVERRIDE_DDL, LANDING_REVIEW_CARRY_DDL]
       .map(normalizeSql).join('\n'))
     .digest('hex')
@@ -556,7 +557,8 @@ function ensureCanonicalSchema(d: Database) {
 
   for (const [name, ddl] of [
     ['run', RUN_DDL], ['score', SCORE_DDL], ['doc', DOC_DDL], ['doc_revision', DOC_REVISION_DDL],
-    ['canon_pack', CANON_PACK_DDL], ['canon_eval', CANON_EVAL_DDL], ['review_lens', REVIEW_LENS_DDL],
+    ['canon_pack', CANON_PACK_DDL], ['canon_eval', CANON_EVAL_DDL],
+    ['run_mutation_audit', RUN_MUTATION_AUDIT_DDL], ['review_lens', REVIEW_LENS_DDL],
     ['review_finding', REVIEW_FINDING_DDL],
     ['landing_override', LANDING_OVERRIDE_DDL],
     ['landing_review_carry', LANDING_REVIEW_CARRY_DDL],
@@ -585,7 +587,8 @@ function ensureCanonicalSchema(d: Database) {
  */
 function rebuildTable(
   d: Database,
-  table: 'run' | 'score' | 'doc' | 'doc_revision' | 'canon_pack' | 'canon_eval' | 'review_lens' |
+  table: 'run' | 'score' | 'doc' | 'doc_revision' | 'canon_pack' | 'canon_eval' |
+    'run_mutation_audit' | 'review_lens' |
     'review_finding' | 'landing_override' | 'landing_review_carry',
   canonical: string,
 ) {
@@ -653,6 +656,8 @@ function rebuildTable(
       `)
     } else if (table === 'review_lens') {
       d.exec('CREATE INDEX IF NOT EXISTS review_calibration ON review_lens(lens, agent, model, review_id)')
+    } else if (table === 'run_mutation_audit') {
+      d.exec('CREATE INDEX IF NOT EXISTS run_mutation_audit_root ON run_mutation_audit(root_id)')
     }
     d.exec('COMMIT')
   } catch (e) {
@@ -917,6 +922,15 @@ const CANON_EVAL_DDL = `CREATE TABLE canon_eval (
       at         TEXT NOT NULL
     )`
 
+const RUN_MUTATION_AUDIT_DDL = `CREATE TABLE run_mutation_audit (
+      run_id       INTEGER NOT NULL REFERENCES run(id),
+      root_id      INTEGER NOT NULL REFERENCES run(id),
+      action       TEXT NOT NULL CHECK (action IN (${RUN_MUTATION_ACTION_SQL})),
+      actor_session TEXT CHECK (actor_session IS NULL OR length(actor_session) > 0),
+      at           TEXT NOT NULL,
+      reason       TEXT
+    )`
+
 const DOC_REVISION_DDL = `CREATE TABLE doc_revision (
       id         INTEGER PRIMARY KEY,
       doc_id     INTEGER NOT NULL,
@@ -950,6 +964,7 @@ function migrate(d: Database) {
   d.exec(createIfNotExists(DOC_REVISION_DDL))
   d.exec(createIfNotExists(CANON_PACK_DDL))
   d.exec(createIfNotExists(CANON_EVAL_DDL))
+  d.exec(createIfNotExists(RUN_MUTATION_AUDIT_DDL))
   d.exec(createIfNotExists(LANDING_OVERRIDE_DDL))
   d.exec(createIfNotExists(LANDING_REVIEW_CARRY_DDL))
   d.exec(`
@@ -1005,14 +1020,6 @@ function migrate(d: Database) {
     -- Append-only provenance for state changes to a run chain. The action
     -- vocabulary is generated from RUN_MUTATION_ACTIONS above, so storage and
     -- display cannot silently disagree about which events exist.
-    CREATE TABLE IF NOT EXISTS run_mutation_audit (
-      run_id       INTEGER NOT NULL REFERENCES run(id),
-      root_id      INTEGER NOT NULL REFERENCES run(id),
-      action       TEXT NOT NULL CHECK (action IN (${RUN_MUTATION_ACTION_SQL})),
-      actor_session TEXT CHECK (actor_session IS NULL OR length(actor_session) > 0),
-      at           TEXT NOT NULL,
-      reason       TEXT
-    );
     CREATE INDEX IF NOT EXISTS run_mutation_audit_root
       ON run_mutation_audit(root_id);
     CREATE INDEX IF NOT EXISTS score_run ON score(run_id);
