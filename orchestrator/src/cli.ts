@@ -1639,6 +1639,7 @@ switch (cmd) {
     if (target.runId !== null) console.log(`run ${target.runId} resolves to branch ${target.branch}`)
     const unreviewed = flag('unreviewed')
     land(process.cwd(), target.branch, {
+      ...(target.runId === null ? {} : { runId: target.runId }),
       ...(message === undefined ? {} : { message }),
       ...(unreviewed === undefined ? {} : { unreviewed }),
     })

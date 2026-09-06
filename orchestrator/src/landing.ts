@@ -652,24 +652,40 @@ function requireReviewCoverage(
 }
 
 function authorizeLanding(
-  project: Project, repoRoot: string, branch: string, tip: string, trunk: string, unreviewed?: string,
+  project: Project, repoRoot: string, worktree: string, branch: string, tip: string, trunk: string,
+  runId?: number, unreviewed?: string,
 ): {
   override: { project: string; branch: string; tip: string; tree: string; reason: string } | null
   carry: ReviewCarry | null
 } {
-  const escaped = db().query(
-    `SELECT escaped.id
-       FROM run escaped
-      WHERE escaped.failure_kind='escaped'
-        AND (escaped.branch=? OR escaped.parent_run_id IN (
-          SELECT root.id FROM run root WHERE root.branch=? AND root.parent_run_id IS NULL
-        ))
-      ORDER BY escaped.id LIMIT 1`,
-  ).get(branch, branch) as { id: number } | null
-  if (escaped) {
+  let rootId: number | null
+  if (runId !== undefined) {
+    const selected = db().query(
+      'SELECT COALESCE(parent_run_id, id) AS root_id FROM run WHERE id=?',
+    ).get(runId) as { root_id: number } | null
+    if (!selected) throw new Error(`no run ${runId}`)
+    rootId = selected.root_id
+  } else {
+    const owner = db().query(
+      `SELECT id, worktree FROM run
+        WHERE parent_run_id IS NULL AND repo=? AND branch=? AND worktree=?
+        ORDER BY id DESC LIMIT 1`,
+    ).get(project.name, branch, worktree) as { id: number; worktree: string } | null
+    rootId = owner && git(owner.worktree, ['rev-parse', '--verify', 'HEAD^{commit}']) === tip
+      ? owner.id
+      : null
+  }
+  const unsafe = rootId === null ? null : db().query(
+    `SELECT id, failure_kind FROM run
+      WHERE (id=? OR parent_run_id=?)
+        AND failure_kind IN ('escaped', 'confinement_unverified')
+      ORDER BY turn, id LIMIT 1`,
+  ).get(rootId, rootId) as { id: number; failure_kind: string } | null
+  if (unsafe) {
     throw new Error(
-      `refusing to land ${branch}: run ${escaped.id} violated the invariant ` +
-      "A WORKER'S WRITES OUTSIDE ITS TREE FAIL THE RUN; --unreviewed cannot override it",
+      `refusing to land ${branch}: run ${unsafe.id} is ${unsafe.failure_kind}; ` +
+      'a persistent outside-checkout change or an unverifiable confinement check blocks ' +
+      'this chain from landing, and --unreviewed cannot override it',
     )
   }
   const reason = unreviewed?.trim()
@@ -747,7 +763,7 @@ function fastForward(
 export function land(
   cwd: string,
   branch: string,
-  options: { timeoutMs?: number; message?: string; unreviewed?: string } = {},
+  options: { timeoutMs?: number; message?: string; unreviewed?: string; runId?: number } = {},
 ): string {
   writableDb()
   const timeoutMs = options.timeoutMs ?? LANDING_LOCK_TIMEOUT_MS
@@ -783,7 +799,8 @@ export function land(
     const currentTrunk = trunkCommit(repoRoot, trunk, guard)
     if (currentTrunk === recordedTrunk) {
       const authorization = authorizeLanding(
-        project, repoRoot, branch, optimisticTip, recordedTrunk, options.unreviewed,
+        project, repoRoot, worktree, branch, optimisticTip, recordedTrunk,
+        options.runId, options.unreviewed,
       )
       fastForward(repoRoot, worktree, branch, trunk, optimisticTip, recordedTrunk, guard)
       recordLandingOverride(authorization.override)
@@ -797,7 +814,8 @@ export function land(
       project, repoRoot, worktree, branch, trunk, currentTrunk, guard,
     )
     const authorization = authorizeLanding(
-      project, repoRoot, branch, serializedTip, currentTrunk, options.unreviewed,
+      project, repoRoot, worktree, branch, serializedTip, currentTrunk,
+      options.runId, options.unreviewed,
     )
     fastForward(repoRoot, worktree, branch, trunk, serializedTip, currentTrunk, guard)
     recordLandingOverride(authorization.override)

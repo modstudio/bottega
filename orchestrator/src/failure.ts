@@ -18,6 +18,8 @@ export type FailureKind =
   | 'truncated'
   /** The worker changed a registered checkout outside its disposable worktree. */
   | 'escaped'
+  /** Orch could not verify a watched checkout's before/after status. */
+  | 'confinement_unverified'
   /**
    * ORCH's own fault: a bad schema, a missing flag, a precondition it should
    * have checked before spending a run. Set at the point in the code that knows
@@ -183,7 +185,9 @@ export function classify(
 }
 
 /** Failures a person has to act on: nothing downstream can route around them. */
-export const NEEDS_HUMAN: FailureKind[] = ['quota', 'auth', 'unreachable', 'escaped']
+export const NEEDS_HUMAN: FailureKind[] = [
+  'quota', 'auth', 'unreachable', 'escaped', 'confinement_unverified',
+]
 
 /**
  * What to call each of those when telling somebody, and what they can do.
@@ -196,7 +200,8 @@ export const NEEDS_HUMAN_TITLE: Record<string, (agent: string) => string> = {
   quota: (a) => `${a} is out of quota`,
   auth: (a) => `${a} needs re-authenticating`,
   unreachable: (a) => `${a}'s endpoint is unreachable`,
-  escaped: (a) => `${a} wrote outside its worktree`,
+  escaped: (a) => `outside change observed during ${a} run`,
+  confinement_unverified: (a) => `confinement could not be verified during ${a} run`,
 }
 
 /**
@@ -239,7 +244,8 @@ export const FAILS_OVER: FailureKind[] = [
  * `unreachable` was carved out to stop.
  */
 export const NOT_EVIDENCE: FailureKind[] = [
-  'quota', 'auth', 'unreachable', 'content_refusal', 'interrupted', 'truncated', 'harness', 'abandoned',
+  'quota', 'auth', 'unreachable', 'content_refusal', 'interrupted', 'truncated', 'escaped',
+  'confinement_unverified', 'harness', 'abandoned',
 ]
 
 /**

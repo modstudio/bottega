@@ -915,41 +915,76 @@ export type OutsideWorktreeWrite = {
 
 type CheckoutToWatch = { project: string; path: string }
 
+type CheckoutSampleFailure = CheckoutToWatch & { error: string }
+
+type CheckoutSample = {
+  snapshots: CheckoutStatusSnapshot[]
+  failures: CheckoutSampleFailure[]
+}
+
+function checkoutWatchSet(
+  additional: CheckoutToWatch[] = [], activeWorktree?: string,
+): CheckoutToWatch[] {
+  const active = activeWorktree ? realpathSync(activeWorktree) : null
+  const watched: CheckoutToWatch[] = []
+  const seen = new Set<string>()
+  for (const checkout of [
+    ...projects().map(({ name, path }) => ({ project: name, path })),
+    ...additional,
+  ]) {
+    let canonical = checkout.path
+    try { canonical = realpathSync(checkout.path) } catch { /* sampling reports the git error */ }
+    if (canonical === active || seen.has(canonical)) continue
+    seen.add(canonical)
+    watched.push({ project: checkout.project, path: canonical })
+  }
+  return watched
+}
+
+function sampleCheckouts(watched: CheckoutToWatch[]): CheckoutSample {
+  const snapshots: CheckoutStatusSnapshot[] = []
+  const failures: CheckoutSampleFailure[] = []
+  for (const checkout of watched) {
+    try {
+      const p = Bun.spawnSync(
+        ['git', '-C', checkout.path, 'status', '--porcelain=v1', '-z', '--untracked-files=all'],
+        {
+          // Status may otherwise take an optional lock to refresh index stat
+          // data. Observation must not itself write to a watched checkout.
+          env: { ...targetGitEnvironment(checkout.path), GIT_OPTIONAL_LOCKS: '0' },
+          stdout: 'pipe', stderr: 'pipe',
+        },
+      )
+      if (p.exitCode !== 0) {
+        failures.push({
+          ...checkout,
+          error: p.stderr.toString().trim() || `git status exited ${p.exitCode}`,
+        })
+        continue
+      }
+      snapshots.push({ project: checkout.project, path: checkout.path, status: p.stdout.toString() })
+    } catch (error) {
+      failures.push({
+        ...checkout,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+  return { snapshots, failures }
+}
+
 /**
  * Cheap observation of registered main checkouts, outside a run's worktree.
  *
  * Porcelain status deliberately bounds the check: it sees tracked and
  * untracked working-tree changes without hashing every file in every project.
- * A checkout that cannot be read is omitted rather than allowed to affect the
- * run; this is evidence collection, never enforcement.
+ * The exported observer retains its historical snapshots-only surface. Run
+ * enforcement uses the fixed watch set and preserves sampling failures too.
  */
 export function snapshotRegisteredCheckouts(
   additional: CheckoutToWatch[] = [],
 ): CheckoutStatusSnapshot[] {
-  const snapshots: CheckoutStatusSnapshot[] = []
-  const seen = new Set<string>()
-  const watched: CheckoutToWatch[] = [
-    ...projects().map(({ name, path }) => ({ project: name, path })),
-    ...additional,
-  ]
-  for (const project of watched) {
-    if (seen.has(project.path)) continue
-    seen.add(project.path)
-    try {
-      const p = Bun.spawnSync(
-        ['git', '-C', project.path, 'status', '--porcelain=v1', '-z', '--untracked-files=all'],
-        {
-          // Status may otherwise take an optional lock to refresh index stat
-          // data. Observation must not itself write to a watched checkout.
-          env: { ...targetGitEnvironment(project.path), GIT_OPTIONAL_LOCKS: '0' },
-          stdout: 'pipe', stderr: 'ignore',
-        },
-      )
-      if (p.exitCode !== 0) continue
-      snapshots.push({ project: project.project, path: project.path, status: p.stdout.toString() })
-    } catch { /* an unreadable checkout must never stop a run */ }
-  }
-  return snapshots
+  return sampleCheckouts(checkoutWatchSet(additional)).snapshots
 }
 
 /**
@@ -1153,6 +1188,14 @@ export function changedRegisteredCheckouts(
   return changes
 }
 
+function boundedConfinementError(message: string): string {
+  const bytes = Buffer.from(message)
+  if (bytes.length <= 1500) return message
+  const suffix = Buffer.from('\n… [error bounded to 1500 bytes]')
+  return Buffer.from(bytes.subarray(0, 1500 - suffix.length))
+    .toString('utf8').replace(/\uFFFD$/, '') + suffix.toString()
+}
+
 function escapedWriteError(changes: OutsideWorktreeWrite[]): string {
   const detail = changes.map((change) => {
     const porcelain = (status: string) => status
@@ -1161,12 +1204,17 @@ function escapedWriteError(changes: OutsideWorktreeWrite[]): string {
     return `registered checkout ${change.project} at ${change.path}\n` +
       `before:\n${porcelain(change.before)}\nafter:\n${porcelain(change.after)}`
   }).join('\n\n')
-  const message = `worker wrote outside its worktree:\n${detail}`
-  const bytes = Buffer.from(message)
-  if (bytes.length <= 1500) return message
-  const suffix = Buffer.from('\n… [error bounded to 1500 bytes]')
-  return Buffer.from(bytes.subarray(0, 1500 - suffix.length))
-    .toString('utf8').replace(/\uFFFD$/, '') + suffix.toString()
+  return boundedConfinementError(
+    `persistent outside change observed during the run; the writer is not established:\n${detail}`,
+  )
+}
+
+function confinementUnverifiedError(failures: CheckoutSampleFailure[]): string {
+  return boundedConfinementError(
+    'checkout confinement could not be verified:\n' + failures.map((failure) =>
+      `registered checkout ${failure.project} at ${failure.path}: ${failure.error}`,
+    ).join('\n'),
+  )
 }
 
 function branchOf(cwd: string): string | null {
@@ -2118,12 +2166,18 @@ export async function run(opts: {
   let error: string | null = null
   let failureKind: ReturnType<typeof classify> | null = null
   let outsideWrites: OutsideWorktreeWrite[] = []
+  let confinementFailures: CheckoutSampleFailure[] = []
   // Start after orch's own worktree and hook setup, immediately before the
-  // vendor process: changes across this interval are attributable to the run.
-  const callerWatch = repoJob
+  // vendor process. The interval establishes when a change happened, not who
+  // wrote it: an architect or concurrent landing can change a watched checkout.
+  const callerWatch = repoJob && !opts.resume
     ? [{ project: opts.repo ?? repoOf(callerCwd) ?? '(caller)', path: callerCwd }]
     : []
-  const outsideWriteBefore = snapshotRegisteredCheckouts(callerWatch)
+  const watchedCheckouts = checkoutWatchSet(callerWatch, worktree?.path)
+  const beforeSample = sampleCheckouts(watchedCheckouts)
+  confinementFailures = beforeSample.failures.map((failure) => ({
+    ...failure, error: `before snapshot: ${failure.error}`,
+  }))
 
   try {
     if (repoJob) {
@@ -2369,14 +2423,19 @@ export async function run(opts: {
     if (proc) live.delete(proc)
 
     try {
+      const afterSample = sampleCheckouts(watchedCheckouts)
+      confinementFailures.push(...afterSample.failures.map((failure) => ({
+        ...failure, error: `after snapshot: ${failure.error}`,
+      })))
       outsideWrites = changedRegisteredCheckouts(
-        outsideWriteBefore, snapshotRegisteredCheckouts(callerWatch),
+        beforeSample.snapshots, afterSample.snapshots,
       )
       db().query('UPDATE run SET outside_worktree_writes=? WHERE id=?')
         .run(JSON.stringify(outsideWrites), claim.id)
     } catch (e) {
-      // Observation is never enforcement. Even its own database write may not
-      // replace the worker's actual outcome with a monitoring failure.
+      // A failure in the observation machinery itself cannot safely fabricate
+      // which checkout was unreadable. Keep the original outcome and make the
+      // harness fault visible; sampled checkout failures take the binding path.
       console.error(`orch: could not record outside-worktree writes for run ${claim.id}: ${e}`)
     }
 
@@ -2494,7 +2553,11 @@ export async function run(opts: {
     // This post-process fact outranks every vendor exit or reply outcome. The
     // reply and diff remain stored, but an escaped write can never be an ok or
     // asking run and never inherits a failover-eligible vendor failure.
-    if (outsideWrites.length) {
+    if (confinementFailures.length) {
+      status = 'failed'
+      failureKind = 'confinement_unverified'
+      error = confinementUnverifiedError(confinementFailures)
+    } else if (outsideWrites.length) {
       status = 'failed'
       failureKind = 'escaped'
       error = escapedWriteError(outsideWrites)

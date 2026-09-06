@@ -537,19 +537,21 @@ usage or balance subcommand - so exhaustion cannot be seen coming. It is caught
 on the failure instead.
 
 Every failure is classified: **quota**, **auth**, **unreachable**, **timeout**,
-**denied**, **content refusal**, **truncated**, **escaped**, or **other**. A
-truncated run hit the vendor's output ceiling before emitting a result; it is
-not evidence that the agent was wrong. Quota, auth, unreachable and escaped are
-the four a person has
+**denied**, **content refusal**, **truncated**, **escaped**, **confinement
+unverified**, or **other**. A truncated run hit the vendor's output ceiling
+before emitting a result; it is not evidence that the agent was wrong. Quota,
+auth, unreachable, escaped and confinement-unverified are the five a person has
 to act on, because nothing downstream can route around them, so each raises a
 macOS notification at the moment it happens rather than waiting to be found in a
 log.
 
 An **escaped** failure means the worker changed the porcelain status of a
 registered checkout or the caller checkout outside its own worktree. It is
-evidence about the agent, never fails over to another vendor, and landing the
-run's branch is refused even with `--unreviewed`, because a shared checkout was
-touched.
+not evidence about the agent because the writer is not established, never
+fails over to another vendor, and landing that chain is refused even with
+`--unreviewed`. **Confinement unverified** means a checkout in the fixed watch
+set could not be sampled before or after the run; it has the same terminal and
+landing-blocking effect, but records an observer failure rather than a change.
 
 **Routing then avoids that agent for an hour**, unless it is the only one left -
 refusing to run is worse than trying an agent that may have recovered. Only the
@@ -587,8 +589,9 @@ The incident is recorded in `orch doc show local-model-host-incidents --scope ma
 
 So the rule is: **`unreachable` is excluded from the evidence count entirely.**
 Not weighted down, excluded. Content refusals are excluded too, for the distinct
-policy reason above; quota, auth, interrupted, truncated, harness and abandoned failures
-are likewise excluded where they say nothing about the agent's competence.
+policy reason above; quota, auth, interrupted, truncated, escaped,
+confinement-unverified, harness and abandoned failures are likewise excluded
+where they say nothing about the agent's competence.
 
 **`unreachable` tells a person but does not cool the agent down.** A cooldown is
 for a condition that CANNOT BE OBSERVED WITHOUT SPENDING A RUN — quota and stale
@@ -774,10 +777,10 @@ The invariants are:
   orch worktree is residue, not a hazard: each tree path carries a unique run id
   and never recurs, so sweep reports the entry for manual pruning (DEV-194).
 - **Every write transaction is IMMEDIATE; a deferred transaction that later writes is a lock-upgrade race under concurrent dispatch.**
-- **A WORKER'S WRITES OUTSIDE ITS TREE FAIL THE RUN;** the worktree is the
-  boundary for every vendor, and a vendor sandbox is a second line, never the
-  first. The porcelain-status comparison does not see ignored-file writes or
-  content changes that keep the same porcelain line.
+- **A persistent porcelain-status change in a registered main checkout or a
+  distinct caller checkout during a run fails that run and blocks its landing;**
+  unregistered paths, ignored paths, writes reverted before exit, clean-to-clean
+  commits and writes after exit are not seen, and the writer is not identified.
 - **A resume is always possible on a stale checkout.** The caller-at-trunk check
   stops a new dispatch from stale input; it must never apply to a chain resuming
   in its own worktree. `run.ts:run` currently attaches a resume under the shared
