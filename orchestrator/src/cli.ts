@@ -262,7 +262,12 @@ async function follow(id: number, quiet: boolean, exitOnFailure = true): Promise
         + ` It is detached and will finish on its own:  orch run ${id}`)
       process.exit(2)
     }
-    reapStale()
+    const observed = reapStale()
+    if (Array.isArray(observed) && observed.some((dead) => dead.id === chain.finalId)) {
+      console.error(`run ${chain.finalId}: process gone, not terminalised (read-only linked worktree)`)
+      if (exitOnFailure) process.exitCode = 1
+      return row?.status ?? 'running'
+    }
     await new Promise((r) => setTimeout(r, 1000))
   }
 }

@@ -1,8 +1,9 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const sourceRoot = join(dirname(new URL(import.meta.url).pathname), '../..')
 const fixtureRoot = mkdtempSync(join(tmpdir(), 'orch-linked-database-'))
@@ -55,6 +56,8 @@ describe('linked-worktree database protection', () => {
     store.exec("ALTER TABLE run ADD COLUMN future_evidence TEXT; UPDATE schema_meta SET value='future-binary' WHERE key='schema';")
     store.close()
 
+    expect(existsSync(`${liveStore}-wal`)).toBe(false)
+    expect(existsSync(`${liveStore}-shm`)).toBe(false)
     const before = readFileSync(liveStore)
     const runs = invoke(linkedCli, linked, ['runs'])
     expect(runs.exitCode).toBe(0)
@@ -68,6 +71,59 @@ describe('linked-worktree database protection', () => {
       '(a copy for experiments, or the live path to insist)',
     )
     expect(readFileSync(liveStore)).toEqual(before)
+    expect(existsSync(`${liveStore}-wal`)).toBe(false)
+    expect(existsSync(`${liveStore}-shm`)).toBe(false)
+  })
+
+  test('held-open WAL sidecars remain visible and unchanged to the ordinary read-only open', () => {
+    const writer = new Database(liveStore)
+    writer.exec('PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;')
+    writer.query(
+      `INSERT INTO run
+         (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status)
+       VALUES ('2026-09-06T00:00:00.000Z','codex','understand','wal',1,'wal-only-row','ok')`,
+    ).run()
+    expect(existsSync(`${liveStore}-wal`)).toBe(true)
+    expect(existsSync(`${liveStore}-shm`)).toBe(true)
+    const before = [liveStore, `${liveStore}-wal`].map((path) => readFileSync(path))
+    try {
+      const runs = invoke(linkedCli, linked, ['runs'])
+      expect(runs.exitCode).toBe(0)
+      expect(runs.stdout.toString()).toContain('wal-only-row')
+      expect([liveStore, `${liveStore}-wal`].map((path) => readFileSync(path))).toEqual(before)
+      expect(existsSync(`${liveStore}-wal`)).toBe(true)
+      expect(existsSync(`${liveStore}-shm`)).toBe(true)
+    } finally {
+      writer.close()
+    }
+  })
+
+  test('wait observes a dead process once and exits without terminalising its row', () => {
+    const store = new Database(liveStore)
+    const inserted = store.query(
+      `INSERT INTO run
+         (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status, pid)
+       VALUES ('2026-09-06T00:00:00.000Z','codex','understand','dead',1,'dead-row','running',2147483647)
+       RETURNING id`,
+    ).get() as { id: number }
+    store.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+    store.close()
+    rmSync(`${liveStore}-wal`, { force: true })
+    rmSync(`${liveStore}-shm`, { force: true })
+    const before = readFileSync(liveStore)
+    const started = Date.now()
+
+    const waited = invoke(linkedCli, linked, ['wait', String(inserted.id), '--timeout', '30'])
+    expect(Date.now() - started).toBeLessThan(5_000)
+    const report = `run ${inserted.id}: process gone, not terminalised (read-only linked worktree)`
+    expect(waited.stderr.toString().split(report).length - 1).toBe(1)
+    expect(waited.stderr.toString()).not.toContain('still running after')
+    expect(readFileSync(liveStore)).toEqual(before)
+    expect(existsSync(`${liveStore}-wal`)).toBe(false)
+    expect(existsSync(`${liveStore}-shm`)).toBe(false)
+    const checked = new Database(`${pathToFileURL(liveStore).href}?immutable=1`, { readonly: true })
+    expect(checked.query('SELECT status FROM run WHERE id=?').get(inserted.id)).toEqual({ status: 'running' })
+    checked.close()
   })
 
   test('explicit ORCH_DB keeps migration and writes enabled from the linked worktree', () => {

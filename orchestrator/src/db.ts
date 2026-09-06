@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { DOC_SCOPES, DOC_SCOPE_SUBJECT_KIND } from '../../shared/docs.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
@@ -82,8 +83,12 @@ export function db(writable = false): Database {
   if (writable && linkedWorktreeReadOnly) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
   if (handle) return handle
   if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
+  const sidecarsExist = existsSync(`${DB_PATH}-wal`) || existsSync(`${DB_PATH}-shm`)
+  const readOnlyPath = linkedWorktreeReadOnly && !sidecarsExist
+    ? `${pathToFileURL(DB_PATH).href}?immutable=1`
+    : DB_PATH
   const d = linkedWorktreeReadOnly
-    ? new Database(DB_PATH, { readonly: true })
+    ? new Database(readOnlyPath, { readonly: true })
     : new Database(DB_PATH, { readwrite: true, create: false })
   // Several `orch do` processes write concurrently during a fan-out. Without a
   // busy timeout SQLite fails the moment it finds the file locked rather than
@@ -1797,7 +1802,9 @@ export function resolveRootFromLastTurn(database: Database, rootId: number): num
  * Returns how many were swept. Called opportunistically on open: cheap, and it
  * means no separate cron has to remember.
  */
-export function reapStale(d: Database = db()): number {
+export type ObservedDeadRun = { id: number; reason: string }
+
+export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
   const cutoff = new Date(Date.now() - STALE_AFTER_MS).toISOString()
   const bootstrapCutoff = new Date(Date.now() - PENDING_BOOTSTRAP_MS).toISOString()
   const rows = d
@@ -1824,10 +1831,15 @@ export function reapStale(d: Database = db()): number {
     if (r.started_at < cutoff) dead.push(r.id)
   }
   if (linkedWorktreeReadOnly) {
-    for (const id of [...dead, ...abandonedBootstrap]) {
-      console.error(`warning: run ${id} appears abandoned; read-only linked worktree did not terminalise it`)
-    }
-    return dead.length + abandonedBootstrap.length
+    return [
+      ...dead.map((id) => {
+        const row = rows.find((candidate) => candidate.id === id)!
+        return { id, reason: row.pid ? `pid ${row.pid} is not alive` : `no pid after ${STALE_AFTER_MS}ms` }
+      }),
+      ...abandonedBootstrap.map((id) => ({
+        id, reason: `pending row had no pid after ${PENDING_BOOTSTRAP_MS}ms`,
+      })),
+    ]
   }
   if (abandonedBootstrap.length) {
     const update = d.query(

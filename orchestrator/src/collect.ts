@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
 import { failureReason, outcomeOf } from './outcome.ts'
+import type { ObservedDeadRun } from './db.ts'
 
 export const COLLECTION_COMMANDS = new Set(['result', 'wait'])
 
@@ -233,7 +234,8 @@ export function collectResult(
 const VALUE_FLAGS = new Set(['--timeout'])
 
 export async function collectWait(
-  database: Database, argv: string[], beforePoll: () => void = () => {},
+  database: Database, argv: string[],
+  beforePoll: () => void | number | ObservedDeadRun[] = () => {},
 ): Promise<void> {
   const rest = argv.slice(1)
   for (let i = 0; i < rest.length; i++) {
@@ -262,8 +264,9 @@ export async function collectWait(
   const timeoutAt = argv.indexOf('--timeout')
   const timeoutMs = Number(timeoutAt >= 0 ? argv[timeoutAt + 1] : 1800) * 1000
   const deadline = Date.now() + timeoutMs
+  const observedTerminal = new Set<number>()
   for (;;) {
-    beforePoll()
+    const observation = beforePoll()
     const outcomes = ids.map((id) => {
       const chain = resolveFailover(database, id)
       const row = database.query(
@@ -284,15 +287,25 @@ export async function collectWait(
             : outcomeOf(row)
       return { requestedId: id, row, chain, outcome }
     })
-    const running = outcomes.filter(({ outcome, chain }) => !outcome.terminal || chain.settling)
+    if (Array.isArray(observation)) {
+      const requestedRows = new Set(outcomes.map(({ row }) => row.id))
+      for (const dead of observation) {
+        if (!requestedRows.has(dead.id) || observedTerminal.has(dead.id)) continue
+        observedTerminal.add(dead.id)
+        console.error(`run ${dead.id}: process gone, not terminalised (read-only linked worktree)`)
+      }
+    }
+    const running = outcomes.filter(({ row, outcome, chain }) =>
+      !observedTerminal.has(row.id) && (!outcome.terminal || chain.settling))
     if (!running.length) {
       for (const { requestedId, row, outcome, chain } of outcomes) {
+        if (observedTerminal.has(row.id)) continue
         console.log(`${requestedId}\t${outcome.line}`)
         const note = failoverSummary(chain.attempts)
         if (note) console.log(`  ${note}`)
         if (!outcome.ok) console.log(`  ${failureReason(row)}`)
       }
-      if (outcomes.some(({ outcome }) => !outcome.ok)) process.exit(1)
+      if (observedTerminal.size || outcomes.some(({ outcome }) => !outcome.ok)) process.exit(1)
       return
     }
     if (Date.now() >= deadline) {
