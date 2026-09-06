@@ -1395,7 +1395,7 @@ const { landingStatus, resolveLandingBranch } = await import('./landing.ts')
 const { gitLocks } = await import('./git-locks.ts')
 const { AGENTS, ARGV_PROMPT_BYTES, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
-        WAKE_COOLDOWN_MS, CODEX_EXEC_SANDBOX, strictCodexSchema } = await import('./agents.ts')
+        WAKE_COOLDOWN_MS, CODEX_EXEC_SANDBOX, CODEX_ASK_ENV_VARS, strictCodexSchema } = await import('./agents.ts')
 const { listDocs, listDocMetadata, getDoc, setDoc: writeDoc, consumeDoc: consumeDocument, removeDoc: deleteDoc,
         docsForRun, exportDocs, importDocs: readDocs, brief, docSubjects,
         listOpenResumes, parseResumeFrontmatter, resumeAge, listDocRevisions, getDocRevision, restoreDoc,
@@ -3276,6 +3276,47 @@ describe('run mailbox', () => {
       .not.toBeNull()
     expect((db().query('SELECT status FROM run WHERE id=?').get(root) as { status: string }).status)
       .toBe('running')
+  })
+
+  test('a resumed turn reads tell queued after the first turn ended', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+    const child = addRun({
+      agent: 'codex', job: 'implement', status: 'running', parent: root, turn: 2,
+    })
+    db().query('UPDATE run SET vendor_session=?, run_token=? WHERE id=?')
+      .run('first-turn-session', 'root-token', root)
+    db().query('UPDATE run SET vendor_session=?, run_token=? WHERE id=?')
+      .run('resume-session', 'turn-token', child)
+    expect(mailboxOrch('tell', String(root), 'note after turn one').code).toBe(0)
+    expect(messagesForRun(root)[0]!.read_at).toBeNull()
+
+    const unrecognised = mailboxOrchInput(['ask-server'],
+      JSON.stringify({
+        jsonrpc: '2.0', id: 1, method: 'tools/call', params: {
+          name: 'check_orchestrator_messages', arguments: {},
+        },
+      }) + '\n',
+      { ORCH_RUN_ID: '', ORCH_RUN_TOKEN: '' },
+    )
+    const unrecognisedReply = JSON.parse(unrecognised.out.trim().split('\n')[0]!)
+    expect(unrecognisedReply.result.isError).toBe(true)
+    expect(unrecognisedReply.result.content[0].text)
+      .toContain('this process is not a recognised orchestrator worker')
+    expect(messagesForRun(root)[0]!.read_at).toBeNull()
+
+    const resumed = mailboxOrchInput(['ask-server'],
+      JSON.stringify({
+        jsonrpc: '2.0', id: 1, method: 'tools/call', params: {
+          name: 'check_orchestrator_messages', arguments: {},
+        },
+      }) + '\n',
+      { ORCH_RUN_ID: String(child), ORCH_RUN_TOKEN: 'turn-token' },
+    )
+    expect(resumed.code).toBe(0)
+    const resumedReply = JSON.parse(resumed.out.trim().split('\n')[0]!)
+    expect(resumedReply.result.content[0].text).toContain('note after turn one')
+    expect(messagesForRun(root)[0]!.read_at).not.toBeNull()
+    expect(messagesForRun(root)[0]!.read_by).toBe('resume-session')
   })
 
   test('tell targets the active child turn while retaining the conversation root', () => {
@@ -11444,6 +11485,9 @@ describe('childEnv allowlists the vendor CLI environment', () => {
       expect(child.ORCH_DEPTH).toBe('1')
       expect(child.ORCH_RUN_ID).toBe(String(result.id))
       expect(child.ORCH_RUN_TOKEN).toBeTruthy()
+      expect(child.ORCH_RUN_TOKEN).toBe(
+        (db().query('SELECT run_token FROM run WHERE id=?').get(result.id) as { run_token: string }).run_token,
+      )
       for (const key of ['USER', 'SHELL', 'LANG', 'TERM', 'TMPDIR', 'SSH_AUTH_SOCK'] as const) {
         const parent = process.env[key]
         if (parent !== undefined) expect(child[key]).toBe(parent)
@@ -11458,6 +11502,47 @@ describe('childEnv allowlists the vendor CLI environment', () => {
         if (prior[key] === undefined) delete process.env[key]
         else process.env[key] = prior[key]
       }
+    }
+  })
+
+  test('a resumed spawn hands the child the turn id and the token minted for that turn', async () => {
+    const script = join(dir, 'dump-env-resume-dev289.ts')
+    writeFileSync(script, 'process.stdout.write(JSON.stringify(process.env))\n')
+    const agent = AGENTS.codex!
+    const origBin = agent.bin
+    const origResume = agent.resumeArgv
+    agent.bin = process.execPath
+    agent.resumeArgv = () => [script]
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    const rootPrompt = join(dir, 'resume-env-root.prompt.txt')
+    writeFileSync(rootPrompt, 'original spec')
+    try {
+      const parent = addRun({ agent: 'codex', job: 'file-question', status: 'asking' })
+      db().query('UPDATE run SET vendor_session=?, prompt_path=?, run_token=? WHERE id=?')
+        .run('root-session', rootPrompt, 'root-token', parent)
+      const result = await runJob({
+        job: 'file-question', prompt: 'continue', cwd: dir,
+        resume: {
+          parent, agent: 'codex', session: 'root-session', turn: 2,
+          sessionId: 'orch-test-session', worktree: null,
+        },
+      })
+      const child = JSON.parse(result.output) as Record<string, string>
+      const row = db().query('SELECT parent_run_id, turn, run_token FROM run WHERE id=?')
+        .get(result.id) as { parent_run_id: number; turn: number; run_token: string }
+      expect(result.id).not.toBe(parent)
+      expect(row).toEqual({ parent_run_id: parent, turn: 2, run_token: child.ORCH_RUN_TOKEN })
+      expect(child.ORCH_RUN_ID).toBe(String(result.id))
+      expect(child.ORCH_RUN_TOKEN).toBeTruthy()
+      expect(child.ORCH_RUN_TOKEN).not.toBe('root-token')
+    } finally {
+      agent.bin = origBin
+      agent.resumeArgv = origResume
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(script, { force: true })
+      rmSync(rootPrompt, { force: true })
     }
   })
 })
@@ -17711,6 +17796,19 @@ describe('the sandbox an agent is launched with', () => {
     const argv = AGENTS.codex!.argv({ prompt: 'p', out: '/tmp/o', sandbox: 'exec', mcp: true })
     expect(argv).toContain('--approve-for-me')
     expect(argv).not.toContain(CODEX_EXEC_SANDBOX)
+  })
+
+  test('Codex MCP forwards the run identity into orch-ask on first and resumed turns', () => {
+    const overlay = `mcp_servers.orch-ask.env_vars=${JSON.stringify([...CODEX_ASK_ENV_VARS])}`
+    const first = AGENTS.codex!.argv({ prompt: 'p', out: '/tmp/o', mcp: true })
+    expect(first).toContain('--approve-for-me')
+    expect(first).toContain(overlay)
+    const resumed = AGENTS.codex!.resumeArgv!({
+      prompt: 'p', out: '/tmp/o', mcp: true, session: 'thread',
+    })
+    expect(resumed).toContain('--approve-for-me')
+    expect(resumed).toContain(overlay)
+    expect(AGENTS.codex!.argv({ prompt: 'p', out: '/tmp/o' })).not.toContain(overlay)
   })
 
   test('a writing worktree grants codex its metadata, common objects, and run-ref directory', () => {

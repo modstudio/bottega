@@ -82,6 +82,18 @@ export type SandboxLevel = 'read-only' | 'workspace-write' | 'exec'
  */
 export const CODEX_EXEC_SANDBOX = 'danger-full-access'
 
+/**
+ * Parent env names Codex must forward into orch-ask.
+ *
+ * Codex stdio MCP does not inherit the vendor CLI environment. Measured on
+ * live `codex exec` workers: the parent had ORCH_RUN_ID/ORCH_RUN_TOKEN/ORCH_DB
+ * and the ask-server grandchild had none, so authorised() failed with
+ * "not a recognised orchestrator worker". Grok inherits the same pair by
+ * default, including on `--resume`. `env_vars` is Codex's documented forward
+ * list; the overlay is per spawn so concurrent runs keep their own values.
+ */
+export const CODEX_ASK_ENV_VARS = ['ORCH_RUN_ID', 'ORCH_RUN_TOKEN', 'ORCH_DB'] as const
+
 export type ArgvOpts = {
   prompt: string
   out: string
@@ -504,8 +516,10 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
       a.push('-c', `shell_environment_policy.set.${key}=${JSON.stringify(value)}`)
     }
   }
-  if (o.mcp) a.push('--approve-for-me')
-  else if (o.sandbox === 'exec') a.push('-s', CODEX_EXEC_SANDBOX)
+  if (o.mcp) {
+    a.push('-c', `mcp_servers.orch-ask.env_vars=${JSON.stringify([...CODEX_ASK_ENV_VARS])}`)
+    a.push('--approve-for-me')
+  } else if (o.sandbox === 'exec') a.push('-s', CODEX_EXEC_SANDBOX)
   else a.push('-s', o.write || o.sandbox === 'workspace-write' ? 'workspace-write' : 'read-only')
   if (o.schema) a.push('--output-schema', o.schema)
   return a
