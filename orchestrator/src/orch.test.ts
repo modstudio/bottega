@@ -1191,7 +1191,8 @@ const removeDoc = (
 const importDocs = (dir: string, context = { reason: 'test import' }) => readDocs(dir, context)
 const { createDocsMcpServer, fileIssue } = await import('./mcp.ts')
 const { setWorkflow, promoteWorkflow } = await import('./workflows.ts')
-const { compilePack, compileBrief, checkDoc, CanonBudgetError, recordPack, diffPack } = await import('./canon.ts')
+const { compilePack, compileBrief, checkDoc, CanonBudgetError, recordPack, diffPack,
+        allInjectChecks } = await import('./canon.ts')
 const { deadRunningProcessConditions, reconcileHub, monitorHistory } = await import('./monitor.ts')
 const { listPairs, addPair, baselineForPair, setBaseline, listSkips, addSkip,
         setLedgerRef, ledgerRef, listLedgerRefs, resolveLedgerRef,
@@ -1316,7 +1317,16 @@ describe('operational monitor record', () => {
     const conditions = db().query(
       'SELECT * FROM monitor_condition WHERE invocation_id=? ORDER BY id',
     ).all(record.id) as any[]
+    const canonRows = allInjectChecks()
+    const canonFindings = canonRows.reduce(
+      (count, row) => count + row.findings.filter((finding) => finding.kind !== 'unchecked').length,
+      0,
+    )
+    const canonDocs = canonRows.filter(
+      (row) => row.findings.some((finding) => finding.kind !== 'unchecked'),
+    ).length
     const lines = [
+      `canon: ${canonFindings} stale references in ${canonDocs} docs`,
       `monitor ${record.id}: ${record.findings} condition(s), ${record.errors} observation error(s)`,
     ]
     for (const condition of conditions) {
