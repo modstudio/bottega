@@ -18,7 +18,7 @@ import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, exist
          realpathSync, mkdirSync, utimesSync, chmodSync, readdirSync, statSync,
          symlinkSync, copyFileSync, openSync, closeSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import * as ts from 'typescript'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -172,6 +172,43 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       expect(g(repo, 'write-tree')).toBe(g(repo, 'rev-parse', `${tip}^{tree}`))
       expect(readFileSync(join(repo, 'clean-landing.txt'), 'utf8')).toBe('clean-landing\n')
       expect(g(repo, 'status', '--porcelain=v1', '--untracked-files=all')).toBe('')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('landing ignores worker global and system config while retaining the target user config', async () => {
+    const { repo } = repoWithBranches(['scrub-config'])
+    const workerHooks = join(repo, 'worker-hooks')
+    const workerConfig = join(repo, 'worker.gitconfig')
+    const targetHome = join(repo, 'target-home')
+    mkdirSync(workerHooks)
+    mkdirSync(targetHome)
+    writeFileSync(join(workerHooks, 'reference-transaction'), '#!/bin/sh\nexit 73\n')
+    chmodSync(join(workerHooks, 'reference-transaction'), 0o755)
+    writeFileSync(workerConfig, [
+      '[core]', `\thooksPath = ${workerHooks}`,
+      '[user]', '\tname = Worker Identity', '\temail = worker@example.invalid',
+    ].join('\n') + '\n')
+    writeFileSync(join(targetHome, '.gitconfig'), [
+      '[user]', '\tname = Target Identity', '\temail = target@example.invalid',
+    ].join('\n') + '\n')
+    g(repo, 'config', '--unset', 'user.name')
+    g(repo, 'config', '--unset', 'user.email')
+    upsertProject({ name: 'landing-scrub-config', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const child = childLand(repo, 'scrub-config', {
+        message: 'DEV-299 landing with target config',
+      }, {
+        HOME: targetHome,
+        GIT_CONFIG_GLOBAL: workerConfig,
+        GIT_CONFIG_SYSTEM: workerConfig,
+        GIT_CONFIG_NOSYSTEM: '1',
+      })
+      const exit = await child.exited
+      const error = await new Response(child.stderr).text()
+      expect(exit, error).toBe(0)
+      expect(g(repo, 'log', '-1', '--format=%cn', 'main')).toBe('Target Identity')
+      expect(() => g(repo, 'config', '--get', 'core.hooksPath')).toThrow()
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
@@ -1816,6 +1853,9 @@ describe('production git environments', () => {
       GIT_CONFIG_VALUE_0: '/worker/hooks',
       GIT_CONFIG_KEY_1: 'safe.directory',
       GIT_CONFIG_VALUE_1: '*',
+      GIT_CONFIG_GLOBAL: '/worker/global-config',
+      GIT_CONFIG_SYSTEM: '/worker/system-config',
+      GIT_CONFIG_NOSYSTEM: '1',
       ORCH_GUARDED_GIT_COMMON_DIR: '/worker/common',
       ORCH_ALLOWED_GIT_REF: 'refs/heads/worker',
     }
@@ -1890,11 +1930,21 @@ describe('production git environments', () => {
     }
   })
 
-  test('every production git spawn supplies an environment without raw process.env', () => {
-    const sourceDir = dirname(new URL(import.meta.url).pathname)
+  const productionGitEnvironmentViolations = (
+    roots: string[], diagnosticRoot: string,
+  ): string[] => {
     const violations: string[] = []
-    for (const name of readdirSync(sourceDir).filter((file) => file.endsWith('.ts') && !file.endsWith('.test.ts'))) {
-      const path = join(sourceDir, name)
+    const files: string[] = []
+    const collect = (root: string) => {
+      if (!existsSync(root)) return
+      for (const entry of readdirSync(root, { withFileTypes: true })) {
+        const path = join(root, entry.name)
+        if (entry.isDirectory()) collect(path)
+        else if (entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) files.push(path)
+      }
+    }
+    roots.forEach(collect)
+    for (const path of files) {
       const source = readFileSync(path, 'utf8')
       const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
       const visit = (node: ts.Node): void => {
@@ -1913,14 +1963,36 @@ describe('production git environments', () => {
           const raw = env && ts.isPropertyAssignment(env) && env.initializer.getText(file).includes('process.env')
           if (!env || raw) {
             const line = file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1
-            violations.push(`${name}:${line}`)
+            violations.push(`${relative(diagnosticRoot, path)}:${line}`)
           }
         }
         ts.forEachChild(node, visit)
       }
       visit(file)
     }
+    return violations
+  }
+
+  test('every production git spawn supplies an environment without raw process.env', () => {
+    const sourceDir = dirname(new URL(import.meta.url).pathname)
+    const repoRoot = resolve(sourceDir, '../..')
+    const violations = productionGitEnvironmentViolations(
+      [sourceDir, join(repoRoot, 'shared')], repoRoot,
+    )
     expect(violations).toEqual([])
+  })
+
+  test('the production git lint recurses shared and names an unsafe nested site', () => {
+    const fixture = mkdtempSync(join(tmpdir(), 'orch-git-lint-'))
+    const nested = join(fixture, 'shared', 'nested')
+    mkdirSync(nested, { recursive: true })
+    writeFileSync(join(nested, 'unsafe.ts'), "Bun.spawnSync(['git', 'status'])\n")
+    try {
+      expect(productionGitEnvironmentViolations([join(fixture, 'shared')], fixture))
+        .toEqual(['shared/nested/unsafe.ts:1'])
+    } finally {
+      rmSync(fixture, { recursive: true, force: true })
+    }
   })
 })
 

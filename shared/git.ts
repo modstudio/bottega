@@ -8,6 +8,8 @@ export function scrubbedGitEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.Pr
     if (variable === 'GIT_DIR' || variable === 'GIT_WORK_TREE' ||
         variable === 'GIT_OBJECT_DIRECTORY' || variable === 'GIT_ALTERNATE_OBJECT_DIRECTORIES' ||
         variable === 'GIT_CONFIG_COUNT' || /^GIT_CONFIG_(?:KEY|VALUE)_\d+$/.test(variable) ||
+        variable === 'GIT_CONFIG_GLOBAL' || variable === 'GIT_CONFIG_SYSTEM' ||
+        variable === 'GIT_CONFIG_NOSYSTEM' ||
         variable === 'ORCH_GUARDED_GIT_COMMON_DIR' || variable === 'ORCH_ALLOWED_GIT_REF') {
       delete env[variable]
     }
