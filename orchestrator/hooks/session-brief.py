@@ -69,6 +69,16 @@ def main() -> int:
             return 0
         sid = payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID")
         orch = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "bin", "orch"))
+        if not os.access(orch, os.X_OK):
+            message = f"Inbox command is missing or not executable: {orch}; question state is unknown."
+            sys.stdout.write(json.dumps({
+                "hookSpecificOutput": {
+                    "hookEventName": "SessionStart",
+                    "additionalContext": "",
+                },
+                "systemMessage": message,
+            }) + "\n")
+            return 0
         brief_p = _start(orch, "doc", "brief", "--cwd", cwd)
         resumes_p = _start(orch, "doc", "resumes", "--cwd", cwd)
         inbox_env = os.environ.copy()
@@ -92,7 +102,7 @@ def main() -> int:
                 context += _resume_sentence(payload.get("source"), lines) + "\n"
 
         answerable_count = foreign_count = unknown_count = 0
-        inbox_invalid = False
+        inbox_failure = None
         if inbox.returncode == 0:
             try:
                 questions = json.loads(inbox.stdout)
@@ -109,7 +119,13 @@ def main() -> int:
                     item["session_liveness"] == "unknown" for item in questions
                 )
             except Exception:
-                inbox_invalid = True
+                inbox_failure = "Inbox response was invalid; question state is unknown."
+        elif inbox.returncode == -1:
+            inbox_failure = "Inbox observation timed out; question state is unknown."
+        else:
+            inbox_failure = (
+                f"Inbox command failed with exit {inbox.returncode}; question state is unknown."
+            )
 
         notices = []
         if brief.returncode != 0:
@@ -117,8 +133,8 @@ def main() -> int:
                          None)
             if first:
                 notices.append(f"operator brief refused: {first}")
-        if inbox_invalid:
-            notices.append("Inbox response was invalid; question state is unknown.")
+        if inbox_failure:
+            notices.append(inbox_failure)
         if answerable_count:
             noun = "question" if answerable_count == 1 else "questions"
             notices.append(f"{answerable_count} {noun} waiting on your ruling.")

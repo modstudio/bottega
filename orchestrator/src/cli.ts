@@ -2883,11 +2883,12 @@ switch (cmd) {
     }
     const ownersLive = live.length > 0
     if (!ownersLive && !stopped.every((q) =>
-      q.owner_status === 'asking' || q.owner_status === 'failed' || q.owner_status === 'stale')) {
+      q.owner_status === 'asking' || q.owner_status === 'failed' ||
+      q.owner_status === 'stale' || q.owner_status === 'stopped')) {
       const states = stopped.map((q) => `q${q.id} (run ${q.owner_id}, ${q.owner_status})`).join(', ')
       throw new Error(`run ${id} has questions whose owners are not waiting or stopped: ${states}`)
     }
-    if (!ownersLive && row.status !== 'asking') {
+    if (!ownersLive && row.status !== 'asking' && row.status !== 'stopped') {
       throw new Error(`run ${id} is ${row.status}, not waiting on a ruling`)
     }
 
@@ -3653,14 +3654,24 @@ switch (cmd) {
     if (!id) usage()
     const row = db().query(
       `SELECT id, status, pid, agent_pid, parent_run_id, repo, cwd, worktree, branch,
-              base_commit
+              base_commit,
+              (SELECT owner.session_id FROM run owner
+                WHERE owner.id = COALESCE(run.parent_run_id, run.id)) session_id
          FROM run WHERE id = ?`,
     ).get(id) as {
       id: number; status: string; pid: number | null; agent_pid: number | null
       parent_run_id: number | null; repo: string | null; cwd: string | null
       worktree: string | null; branch: string | null; base_commit: string | null
+      session_id: string | null
     } | null
     if (!row) throw new Error(`no run ${id}`)
+    const callerSession = sessionId()
+    if (row.session_id && callerSession !== row.session_id) {
+      throw new Error(
+        `run ${id} is owned by session ${row.session_id}; ` +
+        `current session ${callerSession ?? 'unknown'} cannot stop it`,
+      )
+    }
     if (row.status !== 'running') {
       throw new Error(`run ${id} is ${row.status}, not running — nothing to stop`)
     }
@@ -3725,13 +3736,23 @@ switch (cmd) {
     const id = Number(argv[1])
     if (!id) usage()
     const row = db().query(
-      'SELECT id, status, repo, cwd, worktree, branch, parent_run_id, base_commit FROM run WHERE id = ?',
+      `SELECT id, status, repo, cwd, worktree, branch, parent_run_id, base_commit,
+              (SELECT owner.session_id FROM run owner
+                WHERE owner.id = COALESCE(run.parent_run_id, run.id)) session_id
+         FROM run WHERE id = ?`,
     ).get(id) as {
       id: number; status: string; repo: string | null; cwd: string | null
       worktree: string | null; branch: string | null; parent_run_id: number | null
-      base_commit: string | null
+      base_commit: string | null; session_id: string | null
     } | null
     if (!row) throw new Error(`no run ${id}`)
+    const callerSession = sessionId()
+    if (row.session_id && callerSession !== row.session_id) {
+      throw new Error(
+        `run ${id} is owned by session ${row.session_id}; ` +
+        `current session ${callerSession ?? 'unknown'} cannot abandon it`,
+      )
+    }
     if (row.status !== 'asking') {
       throw new Error(`run ${id} is ${row.status}, not asking — nothing to abandon`)
     }
@@ -3744,10 +3765,10 @@ switch (cmd) {
         "UPDATE run SET status='stale', error=?, failure_kind='abandoned' WHERE id=?",
       ).run(error, id)
       db().query(
-        `UPDATE question SET answered_by='abandoned', answered_at=?, answer='(abandoned)'
+        `UPDATE question SET answered_by=?, answered_at=?, answer='(abandoned)'
           WHERE answered_at IS NULL AND run_id IN
             (SELECT id FROM run WHERE id=? OR parent_run_id=?)`,
-      ).run(at, id, id)
+      ).run(callerSession ?? 'anonymous (no session id)', at, id, id)
       resolveRootFromLastTurn(db(), row.parent_run_id ?? row.id)
     })()
     console.log(`abandoned run ${id}`)

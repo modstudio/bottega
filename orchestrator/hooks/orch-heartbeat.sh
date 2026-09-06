@@ -60,40 +60,44 @@ for ((i = 1; i <= MAX; i++)); do
   inbox_raw=$(CLAUDE_CODE_SESSION_ID="$SID" orch inbox --all --json 2>/dev/null); inbox_rc=$?
   runs_raw=$(orch runs --limit 200 --json 2>/dev/null); runs_rc=$?
 
-  if [ "$inbox_rc" -ne 0 ] || [ "$runs_rc" -ne 0 ]; then
-    key="degraded"
-    since_emit=$((since_emit + 1))
-    if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
-      prev_key="$key"; since_emit=0
-      echo "[$(date +%H:%M:%S)] DEGRADED - orch did not answer (inbox rc=$inbox_rc, runs rc=$runs_rc). State unknown; NOT concluding clear."
-    fi
-    sleep "$INTERVAL"; continue
-  fi
-
   asking=$(printf '%s' "$inbox_raw" | python3 -c '
 import sys, json
 try:
     d = json.load(sys.stdin)
 except Exception:
-    print(0); raise SystemExit
-rows = d if isinstance(d, list) else d.get("questions", d.get("items", []))
-print(sum(bool(item.get("can_answer")) for item in rows if isinstance(item, dict)))
-' 2>/dev/null) || asking=0
-  asking=${asking:-0}
+    raise SystemExit(2)
+if not isinstance(d, list):
+    raise SystemExit(2)
+if not all(isinstance(item, dict) and isinstance(item.get("can_answer"), bool) for item in d):
+    raise SystemExit(2)
+print(sum(item["can_answer"] for item in d))
+' 2>/dev/null); inbox_parse_rc=$?
 
   live=$(printf '%s' "$runs_raw" | SID="$SID" python3 -c '
 import sys, json, os, datetime
 sid = os.environ["SID"]
 now = datetime.datetime.now(datetime.timezone.utc)
 out, ids = [], []
+saw = False
 for line in sys.stdin:
     line = line.strip()
     if not line:
         continue
+    saw = True
     try:
         d = json.loads(line)
     except Exception:
-        continue
+        raise SystemExit(2)
+    if not isinstance(d, dict):
+        raise SystemExit(2)
+    if not isinstance(d.get("id"), int) or not isinstance(d.get("job"), str):
+        raise SystemExit(2)
+    if not isinstance(d.get("agent"), str) or not isinstance(d.get("status"), str):
+        raise SystemExit(2)
+    if d.get("session_id") is not None and not isinstance(d.get("session_id"), str):
+        raise SystemExit(2)
+    if not isinstance(d.get("started_at"), str):
+        raise SystemExit(2)
     # `asking` counts as live. A heartbeat that watches only `running` reports
     # CLEAR while a worker sits blocked - the exact failure this file prevents.
     if d.get("session_id") != sid or d.get("status") not in ("running", "asking"):
@@ -106,9 +110,24 @@ for line in sys.stdin:
         age = "?"
     ids.append(str(d.get("id")))
     out.append("%s/%s %s %s %s" % (d.get("id"), d.get("job"), d.get("agent"), d.get("status"), age))
+if not saw:
+    raise SystemExit(2)
 # count \t detail \t state-key (ids only - elapsed must never enter the key)
 print(len(out), " | ".join(out), ",".join(sorted(ids)), sep="\t")
-') || live=$'0\t\t'
+') ; runs_parse_rc=$?
+
+  if [ "$inbox_rc" -ne 0 ] || [ "$runs_rc" -ne 0 ] || \
+     [ "$inbox_parse_rc" -ne 0 ] || [ "$runs_parse_rc" -ne 0 ]; then
+    key="degraded"
+    since_emit=$((since_emit + 1))
+    if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
+      prev_key="$key"; since_emit=0
+      echo "[$(date +%H:%M:%S)] DEGRADED - orch observation failed (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc). State unknown; NOT concluding clear."
+    fi
+    sleep "$INTERVAL"; continue
+  fi
+
+  asking=${asking:-0}
   n=${live%%$'\t'*}; rest=${live#*$'\t'}
   detail=${rest%%$'\t'*}; ids=${rest#*$'\t'}
   n=${n:-0}

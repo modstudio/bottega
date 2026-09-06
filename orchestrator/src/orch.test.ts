@@ -7807,7 +7807,7 @@ describe('detached run collection', () => {
       'SELECT answer, answered_by, answered_at FROM question WHERE run_id=?',
     ).get(id) as { answer: string; answered_by: string; answered_at: string | null }
     expect(question.answer).toBe('(abandoned)')
-    expect(question.answered_by).toBe('abandoned')
+    expect(question.answered_by).toBe('orch-test-session')
     expect(question.answered_at).not.toBeNull()
     expect(orch('inbox').out).not.toContain(`run ${id}`)
     expect(orch('inbox', '--all').out).not.toContain(`run ${id}`)
@@ -7864,6 +7864,43 @@ describe('detached run collection', () => {
       try { vendor.kill() } catch { /* already stopped */ }
       rmSync(worktree, { recursive: true, force: true })
     }
+  })
+
+  test('a foreign session can neither stop nor abandon an owned run', async () => {
+    const vendor = Bun.spawn(['sleep', '30'])
+    const runningRoot = insert('asking', 'implement')
+    const running = insert('running', 'implement')
+    const askingRoot = insert('asking', 'implement')
+    const asking = insert('asking', 'implement')
+    db().query('UPDATE run SET session_id=? WHERE id IN (?,?)')
+      .run('other-session', runningRoot, askingRoot)
+    db().query('UPDATE run SET parent_run_id=?, session_id=NULL, pid=? WHERE id=?')
+      .run(runningRoot, vendor.pid, running)
+    db().query('UPDATE run SET parent_run_id=?, session_id=NULL WHERE id=?')
+      .run(askingRoot, asking)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(asking, new Date().toISOString(), 'which shape?')
+
+    try {
+      const stopped = orch('stop', String(running))
+      expect(stopped.code).toBe(1)
+      expect(stopped.err).toContain(`run ${running} is owned by session other-session`)
+      expect((db().query('SELECT status FROM run WHERE id=?').get(running) as { status: string }).status)
+        .toBe('running')
+      expect(() => process.kill(vendor.pid, 0)).not.toThrow()
+
+      const abandoned = orch('abandon', String(asking))
+      expect(abandoned.code).toBe(1)
+      expect(abandoned.err).toContain(`run ${asking} is owned by session other-session`)
+      expect(db().query(
+        'SELECT answer, answered_by, answered_at FROM question WHERE run_id=?',
+      ).get(asking)).toEqual({ answer: null, answered_by: null, answered_at: null })
+      expect((db().query('SELECT status FROM run WHERE id=?').get(asking) as { status: string }).status)
+        .toBe('asking')
+    } finally {
+      vendor.kill()
+      await vendor.exited
+     }
   })
 
   test('stop refuses a run that is not running without changing it', () => {
@@ -8436,6 +8473,23 @@ describe('detached run collection', () => {
     expect((db().query(
       'SELECT COUNT(*) n FROM question WHERE answered_at IS NOT NULL',
     ).get() as { n: number }).n).toBe(0)
+  })
+
+  test('the owning session may rule on a question after stopping its run', () => {
+    const id = insert('stopped', 'implement')
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('orch-test-session', id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'still answerable?')
+
+    const r = orch('answer', String(id), 'yes')
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('the rulings ARE recorded and were not lost')
+    expect(r.err).not.toContain('owners are not waiting or stopped')
+    expect(db().query(
+      'SELECT answer, answered_by, answered_at FROM question WHERE run_id=?',
+    ).get(id)).toEqual({
+      answer: 'yes', answered_by: 'orch-test-session', answered_at: expect.any(String),
+    })
   })
 
   test('result on a still-running run exits 2, not 1', () => {
@@ -17144,6 +17198,86 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
     }
   })
 
+  test('a failed inbox command reports unknown state, not zero questions', () => {
+    const root = mkdtempSync(join(tmpdir(), 'session-brief-failed-inbox-'))
+    const hooksDir = join(root, 'orchestrator', 'hooks')
+    mkdirSync(hooksDir, { recursive: true })
+    mkdirSync(join(root, 'bin'), { recursive: true })
+    copyFileSync(hook, join(hooksDir, 'session-brief.py'))
+    const fakeOrch = join(root, 'bin', 'orch')
+    writeFileSync(
+      fakeOrch,
+      '#!/bin/sh\nif [ "$1" = "inbox" ]; then exit 7; fi\nexit 0\n',
+    )
+    chmodSync(fakeOrch, 0o755)
+    try {
+      const p = Bun.spawnSync(['python3', join(hooksDir, 'session-brief.py')], {
+        stdin: new TextEncoder().encode(JSON.stringify({
+          cwd: '/w/known', source: 'compact', session_id: 'reader',
+        })),
+        stdout: 'pipe', stderr: 'pipe', env: process.env,
+      })
+      expect(p.exitCode).toBe(0)
+      expect(JSON.parse(p.stdout.toString()).systemMessage).toBe(
+        'Inbox command failed with exit 7; question state is unknown.',
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('an inbox timeout reports unknown state, not zero questions', () => {
+    const root = mkdtempSync(join(tmpdir(), 'session-brief-timeout-inbox-'))
+    const hooksDir = join(root, 'orchestrator', 'hooks')
+    mkdirSync(hooksDir, { recursive: true })
+    mkdirSync(join(root, 'bin'), { recursive: true })
+    copyFileSync(hook, join(hooksDir, 'session-brief.py'))
+    const fakeOrch = join(root, 'bin', 'orch')
+    writeFileSync(
+      fakeOrch,
+      '#!/bin/sh\nif [ "$1" = "inbox" ]; then exec sleep 20; fi\nexit 0\n',
+    )
+    chmodSync(fakeOrch, 0o755)
+    try {
+      const p = Bun.spawnSync(['python3', join(hooksDir, 'session-brief.py')], {
+        stdin: new TextEncoder().encode(JSON.stringify({
+          cwd: '/w/known', source: 'compact', session_id: 'reader',
+        })),
+        stdout: 'pipe', stderr: 'pipe', env: process.env,
+      })
+      expect(p.exitCode).toBe(0)
+      expect(JSON.parse(p.stdout.toString()).systemMessage).toBe(
+        'Inbox observation timed out; question state is unknown.',
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 15_000)
+
+  test('a missing orch executable reports unknown question state', () => {
+    const root = mkdtempSync(join(tmpdir(), 'session-brief-missing-orch-'))
+    const hooksDir = join(root, 'orchestrator', 'hooks')
+    mkdirSync(hooksDir, { recursive: true })
+    copyFileSync(hook, join(hooksDir, 'session-brief.py'))
+    try {
+      const p = Bun.spawnSync(['python3', join(hooksDir, 'session-brief.py')], {
+        stdin: new TextEncoder().encode(JSON.stringify({
+          cwd: '/w/known', source: 'compact', session_id: 'reader',
+        })),
+        stdout: 'pipe', stderr: 'pipe', env: process.env,
+      })
+      expect(p.exitCode).toBe(0)
+      expect(JSON.parse(p.stdout.toString()).systemMessage).toContain(
+        'Inbox command is missing or not executable:',
+      )
+      expect(JSON.parse(p.stdout.toString()).systemMessage).toContain(
+        'question state is unknown.',
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   test('malformed stdin exits zero and prints nothing', () => {
     const p = Bun.spawnSync(['python3', hook], {
       stdin: new TextEncoder().encode('{not json'),
@@ -17251,7 +17385,10 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
     mkdirSync(hooksDir, { recursive: true })
     mkdirSync(join(root, 'bin'), { recursive: true })
     copyFileSync(hook, join(hooksDir, 'session-brief.py'))
-    writeFileSync(join(root, 'bin', 'orch'), '#!/bin/sh\nexit 1\n')
+    writeFileSync(
+      join(root, 'bin', 'orch'),
+      '#!/bin/sh\nif [ "$1" = "inbox" ]; then echo "[]"; exit 0; fi\nexit 1\n',
+    )
     chmodSync(join(root, 'bin', 'orch'), 0o755)
     const copiedHeartbeat = join(hooksDir, 'orch-heartbeat.sh')
     if (opts.heartbeat === 'non-executable') {
@@ -17350,6 +17487,41 @@ fi
       expect(p.stdout.toString()).not.toContain('nothing needed from you')
     } finally {
       rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('malformed inbox or run observations report degraded, never zero', () => {
+    for (const malformed of ['inbox', 'runs', 'empty-runs']) {
+      const root = mkdtempSync(join(tmpdir(), `heartbeat-malformed-${malformed}-`))
+      const fakeOrch = join(root, 'orch')
+      const inbox = malformed === 'inbox' ? 'not-json' : '[]'
+      const runs = malformed === 'runs'
+        ? 'not-json'
+        : malformed === 'empty-runs'
+          ? ''
+        : '{"id":7,"job":"implement","agent":"codex","status":"ok","session_id":"other","started_at":"2026-09-05T00:00:00.000Z"}'
+      writeFileSync(fakeOrch, `#!/bin/sh
+if [ "$1" = "inbox" ]; then
+  echo '${inbox}'
+elif [ "$1" = "runs" ]; then
+  echo '${runs}'
+else
+  exit 20
+fi
+`)
+      chmodSync(fakeOrch, 0o755)
+      try {
+        const p = Bun.spawnSync([heartbeat, 'payload-owner', '0', '1'], {
+          stdout: 'pipe', stderr: 'pipe',
+          env: { ...process.env, PATH: `${root}:${process.env.PATH ?? ''}` },
+        })
+        expect(p.exitCode).toBe(0)
+        expect(p.stdout.toString()).toContain('DEGRADED - orch observation failed')
+        expect(p.stdout.toString()).toContain('State unknown; NOT concluding clear')
+        expect(p.stdout.toString()).not.toContain('nothing needed from you')
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
     }
   })
 })
