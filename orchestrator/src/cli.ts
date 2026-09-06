@@ -3386,35 +3386,32 @@ switch (cmd) {
       }
     }
 
-    if (!dry) {
-      // Removal attempts are not the whole inventory. A prior process may have
-      // deleted a directory without clearing the compose resources, which is
-      // the expensive silent state the nightly sweep exists to expose.
-      const inventory = dockerRunResources()
-      for (const error of inventory.errors) inventoryErrors.add(error)
-      if (inventory.errors.length) cleanupFailed = true
-      const owners = db().query('SELECT id, repo, worktree, status FROM run').all() as {
-        id: number; repo: string | null; worktree: string | null; status: string
-      }[]
-      for (const { resource, project } of orphanedDockerResources(inventory.resources, owners)) {
-        const key = `${resource.kind}:${resource.name}`
-        if (!leaked.has(key)) leaked.set(key, { resource, project, runId: resource.runId })
-      }
+    // Inventory is a read, so dry-run performs it too. A preview that omits
+    // already-leaked infrastructure is materially cleaner than the real run.
+    const inventory = dockerRunResources()
+    for (const error of inventory.errors) inventoryErrors.add(error)
+    if (inventory.errors.length) cleanupFailed = true
+    const owners = db().query('SELECT id, repo, worktree, status FROM run').all() as {
+      id: number; repo: string | null; worktree: string | null; status: string
+    }[]
+    for (const { resource, project } of orphanedDockerResources(inventory.resources, owners)) {
+      const key = `${resource.kind}:${resource.name}`
+      if (!leaked.has(key)) leaked.set(key, { resource, project, runId: resource.runId })
     }
-    if (!dry && leaked.size) {
+    if (leaked.size) {
       cleanupFailed = true
-      console.error(`\nleaked Docker resources: ${leaked.size}`)
+      console.error(`\n${dry ? 'would report ' : ''}leaked Docker resources: ${leaked.size}`)
       for (const { resource, project, runId } of leaked.values()) {
-        console.error(`  ${leakedResourceLines([resource], project, runId)[0]}`)
+        console.error(`  ${dry ? 'would report ' : ''}${leakedResourceLines([resource], project, runId)[0]}`)
       }
     }
-    if (!dry && inventoryErrors.size) {
-      console.error(`\ninventory unavailable: ${inventoryErrors.size}`)
-      for (const error of inventoryErrors) console.error(`  ${error}`)
+    if (inventoryErrors.size) {
+      console.error(`\n${dry ? 'would report ' : ''}inventory unavailable: ${inventoryErrors.size}`)
+      for (const error of inventoryErrors) console.error(`  ${dry ? 'would report ' : ''}${error}`)
     }
 
     printSweepKept(done, kept, dry)
-    if (!dry && cleanupFailed) process.exitCode = 1
+    if (cleanupFailed) process.exitCode = 1
     break
   }
 

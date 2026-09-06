@@ -12319,6 +12319,28 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     }
   })
 
+  test('sweep dry-run names existing orphan containers and volumes', () => {
+    const project = `dry-run-leak-${randomUUID()}`
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
+    const docker = fakeDocker(
+      [`orch-${id}-postgres-1`],
+      [`orch-${id}_${project}-pgdata`],
+    )
+    try {
+      const r = orchWithEnv(docker.env, 'sweep', '--dry-run')
+      expect(r.code).not.toBe(0)
+      expect(r.err).toContain('would report leaked Docker resources: 2')
+      expect(r.err).toContain(
+        `would report container orch-${id}-postgres-1 leaked by project ${project} (run ${id})`,
+      )
+      expect(r.err).toContain(
+        `would report volume orch-${id}_${project}-pgdata leaked by project ${project} (run ${id})`,
+      )
+    } finally {
+      rmSync(docker.dir, { recursive: true, force: true })
+    }
+  })
+
   test('more than ten kept rows are summarised by reason; --dry-run lists every row', () => {
     const recent: number[] = []
     const unscored: number[] = []
