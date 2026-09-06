@@ -257,7 +257,12 @@ export const REVIEW_SCHEMA = {
         model_used: { type: 'string' },
         files_covered: { type: 'array', items: { type: 'string' } },
         commands_run: { type: 'array', items: { type: 'string' } },
-        could_not_verify: { type: 'array', items: { type: 'string' } },
+        could_not_verify: {
+          type: 'array',
+          description:
+            'A review which could not execute the suite must say so in could_not_verify AND must not present static reasoning as an executed check.',
+          items: { type: 'string' },
+        },
         canon_source: CANON_SOURCE_SCHEMA,
       },
     },
@@ -288,6 +293,24 @@ export const VERIFY_CLAIM_SCHEMA = {
     },
   },
 } as const
+
+/**
+ * The one infrastructure recovery instruction shared by repository writers and
+ * readers. Keep this as one string: differing recovery language is how a
+ * reader ends up treating an unavailable suite as a completed check.
+ */
+export const INFRASTRUCTURE_RECOVERY = `
+PROJECT INFRASTRUCTURE RECOVERY
+
+The project register says how this worktree's infrastructure is brought up:
+use the registered \`worktree.create\` or \`worktree.recipe\` setup and the
+registered \`worktree.recipe.serve\` step by name rather than inlining their
+commands. A reader MAY run that serve step to get the suite running. A reader
+MUST NOT modify tracked files or commit.
+
+A review which could not execute the suite must say so in could_not_verify AND
+must not present static reasoning as an executed check.
+`.trim()
 
 /**
  * The standing instructions a worker gets on top of its spec.
@@ -383,6 +406,8 @@ reporting a test verdict they could not actually test.
 A BLOCKER IS NOT A QUESTION. A question is something only the architect can
 answer, and you stop and wait. A blocker is something only the environment can
 fix, and you carry on without it and say so.
+
+${INFRASTRUCTURE_RECOVERY}
 `.trim()
 
 /**
@@ -717,6 +742,8 @@ detail in could_not_verify for that sub-question and continue with the others.
 Edit and test freely when that helps you verify a finding. Your findings are the
 deliverable, not your diff: every change you make here is scratch work and must
 never be treated as a proposed change to land. Do not commit, push, or merge.
+
+${INFRASTRUCTURE_RECOVERY}
 `.trim()
 
 /** Jobs whose whole input is inline do not pay for or claim a repository tree. */

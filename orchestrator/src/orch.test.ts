@@ -1317,7 +1317,7 @@ const retargetedPrompt = (
 const { summary } = await import('./metric.ts')
 const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
         NO_REPO_PREAMBLE, WORKER_PREAMBLE, LAND_PREAMBLE, REVIEW_SCHEMA,
-        REVIEW_SEVERITY_INSTRUCTION,
+        REVIEW_SEVERITY_INSTRUCTION, INFRASTRUCTURE_RECOVERY,
         VERIFY_CLAIM_SCHEMA, ISSUE_WORKER_SCHEMA, workerPreamble, workerResumeGuard,
         rulingPrompt, packResumePrompt, contractConflicts, hasRealQuestions, realQuestions } = await import('./contract.ts')
 const { cleanReviewEvidence, parseReviewReply, recordReview, recordReviews, gradeReviewLens, reviewPins, coverageAudit,
@@ -4180,6 +4180,22 @@ describe('job contracts are visible before submission', () => {
       expect(text).toContain('Never withhold deliverable answers behind a blocked one')
       expect(text).toContain('could_not_verify for that sub-question')
     }
+  })
+
+  test('repository readers and writers receive the same infrastructure recovery paragraph', () => {
+    expect(READONLY_PREAMBLE).toContain(INFRASTRUCTURE_RECOVERY)
+    expect(WORKER_PREAMBLE).toContain(INFRASTRUCTURE_RECOVERY)
+    expect(READONLY_PREAMBLE.match(/PROJECT INFRASTRUCTURE RECOVERY/g)).toHaveLength(1)
+    expect(WORKER_PREAMBLE.match(/PROJECT INFRASTRUCTURE RECOVERY/g)).toHaveLength(1)
+    expect(INFRASTRUCTURE_RECOVERY).toContain('worktree.create')
+    expect(INFRASTRUCTURE_RECOVERY).toContain('worktree.recipe.serve')
+    expect(INFRASTRUCTURE_RECOVERY).toContain('A reader MAY run that serve step')
+    expect(INFRASTRUCTURE_RECOVERY).toContain('A reader\nMUST NOT modify tracked files or commit')
+  })
+
+  test('review provenance makes an unexecuted suite visible', () => {
+    expect(REVIEW_SCHEMA.properties.provenance.properties.could_not_verify.description)
+      .toContain('must not present static reasoning as an executed check')
   })
 
   test('contract prints the same preamble selected when a job is bound', () => {
