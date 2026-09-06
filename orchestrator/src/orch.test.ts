@@ -9875,6 +9875,17 @@ describe('outside-worktree write observation', () => {
     }
   })
 
+  test('shell operators end paths and Unicode name characters do not', () => {
+    expect(retargetedPrompt(
+      'cd /repo;pwd /repo|x /repo&&x /repo>out /repo<in /repo)next /repo`pwd` /repo$VAR',
+      '/repo', '/wt',
+    )).toBe('cd /wt;pwd /wt|x /wt&&x /wt>out /wt<in /wt)next /wt`pwd` /wt$VAR')
+    expect(retargetedPrompt(
+      '/repoé/f /repo١/f /repo\u0301/f /repo𐐀/f é/repo/f ١/repo/f e\u0301/repo/f 𐐀/repo/f /repo/é',
+      '/repo', '/wt',
+    )).toBe('/repoé/f /repo١/f /repo\u0301/f /repo𐐀/f é/repo/f ١/repo/f e\u0301/repo/f 𐐀/repo/f /wt/é')
+  })
+
   test('the project worktree root protects every disposable tree from rebinding', () => {
     const caller = '/repo'
     const root = `${caller}/.claude/worktrees`

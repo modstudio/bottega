@@ -775,6 +775,22 @@ function withoutTrailingSeparators(path: string): string {
   return path.slice(0, end)
 }
 
+const PATH_NAME_CHARACTER = /[\p{L}\p{N}\p{M}_.-]/u
+const UNICODE_ALPHANUMERIC_OR_MARK = /[\p{L}\p{N}\p{M}]/u
+const SHELL_PATH_BOUNDARY = /[;&|<>()`$]/
+
+function characterAt(value: string, offset: number): string | undefined {
+  const point = value.codePointAt(offset)
+  return point === undefined ? undefined : String.fromCodePoint(point)
+}
+
+function characterBefore(value: string, offset: number): string | undefined {
+  if (offset <= 0) return undefined
+  const last = value.charCodeAt(offset - 1)
+  const start = last >= 0xDC00 && last <= 0xDFFF ? offset - 2 : offset - 1
+  return value.slice(Math.max(0, start), offset)
+}
+
 function pathRootAt(
   prompt: string, offset: number, root: string, caseInsensitive: boolean,
 ): boolean {
@@ -783,16 +799,17 @@ function pathRootAt(
     ? candidate.toLowerCase() === root.toLowerCase()
     : candidate === root
   if (!equal) return false
-  const after = prompt[offset + root.length]
+  const after = characterAt(prompt, offset + root.length)
   if (after === undefined || after === '/' || /\s/.test(after)) return true
-  if (/[A-Za-z0-9]/.test(after)) return false
-  const next = prompt[offset + root.length + 1]
-  return next === undefined || /\s/.test(next) || !/[A-Za-z0-9]/.test(next)
+  if (SHELL_PATH_BOUNDARY.test(after)) return true
+  if (UNICODE_ALPHANUMERIC_OR_MARK.test(after)) return false
+  const next = characterAt(prompt, offset + root.length + after.length)
+  return next === undefined || /\s/.test(next) || !PATH_NAME_CHARACTER.test(next)
 }
 
 function hasPathStartBoundary(prompt: string, offset: number): boolean {
   if (offset === 0) return true
-  return !/[A-Za-z0-9_.-]/.test(prompt[offset - 1]!)
+  return !PATH_NAME_CHARACTER.test(characterBefore(prompt, offset)!)
 }
 
 type RetargetResult = { prompt: string; diagnostic: string | null }
