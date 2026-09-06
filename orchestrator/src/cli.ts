@@ -864,16 +864,40 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
   // every detached run showed a blank project in "running now" until its child
   // got far enough to fill the row in. There is no reason to make the page wait
   // for a fact this function already has.
-  const { id } = db().query(
+  // A resume is claimed as a chain member in this same INSERT. Previously the
+  // placeholder became visible as a running root and run() attached its parent
+  // later, leaving inbox a real window in which the old asking root looked
+  // recoverable. One SQLite statement is the claim boundary: readers now see
+  // either no new turn or a running turn already linked to its chain.
+  const claimed = db().query(
     `INSERT INTO run (started_at, agent, job, repo, cwd, prompt_sha, prompt_bytes,
-                      prompt_head, label, status, session_id, probe)
-     VALUES (?, '(pending)', ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?) RETURNING id`,
+                      prompt_head, label, status, session_id, probe, parent_run_id, turn,
+                      vendor_session)
+     SELECT ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?
+      WHERE ? IS NULL OR NOT EXISTS (
+        SELECT 1 FROM run
+         WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
+      )
+     RETURNING id`,
   ).get(
     nowIso(), jobName, spec.repo ?? repoOf(cwd), cwd,
     createHash('sha256').update(prompt).digest('hex').slice(0, 16),
     prompt.length, prompt.slice(0, 200).replace(/\s+/g, ' '), spec.label ?? null,
-    sessionId(), spec.probe ? 1 : 0,
-  ) as { id: number }
+    sessionId(), spec.probe ? 1 : 0, spec.resume?.parent ?? null,
+    spec.resume?.turn ?? 1, spec.resume?.session ?? null,
+    spec.resume?.parent ?? null, spec.resume?.parent ?? null, spec.resume?.parent ?? null,
+  ) as { id: number } | null
+  if (!claimed) {
+    const running = db().query(
+      `SELECT id, turn FROM run
+        WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
+        ORDER BY turn DESC, id DESC LIMIT 1`,
+    ).get(spec.resume!.parent, spec.resume!.parent) as { id: number; turn: number }
+    throw new Error(
+      `run ${spec.resume!.parent} already has running turn ${running.id} (turn ${running.turn})`,
+    )
+  }
+  const { id } = claimed
   // The row now exists, so its id replaces that temporary random name and is
   // also stored on the row for run() to reuse rather than creating a second file.
   const promptPath = runFilePaths(runsDir, Date.now(), id, 'detach', jobName).prompt
@@ -978,6 +1002,14 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
   if (!row) throw new Error(`no run ${id}`)
   if (row.parent_run_id) {
     throw new Error(`run ${id} is a turn of run ${row.parent_run_id}; continue that one`)
+  }
+  const running = db().query(
+    `SELECT id, turn FROM run
+      WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
+      ORDER BY turn, id LIMIT 1`,
+  ).get(id, id) as { id: number; turn: number } | null
+  if (running) {
+    throw new Error(`run ${id} already has running turn ${running.id} (turn ${running.turn})`)
   }
   const open = db().query(
     `SELECT COUNT(*) n FROM question q JOIN run r ON r.id = q.run_id
@@ -3912,18 +3944,29 @@ switch (cmd) {
     const id = Number(argv[1])
     if (!id) usage()
     let authority = authorizeRunMutation(id, 'stop')
-    const row = db().query(
-      `SELECT id, status, pid, agent_pid, parent_run_id, repo, cwd, worktree, branch,
+    const chain = db().query(
+      `SELECT id, status, pid, agent_pid, parent_run_id, turn, repo, cwd, worktree, branch,
               base_commit
-         FROM run WHERE id = ?`,
-    ).get(id) as {
+         FROM run WHERE id = ? OR parent_run_id = ? ORDER BY turn DESC, id DESC`,
+    ).all(authority.rootId, authority.rootId) as {
       id: number; status: string; pid: number | null; agent_pid: number | null
-      parent_run_id: number | null; repo: string | null; cwd: string | null
+      parent_run_id: number | null; turn: number; repo: string | null; cwd: string | null
       worktree: string | null; branch: string | null; base_commit: string | null
-    } | null
-    if (!row) throw new Error(`no run ${id}`)
-    if (row.status !== 'running') {
-      throw new Error(`run ${id} is ${row.status}, not running — nothing to stop`)
+    }[]
+    const row = chain.find((turn) => turn.status === 'running')
+    if (!row) {
+      throw new Error(
+        `run ${id}'s chain has no running turn — nothing to stop: ` +
+        [...chain].reverse().map((turn) => `${turn.id} turn ${turn.turn} ${turn.status}`).join('; '),
+      )
+    }
+    const root = chain.find((turn) => turn.id === authority.rootId)!
+    const artifact = chain.find((turn) => turn.worktree)
+    const cleanupRow = {
+      ...root,
+      worktree: row.worktree ?? artifact?.worktree ?? null,
+      branch: root.branch ?? row.branch ?? artifact?.branch ?? null,
+      base_commit: root.base_commit ?? row.base_commit ?? artifact?.base_commit ?? null,
     }
 
     const pids = [...new Set([row.agent_pid, row.pid].filter((pid): pid is number => Boolean(pid)))]
@@ -3937,11 +3980,11 @@ switch (cmd) {
       authority = adoptRunMutation(authority, 'stop')
       db().query(
         "UPDATE run SET status='stopped', error='stopped by architect', failure_kind=NULL WHERE id=? AND status='running'",
-      ).run(id)
-      if (row.parent_run_id) {
+      ).run(row.id)
+      if (row.id !== authority.rootId) {
         db().query(
           "UPDATE run SET status='stopped', error='stopped by architect', failure_kind=NULL WHERE id=?",
-        ).run(row.parent_run_id)
+        ).run(authority.rootId)
       }
       auditRunMutation(authority, 'stop', auditReason())
     })()
@@ -3950,18 +3993,18 @@ switch (cmd) {
     // creation window strands the project tool's directory before it can be
     // attributed or reclaimed. Stop the vendor, but let the coordinator see
     // the stopped row and finish cleanup.
-    terminateRunProcesses(id, row.pid ? [row.pid] : [])
-    console.log(`stopped run ${id}`)
-    if (row.worktree) {
-      const stoppedWorktree = row.worktree
+    terminateRunProcesses(row.id, row.pid ? [row.pid] : [])
+    console.log(`stopped run ${row.id}`)
+    if (cleanupRow.worktree) {
+      const stoppedWorktree = cleanupRow.worktree
       let reclaimed = false
-      const repoRoot = cleanupRepoRoot(row)
+      const repoRoot = cleanupRepoRoot(cleanupRow)
       const creationHolder = repoRoot ? projectLockState(repoRoot, 'landing').holder : null
       if (creationHolder?.what === 'worktree creation') {
         console.log(`worktree ${stoppedWorktree} cleanup left to its creation coordinator`)
       } else {
         try {
-          await discardWorktree(row as CleanupRow, 'discarded', true)
+          await discardWorktree(cleanupRow as CleanupRow, 'discarded', true)
           reclaimed = true
         } catch (error) {
           if (error instanceof SharedWorktreeEvidenceError) {
@@ -3970,15 +4013,15 @@ switch (cmd) {
             console.log(`worktree ${error.worktree} kept for runs ${owners}`)
           } else {
             console.error(
-              `worktree ${stoppedWorktree} was not reclaimed after stopping run ${id}: ` +
+              `worktree ${stoppedWorktree} was not reclaimed after stopping run ${row.id}: ` +
               `${error instanceof Error ? error.message : String(error)}`,
             )
           }
         }
       }
-      if (reclaimed && row.parent_run_id) {
+      if (reclaimed && row.id !== authority.rootId) {
         db().query('UPDATE run SET worktree=NULL WHERE id=? AND worktree=?')
-          .run(row.parent_run_id, stoppedWorktree)
+          .run(authority.rootId, stoppedWorktree)
       }
     }
     break
@@ -3988,19 +4031,30 @@ switch (cmd) {
     const id = Number(argv[1])
     if (!id) usage()
     let authority = authorizeRunMutation(id, 'abandon')
-    const row = db().query(
-      `SELECT id, status, repo, cwd, worktree, branch, parent_run_id, base_commit
-         FROM run WHERE id = ?`,
-    ).get(id) as {
+    const chain = db().query(
+      `SELECT id, status, repo, cwd, worktree, branch, parent_run_id, turn, base_commit
+         FROM run WHERE id = ? OR parent_run_id = ? ORDER BY turn DESC, id DESC`,
+    ).all(authority.rootId, authority.rootId) as {
       id: number; status: string; repo: string | null; cwd: string | null
-      worktree: string | null; branch: string | null; parent_run_id: number | null
+      worktree: string | null; branch: string | null; parent_run_id: number | null; turn: number
       base_commit: string | null
-    } | null
-    if (!row) throw new Error(`no run ${id}`)
-    const callerSession = authority.actor
-    if (row.status !== 'asking') {
-      throw new Error(`run ${id} is ${row.status}, not asking — nothing to abandon`)
+    }[]
+    const row = chain[0]
+    if (row?.status !== 'asking') {
+      throw new Error(
+        `run ${id}'s chain has no asking turn — nothing to abandon: ` +
+        [...chain].reverse().map((turn) => `${turn.id} turn ${turn.turn} ${turn.status}`).join('; '),
+      )
     }
+    const root = chain.find((turn) => turn.id === authority.rootId)!
+    const artifact = chain.find((turn) => turn.worktree)
+    const cleanupRow = {
+      ...root,
+      worktree: row.worktree ?? artifact?.worktree ?? null,
+      branch: root.branch ?? row.branch ?? artifact?.branch ?? null,
+      base_commit: root.base_commit ?? row.base_commit ?? artifact?.base_commit ?? null,
+    }
+    const callerSession = authority.actor
 
     const note = flag('note')
     const error = `abandoned by architect${note === undefined ? '' : `: ${note}`}`
@@ -4009,67 +4063,68 @@ switch (cmd) {
       authority = adoptRunMutation(authority, 'abandon')
       db().query(
         "UPDATE run SET status='stale', error=?, failure_kind='abandoned' WHERE id=?",
-      ).run(error, id)
+      ).run(error, row.id)
       db().query(
         `UPDATE question SET answered_by=?, answered_at=?, answer='(abandoned)'
           WHERE answered_at IS NULL AND run_id IN
             (SELECT id FROM run WHERE id=? OR parent_run_id=?)`,
-      ).run(callerSession ?? 'anonymous (no session id)', at, id, id)
-      resolveRootFromLastTurn(db(), row.parent_run_id ?? row.id)
+      ).run(callerSession ?? 'anonymous (no session id)', at, authority.rootId, authority.rootId)
+      resolveRootFromLastTurn(db(), authority.rootId)
       auditRunMutation(authority, 'abandon', note ?? null)
     })()
-    console.log(`abandoned run ${id}`)
+    console.log(`abandoned run ${row.id}`)
 
-    if (row.worktree) {
+    if (cleanupRow.worktree) {
       await discardWorktree(
-        row as CleanupRow, 'abandoned', has('force'),
+        cleanupRow as CleanupRow, 'abandoned', has('force'),
       )
       break
     }
 
-    console.log(row.worktree
-      ? `worktree ${row.worktree} was already gone`
+    console.log(cleanupRow.worktree
+      ? `worktree ${cleanupRow.worktree} was already gone`
       : `worktree cleanup skipped: run ${id} has no worktree`)
-    if (!row.branch) {
+    if (!cleanupRow.branch) {
       console.log(`branch cleanup skipped: run ${id} has no branch`)
       break
     }
 
-    const repoRoot = cleanupRepoRoot(row)
+    const repoRoot = cleanupRepoRoot(cleanupRow)
     if (!repoRoot) {
-      console.log(`branch ${row.branch} cleanup skipped: repository root not found`)
+      console.log(`branch ${cleanupRow.branch} cleanup skipped: repository root not found`)
       break
     }
     withCleanupLock(repoRoot, `abandon run ${id}`, () => {
-      const ownersBefore = evidenceOwningBranchOwners(row, repoRoot)
+      const ownersBefore = evidenceOwningBranchOwners(cleanupRow, repoRoot)
       if (ownersBefore.length) {
-        console.log(`branch ${row.branch} left because run ${ownersBefore[0]!.id} records it`)
+        console.log(`branch ${cleanupRow.branch} left because run ${ownersBefore[0]!.id} records it`)
         return
       }
       let protectedBranch: ReturnType<typeof unmergedBranch> = null
       let afterCutCount: number | null = null
       if (!has('force')) {
-        protectedBranch = unmergedBranch(repoRoot, row.branch!, null)
-        afterCutCount = row.base_commit
-          ? (unmergedBranch(repoRoot, row.branch!, row.base_commit)?.count ?? 0)
+        protectedBranch = unmergedBranch(repoRoot, cleanupRow.branch!, null)
+        afterCutCount = cleanupRow.base_commit
+          ? (unmergedBranch(repoRoot, cleanupRow.branch!, cleanupRow.base_commit)?.count ?? 0)
           : null
       }
       if (protectedBranch) {
-        db().query('UPDATE run SET branch_kept=?, branch_kept_tip=NULL WHERE id=?').run(row.branch, id)
-        console.log(keptBranchLine(row.branch!, protectedBranch.count, afterCutCount, id))
+        db().query('UPDATE run SET branch_kept=?, branch_kept_tip=NULL WHERE id=?')
+          .run(cleanupRow.branch, authority.rootId)
+        console.log(keptBranchLine(cleanupRow.branch!, protectedBranch.count, afterCutCount, authority.rootId))
         return
       }
-      const snapshot = branchTip(repoRoot, row.branch!)
-      const removed = removeBranch(repoRoot, row.branch!)
-      const ownersAfter = evidenceOwningBranchOwners(row, repoRoot)
+      const snapshot = branchTip(repoRoot, cleanupRow.branch!)
+      const removed = removeBranch(repoRoot, cleanupRow.branch!)
+      const ownersAfter = evidenceOwningBranchOwners(cleanupRow, repoRoot)
       const outcome = verifyBranchOwnershipAfterCleanup(
-        row.id, repoRoot, row.branch!, snapshot, ownersBefore, ownersAfter,
+        cleanupRow.id, repoRoot, cleanupRow.branch!, snapshot, ownersBefore, ownersAfter,
       )
       if (outcome.refusal) throw new Error(outcome.refusal)
       if (outcome.warning) console.error(outcome.warning)
       console.log(removed
-        ? `deleted branch ${row.branch}`
-        : `branch ${row.branch} cleanup skipped: branch does not exist`)
+        ? `deleted branch ${cleanupRow.branch}`
+        : `branch ${cleanupRow.branch} cleanup skipped: branch does not exist`)
     })
     break
   }

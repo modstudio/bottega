@@ -7514,6 +7514,22 @@ describe('detached run collection', () => {
     expect(result.err).not.toContain(`orch continue ${turn}`)
   })
 
+  test('inbox and continue refuse recovery while a later chain turn is running', () => {
+    const root = insert('asking', 'implement')
+    const completed = insert('ok', 'implement')
+    const running = insert('running', 'implement')
+    db().query('UPDATE run SET parent_run_id=?, turn=2 WHERE id=?').run(root, completed)
+    db().query('UPDATE run SET parent_run_id=?, turn=3 WHERE id=?').run(root, running)
+
+    const inbox = orch('inbox')
+    expect(inbox.code).toBe(0)
+    expect(inbox.out).not.toContain(`recoverable: orch continue ${root}`)
+
+    const continued = orch('continue', String(root), 'continue this chain')
+    expect(continued.code).toBe(1)
+    expect(continued.err).toContain(`run ${root} already has running turn ${running} (turn 3)`)
+  })
+
   test('result surfaces the recorded base commit for a writing run', () => {
     const id = insert('ok', 'implement')
     db().query('UPDATE run SET base_commit=? WHERE id=?').run('base-commit-123', id)
@@ -8420,7 +8436,8 @@ describe('detached run collection', () => {
     const id = insert('ok')
     const r = orch('stop', String(id))
     expect(r.code).toBe(1)
-    expect(r.err).toContain(`run ${id} is ok, not running — nothing to stop`)
+    expect(r.err).toContain(`run ${id}'s chain has no running turn — nothing to stop`)
+    expect(r.err).toContain(`${id} turn 1 ok`)
     expect((db().query('SELECT status FROM run WHERE id=?').get(id) as { status: string }).status)
       .toBe('ok')
   })
@@ -8435,11 +8452,28 @@ describe('detached run collection', () => {
       .toEqual([{ id: root, status: 'stopped' }, { id: turn, status: 'stopped' }])
   })
 
+  test('stop by a chain root stops its running child turn', () => {
+    const root = insert('ok', 'implement')
+    const turn = insert('running', 'implement')
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('orch-test-session', root)
+    db().query('UPDATE run SET parent_run_id=?, turn=2 WHERE id=?').run(root, turn)
+
+    const stopped = orch('stop', String(root))
+    expect(stopped.code).toBe(0)
+    expect(stopped.out).toContain(`stopped run ${turn}`)
+    expect(db().query('SELECT id, status FROM run WHERE id IN (?,?) ORDER BY id').all(root, turn))
+      .toEqual([{ id: root, status: 'stopped' }, { id: turn, status: 'stopped' }])
+    expect(db().query(
+      'SELECT run_id, root_id, action FROM run_mutation_audit WHERE root_id=?',
+    ).all(root)).toEqual([{ run_id: root, root_id: root, action: 'stop' }])
+  })
+
   test('abandon refuses a completed run without changing it', () => {
     const id = insert('ok')
     const r = orch('abandon', String(id))
     expect(r.code).toBe(1)
-    expect(r.err).toContain(`run ${id} is ok, not asking — nothing to abandon`)
+    expect(r.err).toContain(`run ${id}'s chain has no asking turn — nothing to abandon`)
+    expect(r.err).toContain(`${id} turn 1 ok`)
     expect((db().query('SELECT status FROM run WHERE id=?').get(id) as { status: string }).status)
       .toBe('ok')
   })
@@ -8474,6 +8508,25 @@ describe('detached run collection', () => {
     const after = candidates('implement').find((candidate) => candidate.agent === 'codex')!
     expect(after.evidence).toBe(1)
     expect(after.failures).toBe(1)
+  })
+
+  test('abandon by a chain root retires its asking child turn', () => {
+    const root = insert('asking', 'implement')
+    const child = insert('asking', 'implement')
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('orch-test-session', root)
+    db().query('UPDATE run SET parent_run_id=?, turn=2 WHERE id=?').run(root, child)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(child, new Date().toISOString(), 'last question?')
+
+    const abandoned = orch('abandon', String(root), '--note', 'superseded')
+    expect(abandoned.code).toBe(0)
+    expect(abandoned.out).toContain(`abandoned run ${child}`)
+    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(child))
+      .toEqual({ status: 'stale', failure_kind: 'abandoned' })
+    expect(db().query('SELECT status FROM run WHERE id=?').get(root)).toEqual({ status: 'stale' })
+    expect(db().query(
+      'SELECT run_id, root_id, action FROM run_mutation_audit WHERE root_id=?',
+    ).all(root)).toEqual([{ run_id: root, root_id: root, action: 'abandon' }])
   })
 
   test('abandon does not delete a branch recorded by another run', () => {
