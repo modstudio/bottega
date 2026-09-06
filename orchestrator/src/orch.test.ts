@@ -5301,6 +5301,58 @@ describe('a destroyed output is not evidence about the agent', () => {
 })
 
 describe('a probe proves an agent is alive without vouching for it', () => {
+  test('an explicit probe reaches a cooling agent while ordinary work is refused', async () => {
+    const script = join(dir, 'fake-cooling-probe.ts')
+    writeFileSync(script, 'process.stdout.write("probe reached spawn")\n')
+    const agent = AGENTS.grok!
+    const original = {
+      bin: agent.bin, argv: agent.argv, stdin: agent.stdin,
+      readsOut: agent.readsOut, parseReply: agent.parseReply,
+    }
+    const priorDepth = process.env.ORCH_DEPTH
+    const failed = addRun({
+      agent: 'grok', job: 'summarize', status: 'failed', kind: 'quota',
+      startedAt: new Date(Date.now() - 60_000).toISOString(),
+    })
+    try {
+      agent.bin = process.execPath
+      agent.argv = () => [script]
+      agent.stdin = false
+      agent.readsOut = false
+      agent.parseReply = undefined
+      process.env.ORCH_DEPTH = '0'
+
+      await expect(runJob({
+        job: 'summarize', prompt: 'ordinary work', agent: 'grok', noFailover: true,
+      })).rejects.toThrow('not eligible for summarize: vendor quota')
+
+      const probe = await runJob({
+        job: 'summarize', prompt: 'reply', agent: 'grok', probe: true, noFailover: true,
+      })
+      expect(probe.agent).toBe('grok')
+      expect(probe.output).toBe('probe reached spawn')
+      expect(db().query('SELECT status, probe FROM run WHERE id=?').get(probe.id))
+        .toEqual({ status: 'ok', probe: 1 })
+      expect(candidates('summarize').find((c) => c.agent === 'grok')!.cooling).toBeNull()
+    } finally {
+      db().query('DELETE FROM run WHERE id=?').run(failed)
+      agent.bin = original.bin
+      agent.argv = original.argv
+      agent.stdin = original.stdin
+      agent.readsOut = original.readsOut
+      agent.parseReply = original.parseReply
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(script, { force: true })
+    }
+  })
+
+  test('a probe bypasses cooling only, not the pinned agent\'s other exclusions', () => {
+    addRun({ agent: 'agy', job: 'file-question', status: 'failed', kind: 'quota' })
+    expect(() => pick('file-question', 'agy', 0, false, null, {}, true))
+      .toThrow('not eligible for file-question: lacks readsRepo')
+  })
+
   test('a probe clears a cooldown, which is the only way to clear one early', () => {
     // Deliberate, and the one query that does not filter probes. Availability
     // is not quality: a human who tops up a quota needs a way to say so.
@@ -8447,6 +8499,22 @@ describe('detached run collection', () => {
     expect(db().query('SELECT * FROM score WHERE run_id=?').get(id)).toBeNull()
   })
 
+  test("score --void accepts only a harness-failed '(pending)' run", () => {
+    const harness = insert('failed')
+    db().query("UPDATE run SET agent='(pending)', failure_kind='harness' WHERE id=?").run(harness)
+    const voided = orch('score', String(harness), 'none', '--void')
+    expect(voided.code).toBe(0)
+    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(harness))
+      .toEqual({ evidence_excluded: 'voided with orch score --void' })
+    expect(db().query('SELECT * FROM score WHERE run_id=?').get(harness)).toBeNull()
+
+    const other = insert('failed')
+    db().query("UPDATE run SET agent='(pending)', failure_kind='other' WHERE id=?").run(other)
+    const refused = orch('score', String(other), 'none', '--void')
+    expect(refused.code).toBe(1)
+    expect(refused.err).toContain("agent is the placeholder '(pending)'")
+  })
+
   test('only a live hub serve capability lets the dashboard scorer cross ownership', async () => {
     const id = insert('ok', 'file-question')
     db().query('UPDATE run SET session_id=? WHERE id=?').run('owner-session', id)
@@ -11459,6 +11527,19 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
     expect(fromRoot(() => preflight(
       'review-lens', repo, 'small', 'DEV-264', undefined, false, false, 'safety',
     ))).toBe('small')
+    rmSync(repo, { recursive: true, force: true })
+  })
+
+  test('jobs that cut no worktree do not require the branch template key', () => {
+    const { repo } = scratchRepo()
+    upsertProject({
+      name: 'inline-no-key', path: repo,
+      settings: { worktree: { recipe: {}, branch: '{key}-orch-{id}' } },
+    })
+    expect(() => fromRoot(() => preflight('summarize', repo))).not.toThrow()
+    expect(() => fromRoot(() => preflight(
+      'review-lens-inline', repo, undefined, undefined, undefined, false, false, 'inline',
+    ))).not.toThrow()
     rmSync(repo, { recursive: true, force: true })
   })
 

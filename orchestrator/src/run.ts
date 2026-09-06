@@ -394,12 +394,14 @@ export function preflightMcp(opts: {
   avoid?: string[]
   distinctModels?: string[]
   model?: string
+  probe?: boolean
 }): void {
   if (!opts.mcp) return
   if (!projectAt(opts.cwd)) return
   const { agent: name } = pick(
     opts.job, opts.agent, opts.prompt.length, true, stackAt(opts.cwd),
     { agents: opts.avoid, models: opts.distinctModels, model: opts.model },
+    opts.probe,
   )
   const connection = probeRequestedMcp(true, name, opts.cwd)
   if (!connection) return
@@ -456,7 +458,10 @@ export function preflight(
       `Run it from the checkout that holds the change.`,
     )
   }
-  if (!j.needs.readsRepo) return seed
+  // The key belongs to the branch of a newly cut worktree. Inline jobs never
+  // create that branch, so a project's branch template cannot require a key.
+  const cutsWorktree = Boolean(j.needs.readsRepo)
+  if (!cutsWorktree) return seed
   if (repoRoot === null) {
     throw new Error(`${jobName} reads a repository and ${cwd} is not a git checkout`)
   }
@@ -1386,7 +1391,8 @@ export async function run(opts: {
            Buffer.byteLength(prompt) + (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0) +
              (requiresCanonSource ? CANON_SOURCE_PROMPT_RESERVE_BYTES : 0),
            true, stackAt(callerCwd),
-           { agents: opts.avoid, models: opts.distinctModels, model: opts.model })
+           { agents: opts.avoid, models: opts.distinctModels, model: opts.model },
+           opts.probe)
   const a = AGENTS[name]!
   // Route first because the cell keys on the agent ACTUALLY selected. The
   // suffix reserve above keeps argv eligibility honest; append before any

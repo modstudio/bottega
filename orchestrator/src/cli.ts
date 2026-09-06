@@ -895,7 +895,7 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
     preflightMcp({
       mcp: spec.mcp, cwd, job: jobName, prompt,
       agent: spec.agent, avoid: spec.avoid,
-      distinctModels: spec.distinctModels, model: spec.model,
+      distinctModels: spec.distinctModels, model: spec.model, probe: spec.probe,
     })
   }
   const runsDir = RUNS_DIR
@@ -4377,7 +4377,10 @@ switch (cmd) {
           parent_run_id: number | null; failure_kind: FailureKind | null; output_path: string | null } | null
     if (!row) throw new Error(`no run ${requestedId}`)
     const id = row.id
-    if (row.agent === '(pending)') {
+    // A pick-time harness refusal never selected an agent, but it is still a
+    // real failed row the owning session must be able to clear from its ledger.
+    // Voiding that one shape records the note without manufacturing evidence.
+    if (row.agent === '(pending)' && !(has('void') && row.failure_kind === 'harness')) {
       throw new Error(`run ${id} cannot be scored: its agent is the placeholder '(pending)'`)
     }
     const scorer = flag('scorer')

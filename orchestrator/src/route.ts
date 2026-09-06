@@ -348,6 +348,7 @@ export function median(xs: number[]): number | null {
  */
 export function candidates(
   jobName: string, promptBytes = 0, stack?: string | null, modelOverride?: string,
+  coolingProbeAgent?: string,
 ): Candidate[] {
   const j = job(jobName)
   // probe = 0: calibration traffic is deliberately trivial, so counting it would
@@ -512,7 +513,7 @@ export function candidates(
     let eligible = true
     let why = ''
     const unavailable = unavailableReason(name)
-    if (cooling) {
+    if (cooling && coolingProbeAgent !== name) {
       eligible = false
       why = `vendor ${cooling}; retry after ${COOLDOWN_MIN}m or run a successful probe to clear it`
     }
@@ -744,6 +745,8 @@ export function pick(
   stack?: string | null,
   /** Agents and effective models a fan-out has already used. */
   avoid: { agents?: string[]; models?: string[]; model?: string } = {},
+  /** An explicit calibration probe may test whether its named agent recovered. */
+  probe = false,
 ): { agent: string; reason: string } {
   const j = job(jobName)
   const ev = evidenceFor(jobName, promptBytes, stack, avoid.model)
@@ -757,7 +760,16 @@ export function pick(
     if (avoid.agents?.includes(override)) {
       throw new Error(`--agent ${override} contradicts --avoid ${override}`)
     }
-    const c = cands.find((x) => x.agent === override)
+    // Keep candidates()' reporting view unchanged: cooling remains an exclusion
+    // in guide and hub. Only this explicit probe route gets a candidate whose
+    // other exclusions are evaluated without the cooling circuit in front.
+    const probeCandidates = probe
+      ? candidates(
+          jobName, promptBytes, ev.level === 'stack' ? ev.stack : undefined,
+          avoid.model, override,
+        )
+      : cands
+    const c = probeCandidates.find((x) => x.agent === override)
     if (!c) throw new Error(`unknown agent "${override}"`)
     if (!c.eligible) throw new Error(`agent "${override}" not eligible for ${jobName}: ${c.why}`)
     return { agent: override, reason: 'explicit --agent' }
