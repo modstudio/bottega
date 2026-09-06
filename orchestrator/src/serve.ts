@@ -34,6 +34,15 @@ export function runDetail(id: number) {
   if (!row) return null
   const read = (p: unknown) =>
     typeof p === 'string' && existsSync(p) ? readFileSync(p, 'utf8') : null
+  const rootId = (db().query(
+    'SELECT COALESCE(parent_run_id, id) root_id FROM run WHERE id=?',
+  ).get(id) as { root_id: number }).root_id
+  const audit = db().query(
+    `SELECT run_id, root_id, action,
+            COALESCE(actor_session, 'anonymous (no session id)') actor_session,
+            at, reason
+       FROM run_mutation_audit WHERE root_id=? ORDER BY at, rowid`,
+  ).all(rootId)
   return {
     ...row,
     project: typeof row.cwd === 'string' ? projectAt(row.cwd)?.name ?? null : null,
@@ -43,6 +52,7 @@ export function runDetail(id: number) {
     prompt: read(row.prompt_path),
     output: read(row.output_path),
     messages: readMessagesForArchitect(id),
+    audit,
     // Runs recorded before prompts were kept on disk have only the head.
     promptTruncated: !row.prompt_path,
   }

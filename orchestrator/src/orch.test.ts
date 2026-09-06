@@ -1778,7 +1778,7 @@ beforeEach(() => {
   // question cascades from run, but the delete order still matters: it is
   // listed first so a future FK-enforcing change cannot make this fail
   // mysteriously halfway through a suite.
-  db().exec('DELETE FROM canon_pack; DELETE FROM monitor_condition; DELETE FROM monitor_invocation; DELETE FROM landing_review_carry; DELETE FROM landing_override; DELETE FROM review_finding; DELETE FROM review_lens; DELETE FROM review; DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc_revision; DELETE FROM doc; DELETE FROM run_message; DELETE FROM question; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
+  db().exec('DELETE FROM canon_pack; DELETE FROM monitor_condition; DELETE FROM monitor_invocation; DELETE FROM landing_review_carry; DELETE FROM landing_override; DELETE FROM review_finding; DELETE FROM review_lens; DELETE FROM review; DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc_revision; DELETE FROM doc; DELETE FROM run_message; DELETE FROM question; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run_mutation_audit; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
 })
 
 afterAll(() => {
@@ -3297,7 +3297,7 @@ describe('routing counts failures as evidence', () => {
 
   test('vendor billing and auth failures are not evidence', () => {
     for (const kind of ['quota', 'auth']) {
-      db().exec('DELETE FROM score; DELETE FROM run;')
+      db().exec('DELETE FROM score; DELETE FROM run_mutation_audit; DELETE FROM run;')
       addRun({ agent: 'codex', job: 'craft', status: 'failed', kind })
       const c = candidates('craft').find((x) => x.agent === 'codex')!
       expect(c.failures).toBe(0)
@@ -3307,7 +3307,7 @@ describe('routing counts failures as evidence', () => {
 
   test('agent and harness failures remain evidence', () => {
     for (const kind of ['timeout', 'denied', 'other']) {
-      db().exec('DELETE FROM score; DELETE FROM run;')
+      db().exec('DELETE FROM score; DELETE FROM run_mutation_audit; DELETE FROM run;')
       addRun({ agent: 'codex', job: 'craft', status: 'failed', kind })
       const c = candidates('craft').find((x) => x.agent === 'codex')!
       expect(c.failures).toBe(1)
@@ -4456,7 +4456,8 @@ describe('a destroyed output is not evidence about the agent', () => {
     const outputPath = join(dir, 'voided-output.txt')
     writeFileSync(outputPath, 'the retained answer')
     const id = addRun({ agent: 'codex', job: 'review-lens' })
-    db().query('UPDATE run SET output_path=? WHERE id=?').run(outputPath, id)
+    db().query('UPDATE run SET output_path=?, session_id=? WHERE id=?')
+      .run(outputPath, 'orch-test-session', id)
     score(id, 'full', 'right')
 
     const p = Bun.spawnSync([process.execPath, CLI, 'score', String(id), '--void'], {
@@ -4472,7 +4473,35 @@ describe('a destroyed output is not evidence about the agent', () => {
     expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id))
       .toEqual({ evidence_excluded: 'voided with orch score --void' })
     expect(db().query('SELECT COUNT(*) n FROM score WHERE run_id=?').get(id)).toEqual({ n: 1 })
+    expect(db().query(
+      'SELECT run_id, root_id, action, actor_session FROM run_mutation_audit WHERE run_id=?',
+    ).get(id)).toEqual({
+      run_id: id, root_id: id, action: 'void', actor_session: 'orch-test-session',
+    })
     expect(candidates('review-lens').find((c) => c.agent === 'codex')!.evidence).toBe(0)
+  })
+
+  test('score --void refuses a foreign owner and permits an attributed unowned run', () => {
+    const CLI = new URL('cli.ts', import.meta.url).pathname
+    const owned = addRun({ agent: 'codex', job: 'review-lens' })
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('owner-session', owned)
+    const foreign = Bun.spawnSync([process.execPath, CLI, 'score', String(owned), '--void'], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+        CLAUDE_CODE_SESSION_ID: 'foreign-session' }, stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(foreign.exitCode).toBe(1)
+    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(owned))
+      .toEqual({ evidence_excluded: null })
+
+    const unowned = addRun({ agent: 'codex', job: 'review-lens' })
+    const allowed = Bun.spawnSync([process.execPath, CLI, 'score', String(unowned), '--void'], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+        CLAUDE_CODE_SESSION_ID: 'acting-session' }, stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(allowed.exitCode).toBe(0)
+    expect(db().query(
+      'SELECT action, actor_session FROM run_mutation_audit WHERE run_id=?',
+    ).get(unowned)).toEqual({ action: 'void', actor_session: 'acting-session' })
   })
 
   test('a scored collision is kept as a verdict and dropped from routing', () => {
@@ -4827,6 +4856,26 @@ describe('run detail', () => {
       prompt: 'the whole prompt', output: 'the whole reply',
     })
     expect(detail).not.toHaveProperty('run_token')
+  })
+
+  test('publishes ordered chain audit and renders a missing actor explicitly', () => {
+    const root = addRun({ agent: 'codex', job: 'implement' })
+    const child = addRun({ agent: 'codex', job: 'implement' })
+    db().query('UPDATE run SET parent_run_id=?, turn=2 WHERE id=?').run(root, child)
+    const insertAudit = db().query(
+      `INSERT INTO run_mutation_audit (run_id, root_id, action, actor_session, at, reason)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    insertAudit.run(root, root, 'stop', null, '2026-09-05T01:00:00.000Z', null)
+    insertAudit.run(child, root, 'continue', 'architect-session', '2026-09-05T02:00:00.000Z', 'ruled')
+
+    expect(runDetail(child)!.audit).toEqual([
+      { run_id: root, root_id: root, action: 'stop',
+        actor_session: 'anonymous (no session id)', at: '2026-09-05T01:00:00.000Z', reason: null },
+      { run_id: child, root_id: root, action: 'continue',
+        actor_session: 'architect-session', at: '2026-09-05T02:00:00.000Z', reason: 'ruled' },
+    ])
+    expect(() => insertAudit.run(root, root, 'invented', null, nowIso(), null)).toThrow()
   })
 })
 
@@ -7901,6 +7950,20 @@ describe('detached run collection', () => {
       vendor.kill()
       await vendor.exited
      }
+  })
+
+  test('discard resolves a child to its root owner before filesystem mutation', () => {
+    const root = insert('ok', 'implement')
+    const child = insert('ok', 'implement')
+    const path = join(dir, 'foreign-owned-worktree')
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('other-session', root)
+    db().query('UPDATE run SET parent_run_id=?, worktree=? WHERE id=?').run(root, path, child)
+
+    const discarded = orch('discard', String(child), '--force')
+    expect(discarded.code).toBe(1)
+    expect(discarded.err).toContain(`run ${child} is owned by session other-session`)
+    expect(db().query('SELECT worktree FROM run WHERE id=?').get(child)).toEqual({ worktree: path })
+    expect(db().query('SELECT COUNT(*) n FROM run_mutation_audit').get()).toEqual({ n: 0 })
   })
 
   test('stop refuses a run that is not running without changing it', () => {
@@ -11749,13 +11812,17 @@ echo 'Usage: scripts/worktree create [seed]'
       .run(tree.path, tree.branch, id)
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
-      const env = { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' }
+      const env = { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+        CLAUDE_CODE_SESSION_ID: 'discard-actor' }
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
         env, stdout: 'pipe', stderr: 'pipe',
       })
       expect(p.exitCode).toBe(0)
       expect(existsSync(tree.path)).toBe(false)
       expect(git(repo, 'branch', '--list', tree.branch)).toBe('')
+      expect(db().query(
+        'SELECT action, actor_session FROM run_mutation_audit WHERE run_id=?',
+      ).get(id)).toEqual({ action: 'discard', actor_session: 'discard-actor' })
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }

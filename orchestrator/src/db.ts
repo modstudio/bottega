@@ -30,6 +30,12 @@ export type MonitorSeverity = typeof MONITOR_SEVERITY[number]
 
 const sqlValues = (values: readonly string[]) => values.map((value) => `'${value}'`).join(',')
 
+export const RUN_MUTATION_ACTIONS = [
+  'stop', 'abandon', 'discard', 'sweep', 'void', 'retry', 'continue', 'reclassify',
+] as const
+export type RunMutationAction = typeof RUN_MUTATION_ACTIONS[number]
+const RUN_MUTATION_ACTION_SQL = RUN_MUTATION_ACTIONS.map((action) => `'${action}'`).join(',')
+
 let handle: Database | null = null
 let writable: boolean | null = null
 
@@ -853,6 +859,19 @@ function migrate(d: Database) {
       session_id TEXT PRIMARY KEY,
       last_seen  TEXT NOT NULL
     );
+    -- Append-only provenance for state changes to a run chain. The action
+    -- vocabulary is generated from RUN_MUTATION_ACTIONS above, so storage and
+    -- display cannot silently disagree about which events exist.
+    CREATE TABLE IF NOT EXISTS run_mutation_audit (
+      run_id       INTEGER NOT NULL REFERENCES run(id),
+      root_id      INTEGER NOT NULL REFERENCES run(id),
+      action       TEXT NOT NULL CHECK (action IN (${RUN_MUTATION_ACTION_SQL})),
+      actor_session TEXT CHECK (actor_session IS NULL OR length(actor_session) > 0),
+      at           TEXT NOT NULL,
+      reason       TEXT
+    );
+    CREATE INDEX IF NOT EXISTS run_mutation_audit_root
+      ON run_mutation_audit(root_id);
     CREATE INDEX IF NOT EXISTS score_run ON score(run_id);
     CREATE UNIQUE INDEX IF NOT EXISTS score_one_per_run ON score(run_id);
     CREATE INDEX IF NOT EXISTS doc_scope_subject ON doc(scope, subject);
