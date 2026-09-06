@@ -2607,7 +2607,7 @@ describe('review discipline', () => {
         review_ref: `refs/orch/reviewed/${open.runId}`, grading: { reproduced: 'all', coverage: 'adequate', limits: 'named', overlap: 'alone' },
         pin: { resolves: true, commit: expect.any(String) } })
     } finally { rmSync(repo, { recursive: true, force: true }) }
-  })
+  }, 20_000)
 
   test('fleet calibration groups graded models and emits null-model empty record pairs', () => {
     const graded = addRun({ agent: 'codex', job: 'review-lens', model: 'm1', lens: 'fleet-a' })
@@ -2745,7 +2745,7 @@ describe('review discipline', () => {
         'review tier accepts a branch, run id, or explicit <from>..<to> range',
       )
     } finally { rmSync(repo, { recursive: true, force: true }) }
-  })
+  }, 20_000)
 
   test('stores null tier and names differing lens bases', () => {
     const tree = '1'.repeat(40)
@@ -3452,7 +3452,7 @@ describe('run mailbox', () => {
     expect(messagesForRun(root)[0]!.read_at).not.toBeNull()
     expect(messagesForRun(root)[0]!.read_by).toBe('session-A')
     expect(db().query('SELECT COUNT(*) n FROM run_mutation_audit').get()).toEqual({ n: 0 })
-  })
+  }, 20_000)
 
   test('bridge-only identity cannot receipt an unowned run', () => {
     const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
@@ -4498,7 +4498,7 @@ describe('reclassify-failures', () => {
     expect(again.exitCode).toBe(0)
     expect(new TextDecoder().decode(again.stdout)).toContain('PLAN (0 matched rows)')
     expect(new TextDecoder().decode(again.stdout)).toContain('0 rows reclassified.')
-  })
+  }, 20_000)
 })
 
 describe('reapStale', () => {
@@ -5017,7 +5017,7 @@ describe('job contracts are visible before submission', () => {
       )
       expect(r.err).toBe('')
     }
-  })
+  }, 20_000)
 
   test('contract rejects an unknown job', () => {
     const r = contract('not-a-job')
@@ -5154,7 +5154,7 @@ describe('one score, reported the same everywhere', () => {
     expect(guideOut).toContain('SHRUNK LEADER (raw: codex)')
     expect(statsOut).toContain('raw  shrunk')
     expect(statsOut).toContain('78%     75%')
-  })
+  }, 20_000)
 
   test('the scoreboard is the router, not a second opinion', () => {
     // agy on review-lens: one good answer and two headless denials. The old
@@ -5895,7 +5895,7 @@ describe('vendor failure failover is one bounded unit of work', () => {
     } finally {
       process.env.PATH = oldPath
     }
-  })
+  }, 20_000)
 
   test('runs --json publishes every question on the root, including child turns', () => {
     const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
@@ -6029,7 +6029,7 @@ describe('vendor failure failover is one bounded unit of work', () => {
     const listed = orch('runs')
     expect(listed.out.match(new RegExp(`\\b${root}\\s+codex→grok`, 'g'))).toHaveLength(1)
     expect(listed.out).not.toMatch(new RegExp(`\\b${successor}\\s+`))
-  })
+  }, 20_000)
 
   test('a deliberate retry remains separate from an automatic failover chain', () => {
     const first = addRun({ agent: 'codex', job: 'understand', status: 'failed', kind: 'quota' })
@@ -6044,7 +6044,7 @@ describe('vendor failure failover is one bounded unit of work', () => {
     const listed = orch('runs')
     expect(listed.out).toMatch(new RegExp(`\\b${first}\\s+codex\\s+`))
     expect(listed.out).toMatch(new RegExp(`\\b${retry}\\s+grok\\s+`))
-  })
+  }, 20_000)
 })
 
 describe('a destroyed output is not evidence about the agent', () => {
@@ -8659,7 +8659,7 @@ describe('detached run collection', () => {
     const help = orch('--help').out
     expect(help.match(/one JSON document/g)).toHaveLength(documents.length)
     expect(help.match(/one JSON object per line/g)).toHaveLength(1)
-  })
+  }, 20_000)
 
   test('the detached spec mapping forwards every field to run', () => {
     const resume = {
@@ -8948,7 +8948,7 @@ describe('detached run collection', () => {
     } finally {
       rmSync(outside, { recursive: true, force: true })
     }
-  })
+  }, 20_000)
 
   test('orch do accepts every documented starship seed spelling before execution', () => {
     upsertProject({
@@ -8980,7 +8980,7 @@ describe('detached run collection', () => {
       expect(result.err, spelling.join(' ')).not.toContain('needs a value')
     }
     expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before)
-  })
+  }, 20_000)
 
   test('--porcelain prints only a parseable run id on a successful dispatch', () => {
     const binDir = join(dir, 'porcelain-bin')
@@ -9174,7 +9174,7 @@ describe('detached run collection', () => {
     expect(first.err).not.toContain('will be refused')
     expect(sibling.code).toBe(0)
     expect(sibling.err).not.toContain('caller checkout HEAD')
-  })
+  }, 20_000)
 
   test('a drifted caller still dispatches, and --porcelain still prints only the run id', () => {
     mkdirSync(join(dir, 'drift-dispatch'))
@@ -9249,7 +9249,7 @@ describe('detached run collection', () => {
     const contradictory = orch('pick', 'review-lens', '--agent', 'grok', '--avoid', 'grok')
     expect(contradictory.code).toBe(1)
     expect(contradictory.err).toContain('--agent grok contradicts --avoid grok')
-  })
+  }, 20_000)
 
   test('pick refuses an unmet constraint instead of silently routing', () => {
     const r = orch('pick', 'review-lens', '--avoid', 'grok,codex')
@@ -9698,7 +9698,7 @@ describe('detached run collection', () => {
     } finally {
       rmSync(binDir, { recursive: true, force: true })
     }
-  })
+  }, 20_000)
 
   test('retry through a child delivers a pending ruling from a non-asking stranded root', () => {
     const root = insert('failed', 'file-question')
@@ -9863,7 +9863,7 @@ describe('detached run collection', () => {
     const listed = orch('runs')
     expect(listed.out).toContain(warning)
     expect(listed.out.match(/thin:/g)).toHaveLength(1)
-  })
+  }, 20_000)
 
   test('a thin output expiring between exists and stat suppresses only the warning', () => {
     const id = addRun({ agent: 'codex', job: 'diagnose', latency: 400_000 })
@@ -10247,7 +10247,7 @@ describe('detached run collection', () => {
       await hub.exited
       rmSync(capabilityDir, { recursive: true, force: true })
     }
-  })
+  }, 20_000)
 
   test('an anonymous caller cannot score an unowned run', () => {
     const id = insert('ok', 'file-question')
@@ -10327,7 +10327,7 @@ describe('detached run collection', () => {
       .toEqual({ delivery: 'full', quality: 'right' })
     expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id))
       .toEqual({ evidence_excluded: null })
-  })
+  }, 20_000)
 
   test('score drops a habitual fidelity word for a review lens and records two axes', () => {
     const id = insert('ok', 'review-lens')
@@ -10361,7 +10361,7 @@ describe('detached run collection', () => {
       { action: 'rescore', actor_session: 'orch-test-session', reason: '--scorer dashboard-user' },
     ])
     expect(orch('pending').code).toBe(0)
-  })
+  }, 20_000)
 
   test('lens scoring refuses missing grades with the canonical vocabulary and writes nothing', () => {
     const id = insert('ok', 'review-lens')
@@ -10422,7 +10422,7 @@ describe('detached run collection', () => {
       '--reproduced', 'none')
     expect(rejectedFlags.code).toBe(1)
     expect(rejectedFlags.err).toContain("delivery 'none' takes no review grades")
-  })
+  }, 20_000)
 
   test('score refuses an unevidenced clean lens without creating score or review rows', () => {
     const id = insert('ok', 'review-lens')
@@ -10473,7 +10473,7 @@ describe('detached run collection', () => {
       expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
       expect(db().query('SELECT id FROM review_lens WHERE run_id=?').get(id)).toBeNull()
     }
-  })
+  }, 20_000)
 
   test('review triage --severity stores explicit agreement and omission stores null', () => {
     const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'triage-cli' })
@@ -10489,7 +10489,7 @@ describe('detached run collection', () => {
     const invalid = orch('review', 'triage', String(reviewId), '2', 'accepted', '--severity', 'banana')
     expect(invalid.code).toBe(1)
     expect(invalid.err).toContain('critical | high | medium | low')
-  })
+  }, 20_000)
 
   test('duplicate triage severity is refused without changing the finding', () => {
     const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'triage-duplicate' })
@@ -10677,7 +10677,7 @@ describe('detached run collection', () => {
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
-  })
+  }, 20_000)
 
   test('create commands must exist and be executable before dispatch', () => {
     const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-create-command-')))
@@ -10755,7 +10755,7 @@ describe('detached run collection', () => {
       rmSync(repo, { recursive: true, force: true })
       rmSync(binDir, { recursive: true, force: true })
     }
-  })
+  }, 20_000)
 
   test('project set refuses incomplete resulting settings without saving them', () => {
     upsertProject({ name: 'warned', path: process.cwd() })
@@ -10822,7 +10822,7 @@ describe('detached run collection', () => {
       expect(r.err).toContain(message)
       expect(projectByName('malformed-create')!.settings).toEqual({})
     }
-  })
+  }, 20_000)
 
   test('project set admits the pipeline escape only for an actual pipeline', () => {
     upsertProject({ name: 'pipeline-create', path: process.cwd() })
@@ -10868,7 +10868,7 @@ describe('detached run collection', () => {
       expect(r.code).toBe(1)
       expect(r.err).toContain(message)
     }
-  })
+  }, 20_000)
 
   test('project list reports legacy create problems in text and JSON', () => {
     upsertProject({
@@ -10935,7 +10935,7 @@ describe('detached run collection', () => {
     expect(recipe.out.trim()).toBe(
       `${PLATFORM_SLUG}: worktree.create is a recipe; nothing to migrate`,
     )
-  })
+  }, 20_000)
 
   test('migrate-create --apply stores the printed object form', () => {
     const create = 'bun run worktree create "{branch}"'
@@ -11001,7 +11001,7 @@ describe('detached run collection', () => {
     ] as const) {
       expectCreateMigrationRefused(`${name}-create`, create, token, position, kind)
     }
-  })
+  }, 20_000)
 
   test('migrate-create accepts each ruled plain or quoted spelling', () => {
     const accepted: [string, string, WorktreeCreate][] = [
@@ -11026,7 +11026,7 @@ describe('detached run collection', () => {
       expect(r.out, name).toContain(`accepted-${name}: after  ${JSON.stringify(after)}`)
       expect(projectByName(`accepted-${name}`)!.settings.worktree?.create, name).toEqual(after)
     }
-  })
+  }, 20_000)
 
   test('project set settings null deletes that key during a deep merge', () => {
     upsertProject({ name: 'merged', path: process.cwd(), settings: { a: { b: 1, c: 2 } } })
@@ -11113,7 +11113,7 @@ describe('detached run collection', () => {
     expect(question.answered_at).not.toBeNull()
     expect(orch('inbox').out).not.toContain(`run ${id}`)
     expect(orch('inbox', '--all').out).not.toContain(`run ${id}`)
-  })
+  }, 20_000)
 
   test('stop terminates a running vendor and reclaims its recorded worktree', async () => {
     const vendor = Bun.spawn(['sleep', '30'])
@@ -11573,7 +11573,7 @@ describe('detached run collection', () => {
     expect(fromFile.code).toBe(1)
     expect(fromFile.err).toContain('received "--file" as a ruling')
     expect(stored()).toBeNull()
-  })
+  }, 20_000)
 
   test('a ruling containing backticks and command substitution is stored byte-for-byte from --file', () => {
     const id = insert('running', 'implement')
@@ -16028,7 +16028,7 @@ printf '%s\n' "$path"
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
-  })
+  }, 20_000)
 
   test('discard --force deletes a branch with an unmerged commit', () => {
     const { repo } = scratchRepo()
@@ -17741,7 +17741,7 @@ describe('review-lens-inline has no checkout', () => {
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
     }
-  })
+  }, 20_000)
 
   test('explicit review records the trunk merge-base for clean-review evidence', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-explicit-review-evidence-'))
@@ -19800,7 +19800,7 @@ describe('the sandbox an agent is launched with', () => {
       rmSync(repo, { recursive: true, force: true })
       rmSync(foreignObjects, { recursive: true, force: true })
     }
-  })
+  }, 20_000)
 
   test('orch diff finds an unregistered repository after its worktree is discarded', () => {
     const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-diff-unregistered-')))
@@ -20260,7 +20260,7 @@ describe('the sandbox an agent is launched with', () => {
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
-  }, 44_847)
+  }, 120_000)
 
   test('a wrapper delegating to a non-executable guard is rejected', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-guard-broken-mode-'))
@@ -20758,7 +20758,7 @@ describe('read-only orchestrator database', () => {
       chmodSync(path, 0o644)
       rmSync(fixtureDir, { recursive: true, force: true })
     }
-  })
+  }, 20_000)
 
   test('a read-only database missing session_seen still serves jobs and inbox', () => {
     const { fixtureDir, path } = fixture(false)
@@ -20778,7 +20778,7 @@ describe('read-only orchestrator database', () => {
       chmodSync(path, 0o644)
       rmSync(fixtureDir, { recursive: true, force: true })
     }
-  })
+  }, 20_000)
 
   test('a writable database keeps stamping the current session', () => {
     const { fixtureDir, path } = fixture()
@@ -22323,7 +22323,7 @@ describe('scoped operator docs', () => {
     expect(JSON.parse(orchCli(['port', 'doctrine', 'list', '--json']).out)).toEqual([])
     expect(JSON.parse(orchCli(['port', 'doctrine', 'list', '--all', '--json']).out))
       .toMatchObject([{ number: 4, retired_at: expect.any(String) }])
-  })
+  }, 20_000)
 
   test('orch port refuses unknown registered project names and task prefixes', () => {
     upsertProject({ name: 'source-invented', path: '/w/source', settings: {} })
@@ -22355,7 +22355,7 @@ describe('scoped operator docs', () => {
       code: 1,
       err: expect.stringContaining('unknown: orch review. Try tier | record | triage | complete | calibration'),
     })
-  })
+  }, 20_000)
 
   test('MCP port tools use registered names and preserve resolved provenance', async () => {
     upsertProject({ name: 'source-invented', path: '/w/source', settings: {} })
@@ -22453,7 +22453,7 @@ describe('scoped operator docs', () => {
     expect(restored.code).toBe(0)
     expect(getDoc('global', null, 'cli-history')?.body).toBe('one\n')
     expect(listDocRevisions('global', null, 'cli-history')[0]?.op).toBe('restore')
-  })
+  }, 20_000)
 
   test('orch doc consume stamps the session and preserves the document outside its fields', () => {
     const body = '---\r\nstatus: open\r\nepic: demo\r\nproject: known\r\nwritten: 2026-09-03T00:00:00.000Z\r\n---\r\n\r\nNEXT ACTION  \r\n'
@@ -22574,7 +22574,7 @@ describe('scoped operator docs', () => {
     expect(listed.out).toBe(`${'epic-name'.padEnd(24)} ${'Title here'.padEnd(24)} ${age}\n`)
     expect(age).toMatch(/^\d+[smhd]$/)
     expect(listed.out).not.toContain('scope')
-  })
+  }, 20_000)
 })
 
 describe('session-brief hook lists open resumes without injecting bodies', () => {

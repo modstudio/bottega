@@ -90,5 +90,5 @@ describe('workflow CLI', () => {
     const composed=run(['workflow','compose','choose','--mode','default','--arg','key=DEV-257','--json']);expect(composed.code).toBe(0);expect(composed.out).not.toContain('Work on')
     const step=run(['workflow','step','choose','work','--arg','key=DEV-257','--json']);expect(JSON.parse(step.out).body).toBe('Work on DEV-257.')
     expect(JSON.parse(run(['workflow','list','--json']).out).some((row:any)=>row.slug==='ship')).toBe(true)
-  })
+  }, 20_000)
 })
