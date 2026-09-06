@@ -783,51 +783,104 @@ function pathRootAt(
     ? candidate.toLowerCase() === root.toLowerCase()
     : candidate === root
   if (!equal) return false
-  if (root === '/') return true
   const after = prompt[offset + root.length]
-  return after === undefined || after === '/'
+  if (after === undefined || after === '/' || /\s/.test(after)) return true
+  if ((after === '.' || after === '-') &&
+      (prompt[offset + root.length + 1] === undefined ||
+       /\s/.test(prompt[offset + root.length + 1]!))) return true
+  return !/[A-Za-z0-9_.-]/.test(after)
 }
 
 function hasPathStartBoundary(prompt: string, offset: number): boolean {
   if (offset === 0) return true
-  return !/[\p{L}\p{N}_\-.]/u.test(prompt[offset - 1]!)
+  return !/[A-Za-z0-9_.-]/.test(prompt[offset - 1]!)
+}
+
+type RetargetResult = { prompt: string; diagnostic: string | null }
+type RetargetAlias = { root: string; role: 'source' | 'target' }
+
+function aliasKey(root: string, caseInsensitive: boolean): string {
+  return caseInsensitive ? root.toLowerCase() : root
+}
+
+function invalidRetargeting(
+  callers: string[], targets: string[], caseInsensitive: boolean,
+): string | null {
+  if (targets[0] === '') return 'review path retargeting indeterminate: destination is empty'
+  const malformed = [...callers, ...targets].find((root) => root.startsWith('//'))
+  if (malformed) return `review path retargeting indeterminate: unsupported alias ${malformed}`
+  const normalizedCallers = callers.map(withoutTrailingSeparators)
+  const normalizedTargets = targets.filter(Boolean).map(withoutTrailingSeparators)
+  if (normalizedCallers.some((root) => root === '/')) {
+    return 'review path retargeting indeterminate: caller alias is filesystem root (/)'
+  }
+  const sourceKeys = new Set(normalizedCallers.map((root) => aliasKey(root, caseInsensitive)))
+  const collision = normalizedTargets.find((root) => sourceKeys.has(aliasKey(root, caseInsensitive)))
+  return collision
+    ? `review path retargeting indeterminate: alias has both source and target roles (${collision})`
+    : null
+}
+
+function uriAuthorityEnd(prompt: string, offset: number): number | null {
+  const scheme = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.exec(prompt.slice(offset))
+  if (!scheme) return null
+  const authority = offset + scheme[0].length
+  const path = prompt.indexOf('/', authority)
+  return path === -1 ? prompt.length : path
+}
+
+export function retargetRepositoryPromptResult(
+  prompt: string, callers: string | string[], worktree: string,
+  caseInsensitive = false, worktreeAliases: string[] = [worktree],
+): RetargetResult {
+  const callerList = (Array.isArray(callers) ? callers : [callers])
+  if (callerList.every((root) => root === '')) return { prompt, diagnostic: null }
+  const rawTargets = [worktree, ...worktreeAliases]
+  const invalid = invalidRetargeting(callerList, rawTargets, caseInsensitive)
+  if (invalid) return { prompt, diagnostic: invalid }
+  const aliases: RetargetAlias[] = [
+    ...callerList.filter(Boolean).map((root) =>
+      ({ root: withoutTrailingSeparators(root), role: 'source' as const })),
+    ...rawTargets.filter(Boolean).map((root) =>
+      ({ root: withoutTrailingSeparators(root), role: 'target' as const })),
+  ].filter((alias, index, all) => all.findIndex((other) =>
+    other.role === alias.role &&
+    aliasKey(other.root, caseInsensitive) === aliasKey(alias.root, caseInsensitive)) === index)
+    .sort((a, b) => b.root.length - a.root.length)
+  const destination = withoutTrailingSeparators(worktree)
+  let rewritten = ''
+  let cursor = 0
+  while (cursor < prompt.length) {
+    const authorityEnd = uriAuthorityEnd(prompt, cursor)
+    if (authorityEnd !== null) {
+      rewritten += prompt.slice(cursor, authorityEnd)
+      cursor = authorityEnd
+      continue
+    }
+    if (!hasPathStartBoundary(prompt, cursor)) {
+      rewritten += prompt[cursor++]
+      continue
+    }
+    const alias = aliases.find(({ root }) => pathRootAt(prompt, cursor, root, caseInsensitive))
+    if (alias) {
+      rewritten += alias.role === 'source'
+        ? (destination === '/' && prompt[cursor + alias.root.length] === '/' ? '' : destination)
+        : prompt.slice(cursor, cursor + alias.root.length)
+      cursor += alias.root.length
+      continue
+    }
+    rewritten += prompt[cursor++]
+  }
+  return { prompt: rewritten, diagnostic: null }
 }
 
 export function retargetRepositoryPrompt(
   prompt: string, callers: string | string[], worktree: string,
   caseInsensitive = false, worktreeAliases: string[] = [worktree],
 ): string {
-  const sources = (Array.isArray(callers) ? callers : [callers])
-    .filter(Boolean).map(withoutTrailingSeparators)
-    .filter((root, index, all) => all.findIndex((other) =>
-      caseInsensitive ? other.toLowerCase() === root.toLowerCase() : other === root) === index)
-    .sort((a, b) => b.length - a.length)
-  if (sources.length === 0) return prompt
-  const targets = worktreeAliases.filter(Boolean).map(withoutTrailingSeparators)
-    .sort((a, b) => b.length - a.length)
-  const destination = withoutTrailingSeparators(worktree)
-  let rewritten = ''
-  let cursor = 0
-  while (cursor < prompt.length) {
-    if (!hasPathStartBoundary(prompt, cursor)) {
-      rewritten += prompt[cursor++]
-      continue
-    }
-    const target = targets.find((root) => pathRootAt(prompt, cursor, root, caseInsensitive))
-    if (target) {
-      rewritten += prompt.slice(cursor, cursor + target.length)
-      cursor += target.length
-      continue
-    }
-    const source = sources.find((root) => pathRootAt(prompt, cursor, root, caseInsensitive))
-    if (source) {
-      rewritten += destination + (source === '/' && prompt[cursor + 1] !== undefined ? '/' : '')
-      cursor += source.length
-      continue
-    }
-    rewritten += prompt[cursor++]
-  }
-  return rewritten
+  return retargetRepositoryPromptResult(
+    prompt, callers, worktree, caseInsensitive, worktreeAliases,
+  ).prompt
 }
 
 export function changedRegisteredCheckouts(
@@ -1543,9 +1596,11 @@ export async function run(opts: {
       const worktreeRoots = [...new Set([
         worktree.path, gitTopLevel(worktree.path) ?? worktree.path, realWorktree,
       ])]
-      prompt = retargetRepositoryPrompt(
+      const retargeted = retargetRepositoryPromptResult(
         prompt, caller.roots, worktree.path, caller.caseInsensitive, worktreeRoots,
       )
+      prompt = retargeted.prompt
+      retargetDiagnostic = [retargetDiagnostic, retargeted.diagnostic].filter(Boolean).join('\n') || null
       // The original file remains the caller's resumable spec. The bound file
       // and row describe what was actually sent after the worktree had an
       // address, which is the evidence an audit needs.

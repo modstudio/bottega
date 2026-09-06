@@ -1149,7 +1149,7 @@ const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePaths, pr
         resolveRootFromLastTurn, gitObjectEnvironmentFor, inferredReadOnlyKey,
         canonSourceFor, canonSourceInstruction, snapshotRegisteredCheckouts,
         changedRegisteredCheckouts, checkoutAliases, checkoutCaseSensitivity,
-        retargetRepositoryPrompt, run: runJob } = await import('./run.ts')
+        retargetRepositoryPrompt, retargetRepositoryPromptResult, run: runJob } = await import('./run.ts')
 const run = runJob
 const { summary } = await import('./metric.ts')
 const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
@@ -7614,9 +7614,10 @@ describe('a writing worker must return evidence of completed work', () => {
     expect(failure?.runId).toBeDefined()
     const row = db().query('SELECT status, error, files_changed FROM run WHERE id=?')
       .get(failure!.runId!) as { status: string; error: string; files_changed: number }
-    expect(row).toEqual({
-      status: 'failed', error: 'reported done with no change and no test run', files_changed: 0,
-    })
+    expect(row.status).toBe('failed')
+    expect(row.files_changed).toBe(0)
+    expect(row.error).toContain('reported done with no change and no test run')
+    expect(row.error).toContain('review path retargeting indeterminate: alias has both source and target roles')
   })
 
   test('run 1743 placeholder shape is a visible contract failure with no question', async () => {
@@ -7846,7 +7847,7 @@ describe('a writing worker must return evidence of completed work', () => {
     ].map((value) => JSON.stringify(value)).join('\n'))
     expect(result.contract?.summary).toBe('quoted contract-shaped object')
     expect((db().query('SELECT error FROM run WHERE id=?').get(result.id) as { error: string }).error)
-      .toBe('2 contract objects in output; took the last')
+      .toContain('2 contract objects in output; took the last')
   })
 })
 
@@ -9767,11 +9768,62 @@ describe('outside-worktree write observation', () => {
     const bound = `read ${worktree}/subject.txt`
     expect(retargetRepositoryPrompt(bound, caller, worktree)).toBe(bound)
     expect(retargetRepositoryPrompt('unchanged', '', worktree)).toBe('unchanged')
-    expect(retargetRepositoryPrompt('/subject.txt', '/', '/worktree')).toBe('/worktree/subject.txt')
-    expect(retargetRepositoryPrompt('/', '/', '/worktree')).toBe('/worktree')
+    expect(retargetRepositoryPrompt('/subject.txt', '/', '/worktree')).toBe('/subject.txt')
+    expect(retargetRepositoryPrompt('/', '/', '/worktree')).toBe('/')
     expect(retargetRepositoryPrompt(
       '/repo\nline [meta]*/subject.txt', '/repo\nline [meta]*', '/worktree',
     )).toBe('/worktree/subject.txt')
+  })
+
+  test('path ends, alias specificity, URI authorities, and malformed aliases are one rule', () => {
+    expect(retargetRepositoryPrompt(
+      '/repo, /repo) /repo: /repo. /repo-archive /repo.git /repo-\n/repo\nnext',
+      '/repo', '/wt',
+    )).toBe('/wt, /wt) /wt: /wt. /repo-archive /repo.git /wt-\n/wt\nnext')
+
+    const shorterTarget = retargetRepositoryPrompt(
+      '/repo/main/file', '/repo/main', '/repo', false, ['/repo'],
+    )
+    expect(shorterTarget).toBe('/repo/file')
+    expect(retargetRepositoryPrompt(
+      retargetRepositoryPrompt(shorterTarget, '/repo/main', '/repo', false, ['/repo']),
+      '/repo/main', '/repo', false, ['/repo'],
+    )).toBe(shorterTarget)
+    expect(retargetRepositoryPrompt('/repo/file', '/repo', '/', false, ['/']))
+      .toBe('/file')
+    expect(retargetRepositoryPrompt(
+      'https://repo/file file:///repo/file', '/repo', '/wt',
+    )).toBe('https://repo/file file:///wt/file')
+
+    const first = retargetRepositoryPrompt('/repo/file', '/repo', '/repo/wt', false, [])
+    expect(first).toBe('/repo/wt/file')
+    const second = retargetRepositoryPrompt(first, '/repo', '/repo/wt', false, [])
+    expect(retargetRepositoryPrompt(second, '/repo', '/repo/wt', false, [])).toBe(first)
+    const aliased = retargetRepositoryPrompt(
+      '/repo/file', '/repo', '/repo/wt', false, ['/repo/wt-alias'],
+    )
+    expect(aliased).toBe('/repo/wt/file')
+    expect(retargetRepositoryPrompt(
+      aliased, '/repo', '/repo/wt', false, ['/repo/wt-alias'],
+    )).toBe(aliased)
+    expect(retargetRepositoryPrompt('//repo/file', '/repo', '/wt')).toBe('//wt/file')
+
+    expect(retargetRepositoryPromptResult('/repo/file', '/repo', '')).toEqual({
+      prompt: '/repo/file',
+      diagnostic: 'review path retargeting indeterminate: destination is empty',
+    })
+    expect(retargetRepositoryPromptResult('//repo ///repo', '/', '/wt')).toEqual({
+      prompt: '//repo ///repo',
+      diagnostic: 'review path retargeting indeterminate: caller alias is filesystem root (/)',
+    })
+    expect(retargetRepositoryPromptResult('//repo/file', '//repo', '/wt')).toEqual({
+      prompt: '//repo/file',
+      diagnostic: 'review path retargeting indeterminate: unsupported alias //repo',
+    })
+    expect(retargetRepositoryPromptResult('/repo/file', '/repo/', '/repo')).toEqual({
+      prompt: '/repo/file',
+      diagnostic: 'review path retargeting indeterminate: alias has both source and target roles (/repo)',
+    })
   })
 
   test('all checkout aliases follow the checkout filesystem case behavior', () => {
