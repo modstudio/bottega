@@ -24,7 +24,7 @@
 import { accessSync, appendFileSync, closeSync, constants, cpSync, existsSync,
          fchmodSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync,
          realpathSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { db, pidAlive, ROOT } from './db.ts'
@@ -486,13 +486,19 @@ const UNMARKED_GUARD_PREFIX = 'unmarked-'
 /**
  * The guard directory's name. A tree orch cut carries its run id in the
  * marker; a tree built by hand (the lifecycle harness, an operator landing a
- * branch from a tree orch did not cut) has none and gets a per-process key,
- * reclaimed as litter once that process is gone. Refusing here would leave a
- * hand-made tree UNGUARDED at the point the guard matters most.
+ * branch from a tree orch did not cut) has none and gets a key derived from
+ * its real path, so concurrent preparations on one tree still converge on one
+ * directory (DEV-225). Refusing here would leave a hand-made tree UNGUARDED at
+ * the point the guard matters most. Unmarked guards are not reclaimed as
+ * litter: nothing records which tree they served once it is gone, and a
+ * hand-made tree is rare.
  */
 function refGuardOwner(cwd: string): string {
   const value = markedWorktreeRunId(cwd)
-  return value === null ? `${UNMARKED_GUARD_PREFIX}${process.pid}-${randomUUID()}` : String(value)
+  if (value !== null) return String(value)
+  let real = cwd
+  try { real = realpathSync(cwd) } catch { /* the path as given still keys deterministically */ }
+  return `${UNMARKED_GUARD_PREFIX}${createHash('sha256').update(real).digest('hex').slice(0, 16)}`
 }
 
 function markedWorktreeRunId(cwd: string): number | null {
@@ -514,12 +520,6 @@ function cleanupRefGuardLitter(gitDir: string, hookDir?: string): void {
   for (const name of readdirSync(gitDir)) {
     if (name.startsWith(REF_GUARD_STAGE_PREFIX)) {
       const pid = Number(name.slice(REF_GUARD_STAGE_PREFIX.length).split('-', 1)[0])
-      if (Number.isInteger(pid) && pidAlive(pid)) continue
-      rmSync(join(gitDir, name), { recursive: true, force: true })
-      continue
-    }
-    if (name.startsWith(UNMARKED_GUARD_PREFIX)) {
-      const pid = Number(name.slice(UNMARKED_GUARD_PREFIX.length).split('-', 1)[0])
       if (Number.isInteger(pid) && pidAlive(pid)) continue
       rmSync(join(gitDir, name), { recursive: true, force: true })
       continue
