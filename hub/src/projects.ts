@@ -1,29 +1,15 @@
 import { dirname, resolve } from 'node:path'
 import {
-  trackerSourceFor, type TrackerProject, type TrackerSettings,
+  trackerSourceFor, type TrackerProject,
 } from '../../shared/trackers.ts'
+import { projectList, type OrchProject } from './orch.ts'
 
 export type { StatusCategory, TrackerSettings } from '../../shared/trackers.ts'
 
 export type Project = string
 
-export type RegisteredProject = TrackerProject & {
-  id: number
-  name: Project
-  path: string
-  stack: string | null
-  canon: boolean
-  settings: {
-    color?: string
-    colorDark?: string
-    envPrefix?: string
-    keyPrefixes?: string[]
-    tracker?: TrackerSettings
-    [key: string]: unknown
-  }
-}
+export type RegisteredProject = OrchProject & TrackerProject
 
-const ORCH = process.env.HUB_ORCH ?? new URL('../../bin/orch', import.meta.url).pathname
 let cache: RegisteredProject[] | null = null
 
 /** Forget the register after an orchestrator write so the next read sees it. */
@@ -34,17 +20,7 @@ export function refreshProjects(): void {
 /** The project register published by orchestrator, read once per process. */
 export function projects(): RegisteredProject[] {
   if (cache) return cache
-  const proc = Bun.spawnSync([ORCH, 'project', 'list', '--json'], {
-    stdout: 'pipe', stderr: 'pipe',
-  })
-  const stdout = new TextDecoder().decode(proc.stdout)
-  const stderr = new TextDecoder().decode(proc.stderr).trim()
-  if (proc.exitCode !== 0) throw new Error(`could not read project register: ${stderr}`)
-  let value: unknown
-  try { value = JSON.parse(stdout) }
-  catch (error) { throw new Error(`invalid project register JSON: ${String(error)}`) }
-  if (!Array.isArray(value)) throw new Error('invalid project register: expected an array')
-  cache = value as RegisteredProject[]
+  cache = projectList()
   return cache
 }
 

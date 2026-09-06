@@ -24,6 +24,7 @@ mock.module('../src/ingest/git.ts', () => ({
   ingestGit: () => ({ days: 0, tasks: 0 }),
 }))
 mock.module('../src/orch.ts', () => ({
+  readRuns: async () => [],
   projectAdd: async (body: { name?: string }) => {
     const added = tracker(register.length + 1, body.name ?? 'added')
     register.push(added)

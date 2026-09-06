@@ -73,7 +73,7 @@ for ((i = 1; i <= MAX; i++)); do
   # running - the precise failure this file exists to prevent. Distinguish
   # "orch said nothing" from "orch did not answer".
   inbox_raw=$(CLAUDE_CODE_SESSION_ID="$SID" "$ORCH" inbox --all --json 2>/dev/null); inbox_rc=$?
-  runs_raw=$("$ORCH" runs --limit 200 --json 2>/dev/null); runs_rc=$?
+  runs_raw=$("$ORCH" runs --limit 200 --json=v1 2>/dev/null); runs_rc=$?
   if [ ! -d "$ROOT" ]; then
     echo "DEGRADED: launch directory removed; re-arm from the main checkout"
     exit 2

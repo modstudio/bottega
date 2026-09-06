@@ -3,8 +3,7 @@ import { tasksInWindow, completedInWindow, reportEngagedMs } from './query.ts'
 import { human } from './interval.ts'
 import { getReport, smtpPassword, type Report, type Brief } from './settings.ts'
 import { projectColor } from './projects.ts'
-
-const ORCH = new URL('../../bin/orch', import.meta.url).pathname
+import { summarize } from './orch.ts'
 
 export type Item = {
   key: string | null
@@ -155,16 +154,12 @@ export async function summarise(
   // JSON, failed, and fell back to titles - and the fallback was silent, so
   // the email went out with no sentences and nothing said so. Now it waits for
   // the reply, and a fallback names itself on stderr and in the send log.
-  const proc = Bun.spawn(
-    [ORCH, 'do', 'summarize', '--agent', 'codex', '--quiet', '--follow',
-     '--label', 'daily report sentences'],
-    { stdin: new TextEncoder().encode(prompt), stdout: 'pipe', stderr: 'pipe' },
-  )
-  const [out, err, code] = await Promise.all([
-    new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited,
-  ])
-  if (code !== 0) {
-    console.error(`report: summarise failed (exit ${code}); sending titles only\n${err.trim().slice(-400)}`)
+  let out: string
+  try {
+    out = await summarize(prompt)
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause)
+    console.error(`report: summarise failed; sending titles only\n${message.slice(-400)}`)
     return new Map()
   }
   try {

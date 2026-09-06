@@ -1,5 +1,9 @@
 import { db, nowIso } from '../db.ts'
 import { attributeRun } from '../attribute.ts'
+import { readRuns } from '../orch.ts'
+import type { OrchRun } from '../../../shared/orch-contract.ts'
+
+export type { OrchQuestion, OrchRun, OrchTurn } from '../../../shared/orch-contract.ts'
 
 /**
  * Delegated agent runs, as intervals.
@@ -9,54 +13,6 @@ import { attributeRun } from '../attribute.ts'
  * "a database per concern" line stops being true, and the CLI is a published
  * interface that can keep working when the schema behind it moves.
  */
-export type OrchTurn = {
-  id: number
-  started_at: string
-  latency_ms: number | null
-  vendor_tokens: number | null
-  vendor_cost_usd: number | null
-  status: string
-  turn: number
-}
-
-export type OrchQuestion = {
-  id: number
-  run_id: number
-  asked_at: string
-  answered_at: string | null
-}
-
-export type OrchRun = {
-  id: number
-  started_at: string
-  agent: string
-  job: string
-  repo: string | null
-  cwd: string | null
-  session_id: string | null
-  latency_ms: number | null
-  vendor_tokens: number | null
-  vendor_cost_usd: number | null
-  prompt_head: string
-  /** Present only under --json; where orch kept the full prompt. */
-  prompt_path?: string | null
-  /** Present only under --json; the branch the work was on. */
-  branch?: string | null
-  probe: number
-  status: string
-  /** Present only under --json; the runs view needs the verdict. */
-  delivery?: string | null
-  quality?: string | null
-  /** The prior execution this retry or automatic failover replaced. */
-  retry_of?: number | null
-  /** Every execution in a resumable chain, including the root turn. */
-  turns?: OrchTurn[]
-  /** Root and turns, open and answered. Empty when the run asked none. */
-  questions: OrchQuestion[]
-  /** The explicit task the run was started for. Absent on historical rows. */
-  launch_key?: string | null
-}
-
 function rootRef(id: number) {
   return `orch:${id}`
 }
@@ -82,87 +38,6 @@ export function chainVendorTokens(r: OrchRun): number | null {
     if (turn.vendor_tokens != null) total = (total ?? 0) + turn.vendor_tokens
   }
   return total
-}
-
-const ORCH = new URL('../../../bin/orch', import.meta.url).pathname
-
-function present(value: unknown, kind: 'number' | 'string'): boolean {
-  if (kind === 'number') return typeof value === 'number' && Number.isFinite(value)
-  return typeof value === 'string' && value.length > 0
-}
-
-function isoTimestamp(value: unknown): boolean {
-  return typeof value === 'string' && value.length > 0 && Number.isFinite(Date.parse(value))
-}
-
-function publishedRunIds(row: Record<string, unknown>): Set<number> {
-  const ids = new Set<number>()
-  if (present(row.id, 'number')) ids.add(row.id as number)
-  if (Array.isArray(row.turns)) {
-    for (const turn of row.turns) {
-      if (turn === null || typeof turn !== 'object' || Array.isArray(turn)) continue
-      const id = (turn as Record<string, unknown>).id
-      if (present(id, 'number')) ids.add(id as number)
-    }
-  }
-  return ids
-}
-
-/** Field the contract requires and this row lacks, or null if the row is complete. */
-export function runsContractGap(value: unknown): string | null {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return 'id'
-  const row = value as Record<string, unknown>
-  for (const field of ['id', 'agent', 'job', 'status', 'started_at'] as const) {
-    if (!present(row[field], field === 'id' ? 'number' : 'string')) return field
-  }
-  if (!Array.isArray(row.questions)) return 'questions'
-  const published = publishedRunIds(row)
-  for (let i = 0; i < row.questions.length; i++) {
-    const entry = row.questions[i]
-    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
-      return `questions[${i}].id`
-    }
-    const question = entry as Record<string, unknown>
-    if (!present(question.id, 'number')) return `questions[${i}].id`
-    if (!present(question.run_id, 'number')) return `questions[${i}].run_id`
-    if (!isoTimestamp(question.asked_at)) return `questions[${i}].asked_at`
-    if (!Object.hasOwn(question, 'answered_at')) return `questions[${i}].answered_at`
-    if (question.answered_at !== null && !isoTimestamp(question.answered_at)) {
-      return `questions[${i}].answered_at`
-    }
-    if (!published.has(question.run_id as number)) return `questions[${i}].run_id`
-  }
-  return null
-}
-
-export function decodeRunsJson(text: string): OrchRun[] {
-  const runs: OrchRun[] = []
-  const lines = text.split('\n')
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!.trim()
-    if (!line) continue
-    let value: unknown
-    try { value = JSON.parse(line) }
-    catch { throw new Error(`orch runs --json line ${i + 1} is not JSON`) }
-    const gap = runsContractGap(value)
-    if (gap) throw new Error(`orch runs --json line ${i + 1} missing ${gap}`)
-    runs.push(value as OrchRun)
-  }
-  return runs
-}
-
-export async function readRuns(since: string): Promise<OrchRun[]> {
-  const proc = Bun.spawn([ORCH, 'runs', '--json', '--since', since], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  const [out, err, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ])
-  if (code !== 0) throw new Error(`orch runs --json exited ${code}: ${err.trim()}`)
-  return decodeRunsJson(out)
 }
 
 export async function ingestRuns(since: string): Promise<{ rows: number; skipped: number }> {

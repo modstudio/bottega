@@ -1,5 +1,19 @@
 #!/usr/bin/env bun
 
+const args = process.argv.slice(2)
+if (args.join('\0') !== ['project', 'list', '--json'].join('\0')) {
+  const orch = new URL('../../bin/orch', import.meta.url).pathname
+  const result = Bun.spawnSync([orch, ...args], {
+    env: process.env,
+    stdin: await Bun.stdin.bytes(),
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  await Bun.write(Bun.stdout, result.stdout)
+  await Bun.write(Bun.stderr, result.stderr)
+  process.exit(result.exitCode)
+}
+
 console.log(JSON.stringify([
   { id: 1, name: 'alpha', path: '/fixtures/repos/alpha', stack: null, canon: true,
     settings: { keyPrefixes: ['ALP'], color: '#112233', colorDark: '#aabbcc',

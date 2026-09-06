@@ -1,11 +1,9 @@
 import { db } from './db.ts'
 import { human } from './interval.ts'
-import type { OrchRun, OrchTurn } from './ingest/runs.ts'
+import { readRunsById } from './orch.ts'
+import type { OrchRun, OrchTurn, OrchUnknownRun } from '../../shared/orch-contract.ts'
 
-const ORCH = new URL('../../bin/orch', import.meta.url).pathname
-
-type UnknownRun = { id: number; status: 'unknown'; unknown: true }
-type RunAnswer = OrchRun | UnknownRun
+type RunAnswer = OrchRun | OrchUnknownRun
 
 type OpenInterval = {
   id: number
@@ -34,20 +32,6 @@ export function runRef(ref: string): { root: number; turn: number | null } | nul
   const match = ref.match(/^orch:(\d+)(?::turn:(\d+))?$/)
   if (!match) return null
   return { root: Number(match[1]), turn: match[2] ? Number(match[2]) : null }
-}
-
-async function readRunsById(ids: number[]): Promise<RunAnswer[]> {
-  if (!ids.length) return []
-  const proc = Bun.spawn([
-    ORCH, 'runs', '--json', ...ids.flatMap((id) => ['--id', String(id)]),
-  ], { stdout: 'pipe', stderr: 'pipe' })
-  const [out, err, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ])
-  if (code !== 0) throw new Error(`orch runs --id --json exited ${code}: ${err.trim()}`)
-  return out.split('\n').filter((line) => line.trim()).map((line) => JSON.parse(line) as RunAnswer)
 }
 
 function statusFor(answer: RunAnswer | undefined, turnId: number | null): string | null {

@@ -416,7 +416,7 @@ describe('run ingest', () => {
     const state = {
       live: [], stale: 0, matrix: [], guide: [], health: [],
       totals: { runs: 1, failed: 0, stale_n: 0, toks: 0, scored: 1 },
-      unscored: 0, spawns: [], agents: [],
+      unscored: 0, spawns: [], agents: [], byRepo: [],
     }
     const spawn = spyOn(Bun, 'spawn').mockImplementation(((argv: string[]) => ({
       stdout: new Blob([argv.includes('runs') ? JSON.stringify(run) : JSON.stringify(state)]),
@@ -440,7 +440,7 @@ describe('run ingest', () => {
     const state = {
       live: [], stale: 0, matrix: [], guide: [], health: [],
       totals: { runs: 2, failed: 0, stale_n: 0, toks: 1_540_000, scored: 2 },
-      unscored: 0, spawns: [], agents: [],
+      unscored: 0, spawns: [], agents: [], byRepo: [],
     }
     const spawn = spyOn(Bun, 'spawn').mockImplementation(((argv: string[]) => ({
       stdout: new Blob([

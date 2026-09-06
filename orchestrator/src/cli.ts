@@ -1270,7 +1270,9 @@ function usage(): never {
   orch review calibration <lens> <agent> <model> [--json]  (--json: one JSON document)
   orch review coverage-audit [--json]  list completed reviews that inspected trunk history (--json: one JSON document)
   orch pending                  runs YOU made that are still unscored (exit 1 if any)
-  orch runs [--id ID]... [--job X] [--agent Y] [--limit N] [--unscored] [--since ISO] [--json]
+  orch runs [--id ID]... [--job X] [--agent Y] [--limit N] [--unscored] [--since ISO] [--json|--json=v1]
+      --json                    NDJSON, one envelope per line
+      --json=v1                 transition format: NDJSON bare run objects
                          --id resolves a turn to its chain root and identifies the requested id
       --id queries exactly those run ids; repeat it for a union of ids
       --id and --since cannot be combined
@@ -5146,7 +5148,8 @@ switch (cmd) {
   }
 
   case 'runs': {
-    const json = has('json')
+    const jsonV1 = argv.includes('--json=v1')
+    const json = has('json') || jsonV1
     const where: string[] = ['r.parent_run_id IS NULL']
     if (!json) where.push('r.automatic_failover = 0')
     // Typed as the bindings SQLite actually accepts: `unknown[]` does not
@@ -5292,8 +5295,13 @@ switch (cmd) {
     // than opening orch.db, because a database shared between two concerns is
     // how two concerns quietly become one.
     if (json) {
-      for (const r of rows) console.log(JSON.stringify(r))
-      for (const id of unknownIds) console.log(JSON.stringify({ id, status: 'unknown', unknown: true }))
+      const publish = (data: unknown) => JSON.stringify(
+        jsonV1 ? data : { schema_version: 2, kind: 'run', data },
+      )
+      for (const r of rows) console.log(publish(r))
+      for (const id of unknownIds) {
+        console.log(publish({ id, status: 'unknown', unknown: true }))
+      }
       break
     }
 

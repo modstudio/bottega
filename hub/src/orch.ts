@@ -8,25 +8,38 @@
 import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import type { DocScope } from '../../shared/docs.ts'
+import {
+  OrchBlockersSchema, OrchProjectListSchema, OrchProjectSchema, OrchRunDetailSchema,
+  OrchRunEnvelopeSchema, OrchRunSchema, OrchStateSchema, OrchUnknownRunSchema,
+  type OrchBlockers, type OrchProject, type OrchRun, type OrchRunDetail,
+  type OrchRunLineData,
+} from '../../shared/orch-contract.ts'
+export type { OrchProject, OrchRun, OrchRunDetail, OrchState } from '../../shared/orch-contract.ts'
 import {
   DASHBOARD_CAPABILITY_PATH_ENV, DASHBOARD_CAPABILITY_TOKEN_ENV,
   type DashboardCapability,
 } from '../../shared/dashboard-capability.ts'
-import { refreshProjects, type RegisteredProject } from './projects.ts'
-/**
- * Resolved from THIS FILE's location, at module load.
- *
- * Which means a long-running `hub serve` keeps pointing wherever it was started
- * from, for as long as it lives. When the checkout was renamed the server that
- * had been up since the previous evening went on calling a `bin/orch` that no
- * longer existed, and every view needing the orchestrator answered HTTP 500
- * with nothing on screen saying why. Restarting it was the whole fix; working
- * that out was not.
- */
-const ORCH = new URL('../../bin/orch', import.meta.url).pathname
+import { refreshProjects } from './projects.ts'
 let dashboardCapability: { dir: string; path: string; token: string } | null = null
+
+/** Resolve the executable afresh so a server follows its checkout when it moves. */
+function orchPath(): string {
+  if (process.env.HUB_ORCH) return process.env.HUB_ORCH
+  const root = Bun.spawnSync(['git', 'rev-parse', '--show-toplevel'], {
+    cwd: process.cwd(), stdout: 'pipe', stderr: 'ignore',
+  })
+  const checkout = root.exitCode === 0 ? root.stdout.toString().trim() : ''
+  return resolve(checkout || new URL('../..', import.meta.url).pathname, 'bin/orch')
+}
+
+function missingBinary(path: string): Error {
+  return new Error(
+    `orch is not at ${path}. This server was started from a checkout that has ` +
+    `since moved or been renamed; restart it from the current one.`,
+  )
+}
 
 /** Mint the process-local capability used only by dashboard score children. */
 export function startDashboardCapability(): string {
@@ -49,32 +62,20 @@ export function stopDashboardCapability(): void {
   dashboardCapability = null
 }
 
-async function orch(
+async function orchProcess(
   args: string[],
   timeoutMs = 20_000,
-  opts: { parseJson?: boolean; stdin?: string } = {},
-): Promise<unknown> {
-  /**
-   * A MISSING BINARY IS NAMED, not left as a spawn error.
-   *
-   * `Bun.spawn` on a path that does not exist reports ENOENT as though the
-   * command were missing, which reads as "orch is not installed" — and the
-   * actual cause is that this process is older than the checkout it is running
-   * from. Saying so turns an opaque 500 into an instruction.
-   */
-  if (!existsSync(ORCH)) {
-    throw new Error(
-      `orch is not at ${ORCH}. This server was started from a checkout that has ` +
-      `since moved or been renamed; restart it from the current one.`,
-    )
-  }
-  const proc = Bun.spawn([ORCH, ...args], {
-    env: { ...process.env },
+  opts: { stdin?: string; env?: Record<string, string> } = {},
+): Promise<string> {
+  const path = orchPath()
+  if (!existsSync(path)) throw missingBinary(path)
+  const proc = Bun.spawn([path, ...args], {
+    env: { ...process.env, ...opts.env },
     stdout: 'pipe',
     stderr: 'pipe',
     stdin: opts.stdin !== undefined ? Buffer.from(opts.stdin) : 'ignore',
   })
-  const timer = setTimeout(() => proc.kill(), timeoutMs)
+  const timer = timeoutMs > 0 ? setTimeout(() => proc.kill(), timeoutMs) : null
   try {
     const [out, err, code] = await Promise.all([
       new Response(proc.stdout).text(),
@@ -82,8 +83,84 @@ async function orch(
       proc.exited,
     ])
     if (code !== 0) throw new Error(err.trim() || out.trim() || `orch ${args[0]} exited ${code}`)
-    return opts.parseJson === false ? out.trim() : JSON.parse(out)
-  } finally { clearTimeout(timer) }
+    return out.trim()
+  } finally { if (timer) clearTimeout(timer) }
+}
+
+async function json<T>(args: string[], schema: { parse(value: unknown): T }, opts: { stdin?: string } = {}): Promise<T> {
+  const out = await orchProcess(args, 20_000, opts)
+  let value: unknown
+  try { value = JSON.parse(out) }
+  catch { throw new Error(`orch ${args.slice(0, 2).join(' ')} returned invalid JSON`) }
+  return schema.parse(value)
+}
+
+async function jsonDocument<T>(args: string[], opts: { stdin?: string } = {}): Promise<T> {
+  const out = await orchProcess(args, 20_000, opts)
+  try { return JSON.parse(out) as T }
+  catch { throw new Error(`orch ${args.slice(0, 2).join(' ')} returned invalid JSON`) }
+}
+
+export function decodeRunsJson(text: string): OrchRunLineData[] {
+  const rows: OrchRunLineData[] = []
+  for (const [index, source] of text.split('\n').entries()) {
+    const line = source.trim()
+    if (!line) continue
+    let value: unknown
+    try { value = JSON.parse(line) }
+    catch { throw new Error(`orch runs --json line ${index + 1} is not JSON`) }
+    const record = value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown> : null
+    const enveloped = Boolean(record && ('schema_version' in record || 'kind' in record || 'data' in record))
+    const candidate = enveloped && record ? record.data : value
+    const candidateRecord = candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+      ? candidate as Record<string, unknown> : null
+    const dataSchema = candidateRecord?.unknown === true ? OrchUnknownRunSchema : OrchRunSchema
+    const decoded = enveloped ? OrchRunEnvelopeSchema.safeParse(value) : dataSchema.safeParse(value)
+    if (decoded.success) {
+      rows.push(enveloped
+        ? (decoded.data as { data: OrchRunLineData }).data
+        : decoded.data as OrchRunLineData)
+      continue
+    }
+    const dataFailure = dataSchema.safeParse(candidate)
+    const issue = dataFailure.success ? decoded.error.issues[0] : dataFailure.error.issues[0]
+    let path = ''
+    for (const part of issue?.path ?? []) {
+      path += typeof part === 'number' ? `[${part}]` : `${path ? '.' : ''}${String(part)}`
+    }
+    if (!path) path = 'record'
+    throw new Error(`orch runs --json line ${index + 1} missing ${path}`)
+  }
+  return rows
+}
+
+export async function readRuns(since: string): Promise<OrchRun[]> {
+  const rows = decodeRunsJson(await orchProcess(['runs', '--json', '--since', since]))
+  return rows.filter((row): row is OrchRun => !('unknown' in row))
+}
+
+export async function readRunsById(ids: number[]): Promise<OrchRunLineData[]> {
+  if (!ids.length) return []
+  return decodeRunsJson(await orchProcess([
+    'runs', '--json', ...ids.flatMap((id) => ['--id', String(id)]),
+  ]))
+}
+
+export const blockers = (days: number): Promise<OrchBlockers> =>
+  json(['blockers', '--days', String(days), '--json'], OrchBlockersSchema)
+
+export function projectList(): OrchProject[] {
+  const path = orchPath()
+  if (!existsSync(path)) throw missingBinary(path)
+  const proc = Bun.spawnSync([path, 'project', 'list', '--json'], {
+    env: { ...process.env }, stdout: 'pipe', stderr: 'pipe', timeout: 20_000,
+  })
+  const out = proc.stdout.toString()
+  const err = proc.stderr.toString().trim()
+  if (proc.exitCode !== 0) throw new Error(err || out.trim() || `orch project exited ${proc.exitCode}`)
+  try { return OrchProjectListSchema.parse(JSON.parse(out)) }
+  catch (cause) { throw new Error(`invalid project register: ${String(cause)}`) }
 }
 
 export type ProjectWriteBody = {
@@ -113,22 +190,22 @@ export function projectArgv(
   return args
 }
 
-export async function projectAdd(body: ProjectAddBody): Promise<RegisteredProject> {
-  const result = await orch(projectArgv('add', body.name, body)) as RegisteredProject
+export async function projectAdd(body: ProjectAddBody): Promise<OrchProject> {
+  const result = await json(projectArgv('add', body.name, body), OrchProjectSchema)
   refreshProjects()
   return result
 }
 
 export async function projectSet(
   name: string, body: ProjectWriteBody,
-): Promise<RegisteredProject> {
-  const result = await orch(projectArgv('set', name, body)) as RegisteredProject
+): Promise<OrchProject> {
+  const result = await json(projectArgv('set', name, body), OrchProjectSchema)
   refreshProjects()
   return result
 }
 
 export async function projectRemove(name: string): Promise<void> {
-  await orch(projectArgv('remove', name), 20_000, { parseJson: false })
+  await orchProcess(projectArgv('remove', name))
   refreshProjects()
 }
 
@@ -137,23 +214,8 @@ export type OrchAgent = {
   lastStatus: string | null; lastKind: string | null; minsAgo: number | null
 }
 
-export type OrchState = {
-  live: { id: number; agent: string; job: string; repo: string | null; started_at: string
-          prompt_head: string }[]
-  stale: number
-  matrix: { job: string; promptBucket: 'small' | 'large'; agent: string; runs: number; judged: number; failures: number
-            pts: number; lat: number | null; toks: number | null }[]
-  guide: { job: string; promptBucket: 'small' | 'large' | null; best: unknown; quickest: unknown; untried: string[]
-           provisional?: boolean }[]
-  health: OrchAgent[]
-  totals: { runs: number; failed: number; stale_n: number; toks: number; scored: number }
-  unscored: number
-  spawns: { decision: string; why: string; n: number }[]
-  agents: { name: string; billing: string; caps: Record<string, boolean> }[]
-}
-
 export const state = (days: number | null) =>
-  orch(['state', ...(days ? ['--days', String(days)] : [])]) as Promise<OrchState>
+  json(['state', ...(days ? ['--days', String(days)] : [])], OrchStateSchema)
 
 export type OrchJob = {
   name: string
@@ -174,10 +236,12 @@ export type OrchAgentDefinition = {
   timeoutMs: number
 }
 
-export const jobs = () => orch(['jobs', '--json']) as Promise<OrchJob[]>
-export const agents = () => orch(['agents', '--json']) as Promise<OrchAgentDefinition[]>
+export const jobs = () => jsonDocument<OrchJob[]>(['jobs', '--json'])
+export const agents = () => jsonDocument<OrchAgentDefinition[]>(['agents', '--json'])
 
-export const runDetail = (id: number) => orch(['run', String(id)])
+export const run = (id: number): Promise<OrchRunDetail> =>
+  json(['run', String(id)], OrchRunDetailSchema)
+export const runDetail = run
 
 /**
  * Score a run as a person, from the dashboard.
@@ -194,20 +258,11 @@ export async function score(
   const args = ['score', String(id), delivery, ...(quality ? [quality] : []),
                 ...(fidelity ? [fidelity] : []),
                 '--scorer', 'hub-dashboard', ...(note ? ['--note', note] : [])]
-  const capabilityEnv = dashboardCapability ? {
+  const capabilityEnv: Record<string, string> = dashboardCapability ? {
     [DASHBOARD_CAPABILITY_PATH_ENV]: dashboardCapability.path,
     [DASHBOARD_CAPABILITY_TOKEN_ENV]: dashboardCapability.token,
   } : {}
-  const proc = Bun.spawn([ORCH, ...args], {
-    env: { ...process.env, ...capabilityEnv }, stdout: 'pipe', stderr: 'pipe',
-  })
-  const [out, err, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ])
-  if (code !== 0) throw new Error(err.trim() || out.trim() || `orch score exited ${code}`)
-  return out.trim()
+  return orchProcess(args, 20_000, { env: capabilityEnv })
 }
 
 export type { DocScope }
@@ -309,19 +364,28 @@ export function docArgv(op: DocOp, input: DocArgvInput = {}): string[] {
 }
 
 export const docList = (filters: DocListFilters = {}) =>
-  orch(docArgv('list', filters)) as Promise<DocRow[]>
+  jsonDocument<DocRow[]>(docArgv('list', filters))
 
 export const docGet = (scope: string, subject: string | null, slug: string) =>
-  orch(docArgv('get', { scope, subject, slug })) as Promise<DocRow>
+  jsonDocument<DocRow>(docArgv('get', { scope, subject, slug }))
 
 export const docSet = (input: DocSetInput) =>
-  orch(docArgv('set', input), 20_000, { stdin: input.body }) as Promise<DocRow>
+  jsonDocument<DocRow>(docArgv('set', input), { stdin: input.body })
 
 export const docRemove = (scope: string, subject: string | null, slug: string, reason: string) =>
-  orch(docArgv('remove', { scope, subject, slug, reason })) as Promise<{ removed: boolean }>
+  jsonDocument<{ removed: boolean }>(docArgv('remove', { scope, subject, slug, reason }))
 
 export const docHistory = (scope: string, subject: string | null, slug: string) =>
-  orch(docArgv('history', { scope, subject, slug })) as Promise<DocRevisionMetadata[]>
+  jsonDocument<DocRevisionMetadata[]>(docArgv('history', { scope, subject, slug }))
 
 export const docSubjects = () =>
-  orch(docArgv('subjects')) as Promise<DocSubjects>
+  jsonDocument<DocSubjects>(docArgv('subjects'))
+
+export async function summarize(prompt: string): Promise<string> {
+  return orchProcess(
+    ['do', 'summarize', '--agent', 'codex', '--quiet', '--follow',
+     '--label', 'daily report sentences'],
+    0,
+    { stdin: prompt },
+  )
+}

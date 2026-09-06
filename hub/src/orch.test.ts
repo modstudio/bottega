@@ -1,11 +1,63 @@
 import { describe, expect, test } from 'bun:test'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync } from 'node:fs'
+import {
+  cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
-  docArgv, docGet, docRemove, docSet, projectArgv,
+  decodeRunsJson, docArgv, docGet, docRemove, docSet, projectArgv,
   startDashboardCapability, stopDashboardCapability,
 } from './orch.ts'
+import { encodeOrchRunLine } from '../../shared/orch-contract.ts'
+
+const runFixture = {
+  id: 42,
+  started_at: '2026-09-06T12:00:00.000Z',
+  agent: 'codex',
+  job: 'implement',
+  repo: 'sample',
+  cwd: '/tmp/sample',
+  session_id: null,
+  latency_ms: 100,
+  vendor_tokens: 12,
+  vendor_cost_usd: null,
+  prompt_head: 'Build it',
+  prompt_path: null,
+  branch: 'DEV-340-example',
+  probe: 0,
+  status: 'ok',
+  delivery: 'full',
+  quality: 'right',
+  retry_of: null,
+  turns: [{
+    id: 42, started_at: '2026-09-06T12:00:00.000Z', latency_ms: 100,
+    vendor_tokens: 12, vendor_cost_usd: null, status: 'ok', turn: 1,
+  }],
+  questions: [],
+  launch_key: 'DEV-340',
+}
+
+test('v1 and v2 run lines decode to the same run', () => {
+  const v1 = encodeOrchRunLine(runFixture, 1)
+  const v2 = encodeOrchRunLine(runFixture, 2)
+  expect(decodeRunsJson(v1)).toEqual(decodeRunsJson(v2))
+  expect(decodeRunsJson(v2)).toEqual([runFixture])
+})
+
+test('only the orch client invokes bin/orch', () => {
+  const root = new URL('.', import.meta.url).pathname
+  const files = readdirSync(root, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.ts')
+      && entry.name !== 'orch.ts' && !entry.name.endsWith('.test.ts')
+      && !entry.name.endsWith('.fixture.ts'))
+  const violations = files.flatMap((entry) => {
+    const path = join(entry.parentPath, entry.name)
+    const source = readFileSync(path, 'utf8')
+    return /bin\/orch/.test(source) || /\b(?:const|let|var)\s+ORCH\b/.test(source)
+      ? [path.slice(root.length)] : []
+  })
+  expect(violations).toEqual([])
+})
 
 test('dashboard scoring capability is private and bound to this hub process', () => {
   const path = startDashboardCapability()

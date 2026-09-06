@@ -2,6 +2,7 @@ import { afterAll, describe, expect, spyOn, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { encodeOrchRunLine } from '../../shared/orch-contract.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'hub-reconcile-'))
 process.env.HUB_DB = join(dir, 'hub.db')
@@ -21,16 +22,31 @@ function add(id: number, ref: string, endAt: string) {
 function orchAnswers(rows: object[]) {
   return spyOn(Bun, 'spawn').mockImplementation(((args: string[]) => {
     expect(args).toEqual([
-      expect.stringContaining('/bin/orch'), 'runs', '--json',
+      expect.any(String), 'runs', '--json',
       '--id', '1205', '--id', '1206', '--id', '9999',
     ])
     expect(args).not.toContain('--since')
     return {
-      stdout: new Blob([rows.map((row) => JSON.stringify(row)).join('\n')]),
+      stdout: new Blob([rows.map(runLine).join('\n')]),
       stderr: new Blob(['']),
       exited: Promise.resolve(0),
     }
   }) as unknown as typeof Bun.spawn)
+}
+
+function runLine(row: object): string {
+  if ('unknown' in row) return encodeOrchRunLine(row)
+  const value = row as { id: number; status: string }
+  return encodeOrchRunLine({
+    id: value.id, started_at: '2026-09-03T00:00:00.000Z', agent: 'codex',
+    job: 'implement', repo: null, cwd: null, session_id: null, latency_ms: null,
+    vendor_tokens: null, vendor_cost_usd: null, prompt_head: '', prompt_path: null,
+    branch: null, probe: 0, status: value.status, delivery: null, quality: null,
+    retry_of: null, turns: [{
+      id: value.id, started_at: '2026-09-03T00:00:00.000Z', latency_ms: null,
+      vendor_tokens: null, vendor_cost_usd: null, status: value.status, turn: 1,
+    }], questions: [], launch_key: null,
+  })
 }
 
 describe('open interval reconciliation', () => {
@@ -78,7 +94,7 @@ describe('open interval reconciliation', () => {
         [
           { id: 1206, status: 'running' },
           { id: 9999, status: 'unknown', unknown: true },
-        ].map((row) => JSON.stringify(row)).join('\n'),
+        ].map(runLine).join('\n'),
       ]),
       stderr: new Blob(['']), exited: Promise.resolve(0),
     })) as unknown as typeof Bun.spawn)

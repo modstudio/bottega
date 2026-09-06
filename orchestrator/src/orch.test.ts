@@ -27,11 +27,15 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   DASHBOARD_CAPABILITY_PATH_ENV, DASHBOARD_CAPABILITY_TOKEN_ENV,
 } from '../../shared/dashboard-capability.ts'
+import { OrchProjectListSchema, OrchRunEnvelopeSchema } from '../../shared/orch-contract.ts'
 import type { WorktreeCreate, WorktreeCreateArg } from './projects.ts'
 import type { ReviewReply, WorkerReply } from './contract.ts'
 
 const declaredCreate = (command: string, args: WorktreeCreateArg[]): WorktreeCreate =>
   ({ command, args })
+
+const runJson = (line: string) =>
+  OrchRunEnvelopeSchema.parse(JSON.parse(line)).data as Record<string, any>
 
 // Some lifecycle tests need compound shell setup in a scratch repository. The
 // production registration path refuses this shape; these tests bypass the
@@ -6056,7 +6060,7 @@ describe('vendor failure failover is one bounded unit of work', () => {
 
       const json = orch('runs', '--json')
       expect(json.code).toBe(0)
-      const listed = json.out.trim().split('\n').map((line) => JSON.parse(line)) as {
+      const listed = json.out.trim().split('\n').map(runJson) as {
         id: number; agent: string; retry_of: number | null; failover_chain: string[]
         vendor_tokens: number; vendor_cost_usd: number; questions: unknown[]
       }[]
@@ -6088,7 +6092,7 @@ describe('vendor failure failover is one bounded unit of work', () => {
 
     const json = orch('runs', '--json', '--id', String(root))
     expect(json.code).toBe(0)
-    const [row] = json.out.trim().split('\n').map((line) => JSON.parse(line)) as {
+    const [row] = json.out.trim().split('\n').map(runJson) as {
       id: number
       questions: { id: number; run_id: number; asked_at: string; answered_at: string | null }[]
     }[]
@@ -9007,7 +9011,17 @@ describe('detached run collection', () => {
     expect(() => JSON.parse(runs.out)).toThrow()
     const lines = runs.out.trim().split('\n')
     expect(lines).toHaveLength(2)
-    for (const line of lines) expect(JSON.parse(line)).toMatchObject({ id: expect.any(Number) })
+    for (const line of lines) {
+      expect(OrchRunEnvelopeSchema.parse(JSON.parse(line))).toMatchObject({
+        schema_version: 2, kind: 'run', data: { id: expect.any(Number) },
+      })
+    }
+
+    const legacy = orch('runs', '--json=v1')
+    expect(legacy.code).toBe(0)
+    for (const line of legacy.out.trim().split('\n')) {
+      expect(JSON.parse(line)).toMatchObject({ id: expect.any(Number) })
+    }
 
     const help = orch('--help').out
     expect(help.match(/one JSON document/g)).toHaveLength(documents.length)
@@ -9455,7 +9469,7 @@ describe('detached run collection', () => {
     const r = orch('runs', '--unscored', '--json')
     expect(r.code).toBe(0)
     expect(r.err).toBe('')
-    const rows = r.out.trim().split('\n').filter(Boolean).map((line) => JSON.parse(line))
+    const rows = r.out.trim().split('\n').filter(Boolean).map(runJson)
     expect(rows.map((row) => row.id)).toEqual([wanted])
   })
 
@@ -10202,7 +10216,7 @@ describe('detached run collection', () => {
 
     const json = orch('runs', '--json', '--id', String(thin))
     expect(json.code).toBe(0)
-    expect(Object.keys(JSON.parse(json.out)).sort()).toEqual([
+    expect(Object.keys(runJson(json.out)).sort()).toEqual([
       'agent', 'answer_agent', 'branch', 'branch_kept', 'branch_kept_tip', 'cwd',
       'delivery', 'error', 'exit_code', 'failover_chain', 'failure_kind', 'head_commit', 'id',
       'input_tree', 'job', 'latency_ms', 'launch_key', 'probe', 'prompt_head',
@@ -10251,7 +10265,7 @@ describe('detached run collection', () => {
 
     const json = orch('runs', '--json')
     expect(json.code).toBe(0)
-    expect(json.out.trim().split('\n').map((line) => JSON.parse(line).id)).toEqual([root])
+    expect(json.out.trim().split('\n').map((line) => runJson(line).id)).toEqual([root])
   })
 
   test('runs --id returns the union requested and reports unknown ids', () => {
@@ -10263,7 +10277,7 @@ describe('detached run collection', () => {
     const result = orch('runs', '--id', String(first), '--id', String(second),
       '--id', String(unknown), '--json')
     expect(result.code).toBe(0)
-    const rows = result.out.trim().split('\n').map((line) => JSON.parse(line))
+    const rows = result.out.trim().split('\n').map(runJson)
     expect(rows.map((row) => row.id)).toEqual([second, first, unknown])
     expect(rows.slice(0, 2).map((row) => [row.requested_id, row.resolved_from])).toEqual([
       [second, 'root'], [first, 'root'],
@@ -10278,7 +10292,7 @@ describe('detached run collection', () => {
 
     const json = orch('runs', '--id', String(turn), '--json')
     expect(json.code).toBe(0)
-    expect(JSON.parse(json.out)).toMatchObject({
+    expect(runJson(json.out)).toMatchObject({
       id: root, requested_id: turn, resolved_from: 'turn',
     })
 
@@ -10295,7 +10309,7 @@ describe('detached run collection', () => {
     const result = orch('runs', '--id', String(root), '--id', String(turn), '--json')
     expect(result.code).toBe(0)
     expect(result.out.trim().split('\n').map((line) => {
-      const row = JSON.parse(line)
+      const row = runJson(line)
       return [row.id, row.requested_id, row.resolved_from]
     })).toEqual([
       [root, root, 'root'],
@@ -10334,7 +10348,7 @@ describe('detached run collection', () => {
     // The root predates this window, but later execution in the chain does not.
     const result = orch('runs', '--json', '--since', '2026-09-01T12:20:00.000Z')
     expect(result.code).toBe(0)
-    const [row] = result.out.trim().split('\n').map((line) => JSON.parse(line))
+    const [row] = result.out.trim().split('\n').map(runJson)
     expect(row.id).toBe(root)
     expect(row.status).toBe('ok')
     expect(row.turns.map((turn: { id: number }) => turn.id)).toEqual(ids)
@@ -10354,7 +10368,7 @@ describe('detached run collection', () => {
 
     const json = orch('runs', '--json', '--since', cutoff)
     expect(json.code).toBe(0)
-    const rows = json.out.trim().split('\n').map((line) => JSON.parse(line)) as {
+    const rows = json.out.trim().split('\n').map(runJson) as {
       id: number
       questions: { asked_at: string; answered_at: string | null }[]
     }[]
@@ -10376,7 +10390,7 @@ describe('detached run collection', () => {
 
     const json = orch('runs', '--json', '--since', cutoff)
     expect(json.code).toBe(0)
-    const rows = json.out.trim().split('\n').map((line) => JSON.parse(line)) as {
+    const rows = json.out.trim().split('\n').map(runJson) as {
       id: number
       questions: { answered_at: string | null }[]
     }[]
@@ -10395,7 +10409,7 @@ describe('detached run collection', () => {
 
     const json = orch('runs', '--json', '--since', cutoff)
     expect(json.code).toBe(0)
-    expect(json.out.trim().split('\n').map((line) => JSON.parse(line).id)).toEqual([old])
+    expect(json.out.trim().split('\n').map((line) => runJson(line).id)).toEqual([old])
   })
 
   test('runs --json publishes the root launch_key', () => {
@@ -10403,7 +10417,7 @@ describe('detached run collection', () => {
     db().query('UPDATE run SET launch_key=? WHERE id=?').run('DEV-7777', id)
     const json = orch('runs', '--json', '--id', String(id))
     expect(json.code).toBe(0)
-    expect(JSON.parse(json.out.trim().split('\n')[0]!).launch_key).toBe('DEV-7777')
+    expect(runJson(json.out.trim().split('\n')[0]!).launch_key).toBe('DEV-7777')
   })
 
   test('waiting on a failed run exits non-zero', () => {
@@ -11237,6 +11251,16 @@ describe('detached run collection', () => {
     expect(JSON.parse(json.out)[0].problems).toEqual([
       'worktree.create is a shell string; migrate it (DEV-308)',
     ])
+  })
+
+  test('project list JSON satisfies the hub contract and a field hub reads cannot be dropped', () => {
+    upsertProject({ name: 'contract-project', path: process.cwd(), settings: {} })
+    const listed = orch('project', 'list', '--json')
+    expect(listed.code).toBe(0)
+    const document = JSON.parse(listed.out) as Record<string, unknown>[]
+    expect(() => OrchProjectListSchema.parse(document)).not.toThrow()
+    delete document[0]!.path
+    expect(() => OrchProjectListSchema.parse(document)).toThrow()
   })
 
   test('migrate-create dry-runs the five live register shapes', () => {
@@ -24055,7 +24079,7 @@ process.stdout.write(JSON.stringify(body))
         stdout: 'pipe', stderr: 'pipe',
       })
       expect(runListing.exitCode).toBe(0)
-      expect(JSON.parse(runListing.stdout.toString())).toMatchObject({
+      expect(runJson(runListing.stdout.toString())).toMatchObject({
         id: first[0]!.runId, status: 'ok',
       })
 

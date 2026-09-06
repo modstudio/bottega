@@ -10,12 +10,13 @@ import {
   boardTasks,
 } from './query.ts'
 import { engagedMs, human } from './interval.ts'
-import { chainVendorTokens, executionSpans, readRuns } from './ingest/runs.ts'
+import { chainVendorTokens, executionSpans } from './ingest/runs.ts'
 import { attributeRun } from './attribute.ts'
 import { promptLens } from './excerpt.ts'
 import { collectFast, collectSlow, watch, leaseHolder, withLease } from './collect.ts'
 import { hoursAgo } from './time.ts'
-import { state as orchState } from './orch.ts'
+import { blockers as readBlockers, readRuns, state as orchState } from './orch.ts'
+import type { OrchBlockers } from '../../shared/orch-contract.ts'
 import { getReport, secretStatus } from './settings.ts'
 import { gather, lastSends, summarise, renderHtml, renderText, send as sendMail, recordSend } from './report.ts'
 import { human as humanMs } from './interval.ts'
@@ -23,19 +24,6 @@ import {
   projectNames, projects, trackerPresentation, type RegisteredProject,
 } from './projects.ts'
 
-type OrchBlocker = {
-  kind: string | null
-  source: 'declared' | 'detected'
-  runs: number
-  projects: number
-  agents: string[]
-  lastAt: string
-  example: string | null
-}
-
-type OrchBlockers = { days: number; blockers: OrchBlocker[] }
-
-const ORCH = new URL('../../bin/orch', import.meta.url).pathname
 const BLOCKERS_TTL_MS = 30_000
 const blockerCache = new Map<number, {
   checkedAt: number
@@ -61,28 +49,9 @@ async function orchBlockers(days: number): Promise<OrchBlockers | null> {
 
   const pending = (async () => {
     try {
-      if (!existsSync(ORCH)) {
-        throw new Error(
-          `orch is not at ${ORCH}. This server was started from a checkout that has `
-          + `since moved or been renamed; restart it from the current one.`,
-        )
-      }
-      const args = ['blockers', '--days', String(days), '--json']
-      const proc = Bun.spawn([ORCH, ...args], { stdout: 'pipe', stderr: 'pipe' })
-      const timer = setTimeout(() => proc.kill(), 20_000)
-      try {
-        const [out, err, code] = await Promise.all([
-          new Response(proc.stdout).text(),
-          new Response(proc.stderr).text(),
-          proc.exited,
-        ])
-        if (code !== 0) {
-          throw new Error(`orch blockers exited ${code}: ${err.trim().slice(0, 200)}`)
-        }
-        const value = JSON.parse(out) as OrchBlockers
-        blockerCache.set(days, { checkedAt: Date.now(), value })
-        return value
-      } finally { clearTimeout(timer) }
+      const value = await readBlockers(days)
+      blockerCache.set(days, { checkedAt: Date.now(), value })
+      return value
     } catch {
       blockerCache.set(days, { checkedAt: Date.now(), value: cached?.value })
       return cached?.value ?? null
