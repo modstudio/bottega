@@ -201,7 +201,9 @@ describe('run ingest', () => {
     expect(result).toEqual({ rows: 5, skipped: 0 })
     expect(intervals).toHaveLength(5)
     expect(intervals.every((row) => row.ref.startsWith('orch:1168:turn:'))).toBe(true)
-    expect(intervals.reduce((sum, row) => sum + row.vendor_tokens, 0)).toBe(11_798_623)
+    let vendorTokens = 0
+    for (const row of intervals) vendorTokens += row.vendor_tokens
+    expect(vendorTokens).toBe(11_798_623)
     expect(chainVendorTokens(runFixture({ turns }))).toBe(11_798_623)
     expect(engagedMs(executionSpans(runFixture({ turns })))).toBe(1_032_690)
     expect(engagedMs(intervals.map((row) => ({
@@ -425,6 +427,41 @@ describe('run ingest', () => {
     try {
       const result = await view('runs', 24) as { rows: { id: number; task: string | null }[] }
       expect(result.rows).toEqual([expect.objectContaining({ id: 9801, task: 'DEV-3000' })])
+    } finally {
+      spawn.mockRestore()
+    }
+  })
+
+  test('the runs view reports vendor tokens per agent without a combined total', async () => {
+    const runs = [
+      runFixture({ id: 9811, agent: 'grok', vendor_tokens: 1_200_000 }),
+      runFixture({ id: 9812, agent: 'codex', vendor_tokens: 340_000 }),
+    ]
+    const state = {
+      live: [], stale: 0, matrix: [], guide: [], health: [],
+      totals: { runs: 2, failed: 0, stale_n: 0, toks: 1_540_000, scored: 2 },
+      unscored: 0, spawns: [], agents: [],
+    }
+    const spawn = spyOn(Bun, 'spawn').mockImplementation(((argv: string[]) => ({
+      stdout: new Blob([
+        argv.includes('runs')
+          ? runs.map((run) => JSON.stringify(run)).join('\n')
+          : JSON.stringify(state),
+      ]),
+      stderr: new Blob(['']),
+      exited: Promise.resolve(0),
+      kill() {},
+    })) as unknown as typeof Bun.spawn)
+    try {
+      const result = await view('runs', 24) as {
+        totals: Record<string, number>
+        vendors: { agent: string; tokens: number }[]
+      }
+      expect(result.totals).not.toHaveProperty('toks')
+      expect(result.vendors).toEqual([
+        { agent: 'grok', tokens: 1_200_000 },
+        { agent: 'codex', tokens: 340_000 },
+      ])
     } finally {
       spawn.mockRestore()
     }

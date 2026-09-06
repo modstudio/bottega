@@ -5,7 +5,7 @@ import { ChevronRight } from 'lucide-react'
 import { LiveDot, PageHeader, ProjectMark, StatRow, StatTile, WindowBar } from '@/components/design-system'
 import { Badge } from '@/components/badge'
 import { useWindowState } from '@/lib/window'
-import { collectedTime, compactTokens, duration } from '@/lib/format'
+import { collectedTime, compactTokens, duration, vendorFigures } from '@/lib/format'
 import { trpc } from '@/trpc/client'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { Input } from '@/components/input'
@@ -21,7 +21,8 @@ type RunsPayload = {
   servingSince: string
   activeAgents: string[]
   data: {
-    totals: { runs: number; scored: number; failed: number; toks: number }; unscored: number
+    totals: { runs: number; scored: number; failed: number; stale_n: number }
+    vendors: { agent: string; tokens: number }[]; unscored: number
     facets: { agents: string[]; projects: string[] }; matched: number
     live: LiveRow[]; rows: RunRow[]
   }
@@ -67,7 +68,7 @@ function RunsList() {
     [data.totals.scored.toLocaleString(), 'scored', 'judged'],
     [data.unscored.toLocaleString(), 'unscored', 'teaches the router nothing'],
     [data.totals.failed.toLocaleString(), 'failed', 'counts against the agent'],
-    [compact(data.totals.toks), 'vendor tokens', 'across every agent'],
+    [vendorFigures(data.vendors), 'vendor tokens', 'per agent'],
   ] : []
   const matches = (row: RunRow | LiveRow) => matchesRunSearch(row, search)
   const liveRows = data?.live.filter(matches) ?? []

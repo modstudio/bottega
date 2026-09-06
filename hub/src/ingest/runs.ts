@@ -77,9 +77,11 @@ export function executionSpans(r: OrchRun, now = Date.now()) {
 
 export function chainVendorTokens(r: OrchRun): number | null {
   const turns = r.turns ?? [r]
-  return turns.some((turn) => turn.vendor_tokens != null)
-    ? turns.reduce((sum, turn) => sum + (turn.vendor_tokens ?? 0), 0)
-    : null
+  let total: number | null = null
+  for (const turn of turns) {
+    if (turn.vendor_tokens != null) total = (total ?? 0) + turn.vendor_tokens
+  }
+  return total
 }
 
 const ORCH = new URL('../../../bin/orch', import.meta.url).pathname

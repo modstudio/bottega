@@ -512,8 +512,23 @@ export async function view(name: View, hours: number,
     const keep = shaped.filter((r) =>
       (!f.agent || r.agent === f.agent) && (!f.project || r.project === f.project))
 
+    const vendorTotals = new Map<string, number>()
+    for (const run of shaped) {
+      if (run.tokens == null) continue
+      vendorTotals.set(run.agent, (vendorTotals.get(run.agent) ?? 0) + run.tokens)
+    }
+    const vendors = [...vendorTotals]
+      .map(([agent, tokens]) => ({ agent, tokens }))
+      .sort((a, b) => b.tokens - a.tokens || a.agent.localeCompare(b.agent))
+
     return {
-      totals: st.totals, unscored: st.unscored, stale: st.stale,
+      totals: {
+        runs: st.totals.runs,
+        scored: st.totals.scored,
+        failed: st.totals.failed,
+        stale_n: st.totals.stale_n,
+      },
+      vendors, unscored: st.unscored, stale: st.stale,
       filters: f, facets, matched: keep.length,
       // Filtered on the same two axes, so the panel above the table cannot
       // contradict it. A live run carries only its `repo` - it has not been
