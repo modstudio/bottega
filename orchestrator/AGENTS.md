@@ -633,7 +633,10 @@ own mechanism, land it with `--unreviewed "tier 0: <reason>"`. Tier 1 runs one
 `correctness` lens. Tier 2 runs `correctness` plus the surface lens:
 `migration-safety` for `db.ts`, `craft` for a new module, or `teardown-safety`
 for `worktree.ts`. Tier 3 is tier 2 with a second model on at least one lens.
-One lens round per tier is the default.
+One lens round per tier is the default. Counting lens rounds on the branch, not
+fix rounds, tier 0 permits none, tier 1 one pass with no re-lens, tier 2 at most
+two rounds, and tier 3 at most three; after the third, the architect stops and
+asks the operator instead of dispatching a fourth.
 
 After a fix round, re-lens only at tier 3 or when the fix itself touched a
 tier-3 path. Otherwise the architect reads the fix and lands it. Real findings

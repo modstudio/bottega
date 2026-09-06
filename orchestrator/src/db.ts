@@ -309,6 +309,7 @@ export function applySchema(d: Database): void {
   addColumn(d, 'review', 'tier_risk', 'INTEGER')
   addColumn(d, 'review', 'tier_size', 'INTEGER')
   addColumn(d, 'review', 'tier_reasons', 'TEXT')
+  addColumn(d, 'review', 'tier_reason', 'TEXT')
   // WHICH MODEL actually ran. An agent is a harness; the model is what is being
   // judged, and both subscriptions carry more than one. Without this, changing
   // a CLI's configured model silently rewrites the meaning of every score
@@ -1106,7 +1107,8 @@ function migrate(d: Database) {
       tier INTEGER,
       tier_risk INTEGER,
       tier_size INTEGER,
-      tier_reasons TEXT
+      tier_reasons TEXT,
+      tier_reason TEXT
     );
     ${createIfNotExists(REVIEW_LENS_DDL)};
     ${createIfNotExists(REVIEW_FINDING_DDL)};

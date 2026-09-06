@@ -1995,10 +1995,11 @@ describe('review discipline', () => {
         .run(base, 'tier-review', id)
       const reviewId = recordReviews(runs.map((runId) => ({ runId, output: reviewReply(0) })))
       const row = db().query(
-        'SELECT tier, tier_risk, tier_size, tier_reasons FROM review WHERE id=?',
-      ).get(reviewId) as { tier: number; tier_risk: number; tier_size: number; tier_reasons: string }
+        'SELECT tier, tier_risk, tier_size, tier_reasons, tier_reason FROM review WHERE id=?',
+      ).get(reviewId) as { tier: number; tier_risk: number; tier_size: number; tier_reasons: string; tier_reason: string }
       expect(row).toMatchObject({ tier: 2, tier_risk: 2, tier_size: 0 })
       expect(JSON.parse(row.tier_reasons).join('\n')).toContain('unlisted product path')
+      expect(row.tier_reason).toContain('risk 2: unlisted product path')
 
       const result = Bun.spawnSync([
         process.execPath, new URL('cli.ts', import.meta.url).pathname,
@@ -2021,8 +2022,8 @@ describe('review discipline', () => {
       const reviewId = recordReviews([
         { runId: first, output: reviewReply(0) }, { runId: second, output: reviewReply(0) },
       ])
-      expect(db().query('SELECT tier, tier_risk, tier_size, tier_reasons FROM review WHERE id=?')
-        .get(reviewId)).toEqual({ tier: null, tier_risk: null, tier_size: null, tier_reasons: null })
+      expect(db().query('SELECT tier, tier_risk, tier_size, tier_reasons, tier_reason FROM review WHERE id=?')
+        .get(reviewId)).toEqual({ tier: null, tier_risk: null, tier_size: null, tier_reasons: null, tier_reason: null })
       expect(stderr.mock.calls.flat().join(' ')).toContain(`run ${first}=${'a'.repeat(40)}`)
       expect(stderr.mock.calls.flat().join(' ')).toContain(`run ${second}=${'b'.repeat(40)}`)
     } finally { stderr.mockRestore() }
@@ -2225,6 +2226,7 @@ describe('review discipline', () => {
     expect(c.rejection_categories).toEqual([{ category: 'not-a-defect', count: 3 }])
     expect(c.tiers.unclassified).toEqual({
       reviews: 4, lenses: 4, findings_accepted: 4, findings_rejected: 3,
+      rounds: { min: 1, median: 1, max: 1 },
     })
 
     make('current', 'accepted', MIN_REVIEW_TRIAGED - 1)
@@ -2244,6 +2246,22 @@ describe('review discipline', () => {
     const c = reviewCalibration('efficiency', 'codex', 'm')
     expect(c.precision).toBeNull()
     expect(calibrationLine(c)).toContain('no reliable precision yet')
+  })
+
+  test('per-tier calibration counts lens rounds per branch', () => {
+    for (const [branch, rounds] of [['one-round', 1], ['three-rounds', 3]] as const) {
+      for (let round = 0; round < rounds; round++) {
+        const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'rounds' })
+        db().query('UPDATE run SET branch=? WHERE id=?').run(branch, runId)
+        const reviewId = recordReview(runId, reviewReply(0))
+        db().query("UPDATE review SET tier=2, tier_risk=2, tier_size=0, tier_reason='risk 2: fixture' WHERE id=?")
+          .run(reviewId)
+        completeReview(reviewId)
+      }
+    }
+    const tiers = reviewCalibration('rounds', 'codex', 'm').tiers
+    expect(tiers['2'].rounds).toEqual({ min: 1, median: 2, max: 3 })
+    expect(tiers['0'].rounds).toEqual({ min: null, median: null, max: null })
   })
 
   test('triage records explicit severity agreement and leaves omission unassessed', () => {

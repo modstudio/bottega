@@ -8,6 +8,7 @@ import {
 import { CANON_SOURCE_SCHEMA, REVIEW_SCHEMA, type CanonSource, type ReviewReply } from './contract.ts'
 import { job } from './jobs.ts'
 import { classifyReviewTier, diffNumstat, type ReviewTier } from './review-tier.ts'
+import { median } from './route.ts'
 
 export const REVIEW_WINDOW = 50
 /**
@@ -194,10 +195,11 @@ export function recordReviews(
   const transaction = database.transaction(() => {
     const tier = tierForRuns(runs, database)
     const review = database.query(
-      `INSERT INTO review (recorded_at, tier, tier_risk, tier_size, tier_reasons)
-       VALUES (?,?,?,?,?) RETURNING id`,
+      `INSERT INTO review (recorded_at, tier, tier_risk, tier_size, tier_reasons, tier_reason)
+       VALUES (?,?,?,?,?,?) RETURNING id`,
     ).get(nowIso(), tier?.tier ?? null, tier?.risk ?? null, tier?.size ?? null,
-      tier ? JSON.stringify(tier.reasons) : null) as { id: number }
+      tier ? JSON.stringify(tier.reasons) : null,
+      tier ? tier.reasons[tier.risk >= tier.size ? 0 : 1] : null) as { id: number }
     const insertLens = database.query(
       `INSERT INTO review_lens
          (review_id, run_id, lens, agent, model, tree_inspected, reviewed_tree, standards_read,
@@ -377,6 +379,7 @@ export type ReviewCalibration = {
 
 export type TierCalibration = {
   reviews: number; lenses: number; findings_accepted: number; findings_rejected: number
+  rounds: { min: number | null; median: number | null; max: number | null }
 }
 
 export type GradeDistribution<T extends string> = {
@@ -439,7 +442,8 @@ function calibrationCell(
       ORDER BY r.completed_at DESC, r.id DESC LIMIT ?`,
   ).all(...(model === undefined ? [lens, agent, REVIEW_WINDOW] : [lens, agent, model, REVIEW_WINDOW])) as { id: number }[]
   const emptyTiers = () => Object.fromEntries(['0', '1', '2', '3', 'unclassified'].map((key) =>
-    [key, { reviews: 0, lenses: 0, findings_accepted: 0, findings_rejected: 0 }])) as ReviewCalibration['tiers']
+    [key, { reviews: 0, lenses: 0, findings_accepted: 0, findings_rejected: 0,
+      rounds: { min: null, median: null, max: null } }])) as ReviewCalibration['tiers']
   const emptyGrades = () => ({
     reproduced: gradeDistribution([], 'reproduced', REVIEW_REPRODUCED),
     coverage: gradeDistribution([], 'coverage', REVIEW_COVERAGE),
@@ -502,6 +506,30 @@ function calibrationCell(
   for (const [key, cell] of Object.entries(tiers)) {
     cell.reviews = tierReviews.get(key)?.size ?? 0
     cell.lenses = tierLenses.get(key)?.size ?? 0
+  }
+  const identityRows = database.query(
+    `SELECT r.id AS review_id, r.tier, rl.id AS lens_id, run.branch, run.launch_key
+       FROM review r JOIN review_lens rl ON rl.review_id=r.id
+       JOIN run ON run.id=rl.run_id
+      WHERE r.id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}
+      ORDER BY r.id, rl.id`,
+  ).all(...ids, lens, agent, ...(model === undefined ? [] : [model])) as
+    { review_id: number; tier: number | null; lens_id: number; branch: string | null; launch_key: string | null }[]
+  const firstIdentity = new Map<number, typeof identityRows[number]>()
+  for (const row of identityRows) if (!firstIdentity.has(row.review_id)) firstIdentity.set(row.review_id, row)
+  const roundCounts = new Map<string, Map<string, number>>()
+  for (const row of firstIdentity.values()) {
+    const tier = row.tier === null ? 'unclassified' : String(row.tier)
+    const identities = roundCounts.get(tier) ?? new Map<string, number>()
+    const identity = row.branch ?? row.launch_key ?? `review:${row.review_id}`
+    identities.set(identity, (identities.get(identity) ?? 0) + 1)
+    roundCounts.set(tier, identities)
+  }
+  for (const [key, cell] of Object.entries(tiers)) {
+    const values = [...(roundCounts.get(key)?.values() ?? [])]
+    if (values.length) cell.rounds = {
+      min: Math.min(...values), median: median(values), max: Math.max(...values),
+    }
   }
   return { lens, agent, model: model ?? null,
     precision: triaged >= MIN_REVIEW_TRIAGED ? hits / triaged : null,
