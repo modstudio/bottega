@@ -19,7 +19,7 @@ import { db, nowIso, DB_PATH, sessionId, resolveRootFromLastTurn, writableDb } f
 import {
   createWorktree, createWithTool, toolFor, changesIn, repoRootOf, resolveBase, worktreeGitDir,
   createCommandExists,
-  prepareWorktreeObjects, prepareSharedRefGuard, worktreeGitEnvironment, carryWorkingState,
+  prepareWorktreeObjects, prepareSharedRefGuard, carryWorkingState,
   targetGitEnvironment,
   workerSharedGitRoots,
   contentTree,
@@ -715,7 +715,7 @@ export function repoOf(cwd: string): string | null {
 function gitContext(cwd: string, ...args: string[]): string | null {
   try {
     const p = Bun.spawnSync(['git', '-C', cwd, ...args],
-      { env: { ...process.env, ...worktreeGitEnvironment(cwd) }, stdout: 'pipe', stderr: 'ignore' })
+      { env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'ignore' })
     if (p.exitCode !== 0) return null
     const value = new TextDecoder().decode(p.stdout).trim()
     return value ? value.slice(0, 200) : null
@@ -725,7 +725,7 @@ function gitContext(cwd: string, ...args: string[]): string | null {
 function checkoutRootAsAddressed(cwd: string): string | null {
   try {
     const p = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--show-prefix'], {
-      env: { ...process.env, ...worktreeGitEnvironment(cwd) }, stdout: 'pipe', stderr: 'ignore',
+      env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'ignore',
     })
     if (p.exitCode !== 0) return null
     const prefix = new TextDecoder().decode(p.stdout).trim()
@@ -744,7 +744,7 @@ type CheckoutAliases = {
 function gitTopLevel(cwd: string): string | null {
   try {
     const p = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--show-toplevel'], {
-      env: { ...process.env, ...worktreeGitEnvironment(cwd) }, stdout: 'pipe', stderr: 'ignore',
+      env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'ignore',
     })
     if (p.exitCode !== 0) return null
     return new TextDecoder().decode(p.stdout).trim() || null
@@ -838,7 +838,7 @@ export function snapshotRegisteredCheckouts(
         {
           // Status may otherwise take an optional lock to refresh index stat
           // data. Observation must not itself write to a watched checkout.
-          env: { ...process.env, ...worktreeGitEnvironment(project.path), GIT_OPTIONAL_LOCKS: '0' },
+          env: { ...targetGitEnvironment(project.path), GIT_OPTIONAL_LOCKS: '0' },
           stdout: 'pipe', stderr: 'ignore',
         },
       )

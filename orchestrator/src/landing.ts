@@ -5,6 +5,7 @@ import { formatGitLocks } from './git-locks.ts'
 import { projectAt, type Project } from './projects.ts'
 import {
   contentTree, prepareSharedRefGuard, projectLockState, repoRootOf, withProjectLock,
+  targetGitEnvironment,
   type SharedRefGuardEnvironment,
 } from './worktree.ts'
 
@@ -15,7 +16,7 @@ function git(
   cwd: string, args: string[], guard?: SharedRefGuardEnvironment,
 ): string {
   const p = Bun.spawnSync(['git', ...args], {
-    cwd, env: { ...process.env, ...guard }, stdout: 'pipe', stderr: 'pipe',
+    cwd, env: { ...targetGitEnvironment(cwd), ...guard }, stdout: 'pipe', stderr: 'pipe',
   })
   if (p.exitCode !== 0) {
     throw new Error(`git ${args.join(' ')} failed: ${p.stderr.toString().trim() || `exit ${p.exitCode}`}`)
@@ -25,7 +26,7 @@ function git(
 
 function gitOk(cwd: string, args: string[], guard?: SharedRefGuardEnvironment): boolean {
   return Bun.spawnSync(['git', ...args], {
-    cwd, env: { ...process.env, ...guard }, stdout: 'ignore', stderr: 'ignore',
+    cwd, env: { ...targetGitEnvironment(cwd), ...guard }, stdout: 'ignore', stderr: 'ignore',
   }).exitCode === 0
 }
 
@@ -375,13 +376,13 @@ function commitForTree(
 
 function patchId(repoRoot: string, from: string, to: string): string {
   const diff = Bun.spawnSync(['git', 'diff', `${from}..${to}`], {
-    cwd: repoRoot, env: process.env, stdout: 'pipe', stderr: 'pipe',
+    cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
   })
   if (diff.exitCode !== 0) {
     throw new Error(`git diff ${from}..${to} failed: ${diff.stderr.toString().trim()}`)
   }
   const id = Bun.spawnSync(['git', 'patch-id', '--stable'], {
-    cwd: repoRoot, env: process.env, stdin: diff.stdout, stdout: 'pipe', stderr: 'pipe',
+    cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdin: diff.stdout, stdout: 'pipe', stderr: 'pipe',
   })
   if (id.exitCode !== 0) {
     throw new Error(`git patch-id --stable failed: ${id.stderr.toString().trim()}`)
@@ -392,7 +393,7 @@ function patchId(repoRoot: string, from: string, to: string): string {
 function contentHash(repoRoot: string, from: string, to: string): string {
   const diff = Bun.spawnSync([
     'git', 'diff', '--no-color', '--no-ext-diff', '-U0', '--no-renames', `${from}..${to}`,
-  ], { cwd: repoRoot, env: process.env, stdout: 'pipe', stderr: 'pipe' })
+  ], { cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe' })
   if (diff.exitCode !== 0) {
     throw new Error(`git diff ${from}..${to} failed: ${diff.stderr.toString().trim()}`)
   }

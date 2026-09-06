@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { db, nowIso, writableDb } from './db.ts'
 import { projects, projectAt } from './projects.ts'
+import { targetGitEnvironment } from './worktree.ts'
 
 const PROJECTS = `${process.env.HOME}/.claude/projects`
 /**
@@ -216,7 +217,7 @@ function activityByDay(since: string) {
     const proc = Bun.spawnSync(
       ['git', '-C', path, 'log', '--all', `--since=${since}`,
        '--numstat', '--pretty=format:%x00%cI%x09%H%x09%s'],
-      { stdout: 'pipe', stderr: 'ignore' },
+      { env: targetGitEnvironment(path), stdout: 'pipe', stderr: 'ignore' },
     )
     let day: string | null = null
     for (const line of new TextDecoder().decode(proc.stdout).split('\n')) {

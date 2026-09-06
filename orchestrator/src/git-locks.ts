@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
 import { pidAlive } from './db.ts'
+import { targetGitEnvironment } from './worktree.ts'
 
 export type GitLock = {
   path: string
@@ -13,7 +14,9 @@ export type GitLock = {
 }
 
 function git(cwd: string, args: string[]): string | null {
-  const p = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' })
+  const p = Bun.spawnSync(['git', ...args], {
+    cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
+  })
   return p.exitCode === 0 ? p.stdout.toString().trim() : null
 }
 

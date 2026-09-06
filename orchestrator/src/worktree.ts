@@ -30,7 +30,8 @@ import { basename, delimiter, dirname, join, resolve } from 'node:path'
 import { db, pidAlive, ROOT } from './db.ts'
 import { createHasPlaceholder, projectAt, type WorktreeCreate, type WorktreeTool } from './projects.ts'
 import { runRecipe, teardownRecipe, dbNameFor, type Recipe } from './recipe.ts'
-import { mainCheckoutOf } from '../../shared/git.ts'
+import { mainCheckoutOf, scrubbedGitEnv } from '../../shared/git.ts'
+export { scrubbedGitEnv } from '../../shared/git.ts'
 
 export type Worktree = {
   /** Where the worker actually runs. */
@@ -106,14 +107,7 @@ export function worktreeGitEnvironment(cwd: string): WorktreeObjectEnvironment |
 
 /** Drop a worker's repository routing before deriving routing for the target checkout. */
 export function targetGitEnvironment(cwd: string): NodeJS.ProcessEnv {
-  const env = { ...process.env }
-  for (const variable of Object.keys(env)) {
-    if (variable === 'GIT_OBJECT_DIRECTORY' || variable === 'GIT_ALTERNATE_OBJECT_DIRECTORIES' ||
-        variable.startsWith('GIT_CONFIG_') || variable === 'ORCH_GUARDED_GIT_COMMON_DIR' ||
-        variable === 'ORCH_ALLOWED_GIT_REF') {
-      delete env[variable]
-    }
-  }
+  const env = scrubbedGitEnv()
   return { ...env, ...worktreeGitEnvironment(cwd) }
 }
 
@@ -238,7 +232,7 @@ function gitBytes(args: string[], cwd: string): Buffer {
  * `.git`; the working tree sits next to it.
  */
 export function repoRootOf(cwd: string): string | null {
-  return mainCheckoutOf(cwd, worktreeGitEnvironment(cwd))
+  return mainCheckoutOf(cwd, targetGitEnvironment(cwd))
 }
 
 /**

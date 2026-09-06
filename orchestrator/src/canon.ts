@@ -6,6 +6,7 @@ import { db, linkedWorktreeReadOnly, nowIso } from './db.ts'
 import { type Doc, docsForRun, docsMarkdown, listDocs } from './docs.ts'
 import { DEFAULT_PACK_BYTES, JOBS, job as getJob } from './jobs.ts'
 import { projectAt, projectByName } from './projects.ts'
+import { targetGitEnvironment } from './worktree.ts'
 
 export const BRIEF_BYTES = 64 * 1024
 const ROOT = new URL('../..', import.meta.url).pathname.replace(/\/$/, '')
@@ -94,7 +95,9 @@ function tracked(root: string): Set<string> | null {
   if (!existsSync(root)) return null
   const cached = trackedCache.get(root)
   if (cached) return cached
-  const p = Bun.spawnSync(['git', 'ls-files', '-z'], { cwd: root, stdout: 'pipe', stderr: 'pipe' })
+  const p = Bun.spawnSync(['git', 'ls-files', '-z'], {
+    cwd: root, env: targetGitEnvironment(root), stdout: 'pipe', stderr: 'pipe',
+  })
   if (p.exitCode !== 0) return null
   const result = new Set(p.stdout.toString().split('\0').filter(Boolean))
   trackedCache.set(root, result)

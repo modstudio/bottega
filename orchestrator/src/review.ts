@@ -175,9 +175,9 @@ function tierForRuns(runs: RunRow[], database: Database): ReviewTier | null {
 
 const pinRef = (runId: number) => `refs/orch/reviewed/${runId}`
 
-function git(repo: string, args: string[], hermetic = false): { ok: boolean; out: string; err: string } {
+function git(repo: string, args: string[], _hermetic = false): { ok: boolean; out: string; err: string } {
   const p = Bun.spawnSync(['git', ...args], {
-    cwd: repo, env: hermetic ? targetGitEnvironment(repo) : process.env, stdout: 'pipe', stderr: 'pipe',
+    cwd: repo, env: targetGitEnvironment(repo), stdout: 'pipe', stderr: 'pipe',
   })
   return {
     ok: p.exitCode === 0,

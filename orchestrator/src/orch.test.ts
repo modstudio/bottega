@@ -20,6 +20,7 @@ import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, exist
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
+import * as ts from 'typescript'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
@@ -40,22 +41,6 @@ const compoundCreate = (script: string): WorktreeCreate =>
 
 const gitEnvironmentVariables = Object.keys(process.env).filter((variable) =>
   variable.startsWith('GIT_'))
-const orchestratorGitEnvironmentVariables = [
-  'ORCH_GUARDED_GIT_COMMON_DIR',
-  'ORCH_ALLOWED_GIT_REF',
-] as const
-
-// A worker routes git objects and ref hooks into its own linked-worktree metadata.
-// None of that routing belongs to the scratch repositories built by this test process.
-const hermeticGitEnv = (extra: Record<string, string> = {}) => ({
-  ...Object.fromEntries(Object.entries(process.env).filter(([variable]) =>
-    !variable.startsWith('GIT_') &&
-    !orchestratorGitEnvironmentVariables.includes(
-      variable as typeof orchestratorGitEnvironmentVariables[number],
-    ))),
-  ...extra,
-})
-
 async function runWithDelayedStdoutReader(
   argv: string[], env: Record<string, string | undefined>,
 ): Promise<{ exitCode: number; stdout: Buffer; stderr: string }> {
@@ -1254,6 +1239,20 @@ const hermeticGitCommand =
 const dir = mkdtempSync(join(tmpdir(), 'orch-test-'))
 process.env.ORCH_DB = join(dir, 'test.db')
 process.env.ORCH_RUNS = join(dir, 'runs')
+const hermeticHome = join(dir, 'home')
+mkdirSync(hermeticHome)
+const { scrubbedGitEnv, targetGitEnvironment } = await import('./worktree.ts')
+const { mainCheckoutOf } = await import('../../shared/git.ts')
+
+// A worker routes git objects and ref hooks into its own linked-worktree metadata.
+// None of that routing belongs to the scratch repositories built by this test process.
+const hermeticGitEnv = (extra: Record<string, string> = {}) => ({
+  ...scrubbedGitEnv(),
+  HOME: hermeticHome,
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_CONFIG_SYSTEM: '/dev/null',
+  ...extra,
+})
 const originalTestPath = process.env.PATH
 const cleanDockerBin = join(dir, 'clean-docker-bin')
 mkdirSync(cleanDockerBin)
@@ -1802,6 +1801,127 @@ afterAll(() => {
   if (originalTestPath === undefined) delete process.env.PATH
   else process.env.PATH = originalTestPath
   rmSync(dir, { recursive: true, force: true })
+})
+
+describe('production git environments', () => {
+  test('the shared scrub removes worker git routing and preserves unrelated variables', () => {
+    const contaminated: NodeJS.ProcessEnv = {
+      UNRELATED: 'preserved',
+      GIT_DIR: '/worker/git-dir',
+      GIT_WORK_TREE: '/worker/tree',
+      GIT_OBJECT_DIRECTORY: '/worker/objects',
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: '/worker/alternates',
+      GIT_CONFIG_COUNT: '2',
+      GIT_CONFIG_KEY_0: 'core.hooksPath',
+      GIT_CONFIG_VALUE_0: '/worker/hooks',
+      GIT_CONFIG_KEY_1: 'safe.directory',
+      GIT_CONFIG_VALUE_1: '*',
+      ORCH_GUARDED_GIT_COMMON_DIR: '/worker/common',
+      ORCH_ALLOWED_GIT_REF: 'refs/heads/worker',
+    }
+    const scrubbed = scrubbedGitEnv(contaminated)
+    expect(scrubbed.UNRELATED).toBe('preserved')
+    for (const variable of Object.keys(contaminated).filter((key) => key !== 'UNRELATED')) {
+      expect(scrubbed[variable]).toBeUndefined()
+    }
+  })
+
+  test('a guarded linked target receives its own object routing after inherited routing is scrubbed', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-target-git-env-'))
+    const linked = join(repo, 'linked')
+    const previous = Object.fromEntries([
+      'GIT_DIR', 'GIT_WORK_TREE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+      'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0',
+      'ORCH_GUARDED_GIT_COMMON_DIR', 'ORCH_ALLOWED_GIT_REF',
+    ].map((key) => [key, process.env[key]]))
+    const fixtureGit = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+    }
+    try {
+      fixtureGit('init', '-b', 'main')
+      fixtureGit('config', 'user.email', 'orch-test@example.invalid')
+      fixtureGit('config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'tracked'), 'fixture\n')
+      fixtureGit('add', 'tracked')
+      fixtureGit('commit', '-m', 'fixture')
+      fixtureGit('worktree', 'add', '-b', 'guarded-target', linked)
+      const pointer = readFileSync(join(linked, '.git'), 'utf8').trim().slice('gitdir: '.length)
+      const linkedGitDir = realpathSync(resolve(linked, pointer))
+      mkdirSync(join(linkedGitDir, 'objects'))
+      Object.assign(process.env, {
+        GIT_DIR: '/worker/git-dir', GIT_WORK_TREE: '/worker/tree',
+        GIT_OBJECT_DIRECTORY: '/worker/objects', GIT_ALTERNATE_OBJECT_DIRECTORIES: '/worker/alternates',
+        GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.hooksPath', GIT_CONFIG_VALUE_0: '/worker/hooks',
+        ORCH_GUARDED_GIT_COMMON_DIR: '/worker/common', ORCH_ALLOWED_GIT_REF: 'refs/heads/worker',
+      })
+      const target = targetGitEnvironment(linked)
+      expect(target.GIT_OBJECT_DIRECTORY).toBe(join(linkedGitDir, 'objects'))
+      expect(target.GIT_ALTERNATE_OBJECT_DIRECTORIES).toBe(realpathSync(join(repo, '.git', 'objects')))
+      expect(target.GIT_DIR).toBeUndefined()
+      expect(target.GIT_CONFIG_COUNT).toBeUndefined()
+      expect(target.ORCH_GUARDED_GIT_COMMON_DIR).toBeUndefined()
+      expect(target.ORCH_ALLOWED_GIT_REF).toBeUndefined()
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('main checkout resolution does not merge inherited object routing into a supplied environment', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-main-checkout-env-'))
+    const previous = process.env.GIT_OBJECT_DIRECTORY
+    try {
+      const initialized = Bun.spawnSync(['git', 'init', '-b', 'main'], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (initialized.exitCode !== 0) throw new Error(initialized.stderr.toString())
+      process.env.GIT_OBJECT_DIRECTORY = '/nonexistent/worker/objects'
+      expect(mainCheckoutOf(repo, hermeticGitEnv())).toBe(realpathSync(repo))
+    } finally {
+      if (previous === undefined) delete process.env.GIT_OBJECT_DIRECTORY
+      else process.env.GIT_OBJECT_DIRECTORY = previous
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('every production git spawn supplies an environment without raw process.env', () => {
+    const sourceDir = dirname(new URL(import.meta.url).pathname)
+    const violations: string[] = []
+    for (const name of readdirSync(sourceDir).filter((file) => file.endsWith('.ts') && !file.endsWith('.test.ts'))) {
+      const path = join(sourceDir, name)
+      const source = readFileSync(path, 'utf8')
+      const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+      const visit = (node: ts.Node): void => {
+        if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
+            ts.isIdentifier(node.expression.expression) && node.expression.expression.text === 'Bun' &&
+            (node.expression.name.text === 'spawn' || node.expression.name.text === 'spawnSync') &&
+            ts.isArrayLiteralExpression(node.arguments[0]!) &&
+            ts.isStringLiteral(node.arguments[0]!.elements[0]!) &&
+            node.arguments[0]!.elements[0]!.text === 'git') {
+          const options = node.arguments[1]
+          const env = options && ts.isObjectLiteralExpression(options)
+            ? options.properties.find((property) =>
+                (ts.isPropertyAssignment(property) || ts.isShorthandPropertyAssignment(property)) &&
+                property.name.getText(file) === 'env')
+            : undefined
+          const raw = env && ts.isPropertyAssignment(env) && env.initializer.getText(file).includes('process.env')
+          if (!env || raw) {
+            const line = file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1
+            violations.push(`${name}:${line}`)
+          }
+        }
+        ts.forEachChild(node, visit)
+      }
+      visit(file)
+    }
+    expect(violations).toEqual([])
+  })
 })
 
 describe('read-only run task attribution', () => {
@@ -12371,7 +12491,7 @@ echo 'Usage: scripts/worktree create [seed]'
       `})\n`)
     const holder = Bun.spawn(
       [process.execPath, cleanup, repo, tree.path, tree.branch, ready],
-      { env: { ...process.env, ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe' },
+      { env: { ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe' },
     )
     while (!existsSync(ready)) await Bun.sleep(10)
     let failure: Error | null = null
@@ -12540,7 +12660,7 @@ echo 'Usage: scripts/worktree create [seed]'
         branch: 'orch/{id}',
         create: compoundCreate(
           `${hermeticGitCommand} worktree add -b {branch} "${path}" HEAD >/dev/null && ` +
-          `printf broken > "$(git -C "${path}" rev-parse --git-path index)" && echo "${path}"`),
+          `printf broken > "$(${hermeticGitCommand} -C "${path}" rev-parse --git-path index)" && echo "${path}"`),
       }, repo, 915)).toThrow(/worktree verification failed: could not compare[\s\S]*index/)
     } finally {
       rmSync(repo, { recursive: true, force: true })
@@ -18995,8 +19115,10 @@ describe('scoped operator docs', () => {
       writeFileSync(join(repo, 'scripts', 'tracked.ts'), '')
       writeFileSync(join(repo, 'scripts', 'present.ts'), '')
       writeFileSync(join(repo, 'package.json'), JSON.stringify({ scripts: { check: 'true' } }))
-      Bun.spawnSync(['git', 'init'], { cwd: repo })
-      Bun.spawnSync(['git', 'add', 'scripts/tracked.ts', 'package.json'], { cwd: repo })
+      Bun.spawnSync(['git', 'init'], { cwd: repo, env: hermeticGitEnv() })
+      Bun.spawnSync(['git', 'add', 'scripts/tracked.ts', 'package.json'], {
+        cwd: repo, env: hermeticGitEnv(),
+      })
       const findings = checkDoc([
         '`scripts/tracked.ts` `scripts/present.ts` `scripts/<x>.ts` `dist/generated.js`',
         '`orch doc` `orch nosuch` `orch do understand` `orch do fake-job`',

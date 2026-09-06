@@ -10,9 +10,21 @@ const fixtureRoot = mkdtempSync(join(tmpdir(), 'orch-linked-database-'))
 const main = join(fixtureRoot, 'main')
 const linked = join(fixtureRoot, 'linked')
 const liveStore = join(main, 'orchestrator', 'orch.db')
+const hermeticHome = join(fixtureRoot, 'home')
+mkdirSync(hermeticHome)
+const { scrubbedGitEnv } = await import('./worktree.ts')
+
+const hermeticGitEnv = () => ({
+  ...scrubbedGitEnv(),
+  HOME: hermeticHome,
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_CONFIG_SYSTEM: '/dev/null',
+})
 
 function git(cwd: string, ...args: string[]): void {
-  const result = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' })
+  const result = Bun.spawnSync(['git', ...args], {
+    cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+  })
   if (result.exitCode !== 0) throw new Error(result.stderr.toString())
 }
 

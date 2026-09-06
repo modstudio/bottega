@@ -5,7 +5,7 @@ import { db, nowIso, pidAlive, UNSCORED_WHERE, writableDb, type MonitorSeverity 
 import { fileIssue } from './mcp.ts'
 import { gitLocks } from './git-locks.ts'
 import { projects } from './projects.ts'
-import { projectLockState } from './worktree.ts'
+import { projectLockState, targetGitEnvironment } from './worktree.ts'
 import { allInjectChecks, storedPackDrift } from './canon.ts'
 
 const HUB = new URL('../../bin/hub', import.meta.url).pathname
@@ -39,7 +39,9 @@ const age = (since: string | null, clock: number) => {
 }
 
 function git(cwd: string, args: string[]): string | null {
-  const p = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' })
+  const p = Bun.spawnSync(['git', ...args], {
+    cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
+  })
   return p.exitCode === 0 ? p.stdout.toString().trim() : null
 }
 
