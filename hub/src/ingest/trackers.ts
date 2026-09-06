@@ -55,8 +55,6 @@ export function trackerRegistrations(
   return registrations
 }
 
-const TRACKERS = trackerRegistrations(projects())
-
 export type TrackerResult = {
   project: Project
   tasks: number
@@ -67,7 +65,9 @@ export type TrackerResult = {
   error?: string
 }
 
-export const trackerProjects = () => TRACKERS.map((tracker) => tracker.project)
+export const trackerProjects = () => projects()
+  .filter((project) => project.settings.tracker)
+  .map((project) => project.name)
 
 type ExistingTask = {
   project: string
@@ -117,7 +117,10 @@ export async function ingestTrackers(
 ): Promise<TrackerResult[]> {
   const d = db()
   const at = nowIso()
-  const trackers = only ? TRACKERS.filter((tracker) => only.has(tracker.project)) : TRACKERS
+  const registrations = trackerRegistrations(projects())
+  const trackers = only
+    ? registrations.filter((tracker) => only.has(tracker.project))
+    : registrations
 
   // Only keys whose category was already OBSERVED count as having a previous
   // state. A git-seeded row knows a key and nothing else, so treating its null

@@ -8,6 +8,12 @@ export function compactTokens(value: number | null | undefined) {
   return String(Math.round(value))
 }
 
+export function vendorFigures(vendors: { agent: string; tokens: number }[]) {
+  return vendors.length
+    ? vendors.map((vendor) => `${vendor.agent} ${compactTokens(vendor.tokens)}`).join(' · ')
+    : '-'
+}
+
 export function compactBytes(value: number) {
   if (value < 1024) return `${value} B`
   if (value < 1024 * 1024) return `${compactNumber.format(value / 1024)} KB`

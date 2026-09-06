@@ -11,9 +11,10 @@ import {
 } from './query.ts'
 import { engagedMs, human } from './interval.ts'
 import { chainVendorTokens, executionSpans, readRuns } from './ingest/runs.ts'
-import { attribute, keyFromBranch, keyFromPromptFile } from './attribute.ts'
+import { attributeRun } from './attribute.ts'
 import { promptLens } from './excerpt.ts'
-import { collectFast, collectSlow, watch, hoursAgo, leaseHolder, withLease } from './collect.ts'
+import { collectFast, collectSlow, watch, leaseHolder, withLease } from './collect.ts'
+import { hoursAgo } from './time.ts'
 import { state as orchState } from './orch.ts'
 import { getReport, secretStatus } from './settings.ts'
 import { gather, lastSends, summarise, renderHtml, renderText, send as sendMail, recordSend } from './report.ts'
@@ -216,7 +217,6 @@ const shapeTask = (r: ReturnType<typeof tasksInWindow>[number]) => ({
   engaged: human(r.engagedMs),
   engagedMs: r.engagedMs,
   claudeTokens: r.claudeTokens,
-  vendorTokens: r.vendors.reduce((s, v) => s + v.tokens, 0),
   vendors: r.vendors,
   activeAgents: r.activeAgents,
   workingNow: r.workingNow,
@@ -478,12 +478,7 @@ export async function view(name: View, hours: number,
     // raw row would be filtering on r.repo alone - and would then disagree
     // with the project this very table prints in the row beside it.
     const shaped = raw.map((r) => {
-      const a = attribute({ cwd: r.cwd, prompts: [r.prompt_head] })
-      // Same order as the ingest, so the runs list and the task tables cannot
-      // disagree about which ticket a run belonged to. Cached by path, so the
-      // two-second redraw does not re-read a single file.
-      if (!a.key) a.key = keyFromBranch(r.branch, a.project)
-      if (!a.key) a.key = keyFromPromptFile(r.prompt_path, a.project)
+      const a = attributeRun(r)
       return {
         id: r.id, agent: r.agent, job: r.job,
         task: a.key, project: a.project ?? r.repo,

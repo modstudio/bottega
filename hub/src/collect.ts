@@ -4,8 +4,7 @@ import { ingestTranscripts } from './ingest/transcripts.ts'
 import { ingestGit } from './ingest/git.ts'
 import { ingestTrackers, trackerProjects, type TrackerResult } from './ingest/trackers.ts'
 import { rollUpDays } from './query.ts'
-
-export const hoursAgo = (n: number) => new Date(Date.now() - n * 3600_000).toISOString()
+import { hoursAgo } from './time.ts'
 
 /**
  * Two cadences, because the legs cost very different amounts.

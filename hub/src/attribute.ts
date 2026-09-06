@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { projects, projectRoot, type Project } from './projects.ts'
+import type { OrchRun } from './ingest/runs.ts'
 
 /** Every ticket key this estate issues, as one alternation. */
 const KEYS = [...new Set(projects().flatMap((project) => project.settings.keyPrefixes ?? []))]
@@ -226,6 +227,36 @@ export function keyFromPromptFile(
   } catch { /* the file may have been cleaned up; that is not an error */ }
   promptFileKey.set(path, key)
   return key
+}
+
+/**
+ * Decide the task for one delegated run, with orch's explicit launch key first.
+ * Historical rows without one follow the existing direct-evidence cascade.
+ * taskRecord reads this decision downstream through interval.task_key.
+ */
+export function attributeRun(run: OrchRun): Attribution {
+  const launchKey = typeof run.launch_key === 'string' && run.launch_key.trim()
+    ? run.launch_key.trim().toUpperCase()
+    : null
+  if (launchKey) {
+    const project = projectOf(run.cwd)
+    return {
+      project: projectOfKey(launchKey) ?? project,
+      key: launchKey,
+      via: 'launch_key',
+    }
+  }
+
+  const result = attribute({ cwd: run.cwd, prompts: [run.prompt_head] })
+  if (!result.key) {
+    const branch = keyFromBranch(run.branch, result.project)
+    if (branch) return { ...result, key: branch, via: 'branch' }
+  }
+  if (!result.key) {
+    const promptFile = keyFromPromptFile(run.prompt_path, result.project)
+    if (promptFile) return { ...result, key: promptFile, via: 'prompt-file' }
+  }
+  return result
 }
 
 /**

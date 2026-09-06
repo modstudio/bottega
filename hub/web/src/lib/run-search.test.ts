@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { vendorFigures } from './format'
 import { matchesRunSearch, runSearchText, type SearchableLiveRun, type SearchableRun } from './run-search'
 import { PROJECT_FALLBACK } from './project'
 
@@ -19,6 +20,13 @@ const completed: SearchableRun = {
   probe: false,
   lens: 'craft',
 }
+
+test('vendor figures remain separate currencies', () => {
+  expect(vendorFigures([
+    { agent: 'grok', tokens: 1_200_000 },
+    { agent: 'codex', tokens: 340_000 },
+  ])).toBe('grok 1.2M · codex 340K')
+})
 
 const live: SearchableLiveRun = {
   id: 43,

@@ -11,7 +11,7 @@ import {
 } from '@/components/table'
 import { setWorkCounts, useWindowState } from '@/lib/window'
 import { trpc, type BoardResponse, type FlightResponse } from '@/trpc/client'
-import { compactTokens, duration, relativeTime } from '@/lib/format'
+import { compactTokens, duration, relativeTime, vendorFigures } from '@/lib/format'
 
 type WorkName = 'flight' | 'done'
 type TaskData = FlightResponse['data']
@@ -24,6 +24,7 @@ const number = new Intl.NumberFormat('en-US')
 const compact = compactTokens
 const formatMs = duration
 const ago = relativeTime
+const vendors = (row: TaskRow) => vendorFigures(row.vendors)
 
 function Status({ row }: { row: Pick<TaskRow, 'key' | 'status' | 'statusCategory'> }) {
   if (!row.statusCategory) {
@@ -69,7 +70,7 @@ const columns = [
   { id: 'updated', label: 'Updated', numeric: true, get: (row: TaskRow) => row.lastAt },
   { id: 'engaged', label: 'Engaged', numeric: true, get: (row: TaskRow) => row.engagedMs },
   { id: 'claude', label: 'Claude', numeric: true, get: (row: TaskRow) => row.claudeTokens },
-  { id: 'vendor', label: 'Vendor', numeric: true, get: (row: TaskRow) => row.vendorTokens },
+  { id: 'vendor', label: 'Vendor', numeric: true, get: (row: TaskRow) => row.vendors[0]?.tokens ?? 0 },
   { id: 'runs', label: 'Runs', numeric: true, get: (row: TaskRow) => row.runs.length },
 ] as const
 
@@ -112,7 +113,7 @@ function TaskTable({ rows, from }: { rows: TaskRow[]; from: WorkName }) {
             : column.id === 'updated' ? <span className={row.workingNow ? 'text-live' : 'text-muted-foreground'}>{row.workingNow ? <><LiveDot /> now</> : ago(row.lastAt)}</span>
               : column.id === 'engaged' ? <strong>{row.engaged}</strong>
                 : column.id === 'claude' ? compact(row.claudeTokens)
-                  : row.vendorTokens ? compact(row.vendorTokens) : '-',
+                  : vendors(row),
   }))
   return <Collection
     title="Tasks" count={sorted.length} columns={collectionColumns} rows={sorted}
@@ -136,7 +137,7 @@ function LooseTable({ rows }: { rows: TaskRow[] }) {
   return <div className="max-w-3xl overflow-x-auto border border-border"><Table className="text-[12px]"><TableHeader><TableRow>
     <TableHead>Project</TableHead><TableHead className="text-right">Updated</TableHead><TableHead className="text-right">Engaged</TableHead><TableHead className="text-right">Claude</TableHead><TableHead className="text-right">Vendor</TableHead>
   </TableRow></TableHeader><TableBody>{rows.map((row) => <TableRow key={row.project}>
-    <TableCell><ProjectMark name={row.project} /></TableCell><TableCell className="text-right text-muted-foreground">{row.workingNow ? 'now' : ago(row.lastAt)}</TableCell><TableCell className="text-right font-semibold">{row.engaged}</TableCell><TableCell className="text-right">{compact(row.claudeTokens)}</TableCell><TableCell className="text-right text-muted-foreground">{row.vendorTokens ? compact(row.vendorTokens) : '-'}</TableCell>
+    <TableCell><ProjectMark name={row.project} /></TableCell><TableCell className="text-right text-muted-foreground">{row.workingNow ? 'now' : ago(row.lastAt)}</TableCell><TableCell className="text-right font-semibold">{row.engaged}</TableCell><TableCell className="text-right">{compact(row.claudeTokens)}</TableCell><TableCell className="text-right text-muted-foreground">{vendors(row)}</TableCell>
   </TableRow>)}</TableBody></Table></div>
 }
 

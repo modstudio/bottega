@@ -396,19 +396,38 @@ describe('run ingest', () => {
     ])
   })
 
-  test('launch_key beats a contradicting prompt', async () => {
-    await ingestRunFixtures(runFixture({
+  test('launch_key beats a contradicting prompt in ingest and the runs view', async () => {
+    const run = runFixture({
       id: 9801,
-      cwd: '/fixtures/repos/alpha',
-      prompt_head: 'Implement ALP-2000',
-      launch_key: 'ALP-7777',
+      cwd: '/fixtures/repos/workshop',
+      prompt_head: 'Implement LOC-2000',
+      launch_key: 'DEV-3000',
       latency_ms: 1000,
       status: 'ok',
-    }))
+    })
+    await ingestRunFixtures(run)
     const interval = db().query(
       `SELECT task_key, via FROM interval WHERE ref = 'orch:9801'`,
     ).get() as { task_key: string; via: string }
-    expect(interval).toEqual({ task_key: 'ALP-7777', via: 'launch_key' })
+    expect(interval).toEqual({ task_key: 'DEV-3000', via: 'launch_key' })
+
+    const state = {
+      live: [], stale: 0, matrix: [], guide: [], health: [],
+      totals: { runs: 1, failed: 0, stale_n: 0, toks: 0, scored: 1 },
+      unscored: 0, spawns: [], agents: [],
+    }
+    const spawn = spyOn(Bun, 'spawn').mockImplementation(((argv: string[]) => ({
+      stdout: new Blob([argv.includes('runs') ? JSON.stringify(run) : JSON.stringify(state)]),
+      stderr: new Blob(['']),
+      exited: Promise.resolve(0),
+      kill() {},
+    })) as unknown as typeof Bun.spawn)
+    try {
+      const result = await view('runs', 24) as { rows: { id: number; task: string | null }[] }
+      expect(result.rows).toEqual([expect.objectContaining({ id: 9801, task: 'DEV-3000' })])
+    } finally {
+      spawn.mockRestore()
+    }
   })
 
   test('runsSince keeps the two-hour window when collection is current', () => {

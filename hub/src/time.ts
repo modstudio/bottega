@@ -1,3 +1,5 @@
+export const hoursAgo = (n: number) => new Date(Date.now() - n * 3600_000).toISOString()
+
 export function easternTime(value: string | number | Date, includeDay = false): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',

@@ -23,6 +23,7 @@ import { createTrackerTask } from '../../shared/trackers.ts'
 import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
 import { listOpenRulings, rulingsPayload } from './rulings.ts'
 import { startDashboardCapability } from './orch.ts'
+import { hoursAgo } from './time.ts'
 
 const argv = process.argv.slice(2)
 const cmd = argv[0]
@@ -74,9 +75,6 @@ Engaged time is the UNION of every agent's working spans: a session waiting on a
 delegated agent is not idle, and two agents running at once did not take twice
 as long.
 `
-
-/** ISO for N hours ago. */
-const hoursAgo = (n: number) => new Date(Date.now() - n * 3600_000).toISOString()
 
 async function collect() {
   const since = flag('since') ?? hoursAgo(24 * 30)
