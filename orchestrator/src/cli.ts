@@ -16,7 +16,7 @@ import { candidates, pick, scoreboard, MIN_SAMPLE, promptSizeBucketLabel } from 
 import { guide } from './guide.ts'
 import { repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses,
          packedResumePrompt, type DetachSpec } from './run.ts'
-import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync } from 'node:fs'
+import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync, unlinkSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
@@ -153,7 +153,18 @@ function thinOutputWarning(row: {
   if (row.status !== 'ok' || row.probe || row.latency_ms === null ||
       row.latency_ms <= THIN_OUTPUT_LATENCY_MS || job(row.job).needs.writesRepo ||
       !row.output_path || !existsSync(row.output_path)) return null
-  const bytes = statSync(row.output_path).size
+  // Test-only race seam: production never sets this. It deterministically
+  // exercises expiry between the existence check above and the stat below.
+  if (process.env.ORCH_TEST_THIN_OUTPUT_UNLINK_BEFORE_STAT === row.output_path) {
+    unlinkSync(row.output_path)
+  }
+  let bytes: number
+  try {
+    bytes = statSync(row.output_path).size
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
+  }
   if (bytes >= THIN_OUTPUT_BYTES) return null
   return `thin: ${bytes} B after ${dur(row.latency_ms).replaceAll(' ', '')} — ` +
     'check whether the run stopped at a blocker'
@@ -4841,8 +4852,6 @@ switch (cmd) {
     let rows = db().query(
       `SELECT r.id, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
               current_run.status, current_run.failure_kind, current_run.error,
-              current_run.output_path AS current_output_path,
-              current_run.probe AS current_probe,
               s.delivery, s.quality,
               COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason
               ${json ? ', r.cwd, r.session_id, r.vendor_cost_usd, r.probe, r.exit_code, r.input_tree,'
@@ -4869,10 +4878,11 @@ switch (cmd) {
         if (!owed) return []
       }
       const current = json ? {} : db().query(
-        'SELECT status, latency_ms, vendor_tokens, route_reason FROM run WHERE id=?',
+        `SELECT status, latency_ms, vendor_tokens, route_reason, probe, output_path
+           FROM run WHERE id=?`,
       ).get(final.id) as {
         status: string; latency_ms: number | null; vendor_tokens: number | null
-        route_reason: string | null
+        route_reason: string | null; probe: number; output_path: string | null
       }
       const turns = json ? db().query(
         `SELECT id, started_at, latency_ms, vendor_tokens, vendor_cost_usd, status, turn, input_tree
@@ -4962,7 +4972,7 @@ switch (cmd) {
       const warning = thinOutputWarning({
         job: String(r.job), status: String(r.status),
         latency_ms: r.latency_ms as number | null,
-        probe: Number(r.current_probe), output_path: r.current_output_path as string | null,
+        probe: Number(r.probe), output_path: r.output_path as string | null,
       })
       if (warning) console.log(`      ${warning}`)
     }

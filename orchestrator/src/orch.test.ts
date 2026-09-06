@@ -4854,11 +4854,20 @@ describe('vendor failure failover is one bounded unit of work', () => {
         .run(111, 0.11, first.id)
       db().query('UPDATE run SET vendor_tokens=?, vendor_cost_usd=? WHERE id=?')
         .run(222, 0.22, successor.id)
+      const rootOutput = join(dir, `failover-root-${first.id}.txt`)
+      const successorOutput = join(dir, `failover-successor-${successor.id}.txt`)
+      writeFileSync(rootOutput, 'x'.repeat(600))
+      writeFileSync(successorOutput, 'x'.repeat(2048))
+      db().query('UPDATE run SET latency_ms=?, probe=?, output_path=? WHERE id=?')
+        .run(10_000, 0, rootOutput, first.id)
+      db().query('UPDATE run SET latency_ms=?, probe=?, output_path=? WHERE id=?')
+        .run(400_000, 1, successorOutput, successor.id)
 
       const human = orch('runs')
       expect(human.code).toBe(0)
       expect(human.out.match(new RegExp(`\\b${first.id}\\s+codex→grok`, 'g'))).toHaveLength(1)
       expect(human.out).not.toMatch(new RegExp(`\\b${successor.id}\\s+`))
+      expect(human.out).not.toContain('thin:')
 
       const json = orch('runs', '--json')
       expect(json.code).toBe(0)
@@ -7987,9 +7996,34 @@ describe('detached run collection', () => {
     expect(orch('result', String(fast)).err).not.toContain('thin:')
     expect(orch('result', String(probe)).err).not.toContain('thin:')
 
+    const json = orch('runs', '--json', '--id', String(thin))
+    expect(json.code).toBe(0)
+    expect(Object.keys(JSON.parse(json.out)).sort()).toEqual([
+      'agent', 'answer_agent', 'branch', 'branch_kept', 'branch_kept_tip', 'cwd',
+      'delivery', 'error', 'exit_code', 'failover_chain', 'failure_kind', 'id',
+      'input_tree', 'job', 'latency_ms', 'launch_key', 'probe', 'prompt_head',
+      'prompt_path', 'quality', 'questions', 'repo', 'retry_of', 'route_reason',
+      'session_id', 'started_at', 'status', 'turns', 'vendor_cost_usd', 'vendor_tokens',
+    ].sort())
+
     const listed = orch('runs')
     expect(listed.out).toContain(warning)
     expect(listed.out.match(/thin:/g)).toHaveLength(1)
+  })
+
+  test('a thin output expiring between exists and stat suppresses only the warning', () => {
+    const id = addRun({ agent: 'codex', job: 'diagnose', latency: 400_000 })
+    const output = join(dir, `expiring-thin-output-${id}.txt`)
+    writeFileSync(output, 'x'.repeat(600))
+    db().query('UPDATE run SET output_path=? WHERE id=?').run(output, id)
+
+    const result = orchInput(
+      ['result', String(id)], undefined,
+      { ORCH_TEST_THIN_OUTPUT_UNLINK_BEFORE_STAT: output },
+    )
+    expect(result.code).toBe(0)
+    expect(result.err).not.toContain('thin:')
+    expect(existsSync(output)).toBe(false)
   })
 
   test('runs shows asking in the status column', () => {
