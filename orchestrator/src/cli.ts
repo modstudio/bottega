@@ -304,6 +304,18 @@ type BranchOwnerRow = {
   id: number; repo: string | null; cwd: string | null; worktree: string | null
 }
 
+type WorktreeSharerRow = { id: number; status: string; scored: number }
+
+class SharedWorktreeEvidenceError extends Error {
+  constructor(readonly worktree: string, readonly sharers: WorktreeSharerRow[]) {
+    super(
+      `worktree ${worktree} is still evidence owned by other runs:\n` +
+      sharers.map((row) =>
+        `  run ${row.id} is ${row.status}${row.scored ? '' : ' and unscored'}`).join('\n'),
+    )
+  }
+}
+
 function keptBranchLine(branch: string, count: number, id: number): string {
   return `kept branch ${branch}: ${count} commit(s) reachable only from this branch — ` +
     `merge it, or orch discard ${id} --force to delete it`
@@ -385,6 +397,30 @@ function nonTerminalBranchOwner(
   }) ?? null
 }
 
+/** A shared tree remains evidence while any other owner is active or unjudged. */
+function evidenceOwningWorktreeSharers(
+  row: { id: number; worktree: string },
+): WorktreeSharerRow[] {
+  return db().query(
+    `SELECT r.id, r.status, s.delivery IS NOT NULL AS scored
+       FROM run r LEFT JOIN score s ON s.run_id = r.id
+      WHERE r.worktree = ? AND r.id <> ?
+        AND (r.status NOT IN ('ok','failed','stale') OR s.delivery IS NULL)
+      ORDER BY r.id`,
+  ).all(row.worktree, row.id) as WorktreeSharerRow[]
+}
+
+function sharedBranchMutation(
+  branch: string, before: string, after: string | null,
+): string | null {
+  if (after === before) return null
+  return after === null
+    ? `project remove tool deleted shared branch ${branch}; restored ${before}. ` +
+      'The tip at deletion was not observable.'
+    : `project remove tool moved shared branch ${branch} from ${before} to ${after}; ` +
+      `restored ${before}`
+}
+
 /**
  * Release a run's worktree through the single path used by explicit cleanup.
  *
@@ -399,10 +435,10 @@ function nonTerminalBranchOwner(
  * directory out from under run 669 mid-task. It was also that task's own
  * worktree, seeded, not a throwaway.
  *
- * So the tree goes only when nothing else still points at it. This run's
- * pointer is always cleared either way: the row is done with it, whoever
- * else is not. The caller supplies which statuses count as live: `discard`
- * keeps its rule, `abandon` also treats a blocked run as live.
+ * So the tree goes only when no other pointer still owns evidence. A
+ * non-terminal run may still be writing there, and an unscored terminal run's
+ * diff is still awaiting judgement. Refusal keeps every pointer intact so a
+ * later cleanup can retry after those owners finish or are scored.
  *
  * The repo root is resolved from the worktree when it still exists, and
  * from HERE when it does not — `repoRootOf` on a deleted directory can
@@ -412,28 +448,11 @@ function nonTerminalBranchOwner(
  * nothing left that knows to try again.
  */
 async function discardWorktree(
-  row: CleanupRow, liveStatuses: string[], verb: 'discarded' | 'abandoned',
-  force = false,
+  row: CleanupRow, verb: 'discarded' | 'abandoned', force = false,
 ): Promise<void> {
-  const placeholders = liveStatuses.map(() => '?').join(',')
-  const sharers = db().query(
-    `SELECT id, status FROM run
-      WHERE worktree = ? AND id <> ? AND status IN (${placeholders})`,
-  ).all(row.worktree, row.id, ...liveStatuses) as { id: number; status: string }[]
+  const sharers = evidenceOwningWorktreeSharers(row)
   if (sharers.length) {
-    db().query('UPDATE run SET worktree = NULL WHERE id = ?').run(row.id)
-    if (verb === 'discarded') {
-      console.log(
-        `run ${row.id} no longer points at ${row.worktree}, but the directory stays:\n` +
-        sharers.map((r) => `  run ${r.id} is ${r.status} in it`).join('\n'),
-      )
-    } else {
-      console.log(`worktree ${row.worktree} left because run ${sharers[0]!.id} is using it`)
-      for (const r of sharers.slice(1)) {
-        console.log(`worktree ${row.worktree} also left because run ${r.id} is using it`)
-      }
-    }
-    return
+    throw new SharedWorktreeEvidenceError(row.worktree, sharers)
   }
 
   const { branchTip, removeFor, unmergedBranch, restoreBranch } =
@@ -452,7 +471,14 @@ async function discardWorktree(
     repoRoot,
   }, repoRoot, force, Boolean(branchOwner))
   if (protectedBranch && row.branch) restoreBranch(repoRoot, row.branch, protectedBranch.tip)
-  if (sharedBranchTip && row.branch) restoreBranch(repoRoot, row.branch, sharedBranchTip)
+  if (sharedBranchTip && row.branch) {
+    const after = branchTip(repoRoot, row.branch)
+    const mutation = sharedBranchMutation(row.branch, sharedBranchTip, after)
+    if (mutation) {
+      restoreBranch(repoRoot, row.branch, sharedBranchTip)
+      throw new Error(mutation)
+    }
+  }
   if (!r.removed) throw new Error(r.detail)
   const project = row.repo ?? projectAt(repoRoot)?.name ?? 'unknown'
   const inventory = resourcesForRun(row.id)
@@ -3050,15 +3076,17 @@ switch (cmd) {
         keep(`${r.id}  unscored — its diff is the evidence`, 'unscored — its diff is the evidence')
         continue
       }
-      // Never reclaim a tree somebody else is still in. A project's own script
-      // may name a directory by ticket key rather than by run, so several runs
-      // legitimately share one — and one of them may be working right now.
-      const busy = db().query(
-        `SELECT COUNT(*) AS n FROM run
-          WHERE worktree = ? AND id <> ? AND status IN ('running','asking')`,
-      ).get(r.worktree, r.id) as { n: number }
-      if (busy.n) {
-        keep(`${r.id}  shared with ${busy.n} live run(s)`, 'shared with live run(s)')
+      // Never reclaim evidence another run still owns. A project's own script
+      // may name a directory by ticket key rather than by run, so a completed
+      // row can share it with active work or an unscored terminal result.
+      const sharers = evidenceOwningWorktreeSharers(r)
+      if (sharers.length) {
+        const owners = sharers.map((owner) =>
+          `${owner.id} (${owner.status}${owner.scored ? '' : ', unscored'})`).join(', ')
+        keep(
+          `${r.id}  shared with evidence-owning run(s): ${owners}`,
+          'shared with evidence-owning run(s)',
+        )
         continue
       }
       if (dry) { console.log(`would reclaim ${r.id}  ${r.worktree}`); done++; continue }
@@ -3069,7 +3097,15 @@ switch (cmd) {
       const branchOwner = nonTerminalBranchOwner(r, repoRoot)
       const sharedTip = branchOwner && r.branch ? branchTip(repoRoot, r.branch) : null
       const res = removeFor(w, repoRoot, false, Boolean(branchOwner))
-      if (sharedTip && r.branch) restoreBranch(repoRoot, r.branch, sharedTip)
+      if (sharedTip && r.branch) {
+        const mutation = sharedBranchMutation(r.branch, sharedTip, branchTip(repoRoot, r.branch))
+        if (mutation) {
+          restoreBranch(repoRoot, r.branch, sharedTip)
+          cleanupFailed = true
+          console.error(`could not reclaim ${r.id}: ${mutation}`)
+          continue
+        }
+      }
       if (res.removed) {
         const project = r.repo ?? projectAt(repoRoot)?.name ?? 'unknown'
         const inventory = resourcesForRun(r.id)
@@ -3154,7 +3190,18 @@ switch (cmd) {
         }, p.path)
         const sharedTip = branchOwner && safe.branch ? branchTip(p.path, safe.branch) : null
         const res = removeFor(w, p.path, false, Boolean(branchOwner))
-        if (sharedTip && safe.branch) restoreBranch(p.path, safe.branch, sharedTip)
+        if (sharedTip && safe.branch) {
+          const mutation = sharedBranchMutation(
+            safe.branch, sharedTip, branchTip(p.path, safe.branch),
+          )
+          if (mutation) {
+            restoreBranch(p.path, safe.branch, sharedTip)
+            cleanupFailed = true
+            keep(`${label}  removal refused`, 'removal refused')
+            console.error(`could not reclaim ${label}: ${mutation}`)
+            continue
+          }
+        }
         if (res.removed) {
           const inventory = runId === null
             ? { resources: [], errors: [] }
@@ -3201,13 +3248,21 @@ switch (cmd) {
       for (const p of (await import('./projects.ts')).projects()) {
         const tool = p.settings.worktree
         if (!tool?.sweep) continue
-        const out = sweepWithTool(tool, p.path)
-        if (!out.trim()) continue
-        const lines = out.trim().split('\n')
-        const omitted = Math.max(0, lines.length - 8)
-        console.log(`\n${p.name} sweep:\n${lines.slice(-8).join('\n')}`)
-        if (omitted) {
-          console.log(`  (${omitted} earlier line${omitted === 1 ? '' : 's'} omitted)`)
+        const result = sweepWithTool(tool, p.path)
+        if (!result) continue
+        if (result.out.trim()) {
+          const lines = result.out.trim().split('\n')
+          const omitted = Math.max(0, lines.length - 8)
+          console.log(`\n${p.name} sweep:\n${lines.slice(-8).join('\n')}`)
+          if (omitted) {
+            console.log(`  (${omitted} earlier line${omitted === 1 ? '' : 's'} omitted)`)
+          }
+        }
+        if (!result.ok) {
+          cleanupFailed = true
+          console.error(
+            `project ${p.name} sweep failed with exit status ${result.exitCode ?? 'unknown'}`,
+          )
         }
       }
     }
@@ -3268,7 +3323,7 @@ switch (cmd) {
       break
     }
 
-    await discardWorktree(row as CleanupRow, ['running', 'asking'], 'discarded', has('force'))
+    await discardWorktree(row as CleanupRow, 'discarded', has('force'))
     break
   }
 
@@ -3315,8 +3370,23 @@ switch (cmd) {
     console.log(`stopped run ${id}`)
     if (row.worktree) {
       const stoppedWorktree = row.worktree
-      await discardWorktree(row as CleanupRow, ['running', 'asking'], 'discarded', true)
-      if (row.parent_run_id) {
+      let reclaimed = false
+      try {
+        await discardWorktree(row as CleanupRow, 'discarded', true)
+        reclaimed = true
+      } catch (error) {
+        if (error instanceof SharedWorktreeEvidenceError) {
+          const owners = error.sharers.map((owner) =>
+            `${owner.id} (${owner.status}${owner.scored ? '' : ', unscored'})`).join(', ')
+          console.log(`worktree ${error.worktree} kept for runs ${owners}`)
+        } else {
+          console.error(
+            `worktree ${stoppedWorktree} was not reclaimed after stopping run ${id}: ` +
+            `${error instanceof Error ? error.message : String(error)}`,
+          )
+        }
+      }
+      if (reclaimed && row.parent_run_id) {
         db().query('UPDATE run SET worktree=NULL WHERE id=? AND worktree=?')
           .run(row.parent_run_id, stoppedWorktree)
       }
@@ -3357,7 +3427,7 @@ switch (cmd) {
 
     if (row.worktree) {
       await discardWorktree(
-        row as CleanupRow, ['running', 'asking'], 'abandoned', has('force'),
+        row as CleanupRow, 'abandoned', has('force'),
       )
       break
     }

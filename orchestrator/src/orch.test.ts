@@ -7736,6 +7736,33 @@ describe('detached run collection', () => {
     }
   })
 
+  test('stop succeeds but keeps a shared worktree and pointer for an unscored owner', async () => {
+    const vendor = Bun.spawn(['sleep', '30'])
+    const stopped = insert('running', 'implement')
+    const owner = insert('failed', 'implement')
+    const worktree = mkdtempSync(join(tmpdir(), 'orch-stop-shared-'))
+    const evidence = join(worktree, 'evidence.txt')
+    writeFileSync(evidence, 'unjudged work\n')
+    db().query('UPDATE run SET agent_pid=?, worktree=?, branch=? WHERE id=?')
+      .run(vendor.pid, worktree, `orch/${stopped}`, stopped)
+    db().query('UPDATE run SET worktree=?, branch=? WHERE id=?')
+      .run(worktree, `orch/${stopped}`, owner)
+
+    try {
+      const result = orch('stop', String(stopped))
+      expect(result.code).toBe(0)
+      expect(result.out).toContain(`stopped run ${stopped}`)
+      expect(result.out).toContain(`worktree ${worktree} kept for runs ${owner} (failed, unscored)`)
+      expect(await vendor.exited).not.toBe(0)
+      expect(readFileSync(evidence, 'utf8')).toBe('unjudged work\n')
+      expect(db().query('SELECT status, worktree FROM run WHERE id=?').get(stopped))
+        .toEqual({ status: 'stopped', worktree })
+    } finally {
+      try { vendor.kill() } catch { /* already stopped */ }
+      rmSync(worktree, { recursive: true, force: true })
+    }
+  })
+
   test('stop refuses a run that is not running without changing it', () => {
     const id = insert('ok')
     const r = orch('stop', String(id))
@@ -10557,6 +10584,92 @@ echo 'Usage: scripts/worktree create [seed]'
     }
   })
 
+  test('discard refuses to remove a worktree that still holds another unscored run evidence', () => {
+    const { repo } = scratchRepo()
+    const target = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+    const owner = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+    const tree = createWorktree(repo, target)
+    const evidence = join(tree.path, 'uncommitted-evidence.txt')
+    writeFileSync(evidence, 'review me\n')
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, target)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, owner)
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const p = Bun.spawnSync(
+        [process.execPath, CLI, 'discard', String(target), '--force'],
+        {
+          env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+          stdout: 'pipe', stderr: 'pipe',
+        },
+      )
+      expect(p.exitCode).not.toBe(0)
+      expect(p.stderr.toString()).toContain(`run ${owner} is failed and unscored`)
+      expect(readFileSync(evidence, 'utf8')).toBe('review me\n')
+      expect(db().query('SELECT id, worktree FROM run WHERE id IN (?,?) ORDER BY id')
+        .all(target, owner)).toEqual([
+          { id: target, worktree: tree.path },
+          { id: owner, worktree: tree.path },
+        ])
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('discard restores and refuses when a project tool deletes a moved shared branch', () => {
+    const { repo } = scratchRepo()
+    const project = `shared-ref-${repo.split('/').pop()}`
+    const target = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
+    const owner = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: project })
+    const branch = `orch/${target}`
+    const treePath = join(repo, '.claude', 'worktrees', `orch-${target}`)
+    const before = git(repo, 'rev-parse', 'main')
+
+    git(repo, 'checkout', '-b', 'fixture-future-tip')
+    writeFileSync(join(repo, 'future.txt'), 'concurrent tip\n')
+    git(repo, 'add', 'future.txt')
+    git(repo, 'commit', '-m', 'future tip')
+    const unobservable = git(repo, 'rev-parse', 'HEAD')
+    git(repo, 'checkout', 'main')
+    git(repo, 'branch', '-D', 'fixture-future-tip')
+    git(repo, 'worktree', 'add', '-b', branch, treePath, 'main')
+
+    const script = join(repo, 'move-and-delete-shared-branch.sh')
+    writeFileSync(script,
+      `git update-ref "refs/heads/$2" "${unobservable}"\n` +
+      'git worktree remove --force "$1"\n' +
+      'git branch -D "$2"\n')
+    upsertProject({
+      name: project, path: realpathSync(repo),
+      settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
+    })
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
+      .run(repo, treePath, branch, target)
+    db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, branch, owner)
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const p = Bun.spawnSync(
+        [process.execPath, CLI, 'discard', String(target), '--force'],
+        {
+          env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+          stdout: 'pipe', stderr: 'pipe',
+        },
+      )
+      const error = p.stderr.toString()
+      expect(p.exitCode).not.toBe(0)
+      expect(error).toContain(`project remove tool deleted shared branch ${branch}`)
+      expect(error).toContain(`restored ${before}`)
+      expect(error).toContain('The tip at deletion was not observable.')
+      expect(error).not.toContain(unobservable)
+      expect(git(repo, 'rev-parse', branch)).toBe(before)
+      expect(db().query('SELECT worktree FROM run WHERE id=?').get(target))
+        .toEqual({ worktree: treePath })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('discard reports Docker resources left by a successful project remove and keeps the pointer', () => {
     const { repo } = scratchRepo()
     const id = addRun({ agent: 'codex', job: 'implement', repo: 'leaking-tool' })
@@ -11702,11 +11815,35 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, branch, owner)
     try {
       const r = orch('sweep', '--older-than', '0', '--force')
-      expect(r.code).toBe(0)
-      expect(r.out).toContain(`branch ${branch} left because run ${owner} records it`)
-      expect(git(repo, 'branch', '--list', branch)).toContain(branch)
+      expect(r.code).not.toBe(0)
+      expect(r.err).toContain(`project remove tool deleted shared branch ${branch}`)
+      expect(r.err).toContain('The tip at deletion was not observable.')
+      expect(git(repo, 'rev-parse', branch)).toBe(git(repo, 'rev-parse', 'main'))
       expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
-        .toEqual({ worktree: null })
+        .toEqual({ worktree: tree })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a project sweep refusal is attributed and makes sweep fail', () => {
+    const repo = scratchRepo()
+    const name = `sweep-${repo.split('/').pop()}`
+    const sentinel = join(repo, 'project-resource')
+    upsertProject({
+      name, path: repo,
+      settings: {
+        trunk: 'main',
+        worktree: { sweep: `printf retained > "${sentinel}"; echo 'database remains' >&2; exit 7` },
+      },
+    })
+    try {
+      const r = orch('sweep', '--older-than', '0')
+      expect(r.code).not.toBe(0)
+      expect(readFileSync(sentinel, 'utf8')).toBe('retained')
+      expect(r.out).toContain(`${name} sweep:`)
+      expect(r.out).toContain('database remains')
+      expect(r.err).toContain(`project ${name} sweep failed with exit status 7`)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }

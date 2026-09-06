@@ -762,12 +762,12 @@ export function orphanSafety(path: string, repoRoot: string, trunk: string): Orp
  */
 function runShellTool(
   template: string, vars: Record<string, string>, cwd: string,
-): { ok: boolean; out: string; stdout: string } {
+): { ok: boolean; out: string; stdout: string; exitCode: number | null } {
   const cmd = fillTool(template, vars)
   const p = Bun.spawnSync(['sh', '-c', cmd], { cwd, stdout: 'pipe', stderr: 'pipe' })
   const stdout = p.stdout.toString()
   const out = `${stdout}${p.stderr.toString()}`.trim()
-  return { ok: p.exitCode === 0, out, stdout }
+  return { ok: p.exitCode === 0, out, stdout, exitCode: p.exitCode }
 }
 
 function fillArg(template: string, vars: Record<string, string>): string {
@@ -1556,9 +1556,12 @@ export function removeFor(
 }
 
 /** Reclaim orphans the project knows about — databases, containers, metadata. */
-export function sweepWithTool(tool: WorktreeTool, repoRoot: string): string {
-  if (!tool.sweep) return ''
-  return runShellTool(tool.sweep, {}, repoRoot).out
+export function sweepWithTool(
+  tool: WorktreeTool, repoRoot: string,
+): { ok: boolean; out: string; exitCode: number | null } | null {
+  if (!tool.sweep) return null
+  const result = runShellTool(tool.sweep, {}, repoRoot)
+  return { ok: result.ok, out: result.out, exitCode: result.exitCode }
 }
 
 export function removeWorktree(w: Worktree, keepBranch = false): { removed: boolean; detail: string } {
@@ -1622,9 +1625,9 @@ export function unmergedBranch(
   return count > 0 ? { count, tip } : null
 }
 
-/** Restore a protected branch if a project's removal command deleted it. */
+/** Restore a protected branch to its exact snapshot after a project's removal command. */
 export function restoreBranch(repoRoot: string, branch: string, tip: string): void {
-  if (gitOk(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], repoRoot) === null) {
-    git(['branch', branch, tip], repoRoot)
-  }
+  const ref = `refs/heads/${branch}`
+  if (gitOk(['rev-parse', '--verify', ref], repoRoot) === tip) return
+  git(['update-ref', ref, tip], repoRoot)
 }
