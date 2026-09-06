@@ -5873,6 +5873,30 @@ describe('routing backtest statistics', () => {
     expect(routingBacktest('summarize', 123).causalExcludedJudgements).toBe(1)
   })
 
+  test('dispatch chronology is invariant when run ids and started_at disagree', () => {
+    const insertScore = db().query(
+      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?,?,?,?, 'test')`,
+    )
+    const addChronology = (reverse: boolean) => {
+      const rows = [
+        { agent: 'codex', startedAt: '2026-01-01T00:00:00.000Z', quality: 'right' },
+        { agent: 'grok', startedAt: '2026-01-02T00:00:00.000Z', quality: 'mixed' },
+      ]
+      for (const row of reverse ? [...rows].reverse() : rows) {
+        const id = addRun({ agent: row.agent, job: 'fix', startedAt: row.startedAt })
+        insertScore.run(id, 'full', row.quality, row.startedAt.replace('00:00', '01:00'))
+      }
+      return routingBacktest('fix', 1)
+    }
+
+    const reversedIds = addChronology(true)
+    db().exec('DELETE FROM score; DELETE FROM run;')
+    const chronologicalIds = addChronology(false)
+    expect(reversedIds).toEqual(chronologicalIds)
+    expect(reversedIds.causalExcludedJudgements).toBe(0)
+  })
+
   test('quota cooldown is operational state, not scoring evidence, and a probe clears it', () => {
     addRun({
       agent: 'codex', job: 'fix', status: 'failed', kind: 'quota', latency: 1000,

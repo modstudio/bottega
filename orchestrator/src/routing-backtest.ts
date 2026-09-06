@@ -177,7 +177,7 @@ function events(includeVoided = false): Event[] {
         AND r.status IN ('ok','failed','stale')
         AND COALESCE(r.failure_kind,'') NOT IN (${excluded})
         AND (s.delivery IS NOT NULL OR r.status IN ('failed','stale'))
-      ORDER BY r.job, r.id`,
+      ORDER BY r.job, r.started_at, r.id`,
   ).all() as Row[]
   return rows.map((row) => {
     // Scored evidence did not exist until the person recorded the judgement.
@@ -220,9 +220,12 @@ function replay(
     const thompsonSelections: Record<string, number> = {}
     const currentObserved: History = []
     const thompsonObserved: History = []
+    // Detached workers reserve ids before they reset started_at at dispatch,
+    // so only started_at is chronology; id breaks simultaneous-start ties.
     const rows = all.filter((e) => e.job === name)
-    for (const event of rows) {
-      const earlier = rows.filter((candidate) => candidate.id < event.id)
+      .sort((a, b) => a.startedAt.localeCompare(b.startedAt) || a.id - b.id)
+    for (const [index, event] of rows.entries()) {
+      const earlier = rows.slice(0, index)
       causalExcludedJudgements += earlier.filter((candidate) => candidate.evidenceAt >= event.startedAt).length
       const byAvailability = (a: Event, b: Event) => a.evidenceAt.localeCompare(b.evidenceAt) || a.id - b.id
       const currentHistory = currentObserved
