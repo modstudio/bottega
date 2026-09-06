@@ -1478,10 +1478,16 @@ the cause` } }
       source.indexOf('fixRun = await run({'),
       source.indexOf('const fix =', source.indexOf('fixRun = await run({')),
     )
+    const lens = source.slice(
+      source.indexOf('const lens ='),
+      source.indexOf('const review =', source.indexOf('const lens =')),
+    )
     expect(diagnosis).toContain("job: 'diagnose'")
     expect(diagnosis).not.toContain('seed:')
     expect(fix).toContain("job: 'issue-worker'")
     expect(fix).toContain('seed: fixSeed ?? undefined')
+    expect(lens).toContain("job: 'review-lens'")
+    expect(lens).not.toContain('seed:')
   })
 
   test('validates tracker-new stdout with the target project key standard', () => {
@@ -5101,10 +5107,11 @@ describe('vendor failure failover is one bounded unit of work', () => {
     }
   })
 
-  test('a repository review failover refuses a command recipe that cannot recreate its base', async () => {
+  test('a repository review failover bypasses a writing recipe that cannot recreate its base', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-review-failover-no-base-'))
     const caller = join(repo, '.claude', 'caller')
     const codexScript = join(repo, 'first-review.ts')
+    const grokScript = join(repo, 'successor-review.ts')
     const projectScript = join(repo, 'project-worktree.ts')
     const firstReady = join(repo, 'first-review.ready')
     const releaseFirst = join(repo, 'release-first.ready')
@@ -5133,6 +5140,7 @@ describe('vendor failure failover is one bounded unit of work', () => {
       git(repo, 'config', 'user.name', 'Orch Test')
       writeFileSync(join(repo, 'base.txt'), 'base\n')
       git(repo, 'add', 'base.txt'); git(repo, 'commit', '-m', 'base')
+      const originalBase = git(repo, 'rev-parse', 'HEAD')
       mkdirSync(dirname(caller), { recursive: true })
       git(repo, 'worktree', 'add', '-b', 'feature', caller, 'HEAD')
       writeFileSync(join(caller, 'change.ts'), 'carried review subject\n')
@@ -5141,11 +5149,19 @@ describe('vendor failure failover is one bounded unit of work', () => {
       const empty = reviewReply(0) as any
       empty.provenance.files_covered = []
       empty.provenance.commands_run = []
+      const clean = reviewReply(0) as any
+      clean.provenance.files_covered = ['change.ts']
+      clean.provenance.commands_run = ['git diff -- change.ts']
       writeFileSync(codexScript, [
         "import { existsSync, writeFileSync } from 'node:fs'",
         `writeFileSync(${JSON.stringify(firstReady)}, 'ready\\n')`,
         `while (!existsSync(${JSON.stringify(releaseFirst)})) await Bun.sleep(10)`,
         `console.log(${JSON.stringify(JSON.stringify(empty))})`,
+      ].join('\n'))
+      writeFileSync(grokScript, [
+        "import { existsSync } from 'node:fs'",
+        "if (!existsSync('change.ts')) process.exit(19)",
+        `console.log(${JSON.stringify(JSON.stringify(clean))})`,
       ].join('\n'))
       writeFileSync(projectScript, [
         "import { writeFileSync } from 'node:fs'",
@@ -5153,7 +5169,7 @@ describe('vendor failure failover is one bounded unit of work', () => {
       ].join('\n'))
       codex.bin = process.execPath; codex.argv = () => [codexScript]
       codex.stdin = false; codex.readsOut = false; codex.parseReply = undefined
-      grok.bin = process.execPath; grok.argv = () => [codexScript]
+      grok.bin = process.execPath; grok.argv = () => [grokScript]
       grok.stdin = false; grok.readsOut = false; grok.parseReply = undefined
       process.env.ORCH_DEPTH = '0'
 
@@ -5163,8 +5179,6 @@ describe('vendor failure failover is one bounded unit of work', () => {
       })
       for (let i = 0; i < 200 && !existsSync(firstReady); i++) await Bun.sleep(10)
       expect(existsSync(firstReady)).toBe(true)
-      const treesBefore = git(repo, 'worktree', 'list', '--porcelain')
-        .split('\n').filter((line) => line.startsWith('worktree ')).length
       upsertProject({
         name: 'review-failover-no-base-project', path: repo,
         settings: {
@@ -5175,18 +5189,30 @@ describe('vendor failure failover is one bounded unit of work', () => {
         },
       })
       writeFileSync(releaseFirst, 'release\n')
-      await expect(pending).rejects.toThrow(/clean review with no evidence/)
+      const result = await pending
+      expect(result.agent).toBe('grok')
+      expect(result.worktree?.source).toBe('git')
+      expect(git(result.worktree!.path, 'rev-parse', 'HEAD')).toBe(originalBase)
+      expect(Bun.spawnSync(['git', 'symbolic-ref', '-q', 'HEAD'], {
+        cwd: result.worktree!.path, env: hermeticGitEnv(),
+      }).exitCode).not.toBe(0)
 
       const rows = db().query(
-        `SELECT status, failure_kind, error
+        `SELECT id, agent, status, failure_kind, retry_of, base_commit, worktree_source
            FROM run WHERE repo='review-failover-no-base-project' ORDER BY id`,
-      ).all() as { status: string; failure_kind: string | null; error: string }[]
-      expect(rows).toHaveLength(1)
-      expect(rows[0]).toMatchObject({ status: 'failed', failure_kind: 'unevidenced' })
-      expect(rows[0]!.error).toContain('cannot honour --base')
-      expect(rows[0]!.error).toContain('has no {base} slot')
-      expect(git(repo, 'worktree', 'list', '--porcelain')
-        .split('\n').filter((line) => line.startsWith('worktree ')).length).toBe(treesBefore)
+      ).all() as {
+        id: number; agent: string; status: string; failure_kind: string | null; retry_of: number | null
+        base_commit: string; worktree_source: string | null
+      }[]
+      expect(rows).toHaveLength(2)
+      expect(rows[0]).toMatchObject({
+        agent: 'codex', status: 'failed', failure_kind: 'unevidenced',
+        base_commit: originalBase, worktree_source: 'git',
+      })
+      expect(rows[1]).toMatchObject({
+        agent: 'grok', status: 'ok', retry_of: rows[0]!.id,
+        base_commit: originalBase, worktree_source: 'git',
+      })
       expect(existsSync(projectInvoked)).toBe(false)
     } finally {
       if (!existsSync(releaseFirst)) writeFileSync(releaseFirst, 'release\n')
@@ -12521,7 +12547,7 @@ echo 'Usage: scripts/worktree create [seed]'
     upsertProject({ name: 'read-only-tool-seed', path: repo, settings: { worktree: tool } })
     try {
       const base = git(repo, 'rev-parse', 'HEAD')
-      const w = createReadOnlyWorktree(repo, 658)
+      const w = createReadOnlyWorktree(repo, 658, base)
       expect(realpathSync(w.path)).toBe(realpathSync(path))
       expect(existsSync(received)).toBe(false)
       expect(Bun.spawnSync(['git', 'symbolic-ref', '-q', 'HEAD'], { cwd: w.path }).exitCode).not.toBe(0)
@@ -12565,19 +12591,42 @@ echo 'Usage: scripts/worktree create [seed]'
     const { repo } = scratchRepo()
     const path = join(repo, '.claude', 'worktrees', 'orch-659')
     const removed = join(repo, 'readonly-removed')
+    const create = join(repo, 'readonly-create.sh')
+    writeFileSync(create, `#!/bin/sh
+if [ -n "$GIT_OBJECT_DIRECTORY" ] || [ -n "$GIT_ALTERNATE_OBJECT_DIRECTORIES" ] || [ -n "$ORCH_ALLOWED_GIT_REF" ]; then
+  echo inherited git routing >&2
+  exit 42
+fi
+exec git worktree add --detach "$1" "$2"
+`)
+    chmodSync(create, 0o755)
     const tool = {
-      readonly_create: declaredCreate('git', ['worktree', 'add', '--detach', '{path}', '{base}']),
+      readonly_create: declaredCreate(create, ['{path}', '{base}']),
       readonly_remove: `${hermeticGitCommand} worktree remove --force {path} && printf invoked > "${removed}"`,
     }
     upsertProject({ name: 'read-only-recipe', path: repo, settings: { worktree: tool } })
+    const inherited = {
+      object: process.env.GIT_OBJECT_DIRECTORY,
+      alternates: process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES,
+      allowed: process.env.ORCH_ALLOWED_GIT_REF,
+    }
     try {
-      const w = createReadOnlyWithTool(tool, repo, 659)
+      process.env.GIT_OBJECT_DIRECTORY = join(repo, '.git', 'objects')
+      process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES = join(repo, '.git', 'objects')
+      process.env.ORCH_ALLOWED_GIT_REF = 'refs/heads/unrelated-worker-branch'
+      const w = createReadOnlyWithTool(tool, repo, 659, git(repo, 'rev-parse', 'HEAD'))
       expect(realpathSync(w.path)).toBe(realpathSync(path))
       expect(w.source).toBe('readonly_recipe')
       expect(Bun.spawnSync(['git', 'symbolic-ref', '-q', 'HEAD'], { cwd: path }).exitCode).not.toBe(0)
       expect(removeFor(w, repo).removed).toBe(true)
       expect(readFileSync(removed, 'utf8')).toBe('invoked')
     } finally {
+      if (inherited.object === undefined) delete process.env.GIT_OBJECT_DIRECTORY
+      else process.env.GIT_OBJECT_DIRECTORY = inherited.object
+      if (inherited.alternates === undefined) delete process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES
+      else process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES = inherited.alternates
+      if (inherited.allowed === undefined) delete process.env.ORCH_ALLOWED_GIT_REF
+      else process.env.ORCH_ALLOWED_GIT_REF = inherited.allowed
       rmSync(repo, { recursive: true, force: true })
     }
   })
@@ -12618,7 +12667,7 @@ echo 'Usage: scripts/worktree create [seed]'
       ),
     }
     try {
-      expect(() => createReadOnlyWithTool(tool, repo, 660))
+      expect(() => createReadOnlyWithTool(tool, repo, 660, git(repo, 'rev-parse', 'HEAD')))
         .toThrow('worktree create template references unavailable placeholder {key}')
       expect(existsSync(join(repo, '.claude', 'worktrees', 'orch-660'))).toBe(false)
     } finally {
@@ -12626,9 +12675,54 @@ echo 'Usage: scripts/worktree create [seed]'
     }
   })
 
-  test('a recipe-project read-only run records git source and warns that infrastructure is absent', async () => {
+  test('readonly_create removes a tree that fails its detached-head check', () => {
     const { repo } = scratchRepo()
+    const path = join(repo, '.claude', 'worktrees', 'orch-661')
+    const removed = join(repo, 'failed-readonly-removed')
+    const tool = {
+      readonly_create: declaredCreate(
+        'git', ['worktree', 'add', '-b', 'bad-readonly-661', '{path}', '{base}'],
+      ),
+      readonly_remove: `${hermeticGitCommand} worktree remove --force {path} && ` +
+        `printf invoked > "${removed}"`,
+    }
+    try {
+      expect(() => createReadOnlyWithTool(tool, repo, 661, git(repo, 'rev-parse', 'HEAD')))
+        .toThrow(/created attached branch bad-readonly-661[\s\S]*cleanup: removed/)
+      expect(existsSync(path)).toBe(false)
+      expect(readFileSync(removed, 'utf8')).toBe('invoked')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('readonly_create reports a cleanup refusal after a failed check', () => {
+    const { repo } = scratchRepo()
+    const path = join(repo, '.claude', 'worktrees', 'orch-662')
+    const tool = {
+      readonly_create: declaredCreate(
+        'git', ['worktree', 'add', '-b', 'bad-readonly-662', '{path}', '{base}'],
+      ),
+      readonly_remove: 'printf protected >&2; exit 23',
+    }
+    try {
+      expect(() => createReadOnlyWithTool(tool, repo, 662, git(repo, 'rev-parse', 'HEAD')))
+        .toThrow(/cleanup: .*read-only remove tool refused:[\s\S]*protected/)
+      expect(existsSync(path)).toBe(true)
+    } finally {
+      if (existsSync(path)) git(repo, 'worktree', 'remove', '--force', path)
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a recipe-project read-only run records git source and warns that infrastructure is absent', async () => {
+    const { repo, tree } = scratchRepo()
     const invoked = join(repo, 'writing-create-invoked')
+    writeFileSync(join(tree, 'feature.txt'), 'feature state\n')
+    git(tree, 'add', 'feature.txt')
+    git(tree, 'commit', '-m', 'feature state')
+    const featureHead = git(tree, 'rev-parse', 'HEAD')
+    expect(featureHead).not.toBe(git(repo, 'rev-parse', 'main'))
     upsertProject({
       name: 'read-only-run-recipe', path: repo,
       settings: { worktree: {
@@ -12647,13 +12741,16 @@ echo 'Usage: scripts/worktree create [seed]'
         return ['-e', 'console.log("inspected")']
       }
       process.env.ORCH_DEPTH = '0'
-      const result = await runJob({ job: 'file-question', prompt: 'inspect', cwd: repo, agent: 'codex' })
+      const result = await runJob({ job: 'file-question', prompt: 'inspect', cwd: tree, agent: 'codex' })
       expect(existsSync(invoked)).toBe(false)
       expect(result.worktree?.source).toBe('git')
+      expect(result.worktree?.base).toBe(featureHead)
+      expect(git(result.worktree!.path, 'rev-parse', 'HEAD')).toBe(featureHead)
       expect(Bun.spawnSync(['git', 'symbolic-ref', '-q', 'HEAD'], { cwd: result.worktree!.path }).exitCode).not.toBe(0)
       expect(db().query('SELECT worktree_source, branch FROM run WHERE id=?').get(result.id))
         .toEqual({ worktree_source: 'git', branch: null })
       expect(sent).toContain('NO provisioned infrastructure')
+      expect(sent).toContain(`project's files at ${featureHead}`)
       expect(sent).toContain('no databases, no generated env, no vendor tree')
       expect(sent).toContain('could_not_verify')
       expect(removeFor(result.worktree!, repo).removed).toBe(true)
@@ -15170,7 +15267,7 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     const sweepSentinel = join(repo, 'sweep-invoked')
     const old = new Date(Date.now() - 2 * 86_400_000).toISOString()
     const id = addRun({ agent: 'codex', job: 'file-question', status: 'ok', repo: project, startedAt: old })
-    const tree = createReadOnlyWorktree(repo, id)
+    const tree = createReadOnlyWorktree(repo, id, git(repo, 'rev-parse', 'HEAD'))
     db().query(
       `UPDATE run SET worktree=?, cwd=?, branch=NULL, base_commit=?, worktree_source='git' WHERE id=?`,
     ).run(tree.path, tree.path, tree.base, id)
@@ -15203,7 +15300,7 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     const sweepSentinel = join(repo, 'sweep-invoked')
     const old = new Date(Date.now() - 2 * 86_400_000).toISOString()
     const id = addRun({ agent: 'codex', job: 'file-question', status: 'ok', repo: project, startedAt: old })
-    const kept = createReadOnlyWorktree(repo, id)
+    const kept = createReadOnlyWorktree(repo, id, git(repo, 'rev-parse', 'HEAD'))
     db().query(
       `UPDATE run SET worktree=?, cwd=?, branch=NULL, base_commit=?, worktree_source='git' WHERE id=?`,
     ).run(kept.path, kept.path, kept.base, id)
@@ -16281,7 +16378,7 @@ describe('review-lens-inline has no checkout', () => {
 })
 
 describe('issue blast-radius review tree', () => {
-  test('a carried review launched from the fix worktree receives the fix tree and diff', async () => {
+  test('a carried review launched from the fix worktree receives the committed fix tree', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-issue-review-tree-'))
     const fixTree = mkdtempSync(join(tmpdir(), 'orch-issue-fix-tree-'))
     const script = join(dir, 'report-review-tree.ts')
@@ -16310,6 +16407,7 @@ describe('issue blast-radius review tree', () => {
       writeFileSync(join(fixTree, 'reviewed.txt'), 'fix\n')
       runGit(fixTree, 'add', 'reviewed.txt')
       runGit(fixTree, 'commit', '-m', 'DEV-261 fixture fix')
+      const fixHead = runGit(fixTree, 'rev-parse', 'HEAD')
       writeFileSync(script, [
         "const git = (...args: string[]) => Bun.spawnSync(['git', ...args], { stdout: 'pipe' }).stdout.toString().trim()",
         "console.log(JSON.stringify({ head: git('rev-parse', 'HEAD'), diff: git('diff', 'HEAD', '--', 'reviewed.txt') }))",
@@ -16332,9 +16430,7 @@ describe('issue blast-radius review tree', () => {
       const projectReceived = JSON.parse(fromProject.output) as { head: string; diff: string }
       const received = JSON.parse(review.output) as { head: string; diff: string }
       expect(projectReceived).toEqual({ head: trunkHead, diff: '' })
-      expect(received.head).toBe(trunkHead)
-      expect(received.diff).toContain('-trunk')
-      expect(received.diff).toContain('+fix')
+      expect(received).toEqual({ head: fixHead, diff: '' })
     } finally {
       agent.bin = original.bin
       agent.argv = original.argv

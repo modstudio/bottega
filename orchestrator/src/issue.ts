@@ -403,7 +403,7 @@ export async function workIssue(key: string): Promise<void> {
     await comment(issue.key, `Independent measurements and both gates completed for run ${fixRun.id}; blast-radius review is starting.`)
     const lens = fixRun.worktree ? await run({
       job: 'review-lens', cwd: fixRun.worktree.path, lens: 'issue-blast-radius',
-      seed: fixSeed ?? undefined, key: branchKey, carry: true,
+      key: branchKey, carry: true,
       prompt: `Independently inspect task ${issue.key} and the current commit/diff. What is wrong with this change through the single lens: what else uses what it touched? Do not seek agreement and do not use any worker conclusion. Task filing:\n${boundedIssuePack(issue)}`,
       label: `issue ${issue.key} blast radius`,
     }) : null

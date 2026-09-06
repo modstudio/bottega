@@ -18,7 +18,7 @@ import { pick } from './route.ts'
 import { db, nowIso, DB_PATH, sessionId, resolveRootFromLastTurn, writableDb } from './db.ts'
 import {
   createWorktree, createWithTool, createReadOnlyWorktree, createReadOnlyWithTool,
-  toolFor, changesIn, repoRootOf, resolveBase, worktreeGitDir,
+  toolFor, changesIn, repoRootOf, resolveBase, resolveReadOnlyBase, worktreeGitDir,
   createCommandExists,
   prepareWorktreeObjects, prepareSharedRefGuard, carryWorkingState,
   targetGitEnvironment,
@@ -1228,8 +1228,13 @@ export async function run(opts: {
 }): Promise<RunResult> {
   writableDb()
 
+  const requestedJob = job(opts.job)
+  const writesJob = Boolean(requestedJob.needs.writesRepo)
+  const repoJob = Boolean(requestedJob.needs.readsRepo)
+  const forbidsRepo = requestedJob.needs.readsRepo === false
+  const callerCwd = opts.cwd ?? process.cwd()
   const seed = preflight(
-    opts.job, opts.cwd ?? process.cwd(), opts.seed, opts.key, opts.base,
+    opts.job, callerCwd, opts.seed, opts.key, opts.base,
     opts.resume?.worktree != null,
     opts.reserveId !== undefined,
     opts.lens, opts.resolvedReviewTarget ? undefined : opts.review, opts.carry,
@@ -1240,12 +1245,15 @@ export async function run(opts: {
   // Programmatic callers get the same ordering guarantee as the CLI: a bad
   // ref is refused before a run row or worktree exists.
   if (opts.base) {
-    const internalRepositoryFailover = opts.automaticFailover && job(opts.job).needs.readsRepo
+    const internalRepositoryFailover = opts.automaticFailover && requestedJob.needs.readsRepo
     if (opts.job !== 'implement' && opts.job !== 'fix' && !internalRepositoryFailover) {
       throw new Error('--base is only valid for the implement and fix jobs')
     }
-    resolveBase(opts.cwd ?? process.cwd(), opts.base)
   }
+  const readOnlyBase = repoJob && !writesJob && !opts.resume?.worktree
+    ? resolveReadOnlyBase(callerCwd, opts.base ?? 'HEAD')
+    : null
+  if (opts.base && readOnlyBase === null) resolveBase(callerCwd, opts.base)
   // REACHABILITY IS A ROUTING INPUT, not a run outcome, and this is the line
   // that makes it one. `available()` had only ever checked that an endpoint was
   // CONFIGURED, which stayed true while the local model host was powered off
@@ -1287,11 +1295,6 @@ export async function run(opts: {
    * because `land` deliberately permits the one commit that the ordinary
    * implementation contract forbids.
    */
-  const requestedJob = job(opts.job)
-  const writesJob = Boolean(requestedJob.needs.writesRepo)
-  const repoJob = Boolean(requestedJob.needs.readsRepo)
-  const forbidsRepo = requestedJob.needs.readsRepo === false
-  const callerCwd = opts.cwd ?? process.cwd()
   // A RESUMED turn does not repeat the full preamble. The worker is still inside
   // the conversation that carried it, so re-sending all of it would spend tokens
   // restating rules the agent is already operating under. A short reminder puts
@@ -1320,8 +1323,7 @@ export async function run(opts: {
     const tool = toolFor(opts.cwd ?? process.cwd())
     if (!tool) return ''
     if (!writesJob && !tool.readonly_create) {
-      const base = opts.base ? resolveBase(callerCwd, opts.base) : resolveBase(callerCwd, 'HEAD')
-      return `This read-only run has the project's files at ${base} with NO provisioned ` +
+      return `This read-only run has the project's files at ${readOnlyBase} with NO provisioned ` +
         `infrastructure (no databases, no generated env, no vendor tree). Do not treat a test ` +
         `suite that cannot start as a finding; record what you could not run in could_not_verify.`
     }
@@ -1673,8 +1675,8 @@ export async function run(opts: {
           let created: Worktree
           if (!writesJob) {
             created = tool?.readonly_create
-              ? createReadOnlyWithTool(tool, callerCwd, claim.id, opts.base, recordWorktree)
-              : createReadOnlyWorktree(callerCwd, claim.id, opts.base, recordWorktree)
+              ? createReadOnlyWithTool(tool, callerCwd, claim.id, readOnlyBase!, recordWorktree)
+              : createReadOnlyWorktree(callerCwd, claim.id, readOnlyBase!, recordWorktree)
           } else if (tool) {
             // The PROJECT owns its worktrees. A bare `git worktree add` here would
             // produce a directory with no .env, no vendor and no database, in which
