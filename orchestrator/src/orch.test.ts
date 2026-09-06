@@ -18111,14 +18111,24 @@ describe('scoped operator docs', () => {
 describe('session-brief hook lists open resumes without injecting bodies', () => {
   const hook = new URL('../hooks/session-brief.py', import.meta.url).pathname
   const heartbeat = new URL('../hooks/orch-heartbeat.sh', import.meta.url).pathname
-  const runBrief = (payload: object, extraEnv: Record<string, string> = {}) => {
-    const { CLAUDE_CODE_SESSION_ID: _drop, ...rest } = process.env
+  const runBrief = (
+    payload: object,
+    extraEnv: Record<string, string> = {},
+    colour: 'plain' | 'ansi' = 'plain',
+  ) => {
+    const {
+      CLAUDE_CODE_SESSION_ID: _drop,
+      FORCE_COLOR: _forceColor,
+      NO_COLOR: _noColor,
+      ...rest
+    } = process.env
+    const colourEnv = colour === 'ansi' ? { FORCE_COLOR: '1' } : { NO_COLOR: '1' }
     return Bun.spawnSync(
       ['python3', hook],
       {
         stdin: new TextEncoder().encode(JSON.stringify(payload)),
         stdout: 'pipe', stderr: 'pipe',
-        env: { ...rest, ORCH_DB: process.env.ORCH_DB!, ...extraEnv },
+        env: { ...rest, ORCH_DB: process.env.ORCH_DB!, ...extraEnv, ...colourEnv },
       },
     )
   }
@@ -18158,8 +18168,22 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
     expect(p.exitCode).toBe(0)
     const out = hookOutput(p)
     expect(out.systemMessage).toStartWith('operator brief refused: canon pack is ')
+    expect(out.systemMessage).not.toContain('\x1b[')
     expect(out.hookSpecificOutput.additionalContext).toContain('Arm under Monitor:')
     expect(out.hookSpecificOutput.additionalContext).not.toContain('x'.repeat(100))
+  })
+
+  test('a refused operator brief preserves the coloured CLI error in systemMessage', () => {
+    setDoc({ scope: 'global', subject: null, slug: 'oversize', title: 'Oversize', body: 'x'.repeat(70 * 1024) })
+    const p = runBrief(
+      { cwd: dir, source: 'startup', session_id: 'sid-budget' },
+      {},
+      'ansi',
+    )
+    expect(p.exitCode).toBe(0)
+    expect(hookOutput(p).systemMessage).toMatch(
+      /^operator brief refused: \x1b\[0m\x1b\[31mcanon pack is \d+ bytes; budget is 65536 bytes$/,
+    )
   })
 
   test('an old last-seen value is reported as unknown, never orphaned', () => {
