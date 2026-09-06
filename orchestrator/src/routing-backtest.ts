@@ -21,6 +21,8 @@ type Event = {
   id: number; agent: string; job: string; stack: string | null; model: string | null
   promptBytes: number; startedAt: string; latencyMs: number | null
   status: string; failureKind: string | null; weight: number; none: boolean
+  /** When this result first existed for a live routing decision to observe. */
+  evidenceAt: string
 }
 
 type History = Event[]
@@ -41,7 +43,20 @@ export type BacktestJob = {
   verdict: string
 }
 
-export type RoutingBacktest = { seed: number; jobs: BacktestJob[]; shouldWire: boolean }
+export type RoutingBacktest = {
+  seed: number
+  /** Earlier-id judgement/dispatch pairs excluded because the judgement did not exist yet. */
+  causalExcludedJudgements: number
+  jobs: BacktestJob[]
+  shouldWire: boolean
+}
+
+export function passesRoutingBacktest(jobs: readonly BacktestJob[]): boolean {
+  const eligible = jobs.filter((job) => job.runs >= MIN_SAMPLE)
+  return eligible.length > 0 &&
+    eligible.every((job) => job.measurable && job.thompsonMean! >= job.currentMean!) &&
+    eligible.some((job) => job.thompsonMean! - job.currentMean! > NOISE_BAND)
+}
 
 /** Mulberry32: compact, stable across runtimes, and sufficient for replay draws. */
 function seeded(seed: number): () => number {
@@ -211,17 +226,18 @@ function thompsonChoice(event: Event, history: History, rng: () => number, draw:
 }
 
 function events(): Event[] {
-  type Row = Omit<Event, 'weight' | 'none'> & {
+  type Row = Omit<Event, 'weight' | 'none' | 'evidenceAt'> & {
     delivery: Parameters<typeof weigh>[0] | null
     quality: Parameters<typeof weigh>[1]
     fidelity: Parameters<typeof weigh>[2]
+    scoredAt: string | null
   }
   const excluded = NOT_EVIDENCE.map((kind) => `'${kind}'`).join(',')
   const rows = db().query(
     `SELECT r.id, r.agent, r.job, r.stack, r.model, r.prompt_bytes AS promptBytes,
             r.started_at AS startedAt, r.latency_ms AS latencyMs, r.status,
             r.failure_kind AS failureKind,
-            s.delivery, s.quality, s.fidelity
+            s.delivery, s.quality, s.fidelity, s.scored_at AS scoredAt
        FROM run r LEFT JOIN score s ON s.run_id=r.id
       WHERE r.parent_run_id IS NULL AND r.probe=0 AND r.evidence_excluded IS NULL
         AND r.status IN ('ok','failed','stale')
@@ -229,26 +245,37 @@ function events(): Event[] {
         AND (s.delivery IS NOT NULL OR r.status IN ('failed','stale'))
       ORDER BY r.job, r.id`,
   ).all() as Row[]
-  return rows.map((row) => ({
-    id: row.id, agent: row.agent, job: row.job, stack: row.stack, model: row.model,
-    promptBytes: row.promptBytes, startedAt: row.startedAt, latencyMs: row.latencyMs,
-    status: row.status, failureKind: row.failureKind,
-    weight: row.delivery === null ? weigh('none', null) : weigh(row.delivery, row.quality, row.fidelity),
-    none: row.delivery === null || row.delivery === 'none',
-  }))
+  return rows.map((row) => {
+    // Scored evidence did not exist until the person recorded the judgement.
+    // An unjudged failure existed when its process terminated. NOT_EVIDENCE
+    // rows are excluded by the query, and every remaining failure has latency.
+    const evidenceAt = row.scoredAt ?? new Date(
+      Date.parse(row.startedAt) + row.latencyMs!,
+    ).toISOString()
+    return {
+      id: row.id, agent: row.agent, job: row.job, stack: row.stack, model: row.model,
+      promptBytes: row.promptBytes, startedAt: row.startedAt, latencyMs: row.latencyMs,
+      status: row.status, failureKind: row.failureKind,
+      weight: row.delivery === null ? weigh('none', null) : weigh(row.delivery, row.quality, row.fidelity),
+      none: row.delivery === null || row.delivery === 'none', evidenceAt,
+    }
+  })
 }
 
 export function routingBacktest(jobName?: string, seed = ROUTING_BACKTEST_SEED): RoutingBacktest {
   const all = events()
   const jobs: BacktestJob[] = []
+  let causalExcludedJudgements = 0
   for (const name of [...new Set(all.map((e) => e.job))]) {
-    const history: History = []
     const currentRng = seeded(seed ^ 0x43555252)
     const thompsonRng = seeded(seed ^ 0x54484f4d)
     let agreements = 0, currentMatched = 0, thompsonMatched = 0, currentTotal = 0, thompsonTotal = 0
     let currentExplores = 0, thompsonExplores = 0
     const rows = all.filter((e) => e.job === name)
     for (const event of rows) {
+      const earlier = rows.filter((candidate) => candidate.id < event.id)
+      const history = earlier.filter((candidate) => candidate.evidenceAt < event.startedAt)
+      if (!jobName || name === jobName) causalExcludedJudgements += earlier.length - history.length
       const current = currentChoice(event, history, currentRng, true)
       const thompson = thompsonChoice(event, history, thompsonRng, true)
       if (current.agent === thompson.agent) agreements++
@@ -256,11 +283,10 @@ export function routingBacktest(jobName?: string, seed = ROUTING_BACKTEST_SEED):
       if (thompson.agent !== thompson.expected) thompsonExplores++
       if (current.agent === event.agent) { currentMatched++; currentTotal += event.weight }
       if (thompson.agent === event.agent) { thompsonMatched++; thompsonTotal += event.weight }
-      history.push(event)
     }
     const currentMean = currentMatched ? currentTotal / currentMatched : null
     const thompsonMean = thompsonMatched ? thompsonTotal / thompsonMatched : null
-    const measurable = rows.length >= MIN_SAMPLE && currentMean !== null && thompsonMean !== null
+    const measurable = currentMatched >= MIN_SAMPLE && thompsonMatched >= MIN_SAMPLE
     const verdict = !measurable ? 'unmeasurable'
       : thompsonMean! >= currentMean! ? (thompsonMean! - currentMean! > NOISE_BAND ? 'Thompson wins beyond noise' : 'Thompson matches within noise')
         : 'current wins'
@@ -272,8 +298,10 @@ export function routingBacktest(jobName?: string, seed = ROUTING_BACKTEST_SEED):
       measurable, verdict,
     })
   }
-  const eligible = jobs.filter((j) => j.runs >= MIN_SAMPLE)
-  const shouldWire = eligible.length > 0 && eligible.every((j) => j.measurable && j.thompsonMean! >= j.currentMean!) &&
-    eligible.some((j) => j.thompsonMean! - j.currentMean! > NOISE_BAND)
-  return { seed, jobs: jobName ? jobs.filter((row) => row.job === jobName) : jobs, shouldWire }
+  const shouldWire = passesRoutingBacktest(jobs)
+  return {
+    seed, causalExcludedJudgements,
+    jobs: jobName ? jobs.filter((row) => row.job === jobName) : jobs,
+    shouldWire,
+  }
 }

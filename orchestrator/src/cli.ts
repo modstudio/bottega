@@ -3599,6 +3599,7 @@ switch (cmd) {
           eligibility: 'current static capability, metered, prompt-size and context rules; historical cooldowns',
           reachability: 'present-day reachability ignored',
           evidence: 'voided, evidence-excluded and NOT_EVIDENCE runs omitted',
+          causalAvailability: `${result.causalExcludedJudgements} earlier judgements excluded at dispatches where their evidence did not yet exist`,
           ties: 'unmetered, then median latency',
           betaMapping: 'successes += (w + 0.5) / 1.5; failures += 1 - successes',
           exploration: 'choice differs from deterministic expected leader',
@@ -3612,6 +3613,7 @@ switch (cmd) {
     console.log('  eligibility: current static capability, metered, prompt-size and context rules; cooldowns reconstructed from prior log events')
     console.log('  reachability: present-day reachability ignored')
     console.log('  evidence: voided, evidence-excluded and NOT_EVIDENCE runs omitted')
+    console.log(`  causal availability: scored evidence enters at scored_at; failures at termination; ${result.causalExcludedJudgements} earlier judgement/dispatch pairs excluded`)
     console.log('  exact ties: unmetered first, then median latency')
     console.log('  Beta update: successes += (w + 0.5) / 1.5; failures += 1 - that (none is a full failure; full/right a full success)')
     console.log('  exploration: a choice outside the policy\'s deterministic expected leader')

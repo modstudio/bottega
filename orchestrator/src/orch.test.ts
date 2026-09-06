@@ -1269,7 +1269,7 @@ const { candidates, weightCase, scoreboard, median, evidenceFor, pick,
         STANDING_EXPLORE_RATE, PROMPT_SIZE_BOUNDARY, promptSizeBucket } = await import('./route.ts')
 const { guide } = await import('./guide.ts')
 const { gwetAc1 } = await import('./agreement.ts')
-const { betaContribution, routingBacktest } = await import('./routing-backtest.ts')
+const { betaContribution, passesRoutingBacktest, routingBacktest } = await import('./routing-backtest.ts')
 const { projects, projectAt, projectByName, stackAt, upsertProject, removeProject } = await import('./projects.ts')
 const {
   missingDatabaseMessage, registeredRepositoryMissingDatabase, resolveDatabase, resolveRunsDirectory,
@@ -5840,6 +5840,33 @@ describe('routing backtest statistics', () => {
       insert.run(id, 'full', i % 3 ? 'right' : 'mixed')
     }
     expect(routingBacktest('summarize', 12345)).toEqual(routingBacktest('summarize', 12345))
+  })
+
+  test('does not expose evidence from an overlapping fan-out before it was scored', () => {
+    const first = addRun({
+      agent: 'codex', job: 'summarize', startedAt: '2026-01-01T00:00:00.000Z',
+    })
+    const second = addRun({
+      agent: 'agy', job: 'summarize', startedAt: '2026-01-02T00:00:00.000Z',
+    })
+    const insert = db().query(
+      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?,?,?,?, 'test')`,
+    )
+    insert.run(first, 'full', 'right', '2026-01-03T00:00:00.000Z')
+    insert.run(second, 'full', 'right', '2026-01-02T01:00:00.000Z')
+    expect(routingBacktest('summarize', 123).causalExcludedJudgements).toBe(1)
+  })
+
+  test('a sparse matched subset cannot pass the wiring gate', () => {
+    const sparse = {
+      job: 'fix', runs: 8, agreements: 3, differences: 5,
+      currentMatched: 3, thompsonMatched: 5,
+      currentMean: 0.333, thompsonMean: 0.7,
+      currentExplorationShare: 0, thompsonExplorationShare: 0.25,
+      measurable: false, verdict: 'unmeasurable',
+    }
+    expect(passesRoutingBacktest([sparse])).toBe(false)
   })
 })
 
