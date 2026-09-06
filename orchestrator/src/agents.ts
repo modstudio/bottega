@@ -354,6 +354,18 @@ export type Agent = {
   notes: string
 }
 
+/** Argv-agent prompt ceiling used by routing eligibility. */
+export const ARGV_PROMPT_BYTES = 200_000
+
+/**
+ * Resume puts the prompt on argv for every resumable agent, including Codex
+ * whose first turn uses stdin and therefore declares no argv ceiling.
+ */
+export function resumePromptByteLimit(agent: Agent): number {
+  if (Number.isFinite(agent.maxPromptBytes)) return agent.maxPromptBytes
+  return ARGV_PROMPT_BYTES
+}
+
 /** Where a local OpenAI-compatible endpoint lives, e.g. http://127.0.0.1:8010/v1 */
 export const LOCAL_BASE_URL = process.env.ORCH_LOCAL_BASE_URL ?? ''
 export const LOCAL_MODEL = process.env.ORCH_LOCAL_MODEL ?? 'Qwen/Qwen3.6-35B-A3B'
@@ -637,7 +649,7 @@ export const AGENTS: Record<string, Agent> = {
     // cannot edit one, and its headless mode has no session to resume.
     caps: { readsRepo: false, mcp: false, schema: true, writesRepo: false, resumable: false },
     stdin: false,
-    maxPromptBytes: 200_000,
+    maxPromptBytes: ARGV_PROMPT_BYTES,
     readsOut: false,
     // Context is inline, so it never navigates a repo; it is the quickest agent
     // here and its one recorded hang gave up on its own at 305s.
@@ -685,7 +697,7 @@ export const AGENTS: Record<string, Agent> = {
     // `qwenSession` for why the newest file is not good enough.
     caps: { readsRepo: true, mcp: true, schema: false, writesRepo: false, resumable: true },
     stdin: false,
-    maxPromptBytes: 200_000,
+    maxPromptBytes: ARGV_PROMPT_BYTES,
     readsOut: false,
     // Our own hardware, so a hang costs nothing but the caller's wait.
     timeoutMs: 15 * 60_000,
@@ -745,7 +757,7 @@ export const AGENTS: Record<string, Agent> = {
     // and exited 0 in 13.38s.
     caps: { readsRepo: true, mcp: true, schema: true, writesRepo: true, resumable: true },
     stdin: false,
-    maxPromptBytes: 200_000,
+    maxPromptBytes: ARGV_PROMPT_BYTES,
     readsOut: false,
     // The slowest agent by a distance: 867s is the longest honest run recorded.
     timeoutMs: 25 * 60_000,

@@ -9,7 +9,7 @@ import { DATABASE_RESOLUTION, DB_PATH, db, nowIso, sessionId, judgeability, pend
 import { JOBS, job } from './jobs.ts'
 import { AGENTS, available, installed, ensureLocalHealth,
          unavailableReason, NEEDS_HEALTH, tryWake, wakeStatus,
-         lastWakeAttempt, readStrictCodexSchema } from './agents.ts'
+         lastWakeAttempt, readStrictCodexSchema, resumePromptByteLimit } from './agents.ts'
 import { candidates, pick, scoreboard, MIN_SAMPLE, promptSizeBucketLabel } from './route.ts'
 import { guide } from './guide.ts'
 import { repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses,
@@ -29,7 +29,8 @@ import { collectResult, collectWait, resolveFailover, failoverSummary } from './
 import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
 import {
   ANSWER_WORKING_FORMS, CONTINUE_WORKING_FORMS, TELL_WORKING_FORMS,
-  flagValue, flagValues, parseAnswerTextSources, refuseMisparsedMessage, validateCliArgs,
+  flagValue, flagValues, invalidUtf8Offset, nulByteOffset, parseAnswerTextSources,
+  refuseMisparsedMessage, validateCliArgs,
 } from './args.ts'
 import { completeReview, DISPOSITIONS, gradeReviewLens, parseReviewOutput, recordReviews,
          reviewCalibration, reviewPins, triageFinding, type Disposition,
@@ -946,16 +947,56 @@ async function routeConstraints(agent?: string): Promise<{
   return { avoid, distinctModels }
 }
 
-function positionalMessage(rest: string[]): string[] {
+function positionalMessage(rest: string[], allowDashPositionals = false): string[] {
   // A boolean switch does not consume the next argument, so only skip the one
   // after a flag that actually takes a value — otherwise `--quiet <prompt>`
-  // silently discards the prompt.
+  // silently discards the prompt. Unrecognized `--…` tokens after the run id
+  // are message text on answer/tell/continue (DEV-242 for --seed; the same
+  // defect for a ruling). `do` still treats a leading `--` as a flag.
   return rest.filter((a, i) => {
-    if (a.startsWith('--')) return false
     const prev = rest[i - 1] ?? ''
-    if (VALUE_FLAGS.has(prev) || /^--q\d+$/.test(prev)) return false
+    if (VALUE_FLAGS.has(prev)) return false
+    if (a === '--file' || a.startsWith('--file=')) return false
+    if (a === '--follow' || a === '--detach' || a === '--quiet') return false
+    if (!allowDashPositionals && a.startsWith('--')) return false
     return true
   })
+}
+
+function readWorkerFile(path: string): string {
+  const bytes = readFileSync(path)
+  const utf8At = invalidUtf8Offset(bytes)
+  if (utf8At !== null) {
+    throw new Error(`invalid UTF-8 in ${path} at byte offset ${utf8At}`)
+  }
+  return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+}
+
+function assertWorkerText(
+  text: string, noun: string, workingForms: string, argvLimit?: number,
+): void {
+  refuseMisparsedMessage(text, noun, workingForms)
+  const nulAt = nulByteOffset(text)
+  if (nulAt !== null) {
+    throw new Error(
+      `${noun} contains a NUL at byte offset ${nulAt}\nworking forms:\n${workingForms}`,
+    )
+  }
+  if (argvLimit !== undefined) {
+    const n = Buffer.byteLength(text, 'utf8')
+    if (n > argvLimit) {
+      throw new Error(
+        `${noun} is ${n} bytes; this agent's resume transport is bounded at ${argvLimit} bytes\n` +
+        `working forms:\n${workingForms}`,
+      )
+    }
+  }
+}
+
+function argvResumeLimit(agentName: string): number | undefined {
+  const agent = AGENTS[agentName]
+  if (!agent?.resumeArgv) return undefined
+  return resumePromptByteLimit(agent)
 }
 
 /**
@@ -966,11 +1007,12 @@ async function readMessageText(opts: {
   missing: string
   exclusive?: string
   optional?: boolean
+  allowDashPositionals?: boolean
 }): Promise<string | undefined> {
   const f = flag('file')
-  const positional = positionalMessage(argv.slice(2))
+  const positional = positionalMessage(argv.slice(2), opts.allowDashPositionals)
   if (f && positional.length && opts.exclusive) throw new Error(opts.exclusive)
-  if (f) return readFileSync(f, 'utf8')
+  if (f) return readWorkerFile(f)
   if (positional.length) return positional.join(' ')
   if (!process.stdin.isTTY) {
     const text = await Bun.stdin.text()
@@ -1894,8 +1936,9 @@ switch (cmd) {
     const body = (await readMessageText({
       missing: 'no message: pass it as an argument, via --file, or on stdin',
       exclusive: 'pass the message either positionally or with --file, not both',
+      allowDashPositionals: true,
     }))!
-    refuseMisparsedMessage(body, 'message', TELL_WORKING_FORMS)
+    assertWorkerText(body, 'message', TELL_WORKING_FORMS)
     const { tellRun } = await import('./mailbox.ts')
     const message = tellRun(id, body)
     console.log(
@@ -2536,13 +2579,14 @@ switch (cmd) {
       throw new Error(`run ${id} is ${row.status}, not waiting on a ruling`)
     }
 
-    // Two ways to rule: positionally when the order is obvious, or by question
-    // id when there are several. `--q<id> --file PATH` binds that file to that
-    // question; a command-level `--file` is the single-ruling form.
+    // Two ways to rule: one joined positional / --file / stdin message, or
+    // by question id when there are several. `--q<id> --file PATH` binds that
+    // file to that question; a command-level `--file` is the single-ruling form.
     const answers: { question: string; answer: string }[] = []
     const parsed = parseAnswerTextSources(argv.slice(2))
+    const argvLimit = ownersLive ? undefined : argvResumeLimit(row.agent)
     const rulingFrom = (text: string): string => {
-      refuseMisparsedMessage(text, 'ruling', ANSWER_WORKING_FORMS)
+      assertWorkerText(text, 'ruling', ANSWER_WORKING_FORMS, argvLimit)
       return text
     }
     if (parsed.byId.length) {
@@ -2552,10 +2596,38 @@ switch (cmd) {
           `working forms:\n${ANSWER_WORKING_FORMS}`,
         )
       }
+      const invalid: string[] = []
+      const seen = new Set<number>()
+      for (const src of parsed.byId) {
+        if (seen.has(src.id)) invalid.push(`--q${src.id} given more than once`)
+        seen.add(src.id)
+        if (open.some((q) => q.id === src.id)) continue
+        const named = db().query(
+          `SELECT q.id, q.answered_at, r.id AS run_id,
+                  COALESCE(r.parent_run_id, r.id) AS root_id
+             FROM question q JOIN run r ON r.id = q.run_id WHERE q.id = ?`,
+        ).get(src.id) as
+          { id: number; answered_at: string | null; run_id: number; root_id: number } | null
+        if (!named) {
+          invalid.push(`--q${src.id} names no question`)
+        } else if (named.root_id !== id) {
+          invalid.push(`--q${src.id} belongs to run ${named.root_id}, not this chain`)
+        } else if (named.answered_at) {
+          invalid.push(`--q${src.id} on run ${named.run_id} is already closed`)
+        } else {
+          invalid.push(`--q${src.id} is not open on this chain`)
+        }
+      }
+      if (invalid.length) {
+        throw new Error(
+          `refusing the whole ruling: ${invalid.join('; ')}\n` +
+          `nothing was stored\nworking forms:\n${ANSWER_WORKING_FORMS}`,
+        )
+      }
       for (const q of open) {
         const src = parsed.byId.find((item) => item.id === q.id)
         if (!src) continue
-        const given = src.file !== undefined ? readFileSync(src.file, 'utf8') : src.text!
+        const given = src.file !== undefined ? readWorkerFile(src.file) : src.text!
         answers.push({ question: q.question, answer: rulingFrom(given) })
       }
     } else {
@@ -2563,6 +2635,8 @@ switch (cmd) {
       if (parsed.commandFile !== undefined || (!positional.length && !process.stdin.isTTY)) {
         const given = await readMessageText({
           missing: 'no ruling: pass it as an argument, via --file, or on stdin',
+          exclusive: 'pass the ruling either positionally or with --file, not both',
+          allowDashPositionals: true,
         })
         answers.push({ question: open[0]!.question, answer: rulingFrom(given!) })
       } else if (!positional.length) {
@@ -2572,9 +2646,10 @@ switch (cmd) {
           'or pass a ruling via --file or stdin.',
         )
       } else {
-        open.forEach((q, i) => {
-          const given = positional[i]
-          if (given) answers.push({ question: q.question, answer: rulingFrom(given) })
+        // One reader: positional words join into one message, never one-per-question.
+        answers.push({
+          question: open[0]!.question,
+          answer: rulingFrom(positional.join(' ')),
         })
       }
     }
@@ -2718,12 +2793,21 @@ switch (cmd) {
   case 'continue': {
     const id = Number(argv[1])
     if (!id) usage()
+    const chain = db().query(
+      'SELECT id, agent, parent_run_id FROM run WHERE id = ?',
+    ).get(id) as { id: number; agent: string; parent_run_id: number | null } | null
     const message = await readMessageText({
       missing: 'no message: pass it as an argument, via --file, or on stdin',
       exclusive: 'pass the message either positionally or with --file, not both',
       optional: true,
+      allowDashPositionals: true,
     })
-    if (message !== undefined) refuseMisparsedMessage(message, 'message', CONTINUE_WORKING_FORMS)
+    if (message !== undefined) {
+      assertWorkerText(
+        message, 'message', CONTINUE_WORKING_FORMS,
+        chain ? argvResumeLimit(chain.agent) : undefined,
+      )
+    }
     const resumed = await continueRun(id, message)
     await reportContinuedRun(resumed.childId, resumed.job)
     break

@@ -1310,7 +1310,7 @@ const { orphanSafety, repoRootOf, createWorktree, createWithTool, resolveBase, f
         changesIn, contentTree, removeFor } = await import('./worktree.ts')
 const { landingStatus, resolveLandingBranch } = await import('./landing.ts')
 const { gitLocks } = await import('./git-locks.ts')
-const { AGENTS, localReachable, ensureLocalHealth, resetLocalHealth,
+const { AGENTS, ARGV_PROMPT_BYTES, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
         WAKE_COOLDOWN_MS, CODEX_EXEC_SANDBOX, strictCodexSchema } = await import('./agents.ts')
 const { listDocs, listDocMetadata, getDoc, setDoc: writeDoc, consumeDoc: consumeDocument, removeDoc: deleteDoc,
@@ -2348,6 +2348,24 @@ describe('run mailbox', () => {
     const r = mailboxOrch('tell', String(root), '--file', path)
     expect(r.code).toBe(1)
     expect(r.err).toContain('received "--file" as a message')
+    expect(messagesForRun(root)).toEqual([])
+  })
+
+  test('tell accepts a two-word message beginning with --', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const r = mailboxOrch('tell', String(root), '--literal is intended')
+    expect(r.code).toBe(0)
+    expect(messagesForRun(root)[0]!.body).toBe('--literal is intended')
+  })
+
+  test('tell --file refuses invalid UTF-8 at the byte offset', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const path = join(dir, 'mailbox-bad-utf8.bin')
+    writeFileSync(path, Buffer.from([0x66, 0x80, 0xff, 0x67]))
+    const r = mailboxOrch('tell', String(root), '--file', path)
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('invalid UTF-8')
+    expect(r.err).toContain('byte offset 1')
     expect(messagesForRun(root)).toEqual([])
   })
 
@@ -7478,6 +7496,100 @@ describe('detached run collection', () => {
       { answer: string }).answer).toBe('from the file\n')
   })
 
+  test('a multi-word positional ruling is stored whole, not just the first word', () => {
+    const id = insert('running', 'implement')
+    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'which design?')
+
+    const r = orch('answer', String(id), 'alpha', 'beta', 'gamma')
+
+    expect(r.code).toBe(0)
+    expect((db().query('SELECT answer FROM question WHERE run_id=?').get(id) as
+      { answer: string }).answer).toBe('alpha beta gamma')
+  })
+
+  test('a two-word message beginning with -- is accepted as a ruling', () => {
+    const id = insert('running', 'implement')
+    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'which design?')
+
+    const r = orch('answer', String(id), '--literal is intended')
+
+    expect(r.code).toBe(0)
+    expect((db().query('SELECT answer FROM question WHERE run_id=?').get(id) as
+      { answer: string }).answer).toBe('--literal is intended')
+  })
+
+  test('a --q naming a question that is not open on this chain refuses the whole command', () => {
+    const id = insert('running', 'implement')
+    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'on this chain?')
+    const qid = (db().query('SELECT id FROM question WHERE run_id=?').get(id) as { id: number }).id
+    const other = insert('running', 'implement')
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(other, new Date().toISOString(), 'on another chain?')
+    const alien = (db().query('SELECT id FROM question WHERE run_id=?').get(other) as
+      { id: number }).id
+
+    const r = orch('answer', String(id), `--q${qid}`, 'valid', `--q${alien}`, 'alien')
+
+    expect(r.code).toBe(1)
+    expect(r.err).toContain(`--q${alien} belongs to run ${other}, not this chain`)
+    expect(r.err).toContain('nothing was stored')
+    expect((db().query('SELECT answer FROM question WHERE id=?').get(qid) as
+      { answer: string | null }).answer).toBeNull()
+    expect((db().query('SELECT answer FROM question WHERE id=?').get(alien) as
+      { answer: string | null }).answer).toBeNull()
+  })
+
+  test('a closed or duplicate --q refuses the whole command', () => {
+    const id = insert('running', 'implement')
+    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
+    const now = new Date().toISOString()
+    db().query(
+      `INSERT INTO question (run_id, asked_at, question, answer, answered_at)
+       VALUES (?, ?, 'already done?', 'yes', ?)`,
+    ).run(id, now, now)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, now, 'still open?')
+    const rows = db().query('SELECT id, answered_at FROM question WHERE run_id=? ORDER BY id')
+      .all(id) as { id: number; answered_at: string | null }[]
+    const closed = rows.find((q) => q.answered_at)!.id
+    const openId = rows.find((q) => !q.answered_at)!.id
+
+    const closedR = orch('answer', String(id), `--q${closed}`, 'again', `--q${openId}`, 'ok')
+    expect(closedR.code).toBe(1)
+    expect(closedR.err).toContain(`--q${closed} on run ${id} is already closed`)
+    expect((db().query('SELECT answer FROM question WHERE id=?').get(openId) as
+      { answer: string | null }).answer).toBeNull()
+
+    const dup = orch('answer', String(id), `--q${openId}`, 'one', `--q${openId}`, 'two')
+    expect(dup.code).toBe(1)
+    expect(dup.err).toContain(`--q${openId} given more than once`)
+    expect((db().query('SELECT answer FROM question WHERE id=?').get(openId) as
+      { answer: string | null }).answer).toBeNull()
+  })
+
+  test('answer --file refuses invalid UTF-8 at the byte offset', () => {
+    const id = insert('running', 'implement')
+    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'which design?')
+    const path = join(dir, `answer-bad-utf8-${id}.bin`)
+    writeFileSync(path, Buffer.from([0x66, 0x80, 0xff, 0x67]))
+
+    const r = orch('answer', String(id), '--file', path)
+
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('invalid UTF-8')
+    expect(r.err).toContain('byte offset 1')
+    expect((db().query('SELECT answer FROM question WHERE run_id=?').get(id) as
+      { answer: string | null }).answer).toBeNull()
+  })
+
   test('a partial multi-question ruling names the single-command rule', () => {
     const id = insert('running', 'implement')
     db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
@@ -7653,6 +7765,82 @@ describe('detached run collection', () => {
     const r = orch('continue', String(root), '--file', path)
     expect(r.code).toBe(1)
     expect(r.err).toContain('received "--file" as a message')
+    expect((db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=?').get(root) as
+      { n: number }).n).toBe(0)
+  })
+
+  test('continue accepts a two-word follow-up beginning with --', () => {
+    const binDir = mkdtempSync(join(tmpdir(), 'orch-fake-codex-continue-dash-'))
+    writeFileSync(join(binDir, 'codex'), '#!/bin/sh\nexit 0\n')
+    chmodSync(join(binDir, 'codex'), 0o755)
+    const root = insert('ok', 'file-question')
+    const prompt = join(dir, `continue-dash-root-${root}.prompt.txt`)
+    writeFileSync(prompt, 'original research spec')
+    db().query('UPDATE run SET vendor_session=?, agent=?, prompt_path=? WHERE id=?')
+      .run('parent-session', 'codex', prompt, root)
+    try {
+      const r = Bun.spawnSync(
+        [process.execPath, CLI, 'continue', String(root), '--literal is intended'],
+        {
+          env: {
+            ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+            CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+            PATH: `${binDir}:${process.env.PATH ?? ''}`,
+          },
+          stdout: 'pipe', stderr: 'pipe',
+        },
+      )
+      const out = typeof r.stdout === 'string' ? r.stdout : new TextDecoder().decode(r.stdout)
+      expect(r.exitCode).toBe(0)
+      const childId = Number(out.replace(/\u001B\[[0-9;]*m/g, '').trim().split('\n')[0])
+      expect(childId).toBeGreaterThan(0)
+      orch('wait', String(childId), '--timeout', '15')
+      const child = db().query('SELECT prompt_path FROM run WHERE id=?').get(childId) as
+        { prompt_path: string }
+      expect(readFileSync(child.prompt_path, 'utf8')).toBe('--literal is intended')
+    } finally {
+      rmSync(binDir, { recursive: true, force: true })
+    }
+  })
+
+  test('continue --file refuses a NUL and names the byte offset', () => {
+    const root = insert('ok', 'file-question')
+    db().query('UPDATE run SET vendor_session=?, agent=? WHERE id=?')
+      .run('parent-session', 'codex', root)
+    const path = join(dir, `continue-nul-${root}.bin`)
+    writeFileSync(path, Buffer.from('A\0B'))
+    const r = orch('continue', String(root), '--file', path)
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('NUL at byte offset 1')
+    expect((db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=?').get(root) as
+      { n: number }).n).toBe(0)
+  })
+
+  test('continue --file refuses a prompt above the argv resume bound', () => {
+    const root = insert('ok', 'file-question')
+    db().query('UPDATE run SET vendor_session=?, agent=? WHERE id=?')
+      .run('parent-session', 'codex', root)
+    const path = join(dir, `continue-huge-${root}.txt`)
+    const bytes = 1024 * 1024
+    writeFileSync(path, 'A'.repeat(bytes))
+    const r = orch('continue', String(root), '--file', path)
+    expect(r.code).toBe(1)
+    expect(r.err).toContain(`${bytes} bytes`)
+    expect(r.err).toContain(`bounded at ${ARGV_PROMPT_BYTES} bytes`)
+    expect((db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=?').get(root) as
+      { n: number }).n).toBe(0)
+  })
+
+  test('continue --file refuses invalid UTF-8 at the byte offset', () => {
+    const root = insert('ok', 'file-question')
+    db().query('UPDATE run SET vendor_session=?, agent=? WHERE id=?')
+      .run('parent-session', 'codex', root)
+    const path = join(dir, `continue-bad-utf8-${root}.bin`)
+    writeFileSync(path, Buffer.from([0x66, 0x80, 0xff, 0x67]))
+    const r = orch('continue', String(root), '--file', path)
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('invalid UTF-8')
+    expect(r.err).toContain('byte offset 1')
     expect((db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=?').get(root) as
       { n: number }).n).toBe(0)
   })

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  ANSWER_WORKING_FORMS, misparsedMessage, parseAnswerTextSources, refuseMisparsedMessage,
-  flagValue, flagValues, isCliCommand, seedGuidance, validateCliArgs,
+  ANSWER_WORKING_FORMS, invalidUtf8Offset, misparsedMessage, parseAnswerTextSources,
+  refuseMisparsedMessage, flagValue, flagValues, isCliCommand, seedGuidance, validateCliArgs,
 } from './args.ts'
 
 describe('CLI argument recognition', () => {
@@ -144,6 +144,14 @@ describe('CLI argument recognition', () => {
     expect(() => validateCliArgs(['answer', '12', '--q31', '--follow']))
       .toThrow('argument --q31 needs a value')
   })
+
+  test('a dash-prefixed message after the run id is accepted for answer, tell, and continue', () => {
+    const message = '--literal is intended'
+    expect(() => validateCliArgs(['answer', '12', message])).not.toThrow()
+    expect(() => validateCliArgs(['tell', '12', message])).not.toThrow()
+    expect(() => validateCliArgs(['continue', '12', message])).not.toThrow()
+    expect(() => validateCliArgs(['answer', '12', '--q31', message])).not.toThrow()
+  })
 })
 
 describe('answer text sources', () => {
@@ -170,6 +178,17 @@ describe('answer text sources', () => {
       byId: [], commandFile: 'ruling.txt', positionals: [],
     })
   })
+
+  test('a quoted dash-prefixed value is message text, not an unknown flag', () => {
+    expect(parseAnswerTextSources(['--literal is intended'])).toEqual({
+      byId: [], commandFile: undefined, positionals: ['--literal is intended'],
+    })
+    expect(parseAnswerTextSources(['--q31', '--literal is intended'])).toEqual({
+      byId: [{ id: 31, text: '--literal is intended' }],
+      commandFile: undefined,
+      positionals: [],
+    })
+  })
 })
 
 describe('a message that is not a ruling is refused', () => {
@@ -180,6 +199,12 @@ describe('a message that is not a ruling is refused', () => {
     expect(misparsedMessage(' --file ')).toBe('dash-token')
     expect(misparsedMessage('use --file')).toBeNull()
     expect(misparsedMessage('Use $var and `cmd`.')).toBeNull()
+    expect(misparsedMessage('--literal is intended')).toBeNull()
+  })
+
+  test('invalid UTF-8 is reported at the first bad byte', () => {
+    expect(invalidUtf8Offset(Buffer.from([0x66, 0x80, 0xff, 0x67]))).toBe(1)
+    expect(invalidUtf8Offset(Buffer.from('ok'))).toBeNull()
   })
 
   test('the refusal names what was received and the working forms', () => {

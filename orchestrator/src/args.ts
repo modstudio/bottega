@@ -9,6 +9,8 @@ type CommandShape = {
   booleanFlags?: readonly string[]
   dynamicValueFlag?: RegExp
   allowedPositionals?: readonly string[]
+  /** After the first positional (the run id), unrecognized `--…` tokens are message text. */
+  messagePositionals?: boolean
 }
 
 const shape = (
@@ -16,7 +18,7 @@ const shape = (
   maxPositionals: number,
   valueFlags: readonly string[] = [],
   booleanFlags: readonly string[] = [],
-  extra: Pick<CommandShape, 'dynamicValueFlag' | 'allowedPositionals'> = {},
+  extra: Pick<CommandShape, 'dynamicValueFlag' | 'allowedPositionals' | 'messagePositionals'> = {},
 ): CommandShape => ({ usage, maxPositionals, valueFlags, booleanFlags, ...extra })
 
 const hasArg = (argv: string[], arg: string) => argv.includes(arg)
@@ -83,6 +85,71 @@ export function refuseMisparsedMessage(text: string, noun: string, workingForms:
   }
 }
 
+/** First invalid UTF-8 byte offset, or null if the buffer is well-formed. */
+export function invalidUtf8Offset(bytes: Uint8Array): number | null {
+  let i = 0
+  while (i < bytes.length) {
+    const b = bytes[i]!
+    const rest = bytes.length - i
+    const fail = (offset = i) => offset
+    const cont = (n: number) => {
+      for (let k = 1; k <= n; k++) {
+        if ((bytes[i + k]! & 0xc0) !== 0x80) return false
+      }
+      return true
+    }
+    if (b <= 0x7f) { i += 1; continue }
+    if (b >= 0xc2 && b <= 0xdf) {
+      if (rest < 2 || !cont(1)) return fail()
+      i += 2
+      continue
+    }
+    if (b === 0xe0) {
+      if (rest < 3 || bytes[i + 1]! < 0xa0 || bytes[i + 1]! > 0xbf || !cont(2)) return fail()
+      i += 3
+      continue
+    }
+    if (b >= 0xe1 && b <= 0xec) {
+      if (rest < 3 || !cont(2)) return fail()
+      i += 3
+      continue
+    }
+    if (b === 0xed) {
+      if (rest < 3 || bytes[i + 1]! < 0x80 || bytes[i + 1]! > 0x9f || !cont(2)) return fail()
+      i += 3
+      continue
+    }
+    if (b === 0xee || b === 0xef) {
+      if (rest < 3 || !cont(2)) return fail()
+      i += 3
+      continue
+    }
+    if (b === 0xf0) {
+      if (rest < 4 || bytes[i + 1]! < 0x90 || bytes[i + 1]! > 0xbf || !cont(3)) return fail()
+      i += 4
+      continue
+    }
+    if (b >= 0xf1 && b <= 0xf3) {
+      if (rest < 4 || !cont(3)) return fail()
+      i += 4
+      continue
+    }
+    if (b === 0xf4) {
+      if (rest < 4 || bytes[i + 1]! < 0x80 || bytes[i + 1]! > 0x8f || !cont(3)) return fail()
+      i += 4
+      continue
+    }
+    return fail()
+  }
+  return null
+}
+
+export function nulByteOffset(text: string): number | null {
+  const at = text.indexOf('\0')
+  if (at < 0) return null
+  return Buffer.byteLength(text.slice(0, at), 'utf8')
+}
+
 export type QuestionTextSource = { id: number; file?: string; text?: string }
 
 export type AnswerTextSources = {
@@ -107,6 +174,8 @@ function takeFilePath(args: string[], index: number, usage: string): { path: str
  * Walk `answer`'s argv after the run id. `--q<id> --file PATH` binds that file
  * to that question; a `--file` not immediately after `--q<id>` is command-level.
  */
+const ANSWER_BOOLEANS = new Set(['--follow', '--detach', '--quiet'])
+
 export function parseAnswerTextSources(args: string[]): AnswerTextSources {
   const usage = 'orch answer <id> ["<ruling>"] [--file PATH] [--q<ID> "<ruling>"] [--q<ID> --file PATH] [--follow]'
   const byId: QuestionTextSource[] = []
@@ -129,7 +198,7 @@ export function parseAnswerTextSources(args: string[]): AnswerTextSources {
         i = taken.next - 1
         continue
       }
-      if (next === undefined || next.startsWith('--')) {
+      if (next === undefined || ANSWER_BOOLEANS.has(next)) {
         throw new Error(`argument ${arg} needs a value\nworking form: ${usage}`)
       }
       byId.push({ id, text: next })
@@ -142,8 +211,7 @@ export function parseAnswerTextSources(args: string[]): AnswerTextSources {
       i = taken.next - 1
       continue
     }
-    if (arg === '--follow' || arg === '--detach' || arg === '--quiet') continue
-    if (arg.startsWith('--')) throw new Error(`unrecognised argument: ${arg}\nworking form: ${usage}`)
+    if (ANSWER_BOOLEANS.has(arg)) continue
     positionals.push(arg)
   }
   return { byId, commandFile, positionals }
@@ -294,14 +362,17 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
     case 'inbox': return { args: argv.slice(1), shape: shape('orch inbox [--all] [--json]', 0, [], ['--all', '--json']) }
     case 'answer': return { args: argv.slice(1), shape: shape(
       'orch answer <id> ["<ruling>"] [--file PATH] [--q<ID> "<ruling>"] [--q<ID> --file PATH] [--follow]', Infinity,
-      ['--file'], ['--follow', '--detach', '--quiet'], { dynamicValueFlag: /^--q\d+$/ },
+      ['--file'], ['--follow', '--detach', '--quiet'],
+      { dynamicValueFlag: /^--q\d+$/, messagePositionals: true },
     ) }
     case 'tell': return { args: argv.slice(1), shape: shape(
-      'orch tell <run-id> ["<message>"] [--file PATH]', Infinity, ['--file'],
+      'orch tell <run-id> ["<message>"] [--file PATH]', Infinity, ['--file'], [],
+      { messagePositionals: true },
     ) }
     case 'continue': return { args: argv.slice(1), shape: shape(
       'orch continue <id> ["<what next>"] [--file PATH] [--follow]', Infinity,
       ['--file'], ['--follow', '--detach', '--quiet'],
+      { messagePositionals: true },
     ) }
     case 'diff': return { args: argv.slice(1), shape: shape('orch diff <id> [--quiet]', 1, [], ['--quiet']) }
     case 'sweep': return { args: argv.slice(1), shape: shape('orch sweep [--older-than N] [--force] [--dry-run]', 0, ['--older-than'], ['--force', '--dry-run']) }
@@ -357,11 +428,10 @@ export function validateCliArgs(argv: string[]): void {
       }
       const value = args[i + 1]
       // `--q<id> --file PATH` is one ruling, not `--file` as the ruling text.
-      // Dynamic question flags therefore leave `--file` for the value-flag
-      // parser instead of consuming it the way `--seed --bundle=minimal` does.
+      // Other dash-prefixed values are the ruling, matching `--seed --bundle=…`.
       if (expected.dynamicValueFlag?.test(flagName)) {
         if (value === '--file' || value?.startsWith('--file=')) continue
-        if (value === undefined || value.startsWith('--')) {
+        if (value === undefined || booleanFlags.has(value)) {
           throw new Error(`argument ${arg} needs a value\nworking form: ${expected.usage}`)
         }
         i++
@@ -374,7 +444,13 @@ export function validateCliArgs(argv: string[]): void {
       continue
     }
     if (booleanFlags.has(arg)) continue
-    if (arg.startsWith('--') || positionals.length >= expected.maxPositionals) {
+    if (arg.startsWith('--')) {
+      const inMessageSlot = expected.messagePositionals && positionals.length >= 1
+      if (!inMessageSlot) {
+        throw new Error(`unrecognised argument: ${arg}\nworking form: ${expected.usage}`)
+      }
+    }
+    if (positionals.length >= expected.maxPositionals) {
       throw new Error(`unrecognised argument: ${arg}\nworking form: ${expected.usage}`)
     }
     positionals.push(arg)
