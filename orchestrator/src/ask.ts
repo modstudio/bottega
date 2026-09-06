@@ -30,6 +30,7 @@
  */
 import { db, nowIso, writableDb } from './db.ts'
 import { checkMessages, messageArchitect } from './mailbox.ts'
+import { createConnection, createServer, type Socket } from 'node:net'
 
 /**
  * How long a worker waits for a ruling before falling back.
@@ -121,9 +122,13 @@ export async function ask(o: {
  * of "my run id" would be a guess. `ORCH_RUN_ID` is set by the process that
  * spawned the agent, which is the only party that actually knows.
  */
-export async function serveAsk(): Promise<void> {
-  const runId = Number(process.env.ORCH_RUN_ID ?? 0)
-  const token = process.env.ORCH_RUN_TOKEN ?? ''
+type AskChannel = {
+  input: AsyncIterable<Uint8Array | string>
+  send(message: unknown): void
+}
+
+/** Serve one worker connection, independent of whether its bytes arrive by stdio or loopback. */
+async function serveAskChannel(channel: AskChannel, runId: number, token: string): Promise<void> {
 
   /**
    * WHETHER THIS PROCESS IS ACTUALLY THE WORKER IT CLAIMS TO BE.
@@ -143,7 +148,7 @@ export async function serveAsk(): Promise<void> {
    */
   const authorised = (): boolean => authenticatedWorkerRun(runId, token)
 
-  const send = (msg: unknown) => { process.stdout.write(`${JSON.stringify(msg)}\n`) }
+  const send = (msg: unknown) => channel.send(msg)
   const reply = (id: unknown, result: unknown) => send({ jsonrpc: '2.0', id, result })
 
   const ASK_TOOL = {
@@ -191,7 +196,7 @@ export async function serveAsk(): Promise<void> {
   // boundary — so a design question containing an accent or a dash could reach
   // the architect with replacement characters in it, and be ruled on as read.
   const decoder = new TextDecoder('utf-8')
-  for await (const chunk of process.stdin) {
+  for await (const chunk of channel.input) {
     buf += decoder.decode(Buffer.from(chunk), { stream: true })
     // Newline-delimited JSON: a partial line is kept for the next chunk rather
     // than parsed and discarded, which is the standard way this goes wrong.
@@ -297,6 +302,73 @@ export async function serveAsk(): Promise<void> {
       }
     }
   }
+}
+
+export type AskLoopback = { url: string; close(): Promise<void> }
+
+/**
+ * Start the database-owning side of orch-ask outside a worker's process sandbox.
+ * The OS chooses the port, and the listener is bound only to loopback.
+ */
+export async function startAskLoopback(runId: number, token: string): Promise<AskLoopback> {
+  const sockets = new Set<Socket>()
+  const server = createServer((socket) => {
+    sockets.add(socket)
+    socket.once('close', () => sockets.delete(socket))
+    void serveAskChannel({
+      input: socket,
+      send: (message) => socket.write(`${JSON.stringify(message)}\n`),
+    }, runId, token).catch(() => socket.destroy())
+  })
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      server.off('error', reject)
+      resolve()
+    })
+  })
+  const address = server.address()
+  if (!address || typeof address === 'string') {
+    server.close()
+    throw new Error('orch-ask loopback did not receive a TCP port')
+  }
+  return {
+    url: `tcp://127.0.0.1:${address.port}`,
+    close: () => new Promise<void>((resolve) => {
+      for (const socket of sockets) socket.destroy()
+      server.close(() => resolve())
+    }),
+  }
+}
+
+/** Forward the registered stdio endpoint into the host process that owns database writes. */
+async function proxyAsk(urlValue: string): Promise<void> {
+  const url = new URL(urlValue)
+  if (url.protocol !== 'tcp:' || url.hostname !== '127.0.0.1' || !url.port) {
+    throw new Error('ORCH_ASK_URL must name a tcp://127.0.0.1:<port> endpoint')
+  }
+  const socket = createConnection({ host: '127.0.0.1', port: Number(url.port) })
+  await new Promise<void>((resolve, reject) => {
+    socket.once('connect', resolve)
+    socket.once('error', reject)
+  })
+  process.stdin.pipe(socket)
+  socket.pipe(process.stdout)
+  await new Promise<void>((resolve, reject) => {
+    socket.once('close', resolve)
+    socket.once('error', reject)
+  })
+}
+
+export async function serveAsk(): Promise<void> {
+  const loopback = process.env.ORCH_ASK_URL
+  if (loopback) return proxyAsk(loopback)
+  const runId = Number(process.env.ORCH_RUN_ID ?? 0)
+  const token = process.env.ORCH_RUN_TOKEN ?? ''
+  return serveAskChannel({
+    input: process.stdin,
+    send: (message) => process.stdout.write(`${JSON.stringify(message)}\n`),
+  }, runId, token)
 }
 
 /** The single authentication check for tools acting as an orch worker. */

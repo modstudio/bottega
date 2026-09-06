@@ -54,6 +54,7 @@ import { resolveLandingBranch } from './landing.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES } from './result-output.ts'
 import { addedGrokTrustHeadings, grokTrustHeadings } from './grok-trust.ts'
 import { prepareSandboxHome, selectReadonlySandbox, SRT_BIN } from './sandbox.ts'
+import { startAskLoopback, type AskLoopback } from './ask.ts'
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
 
@@ -2297,6 +2298,7 @@ export async function run(opts: {
   let failureKind: ReturnType<typeof classify> | null = null
   let outsideWrites: OutsideWorktreeWrite[] = []
   let confinementFailures: CheckoutSampleFailure[] = []
+  let askLoopback: AskLoopback | null = null
   // Start after orch's own worktree and hook setup, immediately before the
   // vendor process. The interval establishes when a change happened, not who
   // wrote it: an architect or concurrent landing can change a watched checkout.
@@ -2332,10 +2334,14 @@ export async function run(opts: {
         .run(inputTree, headCommit, claim.id)
       if (measured.changes !== 1) throw new Error(`run ${claim.id} could not record its input tree`)
     }
+    if (sandboxSelection.sandbox === 'srt') {
+      askLoopback = await startAskLoopback(claim.id, runToken)
+    }
     const p = Bun.spawn(launchArgv, {
       cwd,
       env: childEnv(a, claim.id, runToken, {
         ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment,
+        ...(askLoopback ? { ORCH_ASK_URL: askLoopback.url } : {}),
       }),
       stdin: a.stdin ? new TextEncoder().encode(prompt) : 'ignore',
       stdout: 'pipe',
@@ -2565,6 +2571,7 @@ export async function run(opts: {
     if (timer) clearTimeout(timer)
     if (killer) clearTimeout(killer)
     if (proc) live.delete(proc)
+    if (askLoopback) await askLoopback.close()
 
     try {
       const afterSample = sampleCheckouts(watchedCheckouts)
