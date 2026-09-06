@@ -16,7 +16,7 @@ import {
 import { composeWorkflow, getWorkflowStep, listWorkflows } from './workflows.ts'
 import { checkDoc, repoRootForDoc } from './canon.ts'
 import { getReview, listReviews } from './review.ts'
-import { authenticatedWorkerRun } from './ask.ts'
+import { strictlyAuthenticatedWorkerRun } from './ask.ts'
 
 const text = (value: unknown) => ({
   content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value) }],
@@ -136,14 +136,14 @@ export async function fileIssue(
   if (reporter.kind === 'session' && !session) {
     const runId = Number(process.env.ORCH_RUN_ID ?? 0)
     const token = process.env.ORCH_RUN_TOKEN ?? ''
-    if (!authenticatedWorkerRun(runId, token)) {
+    if (!strictlyAuthenticatedWorkerRun(runId, token)) {
       throw new Error('cannot file issue: the reporting session is not available')
     }
     worker = db().query(
       'SELECT id, job, agent, launch_cwd, launch_key FROM run WHERE id=?',
     ).get(runId) as WorkerReporter | null
-    if (!worker?.launch_cwd || !worker.launch_key) {
-      throw new Error('cannot file issue: the reporting worker has no project and task origin')
+    if (!worker?.launch_cwd) {
+      throw new Error('cannot file issue: the reporting worker has no project origin')
     }
     reporterId = `run:${worker.id}`
   } else if (reporter.kind === 'monitor') {
@@ -174,7 +174,8 @@ export async function fileIssue(
       : []
   const body = [
     ...(worker
-      ? [`Filed by orch run ${worker.id} (${worker.job}, ${worker.agent}) while working ${worker.launch_key}`]
+      ? [`Filed by orch run ${worker.id} (${worker.job}, ${worker.agent}) while working ${
+        worker.launch_key ?? 'with no task key'}`]
       : []),
     `TYPE: ${type}`,
     ...(worker
@@ -216,7 +217,7 @@ export async function fileIssue(
   return { key: stdout.trim(), kind: input.kind, session, project: project.name,
     reporter: worker ? 'worker' : reporter.kind, reporter_id: reporterId,
     worker_run_id: worker?.id ?? null,
-    origin: worker?.launch_key ?? null,
+    ...(worker ? { origin: worker.launch_key } : {}),
     monitor_invocation_id: reporter.kind === 'monitor' ? reporter.invocationId : null,
     ...(duplicateSearch.duplicates === null
       ? { duplicate_search_error: duplicateSearch.error }

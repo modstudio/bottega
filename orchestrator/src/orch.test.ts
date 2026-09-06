@@ -1856,6 +1856,10 @@ describe('operational monitor record', () => {
         reporter: 'monitor', reporter_id: invocation,
         monitor_invocation_id: invocation, session: null, project: PLATFORM_SLUG,
       })
+      expect(Object.keys(filed).sort()).toEqual([
+        'duplicate_search_error', 'key', 'kind', 'monitor_invocation_id', 'project', 'reporter',
+        'reporter_id', 'session', 'worker_run_id',
+      ])
       const shown = Bun.spawnSync([new URL('../../bin/hub', import.meta.url).pathname,
         'task', 'show', filed.key, '--json'], { env: { ...process.env }, stdout: 'pipe' })
       const task = JSON.parse(shown.stdout.toString()).task
@@ -20347,6 +20351,10 @@ describe('scoped operator docs', () => {
           score: expect.any(Number),
         }],
       })
+      expect(Object.keys(result).sort()).toEqual([
+        'duplicates', 'key', 'kind', 'monitor_invocation_id', 'project', 'reporter',
+        'reporter_id', 'session', 'worker_run_id',
+      ])
       const shown = Bun.spawnSync([
         new URL('../../bin/hub', import.meta.url).pathname,
         'task', 'show', result.key, '--json',
@@ -20449,8 +20457,8 @@ describe('scoped operator docs', () => {
       settings: { keyPrefixes: ['DEV'] },
     })
     const runId = addRun({ agent: 'codex', job: 'implement' })
-    db().query('UPDATE run SET run_token=?, launch_cwd=?, launch_key=? WHERE id=?')
-      .run('worker-file-token', process.cwd(), 'DEV-218', runId)
+    db().query('UPDATE run SET launch_cwd=?, launch_key=? WHERE id=?')
+      .run(process.cwd(), 'DEV-218', runId)
     process.env.ORCH_RUN_ID = String(runId)
     process.env.ORCH_RUN_TOKEN = 'worker-file-token'
     const server = createDocsMcpServer()
@@ -20468,6 +20476,11 @@ describe('scoped operator docs', () => {
         evidence: `run ${runId} observed exit 1`,
         not_established: 'The underlying cause is not established',
       }
+      const nullToken = await client.callTool({ name: 'file_issue', arguments: arguments_ })
+      expect(nullToken.isError).toBe(true)
+      expect(((nullToken as any).content[0] as { text: string }).text)
+        .toContain('reporting session is not available')
+      db().query('UPDATE run SET run_token=? WHERE id=?').run('worker-file-token', runId)
       process.env.ORCH_RUN_TOKEN = 'not-the-worker-token'
       const refused = await client.callTool({ name: 'file_issue', arguments: arguments_ })
       expect(refused.isError).toBe(true)
@@ -20504,6 +20517,34 @@ describe('scoped operator docs', () => {
       expect(task.body).toContain(`REPORTING WORKER RUN: run:${runId}`)
       expect(task.body).toContain(`REPORTING PROJECT: ${PLATFORM_SLUG}`)
       expect(task.body).not.toContain('REPORTING SESSION:')
+
+      db().query('UPDATE run SET launch_key=NULL WHERE id=?').run(runId)
+      const keyless = await client.callTool({
+        name: 'file_issue',
+        arguments: { ...arguments_, what_happened: 'A keyless reader observed a reproducible failure' },
+      })
+      expect(keyless.isError).not.toBe(true)
+      const keylessResult = JSON.parse(((keyless as any).content[0] as { text: string }).text)
+      expect(keylessResult).toMatchObject({
+        reporter: 'worker', worker_run_id: runId, origin: null, project: PLATFORM_SLUG,
+      })
+      const shownKeyless = Bun.spawnSync([
+        new URL('../../bin/hub', import.meta.url).pathname,
+        'task', 'show', keylessResult.key, '--json',
+      ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
+      expect(shownKeyless.exitCode).toBe(0)
+      expect(JSON.parse(shownKeyless.stdout.toString()).task.body).toStartWith(
+        `Filed by orch run ${runId} (implement, codex) while working with no task key\n`,
+      )
+
+      db().query('UPDATE run SET launch_cwd=NULL WHERE id=?').run(runId)
+      const noProject = await client.callTool({
+        name: 'file_issue',
+        arguments: { ...arguments_, what_happened: 'A worker without a project observed a failure' },
+      })
+      expect(noProject.isError).toBe(true)
+      expect(((noProject as any).content[0] as { text: string }).text)
+        .toContain('reporting worker has no project origin')
     } finally {
       await client.close()
       await server.close()
