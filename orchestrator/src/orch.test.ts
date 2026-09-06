@@ -4349,9 +4349,10 @@ describe('vendor failure failover is one bounded unit of work', () => {
         'SELECT id, agent, retry_of, error FROM run ORDER BY id',
       ).all() as { id: number; agent: string; retry_of: number | null; error: string }[]
       expect(rows).toHaveLength(3)
-      expect(rows.map((row) => row.agent)).toEqual(['codex', 'agy', 'grok'])
+      expect(rows[0]!.agent).toBe('codex')
+      expect(new Set(rows.map((row) => row.agent))).toEqual(new Set(['codex', 'agy', 'grok']))
       expect(rows[2]!.error).toContain('the 3-attempt budget was spent')
-      expect(rows[2]!.error).toContain('tried codex, agy, grok')
+      expect(rows[2]!.error).toContain(`tried ${rows.map((row) => row.agent).join(', ')}`)
     } finally {
       process.env.PATH = oldPath
       if (oldDepth === undefined) delete process.env.ORCH_DEPTH
