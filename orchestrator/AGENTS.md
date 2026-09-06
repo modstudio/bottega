@@ -71,6 +71,9 @@ time it is due. Three things make it structural rather than remembered:
   connected and is *shared between sessions on the bridge*, falling back to
   `CLAUDE_SESSION_ID`, which does not exist at all — so 26 of 66 runs recorded no
   session, and runs from a concurrent session landed on another's backlog.
+  That fallback is gone: the bridge id is never an identity, `sessionId()`
+  returns the primary id or nothing, and a mutation that needs an owner refuses
+  rather than proceeding under the shared id.
 - `orch pending` lists your own unscored runs and exits non-zero while any remain.
 - A **Stop hook** raises them before a session finishes, once per turn — it stands
   down if it has already asked, so it can never trap a session in a loop.

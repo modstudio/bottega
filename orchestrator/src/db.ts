@@ -208,7 +208,7 @@ export function adoptRunMutation(
   if (authority.owner) return authority
   if (!authority.actor) {
     throw new Error(
-      `run ${authority.runId} is unowned; no session identity is present to adopt it before ${action}`,
+      `run ${authority.runId} is unowned; CLAUDE_CODE_SESSION_ID is not set`,
     )
   }
   const claimed = database.query(
@@ -1629,10 +1629,12 @@ export const nowIso = () => new Date().toISOString()
  *     agent came to be asked to score, and did score, work it had never read.
  *
  * The bridge id is still worth having for a claude.ai link, but it identifies a
- * connection, not a session, so it is only a fallback.
+ * connection, not a session, so it is never an identity. This returns the
+ * primary id or null. A null owner is an unowned root; mutations that need an
+ * identity to adopt refuse rather than proceeding under the shared bridge id.
  */
 export const sessionId = (): string | null =>
-  process.env.CLAUDE_CODE_SESSION_ID ?? process.env.CLAUDE_CODE_BRIDGE_SESSION_ID ?? null
+  process.env.CLAUDE_CODE_SESSION_ID ?? null
 
 /**
  * A session seen inside this window is known live. A session outside it is

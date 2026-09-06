@@ -1336,7 +1336,7 @@ const { db, nowIso, reapStale, pendingForSession, unscoredCount, judgeability, S
         PENDING_BOOTSTRAP_MS, WEIGHT, weigh, label, FIDELITY_PENALTY, UNSCORED_WHERE,
         excludeSharedOutputRuns, SHARED_OUTPUT_REASON, applySchema, recordDuels, duelMatrices,
         parseRunIds, recordSessionSeen, GENERIC_QUESTION_TOKENS,
-        initializeDatabase, authorizeRunMutation, adoptRunMutation } = await import('./db.ts')
+        initializeDatabase, authorizeRunMutation, adoptRunMutation, sessionId } = await import('./db.ts')
 initializeDatabase()
 const { candidates, weightCase, scoreboard, median, evidenceFor, pick,
         NOISE_BAND, QUALITY_STEP, MIN_SAMPLE, OUTPUT_RESERVE, EVIDENCE_WINDOW,
@@ -4283,6 +4283,58 @@ describe('session scoping', () => {
     expect(pendingForSession('s')).toHaveLength(1)
     score(id, 'full', 'right')
     expect(pendingForSession('s')).toHaveLength(0)
+  })
+})
+
+describe('session identity is the primary id only', () => {
+  const restoreSessionEnv = (claude: string | undefined, bridge: string | undefined) => {
+    if (claude === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = claude
+    if (bridge === undefined) delete process.env.CLAUDE_CODE_BRIDGE_SESSION_ID
+    else process.env.CLAUDE_CODE_BRIDGE_SESSION_ID = bridge
+  }
+
+  test('primary set returns that id', () => {
+    const claude = process.env.CLAUDE_CODE_SESSION_ID
+    const bridge = process.env.CLAUDE_CODE_BRIDGE_SESSION_ID
+    try {
+      process.env.CLAUDE_CODE_SESSION_ID = 'primary-session'
+      process.env.CLAUDE_CODE_BRIDGE_SESSION_ID = 'shared-bridge'
+      expect(sessionId()).toBe('primary-session')
+    } finally {
+      restoreSessionEnv(claude, bridge)
+    }
+  })
+
+  test('only the bridge id is null and cannot adopt', () => {
+    const claude = process.env.CLAUDE_CODE_SESSION_ID
+    const bridge = process.env.CLAUDE_CODE_BRIDGE_SESSION_ID
+    try {
+      delete process.env.CLAUDE_CODE_SESSION_ID
+      process.env.CLAUDE_CODE_BRIDGE_SESSION_ID = 'shared-bridge'
+      expect(sessionId()).toBeNull()
+      for (const action of [
+        'answer', 'tell', 'stop', 'abandon', 'discard', 'void', 'continue', 'score',
+      ] as const) {
+        const id = addRun({ agent: 'codex', job: 'implement' })
+        expect(() => adoptRunMutation(authorizeRunMutation(id, action), action))
+          .toThrow('CLAUDE_CODE_SESSION_ID')
+      }
+    } finally {
+      restoreSessionEnv(claude, bridge)
+    }
+  })
+
+  test('neither variable yields null', () => {
+    const claude = process.env.CLAUDE_CODE_SESSION_ID
+    const bridge = process.env.CLAUDE_CODE_BRIDGE_SESSION_ID
+    try {
+      delete process.env.CLAUDE_CODE_SESSION_ID
+      delete process.env.CLAUDE_CODE_BRIDGE_SESSION_ID
+      expect(sessionId()).toBeNull()
+    } finally {
+      restoreSessionEnv(claude, bridge)
+    }
   })
 })
 
@@ -9222,7 +9274,20 @@ describe('detached run collection', () => {
         stdout: 'pipe', stderr: 'pipe' },
     )
     expect(result.exitCode).toBe(1)
-    expect(result.stderr.toString()).toContain('no session identity is present to score it')
+    expect(result.stderr.toString()).toContain('CLAUDE_CODE_SESSION_ID is not set')
+    expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
+  })
+
+  test('only the bridge id cannot score an unowned run', () => {
+    const id = insert('ok', 'file-question')
+    const result = Bun.spawnSync(
+      [process.execPath, CLI, 'score', String(id), 'full', 'right'],
+      { env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: undefined, CLAUDE_CODE_BRIDGE_SESSION_ID: 'shared-bridge' },
+        stdout: 'pipe', stderr: 'pipe' },
+    )
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr.toString()).toContain('CLAUDE_CODE_SESSION_ID is not set')
     expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
   })
 
@@ -19499,8 +19564,9 @@ describe('scoped operator docs', () => {
     expect(() => deleteDoc('global', null, 'missing', { reason: '\t' })).toThrow('reason is required')
     expect(() => readDocs('/missing', { reason: ' ' })).toThrow('reason is required')
 
-    // sessionId() also falls back to the Remote Control bridge id, which is set
-    // in a real Claude shell; clear both or the "unknown" branch never runs.
+    // sessionId() used to fall back to the Remote Control bridge id, which is
+    // set in a real Claude shell; clear the primary or the "unknown" branch
+    // never runs.
     const before = process.env.CLAUDE_CODE_SESSION_ID
     const bridgeBefore = process.env.CLAUDE_CODE_BRIDGE_SESSION_ID
     try {

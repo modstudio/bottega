@@ -4589,7 +4589,7 @@ switch (cmd) {
     if (has('void')) {
       voidAuthority = authorizeRunMutation(id, 'void')
     } else if (!dashboardAuthorized && !sessionId() && owner.verdict === 'unattributed') {
-      throw new Error(`run ${id} is unowned; no session identity is present to score it`)
+      throw new Error(`run ${id} is unowned; CLAUDE_CODE_SESSION_ID is not set`)
     } else if ((owner.verdict === 'foreign' || owner.verdict === 'anonymous') &&
                !has('force') && !dashboardAuthorized) {
       throw new Error(
