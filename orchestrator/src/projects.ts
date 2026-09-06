@@ -289,20 +289,41 @@ function placeholders(template: string): string[] {
 }
 
 function hasPipelineOperator(template: string): boolean {
+  return scanPipelineOperators(template).positions.length > 0
+}
+
+function scanPipelineOperators(template: string): {
+  positions: number[]
+  ands: number[]
+  unclosed: { quote: "'" | '"'; position: number } | null
+} {
+  const positions: number[] = []
+  const ands: number[] = []
   let quote: "'" | '"' | null = null
+  let quoteStart = 0
   for (let i = 0; i < template.length; i++) {
     const char = template[i]
     if (char === '\\' && quote !== "'") {
       i++
     } else if (char === "'" && quote !== '"') {
       quote = quote === "'" ? null : "'"
+      if (quote) quoteStart = i
     } else if (char === '"' && quote !== "'") {
       quote = quote === '"' ? null : '"'
-    } else if (char === '|' && quote === null && template[i + 1] !== '|') {
-      return true
+      if (quote) quoteStart = i
+    } else if (char === '|' && quote === null &&
+               template[i - 1] !== '|' && template[i + 1] !== '|') {
+      positions.push(i)
+    } else if (char === '&' && quote === null && template[i + 1] === '&') {
+      ands.push(i)
+      i++
     }
   }
-  return false
+  return {
+    positions,
+    ands,
+    unclosed: quote ? { quote, position: quoteStart } : null,
+  }
 }
 
 /**
@@ -434,20 +455,16 @@ export type CreateMigration =
 
 /** Convert the legacy shell subset represented by the live project register. */
 export function migrateCreate(create: string): CreateMigration {
-  const tokens = shellTokens(create)
-  const chain = tokens.indexOf('&&')
-  if (chain >= 0) {
+  const pipeline = scanPipelineOperators(create)
+  if (pipeline.unclosed) {
     return {
       kind: 'refused',
-      message: `'&&'-chained tail ${JSON.stringify(tokens.slice(chain + 1).join(' '))} cannot be migrated; ` +
-        `the chain must move into the project's script`,
+      message: unsupportedShellToken(
+        pipeline.unclosed.quote, pipeline.unclosed.position, 'unclosed quote',
+      ).message,
     }
   }
-
-  const pipes = tokens.reduce<number[]>((indexes, token, index) => {
-    if (token === '|') indexes.push(index)
-    return indexes
-  }, [])
+  const pipes = pipeline.positions
   if (pipes.length) {
     if (pipes.length !== 1) {
       return { kind: 'refused', message: 'only a single pipe can be migrated' }
@@ -461,6 +478,20 @@ export function migrateCreate(create: string): CreateMigration {
     }
     return { kind: 'migrated', after: { pipeline: create } }
   }
+
+  const and = pipeline.ands[0]
+  if (and !== undefined) {
+    const before = shellTokens(create.slice(0, and))
+    if (!before.ok) return { kind: 'refused', message: before.message }
+    return {
+      kind: 'refused',
+      message: `'&&'-chained tail ${JSON.stringify(create.slice(and + 2).trim())} cannot be migrated; ` +
+        `the chain must move into the project's script`,
+    }
+  }
+  const parsed = shellTokens(create)
+  if (!parsed.ok) return { kind: 'refused', message: parsed.message }
+  const tokens = parsed.tokens
 
   const env: Record<string, string> = {}
   while (tokens.length) {
@@ -477,12 +508,16 @@ export function migrateCreate(create: string): CreateMigration {
   }
 }
 
-/** Shell words plus unquoted pipe/and operators; quotes group and unwrap one argument. */
-function shellTokens(input: string): string[] {
+type ShellTokens = { ok: true; tokens: string[] } | { ok: false; message: string }
+
+/** Plain shell words plus &&; unsupported shell semantics fail at their first offset. */
+function shellTokens(input: string): ShellTokens {
   const tokens: string[] = []
   let token = ''
   let started = false
+  let tokenStart = 0
   let quote: "'" | '"' | null = null
+  let quoteStart = 0
   const push = () => {
     if (!started) return
     tokens.push(token)
@@ -492,13 +527,25 @@ function shellTokens(input: string): string[] {
   for (let i = 0; i < input.length; i++) {
     const char = input[i]!
     if (quote) {
-      if (char === quote) quote = null
-      else token += char
+      if (char === quote) {
+        quote = null
+      } else if (quote !== "'" && char === '\\') {
+        return unsupportedShellToken('\\', i)
+      } else if (quote !== "'" && char === '$') {
+        const shellToken = input[i + 1] === '(' ? '$(' : '$'
+        return unsupportedShellToken(shellToken, i)
+      } else if (quote !== "'" && char === '`') {
+        return unsupportedShellToken('`', i)
+      } else {
+        token += char
+      }
       started = true
       continue
     }
     if (char === "'" || char === '"') {
+      if (!started) tokenStart = i
       quote = char
+      quoteStart = i
       started = true
       continue
     }
@@ -506,18 +553,48 @@ function shellTokens(input: string): string[] {
       push()
       continue
     }
-    if (char === '|' || (char === '&' && input[i + 1] === '&')) {
+    if (char === '|' && input[i + 1] === '|') {
+      return unsupportedShellToken('||', i)
+    }
+    if (char === ';') return unsupportedShellToken(';', i)
+    if (char === '\\') return unsupportedShellToken('\\', i)
+    if (char === '$') {
+      const shellToken = input[i + 1] === '(' ? '$(' : '$'
+      return unsupportedShellToken(shellToken, i)
+    }
+    if (char === '`') return unsupportedShellToken('`', i)
+    if (char === '<' || char === '>') {
+      let position = i
+      let shellToken = char
+      if (/^\d+$/.test(token)) {
+        position = tokenStart
+        shellToken = `${token}${char}`
+      }
+      while (input[i + 1] === char) shellToken += input[++i]
+      return unsupportedShellToken(shellToken, position)
+    }
+    if (char === '&' && input[i + 1] !== '&') {
+      return unsupportedShellToken('&', i)
+    }
+    if (char === '&' && input[i + 1] === '&') {
       push()
-      tokens.push(char === '|' ? '|' : '&&')
-      if (char === '&') i++
+      tokens.push('&&')
+      i++
       continue
     }
+    if (!started) tokenStart = i
     token += char
     started = true
   }
-  if (quote) return [input]
+  if (quote) return unsupportedShellToken(quote, quoteStart, 'unclosed quote')
   push()
-  return tokens
+  return { ok: true, tokens }
+}
+
+function unsupportedShellToken(
+  token: string, position: number, kind = 'unsupported shell token',
+): { ok: false; message: string } {
+  return { ok: false, message: `${kind} ${JSON.stringify(token)} at position ${position}; cannot migrate` }
 }
 
 /**

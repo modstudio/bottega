@@ -10174,6 +10174,54 @@ describe('detached run collection', () => {
     expect(projectByName('seed-pipe')!.settings.worktree?.create as any).toBe(create)
   })
 
+  const expectCreateMigrationRefused = (
+    name: string, create: string, token: string, position: number, kind = 'unsupported shell token',
+  ) => {
+    upsertProject({
+      name, path: process.cwd(), settings: { worktree: { create } } as any,
+    })
+    const r = orch('project', 'migrate-create', name, '--apply')
+    expect(r.code).toBe(0)
+    expect(r.out).toContain(`${kind} ${JSON.stringify(token)} at position ${position}; cannot migrate`)
+    expect(projectByName(name)!.settings.worktree?.create as any).toBe(create)
+  }
+
+  test('migrate-create refuses a backslash at its zero-based position', () => {
+    expectCreateMigrationRefused('backslash-create', 'tool foo\\ bar', '\\', 8)
+  })
+
+  test('migrate-create refuses every redirection spelling without saving argv', () => {
+    for (const [suffix, create, token, position] of [
+      ['out', 'printf ok > created-path', '>', 10],
+      ['in', 'tool < input', '<', 5],
+      ['append', 'tool >> output', '>>', 5],
+      ['fd', 'tool 2> output', '2>', 5],
+    ] as const) {
+      expectCreateMigrationRefused(`redirect-${suffix}`, create, token, position)
+    }
+  })
+
+  test('migrate-create refuses a semicolon at its zero-based position', () => {
+    expectCreateMigrationRefused('semicolon-create', 'tool; other', ';', 4)
+  })
+
+  test('migrate-create refuses double-pipe at its zero-based position', () => {
+    expectCreateMigrationRefused('or-create', 'tool || other', '||', 5)
+  })
+
+  test('migrate-create refuses dollar expansion at its zero-based position', () => {
+    expectCreateMigrationRefused('dollar-create', 'X=$HOME tool', '$', 2)
+  })
+
+  test('migrate-create refuses both command-substitution forms', () => {
+    expectCreateMigrationRefused('backtick-create', 'tool `other`', '`', 5)
+    expectCreateMigrationRefused('dollar-paren-create', 'tool $(other)', '$(', 5)
+  })
+
+  test('migrate-create refuses an unclosed quote at its opening position', () => {
+    expectCreateMigrationRefused('unclosed-create', 'tool "foo', '"', 5, 'unclosed quote')
+  })
+
   test('project set settings null deletes that key during a deep merge', () => {
     upsertProject({ name: 'merged', path: process.cwd(), settings: { a: { b: 1, c: 2 } } })
     const r = orch('project', 'set', 'merged', '--settings', '{"a":{"b":null}}')
