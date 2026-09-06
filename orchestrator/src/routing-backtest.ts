@@ -8,6 +8,8 @@ import {
 } from './route.ts'
 
 export const ROUTING_BACKTEST_SEED = 287
+export const ROUTING_BACKTEST_SEEDS = Object.freeze(Array.from({ length: 20 }, (_, i) => i + 1))
+export const ROUTING_BACKTEST_REQUIRED_PASSES = 16
 
 type Event = {
   id: number; agent: string; job: string; stack: string | null; model: string | null
@@ -27,6 +29,7 @@ export type BacktestJob = {
   differences: number
   currentMatched: number
   thompsonMatched: number
+  commonMatched: number
   currentMean: number | null
   thompsonMean: number | null
   currentExplorationShare: number
@@ -40,10 +43,22 @@ export type RoutingBacktest = {
   /** Earlier-id judgement/dispatch pairs excluded because the judgement did not exist yet. */
   causalExcludedJudgements: number
   jobs: BacktestJob[]
+  trajectoryPass: boolean
+}
+
+export type RoutingBacktestEnsemble = {
+  seeds: readonly number[]
+  requiredPasses: number
+  passCount: number
+  jobs: { job: string; wins: number; ties: number; losses: number; unmeasurable: number }[]
+  trajectories: RoutingBacktest[]
   shouldWire: boolean
 }
 
 export function passesRoutingBacktest(jobs: readonly BacktestJob[]): boolean {
+  // A Thompson deficit no larger than NOISE_BAND is a tie, not a loss. One
+  // trajectory passes only when every measurable job is a tie or win AND at
+  // least one job is a win beyond that same band.
   const measurable = jobs.filter((job) => job.measurable)
   return measurable.length > 0 &&
     measurable.every((job) => job.thompsonMean! - job.currentMean! >= -NOISE_BAND) &&
@@ -217,47 +232,85 @@ function events(): Event[] {
   })
 }
 
-export function routingBacktest(jobName?: string, seed = ROUTING_BACKTEST_SEED): RoutingBacktest {
-  const all = events()
+function replay(all: Event[], jobName: string | undefined, seed: number): RoutingBacktest {
   const jobs: BacktestJob[] = []
   let causalExcludedJudgements = 0
-  for (const name of [...new Set(all.map((e) => e.job))]) {
+  const names = [...new Set(all.map((e) => e.job))].filter((name) => !jobName || name === jobName)
+  for (const name of names) {
     const currentRng = seeded(seed ^ 0x43555252)
     const thompsonRng = seeded(seed ^ 0x54484f4d)
-    let agreements = 0, currentMatched = 0, thompsonMatched = 0, currentTotal = 0, thompsonTotal = 0
+    let agreements = 0, currentMatched = 0, thompsonMatched = 0, commonMatched = 0, commonTotal = 0
     let currentExplores = 0, thompsonExplores = 0
     const rows = all.filter((e) => e.job === name)
     for (const event of rows) {
       const earlier = rows.filter((candidate) => candidate.id < event.id)
       const history = earlier.filter((candidate) => candidate.evidenceAt < event.startedAt)
-      if (!jobName || name === jobName) causalExcludedJudgements += earlier.length - history.length
+      causalExcludedJudgements += earlier.length - history.length
       const current = currentChoice(event, history, currentRng, true)
       const thompson = thompsonChoice(event, history, thompsonRng, true)
       if (current.agent === thompson.agent) agreements++
       if (current.agent !== current.expected) currentExplores++
       if (thompson.agent !== thompson.expected) thompsonExplores++
-      if (current.agent === event.agent) { currentMatched++; currentTotal += event.weight }
-      if (thompson.agent === event.agent) { thompsonMatched++; thompsonTotal += event.weight }
+      if (current.agent === event.agent) currentMatched++
+      if (thompson.agent === event.agent) thompsonMatched++
+      if (current.agent === event.agent && thompson.agent === event.agent) {
+        commonMatched++
+        commonTotal += event.weight
+      }
     }
-    const currentMean = currentMatched ? currentTotal / currentMatched : null
-    const thompsonMean = thompsonMatched ? thompsonTotal / thompsonMatched : null
-    const measurable = currentMatched >= MIN_SAMPLE && thompsonMatched >= MIN_SAMPLE
+    // The log has no propensities or counterfactual reward. Compare realised
+    // scores only on common support: dispatches where BOTH policies chose the
+    // historical agent. Both policies therefore receive the same observed
+    // judgement, while their own match counts remain visible as a warning
+    // about how much selective support was discarded.
+    const currentMean = commonMatched ? commonTotal / commonMatched : null
+    const thompsonMean = commonMatched ? commonTotal / commonMatched : null
+    const measurable = commonMatched >= MIN_SAMPLE
     const delta = thompsonMean! - currentMean!
     const verdict = !measurable ? 'unmeasurable'
       : delta > NOISE_BAND ? 'win'
         : delta < -NOISE_BAND ? 'loss' : 'tie'
     jobs.push({
       job: name, runs: rows.length, agreements, differences: rows.length - agreements,
-      currentMatched, thompsonMatched, currentMean, thompsonMean,
+      currentMatched, thompsonMatched, commonMatched, currentMean, thompsonMean,
       currentExplorationShare: rows.length ? currentExplores / rows.length : 0,
       thompsonExplorationShare: rows.length ? thompsonExplores / rows.length : 0,
       measurable, verdict,
     })
   }
-  const shouldWire = passesRoutingBacktest(jobs)
+  const trajectoryPass = passesRoutingBacktest(jobs)
   return {
     seed, causalExcludedJudgements,
-    jobs: jobName ? jobs.filter((row) => row.job === jobName) : jobs,
-    shouldWire,
+    jobs,
+    trajectoryPass,
+  }
+}
+
+export function routingBacktest(jobName?: string, seed = ROUTING_BACKTEST_SEED): RoutingBacktest {
+  return replay(events(), jobName, seed)
+}
+
+export function routingBacktestEnsemble(jobName?: string): RoutingBacktestEnsemble {
+  const all = events()
+  const trajectories = ROUTING_BACKTEST_SEEDS.map((seed) => replay(all, jobName, seed))
+  const names = [...new Set(trajectories.flatMap((trajectory) => trajectory.jobs.map((job) => job.job)))]
+  const jobs = names.map((job) => {
+    const verdicts = trajectories.map((trajectory) => trajectory.jobs.find((row) => row.job === job)!.verdict)
+    return {
+      job,
+      wins: verdicts.filter((verdict) => verdict === 'win').length,
+      ties: verdicts.filter((verdict) => verdict === 'tie').length,
+      losses: verdicts.filter((verdict) => verdict === 'loss').length,
+      unmeasurable: verdicts.filter((verdict) => verdict === 'unmeasurable').length,
+    }
+  })
+  const passCount = trajectories.filter((trajectory) => trajectory.trajectoryPass).length
+  return {
+    seeds: ROUTING_BACKTEST_SEEDS,
+    requiredPasses: ROUTING_BACKTEST_REQUIRED_PASSES,
+    passCount,
+    jobs,
+    trajectories,
+    shouldWire: passCount >= ROUTING_BACKTEST_REQUIRED_PASSES,
   }
 }

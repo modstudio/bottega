@@ -4,7 +4,6 @@ import {
   candidates, pick, median, MIN_SAMPLE, PROMPT_SIZE_BOUNDARY,
   promptBucketsForJob, promptSizeBucket, type PromptSizeBucket,
 } from './route.ts'
-import { routingBacktest, type BacktestJob } from './routing-backtest.ts'
 
 export type AgentOnJob = {
   agent: string
@@ -41,9 +40,6 @@ export type JobGuide = {
   /** Where a run goes by default. Exploration can still divert a share elsewhere. */
   routesTo: string
   reason: string
-  /** Historical policy comparison and the exploration cost of Thompson draws. */
-  backtest: Pick<BacktestJob,
-    'currentMean' | 'thompsonMean' | 'thompsonExplorationShare' | 'measurable' | 'verdict'> | null
   tried: AgentOnJob[]
   /** Agents the circuit breaker or a static capability rule removed. */
   excluded: { agent: string; why: string }[]
@@ -69,7 +65,6 @@ export function guide(onlyJob?: string, promptBytes?: number): JobGuide[] {
     `SELECT job, agent, latency_ms, prompt_bytes FROM run
       WHERE status='ok' AND probe=0 AND latency_ms IS NOT NULL`,
   ).all() as { job: string; agent: string; latency_ms: number; prompt_bytes: number }[]
-  const replay = new Map(routingBacktest().jobs.map((row) => [row.job, row]))
 
   const key = (j: string, a: string, bucket: PromptSizeBucket) => `${j} ${a} ${bucket}`
   const samples = new Map<string, { lat: number[]; bytes: number[] }>()
@@ -135,7 +130,6 @@ export function guide(onlyJob?: string, promptBytes?: number): JobGuide[] {
             .map((c) => c.agent),
           routesTo: chosen.agent,
           reason: chosen.reason,
-          backtest: replay.get(name) ?? null,
           tried,
           excluded: all
             .filter((c) => !c.eligible)

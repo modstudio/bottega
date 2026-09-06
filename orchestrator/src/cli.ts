@@ -39,7 +39,7 @@ import { composeWorkflow, exportWorkflows, forkWorkflow, getWorkflowStep, import
          listWorkflows, promoteWorkflow, retireWorkflow, setWorkflow, showWorkflow,
          workflowVersions } from './workflows.ts'
 import { gwetAc1 } from './agreement.ts'
-import { routingBacktest } from './routing-backtest.ts'
+import { routingBacktest, routingBacktestEnsemble, type RoutingBacktest } from './routing-backtest.ts'
 
 /**
  * How long `orch do` watches a detached run before handing it back.
@@ -3592,41 +3592,75 @@ switch (cmd) {
   }
 
   case 'routing-backtest': {
-    const result = routingBacktest(flag('job'))
-    if (has('json')) {
-      console.log(JSON.stringify({
-        assumptions: {
-          eligibility: 'current static capability, metered, prompt-size and context rules; historical cooldowns',
-          reachability: 'present-day reachability ignored',
-          evidence: 'voided, evidence-excluded and NOT_EVIDENCE runs omitted',
-          causalAvailability: `${result.causalExcludedJudgements} earlier judgements excluded at dispatches where their evidence did not yet exist`,
-          ties: 'unmetered, then median latency',
-          betaMapping: 'successes += (w + 0.5) / 1.5; failures += 1 - successes',
-          exploration: 'choice differs from deterministic expected leader',
-        },
-        ...result,
-      }))
+    const jobFilter = flag('job')
+    const seedFlag = flag('seed')
+    const seed = seedFlag === undefined ? undefined : Number(seedFlag)
+    if (seedFlag !== undefined && (!/^\d+$/.test(seedFlag) || !Number.isSafeInteger(seed))) {
+      throw new Error('--seed must be a non-negative integer')
+    }
+    const assumptions = {
+      eligibility: 'current static capability, metered, prompt-size and context rules; historical cooldowns',
+      reachability: 'present-day reachability ignored',
+      evidence: 'voided, evidence-excluded and NOT_EVIDENCE runs omitted',
+      causalAvailability: 'scored evidence enters at scored_at; failures enter at termination; dispatch sees only earlier available evidence',
+      commonSupport: 'realised scores use only events where both policies matched the historical agent; MIN_SAMPLE common matches required',
+      ties: 'exact route ties use unmetered then median latency; a realised gap within NOISE_BAND is a policy tie, including a small Thompson loss',
+      trajectoryGate: 'Thompson may trail current by at most NOISE_BAND on every measurable job and must lead by more than NOISE_BAND on at least one',
+      ensembleGate: 'at least 16 of the fixed 20 seed trajectories must pass; a single seed never decides wiring',
+      betaMapping: 'successes += (w + 0.5) / 1.5; failures += 1 - successes',
+      exploration: 'choice differs from deterministic expected leader',
+      scope: jobFilter ? `only job ${jobFilter}; the verdict uses only this displayed job` : 'all displayed jobs',
+    }
+    const pct = (n: number | null) => n === null ? 'n/a' : n.toFixed(3)
+    const printTrajectory = (result: RoutingBacktest, indent = '') => {
+      console.log(`${indent}seed ${result.seed}: ${result.trajectoryPass ? 'pass' : 'fail'}; causal exclusions ${result.causalExcludedJudgements}`)
+      for (const row of result.jobs) {
+        console.log(
+          `${indent}  ${row.job}: runs=${row.runs} agreements=${row.agreements} ` +
+          `current=${pct(row.currentMean)} (own ${row.currentMatched}) ` +
+          `Thompson=${pct(row.thompsonMean)} (own ${row.thompsonMatched}) ` +
+          `common=${row.commonMatched} ${row.verdict}; ` +
+          `exploration=${(row.currentExplorationShare * 100).toFixed(1)}%/${(row.thompsonExplorationShare * 100).toFixed(1)}%`,
+        )
+      }
+    }
+    if (seed !== undefined) {
+      const result = routingBacktest(jobFilter, seed)
+      const outputAssumptions = {
+        ...assumptions,
+        causalExclusions: `${result.causalExcludedJudgements} earlier judgement/dispatch pairs excluded`,
+      }
+      if (has('json')) {
+        console.log(JSON.stringify({ mode: 'single-seed-reproduction', decidesWiring: false, assumptions: outputAssumptions, ...result }))
+        break
+      }
+      console.log(`routing backtest single-seed reproduction (seed ${seed}; descriptive only, never decides wiring)`)
+      console.log('assumptions:')
+      for (const [key, value] of Object.entries(outputAssumptions)) console.log(`  ${key}: ${value}`)
+      printTrajectory(result)
+      console.log('wiring verdict: not computed from a single seed')
       break
     }
-    console.log(`routing backtest (seed ${result.seed})`)
-    console.log('assumptions:')
-    console.log('  eligibility: current static capability, metered, prompt-size and context rules; cooldowns reconstructed from prior log events')
-    console.log('  reachability: present-day reachability ignored')
-    console.log('  evidence: voided, evidence-excluded and NOT_EVIDENCE runs omitted')
-    console.log(`  causal availability: scored evidence enters at scored_at; failures at termination; ${result.causalExcludedJudgements} earlier judgement/dispatch pairs excluded`)
-    console.log('  exact ties: unmetered first, then median latency')
-    console.log('  Beta update: successes += (w + 0.5) / 1.5; failures += 1 - that (none is a full failure; full/right a full success)')
-    console.log('  exploration: a choice outside the policy\'s deterministic expected leader')
-    const pct = (n: number | null) => n === null ? 'n/a' : n.toFixed(3)
-    for (const row of result.jobs) {
-      console.log(
-        `${row.job}: runs=${row.runs} agreements=${row.agreements} differences=${row.differences} ` +
-        `current=${pct(row.currentMean)} (matched ${row.currentMatched}) ` +
-        `Thompson=${pct(row.thompsonMean)} (matched ${row.thompsonMatched}) ` +
-        `exploration=${(row.currentExplorationShare * 100).toFixed(1)}%/${(row.thompsonExplorationShare * 100).toFixed(1)}%`,
-      )
-      console.log(`  verdict: ${row.verdict}`)
+    const result = routingBacktestEnsemble(jobFilter)
+    const causalExcludedJudgements = result.trajectories[0]?.causalExcludedJudgements ?? 0
+    const outputAssumptions = {
+      ...assumptions,
+      causalExclusions: `${causalExcludedJudgements} earlier judgement/dispatch pairs excluded per trajectory`,
     }
+    if (has('json')) {
+      console.log(JSON.stringify({ mode: 'ensemble', assumptions: outputAssumptions, ...result }))
+      break
+    }
+    console.log(`routing backtest ensemble (seeds ${result.seeds.join(', ')}; ${result.requiredPasses} passes required)`)
+    console.log('assumptions:')
+    for (const [key, value] of Object.entries(outputAssumptions)) console.log(`  ${key}: ${value}`)
+    console.log('per-job classifications across seeds:')
+    for (const row of result.jobs) console.log(
+      `  ${row.job}: win=${row.wins} tie=${row.ties} loss=${row.losses} unmeasurable=${row.unmeasurable}`,
+    )
+    console.log('individual trajectories:')
+    for (const trajectory of result.trajectories) printTrajectory(trajectory, '  ')
+    console.log(`ensemble: ${result.passCount}/${result.seeds.length} trajectories pass`)
     console.log(`verdict: ${result.shouldWire ? 'wire Thompson routing' : 'leave current routing unchanged'}`)
     break
   }
@@ -3841,16 +3875,6 @@ switch (cmd) {
       if (g.untried.length) console.log(`  untried  ${g.untried.join(', ')}`)
       for (const e of g.excluded) console.log(`  excluded ${e.agent}: ${e.why}`)
       console.log(`  routes to ${g.routesTo}   (${g.reason})`)
-      if (g.backtest) {
-        const delta = g.backtest.measurable
-          ? `${g.backtest.thompsonMean! - g.backtest.currentMean! >= 0 ? '+' : ''}` +
-            `${(g.backtest.thompsonMean! - g.backtest.currentMean!).toFixed(3)} realised score`
-          : 'gain unmeasurable'
-        console.log(
-          `  Thompson backtest ${g.backtest.verdict}: ${delta}; ` +
-          `${(g.backtest.thompsonExplorationShare * 100).toFixed(1)}% exploration`,
-        )
-      }
     }
 
     if (tradeoffs.length) {

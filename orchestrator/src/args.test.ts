@@ -11,7 +11,7 @@ describe('CLI argument recognition', () => {
       'issue', 'land', 'contract', 'doc', 'canon', 'port', 'mcp', 'do', 'review', 'state', 'run',
       'search', 'result', 'wait', 'retry', 'project', 'ask-server', 'setup-ask', 'blockers', 'monitor',
       'inbox', 'answer', 'tell', 'continue', 'diff', 'sweep', 'discard', 'stop', 'abandon', 'score',
-      'recalibrate', 'runs', 'guide', 'spawns', 'stats', 'pick', 'pending', 'metric', 'serve',
+      'recalibrate', 'routing-backtest', 'runs', 'guide', 'spawns', 'stats', 'pick', 'pending', 'metric', 'serve',
       'reclassify-failures', 'doctor', 'jobs', 'agents',
     ]
     for (const command of commands) expect(isCliCommand(command)).toBeTrue()
@@ -66,6 +66,7 @@ describe('CLI argument recognition', () => {
       ['stop', '12'], ['abandon', '12', '--note', 'superseded'],
       ['score', '12', 'full', 'right', 'faithful', '--note', 'good',
         '--reproduced', 'all', '--coverage', 'adequate', '--limits', 'named', '--overlap', 'alone'],
+      ['routing-backtest', '--job', 'implement', '--seed', '7', '--json'],
       ['runs', '--id', '12', '--id', '13', '--json'],
       ['pick', 'implement', '--distinct-from', '10,11'], ['metric', 'collect', '--days', '30'],
     ]
