@@ -317,8 +317,14 @@ class SharedWorktreeEvidenceError extends Error {
   }
 }
 
-function keptBranchLine(branch: string, count: number, id: number): string {
-  return `kept branch ${branch}: ${count} commit(s) reachable only from this branch — ` +
+function keptBranchLine(
+  branch: string, uniqueCount: number, afterCutCount: number | null, id: number,
+): string {
+  const reason = afterCutCount === null
+    ? `${uniqueCount} commit(s) reachable only from this branch`
+    : `deleting it would lose commits reachable from no other ref; ` +
+      `${afterCutCount} commit(s) after the cut`
+  return `kept branch ${branch}: ${reason} — ` +
     `merge it, or orch discard ${id} --force to delete it after checking no other run owns it`
 }
 
@@ -568,8 +574,12 @@ function discardWorktree(
     const ownersBefore = evidenceOwningBranchOwners(row, repoRoot)
     const branchSnapshot = row.branch ? branchTip(repoRoot, row.branch) : null
     let protectedBranch: ReturnType<typeof unmergedBranch> = null
+    let afterCutCount: number | null = null
     if (!force && row.branch) {
-      protectedBranch = unmergedBranch(repoRoot, row.branch, row.base_commit)
+      protectedBranch = unmergedBranch(repoRoot, row.branch, null)
+      afterCutCount = row.base_commit
+        ? (unmergedBranch(repoRoot, row.branch, row.base_commit)?.count ?? 0)
+        : null
     }
     const r = removeFor({
       path: row.worktree,
@@ -629,7 +639,9 @@ function discardWorktree(
     console.log(`${verb} run ${row.id}'s worktree`)
     if (r.output) console.log(r.output)
     if (protectedBranch && keptProtectedBranch) {
-      console.log(keptBranchLine(keptProtectedBranch, protectedBranch.count, row.id))
+      console.log(keptBranchLine(
+        keptProtectedBranch, protectedBranch.count, afterCutCount, row.id,
+      ))
     }
     const branchOwner = ownersAfter[0] ?? ownersBefore[0] ?? null
     if (branchOwner && row.branch) {
@@ -3247,6 +3259,10 @@ switch (cmd) {
           }
           const ownersBefore = evidenceOwningBranchOwners(r, repoRoot)
           const snapshot = r.branch ? branchTip(repoRoot, r.branch) : null
+          const protectedBranch = r.branch ? unmergedBranch(repoRoot, r.branch, null) : null
+          const afterCutCount = protectedBranch && r.base_commit
+            ? (unmergedBranch(repoRoot, r.branch!, r.base_commit)?.count ?? 0)
+            : null
           const res = removeFor(w, repoRoot, false, ownersBefore.length > 0)
           const sharersAfter = evidenceOwningWorktreeSharers(r)
           const ownersAfter = evidenceOwningBranchOwners(r, repoRoot)
@@ -3289,9 +3305,16 @@ switch (cmd) {
               })
               console.error(`could not fully reclaim ${r.id}: project ${project}'s remove tool leaked Docker resources`)
             } else {
-              clearConversationWorktree(r.id, r.worktree)
+              const keptProtectedBranch = protectedBranch && r.branch &&
+                branchTip(repoRoot, r.branch) ? r.branch : null
+              clearConversationWorktree(r.id, r.worktree, keptProtectedBranch)
               console.log(`reclaimed ${r.id}  ${res.detail}`)
               if (res.output) console.log(res.output)
+              if (protectedBranch && keptProtectedBranch) {
+                console.log(keptBranchLine(
+                  keptProtectedBranch, protectedBranch.count, afterCutCount, r.id,
+                ))
+              }
               const owner = ownersAfter[0] ?? ownersBefore[0] ?? null
               if (owner && r.branch) {
                 console.log(`branch ${r.branch} left because run ${owner.id} records it`)
@@ -3691,12 +3714,16 @@ switch (cmd) {
         return
       }
       let protectedBranch: ReturnType<typeof unmergedBranch> = null
+      let afterCutCount: number | null = null
       if (!has('force')) {
-        protectedBranch = unmergedBranch(repoRoot, row.branch!, row.base_commit)
+        protectedBranch = unmergedBranch(repoRoot, row.branch!, null)
+        afterCutCount = row.base_commit
+          ? (unmergedBranch(repoRoot, row.branch!, row.base_commit)?.count ?? 0)
+          : null
       }
       if (protectedBranch) {
         db().query('UPDATE run SET branch_kept=?, branch_kept_tip=NULL WHERE id=?').run(row.branch, id)
-        console.log(keptBranchLine(row.branch!, protectedBranch.count, id))
+        console.log(keptBranchLine(row.branch!, protectedBranch.count, afterCutCount, id))
         return
       }
       const snapshot = branchTip(repoRoot, row.branch!)

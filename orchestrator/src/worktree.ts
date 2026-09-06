@@ -1504,6 +1504,7 @@ export function removeWithTool(
 ): { removed: boolean; detail: string; output?: string } {
   const name = w.path.split('/').pop() ?? w.path
   const branchBefore = branchTip(w.repoRoot, w.branch)
+  const uniqueBefore = unmergedBranch(w.repoRoot, w.branch, null)
 
   // A recipe-built tree is torn down the same way it was made: bottega
   // provisioned the database, so bottega drops it. Done BEFORE the directory
@@ -1526,11 +1527,14 @@ export function removeWithTool(
   const r = runShellTool(tool.remove, { name, branch: w.branch, path: w.path }, w.repoRoot)
   if (r.ok && !existsSync(w.path)) {
     const branchAfter = branchTip(w.repoRoot, w.branch)
-    if (!keepBranch && branchAfter !== null && branchAfter !== branchBefore) {
+    if (branchAfter !== null && branchAfter !== branchBefore &&
+        (uniqueBefore !== null || !keepBranch)) {
       return {
         removed: false,
         detail: branchBefore === null
           ? `project remove tool created unprotected branch ${w.branch} at ${branchAfter}; it was left in place`
+          : uniqueBefore
+          ? `project remove tool moved unique branch ${w.branch} from ${branchBefore} to ${branchAfter}; it was left in place`
           : `project remove tool moved unprotected branch ${w.branch} from ${branchBefore} to ${branchAfter}; it was left in place`,
         ...(r.out ? { output: r.out } : {}),
       }
@@ -1587,7 +1591,7 @@ export function removeFor(
   const project = projectAt(repoRoot)
   const tool = project?.settings.worktree
   const retainBranch = keepBranch ||
-    (!forceOrchTree && unmergedBranch(repoRoot, w.branch, w.base || null) !== null)
+    (!forceOrchTree && unmergedBranch(repoRoot, w.branch, null) !== null)
   const result: { removed: boolean; detail: string; output?: string } = tool
     ? removeWithTool(tool, w, forceOrchTree, retainBranch)
     : removeWorktree(w, retainBranch)
@@ -1655,10 +1659,10 @@ export type UnmergedBranch = { count: number; tip: string }
 /**
  * Commits reachable only from this local branch — deleting it would lose them.
  *
- * Counted from the recorded cut, not against a trunk ref: a local trunk goes
- * stale, and commits already on another branch, remote, or tag are not lost
- * by deleting this one. A missing base (rows that predate the column) drops
- * that term; unique commits are still counted.
+ * Counted against every other branch, remote, and tag. Callers may additionally
+ * exclude the recorded cut when they need the human-facing count of commits
+ * made after that cut, but branch retention always uses the null-base form:
+ * deleting the ref must not lose its cut commit after another ref is rewound.
  */
 export function unmergedBranch(
   repoRoot: string, branch: string, baseCommit: string | null,

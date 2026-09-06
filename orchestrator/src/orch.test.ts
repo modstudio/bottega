@@ -10853,6 +10853,57 @@ echo 'Usage: scripts/worktree create [seed]'
     }
   })
 
+  test('sweep refuses when a project tool moves a pre-teardown unique branch tip', () => {
+    const { repo } = scratchRepo()
+    const project = `sweep-moved-unique-${repo.split('/').pop()}`
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
+    const tree = createWorktree(repo, id)
+    writeFileSync(join(tree.path, 'unique.txt'), 'unique before cleanup\n')
+    git(tree.path, 'add', 'unique.txt')
+    git(tree.path, 'commit', '-m', 'unique before cleanup')
+    const first = git(tree.path, 'rev-parse', 'HEAD')
+    git(repo, 'checkout', '-b', 'fixture-sweep-later-tip', first)
+    writeFileSync(join(repo, 'later.txt'), 'later\n')
+    git(repo, 'add', 'later.txt')
+    git(repo, 'commit', '-m', 'later sweep tip')
+    const later = git(repo, 'rev-parse', 'HEAD')
+    git(repo, 'checkout', 'main')
+    git(repo, 'branch', '-D', 'fixture-sweep-later-tip')
+    const script = join(repo, 'move-unique-during-sweep.sh')
+    writeFileSync(script,
+      'git worktree remove --force "$1"\n' +
+      `git update-ref "refs/heads/$2" "${later}"\n`)
+    upsertProject({
+      name: project, path: realpathSync(repo),
+      settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
+    })
+    db().query(
+      `UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=?, started_at=? WHERE id=?`,
+    ).run(repo, tree.path, tree.branch, tree.base, '2020-01-01T00:00:00.000Z', id)
+    db().query(
+      `INSERT INTO score (run_id, delivery, quality, fidelity, scored_at)
+       VALUES (?,'full','right','faithful',?)`,
+    ).run(id, nowIso())
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const p = Bun.spawnSync(
+        [process.execPath, CLI, 'sweep', '--older-than', '0'],
+        {
+          env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+          stdout: 'pipe', stderr: 'pipe',
+        },
+      )
+      expect(p.exitCode).not.toBe(0)
+      expect(p.stderr.toString()).toContain(`moved unique branch ${tree.branch}`)
+      expect(p.stderr.toString()).toContain(later)
+      expect(git(repo, 'rev-parse', tree.branch)).toBe(later)
+      expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
+        .toEqual({ worktree: tree.path })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('stopped runs are swept and their surviving infrastructure is reported by sweep and doctor', () => {
     const { repo } = scratchRepo()
     const project = `stopped-resource-${repo.split('/').pop()}`
@@ -11737,6 +11788,52 @@ echo 'Usage: scripts/worktree create [seed]'
     }
   })
 
+  for (const cleanup of ['abandon', 'sweep'] as const) {
+    test(`${cleanup} keeps a cut commit after trunk is rewound away from it`, () => {
+      const { repo } = scratchRepo()
+      const project = `rewound-cut-${cleanup}-${repo.split('/').pop()}`
+      writeFileSync(join(repo, 'cut.txt'), 'recorded cut\n')
+      git(repo, 'add', 'cut.txt')
+      git(repo, 'commit', '-m', 'recorded cut')
+      const id = addRun({
+        agent: 'codex', job: 'implement', status: cleanup === 'abandon' ? 'asking' : 'ok',
+        repo: project,
+      })
+      const tree = createWorktree(repo, id)
+      const tip = git(repo, 'rev-parse', tree.branch)
+      git(repo, 'worktree', 'remove', '--force', tree.path)
+      git(repo, 'reset', '--hard', 'HEAD~1')
+      upsertProject({ name: project, path: realpathSync(repo), settings: { trunk: 'main' } })
+      db().query(
+        `UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=?, started_at=? WHERE id=?`,
+      ).run(repo, tree.path, tree.branch, tip, '2020-01-01T00:00:00.000Z', id)
+      if (cleanup === 'sweep') {
+        db().query(
+          `INSERT INTO score (run_id, delivery, quality, fidelity, scored_at)
+           VALUES (?,'full','right','faithful',?)`,
+        ).run(id, nowIso())
+      }
+      try {
+        const CLI = new URL('cli.ts', import.meta.url).pathname
+        const args = cleanup === 'abandon'
+          ? ['abandon', String(id)]
+          : ['sweep', '--older-than', '0']
+        const p = Bun.spawnSync([process.execPath, CLI, ...args], {
+          env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+          stdout: 'pipe', stderr: 'pipe',
+        })
+        expect(p.exitCode).toBe(0)
+        expect(git(repo, 'rev-parse', tree.branch)).toBe(tip)
+        expect(p.stdout.toString()).toContain(`kept branch ${tree.branch}`)
+        expect(p.stdout.toString()).toContain('0 commit(s) after the cut')
+        expect(db().query('SELECT worktree, branch_kept FROM run WHERE id=?').get(id))
+          .toEqual({ worktree: null, branch_kept: tree.branch })
+      } finally {
+        rmSync(repo, { recursive: true, force: true })
+      }
+    })
+  }
+
   test('discard without a configured trunk still deletes a branch with no unique commits', () => {
     const { repo } = scratchRepo()
     const tree = createWorktree(repo, 887)
@@ -11839,7 +11936,8 @@ echo 'Usage: scripts/worktree create [seed]'
       })
       expect(p.exitCode).toBe(0)
       expect(p.stdout.toString()).toContain(
-        `kept branch ${tree.branch}: 1 commit(s) reachable only from this branch`,
+        `kept branch ${tree.branch}: deleting it would lose commits reachable from no other ref; ` +
+        `1 commit(s) after the cut`,
       )
       expect(git(repo, 'rev-parse', tree.branch)).toBe(tip)
       expect(db().query('SELECT branch_kept FROM run WHERE id=?').get(id))
