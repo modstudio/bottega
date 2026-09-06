@@ -4,6 +4,11 @@
  * Refusal contract for chunk 3 (each clause is a complete line):
  *   invariant: <the invariant's bolded phrase from orchestrator/AGENTS.md>
  *   cleared by: <a literal orch or git invocation>
+ *
+ * Every expected failure records evidence only when its invariant expectation
+ * fails. Chunk 3 removes a repaired case from failingCaseNames, changes it to
+ * plain test(), and leaves violation() around its now-passing assertion; that
+ * produces no record, so the final evidence test remains an exact inventory.
  */
 import { afterAll, beforeEach, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
@@ -34,10 +39,12 @@ const home = join(fixture, 'home')
 const bin = join(fixture, 'bin')
 const repoPath = join(fixture, 'trunk')
 const timelines = join(fixture, 'timelines')
+const violationsFile = join(fixture, 'violations.jsonl')
 mkdirSync(home, { recursive: true })
 mkdirSync(bin, { recursive: true })
 mkdirSync(repoPath, { recursive: true })
 mkdirSync(timelines, { recursive: true })
+rmSync(violationsFile, { force: true })
 const repo = realpathSync(repoPath)
 writeFileSync(join(bin, 'docker'), '#!/bin/sh\nexit 0\n')
 chmodSync(join(bin, 'docker'), 0o755)
@@ -116,6 +123,54 @@ afterAll(() => {
 
 const defaultSeed = Number(process.env.ORCH_HARNESS_SEED ?? '1') >>> 0
 const rounds = Math.max(1, Number(process.env.ORCH_HARNESS_ROUNDS ?? '3'))
+
+const refusalSiteNames = [
+  'caller ancestry', 'missing trunk setting', 'missing gate setting',
+  'branch does not exist', 'configured trunk does not exist',
+  'branch has no worktree', 'branch is already merged', 'rebase leaves no commits',
+] as const
+const refusalCaseName = (site: string) =>
+  `Every refusal names the invariant it protects and the command that clears it: ${site}`
+const failingCaseNames = [
+  'One lock per purpose',
+  'A lock waiter is served in arrival order',
+  'A resume is always possible on a stale checkout: attachment never waits on the landing lock',
+  'Only the main checkout binary migrates the store',
+  'Landing holds its lock only for re-check, guard verification and fast-forward, never a gate',
+  'A failed landing leaves the branch worktree as it found it',
+  ...refusalSiteNames.map(refusalCaseName),
+  refusalCaseName('linked-worktree write boundary'),
+] as const
+
+const failingName = {
+  lockPurpose: failingCaseNames[0],
+  fifo: failingCaseNames[1],
+  resume: failingCaseNames[2],
+  migration: failingCaseNames[3],
+  landingGate: failingCaseNames[4],
+  failedLanding: failingCaseNames[5],
+  linkedRefusal: failingCaseNames.at(-1)!,
+}
+
+function expectationError(error: unknown): error is Error {
+  return error instanceof Error && (
+    /\n\s+at to[A-Z]\w* \(unknown\)/.test(error.stack ?? '') ||
+    (/\bExpected\b/.test(error.message) && /\bReceived\b/.test(error.message))
+  )
+}
+
+function violation(caseName: string, seed: string, check: () => void): void {
+  try {
+    check()
+  } catch (error) {
+    if (!expectationError(error)) throw error
+    writeFileSync(violationsFile, `${JSON.stringify({
+      case: caseName, at: new Date().toISOString(), seed: defaultSeed,
+      evidence: `${seed}\n${error.message}`,
+    })}\n`, { flag: 'a' })
+    throw error
+  }
+}
 
 class XorShift32 {
   constructor(private state: number) { if (!state) this.state = 1 }
@@ -258,7 +313,7 @@ test('Every write transaction is IMMEDIATE; a deferred transaction that later wr
   }
 }, 20_000)
 
-test.failing('One lock per purpose', async () => {
+test.failing(failingName.lockPurpose, async () => {
   const actorCode = `const{appendFileSync,existsSync,readFileSync,readdirSync}=await import('node:fs');const{join}=await import('node:path');const{withProjectLock,withWorktreeCreateLock}=await import(process.argv[1]);const [repo,actor,file]=process.argv.slice(2);const log=(event,lock)=>appendFileSync(file,JSON.stringify({at:new Date().toISOString(),event,actor,...(lock?{lock}:{})})+'\\n');log('lock-wait');const action=()=>{const common=Bun.spawnSync(['git','rev-parse','--path-format=absolute','--git-common-dir'],{cwd:repo,stdout:'pipe'}).stdout.toString().trim();const held=readdirSync(common).filter(name=>name.endsWith('.lock')&&existsSync(join(common,name,'owner'))).filter(name=>{try{return JSON.parse(readFileSync(join(common,name,'owner'),'utf8')).pid===process.pid}catch{return false}});const lock=held.length===1?held[0]:'unknown';log('lock-held',lock);Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,80)};actor==='worker'?withWorktreeCreateLock(repo,action,2000):withProjectLock(repo,'landing',{session:actor,what:actor},action,2000,true);log('lock-released');log('exit')`
   const rng = rngFor(2)
   const names = rng.shuffle(['worker', 'lander', 'cleanup'])
@@ -270,17 +325,21 @@ test.failing('One lock per purpose', async () => {
       stdout: 'pipe', stderr: 'pipe',
     }))
   })
-  await Promise.all(children)
+  const actorResults = await Promise.all(children)
+  expect(actorResults.every((actor) => actor.code === 0),
+    actorResults.map((actor) => actor.err).join('\n')).toBe(true)
   const intervals = names.map((actor) => ({ actor, rows: events(actor) }))
   const shared = intervals.flatMap(({ actor, rows }) => rows
     .filter((row) => row.event === 'lock-held').map((row) => ({ actor, lock: row.lock })))
   expect(shared).toHaveLength(3)
   expect(shared.every((row) => row.lock !== undefined && row.lock !== 'unknown'),
     `lock observation itself failed\n${seedMessage()}`).toBe(true)
-  expect(new Set(shared.map((row) => row.lock)).size, seedMessage()).toBe(3)
+  violation(failingName.lockPurpose, seedMessage(), () => {
+    expect(new Set(shared.map((row) => row.lock)).size, seedMessage()).toBe(3)
+  })
 }, 15_000)
 
-test.failing('A lock waiter is served in arrival order', async () => {
+test.failing(failingName.fifo, async () => {
   for (let round = 0; round < rounds; round++) {
     const rng = rngFor(3, round)
     const release = join(fixture, `fifo-release-${round}`)
@@ -303,11 +362,19 @@ test.failing('A lock waiter is served in arrival order', async () => {
       await Bun.sleep(5)
     }
     a.kill('SIGCONT')
-    await Promise.all([holder, a, ...shorts].map(result))
+    const actorResults = await Promise.all([holder, a, ...shorts].map(result))
+    expect(actorResults.every((actor) => actor.code === 0),
+      actorResults.map((actor) => actor.err).join('\n')).toBe(true)
     const held = readdirSync(timelines).filter((name) => name.startsWith(`${round}-`))
       .flatMap((name) => events(name.replace(/\.jsonl$/, ''))).filter((e) => e.event === 'lock-held')
       .sort((x, y) => x.at.localeCompare(y.at)).map((e) => e.actor)
-    expect(held.indexOf('A'), seedMessage()).toBeLessThan(Math.min(...held.filter(x => x.startsWith('S')).map(x => held.indexOf(x))))
+    expect(held).toContain('A')
+    expect(held.some((actor) => actor.startsWith('S'))).toBe(true)
+    violation(failingName.fifo, seedMessage(), () => {
+      expect(held.indexOf('A'), seedMessage()).toBeLessThan(
+        Math.min(...held.filter(x => x.startsWith('S')).map(x => held.indexOf(x))),
+      )
+    })
   }
 }, 15_000)
 
@@ -321,7 +388,7 @@ test('A resume is always possible on a stale checkout: recorded worktree skips c
   expect(resumed.code, `${seedMessage()}\n${resumed.err}`).toBe(0)
 }, 15_000)
 
-test.failing('A resume is always possible on a stale checkout: attachment never waits on the landing lock', async () => {
+test.failing(failingName.resume, async () => {
   const tree = addBranch('resume-during-gate')
   const base = git(tree, 'rev-parse', 'HEAD')
   const inserted = store((database) => database.query(`INSERT INTO run (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,vendor_session,cwd,worktree,branch,base_commit,repo,turn) VALUES (datetime('now'),'codex','file-question','r',1,'r','ok','lifecycle-harness','vendor-session',?,?,?,?, 'lifecycle-fixture',1) RETURNING id`).get(tree, tree, 'resume-during-gate', base) as { id: number })
@@ -351,10 +418,12 @@ test.failing('A resume is always possible on a stale checkout: attachment never 
   }
   expect(store((database) => (database.query('SELECT status FROM run WHERE id=?').get(resumedId) as { status: string }).status))
     .not.toBe('running')
-  expect(premature, seedMessage()).toBe(true)
+  violation(failingName.resume, seedMessage(), () => {
+    expect(premature, seedMessage()).toBe(true)
+  })
 }, 15_000)
 
-test.failing('Only the main checkout binary migrates the store', async () => {
+test.failing(failingName.migration, async () => {
   const copy = join(fixture, 'linked-source')
   const linked = join(fixture, 'linked-tree')
   rmSync(copy, { recursive: true, force: true })
@@ -364,17 +433,20 @@ test.failing('Only the main checkout binary migrates the store', async () => {
   git(copy, 'init', '-b', 'main'); git(copy, 'config', 'user.email', 'linked@example.invalid'); git(copy, 'config', 'user.name', 'Linked')
   git(copy, 'add', '.'); git(copy, 'commit', '-m', 'DEV-321 linked fixture'); git(copy, 'worktree', 'add', '-b', 'DEV-321-linked', linked)
   const scratch = join(fixture, 'linked-migration.db')
-  const init = await result(Bun.spawn([process.execPath, join(copy, 'orchestrator/src/cli.ts'), 'init-db'], { cwd: copy, env: gitEnv({ ORCH_DB: scratch, ORCH_DEPTH: '0' }), stdout: 'pipe', stderr: 'pipe' }))
-  expect(init.code).toBe(0)
+  rmSync(scratch, { force: true })
+  const init = Bun.spawnSync([process.execPath, join(copy, 'orchestrator/src/cli.ts'), 'init-db'], { cwd: copy, env: gitEnv({ ORCH_DB: scratch, ORCH_DEPTH: '0' }), stdout: 'pipe', stderr: 'pipe' })
+  expect(init.exitCode, init.stderr.toString()).toBe(0)
   const before = new Database(scratch); before.exec('ALTER TABLE run DROP COLUMN label'); before.close()
-  const read = await result(Bun.spawn([process.execPath, join(linked, 'orchestrator/src/cli.ts'), 'runs'], { cwd: linked, env: gitEnv({ ORCH_DB: scratch, ORCH_DEPTH: '0' }), stdout: 'pipe', stderr: 'pipe' }))
+  const read = Bun.spawnSync([process.execPath, join(linked, 'orchestrator/src/cli.ts'), 'runs'], { cwd: linked, env: gitEnv({ ORCH_DB: scratch, ORCH_DEPTH: '0' }), stdout: 'pipe', stderr: 'pipe' })
   const checked = new Database(scratch, { readonly: true })
   const columns = checked.query('PRAGMA table_info(run)').all() as { name: string }[]; checked.close()
-  expect(columns.some((column) => column.name === 'label'), `${read.err}\n${seedMessage()}`).toBe(false)
-  expect(read.err).toContain('refusing to write the live store from a linked worktree')
+  violation(failingName.migration, seedMessage(), () => {
+    expect(columns.some((column) => column.name === 'label')).toBe(false)
+    expect(read.stderr.toString()).toContain('refusing to write the live store from a linked worktree')
+  })
 }, 20_000)
 
-test.failing('Landing holds its lock only for re-check, guard verification and fast-forward, never a gate', async () => {
+test.failing(failingName.landingGate, async () => {
   const branches = ['gate-one', 'gate-two']; branches.forEach(addBranch)
   const release = branches.map((branch) => join(fixture, `${branch}-release`))
   release.forEach((path) => rmSync(path, { force: true }))
@@ -386,10 +458,14 @@ test.failing('Landing holds its lock only for re-check, guard verification and f
   for (const branch of branches) while (!events('gates').some(e => e.actor === branch)) await Bun.sleep(5)
   const order = rngFor(6).shuffle([0, 1]); writeFileSync(release[order[0]!]!, ''); await landingResults[order[0]!]!; writeFileSync(release[order[1]!]!, '')
   const landed = await Promise.all(landingResults); expect(landed.every(x => x.code === 0), landed.map(x => x.err).join('\n')).toBe(true)
-  expect(events('gates').filter(e => e.event === 'gate-start').every(e => e.pid === null), seedMessage()).toBe(true)
+  const gateStarts = events('gates').filter(e => e.event === 'gate-start')
+  expect(gateStarts.length).toBeGreaterThanOrEqual(2)
+  violation(failingName.landingGate, seedMessage(), () => {
+    expect(gateStarts.every(e => e.pid === null), seedMessage()).toBe(true)
+  })
 }, 20_000)
 
-test.failing('A failed landing leaves the branch worktree as it found it', async () => {
+test.failing(failingName.failedLanding, async () => {
   const tree = addBranch('failed-landing')
   writeFileSync(join(repo, 'trunk-only.txt'), 'trunk\n'); git(repo, 'add', 'trunk-only.txt'); git(repo, 'commit', '-m', 'DEV-321 move trunk')
   configure('false')
@@ -397,56 +473,67 @@ test.failing('A failed landing leaves the branch worktree as it found it', async
   const landed = await result(childLand('failed-landing'))
   const after = { head: git(tree, 'rev-parse', 'HEAD'), status: git(tree, 'status', '--porcelain'), rebase: existsSync(join(tree, '.git/rebase-merge')) || existsSync(join(tree, '.git/rebase-apply')) }
   expect(landed.code).not.toBe(0)
-  expect(after, seedMessage()).toEqual(before)
+  violation(failingName.failedLanding, seedMessage(), () => {
+    expect(after, seedMessage()).toEqual(before)
+  })
 }, 15_000)
 
 test.todo('A reclaim removes exactly the acquisition it classified as stale — needs the chunk 3 lock-incarnation checkpoint seam', () => {})
 
 const invariantLine = /^invariant: .+$/m
 const clearingLine = /^cleared by: (?:orch|git) .+$/m
+class RefusalSetupError extends Error {}
 const refusedLand = (branch: string) => {
   const r = Bun.spawnSync([process.execPath, '-e',
     `const{land}=await import(process.argv[1]);land(process.argv[2],process.argv[3],{unreviewed:'test'})`,
     landingModule, repo, branch], {
     env: gitEnv({ ORCH_DB: storePath }), stdout: 'pipe', stderr: 'pipe',
   })
-  if (r.exitCode === 0) throw new Error('landing unexpectedly succeeded')
-  throw new Error(r.stderr.toString())
+  if (r.exitCode === 0) throw new RefusalSetupError('landing unexpectedly succeeded')
+  return r.stderr.toString()
 }
 const refusalCases = [
   ['caller ancestry', () => {
     const tree = addBranch('ancestry-refusal'); const base = git(tree, 'rev-parse', 'HEAD')
     git(repo, 'reset', '--hard', `${fixtureBase}`)
     const r = Bun.spawnSync([process.execPath, '-e', `const{assertCallerAncestry}=await import(process.argv[1]);assertCallerAncestry(process.argv[2],JSON.parse(process.argv[3]))`, worktreeModule, repo, JSON.stringify({ path: tree, branch: 'ancestry-refusal', base, repoRoot: repo })], { env: gitEnv({ ORCH_DB: storePath }), stdout: 'pipe', stderr: 'pipe' })
-    throw new Error(r.stderr.toString())
+    if (r.exitCode === 0) throw new RefusalSetupError('caller ancestry unexpectedly succeeded')
+    return r.stderr.toString()
   }],
-  ['missing trunk setting', () => { configureSettings({ gate: 'true' }); addBranch('no-trunk-setting'); refusedLand('no-trunk-setting') }],
-  ['missing gate setting', () => { configureSettings({ trunk: 'main' }); addBranch('no-gate-setting'); refusedLand('no-gate-setting') }],
+  ['missing trunk setting', () => { configureSettings({ gate: 'true' }); addBranch('no-trunk-setting'); return refusedLand('no-trunk-setting') }],
+  ['missing gate setting', () => { configureSettings({ trunk: 'main' }); addBranch('no-gate-setting'); return refusedLand('no-gate-setting') }],
   ['branch does not exist', () => refusedLand('absent-branch')],
-  ['configured trunk does not exist', () => { addBranch('missing-trunk-ref'); configureSettings({ trunk: 'absent-trunk', gate: 'true' }); refusedLand('missing-trunk-ref') }],
-  ['branch has no worktree', () => { git(repo, 'branch', 'no-worktree'); refusedLand('no-worktree') }],
-  ['branch is already merged', () => { const tree = join(fixture, 'trees', 'already-merged'); mkdirSync(dirname(tree), { recursive: true }); git(repo, 'worktree', 'add', '-b', 'already-merged', tree, 'main'); refusedLand('already-merged') }],
+  ['configured trunk does not exist', () => { addBranch('missing-trunk-ref'); configureSettings({ trunk: 'absent-trunk', gate: 'true' }); return refusedLand('missing-trunk-ref') }],
+  ['branch has no worktree', () => { git(repo, 'branch', 'no-worktree'); return refusedLand('no-worktree') }],
+  ['branch is already merged', () => { const tree = join(fixture, 'trees', 'already-merged'); mkdirSync(dirname(tree), { recursive: true }); git(repo, 'worktree', 'add', '-b', 'already-merged', tree, 'main'); return refusedLand('already-merged') }],
   ['rebase leaves no commits', () => {
     const tree = addBranch('empty-after-rebase')
     writeFileSync(join(tree, 'same.txt'), 'same\n'); git(tree, 'add', 'same.txt'); git(tree, 'commit', '-m', 'DEV-321 branch copy')
     writeFileSync(join(repo, 'same.txt'), 'same\n'); git(repo, 'add', 'same.txt'); git(repo, 'commit', '-m', 'DEV-321 trunk copy')
-    refusedLand('empty-after-rebase')
+    return refusedLand('empty-after-rebase')
   }],
 ] as const
 
-for (const [site, trigger] of refusalCases) {
-  test.failing(`Every refusal names the invariant it protects and the command that clears it: ${site}`, () => {
-    let message = ''
-    try { trigger() } catch (error) { message = String((error as Error).message ?? error) }
-    expect(message).toMatch(invariantLine)
-    expect(message).toMatch(clearingLine)
+for (const [index, [site, trigger]] of refusalCases.entries()) {
+  const caseName = failingCaseNames[6 + index]!
+  test.failing(caseName, () => {
+    expect(site).toBe(refusalSiteNames[index])
+    const message = trigger()
+    expect(message.length).toBeGreaterThan(0)
+    violation(caseName, seedMessage(), () => {
+      expect(message).toMatch(invariantLine)
+      expect(message).toMatch(clearingLine)
+    })
   }, 15_000)
 }
 
-test.failing('Every refusal names the invariant it protects and the command that clears it: linked-worktree write boundary', async () => {
+test.failing(failingName.linkedRefusal, async () => {
   const { LINKED_WORKTREE_WRITE_REFUSAL } = await import('./db.ts')
-  expect(LINKED_WORKTREE_WRITE_REFUSAL).toMatch(invariantLine)
-  expect(LINKED_WORKTREE_WRITE_REFUSAL).toMatch(clearingLine)
+  expect(LINKED_WORKTREE_WRITE_REFUSAL.length).toBeGreaterThan(0)
+  violation(failingName.linkedRefusal, seedMessage(), () => {
+    expect(LINKED_WORKTREE_WRITE_REFUSAL).toMatch(invariantLine)
+    expect(LINKED_WORKTREE_WRITE_REFUSAL).toMatch(clearingLine)
+  })
 }, 15_000)
 
 test.todo('The guard on disk is verified against HEAD before fast-forward — needs sharedGuardResidue and restoreSharedGuard from DEV-322', () => {})
@@ -466,4 +553,16 @@ test('Hermetic git in the gate is an observation; the lifecycle invariant does n
   const landed = await result(childLand('gate-environment', inherited))
   expect(landed.code, landed.err).toBe(0)
   expect(JSON.parse(readFileSync(observed, 'utf8'))).toEqual(inherited)
+}, 15_000)
+
+// Serial file order makes this the closing proof that setup failures were never
+// mistaken for expected invariant failures above.
+test('every failing case failed on its invariant, not on its setup', () => {
+  const records = readFileSync(violationsFile, 'utf8').trim().split('\n').filter(Boolean)
+    .map((line) => JSON.parse(line) as { case: string })
+  for (const caseName of failingCaseNames) {
+    expect(records.filter((record) => record.case === caseName), caseName).toHaveLength(1)
+  }
+  expect([...new Set(records.map((record) => record.case))].sort())
+    .toEqual([...failingCaseNames].sort())
 }, 15_000)
