@@ -4598,6 +4598,21 @@ describe('routing exploration', () => {
       Math.random = random
     }
   })
+
+  test('the standing draw skips a challenger whose scored history is all none', () => {
+    for (let i = 0; i < MIN_SAMPLE; i++) {
+      score(addRun({ agent: 'codex', job: 'review-lens' }), 'full', 'right')
+      score(addRun({ agent: 'grok', job: 'review-lens' }), 'none')
+    }
+
+    const random = Math.random
+    Math.random = () => 0
+    try {
+      expect(pick('review-lens').agent).toBe('codex')
+    } finally {
+      Math.random = random
+    }
+  })
 })
 
 describe('routing evidence scope', () => {
@@ -5921,6 +5936,37 @@ describe('routing backtest statistics', () => {
     // outcomes never enter either policy's state as counterfactual evidence.
     expect(row.currentSelections).toEqual({ codex: 8, grok: 1 })
     expect(row.thompsonSelections).toEqual({ codex: 5, grok: 4 })
+  })
+
+  test("the replay's incumbent choice equals pick() when tied unproven challengers decide", () => {
+    const insert = db().query(
+      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?,'full','right',?,'test')`,
+    )
+    for (let i = 0; i < MIN_SAMPLE; i++) {
+      const day = String(i + 1).padStart(2, '0')
+      const id = addRun({
+        agent: 'qwen-local', job: 'summarize', startedAt: `2026-01-${day}T00:00:00.000Z`,
+      })
+      insert.run(id, `2026-01-${day}T01:00:00.000Z`)
+    }
+
+    const random = Math.random
+    Math.random = () => 0
+    let production: string
+    try {
+      production = pick('summarize').agent
+    } finally {
+      Math.random = random
+    }
+    const sixth = addRun({
+      agent: production, job: 'summarize', startedAt: '2026-01-06T00:00:00.000Z',
+    })
+    insert.run(sixth, '2026-01-06T01:00:00.000Z')
+
+    const selections = routingBacktest('summarize', 1).jobs[0]!.currentSelections
+    expect(production).toBe('codex')
+    expect(selections).toEqual({ 'qwen-local': MIN_SAMPLE, [production]: 1 })
   })
 
   test('reports only replay choices for the filtered job', () => {

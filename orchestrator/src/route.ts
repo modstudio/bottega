@@ -649,12 +649,65 @@ export function evidenceFor(
   }
 }
 
+type CurrentPolicyCandidate = Pick<
+  Candidate, 'agent' | 'scored' | 'failures' | 'none' | 'evidence' | 'score' | 'shrunk' | 'free' | 'latencyMs'
+>
+
 /** Failure-only history has already answered whether another run is worthwhile. */
-function worthExploring(c: Candidate): boolean {
+function worthExploring(c: CurrentPolicyCandidate): boolean {
   return !(
     (c.scored === 0 && c.failures > 0) ||
     (c.scored > 0 && c.none === c.scored)
   )
+}
+
+export type CurrentPolicySelection<T extends CurrentPolicyCandidate> = {
+  chosen: T
+  mode: 'challenger' | 'standing-challenger' | 'best' | 'preference' | 'only'
+  tied: number
+}
+
+/**
+ * The incumbent ranking policy, independent of where its evidence came from.
+ *
+ * Candidate order is meaningful: equally unproven challengers retain it after
+ * the stable evidence-only sort. Both live routing and historical replay call
+ * this function so the diagnostic cannot grow a second ordering policy.
+ */
+export function currentPolicySelection<T extends CurrentPolicyCandidate>(
+  candidates: readonly T[], prefer: readonly string[], explore = true, rng: () => number = Math.random,
+): CurrentPolicySelection<T> {
+  const proven = candidates.filter((c) => c.evidence >= MIN_SAMPLE && c.score !== null)
+  const unproven = candidates.filter((c) => c.evidence < MIN_SAMPLE)
+
+  if (proven.length > 0) {
+    const worthTrying = unproven.filter(worthExploring)
+    if (explore && worthTrying.length > 0 && rng() < EXPLORE_RATE) {
+      const challenger = [...worthTrying].sort((a, b) => a.evidence - b.evidence)[0]!
+      return { chosen: challenger, mode: 'challenger', tied: 0 }
+    }
+    const ranked = [...proven].sort((a, b) => b.shrunk! - a.shrunk!)
+    const top = ranked[0]!.shrunk!
+    const tied = ranked.filter((c) => top - c.shrunk! <= NOISE_BAND)
+    tied.sort((a, b) =>
+      Number(b.free) - Number(a.free) ||
+      (a.latencyMs ?? Infinity) - (b.latencyMs ?? Infinity) ||
+      b.evidence - a.evidence)
+    const best = tied[0]!
+    if (explore && unproven.length === 0 && proven.length === candidates.length &&
+        rng() < STANDING_EXPLORE_RATE) {
+      const challenger = [...proven]
+        .filter((c) => c.agent !== best.agent && worthExploring(c))
+        .sort((a, b) => a.evidence - b.evidence)[0]
+      if (challenger) return { chosen: challenger, mode: 'standing-challenger', tied: tied.length }
+    }
+    return { chosen: best, mode: 'best', tied: tied.length }
+  }
+  for (const name of prefer) {
+    const preferred = candidates.find((candidate) => candidate.agent === name)
+    if (preferred) return { chosen: preferred, mode: 'preference', tied: 0 }
+  }
+  return { chosen: candidates[0]!, mode: 'only', tied: 0 }
 }
 
 export function pick(
@@ -718,68 +771,36 @@ export function pick(
   }
   eligible = constrained
   const withConstraint = (reason: string) => reason
-  const ok = eligible
-
-  const proven = ok.filter((c) => c.evidence >= MIN_SAMPLE && c.score !== null)
-  const unproven = ok.filter((c) => c.evidence < MIN_SAMPLE)
-
-  if (proven.length > 0) {
-    // Keep sampling agents that have no score yet, or the incumbent owns the job
-    // permanently and the table stops being evidence about anyone else.
-    //
-    // Exploration spends a real run, so it goes to an agent that might win, not
-    // to one already known not to work here. An agent whose only history is
-    // failure has been answered — repeating the question is not exploration, it
-    // is paying for the same "no" again.
-    const worthTrying = unproven.filter(worthExploring)
-    if (explore && worthTrying.length > 0 && Math.random() < EXPLORE_RATE) {
-      worthTrying.sort((a, b) => a.evidence - b.evidence)
-      const challenger = worthTrying[0]!
-      return {
-        agent: challenger.agent,
-        reason: withConstraint(
-          `challenger (${challenger.evidence}/${MIN_SAMPLE} judged${scope(challenger)}, exploring)`,
-        ),
-      }
-    }
-    proven.sort((a, b) => b.shrunk! - a.shrunk!)
-    const top = proven[0]!.shrunk!
-    const tied = proven.filter((c) => top - c.shrunk! <= NOISE_BAND)
-    tied.sort((a, b) =>
-      Number(b.free) - Number(a.free) ||
-      (a.latencyMs ?? Infinity) - (b.latencyMs ?? Infinity) ||
-      b.evidence - a.evidence)
-    const best = tied[0]!
-    if (explore && unproven.length === 0 && proven.length === ok.length &&
-        Math.random() < STANDING_EXPLORE_RATE) {
-      const challengers = proven
-        .filter((c) => c.agent !== best.agent && worthExploring(c))
-        .sort((a, b) => a.evidence - b.evidence)
-      const challenger = challengers[0]
-      if (challenger) {
-        return {
-          agent: challenger.agent,
-          reason: withConstraint(
-            `standing challenger (${challenger.evidence} judged${scope(challenger)}, exploring)`,
-          ),
-        }
-      }
-    }
-    const pct = `${(best.score! * 100).toFixed(0)}% (shrunk ${(best.shrunk! * 100).toFixed(0)}%) ` +
-      `over ${best.evidence} judged${scope(best)}` +
-      (best.failures ? ` (incl. ${best.failures} failed)` : '')
-    if (tied.length === 1) return { agent: best.agent, reason: withConstraint(`best score ${pct}`) }
-    const edge = best.free ? 'costs no quota' : `fastest at ${Math.round((best.latencyMs ?? 0) / 1000)}s`
-    return { agent: best.agent, reason: withConstraint(`${pct}, tied with ${tied.length - 1} other — ${edge}`) }
+  const selected = currentPolicySelection(eligible, j.prefer, explore)
+  const chosen = selected.chosen
+  if (selected.mode === 'challenger') return {
+    agent: chosen.agent,
+    reason: withConstraint(
+      `challenger (${chosen.evidence}/${MIN_SAMPLE} judged${scope(chosen)}, exploring)`,
+    ),
   }
-  for (const name of j.prefer) {
-    const c = ok.find((x) => x.agent === name)
-    if (c) return {
-      agent: name,
-      reason: withConstraint(
-        `preference (only ${c.evidence} judged${scope(c)}, need ${MIN_SAMPLE})`,
-      ),
-    }
+  if (selected.mode === 'standing-challenger') return {
+    agent: chosen.agent,
+    reason: withConstraint(
+      `standing challenger (${chosen.evidence} judged${scope(chosen)}, exploring)`,
+    ),
   }
-  return { agent: ok[0]!.agent, reason: withConstraint('only eligible agent') }
+  if (selected.mode === 'preference') return {
+    agent: chosen.agent,
+    reason: withConstraint(
+      `preference (only ${chosen.evidence} judged${scope(chosen)}, need ${MIN_SAMPLE})`,
+    ),
+  }
+  if (selected.mode === 'only') {
+    return { agent: chosen.agent, reason: withConstraint('only eligible agent') }
+  }
+  const pct = `${(chosen.score! * 100).toFixed(0)}% (shrunk ${(chosen.shrunk! * 100).toFixed(0)}%) ` +
+    `over ${chosen.evidence} judged${scope(chosen)}` +
+    (chosen.failures ? ` (incl. ${chosen.failures} failed)` : '')
+  if (selected.tied === 1) return { agent: chosen.agent, reason: withConstraint(`best score ${pct}`) }
+  const edge = chosen.free ? 'costs no quota' : `fastest at ${Math.round((chosen.latencyMs ?? 0) / 1000)}s`
+  return {
+    agent: chosen.agent,
+    reason: withConstraint(`${pct}, tied with ${selected.tied - 1} other — ${edge}`),
+  }
 }

@@ -3,8 +3,8 @@ import { db, weigh } from './db.ts'
 import { COOLS_DOWN, NOT_EVIDENCE } from './failure.ts'
 import { JOBS } from './jobs.ts'
 import {
-  COOLDOWN_MIN, EVIDENCE_WINDOW, EXPLORE_RATE, MIN_SAMPLE, NOISE_BAND,
-  OUTPUT_RESERVE, PROMPT_SIZE_BOUNDARY, STANDING_EXPLORE_RATE, median, thompsonRank,
+  COOLDOWN_MIN, EVIDENCE_WINDOW, MIN_SAMPLE, OUTPUT_RESERVE, PROMPT_SIZE_BOUNDARY,
+  currentPolicySelection, median, thompsonRank,
 } from './route.ts'
 
 export const ROUTING_BACKTEST_SEED = 287
@@ -13,7 +13,7 @@ export const ROUTING_BACKTEST_SEEDS = Object.freeze(Array.from({ length: 20 }, (
 type Event = {
   id: number; agent: string; job: string; stack: string | null; model: string | null
   promptBytes: number; startedAt: string; latencyMs: number | null
-  status: string; failureKind: string | null; weight: number; none: boolean
+  status: string; failureKind: string | null; weight: number; none: boolean; scored: boolean
   /** When this result first existed for a live routing decision to observe. */
   evidenceAt: string
 }
@@ -94,8 +94,9 @@ function priorLatency(agent: string, event: Event, history: History, stack?: str
 }
 
 type Cell = {
-  agent: string; evidence: Event[]; score: number | null; shrunk: number | null
-  free: boolean; latency: number | null
+  agent: string; events: Event[]; scored: number; failures: number; none: number
+  evidence: number; score: number | null; shrunk: number | null
+  free: boolean; latencyMs: number | null
 }
 
 function cellsFor(event: Event, history: History, operations: OperationalEvent[], cooldowns: boolean): Cell[] {
@@ -109,54 +110,35 @@ function cellsFor(event: Event, history: History, operations: OperationalEvent[]
       const modelEvidence = evidence.filter((e) => e.model === currentModel)
       if (modelEvidence.length >= MIN_SAMPLE) evidence = modelEvidence
       evidence = evidence.slice(-EVIDENCE_WINDOW)
+      const scored = evidence.filter((event) => event.scored).length
       return {
-        agent, evidence,
+        agent, events: evidence, scored,
+        failures: evidence.length - scored,
+        none: evidence.filter((event) => event.scored && event.none).length,
+        evidence: evidence.length,
         score: evidence.length ? evidence.reduce((sum, e) => sum + e.weight, 0) / evidence.length : null,
         shrunk: null as number | null,
         free: ['free', 'local'].includes(AGENTS[agent]!.billing),
-        latency: priorLatency(agent, event, history, stack),
+        latencyMs: priorLatency(agent, event, history, stack),
       } satisfies Cell
     })
   let cells = build(event.stack)
-  const proven = cells.filter((c) => c.evidence.length >= MIN_SAMPLE)
+  const proven = cells.filter((c) => c.evidence >= MIN_SAMPLE)
   if (!event.stack || (proven.length < 2 && !(cells.length === 1 && proven.length === 1))) cells = build()
-  const scores = cells.filter((c) => c.evidence.length >= MIN_SAMPLE && c.score !== null).map((c) => c.score!)
+  const scores = cells.filter((c) => c.evidence >= MIN_SAMPLE && c.score !== null).map((c) => c.score!)
   const prior = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0.5
   for (const c of cells) if (c.score !== null) {
-    c.shrunk = (c.score * c.evidence.length + MIN_SAMPLE * prior) / (c.evidence.length + MIN_SAMPLE)
+    c.shrunk = (c.score * c.evidence + MIN_SAMPLE * prior) / (c.evidence + MIN_SAMPLE)
   }
   return cells
-}
-
-function factualOrder(a: Cell, b: Cell): number {
-  return Number(b.free) - Number(a.free) || (a.latency ?? Infinity) - (b.latency ?? Infinity) ||
-    b.evidence.length - a.evidence.length || a.agent.localeCompare(b.agent)
 }
 
 function currentChoice(
   event: Event, history: History, operations: OperationalEvent[], rng: () => number, draw: boolean,
   cooldowns: boolean,
-): PolicyChoice {
+): { agent: string } {
   const cells = cellsFor(event, history, operations, cooldowns)
-  const proven = cells.filter((c) => c.evidence.length >= MIN_SAMPLE && c.score !== null)
-  const unproven = cells.filter((c) => c.evidence.length < MIN_SAMPLE)
-  if (proven.length) {
-    const ranked = [...proven].sort((a, b) => b.shrunk! - a.shrunk!)
-    const top = ranked[0]!.shrunk!
-    const expected = ranked.filter((c) => top - c.shrunk! <= NOISE_BAND).sort(factualOrder)[0]!.agent
-    if (draw) {
-      const worthTrying = unproven.filter((c) => !(c.evidence.length && c.evidence.every((e) => e.none)))
-        .sort((a, b) => a.evidence.length - b.evidence.length || factualOrder(a, b))
-      if (worthTrying.length && rng() < EXPLORE_RATE) return { agent: worthTrying[0]!.agent, expected }
-      if (!unproven.length && proven.length === cells.length && rng() < STANDING_EXPLORE_RATE) {
-        const challenger = [...proven].filter((c) => c.agent !== expected).sort((a, b) => a.evidence.length - b.evidence.length || factualOrder(a, b))[0]
-        if (challenger) return { agent: challenger.agent, expected }
-      }
-    }
-    return { agent: expected, expected }
-  }
-  const expected = JOBS[event.job]!.prefer.find((name) => cells.some((c) => c.agent === name)) ?? cells.sort(factualOrder)[0]!.agent
-  return { agent: expected, expected }
+  return { agent: currentPolicySelection(cells, JOBS[event.job]!.prefer, draw, rng).chosen.agent }
 }
 
 function thompsonChoice(
@@ -166,16 +148,16 @@ function thompsonChoice(
   const cells = cellsFor(event, history, operations, cooldowns)
   const ranked = thompsonRank(cells.map((cell) => ({
     agent: cell.agent,
-    evidence: cell.evidence.length,
+    evidence: cell.evidence,
     score: cell.score,
     free: cell.free,
-    latencyMs: cell.latency,
+    latencyMs: cell.latencyMs,
   })), draw, rng)
   return { agent: ranked.chosen.agent, expected: ranked.expected.agent }
 }
 
 function events(includeVoided = false): Event[] {
-  type Row = Omit<Event, 'weight' | 'none' | 'evidenceAt'> & {
+  type Row = Omit<Event, 'weight' | 'none' | 'scored' | 'evidenceAt'> & {
     delivery: Parameters<typeof weigh>[0] | null
     quality: Parameters<typeof weigh>[1]
     fidelity: Parameters<typeof weigh>[2]
@@ -209,7 +191,7 @@ function events(includeVoided = false): Event[] {
       promptBytes: row.promptBytes, startedAt: row.startedAt, latencyMs: row.latencyMs,
       status: row.status, failureKind: row.failureKind,
       weight: row.delivery === null ? weigh('none', null) : weigh(row.delivery, row.quality, row.fidelity),
-      none: row.delivery === null || row.delivery === 'none', evidenceAt,
+      none: row.delivery === 'none', scored: row.delivery !== null, evidenceAt,
     }
   })
 }
