@@ -3,7 +3,7 @@ import {
   db, nowIso, REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP,
   REVIEW_SEVERITY,
   type ReviewReproduced, type ReviewCoverage, type ReviewLimits, type ReviewOverlap,
-  type ReviewSeverity, writableDb,
+  type ReviewSeverity, writableDb, writeTransaction,
 } from './db.ts'
 import { CANON_SOURCE_SCHEMA, REVIEW_SCHEMA, type CanonSource, type ReviewReply } from './contract.ts'
 import { job } from './jobs.ts'
@@ -400,7 +400,7 @@ export function recordReviews(
         `run ${run.id}: ${run.input_tree ?? 'NULL'}`).join('\n')}`,
     )
   }
-  const transaction = database.transaction(() => {
+  const reviewId = writeTransaction(() => {
     const tier = tierForRuns(runs, database)
     const review = database.query(
       `INSERT INTO review (recorded_at, tier, tier_risk, tier_size, tier_reasons, tier_reason)
@@ -433,8 +433,7 @@ export function recordReviews(
       ))
     })
     return review.id
-  })
-  const reviewId = transaction()
+  }, database)
   pinReviewedCommits(runs, database)
   return reviewId
 }

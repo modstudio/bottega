@@ -13,7 +13,7 @@ import {
   DOC_SCOPES, DOC_SCOPE_SUBJECT_KIND, type DocScope,
 } from '../../shared/docs.ts'
 import { AGENTS } from './agents.ts'
-import { db, nowIso, sessionId, writableDb } from './db.ts'
+import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
 import { JOBS } from './jobs.ts'
 import { projectAt, projectByName } from './projects.ts'
 import { compileBrief } from './canon.ts'
@@ -211,7 +211,7 @@ function setDocWithOp(input: {
   writableDb()
   validate(input.scope, input.subject, input.slug)
   writeIdentity(input)
-  return db().transaction(() => {
+  return writeTransaction(() => {
     const existing = getDoc(input.scope, input.subject, input.slug)
     const at = nowIso()
     let doc: Doc
@@ -228,7 +228,7 @@ function setDocWithOp(input: {
     }
     insertRevision(doc, requestedOp ?? (existing ? 'set' : 'create'), input, at)
     return doc
-  })()
+  })
 }
 
 export function setDoc(input: {
@@ -251,14 +251,14 @@ export function removeDoc(
   writableDb()
   validScope(scope)
   writeIdentity(context)
-  return db().transaction(() => {
+  return writeTransaction(() => {
     const doc = getDoc(scope, subject, slug)
     if (!doc) return false
     const at = nowIso()
     db().query('DELETE FROM doc WHERE id=?').run(doc.id)
     insertRevision(doc, 'delete', context, at)
     return true
-  })()
+  })
 }
 
 export type ConsumedDoc = Doc & { already_consumed: boolean }
@@ -308,12 +308,12 @@ export function consumeDoc(
   const contentStart = frontmatter.index! + 3 + newline.length
   const body = doc.body.slice(0, contentStart) + yaml
     + doc.body.slice(contentStart + frontmatter[2]!.length)
-  return db().transaction(() => {
+  return writeTransaction(() => {
     db().query('UPDATE doc SET body=?, updated_at=? WHERE id=?').run(body, consumedAt, doc.id)
     const result = getDoc(scope, subject, slug)!
     insertRevision(result, 'consume', context, consumedAt)
     return { ...result, already_consumed: false }
-  })()
+  })
 }
 
 export type InjectedDoc = Doc & { revision_id: number }
@@ -470,7 +470,7 @@ export function restoreDoc(
   if (!revision || revision.scope !== scope || revision.subject !== subject || revision.slug !== slug) {
     throw new Error(`no revision ${revisionId} for ${scope}/${subject ?? '_'}/${slug}`)
   }
-  return db().transaction(() => {
+  return writeTransaction(() => {
     const existing = getDoc(scope, subject, slug)
     const at = nowIso()
     let doc: Doc
@@ -487,7 +487,7 @@ export function restoreDoc(
     }
     insertRevision(doc, 'restore', context, at)
     return doc
-  })()
+  })
 }
 
 export function diffDocRevisions(a: number, b: number): string {

@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
-import { db, writableDb } from './db.ts'
+import { db, writableDb, writeTransaction } from './db.ts'
 import { importDoc, listDocs, removeDoc } from './docs.ts'
 import {
   addDoctrineRule, addPair, addSkip, setBaseline, setLedgerRef,
@@ -683,7 +683,7 @@ export function applyImport(
     author: 'port-import',
     reason: `port import from ${options.sourceLabel ?? 'source corpus'}`,
   }
-  db().transaction(() => {
+  writeTransaction(() => {
     const counts = db().query(`SELECT
       (SELECT COUNT(*) FROM port_pair) +
       (SELECT COUNT(*) FROM port_baseline) +
@@ -726,5 +726,5 @@ export function applyImport(
     for (const row of plan.docs) importDoc({
       ...row, delivery: demand.has(row.slug) ? 'demand' : 'inject', ...context,
     })
-  })()
+  })
 }

@@ -1,4 +1,4 @@
-import { db, nowIso, writableDb } from './db.ts'
+import { db, nowIso, writableDb, writeTransaction } from './db.ts'
 import { projects, type Project } from './projects.ts'
 
 export type PortPair = {
@@ -58,7 +58,7 @@ export function pairByProjects(sourceProjectId: number, targetProjectId: number)
 
 export function addPair(sourceProjectId: number, targetProjectId: number, at = nowIso()): PortPair {
   writableDb()
-  const write = db().transaction(() => {
+  writeTransaction(() => {
     db().query(
       `INSERT INTO port_pair (source_project_id, target_project_id, created_at)
        VALUES (?,?,?) ON CONFLICT(source_project_id, target_project_id) DO NOTHING`,
@@ -69,7 +69,6 @@ export function addPair(sourceProjectId: number, targetProjectId: number, at = n
        ON CONFLICT(pair_id) DO NOTHING`,
     ).run(pair.id)
   })
-  write()
   return pairByProjects(sourceProjectId, targetProjectId)!
 }
 
@@ -176,7 +175,7 @@ export function setLedgerRef(input: {
     throw new Error('a ledger ref may name each source project only once')
   }
   const target = projectForTaskKey(input.taskKey)
-  const write = db().transaction(() => {
+  writeTransaction(() => {
     db().query(
       `INSERT INTO port_ref (task_key, target_project_id, note, created_at) VALUES (?,?,?,?)
        ON CONFLICT(task_key) DO UPDATE SET
@@ -194,7 +193,6 @@ export function setLedgerRef(input: {
       )
     }
   })
-  write()
   return ledgerRef(input.taskKey)!
 }
 

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { isCliCommand } from './args.ts'
-import { db, linkedWorktreeReadOnly, nowIso } from './db.ts'
+import { db, linkedWorktreeReadOnly, nowIso, writeTransaction } from './db.ts'
 import { type Doc, docsForRun, docsMarkdown, listDocs } from './docs.ts'
 import { DEFAULT_PACK_BYTES, JOBS, job as getJob } from './jobs.ts'
 import { projectAt, projectByName } from './projects.ts'
@@ -184,7 +184,7 @@ function getDocForPack(packed: PackDoc): Doc {
 export function recordPack(pack: Pack): void {
   if (linkedWorktreeReadOnly) return
   const findings = findingsForPack(pack).reduce((sum, row) => sum + row.findings.length, 0)
-  db().transaction(() => {
+  writeTransaction(() => {
     db().query('DELETE FROM canon_pack WHERE job=? AND project IS ?').run(pack.job, pack.project)
     db().query(`INSERT INTO canon_pack
       (job,project,sha256,bytes,doc_count,doc_revisions,compiled_at,findings)
@@ -192,7 +192,7 @@ export function recordPack(pack: Pack): void {
       pack.job, pack.project, pack.sha256, pack.bytes, pack.docs.length,
       JSON.stringify(pack.docs), nowIso(), findings,
     )
-  })()
+  })
 }
 
 export type PackDiff = {

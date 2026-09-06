@@ -1,7 +1,7 @@
 /** Durable, non-authoritative messages attached to a run conversation. */
 import {
   adoptRunMutation, auditRunMutation, authorizeRunMutation, db, linkedWorktreeReadOnly, nowIso,
-  writableDb,
+  writableDb, writeTransaction,
 } from './db.ts'
 
 export type RunMessage = {
@@ -52,7 +52,7 @@ export function tellRun(id: number, body: string): RunMessage {
     throw new Error(`run ${requested.root_id} has no running turn — no message was queued`)
   }
   const messageBody = bodyOf(body)
-  return db().transaction(() => {
+  return writeTransaction(() => {
     authority = adoptRunMutation(authority, 'tell')
     const message = db().query(
       `INSERT INTO run_message
@@ -61,7 +61,7 @@ export function tellRun(id: number, body: string): RunMessage {
     ).get(active.root_id, active.id, authority.actor, messageBody, nowIso()) as RunMessage
     auditRunMutation(authority, 'tell')
     return message
-  })()
+  })
 }
 
 /** Record an outbound worker message without changing the run's status. */
@@ -86,7 +86,7 @@ export function checkMessages(runId: number): RunMessage[] {
   if (run.status !== 'running') {
     throw new Error(`run ${runId} is ${run.status}, not running`)
   }
-  return db().transaction(() => {
+  return writeTransaction(() => {
     const rows = db().query(
       `SELECT * FROM run_message
         WHERE root_run_id = ? AND direction = 'to_worker' AND read_at IS NULL
@@ -100,7 +100,7 @@ export function checkMessages(runId: number): RunMessage[] {
       readAt, run.vendor_session, ...rows.map((row) => row.id),
     )
     return rows.map((row) => ({ ...row, read_at: readAt, read_by: run.vendor_session }))
-  })()
+  })
 }
 
 export function messagesForRun(id: number): RunMessage[] {
@@ -117,7 +117,7 @@ export function receiptMessagesForArchitect(id: number): RunMessage[] {
   let authority = authorizeRunMutation(id, 'receipt')
   const run = identity(id)
   if (!run) return []
-  return db().transaction(() => {
+  return writeTransaction(() => {
     authority = adoptRunMutation(authority, 'receipt')
     const readAt = nowIso()
     db().query(
@@ -125,5 +125,5 @@ export function receiptMessagesForArchitect(id: number): RunMessage[] {
         WHERE root_run_id = ? AND direction = 'from_worker' AND read_at IS NULL`,
     ).run(readAt, authority.actor, run.root_id)
     return messagesForRun(id)
-  })()
+  })
 }

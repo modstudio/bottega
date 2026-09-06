@@ -2019,6 +2019,48 @@ describe('production git environments', () => {
     return violations
   }
 
+  const productionTransactionViolations = (
+    roots: string[], diagnosticRoot: string,
+  ): string[] => {
+    const violations: string[] = []
+    const files: string[] = []
+    const collect = (root: string) => {
+      if (!existsSync(root)) return
+      for (const entry of readdirSync(root, { withFileTypes: true })) {
+        const path = join(root, entry.name)
+        if (entry.isDirectory()) collect(path)
+        else if (entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) files.push(path)
+      }
+    }
+    roots.forEach(collect)
+    for (const path of files) {
+      const source = readFileSync(path, 'utf8')
+      const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+      const visit = (node: ts.Node): void => {
+        if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
+            node.expression.name.text === 'transaction') {
+          let parent: ts.Node | undefined = node
+          let sanctioned = false
+          while (parent) {
+            if (ts.isFunctionDeclaration(parent) && parent.name?.text === 'writeTransaction' &&
+                basename(path) === 'db.ts') {
+              sanctioned = true
+              break
+            }
+            parent = parent.parent
+          }
+          if (!sanctioned) {
+            const line = file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1
+            violations.push(`${relative(diagnosticRoot, path)}:${line}`)
+          }
+        }
+        ts.forEachChild(node, visit)
+      }
+      visit(file)
+    }
+    return violations
+  }
+
   test('every production git spawn supplies an environment without raw process.env', () => {
     const sourceDir = dirname(new URL(import.meta.url).pathname)
     const repoRoot = resolve(sourceDir, '../..')
@@ -2036,6 +2078,23 @@ describe('production git environments', () => {
     try {
       expect(productionGitEnvironmentViolations([join(fixture, 'shared')], fixture))
         .toEqual(['shared/nested/unsafe.ts:1'])
+    } finally {
+      rmSync(fixture, { recursive: true, force: true })
+    }
+  })
+
+  test('only db.ts:writeTransaction opens a production transaction, and the lint names the site', () => {
+    const sourceDir = dirname(new URL(import.meta.url).pathname)
+    const repoRoot = resolve(sourceDir, '../..')
+    expect(productionTransactionViolations([sourceDir], repoRoot)).toEqual([])
+
+    const fixture = mkdtempSync(join(tmpdir(), 'orch-transaction-lint-'))
+    const nested = join(fixture, 'src', 'nested')
+    mkdirSync(nested, { recursive: true })
+    writeFileSync(join(nested, 'unsafe.ts'), 'database.transaction(() => {})()\n')
+    try {
+      expect(productionTransactionViolations([join(fixture, 'src')], fixture))
+        .toEqual(['src/nested/unsafe.ts:1'])
     } finally {
       rmSync(fixture, { recursive: true, force: true })
     }
@@ -7790,6 +7849,44 @@ describe('detached run collection', () => {
     const detachSource = cli.slice(cli.indexOf('function detach('), cli.indexOf('function usage('))
     expect(detachSource).toContain("new URL('exec.ts', import.meta.url).pathname")
     expect(detachSource).not.toContain("new URL('cli.ts', import.meta.url).pathname")
+  })
+
+  test('three concurrent detached dispatches all claim rows in one store', async () => {
+    const store = join(dir, `concurrent-detach-${randomUUID()}.db`)
+    const runs = join(dir, `concurrent-detach-runs-${randomUUID()}`)
+    const env = {
+      ...process.env,
+      ORCH_DB: store,
+      ORCH_RUNS: runs,
+      ORCH_DEPTH: '0',
+      ORCH_EXEC_PATH: '/usr/bin/true',
+      CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+    }
+    const initialized = Bun.spawnSync([process.execPath, CLI, 'init-db'], {
+      env, stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(initialized.exitCode, initialized.stderr.toString()).toBe(0)
+
+    const children = [1, 2, 3].map((n) => Bun.spawn(
+      [process.execPath, CLI, 'do', 'file-question', `concurrent ${n}`, '--agent', 'codex', '--detach'],
+      { cwd: dir, env, stdout: 'pipe', stderr: 'pipe' },
+    ))
+    const results = await Promise.all(children.map(async (child) => ({
+      code: await child.exited,
+      out: await new Response(child.stdout).text(),
+      err: await new Response(child.stderr).text(),
+    })))
+
+    expect(results.map(({ code }) => code)).toEqual([0, 0, 0])
+    expect(results.map(({ out }) => Number(out.trim())).every((id) => id > 0)).toBe(true)
+    expect(results.map(({ err }) => err).join('\n')).not.toContain('database is locked')
+    const scratch = new Database(store)
+    try {
+      expect(scratch.query("SELECT COUNT(*) n FROM run WHERE agent='(pending)'").get())
+        .toEqual({ n: 3 })
+    } finally {
+      scratch.close()
+    }
   })
 
   test('detach with a bad execPath marks the reserved row failed/harness', () => {

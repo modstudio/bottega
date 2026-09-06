@@ -672,6 +672,7 @@ the cause of DEV-316, not a lifecycle design.
 
 The invariants are:
 
+- **Every write transaction is IMMEDIATE; a deferred transaction that later writes is a lock-upgrade race under concurrent dispatch.**
 - **A resume is always possible on a stale checkout.** The caller-at-trunk check
   stops a new dispatch from stale input; it must never apply to a chain resuming
   in its own worktree. `run.ts:run` currently attaches a resume under the shared

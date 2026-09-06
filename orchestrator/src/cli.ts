@@ -8,7 +8,7 @@ import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, nowIso,
          parseRunIds, recordSessionSeen, SESSION_LIVE_MS,
          resolveRootFromLastTurn, chainScoreJoin, chainTerminationAt,
          authorizeRunMutation, runMutationActor,
-         auditRunMutation, adoptRunMutation, type RootAuthority } from './db.ts'
+         auditRunMutation, adoptRunMutation, writeTransaction, type RootAuthority } from './db.ts'
 import { JOBS, job } from './jobs.ts'
 import { AGENTS, available, installed, ensureLocalHealth,
          unavailableReason, NEEDS_HEALTH, tryWake, wakeStatus,
@@ -833,10 +833,10 @@ function discardWorktree(
     }
     const keptProtectedBranch = protectedBranch && row.branch && branchTip(repoRoot, row.branch)
       ? row.branch : null
-    db().transaction(() => {
+    writeTransaction(() => {
       clearConversationWorktree(row.id, row.worktree, keptProtectedBranch)
       if (auditAuthority) auditRunMutation(auditAuthority, 'discard', auditReason())
-    })()
+    })
     console.log(`${verb} run ${row.id}'s worktree`)
     if (r.output) console.log(r.output)
     if (protectedBranch && keptProtectedBranch) {
@@ -919,7 +919,7 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
   // later, leaving inbox a real window in which the old asking root looked
   // recoverable. One SQLite statement is the claim boundary: readers now see
   // either no new turn or a running turn already linked to its chain.
-  const claimed = db().transaction(() => {
+  const claimed = writeTransaction(() => {
     const inserted = db().query(
       `INSERT INTO run (started_at, agent, job, repo, cwd, prompt_sha, prompt_bytes,
                       prompt_head, label, status, session_id, probe, parent_run_id, turn,
@@ -954,7 +954,7 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
       ).run(deliveryRoot, deliveryRoot)
     }
     return inserted
-  })()
+  })
   if (!claimed) {
     const root = db().query('SELECT status FROM run WHERE id=?').get(spec.resume!.parent) as
       { status: string } | null
@@ -1142,7 +1142,7 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
     launch_cwd: string | null; launch_seed: string | null; launch_key: string | null
     launch_base: string | null; no_failover: number
   }
-  authority = db().transaction(() => adoptRunMutation(authority, 'continue'))()
+  authority = writeTransaction(() => adoptRunMutation(authority, 'continue'))
   const childId = await detach(row.job, prompt, {
     cwd: latest.cwd ?? process.cwd(),
     seed: launch.launch_seed ?? undefined,
@@ -3554,14 +3554,14 @@ switch (cmd) {
         WHERE id=?`,
     )
     const answeredBy = callerSession ?? 'anonymous (no session id)'
-    db().transaction(() => {
+    writeTransaction(() => {
       answerAuthority = adoptRunMutation(answerAuthority, 'answer')
       open.forEach((q, i) => upd.run(
         answers[i]!.answer, now, answeredBy, ownersLive ? null : now, q.id,
       ))
       if (skipResume) db().query("UPDATE run SET status='asking' WHERE id=?").run(id)
       auditRunMutation(answerAuthority, 'answer')
-    })()
+    })
 
     if (skipResume) {
       console.log(
@@ -3617,7 +3617,7 @@ switch (cmd) {
         },
       })
     } catch (e) {
-      db().transaction(() => {
+      writeTransaction(() => {
         for (const q of open) {
           db().query(
             `UPDATE question
@@ -3625,7 +3625,7 @@ switch (cmd) {
               WHERE id=?`,
           ).run(q.id)
         }
-      })()
+      })
       throw new Error(
         `Resume failed: ${(e as Error).message}\n` +
         `The ruling was rolled back and the question is still open.`,
@@ -4009,13 +4009,13 @@ switch (cmd) {
             } else {
               const keptProtectedBranch = protectedBranch && r.branch &&
                 branchTip(repoRoot, r.branch) ? r.branch : null
-              db().transaction(() => {
+              writeTransaction(() => {
                 clearConversationWorktree(r.id, r.worktree, keptProtectedBranch)
                 auditRunMutation(
                   { runId: r.id, rootId: r.root_id, owner: null, actor: sessionId() },
                   'sweep',
                 )
-              })()
+              })
               console.log(`reclaimed ${r.id}  ${res.detail}`)
               if (res.output) console.log(res.output)
               if (protectedBranch && keptProtectedBranch) {
@@ -4325,11 +4325,11 @@ switch (cmd) {
         if (outcome.refusal) throw new Error(outcome.refusal)
         if (outcome.warning) console.error(outcome.warning)
         if (removed) {
-          db().transaction(() => {
+          writeTransaction(() => {
             db().query('UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE id=?')
               .run(authority.rootId)
             auditRunMutation(authority, 'discard', auditReason())
-          })()
+          })
         }
         console.log(removed
           ? `deleted branch ${row.branch_kept}`
@@ -4361,7 +4361,7 @@ switch (cmd) {
     const describe = (chain: StopRow[]) => [...chain].reverse()
       .map((turn) => `${turn.id} turn ${turn.turn} ${turn.status}`).join('; ')
 
-    const stopped = db().transaction(() => {
+    const stopped = writeTransaction(() => {
       const chain = readChain()
       const row = chain.find((turn) => turn.status === 'running')
       if (!row) {
@@ -4396,7 +4396,7 @@ switch (cmd) {
       }
       auditRunMutation(authority, 'stop', auditReason())
       return { row, cleanupRow }
-    }).immediate()
+    })
     const { row, cleanupRow } = stopped
 
     const pids = [...new Set([row.agent_pid, row.pid].filter((pid): pid is number => Boolean(pid)))]
@@ -4467,7 +4467,7 @@ switch (cmd) {
     const describe = (chain: AbandonRow[]) => [...chain].reverse()
       .map((turn) => `${turn.id} turn ${turn.turn} ${turn.status}`).join('; ')
 
-    const abandoned = db().transaction(() => {
+    const abandoned = writeTransaction(() => {
       const chain = readChain()
       const row = chain[0]
       if (row?.status !== 'asking') {
@@ -4502,7 +4502,7 @@ switch (cmd) {
       resolveRootFromLastTurn(db(), authority.rootId)
       auditRunMutation(authority, 'abandon', note ?? null)
       return { row, cleanupRow }
-    }).immediate()
+    })
     const { row, cleanupRow } = abandoned
     console.log(`abandoned run ${row.id}`)
 
@@ -4603,12 +4603,12 @@ switch (cmd) {
       )
     }
     if (has('void')) {
-      db().transaction(() => {
+      writeTransaction(() => {
         voidAuthority = adoptRunMutation(voidAuthority!, 'void')
         db().query('UPDATE run SET evidence_excluded=? WHERE id=?')
           .run('voided with orch score --void', id)
         auditRunMutation(voidAuthority!, 'void', auditReason())
-      })()
+      })
       console.log(`voided run ${id}: retained run and output; excluded from routing evidence`)
       break
     }
@@ -4766,7 +4766,7 @@ switch (cmd) {
 
     const wasScored = Boolean(db().query('SELECT 1 FROM score WHERE run_id=?').get(id))
     const scoredAt = nowIso()
-    const saveScore = db().transaction(() => {
+    writeTransaction(() => {
       if (!dashboardAuthorized && !(has('force') && !scoreAuthority.actor)) {
         scoreAuthority = adoptRunMutation(scoreAuthority, 'score')
       }
@@ -4791,7 +4791,6 @@ switch (cmd) {
         scoreAuthority, wasScored ? 'rescore' : 'score', auditReason(),
       )
     })
-    saveScore()
     const w = weigh(delivery, quality ?? null, scoredFidelity ?? null)
     const axes = [delivery, quality, scoredFidelity].filter(Boolean).join(' ')
     console.log(
@@ -5546,7 +5545,7 @@ switch (cmd) {
         WHERE id = ? AND status IN ('failed', 'stale')
           AND (failure_kind = 'other' OR failure_kind IS NULL) AND error = ?`,
     )
-    const apply = db().transaction(() => {
+    const apply = writeTransaction(() => {
       let changed = 0
       for (const { row, kind } of matched) {
         const result = update.run(kind, row.id, row.error)
@@ -5560,7 +5559,7 @@ switch (cmd) {
       }
       return changed
     })
-    const changed = apply()
+    const changed = apply
     console.log(`\n${changed} row${changed === 1 ? '' : 's'} reclassified.`)
     break
   }

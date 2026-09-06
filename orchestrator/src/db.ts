@@ -130,6 +130,11 @@ export function db(writable = false): Database {
   return d
 }
 
+/** Open the only sanctioned multi-statement write transaction. */
+export function writeTransaction<T>(fn: () => T, database: Database = db()): T {
+  return database.transaction(fn).immediate()
+}
+
 /** The sole path that may create the orchestrator database. */
 export function initializeDatabase(): string {
   if (linkedWorktreeReadOnly) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
@@ -373,7 +378,7 @@ export function applySchema(d: Database): void {
         id: number; scope: string; subject: string | null; slug: string; title: string; body: string
       }[]
     const at = nowIso()
-    const migrateDelivery = d.transaction(() => {
+    writeTransaction(() => {
       for (const doc of changed) {
         d.query("UPDATE doc SET delivery='demand', updated_at=? WHERE id=?").run(at, doc.id)
         d.query(`INSERT INTO doc_revision
@@ -383,8 +388,7 @@ export function applySchema(d: Database): void {
           'DEV-254: port importer docs are fetched by slug, not injected', at,
         )
       }
-    })
-    migrateDelivery()
+    }, d)
   }
   // Stable machine identity for findings-producing review jobs. A display label
   // is deliberately not used as a calibration key.
@@ -1383,7 +1387,7 @@ function seedWorkflows(d: Database): void {
     },
   ]
   const now = nowIso()
-  const insert = d.transaction(() => {
+  writeTransaction(() => {
     for (const seed of seeds) {
       if (d.query('SELECT id FROM workflow WHERE slug=?').get(seed.slug)) continue
       const workflow = d.query('INSERT INTO workflow (slug, created_at) VALUES (?, ?) RETURNING id')
@@ -1396,8 +1400,7 @@ function seedWorkflows(d: Database): void {
         (workflow_id,version_n,event,author,reason,session_id,at)
         VALUES (?,1,'set','seed','DEV-257 seed',NULL,?)`).run(workflow.id, now)
     }
-  })
-  insert()
+  }, d)
 }
 
 /**
@@ -1904,11 +1907,11 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
               error='the worker process never started' WHERE id=? AND status='running'`,
     )
     for (const id of abandonedBootstrap) {
-      d.transaction(() => {
+      writeTransaction(() => {
         if (update.run(id).changes !== 1) return
         const authority = runMutationAuthority(d, id)
         auditRunMutation(authority, 'reap', `pending row had no pid after ${PENDING_BOOTSTRAP_MS}ms`, d)
-      })()
+      }, d)
     }
   }
   if (dead.length) {
@@ -1933,12 +1936,12 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
     )
     for (const id of dead) {
       const row = rows.find((candidate) => candidate.id === id)!
-      d.transaction(() => {
+      writeTransaction(() => {
         if (update.run(id).changes !== 1) return
         const authority = runMutationAuthority(d, id)
         auditRunMutation(authority, 'reap',
           row.pid ? `pid ${row.pid} is not alive` : `no pid after ${STALE_AFTER_MS}ms`, d)
-      })()
+      }, d)
     }
   }
   const ended = [...dead, ...abandonedBootstrap]
@@ -2185,11 +2188,11 @@ export function recordDuels(
     `INSERT INTO duel (job, winner_run_id, loser_run_id, session_id, at)
      VALUES (?,?,?,?,?) ON CONFLICT(winner_run_id, loser_run_id) DO NOTHING`,
   )
-  db().transaction(() => {
+  writeTransaction(() => {
     for (const loserId of loserRunIds) {
       insert.run(winner.job, winnerRunId, loserId, callerSession, at)
     }
-  })()
+  })
 }
 
 /** The directed duel evidence, grouped into one agent-by-agent matrix per job. */

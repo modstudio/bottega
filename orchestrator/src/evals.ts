@@ -13,7 +13,7 @@ import {
   hasRealQuestions, isAsking, parseWorkerReply, realQuestions,
   type ReviewReply, type WorkerReply,
 } from './contract.ts'
-import { auditRunMutation, db, nowIso, runMutationActor } from './db.ts'
+import { auditRunMutation, db, nowIso, runMutationActor, writeTransaction } from './db.ts'
 import { JOBS } from './jobs.ts'
 import { parseReviewOutput, parseReviewReply } from './review.ts'
 import { run } from './run.ts'
@@ -404,13 +404,13 @@ export async function runCanonEvals(opts: {
             .filter((part): part is string => Boolean(part)).join('; ')
         const row = db().query('SELECT model, canon_sha FROM run WHERE id=?').get(result.id) as
           { model: string | null; canon_sha: string | null }
-        db().transaction(() => {
+        writeTransaction(() => {
           terminaliseJudgedProbe(result.id)
           insertEval({
             slug: ev.slug, runId: result.id, canonSha: row.canon_sha ?? pack.sha256,
             agent: result.agent, model: row.model, pass, why,
           })
-        })()
+        })
         results.push({
           slug: ev.slug, runId: result.id, canonSha: row.canon_sha ?? pack.sha256,
           agent: result.agent, model: row.model, pass, skipped: false, why, at: nowIso(),

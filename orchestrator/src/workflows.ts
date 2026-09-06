@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { db, nowIso, sessionId, writableDb } from './db.ts'
+import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
 import { JOBS } from './jobs.ts'
 
 export type WorkflowArgument = { name: string; required: boolean; description: string }
@@ -189,7 +189,7 @@ function recordEvent(d: Database, workflow: number, n: number, kind: 'set'|'fork
 function writeDraft(slug: string, definition: unknown, reasonValue: string | undefined, authorValue?: string, kind: 'set'|'fork'|'import' = 'set', d: Database = writableDb()) {
   requireSlug(slug); requireValid(definition)
   const reason = required(reasonValue, 'reason'); const author = writeAuthor(authorValue); const at = nowIso()
-  return d.transaction(() => {
+  return writeTransaction(() => {
     let row = d.query('SELECT id FROM workflow WHERE slug=?').get(slug) as {id:number}|null
     if (!row) row = d.query('INSERT INTO workflow (slug,created_at) VALUES (?,?) RETURNING id').get(slug,at) as {id:number}
     const max = d.query('SELECT COALESCE(MAX(n),0) n FROM workflow_version WHERE workflow_id=?').get(row.id) as {n:number}
@@ -199,7 +199,7 @@ function writeDraft(slug: string, definition: unknown, reasonValue: string | und
     // A new identity's first event is the operation that produced its version.
     recordEvent(d,row.id,n,kind,author,reason,at)
     return showWorkflow(slug,n,d)
-  })()
+  }, d)
 }
 export const setWorkflow = (slug:string, definition:unknown, reason:string|undefined, author?:string, d:Database=writableDb()) => writeDraft(slug,definition,reason,author,'set',d)
 
@@ -208,7 +208,7 @@ export function promoteWorkflow(slug:string,n:number,reasonValue:string|undefine
   const author = writeAuthor(authorValue)
   const at = nowIso()
   const id = workflowId(slug, d)
-  return d.transaction(() => {
+  return writeTransaction(() => {
     const target=d.query('SELECT status FROM workflow_version WHERE workflow_id=? AND n=?').get(id,n) as {status:string}|null
     if (!target || target.status !== 'draft') throw new Error(`workflow "${slug}" version ${n} is not a draft`)
     // Promoting replaces production. Retire the prior row in this transaction
@@ -220,19 +220,19 @@ export function promoteWorkflow(slug:string,n:number,reasonValue:string|undefine
     d.query(`UPDATE workflow_version SET status='production',promoted_at=? WHERE workflow_id=? AND n=?`).run(at,id,n)
     recordEvent(d,id,n,'promote',author,reason,at)
     return showWorkflow(slug,n,d)
-  })()
+  }, d)
 }
 export function retireWorkflow(slug:string,n:number,reasonValue:string|undefined,authorValue?:string,d:Database=writableDb()) {
   const reason = required(reasonValue, 'reason')
   const author = writeAuthor(authorValue)
   const at = nowIso()
   const id = workflowId(slug, d)
-  return d.transaction(() => {
+  return writeTransaction(() => {
     const target=d.query('SELECT status FROM workflow_version WHERE workflow_id=? AND n=?').get(id,n) as {status:string}|null
     if (!target || target.status !== 'production') throw new Error(`workflow "${slug}" version ${n} is not production`)
     d.query(`UPDATE workflow_version SET status='retired',retired_at=? WHERE workflow_id=? AND n=?`).run(at,id,n)
     recordEvent(d,id,n,'retire',author,reason,at); return showWorkflow(slug,n,d)
-  })()
+  }, d)
 }
 export function forkWorkflow(slug:string,from:number|undefined,reason:string|undefined,author?:string,d:Database=writableDb()) {
   const source=from === undefined
@@ -296,5 +296,5 @@ export function importWorkflows(dir:string,reason:string|undefined,author?:strin
   }
   // vN.json only orders the read. Each file becomes a new draft at MAX(n)+1;
   // import does not restore version numbers or statuses.
-  return d.transaction(()=>definitions.map(({slug,definition})=>writeDraft(slug,definition,reason,author,'import',d)))()
+  return writeTransaction(()=>definitions.map(({slug,definition})=>writeDraft(slug,definition,reason,author,'import',d)), d)
 }
