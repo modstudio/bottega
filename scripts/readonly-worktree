@@ -1,0 +1,20 @@
+#!/bin/sh
+# bottega's worktree.readonly_create: a detached tree for a read-only worker,
+# with the main checkout's vendor directories linked in.
+#
+# Why linked rather than installed: the codex sandbox cannot write bun's
+# tempdir, so `bun install` inside the tree fails with PermissionDenied (lens
+# runs 2242 and 2244, 2026-09-06). The vendor tree therefore has to exist
+# before the sandbox starts, and a read-only worker never needs its own copy.
+# Usage: scripts/readonly-worktree <path> <base>   (cwd: the main checkout)
+set -eu
+path=$1
+base=$2
+root=$(git rev-parse --show-toplevel)
+git worktree add --detach "$path" "$base" >/dev/null
+for dir in . orchestrator hub hub/web; do
+  if [ -d "$root/$dir/node_modules" ] && [ ! -e "$path/$dir/node_modules" ]; then
+    ln -s "$root/$dir/node_modules" "$path/$dir/node_modules"
+  fi
+done
+printf '%s\n' "$path"
