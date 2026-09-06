@@ -42,6 +42,8 @@ export type Worktree = {
   base: string
   /** The repository the worktree belongs to. */
   repoRoot: string
+  /** The lifecycle that created this tree, and therefore owns its removal. */
+  source?: 'recipe' | 'git' | 'readonly_recipe'
 }
 
 /**
@@ -666,8 +668,10 @@ export const ORCH_RUN_MARKER = '.orch-run'
 export type RecordWorktree = (worktree: Worktree) => void
 
 /** Mark a tree as orch-owned without asking the project to track orch metadata. */
-function markWorktree(path: string, runId: number, repoRoot: string): void {
-  writeFileSync(join(path, ORCH_RUN_MARKER), `${runId}\n${repoRoot}\n`)
+function markWorktree(
+  path: string, runId: number, repoRoot: string, source: NonNullable<Worktree['source']>,
+): void {
+  writeFileSync(join(path, ORCH_RUN_MARKER), `${runId}\n${repoRoot}\nsource: ${source}\n`)
   const exclude = resolve(path, git(['rev-parse', '--git-path', 'info/exclude'], path))
   const existing = existsSync(exclude) ? readFileSync(exclude, 'utf8') : ''
   if (!existing.split('\n').includes(ORCH_RUN_MARKER)) {
@@ -707,7 +711,19 @@ function attributeWorktree(
       `cleanup: ${cleanup.removed ? 'removed' : cleanup.detail}`,
     )
   }
-  markWorktree(worktree.path, runId, worktree.repoRoot)
+  if (!worktree.source) throw new Error(`worktree ${worktree.path} has no lifecycle source`)
+  markWorktree(worktree.path, runId, worktree.repoRoot, worktree.source)
+}
+
+/** Read lifecycle provenance from current markers; legacy markers have none. */
+export function markedWorktreeSource(path: string): Worktree['source'] | undefined {
+  try {
+    const line = readFileSync(join(path, ORCH_RUN_MARKER), 'utf8')
+      .split('\n').find((entry) => entry.startsWith('source: '))
+    const source = line?.slice('source: '.length)
+    return source === 'recipe' || source === 'git' || source === 'readonly_recipe'
+      ? source : undefined
+  } catch { return undefined }
 }
 
 /** Recognise current markers and the naming schemes used before markers existed. */
@@ -1203,7 +1219,7 @@ function createWithToolUnlocked(
   // commit from the tree it actually created so the run record and every later
   // diff name that floor rather than the caller checkout's incidental HEAD.
   const actualBase = gitOk(['rev-parse', 'HEAD'], path) ?? base
-  const worktree = { path, branch, base: actualBase, repoRoot }
+  const worktree = { path, branch, base: actualBase, repoRoot, source: 'recipe' as const }
   try {
     attributeWorktree(worktree, runId, record)
     verifyFreshWorktree(worktree)
@@ -1236,7 +1252,49 @@ function createWorktreeUnlocked(
     throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
   }
   git(['worktree', 'add', ...(detached ? ['--detach'] : ['-b', branch]), path, base], repoRoot)
-  const worktree = { path, branch, base, repoRoot }
+  const worktree = { path, branch, base, repoRoot, source: 'git' as const }
+  attributeWorktree(worktree, runId, record)
+  verifyFreshWorktree(worktree)
+  return worktree
+}
+
+/** Cut the unprovisioned checkout used by a read-only repository job. */
+export function createReadOnlyWorktree(
+  cwd: string, runId: number, baseRef?: string, record?: RecordWorktree,
+): Worktree {
+  const repoRoot = repoRootOf(cwd)
+  if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
+  const base = baseRef ? resolveBase(repoRoot, baseRef) : git(['rev-parse', 'HEAD'], repoRoot)
+  const path = join(repoRoot, '.claude', 'worktrees', `orch-${runId}`)
+  mkdirSync(dirname(path), { recursive: true })
+  if (existsSync(path)) throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
+  git(['worktree', 'add', '--detach', path, base], repoRoot)
+  const worktree = { path, branch: '', base, repoRoot, source: 'git' as const }
+  attributeWorktree(worktree, runId, record)
+  verifyFreshWorktree(worktree)
+  return worktree
+}
+
+/** Let a project provision a detached read-only checkout at orch's chosen path. */
+export function createReadOnlyWithTool(
+  tool: WorktreeTool, cwd: string, runId: number, key?: string, baseRef?: string,
+  record?: RecordWorktree,
+): Worktree {
+  const repoRoot = repoRootOf(cwd)
+  if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
+  if (!tool.readonly_create) throw new Error('project declares no readonly_create command')
+  const base = baseRef ? resolveBase(repoRoot, baseRef) : git(['rev-parse', 'HEAD'], repoRoot)
+  const path = join(repoRoot, '.claude', 'worktrees', `orch-${runId}`)
+  if (existsSync(path)) throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
+  const vars = { branch: '', name: `orch-${runId}`, base, seed: '', key: key ?? '', path }
+  const result = runCreateTool(tool.readonly_create, vars, repoRoot)
+  if (!result.ok) throw new Error(`the project's read-only worktree tool failed:\n${result.out.slice(-1500)}`)
+  if (!existsSync(path)) {
+    throw new Error(`the project's read-only worktree tool reported success but ${path} does not exist`)
+  }
+  const branch = gitOk(['symbolic-ref', '--quiet', '--short', 'HEAD'], path)
+  if (branch !== null) throw new Error(`the project's read-only worktree tool created attached branch ${branch}`)
+  const worktree = { path, branch: '', base, repoRoot, source: 'readonly_recipe' as const }
   attributeWorktree(worktree, runId, record)
   verifyFreshWorktree(worktree)
   return worktree
@@ -1423,7 +1481,7 @@ function createFromRecipe(
     : git(['rev-parse', 'HEAD'], repoRoot)
 
   git(['worktree', 'add', ...(detached ? ['--detach'] : ['-b', branch]), path, base], repoRoot)
-  const w: Worktree = { path, branch, base, repoRoot }
+  const w: Worktree = { path, branch, base, repoRoot, source: 'recipe' }
   attributeWorktree(w, runId, record)
 
   const dbName = dbNameFor(repoRoot.split('/').pop() ?? 'app', runId)
@@ -1642,7 +1700,22 @@ export function removeFor(
   const tool = project?.settings.worktree
   const retainBranch = keepBranch ||
     (!forceOrchTree && unmergedBranch(repoRoot, w.branch, null) !== null)
-  const result: { removed: boolean; detail: string; output?: string } = tool
+  if (w.source === 'readonly_recipe') {
+    if (!tool?.readonly_remove) return removeWorktree(w, keepBranch)
+    const result = runShellTool(tool.readonly_remove, { path: w.path }, repoRoot)
+    if (!result.ok) {
+      return {
+        removed: false,
+        detail: `${w.path} was NOT removed — the project's read-only remove tool refused:\n` +
+          `${result.out.slice(-600) || `exit code from ${tool.readonly_remove}`}`,
+      }
+    }
+    const reconciled = removeWorktree(w, keepBranch)
+    return result.out ? { ...reconciled, output: `${project!.name} readonly remove:\n${result.out}` } : reconciled
+  }
+  const projectOwned = w.source === 'recipe' ||
+    (w.source === undefined && Boolean(tool))
+  const result: { removed: boolean; detail: string; output?: string } = tool && projectOwned
     ? removeWithTool(tool, w, forceOrchTree, retainBranch)
     : removeWorktree(w, retainBranch)
   return result.output

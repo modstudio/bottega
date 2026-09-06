@@ -1041,12 +1041,34 @@ where a checkout is just files — this one, for instance.
 ```json
 "worktree": {
   "create": "WORKTREE_SEED='{seed}' scripts/worktree add {branch}",
+  "readonly_create": "scripts/worktree readonly-add --path {path} --base {base}",
+  "readonly_remove": "scripts/worktree readonly-rm --path {path}",
   "remove": "scripts/worktree rm {name}",
   "sweep":  "scripts/worktree sweep",
   "seeds":  ["none", "--bundle=minimal", "--full"],
   "notes":  "what the WORKER is told about the infrastructure it has"
 }
 ```
+
+A job that declares `readsRepo` without `writesRepo` does not use `create`, its
+branch template, seed resolver, or seed list. orch cuts a plain git worktree at
+a detached HEAD of the resolved base, and removes it with plain git, even when
+the project declares a writing recipe. `--key` is optional and remains useful
+for attribution; `--seed` is refused because seeds belong to writing runs.
+
+A project may explicitly declare `worktree.readonly_create`, using the same
+template form and placeholders as `create` except `{branch}`. orch
+supplies `{path}` and `{base}`. This command must create a detached worktree,
+must have no side effects on task state, and must provision nothing outside the
+tree. Its tree is removed with plain git by default. A project that needs
+tree-local teardown may declare `worktree.readonly_remove`, which receives
+`{path}` only; writing-run `remove` and `sweep` are never used for it. Do not
+infer this capability from `create`.
+
+Without `readonly_create`, a read-only worker in a project that declares a
+worktree lifecycle has files only: no databases, generated env, vendor tree, or
+other provisioned infrastructure. Its worktree note says so and tells it to
+record suites that cannot start in `could_not_verify`, not as findings.
 
 **Templates, not arguments.** These tools do not agree and never will: one
 takes the seed in the environment, another positionally. A template lets each

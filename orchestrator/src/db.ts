@@ -279,6 +279,8 @@ export function applySchema(d: Database): void {
   // edited files is only readable afterwards if the tree it edited can be
   // found again, and `orch discard` needs both to clean up.
   addColumn(d, 'run', 'worktree', 'TEXT')
+  // Which lifecycle made the tree determines which lifecycle may remove it.
+  addColumn(d, 'run', 'worktree_source', "TEXT CHECK (worktree_source IN ('recipe','git','readonly_recipe'))")
   // The VENDOR's own id for the conversation, which is what makes an escalation
   // affordable: answering a design question resumes the worker where it stopped
   // instead of restarting it against the same files.
@@ -757,6 +759,7 @@ const RUN_DDL = `CREATE TABLE run (
       branch_kept   TEXT,
       branch_kept_tip TEXT,
       worktree      TEXT,
+      worktree_source TEXT CHECK (worktree_source IN ('recipe','git','readonly_recipe')),
       vendor_session TEXT,
       base_commit   TEXT,
       carry_happened INTEGER,

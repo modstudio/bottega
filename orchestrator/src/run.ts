@@ -17,7 +17,8 @@ import { job, type Job } from './jobs.ts'
 import { pick } from './route.ts'
 import { db, nowIso, DB_PATH, sessionId, resolveRootFromLastTurn, writableDb } from './db.ts'
 import {
-  createWorktree, createWithTool, toolFor, changesIn, repoRootOf, resolveBase, worktreeGitDir,
+  createWorktree, createWithTool, createReadOnlyWorktree, createReadOnlyWithTool,
+  toolFor, changesIn, repoRootOf, resolveBase, worktreeGitDir,
   createCommandExists,
   prepareWorktreeObjects, prepareSharedRefGuard, carryWorkingState,
   targetGitEnvironment,
@@ -104,7 +105,7 @@ export type DetachSpec = {
   resume?: {
     parent: number; agent: string; session: string; turn: number
     sessionId: string | null
-    worktree: { path: string; branch: string; base: string; repoRoot: string } | null
+    worktree: Worktree | null
   }
 }
 
@@ -465,38 +466,36 @@ export function preflight(
   if (repoRoot === null) {
     throw new Error(`${jobName} reads a repository and ${cwd} is not a git checkout`)
   }
-  // A key is required whenever a NEW worktree's branch template names it. A
-  // caller-selected seed is required only for a writing job's new worktree. A
-  // read-only job still passes a project-declared `none` explicitly: it is the
-  // settled answer for a job that provably needs no database. A resumed turn
-  // works in the tree its parent already has, so demanding either again blocks
-  // every ruling.
+  if (!writesJob && seed !== undefined) {
+    throw new Error('--seed is only valid for writing runs; seeds belong to writing runs')
+  }
+  // A key is required only when a writing worktree's branch template names it,
+  // and a seed belongs only to a writing worktree. Read-only jobs bypass both
+  // declarations. A resumed turn works in the tree its parent already has, so
+  // demanding either again blocks every ruling.
   if (reusesWorktree) return seed
   const project = projectAt(cwd)
   const tool = project?.settings.worktree ?? null
-  // `none` is a project-declared seed, not an orch default. Matching the exact
-  // literal keeps this inference narrow: another project-specific label is not
-  // silently reinterpreted as "no database" merely because it sounds similar.
-  const effectiveSeed = seed ?? (!writesJob && tool?.seeds?.includes('none') ? 'none' : undefined)
+  const effectiveSeed = seed
   const keyPattern = tool?.keyPattern ?? '^[A-Z][A-Z0-9]+-[0-9]+$'
   const problems: string[] = []
   if (key && !new RegExp(keyPattern).test(key)) {
     problems.push(`key "${key}" does not match ${keyPattern}`)
   }
-  if (tool?.create && !tool.branch) {
+  if (writesJob && tool?.create && !tool.branch) {
     problems.push(
       `this project's worktree create command has no branch template.\n` +
       `Set the worktree branch key with:\n` +
       `  orch project set ${project!.name} --settings '{"worktree":{"branch":"<template>"}}'`,
     )
   }
-  if (baseRef && tool?.create && !createHasPlaceholder(tool.create, 'base')) {
+  if (writesJob && baseRef && tool?.create && !createHasPlaceholder(tool.create, 'base')) {
     problems.push(
       `project ${project!.name} cannot honour --base because its worktree create template ` +
       `${JSON.stringify(tool.create)} has no {base} slot`,
     )
   }
-  if (tool?.branch?.includes('{key}') && !key) {
+  if (writesJob && tool?.branch?.includes('{key}') && !key) {
     problems.push(
       `this project's branch names must carry a ticket key (${tool.branch}), and orch will ` +
       `not invent one.\n  --key <KEY-123>`,
@@ -513,22 +512,18 @@ export function preflight(
       `this project's worktree create arguments contain {seed}, so a seed is required.\n` +
       `  --seed <value>`,
     )
-  } else if (!writesJob && tool?.seeds?.length && !effectiveSeed) {
-    problems.push(
-      `project ${project!.name} requires an explicit seed, but its seed list has no ` +
-      `"none" option for a read-only job that needs no database.`,
-    )
   }
   if (problems.length) throw new Error(problems.join('\n'))
-  if (project && tool?.create && !createCommandExists(tool.create, project.path)) {
-    const command = typeof tool.create === 'object' && 'command' in tool.create
-      ? tool.create.command
+  const selectedCreate = writesJob ? tool?.create : tool?.readonly_create
+  if (project && selectedCreate && !createCommandExists(selectedCreate, project.path)) {
+    const command = typeof selectedCreate === 'object' && 'command' in selectedCreate
+      ? selectedCreate.command
       : 'sh'
     throw new Error(
       `project ${project.name} worktree create command ${command} is absent or not executable`,
     )
   }
-  if (tool?.create && !seedAlreadyValidated) validateSeedWithTool(cwd, effectiveSeed)
+  if (writesJob && tool?.create && !seedAlreadyValidated) validateSeedWithTool(cwd, effectiveSeed)
   return effectiveSeed
 }
 
@@ -1324,6 +1319,12 @@ export async function run(opts: {
     if (!repoJob) return ''
     const tool = toolFor(opts.cwd ?? process.cwd())
     if (!tool) return ''
+    if (!writesJob && !tool.readonly_create) {
+      const base = opts.base ? resolveBase(callerCwd, opts.base) : resolveBase(callerCwd, 'HEAD')
+      return `This read-only run has the project's files at ${base} with NO provisioned ` +
+        `infrastructure (no databases, no generated env, no vendor tree). Do not treat a test ` +
+        `suite that cannot start as a finding; record what you could not run in could_not_verify.`
+    }
     const generated = tool.recipe
       ? recipeNotes(tool.recipe, '<this worktree\'s database>', '')
       : ''
@@ -1365,6 +1366,7 @@ export async function run(opts: {
     : opts.resume
       ? packedResumePrompt(opts.job, originalPrompt, opts.resume.parent)
       : [repoJob ? READONLY_PREAMBLE : NO_REPO_PREAMBLE,
+          infra ? `YOUR WORKTREE'S INFRASTRUCTURE\n\n${infra}` : '',
           docsSection, `---\n\n${originalPrompt}`]
           .filter(Boolean).join('\n\n')
 
@@ -1660,16 +1662,20 @@ export async function run(opts: {
         if (!repoRoot) throw new Error(`not a git repository: ${callerCwd}`)
         const recordWorktree = (created: Worktree) => {
           const result = db().query(
-            'UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id=?',
+            'UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=?, worktree_source=? WHERE id=?',
           ).run(
-            created.path, created.path, created.branch,
-            reviewTarget?.base ?? created.base, claim.id,
+            created.path, created.path, created.branch || null,
+            reviewTarget?.base ?? created.base, created.source ?? null, claim.id,
           )
           if (result.changes !== 1) throw new Error(`run ${claim.id} could not record its worktree`)
         }
         worktree = withWorktreeCreateLock(repoRoot, () => {
           let created: Worktree
-          if (tool) {
+          if (!writesJob) {
+            created = tool?.readonly_create
+              ? createReadOnlyWithTool(tool, callerCwd, claim.id, opts.key, opts.base, recordWorktree)
+              : createReadOnlyWorktree(callerCwd, claim.id, opts.base, recordWorktree)
+          } else if (tool) {
             // The PROJECT owns its worktrees. A bare `git worktree add` here would
             // produce a directory with no .env, no vendor and no database, in which
             // every test the worker runs is meaningless and green.
@@ -1759,11 +1765,11 @@ export async function run(opts: {
           }
         }
         db().query(
-          `UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=?, carry_happened=?,
+          `UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=?, worktree_source=?, carry_happened=?,
                           carry_base_commit=?, carry_tracked_paths=?, carry_untracked_paths=? WHERE id=?`,
         ).run(
-          inheritedWorktree.path, inheritedWorktree.path, inheritedWorktree.branch,
-          reviewTarget?.base ?? inheritedWorktree.base,
+          inheritedWorktree.path, inheritedWorktree.path, inheritedWorktree.branch || null,
+          reviewTarget?.base ?? inheritedWorktree.base, inheritedWorktree.source ?? null,
           carried ? (carried.tracked.length + carried.untracked.length > 0 ? 1 : 0) : null,
           carried?.base ?? null,
           carried ? JSON.stringify(carried.tracked) : null,

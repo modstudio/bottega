@@ -26,7 +26,7 @@ import { createInterface } from 'node:readline/promises'
 import { createHasPlaceholder, projectAt, projectByName, projects } from './projects.ts'
 import { branchTip, restoreBranch, resolveBase, repoRootOf, removeBranch, removeFor, unmergedBranch,
          checkoutHasUncommittedWork, callerDrift, projectLockState, withProjectLock,
-         targetGitEnvironment } from './worktree.ts'
+         targetGitEnvironment, type Worktree } from './worktree.ts'
 import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
 import { WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE,
          REVIEW_SEVERITY_INSTRUCTION, contractConflicts, rulingPrompt } from './contract.ts'
@@ -356,6 +356,7 @@ type CleanupRow = {
   id: number; repo?: string | null; cwd?: string | null
   worktree: string; branch: string | null
   base_commit: string | null
+  worktree_source?: 'recipe' | 'git' | 'readonly_recipe' | null
 }
 
 type BranchOwnerRow = {
@@ -782,6 +783,7 @@ function discardWorktree(
       branch: row.branch ?? `orch/${row.id}`,
       base: row.base_commit ?? '',
       repoRoot,
+      source: row.worktree_source ?? undefined,
     }, repoRoot, force, ownersBefore.length > 0)
     const sharersAfter = evidenceOwningWorktreeSharers(row)
     const ownersAfter = evidenceOwningBranchOwners(row, repoRoot)
@@ -1095,12 +1097,13 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
   // prevent.
   if (open.n) throw new Error(`run ${id} is waiting on ${open.n} question(s): orch answer ${id} ...`)
   const latest = db().query(
-    `SELECT id, agent, vendor_session, turn, cwd, worktree, branch, base_commit
+    `SELECT id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source
        FROM run WHERE id = ? OR parent_run_id = ?
       ORDER BY turn DESC LIMIT 1`,
   ).get(id, id) as {
     id: number; agent: string; vendor_session: string | null; turn: number
     cwd: string | null; worktree: string | null; branch: string | null; base_commit: string | null
+    worktree_source: Worktree['source'] | null
   }
   const sessionFrom = latest.vendor_session
     ? latest
@@ -1152,9 +1155,10 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
       worktree: latest.worktree
         ? {
             path: latest.worktree,
-            branch: latest.branch ?? `orch/${id}`,
+            branch: latest.branch ?? '',
             base: latest.base_commit ?? '',
             repoRoot: (await import('./worktree.ts')).repoRootOf(latest.worktree) ?? process.cwd(),
+            source: latest.worktree_source ?? undefined,
           }
         : null,
     },
@@ -1225,9 +1229,9 @@ function usage(): never {
       --lens <stable-id>        required identity for findings-producing review jobs
       --quiet                   print only the reply
       --probe                   a calibration run: recorded, but not routing evidence
-      --seed <spec>             choose a required project-specific database seed spec
+      --seed <spec>             choose a required project-specific database seed spec (writing jobs only)
       --seed=<spec>             same; quote a multi-token spec as one value in either form
-      --key <KEY-123>           supply a required branch ticket key
+      --key <KEY-123>           attribute a read-only run, or supply a writing run's required branch key
       --repo <name>             attribute work launched outside a registered project
       --cwd <path>              resolve and carry from this path as if orch started there
       --follow                  block and watch the run instead of returning its id
@@ -1339,6 +1343,8 @@ function usage(): never {
       add <path> [--name X] [--stack Y] [--no-canon] [--json]  (--json: one JSON document)
       set <name> [--stack X] [--path P] [--canon|--no-canon] [--settings JSON] [--json]  (--json: one JSON document)
           JSON null deletes that settings key; objects merge deeply
+          worktree.readonly_create may provision detached read-only trees at {path} and {base}
+          worktree.readonly_remove optionally tears them down and receives {path} only
           --allow-incomplete    save a create command missing branch or seed configuration
       remove <name>
   orch init-db                  create the database for a fresh main checkout
@@ -1411,9 +1417,9 @@ function doUsage(): never {
   --label <text>   name this run in listings and pending reminders
   --lens <id>      stable identity required by findings-producing review jobs
   --probe          record a calibration run that does not affect routing
-  --seed <spec>    choose the project-specific database seed required by some projects
+  --seed <spec>    choose the project-specific database seed required by some writing jobs
   --seed=<spec>    same; quote a multi-token spec as one value in either form
-  --key <KEY-123>  supply the ticket key required by some branch templates
+  --key <KEY-123>  attribute a read-only run, or supply a writing run's required branch key
   --repo <name>    attribute a run launched outside a registered project
   --cwd <path>     resolve and carry from this path as if orch started there
   --file <path>    read the prompt from a file instead of argv or stdin
@@ -3310,7 +3316,7 @@ switch (cmd) {
     const row = db().query(
       `SELECT root.id, root.agent, root.job, root.cwd, root.worktree, root.branch,
               root.base_commit, root.vendor_session, root.status, root.session_id,
-              root.turn, root.parent_run_id
+              root.turn, root.parent_run_id, root.worktree_source
          FROM run requested
          JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
         WHERE requested.id = ?`,
@@ -3319,6 +3325,7 @@ switch (cmd) {
       worktree: string | null; branch: string | null; base_commit: string | null
       vendor_session: string | null; status: string; session_id: string | null
       turn: number; parent_run_id: number | null
+      worktree_source: Worktree['source'] | null
     } | null
     if (!row) throw new Error(`no run ${requestedId}`)
     const id = row.id
@@ -3407,12 +3414,13 @@ switch (cmd) {
     }
 
     const latest = db().query(
-      `SELECT id, agent, vendor_session, turn, cwd, worktree, branch, base_commit
+      `SELECT id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source
          FROM run WHERE id = ? OR parent_run_id = ?
         ORDER BY turn DESC LIMIT 1`,
     ).get(id, id) as {
       id: number; agent: string; vendor_session: string | null; turn: number
       cwd: string | null; worktree: string | null; branch: string | null; base_commit: string | null
+      worktree_source: Worktree['source'] | null
     }
     const sessionFrom = latest.vendor_session
       ? latest
@@ -3599,9 +3607,10 @@ switch (cmd) {
           worktree: worktreePath
             ? {
                 path: worktreePath,
-                branch: latest.branch ?? row.branch ?? `orch/${id}`,
+                branch: latest.branch ?? row.branch ?? '',
                 base: latest.base_commit ?? row.base_commit ?? '',
                 repoRoot: (await import('./worktree.ts')).repoRootOf(worktreePath) ?? process.cwd(),
+                source: latest.worktree_source ?? row.worktree_source ?? undefined,
               }
             : null,
         },
@@ -3880,7 +3889,7 @@ switch (cmd) {
     if (!dry) writableDb()
     const rows = db().query(
       `SELECT r.id, COALESCE(r.parent_run_id, r.id) root_id,
-              r.repo, r.worktree, r.branch, r.base_commit, r.status, r.job,
+              r.repo, r.worktree, r.branch, r.base_commit, r.worktree_source, r.status, r.job,
               (julianday('now') - julianday(r.started_at)) AS age_days,
               s.delivery IS NOT NULL AS scored
          FROM run r ${chainScoreJoin('r', 's')}
@@ -3889,16 +3898,24 @@ switch (cmd) {
     ).all() as {
       id: number; root_id: number; repo: string | null; worktree: string
       branch: string | null; base_commit: string | null; status: string
+      worktree_source: Worktree['source'] | null
       job: string; age_days: number; scored: number
     }[]
 
     const { removeFor, sweepWithTool, repoRootOf, orphanSafety,
-            isOrchWorktree } =
+            isOrchWorktree, markedWorktreeSource } =
       await import('./worktree.ts')
     const { projectAt } = await import('./projects.ts')
 
     let done = 0
     let cleanupFailed = false
+    const projectsWithPlainTrees = new Set<string>()
+    for (const row of rows) {
+      if (row.repo && existsSync(row.worktree) &&
+          (row.worktree_source === 'git' || row.worktree_source === 'readonly_recipe')) {
+        projectsWithPlainTrees.add(row.repo)
+      }
+    }
     const inventoryErrors = new Set<string>()
     const leaked = new Map<string, { resource: DockerResource; project: string; runId: number }>()
     const kept: { line: string; reason: string }[] = []
@@ -3934,7 +3951,7 @@ switch (cmd) {
         repoRootOf(r.worktree) ?? projectAt(r.worktree)?.path ?? process.cwd()
       const w = {
         path: r.worktree, branch: r.branch ?? `orch/${r.id}`,
-        base: r.base_commit ?? '', repoRoot,
+        base: r.base_commit ?? '', repoRoot, source: r.worktree_source ?? undefined,
       }
       try {
         withCleanupLock(repoRoot, `sweep run ${r.id}`, () => {
@@ -4089,7 +4106,12 @@ switch (cmd) {
           continue
         }
 
-        const w = { path, branch: safe.branch, base: '', repoRoot: p.path }
+        const source = markedWorktreeSource(path)
+        const w = {
+          path, branch: safe.branch, base: '', repoRoot: p.path,
+          source,
+        }
+        if (source === 'git' || source === 'readonly_recipe') projectsWithPlainTrees.add(p.name)
         const runId = orchRunId(entry.name)
         try {
           withCleanupLock(p.path, `sweep ${label}`, () => {
@@ -4188,6 +4210,12 @@ switch (cmd) {
      */
     if (!dry) {
       for (const p of (await import('./projects.ts')).projects()) {
+        if (projectsWithPlainTrees.has(p.name)) continue
+        const root = join(p.path, '.claude', 'worktrees')
+        const orphanPlain = existsSync(root) && readdirSync(root, { withFileTypes: true })
+          .some((entry) => entry.isDirectory() &&
+            ['git', 'readonly_recipe'].includes(markedWorktreeSource(join(root, entry.name)) ?? ''))
+        if (orphanPlain) continue
         const tool = p.settings.worktree
         if (!tool?.sweep) continue
         let result: ReturnType<typeof sweepWithTool>
@@ -4253,19 +4281,22 @@ switch (cmd) {
     if (!id) usage()
     let authority = authorizeRunMutation(id, 'discard')
     const rootRow = db().query(
-      `SELECT id, repo, cwd, worktree, branch, branch_kept, branch_kept_tip, base_commit
+      `SELECT id, repo, cwd, worktree, branch, branch_kept, branch_kept_tip, base_commit,
+              worktree_source
          FROM run WHERE id = ?`,
     ).get(authority.rootId) as {
       id: number; repo: string | null; cwd: string | null; worktree: string | null
       branch: string | null; branch_kept: string | null; branch_kept_tip: string | null
       base_commit: string | null
+      worktree_source: Worktree['source'] | null
     } | null
     if (!rootRow) throw new Error(`no run ${authority.rootId}`)
     const chain = db().query(
-      `SELECT id, worktree, branch, base_commit FROM run
+      `SELECT id, worktree, branch, base_commit, worktree_source FROM run
         WHERE id = ? OR parent_run_id = ? ORDER BY turn, id`,
     ).all(authority.rootId, authority.rootId) as {
       id: number; worktree: string | null; branch: string | null; base_commit: string | null
+      worktree_source: Worktree['source'] | null
     }[]
     const worktrees = [...new Set(chain.flatMap((turn) => turn.worktree ? [turn.worktree] : []))]
     if (worktrees.length > 1) {
@@ -4280,6 +4311,7 @@ switch (cmd) {
       worktree: worktrees[0] ?? null,
       branch: rootRow.branch ?? artifact?.branch ?? null,
       base_commit: rootRow.base_commit ?? artifact?.base_commit ?? null,
+      worktree_source: rootRow.worktree_source ?? artifact?.worktree_source ?? null,
     }
     if (!row.worktree) {
       if (!has('force') || !row.branch_kept) {
@@ -4332,10 +4364,11 @@ switch (cmd) {
       id: number; status: string; pid: number | null; agent_pid: number | null
       parent_run_id: number | null; turn: number; repo: string | null; cwd: string | null
       worktree: string | null; branch: string | null; base_commit: string | null
+      worktree_source: Worktree['source'] | null
     }
     const readChain = () => db().query(
       `SELECT id, status, pid, agent_pid, parent_run_id, turn, repo, cwd, worktree, branch,
-              base_commit
+              base_commit, worktree_source
          FROM run WHERE id = ? OR parent_run_id = ? ORDER BY turn DESC, id DESC`,
     ).all(authority.rootId, authority.rootId) as StopRow[]
     const describe = (chain: StopRow[]) => [...chain].reverse()
@@ -4356,6 +4389,7 @@ switch (cmd) {
         worktree: row.worktree ?? artifact?.worktree ?? null,
         branch: root.branch ?? row.branch ?? artifact?.branch ?? null,
         base_commit: root.base_commit ?? row.base_commit ?? artifact?.base_commit ?? null,
+        worktree_source: root.worktree_source ?? row.worktree_source ?? artifact?.worktree_source ?? null,
       }
 
       authority = adoptRunMutation(authority, 'stop')
@@ -4432,13 +4466,15 @@ switch (cmd) {
       id: number; status: string; repo: string | null; cwd: string | null
       worktree: string | null; branch: string | null; parent_run_id: number | null; turn: number
       base_commit: string | null
+      worktree_source: Worktree['source'] | null
     }
     const callerSession = authority.actor
     const note = flag('note')
     const error = `abandoned by architect${note === undefined ? '' : `: ${note}`}`
     const at = nowIso()
     const readChain = () => db().query(
-      `SELECT id, status, repo, cwd, worktree, branch, parent_run_id, turn, base_commit
+      `SELECT id, status, repo, cwd, worktree, branch, parent_run_id, turn, base_commit,
+              worktree_source
          FROM run WHERE id = ? OR parent_run_id = ? ORDER BY turn DESC, id DESC`,
     ).all(authority.rootId, authority.rootId) as AbandonRow[]
     const describe = (chain: AbandonRow[]) => [...chain].reverse()
@@ -4459,6 +4495,7 @@ switch (cmd) {
         worktree: row.worktree ?? artifact?.worktree ?? null,
         branch: root.branch ?? row.branch ?? artifact?.branch ?? null,
         base_commit: root.base_commit ?? row.base_commit ?? artifact?.base_commit ?? null,
+        worktree_source: root.worktree_source ?? row.worktree_source ?? artifact?.worktree_source ?? null,
       }
       authority = adoptRunMutation(authority, 'abandon')
       const changed = db().query(

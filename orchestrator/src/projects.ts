@@ -139,6 +139,16 @@ export type WorktreeTool = {
    */
   create?: WorktreeCreate
   /**
+   * Optionally provisions a read-only checkout at a detached HEAD.
+   *
+   * It receives `{path}` and `{base}` and may use the other create placeholders
+   * except `{branch}`. It must not change task state. When absent, read-only
+   * runs use a plain detached git worktree and no project infrastructure.
+   */
+  readonly_create?: WorktreeCreate
+  /** Optional teardown for readonly_create trees. Receives `{path}` only. */
+  readonly_remove?: string
+  /**
    * What this project's worktree NEEDS, for bottega to provide it.
    *
    * The alternative to `create`, and the one a new project should reach for.
@@ -297,9 +307,38 @@ function hasPipelineOperator(template: string): boolean {
  * them, before a worker is waiting on a vendor clone to discover the mistake.
  */
 export function validateProjectSettings(settings: ProjectSettings): string[] {
-  const create = settings.worktree?.create as unknown
+  const problems = [
+    ...validateCreate(settings.worktree?.create as unknown, 'worktree.create', CREATE_VARS),
+    ...validateCreate(
+      settings.worktree?.readonly_create as unknown,
+      'worktree.readonly_create',
+      new Set([...CREATE_VARS].filter((name) => name !== 'branch')),
+    ),
+  ]
+  const readonly = settings.worktree?.readonly_create
+  if (readonly && !createHasPlaceholder(readonly, 'path')) {
+    problems.push('worktree.readonly_create must contain {path}')
+  }
+  if (readonly && !createHasPlaceholder(readonly, 'base')) {
+    problems.push('worktree.readonly_create must contain {base}')
+  }
+  const readonlyRemove = settings.worktree?.readonly_remove
+  if (readonlyRemove !== undefined) {
+    if (typeof readonlyRemove !== 'string' || !readonlyRemove.trim()) {
+      problems.push('worktree.readonly_remove must be a non-empty template')
+    } else {
+      const unknown = placeholders(readonlyRemove).find((name) => name !== 'path')
+      if (unknown) problems.push(`worktree.readonly_remove contains unknown placeholder {${unknown}}`)
+      if (!placeholders(readonlyRemove).includes('path')) {
+        problems.push('worktree.readonly_remove must contain {path}')
+      }
+    }
+  }
+  return problems
+}
+
+function validateCreate(create: unknown, at: string, allowedVars: Set<string>): string[] {
   if (create === undefined) return []
-  const at = 'worktree.create'
   if (typeof create === 'string') {
     return [`${at} must be an object with command and args; shell strings are not commands`]
   }
@@ -314,7 +353,7 @@ export function validateProjectSettings(settings: ProjectSettings): string[] {
     if (!hasPipelineOperator(value.pipeline)) {
       return [`${at}.pipeline is only for a command that uses a pipe; use command and args`]
     }
-    const unknown = placeholders(value.pipeline).find((name) => !CREATE_VARS.has(name))
+    const unknown = placeholders(value.pipeline).find((name) => !allowedVars.has(name))
     if (unknown) return [`${at}.pipeline contains unknown placeholder {${unknown}}`]
     const capability = placeholders(value.pipeline).find((name) => name === 'base' || name === 'seed')
     return capability
@@ -340,7 +379,7 @@ export function validateProjectSettings(settings: ProjectSettings): string[] {
   value.args.forEach((arg, index) => {
     const argAt = `${at}.args[${index}]`
     if (typeof arg === 'string') {
-      const unknown = placeholders(arg).find((name) => !CREATE_VARS.has(name))
+      const unknown = placeholders(arg).find((name) => !allowedVars.has(name))
       if (unknown) problems.push(`${argAt} contains unknown placeholder {${unknown}}`)
       return
     }
@@ -358,14 +397,14 @@ export function validateProjectSettings(settings: ProjectSettings): string[] {
     const variable = item.omitWhenEmpty
     if (Object.keys(item).some((key) => key !== 'value' && key !== 'omitWhenEmpty') ||
         typeof item.value !== 'string' || typeof variable !== 'string' ||
-        !CREATE_VARS.has(variable)) {
+        !allowedVars.has(variable)) {
       problems.push(`${argAt} must have a string value and one valid omitWhenEmpty variable`)
       return
     }
     if (!placeholders(item.value).includes(variable)) {
       problems.push(`${argAt}.value must contain {${variable}}, the value named by omitWhenEmpty`)
     }
-    const unknown = placeholders(item.value).find((name) => !CREATE_VARS.has(name))
+    const unknown = placeholders(item.value).find((name) => !allowedVars.has(name))
     if (unknown) problems.push(`${argAt}.value contains unknown placeholder {${unknown}}`)
   })
   return problems

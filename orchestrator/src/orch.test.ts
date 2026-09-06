@@ -1384,7 +1384,8 @@ const { cleanReviewEvidence, parseReviewReply, recordReview, recordReviews, grad
         MIN_REVIEW_TRIAGED } = await import('./review.ts')
 const { ask } = await import('./ask.ts')
 const { checkMessages, messageArchitect, messagesForRun } = await import('./mailbox.ts')
-const { orphanSafety, repoRootOf, createWorktree, createWithTool, resolveBase, fillTool,
+const { orphanSafety, repoRootOf, createWorktree, createWithTool, createReadOnlyWorktree,
+        createReadOnlyWithTool, resolveBase, fillTool,
         seedArgv, createArgv, worktreeGitDir, prepareWorktreeObjects, prepareSharedRefGuard,
         workerSharedGitRoots,
         carryWorkingState, withWorktreeCreateLock, withProjectLock, projectLockState,
@@ -1465,6 +1466,22 @@ the cause` } }
     const project = { settings: { worktree: { seeds: ['none', 'full'] } } } as any
     expect(seedFromReport(project, 'ordinary shell')).toBeNull()
     expect(seedFromReport(project, 'compare none with full')).toBeNull()
+  })
+
+  test('the issue path consumes its chosen seed only for the writing fix run', () => {
+    const source = readFileSync(new URL('./issue.ts', import.meta.url), 'utf8')
+    const diagnosis = source.slice(
+      source.indexOf('diagnosisRun = await run({'),
+      source.indexOf('const diagnosis =', source.indexOf('diagnosisRun = await run({')),
+    )
+    const fix = source.slice(
+      source.indexOf('fixRun = await run({'),
+      source.indexOf('const fix =', source.indexOf('fixRun = await run({')),
+    )
+    expect(diagnosis).toContain("job: 'diagnose'")
+    expect(diagnosis).not.toContain('seed:')
+    expect(fix).toContain("job: 'issue-worker'")
+    expect(fix).toContain('seed: fixSeed ?? undefined')
   })
 
   test('validates tracker-new stdout with the target project key standard', () => {
@@ -7830,13 +7847,13 @@ describe('detached run collection', () => {
     expectNoDispatchArtifacts(process.cwd(), before)
   })
 
-  test('a missing branch key exits before git and does not claim a run', () => {
+  test('a writing run missing its branch key exits before git and does not claim a run', () => {
     upsertProject({
       name: PLATFORM_SLUG, path: process.cwd(),
       settings: { worktree: { recipe: {}, branch: '{key}-orch-{id}' } },
     })
     const before = dispatchArtifacts(process.cwd())
-    const r = orch('do', 'diagnose', 'find the cause', '--porcelain')
+    const r = orch('do', 'implement', 'make the change', '--porcelain')
 
     expect(r.code).not.toBe(0)
     expect(r.out).toBe('')
@@ -12091,7 +12108,7 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
     rmSync(repo, { recursive: true, force: true })
   })
 
-  test('read-only preflight refuses a missing branch key before git sees a leading dash', () => {
+  test('read-only preflight does not require a writing branch key and refuses seeds', () => {
     const { repo } = scratchRepo()
     upsertProject({
       name: 'read-only-arguments', path: repo,
@@ -12102,18 +12119,15 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
         },
       },
     })
-    expect(() => fromRoot(() => preflight(
+    expect(fromRoot(() => preflight(
       'review-lens', repo, undefined, undefined, undefined, false, false, 'safety',
-    ))).toThrow(
-      `this project's branch names must carry a ticket key ({key}-orch-{id}), and orch will ` +
-      `not invent one.\n  --key <KEY-123>`,
-    )
+    ))).toBeUndefined()
     expect(fromRoot(() => preflight(
       'review-lens', repo, undefined, 'DEV-264', undefined, false, false, 'safety',
-    ))).toBe('none')
-    expect(fromRoot(() => preflight(
+    ))).toBeUndefined()
+    expect(() => fromRoot(() => preflight(
       'review-lens', repo, 'small', 'DEV-264', undefined, false, false, 'safety',
-    ))).toBe('small')
+    ))).toThrow('seeds belong to writing runs')
     rmSync(repo, { recursive: true, force: true })
   })
 
@@ -12130,7 +12144,7 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
     rmSync(repo, { recursive: true, force: true })
   })
 
-  test('read-only preflight refuses a seeded project without none before creating a tree', () => {
+  test('read-only preflight ignores a writing recipe seed list', () => {
     const { repo } = scratchRepo()
     const trees = join(repo, '.claude', 'worktrees')
     upsertProject({
@@ -12143,11 +12157,9 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
       },
     })
     const before = readdirSync(trees).sort()
-    expect(() => fromRoot(() => preflight(
+    expect(fromRoot(() => preflight(
       'review-lens', repo, undefined, undefined, undefined, false, false, 'safety',
-    ))).toThrow(
-      'project read-only-no-none requires an explicit seed, but its seed list has no "none" option',
-    )
+    ))).toBeUndefined()
     expect(readdirSync(trees).sort()).toEqual(before)
     rmSync(repo, { recursive: true, force: true })
   })
@@ -12481,7 +12493,8 @@ echo 'Usage: scripts/worktree create [seed]'
       )
       expect(w.path.startsWith(tree)).toBe(false)
       expect(existsSync(join(tree, '.claude', 'worktrees', 'orch-657'))).toBe(false)
-      expect(readFileSync(join(w.path, '.orch-run'), 'utf8')).toBe(`657\n${realpathSync(repo)}\n`)
+      expect(readFileSync(join(w.path, '.orch-run'), 'utf8'))
+        .toBe(`657\n${realpathSync(repo)}\nsource: git\n`)
       const exclude = resolve(w.path, git(w.path, 'rev-parse', '--git-path', 'info/exclude'))
       expect(readFileSync(exclude, 'utf8').split('\n')).toContain('.orch-run')
       expect(git(w.path, 'check-ignore', '.orch-run')).toBe('.orch-run')
@@ -12491,9 +12504,10 @@ echo 'Usage: scripts/worktree create [seed]'
     }
   })
 
-  test('a read-only job passes its preflight-selected none seed to the project tool', () => {
+  test('a read-only job bypasses the project create tool and gets a detached base', () => {
     const { repo } = scratchRepo()
     const received = join(repo, 'received-seed')
+    const removed = join(repo, 'project-remove-invoked')
     const path = join(repo, '.claude', 'worktrees', 'orch-658')
     const tool = {
       branch: 'orch/{id}',
@@ -12502,15 +12516,19 @@ echo 'Usage: scripts/worktree create [seed]'
         `printf '%s' {seed} > "${received}" && ` +
         `${hermeticGitCommand} worktree add -b {branch} "${path}" HEAD >/dev/null && ` +
         `echo "${path}"`),
+      remove: `printf invoked > "${removed}"`,
     }
     upsertProject({ name: 'read-only-tool-seed', path: repo, settings: { worktree: tool } })
     try {
-      const seed = fromRoot(() => preflight(
-        'review-lens', repo, undefined, undefined, undefined, false, false, 'safety',
-      ))
-      const w = createWithTool(tool, repo, 658, seed)
-      expect(w.path).toBe(path)
-      expect(readFileSync(received, 'utf8')).toBe('none')
+      const base = git(repo, 'rev-parse', 'HEAD')
+      const w = createReadOnlyWorktree(repo, 658)
+      expect(realpathSync(w.path)).toBe(realpathSync(path))
+      expect(existsSync(received)).toBe(false)
+      expect(Bun.spawnSync(['git', 'symbolic-ref', '-q', 'HEAD'], { cwd: w.path }).exitCode).not.toBe(0)
+      expect(git(w.path, 'rev-parse', 'HEAD')).toBe(base)
+      expect(w.source).toBe('git')
+      expect(removeFor(w, repo).removed).toBe(true)
+      expect(existsSync(removed)).toBe(false)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
@@ -12543,6 +12561,27 @@ echo 'Usage: scripts/worktree create [seed]'
     }
   })
 
+  test('readonly_create provisions a detached tree and uses readonly_remove', () => {
+    const { repo } = scratchRepo()
+    const path = join(repo, '.claude', 'worktrees', 'orch-659')
+    const removed = join(repo, 'readonly-removed')
+    const tool = {
+      readonly_create: declaredCreate('git', ['worktree', 'add', '--detach', '{path}', '{base}']),
+      readonly_remove: `${hermeticGitCommand} worktree remove --force {path} && printf invoked > "${removed}"`,
+    }
+    upsertProject({ name: 'read-only-recipe', path: repo, settings: { worktree: tool } })
+    try {
+      const w = createReadOnlyWithTool(tool, repo, 659)
+      expect(realpathSync(w.path)).toBe(realpathSync(path))
+      expect(w.source).toBe('readonly_recipe')
+      expect(Bun.spawnSync(['git', 'symbolic-ref', '-q', 'HEAD'], { cwd: path }).exitCode).not.toBe(0)
+      expect(removeFor(w, repo).removed).toBe(true)
+      expect(readFileSync(removed, 'utf8')).toBe('invoked')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('a command recipe declaring detached support fails if it leaves a branch checked out', () => {
     const { repo } = scratchRepo()
     const path = join(repo, '.claude', 'worktrees', 'orch-660')
@@ -12567,6 +12606,45 @@ echo 'Usage: scripts/worktree create [seed]'
         `expected detached HEAD at ${base}, got refs/heads/review/660 at ${base}.`,
       )
     } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a recipe-project read-only run records git source and warns that infrastructure is absent', async () => {
+    const { repo } = scratchRepo()
+    const invoked = join(repo, 'writing-create-invoked')
+    upsertProject({
+      name: 'read-only-run-recipe', path: repo,
+      settings: { worktree: {
+        create: declaredCreate(process.execPath, ['-e', `require('fs').writeFileSync(${JSON.stringify(invoked)}, 'yes')`]),
+        remove: `printf removed`, branch: '{key}-orch-{id}', seeds: ['full'],
+      } },
+    })
+    const agent = AGENTS.codex!
+    const original = { bin: agent.bin, argv: agent.argv, readsOut: agent.readsOut }
+    let sent = ''
+    try {
+      agent.bin = process.execPath
+      agent.readsOut = false
+      agent.argv = ({ prompt }) => {
+        sent = prompt
+        return ['-e', 'console.log("inspected")']
+      }
+      process.env.ORCH_DEPTH = '0'
+      const result = await runJob({ job: 'file-question', prompt: 'inspect', cwd: repo, agent: 'codex' })
+      expect(existsSync(invoked)).toBe(false)
+      expect(result.worktree?.source).toBe('git')
+      expect(Bun.spawnSync(['git', 'symbolic-ref', '-q', 'HEAD'], { cwd: result.worktree!.path }).exitCode).not.toBe(0)
+      expect(db().query('SELECT worktree_source, branch FROM run WHERE id=?').get(result.id))
+        .toEqual({ worktree_source: 'git', branch: null })
+      expect(sent).toContain('NO provisioned infrastructure')
+      expect(sent).toContain('no databases, no generated env, no vendor tree')
+      expect(sent).toContain('could_not_verify')
+      expect(removeFor(result.worktree!, repo).removed).toBe(true)
+    } finally {
+      agent.bin = original.bin
+      agent.argv = original.argv
+      agent.readsOut = original.readsOut
       rmSync(repo, { recursive: true, force: true })
     }
   })
@@ -15068,6 +15146,69 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
       'commit', '--amend', '--no-edit', '--date', date,
     )
   }
+
+  test('sweep removes a git-made read-only tree without project remove or sweep', () => {
+    const repo = scratchRepo()
+    const project = `readonly-sweep-${randomUUID()}`
+    const removeSentinel = join(repo, 'remove-invoked')
+    const sweepSentinel = join(repo, 'sweep-invoked')
+    const old = new Date(Date.now() - 2 * 86_400_000).toISOString()
+    const id = addRun({ agent: 'codex', job: 'file-question', status: 'ok', repo: project, startedAt: old })
+    const tree = createReadOnlyWorktree(repo, id)
+    db().query(
+      `UPDATE run SET worktree=?, cwd=?, branch=NULL, base_commit=?, worktree_source='git' WHERE id=?`,
+    ).run(tree.path, tree.path, tree.base, id)
+    score(id, 'full', 'right')
+    upsertProject({
+      name: project, path: repo,
+      settings: { trunk: 'main', worktree: {
+        create: declaredCreate('git', ['worktree', 'add', '-b', '{branch}', '{path}', '{base}']),
+        remove: `printf invoked > "${removeSentinel}"`, branch: 'orch/{id}',
+        sweep: `printf invoked > "${sweepSentinel}"`,
+      } },
+    })
+    const docker = fakeDocker([], [])
+    try {
+      const result = orchWithEnv(docker.env, 'sweep', '--older-than', '0')
+      expect(result.code).toBe(0)
+      expect(existsSync(tree.path)).toBe(false)
+      expect(existsSync(removeSentinel)).toBe(false)
+      expect(existsSync(sweepSentinel)).toBe(false)
+    } finally {
+      rmSync(docker.dir, { recursive: true, force: true })
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('sweep reads a git source marker on an orphan and never invokes project lifecycle', () => {
+    const repo = scratchRepo()
+    const project = `readonly-orphan-${randomUUID()}`
+    const removeSentinel = join(repo, 'remove-invoked')
+    const sweepSentinel = join(repo, 'sweep-invoked')
+    const old = new Date(Date.now() - 2 * 86_400_000).toISOString()
+    const id = addRun({ agent: 'codex', job: 'file-question', status: 'ok', repo: project, startedAt: old })
+    const tree = createReadOnlyWorktree(repo, id)
+    upsertProject({
+      name: project, path: repo,
+      settings: { trunk: 'main', worktree: {
+        create: declaredCreate('git', ['worktree', 'add', '-b', '{branch}', '{path}', '{base}']),
+        remove: `printf invoked > "${removeSentinel}"`, branch: 'orch/{id}',
+        sweep: `printf invoked > "${sweepSentinel}"`,
+      } },
+    })
+    const docker = fakeDocker([], [])
+    try {
+      expect(readFileSync(join(tree.path, '.orch-run'), 'utf8')).toContain('source: git')
+      const result = orchWithEnv(docker.env, 'sweep', '--older-than', '0')
+      expect(result.code).toBe(0)
+      expect(existsSync(tree.path)).toBe(false)
+      expect(existsSync(removeSentinel)).toBe(false)
+      expect(existsSync(sweepSentinel)).toBe(false)
+    } finally {
+      rmSync(docker.dir, { recursive: true, force: true })
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
   const ageGit = (mode: 'reflog' | 'unknown' | 'detached', reflogSeconds = 0) => {
     const dir = mkdtempSync(join(tmpdir(), 'orch-age-git-'))
     const script = join(dir, 'git')
