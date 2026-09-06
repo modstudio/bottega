@@ -1,4 +1,5 @@
 import { categorizeFile } from '../../shared/file-kind.ts'
+import { targetGitEnvironment } from './worktree.ts'
 
 export type ReviewTier = {
   tier: 0 | 1 | 2 | 3
@@ -33,13 +34,21 @@ const isOrdinaryConfig = (path: string) => {
   return kind === 'config' || (/\.json$/i.test(path) && kind !== 'generated')
 }
 
+const isReviewExcluded = (path: string) => {
+  const kind = categorizeFile(path)
+  return kind === 'generated' || kind === 'test' || kind === 'docs' || /(^|\/)fixtures?\//i.test(path)
+}
+
 export function classifyReviewTier(input: { files: ReviewTierFile[] }): ReviewTier {
   let risk: 0 | 1 | 2 | 3 = 0
-  let riskReason = 'risk 0: only documentation, tests, fixtures, or configuration paths'
+  let riskReason = input.files.length === 0
+    ? 'risk 0: no branch-side change'
+    : 'risk 0: only documentation, tests, fixtures, or configuration paths'
   for (const file of input.files) {
     const kind = categorizeFile(file.path)
-    const match = REVIEW_HOT_PATHS.find((entry) => entry.pattern.test(file.path) &&
-      !(entry.tier === 2 && kind === 'test'))
+    const excluded = file.path !== '.claude/settings.json' && isReviewExcluded(file.path)
+    if (excluded) continue
+    const match = REVIEW_HOT_PATHS.find((entry) => entry.pattern.test(file.path))
     const ordinaryConfig = isOrdinaryConfig(file.path)
     const candidate = match?.tier ?? (kind === 'product' && !ordinaryConfig ? 2 : 0)
     if (candidate > risk) {
@@ -51,8 +60,8 @@ export function classifyReviewTier(input: { files: ReviewTierFile[] }): ReviewTi
   }
 
   const productFiles = input.files.filter((file) =>
-    categorizeFile(file.path) === 'product' && !isOrdinaryConfig(file.path))
-  const countedFiles = input.files.filter((file) => !['generated', 'test', 'docs'].includes(categorizeFile(file.path)))
+    categorizeFile(file.path) === 'product' && !isOrdinaryConfig(file.path) && !isReviewExcluded(file.path))
+  const countedFiles = input.files.filter((file) => !isReviewExcluded(file.path))
   const productLines = countedFiles.reduce((sum, file) => sum + file.insertions + file.deletions, 0)
   let size: 0 | 1 | 2 | 3 = productLines <= 10 ? 0 : productLines <= 50 ? 1 : productLines <= 400 ? 2 : 3
   const reasons = [riskReason, `size ${size}: ${productLines} product lines`]
@@ -65,7 +74,7 @@ export function classifyReviewTier(input: { files: ReviewTierFile[] }): ReviewTi
 
 export function diffNumstat(repo: string, from: string, to: string): ReviewTierFile[] {
   const result = Bun.spawnSync(['git', 'diff', '--numstat', `${from}..${to}`], {
-    cwd: repo, env: process.env, stdout: 'pipe', stderr: 'pipe',
+    cwd: repo, env: targetGitEnvironment(repo), stdout: 'pipe', stderr: 'pipe',
   })
   if (result.exitCode !== 0) throw new Error(result.stderr.toString().trim() || `git diff exited ${result.exitCode}`)
   return result.stdout.toString().trim().split('\n').filter(Boolean).map((line) => {

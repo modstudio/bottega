@@ -11,7 +11,6 @@ const RULES: [FileKind, RegExp][] = [
   ['test', /\.integration\.test\./],
   ['test', /(^|\/)__tests__\//],
   ['test', /(^|\/)tests?\//i],
-  ['test', /(^|\/)fixtures?\//i],
   ['test', /Test\.php$/],
   ['test', /_test\.(go|py|rb)$/],
   ['test', /(^|\/)(cypress|e2e|playwright)\//],

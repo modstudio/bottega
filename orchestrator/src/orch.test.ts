@@ -1986,28 +1986,61 @@ describe('review discipline', () => {
     try {
       const base = gg('rev-parse', 'main')
       const head = gg('rev-parse', 'tier-review')
-      const tree = gg('rev-parse', 'tier-review^{tree}')
+      writeFileSync(join(repo, 'base.txt'), 'carried tracked change\n'.repeat(60))
+      mkdirSync(join(repo, 'shared'))
+      writeFileSync(join(repo, 'shared', 'carried.ts'), 'carried untracked change\n')
+      const tree = contentTree(repo)
       const runs = ['correctness', 'craft'].map((lens) => addRun({
         agent: 'codex', job: 'review-lens', model: 'm', lens,
         repo: 'tier-review-project', inputTree: tree, headCommit: head,
       }))
       for (const id of runs) db().query('UPDATE run SET base_commit=?, branch=? WHERE id=?')
         .run(base, 'tier-review', id)
-      const reviewId = recordReviews(runs.map((runId) => ({ runId, output: reviewReply(0) })))
+      const oldObjectDirectory = process.env.GIT_OBJECT_DIRECTORY
+      const oldAlternates = process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES
+      process.env.GIT_OBJECT_DIRECTORY = '/foreign/object-directory'
+      process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES = '/foreign/alternates'
+      let reviewId: number
+      try {
+        reviewId = recordReviews(runs.map((runId) => ({ runId, output: reviewReply(0) })))
+      } finally {
+        if (oldObjectDirectory === undefined) delete process.env.GIT_OBJECT_DIRECTORY
+        else process.env.GIT_OBJECT_DIRECTORY = oldObjectDirectory
+        if (oldAlternates === undefined) delete process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES
+        else process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES = oldAlternates
+      }
       const row = db().query(
         'SELECT tier, tier_risk, tier_size, tier_reasons, tier_reason FROM review WHERE id=?',
       ).get(reviewId) as { tier: number; tier_risk: number; tier_size: number; tier_reasons: string; tier_reason: string }
-      expect(row).toMatchObject({ tier: 2, tier_risk: 2, tier_size: 0 })
-      expect(JSON.parse(row.tier_reasons).join('\n')).toContain('unlisted product path')
-      expect(row.tier_reason).toContain('risk 2: unlisted product path')
+      expect(row).toMatchObject({ tier: 3, tier_risk: 3, tier_size: 2 })
+      expect(JSON.parse(row.tier_reasons).join('\n')).toContain('shared/carried.ts')
+      expect(row.tier_reason).toContain('risk 3: shared/carried.ts')
 
-      const result = Bun.spawnSync([
+      const tierCli = (target: string) => Bun.spawnSync([
         process.execPath, new URL('cli.ts', import.meta.url).pathname,
-        'review', 'tier', String(runs[0]), '--json',
-      ], { env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe' })
-      expect(result.stderr.toString()).toBe('')
-      expect(result.exitCode).toBe(0)
-      expect(JSON.parse(result.stdout.toString())).toMatchObject({ tier: 2, risk: 2, size: 0 })
+        'review', 'tier', target, '--json',
+      ], { cwd: repo, env: { ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe' })
+      const carried = tierCli(String(runs[0]))
+      expect(carried.stderr.toString()).toBe('')
+      expect(carried.exitCode).toBe(0)
+      expect(JSON.parse(carried.stdout.toString())).toMatchObject({ tier: 3, risk: 3, size: 2 })
+
+      writeFileSync(join(repo, 'base.txt'), 'base\n'); rmSync(join(repo, 'shared'), { recursive: true })
+      gg('checkout', 'main'); gg('merge', '--ff-only', 'tier-review')
+      const merged = tierCli('tier-review')
+      expect(JSON.parse(merged.stdout.toString())).toMatchObject({ tier: 0, risk: 0, size: 0 })
+      expect(JSON.parse(merged.stdout.toString()).reasons).toContain('risk 0: no branch-side change')
+
+      const docsBase = gg('rev-parse', 'main')
+      gg('checkout', '-b', 'docs-only'); writeFileSync(join(repo, 'README.md'), '# docs\n')
+      gg('add', 'README.md'); gg('commit', '-m', 'docs')
+      const docs = tierCli(`${docsBase}..${gg('rev-parse', 'HEAD')}`)
+      expect(JSON.parse(docs.stdout.toString())).toMatchObject({ tier: 0, risk: 0, size: 0 })
+      const bareCommit = tierCli(gg('rev-parse', 'HEAD'))
+      expect(bareCommit.exitCode).toBe(1)
+      expect(bareCommit.stderr.toString()).toContain(
+        'review tier accepts a branch, run id, or explicit <from>..<to> range',
+      )
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
@@ -2252,7 +2285,8 @@ describe('review discipline', () => {
     for (const [branch, rounds] of [['one-round', 1], ['three-rounds', 3]] as const) {
       for (let round = 0; round < rounds; round++) {
         const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'rounds' })
-        db().query('UPDATE run SET branch=? WHERE id=?').run(branch, runId)
+        db().query('UPDATE run SET branch=?, launch_key=? WHERE id=?')
+          .run(`${branch}-worker-${round}`, branch, runId)
         const reviewId = recordReview(runId, reviewReply(0))
         db().query("UPDATE review SET tier=2, tier_risk=2, tier_size=0, tier_reason='risk 2: fixture' WHERE id=?")
           .run(reviewId)

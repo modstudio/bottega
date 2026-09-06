@@ -30,4 +30,21 @@ describe('review tier classification', () => {
     expect(actual).toMatchObject({ risk: 2, tier: 2 })
     expect(actual.reasons.join('\n')).toContain('unlisted product path scripts/check.ts')
   })
+
+  test('docs and tests stay risk zero inside hot directories', () => {
+    for (const path of [
+      'orchestrator/src/README.md', 'orchestrator/src/x.test.ts',
+      'shared/README.md', 'shared/x.test.ts',
+      'orchestrator/hooks/README.md', 'orchestrator/hooks/x.test.ts',
+    ]) {
+      expect(classifyReviewTier({ files: [{ path, insertions: 500, deletions: 0 }] }))
+        .toMatchObject({ tier: 0, risk: 0, size: 0 })
+    }
+  })
+
+  test('fixtures are excluded by review classification without changing FileKind', () => {
+    expect(classifyReviewTier({ files: [
+      { path: 'orchestrator/src/fixtures/example.ts', insertions: 500, deletions: 0 },
+    ] })).toMatchObject({ tier: 0, risk: 0, size: 0 })
+  })
 })

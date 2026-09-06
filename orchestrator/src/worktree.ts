@@ -105,7 +105,7 @@ export function worktreeGitEnvironment(cwd: string): WorktreeObjectEnvironment |
 }
 
 /** Drop a worker's repository routing before deriving routing for the target checkout. */
-function targetGitEnvironment(cwd: string): NodeJS.ProcessEnv {
+export function targetGitEnvironment(cwd: string): NodeJS.ProcessEnv {
   const env = { ...process.env }
   for (const variable of Object.keys(env)) {
     if (variable === 'GIT_OBJECT_DIRECTORY' || variable === 'GIT_ALTERNATE_OBJECT_DIRECTORIES' ||

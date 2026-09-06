@@ -9,6 +9,7 @@ import { CANON_SOURCE_SCHEMA, REVIEW_SCHEMA, type CanonSource, type ReviewReply 
 import { job } from './jobs.ts'
 import { classifyReviewTier, diffNumstat, type ReviewTier } from './review-tier.ts'
 import { median } from './route.ts'
+import { targetGitEnvironment } from './worktree.ts'
 
 export const REVIEW_WINDOW = 50
 /**
@@ -99,21 +100,21 @@ function tierForRuns(runs: RunRow[], database: Database): ReviewTier | null {
   }
   try {
     for (const run of runs) {
-      if (!run.base_commit || !run.input_tree || !run.head_commit || !run.repo) {
-        throw new Error(`run ${run.id} lacks base_commit, input_tree, head_commit, or repo`)
+      if (!run.base_commit || !run.input_tree || !run.repo) {
+        throw new Error(`run ${run.id} lacks base_commit, input_tree, or repo`)
       }
       const repo = projectPath(database, run.repo)
       if (!repo) throw new Error(`run ${run.id} project ${run.repo} is not registered`)
-      const base = git(repo, ['cat-file', '-e', `${run.base_commit}^{commit}`])
+      const base = git(repo, ['cat-file', '-e', `${run.base_commit}^{commit}`], true)
       if (!base.ok) throw new Error(`run ${run.id} base ${run.base_commit} cannot be resolved`)
-      const actualTree = git(repo, ['rev-parse', `${run.head_commit}^{tree}`])
-      if (!actualTree.ok || actualTree.out !== run.input_tree) {
-        throw new Error(`run ${run.id} reviewed tree ${run.input_tree} cannot be resolved from ${run.head_commit}`)
+      const actualTree = git(repo, ['cat-file', '-t', run.input_tree], true)
+      if (!actualTree.ok || actualTree.out !== 'tree') {
+        throw new Error(`run ${run.id} reviewed tree ${run.input_tree} cannot be resolved as a tree`)
       }
     }
     const run = runs[0]!
     const repo = projectPath(database, run.repo!)
-    return classifyReviewTier({ files: diffNumstat(repo!, run.base_commit!, run.head_commit!) })
+    return classifyReviewTier({ files: diffNumstat(repo!, run.base_commit!, run.input_tree!) })
   } catch (cause) {
     console.error(`warning: review tier not recorded: ${String((cause as Error)?.message ?? cause)}`)
     return null
@@ -122,9 +123,9 @@ function tierForRuns(runs: RunRow[], database: Database): ReviewTier | null {
 
 const pinRef = (runId: number) => `refs/orch/reviewed/${runId}`
 
-function git(repo: string, args: string[]): { ok: boolean; out: string; err: string } {
+function git(repo: string, args: string[], hermetic = false): { ok: boolean; out: string; err: string } {
   const p = Bun.spawnSync(['git', ...args], {
-    cwd: repo, env: process.env, stdout: 'pipe', stderr: 'pipe',
+    cwd: repo, env: hermetic ? targetGitEnvironment(repo) : process.env, stdout: 'pipe', stderr: 'pipe',
   })
   return {
     ok: p.exitCode === 0,
@@ -521,7 +522,7 @@ function calibrationCell(
   for (const row of firstIdentity.values()) {
     const tier = row.tier === null ? 'unclassified' : String(row.tier)
     const identities = roundCounts.get(tier) ?? new Map<string, number>()
-    const identity = row.branch ?? row.launch_key ?? `review:${row.review_id}`
+    const identity = row.launch_key ?? row.branch ?? `review:${row.review_id}`
     identities.set(identity, (identities.get(identity) ?? 0) + 1)
     roundCounts.set(tier, identities)
   }

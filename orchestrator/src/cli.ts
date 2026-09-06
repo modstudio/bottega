@@ -22,7 +22,8 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
 import { createHasPlaceholder, projectAt, projectByName, projects } from './projects.ts'
 import { branchTip, restoreBranch, resolveBase, repoRootOf, removeBranch, removeFor, unmergedBranch,
-         checkoutHasUncommittedWork, callerDrift, projectLockState, withProjectLock } from './worktree.ts'
+         checkoutHasUncommittedWork, callerDrift, projectLockState, withProjectLock,
+         targetGitEnvironment } from './worktree.ts'
 import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
 import { WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE,
          REVIEW_SEVERITY_INSTRUCTION, contractConflicts, rulingPrompt } from './contract.ts'
@@ -1028,7 +1029,7 @@ function usage(): never {
   orch result <run-id>          print a finished run's output; exit 2 if still running
   orch retry <run-id>           re-send a run's exact prompt to the SAME agent
       --agent <name>            ... or to a different one, deliberately
-  orch review tier <branch|run-id> classify review breadth without writing
+  orch review tier <branch|run-id|from..to> classify review breadth without writing
   orch review record <run-id>... record completed lens outputs before triage
   orch review triage <review-id> <finding> <accepted|modified|rejected|skipped>
       --category <name>         required rejection category for rejected findings
@@ -2096,16 +2097,48 @@ switch (cmd) {
     const sub = argv[1]
     if (sub === 'tier') {
       const value = argv[2]
-      if (!value) throw new Error('orch review tier <branch|run-id> [--json]')
-      const target = (await import('./landing.ts')).resolveLandingBranch(value)
-      const runProject = target.runId === null ? null : db().query(
-        'SELECT repo FROM run WHERE id=?',
-      ).get(target.runId) as { repo: string | null } | null
-      const project = runProject?.repo ? projectByName(runProject.repo) : projectAt(process.cwd())
-      if (!project) throw new Error('review tier target is not inside a registered project')
-      const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
-      if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
-      const tier = classifyReviewTier({ files: diffNumstat(project.path, trunk, target.branch) })
+      if (!value) throw new Error('orch review tier <branch|run-id|from..to> [--json]')
+      let repo: string
+      let from: string
+      let to: string
+      if (/^\d+$/.test(value)) {
+        const runId = Number(value)
+        const row = db().query(
+          'SELECT repo, base_commit, input_tree, head_commit FROM run WHERE id=?',
+        ).get(runId) as {
+          repo: string | null; base_commit: string | null; input_tree: string | null; head_commit: string | null
+        } | null
+        if (!row) throw new Error(`no run ${runId}`)
+        const project = row.repo ? projectByName(row.repo) : null
+        if (!project) throw new Error(`run ${runId} has no registered project`)
+        if (!row.base_commit) throw new Error(`run ${runId} has no recorded base commit`)
+        const reviewed = row.input_tree ?? row.head_commit
+        if (!reviewed) throw new Error(`run ${runId} has no recorded input tree or head commit`)
+        repo = project.path; from = row.base_commit; to = reviewed
+      } else {
+        const project = projectAt(process.cwd())
+        if (!project) throw new Error('review tier target is not inside a registered project')
+        repo = project.path
+        const range = value.match(/^(.+)\.\.(.+)$/)
+        if (range) {
+          from = range[1]!; to = range[2]!
+        } else {
+          const branch = Bun.spawnSync(['git', 'show-ref', '--verify', '--quiet', `refs/heads/${value}`], {
+            cwd: repo, env: targetGitEnvironment(repo), stdout: 'pipe', stderr: 'pipe',
+          })
+          if (branch.exitCode !== 0) {
+            throw new Error('review tier accepts a branch, run id, or explicit <from>..<to> range')
+          }
+          const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
+          if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
+          const base = Bun.spawnSync(['git', 'merge-base', trunk, value], {
+            cwd: repo, env: targetGitEnvironment(repo), stdout: 'pipe', stderr: 'pipe',
+          })
+          if (base.exitCode !== 0) throw new Error(base.stderr.toString().trim() || 'git merge-base failed')
+          from = base.stdout.toString().trim(); to = value
+        }
+      }
+      const tier = classifyReviewTier({ files: diffNumstat(repo, from, to) })
       if (has('json')) console.log(JSON.stringify(tier))
       else {
         console.log(`tier ${tier.tier}`)
