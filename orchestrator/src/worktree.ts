@@ -1594,6 +1594,11 @@ export function removeBranch(repoRoot: string, branch: string): boolean {
   return true
 }
 
+/** Read a local branch tip so cleanup can restore a ref another run still records. */
+export function branchTip(repoRoot: string, branch: string): string | null {
+  return gitOk(['rev-parse', '--verify', `refs/heads/${branch}`], repoRoot)
+}
+
 export type UnmergedBranch = { count: number; tip: string }
 
 /**

@@ -40,6 +40,8 @@ import { composeWorkflow, exportWorkflows, forkWorkflow, getWorkflowStep, import
          workflowVersions } from './workflows.ts'
 import { gwetAc1 } from './agreement.ts'
 import { routingBacktest, routingBacktestEnsemble, type RoutingBacktest } from './routing-backtest.ts'
+import { dockerRemovalCommand, dockerRunResources, leakedResourceLines,
+         orphanedDockerResources, resourcesForWorktree, type DockerResource } from './docker-resources.ts'
 
 /**
  * How long `orch do` watches a detached run before handing it back.
@@ -292,7 +294,8 @@ const VALUE_FLAGS = new Set(['--agent', '--file', '--schema', '--model', '--note
                              '--better-than', '--n', '--scope', '--subject', '--title', '--cwd'])
 
 type CleanupRow = {
-  id: number; worktree: string; branch: string | null; base_commit: string | null
+  id: number; repo?: string | null; worktree: string; branch: string | null
+  base_commit: string | null
 }
 
 function keptBranchLine(branch: string, count: number, id: number): string {
@@ -400,9 +403,15 @@ async function discardWorktree(
     return
   }
 
-  const { removeFor, repoRootOf, unmergedBranch, restoreBranch } = await import('./worktree.ts')
-  const repoRoot = repoRootOf(row.worktree) ?? projectAt(row.worktree)?.path ??
+  const { branchTip, removeFor, repoRootOf, unmergedBranch, restoreBranch } =
+    await import('./worktree.ts')
+  const registeredRoot = row.repo ? projectByName(row.repo)?.path : null
+  const repoRoot = repoRootOf(row.worktree) ?? registeredRoot ?? projectAt(row.worktree)?.path ??
     repoRootOf(process.cwd()) ?? process.cwd()
+  const branchOwner = row.branch ? db().query(
+    'SELECT id FROM run WHERE branch=? AND id<>? ORDER BY id LIMIT 1',
+  ).get(row.branch, row.id) as { id: number } | null : null
+  const sharedBranchTip = branchOwner && row.branch ? branchTip(repoRoot, row.branch) : null
   let protectedBranch: ReturnType<typeof unmergedBranch> = null
   if (!force && row.branch) {
     protectedBranch = unmergedBranch(repoRoot, row.branch, row.base_commit)
@@ -412,15 +421,28 @@ async function discardWorktree(
     branch: row.branch ?? `orch/${row.id}`,
     base: '',
     repoRoot,
-  }, repoRoot, force)
+  }, repoRoot, force, Boolean(branchOwner))
   if (protectedBranch && row.branch) restoreBranch(repoRoot, row.branch, protectedBranch.tip)
+  if (sharedBranchTip && row.branch) restoreBranch(repoRoot, row.branch, sharedBranchTip)
   if (!r.removed) throw new Error(r.detail)
+  const project = row.repo ?? projectAt(repoRoot)?.name ?? 'unknown'
+  const worktreeName = row.worktree.split('/').pop() ?? `orch-${row.id}`
+  const inventory = resourcesForWorktree(worktreeName)
+  if (inventory.resources.length) {
+    throw new Error(
+      `project ${project}'s remove tool left Docker resources behind:\n` +
+      leakedResourceLines(inventory.resources, project, row.id).map((line) => `  ${line}`).join('\n'),
+    )
+  }
   db().query('UPDATE run SET worktree = NULL, branch_kept = ? WHERE id = ?')
     .run(protectedBranch ? row.branch : null, row.id)
   console.log(`${verb} run ${row.id}'s worktree`)
   if (r.output) console.log(r.output)
   if (protectedBranch && row.branch) {
     console.log(keptBranchLine(row.branch, protectedBranch.count, row.id))
+  }
+  if (branchOwner && row.branch) {
+    console.log(`branch ${row.branch} left because run ${branchOwner.id} records it`)
   }
 }
 
@@ -2963,14 +2985,14 @@ switch (cmd) {
     }
     const dry = has('dry-run')
     const rows = db().query(
-      `SELECT r.id, r.worktree, r.branch, r.status, r.job,
+      `SELECT r.id, r.repo, r.worktree, r.branch, r.status, r.job,
               (julianday('now') - julianday(r.started_at)) AS age_days,
               s.delivery IS NOT NULL AS scored
          FROM run r LEFT JOIN score s ON s.run_id = r.id
         WHERE r.worktree IS NOT NULL AND r.status IN ('ok','failed','stale')
         ORDER BY r.id`,
     ).all() as {
-      id: number; worktree: string; branch: string | null; status: string
+      id: number; repo: string | null; worktree: string; branch: string | null; status: string
       job: string; age_days: number; scored: number
     }[]
 
@@ -2980,6 +3002,7 @@ switch (cmd) {
     const { projectAt } = await import('./projects.ts')
 
     let done = 0
+    const leaked = new Map<string, { resource: DockerResource; project: string; runId: number }>()
     const kept: { line: string; reason: string }[] = []
     const keep = (line: string, reason: string) => { kept.push({ line, reason }) }
     for (const r of rows) {
@@ -3008,10 +3031,20 @@ switch (cmd) {
       const w = { path: r.worktree, branch: r.branch ?? `orch/${r.id}`, base: '', repoRoot }
       const res = removeFor(w, repoRoot)
       if (res.removed) {
-        db().query('UPDATE run SET worktree = NULL WHERE id = ?').run(r.id)
-        console.log(`reclaimed ${r.id}  ${res.detail}`)
-        if (res.output) console.log(res.output)
-        done++
+        const project = r.repo ?? projectAt(repoRoot)?.name ?? 'unknown'
+        const worktreeName = r.worktree.split('/').pop() ?? `orch-${r.id}`
+        const left = resourcesForWorktree(worktreeName).resources
+        if (left.length) {
+          for (const resource of left) leaked.set(`${resource.kind}:${resource.name}`, {
+            resource, project, runId: r.id,
+          })
+          console.error(`could not fully reclaim ${r.id}: project ${project}'s remove tool leaked Docker resources`)
+        } else {
+          db().query('UPDATE run SET worktree = NULL WHERE id = ?').run(r.id)
+          console.log(`reclaimed ${r.id}  ${res.detail}`)
+          if (res.output) console.log(res.output)
+          done++
+        }
       } else {
         console.error(`could not reclaim ${r.id}: ${res.detail}`)
       }
@@ -3066,9 +3099,17 @@ switch (cmd) {
         const w = { path, branch: safe.branch, base: '', repoRoot: p.path }
         const res = removeFor(w, p.path)
         if (res.removed) {
-          console.log(`reclaimed ${label}  ${res.detail}`)
-          if (res.output) console.log(res.output)
-          done++
+          const left = resourcesForWorktree(entry.name).resources
+          if (left.length) {
+            for (const resource of left) leaked.set(`${resource.kind}:${resource.name}`, {
+              resource, project: p.name, runId: resource.runId,
+            })
+            keep(`${label}  leaked Docker resources`, 'leaked Docker resources')
+          } else {
+            console.log(`reclaimed ${label}  ${res.detail}`)
+            if (res.output) console.log(res.output)
+            done++
+          }
         } else {
           keep(`${label}  removal refused`, 'removal refused')
           console.error(`could not reclaim ${label}: ${res.detail}`)
@@ -3097,6 +3138,26 @@ switch (cmd) {
         if (omitted) {
           console.log(`  (${omitted} earlier line${omitted === 1 ? '' : 's'} omitted)`)
         }
+      }
+    }
+
+    if (!dry) {
+      // Removal attempts are not the whole inventory. A prior process may have
+      // deleted a directory without clearing the compose resources, which is
+      // the expensive silent state the nightly sweep exists to expose.
+      const inventory = dockerRunResources()
+      const owners = db().query('SELECT id, repo, worktree FROM run').all() as {
+        id: number; repo: string | null; worktree: string | null
+      }[]
+      for (const { resource, project } of orphanedDockerResources(inventory.resources, owners)) {
+        const key = `${resource.kind}:${resource.name}`
+        if (!leaked.has(key)) leaked.set(key, { resource, project, runId: resource.runId })
+      }
+    }
+    if (!dry && leaked.size) {
+      console.error(`\nleaked Docker resources: ${leaked.size}`)
+      for (const { resource, project, runId } of leaked.values()) {
+        console.error(`  ${leakedResourceLines([resource], project, runId)[0]}`)
       }
     }
 
@@ -3215,7 +3276,7 @@ switch (cmd) {
     })()
     console.log(`abandoned run ${id}`)
 
-    if (row.worktree && existsSync(row.worktree)) {
+    if (row.worktree) {
       await discardWorktree(
         row as CleanupRow, ['running', 'asking'], 'abandoned', has('force'),
       )
@@ -4302,6 +4363,17 @@ switch (cmd) {
     // it — reported none.
     const owed = unscoredCount()
     console.log(`\nruns ${counts.runs}, scored ${counts.scored}, unscored ${owed}`)
+    const docker = dockerRunResources()
+    const owners = db().query('SELECT id, repo, worktree FROM run').all() as {
+      id: number; repo: string | null; worktree: string | null
+    }[]
+    const orphans = orphanedDockerResources(docker.resources, owners)
+    console.log(`\ndocker orphans  ${orphans.length}`)
+    for (const { resource, project } of orphans) {
+      console.log(`  ${resource.kind} ${resource.name} — project ${project}, run ${resource.runId}`)
+      console.log(`    ${dockerRemovalCommand(resource)}`)
+    }
+    for (const error of docker.errors) console.log(`  inventory unavailable: ${error}`)
     for (const j of Object.keys(JOBS)) {
       try { const p = pick(j); console.log(`  ${j.padEnd(15)} -> ${p.agent}`) }
       catch (e) { console.log(`  ${j.padEnd(15)} -> none (${(e as Error).message})`) }

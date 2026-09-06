@@ -1913,6 +1913,27 @@ function addRun(o: {
   ) as { id: number }).id
 }
 
+function fakeDocker(containers: string[], volumes: string[]): { dir: string; env: Record<string, string> } {
+  const fakeDir = mkdtempSync(join(tmpdir(), 'orch-fake-docker-'))
+  const script = join(fakeDir, 'docker')
+  writeFileSync(script, `#!/bin/sh
+case "$1 $2" in
+  "ps -a") printf '%s\\n' "$FAKE_DOCKER_CONTAINERS" ;;
+  "volume ls") printf '%s\\n' "$FAKE_DOCKER_VOLUMES" ;;
+  *) exit 9 ;;
+esac
+`)
+  chmodSync(script, 0o755)
+  return {
+    dir: fakeDir,
+    env: {
+      PATH: `${fakeDir}:${process.env.PATH ?? ''}`,
+      FAKE_DOCKER_CONTAINERS: containers.join('\n'),
+      FAKE_DOCKER_VOLUMES: volumes.join('\n'),
+    },
+  }
+}
+
 const reviewReply = (findings = 1, severity = 'major') => ({
   findings: Array.from({ length: findings }, (_, i) => ({
     severity, location: `file.ts:${i + 1}`, evidence: `evidence ${i + 1}`,
@@ -7428,6 +7449,35 @@ describe('detached run collection', () => {
     expect(r.out).toContain('runs 2, scored 1, unscored 0')
   })
 
+  test('doctor lists orphaned run containers and volumes with removal commands', () => {
+    const id = addRun({ agent: 'codex', job: 'implement', repo: 'adanim' })
+    db().query('UPDATE run SET worktree=? WHERE id=?')
+      .run(`/tmp/missing/orch-${id}`, id)
+    const docker = fakeDocker(
+      [`orch-${id}-postgres-1`, 'ordinary-container'],
+      [`orch-${id}_adanim-pgdata`, 'ordinary-volume'],
+    )
+    try {
+      const p = Bun.spawnSync([process.execPath, CLI, 'doctor'], {
+        env: {
+          ...process.env, ...docker.env, ORCH_DB: process.env.ORCH_DB!,
+          ORCH_DEPTH: '0', ORCH_LOCAL_BASE_URL: '',
+        },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      const out = p.stdout.toString()
+      expect(p.exitCode).toBe(0)
+      expect(out).toContain('docker orphans  2')
+      expect(out).toContain(`container orch-${id}-postgres-1 — project adanim, run ${id}`)
+      expect(out).toContain(`docker rm -f orch-${id}-postgres-1`)
+      expect(out).toContain(`volume orch-${id}_adanim-pgdata — project adanim, run ${id}`)
+      expect(out).toContain(`docker volume rm orch-${id}_adanim-pgdata`)
+      expect(out).not.toContain('ordinary-container')
+    } finally {
+      rmSync(docker.dir, { recursive: true, force: true })
+    }
+  })
+
   test('doctor prints every CLI version and warns below its recorded minimum', () => {
     upsertProject({ name: PLATFORM_SLUG, path: '/registered/platform' })
     const binDir = join(dir, 'doctor-bin')
@@ -10451,6 +10501,75 @@ echo 'Usage: scripts/worktree create [seed]'
     }
   })
 
+  test('discard reports Docker resources left by a successful project remove and keeps the pointer', () => {
+    const { repo } = scratchRepo()
+    const id = addRun({ agent: 'codex', job: 'implement', repo: 'leaking-tool' })
+    const tree = createWorktree(repo, id)
+    const script = join(repo, 'remove-but-leak.sh')
+    writeFileSync(script,
+      'git worktree remove --force "$1"\n' +
+      'git branch -D "$2"\n')
+    upsertProject({
+      name: 'leaking-tool', path: realpathSync(repo),
+      settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
+    })
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, id)
+    const docker = fakeDocker(
+      [`orch-${id}-postgres-1`, 'unrelated-container'],
+      [`orch-${id}_adanim-pgdata`, 'unrelated-volume'],
+    )
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
+        env: { ...process.env, ...docker.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(p.exitCode).not.toBe(0)
+      expect(p.stderr.toString()).toContain(`container orch-${id}-postgres-1 leaked by project leaking-tool`)
+      expect(p.stderr.toString()).toContain(`volume orch-${id}_adanim-pgdata leaked by project leaking-tool`)
+      expect(p.stderr.toString()).not.toContain('unrelated-container')
+      expect(existsSync(tree.path)).toBe(false)
+      expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
+        .toEqual({ worktree: tree.path })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(docker.dir, { recursive: true, force: true })
+    }
+  })
+
+  test('abandon invokes the project remove tool even when the worktree directory is already gone', () => {
+    const { repo } = scratchRepo()
+    const id = addRun({
+      agent: 'codex', job: 'implement', status: 'asking', repo: 'gone-tree-tool',
+    })
+    const gone = join(repo, '.claude', 'worktrees', `orch-${id}`)
+    const called = join(repo, 'remove-called')
+    upsertProject({
+      name: 'gone-tree-tool', path: realpathSync(repo),
+      settings: {
+        trunk: 'main', worktree: { remove: `printf removed > "${called}"` },
+      },
+    })
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
+      .run(repo, gone, `orch/${id}`, id)
+    const docker = fakeDocker([], [])
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const p = Bun.spawnSync([process.execPath, CLI, 'abandon', String(id)], {
+        env: { ...process.env, ...docker.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(p.exitCode).toBe(0)
+      expect(readFileSync(called, 'utf8')).toBe('removed')
+      expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
+        .toEqual({ worktree: null })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(docker.dir, { recursive: true, force: true })
+    }
+  })
+
   test('discard --force does not override a project tool for a tree orch did not create', () => {
     const { repo } = scratchRepo()
     const path = join(repo, '.claude', 'worktrees', 'operator-tree')
@@ -11312,6 +11431,17 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
       err: new TextDecoder().decode(p.stderr),
     }
   }
+  const orchWithEnv = (env: Record<string, string>, ...args: string[]) => {
+    const p = Bun.spawnSync([process.execPath, CLI, ...args], {
+      env: { ...process.env, ...env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    return {
+      code: p.exitCode,
+      out: new TextDecoder().decode(p.stdout),
+      err: new TextDecoder().decode(p.stderr),
+    }
+  }
   const git = (cwd: string, ...args: string[]) => {
     const p = Bun.spawnSync(['git', ...args], {
       cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
@@ -11418,6 +11548,37 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
       expect(existsSync(tree)).toBe(false)
     } finally {
       rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('sweep reports resources left by a project remove in its summary', () => {
+    const repo = scratchRepo()
+    const project = `sweep-${repo.split('/').pop()}`
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
+    const tree = join(repo, '.claude', 'worktrees', `orch-${id}`)
+    git(repo, 'worktree', 'add', '-b', `orch/${id}`, tree, 'main')
+    upsertProject({
+      name: project, path: repo,
+      settings: {
+        trunk: 'main',
+        worktree: {
+          remove: `${hermeticGitCommand} worktree remove --force {path}; ` +
+            `${hermeticGitCommand} branch -D {branch}`,
+        },
+      },
+    })
+    db().query('UPDATE run SET worktree=?, branch=? WHERE id=?').run(tree, `orch/${id}`, id)
+    const docker = fakeDocker([], [`orch-${id}_${project}-pgdata`])
+    try {
+      const r = orchWithEnv(docker.env, 'sweep', '--older-than', '0', '--force')
+      expect(r.code).toBe(0)
+      expect(r.err).toContain('leaked Docker resources: 1')
+      expect(r.err).toContain(`volume orch-${id}_${project}-pgdata leaked by project ${project}`)
+      expect(r.out).toContain('reclaimed 0, kept 0')
+      expect(db().query('SELECT worktree FROM run WHERE id=?').get(id)).toEqual({ worktree: tree })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(docker.dir, { recursive: true, force: true })
     }
   })
 
