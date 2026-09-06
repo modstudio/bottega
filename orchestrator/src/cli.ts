@@ -16,7 +16,7 @@ import { guide } from './guide.ts'
 import { repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses,
          packedResumePrompt, type DetachSpec } from './run.ts'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
@@ -385,6 +385,73 @@ function orphanKeepReason(detail: string): string {
   return /^has commits not reachable from /.test(detail)
     ? 'holds commits not on trunk'
     : detail
+}
+
+type OrphanAge = { days: number; source: 'run row' | 'commit date' | 'branch reflog' }
+
+function templateRunId(name: string, branchTemplate?: string): number | null {
+  const conventional = name.match(/^orch-(\d+)$/)
+  if (conventional) return Number(conventional[1])
+  if (!branchTemplate?.includes('{id}')) return null
+
+  let idGroup = 0
+  const parts = basename(branchTemplate).split(/(\{id\}|\{key\})/g)
+  const pattern = parts.map((part) => {
+    if (part === '{id}') {
+      idGroup++
+      return idGroup === 1 ? '(\\d+)' : '\\d+'
+    }
+    if (part === '{key}') return '[^/]+'
+    return part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  }).join('')
+  const match = name.match(new RegExp(`^${pattern}$`))
+  return match?.[1] ? Number(match[1]) : null
+}
+
+function gitOutput(cwd: string, args: string[]): string | null {
+  const result = Bun.spawnSync(['git', ...args], {
+    cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
+  })
+  if (result.exitCode !== 0) return null
+  return result.stdout.toString().trim() || null
+}
+
+function orphanAge(
+  path: string, name: string, branchTemplate: string | undefined, now = Date.now(),
+): OrphanAge | null {
+  const runId = templateRunId(name, branchTemplate)
+  if (runId !== null) {
+    const member = db().query('SELECT id, parent_run_id FROM run WHERE id=?').get(runId) as
+      { id: number; parent_run_id: number | null } | null
+    if (member) {
+      const rootId = member.parent_run_id ?? member.id
+      const terminal = db().query(
+        `SELECT started_at, latency_ms FROM run
+          WHERE id=? OR parent_run_id=?
+          ORDER BY turn DESC, id DESC LIMIT 1`,
+      ).get(rootId, rootId) as { started_at: string; latency_ms: number | null }
+      const started = Date.parse(terminal.started_at)
+      if (Number.isFinite(started)) {
+        const terminalMs = started + (terminal.latency_ms ?? 0)
+        return { days: (now - terminalMs) / 86_400_000, source: 'run row' }
+      }
+      return null
+    }
+  }
+
+  const branch = gitOutput(path, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
+  if (!branch) return null
+  const commitSeconds = Number(gitOutput(path, ['log', '-1', '--format=%ct', branch]))
+  if (Number.isFinite(commitSeconds) && commitSeconds > 0) {
+    return { days: (now - commitSeconds * 1000) / 86_400_000, source: 'commit date' }
+  }
+
+  const reflog = gitOutput(path, ['reflog', 'show', '-1', '--date=unix', '--format=%gd', branch])
+  const reflogSeconds = Number(reflog?.match(/@\{(\d+)\}$/)?.[1])
+  if (Number.isFinite(reflogSeconds) && reflogSeconds > 0) {
+    return { days: (now - reflogSeconds * 1000) / 86_400_000, source: 'branch reflog' }
+  }
+  return null
 }
 
 function printSweepKept(
@@ -3380,7 +3447,7 @@ switch (cmd) {
     }[]
 
     const { removeFor, sweepWithTool, repoRootOf, orphanSafety,
-            isOrchWorktree, ORCH_RUN_MARKER } =
+            isOrchWorktree } =
       await import('./worktree.ts')
     const { projectAt } = await import('./projects.ts')
 
@@ -3545,10 +3612,14 @@ switch (cmd) {
           keep(`${label}  kept: not created by orch`, 'not created by orch')
           continue
         }
-        const marker = join(path, ORCH_RUN_MARKER)
-        const ageDays = (Date.now() - statSync(existsSync(marker) ? marker : path).mtimeMs) / 86_400_000
-        if (ageDays < days) {
-          keep(`${label}  too recent (${ageDays.toFixed(1)}d)`, 'under the age threshold')
+        const age = orphanAge(path, entry.name, p.settings.worktree?.branch)
+        if (!age) {
+          keep(`${label}  age unknown — kept`, 'age unknown — kept')
+          continue
+        }
+        const ageDetail = `${age.days.toFixed(1)}d by ${age.source}`
+        if (age.days < days) {
+          keep(`${label}  too recent (${ageDetail})`, 'under the age threshold')
           continue
         }
         const trunk = typeof p.settings.trunk === 'string' && p.settings.trunk.trim()
@@ -3562,7 +3633,11 @@ switch (cmd) {
           keep(`${label}  ${safe.detail}`, orphanKeepReason(safe.detail))
           continue
         }
-        if (dry) { console.log(`would reclaim ${label}  ${safe.detail}`); done++; continue }
+        if (dry) {
+          console.log(`would reclaim ${label}  ${ageDetail}; ${safe.detail}`)
+          done++
+          continue
+        }
 
         const w = { path, branch: safe.branch, base: '', repoRoot: p.path }
         const runId = orchRunId(entry.name)

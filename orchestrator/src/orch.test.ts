@@ -13342,6 +13342,33 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     return p.stdout.toString().trim()
   }
+  const gitWithEnv = (cwd: string, env: Record<string, string>, ...args: string[]) => {
+    const p = Bun.spawnSync(['git', ...args], {
+      cwd, env: hermeticGitEnv(env), stdout: 'pipe', stderr: 'pipe',
+    })
+    if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+    return p.stdout.toString().trim()
+  }
+  const ageHead = (repo: string, days: number) => {
+    const date = new Date(Date.now() - days * 86_400_000).toISOString()
+    gitWithEnv(
+      repo, { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+      'commit', '--amend', '--no-edit', '--date', date,
+    )
+  }
+  const ageGit = (mode: 'reflog' | 'unknown', reflogSeconds = 0) => {
+    const dir = mkdtempSync(join(tmpdir(), 'orch-age-git-'))
+    const script = join(dir, 'git')
+    const actualGit = Bun.which('git')!
+    writeFileSync(script, `#!/bin/sh
+if [ "$1" = "log" ]; then exit 1; fi
+if [ "$1" = "symbolic-ref" ] && [ "${mode}" = "unknown" ]; then exit 1; fi
+if [ "$1" = "reflog" ]; then printf '%s\\n' "branch@{${reflogSeconds}}"; exit 0; fi
+exec ${JSON.stringify(actualGit)} "$@"
+`)
+    chmodSync(script, 0o755)
+    return { dir, env: { PATH: `${dir}:${process.env.PATH ?? ''}` } }
+  }
   const scratchRepo = () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-sweep-'))
     git(repo, 'init', '-b', 'main')
@@ -13382,11 +13409,85 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     const tree = join(repo, '.claude', 'worktrees', 'orch-900')
     try {
       git(repo, 'worktree', 'add', '-b', 'orch/900', tree, 'main')
-      const r = orch('sweep', '--older-than', '1')
+      const r = orch('sweep', '--older-than', '1', '--dry-run')
       expect(r.code).toBe(0)
-      expect(r.out).toContain(`orphan  ${tree}  too recent (0.0d)`)
+      expect(r.out).toContain(`orphan  ${tree}  too recent (0.0d by commit date)`)
       expect(existsSync(tree)).toBe(true)
     } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a fresh directory is reclaimable by the latest turn in its named run chain', () => {
+    const repo = scratchRepo()
+    const project = `sweep-${repo.split('/').pop()}`
+    const root = addRun({
+      agent: 'codex', job: 'implement', status: 'ok', repo: project,
+      startedAt: new Date(Date.now() - 30 * 86_400_000).toISOString(),
+    })
+    const child = addRun({
+      agent: 'codex', job: 'implement', status: 'ok', repo: project, parent: root, turn: 2,
+      startedAt: new Date(Date.now() - 14 * 86_400_000).toISOString(),
+    })
+    db().query('UPDATE run SET latency_ms=NULL WHERE id=?').run(child)
+    const name = `DEV-298-orch-${root}`
+    const tree = join(repo, '.claude', 'worktrees', name)
+    upsertProject({
+      name: project, path: repo,
+      settings: { trunk: 'main', worktree: { branch: '{key}-orch-{id}' } },
+    })
+    try {
+      git(repo, 'worktree', 'add', '-b', name, tree, 'main')
+      const fresh = new Date()
+      utimesSync(tree, fresh, fresh)
+
+      const r = orch('sweep', '--older-than', '7', '--dry-run')
+      expect(r.code).toBe(0)
+      expect(r.out).toContain(`would reclaim orphan  ${tree}`)
+      expect(r.out).toContain('14.0d by run row; clean and HEAD is reachable from main')
+      expect(Date.now() - statSync(tree).mtimeMs).toBeLessThan(10_000)
+      expect(existsSync(tree)).toBe(true)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('an orphan falls back from its commit date to its branch reflog', () => {
+    const repo = scratchRepo()
+    const tree = join(repo, '.claude', 'worktrees', 'reflog-worker')
+    const fake = ageGit('reflog', Math.floor((Date.now() - 2 * 86_400_000) / 1000))
+    try {
+      git(repo, 'worktree', 'add', '-b', 'reflog-worker', tree, 'main')
+      writeFileSync(join(tree, '.orch-run'), `997\n${repo}\n`)
+      appendFileSync(resolve(tree, git(tree, 'rev-parse', '--git-path', 'info/exclude')), '.orch-run\n')
+
+      const r = orchWithEnv(fake.env, 'sweep', '--older-than', '1', '--dry-run')
+      expect(r.code).toBe(0)
+      expect(r.out).toContain(`would reclaim orphan  ${tree}`)
+      expect(r.out).toContain('2.0d by branch reflog; clean and HEAD is reachable from main')
+      expect(existsSync(tree)).toBe(true)
+    } finally {
+      rmSync(fake.dir, { recursive: true, force: true })
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('an orphan with no run, commit, or reflog age is kept as unknown', () => {
+    const repo = scratchRepo()
+    const tree = join(repo, '.claude', 'worktrees', 'unknown-worker')
+    const fake = ageGit('unknown')
+    try {
+      git(repo, 'worktree', 'add', '-b', 'unknown-worker', tree, 'main')
+      writeFileSync(join(tree, '.orch-run'), `998\n${repo}\n`)
+      appendFileSync(resolve(tree, git(tree, 'rev-parse', '--git-path', 'info/exclude')), '.orch-run\n')
+
+      const r = orchWithEnv(fake.env, 'sweep', '--older-than', '0', '--dry-run')
+      expect(r.code).toBe(0)
+      expect(r.out).toContain(`orphan  ${tree}  age unknown — kept`)
+      expect(r.out).not.toContain(`would reclaim orphan  ${tree}`)
+      expect(existsSync(tree)).toBe(true)
+    } finally {
+      rmSync(fake.dir, { recursive: true, force: true })
       rmSync(repo, { recursive: true, force: true })
     }
   })
@@ -13395,11 +13496,10 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     const repo = scratchRepo()
     const tree = join(repo, '.claude', 'worktrees', 'old-worker')
     try {
+      ageHead(repo, 2)
       git(repo, 'worktree', 'add', '-b', 'old-worker', tree, 'main')
       writeFileSync(join(tree, '.orch-run'), `901\n${repo}\n`)
       appendFileSync(resolve(tree, git(tree, 'rev-parse', '--git-path', 'info/exclude')), '.orch-run\n')
-      const old = new Date(Date.now() - 2 * 86_400_000)
-      utimesSync(join(tree, '.orch-run'), old, old)
 
       const r = orch('sweep', '--older-than', '1')
       expect(r.code).toBe(0)
@@ -13415,11 +13515,10 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     const name = `sweep-${repo.split('/').pop()}`
     const tree = join(repo, '.claude', 'worktrees', 'old-worker')
     try {
+      ageHead(repo, 2)
       git(repo, 'worktree', 'add', '-b', 'old-worker', tree, 'main')
       writeFileSync(join(tree, '.orch-run'), `903\n${repo}\n`)
       appendFileSync(resolve(tree, git(tree, 'rev-parse', '--git-path', 'info/exclude')), '.orch-run\n')
-      const old = new Date(Date.now() - 2 * 86_400_000)
-      utimesSync(join(tree, '.orch-run'), old, old)
       upsertProject({
         name, path: repo,
         settings: {
@@ -13689,11 +13788,10 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     upsertProject({ name, path: repo, settings: {} })
     const tree = join(repo, '.claude', 'worktrees', 'old-worker')
     try {
+      ageHead(repo, 2)
       git(repo, 'worktree', 'add', '-b', 'old-worker', tree, 'main')
       writeFileSync(join(tree, '.orch-run'), `902\n${repo}\n`)
       appendFileSync(resolve(tree, git(tree, 'rev-parse', '--git-path', 'info/exclude')), '.orch-run\n')
-      const old = new Date(Date.now() - 2 * 86_400_000)
-      utimesSync(join(tree, '.orch-run'), old, old)
 
       const r = orch('sweep', '--older-than', '1')
       expect(r.code).toBe(0)
