@@ -2,6 +2,8 @@ import { db, WEIGHT, FIDELITY_PENALTY, weigh } from './db.ts'
 import { AGENTS, unavailableReason } from './agents.ts'
 import { job, JOBS } from './jobs.ts'
 import { COOLS_DOWN, NOT_EVIDENCE } from './failure.ts'
+import { reviewCalibration } from './review.ts'
+import { failingDefaultCanonEvals } from './canon-eval-status.ts'
 
 export type Candidate = {
   agent: string
@@ -244,12 +246,14 @@ function beta(alpha: number, betaValue: number, rng: () => number): number {
   return x / (x + y)
 }
 
-type ThompsonCandidate = Pick<Candidate, 'agent' | 'evidence' | 'score' | 'free' | 'latencyMs'>
+type ThompsonCandidate = Pick<Candidate, 'agent' | 'evidence' | 'score' | 'free' | 'latencyMs'> & {
+  precision?: number | null
+}
 
 /** The one Thompson ranking used by every historical replay trajectory. */
 export function thompsonRank<T extends ThompsonCandidate>(
   candidates: readonly T[], draw = true, rng: () => number = Math.random,
-): { chosen: T; expected: T; posteriorMean: number } {
+): { chosen: T; expected: T; posteriorMean: number; tied: number } {
   const field = candidates
     .filter((candidate) => candidate.evidence >= MIN_SAMPLE && candidate.score !== null)
     .map((candidate) => candidate.score!)
@@ -263,12 +267,29 @@ export function thompsonRank<T extends ThompsonCandidate>(
     return { candidate, mean, sample: draw ? beta(successes, failures, rng) : mean }
   })
   const tie = (a: typeof posterior[number], b: typeof posterior[number]) =>
+    (a.candidate.precision === null || a.candidate.precision === undefined
+      ? (b.candidate.precision === null || b.candidate.precision === undefined ? 0 : 1)
+      : b.candidate.precision === null || b.candidate.precision === undefined
+        ? -1
+        : b.candidate.precision - a.candidate.precision) ||
     Number(b.candidate.free) - Number(a.candidate.free) ||
     (a.candidate.latencyMs ?? Infinity) - (b.candidate.latencyMs ?? Infinity) ||
+    b.candidate.evidence - a.candidate.evidence ||
     a.candidate.agent.localeCompare(b.candidate.agent)
-  const expected = [...posterior].sort((a, b) => b.mean - a.mean || tie(a, b))[0]!
-  const chosen = [...posterior].sort((a, b) => b.sample - a.sample || tie(a, b))[0]!
-  return { chosen: chosen.candidate, expected: expected.candidate, posteriorMean: chosen.mean }
+  const rank = (metric: 'mean' | 'sample') => {
+    const leader = [...posterior].sort((a, b) => b[metric] - a[metric])[0]!
+    const band = NOISE_BAND / 1.5
+    const tied = posterior.filter((row) => leader[metric] - row[metric] <= band)
+    return { row: tied.sort(tie)[0]!, tied: tied.length }
+  }
+  const expected = rank('mean')
+  const chosen = rank('sample')
+  return {
+    chosen: chosen.row.candidate,
+    expected: expected.row.candidate,
+    posteriorMean: chosen.row.mean,
+    tied: chosen.tied,
+  }
 }
 
 /**
@@ -675,7 +696,7 @@ export function evidenceFor(
 
 type CurrentPolicyCandidate = Pick<
   Candidate, 'agent' | 'scored' | 'failures' | 'none' | 'evidence' | 'score' | 'shrunk' | 'free' | 'latencyMs'
->
+> & { precision?: number | null }
 
 /** Failure-only history has already answered whether another run is worthwhile. */
 function worthExploring(c: CurrentPolicyCandidate): boolean {
@@ -700,32 +721,28 @@ export type CurrentPolicySelection<T extends CurrentPolicyCandidate> = {
  */
 export function currentPolicySelection<T extends CurrentPolicyCandidate>(
   candidates: readonly T[], prefer: readonly string[], explore = true, rng: () => number = Math.random,
+  explorationExcluded: ReadonlySet<string> = new Set(),
 ): CurrentPolicySelection<T> {
   const proven = candidates.filter((c) => c.evidence >= MIN_SAMPLE && c.score !== null)
   const unproven = candidates.filter((c) => c.evidence < MIN_SAMPLE)
 
   if (proven.length > 0) {
-    const worthTrying = unproven.filter(worthExploring)
+    const worthTrying = unproven.filter((candidate) =>
+      worthExploring(candidate) && !explorationExcluded.has(candidate.agent))
     if (explore && worthTrying.length > 0 && rng() < EXPLORE_RATE) {
       const challenger = [...worthTrying].sort((a, b) => a.evidence - b.evidence)[0]!
       return { chosen: challenger, mode: 'challenger', tied: 0 }
     }
-    const ranked = [...proven].sort((a, b) => b.shrunk! - a.shrunk!)
-    const top = ranked[0]!.shrunk!
-    const tied = ranked.filter((c) => top - c.shrunk! <= NOISE_BAND)
-    tied.sort((a, b) =>
-      Number(b.free) - Number(a.free) ||
-      (a.latencyMs ?? Infinity) - (b.latencyMs ?? Infinity) ||
-      b.evidence - a.evidence)
-    const best = tied[0]!
+    const ranked = thompsonRank(proven, explore, rng)
+    const best = ranked.chosen
     if (explore && unproven.length === 0 && proven.length === candidates.length &&
         rng() < STANDING_EXPLORE_RATE) {
       const challenger = [...proven]
-        .filter((c) => c.agent !== best.agent && worthExploring(c))
+        .filter((c) => c.agent !== best.agent && worthExploring(c) && !explorationExcluded.has(c.agent))
         .sort((a, b) => a.evidence - b.evidence)[0]
-      if (challenger) return { chosen: challenger, mode: 'standing-challenger', tied: tied.length }
+      if (challenger) return { chosen: challenger, mode: 'standing-challenger', tied: ranked.tied }
     }
-    return { chosen: best, mode: 'best', tied: tied.length }
+    return { chosen: best, mode: 'best', tied: ranked.tied }
   }
   for (const name of prefer) {
     const preferred = candidates.find((candidate) => candidate.agent === name)
@@ -747,6 +764,8 @@ export function pick(
   avoid: { agents?: string[]; models?: string[]; model?: string } = {},
   /** An explicit calibration probe may test whether its named agent recovered. */
   probe = false,
+  /** Stable findings viewpoint used for reviewer-precision calibration. */
+  lens?: string,
 ): { agent: string; reason: string } {
   const j = job(jobName)
   const ev = evidenceFor(jobName, promptBytes, stack, avoid.model)
@@ -805,37 +824,60 @@ export function pick(
     )
   }
   eligible = constrained
-  const withConstraint = (reason: string) => reason
-  const selected = currentPolicySelection(eligible, j.prefer, explore)
+  if (j.findings && lens?.trim()) {
+    eligible = eligible.map((candidate) => ({
+      ...candidate,
+      precision: reviewCalibration(
+        lens.trim(), candidate.agent, avoid.model ?? AGENTS[candidate.agent]!.model,
+      ).precision,
+    }))
+  }
+  const failingEvals = failingDefaultCanonEvals()
+  const explorationExcluded = new Set(failingEvals.length ? [failingEvals[0]!.agent] : [])
+  const notExplored = failingEvals.map((row) =>
+    `${row.agent} not explored: failing canon eval ${row.slug}`)
+  const withConstraint = (reason: string) => [reason, ...notExplored].join('; ')
+  const selected = currentPolicySelection(eligible, j.prefer, explore, Math.random, explorationExcluded)
   const chosen = selected.chosen
+  const policy = explore ? 'thompson' : 'mean'
   if (selected.mode === 'challenger') return {
     agent: chosen.agent,
     reason: withConstraint(
-      `challenger (${chosen.evidence}/${MIN_SAMPLE} judged${scope(chosen)}, exploring)`,
+      `${policy}; challenger (${chosen.evidence}/${MIN_SAMPLE} judged${scope(chosen)}, exploring)`,
     ),
   }
   if (selected.mode === 'standing-challenger') return {
     agent: chosen.agent,
     reason: withConstraint(
-      `standing challenger (${chosen.evidence} judged${scope(chosen)}, exploring)`,
+      `${policy}; standing challenger (${chosen.evidence} judged${scope(chosen)}, exploring)`,
     ),
   }
   if (selected.mode === 'preference') return {
     agent: chosen.agent,
     reason: withConstraint(
-      `preference (only ${chosen.evidence} judged${scope(chosen)}, need ${MIN_SAMPLE})`,
+      `${policy}; preference (only ${chosen.evidence} judged${scope(chosen)}, need ${MIN_SAMPLE})`,
     ),
   }
   if (selected.mode === 'only') {
-    return { agent: chosen.agent, reason: withConstraint('only eligible agent') }
+    return { agent: chosen.agent, reason: withConstraint(`${policy}; only eligible agent`) }
   }
   const pct = `${(chosen.score! * 100).toFixed(0)}% (shrunk ${(chosen.shrunk! * 100).toFixed(0)}%) ` +
     `over ${chosen.evidence} judged${scope(chosen)}` +
     (chosen.failures ? ` (incl. ${chosen.failures} failed)` : '')
-  if (selected.tied === 1) return { agent: chosen.agent, reason: withConstraint(`best score ${pct}`) }
-  const edge = chosen.free ? 'costs no quota' : `fastest at ${Math.round((chosen.latencyMs ?? 0) / 1000)}s`
+  const chosenPrecision = 'precision' in chosen && typeof chosen.precision === 'number'
+    ? chosen.precision
+    : null
+  const precision = chosenPrecision !== null
+    ? `; precision ${(chosenPrecision * 100).toFixed(0)}%`
+    : ''
+  if (selected.tied === 1) return {
+    agent: chosen.agent, reason: withConstraint(`${policy}; best score ${pct}${precision}`),
+  }
+  const edge = chosenPrecision !== null
+    ? `review precision ${(chosenPrecision * 100).toFixed(0)}%`
+    : chosen.free ? 'costs no quota' : `fastest at ${Math.round((chosen.latencyMs ?? 0) / 1000)}s`
   return {
     agent: chosen.agent,
-    reason: withConstraint(`${pct}, tied with ${selected.tied - 1} other — ${edge}`),
+    reason: withConstraint(`${policy}; ${pct}, tied with ${selected.tied - 1} other — ${edge}`),
   }
 }

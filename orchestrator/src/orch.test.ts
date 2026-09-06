@@ -1672,7 +1672,7 @@ const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePaths, pr
 const run = runJob
 const {
   CANON_EVALS, CANON_EVAL_LENS, TRACKED_EVAL_PATH, UNTRACKED_EVAL_PATH,
-  runCanonEvals, canonEvalsReport, failingCanonEvalSlugs, lastCanonEvalAt,
+  runCanonEvals, canonEvalsReport, currentCanonEvalSha, failingCanonEvalSlugs, lastCanonEvalAt,
 } = await import('./evals.ts')
 const retargetedPrompt = (
   prompt: string, callers: string | string[], worktree: string,
@@ -6425,6 +6425,77 @@ describe('the noise band', () => {
 })
 
 describe('routing exploration', () => {
+  test('an unproven agent can still win the exploration coin with Thompson proven ranking', () => {
+    for (let i = 0; i < MIN_SAMPLE; i++) {
+      score(addRun({ agent: 'codex', job: 'review-lens' }), 'full', 'right')
+    }
+    const random = Math.random
+    Math.random = () => 0
+    try {
+      const routed = pick('review-lens')
+      expect(routed.agent).toBe('grok')
+      expect(routed.reason).toContain('thompson; challenger')
+    } finally { Math.random = random }
+  })
+
+  test('draw=false ranks proven agents by the same shrunk posterior mean', () => {
+    for (let i = 0; i < MIN_SAMPLE; i++) {
+      score(addRun({ agent: 'codex', job: 'review-lens' }), 'full', 'right')
+      score(addRun({ agent: 'grok', job: 'review-lens' }), 'full', 'wrong')
+    }
+    const expected = candidates('review-lens')
+      .filter((candidate) => candidate.evidence >= MIN_SAMPLE)
+      .sort((a, b) => b.shrunk! - a.shrunk!)[0]!
+    const routed = pick('review-lens', undefined, 0, false)
+    expect(routed.agent).toBe(expected.agent)
+    expect(routed.reason).toContain('mean;')
+  })
+
+  test('precision below its floor is ignored and measured precision breaks a quality tie', () => {
+    for (let i = 0; i < MIN_SAMPLE; i++) {
+      score(addRun({ agent: 'codex', job: 'review-lens' }), 'full', 'right')
+      score(addRun({ agent: 'grok', job: 'review-lens' }), 'full', 'right')
+    }
+    const calibrate = (agent: string, n: number) => {
+      const runId = addRun({ agent, job: 'review-lens', lens: 'correctness' })
+      const reviewId = recordReview(runId, reviewReply(n))
+      for (let i = 1; i <= n; i++) triageFinding(reviewId, i, 'accepted')
+      completeReview(reviewId)
+    }
+    calibrate('grok', MIN_REVIEW_TRIAGED - 1)
+    expect(pick('review-lens', undefined, 0, false, null, {}, false, 'correctness').agent)
+      .toBe('codex')
+    calibrate('grok', 1)
+    const routed = pick('review-lens', undefined, 0, false, null, {}, false, 'correctness')
+    expect(routed.agent).toBe('grok')
+    expect(routed.reason).toContain('precision 100%')
+  })
+
+  test('a failing default-agent eval closes exploration but not proven leading rank', () => {
+    for (let i = 0; i < MIN_SAMPLE; i++) {
+      score(addRun({ agent: 'grok', job: 'review-lens' }), 'full', 'mixed')
+    }
+    const evalRun = addRun({ agent: 'codex', job: 'implement', probe: 1 })
+    db().query(
+      `INSERT INTO canon_eval (slug, run_id, canon_sha, agent, model, pass, why, at)
+       VALUES ('asks-instead-of-deciding', ?, 'sha', 'codex', 'm', 0, 'built', ?)`,
+    ).run(evalRun, nowIso())
+    const random = Math.random
+    Math.random = () => 0
+    try {
+      const protectedRoute = pick('review-lens')
+      expect(protectedRoute.agent).toBe('grok')
+      expect(protectedRoute.reason).toContain(
+        'codex not explored: failing canon eval asks-instead-of-deciding',
+      )
+    } finally { Math.random = random }
+
+    for (let i = 0; i < MIN_SAMPLE; i++) {
+      score(addRun({ agent: 'codex', job: 'review-lens' }), 'full', 'right')
+    }
+    expect(pick('review-lens', undefined, 0, false).agent).toBe('codex')
+  })
+
   test('a wrong answer stays explorable, while delivery-none-only history does not', () => {
     for (let i = 0; i < MIN_SAMPLE; i++) {
       score(addRun({ agent: 'codex', job: 'review-lens' }), 'full', 'right')
@@ -8484,8 +8555,8 @@ describe('routing backtest statistics', () => {
       'routing-backtest', '--job', 'fix', '--seed', '2',
     ], { env: { ...process.env, ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe' })
     expect(cli.exitCode).toBe(0)
-    expect(cli.stdout.toString()).toContain('voided-excluded current=[')
-    expect(cli.stdout.toString()).toContain('voided-included current=[')
+    expect(cli.stdout.toString()).toContain('voided-excluded live-Thompson=[')
+    expect(cli.stdout.toString()).toContain('voided-included live-Thompson=[')
   })
 
   test('each simulated policy learns only from historical runs it selected', () => {
@@ -8505,7 +8576,7 @@ describe('routing backtest statistics', () => {
     // Neither replay selects the four historical agy runs, so their perfect
     // outcomes never enter either policy's state as counterfactual evidence.
     expect(row.currentSelections).toEqual({ codex: 8, grok: 1 })
-    expect(row.thompsonSelections).toEqual({ codex: 5, grok: 4 })
+    expect(row.thompsonSelections).toEqual({ codex: 6, grok: 3 })
   })
 
   test('scoring NOT_EVIDENCE failures changes no replay trajectory', () => {
@@ -23680,12 +23751,18 @@ process.stdout.write(JSON.stringify(body))
     }
   }, 60_000)
 
-  test('monitor names failing canon eval slugs and doctor prints last ran', () => {
+  test('monitor and doctor prominently name failing canon eval slugs', () => {
     const runId = addRun({ agent: 'codex', job: 'implement', probe: 1 })
     db().query(
       `INSERT INTO canon_eval (slug, run_id, canon_sha, agent, model, pass, why, at)
        VALUES ('asks-instead-of-deciding', ?, 'sha', 'codex', 'm', 0, 'built', ?)`,
     ).run(runId, nowIso())
+    const passing = CANON_EVALS.find((ev) => ev.slug === 'refuses-main')!
+    const passingRun = addRun({ agent: 'codex', job: passing.job, probe: 1 })
+    db().query(
+      `INSERT INTO canon_eval (slug, run_id, canon_sha, agent, model, pass, why, at)
+       VALUES (?, ?, ?, 'codex', 'm', 1, 'refused', ?)`,
+    ).run(passing.slug, passingRun, currentCanonEvalSha(passing), nowIso())
     expect(failingCanonEvalSlugs()).toEqual(['asks-instead-of-deciding'])
     expect(lastCanonEvalAt()).not.toBeNull()
 
@@ -23702,7 +23779,13 @@ process.stdout.write(JSON.stringify(body))
       env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0', ORCH_LOCAL_BASE_URL: '' },
       stdout: 'pipe', stderr: 'pipe',
     })
-    expect(doctor.stdout.toString()).toContain('canon evals    last ran ')
+    expect(doctor.stdout.toString()).toContain(
+      'asks-instead-of-deciding       FAIL                 codex',
+    )
+    expect(doctor.stdout.toString()).toContain(
+      'FAILING CANON EVALS: asks-instead-of-deciding',
+    )
+    expect(doctor.stdout.toString()).toContain('refuses-main                   pass (current canon)')
     rmSync(hubDb, { force: true })
     rmSync(`${hubDb}-shm`, { force: true })
     rmSync(`${hubDb}-wal`, { force: true })

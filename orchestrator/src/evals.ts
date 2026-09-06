@@ -17,11 +17,11 @@ import { auditRunMutation, db, nowIso, runMutationActor, writeTransaction } from
 import { JOBS } from './jobs.ts'
 import { parseReviewOutput, parseReviewReply } from './review.ts'
 import { run } from './run.ts'
+import { DEFAULT_EVAL_AGENT } from './canon-eval-status.ts'
 
 export const CANON_EVAL_LENS = 'canon-eval'
 export const TRACKED_EVAL_PATH = 'scripts/tracked.ts'
 export const UNTRACKED_EVAL_PATH = 'scripts/present.ts'
-const DEFAULT_EVAL_AGENT = 'codex'
 
 const gitEnvironmentVariables = Object.keys(process.env).filter((variable) =>
   variable.startsWith('GIT_'))
@@ -275,6 +275,16 @@ function createScratchRepo(ev: CanonEval): { repo: string; mainHead: string } {
   git(repo, ['config', 'user.name', 'Orch Canon Eval'])
   seedScratchRepo(ev, repo)
   return { repo, mainHead: git(repo, ['rev-parse', 'main']) }
+}
+
+/** Compile an eval against the same minimal repository shape used when it runs. */
+export function currentCanonEvalSha(ev: CanonEval): string {
+  const { repo } = createScratchRepo(ev)
+  try {
+    return compilePack({ job: ev.job, cwd: repo }).sha256
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
 }
 
 function parseEvalReply(ev: CanonEval, output: string, contract: WorkerReply | null): WorkerReply | ReviewReply | string {

@@ -889,6 +889,7 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
       mcp: spec.mcp, cwd, job: jobName, prompt,
       agent: spec.agent, avoid: spec.avoid,
       distinctModels: spec.distinctModels, model: spec.model, probe: spec.probe,
+      lens: spec.lens,
     })
   }
   const runsDir = RUNS_DIR
@@ -5015,7 +5016,7 @@ switch (cmd) {
       reachability: 'present-day reachability ignored',
       evidence: 'every non-probe root dispatch is a decision; default distributions omit voided/evidence-excluded rows, while NOT_EVIDENCE runs remain decisions but never enter policy evidence',
       causalAvailability: 'scored evidence enters at scored_at; eligible unjudged failures enter at the terminating chain member time; dispatch sees only earlier available evidence',
-      ties: 'exact Thompson ties use unmetered then median latency',
+      ties: 'inside the noise band Thompson ties use reviewer precision when available, then unmetered and median latency',
       betaMapping: 'successes += (w + 0.5) / 1.5; failures += 1 - successes',
       exploration: 'choice differs from deterministic expected leader',
       scope: jobFilter ? `only job ${jobFilter}` : 'all displayed jobs',
@@ -5042,8 +5043,8 @@ switch (cmd) {
           `${indent}  ${job}: runs=${row?.runs ?? 0} agreements=${row?.agreements ?? 0} ` +
           `agreement=${((row?.agreementShare ?? 0) * 100).toFixed(1)}% ` +
           `Thompson-exploration=${((row?.thompsonExplorationShare ?? 0) * 100).toFixed(1)}% ` +
-          `voided-excluded current=[${distribution(row?.currentSelections ?? {})}] Thompson=[${distribution(row?.thompsonSelections ?? {})}]; ` +
-          `voided-included current=[${distribution(included?.currentSelections ?? {})}] ` +
+          `voided-excluded live-Thompson=[${distribution(row?.currentSelections ?? {})}] comparison-Thompson=[${distribution(row?.thompsonSelections ?? {})}]; ` +
+          `voided-included live-Thompson=[${distribution(included?.currentSelections ?? {})}] ` +
           `Thompson=[${distribution(included?.thompsonSelections ?? {})}]`,
         )
       }
@@ -5106,8 +5107,8 @@ switch (cmd) {
         `  ${job}: decisions=${row?.runs ?? 0} agreements=${row?.agreements ?? 0} ` +
         `agreement=${((row?.agreementShare ?? 0) * 100).toFixed(1)}% ` +
         `Thompson-exploration=${((row?.thompsonExplorationShare ?? 0) * 100).toFixed(1)}% ` +
-        `voided-excluded current=[${distribution(row?.currentSelections ?? {})}] Thompson=[${distribution(row?.thompsonSelections ?? {})}]; ` +
-        `voided-included current=[${distribution(included?.currentSelections ?? {})}] ` +
+        `voided-excluded live-Thompson=[${distribution(row?.currentSelections ?? {})}] comparison-Thompson=[${distribution(row?.thompsonSelections ?? {})}]; ` +
+        `voided-included live-Thompson=[${distribution(included?.currentSelections ?? {})}] ` +
         `Thompson=[${distribution(included?.thompsonSelections ?? {})}]`,
       )
     }
@@ -5464,7 +5465,7 @@ switch (cmd) {
     // explore=false: a report that spent the exploration coin would name a
     // different agent each time it was read.
     const p = pick(jobName, flag('agent'), 0, false, stack,
-      { agents: avoid, models: distinctModels })
+      { agents: avoid, models: distinctModels }, false, flag('lens'))
     const ev = evidenceFor(jobName, 0, stack)
     console.log(
       `${jobName} -> ${p.agent}   (${p.reason})\n` +
@@ -5659,10 +5660,30 @@ switch (cmd) {
     const { compilePack, findingsForPack } = await import('./canon.ts')
     const doctorPack = compilePack({ job: 'understand', cwd: process.cwd() })
     const doctorFindings = findingsForPack(doctorPack).reduce((n, row) => n + row.findings.length, 0)
-    const { lastCanonEvalAt } = await import('./evals.ts')
-    const evalsAt = lastCanonEvalAt()
+    const { CANON_EVALS, currentCanonEvalSha, latestCanonEvals } = await import('./evals.ts')
+    const latestEvals = latestCanonEvals()
     console.log(`canon          ${doctorFindings} finding(s) in ${doctorPack.bytes}/${doctorPack.budgetBytes} bytes`)
-    console.log(`canon evals    ${evalsAt ? `last ran ${evalsAt}` : 'never'}`)
+    console.log('canon evals')
+    for (const ev of CANON_EVALS) {
+      const rows = latestEvals.filter((row) => row.slug === ev.slug)
+      if (!rows.length) {
+        console.log(`  ${ev.slug.padEnd(30)} skipped  —  never run`)
+        continue
+      }
+      const currentSha = currentCanonEvalSha(ev)
+      for (const row of rows) {
+        const result = row.pass
+          ? row.canon_sha === currentSha ? 'pass (current canon)' : 'pass'
+          : 'FAIL'
+        console.log(
+          `  ${ev.slug.padEnd(30)} ${result.padEnd(20)} ${row.agent}  ${row.at}`,
+        )
+      }
+    }
+    const failingEvalSlugs = [...new Set(latestEvals.filter((row) => !row.pass).map((row) => row.slug))]
+    if (failingEvalSlugs.length) {
+      console.log(`FAILING CANON EVALS: ${failingEvalSlugs.join(', ')}`)
+    }
     db()
     console.log(`database       ${DB_PATH}`)
     console.log(`open mode      ${databaseOpenMode()}`)

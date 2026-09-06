@@ -494,6 +494,7 @@ export function preflightMcp(opts: {
   distinctModels?: string[]
   model?: string
   probe?: boolean
+  lens?: string
 }): void {
   const mode = requestedMcpMode(opts.mcp)
   if (!mode) return
@@ -503,6 +504,7 @@ export function preflightMcp(opts: {
     opts.job, opts.agent, opts.prompt.length, true, stackAt(opts.cwd),
     { agents: opts.avoid, models: opts.distinctModels, model: opts.model },
     opts.probe,
+    opts.lens,
   )
   const selected = AGENTS[name]!
   if (selected.caps.discoversMcpFromCwd && job(opts.job).needs.readsRepo) {
@@ -1585,7 +1587,7 @@ export async function run(opts: {
              (requiresCanonSource ? CANON_SOURCE_PROMPT_RESERVE_BYTES : 0),
            true, stackAt(callerCwd),
            { agents: opts.avoid, models: opts.distinctModels, model: opts.model },
-           opts.probe)
+           opts.probe, opts.lens)
   const a = AGENTS[name]!
   if (name === 'codex') {
     const versionRefusal = minimumCliVersionRefusal(a)
@@ -2768,6 +2770,8 @@ export async function run(opts: {
           Buffer.byteLength(originalPrompt) + (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0), true,
           stackAt(first.launch_cwd ?? callerCwd),
           { agents: [...new Set([...(opts.avoid ?? []), ...tried])] },
+          false,
+          first.lens ?? undefined,
         )
         console.error(
           `orch: run ${claim.id} failed over after ${name} ${failureKind}; ` +

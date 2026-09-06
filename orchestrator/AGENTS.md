@@ -232,6 +232,26 @@ tie-banded on `(points + MIN_SAMPLE * prior) / (evidence + MIN_SAMPLE)`, where
 the prior is the mean raw score of every proven agent on that job. Reports keep
 the raw mean beside the shrunk score so the evidence remains visible.
 
+**Thompson sampling is the live ranker.** The shrunk score is the posterior
+mean; a real dispatch draws from that posterior so accumulated evidence can
+still be challenged without pretending a small observed difference is certain.
+Status surfaces use the posterior mean instead, so reading a guide or `orch
+pick` does not spend a draw or make the answer jitter. The unproven and standing
+challenger rates remain separate: they answer whether an agent has been tried
+enough at all, while Thompson answers which proven agent the evidence supports.
+
+For findings jobs, reviewer precision breaks a tie inside the noise band when
+the named lens has enough triage evidence. A measured precision outranks an
+unknown cell; an unknown is not zero. Precision never reaches across a real
+quality gap, because false-positive rate is supporting evidence, not a
+replacement for whether the agent did the job well.
+
+A failing behavioural canon eval closes exploration for the default eval agent
+until that eval passes. It does not erase proven routing evidence and it does
+not override an explicit `--agent`: the failure says not to spend experimental
+traffic, not that every established use is invalid. Harness failures are not
+wrong answers and therefore do not close exploration.
+
 ## A judgement has two axes
 
 **DELIVERY: did an answer arrive?** `none` | `partial` | `full`.
