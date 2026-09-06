@@ -8,6 +8,12 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # The checkout itself. `bin/` holds each concern's binary and sits above ops/,
 # so an agent that runs one needs the root rather than this directory.
 ROOT="$(cd "$REPO/.." && pwd)"
+if [[ -f "$ROOT/.git" ]]; then
+  GIT_COMMON_DIR="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir)"
+  MAIN_CHECKOUT="$(cd "$GIT_COMMON_DIR/.." && pwd)"
+  echo "refusing to install launchd agents from linked worktree $ROOT; run $MAIN_CHECKOUT/ops/install.sh from the main checkout $MAIN_CHECKOUT" >&2
+  exit 1
+fi
 AGENTS_DIR="$HOME/Library/LaunchAgents"
 UID_NUM="$(id -u)"
 # Provisional: today's stale runs were 16-40h old and ghost intervals 19h old,
@@ -16,7 +22,7 @@ UID_NUM="$(id -u)"
 PROVISIONAL_MONITOR_BACKSTOP_SECONDS=$((4 * 60 * 60))
 
 mkdir -p "$AGENTS_DIR" "$HOME/Library/Logs/brew-upgrade" "$HOME/Library/Logs/projects-refresh" \
-  "$HOME/Library/Logs/orch-monitor"
+  "$HOME/Library/Logs/orch-monitor" "$HOME/Library/Logs/orch-canon-eval"
 
 for tmpl in "$REPO"/launchd/*.plist.template; do
   label="$(basename "$tmpl" .plist.template)"
@@ -50,5 +56,5 @@ done
 
 echo
 echo "Active agents:"
-launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|orch-sweep|orch-monitor' \
+launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|orch-sweep|orch-monitor|orch-canon-eval' \
   || echo "  (none found)"

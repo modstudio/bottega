@@ -285,6 +285,8 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       const forms: Record<string, CommandShape> = {
         check: shape('orch canon check [--cwd P] [--job J] [--all] [--json]', 0, ['--cwd', '--job'], ['--all', '--json']),
         diff: shape('orch canon diff [--cwd P] [--job J] [--json]', 0, ['--cwd', '--job'], ['--json']),
+        eval: shape('orch canon eval [--slug S] [--agent A] [--json] [--force]', 0, ['--slug', '--agent'], ['--json', '--force']),
+        evals: shape('orch canon evals [--json]', 0, [], ['--json']),
       }
       if (!sub || !forms[sub]) return null
       return { args: argv.slice(2), shape: forms[sub] }

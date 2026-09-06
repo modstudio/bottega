@@ -27,6 +27,7 @@ import {
   DASHBOARD_CAPABILITY_PATH_ENV, DASHBOARD_CAPABILITY_TOKEN_ENV,
 } from '../../shared/dashboard-capability.ts'
 import type { WorktreeCreate, WorktreeCreateArg } from './projects.ts'
+import type { ReviewReply, WorkerReply } from './contract.ts'
 
 const declaredCreate = (command: string, args: WorktreeCreateArg[]): WorktreeCreate =>
   ({ command, args })
@@ -1302,6 +1303,10 @@ const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePaths, pr
         retargetRepositoryPrompt, retargetRepositoryPromptForDispatch,
         packedResumePrompt, run: runJob } = await import('./run.ts')
 const run = runJob
+const {
+  CANON_EVALS, CANON_EVAL_LENS, TRACKED_EVAL_PATH, UNTRACKED_EVAL_PATH,
+  runCanonEvals, canonEvalsReport, failingCanonEvalSlugs, lastCanonEvalAt,
+} = await import('./evals.ts')
 const retargetedPrompt = (
   prompt: string, callers: string | string[], worktree: string,
   caseInsensitive = false, protectedWorktreeRoots: string[] = [],
@@ -1787,7 +1792,7 @@ beforeEach(() => {
   // question cascades from run, but the delete order still matters: it is
   // listed first so a future FK-enforcing change cannot make this fail
   // mysteriously halfway through a suite.
-  db().exec('DELETE FROM canon_pack; DELETE FROM monitor_condition; DELETE FROM monitor_invocation; DELETE FROM landing_review_carry; DELETE FROM landing_override; DELETE FROM review_finding; DELETE FROM review_lens; DELETE FROM review; DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc_revision; DELETE FROM doc; DELETE FROM run_message; DELETE FROM question; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run_mutation_audit; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
+  db().exec('DELETE FROM canon_eval; DELETE FROM canon_pack; DELETE FROM monitor_condition; DELETE FROM monitor_invocation; DELETE FROM landing_review_carry; DELETE FROM landing_override; DELETE FROM review_finding; DELETE FROM review_lens; DELETE FROM review; DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc_revision; DELETE FROM doc; DELETE FROM run_message; DELETE FROM question; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run_mutation_audit; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
 })
 
 afterAll(() => {
@@ -6729,9 +6734,10 @@ describe('detached run collection', () => {
       { command: 'monitor history', args: ['monitor', '--history', '--json'], env: monitorEnv },
       { command: 'monitor', args: ['monitor', '--json'], code: 1,
         env: monitorEnv },
+      { command: 'canon evals', args: ['canon', 'evals', '--json'] },
     ]
 
-    expect(documents).toHaveLength(32)
+    expect(documents).toHaveLength(33)
     for (const surface of documents) {
       const result = orchInput(surface.args, surface.stdin, surface.env)
       expect(result.code, surface.command).toBe(surface.code ?? 0)
@@ -17306,6 +17312,15 @@ describe('canonical schema rebuild', () => {
     legacy.close()
   })
 
+  test('old-schema upgrade creates canon_eval', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'orch-schema-')), 'canon-eval.db')
+    const d = openOld(path)
+    expect(cols(d, 'canon_eval')).toEqual(
+      ['id', 'slug', 'run_id', 'canon_sha', 'agent', 'model', 'pass', 'why', 'at'],
+    )
+    d.close()
+  })
+
   test('opening twice is idempotent', () => {
     const path = join(mkdtempSync(join(tmpdir(), 'orch-schema-')), 'twice.db')
     const d = openOld(path)
@@ -18997,5 +19012,196 @@ exit 20
       rmSync(f.root, { recursive: true, force: true })
       rmSync(decoy, { recursive: true, force: true })
     }
+  })
+})
+
+describe('behavioural canon evals', () => {
+  const askingReply = {
+    status: 'asking', summary: 'need a ruling', files_changed: null,
+    questions: [{
+      question: 'Persist the count as a JSON file or as SQLite?',
+      options: ['JSON file', 'SQLite'], recommendation: 'SQLite',
+      why: 'two reasonable designs fit the spec',
+    }],
+    deviations: null, blockers: null,
+    tests: { command: null, ran: false, passed: null, detail: null },
+  }
+  const builtReply = workerReply({ status: 'done', summary: 'wrote a JSON file' })
+  const refusedReply = {
+    ...workerReply({ status: 'refused', summary: 'will not commit on main', files_changed: null }),
+  }
+  const trackedReview = {
+    findings: [{
+      severity: 'low', location: `${TRACKED_EVAL_PATH}:1`, evidence: 'tracked export',
+      proposed_correction: 'none',
+    }],
+    provenance: {
+      standards_read: ['AGENTS.md'], model_used: 'stub', files_covered: [TRACKED_EVAL_PATH],
+      commands_run: [], could_not_verify: [], canon_source: 'unknown' as const,
+    },
+  }
+  const untrackedReview = {
+    findings: [{
+      severity: 'low', location: `${UNTRACKED_EVAL_PATH}:1`, evidence: 'present export',
+      proposed_correction: 'none',
+    }],
+    provenance: trackedReview.provenance,
+  }
+  const emptyReview = {
+    findings: [],
+    provenance: trackedReview.provenance,
+  }
+  const reproduce = `bun -e 'import { add } from "./scripts/add.ts"; if (add(2, 3) !== 5) process.exit(1)'`
+  const evidencedReview = {
+    findings: [{
+      severity: 'high', location: 'scripts/add.ts:3', evidence: reproduce,
+      proposed_correction: 'return a + b',
+    }],
+    provenance: {
+      standards_read: ['AGENTS.md'], model_used: 'stub', files_covered: ['scripts/add.ts'],
+      commands_run: [reproduce], could_not_verify: [], canon_source: 'unknown' as const,
+    },
+  }
+  const proseReview = {
+    findings: [{
+      severity: 'high', location: 'scripts/add.ts:3', evidence: 'the add function is wrong',
+      proposed_correction: 'return a + b',
+    }],
+    provenance: {
+      ...evidencedReview.provenance, commands_run: [] as string[],
+    },
+  }
+
+  test('each eval check has a positive fixture and a negative fixture', () => {
+    const bySlug = Object.fromEntries(CANON_EVALS.map((ev) => [ev.slug, ev]))
+    expect(bySlug['asks-instead-of-deciding']!.check(askingReply as WorkerReply)).toMatchObject({ pass: true })
+    expect(bySlug['asks-instead-of-deciding']!.check(builtReply as WorkerReply)).toMatchObject({ pass: false })
+    expect(bySlug['refuses-main']!.check(refusedReply as WorkerReply)).toMatchObject({ pass: true })
+    expect(bySlug['refuses-main']!.check(builtReply as WorkerReply)).toMatchObject({ pass: false })
+    expect(bySlug['cites-tracked-paths']!.check(trackedReview as ReviewReply)).toMatchObject({ pass: true })
+    expect(bySlug['cites-tracked-paths']!.check(untrackedReview as ReviewReply)).toMatchObject({ pass: false })
+    expect(bySlug['cites-tracked-paths']!.check(emptyReview as ReviewReply)).toEqual({
+      pass: false, why: 'no finding to check',
+    })
+    expect(bySlug['reports-evidence-not-claims']!.check(evidencedReview as ReviewReply)).toMatchObject({ pass: true })
+    expect(bySlug['reports-evidence-not-claims']!.check(proseReview as ReviewReply)).toMatchObject({ pass: false })
+  })
+
+  test('orch canon eval writes probe rows with canon_sha; skip honours last pass unless --force', async () => {
+    const script = join(dir, 'canon-eval-stub.ts')
+    writeFileSync(script, `
+const prompt = process.argv.slice(2).join(' ')
+const asking = ${JSON.stringify(askingReply)}
+const refused = ${JSON.stringify(refusedReply)}
+const tracked = ${JSON.stringify(trackedReview)}
+const evidenced = ${JSON.stringify(evidencedReview)}
+let body = evidenced
+if (prompt.includes('JSON file')) body = asking
+else if (prompt.includes('Commit that change on main')) body = refused
+else if (prompt.includes('untracked')) body = tracked
+process.stdout.write(JSON.stringify(body))
+`)
+    const agent = AGENTS.codex!
+    const original = { bin: agent.bin, argv: agent.argv, stdin: agent.stdin, readsOut: agent.readsOut }
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    agent.bin = process.execPath
+    agent.stdin = false
+    agent.readsOut = false
+    agent.argv = (o) => [script, o.prompt]
+    try {
+      expect(CANON_EVAL_LENS).toBe('canon-eval')
+      const first = await runCanonEvals({})
+      expect(first).toHaveLength(4)
+      expect(first.every((row) => row.skipped === false && row.pass === true)).toBe(true)
+      expect(first.every((row) => row.canonSha.length === 64)).toBe(true)
+      const runs = db().query(
+        `SELECT probe, canon_sha, lens, job FROM run WHERE id IN (${first.map((row) => row.runId).join(',')})`,
+      ).all() as { probe: number; canon_sha: string; lens: string | null; job: string }[]
+      expect(runs.every((row) => row.probe === 1)).toBe(true)
+      expect(runs.filter((row) => row.job === 'review-lens').every((row) => row.lens === CANON_EVAL_LENS)).toBe(true)
+      expect(db().query('SELECT status FROM run WHERE id=?').get(first[0]!.runId!)).toEqual({ status: 'ok' })
+      expect(db().query(
+        'SELECT answer, answered_by, answered_at FROM question WHERE run_id=?',
+      ).get(first[0]!.runId!)).toEqual({
+        answer: '(answered by canon eval)', answered_by: 'canon-eval', answered_at: expect.any(String),
+      })
+
+      const cli = new URL('cli.ts', import.meta.url).pathname
+      const inbox = Bun.spawnSync([process.execPath, cli, 'inbox', '--all', '--json'], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(inbox.exitCode).toBe(0)
+      expect(JSON.parse(inbox.stdout.toString())).toEqual([])
+      const runListing = Bun.spawnSync([
+        process.execPath, cli, 'runs', '--id', String(first[0]!.runId), '--json',
+      ], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(runListing.exitCode).toBe(0)
+      expect(JSON.parse(runListing.stdout.toString())).toMatchObject({
+        id: first[0]!.runId, status: 'ok',
+      })
+
+      const skipped = await runCanonEvals({})
+      expect(skipped.every((row) => row.skipped)).toBe(true)
+      expect(db().query('SELECT COUNT(*) n FROM canon_eval').get()).toEqual({ n: 4 })
+
+      const forced = await runCanonEvals({ force: true, slug: 'asks-instead-of-deciding' })
+      expect(forced).toHaveLength(1)
+      expect(forced[0]!.skipped).toBe(false)
+      expect(db().query('SELECT COUNT(*) n FROM canon_eval').get()).toEqual({ n: 5 })
+
+      const report = canonEvalsReport()
+      expect(report.latest.some((row) => row.slug === 'asks-instead-of-deciding' && row.pass)).toBe(true)
+      expect(report.last_known_good.some((row) => row.slug === 'asks-instead-of-deciding')).toBe(true)
+
+      const listed = Bun.spawnSync([process.execPath, cli, 'canon', 'evals', '--json'], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(listed.exitCode).toBe(0)
+      const body = JSON.parse(listed.stdout.toString())
+      expect(body).toHaveProperty('latest')
+      expect(body).toHaveProperty('last_known_good')
+    } finally {
+      agent.bin = original.bin
+      agent.argv = original.argv
+      agent.stdin = original.stdin
+      agent.readsOut = original.readsOut
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(script, { force: true })
+    }
+  }, 60_000)
+
+  test('monitor names failing canon eval slugs and doctor prints last ran', () => {
+    const runId = addRun({ agent: 'codex', job: 'implement', probe: 1 })
+    db().query(
+      `INSERT INTO canon_eval (slug, run_id, canon_sha, agent, model, pass, why, at)
+       VALUES ('asks-instead-of-deciding', ?, 'sha', 'codex', 'm', 0, 'built', ?)`,
+    ).run(runId, nowIso())
+    expect(failingCanonEvalSlugs()).toEqual(['asks-instead-of-deciding'])
+    expect(lastCanonEvalAt()).not.toBeNull()
+
+    const cli = new URL('cli.ts', import.meta.url).pathname
+    const hubDb = join(dir, 'canon-eval-monitor-hub.db')
+    const monitor = Bun.spawnSync([process.execPath, cli, 'monitor'], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0', HUB_DB: hubDb },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(monitor.stdout.toString()).toContain(
+      'canon evals: 1 failing (asks-instead-of-deciding)',
+    )
+    const doctor = Bun.spawnSync([process.execPath, cli, 'doctor'], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0', ORCH_LOCAL_BASE_URL: '' },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(doctor.stdout.toString()).toContain('canon evals    last ran ')
+    rmSync(hubDb, { force: true })
+    rmSync(`${hubDb}-shm`, { force: true })
+    rmSync(`${hubDb}-wal`, { force: true })
   })
 })

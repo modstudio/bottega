@@ -1290,6 +1290,8 @@ function usage(): never {
       export <dir> | import <dir> --reason TEXT [--author NAME]
   orch canon check [--cwd P] [--job J] [--all] [--json]
   orch canon diff [--cwd P] [--job J] [--json]
+  orch canon eval [--slug S] [--agent A] [--json] [--force]
+  orch canon evals [--json]  (--json: one JSON document)
   orch port baseline show <source> <target> [--json]  (--json: one JSON document)
       baseline set <source> <target> <commit> [--clear] [--json]  (--json: one JSON document)
       skip list <source> <target> [--json]  (--json: one JSON document)
@@ -1712,6 +1714,36 @@ switch (cmd) {
     const sub = argv[1]
     const cwd = flag('cwd') ?? process.cwd()
     const jobName = flag('job') ?? 'understand'
+    if (sub === 'eval') {
+      const { runCanonEvals } = await import('./evals.ts')
+      const rows = await runCanonEvals({
+        slug: flag('slug'), agent: flag('agent'), force: has('force'),
+      })
+      if (has('json')) console.log(JSON.stringify(rows))
+      else {
+        for (const row of rows) {
+          const verdict = row.skipped ? 'skip' : row.pass ? 'pass' : 'fail'
+          console.log(`${row.slug}  ${row.agent}  ${verdict}  ${row.why}  ${row.canonSha}`)
+        }
+      }
+      if (rows.some((row) => !row.skipped && row.pass === false)) process.exitCode = 1
+      break
+    }
+    if (sub === 'evals') {
+      const { canonEvalsReport } = await import('./evals.ts')
+      const report = canonEvalsReport()
+      if (has('json')) console.log(JSON.stringify(report))
+      else {
+        for (const row of report.latest) {
+          const good = report.last_known_good.find((item) => item.slug === row.slug && item.agent === row.agent)
+          console.log(
+            `${row.slug}  ${row.agent}  ${row.pass ? 'pass' : 'fail'}  ${row.why}  ${row.canon_sha}` +
+            (good ? `  last-pass ${good.canon_sha}` : '  last-pass none'),
+          )
+        }
+      }
+      break
+    }
     if (sub === 'check') {
       const pack = compilePack({ job: jobName, cwd })
       const rows = has('all') ? allInjectChecks() : findingsForPack(pack)
@@ -1740,7 +1772,7 @@ switch (cmd) {
       }
       break
     }
-    throw new Error('unknown: orch canon. Try check | diff')
+    throw new Error('unknown: orch canon. Try check | diff | eval | evals')
   }
 
   case 'port': {
@@ -2876,7 +2908,12 @@ switch (cmd) {
     const result = await monitor(has('backstop') ? 'backstop' : 'invoked')
     if (has('json')) await writeStdout(`${JSON.stringify(result)}\n`)
     else {
+      const { failingCanonEvalSlugs } = await import('./evals.ts')
+      const failingEvals = failingCanonEvalSlugs()
       const lines = [`canon: ${result.canon.findings} stale references in ${result.canon.docs} docs`]
+      if (failingEvals.length) {
+        lines.push(`canon evals: ${failingEvals.length} failing (${failingEvals.join(', ')})`)
+      }
       if (result.conditions.length || result.errors.length) {
         lines.push(`monitor ${result.id}: ${result.conditions.length} condition(s), ${result.errors.length} observation error(s)`)
         for (const condition of result.conditions) {
@@ -5174,7 +5211,10 @@ switch (cmd) {
     const { compilePack, findingsForPack } = await import('./canon.ts')
     const doctorPack = compilePack({ job: 'understand', cwd: process.cwd() })
     const doctorFindings = findingsForPack(doctorPack).reduce((n, row) => n + row.findings.length, 0)
+    const { lastCanonEvalAt } = await import('./evals.ts')
+    const evalsAt = lastCanonEvalAt()
     console.log(`canon          ${doctorFindings} finding(s) in ${doctorPack.bytes}/${doctorPack.budgetBytes} bytes`)
+    console.log(`canon evals    ${evalsAt ? `last ran ${evalsAt}` : 'never'}`)
     db()
     console.log(`database       ${DB_PATH}`)
     console.log(`open mode      ${databaseOpenMode()}`)

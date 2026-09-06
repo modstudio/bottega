@@ -514,7 +514,7 @@ function normalizeSql(sql: string): string {
 
 function schemaVersion(): string {
   return createHash('sha256')
-    .update([RUN_DDL, SCORE_DDL, DOC_DDL, DOC_REVISION_DDL, CANON_PACK_DDL,
+    .update([RUN_DDL, SCORE_DDL, DOC_DDL, DOC_REVISION_DDL, CANON_PACK_DDL, CANON_EVAL_DDL,
       REVIEW_LENS_DDL, REVIEW_FINDING_DDL, LANDING_OVERRIDE_DDL, LANDING_REVIEW_CARRY_DDL]
       .map(normalizeSql).join('\n'))
     .digest('hex')
@@ -556,7 +556,7 @@ function ensureCanonicalSchema(d: Database) {
 
   for (const [name, ddl] of [
     ['run', RUN_DDL], ['score', SCORE_DDL], ['doc', DOC_DDL], ['doc_revision', DOC_REVISION_DDL],
-    ['canon_pack', CANON_PACK_DDL], ['review_lens', REVIEW_LENS_DDL],
+    ['canon_pack', CANON_PACK_DDL], ['canon_eval', CANON_EVAL_DDL], ['review_lens', REVIEW_LENS_DDL],
     ['review_finding', REVIEW_FINDING_DDL],
     ['landing_override', LANDING_OVERRIDE_DDL],
     ['landing_review_carry', LANDING_REVIEW_CARRY_DDL],
@@ -585,7 +585,7 @@ function ensureCanonicalSchema(d: Database) {
  */
 function rebuildTable(
   d: Database,
-  table: 'run' | 'score' | 'doc' | 'doc_revision' | 'canon_pack' | 'review_lens' |
+  table: 'run' | 'score' | 'doc' | 'doc_revision' | 'canon_pack' | 'canon_eval' | 'review_lens' |
     'review_finding' | 'landing_override' | 'landing_review_carry',
   canonical: string,
 ) {
@@ -905,6 +905,18 @@ const CANON_PACK_DDL = `CREATE TABLE canon_pack (
       UNIQUE(job, project)
     )`
 
+const CANON_EVAL_DDL = `CREATE TABLE canon_eval (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug       TEXT NOT NULL,
+      run_id     INTEGER NOT NULL REFERENCES run(id),
+      canon_sha  TEXT NOT NULL,
+      agent      TEXT NOT NULL,
+      model      TEXT,
+      pass       INTEGER NOT NULL,
+      why        TEXT NOT NULL,
+      at         TEXT NOT NULL
+    )`
+
 const DOC_REVISION_DDL = `CREATE TABLE doc_revision (
       id         INTEGER PRIMARY KEY,
       doc_id     INTEGER NOT NULL,
@@ -937,6 +949,7 @@ function migrate(d: Database) {
   d.exec(createIfNotExists(DOC_DDL))
   d.exec(createIfNotExists(DOC_REVISION_DDL))
   d.exec(createIfNotExists(CANON_PACK_DDL))
+  d.exec(createIfNotExists(CANON_EVAL_DDL))
   d.exec(createIfNotExists(LANDING_OVERRIDE_DDL))
   d.exec(createIfNotExists(LANDING_REVIEW_CARRY_DDL))
   d.exec(`

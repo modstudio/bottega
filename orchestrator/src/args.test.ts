@@ -30,6 +30,8 @@ describe('CLI argument recognition', () => {
       ['workflow','compose','ship','--mode','default','--arg','key=DEV-257','--arg','branch=x'],
       ['workflow','step','ship','lens','--arg','key=DEV-257'], ['workflow','export','out'],
       ['workflow','import','out','--reason','restore'],
+      ['canon', 'eval', '--slug', 'asks-instead-of-deciding', '--agent', 'codex', '--json', '--force'],
+      ['canon', 'evals', '--json'],
       ['doc', 'show', 'slug', '--scope', 'global'],
       ['doc', 'set', 'slug', '--scope', 'global', '--title', 'Title', '--file', 'body.md'],
       ['doc', 'consume', 'slug', '--scope', 'global'],
