@@ -783,11 +783,14 @@ The invariants are:
 | DEV-314 | only the main-checkout binary migrates | `database-location.ts:resolveDatabase`; `db.ts:applySchema`, `rebuildTable` | Separate database location from write authority and refuse linked-worktree schema writes even when `ORCH_DB` is set. |
 | DEV-316 | one lock per purpose; FIFO waiters | `worktree.ts:withWorktreeCreateLock`, `withProjectLock`; `cli.ts:withCleanupLock` | Give creation, landing and cleanup distinct locks, and make acquisition honor waiter arrival order. |
 | DEV-318 | a chain resumes in its own stale checkout | `cli.ts:continueRun`, `detach`; `run.ts:preflight`, `run`; `worktree.ts:assertCallerAncestry` | Exempt inherited resume attachment from the new-dispatch caller-at-trunk boundary. |
-| DEV-224 review 142/143: replacement race | reclaim only the classified acquisition | `worktree.ts:reclaimStaleProjectLock`, `withProjectLock` | Fence acquisition, reclaim and release by one incarnation so none can remove a replacement. |
-| DEV-224 review 142: locale-dependent birth time | a live holder is never classified stale by observer locale | `worktree.ts:processStartTime`, `staleProjectLockHolder` | Use a locale-independent process-birth identity and migrate old owner records conservatively. |
-| DEV-224 review 143: malformed process output | indeterminate liveness cannot prove staleness | `worktree.ts:processStartTime`, `staleProjectLockHolder` | Parse process identity strictly and treat malformed output as unknown, never stale. |
-| DEV-224 review 142/143: staged guard stub | guard bytes and mode equal HEAD before fast-forward | `landing.ts:sharedGuardResidue`, `restoreSharedGuard`, `fastForward` | Compare with and restore from HEAD, preserve or refuse staged state, then verify again before the ref update. |
-| DEV-224 review 143: inherited Git environment | guard repair addresses the source repository's objects | `landing.ts:git`, `gitOk`, `restoreSharedGuard` | Strip worker object and hook routing and derive a hermetic Git environment for inspection and repair. |
+| DEV-224 review 142/143: replacement race | reclaim only the classified acquisition | `worktree.ts:withProjectLock` (reclaim is inlined there; `reclaimStaleProjectLock` is the DEV-224 candidate, not landed) | Fence acquisition, reclaim and release by one incarnation so none can remove a replacement. |
+| DEV-224 review 142: locale-dependent birth time | a live holder is never classified stale by observer locale | `worktree.ts:withProjectLock`'s liveness check (`processStartTime`, `staleProjectLockHolder` are DEV-224 candidates, not landed) | Use a locale-independent process-birth identity and migrate old owner records conservatively. |
+| DEV-224 review 143: malformed process output | indeterminate liveness cannot prove staleness | `worktree.ts:withProjectLock`'s liveness check (same candidates) | Parse process identity strictly and treat malformed output as unknown, never stale. |
+| DEV-224 review 142/143: staged guard stub | guard bytes and mode equal HEAD before fast-forward | `worktree.ts:prepareSharedRefGuard`, `landing.ts:land`, `fastForward` (`sharedGuardResidue`, `restoreSharedGuard` are DEV-224 candidates, not landed) | Compare with and restore from HEAD, preserve or refuse staged state, then verify again before the ref update. |
+| DEV-224 review 143: inherited Git environment | guard repair addresses the source repository's objects | `landing.ts:git`, `gitOk` (`restoreSharedGuard` is the DEV-224 candidate, not landed) | Strip worker object and hook routing and derive a hermetic Git environment for inspection and repair. |
+
+A name marked candidate exists only on the DEV-224 branch; the harness drives
+what is on trunk and treats the candidates as chunk 3 targets.
 
 Chunk 2, the harness, proves these by simulation. Until it exists, no change to
 the core lands without naming which invariant it serves and which it might
