@@ -2499,9 +2499,7 @@ describe('run mailbox', () => {
     expect(JSON.parse(owner.out).messages[0]).toMatchObject({ read_by: 'session-A' })
     expect(messagesForRun(root)[0]!.read_at).not.toBeNull()
     expect(messagesForRun(root)[0]!.read_by).toBe('session-A')
-    expect(db().query(
-      'SELECT run_id, root_id, action, actor_session FROM run_mutation_audit',
-    ).get()).toEqual({ run_id: child, root_id: root, action: 'receipt', actor_session: 'session-A' })
+    expect(db().query('SELECT COUNT(*) n FROM run_mutation_audit').get()).toEqual({ n: 0 })
   })
 
   test('the worker MCP tools send outbound and read inbound at a checkpoint', () => {

@@ -110,11 +110,10 @@ export function receiptMessagesForArchitect(id: number): RunMessage[] {
   if (!run) return []
   return db().transaction(() => {
     const readAt = nowIso()
-    const changed = db().query(
+    db().query(
       `UPDATE run_message SET read_at = ?, read_by = ?
         WHERE root_run_id = ? AND direction = 'from_worker' AND read_at IS NULL`,
-    ).run(readAt, authority.actor, run.root_id).changes
-    if (changed) auditRunMutation(authority, 'receipt')
+    ).run(readAt, authority.actor, run.root_id)
     return messagesForRun(id)
   })()
 }

@@ -31,7 +31,7 @@ export type MonitorSeverity = typeof MONITOR_SEVERITY[number]
 const sqlValues = (values: readonly string[]) => values.map((value) => `'${value}'`).join(',')
 
 export const RUN_MUTATION_ACTIONS = [
-  'answer', 'tell', 'receipt', 'stop', 'abandon', 'discard', 'sweep', 'void', 'score', 'rescore',
+  'answer', 'tell', 'stop', 'abandon', 'discard', 'sweep', 'void', 'score', 'rescore',
   'retry', 'continue', 'reclassify',
 ] as const
 export type RunMutationAction = typeof RUN_MUTATION_ACTIONS[number]
@@ -138,7 +138,7 @@ export function runMutationActor(runId: number): RootAuthority {
 
 export function authorizeRunMutation(
   runId: number,
-  action: RunMutationAction,
+  action: RunMutationAction | 'receipt',
 ): RootAuthority {
   const authority = runMutationActor(runId)
   if (authority.owner && authority.actor !== authority.owner) {
