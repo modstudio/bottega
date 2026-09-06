@@ -305,8 +305,8 @@ PROJECT INFRASTRUCTURE RECOVERY
 The project register says how this worktree's infrastructure is brought up:
 use the registered \`worktree.create\` or \`worktree.recipe\` setup and the
 registered \`worktree.recipe.serve\` step by name rather than inlining their
-commands. A reader MAY run that serve step to get the suite running. A reader
-MUST NOT modify tracked files or commit.
+commands. A reader MAY run that serve step and MAY make scratch edits to verify
+a finding; a reader MUST NOT commit, and its diff is never the deliverable.
 
 A review which could not execute the suite must say so in could_not_verify AND
 must not present static reasoning as an executed check.

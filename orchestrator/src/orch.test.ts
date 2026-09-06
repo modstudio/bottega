@@ -4168,6 +4168,11 @@ describe('job contracts are visible before submission', () => {
     expect(READONLY_PREAMBLE).toContain('If the caller chose to carry their uncommitted work into it')
     expect(READONLY_PREAMBLE).toContain('do not report it as your change')
     expect(READONLY_PREAMBLE).not.toContain("It contains the caller's")
+    expect(READONLY_PREAMBLE).toContain(
+      'Edit and test freely when that helps you verify a finding. Your findings are the\n' +
+      'deliverable, not your diff: every change you make here is scratch work and must\n' +
+      'never be treated as a proposed change to land. Do not commit, push, or merge.',
+    )
   })
 
   test('diagnose and review-lens require partial delivery around blocked sub-questions', () => {
@@ -4189,8 +4194,10 @@ describe('job contracts are visible before submission', () => {
     expect(WORKER_PREAMBLE.match(/PROJECT INFRASTRUCTURE RECOVERY/g)).toHaveLength(1)
     expect(INFRASTRUCTURE_RECOVERY).toContain('worktree.create')
     expect(INFRASTRUCTURE_RECOVERY).toContain('worktree.recipe.serve')
-    expect(INFRASTRUCTURE_RECOVERY).toContain('A reader MAY run that serve step')
-    expect(INFRASTRUCTURE_RECOVERY).toContain('A reader\nMUST NOT modify tracked files or commit')
+    expect(INFRASTRUCTURE_RECOVERY).toContain(
+      'A reader MAY run that serve step and MAY make scratch edits to verify\n' +
+      'a finding; a reader MUST NOT commit, and its diff is never the deliverable.',
+    )
   })
 
   test('review provenance makes an unexecuted suite visible', () => {
