@@ -223,6 +223,53 @@ export function showTask(key: string): {
   return { task, comments, documents: listTaskDocuments(upper) }
 }
 
+export type TaskRun = {
+  id: number
+  agent: string | null
+  job: string | null
+  started_at: string
+  ended_at: string
+  running: boolean
+  vendor_tokens: number
+  vendor_cost_usd: number | null
+}
+
+/** The complete read-only task record used by the dashboard detail sheet. */
+export function taskRecord(key: string) {
+  const record = showTask(key)
+  const documents = record.documents.map((document) => getTaskDocument(document.id))
+    .sort((a, b) => Number(b.role === 'handoff') - Number(a.role === 'handoff'))
+  const runs = db().query<{
+    ref: string; agent: string | null; job: string | null; started_at: string; ended_at: string
+    running: number; vendor_tokens: number; vendor_cost_usd: number | null
+  }, [string]>(
+    `SELECT ref, agent, job, MIN(start_at) started_at, MAX(end_at) ended_at,
+            MAX(open) running, SUM(vendor_tokens) vendor_tokens,
+            SUM(vendor_cost_usd) vendor_cost_usd
+       FROM interval
+      WHERE task_key = ? AND source = 'orch'
+      GROUP BY ref, agent, job
+      ORDER BY started_at DESC`,
+  ).all(record.task.key).map((run): TaskRun => ({
+    id: Number(run.ref.replace(/^orch:/, '')),
+    agent: run.agent,
+    job: run.job,
+    started_at: run.started_at,
+    ended_at: run.ended_at,
+    running: Boolean(run.running),
+    vendor_tokens: run.vendor_tokens,
+    vendor_cost_usd: run.vendor_cost_usd,
+  }))
+  return {
+    task: record.task,
+    source: record.task.source,
+    project: projects().find((project) => project.name === record.task.project) ?? null,
+    runs,
+    comments: record.comments,
+    documents,
+  }
+}
+
 export function setTask(key: string, changes: {
   title?: string; status?: string; parent?: string | null; body?: string
 }, options: { force?: boolean } = {}): TaskRow {

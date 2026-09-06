@@ -840,8 +840,8 @@ function usage(): never {
       doctrine add <number> --title T (--file F | body on stdin) [--json]  (--json: one JSON document)
       doctrine retire <number> [--json]  (--json: one JSON document)
   orch mcp [--config]          serve project, doc, and port tools over stdio
-  orch jobs                     list job types
-  orch agents                   list agents and availability
+  orch jobs [--json]            list job types
+  orch agents [--json]          list agents and availability
 `)
   process.exit(argv.length ? 1 : 0)
 }
@@ -3996,6 +3996,10 @@ switch (cmd) {
   }
 
   case 'jobs':
+    if (process.argv.includes('--json')) {
+      console.log(JSON.stringify(Object.values(JOBS)))
+      break
+    }
     for (const j of Object.values(JOBS)) {
       const needs = Object.keys(j.needs).length ? ` [needs ${Object.keys(j.needs).join(',')}]` : ''
       // Fidelity judges adherence to a supplied implementation spec, so it is
@@ -4006,6 +4010,17 @@ switch (cmd) {
     break
 
   case 'agents':
+    if (process.argv.includes('--json')) {
+      console.log(JSON.stringify(Object.values(AGENTS).map((a) => ({
+        name: a.name,
+        caps: a.caps,
+        model: a.model,
+        contextTokens: Number.isFinite(a.contextTokens) ? a.contextTokens : null,
+        maxPromptBytes: Number.isFinite(a.maxPromptBytes) ? a.maxPromptBytes : null,
+        timeoutMs: a.timeoutMs,
+      }))))
+      break
+    }
     for (const a of Object.values(AGENTS)) {
       console.log(
         `${a.name.padEnd(7)} ${available(a.name) ? 'installed' : 'MISSING  '} ${a.billing.padEnd(13)}` +

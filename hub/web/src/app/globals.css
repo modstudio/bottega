@@ -121,7 +121,6 @@
   .num { text-align: right; font-variant-numeric: tabular-nums; }
   .data-table-link { position: relative; }
   .data-table-link .row-link::after { content: ""; position: absolute; inset: 0; }
-  .sign-bar { position: fixed; z-index: 30; right: 0; bottom: 0; left: 208px; border-top: 1px solid var(--border); background: var(--background); padding: 12px 32px; }
 }
 
 @media (max-width: 900px) {

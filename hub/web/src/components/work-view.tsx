@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { EmptyState, LiveDot, PageHeader, ProjectMark, Segmented, StatRow, StatTile, WindowBar, projectVars, responseSubtitle, useProjectColors } from '@/components/design-system'
 import { Badge } from '@/components/badge'
 import { Input } from '@/components/input'
+import { Collection, type CollectionColumn } from '@/components/collection'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/table'
@@ -78,7 +80,8 @@ function RunLine({ run }: { run: Run }) {
   )
 }
 
-function TaskTable({ rows }: { rows: TaskRow[] }) {
+function TaskTable({ rows, from }: { rows: TaskRow[]; from: WorkName }) {
+  const navigate = useNavigate()
   const [sort, setSort] = useState<Sort>({ col: 'updated', dir: -1 })
   const [opened, setOpened] = useState<Set<string>>(() => new Set())
   const sorted = useMemo(() => {
@@ -93,36 +96,35 @@ function TaskTable({ rows }: { rows: TaskRow[] }) {
   const changeSort = (col: Sort['col']) => setSort((current) => current.col === col
     ? { col, dir: current.dir === -1 ? 1 : -1 }
     : { col, dir: -1 })
-  return (
-    <div className="overflow-x-auto border border-border">
-      <Table className="text-[12px]">
-        <TableHeader><TableRow>{columns.map((column) => (
-          <TableHead key={column.id} className={`h-9 px-3 ${column.numeric ? 'text-right' : ''}`}>
-            <button type="button" onClick={() => changeSort(column.id)}>{column.label}{sort.col === column.id ? sort.dir < 0 ? ' v' : ' ^' : ''}</button>
-          </TableHead>
-        ))}</TableRow></TableHeader>
-        <TableBody>{sorted.map((row) => {
-          const runs = row.runs ?? []
-          const isOpen = row.key ? opened.has(row.key) : false
-          const visible = isOpen ? runs : runs.filter((run) => run.running)
-          return [
-            <TableRow key={`${row.project}:${row.key}:task`}>
-              <TableCell className="px-3 py-2"><ProjectMark name={row.project} /></TableCell>
-              <TableCell className="whitespace-nowrap px-3 py-2 font-semibold">{row.key}</TableCell>
-              <TableCell className="max-w-md px-3 py-2">{row.title || <span className="text-muted-foreground">{row.source === 'git' ? 'title not known, derived from commits' : 'no tracker record yet'}</span>}</TableCell>
-              <TableCell className="px-3 py-2"><Status row={row} /></TableCell>
-              <TableCell className={`px-3 py-2 text-right ${row.workingNow ? 'text-live' : 'text-muted-foreground'}`}>{row.workingNow ? <span className="inline-flex items-center gap-2"><LiveDot />now</span> : ago(row.lastAt)}</TableCell>
-              <TableCell className="px-3 py-2 text-right font-semibold">{row.engaged}</TableCell>
-              <TableCell className="px-3 py-2 text-right" title={number.format(row.claudeTokens)}>{compact(row.claudeTokens)}</TableCell>
-              <TableCell className="px-3 py-2 text-right text-muted-foreground" title={number.format(row.vendorTokens)}>{row.vendorTokens ? compact(row.vendorTokens) : '-'}</TableCell>
-              <TableCell className="px-3 py-2 text-right">{runs.length ? <button type="button" className="inline-flex items-center" onClick={() => row.key && setOpened((current) => { const next = new Set(current); if (next.has(row.key!)) next.delete(row.key!); else next.add(row.key!); return next })}>{isOpen ? 'hide' : runs.length}<ChevronRight className={isOpen ? 'rotate-90' : ''} size={13} /></button> : '-'}</TableCell>
-            </TableRow>,
-            visible.length ? <TableRow key={`${row.project}:${row.key}:runs`}><TableCell colSpan={9} className="bg-muted/20 px-8 py-2">{visible.map((run, index) => <RunLine key={`${run.start}:${index}`} run={run} />)}</TableCell></TableRow> : null,
-          ]
-        })}</TableBody>
-      </Table>
-    </div>
-  )
+  const collectionColumns: CollectionColumn<TaskRow>[] = columns.slice(0, -1).map((column) => ({
+    id: column.id,
+    label: <button type="button" onClick={() => changeSort(column.id)}>{column.label}{sort.col === column.id ? sort.dir < 0 ? ' v' : ' ^' : ''}</button>,
+    className: `px-3 py-2 ${column.numeric ? 'text-right' : ''}`,
+    render: (row) => column.id === 'project' ? <ProjectMark name={row.project} />
+      : column.id === 'task' ? <strong className="whitespace-nowrap">{row.key}</strong>
+        : column.id === 'title' ? row.title || <span className="text-muted-foreground">{row.source === 'git' ? 'title not known, derived from commits' : 'no tracker record yet'}</span>
+          : column.id === 'status' ? <Status row={row} />
+            : column.id === 'updated' ? <span className={row.workingNow ? 'text-live' : 'text-muted-foreground'}>{row.workingNow ? <><LiveDot /> now</> : ago(row.lastAt)}</span>
+              : column.id === 'engaged' ? <strong>{row.engaged}</strong>
+                : column.id === 'claude' ? compact(row.claudeTokens)
+                  : row.vendorTokens ? compact(row.vendorTokens) : '-',
+  }))
+  return <Collection
+    title="Tasks" count={sorted.length} columns={collectionColumns} rows={sorted}
+    getKey={(row) => row.key!}
+    onOpen={(row) => void navigate({ to: '/tasks/$key', params: { key: row.key! }, search: { from } })}
+    rowActions={(row) => {
+      const runs = row.runs ?? []
+      const isOpen = row.key ? opened.has(row.key) : false
+      return runs.length ? <button type="button" className="inline-flex items-center" onClick={() => row.key && setOpened((current) => { const next = new Set(current); if (next.has(row.key!)) next.delete(row.key!); else next.add(row.key!); return next })}>{isOpen ? 'hide' : runs.length}<ChevronRight className={isOpen ? 'rotate-90' : ''} size={13} /></button> : '-'
+    }}
+    children={(row) => {
+      const runs = row.runs ?? []
+      const visible = row.key && opened.has(row.key) ? runs : runs.filter((run) => run.running)
+      return visible.length ? <div className="bg-muted/20 px-5 py-1">{visible.map((run, index) => <RunLine key={`${run.start}:${index}`} run={run} />)}</div> : null
+    }}
+    empty="No tasks."
+  />
 }
 
 function LooseTable({ rows }: { rows: TaskRow[] }) {
@@ -140,7 +142,7 @@ function TaskContent({ name, data }: { name: WorkName; data: TaskData }) {
   const filtered = Boolean(window.filters.agent || window.filters.project)
   const hasRows = data.rows.length > 0
   return <>
-    {tasks.length ? <TaskTable rows={tasks} /> : <EmptyState title={filtered ? 'No tasks match these filters.' : name === 'flight' ? 'No work is in flight.' : 'No tasks were completed in this window.'} hint={filtered ? 'Clear the filters or widen the window.' : name === 'flight' ? 'Work appears here when a task becomes active.' : 'Widen the window to see earlier completed work.'} />}
+    {tasks.length ? <TaskTable rows={tasks} from={name} /> : <EmptyState title={filtered ? 'No tasks match these filters.' : name === 'flight' ? 'No work is in flight.' : 'No tasks were completed in this window.'} hint={filtered ? 'Clear the filters or widen the window.' : name === 'flight' ? 'Work appears here when a task becomes active.' : 'Widen the window to see earlier completed work.'} />}
     {loose.length ? <section className="mt-7"><div className="mb-3 flex items-baseline gap-3"><h2 className="font-sans font-semibold">No ticket</h2><span className="text-muted-foreground">work these projects cannot attribute to a task</span></div><LooseTable rows={loose} /></section> : null}
     {data.dropped.length ? <p className="mt-5 max-w-4xl text-muted-foreground"><strong className="text-foreground">Not shown here:</strong> {data.dropped.map((item) => `${item.tasks} task${item.tasks === 1 ? '' : 's'} (${item.engaged}) ${item.reason}`).join('; ')}. In flight means being worked on right now, or marked active in its tracker.</p> : null}
     {tasks.length && window.filters.agent ? <p className="mt-5 max-w-4xl text-muted-foreground"><strong className="text-foreground">Filtered to tasks {window.filters.agent} worked on.</strong> The rows are the whole task: engaged time is still the union of every agent and session on it, not {window.filters.agent}'s share.</p> : null}
@@ -181,10 +183,13 @@ function BoardOwner({ card }: { card: BoardCard }) {
 
 function BoardCardView({ card }: { card: BoardCard }) {
   const colors = useProjectColors()
-  return <div className="proj-card border border-border p-3" style={projectVars(colors, card.project)}><div className="whitespace-nowrap font-semibold">{card.key}</div><div className="mt-1 font-sans text-[12.5px]">{card.title || <span className="text-muted-foreground">No title from its tracker</span>}</div><div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]"><span>{card.project || 'elsewhere'}</span><BoardOwner card={card} />{card.assignee ? <span>{card.assignee}</span> : null}{card.workingNow ? <span className="inline-flex items-center gap-2 text-live"><LiveDot />working now</span> : null}</div></div>
+  const navigate = useNavigate()
+  const open = () => void navigate({ to: '/tasks/$key', params: { key: card.key }, search: { from: 'board' } })
+  return <div data-record-key={card.key} tabIndex={0} role="link" onClick={open} onKeyDown={(event) => { if (event.key === 'Enter') open() }} className="proj-card cursor-pointer border border-border p-3 focus-visible:ring-2 focus-visible:ring-ring" style={projectVars(colors, card.project)}><div className="whitespace-nowrap font-semibold">{card.key}</div><div className="mt-1 font-sans text-[12.5px]">{card.title || <span className="text-muted-foreground">No title from its tracker</span>}</div><div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]"><span>{card.project || 'elsewhere'}</span><BoardOwner card={card} />{card.assignee ? <span>{card.assignee}</span> : null}{card.workingNow ? <span className="inline-flex items-center gap-2 text-live"><LiveDot />working now</span> : null}</div></div>
 }
 
 export function BoardView() {
+  const navigate = useNavigate()
   const window = useWindowState()
   const [menus, setMenus] = useState(0)
   const [settings, setSettings] = useState(readBoardSettings)
@@ -222,7 +227,7 @@ export function BoardView() {
   return <section>
     <WindowChrome title="Board" response={response} facets={response.data.facets} onDropdown={dropdown} />
     <div className="mb-4 flex flex-wrap items-center gap-3"><Input className="h-8 w-52" type="search" placeholder="Search key or title" value={search} onChange={(event) => setSearch(event.target.value)} /><Segmented label="Board layout" value={settings.layout} options={[{ value: 'cards', label: 'Cards' }, { value: 'table', label: 'Table' }]} onChange={(value) => remember({ layout: value as BoardLayout })} /><Segmented label="Board grouping" value={settings.group} options={[{ value: 'status', label: 'By status' }, { value: 'project', label: 'By project' }]} onChange={(value) => remember({ group: value as BoardGroup })} /></div>
-    {settings.layout === 'cards' ? <div className="grid gap-4 xl:grid-cols-4">{groups.map((group) => { const rows = rowsFor(group.key); const total = totalFor(group.key); return <div key={group.key}><h2 className="mb-2 flex justify-between font-sans font-semibold"><span>{group.label}</span><span>{rows.length}{!response.data.scoped && total > rows.length ? ` of ${total}` : ''}</span></h2><div className="space-y-2">{rows.length ? rows.map((card) => <BoardCardView key={card.key} card={card} />) : <div className="border border-border p-4 text-muted-foreground">{group.empty}</div>}{!response.data.scoped && total > rows.length ? <div className="border border-border p-2 text-center text-muted-foreground">{total - rows.length} more not drawn</div> : null}</div></div> })}</div> : <div className="space-y-5">{groups.map((group) => { const rows = rowsFor(group.key); const total = totalFor(group.key); if (!rows.length) return null; return <section key={group.key}><div className="mb-2 flex items-baseline gap-2"><h2 className="font-sans font-semibold">{group.label}</h2><span className="text-muted-foreground">{rows.length}{!response.data.scoped && total > rows.length ? ` of ${total}` : ''}</span></div><div className="overflow-x-auto border border-border"><Table><TableHeader><TableRow><TableHead>Task</TableHead><TableHead>{settings.group === 'project' ? 'Status' : 'Project'}</TableHead><TableHead>Assignee</TableHead><TableHead>Owner</TableHead><TableHead /></TableRow></TableHeader><TableBody>{rows.map((card) => <TableRow key={card.key}><TableCell><div className="whitespace-nowrap font-semibold">{card.key}</div><div className="font-sans text-sm">{card.title || <span className="text-muted-foreground">no title from its tracker</span>}</div></TableCell><TableCell>{settings.group === 'project' ? card.statusCategory ? <StatusBadge status={card.statusCategory} /> : 'unknown' : card.project || 'elsewhere'}</TableCell><TableCell>{card.assignee || <span className="text-muted-foreground">unknown</span>}</TableCell><TableCell><BoardOwner card={card} /></TableCell><TableCell className="text-right text-live">{card.workingNow ? 'working now' : ''}</TableCell></TableRow>)}</TableBody></Table></div></section> })}</div>}
+    {settings.layout === 'cards' ? <div className="grid gap-4 xl:grid-cols-4">{groups.map((group) => { const rows = rowsFor(group.key); const total = totalFor(group.key); return <div key={group.key}><h2 className="mb-2 flex justify-between font-sans font-semibold"><span>{group.label}</span><span>{rows.length}{!response.data.scoped && total > rows.length ? ` of ${total}` : ''}</span></h2><div className="space-y-2">{rows.length ? rows.map((card) => <BoardCardView key={card.key} card={card} />) : <div className="border border-border p-4 text-muted-foreground">{group.empty}</div>}{!response.data.scoped && total > rows.length ? <div className="border border-border p-2 text-center text-muted-foreground">{total - rows.length} more not drawn</div> : null}</div></div> })}</div> : <div className="space-y-5">{groups.map((group) => { const rows = rowsFor(group.key); if (!rows.length) return null; return <Collection key={group.key} title={group.label} count={rows.length} columns={[{ id: 'task', label: 'Task', render: (card) => <><div className="whitespace-nowrap font-semibold">{card.key}</div><div className="font-sans text-sm">{card.title || <span className="text-muted-foreground">no title from its tracker</span>}</div></> }, { id: 'group', label: settings.group === 'project' ? 'Status' : 'Project', render: (card) => settings.group === 'project' ? card.statusCategory ? <StatusBadge status={card.statusCategory} /> : 'unknown' : card.project || 'elsewhere' }, { id: 'assignee', label: 'Assignee', render: (card) => card.assignee || <span className="text-muted-foreground">unknown</span> }, { id: 'owner', label: 'Owner', render: (card) => <BoardOwner card={card} /> }, { id: 'live', label: '', className: 'text-right text-live', render: (card) => card.workingNow ? 'working now' : '' }]} rows={rows} getKey={(card) => card.key} onOpen={(card) => void navigate({ to: '/tasks/$key', params: { key: card.key }, search: { from: 'board' } })} empty={group.empty} /> })}</div>}
     <p className="mt-5 text-muted-foreground"><Badge variant="outline">ours</Badge> issued here, yours to change - <Badge variant="outline">mcp</Badge> synced from that project's tracker{response.data.scoped ? ' - counts are for this project' : ''} <button type="button" className="underline" onClick={() => setWhy((open) => !open)}>why these cards?</button></p>
     {why ? <p className="mt-2 max-w-4xl text-muted-foreground">A card is here because it is active, in review, was worked on in the last fortnight, or is ours and still open. Recency comes from recorded work, never from a tracker timestamp: those are bumped on every sync, so everything looks freshly touched. Full backlogs live in each project's own tracker.</p> : null}
   </section>

@@ -217,8 +217,8 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
     case 'serve': return { args: argv.slice(1), shape: shape('orch serve', 0) }
     case 'reclassify-failures': return { args: argv.slice(1), shape: shape('orch reclassify-failures [--dry-run]', 0, [], ['--dry-run']) }
     case 'doctor': return { args: argv.slice(1), shape: shape('orch doctor [--wake]', 0, [], ['--wake']) }
-    case 'jobs': return { args: argv.slice(1), shape: shape('orch jobs', 0) }
-    case 'agents': return { args: argv.slice(1), shape: shape('orch agents', 0) }
+    case 'jobs': return { args: argv.slice(1), shape: shape('orch jobs [--json]', 0, [], ['--json']) }
+    case 'agents': return { args: argv.slice(1), shape: shape('orch agents [--json]', 0, [], ['--json']) }
     default: return null
   }
 }

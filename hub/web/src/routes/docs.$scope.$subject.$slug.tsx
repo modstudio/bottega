@@ -7,7 +7,7 @@ import { Button } from '@/components/button'
 import { Input } from '@/components/input'
 import { Textarea } from '@/components/textarea'
 import { queryClient, trpc } from '@/trpc/client'
-import { PageHeader } from '@/components/design-system'
+import { Sheet } from '@/components/sheet'
 import { DOC_SCOPES, isScope, type DocScope } from './docs'
 
 type DocSearch = { edit?: boolean }
@@ -118,12 +118,11 @@ function DocPage() {
   }
 
   if (!scoped) {
-    return <p className="text-destructive">unknown scope "{scope}"; valid: {DOC_SCOPES.join(', ')}</p>
+    return <Sheet open onClose={() => void navigate({ to: '/docs' })} title={slug}><p className="text-destructive">unknown scope "{scope}"; valid: {DOC_SCOPES.join(', ')}</p></Sheet>
   }
 
   return (
-    <section>
-      <PageHeader title={editing ? <Input
+    <Sheet open onClose={() => void navigate({ to: '/docs' })} title={editing ? <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="font-sans text-[20px] font-semibold"
@@ -132,7 +131,7 @@ function DocPage() {
           {(editing || confirmingDelete) ? <Input aria-label="Reason" placeholder="Reason (required)" value={reason} onChange={(e) => setReason(e.target.value)} className="w-52" /> : null}
           {editing ? <><Button size="sm" onClick={() => save.mutate({ scope, subject, slug, title, body, delivery, reason })} disabled={save.isPending || !title || !reason.trim()}><Save size={14} />Save</Button><Button size="sm" variant="outline" onClick={cancelEdit}><X size={14} />Cancel</Button></> : <Button size="sm" variant="outline" onClick={() => { setConfirmingDelete(false); setReason(''); setEditing(true) }} disabled={!doc.data}><Pencil size={14} />Edit</Button>}
           <Button size="sm" variant="destructive" onClick={onDelete} disabled={remove.isPending || !doc.data || (confirmingDelete && !reason.trim())}><Trash2 size={14} />{confirmingDelete ? 'Confirm delete' : 'Delete'}</Button>
-        </div>} />
+        </div>}>
       {doc.isPending ? <p className="text-muted-foreground">Loading doc...</p> : null}
       {doc.error ? <p className="text-destructive">{doc.error.message}</p> : null}
       {save.error ? <p className="text-destructive">{save.error.message}</p> : null}
@@ -171,6 +170,6 @@ function DocPage() {
           <span className="text-muted-foreground">{revision.at} · {revision.bytes} bytes</span>
         </div>)}
       </div> : null}
-    </section>
+    </Sheet>
   )
 }

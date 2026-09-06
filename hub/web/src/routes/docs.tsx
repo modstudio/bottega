@@ -1,19 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
-import { createFileRoute, Link, Outlet, useMatches, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Outlet, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { ChevronRight, Plus } from 'lucide-react'
-import { EmptyState, PageHeader } from '@/components/design-system'
+import { PageHeader } from '@/components/design-system'
 import { Button } from '@/components/button'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/dialog'
 import { Input } from '@/components/input'
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from '@/components/table'
 import { Tabs, TabsList, TabsTrigger } from '@/components/tabs'
 import { queryClient, trpc } from '@/trpc/client'
 import { compactBytes, relativeTime } from '@/lib/format'
+import { Collection, type CollectionColumn } from '@/components/collection'
 import {
   DOC_SCOPES, DOC_SCOPE_SUBJECT_KIND, type DocScope,
 } from '../../../../shared/docs.ts'
@@ -39,10 +37,7 @@ const selectClass =
 export const Route = createFileRoute('/docs')({ component: DocsPage })
 
 function DocsPage() {
-  const matches = useMatches()
-  const leaf = matches[matches.length - 1]
-  if (leaf && leaf.routeId !== '/docs') return <Outlet />
-  return <DocsList />
+  return <><DocsList /><Outlet /></>
 }
 
 function DocsList() {
@@ -96,6 +91,17 @@ function DocsList() {
       return doc.slug.toLowerCase().includes(q) || doc.title.toLowerCase().includes(q)
     })
   }, [docs.data, scopeFilter, textFilter])
+  type Row = typeof rows[number]
+  const columns: CollectionColumn<Row>[] = [
+    { id: 'scope', label: 'Scope', render: (doc) => doc.scope },
+    { id: 'subject', label: 'Subject', render: (doc) => <span className="text-muted-foreground">{doc.subject ?? '-'}</span> },
+    { id: 'slug', label: 'Slug', render: (doc) => <strong>{doc.slug}</strong> },
+    { id: 'title', label: 'Title', render: (doc) => doc.title },
+    { id: 'delivery', label: 'Delivery', render: (doc) => doc.delivery },
+    { id: 'size', label: 'Size', className: 'num', render: (doc) => compactBytes(bodyBytes(doc.body)) },
+    { id: 'updated', label: 'Updated', render: (doc) => <span className="text-muted-foreground">{relativeTime(doc.updated_at)}</span> },
+    { id: 'open', label: '', render: () => <ChevronRight size={14} className="text-muted-foreground" /> },
+  ]
 
   function submitCreate() {
     if (!slug || !title) return
@@ -125,60 +131,9 @@ function DocsList() {
           <Plus size={14} />
           New doc
         </Button>} />
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <Tabs value={scopeFilter} onValueChange={setScopeFilter}>
-          <TabsList>
-            <TabsTrigger value="all">All</TabsTrigger>
-            {DOC_SCOPES.map((s) => (
-              <TabsTrigger key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-        <Input
-          value={textFilter}
-          onChange={(e) => setTextFilter(e.target.value)}
-          placeholder="Filter slug or title"
-          className="h-9 max-w-xs"
-        />
-      </div>
       {docs.isPending ? <p className="text-muted-foreground">Loading docs...</p> : null}
       {docs.error ? <p className="text-destructive">{docs.error.message}</p> : null}
-      {docs.data ? (
-        <div className="border border-border">
-          <Table className="text-[12.5px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="h-9 px-3">Scope</TableHead>
-                <TableHead className="h-9 px-3">Subject</TableHead>
-                <TableHead className="h-9 px-3">Slug</TableHead>
-                <TableHead className="h-9 px-3">Title</TableHead>
-                <TableHead className="h-9 px-3">Delivery</TableHead>
-                <TableHead className="num">Size</TableHead>
-                <TableHead className="h-9 px-3">Updated</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((doc) => (
-                <TableRow
-                  key={`${doc.scope}:${doc.subject ?? '_'}:${doc.slug}`}
-                  className="data-table-link relative"
-                >
-                  <TableCell className="px-3 py-2">{doc.scope}</TableCell>
-                  <TableCell className="px-3 py-2 text-muted-foreground">{doc.subject ?? '-'}</TableCell>
-                  <TableCell className="max-w-48 truncate font-semibold" title={doc.slug}><Link className="row-link" to="/docs/$scope/$subject/$slug" params={{ scope: doc.scope, subject: doc.subject ?? '_', slug: doc.slug }}>{doc.slug}</Link></TableCell>
-                  <TableCell className="px-3 py-2">{doc.title}</TableCell>
-                  <TableCell className="px-3 py-2">{doc.delivery}</TableCell>
-                  <TableCell className="num">{compactBytes(bodyBytes(doc.body))}</TableCell>
-                  <TableCell className="text-muted-foreground">{relativeTime(doc.updated_at)}</TableCell>
-                  <TableCell><ChevronRight size={14} className="text-muted-foreground" /></TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          {!rows.length ? <EmptyState title="No docs match this view." hint="Change the scope or clear the text filter." /> : null}
-        </div>
-      ) : null}
+      {docs.data ? <Collection title="Documents" count={rows.length} search={{ query: textFilter, onQueryChange: setTextFilter, placeholder: 'Filter slug or title' }} filters={<Tabs value={scopeFilter} onValueChange={setScopeFilter}><TabsList><TabsTrigger value="all">All</TabsTrigger>{DOC_SCOPES.map((s) => <TabsTrigger key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</TabsTrigger>)}</TabsList></Tabs>} columns={columns} rows={rows} getKey={(doc) => `${doc.scope}:${doc.subject ?? '_'}:${doc.slug}`} onOpen={(doc) => void navigate({ to: '/docs/$scope/$subject/$slug', params: { scope: doc.scope, subject: doc.subject ?? '_', slug: doc.slug }, search: {} })} empty="No docs match this view." /> : null}
 
       <Dialog open={creating} onOpenChange={(open) => { if (!open) setCreating(false) }}>
         <DialogContent>

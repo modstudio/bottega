@@ -10,11 +10,13 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AgentsRouteImport } from './routes/agents'
 import { Route as BoardRouteImport } from './routes/board'
 import { Route as DesignRouteImport } from './routes/design'
 import { Route as DocsRouteImport } from './routes/docs'
 import { Route as DoneRouteImport } from './routes/done'
 import { Route as FlightRouteImport } from './routes/flight'
+import { Route as JobsRouteImport } from './routes/jobs'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as RatioRouteImport } from './routes/ratio'
 import { Route as RoutingRouteImport } from './routes/routing'
@@ -23,11 +25,17 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SpendRouteImport } from './routes/spend'
 import { Route as ProjectsNameRouteImport } from './routes/projects.$name'
 import { Route as RunsIdRouteImport } from './routes/runs.$id'
+import { Route as TasksKeyRouteImport } from './routes/tasks.$key'
 import { Route as DocsScopeSubjectSlugRouteImport } from './routes/docs.$scope.$subject.$slug'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AgentsRoute = AgentsRouteImport.update({
+  id: '/agents',
+  path: '/agents',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BoardRoute = BoardRouteImport.update({
@@ -53,6 +61,11 @@ const DoneRoute = DoneRouteImport.update({
 const FlightRoute = FlightRouteImport.update({
   id: '/flight',
   path: '/flight',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const JobsRoute = JobsRouteImport.update({
+  id: '/jobs',
+  path: '/jobs',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjectsRoute = ProjectsRouteImport.update({
@@ -95,6 +108,11 @@ const RunsIdRoute = RunsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => RunsRoute,
 } as any)
+const TasksKeyRoute = TasksKeyRouteImport.update({
+  id: '/tasks/$key',
+  path: '/tasks/$key',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DocsScopeSubjectSlugRoute = DocsScopeSubjectSlugRouteImport.update({
   id: '/$scope/$subject/$slug',
   path: '/$scope/$subject/$slug',
@@ -103,11 +121,13 @@ const DocsScopeSubjectSlugRoute = DocsScopeSubjectSlugRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/agents': typeof AgentsRoute
   '/board': typeof BoardRoute
   '/design': typeof DesignRoute
   '/docs': typeof DocsRouteWithChildren
   '/done': typeof DoneRoute
   '/flight': typeof FlightRoute
+  '/jobs': typeof JobsRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
   '/routing': typeof RoutingRoute
@@ -116,15 +136,18 @@ export interface FileRoutesByFullPath {
   '/spend': typeof SpendRoute
   '/projects/$name': typeof ProjectsNameRoute
   '/runs/$id': typeof RunsIdRoute
+  '/tasks/$key': typeof TasksKeyRoute
   '/docs/$scope/$subject/$slug': typeof DocsScopeSubjectSlugRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/agents': typeof AgentsRoute
   '/board': typeof BoardRoute
   '/design': typeof DesignRoute
   '/docs': typeof DocsRouteWithChildren
   '/done': typeof DoneRoute
   '/flight': typeof FlightRoute
+  '/jobs': typeof JobsRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
   '/routing': typeof RoutingRoute
@@ -133,16 +156,19 @@ export interface FileRoutesByTo {
   '/spend': typeof SpendRoute
   '/projects/$name': typeof ProjectsNameRoute
   '/runs/$id': typeof RunsIdRoute
+  '/tasks/$key': typeof TasksKeyRoute
   '/docs/$scope/$subject/$slug': typeof DocsScopeSubjectSlugRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/agents': typeof AgentsRoute
   '/board': typeof BoardRoute
   '/design': typeof DesignRoute
   '/docs': typeof DocsRouteWithChildren
   '/done': typeof DoneRoute
   '/flight': typeof FlightRoute
+  '/jobs': typeof JobsRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
   '/routing': typeof RoutingRoute
@@ -151,17 +177,20 @@ export interface FileRoutesById {
   '/spend': typeof SpendRoute
   '/projects/$name': typeof ProjectsNameRoute
   '/runs/$id': typeof RunsIdRoute
+  '/tasks/$key': typeof TasksKeyRoute
   '/docs/$scope/$subject/$slug': typeof DocsScopeSubjectSlugRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/agents'
     | '/board'
     | '/design'
     | '/docs'
     | '/done'
     | '/flight'
+    | '/jobs'
     | '/projects'
     | '/ratio'
     | '/routing'
@@ -170,15 +199,18 @@ export interface FileRouteTypes {
     | '/spend'
     | '/projects/$name'
     | '/runs/$id'
+    | '/tasks/$key'
     | '/docs/$scope/$subject/$slug'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/agents'
     | '/board'
     | '/design'
     | '/docs'
     | '/done'
     | '/flight'
+    | '/jobs'
     | '/projects'
     | '/ratio'
     | '/routing'
@@ -187,15 +219,18 @@ export interface FileRouteTypes {
     | '/spend'
     | '/projects/$name'
     | '/runs/$id'
+    | '/tasks/$key'
     | '/docs/$scope/$subject/$slug'
   id:
     | '__root__'
     | '/'
+    | '/agents'
     | '/board'
     | '/design'
     | '/docs'
     | '/done'
     | '/flight'
+    | '/jobs'
     | '/projects'
     | '/ratio'
     | '/routing'
@@ -204,22 +239,26 @@ export interface FileRouteTypes {
     | '/spend'
     | '/projects/$name'
     | '/runs/$id'
+    | '/tasks/$key'
     | '/docs/$scope/$subject/$slug'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AgentsRoute: typeof AgentsRoute
   BoardRoute: typeof BoardRoute
   DesignRoute: typeof DesignRoute
   DocsRoute: typeof DocsRouteWithChildren
   DoneRoute: typeof DoneRoute
   FlightRoute: typeof FlightRoute
+  JobsRoute: typeof JobsRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
   RatioRoute: typeof RatioRoute
   RoutingRoute: typeof RoutingRoute
   RunsRoute: typeof RunsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
   SpendRoute: typeof SpendRoute
+  TasksKeyRoute: typeof TasksKeyRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -229,6 +268,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/agents': {
+      id: '/agents'
+      path: '/agents'
+      fullPath: '/agents'
+      preLoaderRoute: typeof AgentsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/board': {
@@ -264,6 +310,13 @@ declare module '@tanstack/react-router' {
       path: '/flight'
       fullPath: '/flight'
       preLoaderRoute: typeof FlightRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/jobs': {
+      id: '/jobs'
+      path: '/jobs'
+      fullPath: '/jobs'
+      preLoaderRoute: typeof JobsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/projects': {
@@ -322,6 +375,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RunsIdRouteImport
       parentRoute: typeof RunsRoute
     }
+    '/tasks/$key': {
+      id: '/tasks/$key'
+      path: '/tasks/$key'
+      fullPath: '/tasks/$key'
+      preLoaderRoute: typeof TasksKeyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/docs/$scope/$subject/$slug': {
       id: '/docs/$scope/$subject/$slug'
       path: '/$scope/$subject/$slug'
@@ -366,17 +426,20 @@ const RunsRouteWithChildren = RunsRoute._addFileChildren(RunsRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AgentsRoute: AgentsRoute,
   BoardRoute: BoardRoute,
   DesignRoute: DesignRoute,
   DocsRoute: DocsRouteWithChildren,
   DoneRoute: DoneRoute,
   FlightRoute: FlightRoute,
+  JobsRoute: JobsRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   RatioRoute: RatioRoute,
   RoutingRoute: RoutingRoute,
   RunsRoute: RunsRouteWithChildren,
   SettingsRoute: SettingsRoute,
   SpendRoute: SpendRoute,
+  TasksKeyRoute: TasksKeyRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

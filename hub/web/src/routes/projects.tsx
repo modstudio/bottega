@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Outlet, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { ChevronRight, FolderGit2, Plus } from 'lucide-react'
-import { EmptyState, PageHeader } from '@/components/design-system'
+import { PageHeader } from '@/components/design-system'
 import { toast } from '@/components/toaster'
 import { Badge } from '@/components/badge'
 import { Button } from '@/components/button'
@@ -11,10 +11,8 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '@/components/dialog'
 import { Input } from '@/components/input'
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from '@/components/table'
 import { queryClient, trpc, type ProjectRow } from '@/trpc/client'
+import { Collection, type CollectionColumn } from '@/components/collection'
 
 function TrackerState({ project }: { project: ProjectRow }) {
   const status = project.trackerStatus
@@ -43,9 +41,12 @@ function useProjects() {
   return useQuery(trpc.project.list.queryOptions())
 }
 
-export const Route = createFileRoute('/projects')({ component: ProjectsPage })
+export const Route = createFileRoute('/projects')({ component: ProjectsRoute })
+
+function ProjectsRoute() { return <><ProjectsPage /><Outlet /></> }
 
 function ProjectsPage() {
+  const navigate = useNavigate()
   const projects = useProjects()
   const [adding, setAdding] = useState(false)
   const [path, setPath] = useState('')
@@ -72,45 +73,22 @@ function ProjectsPage() {
     setError(null)
     add.mutate({ path, ...(name ? { name } : {}), ...(stack ? { stack } : {}), canon })
   }
+  const columns: CollectionColumn<ProjectRow>[] = [
+    { id: 'name', label: 'Name', render: (project) => <span className="flex items-center gap-2 font-semibold"><FolderGit2 size={14} />{project.name}</span> },
+    { id: 'stack', label: 'Stack', render: (project) => project.stack ?? '-' },
+    { id: 'path', label: 'Path', render: (project) => <span className="block max-w-sm truncate text-muted-foreground">{project.path}</span> },
+    { id: 'canon', label: 'Canon', render: (project) => project.canon ? <Badge variant="outline">canon</Badge> : '-' },
+    { id: 'tracker', label: 'Tracker', render: (project) => <TrackerState project={project} /> },
+    { id: 'worktree', label: 'Worktree', render: (project) => worktreeMode(project.settings) },
+    { id: 'open', label: '', render: () => <ChevronRight size={14} className="text-muted-foreground" /> },
+  ]
 
   return (
     <section>
       <PageHeader title="Projects" subtitle={`${projects.data?.length ?? 0} registered`} actions={<Button size="sm" onClick={() => setAdding(true)}><Plus size={14} />Add project</Button>} />
       {projects.isPending ? <p className="text-muted-foreground">Loading register...</p> : null}
       {projects.error ? <p className="text-destructive">{projects.error.message}</p> : null}
-      {projects.data ? (
-        <div className="border border-border">
-          <Table className="text-[12.5px]">
-            <TableHeader><TableRow>
-              <TableHead className="h-9 px-3">Name</TableHead>
-              <TableHead className="h-9 px-3">Stack</TableHead>
-              <TableHead className="h-9 px-3">Path</TableHead>
-              <TableHead className="h-9 px-3">Canon</TableHead>
-              <TableHead className="h-9 px-3">Tracker</TableHead>
-              <TableHead className="h-9 px-3">Worktree</TableHead>
-              <TableHead />
-            </TableRow></TableHeader>
-            <TableBody>
-              {projects.data.map((project) => (
-                <TableRow key={project.id} className="relative hover:bg-muted/50">
-                  <TableCell className="px-3 py-2 font-semibold">
-                    <Link to="/projects/$name" params={{ name: project.name }} className="flex items-center gap-2 after:absolute after:inset-0">
-                      <FolderGit2 size={14} />{project.name}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="px-3 py-2">{project.stack ?? '-'}</TableCell>
-                  <TableCell className="max-w-sm truncate px-3 py-2 text-muted-foreground">{project.path}</TableCell>
-                  <TableCell className="px-3 py-2">{project.canon ? <Badge variant="outline">canon</Badge> : '-'}</TableCell>
-                  <TableCell className="px-3 py-2"><TrackerState project={project} /></TableCell>
-                  <TableCell className="px-3 py-2">{worktreeMode(project.settings)}</TableCell>
-                  <TableCell><ChevronRight size={14} className="text-muted-foreground" /></TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          {!projects.data.length ? <EmptyState title="No projects are registered." hint="Add a project to make it available throughout hub." /> : null}
-        </div>
-      ) : null}
+      {projects.data ? <Collection title="Register" count={projects.data.length} columns={columns} rows={projects.data} getKey={(project) => project.id} onOpen={(project) => void navigate({ to: '/projects/$name', params: { name: project.name } })} empty="No projects are registered." /> : null}
       <Dialog open={adding} onOpenChange={(open) => { setAdding(open); if (!open) setError(null) }}>
         <DialogContent>
           <DialogHeader>

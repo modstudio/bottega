@@ -15,12 +15,15 @@ const docRemove = mock(async (_scope: string, _subject: string | null, _slug: st
   ({ removed: false }))
 const docHistory = mock(async (_scope: string, _subject: string | null, _slug: string) => [] as unknown[])
 const docSubjects = mock(async () => ({ project: [] as string[], agent: [] as string[], job: [] as string[] }))
+const jobs = mock(async () => [])
+const agents = mock(async () => [])
 
 mock.module('../orch.ts', () => ({
-  docList, docGet, docSet, docRemove, docHistory, docSubjects,
+  docList, docGet, docSet, docRemove, docHistory, docSubjects, jobs, agents,
 }))
 
 const { appRouter } = await import('./router.ts')
+const { createWorkRouter } = await import('./routers/work.ts')
 const caller = appRouter.createCaller({})
 
 const row = {
@@ -63,6 +66,25 @@ describe('project.list', () => {
         error: null,
       },
     })
+  })
+})
+
+describe('work.task', () => {
+  const fakeStrip = (() => ({})) as never
+  const fakeView = (async () => ({})) as never
+
+  test('returns the canonical task record', async () => {
+    const record = { task: { key: 'DEV-1' }, source: 'local', project: null, runs: [], comments: [], documents: [] }
+    const router = createWorkRouter({ strip: fakeStrip, view: fakeView, taskRecord: () => record as never })
+    const result = await router.createCaller({}).task({ key: 'DEV-1' })
+    expect(result.task.key).toBe('DEV-1')
+    expect(result.source).toBe('local')
+  })
+
+  test('maps an unknown key to NOT_FOUND', async () => {
+    const router = createWorkRouter({ strip: fakeStrip, view: fakeView, taskRecord: () => { throw new Error('no task DEV-404') } })
+    await expect(router.createCaller({}).task({ key: 'DEV-404' }))
+      .rejects.toMatchObject({ code: 'NOT_FOUND', message: 'no task DEV-404' })
   })
 })
 

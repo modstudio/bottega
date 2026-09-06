@@ -12,6 +12,7 @@ import {
 import { useWindowState } from '@/lib/window'
 import { queryClient, trpc, type SettingsResponse } from '@/trpc/client'
 import { EmptyState, PageHeader, SectionTitle } from '@/components/design-system'
+import { FieldSection, SettingBlock } from '@/components/fields'
 
 type SettingsData = SettingsResponse['data']
 type Report = SettingsData['report']
@@ -39,18 +40,6 @@ function formFrom(report: Report): FormState {
     testTo: report.testTo,
     projects: report.projects,
   }
-}
-
-function Field({ label, hint, children }: {
-  label: string
-  hint?: string
-  children: React.ReactNode
-}) {
-  return <label className="block space-y-1 text-[12.5px]">
-    <span className="text-muted-foreground">{label}</span>
-    {children}
-    {hint ? <span className="block text-[11px] text-muted-foreground">{hint}</span> : null}
-  </label>
 }
 
 export const Route = createFileRoute('/settings')({ component: SettingsPage })
@@ -125,19 +114,20 @@ function SettingsPage() {
     {data && form ? <>
       <Card className="mb-6 max-w-[640px] rounded-none">
         <CardContent className="space-y-4 p-4">
+          <FieldSection title="Schedule and delivery" description="What the daily report sends, and where it goes.">
           <label className="flex items-center gap-2 text-sm font-semibold">
             <Checkbox checked={form.enabled} onChange={(event) => change({ enabled: event.target.checked })} />
             Send daily report
             <span className="font-normal text-muted-foreground">Off records why a send did not happen.</span>
           </label>
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Recipients" hint="Comma separated."><Input value={form.to} onChange={(event) => change({ to: event.target.value })} /></Field>
-            <Field label="Subject prefix"><Input value={form.subjectPrefix} onChange={(event) => change({ subjectPrefix: event.target.value })} /></Field>
-            <Field label="From name"><Input value={form.fromName} onChange={(event) => change({ fromName: event.target.value })} /></Field>
-            <Field label="From address"><Input value={form.fromAddress} onChange={(event) => change({ fromAddress: event.target.value })} /></Field>
-            <Field label="Window (hours)"><Input value={form.windowHours} onChange={(event) => change({ windowHours: event.target.value })} /></Field>
-            <Field label="Floor (minutes engaged)" hint="Work below this floor is not sent."><Input value={form.minMinutes} onChange={(event) => change({ minMinutes: event.target.value })} /></Field>
-            <Field label="Test address" hint="Tests go here without changing the recipient list."><Input value={form.testTo} onChange={(event) => change({ testTo: event.target.value })} /></Field>
+            <SettingBlock label="Recipients" hint="Comma separated." control={<Input value={form.to} onChange={(event) => change({ to: event.target.value })} />} />
+            <SettingBlock label="Subject prefix" control={<Input value={form.subjectPrefix} onChange={(event) => change({ subjectPrefix: event.target.value })} />} />
+            <SettingBlock label="From name" control={<Input value={form.fromName} onChange={(event) => change({ fromName: event.target.value })} />} />
+            <SettingBlock label="From address" control={<Input value={form.fromAddress} onChange={(event) => change({ fromAddress: event.target.value })} />} />
+            <SettingBlock label="Window (hours)" control={<Input value={form.windowHours} onChange={(event) => change({ windowHours: event.target.value })} />} />
+            <SettingBlock label="Floor (minutes engaged)" hint="Work below this floor is not sent." control={<Input value={form.minMinutes} onChange={(event) => change({ minMinutes: event.target.value })} />} />
+            <SettingBlock label="Test address" hint="Tests go here without changing the recipient list." control={<Input value={form.testTo} onChange={(event) => change({ testTo: event.target.value })} />} />
           </div>
           <div>
             <div className="mb-2 text-[12.5px] text-muted-foreground">Projects in the email</div>
@@ -161,6 +151,7 @@ function SettingsPage() {
             <Button variant="outline" size="sm" disabled={sendTest.isPending} onClick={test}>Send a test</Button>
             <span className="text-sm text-muted-foreground">{said}</span>
           </div>
+          </FieldSection>
         </CardContent>
       </Card>
 

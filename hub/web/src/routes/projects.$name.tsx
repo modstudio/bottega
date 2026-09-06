@@ -1,14 +1,15 @@
 import { useState } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Copy, Save, Trash2 } from 'lucide-react'
+import { Save, Trash2 } from 'lucide-react'
 import { toast } from '@/components/toaster'
 import { Button } from '@/components/button'
 import { Checkbox } from '@/components/checkbox'
 import { Input } from '@/components/input'
 import { Textarea } from '@/components/textarea'
 import { queryClient, trpc, type ProjectRow } from '@/trpc/client'
-import { PageHeader } from '@/components/design-system'
+import { FieldSection, SettingBlock } from '@/components/fields'
+import { Sheet } from '@/components/sheet'
 
 export const Route = createFileRoute('/projects/$name')({ component: ProjectEditPage })
 
@@ -20,30 +21,19 @@ function settingsCommand(name: string, value: Record<string, unknown>) {
   return `orch project set ${shellQuote(name)} --settings ${shellQuote(JSON.stringify(value))}`
 }
 
-function CommandHint({ command }: { command: string }) {
-  const copy = async () => {
-    await navigator.clipboard.writeText(command)
-    toast.success('Command copied')
-  }
-  return (
-    <button type="button" onClick={copy} className="flex max-w-full items-center gap-1 truncate text-left font-mono text-[10px] text-muted-foreground hover:text-foreground" title={command}>
-      <Copy size={11} className="shrink-0" />{command}
-    </button>
-  )
-}
-
 function pretty(value: unknown) {
   return value === undefined ? '' : JSON.stringify(value, null, 2)
 }
 
 function ProjectEditPage() {
+  const navigate = useNavigate()
   const { name } = Route.useParams()
   const projects = useQuery(trpc.project.list.queryOptions())
   const project = projects.data?.find((candidate) => candidate.name === name)
 
-  if (projects.isPending) return <p className="text-muted-foreground">Loading register...</p>
-  if (projects.error) return <p className="text-destructive">{projects.error.message}</p>
-  if (!project) return <p className="text-destructive">No project &quot;{name}&quot;</p>
+  if (projects.isPending) return <Sheet open onClose={() => void navigate({ to: '/projects' })} title={name}><p className="text-muted-foreground">Loading register...</p></Sheet>
+  if (projects.error) return <Sheet open onClose={() => void navigate({ to: '/projects' })} title={name}><p className="text-destructive">{projects.error.message}</p></Sheet>
+  if (!project) return <Sheet open onClose={() => void navigate({ to: '/projects' })} title={name}><p className="text-destructive">No project &quot;{name}&quot;</p></Sheet>
   return <ProjectForm key={project.id} project={project} />
 }
 
@@ -131,32 +121,23 @@ function ProjectForm({ project }: { project: ProjectRow }) {
   })()
 
   return (
-    <section>
-      <form onSubmit={submit}>
-      <PageHeader title={project.name} subtitle={project.path} actions={<><Button type="submit" disabled={!changed || save.isPending}><Save size={14} />{save.isPending ? 'Saving...' : 'Save changes'}</Button><Button type="button" variant="destructive" disabled={remove.isPending} onClick={() => { if (!confirmRemove) { setConfirmRemove(true); return }; setError(null); remove.mutate({ name: project.name }) }}><Trash2 size={14} />{remove.isPending ? 'Removing...' : confirmRemove ? 'Confirm remove' : 'Remove'}</Button></>} />
-      <div className="max-w-[640px] space-y-5">
-        <Field label="Path" command={`orch project set ${shellQuote(project.name)} --path ${shellQuote(path)}`}><Input value={path} onChange={(event) => setPath(event.target.value)} /></Field>
-        <Field label="Stack" command={`orch project set ${shellQuote(project.name)} --stack ${shellQuote(stack)}`}><Input value={stack} onChange={(event) => setStack(event.target.value)} /></Field>
-        <Field label="Canon" command={`orch project set ${shellQuote(project.name)} ${canon ? '--canon' : '--no-canon'}`}><label className="flex items-center gap-2"><Checkbox checked={canon} onChange={(event) => setCanon(event.target.checked)} />Included in canon</label></Field>
-        <Field label="Trunk" command={settingsCommand(project.name, { trunk })}><Input value={trunk} onChange={(event) => setTrunk(event.target.value)} /></Field>
-        <Field label="Key prefixes" command={settingsCommand(project.name, { keyPrefixes: prefixes })}><Input value={keyPrefixes} onChange={(event) => setKeyPrefixes(event.target.value)} placeholder="DEV, HUB" /></Field>
-        <Field label="Color" command={settingsCommand(project.name, { color })}><Input value={color} onChange={(event) => setColor(event.target.value)} /></Field>
-        <Field label="Color dark" command={settingsCommand(project.name, { colorDark })}><Input value={colorDark} onChange={(event) => setColorDark(event.target.value)} /></Field>
-        <Field label="Tracker" command={settingsCommand(project.name, { tracker: trackerCommandValue })}><Textarea rows={12} className="font-mono text-[12.5px]" value={tracker} onChange={(event) => setTracker(event.target.value)} /></Field>
-        <Field label="Worktree" command={settingsCommand(project.name, { worktree: worktreeCommandValue })}><Textarea rows={12} className="font-mono text-[12.5px]" value={worktree} onChange={(event) => setWorktree(event.target.value)} /></Field>
+    <Sheet open onClose={() => void navigate({ to: '/projects' })} title={project.name} subtitle={project.path} actions={<><Button type="submit" form="project-form" disabled={!changed || save.isPending}><Save size={14} />{save.isPending ? 'Saving...' : 'Save'}</Button><Button type="button" variant="destructive" disabled={remove.isPending} onClick={() => { if (!confirmRemove) { setConfirmRemove(true); return }; setError(null); remove.mutate({ name: project.name }) }}><Trash2 size={14} />{remove.isPending ? 'Removing...' : confirmRemove ? 'Confirm' : 'Remove'}</Button></>}>
+      <form id="project-form" onSubmit={submit} className="space-y-6">
+      <FieldSection title="Project" description="Checkout identity and canon participation."><div className="space-y-5">
+        <SettingBlock label="Path" cli={`orch project set ${shellQuote(project.name)} --path ${shellQuote(path)}`} control={<Input value={path} onChange={(event) => setPath(event.target.value)} />} />
+        <SettingBlock label="Stack" cli={`orch project set ${shellQuote(project.name)} --stack ${shellQuote(stack)}`} control={<Input value={stack} onChange={(event) => setStack(event.target.value)} />} />
+        <SettingBlock label="Canon" cli={`orch project set ${shellQuote(project.name)} ${canon ? '--canon' : '--no-canon'}`} control={<label className="flex items-center gap-2"><Checkbox checked={canon} onChange={(event) => setCanon(event.target.checked)} />Included in canon</label>} />
+        <SettingBlock label="Trunk" cli={settingsCommand(project.name, { trunk })} control={<Input value={trunk} onChange={(event) => setTrunk(event.target.value)} />} />
+        <SettingBlock label="Key prefixes" cli={settingsCommand(project.name, { keyPrefixes: prefixes })} control={<Input value={keyPrefixes} onChange={(event) => setKeyPrefixes(event.target.value)} placeholder="DEV, HUB" />} />
+        <SettingBlock label="Color" cli={settingsCommand(project.name, { color })} control={<Input value={color} onChange={(event) => setColor(event.target.value)} />} />
+        <SettingBlock label="Color dark" cli={settingsCommand(project.name, { colorDark })} control={<Input value={colorDark} onChange={(event) => setColorDark(event.target.value)} />} />
+      </div></FieldSection>
+      <FieldSection title="Integrations" description="Tracker and worktree definitions are JSON in the project register."><div className="space-y-5">
+        <SettingBlock label="Tracker" cli={settingsCommand(project.name, { tracker: trackerCommandValue })} control={<Textarea rows={12} className="font-mono text-[12.5px]" value={tracker} onChange={(event) => setTracker(event.target.value)} />} />
+        <SettingBlock label="Worktree" cli={settingsCommand(project.name, { worktree: worktreeCommandValue })} control={<Textarea rows={12} className="font-mono text-[12.5px]" value={worktree} onChange={(event) => setWorktree(event.target.value)} />} />
+      </div></FieldSection>
         {error ? <p className="text-destructive">{error} Correct the field and try again.</p> : null}
-      </div>
       </form>
-    </section>
-  )
-}
-
-function Field({ label, command, children }: { label: string; command: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <label className="text-[12.5px] text-muted-foreground">{label}</label>
-      <div>{children}</div>
-      <CommandHint command={command} />
-    </div>
+    </Sheet>
   )
 }

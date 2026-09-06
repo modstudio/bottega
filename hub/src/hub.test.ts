@@ -20,7 +20,7 @@ const { easternTime } = await import('./time.ts')
 const { projectColor, projectNames, trackerPresentation } = await import('./projects.ts')
 const { ingestTrackers, upsertTrackerTask, resolveAssigneeIds, trackerRegistrations } =
   await import('./ingest/trackers.ts')
-const { createTask, duplicateCandidates, duplicateScore, showTask } = await import('./task.ts')
+const { commentTask, createTask, createTaskDocument, duplicateCandidates, duplicateScore, showTask, taskRecord } = await import('./task.ts')
 const { chainVendorTokens, executionSpans, ingestRuns } = await import('./ingest/runs.ts')
 const { listOpenRulings, rulingsPayload, rulingsStaleAfter } = await import('./rulings.ts')
 const { runsSince } = await import('./collect.ts')
@@ -930,6 +930,29 @@ describe('local task tracker', () => {
     expect(scores['DEV-293/DEV-294']).toBeLessThan(0.20)
     expect(scores['best unrelated']).toBeLessThan(0.20)
   })
+
+  test('work.task returns the local record with comments, documents, runs and project', async () => {
+    const task = createTask({ project: 'workshop', title: 'Inspectable task', body: 'Task body' })
+    const comment = commentTask(task.key, 'A useful comment')
+    const ordinary = createTaskDocument({ task: task.key, title: 'Notes', body: '# Notes' })
+    const handoff = createTaskDocument({ task: task.key, title: 'Handoff', body: '# Handoff', role: 'handoff' })
+    db().query(
+      `INSERT INTO interval
+        (task_key, project, source, agent, job, start_at, end_at, vendor_tokens, ref, open)
+       VALUES (?, 'workshop', 'orch', 'codex', 'implement', ?, ?, 123, 'orch:1812', 0)`,
+    ).run(task.key, '2026-09-05T10:00:00.000Z', '2026-09-05T10:01:00.000Z')
+
+    const result = taskRecord(task.key.toLowerCase())
+    expect(result.task).toMatchObject({ key: task.key, title: 'Inspectable task' })
+    expect(result.source).toBe('local')
+    expect(result.project?.name).toBe('workshop')
+    expect(result.comments).toEqual([comment])
+    expect(result.documents.map((document) => document.id)).toEqual([handoff.id, ordinary.id])
+    expect(result.documents[0]?.body).toBe('# Handoff')
+    expect(result.runs).toEqual([expect.objectContaining({ id: 1812, agent: 'codex', vendor_tokens: 123 })])
+    expect(taskRecord(task.key).task.key).toBe(task.key)
+  })
+
 })
 
 describe('attribute()', () => {

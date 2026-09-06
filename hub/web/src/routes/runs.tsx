@@ -1,15 +1,13 @@
 import { useState } from 'react'
-import { createFileRoute, Link, Outlet, useMatches } from '@tanstack/react-router'
+import { createFileRoute, Outlet, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRight } from 'lucide-react'
-import { EmptyState, LiveDot, PageHeader, ProjectMark, SectionTitle, StatRow, StatTile, WindowBar } from '@/components/design-system'
+import { LiveDot, PageHeader, ProjectMark, StatRow, StatTile, WindowBar } from '@/components/design-system'
 import { Badge } from '@/components/badge'
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from '@/components/table'
 import { useWindowState } from '@/lib/window'
 import { collectedTime, compactTokens, duration } from '@/lib/format'
 import { trpc } from '@/trpc/client'
+import { Collection, type CollectionColumn } from '@/components/collection'
 
 type RunRow = {
   id: number; agent: string; job: string | null; task: string | null; project: string | null
@@ -60,15 +58,14 @@ function Verdict({ row }: { row: RunRow }) {
 export const Route = createFileRoute('/runs')({ component: RunsPage })
 
 function RunsPage() {
-  const matches = useMatches()
-  const leaf = matches[matches.length - 1]
-  if (leaf && leaf.routeId !== '/runs') return <Outlet />
-  return <RunsList />
+  return <><RunsList /><Outlet /></>
 }
 
 function RunsList() {
+  const navigate = useNavigate()
   const windowState = useWindowState()
   const [openMenus, setOpenMenus] = useState(0)
+  const [search, setSearch] = useState('')
   const query = useQuery(trpc.run.list.queryOptions({
     hours: windowState.hours, agent: windowState.filters.agent, project: windowState.filters.project,
   }, { refetchInterval: openMenus ? false : 2000 }))
@@ -84,6 +81,28 @@ function RunsList() {
     [data.totals.failed.toLocaleString(), 'failed', 'counts against the agent'],
     [compact(data.totals.toks), 'vendor tokens', 'across every agent'],
   ] : []
+  const matches = (row: RunRow | LiveRow) => JSON.stringify(row).toLowerCase().includes(search.trim().toLowerCase())
+  const liveRows = data?.live.filter(matches) ?? []
+  const runRows = data?.rows.filter(matches) ?? []
+  const liveColumns: CollectionColumn<LiveRow>[] = [
+    { id: 'agent', label: 'Agent', render: (row) => <span className="inline-flex items-center gap-2 text-live"><LiveDot />{row.agent}</span> },
+    { id: 'job', label: 'Job', render: (row) => <span className="text-muted-foreground">{row.job}</span> },
+    { id: 'project', label: 'Project', render: (row) => <ProjectMark name={row.repo} /> },
+    { id: 'elapsed', label: 'Elapsed', className: 'num', render: (row) => fmtMs(row.elapsedMs) },
+    { id: 'prompt', label: 'Prompt', render: (row) => <span className="block max-w-lg truncate text-muted-foreground">{row.prompt_head.slice(0, 90)}</span> },
+  ]
+  const runColumns: CollectionColumn<RunRow>[] = [
+    { id: 'project', label: 'Project', render: (row) => <ProjectMark name={row.project} /> },
+    { id: 'task', label: 'Task', render: (row) => <strong>{row.task ?? '-'}</strong> },
+    { id: 'agent', label: 'Agent', render: (row) => row.agent },
+    { id: 'job', label: 'Job', render: (row) => <span className="text-muted-foreground">{row.job || '-'}{row.lens ? ` ${row.lens}` : ''}{row.probe ? ' probe' : ''}</span> },
+    { id: 'took', label: 'Took', className: 'num', render: (row) => row.engaged },
+    { id: 'verdict', label: 'Verdict', render: (row) => <Verdict row={row} /> },
+    { id: 'tokens', label: 'Tokens', className: 'num', render: (row) => compact(row.tokens) },
+    { id: 'cost', label: 'Cost', className: 'num', render: (row) => row.costUsd == null ? '-' : `$${row.costUsd.toFixed(2)}` },
+    { id: 'started', label: 'Started', render: (row) => easternTime(row.at, true) },
+    { id: 'open', label: '', render: () => <ChevronRight size={14} className="text-muted-foreground" /> },
+  ]
 
   return <section>
     <PageHeader title="Runs" subtitle={payload ? `${collectedTime(payload.collectedAt)} \u00b7 ${payload.activeAgents.length} agent${payload.activeAgents.length === 1 ? '' : 's'} working` : 'Loading runs...'} subtitleTitle={payload ? `Serving code since ${payload.servingSince}` : undefined} actions={data ? <WindowBar projects={data.facets.projects} agents={data.facets.agents} onOpenChange={menuChanged} /> : null} />
@@ -92,10 +111,8 @@ function RunsList() {
     {payload && data ? <>
       <StatRow className="two-rows">{cards.map(([figure, label, hint], index) => <StatTile key={label} figure={figure} label={label} hint={hint} live={index === 1 && data.live.length > 0} />)}</StatRow>
       {filtered ? <p className="mb-4 text-muted-foreground">the counters above count the whole window; the filter applies to the tables below.</p> : null}
-      <SectionTitle detail={data.live.length ? `${data.live.length} delegated runs in flight${filtered ? ' here' : ''}` : filtered ? 'Nothing running matches these filters' : 'No delegated run is executing'}>Running now</SectionTitle>
-      {data.live.length ? <div className="border border-border"><Table><TableHeader><TableRow><TableHead>Agent</TableHead><TableHead>Job</TableHead><TableHead>Project</TableHead><TableHead className="num">Elapsed</TableHead><TableHead>Prompt</TableHead></TableRow></TableHeader><TableBody>{data.live.map((row) => <TableRow key={row.id}><TableCell className="text-live"><span className="inline-flex items-center gap-2"><LiveDot />{row.agent}</span></TableCell><TableCell className="text-muted-foreground">{row.job}</TableCell><TableCell><ProjectMark name={row.repo} /></TableCell><TableCell className="num">{fmtMs(row.elapsedMs)}</TableCell><TableCell className="max-w-lg truncate text-muted-foreground">{row.prompt_head.slice(0, 90)}</TableCell></TableRow>)}</TableBody></Table></div> : <EmptyState title="No runs are running now." hint={filtered ? 'Clear the filters to see all live runs.' : 'A delegated run appears here while it is executing.'} />}
-      <SectionTitle detail={filtered ? `${data.matched} matching, newest first` : `${data.rows.length} delegated runs, newest first`}>Runs</SectionTitle>
-      {data.rows.length ? <div className="border border-border"><Table><TableHeader><TableRow><TableHead>Project</TableHead><TableHead>Task</TableHead><TableHead>Agent</TableHead><TableHead>Job</TableHead><TableHead className="num">Took</TableHead><TableHead>Verdict</TableHead><TableHead className="num">Tokens</TableHead><TableHead className="num">Cost</TableHead><TableHead>Started</TableHead><TableHead /></TableRow></TableHeader><TableBody>{data.rows.map((row) => <TableRow key={row.id} className={`data-table-link ${row.probe ? 'opacity-70' : ''}`}><TableCell><Link to="/runs/$id" params={{ id: String(row.id) }} className="row-link font-normal"><ProjectMark name={row.project} /></Link></TableCell><TableCell className="whitespace-nowrap font-semibold">{row.task ?? '-'}</TableCell><TableCell className={row.running ? 'text-live' : ''}>{row.agent}</TableCell><TableCell className="text-muted-foreground">{row.job || '-'}{row.lens ? ` ${row.lens}` : ''}{row.probe ? ' probe' : ''}</TableCell><TableCell className="num whitespace-nowrap">{row.engaged}</TableCell><TableCell className="whitespace-nowrap"><Verdict row={row} /></TableCell><TableCell className="num text-muted-foreground" title={row.tokens?.toLocaleString()}>{compact(row.tokens)}</TableCell><TableCell className="num text-muted-foreground">{row.costUsd == null ? '-' : `$${row.costUsd.toFixed(2)}`}</TableCell><TableCell className="whitespace-nowrap text-muted-foreground">{easternTime(row.at, true)}</TableCell><TableCell><ChevronRight size={14} className="text-muted-foreground" /></TableCell></TableRow>)}</TableBody></Table></div> : <EmptyState title="No runs in this window." hint="Widen the window or clear the filters." />}
+      <Collection title="Running now" count={liveRows.length} search={{ query: search, onQueryChange: setSearch, placeholder: 'Search visible runs' }} columns={liveColumns} rows={liveRows} getKey={(row) => row.id} onOpen={(row) => void navigate({ to: '/runs/$id', params: { id: String(row.id) } })} empty={filtered ? 'Nothing running matches these filters.' : 'No delegated run is executing.'} />
+      <div className="mt-7"><Collection title="Runs" count={runRows.length} columns={runColumns} rows={runRows} getKey={(row) => row.id} onOpen={(row) => void navigate({ to: '/runs/$id', params: { id: String(row.id) } })} empty="No runs in this window." /></div>
       <p className="mt-4 max-w-4xl text-muted-foreground"><strong className="text-foreground">Scoring is the only thing that measures whether delegation works.</strong>{' '}A run nobody judged and a run judged badly must stay distinguishable, which is why an unscored run shows a control rather than a blank. A probe is a calibration run and is never routing evidence.</p>
     </> : null}
   </section>

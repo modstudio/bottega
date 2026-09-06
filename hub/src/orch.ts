@@ -126,6 +126,28 @@ export type OrchState = {
 export const state = (days: number | null) =>
   orch(['state', ...(days ? ['--days', String(days)] : [])]) as Promise<OrchState>
 
+export type OrchJob = {
+  name: string
+  what: string
+  needs: Record<string, boolean>
+  prefer: string[]
+  contextTokens: number
+  timeoutMs?: number
+  findings?: boolean
+}
+
+export type OrchAgentDefinition = {
+  name: string
+  caps: Record<string, boolean>
+  model: string
+  contextTokens: number | null
+  maxPromptBytes: number | null
+  timeoutMs: number
+}
+
+export const jobs = () => orch(['jobs', '--json']) as Promise<OrchJob[]>
+export const agents = () => orch(['agents', '--json']) as Promise<OrchAgentDefinition[]>
+
 export const runDetail = (id: number) => orch(['run', String(id)])
 
 /**
