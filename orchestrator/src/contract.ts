@@ -480,6 +480,31 @@ export function rulingPrompt(answers: { question: string; answer: string }[]): s
 }
 
 /**
+ * The bytes a resumed turn actually puts on argv: original-spec reminder,
+ * separators, resume guard, and the turn prompt (rulings or a continue message).
+ *
+ * `originalSpec` is null when the root prompt file is gone; the reminder is a
+ * courtesy, not a precondition, and a missing file must not strand the chain.
+ */
+export function packResumePrompt(
+  job: string, turnPrompt: string, originalSpec: string | null,
+): string {
+  if (originalSpec === null) return turnPrompt
+  return [
+    'REMINDER FROM THE ORIGINAL SPEC',
+    '',
+    originalSpec.slice(0, 600),
+    '',
+    'Do not decide what the spec did not settle; ask.',
+    workerResumeGuard(job),
+    '',
+    '---',
+    '',
+    turnPrompt,
+  ].join('\n')
+}
+
+/**
  * Recover the worker's structured reply from whatever actually came back.
  *
  * Three fallbacks, in descending order of how well-behaved the agent was,

@@ -1283,7 +1283,7 @@ const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePaths, pr
         canonSourceFor, canonSourceInstruction, snapshotRegisteredCheckouts,
         changedRegisteredCheckouts, checkoutAliases, checkoutCaseSensitivity,
         retargetRepositoryPrompt, retargetRepositoryPromptForDispatch,
-        run: runJob } = await import('./run.ts')
+        packedResumePrompt, run: runJob } = await import('./run.ts')
 const run = runJob
 const retargetedPrompt = (
   prompt: string, callers: string | string[], worktree: string,
@@ -1296,7 +1296,7 @@ const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
         NO_REPO_PREAMBLE, WORKER_PREAMBLE, LAND_PREAMBLE, REVIEW_SCHEMA,
         REVIEW_SEVERITY_INSTRUCTION,
         VERIFY_CLAIM_SCHEMA, ISSUE_WORKER_SCHEMA, workerPreamble, workerResumeGuard,
-        contractConflicts, hasRealQuestions, realQuestions } = await import('./contract.ts')
+        rulingPrompt, contractConflicts, hasRealQuestions, realQuestions } = await import('./contract.ts')
 const { parseReviewReply, recordReview, recordReviews, gradeReviewLens, reviewPins,
         triageFinding, completeReview, reviewCalibration, calibrationLine,
         MIN_REVIEW_TRIAGED } = await import('./review.ts')
@@ -7704,6 +7704,90 @@ describe('detached run collection', () => {
         { status: string }).status
       if (status !== 'running') break
       await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+  })
+
+  test('answer refuses six individually-legal --file rulings whose packed resume exceeds argv', () => {
+    const id = insert('asking', 'implement')
+    const spec = join(dir, `answer-six-large-${id}.prompt.txt`)
+    writeFileSync(spec, 'original implementation spec')
+    db().query('UPDATE run SET vendor_session=?, prompt_path=? WHERE id=?')
+      .run('parent-session', spec, id)
+    const now = new Date().toISOString()
+    const body = 'x'.repeat(190_000)
+    for (let i = 1; i <= 6; i++) {
+      db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+        .run(id, now, `q${i}?`)
+    }
+    const questions = db().query(
+      'SELECT id, question FROM question WHERE run_id=? ORDER BY id',
+    ).all(id) as { id: number; question: string }[]
+    const args: string[] = ['answer', String(id)]
+    for (const q of questions) {
+      const path = join(dir, `answer-six-large-${id}-q${q.id}.txt`)
+      writeFileSync(path, body)
+      args.push(`--q${q.id}`, '--file', path)
+    }
+    const packed = packedResumePrompt(
+      'implement',
+      rulingPrompt(questions.map((q) => ({ question: q.question, answer: body }))),
+      id,
+    )
+    const assembled = Buffer.byteLength(packed, 'utf8')
+
+    const r = orch(...args)
+
+    expect(assembled).toBeGreaterThan(ARGV_PROMPT_BYTES)
+    expect(r.code).toBe(1)
+    expect(r.err).toContain(`assembled resume prompt is ${assembled} bytes`)
+    expect(r.err).toContain(`bounded at ${ARGV_PROMPT_BYTES} bytes`)
+    expect(r.err).toContain('rulings that would need to shrink:')
+    expect(r.err).toContain('nothing was stored')
+    for (const q of questions) {
+      expect(r.err).toContain(`--q${q.id} (${Buffer.byteLength(body, 'utf8')} bytes)`)
+      expect((db().query('SELECT answer FROM question WHERE id=?').get(q.id) as
+        { answer: string | null }).answer).toBeNull()
+    }
+    expect((db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=?').get(id) as
+      { n: number }).n).toBe(0)
+  })
+
+  test('answer accepts six small --file rulings and resumes', () => {
+    const binDir = mkdtempSync(join(tmpdir(), 'orch-fake-codex-six-small-'))
+    writeFileSync(join(binDir, 'codex'), '#!/bin/sh\nexit 0\n')
+    chmodSync(join(binDir, 'codex'), 0o755)
+    const id = insert('asking', 'implement')
+    const spec = join(dir, `answer-six-small-${id}.prompt.txt`)
+    writeFileSync(spec, 'original implementation spec')
+    db().query('UPDATE run SET vendor_session=?, prompt_path=? WHERE id=?')
+      .run('parent-session', spec, id)
+    const now = new Date().toISOString()
+    for (let i = 1; i <= 6; i++) {
+      db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+        .run(id, now, `q${i}?`)
+    }
+    const questions = db().query(
+      'SELECT id FROM question WHERE run_id=? ORDER BY id',
+    ).all(id) as { id: number }[]
+    const args: string[] = ['answer', String(id)]
+    try {
+      for (const q of questions) {
+        const path = join(dir, `answer-six-small-${id}-q${q.id}.txt`)
+        writeFileSync(path, `yes ${q.id}`)
+        args.push(`--q${q.id}`, '--file', path)
+      }
+      const r = orchInput(args, undefined, { PATH: `${binDir}:${process.env.PATH ?? ''}` })
+      expect(r.code).toBe(0)
+      expect(r.out).toContain(`resumed run ${id} as run`)
+      for (const q of questions) {
+        expect((db().query('SELECT answer FROM question WHERE id=?').get(q.id) as
+          { answer: string }).answer).toBe(`yes ${q.id}`)
+      }
+      const childId = Number(r.out.replace(/\u001B\[[0-9;]*m/g, '').match(/as run (\d+)/)?.[1])
+      expect(childId).toBeGreaterThan(0)
+      orch('wait', String(childId), '--timeout', '15')
+    } finally {
+      rmSync(binDir, { recursive: true, force: true })
     }
   })
 

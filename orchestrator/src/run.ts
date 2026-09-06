@@ -27,7 +27,7 @@ import {
 } from './worktree.ts'
 import { recipeNotes } from './recipe.ts'
 import {
-  workerPreamble, workerResumeGuard, READONLY_PREAMBLE, NO_REPO_PREAMBLE, WORKER_SCHEMA, ISSUE_WORKER_SCHEMA, REVIEW_SCHEMA,
+  workerPreamble, packResumePrompt, READONLY_PREAMBLE, NO_REPO_PREAMBLE, WORKER_SCHEMA, ISSUE_WORKER_SCHEMA, REVIEW_SCHEMA,
   REVIEW_SEVERITY_INSTRUCTION,
   VERIFY_CLAIM_SCHEMA,
   parseWorkerReplyWithCount, isAsking, realQuestions,
@@ -1052,6 +1052,23 @@ export function pruneRuns(dir: string): void {
   } catch { /* no directory yet; nothing to prune */ }
 }
 
+/**
+ * The prompt a resumed turn actually puts on argv — reminder, separators,
+ * resume guard, and the turn body — so the bound can be checked against the
+ * same bytes the agent will receive.
+ */
+export function packedResumePrompt(job: string, turnPrompt: string, parentId: number): string {
+  const root = db().query('SELECT prompt_path FROM run WHERE id=?').get(parentId) as
+    { prompt_path: string | null } | null
+  // A root whose prompt has aged out of runs/ (30 days) is still
+  // resumable: the reminder is a courtesy to the worker, not a
+  // precondition, and refusing here would strand the chain.
+  if (!root?.prompt_path || !existsSync(root.prompt_path)) {
+    return packResumePrompt(job, turnPrompt, null)
+  }
+  return packResumePrompt(job, turnPrompt, readFileSync(root.prompt_path, 'utf8'))
+}
+
 export async function run(opts: {
   job: string
   prompt: string
@@ -1244,24 +1261,6 @@ export async function run(opts: {
   const docsSection = pack?.docs.length
     ? `WHAT THE OPERATOR WANTS YOU TO KNOW\n\n${pack.markdown}`
     : ''
-  const resumeReminder = opts.resume
-    ? (() => {
-        const root = db().query('SELECT prompt_path FROM run WHERE id=?').get(opts.resume.parent) as
-          { prompt_path: string | null } | null
-        // A root whose prompt has aged out of runs/ (30 days) is still
-        // resumable: the reminder is a courtesy to the worker, not a
-        // precondition, and refusing here would strand the chain.
-        if (!root?.prompt_path || !existsSync(root.prompt_path)) return ''
-        return [
-          'REMINDER FROM THE ORIGINAL SPEC',
-          '',
-          readFileSync(root.prompt_path, 'utf8').slice(0, 600),
-          '',
-          'Do not decide what the spec did not settle; ask.',
-          workerResumeGuard(opts.job),
-        ].join('\n')
-      })()
-    : ''
   let prompt = writesJob && !opts.resume
     ? [
         workerPreamble(opts.job),
@@ -1271,7 +1270,7 @@ export async function run(opts: {
       ].filter(Boolean).join('\n')
     // A read-only worker gets a much shorter brief, and only on a first turn.
     : opts.resume
-      ? (resumeReminder ? `${resumeReminder}\n\n---\n\n${originalPrompt}` : originalPrompt)
+      ? packedResumePrompt(opts.job, originalPrompt, opts.resume.parent)
       : [repoJob ? READONLY_PREAMBLE : NO_REPO_PREAMBLE,
           docsSection, `---\n\n${originalPrompt}`]
           .filter(Boolean).join('\n\n')

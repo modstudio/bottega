@@ -13,7 +13,7 @@ import { AGENTS, available, installed, ensureLocalHealth,
 import { candidates, pick, scoreboard, MIN_SAMPLE, promptSizeBucketLabel } from './route.ts'
 import { guide } from './guide.ts'
 import { repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses,
-         type DetachSpec } from './run.ts'
+         packedResumePrompt, type DetachSpec } from './run.ts'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
@@ -24,7 +24,7 @@ import { resolveBase, repoRootOf, removeBranch, unmergedBranch,
          checkoutHasUncommittedWork, callerDrift } from './worktree.ts'
 import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
 import { WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE,
-         REVIEW_SEVERITY_INSTRUCTION, contractConflicts } from './contract.ts'
+         REVIEW_SEVERITY_INSTRUCTION, contractConflicts, rulingPrompt } from './contract.ts'
 import { collectResult, collectWait, resolveFailover, failoverSummary } from './collect.ts'
 import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
 import {
@@ -2589,7 +2589,7 @@ switch (cmd) {
     // Two ways to rule: one joined positional / --file / stdin message, or
     // by question id when there are several. `--q<id> --file PATH` binds that
     // file to that question; a command-level `--file` is the single-ruling form.
-    const answers: { question: string; answer: string }[] = []
+    const answers: { id: number; question: string; answer: string }[] = []
     const parsed = parseAnswerTextSources(argv.slice(2))
     const argvLimit = ownersLive ? undefined : argvResumeLimit(row.agent)
     const rulingFrom = (text: string): string => {
@@ -2635,7 +2635,7 @@ switch (cmd) {
         const src = parsed.byId.find((item) => item.id === q.id)
         if (!src) continue
         const given = src.file !== undefined ? readWorkerFile(src.file) : src.text!
-        answers.push({ question: q.question, answer: rulingFrom(given) })
+        answers.push({ id: q.id, question: q.question, answer: rulingFrom(given) })
       }
     } else {
       const positional = parsed.positionals
@@ -2645,7 +2645,7 @@ switch (cmd) {
           exclusive: 'pass the ruling either positionally or with --file, not both',
           sources: parsed,
         })
-        answers.push({ question: open[0]!.question, answer: rulingFrom(given!) })
+        answers.push({ id: open[0]!.id, question: open[0]!.question, answer: rulingFrom(given!) })
       } else if (!positional.length) {
         throw new Error(
           `run ${id} is waiting on ${open.length} question(s). ` +
@@ -2655,6 +2655,7 @@ switch (cmd) {
       } else {
         // One reader: positional words join into one message, never one-per-question.
         answers.push({
+          id: open[0]!.id,
           question: open[0]!.question,
           answer: rulingFrom(positional.join(' ')),
         })
@@ -2667,6 +2668,37 @@ switch (cmd) {
         'A worker resumed with a question unanswered will guess, which is the ' +
         'one thing this is here to prevent.',
       )
+    }
+
+    // Resume from the latest turn. Bound the packed argv prompt before any
+    // question is marked answered.
+    const latest = db().query(
+      `SELECT id, agent, vendor_session, turn, cwd, worktree, branch, base_commit
+         FROM run WHERE id = ? OR parent_run_id = ?
+        ORDER BY turn DESC LIMIT 1`,
+    ).get(id, id) as {
+      id: number; agent: string; vendor_session: string | null; turn: number
+      cwd: string | null; worktree: string | null; branch: string | null; base_commit: string | null
+    }
+    if (!ownersLive) {
+      const assembledLimit = argvResumeLimit(latest.agent)
+      if (assembledLimit !== undefined) {
+        const turnPrompt = rulingPrompt(answers)
+        const packed = packedResumePrompt(row.job, turnPrompt, id)
+        const assembled = Buffer.byteLength(packed, 'utf8')
+        if (assembled > assembledLimit) {
+          const shrink = [...answers]
+            .map((a) => ({ id: a.id, bytes: Buffer.byteLength(a.answer, 'utf8') }))
+            .sort((a, b) => b.bytes - a.bytes || a.id - b.id)
+            .map((a) => `--q${a.id} (${a.bytes} bytes)`)
+            .join(', ')
+          throw new Error(
+            `assembled resume prompt is ${assembled} bytes; this agent's resume transport is bounded at ${assembledLimit} bytes\n` +
+            `rulings that would need to shrink: ${shrink}\n` +
+            `nothing was stored\nworking forms:\n${ANSWER_WORKING_FORMS}`,
+          )
+        }
+      }
     }
 
     const now = nowIso()
@@ -2686,17 +2718,6 @@ switch (cmd) {
       break
     }
 
-    // The worker ended its turn, so the ruling has to restart it. Resume from
-    // the LATEST turn's session rather than the root's: after turn two, the
-    // root's session id is a conversation that has since moved on.
-    const latest = db().query(
-      `SELECT id, agent, vendor_session, turn, cwd, worktree, branch, base_commit
-         FROM run WHERE id = ? OR parent_run_id = ?
-        ORDER BY turn DESC LIMIT 1`,
-    ).get(id, id) as {
-      id: number; agent: string; vendor_session: string | null; turn: number
-      cwd: string | null; worktree: string | null; branch: string | null; base_commit: string | null
-    }
     if (!latest.vendor_session) {
       throw new Error(
         `ruled on ${answers.length} question(s); the rulings ARE recorded and were not lost.\n` +
@@ -2705,7 +2726,6 @@ switch (cmd) {
       )
     }
 
-    const { rulingPrompt } = await import('./contract.ts')
     const worktreePath = latest.worktree ?? row.worktree
     /**
      * DETACHED, for the reason `orch do` already is.
