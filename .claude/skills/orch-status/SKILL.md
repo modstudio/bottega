@@ -45,6 +45,9 @@ that cannot be parsed, name that interface and its result in the affected
 section and do not make the claim it would have established. `orch pending`
 normally exits 1 when it finds work; that documented exit is data, not a command
 failure. Preserve its listed run IDs rather than recreating its scoring rule.
+An explicit empty collection such as `[]` is usable data, but keep its provenance
+visible in the report: say `orch inbox returned no entries`, for example, rather
+than letting a blank field read as an independently established absence.
 
 ## Establish scope and task identity
 
