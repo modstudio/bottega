@@ -418,8 +418,8 @@ export function preflight(
   }
   if (baseRef && tool?.create && !createHasPlaceholder(tool.create, 'base')) {
     problems.push(
-      `this project's command-based worktree path cannot honor --base because its create ` +
-      `arguments do not declare {base}`,
+      `project ${project!.name} cannot honour --base because its worktree create template ` +
+      `${JSON.stringify(tool.create)} has no {base} slot`,
     )
   }
   if (tool?.branch?.includes('{key}') && !key) {
@@ -1156,7 +1156,9 @@ export async function run(opts: {
   // Programmatic callers get the same ordering guarantee as the CLI: a bad
   // ref is refused before a run row or worktree exists.
   if (opts.base) {
-    if (opts.job !== 'implement') throw new Error('--base is only valid for the implement job')
+    if (opts.job !== 'implement' && opts.job !== 'fix') {
+      throw new Error('--base is only valid for the implement and fix jobs')
+    }
     resolveBase(opts.cwd ?? process.cwd(), opts.base)
   }
   // REACHABILITY IS A ROUTING INPUT, not a run outcome, and this is the line

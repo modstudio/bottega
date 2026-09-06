@@ -1147,7 +1147,7 @@ function usage(): never {
       --agent <name>            force an agent instead of routing
       --avoid <agent>[,...]     route to any other agent when possible
       --distinct-from <id>[,...] avoid models used by earlier fan-out runs
-      --base <ref>              ${baseHelp('base an implement worktree on this git ref')}
+      --base <ref>              ${baseHelp('base an implement or fix worktree on this git ref')}
       --carry                   carry this checkout's uncommitted work into the worker (off by default)
       --file <path>             read the prompt from a file
       --schema <path>           bind JSON schema (Codex normalizes it to OpenAI strict mode)
@@ -1324,7 +1324,7 @@ function doUsage(): never {
   --agent <name>   force an agent instead of using the router
   --avoid <name,...> exclude agents while routing, unless none remain
   --distinct-from <id,...> exclude models used by earlier runs, unless none remain
-  --base <ref>     ${baseHelp('base an implement worktree on this verified git ref')}
+  --base <ref>     ${baseHelp('base an implement or fix worktree on this verified git ref')}
   --carry          carry this checkout's uncommitted work into the worker (off by default)
   --schema <path>  require JSON schema; Codex normalizes it to OpenAI strict mode
   --mcp            allow MCP tool calls
@@ -2150,7 +2150,9 @@ switch (cmd) {
     // them afterwards made a missing key pay for stdin and run setup first.
     const base = flag('base')
     if (base) {
-      if (jobName !== 'implement') throw new Error('--base is only valid for the implement job')
+      if (jobName !== 'implement' && jobName !== 'fix') {
+        throw new Error('--base is only valid for the implement and fix jobs')
+      }
       resolveBase(callerCwd, base)
     }
     const seed = preflight(

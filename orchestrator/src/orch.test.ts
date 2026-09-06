@@ -6851,6 +6851,64 @@ describe('detached run collection', () => {
     } finally { rmSync(repo,{recursive:true,force:true});rmSync(binDir,{recursive:true,force:true}) }
   })
 
+  test('fix --base creates its worktree at the requested commit', () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-fix-base-')))
+    const binDir = mkdtempSync(join(tmpdir(), 'orch-fix-base-bin-'))
+    const git = (cwd: string, ...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    try {
+      git(repo, 'init', '-b', 'main')
+      git(repo, 'config', 'user.email', 'orch-test@example.invalid')
+      git(repo, 'config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'tracked.txt'), 'base\n')
+      git(repo, 'add', '.')
+      git(repo, 'commit', '-m', 'fixture base')
+      const requested = git(repo, 'rev-parse', 'HEAD')
+      writeFileSync(join(repo, 'tracked.txt'), 'later\n')
+      git(repo, 'commit', '-am', 'fixture later')
+      writeFileSync(join(binDir, 'codex'), '#!/bin/sh\nprintf answer\n')
+      chmodSync(join(binDir, 'codex'), 0o755)
+      upsertProject({
+        name: 'fix-base', path: repo, canon: false,
+        settings: { worktree: { recipe: {}, branch: '{key}-orch-{id}' } },
+      })
+
+      const launched = Bun.spawnSync([
+        process.execPath, CLI, 'do', 'fix', 'apply the correction', '--agent', 'codex',
+        '--key', 'DEV-173', '--base', requested, '--porcelain',
+      ], {
+        cwd: repo, stdout: 'pipe', stderr: 'pipe', env: {
+          ...hermeticGitEnv(), PATH: `${binDir}:${process.env.PATH ?? ''}`,
+          ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+        },
+      })
+      expect(launched.exitCode, launched.stderr.toString()).toBe(0)
+      const id = Number(launched.stdout.toString().trim())
+      expect(id).toBeGreaterThan(0)
+      const deadline = Date.now() + 5_000
+      let row: { status: string; worktree: string | null; base_commit: string | null } | undefined
+      while (Date.now() < deadline) {
+        row = db().query(
+          'SELECT status, worktree, base_commit FROM run WHERE id=?',
+        ).get(id) as typeof row
+        if (row?.worktree && row.status !== 'running') break
+        Bun.sleepSync(20)
+      }
+      expect(row?.worktree).toBeTruthy()
+      expect(row?.base_commit).toBe(requested)
+      expect(git(row!.worktree!, 'rev-parse', 'HEAD')).toBe(requested)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(binDir, { recursive: true, force: true })
+    }
+  })
+
   test('do help names every job and every supported flag', () => {
     for (const help of ['--help', '-h']) {
       const r = orch('do', help)
@@ -6879,6 +6937,24 @@ describe('detached run collection', () => {
     expect(r.code).not.toBe(0)
     expect(r.out).toBe('')
     expect(r.err).toContain('this project requires a database size')
+    expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before)
+  })
+
+  test('a missing branch key exits before git and does not claim a run', () => {
+    upsertProject({
+      name: PLATFORM_SLUG, path: process.cwd(),
+      settings: { worktree: { recipe: {}, branch: '{key}-orch-{id}' } },
+    })
+    const before = (db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n
+    const r = orch('do', 'diagnose', 'find the cause', '--porcelain')
+
+    expect(r.code).not.toBe(0)
+    expect(r.out).toBe('')
+    expect(r.err).toContain(
+      `this project's branch names must carry a ticket key ({key}-orch-{id}), and orch will ` +
+      `not invent one.\n  --key <KEY-123>`,
+    )
+    expect(r.err).not.toContain('git worktree')
     expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before)
   })
 
@@ -6993,7 +7069,7 @@ describe('detached run collection', () => {
     const r = orch('do', '--help')
     expect(r.code).toBe(0)
     expect(r.out).toContain(
-      "--base <ref>     base an implement worktree on this verified git ref " +
+      "--base <ref>     base an implement or fix worktree on this verified git ref " +
       "(unsupported for this project's create arguments: no {base})",
     )
   })
@@ -7010,7 +7086,7 @@ describe('detached run collection', () => {
 
     const r = orch('do', '--help')
     expect(r.code).toBe(0)
-    expect(r.out).toContain('--base <ref>     base an implement worktree on this verified git ref')
+    expect(r.out).toContain('--base <ref>     base an implement or fix worktree on this verified git ref')
     expect(r.out).not.toContain('unsupported for this project')
   })
 
@@ -8211,7 +8287,10 @@ describe('detached run collection', () => {
       'do', 'implement', '--base', 'HEAD', '--file', '/definitely/not/a/prompt',
     )
     expect(r.code).toBe(1)
-    expect(r.err).toContain('command-based worktree path cannot honor --base')
+    expect(r.err).toContain(
+      'project cannot-base cannot honour --base because its worktree create template ' +
+      '{"command":"scripts/worktree","args":["create","{branch}"]} has no {base} slot',
+    )
     expect(r.err).not.toContain('ENOENT')
     expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(0)
   })
@@ -10565,8 +10644,8 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
         'implement', realpathSync(repo), undefined, undefined, 'main',
       )))
         .toThrow(
-          "this project's command-based worktree path cannot honor --base because its " +
-          'create arguments do not declare {base}',
+          'project no-base-placeholder cannot honour --base because its worktree create template ' +
+          '{"command":"scripts/worktree","args":["create","{branch}"]} has no {base} slot',
         )
     } finally {
       rmSync(repo, { recursive: true, force: true })
