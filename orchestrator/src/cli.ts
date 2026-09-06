@@ -17,7 +17,7 @@ import { AGENTS, available, installed, ensureLocalHealth,
 import { candidates, pick, scoreboard, MIN_SAMPLE, promptSizeBucketLabel } from './route.ts'
 import { guide } from './guide.ts'
 import { repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses,
-         implicitReviewWarning, packedResumePrompt, type DetachSpec } from './run.ts'
+         implicitReviewWarning, packedResumePrompt, type DetachSpec, type McpRequest } from './run.ts'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync, unlinkSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, timingSafeEqual } from 'node:crypto'
@@ -324,6 +324,13 @@ function flags(name: string): string[] {
   return flagValues(argv, name)
 }
 const has = (n: string) => argv.includes(`--${n}`)
+
+function requestedMcp(): McpRequest | undefined {
+  const values = argv.filter((arg) => arg === '--mcp' || arg.startsWith('--mcp='))
+  if (values.length > 1) throw new Error('--mcp may be supplied only once')
+  if (!values.length) return undefined
+  return values[0] === '--mcp=prefer' ? 'prefer' : 'require'
+}
 
 /** Flags that consume the next argument. Anything else is a boolean switch. */
 const VALUE_FLAGS = new Set(['--agent', '--file', '--schema', '--model', '--note', '--message', '--unreviewed',
@@ -1203,7 +1210,8 @@ function usage(): never {
       --carry                   carry this checkout's uncommitted work into the worker (off by default)
       --file <path>             read the prompt from a file
       --schema <path>           bind JSON schema (Codex normalizes it to OpenAI strict mode)
-      --mcp                     allow MCP tool calls
+      --mcp                     require live MCP; refuse if attachment fails
+      --mcp=prefer              prefer live MCP; disclose and use the mirror if attachment fails
       --model <name>            override the agent's model
       --label <text>            name this run in listings and pending reminders
       --lens <stable-id>        required identity for findings-producing review jobs
@@ -1393,7 +1401,8 @@ function doUsage(): never {
   --review <ref>   review this branch or run id (review-lens, safety, craft)
   --carry          carry this checkout's uncommitted work into the worker (off by default)
   --schema <path>  require JSON schema; Codex normalizes it to OpenAI strict mode
-  --mcp            allow MCP tool calls
+  --mcp            require live MCP; refuse if attachment fails
+  --mcp=prefer     prefer live MCP; disclose and use the mirror if attachment fails
   --model <name>   override the selected agent's model
   --label <text>   name this run in listings and pending reminders
   --lens <id>      stable identity required by findings-producing review jobs
@@ -2327,7 +2336,7 @@ switch (cmd) {
     if (has('detach') || detachByDefault) {
       const id = await detach(jobName, prompt, {
         agent: flag('agent'), schema, label: flag('label'), lens: flag('lens'),
-        mcp: has('mcp'), model: flag('model'), probe: has('probe'), seed, key: flag('key'),
+        mcp: requestedMcp(), model: flag('model'), probe: has('probe'), seed, key: flag('key'),
         repo: explicitRepo, base, avoid, distinctModels,
         noFailover: has('no-failover'), carry: has('carry'), review: reviewRef, cwd: callerCwd,
       })
@@ -2367,7 +2376,7 @@ switch (cmd) {
      */
     const id = await detach(jobName, prompt, {
       agent: flag('agent'), schema, label: flag('label'), lens: flag('lens'),
-      mcp: has('mcp'), model: flag('model'), probe: has('probe'), seed, key: flag('key'),
+      mcp: requestedMcp(), model: flag('model'), probe: has('probe'), seed, key: flag('key'),
       repo: explicitRepo, base, avoid, distinctModels,
       noFailover: has('no-failover'), carry: has('carry'), review: reviewRef, cwd: callerCwd,
     })
@@ -2507,7 +2516,17 @@ switch (cmd) {
         if (!output) throw new Error(`run ${runId} output does not satisfy the review contract`)
         return { runId, output }
       })
-      console.log(recordReviews(entries))
+      const reviewId = recordReviews(entries)
+      const mirrorRuns = entries.filter(({ runId }) => {
+        const row = db().query(
+          `SELECT mcp_connected, mcp_error FROM run WHERE id=?`,
+        ).get(runId) as { mcp_connected: number | null; mcp_error: string | null }
+        return row.mcp_connected === 0 && row.mcp_error?.startsWith('mirror:')
+      }).map(({ runId }) => runId)
+      console.log(
+        `recorded review ${reviewId}` +
+        (mirrorRuns.length ? ` — MIRROR lens run${mirrorRuns.length === 1 ? '' : 's'} ${mirrorRuns.join(', ')}` : ''),
+      )
       break
     }
     if (sub === 'triage') {
@@ -2567,6 +2586,7 @@ switch (cmd) {
         console.log(calibration.precision === null
           ? `${lens}/${agent}: insufficient evidence (${calibration.triaged} triaged)`
           : `${lens}/${agent}: ${calibration.precision.toFixed(2)} (${calibration.hits}/${calibration.triaged}, ${calibration.basis})`)
+        console.log(`  MCP: MIRROR=${calibration.mirror_lenses}`)
         for (const name of ['reproduced', 'coverage', 'limits', 'overlap'] as const) {
           const distribution = calibration[name]
           const cells = Object.keys(distribution.counts).map((value) => {
@@ -2687,13 +2707,13 @@ switch (cmd) {
     let retryAuthority = authorizeRunMutation(id, 'retry')
     const row = db().query(
       `SELECT id, COALESCE(parent_run_id,id) root_id, agent, job, cwd, prompt_path,
-              probe, status, failure_kind, mcp,
+              probe, status, failure_kind, mcp, mcp_error,
               schema_path, model, lens, launch_seed, launch_key, launch_base, no_failover
          FROM run WHERE id = ?`,
     ).get(id) as {
       id: number; root_id: number; agent: string; job: string; cwd: string | null
       prompt_path: string | null; probe: number; status: string; failure_kind: string | null
-      mcp: number | null; schema_path: string | null; model: string | null; lens: string | null
+      mcp: number | null; mcp_error: string | null; schema_path: string | null; model: string | null; lens: string | null
       launch_seed: string | null; launch_key: string | null; launch_base: string | null
       no_failover: number
     } | null
@@ -2752,7 +2772,7 @@ switch (cmd) {
     const newId = await detach(row.job, retryPrompt, {
       agent,
       schema: row.schema_path ?? undefined,
-      mcp: !!row.mcp,
+      mcp: row.mcp ? (row.mcp_error?.startsWith('mirror:') ? 'prefer' : 'require') : undefined,
       model: row.model ?? undefined,
       lens: row.lens ?? undefined,
       probe: !!row.probe, retryOf: id, cwd: row.cwd ?? undefined,

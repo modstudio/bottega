@@ -1,9 +1,9 @@
 import {
   mkdirSync, mkdtempSync, readFileSync, existsSync, writeFileSync, readdirSync, rmSync,
-  realpathSync, statSync, unlinkSync,
+  realpathSync, statSync, unlinkSync, symlinkSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, relative } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import type { Database } from 'bun:sqlite'
 import {
@@ -81,7 +81,7 @@ export function gitObjectEnvironmentFor(
 }
 
 export type DetachSpec = {
-  agent?: string; schema?: string; mcp?: boolean; model?: string; probe?: boolean
+  agent?: string; schema?: string; mcp?: McpRequest; model?: string; probe?: boolean
   label?: string
   lens?: string
   /** How much database the worktree gets, where the project asks for a choice. */
@@ -274,6 +274,32 @@ export type McpConnection = {
   error: string | null
 }
 
+export type McpMode = 'require' | 'prefer'
+export type McpRequest = boolean | McpMode
+
+export function requestedMcpMode(request: McpRequest | undefined): McpMode | null {
+  if (request === 'prefer') return 'prefer'
+  return request ? 'require' : null
+}
+
+type McpConfigPreflight = { header: string | null; error: string | null }
+
+/** Put cwd-discovered project MCP config at the address the vendor will inspect. */
+export function provisionMcpConfig(worktree: string, checkout: string): McpConfigPreflight {
+  const target = join(worktree, '.mcp.json')
+  if (existsSync(target)) return { header: null, error: null }
+  const source = join(checkout, '.mcp.json')
+  if (!existsSync(source)) {
+    return {
+      header: null,
+      error: `missing .mcp.json in worker cwd ${worktree}; registered checkout ${checkout} has no .mcp.json either`,
+    }
+  }
+  const link = relative(dirname(target), source)
+  symlinkSync(link, target)
+  return { header: `MCP preflight: linked .mcp.json -> ${link}`, error: null }
+}
+
 /** The provenance value orch can establish from this run's dispatch facts. */
 export function canonSourceFor(
   mcpRequested: boolean,
@@ -373,8 +399,8 @@ function mcpAttachRefusal(connection: McpConnection): string | null {
   )
 }
 
-function probeRequestedMcp(mcp: boolean | undefined, agent: string, cwd: string): McpConnection | null {
-  if (!mcp) return null
+function probeRequestedMcp(mcp: McpRequest | undefined, agent: string, cwd: string): McpConnection | null {
+  if (!requestedMcpMode(mcp)) return null
   const project = projectAt(cwd)
   if (!project) return null
   return mcpConnectionFor(agent, cwd, project.settings.mcpServer ?? project.name)
@@ -382,14 +408,15 @@ function probeRequestedMcp(mcp: boolean | undefined, agent: string, cwd: string)
 
 /**
  * Refuse a --mcp dispatch that routing would send to an agent whose attach
- * we can prove failed — before a run row exists.
+ * we can prove failed. Cwd-discovered repository MCP is deferred until the
+ * worker tree exists, but the vendor process still never starts on refusal.
  *
  * Consults pick() for who will actually run. An unpinned job that prefers
  * Codex is not refused because grok happens to be eligible; a pinned Codex
  * dispatch is not refused because grok's doctor is red.
  */
 export function preflightMcp(opts: {
-  mcp?: boolean
+  mcp?: McpRequest
   cwd: string
   job: string
   prompt: string
@@ -399,17 +426,28 @@ export function preflightMcp(opts: {
   model?: string
   probe?: boolean
 }): void {
-  if (!opts.mcp) return
-  if (!projectAt(opts.cwd)) return
+  const mode = requestedMcpMode(opts.mcp)
+  if (!mode) return
+  const project = projectAt(opts.cwd)
+  if (!project) return
   const { agent: name } = pick(
     opts.job, opts.agent, opts.prompt.length, true, stackAt(opts.cwd),
     { agents: opts.avoid, models: opts.distinctModels, model: opts.model },
     opts.probe,
   )
-  const connection = probeRequestedMcp(true, name, opts.cwd)
+  const selected = AGENTS[name]!
+  if (selected.caps.discoversMcpFromCwd && job(opts.job).needs.readsRepo) {
+    if (!existsSync(join(project.path, '.mcp.json')) && mode === 'require') {
+      throw new Error(
+        `MCP was requested, but ${project.path}/.mcp.json is missing. The agent was not started.`,
+      )
+    }
+    return
+  }
+  const connection = probeRequestedMcp(mode, name, opts.cwd)
   if (!connection) return
   const why = mcpAttachRefusal(connection)
-  if (why) throw new Error(why)
+  if (why && mode === 'require') throw new Error(why)
 }
 
 /**
@@ -1157,7 +1195,7 @@ export async function run(opts: {
   prompt: string
   agent?: string
   schemaPath?: string
-  mcp?: boolean
+  mcp?: McpRequest
   /** A calibration probe: recorded and scorable, but never routing evidence. */
   probe?: boolean
   /** A caller-supplied name for distinguishing sibling runs in a fan-out. */
@@ -1426,27 +1464,33 @@ export async function run(opts: {
   }
 
   /**
-   * A proven-failed MCP attach is a dispatch that did not happen, not a run
-   * with a bad outcome. Probe after routing (a red grok doctor is evidence
-   * about grok, not about Codex) and before a row exists.
+   * Probe after routing: a red grok doctor is evidence about grok, not about
+   * Codex. Agents that discover MCP from cwd must be probed later, against the
+   * worker tree they will actually inspect; all others retain the pre-row path.
    *
    * A reserved placeholder was claimed by detach() after the same check; if
    * routing here disagrees and grok cannot attach, delete that placeholder
    * rather than converting a non-event into a failed row.
    */
-  const mcpConnection = probeRequestedMcp(opts.mcp, name, callerCwd)
-  if (requiresCanonSource && !opts.resume) {
-    const source = canonSourceFor(Boolean(opts.mcp), mcpConnection, repoJob)
+  const mcpMode = requestedMcpMode(opts.mcp)
+  const deferredCwdMcpPreflight = Boolean(
+    mcpMode && repoJob && a.caps.discoversMcpFromCwd && !opts.resume && projectAt(callerCwd),
+  )
+  let mcpConnection = deferredCwdMcpPreflight
+    ? null
+    : probeRequestedMcp(opts.mcp, name, callerCwd)
+  if (requiresCanonSource && !opts.resume && !deferredCwdMcpPreflight) {
+    const source = canonSourceFor(Boolean(mcpMode), mcpConnection, repoJob)
     prompt += `\n\n${canonSourceInstruction(source)}`
   }
   const mcpWhy = mcpConnection ? mcpAttachRefusal(mcpConnection) : null
-  if (mcpWhy) {
+  if (mcpWhy && mcpMode === 'require') {
     if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
     throw new Error(mcpWhy)
   }
 
   /** Whether the requested product is a diff, rather than review findings. */
-  const usingMcp = (opts.mcp || writesJob) && a.caps.mcp
+  let usingMcp = (Boolean(mcpMode) || writesJob) && a.caps.mcp && mcpConnection?.connected !== false
   /**
    * Every repository job gets writable scratch space. `writesJob` still means
    * its requested product is a diff; `repoJob` means it needs an isolated tree
@@ -1629,9 +1673,9 @@ export async function run(opts: {
   )
     .run(
       stackAt(callerCwd), opts.model ?? a.model, runToken,
-      opts.mcp ? 1 : 0, mcpConnection?.server ?? null,
+      mcpMode ? 1 : 0, mcpConnection?.server ?? null,
       mcpConnection?.connected == null ? null : mcpConnection.connected ? 1 : 0,
-      mcpConnection?.error ?? (opts.mcp ? 'no registered project identifies the canonical MCP server' : null),
+      mcpConnection?.error ?? (mcpMode ? 'no registered project identifies the canonical MCP server' : null),
       opts.schemaPath ?? null, opts.lens ?? null, claim.id,
     )
 
@@ -1649,6 +1693,7 @@ export async function run(opts: {
   let changes: import('./worktree.ts').Changes | null = null
   let isolatedCwd: string | null = null
   let retargetDiagnostic: string | null = null
+  let mcpSetupHeader: string | null = null
   /**
    * Cutting the worktree can FAIL, and the row already exists by now.
    *
@@ -1831,6 +1876,47 @@ export async function run(opts: {
       writeFileSync(promptPath.replace(/\.prompt\.txt$/, '.bound.txt'), prompt)
       db().query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE id=?')
         .run(sha(prompt), Buffer.byteLength(prompt), claim.id)
+    }
+
+    if (deferredCwdMcpPreflight) {
+      const project = projectAt(callerCwd)
+      if (!project) throw new Error(`no registered project identifies MCP configuration for ${callerCwd}`)
+      const config = provisionMcpConfig(cwd, project.path)
+      mcpSetupHeader = config.header
+      const server = project.settings.mcpServer ?? project.name
+      mcpConnection = config.error
+        ? { server, connected: false, error: config.error }
+        : mcpConnectionFor(name, cwd, server)
+      if (mcpConnection.connected === false && mcpMode === 'prefer') {
+        mcpConnection = {
+          ...mcpConnection,
+          error: `mirror: ${mcpConnection.error ?? `server '${server}' could not be attached`}`,
+        }
+        usingMcp = false
+      }
+      db().query(
+        `UPDATE run SET mcp_server=?, mcp_connected=?, mcp_error=? WHERE id=?`,
+      ).run(
+        mcpConnection.server,
+        mcpConnection.connected == null ? null : mcpConnection.connected ? 1 : 0,
+        mcpConnection.error,
+        claim.id,
+      )
+      const refusal = mcpAttachRefusal(mcpConnection)
+      if (refusal && mcpMode === 'require') throw new Error(refusal)
+      if (requiresCanonSource) {
+        prompt += `\n\n${canonSourceInstruction(canonSourceFor(true, mcpConnection, repoJob))}`
+        writeFileSync(promptPath.replace(/\.prompt\.txt$/, '.bound.txt'), prompt)
+        db().query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE id=?')
+          .run(sha(prompt), Buffer.byteLength(prompt), claim.id)
+      }
+    } else if (mcpConnection?.connected === false && mcpMode === 'prefer') {
+      mcpConnection = {
+        ...mcpConnection,
+        error: `mirror: ${mcpConnection.error ?? `server '${mcpConnection.server}' could not be attached`}`,
+      }
+      usingMcp = false
+      db().query('UPDATE run SET mcp_error=? WHERE id=?').run(mcpConnection.error, claim.id)
     }
   } catch (e) {
     if (isolatedCwd) rmSync(isolatedCwd, { recursive: true, force: true })
@@ -2269,6 +2355,11 @@ export async function run(opts: {
         )
         already.add(norm(item.question))
       }
+    }
+
+    if (mcpSetupHeader) {
+      output = output ? `${mcpSetupHeader}\n\n${output}` : mcpSetupHeader
+      writeFileSync(outPath, output)
     }
 
     /**

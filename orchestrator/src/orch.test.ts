@@ -16,7 +16,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from '
 import { Database } from 'bun:sqlite'
 import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync,
          realpathSync, mkdirSync, utimesSync, chmodSync, readdirSync, statSync,
-         symlinkSync, copyFileSync, openSync, closeSync } from 'node:fs'
+         symlinkSync, copyFileSync, openSync, closeSync, lstatSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
@@ -1342,6 +1342,7 @@ const { candidates, weightCase, scoreboard, median, evidenceFor, pick,
         NOISE_BAND, QUALITY_STEP, MIN_SAMPLE, OUTPUT_RESERVE, EVIDENCE_WINDOW,
         STANDING_EXPLORE_RATE, PROMPT_SIZE_BOUNDARY, promptSizeBucket, betaContribution } = await import('./route.ts')
 const { guide } = await import('./guide.ts')
+const { validateCliArgs } = await import('./args.ts')
 const { gwetAc1 } = await import('./agreement.ts')
 const { routingBacktest, routingBacktestEnsemble, ROUTING_BACKTEST_SEEDS } = await import('./routing-backtest.ts')
 const { projects, projectAt, projectByName, stackAt, upsertProject, removeProject } = await import('./projects.ts')
@@ -2860,6 +2861,39 @@ describe('review discipline', () => {
     const c = reviewCalibration('efficiency', 'codex', 'm')
     expect(c.precision).toBeNull()
     expect(calibrationLine(c)).toContain('no reliable precision yet')
+  })
+
+  test('derives MIRROR review recording and calibration from the lens run without changing review_lens schema', () => {
+    const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'mirror-mode' })
+    db().query(
+      `UPDATE run SET mcp=1, mcp_server='fixture-project', mcp_connected=0,
+                      mcp_error='mirror: attachment failed' WHERE id=?`,
+    ).run(runId)
+    const reviewId = recordReview(runId, reviewReply(0))
+    completeReview(reviewId)
+    const calibration = reviewCalibration('mirror-mode', 'codex', 'm')
+    expect(calibration.mirror_lenses).toBe(1)
+    expect(calibrationLine(calibration)).toContain('MIRROR lenses: 1')
+
+    const ddl = (db().query(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='review_lens'",
+    ).get() as { sql: string }).sql
+    expect(ddl).not.toContain('mcp_mode')
+    expect(ddl).not.toContain('provenance')
+
+    const cliRun = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'mirror-mode' })
+    const output = join(dir, 'mirror-review-output.json')
+    writeFileSync(output, JSON.stringify(reviewReply(0)))
+    db().query(
+      `UPDATE run SET output_path=?, mcp=1, mcp_server='fixture-project', mcp_connected=0,
+                      mcp_error='mirror: attachment failed' WHERE id=?`,
+    ).run(output, cliRun)
+    const recorded = Bun.spawnSync([
+      process.execPath, new URL('cli.ts', import.meta.url).pathname,
+      'review', 'record', String(cliRun),
+    ], { env: { ...process.env, ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe' })
+    expect(recorded.exitCode).toBe(0)
+    expect(recorded.stdout.toString()).toContain(`MIRROR lens run ${cliRun}`)
   })
 
   test('per-tier calibration counts lens rounds per branch', () => {
@@ -6306,7 +6340,133 @@ describe('run detail', () => {
 })
 
 describe('review-lens MCP provenance', () => {
-  test('preflightMcp refuses grok and lets a Codex pin through', () => {
+  beforeEach(() => writeFileSync(join(dir, '.mcp.json'), '{}\n'))
+  afterEach(() => rmSync(join(dir, '.mcp.json'), { force: true }))
+
+  test('the MCP flag accepts required and prefer modes only', () => {
+    expect(() => validateCliArgs(['do', 'review-lens', 'review', '--mcp'])).not.toThrow()
+    expect(() => validateCliArgs(['do', 'review-lens', 'review', '--mcp=prefer'])).not.toThrow()
+    expect(() => validateCliArgs(['do', 'review-lens', 'review', '--mcp=optional']))
+      .toThrow('--mcp=prefer')
+  })
+
+  const mcpRepo = (withConfig: boolean) => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-mcp-cwd-')))
+    const git = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+    }
+    git('init', '-b', 'main')
+    git('config', 'user.email', 'orch-test@example.invalid')
+    git('config', 'user.name', 'Orch Test')
+    writeFileSync(join(repo, 'tracked.txt'), 'base\n')
+    git('add', 'tracked.txt'); git('commit', '-m', 'base')
+    if (withConfig) writeFileSync(join(repo, '.mcp.json'), '{}\n')
+    upsertProject({ name: 'fixture-project', path: repo, settings: {} })
+    return repo
+  }
+
+  test('provisions cwd-discovered MCP with a relative symlink and reports it in the output header', async () => {
+    const repo = mcpRepo(true)
+    const script = join(dir, 'fake-grok-cwd-mcp.sh')
+    writeFileSync(script, `#!/bin/sh
+if [ "$1" = "mcp" ]; then
+  test -L .mcp.json || exit 97
+  printf '%s' '{"servers":[{"name":"fixture-project","healthy":true,"checks":[]}]}'
+else
+  printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
+fi
+`)
+    chmodSync(script, 0o755)
+    const agent = AGENTS.grok!
+    const original = { bin: agent.bin, argv: agent.argv }
+    agent.bin = script
+    agent.argv = () => []
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      const result = await runJob({
+        job: 'review-lens', prompt: 'review this', cwd: repo,
+        agent: 'grok', mcp: 'require', lens: 'mcp-cwd',
+      })
+      expect(result.status).toBe('ok')
+      expect(result.output).toContain('MCP preflight: linked .mcp.json -> ../../../.mcp.json')
+      expect(lstatSync(join(result.worktree!.path, '.mcp.json')).isSymbolicLink()).toBe(true)
+      expect(realpathSync(join(result.worktree!.path, '.mcp.json'))).toBe(join(repo, '.mcp.json'))
+    } finally {
+      agent.bin = original.bin; agent.argv = original.argv
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('refuses cwd-discovered required MCP before agent spawn when the checkout has no config', async () => {
+    const repo = mcpRepo(false)
+    const agent = AGENTS.grok!
+    const original = { bin: agent.bin, argv: agent.argv }
+    let spawned = false
+    agent.bin = join(dir, 'must-not-spawn-grok.sh')
+    writeFileSync(agent.bin, '#!/bin/sh\nexit 99\n'); chmodSync(agent.bin, 0o755)
+    agent.argv = () => { spawned = true; return [] }
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      await expect(runJob({
+        job: 'review-lens', prompt: 'review this', cwd: repo,
+        agent: 'grok', mcp: 'require', lens: 'mcp-cwd',
+      })).rejects.toThrow('missing .mcp.json')
+      expect(spawned).toBe(false)
+    } finally {
+      agent.bin = original.bin; agent.argv = original.argv
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('prefer mode runs on the mirror and records and discloses the attachment failure', async () => {
+    const repo = mcpRepo(true)
+    const script = join(dir, 'fake-grok-prefer-mirror.sh')
+    writeFileSync(script, `#!/bin/sh
+if [ "$1" = "mcp" ]; then
+  printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"label":"unavailable","passed":false,"detail":"server down"}]}]}'
+else
+  printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
+fi
+`)
+    chmodSync(script, 0o755)
+    const agent = AGENTS.grok!
+    const original = { bin: agent.bin, argv: agent.argv }
+    agent.bin = script; agent.argv = () => []
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      const result = await runJob({
+        job: 'review-lens', prompt: 'review this', cwd: repo,
+        agent: 'grok', mcp: 'prefer', lens: 'mcp-cwd',
+      })
+      expect(result.status).toBe('ok')
+      expect(db().query(
+        'SELECT mcp_connected, mcp_error FROM run WHERE id=?',
+      ).get(result.id)).toEqual({
+        mcp_connected: 0, mcp_error: 'mirror: unavailable: server down',
+      })
+      const collected = Bun.spawnSync([
+        process.execPath, new URL('cli.ts', import.meta.url).pathname, 'result', String(result.id),
+      ], { env: { ...process.env, ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe' })
+      expect(collected.stderr.toString()).toContain('MIRROR — not the live database')
+    } finally {
+      agent.bin = original.bin; agent.argv = original.argv
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('preflightMcp defers cwd-discovered attachment until the worker tree exists', () => {
     const cwd = dir
     upsertProject({ name: 'fixture-project', path: cwd, settings: {} })
     const grok = AGENTS.grok!
@@ -6322,7 +6482,7 @@ printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"l
       })).not.toThrow()
       expect(() => preflightMcp({
         mcp: true, cwd, job: 'review-lens', prompt: 'review this', agent: 'grok',
-      })).toThrow("MCP was requested, but server 'fixture-project' could not be attached")
+      })).not.toThrow()
       expect(() => preflightMcp({
         mcp: false, cwd, job: 'review-lens', prompt: 'review this', agent: 'grok',
       })).not.toThrow()
@@ -6331,7 +6491,7 @@ printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"l
     }
   })
 
-  test('preflightMcp reads an explicit MCP server name from the project register', () => {
+  test('preflightMcp only requires the checkout config before a cwd-discovered worker tree exists', () => {
     const cwd = dir
     upsertProject({ name: 'fixture-project', path: cwd, settings: { mcpServer: 'orch' } })
     const grok = AGENTS.grok!
@@ -6344,7 +6504,7 @@ printf '%s' '{"servers":[{"name":"orch","healthy":false,"checks":[{"label":"unav
     try {
       expect(() => preflightMcp({
         mcp: true, cwd, job: 'review-lens', prompt: 'review this', agent: 'grok',
-      })).toThrow("MCP was requested, but server 'orch' could not be attached")
+      })).not.toThrow()
     } finally {
       grok.bin = originalBin
     }
@@ -6375,7 +6535,7 @@ printf '%s' '{"servers":[{"name":"orch","healthy":true,"checks":[]},{"name":"use
     expect(result.error).toContain('"name":"orch"')
   })
 
-  test('refuses a grok lens at dispatch and leaves no run row when project MCP cannot attach', async () => {
+  test('refuses a grok lens before agent spawn and records the worker-tree preflight failure', async () => {
     const script = join(dir, 'fake-grok-lens.sh')
     writeFileSync(script, `#!/bin/sh
 if [ "$1" = "mcp" ]; then
@@ -6405,7 +6565,9 @@ fi
         job: 'review-lens', prompt: 'review this', cwd, agent: 'grok', mcp: true, lens: 'mcp',
       })).rejects.toThrow("MCP was requested, but server 'fixture-project' could not be attached")
       expect(sent).toBe('')
-      expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before)
+      expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before + 1)
+      expect(db().query('SELECT status, failure_kind FROM run ORDER BY id DESC LIMIT 1').get())
+        .toEqual({ status: 'failed', failure_kind: 'harness' })
     } finally {
       agent.bin = originalBin
       agent.argv = originalArgv
@@ -6637,7 +6799,7 @@ printf '%s\n' '{"type":"result","subtype":"success","result":"{\\"verdict\\":\\"
     }
   })
 
-  test('orch do refuses a proven-failed grok attach once, with no row', () => {
+  test('detached orch do records a cwd-preflight refusal before grok starts', async () => {
     const cwd = realpathSync(dir)
     upsertProject({ name: 'fixture-project', path: cwd, settings: {} })
     const binDir = join(dir, 'mcp-dispatch-bin')
@@ -6665,15 +6827,25 @@ exit 99
         stdout: 'pipe', stderr: 'pipe',
       },
     )
-    expect(result.exitCode).toBe(1)
-    expect(result.stderr.toString()).toContain(
-      "MCP was requested, but server 'fixture-project' could not be attached",
-    )
-    expect(result.stderr.toString()).toContain('unavailable: server down')
-    expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before)
+    expect(result.exitCode).toBe(0)
+    const id = Number(result.stdout.toString().trim())
+    const deadline = Date.now() + 5_000
+    let row: { status: string; error: string | null } | null = null
+    while (Date.now() < deadline) {
+      row = db().query('SELECT status, error FROM run WHERE id=?').get(id) as
+        { status: string; error: string | null } | null
+      if (row && row.status !== 'running') break
+      await Bun.sleep(20)
+    }
+    const finalRow = db().query('SELECT status, error FROM run WHERE id=?').get(id) as
+      { status: string; error: string | null } | null
+    expect(finalRow?.status).toBe('failed')
+    expect(finalRow?.error).toContain("MCP was requested, but server 'fixture-project' could not be attached")
+    expect(finalRow?.error).toContain('unavailable: server down')
+    expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before + 1)
   })
 
-  test('a fan-out of grok --mcp against an unavailable server leaves zero rows', async () => {
+  test('a fan-out of grok --mcp records one pre-spawn refusal per worker tree', async () => {
     const cwd = realpathSync(dir)
     upsertProject({ name: 'fixture-project', path: cwd, settings: {} })
     const binDir = join(dir, 'mcp-fanout-bin')
@@ -6703,11 +6875,19 @@ exit 99
       const code = await child.exited
       return { code, err }
     }))
-    expect(codes.every((row) => row.code === 1)).toBe(true)
-    expect(codes.every((row) => row.err.includes(
+    expect(codes.every((row) => row.code === 0)).toBe(true)
+    const deadline = Date.now() + 5_000
+    let rows: { status: string; error: string | null }[] = []
+    while (Date.now() < deadline) {
+      rows = db().query('SELECT status, error FROM run WHERE id>? ORDER BY id').all(before) as typeof rows
+      if (rows.length === 3 && rows.every((row) => row.status !== 'running')) break
+      await Bun.sleep(20)
+    }
+    expect(rows).toHaveLength(3)
+    expect(rows.every((row) => row.status === 'failed')).toBe(true)
+    expect(rows.every((row) => row.error?.includes(
       "MCP was requested, but server 'fixture-project' could not be attached",
     ))).toBe(true)
-    expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before)
   })
 })
 

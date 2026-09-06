@@ -643,6 +643,8 @@ export function completeReview(reviewId: number, database: Database = writableDb
 export type ReviewCalibration = {
   lens: string; agent: string; model: string | null; precision: number | null
   hits: number; triaged: number; rejection_categories: { category: string; count: number }[]
+  /** Completed lens runs that explicitly degraded from requested MCP to the mirror. */
+  mirror_lenses: number
   basis: 'model' | 'agent' | null
   reproduced: GradeDistribution<ReviewReproduced>
   coverage: GradeDistribution<ReviewCoverage>
@@ -727,7 +729,7 @@ function calibrationCell(
     severity: severityAgreement([]),
     tiers: emptyTiers(),
   })
-  if (!reviews.length) return { lens, agent, model: model ?? null, precision: null, hits: 0, triaged: 0, rejection_categories: [], ...emptyGrades() }
+  if (!reviews.length) return { lens, agent, model: model ?? null, precision: null, hits: 0, triaged: 0, rejection_categories: [], mirror_lenses: 0, ...emptyGrades() }
   const ids = reviews.map((r) => r.id)
   const marks = ids.map(() => '?').join(',')
   const counts = database.query(
@@ -746,6 +748,11 @@ function calibrationCell(
   ).all(...ids, lens, agent, ...(model === undefined ? [] : [model])) as { category: string; count: number }[]
   const triaged = counts.triaged ?? 0
   const hits = counts.hits ?? 0
+  const mirrorLenses = database.query(
+    `SELECT COUNT(*) AS count FROM review_lens rl JOIN run ON run.id=rl.run_id
+      WHERE rl.review_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}
+        AND run.mcp_connected=0 AND run.mcp_error LIKE 'mirror:%'`,
+  ).get(...ids, lens, agent, ...(model === undefined ? [] : [model])) as { count: number }
   const gradeRows = database.query(
     `SELECT reproduced, coverage, limits, overlap FROM review_lens rl
       WHERE rl.review_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}`,
@@ -808,7 +815,7 @@ function calibrationCell(
   }
   return { lens, agent, model: model ?? null,
     precision: triaged >= MIN_REVIEW_TRIAGED ? hits / triaged : null,
-    hits, triaged, rejection_categories: categories,
+    hits, triaged, rejection_categories: categories, mirror_lenses: mirrorLenses.count,
     reproduced: gradeDistribution(gradeRows, 'reproduced', REVIEW_REPRODUCED),
     coverage: gradeDistribution(gradeRows, 'coverage', REVIEW_COVERAGE),
     limits: gradeDistribution(gradeRows, 'limits', REVIEW_LIMITS),
@@ -904,7 +911,8 @@ export function calibrationLine(calibration: ReviewCalibration): string {
     return `${name}: ${counts}; ungraded ${distribution.ungraded}`
   }
   const severity = ` Severity agreement: agreed ${calibration.severity.counts.agreed}, changed ${calibration.severity.counts.changed}, not-comparable ${calibration.severity.counts.not_comparable}, not-assessed ${calibration.severity.counts.not_assessed}.`
-  const grades = ` Review grades: ${gradeSummary('reproduced')}; ${gradeSummary('coverage')}; ${gradeSummary('limits')}; ${gradeSummary('overlap')}.${severity}`
+  const mirror = ` MIRROR lenses: ${calibration.mirror_lenses}.`
+  const grades = `${mirror} Review grades: ${gradeSummary('reproduced')}; ${gradeSummary('coverage')}; ${gradeSummary('limits')}; ${gradeSummary('overlap')}.${severity}`
   if (calibration.precision === null) {
     return `Reviewer calibration: no reliable precision yet for lens ${calibration.lens} on agent ${calibration.agent}.${grades}`
   }

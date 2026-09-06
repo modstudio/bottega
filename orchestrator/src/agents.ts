@@ -9,6 +9,8 @@ export type Caps = {
   readsRepo: boolean
   /** Can call MCP tools from this machine's server config. */
   mcp: boolean
+  /** Discovers project MCP configuration from the process working directory. */
+  discoversMcpFromCwd: boolean
   /** Can be bound to a JSON schema for its final message. */
   schema: boolean
   /**
@@ -608,7 +610,7 @@ export const AGENTS: Record<string, Agent> = {
     // the requested file and exited 0. resumable VERIFIED: `--json` emits
     // `thread.started` on the first line and `exec resume <thread_id>` recalled
     // the previous turn.
-    caps: { readsRepo: true, mcp: true, schema: true, writesRepo: true, resumable: true },
+    caps: { readsRepo: true, mcp: true, discoversMcpFromCwd: false, schema: true, writesRepo: true, resumable: true },
     mcpImpliesWrite: true,
     stdin: true,
     maxPromptBytes: Number.POSITIVE_INFINITY,
@@ -697,7 +699,7 @@ export const AGENTS: Record<string, Agent> = {
     // token in 9.50s (5.07s reported agent duration), exit 0.
     // Everything false but schema: it cannot open a file, so it certainly
     // cannot edit one, and its headless mode has no session to resume.
-    caps: { readsRepo: false, mcp: false, schema: true, writesRepo: false, resumable: false },
+    caps: { readsRepo: false, mcp: false, discoversMcpFromCwd: false, schema: true, writesRepo: false, resumable: false },
     stdin: false,
     maxPromptBytes: ARGV_PROMPT_BYTES,
     readsOut: false,
@@ -745,7 +747,7 @@ export const AGENTS: Record<string, Agent> = {
     // its chat-recording filename recalled that exact FIRST-turn codeword in
     // 9.28s. The filesystem remains the id route used by orch; see
     // `qwenSession` for why the newest file is not good enough.
-    caps: { readsRepo: true, mcp: true, schema: false, writesRepo: false, resumable: true },
+    caps: { readsRepo: true, mcp: true, discoversMcpFromCwd: false, schema: false, writesRepo: false, resumable: true },
     stdin: false,
     maxPromptBytes: ARGV_PROMPT_BYTES,
     readsOut: false,
@@ -798,14 +800,18 @@ export const AGENTS: Record<string, Agent> = {
     minimumCliVersion: '1.0.13',
     model: process.env.ORCH_GROK_MODEL ?? 'grok-4.6',
     billing: 'subscription',
-    // Installation-specific capability observations belong in agent docs; see
-    // `orch doc list --scope agent`.
+    // Project servers are discovered from the process cwd. For a repository
+    // run requesting `--mcp` (required) or `--mcp=prefer` (mirror fallback),
+    // dispatch therefore preflights the worker tree's `.mcp.json`. When only
+    // the registered checkout has it, orch links that copy into the worker
+    // tree before probing; when neither has it, required mode refuses before
+    // Grok starts and prefer mode records and discloses the mirror fallback.
     //
     // writesRepo VERIFIED directly from a shell in a scratch git repo: with
     // `--permission-mode acceptEdits`, v1.0.13 created the requested uncommitted
     // 28-byte file containing exactly GROK_WRITE_PROOF_2026_09_02 plus newline,
     // and exited 0 in 13.38s.
-    caps: { readsRepo: true, mcp: true, schema: true, writesRepo: true, resumable: true },
+    caps: { readsRepo: true, mcp: true, discoversMcpFromCwd: true, schema: true, writesRepo: true, resumable: true },
     stdin: false,
     maxPromptBytes: ARGV_PROMPT_BYTES,
     readsOut: false,

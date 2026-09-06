@@ -7,6 +7,8 @@ type CommandShape = {
   maxPositionals: number
   valueFlags?: readonly string[]
   booleanFlags?: readonly string[]
+  /** Flags accepted either bare or as `--flag=<one of these values>`. */
+  optionalValueFlags?: Readonly<Record<string, readonly string[]>>
   dynamicValueFlag?: RegExp
   allowedPositionals?: readonly string[]
   /** After the first positional (the run id), unrecognized `--…` tokens are message text. */
@@ -18,7 +20,7 @@ const shape = (
   maxPositionals: number,
   valueFlags: readonly string[] = [],
   booleanFlags: readonly string[] = [],
-  extra: Pick<CommandShape, 'dynamicValueFlag' | 'allowedPositionals' | 'messagePositionals'> = {},
+  extra: Pick<CommandShape, 'dynamicValueFlag' | 'allowedPositionals' | 'messagePositionals' | 'optionalValueFlags'> = {},
 ): CommandShape => ({ usage, maxPositionals, valueFlags, booleanFlags, ...extra })
 
 const hasArg = (argv: string[], arg: string) => argv.includes(arg)
@@ -341,6 +343,7 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       'orch do <job> [prompt] [--agent NAME] [--file PATH] [--schema PATH] [--model NAME]', Infinity,
       ['--agent', '--avoid', '--distinct-from', '--base', '--review', '--file', '--schema', '--model', '--label', '--lens', '--seed', '--key', '--repo', '--cwd'],
       ['--carry', '--mcp', '--quiet', '--probe', '--follow', '--detach', '--porcelain', '--no-failover', '--help'],
+      { optionalValueFlags: { '--mcp': ['prefer'] } },
     ) }
     case 'review': {
       if (topLevelOnly) return { args: [], shape: shape('orch review', 0) }
@@ -448,6 +451,7 @@ export function validateCliArgs(argv: string[]): void {
   const { args, shape: expected } = selected
   const valueFlags = new Set(expected.valueFlags ?? [])
   const booleanFlags = new Set(expected.booleanFlags ?? [])
+  const optionalValueFlags = expected.optionalValueFlags ?? {}
   const positionals: string[] = []
   let messageStarted = false
   for (let i = 0; i < args.length; i++) {
@@ -461,6 +465,18 @@ export function validateCliArgs(argv: string[]): void {
     }
     const equals = arg.indexOf('=')
     const flagName = equals >= 0 ? arg.slice(0, equals) : arg
+    const optionalValues = optionalValueFlags[flagName]
+    if (optionalValues) {
+      if (equals < 0) continue
+      const value = arg.slice(equals + 1)
+      if (!optionalValues.includes(value)) {
+        throw new Error(
+          `argument ${flagName} accepts: bare ${flagName} | ${optionalValues.map((x) => `${flagName}=${x}`).join(' | ')}\n` +
+          `working form: ${expected.usage}`,
+        )
+      }
+      continue
+    }
     const takesValue = valueFlags.has(flagName) || Boolean(expected.dynamicValueFlag?.test(flagName))
     if (takesValue) {
       if (equals >= 0) {
