@@ -38,6 +38,8 @@ import { completeReview, DISPOSITIONS, gradeReviewLens, parseReviewOutput, recor
 import { composeWorkflow, exportWorkflows, forkWorkflow, getWorkflowStep, importWorkflows,
          listWorkflows, promoteWorkflow, retireWorkflow, setWorkflow, showWorkflow,
          workflowVersions } from './workflows.ts'
+import { gwetAc1 } from './agreement.ts'
+import { routingBacktest } from './routing-backtest.ts'
 
 /**
  * How long `orch do` watches a detached run before handing it back.
@@ -743,6 +745,8 @@ function usage(): never {
   orch recalibrate [--n 12]    re-score old outputs blind and measure agreement
       --scorer <who>            use the same scorer identity as orch score
       --force                   sample any scorer's old scores
+  orch routing-backtest [--job X] [--json]
+                                replay current routing and Thompson sampling over judgements
   orch wait <run-id>...         block until those runs finish (--timeout SECONDS, default 1800)
   orch result <run-id>          print a finished run's output; exit 2 if still running
   orch retry <run-id>           re-send a run's exact prompt to the SAME agent
@@ -3576,12 +3580,52 @@ switch (cmd) {
       }
       expected /= pairs.length * pairs.length
       if (expected === 0) {
-        console.log(`${axis.name}: n=${pairs.length} kappa=n/a reading=not measurable`)
+        const ac1 = gwetAc1(pairs, axis.levels)
+        console.log(`${axis.name}: n=${pairs.length} kappa=n/a ac1=${ac1 === null ? 'n/a' : ac1.toFixed(3)} reading=not measurable`)
       } else {
         const kappa = 1 - observed / expected
-        console.log(`${axis.name}: n=${pairs.length} kappa=${kappa.toFixed(3)} reading=${reading(kappa)}`)
+        const ac1 = gwetAc1(pairs, axis.levels)
+        console.log(`${axis.name}: n=${pairs.length} kappa=${kappa.toFixed(3)} ac1=${ac1 === null ? 'n/a' : ac1.toFixed(3)} reading=${reading(kappa)}`)
       }
     }
+    break
+  }
+
+  case 'routing-backtest': {
+    const result = routingBacktest(flag('job'))
+    if (has('json')) {
+      console.log(JSON.stringify({
+        assumptions: {
+          eligibility: 'current static capability, metered, prompt-size and context rules; historical cooldowns',
+          reachability: 'present-day reachability ignored',
+          evidence: 'voided, evidence-excluded and NOT_EVIDENCE runs omitted',
+          ties: 'unmetered, then median latency',
+          betaMapping: 'successes += (w + 0.5) / 1.5; failures += 1 - successes',
+          exploration: 'choice differs from deterministic expected leader',
+        },
+        ...result,
+      }))
+      break
+    }
+    console.log(`routing backtest (seed ${result.seed})`)
+    console.log('assumptions:')
+    console.log('  eligibility: current static capability, metered, prompt-size and context rules; cooldowns reconstructed from prior log events')
+    console.log('  reachability: present-day reachability ignored')
+    console.log('  evidence: voided, evidence-excluded and NOT_EVIDENCE runs omitted')
+    console.log('  exact ties: unmetered first, then median latency')
+    console.log('  Beta update: successes += (w + 0.5) / 1.5; failures += 1 - that (none is a full failure; full/right a full success)')
+    console.log('  exploration: a choice outside the policy\'s deterministic expected leader')
+    const pct = (n: number | null) => n === null ? 'n/a' : n.toFixed(3)
+    for (const row of result.jobs) {
+      console.log(
+        `${row.job}: runs=${row.runs} agreements=${row.agreements} differences=${row.differences} ` +
+        `current=${pct(row.currentMean)} (matched ${row.currentMatched}) ` +
+        `Thompson=${pct(row.thompsonMean)} (matched ${row.thompsonMatched}) ` +
+        `exploration=${(row.currentExplorationShare * 100).toFixed(1)}%/${(row.thompsonExplorationShare * 100).toFixed(1)}%`,
+      )
+      console.log(`  verdict: ${row.verdict}`)
+    }
+    console.log(`verdict: ${result.shouldWire ? 'wire Thompson routing' : 'leave current routing unchanged'}`)
     break
   }
 

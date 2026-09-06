@@ -403,6 +403,7 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       4, ['--note', '--better-than', '--scorer', '--reproduced', '--coverage', '--limits', '--overlap'], ['--force', '--void'],
     ) }
     case 'recalibrate': return { args: argv.slice(1), shape: shape('orch recalibrate [--n N] [--scorer WHO] [--force]', 0, ['--n', '--scorer'], ['--force']) }
+    case 'routing-backtest': return { args: argv.slice(1), shape: shape('orch routing-backtest [--job X] [--json]', 0, ['--job'], ['--json']) }
     case 'runs': return { args: argv.slice(1), shape: shape('orch runs [--id ID]... [--job X] [--agent Y] [--limit N] [--unscored] [--since ISO] [--json]', 0, ['--id', '--job', '--agent', '--limit', '--since'], ['--unscored', '--json']) }
     case 'guide': return { args: argv.slice(1), shape: shape(
       'orch guide [--job X] [--prompt-bytes N]', 0, ['--job', '--prompt-bytes'],

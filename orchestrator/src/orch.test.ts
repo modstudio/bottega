@@ -1268,6 +1268,8 @@ const { candidates, weightCase, scoreboard, median, evidenceFor, pick,
         NOISE_BAND, QUALITY_STEP, MIN_SAMPLE, OUTPUT_RESERVE, EVIDENCE_WINDOW,
         STANDING_EXPLORE_RATE, PROMPT_SIZE_BOUNDARY, promptSizeBucket } = await import('./route.ts')
 const { guide } = await import('./guide.ts')
+const { gwetAc1 } = await import('./agreement.ts')
+const { betaContribution, routingBacktest } = await import('./routing-backtest.ts')
 const { projects, projectAt, projectByName, stackAt, upsertProject, removeProject } = await import('./projects.ts')
 const {
   missingDatabaseMessage, registeredRepositoryMissingDatabase, resolveDatabase, resolveRunsDirectory,
@@ -5759,9 +5761,9 @@ describe('recalibrating the scorer', () => {
     expect(r.code).toBe(0)
     expect(r.err).toBe('')
     expect(r.out).toContain('axes: delivery quality fidelity')
-    expect(r.out).toContain('delivery: n=3 kappa=0.000 reading=ambiguous rubric')
-    expect(r.out).toContain('quality: n=2 kappa=0.000 reading=ambiguous rubric')
-    expect(r.out).toContain('fidelity: n=2 kappa=0.000 reading=ambiguous rubric')
+    expect(r.out).toContain('delivery: n=3 kappa=0.000 ac1=0.111 reading=ambiguous rubric')
+    expect(r.out).toContain('quality: n=2 kappa=0.000 ac1=0.385 reading=ambiguous rubric')
+    expect(r.out).toContain('fidelity: n=2 kappa=0.000 ac1=0.385 reading=ambiguous rubric')
     expect(db().query(
       `SELECT delivery, quality, fidelity, session_id FROM calibration ORDER BY id`,
     ).all()).toEqual(Array.from({ length: 3 }, () => ({
@@ -5812,6 +5814,32 @@ describe('recalibrating the scorer', () => {
     expect(r.out).toContain('T'.repeat(2000))
     expect(r.out).not.toContain('M'.repeat(50))
     expect(r.out).not.toContain('original_delivery')
+  })
+})
+
+describe('routing backtest statistics', () => {
+  test('maps both judgement extremes to whole Beta observations', () => {
+    expect(betaContribution(-0.5)).toEqual({ successes: 0, failures: 1 })
+    expect(betaContribution(1)).toEqual({ successes: 1, failures: 0 })
+  })
+
+  test('Gwet AC1 matches a hand-computed three-category table', () => {
+    // Agreement is 3/4. Combined marginals are 5/8, 1/4, 1/8, so chance
+    // agreement is 17/64 and AC1 is (48/64 - 17/64) / (1 - 17/64) = 31/47.
+    const pairs = [['a', 'a'], ['a', 'a'], ['b', 'b'], ['c', 'a']] as const
+    expect(gwetAc1(pairs, ['a', 'b', 'c'])).toBeCloseTo(31 / 47)
+  })
+
+  test('is deterministic under a fixed seed', () => {
+    const insert = db().query(
+      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?,?,?,'2026-01-01T00:00:00.000Z','test')`,
+    )
+    for (let i = 0; i < 8; i++) {
+      const id = addRun({ agent: i % 2 ? 'agy' : 'codex', job: 'summarize', startedAt: `2026-01-${String(i + 1).padStart(2, '0')}T00:00:00.000Z` })
+      insert.run(id, 'full', i % 3 ? 'right' : 'mixed')
+    }
+    expect(routingBacktest('summarize', 12345)).toEqual(routingBacktest('summarize', 12345))
   })
 })
 
