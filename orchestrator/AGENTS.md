@@ -739,8 +739,6 @@ sessions have used the split twice.
 
 ## The lifecycle: states, locks and the invariants they protect
 
-- **THE GUARD LIVES OUTSIDE EVERY ROOT THE WORKER CAN WRITE.** A guard the constrained party can delete is advisory.
-
 A run: `reserved → attached → running → asking → ok | failed | stopped | stale`; a chain inherits its last turn's state.
 
 A branch: `cut → built → reviewed → rebased → landed | abandoned`; a rebase invalidates the review's exact match, and the pin or the four-fact carry re-establishes it.
@@ -759,6 +757,10 @@ the cause of DEV-316, not a lifecycle design.
 
 The invariants are:
 
+- **The guard lives outside every root the worker can write.** A guard the
+  constrained party can delete is advisory; it is published under the common
+  git dir, which is not a writable root, and dispatch refuses a run whose guard
+  path falls inside one (DEV-248).
 - **Every write transaction is IMMEDIATE; a deferred transaction that later writes is a lock-upgrade race under concurrent dispatch.**
 - **A resume is always possible on a stale checkout.** The caller-at-trunk check
   stops a new dispatch from stale input; it must never apply to a chain resuming
