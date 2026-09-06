@@ -12529,11 +12529,12 @@ exit 17
     })
     expect(r.exitCode).not.toBe(0)
     expect(r.stderr.toString()).toContain("the project's worktree tool failed")
+    const created = db().query('SELECT id FROM run ORDER BY id DESC LIMIT 1').get() as { id: number }
     expect(readFileSync(capture, 'utf8').trim().split('\n')).toEqual([
-      'create', `task/${before + 1}`,
+      'create', `task/${created.id}`,
     ])
-    expect(createArgv(create, { branch: `task/${before + 1}` })).toEqual([
-      'sh', '-c', `${createTool} create "task/${before + 1}"`,
+    expect(createArgv(create, { branch: `task/${created.id}` })).toEqual([
+      'sh', '-c', `${createTool} create "task/${created.id}"`,
     ])
     expect((db().query('SELECT COUNT(*) AS n FROM run').get() as { n: number }).n).toBe(before + 1)
     rmSync(repo, { recursive: true, force: true })
