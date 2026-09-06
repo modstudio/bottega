@@ -20,7 +20,7 @@ git worktree add --detach "$path" "$base" >/dev/null
 for dir in . orchestrator hub hub/web; do
   source="$root/$dir/node_modules"
   target="$path/$dir/node_modules"
-  if [ -d "$source" ] && [ ! -e "$target" ]; then
+  if [ -d "$source" ] && [ -d "$path/$dir" ] && [ ! -e "$target" ]; then
     mkdir "$target"
     for entry in "$source"/* "$source"/.[!.]*; do
       [ -e "$entry" ] || continue
