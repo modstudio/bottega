@@ -6290,6 +6290,29 @@ describe('detached run collection', () => {
     expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
   })
 
+  test('duplicate singleton review grades are refused without recording a score or review', () => {
+    const cases = [
+      { extra: ['--reproduced', 'all'], message: '--reproduced', values: ['all', 'all'] },
+      { extra: ['--coverage', 'empty'], message: '--coverage', values: ['adequate', 'empty'] },
+      { extra: ['--reproduced', 'banana'], message: '--reproduced', values: ['all', 'banana'] },
+    ]
+    for (const [index, duplicate] of cases.entries()) {
+      const id = insert('ok', 'review-lens')
+      const output = join(dir, `duplicate-grade-${index}-${id}.json`)
+      writeFileSync(output, JSON.stringify(reviewReply(1)))
+      db().query('UPDATE run SET session_id=?, lens=?, model=?, output_path=? WHERE id=?')
+        .run('orch-test-session', 'duplicate-grade', 'test-model', output, id)
+      const r = orch('score', String(id), 'full', 'right',
+        '--reproduced', 'all', '--coverage', 'adequate', '--limits', 'named',
+        '--overlap', 'unique', ...duplicate.extra)
+      expect(r.code).toBe(1)
+      expect(r.err).toContain(`${duplicate.message} may be supplied only once`)
+      for (const value of duplicate.values) expect(r.err).toContain(JSON.stringify(value))
+      expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
+      expect(db().query('SELECT id FROM review_lens WHERE run_id=?').get(id)).toBeNull()
+    }
+  })
+
   test('review triage --severity stores a disagreement and omission stores null', () => {
     const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'triage-cli' })
     const reviewId = recordReview(runId, reviewReply(2))
@@ -6304,6 +6327,19 @@ describe('detached run collection', () => {
     const invalid = orch('review', 'triage', String(reviewId), '2', 'accepted', '--severity', 'banana')
     expect(invalid.code).toBe(1)
     expect(invalid.err).toContain('critical | high | medium | low')
+  })
+
+  test('duplicate triage severity is refused without changing the finding', () => {
+    const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'triage-duplicate' })
+    const reviewId = recordReview(runId, reviewReply(1))
+    const r = orch('review', 'triage', String(reviewId), '1', 'accepted',
+      '--severity', 'critical', '--severity', 'banana')
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('--severity may be supplied only once')
+    expect(r.err).toContain('"critical" and "banana"')
+    expect(db().query(
+      'SELECT disposition, triaged_severity, triaged_at FROM review_finding WHERE review_id=?',
+    ).get(reviewId)).toEqual({ disposition: null, triaged_severity: null, triaged_at: null })
   })
 
   test('doctor excludes scores on not-evidence runs from its scored count', () => {

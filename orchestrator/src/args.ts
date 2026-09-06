@@ -22,11 +22,13 @@ const shape = (
 const hasArg = (argv: string[], arg: string) => argv.includes(arg)
 
 export function flagValue(argv: string[], name: string): string | undefined {
-  const needle = `--${name}`
-  const index = argv.findIndex((value) => value === needle || value.startsWith(`${needle}=`))
-  if (index < 0) return undefined
-  const arg = argv[index]!
-  return arg === needle ? argv[index + 1] : arg.slice(needle.length + 1)
+  const values = flagValues(argv, name)
+  if (values.length > 1) {
+    throw new Error(
+      `--${name} may be supplied only once; received ${values.map((value) => JSON.stringify(value)).join(' and ')}`,
+    )
+  }
+  return values[0]
 }
 
 export function flagValues(argv: string[], name: string): string[] {

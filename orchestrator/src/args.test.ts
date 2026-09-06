@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { flagValue, isCliCommand, seedGuidance, validateCliArgs } from './args.ts'
+import { flagValue, flagValues, isCliCommand, seedGuidance, validateCliArgs } from './args.ts'
 
 describe('CLI argument recognition', () => {
   test('every parser top-level command is recognised as canon, including nested commands', () => {
@@ -94,6 +94,16 @@ describe('CLI argument recognition', () => {
     expect(() => validateCliArgs([
       'do', 'implement', '--seed', ' --bundle=minimal', 'make the change',
     ])).not.toThrow()
+  })
+
+  test('the singleton reader refuses every duplicate while the plural reader preserves them', () => {
+    for (const values of [['all', 'all'], ['adequate', 'empty'], ['all', 'banana']]) {
+      const argv = ['score', '1', 'full', 'right', '--grade', values[0]!, `--grade=${values[1]}`]
+      expect(() => flagValue(argv, 'grade')).toThrow(
+        `--grade may be supplied only once; received ${JSON.stringify(values[0])} and ${JSON.stringify(values[1])}`,
+      )
+      expect(flagValues(argv, 'grade')).toEqual(values)
+    }
   })
 
   test('the no-seed guidance spells exactly the accepted starship forms', () => {
