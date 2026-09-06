@@ -4966,6 +4966,7 @@ describe('vendor failure failover is one bounded unit of work', () => {
   test('a writing run with edits names and preserves its tree instead of failing over', () => {
     const reason = writingFailoverRefusal(true, {
       files: ['partial.ts'], diff: 'diff', insertions: 1, deletions: 0,
+      since: 'base', trunk: 'main', trunkConfigured: true,
     }, '/tmp/orch-42')
     expect(reason).toBe(
       'writing run has 1 changed file(s); preserving worktree /tmp/orch-42 ' +
@@ -4973,6 +4974,7 @@ describe('vendor failure failover is one bounded unit of work', () => {
     )
     expect(writingFailoverRefusal(true, {
       files: [], diff: '', insertions: 0, deletions: 0,
+      since: 'base', trunk: 'main', trunkConfigured: true,
     }, '/tmp/orch-42')).toBeNull()
     expect(writingFailoverRefusal(true, null, '/tmp/orch-42'))
       .toContain('worktree diff could not be read')
@@ -16481,6 +16483,82 @@ describe('the sandbox an agent is launched with', () => {
       expect(diff.exitCode).toBe(0)
       expect(diff.stdout.toString()).toContain('diff --git a/new.txt b/new.txt')
       expect(diff.stdout.toString()).toContain(`+${content.trim()}`)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('orch diff anchors at current trunk and --since-base restores the recorded range', () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-diff-trunk-')))
+    const worker = join(repo, 'worker')
+    const g = (cwd: string, ...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    try {
+      g(repo, 'init', '-b', 'main')
+      g(repo, 'config', 'user.email', 'orch-test@example.invalid')
+      g(repo, 'config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      g(repo, 'add', 'base.txt')
+      g(repo, 'commit', '-m', 'base')
+      const recorded = g(repo, 'rev-parse', 'HEAD')
+      for (const name of ['trunk-one', 'trunk-two']) {
+        writeFileSync(join(repo, `${name}.txt`), `${name}\n`)
+        g(repo, 'add', `${name}.txt`)
+        g(repo, 'commit', '-m', name)
+      }
+      const trunk = g(repo, 'rev-parse', 'HEAD')
+      g(repo, 'worktree', 'add', '-b', 'DEV-283-worker', worker, 'main')
+      writeFileSync(join(worker, 'worker.txt'), 'worker\n')
+      g(worker, 'add', 'worker.txt')
+      g(worker, 'commit', '-m', 'DEV-283 worker change')
+      const head = g(worker, 'rev-parse', 'HEAD')
+      const tree = g(worker, 'rev-parse', 'HEAD^{tree}')
+      const project = `diff-trunk-${randomUUID()}`
+      upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+      const id = addRun({ agent: 'codex', job: 'implement', repo: project })
+      db().query(
+        'UPDATE run SET worktree=?, branch=?, base_commit=?, input_tree=?, head_commit=? WHERE id=?',
+      ).run(worker, 'DEV-283-worker', recorded, tree, head, id)
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const show = (...extra: string[]) => Bun.spawnSync(
+        [process.execPath, CLI, 'diff', String(id), '--quiet', ...extra],
+        { env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe' },
+      )
+
+      const current = show()
+      expect(current.exitCode).toBe(0)
+      const currentText = current.stdout.toString()
+      expect(currentText).toContain(`base: ${recorded} (recorded)`)
+      expect(currentText).toContain(`since: ${trunk} (trunk main)`)
+      expect(currentText).toContain('DEV-283 worker change')
+      expect(currentText).toContain('diff --git a/worker.txt b/worker.txt')
+      expect(currentText).not.toContain('diff --git a/trunk-one.txt b/trunk-one.txt')
+      expect(currentText).not.toContain('diff --git a/trunk-two.txt b/trunk-two.txt')
+
+      const full = show('--since-base')
+      expect(full.exitCode).toBe(0)
+      const fullText = full.stdout.toString()
+      expect(fullText).toContain(`since: ${recorded} (recorded; --since-base)`)
+      expect(fullText).toContain('DEV-283 worker change')
+      expect(fullText).toContain('trunk-one')
+      expect(fullText).toContain('trunk-two')
+      expect(fullText).toContain('diff --git a/trunk-one.txt b/trunk-one.txt')
+      expect(fullText).toContain('diff --git a/trunk-two.txt b/trunk-two.txt')
+
+      g(repo, 'worktree', 'remove', '--force', worker)
+      db().query('UPDATE run SET worktree=NULL, branch_kept=? WHERE id=?')
+        .run('DEV-283-worker', id)
+      const discarded = show()
+      expect(discarded.exitCode).toBe(0)
+      const discardedText = discarded.stdout.toString()
+      expect(discardedText).toContain(`since: ${recorded} (recorded fallback; worktree discarded)`)
+      expect(discardedText).toContain('DEV-283 worker change')
+      expect(discardedText).toContain('diff --git a/worker.txt b/worker.txt')
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }

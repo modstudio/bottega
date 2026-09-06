@@ -1241,6 +1241,7 @@ function usage(): never {
       detaches by default; --follow watches the resumed turn here
       several questions: orch answer <id> --q<qid> "<ruling>" --q<qid> "<ruling>"
   orch diff <id>                inspect a run's worktree diff (review diffs are scratch)
+      --since-base              compare with the recorded base instead of current trunk
   orch land <branch|run-id>     gate and fast-forward one explicit branch into configured trunk
       --message TEXT            amend the branch tip's message, then gate that commit
       --file PATH               same, reading the message from a file
@@ -3460,27 +3461,79 @@ switch (cmd) {
     const id = Number(argv[1])
     if (!id) usage()
     const row = db().query(
-      `SELECT id, worktree, branch, base_commit, parent_run_id, carry_happened,
+      `SELECT id, repo, worktree, branch, branch_kept, base_commit,
+              parent_run_id, carry_happened,
               carry_base_commit, carry_tracked_paths, carry_untracked_paths
          FROM run WHERE id = ?`,
     ).get(id) as
-      { id: number; worktree: string | null; branch: string | null
-        base_commit: string | null; parent_run_id: number | null; carry_happened: number | null
+      { id: number; repo: string | null; worktree: string | null; branch: string | null
+        branch_kept: string | null; base_commit: string | null
+        parent_run_id: number | null; carry_happened: number | null
         carry_base_commit: string | null; carry_tracked_paths: string | null
         carry_untracked_paths: string | null } | null
     if (!row) throw new Error(`no run ${id}`)
-    if (!row.worktree) throw new Error(`run ${id} has no worktree`)
-    if (!existsSync(row.worktree)) {
-      throw new Error(`run ${id}'s worktree is gone (${row.worktree}) — discarded already?`)
-    }
     if (!row.base_commit) throw new Error(`run ${id} recorded no base commit to diff against`)
     const { changesIn, repoRootOf } = await import('./worktree.ts')
-    const c = changesIn({
-      path: row.worktree,
-      branch: row.branch ?? `orch/${id}`,
-      base: row.base_commit,
-      repoRoot: repoRootOf(row.worktree) ?? row.worktree,
-    })
+    const registeredRoot = row.repo ? projectByName(row.repo)?.path : null
+    const repoRoot = (row.worktree ? repoRootOf(row.worktree) : null) ?? registeredRoot
+    if (!repoRoot) throw new Error(`run ${id}'s repository root was not found`)
+    const worktreePresent = Boolean(row.worktree && existsSync(row.worktree))
+    const evidenceBranch = row.branch_kept ?? row.branch
+    const branchPresent = Boolean(evidenceBranch && Bun.spawnSync(
+      ['git', 'show-ref', '--verify', '--quiet', `refs/heads/${evidenceBranch}`],
+      { cwd: repoRoot, stdout: 'ignore', stderr: 'ignore' },
+    ).exitCode === 0)
+    const discarded = !worktreePresent
+    let c: ReturnType<typeof changesIn>
+    let commits = ''
+    let sinceNote: string
+    if (discarded) {
+      if (!branchPresent || !evidenceBranch) {
+        throw new Error(`run ${id}'s worktree and evidence branch are gone`)
+      }
+      const diff = Bun.spawnSync(['git', 'diff', '--no-ext-diff', '--binary', row.base_commit, evidenceBranch], {
+        cwd: repoRoot, stdout: 'pipe', stderr: 'pipe',
+      })
+      if (diff.exitCode !== 0) throw new Error(diff.stderr.toString().trim())
+      const names = Bun.spawnSync(['git', 'diff', '--name-only', row.base_commit, evidenceBranch], {
+        cwd: repoRoot, stdout: 'pipe', stderr: 'pipe',
+      }).stdout.toString().trim()
+      const stat = Bun.spawnSync(['git', 'diff', '--numstat', row.base_commit, evidenceBranch], {
+        cwd: repoRoot, stdout: 'pipe', stderr: 'pipe',
+      }).stdout.toString().trim()
+      let insertions = 0
+      let deletions = 0
+      for (const line of stat.split('\n')) {
+        const [add, del] = line.split('\t')
+        insertions += Number(add) || 0
+        deletions += Number(del) || 0
+      }
+      c = {
+        diff: diff.stdout.toString(), files: names ? names.split('\n') : [], insertions, deletions,
+        since: row.base_commit, trunk: projectByName(row.repo ?? '')?.settings.trunk?.trim() || 'main',
+        trunkConfigured: Boolean(projectByName(row.repo ?? '')?.settings.trunk?.trim()),
+      }
+      const logged = Bun.spawnSync(['git', 'log', '--oneline', `${row.base_commit}..${evidenceBranch}`], {
+        cwd: repoRoot, stdout: 'pipe', stderr: 'pipe',
+      })
+      commits = logged.exitCode === 0 ? logged.stdout.toString() : ''
+      sinceNote = 'recorded fallback; worktree discarded'
+    } else {
+      c = changesIn({
+        path: row.worktree!,
+        branch: row.branch ?? `orch/${id}`,
+        base: row.base_commit,
+        repoRoot,
+      }, has('since-base'))
+      const logged = Bun.spawnSync(['git', 'log', '--oneline', `${c.since}..HEAD`], {
+        cwd: row.worktree!, stdout: 'pipe', stderr: 'pipe',
+      })
+      if (logged.exitCode !== 0) throw new Error(logged.stderr.toString().trim())
+      commits = logged.stdout.toString()
+      sinceNote = has('since-base')
+        ? 'recorded; --since-base'
+        : `trunk ${c.trunk}${c.trunkConfigured ? '' : '; register fallback'}`
+    }
     const runKind = db().query('SELECT job FROM run WHERE id=?').get(id) as { job: string }
     if (!JOBS[runKind.job]?.needs.writesRepo) {
       console.error(
@@ -3490,7 +3543,10 @@ switch (cmd) {
     }
     // A patch preamble is ignored by `git apply`, while keeping the base in the
     // stdout artefact even under --quiet or when stderr is not captured.
-    process.stdout.write(`base: ${row.base_commit}\n`)
+    process.stdout.write(`base: ${row.base_commit} (recorded)\n`)
+    process.stdout.write(`since: ${c.since} (${sinceNote})\n`)
+    process.stdout.write('commits:\n')
+    process.stdout.write(commits || '(none)\n')
     if (row.carry_happened !== null && row.carry_base_commit &&
         row.carry_tracked_paths !== null && row.carry_untracked_paths !== null) {
       const tracked = JSON.parse(row.carry_tracked_paths) as string[]

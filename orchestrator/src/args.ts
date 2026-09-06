@@ -398,7 +398,7 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       ['--file'], ['--follow', '--detach', '--quiet'],
       { messagePositionals: true },
     ) }
-    case 'diff': return { args: argv.slice(1), shape: shape('orch diff <id> [--quiet]', 1, [], ['--quiet']) }
+    case 'diff': return { args: argv.slice(1), shape: shape('orch diff <id> [--quiet] [--since-base]', 1, [], ['--quiet', '--since-base']) }
     case 'sweep': return { args: argv.slice(1), shape: shape('orch sweep [--older-than N] [--force] [--dry-run]', 0, ['--older-than'], ['--force', '--dry-run']) }
     case 'discard': return { args: argv.slice(1), shape: shape('orch discard <id> [--force]', 1, [], ['--force']) }
     case 'stop': return { args: argv.slice(1), shape: shape('orch stop <id>', 1) }

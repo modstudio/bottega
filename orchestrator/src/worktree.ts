@@ -1450,12 +1450,18 @@ export function portFor(runId: number): number {
 }
 
 export type Changes = {
-  /** The unified diff against the base commit, including files never added. */
+  /** The unified diff against the run's trunk merge-base, including files never added. */
   diff: string
   /** Paths the worker touched, so scope can be checked without reading the diff. */
   files: string[]
   insertions: number
   deletions: number
+  /** The commit used as the lower end of the diff. */
+  since: string
+  /** The configured trunk, or `main` when the register has none. */
+  trunk: string
+  /** Whether trunk came from the project register. */
+  trunkConfigured: boolean
 }
 
 /**
@@ -1469,15 +1475,26 @@ export type Changes = {
  * discovered later.
  *
  * Staging is also what makes a mixed committed/uncommitted result one complete
- * patch. The comparison is against the immutable run base, so commits on the
- * run branch and working-tree changes are captured together.
+ * patch. The comparison is against the run tip's merge-base with current
+ * trunk, so commits on the run branch and working-tree changes are captured
+ * together without attributing commits that subsequently landed on trunk.
  */
-export function changesIn(w: Worktree): Changes {
+export function changesIn(w: Worktree, sinceBase = false): Changes {
   git(['add', '-A'], w.path)
+  const configuredTrunk = projectAt(w.repoRoot)?.settings.trunk?.trim()
+  const trunk = configuredTrunk || 'main'
+  const mergeBase = sinceBase ? w.base : gitOk(['merge-base', 'HEAD', trunk], w.path)
+  if (!mergeBase && configuredTrunk) {
+    throw new Error(`cannot find merge-base between the run tip and trunk ${trunk}`)
+  }
+  // Unregistered scratch repositories predate the register and do not all call
+  // their initial branch `main`. Their only truthful fallback is the recorded
+  // base; registered projects must resolve their declared trunk above.
+  const since = mergeBase ?? w.base
   // Raw: this is a patch, and `git apply` counts its bytes.
-  const diff = gitRaw(['diff', '--cached', w.base], w.path)
-  const names = gitOk(['diff', '--cached', '--name-only', w.base], w.path) ?? ''
-  const stat = gitOk(['diff', '--cached', '--numstat', w.base], w.path) ?? ''
+  const diff = gitRaw(['diff', '--cached', since], w.path)
+  const names = gitOk(['diff', '--cached', '--name-only', since], w.path) ?? ''
+  const stat = gitOk(['diff', '--cached', '--numstat', since], w.path) ?? ''
 
   let insertions = 0
   let deletions = 0
@@ -1494,6 +1511,9 @@ export function changesIn(w: Worktree): Changes {
     files: names ? names.split('\n').filter(Boolean) : [],
     insertions,
     deletions,
+    since,
+    trunk,
+    trunkConfigured: Boolean(configuredTrunk),
   }
 }
 
