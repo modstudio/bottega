@@ -7930,7 +7930,7 @@ describe('detached run collection', () => {
     expect(r.out).not.toContain(`orch answer ${id}`)
   })
 
-  test('inbox --all shows a foreign stranded root without offering authority', () => {
+  test('inbox --all shows a foreign recoverable root without offering authority', () => {
     const id = insert('asking', 'implement')
     db().query('UPDATE run SET session_id=? WHERE id=?').run('other-session', id)
 
@@ -7938,8 +7938,7 @@ describe('detached run collection', () => {
     expect(r.code).toBe(0)
     expect(r.out).toContain(`run ${id} · codex/implement`)
     expect(r.out).toContain('owner other-session · visible only')
-    expect(r.out).toContain('stranded — only the owning session may use orch retry')
-    expect(r.out).toContain(`orch abandon ${id}`)
+    expect(r.out).toContain('only the owning session may continue it')
     expect(r.out).not.toContain(`recoverable: orch continue ${id}`)
 
     const continued = orch('continue', String(id), 'continue ownership fixture')
@@ -8128,12 +8127,17 @@ describe('detached run collection', () => {
     expect(r.err).toContain(`waiting on a ruling: orch answer ${id}`)
   })
 
-  test('inbox marks a no-session chain stranded while result retains its neighbouring hint', () => {
+  test('inbox marks an answered-but-undelivered chain stranded', () => {
     const root = insert('asking', 'implement')
     const turn = insert('asking', 'implement')
     db().query('UPDATE run SET session_id=? WHERE id IN (?,?)')
       .run('orch-test-session', root, turn)
     db().query('UPDATE run SET parent_run_id=?, turn=2 WHERE id=?').run(root, turn)
+    db().query(
+      `INSERT INTO question
+        (run_id, asked_at, question, answer, answered_at, answered_by, delivery_pending_at)
+       VALUES (?, ?, 'which shape?', 'existing', ?, 'orch-test-session', ?)`,
+    ).run(turn, new Date().toISOString(), new Date().toISOString(), new Date().toISOString())
 
     const inbox = orch('inbox')
     expect(inbox.code).toBe(0)
@@ -8187,6 +8191,7 @@ describe('detached run collection', () => {
     writeFileSync(prompt, 'original fixture spec')
     db().query('UPDATE run SET session_id=?, prompt_path=?, cwd=? WHERE id=?')
       .run('orch-test-session', prompt, dir, id)
+    db().query('UPDATE run SET vendor_session=? WHERE id=?').run('valid-session', id)
     db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
       .run(id, new Date().toISOString(), 'which shape?')
 
@@ -8194,10 +8199,10 @@ describe('detached run collection', () => {
     expect(recorded.code).toBe(0)
     expect(recorded.out).toContain('resume was skipped by --record-only')
     expect(db().query(
-      'SELECT answer, answered_by, answered_at FROM question WHERE run_id=?',
+      'SELECT answer, answered_by, answered_at, delivery_pending_at FROM question WHERE run_id=?',
     ).get(id)).toEqual({
       answer: 'use the existing shape', answered_by: 'orch-test-session',
-      answered_at: expect.any(String),
+      answered_at: expect.any(String), delivery_pending_at: expect.any(String),
     })
 
     const inbox = orch('inbox')
@@ -8223,6 +8228,58 @@ describe('detached run collection', () => {
       expect(resent).toContain('original fixture spec')
       expect(resent).toContain('YOU ASKED: which shape?')
       expect(resent).toContain('THE RULING: use the existing shape')
+      expect(db().query('SELECT delivery_pending_at FROM question WHERE run_id=?').get(id))
+        .toEqual({ delivery_pending_at: null })
+    } finally {
+      rmSync(binDir, { recursive: true, force: true })
+    }
+  })
+
+  test('a recorded-ruling writing retry warns that prior partial edits are not carried', () => {
+    const id = insert('asking', 'implement')
+    const prompt = join(dir, `record-only-writing-${id}.prompt.txt`)
+    writeFileSync(prompt, 'original implementation spec')
+    db().query('UPDATE run SET session_id=?, vendor_session=?, prompt_path=?, cwd=? WHERE id=?')
+      .run('orch-test-session', 'valid-session', prompt, dir, id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'which shape?')
+    expect(orch('answer', String(id), '--record-only', 'use the existing shape').code).toBe(0)
+
+    const retried = orch('retry', String(id))
+
+    expect(retried.code).toBe(1)
+    expect(retried.err).toContain(
+      'recorded rulings require a fresh worktree; retry will not carry the previous partial edit',
+    )
+  })
+
+  test('answer resumes the agent from the same row as the fallback vendor session', () => {
+    const binDir = mkdtempSync(join(tmpdir(), 'orch-answer-fallback-agent-'))
+    writeFileSync(join(binDir, 'codex'), '#!/bin/sh\nexit 0\n')
+    chmodSync(join(binDir, 'codex'), 0o755)
+    const root = insert('asking', 'file-question')
+    db().query('UPDATE run SET session_id=?, vendor_session=?, agent=?, cwd=? WHERE id=?')
+      .run('orch-test-session', 'codex-session', 'codex', dir, root)
+    const latest = insert('asking', 'file-question')
+    db().query(
+      'UPDATE run SET parent_run_id=?, turn=2, vendor_session=NULL, agent=?, cwd=? WHERE id=?',
+    ).run(root, 'grok', dir, latest)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(latest, new Date().toISOString(), 'which shape?')
+    try {
+      const result = orchInput(['answer', String(root), 'use the existing shape'], undefined, {
+        PATH: `${binDir}:${process.env.PATH ?? ''}`,
+      })
+      expect(result.code).toBe(0)
+      const childId = Number(result.out.match(/as run (\d+)/)?.[1])
+      expect(childId).toBeGreaterThan(0)
+      orch('wait', String(childId), '--timeout', '15')
+      const resumed = db().query(
+        'SELECT agent, vendor_session FROM run WHERE parent_run_id=? AND turn=3',
+      ).get(root)
+      expect(resumed).toEqual({ agent: 'codex', vendor_session: 'codex-session' })
+      expect(db().query('SELECT delivery_pending_at FROM question WHERE run_id=?').get(latest))
+        .toEqual({ delivery_pending_at: null })
     } finally {
       rmSync(binDir, { recursive: true, force: true })
     }
@@ -10147,7 +10204,7 @@ describe('detached run collection', () => {
     const stale = insert('stale', 'file-question')
     db().query(
       'UPDATE run SET parent_run_id=?, turn=?, vendor_session=NULL, agent=? WHERE id=?',
-    ).run(root, 2, 'codex', stale)
+    ).run(root, 2, 'grok', stale)
     try {
       const r = Bun.spawnSync(
         [process.execPath, CLI, 'continue', String(root), 'finish'],
@@ -10164,16 +10221,17 @@ describe('detached run collection', () => {
       const err = typeof r.stderr === 'string' ? r.stderr : new TextDecoder().decode(r.stderr)
       expect(r.exitCode).toBe(0)
       expect(err).toContain(`newest turn ${stale} recorded no session id`)
-      expect(err).toContain(`resuming with the session from run ${root} (turn 1)`)
+      expect(err).toContain(`resuming codex with the session from run ${root} (turn 1)`)
       const childId = Number(out.replace(/\u001B\[[0-9;]*m/g, '').trim().split('\n')[0])
       expect(childId).toBeGreaterThan(0)
       orch('wait', String(childId), '--timeout', '15')
       const child = db().query(
-        'SELECT status, parent_run_id, vendor_session FROM run WHERE id=?',
+        'SELECT status, parent_run_id, agent, vendor_session FROM run WHERE id=?',
       ).get(childId) as
-        { status: string; parent_run_id: number | null; vendor_session: string | null } | null
+        { status: string; parent_run_id: number | null; agent: string; vendor_session: string | null } | null
       expect(child?.status).not.toBe('running')
       expect(child?.parent_run_id).toBe(root)
+      expect(child?.agent).toBe('codex')
       expect(child?.vendor_session).toBe('parent-session')
     } finally {
       rmSync(binDir, { recursive: true, force: true })

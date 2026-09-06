@@ -915,28 +915,42 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
   // later, leaving inbox a real window in which the old asking root looked
   // recoverable. One SQLite statement is the claim boundary: readers now see
   // either no new turn or a running turn already linked to its chain.
-  const claimed = db().query(
-    `INSERT INTO run (started_at, agent, job, repo, cwd, prompt_sha, prompt_bytes,
+  const claimed = db().transaction(() => {
+    const inserted = db().query(
+      `INSERT INTO run (started_at, agent, job, repo, cwd, prompt_sha, prompt_bytes,
                       prompt_head, label, status, session_id, probe, parent_run_id, turn,
                       vendor_session)
-     SELECT ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?
-      WHERE ? IS NULL OR (
-        EXISTS (SELECT 1 FROM run root WHERE root.id = ? AND root.status NOT IN ('stopped','stale'))
-        AND NOT EXISTS (
-          SELECT 1 FROM run
-           WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
+       SELECT ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?
+        WHERE ? IS NULL OR (
+          EXISTS (SELECT 1 FROM run root WHERE root.id = ? AND root.status NOT IN ('stopped','stale'))
+          AND NOT EXISTS (
+            SELECT 1 FROM run
+             WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
+          )
         )
-      )
-     RETURNING id`,
-  ).get(
-    nowIso(), jobName, spec.repo ?? repoOf(cwd), cwd,
-    createHash('sha256').update(prompt).digest('hex').slice(0, 16),
-    prompt.length, prompt.slice(0, 200).replace(/\s+/g, ' '), spec.label ?? null,
-    sessionId(), spec.probe ? 1 : 0, spec.resume?.parent ?? null,
-    spec.resume?.turn ?? 1, spec.resume?.session ?? null,
-    spec.resume?.parent ?? null, spec.resume?.parent ?? null,
-    spec.resume?.parent ?? null, spec.resume?.parent ?? null,
-  ) as { id: number } | null
+       RETURNING id`,
+    ).get(
+      nowIso(), jobName, spec.repo ?? repoOf(cwd), cwd,
+      createHash('sha256').update(prompt).digest('hex').slice(0, 16),
+      prompt.length, prompt.slice(0, 200).replace(/\s+/g, ' '), spec.label ?? null,
+      sessionId(), spec.probe ? 1 : 0, spec.resume?.parent ?? null,
+      spec.resume?.turn ?? 1, spec.resume?.session ?? null,
+      spec.resume?.parent ?? null, spec.resume?.parent ?? null,
+      spec.resume?.parent ?? null, spec.resume?.parent ?? null,
+    ) as { id: number } | null
+    const deliveryRoot = spec.resume?.parent ?? (spec.retryOf
+      ? (db().query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
+          .get(spec.retryOf) as { root_id: number } | null)?.root_id
+      : undefined)
+    if (inserted && deliveryRoot) {
+      db().query(
+        `UPDATE question SET delivery_pending_at=NULL
+          WHERE delivery_pending_at IS NOT NULL AND run_id IN
+            (SELECT id FROM run WHERE id=? OR parent_run_id=?)`,
+      ).run(deliveryRoot, deliveryRoot)
+    }
+    return inserted
+  })()
   if (!claimed) {
     const root = db().query('SELECT status FROM run WHERE id=?').get(spec.resume!.parent) as
       { status: string } | null
@@ -1089,23 +1103,23 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
   const sessionFrom = latest.vendor_session
     ? latest
     : db().query(
-        `SELECT id, vendor_session, turn
+        `SELECT id, agent, vendor_session, turn
            FROM run WHERE (id = ? OR parent_run_id = ?) AND vendor_session IS NOT NULL
           ORDER BY turn DESC LIMIT 1`,
-      ).get(id, id) as { id: number; vendor_session: string; turn: number } | null
+      ).get(id, id) as { id: number; agent: string; vendor_session: string; turn: number } | null
   if (!sessionFrom?.vendor_session) {
     throw new Error(`run ${id} recorded no session id, so ${latest.agent} cannot be resumed`)
   }
   if (!latest.vendor_session) {
     console.error(
       `run ${id}: newest turn ${latest.id} recorded no session id; ` +
-      `resuming with the session from run ${sessionFrom.id} (turn ${sessionFrom.turn})`,
+      `resuming ${sessionFrom.agent} with the session from run ${sessionFrom.id} (turn ${sessionFrom.turn})`,
     )
   }
   const prompt = message
     ?? 'Continue from where you stopped and finish the spec. If you reached a ' +
        'decision that is not yours, stop and ask as before.'
-  const assembledLimit = argvResumeLimit(latest.agent)
+  const assembledLimit = argvResumeLimit(sessionFrom.agent)
   if (assembledLimit !== undefined) {
     const packed = packedResumePrompt(row.job, prompt, id)
     const assembled = Buffer.byteLength(packed, 'utf8')
@@ -1131,7 +1145,7 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
     base: launch.launch_base ?? undefined,
     noFailover: !!launch.no_failover,
     resume: {
-      parent: id, agent: latest.agent, session: sessionFrom.vendor_session,
+      parent: id, agent: sessionFrom.agent, session: sessionFrom.vendor_session,
       turn: latest.turn + 1, sessionId: authority.owner,
       worktree: latest.worktree
         ? {
@@ -1163,29 +1177,17 @@ async function reportContinuedRun(childId: number, jobName: string): Promise<voi
   await follow(childId, has('quiet'))
 }
 
-function chainCanResume(rootId: number): boolean {
-  const latest = db().query(
-    `SELECT agent FROM run WHERE id=? OR parent_run_id=?
-      ORDER BY turn DESC, id DESC LIMIT 1`,
-  ).get(rootId, rootId) as { agent: string } | null
-  if (!latest || !AGENTS[latest.agent]?.caps.resumable) return false
+function chainHasPendingDelivery(rootId: number): boolean {
   return Boolean(db().query(
-    `SELECT 1 FROM run WHERE (id=? OR parent_run_id=?) AND vendor_session IS NOT NULL LIMIT 1`,
+    `SELECT 1 FROM question q JOIN run owner ON owner.id=q.run_id
+      WHERE (owner.id=? OR owner.parent_run_id=?)
+        AND q.answered_at IS NOT NULL AND q.delivery_pending_at IS NOT NULL
+      LIMIT 1`,
   ).get(rootId, rootId))
 }
 
 function chainIsStranded(rootId: number): boolean {
-  const root = db().query('SELECT status FROM run WHERE id=?').get(rootId) as
-    { status: string } | null
-  if (root?.status !== 'asking' || chainCanResume(rootId)) return false
-  const open = db().query(
-    `SELECT 1 FROM question q JOIN run owner ON owner.id=q.run_id
-      WHERE (owner.id=? OR owner.parent_run_id=?) AND q.answered_at IS NULL LIMIT 1`,
-  ).get(rootId, rootId)
-  const running = db().query(
-    `SELECT 1 FROM run WHERE (id=? OR parent_run_id=?) AND status='running' LIMIT 1`,
-  ).get(rootId, rootId)
-  return !open && !running
+  return chainHasPendingDelivery(rootId)
 }
 
 function strandedRecovery(rootId: number): string {
@@ -2666,6 +2668,11 @@ switch (cmd) {
     // routing around it starts a different agent from scratch on work the first
     // one had already partly done.
     const agent = flag('agent') ?? row.agent
+    if (recordedRulings.length && job(row.job).needs.writesRepo) {
+      console.error(
+        `— recorded rulings require a fresh worktree; retry will not carry the previous partial edit`,
+      )
+    }
     console.error(
       `— retrying run ${id} (${row.agent}/${row.job}` +
         (row.failure_kind ? `, ${row.failure_kind}` : '') + `) on ${agent}`,
@@ -3114,7 +3121,13 @@ switch (cmd) {
     const recoverable = db().query(
       `SELECT root.id, root.agent, root.job, root.repo, root.session_id
          FROM run root
-        WHERE root.parent_run_id IS NULL AND root.status = 'asking'
+        WHERE root.parent_run_id IS NULL
+          AND (root.status = 'asking' OR EXISTS (
+            SELECT 1 FROM question pending JOIN run owner ON owner.id=pending.run_id
+             WHERE (owner.id=root.id OR owner.parent_run_id=root.id)
+               AND pending.answered_at IS NOT NULL
+               AND pending.delivery_pending_at IS NOT NULL
+          ))
           ${mine
             ? project
               ? 'AND root.repo = ?'
@@ -3163,7 +3176,7 @@ switch (cmd) {
       )
     }
     for (const r of recoverable) {
-      const stranded = !chainCanResume(r.id)
+      const stranded = chainHasPendingDelivery(r.id)
       if (canAnswer(r.session_id)) {
         console.log(
           `\nrun ${r.id} · ${r.agent}/${r.job}${r.repo ? ` · ${r.repo}` : ''} · ` +
@@ -3316,12 +3329,31 @@ switch (cmd) {
       throw new Error(`run ${id} is ${row.status}, not waiting on a ruling`)
     }
 
+    const latest = db().query(
+      `SELECT id, agent, vendor_session, turn, cwd, worktree, branch, base_commit
+         FROM run WHERE id = ? OR parent_run_id = ?
+        ORDER BY turn DESC LIMIT 1`,
+    ).get(id, id) as {
+      id: number; agent: string; vendor_session: string | null; turn: number
+      cwd: string | null; worktree: string | null; branch: string | null; base_commit: string | null
+    }
+    const sessionFrom = latest.vendor_session
+      ? latest
+      : db().query(
+          `SELECT id, agent, vendor_session, turn
+             FROM run WHERE (id = ? OR parent_run_id = ?) AND vendor_session IS NOT NULL
+            ORDER BY turn DESC LIMIT 1`,
+        ).get(id, id) as {
+          id: number; agent: string; vendor_session: string; turn: number
+        } | null
+    const resumeAgent = sessionFrom?.agent ?? latest.agent
+
     // Two ways to rule: one joined positional / --file / stdin message, or
     // by question id when there are several. `--q<id> --file PATH` binds that
     // file to that question; a command-level `--file` is the single-ruling form.
     const answers: { id: number; question: string; answer: string }[] = []
     const parsed = parseAnswerTextSources(argv.slice(2))
-    const argvLimit = ownersLive ? undefined : argvResumeLimit(row.agent)
+    const argvLimit = ownersLive ? undefined : argvResumeLimit(resumeAgent)
     const rulingFrom = (text: string): string => {
       assertWorkerText(text, 'ruling', ANSWER_WORKING_FORMS, argvLimit)
       return text
@@ -3400,35 +3432,16 @@ switch (cmd) {
       )
     }
 
-    // Resume from the latest turn. Bound the packed argv prompt before any
-    // question is marked answered.
-    const latest = db().query(
-      `SELECT id, agent, vendor_session, turn, cwd, worktree, branch, base_commit
-         FROM run WHERE id = ? OR parent_run_id = ?
-        ORDER BY turn DESC LIMIT 1`,
-    ).get(id, id) as {
-      id: number; agent: string; vendor_session: string | null; turn: number
-      cwd: string | null; worktree: string | null; branch: string | null; base_commit: string | null
-    }
-    const sessionFrom = latest.vendor_session
-      ? latest
-      : db().query(
-          `SELECT id, agent, vendor_session, turn
-             FROM run WHERE (id = ? OR parent_run_id = ?) AND vendor_session IS NOT NULL
-            ORDER BY turn DESC LIMIT 1`,
-        ).get(id, id) as {
-          id: number; agent: string; vendor_session: string; turn: number
-        } | null
     if (!ownersLive && !skipResume &&
-        (!sessionFrom?.vendor_session || AGENTS[latest.agent]?.caps.resumable === false)) {
+        (!sessionFrom?.vendor_session || AGENTS[resumeAgent]?.caps.resumable === false)) {
       throw new Error(
-        `run ${id} cannot be resumed: no vendor session (agent ${latest.agent}); ` +
+        `run ${id} cannot be resumed: no vendor session (agent ${resumeAgent}); ` +
         `the ruling was NOT recorded; options: \`orch retry ${id} --agent …\` to ` +
         `re-dispatch with the ruling appended to the spec, or \`orch abandon ${id}\``,
       )
     }
     if (!ownersLive) {
-      const assembledLimit = argvResumeLimit(latest.agent)
+      const assembledLimit = argvResumeLimit(resumeAgent)
       if (assembledLimit !== undefined) {
         const turnPrompt = rulingPrompt(answers)
         const packed = packedResumePrompt(row.job, turnPrompt, id)
@@ -3450,12 +3463,16 @@ switch (cmd) {
 
     const now = nowIso()
     const upd = db().query(
-      'UPDATE question SET answer=?, answered_at=?, answered_by=? WHERE id=?',
+      `UPDATE question
+          SET answer=?, answered_at=?, answered_by=?, delivery_pending_at=?
+        WHERE id=?`,
     )
     const answeredBy = callerSession ?? 'anonymous (no session id)'
     db().transaction(() => {
       answerAuthority = adoptRunMutation(answerAuthority, 'answer')
-      open.forEach((q, i) => upd.run(answers[i]!.answer, now, answeredBy, q.id))
+      open.forEach((q, i) => upd.run(
+        answers[i]!.answer, now, answeredBy, ownersLive ? null : now, q.id,
+      ))
       if (skipResume) db().query("UPDATE run SET status='asking' WHERE id=?").run(id)
       auditRunMutation(answerAuthority, 'answer')
     })()
@@ -3498,7 +3515,7 @@ switch (cmd) {
         cwd: latest.cwd ?? row.cwd ?? process.cwd(),
         resume: {
           parent: id,
-          agent: latest.agent,
+          agent: resumeAgent,
           session: sessionFrom!.vendor_session!,
           turn: latest.turn + 1,
           sessionId: row.session_id,
@@ -3516,7 +3533,9 @@ switch (cmd) {
       db().transaction(() => {
         for (const q of open) {
           db().query(
-            'UPDATE question SET answer=NULL, answered_at=NULL, answered_by=NULL WHERE id=?',
+            `UPDATE question
+                SET answer=NULL, answered_at=NULL, answered_by=NULL, delivery_pending_at=NULL
+              WHERE id=?`,
           ).run(q.id)
         }
       })()

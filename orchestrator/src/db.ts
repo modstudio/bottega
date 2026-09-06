@@ -241,6 +241,10 @@ export function applySchema(d: Database): void {
   addColumn(d, 'run', 'pid', 'INTEGER')
   addColumn(d, 'run', 'agent_pid', 'INTEGER')
   addColumn(d, 'run', 'session_id', 'TEXT')
+  // An answered question remains undelivered until detach atomically claims
+  // the resumed turn. This closes the process-exit gap between ruling and
+  // dispatch without inventing replay machinery.
+  addColumn(d, 'question', 'delivery_pending_at', 'TEXT')
   // A caller-supplied name for distinguishing sibling runs in a fan-out.
   addColumn(d, 'run', 'label', 'TEXT')
   // Which run this one re-attempts. A transient failure — a quota limit, a
@@ -1125,6 +1129,9 @@ function migrate(d: Database) {
       why         TEXT,
       answer      TEXT,
       answered_at TEXT,
+      -- Set in the ruling transaction and cleared only when a resumed or
+      -- replacement turn is claimed. A non-NULL value is a durable retry signal.
+      delivery_pending_at TEXT,
       -- Which session ruled. Same reasoning as score.scored_by: a ruling is a
       -- judgement, and an unattributed judgement cannot be audited.
       answered_by TEXT
