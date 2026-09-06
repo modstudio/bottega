@@ -12499,12 +12499,52 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
     rmSync(repo, { recursive: true, force: true })
   })
 
-  test('preflight refuses a legacy create before any run row exists', () => {
+  test('preflight lets a legacy create reach worktree creation with its string arguments', () => {
     const { repo } = scratchRepo()
+    const capture = join(repo, 'legacy-create-argv')
+    const createTool = join(repo, 'legacy-create')
+    writeFileSync(createTool, `#!/bin/sh
+printf '%s\\n' "$@" > ${JSON.stringify(capture)}
+exit 17
+`)
+    chmodSync(createTool, 0o755)
+    const create = `${createTool} create "{branch}"`
     upsertProject({
       name: 'legacy-preflight', path: realpathSync(repo),
       settings: {
-        worktree: { create: 'bun run worktree create "{branch}"', branch: 'task/{id}' },
+        worktree: { create, branch: 'task/{id}' },
+      } as any,
+    })
+    const before = (db().query('SELECT COUNT(*) AS n FROM run').get() as { n: number }).n
+    const r = Bun.spawnSync([
+      process.execPath, new URL('cli.ts', import.meta.url).pathname,
+      'do', 'implement', 'inspect', '--follow',
+    ], {
+      cwd: repo,
+      env: {
+        ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+        CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+      },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(r.exitCode).not.toBe(0)
+    expect(r.stderr.toString()).toContain("the project's worktree tool failed")
+    expect(readFileSync(capture, 'utf8').trim().split('\n')).toEqual([
+      'create', `task/${before + 1}`,
+    ])
+    expect(createArgv(create, { branch: `task/${before + 1}` })).toEqual([
+      'sh', '-c', `${createTool} create "task/${before + 1}"`,
+    ])
+    expect((db().query('SELECT COUNT(*) AS n FROM run').get() as { n: number }).n).toBe(before + 1)
+    rmSync(repo, { recursive: true, force: true })
+  })
+
+  test('preflight refuses a structured create missing args before any run row exists', () => {
+    const { repo } = scratchRepo()
+    upsertProject({
+      name: 'malformed-preflight', path: realpathSync(repo),
+      settings: {
+        worktree: { create: { command: 'scripts/worktree' }, branch: 'task/{id}' },
       } as any,
     })
     const before = (db().query('SELECT COUNT(*) AS n FROM run').get() as { n: number }).n
@@ -12519,7 +12559,7 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
       stdout: 'pipe', stderr: 'pipe',
     })
     expect(r.exitCode).not.toBe(0)
-    expect(r.stderr.toString()).toContain('worktree.create is a shell string; migrate it (DEV-308)')
+    expect(r.stderr.toString()).toContain('worktree.create.args must be an array')
     expect((db().query('SELECT COUNT(*) AS n FROM run').get() as { n: number }).n).toBe(before)
     rmSync(repo, { recursive: true, force: true })
   })

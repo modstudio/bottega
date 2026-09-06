@@ -478,7 +478,7 @@ export function preflight(
   if (reusesWorktree) return seed
   const project = projectAt(cwd)
   const tool = project?.settings.worktree ?? null
-  if (project && tool?.create) {
+  if (project && tool?.create && typeof tool.create !== 'string') {
     const malformed = validateProjectSettings(project.settings)
     if (malformed.length) throw new Error(malformed.join('\n'))
   }
