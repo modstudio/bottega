@@ -728,6 +728,13 @@ rebases its named branch onto current trunk, applies the approved diff, runs the
 gates after that rebase, commits it, and fast-forwards trunk to the commit. The
 merge is fast-forward only, and it never pushes.
 
+The landing lock serializes concurrent landings' fast-forward of trunk. It does
+not cover installation or replacement of the shared `reference-transaction`
+guard: guard preparation happens before the lock is acquired. DEV-225 exposed
+that boundary when two landings clobbered the tracked shared guard; DEV-248
+showed that the guard's placement is a separate protection boundary, not one the
+landing lock supplies.
+
 Trunk moves under a landing run, because sessions land concurrently: whoever is
 second finds a green gate that ran before the rebase the merge now needs. So a
 refused fast-forward is a lost race, not a verdict — rebase onto the new trunk,
