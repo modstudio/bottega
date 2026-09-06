@@ -6620,6 +6620,33 @@ describe('detached run collection', () => {
     `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status)
      VALUES (?, 'codex', ?, 'x', 1, 'x', ?) RETURNING id`,
   ).get(new Date().toISOString(), job, status) as { id: number }).id
+  const checkpointedOrch = async (checkpoint: string, ...args: string[]) => {
+    const token = randomUUID()
+    const ready = join(dir, `lifecycle-ready-${token}`)
+    const release = join(dir, `lifecycle-release-${token}`)
+    const child = Bun.spawn([process.execPath, CLI, ...args], {
+      env: {
+        ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+        CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+        ORCH_TEST_LIFECYCLE_CHECKPOINT: checkpoint,
+        ORCH_TEST_LIFECYCLE_READY: ready,
+        ORCH_TEST_LIFECYCLE_RELEASE: release,
+      },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    const deadline = Date.now() + 5_000
+    while (!existsSync(ready) && Date.now() < deadline) await Bun.sleep(5)
+    expect(existsSync(ready)).toBe(true)
+    return { child, release }
+  }
+  const lifecycleResult = async (child: ReturnType<typeof Bun.spawn>) => {
+    const [code, out, err] = await Promise.all([
+      child.exited,
+      new Response(child.stdout as ReadableStream<Uint8Array>).text(),
+      new Response(child.stderr as ReadableStream<Uint8Array>).text(),
+    ])
+    return { code, out, err }
+  }
 
   test('every --json surface has an enumerated and pinned output contract', () => {
     const monitorDb = join(dir, 'json-contract-orch.db')
@@ -8468,6 +8495,76 @@ describe('detached run collection', () => {
     ).all(root)).toEqual([{ run_id: root, root_id: root, action: 'stop' }])
   })
 
+  test('stop waits for a concurrent continuation claim and stops the claimed turn', async () => {
+    const root = insert('asking', 'implement')
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('orch-test-session', root)
+    const pending = await checkpointedOrch('stop-before-immediate', 'stop', String(root))
+    const concurrent = new Database(process.env.ORCH_DB!)
+    concurrent.exec('PRAGMA busy_timeout=5000; BEGIN IMMEDIATE')
+    const turn = (concurrent.query(
+      `INSERT INTO run
+        (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,parent_run_id,turn)
+       VALUES (?,'codex','implement','x',1,'x','running',?,2) RETURNING id`,
+    ).get(new Date().toISOString(), root) as { id: number }).id
+    writeFileSync(pending.release, 'continue may commit\n')
+    await Bun.sleep(50)
+    concurrent.exec('COMMIT')
+    concurrent.close()
+
+    const stopped = await lifecycleResult(pending.child)
+    expect(stopped.code).toBe(0)
+    expect(stopped.out).toContain(`stopped run ${turn}`)
+    expect(db().query('SELECT id, status FROM run WHERE id IN (?,?) ORDER BY id').all(root, turn))
+      .toEqual([{ id: root, status: 'stopped' }, { id: turn, status: 'stopped' }])
+    expect(db().query('SELECT action FROM run_mutation_audit WHERE root_id=?').all(root))
+      .toEqual([{ action: 'stop' }])
+  })
+
+  test('abandon loses cleanly to a concurrent continuation claim', async () => {
+    const root = insert('asking', 'implement')
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('orch-test-session', root)
+    const pending = await checkpointedOrch('abandon-before-immediate', 'abandon', String(root))
+    const concurrent = new Database(process.env.ORCH_DB!)
+    concurrent.exec('PRAGMA busy_timeout=5000; BEGIN IMMEDIATE')
+    const turn = (concurrent.query(
+      `INSERT INTO run
+        (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,parent_run_id,turn)
+       VALUES (?,'codex','implement','x',1,'x','running',?,2) RETURNING id`,
+    ).get(new Date().toISOString(), root) as { id: number }).id
+    writeFileSync(pending.release, 'continue may commit\n')
+    await Bun.sleep(50)
+    concurrent.exec('COMMIT')
+    concurrent.close()
+
+    const abandoned = await lifecycleResult(pending.child)
+    expect(abandoned.code).toBe(1)
+    expect(abandoned.err).toContain(`${root} turn 1 asking; ${turn} turn 2 running`)
+    expect(db().query('SELECT id, status FROM run WHERE id IN (?,?) ORDER BY id').all(root, turn))
+      .toEqual([{ id: root, status: 'asking' }, { id: turn, status: 'running' }])
+    expect(db().query('SELECT action FROM run_mutation_audit WHERE root_id=?').all(root)).toEqual([])
+  })
+
+  test('stop refuses when its candidate completes before the immediate transaction', async () => {
+    const root = insert('asking', 'implement')
+    const turn = insert('running', 'implement')
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('orch-test-session', root)
+    db().query('UPDATE run SET parent_run_id=?, turn=2 WHERE id=?').run(root, turn)
+    const pending = await checkpointedOrch('stop-before-immediate', 'stop', String(root))
+    const concurrent = new Database(process.env.ORCH_DB!)
+    concurrent.exec('PRAGMA busy_timeout=5000; BEGIN IMMEDIATE')
+    concurrent.query("UPDATE run SET status='ok' WHERE id=?").run(turn)
+    writeFileSync(pending.release, 'completion may commit\n')
+    await Bun.sleep(50)
+    concurrent.exec('COMMIT')
+    concurrent.close()
+
+    const stopped = await lifecycleResult(pending.child)
+    expect(stopped.code).toBe(1)
+    expect(stopped.err).toContain(`${root} turn 1 asking; ${turn} turn 2 ok`)
+    expect(db().query('SELECT status FROM run WHERE id=?').get(root)).toEqual({ status: 'asking' })
+    expect(db().query('SELECT action FROM run_mutation_audit WHERE root_id=?').all(root)).toEqual([])
+  })
+
   test('abandon refuses a completed run without changing it', () => {
     const id = insert('ok')
     const r = orch('abandon', String(id))
@@ -9058,8 +9155,8 @@ describe('detached run collection', () => {
     })
   })
 
-  test('the owner may answer failed and stale roots and resume each chain', () => {
-    for (const status of ['failed', 'stale']) {
+  test('the owner may answer a failed root and resume its chain', () => {
+    for (const status of ['failed']) {
       const id = addRun({ agent: 'missing-test-agent', job: 'implement', status })
       const prompt = join(dir, `answer-${status}-${id}.prompt.txt`)
       writeFileSync(prompt, 'original implementation spec')
@@ -9079,6 +9176,21 @@ describe('detached run collection', () => {
         'SELECT action, actor_session FROM run_mutation_audit WHERE run_id=?',
       ).get(id)).toEqual({ action: 'answer', actor_session: 'orch-test-session' })
       expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before + 1)
+    }
+  })
+
+  test('stopped and stale roots cannot claim another continuation turn', () => {
+    for (const status of ['stopped', 'stale']) {
+      const id = addRun({ agent: 'missing-test-agent', job: 'implement', status })
+      db().query('UPDATE run SET session_id=?, vendor_session=? WHERE id=?')
+        .run('orch-test-session', `${status}-vendor-session`, id)
+      const before = (db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n
+
+      const result = orch('continue', String(id), 'resume after lifecycle mutation')
+      expect(result.code).toBe(1)
+      expect(result.err).toContain(`run ${id} is ${status} and cannot be continued`)
+      expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before)
+      expect(db().query('SELECT action FROM run_mutation_audit WHERE root_id=?').all(id)).toEqual([])
     }
   })
 

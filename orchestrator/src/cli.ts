@@ -62,6 +62,18 @@ import {
  */
 const FOLLOW_TIMEOUT_MS = STALE_AFTER_MS + 60_000
 
+/** Test-only ordering seam for database interleavings at lifecycle boundaries. */
+function lifecycleCheckpoint(name: string): void {
+  if (process.env.ORCH_TEST_LIFECYCLE_CHECKPOINT !== name) return
+  const ready = process.env.ORCH_TEST_LIFECYCLE_READY
+  const release = process.env.ORCH_TEST_LIFECYCLE_RELEASE
+  if (!ready || !release) return
+  writeFileSync(ready, `${name}\n`)
+  while (!existsSync(release)) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10)
+  }
+}
+
 function parsedVersion(text: string): string | null {
   return text.match(/\b\d+\.\d+\.\d+\b/)?.[0] ?? null
 }
@@ -874,9 +886,12 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
                       prompt_head, label, status, session_id, probe, parent_run_id, turn,
                       vendor_session)
      SELECT ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?
-      WHERE ? IS NULL OR NOT EXISTS (
-        SELECT 1 FROM run
-         WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
+      WHERE ? IS NULL OR (
+        EXISTS (SELECT 1 FROM run root WHERE root.id = ? AND root.status NOT IN ('stopped','stale'))
+        AND NOT EXISTS (
+          SELECT 1 FROM run
+           WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
+        )
       )
      RETURNING id`,
   ).get(
@@ -885,9 +900,15 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
     prompt.length, prompt.slice(0, 200).replace(/\s+/g, ' '), spec.label ?? null,
     sessionId(), spec.probe ? 1 : 0, spec.resume?.parent ?? null,
     spec.resume?.turn ?? 1, spec.resume?.session ?? null,
-    spec.resume?.parent ?? null, spec.resume?.parent ?? null, spec.resume?.parent ?? null,
+    spec.resume?.parent ?? null, spec.resume?.parent ?? null,
+    spec.resume?.parent ?? null, spec.resume?.parent ?? null,
   ) as { id: number } | null
   if (!claimed) {
+    const root = db().query('SELECT status FROM run WHERE id=?').get(spec.resume!.parent) as
+      { status: string } | null
+    if (root && ['stopped', 'stale'].includes(root.status)) {
+      throw new Error(`run ${spec.resume!.parent} is ${root.status} and cannot be continued`)
+    }
     const running = db().query(
       `SELECT id, turn FROM run
         WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
@@ -1002,6 +1023,9 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
   if (!row) throw new Error(`no run ${id}`)
   if (row.parent_run_id) {
     throw new Error(`run ${id} is a turn of run ${row.parent_run_id}; continue that one`)
+  }
+  if (row.status === 'stopped' || row.status === 'stale') {
+    throw new Error(`run ${id} is ${row.status} and cannot be continued`)
   }
   const running = db().query(
     `SELECT id, turn FROM run
@@ -3944,30 +3968,56 @@ switch (cmd) {
     const id = Number(argv[1])
     if (!id) usage()
     let authority = authorizeRunMutation(id, 'stop')
-    const chain = db().query(
-      `SELECT id, status, pid, agent_pid, parent_run_id, turn, repo, cwd, worktree, branch,
-              base_commit
-         FROM run WHERE id = ? OR parent_run_id = ? ORDER BY turn DESC, id DESC`,
-    ).all(authority.rootId, authority.rootId) as {
+    lifecycleCheckpoint('stop-before-immediate')
+    type StopRow = {
       id: number; status: string; pid: number | null; agent_pid: number | null
       parent_run_id: number | null; turn: number; repo: string | null; cwd: string | null
       worktree: string | null; branch: string | null; base_commit: string | null
-    }[]
-    const row = chain.find((turn) => turn.status === 'running')
-    if (!row) {
-      throw new Error(
-        `run ${id}'s chain has no running turn — nothing to stop: ` +
-        [...chain].reverse().map((turn) => `${turn.id} turn ${turn.turn} ${turn.status}`).join('; '),
-      )
     }
-    const root = chain.find((turn) => turn.id === authority.rootId)!
-    const artifact = chain.find((turn) => turn.worktree)
-    const cleanupRow = {
-      ...root,
-      worktree: row.worktree ?? artifact?.worktree ?? null,
-      branch: root.branch ?? row.branch ?? artifact?.branch ?? null,
-      base_commit: root.base_commit ?? row.base_commit ?? artifact?.base_commit ?? null,
-    }
+    const readChain = () => db().query(
+      `SELECT id, status, pid, agent_pid, parent_run_id, turn, repo, cwd, worktree, branch,
+              base_commit
+         FROM run WHERE id = ? OR parent_run_id = ? ORDER BY turn DESC, id DESC`,
+    ).all(authority.rootId, authority.rootId) as StopRow[]
+    const describe = (chain: StopRow[]) => [...chain].reverse()
+      .map((turn) => `${turn.id} turn ${turn.turn} ${turn.status}`).join('; ')
+
+    const stopped = db().transaction(() => {
+      const chain = readChain()
+      const row = chain.find((turn) => turn.status === 'running')
+      if (!row) {
+        throw new Error(
+          `run ${id}'s chain has no running turn — nothing to stop: ${describe(chain)}`,
+        )
+      }
+      const root = chain.find((turn) => turn.id === authority.rootId)!
+      const artifact = chain.find((turn) => turn.worktree)
+      const cleanupRow = {
+        ...root,
+        worktree: row.worktree ?? artifact?.worktree ?? null,
+        branch: root.branch ?? row.branch ?? artifact?.branch ?? null,
+        base_commit: root.base_commit ?? row.base_commit ?? artifact?.base_commit ?? null,
+      }
+
+      authority = adoptRunMutation(authority, 'stop')
+      const changed = db().query(
+        "UPDATE run SET status='stopped', error='stopped by architect', failure_kind=NULL WHERE id=? AND status='running'",
+      ).run(row.id)
+      if (changed.changes !== 1) {
+        const current = readChain()
+        throw new Error(
+          `run ${id}'s chain changed before it could be stopped: ${describe(current)}`,
+        )
+      }
+      if (row.id !== authority.rootId) {
+        db().query(
+          "UPDATE run SET status='stopped', error='stopped by architect', failure_kind=NULL WHERE id=?",
+        ).run(authority.rootId)
+      }
+      auditRunMutation(authority, 'stop', auditReason())
+      return { row, cleanupRow }
+    }).immediate()
+    const { row, cleanupRow } = stopped
 
     const pids = [...new Set([row.agent_pid, row.pid].filter((pid): pid is number => Boolean(pid)))]
     for (const pid of pids) {
@@ -3975,19 +4025,6 @@ switch (cmd) {
         if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e
       }
     }
-
-    db().transaction(() => {
-      authority = adoptRunMutation(authority, 'stop')
-      db().query(
-        "UPDATE run SET status='stopped', error='stopped by architect', failure_kind=NULL WHERE id=? AND status='running'",
-      ).run(row.id)
-      if (row.id !== authority.rootId) {
-        db().query(
-          "UPDATE run SET status='stopped', error='stopped by architect', failure_kind=NULL WHERE id=?",
-        ).run(authority.rootId)
-      }
-      auditRunMutation(authority, 'stop', auditReason())
-    })()
 
     // The coordinator owns setup and final recording. Killing it inside the
     // creation window strands the project tool's directory before it can be
@@ -4031,39 +4068,49 @@ switch (cmd) {
     const id = Number(argv[1])
     if (!id) usage()
     let authority = authorizeRunMutation(id, 'abandon')
-    const chain = db().query(
-      `SELECT id, status, repo, cwd, worktree, branch, parent_run_id, turn, base_commit
-         FROM run WHERE id = ? OR parent_run_id = ? ORDER BY turn DESC, id DESC`,
-    ).all(authority.rootId, authority.rootId) as {
+    lifecycleCheckpoint('abandon-before-immediate')
+    type AbandonRow = {
       id: number; status: string; repo: string | null; cwd: string | null
       worktree: string | null; branch: string | null; parent_run_id: number | null; turn: number
       base_commit: string | null
-    }[]
-    const row = chain[0]
-    if (row?.status !== 'asking') {
-      throw new Error(
-        `run ${id}'s chain has no asking turn — nothing to abandon: ` +
-        [...chain].reverse().map((turn) => `${turn.id} turn ${turn.turn} ${turn.status}`).join('; '),
-      )
-    }
-    const root = chain.find((turn) => turn.id === authority.rootId)!
-    const artifact = chain.find((turn) => turn.worktree)
-    const cleanupRow = {
-      ...root,
-      worktree: row.worktree ?? artifact?.worktree ?? null,
-      branch: root.branch ?? row.branch ?? artifact?.branch ?? null,
-      base_commit: root.base_commit ?? row.base_commit ?? artifact?.base_commit ?? null,
     }
     const callerSession = authority.actor
-
     const note = flag('note')
     const error = `abandoned by architect${note === undefined ? '' : `: ${note}`}`
     const at = nowIso()
-    db().transaction(() => {
+    const readChain = () => db().query(
+      `SELECT id, status, repo, cwd, worktree, branch, parent_run_id, turn, base_commit
+         FROM run WHERE id = ? OR parent_run_id = ? ORDER BY turn DESC, id DESC`,
+    ).all(authority.rootId, authority.rootId) as AbandonRow[]
+    const describe = (chain: AbandonRow[]) => [...chain].reverse()
+      .map((turn) => `${turn.id} turn ${turn.turn} ${turn.status}`).join('; ')
+
+    const abandoned = db().transaction(() => {
+      const chain = readChain()
+      const row = chain[0]
+      if (row?.status !== 'asking') {
+        throw new Error(
+          `run ${id}'s chain has no asking turn — nothing to abandon: ${describe(chain)}`,
+        )
+      }
+      const root = chain.find((turn) => turn.id === authority.rootId)!
+      const artifact = chain.find((turn) => turn.worktree)
+      const cleanupRow = {
+        ...root,
+        worktree: row.worktree ?? artifact?.worktree ?? null,
+        branch: root.branch ?? row.branch ?? artifact?.branch ?? null,
+        base_commit: root.base_commit ?? row.base_commit ?? artifact?.base_commit ?? null,
+      }
       authority = adoptRunMutation(authority, 'abandon')
-      db().query(
-        "UPDATE run SET status='stale', error=?, failure_kind='abandoned' WHERE id=?",
+      const changed = db().query(
+        "UPDATE run SET status='stale', error=?, failure_kind='abandoned' WHERE id=? AND status='asking'",
       ).run(error, row.id)
+      if (changed.changes !== 1) {
+        const current = readChain()
+        throw new Error(
+          `run ${id}'s chain changed before it could be abandoned: ${describe(current)}`,
+        )
+      }
       db().query(
         `UPDATE question SET answered_by=?, answered_at=?, answer='(abandoned)'
           WHERE answered_at IS NULL AND run_id IN
@@ -4071,7 +4118,9 @@ switch (cmd) {
       ).run(callerSession ?? 'anonymous (no session id)', at, authority.rootId, authority.rootId)
       resolveRootFromLastTurn(db(), authority.rootId)
       auditRunMutation(authority, 'abandon', note ?? null)
-    })()
+      return { row, cleanupRow }
+    }).immediate()
+    const { row, cleanupRow } = abandoned
     console.log(`abandoned run ${row.id}`)
 
     if (cleanupRow.worktree) {
