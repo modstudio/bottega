@@ -862,21 +862,30 @@ export function reviewCalibrationFleet(database: Database = db()): ReviewCalibra
   }
   const cells = new Map<string, ReviewCalibrationFleetCell>()
   for (const row of graded) {
-    const calibration = row.model === null
-      ? { ...calibrationCell(row.lens, row.agent, undefined, database), basis: 'aggregate' as const }
-      : reviewCalibration(row.lens, row.agent, row.model, database)
-    const basis: ReviewCalibrationFleetCell['basis'] = calibration.triaged < MIN_REVIEW_TRIAGED
-      ? null
-      : calibration.basis === 'agent' ? 'aggregate' : calibration.basis
-    const model = basis === 'model' ? row.model : null
-    const key = `${row.lens}\0${row.agent}\0${model ?? ''}`
-    cells.set(key, {
-      lens: row.lens, agent: row.agent, model, n: calibration.triaged,
-      precision: calibration.precision, basis,
-      last_graded_at: model === null
-        ? pairLastGraded.get(`${row.lens}\0${row.agent}`) ?? null
-        : row.last_graded_at,
+    if (row.model === null) {
+      const aggregate = calibrationCell(row.lens, row.agent, undefined, database)
+      cells.set(`${row.lens}\0${row.agent}\0`, {
+        lens: row.lens, agent: row.agent, model: null, n: aggregate.triaged,
+        precision: aggregate.precision, basis: 'aggregate',
+        last_graded_at: pairLastGraded.get(`${row.lens}\0${row.agent}`) ?? null,
+      })
+      continue
+    }
+    const specific = calibrationCell(row.lens, row.agent, row.model, database)
+    cells.set(`${row.lens}\0${row.agent}\0${row.model}`, {
+      lens: row.lens, agent: row.agent, model: row.model, n: specific.triaged,
+      precision: specific.precision, basis: 'model', last_graded_at: row.last_graded_at,
     })
+    if (specific.triaged < MIN_REVIEW_TRIAGED) {
+      const aggregate = calibrationCell(row.lens, row.agent, undefined, database)
+      if (aggregate.triaged >= MIN_REVIEW_TRIAGED) {
+        cells.set(`${row.lens}\0${row.agent}\0`, {
+          lens: row.lens, agent: row.agent, model: null, n: aggregate.triaged,
+          precision: aggregate.precision, basis: 'aggregate',
+          last_graded_at: pairLastGraded.get(`${row.lens}\0${row.agent}`) ?? null,
+        })
+      }
+    }
   }
   for (const lens of lenses) for (const agent of agents) {
     if (!pairHasGrade.has(`${lens}\0${agent}`)) {

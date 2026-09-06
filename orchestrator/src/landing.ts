@@ -5,8 +5,7 @@ import { formatGitLocks } from './git-locks.ts'
 import { projectAt, type Project } from './projects.ts'
 import {
   contentTree, prepareSharedRefGuard, projectLockState, repoRootOf, withProjectLock,
-  targetGitEnvironment,
-  type SharedRefGuardEnvironment,
+  targetGitEnvironment, type SharedRefGuardEnvironment,
 } from './worktree.ts'
 
 const LANDING_LOCK = 'landing'
@@ -339,11 +338,16 @@ export type CoverageGitRunner = (args: string[], stdin?: Uint8Array) => Coverage
 function landingCoverageGit(repoRoot: string): CoverageGitRunner {
   return (args, stdin) => {
     const p = Bun.spawnSync(['git', ...args], {
-      cwd: repoRoot, env: process.env, stdin, stdout: 'pipe', stderr: 'pipe',
+      cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdin, stdout: 'pipe', stderr: 'pipe',
     })
     return { ok: p.exitCode === 0, out: p.stdout.toString().trim(), stdout: p.stdout,
       err: p.stderr.toString().trim() || `exit ${p.exitCode}` }
   }
+}
+
+function coverageOutput(result: CoverageGitResult, args: string[]): string {
+  if (!result.ok) throw new Error(`git ${args.join(' ')} failed: ${result.err}`)
+  return result.out
 }
 
 function commitsFrom(runner: CoverageGitRunner, args: string[]): string[] {
@@ -359,9 +363,11 @@ function commitForTree(
     const commits = new Set(pinned.map((lens) => lens.headCommit!))
     if (commits.size === 1) {
       const commit = pinned[0]!.headCommit!
-      if (runner(['cat-file', '-e', `${commit}^{commit}`]).ok &&
-          runner(['rev-parse', `${commit}^{tree}`]).out === tree) {
-        return { commit, resolution: 'pin' }
+      if (runner(['cat-file', '-e', `${commit}^{commit}`]).ok) {
+        const args = ['rev-parse', `${commit}^{tree}`]
+        if (coverageOutput(runner(args), args) === tree) {
+          return { commit, resolution: 'pin' }
+        }
       }
     }
     if (pinned.length === review.lenses.length) {
@@ -377,11 +383,13 @@ function commitForTree(
     commitsFrom(runner, ['rev-list', '--walk-reflogs', '--max-count=50', branch]))
   for (const commit of candidates) {
     seen.add(commit)
-    if (runner(['rev-parse', `${commit}^{tree}`]).out === tree) return { commit, resolution: 'walk' }
+    const args = ['rev-parse', `${commit}^{tree}`]
+    if (coverageOutput(runner(args), args) === tree) return { commit, resolution: 'walk' }
   }
   for (const commit of commitsFrom(runner, ['log', '--all', '--format=%H', '--max-count=500'])) {
     if (seen.has(commit)) continue
-    if (runner(['rev-parse', `${commit}^{tree}`]).out === tree) return { commit, resolution: 'walk' }
+    const args = ['rev-parse', `${commit}^{tree}`]
+    if (coverageOutput(runner(args), args) === tree) return { commit, resolution: 'walk' }
   }
   return { commit: null, resolution: 'walk' }
 }
@@ -403,7 +411,8 @@ function contentHash(runner: CoverageGitRunner, from: string, to: string): strin
 }
 
 function changedPaths(runner: CoverageGitRunner, from: string, to: string): Set<string> {
-  const output = runner(['diff', '--name-only', `${from}..${to}`]).out
+  const args = ['diff', '--name-only', `${from}..${to}`]
+  const output = coverageOutput(runner(args), args)
   return new Set(output ? output.split('\n') : [])
 }
 
@@ -411,7 +420,10 @@ export function reviewCoverageVerdict(
   repoRoot: string, review: ReviewCoverageInput, tip: string, trunk: string,
   runner: CoverageGitRunner = landingCoverageGit(repoRoot),
 ): CoverageVerdict {
-  const tree = runner(['rev-parse', `${tip}^{tree}`]).out
+  const treeArgs = ['rev-parse', `${tip}^{tree}`]
+  const treeResult = runner(treeArgs)
+  if (!treeResult.ok) return { kind: 'invalid', reason: `git ${treeArgs.join(' ')} failed: ${treeResult.err}` }
+  const tree = treeResult.out
   if (review.lenses.length > 0 && review.lenses.every((lens) => lens.tree === tree)) {
     return { kind: 'exact' }
   }
@@ -434,8 +446,20 @@ export function reviewCoverageVerdict(
   if (!runner(['cat-file', '-e', `${baseCommit}^{commit}`]).ok) {
     return { kind: 'invalid', reason: 'reviewed commit not found', resolution: resolved.resolution }
   }
-  const oldBase = runner(['merge-base', reviewedCommit, baseCommit]).out
-  const newBase = runner(['merge-base', tip, trunk]).out
+  const oldBaseArgs = ['merge-base', reviewedCommit, baseCommit]
+  const oldBaseResult = runner(oldBaseArgs)
+  if (!oldBaseResult.ok) {
+    return { kind: 'invalid', reason: `git ${oldBaseArgs.join(' ')} failed: ${oldBaseResult.err}`,
+      resolution: resolved.resolution }
+  }
+  const oldBase = oldBaseResult.out
+  const newBaseArgs = ['merge-base', tip, trunk]
+  const newBaseResult = runner(newBaseArgs)
+  if (!newBaseResult.ok) {
+    return { kind: 'invalid', reason: `git ${newBaseArgs.join(' ')} failed: ${newBaseResult.err}`,
+      resolution: resolved.resolution }
+  }
+  const newBase = newBaseResult.out
   const changePaths = changedPaths(runner, oldBase, reviewedCommit)
   const trunkPaths = changedPaths(runner, oldBase, newBase)
   const overlap = [...changePaths].filter((path) => trunkPaths.has(path))

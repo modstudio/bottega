@@ -857,6 +857,28 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  test('a missing trunk cannot produce a carried review verdict', () => {
+    const branch = 'missing-trunk-review'
+    const { repo, trees } = repoWithBranches([branch])
+    const project = 'landing-missing-trunk-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'missing-trunk', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const reviewedTree = g(repo, 'rev-parse', `${branch}^{tree}`)
+      completedReview(project, [reviewedTree], {
+        branch, baseCommit: oldBase, launchCwd: trees[branch]!,
+      })
+      writeFileSync(join(trees[branch]!, 'after-review.txt'), 'new content\n')
+      g(trees[branch]!, 'add', 'after-review.txt')
+      g(trees[branch]!, 'commit', '-m', 'content after review')
+
+      const status = landingStatus(trees[branch]!)
+      expect(status).toContain('invalid (git merge-base')
+      expect(status).toContain('missing-trunk')
+      expect(status).not.toContain('carried')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   test('refuses a whitespace-only post-review change even when patch-id is unchanged', async () => {
     const { repo, trees } = repoWithBranches(['whitespace-review'])
     const project = 'landing-whitespace-review'
@@ -2345,6 +2367,8 @@ describe('review discipline', () => {
       { lens: 'fleet-b', agent: 'codex', model: null, n: 0, precision: null, basis: null, last_graded_at: null },
       { lens: 'fleet-b', agent: 'grok', model: null, n: 0, precision: null, basis: null, last_graded_at: null },
       { lens: 'fleet-b', agent: 'legacy', model: null, n: 0, precision: null, basis: null, last_graded_at: null },
+      { lens: 'fleet-c', agent: 'codex', model: 'm3', n: MIN_REVIEW_TRIAGED / 2, precision: null, basis: 'model', last_graded_at: '2026-02-04T00:00:00.000Z' },
+      { lens: 'fleet-c', agent: 'codex', model: 'm4', n: MIN_REVIEW_TRIAGED / 2, precision: null, basis: 'model', last_graded_at: '2026-02-05T00:00:00.000Z' },
       { lens: 'fleet-c', agent: 'codex', model: null, n: MIN_REVIEW_TRIAGED, precision: 1, basis: 'aggregate', last_graded_at: '2026-02-05T00:00:00.000Z' },
       { lens: 'fleet-c', agent: 'grok', model: null, n: 0, precision: null, basis: null, last_graded_at: null },
       { lens: 'fleet-c', agent: 'legacy', model: null, n: 0, precision: null, basis: null, last_graded_at: null },
