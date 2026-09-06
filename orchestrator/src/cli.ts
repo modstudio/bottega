@@ -2807,7 +2807,7 @@ switch (cmd) {
    */
   case 'project': {
     const { projects, upsertProject, removeProject, sniffStack, projectByName,
-            worktreeWarnings, validateProjectSettings } = await import('./projects.ts')
+            worktreeWarnings, validateProjectSettings, migrateCreate } = await import('./projects.ts')
     const sub = argv[1] ?? 'list'
 
     if (sub === 'list') {
@@ -2823,7 +2823,9 @@ switch (cmd) {
        * to stop knowing four repository names of its own.
        */
       if (has('json')) {
-        console.log(JSON.stringify(all))
+        console.log(JSON.stringify(all.map((project) => ({
+          ...project, problems: validateProjectSettings(project.settings),
+        }))))
         break
       }
       if (!all.length) {
@@ -2842,6 +2844,9 @@ switch (cmd) {
         )
         const keys = Object.keys(p.settings)
         if (keys.length) console.log(`${' '.repeat(14)} settings: ${keys.join(', ')}`)
+        for (const problem of validateProjectSettings(p.settings)) {
+          console.log(`${p.name}: ${problem}`)
+        }
         // Reported, not enforced: a half-configured project should say so and
         // keep working. Every one of these is a state that has actually
         // happened rather than one imagined here.
@@ -2924,8 +2929,12 @@ switch (cmd) {
         canon: has('no-canon') ? false : has('canon') ? true : p.canon,
         settings,
       }
-      const malformed = validateProjectSettings(candidate.settings)
-      if (malformed.length) throw new Error(malformed.join('\n'))
+      const createChanged = JSON.stringify(p.settings.worktree?.create) !==
+        JSON.stringify(candidate.settings.worktree?.create)
+      if (createChanged) {
+        const malformed = validateProjectSettings(candidate.settings)
+        if (malformed.length) throw new Error(malformed.join('\n'))
+      }
       const incomplete = worktreeWarnings(candidate).filter((w) =>
         w.startsWith('has a create command but no branch template') ||
         w.startsWith('has a create command with a {seed} placeholder but no seeds list'))
@@ -2938,6 +2947,39 @@ switch (cmd) {
       console.log(`updated ${name}`)
       for (const w of worktreeWarnings(projectByName(name)!)) {
         console.log(`${' '.repeat(14)} ! ${w}`)
+      }
+      break
+    }
+
+    if (sub === 'migrate-create') {
+      const name = argv[2]
+      if (!name) throw new Error('orch project migrate-create <name> [--apply]')
+      const p = projectByName(name)
+      if (!p) throw new Error(`no project "${name}"`)
+      const create = p.settings.worktree?.create
+      if (create === undefined && p.settings.worktree?.recipe) {
+        console.log(`${name}: worktree.create is a recipe; nothing to migrate`)
+        break
+      }
+      if (typeof create !== 'string') {
+        console.log(`${name}: worktree.create is already structured; nothing to migrate`)
+        break
+      }
+      console.log(`${name}: before ${JSON.stringify(create)}`)
+      const migration = migrateCreate(create)
+      if (migration.kind === 'refused') {
+        console.log(`${name}: ${migration.message}`)
+        break
+      }
+      console.log(`${name}: after  ${JSON.stringify(migration.after)}`)
+      if (has('apply')) {
+        upsertProject({
+          ...p,
+          settings: {
+            ...p.settings,
+            worktree: { ...p.settings.worktree!, create: migration.after },
+          },
+        })
       }
       break
     }

@@ -41,7 +41,8 @@ import {
   CALIBRATION_SUFFIX_RESERVE_BYTES, calibrationLine, cleanReviewEvidence,
   parseReviewOutput, reviewCalibration,
 } from './review.ts'
-import { createHasPlaceholder, projectAt, projects, stackAt } from './projects.ts'
+import { createHasPlaceholder, projectAt, projects, stackAt,
+         validateProjectSettings } from './projects.ts'
 import { compilePack, recordPack } from './canon.ts'
 import { seedGuidance } from './args.ts'
 import { resolveRunsDirectory } from './database-location.ts'
@@ -477,6 +478,10 @@ export function preflight(
   if (reusesWorktree) return seed
   const project = projectAt(cwd)
   const tool = project?.settings.worktree ?? null
+  if (project && tool?.create) {
+    const malformed = validateProjectSettings(project.settings)
+    if (malformed.length) throw new Error(malformed.join('\n'))
+  }
   const effectiveSeed = seed
   const keyPattern = tool?.keyPattern ?? '^[A-Z][A-Z0-9]+-[0-9]+$'
   const problems: string[] = []

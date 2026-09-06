@@ -116,6 +116,7 @@ export type WorktreeCreateArg = string | {
 export type WorktreeCreate = {
   command: string
   args: WorktreeCreateArg[]
+  env?: Record<string, string>
 } | {
   /**
    * Narrow escape hatch for the one lifecycle tool whose input is piped JSON.
@@ -342,7 +343,7 @@ export function validateProjectSettings(settings: ProjectSettings): string[] {
 function validateCreate(create: unknown, at: string, allowedVars: Set<string>): string[] {
   if (create === undefined) return []
   if (typeof create === 'string') {
-    return [`${at} must be an object with command and args; shell strings are not commands`]
+    return [`${at} is a shell string; migrate it (DEV-308)`]
   }
   if (!create || typeof create !== 'object' || Array.isArray(create)) {
     return [`${at} must be an object with command and args`]
@@ -375,8 +376,23 @@ function validateCreate(create: unknown, at: string, allowedVars: Set<string>): 
     problems.push(`${at}.args must be an array`)
     return problems
   }
-  if (Object.keys(value).some((key) => key !== 'command' && key !== 'args')) {
-    problems.push(`${at} may contain only command and args`)
+  if (Object.keys(value).some((key) => key !== 'command' && key !== 'args' && key !== 'env')) {
+    problems.push(`${at} may contain only command, args, and env`)
+  }
+  if (value.env !== undefined) {
+    if (!value.env || typeof value.env !== 'object' || Array.isArray(value.env)) {
+      problems.push(`${at}.env must be an object mapping names to string values`)
+    } else {
+      for (const [name, envValue] of Object.entries(value.env as Record<string, unknown>)) {
+        const envAt = `${at}.env.${name}`
+        if (typeof envValue !== 'string') {
+          problems.push(`${envAt} must be a string`)
+          continue
+        }
+        const unknown = placeholders(envValue).find((variable) => !CREATE_VARS.has(variable))
+        if (unknown) problems.push(`${envAt} contains unknown placeholder {${unknown}}`)
+      }
+    }
   }
   value.args.forEach((arg, index) => {
     const argAt = `${at}.args[${index}]`
@@ -410,6 +426,98 @@ function validateCreate(create: unknown, at: string, allowedVars: Set<string>): 
     if (unknown) problems.push(`${argAt}.value contains unknown placeholder {${unknown}}`)
   })
   return problems
+}
+
+export type CreateMigration =
+  | { kind: 'migrated'; after: WorktreeCreate }
+  | { kind: 'refused'; message: string }
+
+/** Convert the legacy shell subset represented by the live project register. */
+export function migrateCreate(create: string): CreateMigration {
+  const tokens = shellTokens(create)
+  const chain = tokens.indexOf('&&')
+  if (chain >= 0) {
+    return {
+      kind: 'refused',
+      message: `'&&'-chained tail ${JSON.stringify(tokens.slice(chain + 1).join(' '))} cannot be migrated; ` +
+        `the chain must move into the project's script`,
+    }
+  }
+
+  const pipes = tokens.reduce<number[]>((indexes, token, index) => {
+    if (token === '|') indexes.push(index)
+    return indexes
+  }, [])
+  if (pipes.length) {
+    if (pipes.length !== 1) {
+      return { kind: 'refused', message: 'only a single pipe can be migrated' }
+    }
+    const capability = placeholders(create).find((name) => name === 'seed' || name === 'base')
+    if (capability) {
+      return {
+        kind: 'refused',
+        message: `a pipe using {${capability}} cannot be migrated; the pipe must move into the project's script`,
+      }
+    }
+    return { kind: 'migrated', after: { pipeline: create } }
+  }
+
+  const env: Record<string, string> = {}
+  while (tokens.length) {
+    const match = tokens[0]!.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/s)
+    if (!match) break
+    env[match[1]!] = match[2]!
+    tokens.shift()
+  }
+  const command = tokens.shift()
+  if (!command) return { kind: 'refused', message: 'create string has no command to migrate' }
+  return {
+    kind: 'migrated',
+    after: { command, args: tokens, ...(Object.keys(env).length ? { env } : {}) },
+  }
+}
+
+/** Shell words plus unquoted pipe/and operators; quotes group and unwrap one argument. */
+function shellTokens(input: string): string[] {
+  const tokens: string[] = []
+  let token = ''
+  let started = false
+  let quote: "'" | '"' | null = null
+  const push = () => {
+    if (!started) return
+    tokens.push(token)
+    token = ''
+    started = false
+  }
+  for (let i = 0; i < input.length; i++) {
+    const char = input[i]!
+    if (quote) {
+      if (char === quote) quote = null
+      else token += char
+      started = true
+      continue
+    }
+    if (char === "'" || char === '"') {
+      quote = char
+      started = true
+      continue
+    }
+    if (/\s/.test(char)) {
+      push()
+      continue
+    }
+    if (char === '|' || (char === '&' && input[i + 1] === '&')) {
+      push()
+      tokens.push(char === '|' ? '|' : '&&')
+      if (char === '&') i++
+      continue
+    }
+    token += char
+    started = true
+  }
+  if (quote) return [input]
+  push()
+  return tokens
 }
 
 /**
@@ -462,7 +570,6 @@ export function worktreeWarnings(p: Project): string[] {
   const w = p.settings.worktree
   if (!w) return []
   const out: string[] = []
-  out.push(...validateProjectSettings(p.settings))
   if (w.create && !w.remove) {
     out.push('has a create command but no remove: orch cannot tear down what it makes')
   }
@@ -506,5 +613,5 @@ export function createHasPlaceholder(
     if (typeof arg === 'string') return placeholders(arg).includes(variable)
     if ('expand' in arg) return arg.expand === variable
     return placeholders(arg.value).includes(variable)
-  })
+  }) || Object.values(create.env ?? {}).some((value) => placeholders(value).includes(variable))
 }

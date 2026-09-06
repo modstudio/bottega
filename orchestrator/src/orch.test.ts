@@ -9999,10 +9999,26 @@ describe('detached run collection', () => {
     })
   })
 
+  test('project set changes notes beside a legacy string create without rewriting it', () => {
+    const create = 'bun run worktree create "{branch}"'
+    upsertProject({
+      name: 'legacy-notes', path: process.cwd(),
+      settings: { worktree: { create, branch: 'task/{id}', notes: 'before' } } as any,
+    })
+    const r = orch(
+      'project', 'set', 'legacy-notes', '--settings',
+      JSON.stringify({ worktree: { notes: 'after' } }),
+    )
+    expect(r.code).toBe(0)
+    expect(projectByName('legacy-notes')!.settings.worktree as any).toEqual({
+      create, branch: 'task/{id}', notes: 'after',
+    })
+  })
+
   test('project set refuses legacy and malformed create declarations at registration', () => {
     upsertProject({ name: 'malformed-create', path: process.cwd() })
     for (const [create, message] of [
-      ['scripts/worktree create {branch}', 'shell strings are not commands'],
+      ['scripts/worktree create {branch}', 'is a shell string; migrate it (DEV-308)'],
       [{ command: 'scripts/worktree create', args: ['{branch}'] }, 'must name one executable'],
       [{ command: 'sh', args: ['-c', 'scripts/worktree create {branch}'] }, 'may not disguise a shell string'],
       [{ pipeline: 'scripts/worktree create {branch}' }, 'only for a command that uses a pipe'],
@@ -10029,6 +10045,133 @@ describe('detached run collection', () => {
     )
     expect(r.code).toBe(0)
     expect(projectByName('pipeline-create')!.settings.worktree?.create).toEqual({ pipeline })
+  })
+
+  test('project set validates command environment values and their placeholders', () => {
+    upsertProject({ name: 'create-env', path: process.cwd() })
+    const valid = orch(
+      'project', 'set', 'create-env', '--settings', JSON.stringify({
+        worktree: {
+          create: {
+            command: 'scripts/worktree', args: ['add', '{branch}'],
+            env: { NAME: '{name}', SEED: 'value with {seed}', BASE: '{base}' },
+          },
+          branch: 'task/{id}', seeds: ['none'],
+        },
+      }), '--allow-incomplete',
+    )
+    expect(valid.code).toBe(0)
+    expect(projectByName('create-env')!.settings.worktree?.create).toEqual({
+      command: 'scripts/worktree', args: ['add', '{branch}'],
+      env: { NAME: '{name}', SEED: 'value with {seed}', BASE: '{base}' },
+    })
+
+    for (const [env, message] of [
+      [{ NAME: 3 }, 'worktree.create.env.NAME must be a string'],
+      [{ NAME: '{missing}' }, 'worktree.create.env.NAME contains unknown placeholder {missing}'],
+      [[], 'worktree.create.env must be an object mapping names to string values'],
+    ] as const) {
+      const r = orch(
+        'project', 'set', 'create-env', '--settings',
+        JSON.stringify({ worktree: { create: { command: 'tool', args: [], env } } }),
+        '--allow-incomplete',
+      )
+      expect(r.code).toBe(1)
+      expect(r.err).toContain(message)
+    }
+  })
+
+  test('project list reports legacy create problems in text and JSON', () => {
+    upsertProject({
+      name: 'legacy-list', path: process.cwd(),
+      settings: { worktree: { create: 'bun run worktree create "{branch}"' } } as any,
+    })
+    const text = orch('project', 'list')
+    expect(text.code).toBe(0)
+    expect(text.out).toContain(
+      'legacy-list: worktree.create is a shell string; migrate it (DEV-308)',
+    )
+    expect(text.out.match(/legacy-list: worktree\.create is a shell string/g)).toHaveLength(1)
+
+    const json = orch('project', 'list', '--json')
+    expect(json.code).toBe(0)
+    expect(JSON.parse(json.out)[0].problems).toEqual([
+      'worktree.create is a shell string; migrate it (DEV-308)',
+    ])
+  })
+
+  test('migrate-create dry-runs the five live register shapes', () => {
+    const fixtures = {
+      adanim: {
+        create: 'echo \'{"cwd":"\'"$PWD"\'","name":"{name}"}\' | bun run scripts/worktree.ts create',
+        after: { pipeline: 'echo \'{"cwd":"\'"$PWD"\'","name":"{name}"}\' | bun run scripts/worktree.ts create' },
+      },
+      alephbeis: {
+        create: "scripts/worktree add {branch} '{base}' {seed} --name={name} && echo $PWD/.claude/worktrees/{name}",
+        refusal: `'&&'-chained tail "echo $PWD/.claude/worktrees/{name}" cannot be migrated; ` +
+          `the chain must move into the project's script`,
+      },
+      starship: {
+        create: "WORKTREE_NAME_OVERRIDE={name} WORKTREE_SEED='{seed}' scripts/worktree add {branch} '{base}'",
+        after: {
+          command: 'scripts/worktree', args: ['add', '{branch}', '{base}'],
+          env: { WORKTREE_NAME_OVERRIDE: '{name}', WORKTREE_SEED: '{seed}' },
+        },
+      },
+      stopal: {
+        create: 'bun run worktree create "{branch}"',
+        after: { command: 'bun', args: ['run', 'worktree', 'create', '{branch}'] },
+      },
+    } as const
+    for (const [name, fixture] of Object.entries(fixtures)) {
+      upsertProject({
+        name, path: process.cwd(),
+        settings: { worktree: { create: fixture.create } } as any,
+      })
+      const before = projectByName(name)!.settings.worktree!.create
+      const r = orch('project', 'migrate-create', name)
+      expect(r.code, name).toBe(0)
+      expect(r.out, name).toContain(`${name}: before ${JSON.stringify(fixture.create)}`)
+      if ('after' in fixture) {
+        expect(r.out, name).toContain(`${name}: after  ${JSON.stringify(fixture.after)}`)
+      } else {
+        expect(r.out, name).toContain(`${name}: ${fixture.refusal}`)
+      }
+      expect(projectByName(name)!.settings.worktree!.create, name).toEqual(before)
+    }
+
+    upsertProject({ name: PLATFORM_SLUG, path: process.cwd(), settings: { worktree: { recipe: {} } } })
+    const recipe = orch('project', 'migrate-create', PLATFORM_SLUG)
+    expect(recipe.code).toBe(0)
+    expect(recipe.out.trim()).toBe(
+      `${PLATFORM_SLUG}: worktree.create is a recipe; nothing to migrate`,
+    )
+  })
+
+  test('migrate-create --apply stores the printed object form', () => {
+    const create = 'bun run worktree create "{branch}"'
+    upsertProject({
+      name: 'apply-create', path: process.cwd(),
+      settings: { worktree: { create } } as any,
+    })
+    const r = orch('project', 'migrate-create', 'apply-create', '--apply')
+    expect(r.code).toBe(0)
+    expect(projectByName('apply-create')!.settings.worktree?.create).toEqual({
+      command: 'bun', args: ['run', 'worktree', 'create', '{branch}'],
+    })
+  })
+
+  test('migrate-create refuses a pipe carrying seed semantics', () => {
+    const create = 'printf %s {seed} | scripts/worktree create'
+    upsertProject({
+      name: 'seed-pipe', path: process.cwd(), settings: { worktree: { create } } as any,
+    })
+    const r = orch('project', 'migrate-create', 'seed-pipe', '--apply')
+    expect(r.code).toBe(0)
+    expect(r.out).toContain(
+      `a pipe using {seed} cannot be migrated; the pipe must move into the project's script`,
+    )
+    expect(projectByName('seed-pipe')!.settings.worktree?.create as any).toBe(create)
   })
 
   test('project set settings null deletes that key during a deep merge', () => {
@@ -12356,6 +12499,31 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
     rmSync(repo, { recursive: true, force: true })
   })
 
+  test('preflight refuses a legacy create before any run row exists', () => {
+    const { repo } = scratchRepo()
+    upsertProject({
+      name: 'legacy-preflight', path: realpathSync(repo),
+      settings: {
+        worktree: { create: 'bun run worktree create "{branch}"', branch: 'task/{id}' },
+      } as any,
+    })
+    const before = (db().query('SELECT COUNT(*) AS n FROM run').get() as { n: number }).n
+    const r = Bun.spawnSync([
+      process.execPath, new URL('cli.ts', import.meta.url).pathname, 'do', 'implement', 'inspect',
+    ], {
+      cwd: repo,
+      env: {
+        ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+        CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+      },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(r.exitCode).not.toBe(0)
+    expect(r.stderr.toString()).toContain('worktree.create is a shell string; migrate it (DEV-308)')
+    expect((db().query('SELECT COUNT(*) AS n FROM run').get() as { n: number }).n).toBe(before)
+    rmSync(repo, { recursive: true, force: true })
+  })
+
   test('preflight refuses an explicit base a command template cannot honor', () => {
     const { repo } = scratchRepo()
     upsertProject({
@@ -12603,17 +12771,25 @@ appendFileSync(process.env.CAPTURE, JSON.stringify({
       alephbeis: declaredCreate('scripts/worktree', [
         'add', '{branch}', '{base}', { expand: 'seed' }, '--name={name}',
       ]),
-      starship: declaredCreate('env', [
-        'WORKTREE_NAME_OVERRIDE={name}', 'WORKTREE_SEED={seed}',
-        'scripts/worktree', 'add', '{branch}', '{base}',
-      ]),
+      starship: {
+        command: 'scripts/worktree', args: ['add', '{branch}', '{base}'],
+        env: { WORKTREE_NAME_OVERRIDE: '{name}', WORKTREE_SEED: '{seed}' },
+      },
       stopal: declaredCreate('bun', ['run', 'worktree', 'create', '{branch}']),
     }
     const invoke = (create: WorktreeCreate | string, vars: Record<string, string>) => {
       writeFileSync(capture, '')
+      const declaredEnv = typeof create === 'object' && 'command' in create
+        ? Object.fromEntries(Object.entries(create.env ?? {}).map(([name, value]) => [
+            name, value.replace(/\{(\w+)\}/g, (_placeholder, key: string) => vars[key] ?? ''),
+          ]))
+        : {}
       const result = Bun.spawnSync(createArgv(create, vars), {
         cwd: root,
-        env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}`, CAPTURE: capture },
+        env: {
+          ...process.env, ...declaredEnv,
+          PATH: `${bin}:${process.env.PATH ?? ''}`, CAPTURE: capture,
+        },
         stdout: 'pipe', stderr: 'pipe',
       })
       expect(result.exitCode).toBe(0)
@@ -12870,6 +13046,14 @@ echo 'Usage: scripts/worktree create [seed]'
     const received = join(repo, 'received-seed')
     const removed = join(repo, 'project-remove-invoked')
     const path = join(repo, '.claude', 'worktrees', 'orch-658')
+    const create = join(repo, 'scripts', 'create-read-only')
+    mkdirSync(join(repo, 'scripts'), { recursive: true })
+    writeFileSync(create, `#!/bin/sh
+printf '%s' "$1" > "${received}"
+${hermeticGitCommand} worktree add -b "$2" "${path}" HEAD >/dev/null
+echo "${path}"
+`)
+    chmodSync(create, 0o755)
     const tool = {
       branch: 'orch/{id}',
       seeds: ['none', 'full'],
@@ -13150,6 +13334,46 @@ exec git worktree add --detach "$1" "$2"
       agent.bin = original.bin
       agent.argv = original.argv
       agent.readsOut = original.readsOut
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a structured create expands env placeholders and overlays process env', () => {
+    const { repo } = scratchRepo()
+    const script = join(repo, 'scripts', 'create-with-env')
+    const received = join(repo, 'received-env')
+    mkdirSync(join(repo, 'scripts'), { recursive: true })
+    writeFileSync(script, `#!/bin/sh
+printf '%s\n' "$CREATE_NAME|$CREATE_SEED|$CREATE_BASE|$DEV308_PARENT|$DEV308_OVERRIDE" > "${received}"
+path="$PWD/.claude/worktrees/$CREATE_NAME"
+${hermeticGitCommand} worktree add -b "$1" "$path" HEAD >/dev/null
+printf '%s\n' "$path"
+`)
+    chmodSync(script, 0o755)
+    const previousParent = process.env.DEV308_PARENT
+    const previousOverride = process.env.DEV308_OVERRIDE
+    process.env.DEV308_PARENT = 'inherited'
+    process.env.DEV308_OVERRIDE = 'old'
+    try {
+      const worktree = createWithTool({
+        branch: 'task/{id}',
+        create: {
+          command: 'scripts/create-with-env', args: ['{branch}'],
+          env: {
+            CREATE_NAME: 'value with {name}', CREATE_SEED: 'seed={seed}',
+            CREATE_BASE: '{base}', DEV308_OVERRIDE: 'new {key}',
+          },
+        },
+      }, repo, 308, 'full', 'DEV-308', 'HEAD')
+      expect(worktree.path).toBe(realpathSync(join(repo, '.claude', 'worktrees', 'value with orch-308')))
+      expect(readFileSync(received, 'utf8')).toBe(
+        `value with orch-308|seed=full|${worktree.base}|inherited|new DEV-308\n`,
+      )
+    } finally {
+      if (previousParent === undefined) delete process.env.DEV308_PARENT
+      else process.env.DEV308_PARENT = previousParent
+      if (previousOverride === undefined) delete process.env.DEV308_OVERRIDE
+      else process.env.DEV308_OVERRIDE = previousOverride
       rmSync(repo, { recursive: true, force: true })
     }
   })

@@ -842,7 +842,12 @@ function runCreateTool(
   env?: NodeJS.ProcessEnv,
 ): { ok: boolean; out: string; stdout: string } {
   const argv = createArgv(create, vars)
-  const p = Bun.spawnSync(argv, { cwd, env, stdout: 'pipe', stderr: 'pipe' })
+  const declaredEnv = typeof create === 'object' && 'command' in create
+    ? Object.fromEntries(Object.entries(create.env ?? {}).map(([name, value]) => [name, fillArg(value, vars)]))
+    : {}
+  const p = Bun.spawnSync(argv, {
+    cwd, env: { ...(env ?? process.env), ...declaredEnv }, stdout: 'pipe', stderr: 'pipe',
+  })
   const stdout = p.stdout.toString()
   const out = `${stdout}${p.stderr.toString()}`.trim()
   return { ok: p.exitCode === 0, out, stdout }

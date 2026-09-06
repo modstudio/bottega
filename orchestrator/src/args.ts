@@ -380,6 +380,7 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
         list: shape('orch project list [--json]', 0, [], ['--json']),
         add: shape('orch project add <path> [--name X] [--stack Y] [--no-canon] [--json]', 1, ['--name', '--stack'], ['--no-canon', '--allow-incomplete', '--json']),
         set: shape('orch project set <name> [--stack X] [--path P] [--canon|--no-canon] [--settings JSON] [--json]', 1, ['--stack', '--path', '--settings'], ['--canon', '--no-canon', '--allow-incomplete', '--json']),
+        'migrate-create': shape('orch project migrate-create <name> [--apply]', 1, [], ['--apply']),
         remove: shape('orch project remove <name>', 1),
       }
       if (!sub || !forms[sub]) return null
