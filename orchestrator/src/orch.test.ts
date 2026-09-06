@@ -34,31 +34,27 @@ const declaredCreate = (command: string, args: WorktreeCreateArg[]): WorktreeCre
 const compoundCreate = (script: string): WorktreeCreate =>
   ({ command: 'sh', args: ['-c', script] })
 
-const gitEnvironmentVariables = [
-  'GIT_OBJECT_DIRECTORY',
-  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-  'GIT_DIR',
-  'GIT_WORK_TREE',
-  'GIT_INDEX_FILE',
-  'GIT_CONFIG_COUNT',
-  'GIT_CONFIG_KEY_0',
-  'GIT_CONFIG_VALUE_0',
+const gitEnvironmentVariables = Object.keys(process.env).filter((variable) =>
+  variable.startsWith('GIT_'))
+const orchestratorGitEnvironmentVariables = [
   'ORCH_GUARDED_GIT_COMMON_DIR',
   'ORCH_ALLOWED_GIT_REF',
 ] as const
 
 // A worker routes git objects and ref hooks into its own linked-worktree metadata.
 // None of that routing belongs to the scratch repositories built by this test process.
-for (const variable of gitEnvironmentVariables) delete process.env[variable]
-
 const hermeticGitEnv = (extra: Record<string, string> = {}) => ({
-  ...process.env,
-  ...Object.fromEntries(gitEnvironmentVariables.map((variable) => [variable, undefined])),
+  ...Object.fromEntries(Object.entries(process.env).filter(([variable]) =>
+    !variable.startsWith('GIT_') &&
+    !orchestratorGitEnvironmentVariables.includes(
+      variable as typeof orchestratorGitEnvironmentVariables[number],
+    ))),
   ...extra,
 })
 
 describe('landing is gated on the exact commit that reaches trunk', () => {
   const landingModule = new URL('landing.ts', import.meta.url).href
+  const gitLocksModule = new URL('git-locks.ts', import.meta.url).href
   const worktreeModule = new URL('worktree.ts', import.meta.url).href
   const g = (cwd: string, ...args: string[]) => {
     const p = Bun.spawnSync(['git', ...args], {
@@ -101,6 +97,26 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     { env: { ...hermeticGitEnv(extraEnv), ORCH_DB: process.env.ORCH_DB!, CLAUDE_CODE_SESSION_ID: branch },
       stdout: 'pipe', stderr: 'pipe' },
   )
+  const observeGitLocks = (repo: string) => {
+    // Bun's implicit spawn environment is the process launch environment, even
+    // after process.env entries are deleted. Run the production observers in a
+    // scrubbed child so an orch worker's private object store cannot replace the
+    // scratch repository's object store.
+    const child = Bun.spawnSync(
+      [process.execPath, '-e', [
+        'const { landingStatus } = await import(process.argv[1])',
+        'const { gitLocks } = await import(process.argv[2])',
+        'console.log(JSON.stringify({ status: landingStatus(process.argv[3]), locks: gitLocks(process.argv[3]) }))',
+      ].join(';'), landingModule, gitLocksModule, repo],
+      { cwd: repo, env: hermeticGitEnv({ ORCH_DB: process.env.ORCH_DB! }),
+        stdout: 'pipe', stderr: 'pipe' },
+    )
+    if (child.exitCode !== 0) throw new Error(child.stderr.toString())
+    return JSON.parse(child.stdout.toString()) as {
+      status: string
+      locks: ReturnType<typeof gitLocks>
+    }
+  }
   const completedReview = (project: string, trees: (string | null)[]) => {
     const entries = trees.map((tree, i) => ({
       runId: addRun({ agent: 'codex', job: 'review-lens', model: 'test',
@@ -500,14 +516,14 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     const stale = new Date(Date.now() - 71_000)
     utimesSync(lock, stale, stale)
     try {
-      const status = landingStatus(repo)
+      const { status, locks } = observeGitLocks(repo)
       expect(status).toContain(`${lock} (age `)
       expect(Number(status.match(/main\.lock \(age (\d+)s\)/)?.[1])).toBeGreaterThanOrEqual(70)
       expect(status).toContain('target: refs/heads/main')
       expect(status).toContain(`contents: ${oid} -> refs/heads/lock-source`)
       expect(status).toContain('owner pid: none alive')
       expect(readFileSync(lock, 'utf8')).toBe(`${oid}\n`)
-      expect(gitLocks(repo)).toEqual([expect.objectContaining({
+      expect(locks).toEqual([expect.objectContaining({
         path: lock, target: 'refs/heads/main', contents: oid,
         contentRefs: ['refs/heads/lock-source'], ownerPids: [],
       })])
