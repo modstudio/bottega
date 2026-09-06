@@ -20,8 +20,8 @@ import { createHash } from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
 import { createHasPlaceholder, projectAt, projectByName, projects } from './projects.ts'
-import { branchTip, restoreBranch, resolveBase, repoRootOf, removeBranch, unmergedBranch,
-         checkoutHasUncommittedWork, callerDrift } from './worktree.ts'
+import { branchTip, restoreBranch, resolveBase, repoRootOf, removeBranch, removeFor, unmergedBranch,
+         checkoutHasUncommittedWork, callerDrift, withProjectLock } from './worktree.ts'
 import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
 import { WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE,
          REVIEW_SEVERITY_INSTRUCTION, contractConflicts, rulingPrompt } from './contract.ts'
@@ -379,10 +379,10 @@ function samePath(a: string, b: string): boolean {
 }
 
 /** A branch is shared only inside one repository, and active or unjudged owners protect it. */
-function evidenceOwningBranchOwner(
+function evidenceOwningBranchOwners(
   row: { id: number; repo?: string | null; branch: string | null }, repoRoot: string,
-): BranchOwnerRow | null {
-  if (!row.branch) return null
+): BranchOwnerRow[] {
+  if (!row.branch) return []
   const project = row.repo ?? projectAt(repoRoot)?.name ?? null
   const candidates = db().query(
     `SELECT r.id, r.repo, r.cwd, r.worktree, r.status, s.delivery IS NOT NULL AS scored
@@ -391,13 +391,20 @@ function evidenceOwningBranchOwner(
         AND (r.status NOT IN ('ok','failed','stale') OR s.delivery IS NULL)
       ORDER BY r.id`,
   ).all(row.branch, row.id) as BranchOwnerRow[]
-  return candidates.find((candidate) => {
+  return candidates.filter((candidate) => {
     if (project && candidate.repo) return candidate.repo === project
     const candidateRoot = candidate.repo ? projectByName(candidate.repo)?.path : null
     const discovered = candidateRoot ?? repoRootOf(candidate.worktree ?? '') ??
       repoRootOf(candidate.cwd ?? '')
     return discovered ? samePath(discovered, repoRoot) : false
-  }) ?? null
+  })
+}
+
+function withCleanupLock<T>(repoRoot: string, what: string, action: () => T): T {
+  return withProjectLock(
+    repoRoot, 'landing', { session: sessionId(), what: `cleanup ${what}` },
+    action, 5 * 60_000, true,
+  )
 }
 
 /** A shared tree remains evidence while any other owner is active or unjudged. */
@@ -449,6 +456,33 @@ function sharedBranchRefusal(
   }
 }
 
+function verifyBranchOwnershipAfterCleanup(
+  runId: number, repoRoot: string, branch: string, snapshot: string | null,
+  before: BranchOwnerRow[], after: BranchOwnerRow[],
+): { refusal: string | null; warning: string | null } {
+  const priorIds = new Set(before.map((owner) => owner.id))
+  const acquired = after.find((owner) => !priorIds.has(owner.id)) ?? null
+  const protector = acquired ?? after[0] ?? before[0] ?? null
+  let outcome = { refusal: null as string | null, warning: null as string | null }
+  if (protector && snapshot) {
+    outcome = sharedBranchRefusal(runId, repoRoot, branch, snapshot, protector)
+  }
+  if (!acquired) return outcome
+  if (outcome.refusal) {
+    return {
+      refusal: `Run ${acquired.id} acquired branch ${branch} during cleanup; ${outcome.refusal}`,
+      warning: null,
+    }
+  }
+  const current = branchTip(repoRoot, branch)
+  const location = current ? `left at ${current}` : 'absent with no pre-cleanup tip available to restore'
+  return {
+    refusal: `${outcome.warning ? `${outcome.warning} ` : ''}` +
+      `Run ${acquired.id} acquired branch ${branch} during cleanup; cleanup was refused and the branch was ${location}.`,
+    warning: null,
+  }
+}
+
 /**
  * Release a run's worktree through the single path used by explicit cleanup.
  *
@@ -475,79 +509,86 @@ function sharedBranchRefusal(
  * orphans the directory, still on disk, no longer named by any run, and
  * nothing left that knows to try again.
  */
-async function discardWorktree(
+function discardWorktree(
   row: CleanupRow, verb: 'discarded' | 'abandoned', force = false,
-): Promise<void> {
-  const sharers = evidenceOwningWorktreeSharers(row)
-  if (sharers.length) {
-    throw new SharedWorktreeEvidenceError(row.worktree, sharers)
+): void {
+  const preliminarySharers = evidenceOwningWorktreeSharers(row)
+  if (preliminarySharers.length) {
+    throw new SharedWorktreeEvidenceError(row.worktree, preliminarySharers)
   }
-
-  const { removeFor } = await import('./worktree.ts')
   const repoRoot = cleanupRepoRoot(row) ?? process.cwd()
-  const branchOwner = evidenceOwningBranchOwner(row, repoRoot)
-  const sharedBranchTip = branchOwner && row.branch ? branchTip(repoRoot, row.branch) : null
-  let protectedBranch: ReturnType<typeof unmergedBranch> = null
-  if (!force && row.branch) {
-    protectedBranch = unmergedBranch(repoRoot, row.branch, row.base_commit)
-  }
-  const r = removeFor({
-    path: row.worktree,
-    branch: row.branch ?? `orch/${row.id}`,
-    base: '',
-    repoRoot,
-  }, repoRoot, force, Boolean(branchOwner))
-  let branchWarning: string | null = null
-  if (protectedBranch && row.branch && !sharedBranchTip) {
-    const after = branchTip(repoRoot, row.branch)
-    if (after !== null && after !== protectedBranch.tip) {
+  withCleanupLock(repoRoot, `${row.id}`, () => {
+    const sharers = evidenceOwningWorktreeSharers(row)
+    if (sharers.length) {
+      throw new SharedWorktreeEvidenceError(row.worktree, sharers)
+    }
+
+    const ownersBefore = evidenceOwningBranchOwners(row, repoRoot)
+    const branchSnapshot = row.branch ? branchTip(repoRoot, row.branch) : null
+    let protectedBranch: ReturnType<typeof unmergedBranch> = null
+    if (!force && row.branch) {
+      protectedBranch = unmergedBranch(repoRoot, row.branch, row.base_commit)
+    }
+    const r = removeFor({
+      path: row.worktree,
+      branch: row.branch ?? `orch/${row.id}`,
+      base: '',
+      repoRoot,
+    }, repoRoot, force, ownersBefore.length > 0)
+    const ownersAfter = evidenceOwningBranchOwners(row, repoRoot)
+    let branchWarning: string | null = null
+    if (row.branch) {
+      const ownership = verifyBranchOwnershipAfterCleanup(
+        row.id, repoRoot, row.branch, branchSnapshot, ownersBefore, ownersAfter,
+      )
+      if (ownership.refusal) throw new Error(ownership.refusal)
+      branchWarning = ownership.warning
+    }
+    if (protectedBranch && row.branch && ownersBefore.length === 0 && ownersAfter.length === 0) {
+      const after = branchTip(repoRoot, row.branch)
+      if (after !== null && after !== protectedBranch.tip) {
+        throw new Error(
+          `protected branch ${row.branch} moved from ${protectedBranch.tip} to ${after} during cleanup; ` +
+          `it was left at ${after}`,
+        )
+      }
+      if (after === null) {
+        const restored = restoreBranch(repoRoot, row.branch, protectedBranch.tip)
+        if (!restored.ok) {
+          throw new Error(restoreRefusal(row.id, row.branch, protectedBranch.tip, restored.error))
+        }
+        branchWarning = `project remove tool deleted protected branch ${row.branch}; ` +
+          `restored ${protectedBranch.tip}`
+      }
+    }
+    if (!r.removed) throw new Error(r.detail)
+    if (branchWarning) console.error(branchWarning)
+    const project = row.repo ?? projectAt(repoRoot)?.name ?? 'unknown'
+    const inventory = resourcesForRun(row.id)
+    if (inventory.errors.length) {
       throw new Error(
-        `protected branch ${row.branch} moved from ${protectedBranch.tip} to ${after} during cleanup; ` +
-        `it was left at ${after}`,
+        `project ${project}'s cleanup could not be verified — inventory unavailable:\n` +
+        inventory.errors.map((error) => `  ${error}`).join('\n'),
       )
     }
-    if (after === null) {
-      const restored = restoreBranch(repoRoot, row.branch, protectedBranch.tip)
-      if (!restored.ok) {
-        throw new Error(restoreRefusal(row.id, row.branch, protectedBranch.tip, restored.error))
-      }
-      branchWarning = `project remove tool deleted protected branch ${row.branch}; ` +
-        `restored ${protectedBranch.tip}`
+    if (inventory.resources.length) {
+      throw new Error(
+        `project ${project}'s remove tool left Docker resources behind:\n` +
+        leakedResourceLines(inventory.resources, project, row.id).map((line) => `  ${line}`).join('\n'),
+      )
     }
-  }
-  if (sharedBranchTip && row.branch) {
-    const outcome = sharedBranchRefusal(
-      row.id, repoRoot, row.branch, sharedBranchTip, branchOwner!,
-    )
-    if (outcome.refusal) throw new Error(outcome.refusal)
-    branchWarning = outcome.warning
-  }
-  if (!r.removed) throw new Error(r.detail)
-  if (branchWarning) console.error(branchWarning)
-  const project = row.repo ?? projectAt(repoRoot)?.name ?? 'unknown'
-  const inventory = resourcesForRun(row.id)
-  if (inventory.errors.length) {
-    throw new Error(
-      `project ${project}'s cleanup could not be verified — inventory unavailable:\n` +
-      inventory.errors.map((error) => `  ${error}`).join('\n'),
-    )
-  }
-  if (inventory.resources.length) {
-    throw new Error(
-      `project ${project}'s remove tool left Docker resources behind:\n` +
-      leakedResourceLines(inventory.resources, project, row.id).map((line) => `  ${line}`).join('\n'),
-    )
-  }
-  db().query('UPDATE run SET worktree = NULL, branch_kept = ?, branch_kept_tip = NULL WHERE id = ?')
-    .run(protectedBranch ? row.branch : null, row.id)
-  console.log(`${verb} run ${row.id}'s worktree`)
-  if (r.output) console.log(r.output)
-  if (protectedBranch && row.branch) {
-    console.log(keptBranchLine(row.branch, protectedBranch.count, row.id))
-  }
-  if (branchOwner && row.branch) {
-    console.log(`branch ${row.branch} left because run ${branchOwner.id} records it`)
-  }
+    db().query('UPDATE run SET worktree = NULL, branch_kept = ?, branch_kept_tip = NULL WHERE id = ?')
+      .run(protectedBranch ? row.branch : null, row.id)
+    console.log(`${verb} run ${row.id}'s worktree`)
+    if (r.output) console.log(r.output)
+    if (protectedBranch && row.branch) {
+      console.log(keptBranchLine(row.branch, protectedBranch.count, row.id))
+    }
+    const branchOwner = ownersAfter[0] ?? ownersBefore[0] ?? null
+    if (branchOwner && row.branch) {
+      console.log(`branch ${row.branch} left because run ${branchOwner.id} records it`)
+    }
+  })
 }
 
 /**
@@ -3138,46 +3179,69 @@ switch (cmd) {
       const repoRoot = (r.repo ? projectByName(r.repo)?.path : null) ??
         repoRootOf(r.worktree) ?? projectAt(r.worktree)?.path ?? process.cwd()
       const w = { path: r.worktree, branch: r.branch ?? `orch/${r.id}`, base: '', repoRoot }
-      const branchOwner = evidenceOwningBranchOwner(r, repoRoot)
-      const sharedTip = branchOwner && r.branch ? branchTip(repoRoot, r.branch) : null
-      const res = removeFor(w, repoRoot, false, Boolean(branchOwner))
-      if (sharedTip && r.branch) {
-        const outcome = sharedBranchRefusal(r.id, repoRoot, r.branch, sharedTip, branchOwner!)
-        if (outcome.warning) console.error(`run ${r.id}: ${outcome.warning}`)
-        if (outcome.refusal) {
-          cleanupFailed = true
-          console.error(`could not reclaim ${r.id}: ${outcome.refusal}`)
-          continue
-        }
-      }
-      if (res.removed) {
-        const project = r.repo ?? projectAt(repoRoot)?.name ?? 'unknown'
-        const inventory = resourcesForRun(r.id)
-        for (const error of inventory.errors) inventoryErrors.add(error)
-        if (inventory.errors.length) {
-          cleanupFailed = true
-          console.error(`could not verify reclaim ${r.id}: inventory unavailable`)
-          continue
-        }
-        const left = inventory.resources
-        if (left.length) {
-          cleanupFailed = true
-          for (const resource of left) leaked.set(`${resource.kind}:${resource.name}`, {
-            resource, project, runId: r.id,
-          })
-          console.error(`could not fully reclaim ${r.id}: project ${project}'s remove tool leaked Docker resources`)
-        } else {
-          db().query('UPDATE run SET worktree = NULL WHERE id = ?').run(r.id)
-          console.log(`reclaimed ${r.id}  ${res.detail}`)
-          if (res.output) console.log(res.output)
-          if (branchOwner && r.branch) {
-            console.log(`branch ${r.branch} left because run ${branchOwner.id} records it`)
+      try {
+        withCleanupLock(repoRoot, `sweep run ${r.id}`, () => {
+          const lockedSharers = evidenceOwningWorktreeSharers(r)
+          if (lockedSharers.length) {
+            const owners = lockedSharers.map((owner) =>
+              `${owner.id} (${owner.status}${owner.scored ? '' : ', unscored'})`).join(', ')
+            keep(
+              `${r.id}  shared with evidence-owning run(s): ${owners}`,
+              'shared with evidence-owning run(s)',
+            )
+            return
           }
-          done++
-        }
-      } else {
+          const ownersBefore = evidenceOwningBranchOwners(r, repoRoot)
+          const snapshot = r.branch ? branchTip(repoRoot, r.branch) : null
+          const res = removeFor(w, repoRoot, false, ownersBefore.length > 0)
+          const ownersAfter = evidenceOwningBranchOwners(r, repoRoot)
+          if (r.branch) {
+            const outcome = verifyBranchOwnershipAfterCleanup(
+              r.id, repoRoot, r.branch, snapshot, ownersBefore, ownersAfter,
+            )
+            if (outcome.warning) console.error(`run ${r.id}: ${outcome.warning}`)
+            if (outcome.refusal) {
+              cleanupFailed = true
+              console.error(`could not reclaim ${r.id}: ${outcome.refusal}`)
+              return
+            }
+          }
+          if (res.removed) {
+            const project = r.repo ?? projectAt(repoRoot)?.name ?? 'unknown'
+            const inventory = resourcesForRun(r.id)
+            for (const error of inventory.errors) inventoryErrors.add(error)
+            if (inventory.errors.length) {
+              cleanupFailed = true
+              console.error(`could not verify reclaim ${r.id}: inventory unavailable`)
+              return
+            }
+            const left = inventory.resources
+            if (left.length) {
+              cleanupFailed = true
+              for (const resource of left) leaked.set(`${resource.kind}:${resource.name}`, {
+                resource, project, runId: r.id,
+              })
+              console.error(`could not fully reclaim ${r.id}: project ${project}'s remove tool leaked Docker resources`)
+            } else {
+              db().query('UPDATE run SET worktree = NULL WHERE id = ?').run(r.id)
+              console.log(`reclaimed ${r.id}  ${res.detail}`)
+              if (res.output) console.log(res.output)
+              const owner = ownersAfter[0] ?? ownersBefore[0] ?? null
+              if (owner && r.branch) {
+                console.log(`branch ${r.branch} left because run ${owner.id} records it`)
+              }
+              done++
+            }
+          } else {
+            cleanupFailed = true
+            console.error(`could not reclaim ${r.id}: ${res.detail}`)
+          }
+        })
+      } catch (error) {
         cleanupFailed = true
-        console.error(`could not reclaim ${r.id}: ${res.detail}`)
+        console.error(
+          `could not reclaim ${r.id}: ${error instanceof Error ? error.message : String(error)}`,
+        )
       }
     }
 
@@ -3229,52 +3293,63 @@ switch (cmd) {
 
         const w = { path, branch: safe.branch, base: '', repoRoot: p.path }
         const runId = orchRunId(entry.name)
-        const branchOwner = evidenceOwningBranchOwner({
-          id: runId ?? -1, repo: p.name, branch: safe.branch,
-        }, p.path)
-        const sharedTip = branchOwner && safe.branch ? branchTip(p.path, safe.branch) : null
-        const res = removeFor(w, p.path, false, Boolean(branchOwner))
-        if (sharedTip && safe.branch) {
-          const outcome = sharedBranchRefusal(
-            runId ?? -1, p.path, safe.branch, sharedTip, branchOwner!,
-          )
-          if (outcome.warning) console.error(`${label}: ${outcome.warning}`)
-          if (outcome.refusal) {
-            cleanupFailed = true
-            keep(`${label}  removal refused`, 'removal refused')
-            console.error(`could not reclaim ${label}: ${outcome.refusal}`)
-            continue
-          }
-        }
-        if (res.removed) {
-          const inventory = runId === null
-            ? { resources: [], errors: [] }
-            : resourcesForRun(runId)
-          for (const error of inventory.errors) inventoryErrors.add(error)
-          if (inventory.errors.length) {
-            cleanupFailed = true
-            keep(`${label}  inventory unavailable`, 'inventory unavailable')
-            continue
-          }
-          const left = inventory.resources
-          if (left.length) {
-            cleanupFailed = true
-            for (const resource of left) leaked.set(`${resource.kind}:${resource.name}`, {
-              resource, project: p.name, runId: resource.runId,
-            })
-            keep(`${label}  leaked Docker resources`, 'leaked Docker resources')
-          } else {
-            console.log(`reclaimed ${label}  ${res.detail}`)
-            if (res.output) console.log(res.output)
-            if (branchOwner && safe.branch) {
-              console.log(`branch ${safe.branch} left because run ${branchOwner.id} records it`)
+        try {
+          withCleanupLock(p.path, `sweep ${label}`, () => {
+            const ownerRow = { id: runId ?? -1, repo: p.name, branch: safe.branch }
+            const ownersBefore = evidenceOwningBranchOwners(ownerRow, p.path)
+            const snapshot = safe.branch ? branchTip(p.path, safe.branch) : null
+            const res = removeFor(w, p.path, false, ownersBefore.length > 0)
+            const ownersAfter = evidenceOwningBranchOwners(ownerRow, p.path)
+            if (safe.branch) {
+              const outcome = verifyBranchOwnershipAfterCleanup(
+                runId ?? -1, p.path, safe.branch, snapshot, ownersBefore, ownersAfter,
+              )
+              if (outcome.warning) console.error(`${label}: ${outcome.warning}`)
+              if (outcome.refusal) {
+                cleanupFailed = true
+                keep(`${label}  removal refused`, 'removal refused')
+                console.error(`could not reclaim ${label}: ${outcome.refusal}`)
+                return
+              }
             }
-            done++
-          }
-        } else {
+            if (res.removed) {
+              const inventory = runId === null
+                ? { resources: [], errors: [] }
+                : resourcesForRun(runId)
+              for (const error of inventory.errors) inventoryErrors.add(error)
+              if (inventory.errors.length) {
+                cleanupFailed = true
+                keep(`${label}  inventory unavailable`, 'inventory unavailable')
+                return
+              }
+              const left = inventory.resources
+              if (left.length) {
+                cleanupFailed = true
+                for (const resource of left) leaked.set(`${resource.kind}:${resource.name}`, {
+                  resource, project: p.name, runId: resource.runId,
+                })
+                keep(`${label}  leaked Docker resources`, 'leaked Docker resources')
+              } else {
+                console.log(`reclaimed ${label}  ${res.detail}`)
+                if (res.output) console.log(res.output)
+                const owner = ownersAfter[0] ?? ownersBefore[0] ?? null
+                if (owner && safe.branch) {
+                  console.log(`branch ${safe.branch} left because run ${owner.id} records it`)
+                }
+                done++
+              }
+            } else {
+              cleanupFailed = true
+              keep(`${label}  removal refused`, 'removal refused')
+              console.error(`could not reclaim ${label}: ${res.detail}`)
+            }
+          })
+        } catch (error) {
           cleanupFailed = true
           keep(`${label}  removal refused`, 'removal refused')
-          console.error(`could not reclaim ${label}: ${res.detail}`)
+          console.error(
+            `could not reclaim ${label}: ${error instanceof Error ? error.message : String(error)}`,
+          )
         }
       }
     }
@@ -3361,21 +3436,30 @@ switch (cmd) {
       }
       const repoRoot = cleanupRepoRoot(row)
       if (!repoRoot) throw new Error(`run ${id}'s repository root was not found`)
-      const owner = evidenceOwningBranchOwner({
-        id: row.id, repo: row.repo, branch: row.branch_kept,
-      }, repoRoot)
-      if (owner) {
-        throw new Error(
-          `branch ${row.branch_kept} is still evidence owned by run ${owner.id}; it was left in place`,
+      withCleanupLock(repoRoot, `discard kept branch for run ${id}`, () => {
+        const ownerRow = { id: row.id, repo: row.repo, branch: row.branch_kept }
+        const ownersBefore = evidenceOwningBranchOwners(ownerRow, repoRoot)
+        if (ownersBefore.length) {
+          throw new Error(
+            `branch ${row.branch_kept} is still evidence owned by run ${ownersBefore[0]!.id}; ` +
+            'it was left in place',
+          )
+        }
+        const snapshot = branchTip(repoRoot, row.branch_kept!)
+        const removed = removeBranch(repoRoot, row.branch_kept!)
+        const ownersAfter = evidenceOwningBranchOwners(ownerRow, repoRoot)
+        const outcome = verifyBranchOwnershipAfterCleanup(
+          row.id, repoRoot, row.branch_kept!, snapshot, ownersBefore, ownersAfter,
         )
-      }
-      const removed = removeBranch(repoRoot, row.branch_kept)
-      if (removed) {
-        db().query('UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE id=?').run(id)
-      }
-      console.log(removed
-        ? `deleted branch ${row.branch_kept}`
-        : `branch ${row.branch_kept} cleanup skipped: branch does not exist`)
+        if (outcome.refusal) throw new Error(outcome.refusal)
+        if (outcome.warning) console.error(outcome.warning)
+        if (removed) {
+          db().query('UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE id=?').run(id)
+        }
+        console.log(removed
+          ? `deleted branch ${row.branch_kept}`
+          : `branch ${row.branch_kept} cleanup skipped: branch does not exist`)
+      })
       break
     }
 
@@ -3501,24 +3585,33 @@ switch (cmd) {
       console.log(`branch ${row.branch} cleanup skipped: repository root not found`)
       break
     }
-    const branchOwner = evidenceOwningBranchOwner(row, repoRoot)
-    if (branchOwner) {
-      console.log(`branch ${row.branch} left because run ${branchOwner.id} records it`)
-      break
-    }
-    let protectedBranch: ReturnType<typeof unmergedBranch> = null
-    if (!has('force')) {
-      protectedBranch = unmergedBranch(repoRoot, row.branch, row.base_commit)
-    }
-    if (protectedBranch) {
-      db().query('UPDATE run SET branch_kept=?, branch_kept_tip=NULL WHERE id=?').run(row.branch, id)
-      console.log(keptBranchLine(row.branch, protectedBranch.count, id))
-      break
-    }
-    const removed = removeBranch(repoRoot, row.branch)
-    console.log(removed
-      ? `deleted branch ${row.branch}`
-      : `branch ${row.branch} cleanup skipped: branch does not exist`)
+    withCleanupLock(repoRoot, `abandon run ${id}`, () => {
+      const ownersBefore = evidenceOwningBranchOwners(row, repoRoot)
+      if (ownersBefore.length) {
+        console.log(`branch ${row.branch} left because run ${ownersBefore[0]!.id} records it`)
+        return
+      }
+      let protectedBranch: ReturnType<typeof unmergedBranch> = null
+      if (!has('force')) {
+        protectedBranch = unmergedBranch(repoRoot, row.branch!, row.base_commit)
+      }
+      if (protectedBranch) {
+        db().query('UPDATE run SET branch_kept=?, branch_kept_tip=NULL WHERE id=?').run(row.branch, id)
+        console.log(keptBranchLine(row.branch!, protectedBranch.count, id))
+        return
+      }
+      const snapshot = branchTip(repoRoot, row.branch!)
+      const removed = removeBranch(repoRoot, row.branch!)
+      const ownersAfter = evidenceOwningBranchOwners(row, repoRoot)
+      const outcome = verifyBranchOwnershipAfterCleanup(
+        row.id, repoRoot, row.branch!, snapshot, ownersBefore, ownersAfter,
+      )
+      if (outcome.refusal) throw new Error(outcome.refusal)
+      if (outcome.warning) console.error(outcome.warning)
+      console.log(removed
+        ? `deleted branch ${row.branch}`
+        : `branch ${row.branch} cleanup skipped: branch does not exist`)
+    })
     break
   }
 

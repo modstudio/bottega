@@ -10721,6 +10721,53 @@ echo 'Usage: scripts/worktree create [seed]'
     }
   })
 
+  test('discard refuses when another run acquires the branch during the remove tool', () => {
+    const { repo } = scratchRepo()
+    const project = `acquired-ref-${repo.split('/').pop()}`
+    const target = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
+    const owner = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: project })
+    const tree = createWorktree(repo, target)
+    const tip = git(repo, 'rev-parse', tree.branch)
+    const assign = join(repo, 'assign-branch.ts')
+    writeFileSync(assign,
+      "import { Database } from 'bun:sqlite'\n" +
+      "const database = new Database(process.env.ORCH_DB!)\n" +
+      "database.query('UPDATE run SET branch=? WHERE id=?').run(process.argv[2]!, Number(process.argv[3]))\n")
+    const script = join(repo, 'assign-and-delete-shared-branch.sh')
+    writeFileSync(script,
+      `"${process.execPath}" "${assign}" "$2" "${owner}"\n` +
+      'git worktree remove --force "$1"\n' +
+      'git branch -D "$2"\n')
+    upsertProject({
+      name: project, path: realpathSync(repo),
+      settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
+    })
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, target)
+    db().query('UPDATE run SET cwd=? WHERE id=?').run(repo, owner)
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const p = Bun.spawnSync(
+        [process.execPath, CLI, 'discard', String(target), '--force'],
+        {
+          env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+          stdout: 'pipe', stderr: 'pipe',
+        },
+      )
+      const error = p.stderr.toString()
+      expect(p.exitCode).not.toBe(0)
+      expect(error).toContain(`Run ${owner} acquired branch ${tree.branch} during cleanup`)
+      expect(error).toContain(`deleted shared branch ${tree.branch}; restored ${tip}`)
+      expect(git(repo, 'rev-parse', tree.branch)).toBe(tip)
+      expect(db().query('SELECT branch FROM run WHERE id=?').get(owner))
+        .toEqual({ branch: tree.branch })
+      expect(db().query('SELECT worktree FROM run WHERE id=?').get(target))
+        .toEqual({ worktree: tree.path })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('discard inventories leaks after successfully restoring a shared branch', () => {
     const { repo } = scratchRepo()
     const project = `restored-leak-${repo.split('/').pop()}`
