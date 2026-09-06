@@ -10714,6 +10714,145 @@ echo 'Usage: scripts/worktree create [seed]'
     })
   }
 
+  test('discard through a child reports Docker resources named for its conversation root', () => {
+    const { repo } = scratchRepo()
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+    const child = addRun({ agent: 'codex', job: 'implement', status: 'ok', parent: root, turn: 2 })
+    const tree = createWorktree(repo, root)
+    db().query(
+      `INSERT INTO score (run_id, delivery, quality, fidelity, scored_at)
+       VALUES (?,'full','right','faithful',?)`,
+    ).run(root, nowIso())
+    for (const id of [root, child]) {
+      db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
+        .run(tree.path, tree.path, tree.branch, id)
+    }
+    const container = `orch-${root}-postgres-1`
+    const docker = fakeDocker([container], [])
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const p = Bun.spawnSync(
+        [process.execPath, CLI, 'discard', String(child), '--force'],
+        {
+          env: { ...process.env, ...docker.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+          stdout: 'pipe', stderr: 'pipe',
+        },
+      )
+      expect(p.exitCode).not.toBe(0)
+      expect(p.stderr.toString()).toContain(container)
+      expect(p.stderr.toString()).toContain(`run ${root}`)
+      expect(db().query('SELECT id, worktree FROM run WHERE id IN (?,?) ORDER BY id')
+        .all(root, child)).toEqual([
+        { id: root, worktree: tree.path },
+        { id: child, worktree: tree.path },
+      ])
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(docker.dir, { recursive: true, force: true })
+    }
+  })
+
+  test('a successful project tool deletes an unchanged disposable branch for an already-gone tree', () => {
+    const { repo } = scratchRepo()
+    const project = `branch-postcondition-${repo.split('/').pop()}`
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'asking', repo: project })
+    const tree = createWorktree(repo, id)
+    git(repo, 'worktree', 'remove', '--force', tree.path)
+    upsertProject({
+      name: project, path: realpathSync(repo),
+      settings: { trunk: 'main', worktree: { remove: 'true' } },
+    })
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.base, id)
+    const docker = fakeDocker([], [])
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const p = Bun.spawnSync([process.execPath, CLI, 'abandon', String(id)], {
+        env: { ...process.env, ...docker.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(p.exitCode).toBe(0)
+      expect(git(repo, 'branch', '--list', tree.branch)).toBe('')
+      expect(db().query('SELECT worktree FROM run WHERE id=?').get(id)).toEqual({ worktree: null })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(docker.dir, { recursive: true, force: true })
+    }
+  })
+
+  test('a successful project tool retains and reports a uniquely-committed branch', () => {
+    const { repo } = scratchRepo()
+    const project = `unique-branch-postcondition-${repo.split('/').pop()}`
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'asking', repo: project })
+    const tree = createWorktree(repo, id)
+    writeFileSync(join(tree.path, 'unique.txt'), 'keep me\n')
+    git(tree.path, 'add', 'unique.txt')
+    git(tree.path, 'commit', '-m', 'unique work')
+    const tip = git(tree.path, 'rev-parse', 'HEAD')
+    git(repo, 'worktree', 'remove', '--force', tree.path)
+    upsertProject({
+      name: project, path: realpathSync(repo),
+      settings: { trunk: 'main', worktree: { remove: 'true' } },
+    })
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.base, id)
+    const docker = fakeDocker([], [])
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const p = Bun.spawnSync([process.execPath, CLI, 'abandon', String(id)], {
+        env: { ...process.env, ...docker.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(p.exitCode).toBe(0)
+      expect(git(repo, 'rev-parse', tree.branch)).toBe(tip)
+      expect(p.stdout.toString()).toContain(`kept branch ${tree.branch}`)
+      expect(db().query('SELECT worktree, branch_kept FROM run WHERE id=?').get(id))
+        .toEqual({ worktree: null, branch_kept: tree.branch })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(docker.dir, { recursive: true, force: true })
+    }
+  })
+
+  test('a successful project tool refuses an unprotected branch moved during teardown', () => {
+    const { repo } = scratchRepo()
+    const project = `moved-branch-postcondition-${repo.split('/').pop()}`
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'asking', repo: project })
+    const tree = createWorktree(repo, id)
+    git(repo, 'worktree', 'remove', '--force', tree.path)
+    git(repo, 'checkout', '-b', 'fixture-later-tip')
+    writeFileSync(join(repo, 'later.txt'), 'later\n')
+    git(repo, 'add', 'later.txt')
+    git(repo, 'commit', '-m', 'later tip')
+    const later = git(repo, 'rev-parse', 'HEAD')
+    git(repo, 'checkout', 'main')
+    const script = join(repo, 'move-branch.sh')
+    writeFileSync(script, `git update-ref "refs/heads/$1" "${later}"\n`)
+    upsertProject({
+      name: project, path: realpathSync(repo),
+      settings: { trunk: 'main', worktree: { remove: `sh "${script}" {branch}` } },
+    })
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.base, id)
+    const docker = fakeDocker([], [])
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const p = Bun.spawnSync([process.execPath, CLI, 'abandon', String(id)], {
+        env: { ...process.env, ...docker.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(p.exitCode).not.toBe(0)
+      expect(p.stderr.toString()).toContain(`moved unprotected branch ${tree.branch}`)
+      expect(p.stderr.toString()).toContain(later)
+      expect(git(repo, 'rev-parse', tree.branch)).toBe(later)
+      expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
+        .toEqual({ worktree: tree.path })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(docker.dir, { recursive: true, force: true })
+    }
+  })
+
   test('stopped runs are swept and their surviving infrastructure is reported by sweep and doctor', () => {
     const { repo } = scratchRepo()
     const project = `stopped-resource-${repo.split('/').pop()}`

@@ -79,8 +79,15 @@ export function dockerRunResources(): DockerInventory {
 export function resourcesForRun(
   runId: number, inventory = dockerRunResources(),
 ): DockerInventory {
+  return resourcesForRuns([runId], inventory)
+}
+
+export function resourcesForRuns(
+  runIds: number[], inventory = dockerRunResources(),
+): DockerInventory {
+  const owned = new Set(runIds)
   return {
-    resources: inventory.resources.filter((resource) => resource.runId === runId),
+    resources: inventory.resources.filter((resource) => owned.has(resource.runId)),
     errors: inventory.errors,
   }
 }
@@ -106,10 +113,10 @@ export function orphanedDockerResources(
 }
 
 export function leakedResourceLines(
-  resources: DockerResource[], project: string, runId: number,
+  resources: DockerResource[], project: string,
 ): string[] {
   return resources.map((resource) =>
-    `${resource.kind} ${resource.name} leaked by project ${project} (run ${runId})`)
+    `${resource.kind} ${resource.name} leaked by project ${project} (run ${resource.runId})`)
 }
 
 export function dockerRemovalCommand(resource: DockerResource): string {

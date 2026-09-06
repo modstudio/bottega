@@ -41,7 +41,7 @@ import { composeWorkflow, exportWorkflows, forkWorkflow, getWorkflowStep, import
 import { gwetAc1 } from './agreement.ts'
 import { routingBacktest, routingBacktestEnsemble, type RoutingBacktest } from './routing-backtest.ts'
 import { dockerRemovalCommand, dockerRunResources, leakedResourceLines,
-         orphanedDockerResources, orchRunId, resourcesForRun,
+         orphanedDockerResources, orchRunId, resourcesForRuns,
          type DockerResource } from './docker-resources.ts'
 
 /**
@@ -453,6 +453,15 @@ function clearConversationWorktree(
   ).run(runId, keptBranch, runId, worktree, runId)
 }
 
+function resourcesForConversation(runId: number) {
+  const ids = db().query(
+    `SELECT id FROM run
+      WHERE COALESCE(parent_run_id, id) =
+            (SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?)`,
+  ).all(runId) as { id: number }[]
+  return resourcesForRuns(ids.map((row) => row.id))
+}
+
 function recordRestoreRefusal(runId: number, branch: string, tip: string): void {
   db().query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
     .run(branch, tip, runId)
@@ -565,7 +574,7 @@ function discardWorktree(
     const r = removeFor({
       path: row.worktree,
       branch: row.branch ?? `orch/${row.id}`,
-      base: '',
+      base: row.base_commit ?? '',
       repoRoot,
     }, repoRoot, force, ownersBefore.length > 0)
     const sharersAfter = evidenceOwningWorktreeSharers(row)
@@ -601,7 +610,7 @@ function discardWorktree(
     if (!r.removed) throw new Error(r.detail)
     if (branchWarning) console.error(branchWarning)
     const project = row.repo ?? projectAt(repoRoot)?.name ?? 'unknown'
-    const inventory = resourcesForRun(row.id)
+    const inventory = resourcesForConversation(row.id)
     if (inventory.errors.length) {
       throw new Error(
         `project ${project}'s cleanup could not be verified — inventory unavailable:\n` +
@@ -611,7 +620,7 @@ function discardWorktree(
     if (inventory.resources.length) {
       throw new Error(
         `project ${project}'s remove tool left Docker resources behind:\n` +
-        leakedResourceLines(inventory.resources, project, row.id).map((line) => `  ${line}`).join('\n'),
+        leakedResourceLines(inventory.resources, project).map((line) => `  ${line}`).join('\n'),
       )
     }
     const keptProtectedBranch = protectedBranch && row.branch && branchTip(repoRoot, row.branch)
@@ -3168,14 +3177,15 @@ switch (cmd) {
     }
     const dry = has('dry-run')
     const rows = db().query(
-      `SELECT r.id, r.repo, r.worktree, r.branch, r.status, r.job,
+      `SELECT r.id, r.repo, r.worktree, r.branch, r.base_commit, r.status, r.job,
               (julianday('now') - julianday(r.started_at)) AS age_days,
               s.delivery IS NOT NULL AS scored
          FROM run r ${chainScoreJoin('r', 's')}
         WHERE r.worktree IS NOT NULL AND r.status IN ('ok','failed','stale','stopped')
         ORDER BY r.id`,
     ).all() as {
-      id: number; repo: string | null; worktree: string; branch: string | null; status: string
+      id: number; repo: string | null; worktree: string; branch: string | null
+      base_commit: string | null; status: string
       job: string; age_days: number; scored: number
     }[]
 
@@ -3219,7 +3229,10 @@ switch (cmd) {
 
       const repoRoot = (r.repo ? projectByName(r.repo)?.path : null) ??
         repoRootOf(r.worktree) ?? projectAt(r.worktree)?.path ?? process.cwd()
-      const w = { path: r.worktree, branch: r.branch ?? `orch/${r.id}`, base: '', repoRoot }
+      const w = {
+        path: r.worktree, branch: r.branch ?? `orch/${r.id}`,
+        base: r.base_commit ?? '', repoRoot,
+      }
       try {
         withCleanupLock(repoRoot, `sweep run ${r.id}`, () => {
           const lockedSharers = evidenceOwningWorktreeSharers(r)
@@ -3261,7 +3274,7 @@ switch (cmd) {
           }
           if (res.removed) {
             const project = r.repo ?? projectAt(repoRoot)?.name ?? 'unknown'
-            const inventory = resourcesForRun(r.id)
+            const inventory = resourcesForConversation(r.id)
             for (const error of inventory.errors) inventoryErrors.add(error)
             if (inventory.errors.length) {
               cleanupFailed = true
@@ -3388,7 +3401,7 @@ switch (cmd) {
             if (res.removed) {
               const inventory = runId === null
                 ? { resources: [], errors: [] }
-                : resourcesForRun(runId)
+                : resourcesForConversation(runId)
               for (const error of inventory.errors) inventoryErrors.add(error)
               if (inventory.errors.length) {
                 cleanupFailed = true
@@ -3484,8 +3497,8 @@ switch (cmd) {
     if (leaked.size) {
       cleanupFailed = true
       console.error(`\n${dry ? 'would report ' : ''}leaked Docker resources: ${leaked.size}`)
-      for (const { resource, project, runId } of leaked.values()) {
-        console.error(`  ${dry ? 'would report ' : ''}${leakedResourceLines([resource], project, runId)[0]}`)
+      for (const { resource, project } of leaked.values()) {
+        console.error(`  ${dry ? 'would report ' : ''}${leakedResourceLines([resource], project)[0]}`)
       }
     }
     if (inventoryErrors.size) {

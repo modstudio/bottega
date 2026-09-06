@@ -1503,6 +1503,7 @@ export function removeWithTool(
   tool: WorktreeTool, w: Worktree, forceOrchTree = false, keepBranch = false,
 ): { removed: boolean; detail: string; output?: string } {
   const name = w.path.split('/').pop() ?? w.path
+  const branchBefore = branchTip(w.repoRoot, w.branch)
 
   // A recipe-built tree is torn down the same way it was made: bottega
   // provisioned the database, so bottega drops it. Done BEFORE the directory
@@ -1524,7 +1525,18 @@ export function removeWithTool(
 
   const r = runShellTool(tool.remove, { name, branch: w.branch, path: w.path }, w.repoRoot)
   if (r.ok && !existsSync(w.path)) {
-    return { removed: true, detail: w.path, ...(r.out ? { output: r.out } : {}) }
+    const branchAfter = branchTip(w.repoRoot, w.branch)
+    if (!keepBranch && branchAfter !== null && branchAfter !== branchBefore) {
+      return {
+        removed: false,
+        detail: branchBefore === null
+          ? `project remove tool created unprotected branch ${w.branch} at ${branchAfter}; it was left in place`
+          : `project remove tool moved unprotected branch ${w.branch} from ${branchBefore} to ${branchAfter}; it was left in place`,
+        ...(r.out ? { output: r.out } : {}),
+      }
+    }
+    const reconciled = removeWorktree(w, keepBranch)
+    return { ...reconciled, ...(r.out ? { output: r.out } : {}) }
   }
 
   // The marker is the proof that orch made and owns this disposable checkout.
@@ -1574,9 +1586,11 @@ export function removeFor(
 ): { removed: boolean; detail: string; output?: string } {
   const project = projectAt(repoRoot)
   const tool = project?.settings.worktree
+  const retainBranch = keepBranch ||
+    (!forceOrchTree && unmergedBranch(repoRoot, w.branch, w.base || null) !== null)
   const result: { removed: boolean; detail: string; output?: string } = tool
-    ? removeWithTool(tool, w, forceOrchTree, keepBranch)
-    : removeWorktree(w, keepBranch)
+    ? removeWithTool(tool, w, forceOrchTree, retainBranch)
+    : removeWorktree(w, retainBranch)
   return result.output
     ? { ...result, output: `${project!.name} remove:\n${result.output}` }
     : result
@@ -1597,7 +1611,11 @@ export function removeWorktree(w: Worktree, keepBranch = false): { removed: bool
   // pointer that ought to be clearable — refusing would strand it for ever.
   if (!existsSync(w.path)) {
     gitOk(['worktree', 'prune'], w.repoRoot)
-    return { removed: true, detail: `${w.path} was already gone` }
+    if (!keepBranch) gitOk(['branch', '-D', w.branch], w.repoRoot)
+    const branch = branchTip(w.repoRoot, w.branch)
+    return branch !== null && !keepBranch
+      ? { removed: false, detail: `git could not remove branch ${w.branch}; it remains at ${branch}` }
+      : { removed: true, detail: `${w.path} was already gone` }
   }
   // REPORTED, not swallowed. This function's own comment says a removal that
   // silently fails leaves the run's changes on disk with nothing pointing at
@@ -1610,8 +1628,11 @@ export function removeWorktree(w: Worktree, keepBranch = false): { removed: bool
   // Prunes the administrative record if the directory went missing by other
   // means, so `git worktree list` does not accumulate ghosts.
   gitOk(['worktree', 'prune'], w.repoRoot)
-  return gone || !existsSync(w.path)
+  const branch = branchTip(w.repoRoot, w.branch)
+  return (gone || !existsSync(w.path)) && (keepBranch || branch === null)
     ? { removed: true, detail: w.path }
+    : branch !== null && !keepBranch
+    ? { removed: false, detail: `git could not remove branch ${w.branch}; it remains at ${branch}` }
     : { removed: false, detail: `git could not remove ${w.path}; it is still on disk` }
 }
 
