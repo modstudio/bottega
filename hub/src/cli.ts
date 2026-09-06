@@ -21,6 +21,7 @@ import { projects } from './projects.ts'
 import { Mcp, credentials } from './mcp.ts'
 import { createTrackerTask } from '../../shared/trackers.ts'
 import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
+import { listOpenRulings, rulingsPayload } from './rulings.ts'
 
 const argv = process.argv.slice(2)
 const cmd = argv[0]
@@ -41,6 +42,8 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and the 
   hub serve [--port 7778]     the dashboard
   hub reconcile [--dry-run]   close open intervals whose orch runs are terminal
                               using exact run ids, never an age or time window
+  hub rulings [--json]        open questions ingested from orch, with age
+      --json                  one JSON document: {stale_after, questions}
 
   hub task new --project X --title "..." [--status Y] [--parent KEY]
                [--body "..."|--body-file PATH] [--allow-duplicate "reason"]
@@ -456,7 +459,7 @@ try {
 const initialisesDatabase = cmd === 'collect'
   || (cmd === 'task' && (argv[1] === 'new' || argv[1] === 'import'))
 const usesDatabase = cmd === 'collect' || cmd === 'tasks' || cmd === 'serve'
-  || cmd === 'task' || cmd === 'send' || cmd === 'reconcile'
+  || cmd === 'task' || cmd === 'send' || cmd === 'reconcile' || cmd === 'rulings'
 if (usesDatabase && !initialisesDatabase) requireDatabase()
 
 switch (cmd) {
@@ -482,6 +485,21 @@ switch (cmd) {
   case 'tasks': tasks(); break
   case 'serve': serve(Number(flag('port') ?? 7778)); break
   case 'reconcile': printReconcile(await reconcileOpenIntervals({ dryRun: has('dry-run') })); break
+  case 'rulings': {
+    if (has('json')) {
+      console.log(JSON.stringify(rulingsPayload()))
+      break
+    }
+    const rows = listOpenRulings()
+    if (!rows.length) { console.log('no open rulings'); break }
+    for (const row of rows) {
+      console.log(
+        `${(row.task_key ?? '(untracked)').padEnd(12)} session ${row.session_id ?? 'unknown'}  ` +
+        `since ${row.asked_at}  age ${human(row.age)}`,
+      )
+    }
+    break
+  }
   case 'task': await task(); break
   case 'send': await sendReport(); break
   case undefined:

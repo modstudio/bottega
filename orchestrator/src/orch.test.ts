@@ -1193,7 +1193,8 @@ const { createDocsMcpServer, fileIssue } = await import('./mcp.ts')
 const { setWorkflow, promoteWorkflow } = await import('./workflows.ts')
 const { compilePack, compileBrief, checkDoc, CanonBudgetError, recordPack, diffPack,
         allInjectChecks } = await import('./canon.ts')
-const { deadRunningProcessConditions, reconcileHub, monitorHistory } = await import('./monitor.ts')
+const { deadRunningProcessConditions, reconcileHub, rulingConditions, monitorHistory } =
+  await import('./monitor.ts')
 const { listPairs, addPair, baselineForPair, setBaseline, listSkips, addSkip,
         setLedgerRef, ledgerRef, listLedgerRefs, resolveLedgerRef,
         listDoctrineRules, addDoctrineRule, retireDoctrineRule } =
@@ -1416,6 +1417,42 @@ describe('operational monitor record', () => {
         kind: 'ghost-open-interval', subject: 'interval:747618', ageMs: 68_400_000,
         action: 'reconciled through hub reconcile',
       })])
+    } finally { spawn.mockRestore() }
+  })
+
+  test('reports a task waiting past the rulings threshold and names the session', () => {
+    const spawn = spyOn(Bun, 'spawnSync').mockReturnValue({ exitCode: 0,
+      stdout: Buffer.from(JSON.stringify({
+        stale_after: '1h',
+        questions: [
+          { task_key: 'DEV-215', session_id: 'sess-1', asked_at: '2026-09-04T18:00:00.000Z', age: 7_200_000 },
+          { task_key: 'DEV-1', session_id: 'sess-2', asked_at: '2026-09-04T19:30:00.000Z', age: 1_800_000 },
+        ],
+      })),
+      stderr: Buffer.from(''), success: true } as any)
+    try {
+      const clock = Date.parse('2026-09-04T20:00:00.000Z')
+      expect(rulingConditions(clock)).toEqual({
+        conditions: [expect.objectContaining({
+          kind: 'task-waiting-on-ruling', subject: 'task:DEV-215',
+          since: '2026-09-04T18:00:00.000Z', ageMs: 7_200_000,
+          detail: 'task DEV-215 waiting on a ruling; session sess-1',
+          action: 'reported; it does not answer',
+        })],
+        errors: [],
+      })
+    } finally { spawn.mockRestore() }
+  })
+
+  test('a missing hub rulings document is an observation error, not emptiness', () => {
+    const spawn = spyOn(Bun, 'spawnSync').mockReturnValue({ exitCode: 1,
+      stdout: Buffer.from(''), stderr: Buffer.from('hub database is absent at /tmp/none'),
+      success: false } as any)
+    try {
+      expect(rulingConditions()).toEqual({
+        conditions: [],
+        errors: ['hub database is absent at /tmp/none'],
+      })
     } finally { spawn.mockRestore() }
   })
 
@@ -3777,7 +3814,7 @@ describe('vendor failure failover is one bounded unit of work', () => {
       expect(json.code).toBe(0)
       const listed = json.out.trim().split('\n').map((line) => JSON.parse(line)) as {
         id: number; agent: string; retry_of: number | null; failover_chain: string[]
-        vendor_tokens: number; vendor_cost_usd: number
+        vendor_tokens: number; vendor_cost_usd: number; questions: unknown[]
       }[]
       expect(listed.map((row) => row.id)).toEqual([successor.id, first.id])
       expect(listed.map((row) => row.retry_of)).toEqual([first.id, null])
@@ -3786,12 +3823,43 @@ describe('vendor failure failover is one bounded unit of work', () => {
       expect(listed.every((row) =>
         JSON.stringify(row.failover_chain) === JSON.stringify(['codex', 'grok']),
       )).toBe(true)
+      expect(listed.every((row) => Array.isArray(row.questions))).toBe(true)
 
       expect(followed.err).toContain(`run ${successor.id} · grok`)
       expect(followed.err).not.toContain(`run ${first.id} · grok`)
     } finally {
       process.env.PATH = oldPath
     }
+  })
+
+  test('runs --json publishes every question on the root, including child turns', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+    const child = addRun({
+      agent: 'codex', job: 'implement', status: 'asking', parent: root, turn: 2,
+    })
+    db().query('INSERT INTO question (run_id, asked_at, question, answered_at) VALUES (?,?,?,?)')
+      .run(root, '2026-09-04T10:00:00.000Z', 'root q', '2026-09-04T10:05:00.000Z')
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(child, '2026-09-04T10:10:00.000Z', 'child q')
+
+    const json = orch('runs', '--json', '--id', String(root))
+    expect(json.code).toBe(0)
+    const [row] = json.out.trim().split('\n').map((line) => JSON.parse(line)) as {
+      id: number
+      questions: { id: number; run_id: number; asked_at: string; answered_at: string | null }[]
+    }[]
+    expect(row!.id).toBe(root)
+    expect(row!.questions).toEqual([
+      expect.objectContaining({
+        run_id: root, asked_at: '2026-09-04T10:00:00.000Z', answered_at: '2026-09-04T10:05:00.000Z',
+      }),
+      expect.objectContaining({
+        run_id: child, asked_at: '2026-09-04T10:10:00.000Z', answered_at: null,
+      }),
+    ])
+    expect(row!.questions.every((q) =>
+      Object.keys(q).sort().join() === 'answered_at,asked_at,id,run_id',
+    )).toBe(true)
   })
 
   test('--no-failover holds and records a clear terminal explanation', async () => {

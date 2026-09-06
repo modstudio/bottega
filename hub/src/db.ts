@@ -198,8 +198,25 @@ function migrate(d: Database) {
   addColumn(d, 'task', 'parent_key', 'TEXT REFERENCES task(key) ON DELETE SET NULL')
   addColumn(d, 'task', 'body', 'TEXT')
   addColumn(d, 'task', 'assignee', 'TEXT')
+  addColumn(d, 'interval', 'session_id', 'TEXT')
   d.exec(`
     CREATE INDEX IF NOT EXISTS task_parent ON task(parent_key);
+
+    -- Questions ingested from orch runs JSON. Keyed on orch's question id,
+    -- which is stable across collects. The monitor reads this through
+    -- hub rulings, never by opening orch.db.
+    CREATE TABLE IF NOT EXISTS question (
+      question_id INTEGER PRIMARY KEY,
+      run_ref     TEXT NOT NULL,
+      root_ref    TEXT NOT NULL,
+      task_key    TEXT,
+      session_id  TEXT,
+      asked_at    TEXT NOT NULL,
+      answered_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS question_open ON question(answered_at) WHERE answered_at IS NULL;
+    CREATE INDEX IF NOT EXISTS question_root ON question(root_ref);
+
 
     CREATE TABLE IF NOT EXISTS task_comment (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -82,6 +82,50 @@ export function deadRunningProcessConditions(clock = Date.now()): MonitorConditi
   })
 }
 
+type HubRuling = {
+  task_key: string | null
+  session_id: string | null
+  asked_at: string
+  age: number
+}
+
+type HubRulingsPayload = {
+  stale_after?: string
+  questions?: HubRuling[]
+}
+
+/** Report tasks waiting on a ruling longer than hub's `rulings.stale_after`. It does not answer. */
+export function rulingConditions(clock = Date.now()): { conditions: MonitorCondition[]; errors: string[] } {
+  const p = Bun.spawnSync([HUB, 'rulings', '--json'], { stdout: 'pipe', stderr: 'pipe' })
+  if (p.exitCode !== 0) {
+    return { conditions: [], errors: [p.stderr.toString().trim() || `hub rulings exited ${p.exitCode}`] }
+  }
+  const raw = p.stdout.toString().trim()
+  if (!raw) return { conditions: [], errors: ['hub rulings --json produced no document'] }
+  let payload: HubRulingsPayload
+  try { payload = JSON.parse(raw) as HubRulingsPayload }
+  catch { return { conditions: [], errors: ['hub rulings --json was not a JSON document'] } }
+  if (!Array.isArray(payload.questions)) {
+    return { conditions: [], errors: ['hub rulings --json missing questions array'] }
+  }
+  const threshold = durationMs(payload.stale_after ?? '1h') ?? 3_600_000
+  const conditions = payload.questions.flatMap((row): MonitorCondition[] => {
+    const ageMs = age(row.asked_at, clock)
+    if (ageMs == null || ageMs < threshold) return []
+    const task = row.task_key ?? '(untracked)'
+    const session = row.session_id ?? 'unknown'
+    return [{
+      kind: 'task-waiting-on-ruling',
+      subject: row.task_key ? `task:${row.task_key}` : `session:${session}`,
+      since: row.asked_at,
+      ageMs,
+      detail: `task ${task} waiting on a ruling; session ${session}`,
+      action: 'reported; it does not answer',
+    }]
+  })
+  return { conditions, errors: [] }
+}
+
 /** DEV-211 owns the repair. The monitor invokes its audited command and records its report. */
 export function reconcileHub(clock: number): { conditions: MonitorCondition[]; errors: string[] } {
   const p = Bun.spawnSync([HUB, 'reconcile'], { stdout: 'pipe', stderr: 'pipe' })
@@ -255,6 +299,9 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
   const hub = reconcileHub(clock)
   conditions.push(...hub.conditions)
   errors.push(...hub.errors)
+  const rulings = rulingConditions(clock)
+  conditions.push(...rulings.conditions)
+  errors.push(...rulings.errors)
   const docker = dockerConditions(clock)
   conditions.push(...docker.conditions)
   errors.push(...docker.errors)
@@ -264,18 +311,6 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
     detail: `${drift.removed.length} docs removed; ${drift.bytesDelta} bytes versus stored pack`,
     action: 'reported; dispatch is not blocked by pack drift',
   })
-
-  // File the missing task-state detector once. Repeating the known gap on every
-  // pass would make a healthy monitor incapable of the silence hooks require.
-  const taskDetectorFiled = database.query(
-    `SELECT 1 FROM monitor_condition
-      WHERE kind='detector-unavailable' AND subject='tasks-waiting-on-ruling'
-        AND issue_key IS NOT NULL LIMIT 1`,
-  ).get()
-  if (!taskDetectorFiled) add({ kind: 'detector-unavailable', subject: 'tasks-waiting-on-ruling', since: startedAt,
-    detail: 'tasks do not record which session asked, when, or whether the request was answered',
-    action: 'missing machine-readable detector state must be filed through file_issue',
-    affectedProject: PLATFORM_SLUG })
 
   // A tool that could not look has not established emptiness. Persist the
   // exact refusal beside findings so history is useful after launchd's process

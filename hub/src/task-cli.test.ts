@@ -65,7 +65,7 @@ function document(id: string) {
 describe('task CLI bodies', () => {
   test('queries refuse an absent database instead of reporting an empty finding', () => {
     const absent = join(dir, 'absent.db')
-    for (const args of [['task', 'show', 'DEV-154'], ['task', 'list'], ['tasks']]) {
+    for (const args of [['task', 'show', 'DEV-154'], ['task', 'list'], ['tasks'], ['rulings'], ['rulings', '--json']]) {
       const result = hubAt(absent, ...args)
       expect(result.exitCode).toBe(1)
       expect(result.stdout).toBe('')
@@ -370,5 +370,33 @@ describe('task documents', () => {
 
     expect(hub('task', 'doc', 'rm', created.stdout).exitCode).toBe(0)
     expect(hub('task', 'doc', 'list', task.stdout).stdout).toBe('no documents')
+  })
+})
+
+describe('rulings CLI', () => {
+  test('hub rulings --json is one document with stale_after and open questions', () => {
+    const created = hub('task', 'new', '--project', 'alpha', '--title', 'Waiting on a ruling')
+    expect(created.exitCode).toBe(0)
+    const d = new Database(database)
+    d.query(
+      `INSERT INTO question (question_id, run_ref, root_ref, task_key, session_id, asked_at)
+       VALUES (1, 'orch:1', 'orch:1', ?, 'sess-cli', '2026-09-04T19:00:00.000Z')`,
+    ).run(created.stdout)
+    d.close()
+
+    const result = hub('rulings', '--json')
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr).toBe('')
+    const payload = JSON.parse(result.stdout) as {
+      stale_after: string
+      questions: { task_key: string | null; session_id: string | null; asked_at: string; age: number }[]
+    }
+    expect(payload.stale_after).toBe('1h')
+    expect(payload.questions).toEqual([expect.objectContaining({
+      task_key: created.stdout, session_id: 'sess-cli', asked_at: '2026-09-04T19:00:00.000Z',
+    })])
+    expect(payload.questions.every((q) =>
+      ['task_key', 'session_id', 'asked_at', 'age'].every((key) => key in q),
+    )).toBe(true)
   })
 })

@@ -19,6 +19,13 @@ export type OrchTurn = {
   turn: number
 }
 
+export type OrchQuestion = {
+  id: number
+  run_id: number
+  asked_at: string
+  answered_at: string | null
+}
+
 export type OrchRun = {
   id: number
   started_at: string
@@ -44,6 +51,16 @@ export type OrchRun = {
   retry_of?: number | null
   /** Every execution in a resumable chain, including the root turn. */
   turns?: OrchTurn[]
+  /** Root and turns, open and answered. Absent on older orch builds. */
+  questions?: OrchQuestion[]
+}
+
+function rootRef(id: number) {
+  return `orch:${id}`
+}
+
+function runRef(rootId: number, questionRunId: number, hasTurns: boolean) {
+  return hasTurns ? `orch:${rootId}:turn:${questionRunId}` : `orch:${rootId}`
 }
 
 export function executionSpans(r: OrchRun, now = Date.now()) {
@@ -87,8 +104,8 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
   const d = db()
   const stmt = d.query(
     `INSERT INTO interval (task_key, project, source, agent, job, start_at, end_at,
-                           claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, open)
-     VALUES (?,?,'orch',?,?,?,?,0,?,?,?,?,?)
+                           claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, open, session_id)
+     VALUES (?,?,'orch',?,?,?,?,0,?,?,?,?,?,?)
      ON CONFLICT(source, ref, start_at) DO UPDATE SET
        end_at          = excluded.end_at,
        vendor_tokens   = excluded.vendor_tokens,
@@ -97,8 +114,21 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
        project         = excluded.project,
        job             = excluded.job,
        via             = excluded.via,
-       open            = excluded.open`,
+       open            = excluded.open,
+       session_id      = excluded.session_id`,
   )
+  const upsertQuestion = d.query(
+    `INSERT INTO question (question_id, run_ref, root_ref, task_key, session_id, asked_at, answered_at)
+     VALUES (?,?,?,?,?,?,?)
+     ON CONFLICT(question_id) DO UPDATE SET
+       run_ref     = excluded.run_ref,
+       root_ref    = excluded.root_ref,
+       task_key    = excluded.task_key,
+       session_id  = excluded.session_id,
+       asked_at    = excluded.asked_at,
+       answered_at = excluded.answered_at`,
+  )
+  const deleteRootQuestions = d.query(`DELETE FROM question WHERE root_ref = ?`)
   const close = d.query(
     `UPDATE interval SET open = 0 WHERE source = 'orch' AND ref = ?`,
   )
@@ -149,6 +179,23 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
         closeReplaced.run(`orch:${r.retry_of}`, `orch:%:turn:${r.retry_of}`)
       }
 
+      if (r.questions) {
+        const root = rootRef(r.id)
+        const hasTurns = Boolean(r.turns)
+        deleteRootQuestions.run(root)
+        for (const q of r.questions) {
+          upsertQuestion.run(
+            q.id,
+            runRef(r.id, q.run_id ?? r.id, hasTurns),
+            root,
+            a.key,
+            r.session_id,
+            q.asked_at,
+            q.answered_at ?? null,
+          )
+        }
+      }
+
       const turns = r.turns ?? [r]
       if (r.turns) clearChain.run(`orch:${r.id}`, `orch:${r.id}:turn:%`)
       for (const turn of turns) {
@@ -168,7 +215,7 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
           a.key, a.project, r.agent, r.job,
           new Date(start).toISOString(), new Date(end).toISOString(),
           turn.vendor_tokens ?? 0, turn.vendor_cost_usd, ref, a.via,
-          turn.latency_ms == null ? 1 : 0,
+          turn.latency_ms == null ? 1 : 0, r.session_id,
         )
         if (!r.turns) removeOtherStarts.run(ref, new Date(start).toISOString())
         rows++

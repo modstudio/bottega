@@ -21,6 +21,7 @@ const { ingestTrackers, upsertTrackerTask, resolveAssigneeIds, trackerRegistrati
   await import('./ingest/trackers.ts')
 const { createTask, duplicateCandidates, duplicateScore, showTask } = await import('./task.ts')
 const { chainVendorTokens, executionSpans, ingestRuns } = await import('./ingest/runs.ts')
+const { listOpenRulings, rulingsPayload, rulingsStaleAfter } = await import('./rulings.ts')
 
 process.on('exit', () => {
   try { rmSync(testDir, { recursive: true, force: true }) } catch {}
@@ -192,6 +193,112 @@ describe('run ingest', () => {
       start: at(row.start_at), end: at(row.end_at),
     })))).toBe(1_032_690)
     expect(human(1_032_690)).toBe('17m 13s')
+  })
+
+  test('stores session_id and every question on the interval and question table', async () => {
+    const result = await ingestRunFixtures(runFixture({
+      id: 9201,
+      session_id: 'sess-a',
+      questions: [
+        { id: 11, run_id: 9201, asked_at: '2026-09-04T19:00:00.000Z', answered_at: null },
+        { id: 12, run_id: 9201, asked_at: '2026-09-04T18:00:00.000Z', answered_at: '2026-09-04T18:10:00.000Z' },
+      ],
+    }))
+    expect(result).toEqual({ rows: 1, skipped: 0 })
+
+    const interval = db().query(
+      `SELECT session_id FROM interval WHERE source = 'orch' AND ref = 'orch:9201'`,
+    ).get() as { session_id: string }
+    expect(interval.session_id).toBe('sess-a')
+
+    const questions = db().query(
+      `SELECT question_id, run_ref, root_ref, task_key, session_id, asked_at, answered_at
+         FROM question WHERE root_ref = 'orch:9201' ORDER BY question_id`,
+    ).all() as {
+      question_id: number; run_ref: string; root_ref: string; task_key: string | null
+      session_id: string | null; asked_at: string; answered_at: string | null
+    }[]
+    expect(questions).toEqual([
+      {
+        question_id: 11, run_ref: 'orch:9201', root_ref: 'orch:9201',
+        task_key: 'ALP-118', session_id: 'sess-a',
+        asked_at: '2026-09-04T19:00:00.000Z', answered_at: null,
+      },
+      {
+        question_id: 12, run_ref: 'orch:9201', root_ref: 'orch:9201',
+        task_key: 'ALP-118', session_id: 'sess-a',
+        asked_at: '2026-09-04T18:00:00.000Z', answered_at: '2026-09-04T18:10:00.000Z',
+      },
+    ])
+  })
+
+  test('a child-turn question is stored on that turn ref and listed while unanswered', async () => {
+    await ingestRunFixtures(runFixture({
+      id: 9301,
+      session_id: 'sess-b',
+      turns: [{
+        id: 9302,
+        started_at: '2026-09-04T19:00:00.000Z',
+        latency_ms: null,
+        vendor_tokens: null,
+        vendor_cost_usd: null,
+        status: 'running',
+        turn: 2,
+      }],
+      questions: [
+        { id: 20, run_id: 9301, asked_at: '2026-09-04T18:50:00.000Z', answered_at: null },
+        { id: 21, run_id: 9302, asked_at: '2026-09-04T19:00:00.000Z', answered_at: null },
+      ],
+    }))
+
+    const stored = db().query(
+      `SELECT question_id, run_ref, root_ref FROM question
+        WHERE question_id IN (20, 21) ORDER BY question_id`,
+    ).all() as { question_id: number; run_ref: string; root_ref: string }[]
+    expect(stored).toEqual([
+      { question_id: 20, run_ref: 'orch:9301:turn:9301', root_ref: 'orch:9301' },
+      { question_id: 21, run_ref: 'orch:9301:turn:9302', root_ref: 'orch:9301' },
+    ])
+
+    const clock = Date.parse('2026-09-04T20:00:00.000Z')
+    expect(listOpenRulings(clock).filter((row) => row.session_id === 'sess-b')).toEqual([
+      {
+        task_key: 'ALP-118', session_id: 'sess-b',
+        asked_at: '2026-09-04T18:50:00.000Z', age: 4_200_000,
+      },
+      {
+        task_key: 'ALP-118', session_id: 'sess-b',
+        asked_at: '2026-09-04T19:00:00.000Z', age: 3_600_000,
+      },
+    ])
+  })
+
+  test('re-ingest records that a question was answered and drops it from open rulings', async () => {
+    await ingestRunFixtures(runFixture({
+      id: 9401,
+      session_id: 'sess-c',
+      questions: [
+        { id: 31, run_id: 9401, asked_at: '2026-09-04T19:00:00.000Z', answered_at: null },
+      ],
+    }))
+    await ingestRunFixtures(runFixture({
+      id: 9401,
+      session_id: 'sess-c',
+      questions: [
+        { id: 31, run_id: 9401, asked_at: '2026-09-04T19:00:00.000Z', answered_at: '2026-09-04T19:20:00.000Z' },
+      ],
+    }))
+
+    const row = db().query(
+      `SELECT answered_at FROM question WHERE question_id = 31`,
+    ).get() as { answered_at: string }
+    expect(row.answered_at).toBe('2026-09-04T19:20:00.000Z')
+    expect(listOpenRulings().filter((item) => item.session_id === 'sess-c')).toEqual([])
+  })
+
+  test('rulings payload defaults stale_after to 1h', () => {
+    expect(rulingsStaleAfter()).toBe('1h')
+    expect(rulingsPayload(Date.parse('2026-09-04T20:00:00.000Z')).stale_after).toBe('1h')
   })
 })
 

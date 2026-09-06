@@ -741,7 +741,7 @@ function usage(): never {
   orch runs [--id ID]... [--job X] [--agent Y] [--limit N] [--unscored] [--since ISO] [--json]
       --id queries exactly those run ids; repeat it for a union of ids
       --id and --since cannot be combined
-      --json                    print one JSON object per line, with cwd and session id: the interface hub reads
+      --json                    print one JSON object per line, with cwd, session id and questions: the interface hub reads
   orch stats [--job X]          success rate per agent per job
   orch guide [--job X] [--prompt-bytes N]
                                 what to use for what, separated by prompt-size bucket
@@ -3472,9 +3472,20 @@ switch (cmd) {
            FROM run WHERE id = ? OR parent_run_id = ?
           ORDER BY turn, id`,
       ).all(Number(r.id), Number(r.id)) : undefined
+      const questions = json ? (db().query(
+        `SELECT q.id, q.run_id, q.asked_at, q.answered_at
+           FROM question q JOIN run owner ON owner.id = q.run_id
+          WHERE owner.id = ? OR owner.parent_run_id = ?
+          ORDER BY q.id`,
+      ).all(Number(r.id), Number(r.id)) as {
+        id: number; run_id: number; asked_at: string; answered_at: string | null
+      }[]).map((q) => ({
+        id: q.id, run_id: q.run_id, asked_at: q.asked_at, answered_at: q.answered_at ?? null,
+      })) : undefined
       return [{
         ...r, ...current,
         ...(turns ? { turns } : {}),
+        ...(questions ? { questions } : {}),
         answer_agent: final.agent,
         failover_chain: chain.attempts.map((attempt) => attempt.agent),
       }]
