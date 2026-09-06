@@ -3,7 +3,8 @@ import { Database } from 'bun:sqlite'
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { applySchema } from './db.ts'
+import { applySchema, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP,
+  REVIEW_REPRODUCED } from './db.ts'
 import { composeWorkflow, exportWorkflows, forkWorkflow, getWorkflowStep, importWorkflows,
   listWorkflows, promoteWorkflow, retireWorkflow, setWorkflow, showWorkflow,
   validateWorkflowDefinition, workflowVersions, type WorkflowDefinition } from './workflows.ts'
@@ -70,7 +71,7 @@ describe('workflow versions and composition', () => {
 })
 
 describe('workflow projection and seeds', () => {
-  test('seeds are idempotent, valid, and ship composes in order',()=>{const d=database();applySchema(d);expect(listWorkflows(d).filter((w)=>['ship','filed-issue'].includes(w.slug)).length).toBe(2);for(const slug of ['ship','filed-issue'])expect(validateWorkflowDefinition(showWorkflow(slug,1,d).definition)).toEqual([]);expect(workflowVersions('ship',d)[0]!.events.map((event:any)=>event.event)).toEqual(['set']);expect(composeWorkflow('ship','default',{key:'DEV-257',branch:'x',worktree:'/tmp/x'},d).steps.map((s)=>s.slug)).toEqual(['rebase','lens','score','record','triage','complete','fix','land','close'])})
+  test('seeds are idempotent, valid, and ship composes in order',()=>{const d=database();applySchema(d);expect(listWorkflows(d).filter((w)=>['ship','filed-issue'].includes(w.slug)).length).toBe(2);for(const slug of ['ship','filed-issue'])expect(validateWorkflowDefinition(showWorkflow(slug,1,d).definition)).toEqual([]);expect(workflowVersions('ship',d)[0]!.events.map((event:any)=>event.event)).toEqual(['set']);expect(composeWorkflow('ship','default',{key:'DEV-257',branch:'x',worktree:'/tmp/x'},d).steps.map((s)=>s.slug)).toEqual(['rebase','lens','score','triage','complete','fix','land','close']);const score=getWorkflowStep('ship','score',{key:'DEV-257',branch:'x',worktree:'/tmp/x'},d).body;for(const vocabulary of [REVIEW_REPRODUCED,REVIEW_COVERAGE,REVIEW_LIMITS,REVIEW_OVERLAP])expect(score).toContain(`<${vocabulary.join('|')}>`);expect(score).toContain('Grading records the lens on the review');expect(score).toContain('no separate record step')})
   test('export is byte-identical and import writes drafts',()=>{const d=database();const dir=mkdtempSync(join(tmpdir(),'workflow-export-'));temps.push(dir);exportWorkflows(dir,d);const snapshot=(root:string)=>readdirSync(root,{recursive:true}).filter((p)=>statSync(join(root,String(p))).isFile()).sort().map((p)=>[p,readFileSync(join(root,String(p)),'utf8')]);const once=snapshot(dir);exportWorkflows(dir,d);expect(snapshot(dir)).toEqual(once);const target=database();importWorkflows(dir,'round trip','a',target);expect(showWorkflow('ship',2,target).status).toBe('draft')})
 })
 
