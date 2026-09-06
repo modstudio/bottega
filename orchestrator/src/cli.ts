@@ -2249,7 +2249,8 @@ switch (cmd) {
         console.log(`monitor ${row.id}  ${row.started_at}  ${row.trigger}  ${row.findings} found, ${row.errors} errors`)
         for (const condition of row.conditions) {
           const old = condition.age_ms == null ? 'age unknown' : `${Math.round(condition.age_ms / 60_000)}m old`
-          console.log(`  ${condition.kind}  ${condition.subject}  ${old}  ${condition.action}`)
+          const sev = condition.severity ? `  ${condition.severity}` : ''
+          console.log(`  ${condition.kind}${sev}  ${condition.subject}  ${old}  ${condition.action}`)
         }
       }
       break
@@ -2262,7 +2263,8 @@ switch (cmd) {
         lines.push(`monitor ${result.id}: ${result.conditions.length} condition(s), ${result.errors.length} observation error(s)`)
         for (const condition of result.conditions) {
           const old = condition.ageMs == null ? 'age unknown' : `${Math.round(condition.ageMs / 60_000)}m old`
-          lines.push(`  ${condition.kind}  ${condition.subject}  ${old}\n    ${condition.detail}\n    ${condition.action}${condition.issueKey ? `; ${condition.issueKey}` : ''}`)
+          const sev = condition.severity ? `  ${condition.severity}` : ''
+          lines.push(`  ${condition.kind}${sev}  ${condition.subject}  ${old}\n    ${condition.detail}\n    ${condition.action}${condition.issueKey ? `; ${condition.issueKey}` : ''}`)
         }
         for (const error of result.errors) console.error(`  observation failed: ${error}`)
       }

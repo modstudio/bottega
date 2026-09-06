@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { db, nowIso, pidAlive, SESSION_LIVE_MS, UNSCORED_WHERE } from './db.ts'
+import { db, nowIso, pidAlive, UNSCORED_WHERE, type MonitorSeverity } from './db.ts'
 import { fileIssue } from './mcp.ts'
 import { gitLocks } from './git-locks.ts'
 import { projects } from './projects.ts'
@@ -19,6 +19,7 @@ export type MonitorCondition = {
   action: string
   issueKey?: string | null
   affectedProject?: string
+  severity?: MonitorSeverity | null
 }
 
 export type MonitorResult = {
@@ -95,7 +96,7 @@ type HubRulingsPayload = {
   questions?: HubRuling[]
 }
 
-/** Report tasks waiting on a ruling longer than hub's `rulings.stale_after`. It does not answer. */
+/** Report every open question once. `rulings.stale_after` sets severity, not count. */
 export function rulingConditions(clock = Date.now()): { conditions: MonitorCondition[]; errors: string[] } {
   const p = Bun.spawnSync([HUB, 'rulings', '--json'], { stdout: 'pipe', stderr: 'pipe' })
   if (p.exitCode !== 0) {
@@ -113,7 +114,7 @@ export function rulingConditions(clock = Date.now()): { conditions: MonitorCondi
   const conditions = payload.questions.flatMap((row): MonitorCondition[] => {
     if (typeof row.question_id !== 'number' || !Number.isFinite(row.question_id)) return []
     const ageMs = age(row.asked_at, clock)
-    if (ageMs == null || ageMs < threshold) return []
+    if (ageMs == null) return []
     const task = row.task_key ?? '(untracked)'
     const session = row.session_id ?? 'unknown'
     return [{
@@ -121,8 +122,9 @@ export function rulingConditions(clock = Date.now()): { conditions: MonitorCondi
       subject: `question:${row.question_id}`,
       since: row.asked_at,
       ageMs,
-      detail: `task ${task} waiting on a ruling; session ${session}`,
+      detail: `task ${task} waiting on a ruling; session ${session}; ${elapsedDetail(ageMs)}`,
       action: 'reported; it does not answer',
+      severity: ageMs >= threshold ? 'attention' : 'informational',
     }]
   }).sort((a, b) => a.detail.localeCompare(b.detail) || a.subject.localeCompare(b.subject))
   return { conditions, errors: [] }
@@ -209,19 +211,11 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
   const add = (condition: Omit<MonitorCondition, 'ageMs'> & { ageMs?: number | null }) =>
     conditions.push({ ...condition, ageMs: condition.ageMs ?? age(condition.since, clock) })
 
-  const cutoff = new Date(clock - SESSION_LIVE_MS).toISOString()
-  const questions = database.query(
-    `SELECT q.id, q.run_id, q.asked_at, r.session_id, r.status, s.last_seen
-       FROM question q JOIN run r ON r.id=q.run_id
-       LEFT JOIN session_seen s ON s.session_id=r.session_id
-      WHERE q.answered_at IS NULL`,
-  ).all() as { id: number; run_id: number; asked_at: string; session_id: string | null; status: string; last_seen: string | null }[]
-  for (const q of questions) add({ kind: 'unanswered-question', subject: `question:${q.id}`,
-    since: q.asked_at, detail: `run ${q.run_id} is ${q.status}; owning session ${q.session_id ?? 'unknown'} is ${q.last_seen && q.last_seen >= cutoff ? 'live' : 'gone or unobserved'}`,
-    action: 'reported; v1 has no safe session-addressed delivery channel' })
-
   const asking = database.query(
-    `SELECT id, started_at, session_id FROM run WHERE status='asking'`,
+    `SELECT id, started_at, session_id FROM run WHERE status='asking'
+      AND NOT EXISTS (
+        SELECT 1 FROM question q WHERE q.run_id = run.id AND q.answered_at IS NULL
+      )`,
   ).all() as { id: number; started_at: string; session_id: string | null }[]
   for (const run of asking) add({ kind: 'asking-run', subject: `run:${run.id}`, since: run.started_at,
     detail: `run ${run.id} is waiting on a ruling; session ${run.session_id ?? 'unknown'}`,
@@ -323,11 +317,11 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
 
   const insert = database.query(
     `INSERT INTO monitor_condition
-      (invocation_id,kind,subject,condition_since,age_ms,detail,action,issue_key)
-     VALUES (?,?,?,?,?,?,?,?)`,
+      (invocation_id,kind,subject,condition_since,age_ms,detail,action,issue_key,severity)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
   )
   for (const c of conditions) insert.run(invocation, c.kind, c.subject, c.since, c.ageMs,
-    c.detail, c.action, c.issueKey ?? null)
+    c.detail, c.action, c.issueKey ?? null, c.severity ?? null)
 
   const unavailable = conditions.filter((c) => c.kind === 'detector-unavailable' || c.kind === 'dead-lock')
   for (const condition of unavailable) {
@@ -362,7 +356,8 @@ export function monitorHistory(limit = 20): unknown[] {
   return db().query(
     `SELECT i.*, (SELECT json_group_array(json_object(
        'kind',c.kind,'subject',c.subject,'condition_since',c.condition_since,
-       'age_ms',c.age_ms,'detail',c.detail,'action',c.action,'issue_key',c.issue_key
+       'age_ms',c.age_ms,'detail',c.detail,'action',c.action,'issue_key',c.issue_key,
+       'severity',c.severity
      )) FROM monitor_condition c WHERE c.invocation_id=i.id) conditions
        FROM monitor_invocation i ORDER BY i.id DESC LIMIT ?`,
   ).all(limit).map((row: any) => ({ ...row, conditions: JSON.parse(row.conditions ?? '[]') }))

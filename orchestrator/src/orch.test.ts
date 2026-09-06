@@ -1334,7 +1334,8 @@ describe('operational monitor record', () => {
       const old = condition.age_ms == null
         ? 'age unknown'
         : `${Math.round(condition.age_ms / 60_000)}m old`
-      lines.push(`  ${condition.kind}  ${condition.subject}  ${old}\n    ${condition.detail}\n    ${condition.action}${condition.issue_key ? `; ${condition.issue_key}` : ''}`)
+      const sev = condition.severity ? `  ${condition.severity}` : ''
+      lines.push(`  ${condition.kind}${sev}  ${condition.subject}  ${old}\n    ${condition.detail}\n    ${condition.action}${condition.issue_key ? `; ${condition.issue_key}` : ''}`)
     }
     const expected = Buffer.from(`${lines.join('\n')}\n`)
     expect(expected.byteLength).toBeGreaterThan(65_536)
@@ -1433,12 +1434,22 @@ describe('operational monitor record', () => {
     try {
       const clock = Date.parse('2026-09-04T20:00:00.000Z')
       expect(rulingConditions(clock)).toEqual({
-        conditions: [expect.objectContaining({
-          kind: 'task-waiting-on-ruling', subject: 'question:11',
-          since: '2026-09-04T18:00:00.000Z', ageMs: 7_200_000,
-          detail: 'task DEV-215 waiting on a ruling; session sess-1',
-          action: 'reported; it does not answer',
-        })],
+        conditions: [
+          expect.objectContaining({
+            kind: 'task-waiting-on-ruling', subject: 'question:12',
+            severity: 'informational',
+            since: '2026-09-04T19:30:00.000Z', ageMs: 1_800_000,
+            detail: 'task DEV-1 waiting on a ruling; session sess-2; elapsed 30m',
+            action: 'reported; it does not answer',
+          }),
+          expect.objectContaining({
+            kind: 'task-waiting-on-ruling', subject: 'question:11',
+            severity: 'attention',
+            since: '2026-09-04T18:00:00.000Z', ageMs: 7_200_000,
+            detail: 'task DEV-215 waiting on a ruling; session sess-1; elapsed 2.0h',
+            action: 'reported; it does not answer',
+          }),
+        ],
         errors: [],
       })
     } finally { spawn.mockRestore() }
@@ -1489,8 +1500,79 @@ describe('operational monitor record', () => {
     }) as unknown as typeof Bun.spawnSync)
     try {
       const result = await monitor('invoked', Date.parse('2026-09-04T20:00:00.000Z'))
-      expect(result.conditions.filter((c) => c.kind === 'task-waiting-on-ruling').map((c) => c.subject))
-        .toEqual(['question:201', 'question:202'])
+      expect(result.conditions.filter((c) => c.kind === 'task-waiting-on-ruling').map((c) => c.subject)
+        .sort()).toEqual(['question:201', 'question:202'])
+    } finally { spawn.mockRestore() }
+  })
+
+  test('one open question is one condition, escalated at the rulings threshold', async () => {
+    const runId = addRun({
+      agent: 'codex', job: 'implement', status: 'asking', session: 'sess-1',
+      startedAt: '2026-09-04T19:30:00.000Z',
+    })
+    db().query('INSERT INTO question (id, run_id, asked_at, question) VALUES (?,?,?,?)')
+      .run(2000, runId, '2026-09-04T19:30:00.000Z', 'which way?')
+    const clock = Date.parse('2026-09-04T20:00:00.000Z')
+    const payload = (staleAfter: string) => JSON.stringify({
+      stale_after: staleAfter,
+      questions: [{
+        question_id: 2000, task_key: 'DEV-215', session_id: 'sess-1',
+        asked_at: '2026-09-04T19:30:00.000Z', age: 1_800_000,
+      }],
+    })
+    const spawnFor = (staleAfter: string) => spyOn(Bun, 'spawnSync').mockImplementation(((cmd: string[]) => {
+      const argv = cmd.map(String)
+      if (argv.includes('rulings')) {
+        return { exitCode: 0, stdout: Buffer.from(payload(staleAfter)),
+          stderr: Buffer.from(''), success: true }
+      }
+      return { exitCode: 0, stdout: Buffer.from(''), stderr: Buffer.from(''), success: true }
+    }) as unknown as typeof Bun.spawnSync)
+    const related = (result: { conditions: { kind: string; subject: string }[] }) =>
+      result.conditions.filter((c) =>
+        c.kind === 'task-waiting-on-ruling' || c.kind === 'unanswered-question' ||
+        c.kind === 'asking-run' || c.subject === 'question:2000' || c.subject === `run:${runId}`)
+
+    const young = spawnFor('1h')
+    try {
+      const result = await monitor('invoked', clock)
+      expect(related(result)).toEqual([expect.objectContaining({
+        kind: 'task-waiting-on-ruling', subject: 'question:2000',
+        severity: 'informational', ageMs: 1_800_000,
+        detail: 'task DEV-215 waiting on a ruling; session sess-1; elapsed 30m',
+        action: 'reported; it does not answer',
+      })])
+    } finally { young.mockRestore() }
+
+    const late = spawnFor('10m')
+    try {
+      const result = await monitor('invoked', clock)
+      expect(related(result)).toEqual([expect.objectContaining({
+        kind: 'task-waiting-on-ruling', subject: 'question:2000',
+        severity: 'attention', ageMs: 1_800_000,
+        detail: 'task DEV-215 waiting on a ruling; session sess-1; elapsed 30m',
+        action: 'reported; it does not answer',
+      })])
+    } finally { late.mockRestore() }
+  })
+
+  test('an asking run with no open question is still asking-run', async () => {
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'asking', session: 'sess-recover' })
+    const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((cmd: string[]) => {
+      const argv = cmd.map(String)
+      if (argv.includes('rulings')) {
+        return { exitCode: 0, stdout: Buffer.from(JSON.stringify({ stale_after: '1h', questions: [] })),
+          stderr: Buffer.from(''), success: true }
+      }
+      return { exitCode: 0, stdout: Buffer.from(''), stderr: Buffer.from(''), success: true }
+    }) as unknown as typeof Bun.spawnSync)
+    try {
+      const result = await monitor('invoked')
+      expect(result.conditions.filter((c) => c.kind === 'asking-run')).toEqual([
+        expect.objectContaining({ subject: `run:${id}` }),
+      ])
+      expect(result.conditions.some((c) => c.kind === 'task-waiting-on-ruling')).toBe(false)
+      expect(result.conditions.some((c) => c.kind === 'unanswered-question')).toBe(false)
     } finally { spawn.mockRestore() }
   })
 

@@ -20,11 +20,13 @@ export const REVIEW_COVERAGE = ['empty', 'partial', 'adequate'] as const
 export const REVIEW_LIMITS = ['named', 'absent'] as const
 export const REVIEW_OVERLAP = ['unique', 'shared', 'none', 'alone'] as const
 export const REVIEW_SEVERITY = ['critical', 'high', 'medium', 'low'] as const
+export const MONITOR_SEVERITY = ['informational', 'attention'] as const
 export type ReviewReproduced = typeof REVIEW_REPRODUCED[number]
 export type ReviewCoverage = typeof REVIEW_COVERAGE[number]
 export type ReviewLimits = typeof REVIEW_LIMITS[number]
 export type ReviewOverlap = typeof REVIEW_OVERLAP[number]
 export type ReviewSeverity = typeof REVIEW_SEVERITY[number]
+export type MonitorSeverity = typeof MONITOR_SEVERITY[number]
 
 const sqlValues = (values: readonly string[]) => values.map((value) => `'${value}'`).join(',')
 
@@ -284,6 +286,8 @@ export function applySchema(d: Database): void {
   // A completed target task must keep its provenance. NULL is still active;
   // an ISO timestamp is resolved, so absence never has to stand for completion.
   addColumn(d, 'port_ref', 'resolved_at', 'TEXT')
+  addColumn(d, 'monitor_condition', 'severity',
+    `TEXT CHECK (severity IS NULL OR severity IN (${sqlValues(MONITOR_SEVERITY)}))`)
   // Runs AFTER every addColumn, so the rebuilt table carries the whole current
   // column set rather than whatever migrate() happened to declare.
   ensureCanonicalSchema(d)
@@ -1022,6 +1026,7 @@ function migrate(d: Database) {
       detail           TEXT NOT NULL,
       action           TEXT NOT NULL,
       issue_key        TEXT,
+      severity         TEXT CHECK (severity IS NULL OR severity IN (${sqlValues(MONITOR_SEVERITY)})),
       UNIQUE(invocation_id, kind, subject)
     );
     CREATE INDEX IF NOT EXISTS monitor_condition_kind
