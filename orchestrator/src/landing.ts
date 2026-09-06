@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -38,9 +38,7 @@ export function gateFailureSummary(
   ].join('\n')
 }
 
-function gateOutputPaths(project: string): {
-  directory: string; output: string; stdout: string; stderr: string
-} {
+function gateOutputPaths(project: string): { directory: string; output: string } {
   const safeProject = project.replace(/[^a-zA-Z0-9._-]+/g, '-')
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
   const directory = join(tmpdir(), `orch-gate-${safeProject}-${timestamp}-${randomUUID()}`)
@@ -48,8 +46,6 @@ function gateOutputPaths(project: string): {
   return {
     directory,
     output: join(directory, 'output.log'),
-    stdout: join(directory, 'stdout.log'),
-    stderr: join(directory, 'stderr.log'),
   }
 }
 
@@ -233,36 +229,27 @@ function runGate(
   const contentBefore = contentTree(worktree)
   console.log(`gate ${project.name}: ${gate}`)
   const outputPaths = gateOutputPaths(project.name)
-  const stdoutPipe = join(outputPaths.directory, 'stdout.pipe')
-  const stderrPipe = join(outputPaths.directory, 'stderr.pipe')
+  const outputPipe = join(outputPaths.directory, 'output.pipe')
   const capture = [
-    'mkfifo "$2" "$3"',
-    'tee "$4" <"$2" & stdout_tee=$!',
-    'tee "$5" <"$3" >&2 & stderr_tee=$!',
-    'sh -lc "$1" >"$2" 2>"$3"; status=$?',
+    'mkfifo "$2"',
+    'tee "$3" <"$2" & output_tee=$!',
+    'sh -lc "$1" >"$2" 2>&1; status=$?',
     'attempts=0',
-    'while [ "$attempts" -lt 50 ] && ' +
-      '(kill -0 "$stdout_tee" 2>/dev/null || kill -0 "$stderr_tee" 2>/dev/null); do',
+    'while [ "$attempts" -lt 50 ] && kill -0 "$output_tee" 2>/dev/null; do',
     '  sleep 0.1',
     '  attempts=$((attempts + 1))',
     'done',
-    'for tee_pid in "$stdout_tee" "$stderr_tee"; do',
-    '  if kill -0 "$tee_pid" 2>/dev/null; then kill -9 "$tee_pid" 2>/dev/null; fi',
-    '  wait "$tee_pid" 2>/dev/null || true',
-    'done',
+    'if kill -0 "$output_tee" 2>/dev/null; then kill -9 "$output_tee" 2>/dev/null; fi',
+    'wait "$output_tee" 2>/dev/null || true',
     'exit "$status"',
   ].join('\n')
   const p = Bun.spawnSync([
-    'sh', '-c', capture, 'orch-gate-capture', gate, stdoutPipe, stderrPipe,
-    outputPaths.stdout, outputPaths.stderr,
+    'sh', '-c', capture, 'orch-gate-capture', gate, outputPipe, outputPaths.output,
   ], {
     cwd: worktree, env: { ...process.env, ...guard }, stdout: 'inherit', stderr: 'inherit',
   })
   if (p.exitCode !== 0) {
-    const stdout = readFileSync(outputPaths.stdout, 'utf8')
-    const stderr = readFileSync(outputPaths.stderr, 'utf8')
-    const output = stdout + stderr
-    writeFileSync(outputPaths.output, output)
+    const output = readFileSync(outputPaths.output, 'utf8')
     throw new Error(
       `landing gate failed with exit ${p.exitCode}: ${gate}\n` +
       gateFailureSummary(output, outputPaths.output, liveRunCount()),
