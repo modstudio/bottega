@@ -2,8 +2,9 @@ import { db, nowIso } from './db.ts'
 import { projects, type StatusCategory } from './projects.ts'
 import { randomBytes } from 'node:crypto'
 import { runRef } from './reconcile.ts'
+import { TASK_STATUSES, trackerCapabilities } from '../../shared/trackers.ts'
 
-export const TASK_STATUSES = ['open', 'active', 'review', 'done', 'dropped'] as const
+export { TASK_STATUSES }
 
 export type TaskRow = {
   key: string
@@ -238,6 +239,7 @@ export type TaskRun = {
 /** The complete read-only task record used by the dashboard detail sheet. */
 export function taskRecord(key: string) {
   const record = showTask(key)
+  const project = projects().find((candidate) => candidate.name === record.task.project) ?? null
   const documents = record.documents.map((document) => getTaskDocument(document.id))
     .sort((a, b) => Number(b.role === 'handoff') - Number(a.role === 'handoff'))
   const runs = db().query<{
@@ -268,7 +270,8 @@ export function taskRecord(key: string) {
   return {
     task: record.task,
     source: record.task.source,
-    project: projects().find((project) => project.name === record.task.project) ?? null,
+    project,
+    capabilities: trackerCapabilities({ source: record.task.source, project }),
     runs,
     comments: record.comments,
     documents,

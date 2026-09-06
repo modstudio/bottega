@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  createTrackerTask, trackerSourceFor, type ToolCaller, type TrackerProject,
+  CURSOR_CREATE_REFUSAL, GIT_WRITE_REFUSAL, TASK_STATUSES,
+  TRACKER_COMMENT_WRITE_REFUSAL, TRACKER_STATUS_WRITE_REFUSAL,
+  TRACKER_TITLE_WRITE_REFUSAL, UNKNOWN_TRACKER_REFUSAL, WORKSPACE_CREATE_REFUSAL,
+  createTrackerTask, trackerCapabilities, trackerSourceFor,
+  type ToolCaller, type TrackerProject,
 } from '../../../shared/trackers.ts'
 
 const task = { title: 'Move the adapter', body: 'Protocol-neutral body', status: 'todo' }
@@ -98,5 +102,47 @@ describe('tracker source construction', () => {
 
   test('a project with no tracker remains intentionally absent', () => {
     expect(trackerSourceFor(project('untracked'))).toBeNull()
+  })
+})
+
+describe('tracker capabilities', () => {
+  test('local records expose every hub write', () => {
+    expect(trackerCapabilities({ source: 'local', project: project('workshop') })).toEqual({
+      create: true, setStatus: true, setTitle: true, comment: true, documents: true,
+      statusVocabulary: [...TASK_STATUSES], keyFormat: null, reasons: {},
+    })
+  })
+
+  for (const protocol of ['workspace-mcp', 'cursor-mcp', 'array-mcp'] as const) {
+    test(`${protocol} exposes only its evidenced create support`, () => {
+      const capabilities = trackerCapabilities({ source: 'mcp', project: project('external', protocol) })
+      expect(capabilities).toEqual({
+        create: protocol === 'array-mcp',
+        setStatus: false, setTitle: false, comment: false, documents: false,
+        statusVocabulary: ['todo', 'done'], keyFormat: null,
+        reasons: {
+          ...(protocol === 'array-mcp' ? {} : {
+            create: protocol === 'workspace-mcp' ? WORKSPACE_CREATE_REFUSAL : CURSOR_CREATE_REFUSAL,
+          }),
+          setStatus: TRACKER_STATUS_WRITE_REFUSAL,
+          setTitle: TRACKER_TITLE_WRITE_REFUSAL,
+          comment: TRACKER_COMMENT_WRITE_REFUSAL,
+          documents: `Documents are hub-native; this record lives in ${protocol} and carries none.`,
+        },
+      })
+    })
+  }
+
+  test('git and unknown MCP provenance are read-only with their own exact reasons', () => {
+    const git = trackerCapabilities({ source: 'git', project: {
+      name: 'old', settings: { keyPrefixes: ['OLD', 'LEG'] },
+    } })
+    expect(git.keyFormat).toBe('OLD-* | LEG-*')
+    expect(new Set(Object.values(git.reasons))).toEqual(new Set([GIT_WRITE_REFUSAL]))
+
+    const unknown = trackerCapabilities({ source: 'mcp', project: null })
+    expect(unknown.statusVocabulary).toBeNull()
+    expect(unknown.keyFormat).toBeNull()
+    expect(new Set(Object.values(unknown.reasons))).toEqual(new Set([UNKNOWN_TRACKER_REFUSAL]))
   })
 })

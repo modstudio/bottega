@@ -1,5 +1,7 @@
 import { db } from './db.ts'
 import { engagedMs, union, DEFAULT_IDLE_CAP_MS, type Span } from './interval.ts'
+import { projects } from './projects.ts'
+import { trackerCapabilities, type Capabilities, type TrackerRowSource } from '../../shared/trackers.ts'
 
 export type AgentSpend = { agent: string; tokens: number; costUsd: number | null; runs: number }
 
@@ -10,6 +12,8 @@ export type TaskRow = {
   status: string | null
   statusCategory: string | null
   source: string | null
+  sourceProtocol: string | null
+  capabilities: Capabilities | null
   /** Union of every agent's working spans. Never a sum. */
   engagedMs: number
   claudeTokens: number
@@ -141,7 +145,14 @@ export function tasksInWindow(from: string, to: string): TaskRow[] {
       title: m?.title ?? null,
       status: m?.status ?? null,
       statusCategory: m?.status_category ?? null,
-      source: m?.source ?? null,
+      source: m?.source ?? (key ? 'git' : null),
+      sourceProtocol: m?.source === 'mcp'
+        ? projects().find((project) => project.name === m.project)?.settings.tracker?.protocol ?? null
+        : null,
+      capabilities: key ? trackerCapabilities({
+        source: (m?.source ?? 'git') as TrackerRowSource,
+        project: projects().find((project) => project.name === (m?.project ?? list[0]!.project)) ?? null,
+      }) : null,
       engagedMs: engagedMs(spans),
       claudeTokens: list.reduce((s, r) => s + r.claude_tokens, 0),
       vendors: foldVendors(list),
@@ -524,6 +535,8 @@ export type BoardTask = {
   statusCategory: string | null
   /** 'local' is ours to edit; 'mcp' is a tracker's; 'git' was inferred from commits. */
   source: string
+  sourceProtocol: string | null
+  capabilities: Capabilities
   updatedAt: string | null
   /** Whether an agent is working on it right now. */
   workingNow: boolean
@@ -652,6 +665,13 @@ export function boardTasks(windowDays = 14, cap = 250): Board {
       status: r.status,
       statusCategory: r.status_category,
       source: r.source,
+      sourceProtocol: r.source === 'mcp'
+        ? projects().find((project) => project.name === r.project)?.settings.tracker?.protocol ?? null
+        : null,
+      capabilities: trackerCapabilities({
+        source: r.source as TrackerRowSource,
+        project: projects().find((project) => project.name === r.project) ?? null,
+      }),
       updatedAt: r.updated_at ?? r.last_seen,
       workingNow: live.has(r.key),
     })),

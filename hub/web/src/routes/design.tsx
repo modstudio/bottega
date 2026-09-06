@@ -37,10 +37,14 @@ function DesignPage() {
   const [segment, setSegment] = useState('one')
   const [tab, setTab] = useState('one')
   const [dialog, setDialog] = useState(false)
-  const [sheet, setSheet] = useState(false)
+  const [sheet, setSheet] = useState<'hub' | 'mcp' | 'git' | null>(null)
   const [collectionSearch, setCollectionSearch] = useState('')
-  const samples = [{ id: 1, name: 'Inspectable record', state: 'ready' }, { id: 2, name: 'Another record', state: 'resting' }]
-    .filter((row) => row.name.toLowerCase().includes(collectionSearch.toLowerCase()))
+  const samples = [
+    { id: 'hub' as const, key: 'DEV-260', name: 'Local task', source: 'hub', status: 'active', capabilities: 'Title, status, comments, and documents can be edited here.' },
+    { id: 'mcp' as const, key: 'STAR-5364', name: 'Tracker task', source: 'mcp', status: 'In Review → review', capabilities: 'No adapter has proven writes to this tracker; hub refuses to guess a payload.' },
+    { id: 'git' as const, key: 'BET-2533', name: 'Git-derived task', source: 'git', status: 'unknown', capabilities: 'Derived from git history; there is no tracker to write to.' },
+  ].filter((row) => `${row.key} ${row.name} ${row.source}`.toLowerCase().includes(collectionSearch.toLowerCase()))
+  const selectedSample = samples.find((row) => row.id === sheet)
 
   return <section>
     <PageHeader title="Design" subtitle="Hub's inspectable token and component surface" />
@@ -104,12 +108,10 @@ function DesignPage() {
     <SectionTitle>Table</SectionTitle>
     <div className="border border-border"><Table><TableHeader><TableRow><TableHead>Component</TableHead><TableHead>State</TableHead><TableHead className="num">Value</TableHead></TableRow></TableHeader><TableBody><TableRow><TableCell>Table row</TableCell><TableCell><Badge variant="success">ready</Badge></TableCell><TableCell className="num">1,024</TableCell></TableRow><TableRow><TableCell>Quiet row</TableCell><TableCell><Badge variant="outline">resting</Badge></TableCell><TableCell className="num">64</TableCell></TableRow></TableBody></Table></div>
 
-    <SectionTitle>Collection and Sheet</SectionTitle>
-    <Collection title="Sample records" count={samples.length} search={{ query: collectionSearch, onQueryChange: setCollectionSearch }} columns={[{ id: 'name', label: 'Record', render: (row) => <strong>{row.name}</strong> }, { id: 'state', label: 'State', render: (row) => <Badge variant="outline">{row.state}</Badge> }]} rows={samples} getKey={(row) => row.id} onOpen={() => setSheet(true)} empty={{ title: 'No sample records match.' }} />
-    <Button className="mt-3" variant="outline" onClick={() => setSheet(true)}>Open sample Sheet</Button>
-    <Sheet open={sheet} onClose={() => setSheet(false)} title="Inspectable record" subtitle="The collection remains visible and interactive">
-      <DisplayRow label="State" value="ready" />
-      <DisplayRow label="Identifier" value={<Copyable value="DEV-259" />} />
+    <SectionTitle>Heterogeneous records</SectionTitle>
+    <Collection title="Sample records" count={samples.length} search={{ query: collectionSearch, onQueryChange: setCollectionSearch }} columns={[{ id: 'key', label: 'Key', render: (row) => <strong>{row.key}</strong> }, { id: 'name', label: 'Record', render: (row) => row.name }, { id: 'source', label: 'Source', render: (row) => <Badge variant="outline">{row.source}</Badge> }, { id: 'status', label: 'Status', render: (row) => row.status }]} rows={samples} getKey={(row) => row.id} onOpen={(row) => setSheet(row.id)} empty={{ title: 'No sample records match.' }} />
+    <Sheet open={!!selectedSample} onClose={() => setSheet(null)} title={selectedSample?.key ?? 'Sample record'} subtitle={selectedSample?.name}>
+      {selectedSample ? <><DisplayRow label="Source" value={selectedSample.source} /><DisplayRow label="Status" value={selectedSample.status} /><DisplayRow label="Capabilities" value={selectedSample.capabilities} /></> : null}
     </Sheet>
 
     <SectionTitle>Settings and detail grammar</SectionTitle>

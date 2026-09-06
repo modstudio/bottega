@@ -8,6 +8,7 @@ import { cx } from '@/components/cx'
 import { clearFilters, setFilter, setHours, useWindowState, WINDOWS, type WindowHours } from '@/lib/window'
 import { collectedTime, relativeTime } from '@/lib/format'
 import { PROJECT_FALLBACK } from '@/lib/project'
+import { Database, GitCommit, RadioTower } from 'lucide-react'
 
 export function PageHeader({ title, subtitle, subtitleTitle, actions }: { title: ReactNode; subtitle?: ReactNode; subtitleTitle?: string; actions?: ReactNode }) {
   return <header className="page-header">
@@ -34,7 +35,7 @@ export function EmptyState({ title, hint }: { title: string; hint?: string }) {
 
 export function LiveDot() { return <span className="live-dot" aria-label="Running" /> }
 
-function Filter({ kind, label, options, onOpenChange }: { kind: 'project' | 'agent'; label: string; options: string[]; onOpenChange?: (open: boolean) => void }) {
+function Filter({ kind, label, options, onOpenChange }: { kind: 'project' | 'agent' | 'source'; label: string; options: string[]; onOpenChange?: (open: boolean) => void }) {
   const { filters } = useWindowState()
   const value = filters[kind]
   // A filter narrows with the window, so the applied value can leave its own
@@ -51,10 +52,10 @@ export function Segmented({ value, options, onChange, label }: { value: string; 
   return <div className="segmented" role="group" aria-label={label}>{options.map((option) => <button key={option.value} type="button" aria-pressed={value === option.value} onClick={() => onChange(option.value)}>{option.label}</button>)}</div>
 }
 
-export function WindowBar({ projects = [], agents = [], filters = true, onOpenChange }: { projects?: string[]; agents?: string[]; filters?: boolean; onOpenChange?: (open: boolean) => void }) {
+export function WindowBar({ projects = [], agents = [], sources, filters = true, onOpenChange }: { projects?: string[]; agents?: string[]; sources?: string[]; filters?: boolean; onOpenChange?: (open: boolean) => void }) {
   const state = useWindowState()
   return <div className="window-bar">
-    {filters ? <><Filter kind="project" label="All projects" options={projects} onOpenChange={onOpenChange} /><Filter kind="agent" label="All agents" options={agents} onOpenChange={onOpenChange} />{state.filters.project || state.filters.agent ? <Button variant="ghost" size="sm" onClick={clearFilters}>Clear filters</Button> : null}</> : null}
+    {filters ? <><Filter kind="project" label="All projects" options={projects} onOpenChange={onOpenChange} /><Filter kind="agent" label="All agents" options={agents} onOpenChange={onOpenChange} />{sources ? <Filter kind="source" label="All sources" options={sources} onOpenChange={onOpenChange} /> : null}{state.filters.project || state.filters.agent || (sources && state.filters.source) ? <Button variant="ghost" size="sm" onClick={clearFilters}>Clear filters</Button> : null}</> : null}
     <Segmented label="Time window" value={String(state.hours)} options={WINDOWS.map((hours) => ({ value: String(hours), label: hours === 168 ? '7d' : hours === 720 ? '30d' : `${hours}h` }))} onChange={(value) => setHours(Number(value) as WindowHours)} />
   </div>
 }
@@ -96,4 +97,16 @@ export function ProjectMark({ name, colors: suppliedColors }: { name: string | n
   const queriedColors = useProjectColors(!suppliedColors)
   const colors = suppliedColors ?? queriedColors
   return <span className="proj" style={projectVars(colors, name)}>{name || PROJECT_FALLBACK}</span>
+}
+
+export function SourceMark({ source, project, protocol }: {
+  source: string | null | undefined
+  project?: string | null
+  protocol?: string | null
+}) {
+  const title = source === 'local' ? 'hub'
+    : source === 'git' ? 'git · derived from history'
+      : `${project ?? 'external'} · ${protocol ?? 'tracker protocol unknown'}`
+  const Icon = source === 'local' ? Database : source === 'git' ? GitCommit : RadioTower
+  return <span className="inline-flex items-center" title={title} aria-label={title}><Icon size={13} /></span>
 }

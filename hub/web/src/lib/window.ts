@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 
 export type WindowHours = 24 | 48 | 168 | 720
-export type WorkFilters = { agent: string; project: string }
+export type WorkFilters = { agent: string; project: string; source: string }
 export type WorkCounts = { flight: number; done: number; runs: number }
 
 type WindowState = {
@@ -12,7 +12,7 @@ type WindowState = {
 
 const listeners = new Set<() => void>()
 const validHours: readonly number[] = [24, 48, 168, 720]
-let state: WindowState = { hours: 48, filters: { agent: '', project: '' }, counts: null }
+let state: WindowState = { hours: 48, filters: { agent: '', project: '', source: '' }, counts: null }
 
 try {
   const hours = Number(localStorage.getItem('hub-hours'))
@@ -23,6 +23,7 @@ try {
     filters: {
       agent: typeof saved.agent === 'string' ? saved.agent : '',
       project: typeof saved.project === 'string' ? saved.project : '',
+      source: typeof saved.source === 'string' ? saved.source : '',
     },
   }
 } catch {
@@ -46,7 +47,7 @@ export function setFilter(key: keyof WorkFilters, value: string) {
 }
 
 export function clearFilters() {
-  state = { ...state, filters: { agent: '', project: '' } }
+  state = { ...state, filters: { agent: '', project: '', source: '' } }
   try { localStorage.setItem('hub-run-filters', JSON.stringify(state.filters)) } catch { /* optional */ }
   emit()
 }

@@ -211,6 +211,8 @@ const shapeTask = (r: ReturnType<typeof tasksInWindow>[number]) => ({
   status: r.status,
   statusCategory: r.statusCategory,
   source: r.source,
+  sourceProtocol: r.sourceProtocol,
+  capabilities: r.capabilities,
   engaged: human(r.engagedMs),
   engagedMs: r.engagedMs,
   claudeTokens: r.claudeTokens,
@@ -252,10 +254,10 @@ function runsFor(key: string | null, project: string | null, from: string, to: s
   return { runs }
 }
 
-type RunFilters = { agent: string; project: string }
+type RunFilters = { agent: string; project: string; source?: string }
 
 export async function view(name: View, hours: number,
-                   f: RunFilters = { agent: '', project: '' }) {
+                   f: RunFilters = { agent: '', project: '', source: '' }) {
   const from = hoursAgo(hours)
   const to = nowIso()
 
@@ -266,8 +268,12 @@ export async function view(name: View, hours: number,
     // panel that explains the absences - so filtering later would leave the
     // page explaining why fourteen tasks from one project are missing from a table the
     // reader has just restricted to another project.
-    const rows = f.project ? all.filter((r) => r.project === f.project) : all
+    const rows = all.filter((r) =>
+      (!f.project || r.project === f.project)
+      && (!f.source || (f.source === 'hub' ? r.source === 'local'
+        : r.source !== 'local' && r.project === f.source)))
     const closedHere = new Set(completedInWindow(from, to).map((c) => c.key))
+    const unmapped = rows.filter((r) => r.source === 'mcp' && !!r.status && !r.statusCategory)
 
     // IN FLIGHT: being worked on right now, or marked active in the tracker.
     //
@@ -338,10 +344,20 @@ export async function view(name: View, hours: number,
       [...new Set(xs.filter((x): x is string => !!x))].sort()
     return {
       rows: keep, dropped,
+      unmappedStatuses: {
+        count: unmapped.length,
+        words: [...new Set(unmapped.map((row) => row.status!))].sort(),
+      },
       filters: f, matched: keep.length,
       facets: {
         projects: uniqT(all.map((r) => r.project)),
         agents: uniqT(shaped.flatMap((r) => (r.runs || []).map((x) => x.agent))),
+        sources: [...new Set([
+          'hub',
+          ...projects().filter((project) => project.settings.tracker).map((project) => project.name),
+          ...all.filter((row) => row.source !== 'local')
+            .map((row) => row.project).filter((value): value is string => !!value),
+        ])].sort(),
       },
     }
   }
@@ -370,7 +386,10 @@ export async function view(name: View, hours: number,
      * has to know which they can act on here.
      */
     const b = boardTasks()
-    const rows = f.project ? b.cards.filter((c) => c.project === f.project) : b.cards
+    const rows = b.cards.filter((c) =>
+      (!f.project || c.project === f.project)
+      && (!f.source || (f.source === 'hub' ? c.source === 'local'
+        : c.source !== 'local' && c.project === f.source)))
     /**
      * Facets from the REGISTER, not from the cards.
      *
@@ -394,6 +413,12 @@ export async function view(name: View, hours: number,
         ...projectNames(),
         ...Object.keys(b.totals.project).filter((p) => p !== 'elsewhere'),
       ])].sort() as string[],
+      sources: [...new Set([
+        'hub',
+        ...projects().filter((project) => project.settings.tracker).map((project) => project.name),
+        ...b.cards.filter((card) => card.source !== 'local')
+          .map((card) => card.project).filter((value): value is string => !!value),
+      ])].sort(),
     }
     return {
       cards: rows,
@@ -404,7 +429,7 @@ export async function view(name: View, hours: number,
       cap: b.cap,
       // What a project filter is hiding, so the totals above stay honest about
       // being estate-wide while the columns show one project.
-      scoped: Boolean(f.project),
+      scoped: Boolean(f.project || f.source),
       filters: f,
       facets,
     }

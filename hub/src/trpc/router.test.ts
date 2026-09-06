@@ -86,6 +86,40 @@ describe('work.task', () => {
     await expect(router.createCaller({}).task({ key: 'DEV-404' }))
       .rejects.toMatchObject({ code: 'NOT_FOUND', message: 'no task DEV-404' })
   })
+
+  test('each local write mutation preserves the non-local refusal', async () => {
+    const refusal = () => { throw new Error('task EXT-1 is not local') }
+    const router = createWorkRouter({
+      strip: fakeStrip, view: fakeView,
+      setTask: refusal as never,
+      commentTask: refusal as never,
+      updateTaskDocument: refusal as never,
+    })
+    const writes = router.createCaller({})
+    await expect(writes.setStatus({ key: 'EXT-1', status: 'active' })).rejects.toThrow('task EXT-1 is not local')
+    await expect(writes.setTitle({ key: 'EXT-1', title: 'No' })).rejects.toThrow('task EXT-1 is not local')
+    await expect(writes.comment({ key: 'EXT-1', body: 'No' })).rejects.toThrow('task EXT-1 is not local')
+    await expect(writes.setDocument({ id: 1, title: 'No', body: 'No', version: 'old' })).rejects.toThrow('task EXT-1 is not local')
+  })
+
+  test('a stale document reports both versions without retrying the write', async () => {
+    let writes = 0
+    const router = createWorkRouter({
+      strip: fakeStrip, view: fakeView,
+      updateTaskDocument: (() => {
+        writes++
+        throw new Error('task document 1 changed since version old; read it again')
+      }) as never,
+      getTaskDocument: (() => ({ version: 'new' })) as never,
+    })
+    await expect(router.createCaller({}).setDocument({
+      id: 1, title: 'Draft', body: 'Kept text', version: 'old',
+    })).rejects.toMatchObject({
+      code: 'CONFLICT',
+      message: 'This document changed since you opened it (version old → new). Reload to see the current version; your edit was not saved.',
+    })
+    expect(writes).toBe(1)
+  })
 })
 
 describe('doc router', () => {

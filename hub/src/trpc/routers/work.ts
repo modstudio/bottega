@@ -2,7 +2,9 @@ import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { strip, view } from '../../serve.ts'
 import type { Context } from '../context.ts'
-import { taskRecord } from '../../task.ts'
+import {
+  commentTask, getTaskDocument, setTask, taskRecord, updateTaskDocument,
+} from '../../task.ts'
 
 const t = initTRPC.context<Context>().create()
 
@@ -11,6 +13,7 @@ const input = z.object({
   filters: z.object({
     agent: z.string().max(64),
     project: z.string().max(64),
+    source: z.string().max(64),
   }),
 })
 
@@ -18,11 +21,21 @@ type ViewData = Awaited<ReturnType<typeof view>>
 type TaskData = Extract<ViewData, { dropped: unknown }>
 type BoardData = Extract<ViewData, { cards: unknown }>
 
-export function createWorkRouter(deps: {
+type WorkDeps = {
   strip: typeof strip
   view: typeof view
   taskRecord: typeof taskRecord
-} = { strip, view, taskRecord }) {
+  setTask: typeof setTask
+  commentTask: typeof commentTask
+  getTaskDocument: typeof getTaskDocument
+  updateTaskDocument: typeof updateTaskDocument
+}
+
+export function createWorkRouter(given: Partial<WorkDeps> = {}) {
+  const deps: WorkDeps = {
+    strip, view, taskRecord, setTask, commentTask, getTaskDocument, updateTaskDocument,
+    ...given,
+  }
   const taskView = (name: 'flight' | 'done') =>
     t.procedure.input(input).query(async ({ input: value }) => ({
       ...deps.strip(value.hours),
@@ -36,6 +49,36 @@ export function createWorkRouter(deps: {
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause)
       if (message.startsWith('no task ')) throw new TRPCError({ code: 'NOT_FOUND', message })
+      throw cause
+    }
+  }),
+  setStatus: t.procedure.input(z.object({
+    key: z.string().min(1).max(64),
+    status: z.enum(['open', 'active', 'review', 'done', 'dropped']),
+  })).mutation(({ input: value }) => deps.setTask(value.key, { status: value.status })),
+  setTitle: t.procedure.input(z.object({
+    key: z.string().min(1).max(64), title: z.string().trim().min(1).max(500),
+  })).mutation(({ input: value }) => deps.setTask(value.key, { title: value.title })),
+  comment: t.procedure.input(z.object({
+    key: z.string().min(1).max(64), body: z.string().trim().min(1),
+  })).mutation(({ input: value }) => deps.commentTask(value.key, value.body)),
+  setDocument: t.procedure.input(z.object({
+    id: z.number().int().positive(), title: z.string().trim().min(1).max(500),
+    body: z.string(), version: z.string().min(1),
+  })).mutation(({ input: value }) => {
+    try {
+      return deps.updateTaskDocument(value.id, {
+        title: value.title, body: value.body, expectedVersion: value.version,
+      })
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause)
+      if (message.includes(`changed since version ${value.version}`)) {
+        const current = deps.getTaskDocument(value.id)
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: `This document changed since you opened it (version ${value.version} \u2192 ${current.version}). Reload to see the current version; your edit was not saved.`,
+        })
+      }
       throw cause
     }
   }),

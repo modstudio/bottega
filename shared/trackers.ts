@@ -1,4 +1,5 @@
 export type StatusCategory = 'open' | 'active' | 'review' | 'done' | 'dropped'
+export const TASK_STATUSES = ['open', 'active', 'review', 'done', 'dropped'] as const
 
 export type TrackerSettings = {
   kind?: string
@@ -15,6 +16,92 @@ export type TrackerProject = {
     envPrefix?: string
     tracker?: TrackerSettings
     [key: string]: unknown
+  }
+}
+
+export type TrackerRowSource = 'local' | 'mcp' | 'git'
+export type CapabilityName = 'create' | 'setStatus' | 'setTitle' | 'comment' | 'documents'
+export type Capabilities = {
+  create: boolean
+  setStatus: boolean
+  setTitle: boolean
+  comment: boolean
+  documents: boolean
+  statusVocabulary: string[] | null
+  keyFormat: string | null
+  reasons: Partial<Record<CapabilityName, string>>
+}
+
+export const WORKSPACE_CREATE_REFUSAL =
+  'workspace-mcp create refused: the status field differs between evidenced tool schemas'
+export const CURSOR_CREATE_REFUSAL =
+  'cursor-mcp create refused: required projectId has no value in the tracker register'
+export const TRACKER_STATUS_WRITE_REFUSAL =
+  'No adapter has proven a status write to this tracker; hub refuses to guess a payload.'
+export const TRACKER_TITLE_WRITE_REFUSAL =
+  'No adapter has proven a title write to this tracker; hub refuses to guess a payload.'
+export const TRACKER_COMMENT_WRITE_REFUSAL =
+  'No adapter has proven a comment write to this tracker; hub refuses to guess a payload.'
+export const GIT_WRITE_REFUSAL = 'Derived from git history; there is no tracker to write to.'
+export const UNKNOWN_TRACKER_REFUSAL =
+  "This record's project is not registered on this machine (or declares no tracker protocol), so hub cannot establish what its tracker accepts."
+
+const keyFormat = (project: TrackerProject | null): string | null => {
+  const prefixes = project?.settings.keyPrefixes
+  return Array.isArray(prefixes) && prefixes.length
+    ? prefixes.map((prefix) => `${prefix}-*`).join(' | ')
+    : null
+}
+
+/** Protocol facts for one served row. Unknown provenance stays readable and read-only. */
+export function trackerCapabilities({ source, project }: {
+  source: TrackerRowSource
+  project: TrackerProject | null
+}): Capabilities {
+  if (source === 'local') {
+    return {
+      create: true, setStatus: true, setTitle: true, comment: true, documents: true,
+      statusVocabulary: [...TASK_STATUSES],
+      keyFormat: keyFormat(project), reasons: {},
+    }
+  }
+  if (source === 'git') {
+    return {
+      create: false, setStatus: false, setTitle: false, comment: false, documents: false,
+      statusVocabulary: null, keyFormat: keyFormat(project),
+      reasons: Object.fromEntries(
+        ['create', 'setStatus', 'setTitle', 'comment', 'documents']
+          .map((name) => [name, GIT_WRITE_REFUSAL]),
+      ) as Capabilities['reasons'],
+    }
+  }
+
+  const protocol = project?.settings.tracker?.protocol
+  if (!protocol || !['workspace-mcp', 'cursor-mcp', 'array-mcp'].includes(protocol)) {
+    return {
+      create: false, setStatus: false, setTitle: false, comment: false, documents: false,
+      statusVocabulary: null, keyFormat: null,
+      reasons: Object.fromEntries(
+        ['create', 'setStatus', 'setTitle', 'comment', 'documents']
+          .map((name) => [name, UNKNOWN_TRACKER_REFUSAL]),
+      ) as Capabilities['reasons'],
+    }
+  }
+  const create = protocol === 'array-mcp'
+  return {
+    create, setStatus: false, setTitle: false, comment: false, documents: false,
+    statusVocabulary: project?.settings.tracker?.states
+      ? Object.keys(project.settings.tracker.states)
+      : null,
+    keyFormat: keyFormat(project),
+    reasons: {
+      ...(!create ? { create: protocol === 'workspace-mcp'
+        ? WORKSPACE_CREATE_REFUSAL : CURSOR_CREATE_REFUSAL } : {}),
+      setStatus: TRACKER_STATUS_WRITE_REFUSAL,
+      setTitle: TRACKER_TITLE_WRITE_REFUSAL,
+      comment: TRACKER_COMMENT_WRITE_REFUSAL,
+      documents: `Documents are hub-native; this record lives in ${protocol} and carries none.`,
+    },
   }
 }
 
@@ -319,16 +406,12 @@ export async function createTrackerTask(
     // The two readable workspace-mcp schemas disagree: one accepts `status`,
     // while the other accepts `task_status_id`. Sending either for the protocol
     // as a whole would guess which server is behind the connection.
-    throw new Error(
-      'workspace-mcp create refused: the status field differs between evidenced tool schemas',
-    )
+    throw new Error(WORKSPACE_CREATE_REFUSAL)
   }
   if (tracker.protocol === 'cursor-mcp') {
     // Its tool schema requires projectId; the register carries no tracker field
     // from which that UUID can be obtained.
-    throw new Error(
-      'cursor-mcp create refused: required projectId has no value in the tracker register',
-    )
+    throw new Error(CURSOR_CREATE_REFUSAL)
   }
   if (tracker.protocol === 'array-mcp') {
     // The reflected task.create schema establishes these names; the MCP bridge

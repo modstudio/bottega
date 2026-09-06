@@ -24,6 +24,8 @@ const { commentTask, createTask, createTaskDocument, duplicateCandidates, duplic
 const { chainVendorTokens, executionSpans, ingestRuns } = await import('./ingest/runs.ts')
 const { listOpenRulings, rulingsPayload, rulingsStaleAfter } = await import('./rulings.ts')
 const { runsSince } = await import('./collect.ts')
+const { boardTasks } = await import('./query.ts')
+const { view } = await import('./serve.ts')
 
 process.on('exit', () => {
   try { rmSync(testDir, { recursive: true, force: true }) } catch {}
@@ -951,6 +953,9 @@ describe('local task tracker', () => {
     expect(result.task).toMatchObject({ key: task.key, title: 'Inspectable task' })
     expect(result.source).toBe('local')
     expect(result.project?.name).toBe('workshop')
+    expect(result.capabilities).toMatchObject({
+      setStatus: true, setTitle: true, comment: true, documents: true,
+    })
     expect(result.comments).toEqual([comment])
     expect(result.documents.map((document) => document.id)).toEqual([handoff.id, ordinary.id])
     expect(result.documents[0]?.body).toBe('# Handoff')
@@ -961,6 +966,39 @@ describe('local task tracker', () => {
     expect(taskRecord(task.key).task.key).toBe(task.key)
   })
 
+})
+
+describe('heterogeneous work rows', () => {
+  test('row assembly attaches capabilities and the source filter narrows before serving', async () => {
+    const local = createTask({ project: 'workshop', title: 'Source-filter local row' })
+    upsertTrackerTask({
+      key: 'ALP-999', project: 'alpha', title: 'Source-filter external row',
+      status: 'started', category: 'active', updatedAt: null, assignee: null,
+    })
+    const now = new Date().toISOString()
+    for (const [key, project] of [[local.key, 'workshop'], ['ALP-999', 'alpha']] as const) {
+      db().query(
+        `INSERT INTO interval
+          (task_key, project, source, start_at, end_at, ref, open)
+         VALUES (?, ?, 'claude', ?, ?, ?, 1)`,
+      ).run(key, project, now, now, `filter:${key}`)
+    }
+
+    const hub = await view('flight', 24, { agent: '', project: '', source: 'hub' }) as {
+      rows: { key: string; capabilities: { setTitle: boolean } }[]
+    }
+    expect(hub.rows.length).toBeGreaterThan(0)
+    expect(hub.rows.every((row) => row.capabilities.setTitle)).toBeTrue()
+
+    const external = await view('flight', 24, { agent: '', project: '', source: 'alpha' }) as {
+      rows: { key: string; capabilities: { setTitle: boolean } }[]
+    }
+    expect(external.rows.length).toBeGreaterThan(0)
+    expect(external.rows.every((row) => !row.capabilities.setTitle)).toBeTrue()
+
+    expect(boardTasks().cards.find((card) => card.key === 'ALP-999')?.capabilities)
+      .toMatchObject({ create: false, setStatus: false, statusVocabulary: ['started', 'completed'] })
+  })
 })
 
 describe('attribute()', () => {
