@@ -2192,11 +2192,15 @@ export async function run(opts: {
     : { watched: [], failures: [] }
   const sampledBefore = sampleCheckouts(candidates.watched)
   const skipped = [...candidates.failures, ...sampledBefore.failures]
-  for (const failure of skipped) {
-    console.error(
-      `confinement watch skipped ${failure.project} at ${failure.path}: ${failure.error}; ` +
-      'fix the register with orch project set',
-    )
+  // A detached child's stderr reaches nobody, so the skip also rides the output
+  // header that `orch result` prints (lens run 2290): the register is stale and
+  // the project unwatched on every later run until somebody reads this.
+  const skipLines = skipped.map((failure) =>
+    `confinement watch skipped ${failure.project} at ${failure.path}: ${failure.error}; ` +
+    'fix the register with orch project set')
+  for (const line of skipLines) console.error(line)
+  if (skipLines.length) {
+    mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${skipLines.join('\n')}` : skipLines.join('\n')
   }
   const beforeSample = { snapshots: sampledBefore.snapshots, failures: [] }
   const watchedCheckouts = beforeSample.snapshots.map(({ project, path }) => ({ project, path }))

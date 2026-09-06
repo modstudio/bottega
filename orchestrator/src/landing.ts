@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -672,8 +672,15 @@ function authorizeLanding(
           AND (worktree IS NOT NULL OR branch_kept=?)
         ORDER BY id DESC`,
     ).all(project.name, branch, branch) as { id: number; worktree: string | null }[]
+    // Both spellings are canonicalised: a recorded /var/... against porcelain's
+    // /private/var/... refused the unique current owner (lens run 2290).
+    const realOrNull = (path: string): string | null => {
+      try { return realpathSync(path) } catch { return null }
+    }
+    const landingReal = realOrNull(worktree)
     const owners = recorded.filter((candidate) => {
-      if (!candidate.worktree || candidate.worktree !== worktree) return false
+      if (!candidate.worktree || landingReal === null) return false
+      if (realOrNull(candidate.worktree) !== landingReal) return false
       try {
         return git(candidate.worktree, ['rev-parse', '--verify', 'HEAD^{commit}']) === tip
       } catch {
@@ -682,7 +689,8 @@ function authorizeLanding(
     })
     if (recorded.length && owners.length !== 1) {
       throw new Error(
-        `cannot resolve the owning chain of ${branch}; land by run id, or discard the stale chains`,
+        `cannot resolve the owning chain of ${branch} (runs ${recorded.map((row) => row.id).join(', ')}); ` +
+        'orch land <run id>, or discard the stale chains',
       )
     }
     rootId = owners[0]?.id ?? null
