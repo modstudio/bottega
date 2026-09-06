@@ -15,4 +15,3 @@ export const DUPLICATE_TITLE_FIXTURE = Object.fromEntries(
   Object.entries(DUPLICATE_TITLE_FIXTURE_RAW)
     .map(([key, title]) => [key, title.replaceAll('__PLATFORM__', PLATFORM_SLUG)]),
 ) as Record<keyof typeof DUPLICATE_TITLE_FIXTURE_RAW, string>
-
