@@ -18,6 +18,7 @@ import { pick } from './route.ts'
 import { db, nowIso, DB_PATH, sessionId, resolveRootFromLastTurn, writableDb } from './db.ts'
 import {
   createWorktree, createWithTool, toolFor, changesIn, repoRootOf, resolveBase, worktreeGitDir,
+  createCommandExists,
   prepareWorktreeObjects, prepareSharedRefGuard, worktreeGitEnvironment, carryWorkingState,
   workerSharedGitRoots,
   contentTree,
@@ -384,13 +385,17 @@ export function preflight(
   if (lens && !/^[a-z0-9][a-z0-9-]{0,63}$/.test(lens)) {
     throw new Error(`lens "${lens}" must be a lowercase stable id of at most 64 characters`)
   }
-  if (jobName === 'review-lens' && repoRootOf(cwd) === null) {
+  const repoRoot = repoRootOf(cwd)
+  if (jobName === 'review-lens' && repoRoot === null) {
     throw new Error(
       `a review lens reads a change, and ${cwd} is not inside a git checkout, so there is no change to read.\n` +
       `Run it from the checkout that holds the change.`,
     )
   }
   if (!j.needs.readsRepo) return seed
+  if (repoRoot === null) {
+    throw new Error(`${jobName} reads a repository and ${cwd} is not a git checkout`)
+  }
   // A key is required whenever a NEW worktree's branch template names it. A
   // caller-selected seed is required only for a writing job's new worktree. A
   // read-only job still passes a project-declared `none` explicitly: it is the
@@ -446,6 +451,14 @@ export function preflight(
     )
   }
   if (problems.length) throw new Error(problems.join('\n'))
+  if (project && tool?.create && !createCommandExists(tool.create, project.path)) {
+    const command = typeof tool.create === 'object' && 'command' in tool.create
+      ? tool.create.command
+      : 'sh'
+    throw new Error(
+      `project ${project.name} worktree create command ${command} is absent or not executable`,
+    )
+  }
   if (tool?.create && !seedAlreadyValidated) validateSeedWithTool(cwd, effectiveSeed)
   return effectiveSeed
 }

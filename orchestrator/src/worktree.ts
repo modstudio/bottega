@@ -23,10 +23,10 @@
  */
 import { accessSync, appendFileSync, closeSync, constants, cpSync, existsSync,
          fchmodSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync,
-         realpathSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+         realpathSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, delimiter, dirname, join, resolve } from 'node:path'
 import { db, pidAlive, ROOT } from './db.ts'
 import { createHasPlaceholder, projectAt, type WorktreeCreate, type WorktreeTool } from './projects.ts'
 import { runRecipe, teardownRecipe, dbNameFor, type Recipe } from './recipe.ts'
@@ -951,7 +951,25 @@ export function fillTool(template: string, vars: Record<string, string>): string
 export function resolveBase(cwd: string, ref: string): string {
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
-  return git(['rev-parse', '--verify', ref], repoRoot)
+  return git(['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`], repoRoot)
+}
+
+function executableFile(path: string): boolean {
+  try {
+    accessSync(path, constants.X_OK)
+    return statSync(path).isFile()
+  } catch {
+    return false
+  }
+}
+
+/** Resolve a structured create command exactly as its direct spawn will. */
+export function createCommandExists(create: WorktreeCreate | string, repoRoot: string): boolean {
+  if (typeof create === 'string' || !('command' in create)) return true
+  const command = create.command
+  if (command.includes('/')) return executableFile(resolve(repoRoot, command))
+  return (process.env.PATH ?? '').split(delimiter).some((entry) =>
+    executableFile(resolve(repoRoot, entry || '.', command)))
 }
 
 /** The project's own worktree tool, if it declared one. */
@@ -979,6 +997,9 @@ export function validateSeedWithTool(cwd: string, seed?: string): void {
   const repoRoot = project?.path
   if (!repoRoot) return
   const worktreeTool = join(repoRoot, 'scripts', 'worktree')
+  // This legacy resolver probe stays deliberately optional. Dispatch command
+  // availability is enforced separately in preflight; changing this silent
+  // return would make seed resolution a new required capability.
   if (!existsSync(worktreeTool)) return
 
   const usage = Bun.spawnSync([worktreeTool], {

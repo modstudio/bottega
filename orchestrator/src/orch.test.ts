@@ -6647,6 +6647,19 @@ describe('detached run collection', () => {
     ])
     return { code, out, err }
   }
+  const dispatchArtifacts = (cwd: string) => {
+    const root = repoRootOf(cwd) ?? cwd
+    const trees = join(root, '.claude', 'worktrees')
+    return {
+      runs: (db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n,
+      prompts: existsSync(RUNS_DIR) ? readdirSync(RUNS_DIR).sort() : [],
+      lock: existsSync(join(root, '.git', 'orch-landing.lock')),
+      worktrees: existsSync(trees) ? readdirSync(trees).sort() : null,
+    }
+  }
+  const expectNoDispatchArtifacts = (cwd: string, before: ReturnType<typeof dispatchArtifacts>) => {
+    expect(dispatchArtifacts(cwd)).toEqual(before)
+  }
 
   test('every --json surface has an enumerated and pinned output contract', () => {
     const monitorDb = join(dir, 'json-contract-orch.db')
@@ -6869,6 +6882,7 @@ describe('detached run collection', () => {
       git(repo, 'add', '.')
       git(repo, 'commit', '-m', 'fixture base')
       const requested = git(repo, 'rev-parse', 'HEAD')
+      git(repo, 'tag', '-a', 'requested-tag', '-m', 'fixture tag', requested)
       writeFileSync(join(repo, 'tracked.txt'), 'later\n')
       git(repo, 'commit', '-am', 'fixture later')
       writeFileSync(join(binDir, 'codex'), '#!/bin/sh\nprintf answer\n')
@@ -6880,7 +6894,7 @@ describe('detached run collection', () => {
 
       const launched = Bun.spawnSync([
         process.execPath, CLI, 'do', 'fix', 'apply the correction', '--agent', 'codex',
-        '--key', 'DEV-173', '--base', requested, '--porcelain',
+        '--key', 'DEV-173', '--base', 'requested-tag', '--porcelain',
       ], {
         cwd: repo, stdout: 'pipe', stderr: 'pipe', env: {
           ...hermeticGitEnv(), PATH: `${binDir}:${process.env.PATH ?? ''}`,
@@ -6932,12 +6946,12 @@ describe('detached run collection', () => {
         },
       },
     })
-    const before = (db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n
+    const before = dispatchArtifacts(process.cwd())
     const r = orch('do', 'implement', 'make the change', '--porcelain')
     expect(r.code).not.toBe(0)
     expect(r.out).toBe('')
     expect(r.err).toContain('this project requires a database size')
-    expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before)
+    expectNoDispatchArtifacts(process.cwd(), before)
   })
 
   test('a missing branch key exits before git and does not claim a run', () => {
@@ -6945,7 +6959,7 @@ describe('detached run collection', () => {
       name: PLATFORM_SLUG, path: process.cwd(),
       settings: { worktree: { recipe: {}, branch: '{key}-orch-{id}' } },
     })
-    const before = (db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n
+    const before = dispatchArtifacts(process.cwd())
     const r = orch('do', 'diagnose', 'find the cause', '--porcelain')
 
     expect(r.code).not.toBe(0)
@@ -6955,7 +6969,30 @@ describe('detached run collection', () => {
       `not invent one.\n  --key <KEY-123>`,
     )
     expect(r.err).not.toContain('git worktree')
-    expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before)
+    expectNoDispatchArtifacts(process.cwd(), before)
+  })
+
+  test('every repository-reading job refuses a non-git cwd without dispatch artifacts', () => {
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), 'orch-reads-no-git-')))
+    try {
+      for (const [name, definition] of Object.entries(JOBS)) {
+        if (!definition.needs.readsRepo) continue
+        const before = dispatchArtifacts(outside)
+        const extra = definition.findings ? ['--lens', 'preflight'] : []
+        const r = orchFrom(outside, 'orch-test-session', 'do', name, 'inspect', ...extra)
+        expect(r.code, name).not.toBe(0)
+        if (name === 'review-lens') {
+          expect(r.err, name).toContain('a review lens reads a change')
+        } else {
+          expect(r.err, name).toContain(
+            `${name} reads a repository and ${outside} is not a git checkout`,
+          )
+        }
+        expectNoDispatchArtifacts(outside, before)
+      }
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
   })
 
   test('orch do accepts every documented starship seed spelling before execution', () => {
@@ -7203,7 +7240,7 @@ describe('detached run collection', () => {
       name: 'drift-dispatch', path: repo,
       settings: {
         trunk: 'main',
-        worktree: { create: declaredCreate('scripts/worktree', ['create', '{branch}']), branch: 'task/{id}' },
+        worktree: { recipe: { baseRef: 'origin/main' }, branch: 'task/{id}' },
       },
     })
     const tree = git(['rev-parse', 'HEAD^{tree}'])
@@ -8283,6 +8320,7 @@ describe('detached run collection', () => {
         },
       },
     })
+    const before = dispatchArtifacts(process.cwd())
     const r = orch(
       'do', 'implement', '--base', 'HEAD', '--file', '/definitely/not/a/prompt',
     )
@@ -8292,7 +8330,125 @@ describe('detached run collection', () => {
       '{"command":"scripts/worktree","args":["create","{branch}"]} has no {base} slot',
     )
     expect(r.err).not.toContain('ENOENT')
-    expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(0)
+    expectNoDispatchArtifacts(process.cwd(), before)
+  })
+
+  test('non-commit bases are refused before every dispatch artifact', () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-non-commit-base-')))
+    const git = (cwd: string, ...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    try {
+      git(repo, 'init', '-b', 'main')
+      git(repo, 'config', 'user.email', 'orch-test@example.invalid')
+      git(repo, 'config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'tracked.txt'), 'fixture\n')
+      git(repo, 'add', '.')
+      git(repo, 'commit', '-m', 'fixture')
+      upsertProject({
+        name: 'commit-bases-only', path: repo, canon: false,
+        settings: { worktree: { recipe: {}, branch: 'task/{id}' } },
+      })
+      const refs: [string, string][] = [
+        ['0123456789012345678901234567890123456789', 'Needed a single revision'],
+        [git(repo, 'rev-parse', 'HEAD^{tree}'), 'tree'],
+        [git(repo, 'hash-object', 'tracked.txt'), 'blob'],
+      ]
+      for (const [ref, kind] of refs) {
+        const before = dispatchArtifacts(repo)
+        const r = orchFrom(
+          repo, 'orch-test-session', 'do', 'implement', 'inspect', '--base', ref, '--porcelain',
+        )
+        expect(r.code, ref).not.toBe(0)
+        expect(r.err, ref).toContain(ref)
+        expect(r.err, ref).toContain(kind)
+        expectNoDispatchArtifacts(repo, before)
+      }
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('create commands must exist and be executable before dispatch', () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-create-command-')))
+    const binDir = mkdtempSync(join(tmpdir(), 'orch-create-command-bin-'))
+    const git = (cwd: string, ...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+    }
+    const invoke = (args: string[], extraEnv: Record<string, string> = {}) => {
+      const p = Bun.spawnSync([process.execPath, CLI, ...args], {
+        cwd: repo, env: {
+          ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: 'orch-test-session', ...extraEnv,
+        },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      return { code: p.exitCode, out: p.stdout.toString(), err: p.stderr.toString() }
+    }
+    try {
+      git(repo, 'init', '-b', 'main')
+      git(repo, 'config', 'user.email', 'orch-test@example.invalid')
+      git(repo, 'config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'tracked.txt'), 'fixture\n')
+      git(repo, 'add', '.')
+      git(repo, 'commit', '-m', 'fixture')
+      const create = (command: string) => upsertProject({
+        name: 'create-command', path: repo, canon: false,
+        settings: {
+          worktree: {
+            create: declaredCreate(command, ['create', '{branch}', '{base}']), branch: 'task/{id}',
+          },
+        },
+      })
+
+      for (const args of [[], ['--base', 'HEAD']]) {
+        create('scripts/missing-worktree')
+        const before = dispatchArtifacts(repo)
+        const r = orchFrom(repo, 'orch-test-session', 'do', 'implement', 'inspect', ...args)
+        expect(r.code).not.toBe(0)
+        expect(r.err).toContain(
+          'project create-command worktree create command scripts/missing-worktree is absent or not executable',
+        )
+        expectNoDispatchArtifacts(repo, before)
+      }
+
+      mkdirSync(join(repo, 'scripts'))
+      writeFileSync(join(repo, 'scripts', 'not-executable'), '#!/bin/sh\n')
+      create('scripts/not-executable')
+      const nonExecutableBefore = dispatchArtifacts(repo)
+      const nonExecutable = orchFrom(repo, 'orch-test-session', 'do', 'implement', 'inspect')
+      expect(nonExecutable.code).not.toBe(0)
+      expect(nonExecutable.err).toContain('scripts/not-executable is absent or not executable')
+      expectNoDispatchArtifacts(repo, nonExecutableBefore)
+
+      writeFileSync(join(binDir, 'present-worktree'), '#!/bin/sh\nexit 0\n')
+      chmodSync(join(binDir, 'present-worktree'), 0o755)
+      create('present-worktree')
+      const pathEnv = { PATH: `${binDir}:${process.env.PATH ?? ''}` }
+      const present = invoke([
+        'do', 'implement', '--file', '/definitely/not/a/prompt', '--base', 'HEAD',
+      ], pathEnv)
+      expect(present.code).not.toBe(0)
+      expect(present.err).toContain('/definitely/not/a/prompt')
+      expect(present.err).not.toContain('absent or not executable')
+
+      create('missing-from-path')
+      const bareBefore = dispatchArtifacts(repo)
+      const absentBare = invoke(['do', 'implement', 'inspect'], pathEnv)
+      expect(absentBare.code).not.toBe(0)
+      expect(absentBare.err).toContain('missing-from-path is absent or not executable')
+      expectNoDispatchArtifacts(repo, bareBefore)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(binDir, { recursive: true, force: true })
+    }
   })
 
   test('project set refuses incomplete resulting settings without saving them', () => {
@@ -10618,7 +10774,7 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
   })
 
   test('preflight refuses a create command without a branch template', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-no-branch-'))
+    const { repo } = scratchRepo()
     upsertProject({
       name: 'no-branch', path: repo,
       settings: { worktree: { create: declaredCreate('scripts/worktree', ['create', '{branch}']) } },
@@ -10653,7 +10809,7 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
   })
 
   test('preflight refuses shell metacharacters in a key', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-bad-key-'))
+    const { repo } = scratchRepo()
     upsertProject({
       name: 'bad-key', path: repo,
       settings: { worktree: { recipe: {}, branch: '{key}-orch-{id}' } },
@@ -10664,12 +10820,12 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
   })
 
   test('preflight reports missing key and seed together', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-missing-arguments-'))
+    const { repo } = scratchRepo()
     upsertProject({
       name: 'missing-arguments', path: repo,
       settings: {
         worktree: {
-          create: declaredCreate('scripts/worktree', ['create', '{branch}', '{seed}']), branch: '{key}-orch-{id}',
+          create: declaredCreate(process.execPath, ['create', '{branch}', '{seed}']), branch: '{key}-orch-{id}',
           seeds: ['small', 'full'],
         },
       },
@@ -10705,7 +10861,7 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
       name: 'read-only-arguments', path: repo,
       settings: {
         worktree: {
-          create: declaredCreate('scripts/worktree', ['create', '{branch}', '{seed}']), branch: '{key}-orch-{id}',
+          create: declaredCreate(process.execPath, ['create', '{branch}', '{seed}']), branch: '{key}-orch-{id}',
           seeds: ['none', 'small', 'full'],
         },
       },
@@ -10751,7 +10907,7 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
     const { repo } = scratchRepo()
     upsertProject({
       name: 'read-only-unseeded', path: repo,
-      settings: { worktree: { create: declaredCreate('scripts/worktree', ['create', '{branch}']), branch: 'task/{id}' } },
+      settings: { worktree: { create: declaredCreate(process.execPath, ['create', '{branch}']), branch: 'task/{id}' } },
     })
     expect(fromRoot(() => preflight(
       'review-lens', repo, undefined, undefined, undefined, false, false, 'safety',
@@ -10857,7 +11013,7 @@ appendFileSync(process.env.CAPTURE, JSON.stringify({
   })
 
   test('preflight refuses a create placeholder without --seed even when no seeds are listed', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-no-seed-'))
+    const { repo } = scratchRepo()
     upsertProject({
       name: 'no-seed', path: repo,
       settings: { worktree: { create: declaredCreate('scripts/worktree', ['create', '{seed}']), branch: 'task/{id}' } },
@@ -10869,7 +11025,7 @@ appendFileSync(process.env.CAPTURE, JSON.stringify({
   })
 
   test('preflight passes a project-specific seed spec intact to the project resolver', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-custom-seed-'))
+    const { repo } = scratchRepo()
     mkdirSync(join(repo, 'scripts'), { recursive: true })
     const received = join(repo, 'received-seed')
     const tool = join(repo, 'scripts', 'worktree')
@@ -10926,7 +11082,7 @@ exit 1
   })
 
   test('a scalar seed argument keeps the seed as one resolve argv', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-quoted-seed-'))
+    const { repo } = scratchRepo()
     mkdirSync(join(repo, 'scripts'), { recursive: true })
     const received = join(repo, 'received-seed')
     const tool = join(repo, 'scripts', 'worktree')
@@ -10957,6 +11113,7 @@ exit 1
 
   test('a resolver refusal happens before a run row or worktree can exist', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-rejected-seed-'))
+    git(repo, 'init', '-b', 'main')
     mkdirSync(join(repo, 'scripts'), { recursive: true })
     const created = join(repo, 'create-ran')
     const tool = join(repo, 'scripts', 'worktree')
@@ -10992,7 +11149,7 @@ touch "${created}"
   })
 
   test('a resolver failure is not treated as a successful check', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-unchecked-seed-'))
+    const { repo } = scratchRepo()
     mkdirSync(join(repo, 'scripts'), { recursive: true })
     const tool = join(repo, 'scripts', 'worktree')
     writeFileSync(tool, `#!/bin/sh
@@ -11012,7 +11169,7 @@ exit 1
   })
 
   test('a project whose worktree tool exposes no resolver still accepts its seed', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-no-resolver-'))
+    const { repo } = scratchRepo()
     mkdirSync(join(repo, 'scripts'), { recursive: true })
     const tool = join(repo, 'scripts', 'worktree')
     writeFileSync(tool, `#!/bin/sh
@@ -11029,12 +11186,12 @@ echo 'Usage: scripts/worktree create [seed]'
   })
 
   test('preflight accepts a branch template and a listed seed', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-good-tool-'))
+    const { repo } = scratchRepo()
     upsertProject({
       name: 'good-tool', path: repo,
       settings: {
         worktree: {
-          create: declaredCreate('scripts/worktree', ['create', '{branch}', '{seed}']), branch: 'task/{id}',
+          create: declaredCreate(process.execPath, ['create', '{branch}', '{seed}']), branch: 'task/{id}',
           seeds: ['small', 'full'],
         },
       },
