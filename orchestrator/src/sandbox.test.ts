@@ -91,6 +91,14 @@ describe('readonly-lens sandbox profile', () => {
     })).toThrow('a registered secret path cannot be inside the worktree')
   })
 
+  test('a registered secret inside the runs directory refuses', () => {
+    expect(() => readonlyLensProfile({
+      worktree: '/runs/tree', runsDir: '/runs/evidence', agent: 'grok',
+      project: fixtureProject({ secretPaths: ['/runs/evidence/private/token'] }),
+      path: '/usr/bin', nodeModuleLinks: [],
+    })).toThrow('a registered secret path cannot be inside the run directory')
+  })
+
   test('the srt argv helper owns settings persistence and wrapper grammar', () => {
     const dir = mkdtempSync(join(tmpdir(), 'orch-srt-profile-'))
     const path = join(dir, 'settings.json')

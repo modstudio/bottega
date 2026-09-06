@@ -122,6 +122,11 @@ export function readonlyLensProfile(input: {
         `readonly-lens sandbox refusal: a registered secret path cannot be inside the worktree (${denied})`,
       )
     }
+    if (isAtOrBelow(denied, runsDir)) {
+      throw new Error(
+        `readonly-lens sandbox refusal: a registered secret path cannot be inside the run directory (${denied})`,
+      )
+    }
     if (isAtOrBelow(runsDir, denied)) {
       throw new Error(
         `readonly-lens sandbox refusal: a registered secret path cannot contain the run directory (${denied})`,
