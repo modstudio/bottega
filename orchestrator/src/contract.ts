@@ -375,6 +375,12 @@ example, that the work is taking a different shape than the spec implies and you
 are carrying on within it. Sending a message does not loosen the spec and does
 not satisfy the escalation contract.
 
+FILING FINDINGS
+
+Writing and reading workers may file actionable defects and suggestions with
+file_issue. File a finding there when one is available; do not leave it only as
+a mailbox note, where it depends on somebody reading this run to be discovered.
+
 IF THE SPEC IS SIMPLY WRONG
 
 Return status "refused" and say why. Do not implement something you believe is
@@ -744,6 +750,10 @@ deliverable, not your diff: every change you make here is scratch work and must
 never be treated as a proposed change to land. Do not commit, push, or merge.
 
 ${INFRASTRUCTURE_RECOVERY}
+
+You may file actionable defects and suggestions with file_issue. File a finding
+there when one is available; do not leave it only as a mailbox note, where it
+depends on somebody reading this run to be discovered.
 `.trim()
 
 /** Jobs whose whole input is inline do not pay for or claim a repository tree. */

@@ -141,15 +141,7 @@ export async function serveAsk(): Promise<void> {
    * bounds an accident and a casual misuse, not a determined local attacker,
    * who can read the environment of a process they already own.
    */
-  const authorised = (): boolean => {
-    if (!runId) return false
-    const row = db().query('SELECT run_token FROM run WHERE id = ?').get(runId) as
-      { run_token: string | null } | null
-    if (!row) return false
-    // A run recorded before tokens existed has none; those still work, because
-    // refusing them would break every in-flight worker on upgrade.
-    return !row.run_token || row.run_token === token
-  }
+  const authorised = (): boolean => authenticatedWorkerRun(runId, token)
 
   const send = (msg: unknown) => { process.stdout.write(`${JSON.stringify(msg)}\n`) }
   const reply = (id: unknown, result: unknown) => send({ jsonrpc: '2.0', id, result })
@@ -305,4 +297,15 @@ export async function serveAsk(): Promise<void> {
       }
     }
   }
+}
+
+/** The single authentication check for tools acting as an orch worker. */
+export function authenticatedWorkerRun(runId: number, token: string): boolean {
+  if (!runId) return false
+  const row = db().query('SELECT run_token FROM run WHERE id = ?').get(runId) as
+    { run_token: string | null } | null
+  if (!row) return false
+  // A run recorded before tokens existed has none; those still work, because
+  // refusing them would break every in-flight worker on upgrade.
+  return !row.run_token || row.run_token === token
 }

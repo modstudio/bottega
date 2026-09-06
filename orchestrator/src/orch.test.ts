@@ -4723,6 +4723,14 @@ describe('job contracts are visible before submission', () => {
     expect(schemaInstruction).toBe(paragraphInstruction)
   })
 
+  test('writing and reading workers file findings instead of leaving only mailbox notes', () => {
+    for (const preamble of [WORKER_PREAMBLE, READONLY_PREAMBLE]) {
+      expect(preamble).toContain('file_issue')
+      expect(preamble).toContain('do not leave it only as')
+      expect(preamble).toContain('a mailbox note')
+    }
+  })
+
   test('contract prints the same preamble selected when a job is bound', () => {
     for (const [name, definition] of Object.entries(JOBS)) {
       const r = contract(name)
@@ -20294,8 +20302,12 @@ describe('scoped operator docs', () => {
     const hubDb = join(dir, 'file-issue-hub.db')
     const priorHubDb = process.env.HUB_DB
     const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+    const priorRunId = process.env.ORCH_RUN_ID
+    const priorRunToken = process.env.ORCH_RUN_TOKEN
     process.env.HUB_DB = hubDb
     process.env.CLAUDE_CODE_SESSION_ID = 'reporting-test-session'
+    process.env.ORCH_RUN_ID = '999999'
+    process.env.ORCH_RUN_TOKEN = 'not-a-worker-token'
     upsertProject({
       name: PLATFORM_SLUG, path: join(dir, 'registered-outside-cwd'), stack: 'typescript', canon: true,
       settings: { keyPrefixes: ['DEV'] },
@@ -20369,6 +20381,10 @@ describe('scoped operator docs', () => {
       else process.env.HUB_DB = priorHubDb
       if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
       else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+      if (priorRunId === undefined) delete process.env.ORCH_RUN_ID
+      else process.env.ORCH_RUN_ID = priorRunId
+      if (priorRunToken === undefined) delete process.env.ORCH_RUN_TOKEN
+      else process.env.ORCH_RUN_TOKEN = priorRunToken
     }
   })
 
@@ -20423,15 +20439,18 @@ describe('scoped operator docs', () => {
   test('MCP file_issue derives worker provenance from the authenticated run environment', async () => {
     const hubDb = join(dir, 'worker-file-issue-hub.db')
     const priorHubDb = process.env.HUB_DB
+    const priorSession = process.env.CLAUDE_CODE_SESSION_ID
     const priorRunId = process.env.ORCH_RUN_ID
     const priorRunToken = process.env.ORCH_RUN_TOKEN
     process.env.HUB_DB = hubDb
+    delete process.env.CLAUDE_CODE_SESSION_ID
     upsertProject({
       name: PLATFORM_SLUG, path: process.cwd(), stack: 'typescript', canon: true,
       settings: { keyPrefixes: ['DEV'] },
     })
     const runId = addRun({ agent: 'codex', job: 'implement' })
-    db().query('UPDATE run SET run_token=? WHERE id=?').run('worker-file-token', runId)
+    db().query('UPDATE run SET run_token=?, launch_cwd=?, launch_key=? WHERE id=?')
+      .run('worker-file-token', process.cwd(), 'DEV-218', runId)
     process.env.ORCH_RUN_ID = String(runId)
     process.env.ORCH_RUN_TOKEN = 'worker-file-token'
     const server = createDocsMcpServer()
@@ -20448,14 +20467,19 @@ describe('scoped operator docs', () => {
         environment: 'orch worker test fixture',
         evidence: `run ${runId} observed exit 1`,
         not_established: 'The underlying cause is not established',
-        reporter_kind: 'worker' as const,
-        reporting_project: PLATFORM_SLUG,
       }
       process.env.ORCH_RUN_TOKEN = 'not-the-worker-token'
       const refused = await client.callTool({ name: 'file_issue', arguments: arguments_ })
       expect(refused.isError).toBe(true)
       expect(((refused as any).content[0] as { text: string }).text)
-        .toContain('reporting worker is not available')
+        .toContain('reporting session is not available')
+      delete process.env.ORCH_RUN_ID
+      delete process.env.ORCH_RUN_TOKEN
+      const unidentified = await client.callTool({ name: 'file_issue', arguments: arguments_ })
+      expect(unidentified.isError).toBe(true)
+      expect(((unidentified as any).content[0] as { text: string }).text)
+        .toContain('reporting session is not available')
+      process.env.ORCH_RUN_ID = String(runId)
       process.env.ORCH_RUN_TOKEN = 'worker-file-token'
       const filed = await client.callTool({
         name: 'file_issue',
@@ -20464,8 +20488,8 @@ describe('scoped operator docs', () => {
       expect(filed.isError).not.toBe(true)
       const result = JSON.parse(((filed as any).content[0] as { text: string }).text)
       expect(result).toMatchObject({
-        key: 'DEV-1', reporter: 'worker', reporter_id: runId,
-        worker_run_id: runId, session: null, project: PLATFORM_SLUG,
+        key: 'DEV-1', reporter: 'worker', reporter_id: `run:${runId}`,
+        worker_run_id: runId, origin: 'DEV-218', session: null, project: PLATFORM_SLUG,
       })
       const shown = Bun.spawnSync([
         new URL('../../bin/hub', import.meta.url).pathname,
@@ -20473,8 +20497,11 @@ describe('scoped operator docs', () => {
       ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
       expect(shown.exitCode).toBe(0)
       const task = JSON.parse(shown.stdout.toString()).task
+      expect(task.body).toStartWith(
+        `Filed by orch run ${runId} (implement, codex) while working DEV-218\n`,
+      )
       expect(task.body).toContain('REPORTER KIND: WORKER')
-      expect(task.body).toContain(`REPORTING WORKER RUN: ${runId}`)
+      expect(task.body).toContain(`REPORTING WORKER RUN: run:${runId}`)
       expect(task.body).toContain(`REPORTING PROJECT: ${PLATFORM_SLUG}`)
       expect(task.body).not.toContain('REPORTING SESSION:')
     } finally {
@@ -20485,6 +20512,8 @@ describe('scoped operator docs', () => {
       rmSync(`${hubDb}-wal`, { force: true })
       if (priorHubDb === undefined) delete process.env.HUB_DB
       else process.env.HUB_DB = priorHubDb
+      if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+      else process.env.CLAUDE_CODE_SESSION_ID = priorSession
       if (priorRunId === undefined) delete process.env.ORCH_RUN_ID
       else process.env.ORCH_RUN_ID = priorRunId
       if (priorRunToken === undefined) delete process.env.ORCH_RUN_TOKEN

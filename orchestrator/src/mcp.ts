@@ -16,6 +16,7 @@ import {
 import { composeWorkflow, getWorkflowStep, listWorkflows } from './workflows.ts'
 import { checkDoc, repoRootForDoc } from './canon.ts'
 import { getReview, listReviews } from './review.ts'
+import { authenticatedWorkerRun } from './ask.ts'
 
 const text = (value: unknown) => ({
   content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value) }],
@@ -28,8 +29,8 @@ const requiredReportField = (field: string, belongs: string) =>
     .min(1, `${field} is required: ${belongs}`)
 
 const reporterFields = {
-  reporter_kind: z.enum(['session', 'worker', 'monitor']).optional()
-    .describe('Omit for the calling session; worker identity is derived from the orch run environment.'),
+  reporter_kind: z.enum(['session', 'monitor']).optional()
+    .describe('Omit to derive the calling session or authenticated orch worker from the environment.'),
   monitor_invocation_id: z.number().int().positive().optional(),
   affected_project: z.string().trim().min(1).optional(),
   reporting_project: z.string().trim().min(1).optional()
@@ -91,8 +92,11 @@ async function searchDuplicateIssues(title: string): Promise<
 
 export type IssueReporter =
   | { kind: 'session' }
-  | { kind: 'worker' }
   | { kind: 'monitor'; invocationId: number; affectedProject: string }
+
+type WorkerReporter = {
+  id: number; job: string; agent: string; launch_cwd: string | null; launch_key: string | null
+}
 
 function registeredProject(name: string) {
   const project = projectByName(name)
@@ -123,36 +127,37 @@ export async function fileIssue(
   reporter: IssueReporter = { kind: 'session' },
   reportingProject?: string,
 ) {
-  if (reporter.kind !== 'session' && reporter.kind !== 'worker' && reporter.kind !== 'monitor') {
+  if (reporter.kind !== 'session' && reporter.kind !== 'monitor') {
     throw new Error('unknown issue reporter kind')
   }
   const session = reporter.kind === 'session' ? sessionId() : null
-  if (reporter.kind === 'session' && !session) {
-    throw new Error('cannot file issue: the reporting session is not available')
-  }
+  let worker: WorkerReporter | null = null
   let reporterId: string | number = session ?? ''
-  if (reporter.kind === 'worker') {
-    // Identity is observed from the launcher's environment, never accepted as
-    // a tool argument. The token proves this process belongs to that run.
+  if (reporter.kind === 'session' && !session) {
     const runId = Number(process.env.ORCH_RUN_ID ?? 0)
     const token = process.env.ORCH_RUN_TOKEN ?? ''
-    const run = runId
-      ? db().query('SELECT id, run_token FROM run WHERE id=?').get(runId) as
-        { id: number; run_token: string | null } | null
-      : null
-    if (!run || (run.run_token && run.run_token !== token)) {
-      throw new Error('cannot file issue: the reporting worker is not available')
+    if (!authenticatedWorkerRun(runId, token)) {
+      throw new Error('cannot file issue: the reporting session is not available')
     }
-    reporterId = run.id
+    worker = db().query(
+      'SELECT id, job, agent, launch_cwd, launch_key FROM run WHERE id=?',
+    ).get(runId) as WorkerReporter | null
+    if (!worker?.launch_cwd || !worker.launch_key) {
+      throw new Error('cannot file issue: the reporting worker has no project and task origin')
+    }
+    reporterId = `run:${worker.id}`
   } else if (reporter.kind === 'monitor') {
     const invocation = db().query('SELECT id FROM monitor_invocation WHERE id=?')
       .get(reporter.invocationId)
     if (!invocation) throw new Error(`no monitor invocation ${reporter.invocationId}`)
     reporterId = reporter.invocationId
   }
-  const project = reportingProject ? registeredProject(reportingProject) : projectAt(process.cwd())
+  const project = worker
+    ? projectAt(worker.launch_cwd!)
+    : reportingProject ? registeredProject(reportingProject) : projectAt(process.cwd())
   if (!project) {
-    throw new Error(`cannot file issue: no registered project contains ${process.cwd()}`)
+    const cwd = worker?.launch_cwd ?? process.cwd()
+    throw new Error(`cannot file issue: no registered project contains ${cwd}`)
   }
   const type = input.kind.toUpperCase()
   const title = `[${type}] ${input.what_happened}`
@@ -168,11 +173,14 @@ export async function fileIssue(
       ? ['', 'DUPLICATE SEARCH FAILED', duplicateSearch.error]
       : []
   const body = [
+    ...(worker
+      ? [`Filed by orch run ${worker.id} (${worker.job}, ${worker.agent}) while working ${worker.launch_key}`]
+      : []),
     `TYPE: ${type}`,
-    ...(reporter.kind === 'session'
-      ? [`REPORTER KIND: SESSION`, `REPORTING SESSION: ${session}`]
-      : reporter.kind === 'worker'
-        ? [`REPORTER KIND: WORKER`, `REPORTING WORKER RUN: ${reporterId}`]
+    ...(worker
+      ? [`REPORTER KIND: WORKER`, `REPORTING WORKER RUN: ${reporterId}`]
+      : reporter.kind === 'session'
+        ? [`REPORTER KIND: SESSION`, `REPORTING SESSION: ${session}`]
         : [`REPORTER KIND: MONITOR`, `REPORTING MONITOR INVOCATION: ${reporter.invocationId}`,
           `AFFECTED PROJECT: ${reporter.affectedProject}`]),
     `REPORTING PROJECT: ${project.name}`,
@@ -206,8 +214,9 @@ export async function fileIssue(
     throw new Error(`could not file issue through hub: ${error instanceof Error ? error.message : String(error)}`)
   }
   return { key: stdout.trim(), kind: input.kind, session, project: project.name,
-    reporter: reporter.kind, reporter_id: reporterId,
-    worker_run_id: reporter.kind === 'worker' ? reporterId : null,
+    reporter: worker ? 'worker' : reporter.kind, reporter_id: reporterId,
+    worker_run_id: worker?.id ?? null,
+    origin: worker?.launch_key ?? null,
     monitor_invocation_id: reporter.kind === 'monitor' ? reporter.invocationId : null,
     ...(duplicateSearch.duplicates === null
       ? { duplicate_search_error: duplicateSearch.error }
