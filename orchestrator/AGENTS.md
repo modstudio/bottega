@@ -649,6 +649,75 @@ only when it is high or critical, or observed in a real run. The loop ends.
 These tier boundaries are a first guess. Move them from the per-tier
 calibration as evidence accumulates. Nothing enforces them yet.
 
+## The lifecycle: states, locks and the invariants they protect
+
+A run: `reserved → attached → running → asking → ok | failed | stopped | stale`; a chain inherits its last turn's state.
+
+A branch: `cut → built → reviewed → rebased → landed | abandoned`; a rebase invalidates the review's exact match, and the pin or the four-fact carry re-establishes it.
+
+Trunk: `free | locked-by-landing`.
+
+There are three lock purposes today, but only one lock file. Worktree creation
+and resume attachment take `worktree.ts:withWorktreeCreateLock`, landing takes
+`landing.ts:land`, and cleanup from discard, abandon, stop and sweep takes
+`cli.ts:withCleanupLock`. All three call `worktree.ts:withProjectLock` with the
+name `landing`, so all contend on `orch-landing.lock`. Creation protects a new
+tree through provisioning and attribution; landing protects the trunk decision
+and ref update; cleanup protects ownership checks and removal. **One lock per
+purpose.** Creation, landing and cleanup are three purposes. Their sharing is
+the cause of DEV-316, not a lifecycle design.
+
+The invariants are:
+
+- **A resume is always possible on a stale checkout.** The caller-at-trunk check
+  stops a new dispatch from stale input; it must never apply to a chain resuming
+  in its own worktree. `run.ts:run` currently attaches a resume under the shared
+  lock, while the fresh-tree `assertCallerAncestry` boundary has leaked into
+  resume behaviour (DEV-318).
+- **Only the main checkout's binary migrates the store.** `ORCH_DB` locates a
+  store; it never authorises a linked-worktree binary to write it. Today
+  `database-location.ts:resolveDatabase` gives an `ORCH_DB` resolution write
+  authority, which lets `db.ts:applySchema` and `rebuildTable` violate this
+  boundary (DEV-314). `db.ts:adoptRunMutation` governs chain ownership, not
+  schema authority.
+- **Landing holds its lock only for the trunk re-check, guard verification and
+  fast-forward, never for a gate.** A gate is long and proves a commit without
+  owning trunk. `landing.ts:land` currently calls `rebaseAndGate` under the lock
+  after trunk moves, violating DEV-224's round-two shape.
+- **A lock waiter is served in arrival order.** Otherwise a stream of short
+  holders can starve a long waiter. `worktree.ts:withProjectLock` records waiters
+  but acquisition polls the lock without consulting their order (DEV-316).
+- **Every refusal names the invariant it protects and the command that clears
+  it.** A refusal without both leaves an operator unable to distinguish safety
+  from mechanism or to recover without reading source.
+- **The guard on disk is verified against HEAD, not the index, before any
+  fast-forward.** The index may already contain the disabling bytes; the
+  reviewed `landing.ts:sharedGuardResidue` and `restoreSharedGuard` candidate
+  violate this by diffing against and restoring from the index.
+- **A reclaim removes exactly the acquisition it classified as stale, never a
+  replacement.** A reusable pathname is not identity; the reviewed
+  `worktree.ts:reclaimStaleProjectLock` candidate classifies before rename and
+  violates this under replacement.
+- **A failed landing leaves the branch worktree as it found it.** Failure must
+  not turn a retry into recovery work. `landing.ts:rebaseAndGate` currently
+  rebases before the fallible gate without restoring the input state (DEV-310,
+  closed below-bar but binding here).
+
+| gap | invariant violated | code path (file:function) | what chunk 3 changes |
+|---|---|---|---|
+| DEV-314 | only the main-checkout binary migrates | `database-location.ts:resolveDatabase`; `db.ts:applySchema`, `rebuildTable` | Separate database location from write authority and refuse linked-worktree schema writes even when `ORCH_DB` is set. |
+| DEV-316 | one lock per purpose; FIFO waiters | `worktree.ts:withWorktreeCreateLock`, `withProjectLock`; `cli.ts:withCleanupLock` | Give creation, landing and cleanup distinct locks, and make acquisition honor waiter arrival order. |
+| DEV-318 | a chain resumes in its own stale checkout | `cli.ts:continueRun`, `detach`; `run.ts:preflight`, `run`; `worktree.ts:assertCallerAncestry` | Exempt inherited resume attachment from the new-dispatch caller-at-trunk boundary. |
+| DEV-224 review 142/143: replacement race | reclaim only the classified acquisition | `worktree.ts:reclaimStaleProjectLock`, `withProjectLock` | Fence acquisition, reclaim and release by one incarnation so none can remove a replacement. |
+| DEV-224 review 142: locale-dependent birth time | a live holder is never classified stale by observer locale | `worktree.ts:processStartTime`, `staleProjectLockHolder` | Use a locale-independent process-birth identity and migrate old owner records conservatively. |
+| DEV-224 review 143: malformed process output | indeterminate liveness cannot prove staleness | `worktree.ts:processStartTime`, `staleProjectLockHolder` | Parse process identity strictly and treat malformed output as unknown, never stale. |
+| DEV-224 review 142/143: staged guard stub | guard bytes and mode equal HEAD before fast-forward | `landing.ts:sharedGuardResidue`, `restoreSharedGuard`, `fastForward` | Compare with and restore from HEAD, preserve or refuse staged state, then verify again before the ref update. |
+| DEV-224 review 143: inherited Git environment | guard repair addresses the source repository's objects | `landing.ts:git`, `gitOk`, `restoreSharedGuard` | Strip worker object and hook routing and derive a hermetic Git environment for inspection and repair. |
+
+Chunk 2, the harness, proves these by simulation. Until it exists, no change to
+the core lands without naming which invariant it serves and which it might
+weaken.
+
 Every caller-side workaround loses the work, and all three were tried in a real
 review in one application (runs 407-413):
 
