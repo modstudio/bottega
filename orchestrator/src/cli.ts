@@ -2703,7 +2703,7 @@ switch (cmd) {
   case 'retry': {
     const id = Number(argv[1])
     if (!id) usage()
-    const retryAuthority = authorizeRunMutation(id, 'retry')
+    let retryAuthority = authorizeRunMutation(id, 'retry')
     const row = db().query(
       `SELECT id, COALESCE(parent_run_id,id) root_id, agent, job, cwd, prompt_path,
               probe, status, failure_kind, mcp,
@@ -2760,6 +2760,7 @@ switch (cmd) {
       `— retrying run ${id} (${row.agent}/${row.job}` +
         (row.failure_kind ? `, ${row.failure_kind}` : '') + `) on ${agent}`,
     )
+    retryAuthority = db().transaction(() => adoptRunMutation(retryAuthority, 'retry'))()
     // Detached and followed, exactly like `do`. A retry is usually started
     // BECAUSE the first attempt died; running it as a child of this process
     // would leave it dying the same way.
@@ -4588,7 +4589,7 @@ switch (cmd) {
     let voidAuthority: RootAuthority | null = null
     if (has('void')) {
       voidAuthority = authorizeRunMutation(id, 'void')
-    } else if (!dashboardAuthorized && !sessionId() && owner.verdict === 'unattributed') {
+    } else if (!dashboardAuthorized && !has('force') && !sessionId() && owner.verdict === 'unattributed') {
       throw new Error(`run ${id} is unowned; CLAUDE_CODE_SESSION_ID is not set`)
     } else if ((owner.verdict === 'foreign' || owner.verdict === 'anonymous') &&
                !has('force') && !dashboardAuthorized) {
@@ -4766,7 +4767,9 @@ switch (cmd) {
     const wasScored = Boolean(db().query('SELECT 1 FROM score WHERE run_id=?').get(id))
     const scoredAt = nowIso()
     const saveScore = db().transaction(() => {
-      if (!dashboardAuthorized) scoreAuthority = adoptRunMutation(scoreAuthority, 'score')
+      if (!dashboardAuthorized && !(has('force') && !scoreAuthority.actor)) {
+        scoreAuthority = adoptRunMutation(scoreAuthority, 'score')
+      }
       if (reviewGrade) gradeReviewLens(id, reviewGrade.output, reviewGrade.grades)
       db().query(
         `INSERT INTO score (run_id, delivery, quality, fidelity, note, scored_at, scored_by)

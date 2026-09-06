@@ -196,6 +196,7 @@ export function auditRunMutation(
 
 const ADOPTING_ACTIONS = [
   'answer', 'tell', 'stop', 'abandon', 'discard', 'void', 'continue', 'score',
+  'retry', 'receipt',
 ] as const
 type AdoptingAction = typeof ADOPTING_ACTIONS[number]
 

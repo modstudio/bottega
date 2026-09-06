@@ -3167,6 +3167,25 @@ describe('run mailbox', () => {
     expect(db().query('SELECT COUNT(*) n FROM run_mutation_audit').get()).toEqual({ n: 0 })
   })
 
+  test('bridge-only identity cannot receipt an unowned run', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    messageArchitect(root, 'the implementation is taking a narrower shape')
+    const result = Bun.spawnSync(
+      [process.execPath, new URL('cli.ts', import.meta.url).pathname, 'run', String(root), '--receipt'],
+      { cwd: dir, env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: undefined, CLAUDE_CODE_BRIDGE_SESSION_ID: 'shared-bridge' },
+        stdout: 'pipe', stderr: 'pipe' },
+    )
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr.toString()).toContain(
+      `run ${root} is unowned; CLAUDE_CODE_SESSION_ID is not set`,
+    )
+    expect(messagesForRun(root)[0]).toMatchObject({ read_at: null, read_by: null })
+    expect(db().query('SELECT session_id FROM run WHERE id=?').get(root))
+      .toEqual({ session_id: null })
+    expect(db().query('SELECT COUNT(*) n FROM run_mutation_audit').get()).toEqual({ n: 0 })
+  })
+
   test('the worker MCP tools send outbound and read inbound at a checkpoint', () => {
     const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     db().query('UPDATE run SET vendor_session=?, run_token=? WHERE id=?')
@@ -4315,6 +4334,7 @@ describe('session identity is the primary id only', () => {
       expect(sessionId()).toBeNull()
       for (const action of [
         'answer', 'tell', 'stop', 'abandon', 'discard', 'void', 'continue', 'score',
+        'retry', 'receipt',
       ] as const) {
         const id = addRun({ agent: 'codex', job: 'implement' })
         expect(() => adoptRunMutation(authorizeRunMutation(id, action), action))
@@ -4363,6 +4383,7 @@ describe('who may judge a run', () => {
     try {
       for (const action of [
         'answer', 'tell', 'stop', 'abandon', 'discard', 'void', 'continue', 'score',
+        'retry', 'receipt',
       ] as const) {
         const id = addRun({ agent: 'codex', job: 'implement' })
         process.env.CLAUDE_CODE_SESSION_ID = 'session-A'
@@ -4978,6 +4999,30 @@ describe('retry keeps the work on the same agent', () => {
     } finally {
       rmSync(binDir, { recursive: true, force: true })
     }
+  })
+
+  test('bridge-only identity cannot retry an unowned read-only run', () => {
+    const promptPath = join(dir, 'retry-bridge.prompt.txt')
+    writeFileSync(promptPath, 'What does bar.ts do?')
+    const id = addRun({ agent: 'grok', job: 'file-question', status: 'failed' })
+    db().query('UPDATE run SET prompt_path=?, cwd=? WHERE id=?').run(promptPath, dir, id)
+    const beforeRuns = (db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n
+    const beforeAudit = (db().query('SELECT COUNT(*) n FROM run_mutation_audit').get() as { n: number }).n
+    const result = Bun.spawnSync(
+      [process.execPath, CLI, 'retry', String(id)],
+      { env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: undefined, CLAUDE_CODE_BRIDGE_SESSION_ID: 'shared-bridge' },
+        stdout: 'pipe', stderr: 'pipe' },
+    )
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr.toString()).toContain(
+      `run ${id} is unowned; CLAUDE_CODE_SESSION_ID is not set`,
+    )
+    expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(beforeRuns)
+    expect((db().query('SELECT COUNT(*) n FROM run_mutation_audit').get() as { n: number }).n)
+      .toBe(beforeAudit)
+    expect(db().query('SELECT session_id FROM run WHERE id=?').get(id))
+      .toEqual({ session_id: null })
   })
 
   test('retry refuses a foreign owner before either job shape launches', () => {
@@ -9289,6 +9334,26 @@ describe('detached run collection', () => {
     expect(result.exitCode).toBe(1)
     expect(result.stderr.toString()).toContain('CLAUDE_CODE_SESSION_ID is not set')
     expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
+  })
+
+  test('bridge-only --force scores an unowned run without adopting', () => {
+    const id = insert('ok', 'file-question')
+    const result = Bun.spawnSync(
+      [process.execPath, CLI, 'score', String(id), 'full', 'right', '--force'],
+      { env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: undefined, CLAUDE_CODE_BRIDGE_SESSION_ID: 'shared-bridge' },
+        stdout: 'pipe', stderr: 'pipe' },
+    )
+    expect(result.exitCode).toBe(0)
+    expect(db().query('SELECT session_id FROM run WHERE id=?').get(id))
+      .toEqual({ session_id: null })
+    expect(db().query('SELECT delivery, quality FROM score WHERE run_id=?').get(id))
+      .toEqual({ delivery: 'full', quality: 'right' })
+    expect(db().query(
+      'SELECT action, actor_session, reason FROM run_mutation_audit WHERE run_id=? ORDER BY rowid',
+    ).all(id)).toEqual([
+      { action: 'score', actor_session: null, reason: '--force' },
+    ])
   })
 
   test('the first score adopts an unowned root and refuses foreign rescore and void', () => {

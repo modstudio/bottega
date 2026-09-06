@@ -111,13 +111,14 @@ export function messagesForRun(id: number): RunMessage[] {
   ).all(run.root_id) as RunMessage[]
 }
 
-/** Explicitly receipt outbound messages, after proving the reader owns the chain. */
+/** Receipt unread outbound worker messages: authorize the caller, adopt an unowned root, then set read_at/read_by. */
 export function receiptMessagesForArchitect(id: number): RunMessage[] {
   writableDb()
-  const authority = authorizeRunMutation(id, 'receipt')
+  let authority = authorizeRunMutation(id, 'receipt')
   const run = identity(id)
   if (!run) return []
   return db().transaction(() => {
+    authority = adoptRunMutation(authority, 'receipt')
     const readAt = nowIso()
     db().query(
       `UPDATE run_message SET read_at = ?, read_by = ?
