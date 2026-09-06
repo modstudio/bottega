@@ -31,7 +31,7 @@ export type MonitorSeverity = typeof MONITOR_SEVERITY[number]
 const sqlValues = (values: readonly string[]) => values.map((value) => `'${value}'`).join(',')
 
 export const RUN_MUTATION_ACTIONS = [
-  'answer', 'tell', 'stop', 'abandon', 'discard', 'sweep', 'void', 'score', 'rescore',
+  'adopt', 'answer', 'tell', 'stop', 'abandon', 'discard', 'sweep', 'reap', 'void', 'score', 'rescore',
   'retry', 'continue', 'reclassify',
 ] as const
 export type RunMutationAction = typeof RUN_MUTATION_ACTIONS[number]
@@ -123,8 +123,8 @@ export function initializeDatabase(): string {
   return DB_PATH
 }
 
-export function runMutationActor(runId: number): RootAuthority {
-  const row = db().query(
+function runMutationAuthority(database: Database, runId: number): RootAuthority {
+  const row = database.query(
     `SELECT requested.id run_id, root.id root_id, root.session_id owner
        FROM run requested
        JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
@@ -134,6 +134,10 @@ export function runMutationActor(runId: number): RootAuthority {
   return {
     runId: row.run_id, rootId: row.root_id, owner: row.owner, actor: sessionId(),
   }
+}
+
+export function runMutationActor(runId: number): RootAuthority {
+  return runMutationAuthority(db(), runId)
 }
 
 export function authorizeRunMutation(
@@ -154,11 +158,46 @@ export function auditRunMutation(
   authority: RootAuthority,
   action: RunMutationAction,
   reason: string | null = null,
+  database: Database = db(),
 ): void {
-  db().query(
+  database.query(
     `INSERT INTO run_mutation_audit (run_id, root_id, action, actor_session, at, reason)
      VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(authority.runId, authority.rootId, action, authority.actor, nowIso(), reason)
+}
+
+const ADOPTING_ACTIONS = ['answer', 'stop', 'abandon', 'discard', 'void'] as const
+type AdoptingAction = typeof ADOPTING_ACTIONS[number]
+
+/** Atomically claim an unowned chain before an authoritative mutation. */
+export function adoptRunMutation(
+  authority: RootAuthority,
+  action: AdoptingAction,
+  database: Database = db(),
+): RootAuthority {
+  if (authority.owner) return authority
+  if (!authority.actor) {
+    throw new Error(
+      `run ${authority.runId} is unowned; no session identity is present to adopt it before ${action}`,
+    )
+  }
+  const claimed = database.query(
+    'UPDATE run SET session_id=? WHERE id=? AND session_id IS NULL',
+  ).run(authority.actor, authority.rootId)
+  if (claimed.changes !== 1) {
+    const owner = database.query('SELECT session_id FROM run WHERE id=?').get(authority.rootId) as
+      { session_id: string | null } | null
+    if (!owner?.session_id || owner.session_id !== authority.actor) {
+      throw new Error(
+        `run ${authority.runId} was adopted by session ${owner?.session_id ?? 'unknown'} ` +
+        `before current session ${authority.actor} could ${action} it`,
+      )
+    }
+    return { ...authority, owner: owner.session_id }
+  }
+  const adopted = { ...authority, owner: authority.actor }
+  auditRunMutation(adopted, 'adopt', `before ${action}`, database)
+  return adopted
 }
 
 /**
@@ -1702,8 +1741,9 @@ export function resolveRootFromLastTurn(database: Database, rootId: number): num
  * a distinct status rather than silently counted as either running or failed.
  *
  * Liveness is checked by PID where one was recorded — a dead process is dead
- * now, not in thirty minutes. The age cutoff remains as a fallback for rows
- * written before PIDs were stored, and for a PID that has been recycled.
+ * now, not in thirty minutes. A live PID always wins over the age fallback;
+ * treating a demonstrably live worker as stale transfers authority while it
+ * is still working. The cutoff applies only to rows that have no PID.
  *
  * Returns how many were swept. Called opportunistically on open: cheap, and it
  * means no separate cron has to remember.
@@ -1725,22 +1765,27 @@ export function reapStale(d: Database = db()): number {
       abandonedBootstrap.push(r.id)
       continue
     }
-    // The age cutoff applies whatever the pid says. A pid is only evidence that
-    // SOME process is alive, not that it is still ours: pids are recycled, and a
-    // row old enough to be past the cutoff pointing at a live pid would
-    // otherwise stay `running` for ever on the strength of an unrelated
-    // process. Every agent's timeout is set below the cutoff, so a run that is
-    // genuinely still working always writes its own terminal state first.
-    if (r.started_at < cutoff) { dead.push(r.id); continue }
-    // signal 0 tests existence without touching the process.
-    if (r.pid && !pidAlive(r.pid)) dead.push(r.id)
+    // signal 0 tests existence without touching the process. A live PID is
+    // authoritative whatever the row's age; only PID-less legacy rows fall
+    // back to the clock.
+    if (r.pid) {
+      if (!pidAlive(r.pid)) dead.push(r.id)
+      continue
+    }
+    if (r.started_at < cutoff) dead.push(r.id)
   }
   if (abandonedBootstrap.length) {
-    d.query(
+    const update = d.query(
       `UPDATE run SET status='failed', failure_kind='harness',
-              error='the worker process never started'
-        WHERE id IN (${abandonedBootstrap.map(() => '?').join(',')})`,
-    ).run(...abandonedBootstrap)
+              error='the worker process never started' WHERE id=? AND status='running'`,
+    )
+    for (const id of abandonedBootstrap) {
+      d.transaction(() => {
+        if (update.run(id).changes !== 1) return
+        const authority = runMutationAuthority(d, id)
+        auditRunMutation(authority, 'reap', `pending row had no pid after ${PENDING_BOOTSTRAP_MS}ms`, d)
+      })()
+    }
   }
   if (dead.length) {
     // Stamped `interrupted`, which puts these under the same NOT_EVIDENCE rule as
@@ -1757,11 +1802,20 @@ export function reapStale(d: Database = db()): number {
     // Run 521 is the worked example. A delegation in this very session was killed
     // by the calling harness's command timeout and landed here - a fact about the
     // caller, charged until now to qwen-local.
-    d.query(
+    const update = d.query(
       `UPDATE run SET status='stale', failure_kind='interrupted',
               error='abandoned: process gone, no terminal state recorded'
-        WHERE id IN (${dead.map(() => '?').join(',')})`,
-    ).run(...dead)
+        WHERE id=? AND status='running'`,
+    )
+    for (const id of dead) {
+      const row = rows.find((candidate) => candidate.id === id)!
+      d.transaction(() => {
+        if (update.run(id).changes !== 1) return
+        const authority = runMutationAuthority(d, id)
+        auditRunMutation(authority, 'reap',
+          row.pid ? `pid ${row.pid} is not alive` : `no pid after ${STALE_AFTER_MS}ms`, d)
+      })()
+    }
   }
   const ended = [...dead, ...abandonedBootstrap]
   if (ended.length) {

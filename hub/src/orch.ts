@@ -5,8 +5,15 @@
  * concerns quietly become one, which is the root canon's line and the reason
  * `orch` grew `--json` flags rather than hub growing a second connection.
  */
-import { existsSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { DocScope } from '../../shared/docs.ts'
+import {
+  DASHBOARD_CAPABILITY_PATH_ENV, DASHBOARD_CAPABILITY_TOKEN_ENV,
+  type DashboardCapability,
+} from '../../shared/dashboard-capability.ts'
 import { refreshProjects, type RegisteredProject } from './projects.ts'
 /**
  * Resolved from THIS FILE's location, at module load.
@@ -19,6 +26,28 @@ import { refreshProjects, type RegisteredProject } from './projects.ts'
  * that out was not.
  */
 const ORCH = new URL('../../bin/orch', import.meta.url).pathname
+let dashboardCapability: { dir: string; path: string; token: string } | null = null
+
+/** Mint the process-local capability used only by dashboard score children. */
+export function startDashboardCapability(): string {
+  if (dashboardCapability) return dashboardCapability.path
+  const dir = mkdtempSync(join(tmpdir(), 'hub-dashboard-'))
+  chmodSync(dir, 0o700)
+  const path = join(dir, 'score-capability.json')
+  const token = randomUUID()
+  const body: DashboardCapability = { token, pid: process.pid }
+  writeFileSync(path, JSON.stringify(body), { mode: 0o600 })
+  chmodSync(path, 0o600)
+  dashboardCapability = { dir, path, token }
+  process.once('exit', stopDashboardCapability)
+  return path
+}
+
+export function stopDashboardCapability(): void {
+  if (!dashboardCapability) return
+  rmSync(dashboardCapability.dir, { recursive: true, force: true })
+  dashboardCapability = null
+}
 
 async function orch(
   args: string[],
@@ -153,11 +182,10 @@ export const runDetail = (id: number) => orch(['run', String(id)])
 /**
  * Score a run as a person, from the dashboard.
  *
- * `--scorer` is the session gate's one named exception: the gate exists so an
- * AGENT cannot judge a run it never read, and someone clicking a verdict has
- * the output in front of them. Recording who judged it makes the exception
- * auditable rather than invisible - which is what the orchestrator's own page
- * did by writing the score table behind the CLI's back.
+ * The process capability is the session gate's one exception: the gate exists
+ * so an agent cannot judge a run it never read, while someone clicking a
+ * verdict has the output in front of them. `--scorer` records who judged it;
+ * the independently checked capability proves where the call came from.
  */
 export async function score(
   id: number, delivery: string, quality: string | null, fidelity: string | null,
@@ -166,7 +194,13 @@ export async function score(
   const args = ['score', String(id), delivery, ...(quality ? [quality] : []),
                 ...(fidelity ? [fidelity] : []),
                 '--scorer', 'hub-dashboard', ...(note ? ['--note', note] : [])]
-  const proc = Bun.spawn([ORCH, ...args], { stdout: 'pipe', stderr: 'pipe' })
+  const capabilityEnv = dashboardCapability ? {
+    [DASHBOARD_CAPABILITY_PATH_ENV]: dashboardCapability.path,
+    [DASHBOARD_CAPABILITY_TOKEN_ENV]: dashboardCapability.token,
+  } : {}
+  const proc = Bun.spawn([ORCH, ...args], {
+    env: { ...process.env, ...capabilityEnv }, stdout: 'pipe', stderr: 'pipe',
+  })
   const [out, err, code] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),

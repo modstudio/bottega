@@ -1,8 +1,26 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { docArgv, docGet, docRemove, docSet, projectArgv } from './orch.ts'
+import { dirname, join } from 'node:path'
+import {
+  docArgv, docGet, docRemove, docSet, projectArgv,
+  startDashboardCapability, stopDashboardCapability,
+} from './orch.ts'
+
+test('dashboard scoring capability is private and bound to this hub process', () => {
+  const path = startDashboardCapability()
+  try {
+    const file = statSync(path)
+    const dir = statSync(dirname(path))
+    expect(file.mode & 0o777).toBe(0o600)
+    expect(dir.mode & 0o777).toBe(0o700)
+    const body = JSON.parse(readFileSync(path, 'utf8')) as { token: string; pid: number }
+    expect(body.pid).toBe(process.pid)
+    expect(body.token.length).toBeGreaterThan(20)
+  } finally {
+    stopDashboardCapability()
+  }
+})
 
 describe('docArgv', () => {
   test('list with no filters', () => {

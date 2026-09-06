@@ -6,7 +6,7 @@ import { DATABASE_RESOLUTION, DB_PATH, db, nowIso, sessionId, judgeability, pend
          reapStale, pidAlive, STALE_AFTER_MS, UNSCORED_WHERE, recordDuels, duelMatrices,
          parseRunIds, recordSessionSeen, SESSION_LIVE_MS,
          resolveRootFromLastTurn, chainScoreJoin, authorizeRunMutation, runMutationActor,
-         auditRunMutation, type RootAuthority } from './db.ts'
+         auditRunMutation, adoptRunMutation, type RootAuthority } from './db.ts'
 import { JOBS, job } from './jobs.ts'
 import { AGENTS, available, installed, ensureLocalHealth,
          unavailableReason, NEEDS_HEALTH, tryWake, wakeStatus,
@@ -15,9 +15,9 @@ import { candidates, pick, scoreboard, MIN_SAMPLE, promptSizeBucketLabel } from 
 import { guide } from './guide.ts'
 import { repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses,
          packedResumePrompt, type DetachSpec } from './run.ts'
-import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync } from 'node:fs'
-import { join, resolve } from 'node:path'
-import { createHash } from 'node:crypto'
+import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { createHash, timingSafeEqual } from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
 import { createHasPlaceholder, projectAt, projectByName, projects } from './projects.ts'
@@ -44,6 +44,10 @@ import { routingBacktest, routingBacktestEnsemble, type RoutingBacktest } from '
 import { dockerRemovalCommand, dockerRunResources, leakedResourceLines,
          orphanedDockerResources, orchRunId, resourcesForRuns,
          type DockerResource } from './docker-resources.ts'
+import {
+  DASHBOARD_CAPABILITY_PATH_ENV, DASHBOARD_CAPABILITY_TOKEN_ENV,
+  type DashboardCapability,
+} from '../../shared/dashboard-capability.ts'
 
 /**
  * How long `orch do` watches a detached run before handing it back.
@@ -336,6 +340,38 @@ function auditReason(): string | null {
   return flag('unreviewed') ?? flag('note') ?? null
 }
 
+function dashboardScoreAuthorized(scorer: string | undefined): boolean {
+  if (scorer !== 'hub-dashboard') return false
+  const path = process.env[DASHBOARD_CAPABILITY_PATH_ENV]
+  const presented = process.env[DASHBOARD_CAPABILITY_TOKEN_ENV]
+  if (!path || !presented || typeof process.getuid !== 'function') return false
+  try {
+    const uid = process.getuid()
+    const file = lstatSync(path)
+    const dir = lstatSync(dirname(path))
+    if (!file.isFile() || file.isSymbolicLink() || !dir.isDirectory() || dir.isSymbolicLink()) return false
+    if (file.uid !== uid || dir.uid !== uid || (file.mode & 0o777) !== 0o600 || (dir.mode & 0o777) !== 0o700) {
+      return false
+    }
+    const capability = JSON.parse(readFileSync(path, 'utf8')) as DashboardCapability
+    if (!Number.isInteger(capability.pid) || capability.pid < 1 || typeof capability.token !== 'string') return false
+    const expected = Buffer.from(capability.token)
+    const actual = Buffer.from(presented)
+    if (expected.length !== actual.length || !timingSafeEqual(expected, actual) || !pidAlive(capability.pid)) {
+      return false
+    }
+    const observed = Bun.spawnSync(['ps', '-p', String(capability.pid), '-o', 'command='], {
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    if (observed.exitCode !== 0) return false
+    const words = new TextDecoder().decode(observed.stdout).trim().split(/\s+/)
+    return words.some((word, index) =>
+      (word === 'hub' || word.endsWith('/bin/hub') || word.endsWith('/hub/src/cli.ts')) &&
+      words[index + 1] === 'serve')
+  } catch {
+    return false
+  }
+}
 const KEPT_ROW_LIMIT = 10
 
 function orphanKeepReason(detail: string): string {
@@ -590,6 +626,7 @@ function discardWorktree(
         ? (unmergedBranch(repoRoot, row.branch, row.base_commit)?.count ?? 0)
         : null
     }
+    if (auditAuthority) auditAuthority = adoptRunMutation(auditAuthority, 'discard')
     const r = removeFor({
       path: row.worktree,
       branch: row.branch ?? `orch/${row.id}`,
@@ -978,8 +1015,8 @@ function usage(): never {
       --limits <${REVIEW_LIMITS.join('|')}> --overlap <${REVIEW_OVERLAP.join('|')}>
       only the session that MADE a run may score it; --force overrides.
       --better-than <id>[,<id>] record this run winning a pairwise comparison
-      --scorer <who>            a person judged it from a UI: records who, and
-                                is the gate's one named exception
+      --scorer <who>            record the named human/UI scorer; only the local
+                                hub-dashboard capability bypasses ownership
       --void                    retain the run and output, but exclude it from routing evidence
   orch recalibrate [--n 12]    re-score old outputs blind and measure agreement
       --scorer <who>            use the same scorer identity as orch score
@@ -2808,7 +2845,7 @@ switch (cmd) {
     } | null
     if (!row) throw new Error(`no run ${requestedId}`)
     const id = row.id
-    const answerAuthority = authorizeRunMutation(requestedId, 'answer')
+    let answerAuthority = authorizeRunMutation(requestedId, 'answer')
 
     /**
      * Questions are collected ACROSS THE WHOLE CHAIN, not just off the root.
@@ -2845,9 +2882,9 @@ switch (cmd) {
     // command then accepted the adoption. Only the architect session that
     // dispatched the conversation has standing to change its specification.
     const callerSession = answerAuthority.actor
-    if (!row.session_id) {
+    if (!row.session_id && callerSession) {
       console.error(
-        `run ${id} is unowned; session ${callerSession ?? 'unknown'} may rule, ` +
+        `run ${id} is unowned; session ${callerSession} may rule and will adopt the chain, ` +
         'and that answering identity will be recorded',
       )
     }
@@ -3011,6 +3048,7 @@ switch (cmd) {
     )
     const answeredBy = callerSession ?? 'anonymous (no session id)'
     db().transaction(() => {
+      answerAuthority = adoptRunMutation(answerAuthority, 'answer')
       open.forEach((q, i) => upd.run(answers[i]!.answer, now, answeredBy, q.id))
       auditRunMutation(answerAuthority, 'answer')
     })()
@@ -3611,7 +3649,7 @@ switch (cmd) {
   case 'discard': {
     const id = Number(argv[1])
     if (!id) usage()
-    const authority = authorizeRunMutation(id, 'discard')
+    let authority = authorizeRunMutation(id, 'discard')
     const rootRow = db().query(
       `SELECT id, repo, cwd, worktree, branch, branch_kept, branch_kept_tip, base_commit
          FROM run WHERE id = ?`,
@@ -3656,6 +3694,7 @@ switch (cmd) {
             'it was left in place',
           )
         }
+        authority = adoptRunMutation(authority, 'discard')
         const snapshot = branchTip(repoRoot, row.branch_kept!)
         const removed = removeBranch(repoRoot, row.branch_kept!)
         const ownersAfter = evidenceOwningBranchOwners(ownerRow, repoRoot)
@@ -3685,7 +3724,7 @@ switch (cmd) {
   case 'stop': {
     const id = Number(argv[1])
     if (!id) usage()
-    const authority = authorizeRunMutation(id, 'stop')
+    let authority = authorizeRunMutation(id, 'stop')
     const row = db().query(
       `SELECT id, status, pid, agent_pid, parent_run_id, repo, cwd, worktree, branch,
               base_commit
@@ -3708,6 +3747,7 @@ switch (cmd) {
     }
 
     db().transaction(() => {
+      authority = adoptRunMutation(authority, 'stop')
       db().query(
         "UPDATE run SET status='stopped', error='stopped by architect', failure_kind=NULL WHERE id=? AND status='running'",
       ).run(id)
@@ -3760,7 +3800,7 @@ switch (cmd) {
   case 'abandon': {
     const id = Number(argv[1])
     if (!id) usage()
-    const authority = authorizeRunMutation(id, 'abandon')
+    let authority = authorizeRunMutation(id, 'abandon')
     const row = db().query(
       `SELECT id, status, repo, cwd, worktree, branch, parent_run_id, base_commit
          FROM run WHERE id = ?`,
@@ -3779,6 +3819,7 @@ switch (cmd) {
     const error = `abandoned by architect${note === undefined ? '' : `: ${note}`}`
     const at = nowIso()
     db().transaction(() => {
+      authority = adoptRunMutation(authority, 'abandon')
       db().query(
         "UPDATE run SET status='stale', error=?, failure_kind='abandoned' WHERE id=?",
       ).run(error, id)
@@ -3864,8 +3905,15 @@ switch (cmd) {
       throw new Error(`run ${id} cannot be scored: its agent is the placeholder '(pending)'`)
     }
     const scorer = flag('scorer')
+    const dashboardAuthorized = dashboardScoreAuthorized(scorer)
     const owner = judgeability(row.session_id, sessionId())
-    if ((owner.verdict === 'foreign' || owner.verdict === 'anonymous') && !has('force') && !scorer) {
+    let voidAuthority: RootAuthority | null = null
+    if (has('void')) {
+      voidAuthority = authorizeRunMutation(id, 'void')
+    } else if (!dashboardAuthorized && !sessionId() && owner.verdict === 'unattributed') {
+      throw new Error(`run ${id} is unowned; no session identity is present to score it`)
+    } else if ((owner.verdict === 'foreign' || owner.verdict === 'anonymous') &&
+               !has('force') && !dashboardAuthorized) {
       throw new Error(
         `run ${id} was made by another session — ownership is not established.\n` +
           `  its session:   ${owner.owner}\n` +
@@ -3877,9 +3925,10 @@ switch (cmd) {
     }
     if (has('void')) {
       db().transaction(() => {
+        voidAuthority = adoptRunMutation(voidAuthority!, 'void')
         db().query('UPDATE run SET evidence_excluded=? WHERE id=?')
           .run('voided with orch score --void', id)
-        auditRunMutation(runMutationActor(id), 'void', auditReason())
+        auditRunMutation(voidAuthority!, 'void', auditReason())
       })()
       console.log(`voided run ${id}: retained run and output; excluded from routing evidence`)
       break
@@ -3896,14 +3945,15 @@ switch (cmd) {
     // stating it in AGENTS.md did not hold: see judgeability() for the two
     // sessions that each scored the other's runs inside an hour, both believing
     // the ids were their own.
-    // A PERSON scoring from the dashboard is the gate's one legitimate
-    // exception, and it is named here rather than reimplemented elsewhere.
+    // A PERSON scoring from the local dashboard is the gate's one legitimate
+    // exception, proven by the dashboard process capability rather than by a
+    // caller-controlled scorer label.
     //
     // The gate exists because an AGENT judging a run it did not read teaches
     // the router something false. Someone clicking a verdict has the output on
     // screen. The orchestrator's own dashboard used to bypass this by writing
     // the score table directly, which is the same exception made invisible;
-    // `--scorer` records WHO judged it, so the exception is auditable instead.
+    // `--scorer` records WHO judged it but grants no authority on its own.
     // `orch score 279 none` and `orch score 279 full right` are both complete
     // judgements; quality is meaningless without something to judge.
     //

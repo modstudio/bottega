@@ -22,6 +22,7 @@ import { Mcp, credentials } from './mcp.ts'
 import { createTrackerTask } from '../../shared/trackers.ts'
 import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
 import { listOpenRulings, rulingsPayload } from './rulings.ts'
+import { startDashboardCapability } from './orch.ts'
 
 const argv = process.argv.slice(2)
 const cmd = argv[0]
@@ -483,7 +484,7 @@ switch (cmd) {
     }
     break
   case 'tasks': tasks(); break
-  case 'serve': serve(Number(flag('port') ?? 7778)); break
+  case 'serve': startDashboardCapability(); serve(Number(flag('port') ?? 7778)); break
   case 'reconcile': printReconcile(await reconcileOpenIntervals({ dryRun: has('dry-run') })); break
   case 'rulings': {
     if (has('json')) {

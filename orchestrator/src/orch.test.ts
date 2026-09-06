@@ -23,6 +23,9 @@ import { createHash, randomUUID } from 'node:crypto'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import {
+  DASHBOARD_CAPABILITY_PATH_ENV, DASHBOARD_CAPABILITY_TOKEN_ENV,
+} from '../../shared/dashboard-capability.ts'
 import type { WorktreeCreate, WorktreeCreateArg } from './projects.ts'
 
 const declaredCreate = (command: string, args: WorktreeCreateArg[]): WorktreeCreate =>
@@ -1144,7 +1147,10 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
       .run(repo, tree, 'land-then-discard', id)
     const CLI = new URL('cli.ts', import.meta.url).pathname
-    const cliEnv = { ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' }
+    const cliEnv = {
+      ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+      CLAUDE_CODE_SESSION_ID: 'landing-discard-owner',
+    }
     try {
       const landed = Bun.spawnSync(
         [process.execPath, CLI, 'land', String(id), '--message', 'architect fuller message',
@@ -1268,7 +1274,7 @@ const { db, nowIso, reapStale, pendingForSession, unscoredCount, judgeability, S
         PENDING_BOOTSTRAP_MS, WEIGHT, weigh, label, FIDELITY_PENALTY, UNSCORED_WHERE,
         excludeSharedOutputRuns, SHARED_OUTPUT_REASON, applySchema, recordDuels, duelMatrices,
         parseRunIds, recordSessionSeen, GENERIC_QUESTION_TOKENS,
-        initializeDatabase, authorizeRunMutation } = await import('./db.ts')
+        initializeDatabase, authorizeRunMutation, adoptRunMutation } = await import('./db.ts')
 initializeDatabase()
 const { candidates, weightCase, scoreboard, median, evidenceFor, pick,
         NOISE_BAND, QUALITY_STEP, MIN_SAMPLE, OUTPUT_RESERVE, EVIDENCE_WINDOW,
@@ -3479,23 +3485,36 @@ describe('reclassify-failures', () => {
 })
 
 describe('reapStale', () => {
-  test('a run older than the cutoff is swept even when its pid is alive', () => {
+  test('a run older than the cutoff is untouched while its pid is alive', () => {
     const id = addRun({ agent: 'grok', job: 'craft', status: 'running' })
     // process.pid is certainly alive: this is the recycled-pid case, and the
     // age cutoff has to win it.
     db().query('UPDATE run SET started_at=?, pid=? WHERE id=?')
       .run(new Date(Date.now() - STALE_AFTER_MS - 60_000).toISOString(), process.pid, id)
 
-    expect(reapStale(db())).toBe(1)
+    expect(reapStale(db())).toBe(0)
     expect((db().query('SELECT status FROM run WHERE id=?').get(id) as { status: string }).status)
-      .toBe('stale')
+      .toBe('running')
+    expect(db().query('SELECT rowid FROM run_mutation_audit WHERE run_id=?').get(id)).toBeNull()
   })
 
   test('a recent run whose process is gone is swept at once, not in thirty minutes', () => {
     const id = addRun({ agent: 'grok', job: 'craft', status: 'running' })
     // Nothing owns pid 2^22; it is above every configured pid_max.
     db().query('UPDATE run SET pid=? WHERE id=?').run(4194304, id)
-    expect(reapStale(db())).toBe(1)
+    const prior = process.env.CLAUDE_CODE_SESSION_ID
+    process.env.CLAUDE_CODE_SESSION_ID = 'session-B'
+    try {
+      expect(reapStale(db())).toBe(1)
+    } finally {
+      if (prior === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+      else process.env.CLAUDE_CODE_SESSION_ID = prior
+    }
+    expect(db().query(
+      'SELECT action, actor_session, reason FROM run_mutation_audit WHERE run_id=?',
+    ).get(id)).toEqual({
+      action: 'reap', actor_session: 'session-B', reason: 'pid 4194304 is not alive',
+    })
   })
 
   test('the reaper says WHY it swept, so routing can discount it', () => {
@@ -3614,6 +3633,30 @@ describe('who may judge a run', () => {
       else process.env.CLAUDE_CODE_SESSION_ID = claude
       if (bridge === undefined) delete process.env.CLAUDE_CODE_BRIDGE_SESSION_ID
       else process.env.CLAUDE_CODE_BRIDGE_SESSION_ID = bridge
+    }
+  })
+
+  test('each authoritative action adopts once, then refuses another session', () => {
+    const prior = process.env.CLAUDE_CODE_SESSION_ID
+    try {
+      for (const action of ['answer', 'stop', 'abandon', 'discard', 'void'] as const) {
+        const id = addRun({ agent: 'codex', job: 'implement' })
+        process.env.CLAUDE_CODE_SESSION_ID = 'session-A'
+        const adopted = adoptRunMutation(authorizeRunMutation(id, action), action)
+        expect(adopted.owner).toBe('session-A')
+        expect(db().query(
+          'SELECT action, actor_session, reason FROM run_mutation_audit WHERE run_id=?',
+        ).get(id)).toEqual({
+          action: 'adopt', actor_session: 'session-A', reason: `before ${action}`,
+        })
+
+        process.env.CLAUDE_CODE_SESSION_ID = 'session-B'
+        expect(() => authorizeRunMutation(id, action))
+          .toThrow(`run ${id} is owned by session session-A`)
+      }
+    } finally {
+      if (prior === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+      else process.env.CLAUDE_CODE_SESSION_ID = prior
     }
   })
 
@@ -4575,8 +4618,13 @@ describe('a destroyed output is not evidence about the agent', () => {
     })
     expect(allowed.exitCode).toBe(0)
     expect(db().query(
-      'SELECT action, actor_session FROM run_mutation_audit WHERE run_id=?',
-    ).get(unowned)).toEqual({ action: 'void', actor_session: 'acting-session' })
+      'SELECT action, actor_session, reason FROM run_mutation_audit WHERE run_id=? ORDER BY rowid',
+    ).all(unowned)).toEqual([
+      { action: 'adopt', actor_session: 'acting-session', reason: 'before void' },
+      { action: 'void', actor_session: 'acting-session', reason: null },
+    ])
+    expect(db().query('SELECT session_id FROM run WHERE id=?').get(unowned))
+      .toEqual({ session_id: 'acting-session' })
   })
 
   test('a scored collision is kept as a verdict and dropped from routing', () => {
@@ -7184,6 +7232,19 @@ describe('detached run collection', () => {
       answer: 'the existing shape', answered_by: 'orch-test-session',
       answered_at: expect.any(String),
     })
+    expect(db().query('SELECT session_id FROM run WHERE id=?').get(id))
+      .toEqual({ session_id: 'orch-test-session' })
+    expect(db().query(
+      'SELECT action, actor_session, reason FROM run_mutation_audit WHERE root_id=? ORDER BY rowid',
+    ).all(id)).toEqual([
+      { action: 'adopt', actor_session: 'orch-test-session', reason: 'before answer' },
+      { action: 'answer', actor_session: 'orch-test-session', reason: null },
+    ])
+    const foreign = orchInput(['stop', String(id)], undefined, {
+      CLAUDE_CODE_SESSION_ID: 'other-session',
+    })
+    expect(foreign.code).toBe(1)
+    expect(foreign.err).toContain(`run ${id} is owned by session orch-test-session`)
   })
 
   test('a flag value is not mistaken for a run id', () => {
@@ -7531,6 +7592,86 @@ describe('detached run collection', () => {
     expect(r.err).toContain(`run ${id}`)
     expect(r.err).toContain("agent is the placeholder '(pending)'")
     expect(db().query('SELECT * FROM score WHERE run_id=?').get(id)).toBeNull()
+  })
+
+  test('only a live hub serve capability lets the dashboard scorer cross ownership', async () => {
+    const id = insert('ok', 'file-question')
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('owner-session', id)
+
+    const forged = orchInput(['score', String(id), 'full', 'right', '--scorer', 'forged-dashboard'],
+      undefined, { CLAUDE_CODE_SESSION_ID: 'foreign-session' })
+    expect(forged.code).toBe(1)
+    expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
+
+    const capabilityDir = mkdtempSync(join(tmpdir(), 'hub-dashboard-test-'))
+    chmodSync(capabilityDir, 0o700)
+    const capabilityPath = join(capabilityDir, 'score-capability.json')
+    const capabilityBin = join(capabilityDir, 'bin')
+    mkdirSync(capabilityBin)
+    writeFileSync(join(capabilityBin, 'ps'), '#!/bin/sh\necho "bun /repo/hub/src/cli.ts serve --port 7778"\n')
+    chmodSync(join(capabilityBin, 'ps'), 0o755)
+    const token = randomUUID()
+    const hub = Bun.spawn(
+      [process.execPath, '-e', 'setInterval(() => {}, 1000)', 'hub', 'serve'],
+      { stdout: 'ignore', stderr: 'ignore' },
+    )
+    writeFileSync(capabilityPath, JSON.stringify({ token, pid: hub.pid }), { mode: 0o600 })
+    chmodSync(capabilityPath, 0o600)
+    try {
+      const invalid = orchInput(
+        ['score', String(id), 'full', 'right', '--scorer', 'hub-dashboard'], undefined,
+        {
+          CLAUDE_CODE_SESSION_ID: 'foreign-session',
+          [DASHBOARD_CAPABILITY_PATH_ENV]: capabilityPath,
+          [DASHBOARD_CAPABILITY_TOKEN_ENV]: 'not-the-token',
+          PATH: `${capabilityBin}:${process.env.PATH ?? ''}`,
+        },
+      )
+      expect(invalid.code).toBe(1)
+
+      const forbiddenVoid = orchInput(
+        ['score', String(id), '--void', '--scorer', 'hub-dashboard'], undefined,
+        {
+          CLAUDE_CODE_SESSION_ID: 'foreign-session',
+          [DASHBOARD_CAPABILITY_PATH_ENV]: capabilityPath,
+          [DASHBOARD_CAPABILITY_TOKEN_ENV]: token,
+          PATH: `${capabilityBin}:${process.env.PATH ?? ''}`,
+        },
+      )
+      expect(forbiddenVoid.code).toBe(1)
+      expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id))
+        .toEqual({ evidence_excluded: null })
+
+      const allowed = orchInput(
+        ['score', String(id), 'full', 'right', '--scorer', 'hub-dashboard'], undefined,
+        {
+          CLAUDE_CODE_SESSION_ID: 'foreign-session',
+          [DASHBOARD_CAPABILITY_PATH_ENV]: capabilityPath,
+          [DASHBOARD_CAPABILITY_TOKEN_ENV]: token,
+          PATH: `${capabilityBin}:${process.env.PATH ?? ''}`,
+        },
+      )
+      expect(allowed.code).toBe(0)
+      expect(db().query('SELECT scored_by FROM score WHERE run_id=?').get(id))
+        .toEqual({ scored_by: 'hub-dashboard' })
+    } finally {
+      hub.kill()
+      await hub.exited
+      rmSync(capabilityDir, { recursive: true, force: true })
+    }
+  })
+
+  test('an anonymous caller cannot score an unowned run', () => {
+    const id = insert('ok', 'file-question')
+    const result = Bun.spawnSync(
+      [process.execPath, CLI, 'score', String(id), 'full', 'right'],
+      { env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: undefined, CLAUDE_CODE_BRIDGE_SESSION_ID: undefined },
+        stdout: 'pipe', stderr: 'pipe' },
+    )
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr.toString()).toContain('no session identity is present to score it')
+    expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
   })
 
   test('score drops a habitual fidelity word for a review lens and records two axes', () => {
@@ -9896,6 +10037,16 @@ describe('a conversation is one unit of work, not one per turn', () => {
 })
 
 describe('a worktree is resolved against the main checkout, not the caller cwd', () => {
+  let priorCleanupSession: string | undefined
+  beforeEach(() => {
+    priorCleanupSession = process.env.CLAUDE_CODE_SESSION_ID
+    process.env.CLAUDE_CODE_SESSION_ID = 'worktree-owner-session'
+  })
+  afterEach(() => {
+    if (priorCleanupSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorCleanupSession
+  })
+
   const fromRoot = <T>(fn: () => T): T => {
     const priorDepth = process.env.ORCH_DEPTH
     try {
@@ -12000,8 +12151,11 @@ echo 'Usage: scripts/worktree create [seed]'
       expect(existsSync(tree.path)).toBe(false)
       expect(git(repo, 'branch', '--list', tree.branch)).toBe('')
       expect(db().query(
-        'SELECT action, actor_session FROM run_mutation_audit WHERE run_id=?',
-      ).get(id)).toEqual({ action: 'discard', actor_session: 'discard-actor' })
+        'SELECT action, actor_session FROM run_mutation_audit WHERE run_id=? ORDER BY rowid',
+      ).all(id)).toEqual([
+        { action: 'adopt', actor_session: 'discard-actor' },
+        { action: 'discard', actor_session: 'discard-actor' },
+      ])
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
