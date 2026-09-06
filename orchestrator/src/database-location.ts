@@ -8,9 +8,25 @@ export type DatabaseResolution = {
   method: DatabaseResolutionMethod
   tried: string[]
   registeredPath: string | null
+  repositoryRoot: string | null
+  repositoryCandidate: string | null
+  repositoryCandidateExisted: boolean
+  initializable: boolean
 }
 
 export const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
+
+const worktreeSegment = '/.claude/worktrees/'
+
+function sourceBelongsToRepository(repositoryRoot: string, binaryRoot: string): boolean {
+  const source = resolve(binaryRoot)
+  const root = resolve(repositoryRoot)
+  // This is the pre-database identity test from DEV-286: source is either the
+  // main checkout's orchestrator/ or an orchestrator/ inside that root's
+  // .claude/worktrees/. A sibling project's root matches neither shape.
+  return source === join(root, 'orchestrator') ||
+    (source.startsWith(`${join(root, '.claude', 'worktrees')}/`) && basename(source) === 'orchestrator')
+}
 
 type RepositoryRoot = { root: string; method: 'git-common-dir' | 'git-pointer' }
 
@@ -71,7 +87,11 @@ export function resolveDatabase(
   binaryRoot = ROOT,
 ): DatabaseResolution {
   if (env.ORCH_DB) {
-    return { path: resolve(env.ORCH_DB), method: 'ORCH_DB', tried: [resolve(env.ORCH_DB)], registeredPath: null }
+    return {
+      path: resolve(env.ORCH_DB), method: 'ORCH_DB', tried: [resolve(env.ORCH_DB)], registeredPath: null,
+      repositoryRoot: null, repositoryCandidate: null, repositoryCandidateExisted: false,
+      initializable: true,
+    }
   }
 
   const binaryRelative = join(binaryRoot, 'orch.db')
@@ -80,15 +100,28 @@ export function resolveDatabase(
   if (repository) {
     const candidate = join(repository.root, 'orchestrator', 'orch.db')
     tried.push(candidate)
-    // Do not fall through to the invoking binary when a repository was found.
-    // Returning the absent candidate lets normal startup refuse it and lets
-    // the explicit init-db path create exactly that file.
-    return { path: candidate, method: repository.method, tried, registeredPath: null }
+    const candidateExists = existsSync(candidate)
+    const ownsSource = sourceBelongsToRepository(repository.root, binaryRoot)
+    if (candidateExists || ownsSource) {
+      return {
+        path: candidate, method: repository.method, tried, registeredPath: null,
+        repositoryRoot: repository.root, repositoryCandidate: candidate,
+        repositoryCandidateExisted: candidateExists,
+        // A worktree-local binary may diagnose its main checkout, but only the
+        // main checkout's binary may initialize that checkout.
+        initializable: candidateExists || !resolve(binaryRoot).includes(worktreeSegment),
+      }
+    }
   }
 
   tried.push(binaryRelative)
-  if (!binaryRoot.includes('/.claude/worktrees/')) {
-    return { path: binaryRelative, method: 'binary-relative', tried, registeredPath: null }
+  if (!resolve(binaryRoot).includes(worktreeSegment)) {
+    return {
+      path: binaryRelative, method: 'binary-relative', tried, registeredPath: null,
+      repositoryRoot: repository?.root ?? null,
+      repositoryCandidate: repository ? join(repository.root, 'orchestrator', 'orch.db') : null,
+      repositoryCandidateExisted: false, initializable: true,
+    }
   }
 
   throw new Error(
@@ -102,6 +135,18 @@ export const DB_PATH = DATABASE_RESOLUTION.path
 
 export function missingDatabaseMessage(path = DB_PATH): string {
   return `orchestrator database does not exist: ${path}\nrun orch init-db to create it`
+}
+
+export function registeredRepositoryMissingDatabase(
+  resolution: DatabaseResolution,
+  registeredRoot: string,
+): string | null {
+  if (
+    resolution.repositoryRoot && resolution.repositoryCandidate &&
+    !resolution.repositoryCandidateExisted && resolution.path !== resolution.repositoryCandidate &&
+    resolve(registeredRoot) === resolve(resolution.repositoryRoot)
+  ) return resolution.repositoryCandidate
+  return null
 }
 
 export function resolveRunsDirectory(

@@ -1105,7 +1105,9 @@ const { candidates, weightCase, scoreboard, median, evidenceFor, pick,
         STANDING_EXPLORE_RATE, PROMPT_SIZE_BOUNDARY, promptSizeBucket } = await import('./route.ts')
 const { guide } = await import('./guide.ts')
 const { projects, projectAt, projectByName, stackAt, upsertProject, removeProject } = await import('./projects.ts')
-const { resolveDatabase, resolveRunsDirectory } = await import('./database-location.ts')
+const {
+  missingDatabaseMessage, registeredRepositoryMissingDatabase, resolveDatabase, resolveRunsDirectory,
+} = await import('./database-location.ts')
 const { dbNameFor, recipeNotes, runRecipe, fill } = await import('./recipe.ts')
 const { JOBS } = await import('./jobs.ts')
 const { runDetail, state } = await import('./serve.ts')
@@ -10124,6 +10126,60 @@ describe('projects are data, not code', () => {
     }
   })
 
+  test('a sibling repository with no database falls through to the main binary database', () => {
+    const sibling = realpathSync(mkdtempSync(join(tmpdir(), 'orch-db-sibling-')))
+    const binaryRoot = '/main/orchestrator'
+    try {
+      const initialized = Bun.spawnSync(['git', 'init', '-b', 'main'], {
+        cwd: sibling, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(initialized.exitCode).toBe(0)
+      const candidate = join(sibling, 'orchestrator', 'orch.db')
+      expect(resolveDatabase(sibling, {}, binaryRoot)).toMatchObject({
+        path: '/main/orchestrator/orch.db', method: 'binary-relative',
+        tried: [candidate, '/main/orchestrator/orch.db'],
+      })
+    } finally {
+      rmSync(sibling, { recursive: true, force: true })
+    }
+  })
+
+  test('a missing database in this source repository is retained for refusal and main-only initialization', () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-db-own-missing-')))
+    const tree = join(repo, 'tree')
+    const candidate = join(repo, 'orchestrator', 'orch.db')
+    const git = (cwd: string, ...args: string[]) => {
+      const result = Bun.spawnSync(['git', ...args], {
+        cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+    }
+    try {
+      git(repo, 'init', '-b', 'main')
+      git(repo, 'config', 'user.email', 'orch-test@example.invalid')
+      git(repo, 'config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'tracked'), 'fixture\n')
+      git(repo, 'add', 'tracked')
+      git(repo, 'commit', '-m', 'fixture')
+      git(repo, 'worktree', 'add', '-b', 'test-tree', tree, 'main')
+      mkdirSync(join(repo, 'orchestrator'))
+
+      const main = resolveDatabase(repo, {}, join(repo, 'orchestrator'))
+      expect(main).toMatchObject({ path: candidate, initializable: true })
+      expect(missingDatabaseMessage(main.path)).toContain(`database does not exist: ${candidate}`)
+
+      chmodSync(join(repo, '.git'), 0o000)
+      const worktree = resolveDatabase(
+        tree, {}, join(repo, '.claude', 'worktrees', 'local', 'orchestrator'),
+      )
+      expect(worktree).toMatchObject({ path: candidate, method: 'git-pointer', initializable: false })
+      expect(missingDatabaseMessage(worktree.path)).toContain(candidate)
+    } finally {
+      chmodSync(join(repo, '.git'), 0o755)
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('a bare repository is its own root and never borrows its parent database', () => {
     const parent = realpathSync(mkdtempSync(join(tmpdir(), 'orch-db-bare-')))
     const bare = join(parent, 'repository.git')
@@ -10136,9 +10192,12 @@ describe('projects are data, not code', () => {
       expect(initialized.exitCode).toBe(0)
       mkdirSync(dirname(wrong), { recursive: true })
       writeFileSync(wrong, 'wrong database')
-      const absent = resolveDatabase(bare, {}, '/work/.claude/worktrees/local/orchestrator')
-      expect(absent).toMatchObject({ path: right, method: 'git-common-dir', tried: [right] })
-      expect(existsSync(absent.path)).toBe(false)
+      const absent = resolveDatabase(bare, {}, '/main/orchestrator')
+      expect(absent).toMatchObject({
+        path: '/main/orchestrator/orch.db', method: 'binary-relative',
+        tried: [right, '/main/orchestrator/orch.db'],
+      })
+      expect(absent.path).not.toBe(wrong)
       mkdirSync(dirname(right), { recursive: true })
       writeFileSync(right, 'right database')
       expect(resolveDatabase(bare, {}, '/work/.claude/worktrees/local/orchestrator'))
@@ -10146,6 +10205,18 @@ describe('projects are data, not code', () => {
     } finally {
       rmSync(parent, { recursive: true, force: true })
     }
+  })
+
+  test('the opened register can identify a missing platform database after pre-open fallback', () => {
+    const resolution = {
+      ...resolveDatabase('/outside', {}, '/main/orchestrator'),
+      repositoryRoot: '/registered/platform',
+      repositoryCandidate: '/registered/platform/orchestrator/orch.db',
+      repositoryCandidateExisted: false,
+    }
+    expect(registeredRepositoryMissingDatabase(resolution, '/registered/platform'))
+      .toBe('/registered/platform/orchestrator/orch.db')
+    expect(registeredRepositoryMissingDatabase(resolution, '/another/platform')).toBeNull()
   })
 
   test('runs and pending use the main database from a linked worktree without an override', () => {

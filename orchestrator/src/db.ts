@@ -4,7 +4,9 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { DOC_SCOPES, DOC_SCOPE_SUBJECT_KIND } from '../../shared/docs.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { DATABASE_RESOLUTION, DB_PATH, missingDatabaseMessage } from './database-location.ts'
+import {
+  DATABASE_RESOLUTION, DB_PATH, missingDatabaseMessage, registeredRepositoryMissingDatabase,
+} from './database-location.ts'
 export { label } from './outcome.ts'
 export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
 
@@ -46,6 +48,16 @@ export function db(): Database {
   // holds a connection open for hours, and a long-lived reader blocks
   // truncation but not the limit taking effect afterwards.
   d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+  const registered = d.query('SELECT path FROM project WHERE name = ?').get(PLATFORM_SLUG) as
+    { path: string } | null
+  DATABASE_RESOLUTION.registeredPath = registered ? join(registered.path, 'orchestrator', 'orch.db') : null
+  const registeredMissing = registered
+    ? registeredRepositoryMissingDatabase(DATABASE_RESOLUTION, registered.path)
+    : null
+  if (registeredMissing) {
+    d.close()
+    throw new Error(missingDatabaseMessage(registeredMissing))
+  }
   if (databaseWritable(d)) {
     d.exec(`
       PRAGMA journal_mode = WAL;
@@ -57,9 +69,6 @@ export function db(): Database {
     excludeSharedOutputRuns(d)
     seedProjects(d)
   }
-  const registered = d.query('SELECT path FROM project WHERE name = ?').get(PLATFORM_SLUG) as
-    { path: string } | null
-  DATABASE_RESOLUTION.registeredPath = registered ? join(registered.path, 'orchestrator', 'orch.db') : null
   handle = d
   if (writable) reapStale(d)
   return d
@@ -68,6 +77,9 @@ export function db(): Database {
 /** The sole path that may create the orchestrator database. */
 export function initializeDatabase(): string {
   if (existsSync(DB_PATH)) throw new Error(`refusing to initialize: orchestrator database already exists: ${DB_PATH}`)
+  if (!DATABASE_RESOLUTION.initializable) {
+    throw new Error(`refusing to initialize from a worktree binary: ${DB_PATH}\nrun orch init-db from the main checkout`)
+  }
   mkdirSync(dirname(DB_PATH), { recursive: true })
   const d = new Database(DB_PATH, { create: true })
   try {
