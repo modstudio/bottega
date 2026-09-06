@@ -772,7 +772,7 @@ function discardWorktree(
       base: row.base_commit ?? '',
       repoRoot,
       source: row.worktree_source ?? undefined,
-    }, repoRoot, force, ownersBefore.length > 0)
+    }, repoRoot, force, ownersBefore.length > 0, row.id)
     const sharersAfter = evidenceOwningWorktreeSharers(row)
     const ownersAfter = evidenceOwningBranchOwners(row, repoRoot)
     let branchWarning: string | null = null
@@ -4021,7 +4021,7 @@ switch (cmd) {
           const afterCutCount = protectedBranch && r.base_commit
             ? (unmergedBranch(repoRoot, r.branch!, r.base_commit)?.count ?? 0)
             : null
-          const res = removeFor(w, repoRoot, false, ownersBefore.length > 0)
+          const res = removeFor(w, repoRoot, false, ownersBefore.length > 0, r.id)
           const sharersAfter = evidenceOwningWorktreeSharers(r)
           const ownersAfter = evidenceOwningBranchOwners(r, repoRoot)
           if (r.branch) {
@@ -4182,7 +4182,7 @@ switch (cmd) {
               keep(`${label}  live — kept`, 'live — kept')
               return
             }
-            const res = removeFor(w, p.path, false, ownersBefore.length > 0)
+            const res = removeFor(w, p.path, false, ownersBefore.length > 0, runId ?? undefined)
             const sharersAfter = evidenceOwningWorktreeSharers(worktreeRow)
             const ownersAfter = evidenceOwningBranchOwners(ownerRow, p.path)
             if (safe.branch) {

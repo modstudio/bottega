@@ -251,7 +251,7 @@ async function release(result: RunResult | null, keepBranch = false): Promise<st
   const head = keepBranch
     ? argv(['git', '-C', result.worktree.path, 'rev-parse', 'HEAD'], result.worktree.path)
     : null
-  const removed = removeFor(result.worktree, result.worktree.repoRoot, false, keepBranch)
+  const removed = removeFor(result.worktree, result.worktree.repoRoot, false, keepBranch, result.id)
   if (removed.removed && keepBranch && head?.ok) {
     const exists = argv(['git', '-C', result.worktree.repoRoot, 'show-ref', '--verify', '--quiet',
       `refs/heads/${result.worktree.branch}`], result.worktree.repoRoot)

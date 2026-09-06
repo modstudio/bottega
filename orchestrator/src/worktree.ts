@@ -26,7 +26,7 @@ import { accessSync, appendFileSync, closeSync, constants, cpSync, existsSync,
          realpathSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import { basename, delimiter, dirname, join, resolve } from 'node:path'
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { db, pidAlive, ROOT } from './db.ts'
 import { createHasPlaceholder, projectAt, type WorktreeCreate, type WorktreeTool } from './projects.ts'
 import { runRecipe, teardownRecipe, dbNameFor, type Recipe } from './recipe.ts'
@@ -95,6 +95,14 @@ function linkedWorktreePaths(cwd: string): {
     )
   }
   return { gitDir, commonDir, objects: join(gitDir, 'objects') }
+}
+
+function commonGitDir(cwd: string): string | null {
+  const linked = linkedWorktreePaths(cwd)
+  if (linked) return linked.commonDir
+  const configured = gitConfigOk(['rev-parse', '--path-format=absolute', '--git-common-dir'], cwd)
+  if (!configured) return null
+  try { return realpathSync(resolve(cwd, configured)) } catch { return null }
 }
 
 /** Use the isolated object store after it has been provisioned for this worktree. */
@@ -473,6 +481,15 @@ function installedRefGuard(installed: string, guard: string): InstalledRefGuard 
 
 const REF_GUARD_STAGE_PREFIX = '.orch-hooks-'
 
+function refGuardRunId(cwd: string): number {
+  const marker = join(cwd, ORCH_RUN_MARKER)
+  const value = existsSync(marker) ? Number(readFileSync(marker, 'utf8').split('\n', 1)[0]) : NaN
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`cannot publish shared ref guard: ${cwd} has no valid ${ORCH_RUN_MARKER} run id`)
+  }
+  return value
+}
+
 function refGuardCheckpoint(name: string): void {
   if (process.env.ORCH_TEST_REF_GUARD_CHECKPOINT !== name) return
   const ready = process.env.ORCH_TEST_REF_GUARD_READY
@@ -549,11 +566,13 @@ export function prepareSharedRefGuard(
 ): SharedRefGuardEnvironment {
   const paths = linkedWorktreePaths(cwd)
   if (!paths) throw new Error(`cannot guard shared refs: ${cwd} is not a linked worktree`)
-  const hookDir = join(paths.gitDir, 'orch-hooks')
+  const hookDir = join(paths.commonDir, 'orch-guards', String(refGuardRunId(cwd)))
   if (pathEntryExists(hookDir) && realpathSync(hookDir) !== resolve(hookDir)) {
     throw new Error(`refusing shared ref guard hook directory symlink: ${hookDir}`)
   }
-  cleanupRefGuardLitter(paths.gitDir, hookDir)
+  const guardRoot = dirname(hookDir)
+  mkdirSync(guardRoot, { recursive: true })
+  cleanupRefGuardLitter(guardRoot, hookDir)
 
   const configured = gitConfigOk(['config', '--path', 'core.hooksPath'], cwd)
   const originalDir = configured
@@ -610,7 +629,7 @@ export function prepareSharedRefGuard(
   }
 
   try {
-    accessSync(existsSync(hookDir) ? hookDir : paths.gitDir, constants.W_OK)
+    accessSync(existsSync(hookDir) ? hookDir : guardRoot, constants.W_OK)
   } catch {
     throw new Error(`cannot install shared ref guard: hook path is not writable: ${hookDir}`)
   }
@@ -622,7 +641,7 @@ export function prepareSharedRefGuard(
   // The complete directory is assembled and synced under a private sibling
   // name. Only one rename publishes it at the path a worker may receive.
   try {
-    stageRefGuardDirectory(paths.gitDir, hookDir, guard, wrapper)
+    stageRefGuardDirectory(guardRoot, hookDir, guard, wrapper)
   } catch (error) {
     if (!pathEntryExists(hookDir)) throw error
     const winner = installedRefGuard(installed, guard)
@@ -634,6 +653,34 @@ export function prepareSharedRefGuard(
   }
 
   return verifiedSharedRefGuardEnvironment(paths, hookDir, guard, allowedRef)
+}
+
+/** Remove the guard owned by one run. A missing repository or directory is already clean. */
+export function removeSharedRefGuard(cwd: string, runId: number): void {
+  const commonDir = commonGitDir(cwd)
+  if (!commonDir) return
+  rmSync(join(commonDir, 'orch-guards', String(runId)), { recursive: true, force: true })
+}
+
+/**
+ * Refuse dispatch if the worker can write the hook that constrains its shared ref writes.
+ * Existing paths are canonicalised before containment is compared so symlinks cannot
+ * make a writable ancestor look unrelated to the published directory.
+ */
+export function assertSharedRefGuardOutsideWritableRoots(
+  hookDir: string, writableRoots: string[],
+): void {
+  const published = realpathSync(hookDir)
+  for (const root of writableRoots) {
+    const canonicalRoot = realpathSync(root)
+    const rel = relative(canonicalRoot, published)
+    if (rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel))) {
+      throw new Error(
+        `THE GUARD LIVES OUTSIDE EVERY ROOT THE WORKER CAN WRITE invariant failed: ` +
+        `${published} is inside writable root ${canonicalRoot}`,
+      )
+    }
+  }
 }
 
 function sharedRefGuardEnvironment(
@@ -648,7 +695,11 @@ function sharedRefGuardEnvironment(
   }
 }
 
-/** Common immutable objects plus the run branch's ref/reflog directories are the only shared writes. */
+/**
+ * Common immutable objects plus the run branch's ref/reflog directories are the only shared writes.
+ * A flat branch necessarily grants all of refs/heads and logs/refs/heads. That is acceptable only
+ * because the guard is outside those roots and refuses every ref except the worker's exact branch.
+ */
 export function workerSharedGitRoots(cwd: string, branch: string): string[] {
   const paths = linkedWorktreePaths(cwd)
   if (!paths) throw new Error(`cannot resolve shared git roots: ${cwd} is not a linked worktree`)
@@ -693,7 +744,7 @@ function attributeWorktree(
   try {
     record?.(worktree)
   } catch (e) {
-    const cleanup = removeFor(worktree, worktree.repoRoot)
+    const cleanup = removeFor(worktree, worktree.repoRoot, false, false, runId)
     throw new Error(
       `${String((e as Error)?.message ?? e)}\n` +
       `unrecorded worktree cleanup: ${cleanup.removed ? 'removed' : cleanup.detail}`,
@@ -702,7 +753,7 @@ function attributeWorktree(
   const recorded = db().query('SELECT status FROM run WHERE id=?').get(runId) as
     { status: string } | null
   if (recorded?.status === 'stopped') {
-    const cleanup = removeFor(worktree, worktree.repoRoot)
+    const cleanup = removeFor(worktree, worktree.repoRoot, false, false, runId)
     if (cleanup.removed) {
       db().query('UPDATE run SET worktree=NULL WHERE id=?').run(runId)
     }
@@ -1552,7 +1603,7 @@ function createFromRecipe(
   const steps = runRecipe(recipe, path, dbName, String(recipe.serve ? portFor(runId) : ''))
   const failed = steps.find((r) => !r.ok)
   if (failed) {
-    removeFor(w, repoRoot)
+    removeFor(w, repoRoot, false, false, runId)
     throw new Error(
       `worktree setup failed at "${failed.step}":\n${failed.detail.slice(-1200)}`,
     )
@@ -1560,7 +1611,7 @@ function createFromRecipe(
   try {
     verifyFreshWorktree(w)
   } catch (e) {
-    removeFor(w, repoRoot)
+    removeFor(w, repoRoot, false, false, runId)
     throw e
   }
   return w
@@ -1774,7 +1825,7 @@ function removeReadOnlyTree(
 
 /** Remove a tree through the lifecycle declared by its registered project. */
 export function removeFor(
-  w: Worktree, repoRoot: string, forceOrchTree = false, keepBranch = false,
+  w: Worktree, repoRoot: string, forceOrchTree = false, keepBranch = false, runId?: number,
 ): { removed: boolean; detail: string; output?: string } {
   const project = projectAt(repoRoot)
   const tool = project?.settings.worktree
@@ -1791,6 +1842,7 @@ export function removeFor(
   const result: { removed: boolean; detail: string; output?: string } = tool && projectOwned
     ? removeWithTool(tool, w, forceOrchTree, retainBranch)
     : removeWorktree(w, retainBranch)
+  if (result.removed && runId !== undefined) removeSharedRefGuard(repoRoot, runId)
   return result.output
     ? { ...result, output: `${project!.name} remove:\n${result.output}` }
     : result

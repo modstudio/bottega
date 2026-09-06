@@ -22,6 +22,7 @@ import {
   toolFor, changesIn, repoRootOf, resolveBase, resolveReadOnlyBase, worktreeGitDir,
   createCommandExists,
   prepareWorktreeObjects, prepareSharedRefGuard, carryWorkingState,
+  assertSharedRefGuardOutsideWritableRoots,
   targetGitEnvironment,
   workerSharedGitRoots,
   contentTree,
@@ -1802,7 +1803,7 @@ export async function run(opts: {
           const current = db().query('SELECT status FROM run WHERE id=?').get(claim.id) as
             { status: string }
           if (current.status === 'stopped') {
-            const cleanup = removeFor(created, created.repoRoot)
+            const cleanup = removeFor(created, created.repoRoot, false, false, claim.id)
             if (cleanup.removed) {
               db().query('UPDATE run SET worktree=NULL WHERE id=?').run(claim.id)
             }
@@ -1833,7 +1834,7 @@ export async function run(opts: {
               ? carryWorkingState(callerCwd, created)
               : { base: created.base, tracked: [], untracked: [] }
           } catch (e) {
-            const cleanup = removeFor(created, created.repoRoot)
+            const cleanup = removeFor(created, created.repoRoot, false, false, claim.id)
             throw new Error(
               `${String((e as Error)?.message ?? e)}\n` +
               `incomplete worktree cleanup: ${cleanup.removed ? 'removed' : cleanup.detail}`,
@@ -1986,12 +1987,19 @@ export async function run(opts: {
   // read existing objects through a common-store alternate. Writing jobs use
   // the common store so commits survive removal of the disposable tree.
   const gitObjectEnvironment = gitObjectEnvironmentFor(name, requestedJob, worktree)
+  const writableRoots = repoJob && worktree
+    ? [worktreeGitDir(worktree.path),
+        ...(writesJob ? workerSharedGitRoots(worktree.path, worktree.branch) : [])]
+    : undefined
   const gitConfigEnvironment = worktree
     ? prepareSharedRefGuard(
         worktree.path,
         writesJob && requestedJob.name !== 'land' ? `refs/heads/${worktree.branch}` : undefined,
       )
     : undefined
+  if (gitConfigEnvironment && writableRoots) {
+    assertSharedRefGuardOutsideWritableRoots(gitConfigEnvironment.GIT_CONFIG_VALUE_0, writableRoots)
+  }
   const argvOpts = {
     prompt,
     out: outPath,
@@ -2015,10 +2023,7 @@ export async function run(opts: {
     // Every repository job may write its own linked metadata. A writing worker
     // additionally writes immutable common objects and its run branch ref and
     // reflog; the reference hook refuses every other ref by exact name.
-    writableRoots: repoJob && worktree
-      ? [worktreeGitDir(worktree.path),
-          ...(writesJob ? workerSharedGitRoots(worktree.path, worktree.branch) : [])]
-      : undefined,
+    writableRoots,
     gitObjectEnvironment,
     gitConfigEnvironment,
   }

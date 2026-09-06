@@ -739,6 +739,8 @@ sessions have used the split twice.
 
 ## The lifecycle: states, locks and the invariants they protect
 
+- **THE GUARD LIVES OUTSIDE EVERY ROOT THE WORKER CAN WRITE.** A guard the constrained party can delete is advisory.
+
 A run: `reserved → attached → running → asking → ok | failed | stopped | stale`; a chain inherits its last turn's state.
 
 A branch: `cut → built → reviewed → rebased → landed | abandoned`; a rebase invalidates the review's exact match, and the pin or the four-fact carry re-establishes it.

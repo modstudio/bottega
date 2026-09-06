@@ -73,6 +73,7 @@ async function runWithDelayedStdoutReader(
 }
 
 describe('landing is gated on the exact commit that reaches trunk', () => {
+  let landingFixtureRunId = 50_000
   const landingModule = new URL('landing.ts', import.meta.url).href
   const gitLocksModule = new URL('git-locks.ts', import.meta.url).href
   const worktreeModule = new URL('worktree.ts', import.meta.url).href
@@ -88,7 +89,7 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     g(repo, 'init', '-b', 'main')
     g(repo, 'config', 'user.email', 'orch-test@example.invalid')
     g(repo, 'config', 'user.name', 'Orch Test')
-    appendFileSync(join(repo, '.git', 'info', 'exclude'), 'trees/\n')
+    appendFileSync(join(repo, '.git', 'info', 'exclude'), 'trees/\n.orch-run\n')
     writeFileSync(join(repo, 'base.txt'), 'base\n')
     g(repo, 'add', 'base.txt')
     g(repo, 'commit', '-m', 'base')
@@ -97,6 +98,7 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       const tree = join(repo, 'trees', branch)
       mkdirSync(join(repo, 'trees'), { recursive: true })
       g(repo, 'worktree', 'add', '-b', branch, tree, 'main')
+      writeFileSync(join(tree, '.orch-run'), `${landingFixtureRunId++}\n${repo}\nsource: git\n`)
       writeFileSync(join(tree, `${branch}.txt`), `${branch}\n`)
       g(tree, 'add', `${branch}.txt`)
       g(tree, 'commit', '-m', branch)
@@ -1139,7 +1141,7 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     g(repo, 'init', '-b', 'main')
     g(repo, 'config', 'user.email', 'orch-test@example.invalid')
     g(repo, 'config', 'user.name', 'Orch Test')
-    appendFileSync(join(repo, '.git', 'info', 'exclude'), 'trees/\n')
+    appendFileSync(join(repo, '.git', 'info', 'exclude'), 'trees/\n.orch-run\n')
     writeFileSync(join(repo, 'base.txt'), 'base\n')
     g(repo, 'add', 'base.txt')
     g(repo, 'commit', '-m', 'base')
@@ -1147,6 +1149,7 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     const tree = join(repo, 'trees', branch)
     mkdirSync(join(repo, 'trees'), { recursive: true })
     g(repo, 'worktree', 'add', '-b', branch, tree, 'main')
+    writeFileSync(join(tree, '.orch-run'), `59999\n${repo}\nsource: git\n`)
     writeFileSync(join(tree, 'work.txt'), 'work\n')
     g(tree, 'add', 'work.txt')
     const authored = Bun.spawnSync(['git', 'commit', '-m', 'worker short message'], {
@@ -1388,6 +1391,7 @@ const { checkMessages, messageArchitect, messagesForRun } = await import('./mail
 const { orphanSafety, repoRootOf, createWorktree, createWithTool, createReadOnlyWorktree,
         createReadOnlyWithTool, resolveBase, fillTool,
         seedArgv, createArgv, worktreeGitDir, prepareWorktreeObjects, prepareSharedRefGuard,
+        assertSharedRefGuardOutsideWritableRoots, removeSharedRefGuard,
         workerSharedGitRoots,
         carryWorkingState, withWorktreeCreateLock, withProjectLock, projectLockState,
         unmergedBranch, assertCallerAncestry, checkoutHasUncommittedWork, callerDrift,
@@ -19289,17 +19293,18 @@ describe('the sandbox an agent is launched with', () => {
       symlinkSync(actualReferenceHook, join(projectHooks, 'reference-transaction'))
 
       const guardEnv = prepareSharedRefGuard(tree.path, `refs/heads/${tree.branch}`)
-      expect(readdirSync(join(worktreeGitDir(tree.path), 'orch-hooks')))
+      expect(guardEnv.GIT_CONFIG_VALUE_0).toBe(join(realpathSync(repo), '.git', 'orch-guards', '156'))
+      expect(readdirSync(guardEnv.GIT_CONFIG_VALUE_0))
         .toEqual(['reference-transaction'])
       const installedWrapper = readFileSync(
-        join(worktreeGitDir(tree.path), 'orch-hooks', 'reference-transaction'), 'utf8',
+        join(guardEnv.GIT_CONFIG_VALUE_0, 'reference-transaction'), 'utf8',
       )
       expect(installedWrapper).toContain(Buffer.from(realpathSync(actualReferenceHook)).toString('base64'))
       expect(installedWrapper).not.toContain(Buffer.from(
         join(projectHooks, 'reference-transaction'),
       ).toString('base64'))
       const installedReferenceHook = join(
-        worktreeGitDir(tree.path), 'orch-hooks', 'reference-transaction',
+        guardEnv.GIT_CONFIG_VALUE_0, 'reference-transaction',
       )
       expect(installedWrapper).not.toContain(
         `'${installedReferenceHook}' "$@"`,
@@ -19315,7 +19320,7 @@ describe('the sandbox an agent is launched with', () => {
         delete process.env.GIT_CONFIG_VALUE_0
       }
       expect(readFileSync(
-        join(worktreeGitDir(tree.path), 'orch-hooks', 'reference-transaction'), 'utf8',
+        join(guardEnv.GIT_CONFIG_VALUE_0, 'reference-transaction'), 'utf8',
       )).toBe(installedWrapper)
 
       expect(git(scratch, ['init', '-b', 'main'], guardEnv).exitCode).toBe(0)
@@ -19354,6 +19359,67 @@ describe('the sandbox an agent is launched with', () => {
     } finally {
       rmSync(repo, { recursive: true, force: true })
       rmSync(scratch, { recursive: true, force: true })
+    }
+  })
+
+  test('dispatch containment refuses a guard inside a writable root and names the invariant', () => {
+    const root = mkdtempSync(join(tmpdir(), 'orch-guard-contained-'))
+    const guard = join(root, 'orch-guards', '248')
+    try {
+      mkdirSync(guard, { recursive: true })
+      expect(() => assertSharedRefGuardOutsideWritableRoots(guard, [root])).toThrow(
+        'THE GUARD LIVES OUTSIDE EVERY ROOT THE WORKER CAN WRITE invariant failed',
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('shared-ref guard teardown removes the run directory and accepts it already missing', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-guard-teardown-'))
+    const git = (args: string[]) => Bun.spawnSync(['git', ...args], {
+      cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    try {
+      expect(git(['init', '-b', 'main']).exitCode).toBe(0)
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      expect(git(['add', 'base.txt']).exitCode).toBe(0)
+      expect(git(['-c', 'user.email=orch-test@example.invalid', '-c', 'user.name=Orch Test',
+        'commit', '-m', 'base']).exitCode).toBe(0)
+      const tree = createWorktree(repo, 248)
+      const guard = prepareSharedRefGuard(tree.path)
+      expect(existsSync(guard.GIT_CONFIG_VALUE_0)).toBe(true)
+      expect(removeFor(tree, repo, false, false, 248).removed).toBe(true)
+      expect(existsSync(guard.GIT_CONFIG_VALUE_0)).toBe(false)
+      expect(() => removeSharedRefGuard(repo, 248)).not.toThrow()
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a common-dir guard refuses main for a worker on a flat branch', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-guard-flat-branch-'))
+    const git = (cwd: string, args: string[], env: Record<string, string> = {}) =>
+      Bun.spawnSync(['git', ...args], {
+        cwd, env: hermeticGitEnv(env), stdout: 'pipe', stderr: 'pipe',
+      })
+    try {
+      expect(git(repo, ['init', '-b', 'main']).exitCode).toBe(0)
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      expect(git(repo, ['add', 'base.txt']).exitCode).toBe(0)
+      expect(git(repo, ['-c', 'user.email=orch-test@example.invalid',
+        '-c', 'user.name=Orch Test', 'commit', '-m', 'base']).exitCode).toBe(0)
+      const tree = createWorktree(repo, 249)
+      expect(git(tree.path, ['branch', '-m', 'flat-worker']).exitCode).toBe(0)
+      const guard = prepareSharedRefGuard(tree.path, 'refs/heads/flat-worker')
+      expect(guard.GIT_CONFIG_VALUE_0).toBe(join(realpathSync(repo), '.git', 'orch-guards', '249'))
+      const forbidden = git(tree.path, ['update-ref', 'refs/heads/main', 'HEAD'], guard)
+      expect(forbidden.exitCode).not.toBe(0)
+      expect(forbidden.stderr.toString()).toContain(
+        'refusing shared ref update refs/heads/main: this worker may update only refs/heads/flat-worker',
+      )
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
     }
   })
 
@@ -19456,7 +19522,7 @@ describe('the sandbox an agent is launched with', () => {
       expect(git(repo, ['-c', 'user.email=orch-test@example.invalid',
         '-c', 'user.name=Orch Test', 'commit', '-m', 'base']).exitCode).toBe(0)
       const tree = createWorktree(repo, 230)
-      const hookDir = join(worktreeGitDir(tree.path), 'orch-hooks')
+      const hookDir = join(realpathSync(repo), '.git', 'orch-guards', '230')
       const installed = join(hookDir, 'reference-transaction')
       const otherCheckoutGuard = join(repo, 'other-checkout', 'orchestrator', 'hooks',
         'reference-transaction')
@@ -19465,7 +19531,7 @@ describe('the sandbox an agent is launched with', () => {
         new URL('../hooks/reference-transaction', import.meta.url).pathname,
       ))
       chmodSync(otherCheckoutGuard, 0o755)
-      mkdirSync(hookDir)
+      mkdirSync(hookDir, { recursive: true })
       symlinkSync(otherCheckoutGuard, installed)
 
       const guardEnv = prepareSharedRefGuard(tree.path)
@@ -19517,8 +19583,7 @@ describe('the sandbox an agent is launched with', () => {
       const checkpoints = ['mkdir', 'cleanup', 'temporary-open', 'write', 'chmod', 'fsync', 'close']
       for (const [index, checkpoint] of checkpoints.entries()) {
         const tree = createWorktree(repo, 231 + index)
-        const gitDir = worktreeGitDir(tree.path)
-        const hookDir = join(gitDir, 'orch-hooks')
+        const hookDir = join(repo, '.git', 'orch-guards', String(231 + index))
         const ready = join(repo, `checkpoint-${checkpoint}`)
         const child = Bun.spawn([process.execPath, '-e',
           `const { prepareSharedRefGuard } = await import(process.argv[1]);
@@ -19547,7 +19612,8 @@ describe('the sandbox an agent is launched with', () => {
         expect(forbidden.exitCode).not.toBe(0)
         expect(forbidden.stderr.toString()).toContain('this worker may update only')
         expect(readdirSync(hookDir)).toEqual(['reference-transaction'])
-        expect(readdirSync(gitDir).filter(name => name.startsWith('.orch-hooks-'))).toEqual([])
+        expect(readdirSync(join(repo, '.git', 'orch-guards'))
+          .filter(name => name.startsWith('.orch-hooks-'))).toEqual([])
       }
     } finally {
       rmSync(repo, { recursive: true, force: true })
@@ -19626,7 +19692,7 @@ describe('the sandbox an agent is launched with', () => {
       const [firstExit, secondExit] = await Promise.all([first.exited, second.exited])
       expect(firstExit).toBe(0)
       expect(secondExit).toBe(0)
-      const hookDir = join(worktreeGitDir(tree.path), 'orch-hooks')
+      const hookDir = join(repo, '.git', 'orch-guards', '233')
       const installed = join(hookDir, 'reference-transaction')
       expect(statSync(installed).mode & 0o111).toBe(0o111)
       expect(readdirSync(hookDir)).toEqual(['reference-transaction'])
@@ -19650,9 +19716,9 @@ describe('the sandbox an agent is launched with', () => {
       expect(git(repo, ['-c', 'user.email=orch-test@example.invalid',
         '-c', 'user.name=Orch Test', 'commit', '-m', 'base']).exitCode).toBe(0)
       const tree = createWorktree(repo, 226)
-      const hookDir = join(worktreeGitDir(tree.path), 'orch-hooks')
+      const hookDir = join(realpathSync(repo), '.git', 'orch-guards', '226')
       const installed = join(hookDir, 'reference-transaction')
-      mkdirSync(hookDir)
+      mkdirSync(hookDir, { recursive: true })
       writeFileSync(installed, '#!/bin/sh\necho original\n')
       chmodSync(installed, 0o755)
       expect(git(tree.path, ['config', 'core.hooksPath', hookDir]).exitCode).toBe(0)
@@ -19686,7 +19752,7 @@ describe('the sandbox an agent is launched with', () => {
       mkdirSync(projectHooks)
       symlinkSync(sharedGuard, join(projectHooks, 'reference-transaction'))
       expect(git(tree.path, ['config', 'core.hooksPath', projectHooks]).exitCode).toBe(0)
-      const hookDir = join(worktreeGitDir(tree.path), 'orch-hooks')
+      const hookDir = join(realpathSync(repo), '.git', 'orch-guards', '227')
 
       expect(() => prepareSharedRefGuard(tree.path)).toThrow(
         `resolves to tracked shared guard ${sharedGuard}`,
@@ -19711,8 +19777,8 @@ describe('the sandbox an agent is launched with', () => {
       expect(git(repo, ['-c', 'user.email=orch-test@example.invalid',
         '-c', 'user.name=Orch Test', 'commit', '-m', 'base']).exitCode).toBe(0)
       const tree = createWorktree(repo, 228)
-      hookDir = join(worktreeGitDir(tree.path), 'orch-hooks')
-      mkdirSync(hookDir)
+      hookDir = join(realpathSync(repo), '.git', 'orch-guards', '228')
+      mkdirSync(hookDir, { recursive: true })
       writeFileSync(join(hookDir, 'leave-alone'), 'sentinel\n')
       chmodSync(hookDir, 0o555)
 
