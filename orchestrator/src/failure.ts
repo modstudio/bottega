@@ -37,7 +37,6 @@ export type FailureKind =
   | 'other'
 
 const PATTERNS: [FailureKind, RegExp][] = [
-  ['sandbox_denied', /(?:sandbox(?:-exec)?[^\n]*(?:deny|denied)[^\n]*(?:\/Users\/|\/home\/|~\/)|(?:\/Users\/|\/home\/|~\/)[^\n]*(?:operation not permitted|sandbox[^\n]*denied)|operation not permitted[^\n]*(?:\/Users\/|\/home\/|~\/))/i],
   /**
    * Exit codes observed in run.exit_code, grouped by failure_kind and agent on
    * 2026-09-02. Vendor documentation names none of these behaviours; these are
@@ -174,6 +173,8 @@ export function classify(
   exitCode?: number | null,
   /** Whether OUR timer fired. Our own timeout is a timeout, not an interruption. */
   timedOut = false,
+  /** Recorded run sandbox. Only srt denials are sandbox routing evidence. */
+  sandbox?: 'host' | 'srt' | null,
 ): FailureKind {
   if (exitCode != null && SIGNAL_EXITS.has(exitCode)) {
     // OUR timer kills with the same signal as a harness does, so the exit code
@@ -183,6 +184,11 @@ export function classify(
     return timedOut ? 'timeout' : 'interrupted'
   }
   if (!error) return 'other'
+  if (sandbox === 'srt' &&
+      /(?:permission denied|operation not permitted|sandbox(?:-exec)?[^\n]*(?:deny|denied))/i.test(error) &&
+      /(?:^|[\s:'"])(?:\/[^\s:'"]+|~\/[^\s:'"]+)/m.test(error)) {
+    return 'sandbox_denied'
+  }
   for (const [kind, re] of PATTERNS) if (re.test(error)) return kind
   return 'other'
 }

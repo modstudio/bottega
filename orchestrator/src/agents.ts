@@ -310,7 +310,11 @@ export type Agent = {
    * stream, and qwen never prints it at all — it names a chat-recording file
    * after it, on disk, under a directory derived from the cwd.
    */
-  readSession?(ctx: { stdout: string; cwd: string; prompt: string; startedAt: number }): string | null
+  readSession?(ctx: {
+    stdout: string; cwd: string; prompt: string; startedAt: number
+    /** Vendor recording home when a sandbox deliberately overrides HOME. */
+    home?: string
+  }): string | null
   /** Prompt goes on stdin rather than argv (avoids ARG_MAX on large packs). */
   stdin: boolean
   /**
@@ -456,14 +460,16 @@ export const LOCAL_CONTEXT_TOKENS = Number(process.env.ORCH_LOCAL_CONTEXT ?? 131
  * opening with the exact prompt we sent. mtime alone is not enough and the
  * prompt alone is not either, because retrying an identical prompt is common.
  */
-function qwenSession(
-  { cwd, prompt, startedAt }: { cwd: string; prompt: string; startedAt: number },
+export function qwenSession(
+  { cwd, prompt, startedAt, home }: {
+    cwd: string; prompt: string; startedAt: number; home?: string
+  },
 ): string | null {
   // How qwen slugifies a path for its project directory, verified against the
   // directories it has already written: every run of non-alphanumerics becomes
   // a single dash, leading dash included.
   const slug = cwd.replace(/[^a-zA-Z0-9]+/g, '-')
-  const dir = join(process.env.HOME ?? '', '.qwen', 'projects', slug, 'chats')
+  const dir = join(home ?? process.env.HOME ?? '', '.qwen', 'projects', slug, 'chats')
   let best: { id: string; mtime: number } | null = null
   try {
     for (const name of readdirSync(dir)) {

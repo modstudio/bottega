@@ -5708,7 +5708,7 @@ switch (cmd) {
     const doctorFindings = findingsForPack(doctorPack).reduce((n, row) => n + row.findings.length, 0)
     const { CANON_EVALS, currentCanonEvalSha, latestCanonEvals } = await import('./evals.ts')
     const latestEvals = latestCanonEvals()
-    const { srtInstalled, SRT_BIN } = await import('./sandbox.ts')
+    const { isReadonlySandboxCandidate, srtInstalled, SRT_BIN } = await import('./sandbox.ts')
     console.log(`canon          ${doctorFindings} finding(s) in ${doctorPack.bytes}/${doctorPack.budgetBytes} bytes`)
     console.log('canon evals')
     for (const ev of CANON_EVALS) {
@@ -5757,7 +5757,11 @@ switch (cmd) {
       }
     }
     const srtAgents = Object.values(AGENTS)
-      .filter((agent) => agent.name !== 'codex' && agent.caps.readsRepo)
+      .filter((agent) => isReadonlySandboxCandidate({
+        agent: agent.name,
+        readsRepo: agent.caps.readsRepo,
+        writesRepo: false,
+      }))
       .map((agent) => agent.name)
     console.log(
       `sandbox        srt ${srtInstalled() ? 'installed' : 'NOT INSTALLED'} at ${SRT_BIN}`,

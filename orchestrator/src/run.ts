@@ -53,7 +53,7 @@ import { resolveRunsDirectory } from './database-location.ts'
 import { resolveLandingBranch } from './landing.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES } from './result-output.ts'
 import { addedGrokTrustHeadings, grokTrustHeadings } from './grok-trust.ts'
-import { prepareSandboxHome, selectReadonlySandbox, SRT_BIN } from './sandbox.ts'
+import { prepareSandboxHome, selectReadonlySandbox, srtLaunchArgv } from './sandbox.ts'
 import { startAskLoopback, type AskLoopback } from './ask.ts'
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
@@ -2239,27 +2239,35 @@ export async function run(opts: {
     'SELECT COALESCE(parent_run_id,id) AS id FROM run WHERE id=?',
   ).get(claim.id) as { id: number }).id
   const sandboxRunDir = join(runsDir, `sandbox-${sandboxRoot}`)
-  const sandboxSelection = selectReadonlySandbox({
-    agent: name,
-    readsRepo: repoJob,
-    writesRepo: writesJob,
-    worktree: worktree?.path ?? null,
-    runsDir: sandboxRunDir,
-    project: projectAt(callerCwd),
-    readonlyNotes: toolFor(callerCwd)?.readonly_notes,
-    override: process.env.ORCH_SANDBOX,
-    path: process.env.PATH,
-    localBaseUrl: LOCAL_BASE_URL,
-  })
+  let sandboxSelection: ReturnType<typeof selectReadonlySandbox>
+  try {
+    sandboxSelection = selectReadonlySandbox({
+      agent: name,
+      readsRepo: repoJob,
+      writesRepo: writesJob,
+      worktree: worktree?.path ?? null,
+      runsDir: sandboxRunDir,
+      project: projectAt(callerCwd),
+      readonlyNotes: toolFor(callerCwd)?.readonly_notes,
+      override: process.env.ORCH_SANDBOX,
+      path: process.env.PATH,
+      localBaseUrl: LOCAL_BASE_URL,
+    })
+  } catch (e) {
+    const why = String((e as Error)?.message ?? e)
+    db().query(
+      `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
+    ).run(why, Date.now() - started, claim.id)
+    throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
+  }
   const srtSettingsPath = sandboxSelection.profile
     ? join(sandboxRunDir, 'settings.json')
     : null
   const sandboxEnvironment = sandboxSelection.profile
     ? prepareSandboxHome(name, sandboxRunDir)
     : {}
-  if (srtSettingsPath) writeFileSync(srtSettingsPath, JSON.stringify(sandboxSelection.profile, null, 2))
   const launchArgv = sandboxSelection.sandbox === 'srt'
-    ? [SRT_BIN, '--settings', srtSettingsPath!, '--', a.bin, ...argv]
+    ? srtLaunchArgv(sandboxSelection.profile!, srtSettingsPath!, a.bin, argv)
     : [a.bin, ...argv]
   const sandboxRouteReason = sandboxSelection.reason
     ? `${reason}; sandbox host: ${sandboxSelection.reason}`
@@ -2388,7 +2396,10 @@ export async function run(opts: {
     // The id an agent named for ITSELF, recovered now that it has run. Minted
     // ids are already in hand and must not be overwritten by a failed lookup.
     resolvedSession = vendorSession ??
-      a.readSession?.({ stdout, cwd, prompt, startedAt: started }) ?? null
+      a.readSession?.({
+        stdout, cwd, prompt, startedAt: started,
+        home: sandboxEnvironment.HOME,
+      }) ?? null
 
     if (replyError) {
       // The envelope says the reply failed, but stdout is still the transcript
@@ -2481,7 +2492,7 @@ export async function run(opts: {
     } else if (replyError) {
       status = 'failed'
       error = errorTail(replyError)
-      failureKind = classify(replyError, exitCode, timedOut)
+      failureKind = classify(replyError, exitCode, timedOut, sandboxSelection.sandbox)
     } else if (exitCode === 0 && isNonAnswer(output)) {
       // Exit 0 and non-empty, but what came back is the vendor saying it
       // failed. Recorded as the failure it is rather than stored as an answer:
@@ -2490,7 +2501,7 @@ export async function run(opts: {
       // reads 57 bytes and works it out.
       status = 'failed'
       error = errorTail(output)
-      failureKind = classify(output, exitCode, timedOut)
+      failureKind = classify(output, exitCode, timedOut, sandboxSelection.sandbox)
     } else if (acceptedQuestions.length) {
       // `asking`, not `blocked`: the worker is doing exactly what it was told
       // to. The word matters because a `blocker` in this system is the
@@ -2533,7 +2544,7 @@ export async function run(opts: {
       // complaint about a contract that was satisfied.
       status = 'failed'
       const terminal = stderr.trim() || stdout.trim()
-      const terminalKind = classify(terminal, exitCode, timedOut)
+      const terminalKind = classify(terminal, exitCode, timedOut, sandboxSelection.sandbox)
       failureKind = terminalKind
       error = errorTail(
         (FAILS_OVER.includes(terminalKind) ? `${terminal}\n` : '') +
@@ -2546,7 +2557,7 @@ export async function run(opts: {
       // an unverifiable change set into the record as a completed one.
       status = 'failed'
       const terminal = stderr.trim() || output || stdout.trim()
-      const terminalKind = classify(terminal, exitCode, timedOut)
+      const terminalKind = classify(terminal, exitCode, timedOut, sandboxSelection.sandbox)
       if (FAILS_OVER.includes(terminalKind)) {
         error = errorTail(terminal)
         failureKind = terminalKind
@@ -2559,7 +2570,9 @@ export async function run(opts: {
       error = status === 'failed'
         ? errorTail(stderr.trim() || stdout.trim() || `exit ${exitCode}, empty output`)
         : null
-      failureKind = status === 'failed' ? classify(error, exitCode, timedOut) : null
+      failureKind = status === 'failed'
+        ? classify(error, exitCode, timedOut, sandboxSelection.sandbox)
+        : null
     }
   } catch (e) {
     // Spawn refused, a pipe broke, the output file could not be written. The row

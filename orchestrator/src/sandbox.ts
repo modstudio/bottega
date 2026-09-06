@@ -2,7 +2,7 @@ import {
   existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, symlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { delimiter, isAbsolute, join, resolve } from 'node:path'
+import { delimiter, isAbsolute, join, relative, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { ROOT } from './db.ts'
 import type { Project } from './projects.ts'
@@ -26,12 +26,18 @@ export type RunSandbox = 'host' | 'srt'
 
 /** Sensitive operator paths denied by every readonly-lens profile. */
 export const READONLY_LENS_DENY_PATHS = [
-  '~/.ssh',
-  '~/.aws',
-  '~/.claude/.env',
-  '~/.config/gcloud',
-  '~/Library/Keychains/login.keychain',
-  '~/Library/Keychains/login.keychain-db',
+  '~/.ssh', // private SSH keys and host credentials
+  '~/.aws', // AWS access keys and session credentials
+  '~/.claude/.env', // MCP and service tokens
+  '~/.config/gcloud', // Google Cloud application credentials
+  '~/Library/Keychains/login.keychain', // legacy macOS login keychain
+  '~/Library/Keychains/login.keychain-db', // current macOS login keychain
+] as const
+
+/** Host-control sockets: Docker access is equivalent to escaping the sandbox. */
+export const READONLY_LENS_DENY_SOCKETS = [
+  '/var/run/docker.sock',
+  '/run/docker.sock',
 ] as const
 
 export const SRT_BIN = join(ROOT, 'node_modules', '.bin', 'srt')
@@ -100,6 +106,37 @@ export function readonlyLensProfile(input: {
   const vendorDomains = input.agent === 'grok'
     ? ['cli-chat-proxy.grok.com', 'auth.x.ai', 'api.x.ai']
     : input.agent === 'qwen-local' ? localHost(input.localBaseUrl ?? '') : []
+  const worktree = resolve(input.worktree)
+  const runsDir = resolve(input.runsDir)
+  const protectedDenies = [
+    ...READONLY_LENS_DENY_PATHS.map(expandHome).map((path) => resolve(path)),
+    ...resolveSecretPaths(input.project),
+  ]
+  const isAtOrBelow = (path: string, parent: string) => {
+    const fromParent = relative(parent, path)
+    return fromParent === '' || (!fromParent.startsWith('..') && !isAbsolute(fromParent))
+  }
+  for (const denied of protectedDenies) {
+    if (isAtOrBelow(denied, worktree) || isAtOrBelow(worktree, denied)) {
+      throw new Error(
+        `readonly-lens sandbox refusal: a registered secret path cannot be inside the worktree (${denied})`,
+      )
+    }
+    if (isAtOrBelow(runsDir, denied)) {
+      throw new Error(
+        `readonly-lens sandbox refusal: a registered secret path cannot contain the run directory (${denied})`,
+      )
+    }
+  }
+  const candidateAllows = [...new Set([
+    worktree,
+    runsDir,
+    ...toolchain,
+    ...(input.nodeModuleLinks ?? linkedNodeModules(input.worktree)).map((path) => resolve(path)),
+    join(homedir(), '.claude.json'),
+  ])]
+  const allowRead = candidateAllows.filter((allowed) =>
+    !protectedDenies.some((denied) => isAtOrBelow(allowed, denied)))
   return {
     network: {
       allowedDomains: [...new Set([
@@ -114,19 +151,11 @@ export function readonlyLensProfile(input: {
     },
     filesystem: {
       denyRead: [
-        ...READONLY_LENS_DENY_PATHS.map(expandHome),
-        ...resolveSecretPaths(input.project),
-        '/var/run/docker.sock',
-        '/run/docker.sock',
+        ...protectedDenies,
+        ...READONLY_LENS_DENY_SOCKETS,
       ],
-      allowRead: [...new Set([
-        resolve(input.worktree),
-        resolve(input.runsDir),
-        ...toolchain,
-        ...(input.nodeModuleLinks ?? linkedNodeModules(input.worktree)).map((path) => resolve(path)),
-        join(homedir(), '.claude.json'),
-      ])],
-      allowWrite: [resolve(input.worktree), resolve(input.runsDir)],
+      allowRead,
+      allowWrite: [worktree, runsDir],
       denyWrite: [],
     },
   }
@@ -136,6 +165,14 @@ export type SandboxSelection = {
   sandbox: RunSandbox
   profile: SandboxRuntimeConfig | null
   reason: string | null
+}
+
+export function isReadonlySandboxCandidate(input: {
+  agent: string
+  readsRepo: boolean
+  writesRepo: boolean
+}): boolean {
+  return input.agent !== 'codex' && input.readsRepo && !input.writesRepo
 }
 
 export function selectReadonlySandbox(input: {
@@ -150,7 +187,7 @@ export function selectReadonlySandbox(input: {
   path?: string
   localBaseUrl?: string
 }): SandboxSelection {
-  if (input.agent === 'codex' || !input.readsRepo || input.writesRepo || !input.worktree || !input.project) {
+  if (!isReadonlySandboxCandidate(input) || !input.worktree || !input.project) {
     return { sandbox: 'host', profile: null, reason: null }
   }
   if (input.override === 'host') {
@@ -173,6 +210,17 @@ export function selectReadonlySandbox(input: {
 
 export function srtInstalled(): boolean {
   return existsSync(SRT_BIN)
+}
+
+/** Persist one profile and wrap a vendor argv without leaking srt's CLI grammar into run.ts. */
+export function srtLaunchArgv(
+  profile: SandboxRuntimeConfig,
+  settingsPath: string,
+  bin: string,
+  argv: string[],
+): string[] {
+  writeFileSync(settingsPath, JSON.stringify(profile, null, 2))
+  return [SRT_BIN, '--settings', settingsPath, '--', bin, ...argv]
 }
 
 /** Keep Grok's registered stdio shape while making a linked-worktree build test its own proxy. */

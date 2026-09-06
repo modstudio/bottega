@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Project } from './projects.ts'
 import {
   grokSandboxConfig,
   READONLY_LENS_DENY_PATHS, readonlyLensProfile, readonlyNeedsDocker, selectReadonlySandbox,
+  srtLaunchArgv,
 } from './sandbox.ts'
 import { classify, NOT_EVIDENCE } from './failure.ts'
 
@@ -60,6 +63,47 @@ describe('readonly-lens sandbox profile', () => {
     expect(profile.network.allowLocalBinding).toBe(true)
   })
 
+  test('a registered exact deny removes an otherwise allowed read', () => {
+    const claudeConfig = join(homedir(), '.claude.json')
+    const profile = readonlyLensProfile({
+      worktree: '/runs/tree', runsDir: '/runs/evidence', agent: 'grok',
+      project: fixtureProject({ secretPaths: [claudeConfig] }),
+      path: '/usr/bin', nodeModuleLinks: [],
+    })
+    expect(profile.filesystem.denyRead).toContain(claudeConfig)
+    expect(profile.filesystem.allowRead).not.toContain(claudeConfig)
+  })
+
+  test('a denied parent removes an allowed linked dependency child', () => {
+    const profile = readonlyLensProfile({
+      worktree: '/runs/tree', runsDir: '/runs/evidence', agent: 'grok',
+      project: fixtureProject({ secretPaths: ['/projects/fixture/dependencies'] }),
+      path: '/usr/bin', nodeModuleLinks: ['/projects/fixture/dependencies/node_modules'],
+    })
+    expect(profile.filesystem.allowRead).not.toContain('/projects/fixture/dependencies/node_modules')
+  })
+
+  test('a registered secret inside the worktree refuses the profile', () => {
+    expect(() => readonlyLensProfile({
+      worktree: '/runs/tree', runsDir: '/runs/evidence', agent: 'grok',
+      project: fixtureProject({ secretPaths: ['/runs/tree/private/token'] }),
+      path: '/usr/bin', nodeModuleLinks: [],
+    })).toThrow('a registered secret path cannot be inside the worktree')
+  })
+
+  test('the srt argv helper owns settings persistence and wrapper grammar', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orch-srt-profile-'))
+    const path = join(dir, 'settings.json')
+    const profile = readonlyLensProfile({
+      worktree: '/runs/tree', runsDir: '/runs/evidence', agent: 'grok',
+      project: fixtureProject(), path: '/usr/bin', nodeModuleLinks: [],
+    })
+    const argv = srtLaunchArgv(profile, path, 'grok', ['--flag'])
+    expect(argv.slice(-3)).toEqual(['--', 'grok', '--flag'])
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(profile)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   test('falls back to host when readonly notes need Docker', () => {
     expect(selectReadonlySandbox({
       agent: 'grok', readsRepo: true, writesRepo: false,
@@ -88,10 +132,13 @@ describe('readonly-lens sandbox profile', () => {
     }
   })
 
-  test('classifies an srt denied-read line with its path as not-evidence', () => {
-    const denial = 'cat: /Users/operator/.ssh/orch-sentinel: Operation not permitted'
-    expect(classify(denial)).toBe('sandbox_denied')
-    expect(denial).toContain('/Users/operator/.ssh/orch-sentinel')
+  test('sandbox denial classification is conditioned on srt and accepts every absolute path', () => {
+    const hostDenial = 'cat: /Users/operator/.ssh/orch-sentinel: Operation not permitted'
+    expect(classify(hostDenial, 1, false, 'host')).toBe('other')
+    expect(classify('cat: /shared/x.secret: Operation not permitted', 1, false, 'srt'))
+      .toBe('sandbox_denied')
+    expect(classify('cat: /var/run/docker.sock: Operation not permitted', 1, false, 'srt'))
+      .toBe('sandbox_denied')
     expect(NOT_EVIDENCE).toContain('sandbox_denied')
   })
 })
