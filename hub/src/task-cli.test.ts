@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'hub-task-cli-'))
 const database = join(dir, 'hub.db')
@@ -12,6 +13,10 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
 function hub(...args: string[]) {
   return hubAt(database, ...args)
+}
+
+function newTask(...args: string[]) {
+  return hub('task', 'new', ...args, '--allow-duplicate', 'hub task CLI test')
 }
 
 function hubAt(path: string, ...args: string[]) {
@@ -55,7 +60,7 @@ describe('task CLI bodies', () => {
   })
 
   test('creates a task complete with an argv body in one command', () => {
-    const created = hub('task', 'new', '--project', 'alpha', '--title', 'Complete task',
+    const created = newTask('--project', 'alpha', '--title', 'Complete task',
       '--body', 'The complete body')
 
     expect(created.exitCode).toBe(0)
@@ -66,7 +71,7 @@ describe('task CLI bodies', () => {
     const path = join(dir, 'body.txt')
     writeFileSync(path, 'A body with\nmultiple lines.\n')
 
-    const created = hub('task', 'new', '--project', 'alpha', '--title', 'File body',
+    const created = newTask('--project', 'alpha', '--title', 'File body',
       '--body-file', path)
 
     expect(created.exitCode).toBe(0)
@@ -74,7 +79,7 @@ describe('task CLI bodies', () => {
   })
 
   test('refuses to replace a non-empty body and --force permits it', () => {
-    const created = hub('task', 'new', '--project', 'alpha', '--title', 'Guarded',
+    const created = newTask('--project', 'alpha', '--title', 'Guarded',
       '--body', 'Hand-written work that must survive')
     const refused = hub('task', 'set', created.stdout, '--body', 'Replacement')
 
@@ -89,11 +94,11 @@ describe('task CLI bodies', () => {
   })
 
   test('allows replacing an empty body but refuses a whitespace-only body', () => {
-    const empty = hub('task', 'new', '--project', 'alpha', '--title', 'Empty', '--body', '')
+    const empty = newTask('--project', 'alpha', '--title', 'Empty', '--body', '')
     expect(hub('task', 'set', empty.stdout, '--body', 'Now filled').exitCode).toBe(0)
     expect(show(empty.stdout).body).toBe('Now filled')
 
-    const whitespace = hub('task', 'new', '--project', 'alpha', '--title', 'Whitespace',
+    const whitespace = newTask('--project', 'alpha', '--title', 'Whitespace',
       '--body', '   \n')
     const refused = hub('task', 'set', whitespace.stdout, '--body', 'Replacement')
     expect(refused.exitCode).toBe(1)
@@ -102,9 +107,43 @@ describe('task CLI bodies', () => {
   })
 })
 
+describe('task duplicate guard', () => {
+  const duplicateDatabase = join(dir, 'duplicates.db')
+  const firstTitle = DUPLICATE_TITLE_FIXTURE['DEV-265']
+  const secondTitle = DUPLICATE_TITLE_FIXTURE['DEV-266']
+
+  test('refuses the DEV-265/DEV-266 title pair, records an override, and permits an unrelated title', () => {
+    const first = hubAt(duplicateDatabase, 'task', 'new', '--project', 'workshop',
+      '--title', firstTitle, '--allow-duplicate', 'hub duplicate guard test seed')
+    expect(first.exitCode).toBe(0)
+
+    const refused = hubAt(duplicateDatabase, 'task', 'new', '--project', 'workshop',
+      '--title', secondTitle)
+    expect(refused.exitCode).toBe(1)
+    expect(refused.stderr).toContain(first.stdout)
+    expect(refused.stderr).toContain(firstTitle)
+    expect(refused.stderr).toMatch(/score 0\.\d{3}/)
+    expect(refused.stderr).toContain('--allow-duplicate "reason"')
+
+    const reason = 'hub duplicate guard test intentionally reproduces DEV-266'
+    const overridden = hubAt(duplicateDatabase, 'task', 'new', '--project', 'workshop',
+      '--title', secondTitle, '--allow-duplicate', reason)
+    expect(overridden.exitCode).toBe(0)
+    const shown = hubAt(duplicateDatabase, 'task', 'show', overridden.stdout, '--json')
+    expect(JSON.parse(shown.stdout).comments).toEqual([
+      expect.objectContaining({ body: reason }),
+    ])
+
+    const unrelated = hubAt(duplicateDatabase, 'task', 'new', '--project', 'workshop',
+      '--title', 'Document how daily email typography behaves in Outlook')
+    expect(unrelated.exitCode).toBe(0)
+  })
+
+})
+
 describe('task CLI dash-leading values', () => {
   test('stores a title that begins with two dashes verbatim', () => {
-    const created = hub('task', 'new', '--project', 'alpha',
+    const created = newTask('--project', 'alpha',
       '--title', '--base is advertised unconditionally ...', '--body', '...')
 
     expect(created.exitCode).toBe(0)
@@ -115,7 +154,7 @@ describe('task CLI dash-leading values', () => {
   })
 
   test('stores a body that begins with a dash verbatim', () => {
-    const created = hub('task', 'new', '--project', 'alpha', '--title', 'Flag body',
+    const created = newTask('--project', 'alpha', '--title', 'Flag body',
       '--body', '--force is the override, not the default')
 
     expect(created.exitCode).toBe(0)
@@ -126,7 +165,7 @@ describe('task CLI dash-leading values', () => {
     const path = join(dir, '--dash-body.txt')
     writeFileSync(path, 'Body from a dash-leading path.\n')
 
-    const created = hub('task', 'new', '--project', 'alpha', '--title', 'Dash path',
+    const created = newTask('--project', 'alpha', '--title', 'Dash path',
       '--body-file', path)
 
     expect(created.exitCode).toBe(0)
@@ -134,7 +173,7 @@ describe('task CLI dash-leading values', () => {
   })
 
   test('task set keeps a dash-leading title', () => {
-    const created = hub('task', 'new', '--project', 'alpha', '--title', 'Before')
+    const created = newTask('--project', 'alpha', '--title', 'Before')
     const updated = hub('task', 'set', created.stdout, '--title', '--after the flag')
 
     expect(updated.exitCode).toBe(0)
@@ -158,7 +197,7 @@ describe('task CLI dash-leading values', () => {
 
 describe('task documents', () => {
   test('prints a reusable bare id even when color is forced', () => {
-    const task = hub('task', 'new', '--project', 'alpha', '--title', 'Bare document id')
+    const task = newTask('--project', 'alpha', '--title', 'Bare document id')
     const created = Bun.spawnSync(
       ['bun', cli, 'task', 'doc', 'new', task.stdout, '--title', 'Colorless value'],
       {
@@ -176,7 +215,7 @@ describe('task documents', () => {
   })
 
   test('creates several documents and keeps task show compact', () => {
-    const task = hub('task', 'new', '--project', 'alpha', '--title', 'Documented task',
+    const task = newTask('--project', 'alpha', '--title', 'Documented task',
       '--body', 'A short description.')
     const rulings = hub('task', 'doc', 'new', task.stdout, '--title', 'Rulings',
       '--body', 'Long ruling body that is read separately.')
@@ -197,7 +236,7 @@ describe('task documents', () => {
   })
 
   test('only known roles are accepted and a task has at most one document in a role', () => {
-    const task = hub('task', 'new', '--project', 'alpha', '--title', 'Role owner')
+    const task = newTask('--project', 'alpha', '--title', 'Role owner')
     expect(hub('task', 'doc', 'new', task.stdout, '--title', 'Question',
       '--role', 'request').stderr).toContain("invalid document role 'request'")
     expect(hub('task', 'doc', 'new', task.stdout, '--title', 'First',
@@ -210,7 +249,7 @@ describe('task documents', () => {
   })
 
   test('a body update requires the version read and atomically refuses a stale writer', () => {
-    const task = hub('task', 'new', '--project', 'alpha', '--title', 'Concurrent edits')
+    const task = newTask('--project', 'alpha', '--title', 'Concurrent edits')
     const created = hub('task', 'doc', 'new', task.stdout, '--title', 'Working notes',
       '--body', 'version one')
     const firstRead = document(created.stdout)
@@ -234,7 +273,7 @@ describe('task documents', () => {
   })
 
   test('lists metadata, edits metadata without resending a body, and removes one document', () => {
-    const task = hub('task', 'new', '--project', 'alpha', '--title', 'Document lifecycle')
+    const task = newTask('--project', 'alpha', '--title', 'Document lifecycle')
     const created = hub('task', 'doc', 'new', task.stdout, '--title', 'Notes', '--body', 'kept')
     const renamed = hub('task', 'doc', 'set', created.stdout, '--title', 'Findings',
       '--role', 'handoff')

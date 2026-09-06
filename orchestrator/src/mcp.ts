@@ -51,58 +51,11 @@ type FileIssueInput = {
   not_established: string
 }
 
-type HubTask = {
-  key: string
-  project: string
-  title: string | null
-  status: string | null
-}
-
 export type DuplicateCandidate = {
   key: string
   status: string | null
   title: string
   score: number
-}
-
-const DUPLICATE_STOP_WORDS = new Set(
-  'a an and are as at be by for from has have in into is it its of on or that the this to was were will with should before after not no'.split(' '),
-)
-
-// Provisional, measured against the real reports that prompted DEV-267:
-// DEV-209/DEV-210 scored 0.248, DEV-265/DEV-266 scored 0.227, and the best
-// unrelated result across those four searches scored 0.151.
-const DUPLICATE_THRESHOLD = 0.20
-const DUPLICATE_LIMIT = 3
-
-function titleTokens(title: string): Set<string> {
-  return new Set(
-    (title.toLowerCase().match(/[a-z0-9]+/g) ?? [])
-      .filter((token) => token.length > 1 && !DUPLICATE_STOP_WORDS.has(token)),
-  )
-}
-
-function titleSimilarity(left: string, right: string): number {
-  const a = titleTokens(left)
-  const b = titleTokens(right)
-  if (!a.size || !b.size) return 0
-  let intersection = 0
-  for (const token of a) if (b.has(token)) intersection++
-  return intersection / (a.size + b.size - intersection)
-}
-
-export function duplicateCandidates(tasks: HubTask[], title: string): DuplicateCandidate[] {
-  return tasks
-    .filter((task): task is HubTask & { title: string } => !!task.title)
-    .map((task) => ({
-      key: task.key,
-      status: task.status,
-      title: task.title,
-      score: titleSimilarity(title, task.title),
-    }))
-    .filter((candidate) => candidate.score >= DUPLICATE_THRESHOLD)
-    .sort((a, b) => b.score - a.score || a.key.localeCompare(b.key))
-    .slice(0, DUPLICATE_LIMIT)
 }
 
 async function hubOutput(args: string[]): Promise<string> {
@@ -124,10 +77,12 @@ async function searchDuplicateIssues(title: string): Promise<
   { duplicates: DuplicateCandidate[]; error: null } | { duplicates: null; error: string }
 > {
   try {
-    const output = await hubOutput(['task', 'list', '--project', PLATFORM_SLUG, '--json'])
-    const tasks = JSON.parse(output) as HubTask[]
-    if (!Array.isArray(tasks)) throw new Error('hub task list returned a non-array JSON value')
-    return { duplicates: duplicateCandidates(tasks, title), error: null }
+    const output = await hubOutput([
+      'task', 'duplicates', '--project', PLATFORM_SLUG, '--title', title, '--json',
+    ])
+    const duplicates = JSON.parse(output) as DuplicateCandidate[]
+    if (!Array.isArray(duplicates)) throw new Error('hub task duplicates returned a non-array JSON value')
+    return { duplicates, error: null }
   } catch (error) {
     return { duplicates: null, error: error instanceof Error ? error.message : String(error) }
   }
@@ -244,6 +199,7 @@ export async function fileIssue(
   try {
     stdout = await hubOutput([
       'task', 'new', '--project', PLATFORM_SLUG, '--title', title, '--body', body,
+      '--allow-duplicate', 'orchestrator file_issue',
     ])
   } catch (error) {
     throw new Error(`could not file issue through hub: ${error instanceof Error ? error.message : String(error)}`)

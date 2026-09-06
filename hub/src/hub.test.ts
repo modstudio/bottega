@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { union, engagedMs, spansFromTimestamps, human, DEFAULT_IDLE_CAP_MS } from './interval.ts'
+import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
 
 // db.ts fixes its path at import time. Give this suite a disposable database
 // before dynamically loading modules that reach it.
@@ -18,7 +19,7 @@ const { easternTime } = await import('./time.ts')
 const { projectColor, projectNames, trackerPresentation } = await import('./projects.ts')
 const { ingestTrackers, upsertTrackerTask, resolveAssigneeIds, trackerRegistrations } =
   await import('./ingest/trackers.ts')
-const { createTask, showTask } = await import('./task.ts')
+const { createTask, duplicateCandidates, duplicateScore, showTask } = await import('./task.ts')
 const { chainVendorTokens, executionSpans, ingestRuns } = await import('./ingest/runs.ts')
 
 process.on('exit', () => {
@@ -536,6 +537,40 @@ describe('local task tracker', () => {
     expect(after.status_category).toBe('open')
     expect(after.body).toBe('Local body')
     expect(after.assignee).toBe('Local Owner')
+  })
+
+  test('duplicate title matching is deterministic, thresholded, and capped at three', () => {
+    const tasks = [
+      ['DEV-4', 'open', 'alpha beta gamma delta epsilon'],
+      ['DEV-3', 'done', 'alpha beta gamma delta zeta'],
+      ['DEV-2', 'active', 'alpha beta gamma delta eta'],
+      ['DEV-1', 'open', 'alpha beta gamma delta theta'],
+      ['DEV-5', 'open', 'unrelated words only'],
+    ].map(([key, status, title]) => ({
+      key: key!, project: 'workshop', status: status!, status_category: 'open' as const,
+      title: title!, parent_key: null, body: null, assignee: null, opened_at: null,
+      closed_at: null, updated_at: null, source: 'local' as const, first_seen: '', last_seen: '',
+    }))
+
+    expect(duplicateCandidates(tasks, 'alpha beta gamma delta')).toEqual([
+      expect.objectContaining({ key: 'DEV-1' }),
+      expect.objectContaining({ key: 'DEV-2' }),
+      expect.objectContaining({ key: 'DEV-3' }),
+    ])
+  })
+
+  test('prints the four known duplicate-matcher measurements', () => {
+    const scores = {
+      'DEV-209/DEV-210': duplicateScore(DUPLICATE_TITLE_FIXTURE['DEV-209'], DUPLICATE_TITLE_FIXTURE['DEV-210']),
+      'DEV-265/DEV-266': duplicateScore(DUPLICATE_TITLE_FIXTURE['DEV-265'], DUPLICATE_TITLE_FIXTURE['DEV-266']),
+      'DEV-293/DEV-294': duplicateScore(DUPLICATE_TITLE_FIXTURE['DEV-293'], DUPLICATE_TITLE_FIXTURE['DEV-294']),
+      'best unrelated': duplicateScore(DUPLICATE_TITLE_FIXTURE['DEV-251'], DUPLICATE_TITLE_FIXTURE['DEV-266']),
+    }
+    console.log('duplicate matcher scores', scores)
+    expect(scores['DEV-209/DEV-210']).toBeGreaterThanOrEqual(0.20)
+    expect(scores['DEV-265/DEV-266']).toBeGreaterThanOrEqual(0.20)
+    expect(scores['DEV-293/DEV-294']).toBeLessThan(0.20)
+    expect(scores['best unrelated']).toBeLessThan(0.20)
   })
 })
 

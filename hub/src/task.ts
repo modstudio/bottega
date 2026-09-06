@@ -23,6 +23,53 @@ export type TaskRow = {
 
 export type TaskComment = { id: number; task_key: string; body: string; created_at: string }
 
+export type DuplicateCandidate = {
+  key: string
+  status: string | null
+  title: string
+  score: number
+}
+
+const DUPLICATE_STOP_WORDS = new Set(
+  'a an and are as at be by for from has have in into is it its of on or that the this to was were will with should before after not no'.split(' '),
+)
+
+// Provisional, measured against the real reports that prompted DEV-267:
+// DEV-209/DEV-210 scored 0.248, DEV-265/DEV-266 scored 0.227, and the best
+// unrelated result across those four searches scored 0.151.
+const DUPLICATE_THRESHOLD = 0.20
+const DUPLICATE_LIMIT = 3
+
+function titleTokens(title: string): Set<string> {
+  return new Set(
+    (title.toLowerCase().match(/[a-z0-9]+/g) ?? [])
+      .filter((token) => token.length > 1 && !DUPLICATE_STOP_WORDS.has(token)),
+  )
+}
+
+export function duplicateScore(left: string, right: string): number {
+  const a = titleTokens(left)
+  const b = titleTokens(right)
+  if (!a.size || !b.size) return 0
+  let intersection = 0
+  for (const token of a) if (b.has(token)) intersection++
+  return intersection / (a.size + b.size - intersection)
+}
+
+export function duplicateCandidates(tasks: TaskRow[], title: string): DuplicateCandidate[] {
+  return tasks
+    .filter((task): task is TaskRow & { title: string } => !!task.title)
+    .map((task) => ({
+      key: task.key,
+      status: task.status,
+      title: task.title,
+      score: duplicateScore(title, task.title),
+    }))
+    .filter((candidate) => candidate.score >= DUPLICATE_THRESHOLD)
+    .sort((a, b) => b.score - a.score || a.key.localeCompare(b.key))
+    .slice(0, DUPLICATE_LIMIT)
+}
+
 export const TASK_DOCUMENT_ROLES = ['handoff'] as const
 export type TaskDocumentRole = typeof TASK_DOCUMENT_ROLES[number]
 export type TaskDocumentSummary = {

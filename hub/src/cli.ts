@@ -9,7 +9,8 @@ import { tasksInWindow, estateEngagedMs, rollUpDays } from './query.ts'
 import { watch, withLease } from './collect.ts'
 import {
   closeTask, commentTask, createTask, createTaskDocument, deleteTaskDocument,
-  getTaskDocument, listTaskDocuments, listTasks, setTask, showTask, updateTaskDocument,
+  duplicateCandidates, getTaskDocument, listTaskDocuments, listTasks, setTask, showTask,
+  updateTaskDocument,
 } from './task.ts'
 import { gather, summarise, renderHtml, renderText, send, recordSend } from './report.ts'
 import { getReport } from './settings.ts'
@@ -42,7 +43,8 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and the 
                               using exact run ids, never an age or time window
 
   hub task new --project X --title "..." [--status Y] [--parent KEY]
-               [--body "..."|--body-file PATH]
+               [--body "..."|--body-file PATH] [--allow-duplicate "reason"]
+  hub task duplicates --project X --title "..." --json
   hub task list [--project X] [--status Y] [--parent KEY] [--json]
   hub task show <KEY> [--json]
   hub task set <KEY> [--title "..."] [--status Y] [--parent KEY|--no-parent]
@@ -214,9 +216,35 @@ async function task() {
   }
 
   if (sub === 'new') {
-    const row = createTask({ project: required('project'), title: required('title'),
-      status: flag('status'), parent: flag('parent'), body: newBody() })
+    const project = required('project')
+    const title = required('title')
+    const body = newBody()
+    const candidates = duplicateCandidates(listTasks({ project }), title)
+    const override = flag('allow-duplicate')
+    if (has('allow-duplicate') && !override?.trim()) {
+      throw new Error('--allow-duplicate requires a non-empty reason')
+    }
+    if (candidates.length && !has('allow-duplicate')) {
+      throw new Error([
+        'possible duplicate tasks:',
+        ...candidates.map((candidate) =>
+          `${candidate.key} [${candidate.status ?? 'unknown'}] score ${candidate.score.toFixed(3)}  ${candidate.title}`),
+        '',
+        'Refusing to create a duplicate. Pass --allow-duplicate "reason" to override.',
+      ].join('\n'))
+    }
+    const row = createTask({ project, title,
+      status: flag('status'), parent: flag('parent'), body })
+    if (override) commentTask(row.key, override)
     console.log(row.key)
+    return
+  }
+  if (sub === 'duplicates') {
+    const rows = duplicateCandidates(
+      listTasks({ project: required('project') }), required('title'),
+    )
+    if (!has('json')) throw new Error('hub task duplicates requires --json')
+    console.log(JSON.stringify(rows))
     return
   }
   if (sub === 'tracker-new') {

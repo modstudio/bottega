@@ -1157,7 +1157,7 @@ const removeDoc = (
 ) =>
   deleteDoc(scope, subject, slug, context)
 const importDocs = (dir: string, context = { reason: 'test import' }) => readDocs(dir, context)
-const { createDocsMcpServer, fileIssue, duplicateCandidates } = await import('./mcp.ts')
+const { createDocsMcpServer, fileIssue } = await import('./mcp.ts')
 const { setWorkflow, promoteWorkflow } = await import('./workflows.ts')
 const { compilePack, compileBrief, checkDoc, CanonBudgetError, recordPack, diffPack } = await import('./canon.ts')
 const { deadRunningProcessConditions, reconcileHub, monitorHistory } = await import('./monitor.ts')
@@ -12926,6 +12926,7 @@ describe('scoped operator docs', () => {
       new URL('../../bin/hub', import.meta.url).pathname,
       'task', 'new', '--project', PLATFORM_SLUG,
       '--title', '[SUGGESTION] Issue reporting needs a direct filing path',
+      '--allow-duplicate', 'orchestrator file_issue test seed',
     ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
     expect(prior.exitCode).toBe(0)
     const server = createDocsMcpServer()
@@ -12961,7 +12962,8 @@ describe('scoped operator docs', () => {
         'task', 'show', result.key, '--json',
       ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
       expect(shown.exitCode).toBe(0)
-      const task = JSON.parse(shown.stdout.toString()).task
+      const shownTask = JSON.parse(shown.stdout.toString())
+      const task = shownTask.task
       expect(task.title).toBe('[SUGGESTION] Issue reports need a direct filing path')
       expect(task.project).toBe(PLATFORM_SLUG)
       expect(task.body).toContain('TYPE: SUGGESTION')
@@ -12976,6 +12978,9 @@ describe('scoped operator docs', () => {
         'SUSPECTED DUPLICATES\n- DEV-1 [open] [SUGGESTION] Issue reporting needs a direct filing path',
       )
       expect(task.body).not.toContain(String(result.duplicates[0].score))
+      expect(shownTask.comments).toEqual([
+        expect.objectContaining({ body: 'orchestrator file_issue' }),
+      ])
     } finally {
       await client.close()
       await server.close()
@@ -12987,22 +12992,6 @@ describe('scoped operator docs', () => {
       if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
       else process.env.CLAUDE_CODE_SESSION_ID = priorSession
     }
-  })
-
-  test('duplicate title matching is deterministic, thresholded, and capped at three', () => {
-    const tasks = [
-      ['DEV-4', 'open', 'alpha beta gamma delta epsilon'],
-      ['DEV-3', 'done', 'alpha beta gamma delta zeta'],
-      ['DEV-2', 'active', 'alpha beta gamma delta eta'],
-      ['DEV-1', 'open', 'alpha beta gamma delta theta'],
-      ['DEV-5', 'open', 'unrelated words only'],
-    ].map(([key, status, title]) => ({ key: key!, project: PLATFORM_SLUG, status: status!, title: title! }))
-
-    expect(duplicateCandidates(tasks, 'alpha beta gamma delta')).toEqual([
-      expect.objectContaining({ key: 'DEV-1' }),
-      expect.objectContaining({ key: 'DEV-2' }),
-      expect.objectContaining({ key: 'DEV-3' }),
-    ])
   })
 
   test('file_issue files while making a failed duplicate search explicit in output and body', async () => {
@@ -13017,7 +13006,7 @@ describe('scoped operator docs', () => {
     })
     const realSpawn = Bun.spawn.bind(Bun)
     const spawn = spyOn(Bun, 'spawn').mockImplementation(((args: string[], options: object) => {
-      if (args.includes('list')) {
+      if (args.includes('duplicates')) {
         return { stdout: '', stderr: 'duplicate search unavailable', exited: Promise.resolve(1) }
       }
       return realSpawn(args, options as any)
