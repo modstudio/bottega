@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { Project } from './projects.ts'
 import {
+  grokSandboxConfig,
   READONLY_LENS_DENY_PATHS, readonlyLensProfile, selectReadonlySandbox,
 } from './sandbox.ts'
 import { classify, NOT_EVIDENCE } from './failure.ts'
@@ -17,6 +18,14 @@ const fixtureProject = (settings: Project['settings'] = {}): Project => ({
 })
 
 describe('readonly-lens sandbox profile', () => {
+  test('keeps the registered Grok stdio entry but points it at this checkout', () => {
+    const config = '[mcp_servers.orch-ask]\ncommand = "bun"\nargs = ["/main/orchestrator/src/cli.ts", "ask-server"]\n'
+    const rewritten = grokSandboxConfig(config)
+    expect(rewritten).toContain('command = "bun"')
+    expect(rewritten).toContain('"ask-server"')
+    expect(rewritten).not.toContain('/main/orchestrator/src/cli.ts')
+    expect(rewritten).toContain('/orchestrator/src/cli.ts')
+  })
   test('builds allow and deny lists from the register fixture', () => {
     const project = fixtureProject({
       secretPaths: ['/shared/absolute.secret', '~/.tokens/private', 'config/operator.secret'],

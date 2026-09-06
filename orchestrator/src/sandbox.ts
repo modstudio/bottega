@@ -1,5 +1,6 @@
 import {
-  existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, symlinkSync,
+  existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, symlinkSync,
+  writeFileSync,
 } from 'node:fs'
 import { delimiter, isAbsolute, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
@@ -170,6 +171,14 @@ export function srtInstalled(): boolean {
   return existsSync(SRT_BIN)
 }
 
+/** Keep Grok's registered stdio shape while making a linked-worktree build test its own proxy. */
+export function grokSandboxConfig(config: string): string {
+  return config.replace(
+    /(^\[mcp_servers\.orch-ask\]\s*$[\s\S]*?\bargs\s*=\s*\[\s*)"[^"]+"/m,
+    `$1${JSON.stringify(join(ROOT, 'src', 'cli.ts'))}`,
+  )
+}
+
 /**
  * Put vendor session state under this run's writable directory without copying
  * long-lived credentials into retained run evidence. Grok follows its official
@@ -181,10 +190,14 @@ export function prepareSandboxHome(
 ): Record<string, string> {
   mkdirSync(runDir, { recursive: true })
   if (agent === 'grok') {
-    for (const name of ['auth.json', 'config.toml']) {
-      const source = join(homedir(), '.grok', name)
-      const target = join(runDir, name)
-      if (existsSync(source) && !existsSync(target)) symlinkSync(source, target)
+    const authSource = join(homedir(), '.grok', 'auth.json')
+    const authTarget = join(runDir, 'auth.json')
+    if (existsSync(authSource) && !existsSync(authTarget)) symlinkSync(authSource, authTarget)
+
+    const configSource = join(homedir(), '.grok', 'config.toml')
+    const configTarget = join(runDir, 'config.toml')
+    if (existsSync(configSource) && !existsSync(configTarget)) {
+      writeFileSync(configTarget, grokSandboxConfig(readFileSync(configSource, 'utf8')))
     }
     return { GROK_HOME: runDir, GROK_DISABLE_AUTOUPDATER: '1' }
   }
