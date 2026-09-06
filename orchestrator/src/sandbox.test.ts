@@ -57,6 +57,7 @@ describe('readonly-lens sandbox profile', () => {
       'localhost', '127.0.0.1', '[::1]',
     ])
     expect(profile.network.allowUnixSockets).toEqual([])
+    expect(profile.network.allowLocalBinding).toBe(true)
   })
 
   test('falls back to host when readonly notes need Docker', () => {

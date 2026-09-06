@@ -106,7 +106,10 @@ export function readonlyLensProfile(input: {
       ])],
       deniedDomains: [],
       allowUnixSockets: [],
-      allowLocalBinding: false,
+      // On macOS srt's one switch covers both binding and outbound loopback.
+      // The per-run orch-ask listener uses an OS-assigned loopback port, so it
+      // cannot be named in the static domain list before srt starts.
+      allowLocalBinding: true,
     },
     filesystem: {
       denyRead: [
