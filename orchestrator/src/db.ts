@@ -1724,6 +1724,9 @@ export const DELIVERY: Delivery[] = ['none', 'partial', 'full']
 export const QUALITY: Quality[] = ['wrong', 'mixed', 'right']
 export const FIDELITY: Fidelity[] = ['drifted', 'partial', 'faithful']
 
+/** Words that name a question-shaped field without asking a question. */
+export const GENERIC_QUESTION_TOKENS = ['placeholder', 'tbd', 'question', 'todo'] as const
+
 /**
  * Whether the caller is allowed to judge a run.
  *

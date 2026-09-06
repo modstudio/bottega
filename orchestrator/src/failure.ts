@@ -21,6 +21,8 @@ export type FailureKind =
    * as a last defence when its strict validator learns a constraint before us.
    */
   | 'harness'
+  /** The agent satisfied the reply schema but violated its behavioural contract. */
+  | 'contract'
   | 'abandoned'
   | 'other'
 
@@ -208,7 +210,7 @@ export const NEEDS_HUMAN_TITLE: Record<string, (agent: string) => string> = {
 export const COOLS_DOWN: FailureKind[] = ['quota', 'auth']
 
 /** Failures where another vendor should receive the same prompt immediately. */
-export const FAILS_OVER: FailureKind[] = ['quota', 'auth', 'content_refusal']
+export const FAILS_OVER: FailureKind[] = ['quota', 'auth', 'content_refusal', 'contract']
 
 /**
  * Kinds that must never count as evidence about an agent.

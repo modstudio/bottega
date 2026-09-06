@@ -3342,7 +3342,8 @@ switch (cmd) {
     }
     let rows = db().query(
       `SELECT r.id, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
-              current_run.status, s.delivery, s.quality,
+              current_run.status, current_run.failure_kind, current_run.error,
+              s.delivery, s.quality,
               COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason
               ${json ? ', r.cwd, r.session_id, r.vendor_cost_usd, r.probe, r.exit_code, r.input_tree,'
                         + ' r.prompt_path, r.branch, r.branch_kept, r.retry_of' : ''}
@@ -3417,6 +3418,11 @@ switch (cmd) {
           ` ${dur(r.latency_ms as number | null).padStart(8)}  ${String(r.prompt_head).slice(0, 60)}`,
       )
       if (r.status === 'asking') console.log(`      ${outcome.line.slice(status.length + 3)}`)
+      if (r.failure_kind === 'contract') {
+        console.log(`      ${failureReason(r as {
+          status: string; error: string | null; failure_kind: string | null; exit_code: number | null
+        })}`)
+      }
       // The reason is where a fan-out says its exclusions ran out. Hiding it
       // here would leave the database honest and the human-facing command not.
       if (r.route_reason) console.log(`      route: ${String(r.route_reason)}`)

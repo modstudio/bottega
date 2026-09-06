@@ -29,7 +29,7 @@ import { recipeNotes } from './recipe.ts'
 import {
   workerPreamble, workerResumeGuard, READONLY_PREAMBLE, NO_REPO_PREAMBLE, WORKER_SCHEMA, ISSUE_WORKER_SCHEMA, REVIEW_SCHEMA,
   VERIFY_CLAIM_SCHEMA,
-  parseWorkerReplyWithCount, isAsking,
+  parseWorkerReplyWithCount, isAsking, hasRealQuestions,
   type CanonSource, type WorkerReply,
 } from './contract.ts'
 import { CALIBRATION_SUFFIX_RESERVE_BYTES, calibrationLine, reviewCalibration } from './review.ts'
@@ -1617,7 +1617,7 @@ export async function run(opts: {
       status = 'failed'
       error = errorTail(output)
       failureKind = classify(output, exitCode, timedOut)
-    } else if (contract && isAsking(contract) && contract.questions?.length) {
+    } else if (hasRealQuestions(contract)) {
       // `asking`, not `blocked`: the worker is doing exactly what it was told
       // to. The word matters because a `blocker` in this system is the
       // opposite — an environment problem — and on a page they read alike.
@@ -1626,21 +1626,23 @@ export async function run(opts: {
       failureKind = null
     } else if (isAsking(contract)) {
       /**
-       * Blocked with nothing to answer is a DEAD END, not a pause.
+       * Asking without a real question is a CONTRACT FAILURE, not a pause.
        *
-       * The schema permits `questions: null`, so a worker can stop and say it
-       * is stuck without saying what it is stuck on. Recorded as blocked, that
-       * run shows nothing in `orch inbox`, has nothing `orch answer` can rule
-       * on, and can never be resumed or scored — it sits in the table for ever
-       * looking like a question somebody forgot. A failure it can be retried
-       * from is strictly better than a state with no exit.
+       * Run 1743 is the measured case: grok returned "placeholder" with no why
+       * after 7.5 seconds, in orchestrator/runs/1788659791883-1743-grok-implement.txt.
+       * The schema was satisfied, but no decision had been asked. Recording it
+       * as asking created question 272 and summoned an architect to rule on
+       * nothing. Preserve the rejected text in the error, create no question,
+       * and let the ordinary failover policy hand untouched work to a new agent.
        */
       status = 'failed'
+      const rejected = contract?.questions?.map((item) => JSON.stringify(item.question)).join(', ')
+        || '(no question text)'
       error = errorTail(
-        'the worker stopped to ask but named no question, so there is nothing ' +
-        `to rule on and nothing to resume:\n${output}`,
+        'the worker returned asking without a real question and non-empty why; ' +
+        `rejected question text: ${rejected}`,
       )
-      failureKind = 'other'
+      failureKind = 'contract'
     } else if (contract?.status === 'refused') {
       // The worker read the spec and says it cannot be built as written. That
       // is a real answer and often a correct one, so it is `ok` rather than a
@@ -1751,7 +1753,7 @@ export async function run(opts: {
      * looks identical to a run waiting on a ruling nobody has given, and would
      * sit in the inbox for ever.
      */
-    if (contract && isAsking(contract) && contract.questions?.length) {
+    if (hasRealQuestions(contract)) {
       /**
        * A question asked through the LIVE channel and then repeated in the final
        * answer must not be recorded twice.
@@ -1774,7 +1776,7 @@ export async function run(opts: {
         `INSERT INTO question (run_id, asked_at, question, options, recommendation, why)
          VALUES (?,?,?,?,?,?)`,
       )
-      for (const item of contract.questions) {
+      for (const item of contract!.questions!) {
         if (already.has(norm(item.question))) continue
         q.run(
           claim.id, nowIso(), item.question,
@@ -1871,7 +1873,7 @@ export async function run(opts: {
         contract?.tests ? (contract.tests.ran ? 1 : 0) : null,
         contract?.tests?.passed === undefined ? null : contract.tests.passed ? 1 : 0,
         contract?.deviations?.length ?? null,
-        contract?.questions?.length ?? null,
+        hasRealQuestions(contract) ? contract!.questions!.length : 0,
         claim.id,
       )
     }

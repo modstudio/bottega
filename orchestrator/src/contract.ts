@@ -23,6 +23,7 @@
  * recovers a fenced or embedded object, because the alternative is losing a
  * completed implementation to a stray prose sentence.
  */
+import { GENERIC_QUESTION_TOKENS } from './db.ts'
 
 /**
  * The shape a worker's final message must take.
@@ -329,6 +330,9 @@ Ask EVERYTHING you need in one go rather than one question at a time: each round
 trip costs the architect a turn, and three questions asked together are cheaper
 than three asked in sequence.
 
+Every question must contain non-empty question text and a non-empty why; a lone
+generic token (${GENERIC_QUESTION_TOKENS.join(', ')}) is not a question.
+
 NON-BLOCKING MESSAGES
 
 When the live orchestrator tools are available, check for messages after your
@@ -630,6 +634,16 @@ export function parseWorkerReply(text: string): WorkerReply | null {
  */
 export function isAsking(r: ContractReply | null | undefined): boolean {
   return r?.status === 'asking'
+}
+
+/** A schema-valid `asking` reply fulfils the contract only when every question is real. */
+export function hasRealQuestions(r: ContractReply | null | undefined): boolean {
+  if (!isAsking(r) || !r?.questions?.length) return false
+  const generic = new Set<string>(GENERIC_QUESTION_TOKENS)
+  return r.questions.every((item) => {
+    const question = item.question.trim()
+    return question.length > 0 && !generic.has(question.toLowerCase()) && !!item.why?.trim()
+  })
 }
 
 /**

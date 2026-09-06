@@ -911,7 +911,7 @@ for (const args of [
 const { db, nowIso, reapStale, pendingForSession, unscoredCount, judgeability, STALE_AFTER_MS,
         PENDING_BOOTSTRAP_MS, WEIGHT, weigh, label, FIDELITY_PENALTY, UNSCORED_WHERE,
         excludeSharedOutputRuns, SHARED_OUTPUT_REASON, applySchema, recordDuels, duelMatrices,
-        parseRunIds, recordSessionSeen } = await import('./db.ts')
+        parseRunIds, recordSessionSeen, GENERIC_QUESTION_TOKENS } = await import('./db.ts')
 const { candidates, weightCase, scoreboard, median, evidenceFor, pick,
         NOISE_BAND, QUALITY_STEP, MIN_SAMPLE, OUTPUT_RESERVE, EVIDENCE_WINDOW,
         STANDING_EXPLORE_RATE, PROMPT_SIZE_BOUNDARY, promptSizeBucket } = await import('./route.ts')
@@ -932,7 +932,7 @@ const { summary } = await import('./metric.ts')
 const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
         NO_REPO_PREAMBLE, WORKER_PREAMBLE, LAND_PREAMBLE, REVIEW_SCHEMA,
         VERIFY_CLAIM_SCHEMA, ISSUE_WORKER_SCHEMA, workerPreamble, workerResumeGuard,
-        contractConflicts } = await import('./contract.ts')
+        contractConflicts, hasRealQuestions } = await import('./contract.ts')
 const { parseReviewReply, recordReview, recordReviews, triageFinding, completeReview, reviewCalibration, calibrationLine,
         MIN_REVIEW_TRIAGED } = await import('./review.ts')
 const { ask } = await import('./ask.ts')
@@ -2084,6 +2084,19 @@ function workerReply(overrides: Record<string, unknown> = {}): Record<string, un
 }
 
 describe('failure classification', () => {
+  test('contract failures fail over as scoreable none evidence without cooldown or notification', () => {
+    expect(FAILS_OVER).toContain('contract')
+    expect(NEEDS_HUMAN).not.toContain('contract')
+    expect(COOLS_DOWN).not.toContain('contract')
+    expect(NOT_EVIDENCE).not.toContain('contract')
+
+    addRun({ agent: 'codex', job: 'implement', status: 'failed', kind: 'contract' })
+    const routed = candidates('implement').find((item) => item.agent === 'codex')!
+    expect(routed).toMatchObject({ failures: 1, evidence: 1, score: WEIGHT.none, cooling: null })
+    expect(scoreboard('implement').find((item) => item.agent === 'codex'))
+      .toMatchObject({ failures: 1, evidence: 1, score: WEIGHT.none, cooling: null })
+  })
+
   test("OpenAI's invalid response schema is a harness failure", () => {
     expect(classify(
       "Invalid schema for response_format 'codex_output_schema': additionalProperties is required",
@@ -6641,7 +6654,7 @@ describe('a worker that stops to ask is not a worker that failed', () => {
     expect(embedded?.status).toBe('asking')
   })
 
-  test('a schema-shaped reply keeps its questions', () => {
+  test('a schema-shaped reply keeps its optional recommendation', () => {
     const r = parseWorkerReply(JSON.stringify(workerReply({
       status: 'asking', summary: 'stopped', questions: [{
         question: 'one table or two?', options: ['one', 'two'], recommendation: 'two', why: null,
@@ -6658,6 +6671,31 @@ describe('a worker that stops to ask is not a worker that failed', () => {
     expect(parseWorkerReply(JSON.stringify(workerReply({ questions: [{
       question: 'q?', options: null, recommendation: {}, why: null,
     }] })))).toBeNull()
+  })
+
+  test('only an asking reply whose every question has text and why is real', () => {
+    const asking = (questions: unknown[]) => parseWorkerReply(JSON.stringify(workerReply({
+      status: 'asking', questions,
+    })))
+    expect(hasRealQuestions(asking([{
+      question: 'one table or two?', options: null, recommendation: null,
+      why: 'the choice changes the migration',
+    }]))).toBe(true)
+    expect(hasRealQuestions(asking([{
+      question: 'which table?', options: null, recommendation: null, why: '   ',
+    }]))).toBe(false)
+    for (const token of GENERIC_QUESTION_TOKENS) {
+      expect(hasRealQuestions(asking([{
+        question: token, options: null, recommendation: null, why: 'a claimed reason',
+      }]))).toBe(false)
+    }
+    expect(hasRealQuestions(asking([
+      {
+        question: 'which table?', options: null, recommendation: null,
+        why: 'the schema changes',
+      },
+      { question: '   ', options: null, recommendation: null, why: 'unknown choice' },
+    ]))).toBe(false)
   })
 })
 
@@ -6702,6 +6740,7 @@ describe('a writing worker must return evidence of completed work', () => {
     try {
       return await runJob({
         job: 'implement', prompt: 'continue', cwd: tree.path,
+        noFailover: true,
         resume: {
           parent, agent: 'codex', session: 'test-session', turn: 2,
           sessionId: 'orch-test-session',
@@ -6736,6 +6775,81 @@ describe('a writing worker must return evidence of completed work', () => {
     expect(row).toEqual({
       status: 'failed', error: 'reported done with no change and no test run', files_changed: 0,
     })
+  })
+
+  test('run 1743 placeholder shape is a visible contract failure with no question', async () => {
+    const reply = JSON.stringify(workerReply({
+      status: 'asking',
+      summary: 'Reading the full spec and checking orchestrator messages before implementing.',
+      files_changed: null,
+      questions: [{
+        question: 'placeholder', options: null, recommendation: null, why: null,
+      }],
+      tests: null,
+    }))
+    let failure: Error & { runId?: number } | null = null
+    try { await runInCleanTree(reply) } catch (e) { failure = e as Error & { runId?: number } }
+    expect(failure?.runId).toBeDefined()
+    const id = failure!.runId!
+    expect(db().query(
+      'SELECT status, failure_kind, error, escalations FROM run WHERE id=?',
+    ).get(id)).toEqual({
+      status: 'failed', failure_kind: 'contract', escalations: 0,
+      error: expect.stringContaining('rejected question text: "placeholder"'),
+    })
+    expect((db().query('SELECT COUNT(*) n FROM question WHERE run_id=?').get(id) as { n: number }).n)
+      .toBe(0)
+
+    const cli = (...args: string[]) => {
+      const p = Bun.spawnSync([process.execPath, new URL('cli.ts', import.meta.url).pathname, ...args], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      return { code: p.exitCode, out: p.stdout.toString(), err: p.stderr.toString() }
+    }
+    const result = cli('result', String(id))
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('contract')
+    expect(result.err).toContain('rejected question text: "placeholder"')
+    const runs = cli('runs')
+    expect(runs.out).toContain('contract')
+    expect(runs.out).toContain('rejected question text: "placeholder"')
+
+    const heartbeat = new URL('../hooks/orch-heartbeat.sh', import.meta.url).pathname
+    const bin = new URL('../../bin/', import.meta.url).pathname
+    const beat = Bun.spawnSync([heartbeat, 'orch-test-session', '0', '1'], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, PATH: `${bin}:${process.env.PATH}` },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(beat.exitCode).toBe(0)
+    expect(beat.stdout.toString()).not.toContain('BLOCKED')
+  })
+
+  test('asking with text but empty why is a contract failure', async () => {
+    let failure: Error & { runId?: number } | null = null
+    try {
+      await runInCleanTree(JSON.stringify(workerReply({
+        status: 'asking', files_changed: null, tests: null,
+        questions: [{
+          question: 'one table or two?', options: null, recommendation: null, why: ' ',
+        }],
+      })))
+    } catch (e) { failure = e as Error & { runId?: number } }
+    expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(failure!.runId!))
+      .toEqual({ status: 'failed', failure_kind: 'contract' })
+  })
+
+  test('a real question and why are accepted and recorded as before', async () => {
+    const result = await runInCleanTree(JSON.stringify(workerReply({
+      status: 'asking', files_changed: null, tests: null,
+      questions: [{
+        question: 'one table or two?', options: ['one', 'two'], recommendation: 'two',
+        why: 'the choice changes the public query shape',
+      }],
+    })))
+    expect(result.status).toBe('asking')
+    expect(db().query('SELECT question, why FROM question WHERE run_id=?').get(result.id))
+      .toEqual({ question: 'one table or two?', why: 'the choice changes the public query shape' })
   })
 
   test('multiple contracts leave a visible note on an otherwise successful run', async () => {
@@ -6797,7 +6911,8 @@ describe('a conversation is one unit of work, not one per turn', () => {
       writeFileSync(script, `process.stdout.write(${JSON.stringify(JSON.stringify(workerReply({
         status: 'asking', summary: 'need a second ruling', files_changed: null,
         questions: [{
-          question: 'second question?', options: ['one', 'two'], recommendation: 'one', why: null,
+          question: 'second question?', options: ['one', 'two'], recommendation: 'one',
+          why: 'the ruling changes the implementation',
         }],
       })))})\n`)
       const second = await runJob({
@@ -8982,6 +9097,9 @@ describe('only an agent that can be resumed may be asked to escalate', () => {
       expect(workerPreamble(name)).toContain('Do NOT push')
       expect(workerPreamble(name)).toContain('do NOT merge into\ntrunk')
       expect(workerPreamble(name)).toContain('do not rewrite history')
+      expect(workerPreamble(name)).toContain(
+        `a lone\ngeneric token (${GENERIC_QUESTION_TOKENS.join(', ')}) is not a question`,
+      )
       expect(workerResumeGuard(name)).toContain('may commit to your own throwaway branch')
       expect(workerResumeGuard(name)).toContain('Do not push, merge into trunk, or rewrite history')
     }

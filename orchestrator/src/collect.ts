@@ -80,7 +80,7 @@ export function resolveFailover(database: Database, requestedId: number): {
   }
   const settling = last.status === 'failed' &&
     (last.failure_kind === 'quota' || last.failure_kind === 'auth' ||
-      last.failure_kind === 'content_refusal') &&
+      last.failure_kind === 'content_refusal' || last.failure_kind === 'contract') &&
     !pending.no_failover && !last.error?.includes('Failover refused:') && workerAlive
   return { requestedId, attempts, finalId: last.id, settling }
 }
