@@ -152,6 +152,8 @@ export function applySchema(d: Database): void {
   // Set when cleanup removed the disposable worktree but deliberately retained
   // an architect's commits because they have not reached the project's trunk.
   addColumn(d, 'run', 'branch_kept', 'TEXT')
+  // The exact recovery point when cleanup could not restore a retained branch.
+  addColumn(d, 'run', 'branch_kept_tip', 'TEXT')
   // Where a writing worker was put, and the branch it was given. A run that
   // edited files is only readable afterwards if the tree it edited can be
   // found again, and `orch discard` needs both to clean up.
@@ -586,6 +588,7 @@ const RUN_DDL = `CREATE TABLE run (
       route_reason  TEXT,
       branch        TEXT,
       branch_kept   TEXT,
+      branch_kept_tip TEXT,
       worktree      TEXT,
       vendor_session TEXT,
       base_commit   TEXT,

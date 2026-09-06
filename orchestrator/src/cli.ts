@@ -20,7 +20,7 @@ import { createHash } from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
 import { createHasPlaceholder, projectAt, projectByName, projects } from './projects.ts'
-import { resolveBase, repoRootOf, removeBranch, unmergedBranch,
+import { branchTip, restoreBranch, resolveBase, repoRootOf, removeBranch, unmergedBranch,
          checkoutHasUncommittedWork, callerDrift } from './worktree.ts'
 import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
 import { WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE,
@@ -302,6 +302,7 @@ type CleanupRow = {
 
 type BranchOwnerRow = {
   id: number; repo: string | null; cwd: string | null; worktree: string | null
+  status: string; scored: number
 }
 
 type WorktreeSharerRow = { id: number; status: string; scored: number }
@@ -377,16 +378,18 @@ function samePath(a: string, b: string): boolean {
   return normalized(a) === normalized(b)
 }
 
-/** A branch is shared only inside one repository, and only active owners protect it. */
-function nonTerminalBranchOwner(
+/** A branch is shared only inside one repository, and active or unjudged owners protect it. */
+function evidenceOwningBranchOwner(
   row: { id: number; repo?: string | null; branch: string | null }, repoRoot: string,
 ): BranchOwnerRow | null {
   if (!row.branch) return null
   const project = row.repo ?? projectAt(repoRoot)?.name ?? null
   const candidates = db().query(
-    `SELECT id, repo, cwd, worktree FROM run
-      WHERE branch=? AND id<>? AND status IN ('running','asking','stopped')
-      ORDER BY id`,
+    `SELECT r.id, r.repo, r.cwd, r.worktree, r.status, s.delivery IS NOT NULL AS scored
+       FROM run r LEFT JOIN score s ON s.run_id = r.id
+      WHERE r.branch=? AND r.id<>?
+        AND (r.status NOT IN ('ok','failed','stale') OR s.delivery IS NULL)
+      ORDER BY r.id`,
   ).all(row.branch, row.id) as BranchOwnerRow[]
   return candidates.find((candidate) => {
     if (project && candidate.repo) return candidate.repo === project
@@ -410,15 +413,33 @@ function evidenceOwningWorktreeSharers(
   ).all(row.worktree, row.id) as WorktreeSharerRow[]
 }
 
-function sharedBranchMutation(
-  branch: string, before: string, after: string | null,
+function recordRestoreRefusal(runId: number, branch: string, tip: string): void {
+  db().query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
+    .run(branch, tip, runId)
+}
+
+function restoreRefusal(
+  runId: number, branch: string, tip: string, error: string,
+): string {
+  recordRestoreRefusal(runId, branch, tip)
+  return `branch ${branch} should have been restored to ${tip}, but the ref write was refused: ` +
+    `${error}. Restore it from the main checkout.`
+}
+
+function sharedBranchRefusal(
+  runId: number, repoRoot: string, branch: string, snapshot: string, owner: BranchOwnerRow,
 ): string | null {
-  if (after === before) return null
-  return after === null
-    ? `project remove tool deleted shared branch ${branch}; restored ${before}. ` +
+  const after = branchTip(repoRoot, branch)
+  if (after === snapshot) return null
+  if (after !== null) {
+    return `shared branch ${branch} moved from ${snapshot} to ${after} during cleanup; ` +
+      `run ${owner.id} owns it, so it was left at ${after}`
+  }
+  const restored = restoreBranch(repoRoot, branch, snapshot)
+  return restored.ok
+    ? `project remove tool deleted shared branch ${branch}; restored ${snapshot}. ` +
       'The tip at deletion was not observable.'
-    : `project remove tool moved shared branch ${branch} from ${before} to ${after}; ` +
-      `restored ${before}`
+    : restoreRefusal(runId, branch, snapshot, restored.error)
 }
 
 /**
@@ -455,10 +476,9 @@ async function discardWorktree(
     throw new SharedWorktreeEvidenceError(row.worktree, sharers)
   }
 
-  const { branchTip, removeFor, unmergedBranch, restoreBranch } =
-    await import('./worktree.ts')
+  const { removeFor } = await import('./worktree.ts')
   const repoRoot = cleanupRepoRoot(row) ?? process.cwd()
-  const branchOwner = nonTerminalBranchOwner(row, repoRoot)
+  const branchOwner = evidenceOwningBranchOwner(row, repoRoot)
   const sharedBranchTip = branchOwner && row.branch ? branchTip(repoRoot, row.branch) : null
   let protectedBranch: ReturnType<typeof unmergedBranch> = null
   if (!force && row.branch) {
@@ -470,14 +490,17 @@ async function discardWorktree(
     base: '',
     repoRoot,
   }, repoRoot, force, Boolean(branchOwner))
-  if (protectedBranch && row.branch) restoreBranch(repoRoot, row.branch, protectedBranch.tip)
-  if (sharedBranchTip && row.branch) {
-    const after = branchTip(repoRoot, row.branch)
-    const mutation = sharedBranchMutation(row.branch, sharedBranchTip, after)
-    if (mutation) {
-      restoreBranch(repoRoot, row.branch, sharedBranchTip)
-      throw new Error(mutation)
+  if (protectedBranch && row.branch && !sharedBranchTip) {
+    const restored = restoreBranch(repoRoot, row.branch, protectedBranch.tip)
+    if (!restored.ok) {
+      throw new Error(restoreRefusal(row.id, row.branch, protectedBranch.tip, restored.error))
     }
+  }
+  if (sharedBranchTip && row.branch) {
+    const refusal = sharedBranchRefusal(
+      row.id, repoRoot, row.branch, sharedBranchTip, branchOwner!,
+    )
+    if (refusal) throw new Error(refusal)
   }
   if (!r.removed) throw new Error(r.detail)
   const project = row.repo ?? projectAt(repoRoot)?.name ?? 'unknown'
@@ -494,7 +517,7 @@ async function discardWorktree(
       leakedResourceLines(inventory.resources, project, row.id).map((line) => `  ${line}`).join('\n'),
     )
   }
-  db().query('UPDATE run SET worktree = NULL, branch_kept = ? WHERE id = ?')
+  db().query('UPDATE run SET worktree = NULL, branch_kept = ?, branch_kept_tip = NULL WHERE id = ?')
     .run(protectedBranch ? row.branch : null, row.id)
   console.log(`${verb} run ${row.id}'s worktree`)
   if (r.output) console.log(r.output)
@@ -3056,7 +3079,7 @@ switch (cmd) {
       job: string; age_days: number; scored: number
     }[]
 
-    const { branchTip, removeFor, restoreBranch, sweepWithTool, repoRootOf, orphanSafety,
+    const { removeFor, sweepWithTool, repoRootOf, orphanSafety,
             isOrchWorktree, ORCH_RUN_MARKER } =
       await import('./worktree.ts')
     const { projectAt } = await import('./projects.ts')
@@ -3094,15 +3117,14 @@ switch (cmd) {
       const repoRoot = (r.repo ? projectByName(r.repo)?.path : null) ??
         repoRootOf(r.worktree) ?? projectAt(r.worktree)?.path ?? process.cwd()
       const w = { path: r.worktree, branch: r.branch ?? `orch/${r.id}`, base: '', repoRoot }
-      const branchOwner = nonTerminalBranchOwner(r, repoRoot)
+      const branchOwner = evidenceOwningBranchOwner(r, repoRoot)
       const sharedTip = branchOwner && r.branch ? branchTip(repoRoot, r.branch) : null
       const res = removeFor(w, repoRoot, false, Boolean(branchOwner))
       if (sharedTip && r.branch) {
-        const mutation = sharedBranchMutation(r.branch, sharedTip, branchTip(repoRoot, r.branch))
-        if (mutation) {
-          restoreBranch(repoRoot, r.branch, sharedTip)
+        const refusal = sharedBranchRefusal(r.id, repoRoot, r.branch, sharedTip, branchOwner!)
+        if (refusal) {
           cleanupFailed = true
-          console.error(`could not reclaim ${r.id}: ${mutation}`)
+          console.error(`could not reclaim ${r.id}: ${refusal}`)
           continue
         }
       }
@@ -3185,20 +3207,19 @@ switch (cmd) {
 
         const w = { path, branch: safe.branch, base: '', repoRoot: p.path }
         const runId = orchRunId(entry.name)
-        const branchOwner = nonTerminalBranchOwner({
+        const branchOwner = evidenceOwningBranchOwner({
           id: runId ?? -1, repo: p.name, branch: safe.branch,
         }, p.path)
         const sharedTip = branchOwner && safe.branch ? branchTip(p.path, safe.branch) : null
         const res = removeFor(w, p.path, false, Boolean(branchOwner))
         if (sharedTip && safe.branch) {
-          const mutation = sharedBranchMutation(
-            safe.branch, sharedTip, branchTip(p.path, safe.branch),
+          const refusal = sharedBranchRefusal(
+            runId ?? -1, p.path, safe.branch, sharedTip, branchOwner!,
           )
-          if (mutation) {
-            restoreBranch(p.path, safe.branch, sharedTip)
+          if (refusal) {
             cleanupFailed = true
             keep(`${label}  removal refused`, 'removal refused')
-            console.error(`could not reclaim ${label}: ${mutation}`)
+            console.error(`could not reclaim ${label}: ${refusal}`)
             continue
           }
         }
@@ -3303,10 +3324,12 @@ switch (cmd) {
     const id = Number(argv[1])
     if (!id) usage()
     const row = db().query(
-      'SELECT id, repo, cwd, worktree, branch, branch_kept, base_commit FROM run WHERE id = ?',
+      `SELECT id, repo, cwd, worktree, branch, branch_kept, branch_kept_tip, base_commit
+         FROM run WHERE id = ?`,
     ).get(id) as {
       id: number; repo: string | null; cwd: string | null; worktree: string | null
-      branch: string | null; branch_kept: string | null; base_commit: string | null
+      branch: string | null; branch_kept: string | null; branch_kept_tip: string | null
+      base_commit: string | null
     } | null
     if (!row) throw new Error(`no run ${id}`)
     if (!row.worktree) {
@@ -3316,7 +3339,9 @@ switch (cmd) {
       const repoRoot = cleanupRepoRoot(row)
       if (!repoRoot) throw new Error(`run ${id}'s repository root was not found`)
       const removed = removeBranch(repoRoot, row.branch_kept)
-      if (removed) db().query('UPDATE run SET branch_kept=NULL WHERE id=?').run(id)
+      if (removed) {
+        db().query('UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE id=?').run(id)
+      }
       console.log(removed
         ? `deleted branch ${row.branch_kept}`
         : `branch ${row.branch_kept} cleanup skipped: branch does not exist`)
@@ -3445,7 +3470,7 @@ switch (cmd) {
       console.log(`branch ${row.branch} cleanup skipped: repository root not found`)
       break
     }
-    const branchOwner = nonTerminalBranchOwner(row, repoRoot)
+    const branchOwner = evidenceOwningBranchOwner(row, repoRoot)
     if (branchOwner) {
       console.log(`branch ${row.branch} left because run ${branchOwner.id} records it`)
       break
@@ -3455,7 +3480,7 @@ switch (cmd) {
       protectedBranch = unmergedBranch(repoRoot, row.branch, row.base_commit)
     }
     if (protectedBranch) {
-      db().query('UPDATE run SET branch_kept=? WHERE id=?').run(row.branch, id)
+      db().query('UPDATE run SET branch_kept=?, branch_kept_tip=NULL WHERE id=?').run(row.branch, id)
       console.log(keptBranchLine(row.branch, protectedBranch.count, id))
       break
     }
@@ -3969,7 +3994,7 @@ switch (cmd) {
               s.delivery, s.quality,
               COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason
               ${json ? ', r.cwd, r.session_id, r.vendor_cost_usd, r.probe, r.exit_code, r.input_tree,'
-                        + ' r.prompt_path, r.branch, r.branch_kept, r.retry_of, r.launch_key' : ''}
+                        + ' r.prompt_path, r.branch, r.branch_kept, r.branch_kept_tip, r.retry_of, r.launch_key' : ''}
          FROM run r
          JOIN run current_run ON current_run.id = (
            SELECT member.id FROM run member

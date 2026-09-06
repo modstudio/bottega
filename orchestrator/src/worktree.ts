@@ -104,11 +104,24 @@ export function worktreeGitEnvironment(cwd: string): WorktreeObjectEnvironment |
   }
 }
 
+/** Drop a worker's repository routing before deriving routing for the target checkout. */
+function targetGitEnvironment(cwd: string): NodeJS.ProcessEnv {
+  const env = { ...process.env }
+  for (const variable of Object.keys(env)) {
+    if (variable === 'GIT_OBJECT_DIRECTORY' || variable === 'GIT_ALTERNATE_OBJECT_DIRECTORIES' ||
+        variable.startsWith('GIT_CONFIG_') || variable === 'ORCH_GUARDED_GIT_COMMON_DIR' ||
+        variable === 'ORCH_ALLOWED_GIT_REF') {
+      delete env[variable]
+    }
+  }
+  return { ...env, ...worktreeGitEnvironment(cwd) }
+}
+
 /** A git invocation that throws with git's own words rather than a bare code. */
 function git(args: string[], cwd: string): string {
   if (cwdMissing(cwd)) throw new Error(`git ${args[0]}: ${cwd} does not exist`)
   const p = Bun.spawnSync(['git', ...args], {
-    cwd, env: { ...process.env, ...worktreeGitEnvironment(cwd) }, stdout: 'pipe', stderr: 'pipe',
+    cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
   })
   if (p.exitCode !== 0) {
     throw new Error(`git ${args.join(' ')} failed: ${p.stderr.toString().trim() || `exit ${p.exitCode}`}`)
@@ -120,7 +133,7 @@ function git(args: string[], cwd: string): string {
 function gitOk(args: string[], cwd: string): string | null {
   if (cwdMissing(cwd)) return null
   const p = Bun.spawnSync(['git', ...args], {
-    cwd, env: { ...process.env, ...worktreeGitEnvironment(cwd) }, stdout: 'pipe', stderr: 'pipe',
+    cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
   })
   return p.exitCode === 0 ? p.stdout.toString().trim() : null
 }
@@ -130,7 +143,7 @@ export function contentTree(cwd: string): string {
   const temporary = join(tmpdir(), `orch-index-${process.pid}-${randomUUID()}`)
   mkdirSync(temporary, { recursive: true })
   const index = join(temporary, 'index')
-  const env = { ...process.env, ...worktreeGitEnvironment(cwd), GIT_INDEX_FILE: index }
+  const env = { ...targetGitEnvironment(cwd), GIT_INDEX_FILE: index }
   try {
     const read = Bun.spawnSync(['git', 'read-tree', 'HEAD'], {
       cwd, env, stdout: 'pipe', stderr: 'pipe',
@@ -161,7 +174,7 @@ function gitConfigOk(args: string[], cwd: string): string | null {
   if (cwdMissing(cwd)) return null
   const p = Bun.spawnSync(['git', ...args], {
     cwd,
-    env: { ...process.env, GIT_CONFIG_COUNT: '0', ...worktreeGitEnvironment(cwd) },
+    env: { ...targetGitEnvironment(cwd), GIT_CONFIG_COUNT: '0' },
     stdout: 'pipe', stderr: 'pipe',
   })
   return p.exitCode === 0 ? p.stdout.toString().trim() : null
@@ -184,7 +197,7 @@ function gitConfigOk(args: string[], cwd: string): string | null {
 function gitRaw(args: string[], cwd: string): string {
   if (cwdMissing(cwd)) return ''
   const p = Bun.spawnSync(['git', ...args], {
-    cwd, env: { ...process.env, ...worktreeGitEnvironment(cwd) }, stdout: 'pipe', stderr: 'pipe',
+    cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
   })
   return p.exitCode === 0 ? p.stdout.toString() : ''
 }
@@ -193,7 +206,7 @@ function gitRaw(args: string[], cwd: string): string {
 function gitInput(args: string[], cwd: string, input: Uint8Array): void {
   if (cwdMissing(cwd)) throw new Error(`git ${args[0]}: ${cwd} does not exist`)
   const p = Bun.spawnSync(['git', ...args], {
-    cwd, env: { ...process.env, ...worktreeGitEnvironment(cwd) },
+    cwd, env: targetGitEnvironment(cwd),
     stdin: input, stdout: 'pipe', stderr: 'pipe',
   })
   if (p.exitCode !== 0) {
@@ -205,7 +218,7 @@ function gitInput(args: string[], cwd: string, input: Uint8Array): void {
 function gitBytes(args: string[], cwd: string): Buffer {
   if (cwdMissing(cwd)) throw new Error(`git ${args[0]}: ${cwd} does not exist`)
   const p = Bun.spawnSync(['git', ...args], {
-    cwd, env: { ...process.env, ...worktreeGitEnvironment(cwd) }, stdout: 'pipe', stderr: 'pipe',
+    cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
   })
   if (p.exitCode !== 0) {
     throw new Error(`git ${args.join(' ')} failed: ${p.stderr.toString().trim() || `exit ${p.exitCode}`}`)
@@ -764,7 +777,9 @@ function runShellTool(
   template: string, vars: Record<string, string>, cwd: string,
 ): { ok: boolean; out: string; stdout: string; exitCode: number | null } {
   const cmd = fillTool(template, vars)
-  const p = Bun.spawnSync(['sh', '-c', cmd], { cwd, stdout: 'pipe', stderr: 'pipe' })
+  const p = Bun.spawnSync(['sh', '-c', cmd], {
+    cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
+  })
   const stdout = p.stdout.toString()
   const out = `${stdout}${p.stderr.toString()}`.trim()
   return { ok: p.exitCode === 0, out, stdout, exitCode: p.exitCode }
@@ -1625,9 +1640,16 @@ export function unmergedBranch(
   return count > 0 ? { count, tip } : null
 }
 
-/** Restore a protected branch to its exact snapshot after a project's removal command. */
-export function restoreBranch(repoRoot: string, branch: string, tip: string): void {
+/** Restore a protected branch, retaining git's refusal for an actionable cleanup report. */
+export function restoreBranch(
+  repoRoot: string, branch: string, tip: string,
+): { ok: true } | { ok: false; error: string } {
   const ref = `refs/heads/${branch}`
-  if (gitOk(['rev-parse', '--verify', ref], repoRoot) === tip) return
-  git(['update-ref', ref, tip], repoRoot)
+  if (gitOk(['rev-parse', '--verify', ref], repoRoot) === tip) return { ok: true }
+  const p = Bun.spawnSync(['git', 'update-ref', ref, tip], {
+    cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
+  })
+  return p.exitCode === 0
+    ? { ok: true }
+    : { ok: false, error: p.stderr.toString().trim() || `exit ${p.exitCode}` }
 }
