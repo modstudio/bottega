@@ -11327,6 +11327,24 @@ describe('scoped operator docs', () => {
     )).toMatchObject({ id: expect.any(Number), scope: 'project', subject: 'former', slug: 'historic', body: 'kept' })
   })
 
+  test('consume survives removal of the addressed project', () => {
+    upsertProject({ name: 'former', path: '/w/former', stack: null, canon: true, settings: {} })
+    setDoc({
+      scope: 'resume', subject: 'former', slug: 'epic', title: 'Resume',
+      body: '---\nstatus: open\n---\n\nresume',
+    })
+    setDoc({
+      scope: 'project', subject: 'former', slug: 'note', title: 'Project',
+      body: '---\nstatus: open\n---\n\nproject',
+    })
+    expect(removeProject('former')).toBe(true)
+
+    expect(consumeDoc('resume', 'former', 'epic').body).toContain('status: consumed')
+    expect(consumeDoc('project', 'former', 'note').body).toContain('status: consumed')
+    expect(listDocRevisions('resume', 'former', 'epic')[0]?.op).toBe('consume')
+    expect(listDocRevisions('project', 'former', 'note')[0]?.op).toBe('consume')
+  })
+
   test('scope, slug, and every subject rule name a usable fix', () => {
     upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
     const put = (scope: string, subject: string | null, slug = 'ok') =>

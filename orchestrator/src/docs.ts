@@ -264,7 +264,7 @@ export function consumeDoc(
   scope: string, subject: string | null, slug: string,
   context: DocWriteContext,
 ): ConsumedDoc {
-  validate(scope, subject, slug)
+  validateHistoricAddress(scope, slug)
   writeIdentity(context)
   const doc = getDoc(scope, subject, slug)
   if (!doc) throw new Error(`no ${scope} doc "${slug}"`)
