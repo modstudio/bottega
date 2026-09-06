@@ -339,7 +339,7 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
     }
     case 'do': return { args: argv.slice(1), shape: shape(
       'orch do <job> [prompt] [--agent NAME] [--file PATH] [--schema PATH] [--model NAME]', Infinity,
-      ['--agent', '--avoid', '--distinct-from', '--base', '--file', '--schema', '--model', '--label', '--lens', '--seed', '--key', '--repo', '--cwd'],
+      ['--agent', '--avoid', '--distinct-from', '--base', '--review', '--file', '--schema', '--model', '--label', '--lens', '--seed', '--key', '--repo', '--cwd'],
       ['--carry', '--mcp', '--quiet', '--probe', '--follow', '--detach', '--porcelain', '--no-failover', '--help'],
     ) }
     case 'review': {
@@ -356,6 +356,9 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       if (sub === 'pins') return { args: argv.slice(2), shape: shape('orch review pins [--prune]', 0, [], ['--prune']) }
       if (sub === 'calibration') return { args: argv.slice(2), shape: shape(
         'orch review calibration <lens> <agent> <model> [--json]', 3, [], ['--json'],
+      ) }
+      if (sub === 'coverage-audit') return { args: argv.slice(2), shape: shape(
+        'orch review coverage-audit [--json]', 0, [], ['--json'],
       ) }
       return null
     }

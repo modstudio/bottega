@@ -1038,10 +1038,11 @@ export function validateSeedWithTool(cwd: string, seed?: string): void {
  */
 export function createWithTool(
   tool: WorktreeTool, cwd: string, runId: number, seed?: string, key?: string, baseRef?: string,
-  record?: RecordWorktree,
+  record?: RecordWorktree, detached = false,
 ): Worktree {
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
+  const projectName = projectAt(cwd)?.name ?? projectAt(repoRoot)?.name ?? '(unregistered)'
   if (tool.seeds?.length && !seed) {
     throw new Error(
       `this project requires a database size for a new worktree, and has no default.\n` +
@@ -1051,13 +1052,16 @@ export function createWithTool(
   }
   return withWorktreeCreateLock(
     repoRoot,
-    () => createWithToolUnlocked(tool, repoRoot, runId, seed, key, baseRef, record),
+    () => createWithToolUnlocked(
+      tool, repoRoot, runId, seed, key, baseRef, record, detached, projectName,
+    ),
   )
 }
 
 function createWithToolUnlocked(
   tool: WorktreeTool, repoRoot: string, runId: number, seed?: string, key?: string,
-  baseRef?: string, record?: RecordWorktree,
+  baseRef?: string, record?: RecordWorktree, detached = false,
+  projectName = '(unregistered)',
 ): Worktree {
   // The project's own naming rule wins where it has one. `orch/<id>` is fine
   // where nothing enforces a convention and is refused outright where something
@@ -1078,7 +1082,7 @@ function createWithToolUnlocked(
         "this project's worktree settings declare neither `create` nor `recipe`",
       )
     }
-    return createFromRecipe(tool, tool.recipe, repoRoot, runId, key, baseRef, record)
+    return createFromRecipe(tool, tool.recipe, repoRoot, runId, key, baseRef, record, detached)
   }
 
   if (baseRef && !createHasPlaceholder(tool.create, 'base')) {
@@ -1190,6 +1194,17 @@ function createWithToolUnlocked(
       leftover(path),
     )
   }
+  if (detached) {
+    const symbolicHead = gitOk(['symbolic-ref', '-q', 'HEAD'], path)
+    const head = gitOk(['rev-parse', 'HEAD'], path)
+    if (symbolicHead !== null || head !== base) {
+      throw new Error(
+        `project ${projectName}: worktree.create detached review ` +
+        `postcondition failed; expected detached HEAD at ${base}, got ` +
+        `${symbolicHead ?? '(detached HEAD)'} at ${head ?? '(unresolved)'}.` + leftover(path),
+      )
+    }
+  }
   // A command without {base} may deliberately choose its own floor. Read the
   // commit from the tree it actually created so the run record and every later
   // diff name that floor rather than the caller checkout's incidental HEAD.
@@ -1205,17 +1220,17 @@ function createWithToolUnlocked(
 }
 
 export function createWorktree(
-  cwd: string, runId: number, baseRef?: string, record?: RecordWorktree,
+  cwd: string, runId: number, baseRef?: string, record?: RecordWorktree, detached = false,
 ): Worktree {
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
   return withWorktreeCreateLock(
-    repoRoot, () => createWorktreeUnlocked(repoRoot, runId, baseRef, record),
+    repoRoot, () => createWorktreeUnlocked(repoRoot, runId, baseRef, record, detached),
   )
 }
 
 function createWorktreeUnlocked(
-  repoRoot: string, runId: number, baseRef?: string, record?: RecordWorktree,
+  repoRoot: string, runId: number, baseRef?: string, record?: RecordWorktree, detached = false,
 ): Worktree {
   const base = baseRef ? resolveBase(repoRoot, baseRef) : git(['rev-parse', 'HEAD'], repoRoot)
   const dir = join(repoRoot, '.claude', 'worktrees')
@@ -1226,7 +1241,7 @@ function createWorktreeUnlocked(
   if (existsSync(path)) {
     throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
   }
-  git(['worktree', 'add', '-b', branch, path, base], repoRoot)
+  git(['worktree', 'add', ...(detached ? ['--detach'] : ['-b', branch]), path, base], repoRoot)
   const worktree = { path, branch, base, repoRoot }
   attributeWorktree(worktree, runId, record)
   verifyFreshWorktree(worktree)
@@ -1390,7 +1405,7 @@ export function carryWorkingState(cwd: string, worktree: Worktree): CarriedWorki
  */
 function createFromRecipe(
   tool: WorktreeTool, recipe: Recipe, repoRoot: string, runId: number, key?: string,
-  baseRef?: string, record?: RecordWorktree,
+  baseRef?: string, record?: RecordWorktree, detached = false,
 ): Worktree {
   const branch = (tool.branch ?? 'orch/{id}')
     .replace(/\{id\}/g, String(runId))
@@ -1413,7 +1428,7 @@ function createFromRecipe(
     ? (gitOk(['rev-parse', recipe.baseRef], repoRoot) ?? git(['rev-parse', 'HEAD'], repoRoot))
     : git(['rev-parse', 'HEAD'], repoRoot)
 
-  git(['worktree', 'add', '-b', branch, path, base], repoRoot)
+  git(['worktree', 'add', ...(detached ? ['--detach'] : ['-b', branch]), path, base], repoRoot)
   const w: Worktree = { path, branch, base, repoRoot }
   attributeWorktree(w, runId, record)
 

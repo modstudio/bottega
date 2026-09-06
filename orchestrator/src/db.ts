@@ -409,6 +409,9 @@ export function applySchema(d: Database): void {
   // The commit whose tree a repository review was dispatched against. Review
   // recording pins it so a content-preserving rebase cannot orphan the object.
   addColumn(d, 'run', 'head_commit', 'TEXT')
+  // The caller's explicit review address, kept separately from the resolved
+  // commit so provenance preserves whether a branch or run id was requested.
+  addColumn(d, 'run', 'review_ref', 'TEXT')
   addColumn(d, 'review_lens', 'reviewed_tree', 'TEXT')
   addColumn(d, 'review_finding', 'triaged_severity', 'TEXT')
   // A completed target task must keep its provenance. NULL is still active;
@@ -509,7 +512,12 @@ function seedProjects(d: Database) {
  * existing rows are renamed below.
  */
 function normalizeSql(sql: string): string {
-  return sql.replace(/\s+/g, ' ').trim()
+  return sql
+    .replace(/"([A-Za-z_][A-Za-z0-9_]*)"|`([A-Za-z_][A-Za-z0-9_]*)`|\[([A-Za-z_][A-Za-z0-9_]*)\]/g,
+      (_match, quoted: string | undefined, backticked: string | undefined,
+        bracketed: string | undefined) => quoted ?? backticked ?? bracketed ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function schemaVersion(): string {
@@ -633,8 +641,23 @@ function rebuildTable(
     if (table !== 'canon_pack' || oldCols.has('job')) {
       d.exec(`INSERT INTO ${newName} (${insertList}) SELECT ${selectList} FROM ${table}`)
     }
+    const oldSequence = (() => {
+      try {
+        return (d.query('SELECT seq FROM sqlite_sequence WHERE name=?').get(table) as
+          { seq: number } | null)?.seq ?? null
+      } catch { return null }
+    })()
     d.exec(`DROP TABLE ${table}`)
     d.exec(`ALTER TABLE ${newName} RENAME TO ${table}`)
+    if (oldSequence !== null && newColSet.has('id')) {
+      const maxId = (d.query(`SELECT MAX(id) AS id FROM ${table}`).get() as
+        { id: number | null }).id ?? 0
+      const sequence = Math.max(oldSequence, maxId)
+      const restored = d.query('UPDATE sqlite_sequence SET seq=? WHERE name=?').run(sequence, table)
+      if (restored.changes === 0) {
+        d.query('INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)').run(table, sequence)
+      }
+    }
     if (table === 'run') {
       d.exec('CREATE INDEX IF NOT EXISTS run_job_agent ON run(job, agent)')
     } else if (table === 'canon_pack') {
@@ -753,6 +776,7 @@ const RUN_DDL = `CREATE TABLE run (
       outside_worktree_writes TEXT,
       input_tree    TEXT,
       head_commit   TEXT,
+      review_ref    TEXT,
       agent_pid     INTEGER,
       mcp           INTEGER,
       mcp_server    TEXT,

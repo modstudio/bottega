@@ -20,6 +20,7 @@ import {
   createWorktree, createWithTool, toolFor, changesIn, repoRootOf, resolveBase, worktreeGitDir,
   createCommandExists,
   prepareWorktreeObjects, prepareSharedRefGuard, worktreeGitEnvironment, carryWorkingState,
+  targetGitEnvironment,
   workerSharedGitRoots,
   contentTree,
   assertCallerAncestry, withWorktreeCreateLock,
@@ -42,6 +43,7 @@ import { createHasPlaceholder, projectAt, projects, stackAt } from './projects.t
 import { compilePack, recordPack } from './canon.ts'
 import { seedGuidance } from './args.ts'
 import { resolveRunsDirectory } from './database-location.ts'
+import { resolveLandingBranch } from './landing.ts'
 
 export type RunResult = {
   id: number
@@ -94,6 +96,8 @@ export type DetachSpec = {
   noFailover?: boolean
   /** Carry the caller's uncommitted work into a newly cut worktree. Opt-in. */
   carry?: boolean
+  /** Branch or run id whose recorded branch a findings job reviews. */
+  review?: string
   /** Preserve the session that owns a successor root. */
   ownerSession?: string | null
   /** Resume only: everything needed to continue a worker where it stopped. */
@@ -110,19 +114,73 @@ export function detachedRunOptions(
 ) {
   const {
     agent, schema, mcp, model, probe, label, lens, seed, key, repo, base, avoid,
-    distinctModels, retryOf, cwd, noFailover, carry, ownerSession, resume,
+    distinctModels, retryOf, cwd, noFailover, carry, review, ownerSession, resume,
   } = spec
   // Adding a field to DetachSpec must fail typechecking until it is handled here.
   const consumed: Required<Record<keyof DetachSpec, unknown>> = {
     agent, schema, mcp, model, probe, label, lens, seed, key, repo, base, avoid,
-    distinctModels, retryOf, cwd, noFailover, carry, ownerSession, resume,
+    distinctModels, retryOf, cwd, noFailover, carry, review, ownerSession, resume,
   }
   void consumed
   return {
     job: jobName, prompt, reserveId,
     agent, schemaPath: schema, mcp, model, probe, label, lens, seed, key, repo, base, avoid,
-    distinctModels, retryOf, cwd, noFailover, carry, ownerSession, resume,
+    distinctModels, retryOf, cwd, noFailover, carry, review, ownerSession, resume,
   }
+}
+
+const EXPLICIT_REVIEW_JOBS = new Set(['review-lens', 'safety', 'craft'])
+
+export function resolveReviewTarget(
+  jobName: string, cwd: string, reviewRef?: string, carry = false,
+): { branch: string; commit: string; base: string } | null {
+  if (reviewRef === undefined) return null
+  if (!EXPLICIT_REVIEW_JOBS.has(jobName)) {
+    throw new Error('--review is only valid for review-lens, safety, and craft')
+  }
+  const project = projectAt(cwd)
+  const tool = project?.settings.worktree
+  if (tool?.create && !createHasPlaceholder(tool.create, 'base')) {
+    throw new Error(
+      `project ${project!.name}: worktree.create has no {base} placeholder; --review needs one`,
+    )
+  }
+  if (tool?.create && tool.detached !== true) {
+    throw new Error(
+      `project ${project!.name}: worktree.create does not declare detached review support.\n` +
+      `  orch project set ${project!.name} --settings '{"worktree":{"detached":true}}'`,
+    )
+  }
+  const { branch } = resolveLandingBranch(reviewRef)
+  if (carry && branchOf(cwd) !== branch) {
+    throw new Error(
+      `--review ${reviewRef} resolves to branch ${branch}, but --carry was requested from ` +
+      `${branchOf(cwd) ?? '(detached HEAD)'}; run --carry from that branch's own worktree`,
+    )
+  }
+  const trunk = project?.settings.trunk?.trim()
+  if (!trunk) {
+    throw new Error(
+      `project ${project?.name ?? '(unregistered)'} has no trunk configured; ` +
+      '--review needs one to measure the reviewed change',
+    )
+  }
+  const commit = resolveBase(cwd, `${branch}^{commit}`)
+  const trunkCommit = resolveBase(cwd, `${trunk}^{commit}`)
+  const base = gitContext(cwd, 'merge-base', commit, trunkCommit)
+  if (!base) {
+    throw new Error(`cannot find merge-base between review target ${branch} and trunk ${trunk}`)
+  }
+  return { branch, commit, base }
+}
+
+export function implicitReviewWarning(cwd: string): string {
+  const branch = branchOf(cwd) ?? '(detached HEAD)'
+  const p = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--verify', 'HEAD^{commit}'], {
+    env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'ignore',
+  })
+  const commit = p.exitCode === 0 ? p.stdout.toString().trim() : null
+  return `reviewing ${branch} at ${commit?.slice(0, 8) ?? 'unknown'}; pass --review <branch> to be explicit`
 }
 
 /**
@@ -370,6 +428,8 @@ export function preflight(
   reusesWorktree = false,
   seedAlreadyValidated = false,
   lens?: string,
+  reviewRef?: string,
+  carry = false,
 ): string | undefined {
   if (depth() >= MAX_DEPTH) {
     throw new Error(
@@ -378,6 +438,7 @@ export function preflight(
     )
   }
   const j = job(jobName)
+  resolveReviewTarget(jobName, cwd, reviewRef, carry)
   const writesJob = Boolean(j.needs.writesRepo)
   if (j.findings && !lens?.trim()) {
     throw new Error(`${jobName} produces review findings and requires a stable lens identity.\n  --lens <id>`)
@@ -1128,6 +1189,8 @@ export async function run(opts: {
    * Opt-in, default off. See the call site in this function for why.
    */
   carry?: boolean
+  /** Branch or run id whose tip is the base of a findings review. */
+  review?: string
   /**
    * A row already claimed by the caller, to be filled in rather than inserted.
    *
@@ -1160,6 +1223,8 @@ export async function run(opts: {
     sessionId: string | null
     worktree: Worktree | null
   }
+  /** Immutable explicit-review target inherited only by automatic failover. */
+  resolvedReviewTarget?: { branch: string; commit: string; base: string }
 }): Promise<RunResult> {
   writableDb()
 
@@ -1167,7 +1232,10 @@ export async function run(opts: {
     opts.job, opts.cwd ?? process.cwd(), opts.seed, opts.key, opts.base,
     opts.resume?.worktree != null,
     opts.reserveId !== undefined,
-    opts.lens,
+    opts.lens, opts.resolvedReviewTarget ? undefined : opts.review, opts.carry,
+  )
+  const reviewTarget = opts.resolvedReviewTarget ?? resolveReviewTarget(
+    opts.job, opts.cwd ?? process.cwd(), opts.review, opts.carry,
   )
   // Programmatic callers get the same ordering guarantee as the CLI: a bad
   // ref is refused before a run row or worktree exists.
@@ -1467,7 +1535,7 @@ export async function run(opts: {
                         prompt_bytes=?, prompt_head=?, label=?, status='running', probe=?, retry_of=?,
                         route_reason=?, branch=?, parent_run_id=?, turn=?, vendor_session=?, docs_injected=?, doc_revisions=?, canon_sha=?,
                         launch_cwd=?, launch_seed=?, launch_key=?, launch_base=?, no_failover=?,
-                        automatic_failover=?, pid=?
+                        automatic_failover=?, review_ref=?, pid=?
           WHERE id=? RETURNING id`,
       ).get(
         nowIso(), name, opts.job, opts.repo ?? repoOf(callerCwd), callerCwd, sha(prompt),
@@ -1482,14 +1550,14 @@ export async function run(opts: {
         pack?.docs.length ?? 0, pack ? JSON.stringify(pack.docs.map((doc) => doc.revisionId)) : null,
         pack?.sha256 ?? null,
         launchCwd, launchSeed, launchKey, launchBase, noFailover ? 1 : 0,
-        opts.automaticFailover ? 1 : 0, process.pid,
+        opts.automaticFailover ? 1 : 0, opts.review ?? null, process.pid,
         opts.reserveId,
       ) as { id: number })
     : (db().query(
         `INSERT INTO run (started_at, agent, job, repo, cwd, prompt_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of, route_reason, branch, parent_run_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
                           launch_cwd, launch_seed, launch_key, launch_base, no_failover,
-                          automatic_failover, pid)
-         VALUES (?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+                          automatic_failover, review_ref, pid)
+         VALUES (?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       ).get(
         nowIso(), name, opts.job, opts.repo ?? repoOf(callerCwd), callerCwd,
         sha(prompt), Buffer.byteLength(prompt), head, opts.label ?? null,
@@ -1505,7 +1573,7 @@ export async function run(opts: {
         pack?.docs.length ?? 0, pack ? JSON.stringify(pack.docs.map((doc) => doc.revisionId)) : null,
         pack?.sha256 ?? null,
         launchCwd, launchSeed, launchKey, launchBase, noFailover ? 1 : 0,
-        opts.automaticFailover ? 1 : 0, process.pid,
+        opts.automaticFailover ? 1 : 0, opts.review ?? null, process.pid,
       ) as { id: number })
 
   /**
@@ -1587,7 +1655,10 @@ export async function run(opts: {
         const recordWorktree = (created: Worktree) => {
           const result = db().query(
             'UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id=?',
-          ).run(created.path, created.path, created.branch, created.base, claim.id)
+          ).run(
+            created.path, created.path, created.branch,
+            reviewTarget?.base ?? created.base, claim.id,
+          )
           if (result.changes !== 1) throw new Error(`run ${claim.id} could not record its worktree`)
         }
         worktree = withWorktreeCreateLock(repoRoot, () => {
@@ -1597,14 +1668,18 @@ export async function run(opts: {
             // produce a directory with no .env, no vendor and no database, in which
             // every test the worker runs is meaningless and green.
             created = createWithTool(
-              tool, callerCwd, claim.id, seed, opts.key, opts.base, recordWorktree,
+              tool, callerCwd, claim.id, seed, opts.key, reviewTarget?.commit ?? opts.base, recordWorktree,
+              Boolean(reviewTarget),
             )
           } else {
             // INHERITED on a resume, and this is the point of the whole exercise:
             // the worker is mid-edit in that tree, and cutting a fresh one would
             // answer its question into an empty checkout and throw away everything
             // it had built.
-            created = createWorktree(callerCwd, claim.id, opts.base, recordWorktree)
+            created = createWorktree(
+              callerCwd, claim.id, reviewTarget?.commit ?? opts.base, recordWorktree,
+              Boolean(reviewTarget),
+            )
           }
           const current = db().query('SELECT status FROM run WHERE id=?').get(claim.id) as
             { status: string }
@@ -1631,7 +1706,11 @@ export async function run(opts: {
             //
             // The ancestry guard is orthogonal: a behind-or-diverged caller is
             // refused whether or not carrying was requested.
-            assertCallerAncestry(callerCwd, created)
+            // An explicit review from trunk deliberately selects a branch that
+            // need not descend from the caller. An overlay still comes only
+            // from that branch's own checkout, where the ancestry guard remains
+            // the protection against carrying reversions onto a newer tip.
+            if (!reviewTarget || opts.carry) assertCallerAncestry(callerCwd, created)
             carried = opts.carry
               ? carryWorkingState(callerCwd, created)
               : { base: created.base, tracked: [], untracked: [] }
@@ -1678,7 +1757,7 @@ export async function run(opts: {
                           carry_base_commit=?, carry_tracked_paths=?, carry_untracked_paths=? WHERE id=?`,
         ).run(
           inheritedWorktree.path, inheritedWorktree.path, inheritedWorktree.branch,
-          inheritedWorktree.base,
+          reviewTarget?.base ?? inheritedWorktree.base,
           carried ? (carried.tracked.length + carried.untracked.length > 0 ? 1 : 0) : null,
           carried?.base ?? null,
           carried ? JSON.stringify(carried.tracked) : null,
@@ -1817,7 +1896,7 @@ export async function run(opts: {
     if (repoJob) {
       if (!worktree) throw new Error(`repository run ${claim.id} has no worktree to measure`)
       const inputTree = contentTree(worktree.path)
-      const headCommit = gitContext(callerCwd, 'rev-parse', '--verify', 'HEAD^{commit}')
+      const headCommit = gitContext(worktree.path, 'rev-parse', '--verify', 'HEAD^{commit}')
       const measured = db().query('UPDATE run SET input_tree=?, head_commit=? WHERE id=?')
         .run(inputTree, headCommit, claim.id)
       if (measured.changes !== 1) throw new Error(`run ${claim.id} could not record its input tree`)
@@ -2300,13 +2379,15 @@ export async function run(opts: {
     const tried = attempts.map((attempt) => attempt.agent)
     const first = db().query(
       `SELECT prompt_path, launch_cwd, launch_seed, launch_key, launch_base,
-              no_failover, session_id, mcp, schema_path, probe, label, lens, repo, base_commit
+              no_failover, session_id, mcp, schema_path, probe, label, lens, repo,
+              base_commit, head_commit, review_ref
          FROM run WHERE id=?`,
     ).get(attempts[0]!.id) as {
       prompt_path: string | null; launch_cwd: string | null; launch_seed: string | null
       launch_key: string | null; launch_base: string | null; no_failover: number
       session_id: string | null; mcp: number | null; schema_path: string | null
-      probe: number; label: string | null; lens: string | null; repo: string | null; base_commit: string | null
+      probe: number; label: string | null; lens: string | null; repo: string | null
+      base_commit: string | null; head_commit: string | null; review_ref: string | null
     }
     const treeName = worktree?.path ?? '(none — read-only job)'
     if (first.no_failover || opts.noFailover) {
@@ -2359,6 +2440,14 @@ export async function run(opts: {
           base: repoJob ? (first.base_commit ?? first.launch_base ?? undefined) : undefined,
           avoid: opts.avoid,
           carry: opts.carry,
+          review: first.review_ref ?? undefined,
+          resolvedReviewTarget: first.review_ref && first.base_commit && first.head_commit
+            ? {
+                branch: resolveLandingBranch(first.review_ref).branch,
+                commit: first.head_commit,
+                base: first.base_commit,
+              }
+            : undefined,
         })
       } catch (e) {
         const successor = db().query('SELECT id FROM run WHERE retry_of=?').get(claim.id)

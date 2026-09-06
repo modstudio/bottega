@@ -127,6 +127,8 @@ export type WorktreeCreate = {
 
 /** A project's own worktree lifecycle, as declared commands. */
 export type WorktreeTool = {
+  /** Whether this project's create command can check out a requested base detached. */
+  detached?: boolean
   /**
    * Creates and fully provisions one. Must print the created path.
    *

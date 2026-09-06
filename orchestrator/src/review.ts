@@ -295,6 +295,73 @@ export type ReviewPin = {
   deleted: boolean
 }
 
+export type CoverageAudit = {
+  count: number
+  review_ids: number[]
+  partial_review_ids: number[]
+}
+
+/** Find completed reviews whose lenses measured trunk at their own worktree cut. */
+export function coverageAudit(database: Database = db()): CoverageAudit {
+  const projects = database.query('SELECT name, path, settings FROM project').all() as {
+    name: string; path: string; settings: string | null
+  }[]
+  const registered = new Map<string, { path: string; trunk: string | null }>()
+  for (const project of projects) {
+    let trunk: string | null = null
+    try {
+      const settings = JSON.parse(project.settings ?? '{}') as { trunk?: unknown }
+      if (typeof settings.trunk === 'string' && settings.trunk.trim()) trunk = settings.trunk
+    } catch { /* an unreadable project setting cannot identify trunk */ }
+    registered.set(project.name, { path: project.path, trunk })
+  }
+  const rows = database.query(
+    `SELECT review.id, run.repo, run.started_at, run.base_commit, review_lens.reviewed_tree
+       FROM review
+       JOIN review_lens ON review_lens.review_id=review.id
+       JOIN run ON run.id=review_lens.run_id
+      WHERE review.completed_at IS NOT NULL AND run.review_ref IS NULL
+      ORDER BY review.id, review_lens.id`,
+  ).all() as {
+    id: number; repo: string | null; started_at: string; base_commit: string | null
+    reviewed_tree: string | null
+  }[]
+  const fallbackTrees = new Map<string, Set<string>>()
+  const matches = new Map<number, boolean[]>()
+  for (const row of rows) {
+    const project = row.repo ? registered.get(row.repo) : null
+    let expected: Set<string> | null = null
+    if (project && row.base_commit) {
+      const tree = git(project.path, ['rev-parse', '--verify', `${row.base_commit}^{tree}`])
+      if (tree.ok) expected = new Set([tree.out])
+    } else if (project?.trunk) {
+      const cacheKey = `${row.repo}\0${row.started_at}`
+      expected = fallbackTrees.get(cacheKey) ?? null
+      if (!expected) {
+        const history = git(project.path, [
+          'log', '-n', '2000', '--format=%T', `--before=${row.started_at}`, project.trunk,
+        ])
+        expected = new Set(history.ok ? history.out.split('\n').filter(Boolean) : [])
+        fallbackTrees.set(cacheKey, expected)
+      }
+    }
+    const lensMatches = matches.get(row.id) ?? []
+    lensMatches.push(Boolean(row.reviewed_tree && expected?.has(row.reviewed_tree)))
+    matches.set(row.id, lensMatches)
+  }
+  const reviewIds: number[] = []
+  const partialReviewIds: number[] = []
+  for (const [reviewId, lensMatches] of matches) {
+    if (lensMatches.length && lensMatches.every(Boolean)) reviewIds.push(reviewId)
+    else if (lensMatches.some(Boolean)) partialReviewIds.push(reviewId)
+  }
+  return {
+    count: reviewIds.length,
+    review_ids: reviewIds,
+    partial_review_ids: partialReviewIds,
+  }
+}
+
 /** Inspect keepalive refs; pruning is an explicit act and never part of cleanup. */
 export function reviewPins(prune = false, database: Database = db()): ReviewPin[] {
   if (prune) writableDb()

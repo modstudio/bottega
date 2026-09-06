@@ -1301,7 +1301,8 @@ const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePaths, pr
         canonSourceFor, canonSourceInstruction, snapshotRegisteredCheckouts,
         changedRegisteredCheckouts, checkoutAliases, checkoutCaseSensitivity,
         retargetRepositoryPrompt, retargetRepositoryPromptForDispatch,
-        packedResumePrompt, run: runJob } = await import('./run.ts')
+        packedResumePrompt, resolveReviewTarget, implicitReviewWarning,
+        run: runJob } = await import('./run.ts')
 const run = runJob
 const {
   CANON_EVALS, CANON_EVAL_LENS, TRACKED_EVAL_PATH, UNTRACKED_EVAL_PATH,
@@ -1319,7 +1320,7 @@ const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
         REVIEW_SEVERITY_INSTRUCTION,
         VERIFY_CLAIM_SCHEMA, ISSUE_WORKER_SCHEMA, workerPreamble, workerResumeGuard,
         rulingPrompt, packResumePrompt, contractConflicts, hasRealQuestions, realQuestions } = await import('./contract.ts')
-const { cleanReviewEvidence, parseReviewReply, recordReview, recordReviews, gradeReviewLens, reviewPins,
+const { cleanReviewEvidence, parseReviewReply, recordReview, recordReviews, gradeReviewLens, reviewPins, coverageAudit,
         triageFinding, completeReview, reviewCalibration, calibrationLine,
         MIN_REVIEW_TRIAGED } = await import('./review.ts')
 const { ask } = await import('./ask.ts')
@@ -2124,6 +2125,75 @@ describe('review discipline', () => {
       expect(stderr.mock.calls.flat().join(' ')).toContain(`run ${first}=${'a'.repeat(40)}`)
       expect(stderr.mock.calls.flat().join(' ')).toContain(`run ${second}=${'b'.repeat(40)}`)
     } finally { stderr.mockRestore() }
+  })
+
+  test('coverage audit compares each lens to trunk at cut time, not later trunk history', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-coverage-audit-'))
+    const git = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    try {
+      git('init', '-b', 'main')
+      git('config', 'user.email', 'orch-test@example.invalid')
+      git('config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'trunk.txt'), 'trunk\n')
+      git('add', 'trunk.txt')
+      git('commit', '-m', 'trunk fixture')
+      const trunkCommit = git('rev-parse', 'main^{commit}')
+      const trunkTree = git('rev-parse', 'main^{tree}')
+      git('checkout', '-b', 'feature/audit')
+      writeFileSync(join(repo, 'branch-only.txt'), 'branch\n')
+      git('add', 'branch-only.txt')
+      git('commit', '-m', 'branch fixture')
+      const branchTree = git('rev-parse', 'HEAD^{tree}')
+      git('checkout', 'main')
+      git('merge', '--ff-only', 'feature/audit')
+      upsertProject({ name: 'coverage-audit-fixture', path: repo, settings: { trunk: 'main' } })
+
+      const trunkRun = addRun({
+        agent: 'codex', job: 'review-lens', model: 'm', lens: 'trunk',
+        repo: 'coverage-audit-fixture', inputTree: trunkTree,
+      })
+      const branchRun = addRun({
+        agent: 'codex', job: 'review-lens', model: 'm', lens: 'branch',
+        repo: 'coverage-audit-fixture', inputTree: branchTree,
+      })
+      const mixedTrunkRun = addRun({
+        agent: 'codex', job: 'review-lens', model: 'm', lens: 'mixed-trunk',
+        repo: 'coverage-audit-fixture', inputTree: trunkTree,
+      })
+      const mixedBranchRun = addRun({
+        agent: 'codex', job: 'review-lens', model: 'm', lens: 'mixed-branch',
+        repo: 'coverage-audit-fixture', inputTree: trunkTree,
+      })
+      for (const runId of [trunkRun, branchRun, mixedTrunkRun, mixedBranchRun]) {
+        db().query('UPDATE run SET base_commit=? WHERE id=?').run(trunkCommit, runId)
+      }
+      const trunkReview = recordReview(trunkRun, reviewReply(0))
+      const branchReview = recordReview(branchRun, reviewReply(0))
+      const partialReview = recordReviews([
+        { runId: mixedTrunkRun, output: reviewReply(0) },
+        { runId: mixedBranchRun, output: reviewReply(0) },
+      ])
+      // Historical rows can predate the mixed-tree recording guard. Preserve
+      // one such row shape to exercise the audit's partial-review report.
+      db().query('UPDATE review_lens SET reviewed_tree=? WHERE run_id=?')
+        .run(branchTree, mixedBranchRun)
+      completeReview(trunkReview)
+      completeReview(branchReview)
+      completeReview(partialReview)
+      expect(coverageAudit()).toEqual({
+        count: 1,
+        review_ids: [trunkReview],
+        partial_review_ids: [partialReview],
+      })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
   })
 
   test('findings jobs have stable identities and the structured coverage contract', () => {
@@ -4774,6 +4844,72 @@ describe('vendor failure failover is one bounded unit of work', () => {
     }
   })
 
+  test('explicit review failover keeps the original ref and resolved tip', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-review-failover-'))
+    const binDir = join(repo, 'failover-bin')
+    const git = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    mkdirSync(binDir, { recursive: true })
+    writeFileSync(join(binDir, 'codex'), '#!/bin/sh\necho "HTTP 402: balance exhausted" >&2\nexit 1\n')
+    const review = reviewReply(0)
+    review.provenance.files_covered.push('subject.txt')
+    review.provenance.commands_run.push(
+      'git diff main...feature/review-failover -- subject.txt',
+    )
+    const event = JSON.stringify({ type: 'result', result: JSON.stringify(review) })
+    writeFileSync(join(binDir, 'grok'), `#!/bin/sh\nprintf '%s\\n' '${event}'\n`)
+    chmodSync(join(binDir, 'codex'), 0o755)
+    chmodSync(join(binDir, 'grok'), 0o755)
+    const oldPath = process.env.PATH
+    const oldDepth = process.env.ORCH_DEPTH
+    process.env.PATH = `${binDir}:${oldPath ?? ''}`
+    process.env.ORCH_DEPTH = '0'
+    try {
+      git('init', '-b', 'main')
+      git('config', 'user.email', 'orch-test@example.invalid')
+      git('config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'subject.txt'), 'trunk\n')
+      git('add', 'subject.txt')
+      git('commit', '-m', 'trunk')
+      git('switch', '-c', 'feature/review-failover')
+      writeFileSync(join(repo, 'subject.txt'), 'reviewed branch\n')
+      git('add', 'subject.txt')
+      git('commit', '-m', 'branch')
+      const tip = git('rev-parse', 'HEAD^{commit}')
+      const tree = git('rev-parse', 'HEAD^{tree}')
+      git('switch', 'main')
+      upsertProject({ name: 'review-failover-fixture', path: repo, settings: { trunk: 'main' } })
+
+      const result = await runJob({
+        job: 'review-lens', prompt: 'inspect the requested branch', cwd: repo,
+        agent: 'codex', lens: 'failover-review', review: 'feature/review-failover',
+      })
+      const rows = db().query(
+        `SELECT id, agent, retry_of, input_tree, head_commit, review_ref
+           FROM run ORDER BY id`,
+      ).all() as {
+        id: number; agent: string; retry_of: number | null; input_tree: string | null
+        head_commit: string | null; review_ref: string | null
+      }[]
+      expect(rows).toHaveLength(2)
+      expect(rows[1]).toMatchObject({
+        agent: 'grok', retry_of: rows[0]!.id, input_tree: tree,
+        head_commit: tip, review_ref: 'feature/review-failover',
+      })
+      expect(git('-C', result.worktree!.path, 'rev-parse', 'HEAD')).toBe(tip)
+    } finally {
+      process.env.PATH = oldPath
+      if (oldDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = oldDepth
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('a vendor content refusal is recorded distinctly and fails over', async () => {
     const binDir = join(dir, 'content-refusal-bin')
     mkdirSync(binDir, { recursive: true })
@@ -7010,6 +7146,7 @@ describe('detached run collection', () => {
       { command: 'workflow versions', args: ['workflow', 'versions', 'ship', '--json'] },
       { command: 'workflow compose', args: ['workflow', 'compose', 'ship', '--arg', 'key=DEV-257', '--arg', 'branch=feature/DEV-257', '--arg', 'worktree=/tmp/tree', '--json'] },
       { command: 'workflow step', args: ['workflow', 'step', 'ship', 'lens', '--arg', 'key=DEV-257', '--arg', 'branch=feature/DEV-257', '--arg', 'worktree=/tmp/tree', '--json'] },
+      { command: 'review coverage-audit', args: ['review', 'coverage-audit', '--json'] },
       { command: 'port baseline show', args: ['port', 'baseline', 'show', 'json-source', 'json-target', '--json'] },
       { command: 'port baseline set', args: ['port', 'baseline', 'set', 'json-source', 'json-target', 'abc', '--json'] },
       { command: 'port skip list', args: ['port', 'skip', 'list', 'json-source', 'json-target', '--json'] },
@@ -7028,7 +7165,7 @@ describe('detached run collection', () => {
       { command: 'canon evals', args: ['canon', 'evals', '--json'] },
     ]
 
-    expect(documents).toHaveLength(33)
+    expect(documents).toHaveLength(34)
     for (const surface of documents) {
       const result = orchInput(surface.args, surface.stdin, surface.env)
       expect(result.code, surface.command).toBe(surface.code ?? 0)
@@ -7060,13 +7197,13 @@ describe('detached run collection', () => {
       agent: 'codex', schema: '/tmp/schema.json', mcp: true, model: 'model', probe: true,
       label: 'security lens', lens: 'security', seed: 'small', key: 'DEV-63', repo: 'project', base: 'main', avoid: ['grok'],
       distinctModels: ['other-model'], retryOf: 7, cwd: '/tmp/repo', noFailover: true, carry: true,
-      ownerSession: 'owner', resume,
+      review: 'feature/DEV-63', ownerSession: 'owner', resume,
     })).toEqual({
       job: 'implement', prompt: 'prompt', reserveId: 42,
       agent: 'codex', schemaPath: '/tmp/schema.json', mcp: true, model: 'model', probe: true,
       label: 'security lens', lens: 'security', seed: 'small', key: 'DEV-63', repo: 'project', base: 'main', avoid: ['grok'],
       distinctModels: ['other-model'], retryOf: 7, cwd: '/tmp/repo', noFailover: true, carry: true,
-      ownerSession: 'owner', resume,
+      review: 'feature/DEV-63', ownerSession: 'owner', resume,
     })
   })
 
@@ -11209,6 +11346,49 @@ describe('a worktree is resolved against the main checkout, not the caller cwd',
     }
   })
 
+  test('explicit review names a command recipe that cannot accept its base', () => {
+    const { repo } = scratchRepo()
+    upsertProject({
+      name: 'adanim-fixture', path: repo,
+      settings: {
+        trunk: 'main',
+        worktree: {
+          create: declaredCreate('worktree-create', ['{branch}']),
+          branch: 'review/{id}', seeds: [],
+        },
+      },
+    })
+    expect(() => fromRoot(() => preflight(
+      'review-lens', repo, undefined, undefined, undefined, false, false,
+      'correctness', 'feature/reviewed',
+    ))).toThrow(
+      'project adanim-fixture: worktree.create has no {base} placeholder; --review needs one',
+    )
+    rmSync(repo, { recursive: true, force: true })
+  })
+
+  test('explicit review refuses a command recipe without declared detached support', () => {
+    const { repo } = scratchRepo()
+    upsertProject({
+      name: 'attached-review-fixture', path: repo,
+      settings: {
+        trunk: 'main',
+        worktree: {
+          create: declaredCreate('worktree-create', ['{branch}', '{base}']),
+          branch: 'review/{id}', seeds: [],
+        },
+      },
+    })
+    expect(() => fromRoot(() => preflight(
+      'review-lens', repo, undefined, undefined, undefined, false, false,
+      'correctness', 'feature/reviewed',
+    ))).toThrow(
+      `project attached-review-fixture: worktree.create does not declare detached review support.\n` +
+      `  orch project set attached-review-fixture --settings '{"worktree":{"detached":true}}'`,
+    )
+    rmSync(repo, { recursive: true, force: true })
+  })
+
   test('preflight refuses shell metacharacters in a key', () => {
     const { repo } = scratchRepo()
     upsertProject({
@@ -11663,6 +11843,61 @@ echo 'Usage: scripts/worktree create [seed]'
       const w = createWithTool(tool, repo, 658, seed)
       expect(w.path).toBe(path)
       expect(readFileSync(received, 'utf8')).toBe('none')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a command recipe with detached support satisfies the explicit-review postcondition', () => {
+    const { repo } = scratchRepo()
+    const path = join(repo, '.claude', 'worktrees', 'orch-659')
+    const tool = {
+      detached: true,
+      branch: 'review/{id}',
+      create: compoundCreate(
+        `${hermeticGitCommand} worktree add --detach "${path}" {base} >/dev/null && ` +
+        `echo "${path}"`,
+      ),
+    }
+    upsertProject({
+      name: 'detached-review-fixture', path: repo,
+      settings: { trunk: 'main', worktree: tool },
+    })
+    try {
+      const base = fromRoot(() => resolveReviewTarget('review-lens', repo, 'main'))!.commit
+      const w = createWithTool(tool, repo, 659, undefined, undefined, base, undefined, true)
+      expect(git(w.path, 'rev-parse', 'HEAD')).toBe(base)
+      expect(Bun.spawnSync(['git', 'symbolic-ref', '-q', 'HEAD'], {
+        cwd: w.path, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      }).exitCode).not.toBe(0)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a command recipe declaring detached support fails if it leaves a branch checked out', () => {
+    const { repo } = scratchRepo()
+    const path = join(repo, '.claude', 'worktrees', 'orch-660')
+    const tool = {
+      detached: true,
+      branch: 'review/{id}',
+      create: compoundCreate(
+        `${hermeticGitCommand} worktree add -b {branch} "${path}" {base} >/dev/null && ` +
+        `echo "${path}"`,
+      ),
+    }
+    upsertProject({
+      name: 'branched-review-fixture', path: repo,
+      settings: { trunk: 'main', worktree: tool },
+    })
+    try {
+      const base = fromRoot(() => resolveReviewTarget('review-lens', repo, 'main'))!.commit
+      expect(() => createWithTool(
+        tool, repo, 660, undefined, undefined, base, undefined, true,
+      )).toThrow(
+        `project branched-review-fixture: worktree.create detached review postcondition failed; ` +
+        `expected detached HEAD at ${base}, got refs/heads/review/660 at ${base}.`,
+      )
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
@@ -14913,6 +15148,190 @@ describe('review-lens-inline has no checkout', () => {
     }
   })
 
+  test('explicit review records the trunk merge-base for clean-review evidence', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-explicit-review-evidence-'))
+    const script = join(dir, 'report-explicit-review-evidence.ts')
+    const agent = AGENTS.codex!
+    const original = {
+      bin: agent.bin, argv: agent.argv, stdin: agent.stdin,
+      readsOut: agent.readsOut, parseReply: agent.parseReply,
+    }
+    const oldDepth = process.env.ORCH_DEPTH
+    const git = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    const report = (covered: string) => {
+      const reply = reviewReply(0)
+      reply.provenance.files_covered = [covered]
+      reply.provenance.commands_run = [`git diff main...feature/evidence -- ${covered}`]
+      writeFileSync(script, `console.log(${JSON.stringify(JSON.stringify(reply))})\n`)
+    }
+    try {
+      git('init', '-b', 'main')
+      git('config', 'user.email', 'orch-test@example.invalid')
+      git('config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'untouched.txt'), 'base\n')
+      git('add', '.')
+      git('commit', '-m', 'fixture trunk')
+      const base = git('rev-parse', 'HEAD^{commit}')
+      git('switch', '-c', 'feature/evidence')
+      writeFileSync(join(repo, 'changed.txt'), 'first\n')
+      git('add', '.')
+      git('commit', '-m', 'first branch commit')
+      writeFileSync(join(repo, 'second.txt'), 'second\n')
+      git('add', '.')
+      git('commit', '-m', 'second branch commit')
+      const tip = git('rev-parse', 'HEAD^{commit}')
+      const tree = git('rev-parse', 'HEAD^{tree}')
+      git('switch', 'main')
+      upsertProject({
+        name: 'explicit-review-evidence-fixture', path: repo, settings: { trunk: 'main' },
+      })
+      agent.bin = process.execPath
+      agent.argv = () => [script]
+      agent.stdin = false
+      agent.readsOut = false
+      agent.parseReply = undefined
+      process.env.ORCH_DEPTH = '0'
+
+      report('changed.txt')
+      const clean = await runJob({
+        job: 'review-lens', prompt: 'inspect', cwd: repo, agent: 'codex',
+        lens: 'explicit-evidence-clean', review: 'feature/evidence',
+      })
+      expect(db().query(
+        'SELECT base_commit, input_tree, head_commit, review_ref FROM run WHERE id=?',
+      ).get(clean.id)).toEqual({
+        base_commit: base, input_tree: tree, head_commit: tip, review_ref: 'feature/evidence',
+      })
+
+      report('untouched.txt')
+      await expect(runJob({
+        job: 'review-lens', prompt: 'inspect', cwd: repo, agent: 'codex',
+        lens: 'explicit-evidence-untouched', review: 'feature/evidence', noFailover: true,
+      })).rejects.toThrow(
+        'clean review with no evidence: files_covered intersects none of the changed paths',
+      )
+    } finally {
+      agent.bin = original.bin
+      agent.argv = original.argv
+      agent.stdin = original.stdin
+      agent.readsOut = original.readsOut
+      agent.parseReply = original.parseReply
+      if (oldDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = oldDepth
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('explicit review refs select and record the reviewed branch tip', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-explicit-review-'))
+    const branchTree = join(repo, 'feature-tree')
+    const script = join(dir, 'report-explicit-review.ts')
+    const agent = AGENTS.codex!
+    const original = {
+      bin: agent.bin, argv: agent.argv, stdin: agent.stdin,
+      readsOut: agent.readsOut, parseReply: agent.parseReply,
+    }
+    const oldDepth = process.env.ORCH_DEPTH
+    const git = (cwd: string, ...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    try {
+      git(repo, 'init', '-b', 'main')
+      git(repo, 'config', 'user.email', 'orch-test@example.invalid')
+      git(repo, 'config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'subject.txt'), 'trunk\n')
+      git(repo, 'add', 'subject.txt')
+      git(repo, 'commit', '-m', 'fixture trunk')
+      git(repo, 'worktree', 'add', '-b', 'feature/reviewed', branchTree)
+      writeFileSync(join(branchTree, 'subject.txt'), 'branch\n')
+      git(branchTree, 'add', 'subject.txt')
+      git(branchTree, 'commit', '-m', 'fixture branch')
+      const tip = git(repo, 'rev-parse', 'feature/reviewed^{commit}')
+      const tree = git(repo, 'rev-parse', 'feature/reviewed^{tree}')
+      upsertProject({ name: 'explicit-review-fixture', path: repo, settings: { trunk: 'main' } })
+      writeFileSync(script, "console.log(JSON.stringify({ cwd: process.cwd(), text: await Bun.file('subject.txt').text() }))\n")
+      agent.bin = process.execPath
+      agent.argv = () => [script]
+      agent.stdin = false
+      agent.readsOut = false
+      agent.parseReply = undefined
+      process.env.ORCH_DEPTH = '0'
+
+      const byBranch = await runJob({
+        job: 'review-lens', prompt: 'inspect', cwd: repo, agent: 'codex',
+        lens: 'explicit', review: 'feature/reviewed',
+      })
+      expect(git(byBranch.worktree!.path, 'rev-parse', 'HEAD')).toBe(tip)
+      expect(Bun.spawnSync(['git', 'symbolic-ref', '-q', 'HEAD'], {
+        cwd: byBranch.worktree!.path, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      }).exitCode).not.toBe(0)
+      expect(JSON.parse(byBranch.output).text).toBe('branch\n')
+      expect(db().query(
+        'SELECT input_tree, head_commit, review_ref FROM run WHERE id=?',
+      ).get(byBranch.id)).toEqual({ input_tree: tree, head_commit: tip, review_ref: 'feature/reviewed' })
+      const explicitReview = recordReview(byBranch.id, reviewReply(0))
+      completeReview(explicitReview)
+      expect(coverageAudit()).toEqual({ count: 0, review_ids: [], partial_review_ids: [] })
+
+      const sourceRun = addRun({ agent: 'codex', job: 'implement' })
+      db().query('UPDATE run SET branch=? WHERE id=?').run('feature/reviewed', sourceRun)
+      const byRun = await runJob({
+        job: 'craft', prompt: 'inspect', cwd: repo, agent: 'codex',
+        lens: 'by-run', review: String(sourceRun),
+      })
+      expect(git(byRun.worktree!.path, 'rev-parse', 'HEAD')).toBe(tip)
+      expect(db().query('SELECT review_ref FROM run WHERE id=?').get(byRun.id))
+        .toEqual({ review_ref: String(sourceRun) })
+
+      expect(() => resolveReviewTarget('implement', repo, 'feature/reviewed'))
+        .toThrow('--review is only valid')
+      expect(() => resolveReviewTarget('review-lens', repo, 'feature/reviewed', true))
+        .toThrow("run --carry from that branch's own worktree")
+
+      writeFileSync(join(branchTree, 'overlay.txt'), 'overlay\n')
+      const carried = await runJob({
+        job: 'safety', prompt: 'inspect', cwd: branchTree, agent: 'codex',
+        lens: 'carried-review', review: 'feature/reviewed', carry: true,
+      })
+      expect(readFileSync(join(carried.worktree!.path, 'overlay.txt'), 'utf8')).toBe('overlay\n')
+      expect(git(carried.worktree!.path, 'rev-parse', 'HEAD')).toBe(tip)
+      const oldObjectDirectory = process.env.GIT_OBJECT_DIRECTORY
+      const oldAlternates = process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES
+      const expectedWarning = `reviewing main at ${git(repo, 'rev-parse', 'HEAD').slice(0, 8)}; pass --review <branch> to be explicit`
+      expect(implicitReviewWarning(repo)).toBe(expectedWarning)
+      process.env.GIT_OBJECT_DIRECTORY = '/foreign/object-directory'
+      process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES = '/foreign/alternates'
+      try {
+        expect(implicitReviewWarning(repo)).toContain(`at ${git(repo, 'rev-parse', 'HEAD').slice(0, 8)};`)
+      } finally {
+        if (oldObjectDirectory === undefined) delete process.env.GIT_OBJECT_DIRECTORY
+        else process.env.GIT_OBJECT_DIRECTORY = oldObjectDirectory
+        if (oldAlternates === undefined) delete process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES
+        else process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES = oldAlternates
+      }
+    } finally {
+      agent.bin = original.bin
+      agent.argv = original.argv
+      agent.stdin = original.stdin
+      agent.readsOut = original.readsOut
+      agent.parseReply = original.parseReply
+      if (oldDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = oldDepth
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(script, { force: true })
+    }
+  })
+
   test('runs from an empty directory while review-lens still receives the project tree', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-inline-boundary-'))
     const script = join(dir, 'report-worker-cwd.ts')
@@ -17544,6 +17963,28 @@ describe('read-only orchestrator database', () => {
     }
   })
 
+  test('coverage audit leaves the database bytes unchanged and creates no WAL', () => {
+    const { fixtureDir, path } = fixture()
+    const digest = () => createHash('sha256').update(readFileSync(path)).digest('hex')
+    const before = digest()
+    try {
+      expect(existsSync(`${path}-wal`)).toBe(false)
+      const p = Bun.spawnSync([process.execPath, CLI, 'review', 'coverage-audit', '--json'], {
+        env: { ...process.env, ORCH_DB: path, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(p.exitCode).toBe(0)
+      expect(p.stderr.toString()).toBe('')
+      expect(JSON.parse(p.stdout.toString())).toEqual({
+        count: 0, review_ids: [], partial_review_ids: [],
+      })
+      expect(digest()).toBe(before)
+      expect(existsSync(`${path}-wal`)).toBe(false)
+    } finally {
+      rmSync(fixtureDir, { recursive: true, force: true })
+    }
+  })
+
   test('a failed heartbeat stamp never propagates', () => {
     db().exec('DROP TABLE session_seen')
     try {
@@ -17653,6 +18094,29 @@ describe('canonical schema rebuild', () => {
   const metaVersion = (d: Database) =>
     (d.query(`SELECT value FROM schema_meta WHERE key='schema'`).get() as { value: string } | null)?.value ?? null
 
+  const replaceTableForFixture = (
+    d: Database, name: string, alter: (sql: string) => string,
+  ) => {
+    const replacement = `${name}_fixture`
+    const ddl = alter(tableSql(d, name).replace(
+      /^CREATE TABLE\s+(?:"[^"]+"|`[^`]+`|\[[^\]]+\]|\w+)/,
+      `CREATE TABLE ${replacement}`,
+    ))
+    const cols = (d.query(`PRAGMA table_info(${name})`).all() as { name: string }[])
+      .map((column) => `"${column.name}"`).join(', ')
+    d.exec('PRAGMA foreign_keys=OFF; BEGIN EXCLUSIVE')
+    try {
+      d.exec(ddl)
+      d.exec(`INSERT INTO ${replacement} (${cols}) SELECT ${cols} FROM ${name}`)
+      d.exec(`DROP TABLE ${name}; ALTER TABLE ${replacement} RENAME TO ${name}; COMMIT`)
+    } catch (error) {
+      d.exec('ROLLBACK')
+      throw error
+    } finally {
+      d.exec('PRAGMA foreign_keys=ON')
+    }
+  }
+
   function openOld(path: string): Database {
     const d = new Database(path)
     d.exec('PRAGMA foreign_keys=ON')
@@ -17683,6 +18147,7 @@ describe('canonical schema rebuild', () => {
     expect(cols(d, 'run')).toContain('head_commit')
     expect(cols(d, 'run')).toContain('changed_paths')
     expect(cols(d, 'review')).toEqual(cols(db(), 'review'))
+    expect(cols(d, 'run')).toContain('review_ref')
     expect(cols(d, 'score')).toEqual(cols(db(), 'score'))
     expect(cols(d, 'review_lens')).toEqual(cols(db(), 'review_lens'))
     expect(cols(d, 'landing_override')).toEqual(cols(db(), 'landing_override'))
@@ -17735,6 +18200,69 @@ describe('canonical schema rebuild', () => {
     const freshSql = tableSql(d, 'run')
     expect(freshSql.startsWith('CREATE TABLE run')).toBe(true)
     expect(freshSql.startsWith('CREATE TABLE "run"')).toBe(false)
+    d.close()
+  })
+
+  test('a run-only rebuild ignores identifier quotes and preserves unrelated table SQL and sequence', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'orch-schema-run-only-')), 'fixture.db')
+    let d = new Database(path)
+    applySchema(d)
+    d.exec(`
+      INSERT INTO run (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+      VALUES ('2026-01-01T00:00:00.000Z','codex','implement','sha',1,'run','ok');
+      INSERT INTO score (run_id,delivery,quality,fidelity,scored_at)
+      VALUES (1,'full','right','faithful','2026-01-01T00:00:00.000Z');
+    `)
+    const untouched = ['score', 'doc', 'review_lens', 'review_finding']
+    for (const name of untouched) {
+      d.exec(`ALTER TABLE ${name} RENAME TO ${name}_quoted; ALTER TABLE ${name}_quoted RENAME TO ${name}`)
+    }
+    d.exec("UPDATE sqlite_sequence SET seq=1414 WHERE name='score'")
+    replaceTableForFixture(
+      d, 'run', (sql) => sql.replace(
+        "'running','ok','failed','stale','asking','stopped'))",
+        "'running','ok','failed','stale','asking','stopped','blocked'))",
+      ),
+    )
+    d.exec("UPDATE schema_meta SET value='run-only-change' WHERE key='schema'")
+    d.close()
+
+    d = new Database(path)
+    const before = Object.fromEntries(untouched.map((name) => [name, tableSql(d, name)]))
+    applySchema(d)
+    expect(Object.fromEntries(untouched.map((name) => [name, tableSql(d, name)]))).toEqual(before)
+    expect(d.query("SELECT seq FROM sqlite_sequence WHERE name='score'").get()).toEqual({ seq: 1414 })
+    expect(tableSql(d, 'run')).not.toContain("'blocked'")
+    d.close()
+  })
+
+  test('a genuine table rebuild preserves its autoincrement high watermark', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'orch-schema-sequence-')), 'fixture.db')
+    let d = new Database(path)
+    applySchema(d)
+    d.exec(`
+      INSERT INTO run (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+      VALUES ('2026-01-01T00:00:00.000Z','codex','implement','sha',1,'run','ok');
+      INSERT INTO score (run_id,delivery,quality,fidelity,scored_at)
+      VALUES (1,'full','right','faithful','2026-01-01T00:00:00.000Z');
+    `)
+    replaceTableForFixture(
+      d, 'score', (sql) => sql.replace(
+        "'faithful','drifted'))", "'faithful','drifted','legacy'))",
+      ),
+    )
+    d.exec("UPDATE sqlite_sequence SET seq=1414 WHERE name='score'")
+    d.exec("UPDATE schema_meta SET value='score-change' WHERE key='schema'")
+    d.close()
+
+    d = new Database(path)
+    applySchema(d)
+    expect(d.query("SELECT seq FROM sqlite_sequence WHERE name='score'").get()).toEqual({ seq: 1414 })
+    d.exec(`INSERT INTO run (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+            VALUES ('2026-01-02','codex','implement','sha2',1,'next','ok')`)
+    d.exec(`INSERT INTO score (run_id,delivery,quality,fidelity,scored_at)
+            VALUES (2,'full','right','faithful','2026-01-02')`)
+    expect(d.query('SELECT MAX(id) AS id FROM score').get()).toEqual({ id: 1415 })
     d.close()
   })
 

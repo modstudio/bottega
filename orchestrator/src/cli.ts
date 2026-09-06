@@ -1,3 +1,4 @@
+import { Database } from 'bun:sqlite'
 import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, nowIso, sessionId, judgeability, pendingForSession, unscoredCount, weigh,
          DELIVERY, QUALITY, FIDELITY, type Delivery, type Quality, type Fidelity,
          REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP,
@@ -15,7 +16,7 @@ import { AGENTS, available, installed, ensureLocalHealth,
 import { candidates, pick, scoreboard, MIN_SAMPLE, promptSizeBucketLabel } from './route.ts'
 import { guide } from './guide.ts'
 import { repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses,
-         packedResumePrompt, type DetachSpec } from './run.ts'
+         implicitReviewWarning, packedResumePrompt, type DetachSpec } from './run.ts'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync, unlinkSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, timingSafeEqual } from 'node:crypto'
@@ -35,7 +36,7 @@ import {
   flagValue, flagValues, invalidUtf8Offset, nulByteOffset, parseAnswerTextSources,
   parseWorkerMessageArgs, refuseMisparsedMessage, validateCliArgs,
 } from './args.ts'
-import { cleanReviewEvidence, completeReview, DISPOSITIONS, gradeReviewLens, parseReviewOutput, recordReviews,
+import { cleanReviewEvidence, completeReview, coverageAudit, DISPOSITIONS, gradeReviewLens, parseReviewOutput, recordReviews,
          reviewCalibration, reviewPins, triageFinding, type Disposition,
          type ReviewGrades } from './review.ts'
 import { classifyReviewTier, diffNumstat } from './review-tier.ts'
@@ -319,8 +320,10 @@ const cmd = argv[0]
 
 // One invocation is one heartbeat. Keeping it at the process boundary avoids
 // turning the many read helpers below into competing writers.
-const readOnlyPortDryRun = cmd === 'port' && argv[1] === 'import' && argv.includes('--dry-run')
-if (!readOnlyPortDryRun && cmd !== 'init-db') recordSessionSeen()
+const readOnlyInvocation =
+  (cmd === 'port' && argv[1] === 'import' && argv.includes('--dry-run')) ||
+  (cmd === 'review' && argv[1] === 'coverage-audit')
+if (!readOnlyInvocation && cmd !== 'init-db') recordSessionSeen()
 
 /** Human-readable duration: seconds under a minute, then m/s, then h/m. */
 function dur(ms: number | null | undefined): string {
@@ -343,7 +346,7 @@ const has = (n: string) => argv.includes(`--${n}`)
 /** Flags that consume the next argument. Anything else is a boolean switch. */
 const VALUE_FLAGS = new Set(['--agent', '--file', '--schema', '--model', '--note', '--message', '--unreviewed',
                              '--id', '--job', '--limit', '--port', '--days', '--window', '--timeout', '--scorer',
-                             '--seed', '--key', '--repo', '--base', '--avoid', '--distinct-from', '--label', '--lens', '--category', '--severity',
+                             '--seed', '--key', '--repo', '--base', '--review', '--avoid', '--distinct-from', '--label', '--lens', '--category', '--severity',
                              '--reproduced', '--coverage', '--limits', '--overlap',
                              '--better-than', '--n', '--scope', '--subject', '--title', '--cwd'])
 
@@ -881,7 +884,10 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
   // would demand a `--seed` for a database that is already there.
   const seed = spec.resume
     ? spec.seed
-    : preflight(jobName, cwd, spec.seed, spec.key, spec.base, false, false, spec.lens)
+    : preflight(
+        jobName, cwd, spec.seed, spec.key, spec.base, false, false, spec.lens,
+        spec.review, spec.carry,
+      )
   if (!spec.resume) {
     // Who will run is knowable here, and a proven-failed grok attach must not
     // leave a placeholder for the child to fail. Resume keeps the agent that
@@ -1176,6 +1182,7 @@ function usage(): never {
       --avoid <agent>[,...]     route to any other agent when possible
       --distinct-from <id>[,...] avoid models used by earlier fan-out runs
       --base <ref>              ${baseHelp('base an implement or fix worktree on this git ref')}
+      --review <branch|run-id>  review that branch tip explicitly (review-lens, safety, craft)
       --carry                   carry this checkout's uncommitted work into the worker (off by default)
       --file <path>             read the prompt from a file
       --schema <path>           bind JSON schema (Codex normalizes it to OpenAI strict mode)
@@ -1224,6 +1231,7 @@ function usage(): never {
       --severity <${REVIEW_SEVERITY.join('|')}> architect-assessed severity, including explicit agreement
   orch review complete <review-id> mark a fully triaged review complete
   orch review calibration <lens> <agent> <model> [--json]  (--json: one JSON document)
+  orch review coverage-audit [--json]  list completed reviews that inspected trunk history (--json: one JSON document)
   orch pending                  runs YOU made that are still unscored (exit 1 if any)
   orch runs [--id ID]... [--job X] [--agent Y] [--limit N] [--unscored] [--since ISO] [--json]
                          --id resolves a turn to its chain root and identifies the requested id
@@ -1358,6 +1366,7 @@ function doUsage(): never {
   --avoid <name,...> exclude agents while routing, unless none remain
   --distinct-from <id,...> exclude models used by earlier runs, unless none remain
   --base <ref>     ${baseHelp('base an implement or fix worktree on this verified git ref')}
+  --review <ref>   review this branch or run id (review-lens, safety, craft)
   --carry          carry this checkout's uncommitted work into the worker (off by default)
   --schema <path>  require JSON schema; Codex normalizes it to OpenAI strict mode
   --mcp            allow MCP tool calls
@@ -2212,6 +2221,7 @@ switch (cmd) {
     // Project-required inputs are knowable before the prompt is read. Checking
     // them afterwards made a missing key pay for stdin and run setup first.
     const base = flag('base')
+    const reviewRef = flag('review')
     if (base) {
       if (jobName !== 'implement' && jobName !== 'fix') {
         throw new Error('--base is only valid for the implement and fix jobs')
@@ -2220,8 +2230,12 @@ switch (cmd) {
     }
     const seed = preflight(
       jobName, callerCwd, flag('seed'), flag('key'), base, false, false, flag('lens'),
+      reviewRef, has('carry'),
     )
     if (requested.needs.readsRepo) warnCallerDrift(callerCwd, base)
+    if (requested.findings && requested.needs.readsRepo && !reviewRef) {
+      console.error(`! ${implicitReviewWarning(callerCwd)}`)
+    }
     const schema = flag('schema')
     // An unpinned run may route to Codex, so its schema has to be suitable
     // before detach() claims a row. An explicitly pinned non-Codex agent keeps
@@ -2276,7 +2290,7 @@ switch (cmd) {
         agent: flag('agent'), schema, label: flag('label'), lens: flag('lens'),
         mcp: has('mcp'), model: flag('model'), probe: has('probe'), seed, key: flag('key'),
         repo: explicitRepo, base, avoid, distinctModels,
-        noFailover: has('no-failover'), carry: has('carry'), cwd: callerCwd,
+        noFailover: has('no-failover'), carry: has('carry'), review: reviewRef, cwd: callerCwd,
       })
       if (!porcelain) warnImplementContractConflicts(conflicts, id)
       printRunId(id)
@@ -2316,7 +2330,7 @@ switch (cmd) {
       agent: flag('agent'), schema, label: flag('label'), lens: flag('lens'),
       mcp: has('mcp'), model: flag('model'), probe: has('probe'), seed, key: flag('key'),
       repo: explicitRepo, base, avoid, distinctModels,
-      noFailover: has('no-failover'), carry: has('carry'), cwd: callerCwd,
+      noFailover: has('no-failover'), carry: has('carry'), review: reviewRef, cwd: callerCwd,
     })
     warnImplementContractConflicts(conflicts, id)
 
@@ -2376,6 +2390,22 @@ switch (cmd) {
         console.log(`risk ${tier.risk}`)
         console.log(`size ${tier.size}`)
         for (const reason of tier.reasons) console.log(reason)
+      }
+      break
+    }
+    if (sub === 'coverage-audit') {
+      const database = new Database(DB_PATH, { readonly: true })
+      try {
+        const audit = coverageAudit(database)
+        if (has('json')) console.log(JSON.stringify(audit))
+        else console.log(
+          `${audit.count} completed review${audit.count === 1 ? '' : 's'} reviewed trunk` +
+          (audit.review_ids.length ? `: ${audit.review_ids.join(', ')}` : '') +
+          `\npartial reviews: ${audit.partial_review_ids.length
+            ? audit.partial_review_ids.join(', ') : 'none'}`,
+        )
+      } finally {
+        database.close()
       }
       break
     }
@@ -4854,7 +4884,7 @@ switch (cmd) {
               current_run.status, current_run.failure_kind, current_run.error,
               s.delivery, s.quality,
               COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason
-              ${json ? ', r.cwd, r.session_id, r.vendor_cost_usd, r.probe, r.exit_code, r.input_tree,'
+              ${json ? ', r.cwd, r.session_id, r.vendor_cost_usd, r.probe, r.exit_code, r.input_tree, r.head_commit, r.review_ref,'
                         + ' r.prompt_path, r.branch, r.branch_kept, r.branch_kept_tip, r.retry_of, r.launch_key' : ''}
          FROM run r
          JOIN run current_run ON current_run.id = (
