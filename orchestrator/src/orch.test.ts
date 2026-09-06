@@ -12043,6 +12043,12 @@ echo 'Usage: scripts/worktree create [seed]'
 
   test('diff surfaces the recorded base commit', () => {
     const { repo } = scratchRepo()
+    const foreignObjects = mkdtempSync(join(tmpdir(), 'orch-foreign-objects-'))
+    const cliEnv = {
+      ...process.env, GIT_OBJECT_DIRECTORY: foreignObjects,
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: foreignObjects,
+      ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+    }
     const w = createWorktree(repo, 749, 'main')
     const id = addRun({ agent: 'codex', job: 'implement' })
     db().query('UPDATE run SET worktree=?, branch=?, base_commit=? WHERE id=?')
@@ -12051,7 +12057,7 @@ echo 'Usage: scripts/worktree create [seed]'
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'diff', String(id)], {
-        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        env: cliEnv,
         stdout: 'pipe', stderr: 'pipe',
       })
       expect(p.exitCode).toBe(0)
@@ -12063,7 +12069,7 @@ echo 'Usage: scripts/worktree create [seed]'
       expect(applyCheck.exitCode).toBe(0)
 
       const quiet = Bun.spawnSync([process.execPath, CLI, 'diff', String(id), '--quiet'], {
-        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        env: cliEnv,
         stdout: 'pipe', stderr: 'pipe',
       })
       expect(quiet.exitCode).toBe(0)
@@ -12071,6 +12077,7 @@ echo 'Usage: scripts/worktree create [seed]'
       expect(quiet.stderr.toString()).not.toContain(`base:     ${w.base}`)
     } finally {
       rmSync(repo, { recursive: true, force: true })
+      rmSync(foreignObjects, { recursive: true, force: true })
     }
   })
 
@@ -16445,6 +16452,7 @@ describe('the sandbox an agent is launched with', () => {
 
   test('orch diff resolves a new blob staged in the worker-local object database', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-isolated-objects-'))
+    const foreignObjects = mkdtempSync(join(tmpdir(), 'orch-foreign-objects-'))
     const git = (cwd: string, args: string[], env: Record<string, string> = {}) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd, env: hermeticGitEnv(env), stdout: 'pipe', stderr: 'pipe',
@@ -16476,7 +16484,11 @@ describe('the sandbox an agent is launched with', () => {
         .run(tree.path, tree.branch, tree.base, id)
       const CLI = new URL('cli.ts', import.meta.url).pathname
       const diff = Bun.spawnSync([process.execPath, CLI, 'diff', String(id)], {
-        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        env: {
+          ...process.env, GIT_OBJECT_DIRECTORY: foreignObjects,
+          GIT_ALTERNATE_OBJECT_DIRECTORIES: foreignObjects,
+          ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+        },
         stdout: 'pipe', stderr: 'pipe',
       })
 
@@ -16485,11 +16497,13 @@ describe('the sandbox an agent is launched with', () => {
       expect(diff.stdout.toString()).toContain(`+${content.trim()}`)
     } finally {
       rmSync(repo, { recursive: true, force: true })
+      rmSync(foreignObjects, { recursive: true, force: true })
     }
   })
 
   test('orch diff anchors at current trunk and --since-base restores the recorded range', () => {
     const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-diff-trunk-')))
+    const foreignObjects = mkdtempSync(join(tmpdir(), 'orch-foreign-objects-'))
     const worker = join(repo, 'worker')
     const g = (cwd: string, ...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
@@ -16527,7 +16541,14 @@ describe('the sandbox an agent is launched with', () => {
       const CLI = new URL('cli.ts', import.meta.url).pathname
       const show = (...extra: string[]) => Bun.spawnSync(
         [process.execPath, CLI, 'diff', String(id), '--quiet', ...extra],
-        { env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe' },
+        {
+          env: {
+            ...process.env, GIT_OBJECT_DIRECTORY: foreignObjects,
+            GIT_ALTERNATE_OBJECT_DIRECTORIES: foreignObjects,
+            ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          },
+          stdout: 'pipe', stderr: 'pipe',
+        },
       )
 
       const current = show()
@@ -16556,11 +16577,23 @@ describe('the sandbox an agent is launched with', () => {
       const discarded = show()
       expect(discarded.exitCode).toBe(0)
       const discardedText = discarded.stdout.toString()
-      expect(discardedText).toContain(`since: ${recorded} (recorded fallback; worktree discarded)`)
+      expect(discardedText).toContain(`since: ${trunk} (trunk main; worktree discarded)`)
       expect(discardedText).toContain('DEV-283 worker change')
       expect(discardedText).toContain('diff --git a/worker.txt b/worker.txt')
+      expect(discardedText).not.toContain('diff --git a/trunk-one.txt b/trunk-one.txt')
+      expect(discardedText).not.toContain('diff --git a/trunk-two.txt b/trunk-two.txt')
+
+      const discardedFull = show('--since-base')
+      expect(discardedFull.exitCode).toBe(0)
+      const discardedFullText = discardedFull.stdout.toString()
+      expect(discardedFullText).toContain(
+        `since: ${recorded} (recorded; --since-base; worktree discarded)`,
+      )
+      expect(discardedFullText).toContain('diff --git a/trunk-one.txt b/trunk-one.txt')
+      expect(discardedFullText).toContain('diff --git a/trunk-two.txt b/trunk-two.txt')
     } finally {
       rmSync(repo, { recursive: true, force: true })
+      rmSync(foreignObjects, { recursive: true, force: true })
     }
   })
 

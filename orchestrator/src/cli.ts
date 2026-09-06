@@ -3481,7 +3481,7 @@ switch (cmd) {
     const evidenceBranch = row.branch_kept ?? row.branch
     const branchPresent = Boolean(evidenceBranch && Bun.spawnSync(
       ['git', 'show-ref', '--verify', '--quiet', `refs/heads/${evidenceBranch}`],
-      { cwd: repoRoot, stdout: 'ignore', stderr: 'ignore' },
+      { cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'ignore', stderr: 'ignore' },
     ).exitCode === 0)
     const discarded = !worktreePresent
     let c: ReturnType<typeof changesIn>
@@ -3491,15 +3491,33 @@ switch (cmd) {
       if (!branchPresent || !evidenceBranch) {
         throw new Error(`run ${id}'s worktree and evidence branch are gone`)
       }
-      const diff = Bun.spawnSync(['git', 'diff', '--no-ext-diff', '--binary', row.base_commit, evidenceBranch], {
-        cwd: repoRoot, stdout: 'pipe', stderr: 'pipe',
+      const project = row.repo ? projectByName(row.repo) : null
+      const configuredTrunk = project?.settings.trunk?.trim()
+      const trunk = configuredTrunk || 'main'
+      let since = row.base_commit
+      let usedRecordedFallback = has('since-base')
+      if (!has('since-base')) {
+        const mergeBase = Bun.spawnSync(['git', 'merge-base', evidenceBranch, trunk], {
+          cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
+        })
+        if (mergeBase.exitCode === 0) {
+          since = mergeBase.stdout.toString().trim()
+          usedRecordedFallback = false
+        } else if (configuredTrunk) {
+          throw new Error(`cannot find merge-base between the run tip and trunk ${trunk}`)
+        } else {
+          usedRecordedFallback = true
+        }
+      }
+      const diff = Bun.spawnSync(['git', 'diff', '--no-ext-diff', '--binary', since, evidenceBranch], {
+        cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
       })
       if (diff.exitCode !== 0) throw new Error(diff.stderr.toString().trim())
-      const names = Bun.spawnSync(['git', 'diff', '--name-only', row.base_commit, evidenceBranch], {
-        cwd: repoRoot, stdout: 'pipe', stderr: 'pipe',
+      const names = Bun.spawnSync(['git', 'diff', '--name-only', since, evidenceBranch], {
+        cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
       }).stdout.toString().trim()
-      const stat = Bun.spawnSync(['git', 'diff', '--numstat', row.base_commit, evidenceBranch], {
-        cwd: repoRoot, stdout: 'pipe', stderr: 'pipe',
+      const stat = Bun.spawnSync(['git', 'diff', '--numstat', since, evidenceBranch], {
+        cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
       }).stdout.toString().trim()
       let insertions = 0
       let deletions = 0
@@ -3510,14 +3528,15 @@ switch (cmd) {
       }
       c = {
         diff: diff.stdout.toString(), files: names ? names.split('\n') : [], insertions, deletions,
-        since: row.base_commit, trunk: projectByName(row.repo ?? '')?.settings.trunk?.trim() || 'main',
-        trunkConfigured: Boolean(projectByName(row.repo ?? '')?.settings.trunk?.trim()),
+        since, trunk, trunkConfigured: Boolean(configuredTrunk),
       }
-      const logged = Bun.spawnSync(['git', 'log', '--oneline', `${row.base_commit}..${evidenceBranch}`], {
-        cwd: repoRoot, stdout: 'pipe', stderr: 'pipe',
+      const logged = Bun.spawnSync(['git', 'log', '--oneline', `${since}..${evidenceBranch}`], {
+        cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
       })
       commits = logged.exitCode === 0 ? logged.stdout.toString() : ''
-      sinceNote = 'recorded fallback; worktree discarded'
+      sinceNote = usedRecordedFallback
+        ? `${has('since-base') ? 'recorded; --since-base' : 'recorded fallback'}; worktree discarded`
+        : `trunk ${trunk}; worktree discarded`
     } else {
       c = changesIn({
         path: row.worktree!,
@@ -3526,7 +3545,7 @@ switch (cmd) {
         repoRoot,
       }, has('since-base'))
       const logged = Bun.spawnSync(['git', 'log', '--oneline', `${c.since}..HEAD`], {
-        cwd: row.worktree!, stdout: 'pipe', stderr: 'pipe',
+        cwd: row.worktree!, env: targetGitEnvironment(row.worktree!), stdout: 'pipe', stderr: 'pipe',
       })
       if (logged.exitCode !== 0) throw new Error(logged.stderr.toString().trim())
       commits = logged.stdout.toString()
