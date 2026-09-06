@@ -1129,12 +1129,12 @@ function migrate(d: Database) {
       why         TEXT,
       answer      TEXT,
       answered_at TEXT,
-      -- Set in the ruling transaction and cleared only when a resumed or
-      -- replacement turn is claimed. A non-NULL value is a durable retry signal.
-      delivery_pending_at TEXT,
       -- Which session ruled. Same reasoning as score.scored_by: a ruling is a
       -- judgement, and an unattributed judgement cannot be audited.
-      answered_by TEXT
+      answered_by TEXT,
+      -- Set in the ruling transaction and cleared only when a resumed or
+      -- replacement turn is claimed. A non-NULL value is a durable retry signal.
+      delivery_pending_at TEXT
     );
     -- The projects this machine works on, as data rather than as code.
     --

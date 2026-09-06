@@ -2623,11 +2623,12 @@ switch (cmd) {
     if (!id) usage()
     const retryAuthority = authorizeRunMutation(id, 'retry')
     const row = db().query(
-      `SELECT id, agent, job, cwd, prompt_path, probe, status, failure_kind, mcp,
+      `SELECT id, COALESCE(parent_run_id,id) root_id, agent, job, cwd, prompt_path,
+              probe, status, failure_kind, mcp,
               schema_path, model, lens, launch_seed, launch_key, launch_base, no_failover
          FROM run WHERE id = ?`,
     ).get(id) as {
-      id: number; agent: string; job: string; cwd: string | null
+      id: number; root_id: number; agent: string; job: string; cwd: string | null
       prompt_path: string | null; probe: number; status: string; failure_kind: string | null
       mcp: number | null; schema_path: string | null; model: string | null; lens: string | null
       launch_seed: string | null; launch_key: string | null; launch_base: string | null
@@ -2637,13 +2638,13 @@ switch (cmd) {
     // A writing job already has a worktree and a vendor session. Retry would
     // wrap the prompt again and cut a fresh tree beside the one holding the
     // partial edit. Continue the same conversation in the same tree instead.
-    const recordedRulings = row.status === 'asking' ? db().query(
+    const recordedRulings = db().query(
       `SELECT q.question, q.answer
          FROM question q JOIN run owner ON owner.id = q.run_id
         WHERE (owner.id = ? OR owner.parent_run_id = ?)
-          AND q.answered_at IS NOT NULL AND q.answer IS NOT NULL
+          AND q.delivery_pending_at IS NOT NULL AND q.answer IS NOT NULL
         ORDER BY q.id`,
-    ).all(id, id) as { question: string; answer: string }[] : []
+    ).all(row.root_id, row.root_id) as { question: string; answer: string }[]
     if (job(row.job).needs.writesRepo && !recordedRulings.length) {
       const requested = flag('agent')
       if (requested && requested !== row.agent) {
