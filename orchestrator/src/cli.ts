@@ -3461,21 +3461,21 @@ switch (cmd) {
     const id = Number(argv[1])
     if (!id) usage()
     const row = db().query(
-      `SELECT id, repo, worktree, branch, branch_kept, base_commit,
+      `SELECT id, repo, cwd, worktree, branch, branch_kept, base_commit,
               parent_run_id, carry_happened,
               carry_base_commit, carry_tracked_paths, carry_untracked_paths
          FROM run WHERE id = ?`,
     ).get(id) as
-      { id: number; repo: string | null; worktree: string | null; branch: string | null
+      { id: number; repo: string | null; cwd: string | null
+        worktree: string | null; branch: string | null
         branch_kept: string | null; base_commit: string | null
         parent_run_id: number | null; carry_happened: number | null
         carry_base_commit: string | null; carry_tracked_paths: string | null
         carry_untracked_paths: string | null } | null
     if (!row) throw new Error(`no run ${id}`)
     if (!row.base_commit) throw new Error(`run ${id} recorded no base commit to diff against`)
-    const { changesIn, repoRootOf } = await import('./worktree.ts')
-    const registeredRoot = row.repo ? projectByName(row.repo)?.path : null
-    const repoRoot = (row.worktree ? repoRootOf(row.worktree) : null) ?? registeredRoot
+    const { changesIn } = await import('./worktree.ts')
+    const repoRoot = cleanupRepoRoot(row)
     if (!repoRoot) throw new Error(`run ${id}'s repository root was not found`)
     const worktreePresent = Boolean(row.worktree && existsSync(row.worktree))
     const evidenceBranch = row.branch_kept ?? row.branch

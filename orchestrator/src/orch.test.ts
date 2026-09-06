@@ -16597,6 +16597,55 @@ describe('the sandbox an agent is launched with', () => {
     }
   })
 
+  test('orch diff finds an unregistered repository after its worktree is discarded', () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-diff-unregistered-')))
+    const worker = join(repo, 'worker')
+    const g = (cwd: string, ...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    try {
+      g(repo, 'init', '-b', 'main')
+      g(repo, 'config', 'user.email', 'orch-test@example.invalid')
+      g(repo, 'config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      g(repo, 'add', 'base.txt')
+      g(repo, 'commit', '-m', 'base')
+      const recorded = g(repo, 'rev-parse', 'HEAD')
+      writeFileSync(join(repo, 'trunk.txt'), 'trunk\n')
+      g(repo, 'add', 'trunk.txt')
+      g(repo, 'commit', '-m', 'trunk')
+      const trunk = g(repo, 'rev-parse', 'HEAD')
+      g(repo, 'worktree', 'add', '-b', 'DEV-283-unregistered', worker, 'main')
+      writeFileSync(join(worker, 'worker.txt'), 'worker\n')
+      g(worker, 'add', 'worker.txt')
+      g(worker, 'commit', '-m', 'DEV-283 unregistered worker')
+      g(repo, 'worktree', 'remove', '--force', worker)
+
+      const id = addRun({ agent: 'codex', job: 'implement' })
+      db().query(
+        `UPDATE run SET cwd=?, worktree=NULL, branch=?, branch_kept=?, base_commit=?
+          WHERE id=?`,
+      ).run(repo, 'DEV-283-unregistered', 'DEV-283-unregistered', recorded, id)
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const shown = Bun.spawnSync([process.execPath, CLI, 'diff', String(id), '--quiet'], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+
+      expect(shown.exitCode).toBe(0)
+      const output = shown.stdout.toString()
+      expect(output).toContain(`since: ${trunk} (trunk main; worktree discarded)`)
+      expect(output).toContain('diff --git a/worker.txt b/worker.txt')
+      expect(output).not.toContain('diff --git a/trunk.txt b/trunk.txt')
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('the shared-ref guard does not run project hooks in a scratch repository', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-project-hooks-'))
     const scratch = mkdtempSync(join(tmpdir(), 'orch-unrelated-scratch-'))
