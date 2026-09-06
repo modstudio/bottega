@@ -2016,6 +2016,15 @@ describe('review discipline', () => {
       reply.provenance.files_covered = ['base.txt']
       expect(cleanReviewEvidence(runId, reply).failure).toContain('intersects none')
 
+      const segmentBase = gg('rev-parse', 'HEAD')
+      mkdirSync(join(repo, 'foo'), { recursive: true })
+      writeFileSync(join(repo, 'foo', 'bar-x.ts'), 'segment boundary\n')
+      gg('add', '.'); gg('commit', '-m', 'segment boundary')
+      db().query('UPDATE run SET base_commit=?, input_tree=? WHERE id=?')
+        .run(segmentBase, gg('rev-parse', 'HEAD^{tree}'), runId)
+      reply.provenance.files_covered = ['x.ts']
+      expect(cleanReviewEvidence(runId, reply).failure).toContain('intersects none')
+
       db().query('UPDATE run SET input_tree=NULL WHERE id=?').run(runId)
       const unknown = cleanReviewEvidence(runId, reply)
       expect(unknown.failure).toBeNull()
@@ -4603,6 +4612,106 @@ describe('vendor failure failover is one bounded unit of work', () => {
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
       removeProject('review-failover-project')
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a repository review failover refuses a command recipe that cannot recreate its base', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-review-failover-no-base-'))
+    const caller = join(repo, '.claude', 'caller')
+    const codexScript = join(repo, 'first-review.ts')
+    const projectScript = join(repo, 'project-worktree.ts')
+    const firstReady = join(repo, 'first-review.ready')
+    const releaseFirst = join(repo, 'release-first.ready')
+    const projectInvoked = join(repo, 'project-worktree.invoked')
+    const git = (cwd: string, ...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    const codex = AGENTS.codex!
+    const grok = AGENTS.grok!
+    const priorCodex = {
+      bin: codex.bin, argv: codex.argv, stdin: codex.stdin,
+      readsOut: codex.readsOut, parseReply: codex.parseReply,
+    }
+    const priorGrok = {
+      bin: grok.bin, argv: grok.argv, stdin: grok.stdin,
+      readsOut: grok.readsOut, parseReply: grok.parseReply,
+    }
+    const priorDepth = process.env.ORCH_DEPTH
+    try {
+      git(repo, 'init', '-b', 'main')
+      git(repo, 'config', 'user.email', 'orch-test@example.invalid')
+      git(repo, 'config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      git(repo, 'add', 'base.txt'); git(repo, 'commit', '-m', 'base')
+      mkdirSync(dirname(caller), { recursive: true })
+      git(repo, 'worktree', 'add', '-b', 'feature', caller, 'HEAD')
+      writeFileSync(join(caller, 'change.ts'), 'carried review subject\n')
+      upsertProject({ name: 'review-failover-no-base-project', path: repo })
+
+      const empty = reviewReply(0) as any
+      empty.provenance.files_covered = []
+      empty.provenance.commands_run = []
+      writeFileSync(codexScript, [
+        "import { existsSync, writeFileSync } from 'node:fs'",
+        `writeFileSync(${JSON.stringify(firstReady)}, 'ready\\n')`,
+        `while (!existsSync(${JSON.stringify(releaseFirst)})) await Bun.sleep(10)`,
+        `console.log(${JSON.stringify(JSON.stringify(empty))})`,
+      ].join('\n'))
+      writeFileSync(projectScript, [
+        "import { writeFileSync } from 'node:fs'",
+        `writeFileSync(${JSON.stringify(projectInvoked)}, 'invoked\\n')`,
+      ].join('\n'))
+      codex.bin = process.execPath; codex.argv = () => [codexScript]
+      codex.stdin = false; codex.readsOut = false; codex.parseReply = undefined
+      grok.bin = process.execPath; grok.argv = () => [codexScript]
+      grok.stdin = false; grok.readsOut = false; grok.parseReply = undefined
+      process.env.ORCH_DEPTH = '0'
+
+      const pending = runJob({
+        job: 'review-lens', prompt: 'review the carried change', cwd: caller,
+        repo: 'review-failover-no-base-project', agent: 'codex', lens: 'failover-no-base', carry: true,
+      })
+      for (let i = 0; i < 200 && !existsSync(firstReady); i++) await Bun.sleep(10)
+      expect(existsSync(firstReady)).toBe(true)
+      const treesBefore = git(repo, 'worktree', 'list', '--porcelain')
+        .split('\n').filter((line) => line.startsWith('worktree ')).length
+      upsertProject({
+        name: 'review-failover-no-base-project', path: repo,
+        settings: {
+          worktree: {
+            create: declaredCreate(process.execPath, [projectScript, '{branch}']),
+            branch: 'task/{id}',
+          },
+        },
+      })
+      writeFileSync(releaseFirst, 'release\n')
+      await expect(pending).rejects.toThrow(/clean review with no evidence/)
+
+      const rows = db().query(
+        `SELECT status, failure_kind, error
+           FROM run WHERE repo='review-failover-no-base-project' ORDER BY id`,
+      ).all() as { status: string; failure_kind: string | null; error: string }[]
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).toMatchObject({ status: 'failed', failure_kind: 'unevidenced' })
+      expect(rows[0]!.error).toContain('cannot honour --base')
+      expect(rows[0]!.error).toContain('has no {base} slot')
+      expect(git(repo, 'worktree', 'list', '--porcelain')
+        .split('\n').filter((line) => line.startsWith('worktree ')).length).toBe(treesBefore)
+      expect(existsSync(projectInvoked)).toBe(false)
+    } finally {
+      if (!existsSync(releaseFirst)) writeFileSync(releaseFirst, 'release\n')
+      codex.bin = priorCodex.bin; codex.argv = priorCodex.argv; codex.stdin = priorCodex.stdin
+      codex.readsOut = priorCodex.readsOut; codex.parseReply = priorCodex.parseReply
+      grok.bin = priorGrok.bin; grok.argv = priorGrok.argv; grok.stdin = priorGrok.stdin
+      grok.readsOut = priorGrok.readsOut; grok.parseReply = priorGrok.parseReply
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      removeProject('review-failover-no-base-project')
       rmSync(repo, { recursive: true, force: true })
     }
   })
