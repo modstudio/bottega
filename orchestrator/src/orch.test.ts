@@ -463,6 +463,48 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  test('refuses an away-and-back gate that shortens the reflogs', async () => {
+    const branch = 'gate-shortens-reflogs'
+    const { repo, trees } = repoWithBranches([branch])
+    const exercised = join(repo, 'shortened-exercised-tree')
+    const gate = join(repo, 'shorten-reflogs.sh')
+    writeFileSync(gate, `#!/bin/sh\nset -eu\ncandidate=$(git rev-parse HEAD)\ngit checkout --detach main\ngit rev-parse HEAD^{tree} > '${exercised}'\ngit reset --hard "$candidate"\ngit reflog expire --expire=now --all\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-shortened-reflogs', path: repo,
+      settings: { trunk: 'main', gate } })
+    try {
+      const candidate = g(trees[branch]!, 'rev-parse', 'HEAD')
+      const candidateTree = g(trees[branch]!, 'rev-parse', 'HEAD^{tree}')
+      const trunk = g(repo, 'rev-parse', 'main')
+      const child = childLand(repo, branch)
+      expect(await child.exited).not.toBe(0)
+      const error = await new Response(child.stderr).text()
+      expect(g(trees[branch]!, 'rev-parse', 'HEAD')).toBe(candidate)
+      expect(readFileSync(exercised, 'utf8').trim()).not.toBe(candidateTree)
+      expect(error).toContain(gate)
+      expect(error).toContain('HEAD reflog:')
+      expect(error).toContain('missing:')
+      expect(g(repo, 'rev-parse', 'main')).toBe(trunk)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a same-OID reset reflog entry is a no-op and still lands', async () => {
+    const branch = 'gate-soft-reset'
+    const { repo } = repoWithBranches([branch])
+    const gate = join(repo, 'soft-reset.sh')
+    writeFileSync(gate, '#!/bin/sh\nset -eu\ngit reset --soft HEAD\n')
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-soft-reset', path: repo,
+      settings: { trunk: 'main', gate } })
+    try {
+      const candidate = g(repo, 'rev-parse', branch)
+      const child = childLand(repo, branch)
+      expect(await child.exited).toBe(0)
+      expect(g(repo, 'rev-parse', 'main')).toBe(candidate)
+      expect(g(repo, 'rev-parse', branch)).toBe(candidate)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   test('refuses final content hidden from ordinary status and names both content trees', async () => {
     const branch = 'gate-hides-content'
     const { repo, trees } = repoWithBranches([branch])

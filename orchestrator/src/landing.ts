@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { db, nowIso, sessionId } from './db.ts'
 import { formatGitLocks } from './git-locks.ts'
@@ -156,13 +156,33 @@ function runGate(
   if (before) {
     throw new Error(`refusing to gate a dirty worktree for ${project.name}:\n${before}`)
   }
-  const reflogEntries = (ref: string) => {
-    const output = git(worktree, ['reflog', 'show', '--format=%H%x09%gs', ref], guard)
-    return output ? output.split('\n') : []
+  type ReflogEntry = { oldOid: string; newOid: string; message: string }
+  const reflogEntries = (ref: string): ReflogEntry[] => {
+    const path = git(worktree, [
+      'rev-parse', '--path-format=absolute', '--git-path', `logs/${ref}`,
+    ], guard)
+    if (!existsSync(path)) return []
+    return readFileSync(path, 'utf8').split('\n').filter(Boolean).map((line) => {
+      const tab = line.indexOf('\t')
+      const [oldOid, newOid] = (tab === -1 ? line : line.slice(0, tab)).split(' ', 2)
+      return { oldOid: oldOid!, newOid: newOid!, message: tab === -1 ? '' : line.slice(tab + 1) }
+    })
   }
-  const newReflogEntries = (ref: string, before: string[]) => {
-    const after = reflogEntries(ref)
-    return after.slice(0, Math.max(0, after.length - before.length))
+  const reflogKey = (entry: ReflogEntry) =>
+    `${entry.oldOid}\0${entry.newOid}\0${entry.message}`
+  const unmatchedReflogEntries = (entries: ReflogEntry[], captured: ReflogEntry[]) => {
+    const remaining = new Map<string, number>()
+    for (const entry of captured) {
+      const key = reflogKey(entry)
+      remaining.set(key, (remaining.get(key) ?? 0) + 1)
+    }
+    return entries.filter((entry) => {
+      const key = reflogKey(entry)
+      const count = remaining.get(key) ?? 0
+      if (count === 0) return true
+      remaining.set(key, count - 1)
+      return false
+    })
   }
   const tip = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'], guard)
   const headReflogBefore = reflogEntries('HEAD')
@@ -188,13 +208,27 @@ function runGate(
       `refusing landing because gate ${gate} moved ${branchRef} from ${tip} to ${branchAfter}`,
     )
   }
-  const newHeadReflog = newReflogEntries('HEAD', headReflogBefore)
-  const newBranchReflog = newReflogEntries(branchRef, branchReflogBefore)
-  if (newHeadReflog.length || newBranchReflog.length) {
+  const reflogChanges = (ref: string, captured: ReflogEntry[]) => {
+    const after = reflogEntries(ref)
+    const added = unmatchedReflogEntries(after, captured).filter((entry) =>
+      entry.oldOid !== tip || entry.newOid !== tip)
+    const missing = unmatchedReflogEntries(captured, after)
+    return { ref, added, missing }
+  }
+  const reflogs = [
+    reflogChanges('HEAD', headReflogBefore),
+    reflogChanges(branchRef, branchReflogBefore),
+  ]
+  if (reflogs.some(({ added, missing }) => added.length || missing.length)) {
+    const render = (entry: ReflogEntry) =>
+      `${entry.oldOid} -> ${entry.newOid}${entry.message ? ` ${entry.message}` : ''}`
     throw new Error(
       `refusing landing because gate ${gate} changed git history:\n` +
-      (newHeadReflog.length ? `HEAD reflog:\n${newHeadReflog.join('\n')}\n` : '') +
-      (newBranchReflog.length ? `${branchRef} reflog:\n${newBranchReflog.join('\n')}` : ''),
+      reflogs.filter(({ added, missing }) => added.length || missing.length).map(
+        ({ ref, added, missing }) => `${ref} reflog:\n` +
+          (added.length ? `  added:\n${added.map(render).join('\n')}\n` : '') +
+          (missing.length ? `  missing:\n${missing.map(render).join('\n')}\n` : ''),
+      ).join(''),
     )
   }
   const contentAfter = contentTree(worktree)
