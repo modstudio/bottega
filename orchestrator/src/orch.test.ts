@@ -5858,6 +5858,51 @@ describe('routing backtest statistics', () => {
     expect(routingBacktest('summarize', 123).causalExcludedJudgements).toBe(1)
   })
 
+  test('quota cooldown is operational state, not scoring evidence, and a probe clears it', () => {
+    addRun({
+      agent: 'codex', job: 'fix', status: 'failed', kind: 'quota', latency: 1000,
+      startedAt: '2026-01-01T00:00:00.000Z',
+    })
+    const decision = addRun({
+      agent: 'codex', job: 'fix', startedAt: '2026-01-01T00:10:00.000Z',
+    })
+    db().query(
+      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?,'full','right','2026-01-01T00:11:00.000Z','test')`,
+    ).run(decision)
+
+    const cooled = routingBacktest('fix', 2)
+    const disabled = routingBacktest('fix', 2, { cooldowns: false })
+    expect(cooled.jobs[0]!.currentSelections).not.toEqual(disabled.jobs[0]!.currentSelections)
+    expect(disabled.jobs[0]!.currentSelections).toEqual({ codex: 1 })
+
+    addRun({
+      agent: 'codex', job: 'fix', probe: 1, startedAt: '2026-01-01T00:05:00.000Z',
+    })
+    expect(routingBacktest('fix', 2).jobs[0]!.currentSelections).toEqual({ codex: 1 })
+  })
+
+  test('reports voided-row selection sensitivity side by side', () => {
+    const id = addRun({
+      agent: 'codex', job: 'fix', startedAt: '2026-01-01T00:00:00.000Z',
+    })
+    db().query(
+      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?,'full','right','2026-01-01T00:01:00.000Z','test')`,
+    ).run(id)
+    db().query("UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?").run(id)
+    expect(routingBacktest('fix', 2).jobs).toEqual([])
+    expect(routingBacktest('fix', 2, { includeVoided: true }).jobs[0]!.runs).toBe(1)
+
+    const cli = Bun.spawnSync([
+      process.execPath, new URL('cli.ts', import.meta.url).pathname,
+      'routing-backtest', '--job', 'fix', '--seed', '2',
+    ], { env: { ...process.env, ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe' })
+    expect(cli.exitCode).toBe(0)
+    expect(cli.stdout.toString()).toContain('voided-excluded current=[')
+    expect(cli.stdout.toString()).toContain('voided-included current=[')
+  })
+
   test('each simulated policy learns only from historical runs it selected', () => {
     const insert = db().query(
       `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)

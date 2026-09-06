@@ -3601,9 +3601,10 @@ switch (cmd) {
     const assumptions = {
       outcomeComparison: 'not identifiable: agreements have the same logged outcome, while disagreements have no counterfactual outcome for the agent not run',
       policyLearning: 'each simulated policy updates only from logged runs where it chose the historical agent',
-      eligibility: 'current static capability, metered, prompt-size and context rules; historical cooldowns',
+      eligibility: 'current static capability, metered, prompt-size and context rules',
+      cooldowns: 'reconstructed from the full terminal operational stream, including quota/auth failures and successful probes; these events do not become scoring evidence',
       reachability: 'present-day reachability ignored',
-      evidence: 'voided, evidence-excluded and NOT_EVIDENCE runs omitted',
+      evidence: 'default distributions omit voided/evidence-excluded and NOT_EVIDENCE runs; the side-by-side sensitivity adds only rows voided by orch score --void',
       causalAvailability: 'scored evidence enters at scored_at; unjudged failures enter at termination; dispatch sees only earlier available evidence',
       ties: 'exact Thompson ties use unmetered then median latency',
       betaMapping: 'successes += (w + 0.5) / 1.5; failures += 1 - successes',
@@ -3612,55 +3613,92 @@ switch (cmd) {
     }
     const distribution = (values: Record<string, number>) => Object.entries(values)
       .sort(([a], [b]) => a.localeCompare(b)).map(([agent, count]) => `${agent}=${count}`).join(', ') || 'none'
-    const printTrajectory = (result: RoutingBacktest, indent = '') => {
+    const movedSelections = (baseline: RoutingBacktest, comparison: RoutingBacktest) => {
+      const moved = (key: 'currentSelections' | 'thompsonSelections') => baseline.jobs.reduce((total, row) => {
+        const other = comparison.jobs.find((candidate) => candidate.job === row.job)
+        const agents = new Set([...Object.keys(row[key]), ...Object.keys(other?.[key] ?? {})])
+        return total + [...agents].reduce(
+          (sum, agent) => sum + Math.abs((row[key][agent] ?? 0) - (other?.[key][agent] ?? 0)), 0,
+        ) / 2
+      }, 0)
+      return { current: moved('currentSelections'), thompson: moved('thompsonSelections') }
+    }
+    const printTrajectory = (result: RoutingBacktest, voided: RoutingBacktest, indent = '') => {
       console.log(`${indent}seed ${result.seed}: causal exclusions ${result.causalExcludedJudgements}`)
-      for (const row of result.jobs) {
+      const jobs = [...new Set([...result.jobs, ...voided.jobs].map((row) => row.job))]
+      for (const job of jobs) {
+        const row = result.jobs.find((candidate) => candidate.job === job)
+        const included = voided.jobs.find((candidate) => candidate.job === job)
         console.log(
-          `${indent}  ${row.job}: runs=${row.runs} agreements=${row.agreements} ` +
-          `agreement=${(row.agreementShare * 100).toFixed(1)}% ` +
-          `Thompson-exploration=${(row.thompsonExplorationShare * 100).toFixed(1)}% ` +
-          `current-picks=[${distribution(row.currentSelections)}] ` +
-          `Thompson-picks=[${distribution(row.thompsonSelections)}]`,
+          `${indent}  ${job}: runs=${row?.runs ?? 0} agreements=${row?.agreements ?? 0} ` +
+          `agreement=${((row?.agreementShare ?? 0) * 100).toFixed(1)}% ` +
+          `Thompson-exploration=${((row?.thompsonExplorationShare ?? 0) * 100).toFixed(1)}% ` +
+          `voided-excluded current=[${distribution(row?.currentSelections ?? {})}] Thompson=[${distribution(row?.thompsonSelections ?? {})}]; ` +
+          `voided-included current=[${distribution(included?.currentSelections ?? {})}] ` +
+          `Thompson=[${distribution(included?.thompsonSelections ?? {})}]`,
         )
       }
     }
     if (seed !== undefined) {
       const result = routingBacktest(jobFilter, seed)
+      const voidedIncluded = routingBacktest(jobFilter, seed, { includeVoided: true })
+      const cooldownDisabled = routingBacktest(jobFilter, seed, { cooldowns: false })
+      const cooldownMoves = movedSelections(result, cooldownDisabled)
       const outputAssumptions = {
         ...assumptions,
         causalExclusions: `${result.causalExcludedJudgements} earlier judgement/dispatch pairs excluded`,
+        cooldownSensitivity: `disabling cooldown redistributes ${cooldownMoves.current} current-policy and ${cooldownMoves.thompson} Thompson selections`,
       }
       if (has('json')) {
-        console.log(JSON.stringify({ mode: 'single-seed-reproduction', assumptions: outputAssumptions, ...result }))
+        console.log(JSON.stringify({
+          mode: 'single-seed-reproduction', assumptions: outputAssumptions, ...result,
+          sensitivities: { voidedIncluded, cooldownDisabled: { selectionMoves: cooldownMoves } },
+        }))
         break
       }
       console.log(`routing replay diagnostic (seed ${seed}; descriptive only)`)
       console.log('assumptions:')
       for (const [key, value] of Object.entries(outputAssumptions)) console.log(`  ${key}: ${value}`)
-      printTrajectory(result)
+      printTrajectory(result, voidedIncluded)
       break
     }
     const result = routingBacktestEnsemble(jobFilter)
+    const voidedIncluded = routingBacktestEnsemble(jobFilter, { includeVoided: true })
+    const cooldownDisabled = routingBacktestEnsemble(jobFilter, { cooldowns: false })
+    const cooldownMoves = movedSelections(
+      { seed: 0, causalExcludedJudgements: 0, jobs: result.jobs },
+      { seed: 0, causalExcludedJudgements: 0, jobs: cooldownDisabled.jobs },
+    )
     const causalExcludedJudgements = result.trajectories[0]?.causalExcludedJudgements ?? 0
     const outputAssumptions = {
       ...assumptions,
       causalExclusions: `${causalExcludedJudgements} earlier judgement/dispatch pairs excluded per trajectory`,
+      cooldownSensitivity: `disabling cooldown redistributes ${cooldownMoves.current} current-policy and ${cooldownMoves.thompson} Thompson selections across all seeds`,
     }
     if (has('json')) {
-      console.log(JSON.stringify({ mode: 'ensemble', assumptions: outputAssumptions, ...result }))
+      console.log(JSON.stringify({
+        mode: 'ensemble', assumptions: outputAssumptions, ...result,
+        sensitivities: { voidedIncluded, cooldownDisabled: { selectionMoves: cooldownMoves } },
+      }))
       break
     }
     console.log(`routing replay diagnostic (seeds ${result.seeds.join(', ')}; descriptive only)`)
     console.log('assumptions:')
     for (const [key, value] of Object.entries(outputAssumptions)) console.log(`  ${key}: ${value}`)
     console.log('aggregate across seeds:')
-    for (const row of result.jobs) console.log(
-      `  ${row.job}: decisions=${row.runs} agreements=${row.agreements} ` +
-      `agreement=${(row.agreementShare * 100).toFixed(1)}% ` +
-      `Thompson-exploration=${(row.thompsonExplorationShare * 100).toFixed(1)}% ` +
-      `current-picks=[${distribution(row.currentSelections)}] ` +
-      `Thompson-picks=[${distribution(row.thompsonSelections)}]`,
-    )
+    const jobs = [...new Set([...result.jobs, ...voidedIncluded.jobs].map((row) => row.job))]
+    for (const job of jobs) {
+      const row = result.jobs.find((candidate) => candidate.job === job)
+      const included = voidedIncluded.jobs.find((candidate) => candidate.job === job)
+      console.log(
+        `  ${job}: decisions=${row?.runs ?? 0} agreements=${row?.agreements ?? 0} ` +
+        `agreement=${((row?.agreementShare ?? 0) * 100).toFixed(1)}% ` +
+        `Thompson-exploration=${((row?.thompsonExplorationShare ?? 0) * 100).toFixed(1)}% ` +
+        `voided-excluded current=[${distribution(row?.currentSelections ?? {})}] Thompson=[${distribution(row?.thompsonSelections ?? {})}]; ` +
+        `voided-included current=[${distribution(included?.currentSelections ?? {})}] ` +
+        `Thompson=[${distribution(included?.thompsonSelections ?? {})}]`,
+      )
+    }
     break
   }
 

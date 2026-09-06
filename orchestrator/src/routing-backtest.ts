@@ -18,6 +18,16 @@ type Event = {
   evidenceAt: string
 }
 
+type OperationalEvent = {
+  id: number
+  agent: string
+  status: string
+  failureKind: string | null
+  finishedAt: string
+}
+
+type ReplayOptions = { includeVoided?: boolean; cooldowns?: boolean }
+
 type History = Event[]
 type PolicyChoice = { agent: string; expected: string }
 
@@ -64,17 +74,15 @@ function staticEligible(agent: string, jobName: string, promptBytes: number): bo
   return !Object.entries(j.needs).some(([cap, need]) => need && !a.caps[cap as keyof typeof a.caps])
 }
 
-function cooling(agent: string, at: Event, history: History): boolean {
-  const finishedAt = (event: Event) => Date.parse(event.startedAt) + event.latencyMs!
-  const terminal = history.filter((event) =>
-    event.agent === agent && event.latencyMs !== null && ['ok', 'failed'].includes(event.status),
-  )
+function cooling(agent: string, at: Event, operations: OperationalEvent[], enabled: boolean): boolean {
+  if (!enabled) return false
+  const terminal = operations.filter((event) => event.agent === agent && event.finishedAt <= at.startedAt)
   const latest = terminal
     .filter((event) => event.status === 'failed' && COOLS_DOWN.includes(event.failureKind as typeof COOLS_DOWN[number]))
-    .sort((a, b) => finishedAt(b) - finishedAt(a) || b.id - a.id)[0]
+    .sort((a, b) => b.finishedAt.localeCompare(a.finishedAt) || b.id - a.id)[0]
   if (!latest) return false
-  if (terminal.some((event) => event.status === 'ok' && finishedAt(event) > finishedAt(latest))) return false
-  return Date.parse(at.startedAt) - finishedAt(latest) < COOLDOWN_MIN * 60_000
+  if (terminal.some((event) => event.status === 'ok' && event.finishedAt > latest.finishedAt)) return false
+  return Date.parse(at.startedAt) - Date.parse(latest.finishedAt) < COOLDOWN_MIN * 60_000
 }
 
 function priorLatency(agent: string, event: Event, history: History, stack?: string | null): number | null {
@@ -90,11 +98,11 @@ type Cell = {
   free: boolean; latency: number | null
 }
 
-function cellsFor(event: Event, history: History): Cell[] {
+function cellsFor(event: Event, history: History, operations: OperationalEvent[], cooldowns: boolean): Cell[] {
   const bucket = (e: Event) => e.promptBytes < PROMPT_SIZE_BOUNDARY
   const sameBucket = history.filter((e) => e.job === event.job && bucket(e) === bucket(event))
   const build = (stack?: string | null) => Object.keys(AGENTS)
-    .filter((agent) => staticEligible(agent, event.job, event.promptBytes) && !cooling(agent, event, history))
+    .filter((agent) => staticEligible(agent, event.job, event.promptBytes) && !cooling(agent, event, operations, cooldowns))
     .map((agent) => {
       let evidence = sameBucket.filter((e) => e.agent === agent && (!stack || e.stack === stack))
       const currentModel = AGENTS[agent]!.model
@@ -125,8 +133,11 @@ function factualOrder(a: Cell, b: Cell): number {
     b.evidence.length - a.evidence.length || a.agent.localeCompare(b.agent)
 }
 
-function currentChoice(event: Event, history: History, rng: () => number, draw: boolean): PolicyChoice {
-  const cells = cellsFor(event, history)
+function currentChoice(
+  event: Event, history: History, operations: OperationalEvent[], rng: () => number, draw: boolean,
+  cooldowns: boolean,
+): PolicyChoice {
+  const cells = cellsFor(event, history, operations, cooldowns)
   const proven = cells.filter((c) => c.evidence.length >= MIN_SAMPLE && c.score !== null)
   const unproven = cells.filter((c) => c.evidence.length < MIN_SAMPLE)
   if (proven.length) {
@@ -148,8 +159,11 @@ function currentChoice(event: Event, history: History, rng: () => number, draw: 
   return { agent: expected, expected }
 }
 
-function thompsonChoice(event: Event, history: History, rng: () => number, draw: boolean): PolicyChoice {
-  const cells = cellsFor(event, history)
+function thompsonChoice(
+  event: Event, history: History, operations: OperationalEvent[], rng: () => number, draw: boolean,
+  cooldowns: boolean,
+): PolicyChoice {
+  const cells = cellsFor(event, history, operations, cooldowns)
   const ranked = thompsonRank(cells.map((cell) => ({
     agent: cell.agent,
     evidence: cell.evidence.length,
@@ -160,7 +174,7 @@ function thompsonChoice(event: Event, history: History, rng: () => number, draw:
   return { agent: ranked.chosen.agent, expected: ranked.expected.agent }
 }
 
-function events(): Event[] {
+function events(includeVoided = false): Event[] {
   type Row = Omit<Event, 'weight' | 'none' | 'evidenceAt'> & {
     delivery: Parameters<typeof weigh>[0] | null
     quality: Parameters<typeof weigh>[1]
@@ -174,7 +188,10 @@ function events(): Event[] {
             r.failure_kind AS failureKind,
             s.delivery, s.quality, s.fidelity, s.scored_at AS scoredAt
        FROM run r LEFT JOIN score s ON s.run_id=r.id
-      WHERE r.parent_run_id IS NULL AND r.probe=0 AND r.evidence_excluded IS NULL
+      WHERE r.parent_run_id IS NULL AND r.probe=0
+        ${includeVoided
+    ? "AND (r.evidence_excluded IS NULL OR r.evidence_excluded='voided with orch score --void')"
+    : 'AND r.evidence_excluded IS NULL'}
         AND r.status IN ('ok','failed','stale')
         AND COALESCE(r.failure_kind,'') NOT IN (${excluded})
         AND (s.delivery IS NOT NULL OR r.status IN ('failed','stale'))
@@ -197,7 +214,19 @@ function events(): Event[] {
   })
 }
 
-function replay(all: Event[], jobName: string | undefined, seed: number): RoutingBacktest {
+function operationalEvents(): OperationalEvent[] {
+  return (db().query(
+    `SELECT id, agent, status, failure_kind AS failureKind,
+            strftime('%Y-%m-%dT%H:%M:%fZ', julianday(started_at) + latency_ms / 86400000.0) AS finishedAt
+       FROM run
+      WHERE status IN ('ok','failed') AND latency_ms IS NOT NULL
+      ORDER BY finishedAt, id`,
+  ).all() as OperationalEvent[])
+}
+
+function replay(
+  all: Event[], operations: OperationalEvent[], jobName: string | undefined, seed: number, cooldowns: boolean,
+): RoutingBacktest {
   const jobs: BacktestJob[] = []
   let causalExcludedJudgements = 0
   const names = [...new Set(all.map((e) => e.job))].filter((name) => !jobName || name === jobName)
@@ -218,8 +247,8 @@ function replay(all: Event[], jobName: string | undefined, seed: number): Routin
         .filter((candidate) => candidate.evidenceAt < event.startedAt).sort(byAvailability)
       const thompsonHistory = thompsonObserved
         .filter((candidate) => candidate.evidenceAt < event.startedAt).sort(byAvailability)
-      const current = currentChoice(event, currentHistory, currentRng, true)
-      const thompson = thompsonChoice(event, thompsonHistory, thompsonRng, true)
+      const current = currentChoice(event, currentHistory, operations, currentRng, true, cooldowns)
+      const thompson = thompsonChoice(event, thompsonHistory, operations, thompsonRng, true, cooldowns)
       if (current.agent === thompson.agent) agreements++
       if (thompson.agent !== thompson.expected) thompsonExplores++
       currentSelections[current.agent] = (currentSelections[current.agent] ?? 0) + 1
@@ -240,13 +269,20 @@ function replay(all: Event[], jobName: string | undefined, seed: number): Routin
   return { seed, causalExcludedJudgements, jobs }
 }
 
-export function routingBacktest(jobName?: string, seed = ROUTING_BACKTEST_SEED): RoutingBacktest {
-  return replay(events(), jobName, seed)
+export function routingBacktest(
+  jobName?: string, seed = ROUTING_BACKTEST_SEED, options: ReplayOptions = {},
+): RoutingBacktest {
+  return replay(events(options.includeVoided), operationalEvents(), jobName, seed, options.cooldowns !== false)
 }
 
-export function routingBacktestEnsemble(jobName?: string): RoutingBacktestEnsemble {
-  const all = events()
-  const trajectories = ROUTING_BACKTEST_SEEDS.map((seed) => replay(all, jobName, seed))
+export function routingBacktestEnsemble(
+  jobName?: string, options: ReplayOptions = {},
+): RoutingBacktestEnsemble {
+  const all = events(options.includeVoided)
+  const operations = operationalEvents()
+  const trajectories = ROUTING_BACKTEST_SEEDS.map((seed) =>
+    replay(all, operations, jobName, seed, options.cooldowns !== false),
+  )
   const names = [...new Set(trajectories.flatMap((trajectory) => trajectory.jobs.map((job) => job.job)))]
   const jobs = names.map((job) => {
     const rows = trajectories.map((trajectory) => trajectory.jobs.find((row) => row.job === job)!)
