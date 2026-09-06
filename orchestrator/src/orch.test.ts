@@ -477,6 +477,7 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       )
       const outputPath = error.match(/complete gate output: (.+\/output\.log)/)?.[1]
       expect(outputPath).toBeDefined()
+      expect(readdirSync(dirname(outputPath!))).toEqual(['output.log'])
       const complete = readFileSync(outputPath!, 'utf8')
       expect(complete).toContain('(fail) deeply buried timeout test [5001.00ms]')
       expect(complete).toContain('(pass) later test 900')

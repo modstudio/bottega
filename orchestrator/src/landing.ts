@@ -284,6 +284,20 @@ function runGate(
         'sh', '-c', capture, 'orch-gate-capture', gate,
         captureSetup.pipe, captureSetup.paths.output, truncatedMarker!,
       ], spawnOptions)
+  let capturedOutput: string | null = null
+  let captureReadError: string | null = null
+  let captureTruncated = false
+  if (captureSetup.ok) {
+    try {
+      captureTruncated = existsSync(truncatedMarker!)
+      if (p.exitCode !== 0) capturedOutput = readFileSync(captureSetup.paths.output, 'utf8')
+    } catch (error) {
+      captureReadError = error instanceof Error ? error.message : String(error)
+    } finally {
+      rmSync(captureSetup.pipe, { force: true })
+      rmSync(truncatedMarker!, { force: true })
+    }
+  }
   if (p.exitCode !== 0) {
     if (!captureSetup.ok) {
       throw new Error(
@@ -291,11 +305,17 @@ function runGate(
         `gate output not captured: ${captureSetup.error}`,
       )
     }
-    const output = readFileSync(captureSetup.paths.output, 'utf8')
+    if (captureReadError || capturedOutput === null) {
+      rmSync(captureSetup.paths.directory, { recursive: true, force: true })
+      throw new Error(
+        `landing gate failed with exit ${p.exitCode}: ${gate}\n` +
+        `gate output not captured: ${captureReadError ?? 'capture log was unavailable'}`,
+      )
+    }
     throw new Error(
       `landing gate failed with exit ${p.exitCode}: ${gate}\n` +
       gateFailureSummary(
-        output, captureSetup.paths.output, liveRunCount(), existsSync(truncatedMarker!),
+        capturedOutput, captureSetup.paths.output, liveRunCount(), captureTruncated,
       ),
     )
   }
