@@ -1491,6 +1491,16 @@ export const UNSCORED_WHERE =
         OR s.scored_at < (SELECT MAX(COALESCE(c.started_at, ''))
                             FROM run c WHERE c.parent_run_id = r.id))`
 
+/** Join the one score owned by a conversation root to any of its turns. */
+export function chainScoreJoin(runAlias: string, scoreAlias: string): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(runAlias) ||
+      !/^[A-Za-z_][A-Za-z0-9_]*$/.test(scoreAlias)) {
+    throw new Error('chain score aliases must be SQL identifiers')
+  }
+  return `LEFT JOIN score ${scoreAlias} ON ${scoreAlias}.run_id = ` +
+    `COALESCE(${runAlias}.parent_run_id, ${runAlias}.id)`
+}
+
 /** Runs this session made that nobody has judged. */
 export function pendingForSession(sid: string | null) {
   if (!sid) return []

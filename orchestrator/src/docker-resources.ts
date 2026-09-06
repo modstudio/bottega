@@ -99,7 +99,7 @@ export function orphanedDockerResources(
   const byId = new Map(owners.map((owner) => [owner.id, owner]))
   return resources.flatMap((resource) => {
     const owner = byId.get(resource.runId)
-    if (owner && (!['ok', 'failed', 'stale'].includes(owner.status) ||
+    if (owner && (!['ok', 'failed', 'stale', 'stopped'].includes(owner.status) ||
         (owner.worktree !== null && existsSync(owner.worktree)))) return []
     return [{ resource, project: owner?.repo ?? 'unknown' }]
   })

@@ -10235,6 +10235,62 @@ echo 'Usage: scripts/worktree create [seed]'
     }
   })
 
+  test('a resumed turn waits for cleanup and refuses a worktree removed under the lifecycle lock', async () => {
+    const { repo } = scratchRepo()
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+    const tree = createWorktree(repo, root)
+    const promptPath = join(repo, 'resume-root.prompt.txt')
+    const ready = join(repo, 'cleanup-ready')
+    const cleanup = join(repo, 'paused-cleanup.ts')
+    writeFileSync(promptPath, 'original implementation spec')
+    db().query('UPDATE run SET prompt_path=?, cwd=?, worktree=?, branch=?, base_commit=? WHERE id=?')
+      .run(promptPath, tree.path, tree.path, tree.branch, tree.base, root)
+    writeFileSync(cleanup,
+      `import { writeFileSync } from 'node:fs'\n` +
+      `import { withProjectLock } from ${JSON.stringify(new URL('worktree.ts', import.meta.url).href)}\n` +
+      `withProjectLock(process.argv[2], 'landing', { session: null, what: 'fixture cleanup' }, () => {\n` +
+      `  writeFileSync(process.argv[5], 'ready')\n` +
+      `  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 350)\n` +
+      `  const removed = Bun.spawnSync(['git', 'worktree', 'remove', '--force', process.argv[3]], { cwd: process.argv[2], stdout: 'pipe', stderr: 'pipe' })\n` +
+      `  if (removed.exitCode !== 0) throw new Error(removed.stderr.toString())\n` +
+      `  Bun.spawnSync(['git', 'branch', '-D', process.argv[4]], { cwd: process.argv[2], stdout: 'pipe', stderr: 'pipe' })\n` +
+      `})\n`)
+    const holder = Bun.spawn(
+      [process.execPath, cleanup, repo, tree.path, tree.branch, ready],
+      { env: { ...process.env, ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe' },
+    )
+    while (!existsSync(ready)) await Bun.sleep(10)
+    let failure: Error | null = null
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      await runJob({
+        job: 'implement', prompt: 'continue', cwd: tree.path, noFailover: true,
+        resume: {
+          parent: root, agent: 'codex', session: 'test-session', turn: 2,
+          sessionId: 'orch-test-session', worktree: tree,
+        },
+      })
+    } catch (error) {
+      failure = error as Error
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+    try {
+      expect(await holder.exited).toBe(0)
+      expect(failure?.message).toContain(`resumed worktree ${tree.path} no longer exists`)
+      const child = db().query(
+        'SELECT status, worktree, error FROM run WHERE parent_run_id=? ORDER BY id DESC LIMIT 1',
+      ).get(root) as { status: string; worktree: string | null; error: string | null }
+      expect(child.status).toBe('failed')
+      expect(child.worktree).toBeNull()
+      expect(child.error).toContain(`resumed worktree ${tree.path} no longer exists`)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('separate processes serialize complete creation for the same project', async () => {
     const { repo } = scratchRepo()
     const overlap = join(repo, '.git', 'creation-overlap')
@@ -10614,6 +10670,93 @@ echo 'Usage: scripts/worktree create [seed]'
         ])
     } finally {
       rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  for (const cleanup of ['discard', 'sweep'] as const) {
+    test(`${cleanup} reclaims one scored multi-turn conversation`, () => {
+      const { repo } = scratchRepo()
+      const startedAt = new Date(Date.now() - 86_400_000).toISOString()
+      const root = addRun({ agent: 'codex', job: 'implement', status: 'ok', startedAt })
+      const child = addRun({
+        agent: 'codex', job: 'implement', status: 'ok', parent: root, turn: 2, startedAt,
+      })
+      const tree = createWorktree(repo, root)
+      db().query(
+        `INSERT INTO score (run_id, delivery, quality, fidelity, scored_at)
+         VALUES (?,'full','right','faithful',?)`,
+      ).run(root, nowIso())
+      for (const id of [root, child]) {
+        db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
+          .run(tree.path, tree.path, tree.branch, id)
+      }
+      const docker = fakeDocker([], [])
+      try {
+        const CLI = new URL('cli.ts', import.meta.url).pathname
+        const args = cleanup === 'discard'
+          ? ['discard', String(root), '--force']
+          : ['sweep', '--older-than', '0']
+        const p = Bun.spawnSync([process.execPath, CLI, ...args], {
+          env: { ...process.env, ...docker.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+          stdout: 'pipe', stderr: 'pipe',
+        })
+        expect(p.exitCode).toBe(0)
+        expect(existsSync(tree.path)).toBe(false)
+        expect(db().query('SELECT id, worktree FROM run WHERE id IN (?,?) ORDER BY id')
+          .all(root, child)).toEqual([
+          { id: root, worktree: null },
+          { id: child, worktree: null },
+        ])
+      } finally {
+        rmSync(repo, { recursive: true, force: true })
+        rmSync(docker.dir, { recursive: true, force: true })
+      }
+    })
+  }
+
+  test('stopped runs are swept and their surviving infrastructure is reported by sweep and doctor', () => {
+    const { repo } = scratchRepo()
+    const project = `stopped-resource-${repo.split('/').pop()}`
+    const id = addRun({
+      agent: 'codex', job: 'implement', status: 'stopped', repo: project,
+      startedAt: new Date(Date.now() - 86_400_000).toISOString(),
+    })
+    const gone = join(repo, '.claude', 'worktrees', `orch-${id}`)
+    db().query(
+      `INSERT INTO score (run_id, delivery, quality, fidelity, scored_at)
+       VALUES (?,'full','right','faithful',?)`,
+    ).run(id, nowIso())
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
+      .run(repo, gone, `orch/${id}`, id)
+    upsertProject({
+      name: project, path: realpathSync(repo),
+      settings: { trunk: 'main', worktree: { remove: 'true' } },
+    })
+    const container = `orch-${id}-postgres-1`
+    const volume = `orch-${id}_postgres-data`
+    const docker = fakeDocker([container], [volume])
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const env = { ...process.env, ...docker.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' }
+      const swept = Bun.spawnSync(
+        [process.execPath, CLI, 'sweep', '--older-than', '0'],
+        { env, stdout: 'pipe', stderr: 'pipe' },
+      )
+      expect(swept.exitCode).not.toBe(0)
+      expect(swept.stderr.toString()).toContain(container)
+      expect(swept.stderr.toString()).toContain(volume)
+
+      const doctor = Bun.spawnSync(
+        [process.execPath, CLI, 'doctor'], { env, stdout: 'pipe', stderr: 'pipe' },
+      )
+      expect(doctor.exitCode).toBe(0)
+      expect(doctor.stdout.toString()).toContain(container)
+      expect(doctor.stdout.toString()).toContain(`docker rm -f ${container}`)
+      expect(doctor.stdout.toString()).toContain(volume)
+      expect(doctor.stdout.toString()).toContain(`docker volume rm ${volume}`)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(docker.dir, { recursive: true, force: true })
     }
   })
 

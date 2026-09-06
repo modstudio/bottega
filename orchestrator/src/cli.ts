@@ -5,7 +5,7 @@ import { DATABASE_RESOLUTION, DB_PATH, db, nowIso, sessionId, judgeability, pend
          type ReviewReproduced, type ReviewCoverage, type ReviewLimits, type ReviewOverlap,
          reapStale, pidAlive, STALE_AFTER_MS, UNSCORED_WHERE, recordDuels, duelMatrices,
          parseRunIds, recordSessionSeen, SESSION_LIVE_MS,
-         resolveRootFromLastTurn } from './db.ts'
+         resolveRootFromLastTurn, chainScoreJoin } from './db.ts'
 import { JOBS, job } from './jobs.ts'
 import { AGENTS, available, installed, ensureLocalHealth,
          unavailableReason, NEEDS_HEALTH, tryWake, wakeStatus,
@@ -385,18 +385,27 @@ function evidenceOwningBranchOwners(
   if (!row.branch) return []
   const project = row.repo ?? projectAt(repoRoot)?.name ?? null
   const candidates = db().query(
-    `SELECT r.id, r.repo, r.cwd, r.worktree, r.status, s.delivery IS NOT NULL AS scored
-       FROM run r LEFT JOIN score s ON s.run_id = r.id
-      WHERE r.branch=? AND r.id<>?
-        AND (r.status NOT IN ('ok','failed','stale') OR s.delivery IS NULL)
+    `SELECT r.id, COALESCE(r.parent_run_id, r.id) AS root_id,
+            r.repo, r.cwd, r.worktree, r.status, s.delivery IS NOT NULL AS scored
+       FROM run r ${chainScoreJoin('r', 's')}
+      WHERE r.branch=?
+        AND COALESCE(r.parent_run_id, r.id) <>
+            COALESCE((SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?), ?)
+        AND (r.status NOT IN ('ok','failed','stale','stopped') OR s.delivery IS NULL)
       ORDER BY r.id`,
-  ).all(row.branch, row.id) as BranchOwnerRow[]
-  return candidates.filter((candidate) => {
+  ).all(row.branch, row.id, row.id) as (BranchOwnerRow & { root_id: number })[]
+  const matching = candidates.filter((candidate) => {
     if (project && candidate.repo) return candidate.repo === project
     const candidateRoot = candidate.repo ? projectByName(candidate.repo)?.path : null
     const discovered = candidateRoot ?? repoRootOf(candidate.worktree ?? '') ??
       repoRootOf(candidate.cwd ?? '')
     return discovered ? samePath(discovered, repoRoot) : false
+  })
+  const roots = new Set<number>()
+  return matching.flatMap((candidate) => {
+    if (roots.has(candidate.root_id)) return []
+    roots.add(candidate.root_id)
+    return [{ ...candidate, id: candidate.root_id }]
   })
 }
 
@@ -411,13 +420,37 @@ function withCleanupLock<T>(repoRoot: string, what: string, action: () => T): T 
 function evidenceOwningWorktreeSharers(
   row: { id: number; worktree: string },
 ): WorktreeSharerRow[] {
-  return db().query(
-    `SELECT r.id, r.status, s.delivery IS NOT NULL AS scored
-       FROM run r LEFT JOIN score s ON s.run_id = r.id
-      WHERE r.worktree = ? AND r.id <> ?
-        AND (r.status NOT IN ('ok','failed','stale') OR s.delivery IS NULL)
+  const candidates = db().query(
+    `SELECT r.id, COALESCE(r.parent_run_id, r.id) AS root_id,
+            r.status, s.delivery IS NOT NULL AS scored
+       FROM run r ${chainScoreJoin('r', 's')}
+      WHERE r.worktree = ?
+        AND COALESCE(r.parent_run_id, r.id) <>
+            COALESCE((SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?), ?)
+        AND (r.status NOT IN ('ok','failed','stale','stopped') OR s.delivery IS NULL)
       ORDER BY r.id`,
-  ).all(row.worktree, row.id) as WorktreeSharerRow[]
+  ).all(row.worktree, row.id, row.id) as (WorktreeSharerRow & { root_id: number })[]
+  const roots = new Set<number>()
+  return candidates.flatMap((candidate) => {
+    if (roots.has(candidate.root_id)) return []
+    roots.add(candidate.root_id)
+    return [{ ...candidate, id: candidate.root_id }]
+  })
+}
+
+/** One removed tree clears every pointer held by the same conversation. */
+function clearConversationWorktree(
+  runId: number, worktree: string, keptBranch: string | null = null,
+): void {
+  db().query(
+    `UPDATE run
+        SET worktree=NULL,
+            branch_kept=CASE WHEN id=? THEN ? ELSE branch_kept END,
+            branch_kept_tip=CASE WHEN id=? THEN NULL ELSE branch_kept_tip END
+      WHERE worktree=?
+        AND COALESCE(parent_run_id, id) =
+            (SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?)`,
+  ).run(runId, keptBranch, runId, worktree, runId)
 }
 
 function recordRestoreRefusal(runId: number, branch: string, tip: string): void {
@@ -583,8 +616,7 @@ function discardWorktree(
     }
     const keptProtectedBranch = protectedBranch && row.branch && branchTip(repoRoot, row.branch)
       ? row.branch : null
-    db().query('UPDATE run SET worktree = NULL, branch_kept = ?, branch_kept_tip = NULL WHERE id = ?')
-      .run(keptProtectedBranch, row.id)
+    clearConversationWorktree(row.id, row.worktree, keptProtectedBranch)
     console.log(`${verb} run ${row.id}'s worktree`)
     if (r.output) console.log(r.output)
     if (protectedBranch && keptProtectedBranch) {
@@ -3139,8 +3171,8 @@ switch (cmd) {
       `SELECT r.id, r.repo, r.worktree, r.branch, r.status, r.job,
               (julianday('now') - julianday(r.started_at)) AS age_days,
               s.delivery IS NOT NULL AS scored
-         FROM run r LEFT JOIN score s ON s.run_id = r.id
-        WHERE r.worktree IS NOT NULL AND r.status IN ('ok','failed','stale')
+         FROM run r ${chainScoreJoin('r', 's')}
+        WHERE r.worktree IS NOT NULL AND r.status IN ('ok','failed','stale','stopped')
         ORDER BY r.id`,
     ).all() as {
       id: number; repo: string | null; worktree: string; branch: string | null; status: string
@@ -3159,6 +3191,9 @@ switch (cmd) {
     const kept: { line: string; reason: string }[] = []
     const keep = (line: string, reason: string) => { kept.push({ line, reason }) }
     for (const r of rows) {
+      const current = db().query('SELECT worktree FROM run WHERE id=?').get(r.id) as
+        { worktree: string | null } | null
+      if (current?.worktree !== r.worktree) continue
       if (r.age_days < days) {
         keep(`${r.id}  too recent (${r.age_days.toFixed(1)}d)`, 'under the age threshold')
         continue
@@ -3241,7 +3276,7 @@ switch (cmd) {
               })
               console.error(`could not fully reclaim ${r.id}: project ${project}'s remove tool leaked Docker resources`)
             } else {
-              db().query('UPDATE run SET worktree = NULL WHERE id = ?').run(r.id)
+              clearConversationWorktree(r.id, r.worktree)
               console.log(`reclaimed ${r.id}  ${res.detail}`)
               if (res.output) console.log(res.output)
               const owner = ownersAfter[0] ?? ownersBefore[0] ?? null
