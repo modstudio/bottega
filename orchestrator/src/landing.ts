@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -46,6 +46,29 @@ function gateOutputPaths(project: string): { directory: string; output: string }
   return {
     directory,
     output: join(directory, 'output.log'),
+  }
+}
+
+function prepareGateCapture(project: string):
+  | { ok: true; paths: ReturnType<typeof gateOutputPaths>; pipe: string }
+  | { ok: false; error: string } {
+  let paths: ReturnType<typeof gateOutputPaths> | null = null
+  try {
+    paths = gateOutputPaths(project)
+    writeFileSync(paths.output, '')
+    const pipe = join(paths.directory, 'output.pipe')
+    const made = Bun.spawnSync(['mkfifo', pipe], { stdout: 'pipe', stderr: 'pipe' })
+    if (made.exitCode !== 0) {
+      throw new Error(made.stderr.toString().trim() || `mkfifo exited ${made.exitCode}`)
+    }
+    if (!statSync(pipe).isFIFO()) throw new Error(`${pipe} is not a fifo`)
+    return { ok: true, paths, pipe }
+  } catch (error) {
+    if (paths) rmSync(paths.directory, { recursive: true, force: true })
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    }
   }
 }
 
@@ -228,10 +251,8 @@ function runGate(
   const branchReflogBefore = reflogEntries(branchRef)
   const contentBefore = contentTree(worktree)
   console.log(`gate ${project.name}: ${gate}`)
-  const outputPaths = gateOutputPaths(project.name)
-  const outputPipe = join(outputPaths.directory, 'output.pipe')
+  const captureSetup = prepareGateCapture(project.name)
   const capture = [
-    'mkfifo "$2"',
     'tee "$3" <"$2" & output_tee=$!',
     'sh -lc "$1" >"$2" 2>&1; status=$?',
     'attempts=0',
@@ -243,19 +264,30 @@ function runGate(
     'wait "$output_tee" 2>/dev/null || true',
     'exit "$status"',
   ].join('\n')
-  const p = Bun.spawnSync([
-    'sh', '-c', capture, 'orch-gate-capture', gate, outputPipe, outputPaths.output,
-  ], {
-    cwd: worktree, env: { ...process.env, ...guard }, stdout: 'inherit', stderr: 'inherit',
-  })
+  const spawnOptions = {
+    cwd: worktree, env: { ...process.env, ...guard }, stdout: 'inherit' as const,
+    stderr: 'inherit' as const,
+  }
+  const p = !captureSetup.ok
+    ? Bun.spawnSync(['sh', '-lc', gate], spawnOptions)
+    : Bun.spawnSync([
+        'sh', '-c', capture, 'orch-gate-capture', gate,
+        captureSetup.pipe, captureSetup.paths.output,
+      ], spawnOptions)
   if (p.exitCode !== 0) {
-    const output = readFileSync(outputPaths.output, 'utf8')
+    if (!captureSetup.ok) {
+      throw new Error(
+        `landing gate failed with exit ${p.exitCode}: ${gate}\n` +
+        `gate output not captured: ${captureSetup.error}`,
+      )
+    }
+    const output = readFileSync(captureSetup.paths.output, 'utf8')
     throw new Error(
       `landing gate failed with exit ${p.exitCode}: ${gate}\n` +
-      gateFailureSummary(output, outputPaths.output, liveRunCount()),
+      gateFailureSummary(output, captureSetup.paths.output, liveRunCount()),
     )
   }
-  rmSync(outputPaths.directory, { recursive: true, force: true })
+  if (captureSetup.ok) rmSync(captureSetup.paths.directory, { recursive: true, force: true })
   const headAfter = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'], guard)
   if (headAfter !== tip) {
     throw new Error(

@@ -508,6 +508,30 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     }
   }, 15_000)
 
+  test('a capture setup failure runs the original gate and reports uncaptured output', async () => {
+    const { repo } = repoWithBranches(['capture-setup-failure'])
+    const marker = join(repo, 'gate-ran')
+    const gate = join(repo, 'capture-setup-failure.sh')
+    const bin = join(repo, 'capture-bin')
+    mkdirSync(bin)
+    writeFileSync(join(bin, 'mkfifo'), '#!/bin/sh\necho fixture mkfifo refusal >&2\nexit 9\n')
+    chmodSync(join(bin, 'mkfifo'), 0o755)
+    writeFileSync(gate, `#!/bin/sh\ntouch "${marker}"\nexit 7\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-capture-setup-failure', path: repo,
+      settings: { trunk: 'main', gate } })
+    try {
+      const child = childLand(repo, 'capture-setup-failure', {}, {
+        PATH: `${bin}:${process.env.PATH ?? ''}`,
+      })
+      expect(await child.exited).not.toBe(0)
+      const error = await new Response(child.stderr).text()
+      expect(existsSync(marker)).toBe(true)
+      expect(error).toContain(`landing gate failed with exit 7: ${gate}`)
+      expect(error).toContain('gate output not captured: fixture mkfifo refusal')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   for (const [name, command] of [
     ['commits', `printf 'gate commit\\n' > gate-change.txt && git add gate-change.txt && git commit -m 'gate commit'`],
     ['amends', `git commit --amend -m 'gate amended'`],
