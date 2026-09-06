@@ -5,7 +5,8 @@ import { DATABASE_RESOLUTION, DB_PATH, db, nowIso, sessionId, judgeability, pend
          type ReviewReproduced, type ReviewCoverage, type ReviewLimits, type ReviewOverlap,
          reapStale, pidAlive, STALE_AFTER_MS, UNSCORED_WHERE, recordDuels, duelMatrices,
          parseRunIds, recordSessionSeen, SESSION_LIVE_MS,
-         resolveRootFromLastTurn, chainScoreJoin, type RunMutationAction } from './db.ts'
+         resolveRootFromLastTurn, chainScoreJoin, authorizeRunMutation, runMutationActor,
+         auditRunMutation, type RootAuthority } from './db.ts'
 import { JOBS, job } from './jobs.ts'
 import { AGENTS, available, installed, ensureLocalHealth,
          unavailableReason, NEEDS_HEALTH, tryWake, wakeStatus,
@@ -326,44 +327,6 @@ function keptBranchLine(
       `${afterCutCount} commit(s) after the cut`
   return `kept branch ${branch}: ${reason} — ` +
     `merge it, or orch discard ${id} --force to delete it after checking no other run owns it`
-}
-
-type RootAuthority = { runId: number; rootId: number; owner: string | null; actor: string | null }
-
-function runMutationActor(runId: number): RootAuthority {
-  const row = db().query(
-    `SELECT requested.id run_id, root.id root_id, root.session_id owner
-       FROM run requested
-       JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
-      WHERE requested.id = ?`,
-  ).get(runId) as { run_id: number; root_id: number; owner: string | null } | null
-  if (!row) throw new Error(`no run ${runId}`)
-  const actor = sessionId()
-  return { runId: row.run_id, rootId: row.root_id, owner: row.owner, actor }
-}
-
-/** Resolve authority from the chain root before any mutation can begin. */
-function authorizeRunMutation(runId: number, action: RunMutationAction): RootAuthority {
-  const row = runMutationActor(runId)
-  const actor = row.actor
-  if (row.owner && actor !== row.owner) {
-    throw new Error(
-      `run ${runId} is owned by session ${row.owner}; ` +
-      `current session ${actor ?? 'unknown'} cannot ${action} it`,
-    )
-  }
-  return row
-}
-
-function auditRunMutation(
-  authority: RootAuthority,
-  action: RunMutationAction,
-  reason: string | null = null,
-): void {
-  db().query(
-    `INSERT INTO run_mutation_audit (run_id, root_id, action, actor_session, at, reason)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run(authority.runId, authority.rootId, action, authority.actor, nowIso(), reason)
 }
 
 function auditReason(): string | null {
@@ -2259,6 +2222,7 @@ switch (cmd) {
   case 'retry': {
     const id = Number(argv[1])
     if (!id) usage()
+    const retryAuthority = authorizeRunMutation(id, 'retry')
     const row = db().query(
       'SELECT id, agent, job, cwd, prompt_path, probe, status, failure_kind, mcp, schema_path, model, lens FROM run WHERE id = ?',
     ).get(id) as {
@@ -2279,7 +2243,7 @@ switch (cmd) {
         )
       }
       const resumed = await continueRun(id)
-      auditRunMutation(runMutationActor(id), 'retry', `continued as run ${resumed.childId}`)
+      auditRunMutation(retryAuthority, 'retry', `continued as run ${resumed.childId}`)
       await reportContinuedRun(resumed.childId, resumed.job)
       break
     }
@@ -2309,7 +2273,7 @@ switch (cmd) {
       lens: row.lens ?? undefined,
       probe: !!row.probe, retryOf: id, cwd: row.cwd ?? undefined,
     })
-    auditRunMutation(runMutationActor(id), 'retry', `retried as run ${newId}`)
+    auditRunMutation(retryAuthority, 'retry', `retried as run ${newId}`)
     console.error(`— run ${newId} is retry of ${id}`)
     await follow(newId, has('quiet'))
     break
@@ -2844,6 +2808,7 @@ switch (cmd) {
     } | null
     if (!row) throw new Error(`no run ${requestedId}`)
     const id = row.id
+    const answerAuthority = authorizeRunMutation(requestedId, 'answer')
 
     /**
      * Questions are collected ACROSS THE WHOLE CHAIN, not just off the root.
@@ -2879,13 +2844,7 @@ switch (cmd) {
     // A last-seen timeout used to make a question appear adoptable, and this
     // command then accepted the adoption. Only the architect session that
     // dispatched the conversation has standing to change its specification.
-    const callerSession = sessionId()
-    if (row.session_id && callerSession !== row.session_id) {
-      throw new Error(
-        `run ${id} is owned by session ${row.session_id}; ` +
-        `current session ${callerSession ?? 'unknown'} cannot rule on its questions`,
-      )
-    }
+    const callerSession = answerAuthority.actor
     if (!row.session_id) {
       console.error(
         `run ${id} is unowned; session ${callerSession ?? 'unknown'} may rule, ` +
@@ -2927,7 +2886,7 @@ switch (cmd) {
       const states = stopped.map((q) => `q${q.id} (run ${q.owner_id}, ${q.owner_status})`).join(', ')
       throw new Error(`run ${id} has questions whose owners are not waiting or stopped: ${states}`)
     }
-    if (!ownersLive && row.status !== 'asking' && row.status !== 'stopped') {
+    if (!ownersLive && !['asking', 'stopped', 'failed', 'stale'].includes(row.status)) {
       throw new Error(`run ${id} is ${row.status}, not waiting on a ruling`)
     }
 
@@ -3051,7 +3010,10 @@ switch (cmd) {
       'UPDATE question SET answer=?, answered_at=?, answered_by=? WHERE id=?',
     )
     const answeredBy = callerSession ?? 'anonymous (no session id)'
-    open.forEach((q, i) => upd.run(answers[i]!.answer, now, answeredBy, q.id))
+    db().transaction(() => {
+      open.forEach((q, i) => upd.run(answers[i]!.answer, now, answeredBy, q.id))
+      auditRunMutation(answerAuthority, 'answer')
+    })()
 
     if (ownersLive) {
       // Delivered. The worker's own tool call is polling this row and will
@@ -3882,19 +3844,14 @@ switch (cmd) {
     }
     const scorer = flag('scorer')
     const owner = judgeability(row.session_id, sessionId())
-    if (owner.verdict === 'foreign' && !has('force') && !scorer) {
+    if ((owner.verdict === 'foreign' || owner.verdict === 'anonymous') && !has('force') && !scorer) {
       throw new Error(
-        `run ${id} was made by another session — you did not read its output.\n` +
+        `run ${id} was made by another session — ownership is not established.\n` +
           `  its session:   ${owner.owner}\n` +
-          `  your session:  ${sessionId()}\n\n` +
+          `  your session:  ${sessionId() ?? 'no session identity is present'}\n\n` +
           `Scoring it teaches the router something you cannot know. Ask the session\n` +
           `that ran it to score it — on this machine that is a SendMessage away.\n` +
           `If you are certain (correcting a score you know to be wrong), --force.`,
-      )
-    }
-    if (owner.verdict === 'anonymous') {
-      console.error(
-        `! no session id here, so ownership is unverified — run ${id} was made by ${owner.owner}`,
       )
     }
     if (has('void')) {
@@ -4050,6 +4007,7 @@ switch (cmd) {
       recordDuels(id, loserIds, sessionId(), nowIso(), has('force'))
     }
 
+    const wasScored = Boolean(db().query('SELECT 1 FROM score WHERE run_id=?').get(id))
     const scoredAt = nowIso()
     const saveScore = db().transaction(() => {
       if (reviewGrade) gradeReviewLens(id, reviewGrade.output, reviewGrade.grades)
@@ -4069,6 +4027,9 @@ switch (cmd) {
                                          scored_at=excluded.scored_at`,
       ).run(id, delivery, quality ?? null, scoredFidelity ?? null, flag('note') ?? null, scoredAt,
             scorer ?? process.env.ORCH_SCORER ?? 'claude')
+      auditRunMutation(
+        runMutationActor(id), wasScored ? 'rescore' : 'score', auditReason(),
+      )
     })
     saveScore()
     const w = weigh(delivery, quality ?? null, scoredFidelity ?? null)

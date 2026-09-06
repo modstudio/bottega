@@ -1,5 +1,5 @@
 /** Durable, non-authoritative messages attached to a run conversation. */
-import { db, nowIso, sessionId } from './db.ts'
+import { auditRunMutation, authorizeRunMutation, db, nowIso } from './db.ts'
 
 export type RunMessage = {
   id: number
@@ -34,6 +34,7 @@ function bodyOf(body: string): string {
 
 /** Queue architect context against the conversation's currently running turn. */
 export function tellRun(id: number, body: string): RunMessage {
+  const authority = authorizeRunMutation(id, 'tell')
   const requested = identity(id)
   if (!requested) throw new Error(`no run ${id}`)
   const active = db().query(
@@ -45,11 +46,15 @@ export function tellRun(id: number, body: string): RunMessage {
   if (!active) {
     throw new Error(`run ${requested.root_id} has no running turn — no message was queued`)
   }
-  return db().query(
-    `INSERT INTO run_message
-       (direction, root_run_id, run_id, sender_session, body, created_at, delivery)
-     VALUES ('to_worker', ?, ?, ?, ?, ?, 'architect_cli') RETURNING *`,
-  ).get(active.root_id, active.id, sessionId(), bodyOf(body), nowIso()) as RunMessage
+  return db().transaction(() => {
+    const message = db().query(
+      `INSERT INTO run_message
+         (direction, root_run_id, run_id, sender_session, body, created_at, delivery)
+       VALUES ('to_worker', ?, ?, ?, ?, ?, 'architect_cli') RETURNING *`,
+    ).get(active.root_id, active.id, authority.actor, bodyOf(body), nowIso()) as RunMessage
+    auditRunMutation(authority, 'tell')
+    return message
+  })()
 }
 
 /** Record an outbound worker message without changing the run's status. */

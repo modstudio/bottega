@@ -31,10 +31,14 @@ export type MonitorSeverity = typeof MONITOR_SEVERITY[number]
 const sqlValues = (values: readonly string[]) => values.map((value) => `'${value}'`).join(',')
 
 export const RUN_MUTATION_ACTIONS = [
-  'stop', 'abandon', 'discard', 'sweep', 'void', 'retry', 'continue', 'reclassify',
+  'answer', 'tell', 'stop', 'abandon', 'discard', 'sweep', 'void', 'score', 'rescore',
+  'retry', 'continue', 'reclassify',
 ] as const
 export type RunMutationAction = typeof RUN_MUTATION_ACTIONS[number]
 const RUN_MUTATION_ACTION_SQL = RUN_MUTATION_ACTIONS.map((action) => `'${action}'`).join(',')
+export type RootAuthority = {
+  runId: number; rootId: number; owner: string | null; actor: string | null
+}
 
 let handle: Database | null = null
 let writable: boolean | null = null
@@ -117,6 +121,44 @@ export function initializeDatabase(): string {
     d.close()
   }
   return DB_PATH
+}
+
+export function runMutationActor(runId: number): RootAuthority {
+  const row = db().query(
+    `SELECT requested.id run_id, root.id root_id, root.session_id owner
+       FROM run requested
+       JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
+      WHERE requested.id = ?`,
+  ).get(runId) as { run_id: number; root_id: number; owner: string | null } | null
+  if (!row) throw new Error(`no run ${runId}`)
+  return {
+    runId: row.run_id, rootId: row.root_id, owner: row.owner, actor: sessionId(),
+  }
+}
+
+export function authorizeRunMutation(
+  runId: number,
+  action: RunMutationAction,
+): RootAuthority {
+  const authority = runMutationActor(runId)
+  if (authority.owner && authority.actor !== authority.owner) {
+    throw new Error(
+      `run ${runId} is owned by session ${authority.owner}; ` +
+      `current session ${authority.actor ?? 'no session identity is present'} cannot ${action} it`,
+    )
+  }
+  return authority
+}
+
+export function auditRunMutation(
+  authority: RootAuthority,
+  action: RunMutationAction,
+  reason: string | null = null,
+): void {
+  db().query(
+    `INSERT INTO run_mutation_audit (run_id, root_id, action, actor_session, at, reason)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(authority.runId, authority.rootId, action, authority.actor, nowIso(), reason)
 }
 
 /**

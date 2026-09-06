@@ -1268,7 +1268,7 @@ const { db, nowIso, reapStale, pendingForSession, unscoredCount, judgeability, S
         PENDING_BOOTSTRAP_MS, WEIGHT, weigh, label, FIDELITY_PENALTY, UNSCORED_WHERE,
         excludeSharedOutputRuns, SHARED_OUTPUT_REASON, applySchema, recordDuels, duelMatrices,
         parseRunIds, recordSessionSeen, GENERIC_QUESTION_TOKENS,
-        initializeDatabase } = await import('./db.ts')
+        initializeDatabase, authorizeRunMutation } = await import('./db.ts')
 initializeDatabase()
 const { candidates, weightCase, scoreboard, median, evidenceFor, pick,
         NOISE_BAND, QUALITY_STEP, MIN_SAMPLE, OUTPUT_RESERVE, EVIDENCE_WINDOW,
@@ -2354,6 +2354,29 @@ describe('run mailbox', () => {
     expect(read).toHaveLength(1)
     expect(read[0]!.read_at).not.toBeNull()
     expect(checkMessages(root)).toEqual([])
+  })
+
+  test('tell authorizes against the root and records the permitted sender', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const child = addRun({ agent: 'codex', job: 'implement', status: 'running', parent: root, turn: 2 })
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('owner-session', root)
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('foreign-session', child)
+
+    const foreign = mailboxOrchInput(['tell', String(child), 'foreign steering'], undefined, {
+      CLAUDE_CODE_SESSION_ID: 'foreign-session',
+    })
+    expect(foreign.code).toBe(1)
+    expect(foreign.err).toContain(`run ${child} is owned by session owner-session`)
+    expect(messagesForRun(root)).toEqual([])
+
+    const owner = mailboxOrchInput(['tell', String(child), 'owner context'], undefined, {
+      CLAUDE_CODE_SESSION_ID: 'owner-session',
+    })
+    expect(owner.code).toBe(0)
+    expect(messagesForRun(root)[0]!.sender_session).toBe('owner-session')
+    expect(db().query(
+      'SELECT action, actor_session FROM run_mutation_audit WHERE run_id=?',
+    ).get(child)).toEqual({ action: 'tell', actor_session: 'owner-session' })
   })
 
   test('an unread note stays queued and cannot close an open question', () => {
@@ -3554,6 +3577,25 @@ describe('session scoping', () => {
 })
 
 describe('who may judge a run', () => {
+  test('a missing caller identity satisfies no owned mutation gate', () => {
+    const id = addRun({ agent: 'codex', job: 'implement', session: 'owner-session' })
+    const claude = process.env.CLAUDE_CODE_SESSION_ID
+    const bridge = process.env.CLAUDE_CODE_BRIDGE_SESSION_ID
+    delete process.env.CLAUDE_CODE_SESSION_ID
+    delete process.env.CLAUDE_CODE_BRIDGE_SESSION_ID
+    try {
+      for (const action of ['answer', 'tell', 'stop', 'abandon', 'discard', 'void', 'retry', 'continue'] as const) {
+        expect(() => authorizeRunMutation(id, action))
+          .toThrow('current session no session identity is present')
+      }
+    } finally {
+      if (claude === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+      else process.env.CLAUDE_CODE_SESSION_ID = claude
+      if (bridge === undefined) delete process.env.CLAUDE_CODE_BRIDGE_SESSION_ID
+      else process.env.CLAUDE_CODE_BRIDGE_SESSION_ID = bridge
+    }
+  })
+
   // The rule was already written in AGENTS.md and did not hold: on 2026-08-31 two
   // concurrent sessions each scored the other's runs within an hour, both having
   // inferred their ids from their own previous block rather than reading them
@@ -4076,6 +4118,18 @@ describe('retry keeps the work on the same agent', () => {
       expect(bound.endsWith(original)).toBe(true)
     } finally {
       rmSync(binDir, { recursive: true, force: true })
+    }
+  })
+
+  test('retry refuses a foreign owner before either job shape launches', () => {
+    for (const jobName of ['file-question', 'implement']) {
+      const id = addRun({ agent: 'codex', job: jobName, status: 'failed' })
+      db().query('UPDATE run SET session_id=? WHERE id=?').run('owner-session', id)
+      const before = (db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n
+      const result = orch(['retry', String(id)], { CLAUDE_CODE_SESSION_ID: 'foreign-session' })
+      expect(result.code).toBe(1)
+      expect(result.err).toContain(`run ${id} is owned by session owner-session`)
+      expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before)
     }
   })
 
@@ -7088,7 +7142,7 @@ describe('detached run collection', () => {
     const r = orch('answer', String(id), 'foreign ruling')
     expect(r.code).toBe(1)
     expect(r.err).toContain(`run ${id} is owned by session owning-session`)
-    expect(r.err).toContain('current session orch-test-session cannot rule')
+    expect(r.err).toContain('current session orch-test-session cannot answer')
     expect(db().query('SELECT answer, answered_at FROM question WHERE run_id=?').get(id))
       .toEqual({ answer: null, answered_at: null })
   })
@@ -7480,6 +7534,15 @@ describe('detached run collection', () => {
     expect(db().query(
       'SELECT reproduced, coverage, limits, overlap FROM review_lens WHERE run_id=?',
     ).get(id)).toEqual({ reproduced: 'all', coverage: 'adequate', limits: 'absent', overlap: 'alone' })
+    expect(orch('score', String(id), 'partial', 'mixed', '--scorer', 'dashboard-user',
+      '--reproduced', 'all', '--coverage', 'adequate', '--limits', 'absent',
+      '--overlap', 'alone').code).toBe(0)
+    expect(db().query(
+      'SELECT action, actor_session, reason FROM run_mutation_audit WHERE run_id=? ORDER BY at, rowid',
+    ).all(id)).toEqual([
+      { action: 'score', actor_session: 'orch-test-session', reason: null },
+      { action: 'rescore', actor_session: 'orch-test-session', reason: '--scorer dashboard-user' },
+    ])
     expect(orch('pending').code).toBe(0)
   })
 
@@ -7604,6 +7667,20 @@ describe('detached run collection', () => {
     expect(db().query(
       'SELECT disposition, triaged_severity, triaged_at FROM review_finding WHERE review_id=?',
     ).get(reviewId)).toEqual({ disposition: null, triaged_severity: null, triaged_at: null })
+  })
+
+  test('score refuses an owned run when the caller has no session identity', () => {
+    const id = insert('ok', 'review-lens')
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('owner-session', id)
+    const result = Bun.spawnSync(
+      [process.execPath, CLI, 'score', String(id), 'full', 'right'],
+      { env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: undefined, CLAUDE_CODE_BRIDGE_SESSION_ID: undefined },
+        stdout: 'pipe', stderr: 'pipe' },
+    )
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr.toString()).toContain('no session identity is present')
+    expect(db().query('SELECT * FROM score WHERE run_id=?').get(id)).toBeNull()
   })
 
   test('doctor excludes scores on not-evidence runs from its scored count', () => {
@@ -8553,6 +8630,30 @@ describe('detached run collection', () => {
     ).get(id)).toEqual({
       answer: 'yes', answered_by: 'orch-test-session', answered_at: expect.any(String),
     })
+  })
+
+  test('the owner may answer failed and stale roots and resume each chain', () => {
+    for (const status of ['failed', 'stale']) {
+      const id = addRun({ agent: 'missing-test-agent', job: 'implement', status })
+      const prompt = join(dir, `answer-${status}-${id}.prompt.txt`)
+      writeFileSync(prompt, 'original implementation spec')
+      db().query('UPDATE run SET session_id=?, vendor_session=?, prompt_path=? WHERE id=?')
+        .run('orch-test-session', `${status}-vendor-session`, prompt, id)
+      db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+        .run(id, new Date().toISOString(), `${status} question?`)
+
+      const before = (db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n
+      const result = orch('answer', String(id), `${status} ruling`)
+      expect(result.code).toBe(0)
+      expect(result.out).toContain(`resumed run ${id} as run`)
+      expect(db().query(
+        'SELECT answer, answered_by FROM question WHERE run_id=?',
+      ).get(id)).toEqual({ answer: `${status} ruling`, answered_by: 'orch-test-session' })
+      expect(db().query(
+        'SELECT action, actor_session FROM run_mutation_audit WHERE run_id=?',
+      ).get(id)).toEqual({ action: 'answer', actor_session: 'orch-test-session' })
+      expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before + 1)
+    }
   })
 
   test('result on a still-running run exits 2, not 1', () => {
