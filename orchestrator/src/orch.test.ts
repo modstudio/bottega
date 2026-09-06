@@ -2387,6 +2387,33 @@ describe('run mailbox', () => {
     ).get(child)).toEqual({ action: 'tell', actor_session: 'owner-session' })
   })
 
+  test('the first tell adopts an unowned root and refuses a second session', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    db().query('UPDATE run SET session_id=NULL WHERE id=?').run(root)
+
+    const first = mailboxOrchInput(['tell', String(root), 'session A context'], undefined, {
+      CLAUDE_CODE_SESSION_ID: 'session-A',
+    })
+    expect(first.code).toBe(0)
+    expect(db().query('SELECT session_id FROM run WHERE id=?').get(root))
+      .toEqual({ session_id: 'session-A' })
+
+    const second = mailboxOrchInput(['tell', String(root), 'conflicting session B context'], undefined, {
+      CLAUDE_CODE_SESSION_ID: 'session-B',
+    })
+    expect(second.code).toBe(1)
+    expect(second.err).toContain(`run ${root} is owned by session session-A`)
+    expect(messagesForRun(root).map((message) => ({ body: message.body, sender: message.sender_session })))
+      .toEqual([{ body: 'session A context', sender: 'session-A' }])
+    expect(db().query(
+      `SELECT action, actor_session, reason FROM run_mutation_audit
+        WHERE root_id=? ORDER BY rowid`,
+    ).all(root)).toEqual([
+      { action: 'adopt', actor_session: 'session-A', reason: 'before tell' },
+      { action: 'tell', actor_session: 'session-A', reason: null },
+    ])
+  })
+
   test('an unread note stays queued and cannot close an open question', () => {
     const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     db().query(
@@ -3639,7 +3666,7 @@ describe('who may judge a run', () => {
   test('each authoritative action adopts once, then refuses another session', () => {
     const prior = process.env.CLAUDE_CODE_SESSION_ID
     try {
-      for (const action of ['answer', 'stop', 'abandon', 'discard', 'void', 'continue'] as const) {
+      for (const action of ['answer', 'tell', 'stop', 'abandon', 'discard', 'void', 'continue'] as const) {
         const id = addRun({ agent: 'codex', job: 'implement' })
         process.env.CLAUDE_CODE_SESSION_ID = 'session-A'
         const adopted = adoptRunMutation(authorizeRunMutation(id, action), action)

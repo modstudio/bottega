@@ -1,5 +1,5 @@
 /** Durable, non-authoritative messages attached to a run conversation. */
-import { auditRunMutation, authorizeRunMutation, db, nowIso } from './db.ts'
+import { adoptRunMutation, auditRunMutation, authorizeRunMutation, db, nowIso } from './db.ts'
 
 export type RunMessage = {
   id: number
@@ -35,7 +35,7 @@ function bodyOf(body: string): string {
 
 /** Queue architect context against the conversation's currently running turn. */
 export function tellRun(id: number, body: string): RunMessage {
-  const authority = authorizeRunMutation(id, 'tell')
+  let authority = authorizeRunMutation(id, 'tell')
   const requested = identity(id)
   if (!requested) throw new Error(`no run ${id}`)
   const active = db().query(
@@ -47,12 +47,14 @@ export function tellRun(id: number, body: string): RunMessage {
   if (!active) {
     throw new Error(`run ${requested.root_id} has no running turn — no message was queued`)
   }
+  const messageBody = bodyOf(body)
   return db().transaction(() => {
+    authority = adoptRunMutation(authority, 'tell')
     const message = db().query(
       `INSERT INTO run_message
          (direction, root_run_id, run_id, sender_session, body, created_at, delivery)
        VALUES ('to_worker', ?, ?, ?, ?, ?, 'architect_cli') RETURNING *`,
-    ).get(active.root_id, active.id, authority.actor, bodyOf(body), nowIso()) as RunMessage
+    ).get(active.root_id, active.id, authority.actor, messageBody, nowIso()) as RunMessage
     auditRunMutation(authority, 'tell')
     return message
   })()
