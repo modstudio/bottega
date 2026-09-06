@@ -2476,15 +2476,23 @@ switch (cmd) {
       if (/^\d+$/.test(value)) {
         const runId = Number(value)
         const row = db().query(
-          'SELECT repo, base_commit, input_tree, head_commit FROM run WHERE id=?',
+          'SELECT repo, branch, base_commit, input_tree, head_commit FROM run WHERE id=?',
         ).get(runId) as {
-          repo: string | null; base_commit: string | null; input_tree: string | null; head_commit: string | null
+          repo: string | null; branch: string | null; base_commit: string | null
+          input_tree: string | null; head_commit: string | null
         } | null
         if (!row) throw new Error(`no run ${runId}`)
         const project = row.repo ? projectByName(row.repo) : null
         if (!project) throw new Error(`run ${runId} has no registered project`)
         if (!row.base_commit) throw new Error(`run ${runId} has no recorded base commit`)
-        const reviewed = row.input_tree ?? row.head_commit
+        // A writer run's input tree IS its base: what it built lives on its
+        // branch. Measure the branch tip when the branch still exists, and
+        // fall back to the reviewed input tree only for a reader (DEV-323).
+        const branchLive = row.branch && Bun.spawnSync(
+          ['git', 'show-ref', '--verify', '--quiet', `refs/heads/${row.branch}`],
+          { cwd: project.path, env: targetGitEnvironment(project.path), stdout: 'pipe', stderr: 'pipe' },
+        ).exitCode === 0
+        const reviewed = branchLive ? `refs/heads/${row.branch}` : (row.input_tree ?? row.head_commit)
         if (!reviewed) throw new Error(`run ${runId} has no recorded input tree or head commit`)
         repo = project.path; from = row.base_commit; to = reviewed
       } else {
