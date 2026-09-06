@@ -673,6 +673,20 @@ review row; filing every observation is a loop that cannot end. A mechanism gap
 seen once belongs as a comment on the nearest existing task. Seen twice with
 cost, it has earned a task.
 
+INLINE is the default for anything smaller than a task, and it applies to what a
+session finds while working, not only to review findings. An issue that fits in
+one commit the architect can read in a minute — a wrong name in canon, a stale
+sentence, a fixture the trunk moved under, a missing column in a statement, a
+one-line guard — is fixed on the branch at hand, or on a fresh branch cut at trunk
+and landed the same hour at tier 0 or 1, with no task; the landing reason names
+what was fixed and why, so the record carries it without a row on the board. The
+gate still runs. Two limits: an inline fix never touches a path under a freeze,
+and an inline fix that grows past one readable commit was a task all along —
+stop and file it. Today's evidence: a claim statement missing a column, two
+fixtures rewritten under DEV-311, a gap table naming functions that never landed
+and a restored canon section were each fixed in place; none would have been
+worth a row, and each would have sat unaddressed as one.
+
 ### TRIPPED
 
 When an agent or landing trips — a harness refusal, lockout, dead resume, or unrelated gate failure — ask one bounded question, answered within a minute and not studied:
