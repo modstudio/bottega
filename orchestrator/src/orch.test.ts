@@ -4069,6 +4069,22 @@ describe('job contracts are visible before submission', () => {
       { line: 1, text: 'Do not commit. Push the branch instead.' },
     ])
   })
+
+  test.each([
+    ['Kept separate rather than merged', false],
+    ['reset the counter', false],
+    ['merging two lists', false],
+    ['push the branch', true],
+    ['merge into main', true],
+    ['rebase onto trunk', true],
+    ['git reset --hard', true],
+    ['amend the commit', true],
+    ['3. QUEUED — open, not started. Kept separate from in progress rather than merged.', false],
+  ] as const)('git-sense conflict %j fires=%s', (line, fires) => {
+    expect(contractConflicts(line)).toEqual(
+      fires ? [{ line: 1, text: line }] : [],
+    )
+  })
 })
 
 describe('one score, reported the same everywhere', () => {

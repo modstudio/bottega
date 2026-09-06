@@ -734,10 +734,17 @@ export function contractConflicts(spec: string): ContractConflict[] {
   const gitAction = /\b(?:push(?:es|ed|ing)?|merges?|merged|merging|rebas(?:e|es|ed|ing)|reset(?:s|ting)?|amend(?:s|ed|ing)?)\b/i
   const prohibition = /\b(?:do not|don't|never|must not|should not|may not|cannot|can't|without)\b[^.;]*\b(?:push(?:es|ed|ing)?|merges?|merged|merging|rebas(?:e|es|ed|ing)|reset(?:s|ting)?|amend(?:s|ed|ing)?)\b/i
   const noAction = /\bno\s+(?:push(?:es)?|merges?|rebases?|resets?|amendments?)\b/i
+  // Third condition: the verb is used in a git sense — same sentence as a git
+  // object/command word, or preceded by `git ` literally.
+  const gitObject = /\b(?:git|branch|trunk|main|master|origin|remote|upstream|HEAD|commit|ref|tag|PR|pull request|force)\b|(?<![\w-])(?:--force|-f)(?![\w-])/i
+  const gitPrefixed = /\bgit (?:push(?:es|ed|ing)?|merges?|merged|merging|rebas(?:e|es|ed|ing)|reset(?:s|ting)?|amend(?:s|ed|ing)?)\b/i
 
   return spec.split(/\r?\n/).flatMap((text, index) =>
     text.split(/[.;]/).some((clause) =>
-      gitAction.test(clause) && !prohibition.test(clause) && !noAction.test(clause))
+      gitAction.test(clause)
+      && (gitObject.test(clause) || gitPrefixed.test(clause))
+      && !prohibition.test(clause)
+      && !noAction.test(clause))
       ? [{ line: index + 1, text }]
       : [],
   )
