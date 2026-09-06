@@ -1,8 +1,9 @@
 import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { db, nowIso, pidAlive, UNSCORED_WHERE, writableDb, type MonitorSeverity } from './db.ts'
+import {
+  db, liveRuns, nowIso, pidAlive, UNSCORED_WHERE, writableDb, type MonitorSeverity,
+} from './db.ts'
 import { fileIssue } from './mcp.ts'
 import { gitLocks } from './git-locks.ts'
 import { projects } from './projects.ts'
@@ -10,16 +11,6 @@ import { projectLockState, targetGitEnvironment } from './worktree.ts'
 import { allInjectChecks, storedPackDrift } from './canon.ts'
 
 const HUB = new URL('../../bin/hub', import.meta.url).pathname
-
-export function liveRuns(database: Database = db()): { worktree: string | null }[] {
-  return database.query(
-    `SELECT worktree FROM run WHERE status IN ('running','asking')`,
-  ).all() as { worktree: string | null }[]
-}
-
-export function liveRunCount(database: Database = db()): number {
-  return liveRuns(database).length
-}
 
 export type MonitorCondition = {
   kind: string

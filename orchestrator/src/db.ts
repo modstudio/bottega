@@ -130,6 +130,16 @@ export function db(writable = false): Database {
   return d
 }
 
+export function liveRuns(database: Database = db()): { worktree: string | null }[] {
+  return database.query(
+    `SELECT worktree FROM run WHERE status IN ('running','asking')`,
+  ).all() as { worktree: string | null }[]
+}
+
+export function liveRunCount(database: Database = db()): number {
+  return liveRuns(database).length
+}
+
 /** Open the only sanctioned multi-statement write transaction. */
 export function writeTransaction<T>(fn: () => T, database: Database = db()): T {
   return database.transaction(fn).immediate()

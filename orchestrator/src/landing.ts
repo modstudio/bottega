@@ -2,9 +2,8 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } 
 import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { db, nowIso, sessionId, writableDb } from './db.ts'
+import { db, liveRunCount, nowIso, sessionId, writableDb } from './db.ts'
 import { formatGitLocks } from './git-locks.ts'
-import { liveRunCount } from './monitor.ts'
 import { projectAt, type Project } from './projects.ts'
 import {
   contentTree, prepareSharedRefGuard, projectLockState, repoRootOf, withProjectLock,
