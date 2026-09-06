@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { db, nowIso, sessionId } from './db.ts'
 import { formatGitLocks } from './git-locks.ts'
 import { projectAt, type Project } from './projects.ts'
@@ -293,6 +293,18 @@ function patchId(repoRoot: string, from: string, to: string): string {
   return id.stdout.toString().trim().split(/\s+/)[0] ?? ''
 }
 
+function contentHash(repoRoot: string, from: string, to: string): string {
+  const diff = Bun.spawnSync([
+    'git', 'diff', '--no-color', '--no-ext-diff', '-U0', '--no-renames', `${from}..${to}`,
+  ], { cwd: repoRoot, env: process.env, stdout: 'pipe', stderr: 'pipe' })
+  if (diff.exitCode !== 0) {
+    throw new Error(`git diff ${from}..${to} failed: ${diff.stderr.toString().trim()}`)
+  }
+  const canonical = diff.stdout.toString().split('\n')
+    .filter((line) => !line.startsWith('index ')).join('\n')
+  return createHash('sha256').update(canonical).digest('hex')
+}
+
 function changedPaths(repoRoot: string, from: string, to: string): Set<string> {
   const output = git(repoRoot, ['diff', '--name-only', `${from}..${to}`])
   return new Set(output ? output.split('\n') : [])
@@ -309,12 +321,19 @@ function reviewVerdict(
   if (!reviewedTree || !review.lenses.every((lens) => lens.tree === reviewedTree)) {
     return { kind: 'invalid', reason: 'review lenses do not agree on one tree' }
   }
+  if (!review.lenses.every((lens) =>
+    lens.inputTree === reviewedTree && lens.branch !== null && lens.baseCommit !== null)) {
+    return { kind: 'invalid', reason: 'lens metadata incomplete' }
+  }
+  const bases = new Set(review.lenses.map((lens) => lens.baseCommit))
+  if (bases.size !== 1) return { kind: 'invalid', reason: 'lens bases disagree' }
   const reviewedCommit = commitForTree(repoRoot, review, reviewedTree)
   if (!reviewedCommit) return { kind: 'invalid', reason: 'reviewed commit not found' }
-  const metadata = review.lenses.find((lens) =>
-    lens.inputTree === reviewedTree && lens.baseCommit && gitOk(repoRoot, ['cat-file', '-e', `${lens.baseCommit}^{commit}`]))
-  if (!metadata?.baseCommit) return { kind: 'invalid', reason: 'reviewed commit not found' }
-  const oldBase = git(repoRoot, ['merge-base', reviewedCommit, metadata.baseCommit])
+  const baseCommit = review.lenses[0]!.baseCommit!
+  if (!gitOk(repoRoot, ['cat-file', '-e', `${baseCommit}^{commit}`])) {
+    return { kind: 'invalid', reason: 'reviewed commit not found' }
+  }
+  const oldBase = git(repoRoot, ['merge-base', reviewedCommit, baseCommit])
   const newBase = git(repoRoot, ['merge-base', tip, trunk])
   const changePaths = changedPaths(repoRoot, oldBase, reviewedCommit)
   const trunkPaths = changedPaths(repoRoot, oldBase, newBase)
@@ -324,6 +343,9 @@ function reviewVerdict(
   const candidatePatch = patchId(repoRoot, newBase, tip)
   if (!reviewedPatch || reviewedPatch !== candidatePatch) {
     return { kind: 'invalid', reason: 'patch-id differs' }
+  }
+  if (contentHash(repoRoot, oldBase, reviewedCommit) !== contentHash(repoRoot, newBase, tip)) {
+    return { kind: 'invalid', reason: 'content differs' }
   }
   return {
     kind: 'carried', tip, tree, reviewId: review.id, reviewedCommit, reviewedTree,

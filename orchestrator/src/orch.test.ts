@@ -482,6 +482,76 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  test('refuses a whitespace-only post-review change even when patch-id is unchanged', async () => {
+    const { repo, trees } = repoWithBranches(['whitespace-review'])
+    const project = 'landing-whitespace-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const reviewedTree = g(repo, 'rev-parse', 'whitespace-review^{tree}')
+      completedReview(project, [reviewedTree], {
+        branch: 'whitespace-review', baseCommit: oldBase, launchCwd: trees['whitespace-review']!,
+      })
+      writeFileSync(join(trees['whitespace-review']!, 'whitespace-review.txt'), 'whitespace-review \n')
+      g(trees['whitespace-review']!, 'add', 'whitespace-review.txt')
+      g(trees['whitespace-review']!, 'commit', '-m', 'whitespace after review')
+      const child = childLand(repo, 'whitespace-review', { unreviewed: null })
+      expect(await child.exited).not.toBe(0)
+      expect(await new Response(child.stderr).text()).toContain('invalid (content differs)')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('refuses a review when one lens has incomplete carry metadata', async () => {
+    const { repo, trees } = repoWithBranches(['partial-metadata-review'])
+    const project = 'landing-partial-metadata-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const reviewedTree = g(repo, 'rev-parse', 'partial-metadata-review^{tree}')
+      const reviewId = completedReview(project, [reviewedTree, reviewedTree], {
+        branch: 'partial-metadata-review', baseCommit: oldBase,
+        launchCwd: trees['partial-metadata-review']!,
+      })
+      const second = db().query(
+        'SELECT id FROM review_lens WHERE review_id=? ORDER BY id DESC LIMIT 1',
+      ).get(reviewId) as { id: number }
+      db().query('UPDATE run SET branch=NULL, base_commit=NULL WHERE id=(SELECT run_id FROM review_lens WHERE id=?)')
+        .run(second.id)
+      writeFileSync(join(repo, 'metadata-trunk.txt'), 'unrelated\n')
+      g(repo, 'add', 'metadata-trunk.txt')
+      g(repo, 'commit', '-m', 'move trunk for metadata')
+      const child = childLand(repo, 'partial-metadata-review', { unreviewed: null })
+      expect(await child.exited).not.toBe(0)
+      expect(await new Response(child.stderr).text()).toContain('invalid (lens metadata incomplete)')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('refuses a review when its lens base commits disagree', async () => {
+    const { repo, trees } = repoWithBranches(['disagreeing-bases-review'])
+    const project = 'landing-disagreeing-bases-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const reviewedCommit = g(repo, 'rev-parse', 'disagreeing-bases-review')
+      const reviewedTree = g(repo, 'rev-parse', 'disagreeing-bases-review^{tree}')
+      const reviewId = completedReview(project, [reviewedTree, reviewedTree], {
+        branch: 'disagreeing-bases-review', baseCommit: oldBase,
+        launchCwd: trees['disagreeing-bases-review']!,
+      })
+      const second = db().query(
+        'SELECT id FROM review_lens WHERE review_id=? ORDER BY id DESC LIMIT 1',
+      ).get(reviewId) as { id: number }
+      db().query('UPDATE run SET base_commit=? WHERE id=(SELECT run_id FROM review_lens WHERE id=?)')
+        .run(reviewedCommit, second.id)
+      writeFileSync(join(repo, 'bases-trunk.txt'), 'unrelated\n')
+      g(repo, 'add', 'bases-trunk.txt')
+      g(repo, 'commit', '-m', 'move trunk for bases')
+      const child = childLand(repo, 'disagreeing-bases-review', { unreviewed: null })
+      expect(await child.exited).not.toBe(0)
+      expect(await new Response(child.stderr).text()).toContain('invalid (lens bases disagree)')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   test('refuses a carry when no commit with the reviewed tree remains reachable', async () => {
     const { repo, trees } = repoWithBranches(['missing-review'])
     const project = 'landing-missing-review'
