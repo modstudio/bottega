@@ -1319,7 +1319,7 @@ const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
         REVIEW_SEVERITY_INSTRUCTION,
         VERIFY_CLAIM_SCHEMA, ISSUE_WORKER_SCHEMA, workerPreamble, workerResumeGuard,
         rulingPrompt, packResumePrompt, contractConflicts, hasRealQuestions, realQuestions } = await import('./contract.ts')
-const { parseReviewReply, recordReview, recordReviews, gradeReviewLens, reviewPins,
+const { cleanReviewEvidence, parseReviewReply, recordReview, recordReviews, gradeReviewLens, reviewPins,
         triageFinding, completeReview, reviewCalibration, calibrationLine,
         MIN_REVIEW_TRIAGED } = await import('./review.ts')
 const { ask } = await import('./ask.ts')
@@ -1977,6 +1977,52 @@ const reviewReply = (findings = 1, severity = 'major') => ({
 })
 
 describe('review discipline', () => {
+  test('clean review evidence must name work and intersect the measured change', () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-review-evidence-')))
+    const gg = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    gg('init', '-b', 'main'); gg('config', 'user.email', 'orch-test@example.invalid')
+    gg('config', 'user.name', 'Orch Test')
+    writeFileSync(join(repo, 'base.txt'), 'base\n'); gg('add', '.'); gg('commit', '-m', 'base')
+    const base = gg('rev-parse', 'HEAD')
+    writeFileSync(join(repo, 'changed.ts'), 'changed\n'); gg('add', '.'); gg('commit', '-m', 'change')
+    const tree = gg('rev-parse', 'HEAD^{tree}')
+    upsertProject({ name: 'review-evidence-project', path: repo })
+    const runId = addRun({ agent: 'codex', job: 'review-lens', repo: 'review-evidence-project' })
+    db().query('UPDATE run SET base_commit=?, input_tree=? WHERE id=?').run(base, tree, runId)
+    try {
+      const reply = reviewReply(0) as any
+      reply.provenance.files_covered = []
+      reply.provenance.commands_run = []
+      expect(cleanReviewEvidence(runId, reply)).toEqual({
+        failure: 'clean review with no evidence: files_covered and commands_run are empty', note: null,
+      })
+
+      reply.provenance.files_covered = ['changed.ts']
+      reply.provenance.commands_run = ['bun test']
+      expect(cleanReviewEvidence(runId, reply)).toEqual({ failure: null, note: null })
+
+      reply.provenance.files_covered = ['base.txt']
+      expect(cleanReviewEvidence(runId, reply).failure).toContain('intersects none')
+
+      db().query('UPDATE run SET input_tree=NULL WHERE id=?').run(runId)
+      const unknown = cleanReviewEvidence(runId, reply)
+      expect(unknown.failure).toBeNull()
+      expect(unknown.note).toContain('changed-path coverage not checked')
+
+      reply.provenance.could_not_verify = ['Full operator prompt not yet read']
+      expect(cleanReviewEvidence(runId, reply).failure).toContain('files_covered and commands_run are empty')
+    } finally {
+      removeProject('review-evidence-project')
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('records a tier from one shared base and reviewed tree and exposes CLI JSON', () => {
     const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-tier-')))
     const gg = (...args: string[]) => {
@@ -3201,6 +3247,17 @@ describe('failure classification', () => {
     const routed = candidates('implement').find((item) => item.agent === 'codex')!
     expect(routed).toMatchObject({ failures: 1, evidence: 1, score: WEIGHT.none, cooling: null })
     expect(scoreboard('implement').find((item) => item.agent === 'codex'))
+      .toMatchObject({ failures: 1, evidence: 1, score: WEIGHT.none, cooling: null })
+  })
+
+  test('unevidenced reviews fail over and count against the agent', () => {
+    expect(FAILS_OVER).toContain('unevidenced')
+    expect(NEEDS_HUMAN).not.toContain('unevidenced')
+    expect(COOLS_DOWN).not.toContain('unevidenced')
+    expect(NOT_EVIDENCE).not.toContain('unevidenced')
+
+    addRun({ agent: 'codex', job: 'review-lens', status: 'failed', kind: 'unevidenced' })
+    expect(candidates('review-lens').find((item) => item.agent === 'codex'))
       .toMatchObject({ failures: 1, evidence: 1, score: WEIGHT.none, cooling: null })
   })
 
@@ -8179,6 +8236,24 @@ describe('detached run collection', () => {
       '--reproduced', 'none')
     expect(rejectedFlags.code).toBe(1)
     expect(rejectedFlags.err).toContain("delivery 'none' takes no review grades")
+  })
+
+  test('score refuses an unevidenced clean lens without creating score or review rows', () => {
+    const id = insert('ok', 'review-lens')
+    const output = join(dir, `unevidenced-review-${id}.json`)
+    const reply = reviewReply(0) as any
+    reply.provenance.files_covered = []
+    reply.provenance.commands_run = []
+    writeFileSync(output, JSON.stringify(reply))
+    db().query('UPDATE run SET session_id=?, lens=?, model=?, output_path=? WHERE id=?')
+      .run('orch-test-session', 'empty', 'test-model', output, id)
+
+    const result = orch('score', String(id), 'full', 'right',
+      '--coverage', 'empty', '--limits', 'named')
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('clean review with no evidence')
+    expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
+    expect(db().query('SELECT id FROM review_lens WHERE run_id=?').get(id)).toBeNull()
   })
 
   test('score refuses review grades on a job that does not produce findings', () => {
@@ -14472,6 +14547,84 @@ describe('only an agent that can be resumed may be asked to escalate', () => {
 })
 
 describe('review-lens-inline has no checkout', () => {
+  test('run 1715 shape completes as unevidenced and result wraps it as incomplete', async () => {
+    const agent = AGENTS.codex!
+    const original = { bin: agent.bin, argv: agent.argv, stdin: agent.stdin, readsOut: agent.readsOut }
+    const priorDepth = process.env.ORCH_DEPTH
+    const reply = reviewReply(0) as any
+    reply.provenance.standards_read = []
+    reply.provenance.files_covered = []
+    reply.provenance.commands_run = []
+    reply.provenance.could_not_verify = ['Full operator prompt not yet read']
+    let runId: number | undefined
+    try {
+      agent.bin = process.execPath
+      agent.argv = () => ['-e', `console.log(${JSON.stringify(JSON.stringify(reply))})`]
+      agent.stdin = false
+      agent.readsOut = false
+      process.env.ORCH_DEPTH = '0'
+      try {
+        await runJob({
+          job: 'review-lens-inline', prompt: 'inspect this pack', agent: 'codex',
+          lens: 'empty', noFailover: true,
+        })
+      } catch (cause) {
+        runId = (cause as Error & { runId?: number }).runId
+      }
+      expect(runId).toBeNumber()
+      expect(db().query('SELECT status, failure_kind, error FROM run WHERE id=?').get(runId!))
+        .toEqual({
+          status: 'failed', failure_kind: 'unevidenced',
+          error: expect.stringContaining(
+            'clean review with no evidence: files_covered and commands_run are empty',
+          ),
+        })
+      const shown = Bun.spawnSync([
+        process.execPath, new URL('cli.ts', import.meta.url).pathname, 'result', String(runId),
+      ], {
+        env: {
+          ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+        },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(shown.exitCode).toBe(1)
+      expect(shown.stderr.toString()).toContain('unevidenced')
+      expect(JSON.parse(shown.stdout.toString()).run.complete).toBe(false)
+      const runs = Bun.spawnSync([
+        process.execPath, new URL('cli.ts', import.meta.url).pathname, 'runs', '--id', String(runId),
+      ], {
+        env: {
+          ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+        },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(runs.stdout.toString()).toContain('unevidenced')
+      const score = Bun.spawnSync([
+        process.execPath, new URL('cli.ts', import.meta.url).pathname,
+        'score', String(runId), 'none', '--force',
+      ], {
+        env: {
+          ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+        },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(score.exitCode).toBe(1)
+      expect(score.stderr.toString()).toContain('unevidenced review')
+      expect(db().query('SELECT id FROM score WHERE run_id=?').get(runId!)).toBeNull()
+      expect(db().query('SELECT id FROM review_lens WHERE run_id=?').get(runId!)).toBeNull()
+    } finally {
+      agent.bin = original.bin
+      agent.argv = original.argv
+      agent.stdin = original.stdin
+      agent.readsOut = original.readsOut
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
   test('runs from an empty directory while review-lens still receives the project tree', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-inline-boundary-'))
     const script = join(dir, 'report-worker-cwd.ts')

@@ -23,6 +23,8 @@ export type FailureKind =
   | 'harness'
   /** The agent satisfied the reply schema but violated its behavioural contract. */
   | 'contract'
+  /** A clean review reply that does not establish it reviewed the dispatched change. */
+  | 'unevidenced'
   | 'abandoned'
   | 'other'
 
@@ -210,7 +212,9 @@ export const NEEDS_HUMAN_TITLE: Record<string, (agent: string) => string> = {
 export const COOLS_DOWN: FailureKind[] = ['quota', 'auth']
 
 /** Failures where another vendor should receive the same prompt immediately. */
-export const FAILS_OVER: FailureKind[] = ['quota', 'auth', 'content_refusal', 'contract']
+export const FAILS_OVER: FailureKind[] = [
+  'quota', 'auth', 'content_refusal', 'contract', 'unevidenced',
+]
 
 /**
  * Kinds that must never count as evidence about an agent.

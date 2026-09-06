@@ -80,6 +80,54 @@ export function parseReviewOutput(text: string): ReviewReply | null {
   return null
 }
 
+export const UNEVIDENCED_REVIEW_ERROR =
+  'clean review with no evidence: files_covered and commands_run are empty'
+
+export type CleanReviewEvidence =
+  | { failure: string; note: null }
+  | { failure: null; note: string | null }
+
+/** Classify the evidence on a findings:[] reply against the measured input tree. */
+export function cleanReviewEvidence(
+  runId: number, output: ReviewReply, database: Database = db(),
+): CleanReviewEvidence {
+  if (output.findings.length) return { failure: null, note: null }
+  const provenance = output.provenance
+  if (!provenance.files_covered.length && !provenance.commands_run.length) {
+    return { failure: UNEVIDENCED_REVIEW_ERROR, note: null }
+  }
+  if (provenance.could_not_verify.some((item) => /\bnot(?:\s+yet)?\s+read\b/i.test(item))) {
+    return { failure: UNEVIDENCED_REVIEW_ERROR, note: null }
+  }
+
+  const run = database.query(
+    'SELECT repo, base_commit, input_tree FROM run WHERE id=?',
+  ).get(runId) as { repo: string | null; base_commit: string | null; input_tree: string | null } | null
+  const unavailable = (why: string): CleanReviewEvidence => ({
+    failure: null,
+    note: `clean review changed-path coverage not checked: ${why}`,
+  })
+  if (!run?.repo || !run.base_commit || !run.input_tree) {
+    return unavailable('run lacks repo, base_commit, or input_tree')
+  }
+  const repo = projectPath(database, run.repo)
+  if (!repo) return unavailable(`project ${run.repo} is not registered`)
+  let changed: string[]
+  try {
+    changed = diffNumstat(repo, run.base_commit, run.input_tree).map((file) => file.path)
+  } catch (cause) {
+    return unavailable(String((cause as Error)?.message ?? cause))
+  }
+  const covered = new Set(provenance.files_covered.map((path) => path.replace(/^\.\//, '')))
+  if (!changed.some((path) => covered.has(path.replace(/^\.\//, '')))) {
+    return {
+      failure: 'clean review with no evidence: files_covered intersects none of the changed paths',
+      note: null,
+    }
+  }
+  return { failure: null, note: null }
+}
+
 type RunRow = {
   id: number; agent: string; model: string | null; lens: string | null
   job: string; status: string; output_path: string | null; input_tree: string | null

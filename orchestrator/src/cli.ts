@@ -35,7 +35,7 @@ import {
   flagValue, flagValues, invalidUtf8Offset, nulByteOffset, parseAnswerTextSources,
   parseWorkerMessageArgs, refuseMisparsedMessage, validateCliArgs,
 } from './args.ts'
-import { completeReview, DISPOSITIONS, gradeReviewLens, parseReviewOutput, recordReviews,
+import { cleanReviewEvidence, completeReview, DISPOSITIONS, gradeReviewLens, parseReviewOutput, recordReviews,
          reviewCalibration, reviewPins, triageFinding, type Disposition,
          type ReviewGrades } from './review.ts'
 import { classifyReviewTier, diffNumstat } from './review-tier.ts'
@@ -4267,6 +4267,9 @@ switch (cmd) {
       console.log(`voided run ${id}: retained run and output; excluded from routing evidence`)
       break
     }
+    if (row.failure_kind === 'unevidenced') {
+      throw new Error(`run ${id} cannot be scored: ${row.failure_kind} review`)
+    }
     if (row.failure_kind && NOT_EVIDENCE.includes(row.failure_kind)) {
       throw new Error(
         `run ${id} cannot be scored: failure kind '${row.failure_kind}' is not evidence`,
@@ -4376,6 +4379,10 @@ switch (cmd) {
         }
         output = parseReviewOutput(readFileSync(row.output_path, 'utf8'))
         if (!output) throw new Error(`run ${id} output does not satisfy the review contract`)
+        const evidence = cleanReviewEvidence(id, output)
+        if (evidence.failure) {
+          throw new Error(`run ${id} cannot be scored: ${evidence.failure}`)
+        }
       }
       const findings = existing?.findings ?? output!.findings.length
       const raw: Record<keyof ReviewGrades, string | undefined> = {
@@ -4840,7 +4847,7 @@ switch (cmd) {
           ` ${dur(r.latency_ms as number | null).padStart(8)}  ${String(r.prompt_head).slice(0, 60)}`,
       )
       if (r.status === 'asking') console.log(`      ${outcome.line.slice(status.length + 3)}`)
-      if (r.failure_kind === 'contract') {
+      if (r.failure_kind === 'contract' || r.failure_kind === 'unevidenced') {
         console.log(`      ${failureReason(r as {
           status: string; error: string | null; failure_kind: string | null; exit_code: number | null
         })}`)

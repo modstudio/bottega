@@ -34,7 +34,10 @@ import {
   parseWorkerReplyWithCount, isAsking, realQuestions,
   type CanonSource, type WorkerReply,
 } from './contract.ts'
-import { CALIBRATION_SUFFIX_RESERVE_BYTES, calibrationLine, reviewCalibration } from './review.ts'
+import {
+  CALIBRATION_SUFFIX_RESERVE_BYTES, calibrationLine, cleanReviewEvidence,
+  parseReviewOutput, reviewCalibration,
+} from './review.ts'
 import { createHasPlaceholder, projectAt, projects, stackAt } from './projects.ts'
 import { compilePack, recordPack } from './canon.ts'
 import { seedGuidance } from './args.ts'
@@ -2102,6 +2105,19 @@ export async function run(opts: {
       const note = `${count} invalid question${count === 1 ? '' : 's'} dropped; ` +
         `rejected question text: ${rejected}`
       error = error ? `${error}\n${note}` : note
+    }
+    if (status === 'ok' && requestedJob.findings) {
+      const review = parseReviewOutput(output)
+      if (review) {
+        const evidence = cleanReviewEvidence(claim.id, review)
+        if (evidence.failure) {
+          status = 'failed'
+          error = evidence.failure
+          failureKind = 'unevidenced'
+        } else if (evidence.note) {
+          error = error ? `${error}\n${evidence.note}` : evidence.note
+        }
+      }
     }
 
     /**

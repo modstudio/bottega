@@ -146,8 +146,10 @@ The review schema requires severity, location, evidence, and proposed
 correction for every finding. It also requires machine-readable provenance:
 standards read, effective model, files covered, commands run, and what could not
 be verified. Orch measures the reviewed tree at dispatch; an agent's optional
-claim about the tree is not consulted for coverage. An empty findings array with that coverage is a
-completed clean review; missing or malformed output is not.
+claim about the tree is not consulted for coverage. An empty findings array is a completed clean
+review only with provenance showing what was read, including a covered file from the measured
+change when its changed paths can be established. Without that coverage the run is an
+`unevidenced` failure of the agent, not a clean result; missing or malformed output is not a review.
 
 Reviews are recorded when they happen and begin incomplete. Triage is a later
 act by the architect: each finding becomes accepted, modified, rejected, or
