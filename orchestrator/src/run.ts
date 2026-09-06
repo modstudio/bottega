@@ -1172,7 +1172,8 @@ export async function run(opts: {
   // Programmatic callers get the same ordering guarantee as the CLI: a bad
   // ref is refused before a run row or worktree exists.
   if (opts.base) {
-    if (opts.job !== 'implement' && opts.job !== 'fix') {
+    const internalRepositoryFailover = opts.automaticFailover && job(opts.job).needs.readsRepo
+    if (opts.job !== 'implement' && opts.job !== 'fix' && !internalRepositoryFailover) {
       throw new Error('--base is only valid for the implement and fix jobs')
     }
     resolveBase(opts.cwd ?? process.cwd(), opts.base)
@@ -2352,8 +2353,10 @@ export async function run(opts: {
           automaticFailover: true,
           seed: first.launch_seed ?? undefined,
           key: first.launch_key ?? undefined,
-          // Prefer the immutable cut point once a writing tree exists.
-          base: writesJob ? (first.base_commit ?? first.launch_base ?? undefined) : undefined,
+          // Every repository successor must recreate the first attempt's
+          // immutable tree before carrying the same caller state. Falling back
+          // to current trunk makes a review failover depend on a later move.
+          base: repoJob ? (first.base_commit ?? first.launch_base ?? undefined) : undefined,
           avoid: opts.avoid,
           carry: opts.carry,
         })

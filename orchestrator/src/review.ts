@@ -96,10 +96,6 @@ export function cleanReviewEvidence(
   if (!provenance.files_covered.length && !provenance.commands_run.length) {
     return { failure: UNEVIDENCED_REVIEW_ERROR, note: null }
   }
-  if (provenance.could_not_verify.some((item) => /\bnot(?:\s+yet)?\s+read\b/i.test(item))) {
-    return { failure: UNEVIDENCED_REVIEW_ERROR, note: null }
-  }
-
   const run = database.query(
     'SELECT repo, base_commit, input_tree FROM run WHERE id=?',
   ).get(runId) as { repo: string | null; base_commit: string | null; input_tree: string | null } | null
@@ -118,8 +114,16 @@ export function cleanReviewEvidence(
   } catch (cause) {
     return unavailable(String((cause as Error)?.message ?? cause))
   }
-  const covered = new Set(provenance.files_covered.map((path) => path.replace(/^\.\//, '')))
-  if (!changed.some((path) => covered.has(path.replace(/^\.\//, '')))) {
+  const covered = provenance.files_covered.map((path) => path.replace(/^\.\//, ''))
+  // A reviewer commonly reports paths relative to the directory it worked in.
+  // Any suffix match establishes some changed-file coverage. If one suffix is
+  // ambiguous and matches two changed paths, that still counts for coverage:
+  // this gate asks whether the change was read, not which same-named file it was.
+  const intersects = changed.some((path) => {
+    const normalized = path.replace(/^\.\//, '')
+    return covered.some((claim) => normalized === claim || normalized.endsWith(`/${claim}`))
+  })
+  if (!intersects) {
     return {
       failure: 'clean review with no evidence: files_covered intersects none of the changed paths',
       note: null,

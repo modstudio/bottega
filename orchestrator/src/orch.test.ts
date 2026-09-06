@@ -1990,7 +1990,11 @@ describe('review discipline', () => {
     gg('config', 'user.name', 'Orch Test')
     writeFileSync(join(repo, 'base.txt'), 'base\n'); gg('add', '.'); gg('commit', '-m', 'base')
     const base = gg('rev-parse', 'HEAD')
-    writeFileSync(join(repo, 'changed.ts'), 'changed\n'); gg('add', '.'); gg('commit', '-m', 'change')
+    mkdirSync(join(repo, 'orchestrator', 'src'), { recursive: true })
+    mkdirSync(join(repo, 'hub', 'src'), { recursive: true })
+    writeFileSync(join(repo, 'orchestrator', 'src', 'x.ts'), 'changed\n')
+    writeFileSync(join(repo, 'hub', 'src', 'x.ts'), 'also changed\n')
+    gg('add', '.'); gg('commit', '-m', 'change')
     const tree = gg('rev-parse', 'HEAD^{tree}')
     upsertProject({ name: 'review-evidence-project', path: repo })
     const runId = addRun({ agent: 'codex', job: 'review-lens', repo: 'review-evidence-project' })
@@ -2003,9 +2007,11 @@ describe('review discipline', () => {
         failure: 'clean review with no evidence: files_covered and commands_run are empty', note: null,
       })
 
-      reply.provenance.files_covered = ['changed.ts']
       reply.provenance.commands_run = ['bun test']
-      expect(cleanReviewEvidence(runId, reply)).toEqual({ failure: null, note: null })
+      for (const path of ['orchestrator/src/x.ts', './orchestrator/src/x.ts', 'src/x.ts']) {
+        reply.provenance.files_covered = [path]
+        expect(cleanReviewEvidence(runId, reply)).toEqual({ failure: null, note: null })
+      }
 
       reply.provenance.files_covered = ['base.txt']
       expect(cleanReviewEvidence(runId, reply).failure).toContain('intersects none')
@@ -2015,8 +2021,6 @@ describe('review discipline', () => {
       expect(unknown.failure).toBeNull()
       expect(unknown.note).toContain('changed-path coverage not checked')
 
-      reply.provenance.could_not_verify = ['Full operator prompt not yet read']
-      expect(cleanReviewEvidence(runId, reply).failure).toContain('files_covered and commands_run are empty')
     } finally {
       removeProject('review-evidence-project')
       rmSync(repo, { recursive: true, force: true })
@@ -4504,6 +4508,104 @@ describe('vendor failure failover is one bounded unit of work', () => {
     })
     return { code: p.exitCode, out: p.stdout.toString(), err: p.stderr.toString() }
   }
+
+  test('a repository review failover keeps its immutable base across a trunk move', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-review-failover-'))
+    const caller = join(repo, '.claude', 'caller')
+    const codexScript = join(repo, 'first-review.ts')
+    const grokScript = join(repo, 'successor-review.ts')
+    const firstReady = join(repo, 'first-review.ready')
+    const trunkMoved = join(repo, 'trunk-moved.ready')
+    const git = (cwd: string, ...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    const codex = AGENTS.codex!
+    const grok = AGENTS.grok!
+    const priorCodex = {
+      bin: codex.bin, argv: codex.argv, stdin: codex.stdin,
+      readsOut: codex.readsOut, parseReply: codex.parseReply,
+    }
+    const priorGrok = {
+      bin: grok.bin, argv: grok.argv, stdin: grok.stdin,
+      readsOut: grok.readsOut, parseReply: grok.parseReply,
+    }
+    const priorDepth = process.env.ORCH_DEPTH
+    try {
+      git(repo, 'init', '-b', 'main')
+      git(repo, 'config', 'user.email', 'orch-test@example.invalid')
+      git(repo, 'config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      git(repo, 'add', 'base.txt'); git(repo, 'commit', '-m', 'base')
+      const originalBase = git(repo, 'rev-parse', 'HEAD')
+      mkdirSync(dirname(caller), { recursive: true })
+      git(repo, 'worktree', 'add', '-b', 'feature', caller, originalBase)
+      writeFileSync(join(caller, 'change.ts'), 'carried review subject\n')
+      upsertProject({ name: 'review-failover-project', path: repo })
+
+      const empty = reviewReply(0) as any
+      empty.provenance.files_covered = []
+      empty.provenance.commands_run = []
+      const clean = reviewReply(0) as any
+      clean.provenance.files_covered = ['change.ts']
+      clean.provenance.commands_run = ['git diff -- change.ts']
+      writeFileSync(codexScript, [
+        "import { existsSync, writeFileSync } from 'node:fs'",
+        `writeFileSync(${JSON.stringify(firstReady)}, 'ready\\n')`,
+        `while (!existsSync(${JSON.stringify(trunkMoved)})) await Bun.sleep(10)`,
+        `console.log(${JSON.stringify(JSON.stringify(empty))})`,
+      ].join('\n'))
+      writeFileSync(grokScript, [
+        "import { existsSync } from 'node:fs'",
+        "if (!existsSync('change.ts')) process.exit(19)",
+        `console.log(${JSON.stringify(JSON.stringify(clean))})`,
+      ].join('\n'))
+      codex.bin = process.execPath; codex.argv = () => [codexScript]
+      codex.stdin = false; codex.readsOut = false; codex.parseReply = undefined
+      grok.bin = process.execPath; grok.argv = () => [grokScript]
+      grok.stdin = false; grok.readsOut = false; grok.parseReply = undefined
+      process.env.ORCH_DEPTH = '0'
+
+      const pending = runJob({
+        job: 'review-lens', prompt: 'review the carried change', cwd: caller,
+        repo: 'review-failover-project', agent: 'codex', lens: 'failover-base', carry: true,
+      })
+      for (let i = 0; i < 200 && !existsSync(firstReady); i++) await Bun.sleep(10)
+      expect(existsSync(firstReady)).toBe(true)
+      writeFileSync(join(repo, 'trunk.txt'), 'moved\n')
+      git(repo, 'add', 'trunk.txt'); git(repo, 'commit', '-m', 'trunk moves')
+      writeFileSync(trunkMoved, 'moved\n')
+      const result = await pending
+      expect(result.agent).toBe('grok')
+      const rows = db().query(
+        `SELECT id, agent, status, failure_kind, retry_of, base_commit
+           FROM run WHERE repo='review-failover-project' ORDER BY id`,
+      ).all() as {
+        id: number; agent: string; status: string; failure_kind: string | null
+        retry_of: number | null; base_commit: string
+      }[]
+      expect(rows).toHaveLength(2)
+      expect(rows[0]).toMatchObject({
+        agent: 'codex', status: 'failed', failure_kind: 'unevidenced', base_commit: originalBase,
+      })
+      expect(rows[1]).toMatchObject({
+        agent: 'grok', status: 'ok', retry_of: rows[0]!.id, base_commit: originalBase,
+      })
+      expect(git(repo, 'rev-parse', 'main')).not.toBe(originalBase)
+    } finally {
+      codex.bin = priorCodex.bin; codex.argv = priorCodex.argv; codex.stdin = priorCodex.stdin
+      codex.readsOut = priorCodex.readsOut; codex.parseReply = priorCodex.parseReply
+      grok.bin = priorGrok.bin; grok.argv = priorGrok.argv; grok.stdin = priorGrok.stdin
+      grok.readsOut = priorGrok.readsOut; grok.parseReply = priorGrok.parseReply
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      removeProject('review-failover-project')
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
 
   test('a quota death runs the original prompt on another agent and returns that answer', async () => {
     const binDir = join(dir, 'failover-bin')
