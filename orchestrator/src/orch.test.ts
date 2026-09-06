@@ -1388,7 +1388,7 @@ const { runDetail, state } = await import('./serve.ts')
 const { classify, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOT_EVIDENCE, COOLS_DOWN, FAILS_OVER,
         isNonAnswer, detectBlockers } = await import('./failure.ts')
 const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePaths, pruneRuns, KEEP_RUN_FILES_DAYS,
-        RUNS_DIR, grokMcpConnection, writingFailoverRefusal, resolveSupersededTurn,
+        RUNS_DIR, grokMcpConnection, assertGrokTrustEligible, writingFailoverRefusal, resolveSupersededTurn,
         resolveRootFromLastTurn, gitObjectEnvironmentFor, inferredReadOnlyKey,
         canonSourceFor, canonSourceInstruction, snapshotRegisteredCheckouts,
         changedRegisteredCheckouts, checkoutAliases, checkoutCaseSensitivity,
@@ -6383,8 +6383,20 @@ describe('run detail', () => {
 })
 
 describe('review-lens MCP provenance', () => {
-  beforeEach(() => writeFileSync(join(dir, '.mcp.json'), '{}\n'))
-  afterEach(() => rmSync(join(dir, '.mcp.json'), { force: true }))
+  let priorGrokHome: string | undefined
+  let grokHome: string
+  beforeEach(() => {
+    writeFileSync(join(dir, '.mcp.json'), '{}\n')
+    priorGrokHome = process.env.GROK_HOME
+    grokHome = mkdtempSync(join(tmpdir(), 'orch-grok-home-'))
+    process.env.GROK_HOME = grokHome
+  })
+  afterEach(() => {
+    rmSync(join(dir, '.mcp.json'), { force: true })
+    rmSync(grokHome, { recursive: true, force: true })
+    if (priorGrokHome === undefined) delete process.env.GROK_HOME
+    else process.env.GROK_HOME = priorGrokHome
+  })
 
   test('the MCP flag accepts required and prefer modes only', () => {
     expect(() => validateCliArgs(['do', 'review-lens', 'review', '--mcp'])).not.toThrow()
@@ -6420,11 +6432,159 @@ describe('review-lens MCP provenance', () => {
     return repo
   }
 
+  test('grants only an orch-cut tree and names the invariant for a caller checkout', () => {
+    expect(() => assertGrokTrustEligible('/tmp/orch-tree', {
+      worktree: '/tmp/orch-tree', worktree_source: 'git',
+    })).not.toThrow()
+    expect(() => assertGrokTrustEligible('/tmp/caller-checkout', {
+      worktree: '/tmp/orch-tree', worktree_source: 'git',
+    })).toThrow(
+      'refusing Grok trust for /tmp/caller-checkout: trust is granted only to trees orch cut; ' +
+      'removed tree paths never recur',
+    )
+  })
+
+  test('passes scoped trust to doctor and spawn and records every new heading verbatim', async () => {
+    const repo = mcpRepo(true)
+    const script = join(dir, 'fake-grok-trust-round-trip.sh')
+    writeFileSync(script, `#!/bin/sh
+if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
+  printf '%s' "$*" > "$GROK_HOME/doctor-argv"
+  printf '%s\n' '[folders."/tmp/first observed"]' 'trusted = true' "[folders.'/tmp/second-observed']" 'trusted = true' >> "$GROK_HOME/trusted_folders.toml"
+  printf '%s' '{"servers":[{"name":"fixture-project","healthy":true,"checks":[]}]}'
+else
+  printf '%s' "$*" > "$GROK_HOME/spawn-argv"
+  printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
+fi
+`)
+    chmodSync(script, 0o755)
+    writeFileSync(
+      join(grokHome, 'trusted_folders.toml'),
+      '[folders."/tmp/already-present"]\ntrusted = true\n',
+    )
+    const agent = AGENTS.grok!
+    const originalBin = agent.bin
+    agent.bin = script
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      const result = await runJob({
+        job: 'review-lens', prompt: 'review this', cwd: repo,
+        agent: 'grok', mcp: 'require', lens: 'trust',
+      })
+      const row = db().query(
+        'SELECT mcp_trust_granted, mcp_trust_path FROM run WHERE id=?',
+      ).get(result.id) as { mcp_trust_granted: number; mcp_trust_path: string }
+      expect(row.mcp_trust_granted).toBe(1)
+      expect(JSON.parse(row.mcp_trust_path)).toEqual([
+        '[folders."/tmp/first observed"]', "[folders.'/tmp/second-observed']",
+      ])
+      const invocations = ['doctor-argv', 'spawn-argv']
+        .map((file) => readFileSync(join(grokHome, file), 'utf8'))
+      for (const invocation of invocations) {
+        expect(invocation).toContain(`--cwd ${result.worktree!.path} --trust`)
+      }
+      expect(invocations[0]).toContain('mcp doctor fixture-project --json')
+      expect(invocations[1]).toContain(' -p ')
+    } finally {
+      agent.bin = originalBin
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('records a trust attempt before a doctor spawn throws', async () => {
+    const repo = mcpRepo(true)
+    const agent = AGENTS.grok!
+    const originalBin = agent.bin
+    const script = join(dir, 'grok-removed-before-doctor')
+    writeFileSync(script, '#!/bin/sh\nprintf "grok 1.0.13\\n"\n')
+    chmodSync(script, 0o755)
+    const create = join(dir, 'remove-grok-while-cutting.sh')
+    writeFileSync(create, `#!/bin/sh
+${hermeticGitCommand} worktree add --detach "$1" "$2" >/dev/null
+rm ${JSON.stringify(script)}
+echo "$1"
+`)
+    chmodSync(create, 0o755)
+    upsertProject({
+      name: 'fixture-project', path: repo,
+      settings: {
+        worktree: {
+          branch: 'orch/{id}',
+          readonly_create: declaredCreate(create, ['{path}', '{base}']),
+        },
+      },
+    })
+    agent.bin = script
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    const before = (db().query('SELECT MAX(id) id FROM run').get() as { id: number | null }).id ?? 0
+    try {
+      await expect(runJob({
+        job: 'review-lens', prompt: 'review this', cwd: repo,
+        agent: 'grok', mcp: 'require', lens: 'trust-throws',
+      })).rejects.toThrow()
+      expect(db().query(
+        'SELECT mcp_trust_granted, mcp_trust_path FROM run WHERE id > ? ORDER BY id LIMIT 1',
+      ).get(before)).toEqual({ mcp_trust_granted: 1, mcp_trust_path: null })
+    } finally {
+      agent.bin = originalBin
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a caller-checkout doctor never receives trust', () => {
+    const script = join(dir, 'fake-grok-caller-doctor.sh')
+    const argv = join(grokHome, 'caller-argv')
+    writeFileSync(script, `#!/bin/sh
+printf '%s' "$*" > "$GROK_HOME/caller-argv"
+printf '%s' '{"servers":[{"name":"fixture-project","healthy":true,"checks":[]}]}'
+`)
+    chmodSync(script, 0o755)
+    expect(grokMcpConnection(script, dir, 'fixture-project', {
+      PATH: process.env.PATH ?? '', GROK_HOME: grokHome,
+    }).connected).toBe(true)
+    expect(readFileSync(argv, 'utf8')).not.toContain('--trust')
+  })
+
+  test('installed Grok 1.0.13 currently keys a linked worktree grant by its main repository', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'orch-installed-grok-trust-')))
+    const repo = join(root, 'repo')
+    const tree = join(root, 'linked-tree')
+    mkdirSync(repo)
+    const git = (...args: string[]) => Bun.spawnSync(['git', ...args], {
+      cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    try {
+      expect(git('init', '-b', 'main').exitCode).toBe(0)
+      git('config', 'user.email', 'orch-test@example.invalid')
+      git('config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'base'), '')
+      git('add', 'base')
+      expect(git('commit', '-m', 'base').exitCode).toBe(0)
+      expect(git('worktree', 'add', '--detach', tree, 'HEAD').exitCode).toBe(0)
+      const grant = Bun.spawnSync(['grok', '--cwd', tree, '--trust', 'mcp', 'list', '--json'], {
+        env: { ...process.env, GROK_HOME: grokHome }, stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(grant.exitCode).toBe(0)
+      expect(readFileSync(join(grokHome, 'trusted_folders.toml'), 'utf8').split(/\r?\n/)
+        .filter((line) => line.startsWith('[folders.'))).toEqual([
+          `[folders.${JSON.stringify(repo)}]`,
+        ])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   test('provisions cwd-discovered MCP with a relative symlink and reports it in the output header', async () => {
     const repo = mcpRepo(true)
     const script = join(dir, 'fake-grok-cwd-mcp.sh')
     writeFileSync(script, `#!/bin/sh
-if [ "$1" = "mcp" ]; then
+if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
   test -L .mcp.json || exit 97
   printf '%s' '{"servers":[{"name":"fixture-project","healthy":true,"checks":[]}]}'
 else
@@ -6466,7 +6626,7 @@ fi
     const repo = mcpRepo(true)
     const script = join(dir, 'fake-grok-replaces-mcp-link.sh')
     writeFileSync(script, `#!/bin/sh
-if [ "$1" = "mcp" ]; then
+if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
   test -L .mcp.json || exit 97
   printf '%s' '{"servers":[{"name":"fixture-project","healthy":true,"checks":[]}]}'
 else
@@ -6522,7 +6682,7 @@ echo "$1"
     })
     const script = join(dir, 'fake-grok-recipe-mcp.sh')
     writeFileSync(script, `#!/bin/sh
-if [ "$1" = "mcp" ]; then
+if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
   test -f .mcp.json && test ! -L .mcp.json || exit 97
   printf '%s' '{"servers":[{"name":"fixture-project","healthy":true,"checks":[]}]}'
 else
@@ -6561,7 +6721,7 @@ fi
     writeFileSync(join(caller, '.mcp.json'), '{}\n')
     const script = join(dir, 'fake-grok-carried-mcp.sh')
     writeFileSync(script, `#!/bin/sh
-if [ "$1" = "mcp" ]; then
+if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
   test -f .mcp.json && test ! -L .mcp.json || exit 97
   printf '%s' '{"servers":[{"name":"fixture-project","healthy":true,"checks":[]}]}'
 else
@@ -6625,7 +6785,7 @@ fi
     const repo = mcpRepo(true)
     const script = join(dir, 'fake-grok-prefer-mirror.sh')
     writeFileSync(script, `#!/bin/sh
-if [ "$1" = "mcp" ]; then
+if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
   printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"label":"unavailable","passed":false,"detail":"server down"}]}]}'
 else
   printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
@@ -6665,7 +6825,7 @@ fi
     const binDir = mkdtempSync(join(tmpdir(), 'orch-grok-prefer-continue-'))
     const script = join(binDir, 'grok')
     writeFileSync(script, `#!/bin/sh
-if [ "$1" = "mcp" ]; then
+if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
   printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"label":"unavailable","passed":false,"detail":"server down"}]}]}'
 else
   printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
@@ -6826,7 +6986,7 @@ printf '%s' '{"servers":[{"name":"orch","healthy":true,"checks":[]},{"name":"use
   test('refuses a grok lens before agent spawn and records the worker-tree preflight failure', async () => {
     const script = join(dir, 'fake-grok-lens.sh')
     writeFileSync(script, `#!/bin/sh
-if [ "$1" = "mcp" ]; then
+if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
   printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"label":"folder untrusted","passed":false,"detail":"repo-local server not started","hint":"re-run with --trust"}]}]}'
 else
   echo should-not-launch >&2
@@ -6851,7 +7011,7 @@ fi
     try {
       await expect(runJob({
         job: 'review-lens', prompt: 'review this', cwd, agent: 'grok', mcp: true, lens: 'mcp',
-      })).rejects.toThrow("MCP was requested, but server 'fixture-project' could not be attached")
+      })).rejects.toThrow('Grok remained untrusted after scoped trust')
       expect(sent).toBe('')
       expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before + 1)
       expect(db().query('SELECT status, failure_kind FROM run ORDER BY id DESC LIMIT 1').get())
@@ -6867,7 +7027,7 @@ fi
   test('a connected lens receives live-database provenance in its assembled prompt', async () => {
     const script = join(dir, 'fake-grok-connected-lens.sh')
     writeFileSync(script, `#!/bin/sh
-if [ "$1" = "mcp" ]; then
+if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
   printf '%s' '{"servers":[{"name":"orch","healthy":true,"checks":[]}]}'
 else
   printf '%s\n' '{"type":"system","subtype":"init"}'
@@ -6909,7 +7069,7 @@ fi
   test('a lens without --mcp receives mirror provenance and does not run the MCP doctor', async () => {
     const script = join(dir, 'fake-grok-no-mcp-lens.sh')
     writeFileSync(script, `#!/bin/sh
-if [ "$1" = "mcp" ]; then
+if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
   exit 99
 fi
 printf '%s\n' '{"type":"system","subtype":"init"}'
@@ -7093,7 +7253,7 @@ printf '%s\n' '{"type":"result","subtype":"success","result":"{\\"verdict\\":\\"
     const binDir = join(dir, 'mcp-dispatch-bin')
     mkdirSync(binDir, { recursive: true })
     writeFileSync(join(binDir, 'grok'), `#!/bin/sh
-if [ "$1" = "mcp" ]; then
+if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
   printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"label":"unavailable","passed":false,"detail":"server down"}]}]}'
   exit 0
 fi
@@ -7139,7 +7299,7 @@ exit 99
     const binDir = join(dir, 'mcp-fanout-bin')
     mkdirSync(binDir, { recursive: true })
     writeFileSync(join(binDir, 'grok'), `#!/bin/sh
-if [ "$1" = "mcp" ]; then
+if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
   printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"label":"unavailable","passed":false,"detail":"server down"}]}]}'
   exit 0
 fi
@@ -16572,6 +16732,32 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     )
   }
 
+  test('reports absent Grok trust paths in both heading quote styles without editing the store', () => {
+    const grokHome = mkdtempSync(join(tmpdir(), 'orch-sweep-grok-home-'))
+    const fake = fakeDocker([], [])
+    const doubleHeading = `[folders."${join(grokHome, 'absent-double')}"]`
+    const singleHeading = `[folders.'${join(grokHome, 'absent-single')}']`
+    const store = `${doubleHeading}\ntrusted = true\n${singleHeading}\ntrusted = true\n`
+    writeFileSync(join(grokHome, 'trusted_folders.toml'), store)
+    const known = addRun({ agent: 'grok', job: 'review-lens' })
+    db().query('UPDATE run SET mcp_trust_path=? WHERE id=?')
+      .run(JSON.stringify([doubleHeading]), known)
+    try {
+      const result = orchWithEnv({ ...fake.env, GROK_HOME: grokHome }, 'sweep', '--dry-run')
+      expect(result.code).toBe(0)
+      expect(result.out).toContain(
+        `grok trust entry for absent path ${join(grokHome, 'absent-double')} (run ${known}); prune by hand`,
+      )
+      expect(result.out).toContain(
+        `grok trust entry for absent path ${join(grokHome, 'absent-single')}; prune by hand`,
+      )
+      expect(readFileSync(join(grokHome, 'trusted_folders.toml'), 'utf8')).toBe(store)
+    } finally {
+      rmSync(fake.dir, { recursive: true, force: true })
+      rmSync(grokHome, { recursive: true, force: true })
+    }
+  })
+
   test('sweep removes a git-made read-only tree before running project sweep', () => {
     const repo = scratchRepo()
     const project = `readonly-sweep-${randomUUID()}`
@@ -17294,6 +17480,18 @@ describe('only an agent that can be resumed may be asked to escalate', () => {
       expect(args[args.indexOf('--permission-mode') + 1]).toBe('bypassPermissions')
       expect(args).not.toContain('acceptEdits')
     }
+  })
+
+  test('grok applies scoped trust on first and resumed invocations alike', () => {
+    const grok = AGENTS.grok!
+    const cwd = '/tmp/orch-trusted-tree'
+    for (const args of [
+      grok.argv({ prompt: 'p', out: '/tmp/o', trustCwd: cwd }),
+      grok.resumeArgv!({ prompt: 'p', out: '/tmp/o', trustCwd: cwd, session: 'session' }),
+    ]) {
+      expect(args.slice(0, 3)).toEqual(['--cwd', cwd, '--trust'])
+    }
+    expect(grok.argv({ prompt: 'p', out: '/tmp/o' })).not.toContain('--trust')
   })
 
   test('a writing agent gets a writable sandbox and a reading one does not', () => {

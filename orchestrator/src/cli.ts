@@ -34,6 +34,7 @@ import { WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE,
          REVIEW_SEVERITY_INSTRUCTION, contractConflicts, rulingPrompt } from './contract.ts'
 import { collectResult, collectWait, resolveFailover, failoverSummary } from './collect.ts'
 import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
+import { grokTrustHeadings, grokTrustPathFromHeading } from './grok-trust.ts'
 import {
   ANSWER_WORKING_FORMS, CONTINUE_WORKING_FORMS, TELL_WORKING_FORMS,
   flagValue, flagValues, invalidUtf8Offset, nulByteOffset, parseAnswerTextSources,
@@ -4288,6 +4289,30 @@ switch (cmd) {
           )
         }
       }
+    }
+
+    const trustRuns = db().query(
+      'SELECT id, mcp_trust_path FROM run WHERE mcp_trust_path IS NOT NULL ORDER BY id',
+    ).all() as { id: number; mcp_trust_path: string }[]
+    const trustOwners = new Map<string, number>()
+    for (const run of trustRuns) {
+      try {
+        const headings = JSON.parse(run.mcp_trust_path) as unknown
+        if (!Array.isArray(headings)) continue
+        for (const heading of headings) {
+          if (typeof heading === 'string' && !trustOwners.has(heading)) {
+            trustOwners.set(heading, run.id)
+          }
+        }
+      } catch { /* observation from an older or incomplete row is not authority */ }
+    }
+    for (const heading of grokTrustHeadings()) {
+      const path = grokTrustPathFromHeading(heading)
+      if (!path || existsSync(path)) continue
+      const runId = trustOwners.get(heading)
+      console.log(
+        `grok trust entry for absent path ${path}${runId ? ` (run ${runId})` : ''}; prune by hand`,
+      )
     }
 
     // Inventory is a read, so dry-run performs it too. A preview that omits

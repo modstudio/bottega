@@ -741,6 +741,8 @@ sessions have used the split twice.
 
 ## The lifecycle: states, locks and the invariants they protect
 
+Grok trust left for a removed orch worktree is harmless residue: each tree path carries a unique run id and never recurs, so sweep reports the entry for manual pruning and never edits Grok's store.
+
 A run: `reserved → attached → running → asking → ok | failed | stopped | stale`; a chain inherits its last turn's state.
 
 A branch: `cut → built → reviewed → rebased → landed | abandoned`; a rebase invalidates the review's exact match, and the pin or the four-fact carry re-establishes it.
@@ -1641,10 +1643,10 @@ before, 160 of 160 after.
   `approval_policy=never` and refuses tool calls outright.
 
   Grok discovers project MCP configuration but does not start a repo-local
-  server until that folder has been explicitly trusted. `--mcp` does not grant
-  that persistent trust: a run records the same-named project server's doctor
-  result, and `orch result` prints both the degradation and the exact opt-in
-  trust command. A healthy unrelated server such as `orch-ask` does not count.
+  server until that folder has been explicitly trusted. For an orch-created
+  worktree, `--mcp` passes scoped `--trust` to both doctor and the worker and
+  records the observed new trust headings. A healthy unrelated server such as
+  `orch-ask` does not count.
 
   The capability flag says only that the client CAN speak MCP. So: `--mcp`
   means "this agent can use the servers it has". If a job needs a

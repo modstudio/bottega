@@ -364,6 +364,8 @@ export function applySchema(d: Database): void {
   addColumn(d, 'run', 'mcp_server', 'TEXT')
   addColumn(d, 'run', 'mcp_connected', 'INTEGER')
   addColumn(d, 'run', 'mcp_error', 'TEXT')
+  addColumn(d, 'run', 'mcp_trust_granted', 'INTEGER')
+  addColumn(d, 'run', 'mcp_trust_path', 'TEXT')
   addColumn(d, 'run', 'schema_path', 'TEXT')
   addColumn(d, 'run', 'docs_injected', 'INTEGER')
   addColumn(d, 'run', 'doc_revisions', 'TEXT')
@@ -794,6 +796,8 @@ const RUN_DDL = `CREATE TABLE run (
       mcp_server    TEXT,
       mcp_connected INTEGER,
       mcp_error     TEXT,
+      mcp_trust_granted INTEGER,
+      mcp_trust_path TEXT,
       schema_path   TEXT,
       docs_injected INTEGER,
       doc_revisions TEXT,

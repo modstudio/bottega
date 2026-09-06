@@ -101,6 +101,8 @@ export type ArgvOpts = {
   out: string
   schema?: string
   mcp?: boolean
+  /** Grok-only scoped trust for the disposable cwd orch created. */
+  trustCwd?: string
   model?: string
   /** Open the sandbox for editing. True for every job that reads a repository. */
   write?: boolean
@@ -532,8 +534,10 @@ function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
    * establishing rather than assuming. grok has no such conflict: it discovers
    * Claude-compatible MCP configuration natively and needs no approval flag, so
    * nothing competes with its sandbox setting. Repo-local servers are separately
-   * gated by Grok's persistent folder trust; run() diagnoses that gate but never
-   * grants trust as a side effect. Verified directly — with
+   * gated by Grok's persistent folder trust; run() passes `--trust` only for an
+   * orch-created disposable worktree when MCP was requested. The resulting
+   * entry is harmless residue after that unique worktree path is removed.
+   * Verified directly — with
    * `--permission-mode acceptEdits` it reported `ask_orchestrator` among its
    * tools AND wrote the requested file in the same run.
    *
@@ -585,6 +589,7 @@ function grokCommon(o: Omit<ArgvOpts, 'prompt' | 'session'>): string[] {
    * schema-constrained run whose terminal result also carried structured data.
    */
   const a: string[] = ['-m', o.model ?? AGENTS.grok!.model]
+  if (o.trustCwd) a.unshift('--cwd', o.trustCwd, '--trust')
   // --json-schema takes the schema inline, not a path.
   if (o.schema) a.push('--json-schema', readFileSync(o.schema, 'utf8'))
   a.push('--output-format', 'streaming-messages-json')
@@ -821,6 +826,8 @@ export const AGENTS: Record<string, Agent> = {
     // the registered checkout has it, orch links that copy into the worker
     // tree before probing; when neither has it, required mode refuses before
     // Grok starts and prefer mode records and discloses the mirror fallback.
+    // A removed tree's unique path never recurs, so its vendor trust entry is
+    // harmless residue reported by sweep rather than state orch edits.
     //
     // writesRepo VERIFIED directly from a shell in a scratch git repo: with
     // `--permission-mode acceptEdits`, v1.0.13 created the requested uncommitted

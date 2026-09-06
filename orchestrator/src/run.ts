@@ -51,6 +51,7 @@ import { seedGuidance } from './args.ts'
 import { resolveRunsDirectory } from './database-location.ts'
 import { resolveLandingBranch } from './landing.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES } from './result-output.ts'
+import { addedGrokTrustHeadings, grokTrustHeadings } from './grok-trust.ts'
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
 
@@ -380,12 +381,14 @@ const CANON_SOURCE_PROMPT_RESERVE_BYTES = Math.max(
 /**
  * Ask the same client that will run the lens whether its project MCP can start.
  * Grok gates repo-local MCP behind folder trust separately from permission
- * mode; doctor checks discovery and the handshake without granting that trust.
+ * mode. The deferred orch-worktree path passes trust; caller-checkout probes do not.
  */
 export function grokMcpConnection(
-  bin: string, cwd: string, server: string, env: Record<string, string>,
+  bin: string, cwd: string, server: string, env: Record<string, string>, trust = false,
 ): McpConnection {
-  const p = Bun.spawnSync([bin, 'mcp', 'doctor', server, '--json'], {
+  const p = Bun.spawnSync([
+    bin, ...(trust ? ['--cwd', cwd, '--trust'] : []), 'mcp', 'doctor', server, '--json',
+  ], {
     cwd, env, stdout: 'pipe', stderr: 'pipe',
   })
   const stdout = p.stdout.toString().trim()
@@ -432,10 +435,10 @@ export function grokMcpConnection(
  * unverified, not connected:false. Routing around grok's attach failure is
  * DEV-194 and is not done here.
  */
-function mcpConnectionFor(name: string, cwd: string, server: string): McpConnection {
+function mcpConnectionFor(name: string, cwd: string, server: string, trust = false): McpConnection {
   if (name === 'grok') {
     const grok = AGENTS.grok!
-    return grokMcpConnection(grok.bin, cwd, server, childEnv(grok))
+    return grokMcpConnection(grok.bin, cwd, server, childEnv(grok), trust)
   }
   return {
     server,
@@ -449,6 +452,19 @@ function mcpAttachRefusal(connection: McpConnection): string | null {
   return (
     `MCP was requested, but server '${connection.server}' could not be attached` +
     `${connection.error ? `: ${connection.error}` : '.'} The agent was not started.`
+  )
+}
+
+export function assertGrokTrustEligible(
+  cwd: string,
+  recorded: { worktree: string | null; worktree_source: string | null } | null,
+): void {
+  const orchCut = recorded?.worktree === cwd &&
+    ['recipe', 'git', 'readonly_recipe'].includes(recorded.worktree_source ?? '')
+  if (orchCut) return
+  throw new Error(
+    `refusing Grok trust for ${cwd}: trust is granted only to trees orch cut; ` +
+    'removed tree paths never recur',
   )
 }
 
@@ -1743,6 +1759,7 @@ export async function run(opts: {
   let provisionedMcpConfigLink: string | null = null
   let retargetDiagnostic: string | null = null
   let mcpSetupHeader: string | null = null
+  let mcpTrustGranted = false
   /**
    * Cutting the worktree can FAIL, and the row already exists by now.
    *
@@ -1939,9 +1956,32 @@ export async function run(opts: {
         ? inheritedLink
         : readlinkSync(join(cwd, '.mcp.json'))
       const server = project.settings.mcpServer ?? project.name
-      mcpConnection = config.error
-        ? { server, connected: false, error: config.error }
-        : mcpConnectionFor(name, cwd, server)
+      if (config.error) {
+        mcpConnection = { server, connected: false, error: config.error }
+      } else {
+        const recorded = db().query(
+          'SELECT worktree, worktree_source FROM run WHERE id=?',
+        ).get(claim.id) as { worktree: string | null; worktree_source: string | null } | null
+        assertGrokTrustEligible(cwd, recorded)
+        const beforeTrust = grokTrustHeadings()
+        mcpTrustGranted = true
+        // Record the attempt before doctor: the trusted invocation may write its
+        // store and then fail, and that remains a grant orch made.
+        db().query('UPDATE run SET mcp_trust_granted=1 WHERE id=?').run(claim.id)
+        try {
+          mcpConnection = mcpConnectionFor(name, cwd, server, true)
+        } finally {
+          const added = addedGrokTrustHeadings(beforeTrust, grokTrustHeadings())
+          db().query('UPDATE run SET mcp_trust_path=? WHERE id=?')
+            .run(added.length ? JSON.stringify(added) : null, claim.id)
+        }
+      }
+      if (mcpTrustGranted && mcpConnection.connected === false &&
+          /folder untrusted|repo-local server not started/i.test(mcpConnection.error ?? '')) {
+        throw new Error(
+          `Grok remained untrusted after scoped trust for ${cwd}: ${mcpConnection.error}`,
+        )
+      }
       if (mcpConnection.connected === false && mcpMode === 'prefer') {
         mcpConnection = {
           ...mcpConnection,
@@ -2016,6 +2056,7 @@ export async function run(opts: {
     // falls back to the durable `status: blocked` protocol, which is why that
     // one remains the contract rather than an afterthought.
     mcp: usingMcp,
+    trustCwd: mcpTrustGranted ? cwd : undefined,
     model: opts.model,
     write: writes,
     session: vendorSession ?? undefined,
