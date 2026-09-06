@@ -5148,7 +5148,8 @@ describe('run detail', () => {
 
     const detail = runDetail(id)!
     expect(detail).toMatchObject({
-      id, agent: 'grok', job: 'craft', latency_ms: 1234, vendor_tokens: 5678,
+      id, requested_id: id, resolved_from: 'root', root_id: id,
+      agent: 'grok', job: 'craft', latency_ms: 1234, vendor_tokens: 5678,
       status: 'failed', failure_kind: 'timeout', probe: 1,
       evidence_excluded: 'not evidence', error: 'timed out',
       doc_revisions: '[4,9]', canon_sha: 'canon-123',
@@ -5175,6 +5176,9 @@ describe('run detail', () => {
       { run_id: child, root_id: root, action: 'continue',
         actor_session: 'architect-session', at: '2026-09-05T02:00:00.000Z', reason: 'ruled' },
     ])
+    expect(runDetail(child)).toMatchObject({
+      id: child, requested_id: child, resolved_from: 'turn', root_id: root,
+    })
     expect(() => insertAudit.run(root, root, 'invented', null, nowIso(), null)).toThrow()
   })
 })
@@ -7711,7 +7715,42 @@ describe('detached run collection', () => {
     expect(result.code).toBe(0)
     const rows = result.out.trim().split('\n').map((line) => JSON.parse(line))
     expect(rows.map((row) => row.id)).toEqual([second, first, unknown])
+    expect(rows.slice(0, 2).map((row) => [row.requested_id, row.resolved_from])).toEqual([
+      [second, 'root'], [first, 'root'],
+    ])
     expect(rows.at(-1)).toEqual({ id: unknown, status: 'unknown', unknown: true })
+  })
+
+  test('runs --id identifies a requested turn while returning its chain root', () => {
+    const root = insert('asking', 'implement')
+    const turn = insert('ok', 'implement')
+    db().query('UPDATE run SET parent_run_id=?, turn=2 WHERE id=?').run(root, turn)
+
+    const json = orch('runs', '--id', String(turn), '--json')
+    expect(json.code).toBe(0)
+    expect(JSON.parse(json.out)).toMatchObject({
+      id: root, requested_id: turn, resolved_from: 'turn',
+    })
+
+    const text = orch('runs', '--id', String(turn))
+    expect(text.code).toBe(0)
+    expect(text.out).toContain(`${root} (asked as turn ${turn})`)
+  })
+
+  test('runs --id preserves both requested identities when they resolve to one root', () => {
+    const root = insert('asking', 'implement')
+    const turn = insert('ok', 'implement')
+    db().query('UPDATE run SET parent_run_id=?, turn=2 WHERE id=?').run(root, turn)
+
+    const result = orch('runs', '--id', String(root), '--id', String(turn), '--json')
+    expect(result.code).toBe(0)
+    expect(result.out.trim().split('\n').map((line) => {
+      const row = JSON.parse(line)
+      return [row.id, row.requested_id, row.resolved_from]
+    })).toEqual([
+      [root, root, 'root'],
+      [root, turn, 'turn'],
+    ])
   })
 
   test('runs --id refuses a time window', () => {

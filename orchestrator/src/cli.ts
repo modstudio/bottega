@@ -1198,6 +1198,7 @@ function usage(): never {
   orch review calibration <lens> <agent> <model> [--json]  (--json: one JSON document)
   orch pending                  runs YOU made that are still unscored (exit 1 if any)
   orch runs [--id ID]... [--job X] [--agent Y] [--limit N] [--unscored] [--since ISO] [--json]
+                         --id resolves a turn to its chain root and identifies the requested id
       --id queries exactly those run ids; repeat it for a union of ids
       --id and --since cannot be combined
       --json                    print one JSON object per line, with cwd, session id and questions: the interface hub reads
@@ -1211,7 +1212,8 @@ function usage(): never {
       --distinct-from <id>[,...] preview routing away from models used by these runs
   orch state [--days N]         the dashboard payload as JSON (what hub renders)
       the dashboard itself is 'hub serve' - this concern routes and scores
-  orch run <run-id> [--receipt] one run's detail as JSON; --receipt marks worker messages read
+  orch run <run-id> [--receipt] one exact turn's detail as JSON, with its chain root;
+                                --receipt marks worker messages read
   orch search <query>           consult score notes, rulings, review findings, and saved outputs
       --limit <n>               compact results to return (default 20)
       --full                    include the complete matched records after choosing them
@@ -4758,6 +4760,25 @@ switch (cmd) {
     ) : new Set<number>()
     const unknownIds = requestedIds.filter((id) => !knownIds.has(id))
 
+    if (requestedIds.length) {
+      const rootByRequested = new Map((db().query(
+        `SELECT id requested_id, COALESCE(parent_run_id, id) root_id
+           FROM run WHERE id IN (${requestedIds.map(() => '?').join(',')})`,
+      ).all(...requestedIds) as { requested_id: number; root_id: number }[])
+        .map((requested) => [requested.requested_id, requested.root_id]))
+      const requestedRoots = requestedIds.flatMap((requested_id) => {
+        const root_id = rootByRequested.get(requested_id)
+        return root_id === undefined ? [] : [{ requested_id, root_id }]
+      })
+      rows = rows.flatMap((row) => requestedRoots
+        .filter((requested) => requested.root_id === Number(row.id))
+        .map((requested) => ({
+          ...row,
+          requested_id: requested.requested_id,
+          resolved_from: requested.requested_id === Number(row.id) ? 'root' : 'turn',
+        })))
+    }
+
     // JSON Lines, so a consumer can stream it and a truncated read loses only
     // the last record. This is a published interface: `hub` reads it rather
     // than opening orch.db, because a database shared between two concerns is
@@ -4772,8 +4793,11 @@ switch (cmd) {
     for (const r of rows) {
       const outcome = outcomeOf(r as OutcomeRow)
       const status = outcome.line.split(' - ', 1)[0]!
+      const identity = r.resolved_from === 'turn'
+        ? `${r.id} (asked as turn ${r.requested_id})`
+        : String(r.id)
       console.log(
-        `${String(r.id).padStart(4)}  ${String((r.failover_chain as string[]).join('→')).padEnd(6)} ${String(r.job).padEnd(14)}` +
+        `${identity.padStart(4)}  ${String((r.failover_chain as string[]).join('→')).padEnd(6)} ${String(r.job).padEnd(14)}` +
           // 'running' is not a failure, and a null latency is not zero seconds.
           ` ${String(r.status === 'failed' ? status.toUpperCase() : status).padEnd(10)}` +
           ` ${dur(r.latency_ms as number | null).padStart(8)}  ${String(r.prompt_head).slice(0, 60)}`,

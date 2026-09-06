@@ -34,9 +34,10 @@ export function runDetail(id: number, receipt = false) {
   if (!row) return null
   const read = (p: unknown) =>
     typeof p === 'string' && existsSync(p) ? readFileSync(p, 'utf8') : null
-  const rootId = (db().query(
-    'SELECT COALESCE(parent_run_id, id) root_id FROM run WHERE id=?',
-  ).get(id) as { root_id: number }).root_id
+  const identity = db().query(
+    'SELECT parent_run_id, COALESCE(parent_run_id, id) root_id FROM run WHERE id=?',
+  ).get(id) as { parent_run_id: number | null; root_id: number }
+  const rootId = identity.root_id
   const messages = receipt ? receiptMessagesForArchitect(id) : messagesForRun(id)
   const audit = db().query(
     `SELECT run_id, root_id, action,
@@ -46,6 +47,9 @@ export function runDetail(id: number, receipt = false) {
   ).all(rootId)
   return {
     ...row,
+    requested_id: id,
+    resolved_from: identity.parent_run_id === null ? 'root' : 'turn',
+    root_id: rootId,
     changed_paths: typeof row.changed_paths === 'string' ? JSON.parse(row.changed_paths) : null,
     project: typeof row.cwd === 'string' ? projectAt(row.cwd)?.name ?? null : null,
     scoreAxes: JOBS[String(row.job)]?.needs.writesRepo
