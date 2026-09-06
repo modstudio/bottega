@@ -7166,7 +7166,7 @@ describe('detached run collection', () => {
     expect(r.out).toContain('only the owning session may continue it')
     expect(r.out).not.toContain(`recoverable: orch continue ${id}`)
 
-    const continued = orch('continue', String(id))
+    const continued = orch('continue', String(id), 'continue ownership fixture')
     expect(continued.code).toBe(1)
     expect(continued.err).toContain(`run ${id} is owned by session other-session`)
     expect(continued.err).toContain('current session orch-test-session cannot continue it')
@@ -9210,7 +9210,7 @@ describe('detached run collection', () => {
     ).run('unowned-vendor-session', 'codex', dir, root)
     try {
       const continued = Bun.spawnSync(
-        [process.execPath, CLI, 'continue', String(root)],
+        [process.execPath, CLI, 'continue', String(root), 'continue adoption fixture'],
         {
           env: {
             ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
@@ -9237,7 +9237,7 @@ describe('detached run collection', () => {
         'SELECT action, actor_session, reason FROM run_mutation_audit WHERE root_id=? ORDER BY rowid',
       ).all(root)).toEqual([
         { action: 'adopt', actor_session: 'session-A', reason: 'before continue' },
-        { action: 'continue', actor_session: 'session-A', reason: null },
+        { action: 'continue', actor_session: 'session-A', reason: 'continue adoption fixture' },
       ])
 
       const stopped = Bun.spawnSync(
