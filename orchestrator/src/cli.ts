@@ -319,7 +319,7 @@ class SharedWorktreeEvidenceError extends Error {
 
 function keptBranchLine(branch: string, count: number, id: number): string {
   return `kept branch ${branch}: ${count} commit(s) reachable only from this branch — ` +
-    `merge it, or orch discard ${id} --force to delete it`
+    `merge it, or orch discard ${id} --force to delete it after checking no other run owns it`
 }
 
 const KEPT_ROW_LIMIT = 10
@@ -428,18 +428,25 @@ function restoreRefusal(
 
 function sharedBranchRefusal(
   runId: number, repoRoot: string, branch: string, snapshot: string, owner: BranchOwnerRow,
-): string | null {
+): { refusal: string | null; warning: string | null } {
   const after = branchTip(repoRoot, branch)
-  if (after === snapshot) return null
+  if (after === snapshot) return { refusal: null, warning: null }
   if (after !== null) {
-    return `shared branch ${branch} moved from ${snapshot} to ${after} during cleanup; ` +
-      `run ${owner.id} owns it, so it was left at ${after}`
+    return {
+      refusal: `shared branch ${branch} moved from ${snapshot} to ${after} during cleanup; ` +
+        `run ${owner.id} owns it, so it was left at ${after}`,
+      warning: null,
+    }
   }
   const restored = restoreBranch(repoRoot, branch, snapshot)
-  return restored.ok
-    ? `project remove tool deleted shared branch ${branch}; restored ${snapshot}. ` +
-      'The tip at deletion was not observable.'
-    : restoreRefusal(runId, branch, snapshot, restored.error)
+  return restored.ok ? {
+    refusal: null,
+    warning: `project remove tool deleted shared branch ${branch}; restored ${snapshot}. ` +
+      'The tip at deletion was not observable.',
+  } : {
+    refusal: restoreRefusal(runId, branch, snapshot, restored.error),
+    warning: null,
+  }
 }
 
 /**
@@ -490,19 +497,33 @@ async function discardWorktree(
     base: '',
     repoRoot,
   }, repoRoot, force, Boolean(branchOwner))
+  let branchWarning: string | null = null
   if (protectedBranch && row.branch && !sharedBranchTip) {
-    const restored = restoreBranch(repoRoot, row.branch, protectedBranch.tip)
-    if (!restored.ok) {
-      throw new Error(restoreRefusal(row.id, row.branch, protectedBranch.tip, restored.error))
+    const after = branchTip(repoRoot, row.branch)
+    if (after !== null && after !== protectedBranch.tip) {
+      throw new Error(
+        `protected branch ${row.branch} moved from ${protectedBranch.tip} to ${after} during cleanup; ` +
+        `it was left at ${after}`,
+      )
+    }
+    if (after === null) {
+      const restored = restoreBranch(repoRoot, row.branch, protectedBranch.tip)
+      if (!restored.ok) {
+        throw new Error(restoreRefusal(row.id, row.branch, protectedBranch.tip, restored.error))
+      }
+      branchWarning = `project remove tool deleted protected branch ${row.branch}; ` +
+        `restored ${protectedBranch.tip}`
     }
   }
   if (sharedBranchTip && row.branch) {
-    const refusal = sharedBranchRefusal(
+    const outcome = sharedBranchRefusal(
       row.id, repoRoot, row.branch, sharedBranchTip, branchOwner!,
     )
-    if (refusal) throw new Error(refusal)
+    if (outcome.refusal) throw new Error(outcome.refusal)
+    branchWarning = outcome.warning
   }
   if (!r.removed) throw new Error(r.detail)
+  if (branchWarning) console.error(branchWarning)
   const project = row.repo ?? projectAt(repoRoot)?.name ?? 'unknown'
   const inventory = resourcesForRun(row.id)
   if (inventory.errors.length) {
@@ -3121,10 +3142,11 @@ switch (cmd) {
       const sharedTip = branchOwner && r.branch ? branchTip(repoRoot, r.branch) : null
       const res = removeFor(w, repoRoot, false, Boolean(branchOwner))
       if (sharedTip && r.branch) {
-        const refusal = sharedBranchRefusal(r.id, repoRoot, r.branch, sharedTip, branchOwner!)
-        if (refusal) {
+        const outcome = sharedBranchRefusal(r.id, repoRoot, r.branch, sharedTip, branchOwner!)
+        if (outcome.warning) console.error(`run ${r.id}: ${outcome.warning}`)
+        if (outcome.refusal) {
           cleanupFailed = true
-          console.error(`could not reclaim ${r.id}: ${refusal}`)
+          console.error(`could not reclaim ${r.id}: ${outcome.refusal}`)
           continue
         }
       }
@@ -3213,13 +3235,14 @@ switch (cmd) {
         const sharedTip = branchOwner && safe.branch ? branchTip(p.path, safe.branch) : null
         const res = removeFor(w, p.path, false, Boolean(branchOwner))
         if (sharedTip && safe.branch) {
-          const refusal = sharedBranchRefusal(
+          const outcome = sharedBranchRefusal(
             runId ?? -1, p.path, safe.branch, sharedTip, branchOwner!,
           )
-          if (refusal) {
+          if (outcome.warning) console.error(`${label}: ${outcome.warning}`)
+          if (outcome.refusal) {
             cleanupFailed = true
             keep(`${label}  removal refused`, 'removal refused')
-            console.error(`could not reclaim ${label}: ${refusal}`)
+            console.error(`could not reclaim ${label}: ${outcome.refusal}`)
             continue
           }
         }
@@ -3295,8 +3318,8 @@ switch (cmd) {
       const inventory = dockerRunResources()
       for (const error of inventory.errors) inventoryErrors.add(error)
       if (inventory.errors.length) cleanupFailed = true
-      const owners = db().query('SELECT id, repo, worktree FROM run').all() as {
-        id: number; repo: string | null; worktree: string | null
+      const owners = db().query('SELECT id, repo, worktree, status FROM run').all() as {
+        id: number; repo: string | null; worktree: string | null; status: string
       }[]
       for (const { resource, project } of orphanedDockerResources(inventory.resources, owners)) {
         const key = `${resource.kind}:${resource.name}`
@@ -3338,6 +3361,14 @@ switch (cmd) {
       }
       const repoRoot = cleanupRepoRoot(row)
       if (!repoRoot) throw new Error(`run ${id}'s repository root was not found`)
+      const owner = evidenceOwningBranchOwner({
+        id: row.id, repo: row.repo, branch: row.branch_kept,
+      }, repoRoot)
+      if (owner) {
+        throw new Error(
+          `branch ${row.branch_kept} is still evidence owned by run ${owner.id}; it was left in place`,
+        )
+      }
       const removed = removeBranch(repoRoot, row.branch_kept)
       if (removed) {
         db().query('UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE id=?').run(id)
@@ -4535,8 +4566,8 @@ switch (cmd) {
     const owed = unscoredCount()
     console.log(`\nruns ${counts.runs}, scored ${counts.scored}, unscored ${owed}`)
     const docker = dockerRunResources()
-    const owners = db().query('SELECT id, repo, worktree FROM run').all() as {
-      id: number; repo: string | null; worktree: string | null
+    const owners = db().query('SELECT id, repo, worktree, status FROM run').all() as {
+      id: number; repo: string | null; worktree: string | null; status: string
     }[]
     const orphans = orphanedDockerResources(docker.resources, owners)
     console.log(`\ndocker orphans  ${orphans.length}`)

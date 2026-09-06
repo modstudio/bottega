@@ -10617,7 +10617,7 @@ echo 'Usage: scripts/worktree create [seed]'
     }
   })
 
-  test('discard restores and refuses when a project tool deletes a moved shared branch', () => {
+  test('discard restores and continues when a project tool deletes a moved shared branch', () => {
     const { repo } = scratchRepo()
     const project = `shared-ref-${repo.split('/').pop()}`
     const target = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
@@ -10657,14 +10657,14 @@ echo 'Usage: scripts/worktree create [seed]'
         },
       )
       const error = p.stderr.toString()
-      expect(p.exitCode).not.toBe(0)
+      expect(p.exitCode).toBe(0)
       expect(error).toContain(`project remove tool deleted shared branch ${branch}`)
       expect(error).toContain(`restored ${before}`)
       expect(error).toContain('The tip at deletion was not observable.')
       expect(error).not.toContain(unobservable)
       expect(git(repo, 'rev-parse', branch)).toBe(before)
       expect(db().query('SELECT worktree FROM run WHERE id=?').get(target))
-        .toEqual({ worktree: treePath })
+        .toEqual({ worktree: null })
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
@@ -10721,6 +10721,49 @@ echo 'Usage: scripts/worktree create [seed]'
     }
   })
 
+  test('discard inventories leaks after successfully restoring a shared branch', () => {
+    const { repo } = scratchRepo()
+    const project = `restored-leak-${repo.split('/').pop()}`
+    const target = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
+    const owner = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: project })
+    const tree = createWorktree(repo, target)
+    const tip = git(repo, 'rev-parse', tree.branch)
+    const script = join(repo, 'delete-shared-but-leak.sh')
+    writeFileSync(script,
+      'git worktree remove --force "$1"\n' +
+      'git branch -D "$2"\n')
+    upsertProject({
+      name: project, path: realpathSync(repo),
+      settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
+    })
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, target)
+    db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, tree.branch, owner)
+    const docker = fakeDocker([`orch-${target}-leaked`], [])
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const p = Bun.spawnSync(
+        [process.execPath, CLI, 'discard', String(target), '--force'],
+        {
+          env: {
+            ...process.env, ...docker.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          },
+          stdout: 'pipe', stderr: 'pipe',
+        },
+      )
+      const error = p.stderr.toString()
+      expect(p.exitCode).not.toBe(0)
+      expect(error).toContain(`deleted shared branch ${tree.branch}; restored ${tip}`)
+      expect(error).toContain(`container orch-${target}-leaked leaked by project ${project}`)
+      expect(git(repo, 'rev-parse', tree.branch)).toBe(tip)
+      expect(db().query('SELECT worktree FROM run WHERE id=?').get(target))
+        .toEqual({ worktree: tree.path })
+    } finally {
+      rmSync(docker.dir, { recursive: true, force: true })
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('an unscored failed run owns its recorded branch', () => {
     const { repo } = scratchRepo()
     const project = `unscored-ref-${repo.split('/').pop()}`
@@ -10748,11 +10791,11 @@ echo 'Usage: scripts/worktree create [seed]'
           stdout: 'pipe', stderr: 'pipe',
         },
       )
-      expect(p.exitCode).not.toBe(0)
+      expect(p.exitCode).toBe(0)
       expect(p.stderr.toString()).toContain(`deleted shared branch ${tree.branch}`)
       expect(git(repo, 'rev-parse', tree.branch)).toBe(tip)
       expect(db().query('SELECT worktree FROM run WHERE id=?').get(target))
-        .toEqual({ worktree: tree.path })
+        .toEqual({ worktree: null })
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
@@ -10795,7 +10838,7 @@ echo 'Usage: scripts/worktree create [seed]'
           stdout: 'pipe', stderr: 'pipe',
         },
       )
-      expect(p.exitCode).not.toBe(0)
+      expect(p.exitCode).toBe(0)
       expect(p.stderr.toString()).toContain(`deleted shared branch ${tree.branch}`)
       expect(git(repo, 'rev-parse', tree.branch)).toBe(tip)
       expect(p.stderr.toString()).not.toContain('nonexistent object')
@@ -11108,12 +11151,30 @@ echo 'Usage: scripts/worktree create [seed]'
       expect(p.exitCode).toBe(0)
       expect(p.stdout.toString()).toContain(
         `kept branch ${tree.branch}: 1 commit(s) reachable only from this branch — merge it, or ` +
-        `orch discard ${id} --force to delete it`,
+        `orch discard ${id} --force to delete it after checking no other run owns it`,
       )
       expect(existsSync(tree.path)).toBe(false)
       expect(git(repo, 'rev-parse', tree.branch)).toBe(tip)
       expect(db().query('SELECT branch_kept FROM run WHERE id=?').get(id))
         .toEqual({ branch_kept: tree.branch })
+
+      const owner = addRun({
+        agent: 'codex', job: 'implement', status: 'running', repo: 'protected-tool',
+      })
+      db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, tree.branch, owner)
+      const refused = Bun.spawnSync(
+        [process.execPath, CLI, 'discard', String(id), '--force'],
+        {
+          env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+          stdout: 'pipe', stderr: 'pipe',
+        },
+      )
+      expect(refused.exitCode).not.toBe(0)
+      expect(refused.stderr.toString()).toContain(
+        `branch ${tree.branch} is still evidence owned by run ${owner}`,
+      )
+      expect(git(repo, 'rev-parse', tree.branch)).toBe(tip)
+      db().query('UPDATE run SET branch=NULL WHERE id=?').run(owner)
 
       const forced = Bun.spawnSync(
         [process.execPath, CLI, 'discard', String(id), '--force'],
@@ -11150,6 +11211,51 @@ echo 'Usage: scripts/worktree create [seed]'
       expect(git(repo, 'branch', '--list', tree.branch)).toBe('')
       expect(db().query('SELECT branch_kept FROM run WHERE id=?').get(id))
         .toEqual({ branch_kept: null })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('discard never rewinds a protected branch moved by the project remove tool', () => {
+    const { repo } = scratchRepo()
+    const project = `moved-protected-${repo.split('/').pop()}`
+    const id = addRun({ agent: 'codex', job: 'implement', repo: project })
+    const tree = createWorktree(repo, id)
+    writeFileSync(join(tree.path, 'unique.txt'), 'first tip\n')
+    git(tree.path, 'add', 'unique.txt')
+    git(tree.path, 'commit', '-m', 'first unique tip')
+    const first = git(tree.path, 'rev-parse', 'HEAD')
+    git(repo, 'checkout', '-b', 'fixture-later-tip', first)
+    writeFileSync(join(repo, 'later.txt'), 'later tip\n')
+    git(repo, 'add', 'later.txt')
+    git(repo, 'commit', '-m', 'later unique tip')
+    const later = git(repo, 'rev-parse', 'HEAD')
+    git(repo, 'checkout', 'main')
+    git(repo, 'branch', '-D', 'fixture-later-tip')
+    const script = join(repo, 'move-protected-branch.sh')
+    writeFileSync(script,
+      'git worktree remove --force "$1"\n' +
+      `git update-ref "refs/heads/$2" "${later}"\n`)
+    upsertProject({
+      name: project, path: realpathSync(repo),
+      settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
+    })
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, id)
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(p.exitCode).not.toBe(0)
+      expect(p.stderr.toString()).toContain(
+        `protected branch ${tree.branch} moved from ${first} to ${later}`,
+      )
+      expect(p.stderr.toString()).toContain(`left at ${later}`)
+      expect(git(repo, 'rev-parse', tree.branch)).toBe(later)
+      expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
+        .toEqual({ worktree: tree.path })
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
@@ -12015,12 +12121,12 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, branch, owner)
     try {
       const r = orchWithEnv(managedEnv, 'sweep', '--older-than', '0', '--force')
-      expect(r.code).not.toBe(0)
+      expect(r.code).toBe(0)
       expect(r.err).toContain(`project remove tool deleted shared branch ${branch}`)
       expect(r.err).toContain('The tip at deletion was not observable.')
       expect(git(repo, 'rev-parse', branch)).toBe(git(repo, 'rev-parse', 'main'))
       expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
-        .toEqual({ worktree: tree })
+        .toEqual({ worktree: null })
     } finally {
       rmSync(repo, { recursive: true, force: true })
       rmSync(workerRepo, { recursive: true, force: true })
@@ -12047,6 +12153,30 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
       expect(r.err).toContain(`project ${name} sweep failed with exit status 7`)
     } finally {
       rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('sweep does not classify infrastructure for a running run as orphaned', () => {
+    const project = `live-resource-${randomUUID()}`
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: project })
+    const docker = fakeDocker([`orch-${id}-booting`], [])
+    try {
+      const r = orchWithEnv(docker.env, 'sweep', '--older-than', '0')
+      expect(r.code).toBe(0)
+      expect(r.err).not.toContain(`orch-${id}-booting`)
+      expect(r.err).not.toContain('leaked Docker resources')
+
+      const doctor = Bun.spawnSync([process.execPath, CLI, 'doctor'], {
+        env: {
+          ...process.env, ...docker.env, ORCH_DB: process.env.ORCH_DB!,
+          ORCH_DEPTH: '0', ORCH_LOCAL_BASE_URL: '',
+        },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(doctor.exitCode).toBe(0)
+      expect(doctor.stdout.toString()).not.toContain(`orch-${id}-booting`)
+    } finally {
+      rmSync(docker.dir, { recursive: true, force: true })
     }
   })
 

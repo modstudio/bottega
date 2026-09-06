@@ -1645,8 +1645,13 @@ export function restoreBranch(
   repoRoot: string, branch: string, tip: string,
 ): { ok: true } | { ok: false; error: string } {
   const ref = `refs/heads/${branch}`
-  if (gitOk(['rev-parse', '--verify', ref], repoRoot) === tip) return { ok: true }
-  const p = Bun.spawnSync(['git', 'update-ref', ref, tip], {
+  const existing = gitOk(['rev-parse', '--verify', ref], repoRoot)
+  if (existing === tip) return { ok: true }
+  if (existing !== null) {
+    return { ok: false, error: `branch already exists at ${existing}` }
+  }
+  const zero = '0000000000000000000000000000000000000000'
+  const p = Bun.spawnSync(['git', 'update-ref', ref, tip, zero], {
     cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
   })
   return p.exitCode === 0

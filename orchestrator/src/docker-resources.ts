@@ -89,16 +89,18 @@ export type RunResourceOwner = {
   id: number
   repo: string | null
   worktree: string | null
+  status: string
 }
 
-/** A resource is orphaned once no extant worktree remains to own its run infrastructure. */
+/** Live runs own their infrastructure even before a worktree path exists. */
 export function orphanedDockerResources(
   resources: DockerResource[], owners: RunResourceOwner[],
 ): { resource: DockerResource; project: string }[] {
   const byId = new Map(owners.map((owner) => [owner.id, owner]))
   return resources.flatMap((resource) => {
     const owner = byId.get(resource.runId)
-    if (owner?.worktree && existsSync(owner.worktree)) return []
+    if (owner && (!['ok', 'failed', 'stale'].includes(owner.status) ||
+        (owner.worktree !== null && existsSync(owner.worktree)))) return []
     return [{ resource, project: owner?.repo ?? 'unknown' }]
   })
 }
