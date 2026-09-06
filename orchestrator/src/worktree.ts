@@ -364,16 +364,48 @@ function waiterEntries(waitersDir: string): { name: string; participant: Project
   }).sort((a, b) => a.name.localeCompare(b.name))
 }
 
-function nextWaiterTicket(waitersDir: string): string {
+const TICKET_LOCK_STALE_MS = 10_000
+
+/**
+ * Hand out the next arrival ticket under a tiny mkdir lock. The lock is
+ * bounded by the caller's deadline and reclaimed when its owner is dead or
+ * has held it past TICKET_LOCK_STALE_MS (a ticket write takes microseconds),
+ * so one killed allocator cannot wedge every lock in the repository
+ * (lens run 2346).
+ */
+function nextWaiterTicket(waitersDir: string, deadline: number): string {
   const lock = join(waitersDir, '.ticket.lock')
+  const owner = join(lock, 'owner')
   const file = join(waitersDir, '.ticket')
   const sleeper = new Int32Array(new SharedArrayBuffer(4))
   for (;;) {
     try {
       mkdirSync(lock)
+      writeFileSync(owner, `${JSON.stringify({ pid: process.pid, since: Date.now() })}\n`)
       break
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      let stale = false
+      try {
+        const held = JSON.parse(readFileSync(owner, 'utf8')) as { pid?: number; since?: number }
+        stale = !Number.isSafeInteger(held.pid) || !pidAlive(held.pid!) ||
+          !Number.isFinite(held.since) || Date.now() - held.since! > TICKET_LOCK_STALE_MS
+      } catch {
+        // No owner file yet: the holder is between mkdir and write, or died there.
+        try { stale = Date.now() - statSync(lock).mtimeMs > TICKET_LOCK_STALE_MS } catch { stale = false }
+      }
+      if (stale) {
+        const gone = `${lock}.stale-${process.pid}-${randomUUID()}`
+        try { renameSync(lock, gone); rmSync(gone, { recursive: true, force: true }) } catch { /* lost the race */ }
+        continue
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `timed out waiting for the waiter-ticket lock ${lock}\n` +
+          'invariant: A lock waiter is served in arrival order.\n' +
+          'cleared by: the holder finishing; orch monitor names a dead holder, which the next arrival reclaims',
+        )
+      }
       Atomics.wait(sleeper, 0, 0, 10)
     }
   }
@@ -447,10 +479,10 @@ export function withProjectLock<T>(
     session: identity.session, what: identity.what, since: new Date().toISOString(),
   }
   mkdirSync(paths.waiters, { recursive: true })
-  const waiterName = `${nextWaiterTicket(paths.waiters)}-${process.pid}-${incarnation}`
+  const deadline = Date.now() + timeoutMs
+  const waiterName = `${nextWaiterTicket(paths.waiters, deadline)}-${process.pid}-${incarnation}`
   const waiter = join(paths.waiters, waiterName)
   writeFileSync(waiter, `${JSON.stringify(participant)}\n`)
-  const deadline = Date.now() + timeoutMs
   const sleeper = new Int32Array(new SharedArrayBuffer(4))
 
   try {
@@ -513,7 +545,8 @@ function lockTimeout(
   return new Error(
     `timed out after ${timeoutMs / 1000}s waiting for this project's ${label} lock${detail}: ${lock}\n` +
     `invariant: A lock waiter is served in arrival order.\n` +
-    `cleared by: orch land --status`,
+    `cleared by: the holder${held ? ` (pid ${held.pid})` : ''} finishing; ` +
+    'orch monitor names a dead holder, which the next acquisition reclaims',
   )
 }
 
