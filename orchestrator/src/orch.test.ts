@@ -9809,7 +9809,13 @@ describe('outside-worktree write observation', () => {
     expect(retargetedPrompt(
       'https://example.test/repo/f file:///repo/f "https://host/repo/f" (ssh://host/repo/f)',
       '/repo', '/wt',
-    )).toBe('https://example.test/repo/f file:///wt/f "https://host/repo/f" (ssh://host/repo/f)')
+    )).toBe('https://example.test/wt/f file:///wt/f "https://host/wt/f" (ssh://host/wt/f)')
+    expect(retargetedPrompt(
+      'https://x.test/?path=/repo/file vscode://x/open?path=/repo/file file://host/?path=/repo/file',
+      '/repo', '/wt',
+    )).toBe(
+      'https://x.test/?path=/wt/file vscode://x/open?path=/wt/file file://host/?path=/wt/file',
+    )
 
     const first = retargetedPrompt('/repo/file', '/repo', '/repo/wt', false, [])
     expect(first).toBe('/repo/wt/file')
@@ -9822,7 +9828,7 @@ describe('outside-worktree write observation', () => {
     expect(retargetedPrompt(
       aliased, '/repo', '/repo/wt', false, ['/repo/wt-alias'],
     )).toBe(aliased)
-    expect(retargetedPrompt('//repo/file', '/repo', '/wt')).toBe('//wt/file')
+    expect(retargetedPrompt('//repo/file', '/repo', '/wt')).toBe('//repo/file')
 
     expect(retargetRepositoryPrompt('/repo/file', '/repo', '', false, [])).toEqual({
       prompt: '/repo/file',
@@ -9862,10 +9868,12 @@ describe('outside-worktree write observation', () => {
     try {
       const prompt = `Inspect ${caller}. ${caller}, ${caller}/sub ` +
         `${caller}@archive ${caller}-archive/f ${caller}.git ${caller}.x ` +
-        `${caller}_archive ${caller},archive ${caller}:archive ${caller}+archive word${caller}/f`
+        `${caller}_archive ${caller},archive ${caller}:archive ${caller}+archive ` +
+        `${caller}:+ word${caller}/f`
       const expected = `Inspect ${worktree}. ${worktree}, ${worktree}/sub ` +
         `${caller}@archive ${caller}-archive/f ${caller}.git ${caller}.x ` +
-        `${caller}_archive ${caller},archive ${caller}:archive ${caller}+archive word${caller}/f`
+        `${caller}_archive ${caller},archive ${caller}:archive ${caller}+archive ` +
+        `${caller}:+ word${caller}/f`
       expect(retargetedPrompt(prompt, caller, worktree)).toBe(expected)
       mkdirSync(`${caller}.`)
       mkdirSync(`${caller}-archive`)
@@ -9884,6 +9892,20 @@ describe('outside-worktree write observation', () => {
       '/repoé/f /repo١/f /repo\u0301/f /repo𐐀/f é/repo/f ١/repo/f e\u0301/repo/f 𐐀/repo/f /repo/é',
       '/repo', '/wt',
     )).toBe('/repoé/f /repo١/f /repo\u0301/f /repo𐐀/f é/repo/f ١/repo/f e\u0301/repo/f 𐐀/repo/f /wt/é')
+    expect(retargetedPrompt(
+      '/tmp/@/repo/file /tmp//repo/file @/repo/file', '/repo', '/wt',
+    )).toBe('/tmp/@/repo/file /tmp//repo/file @/repo/file')
+  })
+
+  test('case-insensitive aliases use the documented partial length-changing fold', () => {
+    expect(retargetedPrompt(
+      '/tmp/case/i̇/file /tmp/case/SS/file /tmp/case/fi/file',
+      ['/tmp/case/İ', '/tmp/case/ß', '/tmp/case/ﬁ'], '/worktree', true,
+    )).toBe('/worktree/file /worktree/file /worktree/file')
+    expect(retargetedPrompt(
+      '/tmp/case/İ/file /tmp/case/ß/file /tmp/case/ﬁ/file',
+      ['/tmp/case/i̇', '/tmp/case/SS', '/tmp/case/fi'], '/worktree', true,
+    )).toBe('/worktree/file /worktree/file /worktree/file')
   })
 
   test('the project worktree root protects every disposable tree from rebinding', () => {
@@ -9922,7 +9944,8 @@ describe('outside-worktree write observation', () => {
     }
     expect(checkoutCaseSensitivity('/')).toEqual({
       caseInsensitive: false,
-      diagnostic: 'checkout case-sensitivity probe indeterminate: root has no alphabetic character (/)',
+      diagnostic: 'checkout case-sensitivity probe indeterminate: root has no alphabetic character (/); ' +
+        'path matching uses a partial Unicode case fold; filesystem-specific folding beyond it is a known limit',
     })
   })
 
