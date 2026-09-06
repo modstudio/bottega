@@ -482,12 +482,18 @@ function installedRefGuard(installed: string, guard: string): InstalledRefGuard 
 const REF_GUARD_STAGE_PREFIX = '.orch-hooks-'
 
 function refGuardRunId(cwd: string): number {
-  const marker = join(cwd, ORCH_RUN_MARKER)
-  const value = existsSync(marker) ? Number(readFileSync(marker, 'utf8').split('\n', 1)[0]) : NaN
-  if (!Number.isInteger(value) || value <= 0) {
+  const value = markedWorktreeRunId(cwd)
+  if (value === null) {
     throw new Error(`cannot publish shared ref guard: ${cwd} has no valid ${ORCH_RUN_MARKER} run id`)
   }
   return value
+}
+
+function markedWorktreeRunId(cwd: string): number | null {
+  try {
+    const value = Number(readFileSync(join(cwd, ORCH_RUN_MARKER), 'utf8').split('\n', 1)[0])
+    return Number.isInteger(value) && value > 0 ? value : null
+  } catch { return null }
 }
 
 function refGuardCheckpoint(name: string): void {
@@ -500,9 +506,19 @@ function refGuardCheckpoint(name: string): void {
 
 function cleanupRefGuardLitter(gitDir: string, hookDir?: string): void {
   for (const name of readdirSync(gitDir)) {
-    if (!name.startsWith(REF_GUARD_STAGE_PREFIX)) continue
-    const pid = Number(name.slice(REF_GUARD_STAGE_PREFIX.length).split('-', 1)[0])
-    if (Number.isInteger(pid) && pidAlive(pid)) continue
+    if (name.startsWith(REF_GUARD_STAGE_PREFIX)) {
+      const pid = Number(name.slice(REF_GUARD_STAGE_PREFIX.length).split('-', 1)[0])
+      if (Number.isInteger(pid) && pidAlive(pid)) continue
+      rmSync(join(gitDir, name), { recursive: true, force: true })
+      continue
+    }
+    if (!/^\d+$/.test(name)) continue
+    const run = db().query(
+      `SELECT status, worktree FROM run WHERE id=?`,
+    ).get(Number(name)) as { status: string; worktree: string | null } | null
+    if (!run || run.worktree !== null || !['ok', 'failed', 'stale', 'stopped'].includes(run.status)) {
+      continue
+    }
     rmSync(join(gitDir, name), { recursive: true, force: true })
   }
   if (!hookDir || !pathEntryExists(hookDir) || !lstatSync(hookDir).isDirectory()) return
@@ -1827,25 +1843,33 @@ function removeReadOnlyTree(
 export function removeFor(
   w: Worktree, repoRoot: string, forceOrchTree = false, keepBranch = false, runId?: number,
 ): { removed: boolean; detail: string; output?: string } {
+  // Read ownership before any removal path can take the marker with the tree.
+  // The caller id remains a fallback for legacy/already-missing trees only.
+  const owningRunId = markedWorktreeRunId(w.path) ?? runId
   const project = projectAt(repoRoot)
   const tool = project?.settings.worktree
   const retainBranch = keepBranch ||
     (!forceOrchTree && unmergedBranch(repoRoot, w.branch, null) !== null)
+  let result: { removed: boolean; detail: string; output?: string }
   if (w.source === 'readonly_recipe') {
-    const result = removeReadOnlyTree(tool ?? {}, w, keepBranch)
-    return result.output
-      ? { ...result, output: `${project!.name} readonly remove:\n${result.output}` }
-      : result
+    const removed = removeReadOnlyTree(tool ?? {}, w, keepBranch)
+    result = removed.output
+      ? { ...removed, output: `${project!.name} readonly remove:\n${removed.output}` }
+      : removed
+  } else {
+    const projectOwned = w.source === 'recipe' ||
+      (w.source === undefined && Boolean(tool))
+    const removed: { removed: boolean; detail: string; output?: string } = tool && projectOwned
+      ? removeWithTool(tool, w, forceOrchTree, retainBranch)
+      : removeWorktree(w, retainBranch)
+    result = removed.output
+      ? { ...removed, output: `${project!.name} remove:\n${removed.output}` }
+      : removed
   }
-  const projectOwned = w.source === 'recipe' ||
-    (w.source === undefined && Boolean(tool))
-  const result: { removed: boolean; detail: string; output?: string } = tool && projectOwned
-    ? removeWithTool(tool, w, forceOrchTree, retainBranch)
-    : removeWorktree(w, retainBranch)
-  if (result.removed && runId !== undefined) removeSharedRefGuard(repoRoot, runId)
-  return result.output
-    ? { ...result, output: `${project!.name} remove:\n${result.output}` }
-    : result
+  if (result.removed && owningRunId !== undefined && owningRunId !== null) {
+    removeSharedRefGuard(repoRoot, owningRunId)
+  }
+  return result
 }
 
 /** Reclaim orphans the project knows about — databases, containers, metadata. */

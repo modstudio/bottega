@@ -177,6 +177,36 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  test('nested landing keeps the outer worker guard after land returns or throws', () => {
+    for (const outcome of ['returns', 'throws'] as const) {
+      const branch = `nested-land-${outcome}`
+      const { repo, trees } = repoWithBranches([branch])
+      const tree = trees[branch]!
+      upsertProject({
+        name: `landing-guard-${outcome}`, path: repo,
+        settings: { trunk: 'main', gate: outcome === 'returns' ? 'true' : 'false' },
+      })
+      try {
+        const outerGuard = prepareSharedRefGuard(tree, `refs/heads/${branch}`)
+        if (outcome === 'returns') {
+          expect(() => land(repo, branch, { unreviewed: 'nested landing fixture' })).not.toThrow()
+        } else {
+          expect(() => land(repo, branch, { unreviewed: 'nested landing fixture' })).toThrow()
+        }
+        expect(existsSync(join(outerGuard.GIT_CONFIG_VALUE_0, 'reference-transaction'))).toBe(true)
+        const forbidden = Bun.spawnSync([
+          'git', 'update-ref', 'refs/heads/forbidden-after-land', 'HEAD',
+        ], {
+          cwd: tree, env: hermeticGitEnv(outerGuard), stdout: 'pipe', stderr: 'pipe',
+        })
+        expect(forbidden.exitCode).not.toBe(0)
+        expect(forbidden.stderr.toString()).toContain('this worker may update only')
+      } finally {
+        rmSync(repo, { recursive: true, force: true })
+      }
+    }
+  })
+
   test('landing ignores worker global and system config while retaining the target user config', async () => {
     const { repo } = repoWithBranches(['scrub-config'])
     const workerHooks = join(repo, 'worker-hooks')
@@ -1396,7 +1426,7 @@ const { orphanSafety, repoRootOf, createWorktree, createWithTool, createReadOnly
         carryWorkingState, withWorktreeCreateLock, withProjectLock, projectLockState,
         unmergedBranch, assertCallerAncestry, checkoutHasUncommittedWork, callerDrift,
         changesIn, contentTree, removeFor, branchTip } = await import('./worktree.ts')
-const { landingStatus, resolveLandingBranch } = await import('./landing.ts')
+const { land, landingStatus, resolveLandingBranch } = await import('./landing.ts')
 const { gitLocks } = await import('./git-locks.ts')
 const { AGENTS, ARGV_PROMPT_BYTES, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
@@ -13681,7 +13711,10 @@ exec git worktree add --detach "$1" "$2"
       expect(realpathSync(w.path)).toBe(realpathSync(path))
       expect(w.source).toBe('readonly_recipe')
       expect(Bun.spawnSync(['git', 'symbolic-ref', '-q', 'HEAD'], { cwd: path }).exitCode).not.toBe(0)
+      const guard = prepareSharedRefGuard(w.path)
+      expect(existsSync(guard.GIT_CONFIG_VALUE_0)).toBe(true)
       expect(removeFor(w, repo).removed).toBe(true)
+      expect(existsSync(guard.GIT_CONFIG_VALUE_0)).toBe(false)
       expect(readFileSync(removed, 'utf8')).toBe('invoked')
     } finally {
       if (inherited.object === undefined) delete process.env.GIT_OBJECT_DIRECTORY
@@ -14409,6 +14442,9 @@ printf '%s\n' "$path"
     const child = addRun({
       agent: 'codex', job: 'implement', parent: root, turn: 2, session: 'session-B',
     })
+    appendFileSync(join(repo, '.git', 'info', 'exclude'), '.orch-run\n')
+    writeFileSync(join(tree, '.orch-run'), `${root}\n${repo}\nsource: git\n`)
+    const guard = prepareSharedRefGuard(tree, 'refs/heads/AB-2581')
     db().query('UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id IN (?,?)')
       .run(repo, tree, 'AB-2581', git(repo, 'rev-parse', 'main'), root, child)
     try {
@@ -14422,6 +14458,8 @@ printf '%s\n' "$path"
       })
       expect(p.exitCode).toBe(0)
       expect(existsSync(tree)).toBe(false)
+      expect(existsSync(guard.GIT_CONFIG_VALUE_0)).toBe(false)
+      expect(existsSync(join(repo, '.git', 'orch-guards', String(child)))).toBe(false)
       expect(db().query('SELECT id, worktree FROM run WHERE id IN (?,?) ORDER BY id').all(root, child))
         .toEqual([{ id: root, worktree: null }, { id: child, worktree: null }])
       expect(db().query(
@@ -19392,6 +19430,61 @@ describe('the sandbox an agent is launched with', () => {
       expect(removeFor(tree, repo, false, false, 248).removed).toBe(true)
       expect(existsSync(guard.GIT_CONFIG_VALUE_0)).toBe(false)
       expect(() => removeSharedRefGuard(repo, 248)).not.toThrow()
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('worktree marker ownership wins over a resumed child cleanup fallback', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-guard-resumed-cleanup-'))
+    const git = (args: string[]) => Bun.spawnSync(['git', ...args], {
+      cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    try {
+      expect(git(['init', '-b', 'main']).exitCode).toBe(0)
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      expect(git(['add', 'base.txt']).exitCode).toBe(0)
+      expect(git(['-c', 'user.email=orch-test@example.invalid', '-c', 'user.name=Orch Test',
+        'commit', '-m', 'base']).exitCode).toBe(0)
+      const root = 251
+      const resumedChild = 252
+      const tree = createWorktree(repo, root)
+      const rootGuard = prepareSharedRefGuard(tree.path)
+      const childGuard = join(realpathSync(repo), '.git', 'orch-guards', String(resumedChild))
+      mkdirSync(childGuard)
+
+      expect(removeFor(tree, repo, false, false, resumedChild).removed).toBe(true)
+      expect(existsSync(rootGuard.GIT_CONFIG_VALUE_0)).toBe(false)
+      expect(existsSync(childGuard)).toBe(true)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('shared-ref guard litter cleanup reclaims terminal orphans and skips live runs', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-guard-litter-'))
+    const git = (args: string[]) => Bun.spawnSync(['git', ...args], {
+      cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    const terminal = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+    const live = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    try {
+      expect(git(['init', '-b', 'main']).exitCode).toBe(0)
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      expect(git(['add', 'base.txt']).exitCode).toBe(0)
+      expect(git(['-c', 'user.email=orch-test@example.invalid', '-c', 'user.name=Orch Test',
+        'commit', '-m', 'base']).exitCode).toBe(0)
+      const guardRoot = join(realpathSync(repo), '.git', 'orch-guards')
+      mkdirSync(join(guardRoot, String(terminal)), { recursive: true })
+      mkdirSync(join(guardRoot, String(live)), { recursive: true })
+      writeFileSync(join(guardRoot, String(terminal), 'reference-transaction'), 'litter\n')
+      writeFileSync(join(guardRoot, String(live), 'reference-transaction'), 'live\n')
+
+      const tree = createWorktree(repo, 250)
+      prepareSharedRefGuard(tree.path)
+
+      expect(existsSync(join(guardRoot, String(terminal)))).toBe(false)
+      expect(existsSync(join(guardRoot, String(live)))).toBe(true)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { db, nowIso, sessionId, writableDb } from './db.ts'
 import { formatGitLocks } from './git-locks.ts'
@@ -626,44 +626,40 @@ export function land(
   }
 
   const guard = prepareSharedRefGuard(worktree)
-  try {
-    // A message-only amend changes the commit hash. The gate must run on the
-    // commit that becomes trunk, so the message is rewritten before rebase.
-    if (options.message !== undefined) amendLandingMessage(worktree, options.message, guard)
-    const recordedTrunk = trunkCommit(repoRoot, trunk, guard)
-    const optimisticTip = rebaseAndGate(
-      project, repoRoot, worktree, branch, trunk, recordedTrunk, guard,
-    )
+  // A message-only amend changes the commit hash. The gate must run on the
+  // commit that becomes trunk, so the message is rewritten before rebase.
+  if (options.message !== undefined) amendLandingMessage(worktree, options.message, guard)
+  const recordedTrunk = trunkCommit(repoRoot, trunk, guard)
+  const optimisticTip = rebaseAndGate(
+    project, repoRoot, worktree, branch, trunk, recordedTrunk, guard,
+  )
 
-    return withProjectLock(repoRoot, LANDING_LOCK, { session: sessionId(), what: branch }, () => {
-      const currentTrunk = trunkCommit(repoRoot, trunk, guard)
-      if (currentTrunk === recordedTrunk) {
-        const authorization = authorizeLanding(
-          project, repoRoot, branch, optimisticTip, recordedTrunk, options.unreviewed,
-        )
-        fastForward(repoRoot, worktree, branch, trunk, optimisticTip, recordedTrunk, guard)
-        recordLandingOverride(authorization.override)
-        recordReviewCarry(authorization.carry)
-        console.log(`landed ${branch} at ${optimisticTip} onto ${trunk} (optimistic gate remained current)`)
-        return optimisticTip
-      }
-
-      console.log(`${trunk} moved from ${recordedTrunk} to ${currentTrunk}; re-gating ${branch} under the landing lock`)
-      const serializedTip = rebaseAndGate(
-        project, repoRoot, worktree, branch, trunk, currentTrunk, guard,
-      )
+  return withProjectLock(repoRoot, LANDING_LOCK, { session: sessionId(), what: branch }, () => {
+    const currentTrunk = trunkCommit(repoRoot, trunk, guard)
+    if (currentTrunk === recordedTrunk) {
       const authorization = authorizeLanding(
-        project, repoRoot, branch, serializedTip, currentTrunk, options.unreviewed,
+        project, repoRoot, branch, optimisticTip, recordedTrunk, options.unreviewed,
       )
-      fastForward(repoRoot, worktree, branch, trunk, serializedTip, currentTrunk, guard)
+      fastForward(repoRoot, worktree, branch, trunk, optimisticTip, recordedTrunk, guard)
       recordLandingOverride(authorization.override)
       recordReviewCarry(authorization.carry)
-      console.log(`landed ${branch} at ${serializedTip} onto ${trunk} after serialized re-gate`)
-      return serializedTip
-    }, timeoutMs, true)
-  } finally {
-    rmSync(guard.GIT_CONFIG_VALUE_0, { recursive: true, force: true })
-  }
+      console.log(`landed ${branch} at ${optimisticTip} onto ${trunk} (optimistic gate remained current)`)
+      return optimisticTip
+    }
+
+    console.log(`${trunk} moved from ${recordedTrunk} to ${currentTrunk}; re-gating ${branch} under the landing lock`)
+    const serializedTip = rebaseAndGate(
+      project, repoRoot, worktree, branch, trunk, currentTrunk, guard,
+    )
+    const authorization = authorizeLanding(
+      project, repoRoot, branch, serializedTip, currentTrunk, options.unreviewed,
+    )
+    fastForward(repoRoot, worktree, branch, trunk, serializedTip, currentTrunk, guard)
+    recordLandingOverride(authorization.override)
+    recordReviewCarry(authorization.carry)
+    console.log(`landed ${branch} at ${serializedTip} onto ${trunk} after serialized re-gate`)
+    return serializedTip
+  }, timeoutMs, true)
 }
 
 export function landingStatus(cwd: string): string {
