@@ -8278,18 +8278,35 @@ describe('detached run collection', () => {
     const id = insert('asking', 'implement')
     const prompt = join(dir, `record-only-writing-${id}.prompt.txt`)
     writeFileSync(prompt, 'original implementation spec')
+    upsertProject({
+      name: PLATFORM_SLUG, path: process.cwd(),
+      settings: { worktree: { recipe: {}, branch: '{key}-orch-{id}' } },
+    })
     db().query('UPDATE run SET session_id=?, vendor_session=?, prompt_path=?, cwd=? WHERE id=?')
-      .run('orch-test-session', 'valid-session', prompt, dir, id)
+      .run('orch-test-session', 'valid-session', prompt, process.cwd(), id)
     db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
       .run(id, new Date().toISOString(), 'which shape?')
     expect(orch('answer', String(id), '--record-only', 'use the existing shape').code).toBe(0)
 
-    const retried = orch('retry', String(id))
-
-    expect(retried.code).toBe(1)
-    expect(retried.err).toContain(
-      'recorded rulings require a fresh worktree; retry will not carry the previous partial edit',
-    )
+    const binDir = mkdtempSync(join(tmpdir(), 'orch-writing-warning-retry-'))
+    writeFileSync(join(binDir, 'codex'), '#!/bin/sh\nexit 99\n')
+    chmodSync(join(binDir, 'codex'), 0o755)
+    try {
+      const retried = orchInput(['retry', String(id)], undefined, {
+        PATH: `${binDir}:${process.env.PATH ?? ''}`,
+      })
+      expect(retried.code).toBe(1)
+      expect(retried.err).toContain(
+        'recorded rulings require a fresh worktree; retry will not carry the previous partial edit',
+      )
+      expect(retried.err).toContain(
+        "this project's branch names must carry a ticket key ({key}-orch-{id})",
+      )
+      expect((db().query('SELECT COUNT(*) n FROM run WHERE retry_of=?').get(id) as { n: number }).n)
+        .toBe(0)
+    } finally {
+      rmSync(binDir, { recursive: true, force: true })
+    }
   })
 
   test('answer resumes the agent from the same row as the fallback vendor session', () => {
