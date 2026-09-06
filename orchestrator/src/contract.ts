@@ -656,13 +656,13 @@ export function isRealQuestion(item: ContractQuestion): boolean {
   return question.length > 0 && !generic.has(question.toLowerCase()) && why.length > 0
 }
 
-/** The usable subset of a schema-valid `asking` reply. */
+/** The usable question subset of a schema-valid worker reply. */
 export function realQuestions(r: ContractReply | null | undefined): ContractQuestion[] {
-  if (!isAsking(r) || !r?.questions?.length) return []
+  if (!r?.questions?.length) return []
   return r.questions.filter(isRealQuestion)
 }
 
-/** A reply asks when at least one of its questions is real. */
+/** A reply contains a decision for the architect when at least one question is real. */
 export function hasRealQuestions(r: ContractReply | null | undefined): boolean {
   return realQuestions(r).length > 0
 }

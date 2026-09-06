@@ -6711,6 +6711,12 @@ describe('a worker that stops to ask is not a worker that failed', () => {
     ])
     expect(hasRealQuestions(partial)).toBe(true)
     expect(realQuestions(partial).map((item) => item.question)).toEqual(['which table?'])
+    expect(hasRealQuestions(parseWorkerReply(JSON.stringify(workerReply({
+      status: 'done', questions: [{
+        question: 'Which table?', options: null, recommendation: null,
+        why: 'the schema changes',
+      }],
+    }))))).toBe(true)
   })
 })
 
@@ -6930,6 +6936,78 @@ describe('a writing worker must return evidence of completed work', () => {
       error: '1 invalid question dropped; rejected question text: "   "', escalations: 1,
     })
     expect(heartbeat()).toContain('BLOCKED')
+  })
+
+  test('done carrying a real question is reclassified as asking', async () => {
+    const result = await runInCleanTree(JSON.stringify(workerReply({
+      status: 'done', questions: [{
+        question: 'Which table?', options: null, recommendation: null,
+        why: 'the schema changes',
+      }],
+    })))
+    expect(result.status).toBe('asking')
+    expect(db().query('SELECT status, error, escalations FROM run WHERE id=?').get(result.id))
+      .toEqual({
+        status: 'asking', escalations: 1,
+        error: 'status reclassified from done to asking: a worker with a real question has not finished',
+      })
+    expect(db().query('SELECT question, why FROM question WHERE run_id=?').all(result.id))
+      .toEqual([{ question: 'Which table?', why: 'the schema changes' }])
+    expect(heartbeat()).toContain('BLOCKED')
+  })
+
+  test('done carrying two real questions records both and remains asking', async () => {
+    const result = await runInCleanTree(JSON.stringify(workerReply({
+      status: 'done', questions: [
+        { question: 'Which table?', options: null, recommendation: null, why: 'the schema changes' },
+        { question: 'Which index?', options: null, recommendation: null, why: 'the query changes' },
+      ],
+    })))
+    expect(result.status).toBe('asking')
+    expect(db().query('SELECT question FROM question WHERE run_id=? ORDER BY id').all(result.id))
+      .toEqual([{ question: 'Which table?' }, { question: 'Which index?' }])
+    expect(db().query('SELECT escalations FROM run WHERE id=?').get(result.id))
+      .toEqual({ escalations: 2 })
+  })
+
+  test('done carrying one real and one blank question records only the real one', async () => {
+    const result = await runInCleanTree(JSON.stringify(workerReply({
+      status: 'done', questions: [
+        { question: 'Which table?', options: null, recommendation: null, why: 'the schema changes' },
+        { question: ' ', options: null, recommendation: null, why: 'unknown choice' },
+      ],
+    })))
+    expect(result.status).toBe('asking')
+    expect(db().query('SELECT question FROM question WHERE run_id=?').all(result.id))
+      .toEqual([{ question: 'Which table?' }])
+    expect((db().query('SELECT error FROM run WHERE id=?').get(result.id) as { error: string }).error)
+      .toBe('status reclassified from done to asking: a worker with a real question has not finished\n' +
+        '1 invalid question dropped; rejected question text: " "')
+  })
+
+  test('done carrying only blank questions stays done and records the dropped blanks', async () => {
+    const result = await runInCleanTree(JSON.stringify(workerReply({
+      status: 'done', questions: [
+        { question: ' ', options: null, recommendation: null, why: 'unknown choice' },
+        { question: '\u200B', options: null, recommendation: null, why: '\u2060' },
+      ],
+    })))
+    expect(result.status).toBe('ok')
+    expect(db().query('SELECT error, escalations FROM run WHERE id=?').get(result.id)).toEqual({
+      error: '2 invalid questions dropped; rejected question text: " ", "​"', escalations: 0,
+    })
+    expect((db().query('SELECT COUNT(*) n FROM question WHERE run_id=?').get(result.id) as { n: number }).n)
+      .toBe(0)
+    expect(heartbeat()).not.toContain('BLOCKED')
+  })
+
+  test('done carrying no questions remains done', async () => {
+    const result = await runInCleanTree(JSON.stringify(workerReply({ status: 'done', questions: null })))
+    expect(result.status).toBe('ok')
+    expect(db().query('SELECT error, escalations FROM run WHERE id=?').get(result.id))
+      .toEqual({ error: null, escalations: 0 })
+    expect((db().query('SELECT COUNT(*) n FROM question WHERE run_id=?').get(result.id) as { n: number }).n)
+      .toBe(0)
   })
 
   test('an all-blank asking reply remains a failover-eligible contract failure', async () => {

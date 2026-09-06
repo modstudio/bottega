@@ -1572,9 +1572,10 @@ export async function run(opts: {
       contract = parsed.reply as WorkerReply | null
       contractObjects = parsed.contractObjects
     }
-    acceptedQuestions = realQuestions(contract)
+    const questionsControlStatus = isAsking(contract) || contract?.status === 'done'
+    acceptedQuestions = questionsControlStatus ? realQuestions(contract) : []
     const acceptedQuestionSet = new Set(acceptedQuestions)
-    droppedQuestions = isAsking(contract)
+    droppedQuestions = questionsControlStatus
       ? (contract?.questions ?? []).filter((item) => !acceptedQuestionSet.has(item))
       : []
 
@@ -1600,12 +1601,12 @@ export async function run(opts: {
        * worth knowing about — the bound may be too short for this job — but it
        * is a note on a successful run, not a failure.
        */
-      status = 'ok'
+      status = acceptedQuestions.length ? 'asking' : 'ok'
       error = null
       failureKind = null
       console.error(
         `orch: run ${claim.id} had already returned a complete reply when the ` +
-        `${Math.round(boundMs / 60_000)}m bound killed it. Recorded ok; the bound may be short.`,
+        `${Math.round(boundMs / 60_000)}m bound killed it. Recorded ${status}; the bound may be short.`,
       )
     } else if (timedOut) {
       status = 'failed'
@@ -1752,7 +1753,11 @@ export async function run(opts: {
       const note = `${contractObjects} contract objects in output; took the last`
       error = error ? `${error}\n${note}` : note
     }
-    if (acceptedQuestions.length && droppedQuestions.length) {
+    if (contract?.status === 'done' && acceptedQuestions.length) {
+      const note = 'status reclassified from done to asking: a worker with a real question has not finished'
+      error = error ? `${error}\n${note}` : note
+    }
+    if (droppedQuestions.length && (acceptedQuestions.length || contract?.status === 'done')) {
       const count = droppedQuestions.length
       const rejected = droppedQuestions.map((item) => JSON.stringify(item.question)).join(', ')
       const note = `${count} invalid question${count === 1 ? '' : 's'} dropped; ` +
