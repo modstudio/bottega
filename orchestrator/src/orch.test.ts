@@ -18546,6 +18546,8 @@ describe('canonical schema rebuild', () => {
             VALUES (2,'full','right','faithful','2026-01-02')`)
     expect(d.query('SELECT MAX(id) AS id FROM score').get()).toEqual({ id: 1415 })
     d.close()
+  })
+
   test('fresh and upgraded question tables have identical column order', () => {
     const upgradedPath = join(mkdtempSync(join(tmpdir(), 'orch-schema-')), 'upgraded.db')
     const upgraded = new Database(upgradedPath)
