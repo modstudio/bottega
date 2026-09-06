@@ -2341,6 +2341,16 @@ describe('run mailbox', () => {
     expect(messagesForRun(root)[0]!.body).toBe(body)
   })
 
+  test('tell refuses a message that is only --file', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const path = join(dir, 'mailbox-dash-token.txt')
+    writeFileSync(path, '--file')
+    const r = mailboxOrch('tell', String(root), '--file', path)
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('received "--file" as a message')
+    expect(messagesForRun(root)).toEqual([])
+  })
+
   test('a worker sends outbound without stopping and it is visible on run detail', () => {
     const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     db().query('UPDATE run SET vendor_session=? WHERE id=?').run('worker-session', root)
@@ -7380,6 +7390,94 @@ describe('detached run collection', () => {
       { answer: string }).answer).toBe(ruling)
   })
 
+  test('answer --q<id> --file reads the file and never stores the flag name', () => {
+    const id = insert('running', 'implement')
+    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'which design?')
+    const qid = (db().query('SELECT id FROM question WHERE run_id=?').get(id) as { id: number }).id
+    const path = join(dir, `answer-q-file-${id}.txt`)
+    const ruling = 'Choose the first design.\nKeep the public shape.\n'
+    writeFileSync(path, ruling)
+
+    const r = orch('answer', String(id), `--q${qid}`, '--file', path)
+
+    expect(r.code).toBe(0)
+    expect((db().query('SELECT answer FROM question WHERE id=?').get(qid) as
+      { answer: string }).answer).toBe(ruling)
+    expect((db().query('SELECT answer FROM question WHERE id=?').get(qid) as
+      { answer: string }).answer).not.toBe('--file')
+  })
+
+  test('a ruling of --file alone is refused and not stored', () => {
+    const id = insert('running', 'implement')
+    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'which design?')
+    const qid = (db().query('SELECT id FROM question WHERE run_id=?').get(id) as { id: number }).id
+    const stored = () => (db().query('SELECT answer FROM question WHERE id=?').get(qid) as
+      { answer: string | null }).answer
+
+    const missingPath = orch('answer', String(id), `--q${qid}`, '--file')
+    expect(missingPath.code).toBe(1)
+    expect(missingPath.err).toContain('argument --file needs a value')
+    expect(stored()).toBeNull()
+
+    const asEquals = orch('answer', String(id), `--q${qid}=--file`)
+    expect(asEquals.code).toBe(1)
+    expect(asEquals.err).toContain('received "--file" as a ruling')
+    expect(asEquals.err).toContain('orch answer <id> --q<id> --file <path>')
+    expect(stored()).toBeNull()
+
+    const path = join(dir, `answer-dash-token-${id}.txt`)
+    writeFileSync(path, '--file')
+    const fromFile = orch('answer', String(id), `--q${qid}`, '--file', path)
+    expect(fromFile.code).toBe(1)
+    expect(fromFile.err).toContain('received "--file" as a ruling')
+    expect(stored()).toBeNull()
+  })
+
+  test('a ruling containing backticks and command substitution is stored byte-for-byte from --file', () => {
+    const id = insert('running', 'implement')
+    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'which names?')
+    const path = join(dir, `answer-backticks-${id}.txt`)
+    const ruling = 'Never run `git stash push` or $(git stash pop) against the shared checkout.\n'
+    writeFileSync(path, ruling)
+
+    const r = orch('answer', String(id), '--file', path)
+
+    expect(r.code).toBe(0)
+    expect((db().query('SELECT answer FROM question WHERE run_id=?').get(id) as
+      { answer: string }).answer).toBe(ruling)
+  })
+
+  test('multi-question answer mixes positional --q text with per-question --file', () => {
+    const id = insert('running', 'implement')
+    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'first?')
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'second?')
+    const questions = db().query('SELECT id FROM question WHERE run_id=? ORDER BY id')
+      .all(id) as { id: number }[]
+    const path = join(dir, `answer-mixed-${id}.txt`)
+    writeFileSync(path, 'from the file\n')
+
+    const r = orch(
+      'answer', String(id),
+      `--q${questions[0]!.id}`, 'positional ruling',
+      `--q${questions[1]!.id}`, '--file', path,
+    )
+
+    expect(r.code).toBe(0)
+    expect((db().query('SELECT answer FROM question WHERE id=?').get(questions[0]!.id) as
+      { answer: string }).answer).toBe('positional ruling')
+    expect((db().query('SELECT answer FROM question WHERE id=?').get(questions[1]!.id) as
+      { answer: string }).answer).toBe('from the file\n')
+  })
+
   test('a partial multi-question ruling names the single-command rule', () => {
     const id = insert('running', 'implement')
     db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
@@ -7504,6 +7602,59 @@ describe('detached run collection', () => {
     } finally {
       rmSync(binDir, { recursive: true, force: true })
     }
+  })
+
+  test('continue --file reads the follow-up without shell interpolation', () => {
+    const binDir = mkdtempSync(join(tmpdir(), 'orch-fake-codex-continue-file-'))
+    writeFileSync(join(binDir, 'codex'), '#!/bin/sh\nexit 0\n')
+    chmodSync(join(binDir, 'codex'), 0o755)
+    const root = insert('ok', 'file-question')
+    const prompt = join(dir, `continue-file-root-${root}.prompt.txt`)
+    writeFileSync(prompt, 'original research spec')
+    db().query('UPDATE run SET vendor_session=?, agent=?, prompt_path=? WHERE id=?')
+      .run('parent-session', 'codex', prompt, root)
+    const path = join(dir, `continue-file-${root}.txt`)
+    const body = 'Next: keep `literal` and $(hostname) byte-for-byte.\n'
+    writeFileSync(path, body)
+    try {
+      const r = Bun.spawnSync(
+        [process.execPath, CLI, 'continue', String(root), '--file', path],
+        {
+          env: {
+            ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+            CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+            PATH: `${binDir}:${process.env.PATH ?? ''}`,
+          },
+          stdout: 'pipe', stderr: 'pipe',
+        },
+      )
+      const out = typeof r.stdout === 'string' ? r.stdout : new TextDecoder().decode(r.stdout)
+      const err = typeof r.stderr === 'string' ? r.stderr : new TextDecoder().decode(r.stderr)
+      expect(r.exitCode).toBe(0)
+      expect(err).not.toContain('unrecognised argument')
+      const childId = Number(out.replace(/\u001B\[[0-9;]*m/g, '').trim().split('\n')[0])
+      expect(childId).toBeGreaterThan(0)
+      orch('wait', String(childId), '--timeout', '15')
+      const child = db().query(
+        'SELECT prompt_path, parent_run_id FROM run WHERE id=?',
+      ).get(childId) as { prompt_path: string; parent_run_id: number | null }
+      expect(child.parent_run_id).toBe(root)
+      expect(readFileSync(child.prompt_path, 'utf8')).toBe(body)
+    } finally {
+      rmSync(binDir, { recursive: true, force: true })
+    }
+  })
+
+  test('continue refuses a follow-up that is only --file', () => {
+    const root = insert('ok', 'file-question')
+    db().query('UPDATE run SET vendor_session=? WHERE id=?').run('parent-session', root)
+    const path = join(dir, `continue-dash-token-${root}.txt`)
+    writeFileSync(path, '--file')
+    const r = orch('continue', String(root), '--file', path)
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('received "--file" as a message')
+    expect((db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=?').get(root) as
+      { n: number }).n).toBe(0)
   })
 })
 

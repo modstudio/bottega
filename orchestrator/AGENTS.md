@@ -1461,7 +1461,8 @@ orch do implement "<spec>"  delegate a bounded change; it writes in its own work
 orch inbox                  design decisions a worker stopped to ask about
 orch tell <id> ["..."]       queue non-authoritative context; --file for long notes
 orch answer <id> "<ruling>" rule on them, and resume the worker where it stopped
-orch continue <id> ["..."]  carry on a chain with no open question
+    --q<id> --file PATH     read that question's ruling from a file
+orch continue <id> ["..."]  carry on a chain with no open question; --file for a long follow-up
 orch diff <id>              what a writing run actually changed
 orch discard <id>           throw its worktree away (the run row stays)
 orch sweep                  reclaim finished runs' worktrees and their databases

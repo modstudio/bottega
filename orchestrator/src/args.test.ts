@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { flagValue, flagValues, isCliCommand, seedGuidance, validateCliArgs } from './args.ts'
+import {
+  ANSWER_WORKING_FORMS, misparsedMessage, parseAnswerTextSources, refuseMisparsedMessage,
+  flagValue, flagValues, isCliCommand, seedGuidance, validateCliArgs,
+} from './args.ts'
 
 describe('CLI argument recognition', () => {
   test('every parser top-level command is recognised as canon, including nested commands', () => {
@@ -53,8 +56,12 @@ describe('CLI argument recognition', () => {
       ['port', 'doctrine', 'retire', '1'],
       ['answer', '12', 'first ruling', 'second ruling'],
       ['answer', '12', '--q31', 'first ruling', '--q32', 'second ruling'],
+      ['answer', '12', '--q31', '--file', 'a.txt'],
+      ['answer', '12', '--q31', '--file', 'a.txt', '--q32', '--file', 'b.txt'],
+      ['answer', '12', '--q31', 'first ruling', '--q32', '--file', 'b.txt'],
       ['tell', '12', 'context', 'for', 'the worker'], ['tell', '12', '--file', 'note.md'],
-      ['continue', '12', 'one more change'], ['diff', '12', '--quiet'], ['discard', '12', '--force'],
+      ['continue', '12', 'one more change'], ['continue', '12', '--file', 'msg.txt'],
+      ['continue', '12', 'hello', 'world'], ['diff', '12', '--quiet'], ['discard', '12', '--force'],
       ['stop', '12'], ['abandon', '12', '--note', 'superseded'],
       ['score', '12', 'full', 'right', 'faithful', '--note', 'good',
         '--reproduced', 'all', '--coverage', 'adequate', '--limits', 'named', '--overlap', 'alone'],
@@ -131,5 +138,57 @@ describe('CLI argument recognition', () => {
       expect(() => validateCliArgs(argv)).not.toThrow()
       expect(flagValue(argv, 'seed')).toBe(multiToken)
     }
+  })
+
+  test('a --q flag followed by another flag that is not --file needs a value', () => {
+    expect(() => validateCliArgs(['answer', '12', '--q31', '--follow']))
+      .toThrow('argument --q31 needs a value')
+  })
+})
+
+describe('answer text sources', () => {
+  test('--q<id> --file PATH binds that file to that question', () => {
+    expect(parseAnswerTextSources(['--q264', '--file', 'a.txt', '--q265', '--file', 'b.txt']))
+      .toEqual({
+        byId: [{ id: 264, file: 'a.txt' }, { id: 265, file: 'b.txt' }],
+        commandFile: undefined,
+        positionals: [],
+      })
+  })
+
+  test('mixed positional --q values and per-question --file', () => {
+    expect(parseAnswerTextSources(['--q264', 'use option A', '--q265', '--file', 'b.txt']))
+      .toEqual({
+        byId: [{ id: 264, text: 'use option A' }, { id: 265, file: 'b.txt' }],
+        commandFile: undefined,
+        positionals: [],
+      })
+  })
+
+  test('a command-level --file is distinct from a per-question --file', () => {
+    expect(parseAnswerTextSources(['--file', 'ruling.txt'])).toEqual({
+      byId: [], commandFile: 'ruling.txt', positionals: [],
+    })
+  })
+})
+
+describe('a message that is not a ruling is refused', () => {
+  test('empty, whitespace, and a single --token are mis-parses', () => {
+    expect(misparsedMessage('')).toBe('empty')
+    expect(misparsedMessage('   \n')).toBe('empty')
+    expect(misparsedMessage('--file')).toBe('dash-token')
+    expect(misparsedMessage(' --file ')).toBe('dash-token')
+    expect(misparsedMessage('use --file')).toBeNull()
+    expect(misparsedMessage('Use $var and `cmd`.')).toBeNull()
+  })
+
+  test('the refusal names what was received and the working forms', () => {
+    expect(() => refuseMisparsedMessage('--file', 'ruling', ANSWER_WORKING_FORMS)).toThrow(
+      'received "--file" as a ruling',
+    )
+    expect(() => refuseMisparsedMessage('--file', 'ruling', ANSWER_WORKING_FORMS))
+      .toThrow(ANSWER_WORKING_FORMS)
+    expect(() => refuseMisparsedMessage('  ', 'ruling', ANSWER_WORKING_FORMS))
+      .toThrow('empty ruling: received "  "')
   })
 })

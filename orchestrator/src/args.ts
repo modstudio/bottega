@@ -45,6 +45,110 @@ function shellValue(value: string): string {
   return `"${value.replace(/[\\"$`]/g, '\\$&')}"`
 }
 
+export const ANSWER_WORKING_FORMS =
+  `  orch answer <id> --q<id> "<ruling>"\n` +
+  `  orch answer <id> --q<id> --file <path>\n` +
+  `  orch answer <id> --file <path>\n` +
+  `  orch answer <id> "<ruling>"`
+
+export const TELL_WORKING_FORMS =
+  `  orch tell <id> "<message>"\n` +
+  `  orch tell <id> --file <path>\n` +
+  `  orch tell <id>  (message on stdin)`
+
+export const CONTINUE_WORKING_FORMS =
+  `  orch continue <id> "<what next>"\n` +
+  `  orch continue <id> --file <path>\n` +
+  `  orch continue <id>  (message on stdin)`
+
+/** Empty, whitespace-only, or a single token beginning with `--` is a mis-parse. */
+export function misparsedMessage(text: string): 'empty' | 'dash-token' | null {
+  const trimmed = text.trim()
+  if (!trimmed) return 'empty'
+  const tokens = trimmed.split(/\s+/)
+  if (tokens.length === 1 && tokens[0]!.startsWith('--')) return 'dash-token'
+  return null
+}
+
+export function refuseMisparsedMessage(text: string, noun: string, workingForms: string): void {
+  const kind = misparsedMessage(text)
+  if (kind === 'empty') {
+    throw new Error(`empty ${noun}: received ${JSON.stringify(text)}\nworking forms:\n${workingForms}`)
+  }
+  if (kind === 'dash-token') {
+    throw new Error(
+      `received ${JSON.stringify(text)} as a ${noun}; a single token beginning with -- is a mis-parse, not a decision\n` +
+      `working forms:\n${workingForms}`,
+    )
+  }
+}
+
+export type QuestionTextSource = { id: number; file?: string; text?: string }
+
+export type AnswerTextSources = {
+  byId: QuestionTextSource[]
+  commandFile: string | undefined
+  positionals: string[]
+}
+
+function takeFilePath(args: string[], index: number, usage: string): { path: string; next: number } {
+  const arg = args[index]!
+  if (arg.startsWith('--file=')) {
+    const path = arg.slice('--file='.length)
+    if (!path) throw new Error(`argument --file needs a value\nworking form: ${usage}`)
+    return { path, next: index + 1 }
+  }
+  const path = args[index + 1]
+  if (path === undefined) throw new Error(`argument --file needs a value\nworking form: ${usage}`)
+  return { path, next: index + 2 }
+}
+
+/**
+ * Walk `answer`'s argv after the run id. `--q<id> --file PATH` binds that file
+ * to that question; a `--file` not immediately after `--q<id>` is command-level.
+ */
+export function parseAnswerTextSources(args: string[]): AnswerTextSources {
+  const usage = 'orch answer <id> ["<ruling>"] [--file PATH] [--q<ID> "<ruling>"] [--q<ID> --file PATH] [--follow]'
+  const byId: QuestionTextSource[] = []
+  let commandFile: string | undefined
+  const positionals: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!
+    const equals = arg.match(/^--q(\d+)=(.*)$/)
+    if (equals) {
+      byId.push({ id: Number(equals[1]), text: equals[2] })
+      continue
+    }
+    const flagged = arg.match(/^--q(\d+)$/)
+    if (flagged) {
+      const id = Number(flagged[1])
+      const next = args[i + 1]
+      if (next === '--file' || next?.startsWith('--file=')) {
+        const taken = takeFilePath(args, i + 1, usage)
+        byId.push({ id, file: taken.path })
+        i = taken.next - 1
+        continue
+      }
+      if (next === undefined || next.startsWith('--')) {
+        throw new Error(`argument ${arg} needs a value\nworking form: ${usage}`)
+      }
+      byId.push({ id, text: next })
+      i++
+      continue
+    }
+    if (arg === '--file' || arg.startsWith('--file=')) {
+      const taken = takeFilePath(args, i, usage)
+      commandFile = taken.path
+      i = taken.next - 1
+      continue
+    }
+    if (arg === '--follow' || arg === '--detach' || arg === '--quiet') continue
+    if (arg.startsWith('--')) throw new Error(`unrecognised argument: ${arg}\nworking form: ${usage}`)
+    positionals.push(arg)
+  }
+  return { byId, commandFile, positionals }
+}
+
 /** Every documented seed spelling is accepted by the CLI argument parser. */
 export function seedGuidance(seeds: string[]): string {
   const forms = seeds.flatMap((seed) => {
@@ -189,13 +293,16 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
     ) }
     case 'inbox': return { args: argv.slice(1), shape: shape('orch inbox [--all] [--json]', 0, [], ['--all', '--json']) }
     case 'answer': return { args: argv.slice(1), shape: shape(
-      'orch answer <id> ["<ruling>"] [--file PATH] [--q<ID> "<ruling>"] [--follow]', Infinity,
+      'orch answer <id> ["<ruling>"] [--file PATH] [--q<ID> "<ruling>"] [--q<ID> --file PATH] [--follow]', Infinity,
       ['--file'], ['--follow', '--detach', '--quiet'], { dynamicValueFlag: /^--q\d+$/ },
     ) }
     case 'tell': return { args: argv.slice(1), shape: shape(
       'orch tell <run-id> ["<message>"] [--file PATH]', Infinity, ['--file'],
     ) }
-    case 'continue': return { args: argv.slice(1), shape: shape('orch continue <id> ["<what next>"] [--follow]', 2, [], ['--follow', '--detach', '--quiet']) }
+    case 'continue': return { args: argv.slice(1), shape: shape(
+      'orch continue <id> ["<what next>"] [--file PATH] [--follow]', Infinity,
+      ['--file'], ['--follow', '--detach', '--quiet'],
+    ) }
     case 'diff': return { args: argv.slice(1), shape: shape('orch diff <id> [--quiet]', 1, [], ['--quiet']) }
     case 'sweep': return { args: argv.slice(1), shape: shape('orch sweep [--older-than N] [--force] [--dry-run]', 0, ['--older-than'], ['--force', '--dry-run']) }
     case 'discard': return { args: argv.slice(1), shape: shape('orch discard <id> [--force]', 1, [], ['--force']) }
@@ -249,6 +356,17 @@ export function validateCliArgs(argv: string[]): void {
         continue
       }
       const value = args[i + 1]
+      // `--q<id> --file PATH` is one ruling, not `--file` as the ruling text.
+      // Dynamic question flags therefore leave `--file` for the value-flag
+      // parser instead of consuming it the way `--seed --bundle=minimal` does.
+      if (expected.dynamicValueFlag?.test(flagName)) {
+        if (value === '--file' || value?.startsWith('--file=')) continue
+        if (value === undefined || value.startsWith('--')) {
+          throw new Error(`argument ${arg} needs a value\nworking form: ${expected.usage}`)
+        }
+        i++
+        continue
+      }
       if (value === undefined) {
         throw new Error(`argument ${arg} needs a value\nworking form: ${expected.usage}`)
       }

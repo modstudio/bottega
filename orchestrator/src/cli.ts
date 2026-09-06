@@ -27,7 +27,10 @@ import { WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE,
          REVIEW_SEVERITY_INSTRUCTION, contractConflicts } from './contract.ts'
 import { collectResult, collectWait, resolveFailover, failoverSummary } from './collect.ts'
 import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
-import { flagValue, flagValues, validateCliArgs } from './args.ts'
+import {
+  ANSWER_WORKING_FORMS, CONTINUE_WORKING_FORMS, TELL_WORKING_FORMS,
+  flagValue, flagValues, parseAnswerTextSources, refuseMisparsedMessage, validateCliArgs,
+} from './args.ts'
 import { completeReview, DISPOSITIONS, gradeReviewLens, parseReviewOutput, recordReviews,
          reviewCalibration, reviewPins, triageFinding, type Disposition,
          type ReviewGrades } from './review.ts'
@@ -772,10 +775,12 @@ function usage(): never {
   orch setup-ask                register the live ask channel with codex and grok
   orch answer <id> ["<ruling>"] rule from argv, --file, or stdin; resume detached
       --file <path>             read the ruling from a file
+      --q<id> --file <path>     read that question's ruling from a file
       --follow                  watch the resumed turn here instead
   orch continue <id> ["<what next>"]
       carry on a chain with no open question - one that was interrupted, or
       one you want to add to without paying for its context again
+      --file <path>             read the follow-up from a file
       detaches by default; --follow watches the resumed turn here
       several questions: orch answer <id> --q<qid> "<ruling>" --q<qid> "<ruling>"
   orch diff <id>                inspect a run's worktree diff (review diffs are scratch)
@@ -941,17 +946,45 @@ async function routeConstraints(agent?: string): Promise<{
   return { avoid, distinctModels }
 }
 
-async function readPrompt(): Promise<string> {
-  const f = flag('file')
-  if (f) return readFileSync(f, 'utf8')
+function positionalMessage(rest: string[]): string[] {
   // A boolean switch does not consume the next argument, so only skip the one
   // after a flag that actually takes a value — otherwise `--quiet <prompt>`
   // silently discards the prompt.
-  const rest = argv.slice(2)
-  const positional = rest.filter((a, i) => !a.startsWith('--') && !VALUE_FLAGS.has(rest[i - 1] ?? ''))
+  return rest.filter((a, i) => {
+    if (a.startsWith('--')) return false
+    const prev = rest[i - 1] ?? ''
+    if (VALUE_FLAGS.has(prev) || /^--q\d+$/.test(prev)) return false
+    return true
+  })
+}
+
+/**
+ * One reader for the free-text body that reaches a worker: positional text,
+ * or --file PATH, or stdin when neither is given and stdin is not a TTY.
+ */
+async function readMessageText(opts: {
+  missing: string
+  exclusive?: string
+  optional?: boolean
+}): Promise<string | undefined> {
+  const f = flag('file')
+  const positional = positionalMessage(argv.slice(2))
+  if (f && positional.length && opts.exclusive) throw new Error(opts.exclusive)
+  if (f) return readFileSync(f, 'utf8')
   if (positional.length) return positional.join(' ')
-  if (!process.stdin.isTTY) return await Bun.stdin.text()
-  throw new Error('no prompt: pass it as an argument, via --file, or on stdin')
+  if (!process.stdin.isTTY) {
+    const text = await Bun.stdin.text()
+    if (opts.optional && !text.trim()) return undefined
+    return text
+  }
+  if (opts.optional) return undefined
+  throw new Error(opts.missing)
+}
+
+async function readPrompt(): Promise<string> {
+  return (await readMessageText({
+    missing: 'no prompt: pass it as an argument, via --file, or on stdin',
+  }))!
 }
 
 /**
@@ -1858,16 +1891,11 @@ switch (cmd) {
   case 'tell': {
     const id = Number(argv[1])
     if (!id) usage()
-    const f = flag('file')
-    const positional = argv.slice(2).filter((a, i, all) =>
-      !a.startsWith('--') && all[i - 1] !== '--file')
-    if (f && positional.length) {
-      throw new Error('pass the message either positionally or with --file, not both')
-    }
-    const body = f ? readFileSync(f, 'utf8')
-      : positional.length ? positional.join(' ')
-      : !process.stdin.isTTY ? await Bun.stdin.text()
-      : (() => { throw new Error('no message: pass it as an argument, via --file, or on stdin') })()
+    const body = (await readMessageText({
+      missing: 'no message: pass it as an argument, via --file, or on stdin',
+      exclusive: 'pass the message either positionally or with --file, not both',
+    }))!
+    refuseMisparsedMessage(body, 'message', TELL_WORKING_FORMS)
     const { tellRun } = await import('./mailbox.ts')
     const message = tellRun(id, body)
     console.log(
@@ -2509,17 +2537,34 @@ switch (cmd) {
     }
 
     // Two ways to rule: positionally when the order is obvious, or by question
-    // id when there are several.
+    // id when there are several. `--q<id> --file PATH` binds that file to that
+    // question; a command-level `--file` is the single-ruling form.
     const answers: { question: string; answer: string }[] = []
-    const byId = open.map((q) => ({ q, given: flag(`q${q.id}`) })).filter((x) => x.given)
-    if (byId.length) {
-      for (const { q, given } of byId) answers.push({ question: q.question, answer: given! })
+    const parsed = parseAnswerTextSources(argv.slice(2))
+    const rulingFrom = (text: string): string => {
+      refuseMisparsedMessage(text, 'ruling', ANSWER_WORKING_FORMS)
+      return text
+    }
+    if (parsed.byId.length) {
+      if (parsed.commandFile !== undefined || parsed.positionals.length) {
+        throw new Error(
+          'pass --file next to each --q<id>, not as a command-level flag or positional alongside --q\n' +
+          `working forms:\n${ANSWER_WORKING_FORMS}`,
+        )
+      }
+      for (const q of open) {
+        const src = parsed.byId.find((item) => item.id === q.id)
+        if (!src) continue
+        const given = src.file !== undefined ? readFileSync(src.file, 'utf8') : src.text!
+        answers.push({ question: q.question, answer: rulingFrom(given) })
+      }
     } else {
-      const positional = argv.slice(2).filter((x) => !x.startsWith('--'))
-      if (flag('file') || (!positional.length && !process.stdin.isTTY)) {
-        const given = await readPrompt()
-        if (!given.trim()) throw new Error('empty ruling')
-        answers.push({ question: open[0]!.question, answer: given })
+      const positional = parsed.positionals
+      if (parsed.commandFile !== undefined || (!positional.length && !process.stdin.isTTY)) {
+        const given = await readMessageText({
+          missing: 'no ruling: pass it as an argument, via --file, or on stdin',
+        })
+        answers.push({ question: open[0]!.question, answer: rulingFrom(given!) })
       } else if (!positional.length) {
         throw new Error(
           `run ${id} is waiting on ${open.length} question(s). ` +
@@ -2529,7 +2574,7 @@ switch (cmd) {
       } else {
         open.forEach((q, i) => {
           const given = positional[i]
-          if (given) answers.push({ question: q.question, answer: given })
+          if (given) answers.push({ question: q.question, answer: rulingFrom(given) })
         })
       }
     }
@@ -2673,7 +2718,12 @@ switch (cmd) {
   case 'continue': {
     const id = Number(argv[1])
     if (!id) usage()
-    const message = argv.slice(2).find((x) => !x.startsWith('--'))
+    const message = await readMessageText({
+      missing: 'no message: pass it as an argument, via --file, or on stdin',
+      exclusive: 'pass the message either positionally or with --file, not both',
+      optional: true,
+    })
+    if (message !== undefined) refuseMisparsedMessage(message, 'message', CONTINUE_WORKING_FORMS)
     const resumed = await continueRun(id, message)
     await reportContinuedRun(resumed.childId, resumed.job)
     break
