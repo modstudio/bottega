@@ -6282,6 +6282,61 @@ describe('detached run collection', () => {
     )).toBe(11_798_623)
   })
 
+  test('runs --json --since includes a chain whose only recent fact is a question', () => {
+    const cutoff = '2026-09-04T18:00:00.000Z'
+    const old = addRun({
+      agent: 'codex', job: 'implement', status: 'asking',
+      startedAt: '2026-09-04T15:00:00.000Z',
+    })
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(old, '2026-09-04T19:55:00.000Z', 'need a ruling')
+
+    const json = orch('runs', '--json', '--since', cutoff)
+    expect(json.code).toBe(0)
+    const rows = json.out.trim().split('\n').map((line) => JSON.parse(line)) as {
+      id: number
+      questions: { asked_at: string; answered_at: string | null }[]
+    }[]
+    expect(rows.map((row) => row.id)).toEqual([old])
+    expect(rows[0]!.questions).toEqual([expect.objectContaining({
+      asked_at: '2026-09-04T19:55:00.000Z', answered_at: null,
+    })])
+  })
+
+  test('runs --json --since republishes a question answered with no new turn', () => {
+    const cutoff = '2026-09-04T18:00:00.000Z'
+    const old = addRun({
+      agent: 'codex', job: 'implement', status: 'ok',
+      startedAt: '2026-09-04T15:00:00.000Z',
+    })
+    db().query(
+      'INSERT INTO question (run_id, asked_at, question, answered_at) VALUES (?,?,?,?)',
+    ).run(old, '2026-09-04T16:00:00.000Z', 'need a ruling', '2026-09-04T19:55:00.000Z')
+
+    const json = orch('runs', '--json', '--since', cutoff)
+    expect(json.code).toBe(0)
+    const rows = json.out.trim().split('\n').map((line) => JSON.parse(line)) as {
+      id: number
+      questions: { answered_at: string | null }[]
+    }[]
+    expect(rows.map((row) => row.id)).toEqual([old])
+    expect(rows[0]!.questions[0]!.answered_at).toBe('2026-09-04T19:55:00.000Z')
+  })
+
+  test('runs --json --since still publishes an unanswered question older than the cutoff', () => {
+    const cutoff = '2026-09-04T18:00:00.000Z'
+    const old = addRun({
+      agent: 'codex', job: 'implement', status: 'asking',
+      startedAt: '2026-09-04T15:00:00.000Z',
+    })
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(old, '2026-09-04T16:00:00.000Z', 'still waiting')
+
+    const json = orch('runs', '--json', '--since', cutoff)
+    expect(json.code).toBe(0)
+    expect(json.out.trim().split('\n').map((line) => JSON.parse(line).id)).toEqual([old])
+  })
+
   test('waiting on a failed run exits non-zero', () => {
     const id = insert('failed')
     db().query(

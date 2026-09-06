@@ -82,6 +82,49 @@ export function chainVendorTokens(r: OrchRun): number | null {
 
 const ORCH = new URL('../../../bin/orch', import.meta.url).pathname
 
+function present(value: unknown, kind: 'number' | 'string'): boolean {
+  if (kind === 'number') return typeof value === 'number' && Number.isFinite(value)
+  return typeof value === 'string' && value.length > 0
+}
+
+/** Field the contract requires and this row lacks, or null if the row is complete. */
+export function runsContractGap(value: unknown): string | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return 'id'
+  const row = value as Record<string, unknown>
+  for (const field of ['id', 'agent', 'job', 'status', 'started_at'] as const) {
+    if (!present(row[field], field === 'id' ? 'number' : 'string')) return field
+  }
+  if (row.questions == null) return null
+  if (!Array.isArray(row.questions)) return 'questions'
+  for (let i = 0; i < row.questions.length; i++) {
+    const entry = row.questions[i]
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+      return `questions[${i}].id`
+    }
+    const question = entry as Record<string, unknown>
+    if (!present(question.id, 'number')) return `questions[${i}].id`
+    if (!present(question.run_id, 'number')) return `questions[${i}].run_id`
+    if (!present(question.asked_at, 'string')) return `questions[${i}].asked_at`
+  }
+  return null
+}
+
+export function decodeRunsJson(text: string): OrchRun[] {
+  const runs: OrchRun[] = []
+  const lines = text.split('\n')
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!.trim()
+    if (!line) continue
+    let value: unknown
+    try { value = JSON.parse(line) }
+    catch { throw new Error(`orch runs --json line ${i + 1} is not JSON`) }
+    const gap = runsContractGap(value)
+    if (gap) throw new Error(`orch runs --json line ${i + 1} missing ${gap}`)
+    runs.push(value as OrchRun)
+  }
+  return runs
+}
+
 export async function readRuns(since: string): Promise<OrchRun[]> {
   const proc = Bun.spawn([ORCH, 'runs', '--json', '--since', since], {
     stdout: 'pipe',
@@ -93,10 +136,7 @@ export async function readRuns(since: string): Promise<OrchRun[]> {
     proc.exited,
   ])
   if (code !== 0) throw new Error(`orch runs --json exited ${code}: ${err.trim()}`)
-  return out
-    .split('\n')
-    .filter((l) => l.trim())
-    .map((l) => JSON.parse(l) as OrchRun)
+  return decodeRunsJson(out)
 }
 
 export async function ingestRuns(since: string): Promise<{ rows: number; skipped: number }> {
@@ -151,7 +191,7 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
     for (const r of batch) {
       // A probe is a smoke test — "reply with ok" — that did no work on
       // anything, so it is not engaged time on any task.
-      if (r.probe) { skipped++; continue }
+      if (r.probe === 1) { skipped++; continue }
       // The prompt head is searched for a key only as a last resort, and it is
       // genuinely useful here: a review pack names the task it reviews even
       // when the run happened in a plain checkout.

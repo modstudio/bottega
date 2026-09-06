@@ -3424,14 +3424,21 @@ switch (cmd) {
       args.push(...requestedIds, ...requestedIds)
     }
     if (sinceFlag) {
-      // A resumed chain belongs in the window when any of its turns executed
-      // there, even if the root turn predates the cutoff.
-      where.push(`EXISTS (
-        SELECT 1 FROM run turn
-         WHERE (turn.id = r.id OR turn.parent_run_id = r.id)
-           AND turn.started_at >= ?
+      // A chain belongs in the window when any turn started there, any
+      // question was asked or answered there, or any question is still
+      // unanswered — an open ruling is current whatever its age.
+      where.push(`(
+        EXISTS (
+          SELECT 1 FROM run turn
+           WHERE (turn.id = r.id OR turn.parent_run_id = r.id)
+             AND turn.started_at >= ?
+        ) OR EXISTS (
+          SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
+           WHERE (owner.id = r.id OR owner.parent_run_id = r.id)
+             AND (q.answered_at IS NULL OR q.asked_at >= ? OR q.answered_at >= ?)
+        )
       )`)
-      args.push(sinceFlag)
+      args.push(sinceFlag, sinceFlag, sinceFlag)
     }
     let rows = db().query(
       `SELECT r.id, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,

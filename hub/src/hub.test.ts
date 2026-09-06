@@ -50,9 +50,9 @@ const runFixture = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 })
 
-async function ingestRunFixtures(...runs: ReturnType<typeof runFixture>[]) {
+async function ingestStdout(stdout: string) {
   const spawn = spyOn(Bun, 'spawn').mockImplementation((() => ({
-    stdout: new Blob([runs.map((run) => JSON.stringify(run)).join('\n')]),
+    stdout: new Blob([stdout]),
     stderr: new Blob(['']),
     exited: Promise.resolve(0),
   })) as unknown as typeof Bun.spawn)
@@ -61,6 +61,16 @@ async function ingestRunFixtures(...runs: ReturnType<typeof runFixture>[]) {
   } finally {
     spawn.mockRestore()
   }
+}
+
+async function ingestRunFixtures(...runs: ReturnType<typeof runFixture>[]) {
+  return await ingestStdout(runs.map((run) => JSON.stringify(run)).join('\n'))
+}
+
+function collectRunsAt() {
+  return db().query<{ value: string }, []>(
+    `SELECT value FROM setting WHERE key = 'collect.runs.at'`,
+  ).get()?.value ?? null
 }
 
 describe('run ingest', () => {
@@ -299,6 +309,57 @@ describe('run ingest', () => {
   test('rulings payload defaults stale_after to 1h', () => {
     expect(rulingsStaleAfter()).toBe('1h')
     expect(rulingsPayload(Date.parse('2026-09-04T20:00:00.000Z')).stale_after).toBe('1h')
+  })
+
+  test('an old chain with a fresh open question is ingested', async () => {
+    await ingestRunFixtures(runFixture({
+      id: 9501,
+      started_at: '2026-09-04T15:00:00.000Z',
+      session_id: 'sess-old',
+      latency_ms: 1000,
+      status: 'asking',
+      questions: [
+        { id: 41, run_id: 9501, asked_at: '2026-09-04T19:55:00.000Z', answered_at: null },
+      ],
+    }))
+    const stored = db().query(
+      `SELECT asked_at, answered_at, session_id FROM question WHERE question_id = 41`,
+    ).get() as { asked_at: string; answered_at: string | null; session_id: string }
+    expect(stored).toEqual({
+      asked_at: '2026-09-04T19:55:00.000Z', answered_at: null, session_id: 'sess-old',
+    })
+    expect(listOpenRulings().some((row) => row.session_id === 'sess-old')).toBe(true)
+  })
+
+  test('a bare probe object is a contract violation, not a skipped probe', async () => {
+    const prior = '"2026-09-04T00:00:00.000Z"'
+    db().query(`INSERT INTO setting (key, value) VALUES ('collect.runs.at', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(prior)
+    const beforeQuestions = (db().query(`SELECT COUNT(*) n FROM question`).get() as { n: number }).n
+
+    await expect(ingestStdout('{"probe":1}\n')).rejects.toThrow('line 1 missing id')
+    expect(collectRunsAt()).toBe(prior)
+    expect((db().query(`SELECT COUNT(*) n FROM question`).get() as { n: number }).n)
+      .toBe(beforeQuestions)
+  })
+
+  test('a malformed line refuses the whole batch and writes nothing', async () => {
+    const prior = collectRunsAt()
+    const good = runFixture({ id: 9601, session_id: 'sess-batch' })
+    const bad = { ...runFixture({ id: 9602 }), started_at: undefined }
+    delete (bad as { started_at?: string }).started_at
+
+    await expect(ingestStdout(`${JSON.stringify(good)}\n${JSON.stringify(bad)}\n`))
+      .rejects.toThrow('line 2 missing started_at')
+    expect(collectRunsAt()).toBe(prior)
+    expect(db().query(`SELECT 1 FROM interval WHERE ref = 'orch:9601'`).get()).toBeNull()
+    expect(db().query(`SELECT 1 FROM question WHERE root_ref = 'orch:9601'`).get()).toBeNull()
+  })
+
+  test('a probe carrying the full contract is skipped without writing', async () => {
+    const result = await ingestRunFixtures(runFixture({ id: 9701, probe: 1 }))
+    expect(result).toEqual({ rows: 0, skipped: 1 })
+    expect(db().query(`SELECT 1 FROM interval WHERE ref = 'orch:9701'`).get()).toBeNull()
   })
 })
 
