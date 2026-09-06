@@ -21,18 +21,22 @@ function gateFailureLines(output: string): string[] {
 }
 
 export function gateFailureSummary(
-  output: string, outputPath: string, liveRuns: number,
+  output: string, outputPath: string, liveRuns: number, truncated = false,
 ): string {
   const lines = output.split('\n')
   if (lines.at(-1) === '') lines.pop()
   const failures = gateFailureLines(output)
   const timeout = /timed out after \d+ms/i.test(output)
   return [
-    `complete gate output: ${outputPath}`,
+    truncated
+      ? 'gate output (TRUNCATED after 5 s: a process the gate left behind still held its ' +
+        `output pipe): ${outputPath}`
+      : `complete gate output: ${outputPath}`,
     ...(timeout
       ? [`gate timeout under load: ${liveRuns} orch runs live (running + asking) machine-wide`]
       : []),
-    ...(failures.length ? ['gate failures:', ...failures] : []),
+    'gate failures:',
+    ...(failures.length ? failures : ['no failing test named in the captured output']),
     `gate output tail (last ${GATE_FAILURE_TAIL_LINES} lines):`,
     ...lines.slice(-GATE_FAILURE_TAIL_LINES),
   ].join('\n')
@@ -252,6 +256,9 @@ function runGate(
   const contentBefore = contentTree(worktree)
   console.log(`gate ${project.name}: ${gate}`)
   const captureSetup = prepareGateCapture(project.name)
+  const truncatedMarker = captureSetup.ok
+    ? join(captureSetup.paths.directory, 'truncated')
+    : null
   const capture = [
     'tee "$3" <"$2" & output_tee=$!',
     'sh -lc "$1" >"$2" 2>&1; status=$?',
@@ -260,7 +267,10 @@ function runGate(
     '  sleep 0.1',
     '  attempts=$((attempts + 1))',
     'done',
-    'if kill -0 "$output_tee" 2>/dev/null; then kill -9 "$output_tee" 2>/dev/null; fi',
+    'if kill -0 "$output_tee" 2>/dev/null; then',
+    '  : > "$4" 2>/dev/null || true',
+    '  kill -9 "$output_tee" 2>/dev/null',
+    'fi',
     'wait "$output_tee" 2>/dev/null || true',
     'exit "$status"',
   ].join('\n')
@@ -272,7 +282,7 @@ function runGate(
     ? Bun.spawnSync(['sh', '-lc', gate], spawnOptions)
     : Bun.spawnSync([
         'sh', '-c', capture, 'orch-gate-capture', gate,
-        captureSetup.pipe, captureSetup.paths.output,
+        captureSetup.pipe, captureSetup.paths.output, truncatedMarker!,
       ], spawnOptions)
   if (p.exitCode !== 0) {
     if (!captureSetup.ok) {
@@ -284,7 +294,9 @@ function runGate(
     const output = readFileSync(captureSetup.paths.output, 'utf8')
     throw new Error(
       `landing gate failed with exit ${p.exitCode}: ${gate}\n` +
-      gateFailureSummary(output, captureSetup.paths.output, liveRunCount()),
+      gateFailureSummary(
+        output, captureSetup.paths.output, liveRunCount(), existsSync(truncatedMarker!),
+      ),
     )
   }
   if (captureSetup.ok) rmSync(captureSetup.paths.directory, { recursive: true, force: true })

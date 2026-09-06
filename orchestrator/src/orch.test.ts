@@ -484,11 +484,11 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
-  test('a gate shell exiting with a leaked fifo writer does not hang landing', async () => {
+  test('a failed gate with a leaked fifo writer names its truncated capture', async () => {
     const { repo } = repoWithBranches(['leaked-gate-writer'])
     const sleeperPid = join(repo, 'leaked-gate-writer.pid')
     const gate = join(repo, 'leaked-gate-writer.sh')
-    writeFileSync(gate, `#!/bin/sh\nsleep 60 &\necho $! > "${sleeperPid}"\nexit 0\n`)
+    writeFileSync(gate, `#!/bin/sh\nsleep 60 &\necho $! > "${sleeperPid}"\nexit 7\n`)
     chmodSync(gate, 0o755)
     upsertProject({ name: 'landing-leaked-gate-writer', path: repo,
       settings: { trunk: 'main', gate } })
@@ -497,12 +497,69 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       const child = childLand(repo, 'leaked-gate-writer')
       const exit = await child.exited
       const error = await new Response(child.stderr).text()
-      expect(exit, error).toBe(0)
+      expect(exit).not.toBe(0)
       expect(Date.now() - started).toBeLessThan(8_000)
-      expect(g(repo, 'rev-parse', 'main')).toBe(g(repo, 'rev-parse', 'leaked-gate-writer'))
+      expect(error).toContain(
+        'gate output (TRUNCATED after 5 s: a process the gate left behind still held its output pipe):',
+      )
+      const outputPath = error.match(/output pipe\): (.+\/output\.log)/)?.[1]
+      expect(outputPath).toBeDefined()
+      rmSync(dirname(outputPath!), { recursive: true, force: true })
     } finally {
       if (existsSync(sleeperPid)) {
         try { process.kill(Number(readFileSync(sleeperPid, 'utf8').trim()), 'SIGKILL') } catch {}
+      }
+      rmSync(repo, { recursive: true, force: true })
+    }
+  }, 15_000)
+
+  test('a successful gate with a leaked fifo writer still lands', async () => {
+    const { repo } = repoWithBranches(['successful-leaked-gate-writer'])
+    const sleeperPid = join(repo, 'successful-leaked-gate-writer.pid')
+    const gate = join(repo, 'successful-leaked-gate-writer.sh')
+    writeFileSync(gate, `#!/bin/sh\nsleep 60 &\necho $! > "${sleeperPid}"\nexit 0\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-successful-leaked-gate-writer', path: repo,
+      settings: { trunk: 'main', gate } })
+    const started = Date.now()
+    try {
+      const child = childLand(repo, 'successful-leaked-gate-writer')
+      const exit = await child.exited
+      const error = await new Response(child.stderr).text()
+      expect(exit, error).toBe(0)
+      expect(Date.now() - started).toBeLessThan(8_000)
+      expect(g(repo, 'rev-parse', 'main'))
+        .toBe(g(repo, 'rev-parse', 'successful-leaked-gate-writer'))
+    } finally {
+      if (existsSync(sleeperPid)) {
+        try { process.kill(Number(readFileSync(sleeperPid, 'utf8').trim()), 'SIGKILL') } catch {}
+      }
+      rmSync(repo, { recursive: true, force: true })
+    }
+  }, 15_000)
+
+  test('a failing test name printed after capture truncation is not claimed as captured', async () => {
+    const { repo } = repoWithBranches(['late-gate-writer'])
+    const writerPid = join(repo, 'late-gate-writer.pid')
+    const gate = join(repo, 'late-gate-writer.sh')
+    writeFileSync(gate,
+      `#!/bin/sh\n(sleep 6; echo '(fail) too-late test') &\necho $! > "${writerPid}"\nexit 7\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-late-gate-writer', path: repo,
+      settings: { trunk: 'main', gate } })
+    try {
+      const child = childLand(repo, 'late-gate-writer')
+      expect(await child.exited).not.toBe(0)
+      const error = await new Response(child.stderr).text()
+      expect(error).toContain('gate output (TRUNCATED after 5 s:')
+      expect(error).toContain('gate failures:\nno failing test named in the captured output')
+      expect(error).not.toContain('too-late test')
+      const outputPath = error.match(/output pipe\): (.+\/output\.log)/)?.[1]
+      expect(outputPath).toBeDefined()
+      rmSync(dirname(outputPath!), { recursive: true, force: true })
+    } finally {
+      if (existsSync(writerPid)) {
+        try { process.kill(Number(readFileSync(writerPid, 'utf8').trim()), 'SIGKILL') } catch {}
       }
       rmSync(repo, { recursive: true, force: true })
     }
