@@ -484,6 +484,30 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  test('a gate shell exiting with a leaked fifo writer does not hang landing', async () => {
+    const { repo } = repoWithBranches(['leaked-gate-writer'])
+    const sleeperPid = join(repo, 'leaked-gate-writer.pid')
+    const gate = join(repo, 'leaked-gate-writer.sh')
+    writeFileSync(gate, `#!/bin/sh\nsleep 60 &\necho $! > "${sleeperPid}"\nexit 0\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-leaked-gate-writer', path: repo,
+      settings: { trunk: 'main', gate } })
+    const started = Date.now()
+    try {
+      const child = childLand(repo, 'leaked-gate-writer')
+      const exit = await child.exited
+      const error = await new Response(child.stderr).text()
+      expect(exit, error).toBe(0)
+      expect(Date.now() - started).toBeLessThan(8_000)
+      expect(g(repo, 'rev-parse', 'main')).toBe(g(repo, 'rev-parse', 'leaked-gate-writer'))
+    } finally {
+      if (existsSync(sleeperPid)) {
+        try { process.kill(Number(readFileSync(sleeperPid, 'utf8').trim()), 'SIGKILL') } catch {}
+      }
+      rmSync(repo, { recursive: true, force: true })
+    }
+  }, 15_000)
+
   for (const [name, command] of [
     ['commits', `printf 'gate commit\\n' > gate-change.txt && git add gate-change.txt && git commit -m 'gate commit'`],
     ['amends', `git commit --amend -m 'gate amended'`],

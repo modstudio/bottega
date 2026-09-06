@@ -240,8 +240,16 @@ function runGate(
     'tee "$4" <"$2" & stdout_tee=$!',
     'tee "$5" <"$3" >&2 & stderr_tee=$!',
     'sh -lc "$1" >"$2" 2>"$3"; status=$?',
-    'wait "$stdout_tee"',
-    'wait "$stderr_tee"',
+    'attempts=0',
+    'while [ "$attempts" -lt 50 ] && ' +
+      '(kill -0 "$stdout_tee" 2>/dev/null || kill -0 "$stderr_tee" 2>/dev/null); do',
+    '  sleep 0.1',
+    '  attempts=$((attempts + 1))',
+    'done',
+    'for tee_pid in "$stdout_tee" "$stderr_tee"; do',
+    '  if kill -0 "$tee_pid" 2>/dev/null; then kill -9 "$tee_pid" 2>/dev/null; fi',
+    '  wait "$tee_pid" 2>/dev/null || true',
+    'done',
     'exit "$status"',
   ].join('\n')
   const p = Bun.spawnSync([
