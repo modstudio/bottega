@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { db, nextImportedTaskKey, nowIso, requireDatabase } from './db.ts'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { ingestRuns } from './ingest/runs.ts'
 import { ingestTranscripts } from './ingest/transcripts.ts'
 import { ingestGit } from './ingest/git.ts'
@@ -8,7 +8,7 @@ import { ingestTrackers } from './ingest/trackers.ts'
 import { tasksInWindow, estateEngagedMs, rollUpDays } from './query.ts'
 import { watch, withLease } from './collect.ts'
 import {
-  closeTask, commentTask, createTask, createTaskDocument, deleteTaskDocument,
+  closeTask, commentTask, createTask, createTaskDocument, deleteTaskDocument, DuplicateTaskError,
   duplicateCandidates, getTaskDocument, listTaskDocuments, listTasks, setTask, showTask,
   updateTaskDocument,
 } from './task.ts'
@@ -219,23 +219,30 @@ async function task() {
     const project = required('project')
     const title = required('title')
     const body = newBody()
-    const candidates = duplicateCandidates(listTasks({ project }), title)
     const override = flag('allow-duplicate')
-    if (has('allow-duplicate') && !override?.trim()) {
-      throw new Error('--allow-duplicate requires a non-empty reason')
-    }
-    if (candidates.length && !has('allow-duplicate')) {
+    const delay = Number(process.env.HUB_TEST_DUPLICATE_DELAY_MS ?? 0)
+    const afterDuplicateSearch = delay > 0 ? () => {
+      const marker = process.env.HUB_TEST_DUPLICATE_MARKER
+      if (marker) writeFileSync(marker, '')
+      Bun.sleepSync(delay)
+    } : undefined
+    let row
+    try {
+      row = createTask({ project, title,
+        status: flag('status'), parent: flag('parent'), body }, {
+        allowDuplicateReason: has('allow-duplicate') ? override : undefined,
+        afterDuplicateSearch,
+      })
+    } catch (error) {
+      if (!(error instanceof DuplicateTaskError)) throw error
       throw new Error([
         'possible duplicate tasks:',
-        ...candidates.map((candidate) =>
+        ...error.candidates.map((candidate) =>
           `${candidate.key} [${candidate.status ?? 'unknown'}] score ${candidate.score.toFixed(3)}  ${candidate.title}`),
         '',
         'Refusing to create a duplicate. Pass --allow-duplicate "reason" to override.',
       ].join('\n'))
     }
-    const row = createTask({ project, title,
-      status: flag('status'), parent: flag('parent'), body })
-    if (override) commentTask(row.key, override)
     console.log(row.key)
     return
   }

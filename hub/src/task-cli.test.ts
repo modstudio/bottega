@@ -1,7 +1,8 @@
 import { afterAll, describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Database } from 'bun:sqlite'
 import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
 
 const dir = mkdtempSync(join(tmpdir(), 'hub-task-cli-'))
@@ -30,6 +31,20 @@ function hubAt(path: string, ...args: string[]) {
     stdout: decoder.decode(result.stdout).trim(),
     stderr: decoder.decode(result.stderr).trim(),
   }
+}
+
+async function spawnedHubAt(path: string, args: string[], env: Record<string, string> = {}) {
+  const proc = Bun.spawn(['bun', cli, ...args], {
+    env: { ...process.env, HUB_DB: path, ...env },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  const [exitCode, stdout, stderr] = await Promise.all([
+    proc.exited,
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ])
+  return { exitCode, stdout: stdout.trim(), stderr: stderr.trim() }
 }
 
 function show(key: string) {
@@ -137,6 +152,53 @@ describe('task duplicate guard', () => {
     const unrelated = hubAt(duplicateDatabase, 'task', 'new', '--project', 'workshop',
       '--title', 'Document how daily email typography behaves in Outlook')
     expect(unrelated.exitCode).toBe(0)
+  })
+
+  test('serialises concurrent identical filings so the second sees and refuses the first', async () => {
+    const concurrentDatabase = join(dir, 'concurrent-duplicates.db')
+    const marker = join(dir, 'duplicate-search-complete')
+    const args = ['task', 'new', '--project', 'workshop',
+      '--title', 'Concurrent duplicate filing must serialize']
+    const first = spawnedHubAt(concurrentDatabase, args, {
+      HUB_TEST_DUPLICATE_DELAY_MS: '500',
+      HUB_TEST_DUPLICATE_MARKER: marker,
+    })
+    for (let attempt = 0; attempt < 500 && !existsSync(marker); attempt++) await Bun.sleep(10)
+    expect(existsSync(marker)).toBe(true)
+
+    const second = spawnedHubAt(concurrentDatabase, args)
+    const [firstResult, secondResult] = await Promise.all([first, second])
+
+    expect(firstResult.exitCode).toBe(0)
+    expect(secondResult.exitCode).toBe(1)
+    expect(secondResult.stderr).toContain(firstResult.stdout)
+    expect(secondResult.stderr).toContain('Refusing to create a duplicate')
+    const listed = hubAt(concurrentDatabase, 'task', 'list', '--project', 'workshop', '--json')
+    expect(JSON.parse(listed.stdout)).toHaveLength(1)
+  })
+
+  test('rolls task creation back when recording the duplicate reason fails', () => {
+    const rollbackDatabase = join(dir, 'duplicate-comment-rollback.db')
+    const seed = hubAt(rollbackDatabase, 'task', 'new', '--project', 'workshop',
+      '--title', firstTitle, '--allow-duplicate', 'hub rollback test seed')
+    expect(seed.exitCode).toBe(0)
+    const d = new Database(rollbackDatabase)
+    d.exec(`
+      CREATE TRIGGER force_comment_failure BEFORE INSERT ON task_comment
+      BEGIN
+        SELECT RAISE(FAIL, 'forced comment failure');
+      END
+    `)
+    d.close()
+
+    const failed = hubAt(rollbackDatabase, 'task', 'new', '--project', 'workshop',
+      '--title', secondTitle, '--allow-duplicate', 'required duplicate reason')
+
+    expect(failed.exitCode).toBe(1)
+    expect(failed.stderr).toContain('forced comment failure')
+    const shown = hubAt(rollbackDatabase, 'task', 'list', '--project', 'workshop', '--json')
+    const rows = JSON.parse(shown.stdout) as { title: string | null }[]
+    expect(rows.map((row) => row.title)).toEqual([firstTitle])
   })
 
 })

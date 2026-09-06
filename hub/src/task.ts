@@ -30,6 +30,12 @@ export type DuplicateCandidate = {
   score: number
 }
 
+export class DuplicateTaskError extends Error {
+  constructor(readonly candidates: DuplicateCandidate[]) {
+    super('possible duplicate tasks')
+  }
+}
+
 const DUPLICATE_STOP_WORDS = new Set(
   'a an and are as at be by for from has have in into is it its of on or that the this to was were will with should before after not no'.split(' '),
 )
@@ -121,10 +127,13 @@ function assertParent(key: string | null | undefined) {
   if (!found) throw new Error(`no task ${key}`)
 }
 
-/** Allocate and insert under one IMMEDIATE transaction, serialising concurrent issuers. */
+/** Check, allocate, insert, and record an override under one serialised write transaction. */
 export function createTask(input: {
   project: string; title: string; status?: string; parent?: string; body?: string
-}): TaskRow {
+}, options: {
+  allowDuplicateReason?: string
+  afterDuplicateSearch?: () => void
+} = {}): TaskRow {
   const project = registeredProject(input.project)
   const prefix = project.settings.keyPrefixes?.[0]
   if (!prefix) {
@@ -139,6 +148,14 @@ export function createTask(input: {
   const d = db()
   const at = nowIso()
   const issue = d.transaction(() => {
+    const candidates = duplicateCandidates(listTasks({ project: input.project }), input.title)
+    options.afterDuplicateSearch?.()
+    if (options.allowDuplicateReason !== undefined && !options.allowDuplicateReason.trim()) {
+      throw new Error('--allow-duplicate requires a non-empty reason')
+    }
+    if (candidates.length && options.allowDuplicateReason === undefined) {
+      throw new DuplicateTaskError(candidates)
+    }
     const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-(\\d+)$`, 'i')
     const highest = d.query<{ key: string }, []>(`SELECT key FROM task`).all()
       .reduce((max, row) => {
@@ -160,6 +177,11 @@ export function createTask(input: {
       `INSERT INTO seq (name, next) VALUES (?, ?)
        ON CONFLICT(name) DO UPDATE SET next = excluded.next`,
     ).run(`task:${prefix}`, number + 1)
+    if (options.allowDuplicateReason !== undefined) {
+      d.query(
+        `INSERT INTO task_comment (task_key, body, created_at) VALUES (?, ?, ?)`,
+      ).run(key, options.allowDuplicateReason, at)
+    }
     return key
   })
   const key = issue.immediate()
