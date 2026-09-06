@@ -2206,10 +2206,11 @@ export async function run(opts: {
      */
     if (writesJob) {
       db().query(
-        `UPDATE run SET files_changed=?, lines_added=?, lines_removed=?,
+        `UPDATE run SET files_changed=?, changed_paths=?, lines_added=?, lines_removed=?,
                         tests_ran=?, tests_passed=?, deviations=?, escalations=? WHERE id=?`,
       ).run(
         changes?.files.length ?? null,
+        changes ? JSON.stringify(changes.files) : null,
         changes?.insertions ?? null,
         changes?.deletions ?? null,
         contract?.tests ? (contract.tests.ran ? 1 : 0) : null,

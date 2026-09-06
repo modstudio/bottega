@@ -1972,6 +1972,62 @@ const reviewReply = (findings = 1, severity = 'major') => ({
 })
 
 describe('review discipline', () => {
+  test('records a tier from one shared base and reviewed tree and exposes CLI JSON', () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-tier-')))
+    const gg = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], { cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    gg('init', '-b', 'main'); gg('config', 'user.email', 'orch-test@example.invalid'); gg('config', 'user.name', 'Orch Test')
+    writeFileSync(join(repo, 'base.txt'), 'base\n'); gg('add', 'base.txt'); gg('commit', '-m', 'base')
+    gg('checkout', '-b', 'tier-review'); writeFileSync(join(repo, 'change.ts'), 'change\n'); gg('add', 'change.ts'); gg('commit', '-m', 'change')
+    upsertProject({ name: 'tier-review-project', path: repo, settings: { trunk: 'main' } })
+    try {
+      const base = gg('rev-parse', 'main')
+      const head = gg('rev-parse', 'tier-review')
+      const tree = gg('rev-parse', 'tier-review^{tree}')
+      const runs = ['correctness', 'craft'].map((lens) => addRun({
+        agent: 'codex', job: 'review-lens', model: 'm', lens,
+        repo: 'tier-review-project', inputTree: tree, headCommit: head,
+      }))
+      for (const id of runs) db().query('UPDATE run SET base_commit=?, branch=? WHERE id=?')
+        .run(base, 'tier-review', id)
+      const reviewId = recordReviews(runs.map((runId) => ({ runId, output: reviewReply(0) })))
+      const row = db().query(
+        'SELECT tier, tier_risk, tier_size, tier_reasons FROM review WHERE id=?',
+      ).get(reviewId) as { tier: number; tier_risk: number; tier_size: number; tier_reasons: string }
+      expect(row).toMatchObject({ tier: 2, tier_risk: 2, tier_size: 0 })
+      expect(JSON.parse(row.tier_reasons).join('\n')).toContain('unlisted product path')
+
+      const result = Bun.spawnSync([
+        process.execPath, new URL('cli.ts', import.meta.url).pathname,
+        'review', 'tier', String(runs[0]), '--json',
+      ], { env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe' })
+      expect(result.stderr.toString()).toBe('')
+      expect(result.exitCode).toBe(0)
+      expect(JSON.parse(result.stdout.toString())).toMatchObject({ tier: 2, risk: 2, size: 0 })
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('stores null tier and names differing lens bases', () => {
+    const tree = '1'.repeat(40)
+    const first = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'one', inputTree: tree })
+    const second = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'two', inputTree: tree })
+    db().query('UPDATE run SET base_commit=? WHERE id=?').run('a'.repeat(40), first)
+    db().query('UPDATE run SET base_commit=? WHERE id=?').run('b'.repeat(40), second)
+    const stderr = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const reviewId = recordReviews([
+        { runId: first, output: reviewReply(0) }, { runId: second, output: reviewReply(0) },
+      ])
+      expect(db().query('SELECT tier, tier_risk, tier_size, tier_reasons FROM review WHERE id=?')
+        .get(reviewId)).toEqual({ tier: null, tier_risk: null, tier_size: null, tier_reasons: null })
+      expect(stderr.mock.calls.flat().join(' ')).toContain(`run ${first}=${'a'.repeat(40)}`)
+      expect(stderr.mock.calls.flat().join(' ')).toContain(`run ${second}=${'b'.repeat(40)}`)
+    } finally { stderr.mockRestore() }
+  })
+
   test('findings jobs have stable identities and the structured coverage contract', () => {
     const priorDepth = process.env.ORCH_DEPTH
     process.env.ORCH_DEPTH = '0'
@@ -2167,6 +2223,9 @@ describe('review discipline', () => {
     let c = reviewCalibration('correctness', 'codex', 'current')
     expect(c).toMatchObject({ precision: 0.7, hits: 7, triaged: 10, basis: 'agent' })
     expect(c.rejection_categories).toEqual([{ category: 'not-a-defect', count: 3 }])
+    expect(c.tiers.unclassified).toEqual({
+      reviews: 4, lenses: 4, findings_accepted: 4, findings_rejected: 3,
+    })
 
     make('current', 'accepted', MIN_REVIEW_TRIAGED - 1)
     c = reviewCalibration('correctness', 'codex', 'current')
@@ -9600,12 +9659,13 @@ describe('a writing worker must return evidence of completed work', () => {
     }
     expect(failure?.message).toContain('reported done with no change and no test run')
     expect(failure?.runId).toBeDefined()
-    const row = db().query('SELECT status, error, files_changed, route_reason FROM run WHERE id=?')
+    const row = db().query('SELECT status, error, files_changed, changed_paths, route_reason FROM run WHERE id=?')
       .get(failure!.runId!) as {
-        status: string; error: string; files_changed: number; route_reason: string
+        status: string; error: string; files_changed: number; changed_paths: string; route_reason: string
       }
     expect(row.status).toBe('failed')
     expect(row.files_changed).toBe(0)
+    expect(JSON.parse(row.changed_paths)).toEqual([])
     expect(row.error).toContain('reported done with no change and no test run')
     expect(row.error).not.toContain('review path retargeting indeterminate:')
     expect(row.route_reason).toContain(
@@ -16305,6 +16365,8 @@ describe('canonical schema rebuild', () => {
     const d = openOld(path)
     expect(cols(d, 'run')).toEqual(cols(db(), 'run'))
     expect(cols(d, 'run')).toContain('head_commit')
+    expect(cols(d, 'run')).toContain('changed_paths')
+    expect(cols(d, 'review')).toEqual(cols(db(), 'review'))
     expect(cols(d, 'score')).toEqual(cols(db(), 'score'))
     expect(cols(d, 'review_lens')).toEqual(cols(db(), 'review_lens'))
     expect(cols(d, 'landing_override')).toEqual(cols(db(), 'landing_override'))
@@ -17375,11 +17437,11 @@ describe('scoped operator docs', () => {
     })
     expect(orchCli(['review', 'inspect'])).toMatchObject({
       code: 1,
-      err: expect.stringContaining('unknown: orch review inspect. Try record | triage | complete | calibration'),
+      err: expect.stringContaining('unknown: orch review inspect. Try tier | record | triage | complete | calibration'),
     })
     expect(orchCli(['review'])).toMatchObject({
       code: 1,
-      err: expect.stringContaining('unknown: orch review. Try record | triage | complete | calibration'),
+      err: expect.stringContaining('unknown: orch review. Try tier | record | triage | complete | calibration'),
     })
   })
 

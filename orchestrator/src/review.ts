@@ -7,6 +7,7 @@ import {
 } from './db.ts'
 import { CANON_SOURCE_SCHEMA, REVIEW_SCHEMA, type CanonSource, type ReviewReply } from './contract.ts'
 import { job } from './jobs.ts'
+import { classifyReviewTier, diffNumstat, type ReviewTier } from './review-tier.ts'
 
 export const REVIEW_WINDOW = 50
 /**
@@ -81,6 +82,41 @@ type RunRow = {
   id: number; agent: string; model: string | null; lens: string | null
   job: string; status: string; output_path: string | null; input_tree: string | null
   head_commit: string | null; repo: string | null
+  base_commit: string | null
+}
+
+function tierForRuns(runs: RunRow[], database: Database): ReviewTier | null {
+  const bases = new Map(runs.map((run) => [run.id, run.base_commit]))
+  const trees = new Map(runs.map((run) => [run.id, run.input_tree]))
+  const distinctBases = new Set(bases.values())
+  const distinctTrees = new Set(trees.values())
+  const differ = (values: Map<number, string | null>) => [...values].map(([id, value]) =>
+    `run ${id}=${value ?? 'NULL'}`).join(', ')
+  if (distinctBases.size !== 1 || distinctTrees.size !== 1) {
+    console.error(`warning: review tier not recorded: lens runs differ (${differ(bases)}; ${differ(trees)})`)
+    return null
+  }
+  try {
+    for (const run of runs) {
+      if (!run.base_commit || !run.input_tree || !run.head_commit || !run.repo) {
+        throw new Error(`run ${run.id} lacks base_commit, input_tree, head_commit, or repo`)
+      }
+      const repo = projectPath(database, run.repo)
+      if (!repo) throw new Error(`run ${run.id} project ${run.repo} is not registered`)
+      const base = git(repo, ['cat-file', '-e', `${run.base_commit}^{commit}`])
+      if (!base.ok) throw new Error(`run ${run.id} base ${run.base_commit} cannot be resolved`)
+      const actualTree = git(repo, ['rev-parse', `${run.head_commit}^{tree}`])
+      if (!actualTree.ok || actualTree.out !== run.input_tree) {
+        throw new Error(`run ${run.id} reviewed tree ${run.input_tree} cannot be resolved from ${run.head_commit}`)
+      }
+    }
+    const run = runs[0]!
+    const repo = projectPath(database, run.repo!)
+    return classifyReviewTier({ files: diffNumstat(repo!, run.base_commit!, run.head_commit!) })
+  } catch (cause) {
+    console.error(`warning: review tier not recorded: ${String((cause as Error)?.message ?? cause)}`)
+    return null
+  }
 }
 
 const pinRef = (runId: number) => `refs/orch/reviewed/${runId}`
@@ -134,7 +170,7 @@ export function recordReviews(
   if (!entries.length) throw new Error('a review requires at least one lens run')
   const runs = entries.map(({ runId }) => {
     const run = database.query(
-      `SELECT id, agent, model, lens, job, status, output_path, input_tree, head_commit, repo
+      `SELECT id, agent, model, lens, job, status, output_path, input_tree, head_commit, repo, base_commit
          FROM run WHERE id=?`,
     ).get(runId) as RunRow | null
     if (!run) throw new Error(`no run ${runId}`)
@@ -156,8 +192,12 @@ export function recordReviews(
     )
   }
   const transaction = database.transaction(() => {
-    const review = database.query('INSERT INTO review (recorded_at) VALUES (?) RETURNING id')
-      .get(nowIso()) as { id: number }
+    const tier = tierForRuns(runs, database)
+    const review = database.query(
+      `INSERT INTO review (recorded_at, tier, tier_risk, tier_size, tier_reasons)
+       VALUES (?,?,?,?,?) RETURNING id`,
+    ).get(nowIso(), tier?.tier ?? null, tier?.risk ?? null, tier?.size ?? null,
+      tier ? JSON.stringify(tier.reasons) : null) as { id: number }
     const insertLens = database.query(
       `INSERT INTO review_lens
          (review_id, run_id, lens, agent, model, tree_inspected, reviewed_tree, standards_read,
@@ -332,6 +372,11 @@ export type ReviewCalibration = {
   limits: GradeDistribution<ReviewLimits>
   overlap: GradeDistribution<ReviewOverlap>
   severity: SeverityAgreement
+  tiers: Record<'0' | '1' | '2' | '3' | 'unclassified', TierCalibration>
+}
+
+export type TierCalibration = {
+  reviews: number; lenses: number; findings_accepted: number; findings_rejected: number
 }
 
 export type GradeDistribution<T extends string> = {
@@ -393,12 +438,15 @@ function calibrationCell(
       WHERE rl.lens=? AND rl.agent=? AND r.completed_at IS NOT NULL ${modelClause}
       ORDER BY r.completed_at DESC, r.id DESC LIMIT ?`,
   ).all(...(model === undefined ? [lens, agent, REVIEW_WINDOW] : [lens, agent, model, REVIEW_WINDOW])) as { id: number }[]
+  const emptyTiers = () => Object.fromEntries(['0', '1', '2', '3', 'unclassified'].map((key) =>
+    [key, { reviews: 0, lenses: 0, findings_accepted: 0, findings_rejected: 0 }])) as ReviewCalibration['tiers']
   const emptyGrades = () => ({
     reproduced: gradeDistribution([], 'reproduced', REVIEW_REPRODUCED),
     coverage: gradeDistribution([], 'coverage', REVIEW_COVERAGE),
     limits: gradeDistribution([], 'limits', REVIEW_LIMITS),
     overlap: gradeDistribution([], 'overlap', REVIEW_OVERLAP),
     severity: severityAgreement([]),
+    tiers: emptyTiers(),
   })
   if (!reviews.length) return { lens, agent, model: model ?? null, precision: null, hits: 0, triaged: 0, rejection_categories: [], ...emptyGrades() }
   const ids = reviews.map((r) => r.id)
@@ -430,6 +478,31 @@ function calibrationCell(
         AND rf.disposition IS NOT NULL`,
   ).all(...ids, lens, agent, ...(model === undefined ? [] : [model])) as
     { severity: string; triaged_severity: string | null }[]
+  const tierRows = database.query(
+    `SELECT r.id AS review_id, r.tier, rl.id AS lens_id, rf.disposition
+       FROM review r JOIN review_lens rl ON rl.review_id=r.id
+       LEFT JOIN review_finding rf ON rf.review_lens_id=rl.id
+      WHERE r.id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}`,
+  ).all(...ids, lens, agent, ...(model === undefined ? [] : [model])) as
+    { review_id: number; tier: number | null; lens_id: number; disposition: string | null }[]
+  const tiers = emptyTiers()
+  const tierReviews = new Map<string, Set<number>>()
+  const tierLenses = new Map<string, Set<number>>()
+  for (const row of tierRows) {
+    const key = row.tier === null ? 'unclassified' : String(row.tier)
+    const cell = tiers[key as keyof typeof tiers]
+    if (!cell) continue
+    const reviews = tierReviews.get(key) ?? new Set<number>()
+    const lenses = tierLenses.get(key) ?? new Set<number>()
+    reviews.add(row.review_id); lenses.add(row.lens_id)
+    tierReviews.set(key, reviews); tierLenses.set(key, lenses)
+    if (row.disposition === 'accepted') cell.findings_accepted++
+    if (row.disposition === 'rejected') cell.findings_rejected++
+  }
+  for (const [key, cell] of Object.entries(tiers)) {
+    cell.reviews = tierReviews.get(key)?.size ?? 0
+    cell.lenses = tierLenses.get(key)?.size ?? 0
+  }
   return { lens, agent, model: model ?? null,
     precision: triaged >= MIN_REVIEW_TRIAGED ? hits / triaged : null,
     hits, triaged, rejection_categories: categories,
@@ -438,6 +511,7 @@ function calibrationCell(
     limits: gradeDistribution(gradeRows, 'limits', REVIEW_LIMITS),
     overlap: gradeDistribution(gradeRows, 'overlap', REVIEW_OVERLAP),
     severity: severityAgreement(severityRows),
+    tiers,
   }
 }
 

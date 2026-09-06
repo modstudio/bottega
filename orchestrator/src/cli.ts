@@ -36,6 +36,7 @@ import {
 import { completeReview, DISPOSITIONS, gradeReviewLens, parseReviewOutput, recordReviews,
          reviewCalibration, reviewPins, triageFinding, type Disposition,
          type ReviewGrades } from './review.ts'
+import { classifyReviewTier, diffNumstat } from './review-tier.ts'
 import { composeWorkflow, exportWorkflows, forkWorkflow, getWorkflowStep, importWorkflows,
          listWorkflows, promoteWorkflow, retireWorkflow, setWorkflow, showWorkflow,
          workflowVersions } from './workflows.ts'
@@ -1027,6 +1028,7 @@ function usage(): never {
   orch result <run-id>          print a finished run's output; exit 2 if still running
   orch retry <run-id>           re-send a run's exact prompt to the SAME agent
       --agent <name>            ... or to a different one, deliberately
+  orch review tier <branch|run-id> classify review breadth without writing
   orch review record <run-id>... record completed lens outputs before triage
   orch review triage <review-id> <finding> <accepted|modified|rejected|skipped>
       --category <name>         required rejection category for rejected findings
@@ -2092,6 +2094,27 @@ switch (cmd) {
 
   case 'review': {
     const sub = argv[1]
+    if (sub === 'tier') {
+      const value = argv[2]
+      if (!value) throw new Error('orch review tier <branch|run-id> [--json]')
+      const target = (await import('./landing.ts')).resolveLandingBranch(value)
+      const runProject = target.runId === null ? null : db().query(
+        'SELECT repo FROM run WHERE id=?',
+      ).get(target.runId) as { repo: string | null } | null
+      const project = runProject?.repo ? projectByName(runProject.repo) : projectAt(process.cwd())
+      if (!project) throw new Error('review tier target is not inside a registered project')
+      const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
+      if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
+      const tier = classifyReviewTier({ files: diffNumstat(project.path, trunk, target.branch) })
+      if (has('json')) console.log(JSON.stringify(tier))
+      else {
+        console.log(`tier ${tier.tier}`)
+        console.log(`risk ${tier.risk}`)
+        console.log(`size ${tier.size}`)
+        for (const reason of tier.reasons) console.log(reason)
+      }
+      break
+    }
     if (sub === 'record') {
       const runIds = argv.slice(2).map(Number)
       if (!runIds.length || runIds.some((id) => !Number.isInteger(id) || id <= 0)) {
@@ -2166,10 +2189,13 @@ switch (cmd) {
         }
         const severity = calibration.severity
         console.log(`  severity: agreed=${severity.counts.agreed}, changed=${severity.counts.changed}, not-comparable=${severity.counts.not_comparable}, not-assessed=${severity.counts.not_assessed}`)
+        for (const [tier, counts] of Object.entries(calibration.tiers)) {
+          console.log(`  tier ${tier}: reviews=${counts.reviews}, lenses=${counts.lenses}, accepted=${counts.findings_accepted}, rejected=${counts.findings_rejected}`)
+        }
       }
       break
     }
-    throw new Error(`unknown: orch review${sub ? ` ${sub}` : ''}. Try record | triage | complete | calibration`)
+    throw new Error(`unknown: orch review${sub ? ` ${sub}` : ''}. Try tier | record | triage | complete | calibration`)
   }
 
   // The dashboard surface, published for hub to render.

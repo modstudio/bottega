@@ -24,7 +24,7 @@ import { messagesForRun, receiptMessagesForArchitect } from './mailbox.ts'
 export function runDetail(id: number, receipt = false) {
   const row = db().query(
     `SELECT r.id, r.agent, r.job, r.cwd, r.latency_ms, r.vendor_tokens, r.status,
-            r.failure_kind, r.probe, r.evidence_excluded, r.error, r.input_tree, r.head_commit, r.doc_revisions, r.canon_sha,
+            r.failure_kind, r.probe, r.evidence_excluded, r.error, r.input_tree, r.head_commit, r.changed_paths, r.doc_revisions, r.canon_sha,
             r.prompt_path, r.output_path, r.mcp, r.mcp_server, r.mcp_connected, r.mcp_error,
             r.branch_kept, r.branch_kept_tip,
             s.delivery, s.quality, s.fidelity, s.note, s.scored_at
@@ -46,6 +46,7 @@ export function runDetail(id: number, receipt = false) {
   ).all(rootId)
   return {
     ...row,
+    changed_paths: typeof row.changed_paths === 'string' ? JSON.parse(row.changed_paths) : null,
     project: typeof row.cwd === 'string' ? projectAt(row.cwd)?.name ?? null : null,
     scoreAxes: JOBS[String(row.job)]?.needs.writesRepo
       ? ['delivery', 'quality', 'fidelity']

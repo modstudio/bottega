@@ -36,6 +36,7 @@ describe('CLI argument recognition', () => {
       ['doc', 'rm', 'slug', '--scope', 'global'], ['doc', 'export', 'docs'],
       ['doc', 'import', 'docs'], ['do', 'summarize', '--cwd', '/tmp/project', 'a', 'multi-word', 'prompt'],
       ['review', 'record', '12', '13'],
+      ['review', 'tier', 'feature/DEV-305', '--json'],
       ['review', 'triage', '12', '1', 'rejected', '--category', 'not-a-defect', '--severity', 'critical'],
       ['review', 'complete', '12'],
       ['review', 'pins'], ['review', 'pins', '--prune'],

@@ -1,6 +1,7 @@
 import { db, nowIso, type Project } from '../db.ts'
 import { KEY, projectOfKey } from '../attribute.ts'
 import { projects } from '../projects.ts'
+import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
 
 /**
  * Generated files, which are not work.
@@ -10,7 +11,7 @@ import { projects } from '../projects.ts'
  * every migration, so adding one column reads as a 23,000-line day. Left in,
  * the lines lens measures the ORM's verbosity rather than anything anyone did.
  */
-export type FileKind = 'generated' | 'test' | 'docs' | 'config' | 'product'
+export type { FileKind } from '../../../shared/file-kind.ts'
 
 /**
  * What kind of file a change touched.
@@ -24,31 +25,8 @@ export type FileKind = 'generated' | 'test' | 'docs' | 'config' | 'product'
  * one project's window — but they are real work, and scoring them at zero would make
  * writing them look free.
  */
-const RULES: [FileKind, RegExp][] = [
-  ['generated', /drizzle\/(.*snapshot\.json$|meta\/)/],
-  ['generated', /(^|\/)(package-lock\.json|bun\.lockb?|yarn\.lock|composer\.lock|pnpm-lock\.yaml)$/],
-  ['generated', /\.min\.(js|css)$/],
-  ['generated', /(^|\/)(dist|build|vendor|node_modules)\//],
-  ['generated', /\.(map|snap|svg|png|jpe?g|gif|ico|woff2?|ttf|pdf|lock)$/],
-  ['generated', /(^|\/)__snapshots__\//],
-  ['test', /\.(test|spec)\.[jt]sx?$/],
-  ['test', /\.integration\.test\./],
-  ['test', /(^|\/)__tests__\//],
-  ['test', /(^|\/)tests?\//i],
-  ['test', /Test\.php$/],
-  ['test', /_test\.(go|py|rb)$/],
-  ['test', /(^|\/)(cypress|e2e|playwright)\//],
-  ['docs', /\.mdx?$/],
-  ['docs', /(^|\/)docs?\//i],
-  ['config', /\.(ya?ml|toml|ini|conf)$/],
-  ['config', /(^|\/)\.[\w.-]+$/],
-  ['config', /\.config\.[jt]s$/],
-  ['config', /(^|\/)(tsconfig|package)\.json$/],
-]
-
 export function categorize(file: string): FileKind {
-  for (const [kind, re] of RULES) if (re.test(file)) return kind
-  return 'product'
+  return categorizeFile(file)
 }
 
 export type DayActivity = {

@@ -343,6 +343,9 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
     case 'review': {
       if (topLevelOnly) return { args: [], shape: shape('orch review', 0) }
       if (sub === 'record') return { args: argv.slice(2), shape: shape('orch review record <run-id>...', Infinity) }
+      if (sub === 'tier') return { args: argv.slice(2), shape: shape(
+        'orch review tier <branch|run-id> [--json]', 1, [], ['--json'],
+      ) }
       if (sub === 'triage') return { args: argv.slice(2), shape: shape(
         `orch review triage <review-id> <finding> <accepted|modified|rejected|skipped> [--category X] [--severity ${REVIEW_SEVERITY.join('|')}]`, 3,
         ['--category', '--severity'],

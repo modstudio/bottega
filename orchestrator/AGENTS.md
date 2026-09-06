@@ -623,9 +623,26 @@ distribution.
 
 ## A fan-out cannot be synchronous
 
-`orch do` blocked until the agent answered, and that made the shape of work
-this exists for impossible to run. Seven review lenses over one diff is the
-NORMAL shape of a review here, and a lens takes about six minutes.
+`orch do` blocked until the agent answered, and that made concurrent review
+impossible to run. A lens takes about six minutes.
+
+Review breadth follows a tier computed as the higher of risk and cognitive
+size. Risk comes from the surface touched, never from line count. Tier 0 means
+the architect reads the diff and runs no lens; until tier-0 recording has its
+own mechanism, land it with `--unreviewed "tier 0: <reason>"`. Tier 1 runs one
+`correctness` lens. Tier 2 runs `correctness` plus the surface lens:
+`migration-safety` for `db.ts`, `craft` for a new module, or `teardown-safety`
+for `worktree.ts`. Tier 3 is tier 2 with a second model on at least one lens.
+One lens round per tier is the default.
+
+After a fix round, re-lens only at tier 3 or when the fix itself touched a
+tier-3 path. Otherwise the architect reads the fix and lands it. Real findings
+are fixed. Small and formatting findings are fixed inline in the same round,
+without re-review. Speculation is dropped in triage as `below-bar`; file it
+only when it is high or critical, or observed in a real run. The loop ends.
+
+These tier boundaries are a first guess. Move them from the per-tier
+calibration as evidence accumulates. Nothing enforces them yet.
 
 Every caller-side workaround loses the work, and all three were tried in a real
 review in one application (runs 407-413):

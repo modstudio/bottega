@@ -287,6 +287,7 @@ export function applySchema(d: Database): void {
    * a zero would put a fact in the table that nobody observed.
    */
   addColumn(d, 'run', 'files_changed', 'INTEGER')
+  addColumn(d, 'run', 'changed_paths', 'TEXT')
   addColumn(d, 'run', 'lines_added', 'INTEGER')
   addColumn(d, 'run', 'lines_removed', 'INTEGER')
   // What the worker SAYS about its own tests. Its claim, not our measurement —
@@ -304,6 +305,10 @@ export function applySchema(d: Database): void {
   // stack, and re-deriving old runs through the new value would rewrite history
   // — evidence belongs to the stack it was actually gathered in.
   addColumn(d, 'run', 'stack', 'TEXT')
+  addColumn(d, 'review', 'tier', 'INTEGER')
+  addColumn(d, 'review', 'tier_risk', 'INTEGER')
+  addColumn(d, 'review', 'tier_size', 'INTEGER')
+  addColumn(d, 'review', 'tier_reasons', 'TEXT')
   // WHICH MODEL actually ran. An agent is a harness; the model is what is being
   // judged, and both subscriptions carry more than one. Without this, changing
   // a CLI's configured model silently rewrites the meaning of every score
@@ -688,6 +693,7 @@ const RUN_DDL = `CREATE TABLE run (
       parent_run_id INTEGER REFERENCES run(id),
       turn          INTEGER NOT NULL DEFAULT 1,
       files_changed INTEGER,
+      changed_paths TEXT,
       lines_added   INTEGER,
       lines_removed INTEGER,
       tests_ran     INTEGER,
@@ -1096,7 +1102,11 @@ function migrate(d: Database) {
     CREATE TABLE IF NOT EXISTS review (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       recorded_at TEXT NOT NULL,
-      completed_at TEXT
+      completed_at TEXT,
+      tier INTEGER,
+      tier_risk INTEGER,
+      tier_size INTEGER,
+      tier_reasons TEXT
     );
     ${createIfNotExists(REVIEW_LENS_DDL)};
     ${createIfNotExists(REVIEW_FINDING_DDL)};
