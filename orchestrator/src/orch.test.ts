@@ -110,16 +110,23 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     repo: string, branch: string,
     options: { message?: string; unreviewed?: string | null } = {},
     extraEnv: Record<string, string | undefined> = {},
-  ) => Bun.spawn(
-    [process.execPath, '-e',
-      `const { land } = await import(process.argv[1]); land(process.argv[2], process.argv[3], JSON.parse(process.argv[4]))`,
-      landingModule, repo, branch, JSON.stringify(options.unreviewed === null
-        ? { ...options, unreviewed: undefined }
-        : { unreviewed: 'existing landing fixture', ...options })],
-    { env: { ...hermeticGitEnv(), ...extraEnv,
-        ORCH_DB: process.env.ORCH_DB!, CLAUDE_CODE_SESSION_ID: branch },
-      stdout: 'pipe', stderr: 'pipe' },
-  )
+  ) => {
+    const env: Record<string, string | undefined> = {
+      ...hermeticGitEnv(), ...extraEnv,
+      ORCH_DB: process.env.ORCH_DB!, CLAUDE_CODE_SESSION_ID: branch,
+    }
+    for (const [name, value] of Object.entries(env)) {
+      if (value === undefined) delete env[name]
+    }
+    return Bun.spawn(
+      [process.execPath, '-e',
+        `const { land } = await import(process.argv[1]); land(process.argv[2], process.argv[3], JSON.parse(process.argv[4]))`,
+        landingModule, repo, branch, JSON.stringify(options.unreviewed === null
+          ? { ...options, unreviewed: undefined }
+          : { unreviewed: 'existing landing fixture', ...options })],
+      { env, stdout: 'pipe', stderr: 'pipe' },
+    )
+  }
   const observeGitLocks = (repo: string) => {
     // Bun's implicit spawn environment is the process launch environment, even
     // after process.env entries are deleted. Run the production observers in a
@@ -488,7 +495,6 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     try {
       const child = childLand(repo, 'timeout-summary', {}, {
         NO_COLOR: undefined,
-        // The worker environment running this suite sets NO_COLOR; restore Bun's coloured reporter.
         FORCE_COLOR: '1',
       })
       expect(await child.exited).not.toBe(0)
@@ -520,7 +526,12 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     upsertProject({ name: 'landing-timeout-no-color', path: repo,
       settings: { trunk: 'main', gate: timeout.gate } })
     try {
-      const child = childLand(repo, 'timeout-no-color', {}, { NO_COLOR: '1' })
+      const child = childLand(repo, 'timeout-no-color', {}, {
+        FORCE_COLOR: undefined,
+        CLICOLOR: undefined,
+        CLICOLOR_FORCE: undefined,
+        NO_COLOR: '1',
+      })
       expect(await child.exited).not.toBe(0)
       const error = await new Response(child.stderr).text()
       expect(error).toContain(`(fail) ${name}`)
