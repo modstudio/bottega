@@ -515,7 +515,6 @@ function shellTokens(input: string): ShellTokens {
   const tokens: string[] = []
   let token = ''
   let started = false
-  let tokenStart = 0
   let quote: "'" | '"' | null = null
   let quoteStart = 0
   const push = () => {
@@ -532,8 +531,7 @@ function shellTokens(input: string): ShellTokens {
       } else if (quote !== "'" && char === '\\') {
         return unsupportedShellToken('\\', i)
       } else if (quote !== "'" && char === '$') {
-        const shellToken = input[i + 1] === '(' ? '$(' : '$'
-        return unsupportedShellToken(shellToken, i)
+        return unsupportedShellToken('$', i)
       } else if (quote !== "'" && char === '`') {
         return unsupportedShellToken('`', i)
       } else {
@@ -543,38 +541,14 @@ function shellTokens(input: string): ShellTokens {
       continue
     }
     if (char === "'" || char === '"') {
-      if (!started) tokenStart = i
       quote = char
       quoteStart = i
       started = true
       continue
     }
-    if (/\s/.test(char)) {
+    if (char === ' ' || char === '\t') {
       push()
       continue
-    }
-    if (char === '|' && input[i + 1] === '|') {
-      return unsupportedShellToken('||', i)
-    }
-    if (char === ';') return unsupportedShellToken(';', i)
-    if (char === '\\') return unsupportedShellToken('\\', i)
-    if (char === '$') {
-      const shellToken = input[i + 1] === '(' ? '$(' : '$'
-      return unsupportedShellToken(shellToken, i)
-    }
-    if (char === '`') return unsupportedShellToken('`', i)
-    if (char === '<' || char === '>') {
-      let position = i
-      let shellToken = char
-      if (/^\d+$/.test(token)) {
-        position = tokenStart
-        shellToken = `${token}${char}`
-      }
-      while (input[i + 1] === char) shellToken += input[++i]
-      return unsupportedShellToken(shellToken, position)
-    }
-    if (char === '&' && input[i + 1] !== '&') {
-      return unsupportedShellToken('&', i)
     }
     if (char === '&' && input[i + 1] === '&') {
       push()
@@ -582,9 +556,20 @@ function shellTokens(input: string): ShellTokens {
       i++
       continue
     }
-    if (!started) tokenStart = i
-    token += char
-    started = true
+    if (char === '{') {
+      const placeholder = input.slice(i).match(/^\{[A-Za-z_][A-Za-z0-9_]*\}/)?.[0]
+      if (!placeholder) return unsupportedShellToken(char, i)
+      token += placeholder
+      started = true
+      i += placeholder.length - 1
+      continue
+    }
+    if (/[A-Za-z0-9_\-./:=@,+%]/.test(char)) {
+      token += char
+      started = true
+      continue
+    }
+    return unsupportedShellToken(char, i)
   }
   if (quote) return unsupportedShellToken(quote, quoteStart, 'unclosed quote')
   push()

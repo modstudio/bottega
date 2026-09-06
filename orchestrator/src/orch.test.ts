@@ -10186,40 +10186,57 @@ describe('detached run collection', () => {
     expect(projectByName(name)!.settings.worktree?.create as any).toBe(create)
   }
 
-  test('migrate-create refuses a backslash at its zero-based position', () => {
-    expectCreateMigrationRefused('backslash-create', 'tool foo\\ bar', '\\', 8)
-  })
-
-  test('migrate-create refuses every redirection spelling without saving argv', () => {
-    for (const [suffix, create, token, position] of [
-      ['out', 'printf ok > created-path', '>', 10],
-      ['in', 'tool < input', '<', 5],
-      ['append', 'tool >> output', '>>', 5],
-      ['fd', 'tool 2> output', '2>', 5],
+  test('migrate-create refuses every unquoted class outside the allowlist', () => {
+    for (const [name, create, token, position, kind] of [
+      ['backslash', 'tool foo\\ bar', '\\', 8, 'unsupported shell token'],
+      ['redirection', 'printf ok > created-path', '>', 10, 'unsupported shell token'],
+      ['semicolon', 'tool; other', ';', 4, 'unsupported shell token'],
+      ['logical-or', 'tool || other', '|', 5, 'unsupported shell token'],
+      ['dollar', 'X=$HOME tool', '$', 2, 'unsupported shell token'],
+      ['backtick', 'tool `other`', '`', 5, 'unsupported shell token'],
+      ['newline', 'a\nb', '\n', 1, 'unsupported shell token'],
+      ['comment', 'tool # comment', '#', 5, 'unsupported shell token'],
+      ['glob-star', 'tool *', '*', 5, 'unsupported shell token'],
+      ['glob-question', 'tool ?', '?', 5, 'unsupported shell token'],
+      ['glob-open', 'tool [ab]', '[', 5, 'unsupported shell token'],
+      ['glob-close', 'tool ]', ']', 5, 'unsupported shell token'],
+      ['tilde', 'tool ~', '~', 5, 'unsupported shell token'],
+      ['paren-open', 'tool (x)', '(', 5, 'unsupported shell token'],
+      ['paren-close', 'tool )', ')', 5, 'unsupported shell token'],
+      ['brace-open', 'tool {not-closed', '{', 5, 'unsupported shell token'],
+      ['brace-close', 'tool }', '}', 5, 'unsupported shell token'],
+      ['bang', 'tool !', '!', 5, 'unsupported shell token'],
+      ['caret', 'tool ^', '^', 5, 'unsupported shell token'],
+      ['ampersand', 'tool & other', '&', 5, 'unsupported shell token'],
+      ['unclosed', 'tool "foo', '"', 5, 'unclosed quote'],
     ] as const) {
-      expectCreateMigrationRefused(`redirect-${suffix}`, create, token, position)
+      expectCreateMigrationRefused(`${name}-create`, create, token, position, kind)
     }
   })
 
-  test('migrate-create refuses a semicolon at its zero-based position', () => {
-    expectCreateMigrationRefused('semicolon-create', 'tool; other', ';', 4)
-  })
-
-  test('migrate-create refuses double-pipe at its zero-based position', () => {
-    expectCreateMigrationRefused('or-create', 'tool || other', '||', 5)
-  })
-
-  test('migrate-create refuses dollar expansion at its zero-based position', () => {
-    expectCreateMigrationRefused('dollar-create', 'X=$HOME tool', '$', 2)
-  })
-
-  test('migrate-create refuses both command-substitution forms', () => {
-    expectCreateMigrationRefused('backtick-create', 'tool `other`', '`', 5)
-    expectCreateMigrationRefused('dollar-paren-create', 'tool $(other)', '$(', 5)
-  })
-
-  test('migrate-create refuses an unclosed quote at its opening position', () => {
-    expectCreateMigrationRefused('unclosed-create', 'tool "foo', '"', 5, 'unclosed quote')
+  test('migrate-create accepts each ruled plain or quoted spelling', () => {
+    const accepted: [string, string, WorktreeCreate][] = [
+      ['plain', 'tool Az09_-./:=@,+%', { command: 'tool', args: ['Az09_-./:=@,+%'] }],
+      ['placeholder', 'tool {branch}', { command: 'tool', args: ['{branch}'] }],
+      ['quoted-glob', 'tool "*?[]~(){}!^"', { command: 'tool', args: ['*?[]~(){}!^'] }],
+      ['quoted-comment', "tool '# comment'", { command: 'tool', args: ['# comment'] }],
+      ['quoted-literal-shell', "tool '$HOME `x` foo\\ bar'", {
+        command: 'tool', args: ['$HOME `x` foo\\ bar'],
+      }],
+      ['env', 'NAME=value tool --flag', {
+        command: 'tool', args: ['--flag'], env: { NAME: 'value' },
+      }],
+    ]
+    for (const [name, create, after] of accepted) {
+      upsertProject({
+        name: `accepted-${name}`, path: process.cwd(),
+        settings: { worktree: { create } } as any,
+      })
+      const r = orch('project', 'migrate-create', `accepted-${name}`, '--apply')
+      expect(r.code, name).toBe(0)
+      expect(r.out, name).toContain(`accepted-${name}: after  ${JSON.stringify(after)}`)
+      expect(projectByName(`accepted-${name}`)!.settings.worktree?.create, name).toEqual(after)
+    }
   })
 
   test('project set settings null deletes that key during a deep merge', () => {
