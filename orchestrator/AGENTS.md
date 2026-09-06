@@ -787,15 +787,14 @@ A branch: `cut → built → reviewed → rebased → landed | abandoned`; a reb
 
 Trunk: `free | locked-by-landing`.
 
-There are three lock purposes today, but only one lock file. Worktree creation
-and resume attachment take `worktree.ts:withWorktreeCreateLock`, landing takes
-`landing.ts:land`, and cleanup from discard, abandon, stop and sweep takes
-`cli.ts:withCleanupLock`. All three call `worktree.ts:withProjectLock` with the
-name `landing`, so all contend on `orch-landing.lock`. Creation protects a new
-tree through provisioning and attribution; landing protects the trunk decision
-and ref update; cleanup protects ownership checks and removal. **One lock per
-purpose.** Creation, landing and cleanup are three purposes. Their sharing is
-the cause of DEV-316, not a lifecycle design.
+There are three lock purposes, and three lock files. Worktree creation
+and resume attachment take `worktree.ts:withWorktreeCreateLock` (`orch-create.lock`),
+landing takes `landing.ts:land` (`orch-landing.lock`), and cleanup from discard,
+abandon, stop and sweep takes `cli.ts:withCleanupLock` (`orch-cleanup.lock`).
+Creation protects a new tree through provisioning and attribution; landing
+protects the trunk decision and ref update; cleanup protects ownership checks
+and removal. **One lock per purpose.** Creation, landing and cleanup are three
+purposes. Their sharing was the cause of DEV-316, closed in chunk 3.
 
 The invariants are:
 
@@ -814,55 +813,52 @@ The invariants are:
   writes after exit are not seen, and the writer is not identified.
 - **A resume is always possible on a stale checkout.** The caller-at-trunk check
   stops a new dispatch from stale input; it must never apply to a chain resuming
-  in its own worktree. `run.ts:run` currently attaches a resume under the shared
-  lock, while the fresh-tree `assertCallerAncestry` boundary has leaked into
-  resume behaviour (DEV-318).
+  in its own worktree, nor to `--base` / `--cwd` forms that name a recorded run's
+  tree. Resume attachment takes the creation lock only for attribution.
 - **Only the main checkout's binary migrates the store.** `ORCH_DB` locates a
-  store; it never authorises a linked-worktree binary to write it. Today
-  `database-location.ts:resolveDatabase` gives an `ORCH_DB` resolution write
-  authority, which lets `db.ts:applySchema` and `rebuildTable` violate this
-  boundary (DEV-314). `db.ts:adoptRunMutation` governs chain ownership, not
-  schema authority.
+  store; it never authorises a linked-worktree binary to migrate it.
+  `database-location.ts:resolveDatabase` separates location from write authority.
+  `db.ts:adoptRunMutation` governs chain ownership, not schema authority.
 - **Landing holds its lock only for the trunk re-check, guard verification and
   fast-forward, never for a gate.** A gate is long and proves a commit without
-  owning trunk. `landing.ts:land` currently calls `rebaseAndGate` under the lock
-  after trunk moves, violating DEV-224's round-two shape.
+  owning trunk. A moved trunk releases the lock, re-gates, and re-acquires.
 - **A lock waiter is served in arrival order.** Otherwise a stream of short
   holders can starve a long waiter. `worktree.ts:withProjectLock` records waiters
-  but acquisition polls the lock without consulting their order (DEV-316).
+  and acquisition consults their order.
 - **Every refusal names the invariant it protects and the command that clears
   it.** A refusal without both leaves an operator unable to distinguish safety
   from mechanism or to recover without reading source.
 - **The guard on disk is verified against HEAD, not the index, before any
-  fast-forward.** The index may already contain the disabling bytes; the
-  reviewed `landing.ts:sharedGuardResidue` and `restoreSharedGuard` candidate
-  violate this by diffing against and restoring from the index.
+  fast-forward.** The index may already contain the disabling bytes.
+  `landing.ts:sharedGuardResidue` and `restoreSharedGuard` compare with and
+  restore from HEAD under a hermetic git environment.
 - **A reclaim removes exactly the acquisition it classified as stale, never a
-  replacement.** A reusable pathname is not identity; the reviewed
-  `worktree.ts:reclaimStaleProjectLock` candidate classifies before rename and
-  violates this under replacement.
+  replacement.** A reusable pathname is not identity. Reclaim fences by an
+  incarnation id written into the lock owner record and checked after rename
+  before removal. Liveness classification parses process identity strictly and
+  treats malformed or locale-dependent output as unknown, never stale.
 - **A failed landing leaves the branch worktree as it found it.** Failure must
-  not turn a retry into recovery work. `landing.ts:rebaseAndGate` currently
-  rebases before the fallible gate without restoring the input state (DEV-310,
-  closed below-bar but binding here).
+  not turn a retry into recovery work. `landing.ts:rebaseAndGate` records the
+  branch tip and index before it rebases and restores them when the gate or the
+  rebase fails.
 
 | gap | invariant violated | code path (file:function) | what chunk 3 changes |
 |---|---|---|---|
-| DEV-314 | only the main-checkout binary migrates | `database-location.ts:resolveDatabase`; `db.ts:applySchema`, `rebuildTable` | Separate database location from write authority and refuse linked-worktree schema writes even when `ORCH_DB` is set. |
-| DEV-316 | one lock per purpose; FIFO waiters | `worktree.ts:withWorktreeCreateLock`, `withProjectLock`; `cli.ts:withCleanupLock` | Give creation, landing and cleanup distinct locks, and make acquisition honor waiter arrival order. |
-| DEV-318 | a chain resumes in its own stale checkout | `cli.ts:continueRun`, `detach`; `run.ts:preflight`, `run`; `worktree.ts:assertCallerAncestry` | Exempt inherited resume attachment from the new-dispatch caller-at-trunk boundary. |
-| DEV-224 review 142/143: replacement race | reclaim only the classified acquisition | `worktree.ts:withProjectLock` (reclaim is inlined there; `reclaimStaleProjectLock` is the DEV-224 candidate, not landed) | Fence acquisition, reclaim and release by one incarnation so none can remove a replacement. |
-| DEV-224 review 142: locale-dependent birth time | a live holder is never classified stale by observer locale | `worktree.ts:withProjectLock`'s liveness check (`processStartTime`, `staleProjectLockHolder` are DEV-224 candidates, not landed) | Use a locale-independent process-birth identity and migrate old owner records conservatively. |
-| DEV-224 review 143: malformed process output | indeterminate liveness cannot prove staleness | `worktree.ts:withProjectLock`'s liveness check (same candidates) | Parse process identity strictly and treat malformed output as unknown, never stale. |
-| DEV-224 review 142/143: staged guard stub | guard bytes and mode equal HEAD before fast-forward | `worktree.ts:prepareSharedRefGuard`, `landing.ts:land`, `fastForward` (`sharedGuardResidue`, `restoreSharedGuard` are DEV-224 candidates, not landed) | Compare with and restore from HEAD, preserve or refuse staged state, then verify again before the ref update. |
-| DEV-224 review 143: inherited Git environment | guard repair addresses the source repository's objects | `landing.ts:git`, `gitOk` (`restoreSharedGuard` is the DEV-224 candidate, not landed) | Strip worker object and hook routing and derive a hermetic Git environment for inspection and repair. |
+| DEV-314 | only the main-checkout binary migrates | `database-location.ts:resolveDatabase`; `db.ts:applySchema`, `rebuildTable` | closed in chunk 3: location is `ORCH_DB`; schema writes stay with the main-checkout binary. |
+| DEV-316 | one lock per purpose; FIFO waiters | `worktree.ts:withWorktreeCreateLock`, `withProjectLock`; `cli.ts:withCleanupLock` | closed in chunk 3: `orch-create.lock`, `orch-landing.lock`, `orch-cleanup.lock`; waiters served in arrival order. |
+| DEV-318 | a chain resumes in its own stale checkout | `cli.ts:continueRun`, `detach`; `run.ts:preflight`, `run`; `worktree.ts:assertCallerAncestry` | closed in chunk 3: resume and recorded-tree `--base`/`--cwd` skip caller-at-trunk; resume takes the create lock only. |
+| DEV-224 review 142/143: replacement race | reclaim only the classified acquisition | `worktree.ts:reclaimStaleProjectLock` | closed in chunk 3: incarnation id fenced after rename. |
+| DEV-224 review 142: locale-dependent birth time | a live holder is never classified stale by observer locale | `worktree.ts:processStartTime`, `staleProjectLockHolder` | closed in chunk 3: `LC_ALL=C` birth string; legacy null startTime is liveness-only. |
+| DEV-224 review 143: malformed process output | indeterminate liveness cannot prove staleness | `worktree.ts:processStartTime`, `staleProjectLockHolder` | closed in chunk 3: strict parse; malformed output is unknown, never stale. |
+| DEV-224 review 142/143: staged guard stub | guard bytes and mode equal HEAD before fast-forward | `landing.ts:sharedGuardResidue`, `restoreSharedGuard`, `land` | closed in chunk 3: compare and restore from HEAD, then verify before the ref update. |
+| DEV-224 review 143: inherited Git environment | guard repair addresses the source repository's objects | `landing.ts:inspectionGit`, `restoreSharedGuard` | closed in chunk 3: hermetic `scrubbedGitEnv` for inspection and repair. |
+| failed landing residue | a failed landing leaves the branch worktree as it found it | `landing.ts:rebaseAndGate` | closed in chunk 3: restore tip and index on rebase or gate failure. |
+| `orch land --status` hang | status answers without a lock and without scanning refs | `landing.ts:landingStatus` | closed in chunk 3: lock-state only; coverage and git-lock scans are separate. |
 
-A name marked candidate exists only on the DEV-224 branch; the harness drives
-what is on trunk and treats the candidates as chunk 3 targets.
+Chunk 3 landed the candidates from DEV-224-orch-2185 (reviews 142/143), taking the helper names and the conservative null-startTime fallback, and rejecting the classify-before-rename reclaim, index-based guard diff/restore, and locale-dependent `ps` parse.
 
-Chunk 2, the harness, proves these by simulation. Until it exists, no change to
-the core lands without naming which invariant it serves and which it might
-weaken.
+Chunk 2's harness proves these by simulation. A change to the core names which
+invariant it serves and which it might weaken.
 
 Every caller-side workaround loses the work, and all three were tried in a real
 review in one application (runs 407-413):

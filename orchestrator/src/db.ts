@@ -46,7 +46,14 @@ let connectionWritable: boolean | null = null
 
 export const LINKED_WORKTREE_WRITE_REFUSAL =
   'refusing to write the live store from a linked worktree; set ORCH_DB explicitly ' +
-  '(a copy for experiments, or the live path to insist)'
+  '(a copy for experiments, or the live path to insist)\n' +
+  'invariant: Only the main checkout\'s binary migrates the store.\n' +
+  'cleared by: orch init-db'
+
+export const LINKED_WORKTREE_SCHEMA_REFUSAL =
+  'refusing to migrate the store from a linked-worktree binary; run it from the main checkout\n' +
+  'invariant: Only the main checkout\'s binary migrates the store.\n' +
+  'cleared by: orch init-db'
 
 export const linkedWorktreeReadOnly =
   DATABASE_RESOLUTION.linkedWorktreeBinary && DATABASE_RESOLUTION.method !== 'ORCH_DB'
@@ -119,11 +126,18 @@ export function db(writable = false): Database {
       PRAGMA wal_autocheckpoint = 100;
       PRAGMA journal_size_limit = 1048576;
     `)
-    applySchema(d)
+    if (DATABASE_RESOLUTION.linkedWorktreeBinary) {
+      if (linkedBinaryMustNotMigrate(d)) console.error(LINKED_WORKTREE_SCHEMA_REFUSAL)
+    } else {
+      applySchema(d)
+    }
     excludeSharedOutputRuns(d)
     seedProjects(d)
   } else if (linkedWorktreeReadOnly && canonicalSchemaMismatch(d)) {
     console.error('warning: canonical schema mismatch; opened the live store read-only')
+    console.error(LINKED_WORKTREE_SCHEMA_REFUSAL)
+  } else if (DATABASE_RESOLUTION.linkedWorktreeBinary && linkedBinaryMustNotMigrate(d)) {
+    console.error(LINKED_WORKTREE_SCHEMA_REFUSAL)
   }
   handle = d
   if (connectionWritable) reapStale(d)
@@ -559,6 +573,16 @@ function canonicalSchemaMismatch(d: Database): boolean {
       `SELECT value FROM schema_meta WHERE key = 'schema'`,
     ).get() as { value: string } | null
     return stored?.value !== schemaVersion()
+  } catch {
+    return true
+  }
+}
+
+function linkedBinaryMustNotMigrate(d: Database): boolean {
+  if (canonicalSchemaMismatch(d)) return true
+  try {
+    const columns = d.query('PRAGMA table_info(run)').all() as { name: string }[]
+    return !columns.some((column) => column.name === 'label')
   } catch {
     return true
   }

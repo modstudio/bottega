@@ -27,7 +27,8 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
 import { createHasPlaceholder, projectAt, projectByName, projects } from './projects.ts'
 import { branchTip, restoreBranch, resolveBase, repoRootOf, removeBranch, removeFor, unmergedBranch,
-         checkoutHasUncommittedWork, callerDrift, projectLockState, withProjectLock,
+         checkoutHasUncommittedWork, callerDrift, projectLockState,
+         withCleanupLock as takeCleanupLock,
          targetGitEnvironment, type Worktree } from './worktree.ts'
 import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
 import { WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE,
@@ -600,9 +601,8 @@ function evidenceOwningBranchOwners(
 }
 
 function withCleanupLock<T>(repoRoot: string, what: string, action: () => T): T {
-  return withProjectLock(
-    repoRoot, 'landing', { session: sessionId(), what: `cleanup ${what}` },
-    action, 5 * 60_000, true,
+  return takeCleanupLock(
+    repoRoot, { session: sessionId(), what: `cleanup ${what}` }, action, 5 * 60_000,
   )
 }
 

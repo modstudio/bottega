@@ -138,7 +138,7 @@ describe('linked-worktree database protection', () => {
     checked.close()
   }, 90_000)
 
-  test('explicit ORCH_DB keeps migration and writes enabled from the linked worktree', () => {
+  test('explicit ORCH_DB locates a copy and allows writes but not schema migration from a linked binary', () => {
     const explicit = join(fixtureRoot, 'explicit.db')
     const init = invoke(linkedCli, linked, ['init-db'], explicit)
     expect(init.exitCode).toBe(0)
@@ -156,11 +156,13 @@ describe('linked-worktree database protection', () => {
       ['score', '1', 'full', 'right', 'faithful', '--note', 'explicit'], explicit,
     )
     expect(score.exitCode).toBe(0)
+    expect(score.stderr.toString()).toContain('invariant: Only the main checkout\'s binary migrates the store.')
+    expect(score.stderr.toString()).toContain('cleared by: orch init-db')
     const checked = new Database(explicit, { readonly: true })
     expect(checked.query('SELECT delivery, quality, fidelity FROM score WHERE run_id=1').get())
       .toEqual({ delivery: 'full', quality: 'right', fidelity: 'faithful' })
     expect(checked.query("SELECT value FROM schema_meta WHERE key='schema'").get())
-      .not.toEqual({ value: 'force-migration' })
+      .toEqual({ value: 'force-migration' })
     checked.close()
   })
 

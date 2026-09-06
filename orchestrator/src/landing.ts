@@ -1,18 +1,106 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { db, liveRunCount, nowIso, sessionId, writableDb } from './db.ts'
-import { formatGitLocks } from './git-locks.ts'
+import { isAbsolute, join, relative } from 'node:path'
+import { db, liveRunCount, nowIso, sessionId, writableDb, ROOT } from './db.ts'
 import { projectAt, type Project } from './projects.ts'
 import {
   contentTree, prepareSharedRefGuard, projectLockState, repoRootOf, withProjectLock,
-  targetGitEnvironment, type SharedRefGuardEnvironment,
+  targetGitEnvironment, scrubbedGitEnv, type SharedRefGuardEnvironment,
 } from './worktree.ts'
 
 const LANDING_LOCK = 'landing'
 const LANDING_LOCK_TIMEOUT_MS = 5 * 60_000
 const GATE_FAILURE_TAIL_LINES = 40
+const INVARIANT_FAILED_LANDING = 'A failed landing leaves the branch worktree as it found it.'
+const INVARIANT_LOCK_SCOPE =
+  'Landing holds its lock only for the trunk re-check, guard verification and fast-forward, never for a gate.'
+const INVARIANT_GUARD_HEAD =
+  'The guard on disk is verified against HEAD, not the index, before any fast-forward.'
+export type SharedGuardResidue = {
+  repoRoot: string
+  hookPath: string
+  relativePath: string
+  repairCommand: string
+}
+
+function namedError(detail: string, invariant: string, command: string): Error {
+  return new Error(`${detail}\ninvariant: ${invariant}\ncleared by: ${command}`)
+}
+
+function inspectionGit(cwd: string, args: string[]): { ok: boolean; out: string; err: string } {
+  const env = scrubbedGitEnv()
+  delete env.GIT_INDEX_FILE
+  const p = Bun.spawnSync(['git', ...args], {
+    cwd, env, stdout: 'pipe', stderr: 'pipe',
+  })
+  return {
+    ok: p.exitCode === 0,
+    out: p.stdout.toString().trim(),
+    err: p.stderr.toString().trim() || `exit ${p.exitCode}`,
+  }
+}
+
+/** Detect damage to the tracked guard bytes by comparing with HEAD, never the index. */
+export function sharedGuardResidue(root = ROOT): SharedGuardResidue | null {
+  const hookPath = join(root, 'hooks', 'reference-transaction')
+  const repoRoot = repoRootOf(root)
+  if (!repoRoot || !existsSync(hookPath)) return null
+  let from: string
+  let to: string
+  try {
+    from = realpathSync(repoRoot)
+    to = realpathSync(hookPath)
+  } catch { return null }
+  const relativePath = relative(from, to)
+  if (relativePath.startsWith('..') || isAbsolute(relativePath)) return null
+  const worktree = inspectionGit(repoRoot, ['diff', '--quiet', 'HEAD', '--', relativePath])
+  const staged = inspectionGit(repoRoot, ['diff', '--quiet', '--cached', 'HEAD', '--', relativePath])
+  if (worktree.ok && staged.ok) return null
+  return {
+    repoRoot, hookPath, relativePath,
+    repairCommand: `git -C ${shellQuote(repoRoot)} checkout HEAD -- ${shellQuote(relativePath)}`,
+  }
+}
+
+/** Restore the guard from HEAD into both the worktree and the index. */
+export function restoreSharedGuard(root = ROOT): SharedGuardResidue | null {
+  const residue = sharedGuardResidue(root)
+  if (!residue) return null
+  const restored = inspectionGit(residue.repoRoot, ['checkout', 'HEAD', '--', residue.relativePath])
+  if (!restored.ok) {
+    throw namedError(
+      `shared reference-transaction guard restore failed: ${restored.err}`,
+      INVARIANT_GUARD_HEAD,
+      residue.repairCommand,
+    )
+  }
+  if (sharedGuardResidue(root)) {
+    throw namedError(
+      `shared reference-transaction guard still differs after: ${residue.repairCommand}`,
+      INVARIANT_GUARD_HEAD,
+      residue.repairCommand,
+    )
+  }
+  console.log(`restored shared reference-transaction guard with: ${residue.repairCommand}`)
+  return residue
+}
+
+function verifyGuardBeforeFastForward(repoRoot: string): void {
+  const binaryRepo = repoRootOf(ROOT)
+  if (!binaryRepo) return
+  try {
+    if (realpathSync(binaryRepo) !== realpathSync(repoRoot)) return
+  } catch { return }
+  restoreSharedGuard()
+  if (sharedGuardResidue()) {
+    throw namedError(
+      'shared reference-transaction guard differs from HEAD before fast-forward',
+      INVARIANT_GUARD_HEAD,
+      'git checkout HEAD -- orchestrator/hooks/reference-transaction',
+    )
+  }
+}
 
 function gateFailureLines(output: string): string[] {
   return output.split('\n').map(stripAnsi).filter((line) =>
@@ -388,15 +476,66 @@ function amendLandingMessage(
   git(worktree, ['commit', '--amend', '-m', message], guard)
 }
 
+function rebaseInProgress(worktree: string, guard: SharedRefGuardEnvironment): boolean {
+  const gitDir = git(worktree, ['rev-parse', '--path-format=absolute', '--git-dir'], guard)
+  return existsSync(join(gitDir, 'rebase-merge')) || existsSync(join(gitDir, 'rebase-apply'))
+}
+
 function rebaseAndGate(
   project: Project, repoRoot: string, worktree: string, branch: string, trunk: string,
   trunkOid: string, guard: SharedRefGuardEnvironment,
 ): string {
-  console.log(`rebase ${branch} onto ${trunk} at ${trunkOid}`)
-  git(worktree, ['rebase', trunkOid], guard)
-  const tip = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'], guard)
-  if (tip === trunkOid) throw new Error(`branch ${branch} has no commits to land after rebasing onto ${trunk}`)
-  return runGate(project, worktree, branch, guard)
+  const headBefore = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'], guard)
+  const gitDir = git(worktree, ['rev-parse', '--path-format=absolute', '--git-dir'], guard)
+  const indexPath = join(gitDir, 'index')
+  const indexBackup = existsSync(indexPath) ? `${indexPath}.orch-pre-rebase-${process.pid}` : null
+  if (indexBackup) copyFileSync(indexPath, indexBackup)
+  const restore = (cause: unknown): Error => {
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    try {
+      if (rebaseInProgress(worktree, guard)) git(worktree, ['rebase', '--abort'], guard)
+      git(worktree, ['update-ref', `refs/heads/${branch}`, headBefore], guard)
+      git(worktree, ['checkout', '--force', branch], guard)
+      if (indexBackup && existsSync(indexBackup)) copyFileSync(indexBackup, indexPath)
+    } catch (restoreError) {
+      return namedError(
+        `${detail}\nrestore after failed landing also failed: ` +
+        `${restoreError instanceof Error ? restoreError.message : String(restoreError)}`,
+        INVARIANT_FAILED_LANDING,
+        `git -C ${shellQuote(worktree)} reset --hard ${headBefore}`,
+      )
+    }
+    return namedError(
+      `${detail}\nrestored branch tip ${headBefore} and index to the pre-rebase state`,
+      INVARIANT_FAILED_LANDING,
+      `git -C ${shellQuote(worktree)} reset --hard ${headBefore}`,
+    )
+  }
+  try {
+    console.log(`rebase ${branch} onto ${trunk} at ${trunkOid}`)
+    git(worktree, ['rebase', trunkOid], guard)
+    const tip = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'], guard)
+    if (tip === trunkOid) {
+      throw namedError(
+        `branch ${branch} has no commits to land after rebasing onto ${trunk}`,
+        INVARIANT_FAILED_LANDING,
+        `git -C ${shellQuote(worktree)} rebase --abort`,
+      )
+    }
+    try {
+      return runGate(project, worktree, branch, guard)
+    } catch (error) {
+      throw restore(error)
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('invariant:')) {
+      if (!error.message.includes(`restored branch tip ${headBefore}`)) throw restore(error)
+      throw error
+    }
+    throw restore(error)
+  } finally {
+    if (indexBackup) rmSync(indexBackup, { force: true })
+  }
 }
 
 export type ReviewCoverageInput = {
@@ -643,11 +782,13 @@ function requireReviewCoverage(
       carry: { project: project.name, branch, ...carried.verdict },
     }
   }
-  throw new Error(
+  throw namedError(
     `refusing to land unreviewed content\ncandidate tree: ${candidateTree}\n` +
     `${coverageText(project.name, repoRoot, tip, trunk)}\n` +
     'A rebase onto moved trunk changes the tree, so re-run the review lenses from the rebased branch ' +
     '(with --carry) and record them.',
+    INVARIANT_LOCK_SCOPE,
+    'orch do review-lens --carry',
   )
 }
 
@@ -761,7 +902,11 @@ function fastForward(
   guard: SharedRefGuardEnvironment,
 ): void {
   if (!gitOk(repoRoot, ['merge-base', '--is-ancestor', expected, tip], guard)) {
-    throw new Error(`refusing to land ${branch}: ${tip} is not a fast-forward of ${trunk} at ${expected}`)
+    throw namedError(
+      `refusing to land ${branch}: ${tip} is not a fast-forward of ${trunk} at ${expected}`,
+      INVARIANT_LOCK_SCOPE,
+      `orch land ${branch}`,
+    )
   }
   // The expected old value makes the ref update itself the lost-race check.
   // The reference-transaction guard installed in this worktree runs before it
@@ -789,21 +934,51 @@ export function land(
   const timeoutMs = options.timeoutMs ?? LANDING_LOCK_TIMEOUT_MS
   const { project, repoRoot } = registeredProject(cwd)
   const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
-  if (!trunk) throw new Error(`project ${project.name} has no trunk configured — set settings.trunk before landing`)
+  if (!trunk) {
+    throw namedError(
+      `project ${project.name} has no trunk configured — set settings.trunk before landing`,
+      INVARIANT_LOCK_SCOPE,
+      `orch project set ${project.name} --settings '{"trunk":"<branch>"}'`,
+    )
+  }
   const gate = typeof project.settings.gate === 'string' ? project.settings.gate.trim() : ''
-  if (!gate) throw new Error(`project ${project.name} has no landing gate configured — set settings.gate before landing`)
+  if (!gate) {
+    throw namedError(
+      `project ${project.name} has no landing gate configured — set settings.gate before landing`,
+      INVARIANT_LOCK_SCOPE,
+      `orch project set ${project.name} --settings '{"gate":"<command>"}'`,
+    )
+  }
   if (!gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])) {
-    throw new Error(`branch ${branch} does not exist in project ${project.name}`)
+    throw namedError(
+      `branch ${branch} does not exist in project ${project.name}`,
+      INVARIANT_LOCK_SCOPE,
+      `git show-ref --verify refs/heads/${branch}`,
+    )
   }
   if (!gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${trunk}`])) {
-    throw new Error(`configured trunk ${trunk} does not exist in project ${project.name}`)
+    throw namedError(
+      `configured trunk ${trunk} does not exist in project ${project.name}`,
+      INVARIANT_LOCK_SCOPE,
+      `git show-ref --verify refs/heads/${trunk}`,
+    )
   }
   const worktree = worktreesForBranch(repoRoot, branch)[0] ?? null
-  if (!worktree || !existsSync(worktree)) throw new Error(`branch ${branch} has no worktree and cannot be landed`)
+  if (!worktree || !existsSync(worktree)) {
+    throw namedError(
+      `branch ${branch} has no worktree and cannot be landed`,
+      INVARIANT_LOCK_SCOPE,
+      `git worktree add .claude/worktrees/${branch} ${branch}`,
+    )
+  }
   if (branch === trunk || gitOk(repoRoot, [
     'merge-base', '--is-ancestor', `refs/heads/${branch}`, `refs/heads/${trunk}`,
   ])) {
-    throw new Error(`branch ${branch} is already merged into ${trunk}`)
+    throw namedError(
+      `branch ${branch} is already merged into ${trunk}`,
+      INVARIANT_LOCK_SCOPE,
+      `git merge-base --is-ancestor refs/heads/${branch} refs/heads/${trunk}`,
+    )
   }
 
   const guard = prepareSharedRefGuard(worktree)
@@ -811,38 +986,63 @@ export function land(
   // commit that becomes trunk, so the message is rewritten before rebase.
   if (options.message !== undefined) amendLandingMessage(worktree, options.message, guard)
   const recordedTrunk = trunkCommit(repoRoot, trunk, guard)
-  const optimisticTip = rebaseAndGate(
-    project, repoRoot, worktree, branch, trunk, recordedTrunk, guard,
-  )
-
-  return withProjectLock(repoRoot, LANDING_LOCK, { session: sessionId(), what: branch }, () => {
-    const currentTrunk = trunkCommit(repoRoot, trunk, guard)
-    if (currentTrunk === recordedTrunk) {
-      const authorization = authorizeLanding(
-        project, repoRoot, worktree, branch, optimisticTip, recordedTrunk,
-        options.runId, options.unreviewed,
-      )
-      fastForward(repoRoot, worktree, branch, trunk, optimisticTip, recordedTrunk, guard)
-      recordLandingOverride(authorization.override)
-      recordReviewCarry(authorization.carry)
-      console.log(`landed ${branch} at ${optimisticTip} onto ${trunk} (optimistic gate remained current)`)
-      return optimisticTip
-    }
-
-    console.log(`${trunk} moved from ${recordedTrunk} to ${currentTrunk}; re-gating ${branch} under the landing lock`)
-    const serializedTip = rebaseAndGate(
-      project, repoRoot, worktree, branch, trunk, currentTrunk, guard,
-    )
-    const authorization = authorizeLanding(
-      project, repoRoot, worktree, branch, serializedTip, currentTrunk,
+  if (options.unreviewed === undefined) {
+    authorizeLanding(
+      project, repoRoot, worktree, branch,
+      git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'], guard), recordedTrunk,
       options.runId, options.unreviewed,
     )
-    fastForward(repoRoot, worktree, branch, trunk, serializedTip, currentTrunk, guard)
-    recordLandingOverride(authorization.override)
-    recordReviewCarry(authorization.carry)
-    console.log(`landed ${branch} at ${serializedTip} onto ${trunk} after serialized re-gate`)
-    return serializedTip
-  }, timeoutMs, true)
+  }
+  let gatedTrunk = recordedTrunk
+  let tip = rebaseAndGate(
+    project, repoRoot, worktree, branch, trunk, recordedTrunk, guard,
+  )
+  let losses = 0
+  while (true) {
+    const outcome = withProjectLock(repoRoot, LANDING_LOCK, { session: sessionId(), what: branch }, () => {
+      verifyGuardBeforeFastForward(repoRoot)
+      const currentTrunk = trunkCommit(repoRoot, trunk, guard)
+      if (currentTrunk === gatedTrunk) {
+        const authorization = authorizeLanding(
+          project, repoRoot, worktree, branch, tip, gatedTrunk,
+          options.runId, options.unreviewed,
+        )
+        fastForward(repoRoot, worktree, branch, trunk, tip, gatedTrunk, guard)
+        recordLandingOverride(authorization.override)
+        recordReviewCarry(authorization.carry)
+        return { kind: 'landed' as const, tip, currentTrunk }
+      }
+      return { kind: 'moved' as const, tip, currentTrunk }
+    }, timeoutMs, true)
+    if (outcome.kind === 'landed') {
+      const how = losses === 0
+        ? 'optimistic gate remained current'
+        : 'after re-gate outside the landing lock'
+      console.log(`landed ${branch} at ${outcome.tip} onto ${trunk} (${how})`)
+      return outcome.tip
+    }
+    losses += 1
+    if (losses >= 2) {
+      throw namedError(
+        `refusing to land ${branch}: ${trunk} moved again to ${outcome.currentTrunk} after re-gate`,
+        INVARIANT_LOCK_SCOPE,
+        `orch land ${branch}`,
+      )
+    }
+    console.log(
+      `${trunk} moved from ${gatedTrunk} to ${outcome.currentTrunk}; re-gating ${branch} outside the landing lock`,
+    )
+    gatedTrunk = outcome.currentTrunk
+    tip = rebaseAndGate(project, repoRoot, worktree, branch, trunk, gatedTrunk, guard)
+  }
+}
+
+export function landingReviewCoverage(cwd: string): string {
+  const { project, repoRoot } = registeredProject(cwd)
+  const branch = git(cwd, ['branch', '--show-current']) || '(detached)'
+  const tip = git(cwd, ['rev-parse', '--verify', 'HEAD^{commit}'])
+  const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
+  return `review coverage for ${branch}:\n${coverageText(project.name, repoRoot, tip, trunk)}`
 }
 
 export function landingStatus(cwd: string): string {
@@ -857,9 +1057,5 @@ export function landingStatus(cwd: string): string {
     ? state.waiters.map((w) =>
         `  session ${w.session ?? 'unknown'}, pid ${w.pid}, landing ${w.what}, waiting ${age(w.since)}`).join('\n')
     : '  none'
-  const branch = git(cwd, ['branch', '--show-current']) || '(detached)'
-  const tip = git(cwd, ['rev-parse', '--verify', 'HEAD^{commit}'])
-  const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
-  return `${project.name} landing lock: ${holder}\nwaiters:\n${waiters}\n${formatGitLocks(repoRoot)}` +
-    `\nreview coverage for ${branch}:\n${coverageText(project.name, repoRoot, tip, trunk)}`
+  return `${project.name} landing lock: ${holder}\nwaiters:\n${waiters}`
 }

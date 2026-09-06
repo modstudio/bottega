@@ -238,7 +238,7 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
     detail: `completed run ${run.id} has no score`, action: 'reported; only its owning reader may score it' })
 
   for (const project of projects()) {
-    for (const lockName of ['worktree-create', 'landing']) {
+    for (const lockName of ['create', 'landing', 'cleanup']) {
       try {
         const state = projectLockState(project.path, lockName)
         if (state.holder && !pidAlive(state.holder.pid)) add({ kind: 'dead-lock',

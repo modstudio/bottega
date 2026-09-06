@@ -652,6 +652,31 @@ export function preflight(
 }
 
 /**
+ * --base of an unmerged recorded tip, or --cwd of a recorded run's worktree,
+ * names a chain's own tree. The caller-at-trunk check is for a new dispatch
+ * from a checkout, not that form (DEV-318).
+ */
+function namesRecordedRunTree(cwd: string, baseRef?: string): boolean {
+  let realCwd: string | null = null
+  try { realCwd = realpathSync(cwd) } catch { /* keep the spelled path */ }
+  const rows = db().query(
+    `SELECT worktree, cwd, branch FROM run
+      WHERE worktree IS NOT NULL OR cwd IS NOT NULL OR branch IS NOT NULL`,
+  ).all() as { worktree: string | null; cwd: string | null; branch: string | null }[]
+  for (const row of rows) {
+    for (const path of [row.worktree, row.cwd]) {
+      if (!path) continue
+      if (path === cwd || (realCwd !== null && path === realCwd)) return true
+      try { if (realpathSync(path) === (realCwd ?? cwd)) return true } catch { /* gone */ }
+    }
+    if (baseRef && row.branch && (row.branch === baseRef || baseRef.endsWith(`/${row.branch}`))) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
  * Variables that may reach a vendor's CLI: an allowlist, not a denylist.
  *
  * childEnv() used to copy the whole environment minus CLAUDE_* and ANTHROPIC_*,
@@ -1945,7 +1970,9 @@ export async function run(opts: {
             // need not descend from the caller. An overlay still comes only
             // from that branch's own checkout, where the ancestry guard remains
             // the protection against carrying reversions onto a newer tip.
-            if (!reviewTarget || opts.carry) assertCallerAncestry(callerCwd, created)
+            if ((!reviewTarget || opts.carry) && !namesRecordedRunTree(callerCwd, opts.base)) {
+              assertCallerAncestry(callerCwd, created)
+            }
             carried = opts.carry
               ? carryWorkingState(callerCwd, created)
               : { base: created.base, tracked: [], untracked: [] }

@@ -86,11 +86,12 @@ export function resolveDatabase(
   binaryRoot = ROOT,
 ): DatabaseResolution {
   if (env.ORCH_DB) {
+    const binaryRepository = repositoryRootFromGit(binaryRoot) ?? repositoryRootFromDotGit(binaryRoot)
     return {
       path: resolve(env.ORCH_DB), method: 'ORCH_DB', tried: [resolve(env.ORCH_DB)], registeredPath: null,
       repositoryRoot: null, repositoryCandidate: null, repositoryCandidateExisted: false,
       initializable: true,
-      linkedWorktreeBinary: false,
+      linkedWorktreeBinary: Boolean(binaryRepository?.linked),
     }
   }
 

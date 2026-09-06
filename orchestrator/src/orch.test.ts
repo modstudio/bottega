@@ -677,10 +677,11 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
         expect(await child.exited).not.toBe(0)
         const after = g(trees[branch]!, 'rev-parse', 'HEAD')
         const error = await new Response(child.stderr).text()
-        expect(after).not.toBe(before)
+        expect(after).toBe(before)
         expect(error).toContain(gate)
         expect(error).toContain(before)
-        expect(error).toContain(after)
+        expect(error).toContain(`moved HEAD from ${before} to `)
+        expect(error).toContain('restored branch tip')
         expect(g(repo, 'rev-parse', 'main')).toBe(trunk)
       } finally { rmSync(repo, { recursive: true, force: true }) }
     })
@@ -701,10 +702,11 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       expect(await child.exited).not.toBe(0)
       const error = await new Response(child.stderr).text()
       expect(g(trees[branch]!, 'rev-parse', 'HEAD')).toBe(before)
-      expect(g(repo, 'rev-parse', branch)).toBe(moved)
+      expect(g(repo, 'rev-parse', branch)).toBe(before)
       expect(error).toContain(gate)
       expect(error).toContain(before)
       expect(error).toContain(moved)
+      expect(error).toContain('restored branch tip')
       expect(g(repo, 'rev-parse', 'main')).toBe(moved)
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
@@ -820,10 +822,11 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       const after = contentTree(trees[branch]!)
       const error = await new Response(child.stderr).text()
       expect(g(trees[branch]!, 'status', '--porcelain=v1', '--untracked-files=all')).toBe('')
-      expect(after).not.toBe(before)
+      expect(after).toBe(before)
       expect(error).toContain(gate)
       expect(error).toContain(before)
-      expect(error).toContain(after)
+      expect(error).toContain('changed the content tree from')
+      expect(error).toContain('restored branch tip')
       expect(g(repo, 'rev-parse', 'main')).toBe(trunk)
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
@@ -865,7 +868,7 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     try {
       const tree = g(trees.reviewed!, 'rev-parse', 'HEAD^{tree}')
       const reviewId = completedReview(project, [tree, tree])
-      expect(landingStatus(trees.reviewed!)).toContain(`review ${reviewId}: exact`)
+      expect(landingReviewCoverage(trees.reviewed!)).toContain(`review ${reviewId}: exact`)
       const child = childLand(repo, 'reviewed', { unreviewed: null })
       expect(await child.exited).toBe(0)
       expect(g(repo, 'rev-parse', 'main')).toBe(g(repo, 'rev-parse', 'reviewed'))
@@ -895,7 +898,7 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       const newBase = g(repo, 'rev-parse', 'main')
       g(trees['carry-review']!, 'rebase', 'main')
       g(repo, 'reflog', 'expire', '--expire=now', '--all')
-      const beforeLandStatus = landingStatus(trees['carry-review']!)
+      const beforeLandStatus = landingReviewCoverage(trees['carry-review']!)
       expect(beforeLandStatus).toContain(`review ${reviewId}: carried (patch-id `)
       expect(beforeLandStatus).toContain('(commit from pin)')
       expect(beforeLandStatus).toContain(`${oldBase}..${newBase})`)
@@ -943,10 +946,10 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       g(repo, 'add', 'mixed-pin-trunk.txt')
       g(repo, 'commit', '-m', 'move trunk')
       g(trees['mixed-pin-review']!, 'rebase', 'main')
-      expect(landingStatus(trees['mixed-pin-review']!)).toContain(
+      expect(landingReviewCoverage(trees['mixed-pin-review']!)).toContain(
         `review ${reviewId}: carried (patch-id`,
       )
-      expect(landingStatus(trees['mixed-pin-review']!)).toContain('(commit from pin)')
+      expect(landingReviewCoverage(trees['mixed-pin-review']!)).toContain('(commit from pin)')
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
@@ -968,7 +971,7 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       g(repo, 'add', 'walk-trunk.txt')
       g(repo, 'commit', '-m', 'move trunk')
       g(trees['walk-review']!, 'rebase', 'main')
-      const status = landingStatus(trees['walk-review']!)
+      const status = landingReviewCoverage(trees['walk-review']!)
       expect(status).toContain(`review ${reviewId}: carried (patch-id`)
       expect(status).toContain('(commit from walk)')
     } finally { rmSync(repo, { recursive: true, force: true }) }
@@ -1090,7 +1093,7 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       writeFileSync(join(trees['changed-review']!, 'after-review.txt'), 'new content\n')
       g(trees['changed-review']!, 'add', 'after-review.txt')
       g(trees['changed-review']!, 'commit', '-m', 'content after review')
-      expect(landingStatus(trees['changed-review']!)).toContain('invalid (patch-id differs)')
+      expect(landingReviewCoverage(trees['changed-review']!)).toContain('invalid (patch-id differs)')
       const child = childLand(repo, 'changed-review', { unreviewed: null })
       expect(await child.exited).not.toBe(0)
       expect(await new Response(child.stderr).text()).toContain('invalid (patch-id differs)')
@@ -1112,7 +1115,7 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       g(trees[branch]!, 'add', 'after-review.txt')
       g(trees[branch]!, 'commit', '-m', 'content after review')
 
-      const status = landingStatus(trees[branch]!)
+      const status = landingReviewCoverage(trees[branch]!)
       expect(status).toContain('invalid (git merge-base')
       expect(status).toContain('missing-trunk')
       expect(status).not.toContain('carried')
@@ -1343,8 +1346,10 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     try {
       const tree = g(repo, 'rev-parse', 'HEAD^{tree}')
       expect(landingStatus(repo)).toBe(
-        'landing-status landing lock: free\nwaiters:\n  none\ngit locks:\n  none' +
-        `\nreview coverage for main:\ncurrent tip tree: ${tree}\n  none`,
+        'landing-status landing lock: free\nwaiters:\n  none',
+      )
+      expect(landingReviewCoverage(repo)).toBe(
+        `review coverage for main:\ncurrent tip tree: ${tree}\n  none`,
       )
     }
     finally { rmSync(repo, { recursive: true, force: true }) }
@@ -1427,11 +1432,13 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     utimesSync(lock, stale, stale)
     try {
       const { status, locks } = observeGitLocks(repo)
-      expect(status).toContain(`${lock} (age `)
-      expect(Number(status.match(/main\.lock \(age (\d+)s\)/)?.[1])).toBeGreaterThanOrEqual(70)
-      expect(status).toContain('target: refs/heads/main')
-      expect(status).toContain(`contents: ${oid} -> refs/heads/lock-source`)
-      expect(status).toContain('owner pid: none alive')
+      expect(status).toBe('landing-git-lock landing lock: free\nwaiters:\n  none')
+      const formatted = formatGitLocks(repo)
+      expect(formatted).toContain(`${lock} (age `)
+      expect(Number(formatted.match(/main\.lock \(age (\d+)s\)/)?.[1])).toBeGreaterThanOrEqual(70)
+      expect(formatted).toContain('target: refs/heads/main')
+      expect(formatted).toContain(`contents: ${oid} -> refs/heads/lock-source`)
+      expect(formatted).toContain('owner pid: none alive')
       expect(readFileSync(lock, 'utf8')).toBe(`${oid}\n`)
       expect(locks).toEqual([expect.objectContaining({
         path: lock, target: 'refs/heads/main', contents: oid,
@@ -1700,10 +1707,11 @@ const { orphanSafety, repoRootOf, createWorktree, createWithTool, createReadOnly
         assertSharedRefGuardOutsideWritableRoots, removeSharedRefGuard,
         workerSharedGitRoots,
         carryWorkingState, withWorktreeCreateLock, withProjectLock, projectLockState,
+        reclaimStaleProjectLock, processStartTime, staleProjectLockHolder,
         unmergedBranch, assertCallerAncestry, checkoutHasUncommittedWork, callerDrift,
         changesIn, contentTree, removeFor, branchTip } = await import('./worktree.ts')
-const { gateFailureSummary, land, landingStatus, resolveLandingBranch } = await import('./landing.ts')
-const { gitLocks } = await import('./git-locks.ts')
+const { gateFailureSummary, land, landingStatus, landingReviewCoverage, resolveLandingBranch } = await import('./landing.ts')
+const { gitLocks, formatGitLocks } = await import('./git-locks.ts')
 const { AGENTS, ARGV_PROMPT_BYTES, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
         WAKE_COOLDOWN_MS, CODEX_EXEC_SANDBOX, CODEX_ASK_ENV_VARS, strictCodexSchema } = await import('./agents.ts')
@@ -8889,7 +8897,7 @@ describe('detached run collection', () => {
     return {
       runs: (db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n,
       prompts: existsSync(RUNS_DIR) ? readdirSync(RUNS_DIR).sort() : [],
-      lock: existsSync(join(root, '.git', 'orch-landing.lock')),
+      lock: existsSync(join(root, '.git', 'orch-create.lock')),
       worktrees: existsSync(trees) ? readdirSync(trees).sort() : null,
     }
   }
@@ -14863,7 +14871,7 @@ printf '%s\n' "$path"
     writeFileSync(cleanup,
       `import { writeFileSync } from 'node:fs'\n` +
       `import { withProjectLock } from ${JSON.stringify(new URL('worktree.ts', import.meta.url).href)}\n` +
-      `withProjectLock(process.argv[2], 'landing', { session: null, what: 'fixture cleanup' }, () => {\n` +
+      `withProjectLock(process.argv[2], 'create', { session: null, what: 'fixture cleanup' }, () => {\n` +
       `  writeFileSync(process.argv[5], 'ready')\n` +
       `  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 350)\n` +
       `  const removed = Bun.spawnSync(['git', 'worktree', 'remove', '--force', process.argv[3]], { cwd: process.argv[2], stdout: 'pipe', stderr: 'pipe' })\n` +
@@ -14939,14 +14947,14 @@ printf '%s\n' "$path"
 
   test('a creation lock held by a live owner waits and names its holder on timeout', () => {
     const { repo } = scratchRepo()
-    const lock = join(repo, '.git', 'orch-landing.lock')
+    const lock = join(repo, '.git', 'orch-create.lock')
     try {
       mkdirSync(lock)
       writeFileSync(join(lock, 'owner'), `${process.pid}\n`)
       expect(() => withWorktreeCreateLock(repo, () => undefined, 20)).toThrow(
         new RegExp(
-          `timed out after 0\\.02s waiting for this project's landing lock ` +
-          `\\(holder session unknown, pid ${process.pid}, landing worktree creation, held for \\d+s\\)`,
+          `timed out after 0\\.02s waiting for this project's worktree creation lock ` +
+          `\\(holder session unknown, pid ${process.pid}, worktree creation, held for \\d+s\\)`,
         ),
       )
     } finally {
@@ -14956,8 +14964,8 @@ printf '%s\n' "$path"
 
   test('a creation lock held by a dead owner is reclaimed and reported', () => {
     const { repo } = scratchRepo()
-    const lock = join(repo, '.git', 'orch-landing.lock')
-    const reportedLock = join(realpathSync(join(repo, '.git')), 'orch-landing.lock')
+    const lock = join(repo, '.git', 'orch-create.lock')
+    const reportedLock = join(realpathSync(join(repo, '.git')), 'orch-create.lock')
     const deadPid = 2_147_483_647
     const errors: string[] = []
     const originalError = console.error
@@ -14967,7 +14975,7 @@ printf '%s\n' "$path"
       console.error = (...args: unknown[]) => errors.push(args.join(' '))
       expect(withWorktreeCreateLock(repo, () => 'created', 20)).toBe('created')
       expect(errors).toEqual([
-        `orch: reclaimed landing lock from dead holder pid ${deadPid}: ${reportedLock}`,
+        `orch: reclaimed worktree creation lock from dead holder pid ${deadPid}: ${reportedLock}`,
       ])
       expect(existsSync(lock)).toBe(false)
     } finally {
@@ -14978,7 +14986,7 @@ printf '%s\n' "$path"
 
   test('a fresh ownerless lock is not reclaimed during the owner-write race', async () => {
     const { repo } = scratchRepo()
-    const lock = join(repo, '.git', 'orch-landing.lock')
+    const lock = join(repo, '.git', 'orch-create.lock')
     const child = Bun.spawn([
       process.execPath, '-e',
       `
@@ -14996,7 +15004,7 @@ printf '%s\n' "$path"
       expect(existsSync(lock)).toBe(true)
       let entered = false
       expect(() => withWorktreeCreateLock(repo, () => { entered = true }, 20)).toThrow(
-        /timed out after 0\.02s waiting for this project's landing lock/,
+        /timed out after 0\.02s waiting for this project's worktree creation lock/,
       )
       expect(entered).toBe(false)
       expect(await child.exited).toBe(0)
@@ -15011,7 +15019,51 @@ printf '%s\n' "$path"
     const { repo } = scratchRepo()
     try {
       expect(withWorktreeCreateLock(repo, () => 'created')).toBe('created')
-      expect(existsSync(join(repo, '.git', 'orch-landing.lock'))).toBe(false)
+      expect(existsSync(join(repo, '.git', 'orch-create.lock'))).toBe(false)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a null recorded start time falls back to pid liveness alone', () => {
+    const participant = {
+      pid: process.pid, startTime: null, incarnation: 'legacy', session: 'legacy',
+      what: 'landing', since: new Date(0).toISOString(),
+    }
+    expect(staleProjectLockHolder(participant)).toBeNull()
+    expect(staleProjectLockHolder({ ...participant, pid: 2_147_483_647 }))
+      .toBe('dead holder pid 2147483647')
+  })
+
+  test('malformed process identity is unknown, never stale', () => {
+    const original = Bun.spawnSync
+    const spawn = spyOn(Bun, 'spawnSync').mockImplementation(((cmd: string[], options?: any) =>
+      cmd[0] === 'ps'
+        ? { exitCode: 0, stdout: Buffer.from('garbage\n'), stderr: Buffer.from(''), success: true }
+        : original(cmd, options)) as typeof Bun.spawnSync)
+    try {
+      expect(processStartTime(process.pid)).toBeNull()
+      expect(staleProjectLockHolder({
+        pid: process.pid, startTime: 'Sat Sep  6 12:34:56 2026', incarnation: 'a',
+        session: 's', what: 'landing', since: new Date(0).toISOString(),
+      })).toBeNull()
+    } finally {
+      spawn.mockRestore()
+    }
+  })
+
+  test('reclaim refuses to remove a live replacement after classifying a stale owner', () => {
+    const { repo } = scratchRepo()
+    const lock = join(repo, '.git', 'orch-landing.lock')
+    try {
+      mkdirSync(lock)
+      writeFileSync(join(lock, 'owner'), `${JSON.stringify({
+        pid: process.pid, startTime: processStartTime(process.pid), incarnation: 'live-b',
+        session: 'live', what: 'replacement', since: new Date().toISOString(),
+      })}\n`)
+      expect(reclaimStaleProjectLock(repo, 'landing')).toBeNull()
+      expect(existsSync(lock)).toBe(true)
+      expect(JSON.parse(readFileSync(join(lock, 'owner'), 'utf8')).incarnation).toBe('live-b')
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }

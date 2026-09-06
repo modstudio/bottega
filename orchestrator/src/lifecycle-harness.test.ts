@@ -133,25 +133,16 @@ const refusalSiteNames = [
 ] as const
 const refusalCaseName = (site: string) =>
   `Every refusal names the invariant it protects and the command that clears it: ${site}`
-const failingCaseNames = [
-  'One lock per purpose',
-  'A lock waiter is served in arrival order',
-  'A resume is always possible on a stale checkout: attachment never waits on the landing lock',
-  'Only the main checkout binary migrates the store',
-  'Landing holds its lock only for re-check, guard verification and fast-forward, never a gate',
-  'A failed landing leaves the branch worktree as it found it',
-  ...refusalSiteNames.map(refusalCaseName),
-  refusalCaseName('linked-worktree write boundary'),
-] as const
+const failingCaseNames = [] as const
 
-const failingName = {
-  lockPurpose: failingCaseNames[0],
-  fifo: failingCaseNames[1],
-  resume: failingCaseNames[2],
-  migration: failingCaseNames[3],
-  landingGate: failingCaseNames[4],
-  failedLanding: failingCaseNames[5],
-  linkedRefusal: failingCaseNames.at(-1)!,
+const caseName = {
+  lockPurpose: 'One lock per purpose',
+  fifo: 'A lock waiter is served in arrival order',
+  resume: 'A resume is always possible on a stale checkout: attachment never waits on the landing lock',
+  migration: 'Only the main checkout binary migrates the store',
+  landingGate: 'Landing holds its lock only for re-check, guard verification and fast-forward, never a gate',
+  failedLanding: 'A failed landing leaves the branch worktree as it found it',
+  linkedRefusal: refusalCaseName('linked-worktree write boundary'),
 }
 
 function expectationError(error: unknown): error is Error {
@@ -315,8 +306,8 @@ test('Every write transaction is IMMEDIATE; a deferred transaction that later wr
   }
 }, 20_000)
 
-test.failing(failingName.lockPurpose, async () => {
-  const actorCode = `const{appendFileSync,existsSync,readFileSync,readdirSync}=await import('node:fs');const{join}=await import('node:path');const{withProjectLock,withWorktreeCreateLock}=await import(process.argv[1]);const [repo,actor,file]=process.argv.slice(2);const log=(event,lock)=>appendFileSync(file,JSON.stringify({at:new Date().toISOString(),event,actor,...(lock?{lock}:{})})+'\\n');log('lock-wait');const action=()=>{const common=Bun.spawnSync(['git','rev-parse','--path-format=absolute','--git-common-dir'],{cwd:repo,stdout:'pipe'}).stdout.toString().trim();const held=readdirSync(common).filter(name=>name.endsWith('.lock')&&existsSync(join(common,name,'owner'))).filter(name=>{try{return JSON.parse(readFileSync(join(common,name,'owner'),'utf8')).pid===process.pid}catch{return false}});const lock=held.length===1?held[0]:'unknown';log('lock-held',lock);Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,80)};actor==='worker'?withWorktreeCreateLock(repo,action,2000):withProjectLock(repo,'landing',{session:actor,what:actor},action,2000,true);log('lock-released');log('exit')`
+test(caseName.lockPurpose, async () => {
+  const actorCode = `const{appendFileSync,existsSync,readFileSync,readdirSync}=await import('node:fs');const{join}=await import('node:path');const{withProjectLock,withWorktreeCreateLock,withCleanupLock}=await import(process.argv[1]);const [repo,actor,file]=process.argv.slice(2);const log=(event,lock)=>appendFileSync(file,JSON.stringify({at:new Date().toISOString(),event,actor,...(lock?{lock}:{})})+'\\n');log('lock-wait');const action=()=>{const common=Bun.spawnSync(['git','rev-parse','--path-format=absolute','--git-common-dir'],{cwd:repo,stdout:'pipe'}).stdout.toString().trim();const held=readdirSync(common).filter(name=>name.endsWith('.lock')&&existsSync(join(common,name,'owner'))).filter(name=>{try{return JSON.parse(readFileSync(join(common,name,'owner'),'utf8')).pid===process.pid}catch{return false}});const lock=held.length===1?held[0]:'unknown';log('lock-held',lock);Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,80)};if(actor==='worker')withWorktreeCreateLock(repo,action,2000);else if(actor==='cleanup')withCleanupLock(repo,{session:actor,what:actor},action,2000);else withProjectLock(repo,'landing',{session:actor,what:actor},action,2000,true);log('lock-released');log('exit')`
   const rng = rngFor(2)
   const names = rng.shuffle(['worker', 'lander', 'cleanup'])
   const children = names.map(async (actor) => {
@@ -336,12 +327,12 @@ test.failing(failingName.lockPurpose, async () => {
   expect(shared).toHaveLength(3)
   expect(shared.every((row) => row.lock !== undefined && row.lock !== 'unknown'),
     `lock observation itself failed\n${seedMessage()}`).toBe(true)
-  violation(failingName.lockPurpose, seedMessage(), () => {
+  violation(caseName.lockPurpose, seedMessage(), () => {
     expect(new Set(shared.map((row) => row.lock)).size, seedMessage()).toBe(3)
   })
 }, 15_000)
 
-test.failing(failingName.fifo, async () => {
+test(caseName.fifo, async () => {
   for (let round = 0; round < rounds; round++) {
     const rng = rngFor(3, round)
     const release = join(fixture, `fifo-release-${round}`)
@@ -372,7 +363,7 @@ test.failing(failingName.fifo, async () => {
       .sort((x, y) => x.at.localeCompare(y.at)).map((e) => e.actor)
     expect(held).toContain('A')
     expect(held.some((actor) => actor.startsWith('S'))).toBe(true)
-    violation(failingName.fifo, seedMessage(), () => {
+    violation(caseName.fifo, seedMessage(), () => {
       expect(held.indexOf('A'), seedMessage()).toBeLessThan(
         Math.min(...held.filter(x => x.startsWith('S')).map(x => held.indexOf(x))),
       )
@@ -390,7 +381,7 @@ test('A resume is always possible on a stale checkout: recorded worktree skips c
   expect(resumed.code, `${seedMessage()}\n${resumed.err}`).toBe(0)
 }, 15_000)
 
-test.failing(failingName.resume, async () => {
+test(caseName.resume, async () => {
   const tree = addBranch('resume-during-gate')
   const base = git(tree, 'rev-parse', 'HEAD')
   const inserted = store((database) => database.query(`INSERT INTO run (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,vendor_session,cwd,worktree,branch,base_commit,repo,turn) VALUES (datetime('now'),'codex','file-question','r',1,'r','ok','lifecycle-harness','vendor-session',?,?,?,?, 'lifecycle-fixture',1) RETURNING id`).get(tree, tree, 'resume-during-gate', base) as { id: number })
@@ -407,7 +398,9 @@ test.failing(failingName.resume, async () => {
   const resumed = await result(resume)
   const resumedId = Number(resumed.out.trim())
   expect(resumedId).toBeGreaterThan(0)
-  await Bun.sleep(150)
+  for (let i = 0; i < 80 && !(existsSync(agentExit) && readFileSync(agentExit, 'utf8') === String(resumedId)); i++) {
+    await Bun.sleep(25)
+  }
   const premature = existsSync(agentExit) && readFileSync(agentExit, 'utf8') === String(resumedId)
   writeFileSync(release, '')
   await result(holder)
@@ -420,12 +413,12 @@ test.failing(failingName.resume, async () => {
   }
   expect(store((database) => (database.query('SELECT status FROM run WHERE id=?').get(resumedId) as { status: string }).status))
     .not.toBe('running')
-  violation(failingName.resume, seedMessage(), () => {
+  violation(caseName.resume, seedMessage(), () => {
     expect(premature, seedMessage()).toBe(true)
   })
 }, 15_000)
 
-test.failing(failingName.migration, async () => {
+test(caseName.migration, async () => {
   const copy = join(fixture, 'linked-source')
   const linked = join(fixture, 'linked-tree')
   rmSync(copy, { recursive: true, force: true })
@@ -443,14 +436,14 @@ test.failing(failingName.migration, async () => {
   const read = Bun.spawnSync([process.execPath, join(linked, 'orchestrator/src/cli.ts'), 'runs'], { cwd: linked, env: gitEnv({ ORCH_DB: scratch, ORCH_DEPTH: '0' }), stdout: 'pipe', stderr: 'pipe' })
   const checked = new Database(scratch, { readonly: true })
   const columns = checked.query('PRAGMA table_info(run)').all() as { name: string }[]; checked.close()
-  violation(failingName.migration, seedMessage(), () => {
+  violation(caseName.migration, seedMessage(), () => {
     expect(columns.some((column) => column.name === 'label')).toBe(false)
     expect(read.stderr.toString()).toMatch(invariantLine)
     expect(read.stderr.toString()).toMatch(clearingLine)
   })
 }, 20_000)
 
-test.failing(failingName.landingGate, async () => {
+test(caseName.landingGate, async () => {
   const branches = ['gate-one', 'gate-two']; branches.forEach(addBranch)
   const release = branches.map((branch) => join(fixture, `${branch}-release`))
   release.forEach((path) => rmSync(path, { force: true }))
@@ -464,12 +457,12 @@ test.failing(failingName.landingGate, async () => {
   const landed = await Promise.all(landingResults); expect(landed.every(x => x.code === 0), landed.map(x => x.err).join('\n')).toBe(true)
   const gateStarts = events('gates').filter(e => e.event === 'gate-start')
   expect(gateStarts.length).toBeGreaterThanOrEqual(2)
-  violation(failingName.landingGate, seedMessage(), () => {
+  violation(caseName.landingGate, seedMessage(), () => {
     expect(gateStarts.every(e => e.pid === null), seedMessage()).toBe(true)
   })
 }, 20_000)
 
-test.failing(failingName.failedLanding, async () => {
+test(caseName.failedLanding, async () => {
   const tree = addBranch('failed-landing')
   writeFileSync(join(repo, 'trunk-only.txt'), 'trunk\n'); git(repo, 'add', 'trunk-only.txt'); git(repo, 'commit', '-m', 'DEV-321 move trunk')
   configure('false')
@@ -477,12 +470,31 @@ test.failing(failingName.failedLanding, async () => {
   const landed = await result(childLand('failed-landing'))
   const after = { head: git(tree, 'rev-parse', 'HEAD'), status: git(tree, 'status', '--porcelain'), rebase: existsSync(join(tree, '.git/rebase-merge')) || existsSync(join(tree, '.git/rebase-apply')) }
   expect(landed.code).not.toBe(0)
-  violation(failingName.failedLanding, seedMessage(), () => {
+  violation(caseName.failedLanding, seedMessage(), () => {
     expect(after, seedMessage()).toEqual(before)
   })
 }, 15_000)
 
-test.todo('A reclaim removes exactly the acquisition it classified as stale — needs the chunk 3 lock-incarnation checkpoint seam', () => {})
+test('A reclaim removes exactly the acquisition it classified as stale', async () => {
+  const { reclaimStaleProjectLock, withProjectLock } = await import('./worktree.ts')
+  const deadPid = 2_147_483_647
+  const lock = join(git(repo, 'rev-parse', '--path-format=absolute', '--git-common-dir'), 'orch-landing.lock')
+  mkdirSync(lock, { recursive: true })
+  writeFileSync(join(lock, 'owner'), `${JSON.stringify({
+    pid: deadPid, startTime: null, incarnation: 'classified-a',
+    session: 'dead', what: 'stale-holder', since: new Date(0).toISOString(),
+  })}\n`)
+  const first = reclaimStaleProjectLock(repo, 'landing')
+  expect(first?.holder.incarnation).toBe('classified-a')
+  expect(existsSync(lock)).toBe(false)
+  expect(withProjectLock(repo, 'landing', { session: 'live', what: 'replacement' }, () => {
+    const live = JSON.parse(readFileSync(join(lock, 'owner'), 'utf8')) as { incarnation: string }
+    expect(reclaimStaleProjectLock(repo, 'landing')).toBeNull()
+    expect(JSON.parse(readFileSync(join(lock, 'owner'), 'utf8')).incarnation).toBe(live.incarnation)
+    return 'held'
+  }, 2000, true)).toBe('held')
+  expect(existsSync(lock)).toBe(false)
+}, 15_000)
 
 class RefusalSetupError extends Error {}
 const refusedLand = (branch: string) => {
@@ -519,28 +531,51 @@ const refusalCases = [
 ] as const
 
 for (const [index, [site, trigger]] of refusalCases.entries()) {
-  const caseName = failingCaseNames[6 + index]!
-  test.failing(caseName, () => {
+  const name = refusalCaseName(site)
+  test(name, () => {
     expect(site).toBe(refusalSiteNames[index])
     const message = trigger()
     expect(message.length).toBeGreaterThan(0)
-    violation(caseName, seedMessage(), () => {
+    violation(name, seedMessage(), () => {
       expect(message).toMatch(invariantLine)
       expect(message).toMatch(clearingLine)
     })
   }, 15_000)
 }
 
-test.failing(failingName.linkedRefusal, async () => {
+test(caseName.linkedRefusal, async () => {
   const { LINKED_WORKTREE_WRITE_REFUSAL } = await import('./db.ts')
   expect(LINKED_WORKTREE_WRITE_REFUSAL.length).toBeGreaterThan(0)
-  violation(failingName.linkedRefusal, seedMessage(), () => {
+  violation(caseName.linkedRefusal, seedMessage(), () => {
     expect(LINKED_WORKTREE_WRITE_REFUSAL).toMatch(invariantLine)
     expect(LINKED_WORKTREE_WRITE_REFUSAL).toMatch(clearingLine)
   })
 }, 15_000)
 
-test.todo('The guard on disk is verified against HEAD before fast-forward — needs sharedGuardResidue and restoreSharedGuard from DEV-322', () => {})
+test('The guard on disk is verified against HEAD before fast-forward', async () => {
+  const { sharedGuardResidue, restoreSharedGuard } = await import('./landing.ts')
+  const copy = join(fixture, 'guard-head')
+  rmSync(copy, { recursive: true, force: true })
+  mkdirSync(join(copy, 'orchestrator', 'hooks'), { recursive: true })
+  const hook = join(sourceRoot, 'orchestrator', 'hooks', 'reference-transaction')
+  writeFileSync(join(copy, 'orchestrator', 'hooks', 'reference-transaction'), readFileSync(hook))
+  git(copy, 'init', '-b', 'main')
+  git(copy, 'config', 'user.email', 'guard@example.invalid')
+  git(copy, 'config', 'user.name', 'Guard')
+  git(copy, 'add', '.')
+  git(copy, 'commit', '-m', 'DEV-321 tracked guard')
+  const root = join(copy, 'orchestrator')
+  expect(sharedGuardResidue(root)).toBeNull()
+  const staged = join(copy, 'orchestrator', 'hooks', 'reference-transaction')
+  writeFileSync(staged, '#!/bin/sh\nexit 0\n')
+  git(copy, 'add', 'orchestrator/hooks/reference-transaction')
+  const residue = sharedGuardResidue(root)
+  expect(residue).not.toBeNull()
+  restoreSharedGuard(root)
+  expect(sharedGuardResidue(root)).toBeNull()
+  expect(readFileSync(staged)).toEqual(readFileSync(hook))
+  expect(git(copy, 'status', '--porcelain', '--', 'orchestrator/hooks/reference-transaction')).toBe('')
+}, 15_000)
 
 test('Hermetic git in the gate is an observation; the lifecycle invariant does not cover the gate', async () => {
   addBranch('gate-environment')
@@ -562,10 +597,12 @@ test('Hermetic git in the gate is an observation; the lifecycle invariant does n
 // Serial file order makes this the closing proof that setup failures were never
 // mistaken for expected invariant failures above.
 test('every failing case failed on its invariant, not on its setup', () => {
-  const records = readFileSync(violationsFile, 'utf8').trim().split('\n').filter(Boolean)
-    .map((line) => JSON.parse(line) as { case: string })
-  for (const caseName of failingCaseNames) {
-    expect(records.filter((record) => record.case === caseName), caseName).toHaveLength(1)
+  const records = existsSync(violationsFile)
+    ? readFileSync(violationsFile, 'utf8').trim().split('\n').filter(Boolean)
+      .map((line) => JSON.parse(line) as { case: string })
+    : []
+  for (const name of failingCaseNames) {
+    expect(records.filter((record) => record.case === name), name).toHaveLength(1)
   }
   expect([...new Set(records.map((record) => record.case))].sort())
     .toEqual([...failingCaseNames].sort())
