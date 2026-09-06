@@ -32,7 +32,7 @@ describe('CLI argument recognition', () => {
       ['doc', 'rm', 'slug', '--scope', 'global'], ['doc', 'export', 'docs'],
       ['doc', 'import', 'docs'], ['do', 'summarize', '--cwd', '/tmp/project', 'a', 'multi-word', 'prompt'],
       ['review', 'record', '12', '13'],
-      ['review', 'triage', '12', '1', 'rejected', '--category', 'not-a-defect'],
+      ['review', 'triage', '12', '1', 'rejected', '--category', 'not-a-defect', '--severity', 'critical'],
       ['review', 'complete', '12'],
       ['review', 'calibration', 'correctness', 'codex', 'gpt-5', '--json'],
       ['run', '12'], ['result', '12', '--quiet'],
@@ -55,7 +55,8 @@ describe('CLI argument recognition', () => {
       ['tell', '12', 'context', 'for', 'the worker'], ['tell', '12', '--file', 'note.md'],
       ['continue', '12', 'one more change'], ['diff', '12', '--quiet'], ['discard', '12', '--force'],
       ['stop', '12'], ['abandon', '12', '--note', 'superseded'],
-      ['score', '12', 'full', 'right', 'faithful', '--note', 'good'],
+      ['score', '12', 'full', 'right', 'faithful', '--note', 'good',
+        '--reproduced', 'all', '--coverage', 'adequate', '--limits', 'named', '--overlap', 'alone'],
       ['runs', '--id', '12', '--id', '13', '--json'],
       ['pick', 'implement', '--distinct-from', '10,11'], ['metric', 'collect', '--days', '30'],
     ]

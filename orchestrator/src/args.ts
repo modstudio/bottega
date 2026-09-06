@@ -1,3 +1,7 @@
+import { REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_REPRODUCED } from './db.ts'
+
+const REVIEW_GRADE_USAGE = `[--reproduced ${REVIEW_REPRODUCED.join('|')}] [--coverage ${REVIEW_COVERAGE.join('|')}] [--limits ${REVIEW_LIMITS.join('|')}] [--overlap ${REVIEW_OVERLAP.join('|')}]`
+
 type CommandShape = {
   usage: string
   maxPositionals: number
@@ -147,8 +151,8 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       if (topLevelOnly) return { args: [], shape: shape('orch review', 0) }
       if (sub === 'record') return { args: argv.slice(2), shape: shape('orch review record <run-id>...', Infinity) }
       if (sub === 'triage') return { args: argv.slice(2), shape: shape(
-        'orch review triage <review-id> <finding> <accepted|modified|rejected|skipped> [--category X]', 3,
-        ['--category'],
+        'orch review triage <review-id> <finding> <accepted|modified|rejected|skipped> [--category X] [--severity LEVEL]', 3,
+        ['--category', '--severity'],
       ) }
       if (sub === 'complete') return { args: argv.slice(2), shape: shape('orch review complete <review-id>', 1) }
       if (sub === 'calibration') return { args: argv.slice(2), shape: shape(
@@ -195,8 +199,8 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
     case 'stop': return { args: argv.slice(1), shape: shape('orch stop <id>', 1) }
     case 'abandon': return { args: argv.slice(1), shape: shape('orch abandon <id> [--note TEXT] [--force]', 1, ['--note'], ['--force']) }
     case 'score': return { args: argv.slice(1), shape: shape(
-      'orch score <run-id> <none|partial|full> [wrong|mixed|right] [drifted|partial|faithful] [--note TEXT]',
-      4, ['--note', '--better-than', '--scorer'], ['--force', '--void'],
+      `orch score <run-id> <none|partial|full> [wrong|mixed|right] [drifted|partial|faithful] [--note TEXT] ${REVIEW_GRADE_USAGE}`,
+      4, ['--note', '--better-than', '--scorer', '--reproduced', '--coverage', '--limits', '--overlap'], ['--force', '--void'],
     ) }
     case 'recalibrate': return { args: argv.slice(1), shape: shape('orch recalibrate [--n N] [--scorer WHO] [--force]', 0, ['--n', '--scorer'], ['--force']) }
     case 'runs': return { args: argv.slice(1), shape: shape('orch runs [--id ID]... [--job X] [--agent Y] [--limit N] [--unscored] [--since ISO] [--json]', 0, ['--id', '--job', '--agent', '--limit', '--since'], ['--unscored', '--json']) }

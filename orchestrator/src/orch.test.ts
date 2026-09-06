@@ -1124,7 +1124,7 @@ const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
         NO_REPO_PREAMBLE, WORKER_PREAMBLE, LAND_PREAMBLE, REVIEW_SCHEMA,
         VERIFY_CLAIM_SCHEMA, ISSUE_WORKER_SCHEMA, workerPreamble, workerResumeGuard,
         contractConflicts, hasRealQuestions, realQuestions } = await import('./contract.ts')
-const { parseReviewReply, recordReview, recordReviews, triageFinding, completeReview, reviewCalibration, calibrationLine,
+const { parseReviewReply, recordReview, recordReviews, gradeReviewLens, triageFinding, completeReview, reviewCalibration, calibrationLine,
         MIN_REVIEW_TRIAGED } = await import('./review.ts')
 const { ask } = await import('./ask.ts')
 const { checkMessages, messageArchitect, messagesForRun } = await import('./mailbox.ts')
@@ -1648,6 +1648,49 @@ describe('review discipline', () => {
     const c = reviewCalibration('efficiency', 'codex', 'm')
     expect(c.precision).toBeNull()
     expect(calibrationLine(c)).toContain('no reliable precision yet')
+  })
+
+  test('triage records only a severity disagreement', () => {
+    const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'severity' })
+    const reviewId = recordReview(runId, reviewReply(2))
+    triageFinding(reviewId, 1, 'accepted', undefined, 'critical')
+    triageFinding(reviewId, 2, 'modified', undefined, 'major')
+    expect(db().query(
+      'SELECT ordinal, severity, triaged_severity FROM review_finding WHERE review_id=? ORDER BY ordinal',
+    ).all(reviewId)).toEqual([
+      { ordinal: 1, severity: 'major', triaged_severity: 'critical' },
+      { ordinal: 2, severity: 'major', triaged_severity: null },
+    ])
+  })
+
+  test('calibration and state count graded values and preserve historical null grades', () => {
+    const gradedRun = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'graded' })
+    const gradedReview = recordReview(gradedRun, reviewReply(MIN_REVIEW_TRIAGED))
+    gradeReviewLens(gradedRun, null, {
+      reproduced: 'all', coverage: 'adequate', limits: 'named', overlap: 'alone',
+    })
+    for (let i = 1; i <= MIN_REVIEW_TRIAGED; i++) triageFinding(gradedReview, i, 'accepted')
+    completeReview(gradedReview)
+
+    const historicalRun = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'graded' })
+    const historicalReview = recordReview(historicalRun, reviewReply(1))
+    triageFinding(historicalReview, 1, 'accepted')
+    completeReview(historicalReview)
+
+    const c = reviewCalibration('graded', 'codex', 'm')
+    expect(c.reproduced).toEqual({
+      counts: { none: 0, some: 0, all: 1 },
+      shares: { none: 0, some: 0, all: 1 },
+      ungraded: 1,
+    })
+    expect(c.overlap).toEqual({
+      counts: { unique: 0, shared: 0, none: 0, alone: 1 },
+      shares: { unique: 0, shared: 0, none: 0, alone: 1 },
+      ungraded: 1,
+    })
+    const cells = state(null).reviewCalibration as typeof c[]
+    expect(cells.find((cell) => cell.lens === 'graded' && cell.model === 'm'))
+      .toMatchObject({ reproduced: c.reproduced, overlap: c.overlap })
   })
 
   test('uses only the most recent fifty complete reviews', () => {
@@ -6111,10 +6154,15 @@ describe('detached run collection', () => {
 
   test('score drops a habitual fidelity word for a review lens and records two axes', () => {
     const id = insert('ok', 'review-lens')
-    db().query('UPDATE run SET session_id=? WHERE id=?').run('orch-test-session', id)
+    const output = join(dir, `graded-review-${id}.json`)
+    writeFileSync(output, JSON.stringify(reviewReply(1)))
+    db().query('UPDATE run SET session_id=?, lens=?, model=?, output_path=? WHERE id=?')
+      .run('orch-test-session', 'correctness', 'test-model', output, id)
     expect(orch('pending').code).toBe(1)
 
-    const r = orch('score', String(id), 'full', 'right', 'faithful')
+    const r = orch('score', String(id), 'full', 'right', 'faithful',
+      '--reproduced', 'all', '--coverage', 'adequate', '--limits', 'absent',
+      '--overlap', 'alone')
     expect(r.code).toBe(0)
     expect(r.err).toContain(
       'review-lens has no spec to be faithful to, so it is judged on two axes only',
@@ -6123,7 +6171,77 @@ describe('detached run collection', () => {
     expect(db().query(
       'SELECT delivery, quality, fidelity FROM score WHERE run_id=?',
     ).get(id)).toEqual({ delivery: 'full', quality: 'right', fidelity: null })
+    expect(db().query(
+      'SELECT reproduced, coverage, limits, overlap FROM review_lens WHERE run_id=?',
+    ).get(id)).toEqual({ reproduced: 'all', coverage: 'adequate', limits: 'absent', overlap: 'alone' })
     expect(orch('pending').code).toBe(0)
+  })
+
+  test('lens scoring refuses missing grades with the canonical vocabulary and writes nothing', () => {
+    const id = insert('ok', 'review-lens')
+    const output = join(dir, `ungraded-review-${id}.json`)
+    writeFileSync(output, JSON.stringify(reviewReply(1)))
+    db().query('UPDATE run SET session_id=?, lens=?, model=?, output_path=? WHERE id=?')
+      .run('orch-test-session', 'safety', 'test-model', output, id)
+
+    const r = orch('score', String(id), 'full', 'right')
+
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('--reproduced none | some | all')
+    expect(r.err).toContain('--coverage   empty | partial | adequate')
+    expect(r.err).toContain('--limits     named | absent')
+    expect(r.err).toContain('--overlap    unique | shared | none | alone')
+    expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
+    expect(db().query('SELECT id FROM review_lens WHERE run_id=?').get(id)).toBeNull()
+  })
+
+  test('lens scoring updates an already-recorded review row instead of creating another review', () => {
+    const id = addRun({ agent: 'codex', job: 'safety', model: 'm', lens: 'existing',
+      session: 'orch-test-session' })
+    const reviewId = recordReview(id, reviewReply(1))
+    const before = (db().query('SELECT COUNT(*) AS n FROM review').get() as { n: number }).n
+    const r = orch('score', String(id), 'partial', 'mixed',
+      '--reproduced', 'some', '--coverage', 'partial', '--limits', 'named', '--overlap', 'shared')
+    expect(r.code).toBe(0)
+    expect((db().query('SELECT COUNT(*) AS n FROM review').get() as { n: number }).n).toBe(before)
+    expect(db().query(
+      'SELECT review_id, reproduced, coverage, limits, overlap FROM review_lens WHERE run_id=?',
+    ).get(id)).toEqual({
+      review_id: reviewId, reproduced: 'some', coverage: 'partial', limits: 'named', overlap: 'shared',
+    })
+  })
+
+  test('an empty lens defaults reproduced and overlap while delivery none captures nothing', () => {
+    const empty = insert('ok', 'craft')
+    const output = join(dir, `empty-review-${empty}.json`)
+    writeFileSync(output, JSON.stringify(reviewReply(0)))
+    db().query('UPDATE run SET session_id=?, lens=?, model=?, output_path=? WHERE id=?')
+      .run('orch-test-session', 'craft', 'test-model', output, empty)
+    const scored = orch('score', String(empty), 'full', 'right',
+      '--coverage', 'partial', '--limits', 'named')
+    expect(scored.code).toBe(0)
+    expect(db().query(
+      'SELECT reproduced, coverage, limits, overlap FROM review_lens WHERE run_id=?',
+    ).get(empty)).toEqual({ reproduced: 'none', coverage: 'partial', limits: 'named', overlap: 'none' })
+
+    const failed = insert('failed', 'safety')
+    db().query("UPDATE run SET session_id=?, failure_kind='other' WHERE id=?")
+      .run('orch-test-session', failed)
+    expect(orch('score', String(failed), 'none').code).toBe(0)
+    expect(db().query('SELECT id FROM review_lens WHERE run_id=?').get(failed)).toBeNull()
+  })
+
+  test('review triage --severity stores a disagreement and omission stores null', () => {
+    const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'triage-cli' })
+    const reviewId = recordReview(runId, reviewReply(2))
+    expect(orch('review', 'triage', String(reviewId), '1', 'accepted', '--severity', 'critical').code).toBe(0)
+    expect(orch('review', 'triage', String(reviewId), '2', 'accepted').code).toBe(0)
+    expect(db().query(
+      'SELECT ordinal, triaged_severity FROM review_finding WHERE review_id=? ORDER BY ordinal',
+    ).all(reviewId)).toEqual([
+      { ordinal: 1, triaged_severity: 'critical' },
+      { ordinal: 2, triaged_severity: null },
+    ])
   })
 
   test('doctor excludes scores on not-evidence runs from its scored count', () => {
@@ -12142,8 +12260,15 @@ describe('canonical schema rebuild', () => {
       { id: 1, prompt_head: 'keep-me', status: 'asking' },
     )
     expect(d.query('SELECT fidelity FROM score WHERE run_id=1').get()).toEqual({ fidelity: 'faithful' })
-    expect(d.query('SELECT tree_inspected, reviewed_tree FROM review_lens WHERE id=1').get())
-      .toEqual({ tree_inspected: 'claimed', reviewed_tree: null })
+    expect(d.query(
+      `SELECT tree_inspected, reviewed_tree, reproduced, coverage, limits, overlap
+         FROM review_lens WHERE id=1`,
+    ).get()).toEqual({
+      tree_inspected: 'claimed', reviewed_tree: null,
+      reproduced: null, coverage: null, limits: null, overlap: null,
+    })
+    expect(d.query('SELECT triaged_severity FROM review_finding WHERE id=1').get())
+      .toEqual({ triaged_severity: null })
     expect((d.query('PRAGMA table_info(review_lens)').all() as { name: string; notnull: number }[])
       .find((column) => column.name === 'tree_inspected')?.notnull).toBe(0)
     const uniqueIndexes = (d.query('PRAGMA index_list(review_lens)').all() as

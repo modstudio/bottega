@@ -18,6 +18,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { NOT_EVIDENCE } from './failure.ts'
 import { projectAt } from './projects.ts'
 import { readMessagesForArchitect } from './mailbox.ts'
+import { reviewCalibration } from './review.ts'
 
 /** Full detail for one run: the whole prompt and the whole reply, read from disk. */
 export function runDetail(id: number) {
@@ -191,9 +192,15 @@ export function state(sinceDays: number | null = null) {
     `SELECT decision, why, COUNT(*) n FROM spawn GROUP BY decision, why ORDER BY n DESC`,
   ).all()
 
+  const reviewCells = (d.query(
+    `SELECT DISTINCT lens, agent, model FROM review_lens
+      WHERE model IS NOT NULL ORDER BY lens, agent, model`,
+  ).all() as { lens: string; agent: string; model: string }[])
+    .map(({ lens, agent, model }) => reviewCalibration(lens, agent, model, d))
+
   return {
     live, stale, matrix, byRepo, totals, allTimeRuns, unscored, sinceDays,
-    metric, metricError, guide: guide(), health, spawns,
+    metric, metricError, guide: guide(), health, spawns, reviewCalibration: reviewCells,
     agents: Object.values(AGENTS).map((a) => ({ name: a.name, billing: a.billing, caps: a.caps })),
     jobs: Object.keys(JOBS),
     now: Date.now(),

@@ -1,5 +1,8 @@
 import type { Database } from 'bun:sqlite'
-import { db, nowIso } from './db.ts'
+import {
+  db, nowIso, REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP,
+  type ReviewReproduced, type ReviewCoverage, type ReviewLimits, type ReviewOverlap,
+} from './db.ts'
 import { CANON_SOURCE_SCHEMA, REVIEW_SCHEMA, type CanonSource, type ReviewReply } from './contract.ts'
 import { job } from './jobs.ts'
 
@@ -13,6 +16,13 @@ export const MIN_REVIEW_TRIAGED = 10
 
 export const DISPOSITIONS = ['accepted', 'modified', 'rejected', 'skipped'] as const
 export type Disposition = typeof DISPOSITIONS[number]
+
+export type ReviewGrades = {
+  reproduced: ReviewReproduced
+  coverage: ReviewCoverage
+  limits: ReviewLimits
+  overlap: ReviewOverlap
+}
 
 const isStrings = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((x) => typeof x === 'string')
@@ -132,9 +142,27 @@ export function recordReview(runId: number, output: ReviewReply, database: Datab
   return recordReviews([{ runId, output }], database)
 }
 
+export function gradeReviewLens(
+  runId: number, output: ReviewReply | null, grades: ReviewGrades, database: Database = db(),
+): number {
+  let row = database.query('SELECT id, review_id FROM review_lens WHERE run_id=?').get(runId) as
+    { id: number; review_id: number } | null
+  if (!row) {
+    if (!output) throw new Error(`run ${runId} has no review output to record`)
+    const reviewId = recordReview(runId, output, database)
+    row = database.query('SELECT id, review_id FROM review_lens WHERE run_id=?').get(runId) as
+      { id: number; review_id: number }
+    if (row.review_id !== reviewId) throw new Error(`run ${runId} review capture did not persist`)
+  }
+  database.query(
+    `UPDATE review_lens SET reproduced=?, coverage=?, limits=?, overlap=? WHERE id=?`,
+  ).run(grades.reproduced, grades.coverage, grades.limits, grades.overlap, row.id)
+  return row.review_id
+}
+
 export function triageFinding(
   reviewId: number, ordinal: number, disposition: Disposition,
-  rejectionCategory?: string, database: Database = db(),
+  rejectionCategory?: string, triagedSeverity?: string, database: Database = db(),
 ): void {
   if (!DISPOSITIONS.includes(disposition)) throw new Error(`invalid disposition: ${disposition}`)
   if (disposition === 'rejected' && !rejectionCategory?.trim()) {
@@ -147,10 +175,16 @@ export function triageFinding(
     { completed_at: string | null } | null
   if (!review) throw new Error(`no review ${reviewId}`)
   if (review.completed_at) throw new Error(`review ${reviewId} is already complete`)
+  const finding = database.query(
+    'SELECT severity FROM review_finding WHERE review_id=? AND ordinal=?',
+  ).get(reviewId, ordinal) as { severity: string } | null
+  if (!finding) throw new Error(`review ${reviewId} has no finding ${ordinal}`)
+  const severity = triagedSeverity?.trim()
   const result = database.query(
-    `UPDATE review_finding SET disposition=?, rejection_category=?, triaged_at=?
+    `UPDATE review_finding SET disposition=?, rejection_category=?, triaged_severity=?, triaged_at=?
        WHERE review_id=? AND ordinal=?`,
   ).run(disposition, disposition === 'rejected' ? rejectionCategory!.trim() : null,
+    severity && severity !== finding.severity ? severity : null,
     nowIso(), reviewId, ordinal)
   if (result.changes !== 1) throw new Error(`review ${reviewId} has no finding ${ordinal}`)
 }
@@ -171,6 +205,33 @@ export type ReviewCalibration = {
   lens: string; agent: string; model: string | null; precision: number | null
   hits: number; triaged: number; rejection_categories: { category: string; count: number }[]
   basis: 'model' | 'agent' | null
+  reproduced: GradeDistribution<ReviewReproduced>
+  coverage: GradeDistribution<ReviewCoverage>
+  limits: GradeDistribution<ReviewLimits>
+  overlap: GradeDistribution<ReviewOverlap>
+}
+
+export type GradeDistribution<T extends string> = {
+  counts: Record<T, number>
+  shares: Record<T, number | null>
+  ungraded: number
+}
+
+function gradeDistribution<T extends string>(
+  rows: Record<string, unknown>[], column: string, values: readonly T[], sharesVisible: boolean,
+): GradeDistribution<T> {
+  const counts = Object.fromEntries(values.map((value) => [value, 0])) as Record<T, number>
+  let ungraded = 0
+  for (const row of rows) {
+    const value = row[column]
+    if (typeof value === 'string' && values.includes(value as T)) counts[value as T]++
+    else ungraded++
+  }
+  const graded = rows.length - ungraded
+  const shares = Object.fromEntries(values.map((value) => [
+    value, sharesVisible && graded > 0 ? counts[value] / graded : null,
+  ])) as Record<T, number | null>
+  return { counts, shares, ungraded }
 }
 
 function calibrationCell(
@@ -182,7 +243,13 @@ function calibrationCell(
       WHERE rl.lens=? AND rl.agent=? AND r.completed_at IS NOT NULL ${modelClause}
       ORDER BY r.completed_at DESC, r.id DESC LIMIT ?`,
   ).all(...(model === undefined ? [lens, agent, REVIEW_WINDOW] : [lens, agent, model, REVIEW_WINDOW])) as { id: number }[]
-  if (!reviews.length) return { lens, agent, model: model ?? null, precision: null, hits: 0, triaged: 0, rejection_categories: [] }
+  const emptyGrades = () => ({
+    reproduced: gradeDistribution([], 'reproduced', REVIEW_REPRODUCED, false),
+    coverage: gradeDistribution([], 'coverage', REVIEW_COVERAGE, false),
+    limits: gradeDistribution([], 'limits', REVIEW_LIMITS, false),
+    overlap: gradeDistribution([], 'overlap', REVIEW_OVERLAP, false),
+  })
+  if (!reviews.length) return { lens, agent, model: model ?? null, precision: null, hits: 0, triaged: 0, rejection_categories: [], ...emptyGrades() }
   const ids = reviews.map((r) => r.id)
   const marks = ids.map(() => '?').join(',')
   const counts = database.query(
@@ -201,9 +268,19 @@ function calibrationCell(
   ).all(...ids, lens, agent, ...(model === undefined ? [] : [model])) as { category: string; count: number }[]
   const triaged = counts.triaged ?? 0
   const hits = counts.hits ?? 0
+  const gradeRows = database.query(
+    `SELECT reproduced, coverage, limits, overlap FROM review_lens rl
+      WHERE rl.review_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}`,
+  ).all(...ids, lens, agent, ...(model === undefined ? [] : [model])) as Record<string, unknown>[]
+  const sharesVisible = triaged >= MIN_REVIEW_TRIAGED
   return { lens, agent, model: model ?? null,
     precision: triaged >= MIN_REVIEW_TRIAGED ? hits / triaged : null,
-    hits, triaged, rejection_categories: categories }
+    hits, triaged, rejection_categories: categories,
+    reproduced: gradeDistribution(gradeRows, 'reproduced', REVIEW_REPRODUCED, sharesVisible),
+    coverage: gradeDistribution(gradeRows, 'coverage', REVIEW_COVERAGE, sharesVisible),
+    limits: gradeDistribution(gradeRows, 'limits', REVIEW_LIMITS, sharesVisible),
+    overlap: gradeDistribution(gradeRows, 'overlap', REVIEW_OVERLAP, sharesVisible),
+  }
 }
 
 export function reviewCalibration(
@@ -217,14 +294,20 @@ export function reviewCalibration(
 }
 
 export function calibrationLine(calibration: ReviewCalibration): string {
+  const gradeSummary = (name: keyof Pick<ReviewCalibration, 'reproduced' | 'coverage' | 'limits' | 'overlap'>) => {
+    const distribution = calibration[name]
+    const counts = Object.entries(distribution.counts).map(([value, count]) => `${value} ${count}`).join(', ')
+    return `${name}: ${counts}; ungraded ${distribution.ungraded}`
+  }
+  const grades = ` Review grades: ${gradeSummary('reproduced')}; ${gradeSummary('coverage')}; ${gradeSummary('limits')}; ${gradeSummary('overlap')}.`
   if (calibration.precision === null) {
-    return `Reviewer calibration: no reliable precision yet for lens ${calibration.lens} on agent ${calibration.agent}.`
+    return `Reviewer calibration: no reliable precision yet for lens ${calibration.lens} on agent ${calibration.agent}.${grades}`
   }
   const rejected = calibration.rejection_categories.length
     ? ` Frequent rejection categories: ${calibration.rejection_categories.map((x) => `${x.category} (${x.count})`).join(', ')}.`
     : ''
   const scope = calibration.basis === 'model' ? `model ${calibration.model}` : 'all models'
-  return `Reviewer calibration: lens ${calibration.lens} on agent ${calibration.agent} (${scope}) has precision ${calibration.precision.toFixed(2)} over ${calibration.triaged} triaged findings.${rejected}`
+  return `Reviewer calibration: lens ${calibration.lens} on agent ${calibration.agent} (${scope}) has precision ${calibration.precision.toFixed(2)} over ${calibration.triaged} triaged findings.${rejected}${grades}`
 }
 
 /** Reserved during routing so argv eligibility remains true after calibration is appended. */

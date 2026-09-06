@@ -10,6 +10,22 @@ import {
 export { label } from './outcome.ts'
 export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
 
+/**
+ * Architect-graded review evidence. Keep the closed vocabularies here: the
+ * schema, CLI hints and refusals all import these values instead of copying
+ * strings that can drift apart.
+ */
+export const REVIEW_REPRODUCED = ['none', 'some', 'all'] as const
+export const REVIEW_COVERAGE = ['empty', 'partial', 'adequate'] as const
+export const REVIEW_LIMITS = ['named', 'absent'] as const
+export const REVIEW_OVERLAP = ['unique', 'shared', 'none', 'alone'] as const
+export type ReviewReproduced = typeof REVIEW_REPRODUCED[number]
+export type ReviewCoverage = typeof REVIEW_COVERAGE[number]
+export type ReviewLimits = typeof REVIEW_LIMITS[number]
+export type ReviewOverlap = typeof REVIEW_OVERLAP[number]
+
+const sqlValues = (values: readonly string[]) => values.map((value) => `'${value}'`).join(',')
+
 let handle: Database | null = null
 let writable: boolean | null = null
 
@@ -262,6 +278,7 @@ export function applySchema(d: Database): void {
   // by orch immediately before the vendor process starts.
   addColumn(d, 'run', 'input_tree', 'TEXT')
   addColumn(d, 'review_lens', 'reviewed_tree', 'TEXT')
+  addColumn(d, 'review_finding', 'triaged_severity', 'TEXT')
   // A completed target task must keep its provenance. NULL is still active;
   // an ISO timestamp is resolved, so absence never has to stand for completion.
   addColumn(d, 'port_ref', 'resolved_at', 'TEXT')
@@ -601,7 +618,11 @@ const REVIEW_LENS_DDL = `CREATE TABLE review_lens (
       standards_read TEXT NOT NULL,
       files_covered TEXT NOT NULL,
       commands_run TEXT NOT NULL,
-      could_not_verify TEXT NOT NULL
+      could_not_verify TEXT NOT NULL,
+      reproduced TEXT CHECK (reproduced IS NULL OR reproduced IN (${sqlValues(REVIEW_REPRODUCED)})),
+      coverage TEXT CHECK (coverage IS NULL OR coverage IN (${sqlValues(REVIEW_COVERAGE)})),
+      limits TEXT CHECK (limits IS NULL OR limits IN (${sqlValues(REVIEW_LIMITS)})),
+      overlap TEXT CHECK (overlap IS NULL OR overlap IN (${sqlValues(REVIEW_OVERLAP)}))
     )`
 
 const LANDING_OVERRIDE_DDL = `CREATE TABLE landing_override (
@@ -953,6 +974,7 @@ function migrate(d: Database) {
       proposed_correction TEXT NOT NULL,
       disposition TEXT CHECK (disposition IS NULL OR disposition IN ('accepted','modified','rejected','skipped')),
       rejection_category TEXT,
+      triaged_severity TEXT,
       triaged_at TEXT,
       UNIQUE(review_id, ordinal),
       CHECK (disposition = 'rejected' OR rejection_category IS NULL)

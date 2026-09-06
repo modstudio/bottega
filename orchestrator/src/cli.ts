@@ -1,5 +1,7 @@
 import { DATABASE_RESOLUTION, DB_PATH, db, nowIso, sessionId, judgeability, pendingForSession, unscoredCount, weigh,
          DELIVERY, QUALITY, FIDELITY, type Delivery, type Quality, type Fidelity,
+         REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP,
+         type ReviewReproduced, type ReviewCoverage, type ReviewLimits, type ReviewOverlap,
          reapStale, pidAlive, STALE_AFTER_MS, UNSCORED_WHERE, recordDuels, duelMatrices,
          parseRunIds, recordSessionSeen, SESSION_LIVE_MS,
          resolveRootFromLastTurn } from './db.ts'
@@ -24,8 +26,8 @@ import { WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE, contractConflicts
 import { collectResult, collectWait, resolveFailover, failoverSummary } from './collect.ts'
 import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
 import { flagValue, flagValues, validateCliArgs } from './args.ts'
-import { completeReview, DISPOSITIONS, parseReviewOutput, recordReviews,
-         reviewCalibration, triageFinding, type Disposition } from './review.ts'
+import { completeReview, DISPOSITIONS, gradeReviewLens, parseReviewOutput, recordReviews,
+         reviewCalibration, triageFinding, type Disposition, type ReviewGrades } from './review.ts'
 import { composeWorkflow, exportWorkflows, forkWorkflow, getWorkflowStep, importWorkflows,
          listWorkflows, promoteWorkflow, retireWorkflow, setWorkflow, showWorkflow,
          workflowVersions } from './workflows.ts'
@@ -81,11 +83,19 @@ function cliVersion(bin: string): { display: string; parsed: string | null } {
  */
 function scoreHint(id: number, jobName: string, parent: number | null): string {
   const target = parent ?? id
-  const writes = Boolean(JOBS[jobName]?.needs.writesRepo)
   return `orch score ${target} <none|partial|full> [wrong|mixed|right]`
-    + (writes ? ' [drifted|partial|faithful]' : '')
+    + scoreSuffix(jobName)
     + ' --note "..."'
     + (parent ? `   # the whole conversation, not turn ${id}` : '')
+}
+
+function scoreSuffix(jobName: string): string {
+  const writes = Boolean(JOBS[jobName]?.needs.writesRepo)
+  const reviewGrades = JOBS[jobName]?.findings
+    ? ` [--reproduced ${REVIEW_REPRODUCED.join('|')}] [--coverage ${REVIEW_COVERAGE.join('|')}]` +
+      ` [--limits ${REVIEW_LIMITS.join('|')}] [--overlap ${REVIEW_OVERLAP.join('|')}]`
+    : ''
+  return (writes ? ' [drifted|partial|faithful]' : '') + reviewGrades
 }
 
 /**
@@ -268,7 +278,8 @@ const has = (n: string) => argv.includes(`--${n}`)
 /** Flags that consume the next argument. Anything else is a boolean switch. */
 const VALUE_FLAGS = new Set(['--agent', '--file', '--schema', '--model', '--note', '--message', '--unreviewed',
                              '--id', '--job', '--limit', '--port', '--days', '--window', '--timeout', '--scorer',
-                             '--seed', '--key', '--repo', '--base', '--avoid', '--distinct-from', '--label', '--lens', '--category',
+                             '--seed', '--key', '--repo', '--base', '--avoid', '--distinct-from', '--label', '--lens', '--category', '--severity',
+                             '--reproduced', '--coverage', '--limits', '--overlap',
                              '--better-than', '--n', '--scope', '--subject', '--title', '--cwd'])
 
 type CleanupRow = {
@@ -703,6 +714,9 @@ function usage(): never {
   orch score <run-id> <none|partial|full> [wrong|mixed|right] [--note "..."]
       delivery first (did an answer arrive), then quality (was it right).
       'none' takes no quality — there was nothing to judge.
+      findings-producing lenses with an answer also require:
+      --reproduced <${REVIEW_REPRODUCED.join('|')}> --coverage <${REVIEW_COVERAGE.join('|')}>
+      --limits <${REVIEW_LIMITS.join('|')}> --overlap <${REVIEW_OVERLAP.join('|')}>
       only the session that MADE a run may score it; --force overrides.
       --better-than <id>[,<id>] record this run winning a pairwise comparison
       --scorer <who>            a person judged it from a UI: records who, and
@@ -718,6 +732,7 @@ function usage(): never {
   orch review record <run-id>... record completed lens outputs before triage
   orch review triage <review-id> <finding> <accepted|modified|rejected|skipped>
       --category <name>         required rejection category for rejected findings
+      --severity <level>        architect severity when it differs from the lens
   orch review complete <review-id> mark a fully triaged review complete
   orch review calibration <lens> <agent> <model> [--json]  (--json: one JSON document)
   orch pending                  runs YOU made that are still unscored (exit 1 if any)
@@ -1725,9 +1740,9 @@ switch (cmd) {
       const finding = Number(argv[3])
       const disposition = argv[4] as Disposition
       if (!reviewId || !finding || !DISPOSITIONS.includes(disposition)) {
-        throw new Error('orch review triage <review-id> <finding> <accepted|modified|rejected|skipped> [--category X]')
+        throw new Error('orch review triage <review-id> <finding> <accepted|modified|rejected|skipped> [--category X] [--severity LEVEL]')
       }
-      triageFinding(reviewId, finding, disposition, flag('category'))
+      triageFinding(reviewId, finding, disposition, flag('category'), flag('severity'))
       console.log(`triaged review ${reviewId} finding ${finding}: ${disposition}`)
       break
     }
@@ -1744,10 +1759,22 @@ switch (cmd) {
       const model = argv[4]
       if (!lens || !agent || !model) throw new Error('orch review calibration <lens> <agent> <model> [--json]')
       const calibration = reviewCalibration(lens, agent, model)
-      console.log(has('json') ? JSON.stringify(calibration) :
-        calibration.precision === null
+      if (has('json')) {
+        console.log(JSON.stringify(calibration))
+      } else {
+        console.log(calibration.precision === null
           ? `${lens}/${agent}: insufficient evidence (${calibration.triaged} triaged)`
           : `${lens}/${agent}: ${calibration.precision.toFixed(2)} (${calibration.hits}/${calibration.triaged}, ${calibration.basis})`)
+        for (const name of ['reproduced', 'coverage', 'limits', 'overlap'] as const) {
+          const distribution = calibration[name]
+          const cells = Object.keys(distribution.counts).map((value) => {
+            const count = distribution.counts[value as keyof typeof distribution.counts]
+            const share = distribution.shares[value as keyof typeof distribution.shares]
+            return `${value}=${count}` + (share === null ? '' : ` (${(share * 100).toFixed(0)}%)`)
+          })
+          console.log(`  ${name}: ${cells.join(', ')}, ungraded=${distribution.ungraded}`)
+        }
+      }
       break
     }
     throw new Error(`unknown: orch review${sub ? ` ${sub}` : ''}. Try record | triage | complete | calibration`)
@@ -1829,7 +1856,7 @@ switch (cmd) {
   }
 
   case 'result': {
-    collectResult(db(), argv, (jobName) => Boolean(JOBS[jobName]?.needs.writesRepo))
+    collectResult(db(), argv, scoreSuffix)
     break
   }
 
@@ -3032,13 +3059,13 @@ switch (cmd) {
     if (!requestedId) usage()
     const row = db().query(
       `SELECT root.id, root.agent, root.job, root.session_id, root.parent_run_id,
-              root.failure_kind
+              root.failure_kind, root.output_path
          FROM run requested
          JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
         WHERE requested.id = ?`,
     ).get(requestedId) as
       | { id: number; agent: string; job: string; session_id: string | null
-          parent_run_id: number | null; failure_kind: FailureKind | null } | null
+          parent_run_id: number | null; failure_kind: FailureKind | null; output_path: string | null } | null
     if (!row) throw new Error(`no run ${requestedId}`)
     const id = row.id
     if (row.agent === '(pending)') {
@@ -3151,6 +3178,50 @@ switch (cmd) {
     }
     const scoredFidelity = needsFidelity ? fidelity : undefined
 
+    let reviewGrade: { output: ReturnType<typeof parseReviewOutput>; grades: ReviewGrades } | null = null
+    if (job(row.job).findings && delivery !== 'none') {
+      const existing = db().query(
+        `SELECT rl.id, COUNT(rf.id) AS findings
+           FROM review_lens rl LEFT JOIN review_finding rf ON rf.review_lens_id=rl.id
+          WHERE rl.run_id=? GROUP BY rl.id`,
+      ).get(id) as { id: number; findings: number } | null
+      let output: ReturnType<typeof parseReviewOutput> = null
+      if (!existing) {
+        if (!row.output_path || !existsSync(row.output_path)) {
+          throw new Error(`run ${id} has no recorded output to capture as a review`)
+        }
+        output = parseReviewOutput(readFileSync(row.output_path, 'utf8'))
+        if (!output) throw new Error(`run ${id} output does not satisfy the review contract`)
+      }
+      const findings = existing?.findings ?? output!.findings.length
+      const raw: Record<keyof ReviewGrades, string | undefined> = {
+        reproduced: flag('reproduced'), coverage: flag('coverage'),
+        limits: flag('limits'), overlap: flag('overlap'),
+      }
+      if (findings === 0) {
+        raw.reproduced ??= 'none'
+        raw.overlap ??= 'none'
+        if (raw.reproduced !== 'none' || raw.overlap !== 'none') {
+          throw new Error("a lens with findings:[] has --reproduced none and --overlap none")
+        }
+      }
+      const valid =
+        raw.reproduced && REVIEW_REPRODUCED.includes(raw.reproduced as ReviewReproduced) &&
+        raw.coverage && REVIEW_COVERAGE.includes(raw.coverage as ReviewCoverage) &&
+        raw.limits && REVIEW_LIMITS.includes(raw.limits as ReviewLimits) &&
+        raw.overlap && REVIEW_OVERLAP.includes(raw.overlap as ReviewOverlap)
+      if (!valid) {
+        throw new Error(
+          `${row.job} grading requires architect review fields:\n` +
+          `  --reproduced ${REVIEW_REPRODUCED.join(' | ')}\n` +
+          `  --coverage   ${REVIEW_COVERAGE.join(' | ')}\n` +
+          `  --limits     ${REVIEW_LIMITS.join(' | ')}\n` +
+          `  --overlap    ${REVIEW_OVERLAP.join(' | ')}`,
+        )
+      }
+      reviewGrade = { output, grades: raw as ReviewGrades }
+    }
+
     const betterThan = flag('better-than')
     const loserIds = betterThan === undefined ? [] : parseRunIds(betterThan, '--better-than')
     if (loserIds.length) {
@@ -3158,8 +3229,10 @@ switch (cmd) {
     }
 
     const scoredAt = nowIso()
-    db().query(
-      `INSERT INTO score (run_id, delivery, quality, fidelity, note, scored_at, scored_by)
+    const saveScore = db().transaction(() => {
+      if (reviewGrade) gradeReviewLens(id, reviewGrade.output, reviewGrade.grades)
+      db().query(
+        `INSERT INTO score (run_id, delivery, quality, fidelity, note, scored_at, scored_by)
        VALUES (?,?,?,?,?,?,?)
        ON CONFLICT(run_id) DO UPDATE SET delivery=excluded.delivery, quality=excluded.quality,
                                          fidelity=excluded.fidelity,
@@ -3172,8 +3245,10 @@ switch (cmd) {
                                              excluded.scored_at || ' ---\n' || excluded.note
                                          END,
                                          scored_at=excluded.scored_at`,
-    ).run(id, delivery, quality ?? null, scoredFidelity ?? null, flag('note') ?? null, scoredAt,
-          scorer ?? process.env.ORCH_SCORER ?? 'claude')
+      ).run(id, delivery, quality ?? null, scoredFidelity ?? null, flag('note') ?? null, scoredAt,
+            scorer ?? process.env.ORCH_SCORER ?? 'claude')
+    })
+    saveScore()
     const w = weigh(delivery, quality ?? null, scoredFidelity ?? null)
     const axes = [delivery, quality, scoredFidelity].filter(Boolean).join(' ')
     console.log(

@@ -106,11 +106,10 @@ function dur(ms: number | null | undefined): string {
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`
 }
 
-function scoreHint(id: number, jobName: string, parent: number | null, writesRepo: (job: string) => boolean): string {
+function scoreHint(id: number, jobName: string, parent: number | null, scoreSuffix: (job: string) => string): string {
   const target = parent ?? id
-  const writes = writesRepo(jobName)
   return `orch score ${target} <none|partial|full> [wrong|mixed|right]`
-    + (writes ? ' [drifted|partial|faithful]' : '')
+    + scoreSuffix(jobName)
     + ' --note "..."'
     + (parent ? `   # the whole conversation, not turn ${id}` : '')
 }
@@ -160,7 +159,7 @@ function partialOutputDocument(row: {
 }
 
 export function collectResult(
-  database: Database, argv: string[], writesRepo: (job: string) => boolean = () => false,
+  database: Database, argv: string[], scoreSuffix: (job: string) => string = () => '',
 ): void {
   const unknown = argv.slice(2).find((arg) => arg !== '--quiet')
   if (unknown) {
@@ -225,7 +224,7 @@ export function collectResult(
     console.error(
       `\n— run ${row.id} · ${row.agent} · ${dur(row.latency_ms)}` +
         (row.vendor_tokens ? ` · ${row.vendor_tokens.toLocaleString()} vendor tokens` : '') +
-        `\n  score it:  ${scoreHint(row.id, row.job, row.parent_run_id, writesRepo)}` +
+        `\n  score it:  ${scoreHint(row.id, row.job, row.parent_run_id, scoreSuffix)}` +
         baseNote + mcpNote(row) + evidenceNote(row),
     )
   }
