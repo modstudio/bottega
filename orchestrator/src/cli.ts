@@ -1800,7 +1800,7 @@ switch (cmd) {
   }
 
   case 'canon': {
-    const { allInjectChecks, compilePack, diffPack, findingsForPack } = await import('./canon.ts')
+    const { allInjectChecks, allNumericLiterals, compilePack, diffPack, findingsForPack } = await import('./canon.ts')
     const sub = argv[1]
     const cwd = flag('cwd') ?? process.cwd()
     const jobName = flag('job') ?? 'understand'
@@ -1838,14 +1838,19 @@ switch (cmd) {
       const pack = compilePack({ job: jobName, cwd })
       const rows = has('all') ? allInjectChecks() : findingsForPack(pack)
       const findings = rows.flatMap((row) => row.findings.map((finding) => ({ doc: row.doc, ...finding })))
+      const numericLiterals = allNumericLiterals(cwd).filter((hit) => hit.classification === 'RESTATED')
       const result = { pack: { job: pack.job, project: pack.project, bytes: pack.bytes,
-        budgetBytes: pack.budgetBytes, sha256: pack.sha256 }, docs: rows, findings }
+        budgetBytes: pack.budgetBytes, sha256: pack.sha256 }, docs: rows, findings, numericLiterals }
       if (has('json')) console.log(JSON.stringify(result))
       else {
         console.log(`canon: ${pack.bytes}/${pack.budgetBytes} bytes`)
         for (const row of rows.filter((row) => row.findings.length)) {
           console.log(`${row.doc.scope}/${row.doc.subject ?? '_'}/${row.doc.slug} revision ${row.doc.revisionId}`)
           for (const finding of row.findings) console.log(`  ${finding.kind}: ${finding.message}`)
+        }
+        console.log('numeric literals')
+        for (const hit of numericLiterals) {
+          console.log(`  ${hit.source}  ${hit.numeral}  ${hit.sentence}`)
         }
       }
       if (findings.length) process.exitCode = 1

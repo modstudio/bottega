@@ -1418,7 +1418,7 @@ const importDocs = (dir: string, context = { reason: 'test import' }) => readDoc
 const { createDocsMcpServer, fileIssue } = await import('./mcp.ts')
 const { setWorkflow, promoteWorkflow } = await import('./workflows.ts')
 const { compilePack, compileBrief, checkDoc, CanonBudgetError, recordPack, diffPack,
-        allInjectChecks } = await import('./canon.ts')
+        allInjectChecks, allNumericLiterals, numericLiteralReport } = await import('./canon.ts')
 const { deadRunningProcessConditions, reconcileHub, rulingConditions, monitorHistory, monitor } =
   await import('./monitor.ts')
 const { listPairs, addPair, baselineForPair, setBaseline, listSkips, addSkip,
@@ -20839,6 +20839,54 @@ describe('scoped operator docs', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  test('numeric literal report classifies prose values and excludes reference syntax and code', () => {
+    const report = numericLiteralReport([
+      'The suite currently has 6,676 tests and uses Bun 1.2.3.',
+      'The default is 5 and this policy defines and enforces the threshold of 15.',
+      'The gate asserts 170 characters and refuses 51 lines.',
+      'Run 1565 measured',
+      '36,058 rows.',
+      'The command uses --port=7778 and exits 0 on success.',
+      'The server currently uses localhost:5432.',
+      'Ignore DEV-307, 2026-09-06, 13:20, (file.ts:42), path/file:43, lines 19-21, and `port 8888`.',
+      '```',
+      'hidden 9000',
+      '```',
+    ].join('\n'), 'fixture')
+    expect(report.map(({ numeral, classification }) => [numeral, classification])).toEqual([
+      ['6,676', 'RESTATED'], ['1.2.3', 'RESTATED'],
+      ['5', 'OWNED'], ['15', 'OWNED'],
+      ['170', 'CHECKED'], ['51', 'CHECKED'],
+      ['1565', 'EVIDENCE'], ['36,058', 'EVIDENCE'],
+      ['7778', 'OWNED'], ['0', 'OWNED'],
+      ['5432', 'RESTATED'],
+    ])
+    expect(report.every((hit) => hit.source === 'fixture')).toBe(true)
+  })
+
+  test('numeric report scans register notes and only the five declared canon files', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'numeric-canon-'))
+    try {
+      Bun.spawnSync(['git', 'init', '-b', 'main'], { cwd: repo, env: hermeticGitEnv() })
+      const canon = ['AGENTS.md', 'orchestrator/AGENTS.md', 'hub/AGENTS.md', 'ops/AGENTS.md',
+        'local-stack/AGENTS.md']
+      for (const [index, file] of canon.entries()) {
+        mkdirSync(dirname(join(repo, file)), { recursive: true })
+        writeFileSync(join(repo, file), `The current suite has ${index + 10} tests.\n`)
+      }
+      mkdirSync(join(repo, 'nested'), { recursive: true })
+      writeFileSync(join(repo, 'nested', 'AGENTS.md'), 'The current suite has 999 tests.\n')
+      upsertProject({ name: 'registered', path: repo, canon: true,
+        settings: { worktree: { notes: 'The current port is 7000.' } } })
+      const report = allNumericLiterals(repo).filter((hit) => hit.classification === 'RESTATED')
+      expect(report.map((hit) => hit.source)).toEqual([
+        'register:registered notes', 'AGENTS.md:1', 'orchestrator/AGENTS.md:1',
+        'hub/AGENTS.md:1', 'ops/AGENTS.md:1', 'local-stack/AGENTS.md:1',
+      ])
+      expect(report.map((hit) => hit.numeral)).toEqual(['7000', '10', '11', '12', '13', '14'])
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   test('canon pack upsert and diff retain removed docs, revisions, and byte delta', () => {
     setDoc({ scope: 'global', subject: null, slug: 'one', title: 'One', body: 'one' })
     setDoc({ scope: 'global', subject: null, slug: 'two', title: 'Two', body: 'two' })
@@ -20925,17 +20973,23 @@ describe('scoped operator docs', () => {
       env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
       stdout: 'pipe', stderr: 'pipe',
     })
+    upsertProject({ name: 'canon-cli', path: dir, canon: true,
+      settings: { worktree: { notes: 'The current suite has 9,999 tests.' } } })
     setDoc({ scope: 'global', subject: null, slug: 'bad', title: 'Bad', body: '`orch nosuch`' })
     const bad = invoke()
     expect(bad.exitCode).toBe(1)
     expect(JSON.parse(bad.stdout.toString())).toMatchObject({
       pack: { job: 'understand', bytes: expect.any(Number), budgetBytes: 96 * 1024 },
       findings: [{ kind: 'orch-command', token: 'orch nosuch' }],
+      numericLiterals: [expect.objectContaining({
+        source: 'register:canon-cli notes', numeral: '9,999', classification: 'RESTATED',
+      })],
     })
     setDoc({ scope: 'global', subject: null, slug: 'bad', title: 'Good', body: '`orch doc`' })
     const good = invoke()
     expect(good.exitCode).toBe(0)
     expect(JSON.parse(good.stdout.toString()).findings).toEqual([])
+    expect(JSON.parse(good.stdout.toString())).toContainKey('numericLiterals')
   })
 
   test('first-turn bound prompts inject docs and count them; resumes do neither', async () => {

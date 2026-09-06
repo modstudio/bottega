@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { CONCERNS } from '../../shared/brand.ts'
 import { isCliCommand } from './args.ts'
 import { db, linkedWorktreeReadOnly, nowIso, writeTransaction } from './db.ts'
 import { type Doc, docsForRun, docsMarkdown, listDocs } from './docs.ts'
 import { DEFAULT_PACK_BYTES, JOBS, job as getJob } from './jobs.ts'
-import { projectAt, projectByName } from './projects.ts'
+import { projectAt, projectByName, projects } from './projects.ts'
 import { targetGitEnvironment } from './worktree.ts'
 
 export const BRIEF_BYTES = 64 * 1024
@@ -39,6 +40,123 @@ export type Finding = {
   token: string
   line: number
   message: string
+}
+
+export type NumericLiteralClass = 'RESTATED' | 'OWNED' | 'CHECKED' | 'EVIDENCE'
+
+export type NumericLiteral = {
+  source: string
+  line: number
+  sentence: string
+  numeral: string
+  classification: NumericLiteralClass
+}
+
+const NUMERAL = /(?<![\w])~?[+-]?\d[\d,]*(?:\.\d+)*(?:%|\+)?/g
+const EXCLUDED_NUMERIC_FORMS = [
+  /\b[A-Z][A-Z0-9]+-\d+\b/g,
+  /\b\d{4}-\d{2}-\d{2}\b/g,
+  /\b\d{1,2}:\d{2}(?::\d{2})?\b/g,
+  /(?:^|[^\w./-])(?:[\w.-]+\/)+[\w.-]+:\d+(?::\d+)?(?:-\d+)?\b|(?:^|[^\w./-])[\w-]+\.[A-Za-z][\w.-]*:\d+(?::\d+)?(?:-\d+)?\b/g,
+  /\blines?\s+\d+(?:-\d+)?\b/gi,
+]
+
+function overlaps(start: number, end: number, ranges: { start: number; end: number }[]): boolean {
+  return ranges.some((range) => start < range.end && end > range.start)
+}
+
+function numericClass(sentence: string, numeral: string): NumericLiteralClass {
+  if (/\bmeasur(?:e[ds]?|ing)\b|\brun\s+(?:id\s*:?\s*)?#?\d|\b(?:as of|observed|verified|recorded|evidence)\b|\b(?:19|20)\d{2}\b/i.test(sentence)) {
+    return 'EVIDENCE'
+  }
+  if (/\bthe gate\b|\basserts?\b|\brefuses?\b|\bcheck(?:s|ed|ing)?\b/i.test(sentence)) return 'CHECKED'
+  const escaped = numeral.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  if (
+    /\bdefaults?\b|\btier\s+\d/i.test(sentence) ||
+    /^\s*\|.*\|\s*$/.test(sentence) ||
+    /\b(?:defines?|owns?|enforces?|requires?|sets?)\b[^.!?]{0,80}\bthreshold\b|\bthreshold\b[^.!?]{0,80}\b(?:enforces?|required|must)\b/i.test(sentence) ||
+    /\bonly\s+(?:once|after|when)\b|\bmost recent\s+\d/i.test(sentence) ||
+    new RegExp(`--[\\w-]+=${escaped}(?![\\d.])`, 'i').test(sentence) ||
+    new RegExp(`\\bexit(?:s|ed)?(?:\\s+(?:status|code))?\\s+${escaped}\\b`, 'i').test(sentence) ||
+    new RegExp(`(?:at (?:most|least)|no (?:more|fewer) than|exactly|maximum|min(?:imum)?|limit(?:ed)? to)\\s+${escaped}`, 'i').test(sentence)
+  ) return 'OWNED'
+  return 'RESTATED'
+}
+
+/** Classify prose numerals without consulting the filesystem or database. */
+export function numericLiteralReport(text: string, source: string): NumericLiteral[] {
+  const hits: NumericLiteral[] = []
+  let fenced = false
+  const masked = text.split('\n').map((raw) => {
+    const line = raw.replace(/\r$/, '')
+    if (/^\s*(?:```|~~~)/.test(line)) {
+      fenced = !fenced
+      return ' '.repeat(raw.length)
+    }
+    return fenced ? ' '.repeat(raw.length) : line.replace(/`[^`]*`/g, (code) => ' '.repeat(code.length))
+  }).join('\n')
+  const sentenceStarts = [0]
+  for (let index = 0; index < masked.length; index++) {
+    const paragraphEnd = masked[index] === '\n' && masked[index + 1] === '\n'
+    const punctuationEnd = /[.!?]/.test(masked[index]!) &&
+      (index === masked.length - 1 || /\s/.test(masked[index + 1]!))
+    if (paragraphEnd || punctuationEnd) sentenceStarts.push(index + 1)
+  }
+  for (let part = 0; part < sentenceStarts.length; part++) {
+    const sentenceStart = sentenceStarts[part]!
+    const sentenceEnd = sentenceStarts[part + 1] ?? masked.length
+    const sentenceVisible = masked.slice(sentenceStart, sentenceEnd)
+    const ranges = EXCLUDED_NUMERIC_FORMS.flatMap((pattern) =>
+      [...sentenceVisible.matchAll(pattern)].map((match) => ({
+        start: match.index,
+        end: match.index + match[0].length,
+      })),
+    )
+    for (const match of sentenceVisible.matchAll(NUMERAL)) {
+      if (overlaps(match.index, match.index + match[0].length, ranges)) continue
+      const absolute = sentenceStart + match.index
+      const sentence = text.slice(sentenceStart, sentenceEnd).replace(/\s+/g, ' ').trim()
+      hits.push({
+        source,
+        line: text.slice(0, absolute).split('\n').length,
+        sentence,
+        numeral: match[0],
+        classification: numericClass(sentence, match[0]),
+      })
+    }
+  }
+  return hits
+}
+
+function checkoutRoot(cwd: string): string | null {
+  const result = Bun.spawnSync(['git', 'rev-parse', '--show-toplevel'], {
+    cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
+  })
+  return result.exitCode === 0 ? result.stdout.toString().trim() : null
+}
+
+/** The report is deliberately broader than the pack and deliberately never refuses. */
+export function allNumericLiterals(cwd: string): NumericLiteral[] {
+  const report = projects().flatMap((project) => {
+    const worktree = project.settings.worktree
+    return [
+      ...(worktree?.notes
+        ? numericLiteralReport(worktree.notes, `register:${project.name} notes`) : []),
+      ...(worktree?.readonly_notes
+        ? numericLiteralReport(worktree.readonly_notes, `register:${project.name} readonly_notes`) : []),
+    ]
+  })
+  const root = checkoutRoot(cwd)
+  if (!root) return report
+  const files = ['AGENTS.md', ...CONCERNS.map((concern) => `${concern}/AGENTS.md`)]
+  for (const file of files) {
+    const path = join(root, file)
+    if (!existsSync(path)) continue
+    report.push(...numericLiteralReport(readFileSync(path, 'utf8'), file).map((hit) => ({
+      ...hit, source: `${file}:${hit.line}`,
+    })))
+  }
+  return report
 }
 
 export class CanonBudgetError extends Error {
