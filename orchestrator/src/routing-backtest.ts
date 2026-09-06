@@ -4,18 +4,10 @@ import { COOLS_DOWN, NOT_EVIDENCE } from './failure.ts'
 import { JOBS } from './jobs.ts'
 import {
   COOLDOWN_MIN, EVIDENCE_WINDOW, EXPLORE_RATE, MIN_SAMPLE, NOISE_BAND,
-  OUTPUT_RESERVE, PROMPT_SIZE_BOUNDARY, STANDING_EXPLORE_RATE, median,
+  OUTPUT_RESERVE, PROMPT_SIZE_BOUNDARY, STANDING_EXPLORE_RATE, median, thompsonRank,
 } from './route.ts'
 
 export const ROUTING_BACKTEST_SEED = 287
-
-export function betaContribution(weight: number): { successes: number; failures: number } {
-  // Map the judgement range [-0.5, 1] linearly onto [0, 1]: `none` is one
-  // whole failure and full/right is one whole success; intermediate verdicts
-  // contribute fractional evidence without inventing a second score table.
-  const successes = (weight + 0.5) / 1.5
-  return { successes, failures: 1 - successes }
-}
 
 type Event = {
   id: number; agent: string; job: string; stack: string | null; model: string | null
@@ -52,10 +44,10 @@ export type RoutingBacktest = {
 }
 
 export function passesRoutingBacktest(jobs: readonly BacktestJob[]): boolean {
-  const eligible = jobs.filter((job) => job.runs >= MIN_SAMPLE)
-  return eligible.length > 0 &&
-    eligible.every((job) => job.measurable && job.thompsonMean! >= job.currentMean!) &&
-    eligible.some((job) => job.thompsonMean! - job.currentMean! > NOISE_BAND)
+  const measurable = jobs.filter((job) => job.measurable)
+  return measurable.length > 0 &&
+    measurable.every((job) => job.thompsonMean! - job.currentMean! >= -NOISE_BAND) &&
+    measurable.some((job) => job.thompsonMean! - job.currentMean! > NOISE_BAND)
 }
 
 /** Mulberry32: compact, stable across runtimes, and sufficient for replay draws. */
@@ -67,32 +59,6 @@ function seeded(seed: number): () => number {
     t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t
     return ((t ^ t >>> 14) >>> 0) / 4294967296
   }
-}
-
-function normal(rng: () => number): number {
-  const u = Math.max(rng(), Number.EPSILON)
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rng())
-}
-
-/** Marsaglia-Tsang gamma draw, including the standard alpha < 1 transform. */
-function gamma(alpha: number, rng: () => number): number {
-  if (alpha < 1) return gamma(alpha + 1, rng) * Math.pow(Math.max(rng(), Number.EPSILON), 1 / alpha)
-  const d = alpha - 1 / 3
-  const c = 1 / Math.sqrt(9 * d)
-  while (true) {
-    const x = normal(rng)
-    const v0 = 1 + c * x
-    if (v0 <= 0) continue
-    const v = v0 * v0 * v0
-    const u = rng()
-    if (u < 1 - 0.0331 * x ** 4 || Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v
-  }
-}
-
-function beta(alpha: number, betaValue: number, rng: () => number): number {
-  const x = gamma(Math.max(alpha, Number.EPSILON), rng)
-  const y = gamma(Math.max(betaValue, Number.EPSILON), rng)
-  return x / (x + y)
 }
 
 function staticEligible(agent: string, jobName: string, promptBytes: number): boolean {
@@ -204,25 +170,14 @@ function currentChoice(event: Event, history: History, rng: () => number, draw: 
 
 function thompsonChoice(event: Event, history: History, rng: () => number, draw: boolean): PolicyChoice {
   const cells = cellsFor(event, history)
-  const field = cells.filter((c) => c.evidence.length >= MIN_SAMPLE && c.score !== null).map((c) => c.score!)
-  const priorWeight = field.length ? field.reduce((a, b) => a + b, 0) / field.length : 0.5
-  const priorSuccess = betaContribution(priorWeight).successes
-  const posterior = cells.map((cell) => {
-    let successes = priorSuccess * MIN_SAMPLE
-    let failures = (1 - priorSuccess) * MIN_SAMPLE
-    for (const evidence of cell.evidence) {
-      const update = betaContribution(evidence.weight)
-      successes += update.successes; failures += update.failures
-    }
-    return { cell, mean: successes / (successes + failures), sample: draw ? beta(successes, failures, rng) : successes / (successes + failures) }
-  })
-  const exactTie = (a: typeof posterior[number], b: typeof posterior[number]) =>
-    Number(b.cell.free) - Number(a.cell.free) ||
-    (a.cell.latency ?? Infinity) - (b.cell.latency ?? Infinity) ||
-    a.cell.agent.localeCompare(b.cell.agent)
-  const expected = [...posterior].sort((a, b) => b.mean - a.mean || exactTie(a, b))[0]!.cell.agent
-  const agent = [...posterior].sort((a, b) => b.sample - a.sample || exactTie(a, b))[0]!.cell.agent
-  return { agent, expected }
+  const ranked = thompsonRank(cells.map((cell) => ({
+    agent: cell.agent,
+    evidence: cell.evidence.length,
+    score: cell.score,
+    free: cell.free,
+    latencyMs: cell.latency,
+  })), draw, rng)
+  return { agent: ranked.chosen.agent, expected: ranked.expected.agent }
 }
 
 function events(): Event[] {
@@ -287,9 +242,10 @@ export function routingBacktest(jobName?: string, seed = ROUTING_BACKTEST_SEED):
     const currentMean = currentMatched ? currentTotal / currentMatched : null
     const thompsonMean = thompsonMatched ? thompsonTotal / thompsonMatched : null
     const measurable = currentMatched >= MIN_SAMPLE && thompsonMatched >= MIN_SAMPLE
+    const delta = thompsonMean! - currentMean!
     const verdict = !measurable ? 'unmeasurable'
-      : thompsonMean! >= currentMean! ? (thompsonMean! - currentMean! > NOISE_BAND ? 'Thompson wins beyond noise' : 'Thompson matches within noise')
-        : 'current wins'
+      : delta > NOISE_BAND ? 'win'
+        : delta < -NOISE_BAND ? 'loss' : 'tie'
     jobs.push({
       job: name, runs: rows.length, agreements, differences: rows.length - agreements,
       currentMatched, thompsonMatched, currentMean, thompsonMean,

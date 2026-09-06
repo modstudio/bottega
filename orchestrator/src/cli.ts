@@ -3841,6 +3841,16 @@ switch (cmd) {
       if (g.untried.length) console.log(`  untried  ${g.untried.join(', ')}`)
       for (const e of g.excluded) console.log(`  excluded ${e.agent}: ${e.why}`)
       console.log(`  routes to ${g.routesTo}   (${g.reason})`)
+      if (g.backtest) {
+        const delta = g.backtest.measurable
+          ? `${g.backtest.thompsonMean! - g.backtest.currentMean! >= 0 ? '+' : ''}` +
+            `${(g.backtest.thompsonMean! - g.backtest.currentMean!).toFixed(3)} realised score`
+          : 'gain unmeasurable'
+        console.log(
+          `  Thompson backtest ${g.backtest.verdict}: ${delta}; ` +
+          `${(g.backtest.thompsonExplorationShare * 100).toFixed(1)}% exploration`,
+        )
+      }
     }
 
     if (tradeoffs.length) {

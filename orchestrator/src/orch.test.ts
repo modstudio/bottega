@@ -1266,10 +1266,10 @@ const { db, nowIso, reapStale, pendingForSession, unscoredCount, judgeability, S
 initializeDatabase()
 const { candidates, weightCase, scoreboard, median, evidenceFor, pick,
         NOISE_BAND, QUALITY_STEP, MIN_SAMPLE, OUTPUT_RESERVE, EVIDENCE_WINDOW,
-        STANDING_EXPLORE_RATE, PROMPT_SIZE_BOUNDARY, promptSizeBucket } = await import('./route.ts')
+        PROMPT_SIZE_BOUNDARY, promptSizeBucket, betaContribution, thompsonRank } = await import('./route.ts')
 const { guide } = await import('./guide.ts')
 const { gwetAc1 } = await import('./agreement.ts')
-const { betaContribution, passesRoutingBacktest, routingBacktest } = await import('./routing-backtest.ts')
+const { passesRoutingBacktest, routingBacktest } = await import('./routing-backtest.ts')
 const { projects, projectAt, projectByName, stackAt, upsertProject, removeProject } = await import('./projects.ts')
 const {
   missingDatabaseMessage, registeredRepositoryMissingDatabase, resolveDatabase, resolveRunsDirectory,
@@ -3819,14 +3819,15 @@ describe('one score, reported the same everywhere', () => {
     expect(codex.shrunk).toBeCloseTo((1 + MIN_SAMPLE * 0.5) / (1 + MIN_SAMPLE))
   })
 
-  test('pick and guide rank proven agents by shrunk score and report both means', () => {
+  test('pick uses Thompson ranking while guide still reports the descriptive shrunk means', () => {
     judged('codex', 4, 1)
     judged('grok', 31, 9)
     judged('agy', 0, 40)
 
     const routed = pick('review-lens-inline', undefined, 0, false)
     expect(routed.agent).toBe('grok')
-    expect(routed.reason).toContain('78% (shrunk 75%) over 40 judged')
+    expect(routed.reason).toContain('Thompson expected route')
+    expect(routed.reason).toContain('over 40 judged')
 
     const g = guide('review-lens-inline')[0]!
     expect(g.best!.agent).toBe('grok')
@@ -3847,7 +3848,7 @@ describe('one score, reported the same everywhere', () => {
     const pickOut = new TextDecoder().decode(runCli('pick', 'review-lens-inline').stdout)
     const guideOut = new TextDecoder().decode(runCli('guide', '--job', 'review-lens-inline').stdout)
     const statsOut = new TextDecoder().decode(runCli('stats', '--job', 'review-lens-inline').stdout)
-    expect(pickOut).toContain('78% (shrunk 75%) over 40 judged')
+    expect(pickOut).toContain('Thompson expected route')
     expect(pickOut).toContain('score=78% shrunk=75%')
     expect(guideOut).toContain('78% raw,   75% shrunk')
     expect(guideOut).toContain('SHRUNK LEADER (raw: codex)')
@@ -4564,39 +4565,32 @@ describe('the noise band', () => {
 })
 
 describe('routing exploration', () => {
-  test('a wrong answer stays explorable, while delivery-none-only history does not', () => {
-    for (let i = 0; i < MIN_SAMPLE; i++) {
-      score(addRun({ agent: 'codex', job: 'review-lens' }), 'full', 'right')
-    }
-    const wrong = addRun({ agent: 'grok', job: 'review-lens' })
-    score(wrong, 'full', 'wrong')
-
-    const random = Math.random
-    Math.random = () => 0
-    try {
-      expect(pick('review-lens').agent).toBe('grok')
-      db().query("UPDATE score SET delivery='none', quality=NULL WHERE run_id=?").run(wrong)
-      expect(pick('review-lens').agent).toBe('codex')
-    } finally {
-      Math.random = random
-    }
-  })
-
-  test('the standing draw picks a proven non-leader', () => {
+  test('the deterministic expected route spends no Thompson draw', () => {
     for (let i = 0; i < MIN_SAMPLE; i++) {
       score(addRun({ agent: 'codex', job: 'review-lens' }), 'full', 'right')
       score(addRun({ agent: 'grok', job: 'review-lens' }), 'full', 'mixed')
     }
 
     const random = Math.random
-    Math.random = () => STANDING_EXPLORE_RATE / 2
+    Math.random = () => { throw new Error('guide spent a draw') }
     try {
-      const routed = pick('review-lens')
-      expect(routed.agent).toBe('grok')
-      expect(routed.reason).toContain('standing challenger')
+      const routed = pick('review-lens', undefined, 0, false)
+      expect(routed.agent).toBe('codex')
+      expect(routed.reason).toContain('Thompson expected route')
+      expect(guide('review-lens')[0]!.reason).toContain('Thompson expected route')
     } finally {
       Math.random = random
     }
+  })
+
+  test('exact posterior ties use the factual free-then-latency order', () => {
+    const ranked = thompsonRank([
+      { agent: 'slow-free', evidence: 0, score: null, free: true, latencyMs: 200 },
+      { agent: 'fast-paid', evidence: 0, score: null, free: false, latencyMs: 10 },
+      { agent: 'fast-free', evidence: 0, score: null, free: true, latencyMs: 100 },
+    ], false)
+    expect(ranked.expected.agent).toBe('fast-free')
+    expect(ranked.chosen.agent).toBe('fast-free')
   })
 })
 
@@ -5867,6 +5861,18 @@ describe('routing backtest statistics', () => {
       measurable: false, verdict: 'unmeasurable',
     }
     expect(passesRoutingBacktest([sparse])).toBe(false)
+  })
+
+  test('the wiring gate accepts ties within noise plus one win, but rejects one loss', () => {
+    const row = (job: string, delta: number) => ({
+      job, runs: 20, agreements: 10, differences: 10,
+      currentMatched: MIN_SAMPLE, thompsonMatched: MIN_SAMPLE,
+      currentMean: 0.5, thompsonMean: 0.5 + delta,
+      currentExplorationShare: 0, thompsonExplorationShare: 0.25,
+      measurable: true, verdict: Math.abs(delta) <= NOISE_BAND ? 'tie' : delta > 0 ? 'win' : 'loss',
+    })
+    expect(passesRoutingBacktest([row('implement', -NOISE_BAND / 2), row('summarize', NOISE_BAND + 0.01)])).toBe(true)
+    expect(passesRoutingBacktest([row('implement', -NOISE_BAND - 0.01), row('summarize', NOISE_BAND + 0.01)])).toBe(false)
   })
 })
 
