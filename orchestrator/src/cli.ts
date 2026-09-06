@@ -18,7 +18,7 @@ import { candidates, pick, scoreboard, MIN_SAMPLE, promptSizeBucketLabel } from 
 import { guide } from './guide.ts'
 import { repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses,
          implicitReviewWarning, packedResumePrompt, mcpRequestFromStored, storedMcpRequest,
-         type DetachSpec, type McpRequest } from './run.ts'
+         retryModelForAgent, type DetachSpec, type McpRequest } from './run.ts'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync, unlinkSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, timingSafeEqual } from 'node:crypto'
@@ -1253,7 +1253,7 @@ function usage(): never {
                                 replay current routing and Thompson sampling over judgements
   orch wait <run-id>...         block until those runs finish (--timeout SECONDS, default 1800)
   orch result <run-id>          print a finished run's output; exit 2 if still running
-  orch retry <run-id>           re-send a run's exact prompt to the SAME agent
+  orch retry <run-id>           re-send a run's exact prompt [--agent NAME] [--model MODEL]
       --agent <name>            ... or to a different one, deliberately
   orch review tier <branch|run-id|from..to> classify review breadth without writing
   orch review record <run-id>... record completed lens outputs before triage
@@ -2789,7 +2789,7 @@ switch (cmd) {
       agent,
       schema: row.schema_path ?? undefined,
       mcp: mcpRequestFromStored(row.mcp, row.mcp_error),
-      model: row.model ?? undefined,
+      model: retryModelForAgent(row.agent, row.model, agent, flag('model')),
       lens: row.lens ?? undefined,
       probe: !!row.probe, retryOf: id, cwd: row.cwd ?? undefined,
       seed: row.launch_seed ?? undefined, key: row.launch_key ?? undefined,

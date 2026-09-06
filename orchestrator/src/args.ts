@@ -376,7 +376,7 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
     case 'search': return { args: argv.slice(1), shape: shape('orch search <file|function|task-key|text> [--limit N] [--full] [--json]', 1, ['--limit'], ['--full', '--json']) }
     case 'result': return { args: argv.slice(1), shape: shape('orch result <run-id> [--quiet]', 1, [], ['--quiet']) }
     case 'wait': return { args: argv.slice(1), shape: shape('orch wait <run-id>... [--timeout SECONDS]', Infinity, ['--timeout']) }
-    case 'retry': return { args: argv.slice(1), shape: shape('orch retry <run-id> [--agent NAME] [--follow] [--quiet]', 1, ['--agent'], ['--follow', '--detach', '--quiet']) }
+    case 'retry': return { args: argv.slice(1), shape: shape('orch retry <run-id> [--agent NAME] [--model MODEL] [--follow] [--quiet]', 1, ['--agent', '--model'], ['--follow', '--detach', '--quiet']) }
     case 'project': {
       if (topLevelOnly) return { args: [], shape: shape('orch project', 0) }
       const forms: Record<string, CommandShape> = {

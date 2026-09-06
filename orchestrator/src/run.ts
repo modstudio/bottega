@@ -118,6 +118,20 @@ export type DetachSpec = {
   }
 }
 
+/** Resolve retry model affinity when the caller keeps or changes the agent. */
+export function retryModelForAgent(
+  originalAgent: string,
+  originalModel: string | null,
+  retryAgent: string,
+  explicitModel?: string,
+): string | undefined {
+  if (explicitModel !== undefined) return explicitModel
+  if (retryAgent === originalAgent) return originalModel ?? undefined
+  const pin = AGENTS[retryAgent]
+  if (!pin) throw new Error(`unknown agent "${retryAgent}"`)
+  return pin.model
+}
+
 /** Translate the detached wire format into the names run() consumes. */
 export function detachedRunOptions(
   jobName: string, prompt: string, reserveId: number, spec: DetachSpec,

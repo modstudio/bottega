@@ -1669,7 +1669,7 @@ const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePaths, pr
         changedRegisteredCheckouts, checkoutAliases, checkoutCaseSensitivity,
         retargetRepositoryPrompt, retargetRepositoryPromptForDispatch,
         packedResumePrompt, resolveReviewTarget, implicitReviewWarning, mcpRequestFromStored,
-        run: runJob } = await import('./run.ts')
+        retryModelForAgent, run: runJob } = await import('./run.ts')
 const run = runJob
 const {
   CANON_EVALS, CANON_EVAL_LENS, TRACKED_EVAL_PATH, UNTRACKED_EVAL_PATH,
@@ -5367,6 +5367,13 @@ describe('what the views print beside a percentage', () => {
 })
 
 describe('retry keeps the work on the same agent', () => {
+  test('a changed retry agent uses its pin unless an explicit model overrides it', () => {
+    expect(retryModelForAgent('grok', 'grok-4.6', 'grok')).toBe('grok-4.6')
+    expect(retryModelForAgent('grok', 'grok-4.6', 'codex')).toBe(AGENTS.codex!.model)
+    expect(retryModelForAgent('grok', 'grok-4.6', 'codex', 'explicit-model'))
+      .toBe('explicit-model')
+  })
+
   test('a retry is linked to what it re-attempts', () => {
     const first = addRun({ agent: 'codex', job: 'review-lens', status: 'failed' })
     const second = addRun({ agent: 'codex', job: 'review-lens' })
