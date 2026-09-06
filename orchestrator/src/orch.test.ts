@@ -1396,8 +1396,7 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       )
       expect(await unresolved.exited).not.toBe(0)
       expect(await new Response(unresolved.stderr).text()).toContain(
-        'cannot resolve the owning chain of discarded-owner; ' +
-        'land by run id, or discard the stale chains',
+        'cannot resolve the owning chain of discarded-owner (runs ',
       )
 
       const old = addRun({
