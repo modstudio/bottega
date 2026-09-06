@@ -5897,6 +5897,70 @@ describe('routing backtest statistics', () => {
     )
   })
 
+  test('unscored successful latency reaches the replay tie-break at completion', () => {
+    const seed = 1
+    const base = Date.parse('2026-01-01T00:00:00.000Z')
+    let tick = 0
+    let prior: Record<string, number> = {}
+    const choiceAdded = (next: Record<string, number>) => {
+      const agents = new Set([...Object.keys(prior), ...Object.keys(next)])
+      return [...agents].find((agent) => (next[agent] ?? 0) - (prior[agent] ?? 0) === 1)!
+    }
+    const matched = { codex: 0, grok: 0 }
+    while ((matched.codex < MIN_SAMPLE || matched.grok < MIN_SAMPLE) && tick < 100) {
+      const startedAt = new Date(base + tick++ * 86_400_000).toISOString()
+      const id = addRun({ agent: 'codex', job: 'fix', startedAt })
+      db().query('UPDATE run SET latency_ms=NULL WHERE id=?').run(id)
+      const next = routingBacktest('fix', seed).jobs[0]!.currentSelections
+      const chosen = choiceAdded(next) as keyof typeof matched
+      db().query('UPDATE run SET agent=?, model=? WHERE id=?')
+        .run(chosen, AGENTS[chosen]!.model, id)
+      db().query(
+        `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
+         VALUES (?,'full','right',?,'test')`,
+      ).run(id, new Date(Date.parse(startedAt) + 1000).toISOString())
+      matched[chosen]++
+      prior = routingBacktest('fix', seed).jobs[0]!.currentSelections
+    }
+    expect(matched.codex).toBeGreaterThanOrEqual(MIN_SAMPLE)
+    expect(matched.grok).toBeGreaterThanOrEqual(MIN_SAMPLE)
+
+    // With tied quality and no prior successful latency, factual ordering picks
+    // codex. These completed but unscored 100s runs must still enter latency.
+    for (let i = 0; i < 2; i++) {
+      const startedAt = new Date(base + tick++ * 86_400_000).toISOString()
+      addRun({ agent: 'codex', job: 'fix', latency: 100_000, startedAt })
+      prior = routingBacktest('fix', seed).jobs[0]!.currentSelections
+    }
+
+    // Advance the standing draw without adding quality or latency until grok
+    // is actually selected, then give that matched run a 1s completion.
+    let grokLatency = false
+    while (!grokLatency && tick < 150) {
+      const startedAt = new Date(base + tick++ * 86_400_000).toISOString()
+      const id = addRun({
+        agent: 'codex', job: 'fix', status: 'failed', kind: 'unreachable', startedAt,
+      })
+      const next = routingBacktest('fix', seed).jobs[0]!.currentSelections
+      const chosen = choiceAdded(next)
+      db().query('UPDATE run SET agent=?, model=? WHERE id=?')
+        .run(chosen, AGENTS[chosen]!.model, id)
+      if (chosen === 'grok') {
+        db().query("UPDATE run SET status='ok', failure_kind=NULL, latency_ms=1000 WHERE id=?").run(id)
+        grokLatency = true
+      }
+      prior = routingBacktest('fix', seed).jobs[0]!.currentSelections
+    }
+    expect(grokLatency).toBeTrue()
+
+    const production = pick('fix', undefined, 0, false).agent
+    const startedAt = new Date(base + tick * 86_400_000).toISOString()
+    addRun({ agent: production, job: 'fix', startedAt })
+    const next = routingBacktest('fix', seed).jobs[0]!.currentSelections
+    expect(production).toBe('grok')
+    expect(choiceAdded(next)).toBe(production)
+  })
+
   test("uses the terminating child's time when a root inherits stale status", () => {
     const root = addRun({
       agent: 'codex', job: 'fix', status: 'stale', latency: 1000,

@@ -3601,6 +3601,7 @@ switch (cmd) {
     const assumptions = {
       outcomeComparison: 'not identifiable: agreements have the same logged outcome, while disagreements have no counterfactual outcome for the agent not run',
       policyLearning: 'each simulated policy updates only from logged runs where it chose the historical agent',
+      latency: 'a matched successful run enters tie-break latency at chain completion whether or not it was scored',
       eligibility: 'current static capability, metered, prompt-size and context rules',
       cooldowns: 'reconstructed from the full terminal operational stream, including quota/auth failures and successful probes; these events do not become scoring evidence',
       reachability: 'present-day reachability ignored',

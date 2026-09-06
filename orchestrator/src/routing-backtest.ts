@@ -16,6 +16,8 @@ type Event = {
   status: string; failureKind: string | null; weight: number; none: boolean; scored: boolean
   /** When this result first existed for a live routing decision to observe. */
   evidenceAt: string | null
+  /** When a successful run's latency became observable, whether scored or not. */
+  latencyAt: string | null
 }
 
 type OperationalEvent = {
@@ -100,7 +102,10 @@ type Cell = {
   free: boolean; latencyMs: number | null
 }
 
-function cellsFor(event: Event, history: History, operations: OperationalEvent[], cooldowns: boolean): Cell[] {
+function cellsFor(
+  event: Event, history: History, latencyHistory: History,
+  operations: OperationalEvent[], cooldowns: boolean,
+): Cell[] {
   const bucket = (e: Event) => e.promptBytes < PROMPT_SIZE_BOUNDARY
   const sameBucket = history.filter((e) => e.job === event.job && bucket(e) === bucket(event))
   const build = (stack?: string | null) => Object.keys(AGENTS)
@@ -120,7 +125,7 @@ function cellsFor(event: Event, history: History, operations: OperationalEvent[]
         score: evidence.length ? evidence.reduce((sum, e) => sum + e.weight, 0) / evidence.length : null,
         shrunk: null as number | null,
         free: ['free', 'local'].includes(AGENTS[agent]!.billing),
-        latencyMs: priorLatency(agent, event, history, stack),
+        latencyMs: priorLatency(agent, event, latencyHistory, stack),
       } satisfies Cell
     })
   let cells = build(event.stack)
@@ -135,18 +140,18 @@ function cellsFor(event: Event, history: History, operations: OperationalEvent[]
 }
 
 function currentChoice(
-  event: Event, history: History, operations: OperationalEvent[], rng: () => number, draw: boolean,
-  cooldowns: boolean,
+  event: Event, history: History, latencyHistory: History, operations: OperationalEvent[],
+  rng: () => number, draw: boolean, cooldowns: boolean,
 ): { agent: string } {
-  const cells = cellsFor(event, history, operations, cooldowns)
+  const cells = cellsFor(event, history, latencyHistory, operations, cooldowns)
   return { agent: currentPolicySelection(cells, JOBS[event.job]!.prefer, draw, rng).chosen.agent }
 }
 
 function thompsonChoice(
-  event: Event, history: History, operations: OperationalEvent[], rng: () => number, draw: boolean,
-  cooldowns: boolean,
+  event: Event, history: History, latencyHistory: History, operations: OperationalEvent[],
+  rng: () => number, draw: boolean, cooldowns: boolean,
 ): PolicyChoice {
-  const cells = cellsFor(event, history, operations, cooldowns)
+  const cells = cellsFor(event, history, latencyHistory, operations, cooldowns)
   const ranked = thompsonRank(cells.map((cell) => ({
     agent: cell.agent,
     evidence: cell.evidence,
@@ -158,7 +163,7 @@ function thompsonChoice(
 }
 
 function events(includeVoided = false): Event[] {
-  type Row = Omit<Event, 'weight' | 'none' | 'scored' | 'evidenceAt'> & {
+  type Row = Omit<Event, 'weight' | 'none' | 'scored' | 'evidenceAt' | 'latencyAt'> & {
     delivery: Parameters<typeof weigh>[0] | null
     quality: Parameters<typeof weigh>[1]
     fidelity: Parameters<typeof weigh>[2]
@@ -185,12 +190,15 @@ function events(includeVoided = false): Event[] {
     const evidenceAt = isRoutingEvidence({
       status: row.status, delivery: row.delivery, failureKind: row.failureKind,
     }) ? row.scoredAt ?? chainTerminationAt(database, row.id) : null
+    const latencyAt = row.status === 'ok' && row.latencyMs !== null
+      ? chainTerminationAt(database, row.id)
+      : null
     return {
       id: row.id, agent: row.agent, job: row.job, stack: row.stack, model: row.model,
       promptBytes: row.promptBytes, startedAt: row.startedAt, latencyMs: row.latencyMs,
       status: row.status, failureKind: row.failureKind,
       weight: row.delivery === null ? weigh('none', null) : weigh(row.delivery, row.quality, row.fidelity),
-      none: row.delivery === 'none', scored: row.delivery !== null, evidenceAt,
+      none: row.delivery === 'none', scored: row.delivery !== null, evidenceAt, latencyAt,
     }
   })
 }
@@ -233,6 +241,8 @@ function replay(
     const thompsonSelections: Record<string, number> = {}
     const currentObserved: History = []
     const thompsonObserved: History = []
+    const currentLatencies: History = []
+    const thompsonLatencies: History = []
     // Detached workers reserve ids before they reset started_at at dispatch,
     // so only started_at is chronology; id breaks simultaneous-start ties.
     const rows = all.filter((e) => e.job === name)
@@ -249,8 +259,18 @@ function replay(
       const thompsonHistory = thompsonObserved
         .filter((candidate) => candidate.evidenceAt !== null && candidate.evidenceAt < event.startedAt)
         .sort(byAvailability)
-      const current = currentChoice(event, currentHistory, operations, currentRng, true, cooldowns)
-      const thompson = thompsonChoice(event, thompsonHistory, operations, thompsonRng, true, cooldowns)
+      const currentLatency = currentLatencies.filter(
+        (candidate) => candidate.latencyAt !== null && candidate.latencyAt < event.startedAt,
+      )
+      const thompsonLatency = thompsonLatencies.filter(
+        (candidate) => candidate.latencyAt !== null && candidate.latencyAt < event.startedAt,
+      )
+      const current = currentChoice(
+        event, currentHistory, currentLatency, operations, currentRng, true, cooldowns,
+      )
+      const thompson = thompsonChoice(
+        event, thompsonHistory, thompsonLatency, operations, thompsonRng, true, cooldowns,
+      )
       if (current.agent === thompson.agent) agreements++
       if (thompson.agent !== thompson.expected) thompsonExplores++
       currentSelections[current.agent] = (currentSelections[current.agent] ?? 0) + 1
@@ -260,6 +280,8 @@ function replay(
       // disagreement has no counterfactual result for the road not taken.
       if (event.evidenceAt !== null && current.agent === event.agent) currentObserved.push(event)
       if (event.evidenceAt !== null && thompson.agent === event.agent) thompsonObserved.push(event)
+      if (event.latencyAt !== null && current.agent === event.agent) currentLatencies.push(event)
+      if (event.latencyAt !== null && thompson.agent === event.agent) thompsonLatencies.push(event)
     }
     jobs.push({
       job: name, runs: rows.length, agreements, differences: rows.length - agreements,
