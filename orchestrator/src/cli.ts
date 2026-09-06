@@ -2760,7 +2760,7 @@ switch (cmd) {
       `— retrying run ${id} (${row.agent}/${row.job}` +
         (row.failure_kind ? `, ${row.failure_kind}` : '') + `) on ${agent}`,
     )
-    retryAuthority = db().transaction(() => adoptRunMutation(retryAuthority, 'retry'))()
+    retryAuthority = writeTransaction(() => adoptRunMutation(retryAuthority, 'retry'))
     // Detached and followed, exactly like `do`. A retry is usually started
     // BECAUSE the first attempt died; running it as a child of this process
     // would leave it dying the same way.
