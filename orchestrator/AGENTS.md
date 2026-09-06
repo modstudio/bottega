@@ -652,6 +652,77 @@ only when it is high or critical, or observed in a real run. The loop ends.
 These tier boundaries are a first guess. Move them from the per-tier
 calibration as evidence accumulates. Nothing enforces them yet.
 
+## A drain loop: how it starts and how it ends
+
+### START
+
+A drain loop starts from a `hub task list` snapshot. The sessions working it
+split that board by cluster, give every task one owner, and send the split;
+ownership assumed rather than announced produced collisions. Dispatch stays
+within the lens and landing capacity available to drain it. About eight runs
+per session was the ceiling before landing gates began losing to load. Read
+every branch's tier from `orch review tier` before dispatching any lens, because
+the tier sets the review budget rather than ratifying it afterwards.
+
+### FILING
+
+A finding becomes a task only when it blocks a landing or was observed in a
+real run that cost real time. Fix anything smaller inline on the branch that
+surfaced it, or reject it in triage as `below-bar` and put the reason on the
+review row; filing every observation is a loop that cannot end. A mechanism gap
+seen once belongs as a comment on the nearest existing task. Seen twice with
+cost, it has earned a task.
+
+### TRIPPED
+
+When an agent or landing trips — a harness refusal, lockout, dead resume, or unrelated gate failure — ask one bounded question, answered within a minute and not studied:
+**Has this class tripped before today, or did two checks collide?** If no, patch it now:
+one worker, one round, the violated invariant named in the spec, no task, then move on;
+treating a small issue as a design problem made it big. If yes, step back: name the
+mechanism — which lock, check, open, or state — and the broken or missing invariant,
+then fix the class at the core once under one task. Every further instance is a comment
+on that task, never a task or patch: a trip files zero tasks or one, never a chain.
+Record the decision and one-line reason on the nearest task before dispatch. Six
+refusals, three lockouts, and two lock starvations were patched until DEV-321 named the
+class and the patches collided; holding the model fix was decided in one sentence.
+Answer from the record, not memory: `orch search <mechanism keyword>` reads score notes, rulings, review findings, and saved outputs; run it and the
+task duplicate search on the trip's one-line description, then read what past tasks established before deciding.
+A hit is the class task: comment there and decide whether to patch or step back from its record, not by re-deriving it; those two commands take thirty seconds and precede every dispatch.
+One patch of a mechanism is allowed; a second aimed at it is the signal to step back, because
+continued patching proves a class and search reveals the count. Each of six harness refusals was decided from session memory;
+DEV-318 was named only when search found DEV-239's ruling under it after the third patch.
+
+### REVIEW
+
+Tier decides the lens count as above. The architect reads an inline fix round
+after a lens; do not re-lens it except at tier 3 when the fix itself touched the
+hot path. The per-tier round ceilings are hard: reaching one means stop and ask,
+not dispatch round four. Read both lenses in a tier-3 pair before writing their
+single fix round, because acting on half the review defeats the pair.
+
+### LANDING
+
+Sessions announce each landing as `LANDING` before it begins and `LANDED` with
+the files named after it finishes, because an ordered queue only exists when
+both ends are visible. Carry a lens from an older tree manually with DEV-270's
+four facts instead of re-lensing it. Rebase a branch that has fallen behind
+trunk in the same breath as its resume or lens dispatch; the harness refuses a
+stale caller. Retry a landing once when a ceiling flake stops it, then record
+the flake on DEV-315 rather than opening another task.
+
+### END
+
+The loop ends when the board is empty or every task left is held by a named
+operator ruling recorded on that task, or owned by another session's announced
+sequence. Follow the orch-status skill's `CLOSE OUT` section: discard each
+landed run's worktree, remove its branch, close every `LANDED` task still open,
+record the day's calibration observations on DEV-305, and offer a resume brief.
+A session with unscored runs, unclosed landed tasks, or unswept worktrees has
+paused; it has not ended.
+
+Nothing enforces these rules yet; the board-split readout arrives when two
+sessions have used the split twice.
+
 ## The lifecycle: states, locks and the invariants they protect
 
 A run: `reserved → attached → running → asking → ok | failed | stopped | stale`; a chain inherits its last turn's state.
@@ -673,75 +744,6 @@ the cause of DEV-316, not a lifecycle design.
 The invariants are:
 
 - **Every write transaction is IMMEDIATE; a deferred transaction that later writes is a lock-upgrade race under concurrent dispatch.**
-- **A resume is always possible on a stale checkout.** The caller-at-trunk check
-  stops a new dispatch from stale input; it must never apply to a chain resuming
-  in its own worktree. `run.ts:run` currently attaches a resume under the shared
-  lock, while the fresh-tree `assertCallerAncestry` boundary has leaked into
-  resume behaviour (DEV-318).
-- **Only the main checkout's binary migrates the store.** `ORCH_DB` locates a
-  store; it never authorises a linked-worktree binary to write it. Today
-  `database-location.ts:resolveDatabase` gives an `ORCH_DB` resolution write
-  authority, which lets `db.ts:applySchema` and `rebuildTable` violate this
-  boundary (DEV-314). `db.ts:adoptRunMutation` governs chain ownership, not
-  schema authority.
-- **Landing holds its lock only for the trunk re-check, guard verification and
-  fast-forward, never for a gate.** A gate is long and proves a commit without
-  owning trunk. `landing.ts:land` currently calls `rebaseAndGate` under the lock
-  after trunk moves, violating DEV-224's round-two shape.
-- **A lock waiter is served in arrival order.** Otherwise a stream of short
-  holders can starve a long waiter. `worktree.ts:withProjectLock` records waiters
-  but acquisition polls the lock without consulting their order (DEV-316).
-- **Every refusal names the invariant it protects and the command that clears
-  it.** A refusal without both leaves an operator unable to distinguish safety
-  from mechanism or to recover without reading source.
-- **The guard on disk is verified against HEAD, not the index, before any
-  fast-forward.** The index may already contain the disabling bytes; the
-  reviewed `landing.ts:sharedGuardResidue` and `restoreSharedGuard` candidate
-  violate this by diffing against and restoring from the index.
-- **A reclaim removes exactly the acquisition it classified as stale, never a
-  replacement.** A reusable pathname is not identity; the reviewed
-  `worktree.ts:reclaimStaleProjectLock` candidate classifies before rename and
-  violates this under replacement.
-- **A failed landing leaves the branch worktree as it found it.** Failure must
-  not turn a retry into recovery work. `landing.ts:rebaseAndGate` currently
-  rebases before the fallible gate without restoring the input state (DEV-310,
-  closed below-bar but binding here).
-
-| gap | invariant violated | code path (file:function) | what chunk 3 changes |
-|---|---|---|---|
-| DEV-314 | only the main-checkout binary migrates | `database-location.ts:resolveDatabase`; `db.ts:applySchema`, `rebuildTable` | Separate database location from write authority and refuse linked-worktree schema writes even when `ORCH_DB` is set. |
-| DEV-316 | one lock per purpose; FIFO waiters | `worktree.ts:withWorktreeCreateLock`, `withProjectLock`; `cli.ts:withCleanupLock` | Give creation, landing and cleanup distinct locks, and make acquisition honor waiter arrival order. |
-| DEV-318 | a chain resumes in its own stale checkout | `cli.ts:continueRun`, `detach`; `run.ts:preflight`, `run`; `worktree.ts:assertCallerAncestry` | Exempt inherited resume attachment from the new-dispatch caller-at-trunk boundary. |
-| DEV-224 review 142/143: replacement race | reclaim only the classified acquisition | `worktree.ts:reclaimStaleProjectLock`, `withProjectLock` | Fence acquisition, reclaim and release by one incarnation so none can remove a replacement. |
-| DEV-224 review 142: locale-dependent birth time | a live holder is never classified stale by observer locale | `worktree.ts:processStartTime`, `staleProjectLockHolder` | Use a locale-independent process-birth identity and migrate old owner records conservatively. |
-| DEV-224 review 143: malformed process output | indeterminate liveness cannot prove staleness | `worktree.ts:processStartTime`, `staleProjectLockHolder` | Parse process identity strictly and treat malformed output as unknown, never stale. |
-| DEV-224 review 142/143: staged guard stub | guard bytes and mode equal HEAD before fast-forward | `landing.ts:sharedGuardResidue`, `restoreSharedGuard`, `fastForward` | Compare with and restore from HEAD, preserve or refuse staged state, then verify again before the ref update. |
-| DEV-224 review 143: inherited Git environment | guard repair addresses the source repository's objects | `landing.ts:git`, `gitOk`, `restoreSharedGuard` | Strip worker object and hook routing and derive a hermetic Git environment for inspection and repair. |
-
-Chunk 2, the harness, proves these by simulation. Until it exists, no change to
-the core lands without naming which invariant it serves and which it might
-weaken.
-
-## The lifecycle: states, locks and the invariants they protect
-
-A run: `reserved → attached → running → asking → ok | failed | stopped | stale`; a chain inherits its last turn's state.
-
-A branch: `cut → built → reviewed → rebased → landed | abandoned`; a rebase invalidates the review's exact match, and the pin or the four-fact carry re-establishes it.
-
-Trunk: `free | locked-by-landing`.
-
-There are three lock purposes today, but only one lock file. Worktree creation
-and resume attachment take `worktree.ts:withWorktreeCreateLock`, landing takes
-`landing.ts:land`, and cleanup from discard, abandon, stop and sweep takes
-`cli.ts:withCleanupLock`. All three call `worktree.ts:withProjectLock` with the
-name `landing`, so all contend on `orch-landing.lock`. Creation protects a new
-tree through provisioning and attribution; landing protects the trunk decision
-and ref update; cleanup protects ownership checks and removal. **One lock per
-purpose.** Creation, landing and cleanup are three purposes. Their sharing is
-the cause of DEV-316, not a lifecycle design.
-
-The invariants are:
-
 - **A resume is always possible on a stale checkout.** The caller-at-trunk check
   stops a new dispatch from stale input; it must never apply to a chain resuming
   in its own worktree. `run.ts:run` currently attaches a resume under the shared
