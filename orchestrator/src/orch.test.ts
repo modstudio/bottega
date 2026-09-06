@@ -4100,6 +4100,18 @@ describe('job contracts are visible before submission', () => {
     expect(READONLY_PREAMBLE).not.toContain("It contains the caller's")
   })
 
+  test('diagnose and review-lens require partial delivery around blocked sub-questions', () => {
+    for (const name of ['diagnose', 'review-lens']) {
+      const r = contract(name)
+      expect(r.code).toBe(0)
+      const text = r.out.replace(/\s+/g, ' ')
+      expect(text).toContain('A prompt with several questions is not atomic')
+      expect(text).toContain('report BLOCKED under that question')
+      expect(text).toContain('Never withhold deliverable answers behind a blocked one')
+      expect(text).toContain('could_not_verify for that sub-question')
+    }
+  })
+
   test('contract prints the same preamble selected when a job is bound', () => {
     for (const [name, definition] of Object.entries(JOBS)) {
       const r = contract(name)
@@ -7956,6 +7968,28 @@ describe('detached run collection', () => {
     const r = orch('result', String(id))
     expect(r.code).toBe(0)
     expect(r.err).toContain('base:      base-commit-123')
+  })
+
+  test('result and runs flag only slow, thin, non-probe answer output', () => {
+    const fixture = (latency: number, probe = 0) => {
+      const id = addRun({ agent: 'codex', job: 'diagnose', latency, probe })
+      const output = join(dir, `thin-output-${id}.txt`)
+      writeFileSync(output, 'x'.repeat(600))
+      db().query('UPDATE run SET output_path=? WHERE id=?').run(output, id)
+      return id
+    }
+    const thin = fixture(400_000)
+    const fast = fixture(300_000)
+    const probe = fixture(400_000, 1)
+    const warning = 'thin: 600 B after 6m40s — check whether the run stopped at a blocker'
+
+    expect(orch('result', String(thin)).err).toContain(warning)
+    expect(orch('result', String(fast)).err).not.toContain('thin:')
+    expect(orch('result', String(probe)).err).not.toContain('thin:')
+
+    const listed = orch('runs')
+    expect(listed.out).toContain(warning)
+    expect(listed.out.match(/thin:/g)).toHaveLength(1)
   })
 
   test('runs shows asking in the status column', () => {

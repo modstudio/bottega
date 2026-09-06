@@ -142,6 +142,23 @@ function evidenceNote(row: { evidence_excluded: string | null }): string {
     : ''
 }
 
+const THIN_OUTPUT_BYTES = 1024
+const THIN_OUTPUT_LATENCY_MS = 5 * 60_000
+
+/** A reader-facing suspicion only: this never enters status, scoring, or routing. */
+function thinOutputWarning(row: {
+  job: string; status: string; latency_ms: number | null; probe: number
+  output_path: string | null
+}): string | null {
+  if (row.status !== 'ok' || row.probe || row.latency_ms === null ||
+      row.latency_ms <= THIN_OUTPUT_LATENCY_MS || job(row.job).needs.writesRepo ||
+      !row.output_path || !existsSync(row.output_path)) return null
+  const bytes = statSync(row.output_path).size
+  if (bytes >= THIN_OUTPUT_BYTES) return null
+  return `thin: ${bytes} B after ${dur(row.latency_ms).replaceAll(' ', '')} — ` +
+    'check whether the run stopped at a blocker'
+}
+
 /** A run id is a machine interface: callers feed it back to wait/result. */
 function printRunId(id: number): void {
   process.stdout.write(`${id}\n`)
@@ -2510,6 +2527,16 @@ switch (cmd) {
 
   case 'result': {
     collectResult(db(), argv, scoreSuffix)
+    const id = Number(argv[1])
+    const chain = resolveFailover(db(), id)
+    const row = db().query(
+      `SELECT job, status, latency_ms, probe, output_path FROM run WHERE id=?`,
+    ).get(chain.finalId) as {
+      job: string; status: string; latency_ms: number | null; probe: number
+      output_path: string | null
+    }
+    const warning = thinOutputWarning(row)
+    if (warning) console.error(warning)
     break
   }
 
@@ -4814,6 +4841,8 @@ switch (cmd) {
     let rows = db().query(
       `SELECT r.id, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
               current_run.status, current_run.failure_kind, current_run.error,
+              current_run.output_path AS current_output_path,
+              current_run.probe AS current_probe,
               s.delivery, s.quality,
               COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason
               ${json ? ', r.cwd, r.session_id, r.vendor_cost_usd, r.probe, r.exit_code, r.input_tree,'
@@ -4930,6 +4959,12 @@ switch (cmd) {
       // The reason is where a fan-out says its exclusions ran out. Hiding it
       // here would leave the database honest and the human-facing command not.
       if (r.route_reason) console.log(`      route: ${String(r.route_reason)}`)
+      const warning = thinOutputWarning({
+        job: String(r.job), status: String(r.status),
+        latency_ms: r.latency_ms as number | null,
+        probe: Number(r.current_probe), output_path: r.current_output_path as string | null,
+      })
+      if (warning) console.log(`      ${warning}`)
     }
     for (const id of unknownIds) console.log(`${String(id).padStart(4)}  unknown run id`)
     break

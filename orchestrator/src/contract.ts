@@ -706,6 +706,14 @@ You are working in your own disposable worktree. It is a fresh checkout of this
 run's base commit. If the caller chose to carry their uncommitted work into it,
 that work is present and is not yours: do not report it as your change.
 
+A prompt with several questions is not atomic: answer every question you can.
+When one is blocked — a command cannot run here, a file does not exist, or a
+result cannot be reproduced — report BLOCKED under that question with the exact
+reason and what you tried, and keep going. Never withhold deliverable answers
+behind a blocked one; a run that returns only "I could not do X" when Y and Z
+were answerable is a failed run. For findings-producing jobs, record the same
+detail in could_not_verify for that sub-question and continue with the others.
+
 Edit and test freely when that helps you verify a finding. Your findings are the
 deliverable, not your diff: every change you make here is scratch work and must
 never be treated as a proposed change to land. Do not commit, push, or merge.
