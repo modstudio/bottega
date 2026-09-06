@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { db, nowIso, sessionId } from './db.ts'
+import { db, nowIso, sessionId, writableDb } from './db.ts'
 import { JOBS } from './jobs.ts'
 
 export type WorkflowArgument = { name: string; required: boolean; description: string }
@@ -186,7 +186,7 @@ function recordEvent(d: Database, workflow: number, n: number, kind: 'set'|'fork
   d.query(`INSERT INTO workflow_event (workflow_id,version_n,event,author,reason,session_id,at) VALUES (?,?,?,?,?,?,?)`)
     .run(workflow, n, kind, author, reason, sessionId(), at)
 }
-function writeDraft(slug: string, definition: unknown, reasonValue: string | undefined, authorValue?: string, kind: 'set'|'fork'|'import' = 'set', d: Database = db()) {
+function writeDraft(slug: string, definition: unknown, reasonValue: string | undefined, authorValue?: string, kind: 'set'|'fork'|'import' = 'set', d: Database = writableDb()) {
   requireSlug(slug); requireValid(definition)
   const reason = required(reasonValue, 'reason'); const author = writeAuthor(authorValue); const at = nowIso()
   return d.transaction(() => {
@@ -201,9 +201,9 @@ function writeDraft(slug: string, definition: unknown, reasonValue: string | und
     return showWorkflow(slug,n,d)
   })()
 }
-export const setWorkflow = (slug:string, definition:unknown, reason:string|undefined, author?:string, d:Database=db()) => writeDraft(slug,definition,reason,author,'set',d)
+export const setWorkflow = (slug:string, definition:unknown, reason:string|undefined, author?:string, d:Database=writableDb()) => writeDraft(slug,definition,reason,author,'set',d)
 
-export function promoteWorkflow(slug:string,n:number,reasonValue:string|undefined,authorValue?:string,d:Database=db()) {
+export function promoteWorkflow(slug:string,n:number,reasonValue:string|undefined,authorValue?:string,d:Database=writableDb()) {
   const reason = required(reasonValue, 'reason')
   const author = writeAuthor(authorValue)
   const at = nowIso()
@@ -222,7 +222,7 @@ export function promoteWorkflow(slug:string,n:number,reasonValue:string|undefine
     return showWorkflow(slug,n,d)
   })()
 }
-export function retireWorkflow(slug:string,n:number,reasonValue:string|undefined,authorValue?:string,d:Database=db()) {
+export function retireWorkflow(slug:string,n:number,reasonValue:string|undefined,authorValue?:string,d:Database=writableDb()) {
   const reason = required(reasonValue, 'reason')
   const author = writeAuthor(authorValue)
   const at = nowIso()
@@ -234,7 +234,7 @@ export function retireWorkflow(slug:string,n:number,reasonValue:string|undefined
     recordEvent(d,id,n,'retire',author,reason,at); return showWorkflow(slug,n,d)
   })()
 }
-export function forkWorkflow(slug:string,from:number|undefined,reason:string|undefined,author?:string,d:Database=db()) {
+export function forkWorkflow(slug:string,from:number|undefined,reason:string|undefined,author?:string,d:Database=writableDb()) {
   const source=from === undefined
     ? d.query(`SELECT n FROM workflow_version WHERE workflow_id=? AND status='production'`).get(workflowId(slug,d)) as {n:number}|null
     : {n:from}
@@ -284,7 +284,7 @@ export function exportWorkflows(dir:string,d:Database=db()):void {
     writeFileSync(join(target,'README.md'),`# ${workflow.slug}\n\n${versions.map((v)=>`- v${v.n}: ${v.status}`).join('\n')}\n`)
   }
 }
-export function importWorkflows(dir:string,reason:string|undefined,author?:string,d:Database=db()) {
+export function importWorkflows(dir:string,reason:string|undefined,author?:string,d:Database=writableDb()) {
   required(reason,'reason'); if (!existsSync(dir)) throw new Error(`no such directory: ${dir}`)
   const definitions:{slug:string;definition:unknown}[]=[]
   for (const slug of readdirSync(dir).sort()) {

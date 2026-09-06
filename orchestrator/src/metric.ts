@@ -1,7 +1,7 @@
 import { readdirSync, statSync, createReadStream } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
-import { db, nowIso } from './db.ts'
+import { db, nowIso, writableDb } from './db.ts'
 import { projects, projectAt } from './projects.ts'
 
 const PROJECTS = `${process.env.HOME}/.claude/projects`
@@ -244,6 +244,7 @@ function activityByDay(since: string) {
 
 
 export async function collect(windowDays = 30) {
+  writableDb()
   const since = localDay(localDaysAgo(windowDays))
   const [tok, act] = [await claudeTokensByDay(since), activityByDay(since)]
   const d = db()

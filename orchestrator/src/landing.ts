@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
-import { db, nowIso, sessionId } from './db.ts'
+import { db, nowIso, sessionId, writableDb } from './db.ts'
 import { formatGitLocks } from './git-locks.ts'
 import { projectAt, type Project } from './projects.ts'
 import {
@@ -578,6 +578,7 @@ export function land(
   branch: string,
   options: { timeoutMs?: number; message?: string; unreviewed?: string } = {},
 ): string {
+  writableDb()
   const timeoutMs = options.timeoutMs ?? LANDING_LOCK_TIMEOUT_MS
   const { project, repoRoot } = registeredProject(cwd)
   const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''

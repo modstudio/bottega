@@ -15,7 +15,7 @@ import {
 } from './agents.ts'
 import { job, type Job } from './jobs.ts'
 import { pick } from './route.ts'
-import { db, nowIso, DB_PATH, sessionId, resolveRootFromLastTurn } from './db.ts'
+import { db, nowIso, DB_PATH, sessionId, resolveRootFromLastTurn, writableDb } from './db.ts'
 import {
   createWorktree, createWithTool, toolFor, changesIn, repoRootOf, resolveBase, worktreeGitDir,
   prepareWorktreeObjects, prepareSharedRefGuard, worktreeGitEnvironment, carryWorkingState,
@@ -1145,6 +1145,7 @@ export async function run(opts: {
     worktree: Worktree | null
   }
 }): Promise<RunResult> {
+  writableDb()
 
   const seed = preflight(
     opts.job, opts.cwd ?? process.cwd(), opts.seed, opts.key, opts.base,

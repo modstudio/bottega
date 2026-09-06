@@ -13,7 +13,7 @@ import {
   DOC_SCOPES, DOC_SCOPE_SUBJECT_KIND, type DocScope,
 } from '../../shared/docs.ts'
 import { AGENTS } from './agents.ts'
-import { db, nowIso, sessionId } from './db.ts'
+import { db, nowIso, sessionId, writableDb } from './db.ts'
 import { JOBS } from './jobs.ts'
 import { projectAt, projectByName } from './projects.ts'
 import { compileBrief } from './canon.ts'
@@ -208,6 +208,7 @@ function setDocWithOp(input: {
   scope: string; subject: string | null; slug: string; title: string; body: string
   delivery?: 'inject' | 'demand'
 } & DocWriteContext, requestedOp?: 'import'): Doc {
+  writableDb()
   validate(input.scope, input.subject, input.slug)
   writeIdentity(input)
   return db().transaction(() => {
@@ -247,6 +248,7 @@ export function importDoc(input: {
 export function removeDoc(
   scope: string, subject: string | null, slug: string, context: DocWriteContext,
 ): boolean {
+  writableDb()
   validScope(scope)
   writeIdentity(context)
   return db().transaction(() => {
@@ -270,6 +272,7 @@ export function consumeDoc(
   scope: string, subject: string | null, slug: string,
   context: DocWriteContext,
 ): ConsumedDoc {
+  writableDb()
   validateHistoricAddress(scope, slug)
   writeIdentity(context)
   const doc = getDoc(scope, subject, slug)
@@ -418,6 +421,7 @@ export function exportDocs(dir: string): number {
 }
 
 export function importDocs(dir: string, context: DocWriteContext): number {
+  writableDb()
   writeIdentity(context)
   let count = 0
   for (const scopeEntry of readdirSync(dir, { withFileTypes: true })) {
@@ -459,6 +463,7 @@ export function getDocRevision(id: number): DocRevision | null {
 export function restoreDoc(
   scope: string, subject: string | null, slug: string, revisionId: number, context: DocWriteContext,
 ): Doc {
+  writableDb()
   validateHistoricAddress(scope, slug)
   writeIdentity(context)
   const revision = getDocRevision(revisionId)

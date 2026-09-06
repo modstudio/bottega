@@ -28,7 +28,7 @@
  * the question in the final answer — which is precisely the durable protocol,
  * so the fast path degrades into the slow one rather than into a hang.
  */
-import { db, nowIso } from './db.ts'
+import { db, nowIso, writableDb } from './db.ts'
 import { checkMessages, messageArchitect } from './mailbox.ts'
 
 /**
@@ -71,6 +71,7 @@ export async function ask(o: {
   why?: string
   timeoutMs?: number
 }): Promise<AskResult> {
+  writableDb()
   const { id } = db().query(
     `INSERT INTO question (run_id, asked_at, question, options, recommendation, why)
      VALUES (?,?,?,?,?,?) RETURNING id`,

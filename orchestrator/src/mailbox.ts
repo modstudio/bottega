@@ -1,5 +1,8 @@
 /** Durable, non-authoritative messages attached to a run conversation. */
-import { adoptRunMutation, auditRunMutation, authorizeRunMutation, db, nowIso } from './db.ts'
+import {
+  adoptRunMutation, auditRunMutation, authorizeRunMutation, db, linkedWorktreeReadOnly, nowIso,
+  writableDb,
+} from './db.ts'
 
 export type RunMessage = {
   id: number
@@ -35,6 +38,7 @@ function bodyOf(body: string): string {
 
 /** Queue architect context against the conversation's currently running turn. */
 export function tellRun(id: number, body: string): RunMessage {
+  writableDb()
   let authority = authorizeRunMutation(id, 'tell')
   const requested = identity(id)
   if (!requested) throw new Error(`no run ${id}`)
@@ -62,6 +66,7 @@ export function tellRun(id: number, body: string): RunMessage {
 
 /** Record an outbound worker message without changing the run's status. */
 export function messageArchitect(runId: number, body: string): RunMessage {
+  writableDb()
   const run = identity(runId)
   if (!run) throw new Error(`no run ${runId}`)
   if (run.status !== 'running') {
@@ -88,6 +93,7 @@ export function checkMessages(runId: number): RunMessage[] {
         ORDER BY id`,
     ).all(run.root_id) as RunMessage[]
     if (!rows.length) return []
+    if (linkedWorktreeReadOnly) return rows
     const readAt = nowIso()
     const ids = rows.map(() => '?').join(',')
     db().query(`UPDATE run_message SET read_at = ?, read_by = ? WHERE id IN (${ids})`).run(
@@ -107,6 +113,7 @@ export function messagesForRun(id: number): RunMessage[] {
 
 /** Explicitly receipt outbound messages, after proving the reader owns the chain. */
 export function receiptMessagesForArchitect(id: number): RunMessage[] {
+  writableDb()
   const authority = authorizeRunMutation(id, 'receipt')
   const run = identity(id)
   if (!run) return []

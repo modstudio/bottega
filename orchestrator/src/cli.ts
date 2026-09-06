@@ -1,4 +1,4 @@
-import { DATABASE_RESOLUTION, DB_PATH, db, nowIso, sessionId, judgeability, pendingForSession, unscoredCount, weigh,
+import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, nowIso, sessionId, judgeability, pendingForSession, unscoredCount, weigh,
          DELIVERY, QUALITY, FIDELITY, type Delivery, type Quality, type Fidelity,
          REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP,
          REVIEW_SEVERITY,
@@ -274,7 +274,7 @@ const cmd = argv[0]
 // One invocation is one heartbeat. Keeping it at the process boundary avoids
 // turning the many read helpers below into competing writers.
 const readOnlyPortDryRun = cmd === 'port' && argv[1] === 'import' && argv.includes('--dry-run')
-if (!readOnlyPortDryRun) recordSessionSeen()
+if (!readOnlyPortDryRun && cmd !== 'init-db') recordSessionSeen()
 
 /** Human-readable duration: seconds under a minute, then m/s, then h/m. */
 function dur(ms: number | null | undefined): string {
@@ -715,6 +715,7 @@ function discardWorktree(
  * with it, and `setsid` does not exist on macOS.
  */
 async function detach(jobName: string, prompt: string, spec: DetachSpec): Promise<number> {
+  writableDb()
   /**
    * The depth check happens HERE TOO, before a row exists.
    *
@@ -1356,6 +1357,12 @@ validateCliArgs(argv)
 if (NEEDS_HEALTH.has(cmd ?? '')) await ensureLocalHealth()
 
 switch (cmd) {
+  case 'init-db': {
+    const { initializeDatabase } = await import('./db.ts')
+    console.log(`initialized ${initializeDatabase()}`)
+    break
+  }
+
   case 'land': {
     const { land, landingStatus, resolveLandingBranch } = await import('./landing.ts')
     if (has('status')) {
@@ -3352,6 +3359,7 @@ switch (cmd) {
       throw new Error('--older-than must be a finite, non-negative number')
     }
     const dry = has('dry-run')
+    if (!dry) writableDb()
     const rows = db().query(
       `SELECT r.id, COALESCE(r.parent_run_id, r.id) root_id,
               r.repo, r.worktree, r.branch, r.base_commit, r.status, r.job,
@@ -3947,6 +3955,7 @@ switch (cmd) {
   }
 
   case 'score': {
+    writableDb()
     const requestedId = Number(argv[1])
     if (!requestedId) usage()
     const row = db().query(
@@ -4876,6 +4885,8 @@ switch (cmd) {
       break
     }
 
+    writableDb()
+
     const update = db().query(
       `UPDATE run SET failure_kind = ?
         WHERE id = ? AND status IN ('failed', 'stale')
@@ -4916,6 +4927,7 @@ switch (cmd) {
     console.log(`canon          ${doctorFindings} finding(s) in ${doctorPack.bytes}/${doctorPack.budgetBytes} bytes`)
     db()
     console.log(`database       ${DB_PATH}`)
+    console.log(`open mode      ${databaseOpenMode()}`)
     console.log(`resolved by    ${DATABASE_RESOLUTION.method}`)
     if (DATABASE_RESOLUTION.registeredPath && DATABASE_RESOLUTION.registeredPath !== DB_PATH) {
       console.log(`registered     ${DATABASE_RESOLUTION.registeredPath}  (resolved path won)`)

@@ -1,4 +1,4 @@
-import { db, nowIso } from './db.ts'
+import { db, nowIso, writableDb } from './db.ts'
 import { projects, type Project } from './projects.ts'
 
 export type PortPair = {
@@ -57,6 +57,7 @@ export function pairByProjects(sourceProjectId: number, targetProjectId: number)
 }
 
 export function addPair(sourceProjectId: number, targetProjectId: number, at = nowIso()): PortPair {
+  writableDb()
   const write = db().transaction(() => {
     db().query(
       `INSERT INTO port_pair (source_project_id, target_project_id, created_at)
@@ -73,6 +74,7 @@ export function addPair(sourceProjectId: number, targetProjectId: number, at = n
 }
 
 export function removePair(id: number): boolean {
+  writableDb()
   return db().query('DELETE FROM port_pair WHERE id=?').run(id).changes > 0
 }
 
@@ -85,6 +87,7 @@ export function setBaseline(
   sourceCommit: string | null,
   scannedAt: string | null = sourceCommit === null ? null : nowIso(),
 ): PortBaseline {
+  writableDb()
   db().query(
     `INSERT INTO port_baseline (pair_id, source_commit, scanned_at) VALUES (?,?,?)
      ON CONFLICT(pair_id) DO UPDATE SET
@@ -105,6 +108,7 @@ export function addSkip(
   reason: string,
   skippedAt = nowIso(),
 ): PortSkip {
+  writableDb()
   const id = (db().query(
     `INSERT INTO port_skip (pair_id, candidate, reason, skipped_at) VALUES (?,?,?,?)
      RETURNING id`,
@@ -113,6 +117,7 @@ export function addSkip(
 }
 
 export function removeSkip(id: number): boolean {
+  writableDb()
   return db().query('DELETE FROM port_skip WHERE id=?').run(id).changes > 0
 }
 
@@ -165,6 +170,7 @@ export function setLedgerRef(input: {
   sources: LedgerSource[]
   createdAt?: string
 }): LedgerRef {
+  writableDb()
   if (input.sources.length === 0) throw new Error('a ledger ref needs at least one source project')
   if (new Set(input.sources.map((source) => source.source_project_id)).size !== input.sources.length) {
     throw new Error('a ledger ref may name each source project only once')
@@ -193,10 +199,12 @@ export function setLedgerRef(input: {
 }
 
 export function removeLedgerRef(taskKey: string): boolean {
+  writableDb()
   return db().query('DELETE FROM port_ref WHERE task_key=?').run(taskKey).changes > 0
 }
 
 export function resolveLedgerRef(taskKey: string, resolvedAt = nowIso()): LedgerRef | null {
+  writableDb()
   const existing = ledgerRef(taskKey)
   if (!existing || existing.resolved_at) return existing
   db().query(
@@ -217,6 +225,7 @@ export function addDoctrineRule(
   body: string,
   createdAt = nowIso(),
 ): DoctrineRule {
+  writableDb()
   db().query(
     `INSERT INTO port_doctrine (number, title, body, created_at) VALUES (?,?,?,?)`,
   ).run(number, title, body, createdAt)
@@ -224,6 +233,7 @@ export function addDoctrineRule(
 }
 
 export function retireDoctrineRule(number: number, retiredAt = nowIso()): boolean {
+  writableDb()
   return db().query(
     'UPDATE port_doctrine SET retired_at=? WHERE number=? AND retired_at IS NULL',
   ).run(retiredAt, number).changes > 0

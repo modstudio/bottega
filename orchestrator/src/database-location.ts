@@ -12,6 +12,7 @@ export type DatabaseResolution = {
   repositoryCandidate: string | null
   repositoryCandidateExisted: boolean
   initializable: boolean
+  linkedWorktreeBinary: boolean
 }
 
 export const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
@@ -88,6 +89,7 @@ export function resolveDatabase(
       path: resolve(env.ORCH_DB), method: 'ORCH_DB', tried: [resolve(env.ORCH_DB)], registeredPath: null,
       repositoryRoot: null, repositoryCandidate: null, repositoryCandidateExisted: false,
       initializable: true,
+      linkedWorktreeBinary: false,
     }
   }
 
@@ -110,6 +112,7 @@ export function resolveDatabase(
         // A worktree-local binary may diagnose its main checkout, but only the
         // main checkout's binary may initialize that checkout.
         initializable: Boolean(binaryRepository && !binaryRepository.linked),
+        linkedWorktreeBinary: Boolean(binaryRepository?.linked),
       }
     }
   }
@@ -123,6 +126,7 @@ export function resolveDatabase(
         repositoryRoot: repository?.root ?? null,
         repositoryCandidate: repository ? join(repository.root, 'orchestrator', 'orch.db') : null,
         repositoryCandidateExisted: false, initializable: false,
+        linkedWorktreeBinary: true,
       }
     }
   }
@@ -134,6 +138,7 @@ export function resolveDatabase(
       repositoryRoot: repository?.root ?? null,
       repositoryCandidate: repository ? join(repository.root, 'orchestrator', 'orch.db') : null,
       repositoryCandidateExisted: false, initializable: true,
+      linkedWorktreeBinary: false,
     }
   }
 

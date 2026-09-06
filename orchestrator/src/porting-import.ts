@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
-import { db } from './db.ts'
+import { db, writableDb } from './db.ts'
 import { importDoc, listDocs, removeDoc } from './docs.ts'
 import {
   addDoctrineRule, addPair, addSkip, setBaseline, setLedgerRef,
@@ -677,6 +677,7 @@ const PROJECT_PORT_DOC_SLUGS = ['port-differences', 'port-backports']
 export function applyImport(
   plan: ImportPlan, options: { replace?: boolean; sourceLabel?: string } = {},
 ): void {
+  writableDb()
   if (plan.refusals.length) throw new ImportRefusalError(plan.refusals)
   const context = {
     author: 'port-import',

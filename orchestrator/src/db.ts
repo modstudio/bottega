@@ -41,7 +41,23 @@ export type RootAuthority = {
 }
 
 let handle: Database | null = null
-let writable: boolean | null = null
+let connectionWritable: boolean | null = null
+
+export const LINKED_WORKTREE_WRITE_REFUSAL =
+  'refusing to write the live store from a linked worktree; set ORCH_DB explicitly ' +
+  '(a copy for experiments, or the live path to insist)'
+
+export const linkedWorktreeReadOnly =
+  DATABASE_RESOLUTION.linkedWorktreeBinary && DATABASE_RESOLUTION.method !== 'ORCH_DB'
+
+export function databaseOpenMode(): 'read-write' | 'read-only linked worktree' {
+  return linkedWorktreeReadOnly ? 'read-only linked worktree' : 'read-write'
+}
+
+/** Request the process connection for a mutation. */
+export function writableDb(): Database {
+  return db(true)
+}
 
 /**
  * Ask SQLite whether this connection can commit a write. The answer is
@@ -49,23 +65,26 @@ let writable: boolean | null = null
  * probe must not turn every read into another attempted write.
  */
 function databaseWritable(d: Database): boolean {
-  if (writable !== null) return writable
+  if (connectionWritable !== null) return connectionWritable
   const probe = `__orch_write_probe_${process.pid}`
   try {
     // Committing the create matters: on WAL databases SQLite can prepare a
     // write transaction against a chmod-444 main file and fail only at commit.
     d.exec(`CREATE TABLE "${probe}" (value INTEGER); DROP TABLE "${probe}";`)
-    writable = true
+    connectionWritable = true
   } catch {
-    writable = false
+    connectionWritable = false
   }
-  return writable
+  return connectionWritable
 }
 
-export function db(): Database {
+export function db(writable = false): Database {
+  if (writable && linkedWorktreeReadOnly) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
   if (handle) return handle
   if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
-  const d = new Database(DB_PATH, { readwrite: true, create: false })
+  const d = linkedWorktreeReadOnly
+    ? new Database(DB_PATH, { readonly: true })
+    : new Database(DB_PATH, { readwrite: true, create: false })
   // Several `orch do` processes write concurrently during a fan-out. Without a
   // busy timeout SQLite fails the moment it finds the file locked rather than
   // waiting its turn, so a parallel launch loses most of its rows — the record
@@ -88,7 +107,7 @@ export function db(): Database {
     d.close()
     throw new Error(missingDatabaseMessage(registeredMissing))
   }
-  if (databaseWritable(d)) {
+  if (!linkedWorktreeReadOnly && databaseWritable(d)) {
     d.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA synchronous = NORMAL;
@@ -98,14 +117,17 @@ export function db(): Database {
     applySchema(d)
     excludeSharedOutputRuns(d)
     seedProjects(d)
+  } else if (linkedWorktreeReadOnly && canonicalSchemaMismatch(d)) {
+    console.error('warning: canonical schema mismatch; opened the live store read-only')
   }
   handle = d
-  if (writable) reapStale(d)
+  if (connectionWritable) reapStale(d)
   return d
 }
 
 /** The sole path that may create the orchestrator database. */
 export function initializeDatabase(): string {
+  if (linkedWorktreeReadOnly) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
   if (existsSync(DB_PATH)) throw new Error(`refusing to initialize: orchestrator database already exists: ${DB_PATH}`)
   if (!DATABASE_RESOLUTION.initializable) {
     throw new Error(`refusing to initialize from a worktree binary: ${DB_PATH}\nrun orch init-db from the main checkout`)
@@ -144,6 +166,7 @@ export function authorizeRunMutation(
   runId: number,
   action: RunMutationAction | 'receipt',
 ): RootAuthority {
+  writableDb()
   const authority = runMutationActor(runId)
   if (authority.owner && authority.actor !== authority.owner) {
     throw new Error(
@@ -490,6 +513,18 @@ function schemaVersion(): string {
       REVIEW_LENS_DDL, REVIEW_FINDING_DDL, LANDING_OVERRIDE_DDL, LANDING_REVIEW_CARRY_DDL]
       .map(normalizeSql).join('\n'))
     .digest('hex')
+}
+
+/** Read-only equivalent of ensureCanonicalSchema: report drift without repairing it. */
+function canonicalSchemaMismatch(d: Database): boolean {
+  try {
+    const stored = d.query(
+      `SELECT value FROM schema_meta WHERE key = 'schema'`,
+    ).get() as { value: string } | null
+    return stored?.value !== schemaVersion()
+  } catch {
+    return true
+  }
 }
 
 function liveTableSql(d: Database, name: string): string | null {
@@ -1551,7 +1586,7 @@ export const SESSION_LIVE_MS = 60 * 60 * 1000
 export function recordSessionSeen(sid: string | null = sessionId(), at = nowIso()): void {
   if (!sid) return
   const d = db()
-  if (!writable) return
+  if (!connectionWritable) return
   try {
     d.query(
       `INSERT INTO session_seen (session_id, last_seen) VALUES (?, ?)
@@ -1787,6 +1822,12 @@ export function reapStale(d: Database = db()): number {
       continue
     }
     if (r.started_at < cutoff) dead.push(r.id)
+  }
+  if (linkedWorktreeReadOnly) {
+    for (const id of [...dead, ...abandonedBootstrap]) {
+      console.error(`warning: run ${id} appears abandoned; read-only linked worktree did not terminalise it`)
+    }
+    return dead.length + abandonedBootstrap.length
   }
   if (abandonedBootstrap.length) {
     const update = d.query(
@@ -2036,6 +2077,7 @@ export function recordDuels(
   at: string,
   force = false,
 ): void {
+  writableDb()
   const ids = [winnerRunId, ...loserRunIds]
   const rows = db().query(
     `SELECT id, job, session_id FROM run WHERE id IN (${ids.map(() => '?').join(',')})`,

@@ -3,7 +3,7 @@ import {
   db, nowIso, REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP,
   REVIEW_SEVERITY,
   type ReviewReproduced, type ReviewCoverage, type ReviewLimits, type ReviewOverlap,
-  type ReviewSeverity,
+  type ReviewSeverity, writableDb,
 } from './db.ts'
 import { CANON_SOURCE_SCHEMA, REVIEW_SCHEMA, type CanonSource, type ReviewReply } from './contract.ts'
 import { job } from './jobs.ts'
@@ -167,7 +167,7 @@ function pinReviewedCommits(runs: RunRow[], database: Database): void {
 }
 
 export function recordReviews(
-  entries: { runId: number; output: ReviewReply }[], database: Database = db(),
+  entries: { runId: number; output: ReviewReply }[], database: Database = writableDb(),
 ): number {
   if (!entries.length) throw new Error('a review requires at least one lens run')
   const runs = entries.map(({ runId }) => {
@@ -245,6 +245,7 @@ export type ReviewPin = {
 
 /** Inspect keepalive refs; pruning is an explicit act and never part of cleanup. */
 export function reviewPins(prune = false, database: Database = db()): ReviewPin[] {
+  if (prune) writableDb()
   const registered = new Map((database.query(
     'SELECT name, path, settings FROM project',
   ).all() as { name: string; path: string; settings: string }[]).map((project) => {
@@ -298,12 +299,12 @@ export function reviewPins(prune = false, database: Database = db()): ReviewPin[
   return pins
 }
 
-export function recordReview(runId: number, output: ReviewReply, database: Database = db()): number {
+export function recordReview(runId: number, output: ReviewReply, database: Database = writableDb()): number {
   return recordReviews([{ runId, output }], database)
 }
 
 export function gradeReviewLens(
-  runId: number, output: ReviewReply | null, grades: ReviewGrades, database: Database = db(),
+  runId: number, output: ReviewReply | null, grades: ReviewGrades, database: Database = writableDb(),
 ): number {
   let row = database.query('SELECT id, review_id FROM review_lens WHERE run_id=?').get(runId) as
     { id: number; review_id: number } | null
@@ -324,7 +325,7 @@ export function gradeReviewLens(
 
 export function triageFinding(
   reviewId: number, ordinal: number, disposition: Disposition,
-  rejectionCategory?: string, triagedSeverity?: string, database: Database = db(),
+  rejectionCategory?: string, triagedSeverity?: string, database: Database = writableDb(),
 ): void {
   if (!DISPOSITIONS.includes(disposition)) throw new Error(`invalid disposition: ${disposition}`)
   if (disposition === 'rejected' && !rejectionCategory?.trim()) {
@@ -354,7 +355,7 @@ export function triageFinding(
   if (result.changes !== 1) throw new Error(`review ${reviewId} has no finding ${ordinal}`)
 }
 
-export function completeReview(reviewId: number, database: Database = db()): void {
+export function completeReview(reviewId: number, database: Database = writableDb()): void {
   const row = database.query(
     `SELECT COUNT(*) AS findings,
             SUM(CASE WHEN disposition IS NULL THEN 1 ELSE 0 END) AS untriaged

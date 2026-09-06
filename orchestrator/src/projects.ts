@@ -21,7 +21,7 @@
  * two Laravel apps are the same stack, so a verdict from one is real
  * evidence about the other.
  */
-import { db } from './db.ts'
+import { db, writableDb } from './db.ts'
 
 export type Project = {
   id: number
@@ -251,6 +251,7 @@ export function upsertProject(p: {
   name: string; path: string; stack?: string | null; canon?: boolean
   settings?: ProjectSettings
 }): void {
+  writableDb()
   db().query(
     `INSERT INTO project (name, path, stack, canon, settings) VALUES (?,?,?,?,?)
      ON CONFLICT(name) DO UPDATE SET path=excluded.path, stack=excluded.stack,
@@ -262,6 +263,7 @@ export function upsertProject(p: {
 }
 
 export function removeProject(name: string): boolean {
+  writableDb()
   return db().query('DELETE FROM project WHERE name = ?').run(name).changes > 0
 }
 

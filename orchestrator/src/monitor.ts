@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { db, nowIso, pidAlive, UNSCORED_WHERE, type MonitorSeverity } from './db.ts'
+import { db, nowIso, pidAlive, UNSCORED_WHERE, writableDb, type MonitorSeverity } from './db.ts'
 import { fileIssue } from './mcp.ts'
 import { gitLocks } from './git-locks.ts'
 import { projects } from './projects.ts'
@@ -195,7 +195,7 @@ function dockerConditions(clock: number): { conditions: MonitorCondition[]; erro
 
 /** Observe machine state, record the pass, and make no judgement-shaped repair. */
 export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock = Date.now()): Promise<MonitorResult> {
-  const database = db()
+  const database = writableDb()
   const startedAt = new Date(clock).toISOString()
   const invocationRow = database.query(
     'INSERT INTO monitor_invocation (started_at, trigger) VALUES (?,?) RETURNING id',
