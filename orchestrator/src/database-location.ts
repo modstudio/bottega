@@ -16,32 +16,29 @@ export type DatabaseResolution = {
 
 export const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 
-const worktreeSegment = '/.claude/worktrees/'
-
-function sourceBelongsToRepository(repositoryRoot: string, binaryRoot: string): boolean {
-  const source = resolve(binaryRoot)
-  const root = resolve(repositoryRoot)
-  // This is the pre-database identity test from DEV-286: source is either the
-  // main checkout's orchestrator/ or an orchestrator/ inside that root's
-  // .claude/worktrees/. A sibling project's root matches neither shape.
-  return source === join(root, 'orchestrator') ||
-    (source.startsWith(`${join(root, '.claude', 'worktrees')}/`) && basename(source) === 'orchestrator')
+type RepositoryRoot = {
+  root: string
+  method: 'git-common-dir' | 'git-pointer'
+  linked: boolean
 }
-
-type RepositoryRoot = { root: string; method: 'git-common-dir' | 'git-pointer' }
 
 function repositoryRootFromGit(cwd: string): RepositoryRoot | null {
   try {
     const git = Bun.spawnSync(
-      ['git', 'rev-parse', '--is-bare-repository', '--git-common-dir'], {
+      ['git', 'rev-parse', '--is-bare-repository', '--git-dir', '--git-common-dir'], {
       cwd, stdout: 'pipe', stderr: 'ignore',
       },
     )
     if (git.exitCode !== 0) return null
-    const [bare, commonOutput] = git.stdout.toString().trim().split('\n')
-    if (!commonOutput || (bare !== 'true' && bare !== 'false')) return null
+    const [bare, gitDirOutput, commonOutput] = git.stdout.toString().trim().split('\n')
+    if (!gitDirOutput || !commonOutput || (bare !== 'true' && bare !== 'false')) return null
+    const gitDir = resolve(cwd, gitDirOutput)
     const common = resolve(cwd, commonOutput)
-    return { root: bare === 'true' ? common : dirname(common), method: 'git-common-dir' }
+    return {
+      root: bare === 'true' ? common : dirname(common),
+      method: 'git-common-dir',
+      linked: gitDir !== common,
+    }
   } catch {
     return null
   }
@@ -59,7 +56,7 @@ function repositoryRootFromDotGit(cwd: string): RepositoryRoot | null {
     if (existsSync(dotGit)) {
       try {
         if (statSync(dotGit).isDirectory()) {
-          return { root: current, method: 'git-pointer' }
+          return { root: current, method: 'git-pointer', linked: false }
         }
         const match = readFileSync(dotGit, 'utf8').trim().match(/^gitdir: (.+)$/)
         if (!match) throw new Error(`invalid git worktree pointer: ${dotGit}`)
@@ -69,7 +66,7 @@ function repositoryRootFromDotGit(cwd: string): RepositoryRoot | null {
         if (basename(worktrees) !== 'worktrees' || basename(common) !== '.git' || dirname(gitDir) === gitDir) {
           throw new Error(`invalid git worktree pointer: ${dotGit}`)
         }
-        return { root: dirname(common), method: 'git-pointer' }
+        return { root: dirname(common), method: 'git-pointer', linked: true }
       } catch (error) {
         if (error instanceof Error && error.message.startsWith('invalid git worktree pointer:')) throw error
         throw new Error(`cannot read git repository marker: ${dotGit}: ${String(error)}`)
@@ -97,11 +94,14 @@ export function resolveDatabase(
   const binaryRelative = join(binaryRoot, 'orch.db')
   const tried: string[] = []
   const repository = repositoryRootFromGit(cwd) ?? repositoryRootFromDotGit(cwd)
+  const binaryRepository = repositoryRootFromGit(binaryRoot) ?? repositoryRootFromDotGit(binaryRoot)
   if (repository) {
     const candidate = join(repository.root, 'orchestrator', 'orch.db')
     tried.push(candidate)
     const candidateExists = existsSync(candidate)
-    const ownsSource = sourceBelongsToRepository(repository.root, binaryRoot)
+    // Before the database can confirm the register, Git establishes identity:
+    // cwd and the binary source belong to the same common repository root.
+    const ownsSource = binaryRepository && resolve(binaryRepository.root) === resolve(repository.root)
     if (candidateExists || ownsSource) {
       return {
         path: candidate, method: repository.method, tried, registeredPath: null,
@@ -109,13 +109,26 @@ export function resolveDatabase(
         repositoryCandidateExisted: candidateExists,
         // A worktree-local binary may diagnose its main checkout, but only the
         // main checkout's binary may initialize that checkout.
-        initializable: candidateExists || !resolve(binaryRoot).includes(worktreeSegment),
+        initializable: Boolean(binaryRepository && !binaryRepository.linked),
+      }
+    }
+  }
+
+  if (binaryRepository?.linked) {
+    const mainCandidate = join(binaryRepository.root, 'orchestrator', 'orch.db')
+    if (!tried.includes(mainCandidate)) tried.push(mainCandidate)
+    if (existsSync(mainCandidate)) {
+      return {
+        path: mainCandidate, method: binaryRepository.method, tried, registeredPath: null,
+        repositoryRoot: repository?.root ?? null,
+        repositoryCandidate: repository ? join(repository.root, 'orchestrator', 'orch.db') : null,
+        repositoryCandidateExisted: false, initializable: false,
       }
     }
   }
 
   tried.push(binaryRelative)
-  if (!resolve(binaryRoot).includes(worktreeSegment)) {
+  if (binaryRepository && !binaryRepository.linked) {
     return {
       path: binaryRelative, method: 'binary-relative', tried, registeredPath: null,
       repositoryRoot: repository?.root ?? null,

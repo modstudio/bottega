@@ -10127,20 +10127,25 @@ describe('projects are data, not code', () => {
   })
 
   test('a sibling repository with no database falls through to the main binary database', () => {
-    const sibling = realpathSync(mkdtempSync(join(tmpdir(), 'orch-db-sibling-')))
-    const binaryRoot = '/main/orchestrator'
+    const main = realpathSync(mkdtempSync(join(tmpdir(), 'orch-db-sibling-')))
+    const sibling = join(main, 'sibling')
+    const binaryRoot = join(main, 'orchestrator')
     try {
-      const initialized = Bun.spawnSync(['git', 'init', '-b', 'main'], {
-        cwd: sibling, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
-      })
-      expect(initialized.exitCode).toBe(0)
+      mkdirSync(sibling)
+      for (const cwd of [main, sibling]) {
+        const initialized = Bun.spawnSync(['git', 'init', '-b', 'main'], {
+          cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+        })
+        expect(initialized.exitCode).toBe(0)
+      }
+      mkdirSync(binaryRoot)
       const candidate = join(sibling, 'orchestrator', 'orch.db')
       expect(resolveDatabase(sibling, {}, binaryRoot)).toMatchObject({
-        path: '/main/orchestrator/orch.db', method: 'binary-relative',
-        tried: [candidate, '/main/orchestrator/orch.db'],
+        path: join(binaryRoot, 'orch.db'), method: 'binary-relative',
+        tried: [candidate, join(binaryRoot, 'orch.db')],
       })
     } finally {
-      rmSync(sibling, { recursive: true, force: true })
+      rmSync(main, { recursive: true, force: true })
     }
   })
 
@@ -10163,15 +10168,14 @@ describe('projects are data, not code', () => {
       git(repo, 'commit', '-m', 'fixture')
       git(repo, 'worktree', 'add', '-b', 'test-tree', tree, 'main')
       mkdirSync(join(repo, 'orchestrator'))
+      mkdirSync(join(tree, 'orchestrator'))
 
       const main = resolveDatabase(repo, {}, join(repo, 'orchestrator'))
       expect(main).toMatchObject({ path: candidate, initializable: true })
       expect(missingDatabaseMessage(main.path)).toContain(`database does not exist: ${candidate}`)
 
       chmodSync(join(repo, '.git'), 0o000)
-      const worktree = resolveDatabase(
-        tree, {}, join(repo, '.claude', 'worktrees', 'local', 'orchestrator'),
-      )
+      const worktree = resolveDatabase(tree, {}, join(tree, 'orchestrator'))
       expect(worktree).toMatchObject({ path: candidate, method: 'git-pointer', initializable: false })
       expect(missingDatabaseMessage(worktree.path)).toContain(candidate)
     } finally {
@@ -10182,20 +10186,27 @@ describe('projects are data, not code', () => {
 
   test('a bare repository is its own root and never borrows its parent database', () => {
     const parent = realpathSync(mkdtempSync(join(tmpdir(), 'orch-db-bare-')))
+    const main = join(parent, 'main')
     const bare = join(parent, 'repository.git')
+    const binaryRoot = join(main, 'orchestrator')
     const wrong = join(parent, 'orchestrator', 'orch.db')
     const right = join(bare, 'orchestrator', 'orch.db')
     try {
+      mkdirSync(main)
+      const mainInitialized = Bun.spawnSync(['git', 'init', '-b', 'main'], {
+        cwd: main, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(mainInitialized.exitCode).toBe(0)
       const initialized = Bun.spawnSync(['git', 'init', '--bare', bare], {
         env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
       })
       expect(initialized.exitCode).toBe(0)
       mkdirSync(dirname(wrong), { recursive: true })
       writeFileSync(wrong, 'wrong database')
-      const absent = resolveDatabase(bare, {}, '/main/orchestrator')
+      const absent = resolveDatabase(bare, {}, binaryRoot)
       expect(absent).toMatchObject({
-        path: '/main/orchestrator/orch.db', method: 'binary-relative',
-        tried: [right, '/main/orchestrator/orch.db'],
+        path: join(binaryRoot, 'orch.db'), method: 'binary-relative',
+        tried: [right, join(binaryRoot, 'orch.db')],
       })
       expect(absent.path).not.toBe(wrong)
       mkdirSync(dirname(right), { recursive: true })
@@ -10208,8 +10219,14 @@ describe('projects are data, not code', () => {
   })
 
   test('the opened register can identify a missing platform database after pre-open fallback', () => {
+    const main = realpathSync(mkdtempSync(join(tmpdir(), 'orch-db-register-')))
+    const initialized = Bun.spawnSync(['git', 'init', '-b', 'main'], {
+      cwd: main, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(initialized.exitCode).toBe(0)
+    mkdirSync(join(main, 'orchestrator'))
     const resolution = {
-      ...resolveDatabase('/outside', {}, '/main/orchestrator'),
+      ...resolveDatabase('/outside', {}, join(main, 'orchestrator')),
       repositoryRoot: '/registered/platform',
       repositoryCandidate: '/registered/platform/orchestrator/orch.db',
       repositoryCandidateExisted: false,
@@ -10217,6 +10234,7 @@ describe('projects are data, not code', () => {
     expect(registeredRepositoryMissingDatabase(resolution, '/registered/platform'))
       .toBe('/registered/platform/orchestrator/orch.db')
     expect(registeredRepositoryMissingDatabase(resolution, '/another/platform')).toBeNull()
+    rmSync(main, { recursive: true, force: true })
   })
 
   test('runs and pending use the main database from a linked worktree without an override', () => {
@@ -10272,12 +10290,45 @@ describe('projects are data, not code', () => {
     }
   })
 
-  test('main binary fallback is allowed, while a worktree binary names every refused path', () => {
-    expect(resolveDatabase('/outside', {}, '/main/orchestrator')).toMatchObject({
-      path: '/main/orchestrator/orch.db', method: 'binary-relative',
-    })
-    expect(() => resolveDatabase('/outside', {}, '/main/.claude/worktrees/orch-1/orchestrator'))
-      .toThrow(/tried:\n  \/main\/\.claude\/worktrees\/orch-1\/orchestrator\/orch\.db[\s\S]*orch init-db/)
+  test('an externally located linked binary resolves main and may never initialize beside itself', () => {
+    const parent = realpathSync(mkdtempSync(join(tmpdir(), 'orch-db-external-binary-')))
+    const main = join(parent, 'main')
+    const tree = join(parent, 'external-linked')
+    const mainRoot = join(main, 'orchestrator')
+    const binaryRoot = join(tree, 'orchestrator')
+    const databasePath = join(mainRoot, 'orch.db')
+    const git = (cwd: string, ...args: string[]) => {
+      const result = Bun.spawnSync(['git', ...args], {
+        cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+    }
+    try {
+      mkdirSync(main)
+      git(main, 'init', '-b', 'main')
+      git(main, 'config', 'user.email', 'orch-test@example.invalid')
+      git(main, 'config', 'user.name', 'Orch Test')
+      writeFileSync(join(main, 'tracked'), 'fixture\n')
+      git(main, 'add', 'tracked')
+      git(main, 'commit', '-m', 'fixture')
+      git(main, 'worktree', 'add', '-b', 'external-tree', tree, 'main')
+      mkdirSync(mainRoot)
+      mkdirSync(binaryRoot)
+      writeFileSync(databasePath, 'fixture')
+
+      expect(resolveDatabase(parent, {}, mainRoot)).toMatchObject({
+        path: databasePath, method: 'binary-relative', initializable: true,
+      })
+      expect(resolveDatabase(parent, {}, binaryRoot)).toMatchObject({
+        path: databasePath, method: 'git-common-dir', initializable: false,
+      })
+      rmSync(databasePath)
+      expect(() => resolveDatabase(parent, {}, binaryRoot))
+        .toThrow(/main\/orchestrator\/orch\.db[\s\S]*external-linked\/orchestrator\/orch\.db[\s\S]*orch init-db/)
+      expect(existsSync(join(binaryRoot, 'orch.db'))).toBe(false)
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
   })
 
   test('run files live beside the resolved database unless explicitly overridden', () => {
