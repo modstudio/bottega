@@ -35,7 +35,7 @@ export function Collection<Row>({ title, count, search, filters, columns, rows, 
         {filters}
       </div>
     </div>
-    <div className="max-h-[70vh] overflow-auto border border-border">
+    <div className="border border-border [&>div]:max-h-[70vh]">
       <Table className="text-[12.5px]">
         <TableHeader className="sticky top-0 z-10 bg-background"><TableRow>{columns.map((column) => <TableHead key={column.id} className={column.className}>{column.label}</TableHead>)}{rowActions ? <TableHead /> : null}</TableRow></TableHeader>
         <TableBody>{rows.flatMap((row) => {
