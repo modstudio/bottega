@@ -2282,14 +2282,15 @@ describe('review discipline', () => {
 })
 
 describe('run mailbox', () => {
-  const mailboxOrchInput = (args: string[], stdin?: string, extraEnv: Record<string, string> = {}) => {
+  const mailboxOrchInput = (args: string[], stdin?: string | Uint8Array, extraEnv: Record<string, string> = {}) => {
     const p = Bun.spawnSync([process.execPath, new URL('cli.ts', import.meta.url).pathname, ...args], {
       cwd: dir,
       env: {
         ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
         CLAUDE_CODE_SESSION_ID: 'orch-test-session', ...extraEnv,
       },
-      stdin: stdin === undefined ? undefined : new TextEncoder().encode(stdin),
+      stdin: stdin === undefined ? undefined
+        : typeof stdin === 'string' ? new TextEncoder().encode(stdin) : stdin,
       stdout: 'pipe', stderr: 'pipe',
     })
     return { code: p.exitCode, out: p.stdout.toString(), err: p.stderr.toString() }
@@ -2366,6 +2367,38 @@ describe('run mailbox', () => {
     expect(r.code).toBe(1)
     expect(r.err).toContain('invalid UTF-8')
     expect(r.err).toContain('byte offset 1')
+    expect(messagesForRun(root)).toEqual([])
+  })
+
+  test('tell stdin refuses invalid UTF-8 at the byte offset', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const r = mailboxOrchInput(['tell', String(root)], Buffer.from([0x66, 0x80, 0xff, 0x67]))
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('invalid UTF-8')
+    expect(r.err).toContain('byte offset 1')
+    expect(messagesForRun(root)).toEqual([])
+  })
+
+  test('tell keeps flag-shaped words after the message starts', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const r = mailboxOrch('tell', String(root), 'use', '--agent', 'codex', 'exactly')
+    expect(r.code).toBe(0)
+    expect(messagesForRun(root)[0]!.body).toBe('use --agent codex exactly')
+  })
+
+  test('tell stdin refuses whitespace-only input', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const r = mailboxOrchInput(['tell', String(root)], Buffer.from([0x20, 0x09, 0x0d, 0x0a]))
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('empty message')
+    expect(messagesForRun(root)).toEqual([])
+  })
+
+  test('tell refuses a message that is only a flag-shaped word', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const r = mailboxOrch('tell', String(root), '--quiet')
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('received "--quiet" as a message')
     expect(messagesForRun(root)).toEqual([])
   })
 
@@ -4053,7 +4086,9 @@ describe('retry keeps the work on the same agent', () => {
   test('retry and continue give the same refusal when the chain has no session', () => {
     for (const command of ['retry', 'continue']) {
       const id = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
-      const r = orch([command, String(id)])
+      const r = command === 'continue'
+        ? orch([command, String(id), 'go'])
+        : orch([command, String(id)])
       expect(r.code).toBe(1)
       expect(r.err).toContain(`run ${id} recorded no session id, so codex cannot be resumed`)
     }
@@ -5782,7 +5817,7 @@ describe('recalibrating the scorer', () => {
 
 describe('detached run collection', () => {
   const CLI = new URL('cli.ts', import.meta.url).pathname
-  const orchInput = (args: string[], stdin?: string, extraEnv: Record<string, string> = {}) => {
+  const orchInput = (args: string[], stdin?: string | Uint8Array, extraEnv: Record<string, string> = {}) => {
     const p = Bun.spawnSync([process.execPath, CLI, ...args], {
       // The suite may itself be run by an orch worker. CLI behavior under test
       // starts at the user boundary, not at the inherited delegation depth.
@@ -5791,7 +5826,8 @@ describe('detached run collection', () => {
         CLAUDE_CODE_SESSION_ID: 'orch-test-session',
         ...extraEnv,
       },
-      stdin: stdin !== undefined ? new TextEncoder().encode(stdin) : undefined,
+      stdin: stdin === undefined ? undefined
+        : typeof stdin === 'string' ? new TextEncoder().encode(stdin) : stdin,
       stdout: 'pipe', stderr: 'pipe',
     })
     return {
@@ -7590,6 +7626,42 @@ describe('detached run collection', () => {
       { answer: string | null }).answer).toBeNull()
   })
 
+  test('answer stdin refuses invalid UTF-8 at the byte offset', () => {
+    const id = insert('running', 'implement')
+    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'which design?')
+    const r = orchInput(['answer', String(id)], Buffer.from([0x66, 0x80, 0xff, 0x67]))
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('invalid UTF-8')
+    expect(r.err).toContain('byte offset 1')
+    expect((db().query('SELECT answer FROM question WHERE run_id=?').get(id) as
+      { answer: string | null }).answer).toBeNull()
+  })
+
+  test('answer keeps flag-shaped words after the message starts', () => {
+    const id = insert('running', 'implement')
+    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'which design?')
+    const r = orch('answer', String(id), 'use', '--quiet', 'mode')
+    expect(r.code).toBe(0)
+    expect((db().query('SELECT answer FROM question WHERE run_id=?').get(id) as
+      { answer: string }).answer).toBe('use --quiet mode')
+  })
+
+  test('answer stdin refuses whitespace-only input', () => {
+    const id = insert('running', 'implement')
+    db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'which design?')
+    const r = orchInput(['answer', String(id)], Buffer.from([0x20, 0x09, 0x0d, 0x0a]))
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('empty ruling')
+    expect((db().query('SELECT answer FROM question WHERE run_id=?').get(id) as
+      { answer: string | null }).answer).toBeNull()
+  })
+
   test('a partial multi-question ruling names the single-command rule', () => {
     const id = insert('running', 'implement')
     db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
@@ -7686,7 +7758,7 @@ describe('detached run collection', () => {
     ).run(root, 2, 'codex', stale)
     try {
       const r = Bun.spawnSync(
-        [process.execPath, CLI, 'continue', String(root)],
+        [process.execPath, CLI, 'continue', String(root), 'finish'],
         {
           env: {
             ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
@@ -7843,6 +7915,74 @@ describe('detached run collection', () => {
     expect(r.err).toContain('byte offset 1')
     expect((db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=?').get(root) as
       { n: number }).n).toBe(0)
+  })
+
+  test('continue stdin refuses invalid UTF-8 at the byte offset', () => {
+    const root = insert('ok', 'file-question')
+    db().query('UPDATE run SET vendor_session=?, agent=? WHERE id=?')
+      .run('parent-session', 'codex', root)
+    const r = orchInput(['continue', String(root)], Buffer.from([0x66, 0x80, 0xff, 0x67]))
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('invalid UTF-8')
+    expect(r.err).toContain('byte offset 1')
+    expect((db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=?').get(root) as
+      { n: number }).n).toBe(0)
+  })
+
+  test('continue stdin refuses whitespace-only input instead of substituting the canned prompt', () => {
+    const root = insert('ok', 'file-question')
+    db().query('UPDATE run SET vendor_session=?, agent=? WHERE id=?')
+      .run('parent-session', 'codex', root)
+    const r = orchInput(['continue', String(root)], Buffer.from([0x20, 0x09, 0x0d, 0x0a]))
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('empty message')
+    expect((db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=?').get(root) as
+      { n: number }).n).toBe(0)
+  })
+
+  test('continue stdin refuses an empty pipe instead of substituting the canned prompt', () => {
+    const root = insert('ok', 'file-question')
+    db().query('UPDATE run SET vendor_session=?, agent=? WHERE id=?')
+      .run('parent-session', 'codex', root)
+    const r = orchInput(['continue', String(root)], '')
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('empty message')
+    expect((db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=?').get(root) as
+      { n: number }).n).toBe(0)
+  })
+
+  test('continue keeps flag-shaped words after the message starts', () => {
+    const binDir = mkdtempSync(join(tmpdir(), 'orch-fake-codex-continue-quiet-'))
+    writeFileSync(join(binDir, 'codex'), '#!/bin/sh\nexit 0\n')
+    chmodSync(join(binDir, 'codex'), 0o755)
+    const root = insert('ok', 'file-question')
+    const prompt = join(dir, `continue-quiet-root-${root}.prompt.txt`)
+    writeFileSync(prompt, 'original research spec')
+    db().query('UPDATE run SET vendor_session=?, agent=?, prompt_path=? WHERE id=?')
+      .run('parent-session', 'codex', prompt, root)
+    try {
+      const r = Bun.spawnSync(
+        [process.execPath, CLI, 'continue', String(root), 'use', '--quiet', 'mode'],
+        {
+          env: {
+            ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+            CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+            PATH: `${binDir}:${process.env.PATH ?? ''}`,
+          },
+          stdout: 'pipe', stderr: 'pipe',
+        },
+      )
+      const out = typeof r.stdout === 'string' ? r.stdout : new TextDecoder().decode(r.stdout)
+      expect(r.exitCode).toBe(0)
+      const childId = Number(out.replace(/\u001B\[[0-9;]*m/g, '').trim().split('\n')[0])
+      expect(childId).toBeGreaterThan(0)
+      orch('wait', String(childId), '--timeout', '15')
+      const child = db().query('SELECT prompt_path FROM run WHERE id=?').get(childId) as
+        { prompt_path: string }
+      expect(readFileSync(child.prompt_path, 'utf8')).toBe('use --quiet mode')
+    } finally {
+      rmSync(binDir, { recursive: true, force: true })
+    }
   })
 })
 

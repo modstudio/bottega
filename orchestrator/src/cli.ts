@@ -30,7 +30,7 @@ import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
 import {
   ANSWER_WORKING_FORMS, CONTINUE_WORKING_FORMS, TELL_WORKING_FORMS,
   flagValue, flagValues, invalidUtf8Offset, nulByteOffset, parseAnswerTextSources,
-  refuseMisparsedMessage, validateCliArgs,
+  parseWorkerMessageArgs, refuseMisparsedMessage, validateCliArgs,
 } from './args.ts'
 import { completeReview, DISPOSITIONS, gradeReviewLens, parseReviewOutput, recordReviews,
          reviewCalibration, reviewPins, triageFinding, type Disposition,
@@ -963,13 +963,16 @@ function positionalMessage(rest: string[], allowDashPositionals = false): string
   })
 }
 
-function readWorkerFile(path: string): string {
-  const bytes = readFileSync(path)
+function decodeWorkerBytes(bytes: Uint8Array, source: string): string {
   const utf8At = invalidUtf8Offset(bytes)
   if (utf8At !== null) {
-    throw new Error(`invalid UTF-8 in ${path} at byte offset ${utf8At}`)
+    throw new Error(`invalid UTF-8 in ${source} at byte offset ${utf8At}`)
   }
   return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+}
+
+function readWorkerFile(path: string): string {
+  return decodeWorkerBytes(readFileSync(path), path)
 }
 
 function assertWorkerText(
@@ -1008,16 +1011,17 @@ async function readMessageText(opts: {
   exclusive?: string
   optional?: boolean
   allowDashPositionals?: boolean
+  sources?: { commandFile?: string; positionals: string[] }
 }): Promise<string | undefined> {
-  const f = flag('file')
-  const positional = positionalMessage(argv.slice(2), opts.allowDashPositionals)
-  if (f && positional.length && opts.exclusive) throw new Error(opts.exclusive)
-  if (f) return readWorkerFile(f)
+  const commandFile = opts.sources?.commandFile ?? flag('file')
+  const positional = opts.sources
+    ? opts.sources.positionals
+    : positionalMessage(argv.slice(2), opts.allowDashPositionals)
+  if (commandFile && positional.length && opts.exclusive) throw new Error(opts.exclusive)
+  if (commandFile) return readWorkerFile(commandFile)
   if (positional.length) return positional.join(' ')
   if (!process.stdin.isTTY) {
-    const text = await Bun.stdin.text()
-    if (opts.optional && !text.trim()) return undefined
-    return text
+    return decodeWorkerBytes(new Uint8Array(await Bun.stdin.bytes()), 'stdin')
   }
   if (opts.optional) return undefined
   throw new Error(opts.missing)
@@ -1933,10 +1937,13 @@ switch (cmd) {
   case 'tell': {
     const id = Number(argv[1])
     if (!id) usage()
+    const sources = parseWorkerMessageArgs(argv.slice(2), {
+      usage: 'orch tell <run-id> ["<message>"] [--file PATH]',
+    })
     const body = (await readMessageText({
       missing: 'no message: pass it as an argument, via --file, or on stdin',
       exclusive: 'pass the message either positionally or with --file, not both',
-      allowDashPositionals: true,
+      sources,
     }))!
     assertWorkerText(body, 'message', TELL_WORKING_FORMS)
     const { tellRun } = await import('./mailbox.ts')
@@ -2636,7 +2643,7 @@ switch (cmd) {
         const given = await readMessageText({
           missing: 'no ruling: pass it as an argument, via --file, or on stdin',
           exclusive: 'pass the ruling either positionally or with --file, not both',
-          allowDashPositionals: true,
+          sources: parsed,
         })
         answers.push({ question: open[0]!.question, answer: rulingFrom(given!) })
       } else if (!positional.length) {
@@ -2796,11 +2803,15 @@ switch (cmd) {
     const chain = db().query(
       'SELECT id, agent, parent_run_id FROM run WHERE id = ?',
     ).get(id) as { id: number; agent: string; parent_run_id: number | null } | null
+    const sources = parseWorkerMessageArgs(argv.slice(2), {
+      booleans: ['--follow', '--detach', '--quiet'],
+      usage: 'orch continue <id> ["<what next>"] [--file PATH] [--follow]',
+    })
     const message = await readMessageText({
       missing: 'no message: pass it as an argument, via --file, or on stdin',
       exclusive: 'pass the message either positionally or with --file, not both',
       optional: true,
-      allowDashPositionals: true,
+      sources,
     })
     if (message !== undefined) {
       assertWorkerText(

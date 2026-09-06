@@ -171,39 +171,53 @@ function takeFilePath(args: string[], index: number, usage: string): { path: str
 }
 
 /**
- * Walk `answer`'s argv after the run id. `--q<id> --file PATH` binds that file
- * to that question; a `--file` not immediately after `--q<id>` is command-level.
+ * Walk argv after the run id. `--q<id>` / `--file` / command booleans are
+ * recognised only before the first positional message word; after that every
+ * remaining word is message text, including flag-shaped ones.
  */
 const ANSWER_BOOLEANS = new Set(['--follow', '--detach', '--quiet'])
 
-export function parseAnswerTextSources(args: string[]): AnswerTextSources {
-  const usage = 'orch answer <id> ["<ruling>"] [--file PATH] [--q<ID> "<ruling>"] [--q<ID> --file PATH] [--follow]'
+export function parseWorkerMessageArgs(
+  args: string[],
+  options: { booleans?: Iterable<string>; questions?: boolean; usage?: string } = {},
+): AnswerTextSources {
+  const usage = options.usage
+    ?? 'orch answer <id> ["<ruling>"] [--file PATH] [--q<ID> "<ruling>"] [--q<ID> --file PATH] [--follow]'
+  const booleans = new Set(options.booleans ?? [])
+  const questions = options.questions ?? false
   const byId: QuestionTextSource[] = []
   let commandFile: string | undefined
   const positionals: string[] = []
+  let messageStarted = false
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!
-    const equals = arg.match(/^--q(\d+)=(.*)$/)
-    if (equals) {
-      byId.push({ id: Number(equals[1]), text: equals[2] })
+    if (messageStarted) {
+      positionals.push(arg)
       continue
     }
-    const flagged = arg.match(/^--q(\d+)$/)
-    if (flagged) {
-      const id = Number(flagged[1])
-      const next = args[i + 1]
-      if (next === '--file' || next?.startsWith('--file=')) {
-        const taken = takeFilePath(args, i + 1, usage)
-        byId.push({ id, file: taken.path })
-        i = taken.next - 1
+    if (questions) {
+      const equals = arg.match(/^--q(\d+)=(.*)$/)
+      if (equals) {
+        byId.push({ id: Number(equals[1]), text: equals[2] })
         continue
       }
-      if (next === undefined || ANSWER_BOOLEANS.has(next)) {
-        throw new Error(`argument ${arg} needs a value\nworking form: ${usage}`)
+      const flagged = arg.match(/^--q(\d+)$/)
+      if (flagged) {
+        const id = Number(flagged[1])
+        const next = args[i + 1]
+        if (next === '--file' || next?.startsWith('--file=')) {
+          const taken = takeFilePath(args, i + 1, usage)
+          byId.push({ id, file: taken.path })
+          i = taken.next - 1
+          continue
+        }
+        if (next === undefined || booleans.has(next)) {
+          throw new Error(`argument ${arg} needs a value\nworking form: ${usage}`)
+        }
+        byId.push({ id, text: next })
+        i++
+        continue
       }
-      byId.push({ id, text: next })
-      i++
-      continue
     }
     if (arg === '--file' || arg.startsWith('--file=')) {
       const taken = takeFilePath(args, i, usage)
@@ -211,10 +225,15 @@ export function parseAnswerTextSources(args: string[]): AnswerTextSources {
       i = taken.next - 1
       continue
     }
-    if (ANSWER_BOOLEANS.has(arg)) continue
+    if (booleans.has(arg)) continue
+    messageStarted = true
     positionals.push(arg)
   }
   return { byId, commandFile, positionals }
+}
+
+export function parseAnswerTextSources(args: string[]): AnswerTextSources {
+  return parseWorkerMessageArgs(args, { booleans: ANSWER_BOOLEANS, questions: true })
 }
 
 /** Every documented seed spelling is accepted by the CLI argument parser. */
@@ -414,8 +433,16 @@ export function validateCliArgs(argv: string[]): void {
   const valueFlags = new Set(expected.valueFlags ?? [])
   const booleanFlags = new Set(expected.booleanFlags ?? [])
   const positionals: string[] = []
+  let messageStarted = false
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!
+    if (expected.messagePositionals && messageStarted) {
+      if (positionals.length >= expected.maxPositionals) {
+        throw new Error(`unrecognised argument: ${arg}\nworking form: ${expected.usage}`)
+      }
+      positionals.push(arg)
+      continue
+    }
     const equals = arg.indexOf('=')
     const flagName = equals >= 0 ? arg.slice(0, equals) : arg
     const takesValue = valueFlags.has(flagName) || Boolean(expected.dynamicValueFlag?.test(flagName))
@@ -454,6 +481,7 @@ export function validateCliArgs(argv: string[]): void {
       throw new Error(`unrecognised argument: ${arg}\nworking form: ${expected.usage}`)
     }
     positionals.push(arg)
+    if (expected.messagePositionals && positionals.length >= 2) messageStarted = true
   }
   const unknown = expected.allowedPositionals
     ? positionals.find((arg) => !expected.allowedPositionals!.includes(arg)) : undefined

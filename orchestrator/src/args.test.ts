@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import {
   ANSWER_WORKING_FORMS, invalidUtf8Offset, misparsedMessage, parseAnswerTextSources,
-  refuseMisparsedMessage, flagValue, flagValues, isCliCommand, seedGuidance, validateCliArgs,
+  parseWorkerMessageArgs, refuseMisparsedMessage, flagValue, flagValues, isCliCommand, seedGuidance,
+  validateCliArgs,
 } from './args.ts'
 
 describe('CLI argument recognition', () => {
@@ -188,6 +189,21 @@ describe('answer text sources', () => {
       commandFile: undefined,
       positionals: [],
     })
+  })
+
+  test('once the message starts, flag-shaped words stay in the message', () => {
+    expect(parseAnswerTextSources(['use', '--quiet', 'mode'])).toEqual({
+      byId: [], commandFile: undefined, positionals: ['use', '--quiet', 'mode'],
+    })
+    expect(parseWorkerMessageArgs(['use', '--agent', 'codex', 'exactly'])).toEqual({
+      byId: [], commandFile: undefined, positionals: ['use', '--agent', 'codex', 'exactly'],
+    })
+    expect(parseAnswerTextSources(['--follow', 'use', '--quiet', 'mode'])).toEqual({
+      byId: [], commandFile: undefined, positionals: ['use', '--quiet', 'mode'],
+    })
+    expect(() => validateCliArgs(['answer', '12', 'use', '--quiet', 'mode'])).not.toThrow()
+    expect(() => validateCliArgs(['tell', '12', 'use', '--agent', 'codex', 'exactly'])).not.toThrow()
+    expect(() => validateCliArgs(['continue', '12', 'use', '--quiet', 'mode'])).not.toThrow()
   })
 })
 
