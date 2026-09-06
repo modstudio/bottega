@@ -1153,6 +1153,22 @@ export function changedRegisteredCheckouts(
   return changes
 }
 
+function escapedWriteError(changes: OutsideWorktreeWrite[]): string {
+  const detail = changes.map((change) => {
+    const porcelain = (status: string) => status
+      ? status.split('\0').filter(Boolean).join('\n')
+      : '(clean)'
+    return `registered checkout ${change.project} at ${change.path}\n` +
+      `before:\n${porcelain(change.before)}\nafter:\n${porcelain(change.after)}`
+  }).join('\n\n')
+  const message = `worker wrote outside its worktree:\n${detail}`
+  const bytes = Buffer.from(message)
+  if (bytes.length <= 1500) return message
+  const suffix = Buffer.from('\n… [error bounded to 1500 bytes]')
+  return Buffer.from(bytes.subarray(0, 1500 - suffix.length))
+    .toString('utf8').replace(/\uFFFD$/, '') + suffix.toString()
+}
+
 function branchOf(cwd: string): string | null {
   const branch = gitContext(cwd, 'rev-parse', '--abbrev-ref', 'HEAD')
   return branch && branch !== 'HEAD' ? branch : null
@@ -2101,6 +2117,7 @@ export async function run(opts: {
   let status = 'failed'
   let error: string | null = null
   let failureKind: ReturnType<typeof classify> | null = null
+  let outsideWrites: OutsideWorktreeWrite[] = []
   // Start after orch's own worktree and hook setup, immediately before the
   // vendor process: changes across this interval are attributable to the run.
   const callerWatch = repoJob
@@ -2352,7 +2369,7 @@ export async function run(opts: {
     if (proc) live.delete(proc)
 
     try {
-      const outsideWrites = changedRegisteredCheckouts(
+      outsideWrites = changedRegisteredCheckouts(
         outsideWriteBefore, snapshotRegisteredCheckouts(callerWatch),
       )
       db().query('UPDATE run SET outside_worktree_writes=? WHERE id=?')
@@ -2472,6 +2489,15 @@ export async function run(opts: {
     if (mcpSetupHeader) {
       output = output ? `${mcpSetupHeader}\n\n${output}` : mcpSetupHeader
       writeFileSync(outPath, output)
+    }
+
+    // This post-process fact outranks every vendor exit or reply outcome. The
+    // reply and diff remain stored, but an escaped write can never be an ok or
+    // asking run and never inherits a failover-eligible vendor failure.
+    if (outsideWrites.length) {
+      status = 'failed'
+      failureKind = 'escaped'
+      error = escapedWriteError(outsideWrites)
     }
 
     /**

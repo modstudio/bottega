@@ -537,12 +537,19 @@ usage or balance subcommand - so exhaustion cannot be seen coming. It is caught
 on the failure instead.
 
 Every failure is classified: **quota**, **auth**, **unreachable**, **timeout**,
-**denied**, **content refusal**, **truncated**, or **other**. A truncated run hit
-the vendor's output ceiling before emitting a result; it is not evidence that
-the agent was wrong. Quota, auth and unreachable are the three a person has
+**denied**, **content refusal**, **truncated**, **escaped**, or **other**. A
+truncated run hit the vendor's output ceiling before emitting a result; it is
+not evidence that the agent was wrong. Quota, auth, unreachable and escaped are
+the four a person has
 to act on, because nothing downstream can route around them, so each raises a
 macOS notification at the moment it happens rather than waiting to be found in a
 log.
+
+An **escaped** failure means the worker changed the porcelain status of a
+registered checkout or the caller checkout outside its own worktree. It is
+evidence about the agent, never fails over to another vendor, and landing the
+run's branch is refused even with `--unreviewed`, because a shared checkout was
+touched.
 
 **Routing then avoids that agent for an hour**, unless it is the only one left -
 refusing to run is worse than trying an agent that may have recovered. Only the
@@ -767,6 +774,10 @@ The invariants are:
   orch worktree is residue, not a hazard: each tree path carries a unique run id
   and never recurs, so sweep reports the entry for manual pruning (DEV-194).
 - **Every write transaction is IMMEDIATE; a deferred transaction that later writes is a lock-upgrade race under concurrent dispatch.**
+- **A WORKER'S WRITES OUTSIDE ITS TREE FAIL THE RUN;** the worktree is the
+  boundary for every vendor, and a vendor sandbox is a second line, never the
+  first. The porcelain-status comparison does not see ignored-file writes or
+  content changes that keep the same porcelain line.
 - **A resume is always possible on a stale checkout.** The caller-at-trunk check
   stops a new dispatch from stale input; it must never apply to a chain resuming
   in its own worktree. `run.ts:run` currently attaches a resume under the shared

@@ -657,6 +657,21 @@ function authorizeLanding(
   override: { project: string; branch: string; tip: string; tree: string; reason: string } | null
   carry: ReviewCarry | null
 } {
+  const escaped = db().query(
+    `SELECT escaped.id
+       FROM run escaped
+      WHERE escaped.failure_kind='escaped'
+        AND (escaped.branch=? OR escaped.parent_run_id IN (
+          SELECT root.id FROM run root WHERE root.branch=? AND root.parent_run_id IS NULL
+        ))
+      ORDER BY escaped.id LIMIT 1`,
+  ).get(branch, branch) as { id: number } | null
+  if (escaped) {
+    throw new Error(
+      `refusing to land ${branch}: run ${escaped.id} violated the invariant ` +
+      "A WORKER'S WRITES OUTSIDE ITS TREE FAIL THE RUN; --unreviewed cannot override it",
+    )
+  }
   const reason = unreviewed?.trim()
   if (unreviewed !== undefined && !reason) throw new Error('--unreviewed requires a non-empty reason')
   if (reason) {

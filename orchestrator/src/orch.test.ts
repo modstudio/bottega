@@ -1350,6 +1350,36 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  test('landing refuses an escaped run or resumed turn even with --unreviewed', async () => {
+    const { repo, trees } = repoWithBranches(['escaped-root', 'escaped-turn'])
+    upsertProject({ name: 'landing-escaped', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const root = addRun({
+        agent: 'grok', job: 'implement', status: 'failed', kind: 'escaped',
+      })
+      db().query('UPDATE run SET branch=? WHERE id=?').run('escaped-root', root)
+
+      const chainRoot = addRun({ agent: 'grok', job: 'implement', status: 'failed' })
+      db().query('UPDATE run SET branch=? WHERE id=?').run('escaped-turn', chainRoot)
+      const turn = addRun({
+        agent: 'grok', job: 'implement', status: 'failed', kind: 'escaped',
+        parent: chainRoot, turn: 2,
+      })
+
+      for (const [branch, runId] of [['escaped-root', root], ['escaped-turn', turn]] as const) {
+        const trunk = g(repo, 'rev-parse', 'main')
+        const child = childLand(trees[branch]!, branch, { unreviewed: 'operator override' })
+        expect(await child.exited).not.toBe(0)
+        const error = await new Response(child.stderr).text()
+        expect(error).toContain(`run ${runId}`)
+        expect(error).toContain("A WORKER'S WRITES OUTSIDE ITS TREE FAIL THE RUN")
+        expect(error).toContain('--unreviewed cannot override it')
+        expect(g(repo, 'rev-parse', 'main')).toBe(trunk)
+      }
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   test('status reports a stale ref lock with age, recoverable contents, resolved ref, and no live owner', () => {
     const { repo } = repoWithBranches(['lock-source'])
     upsertProject({ name: 'landing-git-lock', path: repo,
@@ -4165,7 +4195,18 @@ describe('failure classification', () => {
     expect(classify('HTTP 402')).toBe('quota')
     expect(classify('balance exhausted')).toBe('quota')
     expect(classify('401 unauthorized')).toBe('auth')
-    expect(NEEDS_HUMAN).toEqual(['quota', 'auth', 'unreachable'])
+    expect(NEEDS_HUMAN).toEqual(['quota', 'auth', 'unreachable', 'escaped'])
+  })
+
+  test('an escaped write needs a human, counts as evidence, and never fails over', () => {
+    expect(NEEDS_HUMAN).toContain('escaped')
+    expect(NOT_EVIDENCE).not.toContain('escaped')
+    expect(FAILS_OVER).not.toContain('escaped')
+    expect(COOLS_DOWN).not.toContain('escaped')
+
+    addRun({ agent: 'grok', job: 'file-question', status: 'failed', kind: 'escaped' })
+    expect(candidates('file-question').find((item) => item.agent === 'grok'))
+      .toMatchObject({ failures: 1, evidence: 1, score: WEIGHT.none, cooling: null })
   })
 
   test('an endpoint that is not there is unreachable, not a verdict', () => {
@@ -4186,7 +4227,7 @@ describe('failure classification', () => {
     expect(NOT_EVIDENCE).toEqual([
       'quota', 'auth', 'unreachable', 'content_refusal', 'interrupted', 'truncated', 'harness', 'abandoned',
     ])
-    for (const kind of ['timeout', 'denied', 'other']) {
+    for (const kind of ['timeout', 'denied', 'escaped', 'other']) {
       expect(NOT_EVIDENCE).not.toContain(kind)
     }
   })
@@ -5531,6 +5572,7 @@ describe('vendor failure failover is one bounded unit of work', () => {
       git(repo, 'init', '-b', 'main')
       git(repo, 'config', 'user.email', 'orch-test@example.invalid')
       git(repo, 'config', 'user.name', 'Orch Test')
+      appendFileSync(join(repo, '.git', 'info', 'exclude'), 'first-review.ready\ntrunk-moved.ready\n')
       writeFileSync(join(repo, 'base.txt'), 'base\n')
       git(repo, 'add', 'base.txt'); git(repo, 'commit', '-m', 'base')
       const originalBase = git(repo, 'rev-parse', 'HEAD')
@@ -5631,6 +5673,10 @@ describe('vendor failure failover is one bounded unit of work', () => {
       git(repo, 'init', '-b', 'main')
       git(repo, 'config', 'user.email', 'orch-test@example.invalid')
       git(repo, 'config', 'user.name', 'Orch Test')
+      appendFileSync(
+        join(repo, '.git', 'info', 'exclude'),
+        'first-review.ready\nrelease-first.ready\nproject-worktree.invoked\n',
+      )
       writeFileSync(join(repo, 'base.txt'), 'base\n')
       git(repo, 'add', 'base.txt'); git(repo, 'commit', '-m', 'base')
       const originalBase = git(repo, 'rev-parse', 'HEAD')
@@ -16786,6 +16832,7 @@ describe('outside-worktree write observation', () => {
     const script = join(dir, 'outside-write-agent.sh')
     writeFileSync(script, `#!/bin/sh
 if [ -n "$ORCH_TEST_EXTERNAL_WRITE" ]; then printf 'outside\\n' > "$ORCH_TEST_EXTERNAL_WRITE"; fi
+if [ -n "$ORCH_TEST_INSIDE_WRITE" ]; then printf 'inside\\n' > inside-only.txt; fi
 printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"answer"}'
 `)
     chmodSync(script, 0o755)
@@ -16794,28 +16841,82 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
     const previousBin = grok.bin
     const priorDepth = process.env.ORCH_DEPTH
     const priorTarget = process.env.ORCH_TEST_EXTERNAL_WRITE
+    const priorInside = process.env.ORCH_TEST_INSIDE_WRITE
     process.env.ORCH_DEPTH = '0'
     try {
       grok.bin = script
       process.env.ORCH_TEST_EXTERNAL_WRITE = join(watched, 'written-by-run.txt')
-      const dirty = await run({ job: 'file-question', prompt: 'write outside', cwd: dir, agent: 'grok' })
-      const recorded = db().query('SELECT outside_worktree_writes FROM run WHERE id=?')
-        .get(dirty.id) as { outside_worktree_writes: string }
+      let dirtyRunId: number | null = null
+      try {
+        await run({ job: 'file-question', prompt: 'write outside', cwd: dir, agent: 'grok' })
+      } catch (error) {
+        dirtyRunId = (error as Error & { runId?: number }).runId ?? null
+      }
+      expect(dirtyRunId).not.toBeNull()
+      const recorded = db().query(
+        `SELECT status, failure_kind, error, outside_worktree_writes, output_path,
+                worktree, branch, base_commit, worktree_source
+           FROM run WHERE id=?`,
+      ).get(dirtyRunId!) as {
+        status: string; failure_kind: string; error: string
+        outside_worktree_writes: string; output_path: string
+        worktree: string | null; branch: string | null; base_commit: string | null
+        worktree_source: 'recipe' | 'git' | 'readonly_recipe' | null
+      }
+      expect(recorded.status).toBe('failed')
+      expect(recorded.failure_kind).toBe('escaped')
+      expect(recorded.error).toContain(watched)
+      expect(recorded.error).toContain('?? written-by-run.txt')
+      expect(Buffer.byteLength(recorded.error)).toBeLessThanOrEqual(1500)
+      expect(readFileSync(recorded.output_path, 'utf8')).toContain('answer')
       expect(JSON.parse(recorded.outside_worktree_writes)).toEqual([{
         project: 'watched-project', path: watched,
         before: '', after: '?? written-by-run.txt\u0000',
       }])
-      if (dirty.worktree) expect(removeFor(dirty.worktree, dirty.worktree.repoRoot).removed).toBe(true)
+      expect(db().query('SELECT id FROM run WHERE retry_of=?').get(dirtyRunId!)).toBeNull()
+      expect(candidates('file-question').find((item) => item.agent === 'grok'))
+        .toMatchObject({ failures: 1, evidence: 1, score: WEIGHT.none })
+      if (recorded.worktree && recorded.branch && recorded.base_commit) {
+        expect(removeFor({
+          path: recorded.worktree, branch: recorded.branch, base: recorded.base_commit,
+          repoRoot: dir, source: recorded.worktree_source ?? undefined,
+        }, dir).removed).toBe(true)
+      }
 
       rmSync(join(watched, 'written-by-run.txt'))
       delete process.env.ORCH_TEST_EXTERNAL_WRITE
-      const clean = await run({ job: 'file-question', prompt: 'stay clean', cwd: dir, agent: 'grok' })
-      const cleanRecorded = db().query('SELECT outside_worktree_writes FROM run WHERE id=?')
-        .get(clean.id) as { outside_worktree_writes: string }
+      process.env.ORCH_TEST_INSIDE_WRITE = '1'
+      const clean = await run({ job: 'file-question', prompt: 'write inside', cwd: dir, agent: 'grok' })
+      const cleanRecorded = db().query(
+        'SELECT status, failure_kind, outside_worktree_writes FROM run WHERE id=?',
+      ).get(clean.id) as { status: string; failure_kind: string | null; outside_worktree_writes: string }
+      expect(cleanRecorded).toMatchObject({ status: 'ok', failure_kind: null })
       expect(JSON.parse(cleanRecorded.outside_worktree_writes)).toEqual([])
+      expect(clean.worktree && existsSync(join(clean.worktree.path, 'inside-only.txt'))).toBe(true)
       expect(snapshotRegisteredCheckouts()).toEqual([
         { project: 'watched-project', path: watched, status: '' },
       ])
+
+      process.env.ORCH_TEST_EXTERNAL_WRITE = join(watched, 'written-by-resume.txt')
+      let resumedRunId: number | null = null
+      try {
+        await run({
+          job: 'file-question', prompt: 'resume and escape', cwd: clean.worktree!.path,
+          resume: {
+            parent: clean.id, agent: 'grok', session: 'test-session', turn: 2,
+            sessionId: 'orch-test-session', worktree: clean.worktree,
+          },
+        })
+      } catch (error) {
+        resumedRunId = (error as Error & { runId?: number }).runId ?? null
+      }
+      expect(resumedRunId).not.toBeNull()
+      expect(db().query(
+        'SELECT status, failure_kind, parent_run_id FROM run WHERE id=?',
+      ).get(resumedRunId!)).toEqual({
+        status: 'failed', failure_kind: 'escaped', parent_run_id: clean.id,
+      })
+      rmSync(join(watched, 'written-by-resume.txt'))
       if (clean.worktree) expect(removeFor(clean.worktree, clean.worktree.repoRoot).removed).toBe(true)
     } finally {
       grok.bin = previousBin
@@ -16823,6 +16924,8 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
       else process.env.ORCH_DEPTH = priorDepth
       if (priorTarget === undefined) delete process.env.ORCH_TEST_EXTERNAL_WRITE
       else process.env.ORCH_TEST_EXTERNAL_WRITE = priorTarget
+      if (priorInside === undefined) delete process.env.ORCH_TEST_INSIDE_WRITE
+      else process.env.ORCH_TEST_INSIDE_WRITE = priorInside
       rmSync(watched, { recursive: true, force: true })
     }
   })
