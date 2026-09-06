@@ -3,7 +3,7 @@ import {
   CURSOR_CREATE_REFUSAL, GIT_WRITE_REFUSAL, TASK_STATUSES,
   TRACKER_COMMENT_WRITE_REFUSAL, TRACKER_STATUS_WRITE_REFUSAL,
   TRACKER_TITLE_WRITE_REFUSAL, UNKNOWN_TRACKER_REFUSAL, WORKSPACE_CREATE_REFUSAL,
-  createTrackerTask, trackerCapabilities, trackerSourceFor,
+  createTrackerTask, documentsRefusal, trackerCapabilities, trackerSourceFor,
   type ToolCaller, type TrackerProject,
 } from '../../../shared/trackers.ts'
 
@@ -108,8 +108,9 @@ describe('tracker source construction', () => {
 describe('tracker capabilities', () => {
   test('local records expose every hub write', () => {
     expect(trackerCapabilities({ source: 'local', project: project('workshop') })).toEqual({
-      create: true, setStatus: true, setTitle: true, comment: true, documents: true,
-      statusVocabulary: [...TASK_STATUSES], keyFormat: null, reasons: {},
+      create: { allowed: true }, setStatus: { allowed: true },
+      setTitle: { allowed: true }, comment: { allowed: true }, documents: { allowed: true },
+      statusVocabulary: [...TASK_STATUSES], keyFormat: null,
     })
   })
 
@@ -117,32 +118,36 @@ describe('tracker capabilities', () => {
     test(`${protocol} exposes only its evidenced create support`, () => {
       const capabilities = trackerCapabilities({ source: 'mcp', project: project('external', protocol) })
       expect(capabilities).toEqual({
-        create: protocol === 'array-mcp',
-        setStatus: false, setTitle: false, comment: false, documents: false,
-        statusVocabulary: ['todo', 'done'], keyFormat: null,
-        reasons: {
-          ...(protocol === 'array-mcp' ? {} : {
-            create: protocol === 'workspace-mcp' ? WORKSPACE_CREATE_REFUSAL : CURSOR_CREATE_REFUSAL,
-          }),
-          setStatus: TRACKER_STATUS_WRITE_REFUSAL,
-          setTitle: TRACKER_TITLE_WRITE_REFUSAL,
-          comment: TRACKER_COMMENT_WRITE_REFUSAL,
-          documents: `Documents are hub-native; this record lives in ${protocol} and carries none.`,
+        create: protocol === 'array-mcp' ? { allowed: true } : {
+          allowed: false,
+          reason: protocol === 'workspace-mcp' ? WORKSPACE_CREATE_REFUSAL : CURSOR_CREATE_REFUSAL,
         },
+        setStatus: { allowed: false, reason: TRACKER_STATUS_WRITE_REFUSAL },
+        setTitle: { allowed: false, reason: TRACKER_TITLE_WRITE_REFUSAL },
+        comment: { allowed: false, reason: TRACKER_COMMENT_WRITE_REFUSAL },
+        documents: { allowed: false, reason: documentsRefusal(protocol) },
+        statusVocabulary: ['todo', 'done'], keyFormat: null,
       })
     })
   }
 
   test('git and unknown MCP provenance are read-only with their own exact reasons', () => {
     const git = trackerCapabilities({ source: 'git', project: {
-      name: 'old', settings: { keyPrefixes: ['OLD', 'LEG'] },
+      name: 'old', settings: {
+        keyPrefixes: ['OLD', 'LEG'], tracker: { protocol: 'array-mcp' },
+      },
     } })
     expect(git.keyFormat).toBe('OLD-* | LEG-*')
-    expect(new Set(Object.values(git.reasons))).toEqual(new Set([GIT_WRITE_REFUSAL]))
+    expect(git.setTitle).toEqual({ allowed: false, reason: GIT_WRITE_REFUSAL })
 
-    const unknown = trackerCapabilities({ source: 'mcp', project: null })
-    expect(unknown.statusVocabulary).toBeNull()
-    expect(unknown.keyFormat).toBeNull()
-    expect(new Set(Object.values(unknown.reasons))).toEqual(new Set([UNKNOWN_TRACKER_REFUSAL]))
+    for (const unknown of [
+      trackerCapabilities({ source: 'mcp', project: null }),
+      trackerCapabilities({ source: 'git', project: null }),
+      trackerCapabilities({ source: 'git', project: project('protocol-less') }),
+    ]) {
+      expect(unknown.statusVocabulary).toBeNull()
+      expect(unknown.keyFormat).toBeNull()
+      expect(unknown.setTitle).toEqual({ allowed: false, reason: UNKNOWN_TRACKER_REFUSAL })
+    }
   })
 })

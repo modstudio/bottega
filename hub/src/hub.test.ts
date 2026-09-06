@@ -954,7 +954,8 @@ describe('local task tracker', () => {
     expect(result.source).toBe('local')
     expect(result.project?.name).toBe('workshop')
     expect(result.capabilities).toMatchObject({
-      setStatus: true, setTitle: true, comment: true, documents: true,
+      setStatus: { allowed: true }, setTitle: { allowed: true },
+      comment: { allowed: true }, documents: { allowed: true },
     })
     expect(result.comments).toEqual([comment])
     expect(result.documents.map((document) => document.id)).toEqual([handoff.id, ordinary.id])
@@ -985,19 +986,54 @@ describe('heterogeneous work rows', () => {
     }
 
     const hub = await view('flight', 24, { agent: '', project: '', source: 'hub' }) as {
-      rows: { key: string; capabilities: { setTitle: boolean } }[]
+      rows: { key: string; capabilities: { setTitle: { allowed: boolean } } }[]
     }
     expect(hub.rows.length).toBeGreaterThan(0)
-    expect(hub.rows.every((row) => row.capabilities.setTitle)).toBeTrue()
+    expect(hub.rows.every((row) => row.capabilities.setTitle.allowed)).toBeTrue()
 
     const external = await view('flight', 24, { agent: '', project: '', source: 'alpha' }) as {
-      rows: { key: string; capabilities: { setTitle: boolean } }[]
+      rows: { key: string; capabilities: { setTitle: { allowed: boolean } } }[]
     }
     expect(external.rows.length).toBeGreaterThan(0)
-    expect(external.rows.every((row) => !row.capabilities.setTitle)).toBeTrue()
+    expect(external.rows.every((row) => !row.capabilities.setTitle.allowed)).toBeTrue()
 
     expect(boardTasks().cards.find((card) => card.key === 'ALP-999')?.capabilities)
-      .toMatchObject({ create: false, setStatus: false, statusVocabulary: ['started', 'completed'] })
+      .toMatchObject({
+        create: { allowed: false }, setStatus: { allowed: false },
+        statusVocabulary: ['started', 'completed'],
+      })
+    expect(taskRecord('ALP-999').sourceProtocol).toBe('workspace-mcp')
+  })
+
+  test('the unmapped footnote counts only rows this view excludes', async () => {
+    for (const [key, raw] of [['ALP-997', 'Awaiting Oracle'], ['ALP-998', 'Vendor Mystery']] as const) {
+      upsertTrackerTask({
+        key, project: 'alpha', title: raw, status: raw,
+        category: 'active', updatedAt: null, assignee: null,
+      })
+      db().query('UPDATE task SET status_category = NULL WHERE key = ?').run(key)
+    }
+    const now = new Date().toISOString()
+    const started = new Date(Date.now() - 1_000).toISOString()
+    const oldStart = new Date(Date.now() - 3_601_000).toISOString()
+    const oldEnd = new Date(Date.now() - 3_600_000).toISOString()
+    db().query(
+      `INSERT INTO interval
+        (task_key, project, source, start_at, end_at, ref, open)
+       VALUES ('ALP-997', 'alpha', 'claude', ?, ?, 'unmapped:excluded', 0),
+              ('ALP-998', 'alpha', 'claude', ?, ?, 'unmapped:shown', 1)`,
+    ).run(oldStart, oldEnd, started, now)
+
+    const result = await view('flight', 24, { agent: '', project: '', source: 'alpha' }) as {
+      rows: { key: string }[]
+      dropped: { reason: string }[]
+      unmappedStatuses: { count: number; words: string[] }
+    }
+    expect(result.rows.some((row) => row.key === 'ALP-998')).toBeTrue()
+    expect(result.rows.some((row) => row.key === 'ALP-997')).toBeFalse()
+    expect(result.unmappedStatuses.words).toContain('Awaiting Oracle')
+    expect(result.unmappedStatuses.words).not.toContain('Vendor Mystery')
+    expect(result.dropped.some((item) => item.reason.includes('no tracker reachable'))).toBeFalse()
   })
 })
 

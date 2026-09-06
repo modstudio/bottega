@@ -1,5 +1,6 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
+import { TASK_STATUSES } from '../../../../shared/trackers.ts'
 import { strip, view } from '../../serve.ts'
 import type { Context } from '../context.ts'
 import {
@@ -7,6 +8,25 @@ import {
 } from '../../task.ts'
 
 const t = initTRPC.context<Context>().create()
+
+function asWriteError(cause: unknown, conflict?: { from: string; to: string }): TRPCError {
+  const message = cause instanceof Error ? cause.message : String(cause)
+  if (message.startsWith('no task ')) {
+    return new TRPCError({ code: 'NOT_FOUND', message, cause })
+  }
+  if (conflict) {
+    return new TRPCError({
+      code: 'CONFLICT', cause,
+      message: `This document changed since you opened it (version ${conflict.from} → ${conflict.to}). Reload to see the current version; your edit was not saved.`,
+    })
+  }
+  return new TRPCError({ code: 'BAD_REQUEST', message, cause })
+}
+
+function write<T>(operation: () => T): T {
+  try { return operation() }
+  catch (cause) { throw asWriteError(cause) }
+}
 
 const input = z.object({
   hours: z.union([z.literal(24), z.literal(48), z.literal(168), z.literal(720)]),
@@ -54,14 +74,14 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
   }),
   setStatus: t.procedure.input(z.object({
     key: z.string().min(1).max(64),
-    status: z.enum(['open', 'active', 'review', 'done', 'dropped']),
-  })).mutation(({ input: value }) => deps.setTask(value.key, { status: value.status })),
+    status: z.enum(TASK_STATUSES),
+  })).mutation(({ input: value }) => write(() => deps.setTask(value.key, { status: value.status }))),
   setTitle: t.procedure.input(z.object({
     key: z.string().min(1).max(64), title: z.string().trim().min(1).max(500),
-  })).mutation(({ input: value }) => deps.setTask(value.key, { title: value.title })),
+  })).mutation(({ input: value }) => write(() => deps.setTask(value.key, { title: value.title }))),
   comment: t.procedure.input(z.object({
     key: z.string().min(1).max(64), body: z.string().trim().min(1),
-  })).mutation(({ input: value }) => deps.commentTask(value.key, value.body)),
+  })).mutation(({ input: value }) => write(() => deps.commentTask(value.key, value.body))),
   setDocument: t.procedure.input(z.object({
     id: z.number().int().positive(), title: z.string().trim().min(1).max(500),
     body: z.string(), version: z.string().min(1),
@@ -73,13 +93,12 @@ export function createWorkRouter(given: Partial<WorkDeps> = {}) {
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause)
       if (message.includes(`changed since version ${value.version}`)) {
-        const current = deps.getTaskDocument(value.id)
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: `This document changed since you opened it (version ${value.version} \u2192 ${current.version}). Reload to see the current version; your edit was not saved.`,
-        })
+        let current: ReturnType<typeof deps.getTaskDocument>
+        try { current = deps.getTaskDocument(value.id) }
+        catch (lookupCause) { throw asWriteError(lookupCause) }
+        throw asWriteError(cause, { from: value.version, to: current.version })
       }
-      throw cause
+      throw asWriteError(cause)
     }
   }),
   flight: taskView('flight'),

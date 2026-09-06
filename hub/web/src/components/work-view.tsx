@@ -33,7 +33,7 @@ function Status({ row }: { row: Pick<TaskRow, 'key' | 'status' | 'statusCategory
 }
 
 function RecordStatus({ row }: { row: Pick<TaskRow, 'key' | 'status' | 'statusCategory' | 'source'> }) {
-  if (row.source === 'local') return <Status row={row} />
+  if (row.source === 'local' || row.status === row.statusCategory) return <Status row={row} />
   return <span className="inline-flex items-center gap-2">{row.status ?? 'unknown'}<span aria-hidden>→</span><Status row={row} /></span>
 }
 

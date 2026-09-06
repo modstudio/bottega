@@ -7,7 +7,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from '@/components/dialog'
 import {
-  EmptyState, LiveDot, PageHeader, ProjectMark, SectionTitle, Segmented, StatRow, StatTile,
+  EmptyState, LiveDot, PageHeader, ProjectMark, SectionTitle, Segmented, SourceMark, StatRow, StatTile,
 } from '@/components/design-system'
 import { Input } from '@/components/input'
 import { Select } from '@/components/select'
@@ -40,9 +40,15 @@ function DesignPage() {
   const [sheet, setSheet] = useState<'hub' | 'mcp' | 'git' | null>(null)
   const [collectionSearch, setCollectionSearch] = useState('')
   const samples = [
-    { id: 'hub' as const, key: 'DEV-260', name: 'Local task', source: 'hub', status: 'active', capabilities: 'Title, status, comments, and documents can be edited here.' },
-    { id: 'mcp' as const, key: 'STAR-5364', name: 'Tracker task', source: 'mcp', status: 'In Review → review', capabilities: 'No adapter has proven writes to this tracker; hub refuses to guess a payload.' },
-    { id: 'git' as const, key: 'BET-2533', name: 'Git-derived task', source: 'git', status: 'unknown', capabilities: 'Derived from git history; there is no tracker to write to.' },
+    { id: 'hub' as const, key: 'DEV-260', name: 'Local task', source: 'local', project: 'workshop', protocol: null, status: 'active', refusals: [] },
+    { id: 'mcp' as const, key: 'STAR-5364', name: 'Tracker task', source: 'mcp', project: 'starship', protocol: 'array-mcp', status: 'In Review → review', refusals: [
+      ['Change status', 'No adapter has proven a status write to this tracker; hub refuses to guess a payload.'],
+      ['Edit title', 'No adapter has proven a title write to this tracker; hub refuses to guess a payload.'],
+    ] },
+    { id: 'git' as const, key: 'BET-2533', name: 'Git-derived task', source: 'git', project: 'beta', protocol: null, status: 'unknown', refusals: [
+      ['Change status', 'Derived from git history; there is no tracker to write to.'],
+      ['Edit title', 'Derived from git history; there is no tracker to write to.'],
+    ] },
   ].filter((row) => `${row.key} ${row.name} ${row.source}`.toLowerCase().includes(collectionSearch.toLowerCase()))
   const selectedSample = samples.find((row) => row.id === sheet)
 
@@ -109,9 +115,18 @@ function DesignPage() {
     <div className="border border-border"><Table><TableHeader><TableRow><TableHead>Component</TableHead><TableHead>State</TableHead><TableHead className="num">Value</TableHead></TableRow></TableHeader><TableBody><TableRow><TableCell>Table row</TableCell><TableCell><Badge variant="success">ready</Badge></TableCell><TableCell className="num">1,024</TableCell></TableRow><TableRow><TableCell>Quiet row</TableCell><TableCell><Badge variant="outline">resting</Badge></TableCell><TableCell className="num">64</TableCell></TableRow></TableBody></Table></div>
 
     <SectionTitle>Heterogeneous records</SectionTitle>
-    <Collection title="Sample records" count={samples.length} search={{ query: collectionSearch, onQueryChange: setCollectionSearch }} columns={[{ id: 'key', label: 'Key', render: (row) => <strong>{row.key}</strong> }, { id: 'name', label: 'Record', render: (row) => row.name }, { id: 'source', label: 'Source', render: (row) => <Badge variant="outline">{row.source}</Badge> }, { id: 'status', label: 'Status', render: (row) => row.status }]} rows={samples} getKey={(row) => row.id} onOpen={(row) => setSheet(row.id)} empty={{ title: 'No sample records match.' }} />
+    <Collection title="Sample records" count={samples.length} search={{ query: collectionSearch, onQueryChange: setCollectionSearch }} columns={[{ id: 'key', label: 'Key', render: (row) => <strong>{row.key}</strong> }, { id: 'name', label: 'Record', render: (row) => row.name }, { id: 'source', label: 'Source', render: (row) => <SourceMark source={row.source} project={row.project} protocol={row.protocol} /> }, { id: 'status', label: 'Status', render: (row) => row.status }]} rows={samples} getKey={(row) => row.id} onOpen={(row) => setSheet(row.id)} empty={{ title: 'No sample records match.' }} />
     <Sheet open={!!selectedSample} onClose={() => setSheet(null)} title={selectedSample?.key ?? 'Sample record'} subtitle={selectedSample?.name}>
-      {selectedSample ? <><DisplayRow label="Source" value={selectedSample.source} /><DisplayRow label="Status" value={selectedSample.status} /><DisplayRow label="Capabilities" value={selectedSample.capabilities} /></> : null}
+      {selectedSample ? <div className="space-y-4">
+        <DisplayRow label="Source" value={<span className="inline-flex items-center gap-2"><SourceMark source={selectedSample.source} project={selectedSample.project} protocol={selectedSample.protocol} />{selectedSample.source === 'local' ? 'hub' : selectedSample.source === 'git' ? 'git' : `${selectedSample.project} · ${selectedSample.protocol}`}</span>} />
+        {selectedSample.id === 'hub' ? <>
+          <SettingBlock label="Task title" control={<Input defaultValue={selectedSample.name} />} />
+          <SettingBlock label="Task status" control={<Select label="Sample task status" value={selectedSample.status} options={['open', 'active', 'review', 'done', 'dropped'].map((status) => ({ value: status, label: status }))} onChange={() => {}} />} />
+        </> : <>
+          <DisplayRow label="Status" value={selectedSample.status} />
+          {selectedSample.refusals.map(([label, reason]) => <DisplayRow key={label} label={label} value={reason} />)}
+        </>}
+      </div> : null}
     </Sheet>
 
     <SectionTitle>Settings and detail grammar</SectionTitle>

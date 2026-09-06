@@ -104,6 +104,8 @@ export function SourceMark({ source, project, protocol }: {
   project?: string | null
   protocol?: string | null
 }) {
+  // Source is a glyph, not a colour: project and status colours already carry
+  // facts, and a third colour would make two independent facts look like one.
   const title = source === 'local' ? 'hub'
     : source === 'git' ? 'git · derived from history'
       : `${project ?? 'external'} · ${protocol ?? 'tracker protocol unknown'}`

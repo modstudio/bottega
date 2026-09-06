@@ -96,10 +96,19 @@ describe('work.task', () => {
       updateTaskDocument: refusal as never,
     })
     const writes = router.createCaller({})
-    await expect(writes.setStatus({ key: 'EXT-1', status: 'active' })).rejects.toThrow('task EXT-1 is not local')
-    await expect(writes.setTitle({ key: 'EXT-1', title: 'No' })).rejects.toThrow('task EXT-1 is not local')
-    await expect(writes.comment({ key: 'EXT-1', body: 'No' })).rejects.toThrow('task EXT-1 is not local')
-    await expect(writes.setDocument({ id: 1, title: 'No', body: 'No', version: 'old' })).rejects.toThrow('task EXT-1 is not local')
+    await expect(writes.setStatus({ key: 'EXT-1', status: 'active' })).rejects.toMatchObject({ code: 'BAD_REQUEST', message: 'task EXT-1 is not local' })
+    await expect(writes.setTitle({ key: 'EXT-1', title: 'No' })).rejects.toMatchObject({ code: 'BAD_REQUEST', message: 'task EXT-1 is not local' })
+    await expect(writes.comment({ key: 'EXT-1', body: 'No' })).rejects.toMatchObject({ code: 'BAD_REQUEST', message: 'task EXT-1 is not local' })
+    await expect(writes.setDocument({ id: 1, title: 'No', body: 'No', version: 'old' })).rejects.toMatchObject({ code: 'BAD_REQUEST', message: 'task EXT-1 is not local' })
+  })
+
+  test('a write to a missing task maps to NOT_FOUND', async () => {
+    const router = createWorkRouter({
+      strip: fakeStrip, view: fakeView,
+      setTask: (() => { throw new Error('no task DEV-404') }) as never,
+    })
+    await expect(router.createCaller({}).setStatus({ key: 'DEV-404', status: 'active' }))
+      .rejects.toMatchObject({ code: 'NOT_FOUND', message: 'no task DEV-404' })
   })
 
   test('a stale document reports both versions without retrying the write', async () => {

@@ -270,6 +270,9 @@ export function taskRecord(key: string) {
   return {
     task: record.task,
     source: record.task.source,
+    sourceProtocol: record.task.source === 'mcp'
+      ? project?.settings.tracker?.protocol ?? null
+      : null,
     project,
     capabilities: trackerCapabilities({ source: record.task.source, project }),
     runs,

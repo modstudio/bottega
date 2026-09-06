@@ -256,6 +256,21 @@ function runsFor(key: string | null, project: string | null, from: string, to: s
 
 type RunFilters = { agent: string; project: string; source?: string }
 
+/** The UI calls local ownership "hub"; external source values are project names. */
+function matchesSource(row: { source: string | null; project: string | null }, source?: string) {
+  return !source || (source === 'hub' ? row.source === 'local'
+    : row.source !== 'local' && row.project === source)
+}
+
+function sourceFacets(rows: { source: string | null; project: string | null }[]) {
+  return [...new Set([
+    'hub',
+    ...projects().filter((project) => project.settings.tracker).map((project) => project.name),
+    ...rows.filter((row) => row.source !== 'local')
+      .map((row) => row.project).filter((value): value is string => !!value),
+  ])].sort()
+}
+
 export async function view(name: View, hours: number,
                    f: RunFilters = { agent: '', project: '', source: '' }) {
   const from = hoursAgo(hours)
@@ -270,10 +285,8 @@ export async function view(name: View, hours: number,
     // reader has just restricted to another project.
     const rows = all.filter((r) =>
       (!f.project || r.project === f.project)
-      && (!f.source || (f.source === 'hub' ? r.source === 'local'
-        : r.source !== 'local' && r.project === f.source)))
+      && matchesSource(r, f.source))
     const closedHere = new Set(completedInWindow(from, to).map((c) => c.key))
-    const unmapped = rows.filter((r) => r.source === 'mcp' && !!r.status && !r.statusCategory)
 
     // IN FLIGHT: being worked on right now, or marked active in the tracker.
     //
@@ -296,6 +309,11 @@ export async function view(name: View, hours: number,
       ? rows.filter((r) => r.key && (closedHere.has(r.key) || r.statusCategory === 'done'))
       : rows.filter(inFlight)
 
+    // Like the dropped groups below, this footnote describes only rows this
+    // view actually excluded; a present row must never also be called missing.
+    const unmapped = rows.filter((r) =>
+      r.source === 'mcp' && !!r.status && !r.statusCategory && !want.includes(r))
+
     // What the filter left out, and why.
     //
     // Excluding a task is a claim, and an unexplained absence is worse than a
@@ -306,7 +324,7 @@ export async function view(name: View, hours: number,
     if (name === 'flight') {
       const groups: [string, string, (r: (typeof rows)[number]) => boolean][] = [
         ['unknown', 'no tracker reachable to say whether they are active',
-         (r) => !!r.key && !r.statusCategory],
+         (r) => !!r.key && !r.statusCategory && !(r.source === 'mcp' && r.status)],
         ['open', 'queued in their tracker: backlog, todo or unstarted',
          (r) => r.statusCategory === 'open'],
       ]
@@ -352,12 +370,7 @@ export async function view(name: View, hours: number,
       facets: {
         projects: uniqT(all.map((r) => r.project)),
         agents: uniqT(shaped.flatMap((r) => (r.runs || []).map((x) => x.agent))),
-        sources: [...new Set([
-          'hub',
-          ...projects().filter((project) => project.settings.tracker).map((project) => project.name),
-          ...all.filter((row) => row.source !== 'local')
-            .map((row) => row.project).filter((value): value is string => !!value),
-        ])].sort(),
+        sources: sourceFacets(all),
       },
     }
   }
@@ -388,8 +401,7 @@ export async function view(name: View, hours: number,
     const b = boardTasks()
     const rows = b.cards.filter((c) =>
       (!f.project || c.project === f.project)
-      && (!f.source || (f.source === 'hub' ? c.source === 'local'
-        : c.source !== 'local' && c.project === f.source)))
+      && matchesSource(c, f.source))
     /**
      * Facets from the REGISTER, not from the cards.
      *
@@ -413,12 +425,7 @@ export async function view(name: View, hours: number,
         ...projectNames(),
         ...Object.keys(b.totals.project).filter((p) => p !== 'elsewhere'),
       ])].sort() as string[],
-      sources: [...new Set([
-        'hub',
-        ...projects().filter((project) => project.settings.tracker).map((project) => project.name),
-        ...b.cards.filter((card) => card.source !== 'local')
-          .map((card) => card.project).filter((value): value is string => !!value),
-      ])].sort(),
+      sources: sourceFacets(b.cards),
     }
     return {
       cards: rows,

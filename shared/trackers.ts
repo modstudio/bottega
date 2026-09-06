@@ -20,16 +20,15 @@ export type TrackerProject = {
 }
 
 export type TrackerRowSource = 'local' | 'mcp' | 'git'
-export type CapabilityName = 'create' | 'setStatus' | 'setTitle' | 'comment' | 'documents'
+export type Capability = { allowed: true } | { allowed: false; reason: string }
 export type Capabilities = {
-  create: boolean
-  setStatus: boolean
-  setTitle: boolean
-  comment: boolean
-  documents: boolean
+  create: Capability
+  setStatus: Capability
+  setTitle: Capability
+  comment: Capability
+  documents: Capability
   statusVocabulary: string[] | null
   keyFormat: string | null
-  reasons: Partial<Record<CapabilityName, string>>
 }
 
 export const WORKSPACE_CREATE_REFUSAL =
@@ -46,6 +45,11 @@ export const GIT_WRITE_REFUSAL = 'Derived from git history; there is no tracker 
 export const UNKNOWN_TRACKER_REFUSAL =
   "This record's project is not registered on this machine (or declares no tracker protocol), so hub cannot establish what its tracker accepts."
 
+const allow: Capability = { allowed: true }
+const refuse = (reason: string): Capability => ({ allowed: false, reason })
+export const documentsRefusal = (protocol: string): string =>
+  `Documents are hub-native; this record lives in ${protocol} and carries none.`
+
 const keyFormat = (project: TrackerProject | null): string | null => {
   const prefixes = project?.settings.keyPrefixes
   return Array.isArray(prefixes) && prefixes.length
@@ -60,48 +64,51 @@ export function trackerCapabilities({ source, project }: {
 }): Capabilities {
   if (source === 'local') {
     return {
-      create: true, setStatus: true, setTitle: true, comment: true, documents: true,
+      create: allow, setStatus: allow, setTitle: allow, comment: allow, documents: allow,
       statusVocabulary: [...TASK_STATUSES],
-      keyFormat: keyFormat(project), reasons: {},
+      keyFormat: keyFormat(project),
+    }
+  }
+  const protocol = project?.settings.tracker?.protocol
+  if (!project || !protocol) {
+    return {
+      create: refuse(UNKNOWN_TRACKER_REFUSAL),
+      setStatus: refuse(UNKNOWN_TRACKER_REFUSAL),
+      setTitle: refuse(UNKNOWN_TRACKER_REFUSAL),
+      comment: refuse(UNKNOWN_TRACKER_REFUSAL),
+      documents: refuse(UNKNOWN_TRACKER_REFUSAL),
+      statusVocabulary: null, keyFormat: null,
     }
   }
   if (source === 'git') {
     return {
-      create: false, setStatus: false, setTitle: false, comment: false, documents: false,
+      create: refuse(GIT_WRITE_REFUSAL), setStatus: refuse(GIT_WRITE_REFUSAL),
+      setTitle: refuse(GIT_WRITE_REFUSAL), comment: refuse(GIT_WRITE_REFUSAL),
+      documents: refuse(GIT_WRITE_REFUSAL),
       statusVocabulary: null, keyFormat: keyFormat(project),
-      reasons: Object.fromEntries(
-        ['create', 'setStatus', 'setTitle', 'comment', 'documents']
-          .map((name) => [name, GIT_WRITE_REFUSAL]),
-      ) as Capabilities['reasons'],
     }
   }
-
-  const protocol = project?.settings.tracker?.protocol
-  if (!protocol || !['workspace-mcp', 'cursor-mcp', 'array-mcp'].includes(protocol)) {
+  if (!['workspace-mcp', 'cursor-mcp', 'array-mcp'].includes(protocol)) {
     return {
-      create: false, setStatus: false, setTitle: false, comment: false, documents: false,
+      create: refuse(UNKNOWN_TRACKER_REFUSAL),
+      setStatus: refuse(UNKNOWN_TRACKER_REFUSAL),
+      setTitle: refuse(UNKNOWN_TRACKER_REFUSAL),
+      comment: refuse(UNKNOWN_TRACKER_REFUSAL),
+      documents: refuse(UNKNOWN_TRACKER_REFUSAL),
       statusVocabulary: null, keyFormat: null,
-      reasons: Object.fromEntries(
-        ['create', 'setStatus', 'setTitle', 'comment', 'documents']
-          .map((name) => [name, UNKNOWN_TRACKER_REFUSAL]),
-      ) as Capabilities['reasons'],
     }
   }
-  const create = protocol === 'array-mcp'
   return {
-    create, setStatus: false, setTitle: false, comment: false, documents: false,
+    create: protocol === 'array-mcp' ? allow : refuse(protocol === 'workspace-mcp'
+      ? WORKSPACE_CREATE_REFUSAL : CURSOR_CREATE_REFUSAL),
+    setStatus: refuse(TRACKER_STATUS_WRITE_REFUSAL),
+    setTitle: refuse(TRACKER_TITLE_WRITE_REFUSAL),
+    comment: refuse(TRACKER_COMMENT_WRITE_REFUSAL),
+    documents: refuse(documentsRefusal(protocol)),
     statusVocabulary: project?.settings.tracker?.states
       ? Object.keys(project.settings.tracker.states)
       : null,
     keyFormat: keyFormat(project),
-    reasons: {
-      ...(!create ? { create: protocol === 'workspace-mcp'
-        ? WORKSPACE_CREATE_REFUSAL : CURSOR_CREATE_REFUSAL } : {}),
-      setStatus: TRACKER_STATUS_WRITE_REFUSAL,
-      setTitle: TRACKER_TITLE_WRITE_REFUSAL,
-      comment: TRACKER_COMMENT_WRITE_REFUSAL,
-      documents: `Documents are hub-native; this record lives in ${protocol} and carries none.`,
-    },
   }
 }
 
