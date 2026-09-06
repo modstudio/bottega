@@ -1163,6 +1163,35 @@ async function reportContinuedRun(childId: number, jobName: string): Promise<voi
   await follow(childId, has('quiet'))
 }
 
+function chainCanResume(rootId: number): boolean {
+  const latest = db().query(
+    `SELECT agent FROM run WHERE id=? OR parent_run_id=?
+      ORDER BY turn DESC, id DESC LIMIT 1`,
+  ).get(rootId, rootId) as { agent: string } | null
+  if (!latest || !AGENTS[latest.agent]?.caps.resumable) return false
+  return Boolean(db().query(
+    `SELECT 1 FROM run WHERE (id=? OR parent_run_id=?) AND vendor_session IS NOT NULL LIMIT 1`,
+  ).get(rootId, rootId))
+}
+
+function chainIsStranded(rootId: number): boolean {
+  const root = db().query('SELECT status FROM run WHERE id=?').get(rootId) as
+    { status: string } | null
+  if (root?.status !== 'asking' || chainCanResume(rootId)) return false
+  const open = db().query(
+    `SELECT 1 FROM question q JOIN run owner ON owner.id=q.run_id
+      WHERE (owner.id=? OR owner.parent_run_id=?) AND q.answered_at IS NULL LIMIT 1`,
+  ).get(rootId, rootId)
+  const running = db().query(
+    `SELECT 1 FROM run WHERE (id=? OR parent_run_id=?) AND status='running' LIMIT 1`,
+  ).get(rootId, rootId)
+  return !open && !running
+}
+
+function strandedRecovery(rootId: number): string {
+  return `stranded — orch retry ${rootId} --agent … with the recorded ruling, or orch abandon ${rootId}`
+}
+
 function baseHelp(description: string): string {
   const create = projectAt(process.cwd())?.settings.worktree?.create
   return create && !createHasPlaceholder(create, 'base')
@@ -1269,6 +1298,7 @@ function usage(): never {
   orch answer <id> ["<ruling>"] rule from argv, --file, or stdin; resume detached
       --file <path>             read the ruling from a file
       --q<id> --file <path>     read that question's ruling from a file
+      --record-only             attach the ruling without resuming the worker
       --follow                  watch the resumed turn here instead
   orch continue <id> ["<what next>"]
       carry on a chain with no open question - one that was interrupted, or
@@ -2591,17 +2621,28 @@ switch (cmd) {
     if (!id) usage()
     const retryAuthority = authorizeRunMutation(id, 'retry')
     const row = db().query(
-      'SELECT id, agent, job, cwd, prompt_path, probe, status, failure_kind, mcp, schema_path, model, lens FROM run WHERE id = ?',
+      `SELECT id, agent, job, cwd, prompt_path, probe, status, failure_kind, mcp,
+              schema_path, model, lens, launch_seed, launch_key, launch_base, no_failover
+         FROM run WHERE id = ?`,
     ).get(id) as {
       id: number; agent: string; job: string; cwd: string | null
       prompt_path: string | null; probe: number; status: string; failure_kind: string | null
       mcp: number | null; schema_path: string | null; model: string | null; lens: string | null
+      launch_seed: string | null; launch_key: string | null; launch_base: string | null
+      no_failover: number
     } | null
     if (!row) throw new Error(`no run ${id}`)
     // A writing job already has a worktree and a vendor session. Retry would
     // wrap the prompt again and cut a fresh tree beside the one holding the
     // partial edit. Continue the same conversation in the same tree instead.
-    if (job(row.job).needs.writesRepo) {
+    const recordedRulings = row.status === 'asking' ? db().query(
+      `SELECT q.question, q.answer
+         FROM question q JOIN run owner ON owner.id = q.run_id
+        WHERE (owner.id = ? OR owner.parent_run_id = ?)
+          AND q.answered_at IS NOT NULL AND q.answer IS NOT NULL
+        ORDER BY q.id`,
+    ).all(id, id) as { question: string; answer: string }[] : []
+    if (job(row.job).needs.writesRepo && !recordedRulings.length) {
       const requested = flag('agent')
       if (requested && requested !== row.agent) {
         throw new Error(
@@ -2632,13 +2673,19 @@ switch (cmd) {
     // Detached and followed, exactly like `do`. A retry is usually started
     // BECAUSE the first attempt died; running it as a child of this process
     // would leave it dying the same way.
-    const newId = await detach(row.job, readFileSync(row.prompt_path, 'utf8'), {
+    const originalPrompt = readFileSync(row.prompt_path, 'utf8')
+    const retryPrompt = recordedRulings.length
+      ? `${originalPrompt}\n\n---\n\n${rulingPrompt(recordedRulings)}`
+      : originalPrompt
+    const newId = await detach(row.job, retryPrompt, {
       agent,
       schema: row.schema_path ?? undefined,
       mcp: !!row.mcp,
       model: row.model ?? undefined,
       lens: row.lens ?? undefined,
       probe: !!row.probe, retryOf: id, cwd: row.cwd ?? undefined,
+      seed: row.launch_seed ?? undefined, key: row.launch_key ?? undefined,
+      base: row.launch_base ?? undefined, noFailover: !!row.no_failover,
     })
     auditRunMutation(retryAuthority, 'retry', `retried as run ${newId}`)
     console.error(`— run ${newId} is retry of ${id}`)
@@ -3116,10 +3163,13 @@ switch (cmd) {
       )
     }
     for (const r of recoverable) {
+      const stranded = !chainCanResume(r.id)
       if (canAnswer(r.session_id)) {
         console.log(
           `\nrun ${r.id} · ${r.agent}/${r.job}${r.repo ? ` · ${r.repo}` : ''} · ` +
-          `asking, but no ruling is open — recoverable: orch continue ${r.id}`,
+          (stranded
+            ? `asking, but no ruling is open — ${strandedRecovery(r.id)}`
+            : `asking, but no ruling is open — recoverable: orch continue ${r.id}`),
         )
         if (r.session_id === null) {
           console.log('        unowned — any session may continue it')
@@ -3128,7 +3178,9 @@ switch (cmd) {
         console.log(
           `\nrun ${r.id} · ${r.agent}/${r.job}${r.repo ? ` · ${r.repo}` : ''} · ` +
           `asking, but no ruling is open · owner ${r.session_id} · visible only; ` +
-          'only the owning session may continue it',
+          (stranded
+            ? `stranded — only the owning session may use orch retry ${r.id} --agent … or orch abandon ${r.id}`
+            : 'only the owning session may continue it'),
         )
       }
     }
@@ -3252,6 +3304,8 @@ switch (cmd) {
       )
     }
     const ownersLive = live.length > 0
+    const recordOnly = has('record-only')
+    const skipResume = recordOnly && !ownersLive
     if (!ownersLive && !stopped.every((q) =>
       q.owner_status === 'asking' || q.owner_status === 'failed' ||
       q.owner_status === 'stale' || q.owner_status === 'stopped')) {
@@ -3356,6 +3410,23 @@ switch (cmd) {
       id: number; agent: string; vendor_session: string | null; turn: number
       cwd: string | null; worktree: string | null; branch: string | null; base_commit: string | null
     }
+    const sessionFrom = latest.vendor_session
+      ? latest
+      : db().query(
+          `SELECT id, agent, vendor_session, turn
+             FROM run WHERE (id = ? OR parent_run_id = ?) AND vendor_session IS NOT NULL
+            ORDER BY turn DESC LIMIT 1`,
+        ).get(id, id) as {
+          id: number; agent: string; vendor_session: string; turn: number
+        } | null
+    if (!ownersLive && !skipResume &&
+        (!sessionFrom?.vendor_session || AGENTS[latest.agent]?.caps.resumable === false)) {
+      throw new Error(
+        `run ${id} cannot be resumed: no vendor session (agent ${latest.agent}); ` +
+        `the ruling was NOT recorded; options: \`orch retry ${id} --agent …\` to ` +
+        `re-dispatch with the ruling appended to the spec, or \`orch abandon ${id}\``,
+      )
+    }
     if (!ownersLive) {
       const assembledLimit = argvResumeLimit(latest.agent)
       if (assembledLimit !== undefined) {
@@ -3385,8 +3456,18 @@ switch (cmd) {
     db().transaction(() => {
       answerAuthority = adoptRunMutation(answerAuthority, 'answer')
       open.forEach((q, i) => upd.run(answers[i]!.answer, now, answeredBy, q.id))
+      if (skipResume) db().query("UPDATE run SET status='asking' WHERE id=?").run(id)
       auditRunMutation(answerAuthority, 'answer')
     })()
+
+    if (skipResume) {
+      console.log(
+        `recorded ${answers.length} ruling(s) for run ${id}; resume was skipped by --record-only. ` +
+        `The run remains asking; use orch retry ${id} --agent … to re-dispatch with the ruling appended to the spec, ` +
+        `or orch abandon ${id}.`,
+      )
+      break
+    }
 
     if (ownersLive) {
       // Delivered. The worker's own tool call is polling this row and will
@@ -3397,14 +3478,6 @@ switch (cmd) {
         `pick this up from its ask_orchestrator call.`,
       )
       break
-    }
-
-    if (!latest.vendor_session) {
-      throw new Error(
-        `ruled on ${answers.length} question(s); the rulings ARE recorded and were not lost.\n` +
-        `Resume failed: run ${id} recorded no session id, so ${latest.agent} cannot be resumed.\n` +
-        `Retry it with: orch continue ${id}`,
-      )
     }
 
     const worktreePath = latest.worktree ?? row.worktree
@@ -3426,7 +3499,7 @@ switch (cmd) {
         resume: {
           parent: id,
           agent: latest.agent,
-          session: latest.vendor_session,
+          session: sessionFrom!.vendor_session!,
           turn: latest.turn + 1,
           sessionId: row.session_id,
           worktree: worktreePath
@@ -3440,10 +3513,16 @@ switch (cmd) {
         },
       })
     } catch (e) {
+      db().transaction(() => {
+        for (const q of open) {
+          db().query(
+            'UPDATE question SET answer=NULL, answered_at=NULL, answered_by=NULL WHERE id=?',
+          ).run(q.id)
+        }
+      })()
       throw new Error(
-        `ruled on ${answers.length} question(s); the rulings ARE recorded and were not lost.\n` +
         `Resume failed: ${(e as Error).message}\n` +
-        `Retry it with: orch continue ${id}`,
+        `The ruling was rolled back and the question is still open.`,
       )
     }
     console.log(`ruled on ${answers.length} question(s); resumed run ${id} as run ${childId}`)
@@ -4938,6 +5017,10 @@ switch (cmd) {
         ...(questions ? { questions } : {}),
         answer_agent: final.agent,
         failover_chain: chain.attempts.map((attempt) => attempt.agent),
+        ...(chainIsStranded(Number(r.id)) ? {
+          status: 'stranded', stranded: true,
+          recovery_hint: strandedRecovery(Number(r.id)),
+        } : {}),
       }]
     }).slice(0, Number(flag('limit') ?? (json ? 100000 : 20)))
 
@@ -4983,7 +5066,8 @@ switch (cmd) {
     if (!rows.length && !unknownIds.length) { console.log('no runs'); break }
     for (const r of rows) {
       const outcome = outcomeOf(r as OutcomeRow)
-      const status = outcome.line.split(' - ', 1)[0]!
+      const stranded = r.stranded === true
+      const status = stranded ? 'stranded' : outcome.line.split(' - ', 1)[0]!
       const identity = r.resolved_from === 'turn'
         ? `${r.id} (asked as turn ${r.requested_id})`
         : String(r.id)
@@ -4993,7 +5077,8 @@ switch (cmd) {
           ` ${String(r.status === 'failed' ? status.toUpperCase() : status).padEnd(10)}` +
           ` ${dur(r.latency_ms as number | null).padStart(8)}  ${String(r.prompt_head).slice(0, 60)}`,
       )
-      if (r.status === 'asking') console.log(`      ${outcome.line.slice(status.length + 3)}`)
+      if (stranded) console.log(`      ${r.recovery_hint}`)
+      else if (r.status === 'asking') console.log(`      ${outcome.line.slice(status.length + 3)}`)
       if (r.failure_kind === 'contract' || r.failure_kind === 'unevidenced') {
         console.log(`      ${failureReason(r as {
           status: string; error: string | null; failure_kind: string | null; exit_code: number | null

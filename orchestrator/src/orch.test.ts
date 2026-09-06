@@ -7930,7 +7930,7 @@ describe('detached run collection', () => {
     expect(r.out).not.toContain(`orch answer ${id}`)
   })
 
-  test('inbox --all shows a foreign recoverable root without offering authority', () => {
+  test('inbox --all shows a foreign stranded root without offering authority', () => {
     const id = insert('asking', 'implement')
     db().query('UPDATE run SET session_id=? WHERE id=?').run('other-session', id)
 
@@ -7938,7 +7938,8 @@ describe('detached run collection', () => {
     expect(r.code).toBe(0)
     expect(r.out).toContain(`run ${id} · codex/implement`)
     expect(r.out).toContain('owner other-session · visible only')
-    expect(r.out).toContain('only the owning session may continue it')
+    expect(r.out).toContain('stranded — only the owning session may use orch retry')
+    expect(r.out).toContain(`orch abandon ${id}`)
     expect(r.out).not.toContain(`recoverable: orch continue ${id}`)
 
     const continued = orch('continue', String(id), 'continue ownership fixture')
@@ -8127,7 +8128,7 @@ describe('detached run collection', () => {
     expect(r.err).toContain(`waiting on a ruling: orch answer ${id}`)
   })
 
-  test('inbox and result expose an asking chain with no open question as recoverable', () => {
+  test('inbox marks a no-session chain stranded while result retains its neighbouring hint', () => {
     const root = insert('asking', 'implement')
     const turn = insert('asking', 'implement')
     db().query('UPDATE run SET session_id=? WHERE id IN (?,?)')
@@ -8136,7 +8137,9 @@ describe('detached run collection', () => {
 
     const inbox = orch('inbox')
     expect(inbox.code).toBe(0)
-    expect(inbox.out).toContain(`asking, but no ruling is open — recoverable: orch continue ${root}`)
+    expect(inbox.out).toContain(`asking, but no ruling is open — stranded`)
+    expect(inbox.out).toContain(`orch retry ${root} --agent`)
+    expect(inbox.out).not.toContain(`recoverable: orch continue ${root}`)
 
     const result = orch('result', String(turn))
     expect(result.code).toBe(0)
@@ -8158,6 +8161,90 @@ describe('detached run collection', () => {
     const continued = orch('continue', String(root), 'continue this chain')
     expect(continued.code).toBe(1)
     expect(continued.err).toContain(`run ${root} already has running turn ${running} (turn 3)`)
+  })
+
+  test('answer refuses an asking run with no vendor session without recording the ruling', () => {
+    const id = insert('asking', 'implement')
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('orch-test-session', id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'which shape?')
+
+    const result = orch('answer', String(id), 'use the existing shape')
+
+    expect(result.code).toBe(1)
+    expect(result.err).toContain(`run ${id} cannot be resumed: no vendor session (agent codex)`)
+    expect(result.err).toContain('the ruling was NOT recorded')
+    expect(result.err).toContain(`orch retry ${id} --agent`)
+    expect(result.err).toContain(`orch abandon ${id}`)
+    expect(db().query(
+      'SELECT answer, answered_by, answered_at FROM question WHERE run_id=?',
+    ).get(id)).toEqual({ answer: null, answered_by: null, answered_at: null })
+  })
+
+  test('record-only closes the question, marks the chain stranded, and retry restates the ruling', () => {
+    const id = insert('asking', 'file-question')
+    const prompt = join(dir, `record-only-${id}.prompt.txt`)
+    writeFileSync(prompt, 'original fixture spec')
+    db().query('UPDATE run SET session_id=?, prompt_path=?, cwd=? WHERE id=?')
+      .run('orch-test-session', prompt, dir, id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'which shape?')
+
+    const recorded = orch('answer', String(id), '--record-only', 'use the existing shape')
+    expect(recorded.code).toBe(0)
+    expect(recorded.out).toContain('resume was skipped by --record-only')
+    expect(db().query(
+      'SELECT answer, answered_by, answered_at FROM question WHERE run_id=?',
+    ).get(id)).toEqual({
+      answer: 'use the existing shape', answered_by: 'orch-test-session',
+      answered_at: expect.any(String),
+    })
+
+    const inbox = orch('inbox')
+    expect(inbox.out).toContain(`asking, but no ruling is open — stranded`)
+    expect(inbox.out).toContain(`orch retry ${id} --agent`)
+    expect(inbox.out).toContain(`orch abandon ${id}`)
+    expect(inbox.out).not.toContain(`recoverable: orch continue ${id}`)
+    const runs = orch('runs', '--id', String(id))
+    expect(runs.out).toMatch(new RegExp(`\\b${id}\\s+codex\\s+file-question\\s+stranded\\b`))
+    expect(runs.out).toContain(`orch retry ${id} --agent`)
+
+    const binDir = mkdtempSync(join(tmpdir(), 'orch-record-only-retry-'))
+    writeFileSync(join(binDir, 'grok'), '#!/bin/sh\necho ok\n')
+    chmodSync(join(binDir, 'grok'), 0o755)
+    try {
+      const retried = orchInput(['retry', String(id), '--agent', 'grok'], undefined, {
+        PATH: `${binDir}:${process.env.PATH ?? ''}`,
+      })
+      expect(retried.code, retried.err).toBe(0)
+      const child = db().query('SELECT prompt_path FROM run WHERE retry_of=?').get(id) as
+        { prompt_path: string }
+      const resent = readFileSync(child.prompt_path, 'utf8')
+      expect(resent).toContain('original fixture spec')
+      expect(resent).toContain('YOU ASKED: which shape?')
+      expect(resent).toContain('THE RULING: use the existing shape')
+    } finally {
+      rmSync(binDir, { recursive: true, force: true })
+    }
+  })
+
+  test('a resume spawn failure rolls the ruling back and leaves the question open', () => {
+    const id = insert('asking', 'implement')
+    db().query('UPDATE run SET session_id=?, vendor_session=? WHERE id=?')
+      .run('orch-test-session', 'fixture-vendor-session', id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'which shape?')
+
+    const result = orchInput(['answer', String(id), 'use the existing shape'], undefined, {
+      ORCH_EXEC_PATH: join(dir, 'definitely-missing-orch-exec'),
+    })
+
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('Resume failed:')
+    expect(result.err).toContain('The ruling was rolled back and the question is still open.')
+    expect(db().query(
+      'SELECT answer, answered_by, answered_at FROM question WHERE run_id=?',
+    ).get(id)).toEqual({ answer: null, answered_by: null, answered_at: null })
   })
 
   test('result surfaces the recorded base commit for a writing run', () => {
@@ -8217,6 +8304,8 @@ describe('detached run collection', () => {
 
   test('runs shows asking in the status column', () => {
     const id = insert('asking', 'implement')
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'which shape?')
     const r = orch('runs')
     expect(r.code).toBe(0)
     expect(r.out).toMatch(new RegExp(`\\b${id}\\s+codex\\s+implement\\s+asking\\b`))
@@ -9979,7 +10068,7 @@ describe('detached run collection', () => {
     ).get() as { n: number }).n).toBe(0)
   })
 
-  test('the owning session may rule on a question after stopping its run', () => {
+  test('a stopped run without a vendor session keeps its question open', () => {
     const id = insert('stopped', 'implement')
     db().query('UPDATE run SET session_id=? WHERE id=?').run('orch-test-session', id)
     db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
@@ -9987,13 +10076,11 @@ describe('detached run collection', () => {
 
     const r = orch('answer', String(id), 'yes')
     expect(r.code).toBe(1)
-    expect(r.err).toContain('the rulings ARE recorded and were not lost')
+    expect(r.err).toContain('the ruling was NOT recorded')
     expect(r.err).not.toContain('owners are not waiting or stopped')
     expect(db().query(
       'SELECT answer, answered_by, answered_at FROM question WHERE run_id=?',
-    ).get(id)).toEqual({
-      answer: 'yes', answered_by: 'orch-test-session', answered_at: expect.any(String),
-    })
+    ).get(id)).toEqual({ answer: null, answered_by: null, answered_at: null })
   })
 
   test('the owner may answer a failed root and resume its chain', () => {

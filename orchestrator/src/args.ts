@@ -175,7 +175,7 @@ function takeFilePath(args: string[], index: number, usage: string): { path: str
  * recognised only before the first positional message word; after that every
  * remaining word is message text, including flag-shaped ones.
  */
-const ANSWER_BOOLEANS = new Set(['--follow', '--detach', '--quiet'])
+const ANSWER_BOOLEANS = new Set(['--follow', '--detach', '--quiet', '--record-only'])
 
 export function parseWorkerMessageArgs(
   args: string[],
@@ -388,8 +388,8 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
     ) }
     case 'inbox': return { args: argv.slice(1), shape: shape('orch inbox [--all] [--json]', 0, [], ['--all', '--json']) }
     case 'answer': return { args: argv.slice(1), shape: shape(
-      'orch answer <id> ["<ruling>"] [--file PATH] [--q<ID> "<ruling>"] [--q<ID> --file PATH] [--follow]', Infinity,
-      ['--file'], ['--follow', '--detach', '--quiet'],
+      'orch answer <id> [--record-only] ["<ruling>"] [--file PATH] [--q<ID> "<ruling>"] [--q<ID> --file PATH] [--follow]', Infinity,
+      ['--file'], ['--follow', '--detach', '--quiet', '--record-only'],
       { dynamicValueFlag: /^--q\d+$/, messagePositionals: true },
     ) }
     case 'tell': return { args: argv.slice(1), shape: shape(
