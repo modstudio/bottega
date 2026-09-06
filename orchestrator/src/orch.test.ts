@@ -8137,9 +8137,9 @@ describe('detached run collection', () => {
     expect(json.code).toBe(0)
     expect(Object.keys(JSON.parse(json.out)).sort()).toEqual([
       'agent', 'answer_agent', 'branch', 'branch_kept', 'branch_kept_tip', 'cwd',
-      'delivery', 'error', 'exit_code', 'failover_chain', 'failure_kind', 'id',
+      'delivery', 'error', 'exit_code', 'failover_chain', 'failure_kind', 'head_commit', 'id',
       'input_tree', 'job', 'latency_ms', 'launch_key', 'probe', 'prompt_head',
-      'prompt_path', 'quality', 'questions', 'repo', 'requested_id', 'resolved_from', 'retry_of', 'route_reason',
+      'prompt_path', 'quality', 'questions', 'repo', 'requested_id', 'resolved_from', 'retry_of', 'review_ref', 'route_reason',
       'session_id', 'started_at', 'status', 'turns', 'vendor_cost_usd', 'vendor_tokens',
     ].sort())
 
