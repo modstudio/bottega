@@ -1,3 +1,5 @@
+import { REVIEW_SEVERITY } from './db.ts'
+
 /**
  * What an implementation worker is told, and what it must hand back.
  *
@@ -215,6 +217,10 @@ export const CANON_SOURCE_SCHEMA = {
 } as const
 
 export type CanonSource = typeof CANON_SOURCE_SCHEMA.enum[number]
+
+/** Generated from the architect's closed scale so prompt and triage cannot drift. */
+export const REVIEW_SEVERITY_INSTRUCTION =
+  `Every finding severity must use the architect's closed scale: ${REVIEW_SEVERITY.join(' | ')}.`
 
 /**
  * The fixed product of every findings-producing review job.

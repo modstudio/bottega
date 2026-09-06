@@ -1,6 +1,7 @@
 import { DATABASE_RESOLUTION, DB_PATH, db, nowIso, sessionId, judgeability, pendingForSession, unscoredCount, weigh,
          DELIVERY, QUALITY, FIDELITY, type Delivery, type Quality, type Fidelity,
          REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP,
+         REVIEW_SEVERITY,
          type ReviewReproduced, type ReviewCoverage, type ReviewLimits, type ReviewOverlap,
          reapStale, pidAlive, STALE_AFTER_MS, UNSCORED_WHERE, recordDuels, duelMatrices,
          parseRunIds, recordSessionSeen, SESSION_LIVE_MS,
@@ -22,7 +23,8 @@ import { createHasPlaceholder, projectAt, projectByName, projects } from './proj
 import { resolveBase, repoRootOf, removeBranch, unmergedBranch,
          checkoutHasUncommittedWork, callerDrift } from './worktree.ts'
 import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
-import { WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE, contractConflicts } from './contract.ts'
+import { WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE,
+         REVIEW_SEVERITY_INSTRUCTION, contractConflicts } from './contract.ts'
 import { collectResult, collectWait, resolveFailover, failoverSummary } from './collect.ts'
 import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
 import { flagValue, flagValues, validateCliArgs } from './args.ts'
@@ -732,7 +734,7 @@ function usage(): never {
   orch review record <run-id>... record completed lens outputs before triage
   orch review triage <review-id> <finding> <accepted|modified|rejected|skipped>
       --category <name>         required rejection category for rejected findings
-      --severity <level>        architect severity when it differs from the lens
+      --severity <${REVIEW_SEVERITY.join('|')}> architect severity when it differs from the lens
   orch review complete <review-id> mark a fully triaged review complete
   orch review calibration <lens> <agent> <model> [--json]  (--json: one JSON document)
   orch pending                  runs YOU made that are still unscored (exit 1 if any)
@@ -1011,9 +1013,10 @@ switch (cmd) {
     const jobName = argv[1]
     if (!jobName) throw new Error('orch contract <job>')
     const selected = job(jobName)
-    process.stdout.write((selected.needs.writesRepo
+    const preamble = selected.needs.writesRepo
       ? WORKER_PREAMBLE
-      : selected.needs.readsRepo ? READONLY_PREAMBLE : NO_REPO_PREAMBLE) + '\n')
+      : selected.needs.readsRepo ? READONLY_PREAMBLE : NO_REPO_PREAMBLE
+    process.stdout.write((selected.findings ? `${REVIEW_SEVERITY_INSTRUCTION}\n\n` : '') + preamble + '\n')
     break
   }
 
@@ -1740,7 +1743,7 @@ switch (cmd) {
       const finding = Number(argv[3])
       const disposition = argv[4] as Disposition
       if (!reviewId || !finding || !DISPOSITIONS.includes(disposition)) {
-        throw new Error('orch review triage <review-id> <finding> <accepted|modified|rejected|skipped> [--category X] [--severity LEVEL]')
+        throw new Error(`orch review triage <review-id> <finding> <accepted|modified|rejected|skipped> [--category X] [--severity ${REVIEW_SEVERITY.join('|')}]`)
       }
       triageFinding(reviewId, finding, disposition, flag('category'), flag('severity'))
       console.log(`triaged review ${reviewId} finding ${finding}: ${disposition}`)
@@ -1774,6 +1777,8 @@ switch (cmd) {
           })
           console.log(`  ${name}: ${cells.join(', ')}, ungraded=${distribution.ungraded}`)
         }
+        const severity = calibration.severity
+        console.log(`  severity: agreed=${severity.counts.agreed}, changed=${severity.counts.changed}, not-comparable=${severity.counts.not_comparable}`)
       }
       break
     }
@@ -3158,6 +3163,17 @@ switch (cmd) {
     if (delivery !== 'none' && (!quality || !QUALITY.includes(quality))) {
       throw new Error(`delivery '${delivery}' needs a quality: ${QUALITY.join(' | ')}`)
     }
+    const reviewGradeFlags = ['reproduced', 'coverage', 'limits', 'overlap'] as const
+    const suppliedReviewGradeFlags = reviewGradeFlags.filter((name) => flag(name) !== undefined)
+    const findingsJob = Boolean(job(row.job).findings)
+    if (suppliedReviewGradeFlags.length && !findingsJob) {
+      throw new Error(
+        `${row.job} is not a findings-producing lens; review grade flags are not valid for this job`,
+      )
+    }
+    if (suppliedReviewGradeFlags.length && delivery === 'none') {
+      throw new Error("delivery 'none' takes no review grades: there was no lens output to judge")
+    }
     if (needsFidelity && (!fidelity || !FIDELITY.includes(fidelity))) {
       throw new Error(
         `${row.job} writes code, so it needs a third word — fidelity: did it build what\n` +
@@ -3179,7 +3195,7 @@ switch (cmd) {
     const scoredFidelity = needsFidelity ? fidelity : undefined
 
     let reviewGrade: { output: ReturnType<typeof parseReviewOutput>; grades: ReviewGrades } | null = null
-    if (job(row.job).findings && delivery !== 'none') {
+    if (findingsJob && delivery !== 'none') {
       const existing = db().query(
         `SELECT rl.id, COUNT(rf.id) AS findings
            FROM review_lens rl LEFT JOIN review_finding rf ON rf.review_lens_id=rl.id

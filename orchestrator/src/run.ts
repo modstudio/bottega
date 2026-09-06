@@ -28,6 +28,7 @@ import {
 import { recipeNotes } from './recipe.ts'
 import {
   workerPreamble, workerResumeGuard, READONLY_PREAMBLE, NO_REPO_PREAMBLE, WORKER_SCHEMA, ISSUE_WORKER_SCHEMA, REVIEW_SCHEMA,
+  REVIEW_SEVERITY_INSTRUCTION,
   VERIFY_CLAIM_SCHEMA,
   parseWorkerReplyWithCount, isAsking, realQuestions,
   type CanonSource, type WorkerReply,
@@ -1008,6 +1009,10 @@ export async function run(opts: {
       : [repoJob ? READONLY_PREAMBLE : NO_REPO_PREAMBLE,
           docsSection, `---\n\n${originalPrompt}`]
           .filter(Boolean).join('\n\n')
+
+  if (requestedJob.findings && !opts.resume) {
+    prompt = `${REVIEW_SEVERITY_INSTRUCTION}\n\n${prompt}`
+  }
 
   const requiresCanonSource = requestedJob.findings || opts.job === 'verify-claim'
 

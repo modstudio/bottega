@@ -1,4 +1,4 @@
-import { REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_REPRODUCED } from './db.ts'
+import { REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_REPRODUCED, REVIEW_SEVERITY } from './db.ts'
 
 const REVIEW_GRADE_USAGE = `[--reproduced ${REVIEW_REPRODUCED.join('|')}] [--coverage ${REVIEW_COVERAGE.join('|')}] [--limits ${REVIEW_LIMITS.join('|')}] [--overlap ${REVIEW_OVERLAP.join('|')}]`
 
@@ -151,7 +151,7 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       if (topLevelOnly) return { args: [], shape: shape('orch review', 0) }
       if (sub === 'record') return { args: argv.slice(2), shape: shape('orch review record <run-id>...', Infinity) }
       if (sub === 'triage') return { args: argv.slice(2), shape: shape(
-        'orch review triage <review-id> <finding> <accepted|modified|rejected|skipped> [--category X] [--severity LEVEL]', 3,
+        `orch review triage <review-id> <finding> <accepted|modified|rejected|skipped> [--category X] [--severity ${REVIEW_SEVERITY.join('|')}]`, 3,
         ['--category', '--severity'],
       ) }
       if (sub === 'complete') return { args: argv.slice(2), shape: shape('orch review complete <review-id>', 1) }

@@ -19,10 +19,12 @@ export const REVIEW_REPRODUCED = ['none', 'some', 'all'] as const
 export const REVIEW_COVERAGE = ['empty', 'partial', 'adequate'] as const
 export const REVIEW_LIMITS = ['named', 'absent'] as const
 export const REVIEW_OVERLAP = ['unique', 'shared', 'none', 'alone'] as const
+export const REVIEW_SEVERITY = ['critical', 'high', 'medium', 'low'] as const
 export type ReviewReproduced = typeof REVIEW_REPRODUCED[number]
 export type ReviewCoverage = typeof REVIEW_COVERAGE[number]
 export type ReviewLimits = typeof REVIEW_LIMITS[number]
 export type ReviewOverlap = typeof REVIEW_OVERLAP[number]
+export type ReviewSeverity = typeof REVIEW_SEVERITY[number]
 
 const sqlValues = (values: readonly string[]) => values.map((value) => `'${value}'`).join(',')
 
@@ -380,8 +382,8 @@ function normalizeSql(sql: string): string {
 
 function schemaVersion(): string {
   return createHash('sha256')
-    .update([RUN_DDL, SCORE_DDL, DOC_DDL, DOC_REVISION_DDL, CANON_PACK_DDL, REVIEW_LENS_DDL,
-      LANDING_OVERRIDE_DDL, LANDING_REVIEW_CARRY_DDL]
+    .update([RUN_DDL, SCORE_DDL, DOC_DDL, DOC_REVISION_DDL, CANON_PACK_DDL,
+      REVIEW_LENS_DDL, REVIEW_FINDING_DDL, LANDING_OVERRIDE_DDL, LANDING_REVIEW_CARRY_DDL]
       .map(normalizeSql).join('\n'))
     .digest('hex')
 }
@@ -408,15 +410,11 @@ function ensureCanonicalSchema(d: Database) {
     return
   }
 
-  try {
-    d.query("UPDATE run SET status = 'asking' WHERE status = 'blocked'").run()
-  } catch {
-    // CHECK does not yet allow 'asking'; the rebuild copy rewrites them.
-  }
-
   for (const [name, ddl] of [
     ['run', RUN_DDL], ['score', SCORE_DDL], ['doc', DOC_DDL], ['doc_revision', DOC_REVISION_DDL],
-    ['canon_pack', CANON_PACK_DDL], ['review_lens', REVIEW_LENS_DDL], ['landing_override', LANDING_OVERRIDE_DDL],
+    ['canon_pack', CANON_PACK_DDL], ['review_lens', REVIEW_LENS_DDL],
+    ['review_finding', REVIEW_FINDING_DDL],
+    ['landing_override', LANDING_OVERRIDE_DDL],
     ['landing_review_carry', LANDING_REVIEW_CARRY_DDL],
   ] as const) {
     const live = liveTableSql(d, name)
@@ -443,8 +441,8 @@ function ensureCanonicalSchema(d: Database) {
  */
 function rebuildTable(
   d: Database,
-  table: 'run' | 'score' | 'doc' | 'doc_revision' | 'canon_pack' | 'review_lens' | 'landing_override' |
-    'landing_review_carry',
+  table: 'run' | 'score' | 'doc' | 'doc_revision' | 'canon_pack' | 'review_lens' |
+    'review_finding' | 'landing_override' | 'landing_review_carry',
   canonical: string,
 ) {
   const fkOn = foreignKeysOn(d)
@@ -623,6 +621,23 @@ const REVIEW_LENS_DDL = `CREATE TABLE review_lens (
       coverage TEXT CHECK (coverage IS NULL OR coverage IN (${sqlValues(REVIEW_COVERAGE)})),
       limits TEXT CHECK (limits IS NULL OR limits IN (${sqlValues(REVIEW_LIMITS)})),
       overlap TEXT CHECK (overlap IS NULL OR overlap IN (${sqlValues(REVIEW_OVERLAP)}))
+    )`
+
+const REVIEW_FINDING_DDL = `CREATE TABLE review_finding (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      review_id INTEGER NOT NULL REFERENCES review(id) ON DELETE CASCADE,
+      review_lens_id INTEGER NOT NULL REFERENCES review_lens(id) ON DELETE CASCADE,
+      ordinal INTEGER NOT NULL,
+      severity TEXT NOT NULL,
+      location TEXT NOT NULL,
+      evidence TEXT NOT NULL,
+      proposed_correction TEXT NOT NULL,
+      disposition TEXT CHECK (disposition IS NULL OR disposition IN ('accepted','modified','rejected','skipped')),
+      rejection_category TEXT,
+      triaged_severity TEXT CHECK (triaged_severity IS NULL OR triaged_severity IN (${sqlValues(REVIEW_SEVERITY)})),
+      triaged_at TEXT,
+      UNIQUE(review_id, ordinal),
+      CHECK (disposition = 'rejected' OR rejection_category IS NULL)
     )`
 
 const LANDING_OVERRIDE_DDL = `CREATE TABLE landing_override (
@@ -963,22 +978,7 @@ function migrate(d: Database) {
       completed_at TEXT
     );
     ${createIfNotExists(REVIEW_LENS_DDL)};
-    CREATE TABLE IF NOT EXISTS review_finding (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      review_id INTEGER NOT NULL REFERENCES review(id) ON DELETE CASCADE,
-      review_lens_id INTEGER NOT NULL REFERENCES review_lens(id) ON DELETE CASCADE,
-      ordinal INTEGER NOT NULL,
-      severity TEXT NOT NULL,
-      location TEXT NOT NULL,
-      evidence TEXT NOT NULL,
-      proposed_correction TEXT NOT NULL,
-      disposition TEXT CHECK (disposition IS NULL OR disposition IN ('accepted','modified','rejected','skipped')),
-      rejection_category TEXT,
-      triaged_severity TEXT,
-      triaged_at TEXT,
-      UNIQUE(review_id, ordinal),
-      CHECK (disposition = 'rejected' OR rejection_category IS NULL)
-    );
+    ${createIfNotExists(REVIEW_FINDING_DDL)};
     CREATE INDEX IF NOT EXISTS review_calibration ON review_lens(lens, agent, model, review_id);
     -- Open questions, which is the only query the inbox actually runs.
     CREATE INDEX IF NOT EXISTS question_open ON question(answered_at) WHERE answered_at IS NULL;

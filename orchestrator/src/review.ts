@@ -1,7 +1,9 @@
 import type { Database } from 'bun:sqlite'
 import {
   db, nowIso, REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP,
+  REVIEW_SEVERITY,
   type ReviewReproduced, type ReviewCoverage, type ReviewLimits, type ReviewOverlap,
+  type ReviewSeverity,
 } from './db.ts'
 import { CANON_SOURCE_SCHEMA, REVIEW_SCHEMA, type CanonSource, type ReviewReply } from './contract.ts'
 import { job } from './jobs.ts'
@@ -180,6 +182,9 @@ export function triageFinding(
   ).get(reviewId, ordinal) as { severity: string } | null
   if (!finding) throw new Error(`review ${reviewId} has no finding ${ordinal}`)
   const severity = triagedSeverity?.trim()
+  if (severity && !REVIEW_SEVERITY.includes(severity as ReviewSeverity)) {
+    throw new Error(`severity must be: ${REVIEW_SEVERITY.join(' | ')}`)
+  }
   const result = database.query(
     `UPDATE review_finding SET disposition=?, rejection_category=?, triaged_severity=?, triaged_at=?
        WHERE review_id=? AND ordinal=?`,
@@ -209,6 +214,7 @@ export type ReviewCalibration = {
   coverage: GradeDistribution<ReviewCoverage>
   limits: GradeDistribution<ReviewLimits>
   overlap: GradeDistribution<ReviewOverlap>
+  severity: SeverityAgreement
 }
 
 export type GradeDistribution<T extends string> = {
@@ -217,8 +223,13 @@ export type GradeDistribution<T extends string> = {
   ungraded: number
 }
 
+export type SeverityAgreement = {
+  counts: { agreed: number; changed: number; not_comparable: number }
+  shares: { agreed: number | null; changed: number | null; not_comparable: number | null }
+}
+
 function gradeDistribution<T extends string>(
-  rows: Record<string, unknown>[], column: string, values: readonly T[], sharesVisible: boolean,
+  rows: Record<string, unknown>[], column: string, values: readonly T[],
 ): GradeDistribution<T> {
   const counts = Object.fromEntries(values.map((value) => [value, 0])) as Record<T, number>
   let ungraded = 0
@@ -229,9 +240,29 @@ function gradeDistribution<T extends string>(
   }
   const graded = rows.length - ungraded
   const shares = Object.fromEntries(values.map((value) => [
-    value, sharesVisible && graded > 0 ? counts[value] / graded : null,
+    value, graded > 0 ? counts[value] / graded : null,
   ])) as Record<T, number | null>
   return { counts, shares, ungraded }
+}
+
+function severityAgreement(
+  rows: { severity: string; triaged_severity: string | null }[],
+): SeverityAgreement {
+  const counts = { agreed: 0, changed: 0, not_comparable: 0 }
+  for (const row of rows) {
+    if (!REVIEW_SEVERITY.includes(row.severity as ReviewSeverity)) counts.not_comparable++
+    else if (row.triaged_severity === null) counts.agreed++
+    else counts.changed++
+  }
+  const total = rows.length
+  return {
+    counts,
+    shares: {
+      agreed: total ? counts.agreed / total : null,
+      changed: total ? counts.changed / total : null,
+      not_comparable: total ? counts.not_comparable / total : null,
+    },
+  }
 }
 
 function calibrationCell(
@@ -244,10 +275,11 @@ function calibrationCell(
       ORDER BY r.completed_at DESC, r.id DESC LIMIT ?`,
   ).all(...(model === undefined ? [lens, agent, REVIEW_WINDOW] : [lens, agent, model, REVIEW_WINDOW])) as { id: number }[]
   const emptyGrades = () => ({
-    reproduced: gradeDistribution([], 'reproduced', REVIEW_REPRODUCED, false),
-    coverage: gradeDistribution([], 'coverage', REVIEW_COVERAGE, false),
-    limits: gradeDistribution([], 'limits', REVIEW_LIMITS, false),
-    overlap: gradeDistribution([], 'overlap', REVIEW_OVERLAP, false),
+    reproduced: gradeDistribution([], 'reproduced', REVIEW_REPRODUCED),
+    coverage: gradeDistribution([], 'coverage', REVIEW_COVERAGE),
+    limits: gradeDistribution([], 'limits', REVIEW_LIMITS),
+    overlap: gradeDistribution([], 'overlap', REVIEW_OVERLAP),
+    severity: severityAgreement([]),
   })
   if (!reviews.length) return { lens, agent, model: model ?? null, precision: null, hits: 0, triaged: 0, rejection_categories: [], ...emptyGrades() }
   const ids = reviews.map((r) => r.id)
@@ -272,14 +304,21 @@ function calibrationCell(
     `SELECT reproduced, coverage, limits, overlap FROM review_lens rl
       WHERE rl.review_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}`,
   ).all(...ids, lens, agent, ...(model === undefined ? [] : [model])) as Record<string, unknown>[]
-  const sharesVisible = triaged >= MIN_REVIEW_TRIAGED
+  const severityRows = database.query(
+    `SELECT rf.severity, rf.triaged_severity FROM review_finding rf
+      JOIN review_lens rl ON rl.id=rf.review_lens_id
+      WHERE rf.review_id IN (${marks}) AND rl.lens=? AND rl.agent=? ${modelClause}
+        AND rf.disposition IS NOT NULL`,
+  ).all(...ids, lens, agent, ...(model === undefined ? [] : [model])) as
+    { severity: string; triaged_severity: string | null }[]
   return { lens, agent, model: model ?? null,
     precision: triaged >= MIN_REVIEW_TRIAGED ? hits / triaged : null,
     hits, triaged, rejection_categories: categories,
-    reproduced: gradeDistribution(gradeRows, 'reproduced', REVIEW_REPRODUCED, sharesVisible),
-    coverage: gradeDistribution(gradeRows, 'coverage', REVIEW_COVERAGE, sharesVisible),
-    limits: gradeDistribution(gradeRows, 'limits', REVIEW_LIMITS, sharesVisible),
-    overlap: gradeDistribution(gradeRows, 'overlap', REVIEW_OVERLAP, sharesVisible),
+    reproduced: gradeDistribution(gradeRows, 'reproduced', REVIEW_REPRODUCED),
+    coverage: gradeDistribution(gradeRows, 'coverage', REVIEW_COVERAGE),
+    limits: gradeDistribution(gradeRows, 'limits', REVIEW_LIMITS),
+    overlap: gradeDistribution(gradeRows, 'overlap', REVIEW_OVERLAP),
+    severity: severityAgreement(severityRows),
   }
 }
 
@@ -299,7 +338,8 @@ export function calibrationLine(calibration: ReviewCalibration): string {
     const counts = Object.entries(distribution.counts).map(([value, count]) => `${value} ${count}`).join(', ')
     return `${name}: ${counts}; ungraded ${distribution.ungraded}`
   }
-  const grades = ` Review grades: ${gradeSummary('reproduced')}; ${gradeSummary('coverage')}; ${gradeSummary('limits')}; ${gradeSummary('overlap')}.`
+  const severity = ` Severity agreement: agreed ${calibration.severity.counts.agreed}, changed ${calibration.severity.counts.changed}, not-comparable ${calibration.severity.counts.not_comparable}.`
+  const grades = ` Review grades: ${gradeSummary('reproduced')}; ${gradeSummary('coverage')}; ${gradeSummary('limits')}; ${gradeSummary('overlap')}.${severity}`
   if (calibration.precision === null) {
     return `Reviewer calibration: no reliable precision yet for lens ${calibration.lens} on agent ${calibration.agent}.${grades}`
   }

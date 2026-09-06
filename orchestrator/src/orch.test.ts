@@ -1122,6 +1122,7 @@ const run = runJob
 const { summary } = await import('./metric.ts')
 const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
         NO_REPO_PREAMBLE, WORKER_PREAMBLE, LAND_PREAMBLE, REVIEW_SCHEMA,
+        REVIEW_SEVERITY_INSTRUCTION,
         VERIFY_CLAIM_SCHEMA, ISSUE_WORKER_SCHEMA, workerPreamble, workerResumeGuard,
         contractConflicts, hasRealQuestions, realQuestions } = await import('./contract.ts')
 const { parseReviewReply, recordReview, recordReviews, gradeReviewLens, triageFinding, completeReview, reviewCalibration, calibrationLine,
@@ -1515,9 +1516,9 @@ function addRun(o: {
   ) as { id: number }).id
 }
 
-const reviewReply = (findings = 1) => ({
+const reviewReply = (findings = 1, severity = 'major') => ({
   findings: Array.from({ length: findings }, (_, i) => ({
-    severity: 'major', location: `file.ts:${i + 1}`, evidence: `evidence ${i + 1}`,
+    severity, location: `file.ts:${i + 1}`, evidence: `evidence ${i + 1}`,
     proposed_correction: `fix ${i + 1}`,
   })),
   provenance: {
@@ -1653,14 +1654,20 @@ describe('review discipline', () => {
   test('triage records only a severity disagreement', () => {
     const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'severity' })
     const reviewId = recordReview(runId, reviewReply(2))
+    db().query("UPDATE review_finding SET severity='high' WHERE review_id=? AND ordinal=2")
+      .run(reviewId)
     triageFinding(reviewId, 1, 'accepted', undefined, 'critical')
-    triageFinding(reviewId, 2, 'modified', undefined, 'major')
+    triageFinding(reviewId, 2, 'modified', undefined, 'high')
     expect(db().query(
       'SELECT ordinal, severity, triaged_severity FROM review_finding WHERE review_id=? ORDER BY ordinal',
     ).all(reviewId)).toEqual([
       { ordinal: 1, severity: 'major', triaged_severity: 'critical' },
-      { ordinal: 2, severity: 'major', triaged_severity: null },
+      { ordinal: 2, severity: 'high', triaged_severity: null },
     ])
+    expect(() => triageFinding(reviewId, 1, 'accepted', undefined, 'banana'))
+      .toThrow('critical | high | medium | low')
+    expect(() => db().query("UPDATE review_finding SET triaged_severity='banana' WHERE review_id=?")
+      .run(reviewId)).toThrow()
   })
 
   test('calibration and state count graded values and preserve historical null grades', () => {
@@ -1688,9 +1695,43 @@ describe('review discipline', () => {
       shares: { unique: 0, shared: 0, none: 0, alone: 1 },
       ungraded: 1,
     })
+    expect(c.severity).toEqual({
+      counts: { agreed: 0, changed: 0, not_comparable: MIN_REVIEW_TRIAGED + 1 },
+      shares: { agreed: 0, changed: 0, not_comparable: 1 },
+    })
     const cells = state(null).reviewCalibration as typeof c[]
     expect(cells.find((cell) => cell.lens === 'graded' && cell.model === 'm'))
       .toMatchObject({ reproduced: c.reproduced, overlap: c.overlap })
+  })
+
+  test('grade shares use graded rows independently of the finding precision floor', () => {
+    const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'clean-grade' })
+    const reviewId = recordReview(runId, reviewReply(0))
+    gradeReviewLens(runId, null, {
+      reproduced: 'none', coverage: 'adequate', limits: 'absent', overlap: 'none',
+    })
+    completeReview(reviewId)
+    const c = reviewCalibration('clean-grade', 'codex', 'm')
+    expect(c.precision).toBeNull()
+    expect(c.coverage).toEqual({
+      counts: { empty: 0, partial: 0, adequate: 1 },
+      shares: { empty: 0, partial: 0, adequate: 1 },
+      ungraded: 0,
+    })
+  })
+
+  test('severity calibration separates agreement, changes, and off-scale lens claims', () => {
+    const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'severity-cell' })
+    const reviewId = recordReview(runId, reviewReply(3, 'high'))
+    db().query("UPDATE review_finding SET severity='major' WHERE review_id=? AND ordinal=3").run(reviewId)
+    triageFinding(reviewId, 1, 'accepted')
+    triageFinding(reviewId, 2, 'accepted', undefined, 'critical')
+    triageFinding(reviewId, 3, 'accepted', undefined, 'low')
+    completeReview(reviewId)
+    expect(reviewCalibration('severity-cell', 'codex', 'm').severity).toEqual({
+      counts: { agreed: 1, changed: 1, not_comparable: 1 },
+      shares: { agreed: 1 / 3, changed: 1 / 3, not_comparable: 1 / 3 },
+    })
   })
 
   test('uses only the most recent fifty complete reviews', () => {
@@ -1733,6 +1774,7 @@ describe('review discipline', () => {
       process.env.ORCH_DEPTH = '0'
       const result = await runJob({ job: 'review-lens-inline', prompt: 'inspect this pack',
         agent: 'codex', lens: 'bound-prompt' })
+      expect(sent).toContain('closed scale: critical | high | medium | low')
       expect(sent).toContain('precision 1.00 over 10 triaged findings')
       expect(JSON.parse(readFileSync(sentSchema!, 'utf8'))).toEqual(strictCodexSchema(REVIEW_SCHEMA))
       const row = db().query('SELECT prompt_sha, prompt_path, lens FROM run WHERE id=?').get(result.id) as
@@ -3104,7 +3146,7 @@ describe('job contracts are visible before submission', () => {
       const r = contract(name)
       expect(r.code).toBe(0)
       expect(r.out).toBe(
-        `${definition.needs.writesRepo
+        `${definition.findings ? `${REVIEW_SEVERITY_INSTRUCTION}\n\n` : ''}${definition.needs.writesRepo
           ? WORKER_PREAMBLE
           : definition.needs.readsRepo ? READONLY_PREAMBLE : NO_REPO_PREAMBLE}\n`,
       )
@@ -6229,6 +6271,23 @@ describe('detached run collection', () => {
       .run('orch-test-session', failed)
     expect(orch('score', String(failed), 'none').code).toBe(0)
     expect(db().query('SELECT id FROM review_lens WHERE run_id=?').get(failed)).toBeNull()
+
+    const rejectedRun = insert('failed', 'craft')
+    db().query("UPDATE run SET failure_kind='other' WHERE id=?").run(rejectedRun)
+    const rejectedFlags = orch('score', String(rejectedRun), 'none',
+      '--reproduced', 'none')
+    expect(rejectedFlags.code).toBe(1)
+    expect(rejectedFlags.err).toContain("delivery 'none' takes no review grades")
+  })
+
+  test('score refuses review grades on a job that does not produce findings', () => {
+    const id = insert('ok', 'file-question')
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('orch-test-session', id)
+    const r = orch('score', String(id), 'full', 'right',
+      '--reproduced', 'all', '--coverage', 'adequate', '--limits', 'named', '--overlap', 'unique')
+    expect(r.code).toBe(1)
+    expect(r.err).toContain('file-question is not a findings-producing lens')
+    expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
   })
 
   test('review triage --severity stores a disagreement and omission stores null', () => {
@@ -6242,6 +6301,9 @@ describe('detached run collection', () => {
       { ordinal: 1, triaged_severity: 'critical' },
       { ordinal: 2, triaged_severity: null },
     ])
+    const invalid = orch('review', 'triage', String(reviewId), '2', 'accepted', '--severity', 'banana')
+    expect(invalid.code).toBe(1)
+    expect(invalid.err).toContain('critical | high | medium | low')
   })
 
   test('doctor excludes scores on not-evidence runs from its scored count', () => {
