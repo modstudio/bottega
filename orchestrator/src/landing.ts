@@ -192,61 +192,193 @@ function rebaseAndGate(
 
 type ReviewCoverage = {
   id: number
-  lenses: { lens: string; runId: number; tree: string | null }[]
+  lenses: {
+    lens: string
+    runId: number
+    tree: string | null
+    inputTree: string | null
+    branch: string | null
+    baseCommit: string | null
+    launchCwd: string | null
+  }[]
 }
 
 function completedReviews(project: string): ReviewCoverage[] {
   const rows = db().query(
-    `SELECT r.id, rl.lens, rl.run_id, rl.reviewed_tree
+    `SELECT r.id, rl.lens, rl.run_id, rl.reviewed_tree, run.input_tree,
+            run.branch, run.base_commit, run.launch_cwd
        FROM review r
        JOIN review_lens rl ON rl.review_id=r.id
+       JOIN run ON run.id=rl.run_id
       WHERE r.completed_at IS NOT NULL AND EXISTS (
         SELECT 1 FROM review_lens project_lens
         JOIN run project_run ON project_run.id=project_lens.run_id
         WHERE project_lens.review_id=r.id AND project_run.repo=?
       )
       ORDER BY r.id, rl.id`,
-  ).all(project) as { id: number; lens: string; run_id: number; reviewed_tree: string | null }[]
+  ).all(project) as {
+    id: number; lens: string; run_id: number; reviewed_tree: string | null
+    input_tree: string | null; branch: string | null; base_commit: string | null
+    launch_cwd: string | null
+  }[]
   const grouped = new Map<number, ReviewCoverage>()
   for (const row of rows) {
     const review = grouped.get(row.id) ?? { id: row.id, lenses: [] }
-    review.lenses.push({ lens: row.lens, runId: row.run_id, tree: row.reviewed_tree })
+    review.lenses.push({
+      lens: row.lens, runId: row.run_id, tree: row.reviewed_tree,
+      inputTree: row.input_tree, branch: row.branch, baseCommit: row.base_commit,
+      launchCwd: row.launch_cwd,
+    })
     grouped.set(row.id, review)
   }
   return [...grouped.values()]
 }
 
-function coverageText(project: string, candidateTree: string): string {
+type ReviewCarry = {
+  project: string
+  branch: string
+  tip: string
+  tree: string
+  reviewId: number
+  reviewedCommit: string
+  reviewedTree: string
+  patchId: string
+  oldBase: string
+  newBase: string
+}
+
+type CoverageVerdict =
+  | { kind: 'exact' }
+  | ({ kind: 'carried' } & Omit<ReviewCarry, 'project' | 'branch'>)
+  | { kind: 'invalid'; reason: string }
+
+function commitsFrom(repoRoot: string, args: string[]): string[] {
+  if (!gitOk(repoRoot, args)) return []
+  const output = git(repoRoot, args)
+  return output ? output.split('\n') : []
+}
+
+function commitForTree(repoRoot: string, review: ReviewCoverage, tree: string): string | null {
+  const branches = [...new Set(review.lenses
+    .filter((lens) => lens.inputTree === tree)
+    .map((lens) => lens.branch)
+    .filter((branch): branch is string => Boolean(branch)))]
+  const seen = new Set<string>()
+  const candidates = branches.flatMap((branch) =>
+    commitsFrom(repoRoot, ['rev-list', '--walk-reflogs', '--max-count=50', branch]))
+  for (const commit of candidates) {
+    seen.add(commit)
+    if (git(repoRoot, ['rev-parse', `${commit}^{tree}`]) === tree) return commit
+  }
+  for (const commit of commitsFrom(repoRoot, ['log', '--all', '--format=%H', '--max-count=500'])) {
+    if (seen.has(commit)) continue
+    if (git(repoRoot, ['rev-parse', `${commit}^{tree}`]) === tree) return commit
+  }
+  return null
+}
+
+function patchId(repoRoot: string, from: string, to: string): string {
+  const diff = Bun.spawnSync(['git', 'diff', `${from}..${to}`], {
+    cwd: repoRoot, env: process.env, stdout: 'pipe', stderr: 'pipe',
+  })
+  if (diff.exitCode !== 0) {
+    throw new Error(`git diff ${from}..${to} failed: ${diff.stderr.toString().trim()}`)
+  }
+  const id = Bun.spawnSync(['git', 'patch-id', '--stable'], {
+    cwd: repoRoot, env: process.env, stdin: diff.stdout, stdout: 'pipe', stderr: 'pipe',
+  })
+  if (id.exitCode !== 0) {
+    throw new Error(`git patch-id --stable failed: ${id.stderr.toString().trim()}`)
+  }
+  return id.stdout.toString().trim().split(/\s+/)[0] ?? ''
+}
+
+function changedPaths(repoRoot: string, from: string, to: string): Set<string> {
+  const output = git(repoRoot, ['diff', '--name-only', `${from}..${to}`])
+  return new Set(output ? output.split('\n') : [])
+}
+
+function reviewVerdict(
+  repoRoot: string, review: ReviewCoverage, tip: string, trunk: string,
+): CoverageVerdict {
+  const tree = git(repoRoot, ['rev-parse', `${tip}^{tree}`])
+  if (review.lenses.length > 0 && review.lenses.every((lens) => lens.tree === tree)) {
+    return { kind: 'exact' }
+  }
+  const reviewedTree = review.lenses[0]?.tree
+  if (!reviewedTree || !review.lenses.every((lens) => lens.tree === reviewedTree)) {
+    return { kind: 'invalid', reason: 'review lenses do not agree on one tree' }
+  }
+  const reviewedCommit = commitForTree(repoRoot, review, reviewedTree)
+  if (!reviewedCommit) return { kind: 'invalid', reason: 'reviewed commit not found' }
+  const metadata = review.lenses.find((lens) =>
+    lens.inputTree === reviewedTree && lens.baseCommit && gitOk(repoRoot, ['cat-file', '-e', `${lens.baseCommit}^{commit}`]))
+  if (!metadata?.baseCommit) return { kind: 'invalid', reason: 'reviewed commit not found' }
+  const oldBase = git(repoRoot, ['merge-base', reviewedCommit, metadata.baseCommit])
+  const newBase = git(repoRoot, ['merge-base', tip, trunk])
+  const changePaths = changedPaths(repoRoot, oldBase, reviewedCommit)
+  const trunkPaths = changedPaths(repoRoot, oldBase, newBase)
+  const overlap = [...changePaths].filter((path) => trunkPaths.has(path))
+  if (overlap.length) return { kind: 'invalid', reason: 'overlapping paths' }
+  const reviewedPatch = patchId(repoRoot, oldBase, reviewedCommit)
+  const candidatePatch = patchId(repoRoot, newBase, tip)
+  if (!reviewedPatch || reviewedPatch !== candidatePatch) {
+    return { kind: 'invalid', reason: 'patch-id differs' }
+  }
+  return {
+    kind: 'carried', tip, tree, reviewId: review.id, reviewedCommit, reviewedTree,
+    patchId: candidatePatch, oldBase, newBase,
+  }
+}
+
+function coverageText(project: string, repoRoot: string, tip: string, trunk: string): string {
+  const candidateTree = git(repoRoot, ['rev-parse', `${tip}^{tree}`])
   const reviews = completedReviews(project)
   const lines = reviews.length
-    ? reviews.flatMap((review) => [
-        `review ${review.id} (${review.lenses.length > 0 &&
-          review.lenses.every((lens) => lens.tree === candidateTree)
-          ? 'covers' : 'does not cover'}):`,
-        ...review.lenses.map((lens) =>
-          `  ${lens.lens} (run ${lens.runId}): ${lens.tree ?? 'NULL'} ` +
-          (lens.tree === candidateTree ? '(matches)' : '(MISMATCH)')),
-      ])
+    ? reviews.map((review) => {
+        const verdict = reviewVerdict(repoRoot, review, tip, trunk)
+        if (verdict.kind === 'exact') return `review ${review.id}: exact`
+        if (verdict.kind === 'carried') {
+          return `review ${review.id}: carried (patch-id ${verdict.patchId}; ` +
+            `${verdict.oldBase}..${verdict.newBase})`
+        }
+        return `review ${review.id}: invalid (${verdict.reason})`
+      })
     : ['  none']
   return `current tip tree: ${candidateTree}\n${lines.join('\n')}`
 }
 
-function requireReviewCoverage(project: Project, repoRoot: string, tip: string): string {
+function requireReviewCoverage(
+  project: Project, repoRoot: string, branch: string, tip: string, trunk: string,
+): { tree: string; carry: ReviewCarry | null } {
   const candidateTree = git(repoRoot, ['rev-parse', `${tip}^{tree}`])
   const reviews = completedReviews(project.name)
   if (reviews.some((review) => review.lenses.length > 0 &&
-      review.lenses.every((lens) => lens.tree === candidateTree))) return candidateTree
+      review.lenses.every((lens) => lens.tree === candidateTree))) {
+    return { tree: candidateTree, carry: null }
+  }
+  const verdicts = reviews.map((review) => ({ review, verdict: reviewVerdict(repoRoot, review, tip, trunk) }))
+  const carried = verdicts.find((item) => item.verdict.kind === 'carried')
+  if (carried?.verdict.kind === 'carried') {
+    return {
+      tree: candidateTree,
+      carry: { project: project.name, branch, ...carried.verdict },
+    }
+  }
   throw new Error(
     `refusing to land unreviewed content\ncandidate tree: ${candidateTree}\n` +
-    `${coverageText(project.name, candidateTree)}\n` +
+    `${coverageText(project.name, repoRoot, tip, trunk)}\n` +
     'A rebase onto moved trunk changes the tree, so re-run the review lenses from the rebased branch ' +
     '(with --carry) and record them.',
   )
 }
 
 function authorizeLanding(
-  project: Project, repoRoot: string, branch: string, tip: string, unreviewed?: string,
-): { project: string; branch: string; tip: string; tree: string; reason: string } | null {
+  project: Project, repoRoot: string, branch: string, tip: string, trunk: string, unreviewed?: string,
+): {
+  override: { project: string; branch: string; tip: string; tree: string; reason: string } | null
+  carry: ReviewCarry | null
+} {
   const reason = unreviewed?.trim()
   if (unreviewed !== undefined && !reason) throw new Error('--unreviewed requires a non-empty reason')
   if (reason) {
@@ -258,10 +390,10 @@ function authorizeLanding(
       `tree: ${tree}\nreason: ${reason}\n` +
       '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!',
     )
-    return { project: project.name, branch, tip, tree, reason }
+    return { override: { project: project.name, branch, tip, tree, reason }, carry: null }
   }
-  requireReviewCoverage(project, repoRoot, tip)
-  return null
+  const coverage = requireReviewCoverage(project, repoRoot, branch, tip, trunk)
+  return { override: null, carry: coverage.carry }
 }
 
 function recordLandingOverride(
@@ -274,6 +406,24 @@ function recordLandingOverride(
   ).run(
     override.project, override.branch, override.tip, override.tree, override.reason,
     sessionId(), nowIso(),
+  )
+}
+
+function recordReviewCarry(carry: ReviewCarry | null): void {
+  if (!carry) return
+  db().query(
+    `INSERT INTO landing_review_carry
+       (project,branch,tip,tree,review_id,reviewed_commit,reviewed_tree,patch_id,
+        old_base,new_base,session_id,at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+  ).run(
+    carry.project, carry.branch, carry.tip, carry.tree, carry.reviewId,
+    carry.reviewedCommit, carry.reviewedTree, carry.patchId, carry.oldBase, carry.newBase,
+    sessionId(), nowIso(),
+  )
+  console.log(
+    `review ${carry.reviewId} carried: patch-id ${carry.patchId} unchanged across rebase ` +
+    `${carry.oldBase}..${carry.newBase}; gate green on ${carry.tip}`,
   )
 }
 
@@ -338,9 +488,12 @@ export function land(
   return withProjectLock(repoRoot, LANDING_LOCK, { session: sessionId(), what: branch }, () => {
     const currentTrunk = trunkCommit(repoRoot, trunk, guard)
     if (currentTrunk === recordedTrunk) {
-      const override = authorizeLanding(project, repoRoot, branch, optimisticTip, options.unreviewed)
+      const authorization = authorizeLanding(
+        project, repoRoot, branch, optimisticTip, recordedTrunk, options.unreviewed,
+      )
       fastForward(repoRoot, worktree, branch, trunk, optimisticTip, recordedTrunk, guard)
-      recordLandingOverride(override)
+      recordLandingOverride(authorization.override)
+      recordReviewCarry(authorization.carry)
       console.log(`landed ${branch} at ${optimisticTip} onto ${trunk} (optimistic gate remained current)`)
       return optimisticTip
     }
@@ -349,9 +502,12 @@ export function land(
     const serializedTip = rebaseAndGate(
       project, repoRoot, worktree, branch, trunk, currentTrunk, guard,
     )
-    const override = authorizeLanding(project, repoRoot, branch, serializedTip, options.unreviewed)
+    const authorization = authorizeLanding(
+      project, repoRoot, branch, serializedTip, currentTrunk, options.unreviewed,
+    )
     fastForward(repoRoot, worktree, branch, trunk, serializedTip, currentTrunk, guard)
-    recordLandingOverride(override)
+    recordLandingOverride(authorization.override)
+    recordReviewCarry(authorization.carry)
     console.log(`landed ${branch} at ${serializedTip} onto ${trunk} after serialized re-gate`)
     return serializedTip
   }, timeoutMs, true)
@@ -371,7 +527,7 @@ export function landingStatus(cwd: string): string {
     : '  none'
   const branch = git(cwd, ['branch', '--show-current']) || '(detached)'
   const tip = git(cwd, ['rev-parse', '--verify', 'HEAD^{commit}'])
-  const tree = git(cwd, ['rev-parse', `${tip}^{tree}`])
+  const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
   return `${project.name} landing lock: ${holder}\nwaiters:\n${waiters}\n${formatGitLocks(repoRoot)}` +
-    `\nreview coverage for ${branch}:\n${coverageText(project.name, tree)}`
+    `\nreview coverage for ${branch}:\n${coverageText(project.name, repoRoot, tip, trunk)}`
 }

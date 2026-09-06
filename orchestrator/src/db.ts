@@ -332,7 +332,8 @@ function normalizeSql(sql: string): string {
 
 function schemaVersion(): string {
   return createHash('sha256')
-    .update([RUN_DDL, SCORE_DDL, DOC_DDL, DOC_REVISION_DDL, CANON_PACK_DDL, REVIEW_LENS_DDL, LANDING_OVERRIDE_DDL]
+    .update([RUN_DDL, SCORE_DDL, DOC_DDL, DOC_REVISION_DDL, CANON_PACK_DDL, REVIEW_LENS_DDL,
+      LANDING_OVERRIDE_DDL, LANDING_REVIEW_CARRY_DDL]
       .map(normalizeSql).join('\n'))
     .digest('hex')
 }
@@ -368,6 +369,7 @@ function ensureCanonicalSchema(d: Database) {
   for (const [name, ddl] of [
     ['run', RUN_DDL], ['score', SCORE_DDL], ['doc', DOC_DDL], ['doc_revision', DOC_REVISION_DDL],
     ['canon_pack', CANON_PACK_DDL], ['review_lens', REVIEW_LENS_DDL], ['landing_override', LANDING_OVERRIDE_DDL],
+    ['landing_review_carry', LANDING_REVIEW_CARRY_DDL],
   ] as const) {
     const live = liveTableSql(d, name)
     if (!live) continue
@@ -393,7 +395,8 @@ function ensureCanonicalSchema(d: Database) {
  */
 function rebuildTable(
   d: Database,
-  table: 'run' | 'score' | 'doc' | 'doc_revision' | 'canon_pack' | 'review_lens' | 'landing_override',
+  table: 'run' | 'score' | 'doc' | 'doc_revision' | 'canon_pack' | 'review_lens' | 'landing_override' |
+    'landing_review_carry',
   canonical: string,
 ) {
   const fkOn = foreignKeysOn(d)
@@ -581,6 +584,22 @@ const LANDING_OVERRIDE_DDL = `CREATE TABLE landing_override (
       at TEXT NOT NULL
     )`
 
+const LANDING_REVIEW_CARRY_DDL = `CREATE TABLE landing_review_carry (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project TEXT NOT NULL,
+      branch TEXT NOT NULL,
+      tip TEXT NOT NULL,
+      tree TEXT NOT NULL,
+      review_id INTEGER NOT NULL REFERENCES review(id),
+      reviewed_commit TEXT NOT NULL,
+      reviewed_tree TEXT NOT NULL,
+      patch_id TEXT NOT NULL,
+      old_base TEXT NOT NULL,
+      new_base TEXT NOT NULL,
+      session_id TEXT,
+      at TEXT NOT NULL
+    )`
+
 // A judgement has two axes, because the two ways a run disappoints you are
 // fixed by opposite things.
 //
@@ -697,6 +716,7 @@ function migrate(d: Database) {
   d.exec(createIfNotExists(DOC_REVISION_DDL))
   d.exec(createIfNotExists(CANON_PACK_DDL))
   d.exec(createIfNotExists(LANDING_OVERRIDE_DDL))
+  d.exec(createIfNotExists(LANDING_REVIEW_CARRY_DDL))
   d.exec(`
     -- The ratio this whole layer exists to move: Claude tokens spent per unit of
     -- shipped work. Kept as daily rows because the trend is what matters — the

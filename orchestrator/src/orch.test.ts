@@ -117,12 +117,23 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       locks: ReturnType<typeof gitLocks>
     }
   }
-  const completedReview = (project: string, trees: (string | null)[]) => {
+  const completedReview = (
+    project: string, trees: (string | null)[],
+    source?: { branch: string; baseCommit: string; launchCwd: string },
+  ) => {
     const entries = trees.map((tree, i) => ({
       runId: addRun({ agent: 'codex', job: 'review-lens', model: 'test',
         lens: `lens-${i + 1}`, repo: project, ...(tree ? { inputTree: tree } : {}) }),
       output: reviewReply(0),
     }))
+    if (source) {
+      const update = db().query(
+        'UPDATE run SET branch=?, base_commit=?, launch_cwd=? WHERE id=?',
+      )
+      for (const entry of entries) {
+        update.run(source.branch, source.baseCommit, source.launchCwd, entry.runId)
+      }
+    }
     const id = recordReviews(entries)
     completeReview(id)
     return id
@@ -369,10 +380,129 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
     try {
       const tree = g(trees.reviewed!, 'rev-parse', 'HEAD^{tree}')
-      completedReview(project, [tree, tree])
+      const reviewId = completedReview(project, [tree, tree])
+      expect(landingStatus(trees.reviewed!)).toContain(`review ${reviewId}: exact`)
       const child = childLand(repo, 'reviewed', { unreviewed: null })
       expect(await child.exited).toBe(0)
       expect(g(repo, 'rev-parse', 'main')).toBe(g(repo, 'rev-parse', 'reviewed'))
+      expect(db().query(
+        'SELECT id FROM landing_review_carry WHERE branch=?',
+      ).get('reviewed')).toBeNull()
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('carries a pre-rebase review across an unrelated trunk move and records it', async () => {
+    const { repo, trees } = repoWithBranches(['carry-review'])
+    const project = 'landing-carry-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const reviewedCommit = g(repo, 'rev-parse', 'carry-review')
+      const reviewedTree = g(repo, 'rev-parse', 'carry-review^{tree}')
+      const reviewId = completedReview(project, [reviewedTree], {
+        branch: 'carry-review', baseCommit: oldBase, launchCwd: trees['carry-review']!,
+      })
+      writeFileSync(join(repo, 'unrelated.txt'), 'trunk only\n')
+      g(repo, 'add', 'unrelated.txt')
+      g(repo, 'commit', '-m', 'unrelated trunk move')
+      const newBase = g(repo, 'rev-parse', 'main')
+      g(trees['carry-review']!, 'rebase', 'main')
+      const beforeLandStatus = landingStatus(trees['carry-review']!)
+      expect(beforeLandStatus).toContain(`review ${reviewId}: carried (patch-id `)
+      expect(beforeLandStatus).toContain(`${oldBase}..${newBase})`)
+      const child = childLand(repo, 'carry-review', { unreviewed: null })
+      expect(await child.exited).toBe(0)
+      const stdout = await new Response(child.stdout).text()
+      const row = db().query(
+        `SELECT project,branch,tip,tree,review_id,reviewed_commit,reviewed_tree,patch_id,
+                old_base,new_base
+           FROM landing_review_carry WHERE branch=?`,
+      ).get('carry-review') as Record<string, string | number>
+      expect(row).toEqual({
+        project, branch: 'carry-review', tip: g(repo, 'rev-parse', 'carry-review'),
+        tree: g(repo, 'rev-parse', 'carry-review^{tree}'), review_id: reviewId,
+        reviewed_commit: reviewedCommit, reviewed_tree: reviewedTree,
+        patch_id: expect.stringMatching(/^[0-9a-f]{40}$/), old_base: oldBase, new_base: newBase,
+      })
+      expect(stdout).toContain(
+        `review ${reviewId} carried: patch-id ${row.patch_id} unchanged across rebase ` +
+        `${oldBase}..${newBase}; gate green on ${row.tip}`,
+      )
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('refuses a carry when trunk moved on a path touched by the change', async () => {
+    const { repo, trees } = repoWithBranches(['overlap-review'])
+    const project = 'landing-overlap-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      writeFileSync(join(repo, 'shared.txt'), Array.from({ length: 20 }, (_, i) => `line ${i}\n`).join(''))
+      g(repo, 'add', 'shared.txt')
+      g(repo, 'commit', '-m', 'shared base')
+      g(trees['overlap-review']!, 'rebase', 'main')
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const branchPath = join(trees['overlap-review']!, 'shared.txt')
+      const branchLines = readFileSync(branchPath, 'utf8').split('\n')
+      branchLines[1] = 'branch line'
+      writeFileSync(branchPath, branchLines.join('\n'))
+      g(trees['overlap-review']!, 'add', 'shared.txt')
+      g(trees['overlap-review']!, 'commit', '-m', 'branch shared change')
+      const reviewedTree = g(repo, 'rev-parse', 'overlap-review^{tree}')
+      completedReview(project, [reviewedTree], {
+        branch: 'overlap-review', baseCommit: oldBase, launchCwd: trees['overlap-review']!,
+      })
+      const trunkLines = readFileSync(join(repo, 'shared.txt'), 'utf8').split('\n')
+      trunkLines[18] = 'trunk line'
+      writeFileSync(join(repo, 'shared.txt'), trunkLines.join('\n'))
+      g(repo, 'add', 'shared.txt')
+      g(repo, 'commit', '-m', 'trunk shared change')
+      const child = childLand(repo, 'overlap-review', { unreviewed: null })
+      expect(await child.exited).not.toBe(0)
+      expect(await new Response(child.stderr).text()).toContain('invalid (overlapping paths)')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('refuses a carry when the branch gained content after review', async () => {
+    const { repo, trees } = repoWithBranches(['changed-review'])
+    const project = 'landing-changed-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const reviewedTree = g(repo, 'rev-parse', 'changed-review^{tree}')
+      completedReview(project, [reviewedTree], {
+        branch: 'changed-review', baseCommit: oldBase, launchCwd: trees['changed-review']!,
+      })
+      writeFileSync(join(trees['changed-review']!, 'after-review.txt'), 'new content\n')
+      g(trees['changed-review']!, 'add', 'after-review.txt')
+      g(trees['changed-review']!, 'commit', '-m', 'content after review')
+      expect(landingStatus(trees['changed-review']!)).toContain('invalid (patch-id differs)')
+      const child = childLand(repo, 'changed-review', { unreviewed: null })
+      expect(await child.exited).not.toBe(0)
+      expect(await new Response(child.stderr).text()).toContain('invalid (patch-id differs)')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('refuses a carry when no commit with the reviewed tree remains reachable', async () => {
+    const { repo, trees } = repoWithBranches(['missing-review'])
+    const project = 'landing-missing-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const reviewedCommit = g(repo, 'rev-parse', 'missing-review')
+      const reviewedTree = g(repo, 'rev-parse', 'missing-review^{tree}')
+      completedReview(project, [reviewedTree], {
+        branch: 'missing-review', baseCommit: oldBase, launchCwd: trees['missing-review']!,
+      })
+      g(trees['missing-review']!, 'reset', '--hard', 'main')
+      writeFileSync(join(trees['missing-review']!, 'replacement.txt'), 'replacement\n')
+      g(trees['missing-review']!, 'add', 'replacement.txt')
+      g(trees['missing-review']!, 'commit', '-m', 'replacement history')
+      g(repo, 'reflog', 'expire', '--expire=now', '--all')
+      g(repo, 'gc', '--prune=now')
+      expect(() => g(repo, 'cat-file', '-e', `${reviewedCommit}^{commit}`)).toThrow()
+      const child = childLand(repo, 'missing-review', { unreviewed: null })
+      expect(await child.exited).not.toBe(0)
+      expect(await new Response(child.stderr).text()).toContain('invalid (reviewed commit not found)')
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
@@ -399,12 +529,11 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       const child = childLand(repo, 'mixed-review', { unreviewed: null })
       expect(await child.exited).not.toBe(0)
       const error = await new Response(child.stderr).text()
-      expect(error).toContain('(matches)')
-      expect(error).toContain('(MISMATCH)')
+      expect(error).toContain('invalid (review lenses do not agree on one tree)')
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
-  test('a trunk move changes the rebased tree and requires a fresh review', async () => {
+  test('a trunk move during landing carries the review after the serialized re-gate', async () => {
     const { repo, trees } = repoWithBranches(['stale-review'])
     const project = 'landing-stale-review'
     const gate = join(repo, 'review-gate.sh')
@@ -412,7 +541,11 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     chmodSync(gate, 0o755)
     upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate } })
     try {
-      completedReview(project, [g(trees['stale-review']!, 'rev-parse', 'HEAD^{tree}')])
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const reviewedTree = g(trees['stale-review']!, 'rev-parse', 'HEAD^{tree}')
+      completedReview(project, [reviewedTree], {
+        branch: 'stale-review', baseCommit: oldBase, launchCwd: trees['stale-review']!,
+      })
       const child = childLand(repo, 'stale-review', { unreviewed: null })
       for (let i = 0; i < 200 && !existsSync(join(repo, 'first-review-gate')); i++) await Bun.sleep(5)
       writeFileSync(join(repo, 'trunk-move.txt'), 'move\n')
@@ -420,11 +553,11 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       g(repo, 'commit', '-m', 'move trunk')
       const moved = g(repo, 'rev-parse', 'main')
       writeFileSync(join(repo, 'release-review-gate'), '')
-      expect(await child.exited).not.toBe(0)
-      const error = await new Response(child.stderr).text()
-      expect(error).toContain('A rebase onto moved trunk changes the tree')
-      expect(g(repo, 'rev-parse', 'main')).toBe(moved)
-      expect(g(repo, 'rev-parse', 'stale-review')).not.toBe(moved)
+      expect(await child.exited).toBe(0)
+      expect(g(repo, 'merge-base', '--is-ancestor', moved, 'main')).toBe('')
+      expect(db().query(
+        'SELECT old_base,new_base FROM landing_review_carry WHERE branch=?',
+      ).get('stale-review')).toEqual({ old_base: oldBase, new_base: moved })
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
@@ -981,7 +1114,7 @@ beforeEach(() => {
   // question cascades from run, but the delete order still matters: it is
   // listed first so a future FK-enforcing change cannot make this fail
   // mysteriously halfway through a suite.
-  db().exec('DELETE FROM canon_pack; DELETE FROM monitor_condition; DELETE FROM monitor_invocation; DELETE FROM landing_override; DELETE FROM review_finding; DELETE FROM review_lens; DELETE FROM review; DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc_revision; DELETE FROM doc; DELETE FROM run_message; DELETE FROM question; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
+  db().exec('DELETE FROM canon_pack; DELETE FROM monitor_condition; DELETE FROM monitor_invocation; DELETE FROM landing_review_carry; DELETE FROM landing_override; DELETE FROM review_finding; DELETE FROM review_lens; DELETE FROM review; DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc_revision; DELETE FROM doc; DELETE FROM run_message; DELETE FROM question; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
 })
 
 afterAll(() => {
@@ -11100,6 +11233,7 @@ describe('canonical schema rebuild', () => {
     expect(cols(d, 'score')).toEqual(cols(db(), 'score'))
     expect(cols(d, 'review_lens')).toEqual(cols(db(), 'review_lens'))
     expect(cols(d, 'landing_override')).toEqual(cols(db(), 'landing_override'))
+    expect(cols(d, 'landing_review_carry')).toEqual(cols(db(), 'landing_review_carry'))
     expect(d.query('SELECT id, prompt_head, status FROM run').get()).toEqual(
       { id: 1, prompt_head: 'keep-me', status: 'asking' },
     )

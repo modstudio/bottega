@@ -765,7 +765,7 @@ function usage(): never {
       --message TEXT            amend the branch tip's message, then gate that commit
       --file PATH               same, reading the message from a file
       --unreviewed REASON       land without matching review coverage and record why
-      --status                  show this project's landing lock without taking it
+      --status                  show the landing lock and exact/carried/invalid review coverage
   orch stop <id>                terminate a running run and reclaim its worktree
   orch discard <id>             delete that run's worktree (the row stays)
       --force                   also delete a protected branch; bypass a refusing project tool
