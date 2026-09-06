@@ -1,5 +1,5 @@
 import {
-  existsSync, lstatSync, readdirSync, realpathSync,
+  existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, symlinkSync,
 } from 'node:fs'
 import { delimiter, isAbsolute, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
@@ -168,4 +168,35 @@ export function selectReadonlySandbox(input: {
 
 export function srtInstalled(): boolean {
   return existsSync(SRT_BIN)
+}
+
+/**
+ * Put vendor session state under this run's writable directory without copying
+ * long-lived credentials into retained run evidence. Grok follows its official
+ * GROK_HOME override; Qwen follows HOME and receives only its non-secret user
+ * settings as read-only links.
+ */
+export function prepareSandboxHome(
+  agent: string, runDir: string,
+): Record<string, string> {
+  mkdirSync(runDir, { recursive: true })
+  if (agent === 'grok') {
+    for (const name of ['auth.json', 'config.toml']) {
+      const source = join(homedir(), '.grok', name)
+      const target = join(runDir, name)
+      if (existsSync(source) && !existsSync(target)) symlinkSync(source, target)
+    }
+    return { GROK_HOME: runDir, GROK_DISABLE_AUTOUPDATER: '1' }
+  }
+  if (agent === 'qwen-local') {
+    const qwenDir = join(runDir, '.qwen')
+    mkdirSync(qwenDir, { recursive: true })
+    for (const name of ['settings.json', 'output-language.md']) {
+      const source = join(homedir(), '.qwen', name)
+      const target = join(qwenDir, name)
+      if (existsSync(source) && !existsSync(target)) symlinkSync(source, target)
+    }
+    return { HOME: runDir }
+  }
+  return {}
 }

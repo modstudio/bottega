@@ -53,7 +53,7 @@ import { resolveRunsDirectory } from './database-location.ts'
 import { resolveLandingBranch } from './landing.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES } from './result-output.ts'
 import { addedGrokTrustHeadings, grokTrustHeadings } from './grok-trust.ts'
-import { selectReadonlySandbox, SRT_BIN } from './sandbox.ts'
+import { prepareSandboxHome, selectReadonlySandbox, SRT_BIN } from './sandbox.ts'
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
 
@@ -2234,12 +2234,16 @@ export async function run(opts: {
     ? a.resumeArgv!({ ...argvOpts, session: opts.resume.session })
     : a.argv(argvOpts)
 
+  const sandboxRoot = (db().query(
+    'SELECT COALESCE(parent_run_id,id) AS id FROM run WHERE id=?',
+  ).get(claim.id) as { id: number }).id
+  const sandboxRunDir = join(runsDir, `sandbox-${sandboxRoot}`)
   const sandboxSelection = selectReadonlySandbox({
     agent: name,
     readsRepo: repoJob,
     writesRepo: writesJob,
     worktree: worktree?.path ?? null,
-    runsDir,
+    runsDir: sandboxRunDir,
     project: projectAt(callerCwd),
     readonlyNotes: toolFor(callerCwd)?.readonly_notes,
     override: process.env.ORCH_SANDBOX,
@@ -2247,8 +2251,11 @@ export async function run(opts: {
     localBaseUrl: LOCAL_BASE_URL,
   })
   const srtSettingsPath = sandboxSelection.profile
-    ? join(runsDir, `${stamp}.srt.json`)
+    ? join(sandboxRunDir, 'settings.json')
     : null
+  const sandboxEnvironment = sandboxSelection.profile
+    ? prepareSandboxHome(name, sandboxRunDir)
+    : {}
   if (srtSettingsPath) writeFileSync(srtSettingsPath, JSON.stringify(sandboxSelection.profile, null, 2))
   const launchArgv = sandboxSelection.sandbox === 'srt'
     ? [SRT_BIN, '--settings', srtSettingsPath!, '--', a.bin, ...argv]
@@ -2327,7 +2334,9 @@ export async function run(opts: {
     }
     const p = Bun.spawn(launchArgv, {
       cwd,
-      env: childEnv(a, claim.id, runToken, gitConfigEnvironment),
+      env: childEnv(a, claim.id, runToken, {
+        ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment,
+      }),
       stdin: a.stdin ? new TextEncoder().encode(prompt) : 'ignore',
       stdout: 'pipe',
       stderr: 'pipe',
@@ -2578,7 +2587,6 @@ export async function run(opts: {
     // alive. Remove it after readSession has had the chance to derive any
     // vendor-owned transcript location from cwd.
     if (isolatedCwd) rmSync(isolatedCwd, { recursive: true, force: true })
-    if (srtSettingsPath) rmSync(srtSettingsPath, { force: true })
 
     /**
      * The diff is read EVEN WHEN THE RUN FAILED, and that is the point.
