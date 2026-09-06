@@ -3909,13 +3909,6 @@ switch (cmd) {
 
     let done = 0
     let cleanupFailed = false
-    const projectsWithPlainTrees = new Set<string>()
-    for (const row of rows) {
-      if (row.repo && existsSync(row.worktree) &&
-          (row.worktree_source === 'git' || row.worktree_source === 'readonly_recipe')) {
-        projectsWithPlainTrees.add(row.repo)
-      }
-    }
     const inventoryErrors = new Set<string>()
     const leaked = new Map<string, { resource: DockerResource; project: string; runId: number }>()
     const kept: { line: string; reason: string }[] = []
@@ -4111,7 +4104,6 @@ switch (cmd) {
           path, branch: safe.branch, base: '', repoRoot: p.path,
           source,
         }
-        if (source === 'git' || source === 'readonly_recipe') projectsWithPlainTrees.add(p.name)
         const runId = orchRunId(entry.name)
         try {
           withCleanupLock(p.path, `sweep ${label}`, () => {
@@ -4210,12 +4202,6 @@ switch (cmd) {
      */
     if (!dry) {
       for (const p of (await import('./projects.ts')).projects()) {
-        if (projectsWithPlainTrees.has(p.name)) continue
-        const root = join(p.path, '.claude', 'worktrees')
-        const orphanPlain = existsSync(root) && readdirSync(root, { withFileTypes: true })
-          .some((entry) => entry.isDirectory() &&
-            ['git', 'readonly_recipe'].includes(markedWorktreeSource(join(root, entry.name)) ?? ''))
-        if (orphanPlain) continue
         const tool = p.settings.worktree
         if (!tool?.sweep) continue
         let result: ReturnType<typeof sweepWithTool>

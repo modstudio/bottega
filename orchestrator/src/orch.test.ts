@@ -12610,6 +12610,22 @@ echo 'Usage: scripts/worktree create [seed]'
     }
   })
 
+  test('readonly_create receives only path and base template variables', () => {
+    const { repo } = scratchRepo()
+    const tool = {
+      readonly_create: declaredCreate(
+        'git', ['worktree', 'add', '--detach', '{path}', '{base}', '{key}'],
+      ),
+    }
+    try {
+      expect(() => createReadOnlyWithTool(tool, repo, 660))
+        .toThrow('worktree create template references unavailable placeholder {key}')
+      expect(existsSync(join(repo, '.claude', 'worktrees', 'orch-660'))).toBe(false)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('a recipe-project read-only run records git source and warns that infrastructure is absent', async () => {
     const { repo } = scratchRepo()
     const invoked = join(repo, 'writing-create-invoked')
@@ -15147,7 +15163,7 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     )
   }
 
-  test('sweep removes a git-made read-only tree without project remove or sweep', () => {
+  test('sweep removes a git-made read-only tree before running project sweep', () => {
     const repo = scratchRepo()
     const project = `readonly-sweep-${randomUUID()}`
     const removeSentinel = join(repo, 'remove-invoked')
@@ -15173,37 +15189,45 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
       expect(result.code).toBe(0)
       expect(existsSync(tree.path)).toBe(false)
       expect(existsSync(removeSentinel)).toBe(false)
-      expect(existsSync(sweepSentinel)).toBe(false)
+      expect(readFileSync(sweepSentinel, 'utf8')).toBe('invoked')
     } finally {
       rmSync(docker.dir, { recursive: true, force: true })
       rmSync(repo, { recursive: true, force: true })
     }
   })
 
-  test('sweep reads a git source marker on an orphan and never invokes project lifecycle', () => {
+  test('project sweep reclaims a recipe orphan while leaving a kept plain tree untouched', () => {
     const repo = scratchRepo()
     const project = `readonly-orphan-${randomUUID()}`
     const removeSentinel = join(repo, 'remove-invoked')
     const sweepSentinel = join(repo, 'sweep-invoked')
     const old = new Date(Date.now() - 2 * 86_400_000).toISOString()
     const id = addRun({ agent: 'codex', job: 'file-question', status: 'ok', repo: project, startedAt: old })
-    const tree = createReadOnlyWorktree(repo, id)
+    const kept = createReadOnlyWorktree(repo, id)
+    db().query(
+      `UPDATE run SET worktree=?, cwd=?, branch=NULL, base_commit=?, worktree_source='git' WHERE id=?`,
+    ).run(kept.path, kept.path, kept.base, id)
+    const recipeOrphan = join(repo, '.claude', 'worktrees', 'recipe-orphan')
+    git(repo, 'worktree', 'add', '--detach', recipeOrphan, 'HEAD')
     upsertProject({
       name: project, path: repo,
       settings: { trunk: 'main', worktree: {
         create: declaredCreate('git', ['worktree', 'add', '-b', '{branch}', '{path}', '{base}']),
         remove: `printf invoked > "${removeSentinel}"`, branch: 'orch/{id}',
-        sweep: `printf invoked > "${sweepSentinel}"`,
+        sweep: `test -f "${join(kept.path, '.orch-run')}" && ` +
+          `${hermeticGitCommand} worktree remove --force "${recipeOrphan}" && ` +
+          `printf invoked > "${sweepSentinel}"`,
       } },
     })
     const docker = fakeDocker([], [])
     try {
-      expect(readFileSync(join(tree.path, '.orch-run'), 'utf8')).toContain('source: git')
+      expect(readFileSync(join(kept.path, '.orch-run'), 'utf8')).toContain('source: git')
       const result = orchWithEnv(docker.env, 'sweep', '--older-than', '0')
       expect(result.code).toBe(0)
-      expect(existsSync(tree.path)).toBe(false)
+      expect(existsSync(kept.path)).toBe(true)
+      expect(existsSync(recipeOrphan)).toBe(false)
       expect(existsSync(removeSentinel)).toBe(false)
-      expect(existsSync(sweepSentinel)).toBe(false)
+      expect(readFileSync(sweepSentinel, 'utf8')).toBe('invoked')
     } finally {
       rmSync(docker.dir, { recursive: true, force: true })
       rmSync(repo, { recursive: true, force: true })

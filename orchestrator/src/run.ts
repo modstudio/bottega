@@ -1673,7 +1673,7 @@ export async function run(opts: {
           let created: Worktree
           if (!writesJob) {
             created = tool?.readonly_create
-              ? createReadOnlyWithTool(tool, callerCwd, claim.id, opts.key, opts.base, recordWorktree)
+              ? createReadOnlyWithTool(tool, callerCwd, claim.id, opts.base, recordWorktree)
               : createReadOnlyWorktree(callerCwd, claim.id, opts.base, recordWorktree)
           } else if (tool) {
             // The PROJECT owns its worktrees. A bare `git worktree add` here would

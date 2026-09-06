@@ -1057,8 +1057,8 @@ the project declares a writing recipe. `--key` is optional and remains useful
 for attribution; `--seed` is refused because seeds belong to writing runs.
 
 A project may explicitly declare `worktree.readonly_create`, using the same
-template form and placeholders as `create` except `{branch}`. orch
-supplies `{path}` and `{base}`. This command must create a detached worktree,
+template form as `create` with exactly the `{path}` and `{base}` placeholders.
+This command must create a detached worktree,
 must have no side effects on task state, and must provision nothing outside the
 tree. Its tree is removed with plain git by default. A project that needs
 tree-local teardown may declare `worktree.readonly_remove`, which receives

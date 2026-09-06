@@ -141,9 +141,9 @@ export type WorktreeTool = {
   /**
    * Optionally provisions a read-only checkout at a detached HEAD.
    *
-   * It receives `{path}` and `{base}` and may use the other create placeholders
-   * except `{branch}`. It must not change task state. When absent, read-only
-   * runs use a plain detached git worktree and no project infrastructure.
+   * It receives exactly `{path}` and `{base}`. It must not change task state.
+   * When absent, read-only runs use a plain detached git worktree and no
+   * project infrastructure.
    */
   readonly_create?: WorktreeCreate
   /** Optional teardown for readonly_create trees. Receives `{path}` only. */
@@ -312,7 +312,7 @@ export function validateProjectSettings(settings: ProjectSettings): string[] {
     ...validateCreate(
       settings.worktree?.readonly_create as unknown,
       'worktree.readonly_create',
-      new Set([...CREATE_VARS].filter((name) => name !== 'branch')),
+      new Set(['path', 'base']),
     ),
   ]
   const readonly = settings.worktree?.readonly_create

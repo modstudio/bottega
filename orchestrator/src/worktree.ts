@@ -847,6 +847,16 @@ function runCreateTool(
   return { ok: p.exitCode === 0, out, stdout }
 }
 
+function assertCreateVarsAvailable(
+  create: WorktreeCreate | string, vars: Record<string, string>,
+): void {
+  const encoded = JSON.stringify(create)
+  const missing = [...encoded.matchAll(/\{(\w+)\}/g)]
+    .map((match) => match[1]!)
+    .find((name) => !(name in vars))
+  if (missing) throw new Error(`worktree create template references unavailable placeholder {${missing}}`)
+}
+
 function quoteAt(template: string, offset: number): "'" | '"' | null {
   let quote: "'" | '"' | null = null
   for (let i = 0; i < offset; i++) {
@@ -1277,7 +1287,7 @@ export function createReadOnlyWorktree(
 
 /** Let a project provision a detached read-only checkout at orch's chosen path. */
 export function createReadOnlyWithTool(
-  tool: WorktreeTool, cwd: string, runId: number, key?: string, baseRef?: string,
+  tool: WorktreeTool, cwd: string, runId: number, baseRef?: string,
   record?: RecordWorktree,
 ): Worktree {
   const repoRoot = repoRootOf(cwd)
@@ -1286,7 +1296,8 @@ export function createReadOnlyWithTool(
   const base = baseRef ? resolveBase(repoRoot, baseRef) : git(['rev-parse', 'HEAD'], repoRoot)
   const path = join(repoRoot, '.claude', 'worktrees', `orch-${runId}`)
   if (existsSync(path)) throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
-  const vars = { branch: '', name: `orch-${runId}`, base, seed: '', key: key ?? '', path }
+  const vars = { path, base }
+  assertCreateVarsAvailable(tool.readonly_create, vars)
   const result = runCreateTool(tool.readonly_create, vars, repoRoot)
   if (!result.ok) throw new Error(`the project's read-only worktree tool failed:\n${result.out.slice(-1500)}`)
   if (!existsSync(path)) {
