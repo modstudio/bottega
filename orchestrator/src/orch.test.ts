@@ -511,7 +511,8 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       expect(complete).toContain('✗')
       expect(complete).toContain(name)
       expect(complete).toContain('\x1b[')
-      expect(complete).toContain('later test 900')
+      expect(complete).toContain('900 pass')
+      expect(complete).toContain('1 fail')
       rmSync(dirname(outputPath!), { recursive: true, force: true })
     } finally {
       rmSync(repo, { recursive: true, force: true })
@@ -542,7 +543,8 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       const complete = readFileSync(outputPath!, 'utf8')
       expect(complete).toContain(`(fail) ${name}`)
       expect(complete).not.toContain('\x1b[')
-      expect(complete).toContain('later test 900')
+      expect(complete).toContain('900 pass')
+      expect(complete).toContain('1 fail')
       rmSync(dirname(outputPath!), { recursive: true, force: true })
     } finally {
       rmSync(repo, { recursive: true, force: true })
