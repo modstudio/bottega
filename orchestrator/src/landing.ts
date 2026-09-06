@@ -1,7 +1,10 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { db, nowIso, sessionId, writableDb } from './db.ts'
 import { formatGitLocks } from './git-locks.ts'
+import { liveRunCount } from './monitor.ts'
 import { projectAt, type Project } from './projects.ts'
 import {
   contentTree, prepareSharedRefGuard, projectLockState, repoRootOf, withProjectLock,
@@ -10,6 +13,45 @@ import {
 
 const LANDING_LOCK = 'landing'
 const LANDING_LOCK_TIMEOUT_MS = 5 * 60_000
+const GATE_FAILURE_TAIL_LINES = 40
+
+function gateFailureLines(output: string): string[] {
+  return output.split('\n').filter((line) =>
+    /^\s*\(fail\)\s+/.test(line) || /^\s*\d+\s+fail(?:s|ed)?\b/.test(line))
+}
+
+export function gateFailureSummary(
+  output: string, outputPath: string, liveRuns: number,
+): string {
+  const lines = output.split('\n')
+  if (lines.at(-1) === '') lines.pop()
+  const failures = gateFailureLines(output)
+  const timeout = /timed out after \d+ms/i.test(output)
+  return [
+    `complete gate output: ${outputPath}`,
+    ...(timeout
+      ? [`gate timeout under load: ${liveRuns} orch runs live (running + asking) machine-wide`]
+      : []),
+    ...(failures.length ? ['gate failures:', ...failures] : []),
+    `gate output tail (last ${GATE_FAILURE_TAIL_LINES} lines):`,
+    ...lines.slice(-GATE_FAILURE_TAIL_LINES),
+  ].join('\n')
+}
+
+function gateOutputPaths(project: string): {
+  directory: string; output: string; stdout: string; stderr: string
+} {
+  const safeProject = project.replace(/[^a-zA-Z0-9._-]+/g, '-')
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const directory = join(tmpdir(), `orch-gate-${safeProject}-${timestamp}-${randomUUID()}`)
+  mkdirSync(directory)
+  return {
+    directory,
+    output: join(directory, 'output.log'),
+    stdout: join(directory, 'stdout.log'),
+    stderr: join(directory, 'stderr.log'),
+  }
+}
 
 function git(
   cwd: string, args: string[], guard?: SharedRefGuardEnvironment,
@@ -190,10 +232,35 @@ function runGate(
   const branchReflogBefore = reflogEntries(branchRef)
   const contentBefore = contentTree(worktree)
   console.log(`gate ${project.name}: ${gate}`)
-  const p = Bun.spawnSync(['sh', '-lc', gate], {
+  const outputPaths = gateOutputPaths(project.name)
+  const stdoutPipe = join(outputPaths.directory, 'stdout.pipe')
+  const stderrPipe = join(outputPaths.directory, 'stderr.pipe')
+  const capture = [
+    'mkfifo "$2" "$3"',
+    'tee "$4" <"$2" & stdout_tee=$!',
+    'tee "$5" <"$3" >&2 & stderr_tee=$!',
+    'sh -lc "$1" >"$2" 2>"$3"; status=$?',
+    'wait "$stdout_tee"',
+    'wait "$stderr_tee"',
+    'exit "$status"',
+  ].join('\n')
+  const p = Bun.spawnSync([
+    'sh', '-c', capture, 'orch-gate-capture', gate, stdoutPipe, stderrPipe,
+    outputPaths.stdout, outputPaths.stderr,
+  ], {
     cwd: worktree, env: { ...process.env, ...guard }, stdout: 'inherit', stderr: 'inherit',
   })
-  if (p.exitCode !== 0) throw new Error(`landing gate failed with exit ${p.exitCode}: ${gate}`)
+  if (p.exitCode !== 0) {
+    const stdout = readFileSync(outputPaths.stdout, 'utf8')
+    const stderr = readFileSync(outputPaths.stderr, 'utf8')
+    const output = stdout + stderr
+    writeFileSync(outputPaths.output, output)
+    throw new Error(
+      `landing gate failed with exit ${p.exitCode}: ${gate}\n` +
+      gateFailureSummary(output, outputPaths.output, liveRunCount()),
+    )
+  }
+  rmSync(outputPaths.directory, { recursive: true, force: true })
   const headAfter = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'], guard)
   if (headAfter !== tip) {
     throw new Error(

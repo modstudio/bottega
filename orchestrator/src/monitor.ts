@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db, nowIso, pidAlive, UNSCORED_WHERE, writableDb, type MonitorSeverity } from './db.ts'
 import { fileIssue } from './mcp.ts'
@@ -9,6 +10,16 @@ import { projectLockState, targetGitEnvironment } from './worktree.ts'
 import { allInjectChecks, storedPackDrift } from './canon.ts'
 
 const HUB = new URL('../../bin/hub', import.meta.url).pathname
+
+export function liveRuns(database: Database = db()): { worktree: string | null }[] {
+  return database.query(
+    `SELECT worktree FROM run WHERE status IN ('running','asking')`,
+  ).all() as { worktree: string | null }[]
+}
+
+export function liveRunCount(database: Database = db()): number {
+  return liveRuns(database).length
+}
 
 export type MonitorCondition = {
   kind: string
@@ -179,9 +190,7 @@ function dockerConditions(clock: number): { conditions: MonitorCondition[]; erro
   const rows = JSON.parse(inspected.stdout.toString()) as {
     Name: string; CreatedAt?: string; Labels?: Record<string, string> | null
   }[]
-  const liveTrees = new Set((db().query(
-    `SELECT worktree FROM run WHERE worktree IS NOT NULL AND status IN ('running','asking')`,
-  ).all() as { worktree: string }[]).map((row) => row.worktree))
+  const liveTrees = new Set(liveRuns().flatMap((row) => row.worktree ? [row.worktree] : []))
   const ownedRoots = projects().map((project) => `${join(project.path, '.claude', 'worktrees')}/`)
   const conditions = rows.flatMap((row): MonitorCondition[] => {
     const workingDir = row.Labels?.['com.docker.compose.project.working_dir'] ?? null

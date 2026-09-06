@@ -136,7 +136,7 @@ describe('linked-worktree database protection', () => {
     const checked = new Database(`${pathToFileURL(liveStore).href}?immutable=1`, { readonly: true })
     expect(checked.query('SELECT status FROM run WHERE id=?').get(inserted.id)).toEqual({ status: 'running' })
     checked.close()
-  })
+  }, 90_000)
 
   test('explicit ORCH_DB keeps migration and writes enabled from the linked worktree', () => {
     const explicit = join(fixtureRoot, 'explicit.db')

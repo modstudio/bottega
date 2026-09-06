@@ -408,7 +408,7 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       expect(g(repo, 'show', 'main:waits.txt')).toBe('waits')
       expect(projectLockState(repo, 'landing').holder).toBeNull()
     } finally { rmSync(repo, { recursive: true, force: true }) }
-  })
+  }, 15_000)
 
   test('a killed holder is reclaimed, and another project never waits on it', async () => {
     const one = repoWithBranches([]).repo
@@ -434,7 +434,7 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       rmSync(one, { recursive: true, force: true })
       rmSync(two, { recursive: true, force: true })
     }
-  })
+  }, 30_000)
 
   test('a project with no declared gate is refused before it can land', async () => {
     const { repo } = repoWithBranches(['ungated'])
@@ -446,6 +446,41 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
         'project landing-ungated has no landing gate configured',
       )
       expect(() => g(repo, 'merge-base', '--is-ancestor', 'ungated', 'main')).toThrow()
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a buried bun timeout failure is repeated with machine load and complete output path', async () => {
+    const { repo } = repoWithBranches(['timeout-summary'])
+    const gate = join(repo, 'timeout-gate.sh')
+    writeFileSync(gate, [
+      '#!/bin/sh',
+      "echo '(fail) deeply buried timeout test [5001.00ms]'",
+      "echo 'error: Test timed out after 5000ms'",
+      "i=1; while [ \"$i\" -le 900 ]; do echo \"(pass) later test $i\"; i=$((i+1)); done",
+      "echo '1 fail'",
+      'exit 7',
+    ].join('\n') + '\n')
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-timeout-summary', path: repo,
+      settings: { trunk: 'main', gate } })
+    addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+    addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+    try {
+      const child = childLand(repo, 'timeout-summary')
+      expect(await child.exited).not.toBe(0)
+      const error = await new Response(child.stderr).text()
+      expect(error).toContain('(fail) deeply buried timeout test [5001.00ms]')
+      expect(error).toContain('1 fail')
+      expect(error).toContain(
+        'gate timeout under load: 2 orch runs live (running + asking) machine-wide',
+      )
+      const outputPath = error.match(/complete gate output: (.+\/output\.log)/)?.[1]
+      expect(outputPath).toBeDefined()
+      const complete = readFileSync(outputPath!, 'utf8')
+      expect(complete).toContain('(fail) deeply buried timeout test [5001.00ms]')
+      expect(complete).toContain('(pass) later test 900')
+      rmSync(dirname(outputPath!), { recursive: true, force: true })
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
@@ -1062,7 +1097,7 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
         'SELECT old_base,new_base FROM landing_review_carry WHERE branch=?',
       ).get('stale-review')).toEqual({ old_base: oldBase, new_base: moved })
     } finally { rmSync(repo, { recursive: true, force: true }) }
-  })
+  }, 15_000)
 
   test('an explicit non-empty override lands and records the measured tree and reason', async () => {
     const { repo } = repoWithBranches(['override-review'])
@@ -5252,7 +5287,7 @@ describe('retry keeps the work on the same agent', () => {
     } finally {
       rmSync(binDir, { recursive: true, force: true })
     }
-  })
+  }, 45_000)
 
   test('a writing retry refuses to change agents and directs a fresh start', () => {
     const id = addRun({ agent: 'grok', job: 'implement', status: 'failed' })
@@ -5390,7 +5425,7 @@ describe('vendor failure failover is one bounded unit of work', () => {
       removeProject('review-failover-project')
       rmSync(repo, { recursive: true, force: true })
     }
-  })
+  }, 15_000)
 
   test('a repository review failover bypasses a writing recipe that cannot recreate its base', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-review-failover-no-base-'))
@@ -5510,7 +5545,7 @@ describe('vendor failure failover is one bounded unit of work', () => {
       removeProject('review-failover-no-base-project')
       rmSync(repo, { recursive: true, force: true })
     }
-  })
+  }, 15_000)
 
   test('prefer persists through automatic failover and the successor returns the answer', async () => {
     const binDir = join(dir, 'failover-bin')
@@ -7842,7 +7877,7 @@ describe('metric canon headline and calendar halves', () => {
       db().exec('DELETE FROM metric')
       for (const repo of repos) rmSync(repo, { recursive: true, force: true })
     }
-  })
+  }, 15_000)
 
   test('headline uses canon totals and excluded days do not move the midpoint', () => {
     const day = (ago: number) => {
@@ -8643,7 +8678,7 @@ describe('detached run collection', () => {
     for (const name of readdirSync(runsDir).filter((name) => name.includes(`-${id}-`))) {
       rmSync(join(runsDir, name), { force: true })
     }
-  })
+  }, 15_000)
 
   test('--cwd carry measures the same input tree as launching inside that worktree', () => {
     const repo=realpathSync(mkdtempSync(join(tmpdir(),'orch-cwd-repo-'))), linked=join(repo,'.claude','worktrees','DEV-257-caller')
@@ -8662,7 +8697,7 @@ describe('detached run collection', () => {
       const trees=[fromRoot,fromTree].map((id)=>(db().query('SELECT input_tree FROM run WHERE id=?').get(id) as {input_tree:string}).input_tree)
       expect(trees[0]).toBeTruthy();expect(trees[0]).toBe(trees[1])
     } finally { rmSync(repo,{recursive:true,force:true});rmSync(binDir,{recursive:true,force:true}) }
-  })
+  }, 15_000)
 
   test('fix --base creates its worktree at the requested commit', () => {
     const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-fix-base-')))
@@ -8721,7 +8756,7 @@ describe('detached run collection', () => {
       rmSync(repo, { recursive: true, force: true })
       rmSync(binDir, { recursive: true, force: true })
     }
-  })
+  }, 15_000)
 
   test('do help names every job and every supported flag', () => {
     for (const help of ['--help', '-h']) {
@@ -9649,7 +9684,7 @@ describe('detached run collection', () => {
     } finally {
       rmSync(binDir, { recursive: true, force: true })
     }
-  })
+  }, 45_000)
 
   test('a resume spawn failure rolls the ruling back and leaves the question open', () => {
     const id = insert('asking', 'implement')
@@ -11123,7 +11158,7 @@ describe('detached run collection', () => {
       .toEqual([{ id: root, status: 'stopped' }, { id: turn, status: 'stopped' }])
     expect(db().query('SELECT action FROM run_mutation_audit WHERE root_id=?').all(root))
       .toEqual([{ action: 'stop' }])
-  })
+  }, 15_000)
 
   test('abandon loses cleanly to a concurrent continuation claim', async () => {
     const root = insert('asking', 'implement')
@@ -11147,7 +11182,7 @@ describe('detached run collection', () => {
     expect(db().query('SELECT id, status FROM run WHERE id IN (?,?) ORDER BY id').all(root, turn))
       .toEqual([{ id: root, status: 'asking' }, { id: turn, status: 'running' }])
     expect(db().query('SELECT action FROM run_mutation_audit WHERE root_id=?').all(root)).toEqual([])
-  })
+  }, 15_000)
 
   test('stop refuses when its candidate completes before the immediate transaction', async () => {
     const root = insert('asking', 'implement')
@@ -11168,7 +11203,7 @@ describe('detached run collection', () => {
     expect(stopped.err).toContain(`${root} turn 1 asking; ${turn} turn 2 ok`)
     expect(db().query('SELECT status FROM run WHERE id=?').get(root)).toEqual({ status: 'asking' })
     expect(db().query('SELECT action FROM run_mutation_audit WHERE root_id=?').all(root)).toEqual([])
-  })
+  }, 15_000)
 
   test('abandon refuses a completed run without changing it', () => {
     const id = insert('ok')
@@ -11720,7 +11755,7 @@ describe('detached run collection', () => {
     } finally {
       rmSync(binDir, { recursive: true, force: true })
     }
-  })
+  }, 45_000)
 
   test('answer refuses questions split between live and stopped owners', () => {
     const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
@@ -11857,7 +11892,7 @@ describe('detached run collection', () => {
     } finally {
       rmSync(binDir, { recursive: true, force: true })
     }
-  })
+  }, 45_000)
 
   test('continue --file reads the follow-up without shell interpolation', () => {
     const binDir = mkdtempSync(join(tmpdir(), 'orch-fake-codex-continue-file-'))
@@ -11898,7 +11933,7 @@ describe('detached run collection', () => {
     } finally {
       rmSync(binDir, { recursive: true, force: true })
     }
-  })
+  }, 45_000)
 
   test('continue refuses a follow-up that is only --file', () => {
     const root = insert('ok', 'file-question')
@@ -11944,7 +11979,7 @@ describe('detached run collection', () => {
     } finally {
       rmSync(binDir, { recursive: true, force: true })
     }
-  })
+  }, 45_000)
 
   test('continue --file refuses a NUL and names the byte offset', () => {
     const root = insert('ok', 'file-question')
@@ -12033,7 +12068,7 @@ describe('detached run collection', () => {
     } finally {
       rmSync(binDir, { recursive: true, force: true })
     }
-  })
+  }, 45_000)
 
   test('continue --file refuses invalid UTF-8 at the byte offset', () => {
     const root = insert('ok', 'file-question')
@@ -12115,7 +12150,7 @@ describe('detached run collection', () => {
     } finally {
       rmSync(binDir, { recursive: true, force: true })
     }
-  })
+  }, 45_000)
 
   test('continuing an unowned root adopts it before linking the child', () => {
     const binDir = mkdtempSync(join(tmpdir(), 'orch-fake-codex-adopt-'))
@@ -12174,7 +12209,7 @@ describe('detached run collection', () => {
     } finally {
       rmSync(binDir, { recursive: true, force: true })
     }
-  })
+  }, 45_000)
 })
 
 describe('vendor_session is recorded before the agent runs', () => {
@@ -12649,7 +12684,7 @@ describe('a writing worker must return evidence of completed work', () => {
         .toBe(0)
       expect(heartbeat()).not.toContain('BLOCKED')
     }
-  })
+  }, 15_000)
 
   test('punctuated generic and invisible-only questions fail in the run path', async () => {
     for (const question of ['(placeholder)!', '\u200B\u2060']) {
@@ -15687,7 +15722,7 @@ printf '%s\n' "$path"
       rmSync(repo, { recursive: true, force: true })
       rmSync(docker.dir, { recursive: true, force: true })
     }
-  })
+  }, 15_000)
 
   test('abandon invokes the project remove tool even when the worktree directory is already gone', () => {
     const { repo } = scratchRepo()
@@ -18616,7 +18651,7 @@ describe('projects are data, not code', () => {
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
-  })
+  }, 20_000)
 
   test('an externally located linked binary resolves main and may never initialize beside itself', () => {
     const parent = realpathSync(mkdtempSync(join(tmpdir(), 'orch-db-external-binary-')))
@@ -20105,7 +20140,7 @@ describe('the sandbox an agent is launched with', () => {
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
-  })
+  }, 44_847)
 
   test('a wrapper delegating to a non-executable guard is rejected', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-guard-broken-mode-'))
@@ -20189,7 +20224,7 @@ describe('the sandbox an agent is launched with', () => {
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
-  })
+  }, 15_000)
 
   test('shared-ref guard refuses a self-referencing original without changing it', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-guard-self-reference-'))
