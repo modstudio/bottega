@@ -279,13 +279,14 @@ type ReviewCoverage = {
     branch: string | null
     baseCommit: string | null
     launchCwd: string | null
+    headCommit: string | null
   }[]
 }
 
 function completedReviews(project: string): ReviewCoverage[] {
   const rows = db().query(
     `SELECT r.id, rl.lens, rl.run_id, rl.reviewed_tree, run.input_tree,
-            run.branch, run.base_commit, run.launch_cwd
+            run.branch, run.base_commit, run.launch_cwd, run.head_commit
        FROM review r
        JOIN review_lens rl ON rl.review_id=r.id
        JOIN run ON run.id=rl.run_id
@@ -298,7 +299,7 @@ function completedReviews(project: string): ReviewCoverage[] {
   ).all(project) as {
     id: number; lens: string; run_id: number; reviewed_tree: string | null
     input_tree: string | null; branch: string | null; base_commit: string | null
-    launch_cwd: string | null
+    launch_cwd: string | null; head_commit: string | null
   }[]
   const grouped = new Map<number, ReviewCoverage>()
   for (const row of rows) {
@@ -306,7 +307,7 @@ function completedReviews(project: string): ReviewCoverage[] {
     review.lenses.push({
       lens: row.lens, runId: row.run_id, tree: row.reviewed_tree,
       inputTree: row.input_tree, branch: row.branch, baseCommit: row.base_commit,
-      launchCwd: row.launch_cwd,
+      launchCwd: row.launch_cwd, headCommit: row.head_commit,
     })
     grouped.set(row.id, review)
   }
@@ -328,8 +329,8 @@ type ReviewCarry = {
 
 type CoverageVerdict =
   | { kind: 'exact' }
-  | ({ kind: 'carried' } & Omit<ReviewCarry, 'project' | 'branch'>)
-  | { kind: 'invalid'; reason: string }
+  | ({ kind: 'carried'; resolution: 'pin' | 'walk' } & Omit<ReviewCarry, 'project' | 'branch'>)
+  | { kind: 'invalid'; reason: string; resolution?: 'pin' | 'walk' }
 
 function commitsFrom(repoRoot: string, args: string[]): string[] {
   if (!gitOk(repoRoot, args)) return []
@@ -337,7 +338,22 @@ function commitsFrom(repoRoot: string, args: string[]): string[] {
   return output ? output.split('\n') : []
 }
 
-function commitForTree(repoRoot: string, review: ReviewCoverage, tree: string): string | null {
+function commitForTree(
+  repoRoot: string, review: ReviewCoverage, tree: string,
+): { commit: string | null; resolution: 'pin' | 'walk' } {
+  const pinned = review.lenses.filter((lens) => lens.headCommit !== null)
+  if (pinned.length) {
+    const commits = new Set(pinned.map((lens) => lens.headCommit!))
+    if (pinned.length !== review.lenses.length || commits.size !== 1) {
+      return { commit: null, resolution: 'pin' }
+    }
+    const commit = pinned[0]!.headCommit!
+    if (!gitOk(repoRoot, ['cat-file', '-e', `${commit}^{commit}`]) ||
+        git(repoRoot, ['rev-parse', `${commit}^{tree}`]) !== tree) {
+      return { commit: null, resolution: 'pin' }
+    }
+    return { commit, resolution: 'pin' }
+  }
   const branches = [...new Set(review.lenses
     .filter((lens) => lens.inputTree === tree)
     .map((lens) => lens.branch)
@@ -347,13 +363,13 @@ function commitForTree(repoRoot: string, review: ReviewCoverage, tree: string): 
     commitsFrom(repoRoot, ['rev-list', '--walk-reflogs', '--max-count=50', branch]))
   for (const commit of candidates) {
     seen.add(commit)
-    if (git(repoRoot, ['rev-parse', `${commit}^{tree}`]) === tree) return commit
+    if (git(repoRoot, ['rev-parse', `${commit}^{tree}`]) === tree) return { commit, resolution: 'walk' }
   }
   for (const commit of commitsFrom(repoRoot, ['log', '--all', '--format=%H', '--max-count=500'])) {
     if (seen.has(commit)) continue
-    if (git(repoRoot, ['rev-parse', `${commit}^{tree}`]) === tree) return commit
+    if (git(repoRoot, ['rev-parse', `${commit}^{tree}`]) === tree) return { commit, resolution: 'walk' }
   }
-  return null
+  return { commit: null, resolution: 'walk' }
 }
 
 function patchId(repoRoot: string, from: string, to: string): string {
@@ -406,28 +422,31 @@ function reviewVerdict(
   }
   const bases = new Set(review.lenses.map((lens) => lens.baseCommit))
   if (bases.size !== 1) return { kind: 'invalid', reason: 'lens bases disagree' }
-  const reviewedCommit = commitForTree(repoRoot, review, reviewedTree)
-  if (!reviewedCommit) return { kind: 'invalid', reason: 'reviewed commit not found' }
+  const resolved = commitForTree(repoRoot, review, reviewedTree)
+  const reviewedCommit = resolved.commit
+  if (!reviewedCommit) {
+    return { kind: 'invalid', reason: 'reviewed commit not found', resolution: resolved.resolution }
+  }
   const baseCommit = review.lenses[0]!.baseCommit!
   if (!gitOk(repoRoot, ['cat-file', '-e', `${baseCommit}^{commit}`])) {
-    return { kind: 'invalid', reason: 'reviewed commit not found' }
+    return { kind: 'invalid', reason: 'reviewed commit not found', resolution: resolved.resolution }
   }
   const oldBase = git(repoRoot, ['merge-base', reviewedCommit, baseCommit])
   const newBase = git(repoRoot, ['merge-base', tip, trunk])
   const changePaths = changedPaths(repoRoot, oldBase, reviewedCommit)
   const trunkPaths = changedPaths(repoRoot, oldBase, newBase)
   const overlap = [...changePaths].filter((path) => trunkPaths.has(path))
-  if (overlap.length) return { kind: 'invalid', reason: 'overlapping paths' }
+  if (overlap.length) return { kind: 'invalid', reason: 'overlapping paths', resolution: resolved.resolution }
   const reviewedPatch = patchId(repoRoot, oldBase, reviewedCommit)
   const candidatePatch = patchId(repoRoot, newBase, tip)
   if (!reviewedPatch || reviewedPatch !== candidatePatch) {
-    return { kind: 'invalid', reason: 'patch-id differs' }
+    return { kind: 'invalid', reason: 'patch-id differs', resolution: resolved.resolution }
   }
   if (contentHash(repoRoot, oldBase, reviewedCommit) !== contentHash(repoRoot, newBase, tip)) {
-    return { kind: 'invalid', reason: 'content differs' }
+    return { kind: 'invalid', reason: 'content differs', resolution: resolved.resolution }
   }
   return {
-    kind: 'carried', tip, tree, reviewId: review.id, reviewedCommit, reviewedTree,
+    kind: 'carried', resolution: resolved.resolution, tip, tree, reviewId: review.id, reviewedCommit, reviewedTree,
     patchId: candidatePatch, oldBase, newBase,
   }
 }
@@ -441,9 +460,10 @@ function coverageText(project: string, repoRoot: string, tip: string, trunk: str
         if (verdict.kind === 'exact') return `review ${review.id}: exact`
         if (verdict.kind === 'carried') {
           return `review ${review.id}: carried (patch-id ${verdict.patchId}; ` +
-            `${verdict.oldBase}..${verdict.newBase})`
+            `${verdict.oldBase}..${verdict.newBase}) (commit from ${verdict.resolution})`
         }
-        return `review ${review.id}: invalid (${verdict.reason})`
+        return `review ${review.id}: invalid (${verdict.reason}) ` +
+          `(commit from ${verdict.resolution ?? 'not resolved'})`
       })
     : ['  none']
   return `current tip tree: ${candidateTree}\n${lines.join('\n')}`

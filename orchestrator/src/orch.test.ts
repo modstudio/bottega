@@ -159,10 +159,11 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     }))
     if (source) {
       const update = db().query(
-        'UPDATE run SET branch=?, base_commit=?, launch_cwd=? WHERE id=?',
+        'UPDATE run SET branch=?, base_commit=?, launch_cwd=?, head_commit=? WHERE id=?',
       )
+      const headCommit = g(source.launchCwd, 'rev-parse', 'HEAD^{commit}')
       for (const entry of entries) {
-        update.run(source.branch, source.baseCommit, source.launchCwd, entry.runId)
+        update.run(source.branch, source.baseCommit, source.launchCwd, headCommit, entry.runId)
       }
     }
     const id = recordReviews(entries)
@@ -619,13 +620,18 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       const reviewId = completedReview(project, [reviewedTree], {
         branch: 'carry-review', baseCommit: oldBase, launchCwd: trees['carry-review']!,
       })
+      expect(g(repo, 'rev-parse', `refs/orch/reviewed/${
+        (db().query('SELECT run_id FROM review_lens WHERE review_id=?').get(reviewId) as { run_id: number }).run_id
+      }`)).toBe(reviewedCommit)
       writeFileSync(join(repo, 'unrelated.txt'), 'trunk only\n')
       g(repo, 'add', 'unrelated.txt')
       g(repo, 'commit', '-m', 'unrelated trunk move')
       const newBase = g(repo, 'rev-parse', 'main')
       g(trees['carry-review']!, 'rebase', 'main')
+      g(repo, 'reflog', 'expire', '--expire=now', '--all')
       const beforeLandStatus = landingStatus(trees['carry-review']!)
       expect(beforeLandStatus).toContain(`review ${reviewId}: carried (patch-id `)
+      expect(beforeLandStatus).toContain('(commit from pin)')
       expect(beforeLandStatus).toContain(`${oldBase}..${newBase})`)
       const child = childLand(repo, 'carry-review', { unreviewed: null })
       expect(await child.exited).toBe(0)
@@ -646,6 +652,75 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
         `${oldBase}..${newBase}; gate green on ${row.tip}`,
       )
     } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('review pins prune only completed reviews whose branch has landed', () => {
+    const { repo, trees } = repoWithBranches(['pin-prune'])
+    const project = 'landing-pin-prune'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const commit = g(repo, 'rev-parse', 'pin-prune')
+      const tree = g(repo, 'rev-parse', 'pin-prune^{tree}')
+      const completed = completedReview(project, [tree], {
+        branch: 'pin-prune', baseCommit: oldBase, launchCwd: trees['pin-prune']!,
+      })
+      const incompleteRun = addRun({
+        agent: 'codex', job: 'review-lens', model: 'test', lens: 'incomplete', repo: project,
+        inputTree: tree, headCommit: commit,
+      })
+      db().query('UPDATE run SET branch=?, base_commit=?, launch_cwd=? WHERE id=?')
+        .run('pin-prune', oldBase, trees['pin-prune']!, incompleteRun)
+      const incomplete = recordReviews([{ runId: incompleteRun, output: reviewReply(0) }])
+
+      expect(reviewPins(true).map((pin) => ({ review: pin.reviewId, deleted: pin.deleted })))
+        .toEqual([
+          { review: completed, deleted: false },
+          { review: incomplete, deleted: false },
+        ])
+      g(repo, 'update-ref', 'refs/heads/main', 'refs/heads/pin-prune')
+      const pruned = reviewPins(true)
+      expect(pruned.find((pin) => pin.reviewId === completed)?.deleted).toBe(true)
+      expect(pruned.find((pin) => pin.reviewId === incomplete)?.deleted).toBe(false)
+      expect(() => g(repo, 'rev-parse', `refs/orch/reviewed/${incompleteRun}`)).not.toThrow()
+      const completedRun = (db().query(
+        'SELECT run_id FROM review_lens WHERE review_id=?',
+      ).get(completed) as { run_id: number }).run_id
+      expect(() => g(repo, 'rev-parse', `refs/orch/reviewed/${completedRun}`)).toThrow()
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('discard and sweep leave reviewed-commit pins intact', () => {
+    for (const command of ['discard', 'sweep'] as const) {
+      const branch = `pin-${command}`
+      const { repo, trees } = repoWithBranches([branch])
+      const project = `landing-${branch}`
+      upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+      try {
+        const reviewId = completedReview(project, [g(repo, 'rev-parse', `${branch}^{tree}`)], {
+          branch, baseCommit: g(repo, 'rev-parse', 'main'), launchCwd: trees[branch]!,
+        })
+        const runId = (db().query(
+          'SELECT run_id FROM review_lens WHERE review_id=?',
+        ).get(reviewId) as { run_id: number }).run_id
+        const ref = `refs/orch/reviewed/${runId}`
+        const pinned = g(repo, 'rev-parse', ref)
+        db().query("UPDATE run SET worktree=?, started_at='2020-01-01T00:00:00.000Z' WHERE id=?")
+          .run(trees[branch]!, runId)
+        const args = command === 'discard'
+          ? ['discard', String(runId), '--force']
+          : ['sweep', '--older-than', '0', '--force']
+        const result = Bun.spawnSync([
+          process.execPath, new URL('cli.ts', import.meta.url).pathname, ...args,
+        ], {
+          cwd: repo,
+          env: { ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+          stdout: 'pipe', stderr: 'pipe',
+        })
+        expect(result.exitCode).toBe(0)
+        expect(g(repo, 'rev-parse', ref)).toBe(pinned)
+      } finally { rmSync(repo, { recursive: true, force: true }) }
+    }
   })
 
   test('refuses a carry when trunk moved on a path touched by the change', async () => {
@@ -777,9 +852,13 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       const oldBase = g(repo, 'rev-parse', 'main')
       const reviewedCommit = g(repo, 'rev-parse', 'missing-review')
       const reviewedTree = g(repo, 'rev-parse', 'missing-review^{tree}')
-      completedReview(project, [reviewedTree], {
+      const reviewId = completedReview(project, [reviewedTree], {
         branch: 'missing-review', baseCommit: oldBase, launchCwd: trees['missing-review']!,
       })
+      const runId = (db().query('SELECT run_id FROM review_lens WHERE review_id=?').get(reviewId) as
+        { run_id: number }).run_id
+      g(repo, 'update-ref', '-d', `refs/orch/reviewed/${runId}`)
+      db().query('UPDATE run SET head_commit=NULL WHERE id=?').run(runId)
       g(trees['missing-review']!, 'reset', '--hard', 'main')
       writeFileSync(join(trees['missing-review']!, 'replacement.txt'), 'replacement\n')
       g(trees['missing-review']!, 'add', 'replacement.txt')
@@ -1164,7 +1243,8 @@ const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
         REVIEW_SEVERITY_INSTRUCTION,
         VERIFY_CLAIM_SCHEMA, ISSUE_WORKER_SCHEMA, workerPreamble, workerResumeGuard,
         contractConflicts, hasRealQuestions, realQuestions } = await import('./contract.ts')
-const { parseReviewReply, recordReview, recordReviews, gradeReviewLens, triageFinding, completeReview, reviewCalibration, calibrationLine,
+const { parseReviewReply, recordReview, recordReviews, gradeReviewLens, reviewPins,
+        triageFinding, completeReview, reviewCalibration, calibrationLine,
         MIN_REVIEW_TRIAGED } = await import('./review.ts')
 const { ask } = await import('./ask.ts')
 const { checkMessages, messageArchitect, messagesForRun } = await import('./mailbox.ts')
@@ -1760,19 +1840,20 @@ function addRun(o: {
   kind?: string; parent?: number; turn?: number; session?: string | null; stack?: string
   model?: string; startedAt?: string
   lens?: string; repo?: string; inputTree?: string
+  headCommit?: string
   promptBytes?: number
 }): number {
   return (db().query(
     `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head,
                       status, latency_ms, probe, failure_kind, parent_run_id, turn, session_id, stack,
-                      model, lens, repo, input_tree)
-     VALUES (?,?,?,'sha',?,'head',?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+                      model, lens, repo, input_tree, head_commit)
+     VALUES (?,?,?,'sha',?,'head',?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
   ).get(
     o.startedAt ?? new Date().toISOString(), o.agent, o.job, o.promptBytes ?? 10,
     o.status ?? 'ok', o.latency ?? 1000, o.probe ?? 0, o.kind ?? null,
     o.parent ?? null, o.turn ?? 1, o.session ?? null, o.stack ?? null,
     o.model ?? AGENTS[o.agent]?.model ?? null, o.lens ?? null, o.repo ?? null,
-    o.inputTree ?? null,
+    o.inputTree ?? null, o.headCommit ?? null,
   ) as { id: number }).id
 }
 
@@ -10427,8 +10508,8 @@ describe('review-lens-inline has no checkout', () => {
       expect(inlineView.receivedPack).toBe(true)
       expect(existsSync(inlineView.cwd)).toBe(false)
       expect(inline.worktree).toBeNull()
-      expect(db().query('SELECT input_tree FROM run WHERE id=?').get(inline.id))
-        .toEqual({ input_tree: null })
+      expect(db().query('SELECT input_tree, head_commit FROM run WHERE id=?').get(inline.id))
+        .toEqual({ input_tree: null, head_commit: null })
 
       const repository = await runJob({
         job: 'review-lens', prompt: `inspect ${repo}/project-only.txt`,
@@ -10442,8 +10523,11 @@ describe('review-lens-inline has no checkout', () => {
       expect(repository.worktree?.path).toBeTruthy()
       expect(repositoryView.prompt).toContain(`${repository.worktree!.path}/project-only.txt`)
       expect(repositoryView.prompt).not.toContain(`${repo}/project-only.txt`)
-      expect(db().query('SELECT input_tree FROM run WHERE id=?').get(repository.id))
-        .toEqual({ input_tree: runGit('rev-parse', 'HEAD^{tree}') })
+      expect(db().query('SELECT input_tree, head_commit FROM run WHERE id=?').get(repository.id))
+        .toEqual({
+          input_tree: runGit('rev-parse', 'HEAD^{tree}'),
+          head_commit: runGit('rev-parse', 'HEAD^{commit}'),
+        })
 
       const nested = await runJob({
         job: 'review-lens', prompt: `inspect ${repo}/subdir/subject.txt`,
@@ -10462,8 +10546,8 @@ describe('review-lens-inline has no checkout', () => {
         lens: 'carried', carry: true,
       })
       const expected = contentTree(carried.worktree!.path)
-      expect(db().query('SELECT input_tree FROM run WHERE id=?').get(carried.id))
-        .toEqual({ input_tree: expected })
+      expect(db().query('SELECT input_tree, head_commit FROM run WHERE id=?').get(carried.id))
+        .toEqual({ input_tree: expected, head_commit: runGit('rev-parse', 'HEAD^{commit}') })
       expect(runGit('write-tree')).toBe(callerIndex)
       expect(readFileSync(join(carried.worktree!.path, 'project-only.txt'), 'utf8'))
         .toBe('carried tracked evidence\n')
@@ -12985,6 +13069,7 @@ describe('canonical schema rebuild', () => {
     const path = join(mkdtempSync(join(tmpdir(), 'orch-schema-')), 'old.db')
     const d = openOld(path)
     expect(cols(d, 'run')).toEqual(cols(db(), 'run'))
+    expect(cols(d, 'run')).toContain('head_commit')
     expect(cols(d, 'score')).toEqual(cols(db(), 'score'))
     expect(cols(d, 'review_lens')).toEqual(cols(db(), 'review_lens'))
     expect(cols(d, 'landing_override')).toEqual(cols(db(), 'landing_override'))

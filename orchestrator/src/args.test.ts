@@ -34,6 +34,7 @@ describe('CLI argument recognition', () => {
       ['review', 'record', '12', '13'],
       ['review', 'triage', '12', '1', 'rejected', '--category', 'not-a-defect', '--severity', 'critical'],
       ['review', 'complete', '12'],
+      ['review', 'pins'], ['review', 'pins', '--prune'],
       ['review', 'calibration', 'correctness', 'codex', 'gpt-5', '--json'],
       ['run', '12'], ['result', '12', '--quiet'],
       ['wait', '12', '13', '--timeout', '30'], ['retry', '12', '--agent', 'codex'],

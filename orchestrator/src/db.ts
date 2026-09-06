@@ -281,6 +281,9 @@ export function applySchema(d: Database): void {
   // The complete worktree content presented to a repository worker, measured
   // by orch immediately before the vendor process starts.
   addColumn(d, 'run', 'input_tree', 'TEXT')
+  // The commit whose tree a repository review was dispatched against. Review
+  // recording pins it so a content-preserving rebase cannot orphan the object.
+  addColumn(d, 'run', 'head_commit', 'TEXT')
   addColumn(d, 'review_lens', 'reviewed_tree', 'TEXT')
   addColumn(d, 'review_finding', 'triaged_severity', 'TEXT')
   // A completed target task must keep its provenance. NULL is still active;
@@ -597,6 +600,7 @@ const RUN_DDL = `CREATE TABLE run (
       evidence_excluded TEXT,
       outside_worktree_writes TEXT,
       input_tree    TEXT,
+      head_commit   TEXT,
       agent_pid     INTEGER,
       mcp           INTEGER,
       mcp_server    TEXT,

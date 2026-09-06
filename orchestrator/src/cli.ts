@@ -29,7 +29,8 @@ import { collectResult, collectWait, resolveFailover, failoverSummary } from './
 import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
 import { flagValue, flagValues, validateCliArgs } from './args.ts'
 import { completeReview, DISPOSITIONS, gradeReviewLens, parseReviewOutput, recordReviews,
-         reviewCalibration, triageFinding, type Disposition, type ReviewGrades } from './review.ts'
+         reviewCalibration, reviewPins, triageFinding, type Disposition,
+         type ReviewGrades } from './review.ts'
 import { composeWorkflow, exportWorkflows, forkWorkflow, getWorkflowStep, importWorkflows,
          listWorkflows, promoteWorkflow, retireWorkflow, setWorkflow, showWorkflow,
          workflowVersions } from './workflows.ts'
@@ -783,6 +784,7 @@ function usage(): never {
       --file PATH               same, reading the message from a file
       --unreviewed REASON       land without matching review coverage and record why
       --status                  show the landing lock and exact/carried/invalid review coverage
+  orch review pins [--prune]    list reviewed-commit keepalive refs; explicitly prune landed reviews
   orch stop <id>                terminate a running run and reclaim its worktree
   orch discard <id>             delete that run's worktree (the row stays)
       --force                   also delete a protected branch; bypass a refusing project tool
@@ -1754,6 +1756,21 @@ switch (cmd) {
       if (!reviewId) throw new Error('orch review complete <review-id>')
       completeReview(reviewId)
       console.log(`completed review ${reviewId}`)
+      break
+    }
+    if (sub === 'pins') {
+      const pins = reviewPins(has('prune'))
+      if (!pins.length) {
+        console.log('no review pins')
+        break
+      }
+      for (const pin of pins) {
+        console.log(
+          `${pin.project} review ${pin.reviewId} run ${pin.runId} ${pin.commit} ` +
+          `completed=${pin.completed} superseded=${pin.superseded} landed=${pin.landed}` +
+          (pin.deleted ? ' deleted' : ''),
+        )
+      }
       break
     }
     if (sub === 'calibration') {

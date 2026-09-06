@@ -80,6 +80,44 @@ export function parseReviewOutput(text: string): ReviewReply | null {
 type RunRow = {
   id: number; agent: string; model: string | null; lens: string | null
   job: string; status: string; output_path: string | null; input_tree: string | null
+  head_commit: string | null; repo: string | null
+}
+
+const pinRef = (runId: number) => `refs/orch/reviewed/${runId}`
+
+function git(repo: string, args: string[]): { ok: boolean; out: string; err: string } {
+  const p = Bun.spawnSync(['git', ...args], {
+    cwd: repo, env: process.env, stdout: 'pipe', stderr: 'pipe',
+  })
+  return {
+    ok: p.exitCode === 0,
+    out: p.stdout.toString().trim(),
+    err: p.stderr.toString().trim() || `exit ${p.exitCode}`,
+  }
+}
+
+function projectPath(database: Database, name: string): string | null {
+  return (database.query('SELECT path FROM project WHERE name=?').get(name) as
+    { path: string } | null)?.path ?? null
+}
+
+function pinReviewedCommits(runs: RunRow[], database: Database): void {
+  for (const run of runs) {
+    if (!run.head_commit) continue
+    const repo = run.repo ? projectPath(database, run.repo) : null
+    if (!repo) {
+      throw new Error(`cannot pin review run ${run.id}: project ${run.repo ?? '(none)'} is not registered`)
+    }
+    if (!git(repo, ['cat-file', '-e', `${run.head_commit}^{commit}`]).ok) {
+      console.error(
+        `warning: review run ${run.id} recorded but ${pinRef(run.id)} was not created: ` +
+        `commit ${run.head_commit} is missing from ${repo}`,
+      )
+      continue
+    }
+    const updated = git(repo, ['update-ref', pinRef(run.id), run.head_commit])
+    if (!updated.ok) throw new Error(`git update-ref ${pinRef(run.id)} failed: ${updated.err}`)
+  }
 }
 
 export function recordReviews(
@@ -88,7 +126,8 @@ export function recordReviews(
   if (!entries.length) throw new Error('a review requires at least one lens run')
   const runs = entries.map(({ runId }) => {
     const run = database.query(
-      'SELECT id, agent, model, lens, job, status, output_path, input_tree FROM run WHERE id=?',
+      `SELECT id, agent, model, lens, job, status, output_path, input_tree, head_commit, repo
+         FROM run WHERE id=?`,
     ).get(runId) as RunRow | null
     if (!run) throw new Error(`no run ${runId}`)
     if (!job(run.job).findings) throw new Error(`run ${runId} job ${run.job} does not produce review findings`)
@@ -137,7 +176,76 @@ export function recordReviews(
     })
     return review.id
   })
-  return transaction()
+  const reviewId = transaction()
+  pinReviewedCommits(runs, database)
+  // TODO(DEV-282): its orch score grading path must call this same pinning path.
+  return reviewId
+}
+
+export type ReviewPin = {
+  project: string
+  runId: number
+  reviewId: number
+  commit: string
+  completed: boolean
+  superseded: boolean
+  landed: boolean
+  deleted: boolean
+}
+
+/** Inspect keepalive refs; pruning is an explicit act and never part of cleanup. */
+export function reviewPins(prune = false, database: Database = db()): ReviewPin[] {
+  const registered = new Map((database.query(
+    'SELECT name, path, settings FROM project',
+  ).all() as { name: string; path: string; settings: string }[]).map((project) => {
+    let settings: Record<string, unknown> = {}
+    try { settings = JSON.parse(project.settings) } catch { /* unreadable settings have no trunk */ }
+    return [project.name, { path: project.path, settings }] as const
+  }))
+  const rows = database.query(
+    `SELECT run.repo, run.branch, run.id AS run_id, rl.review_id, r.completed_at
+       FROM review_lens rl
+       JOIN review r ON r.id=rl.review_id
+       JOIN run ON run.id=rl.run_id
+      WHERE run.head_commit IS NOT NULL
+      ORDER BY run.repo, run.id`,
+  ).all() as {
+    repo: string | null; branch: string | null; run_id: number
+    review_id: number; completed_at: string | null
+  }[]
+  const pins: ReviewPin[] = []
+  for (const row of rows) {
+    if (!row.repo) continue
+    const project = registered.get(row.repo)
+    if (!project) continue
+    const ref = git(project.path, ['rev-parse', '--verify', pinRef(row.run_id)])
+    if (!ref.ok) continue
+    const superseded = Boolean(database.query(
+      `SELECT 1
+         FROM review_lens newer_lens
+         JOIN review newer ON newer.id=newer_lens.review_id
+         JOIN run newer_run ON newer_run.id=newer_lens.run_id
+        WHERE newer.id>? AND newer_run.repo=? AND newer_run.branch IS ?
+        LIMIT 1`,
+    ).get(row.review_id, row.repo, row.branch))
+    const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
+    const landed = Boolean(row.branch && trunk &&
+      git(project.path, ['show-ref', '--verify', '--quiet', `refs/heads/${row.branch}`]).ok &&
+      git(project.path, [
+        'merge-base', '--is-ancestor', `refs/heads/${row.branch}`, `refs/heads/${trunk}`,
+      ]).ok)
+    let deleted = false
+    if (prune && row.completed_at !== null && landed) {
+      const removal = git(project.path, ['update-ref', '-d', pinRef(row.run_id)])
+      if (!removal.ok) throw new Error(`git update-ref -d ${pinRef(row.run_id)} failed: ${removal.err}`)
+      deleted = true
+    }
+    pins.push({
+      project: row.repo, runId: row.run_id, reviewId: row.review_id, commit: ref.out,
+      completed: row.completed_at !== null, superseded, landed, deleted,
+    })
+  }
+  return pins
 }
 
 export function recordReview(runId: number, output: ReviewReply, database: Database = db()): number {

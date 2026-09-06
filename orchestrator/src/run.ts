@@ -1784,7 +1784,9 @@ export async function run(opts: {
     if (repoJob) {
       if (!worktree) throw new Error(`repository run ${claim.id} has no worktree to measure`)
       const inputTree = contentTree(worktree.path)
-      const measured = db().query('UPDATE run SET input_tree=? WHERE id=?').run(inputTree, claim.id)
+      const headCommit = gitContext(callerCwd, 'rev-parse', '--verify', 'HEAD^{commit}')
+      const measured = db().query('UPDATE run SET input_tree=?, head_commit=? WHERE id=?')
+        .run(inputTree, headCommit, claim.id)
       if (measured.changes !== 1) throw new Error(`run ${claim.id} could not record its input tree`)
     }
     const p = Bun.spawn([a.bin, ...argv], {

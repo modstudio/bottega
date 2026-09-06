@@ -157,6 +157,7 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
         ['--category', '--severity'],
       ) }
       if (sub === 'complete') return { args: argv.slice(2), shape: shape('orch review complete <review-id>', 1) }
+      if (sub === 'pins') return { args: argv.slice(2), shape: shape('orch review pins [--prune]', 0, [], ['--prune']) }
       if (sub === 'calibration') return { args: argv.slice(2), shape: shape(
         'orch review calibration <lens> <agent> <model> [--json]', 3, [], ['--json'],
       ) }
