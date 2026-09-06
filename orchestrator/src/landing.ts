@@ -4,7 +4,7 @@ import { db, nowIso, sessionId } from './db.ts'
 import { formatGitLocks } from './git-locks.ts'
 import { projectAt, type Project } from './projects.ts'
 import {
-  prepareSharedRefGuard, projectLockState, repoRootOf, withProjectLock,
+  contentTree, prepareSharedRefGuard, projectLockState, repoRootOf, withProjectLock,
   type SharedRefGuardEnvironment,
 } from './worktree.ts'
 
@@ -156,7 +156,19 @@ function runGate(
   if (before) {
     throw new Error(`refusing to gate a dirty worktree for ${project.name}:\n${before}`)
   }
+  const reflogEntries = (ref: string) => {
+    const output = git(worktree, ['reflog', 'show', '--format=%H%x09%gs', ref], guard)
+    return output ? output.split('\n') : []
+  }
+  const newReflogEntries = (ref: string, before: string[]) => {
+    const after = reflogEntries(ref)
+    return after.slice(0, Math.max(0, after.length - before.length))
+  }
   const tip = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'], guard)
+  const headReflogBefore = reflogEntries('HEAD')
+  const branchRef = `refs/heads/${branch}`
+  const branchReflogBefore = reflogEntries(branchRef)
+  const contentBefore = contentTree(worktree)
   console.log(`gate ${project.name}: ${gate}`)
   const p = Bun.spawnSync(['sh', '-lc', gate], {
     cwd: worktree, env: { ...process.env, ...guard }, stdout: 'inherit', stderr: 'inherit',
@@ -169,11 +181,27 @@ function runGate(
     )
   }
   const branchAfter = git(worktree, [
-    'rev-parse', '--verify', `refs/heads/${branch}^{commit}`,
+    'rev-parse', '--verify', `${branchRef}^{commit}`,
   ], guard)
   if (branchAfter !== tip) {
     throw new Error(
-      `refusing landing because gate ${gate} moved refs/heads/${branch} from ${tip} to ${branchAfter}`,
+      `refusing landing because gate ${gate} moved ${branchRef} from ${tip} to ${branchAfter}`,
+    )
+  }
+  const newHeadReflog = newReflogEntries('HEAD', headReflogBefore)
+  const newBranchReflog = newReflogEntries(branchRef, branchReflogBefore)
+  if (newHeadReflog.length || newBranchReflog.length) {
+    throw new Error(
+      `refusing landing because gate ${gate} changed git history:\n` +
+      (newHeadReflog.length ? `HEAD reflog:\n${newHeadReflog.join('\n')}\n` : '') +
+      (newBranchReflog.length ? `${branchRef} reflog:\n${newBranchReflog.join('\n')}` : ''),
+    )
+  }
+  const contentAfter = contentTree(worktree)
+  // This observes final bytes only; a gate that restores them exactly requires continuous observation.
+  if (contentAfter !== contentBefore) {
+    throw new Error(
+      `refusing landing because gate ${gate} changed the content tree from ${contentBefore} to ${contentAfter}`,
     )
   }
   const after = git(worktree, ['status', '--porcelain=v1', '--untracked-files=all'], guard)

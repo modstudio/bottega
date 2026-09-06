@@ -411,6 +411,83 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  test('refuses a gate that checks out another tree and restores HEAD, naming new reflog entries', async () => {
+    const branch = 'gate-restores-head'
+    const { repo, trees } = repoWithBranches([branch])
+    const exercised = join(repo, 'exercised-tree')
+    const gate = join(repo, 'restore-head.sh')
+    writeFileSync(gate, `#!/bin/sh\nset -eu\ncandidate=$(git rev-parse HEAD)\ngit checkout --detach main\ngit rev-parse HEAD^{tree} > '${exercised}'\ngit reset --hard "$candidate"\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-restored-head', path: repo,
+      settings: { trunk: 'main', gate } })
+    try {
+      const candidate = g(trees[branch]!, 'rev-parse', 'HEAD')
+      const candidateTree = g(trees[branch]!, 'rev-parse', 'HEAD^{tree}')
+      const trunk = g(repo, 'rev-parse', 'main')
+      const child = childLand(repo, branch)
+      expect(await child.exited).not.toBe(0)
+      const error = await new Response(child.stderr).text()
+      expect(g(trees[branch]!, 'rev-parse', 'HEAD')).toBe(candidate)
+      expect(readFileSync(exercised, 'utf8').trim()).not.toBe(candidateTree)
+      expect(error).toContain(gate)
+      expect(error).toContain('HEAD reflog:')
+      expect(error).toContain('checkout: moving from')
+      expect(error).toContain(`reset: moving to ${candidate}`)
+      expect(g(repo, 'rev-parse', 'main')).toBe(trunk)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('refuses a gate that moves the branch away and back, naming its new reflog entries', async () => {
+    const branch = 'gate-restores-branch-ref'
+    const { repo, trees } = repoWithBranches([branch])
+    const gate = join(repo, 'restore-branch-ref.sh')
+    writeFileSync(gate, `#!/bin/sh\nset -eu\ncandidate=$(git rev-parse HEAD)\ngit update-ref -m 'gate branch away' refs/heads/${branch} refs/heads/main\ngit update-ref -m 'gate branch back' refs/heads/${branch} "$candidate"\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-restored-branch-ref', path: repo,
+      settings: { trunk: 'main', gate } })
+    try {
+      const candidate = g(trees[branch]!, 'rev-parse', 'HEAD')
+      const trunk = g(repo, 'rev-parse', 'main')
+      const child = childLand(repo, branch)
+      expect(await child.exited).not.toBe(0)
+      const error = await new Response(child.stderr).text()
+      expect(g(trees[branch]!, 'rev-parse', 'HEAD')).toBe(candidate)
+      expect(g(repo, 'rev-parse', branch)).toBe(candidate)
+      expect(error).toContain(gate)
+      expect(error).toContain(`refs/heads/${branch} reflog:`)
+      expect(error).toContain(candidate)
+      expect(error).toContain(trunk)
+      expect(error).toContain('gate branch away')
+      expect(error).toContain('gate branch back')
+      expect(g(repo, 'rev-parse', 'main')).toBe(trunk)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('refuses final content hidden from ordinary status and names both content trees', async () => {
+    const branch = 'gate-hides-content'
+    const { repo, trees } = repoWithBranches([branch])
+    const path = `${branch}.txt`
+    const gate = join(repo, 'hide-content.sh')
+    writeFileSync(gate, `#!/bin/sh\nset -eu\ngit update-index --assume-unchanged '${path}'\nprintf 'hidden gate change\\n' > '${path}'\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-hidden-content', path: repo,
+      settings: { trunk: 'main', gate } })
+    try {
+      const before = contentTree(trees[branch]!)
+      const trunk = g(repo, 'rev-parse', 'main')
+      const child = childLand(repo, branch)
+      expect(await child.exited).not.toBe(0)
+      const after = contentTree(trees[branch]!)
+      const error = await new Response(child.stderr).text()
+      expect(g(trees[branch]!, 'status', '--porcelain=v1', '--untracked-files=all')).toBe('')
+      expect(after).not.toBe(before)
+      expect(error).toContain(gate)
+      expect(error).toContain(before)
+      expect(error).toContain(after)
+      expect(g(repo, 'rev-parse', 'main')).toBe(trunk)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   test('a gate that does not move HEAD or the landing branch still lands', async () => {
     const branch = 'gate-does-not-move'
     const { repo } = repoWithBranches([branch])
