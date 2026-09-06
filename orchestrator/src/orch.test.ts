@@ -16,7 +16,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from '
 import { Database } from 'bun:sqlite'
 import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync,
          realpathSync, mkdirSync, utimesSync, chmodSync, readdirSync, statSync,
-         symlinkSync, copyFileSync } from 'node:fs'
+         symlinkSync, copyFileSync, openSync, closeSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
@@ -51,6 +51,37 @@ const hermeticGitEnv = (extra: Record<string, string> = {}) => ({
     ))),
   ...extra,
 })
+
+async function runWithDelayedStdoutReader(
+  argv: string[], env: Record<string, string | undefined>,
+): Promise<{ exitCode: number; stdout: Buffer; stderr: string }> {
+  const pipeDir = mkdtempSync(join(tmpdir(), 'orch-slow-stdout-'))
+  const fifo = join(pipeDir, 'stdout.fifo')
+  const made = Bun.spawnSync(['mkfifo', fifo], { stdout: 'pipe', stderr: 'pipe' })
+  if (made.exitCode !== 0) throw new Error(made.stderr.toString())
+  try {
+    // fd 3 is opened before the sleep, so the producer starts against a pipe
+    // whose consumer deliberately does not read until its buffer is full.
+    const reader = Bun.spawn(
+      ['sh', '-c', 'exec 3<"$1"; sleep 0.25; cat <&3', 'slow-reader', fifo],
+      { stdout: 'pipe', stderr: 'pipe' },
+    )
+    const writer = openSync(fifo, 'w')
+    const producer = Bun.spawn(argv, { env, stdout: writer, stderr: 'pipe' })
+    closeSync(writer)
+    const [exitCode, stdout, stderr, readerExit, readerError] = await Promise.all([
+      producer.exited,
+      new Response(reader.stdout).arrayBuffer(),
+      new Response(producer.stderr).text(),
+      reader.exited,
+      new Response(reader.stderr).text(),
+    ])
+    if (readerExit !== 0) throw new Error(readerError || `slow reader exited ${readerExit}`)
+    return { exitCode, stdout: Buffer.from(stdout), stderr }
+  } finally {
+    rmSync(pipeDir, { recursive: true, force: true })
+  }
+}
 
 describe('landing is gated on the exact commit that reaches trunk', () => {
   const landingModule = new URL('landing.ts', import.meta.url).href
@@ -1250,7 +1281,7 @@ the cause` } }
 })
 
 describe('operational monitor record', () => {
-  test('pipes a complete large JSON report before returning its condition status', () => {
+  test('pipes a complete large human report before returning its condition status', async () => {
     const hubDb = join(dir, 'monitor-large-report-hub.db')
     const binDir = join(dir, 'monitor-large-report-bin')
     mkdirSync(binDir)
@@ -1275,33 +1306,34 @@ describe('operational monitor record', () => {
     }
 
     const cli = new URL('cli.ts', import.meta.url).pathname
-    const run = Bun.spawnSync([process.execPath, cli, 'monitor', '--json'], {
-      env: {
+    const human = await runWithDelayedStdoutReader([process.execPath, cli, 'monitor'], {
         ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0', HUB_DB: hubDb,
         PATH: `${binDir}:${process.env.PATH ?? ''}`,
-      },
-      stdout: 'pipe', stderr: 'pipe',
     })
-    const output = run.stdout.toString()
-    expect(output.length).toBeGreaterThan(65_536)
-    const report = JSON.parse(output) as { conditions: unknown[]; errors: unknown[] }
-    expect(report.conditions.length).toBeGreaterThanOrEqual(750)
-    expect(run.exitCode).toBe(report.errors.length ? 1 : report.conditions.length ? 2 : 0)
-
-    const human = Bun.spawnSync([process.execPath, cli, 'monitor'], {
-      env: {
-        ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0', HUB_DB: hubDb,
-        PATH: `${binDir}:${process.env.PATH ?? ''}`,
-      },
-      stdout: 'pipe', stderr: 'pipe',
-    })
-    const humanOutput = human.stdout.toString()
-    expect(humanOutput.length).toBeGreaterThan(65_536)
-    expect(humanOutput).toContain(`stale-run  run:${lastRunId} `)
-    expect([1, 2]).toContain(human.exitCode)
+    const record = db().query(
+      'SELECT * FROM monitor_invocation ORDER BY id DESC LIMIT 1',
+    ).get() as any
+    const conditions = db().query(
+      'SELECT * FROM monitor_condition WHERE invocation_id=? ORDER BY id',
+    ).all(record.id) as any[]
+    const lines = [
+      `monitor ${record.id}: ${record.findings} condition(s), ${record.errors} observation error(s)`,
+    ]
+    for (const condition of conditions) {
+      const old = condition.age_ms == null
+        ? 'age unknown'
+        : `${Math.round(condition.age_ms / 60_000)}m old`
+      lines.push(`  ${condition.kind}  ${condition.subject}  ${old}\n    ${condition.detail}\n    ${condition.action}${condition.issue_key ? `; ${condition.issue_key}` : ''}`)
+    }
+    const expected = Buffer.from(`${lines.join('\n')}\n`)
+    expect(expected.byteLength).toBeGreaterThan(65_536)
+    expect(human.stdout.byteLength).toBe(expected.byteLength)
+    expect(human.stdout.equals(expected)).toBe(true)
+    expect(human.stdout.toString()).toContain(`stale-run  run:${lastRunId} `)
+    expect(human.exitCode).toBe(record.errors ? 1 : record.findings ? 2 : 0)
   })
 
-  test('pipes a complete large monitor history JSON document', () => {
+  test('pipes a complete large monitor history JSON document', async () => {
     const invocation = (db().query(
       `INSERT INTO monitor_invocation (started_at,finished_at,trigger,findings,errors)
        VALUES ('2026-09-04T00:00:00Z','2026-09-04T00:00:01Z','backstop',1,0) RETURNING id`,
@@ -1315,13 +1347,15 @@ describe('operational monitor record', () => {
       detail, 'reported')
 
     const cli = new URL('cli.ts', import.meta.url).pathname
-    const run = Bun.spawnSync([process.execPath, cli, 'monitor', '--history', '--json'], {
-      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
-      stdout: 'pipe', stderr: 'pipe',
-    })
-    const output = run.stdout.toString()
-    expect(output.length).toBeGreaterThan(65_536)
-    expect(JSON.parse(output)[0].conditions[0].detail).toBe(detail)
+    const expected = Buffer.from(`${JSON.stringify(monitorHistory(20))}\n`)
+    const run = await runWithDelayedStdoutReader(
+      [process.execPath, cli, 'monitor', '--history', '--json'],
+      { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+    )
+    expect(expected.byteLength).toBeGreaterThan(65_536)
+    expect(run.stdout.byteLength).toBe(expected.byteLength)
+    expect(run.stdout.equals(expected)).toBe(true)
+    expect(JSON.parse(run.stdout.toString())[0].conditions[0].detail).toBe(detail)
     expect(run.exitCode).toBe(0)
   })
 
@@ -2266,7 +2300,7 @@ describe('port importer', () => {
     } finally { rmSync(source, { recursive: true, force: true }) }
   })
 
-  test('CLI dry-run pipes a complete large JSON refusal plan', () => {
+  test('CLI dry-run pipes a complete large JSON refusal plan', async () => {
     registered()
     const source = mkdtempSync(join(tmpdir(), 'port-import-large-refusal-invented-'))
     try {
@@ -2289,17 +2323,22 @@ describe('port importer', () => {
         'state.json': contents.state, 'projects.md': contents.projects,
       })) writeFileSync(join(source, name), body)
 
+      const planned = planImport(contents, projects())
+      const expected = Buffer.from(`${JSON.stringify({
+        ...planned,
+        doctrine: planned.doctrine.map((row) => ({ ...row, bodyLength: row.body.length })),
+        docs: planned.docs.map((row) => ({ ...row, bodyLength: row.body.length })),
+        uncoveredSpans: sourceCoverage(planned, contents),
+      }, null, 2)}\n`)
       const cli = new URL('cli.ts', import.meta.url).pathname
-      const run = Bun.spawnSync(
+      const run = await runWithDelayedStdoutReader(
         [process.execPath, cli, 'port', 'import', source, '--dry-run', '--json'],
-        {
-          env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
-          stdout: 'pipe', stderr: 'pipe',
-        },
+        { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
       )
-      const output = run.stdout.toString()
-      expect(output.length).toBeGreaterThan(65_536)
-      const plan = JSON.parse(output)
+      expect(expected.byteLength).toBeGreaterThan(65_536)
+      expect(run.stdout.byteLength).toBe(expected.byteLength)
+      expect(run.stdout.equals(expected)).toBe(true)
+      const plan = JSON.parse(run.stdout.toString())
       expect(plan.refusals).toContainEqual(expect.objectContaining({
         what: 'project "missing-invented"',
       }))
