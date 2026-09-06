@@ -8974,20 +8974,32 @@ describe('pid stays the worker for the whole run', () => {
 describe('a wall kill does not erase a read-only answer', () => {
   test('substantive output is judgeable and routing does not count it as delivery-none', async () => {
     const script = join(dir, 'DEV-235-readonly-agent.ts')
+    const ready = join(dir, 'DEV-235-readonly-agent-ready')
     writeFileSync(script, `#!/usr/bin/env bun
-process.stdout.write('The requested implementation is in orchestrator/src/run.ts:1542.\\n')
 process.on('SIGTERM', () => process.exit(143))
+process.stdout.write('The requested implementation is in orchestrator/src/run.ts:1542.\\n')
+await Bun.write(${JSON.stringify(ready)}, 'ready\\n')
 setInterval(() => {}, 1_000)
 `)
     chmodSync(script, 0o755)
     const grok = AGENTS.grok!
     const previousBin = grok.bin
-    const previousTimeout = grok.timeoutMs
+    const previousTimeout = Object.getOwnPropertyDescriptor(grok, 'timeoutMs')!
     const priorDepth = process.env.ORCH_DEPTH
     process.env.ORCH_DEPTH = '0'
     try {
       grok.bin = script
-      grok.timeoutMs = 250
+      Object.defineProperty(grok, 'timeoutMs', {
+        configurable: true,
+        get: () => {
+          // The loaded reproduction took 598 ms. Three times that measured
+          // worst case guards only against a hung child; readiness decides pass.
+          const deadline = Date.now() + 3 * 598
+          while (!existsSync(ready) && Date.now() < deadline) Bun.sleepSync(5)
+          if (!existsSync(ready)) throw new Error('read-only agent did not become ready')
+          return 1
+        },
+      })
       const result = await run({
         job: 'file-question', prompt: 'where is the implementation?', cwd: dir,
         agent: 'grok', noFailover: true,
@@ -8998,6 +9010,7 @@ setInterval(() => {}, 1_000)
         status: string; failure_kind: string | null; exit_code: number; output_bytes: number
       }
 
+      expect(existsSync(ready)).toBe(true)
       expect(row).toMatchObject({ status: 'ok', failure_kind: null, exit_code: 143 })
       expect(row.output_bytes).toBeGreaterThan(0)
 
@@ -9014,7 +9027,7 @@ setInterval(() => {}, 1_000)
       expect(candidate.score).toBe(weigh('full', 'right'))
     } finally {
       grok.bin = previousBin
-      grok.timeoutMs = previousTimeout
+      Object.defineProperty(grok, 'timeoutMs', previousTimeout)
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
     }
@@ -11088,7 +11101,9 @@ describe('the sandbox an agent is launched with', () => {
           }),
           stdout: 'pipe', stderr: 'pipe',
         })
-        const deadline = Date.now() + 5_000
+        // The loaded reproduction reached 4,983 ms. Three times that measured
+        // worst case keeps this deadline a hang guard; the sentinel decides pass.
+        const deadline = Date.now() + 3 * 4_983
         while (!existsSync(ready) && Date.now() < deadline) await Bun.sleep(5)
         expect(existsSync(ready)).toBe(true)
         expect(existsSync(hookDir)).toBe(false)
