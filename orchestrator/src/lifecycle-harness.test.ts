@@ -60,6 +60,7 @@ const sourceRoot = join(dirname(new URL(import.meta.url).pathname), '../..')
 const cli = join(sourceRoot, 'orchestrator', 'src', 'cli.ts')
 const landingModule = new URL('./landing.ts', import.meta.url).href
 const worktreeModule = new URL('./worktree.ts', import.meta.url).href
+const runModule = new URL('./run.ts', import.meta.url).href
 
 if (!storePath.startsWith(`${fixture}/`)) {
   throw new Error(`lifecycle harness ORCH_DB escaped its fixture: ${storePath}`)
@@ -385,17 +386,29 @@ test(caseName.fifo, async () => {
   }
 }, 15_000)
 
+function namesRecordedRunTreeInChild(opts: {
+  cwd: string; explicitCwd?: boolean; base?: string
+  resume?: { parent: number; worktree: { path: string } | null }
+}): boolean {
+  const r = Bun.spawnSync([process.execPath, '-e',
+    `const{namesRecordedRunTree}=await import(process.argv[1]);console.log(JSON.stringify(namesRecordedRunTree(JSON.parse(process.argv[2]))))`,
+    runModule, JSON.stringify(opts)], {
+    cwd: repo, env: gitEnv({ ORCH_DB: storePath }), stdout: 'pipe', stderr: 'pipe',
+  })
+  if (r.exitCode !== 0) throw new Error(r.stderr.toString())
+  return JSON.parse(r.stdout.toString()) as boolean
+}
+
 test('A resume is always possible on a stale checkout: a stale new dispatch from the main checkout refuses', async () => {
-  const { namesRecordedRunTree } = await import('./run.ts')
   store((database) => database.query(`INSERT INTO run (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,cwd,repo) VALUES (datetime('now'),'codex','file-question','p',1,'p','ok','lifecycle-harness',?, 'lifecycle-fixture')`).run(repo))
   const tree = addBranch('stale-new')
   writeFileSync(join(repo, 'advance-stale.txt'), 'advance\n')
   git(repo, 'add', 'advance-stale.txt')
   git(repo, 'commit', '-m', 'DEV-321 advance after recorded cwd')
   git(repo, 'reset', '--hard', fixtureBase)
-  expect(namesRecordedRunTree({ cwd: repo })).toBe(false)
-  expect(namesRecordedRunTree({ cwd: repo, explicitCwd: true })).toBe(false)
-  expect(namesRecordedRunTree({ cwd: repo, base: 'stale-new' })).toBe(false)
+  expect(namesRecordedRunTreeInChild({ cwd: repo })).toBe(false)
+  expect(namesRecordedRunTreeInChild({ cwd: repo, explicitCwd: true })).toBe(false)
+  expect(namesRecordedRunTreeInChild({ cwd: repo, base: 'stale-new' })).toBe(false)
   const r = Bun.spawnSync([process.execPath, '-e',
     `const{assertCallerAncestry}=await import(process.argv[1]);assertCallerAncestry(process.argv[2],JSON.parse(process.argv[3]))`,
     worktreeModule, repo, JSON.stringify({ path: tree, branch: 'stale-new', base: git(tree, 'rev-parse', 'HEAD'), repoRoot: repo })],
@@ -409,13 +422,12 @@ test('A resume is always possible on a stale checkout: recorded worktree skips c
   const base = git(tree, 'rev-parse', 'HEAD')
   writeFileSync(join(repo, 'advance.txt'), 'advance\n'); git(repo, 'add', 'advance.txt'); git(repo, 'commit', '-m', 'DEV-321 advance trunk')
   const inserted = store((database) => database.query(`INSERT INTO run (started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,vendor_session,cwd,worktree,branch,base_commit,repo,turn) VALUES (datetime('now'),'codex','file-question','r',1,'r','ok','lifecycle-harness','vendor-session',?,?,?,?, 'lifecycle-fixture',1) RETURNING id`).get(tree, tree, 'resume-stale', base) as { id: number })
-  const { namesRecordedRunTree } = await import('./run.ts')
-  expect(namesRecordedRunTree({
+  expect(namesRecordedRunTreeInChild({
     cwd: tree, resume: { parent: inserted.id, worktree: { path: tree } },
   })).toBe(true)
-  expect(namesRecordedRunTree({ cwd: tree, explicitCwd: true })).toBe(true)
-  expect(namesRecordedRunTree({ cwd: repo, base: 'resume-stale' })).toBe(true)
-  expect(namesRecordedRunTree({ cwd: repo, base: 'origin/resume-stale' })).toBe(false)
+  expect(namesRecordedRunTreeInChild({ cwd: tree, explicitCwd: true })).toBe(true)
+  expect(namesRecordedRunTreeInChild({ cwd: repo, base: 'resume-stale' })).toBe(true)
+  expect(namesRecordedRunTreeInChild({ cwd: repo, base: 'origin/resume-stale' })).toBe(false)
   const resumed = await result(invoke(['continue', String(inserted.id), 'continue', '--detach'], repo,
     { ORCH_EXEC_PATH: '/usr/bin/true' }))
   expect(resumed.code, `${seedMessage()}\n${resumed.err}`).toBe(0)

@@ -524,8 +524,11 @@ function rebaseAndGate(
     const detail = cause instanceof Error ? cause.message : String(cause)
     try {
       if (rebaseInProgress(worktree, guard)) git(worktree, ['rebase', '--abort'], guard)
-      const headNow = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'], guard)
-      if (headNow !== headBefore) git(worktree, ['reset', '--keep', headBefore], guard)
+      try {
+        const headNow = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'], guard)
+        if (headNow !== headBefore) git(worktree, ['reset', '--keep', headBefore], guard)
+      } catch { /* a dirty post-gate tree still has its refs and tracked files restored below */ }
+      git(worktree, ['checkout', headBefore, '--', '.'], guard)
       git(worktree, ['update-ref', `refs/heads/${branch}`, headBefore], guard)
       git(worktree, ['checkout', branch], guard)
       if (indexBackup && existsSync(indexBackup)) copyFileSync(indexBackup, indexPath)
