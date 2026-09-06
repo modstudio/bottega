@@ -359,6 +359,73 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  for (const [name, command] of [
+    ['commits', `printf 'gate commit\\n' > gate-change.txt && git add gate-change.txt && git commit -m 'gate commit'`],
+    ['amends', `git commit --amend -m 'gate amended'`],
+    ['checks out another ref', `git checkout --detach main`],
+  ] as const) {
+    test(`refuses when the gate ${name} and names both HEAD OIDs`, async () => {
+      const branch = `gate-${name.replaceAll(' ', '-')}`
+      const { repo, trees } = repoWithBranches([branch])
+      const gate = join(repo, `${branch}.sh`)
+      writeFileSync(gate, `#!/bin/sh\nset -eu\n${command}\n`)
+      chmodSync(gate, 0o755)
+      upsertProject({ name: `landing-${branch}`, path: repo,
+        settings: { trunk: 'main', gate } })
+      try {
+        const before = g(trees[branch]!, 'rev-parse', 'HEAD')
+        const trunk = g(repo, 'rev-parse', 'main')
+        const child = childLand(repo, branch)
+        expect(await child.exited).not.toBe(0)
+        const after = g(trees[branch]!, 'rev-parse', 'HEAD')
+        const error = await new Response(child.stderr).text()
+        expect(after).not.toBe(before)
+        expect(error).toContain(gate)
+        expect(error).toContain(before)
+        expect(error).toContain(after)
+        expect(g(repo, 'rev-parse', 'main')).toBe(trunk)
+      } finally { rmSync(repo, { recursive: true, force: true }) }
+    })
+  }
+
+  test('refuses when the gate moves only the landing branch ref and names both OIDs', async () => {
+    const branch = 'gate-moves-branch-ref'
+    const { repo, trees } = repoWithBranches([branch])
+    const gate = join(repo, 'move-branch-ref.sh')
+    writeFileSync(gate, `#!/bin/sh\nset -eu\ngit checkout --detach\ngit update-ref refs/heads/${branch} refs/heads/main\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-moved-branch-ref', path: repo,
+      settings: { trunk: 'main', gate } })
+    try {
+      const before = g(trees[branch]!, 'rev-parse', 'HEAD')
+      const moved = g(repo, 'rev-parse', 'main')
+      const child = childLand(repo, branch)
+      expect(await child.exited).not.toBe(0)
+      const error = await new Response(child.stderr).text()
+      expect(g(trees[branch]!, 'rev-parse', 'HEAD')).toBe(before)
+      expect(g(repo, 'rev-parse', branch)).toBe(moved)
+      expect(error).toContain(gate)
+      expect(error).toContain(before)
+      expect(error).toContain(moved)
+      expect(g(repo, 'rev-parse', 'main')).toBe(moved)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a gate that does not move HEAD or the landing branch still lands', async () => {
+    const branch = 'gate-does-not-move'
+    const { repo } = repoWithBranches([branch])
+    const gate = join(repo, 'no-move.sh')
+    writeFileSync(gate, '#!/bin/sh\nset -eu\ngit rev-parse HEAD >/dev/null\n')
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-no-move', path: repo,
+      settings: { trunk: 'main', gate } })
+    try {
+      const child = childLand(repo, branch)
+      expect(await child.exited).toBe(0)
+      expect(g(repo, 'rev-parse', 'main')).toBe(g(repo, 'rev-parse', branch))
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   test('refuses a green landing with no completed review and names the candidate tree', async () => {
     const { repo, trees } = repoWithBranches(['unreviewed'])
     upsertProject({ name: 'landing-unreviewed', path: repo,

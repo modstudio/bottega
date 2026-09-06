@@ -143,7 +143,9 @@ function reconcileTrunkCheckouts(
   }
 }
 
-function runGate(project: Project, worktree: string, guard: SharedRefGuardEnvironment): void {
+function runGate(
+  project: Project, worktree: string, branch: string, guard: SharedRefGuardEnvironment,
+): string {
   const gate = typeof project.settings.gate === 'string' ? project.settings.gate.trim() : ''
   if (!gate) {
     throw new Error(
@@ -154,15 +156,31 @@ function runGate(project: Project, worktree: string, guard: SharedRefGuardEnviro
   if (before) {
     throw new Error(`refusing to gate a dirty worktree for ${project.name}:\n${before}`)
   }
+  const tip = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'], guard)
   console.log(`gate ${project.name}: ${gate}`)
   const p = Bun.spawnSync(['sh', '-lc', gate], {
     cwd: worktree, env: { ...process.env, ...guard }, stdout: 'inherit', stderr: 'inherit',
   })
   if (p.exitCode !== 0) throw new Error(`landing gate failed with exit ${p.exitCode}: ${gate}`)
+  const headAfter = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'], guard)
+  if (headAfter !== tip) {
+    throw new Error(
+      `refusing landing because gate ${gate} moved HEAD from ${tip} to ${headAfter}`,
+    )
+  }
+  const branchAfter = git(worktree, [
+    'rev-parse', '--verify', `refs/heads/${branch}^{commit}`,
+  ], guard)
+  if (branchAfter !== tip) {
+    throw new Error(
+      `refusing landing because gate ${gate} moved refs/heads/${branch} from ${tip} to ${branchAfter}`,
+    )
+  }
   const after = git(worktree, ['status', '--porcelain=v1', '--untracked-files=all'], guard)
   if (after) {
     throw new Error(`landing gate changed the worktree; its result was not the commit being landed:\n${after}`)
   }
+  return tip
 }
 
 function trunkCommit(repoRoot: string, trunk: string, guard?: SharedRefGuardEnvironment): string {
@@ -186,8 +204,7 @@ function rebaseAndGate(
   git(worktree, ['rebase', trunkOid], guard)
   const tip = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'], guard)
   if (tip === trunkOid) throw new Error(`branch ${branch} has no commits to land after rebasing onto ${trunk}`)
-  runGate(project, worktree, guard)
-  return tip
+  return runGate(project, worktree, branch, guard)
 }
 
 type ReviewCoverage = {
