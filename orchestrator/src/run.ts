@@ -29,7 +29,7 @@ import { recipeNotes } from './recipe.ts'
 import {
   workerPreamble, workerResumeGuard, READONLY_PREAMBLE, NO_REPO_PREAMBLE, WORKER_SCHEMA, ISSUE_WORKER_SCHEMA, REVIEW_SCHEMA,
   VERIFY_CLAIM_SCHEMA,
-  parseWorkerReplyWithCount, isAsking, hasRealQuestions,
+  parseWorkerReplyWithCount, isAsking, realQuestions,
   type CanonSource, type WorkerReply,
 } from './contract.ts'
 import { CALIBRATION_SUFFIX_RESERVE_BYTES, calibrationLine, reviewCalibration } from './review.ts'
@@ -1464,6 +1464,8 @@ export async function run(opts: {
   let resolvedSession: string | null = vendorSession
   let contract: WorkerReply | null = null
   let contractObjects = 0
+  let acceptedQuestions: ReturnType<typeof realQuestions> = []
+  let droppedQuestions: ReturnType<typeof realQuestions> = []
   let status = 'failed'
   let error: string | null = null
   let failureKind: ReturnType<typeof classify> | null = null
@@ -1570,6 +1572,11 @@ export async function run(opts: {
       contract = parsed.reply as WorkerReply | null
       contractObjects = parsed.contractObjects
     }
+    acceptedQuestions = realQuestions(contract)
+    const acceptedQuestionSet = new Set(acceptedQuestions)
+    droppedQuestions = isAsking(contract)
+      ? (contract?.questions ?? []).filter((item) => !acceptedQuestionSet.has(item))
+      : []
 
     const completedReplyAtTimeout = contract?.status === 'done' ||
       (!writesJob && !replyError && !!output && !isNonAnswer(output))
@@ -1617,7 +1624,7 @@ export async function run(opts: {
       status = 'failed'
       error = errorTail(output)
       failureKind = classify(output, exitCode, timedOut)
-    } else if (hasRealQuestions(contract)) {
+    } else if (acceptedQuestions.length) {
       // `asking`, not `blocked`: the worker is doing exactly what it was told
       // to. The word matters because a `blocker` in this system is the
       // opposite — an environment problem — and on a page they read alike.
@@ -1745,6 +1752,13 @@ export async function run(opts: {
       const note = `${contractObjects} contract objects in output; took the last`
       error = error ? `${error}\n${note}` : note
     }
+    if (acceptedQuestions.length && droppedQuestions.length) {
+      const count = droppedQuestions.length
+      const rejected = droppedQuestions.map((item) => JSON.stringify(item.question)).join(', ')
+      const note = `${count} invalid question${count === 1 ? '' : 's'} dropped; ` +
+        `rejected question text: ${rejected}`
+      error = error ? `${error}\n${note}` : note
+    }
 
     /**
      * The questions are written in the SAME `finally` as the row, so a blocked
@@ -1753,7 +1767,7 @@ export async function run(opts: {
      * looks identical to a run waiting on a ruling nobody has given, and would
      * sit in the inbox for ever.
      */
-    if (hasRealQuestions(contract)) {
+    if (acceptedQuestions.length) {
       /**
        * A question asked through the LIVE channel and then repeated in the final
        * answer must not be recorded twice.
@@ -1776,7 +1790,7 @@ export async function run(opts: {
         `INSERT INTO question (run_id, asked_at, question, options, recommendation, why)
          VALUES (?,?,?,?,?,?)`,
       )
-      for (const item of contract!.questions!) {
+      for (const item of acceptedQuestions) {
         if (already.has(norm(item.question))) continue
         q.run(
           claim.id, nowIso(), item.question,
@@ -1873,7 +1887,7 @@ export async function run(opts: {
         contract?.tests ? (contract.tests.ran ? 1 : 0) : null,
         contract?.tests?.passed === undefined ? null : contract.tests.passed ? 1 : 0,
         contract?.deviations?.length ?? null,
-        hasRealQuestions(contract) ? contract!.questions!.length : 0,
+        acceptedQuestions.length,
         claim.id,
       )
     }

@@ -932,7 +932,7 @@ const { summary } = await import('./metric.ts')
 const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
         NO_REPO_PREAMBLE, WORKER_PREAMBLE, LAND_PREAMBLE, REVIEW_SCHEMA,
         VERIFY_CLAIM_SCHEMA, ISSUE_WORKER_SCHEMA, workerPreamble, workerResumeGuard,
-        contractConflicts, hasRealQuestions } = await import('./contract.ts')
+        contractConflicts, hasRealQuestions, realQuestions } = await import('./contract.ts')
 const { parseReviewReply, recordReview, recordReviews, triageFinding, completeReview, reviewCalibration, calibrationLine,
         MIN_REVIEW_TRIAGED } = await import('./review.ts')
 const { ask } = await import('./ask.ts')
@@ -6673,7 +6673,7 @@ describe('a worker that stops to ask is not a worker that failed', () => {
     }] })))).toBeNull()
   })
 
-  test('only an asking reply whose every question has text and why is real', () => {
+  test('an asking reply keeps every question with text and why', () => {
     const asking = (questions: unknown[]) => parseWorkerReply(JSON.stringify(workerReply({
       status: 'asking', questions,
     })))
@@ -6684,6 +6684,11 @@ describe('a worker that stops to ask is not a worker that failed', () => {
     expect(hasRealQuestions(asking([{
       question: 'which table?', options: null, recommendation: null, why: '   ',
     }]))).toBe(false)
+    for (const why of ['\u200B', '\u2060', '\u00AD', '\u200B\u2060']) {
+      expect(hasRealQuestions(asking([{
+        question: 'one table or two?', options: null, recommendation: null, why,
+      }]))).toBe(false)
+    }
     for (const token of GENERIC_QUESTION_TOKENS) {
       expect(hasRealQuestions(asking([{
         question: token, options: null, recommendation: null, why: 'a claimed reason',
@@ -6697,17 +6702,30 @@ describe('a worker that stops to ask is not a worker that failed', () => {
     expect(hasRealQuestions(asking([{
       question: '\u200B\u2060', options: null, recommendation: null, why: 'a claimed reason',
     }]))).toBe(false)
-    expect(hasRealQuestions(asking([
+    const partial = asking([
       {
         question: 'which table?', options: null, recommendation: null,
         why: 'the schema changes',
       },
       { question: '   ', options: null, recommendation: null, why: 'unknown choice' },
-    ]))).toBe(false)
+    ])
+    expect(hasRealQuestions(partial)).toBe(true)
+    expect(realQuestions(partial).map((item) => item.question)).toEqual(['which table?'])
   })
 })
 
 describe('a writing worker must return evidence of completed work', () => {
+  function heartbeat(): string {
+    const hook = new URL('../hooks/orch-heartbeat.sh', import.meta.url).pathname
+    const bin = new URL('../../bin/', import.meta.url).pathname
+    const beat = Bun.spawnSync([hook, 'orch-test-session', '0', '1'], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, PATH: `${bin}:${process.env.PATH}` },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(beat.exitCode).toBe(0)
+    return beat.stdout.toString()
+  }
+
   async function runInCleanTree(output: string): Promise<Awaited<ReturnType<typeof runJob>>> {
     const repo = mkdtempSync(join(tmpdir(), 'orch-empty-write-'))
     const script = join(dir, `worker-${Math.random().toString(16).slice(2)}.ts`)
@@ -6823,14 +6841,7 @@ describe('a writing worker must return evidence of completed work', () => {
     expect(runs.out).toContain('contract')
     expect(runs.out).toContain('rejected question text: "placeholder"')
 
-    const heartbeat = new URL('../hooks/orch-heartbeat.sh', import.meta.url).pathname
-    const bin = new URL('../../bin/', import.meta.url).pathname
-    const beat = Bun.spawnSync([heartbeat, 'orch-test-session', '0', '1'], {
-      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, PATH: `${bin}:${process.env.PATH}` },
-      stdout: 'pipe', stderr: 'pipe',
-    })
-    expect(beat.exitCode).toBe(0)
-    expect(beat.stdout.toString()).not.toContain('BLOCKED')
+    expect(heartbeat()).not.toContain('BLOCKED')
   })
 
   test('asking with text but empty why is a contract failure', async () => {
@@ -6845,6 +6856,27 @@ describe('a writing worker must return evidence of completed work', () => {
     } catch (e) { failure = e as Error & { runId?: number } }
     expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(failure!.runId!))
       .toEqual({ status: 'failed', failure_kind: 'contract' })
+  })
+
+  test('format-only why is a contract failure', async () => {
+    for (const why of ['\u200B', '\u2060', '\u00AD', '\u200B\u2060']) {
+      let failure: Error & { runId?: number } | null = null
+      try {
+        await runInCleanTree(JSON.stringify(workerReply({
+          status: 'asking', files_changed: null, tests: null,
+          questions: [{
+            question: 'one table or two?', options: null, recommendation: null, why,
+          }],
+        })))
+      } catch (e) { failure = e as Error & { runId?: number } }
+      expect(failure?.runId).toBeDefined()
+      const id = failure!.runId!
+      expect(db().query('SELECT status, failure_kind, escalations FROM run WHERE id=?').get(id))
+        .toEqual({ status: 'failed', failure_kind: 'contract', escalations: 0 })
+      expect((db().query('SELECT COUNT(*) n FROM question WHERE run_id=?').get(id) as { n: number }).n)
+        .toBe(0)
+      expect(heartbeat()).not.toContain('BLOCKED')
+    }
   })
 
   test('punctuated generic and invisible-only questions fail in the run path', async () => {
@@ -6878,6 +6910,45 @@ describe('a writing worker must return evidence of completed work', () => {
     expect(result.status).toBe('asking')
     expect(db().query('SELECT question, why FROM question WHERE run_id=?').get(result.id))
       .toEqual({ question: 'one table or two?', why: 'the choice changes the public query shape' })
+  })
+
+  test('a real question beside a blank is accepted and only the real one is recorded', async () => {
+    const result = await runInCleanTree(JSON.stringify(workerReply({
+      status: 'asking', files_changed: null, tests: null,
+      questions: [
+        {
+          question: 'which table?', options: null, recommendation: null,
+          why: 'the schema changes',
+        },
+        { question: '   ', options: null, recommendation: null, why: 'unknown choice' },
+      ],
+    })))
+    expect(result.status).toBe('asking')
+    expect(db().query('SELECT question, why FROM question WHERE run_id=?').all(result.id))
+      .toEqual([{ question: 'which table?', why: 'the schema changes' }])
+    expect(db().query('SELECT error, escalations FROM run WHERE id=?').get(result.id)).toEqual({
+      error: '1 invalid question dropped; rejected question text: "   "', escalations: 1,
+    })
+    expect(heartbeat()).toContain('BLOCKED')
+  })
+
+  test('an all-blank asking reply remains a failover-eligible contract failure', async () => {
+    let failure: Error & { runId?: number } | null = null
+    try {
+      await runInCleanTree(JSON.stringify(workerReply({
+        status: 'asking', files_changed: null, tests: null,
+        questions: [
+          { question: ' ', options: null, recommendation: null, why: 'unknown choice' },
+          { question: '\u200B', options: null, recommendation: null, why: '\u2060' },
+        ],
+      })))
+    } catch (e) { failure = e as Error & { runId?: number } }
+    const id = failure!.runId!
+    expect(db().query('SELECT status, failure_kind, escalations FROM run WHERE id=?').get(id))
+      .toEqual({ status: 'failed', failure_kind: 'contract', escalations: 0 })
+    expect((db().query('SELECT COUNT(*) n FROM question WHERE run_id=?').get(id) as { n: number }).n)
+      .toBe(0)
+    expect(FAILS_OVER).toContain('contract')
   })
 
   test('multiple contracts leave a visible note on an otherwise successful run', async () => {

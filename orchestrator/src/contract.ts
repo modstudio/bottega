@@ -331,7 +331,8 @@ trip costs the architect a turn, and three questions asked together are cheaper
 than three asked in sequence.
 
 Every question must contain non-empty question text and a non-empty why; a lone
-generic token (${GENERIC_QUESTION_TOKENS.join(', ')}) is not a question.
+generic token (${GENERIC_QUESTION_TOKENS.join(', ')}) is not a question. Only
+real questions are recorded; invalid entries are dropped and noted on the run.
 
 NON-BLOCKING MESSAGES
 
@@ -636,20 +637,34 @@ export function isAsking(r: ContractReply | null | undefined): boolean {
   return r?.status === 'asking'
 }
 
-/** A schema-valid `asking` reply fulfils the contract only when every question is real. */
-export function hasRealQuestions(r: ContractReply | null | undefined): boolean {
-  if (!isAsking(r) || !r?.questions?.length) return false
+type ContractQuestion = NonNullable<ContractReply['questions']>[number]
+
+/** Invisible format characters are not content, even though trim() preserves them. */
+function normalizeQuestionField(value: string | null | undefined): string {
+  return (value ?? '').replace(/\p{Cf}/gu, '').trim()
+}
+
+/** Whether one schema-valid question contains both a decision and its consequence. */
+export function isRealQuestion(item: ContractQuestion): boolean {
   const generic = new Set<string>(GENERIC_QUESTION_TOKENS)
-  return r.questions.every((item) => {
-    // Format characters are invisible but are not whitespace, so trim() leaves
-    // U+200B ZERO WIDTH SPACE and U+2060 WORD JOINER looking like content.
-    // Punctuation is stripped only at the edges: punctuation inside a real
-    // sentence remains part of the question, while `(placeholder)!` reduces to
-    // the generic token it is disguising.
-    const question = item.question.replace(/\p{Cf}/gu, '').trim()
-      .replace(/^\p{P}+|\p{P}+$/gu, '').trim()
-    return question.length > 0 && !generic.has(question.toLowerCase()) && !!item.why?.trim()
-  })
+  // Punctuation is stripped only at the edges: punctuation inside a real
+  // sentence remains part of the question, while `(placeholder)!` reduces to
+  // the generic token it is disguising.
+  const question = normalizeQuestionField(item.question)
+    .replace(/^\p{P}+|\p{P}+$/gu, '').trim()
+  const why = normalizeQuestionField(item.why)
+  return question.length > 0 && !generic.has(question.toLowerCase()) && why.length > 0
+}
+
+/** The usable subset of a schema-valid `asking` reply. */
+export function realQuestions(r: ContractReply | null | undefined): ContractQuestion[] {
+  if (!isAsking(r) || !r?.questions?.length) return []
+  return r.questions.filter(isRealQuestion)
+}
+
+/** A reply asks when at least one of its questions is real. */
+export function hasRealQuestions(r: ContractReply | null | undefined): boolean {
+  return realQuestions(r).length > 0
 }
 
 /**
