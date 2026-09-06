@@ -655,12 +655,19 @@ function realpathOrSpelled(path: string): string {
   try { return realpathSync(path) } catch { return path }
 }
 
-function recordedRunIdsForWorktree(path: string): number[] {
+/**
+ * Chain roots, not rows: every turn of a resumed chain records the same
+ * worktree (eleven rows for one tree in the live store), and the exemption
+ * asks whether ONE chain owns the tree.
+ */
+function recordedChainRootsForWorktree(path: string): number[] {
   const real = realpathOrSpelled(path)
   const rows = real === path
-    ? db().query('SELECT id FROM run WHERE worktree = ?').all(path) as { id: number }[]
-    : db().query('SELECT id FROM run WHERE worktree = ? OR worktree = ?').all(path, real) as { id: number }[]
-  return [...new Set(rows.map((row) => row.id))]
+    ? db().query('SELECT COALESCE(parent_run_id, id) AS root FROM run WHERE worktree = ?')
+        .all(path) as { root: number }[]
+    : db().query('SELECT COALESCE(parent_run_id, id) AS root FROM run WHERE worktree = ? OR worktree = ?')
+        .all(path, real) as { root: number }[]
+  return [...new Set(rows.map((row) => row.root))]
 }
 
 /**
@@ -682,19 +689,19 @@ export function namesRecordedRunTree(opts: {
     if (!recorded) return false
     return realpathOrSpelled(recorded) === realpathOrSpelled(opts.cwd)
   }
-  if (opts.explicitCwd) return recordedRunIdsForWorktree(opts.cwd).length === 1
+  if (opts.explicitCwd) return recordedChainRootsForWorktree(opts.cwd).length === 1
   if (!opts.base) return false
-  const ids = new Set(
-    (db().query('SELECT id FROM run WHERE branch = ?').all(opts.base) as { id: number }[])
-      .map((row) => row.id),
+  const roots = new Set(
+    (db().query('SELECT COALESCE(parent_run_id, id) AS root FROM run WHERE branch = ?')
+      .all(opts.base) as { root: number }[]).map((row) => row.root),
   )
   try {
     const oid = resolveBase(opts.cwd, opts.base)
-    for (const row of db().query('SELECT id FROM run WHERE head_commit = ?').all(oid) as { id: number }[]) {
-      ids.add(row.id)
-    }
+    const byCommit = db().query('SELECT COALESCE(parent_run_id, id) AS root FROM run WHERE head_commit = ?')
+      .all(oid) as { root: number }[]
+    for (const row of byCommit) roots.add(row.root)
   } catch { /* --base is not a commit here */ }
-  return ids.size === 1
+  return roots.size === 1
 }
 
 /**
