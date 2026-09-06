@@ -35,7 +35,7 @@ export function Copyable({ value, compact = false }: { value: string; compact?: 
     await navigator.clipboard.writeText(value)
     toast.success('Copied')
   }
-  return <div className={`flex min-w-0 items-center gap-2 ${compact ? 'text-[10px] text-muted-foreground' : ''}`}>
+  return <div className={`flex min-w-0 items-center gap-2 ${compact ? 'text-[11px] text-muted-foreground' : ''}`}>
     <code className="min-w-0 flex-1 break-all">{value}</code>
     <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={copy} aria-label="Copy value"><Copy size={13} /></Button>
   </div>

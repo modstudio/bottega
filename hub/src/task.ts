@@ -1,6 +1,7 @@
 import { db, nowIso } from './db.ts'
 import { projects, type StatusCategory } from './projects.ts'
 import { randomBytes } from 'node:crypto'
+import { runRef } from './reconcile.ts'
 
 export const TASK_STATUSES = ['open', 'active', 'review', 'done', 'dropped'] as const
 
@@ -250,16 +251,20 @@ export function taskRecord(key: string) {
       WHERE task_key = ? AND source = 'orch'
       GROUP BY ref, agent, job
       ORDER BY started_at DESC`,
-  ).all(record.task.key).map((run): TaskRun => ({
-    id: Number(run.ref.replace(/^orch:/, '')),
-    agent: run.agent,
-    job: run.job,
-    started_at: run.started_at,
-    ended_at: run.ended_at,
-    running: Boolean(run.running),
-    vendor_tokens: run.vendor_tokens,
-    vendor_cost_usd: run.vendor_cost_usd,
-  }))
+  ).all(record.task.key).flatMap((run): TaskRun[] => {
+    const parsed = runRef(run.ref)
+    if (!parsed) return []
+    return [{
+      id: parsed.turn ?? parsed.root,
+      agent: run.agent,
+      job: run.job,
+      started_at: run.started_at,
+      ended_at: run.ended_at,
+      running: Boolean(run.running),
+      vendor_tokens: run.vendor_tokens,
+      vendor_cost_usd: run.vendor_cost_usd,
+    }]
+  })
   return {
     task: record.task,
     source: record.task.source,

@@ -941,6 +941,11 @@ describe('local task tracker', () => {
         (task_key, project, source, agent, job, start_at, end_at, vendor_tokens, ref, open)
        VALUES (?, 'workshop', 'orch', 'codex', 'implement', ?, ?, 123, 'orch:1812', 0)`,
     ).run(task.key, '2026-09-05T10:00:00.000Z', '2026-09-05T10:01:00.000Z')
+    db().query(
+      `INSERT INTO interval
+        (task_key, project, source, agent, job, start_at, end_at, vendor_tokens, ref, open)
+       VALUES (?, 'workshop', 'orch', 'codex', 'implement', ?, ?, 45, 'orch:1812:turn:1813', 0)`,
+    ).run(task.key, '2026-09-05T10:02:00.000Z', '2026-09-05T10:03:00.000Z')
 
     const result = taskRecord(task.key.toLowerCase())
     expect(result.task).toMatchObject({ key: task.key, title: 'Inspectable task' })
@@ -949,7 +954,10 @@ describe('local task tracker', () => {
     expect(result.comments).toEqual([comment])
     expect(result.documents.map((document) => document.id)).toEqual([handoff.id, ordinary.id])
     expect(result.documents[0]?.body).toBe('# Handoff')
-    expect(result.runs).toEqual([expect.objectContaining({ id: 1812, agent: 'codex', vendor_tokens: 123 })])
+    expect(result.runs).toEqual([
+      expect.objectContaining({ id: 1813, agent: 'codex', vendor_tokens: 45 }),
+      expect.objectContaining({ id: 1812, agent: 'codex', vendor_tokens: 123 }),
+    ])
     expect(taskRecord(task.key).task.key).toBe(task.key)
   })
 

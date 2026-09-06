@@ -8,6 +8,7 @@ import { useWindowState } from '@/lib/window'
 import { collectedTime, compactTokens, duration } from '@/lib/format'
 import { trpc } from '@/trpc/client'
 import { Collection, type CollectionColumn } from '@/components/collection'
+import { Input } from '@/components/input'
 
 type RunRow = {
   id: number; agent: string; job: string | null; task: string | null; project: string | null
@@ -81,7 +82,12 @@ function RunsList() {
     [data.totals.failed.toLocaleString(), 'failed', 'counts against the agent'],
     [compact(data.totals.toks), 'vendor tokens', 'across every agent'],
   ] : []
-  const matches = (row: RunRow | LiveRow) => JSON.stringify(row).toLowerCase().includes(search.trim().toLowerCase())
+  const matches = (row: RunRow | LiveRow) => {
+    const visible = 'task' in row
+      ? [row.project, row.task, row.agent, row.job]
+      : [row.repo, row.agent, row.job]
+    return visible.some((value) => value?.toLowerCase().includes(search.trim().toLowerCase()))
+  }
   const liveRows = data?.live.filter(matches) ?? []
   const runRows = data?.rows.filter(matches) ?? []
   const liveColumns: CollectionColumn<LiveRow>[] = [
@@ -105,14 +111,14 @@ function RunsList() {
   ]
 
   return <section>
-    <PageHeader title="Runs" subtitle={payload ? `${collectedTime(payload.collectedAt)} \u00b7 ${payload.activeAgents.length} agent${payload.activeAgents.length === 1 ? '' : 's'} working` : 'Loading runs...'} subtitleTitle={payload ? `Serving code since ${payload.servingSince}` : undefined} actions={data ? <WindowBar projects={data.facets.projects} agents={data.facets.agents} onOpenChange={menuChanged} /> : null} />
+    <PageHeader title="Runs" subtitle={payload ? `${collectedTime(payload.collectedAt)} \u00b7 ${payload.activeAgents.length} agent${payload.activeAgents.length === 1 ? '' : 's'} working` : 'Loading runs...'} subtitleTitle={payload ? `Serving code since ${payload.servingSince}` : undefined} actions={data ? <><Input type="search" className="h-8 w-56" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search visible runs" /><WindowBar projects={data.facets.projects} agents={data.facets.agents} onOpenChange={menuChanged} /></> : null} />
     {query.isPending ? <p className="text-muted-foreground">Loading runs...</p> : null}
     {query.error ? <p className="text-destructive">could not load: {query.error.message}</p> : null}
     {payload && data ? <>
       <StatRow className="two-rows">{cards.map(([figure, label, hint], index) => <StatTile key={label} figure={figure} label={label} hint={hint} live={index === 1 && data.live.length > 0} />)}</StatRow>
       {filtered ? <p className="mb-4 text-muted-foreground">the counters above count the whole window; the filter applies to the tables below.</p> : null}
-      <Collection title="Running now" count={liveRows.length} search={{ query: search, onQueryChange: setSearch, placeholder: 'Search visible runs' }} columns={liveColumns} rows={liveRows} getKey={(row) => row.id} onOpen={(row) => void navigate({ to: '/runs/$id', params: { id: String(row.id) } })} empty={filtered ? 'Nothing running matches these filters.' : 'No delegated run is executing.'} />
-      <div className="mt-7"><Collection title="Runs" count={runRows.length} columns={runColumns} rows={runRows} getKey={(row) => row.id} onOpen={(row) => void navigate({ to: '/runs/$id', params: { id: String(row.id) } })} empty="No runs in this window." /></div>
+      <Collection title="Running now" count={liveRows.length} columns={liveColumns} rows={liveRows} getKey={(row) => row.id} onOpen={(row) => void navigate({ to: '/runs/$id', params: { id: String(row.id) } })} empty={{ title: filtered ? 'Nothing running matches these filters.' : 'No delegated run is executing.', hint: filtered ? 'Clear the filters or widen the window.' : 'A run appears here while its agent is executing.' }} />
+      <div className="mt-7"><Collection title="Runs" count={runRows.length} columns={runColumns} rows={runRows} getKey={(row) => row.id} onOpen={(row) => void navigate({ to: '/runs/$id', params: { id: String(row.id) } })} empty={{ title: 'No runs in this window.', hint: 'Widen the window to see earlier runs.' }} /></div>
       <p className="mt-4 max-w-4xl text-muted-foreground"><strong className="text-foreground">Scoring is the only thing that measures whether delegation works.</strong>{' '}A run nobody judged and a run judged badly must stay distinguishable, which is why an unscored run shows a control rather than a blank. A probe is a calibration run and is never routing evidence.</p>
     </> : null}
   </section>

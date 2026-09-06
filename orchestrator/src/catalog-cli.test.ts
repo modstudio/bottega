@@ -11,13 +11,16 @@ function run(command: 'jobs' | 'agents', json = false) {
 }
 
 describe('inspectable catalogs', () => {
-  test('jobs --json serializes the existing Job type without changing human output', () => {
+  test('jobs --json projects the inspectable job fields without changing human output', () => {
     const rows = JSON.parse(run('jobs', true)) as Record<string, unknown>[]
     expect(rows.length).toBeGreaterThan(0)
     expect(rows[0]).toEqual(expect.objectContaining({
       name: expect.any(String), what: expect.any(String), needs: expect.any(Object),
       prefer: expect.any(Array), contextTokens: expect.any(Number),
     }))
+    expect(Object.keys(rows[0]!).sort()).toEqual([
+      'contextTokens', 'findings', 'name', 'needs', 'prefer', 'timeoutMs', 'what',
+    ])
     expect(run('jobs')).toContain(' [axes delivery,quality]')
   })
 

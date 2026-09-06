@@ -27,8 +27,8 @@ export function StatRow({ children, className }: { children: ReactNode; classNam
   return <div className={cx('stat-row', className)}>{children}</div>
 }
 
-export function EmptyState({ title, hint }: { title: string; hint: string }) {
-  return <div className="empty-state"><div>{title}</div><div className="meta mt-1">{hint}</div></div>
+export function EmptyState({ title, hint }: { title: string; hint?: string }) {
+  return <div className="empty-state"><div>{title}</div>{hint ? <div className="meta mt-1">{hint}</div> : null}</div>
 }
 
 export function LiveDot() { return <span className="live-dot" aria-label="Running" /> }

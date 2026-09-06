@@ -3997,7 +3997,15 @@ switch (cmd) {
 
   case 'jobs':
     if (process.argv.includes('--json')) {
-      console.log(JSON.stringify(Object.values(JOBS)))
+      console.log(JSON.stringify(Object.values(JOBS).map((job) => ({
+        name: job.name,
+        what: job.what,
+        needs: job.needs,
+        prefer: job.prefer,
+        contextTokens: job.contextTokens,
+        timeoutMs: job.timeoutMs ?? null,
+        findings: Boolean(job.findings),
+      }))))
       break
     }
     for (const j of Object.values(JOBS)) {

@@ -31,8 +31,8 @@ function AgentsPage() {
   return <section>
     <PageHeader title="Agents" subtitle="Code-declared runners and their limits" />
     {query.error ? <p className="text-destructive">{query.error.message}</p> : null}
-    <Collection title="Agents" count={rows.length} search={{ query: search, onQueryChange: setSearch, placeholder: 'Search agents' }} columns={columns} rows={rows} getKey={(row) => row.name} onOpen={(row) => void navigate({ to: '/agents', search: { agent: row.name } })} empty={query.isPending ? 'Loading agents...' : 'No agents match.'} />
-    <Sheet open={Boolean(selected)} onClose={close} title={selected?.name ?? agent ?? 'Agent'} subtitle="Code-declared; inspectable, not editable">
+    <Collection title="Agents" count={rows.length} search={{ query: search, onQueryChange: setSearch, placeholder: 'Search agents' }} columns={columns} rows={rows} getKey={(row) => row.name} onOpen={(row) => void navigate({ to: '/agents', search: { agent: row.name } })} empty={{ title: query.isPending ? 'Loading agents...' : 'No agents match.' }} />
+    <Sheet open={Boolean(agent)} onClose={close} title={selected?.name ?? agent ?? 'Agent'} subtitle="Code-declared; inspectable, not editable">
       {selected ? <>
         <DisplayRow label="Model" value={selected.model} />
         <DisplayRow label="Capabilities" value={Object.entries(selected.caps).map(([name, has]) => `${name}: ${has ? 'yes' : 'no'}`).join(' · ')} />

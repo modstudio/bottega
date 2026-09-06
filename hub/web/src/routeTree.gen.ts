@@ -25,7 +25,9 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SpendRouteImport } from './routes/spend'
 import { Route as ProjectsNameRouteImport } from './routes/projects.$name'
 import { Route as RunsIdRouteImport } from './routes/runs.$id'
-import { Route as TasksKeyRouteImport } from './routes/tasks.$key'
+import { Route as BoardTasksKeyRouteImport } from './routes/board.tasks.$key'
+import { Route as DoneTasksKeyRouteImport } from './routes/done.tasks.$key'
+import { Route as FlightTasksKeyRouteImport } from './routes/flight.tasks.$key'
 import { Route as DocsScopeSubjectSlugRouteImport } from './routes/docs.$scope.$subject.$slug'
 
 const IndexRoute = IndexRouteImport.update({
@@ -108,10 +110,20 @@ const RunsIdRoute = RunsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => RunsRoute,
 } as any)
-const TasksKeyRoute = TasksKeyRouteImport.update({
+const BoardTasksKeyRoute = BoardTasksKeyRouteImport.update({
   id: '/tasks/$key',
   path: '/tasks/$key',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => BoardRoute,
+} as any)
+const DoneTasksKeyRoute = DoneTasksKeyRouteImport.update({
+  id: '/tasks/$key',
+  path: '/tasks/$key',
+  getParentRoute: () => DoneRoute,
+} as any)
+const FlightTasksKeyRoute = FlightTasksKeyRouteImport.update({
+  id: '/tasks/$key',
+  path: '/tasks/$key',
+  getParentRoute: () => FlightRoute,
 } as any)
 const DocsScopeSubjectSlugRoute = DocsScopeSubjectSlugRouteImport.update({
   id: '/$scope/$subject/$slug',
@@ -122,11 +134,11 @@ const DocsScopeSubjectSlugRoute = DocsScopeSubjectSlugRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/agents': typeof AgentsRoute
-  '/board': typeof BoardRoute
+  '/board': typeof BoardRouteWithChildren
   '/design': typeof DesignRoute
   '/docs': typeof DocsRouteWithChildren
-  '/done': typeof DoneRoute
-  '/flight': typeof FlightRoute
+  '/done': typeof DoneRouteWithChildren
+  '/flight': typeof FlightRouteWithChildren
   '/jobs': typeof JobsRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
@@ -136,17 +148,19 @@ export interface FileRoutesByFullPath {
   '/spend': typeof SpendRoute
   '/projects/$name': typeof ProjectsNameRoute
   '/runs/$id': typeof RunsIdRoute
-  '/tasks/$key': typeof TasksKeyRoute
+  '/board/tasks/$key': typeof BoardTasksKeyRoute
+  '/done/tasks/$key': typeof DoneTasksKeyRoute
+  '/flight/tasks/$key': typeof FlightTasksKeyRoute
   '/docs/$scope/$subject/$slug': typeof DocsScopeSubjectSlugRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/agents': typeof AgentsRoute
-  '/board': typeof BoardRoute
+  '/board': typeof BoardRouteWithChildren
   '/design': typeof DesignRoute
   '/docs': typeof DocsRouteWithChildren
-  '/done': typeof DoneRoute
-  '/flight': typeof FlightRoute
+  '/done': typeof DoneRouteWithChildren
+  '/flight': typeof FlightRouteWithChildren
   '/jobs': typeof JobsRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
@@ -156,18 +170,20 @@ export interface FileRoutesByTo {
   '/spend': typeof SpendRoute
   '/projects/$name': typeof ProjectsNameRoute
   '/runs/$id': typeof RunsIdRoute
-  '/tasks/$key': typeof TasksKeyRoute
+  '/board/tasks/$key': typeof BoardTasksKeyRoute
+  '/done/tasks/$key': typeof DoneTasksKeyRoute
+  '/flight/tasks/$key': typeof FlightTasksKeyRoute
   '/docs/$scope/$subject/$slug': typeof DocsScopeSubjectSlugRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/agents': typeof AgentsRoute
-  '/board': typeof BoardRoute
+  '/board': typeof BoardRouteWithChildren
   '/design': typeof DesignRoute
   '/docs': typeof DocsRouteWithChildren
-  '/done': typeof DoneRoute
-  '/flight': typeof FlightRoute
+  '/done': typeof DoneRouteWithChildren
+  '/flight': typeof FlightRouteWithChildren
   '/jobs': typeof JobsRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
@@ -177,7 +193,9 @@ export interface FileRoutesById {
   '/spend': typeof SpendRoute
   '/projects/$name': typeof ProjectsNameRoute
   '/runs/$id': typeof RunsIdRoute
-  '/tasks/$key': typeof TasksKeyRoute
+  '/board/tasks/$key': typeof BoardTasksKeyRoute
+  '/done/tasks/$key': typeof DoneTasksKeyRoute
+  '/flight/tasks/$key': typeof FlightTasksKeyRoute
   '/docs/$scope/$subject/$slug': typeof DocsScopeSubjectSlugRoute
 }
 export interface FileRouteTypes {
@@ -199,7 +217,9 @@ export interface FileRouteTypes {
     | '/spend'
     | '/projects/$name'
     | '/runs/$id'
-    | '/tasks/$key'
+    | '/board/tasks/$key'
+    | '/done/tasks/$key'
+    | '/flight/tasks/$key'
     | '/docs/$scope/$subject/$slug'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -219,7 +239,9 @@ export interface FileRouteTypes {
     | '/spend'
     | '/projects/$name'
     | '/runs/$id'
-    | '/tasks/$key'
+    | '/board/tasks/$key'
+    | '/done/tasks/$key'
+    | '/flight/tasks/$key'
     | '/docs/$scope/$subject/$slug'
   id:
     | '__root__'
@@ -239,18 +261,20 @@ export interface FileRouteTypes {
     | '/spend'
     | '/projects/$name'
     | '/runs/$id'
-    | '/tasks/$key'
+    | '/board/tasks/$key'
+    | '/done/tasks/$key'
+    | '/flight/tasks/$key'
     | '/docs/$scope/$subject/$slug'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AgentsRoute: typeof AgentsRoute
-  BoardRoute: typeof BoardRoute
+  BoardRoute: typeof BoardRouteWithChildren
   DesignRoute: typeof DesignRoute
   DocsRoute: typeof DocsRouteWithChildren
-  DoneRoute: typeof DoneRoute
-  FlightRoute: typeof FlightRoute
+  DoneRoute: typeof DoneRouteWithChildren
+  FlightRoute: typeof FlightRouteWithChildren
   JobsRoute: typeof JobsRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
   RatioRoute: typeof RatioRoute
@@ -258,7 +282,6 @@ export interface RootRouteChildren {
   RunsRoute: typeof RunsRouteWithChildren
   SettingsRoute: typeof SettingsRoute
   SpendRoute: typeof SpendRoute
-  TasksKeyRoute: typeof TasksKeyRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -375,12 +398,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RunsIdRouteImport
       parentRoute: typeof RunsRoute
     }
-    '/tasks/$key': {
-      id: '/tasks/$key'
+    '/board/tasks/$key': {
+      id: '/board/tasks/$key'
       path: '/tasks/$key'
-      fullPath: '/tasks/$key'
-      preLoaderRoute: typeof TasksKeyRouteImport
-      parentRoute: typeof rootRouteImport
+      fullPath: '/board/tasks/$key'
+      preLoaderRoute: typeof BoardTasksKeyRouteImport
+      parentRoute: typeof BoardRoute
+    }
+    '/done/tasks/$key': {
+      id: '/done/tasks/$key'
+      path: '/tasks/$key'
+      fullPath: '/done/tasks/$key'
+      preLoaderRoute: typeof DoneTasksKeyRouteImport
+      parentRoute: typeof DoneRoute
+    }
+    '/flight/tasks/$key': {
+      id: '/flight/tasks/$key'
+      path: '/tasks/$key'
+      fullPath: '/flight/tasks/$key'
+      preLoaderRoute: typeof FlightTasksKeyRouteImport
+      parentRoute: typeof FlightRoute
     }
     '/docs/$scope/$subject/$slug': {
       id: '/docs/$scope/$subject/$slug'
@@ -392,6 +429,16 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface BoardRouteChildren {
+  BoardTasksKeyRoute: typeof BoardTasksKeyRoute
+}
+
+const BoardRouteChildren: BoardRouteChildren = {
+  BoardTasksKeyRoute: BoardTasksKeyRoute,
+}
+
+const BoardRouteWithChildren = BoardRoute._addFileChildren(BoardRouteChildren)
+
 interface DocsRouteChildren {
   DocsScopeSubjectSlugRoute: typeof DocsScopeSubjectSlugRoute
 }
@@ -401,6 +448,27 @@ const DocsRouteChildren: DocsRouteChildren = {
 }
 
 const DocsRouteWithChildren = DocsRoute._addFileChildren(DocsRouteChildren)
+
+interface DoneRouteChildren {
+  DoneTasksKeyRoute: typeof DoneTasksKeyRoute
+}
+
+const DoneRouteChildren: DoneRouteChildren = {
+  DoneTasksKeyRoute: DoneTasksKeyRoute,
+}
+
+const DoneRouteWithChildren = DoneRoute._addFileChildren(DoneRouteChildren)
+
+interface FlightRouteChildren {
+  FlightTasksKeyRoute: typeof FlightTasksKeyRoute
+}
+
+const FlightRouteChildren: FlightRouteChildren = {
+  FlightTasksKeyRoute: FlightTasksKeyRoute,
+}
+
+const FlightRouteWithChildren =
+  FlightRoute._addFileChildren(FlightRouteChildren)
 
 interface ProjectsRouteChildren {
   ProjectsNameRoute: typeof ProjectsNameRoute
@@ -427,11 +495,11 @@ const RunsRouteWithChildren = RunsRoute._addFileChildren(RunsRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AgentsRoute: AgentsRoute,
-  BoardRoute: BoardRoute,
+  BoardRoute: BoardRouteWithChildren,
   DesignRoute: DesignRoute,
   DocsRoute: DocsRouteWithChildren,
-  DoneRoute: DoneRoute,
-  FlightRoute: FlightRoute,
+  DoneRoute: DoneRouteWithChildren,
+  FlightRoute: FlightRouteWithChildren,
   JobsRoute: JobsRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   RatioRoute: RatioRoute,
@@ -439,7 +507,6 @@ const rootRouteChildren: RootRouteChildren = {
   RunsRoute: RunsRouteWithChildren,
   SettingsRoute: SettingsRoute,
   SpendRoute: SpendRoute,
-  TasksKeyRoute: TasksKeyRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -88,7 +88,7 @@ function ProjectsPage() {
       <PageHeader title="Projects" subtitle={`${projects.data?.length ?? 0} registered`} actions={<Button size="sm" onClick={() => setAdding(true)}><Plus size={14} />Add project</Button>} />
       {projects.isPending ? <p className="text-muted-foreground">Loading register...</p> : null}
       {projects.error ? <p className="text-destructive">{projects.error.message}</p> : null}
-      {projects.data ? <Collection title="Register" count={projects.data.length} columns={columns} rows={projects.data} getKey={(project) => project.id} onOpen={(project) => void navigate({ to: '/projects/$name', params: { name: project.name } })} empty="No projects are registered." /> : null}
+      {projects.data ? <Collection title="Register" count={projects.data.length} columns={columns} rows={projects.data} getKey={(project) => project.id} onOpen={(project) => void navigate({ to: '/projects/$name', params: { name: project.name } })} empty={{ title: 'No projects are registered.' }} /> : null}
       <Dialog open={adding} onOpenChange={(open) => { setAdding(open); if (!open) setError(null) }}>
         <DialogContent>
           <DialogHeader>

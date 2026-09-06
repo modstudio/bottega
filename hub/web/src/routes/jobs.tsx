@@ -30,8 +30,8 @@ function JobsPage() {
   return <section>
     <PageHeader title="Jobs" subtitle="Code-declared work the orchestrator can route" />
     {query.error ? <p className="text-destructive">{query.error.message}</p> : null}
-    <Collection title="Job types" count={rows.length} search={{ query: search, onQueryChange: setSearch, placeholder: 'Search jobs' }} columns={columns} rows={rows} getKey={(row) => row.name} onOpen={(row) => void navigate({ to: '/jobs', search: { job: row.name } })} empty={query.isPending ? 'Loading jobs...' : 'No jobs match.'} />
-    <Sheet open={Boolean(selected)} onClose={close} title={selected?.name ?? job ?? 'Job'} subtitle="Code-declared; inspectable, not editable">
+    <Collection title="Job types" count={rows.length} search={{ query: search, onQueryChange: setSearch, placeholder: 'Search jobs' }} columns={columns} rows={rows} getKey={(row) => row.name} onOpen={(row) => void navigate({ to: '/jobs', search: { job: row.name } })} empty={{ title: query.isPending ? 'Loading jobs...' : 'No jobs match.' }} />
+    <Sheet open={Boolean(job)} onClose={close} title={selected?.name ?? job ?? 'Job'} subtitle="Code-declared; inspectable, not editable">
       {selected ? <>
         <DisplayRow label="What" value={selected.what} />
         <DisplayRow label="Needs" value={Object.entries(selected.needs).filter(([, needed]) => needed).map(([name]) => name).join(', ') || 'none'} />

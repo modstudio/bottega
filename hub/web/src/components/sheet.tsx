@@ -18,10 +18,14 @@ export function Sheet({ open, onClose, title, subtitle, actions, footer, childre
 
   useEffect(() => {
     if (!open) return
+    // This is deliberately not modal: the list stays visible and interactive so a
+    // record can be read against its collection. Focus enters the panel and Escape
+    // closes it, but Tab may leave it; a scrim would hide what the sheet exists to
+    // inspect against.
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     panel.current?.focus()
     const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') close.current()
+      if (event.key === 'Escape' && !document.querySelector('dialog[open]')) close.current()
     }
     document.addEventListener('keydown', escape)
     return () => {
@@ -37,7 +41,7 @@ export function Sheet({ open, onClose, title, subtitle, actions, footer, childre
     role="complementary"
     aria-modal="false"
     aria-label={typeof title === 'string' ? title : 'Record detail'}
-    className="fixed inset-y-0 right-0 z-40 flex w-[min(640px,100vw)] flex-col border-l border-border bg-[var(--surface-raised)] shadow-2xl outline-none max-[900px]:w-screen"
+    className="fixed inset-y-0 right-0 z-40 flex w-[min(640px,100vw)] flex-col border-l border-border bg-[var(--surface-raised)] outline-none max-[900px]:w-screen"
   >
     <header className="flex min-h-14 items-start gap-3 border-b border-border p-4">
       <div className="min-w-0 flex-1">

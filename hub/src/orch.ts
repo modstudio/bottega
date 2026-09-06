@@ -132,8 +132,8 @@ export type OrchJob = {
   needs: Record<string, boolean>
   prefer: string[]
   contextTokens: number
-  timeoutMs?: number
-  findings?: boolean
+  timeoutMs: number | null
+  findings: boolean
 }
 
 export type OrchAgentDefinition = {
