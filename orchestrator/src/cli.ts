@@ -21,7 +21,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
 import { createHasPlaceholder, projectAt, projectByName, projects } from './projects.ts'
 import { branchTip, restoreBranch, resolveBase, repoRootOf, removeBranch, removeFor, unmergedBranch,
-         checkoutHasUncommittedWork, callerDrift, withProjectLock } from './worktree.ts'
+         checkoutHasUncommittedWork, callerDrift, projectLockState, withProjectLock } from './worktree.ts'
 import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
 import { WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE,
          REVIEW_SEVERITY_INSTRUCTION, contractConflicts, rulingPrompt } from './contract.ts'
@@ -462,7 +462,7 @@ function verifyBranchOwnershipAfterCleanup(
 ): { refusal: string | null; warning: string | null } {
   const priorIds = new Set(before.map((owner) => owner.id))
   const acquired = after.find((owner) => !priorIds.has(owner.id)) ?? null
-  const protector = acquired ?? after[0] ?? before[0] ?? null
+  const protector = acquired ?? after[0] ?? null
   let outcome = { refusal: null as string | null, warning: null as string | null }
   if (protector && snapshot) {
     outcome = sharedBranchRefusal(runId, repoRoot, branch, snapshot, protector)
@@ -535,6 +535,7 @@ function discardWorktree(
       base: '',
       repoRoot,
     }, repoRoot, force, ownersBefore.length > 0)
+    const sharersAfter = evidenceOwningWorktreeSharers(row)
     const ownersAfter = evidenceOwningBranchOwners(row, repoRoot)
     let branchWarning: string | null = null
     if (row.branch) {
@@ -543,6 +544,9 @@ function discardWorktree(
       )
       if (ownership.refusal) throw new Error(ownership.refusal)
       branchWarning = ownership.warning
+    }
+    if (sharersAfter.length) {
+      throw new SharedWorktreeEvidenceError(row.worktree, sharersAfter)
     }
     if (protectedBranch && row.branch && ownersBefore.length === 0 && ownersAfter.length === 0) {
       const after = branchTip(repoRoot, row.branch)
@@ -577,12 +581,14 @@ function discardWorktree(
         leakedResourceLines(inventory.resources, project, row.id).map((line) => `  ${line}`).join('\n'),
       )
     }
+    const keptProtectedBranch = protectedBranch && row.branch && branchTip(repoRoot, row.branch)
+      ? row.branch : null
     db().query('UPDATE run SET worktree = NULL, branch_kept = ?, branch_kept_tip = NULL WHERE id = ?')
-      .run(protectedBranch ? row.branch : null, row.id)
+      .run(keptProtectedBranch, row.id)
     console.log(`${verb} run ${row.id}'s worktree`)
     if (r.output) console.log(r.output)
-    if (protectedBranch && row.branch) {
-      console.log(keptBranchLine(row.branch, protectedBranch.count, row.id))
+    if (protectedBranch && keptProtectedBranch) {
+      console.log(keptBranchLine(keptProtectedBranch, protectedBranch.count, row.id))
     }
     const branchOwner = ownersAfter[0] ?? ownersBefore[0] ?? null
     if (branchOwner && row.branch) {
@@ -3194,6 +3200,7 @@ switch (cmd) {
           const ownersBefore = evidenceOwningBranchOwners(r, repoRoot)
           const snapshot = r.branch ? branchTip(repoRoot, r.branch) : null
           const res = removeFor(w, repoRoot, false, ownersBefore.length > 0)
+          const sharersAfter = evidenceOwningWorktreeSharers(r)
           const ownersAfter = evidenceOwningBranchOwners(r, repoRoot)
           if (r.branch) {
             const outcome = verifyBranchOwnershipAfterCleanup(
@@ -3205,6 +3212,17 @@ switch (cmd) {
               console.error(`could not reclaim ${r.id}: ${outcome.refusal}`)
               return
             }
+          }
+          if (sharersAfter.length) {
+            cleanupFailed = true
+            const owners = sharersAfter.map((owner) =>
+              `${owner.id} (${owner.status}${owner.scored ? '' : ', unscored'})`).join(', ')
+            keep(
+              `${r.id}  shared with evidence-owning run(s): ${owners}`,
+              'shared with evidence-owning run(s)',
+            )
+            console.error(`could not reclaim ${r.id}: worktree ${r.worktree} was acquired during cleanup by run(s) ${owners}`)
+            return
           }
           if (res.removed) {
             const project = r.repo ?? projectAt(repoRoot)?.name ?? 'unknown'
@@ -3296,9 +3314,20 @@ switch (cmd) {
         try {
           withCleanupLock(p.path, `sweep ${label}`, () => {
             const ownerRow = { id: runId ?? -1, repo: p.name, branch: safe.branch }
+            const worktreeRow = { id: runId ?? -1, worktree: path }
+            const sharersBefore = evidenceOwningWorktreeSharers(worktreeRow)
+            if (sharersBefore.length) {
+              const owners = sharersBefore.map((owner) =>
+                `${owner.id} (${owner.status}${owner.scored ? '' : ', unscored'})`).join(', ')
+              cleanupFailed = true
+              keep(`${label}  acquired by run(s): ${owners}`, 'shared with evidence-owning run(s)')
+              console.error(`could not reclaim ${label}: acquired by run(s) ${owners}`)
+              return
+            }
             const ownersBefore = evidenceOwningBranchOwners(ownerRow, p.path)
             const snapshot = safe.branch ? branchTip(p.path, safe.branch) : null
             const res = removeFor(w, p.path, false, ownersBefore.length > 0)
+            const sharersAfter = evidenceOwningWorktreeSharers(worktreeRow)
             const ownersAfter = evidenceOwningBranchOwners(ownerRow, p.path)
             if (safe.branch) {
               const outcome = verifyBranchOwnershipAfterCleanup(
@@ -3311,6 +3340,15 @@ switch (cmd) {
                 console.error(`could not reclaim ${label}: ${outcome.refusal}`)
                 return
               }
+            }
+            if (sharersAfter.length) {
+              const owners = sharersAfter.map((owner) =>
+                `${owner.id} (${owner.status}${owner.scored ? '' : ', unscored'})`).join(', ')
+              cleanupFailed = true
+              keep(`${label}  acquired during cleanup by run(s): ${owners}`,
+                'shared with evidence-owning run(s)')
+              console.error(`could not reclaim ${label}: acquired during cleanup by run(s) ${owners}`)
+              return
             }
             if (res.removed) {
               const inventory = runId === null
@@ -3367,7 +3405,17 @@ switch (cmd) {
       for (const p of (await import('./projects.ts')).projects()) {
         const tool = p.settings.worktree
         if (!tool?.sweep) continue
-        const result = sweepWithTool(tool, p.path)
+        let result: ReturnType<typeof sweepWithTool>
+        try {
+          result = withCleanupLock(p.path, `project sweep for ${p.name}`, () =>
+            sweepWithTool(tool, p.path))
+        } catch (error) {
+          cleanupFailed = true
+          console.error(
+            `project ${p.name} sweep failed: ${error instanceof Error ? error.message : String(error)}`,
+          )
+          continue
+        }
         if (!result) continue
         if (result.out.trim()) {
           const lines = result.out.trim().split('\n')
@@ -3508,19 +3556,25 @@ switch (cmd) {
     if (row.worktree) {
       const stoppedWorktree = row.worktree
       let reclaimed = false
-      try {
-        await discardWorktree(row as CleanupRow, 'discarded', true)
-        reclaimed = true
-      } catch (error) {
-        if (error instanceof SharedWorktreeEvidenceError) {
-          const owners = error.sharers.map((owner) =>
-            `${owner.id} (${owner.status}${owner.scored ? '' : ', unscored'})`).join(', ')
-          console.log(`worktree ${error.worktree} kept for runs ${owners}`)
-        } else {
-          console.error(
-            `worktree ${stoppedWorktree} was not reclaimed after stopping run ${id}: ` +
-            `${error instanceof Error ? error.message : String(error)}`,
-          )
+      const repoRoot = cleanupRepoRoot(row)
+      const creationHolder = repoRoot ? projectLockState(repoRoot, 'landing').holder : null
+      if (creationHolder?.what === 'worktree creation') {
+        console.log(`worktree ${stoppedWorktree} cleanup left to its creation coordinator`)
+      } else {
+        try {
+          await discardWorktree(row as CleanupRow, 'discarded', true)
+          reclaimed = true
+        } catch (error) {
+          if (error instanceof SharedWorktreeEvidenceError) {
+            const owners = error.sharers.map((owner) =>
+              `${owner.id} (${owner.status}${owner.scored ? '' : ', unscored'})`).join(', ')
+            console.log(`worktree ${error.worktree} kept for runs ${owners}`)
+          } else {
+            console.error(
+              `worktree ${stoppedWorktree} was not reclaimed after stopping run ${id}: ` +
+              `${error instanceof Error ? error.message : String(error)}`,
+            )
+          }
         }
       }
       if (reclaimed && row.parent_run_id) {

@@ -413,7 +413,7 @@ export function withProjectLock<T>(
 export function withWorktreeCreateLock<T>(
   repoRoot: string, create: () => T, timeoutMs = WORKTREE_CREATE_LOCK_TIMEOUT_MS,
 ): T {
-  return withProjectLock(repoRoot, 'worktree-create',
+  return withProjectLock(repoRoot, 'landing',
     { session: null, what: 'worktree creation' }, create, timeoutMs)
 }
 
@@ -699,6 +699,18 @@ function attributeWorktree(
     throw new Error(
       `${String((e as Error)?.message ?? e)}\n` +
       `unrecorded worktree cleanup: ${cleanup.removed ? 'removed' : cleanup.detail}`,
+    )
+  }
+  const recorded = db().query('SELECT status FROM run WHERE id=?').get(runId) as
+    { status: string } | null
+  if (recorded?.status === 'stopped') {
+    const cleanup = removeFor(worktree, worktree.repoRoot)
+    if (cleanup.removed) {
+      db().query('UPDATE run SET worktree=NULL WHERE id=?').run(runId)
+    }
+    throw new Error(
+      `run ${runId} stopped during worktree creation; ` +
+      `cleanup: ${cleanup.removed ? 'removed' : cleanup.detail}`,
     )
   }
   markWorktree(worktree.path, runId, worktree.repoRoot)

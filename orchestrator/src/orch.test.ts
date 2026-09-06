@@ -10268,14 +10268,14 @@ echo 'Usage: scripts/worktree create [seed]'
 
   test('a creation lock held by a live owner waits and names its holder on timeout', () => {
     const { repo } = scratchRepo()
-    const lock = join(repo, '.git', 'orch-worktree-create.lock')
+    const lock = join(repo, '.git', 'orch-landing.lock')
     try {
       mkdirSync(lock)
       writeFileSync(join(lock, 'owner'), `${process.pid}\n`)
       expect(() => withWorktreeCreateLock(repo, () => undefined, 20)).toThrow(
         new RegExp(
-          `timed out after 0\\.02s waiting for this project's worktree creation lock ` +
-          `\\(holder pid ${process.pid}\\)`,
+          `timed out after 0\\.02s waiting for this project's landing lock ` +
+          `\\(holder session unknown, pid ${process.pid}, landing worktree creation, held for \\d+s\\)`,
         ),
       )
     } finally {
@@ -10285,8 +10285,8 @@ echo 'Usage: scripts/worktree create [seed]'
 
   test('a creation lock held by a dead owner is reclaimed and reported', () => {
     const { repo } = scratchRepo()
-    const lock = join(repo, '.git', 'orch-worktree-create.lock')
-    const reportedLock = join(realpathSync(join(repo, '.git')), 'orch-worktree-create.lock')
+    const lock = join(repo, '.git', 'orch-landing.lock')
+    const reportedLock = join(realpathSync(join(repo, '.git')), 'orch-landing.lock')
     const deadPid = 2_147_483_647
     const errors: string[] = []
     const originalError = console.error
@@ -10296,7 +10296,7 @@ echo 'Usage: scripts/worktree create [seed]'
       console.error = (...args: unknown[]) => errors.push(args.join(' '))
       expect(withWorktreeCreateLock(repo, () => 'created', 20)).toBe('created')
       expect(errors).toEqual([
-        `orch: reclaimed worktree creation lock from dead holder pid ${deadPid}: ${reportedLock}`,
+        `orch: reclaimed landing lock from dead holder pid ${deadPid}: ${reportedLock}`,
       ])
       expect(existsSync(lock)).toBe(false)
     } finally {
@@ -10307,7 +10307,7 @@ echo 'Usage: scripts/worktree create [seed]'
 
   test('a fresh ownerless lock is not reclaimed during the owner-write race', async () => {
     const { repo } = scratchRepo()
-    const lock = join(repo, '.git', 'orch-worktree-create.lock')
+    const lock = join(repo, '.git', 'orch-landing.lock')
     const child = Bun.spawn([
       process.execPath, '-e',
       `
@@ -10325,7 +10325,7 @@ echo 'Usage: scripts/worktree create [seed]'
       expect(existsSync(lock)).toBe(true)
       let entered = false
       expect(() => withWorktreeCreateLock(repo, () => { entered = true }, 20)).toThrow(
-        /timed out after 0\.02s waiting for this project's worktree creation lock/,
+        /timed out after 0\.02s waiting for this project's landing lock/,
       )
       expect(entered).toBe(false)
       expect(await child.exited).toBe(0)
@@ -10340,7 +10340,7 @@ echo 'Usage: scripts/worktree create [seed]'
     const { repo } = scratchRepo()
     try {
       expect(withWorktreeCreateLock(repo, () => 'created')).toBe('created')
-      expect(existsSync(join(repo, '.git', 'orch-worktree-create.lock'))).toBe(false)
+      expect(existsSync(join(repo, '.git', 'orch-landing.lock'))).toBe(false)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
@@ -10617,6 +10617,55 @@ echo 'Usage: scripts/worktree create [seed]'
     }
   })
 
+  for (const cleanup of ['discard', 'abandon', 'sweep'] as const) {
+    test(`${cleanup} refuses finalization when a run acquires the worktree during removal`, () => {
+      const { repo } = scratchRepo()
+      const project = `${cleanup}-acquired-tree-${repo.split('/').pop()}`
+      const target = addRun({
+        agent: 'codex', job: 'implement', status: cleanup === 'abandon' ? 'asking' : 'ok',
+        repo: project, startedAt: new Date(Date.now() - 86_400_000).toISOString(),
+      })
+      const owner = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: project })
+      const tree = createWorktree(repo, target)
+      const assign = join(repo, 'assign-worktree.ts')
+      writeFileSync(assign,
+        "import { Database } from 'bun:sqlite'\n" +
+        "const database = new Database(process.env.ORCH_DB!)\n" +
+        "database.query('UPDATE run SET worktree=? WHERE id=?').run(process.argv[2]!, Number(process.argv[3]))\n")
+      const script = join(repo, 'assign-and-remove-worktree.sh')
+      writeFileSync(script,
+        `"${process.execPath}" "${assign}" "$1" "${owner}"\n` +
+        'git worktree remove --force "$1"\n' +
+        'git branch -D "$2"\n')
+      upsertProject({
+        name: project, path: realpathSync(repo),
+        settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
+      })
+      db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
+        .run(repo, tree.path, tree.branch, target)
+      db().query('UPDATE run SET cwd=? WHERE id=?').run(repo, owner)
+      try {
+        const CLI = new URL('cli.ts', import.meta.url).pathname
+        const args = cleanup === 'sweep'
+          ? ['sweep', '--older-than', '0', '--force']
+          : [cleanup, String(target), '--force']
+        const p = Bun.spawnSync([process.execPath, CLI, ...args], {
+          env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+          stdout: 'pipe', stderr: 'pipe',
+        })
+        expect(p.exitCode).not.toBe(0)
+        expect(p.stderr.toString()).toContain(String(owner))
+        expect(existsSync(tree.path)).toBe(false)
+        expect(db().query('SELECT worktree FROM run WHERE id=?').get(owner))
+          .toEqual({ worktree: tree.path })
+        expect(db().query('SELECT worktree FROM run WHERE id=?').get(target))
+          .toEqual({ worktree: tree.path })
+      } finally {
+        rmSync(repo, { recursive: true, force: true })
+      }
+    })
+  }
+
   test('discard restores and continues when a project tool deletes a moved shared branch', () => {
     const { repo } = scratchRepo()
     const project = `shared-ref-${repo.split('/').pop()}`
@@ -10665,6 +10714,51 @@ echo 'Usage: scripts/worktree create [seed]'
       expect(git(repo, 'rev-parse', branch)).toBe(before)
       expect(db().query('SELECT worktree FROM run WHERE id=?').get(target))
         .toEqual({ worktree: null })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('discard accepts branch deletion after every prior owner releases it', () => {
+    const { repo } = scratchRepo()
+    const project = `released-ref-${repo.split('/').pop()}`
+    const target = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
+    const owner = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: project })
+    const tree = createWorktree(repo, target)
+    const release = join(repo, 'release-owner.ts')
+    writeFileSync(release,
+      "import { Database } from 'bun:sqlite'\n" +
+      "const database = new Database(process.env.ORCH_DB!)\n" +
+      "database.query(\"UPDATE run SET status='ok' WHERE id=?\").run(Number(process.argv[2]))\n" +
+      "database.query(\"INSERT INTO score (run_id, delivery, quality, fidelity, scored_at) VALUES (?,'full','right','faithful',?)\").run(Number(process.argv[2]), new Date().toISOString())\n")
+    const script = join(repo, 'release-and-delete-shared-branch.sh')
+    writeFileSync(script,
+      `"${process.execPath}" "${release}" "${owner}"\n` +
+      'git worktree remove --force "$1"\n' +
+      'git branch -D "$2"\n')
+    upsertProject({
+      name: project, path: realpathSync(repo),
+      settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
+    })
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, target)
+    db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, tree.branch, owner)
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const p = Bun.spawnSync(
+        [process.execPath, CLI, 'discard', String(target)],
+        {
+          env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+          stdout: 'pipe', stderr: 'pipe',
+        },
+      )
+      expect(p.exitCode).toBe(0)
+      expect(git(repo, 'branch', '--list', tree.branch)).toBe('')
+      expect(db().query('SELECT worktree FROM run WHERE id=?').get(target))
+        .toEqual({ worktree: null })
+      expect(db().query('SELECT branch_kept FROM run WHERE id=?').get(target))
+        .toEqual({ branch_kept: null })
+      expect(db().query('SELECT status FROM run WHERE id=?').get(owner)).toEqual({ status: 'ok' })
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
