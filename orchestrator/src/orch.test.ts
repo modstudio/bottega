@@ -109,14 +109,15 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
   const childLand = (
     repo: string, branch: string,
     options: { message?: string; unreviewed?: string | null } = {},
-    extraEnv: Record<string, string> = {},
+    extraEnv: Record<string, string | undefined> = {},
   ) => Bun.spawn(
     [process.execPath, '-e',
       `const { land } = await import(process.argv[1]); land(process.argv[2], process.argv[3], JSON.parse(process.argv[4]))`,
       landingModule, repo, branch, JSON.stringify(options.unreviewed === null
         ? { ...options, unreviewed: undefined }
         : { unreviewed: 'existing landing fixture', ...options })],
-    { env: { ...hermeticGitEnv(extraEnv), ORCH_DB: process.env.ORCH_DB!, CLAUDE_CODE_SESSION_ID: branch },
+    { env: { ...hermeticGitEnv(), ...extraEnv,
+        ORCH_DB: process.env.ORCH_DB!, CLAUDE_CODE_SESSION_ID: branch },
       stdout: 'pipe', stderr: 'pipe' },
   )
   const observeGitLocks = (repo: string) => {
@@ -463,28 +464,36 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
-  test('a buried bun timeout failure is repeated with machine load and complete output path', async () => {
-    const { repo } = repoWithBranches(['timeout-summary'])
-    const gate = join(repo, 'timeout-gate.sh')
-    writeFileSync(gate, [
-      '#!/bin/sh',
-      "echo '(fail) deeply buried timeout test [5001.00ms]'",
-      "echo '^ this test timed out after 5000ms.'",
-      "i=1; while [ \"$i\" -le 900 ]; do echo \"(pass) later test $i\"; i=$((i+1)); done",
-      "echo '1 fail'",
-      'exit 7',
+  const realTimeoutGate = (name: string) => {
+    const fixture = mkdtempSync(join(tmpdir(), 'orch-real-timeout-gate-'))
+    const testFile = join(fixture, 'buried-timeout.test.ts')
+    const quote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`
+    writeFileSync(testFile, [
+      "import { test } from 'bun:test'",
+      `test(${JSON.stringify(name)}, async () => { await Bun.sleep(50) }, 1)`,
+      "for (let i = 1; i <= 900; i++) test(`later test ${i}`, () => {})",
     ].join('\n') + '\n')
-    chmodSync(gate, 0o755)
+    return { fixture, gate: `${quote(process.execPath)} test ${quote(testFile)}` }
+  }
+
+  test('a buried coloured bun timeout failure is repeated with machine load and complete output path', async () => {
+    const { repo } = repoWithBranches(['timeout-summary'])
+    const name = 'deeply buried coloured timeout test'
+    const timeout = realTimeoutGate(name)
     upsertProject({ name: 'landing-timeout-summary', path: repo,
-      settings: { trunk: 'main', gate } })
+      settings: { trunk: 'main', gate: timeout.gate } })
     addRun({ agent: 'codex', job: 'implement', status: 'running' })
     addRun({ agent: 'codex', job: 'implement', status: 'asking' })
     addRun({ agent: 'codex', job: 'implement', status: 'ok' })
     try {
-      const child = childLand(repo, 'timeout-summary')
+      const child = childLand(repo, 'timeout-summary', {}, {
+        NO_COLOR: undefined,
+        // The worker environment running this suite sets NO_COLOR; restore Bun's coloured reporter.
+        FORCE_COLOR: '1',
+      })
       expect(await child.exited).not.toBe(0)
       const error = await new Response(child.stderr).text()
-      expect(error).toContain('(fail) deeply buried timeout test [5001.00ms]')
+      expect(error).toContain(`✗ ${name}`)
       expect(error).toContain('1 fail')
       expect(error).toContain(
         'gate timeout under load: 2 orch runs live (running + asking) machine-wide',
@@ -493,10 +502,41 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
       expect(outputPath).toBeDefined()
       expect(readdirSync(dirname(outputPath!))).toEqual(['output.log'])
       const complete = readFileSync(outputPath!, 'utf8')
-      expect(complete).toContain('(fail) deeply buried timeout test [5001.00ms]')
-      expect(complete).toContain('(pass) later test 900')
+      expect(complete).toContain('✗')
+      expect(complete).toContain(name)
+      expect(complete).toContain('\x1b[')
+      expect(complete).toContain('later test 900')
       rmSync(dirname(outputPath!), { recursive: true, force: true })
-    } finally { rmSync(repo, { recursive: true, force: true }) }
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(timeout.fixture, { recursive: true, force: true })
+    }
+  })
+
+  test('a buried NO_COLOR bun timeout failure keeps the alternate reporter name', async () => {
+    const { repo } = repoWithBranches(['timeout-no-color'])
+    const name = 'deeply buried no-colour timeout test'
+    const timeout = realTimeoutGate(name)
+    upsertProject({ name: 'landing-timeout-no-color', path: repo,
+      settings: { trunk: 'main', gate: timeout.gate } })
+    try {
+      const child = childLand(repo, 'timeout-no-color', {}, { NO_COLOR: '1' })
+      expect(await child.exited).not.toBe(0)
+      const error = await new Response(child.stderr).text()
+      expect(error).toContain(`(fail) ${name}`)
+      expect(error).toContain('1 fail')
+      expect(error).toContain('gate timeout under load: 0 orch runs live (running + asking) machine-wide')
+      const outputPath = error.match(/complete gate output: (.+\/output\.log)/)?.[1]
+      expect(outputPath).toBeDefined()
+      const complete = readFileSync(outputPath!, 'utf8')
+      expect(complete).toContain(`(fail) ${name}`)
+      expect(complete).not.toContain('\x1b[')
+      expect(complete).toContain('later test 900')
+      rmSync(dirname(outputPath!), { recursive: true, force: true })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(timeout.fixture, { recursive: true, force: true })
+    }
   })
 
   test('a failed gate with a leaked fifo writer names its truncated capture', async () => {

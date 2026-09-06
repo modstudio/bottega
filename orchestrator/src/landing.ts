@@ -15,8 +15,8 @@ const LANDING_LOCK_TIMEOUT_MS = 5 * 60_000
 const GATE_FAILURE_TAIL_LINES = 40
 
 function gateFailureLines(output: string): string[] {
-  return output.split('\n').filter((line) =>
-    /^\s*\(fail\)\s+/.test(line) || /^\s*\d+\s+fail(?:s|ed)?\b/.test(line))
+  return output.split('\n').map(stripAnsi).filter((line) =>
+    /^\s*(?:\(fail\)|✗)\s+/.test(line) || /^\s*\d+\s+fail(?:s|ed)?\b/.test(line))
 }
 
 function stripAnsi(value: string): string {
