@@ -46,6 +46,38 @@ Three more separations that matter as much as the import graph:
 - **Canon per concern.** Each directory carries its own `AGENTS.md`; a session
   working in `ops/` is not handed the orchestrator's rules.
 
+## What bottega is for the other projects
+
+Bottega is the AI orchestration infrastructure for every project on this
+machine: agent management and the whole lifecycle — dispatch, review, scoring,
+routing, landing, tasks, docs, workflows, canon and the machine itself.
+Anything workflow-related is resolved HERE, once, and offered to projects; it
+is not offloaded to them.
+
+This week's evidence is four projects each carrying a port of the same
+review-tier ladder, three doctrine rewrites in an hour, and a register note and
+a project canon disagreeing on a test count. Every per-project copy of
+orchestration drifts, and the drift is the cost.
+
+A project that already has its own system for a concern keeps it, and bottega
+honours it: its own task tracker, doc store, workflows or review pipeline. The
+project register (`orch project list --json`) is where a project declares which
+concerns it keeps; everything it does not declare, it takes from bottega whole.
+That declaration is prose in the register today and becomes a structured field
+when the first project actually declares one, not before: observe first.
+
+The long-term shape is that a project needs no orchestration of its own. A
+per-project port of bottega machinery is a transitional state to retire, not a
+pattern to extend. Worktree scripts are the exception: they are how a project
+builds its own trees, and the register's create recipe is the interface. Canon
+or workflows in a project that duplicate bottega's are candidates for removal
+once that project declares it uses bottega's.
+
+A session reads the register entry before assuming which system applies. Build
+new orchestration, review or lifecycle capability in bottega and expose it
+through `orch`, the MCP surface and the register. Never copy a bottega mechanism
+into a project as a script when the project could call bottega.
+
 ## Secrets
 
 **No concern here stores a secret.** MCP tokens live in `~/.claude/.env`, the
@@ -97,6 +129,6 @@ Work here is tracked in `hub`, and every task carries a `DEV-` key:
 Branches and commit subjects cite the key, and `orch do` requires `--key`; work naming
 no key is recorded against the project with no task and the link cannot be recovered.
 
-**The project register is the authority** on key prefixes, worktree recipes and
-per-project notes — `orch project list --json`. Read it before concluding a project
-lacks something.
+**The project register is the authority** on key prefixes, worktree recipes,
+per-project notes and on which concerns a project keeps for itself (see above) —
+`orch project list --json`. Read it before concluding a project lacks something.
