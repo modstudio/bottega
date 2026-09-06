@@ -333,22 +333,34 @@ export type CoverageVerdict =
   | ({ kind: 'carried'; resolution: 'pin' | 'walk' } & Omit<ReviewCarry, 'project' | 'branch'>)
   | { kind: 'invalid'; reason: string; resolution?: 'pin' | 'walk' }
 
-function commitsFrom(repoRoot: string, args: string[]): string[] {
-  if (!gitOk(repoRoot, args)) return []
-  const output = git(repoRoot, args)
-  return output ? output.split('\n') : []
+export type CoverageGitResult = { ok: boolean; out: string; err: string; stdout: Uint8Array }
+export type CoverageGitRunner = (args: string[], stdin?: Uint8Array) => CoverageGitResult
+
+function landingCoverageGit(repoRoot: string): CoverageGitRunner {
+  return (args, stdin) => {
+    const p = Bun.spawnSync(['git', ...args], {
+      cwd: repoRoot, env: process.env, stdin, stdout: 'pipe', stderr: 'pipe',
+    })
+    return { ok: p.exitCode === 0, out: p.stdout.toString().trim(), stdout: p.stdout,
+      err: p.stderr.toString().trim() || `exit ${p.exitCode}` }
+  }
+}
+
+function commitsFrom(runner: CoverageGitRunner, args: string[]): string[] {
+  const result = runner(args)
+  return result.ok && result.out ? result.out.split('\n') : []
 }
 
 function commitForTree(
-  repoRoot: string, review: ReviewCoverageInput, tree: string,
+  runner: CoverageGitRunner, review: ReviewCoverageInput, tree: string,
 ): { commit: string | null; resolution: 'pin' | 'walk' } {
   const pinned = review.lenses.filter((lens) => lens.headCommit !== null)
   if (pinned.length) {
     const commits = new Set(pinned.map((lens) => lens.headCommit!))
     if (commits.size === 1) {
       const commit = pinned[0]!.headCommit!
-      if (gitOk(repoRoot, ['cat-file', '-e', `${commit}^{commit}`]) &&
-          git(repoRoot, ['rev-parse', `${commit}^{tree}`]) === tree) {
+      if (runner(['cat-file', '-e', `${commit}^{commit}`]).ok &&
+          runner(['rev-parse', `${commit}^{tree}`]).out === tree) {
         return { commit, resolution: 'pin' }
       }
     }
@@ -362,55 +374,44 @@ function commitForTree(
     .filter((branch): branch is string => Boolean(branch)))]
   const seen = new Set<string>()
   const candidates = branches.flatMap((branch) =>
-    commitsFrom(repoRoot, ['rev-list', '--walk-reflogs', '--max-count=50', branch]))
+    commitsFrom(runner, ['rev-list', '--walk-reflogs', '--max-count=50', branch]))
   for (const commit of candidates) {
     seen.add(commit)
-    if (git(repoRoot, ['rev-parse', `${commit}^{tree}`]) === tree) return { commit, resolution: 'walk' }
+    if (runner(['rev-parse', `${commit}^{tree}`]).out === tree) return { commit, resolution: 'walk' }
   }
-  for (const commit of commitsFrom(repoRoot, ['log', '--all', '--format=%H', '--max-count=500'])) {
+  for (const commit of commitsFrom(runner, ['log', '--all', '--format=%H', '--max-count=500'])) {
     if (seen.has(commit)) continue
-    if (git(repoRoot, ['rev-parse', `${commit}^{tree}`]) === tree) return { commit, resolution: 'walk' }
+    if (runner(['rev-parse', `${commit}^{tree}`]).out === tree) return { commit, resolution: 'walk' }
   }
   return { commit: null, resolution: 'walk' }
 }
 
-function patchId(repoRoot: string, from: string, to: string): string {
-  const diff = Bun.spawnSync(['git', 'diff', `${from}..${to}`], {
-    cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
-  })
-  if (diff.exitCode !== 0) {
-    throw new Error(`git diff ${from}..${to} failed: ${diff.stderr.toString().trim()}`)
-  }
-  const id = Bun.spawnSync(['git', 'patch-id', '--stable'], {
-    cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdin: diff.stdout, stdout: 'pipe', stderr: 'pipe',
-  })
-  if (id.exitCode !== 0) {
-    throw new Error(`git patch-id --stable failed: ${id.stderr.toString().trim()}`)
-  }
-  return id.stdout.toString().trim().split(/\s+/)[0] ?? ''
+function patchId(runner: CoverageGitRunner, from: string, to: string): string {
+  const diff = runner(['diff', `${from}..${to}`])
+  if (!diff.ok) throw new Error(`git diff ${from}..${to} failed: ${diff.err}`)
+  const id = runner(['patch-id', '--stable'], diff.stdout)
+  if (!id.ok) throw new Error(`git patch-id --stable failed: ${id.err}`)
+  return id.out.split(/\s+/)[0] ?? ''
 }
 
-function contentHash(repoRoot: string, from: string, to: string): string {
-  const diff = Bun.spawnSync([
-    'git', 'diff', '--no-color', '--no-ext-diff', '-U0', '--no-renames', `${from}..${to}`,
-  ], { cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe' })
-  if (diff.exitCode !== 0) {
-    throw new Error(`git diff ${from}..${to} failed: ${diff.stderr.toString().trim()}`)
-  }
-  const canonical = diff.stdout.toString().split('\n')
+function contentHash(runner: CoverageGitRunner, from: string, to: string): string {
+  const diff = runner(['diff', '--no-color', '--no-ext-diff', '-U0', '--no-renames', `${from}..${to}`])
+  if (!diff.ok) throw new Error(`git diff ${from}..${to} failed: ${diff.err}`)
+  const canonical = new TextDecoder().decode(diff.stdout).split('\n')
     .filter((line) => !line.startsWith('index ')).join('\n')
   return createHash('sha256').update(canonical).digest('hex')
 }
 
-function changedPaths(repoRoot: string, from: string, to: string): Set<string> {
-  const output = git(repoRoot, ['diff', '--name-only', `${from}..${to}`])
+function changedPaths(runner: CoverageGitRunner, from: string, to: string): Set<string> {
+  const output = runner(['diff', '--name-only', `${from}..${to}`]).out
   return new Set(output ? output.split('\n') : [])
 }
 
 export function reviewCoverageVerdict(
   repoRoot: string, review: ReviewCoverageInput, tip: string, trunk: string,
+  runner: CoverageGitRunner = landingCoverageGit(repoRoot),
 ): CoverageVerdict {
-  const tree = git(repoRoot, ['rev-parse', `${tip}^{tree}`])
+  const tree = runner(['rev-parse', `${tip}^{tree}`]).out
   if (review.lenses.length > 0 && review.lenses.every((lens) => lens.tree === tree)) {
     return { kind: 'exact' }
   }
@@ -424,27 +425,27 @@ export function reviewCoverageVerdict(
   }
   const bases = new Set(review.lenses.map((lens) => lens.baseCommit))
   if (bases.size !== 1) return { kind: 'invalid', reason: 'lens bases disagree' }
-  const resolved = commitForTree(repoRoot, review, reviewedTree)
+  const resolved = commitForTree(runner, review, reviewedTree)
   const reviewedCommit = resolved.commit
   if (!reviewedCommit) {
     return { kind: 'invalid', reason: 'reviewed commit not found', resolution: resolved.resolution }
   }
   const baseCommit = review.lenses[0]!.baseCommit!
-  if (!gitOk(repoRoot, ['cat-file', '-e', `${baseCommit}^{commit}`])) {
+  if (!runner(['cat-file', '-e', `${baseCommit}^{commit}`]).ok) {
     return { kind: 'invalid', reason: 'reviewed commit not found', resolution: resolved.resolution }
   }
-  const oldBase = git(repoRoot, ['merge-base', reviewedCommit, baseCommit])
-  const newBase = git(repoRoot, ['merge-base', tip, trunk])
-  const changePaths = changedPaths(repoRoot, oldBase, reviewedCommit)
-  const trunkPaths = changedPaths(repoRoot, oldBase, newBase)
+  const oldBase = runner(['merge-base', reviewedCommit, baseCommit]).out
+  const newBase = runner(['merge-base', tip, trunk]).out
+  const changePaths = changedPaths(runner, oldBase, reviewedCommit)
+  const trunkPaths = changedPaths(runner, oldBase, newBase)
   const overlap = [...changePaths].filter((path) => trunkPaths.has(path))
   if (overlap.length) return { kind: 'invalid', reason: 'overlapping paths', resolution: resolved.resolution }
-  const reviewedPatch = patchId(repoRoot, oldBase, reviewedCommit)
-  const candidatePatch = patchId(repoRoot, newBase, tip)
+  const reviewedPatch = patchId(runner, oldBase, reviewedCommit)
+  const candidatePatch = patchId(runner, newBase, tip)
   if (!reviewedPatch || reviewedPatch !== candidatePatch) {
     return { kind: 'invalid', reason: 'patch-id differs', resolution: resolved.resolution }
   }
-  if (contentHash(repoRoot, oldBase, reviewedCommit) !== contentHash(repoRoot, newBase, tip)) {
+  if (contentHash(runner, oldBase, reviewedCommit) !== contentHash(runner, newBase, tip)) {
     return { kind: 'invalid', reason: 'content differs', resolution: resolved.resolution }
   }
   return {

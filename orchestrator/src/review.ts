@@ -10,7 +10,7 @@ import { job } from './jobs.ts'
 import { classifyReviewTier, diffNumstat, type ReviewTier } from './review-tier.ts'
 import { median } from './route.ts'
 import { targetGitEnvironment } from './worktree.ts'
-import { reviewCoverageVerdict, type ReviewCoverageInput } from './landing.ts'
+import { reviewCoverageVerdict, type CoverageGitRunner, type ReviewCoverageInput } from './landing.ts'
 
 export const REVIEW_WINDOW = 50
 /**
@@ -202,16 +202,19 @@ function tierForRuns(runs: RunRow[], database: Database): ReviewTier | null {
 
 const pinRef = (runId: number) => `refs/orch/reviewed/${runId}`
 
-function git(repo: string, args: string[], _hermetic = false): { ok: boolean; out: string; err: string } {
+function git(repo: string, args: string[], _hermetic = false, stdin?: Uint8Array): { ok: boolean; out: string; err: string; stdout: Uint8Array } {
   const p = Bun.spawnSync(['git', ...args], {
-    cwd: repo, env: targetGitEnvironment(repo), stdout: 'pipe', stderr: 'pipe',
+    cwd: repo, env: targetGitEnvironment(repo), stdin, stdout: 'pipe', stderr: 'pipe',
   })
   return {
     ok: p.exitCode === 0,
     out: p.stdout.toString().trim(),
     err: p.stderr.toString().trim() || `exit ${p.exitCode}`,
+    stdout: p.stdout,
   }
 }
+
+const reviewGit = (repo: string): CoverageGitRunner => (args, stdin) => git(repo, args, true, stdin)
 
 function projectPath(database: Database, name: string): string | null {
   return (database.query('SELECT path FROM project WHERE name=?').get(name) as
@@ -254,12 +257,13 @@ function currentCoverage(
   const review: ReviewCoverageInput = { id: reviewId, lenses }
   const verdicts = branches.flatMap((branch) => {
     const ref = `refs/heads/${branch}`
-    const tip = git(registered.path, ['rev-parse', '--verify', ref])
-    if (!tip.ok) return []
-    const verdict = reviewCoverageVerdict(registered.path, review, tip.out, registered.trunk)
+    const runner = reviewGit(registered.path)
+    const tip = runner(['rev-parse', '--verify', ref])
+    if (!tip.ok) return [null]
+    const verdict = reviewCoverageVerdict(registered.path, review, tip.out, registered.trunk, runner)
     return [verdict.kind === 'invalid' ? 'stale' as const : verdict.kind]
   })
-  if (!verdicts.length) return null
+  if (verdicts.includes(null)) return null
   if (verdicts.includes('stale')) return 'stale'
   return verdicts.includes('carried') ? 'carried' : 'exact'
 }
@@ -285,7 +289,7 @@ export function listReviews(
             COUNT(DISTINCT CASE WHEN rf.disposition='modified' THEN rf.id END) AS findings_modified,
             COUNT(DISTINCT CASE WHEN rf.disposition='rejected' THEN rf.id END) AS findings_rejected,
             COUNT(DISTINCT CASE WHEN rf.disposition='skipped' THEN rf.id END) AS findings_skipped,
-            MIN(run.repo) AS project
+            run.repo AS project
        FROM review r JOIN review_lens rl ON rl.review_id=r.id JOIN run ON run.id=rl.run_id
        LEFT JOIN review_finding rf ON rf.review_id=r.id
        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
@@ -323,7 +327,7 @@ export function getReview(reviewId: number, database: Database = db()) {
     tier_reason: review.tier_reason, projects,
     lenses: lenses.map((lens) => {
       const project = projects.length === 1 ? projectRecord(database, projects[0]!) : null
-      const pin = project ? git(project.path, ['rev-parse', '--verify', lens.reviewRef]) : { ok: false, out: '' }
+      const pin = project ? git(project.path, ['rev-parse', '--verify', lens.reviewRef], true) : { ok: false, out: '' }
       return {
         run_id: lens.runId, lens: lens.lens, agent: lens.agent, model: lens.model,
         reviewed_tree: lens.tree, head_commit: lens.headCommit, review_ref: lens.reviewRef,
@@ -384,6 +388,10 @@ export function recordReviews(
     if (existing) throw new Error(`run ${runId} is already recorded in review ${existing.review_id}`)
     return run
   })
+  const projects = [...new Set(runs.map((run) => run.repo))]
+  if (projects.length > 1) {
+    throw new Error(`review lens runs belong to different projects: ${projects.map((project) => project ?? '(none)').join(', ')}`)
+  }
   const measuredTrees = runs.filter((run) => run.input_tree !== null)
   const distinctTrees = new Set(measuredTrees.map((run) => run.input_tree))
   if (distinctTrees.size > 1) {
@@ -827,6 +835,7 @@ export type ReviewCalibrationFleetCell = {
   model: string | null
   n: number
   precision: number | null
+  basis: 'model' | 'aggregate' | null
   last_graded_at: string | null
 }
 
@@ -845,17 +854,38 @@ export function reviewCalibrationFleet(database: Database = db()): ReviewCalibra
       GROUP BY rl.lens, rl.agent, rl.model ORDER BY rl.lens, rl.agent, rl.model`,
   ).all() as { lens: string; agent: string; model: string | null; last_graded_at: string | null }[]
   const pairHasGrade = new Set(graded.map((row) => `${row.lens}\0${row.agent}`))
-  const cells = graded.map((row) => {
-    const calibration = calibrationCell(row.lens, row.agent, row.model, database)
-    return { lens: row.lens, agent: row.agent, model: row.model, n: calibration.triaged,
-      precision: calibration.precision, last_graded_at: row.last_graded_at }
-  })
+  const pairLastGraded = new Map<string, string | null>()
+  for (const row of graded) {
+    const key = `${row.lens}\0${row.agent}`
+    const prior = pairLastGraded.get(key)
+    if (row.last_graded_at && (!prior || row.last_graded_at > prior)) pairLastGraded.set(key, row.last_graded_at)
+  }
+  const cells = new Map<string, ReviewCalibrationFleetCell>()
+  for (const row of graded) {
+    const calibration = row.model === null
+      ? { ...calibrationCell(row.lens, row.agent, undefined, database), basis: 'aggregate' as const }
+      : reviewCalibration(row.lens, row.agent, row.model, database)
+    const basis: ReviewCalibrationFleetCell['basis'] = calibration.triaged < MIN_REVIEW_TRIAGED
+      ? null
+      : calibration.basis === 'agent' ? 'aggregate' : calibration.basis
+    const model = basis === 'model' ? row.model : null
+    const key = `${row.lens}\0${row.agent}\0${model ?? ''}`
+    cells.set(key, {
+      lens: row.lens, agent: row.agent, model, n: calibration.triaged,
+      precision: calibration.precision, basis,
+      last_graded_at: model === null
+        ? pairLastGraded.get(`${row.lens}\0${row.agent}`) ?? null
+        : row.last_graded_at,
+    })
+  }
   for (const lens of lenses) for (const agent of agents) {
     if (!pairHasGrade.has(`${lens}\0${agent}`)) {
-      cells.push({ lens, agent, model: null, n: 0, precision: null, last_graded_at: null })
+      cells.set(`${lens}\0${agent}\0`, {
+        lens, agent, model: null, n: 0, precision: null, basis: null, last_graded_at: null,
+      })
     }
   }
-  return cells.sort((a, b) => a.lens.localeCompare(b.lens) || a.agent.localeCompare(b.agent) ||
+  return [...cells.values()].sort((a, b) => a.lens.localeCompare(b.lens) || a.agent.localeCompare(b.agent) ||
     String(a.model).localeCompare(String(b.model)))
 }
 

@@ -20,6 +20,7 @@ import { repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFile
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync, unlinkSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, timingSafeEqual } from 'node:crypto'
+import { z } from 'zod'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
 import { createHasPlaceholder, projectAt, projectByName, projects } from './projects.ts'
@@ -2395,7 +2396,9 @@ switch (cmd) {
     if (sub === 'list') {
       if (has('open') && has('complete')) throw new Error('--open and --complete are mutually exclusive')
       const since = flag('since')
-      if (since && Number.isNaN(Date.parse(since))) throw new Error('--since must be an ISO timestamp')
+      if (since && !z.iso.datetime().safeParse(since).success) {
+        throw new Error('--since must be an ISO datetime (for example 2026-01-01T00:00:00Z)')
+      }
       const rows = listReviews({
         state: has('open') ? 'open' : has('complete') ? 'complete' : undefined,
         project: flag('project'), since,
@@ -2564,7 +2567,7 @@ switch (cmd) {
           for (const cell of fleet) console.log(
             `${cell.lens}/${cell.agent}/${cell.model ?? '—'} n=${cell.n} ` +
             (cell.n < MIN_REVIEW_TRIAGED ? `below floor (${cell.n}/${MIN_REVIEW_TRIAGED} triaged)` : `precision=${cell.precision!.toFixed(2)}`) +
-            ` last_graded_at=${cell.last_graded_at ?? '—'}`,
+            ` basis=${cell.basis ?? '—'} last_graded_at=${cell.last_graded_at ?? '—'}`,
           )
         }
         break

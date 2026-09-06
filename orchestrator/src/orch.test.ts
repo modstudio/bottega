@@ -2266,7 +2266,9 @@ describe('review discipline', () => {
         .toEqual([complete.reviewId])
       const cli = (...args: string[]) => Bun.spawnSync(
         [process.execPath, new URL('cli.ts', import.meta.url).pathname, 'review', 'list', '--project', project, ...args],
-        { env: { ...process.env, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe' },
+        { env: { ...process.env, ORCH_DEPTH: '0', GIT_OBJECT_DIRECTORY: '/foreign/objects',
+          GIT_ALTERNATE_OBJECT_DIRECTORIES: '/foreign/alternates' },
+          stdout: 'pipe', stderr: 'pipe' },
       )
       const json = cli('--json')
       expect(json.exitCode).toBe(0)
@@ -2275,9 +2277,30 @@ describe('review discipline', () => {
       expect(human.exitCode).toBe(0)
       expect(human.stdout.toString()).toContain(`${open.reviewId}`)
       expect(human.stdout.toString()).toContain('exact')
+      const show = Bun.spawnSync([
+        process.execPath, new URL('cli.ts', import.meta.url).pathname, 'review', 'show', String(open.reviewId), '--json',
+      ], { env: { ...process.env, ORCH_DEPTH: '0', GIT_OBJECT_DIRECTORY: '/foreign/objects',
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: '/foreign/alternates' },
+        stdout: 'pipe', stderr: 'pipe' })
+      expect(show.exitCode).toBe(0)
+      expect(JSON.parse(show.stdout.toString()).lenses[0].pin.resolves).toBe(true)
+      const badSince = cli('--since', '2026-01-01')
+      expect(badSince.exitCode).toBe(1)
+      expect(badSince.stderr.toString()).toContain('ISO datetime')
+      const splitRuns = ['reviewed', 'missing-branch'].map((branch, index) => {
+        const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'model-a',
+          lens: `split-${index}`, repo: project, inputTree: gg('rev-parse', 'reviewed^{tree}'),
+          headCommit: gg('rev-parse', 'reviewed') })
+        db().query('UPDATE run SET branch=?, base_commit=? WHERE id=?').run(branch, gg('rev-parse', 'main'), runId)
+        return runId
+      })
+      const splitReview = recordReviews(splitRuns.map((runId) => ({ runId, output: reviewReply(0) })))
+      completeReview(splitReview)
+      expect(listReviews({ project }).find((row) => row.id === splitReview)?.coverage).toBeNull()
       writeFileSync(join(repo, 'change.txt'), 'two\n'); gg('add', '.'); gg('commit', '-m', 'move branch')
       rows = listReviews({ project })
-      expect(rows.every((row) => row.coverage === 'stale')).toBe(true)
+      expect(rows.filter((row) => row.id !== splitReview).every((row) => row.coverage === 'stale')).toBe(true)
+      expect(rows.find((row) => row.id === splitReview)?.coverage).toBeNull()
 
       const shown = getReview(open.reviewId)
       expect(shown.findings).toEqual([expect.objectContaining({ evidence: 'evidence 1', disposition: null })])
@@ -2297,13 +2320,47 @@ describe('review discipline', () => {
       .run(graded, '2026-02-03T00:00:00.000Z')
     const ungraded = addRun({ agent: 'grok', job: 'review-lens', model: 'm2', lens: 'fleet-b' })
     const ungradedReview = recordReview(ungraded, reviewReply(0)); completeReview(ungradedReview)
+    for (const model of ['m3', 'm4']) {
+      const runId = addRun({ agent: 'codex', job: 'review-lens', model, lens: 'fleet-c' })
+      const reviewId = recordReview(runId, reviewReply(MIN_REVIEW_TRIAGED / 2))
+      gradeReviewLens(runId, null, { reproduced: 'all', coverage: 'adequate', limits: 'named', overlap: 'alone' })
+      for (let i = 1; i <= MIN_REVIEW_TRIAGED / 2; i++) triageFinding(reviewId, i, 'accepted')
+      completeReview(reviewId)
+      db().query("INSERT INTO score (run_id,delivery,quality,scored_at) VALUES (?,'full','right',?)")
+        .run(runId, model === 'm3' ? '2026-02-04T00:00:00.000Z' : '2026-02-05T00:00:00.000Z')
+    }
+    const legacy = addRun({ agent: 'legacy', job: 'review-lens', model: 'legacy-model', lens: 'fleet-d' })
+    const legacyReview = recordReview(legacy, reviewReply(MIN_REVIEW_TRIAGED))
+    db().query('UPDATE review_lens SET model=NULL WHERE run_id=?').run(legacy)
+    gradeReviewLens(legacy, null, { reproduced: 'all', coverage: 'adequate', limits: 'named', overlap: 'alone' })
+    for (let i = 1; i <= MIN_REVIEW_TRIAGED; i++) triageFinding(legacyReview, i, 'accepted')
+    completeReview(legacyReview)
+    db().query("INSERT INTO score (run_id,delivery,quality,scored_at) VALUES (?,'full','right',?)")
+      .run(legacy, '2026-02-06T00:00:00.000Z')
 
     expect(reviewCalibrationFleet()).toEqual([
-      { lens: 'fleet-a', agent: 'codex', model: 'm1', n: MIN_REVIEW_TRIAGED, precision: 1, last_graded_at: '2026-02-03T00:00:00.000Z' },
-      { lens: 'fleet-a', agent: 'grok', model: null, n: 0, precision: null, last_graded_at: null },
-      { lens: 'fleet-b', agent: 'codex', model: null, n: 0, precision: null, last_graded_at: null },
-      { lens: 'fleet-b', agent: 'grok', model: null, n: 0, precision: null, last_graded_at: null },
+      { lens: 'fleet-a', agent: 'codex', model: 'm1', n: MIN_REVIEW_TRIAGED, precision: 1, basis: 'model', last_graded_at: '2026-02-03T00:00:00.000Z' },
+      { lens: 'fleet-a', agent: 'grok', model: null, n: 0, precision: null, basis: null, last_graded_at: null },
+      { lens: 'fleet-a', agent: 'legacy', model: null, n: 0, precision: null, basis: null, last_graded_at: null },
+      { lens: 'fleet-b', agent: 'codex', model: null, n: 0, precision: null, basis: null, last_graded_at: null },
+      { lens: 'fleet-b', agent: 'grok', model: null, n: 0, precision: null, basis: null, last_graded_at: null },
+      { lens: 'fleet-b', agent: 'legacy', model: null, n: 0, precision: null, basis: null, last_graded_at: null },
+      { lens: 'fleet-c', agent: 'codex', model: null, n: MIN_REVIEW_TRIAGED, precision: 1, basis: 'aggregate', last_graded_at: '2026-02-05T00:00:00.000Z' },
+      { lens: 'fleet-c', agent: 'grok', model: null, n: 0, precision: null, basis: null, last_graded_at: null },
+      { lens: 'fleet-c', agent: 'legacy', model: null, n: 0, precision: null, basis: null, last_graded_at: null },
+      { lens: 'fleet-d', agent: 'codex', model: null, n: 0, precision: null, basis: null, last_graded_at: null },
+      { lens: 'fleet-d', agent: 'grok', model: null, n: 0, precision: null, basis: null, last_graded_at: null },
+      { lens: 'fleet-d', agent: 'legacy', model: null, n: MIN_REVIEW_TRIAGED, precision: 1, basis: 'aggregate', last_graded_at: '2026-02-06T00:00:00.000Z' },
     ])
+  })
+
+  test('recording refuses lens runs from different projects', () => {
+    const first = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'one', repo: 'project-one' })
+    const second = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'two', repo: 'project-two' })
+    expect(() => recordReviews([
+      { runId: first, output: reviewReply(0) }, { runId: second, output: reviewReply(0) },
+    ])).toThrow('project-one, project-two')
+    expect(db().query('SELECT COUNT(*) AS n FROM review').get()).toEqual({ n: 0 })
   })
 
   test('review help exits zero and names every review verb', () => {
