@@ -344,6 +344,12 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
     ) }
     case 'review': {
       if (topLevelOnly) return { args: [], shape: shape('orch review', 0) }
+      if (sub === '--help' || sub === '-h') return { args: argv.slice(2), shape: shape('orch review --help', 0) }
+      if (sub === 'list') return { args: argv.slice(2), shape: shape(
+        'orch review list [--open|--complete] [--project P] [--since ISO] [--json]', 0,
+        ['--project', '--since'], ['--open', '--complete', '--json'],
+      ) }
+      if (sub === 'show') return { args: argv.slice(2), shape: shape('orch review show <id> [--json]', 1, [], ['--json']) }
       if (sub === 'record') return { args: argv.slice(2), shape: shape('orch review record <run-id>...', Infinity) }
       if (sub === 'tier') return { args: argv.slice(2), shape: shape(
         'orch review tier <branch|run-id|from..to> [--json]', 1, [], ['--json'],
@@ -355,7 +361,7 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       if (sub === 'complete') return { args: argv.slice(2), shape: shape('orch review complete <review-id>', 1) }
       if (sub === 'pins') return { args: argv.slice(2), shape: shape('orch review pins [--prune]', 0, [], ['--prune']) }
       if (sub === 'calibration') return { args: argv.slice(2), shape: shape(
-        'orch review calibration <lens> <agent> <model> [--json]', 3, [], ['--json'],
+        'orch review calibration [<lens> <agent> <model>] [--json]', 3, [], ['--json'],
       ) }
       if (sub === 'coverage-audit') return { args: argv.slice(2), shape: shape(
         'orch review coverage-audit [--json]', 0, [], ['--json'],

@@ -1357,7 +1357,8 @@ const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
         VERIFY_CLAIM_SCHEMA, ISSUE_WORKER_SCHEMA, workerPreamble, workerResumeGuard,
         rulingPrompt, packResumePrompt, contractConflicts, hasRealQuestions, realQuestions } = await import('./contract.ts')
 const { cleanReviewEvidence, parseReviewReply, recordReview, recordReviews, gradeReviewLens, reviewPins, coverageAudit,
-        triageFinding, completeReview, reviewCalibration, calibrationLine,
+        triageFinding, completeReview, getReview, listReviews, reviewCalibration,
+        reviewCalibrationFleet, calibrationLine,
         MIN_REVIEW_TRIAGED } = await import('./review.ts')
 const { ask } = await import('./ask.ts')
 const { checkMessages, messageArchitect, messagesForRun } = await import('./mailbox.ts')
@@ -2226,6 +2227,93 @@ describe('review discipline', () => {
     } finally {
       removeProject('review-evidence-project')
       rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('list and show expose open, complete, stale, findings, grading, and pin state', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-review-read-'))
+    const gg = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], { cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    try {
+      gg('init', '-b', 'main'); gg('config', 'user.email', 'orch-test@example.invalid'); gg('config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'base.txt'), 'base\n'); gg('add', '.'); gg('commit', '-m', 'base')
+      gg('checkout', '-b', 'reviewed'); writeFileSync(join(repo, 'change.txt'), 'one\n'); gg('add', '.'); gg('commit', '-m', 'change')
+      const project = 'review-read-project'
+      upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+      const make = (lens: string, findings: number) => {
+        const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'model-a', lens, repo: project,
+          inputTree: gg('rev-parse', 'reviewed^{tree}'), headCommit: gg('rev-parse', 'reviewed') })
+        db().query('UPDATE run SET branch=?, base_commit=? WHERE id=?').run('reviewed', gg('rev-parse', 'main'), runId)
+        return { runId, reviewId: recordReview(runId, reviewReply(findings)) }
+      }
+      const open = make('read-open', 1)
+      gradeReviewLens(open.runId, null, { reproduced: 'all', coverage: 'adequate', limits: 'named', overlap: 'alone' })
+      const complete = make('read-complete', 1); triageFinding(complete.reviewId, 1, 'accepted'); completeReview(complete.reviewId)
+      const stale = make('read-stale', 0); completeReview(stale.reviewId)
+      db().query('UPDATE review SET recorded_at=? WHERE id=?').run('2026-01-03T00:00:00.000Z', open.reviewId)
+      db().query('UPDATE review SET recorded_at=? WHERE id=?').run('2026-01-02T00:00:00.000Z', complete.reviewId)
+      db().query('UPDATE review SET recorded_at=? WHERE id=?').run('2026-01-01T00:00:00.000Z', stale.reviewId)
+
+      let rows = listReviews({ project })
+      expect(rows.map((row) => row.id)).toEqual([open.reviewId, complete.reviewId, stale.reviewId])
+      expect(rows[0]).toMatchObject({ project, branches: ['reviewed'], lens_count: 1,
+        findings: { total: 1, triaged: 0, accepted: 0, modified: 0, rejected: 0, skipped: 0 }, coverage: 'exact' })
+      expect(listReviews({ state: 'open', project }).map((row) => row.id)).toEqual([open.reviewId])
+      expect(listReviews({ state: 'complete', since: '2026-01-02T00:00:00.000Z', project }).map((row) => row.id))
+        .toEqual([complete.reviewId])
+      const cli = (...args: string[]) => Bun.spawnSync(
+        [process.execPath, new URL('cli.ts', import.meta.url).pathname, 'review', 'list', '--project', project, ...args],
+        { env: { ...process.env, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe' },
+      )
+      const json = cli('--json')
+      expect(json.exitCode).toBe(0)
+      expect(JSON.parse(json.stdout.toString())[0]).toMatchObject({ id: open.reviewId, coverage: 'exact' })
+      const human = cli('--open')
+      expect(human.exitCode).toBe(0)
+      expect(human.stdout.toString()).toContain(`${open.reviewId}`)
+      expect(human.stdout.toString()).toContain('exact')
+      writeFileSync(join(repo, 'change.txt'), 'two\n'); gg('add', '.'); gg('commit', '-m', 'move branch')
+      rows = listReviews({ project })
+      expect(rows.every((row) => row.coverage === 'stale')).toBe(true)
+
+      const shown = getReview(open.reviewId)
+      expect(shown.findings).toEqual([expect.objectContaining({ evidence: 'evidence 1', disposition: null })])
+      expect(shown.lenses[0]).toMatchObject({ run_id: open.runId, lens: 'read-open', reviewed_tree: expect.any(String),
+        review_ref: `refs/orch/reviewed/${open.runId}`, grading: { reproduced: 'all', coverage: 'adequate', limits: 'named', overlap: 'alone' },
+        pin: { resolves: true, commit: expect.any(String) } })
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('fleet calibration groups graded models and emits null-model empty record pairs', () => {
+    const graded = addRun({ agent: 'codex', job: 'review-lens', model: 'm1', lens: 'fleet-a' })
+    const gradedReview = recordReview(graded, reviewReply(MIN_REVIEW_TRIAGED))
+    gradeReviewLens(graded, null, { reproduced: 'all', coverage: 'adequate', limits: 'named', overlap: 'alone' })
+    for (let i = 1; i <= MIN_REVIEW_TRIAGED; i++) triageFinding(gradedReview, i, 'accepted')
+    completeReview(gradedReview)
+    db().query("INSERT INTO score (run_id,delivery,quality,scored_at) VALUES (?,'full','right',?)")
+      .run(graded, '2026-02-03T00:00:00.000Z')
+    const ungraded = addRun({ agent: 'grok', job: 'review-lens', model: 'm2', lens: 'fleet-b' })
+    const ungradedReview = recordReview(ungraded, reviewReply(0)); completeReview(ungradedReview)
+
+    expect(reviewCalibrationFleet()).toEqual([
+      { lens: 'fleet-a', agent: 'codex', model: 'm1', n: MIN_REVIEW_TRIAGED, precision: 1, last_graded_at: '2026-02-03T00:00:00.000Z' },
+      { lens: 'fleet-a', agent: 'grok', model: null, n: 0, precision: null, last_graded_at: null },
+      { lens: 'fleet-b', agent: 'codex', model: null, n: 0, precision: null, last_graded_at: null },
+      { lens: 'fleet-b', agent: 'grok', model: null, n: 0, precision: null, last_graded_at: null },
+    ])
+  })
+
+  test('review help exits zero and names every review verb', () => {
+    const p = Bun.spawnSync([process.execPath, new URL('cli.ts', import.meta.url).pathname, 'review', '--help'], {
+      env: { ...process.env, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(p.exitCode).toBe(0)
+    const output = p.stdout.toString()
+    for (const verb of ['list', 'show', 'tier', 'record', 'triage', 'complete', 'pins', 'calibration']) {
+      expect(output).toContain(`orch review ${verb}`)
     }
   })
 
@@ -18393,8 +18481,8 @@ describe('read-only orchestrator database', () => {
     return { fixtureDir, path }
   }
 
-  const invoke = (path: string, command: 'jobs' | 'inbox') => Bun.spawnSync(
-    [process.execPath, CLI, command],
+  const invoke = (path: string, command: string | readonly string[]) => Bun.spawnSync(
+    [process.execPath, CLI, ...(Array.isArray(command) ? command : [command])],
     {
       env: {
         ...process.env,
@@ -18410,9 +18498,9 @@ describe('read-only orchestrator database', () => {
     const { fixtureDir, path } = fixture()
     chmodSync(path, 0o444)
     try {
-      for (const command of ['jobs', 'inbox'] as const) {
+      for (const command of ['jobs', 'inbox', ['review', 'list', '--json'], ['review', 'calibration', '--json']] as const) {
         const p = invoke(path, command)
-        expect(p.exitCode).toBe(0)
+        expect(p.exitCode, `${JSON.stringify(command)}: ${p.stderr.toString()}`).toBe(0)
         expect(p.stderr.toString()).toBe('')
       }
       const readonly = new Database(path, { readonly: true })
@@ -18428,9 +18516,9 @@ describe('read-only orchestrator database', () => {
     const { fixtureDir, path } = fixture(false)
     chmodSync(path, 0o444)
     try {
-      for (const command of ['jobs', 'inbox'] as const) {
+      for (const command of ['jobs', 'inbox', ['review', 'list', '--json'], ['review', 'calibration', '--json']] as const) {
         const p = invoke(path, command)
-        expect(p.exitCode).toBe(0)
+        expect(p.exitCode, `${JSON.stringify(command)}: ${p.stderr.toString()}`).toBe(0)
         expect(p.stderr.toString()).toBe('')
       }
       const readonly = new Database(path, { readonly: true })
@@ -19351,6 +19439,24 @@ describe('scoped operator docs', () => {
       else process.env.ORCH_DEPTH = priorDepth
       rmSync(script, { force: true })
     }
+  })
+
+  test('MCP list_reviews and get_review round-trip through linked in-memory transports', async () => {
+    const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'mcp-model', lens: 'mcp-review' })
+    const reviewId = recordReview(runId, reviewReply(1))
+    const server = createDocsMcpServer()
+    const client = new Client({ name: 'orch-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport); await client.connect(clientTransport)
+    try {
+      const parse = (result: any) => JSON.parse((result.content[0] as { text: string }).text)
+      const listed = parse(await client.callTool({ name: 'list_reviews', arguments: { open: true } }))
+      const shown = parse(await client.callTool({ name: 'get_review', arguments: { id: reviewId } }))
+      expect(listed).toEqual([expect.objectContaining({ id: reviewId, findings: { total: 1, triaged: 0,
+        accepted: 0, modified: 0, rejected: 0, skipped: 0 } })])
+      expect(shown).toMatchObject({ id: reviewId, lenses: [{ run_id: runId, lens: 'mcp-review' }],
+        findings: [{ evidence: 'evidence 1' }] })
+    } finally { await client.close(); await server.close() }
   })
 
   test('MCP list_docs and get_doc work through linked in-memory transports', async () => {

@@ -270,7 +270,7 @@ function rebaseAndGate(
   return runGate(project, worktree, branch, guard)
 }
 
-type ReviewCoverage = {
+export type ReviewCoverageInput = {
   id: number
   lenses: {
     lens: string
@@ -284,7 +284,7 @@ type ReviewCoverage = {
   }[]
 }
 
-function completedReviews(project: string): ReviewCoverage[] {
+function completedReviews(project: string): ReviewCoverageInput[] {
   const rows = db().query(
     `SELECT r.id, rl.lens, rl.run_id, rl.reviewed_tree, run.input_tree,
             run.branch, run.base_commit, run.launch_cwd, run.head_commit
@@ -302,7 +302,7 @@ function completedReviews(project: string): ReviewCoverage[] {
     input_tree: string | null; branch: string | null; base_commit: string | null
     launch_cwd: string | null; head_commit: string | null
   }[]
-  const grouped = new Map<number, ReviewCoverage>()
+  const grouped = new Map<number, ReviewCoverageInput>()
   for (const row of rows) {
     const review = grouped.get(row.id) ?? { id: row.id, lenses: [] }
     review.lenses.push({
@@ -328,7 +328,7 @@ type ReviewCarry = {
   newBase: string
 }
 
-type CoverageVerdict =
+export type CoverageVerdict =
   | { kind: 'exact' }
   | ({ kind: 'carried'; resolution: 'pin' | 'walk' } & Omit<ReviewCarry, 'project' | 'branch'>)
   | { kind: 'invalid'; reason: string; resolution?: 'pin' | 'walk' }
@@ -340,7 +340,7 @@ function commitsFrom(repoRoot: string, args: string[]): string[] {
 }
 
 function commitForTree(
-  repoRoot: string, review: ReviewCoverage, tree: string,
+  repoRoot: string, review: ReviewCoverageInput, tree: string,
 ): { commit: string | null; resolution: 'pin' | 'walk' } {
   const pinned = review.lenses.filter((lens) => lens.headCommit !== null)
   if (pinned.length) {
@@ -407,8 +407,8 @@ function changedPaths(repoRoot: string, from: string, to: string): Set<string> {
   return new Set(output ? output.split('\n') : [])
 }
 
-function reviewVerdict(
-  repoRoot: string, review: ReviewCoverage, tip: string, trunk: string,
+export function reviewCoverageVerdict(
+  repoRoot: string, review: ReviewCoverageInput, tip: string, trunk: string,
 ): CoverageVerdict {
   const tree = git(repoRoot, ['rev-parse', `${tip}^{tree}`])
   if (review.lenses.length > 0 && review.lenses.every((lens) => lens.tree === tree)) {
@@ -458,7 +458,7 @@ function coverageText(project: string, repoRoot: string, tip: string, trunk: str
   const reviews = completedReviews(project)
   const lines = reviews.length
     ? reviews.map((review) => {
-        const verdict = reviewVerdict(repoRoot, review, tip, trunk)
+        const verdict = reviewCoverageVerdict(repoRoot, review, tip, trunk)
         if (verdict.kind === 'exact') return `review ${review.id}: exact`
         if (verdict.kind === 'carried') {
           return `review ${review.id}: carried (patch-id ${verdict.patchId}; ` +
@@ -480,7 +480,7 @@ function requireReviewCoverage(
       review.lenses.every((lens) => lens.tree === candidateTree))) {
     return { tree: candidateTree, carry: null }
   }
-  const verdicts = reviews.map((review) => ({ review, verdict: reviewVerdict(repoRoot, review, tip, trunk) }))
+  const verdicts = reviews.map((review) => ({ review, verdict: reviewCoverageVerdict(repoRoot, review, tip, trunk) }))
   const carried = verdicts.find((item) => item.verdict.kind === 'carried')
   if (carried?.verdict.kind === 'carried') {
     return {

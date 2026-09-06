@@ -10,6 +10,7 @@ import { job } from './jobs.ts'
 import { classifyReviewTier, diffNumstat, type ReviewTier } from './review-tier.ts'
 import { median } from './route.ts'
 import { targetGitEnvironment } from './worktree.ts'
+import { reviewCoverageVerdict, type ReviewCoverageInput } from './landing.ts'
 
 export const REVIEW_WINDOW = 50
 /**
@@ -21,6 +22,32 @@ export const MIN_REVIEW_TRIAGED = 10
 
 export const DISPOSITIONS = ['accepted', 'modified', 'rejected', 'skipped'] as const
 export type Disposition = typeof DISPOSITIONS[number]
+
+export type ReviewListFilter = {
+  state?: 'open' | 'complete'
+  project?: string
+  since?: string
+}
+
+export type ReviewListRow = {
+  id: number
+  recorded_at: string
+  completed_at: string | null
+  project: string | null
+  branches: string[]
+  tier: number | null
+  risk: number | null
+  size: number | null
+  lens_count: number
+  findings: { total: number; triaged: number; accepted: number; modified: number; rejected: number; skipped: number }
+  coverage: 'exact' | 'carried' | 'stale' | null
+}
+
+type ReviewReadLens = ReviewCoverageInput['lenses'][number] & {
+  id: number; agent: string; model: string | null; treeInspected: string | null
+  reviewRef: string; reproduced: ReviewReproduced | null; coverageGrade: ReviewCoverage | null
+  limits: ReviewLimits | null; overlap: ReviewOverlap | null
+}
 
 export type ReviewGrades = {
   reproduced: ReviewReproduced
@@ -189,6 +216,126 @@ function git(repo: string, args: string[], _hermetic = false): { ok: boolean; ou
 function projectPath(database: Database, name: string): string | null {
   return (database.query('SELECT path FROM project WHERE name=?').get(name) as
     { path: string } | null)?.path ?? null
+}
+
+function reviewReadLenses(reviewId: number, database: Database): ReviewReadLens[] {
+  return (database.query(
+    `SELECT rl.id, rl.lens, rl.run_id, rl.agent, rl.model, rl.tree_inspected, rl.reviewed_tree,
+            rl.reproduced, rl.coverage, rl.limits, rl.overlap,
+            run.input_tree, run.branch, run.base_commit, run.launch_cwd, run.head_commit
+       FROM review_lens rl JOIN run ON run.id=rl.run_id
+      WHERE rl.review_id=? ORDER BY rl.id`,
+  ).all(reviewId) as any[]).map((row) => ({
+    id: row.id, lens: row.lens, runId: row.run_id, agent: row.agent, model: row.model,
+    treeInspected: row.tree_inspected, tree: row.reviewed_tree, inputTree: row.input_tree,
+    branch: row.branch, baseCommit: row.base_commit, launchCwd: row.launch_cwd,
+    headCommit: row.head_commit, reviewRef: pinRef(row.run_id), reproduced: row.reproduced,
+    coverageGrade: row.coverage, limits: row.limits, overlap: row.overlap,
+  }))
+}
+
+function projectRecord(database: Database, name: string): { path: string; trunk: string } | null {
+  const row = database.query('SELECT path, settings FROM project WHERE name=?').get(name) as
+    { path: string; settings: string } | null
+  if (!row) return null
+  let settings: Record<string, unknown> = {}
+  try { settings = JSON.parse(row.settings) } catch { return null }
+  return { path: row.path, trunk: typeof settings.trunk === 'string' ? settings.trunk.trim() : '' }
+}
+
+function currentCoverage(
+  reviewId: number, project: string | null, lenses: ReviewReadLens[], database: Database,
+): ReviewListRow['coverage'] {
+  if (!project) return null
+  const registered = projectRecord(database, project)
+  if (!registered?.trunk) return null
+  const branches = [...new Set(lenses.map((lens) => lens.branch).filter((x): x is string => Boolean(x)))]
+  if (!branches.length) return null
+  const review: ReviewCoverageInput = { id: reviewId, lenses }
+  const verdicts = branches.flatMap((branch) => {
+    const ref = `refs/heads/${branch}`
+    const tip = git(registered.path, ['rev-parse', '--verify', ref])
+    if (!tip.ok) return []
+    const verdict = reviewCoverageVerdict(registered.path, review, tip.out, registered.trunk)
+    return [verdict.kind === 'invalid' ? 'stale' as const : verdict.kind]
+  })
+  if (!verdicts.length) return null
+  if (verdicts.includes('stale')) return 'stale'
+  return verdicts.includes('carried') ? 'carried' : 'exact'
+}
+
+export function listReviews(
+  filter: ReviewListFilter = {}, database: Database = db(),
+): ReviewListRow[] {
+  const where: string[] = []
+  const params: unknown[] = []
+  if (filter.state === 'open') where.push('(r.completed_at IS NULL OR EXISTS (SELECT 1 FROM review_finding open_f WHERE open_f.review_id=r.id AND open_f.disposition IS NULL))')
+  if (filter.state === 'complete') where.push('r.completed_at IS NOT NULL')
+  if (filter.project) {
+    where.push('EXISTS (SELECT 1 FROM review_lens project_l JOIN run project_run ON project_run.id=project_l.run_id WHERE project_l.review_id=r.id AND project_run.repo=?)')
+    params.push(filter.project)
+  }
+  if (filter.since) { where.push('r.recorded_at>=?'); params.push(filter.since) }
+  const rows = database.query(
+    `SELECT r.id, r.recorded_at, r.completed_at, r.tier, r.tier_risk, r.tier_size,
+            COUNT(DISTINCT rl.id) AS lens_count,
+            COUNT(DISTINCT rf.id) AS findings_total,
+            COUNT(DISTINCT CASE WHEN rf.disposition IS NOT NULL THEN rf.id END) AS findings_triaged,
+            COUNT(DISTINCT CASE WHEN rf.disposition='accepted' THEN rf.id END) AS findings_accepted,
+            COUNT(DISTINCT CASE WHEN rf.disposition='modified' THEN rf.id END) AS findings_modified,
+            COUNT(DISTINCT CASE WHEN rf.disposition='rejected' THEN rf.id END) AS findings_rejected,
+            COUNT(DISTINCT CASE WHEN rf.disposition='skipped' THEN rf.id END) AS findings_skipped,
+            MIN(run.repo) AS project
+       FROM review r JOIN review_lens rl ON rl.review_id=r.id JOIN run ON run.id=rl.run_id
+       LEFT JOIN review_finding rf ON rf.review_id=r.id
+       ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+      GROUP BY r.id
+      ORDER BY CASE WHEN r.completed_at IS NULL OR EXISTS (SELECT 1 FROM review_finding order_f WHERE order_f.review_id=r.id AND order_f.disposition IS NULL) THEN 0 ELSE 1 END,
+               r.recorded_at DESC, r.id DESC`,
+  ).all(...params as any[]) as any[]
+  return rows.map((row) => {
+    const lenses = reviewReadLenses(row.id, database)
+    return {
+      id: row.id, recorded_at: row.recorded_at, completed_at: row.completed_at,
+      project: row.project, branches: [...new Set(lenses.map((lens) => lens.branch).filter(Boolean))] as string[],
+      tier: row.tier, risk: row.tier_risk, size: row.tier_size, lens_count: row.lens_count,
+      findings: { total: row.findings_total, triaged: row.findings_triaged,
+        accepted: row.findings_accepted, modified: row.findings_modified,
+        rejected: row.findings_rejected, skipped: row.findings_skipped },
+      coverage: currentCoverage(row.id, row.project, lenses, database),
+    }
+  })
+}
+
+export function getReview(reviewId: number, database: Database = db()) {
+  const review = database.query(
+    'SELECT id, recorded_at, completed_at, tier, tier_risk, tier_size, tier_reasons, tier_reason FROM review WHERE id=?',
+  ).get(reviewId) as any
+  if (!review) throw new Error(`no review ${reviewId}`)
+  const lenses = reviewReadLenses(reviewId, database)
+  const projects = [...new Set((database.query(
+    `SELECT run.repo FROM review_lens rl JOIN run ON run.id=rl.run_id WHERE rl.review_id=? AND run.repo IS NOT NULL`,
+  ).all(reviewId) as { repo: string }[]).map((row) => row.repo))]
+  return {
+    id: review.id, recorded_at: review.recorded_at, completed_at: review.completed_at,
+    tier: review.tier, risk: review.tier_risk, size: review.tier_size,
+    tier_reasons: review.tier_reasons ? JSON.parse(review.tier_reasons) : null,
+    tier_reason: review.tier_reason, projects,
+    lenses: lenses.map((lens) => {
+      const project = projects.length === 1 ? projectRecord(database, projects[0]!) : null
+      const pin = project ? git(project.path, ['rev-parse', '--verify', lens.reviewRef]) : { ok: false, out: '' }
+      return {
+        run_id: lens.runId, lens: lens.lens, agent: lens.agent, model: lens.model,
+        reviewed_tree: lens.tree, head_commit: lens.headCommit, review_ref: lens.reviewRef,
+        grading: { reproduced: lens.reproduced, coverage: lens.coverageGrade, limits: lens.limits, overlap: lens.overlap },
+        pin: { resolves: pin.ok, commit: pin.ok ? pin.out : null },
+      }
+    }),
+    findings: database.query(
+      `SELECT ordinal, severity, location, disposition, rejection_category, evidence, proposed_correction
+         FROM review_finding WHERE review_id=? ORDER BY ordinal`,
+    ).all(reviewId),
+  }
 }
 
 function pinReviewedCommits(runs: RunRow[], database: Database): void {
@@ -672,6 +819,44 @@ export function reviewCalibration(
   const aggregate = calibrationCell(lens, agent, undefined, database)
   if (aggregate.triaged >= MIN_REVIEW_TRIAGED) return { ...aggregate, model: null, basis: 'agent' }
   return { ...aggregate, precision: null, model: null, basis: null }
+}
+
+export type ReviewCalibrationFleetCell = {
+  lens: string
+  agent: string
+  model: string | null
+  n: number
+  precision: number | null
+  last_graded_at: string | null
+}
+
+export function reviewCalibrationFleet(database: Database = db()): ReviewCalibrationFleetCell[] {
+  const identities = database.query(
+    `SELECT DISTINCT lens, agent FROM review_lens ORDER BY lens, agent`,
+  ).all() as { lens: string; agent: string }[]
+  const lenses = [...new Set(identities.map((row) => row.lens))]
+  const agents = [...new Set(identities.map((row) => row.agent))]
+  const graded = database.query(
+    `SELECT rl.lens, rl.agent, rl.model, MAX(s.scored_at) AS last_graded_at
+       FROM review_lens rl JOIN review r ON r.id=rl.review_id
+       LEFT JOIN score s ON s.run_id=rl.run_id
+      WHERE r.completed_at IS NOT NULL
+        AND (rl.reproduced IS NOT NULL OR rl.coverage IS NOT NULL OR rl.limits IS NOT NULL OR rl.overlap IS NOT NULL)
+      GROUP BY rl.lens, rl.agent, rl.model ORDER BY rl.lens, rl.agent, rl.model`,
+  ).all() as { lens: string; agent: string; model: string | null; last_graded_at: string | null }[]
+  const pairHasGrade = new Set(graded.map((row) => `${row.lens}\0${row.agent}`))
+  const cells = graded.map((row) => {
+    const calibration = calibrationCell(row.lens, row.agent, row.model, database)
+    return { lens: row.lens, agent: row.agent, model: row.model, n: calibration.triaged,
+      precision: calibration.precision, last_graded_at: row.last_graded_at }
+  })
+  for (const lens of lenses) for (const agent of agents) {
+    if (!pairHasGrade.has(`${lens}\0${agent}`)) {
+      cells.push({ lens, agent, model: null, n: 0, precision: null, last_graded_at: null })
+    }
+  }
+  return cells.sort((a, b) => a.lens.localeCompare(b.lens) || a.agent.localeCompare(b.agent) ||
+    String(a.model).localeCompare(String(b.model)))
 }
 
 export function calibrationLine(calibration: ReviewCalibration): string {

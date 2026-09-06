@@ -37,7 +37,8 @@ import {
   parseWorkerMessageArgs, refuseMisparsedMessage, validateCliArgs,
 } from './args.ts'
 import { cleanReviewEvidence, completeReview, coverageAudit, DISPOSITIONS, gradeReviewLens, parseReviewOutput, recordReviews,
-         reviewCalibration, reviewPins, triageFinding, type Disposition,
+         getReview, listReviews, MIN_REVIEW_TRIAGED, REVIEW_WINDOW, reviewCalibration,
+         reviewCalibrationFleet, reviewPins, triageFinding, type Disposition,
          type ReviewGrades } from './review.ts'
 import { classifyReviewTier, diffNumstat } from './review-tier.ts'
 import { composeWorkflow, exportWorkflows, forkWorkflow, getWorkflowStep, importWorkflows,
@@ -1315,6 +1316,9 @@ function usage(): never {
       --file PATH               same, reading the message from a file
       --unreviewed REASON       land without matching review coverage and record why
       --status                  show the landing lock and exact/carried/invalid review coverage
+  orch review list [--open|--complete] [--project P] [--since ISO] [--json]
+  orch review show <id> [--json]
+  orch review calibration [<lens> <agent> <model>] [--json]
   orch review pins [--prune]    list reviewed-commit keepalive refs; explicitly prune landed reviews
   orch stop <id>                terminate a running run and reclaim its worktree
   orch discard <id>             delete that run's worktree (the row stays)
@@ -1417,6 +1421,21 @@ function doUsage(): never {
   --follow         block and watch the run instead of returning its id
   --no-failover    do not retry vendor failures on another agent
   --quiet          print only the reply or run id
+`)
+  process.exit(0)
+}
+
+function reviewUsage(): never {
+  console.log(`orch review - record, inspect, and calibrate independent reviews
+
+  orch review list [--open|--complete] [--project P] [--since ISO] [--json]
+  orch review show <id> [--json]
+  orch review tier <branch|run-id|from..to> [--json]
+  orch review record <run-id>...
+  orch review triage <review-id> <finding> <accepted|modified|rejected|skipped>
+  orch review complete <review-id>
+  orch review pins [--prune]
+  orch review calibration [<lens> <agent> <model>] [--json]
 `)
   process.exit(0)
 }
@@ -2372,6 +2391,48 @@ switch (cmd) {
 
   case 'review': {
     const sub = argv[1]
+    if (sub === '--help' || sub === '-h') reviewUsage()
+    if (sub === 'list') {
+      if (has('open') && has('complete')) throw new Error('--open and --complete are mutually exclusive')
+      const since = flag('since')
+      if (since && Number.isNaN(Date.parse(since))) throw new Error('--since must be an ISO timestamp')
+      const rows = listReviews({
+        state: has('open') ? 'open' : has('complete') ? 'complete' : undefined,
+        project: flag('project'), since,
+      })
+      if (has('json')) console.log(JSON.stringify(rows))
+      else if (!rows.length) console.log('no reviews')
+      else {
+        console.log('id  recorded_at               completed  project  branches  tier/risk/size  lenses  findings t/tr/a/m/r/s  coverage')
+        for (const row of rows) console.log(
+          `${String(row.id).padEnd(3)} ${row.recorded_at.padEnd(25)} ${row.completed_at ? 'yes' : 'no '}        ` +
+          `${(row.project ?? '—').padEnd(8)} ${(row.branches.join(',') || '—').padEnd(9)} ` +
+          `${`${row.tier ?? '—'}/${row.risk ?? '—'}/${row.size ?? '—'}`.padEnd(14)} ${String(row.lens_count).padEnd(7)} ` +
+          `${row.findings.total}/${row.findings.triaged}/${row.findings.accepted}/${row.findings.modified}/${row.findings.rejected}/${row.findings.skipped}              ${row.coverage ?? '—'}`,
+        )
+      }
+      break
+    }
+    if (sub === 'show') {
+      const reviewId = Number(argv[2])
+      if (!Number.isInteger(reviewId) || reviewId <= 0) throw new Error('orch review show <id> [--json]')
+      const review = getReview(reviewId)
+      if (has('json')) console.log(JSON.stringify(review))
+      else {
+        console.log(`review ${review.id} recorded=${review.recorded_at} completed=${review.completed_at ?? '—'} projects=${review.projects.join(',') || '—'} tier/risk/size=${review.tier ?? '—'}/${review.risk ?? '—'}/${review.size ?? '—'}`)
+        for (const lens of review.lenses) {
+          console.log(`lens run ${lens.run_id}: ${lens.lens} ${lens.agent}/${lens.model ?? '—'} tree=${lens.reviewed_tree ?? '—'} head=${lens.head_commit ?? '—'}`)
+          console.log(`  ref ${lens.review_ref}: ${lens.pin.resolves ? lens.pin.commit : 'unresolved'}`)
+          console.log(`  grading ${Object.entries(lens.grading).map(([key, value]) => `${key}=${value ?? '—'}`).join(' ')}`)
+        }
+        for (const finding of review.findings as any[]) {
+          console.log(`finding ${finding.ordinal} ${finding.severity} ${finding.location} disposition=${finding.disposition ?? 'untriaged'} category=${finding.rejection_category ?? '—'}`)
+          console.log(`  evidence: ${finding.evidence}`)
+          console.log(`  correction: ${finding.proposed_correction}`)
+        }
+      }
+      break
+    }
     if (sub === 'tier') {
       const value = argv[2]
       if (!value) throw new Error('orch review tier <branch|run-id|from..to> [--json]')
@@ -2493,10 +2554,22 @@ switch (cmd) {
       break
     }
     if (sub === 'calibration') {
-      const lens = argv[2]
-      const agent = argv[3]
-      const model = argv[4]
-      if (!lens || !agent || !model) throw new Error('orch review calibration <lens> <agent> <model> [--json]')
+      const [lens, agent, model] = argv.slice(2).filter((value) => value !== '--json')
+      if (!lens && !agent && !model) {
+        const fleet = reviewCalibrationFleet()
+        if (has('json')) console.log(JSON.stringify(fleet))
+        else {
+          console.log(`review calibration fleet (last ${REVIEW_WINDOW} completed reviews; precision floor ${MIN_REVIEW_TRIAGED} triaged)`)
+          if (!fleet.length) console.log('no review calibration evidence')
+          for (const cell of fleet) console.log(
+            `${cell.lens}/${cell.agent}/${cell.model ?? '—'} n=${cell.n} ` +
+            (cell.n < MIN_REVIEW_TRIAGED ? `below floor (${cell.n}/${MIN_REVIEW_TRIAGED} triaged)` : `precision=${cell.precision!.toFixed(2)}`) +
+            ` last_graded_at=${cell.last_graded_at ?? '—'}`,
+          )
+        }
+        break
+      }
+      if (!lens || !agent || !model) throw new Error('orch review calibration [<lens> <agent> <model>] [--json]')
       const calibration = reviewCalibration(lens, agent, model)
       if (has('json')) {
         console.log(JSON.stringify(calibration))

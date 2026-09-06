@@ -15,6 +15,7 @@ import {
 } from './porting.ts'
 import { composeWorkflow, getWorkflowStep, listWorkflows } from './workflows.ts'
 import { checkDoc, repoRootForDoc } from './canon.ts'
+import { getReview, listReviews } from './review.ts'
 
 const text = (value: unknown) => ({
   content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value) }],
@@ -239,6 +240,22 @@ export function createDocsMcpServer(): McpServer {
   server.registerTool('list_projects', {
     description: 'List projects registered with the orchestrator.',
   }, async () => text(projects()))
+
+  server.registerTool('list_reviews', {
+    description: 'List review records, findings counts, and current branch coverage.',
+    inputSchema: {
+      open: z.boolean().optional(), complete: z.boolean().optional(),
+      project: z.string().trim().min(1).optional(), since: z.iso.datetime().optional(),
+    },
+  }, async ({ open, complete, project, since }) => {
+    if (open && complete) throw new Error('open and complete are mutually exclusive')
+    return text(listReviews({ state: open ? 'open' : complete ? 'complete' : undefined, project, since }))
+  })
+
+  server.registerTool('get_review', {
+    description: 'Get one review with all lenses, grading flags, findings, evidence, and pin state.',
+    inputSchema: { id: z.number().int().positive() },
+  }, async ({ id }) => text(getReview(id)))
 
   server.registerTool('project_brief', {
     description: 'Get a registered project row and its operator documents.',
