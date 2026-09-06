@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import type { Project } from './projects.ts'
 import {
   grokSandboxConfig,
-  READONLY_LENS_DENY_PATHS, readonlyLensProfile, selectReadonlySandbox,
+  READONLY_LENS_DENY_PATHS, readonlyLensProfile, readonlyNeedsDocker, selectReadonlySandbox,
 } from './sandbox.ts'
 import { classify, NOT_EVIDENCE } from './failure.ts'
 
@@ -70,6 +70,10 @@ describe('readonly-lens sandbox profile', () => {
       sandbox: 'host', profile: null,
       reason: 'project worktree.readonly_notes says read-only checks need Docker',
     })
+  })
+
+  test('a note merely saying Docker is unavailable does not disable confinement', () => {
+    expect(readonlyNeedsDocker('Docker is unavailable in read-only worktrees; use bun tests.')).toBe(false)
   })
 
   test('codex and writing jobs stay on the host seam', () => {

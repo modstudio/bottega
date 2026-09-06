@@ -77,7 +77,8 @@ export function linkedNodeModules(worktree: string): string[] {
 }
 
 export function readonlyNeedsDocker(notes: string | undefined): boolean {
-  return /\bdocker(?:\s+compose)?\b/i.test(notes ?? '')
+  return /(?:\b(?:need|needs|require|requires|must use)\b.{0,80}\bdocker\b|\bdocker\b.{0,80}\b(?:needed|required|must be used)\b|\brun\b.{0,40}\b(?:checks?|tests?)\b.{0,40}\b(?:with|in|via)\s+docker\b)/is
+    .test(notes ?? '')
 }
 
 function localHost(baseUrl: string): string[] {
