@@ -14,7 +14,7 @@ import { afterAll, beforeEach, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import {
   chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync,
-  readFileSync, readdirSync, realpathSync, rmSync, writeFileSync,
+  readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -123,6 +123,8 @@ afterAll(() => {
 
 const defaultSeed = Number(process.env.ORCH_HARNESS_SEED ?? '1') >>> 0
 const rounds = Math.max(1, Number(process.env.ORCH_HARNESS_ROUNDS ?? '3'))
+const invariantLine = /^invariant: .+$/m
+const clearingLine = /^cleared by: (?:orch|git) .+$/m
 
 const refusalSiteNames = [
   'caller ancestry', 'missing trunk setting', 'missing gate setting',
@@ -430,6 +432,7 @@ test.failing(failingName.migration, async () => {
   rmSync(linked, { recursive: true, force: true })
   cpSync(join(sourceRoot, 'orchestrator', 'src'), join(copy, 'orchestrator', 'src'), { recursive: true })
   cpSync(join(sourceRoot, 'shared'), join(copy, 'shared'), { recursive: true })
+  symlinkSync(join(sourceRoot, 'orchestrator', 'node_modules'), join(copy, 'orchestrator', 'node_modules'))
   git(copy, 'init', '-b', 'main'); git(copy, 'config', 'user.email', 'linked@example.invalid'); git(copy, 'config', 'user.name', 'Linked')
   git(copy, 'add', '.'); git(copy, 'commit', '-m', 'DEV-321 linked fixture'); git(copy, 'worktree', 'add', '-b', 'DEV-321-linked', linked)
   const scratch = join(fixture, 'linked-migration.db')
@@ -442,7 +445,8 @@ test.failing(failingName.migration, async () => {
   const columns = checked.query('PRAGMA table_info(run)').all() as { name: string }[]; checked.close()
   violation(failingName.migration, seedMessage(), () => {
     expect(columns.some((column) => column.name === 'label')).toBe(false)
-    expect(read.stderr.toString()).toContain('refusing to write the live store from a linked worktree')
+    expect(read.stderr.toString()).toMatch(invariantLine)
+    expect(read.stderr.toString()).toMatch(clearingLine)
   })
 }, 20_000)
 
@@ -480,8 +484,6 @@ test.failing(failingName.failedLanding, async () => {
 
 test.todo('A reclaim removes exactly the acquisition it classified as stale — needs the chunk 3 lock-incarnation checkpoint seam', () => {})
 
-const invariantLine = /^invariant: .+$/m
-const clearingLine = /^cleared by: (?:orch|git) .+$/m
 class RefusalSetupError extends Error {}
 const refusedLand = (branch: string) => {
   const r = Bun.spawnSync([process.execPath, '-e',
@@ -507,7 +509,9 @@ const refusalCases = [
   ['branch has no worktree', () => { git(repo, 'branch', 'no-worktree'); return refusedLand('no-worktree') }],
   ['branch is already merged', () => { const tree = join(fixture, 'trees', 'already-merged'); mkdirSync(dirname(tree), { recursive: true }); git(repo, 'worktree', 'add', '-b', 'already-merged', tree, 'main'); return refusedLand('already-merged') }],
   ['rebase leaves no commits', () => {
-    const tree = addBranch('empty-after-rebase')
+    const tree = join(fixture, 'trees', 'empty-after-rebase')
+    mkdirSync(dirname(tree), { recursive: true })
+    git(repo, 'worktree', 'add', '-b', 'empty-after-rebase', tree, 'main')
     writeFileSync(join(tree, 'same.txt'), 'same\n'); git(tree, 'add', 'same.txt'); git(tree, 'commit', '-m', 'DEV-321 branch copy')
     writeFileSync(join(repo, 'same.txt'), 'same\n'); git(repo, 'add', 'same.txt'); git(repo, 'commit', '-m', 'DEV-321 trunk copy')
     return refusedLand('empty-after-rebase')
