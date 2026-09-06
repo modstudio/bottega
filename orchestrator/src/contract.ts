@@ -222,6 +222,9 @@ export type CanonSource = typeof CANON_SOURCE_SCHEMA.enum[number]
 export const REVIEW_SEVERITY_INSTRUCTION =
   `Every finding severity must use the architect's closed scale: ${REVIEW_SEVERITY.join(' | ')}.`
 
+export const COULD_NOT_VERIFY_INSTRUCTION =
+  'A review which could not execute the suite must say so in could_not_verify AND must not present static reasoning as an executed check.'
+
 /**
  * The fixed product of every findings-producing review job.
  *
@@ -259,8 +262,7 @@ export const REVIEW_SCHEMA = {
         commands_run: { type: 'array', items: { type: 'string' } },
         could_not_verify: {
           type: 'array',
-          description:
-            'A review which could not execute the suite must say so in could_not_verify AND must not present static reasoning as an executed check.',
+          description: COULD_NOT_VERIFY_INSTRUCTION,
           items: { type: 'string' },
         },
         canon_source: CANON_SOURCE_SCHEMA,
@@ -303,13 +305,11 @@ export const INFRASTRUCTURE_RECOVERY = `
 PROJECT INFRASTRUCTURE RECOVERY
 
 The project register says how this worktree's infrastructure is brought up:
-use the registered \`worktree.create\` or \`worktree.recipe\` setup and the
-registered \`worktree.recipe.serve\` step by name rather than inlining their
-commands. A reader MAY run that serve step and MAY make scratch edits to verify
-a finding; a reader MUST NOT commit, and its diff is never the deliverable.
+use the register's \`worktree.recipe.serve\` step when the project declares one,
+otherwise the serve instructions in its \`worktree.notes\`.
+A reader MAY run that serve step and MAY make scratch edits to verify a finding; a reader MUST NOT commit, and its diff is never the deliverable.
 
-A review which could not execute the suite must say so in could_not_verify AND
-must not present static reasoning as an executed check.
+${COULD_NOT_VERIFY_INSTRUCTION}
 `.trim()
 
 /**

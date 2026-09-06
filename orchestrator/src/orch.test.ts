@@ -1317,7 +1317,7 @@ const retargetedPrompt = (
 const { summary } = await import('./metric.ts')
 const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
         NO_REPO_PREAMBLE, WORKER_PREAMBLE, LAND_PREAMBLE, REVIEW_SCHEMA,
-        REVIEW_SEVERITY_INSTRUCTION, INFRASTRUCTURE_RECOVERY,
+        REVIEW_SEVERITY_INSTRUCTION, INFRASTRUCTURE_RECOVERY, COULD_NOT_VERIFY_INSTRUCTION,
         VERIFY_CLAIM_SCHEMA, ISSUE_WORKER_SCHEMA, workerPreamble, workerResumeGuard,
         rulingPrompt, packResumePrompt, contractConflicts, hasRealQuestions, realQuestions } = await import('./contract.ts')
 const { cleanReviewEvidence, parseReviewReply, recordReview, recordReviews, gradeReviewLens, reviewPins, coverageAudit,
@@ -4192,17 +4192,19 @@ describe('job contracts are visible before submission', () => {
     expect(WORKER_PREAMBLE).toContain(INFRASTRUCTURE_RECOVERY)
     expect(READONLY_PREAMBLE.match(/PROJECT INFRASTRUCTURE RECOVERY/g)).toHaveLength(1)
     expect(WORKER_PREAMBLE.match(/PROJECT INFRASTRUCTURE RECOVERY/g)).toHaveLength(1)
-    expect(INFRASTRUCTURE_RECOVERY).toContain('worktree.create')
     expect(INFRASTRUCTURE_RECOVERY).toContain('worktree.recipe.serve')
+    expect(INFRASTRUCTURE_RECOVERY).toContain('worktree.notes')
     expect(INFRASTRUCTURE_RECOVERY).toContain(
-      'A reader MAY run that serve step and MAY make scratch edits to verify\n' +
-      'a finding; a reader MUST NOT commit, and its diff is never the deliverable.',
+      'A reader MAY run that serve step and MAY make scratch edits to verify a finding; a reader MUST NOT commit, and its diff is never the deliverable.',
     )
   })
 
   test('review provenance makes an unexecuted suite visible', () => {
-    expect(REVIEW_SCHEMA.properties.provenance.properties.could_not_verify.description)
-      .toContain('must not present static reasoning as an executed check')
+    const paragraphInstruction = INFRASTRUCTURE_RECOVERY.split('\n\n').at(-1)!
+    const schemaInstruction: string =
+      REVIEW_SCHEMA.properties.provenance.properties.could_not_verify.description
+    expect(paragraphInstruction).toBe(COULD_NOT_VERIFY_INSTRUCTION)
+    expect(schemaInstruction).toBe(paragraphInstruction)
   })
 
   test('contract prints the same preamble selected when a job is bound', () => {
