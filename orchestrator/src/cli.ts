@@ -1344,6 +1344,7 @@ function usage(): never {
       set <name> [--stack X] [--path P] [--canon|--no-canon] [--settings JSON] [--json]  (--json: one JSON document)
           JSON null deletes that settings key; objects merge deeply
           worktree.readonly_create may provision detached read-only trees at {path} and {base}
+          worktree.readonly_notes says what a detached read-only tree can and cannot run
           worktree.readonly_remove optionally tears them down and receives {path} only
           --allow-incomplete    save a create command missing branch or seed configuration
       remove <name>

@@ -9987,6 +9987,17 @@ describe('detached run collection', () => {
     })
   })
 
+  test('project set round-trips worktree readonly_notes', () => {
+    upsertProject({ name: 'read-only-notes', path: process.cwd() })
+    const r = orch(
+      'project', 'set', 'read-only-notes', '--settings',
+      '{"worktree":{"readonly_notes":"Dependencies are installed; bun run test works."}}',
+    )
+    expect(r.code).toBe(0)
+    expect(projectByName('read-only-notes')!.settings.worktree?.readonly_notes)
+      .toBe('Dependencies are installed; bun run test works.')
+  })
+
   test('project set refuses positional settings, names the first extra, and shows the working form', () => {
     upsertProject({ name: 'positional-settings', path: process.cwd() })
     const r = orch('project', 'set', 'positional-settings', 'gate', 'bun run check')
@@ -13006,6 +13017,37 @@ exec git worktree add --detach "$1" "$2"
       expect(sent).toContain(`project's files at ${featureHead}`)
       expect(sent).toContain('no databases, no generated env, no vendor tree')
       expect(sent).toContain('could_not_verify')
+      expect(removeFor(result.worktree!, repo).removed).toBe(true)
+    } finally {
+      agent.bin = original.bin
+      agent.argv = original.argv
+      agent.readsOut = original.readsOut
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a read-only run uses the project\'s declared infrastructure note', async () => {
+    const { repo, tree } = scratchRepo()
+    const note = 'Dependencies are installed and bun run test uses in-process PGlite.'
+    upsertProject({
+      name: 'read-only-run-notes', path: repo,
+      settings: { worktree: { recipe: {}, readonly_notes: note } },
+    })
+    const agent = AGENTS.codex!
+    const original = { bin: agent.bin, argv: agent.argv, readsOut: agent.readsOut }
+    let sent = ''
+    try {
+      agent.bin = process.execPath
+      agent.readsOut = false
+      agent.argv = ({ prompt }) => {
+        sent = prompt
+        return ['-e', 'console.log("inspected")']
+      }
+      process.env.ORCH_DEPTH = '0'
+      const result = await runJob({ job: 'file-question', prompt: 'inspect', cwd: tree, agent: 'codex' })
+      expect(sent).toContain(`This read-only run has the project's files at ${result.worktree!.base}. ${note}`)
+      expect(sent).not.toContain('NO provisioned infrastructure')
+      expect(sent).toContain('record what you could not run in could_not_verify')
       expect(removeFor(result.worktree!, repo).removed).toBe(true)
     } finally {
       agent.bin = original.bin

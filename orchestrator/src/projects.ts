@@ -146,6 +146,8 @@ export type WorktreeTool = {
    * project infrastructure.
    */
   readonly_create?: WorktreeCreate
+  /** What a read-only worker is told this project's detached tree can and cannot run. */
+  readonly_notes?: string
   /** Optional teardown for readonly_create trees. Receives `{path}` only. */
   readonly_remove?: string
   /**

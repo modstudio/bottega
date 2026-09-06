@@ -1322,10 +1322,13 @@ export async function run(opts: {
     if (!repoJob) return ''
     const tool = toolFor(opts.cwd ?? process.cwd())
     if (!tool) return ''
-    if (!writesJob && !tool.readonly_create) {
-      return `This read-only run has the project's files at ${readOnlyBase} with NO provisioned ` +
-        `infrastructure (no databases, no generated env, no vendor tree). Do not treat a test ` +
-        `suite that cannot start as a finding; record what you could not run in could_not_verify.`
+    if (!writesJob && (!tool.readonly_create || tool.readonly_notes !== undefined)) {
+      const tree = tool.readonly_notes !== undefined
+        ? `This read-only run has the project's files at ${readOnlyBase}. ${tool.readonly_notes}`
+        : `This read-only run has the project's files at ${readOnlyBase} with NO provisioned ` +
+          `infrastructure (no databases, no generated env, no vendor tree).`
+      return `${tree} Do not treat a test suite that cannot start as a finding; ` +
+        `record what you could not run in could_not_verify.`
     }
     const generated = tool.recipe
       ? recipeNotes(tool.recipe, '<this worktree\'s database>', '')

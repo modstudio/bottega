@@ -1046,6 +1046,7 @@ where a checkout is just files — this one, for instance.
 "worktree": {
   "create": "WORKTREE_SEED='{seed}' scripts/worktree add {branch}",
   "readonly_create": "scripts/worktree readonly-add --path {path} --base {base}",
+  "readonly_notes": "what a READ-ONLY worker is told this detached tree can and cannot run",
   "readonly_remove": "scripts/worktree readonly-rm --path {path}",
   "remove": "scripts/worktree rm {name}",
   "sweep":  "scripts/worktree sweep",
@@ -1068,6 +1069,10 @@ tree. Its tree is removed with plain git by default. A project that needs
 tree-local teardown may declare `worktree.readonly_remove`, which receives
 `{path}` only; writing-run `remove` and `sweep` are never used for it. Do not
 infer this capability from `create`.
+
+A project may declare `worktree.readonly_notes` beside `readonly_create`: the
+project's verbatim account of what its detached read-only tree can and cannot
+run. The capability is declared, never inferred from the project's lifecycle.
 
 Without `readonly_create`, a read-only worker in a project that declares a
 worktree lifecycle has files only: no databases, generated env, vendor tree, or
