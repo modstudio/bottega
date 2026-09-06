@@ -537,7 +537,9 @@ usage or balance subcommand - so exhaustion cannot be seen coming. It is caught
 on the failure instead.
 
 Every failure is classified: **quota**, **auth**, **unreachable**, **timeout**,
-**denied**, **content refusal**, or **other**. Quota, auth and unreachable are the three a person has
+**denied**, **content refusal**, **truncated**, or **other**. A truncated run hit
+the vendor's output ceiling before emitting a result; it is not evidence that
+the agent was wrong. Quota, auth and unreachable are the three a person has
 to act on, because nothing downstream can route around them, so each raises a
 macOS notification at the moment it happens rather than waiting to be found in a
 log.
@@ -578,7 +580,7 @@ The incident is recorded in `orch doc show local-model-host-incidents --scope ma
 
 So the rule is: **`unreachable` is excluded from the evidence count entirely.**
 Not weighted down, excluded. Content refusals are excluded too, for the distinct
-policy reason above; quota, auth, interrupted, harness and abandoned failures
+policy reason above; quota, auth, interrupted, truncated, harness and abandoned failures
 are likewise excluded where they say nothing about the agent's competence.
 
 **`unreachable` tells a person but does not cool the agent down.** A cooldown is

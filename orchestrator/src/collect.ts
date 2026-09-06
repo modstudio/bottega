@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
 import { failureReason, outcomeOf } from './outcome.ts'
 import type { ObservedDeadRun } from './db.ts'
+import { TRUNCATED_TRANSCRIPT_BYTES, visibleTranscriptText } from './result-output.ts'
 
 export const COLLECTION_COMMANDS = new Set(['result', 'wait'])
 
@@ -163,6 +164,14 @@ function partialOutputDocument(row: {
   }, null, 2)
 }
 
+function utf8Tail(text: string, bytes: number): string {
+  const encoded = Buffer.from(text)
+  if (encoded.byteLength <= bytes) return text
+  let start = encoded.byteLength - bytes
+  while (start < encoded.byteLength && (encoded[start]! & 0xc0) === 0x80) start++
+  return encoded.subarray(start).toString('utf8')
+}
+
 export function collectResult(
   database: Database, argv: string[], scoreSuffix: (job: string) => string = () => '',
 ): void {
@@ -200,8 +209,13 @@ export function collectResult(
     : null
   if (!outcome.ok) {
     if (output !== null) {
-      console.error(`\n— INCOMPLETE partial output from run ${row.id} (${row.status}) follows`)
-      console.log(partialOutputDocument(row, output))
+      if (row.failure_kind === 'truncated') {
+        console.log('TRUNCATED at the output ceiling — this is the transcript, not a result')
+        console.log(utf8Tail(visibleTranscriptText(row.agent, output), TRUNCATED_TRANSCRIPT_BYTES))
+      } else {
+        console.error(`\n— INCOMPLETE partial output from run ${row.id} (${row.status}) follows`)
+        console.log(partialOutputDocument(row, output))
+      }
     }
   } else if (output !== null) {
     console.log(output)

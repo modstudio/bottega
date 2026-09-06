@@ -48,6 +48,9 @@ import { compilePack, recordPack } from './canon.ts'
 import { seedGuidance } from './args.ts'
 import { resolveRunsDirectory } from './database-location.ts'
 import { resolveLandingBranch } from './landing.ts'
+import { TRUNCATED_TRANSCRIPT_BYTES } from './result-output.ts'
+
+export { TRUNCATED_TRANSCRIPT_BYTES }
 
 export type RunResult = {
   id: number
@@ -2113,6 +2116,8 @@ export async function run(opts: {
     // so the stored output is the reply and the token count is not lost.
     const reply = a.parseReply?.(stdout)
     const replyError = reply?.error ?? null
+    const outputCeilingReached = !!reply && !reply.text.trim() &&
+      a.outputCeilingStopReason !== null && reply.stopReason === a.outputCeilingStopReason
     vendorTokens = reply?.tokens ?? parseVendorTokens(stderr) ?? parseVendorTokens(stdout)
     costUsd = reply?.costUsd ?? null
 
@@ -2174,7 +2179,11 @@ export async function run(opts: {
 
     const completedReplyAtTimeout = contract?.status === 'done' ||
       (!writesJob && !replyError && !!output && !isNonAnswer(output))
-    if (timedOut && completedReplyAtTimeout) {
+    if (outputCeilingReached) {
+      status = 'failed'
+      error = `response truncated at output ceiling (${reply!.stopReason})`
+      failureKind = 'truncated'
+    } else if (timedOut && completedReplyAtTimeout) {
       /**
        * IT FINISHED, AND THEN WE KILLED IT.
        *

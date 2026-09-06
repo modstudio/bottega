@@ -736,12 +736,17 @@ export function hasRealQuestions(r: ContractReply | null | undefined): boolean {
 /**
  * What a review/read worker is told, and it is short on purpose.
  */
+export const READER_DELIVERABLE_FIRST =
+  'Write the deliverable to the result first and reason afterwards; ' +
+  'a report composed only in thinking is lost at the output ceiling.'
+
 export const READONLY_PREAMBLE = `
 You are working in your own disposable worktree. It is a fresh checkout of this
 run's base commit. If the caller chose to carry their uncommitted work into it,
 that work is present and is not yours: do not report it as your change.
 
 A prompt with several questions is not atomic: answer every question you can.
+${READER_DELIVERABLE_FIRST}
 When one is blocked — a command cannot run here, a file does not exist, or a
 result cannot be reproduced — report BLOCKED under that question with the exact
 reason and what you tried, and keep going. Never withhold deliverable answers
@@ -768,6 +773,8 @@ export const NO_REPO_PREAMBLE = `
 This job needs no repository, so you have no repository worktree for this run.
 Answer from the supplied context and requested tools, and do not make external
 changes.
+
+${READER_DELIVERABLE_FIRST}
 `.trim()
 
 export type ContractConflict = { line: number; text: string }

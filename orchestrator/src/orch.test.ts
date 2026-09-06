@@ -1409,6 +1409,7 @@ const retargetedPrompt = (
 const { summary } = await import('./metric.ts')
 const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
         NO_REPO_PREAMBLE, WORKER_PREAMBLE, LAND_PREAMBLE, REVIEW_SCHEMA,
+        READER_DELIVERABLE_FIRST,
         REVIEW_SEVERITY_INSTRUCTION, INFRASTRUCTURE_RECOVERY, COULD_NOT_VERIFY_INSTRUCTION,
         VERIFY_CLAIM_SCHEMA, ISSUE_WORKER_SCHEMA, workerPreamble, workerResumeGuard,
         rulingPrompt, packResumePrompt, contractConflicts, hasRealQuestions, realQuestions } = await import('./contract.ts')
@@ -3975,7 +3976,7 @@ describe('failure classification', () => {
     // process tree, and orch itself being wrong are not capability evidence.
     // None of them may be averaged in with the agent's actual work.
     expect(NOT_EVIDENCE).toEqual([
-      'quota', 'auth', 'unreachable', 'content_refusal', 'interrupted', 'harness', 'abandoned',
+      'quota', 'auth', 'unreachable', 'content_refusal', 'interrupted', 'truncated', 'harness', 'abandoned',
     ])
     for (const kind of ['timeout', 'denied', 'other']) {
       expect(NOT_EVIDENCE).not.toContain(kind)
@@ -4802,6 +4803,11 @@ describe('job contracts are visible before submission', () => {
       'deliverable, not your diff: every change you make here is scratch work and must\n' +
       'never be treated as a proposed change to land. Do not commit, push, or merge.',
     )
+  })
+
+  test('reader contracts require the deliverable before ceiling-vulnerable reasoning', () => {
+    expect(READONLY_PREAMBLE).toContain(READER_DELIVERABLE_FIRST)
+    expect(NO_REPO_PREAMBLE).toContain(READER_DELIVERABLE_FIRST)
   })
 
   test('diagnose and review-lens require partial delivery around blocked sub-questions', () => {
@@ -9784,7 +9790,7 @@ describe('detached run collection', () => {
 
     const shadow = join(dir, 'degraded-result-cli')
     mkdirSync(shadow, { recursive: true })
-    for (const file of ['orch.ts', 'collect.ts', 'outcome.ts']) {
+    for (const file of ['orch.ts', 'collect.ts', 'outcome.ts', 'result-output.ts']) {
       writeFileSync(join(shadow, file), readFileSync(new URL(file, import.meta.url).pathname, 'utf8'))
     }
     writeFileSync(join(shadow, 'cli.ts'), '<<<<<<< ours\n')
@@ -9807,7 +9813,7 @@ describe('detached run collection', () => {
 
     const shadow = join(dir, 'degraded-wait-cli')
     mkdirSync(shadow, { recursive: true })
-    for (const file of ['orch.ts', 'collect.ts', 'outcome.ts']) {
+    for (const file of ['orch.ts', 'collect.ts', 'outcome.ts', 'result-output.ts']) {
       writeFileSync(join(shadow, file), readFileSync(new URL(file, import.meta.url).pathname, 'utf8'))
     }
     writeFileSync(join(shadow, 'cli.ts'), '<<<<<<< ours\n')
@@ -17750,6 +17756,16 @@ describe('content tree measurement', () => {
 })
 
 describe('grok reply parsing', () => {
+  test('every agent explicitly declares its observed output-ceiling stop reason', () => {
+    expect(Object.fromEntries(Object.entries(AGENTS).map(([name, agent]) =>
+      [name, agent.outputCeilingStopReason]))).toEqual({
+      codex: null,
+      agy: null,
+      'qwen-local': null,
+      grok: 'max_tokens',
+    })
+  })
+
   test('takes only the terminal result from a tool-using message stream', () => {
     const stdout = [
       JSON.stringify({
@@ -17766,7 +17782,7 @@ describe('grok reply parsing', () => {
       }),
     ].join('\n')
     expect(AGENTS.grok!.parseReply!(stdout)).toEqual({
-      text: '## Finding', tokens: 35, costUsd: 0.25,
+      text: '## Finding', tokens: 35, costUsd: 0.25, stopReason: 'end_turn',
     })
   })
 
@@ -17828,6 +17844,78 @@ describe('grok reply parsing', () => {
       grok.bin = previous
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
+  test('retains and recovers a transcript when an empty result hits the output ceiling', async () => {
+    const visible = `DROP-ME-${'x'.repeat(40 * 1024)}-RECOVERED-END`
+    const stdout = [
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'truncated' }),
+      JSON.stringify({
+        type: 'assistant',
+        message: { content: [{ type: 'thinking', text: visible }], stop_reason: 'max_tokens' },
+      }),
+      JSON.stringify({
+        type: 'result', subtype: 'error_during_execution', result: '', stop_reason: 'max_tokens',
+        errors: ['response truncated by max_tokens'], usage: { input_tokens: 10, output_tokens: 2 },
+      }),
+    ].join('\n') + '\n'
+    const script = join(dir, 'fake-grok-truncated.ts')
+    writeFileSync(script, `process.stdout.write(${JSON.stringify(stdout)})\n`)
+    const grok = AGENTS.grok!
+    const previous = {
+      bin: grok.bin, argv: grok.argv, stdin: grok.stdin,
+      readsOut: grok.readsOut, parseReply: grok.parseReply,
+    }
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      grok.bin = process.execPath
+      grok.argv = () => [script]
+      grok.stdin = false
+      grok.readsOut = false
+      const reserved = addRun({ agent: '(pending)', job: 'file-question', status: 'running' })
+      await expect(run({
+        job: 'file-question', prompt: 'recover this report', cwd: dir,
+        agent: 'grok', reserveId: reserved,
+      })).rejects.toThrow('response truncated at output ceiling (max_tokens)')
+
+      const failed = db().query(
+        'SELECT status, failure_kind, output_path, output_bytes FROM run WHERE id=?',
+      ).get(reserved) as {
+        status: string; failure_kind: string; output_path: string; output_bytes: number
+      }
+      expect(failed.status).toBe('failed')
+      expect(failed.failure_kind).toBe('truncated')
+      expect(readFileSync(failed.output_path, 'utf8')).toBe(stdout)
+      expect(failed.output_bytes).toBe(Buffer.byteLength(stdout))
+      expect(NOT_EVIDENCE).toContain('truncated')
+      expect(candidates('file-question').find((candidate) => candidate.agent === 'grok')!.evidence)
+        .toBe(0)
+
+      const result = Bun.spawnSync([
+        process.execPath, new URL('cli.ts', import.meta.url).pathname,
+        'result', String(reserved),
+      ], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      const recovered = result.stdout.toString()
+      expect(result.exitCode).toBe(1)
+      expect(recovered).toStartWith(
+        'TRUNCATED at the output ceiling — this is the transcript, not a result\n',
+      )
+      expect(recovered).toContain('RECOVERED-END')
+      expect(recovered).not.toContain('DROP-ME')
+    } finally {
+      grok.bin = previous.bin
+      grok.argv = previous.argv
+      grok.stdin = previous.stdin
+      grok.readsOut = previous.readsOut
+      grok.parseReply = previous.parseReply
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(script, { force: true })
     }
   })
 

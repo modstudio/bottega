@@ -14,6 +14,8 @@
 export type FailureKind =
   | 'quota' | 'auth' | 'unreachable' | 'timeout' | 'denied' | 'content_refusal'
   | 'interrupted'
+  /** The vendor exhausted its reply budget before emitting a result. */
+  | 'truncated'
   /**
    * ORCH's own fault: a bad schema, a missing flag, a precondition it should
    * have checked before spending a run. Set at the point in the code that knows
@@ -234,7 +236,7 @@ export const FAILS_OVER: FailureKind[] = [
  * `unreachable` was carved out to stop.
  */
 export const NOT_EVIDENCE: FailureKind[] = [
-  'quota', 'auth', 'unreachable', 'content_refusal', 'interrupted', 'harness', 'abandoned',
+  'quota', 'auth', 'unreachable', 'content_refusal', 'interrupted', 'truncated', 'harness', 'abandoned',
 ]
 
 /**

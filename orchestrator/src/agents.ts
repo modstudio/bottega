@@ -349,6 +349,13 @@ export type Agent = {
    * run 294 is the blunter version — a flat 400 saying 65,536.
    */
   contextTokens: number
+  /**
+   * The vendor's native stop reason for exhausting the reply budget.
+   *
+   * Null is explicit: it means this agent has not produced an observed value
+   * yet, not that somebody forgot to decide how its truncations are named.
+   */
+  outputCeilingStopReason: string | null
   /** Extra environment for the child process, e.g. to select a local endpoint. */
   env?: () => Record<string, string>
   /**
@@ -362,6 +369,8 @@ export type Agent = {
     text: string
     tokens: number | null
     costUsd: number | null
+    /** The vendor's native terminal reason, without cross-vendor normalization. */
+    stopReason?: string | null
     /** The structured envelope says the run failed even if the process exited 0. */
     error?: string
   }
@@ -622,6 +631,8 @@ export const AGENTS: Record<string, Agent> = {
     // copied off a model card. The day one of these fails on window, put the
     // real figure in and the router will start respecting it.
     contextTokens: Number.POSITIVE_INFINITY,
+    // output-ceiling stop reason not yet observed; record it from a real run
+    outputCeilingStopReason: null,
     notes: 'ChatGPT auth. Bundled ripgrep. Reads AGENTS.md natively, root and nested.',
     argv(o) {
       return ['exec', ...codexCommon(o), '-']
@@ -707,6 +718,8 @@ export const AGENTS: Record<string, Agent> = {
     // here and its one recorded hang gave up on its own at 305s.
     timeoutMs: 10 * 60_000,
     contextTokens: Number.POSITIVE_INFINITY,
+    // output-ceiling stop reason not yet observed; record it from a real run
+    outputCeilingStopReason: null,
     notes: 'Antigravity Starter. Headless denies tool permissions, so context must be inline.',
     argv({ prompt, schema, model }) {
       // --print must use the attached form or it swallows the next flag.
@@ -760,6 +773,8 @@ export const AGENTS: Record<string, Agent> = {
     // different --max-model-len is a routing change, whether or not anyone
     // remembers to edit this line.
     contextTokens: LOCAL_CONTEXT_TOKENS,
+    // output-ceiling stop reason not yet observed; record it from a real run
+    outputCeilingStopReason: null,
     notes: 'Qwen Code CLI on the local endpoint. Free per call, no quota.',
     argv({ prompt, session }) {
       // --approval-mode yolo because headless cannot answer a permission prompt.
@@ -818,6 +833,7 @@ export const AGENTS: Record<string, Agent> = {
     // The slowest agent by a distance: 867s is the longest honest run recorded.
     timeoutMs: 25 * 60_000,
     contextTokens: Number.POSITIVE_INFINITY,
+    outputCeilingStopReason: 'max_tokens',
     notes: 'OIDC subscription auth. Inherits Claude rules and MCP config with no setup.',
     argv({ prompt, ...o }) {
       // The session id is minted by US and handed in, so the resume handle
@@ -842,12 +858,16 @@ export const AGENTS: Record<string, Agent> = {
        */
       let final: any = null
       let stream = false
+      let stopReason: string | null = null
       for (const line of stdout.split('\n')) {
         const s = line.trimStart()
         if (!s.startsWith('{')) continue
         try {
           const event = JSON.parse(s)
           if (event.type === 'system' && event.subtype === 'init') stream = true
+          if (event.type === 'assistant' && event.message?.stop_reason) {
+            stopReason = String(event.message.stop_reason)
+          }
           if (event.type === 'result') final = event
         } catch { /* a partial line cannot be the terminal result */ }
       }
@@ -861,10 +881,12 @@ export const AGENTS: Record<string, Agent> = {
         const errors = Array.isArray(final.errors)
           ? final.errors.map((error: unknown) => String(error)).filter(Boolean)
           : []
+        const nativeStopReason = final.stop_reason ? String(final.stop_reason) : stopReason
         return {
           text,
           tokens,
           costUsd: final.total_cost_usd ?? null,
+          ...(nativeStopReason ? { stopReason: nativeStopReason } : {}),
           ...errors.length
             ? { error: errors.join('\n') }
             : !text ? { error: 'grok result contained no final text' } : {},
@@ -887,7 +909,6 @@ export const AGENTS: Record<string, Agent> = {
     },
   },
 }
-
 
 /**
  * What the last reachability probe found, or null if none has run yet.
