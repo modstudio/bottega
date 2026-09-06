@@ -212,11 +212,20 @@ export const QUALITY_STEP = weigh('full', 'right') - weigh('full', 'mixed')
  */
 export const NOISE_BAND = QUALITY_STEP / MIN_SAMPLE
 
+/** Linear width of the judgement-weight range mapped onto a Beta probability. */
+export const BETA_SCALE = 1.5
+
+/**
+ * The shrunk-score noise band expressed on the [0, 1] posterior scale.
+ * betaContribution maps one score unit across BETA_SCALE probability units.
+ */
+export const POSTERIOR_NOISE_BAND = NOISE_BAND / BETA_SCALE
+
 export function betaContribution(weight: number): { successes: number; failures: number } {
   // Map the judgement range [-0.5, 1] linearly onto [0, 1]: `none` is one
   // whole failure and full/right is one whole success. Thus successes +=
   // (w + 0.5) / 1.5 and failures += 1 - that for every judgement.
-  const successes = (weight + 0.5) / 1.5
+  const successes = (weight + 0.5) / BETA_SCALE
   return { successes, failures: 1 - successes }
 }
 
@@ -278,8 +287,8 @@ export function thompsonRank<T extends ThompsonCandidate>(
     a.candidate.agent.localeCompare(b.candidate.agent)
   const rank = (metric: 'mean' | 'sample') => {
     const leader = [...posterior].sort((a, b) => b[metric] - a[metric])[0]!
-    const band = NOISE_BAND / 1.5
-    const tied = posterior.filter((row) => leader[metric] - row[metric] <= band)
+    const tied = posterior.filter((row) =>
+      leader[metric] - row[metric] <= POSTERIOR_NOISE_BAND)
     return { row: tied.sort(tie)[0]!, tied: tied.length }
   }
   const expected = rank('mean')
