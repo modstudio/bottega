@@ -12,7 +12,8 @@ import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, nowIso,
 import { JOBS, job } from './jobs.ts'
 import { AGENTS, available, installed, ensureLocalHealth,
          unavailableReason, NEEDS_HEALTH, tryWake, wakeStatus,
-         lastWakeAttempt, readStrictCodexSchema, resumePromptByteLimit } from './agents.ts'
+         lastWakeAttempt, readStrictCodexSchema, resumePromptByteLimit,
+         cliVersion, versionBelow } from './agents.ts'
 import { candidates, pick, scoreboard, MIN_SAMPLE, promptSizeBucketLabel } from './route.ts'
 import { guide } from './guide.ts'
 import { repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses,
@@ -75,27 +76,6 @@ function lifecycleCheckpoint(name: string): void {
   while (!existsSync(release)) {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10)
   }
-}
-
-function parsedVersion(text: string): string | null {
-  return text.match(/\b\d+\.\d+\.\d+\b/)?.[0] ?? null
-}
-
-function versionBelow(actual: string, minimum: string): boolean {
-  const a = actual.split('.').map(Number)
-  const m = minimum.split('.').map(Number)
-  for (let i = 0; i < 3; i++) {
-    if (a[i]! !== m[i]!) return a[i]! < m[i]!
-  }
-  return false
-}
-
-function cliVersion(bin: string): { display: string; parsed: string | null } {
-  const p = Bun.spawnSync([bin, '--version'], { stdout: 'pipe', stderr: 'pipe' })
-  const stdout = new TextDecoder().decode(p.stdout).trim()
-  const stderr = new TextDecoder().decode(p.stderr).trim()
-  const display = stdout || stderr || `exit ${p.exitCode}`
-  return { display, parsed: parsedVersion(`${stdout}\n${stderr}`) }
 }
 
 /**

@@ -9796,7 +9796,7 @@ describe('detached run collection', () => {
     expect(out).toContain('resolved by    ORCH_DB')
     expect(out).toContain('registered     /registered/platform/orchestrator/orch.db  (resolved path won)')
     for (const version of Object.values(versions)) expect(out).toContain(`version ${version}`)
-    expect(out).toContain('WARNING: codex 0.150.0 is below minimum 0.151.0')
+    expect(out).toContain('WARNING: codex 0.150.0 is below minimum 0.153.4')
     expect(out).not.toContain('WARNING: grok')
     expect(out).not.toContain('WARNING: agy')
     expect(out).not.toContain('WARNING: qwen-local')
@@ -17801,14 +17801,43 @@ describe('the sandbox an agent is launched with', () => {
   test('Codex MCP forwards the run identity into orch-ask on first and resumed turns', () => {
     const overlay = `mcp_servers.orch-ask.env_vars=${JSON.stringify([...CODEX_ASK_ENV_VARS])}`
     const first = AGENTS.codex!.argv({ prompt: 'p', out: '/tmp/o', mcp: true })
+    expect(first).toContain('--strict-config')
     expect(first).toContain('--approve-for-me')
     expect(first).toContain(overlay)
     const resumed = AGENTS.codex!.resumeArgv!({
       prompt: 'p', out: '/tmp/o', mcp: true, session: 'thread',
     })
+    expect(resumed).toContain('--strict-config')
     expect(resumed).toContain('--approve-for-me')
     expect(resumed).toContain(overlay)
     expect(AGENTS.codex!.argv({ prompt: 'p', out: '/tmp/o' })).not.toContain(overlay)
+  })
+
+  test('Codex below its minimum CLI version is refused before the worker spawn', async () => {
+    const fake = join(dir, 'codex-below-minimum')
+    const spawned = join(dir, 'codex-below-minimum.spawned')
+    writeFileSync(
+      fake,
+      `#!/bin/sh\nif [ "$1" = "--version" ]; then echo 'codex-cli 0.153.3'; exit 0; fi\ntouch '${spawned}'\n`,
+    )
+    chmodSync(fake, 0o755)
+    const agent = AGENTS.codex!
+    const originalBin = agent.bin
+    const priorDepth = process.env.ORCH_DEPTH
+    agent.bin = fake
+    process.env.ORCH_DEPTH = '0'
+    try {
+      await expect(runJob({
+        job: 'summarize', prompt: 'summarize this', agent: 'codex', cwd: dir,
+      })).rejects.toThrow('codex 0.153.3 is below minimum 0.153.4')
+      expect(existsSync(spawned)).toBe(false)
+    } finally {
+      agent.bin = originalBin
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(fake, { force: true })
+      rmSync(spawned, { force: true })
+    }
   })
 
   test('a writing worktree grants codex its metadata, common objects, and run-ref directory', () => {

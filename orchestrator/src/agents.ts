@@ -366,6 +366,34 @@ export type Agent = {
   notes: string
 }
 
+export function parsedCliVersion(text: string): string | null {
+  return text.match(/\b\d+\.\d+\.\d+\b/)?.[0] ?? null
+}
+
+export function versionBelow(actual: string, minimum: string): boolean {
+  const a = actual.split('.').map(Number)
+  const m = minimum.split('.').map(Number)
+  for (let i = 0; i < 3; i++) {
+    if (a[i]! !== m[i]!) return a[i]! < m[i]!
+  }
+  return false
+}
+
+export function cliVersion(bin: string): { display: string; parsed: string | null } {
+  const p = Bun.spawnSync([bin, '--version'], { stdout: 'pipe', stderr: 'pipe' })
+  const stdout = new TextDecoder().decode(p.stdout).trim()
+  const stderr = new TextDecoder().decode(p.stderr).trim()
+  const display = stdout || stderr || `exit ${p.exitCode}`
+  return { display, parsed: parsedCliVersion(`${stdout}\n${stderr}`) }
+}
+
+export function minimumCliVersionRefusal(agent: Agent): string | null {
+  const version = cliVersion(agent.bin)
+  return version.parsed && versionBelow(version.parsed, agent.minimumCliVersion)
+    ? `${agent.name} ${version.parsed} is below minimum ${agent.minimumCliVersion}`
+    : null
+}
+
 /** Argv-agent prompt ceiling used by routing eligibility. */
 export const ARGV_PROMPT_BYTES = 200_000
 
@@ -471,7 +499,10 @@ const rawReply = (stdout: string) => ({ text: stdout.trim(), tokens: null, costU
 function codexCommon(o: Omit<ArgvOpts, 'prompt'>): string[] {
   // -m always, never the config file's default: see Agent.model for why an
   // unpinned model quietly rewrites the meaning of every score already taken.
-  const a = ['--skip-git-repo-check', '--json', '-o', o.out, '-m', o.model ?? AGENTS.codex!.model]
+  const a = [
+    '--strict-config', '--skip-git-repo-check', '--json', '-o', o.out,
+    '-m', o.model ?? AGENTS.codex!.model,
+  ]
   /**
    * MCP AND THE SANDBOX CANNOT BOTH BE CHOSEN, and the split falls out well.
    *
@@ -565,7 +596,12 @@ export const AGENTS: Record<string, Agent> = {
   codex: {
     name: 'codex',
     bin: 'codex',
-    minimumCliVersion: '0.151.0',
+    // The official Configuration Reference documents this as "Additional
+    // environment variables to whitelist for an MCP stdio server" but names
+    // no introducing release. 0.153.4 is therefore the installed version on
+    // which the env_vars overlay and --strict-config were verified together.
+    // https://developers.openai.com/codex/config-reference#mcp_serversidenv_vars
+    minimumCliVersion: '0.153.4',
     model: process.env.ORCH_CODEX_MODEL ?? 'gpt-5.6-sol',
     billing: 'subscription',
     // writesRepo VERIFIED: `-s workspace-write` in a scratch git repo created

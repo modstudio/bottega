@@ -11,7 +11,8 @@ import {
   FAILS_OVER,
 } from './failure.ts'
 import {
-  AGENTS, ensureLocalHealth, tryWake, readStrictCodexSchema, type SandboxLevel,
+  AGENTS, ensureLocalHealth, tryWake, readStrictCodexSchema, minimumCliVersionRefusal,
+  type SandboxLevel,
 } from './agents.ts'
 import { job, type Job } from './jobs.ts'
 import { pick } from './route.ts'
@@ -1401,6 +1402,13 @@ export async function run(opts: {
            { agents: opts.avoid, models: opts.distinctModels, model: opts.model },
            opts.probe)
   const a = AGENTS[name]!
+  if (name === 'codex') {
+    const versionRefusal = minimumCliVersionRefusal(a)
+    if (versionRefusal) {
+      if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
+      throw new Error(versionRefusal)
+    }
+  }
   // Route first because the cell keys on the agent ACTUALLY selected. The
   // suffix reserve above keeps argv eligibility honest; append before any
   // prompt file, hash, or database prompt metadata is written.
