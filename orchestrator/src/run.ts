@@ -1251,7 +1251,7 @@ export async function run(opts: {
     }
   }
   const readOnlyBase = repoJob && !writesJob && !opts.resume?.worktree
-    ? resolveReadOnlyBase(callerCwd, opts.base ?? 'HEAD')
+    ? resolveReadOnlyBase(callerCwd, reviewTarget?.commit ?? opts.base ?? 'HEAD')
     : null
   if (opts.base && readOnlyBase === null) resolveBase(callerCwd, opts.base)
   // REACHABILITY IS A ROUTING INPUT, not a run outcome, and this is the line
