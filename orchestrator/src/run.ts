@@ -780,8 +780,8 @@ function withoutTrailingSeparators(path: string): string {
 }
 
 const UNICODE_ALPHANUMERIC_OR_MARK = /[\p{L}\p{N}\p{M}]/u
+const PATH_NAME_CHARACTER = /[\p{L}\p{N}\p{M}_.-]/u
 const SHELL_PATH_BOUNDARY = /[;&|<>()`$]/
-const PATH_START_BOUNDARY = /[\s'"`=,:([{<;|&>$]/
 
 /**
  * A deliberately partial subset of Unicode CaseFolding.txt's full (`F`)
@@ -849,7 +849,7 @@ function pathRootMatchLength(
 function hasPathStartBoundary(prompt: string, offset: number): boolean {
   if (offset === 0) return true
   const before = characterBefore(prompt, offset)!
-  return before !== '/' && PATH_START_BOUNDARY.test(before)
+  return before !== '/' && !PATH_NAME_CHARACTER.test(before)
 }
 
 type RetargetResult = { prompt: string; diagnostic: string | null }

@@ -9893,8 +9893,11 @@ describe('outside-worktree write observation', () => {
       '/repo', '/wt',
     )).toBe('/repoé/f /repo١/f /repo\u0301/f /repo𐐀/f é/repo/f ١/repo/f e\u0301/repo/f 𐐀/repo/f /wt/é')
     expect(retargetedPrompt(
-      '/tmp/@/repo/file /tmp//repo/file @/repo/file', '/repo', '/wt',
-    )).toBe('/tmp/@/repo/file /tmp//repo/file @/repo/file')
+      '/tmp/@/repo/file /tmp//repo/file', '/repo', '/wt',
+    )).toBe('/tmp/@/wt/file /tmp//repo/file')
+    const escapedPrompt = '—/repo/f @/repo/f ' + '\\' + '/repo/f'
+    const escapedExpected = '—/wt/f @/wt/f ' + '\\' + '/wt/f'
+    expect(retargetedPrompt(escapedPrompt, '/repo', '/wt')).toBe(escapedExpected)
   })
 
   test('case-insensitive aliases use the documented partial length-changing fold', () => {
