@@ -794,7 +794,7 @@ abandon, stop and sweep takes `cli.ts:withCleanupLock` (`orch-cleanup.lock`).
 Creation protects a new tree through provisioning and attribution; landing
 protects the trunk decision and ref update; cleanup protects ownership checks
 and removal. **One lock per purpose.** Creation, landing and cleanup are three
-purposes. Their sharing was the cause of DEV-316, closed in chunk 3.
+purposes. Their sharing was the cause of DEV-316, closed in chunk 3 (`5cb76a2`).
 
 The invariants are:
 
@@ -844,16 +844,16 @@ The invariants are:
 
 | gap | invariant violated | code path (file:function) | what chunk 3 changes |
 |---|---|---|---|
-| DEV-314 | only the main-checkout binary migrates | `database-location.ts:resolveDatabase`; `db.ts:applySchema`, `rebuildTable` | closed in chunk 3: location is `ORCH_DB`; schema writes stay with the main-checkout binary. |
-| DEV-316 | one lock per purpose; FIFO waiters | `worktree.ts:withWorktreeCreateLock`, `withProjectLock`; `cli.ts:withCleanupLock` | closed in chunk 3: `orch-create.lock`, `orch-landing.lock`, `orch-cleanup.lock`; waiters served in arrival order. |
-| DEV-318 | a chain resumes in its own stale checkout | `cli.ts:continueRun`, `detach`; `run.ts:preflight`, `run`; `worktree.ts:assertCallerAncestry` | closed in chunk 3: resume and recorded-tree `--base`/`--cwd` skip caller-at-trunk; resume takes the create lock only. |
-| DEV-224 review 142/143: replacement race | reclaim only the classified acquisition | `worktree.ts:reclaimStaleProjectLock` | closed in chunk 3: incarnation id fenced after rename. |
-| DEV-224 review 142: locale-dependent birth time | a live holder is never classified stale by observer locale | `worktree.ts:processStartTime`, `staleProjectLockHolder` | closed in chunk 3: `LC_ALL=C` birth string; legacy null startTime is liveness-only. |
-| DEV-224 review 143: malformed process output | indeterminate liveness cannot prove staleness | `worktree.ts:processStartTime`, `staleProjectLockHolder` | closed in chunk 3: strict parse; malformed output is unknown, never stale. |
-| DEV-224 review 142/143: staged guard stub | guard bytes and mode equal HEAD before fast-forward | `landing.ts:sharedGuardResidue`, `restoreSharedGuard`, `land` | closed in chunk 3: compare and restore from HEAD, then verify before the ref update. |
-| DEV-224 review 143: inherited Git environment | guard repair addresses the source repository's objects | `landing.ts:inspectionGit`, `restoreSharedGuard` | closed in chunk 3: hermetic `scrubbedGitEnv` for inspection and repair. |
-| failed landing residue | a failed landing leaves the branch worktree as it found it | `landing.ts:rebaseAndGate` | closed in chunk 3: restore tip and index on rebase or gate failure. |
-| `orch land --status` hang | status answers without a lock and without scanning refs | `landing.ts:landingStatus` | closed in chunk 3: lock-state only; coverage and git-lock scans are separate. |
+| DEV-314 | only the main-checkout binary migrates | `database-location.ts:resolveDatabase`; `db.ts:applySchema`, `rebuildTable` | closed in chunk 3 (`5cb76a2`): location is `ORCH_DB`; schema writes stay with the main-checkout binary. |
+| DEV-316 | one lock per purpose; FIFO waiters | `worktree.ts:withWorktreeCreateLock`, `withProjectLock`; `cli.ts:withCleanupLock` | closed in chunk 3 (`5cb76a2`): `orch-create.lock`, `orch-landing.lock`, `orch-cleanup.lock`; waiters served in arrival order. |
+| DEV-318 | a chain resumes in its own stale checkout | `cli.ts:continueRun`, `detach`; `run.ts:preflight`, `run`; `worktree.ts:assertCallerAncestry` | closed in chunk 3 (`5cb76a2`): resume and recorded-tree `--base`/`--cwd` skip caller-at-trunk; resume takes the create lock only. |
+| DEV-224 review 142/143: replacement race | reclaim only the classified acquisition | `worktree.ts:reclaimStaleProjectLock` | closed in chunk 3 (`5cb76a2`): incarnation id fenced after rename. |
+| DEV-224 review 142: locale-dependent birth time | a live holder is never classified stale by observer locale | `worktree.ts:processStartTime`, `staleProjectLockHolder` | closed in chunk 3 (`5cb76a2`): `LC_ALL=C` birth string; legacy null startTime is liveness-only. |
+| DEV-224 review 143: malformed process output | indeterminate liveness cannot prove staleness | `worktree.ts:processStartTime`, `staleProjectLockHolder` | closed in chunk 3 (`5cb76a2`): strict parse; malformed output is unknown, never stale. |
+| DEV-224 review 142/143: staged guard stub | guard bytes and mode equal HEAD before fast-forward | `landing.ts:sharedGuardResidue`, `restoreSharedGuard`, `land` | closed in chunk 3 (`5cb76a2`): compare and restore from HEAD, then verify before the ref update. |
+| DEV-224 review 143: inherited Git environment | guard repair addresses the source repository's objects | `landing.ts:inspectionGit`, `restoreSharedGuard` | closed in chunk 3 (`5cb76a2`): hermetic `scrubbedGitEnv` for inspection and repair. |
+| failed landing residue | a failed landing leaves the branch worktree as it found it | `landing.ts:rebaseAndGate` | closed in chunk 3 (`5cb76a2`): restore tip and index on rebase or gate failure. |
+| `orch land --status` hang | status answers without a lock and without scanning refs | `landing.ts:landingStatus` | closed in chunk 3 (`5cb76a2`): lock-state only; coverage and git-lock scans are separate. |
 
 Chunk 3 landed the candidates from DEV-224-orch-2185 (reviews 142/143), taking the helper names and the conservative null-startTime fallback, and rejecting the classify-before-rename reclaim, index-based guard diff/restore, and locale-dependent `ps` parse.
 
