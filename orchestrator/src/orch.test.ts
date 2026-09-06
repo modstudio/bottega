@@ -1651,7 +1651,7 @@ describe('review discipline', () => {
     expect(calibrationLine(c)).toContain('no reliable precision yet')
   })
 
-  test('triage records only a severity disagreement', () => {
+  test('triage records explicit severity agreement and leaves omission unassessed', () => {
     const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'severity' })
     const reviewId = recordReview(runId, reviewReply(2))
     db().query("UPDATE review_finding SET severity='high' WHERE review_id=? AND ordinal=2")
@@ -1662,7 +1662,7 @@ describe('review discipline', () => {
       'SELECT ordinal, severity, triaged_severity FROM review_finding WHERE review_id=? ORDER BY ordinal',
     ).all(reviewId)).toEqual([
       { ordinal: 1, severity: 'major', triaged_severity: 'critical' },
-      { ordinal: 2, severity: 'high', triaged_severity: null },
+      { ordinal: 2, severity: 'high', triaged_severity: 'high' },
     ])
     expect(() => triageFinding(reviewId, 1, 'accepted', undefined, 'banana'))
       .toThrow('critical | high | medium | low')
@@ -1696,8 +1696,8 @@ describe('review discipline', () => {
       ungraded: 1,
     })
     expect(c.severity).toEqual({
-      counts: { agreed: 0, changed: 0, not_comparable: MIN_REVIEW_TRIAGED + 1 },
-      shares: { agreed: 0, changed: 0, not_comparable: 1 },
+      counts: { agreed: 0, changed: 0, not_comparable: 0, not_assessed: MIN_REVIEW_TRIAGED + 1 },
+      shares: { agreed: 0, changed: 0, not_comparable: 0, not_assessed: 1 },
     })
     const cells = state(null).reviewCalibration as typeof c[]
     expect(cells.find((cell) => cell.lens === 'graded' && cell.model === 'm'))
@@ -1724,13 +1724,13 @@ describe('review discipline', () => {
     const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'severity-cell' })
     const reviewId = recordReview(runId, reviewReply(3, 'high'))
     db().query("UPDATE review_finding SET severity='major' WHERE review_id=? AND ordinal=3").run(reviewId)
-    triageFinding(reviewId, 1, 'accepted')
+    triageFinding(reviewId, 1, 'accepted', undefined, 'high')
     triageFinding(reviewId, 2, 'accepted', undefined, 'critical')
     triageFinding(reviewId, 3, 'accepted', undefined, 'low')
     completeReview(reviewId)
     expect(reviewCalibration('severity-cell', 'codex', 'm').severity).toEqual({
-      counts: { agreed: 1, changed: 1, not_comparable: 1 },
-      shares: { agreed: 1 / 3, changed: 1 / 3, not_comparable: 1 / 3 },
+      counts: { agreed: 1, changed: 1, not_comparable: 1, not_assessed: 0 },
+      shares: { agreed: 1 / 3, changed: 1 / 3, not_comparable: 1 / 3, not_assessed: 0 },
     })
   })
 
@@ -6313,15 +6313,15 @@ describe('detached run collection', () => {
     }
   })
 
-  test('review triage --severity stores a disagreement and omission stores null', () => {
+  test('review triage --severity stores explicit agreement and omission stores null', () => {
     const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'triage-cli' })
-    const reviewId = recordReview(runId, reviewReply(2))
-    expect(orch('review', 'triage', String(reviewId), '1', 'accepted', '--severity', 'critical').code).toBe(0)
+    const reviewId = recordReview(runId, reviewReply(2, 'high'))
+    expect(orch('review', 'triage', String(reviewId), '1', 'accepted', '--severity', 'high').code).toBe(0)
     expect(orch('review', 'triage', String(reviewId), '2', 'accepted').code).toBe(0)
     expect(db().query(
       'SELECT ordinal, triaged_severity FROM review_finding WHERE review_id=? ORDER BY ordinal',
     ).all(reviewId)).toEqual([
-      { ordinal: 1, triaged_severity: 'critical' },
+      { ordinal: 1, triaged_severity: 'high' },
       { ordinal: 2, triaged_severity: null },
     ])
     const invalid = orch('review', 'triage', String(reviewId), '2', 'accepted', '--severity', 'banana')

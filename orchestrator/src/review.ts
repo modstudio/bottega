@@ -189,7 +189,7 @@ export function triageFinding(
     `UPDATE review_finding SET disposition=?, rejection_category=?, triaged_severity=?, triaged_at=?
        WHERE review_id=? AND ordinal=?`,
   ).run(disposition, disposition === 'rejected' ? rejectionCategory!.trim() : null,
-    severity && severity !== finding.severity ? severity : null,
+    severity ?? null,
     nowIso(), reviewId, ordinal)
   if (result.changes !== 1) throw new Error(`review ${reviewId} has no finding ${ordinal}`)
 }
@@ -224,8 +224,8 @@ export type GradeDistribution<T extends string> = {
 }
 
 export type SeverityAgreement = {
-  counts: { agreed: number; changed: number; not_comparable: number }
-  shares: { agreed: number | null; changed: number | null; not_comparable: number | null }
+  counts: { agreed: number; changed: number; not_comparable: number; not_assessed: number }
+  shares: { agreed: number | null; changed: number | null; not_comparable: number | null; not_assessed: number | null }
 }
 
 function gradeDistribution<T extends string>(
@@ -248,10 +248,11 @@ function gradeDistribution<T extends string>(
 function severityAgreement(
   rows: { severity: string; triaged_severity: string | null }[],
 ): SeverityAgreement {
-  const counts = { agreed: 0, changed: 0, not_comparable: 0 }
+  const counts = { agreed: 0, changed: 0, not_comparable: 0, not_assessed: 0 }
   for (const row of rows) {
-    if (!REVIEW_SEVERITY.includes(row.severity as ReviewSeverity)) counts.not_comparable++
-    else if (row.triaged_severity === null) counts.agreed++
+    if (row.triaged_severity === null) counts.not_assessed++
+    else if (!REVIEW_SEVERITY.includes(row.severity as ReviewSeverity)) counts.not_comparable++
+    else if (row.triaged_severity === row.severity) counts.agreed++
     else counts.changed++
   }
   const total = rows.length
@@ -261,6 +262,7 @@ function severityAgreement(
       agreed: total ? counts.agreed / total : null,
       changed: total ? counts.changed / total : null,
       not_comparable: total ? counts.not_comparable / total : null,
+      not_assessed: total ? counts.not_assessed / total : null,
     },
   }
 }
@@ -338,7 +340,7 @@ export function calibrationLine(calibration: ReviewCalibration): string {
     const counts = Object.entries(distribution.counts).map(([value, count]) => `${value} ${count}`).join(', ')
     return `${name}: ${counts}; ungraded ${distribution.ungraded}`
   }
-  const severity = ` Severity agreement: agreed ${calibration.severity.counts.agreed}, changed ${calibration.severity.counts.changed}, not-comparable ${calibration.severity.counts.not_comparable}.`
+  const severity = ` Severity agreement: agreed ${calibration.severity.counts.agreed}, changed ${calibration.severity.counts.changed}, not-comparable ${calibration.severity.counts.not_comparable}, not-assessed ${calibration.severity.counts.not_assessed}.`
   const grades = ` Review grades: ${gradeSummary('reproduced')}; ${gradeSummary('coverage')}; ${gradeSummary('limits')}; ${gradeSummary('overlap')}.${severity}`
   if (calibration.precision === null) {
     return `Reviewer calibration: no reliable precision yet for lens ${calibration.lens} on agent ${calibration.agent}.${grades}`

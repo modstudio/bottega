@@ -734,7 +734,7 @@ function usage(): never {
   orch review record <run-id>... record completed lens outputs before triage
   orch review triage <review-id> <finding> <accepted|modified|rejected|skipped>
       --category <name>         required rejection category for rejected findings
-      --severity <${REVIEW_SEVERITY.join('|')}> architect severity when it differs from the lens
+      --severity <${REVIEW_SEVERITY.join('|')}> architect-assessed severity, including explicit agreement
   orch review complete <review-id> mark a fully triaged review complete
   orch review calibration <lens> <agent> <model> [--json]  (--json: one JSON document)
   orch pending                  runs YOU made that are still unscored (exit 1 if any)
@@ -1778,7 +1778,7 @@ switch (cmd) {
           console.log(`  ${name}: ${cells.join(', ')}, ungraded=${distribution.ungraded}`)
         }
         const severity = calibration.severity
-        console.log(`  severity: agreed=${severity.counts.agreed}, changed=${severity.counts.changed}, not-comparable=${severity.counts.not_comparable}`)
+        console.log(`  severity: agreed=${severity.counts.agreed}, changed=${severity.counts.changed}, not-comparable=${severity.counts.not_comparable}, not-assessed=${severity.counts.not_assessed}`)
       }
       break
     }
