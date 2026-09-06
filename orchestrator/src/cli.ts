@@ -3604,8 +3604,8 @@ switch (cmd) {
       eligibility: 'current static capability, metered, prompt-size and context rules',
       cooldowns: 'reconstructed from the full terminal operational stream, including quota/auth failures and successful probes; these events do not become scoring evidence',
       reachability: 'present-day reachability ignored',
-      evidence: 'default distributions omit voided/evidence-excluded and NOT_EVIDENCE runs; the side-by-side sensitivity adds only rows voided by orch score --void',
-      causalAvailability: 'scored evidence enters at scored_at; unjudged failures enter at termination; dispatch sees only earlier available evidence',
+      evidence: 'every non-probe root dispatch is a decision; default distributions omit voided/evidence-excluded rows, while NOT_EVIDENCE runs remain decisions but never enter policy evidence',
+      causalAvailability: 'scored evidence enters at scored_at; eligible unjudged failures enter at the terminating chain member time; dispatch sees only earlier available evidence',
       ties: 'exact Thompson ties use unmetered then median latency',
       betaMapping: 'successes += (w + 0.5) / 1.5; failures += 1 - successes',
       exploration: 'choice differs from deterministic expected leader',
@@ -3624,7 +3624,7 @@ switch (cmd) {
       return { current: moved('currentSelections'), thompson: moved('thompsonSelections') }
     }
     const printTrajectory = (result: RoutingBacktest, voided: RoutingBacktest, indent = '') => {
-      console.log(`${indent}seed ${result.seed}: causal exclusions ${result.causalExcludedJudgements}`)
+      console.log(`${indent}seed ${result.seed}: causal exclusions ${result.causalExcludedJudgements}; unscored decisions ${result.unscoredDecisions}`)
       const jobs = [...new Set([...result.jobs, ...voided.jobs].map((row) => row.job))]
       for (const job of jobs) {
         const row = result.jobs.find((candidate) => candidate.job === job)
@@ -3647,6 +3647,7 @@ switch (cmd) {
       const outputAssumptions = {
         ...assumptions,
         causalExclusions: `${result.causalExcludedJudgements} earlier judgement/dispatch pairs excluded`,
+        unscoredDecisions: `${result.unscoredDecisions} dispatches have no score and contribute no quality evidence`,
         cooldownSensitivity: `disabling cooldown redistributes ${cooldownMoves.current} current-policy and ${cooldownMoves.thompson} Thompson selections`,
       }
       if (has('json')) {
@@ -3666,13 +3667,15 @@ switch (cmd) {
     const voidedIncluded = routingBacktestEnsemble(jobFilter, { includeVoided: true })
     const cooldownDisabled = routingBacktestEnsemble(jobFilter, { cooldowns: false })
     const cooldownMoves = movedSelections(
-      { seed: 0, causalExcludedJudgements: 0, jobs: result.jobs },
-      { seed: 0, causalExcludedJudgements: 0, jobs: cooldownDisabled.jobs },
+      { seed: 0, causalExcludedJudgements: 0, unscoredDecisions: 0, jobs: result.jobs },
+      { seed: 0, causalExcludedJudgements: 0, unscoredDecisions: 0, jobs: cooldownDisabled.jobs },
     )
     const causalExcludedJudgements = result.trajectories[0]?.causalExcludedJudgements ?? 0
+    const unscoredDecisions = result.trajectories[0]?.unscoredDecisions ?? 0
     const outputAssumptions = {
       ...assumptions,
       causalExclusions: `${causalExcludedJudgements} earlier judgement/dispatch pairs excluded per trajectory`,
+      unscoredDecisions: `${unscoredDecisions} dispatches have no score and contribute no quality evidence`,
       cooldownSensitivity: `disabling cooldown redistributes ${cooldownMoves.current} current-policy and ${cooldownMoves.thompson} Thompson selections across all seeds`,
     }
     if (has('json')) {

@@ -1,5 +1,5 @@
 import { AGENTS } from './agents.ts'
-import { db, weigh } from './db.ts'
+import { chainTerminationAt, db, weigh } from './db.ts'
 import { COOLS_DOWN, NOT_EVIDENCE } from './failure.ts'
 import { JOBS } from './jobs.ts'
 import {
@@ -15,7 +15,7 @@ type Event = {
   promptBytes: number; startedAt: string; latencyMs: number | null
   status: string; failureKind: string | null; weight: number; none: boolean; scored: boolean
   /** When this result first existed for a live routing decision to observe. */
-  evidenceAt: string
+  evidenceAt: string | null
 }
 
 type OperationalEvent = {
@@ -44,8 +44,9 @@ export type BacktestJob = {
 
 export type RoutingBacktest = {
   seed: number
-  /** Earlier-id judgement/dispatch pairs excluded because the judgement did not exist yet. */
+  /** Earlier judgement/dispatch pairs excluded because the judgement did not exist yet. */
   causalExcludedJudgements: number
+  unscoredDecisions: number
   jobs: BacktestJob[]
 }
 
@@ -163,29 +164,30 @@ function events(includeVoided = false): Event[] {
     fidelity: Parameters<typeof weigh>[2]
     scoredAt: string | null
   }
-  const excluded = NOT_EVIDENCE.map((kind) => `'${kind}'`).join(',')
-  const rows = db().query(
+  const database = db()
+  const rows = database.query(
     `SELECT r.id, r.agent, r.job, r.stack, r.model, r.prompt_bytes AS promptBytes,
             r.started_at AS startedAt, r.latency_ms AS latencyMs, r.status,
             r.failure_kind AS failureKind,
             s.delivery, s.quality, s.fidelity, s.scored_at AS scoredAt
        FROM run r LEFT JOIN score s ON s.run_id=r.id
       WHERE r.parent_run_id IS NULL AND r.probe=0
+        AND r.agent <> '(pending)'
         ${includeVoided
     ? "AND (r.evidence_excluded IS NULL OR r.evidence_excluded='voided with orch score --void')"
     : 'AND r.evidence_excluded IS NULL'}
-        AND r.status IN ('ok','failed','stale')
-        AND COALESCE(r.failure_kind,'') NOT IN (${excluded})
-        AND (s.delivery IS NOT NULL OR r.status IN ('failed','stale'))
       ORDER BY r.job, r.started_at, r.id`,
   ).all() as Row[]
   return rows.map((row) => {
     // Scored evidence did not exist until the person recorded the judgement.
-    // An unjudged failure existed when its process terminated. NOT_EVIDENCE
-    // rows are excluded by the query, and every remaining failure has latency.
-    const evidenceAt = row.scoredAt ?? new Date(
-      Date.parse(row.startedAt) + row.latencyMs!,
-    ).toISOString()
+    // An eligible unjudged failure existed when its chain terminated. Every
+    // dispatch remains a decision even when it never becomes evidence.
+    const evidenceAt = row.scoredAt ?? (
+      ['failed', 'stale'].includes(row.status) &&
+      !NOT_EVIDENCE.includes(row.failureKind as typeof NOT_EVIDENCE[number])
+        ? chainTerminationAt(database, row.id)
+        : null
+    )
     return {
       id: row.id, agent: row.agent, job: row.job, stack: row.stack, model: row.model,
       promptBytes: row.promptBytes, startedAt: row.startedAt, latencyMs: row.latencyMs,
@@ -197,13 +199,24 @@ function events(includeVoided = false): Event[] {
 }
 
 function operationalEvents(): OperationalEvent[] {
-  return (db().query(
-    `SELECT id, agent, status, failure_kind AS failureKind,
-            strftime('%Y-%m-%dT%H:%M:%fZ', julianday(started_at) + latency_ms / 86400000.0) AS finishedAt
+  const database = db()
+  const rows = database.query(
+    `SELECT id, agent, status, failure_kind AS failureKind, parent_run_id AS parentRunId,
+            started_at AS startedAt, latency_ms AS latencyMs
        FROM run
-      WHERE status IN ('ok','failed') AND latency_ms IS NOT NULL
-      ORDER BY finishedAt, id`,
-  ).all() as OperationalEvent[])
+      WHERE status IN ('ok','failed')
+      ORDER BY started_at, id`,
+  ).all() as Array<Omit<OperationalEvent, 'finishedAt'> & {
+    parentRunId: number | null; startedAt: string; latencyMs: number | null
+  }>
+  return rows.flatMap((row) => {
+    const finishedAt = row.parentRunId === null
+      ? chainTerminationAt(database, row.id)
+      : row.latencyMs === null ? null : new Date(Date.parse(row.startedAt) + row.latencyMs).toISOString()
+    return finishedAt ? [{
+      id: row.id, agent: row.agent, status: row.status, failureKind: row.failureKind, finishedAt,
+    }] : []
+  })
 }
 
 function replay(
@@ -211,6 +224,9 @@ function replay(
 ): RoutingBacktest {
   const jobs: BacktestJob[] = []
   let causalExcludedJudgements = 0
+  const unscoredDecisions = all.filter(
+    (event) => !event.scored && (!jobName || event.job === jobName),
+  ).length
   const names = [...new Set(all.map((e) => e.job))].filter((name) => !jobName || name === jobName)
   for (const name of names) {
     const currentRng = seeded(seed ^ 0x43555252)
@@ -226,12 +242,16 @@ function replay(
       .sort((a, b) => a.startedAt.localeCompare(b.startedAt) || a.id - b.id)
     for (const [index, event] of rows.entries()) {
       const earlier = rows.slice(0, index)
-      causalExcludedJudgements += earlier.filter((candidate) => candidate.evidenceAt >= event.startedAt).length
-      const byAvailability = (a: Event, b: Event) => a.evidenceAt.localeCompare(b.evidenceAt) || a.id - b.id
+      causalExcludedJudgements += earlier.filter(
+        (candidate) => candidate.evidenceAt !== null && candidate.evidenceAt >= event.startedAt,
+      ).length
+      const byAvailability = (a: Event, b: Event) => a.evidenceAt!.localeCompare(b.evidenceAt!) || a.id - b.id
       const currentHistory = currentObserved
-        .filter((candidate) => candidate.evidenceAt < event.startedAt).sort(byAvailability)
+        .filter((candidate) => candidate.evidenceAt !== null && candidate.evidenceAt < event.startedAt)
+        .sort(byAvailability)
       const thompsonHistory = thompsonObserved
-        .filter((candidate) => candidate.evidenceAt < event.startedAt).sort(byAvailability)
+        .filter((candidate) => candidate.evidenceAt !== null && candidate.evidenceAt < event.startedAt)
+        .sort(byAvailability)
       const current = currentChoice(event, currentHistory, operations, currentRng, true, cooldowns)
       const thompson = thompsonChoice(event, thompsonHistory, operations, thompsonRng, true, cooldowns)
       if (current.agent === thompson.agent) agreements++
@@ -241,8 +261,8 @@ function replay(
       // Logged outcomes are observable to a simulated policy only when that
       // policy chose the agent the historical dispatcher actually ran. A
       // disagreement has no counterfactual result for the road not taken.
-      if (current.agent === event.agent) currentObserved.push(event)
-      if (thompson.agent === event.agent) thompsonObserved.push(event)
+      if (event.evidenceAt !== null && current.agent === event.agent) currentObserved.push(event)
+      if (event.evidenceAt !== null && thompson.agent === event.agent) thompsonObserved.push(event)
     }
     jobs.push({
       job: name, runs: rows.length, agreements, differences: rows.length - agreements,
@@ -251,7 +271,7 @@ function replay(
       currentSelections, thompsonSelections,
     })
   }
-  return { seed, causalExcludedJudgements, jobs }
+  return { seed, causalExcludedJudgements, unscoredDecisions, jobs }
 }
 
 export function routingBacktest(

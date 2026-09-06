@@ -1549,6 +1549,32 @@ export function pidAlive(pid: number | null): boolean {
 export const PENDING_BOOTSTRAP_MS = 60_000
 
 /**
+ * When the terminal outcome of a conversation chain became observable.
+ *
+ * A root may inherit the last child's status, but it does not inherit that
+ * child's timing. Read the terminal member itself: root arithmetic can put a
+ * failure hours before or after it actually happened. Until the schema holds
+ * an explicit terminal timestamp, a member without latency has no supportable
+ * terminal time and returns null.
+ */
+export function chainTerminationAt(database: Database, memberId: number): string | null {
+  const member = database.query('SELECT id, parent_run_id FROM run WHERE id=?').get(memberId) as
+    { id: number; parent_run_id: number | null } | null
+  if (!member) return null
+  const rootId = member.parent_run_id ?? member.id
+  const terminal = database.query(
+    `SELECT started_at, latency_ms, status FROM run
+      WHERE id=? OR parent_run_id=?
+      ORDER BY turn DESC, id DESC LIMIT 1`,
+  ).get(rootId, rootId) as
+    { started_at: string; latency_ms: number | null; status: string } | null
+  if (!terminal || !['ok', 'failed', 'stale'].includes(terminal.status) || terminal.latency_ms === null) {
+    return null
+  }
+  return new Date(Date.parse(terminal.started_at) + terminal.latency_ms).toISOString()
+}
+
+/**
  * A root inherits the terminal status of the last turn of its chain.
  *
  * Counterpart of `resolveSupersededTurn` in run.ts, which is child-only and

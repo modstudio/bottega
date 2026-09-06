@@ -5873,6 +5873,52 @@ describe('routing backtest statistics', () => {
     expect(routingBacktest('summarize', 123).causalExcludedJudgements).toBe(1)
   })
 
+  test('replays a successful unscored dispatch as a decision without quality evidence', () => {
+    const scored = addRun({
+      agent: 'codex', job: 'fix', startedAt: '2026-01-01T00:00:00.000Z',
+    })
+    addRun({ agent: 'grok', job: 'fix', startedAt: '2026-01-02T00:00:00.000Z' })
+    db().query(
+      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?,'full','right','2026-01-01T01:00:00.000Z','test')`,
+    ).run(scored)
+
+    const result = routingBacktest('fix', 1)
+    expect(result.jobs[0]!.runs).toBe(2)
+    expect(result.unscoredDecisions).toBe(1)
+
+    const cli = Bun.spawnSync([
+      process.execPath, new URL('cli.ts', import.meta.url).pathname,
+      'routing-backtest', '--job', 'fix', '--seed', '1',
+    ], { env: { ...process.env, ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe' })
+    expect(cli.exitCode).toBe(0)
+    expect(cli.stdout.toString()).toContain(
+      'unscoredDecisions: 1 dispatches have no score and contribute no quality evidence',
+    )
+  })
+
+  test("uses the terminating child's time when a root inherits stale status", () => {
+    const root = addRun({
+      agent: 'codex', job: 'fix', status: 'stale', latency: 1000,
+      startedAt: '2026-01-01T00:00:00.000Z',
+    })
+    addRun({
+      agent: 'codex', job: 'fix', status: 'stale', parent: root, turn: 2, latency: 60 * 60_000,
+      startedAt: '2026-01-01T10:00:00.000Z',
+    })
+    addRun({ agent: 'grok', job: 'fix', startedAt: '2026-01-01T12:00:00.000Z' })
+
+    const shortRootLatency = routingBacktest('fix', 1)
+    db().query('UPDATE run SET latency_ms=NULL WHERE id=?').run(root)
+    const nullRootLatency = routingBacktest('fix', 1)
+    db().query('UPDATE run SET latency_ms=? WHERE id=?').run(24 * 60 * 60_000, root)
+    const longRootLatency = routingBacktest('fix', 1)
+
+    expect(nullRootLatency).toEqual(shortRootLatency)
+    expect(longRootLatency).toEqual(shortRootLatency)
+    expect(shortRootLatency.causalExcludedJudgements).toBe(0)
+  })
+
   test('dispatch chronology is invariant when run ids and started_at disagree', () => {
     const insertScore = db().query(
       `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
@@ -5913,12 +5959,12 @@ describe('routing backtest statistics', () => {
     const cooled = routingBacktest('fix', 2)
     const disabled = routingBacktest('fix', 2, { cooldowns: false })
     expect(cooled.jobs[0]!.currentSelections).not.toEqual(disabled.jobs[0]!.currentSelections)
-    expect(disabled.jobs[0]!.currentSelections).toEqual({ codex: 1 })
+    expect(disabled.jobs[0]!.currentSelections).toEqual({ codex: 2 })
 
     addRun({
       agent: 'codex', job: 'fix', probe: 1, startedAt: '2026-01-01T00:05:00.000Z',
     })
-    expect(routingBacktest('fix', 2).jobs[0]!.currentSelections).toEqual({ codex: 1 })
+    expect(routingBacktest('fix', 2).jobs[0]!.currentSelections).toEqual({ codex: 2 })
   })
 
   test('reports voided-row selection sensitivity side by side', () => {
