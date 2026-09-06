@@ -33,6 +33,9 @@ describe('workflow definition validation', () => {
     ['unknown job',d=>{d.steps[0]!.job='imaginary'},'names unknown job'],
     ['bad autonomy',d=>{(d.steps[0] as {autonomy:string}).autonomy='sometimes'},'invalid autonomy'],
     ['empty title',d=>{d.title=''},'title must be non-empty'],
+    ['non-string body',d=>{(d.steps[0] as any).body=42},'body must be a string'],
+    ['non-array mode steps',d=>{(d.modes[0] as any).steps='x'},'steps must be a string array'],
+    ['non-boolean required',d=>{(d.arguments[0] as any).required='yes'},'required must be a boolean'],
   ]
   for (const [name,mutate,message] of cases) test(name,()=>{const d=valid();mutate(d);expect(validateWorkflowDefinition(d).join('\n')).toContain(message)})
   test('reports every violation',()=>{const d=valid();d.title='';d.steps[0]!.job='imaginary';const errors=validateWorkflowDefinition(d);expect(errors).toContain('title must be non-empty');expect(errors.join('\n')).toContain('unknown job')})
@@ -54,7 +57,10 @@ describe('workflow versions and composition', () => {
   })
   test('fork copies a selected version into a new draft',()=>{const d=database();setWorkflow('forked',valid(),'set','a',d);promoteWorkflow('forked',1,'go','a',d);const fork=forkWorkflow('forked',undefined,'revise','a',d);expect(fork.n).toBe(2);expect(fork.definition).toEqual(valid())})
   test('compose is lean and reports mode and argument needs',()=>{
-    const d=database();setWorkflow('compose',valid(),'set','a',d);promoteWorkflow('compose',1,'go','a',d)
+    const d=database();setWorkflow('compose',valid(),'set','a',d)
+    expect(()=>composeWorkflow('compose',undefined,{key:'DEV-257'},d)).toThrow('workflow "compose" has no production version; promote one')
+    expect(()=>getWorkflowStep('compose','work',{key:'DEV-257'},d)).toThrow('workflow "compose" has no production version; promote one')
+    promoteWorkflow('compose',1,'go','a',d)
     const composed=composeWorkflow('compose',undefined,{key:'DEV-257'},d);expect(composed.mode?.slug).toBe('default');expect(JSON.stringify(composed)).not.toContain('Work on')
     expect(composeWorkflow('compose',undefined,{},d).needs.arguments).toEqual(['key'])
     const noDefault=valid();delete noDefault.modes[0]!.default;noDefault.modes[0]!.entry='Which path?';setWorkflow('choose',noDefault,'set','a',d);promoteWorkflow('choose',1,'go','a',d)
@@ -64,7 +70,7 @@ describe('workflow versions and composition', () => {
 })
 
 describe('workflow projection and seeds', () => {
-  test('seeds are idempotent, valid, and ship composes in order',()=>{const d=database();applySchema(d);expect(listWorkflows(d).filter((w)=>['ship','filed-issue'].includes(w.slug)).length).toBe(2);for(const slug of ['ship','filed-issue'])expect(validateWorkflowDefinition(showWorkflow(slug,1,d).definition)).toEqual([]);expect(composeWorkflow('ship','default',{key:'DEV-257',branch:'x',worktree:'/tmp/x'},d).steps.map((s)=>s.slug)).toEqual(['rebase','lens','score','record','triage','complete','fix','land','close'])})
+  test('seeds are idempotent, valid, and ship composes in order',()=>{const d=database();applySchema(d);expect(listWorkflows(d).filter((w)=>['ship','filed-issue'].includes(w.slug)).length).toBe(2);for(const slug of ['ship','filed-issue'])expect(validateWorkflowDefinition(showWorkflow(slug,1,d).definition)).toEqual([]);expect(workflowVersions('ship',d)[0]!.events.map((event:any)=>event.event)).toEqual(['set']);expect(composeWorkflow('ship','default',{key:'DEV-257',branch:'x',worktree:'/tmp/x'},d).steps.map((s)=>s.slug)).toEqual(['rebase','lens','score','record','triage','complete','fix','land','close'])})
   test('export is byte-identical and import writes drafts',()=>{const d=database();const dir=mkdtempSync(join(tmpdir(),'workflow-export-'));temps.push(dir);exportWorkflows(dir,d);const snapshot=(root:string)=>readdirSync(root,{recursive:true}).filter((p)=>statSync(join(root,String(p))).isFile()).sort().map((p)=>[p,readFileSync(join(root,String(p)),'utf8')]);const once=snapshot(dir);exportWorkflows(dir,d);expect(snapshot(dir)).toEqual(once);const target=database();importWorkflows(dir,'round trip','a',target);expect(showWorkflow('ship',2,target).status).toBe('draft')})
 })
 

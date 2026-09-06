@@ -13,7 +13,12 @@ export type WorkflowStep = {
 export type WorkflowDefinition = {
   title: string; description: string; arguments: WorkflowArgument[]
   modes: WorkflowMode[]
-  // Steps deliberately live inside one workflow; reusable cross-workflow steps are not modelled.
+  // Steps live inside one workflow because a step's body, job, and autonomy
+  // only make sense in that workflow's arguments and modes. Sharing a step
+  // across workflows would let a change in one silently rewrite another,
+  // which is the opposite of versioned definitions. Cross-workflow reuse is
+  // composing jobs, not steps — so the definition is one JSON blob, not a
+  // step table.
   steps: WorkflowStep[]
 }
 
@@ -25,13 +30,40 @@ const text = (value: unknown) => typeof value === 'string' ? value : ''
 export function validateWorkflowDefinition(value: unknown): string[] {
   const errors: string[] = []
   if (!object(value)) return ['definition must be an object']
-  if (!text(value.title).trim()) errors.push('title must be non-empty')
+  if (typeof value.title !== 'string') errors.push('title must be a string')
+  else if (!value.title.trim()) errors.push('title must be non-empty')
+  if (typeof value.description !== 'string') errors.push('description must be a string')
   const args = Array.isArray(value.arguments) ? value.arguments : []
   const modes = Array.isArray(value.modes) ? value.modes : []
   const steps = Array.isArray(value.steps) ? value.steps : []
   if (!Array.isArray(value.arguments)) errors.push('arguments must be an array')
   if (!Array.isArray(value.modes)) errors.push('modes must be an array')
   if (!Array.isArray(value.steps)) errors.push('steps must be an array')
+
+  for (const [index, argument] of args.entries()) {
+    if (!object(argument)) { errors.push(`argument ${index + 1} must be an object`); continue }
+    if (typeof argument.name !== 'string') errors.push(`argument ${index + 1} name must be a string`)
+    if (typeof argument.required !== 'boolean') errors.push(`argument "${text(argument.name)}" required must be a boolean`)
+    if (typeof argument.description !== 'string') errors.push(`argument "${text(argument.name)}" description must be a string`)
+  }
+  for (const [index, mode] of modes.entries()) {
+    if (!object(mode)) { errors.push(`mode ${index + 1} must be an object`); continue }
+    if (typeof mode.slug !== 'string') errors.push(`mode ${index + 1} slug must be a string`)
+    if (typeof mode.title !== 'string') errors.push(`mode "${text(mode.slug)}" title must be a string`)
+    if (mode.default !== undefined && typeof mode.default !== 'boolean') errors.push(`mode "${text(mode.slug)}" default must be a boolean`)
+    if (mode.entry !== undefined && typeof mode.entry !== 'string') errors.push(`mode "${text(mode.slug)}" entry must be a string`)
+    if (!Array.isArray(mode.steps) || mode.steps.some((step) => typeof step !== 'string')) errors.push(`mode "${text(mode.slug)}" steps must be a string array`)
+  }
+  for (const [index, step] of steps.entries()) {
+    if (!object(step)) { errors.push(`step ${index + 1} must be an object`); continue }
+    const slug = text(step.slug)
+    if (typeof step.slug !== 'string') errors.push(`step ${index + 1} slug must be a string`)
+    if (typeof step.title !== 'string') errors.push(`step "${slug}" title must be a string`)
+    if (step.job !== null && typeof step.job !== 'string') errors.push(`step "${slug}" job must be a string or null`)
+    if (typeof step.autonomy !== 'string') errors.push(`step "${slug}" autonomy must be a string`)
+    if (step.gate !== null && typeof step.gate !== 'string') errors.push(`step "${slug}" gate must be a string or null`)
+    if (typeof step.body !== 'string') errors.push(`step "${slug}" body must be a string`)
+  }
 
   const checkSlugs = (items: unknown[], kind: string) => {
     const seen = new Set<string>()
@@ -104,7 +136,11 @@ function required(value: string | undefined, name: string): string {
   if (!value?.trim()) throw new Error(`${name} is required`)
   return value.trim()
 }
-function authorName(author?: string): string { return author?.trim() || sessionId() || 'unknown' }
+// Explicit --author, else this session id, else 'unknown'. Same fallback as
+// docs.writeIdentity; the value is an actor id, not a display name.
+function writeAuthor(author?: string): string {
+  return author?.trim() || sessionId() || 'unknown'
+}
 
 type VersionRow = { id: number; workflow_id: number; slug: string; n: number; status: 'draft'|'production'|'retired'; definition: string; author: string; reason: string; created_at: string; promoted_at: string|null; retired_at: string|null }
 function workflowId(slug: string, d: Database = db()): number {
@@ -113,6 +149,8 @@ function workflowId(slug: string, d: Database = db()): number {
   return row.id
 }
 function versionRow(slug: string, n?: number, d: Database = db()): VersionRow {
+  // Unqualified show prefers production, then the newest draft, then the
+  // newest retired. A newer draft must not shadow live production.
   const where = n === undefined
     ? `ORDER BY CASE status WHEN 'production' THEN 0 WHEN 'draft' THEN 1 ELSE 2 END, n DESC LIMIT 1`
     : `AND v.n=?`
@@ -121,7 +159,16 @@ function versionRow(slug: string, n?: number, d: Database = db()): VersionRow {
   if (!row) throw new Error(n === undefined ? `unknown workflow "${slug}"` : `workflow "${slug}" has no version ${n}`)
   return row
 }
-const decoded = (row: VersionRow) => ({ ...row, definition: JSON.parse(row.definition) as WorkflowDefinition })
+const parseVersion = (row: VersionRow) =>
+  ({ ...row, definition: JSON.parse(row.definition) as WorkflowDefinition })
+
+function productionVersionRow(slug: string, d: Database = db()): VersionRow {
+  const row = d.query(`SELECT v.*, w.slug FROM workflow_version v
+    JOIN workflow w ON w.id=v.workflow_id
+    WHERE w.slug=? AND v.status='production'`).get(slug) as VersionRow | null
+  if (!row) throw new Error(`workflow "${slug}" has no production version; promote one`)
+  return row
+}
 
 export function listWorkflows(d: Database = db()) {
   const rows = d.query(`SELECT w.id,w.slug,
@@ -133,49 +180,58 @@ export function listWorkflows(d: Database = db()) {
     return { slug: row.slug, title: (JSON.parse(selected.definition) as WorkflowDefinition).title, production_n: row.production_n, draft_n: row.draft_n }
   })
 }
-export function showWorkflow(slug: string, n?: number, d: Database = db()) { return decoded(versionRow(slug, n, d)) }
+export function showWorkflow(slug: string, n?: number, d: Database = db()) { return parseVersion(versionRow(slug, n, d)) }
 
-function event(d: Database, workflow: number, n: number, kind: 'create'|'set'|'fork'|'import'|'promote'|'retire', author: string, reason: string, at: string) {
+function recordEvent(d: Database, workflow: number, n: number, kind: 'set'|'fork'|'import'|'promote'|'retire', author: string, reason: string, at: string) {
   d.query(`INSERT INTO workflow_event (workflow_id,version_n,event,author,reason,session_id,at) VALUES (?,?,?,?,?,?,?)`)
     .run(workflow, n, kind, author, reason, sessionId(), at)
 }
 function writeDraft(slug: string, definition: unknown, reasonValue: string | undefined, authorValue?: string, kind: 'set'|'fork'|'import' = 'set', d: Database = db()) {
   requireSlug(slug); requireValid(definition)
-  const reason = required(reasonValue, 'reason'); const author = authorName(authorValue); const at = nowIso()
+  const reason = required(reasonValue, 'reason'); const author = writeAuthor(authorValue); const at = nowIso()
   return d.transaction(() => {
     let row = d.query('SELECT id FROM workflow WHERE slug=?').get(slug) as {id:number}|null
-    let created = false
-    if (!row) { row = d.query('INSERT INTO workflow (slug,created_at) VALUES (?,?) RETURNING id').get(slug,at) as {id:number}; created = true }
+    if (!row) row = d.query('INSERT INTO workflow (slug,created_at) VALUES (?,?) RETURNING id').get(slug,at) as {id:number}
     const max = d.query('SELECT COALESCE(MAX(n),0) n FROM workflow_version WHERE workflow_id=?').get(row.id) as {n:number}
     const n = max.n + 1
     d.query(`INSERT INTO workflow_version (workflow_id,n,status,definition,author,reason,created_at) VALUES (?,?,'draft',?,?,?,?)`)
       .run(row.id,n,JSON.stringify(definition),author,reason,at)
-    event(d,row.id,n,created ? 'create' : kind,author,reason,at)
+    // A new identity's first event is the operation that produced its version.
+    recordEvent(d,row.id,n,kind,author,reason,at)
     return showWorkflow(slug,n,d)
   })()
 }
 export const setWorkflow = (slug:string, definition:unknown, reason:string|undefined, author?:string, d:Database=db()) => writeDraft(slug,definition,reason,author,'set',d)
 
 export function promoteWorkflow(slug:string,n:number,reasonValue:string|undefined,authorValue?:string,d:Database=db()) {
-  const reason=required(reasonValue,'reason'), author=authorName(authorValue), at=nowIso(), id=workflowId(slug,d)
+  const reason = required(reasonValue, 'reason')
+  const author = writeAuthor(authorValue)
+  const at = nowIso()
+  const id = workflowId(slug, d)
   return d.transaction(() => {
     const target=d.query('SELECT status FROM workflow_version WHERE workflow_id=? AND n=?').get(id,n) as {status:string}|null
     if (!target || target.status !== 'draft') throw new Error(`workflow "${slug}" version ${n} is not a draft`)
+    // Promoting replaces production. Retire the prior row in this transaction
+    // so the unique production index holds; the retire event reuses this
+    // promote reason — there is no separate withdraw.
     const prior=d.query(`SELECT n FROM workflow_version WHERE workflow_id=? AND status='production'`).get(id) as {n:number}|null
     d.query(`UPDATE workflow_version SET status='retired',retired_at=? WHERE workflow_id=? AND status='production'`).run(at,id)
-    if (prior) event(d,id,prior.n,'retire',author,reason,at)
+    if (prior) recordEvent(d,id,prior.n,'retire',author,reason,at)
     d.query(`UPDATE workflow_version SET status='production',promoted_at=? WHERE workflow_id=? AND n=?`).run(at,id,n)
-    event(d,id,n,'promote',author,reason,at)
+    recordEvent(d,id,n,'promote',author,reason,at)
     return showWorkflow(slug,n,d)
   })()
 }
 export function retireWorkflow(slug:string,n:number,reasonValue:string|undefined,authorValue?:string,d:Database=db()) {
-  const reason=required(reasonValue,'reason'),author=authorName(authorValue),at=nowIso(),id=workflowId(slug,d)
+  const reason = required(reasonValue, 'reason')
+  const author = writeAuthor(authorValue)
+  const at = nowIso()
+  const id = workflowId(slug, d)
   return d.transaction(() => {
     const target=d.query('SELECT status FROM workflow_version WHERE workflow_id=? AND n=?').get(id,n) as {status:string}|null
     if (!target || target.status !== 'production') throw new Error(`workflow "${slug}" version ${n} is not production`)
     d.query(`UPDATE workflow_version SET status='retired',retired_at=? WHERE workflow_id=? AND n=?`).run(at,id,n)
-    event(d,id,n,'retire',author,reason,at); return showWorkflow(slug,n,d)
+    recordEvent(d,id,n,'retire',author,reason,at); return showWorkflow(slug,n,d)
   })()
 }
 export function forkWorkflow(slug:string,from:number|undefined,reason:string|undefined,author?:string,d:Database=db()) {
@@ -194,7 +250,7 @@ export function workflowVersions(slug:string,d:Database=db()) {
 
 export type WorkflowNeeds = { mode?: {slug:string;title:string;entry:string}[]; arguments?: string[] }
 export function composeWorkflow(slug:string,modeSlug?:string,args:Record<string,string>={},d:Database=db()) {
-  const row=showWorkflow(slug,undefined,d), definition=row.definition
+  const row=parseVersion(productionVersionRow(slug,d)), definition=row.definition
   let mode=modeSlug ? definition.modes.find((m)=>m.slug===modeSlug) : definition.modes.find((m)=>m.default)
   const needs:WorkflowNeeds={}
   if (modeSlug && !mode) throw new Error(`workflow "${slug}" has no mode "${modeSlug}"`)
@@ -205,7 +261,7 @@ export function composeWorkflow(slug:string,modeSlug?:string,args:Record<string,
     arguments:args, steps:mode?.steps.map((stepSlug,index)=>{const step=definition.steps.find((s)=>s.slug===stepSlug)!;return {n:index+1,slug:step.slug,title:step.title,job:step.job,autonomy:step.autonomy,gate:step.gate}}) ?? [], needs }
 }
 export function getWorkflowStep(slug:string,stepSlug:string,args:Record<string,string>={},d:Database=db()) {
-  const row=showWorkflow(slug,undefined,d), definition=row.definition, step=definition.steps.find((item)=>item.slug===stepSlug)
+  const row=parseVersion(productionVersionRow(slug,d)), definition=row.definition, step=definition.steps.find((item)=>item.slug===stepSlug)
   if (!step) throw new Error(`workflow "${slug}" has no step "${stepSlug}"`)
   const missing=definition.arguments.filter((arg)=>arg.required && !args[arg.name]).map((arg)=>arg.name)
   if (missing.length) throw new Error(`missing required arguments: ${missing.join(', ')}`)
@@ -238,5 +294,7 @@ export function importWorkflows(dir:string,reason:string|undefined,author?:strin
       definitions.push({slug,definition})
     }
   }
+  // vN.json only orders the read. Each file becomes a new draft at MAX(n)+1;
+  // import does not restore version numbers or statuses.
   return d.transaction(()=>definitions.map(({slug,definition})=>writeDraft(slug,definition,reason,author,'import',d)))()
 }
