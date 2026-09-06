@@ -1244,6 +1244,12 @@ const hermeticGitCommand =
 const dir = mkdtempSync(join(tmpdir(), 'orch-test-'))
 process.env.ORCH_DB = join(dir, 'test.db')
 process.env.ORCH_RUNS = join(dir, 'runs')
+const originalTestPath = process.env.PATH
+const cleanDockerBin = join(dir, 'clean-docker-bin')
+mkdirSync(cleanDockerBin)
+writeFileSync(join(cleanDockerBin, 'docker'), '#!/bin/sh\nexit 0\n')
+chmodSync(join(cleanDockerBin, 'docker'), 0o755)
+process.env.PATH = `${cleanDockerBin}:${originalTestPath ?? ''}`
 writeFileSync(join(dir, '.gitignore'), '*\n!.gitignore\n')
 for (const args of [
   ['init', '-b', 'main'],
@@ -1778,6 +1784,8 @@ beforeEach(() => {
 afterAll(() => {
   delete process.env.ORCH_DB
   delete process.env.ORCH_RUNS
+  if (originalTestPath === undefined) delete process.env.PATH
+  else process.env.PATH = originalTestPath
   rmSync(dir, { recursive: true, force: true })
 })
 
@@ -1932,6 +1940,14 @@ esac
       FAKE_DOCKER_VOLUMES: volumes.join('\n'),
     },
   }
+}
+
+function fakeDockerCommand(body: string): { dir: string; env: Record<string, string> } {
+  const fakeDir = mkdtempSync(join(tmpdir(), 'orch-fake-docker-command-'))
+  const script = join(fakeDir, 'docker')
+  writeFileSync(script, `#!/bin/sh\n${body}\n`)
+  chmodSync(script, 0o755)
+  return { dir: fakeDir, env: { PATH: `${fakeDir}:${process.env.PATH ?? ''}` } }
 }
 
 const reviewReply = (findings = 1, severity = 'major') => ({
@@ -7800,11 +7816,11 @@ describe('detached run collection', () => {
       git('branch', 'shared-branch')
 
       const abandoned = insert('asking', 'implement')
-      const owner = insert('stale', 'implement')
+      const owner = insert('running', 'implement')
       const gone = join(repo, '.claude', 'worktrees', 'gone')
       db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
         .run(repo, gone, 'shared-branch', abandoned)
-      db().query('UPDATE run SET branch=? WHERE id=?').run('shared-branch', owner)
+      db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, 'shared-branch', owner)
 
       const r = orch('abandon', String(abandoned))
       expect(r.code).toBe(0)
@@ -7812,6 +7828,46 @@ describe('detached run collection', () => {
       expect(git('branch', '--list', 'shared-branch')).toContain('shared-branch')
     } finally {
       rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('abandon does not treat a live same-named branch in another repository as an owner', () => {
+    const first = mkdtempSync(join(tmpdir(), 'orch-abandon-first-'))
+    const second = mkdtempSync(join(tmpdir(), 'orch-abandon-second-'))
+    const git = (repo: string, ...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    try {
+      for (const repo of [first, second]) {
+        git(repo, 'init', '-b', 'main')
+        git(repo, 'config', 'user.email', 'orch-test@example.invalid')
+        git(repo, 'config', 'user.name', 'Orch Test')
+        writeFileSync(join(repo, 'kept.txt'), 'base\n')
+        git(repo, 'add', 'kept.txt')
+        git(repo, 'commit', '-m', 'base')
+        git(repo, 'branch', 'shared-branch')
+      }
+      upsertProject({ name: 'abandon-first', path: first })
+      upsertProject({ name: 'abandon-second', path: second })
+      const abandoned = insert('asking', 'implement')
+      const otherRepository = insert('running', 'implement')
+      db().query('UPDATE run SET repo=?, cwd=?, worktree=NULL, branch=? WHERE id=?')
+        .run('abandon-first', first, 'shared-branch', abandoned)
+      db().query('UPDATE run SET repo=?, cwd=?, branch=? WHERE id=?')
+        .run('abandon-second', second, 'shared-branch', otherRepository)
+
+      const r = orch('abandon', String(abandoned))
+      expect(r.code).toBe(0)
+      expect(r.out).not.toContain(`run ${otherRepository} records it`)
+      expect(git(first, 'branch', '--list', 'shared-branch')).toBe('')
+      expect(git(second, 'branch', '--list', 'shared-branch')).toContain('shared-branch')
+    } finally {
+      rmSync(first, { recursive: true, force: true })
+      rmSync(second, { recursive: true, force: true })
     }
   })
 
@@ -10504,7 +10560,11 @@ echo 'Usage: scripts/worktree create [seed]'
   test('discard reports Docker resources left by a successful project remove and keeps the pointer', () => {
     const { repo } = scratchRepo()
     const id = addRun({ agent: 'codex', job: 'implement', repo: 'leaking-tool' })
-    const tree = createWorktree(repo, id)
+    const tree = {
+      path: join(repo, '.claude', 'worktrees', `DEV-207-orch-${id}`),
+      branch: `orch/${id}`,
+    }
+    git(repo, 'worktree', 'add', '-b', tree.branch, tree.path, 'main')
     const script = join(repo, 'remove-but-leak.sh')
     writeFileSync(script,
       'git worktree remove --force "$1"\n' +
@@ -10530,6 +10590,71 @@ echo 'Usage: scripts/worktree create [seed]'
       expect(p.stderr.toString()).toContain(`volume orch-${id}_adanim-pgdata leaked by project leaking-tool`)
       expect(p.stderr.toString()).not.toContain('unrelated-container')
       expect(existsSync(tree.path)).toBe(false)
+      expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
+        .toEqual({ worktree: tree.path })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(docker.dir, { recursive: true, force: true })
+    }
+  })
+
+  test('discard refuses unverifiable cleanup when Docker inventory is unavailable', () => {
+    const { repo } = scratchRepo()
+    const id = addRun({ agent: 'codex', job: 'implement', repo: 'inventory-tool' })
+    const tree = createWorktree(repo, id)
+    const script = join(repo, 'remove-before-inventory.sh')
+    writeFileSync(script,
+      'git worktree remove --force "$1"\n' +
+      'git branch -D "$2"\n')
+    upsertProject({
+      name: 'inventory-tool', path: realpathSync(repo),
+      settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
+    })
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, id)
+    const docker = fakeDockerCommand("echo 'docker unavailable' >&2; exit 127")
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
+        env: { ...process.env, ...docker.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(p.exitCode).not.toBe(0)
+      expect(p.stderr.toString()).toContain('inventory unavailable')
+      expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
+        .toEqual({ worktree: tree.path })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(docker.dir, { recursive: true, force: true })
+    }
+  })
+
+  test('discard bounds an unresponsive Docker inventory and keeps the pointer', () => {
+    const { repo } = scratchRepo()
+    const id = addRun({ agent: 'codex', job: 'implement', repo: 'slow-inventory-tool' })
+    const tree = createWorktree(repo, id)
+    const script = join(repo, 'remove-before-slow-inventory.sh')
+    writeFileSync(script,
+      'git worktree remove --force "$1"\n' +
+      'git branch -D "$2"\n')
+    upsertProject({
+      name: 'slow-inventory-tool', path: realpathSync(repo),
+      settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
+    })
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, id)
+    const docker = fakeDockerCommand('sleep 5')
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const started = Date.now()
+      const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
+        env: { ...process.env, ...docker.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(Date.now() - started).toBeLessThan(3_000)
+      expect(p.exitCode).not.toBe(0)
+      expect(p.stderr.toString()).toContain('inventory unavailable')
+      expect(p.stderr.toString()).toContain('timed out')
       expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
         .toEqual({ worktree: tree.path })
     } finally {
@@ -11551,6 +11676,103 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     }
   })
 
+  test('sweep preserves a branch recorded by another live run in the same project', () => {
+    const repo = scratchRepo()
+    const project = `sweep-${repo.split('/').pop()}`
+    const old = new Date(Date.now() - 86_400_000).toISOString()
+    const id = addRun({
+      agent: 'codex', job: 'implement', status: 'ok', repo: project, startedAt: old,
+    })
+    const owner = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: project })
+    const branch = `orch/${id}`
+    const tree = join(repo, '.claude', 'worktrees', `orch-${id}`)
+    git(repo, 'worktree', 'add', '-b', branch, tree, 'main')
+    upsertProject({
+      name: project, path: repo,
+      settings: {
+        trunk: 'main',
+        worktree: {
+          remove: `${hermeticGitCommand} worktree remove --force {path}; ` +
+            `${hermeticGitCommand} branch -D {branch}`,
+        },
+      },
+    })
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
+      .run(repo, tree, branch, id)
+    db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, branch, owner)
+    try {
+      const r = orch('sweep', '--older-than', '0', '--force')
+      expect(r.code).toBe(0)
+      expect(r.out).toContain(`branch ${branch} left because run ${owner} records it`)
+      expect(git(repo, 'branch', '--list', branch)).toContain(branch)
+      expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
+        .toEqual({ worktree: null })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('sweep exits non-zero and keeps the pointer when project removal is refused', () => {
+    const repo = scratchRepo()
+    const project = `sweep-${repo.split('/').pop()}`
+    const id = addRun({
+      agent: 'codex', job: 'implement', status: 'ok', repo: project,
+      startedAt: new Date(Date.now() - 86_400_000).toISOString(),
+    })
+    const tree = join(repo, '.claude', 'worktrees', `orch-${id}`)
+    git(repo, 'worktree', 'add', '-b', `orch/${id}`, tree, 'main')
+    upsertProject({
+      name: project, path: repo,
+      settings: { trunk: 'main', worktree: { remove: "echo 'protected work' >&2; exit 7" } },
+    })
+    db().query('UPDATE run SET worktree=?, branch=? WHERE id=?').run(tree, `orch/${id}`, id)
+    try {
+      const r = orch('sweep', '--older-than', '0', '--force')
+      expect(r.code).not.toBe(0)
+      expect(r.err).toContain(`could not reclaim ${id}`)
+      expect(r.err).toContain('protected work')
+      expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
+        .toEqual({ worktree: tree })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('sweep reports unavailable Docker inventory, exits non-zero, and keeps the pointer', () => {
+    const repo = scratchRepo()
+    const project = `sweep-${repo.split('/').pop()}`
+    const id = addRun({
+      agent: 'codex', job: 'implement', status: 'ok', repo: project,
+      startedAt: new Date(Date.now() - 86_400_000).toISOString(),
+    })
+    const tree = join(repo, '.claude', 'worktrees', `orch-${id}`)
+    git(repo, 'worktree', 'add', '-b', `orch/${id}`, tree, 'main')
+    upsertProject({
+      name: project, path: repo,
+      settings: {
+        trunk: 'main',
+        worktree: {
+          remove: `${hermeticGitCommand} worktree remove --force {path}; ` +
+            `${hermeticGitCommand} branch -D {branch}`,
+        },
+      },
+    })
+    db().query('UPDATE run SET worktree=?, branch=? WHERE id=?').run(tree, `orch/${id}`, id)
+    const docker = fakeDockerCommand("echo 'stub inventory failure' >&2; exit 127")
+    try {
+      const r = orchWithEnv(docker.env, 'sweep', '--older-than', '0', '--force')
+      expect(r.code).not.toBe(0)
+      expect(r.err).toContain(`could not verify reclaim ${id}: inventory unavailable`)
+      expect(r.err).toContain('inventory unavailable: 2')
+      expect(r.err).toContain('stub inventory failure')
+      expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
+        .toEqual({ worktree: tree })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(docker.dir, { recursive: true, force: true })
+    }
+  })
+
   test('sweep reports resources left by a project remove in its summary', () => {
     const repo = scratchRepo()
     const project = `sweep-${repo.split('/').pop()}`
@@ -11571,7 +11793,7 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     const docker = fakeDocker([], [`orch-${id}_${project}-pgdata`])
     try {
       const r = orchWithEnv(docker.env, 'sweep', '--older-than', '0', '--force')
-      expect(r.code).toBe(0)
+      expect(r.code).not.toBe(0)
       expect(r.err).toContain('leaked Docker resources: 1')
       expect(r.err).toContain(`volume orch-${id}_${project}-pgdata leaked by project ${project}`)
       expect(r.out).toContain('reclaimed 0, kept 0')

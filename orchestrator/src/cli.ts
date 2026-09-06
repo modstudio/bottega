@@ -41,7 +41,8 @@ import { composeWorkflow, exportWorkflows, forkWorkflow, getWorkflowStep, import
 import { gwetAc1 } from './agreement.ts'
 import { routingBacktest, routingBacktestEnsemble, type RoutingBacktest } from './routing-backtest.ts'
 import { dockerRemovalCommand, dockerRunResources, leakedResourceLines,
-         orphanedDockerResources, resourcesForWorktree, type DockerResource } from './docker-resources.ts'
+         orphanedDockerResources, orchRunId, resourcesForRun,
+         type DockerResource } from './docker-resources.ts'
 
 /**
  * How long `orch do` watches a detached run before handing it back.
@@ -294,8 +295,13 @@ const VALUE_FLAGS = new Set(['--agent', '--file', '--schema', '--model', '--note
                              '--better-than', '--n', '--scope', '--subject', '--title', '--cwd'])
 
 type CleanupRow = {
-  id: number; repo?: string | null; worktree: string; branch: string | null
+  id: number; repo?: string | null; cwd?: string | null
+  worktree: string; branch: string | null
   base_commit: string | null
+}
+
+type BranchOwnerRow = {
+  id: number; repo: string | null; cwd: string | null; worktree: string | null
 }
 
 function keptBranchLine(branch: string, count: number, id: number): string {
@@ -347,9 +353,36 @@ function cleanupRepoRoot(row: {
   const registered = row.repo ? projectByName(row.repo)?.path : null
   const builtInRoot = row.worktree?.includes('/.claude/worktrees/')
     ? row.worktree.slice(0, row.worktree.indexOf('/.claude/worktrees/')) : null
-  return repoRootOf(row.worktree ?? '') ?? repoRootOf(row.cwd ?? '')
-    ?? (registered ? repoRootOf(registered) : null)
+  return registered ?? repoRootOf(row.worktree ?? '') ?? repoRootOf(row.cwd ?? '')
     ?? (builtInRoot ? repoRootOf(builtInRoot) : null) ?? repoRootOf(process.cwd())
+}
+
+function samePath(a: string, b: string): boolean {
+  const normalized = (path: string) => {
+    const value = existsSync(path) ? realpathSync(path) : resolve(path)
+    return value.replace(/\/$/, '')
+  }
+  return normalized(a) === normalized(b)
+}
+
+/** A branch is shared only inside one repository, and only active owners protect it. */
+function nonTerminalBranchOwner(
+  row: { id: number; repo?: string | null; branch: string | null }, repoRoot: string,
+): BranchOwnerRow | null {
+  if (!row.branch) return null
+  const project = row.repo ?? projectAt(repoRoot)?.name ?? null
+  const candidates = db().query(
+    `SELECT id, repo, cwd, worktree FROM run
+      WHERE branch=? AND id<>? AND status IN ('running','asking','stopped')
+      ORDER BY id`,
+  ).all(row.branch, row.id) as BranchOwnerRow[]
+  return candidates.find((candidate) => {
+    if (project && candidate.repo) return candidate.repo === project
+    const candidateRoot = candidate.repo ? projectByName(candidate.repo)?.path : null
+    const discovered = candidateRoot ?? repoRootOf(candidate.worktree ?? '') ??
+      repoRootOf(candidate.cwd ?? '')
+    return discovered ? samePath(discovered, repoRoot) : false
+  }) ?? null
 }
 
 /**
@@ -403,14 +436,10 @@ async function discardWorktree(
     return
   }
 
-  const { branchTip, removeFor, repoRootOf, unmergedBranch, restoreBranch } =
+  const { branchTip, removeFor, unmergedBranch, restoreBranch } =
     await import('./worktree.ts')
-  const registeredRoot = row.repo ? projectByName(row.repo)?.path : null
-  const repoRoot = repoRootOf(row.worktree) ?? registeredRoot ?? projectAt(row.worktree)?.path ??
-    repoRootOf(process.cwd()) ?? process.cwd()
-  const branchOwner = row.branch ? db().query(
-    'SELECT id FROM run WHERE branch=? AND id<>? ORDER BY id LIMIT 1',
-  ).get(row.branch, row.id) as { id: number } | null : null
+  const repoRoot = cleanupRepoRoot(row) ?? process.cwd()
+  const branchOwner = nonTerminalBranchOwner(row, repoRoot)
   const sharedBranchTip = branchOwner && row.branch ? branchTip(repoRoot, row.branch) : null
   let protectedBranch: ReturnType<typeof unmergedBranch> = null
   if (!force && row.branch) {
@@ -426,8 +455,13 @@ async function discardWorktree(
   if (sharedBranchTip && row.branch) restoreBranch(repoRoot, row.branch, sharedBranchTip)
   if (!r.removed) throw new Error(r.detail)
   const project = row.repo ?? projectAt(repoRoot)?.name ?? 'unknown'
-  const worktreeName = row.worktree.split('/').pop() ?? `orch-${row.id}`
-  const inventory = resourcesForWorktree(worktreeName)
+  const inventory = resourcesForRun(row.id)
+  if (inventory.errors.length) {
+    throw new Error(
+      `project ${project}'s cleanup could not be verified — inventory unavailable:\n` +
+      inventory.errors.map((error) => `  ${error}`).join('\n'),
+    )
+  }
   if (inventory.resources.length) {
     throw new Error(
       `project ${project}'s remove tool left Docker resources behind:\n` +
@@ -2996,12 +3030,14 @@ switch (cmd) {
       job: string; age_days: number; scored: number
     }[]
 
-    const { removeFor, sweepWithTool, repoRootOf, orphanSafety,
+    const { branchTip, removeFor, restoreBranch, sweepWithTool, repoRootOf, orphanSafety,
             isOrchWorktree, ORCH_RUN_MARKER } =
       await import('./worktree.ts')
     const { projectAt } = await import('./projects.ts')
 
     let done = 0
+    let cleanupFailed = false
+    const inventoryErrors = new Set<string>()
     const leaked = new Map<string, { resource: DockerResource; project: string; runId: number }>()
     const kept: { line: string; reason: string }[] = []
     const keep = (line: string, reason: string) => { kept.push({ line, reason }) }
@@ -3027,14 +3063,25 @@ switch (cmd) {
       }
       if (dry) { console.log(`would reclaim ${r.id}  ${r.worktree}`); done++; continue }
 
-      const repoRoot = repoRootOf(r.worktree) ?? projectAt(r.worktree)?.path ?? process.cwd()
+      const repoRoot = (r.repo ? projectByName(r.repo)?.path : null) ??
+        repoRootOf(r.worktree) ?? projectAt(r.worktree)?.path ?? process.cwd()
       const w = { path: r.worktree, branch: r.branch ?? `orch/${r.id}`, base: '', repoRoot }
-      const res = removeFor(w, repoRoot)
+      const branchOwner = nonTerminalBranchOwner(r, repoRoot)
+      const sharedTip = branchOwner && r.branch ? branchTip(repoRoot, r.branch) : null
+      const res = removeFor(w, repoRoot, false, Boolean(branchOwner))
+      if (sharedTip && r.branch) restoreBranch(repoRoot, r.branch, sharedTip)
       if (res.removed) {
         const project = r.repo ?? projectAt(repoRoot)?.name ?? 'unknown'
-        const worktreeName = r.worktree.split('/').pop() ?? `orch-${r.id}`
-        const left = resourcesForWorktree(worktreeName).resources
+        const inventory = resourcesForRun(r.id)
+        for (const error of inventory.errors) inventoryErrors.add(error)
+        if (inventory.errors.length) {
+          cleanupFailed = true
+          console.error(`could not verify reclaim ${r.id}: inventory unavailable`)
+          continue
+        }
+        const left = inventory.resources
         if (left.length) {
+          cleanupFailed = true
           for (const resource of left) leaked.set(`${resource.kind}:${resource.name}`, {
             resource, project, runId: r.id,
           })
@@ -3043,9 +3090,13 @@ switch (cmd) {
           db().query('UPDATE run SET worktree = NULL WHERE id = ?').run(r.id)
           console.log(`reclaimed ${r.id}  ${res.detail}`)
           if (res.output) console.log(res.output)
+          if (branchOwner && r.branch) {
+            console.log(`branch ${r.branch} left because run ${branchOwner.id} records it`)
+          }
           done++
         }
       } else {
+        cleanupFailed = true
         console.error(`could not reclaim ${r.id}: ${res.detail}`)
       }
     }
@@ -3097,10 +3148,26 @@ switch (cmd) {
         if (dry) { console.log(`would reclaim ${label}  ${safe.detail}`); done++; continue }
 
         const w = { path, branch: safe.branch, base: '', repoRoot: p.path }
-        const res = removeFor(w, p.path)
+        const runId = orchRunId(entry.name)
+        const branchOwner = nonTerminalBranchOwner({
+          id: runId ?? -1, repo: p.name, branch: safe.branch,
+        }, p.path)
+        const sharedTip = branchOwner && safe.branch ? branchTip(p.path, safe.branch) : null
+        const res = removeFor(w, p.path, false, Boolean(branchOwner))
+        if (sharedTip && safe.branch) restoreBranch(p.path, safe.branch, sharedTip)
         if (res.removed) {
-          const left = resourcesForWorktree(entry.name).resources
+          const inventory = runId === null
+            ? { resources: [], errors: [] }
+            : resourcesForRun(runId)
+          for (const error of inventory.errors) inventoryErrors.add(error)
+          if (inventory.errors.length) {
+            cleanupFailed = true
+            keep(`${label}  inventory unavailable`, 'inventory unavailable')
+            continue
+          }
+          const left = inventory.resources
           if (left.length) {
+            cleanupFailed = true
             for (const resource of left) leaked.set(`${resource.kind}:${resource.name}`, {
               resource, project: p.name, runId: resource.runId,
             })
@@ -3108,9 +3175,13 @@ switch (cmd) {
           } else {
             console.log(`reclaimed ${label}  ${res.detail}`)
             if (res.output) console.log(res.output)
+            if (branchOwner && safe.branch) {
+              console.log(`branch ${safe.branch} left because run ${branchOwner.id} records it`)
+            }
             done++
           }
         } else {
+          cleanupFailed = true
           keep(`${label}  removal refused`, 'removal refused')
           console.error(`could not reclaim ${label}: ${res.detail}`)
         }
@@ -3146,6 +3217,8 @@ switch (cmd) {
       // deleted a directory without clearing the compose resources, which is
       // the expensive silent state the nightly sweep exists to expose.
       const inventory = dockerRunResources()
+      for (const error of inventory.errors) inventoryErrors.add(error)
+      if (inventory.errors.length) cleanupFailed = true
       const owners = db().query('SELECT id, repo, worktree FROM run').all() as {
         id: number; repo: string | null; worktree: string | null
       }[]
@@ -3155,13 +3228,19 @@ switch (cmd) {
       }
     }
     if (!dry && leaked.size) {
+      cleanupFailed = true
       console.error(`\nleaked Docker resources: ${leaked.size}`)
       for (const { resource, project, runId } of leaked.values()) {
         console.error(`  ${leakedResourceLines([resource], project, runId)[0]}`)
       }
     }
+    if (!dry && inventoryErrors.size) {
+      console.error(`\ninventory unavailable: ${inventoryErrors.size}`)
+      for (const error of inventoryErrors) console.error(`  ${error}`)
+    }
 
     printSweepKept(done, kept, dry)
+    if (!dry && cleanupFailed) process.exitCode = 1
     break
   }
 
@@ -3291,17 +3370,14 @@ switch (cmd) {
       break
     }
 
-    const branchOwner = db().query(
-      'SELECT id FROM run WHERE branch=? AND id<>? ORDER BY id LIMIT 1',
-    ).get(row.branch, id) as { id: number } | null
-    if (branchOwner) {
-      console.log(`branch ${row.branch} left because run ${branchOwner.id} records it`)
-      break
-    }
-
     const repoRoot = cleanupRepoRoot(row)
     if (!repoRoot) {
       console.log(`branch ${row.branch} cleanup skipped: repository root not found`)
+      break
+    }
+    const branchOwner = nonTerminalBranchOwner(row, repoRoot)
+    if (branchOwner) {
+      console.log(`branch ${row.branch} left because run ${branchOwner.id} records it`)
       break
     }
     let protectedBranch: ReturnType<typeof unmergedBranch> = null

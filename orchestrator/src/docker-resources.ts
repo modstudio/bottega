@@ -1,5 +1,7 @@
 import { existsSync } from 'node:fs'
 
+export const DOCKER_INVENTORY_TIMEOUT_MS = 1_000
+
 export type DockerResourceKind = 'container' | 'volume'
 
 export type DockerResource = {
@@ -19,16 +21,27 @@ function list(kind: DockerResourceKind): { names: string[]; error: string | null
     : ['docker', 'volume', 'ls', '--format', '{{.Name}}']
   let p: ReturnType<typeof Bun.spawnSync>
   try {
-    p = Bun.spawnSync(args, { stdout: 'pipe', stderr: 'pipe' })
+    p = Bun.spawnSync(args, {
+      stdout: 'pipe', stderr: 'pipe', timeout: DOCKER_INVENTORY_TIMEOUT_MS,
+    })
   } catch (error) {
     return {
       names: [],
-      error: `docker ${args.slice(1, 3).join(' ')} unavailable: ${(error as Error).message}`,
+      error: `docker ${args.slice(1, 3).join(' ')} inventory unavailable: ${(error as Error).message}`,
+    }
+  }
+  if (p.exitedDueToTimeout) {
+    return {
+      names: [],
+      error: `docker ${args.slice(1, 3).join(' ')} inventory unavailable: ` +
+        `timed out after ${DOCKER_INVENTORY_TIMEOUT_MS}ms`,
     }
   }
   if (p.exitCode !== 0) {
     const detail = p.stderr?.toString().trim() || `exit ${p.exitCode}`
-    return { names: [], error: `docker ${args.slice(1, 3).join(' ')} unavailable: ${detail}` }
+    return {
+      names: [], error: `docker ${args.slice(1, 3).join(' ')} inventory unavailable: ${detail}`,
+    }
   }
   return {
     names: (p.stdout?.toString() ?? '').split('\n').map((name) => name.trim()).filter(Boolean),
@@ -36,11 +49,16 @@ function list(kind: DockerResourceKind): { names: string[]; error: string | null
   }
 }
 
-/** Docker Compose carries its project/worktree name at the start of every resource name. */
-export function dockerRunResource(name: string): { runId: number; worktreeName: string } | null {
-  const match = name.match(/^(orch-(\d+))(?:[_-]|$)/)
+/** The one identity rule shared by worktree names and their Docker resources. */
+export function orchRunId(name: string): number | null {
+  const match = name.match(/(?:^|[_-])orch-(\d+)(?=[_-]|$)/)
   if (!match) return null
-  return { runId: Number(match[2]), worktreeName: match[1]! }
+  return Number(match[1])
+}
+
+export function dockerRunResource(name: string): { runId: number } | null {
+  const runId = orchRunId(name)
+  return runId === null ? null : { runId }
 }
 
 /** Inventory only resources created for orch run worktrees. Never mutates Docker. */
@@ -58,14 +76,11 @@ export function dockerRunResources(): DockerInventory {
   return { resources, errors }
 }
 
-export function resourcesForWorktree(
-  worktreeName: string, inventory = dockerRunResources(),
+export function resourcesForRun(
+  runId: number, inventory = dockerRunResources(),
 ): DockerInventory {
   return {
-    resources: inventory.resources.filter((resource) => {
-      const parsed = dockerRunResource(resource.name)
-      return parsed?.worktreeName === worktreeName
-    }),
+    resources: inventory.resources.filter((resource) => resource.runId === runId),
     errors: inventory.errors,
   }
 }
