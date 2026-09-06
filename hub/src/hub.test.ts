@@ -13,7 +13,8 @@ const {
   attribute, keyFromWorktree, keyFromBranch, projectOf, projectOfKey, isInjected,
 } = await import('./attribute.ts')
 const { spendingSpans } = await import('./ingest/transcripts.ts')
-const { db } = await import('./db.ts')
+const dbMod = await import('./db.ts')
+const { db } = dbMod
 const { gather, renderHtml, renderText } = await import('./report.ts')
 const { easternTime } = await import('./time.ts')
 const { projectColor, projectNames, trackerPresentation } = await import('./projects.ts')
@@ -412,6 +413,98 @@ describe('run ingest', () => {
       `SELECT answered_at FROM question WHERE question_id = 61`,
     ).get() as { answered_at: string }
     expect(row.answered_at).toBe('2026-09-04T07:30:00.000Z')
+  })
+
+  test('an answer recorded between the snapshot and the stamp is ingested on the following collect', async () => {
+    const snapshot = '2026-09-04T10:00:00.000Z'
+    const completion = '2026-09-04T10:00:10.000Z'
+    const answeredAt = '2026-09-04T10:00:05.000Z'
+    let now = snapshot
+    const clock = spyOn(dbMod, 'nowIso').mockImplementation(() => now)
+    const unanswered = runFixture({
+      id: 10001,
+      session_id: 'sess-snap',
+      questions: [
+        { id: 1001, run_id: 10001, asked_at: snapshot, answered_at: null },
+      ],
+    })
+    const spawn = spyOn(Bun, 'spawn').mockImplementation((() => {
+      now = completion
+      return {
+        stdout: new Blob([JSON.stringify(unanswered)]),
+        stderr: new Blob(['']),
+        exited: Promise.resolve(0),
+      }
+    }) as unknown as typeof Bun.spawn)
+    try {
+      await ingestRuns('2026-09-01T00:00:00.000Z')
+      expect(collectRunsAt()).toBe(JSON.stringify(snapshot))
+      expect(runsSince(Date.parse('2026-09-04T12:00:10.000Z'))).toBe(snapshot)
+    } finally {
+      spawn.mockRestore()
+    }
+
+    try {
+      await ingestRunFixtures(runFixture({
+        id: 10001,
+        session_id: 'sess-snap',
+        questions: [
+          { id: 1001, run_id: 10001, asked_at: snapshot, answered_at: answeredAt },
+        ],
+      }))
+      const row = db().query(
+        `SELECT answered_at FROM question WHERE question_id = 1001`,
+      ).get() as { answered_at: string }
+      expect(row.answered_at).toBe(answeredAt)
+      expect(listOpenRulings().filter((item) => item.session_id === 'sess-snap')).toEqual([])
+    } finally {
+      clock.mockRestore()
+    }
+  })
+
+  test('questions:null is a contract violation', async () => {
+    const prior = collectRunsAt()
+    const row = { ...runFixture({ id: 10101 }), questions: null }
+    await expect(ingestStdout(`${JSON.stringify(row)}\n`)).rejects.toThrow('line 1 missing questions')
+    expect(collectRunsAt()).toBe(prior)
+    expect(db().query(`SELECT 1 FROM interval WHERE ref = 'orch:10101'`).get()).toBeNull()
+    expect(db().query(`SELECT 1 FROM question WHERE root_ref = 'orch:10101'`).get()).toBeNull()
+  })
+
+  test('a question missing answered_at refuses the batch', async () => {
+    const prior = collectRunsAt()
+    await expect(ingestRunFixtures(runFixture({
+      id: 10102,
+      questions: [
+        { id: 71, run_id: 10102, asked_at: '2026-09-04T19:00:00.000Z' },
+      ],
+    }))).rejects.toThrow('line 1 missing questions[0].answered_at')
+    expect(collectRunsAt()).toBe(prior)
+    expect(db().query(`SELECT 1 FROM question WHERE question_id = 71`).get()).toBeNull()
+  })
+
+  test('an invalid asked_at refuses the batch', async () => {
+    const prior = collectRunsAt()
+    await expect(ingestRunFixtures(runFixture({
+      id: 10103,
+      questions: [
+        { id: 72, run_id: 10103, asked_at: 'not-a-date', answered_at: null },
+      ],
+    }))).rejects.toThrow('line 1 missing questions[0].asked_at')
+    expect(collectRunsAt()).toBe(prior)
+    expect(db().query(`SELECT 1 FROM question WHERE question_id = 72`).get()).toBeNull()
+  })
+
+  test('a run_id outside the published root and turns refuses the batch', async () => {
+    const prior = collectRunsAt()
+    await expect(ingestRunFixtures(runFixture({
+      id: 10104,
+      questions: [
+        { id: 73, run_id: 999, asked_at: '2026-09-04T19:00:00.000Z', answered_at: null },
+      ],
+    }))).rejects.toThrow('line 1 missing questions[0].run_id')
+    expect(collectRunsAt()).toBe(prior)
+    expect(db().query(`SELECT 1 FROM question WHERE question_id = 73`).get()).toBeNull()
   })
 })
 

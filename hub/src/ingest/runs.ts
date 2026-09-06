@@ -89,6 +89,23 @@ function present(value: unknown, kind: 'number' | 'string'): boolean {
   return typeof value === 'string' && value.length > 0
 }
 
+function isoTimestamp(value: unknown): boolean {
+  return typeof value === 'string' && value.length > 0 && Number.isFinite(Date.parse(value))
+}
+
+function publishedRunIds(row: Record<string, unknown>): Set<number> {
+  const ids = new Set<number>()
+  if (present(row.id, 'number')) ids.add(row.id as number)
+  if (Array.isArray(row.turns)) {
+    for (const turn of row.turns) {
+      if (turn === null || typeof turn !== 'object' || Array.isArray(turn)) continue
+      const id = (turn as Record<string, unknown>).id
+      if (present(id, 'number')) ids.add(id as number)
+    }
+  }
+  return ids
+}
+
 /** Field the contract requires and this row lacks, or null if the row is complete. */
 export function runsContractGap(value: unknown): string | null {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return 'id'
@@ -96,8 +113,10 @@ export function runsContractGap(value: unknown): string | null {
   for (const field of ['id', 'agent', 'job', 'status', 'started_at'] as const) {
     if (!present(row[field], field === 'id' ? 'number' : 'string')) return field
   }
-  if (row.questions == null) return null
+  // Absent questions is older orch. Null, or anything that is not an array, is not.
+  if (!Object.hasOwn(row, 'questions')) return null
   if (!Array.isArray(row.questions)) return 'questions'
+  const published = publishedRunIds(row)
   for (let i = 0; i < row.questions.length; i++) {
     const entry = row.questions[i]
     if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
@@ -106,7 +125,12 @@ export function runsContractGap(value: unknown): string | null {
     const question = entry as Record<string, unknown>
     if (!present(question.id, 'number')) return `questions[${i}].id`
     if (!present(question.run_id, 'number')) return `questions[${i}].run_id`
-    if (!present(question.asked_at, 'string')) return `questions[${i}].asked_at`
+    if (!isoTimestamp(question.asked_at)) return `questions[${i}].asked_at`
+    if (!Object.hasOwn(question, 'answered_at')) return `questions[${i}].answered_at`
+    if (question.answered_at !== null && !isoTimestamp(question.answered_at)) {
+      return `questions[${i}].answered_at`
+    }
+    if (!published.has(question.run_id as number)) return `questions[${i}].run_id`
   }
   return null
 }
@@ -142,6 +166,9 @@ export async function readRuns(since: string): Promise<OrchRun[]> {
 }
 
 export async function ingestRuns(since: string): Promise<{ rows: number; skipped: number }> {
+  // Snapshot time, not completion: anything that happens during the read is
+  // re-fetched next time. Overlap is cheap; a missed answer is not.
+  const snapshot = nowIso()
   const runs = await readRuns(since)
   const d = db()
   const stmt = d.query(
@@ -237,12 +264,12 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
         for (const q of r.questions) {
           upsertQuestion.run(
             q.id,
-            runRef(r.id, q.run_id ?? r.id, hasTurns),
+            runRef(r.id, q.run_id, hasTurns),
             root,
             a.key,
             r.session_id,
             q.asked_at,
-            q.answered_at ?? null,
+            q.answered_at,
           )
         }
       }
@@ -276,6 +303,6 @@ export async function ingestRuns(since: string): Promise<{ rows: number; skipped
   write(runs)
 
   d.query(`INSERT INTO setting (key, value) VALUES ('collect.runs.at', ?)
-           ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(JSON.stringify(nowIso()))
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(JSON.stringify(snapshot))
   return { rows, skipped }
 }
