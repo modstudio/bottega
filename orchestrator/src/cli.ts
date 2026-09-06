@@ -5,7 +5,8 @@ import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, nowIso,
          type ReviewReproduced, type ReviewCoverage, type ReviewLimits, type ReviewOverlap,
          reapStale, pidAlive, STALE_AFTER_MS, UNSCORED_WHERE, recordDuels, duelMatrices,
          parseRunIds, recordSessionSeen, SESSION_LIVE_MS,
-         resolveRootFromLastTurn, chainScoreJoin, authorizeRunMutation, runMutationActor,
+         resolveRootFromLastTurn, chainScoreJoin, chainTerminationAt,
+         authorizeRunMutation, runMutationActor,
          auditRunMutation, adoptRunMutation, type RootAuthority } from './db.ts'
 import { JOBS, job } from './jobs.ts'
 import { AGENTS, available, installed, ensureLocalHealth,
@@ -387,7 +388,12 @@ function orphanKeepReason(detail: string): string {
     : detail
 }
 
-type OrphanAge = { days: number; source: 'run row' | 'commit date' | 'branch reflog' }
+type OrphanAge =
+  | { kind: 'aged'; days: number; source: 'run row' | 'commit date' | 'branch reflog' }
+  | { kind: 'live' }
+  | { kind: 'unknown' }
+
+type NamedRun = { id: number; status: string }
 
 function templateRunId(name: string, branchTemplate?: string): number | null {
   const conventional = name.match(/^orch-(\d+)$/)
@@ -416,42 +422,67 @@ function gitOutput(cwd: string, args: string[]): string | null {
   return result.stdout.toString().trim() || null
 }
 
-function orphanAge(
-  path: string, name: string, branchTemplate: string | undefined, now = Date.now(),
-): OrphanAge | null {
+function pathIsUnder(path: string | null, root: string): boolean {
+  if (!path) return false
+  const candidate = resolve(path)
+  const project = resolve(root)
+  return candidate === project || candidate.startsWith(`${project}/`)
+}
+
+function namedRun(
+  name: string, branchTemplate: string | undefined, project: { name: string; path: string },
+): NamedRun | null {
   const runId = templateRunId(name, branchTemplate)
-  if (runId !== null) {
-    const member = db().query('SELECT id, parent_run_id FROM run WHERE id=?').get(runId) as
-      { id: number; parent_run_id: number | null } | null
-    if (member) {
-      const rootId = member.parent_run_id ?? member.id
-      const terminal = db().query(
-        `SELECT started_at, latency_ms FROM run
-          WHERE id=? OR parent_run_id=?
-          ORDER BY turn DESC, id DESC LIMIT 1`,
-      ).get(rootId, rootId) as { started_at: string; latency_ms: number | null }
-      const started = Date.parse(terminal.started_at)
-      if (Number.isFinite(started)) {
-        const terminalMs = started + (terminal.latency_ms ?? 0)
-        return { days: (now - terminalMs) / 86_400_000, source: 'run row' }
-      }
-      return null
-    }
+  if (runId === null) return null
+  const member = db().query(
+    'SELECT id, parent_run_id, repo, cwd, worktree FROM run WHERE id=?',
+  ).get(runId) as {
+    id: number; parent_run_id: number | null; repo: string | null
+    cwd: string | null; worktree: string | null
+  } | null
+  if (!member) return null
+  const belongs = member.repo === project.name ||
+    (member.repo === null &&
+      (pathIsUnder(member.cwd, project.path) || pathIsUnder(member.worktree, project.path)))
+  if (!belongs) return null
+
+  const rootId = member.parent_run_id ?? member.id
+  const latest = db().query(
+    `SELECT status FROM run
+      WHERE id=? OR parent_run_id=?
+      ORDER BY turn DESC, id DESC LIMIT 1`,
+  ).get(rootId, rootId) as { status: string }
+  return { id: member.id, status: latest.status }
+}
+
+function orphanAge(
+  path: string, name: string, branchTemplate: string | undefined,
+  project: { name: string; path: string }, now = Date.now(),
+): OrphanAge {
+  const run = namedRun(name, branchTemplate, project)
+  if (run) {
+    if (run.status === 'running' || run.status === 'asking') return { kind: 'live' }
+    const terminatedAt = chainTerminationAt(db(), run.id)
+    if (!terminatedAt) return { kind: 'unknown' }
+    const terminalMs = Date.parse(terminatedAt)
+    if (!Number.isFinite(terminalMs)) return { kind: 'unknown' }
+    return { kind: 'aged', days: (now - terminalMs) / 86_400_000, source: 'run row' }
   }
 
-  const branch = gitOutput(path, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
-  if (!branch) return null
-  const commitSeconds = Number(gitOutput(path, ['log', '-1', '--format=%ct', branch]))
-  if (Number.isFinite(commitSeconds) && commitSeconds > 0) {
-    return { days: (now - commitSeconds * 1000) / 86_400_000, source: 'commit date' }
-  }
-
-  const reflog = gitOutput(path, ['reflog', 'show', '-1', '--date=unix', '--format=%gd', branch])
+  const ref = gitOutput(path, ['symbolic-ref', '--quiet', '--short', 'HEAD']) ?? 'HEAD'
+  const commitSeconds = Number(gitOutput(path, ['log', '-1', '--format=%ct', ref]))
+  const reflog = gitOutput(path, ['reflog', 'show', '-1', '--date=unix', '--format=%gd', ref])
   const reflogSeconds = Number(reflog?.match(/@\{(\d+)\}$/)?.[1])
-  if (Number.isFinite(reflogSeconds) && reflogSeconds > 0) {
-    return { days: (now - reflogSeconds * 1000) / 86_400_000, source: 'branch reflog' }
-  }
-  return null
+  const candidates = [
+    Number.isFinite(commitSeconds) && commitSeconds > 0
+      ? { at: commitSeconds * 1000, source: 'commit date' as const } : null,
+    Number.isFinite(reflogSeconds) && reflogSeconds > 0
+      ? { at: reflogSeconds * 1000, source: 'branch reflog' as const } : null,
+  ].filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null)
+  const newest = candidates.sort((a, b) => b.at - a.at)[0]
+  return newest
+    ? { kind: 'aged', days: (now - newest.at) / 86_400_000, source: newest.source }
+    : { kind: 'unknown' }
 }
 
 function printSweepKept(
@@ -3612,8 +3643,12 @@ switch (cmd) {
           keep(`${label}  kept: not created by orch`, 'not created by orch')
           continue
         }
-        const age = orphanAge(path, entry.name, p.settings.worktree?.branch)
-        if (!age) {
+        const age = orphanAge(path, entry.name, p.settings.worktree?.branch, p)
+        if (age.kind === 'live') {
+          keep(`${label}  live — kept`, 'live — kept')
+          continue
+        }
+        if (age.kind === 'unknown') {
           keep(`${label}  age unknown — kept`, 'age unknown — kept')
           continue
         }
@@ -3656,6 +3691,11 @@ switch (cmd) {
             }
             const ownersBefore = evidenceOwningBranchOwners(ownerRow, p.path)
             const snapshot = safe.branch ? branchTip(p.path, safe.branch) : null
+            const lockedRun = namedRun(entry.name, p.settings.worktree?.branch, p)
+            if (lockedRun?.status === 'running' || lockedRun?.status === 'asking') {
+              keep(`${label}  live — kept`, 'live — kept')
+              return
+            }
             const res = removeFor(w, p.path, false, ownersBefore.length > 0)
             const sharersAfter = evidenceOwningWorktreeSharers(worktreeRow)
             const ownersAfter = evidenceOwningBranchOwners(ownerRow, p.path)
