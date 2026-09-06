@@ -6,7 +6,7 @@ const completed: SearchableRun = {
   agent: 'codex',
   job: 'review-lens',
   task: 'DEV-259',
-  project: 'bottega',
+  project: 'workshop',
   at: '2026-09-06T14:30:00.000Z',
   engaged: '4m 12s',
   running: false,
@@ -31,7 +31,7 @@ const live: SearchableLiveRun = {
 describe('runs collection search', () => {
   test('completed rows include every rendered text field', () => {
     for (const query of [
-      'bottega', 'DEV-259', 'codex', 'review-lens', 'craft', '4m 12s',
+      'workshop', 'DEV-259', 'codex', 'review-lens', 'craft', '4m 12s',
       'partial', 'mixed', '12.3K', '$1.25', 'Sep 6', '10:30 am',
     ]) expect(matchesRunSearch(completed, query)).toBe(true)
 
