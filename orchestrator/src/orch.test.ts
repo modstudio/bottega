@@ -3639,7 +3639,7 @@ describe('who may judge a run', () => {
   test('each authoritative action adopts once, then refuses another session', () => {
     const prior = process.env.CLAUDE_CODE_SESSION_ID
     try {
-      for (const action of ['answer', 'stop', 'abandon', 'discard', 'void'] as const) {
+      for (const action of ['answer', 'stop', 'abandon', 'discard', 'void', 'continue'] as const) {
         const id = addRun({ agent: 'codex', job: 'implement' })
         process.env.CLAUDE_CODE_SESSION_ID = 'session-A'
         const adopted = adoptRunMutation(authorizeRunMutation(id, action), action)
@@ -9129,6 +9129,65 @@ describe('detached run collection', () => {
       const child = db().query('SELECT prompt_path FROM run WHERE id=?').get(childId) as
         { prompt_path: string }
       expect(readFileSync(child.prompt_path, 'utf8')).toBe('use --quiet mode')
+    } finally {
+      rmSync(binDir, { recursive: true, force: true })
+    }
+  })
+
+  test('continuing an unowned root adopts it before linking the child', () => {
+    const binDir = mkdtempSync(join(tmpdir(), 'orch-fake-codex-adopt-'))
+    writeFileSync(join(binDir, 'codex'), '#!/bin/sh\nexit 0\n')
+    chmodSync(join(binDir, 'codex'), 0o755)
+    const root = insert('failed', 'implement')
+    db().query(
+      'UPDATE run SET session_id=NULL, vendor_session=?, agent=?, cwd=? WHERE id=?',
+    ).run('unowned-vendor-session', 'codex', dir, root)
+    try {
+      const continued = Bun.spawnSync(
+        [process.execPath, CLI, 'continue', String(root)],
+        {
+          env: {
+            ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+            CLAUDE_CODE_SESSION_ID: 'session-A',
+            PATH: `${binDir}:${process.env.PATH ?? ''}`,
+          },
+          stdout: 'pipe', stderr: 'pipe',
+        },
+      )
+      expect(continued.exitCode).toBe(0)
+      const childId = Number(
+        continued.stdout.toString().replace(/\u001B\[[0-9;]*m/g, '').trim().split('\n')[0],
+      )
+      expect(childId).toBeGreaterThan(0)
+      orch('wait', String(childId), '--timeout', '15')
+      const child = db().query(
+        'SELECT id, session_id FROM run WHERE id=?',
+      ).get(childId) as { id: number; session_id: string | null } | null
+      expect(child).not.toBeNull()
+      expect(db().query('SELECT session_id FROM run WHERE id=?').get(root))
+        .toEqual({ session_id: 'session-A' })
+      expect(child!.session_id).toBe('session-A')
+      expect(db().query(
+        'SELECT action, actor_session, reason FROM run_mutation_audit WHERE root_id=? ORDER BY rowid',
+      ).all(root)).toEqual([
+        { action: 'adopt', actor_session: 'session-A', reason: 'before continue' },
+        { action: 'continue', actor_session: 'session-A', reason: null },
+      ])
+
+      const stopped = Bun.spawnSync(
+        [process.execPath, CLI, 'stop', String(child!.id)],
+        {
+          env: {
+            ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+            CLAUDE_CODE_SESSION_ID: 'session-B',
+          },
+          stdout: 'pipe', stderr: 'pipe',
+        },
+      )
+      expect(stopped.exitCode).toBe(1)
+      expect(stopped.stderr.toString()).toContain(`run ${child!.id} is owned by session session-A`)
+      expect(db().query('SELECT session_id FROM run WHERE id=?').get(root))
+        .toEqual({ session_id: 'session-A' })
     } finally {
       rmSync(binDir, { recursive: true, force: true })
     }

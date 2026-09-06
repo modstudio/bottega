@@ -864,12 +864,11 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
 
 /** Resume a root run through the one path shared by `continue` and writing retries. */
 async function continueRun(id: number, message?: string): Promise<{ childId: number; job: string }> {
-  const authority = authorizeRunMutation(id, 'continue')
+  let authority = authorizeRunMutation(id, 'continue')
   const row = db().query(
-    'SELECT id, job, session_id, parent_run_id, status FROM run WHERE id = ?',
+    'SELECT id, job, parent_run_id, status FROM run WHERE id = ?',
   ).get(id) as
-    { id: number; job: string; session_id: string | null; parent_run_id: number | null
-      status: string } | null
+    { id: number; job: string; parent_run_id: number | null; status: string } | null
   if (!row) throw new Error(`no run ${id}`)
   if (row.parent_run_id) {
     throw new Error(`run ${id} is a turn of run ${row.parent_run_id}; continue that one`)
@@ -928,6 +927,7 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
     launch_cwd: string | null; launch_seed: string | null; launch_key: string | null
     launch_base: string | null; no_failover: number
   }
+  authority = db().transaction(() => adoptRunMutation(authority, 'continue'))()
   const childId = await detach(row.job, prompt, {
     cwd: latest.cwd ?? process.cwd(),
     seed: launch.launch_seed ?? undefined,
@@ -936,7 +936,7 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
     noFailover: !!launch.no_failover,
     resume: {
       parent: id, agent: latest.agent, session: sessionFrom.vendor_session,
-      turn: latest.turn + 1, sessionId: row.session_id,
+      turn: latest.turn + 1, sessionId: authority.owner,
       worktree: latest.worktree
         ? {
             path: latest.worktree,
