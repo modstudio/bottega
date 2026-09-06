@@ -18,7 +18,7 @@ import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, exist
          realpathSync, mkdirSync, utimesSync, chmodSync, readdirSync, statSync,
          symlinkSync, copyFileSync, openSync, closeSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
@@ -1148,7 +1148,8 @@ const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePaths, pr
         RUNS_DIR, grokMcpConnection, writingFailoverRefusal, resolveSupersededTurn,
         resolveRootFromLastTurn, gitObjectEnvironmentFor, inferredReadOnlyKey,
         canonSourceFor, canonSourceInstruction, snapshotRegisteredCheckouts,
-        changedRegisteredCheckouts, retargetRepositoryPrompt, run: runJob } = await import('./run.ts')
+        changedRegisteredCheckouts, checkoutAliases, checkoutCaseSensitivity,
+        retargetRepositoryPrompt, run: runJob } = await import('./run.ts')
 const run = runJob
 const { summary } = await import('./metric.ts')
 const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
@@ -9750,13 +9751,57 @@ describe('outside-worktree write observation', () => {
   })
 
   test('caller paths in a review pack are retargeted at filesystem boundaries', () => {
+    const caller = '/repo with [meta]*'
+    const worktree = `${caller}/.claude/worktrees/orch-1`
+    expect(retargetRepositoryPrompt(`${caller}/subdir/subject.txt`, `${caller}/`, worktree))
+      .toBe(`${worktree}/subdir/subject.txt`)
+    expect(retargetRepositoryPrompt(caller, caller, worktree)).toBe(worktree)
+    expect(retargetRepositoryPrompt(`${caller}-archive/subject.txt`, caller, worktree))
+      .toBe(`${caller}-archive/subject.txt`)
+    expect(retargetRepositoryPrompt(`word${caller}/subject.txt`, caller, worktree))
+      .toBe(`word${caller}/subject.txt`)
+    for (const prefix of ['', ' ', '\n', '"', "'", '`', '=', ':', ',', '(', '[', '{', '<']) {
+      expect(retargetRepositoryPrompt(`${prefix}${caller}/subject.txt`, caller, worktree))
+        .toBe(`${prefix}${worktree}/subject.txt`)
+    }
+    const bound = `read ${worktree}/subject.txt`
+    expect(retargetRepositoryPrompt(bound, caller, worktree)).toBe(bound)
+    expect(retargetRepositoryPrompt('unchanged', '', worktree)).toBe('unchanged')
+    expect(retargetRepositoryPrompt('/subject.txt', '/', '/worktree')).toBe('/worktree/subject.txt')
+    expect(retargetRepositoryPrompt('/', '/', '/worktree')).toBe('/worktree')
     expect(retargetRepositoryPrompt(
-      '/repo/subdir/subject.txt', '/repo', '/worktree',
-    )).toBe('/worktree/subdir/subject.txt')
-    expect(retargetRepositoryPrompt('/repo', '/repo', '/worktree')).toBe('/worktree')
-    expect(retargetRepositoryPrompt(
-      '/repo-archive/subject.txt', '/repo', '/worktree',
-    )).toBe('/repo-archive/subject.txt')
+      '/repo\nline [meta]*/subject.txt', '/repo\nline [meta]*', '/worktree',
+    )).toBe('/worktree/subject.txt')
+  })
+
+  test('all checkout aliases follow the checkout filesystem case behavior', () => {
+    const repo = repository()
+    const alias = join(dirname(repo), `${basename(repo)}-alias`)
+    symlinkSync(repo, alias)
+    try {
+      const checkout = checkoutAliases(`${alias}/`)
+      expect(checkout).not.toBeNull()
+      expect(checkout!.roots).toContain(`${alias}/`)
+      expect(checkout!.roots).toContain(realpathSync(repo))
+      const prompt = checkout!.roots
+        .map((root) => `${root.replace(/\/+$/, '')}/subject.txt`).join('\n')
+      expect(retargetRepositoryPrompt(
+        prompt, checkout!.roots, '/worktree', checkout!.caseInsensitive,
+      )).toBe(checkout!.roots.map(() => '/worktree/subject.txt').join('\n'))
+
+      const uppercase = realpathSync(repo).toUpperCase()
+      const expected = checkout!.caseInsensitive ? '/worktree/subject.txt' : `${uppercase}/subject.txt`
+      expect(retargetRepositoryPrompt(
+        `${uppercase}/subject.txt`, checkout!.roots, '/worktree', checkout!.caseInsensitive,
+      )).toBe(expected)
+    } finally {
+      rmSync(alias)
+      rmSync(repo, { recursive: true, force: true })
+    }
+    expect(checkoutCaseSensitivity('/')).toEqual({
+      caseInsensitive: false,
+      diagnostic: 'checkout case-sensitivity probe indeterminate: root has no alphabetic character (/)',
+    })
   })
 
   test('a real run records an external write and a clean run records none', async () => {

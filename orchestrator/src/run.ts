@@ -1,6 +1,6 @@
 import {
   mkdirSync, mkdtempSync, readFileSync, existsSync, writeFileSync, readdirSync, rmSync,
-  statSync, unlinkSync,
+  realpathSync, statSync, unlinkSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
@@ -653,6 +653,64 @@ function checkoutRootAsAddressed(cwd: string): string | null {
   } catch { return null }
 }
 
+type CheckoutAliases = {
+  roots: string[]
+  caseInsensitive: boolean
+  diagnostic: string | null
+}
+
+function gitTopLevel(cwd: string): string | null {
+  try {
+    const p = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--show-toplevel'], {
+      env: { ...process.env, ...worktreeGitEnvironment(cwd) }, stdout: 'pipe', stderr: 'ignore',
+    })
+    if (p.exitCode !== 0) return null
+    return new TextDecoder().decode(p.stdout).trim() || null
+  } catch { return null }
+}
+
+function flipOneAsciiLetter(value: string): string | null {
+  let index = -1
+  for (let candidate = value.length - 1; candidate >= 0; candidate--) {
+    if (/[A-Za-z]/.test(value[candidate]!)) {
+      index = candidate
+      break
+    }
+  }
+  if (index === -1) return null
+  const letter = value[index]!
+  const flipped = letter === letter.toLowerCase() ? letter.toUpperCase() : letter.toLowerCase()
+  return value.slice(0, index) + flipped + value.slice(index + 1)
+}
+
+export function checkoutAliases(cwd: string): CheckoutAliases | null {
+  const addressed = checkoutRootAsAddressed(cwd)
+  const top = gitTopLevel(cwd)
+  if (!addressed || !top) return null
+  let canonical: string
+  try { canonical = realpathSync(addressed) } catch { canonical = top }
+  const roots = [...new Set([addressed, top, canonical])]
+  return { roots, ...checkoutCaseSensitivity(addressed) }
+}
+
+export function checkoutCaseSensitivity(root: string): Omit<CheckoutAliases, 'roots'> {
+  const variant = flipOneAsciiLetter(root)
+  let caseInsensitive = false
+  let diagnostic: string | null = null
+  if (!variant) {
+    diagnostic = `checkout case-sensitivity probe indeterminate: root has no alphabetic character (${root})`
+  } else {
+    try {
+      const original = statSync(root)
+      const changed = statSync(variant)
+      caseInsensitive = original.dev === changed.dev && original.ino === changed.ino
+    } catch {
+      diagnostic = `checkout case-sensitivity probe indeterminate: could not stat case variant of ${root}`
+    }
+  }
+  return { caseInsensitive, diagnostic }
+}
+
 export type CheckoutStatusSnapshot = {
   project: string
   path: string
@@ -711,21 +769,63 @@ export function snapshotRegisteredCheckouts(
  * content: once the tree has been copied, every occurrence must point at the
  * copy or an agent following the pack escapes the isolation boundary.
  */
-export function retargetRepositoryPrompt(prompt: string, caller: string, worktree: string): string {
-  if (caller === worktree) return prompt
-  let cursor = 0
+function withoutTrailingSeparators(path: string): string {
+  let end = path.length
+  while (end > 1 && path[end - 1] === '/') end--
+  return path.slice(0, end)
+}
+
+function pathRootAt(
+  prompt: string, offset: number, root: string, caseInsensitive: boolean,
+): boolean {
+  const candidate = prompt.slice(offset, offset + root.length)
+  const equal = caseInsensitive
+    ? candidate.toLowerCase() === root.toLowerCase()
+    : candidate === root
+  if (!equal) return false
+  if (root === '/') return true
+  const after = prompt[offset + root.length]
+  return after === undefined || after === '/'
+}
+
+function hasPathStartBoundary(prompt: string, offset: number): boolean {
+  if (offset === 0) return true
+  return !/[\p{L}\p{N}_\-.]/u.test(prompt[offset - 1]!)
+}
+
+export function retargetRepositoryPrompt(
+  prompt: string, callers: string | string[], worktree: string,
+  caseInsensitive = false, worktreeAliases: string[] = [worktree],
+): string {
+  const sources = (Array.isArray(callers) ? callers : [callers])
+    .filter(Boolean).map(withoutTrailingSeparators)
+    .filter((root, index, all) => all.findIndex((other) =>
+      caseInsensitive ? other.toLowerCase() === root.toLowerCase() : other === root) === index)
+    .sort((a, b) => b.length - a.length)
+  if (sources.length === 0) return prompt
+  const targets = worktreeAliases.filter(Boolean).map(withoutTrailingSeparators)
+    .sort((a, b) => b.length - a.length)
+  const destination = withoutTrailingSeparators(worktree)
   let rewritten = ''
+  let cursor = 0
   while (cursor < prompt.length) {
-    const occurrence = prompt.indexOf(caller, cursor)
-    if (occurrence === -1) return rewritten + prompt.slice(cursor)
-    const after = prompt[occurrence + caller.length]
-    if (after === undefined || after === '/') {
-      rewritten += prompt.slice(cursor, occurrence) + worktree
-      cursor = occurrence + caller.length
-    } else {
-      rewritten += prompt.slice(cursor, occurrence + caller.length)
-      cursor = occurrence + caller.length
+    if (!hasPathStartBoundary(prompt, cursor)) {
+      rewritten += prompt[cursor++]
+      continue
     }
+    const target = targets.find((root) => pathRootAt(prompt, cursor, root, caseInsensitive))
+    if (target) {
+      rewritten += prompt.slice(cursor, cursor + target.length)
+      cursor += target.length
+      continue
+    }
+    const source = sources.find((root) => pathRootAt(prompt, cursor, root, caseInsensitive))
+    if (source) {
+      rewritten += destination + (source === '/' && prompt[cursor + 1] !== undefined ? '/' : '')
+      cursor += source.length
+      continue
+    }
+    rewritten += prompt[cursor++]
   }
   return rewritten
 }
@@ -1311,6 +1411,7 @@ export async function run(opts: {
   let carried: import('./worktree.ts').CarriedWorkingState | null = null
   let changes: import('./worktree.ts').Changes | null = null
   let isolatedCwd: string | null = null
+  let retargetDiagnostic: string | null = null
   /**
    * Cutting the worktree can FAIL, and the row already exists by now.
    *
@@ -1434,9 +1535,17 @@ export async function run(opts: {
         claim.id,
       )
       cwd = worktree.path
-      const callerRoot = checkoutRootAsAddressed(callerCwd)
-      if (!callerRoot) throw new Error(`could not resolve caller checkout root: ${callerCwd}`)
-      prompt = retargetRepositoryPrompt(prompt, callerRoot, worktree.path)
+      const caller = checkoutAliases(callerCwd)
+      if (!caller) throw new Error(`could not resolve caller checkout root: ${callerCwd}`)
+      retargetDiagnostic = caller.diagnostic
+      let realWorktree = worktree.path
+      try { realWorktree = realpathSync(worktree.path) } catch { /* the Git spelling remains valid */ }
+      const worktreeRoots = [...new Set([
+        worktree.path, gitTopLevel(worktree.path) ?? worktree.path, realWorktree,
+      ])]
+      prompt = retargetRepositoryPrompt(
+        prompt, caller.roots, worktree.path, caller.caseInsensitive, worktreeRoots,
+      )
       // The original file remains the caller's resumable spec. The bound file
       // and row describe what was actually sent after the worktree had an
       // address, which is the evidence an audit needs.
@@ -1810,6 +1919,7 @@ export async function run(opts: {
       error = 'reported done with no change and no test run'
       failureKind = 'other'
     }
+    if (retargetDiagnostic) error = error ? `${error}\n${retargetDiagnostic}` : retargetDiagnostic
     if (contractObjects > 1) {
       const note = `${contractObjects} contract objects in output; took the last`
       error = error ? `${error}\n${note}` : note
