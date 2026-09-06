@@ -12,11 +12,9 @@
  * anything. Run files go the same way: ORCH_RUNS points at a temp directory so
  * concurrent copies of the suite in one checkout do not share filenames.
  */
-import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
-import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync,
-         realpathSync, mkdirSync, utimesSync, chmodSync, readdirSync, statSync,
-         symlinkSync, copyFileSync, cpSync, openSync, closeSync, lstatSync, unlinkSync, renameSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync, utimesSync, chmodSync, readdirSync, statSync, symlinkSync, copyFileSync, cpSync, lstatSync, unlinkSync, renameSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
@@ -24,57 +22,298 @@ import * as ts from 'typescript'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import {
-  DASHBOARD_CAPABILITY_PATH_ENV, DASHBOARD_CAPABILITY_TOKEN_ENV,
-} from '../../shared/dashboard-capability.ts'
+import { DASHBOARD_CAPABILITY_PATH_ENV, DASHBOARD_CAPABILITY_TOKEN_ENV } from '../../shared/dashboard-capability.ts'
 import { OrchProjectListSchema, OrchRunEnvelopeSchema } from '../../shared/orch-contract.ts'
-import type { WorktreeCreate, WorktreeCreateArg } from './projects.ts'
+import type { WorktreeCreate } from './projects.ts'
 import type { ReviewReply, WorkerReply } from './contract.ts'
-
-const declaredCreate = (command: string, args: WorktreeCreateArg[]): WorktreeCreate =>
-  ({ command, args })
-
-const runJson = (line: string) =>
-  OrchRunEnvelopeSchema.parse(JSON.parse(line)).data as Record<string, any>
-
-// Some lifecycle tests need compound shell setup in a scratch repository. The
-// production registration path refuses this shape; these tests bypass the
-// register deliberately because the compound script is their fixture.
-const compoundCreate = (script: string): WorktreeCreate =>
-  ({ command: 'sh', args: ['-c', script] })
-
-const gitEnvironmentVariables = Object.keys(process.env).filter((variable) =>
-  variable.startsWith('GIT_'))
-async function runWithDelayedStdoutReader(
-  argv: string[], env: Record<string, string | undefined>,
-): Promise<{ exitCode: number; stdout: Buffer; stderr: string }> {
-  const pipeDir = mkdtempSync(join(tmpdir(), 'orch-slow-stdout-'))
-  const fifo = join(pipeDir, 'stdout.fifo')
-  const made = Bun.spawnSync(['mkfifo', fifo], { stdout: 'pipe', stderr: 'pipe' })
-  if (made.exitCode !== 0) throw new Error(made.stderr.toString())
-  try {
-    // fd 3 is opened before the sleep, so the producer starts against a pipe
-    // whose consumer deliberately does not read until its buffer is full.
-    const reader = Bun.spawn(
-      ['sh', '-c', 'exec 3<"$1"; sleep 0.25; cat <&3', 'slow-reader', fifo],
-      { stdout: 'pipe', stderr: 'pipe' },
-    )
-    const writer = openSync(fifo, 'w')
-    const producer = Bun.spawn(argv, { env, stdout: writer, stderr: 'pipe' })
-    closeSync(writer)
-    const [exitCode, stdout, stderr, readerExit, readerError] = await Promise.all([
-      producer.exited,
-      new Response(reader.stdout).arrayBuffer(),
-      new Response(producer.stderr).text(),
-      reader.exited,
-      new Response(reader.stderr).text(),
-    ])
-    if (readerExit !== 0) throw new Error(readerError || `slow reader exited ${readerExit}`)
-    return { exitCode, stdout: Buffer.from(stdout), stderr }
-  } finally {
-    rmSync(pipeDir, { recursive: true, force: true })
-  }
-}
+import {
+  AGENTS,
+  ARGV_PROMPT_BYTES,
+  BETA_SCALE,
+  CANON_EVALS,
+  CANON_EVAL_LENS,
+  CODEX_ASK_ENV_VARS,
+  CODEX_EXEC_SANDBOX,
+  COOLS_DOWN,
+  COULD_NOT_VERIFY_INSTRUCTION,
+  CanonBudgetError,
+  EVIDENCE_WINDOW,
+  FAILS_OVER,
+  FIDELITY_PENALTY,
+  GENERIC_QUESTION_TOKENS,
+  INFRASTRUCTURE_RECOVERY,
+  ISSUE_DIAGNOSIS_SCHEMA,
+  ISSUE_WORKER_SCHEMA,
+  ImportRefusalError,
+  JOBS,
+  KEEP_RUN_FILES_DAYS,
+  LAND_PREAMBLE,
+  MIN_REVIEW_TRIAGED,
+  MIN_SAMPLE,
+  NEEDS_HEALTH,
+  NEEDS_HUMAN,
+  NEEDS_HUMAN_TITLE,
+  NOISE_BAND,
+  NOT_EVIDENCE,
+  NO_REPO_PREAMBLE,
+  OUTPUT_RESERVE,
+  PENDING_BOOTSTRAP_MS,
+  POSTERIOR_NOISE_BAND,
+  PROMPT_SIZE_BOUNDARY,
+  QUALITY_STEP,
+  READER_DELIVERABLE_FIRST,
+  READONLY_PREAMBLE,
+  REVIEW_SCHEMA,
+  REVIEW_SEVERITY_INSTRUCTION,
+  ROUTING_BACKTEST_SEEDS,
+  RUNS_DIR,
+  SHARED_OUTPUT_REASON,
+  STALE_AFTER_MS,
+  STANDING_EXPLORE_RATE,
+  TRACKED_EVAL_PATH,
+  UNSCORED_WHERE,
+  UNTRACKED_EVAL_PATH,
+  VERIFY_CLAIM_SCHEMA,
+  WAKE_COOLDOWN_MS,
+  WEIGHT,
+  WORKER_PREAMBLE,
+  addDoctrineRule,
+  addPair,
+  addRun,
+  addSkip,
+  adoptRunMutation,
+  allInjectChecks,
+  allNumericLiterals,
+  applyImport,
+  applySchema,
+  ask,
+  assertCallerAncestry,
+  assertGrokTrustEligible,
+  assertSharedRefGuardOutsideWritableRoots,
+  authorizeRunMutation,
+  available,
+  baselineForPair,
+  betaContribution,
+  bootstrapFixtureStore,
+  boundedIssuePack,
+  bradleyTerry,
+  branchTip,
+  brief,
+  calibrationLine,
+  callerDrift,
+  candidates,
+  canonEvalsReport,
+  canonSourceFor,
+  canonSourceInstruction,
+  carryWorkingState,
+  changedRegisteredCheckouts,
+  changesIn,
+  checkDoc,
+  checkMessages,
+  checkoutAliases,
+  checkoutCaseSensitivity,
+  checkoutHasUncommittedWork,
+  classify,
+  cleanReviewEvidence,
+  compileBrief,
+  compilePack,
+  completeReview,
+  compoundCreate,
+  consumeDoc,
+  consumeDocument,
+  contentTree,
+  contractConflicts,
+  coverageAudit,
+  createArgv,
+  createDocsMcpServer,
+  createReadOnlyWithTool,
+  createReadOnlyWorktree,
+  createWithTool,
+  createWorktree,
+  currentCanonEvalSha,
+  currentPolicySelection,
+  db,
+  dbNameFor,
+  deadRunningProcessConditions,
+  declaredCreate,
+  deleteDoc,
+  detachedRunOptions,
+  detectBlockers,
+  diffDocRevisions,
+  diffPack,
+  dir,
+  docSubjects,
+  docsForRun,
+  duelMatrices,
+  ensureLocalHealth,
+  errorTail,
+  evidenceFor,
+  excludeSharedOutputRuns,
+  exportDocs,
+  failingCanonEvalSlugs,
+  fakeDocker,
+  fakeDockerCommand,
+  fileIssue,
+  fill,
+  fillTool,
+  formatGitLocks,
+  gateFailureSummary,
+  getDoc,
+  getDocRevision,
+  getReview,
+  gitLocks,
+  gitObjectEnvironmentFor,
+  gradeReviewLens,
+  grokMcpConnection,
+  guide,
+  gwetAc1,
+  hasRealQuestions,
+  hermeticGitCommand,
+  hermeticGitEnv,
+  implicitReviewWarning,
+  importDocs,
+  inferredReadOnlyKey,
+  isNonAnswer,
+  judgeability,
+  label,
+  land,
+  landingReviewCoverage,
+  landingStatus,
+  lastCanonEvalAt,
+  ledgerRef,
+  listDocMetadata,
+  listDocRevisions,
+  listDocs,
+  listDoctrineRules,
+  listLedgerRefs,
+  listOpenResumes,
+  listPairs,
+  listReviews,
+  listSkips,
+  localReachable,
+  mainCheckoutOf,
+  mcpRequestFromStored,
+  median,
+  messageArchitect,
+  messagesForRun,
+  missingDatabaseMessage,
+  monitor,
+  monitorHistory,
+  nowIso,
+  numericLiteralReport,
+  orphanSafety,
+  packResumePrompt,
+  packedResumePrompt,
+  parseFiledIssue,
+  parseIssueReply,
+  parseResumeFrontmatter,
+  parseReviewReply,
+  parseRunIds,
+  parseWorkerReply,
+  parseWorkerReplyWithCount,
+  pendingForSession,
+  pick,
+  planImport,
+  preflight,
+  preflightMcp,
+  prepareSharedRefGuard,
+  prepareWorktreeObjects,
+  processStartTime,
+  projectAt,
+  projectByName,
+  projectLockState,
+  projects,
+  promoteWorkflow,
+  promptSizeBucket,
+  pruneRuns,
+  qwenSession,
+  readDocs,
+  realQuestions,
+  reapStale,
+  recipeNotes,
+  reclaimStaleProjectLock,
+  reconcileHub,
+  recordDuels,
+  recordPack,
+  recordReview,
+  recordReviews,
+  recordSessionSeen,
+  registeredRepositoryMissingDatabase,
+  removeDoc,
+  removeFor,
+  removeProject,
+  removeSharedRefGuard,
+  repoRootOf,
+  resetLocalHealth,
+  resolveBase,
+  resolveDatabase,
+  resolveLandingBranch,
+  resolveLedgerRef,
+  resolveReviewTarget,
+  resolveRootFromLastTurn,
+  resolveRunsDirectory,
+  resolveSupersededTurn,
+  restoreDoc,
+  resumeAge,
+  retargetRepositoryPrompt,
+  retargetRepositoryPromptForDispatch,
+  retargetedPrompt,
+  retireDoctrineRule,
+  retryModelForAgent,
+  reviewCalibration,
+  reviewCalibrationFleet,
+  reviewPins,
+  reviewReply,
+  routingBacktest,
+  routingBacktestEnsemble,
+  rulingConditions,
+  rulingPrompt,
+  run,
+  runCanonEvals,
+  runDetail,
+  runFilePaths,
+  runJob,
+  runJson,
+  runRecipe,
+  runWithDelayedStdoutReader,
+  score,
+  scoreboard,
+  scrubbedGitEnv,
+  seedArgv,
+  seedFromReport,
+  sessionId,
+  setBaseline,
+  setDoc,
+  setLedgerRef,
+  setWorkflow,
+  snapshotRegisteredCheckouts,
+  sourceCoverage,
+  stackAt,
+  staleProjectLockHolder,
+  state,
+  strictCodexSchema,
+  summary,
+  targetGitEnvironment,
+  triageFinding,
+  unavailableReason,
+  unmergedBranch,
+  unscoredCount,
+  upsertProject,
+  validateCliArgs,
+  validatedTrackerTaskKey,
+  wakeDecision,
+  weigh,
+  weightCase,
+  withProjectLock,
+  withWorktreeCreateLock,
+  workerPreamble,
+  workerReply,
+  workerResumeGuard,
+  workerSharedGitRoots,
+  worktreeGitDir,
+  writeDoc,
+  writingFailoverRefusal,
+} from '../test/fixture.ts'
 
 describe('landing is gated on the exact commit that reaches trunk', () => {
   let landingFixtureRunId = 50_000
@@ -1600,162 +1839,6 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     expect(p.stderr.toString() + p.stdout.toString()).toContain('pass --message or --file, not both')
   })
 })
-const hermeticGitCommand =
-  `env ${gitEnvironmentVariables.map((variable) => `-u ${variable}`).join(' ')} git`
-
-/**
- * One database for the whole file, chosen before anything imports db.ts.
- *
- * db() caches its handle and DB_PATH is read at module load, so a per-test
- * database would need the whole module graph reloaded — and route.ts imports
- * db.ts by a plain specifier, which Bun caches once however the test file
- * spells its own import. Reloading only the modules the test names left route.ts
- * talking to the first test's file, which had already been deleted. Clearing the
- * tables between tests is both simpler and closer to how this actually runs.
- */
-const dir = mkdtempSync(join(tmpdir(), 'orch-test-'))
-process.env.ORCH_DB = join(dir, 'test.db')
-process.env.ORCH_RUNS = join(dir, 'runs')
-const originalTestSandbox = process.env.ORCH_SANDBOX
-// Existing fake-agent integration tests write capture artifacts outside their
-// disposable trees. Profile construction and live SRT behaviour have dedicated
-// coverage; these tests exercise their original subject on the host seam.
-process.env.ORCH_SANDBOX = 'host'
-const hermeticHome = join(dir, 'home')
-mkdirSync(hermeticHome)
-const { scrubbedGitEnv, targetGitEnvironment } = await import('./worktree.ts')
-const { mainCheckoutOf } = await import('../../shared/git.ts')
-
-// A worker routes git objects and ref hooks into its own linked-worktree metadata.
-// None of that routing belongs to the scratch repositories built by this test process.
-const hermeticGitEnv = (extra: Record<string, string> = {}) => ({
-  ...scrubbedGitEnv(),
-  HOME: hermeticHome,
-  GIT_CONFIG_GLOBAL: '/dev/null',
-  GIT_CONFIG_SYSTEM: '/dev/null',
-  ...extra,
-})
-const originalTestPath = process.env.PATH
-const cleanDockerBin = join(dir, 'clean-docker-bin')
-mkdirSync(cleanDockerBin)
-writeFileSync(join(cleanDockerBin, 'docker'), '#!/bin/sh\nexit 0\n')
-chmodSync(join(cleanDockerBin, 'docker'), 0o755)
-process.env.PATH = `${cleanDockerBin}:${originalTestPath ?? ''}`
-writeFileSync(join(dir, '.gitignore'), '*\n!.gitignore\n')
-for (const args of [
-  ['init', '-b', 'main'],
-  ['config', 'user.email', 'orch-test@example.invalid'],
-  ['config', 'user.name', 'Orch Test'],
-  ['add', '.gitignore'],
-  ['commit', '-m', 'test fixture'],
-]) {
-  const p = Bun.spawnSync(['git', ...args], {
-    cwd: dir, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
-  })
-  if (p.exitCode !== 0) throw new Error(p.stderr.toString())
-}
-
-const { db, nowIso, reapStale, pendingForSession, unscoredCount, judgeability, STALE_AFTER_MS,
-        PENDING_BOOTSTRAP_MS, WEIGHT, weigh, label, FIDELITY_PENALTY, UNSCORED_WHERE,
-        excludeSharedOutputRuns, SHARED_OUTPUT_REASON, applySchema, recordDuels, duelMatrices,
-        parseRunIds, recordSessionSeen, GENERIC_QUESTION_TOKENS,
-        bootstrapFixtureStore, authorizeRunMutation, adoptRunMutation, sessionId } = await import('./db.ts')
-bootstrapFixtureStore(process.env.ORCH_DB!)
-const { candidates, weightCase, scoreboard, median, evidenceFor, pick,
-        NOISE_BAND, QUALITY_STEP, MIN_SAMPLE, OUTPUT_RESERVE, EVIDENCE_WINDOW,
-        STANDING_EXPLORE_RATE, PROMPT_SIZE_BOUNDARY, promptSizeBucket, betaContribution,
-        BETA_SCALE, POSTERIOR_NOISE_BAND, currentPolicySelection } = await import('./route.ts')
-const { guide } = await import('./guide.ts')
-const { validateCliArgs } = await import('./args.ts')
-const { bradleyTerry, gwetAc1 } = await import('./agreement.ts')
-const { routingBacktest, routingBacktestEnsemble, ROUTING_BACKTEST_SEEDS } = await import('./routing-backtest.ts')
-const { projects, projectAt, projectByName, stackAt, upsertProject, removeProject } = await import('./projects.ts')
-const {
-  missingDatabaseMessage, registeredRepositoryMissingDatabase, resolveDatabase, resolveRunsDirectory,
-} = await import('./database-location.ts')
-const { dbNameFor, recipeNotes, runRecipe, fill } = await import('./recipe.ts')
-const { JOBS } = await import('./jobs.ts')
-const { runDetail, state } = await import('./serve.ts')
-const { classify, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOT_EVIDENCE, COOLS_DOWN, FAILS_OVER,
-        isNonAnswer, detectBlockers } = await import('./failure.ts')
-const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePaths, pruneRuns, KEEP_RUN_FILES_DAYS,
-        RUNS_DIR, grokMcpConnection, assertGrokTrustEligible, writingFailoverRefusal, resolveSupersededTurn,
-        resolveRootFromLastTurn, gitObjectEnvironmentFor, inferredReadOnlyKey,
-        canonSourceFor, canonSourceInstruction, snapshotRegisteredCheckouts,
-        changedRegisteredCheckouts, checkoutAliases, checkoutCaseSensitivity,
-        retargetRepositoryPrompt, retargetRepositoryPromptForDispatch,
-        packedResumePrompt, resolveReviewTarget, implicitReviewWarning, mcpRequestFromStored,
-        retryModelForAgent, run: runJob } = await import('./run.ts')
-const run = runJob
-const {
-  CANON_EVALS, CANON_EVAL_LENS, TRACKED_EVAL_PATH, UNTRACKED_EVAL_PATH,
-  runCanonEvals, canonEvalsReport, currentCanonEvalSha, failingCanonEvalSlugs, lastCanonEvalAt,
-} = await import('./evals.ts')
-const retargetedPrompt = (
-  prompt: string, callers: string | string[], worktree: string,
-  caseInsensitive = false, protectedWorktreeRoots: string[] = [],
-) => retargetRepositoryPrompt(
-  prompt, callers, worktree, caseInsensitive, protectedWorktreeRoots,
-).prompt
-const { summary } = await import('./metric.ts')
-const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
-        NO_REPO_PREAMBLE, WORKER_PREAMBLE, LAND_PREAMBLE, REVIEW_SCHEMA,
-        READER_DELIVERABLE_FIRST,
-        REVIEW_SEVERITY_INSTRUCTION, INFRASTRUCTURE_RECOVERY, COULD_NOT_VERIFY_INSTRUCTION,
-        VERIFY_CLAIM_SCHEMA, ISSUE_WORKER_SCHEMA, workerPreamble, workerResumeGuard,
-        rulingPrompt, packResumePrompt, contractConflicts, hasRealQuestions, realQuestions } = await import('./contract.ts')
-const { cleanReviewEvidence, parseReviewReply, recordReview, recordReviews, gradeReviewLens, reviewPins, coverageAudit,
-        triageFinding, completeReview, getReview, listReviews, reviewCalibration,
-        reviewCalibrationFleet, calibrationLine,
-        MIN_REVIEW_TRIAGED } = await import('./review.ts')
-const { ask } = await import('./ask.ts')
-const { checkMessages, messageArchitect, messagesForRun } = await import('./mailbox.ts')
-const { orphanSafety, repoRootOf, createWorktree, createWithTool, createReadOnlyWorktree,
-        createReadOnlyWithTool, resolveBase, fillTool,
-        seedArgv, createArgv, worktreeGitDir, prepareWorktreeObjects, prepareSharedRefGuard,
-        assertSharedRefGuardOutsideWritableRoots, removeSharedRefGuard,
-        workerSharedGitRoots,
-        carryWorkingState, withWorktreeCreateLock, withProjectLock, projectLockState,
-        reclaimStaleProjectLock, processStartTime, staleProjectLockHolder,
-        unmergedBranch, assertCallerAncestry, checkoutHasUncommittedWork, callerDrift,
-        changesIn, contentTree, removeFor, branchTip } = await import('./worktree.ts')
-const { gateFailureSummary, land, landingStatus, landingReviewCoverage, resolveLandingBranch } = await import('./landing.ts')
-const { gitLocks, formatGitLocks } = await import('./git-locks.ts')
-const { AGENTS, ARGV_PROMPT_BYTES, localReachable, ensureLocalHealth, resetLocalHealth,
-        unavailableReason, available, NEEDS_HEALTH, wakeDecision,
-        WAKE_COOLDOWN_MS, CODEX_EXEC_SANDBOX, CODEX_ASK_ENV_VARS, strictCodexSchema,
-        qwenSession } = await import('./agents.ts')
-const { listDocs, listDocMetadata, getDoc, setDoc: writeDoc, consumeDoc: consumeDocument, removeDoc: deleteDoc,
-        docsForRun, exportDocs, importDocs: readDocs, brief, docSubjects,
-        listOpenResumes, parseResumeFrontmatter, resumeAge, listDocRevisions, getDocRevision, restoreDoc,
-        diffDocRevisions } =
-  await import('./docs.ts')
-type TestDocInput = Parameters<typeof writeDoc>[0]
-const setDoc = (input: Omit<TestDocInput, 'reason'> & { reason?: string }) =>
-  writeDoc({ ...input, reason: input.reason ?? 'test write' })
-const consumeDoc = (
-  scope: string, subject: string | null, slug: string,
-  context: { reason: string; author?: string } = { reason: 'test consume' },
-) => consumeDocument(scope, subject, slug, context)
-const removeDoc = (
-  scope: string, subject: string | null, slug: string,
-  context: { reason: string; author?: string } = { reason: 'test delete' },
-) =>
-  deleteDoc(scope, subject, slug, context)
-const importDocs = (dir: string, context = { reason: 'test import' }) => readDocs(dir, context)
-const { createDocsMcpServer, fileIssue } = await import('./mcp.ts')
-const { setWorkflow, promoteWorkflow } = await import('./workflows.ts')
-const { compilePack, compileBrief, checkDoc, CanonBudgetError, recordPack, diffPack,
-        allInjectChecks, allNumericLiterals, numericLiteralReport } = await import('./canon.ts')
-const { deadRunningProcessConditions, reconcileHub, rulingConditions, monitorHistory, monitor } =
-  await import('./monitor.ts')
-const { listPairs, addPair, baselineForPair, setBaseline, listSkips, addSkip,
-        setLedgerRef, ledgerRef, listLedgerRefs, resolveLedgerRef,
-        listDoctrineRules, addDoctrineRule, retireDoctrineRule } =
-  await import('./porting.ts')
-const { applyImport, ImportRefusalError, planImport, sourceCoverage } = await import('./porting-import.ts')
-const { parseFiledIssue, seedFromReport, boundedIssuePack, parseIssueReply,
-        validatedTrackerTaskKey, ISSUE_DIAGNOSIS_SCHEMA } = await import('./issue.ts')
 
 describe('filed issue coordinator inputs', () => {
   const shown = { task: { key: 'DEV-9', title: '[DEFECT] broken', body: `TYPE: DEFECT
@@ -2204,23 +2287,6 @@ describe('operational monitor record', () => {
   })
 })
 
-beforeEach(() => {
-  // question cascades from run, but the delete order still matters: it is
-  // listed first so a future FK-enforcing change cannot make this fail
-  // mysteriously halfway through a suite.
-  db().exec('DELETE FROM canon_eval; DELETE FROM canon_pack; DELETE FROM monitor_condition; DELETE FROM monitor_invocation; DELETE FROM landing_review_carry; DELETE FROM landing_override; DELETE FROM review_finding; DELETE FROM review_lens; DELETE FROM review; DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc_revision; DELETE FROM doc; DELETE FROM run_message; DELETE FROM question; DELETE FROM compared_pair; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run_mutation_audit; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
-})
-
-afterAll(() => {
-  delete process.env.ORCH_DB
-  delete process.env.ORCH_RUNS
-  if (originalTestSandbox === undefined) delete process.env.ORCH_SANDBOX
-  else process.env.ORCH_SANDBOX = originalTestSandbox
-  if (originalTestPath === undefined) delete process.env.PATH
-  else process.env.PATH = originalTestPath
-  rmSync(dir, { recursive: true, force: true })
-})
-
 describe('production git environments', () => {
   test('the shared scrub removes worker git routing and preserves unrelated variables', () => {
     const contaminated: NodeJS.ProcessEnv = {
@@ -2543,70 +2609,6 @@ describe('read-only run task attribution', () => {
       rmSync(repo, { recursive: true, force: true })
     }
   })
-})
-
-/** Insert a finished run. Returns its id. */
-function addRun(o: {
-  agent: string; job: string; status?: string; latency?: number; probe?: number
-  kind?: string; parent?: number; turn?: number; session?: string | null; stack?: string
-  model?: string; startedAt?: string
-  lens?: string; repo?: string; inputTree?: string
-  headCommit?: string
-  promptBytes?: number
-}): number {
-  return (db().query(
-    `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head,
-                      status, latency_ms, probe, failure_kind, parent_run_id, turn, session_id, stack,
-                      model, lens, repo, input_tree, head_commit)
-     VALUES (?,?,?,'sha',?,'head',?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
-  ).get(
-    o.startedAt ?? new Date().toISOString(), o.agent, o.job, o.promptBytes ?? 10,
-    o.status ?? 'ok', o.latency ?? 1000, o.probe ?? 0, o.kind ?? null,
-    o.parent ?? null, o.turn ?? 1, o.session ?? null, o.stack ?? null,
-    o.model ?? AGENTS[o.agent]?.model ?? null, o.lens ?? null, o.repo ?? null,
-    o.inputTree ?? null, o.headCommit ?? null,
-  ) as { id: number }).id
-}
-
-function fakeDocker(containers: string[], volumes: string[]): { dir: string; env: Record<string, string> } {
-  const fakeDir = mkdtempSync(join(tmpdir(), 'orch-fake-docker-'))
-  const script = join(fakeDir, 'docker')
-  writeFileSync(script, `#!/bin/sh
-case "$1 $2" in
-  "ps -a") printf '%s\\n' "$FAKE_DOCKER_CONTAINERS" ;;
-  "volume ls") printf '%s\\n' "$FAKE_DOCKER_VOLUMES" ;;
-  *) exit 9 ;;
-esac
-`)
-  chmodSync(script, 0o755)
-  return {
-    dir: fakeDir,
-    env: {
-      PATH: `${fakeDir}:${process.env.PATH ?? ''}`,
-      FAKE_DOCKER_CONTAINERS: containers.join('\n'),
-      FAKE_DOCKER_VOLUMES: volumes.join('\n'),
-    },
-  }
-}
-
-function fakeDockerCommand(body: string): { dir: string; env: Record<string, string> } {
-  const fakeDir = mkdtempSync(join(tmpdir(), 'orch-fake-docker-command-'))
-  const script = join(fakeDir, 'docker')
-  writeFileSync(script, `#!/bin/sh\n${body}\n`)
-  chmodSync(script, 0o755)
-  return { dir: fakeDir, env: { PATH: `${fakeDir}:${process.env.PATH ?? ''}` } }
-}
-
-const reviewReply = (findings = 1, severity = 'major') => ({
-  findings: Array.from({ length: findings }, (_, i) => ({
-    severity, location: `file.ts:${i + 1}`, evidence: `evidence ${i + 1}`,
-    proposed_correction: `fix ${i + 1}`,
-  })),
-  provenance: {
-    tree_inspected: 'abc123', standards_read: ['AGENTS.md'], model_used: 'reported-by-reviewer',
-    files_covered: ['file.ts'], commands_run: ['bun test'], could_not_verify: [],
-    canon_source: 'live database' as const,
-  },
 })
 
 describe('review discipline', () => {
@@ -4187,22 +4189,6 @@ describe('port importer', () => {
     expect(sourceCoverage(jsonPlan, files)).toContainEqual({ file: 'refs.json', offset: 0, text: files.refs })
   })
 })
-
-function score(
-  runId: number, delivery: string, quality: string | null = null, fidelity: string | null = null,
-) {
-  db().query(
-    'INSERT INTO score (run_id, delivery, quality, fidelity, scored_at) VALUES (?,?,?,?,?)',
-  ).run(runId, delivery, quality, fidelity, new Date().toISOString())
-}
-
-function workerReply(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    status: 'done', summary: 'done', files_changed: ['changed.ts'], questions: null,
-    deviations: null, tests: { command: 'bun test', ran: true, passed: true, detail: null },
-    blockers: null, ...overrides,
-  }
-}
 
 describe('failure classification', () => {
   test('contract failures fail over as scoreable none evidence without cooldown or notification', () => {
