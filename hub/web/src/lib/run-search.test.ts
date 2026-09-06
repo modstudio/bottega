@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { matchesRunSearch, runSearchText, type SearchableLiveRun, type SearchableRun } from './run-search'
+import { PROJECT_FALLBACK } from './project'
 
 const completed: SearchableRun = {
   id: 42,
@@ -44,5 +45,10 @@ describe('runs collection search', () => {
       expect(matchesRunSearch(live, query)).toBe(true)
     }
     expect(runSearchText({ ...live, prompt_head: `${'x'.repeat(90)}hidden` })).not.toContain('hidden')
+  })
+
+  test('rows without a project are found by the fallback ProjectMark renders', () => {
+    expect(matchesRunSearch({ ...completed, project: null }, PROJECT_FALLBACK)).toBe(true)
+    expect(matchesRunSearch({ ...live, repo: null }, PROJECT_FALLBACK)).toBe(true)
   })
 })

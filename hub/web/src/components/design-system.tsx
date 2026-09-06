@@ -7,6 +7,7 @@ import { Select, type SelectOption } from '@/components/select'
 import { cx } from '@/components/cx'
 import { clearFilters, setFilter, setHours, useWindowState, WINDOWS, type WindowHours } from '@/lib/window'
 import { collectedTime, relativeTime } from '@/lib/format'
+import { PROJECT_FALLBACK } from '@/lib/project'
 
 export function PageHeader({ title, subtitle, subtitleTitle, actions }: { title: ReactNode; subtitle?: ReactNode; subtitleTitle?: string; actions?: ReactNode }) {
   return <header className="page-header">
@@ -94,5 +95,5 @@ export function projectVars(colors: ReturnType<typeof useProjectColors>, name: s
 export function ProjectMark({ name, colors: suppliedColors }: { name: string | null | undefined; colors?: ProjectColors }) {
   const queriedColors = useProjectColors(!suppliedColors)
   const colors = suppliedColors ?? queriedColors
-  return <span className="proj" style={projectVars(colors, name)}>{name || 'elsewhere'}</span>
+  return <span className="proj" style={projectVars(colors, name)}>{name || PROJECT_FALLBACK}</span>
 }
