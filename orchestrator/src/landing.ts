@@ -344,15 +344,16 @@ function commitForTree(
   const pinned = review.lenses.filter((lens) => lens.headCommit !== null)
   if (pinned.length) {
     const commits = new Set(pinned.map((lens) => lens.headCommit!))
-    if (pinned.length !== review.lenses.length || commits.size !== 1) {
+    if (commits.size === 1) {
+      const commit = pinned[0]!.headCommit!
+      if (gitOk(repoRoot, ['cat-file', '-e', `${commit}^{commit}`]) &&
+          git(repoRoot, ['rev-parse', `${commit}^{tree}`]) === tree) {
+        return { commit, resolution: 'pin' }
+      }
+    }
+    if (pinned.length === review.lenses.length) {
       return { commit: null, resolution: 'pin' }
     }
-    const commit = pinned[0]!.headCommit!
-    if (!gitOk(repoRoot, ['cat-file', '-e', `${commit}^{commit}`]) ||
-        git(repoRoot, ['rev-parse', `${commit}^{tree}`]) !== tree) {
-      return { commit: null, resolution: 'pin' }
-    }
-    return { commit, resolution: 'pin' }
   }
   const branches = [...new Set(review.lenses
     .filter((lens) => lens.inputTree === tree)

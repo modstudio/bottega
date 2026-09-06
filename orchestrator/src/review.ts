@@ -104,19 +104,27 @@ function projectPath(database: Database, name: string): string | null {
 function pinReviewedCommits(runs: RunRow[], database: Database): void {
   for (const run of runs) {
     if (!run.head_commit) continue
-    const repo = run.repo ? projectPath(database, run.repo) : null
-    if (!repo) {
-      throw new Error(`cannot pin review run ${run.id}: project ${run.repo ?? '(none)'} is not registered`)
-    }
-    if (!git(repo, ['cat-file', '-e', `${run.head_commit}^{commit}`]).ok) {
+    const warn = (why: string) => {
       console.error(
         `warning: review run ${run.id} recorded but ${pinRef(run.id)} was not created: ` +
-        `commit ${run.head_commit} is missing from ${repo}`,
+        why,
       )
-      continue
     }
-    const updated = git(repo, ['update-ref', pinRef(run.id), run.head_commit])
-    if (!updated.ok) throw new Error(`git update-ref ${pinRef(run.id)} failed: ${updated.err}`)
+    try {
+      const repo = run.repo ? projectPath(database, run.repo) : null
+      if (!repo) {
+        warn(`project ${run.repo ?? '(none)'} is not registered`)
+        continue
+      }
+      if (!git(repo, ['cat-file', '-e', `${run.head_commit}^{commit}`]).ok) {
+        warn(`commit ${run.head_commit} is missing from ${repo}`)
+        continue
+      }
+      const updated = git(repo, ['update-ref', pinRef(run.id), run.head_commit])
+      if (!updated.ok) warn(`git update-ref failed: ${updated.err}`)
+    } catch (cause) {
+      warn(String((cause as Error)?.message ?? cause))
+    }
   }
 }
 
@@ -178,7 +186,6 @@ export function recordReviews(
   })
   const reviewId = transaction()
   pinReviewedCommits(runs, database)
-  // TODO(DEV-282): its orch score grading path must call this same pinning path.
   return reviewId
 }
 
@@ -259,6 +266,8 @@ export function gradeReviewLens(
     { id: number; review_id: number } | null
   if (!row) {
     if (!output) throw new Error(`run ${runId} has no review output to record`)
+    // The scoring path records through recordReview so it shares the same
+    // best-effort commit pinning as `orch review record`.
     const reviewId = recordReview(runId, output, database)
     row = database.query('SELECT id, review_id FROM review_lens WHERE run_id=?').get(runId) as
       { id: number; review_id: number }

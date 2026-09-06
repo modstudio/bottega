@@ -654,6 +654,60 @@ describe('landing is gated on the exact commit that reaches trunk', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  test('a mixed old and new lens set carries from the agreeing non-null pin', () => {
+    const { repo, trees } = repoWithBranches(['mixed-pin-review'])
+    const project = 'landing-mixed-pin-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const commit = g(repo, 'rev-parse', 'mixed-pin-review')
+      const tree = g(repo, 'rev-parse', 'mixed-pin-review^{tree}')
+      const entries = [
+        addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'new', repo: project,
+          inputTree: tree, headCommit: commit }),
+        addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'old', repo: project,
+          inputTree: tree }),
+      ]
+      for (const runId of entries) db().query(
+        'UPDATE run SET branch=?, base_commit=?, launch_cwd=? WHERE id=?',
+      ).run('mixed-pin-review', oldBase, trees['mixed-pin-review']!, runId)
+      const reviewId = recordReviews(entries.map((runId) => ({ runId, output: reviewReply(0) })))
+      completeReview(reviewId)
+      writeFileSync(join(repo, 'mixed-pin-trunk.txt'), 'unrelated\n')
+      g(repo, 'add', 'mixed-pin-trunk.txt')
+      g(repo, 'commit', '-m', 'move trunk')
+      g(trees['mixed-pin-review']!, 'rebase', 'main')
+      expect(landingStatus(trees['mixed-pin-review']!)).toContain(
+        `review ${reviewId}: carried (patch-id`,
+      )
+      expect(landingStatus(trees['mixed-pin-review']!)).toContain('(commit from pin)')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('an all-null legacy lens set carries from the existing commit walk', () => {
+    const { repo, trees } = repoWithBranches(['walk-review'])
+    const project = 'landing-walk-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const tree = g(repo, 'rev-parse', 'walk-review^{tree}')
+      const reviewId = completedReview(project, [tree], {
+        branch: 'walk-review', baseCommit: oldBase, launchCwd: trees['walk-review']!,
+      })
+      const runId = (db().query('SELECT run_id FROM review_lens WHERE review_id=?').get(reviewId) as
+        { run_id: number }).run_id
+      g(repo, 'update-ref', '-d', `refs/orch/reviewed/${runId}`)
+      db().query('UPDATE run SET head_commit=NULL WHERE id=?').run(runId)
+      writeFileSync(join(repo, 'walk-trunk.txt'), 'unrelated\n')
+      g(repo, 'add', 'walk-trunk.txt')
+      g(repo, 'commit', '-m', 'move trunk')
+      g(trees['walk-review']!, 'rebase', 'main')
+      const status = landingStatus(trees['walk-review']!)
+      expect(status).toContain(`review ${reviewId}: carried (patch-id`)
+      expect(status).toContain('(commit from walk)')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   test('review pins prune only completed reviews whose branch has landed', () => {
     const { repo, trees } = repoWithBranches(['pin-prune'])
     const project = 'landing-pin-prune'
@@ -1955,6 +2009,99 @@ describe('review discipline', () => {
       { runId: addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'four',
         inputTree: '3333333333333333333333333333333333333333' }), output: reviewReply(0) },
     ])).toThrow(`run ${third}: 2222222222222222222222222222222222222222`)
+  })
+
+  test('an unregistered project warns after recording and does not block later grading', () => {
+    const runId = addRun({
+      agent: 'codex', job: 'review-lens', model: 'm', lens: 'unregistered-pin',
+      repo: 'not-registered', headCommit: 'a'.repeat(40),
+    })
+    const stderr = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const reviewId = recordReview(runId, reviewReply(0))
+      expect(reviewId).toBeGreaterThan(0)
+      expect(stderr).toHaveBeenCalledWith(expect.stringContaining(
+        `refs/orch/reviewed/${runId} was not created: project not-registered is not registered`,
+      ))
+      expect(() => gradeReviewLens(runId, null, {
+        reproduced: 'none', coverage: 'adequate', limits: 'named', overlap: 'none',
+      })).not.toThrow()
+      expect(db().query('SELECT COUNT(*) AS n FROM review WHERE id=?').get(reviewId))
+        .toEqual({ n: 1 })
+    } finally { stderr.mockRestore() }
+  })
+
+  test('an update-ref refusal warns after recording and does not block later grading', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-review-pin-refusal-'))
+    const runGit = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString().trim())
+      return p.stdout.toString().trim()
+    }
+    runGit('init', '-b', 'main')
+    runGit('config', 'user.email', 'orch-test@example.invalid')
+    runGit('config', 'user.name', 'Orch Test')
+    writeFileSync(join(repo, 'base.txt'), 'base\n')
+    runGit('add', 'base.txt')
+    runGit('commit', '-m', 'base')
+    const project = 'review-pin-refusal'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+    const runId = addRun({
+      agent: 'codex', job: 'review-lens', model: 'm', lens: 'refused-pin', repo: project,
+      inputTree: runGit('rev-parse', 'HEAD^{tree}'), headCommit: runGit('rev-parse', 'HEAD'),
+    })
+    const refDir = join(repo, '.git', 'refs', 'orch', 'reviewed')
+    mkdirSync(refDir, { recursive: true })
+    writeFileSync(join(refDir, `${runId}.lock`), 'held\n')
+    const stderr = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const reviewId = recordReview(runId, reviewReply(0))
+      expect(reviewId).toBeGreaterThan(0)
+      expect(stderr).toHaveBeenCalledWith(expect.stringContaining(
+        `refs/orch/reviewed/${runId} was not created: git update-ref failed:`,
+      ))
+      expect(() => runGit('rev-parse', `refs/orch/reviewed/${runId}`)).toThrow()
+      expect(() => gradeReviewLens(runId, null, {
+        reproduced: 'none', coverage: 'adequate', limits: 'absent', overlap: 'none',
+      })).not.toThrow()
+      expect(db().query('SELECT COUNT(*) AS n FROM review WHERE id=?').get(reviewId))
+        .toEqual({ n: 1 })
+    } finally {
+      stderr.mockRestore()
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('the grading capture path creates the same reviewed-commit pin', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-review-grade-pin-'))
+    const runGit = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString().trim())
+      return p.stdout.toString().trim()
+    }
+    try {
+      runGit('init', '-b', 'main')
+      runGit('config', 'user.email', 'orch-test@example.invalid')
+      runGit('config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      runGit('add', 'base.txt')
+      runGit('commit', '-m', 'base')
+      const project = 'review-grade-pin'
+      upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+      const commit = runGit('rev-parse', 'HEAD')
+      const runId = addRun({
+        agent: 'codex', job: 'review-lens', model: 'm', lens: 'grade-pin', repo: project,
+        inputTree: runGit('rev-parse', 'HEAD^{tree}'), headCommit: commit,
+      })
+      gradeReviewLens(runId, reviewReply(0), {
+        reproduced: 'none', coverage: 'adequate', limits: 'named', overlap: 'none',
+      })
+      expect(runGit('rev-parse', `refs/orch/reviewed/${runId}`)).toBe(commit)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
   test('precision counts accepted and modified as hits, rejects as misses, and skips nothing', () => {
@@ -13122,6 +13269,19 @@ describe('canonical schema rebuild', () => {
     const freshSql = tableSql(d, 'run')
     expect(freshSql.startsWith('CREATE TABLE run')).toBe(true)
     expect(freshSql.startsWith('CREATE TABLE "run"')).toBe(false)
+    d.close()
+  })
+
+  test('a rebuild refuses to drop a live column from a newer store', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'orch-schema-newer-')), 'newer.db')
+    const d = new Database(path)
+    applySchema(d)
+    d.exec('ALTER TABLE run ADD COLUMN future_evidence TEXT')
+    d.exec("UPDATE schema_meta SET value='older-binary' WHERE key='schema'")
+    expect(() => applySchema(d)).toThrow(
+      'live column(s) future_evidence would be dropped by a rebuild; this binary is older than the store',
+    )
+    expect(cols(d, 'run')).toContain('future_evidence')
     d.close()
   })
 

@@ -474,6 +474,14 @@ function rebuildTable(
     )
     const newCols = (d.query(`PRAGMA table_info(${newName})`).all() as { name: string }[])
       .map((c) => c.name)
+    const newColSet = new Set(newCols)
+    const dropped = [...oldCols].filter((c) => !newColSet.has(c))
+    if (dropped.length) {
+      throw new Error(
+        `live column(s) ${dropped.join(', ')} would be dropped by a rebuild; ` +
+        'this binary is older than the store',
+      )
+    }
     const common = newCols.filter((c) => oldCols.has(c))
     const insertList = common.map((c) => `"${c}"`).join(', ')
     const selectList = common.map((c) => {
