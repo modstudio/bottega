@@ -1269,8 +1269,7 @@ const { candidates, weightCase, scoreboard, median, evidenceFor, pick,
         STANDING_EXPLORE_RATE, PROMPT_SIZE_BOUNDARY, promptSizeBucket, betaContribution } = await import('./route.ts')
 const { guide } = await import('./guide.ts')
 const { gwetAc1 } = await import('./agreement.ts')
-const { passesRoutingBacktest, routingBacktest, routingBacktestEnsemble,
-        ROUTING_BACKTEST_SEEDS } = await import('./routing-backtest.ts')
+const { routingBacktest, routingBacktestEnsemble, ROUTING_BACKTEST_SEEDS } = await import('./routing-backtest.ts')
 const { projects, projectAt, projectByName, stackAt, upsertProject, removeProject } = await import('./projects.ts')
 const {
   missingDatabaseMessage, registeredRepositoryMissingDatabase, resolveDatabase, resolveRunsDirectory,
@@ -5859,32 +5858,27 @@ describe('routing backtest statistics', () => {
     expect(routingBacktest('summarize', 123).causalExcludedJudgements).toBe(1)
   })
 
-  test('a sparse matched subset cannot pass the wiring gate', () => {
-    const sparse = {
-      job: 'fix', runs: 8, agreements: 3, differences: 5,
-      currentMatched: 3, thompsonMatched: 5,
-      commonMatched: 2,
-      currentMean: 0.333, thompsonMean: 0.7,
-      currentExplorationShare: 0, thompsonExplorationShare: 0.25,
-      measurable: false, verdict: 'unmeasurable',
+  test('each simulated policy learns only from historical runs it selected', () => {
+    const insert = db().query(
+      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?,?,?,?, 'test')`,
+    )
+    for (let i = 0; i < 9; i++) {
+      const day = String(i + 1).padStart(2, '0')
+      const id = addRun({
+        agent: i < 5 ? 'codex' : 'agy', job: 'fix',
+        startedAt: `2026-01-${day}T00:00:00.000Z`,
+      })
+      insert.run(id, 'full', i < 5 ? 'mixed' : 'right', `2026-01-${day}T01:00:00.000Z`)
     }
-    expect(passesRoutingBacktest([sparse])).toBe(false)
+    const row = routingBacktest('fix', 2).jobs[0]!
+    // Neither replay selects the four historical agy runs, so their perfect
+    // outcomes never enter either policy's state as counterfactual evidence.
+    expect(row.currentSelections).toEqual({ codex: 8, grok: 1 })
+    expect(row.thompsonSelections).toEqual({ codex: 5, grok: 4 })
   })
 
-  test('the wiring gate accepts ties within noise plus one win, but rejects one loss', () => {
-    const row = (job: string, delta: number) => ({
-      job, runs: 20, agreements: 10, differences: 10,
-      currentMatched: MIN_SAMPLE, thompsonMatched: MIN_SAMPLE,
-      commonMatched: MIN_SAMPLE,
-      currentMean: 0.5, thompsonMean: 0.5 + delta,
-      currentExplorationShare: 0, thompsonExplorationShare: 0.25,
-      measurable: true, verdict: Math.abs(delta) <= NOISE_BAND ? 'tie' : delta > 0 ? 'win' : 'loss',
-    })
-    expect(passesRoutingBacktest([row('implement', -NOISE_BAND / 2), row('summarize', NOISE_BAND + 0.01)])).toBe(true)
-    expect(passesRoutingBacktest([row('implement', -NOISE_BAND - 0.01), row('summarize', NOISE_BAND + 0.01)])).toBe(false)
-  })
-
-  test('realised policy scores use common support and filtered verdicts expose only that job', () => {
+  test('reports only replay choices for the filtered job', () => {
     const insert = db().query(
       `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
        VALUES (?,?,?,'2026-01-01T00:00:00.000Z','test')`,
@@ -5898,20 +5892,28 @@ describe('routing backtest statistics', () => {
     }
     const result = routingBacktest('summarize', 7)
     expect(result.jobs.map((row) => row.job)).toEqual(['summarize'])
-    expect(result.trajectoryPass).toBe(passesRoutingBacktest(result.jobs))
     for (const row of result.jobs) {
-      expect(row.commonMatched).toBeLessThanOrEqual(row.currentMatched)
-      expect(row.commonMatched).toBeLessThanOrEqual(row.thompsonMatched)
-      expect(row.currentMean).toBe(row.thompsonMean)
+      expect(Object.values(row.currentSelections).reduce((sum, count) => sum + count, 0)).toBe(row.runs)
+      expect(Object.values(row.thompsonSelections).reduce((sum, count) => sum + count, 0)).toBe(row.runs)
+      expect(row.agreements + row.differences).toBe(row.runs)
     }
   })
 
-  test('the wiring verdict uses the fixed twenty-seed ensemble, never one seed', () => {
+  test('the ensemble aggregates the fixed twenty reproducible trajectories', () => {
+    const id = addRun({
+      agent: 'codex', job: 'summarize', startedAt: '2026-01-02T00:00:00.000Z',
+    })
+    db().query(
+      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?,'full','right','2026-01-02T01:00:00.000Z','test')`,
+    ).run(id)
     const result = routingBacktestEnsemble('summarize')
     expect(result.seeds).toEqual(ROUTING_BACKTEST_SEEDS)
     expect(result.trajectories).toHaveLength(20)
-    expect(result.passCount).toBe(result.trajectories.filter((run) => run.trajectoryPass).length)
-    expect(result.shouldWire).toBe(result.passCount >= 16)
+    expect(result.jobs).toHaveLength(1)
+    expect(result.jobs[0]!.runs).toBe(
+      result.trajectories.reduce((sum, trajectory) => sum + trajectory.jobs[0]!.runs, 0),
+    )
   })
 })
 

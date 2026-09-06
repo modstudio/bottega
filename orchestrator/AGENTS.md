@@ -193,6 +193,10 @@ consistently than absolute grades, and a fan-out already produces the pairs.
 Routing does not use these duels yet; `orch stats` reports them while the
 evidence accumulates.
 
+An off-policy backtest cannot decide a routing change from this judgement log
+because disagreements have no counterfactual outcome. The standing challenger
+draw is the online experiment that can.
+
 **A run that produced nothing counts as `unusable`.** Routing used to read only
 successful runs, which made failure invisible: an agent that fails most of the
 time but scores well on the few that land looked flawless. `agy` on review-lens

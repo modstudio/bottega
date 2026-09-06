@@ -9,7 +9,6 @@ import {
 
 export const ROUTING_BACKTEST_SEED = 287
 export const ROUTING_BACKTEST_SEEDS = Object.freeze(Array.from({ length: 20 }, (_, i) => i + 1))
-export const ROUTING_BACKTEST_REQUIRED_PASSES = 16
 
 type Event = {
   id: number; agent: string; job: string; stack: string | null; model: string | null
@@ -27,15 +26,10 @@ export type BacktestJob = {
   runs: number
   agreements: number
   differences: number
-  currentMatched: number
-  thompsonMatched: number
-  commonMatched: number
-  currentMean: number | null
-  thompsonMean: number | null
-  currentExplorationShare: number
+  agreementShare: number
   thompsonExplorationShare: number
-  measurable: boolean
-  verdict: string
+  currentSelections: Record<string, number>
+  thompsonSelections: Record<string, number>
 }
 
 export type RoutingBacktest = {
@@ -43,26 +37,12 @@ export type RoutingBacktest = {
   /** Earlier-id judgement/dispatch pairs excluded because the judgement did not exist yet. */
   causalExcludedJudgements: number
   jobs: BacktestJob[]
-  trajectoryPass: boolean
 }
 
 export type RoutingBacktestEnsemble = {
   seeds: readonly number[]
-  requiredPasses: number
-  passCount: number
-  jobs: { job: string; wins: number; ties: number; losses: number; unmeasurable: number }[]
+  jobs: BacktestJob[]
   trajectories: RoutingBacktest[]
-  shouldWire: boolean
-}
-
-export function passesRoutingBacktest(jobs: readonly BacktestJob[]): boolean {
-  // A Thompson deficit no larger than NOISE_BAND is a tie, not a loss. One
-  // trajectory passes only when every measurable job is a tie or win AND at
-  // least one job is a win beyond that same band.
-  const measurable = jobs.filter((job) => job.measurable)
-  return measurable.length > 0 &&
-    measurable.every((job) => job.thompsonMean! - job.currentMean! >= -NOISE_BAND) &&
-    measurable.some((job) => job.thompsonMean! - job.currentMean! > NOISE_BAND)
 }
 
 /** Mulberry32: compact, stable across runtimes, and sufficient for replay draws. */
@@ -84,40 +64,25 @@ function staticEligible(agent: string, jobName: string, promptBytes: number): bo
   return !Object.entries(j.needs).some(([cap, need]) => need && !a.caps[cap as keyof typeof a.caps])
 }
 
-function cooling(agent: string, at: Event): boolean {
-  const kinds = COOLS_DOWN.map((kind) => `'${kind}'`).join(',')
-  const row = db().query(
-    `WITH terminal AS (
-       SELECT id, status, failure_kind,
-              julianday(started_at) + latency_ms / 86400000.0 AS finished_at
-         FROM run
-        WHERE id < ? AND agent=? AND status IN ('ok','failed') AND latency_ms IS NOT NULL
-          AND julianday(started_at) + latency_ms / 86400000.0 <= julianday(?)
-     ), latest AS (
-       SELECT * FROM terminal WHERE status='failed' AND failure_kind IN (${kinds})
-        ORDER BY finished_at DESC, id DESC LIMIT 1
-     )
-     SELECT finished_at,
-            EXISTS(SELECT 1 FROM terminal s, latest f
-                    WHERE s.status='ok' AND s.finished_at > f.finished_at) AS cleared
-       FROM latest`,
-  ).get(at.id, agent, at.startedAt) as { finished_at: number; cleared: number } | null
-  if (!row || row.cleared) return false
-  const atJulian = Date.parse(at.startedAt) / 86400000 + 2440587.5
-  return (atJulian - row.finished_at) * 1440 < COOLDOWN_MIN
+function cooling(agent: string, at: Event, history: History): boolean {
+  const finishedAt = (event: Event) => Date.parse(event.startedAt) + event.latencyMs!
+  const terminal = history.filter((event) =>
+    event.agent === agent && event.latencyMs !== null && ['ok', 'failed'].includes(event.status),
+  )
+  const latest = terminal
+    .filter((event) => event.status === 'failed' && COOLS_DOWN.includes(event.failureKind as typeof COOLS_DOWN[number]))
+    .sort((a, b) => finishedAt(b) - finishedAt(a) || b.id - a.id)[0]
+  if (!latest) return false
+  if (terminal.some((event) => event.status === 'ok' && finishedAt(event) > finishedAt(latest))) return false
+  return Date.parse(at.startedAt) - finishedAt(latest) < COOLDOWN_MIN * 60_000
 }
 
-function priorLatency(agent: string, event: Event, stack?: string | null): number | null {
-  const comparison = event.promptBytes < PROMPT_SIZE_BOUNDARY ? '<' : '>='
-  const rows = db().query(
-    `SELECT latency_ms FROM run
-      WHERE id < ? AND agent=? AND job=? AND status='ok' AND probe=0
-        AND latency_ms IS NOT NULL AND prompt_bytes ${comparison} ?
-        ${stack ? 'AND stack=?' : ''}`,
-  ).all(...(stack
-    ? [event.id, agent, event.job, PROMPT_SIZE_BOUNDARY, stack]
-    : [event.id, agent, event.job, PROMPT_SIZE_BOUNDARY])) as { latency_ms: number }[]
-  return median(rows.map((row) => row.latency_ms))
+function priorLatency(agent: string, event: Event, history: History, stack?: string | null): number | null {
+  const small = event.promptBytes < PROMPT_SIZE_BOUNDARY
+  return median(history.filter((row) =>
+    row.agent === agent && row.job === event.job && row.status === 'ok' && row.latencyMs !== null &&
+    (row.promptBytes < PROMPT_SIZE_BOUNDARY) === small && (!stack || row.stack === stack),
+  ).map((row) => row.latencyMs!))
 }
 
 type Cell = {
@@ -129,7 +94,7 @@ function cellsFor(event: Event, history: History): Cell[] {
   const bucket = (e: Event) => e.promptBytes < PROMPT_SIZE_BOUNDARY
   const sameBucket = history.filter((e) => e.job === event.job && bucket(e) === bucket(event))
   const build = (stack?: string | null) => Object.keys(AGENTS)
-    .filter((agent) => staticEligible(agent, event.job, event.promptBytes) && !cooling(agent, event))
+    .filter((agent) => staticEligible(agent, event.job, event.promptBytes) && !cooling(agent, event, history))
     .map((agent) => {
       let evidence = sameBucket.filter((e) => e.agent === agent && (!stack || e.stack === stack))
       const currentModel = AGENTS[agent]!.model
@@ -141,7 +106,7 @@ function cellsFor(event: Event, history: History): Cell[] {
         score: evidence.length ? evidence.reduce((sum, e) => sum + e.weight, 0) / evidence.length : null,
         shrunk: null as number | null,
         free: ['free', 'local'].includes(AGENTS[agent]!.billing),
-        latency: priorLatency(agent, event, stack),
+        latency: priorLatency(agent, event, history, stack),
       } satisfies Cell
     })
   let cells = build(event.stack)
@@ -239,51 +204,40 @@ function replay(all: Event[], jobName: string | undefined, seed: number): Routin
   for (const name of names) {
     const currentRng = seeded(seed ^ 0x43555252)
     const thompsonRng = seeded(seed ^ 0x54484f4d)
-    let agreements = 0, currentMatched = 0, thompsonMatched = 0, commonMatched = 0, commonTotal = 0
-    let currentExplores = 0, thompsonExplores = 0
+    let agreements = 0, thompsonExplores = 0
+    const currentSelections: Record<string, number> = {}
+    const thompsonSelections: Record<string, number> = {}
+    const currentObserved: History = []
+    const thompsonObserved: History = []
     const rows = all.filter((e) => e.job === name)
     for (const event of rows) {
       const earlier = rows.filter((candidate) => candidate.id < event.id)
-      const history = earlier.filter((candidate) => candidate.evidenceAt < event.startedAt)
-      causalExcludedJudgements += earlier.length - history.length
-      const current = currentChoice(event, history, currentRng, true)
-      const thompson = thompsonChoice(event, history, thompsonRng, true)
+      causalExcludedJudgements += earlier.filter((candidate) => candidate.evidenceAt >= event.startedAt).length
+      const byAvailability = (a: Event, b: Event) => a.evidenceAt.localeCompare(b.evidenceAt) || a.id - b.id
+      const currentHistory = currentObserved
+        .filter((candidate) => candidate.evidenceAt < event.startedAt).sort(byAvailability)
+      const thompsonHistory = thompsonObserved
+        .filter((candidate) => candidate.evidenceAt < event.startedAt).sort(byAvailability)
+      const current = currentChoice(event, currentHistory, currentRng, true)
+      const thompson = thompsonChoice(event, thompsonHistory, thompsonRng, true)
       if (current.agent === thompson.agent) agreements++
-      if (current.agent !== current.expected) currentExplores++
       if (thompson.agent !== thompson.expected) thompsonExplores++
-      if (current.agent === event.agent) currentMatched++
-      if (thompson.agent === event.agent) thompsonMatched++
-      if (current.agent === event.agent && thompson.agent === event.agent) {
-        commonMatched++
-        commonTotal += event.weight
-      }
+      currentSelections[current.agent] = (currentSelections[current.agent] ?? 0) + 1
+      thompsonSelections[thompson.agent] = (thompsonSelections[thompson.agent] ?? 0) + 1
+      // Logged outcomes are observable to a simulated policy only when that
+      // policy chose the agent the historical dispatcher actually ran. A
+      // disagreement has no counterfactual result for the road not taken.
+      if (current.agent === event.agent) currentObserved.push(event)
+      if (thompson.agent === event.agent) thompsonObserved.push(event)
     }
-    // The log has no propensities or counterfactual reward. Compare realised
-    // scores only on common support: dispatches where BOTH policies chose the
-    // historical agent. Both policies therefore receive the same observed
-    // judgement, while their own match counts remain visible as a warning
-    // about how much selective support was discarded.
-    const currentMean = commonMatched ? commonTotal / commonMatched : null
-    const thompsonMean = commonMatched ? commonTotal / commonMatched : null
-    const measurable = commonMatched >= MIN_SAMPLE
-    const delta = thompsonMean! - currentMean!
-    const verdict = !measurable ? 'unmeasurable'
-      : delta > NOISE_BAND ? 'win'
-        : delta < -NOISE_BAND ? 'loss' : 'tie'
     jobs.push({
       job: name, runs: rows.length, agreements, differences: rows.length - agreements,
-      currentMatched, thompsonMatched, commonMatched, currentMean, thompsonMean,
-      currentExplorationShare: rows.length ? currentExplores / rows.length : 0,
+      agreementShare: rows.length ? agreements / rows.length : 0,
       thompsonExplorationShare: rows.length ? thompsonExplores / rows.length : 0,
-      measurable, verdict,
+      currentSelections, thompsonSelections,
     })
   }
-  const trajectoryPass = passesRoutingBacktest(jobs)
-  return {
-    seed, causalExcludedJudgements,
-    jobs,
-    trajectoryPass,
-  }
+  return { seed, causalExcludedJudgements, jobs }
 }
 
 export function routingBacktest(jobName?: string, seed = ROUTING_BACKTEST_SEED): RoutingBacktest {
@@ -295,22 +249,25 @@ export function routingBacktestEnsemble(jobName?: string): RoutingBacktestEnsemb
   const trajectories = ROUTING_BACKTEST_SEEDS.map((seed) => replay(all, jobName, seed))
   const names = [...new Set(trajectories.flatMap((trajectory) => trajectory.jobs.map((job) => job.job)))]
   const jobs = names.map((job) => {
-    const verdicts = trajectories.map((trajectory) => trajectory.jobs.find((row) => row.job === job)!.verdict)
+    const rows = trajectories.map((trajectory) => trajectory.jobs.find((row) => row.job === job)!)
+    const sumSelections = (key: 'currentSelections' | 'thompsonSelections') => rows.reduce<Record<string, number>>(
+      (totals, row) => {
+        for (const [agent, count] of Object.entries(row[key])) totals[agent] = (totals[agent] ?? 0) + count
+        return totals
+      },
+      {},
+    )
+    const runs = rows.reduce((sum, row) => sum + row.runs, 0)
+    const agreements = rows.reduce((sum, row) => sum + row.agreements, 0)
     return {
-      job,
-      wins: verdicts.filter((verdict) => verdict === 'win').length,
-      ties: verdicts.filter((verdict) => verdict === 'tie').length,
-      losses: verdicts.filter((verdict) => verdict === 'loss').length,
-      unmeasurable: verdicts.filter((verdict) => verdict === 'unmeasurable').length,
+      job, runs, agreements, differences: runs - agreements,
+      agreementShare: runs ? agreements / runs : 0,
+      thompsonExplorationShare: runs
+        ? rows.reduce((sum, row) => sum + row.thompsonExplorationShare * row.runs, 0) / runs
+        : 0,
+      currentSelections: sumSelections('currentSelections'),
+      thompsonSelections: sumSelections('thompsonSelections'),
     }
   })
-  const passCount = trajectories.filter((trajectory) => trajectory.trajectoryPass).length
-  return {
-    seeds: ROUTING_BACKTEST_SEEDS,
-    requiredPasses: ROUTING_BACKTEST_REQUIRED_PASSES,
-    passCount,
-    jobs,
-    trajectories,
-    shouldWire: passCount >= ROUTING_BACKTEST_REQUIRED_PASSES,
-  }
+  return { seeds: ROUTING_BACKTEST_SEEDS, jobs, trajectories }
 }
