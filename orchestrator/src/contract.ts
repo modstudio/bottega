@@ -382,7 +382,7 @@ the artifact they were asked to build or review — a broken tool, a wrong doc, 
 failure in another path. Anything about the artifact itself goes in your reply
 (a finding for a reader, a deviation or blocker for a writer), never in a task:
 the architect fixes it in this branch's next round, and a task for it is a row
-that outlives the fix. When you do file, do not also leave it only as a mailbox
+that outlives the fix. When you do file, do not leave it only as a mailbox
 note, where it depends on somebody reading this run to be discovered.
 
 IF THE SPEC IS SIMPLY WRONG
