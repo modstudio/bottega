@@ -633,6 +633,17 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
   const prompt = message
     ?? 'Continue from where you stopped and finish the spec. If you reached a ' +
        'decision that is not yours, stop and ask as before.'
+  const assembledLimit = argvResumeLimit(latest.agent)
+  if (assembledLimit !== undefined) {
+    const packed = packedResumePrompt(row.job, prompt, id)
+    const assembled = Buffer.byteLength(packed, 'utf8')
+    if (assembled > assembledLimit) {
+      throw new Error(
+        `assembled resume prompt is ${assembled} bytes; this agent's resume transport is bounded at ${assembledLimit} bytes\n` +
+        `nothing was stored\nworking forms:\n${CONTINUE_WORKING_FORMS}`,
+      )
+    }
+  }
   const launch = db().query(
     `SELECT launch_cwd, launch_seed, launch_key, launch_base, no_failover
        FROM run WHERE id=?`,

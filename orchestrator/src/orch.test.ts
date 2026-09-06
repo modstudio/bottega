@@ -1296,7 +1296,7 @@ const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
         NO_REPO_PREAMBLE, WORKER_PREAMBLE, LAND_PREAMBLE, REVIEW_SCHEMA,
         REVIEW_SEVERITY_INSTRUCTION,
         VERIFY_CLAIM_SCHEMA, ISSUE_WORKER_SCHEMA, workerPreamble, workerResumeGuard,
-        rulingPrompt, contractConflicts, hasRealQuestions, realQuestions } = await import('./contract.ts')
+        rulingPrompt, packResumePrompt, contractConflicts, hasRealQuestions, realQuestions } = await import('./contract.ts')
 const { parseReviewReply, recordReview, recordReviews, gradeReviewLens, reviewPins,
         triageFinding, completeReview, reviewCalibration, calibrationLine,
         MIN_REVIEW_TRIAGED } = await import('./review.ts')
@@ -7985,6 +7985,67 @@ describe('detached run collection', () => {
     expect(r.err).toContain(`bounded at ${ARGV_PROMPT_BYTES} bytes`)
     expect((db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=?').get(root) as
       { n: number }).n).toBe(0)
+  })
+
+  test('continue --file refuses when a just-below-limit body plus the reminder exceeds argv', () => {
+    const root = insert('ok', 'file-question')
+    const longSpec = 's'.repeat(600)
+    const shortSpec = 'x'
+    const shortOverhead = Buffer.byteLength(packResumePrompt('file-question', '', shortSpec), 'utf8')
+    const body = 'A'.repeat(ARGV_PROMPT_BYTES - shortOverhead)
+    const spec = join(dir, `continue-assembled-long-${root}.prompt.txt`)
+    writeFileSync(spec, longSpec)
+    db().query('UPDATE run SET vendor_session=?, agent=?, prompt_path=? WHERE id=?')
+      .run('parent-session', 'codex', spec, root)
+    const path = join(dir, `continue-assembled-long-${root}.txt`)
+    writeFileSync(path, body)
+    const assembled = Buffer.byteLength(packResumePrompt('file-question', body, longSpec), 'utf8')
+    expect(Buffer.byteLength(body, 'utf8')).toBeLessThanOrEqual(ARGV_PROMPT_BYTES)
+    expect(assembled).toBeGreaterThan(ARGV_PROMPT_BYTES)
+
+    const r = orch('continue', String(root), '--file', path)
+    expect(r.code).toBe(1)
+    expect(r.err).toContain(`assembled resume prompt is ${assembled} bytes`)
+    expect(r.err).toContain(`bounded at ${ARGV_PROMPT_BYTES} bytes`)
+    expect(r.err).toContain('nothing was stored')
+    expect((db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=?').get(root) as
+      { n: number }).n).toBe(0)
+  })
+
+  test('continue --file accepts the same body when the reminder is short', () => {
+    const binDir = mkdtempSync(join(tmpdir(), 'orch-fake-codex-continue-short-'))
+    writeFileSync(join(binDir, 'codex'), '#!/bin/sh\nexit 0\n')
+    chmodSync(join(binDir, 'codex'), 0o755)
+    const root = insert('ok', 'file-question')
+    const shortSpec = 'x'
+    const shortOverhead = Buffer.byteLength(packResumePrompt('file-question', '', shortSpec), 'utf8')
+    const body = 'A'.repeat(ARGV_PROMPT_BYTES - shortOverhead)
+    const spec = join(dir, `continue-assembled-short-${root}.prompt.txt`)
+    writeFileSync(spec, shortSpec)
+    db().query('UPDATE run SET vendor_session=?, agent=?, prompt_path=? WHERE id=?')
+      .run('parent-session', 'codex', spec, root)
+    const path = join(dir, `continue-assembled-short-${root}.txt`)
+    writeFileSync(path, body)
+    expect(Buffer.byteLength(packResumePrompt('file-question', body, shortSpec), 'utf8'))
+      .toBeLessThanOrEqual(ARGV_PROMPT_BYTES)
+    try {
+      const r = orchInput(
+        ['continue', String(root), '--file', path],
+        undefined,
+        { PATH: `${binDir}:${process.env.PATH ?? ''}` },
+      )
+      expect(r.code).toBe(0)
+      const childId = Number(r.out.replace(/\u001B\[[0-9;]*m/g, '').trim().split('\n')[0])
+      expect(childId).toBeGreaterThan(0)
+      orch('wait', String(childId), '--timeout', '15')
+      const child = db().query(
+        'SELECT prompt_path, parent_run_id FROM run WHERE id=?',
+      ).get(childId) as { prompt_path: string; parent_run_id: number | null }
+      expect(child.parent_run_id).toBe(root)
+      expect(readFileSync(child.prompt_path, 'utf8')).toBe(body)
+    } finally {
+      rmSync(binDir, { recursive: true, force: true })
+    }
   })
 
   test('continue --file refuses invalid UTF-8 at the byte offset', () => {
