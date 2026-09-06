@@ -42,7 +42,7 @@ export type Finding = {
   message: string
 }
 
-export type NumericLiteralClass = 'RESTATED' | 'OWNED' | 'CHECKED' | 'EVIDENCE'
+export type NumericLiteralClass = 'RESTATED' | 'OWNED' | 'CHECKED' | 'EVIDENCE' | 'UNCLASSIFIED'
 
 export type NumericLiteral = {
   source: string
@@ -52,42 +52,75 @@ export type NumericLiteral = {
   classification: NumericLiteralClass
 }
 
-const NUMERAL = /(?<![\w])~?[+-]?\d[\d,]*(?:\.\d+)*(?:%|\+)?/g
+// Spelled-out numbers stay out of scope: this report finds numeric literals only.
+const NUMERAL = /\b[A-Za-z]+\d+(?:\.\d+)+\b|(?<![\w])~?[+-]?\d[\d,]*(?:\.\d+)*(?:%|\+)?/g
+const MASKED_PROSE_SPANS = [
+  /^(?:\s*[-*+]\s+)?\d+[.)]\s/gm,
+  /\b(?:https?|file):\/\/\S+/gi,
+  /(?:^|[\s(])(?:\.{0,2}\/|\/)[^\s)]+/g,
+  /\b[\w.-]+(?:\/[\w.-]+)+(?::\d+(?::\d+)?)?\b/g,
+  /\b[\w-]*\d[\w.-]*\.[A-Za-z][\w.-]*\b/g,
+]
 const EXCLUDED_NUMERIC_FORMS = [
   /\b[A-Z][A-Z0-9]+-\d+\b/g,
   /\b\d{4}-\d{2}-\d{2}\b/g,
+  /\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/g,
+  /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:,\s*\d{4})?\b/gi,
   /\b\d{1,2}:\d{2}(?::\d{2})?\b/g,
   /(?:^|[^\w./-])(?:[\w.-]+\/)+[\w.-]+:\d+(?::\d+)?(?:-\d+)?\b|(?:^|[^\w./-])[\w-]+\.[A-Za-z][\w.-]*:\d+(?::\d+)?(?:-\d+)?\b/g,
   /\blines?\s+\d+(?:-\d+)?\b/gi,
+  /\b\d+(?:st|nd|rd|th)\b/gi,
+  ...MASKED_PROSE_SPANS,
 ]
 
 function overlaps(start: number, end: number, ranges: { start: number; end: number }[]): boolean {
   return ranges.some((range) => start < range.end && end > range.start)
 }
 
-function numericClass(sentence: string, numeral: string): NumericLiteralClass {
-  if (/\bmeasur(?:e[ds]?|ing)\b|\brun\s+(?:id\s*:?\s*)?#?\d|\b(?:as of|observed|verified|recorded|evidence)\b|\b(?:19|20)\d{2}\b/i.test(sentence)) {
+function localClause(text: string, start: number, end: number): string {
+  const delimiters = [...text.matchAll(/;|[—–]|\s-\s|,(?=\s)|\b(?:and|but|so)\b/gi)]
+  const before = delimiters.filter((delimiter) => delimiter.index < start).at(-1)
+  const after = delimiters.find((delimiter) => delimiter.index >= end)
+  return text.slice(before ? before.index + before[0].length : 0, after?.index ?? text.length).trim()
+}
+
+function numericClass(clause: string, sentence: string, numeral: string): NumericLiteralClass {
+  const date = /\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}/i
+  if (/\bmeasur(?:e[ds]?|ing)\b|\bobserved\b|\bruns?\s+(?:id\s*:?\s*)?#?\d/i.test(clause) ||
+      (/\brecorded\s+on\b/i.test(clause) && date.test(clause)) || date.test(clause)) {
     return 'EVIDENCE'
   }
-  if (/\bthe gate\b|\basserts?\b|\brefuses?\b|\bcheck(?:s|ed|ing)?\b/i.test(sentence)) return 'CHECKED'
+  if (/\basserts?\b|\brefuses?\b|\bcheck(?:s|ed|ing)?\b/i.test(clause)) return 'CHECKED'
   const escaped = numeral.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   if (
-    /\bdefaults?\b|\btier\s+\d/i.test(sentence) ||
-    /^\s*\|.*\|\s*$/.test(sentence) ||
-    /\b(?:defines?|owns?|enforces?|requires?|sets?)\b[^.!?]{0,80}\bthreshold\b|\bthreshold\b[^.!?]{0,80}\b(?:enforces?|required|must)\b/i.test(sentence) ||
-    /\bonly\s+(?:once|after|when)\b|\bmost recent\s+\d/i.test(sentence) ||
-    new RegExp(`--[\\w-]+=${escaped}(?![\\d.])`, 'i').test(sentence) ||
-    new RegExp(`\\bexit(?:s|ed)?(?:\\s+(?:status|code))?\\s+${escaped}\\b`, 'i').test(sentence) ||
-    new RegExp(`(?:at (?:most|least)|no (?:more|fewer) than|exactly|maximum|min(?:imum)?|limit(?:ed)? to)\\s+${escaped}`, 'i').test(sentence)
+    /\bdefaults?\b|\btier\s+\d/i.test(clause) ||
+    /^\s*\|.*\|\s*$/.test(clause) ||
+    /\b(?:defines?|owns?|enforces?|requires?|sets?)\b[^.!?]{0,80}\bthreshold\b|\bthreshold\b[^.!?]{0,80}\b(?:enforces?|required|must)\b/i.test(clause) ||
+    /\bonly\s+(?:once|after|when)\b|\bmost recent\s+\d/i.test(clause) ||
+    new RegExp(`\\b(?:first|last|under|over)\\s+${escaped}(?![\\d.])`, 'i').test(clause) ||
+    new RegExp(`--[\\w-]+=${escaped}(?![\\d.])`, 'i').test(clause) ||
+    new RegExp(`\\bexit(?:s|ed)?(?:\\s+(?:status|code))?\\s+${escaped}\\b`, 'i').test(clause) ||
+    new RegExp(`(?:at (?:most|least)|no (?:more|fewer) than|exactly|maximum|min(?:imum)?|limit(?:ed)? to)\\s+${escaped}`, 'i').test(clause)
   ) return 'OWNED'
-  return 'RESTATED'
+  const mutableNoun = /\b(?:tests?|rows?|ports?|versions?|bytes?|files?|lines?|characters?|records?|items?|entries?|requests?|tokens?|seconds?|minutes?|hours?|percent(?:age)?|rates?|sizes?|totals?|counts?)\b|%/i
+  const current = /\b(?:currently|today|now|has|have|is|are|runs?\s+at|serves?\s+at|listens?\s+on|ships?|contains?)\b/i
+  const historicalOrQuoted = /\b(?:had|was|were|did|used|cost|filed|printed|reported|recorded|exited|reconstructed|made|recoverable|history|runs?\s+\d+|previous(?:ly)?|historical|incident|before|after|ago|do not trust|don't trust|example|claim(?:ed|s)?|reading it as|a day)\b/i
+  const toolVersion = /^[A-Za-z]+\d+(?:\.\d+)+$/.test(numeral) ||
+    ((numeral.match(/\./g)?.length ?? 0) >= 2 &&
+      new RegExp(`\\b[A-Za-z][\\w-]*\\s+${escaped}`).test(clause))
+  const bareMutable = new RegExp(`${escaped}\\s+[^.!?]*(?:${mutableNoun.source})`, 'i').test(clause)
+  if (toolVersion || (mutableNoun.test(clause) && !historicalOrQuoted.test(clause) &&
+      (current.test(clause) || (bareMutable && !historicalOrQuoted.test(sentence))))) {
+    return 'RESTATED'
+  }
+  return 'UNCLASSIFIED'
 }
 
 /** Classify prose numerals without consulting the filesystem or database. */
 export function numericLiteralReport(text: string, source: string): NumericLiteral[] {
   const hits: NumericLiteral[] = []
   let fenced = false
-  const masked = text.split('\n').map((raw) => {
+  let masked = text.split('\n').map((raw) => {
     const line = raw.replace(/\r$/, '')
     if (/^\s*(?:```|~~~)/.test(line)) {
       fenced = !fenced
@@ -95,6 +128,9 @@ export function numericLiteralReport(text: string, source: string): NumericLiter
     }
     return fenced ? ' '.repeat(raw.length) : line.replace(/`[^`]*`/g, (code) => ' '.repeat(code.length))
   }).join('\n')
+  for (const pattern of MASKED_PROSE_SPANS) {
+    masked = masked.replace(pattern, (span) => ' '.repeat(span.length))
+  }
   const sentenceStarts = [0]
   for (let index = 0; index < masked.length; index++) {
     const paragraphEnd = masked[index] === '\n' && masked[index + 1] === '\n'
@@ -116,12 +152,13 @@ export function numericLiteralReport(text: string, source: string): NumericLiter
       if (overlaps(match.index, match.index + match[0].length, ranges)) continue
       const absolute = sentenceStart + match.index
       const sentence = text.slice(sentenceStart, sentenceEnd).replace(/\s+/g, ' ').trim()
+      const clause = localClause(sentenceVisible, match.index, match.index + match[0].length)
       hits.push({
         source,
         line: text.slice(0, absolute).split('\n').length,
         sentence,
         numeral: match[0],
-        classification: numericClass(sentence, match[0]),
+        classification: numericClass(clause, sentence, match[0]),
       })
     }
   }
@@ -129,34 +166,47 @@ export function numericLiteralReport(text: string, source: string): NumericLiter
 }
 
 function checkoutRoot(cwd: string): string | null {
-  const result = Bun.spawnSync(['git', 'rev-parse', '--show-toplevel'], {
-    cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
-  })
-  return result.exitCode === 0 ? result.stdout.toString().trim() : null
+  if (!existsSync(cwd)) return null
+  try {
+    const result = Bun.spawnSync(['git', 'rev-parse', '--show-toplevel'], {
+      cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
+    })
+    return result.exitCode === 0 ? result.stdout.toString().trim() : null
+  } catch { return null }
 }
 
 /** The report is deliberately broader than the pack and deliberately never refuses. */
-export function allNumericLiterals(cwd: string): NumericLiteral[] {
+export function allNumericLiterals(cwd: string): {
+  numericLiterals: NumericLiteral[]
+  canonFiles: { read: string[]; missing: string[] }
+} {
   const report = projects().flatMap((project) => {
-    const worktree = project.settings.worktree
+    const settings = project.settings && typeof project.settings === 'object' ? project.settings : null
+    const candidate = settings?.worktree
+    const worktree = candidate && typeof candidate === 'object' ? candidate : null
     return [
-      ...(worktree?.notes
+      ...(typeof worktree?.notes === 'string'
         ? numericLiteralReport(worktree.notes, `register:${project.name} notes`) : []),
-      ...(worktree?.readonly_notes
+      ...(typeof worktree?.readonly_notes === 'string'
         ? numericLiteralReport(worktree.readonly_notes, `register:${project.name} readonly_notes`) : []),
     ]
   })
+  const canonFiles = { read: [] as string[], missing: [] as string[] }
   const root = checkoutRoot(cwd)
-  if (!root) return report
+  if (!root) return { numericLiterals: report, canonFiles }
   const files = ['AGENTS.md', ...CONCERNS.map((concern) => `${concern}/AGENTS.md`)]
   for (const file of files) {
     const path = join(root, file)
-    if (!existsSync(path)) continue
+    if (!existsSync(path)) {
+      canonFiles.missing.push(file)
+      continue
+    }
+    canonFiles.read.push(file)
     report.push(...numericLiteralReport(readFileSync(path, 'utf8'), file).map((hit) => ({
       ...hit, source: `${file}:${hit.line}`,
     })))
   }
-  return report
+  return { numericLiterals: report, canonFiles }
 }
 
 export class CanonBudgetError extends Error {

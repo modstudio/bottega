@@ -20839,38 +20839,65 @@ describe('scoped operator docs', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
-  test('numeric literal report classifies prose values and excludes reference syntax and code', () => {
-    const report = numericLiteralReport([
-      'The suite currently has 6,676 tests and uses Bun 1.2.3.',
-      'The default is 5 and this policy defines and enforces the threshold of 15.',
-      'The gate asserts 170 characters and refuses 51 lines.',
-      'Run 1565 measured',
-      '36,058 rows.',
-      'The command uses --port=7778 and exits 0 on success.',
-      'The server currently uses localhost:5432.',
-      'Ignore DEV-307, 2026-09-06, 13:20, (file.ts:42), path/file:43, lines 19-21, and `port 8888`.',
-      '```',
-      'hidden 9000',
-      '```',
-    ].join('\n'), 'fixture')
-    expect(report.map(({ numeral, classification }) => [numeral, classification])).toEqual([
-      ['6,676', 'RESTATED'], ['1.2.3', 'RESTATED'],
-      ['5', 'OWNED'], ['15', 'OWNED'],
-      ['170', 'CHECKED'], ['51', 'CHECKED'],
-      ['1565', 'EVIDENCE'], ['36,058', 'EVIDENCE'],
-      ['7778', 'OWNED'], ['0', 'OWNED'],
-      ['5432', 'RESTATED'],
-    ])
-    expect(report.every((hit) => hit.source === 'fixture')).toBe(true)
+  test('numeric literal report classifies per clause and excludes non-prose spans', () => {
+    const cases: { text: string; expected: [string, string][] }[] = [
+      { text: 'The suite currently has 6,676 tests.', expected: [['6,676', 'RESTATED']] },
+      { text: 'The service listens on port 5432.', expected: [['5432', 'RESTATED']] },
+      { text: 'Bun 1.3.14 is installed.', expected: [['1.3.14', 'RESTATED']] },
+      { text: 'Qwen3.6 is installed.', expected: [['Qwen3.6', 'RESTATED']] },
+      { text: 'The default is 5.', expected: [['5', 'OWNED']] },
+      { text: 'This policy defines and enforces the threshold of 15.', expected: [['15', 'OWNED']] },
+      { text: 'A product admits at most 1 tag.', expected: [['1', 'OWNED']] },
+      { text: 'A change under 10% is reported as flat.', expected: [['10%', 'OWNED']] },
+      { text: 'The gate asserts 170 characters.', expected: [['170', 'CHECKED']] },
+      { text: 'The check refuses 51 lines.', expected: [['51', 'CHECKED']] },
+      { text: 'This check caps output at 20 bytes.', expected: [['20', 'CHECKED']] },
+      { text: 'Run 1565 measured 36,058 rows.', expected: [['1565', 'EVIDENCE'], ['36,058', 'EVIDENCE']] },
+      { text: 'We observed 42 rows.', expected: [['42', 'EVIDENCE']] },
+      { text: 'The sample measured 80 bytes.', expected: [['80', 'EVIDENCE']] },
+      { text: 'The incident had 22 files.', expected: [['22', 'UNCLASSIFIED']] },
+      { text: 'Build 4 succeeded.', expected: [['4', 'UNCLASSIFIED']] },
+      { text: 'Option 7 is preferred.', expected: [['7', 'UNCLASSIFIED']] },
+      { text: 'Version 2 was used during the incident.', expected: [['2', 'UNCLASSIFIED']] },
+      { text: 'Do not trust the claim that the suite has 900 tests.', expected: [['900', 'UNCLASSIFIED']] },
+      { text: 'Its 22 files are recoverable from the old commit.', expected: [['22', 'UNCLASSIFIED']] },
+      { text: 'Run 279 is the case: 409 seconds, 57 bytes back.',
+        expected: [['279', 'EVIDENCE'], ['409', 'EVIDENCE'], ['57', 'UNCLASSIFIED']] },
+      { text: 'Runs 378 and 379 did work and reported 452 rows.',
+        expected: [['378', 'EVIDENCE'], ['379', 'UNCLASSIFIED'], ['452', 'UNCLASSIFIED']] },
+      { text: 'The 3rd retry succeeded.', expected: [] },
+      { text: '1. First item.', expected: [] },
+      { text: 'Open https://localhost:7778/v2 now.', expected: [] },
+      { text: 'Read /tmp/run-42/file2.ts.', expected: [] },
+      { text: 'Use `port 8888`.', expected: [] },
+      { text: '```\nhidden 9000\n```', expected: [] },
+      { text: 'Ticket DEV-307 owns this.', expected: [] },
+      { text: 'Recorded on 2026-09-06.', expected: [] },
+      { text: 'The meeting starts at 13:20.', expected: [] },
+      { text: 'See file.ts:42 and path/file:43.', expected: [] },
+      { text: 'See lines 19-21.', expected: [] },
+      { text: 'Install Bun 1.3.14 before running the gate.', expected: [['1.3.14', 'RESTATED']] },
+      { text: 'The gate checks 50 files and Bun 1.3.14 is installed.',
+        expected: [['50', 'CHECKED'], ['1.3.14', 'RESTATED']] },
+      { text: 'Run 7 measured 40 rows, but the suite has 900 tests.',
+        expected: [['7', 'EVIDENCE'], ['40', 'EVIDENCE'], ['900', 'RESTATED']] },
+      { text: 'The year 2020 changed everything.', expected: [['2020', 'UNCLASSIFIED']] },
+    ]
+    for (const row of cases) {
+      const report = numericLiteralReport(row.text, 'fixture')
+      expect(report.map(({ numeral, classification }) => [numeral, classification]), row.text)
+        .toEqual(row.expected)
+      expect(report.every((hit) => hit.source === 'fixture')).toBe(true)
+    }
   })
 
-  test('numeric report scans register notes and only the five declared canon files', () => {
+  test('numeric report scans safe register strings and reports read and missing canon files', () => {
     const repo = mkdtempSync(join(tmpdir(), 'numeric-canon-'))
     try {
       Bun.spawnSync(['git', 'init', '-b', 'main'], { cwd: repo, env: hermeticGitEnv() })
       const canon = ['AGENTS.md', 'orchestrator/AGENTS.md', 'hub/AGENTS.md', 'ops/AGENTS.md',
         'local-stack/AGENTS.md']
-      for (const [index, file] of canon.entries()) {
+      for (const [index, file] of canon.slice(0, -1).entries()) {
         mkdirSync(dirname(join(repo, file)), { recursive: true })
         writeFileSync(join(repo, file), `The current suite has ${index + 10} tests.\n`)
       }
@@ -20878,12 +20905,18 @@ describe('scoped operator docs', () => {
       writeFileSync(join(repo, 'nested', 'AGENTS.md'), 'The current suite has 999 tests.\n')
       upsertProject({ name: 'registered', path: repo, canon: true,
         settings: { worktree: { notes: 'The current port is 7000.' } } })
-      const report = allNumericLiterals(repo).filter((hit) => hit.classification === 'RESTATED')
+      upsertProject({ name: 'null-settings', path: '/null', canon: true })
+      db().query(`UPDATE project SET settings='null' WHERE name='null-settings'`).run()
+      upsertProject({ name: 'bad-notes', path: '/bad', canon: true,
+        settings: { worktree: { notes: 123, readonly_notes: null } } as any })
+      const result = allNumericLiterals(repo)
+      const report = result.numericLiterals.filter((hit) => hit.classification === 'RESTATED')
       expect(report.map((hit) => hit.source)).toEqual([
         'register:registered notes', 'AGENTS.md:1', 'orchestrator/AGENTS.md:1',
-        'hub/AGENTS.md:1', 'ops/AGENTS.md:1', 'local-stack/AGENTS.md:1',
+        'hub/AGENTS.md:1', 'ops/AGENTS.md:1',
       ])
-      expect(report.map((hit) => hit.numeral)).toEqual(['7000', '10', '11', '12', '13', '14'])
+      expect(report.map((hit) => hit.numeral)).toEqual(['7000', '10', '11', '12', '13'])
+      expect(result.canonFiles).toEqual({ read: canon.slice(0, -1), missing: ['local-stack/AGENTS.md'] })
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
@@ -20984,12 +21017,37 @@ describe('scoped operator docs', () => {
       numericLiterals: [expect.objectContaining({
         source: 'register:canon-cli notes', numeral: '9,999', classification: 'RESTATED',
       })],
+      canonFiles: { read: [], missing: [
+        'AGENTS.md', 'orchestrator/AGENTS.md', 'hub/AGENTS.md', 'ops/AGENTS.md',
+        'local-stack/AGENTS.md',
+      ] },
     })
     setDoc({ scope: 'global', subject: null, slug: 'bad', title: 'Good', body: '`orch doc`' })
     const good = invoke()
     expect(good.exitCode).toBe(0)
     expect(JSON.parse(good.stdout.toString()).findings).toEqual([])
     expect(JSON.parse(good.stdout.toString())).toContainKey('numericLiterals')
+    const plain = Bun.spawnSync([process.execPath, CLI, 'canon', 'check', '--cwd', dir,
+      '--job', 'understand'], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(plain.exitCode).toBe(0)
+    expect(plain.stdout.toString()).toContain('canon files: read none; missing AGENTS.md')
+  })
+
+  test('canon check keeps its exit-zero JSON contract for a missing cwd', () => {
+    const CLI = new URL('cli.ts', import.meta.url).pathname
+    const missing = join(dir, 'numeric-missing-cwd')
+    const result = Bun.spawnSync([process.execPath, CLI, 'canon', 'check', '--cwd', missing,
+      '--job', 'understand', '--json'], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(result.exitCode).toBe(0)
+    expect(JSON.parse(result.stdout.toString())).toMatchObject({
+      findings: [], numericLiterals: [], canonFiles: { read: [], missing: [] },
+    })
   })
 
   test('first-turn bound prompts inject docs and count them; resumes do neither', async () => {
