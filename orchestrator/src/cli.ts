@@ -1011,7 +1011,7 @@ function usage(): never {
       --distinct-from <id>[,...] preview routing away from models used by these runs
   orch state [--days N]         the dashboard payload as JSON (what hub renders)
       the dashboard itself is 'hub serve' - this concern routes and scores
-  orch run <run-id>             one run's detail as JSON, prompt and output included
+  orch run <run-id> [--receipt] one run's detail as JSON; --receipt marks worker messages read
   orch search <query>           consult score notes, rulings, review findings, and saved outputs
       --limit <n>               compact results to return (default 20)
       --full                    include the complete matched records after choosing them
@@ -2151,7 +2151,7 @@ switch (cmd) {
     const id = Number(argv[1])
     if (!id) usage()
     const { runDetail } = await import('./serve.ts')
-    const d = runDetail(id)
+    const d = runDetail(id, has('receipt'))
     if (!d) throw new Error(`no run ${id}`)
     console.log(JSON.stringify(d))
     break
@@ -3612,15 +3612,35 @@ switch (cmd) {
     const id = Number(argv[1])
     if (!id) usage()
     const authority = authorizeRunMutation(id, 'discard')
-    const row = db().query(
+    const rootRow = db().query(
       `SELECT id, repo, cwd, worktree, branch, branch_kept, branch_kept_tip, base_commit
          FROM run WHERE id = ?`,
-    ).get(id) as {
+    ).get(authority.rootId) as {
       id: number; repo: string | null; cwd: string | null; worktree: string | null
       branch: string | null; branch_kept: string | null; branch_kept_tip: string | null
       base_commit: string | null
     } | null
-    if (!row) throw new Error(`no run ${id}`)
+    if (!rootRow) throw new Error(`no run ${authority.rootId}`)
+    const chain = db().query(
+      `SELECT id, worktree, branch, base_commit FROM run
+        WHERE id = ? OR parent_run_id = ? ORDER BY turn, id`,
+    ).all(authority.rootId, authority.rootId) as {
+      id: number; worktree: string | null; branch: string | null; base_commit: string | null
+    }[]
+    const worktrees = [...new Set(chain.flatMap((turn) => turn.worktree ? [turn.worktree] : []))]
+    if (worktrees.length > 1) {
+      throw new Error(
+        `refusing to discard chain ${authority.rootId}: its turns record several worktrees:\n` +
+        worktrees.map((worktree) => `  ${worktree}`).join('\n'),
+      )
+    }
+    const artifact = chain.find((turn) => turn.worktree === worktrees[0])
+    const row = {
+      ...rootRow,
+      worktree: worktrees[0] ?? null,
+      branch: rootRow.branch ?? artifact?.branch ?? null,
+      base_commit: rootRow.base_commit ?? artifact?.base_commit ?? null,
+    }
     if (!row.worktree) {
       if (!has('force') || !row.branch_kept) {
         throw new Error(`run ${id} has no worktree to discard`)
@@ -3646,7 +3666,8 @@ switch (cmd) {
         if (outcome.warning) console.error(outcome.warning)
         if (removed) {
           db().transaction(() => {
-            db().query('UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE id=?').run(id)
+            db().query('UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE id=?')
+              .run(authority.rootId)
             auditRunMutation(authority, 'discard', auditReason())
           })()
         }

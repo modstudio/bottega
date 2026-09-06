@@ -10,6 +10,7 @@ export type RunMessage = {
   body: string
   created_at: string
   read_at: string | null
+  read_by: string | null
   delivery: 'architect_cli' | 'worker_tool'
 }
 
@@ -87,10 +88,10 @@ export function checkMessages(runId: number): RunMessage[] {
     if (!rows.length) return []
     const readAt = nowIso()
     const ids = rows.map(() => '?').join(',')
-    db().query(`UPDATE run_message SET read_at = ? WHERE id IN (${ids})`).run(
-      readAt, ...rows.map((row) => row.id),
+    db().query(`UPDATE run_message SET read_at = ?, read_by = ? WHERE id IN (${ids})`).run(
+      readAt, run.vendor_session, ...rows.map((row) => row.id),
     )
-    return rows.map((row) => ({ ...row, read_at: readAt }))
+    return rows.map((row) => ({ ...row, read_at: readAt, read_by: run.vendor_session }))
   })()
 }
 
@@ -102,16 +103,18 @@ export function messagesForRun(id: number): RunMessage[] {
   ).all(run.root_id) as RunMessage[]
 }
 
-/** Viewing the run is the architect-side receipt for outbound messages. */
-export function readMessagesForArchitect(id: number): RunMessage[] {
+/** Explicitly receipt outbound messages, after proving the reader owns the chain. */
+export function receiptMessagesForArchitect(id: number): RunMessage[] {
+  const authority = authorizeRunMutation(id, 'receipt')
   const run = identity(id)
   if (!run) return []
   return db().transaction(() => {
     const readAt = nowIso()
-    db().query(
-      `UPDATE run_message SET read_at = ?
+    const changed = db().query(
+      `UPDATE run_message SET read_at = ?, read_by = ?
         WHERE root_run_id = ? AND direction = 'from_worker' AND read_at IS NULL`,
-    ).run(readAt, run.root_id)
+    ).run(readAt, authority.actor, run.root_id).changes
+    if (changed) auditRunMutation(authority, 'receipt')
     return messagesForRun(id)
   })()
 }

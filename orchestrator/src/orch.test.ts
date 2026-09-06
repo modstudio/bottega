@@ -2347,12 +2347,14 @@ describe('run mailbox', () => {
     const queued = messagesForRun(root)[0]!
     expect(queued).toMatchObject({
       direction: 'to_worker', root_run_id: root, run_id: root,
-      body: 'keep the public shape unchanged', read_at: null, delivery: 'architect_cli',
+      body: 'keep the public shape unchanged', read_at: null, read_by: null,
+      delivery: 'architect_cli',
     })
 
     const read = checkMessages(root)
     expect(read).toHaveLength(1)
     expect(read[0]!.read_at).not.toBeNull()
+    expect(read[0]!.read_by).toBe('worker-session')
     expect(checkMessages(root)).toEqual([])
   })
 
@@ -2464,21 +2466,42 @@ describe('run mailbox', () => {
     expect(messagesForRun(root)).toEqual([])
   })
 
-  test('a worker sends outbound without stopping and it is visible on run detail', () => {
+  test('run detail is read-only; only the root owner can explicitly receipt worker messages', () => {
     const root = addRun({ agent: 'codex', job: 'implement', status: 'running' })
-    db().query('UPDATE run SET vendor_session=? WHERE id=?').run('worker-session', root)
+    const child = addRun({ agent: 'codex', job: 'implement', status: 'running', parent: root, turn: 2 })
+    db().query('UPDATE run SET session_id=? WHERE id=?').run('session-A', root)
+    db().query('UPDATE run SET session_id=?, vendor_session=? WHERE id=?')
+      .run('session-B', 'worker-session', child)
 
-    const sent = messageArchitect(root, 'the implementation is taking a narrower shape')
+    const sent = messageArchitect(child, 'the implementation is taking a narrower shape')
     expect(sent).toMatchObject({
-      direction: 'from_worker', root_run_id: root, run_id: root,
-      sender_session: 'worker-session', read_at: null, delivery: 'worker_tool',
+      direction: 'from_worker', root_run_id: root, run_id: child,
+      sender_session: 'worker-session', read_at: null, read_by: null, delivery: 'worker_tool',
     })
-    expect((db().query('SELECT status FROM run WHERE id=?').get(root) as { status: string }).status)
-      .toBe('running')
 
-    const detail = JSON.parse(mailboxOrch('run', String(root)).out)
+    const detail = JSON.parse(mailboxOrchInput(['run', String(child)], undefined, {
+      CLAUDE_CODE_SESSION_ID: 'session-B',
+    }).out)
     expect(detail.messages[0].body).toBe('the implementation is taking a narrower shape')
-    expect(detail.messages[0].read_at).not.toBeNull()
+    expect(messagesForRun(root)[0]).toMatchObject({ read_at: null, read_by: null })
+
+    const foreign = mailboxOrchInput(['run', String(child), '--receipt'], undefined, {
+      CLAUDE_CODE_SESSION_ID: 'session-B',
+    })
+    expect(foreign.code).toBe(1)
+    expect(foreign.err).toContain(`run ${child} is owned by session session-A`)
+    expect(messagesForRun(root)[0]).toMatchObject({ read_at: null, read_by: null })
+
+    const owner = mailboxOrchInput(['run', String(child), '--receipt'], undefined, {
+      CLAUDE_CODE_SESSION_ID: 'session-A',
+    })
+    expect(owner.code).toBe(0)
+    expect(JSON.parse(owner.out).messages[0]).toMatchObject({ read_by: 'session-A' })
+    expect(messagesForRun(root)[0]!.read_at).not.toBeNull()
+    expect(messagesForRun(root)[0]!.read_by).toBe('session-A')
+    expect(db().query(
+      'SELECT run_id, root_id, action, actor_session FROM run_mutation_audit',
+    ).get()).toEqual({ run_id: child, root_id: root, action: 'receipt', actor_session: 'session-A' })
   })
 
   test('the worker MCP tools send outbound and read inbound at a checkpoint', () => {
@@ -10892,6 +10915,63 @@ echo 'Usage: scripts/worktree create [seed]'
       expect(quiet.exitCode).toBe(0)
       expect(quiet.stdout.toString()).toContain(`base: ${w.base}`)
       expect(quiet.stderr.toString()).not.toContain(`base:     ${w.base}`)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('discarding a child cleans the root-owned worktree and every chain pointer', () => {
+    const { repo, tree } = scratchRepo()
+    const root = addRun({ agent: 'codex', job: 'implement', session: 'session-A' })
+    const child = addRun({
+      agent: 'codex', job: 'implement', parent: root, turn: 2, session: 'session-B',
+    })
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id IN (?,?)')
+      .run(repo, tree, 'AB-2581', git(repo, 'rev-parse', 'main'), root, child)
+    try {
+      const p = Bun.spawnSync([
+        process.execPath, new URL('cli.ts', import.meta.url).pathname,
+        'discard', String(child), '--force',
+      ], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: 'session-A' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(p.exitCode).toBe(0)
+      expect(existsSync(tree)).toBe(false)
+      expect(db().query('SELECT id, worktree FROM run WHERE id IN (?,?) ORDER BY id').all(root, child))
+        .toEqual([{ id: root, worktree: null }, { id: child, worktree: null }])
+      expect(db().query(
+        'SELECT run_id, root_id, action, actor_session FROM run_mutation_audit',
+      ).get()).toEqual({ run_id: child, root_id: root, action: 'discard', actor_session: 'session-A' })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('discard preserves a chain worktree that is evidence for another unscored chain', () => {
+    const { repo, tree } = scratchRepo()
+    const root = addRun({ agent: 'codex', job: 'implement', session: 'session-A' })
+    const child = addRun({
+      agent: 'codex', job: 'implement', parent: root, turn: 2, session: 'session-B',
+    })
+    const unscored = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id IN (?,?,?)')
+      .run(repo, tree, 'AB-2581', git(repo, 'rev-parse', 'main'), root, child, unscored)
+    try {
+      const p = Bun.spawnSync([
+        process.execPath, new URL('cli.ts', import.meta.url).pathname,
+        'discard', String(child), '--force',
+      ], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: 'session-A' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(p.exitCode).toBe(1)
+      expect(p.stderr.toString()).toContain(`evidence for run ${unscored}`)
+      expect(existsSync(tree)).toBe(true)
+      expect(db().query('SELECT COUNT(*) n FROM run WHERE worktree=?').get(tree)).toEqual({ n: 3 })
+      expect(db().query('SELECT COUNT(*) n FROM run_mutation_audit').get()).toEqual({ n: 0 })
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }

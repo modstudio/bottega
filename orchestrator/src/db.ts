@@ -31,7 +31,7 @@ export type MonitorSeverity = typeof MONITOR_SEVERITY[number]
 const sqlValues = (values: readonly string[]) => values.map((value) => `'${value}'`).join(',')
 
 export const RUN_MUTATION_ACTIONS = [
-  'answer', 'tell', 'stop', 'abandon', 'discard', 'sweep', 'void', 'score', 'rescore',
+  'answer', 'tell', 'receipt', 'stop', 'abandon', 'discard', 'sweep', 'void', 'score', 'rescore',
   'retry', 'continue', 'reclassify',
 ] as const
 export type RunMutationAction = typeof RUN_MUTATION_ACTIONS[number]
@@ -1075,6 +1075,7 @@ function migrate(d: Database) {
       body            TEXT NOT NULL CHECK (length(trim(body)) > 0),
       created_at      TEXT NOT NULL,
       read_at         TEXT,
+      read_by         TEXT,
       delivery        TEXT NOT NULL CHECK (delivery IN ('architect_cli','worker_tool'))
     );
     CREATE INDEX IF NOT EXISTS run_message_root ON run_message(root_run_id, id);
@@ -1117,6 +1118,7 @@ function migrate(d: Database) {
   migrateWorkflowSchema(d)
 
   migrateScoreToMatrix(d)
+  addColumn(d, 'run_message', 'read_by', 'TEXT')
   addColumn(d, 'score', 'fidelity', 'TEXT')
 
   // The status DEFAULT and CHECK above apply to databases created from here on.

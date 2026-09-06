@@ -17,11 +17,11 @@ import { candidates } from './route.ts'
 import { readFileSync, existsSync } from 'node:fs'
 import { NOT_EVIDENCE } from './failure.ts'
 import { projectAt } from './projects.ts'
-import { readMessagesForArchitect } from './mailbox.ts'
 import { reviewCalibration } from './review.ts'
+import { messagesForRun, receiptMessagesForArchitect } from './mailbox.ts'
 
 /** Full detail for one run: the whole prompt and the whole reply, read from disk. */
-export function runDetail(id: number) {
+export function runDetail(id: number, receipt = false) {
   const row = db().query(
     `SELECT r.id, r.agent, r.job, r.cwd, r.latency_ms, r.vendor_tokens, r.status,
             r.failure_kind, r.probe, r.evidence_excluded, r.error, r.input_tree, r.head_commit, r.doc_revisions, r.canon_sha,
@@ -37,6 +37,7 @@ export function runDetail(id: number) {
   const rootId = (db().query(
     'SELECT COALESCE(parent_run_id, id) root_id FROM run WHERE id=?',
   ).get(id) as { root_id: number }).root_id
+  const messages = receipt ? receiptMessagesForArchitect(id) : messagesForRun(id)
   const audit = db().query(
     `SELECT run_id, root_id, action,
             COALESCE(actor_session, 'anonymous (no session id)') actor_session,
@@ -51,7 +52,7 @@ export function runDetail(id: number) {
       : ['delivery', 'quality'],
     prompt: read(row.prompt_path),
     output: read(row.output_path),
-    messages: readMessagesForArchitect(id),
+    messages,
     audit,
     // Runs recorded before prompts were kept on disk have only the head.
     promptTruncated: !row.prompt_path,

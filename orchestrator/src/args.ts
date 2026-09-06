@@ -355,7 +355,7 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       return null
     }
     case 'state': return { args: argv.slice(1), shape: shape('orch state [--days N]', 0, ['--days']) }
-    case 'run': return { args: argv.slice(1), shape: shape('orch run <run-id>', 1) }
+    case 'run': return { args: argv.slice(1), shape: shape('orch run <run-id> [--receipt]', 1, [], ['--receipt']) }
     case 'search': return { args: argv.slice(1), shape: shape('orch search <file|function|task-key|text> [--limit N] [--full] [--json]', 1, ['--limit'], ['--full', '--json']) }
     case 'result': return { args: argv.slice(1), shape: shape('orch result <run-id> [--quiet]', 1, [], ['--quiet']) }
     case 'wait': return { args: argv.slice(1), shape: shape('orch wait <run-id>... [--timeout SECONDS]', Infinity, ['--timeout']) }
