@@ -18867,6 +18867,41 @@ fi
     expect(out.match(new RegExp(`FAILED ${recent}/fix`, 'g'))).toHaveLength(1)
   })
 
+  test('terminal recency and duration come from the last turn of a resumed chain', () => {
+    const now = Date.now()
+    const oldRoot = addRun({
+      agent: 'codex', job: 'implement', status: 'asking', latency: 60 * 60_000,
+      startedAt: new Date(now - 2 * 60 * 60_000).toISOString(), session: 'heartbeat-turns',
+    })
+    addRun({
+      agent: 'codex', job: 'implement', status: 'failed', latency: 1500,
+      startedAt: new Date(now - 30_000 - 1500).toISOString(), parent: oldRoot, turn: 2,
+      kind: 'other',
+    })
+    const recentRoot = addRun({
+      agent: 'grok', job: 'fix', status: 'asking', latency: 1000,
+      startedAt: new Date(now - 30_000).toISOString(), session: 'heartbeat-turns',
+    })
+    addRun({
+      agent: 'grok', job: 'fix', status: 'failed', latency: 1500,
+      startedAt: new Date(now - 60 * 60_000 - 1500).toISOString(), parent: recentRoot, turn: 2,
+      kind: 'other',
+    })
+    const live = addRun({
+      agent: 'agy', job: 'craft', status: 'running', session: 'heartbeat-turns',
+    })
+    db().query("UPDATE run SET error='child failed' WHERE parent_run_id IN (?,?)").run(oldRoot, recentRoot)
+    db().query('UPDATE run SET latency_ms=NULL WHERE id=?').run(live)
+
+    const p = Bun.spawnSync([heartbeat, 'heartbeat-turns', '0', '2'], {
+      stdout: 'pipe', stderr: 'pipe', env: process.env,
+    })
+    expect(p.exitCode).toBe(0)
+    const out = p.stdout.toString()
+    expect(out.match(new RegExp(`FAILED ${oldRoot}/implement codex other 1\\.5s child failed`, 'g'))).toHaveLength(1)
+    expect(out).not.toContain(`FAILED ${recentRoot}/fix`)
+  })
+
   test('a run that finishes between ticks reports FINISHED once', async () => {
     const finishing = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const live = addRun({ agent: 'agy', job: 'craft', status: 'running' })

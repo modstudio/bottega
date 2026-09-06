@@ -128,9 +128,21 @@ for line in sys.stdin:
         continue
     status = d.get("status")
     if status == "ok" or status in ("failed", "stale", "stopped", "abandoned"):
-        latency = d.get("latency_ms")
+        timing = d
+        if d.get("turns") is not None:
+            if not isinstance(d["turns"], list):
+                raise SystemExit(2)
+            if d["turns"]:
+                timing = d["turns"][-1]
+                if not isinstance(timing, dict):
+                    raise SystemExit(2)
+                if not isinstance(timing.get("started_at"), str):
+                    raise SystemExit(2)
+                if timing.get("latency_ms") is not None and not isinstance(timing.get("latency_ms"), (int, float)):
+                    raise SystemExit(2)
+        latency = timing.get("latency_ms")
         try:
-            started = datetime.datetime.fromisoformat(d["started_at"].replace("Z", "+00:00"))
+            started = datetime.datetime.fromisoformat(timing["started_at"].replace("Z", "+00:00"))
             terminal = started if latency is None else started + datetime.timedelta(milliseconds=latency)
             recent = (now - terminal).total_seconds() <= recent_seconds
         except Exception:
