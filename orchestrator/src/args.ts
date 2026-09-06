@@ -52,7 +52,7 @@ export function seedGuidance(seeds: string[]): string {
 }
 
 /** Every word the human-facing CLI understands. */
-export function commandShape(argv: string[]): { args: string[]; shape: CommandShape } | null {
+export function commandShape(argv: string[], topLevelOnly = false): { args: string[]; shape: CommandShape } | null {
   const command = argv[0]
   const sub = argv[1]
   switch (command) {
@@ -64,6 +64,7 @@ export function commandShape(argv: string[]): { args: string[]; shape: CommandSh
     ) }
     case 'contract': return { args: argv.slice(1), shape: shape('orch contract <job>', 1) }
     case 'doc': {
+      if (topLevelOnly) return { args: [], shape: shape('orch doc', 0) }
       const forms: Record<string, CommandShape> = {
         list: shape('orch doc list [--scope S] [--subject X] [--json]', 0, ['--scope', '--subject'], ['--json']),
         show: shape('orch doc show <slug> --scope S [--subject X] [--json]', 1, ['--scope', '--subject'], ['--json']),
@@ -82,6 +83,7 @@ export function commandShape(argv: string[]): { args: string[]; shape: CommandSh
       return { args: argv.slice(2), shape: forms[sub] }
     }
     case 'canon': {
+      if (topLevelOnly) return { args: [], shape: shape('orch canon', 0) }
       const forms: Record<string, CommandShape> = {
         check: shape('orch canon check [--cwd P] [--job J] [--all] [--json]', 0, ['--cwd', '--job'], ['--all', '--json']),
         diff: shape('orch canon diff [--cwd P] [--job J] [--json]', 0, ['--cwd', '--job'], ['--json']),
@@ -90,6 +92,7 @@ export function commandShape(argv: string[]): { args: string[]; shape: CommandSh
       return { args: argv.slice(2), shape: forms[sub] }
     }
     case 'port': {
+      if (topLevelOnly) return { args: [], shape: shape('orch port', 0) }
       const action = argv[2]
       const forms: Record<string, Record<string, CommandShape>> = {
         baseline: {
@@ -140,6 +143,7 @@ export function commandShape(argv: string[]): { args: string[]; shape: CommandSh
       ['--carry', '--mcp', '--quiet', '--probe', '--follow', '--detach', '--porcelain', '--no-failover', '--help'],
     ) }
     case 'review': {
+      if (topLevelOnly) return { args: [], shape: shape('orch review', 0) }
       if (sub === 'record') return { args: argv.slice(2), shape: shape('orch review record <run-id>...', Infinity) }
       if (sub === 'triage') return { args: argv.slice(2), shape: shape(
         'orch review triage <review-id> <finding> <accepted|modified|rejected|skipped> [--category X]', 3,
@@ -158,6 +162,7 @@ export function commandShape(argv: string[]): { args: string[]; shape: CommandSh
     case 'wait': return { args: argv.slice(1), shape: shape('orch wait <run-id>... [--timeout SECONDS]', Infinity, ['--timeout']) }
     case 'retry': return { args: argv.slice(1), shape: shape('orch retry <run-id> [--agent NAME] [--follow] [--quiet]', 1, ['--agent'], ['--follow', '--detach', '--quiet']) }
     case 'project': {
+      if (topLevelOnly) return { args: [], shape: shape('orch project', 0) }
       const forms: Record<string, CommandShape> = {
         list: shape('orch project list [--json]', 0, [], ['--json']),
         add: shape('orch project add <path> [--name X] [--stack Y] [--no-canon] [--json]', 1, ['--name', '--stack'], ['--no-canon', '--allow-incomplete', '--json']),
@@ -213,9 +218,7 @@ export function commandShape(argv: string[]): { args: string[]; shape: CommandSh
 
 /** Ask the parser itself whether a top-level word has any accepted command shape. */
 export function isCliCommand(name: string): boolean {
-  return [
-    [name], [name, 'list'], [name, 'baseline', 'show'],
-  ].some((argv) => commandShape(argv) !== null)
+  return commandShape([name], true) !== null
 }
 
 export function validateCliArgs(argv: string[]): void {

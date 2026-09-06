@@ -3621,8 +3621,8 @@ describe('run detail', () => {
     writeFileSync(outputPath, 'the whole reply')
     db().query(
       `UPDATE run SET vendor_tokens=?, failure_kind=?, evidence_excluded=?, error=?,
-                      prompt_path=?, output_path=?, run_token=?, doc_revisions=? WHERE id=?`,
-    ).run(5678, 'timeout', 'not evidence', 'timed out', promptPath, outputPath, 'secret', '[4,9]', id)
+                      prompt_path=?, output_path=?, run_token=?, doc_revisions=?, canon_sha=? WHERE id=?`,
+    ).run(5678, 'timeout', 'not evidence', 'timed out', promptPath, outputPath, 'secret', '[4,9]', 'canon-123', id)
     score(id, 'partial', 'mixed')
     db().query('UPDATE score SET note=? WHERE run_id=?').run('read by hub', id)
 
@@ -3631,7 +3631,7 @@ describe('run detail', () => {
       id, agent: 'grok', job: 'craft', latency_ms: 1234, vendor_tokens: 5678,
       status: 'failed', failure_kind: 'timeout', probe: 1,
       evidence_excluded: 'not evidence', error: 'timed out',
-      doc_revisions: '[4,9]',
+      doc_revisions: '[4,9]', canon_sha: 'canon-123',
       delivery: 'partial', quality: 'mixed', note: 'read by hub',
       prompt: 'the whole prompt', output: 'the whole reply',
     })
@@ -11213,6 +11213,7 @@ describe('canonical schema rebuild', () => {
     expect(cols(d, 'run')).toContain('doc_revisions')
     expect(cols(d, 'run')).toContain('canon_sha')
     expect(cols(d, 'doc')).toContain('delivery')
+    expect(cols(d, 'doc_revision')).toContain('delivery')
     expect(cols(d, 'canon_pack')).toContain('doc_revisions')
     expect(d.query('SELECT doc_id, op, author, reason FROM doc_revision ORDER BY doc_id').all()).toEqual([
       { doc_id: 1, op: 'backfill', author: 'migration', reason: 'state at DEV-256 migration' },
@@ -11256,6 +11257,27 @@ describe('canonical schema rebuild', () => {
       .toEqual(['port-category-map', 'port-import-exclusions', 'port-import-source-context',
         'port-ref-metadata', 'port-state-metadata'].map((slug) => ({ slug })))
     expect(legacy.query("SELECT delivery FROM doc WHERE slug='ordinary'").get()).toEqual({ delivery: 'inject' })
+    const revisions = legacy.query(`SELECT op,delivery,author,reason FROM doc_revision
+      WHERE slug='port-category-map' AND reason='DEV-254: port importer docs are fetched by slug, not injected'
+      ORDER BY id`).all()
+    expect(revisions).toEqual([{
+      op: 'set', delivery: 'demand', author: 'migration',
+      reason: 'DEV-254: port importer docs are fetched by slug, not injected',
+    }])
+    applySchema(legacy)
+    expect(legacy.query(`SELECT COUNT(*) AS n FROM doc_revision WHERE slug='port-category-map'
+      AND reason='DEV-254: port importer docs are fetched by slug, not injected'`).get())
+      .toEqual({ n: 1 })
+    legacy.close()
+  })
+
+  test('a noncanonical canon pack is rebuilt before its address index is created', () => {
+    const legacy = new Database(':memory:')
+    legacy.exec('CREATE TABLE canon_pack (id INTEGER PRIMARY KEY)')
+    applySchema(legacy)
+    expect(cols(legacy, 'canon_pack')).toContain('job')
+    expect(legacy.query("SELECT name FROM sqlite_master WHERE type='index' AND name='canon_pack_address'").get())
+      .toEqual({ name: 'canon_pack_address' })
     legacy.close()
   })
 
@@ -11303,7 +11325,7 @@ describe('scoped operator docs', () => {
     })
     writeDoc({
       scope: 'global', subject: null, slug: 'revision-life', title: 'Second',
-      body: '---\nstatus: open\n---\n\ntwo', author: 'editor', reason: 'update it',
+      body: '---\nstatus: open\n---\n\ntwo', delivery: 'demand', author: 'editor', reason: 'update it',
     })
     consumeDoc('global', null, 'revision-life', { author: 'consumer', reason: 'finish it' })
     const beforeDelete = getDoc('global', null, 'revision-life')!
@@ -11321,7 +11343,9 @@ describe('scoped operator docs', () => {
     ])
     expect(getDocRevision(revisions[2]!.id)?.body).toContain('status: consumed')
     expect(getDocRevision(revisions[3]!.id)?.body).toBe(beforeDelete.body)
+    expect(getDocRevision(revisions[1]!.id)?.delivery).toBe('demand')
     expect(restored.body).toBe('---\nstatus: open\n---\n\none')
+    expect(restored.delivery).toBe('inject')
     expect(restored.updated_at).not.toBe(created.updated_at)
   })
 

@@ -46,12 +46,13 @@ export type DocRevision = {
   op: DocRevisionOp
   title: string
   body: string
+  delivery: 'inject' | 'demand'
   author: string
   reason: string
   session_id: string | null
   at: string
 }
-export type DocRevisionMetadata = Omit<DocRevision, 'title' | 'body' | 'session_id' | 'doc_id' | 'scope' | 'subject' | 'slug'> & {
+export type DocRevisionMetadata = Omit<DocRevision, 'title' | 'body' | 'delivery' | 'session_id' | 'doc_id' | 'scope' | 'subject' | 'slug'> & {
   bytes: number
 }
 export type DocWriteContext = { author?: string; reason: string }
@@ -195,10 +196,10 @@ function insertRevision(doc: Doc, op: DocRevisionOp, context: DocWriteContext, a
   const identity = writeIdentity(context)
   db().query(
     `INSERT INTO doc_revision
-       (doc_id, scope, subject, slug, op, title, body, author, reason, session_id, at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+       (doc_id, scope, subject, slug, op, title, body, delivery, author, reason, session_id, at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
-    doc.id, doc.scope, doc.subject, doc.slug, op, doc.title, doc.body,
+    doc.id, doc.scope, doc.subject, doc.slug, op, doc.title, doc.body, doc.delivery,
     identity.author, identity.reason, identity.session, at,
   )
 }
@@ -469,14 +470,14 @@ export function restoreDoc(
     const at = nowIso()
     let doc: Doc
     if (existing) {
-      db().query('UPDATE doc SET title=?, body=?, updated_at=? WHERE id=?')
-        .run(revision.title, revision.body, at, existing.id)
+      db().query('UPDATE doc SET title=?, body=?, delivery=?, updated_at=? WHERE id=?')
+        .run(revision.title, revision.body, revision.delivery, at, existing.id)
       doc = getDoc(scope, subject, slug)!
     } else {
       db().query(
-        `INSERT INTO doc (scope, subject, slug, title, body, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?)`,
-      ).run(scope, subject, slug, revision.title, revision.body, at, at)
+        `INSERT INTO doc (scope, subject, slug, title, body, delivery, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?)`,
+      ).run(scope, subject, slug, revision.title, revision.body, revision.delivery, at, at)
       doc = getDoc(scope, subject, slug)!
     }
     insertRevision(doc, 'restore', context, at)

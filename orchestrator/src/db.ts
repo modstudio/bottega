@@ -183,8 +183,26 @@ export function applySchema(d: Database): void {
   const hadDocDelivery = (d.query("PRAGMA table_info('doc')").all() as { name: string }[])
     .some((column) => column.name === 'delivery')
   addColumn(d, 'doc', 'delivery', "TEXT NOT NULL DEFAULT 'inject'")
-  if (!hadDocDelivery) d.query(`UPDATE doc SET delivery='demand' WHERE scope='global' AND slug IN
-    ('port-category-map','port-import-exclusions','port-import-source-context','port-ref-metadata','port-state-metadata')`).run()
+  addColumn(d, 'doc_revision', 'delivery', "TEXT NOT NULL DEFAULT 'inject'")
+  if (!hadDocDelivery) {
+    const changed = d.query(`SELECT * FROM doc WHERE delivery='inject' AND scope='global' AND slug IN
+      ('port-category-map','port-import-exclusions','port-import-source-context','port-ref-metadata','port-state-metadata')`).all() as {
+        id: number; scope: string; subject: string | null; slug: string; title: string; body: string
+      }[]
+    const at = nowIso()
+    const migrateDelivery = d.transaction(() => {
+      for (const doc of changed) {
+        d.query("UPDATE doc SET delivery='demand', updated_at=? WHERE id=?").run(at, doc.id)
+        d.query(`INSERT INTO doc_revision
+          (doc_id,scope,subject,slug,op,title,body,delivery,author,reason,session_id,at)
+          VALUES (?,?,?,?,?,?,?,'demand','migration',?,NULL,?)`).run(
+          doc.id, doc.scope, doc.subject, doc.slug, 'set', doc.title, doc.body,
+          'DEV-254: port importer docs are fetched by slug, not injected', at,
+        )
+      }
+    })
+    migrateDelivery()
+  }
   // Stable machine identity for findings-producing review jobs. A display label
   // is deliberately not used as a calibration key.
   addColumn(d, 'run', 'lens', 'TEXT')
@@ -336,7 +354,10 @@ function ensureCanonicalSchema(d: Database) {
   const stored = d.query(
     `SELECT value FROM schema_meta WHERE key = 'schema'`,
   ).get() as { value: string } | null
-  if (stored?.value === current) return
+  if (stored?.value === current) {
+    d.exec("CREATE UNIQUE INDEX IF NOT EXISTS canon_pack_address ON canon_pack(job, COALESCE(project, ''))")
+    return
+  }
 
   try {
     d.query("UPDATE run SET status = 'asking' WHERE status = 'blocked'").run()
@@ -346,13 +367,15 @@ function ensureCanonicalSchema(d: Database) {
 
   for (const [name, ddl] of [
     ['run', RUN_DDL], ['score', SCORE_DDL], ['doc', DOC_DDL], ['doc_revision', DOC_REVISION_DDL],
-    ['review_lens', REVIEW_LENS_DDL], ['landing_override', LANDING_OVERRIDE_DDL],
+    ['canon_pack', CANON_PACK_DDL], ['review_lens', REVIEW_LENS_DDL], ['landing_override', LANDING_OVERRIDE_DDL],
   ] as const) {
     const live = liveTableSql(d, name)
     if (!live) continue
     if (normalizeSql(live) === normalizeSql(ddl)) continue
     rebuildTable(d, name, ddl)
   }
+
+  d.exec("CREATE UNIQUE INDEX IF NOT EXISTS canon_pack_address ON canon_pack(job, COALESCE(project, ''))")
 
   d.query(
     `INSERT INTO schema_meta (key, value) VALUES ('schema', ?)
@@ -370,7 +393,7 @@ function ensureCanonicalSchema(d: Database) {
  */
 function rebuildTable(
   d: Database,
-  table: 'run' | 'score' | 'doc' | 'doc_revision' | 'review_lens' | 'landing_override',
+  table: 'run' | 'score' | 'doc' | 'doc_revision' | 'canon_pack' | 'review_lens' | 'landing_override',
   canonical: string,
 ) {
   const fkOn = foreignKeysOn(d)
@@ -403,11 +426,15 @@ function rebuildTable(
       }
       return `"${c}"`
     }).join(', ')
-    d.exec(`INSERT INTO ${newName} (${insertList}) SELECT ${selectList} FROM ${table}`)
+    if (table !== 'canon_pack' || oldCols.has('job')) {
+      d.exec(`INSERT INTO ${newName} (${insertList}) SELECT ${selectList} FROM ${table}`)
+    }
     d.exec(`DROP TABLE ${table}`)
     d.exec(`ALTER TABLE ${newName} RENAME TO ${table}`)
     if (table === 'run') {
       d.exec('CREATE INDEX IF NOT EXISTS run_job_agent ON run(job, agent)')
+    } else if (table === 'canon_pack') {
+      d.exec("CREATE UNIQUE INDEX IF NOT EXISTS canon_pack_address ON canon_pack(job, COALESCE(project, ''))")
     } else if (table === 'score') {
       d.exec(`
         CREATE INDEX IF NOT EXISTS score_run ON score(run_id);
@@ -650,6 +677,7 @@ const DOC_REVISION_DDL = `CREATE TABLE doc_revision (
       op         TEXT NOT NULL CHECK (op IN ('create','set','consume','delete','restore','import','backfill')),
       title      TEXT NOT NULL,
       body       TEXT NOT NULL,
+      delivery   TEXT NOT NULL DEFAULT 'inject' CHECK (delivery IN ('inject','demand')),
       author     TEXT NOT NULL CHECK (length(trim(author)) > 0),
       reason     TEXT NOT NULL CHECK (length(trim(reason)) > 0),
       session_id TEXT,
@@ -724,7 +752,6 @@ function migrate(d: Database) {
     CREATE INDEX IF NOT EXISTS doc_scope_subject ON doc(scope, subject);
     CREATE INDEX IF NOT EXISTS doc_revision_doc ON doc_revision(doc_id, id);
     CREATE INDEX IF NOT EXISTS doc_revision_address ON doc_revision(scope, subject, slug, id);
-    CREATE UNIQUE INDEX IF NOT EXISTS canon_pack_address ON canon_pack(job, COALESCE(project, ''));
   `)
 
   const duplicateAddresses = d.query(

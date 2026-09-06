@@ -1,7 +1,19 @@
 import { describe, expect, test } from 'bun:test'
-import { flagValue, seedGuidance, validateCliArgs } from './args.ts'
+import { flagValue, isCliCommand, seedGuidance, validateCliArgs } from './args.ts'
 
 describe('CLI argument recognition', () => {
+  test('every parser top-level command is recognised as canon, including nested commands', () => {
+    const commands = [
+      'issue', 'land', 'contract', 'doc', 'canon', 'port', 'mcp', 'do', 'review', 'state', 'run',
+      'search', 'result', 'wait', 'retry', 'project', 'ask-server', 'setup-ask', 'blockers', 'monitor',
+      'inbox', 'answer', 'tell', 'continue', 'diff', 'sweep', 'discard', 'stop', 'abandon', 'score',
+      'recalibrate', 'runs', 'guide', 'spawns', 'stats', 'pick', 'pending', 'metric', 'serve',
+      'reclassify-failures', 'doctor', 'jobs', 'agents',
+    ]
+    for (const command of commands) expect(isCliCommand(command)).toBeTrue()
+    expect(isCliCommand('nosuch')).toBeFalse()
+  })
+
   test('every command with legitimate positionals still accepts its documented shape', () => {
     const commands = [
       ['land', 'feature/DEV-185'], ['land', '--status'],
