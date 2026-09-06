@@ -109,9 +109,26 @@ function commandShape(argv: string[]): { args: string[]; shape: CommandShape } |
       return { args: argv.slice(3), shape: forms[sub]![action]! }
     }
     case 'mcp': return { args: argv.slice(1), shape: shape('orch mcp [--config]', 0, [], ['--config']) }
+    case 'workflow': {
+      const forms: Record<string, CommandShape> = {
+        list: shape('orch workflow list [--json]', 0, [], ['--json']),
+        show: shape('orch workflow show <slug> [--version N] [--json]', 1, ['--version'], ['--json']),
+        set: shape('orch workflow set <slug> --file PATH --reason TEXT [--author NAME]', 1, ['--file','--reason','--author']),
+        promote: shape('orch workflow promote <slug> <n> --reason TEXT [--author NAME]', 2, ['--reason','--author']),
+        retire: shape('orch workflow retire <slug> <n> --reason TEXT [--author NAME]', 2, ['--reason','--author']),
+        fork: shape('orch workflow fork <slug> [--from N] --reason TEXT [--author NAME]', 1, ['--from','--reason','--author']),
+        versions: shape('orch workflow versions <slug> [--json]', 1, [], ['--json']),
+        compose: shape('orch workflow compose <slug> [--mode M] [--arg k=v]... [--json]', 1, ['--mode','--arg'], ['--json']),
+        step: shape('orch workflow step <slug> <step-slug> [--arg k=v]... [--json]', 2, ['--arg'], ['--json']),
+        export: shape('orch workflow export <dir>', 1),
+        import: shape('orch workflow import <dir> --reason TEXT [--author NAME]', 1, ['--reason','--author']),
+      }
+      if (!sub || !forms[sub]) return null
+      return { args: argv.slice(2), shape: forms[sub]! }
+    }
     case 'do': return { args: argv.slice(1), shape: shape(
       'orch do <job> [prompt] [--agent NAME] [--file PATH] [--schema PATH] [--model NAME]', Infinity,
-      ['--agent', '--avoid', '--distinct-from', '--base', '--file', '--schema', '--model', '--label', '--lens', '--seed', '--key', '--repo'],
+      ['--agent', '--avoid', '--distinct-from', '--base', '--file', '--schema', '--model', '--label', '--lens', '--seed', '--key', '--repo', '--cwd'],
       ['--carry', '--mcp', '--quiet', '--probe', '--follow', '--detach', '--porcelain', '--no-failover', '--help'],
     ) }
     case 'review': {

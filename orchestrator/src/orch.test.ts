@@ -748,6 +748,7 @@ const removeDoc = (
   deleteDoc(scope, subject, slug, context)
 const importDocs = (dir: string, context = { reason: 'test import' }) => readDocs(dir, context)
 const { createDocsMcpServer, fileIssue, duplicateCandidates } = await import('./mcp.ts')
+const { setWorkflow, promoteWorkflow } = await import('./workflows.ts')
 const { deadRunningProcessConditions, reconcileHub, monitorHistory } = await import('./monitor.ts')
 const { listPairs, addPair, baselineForPair, setBaseline, listSkips, addSkip,
         setLedgerRef, ledgerRef, listLedgerRefs, resolveLedgerRef,
@@ -4741,6 +4742,11 @@ describe('detached run collection', () => {
       { command: 'doc consume', args: ['doc', 'consume', 'json-consume', '--scope', 'global', '--json'] },
       { command: 'doc rm', args: ['doc', 'rm', 'json-rm', '--scope', 'global', '--reason', 'json test', '--json'] },
       { command: 'doc subjects', args: ['doc', 'subjects', '--json'] },
+      { command: 'workflow list', args: ['workflow', 'list', '--json'] },
+      { command: 'workflow show', args: ['workflow', 'show', 'ship', '--json'] },
+      { command: 'workflow versions', args: ['workflow', 'versions', 'ship', '--json'] },
+      { command: 'workflow compose', args: ['workflow', 'compose', 'ship', '--arg', 'key=DEV-257', '--arg', 'branch=feature/DEV-257', '--arg', 'worktree=/tmp/tree', '--json'] },
+      { command: 'workflow step', args: ['workflow', 'step', 'ship', 'lens', '--arg', 'key=DEV-257', '--arg', 'branch=feature/DEV-257', '--arg', 'worktree=/tmp/tree', '--json'] },
       { command: 'port baseline show', args: ['port', 'baseline', 'show', 'json-source', 'json-target', '--json'] },
       { command: 'port baseline set', args: ['port', 'baseline', 'set', 'json-source', 'json-target', 'abc', '--json'] },
       { command: 'port skip list', args: ['port', 'skip', 'list', 'json-source', 'json-target', '--json'] },
@@ -4758,7 +4764,7 @@ describe('detached run collection', () => {
         env: monitorEnv },
     ]
 
-    expect(documents).toHaveLength(27)
+    expect(documents).toHaveLength(32)
     for (const surface of documents) {
       const result = orchInput(surface.args, surface.stdin, surface.env)
       expect(result.code, surface.command).toBe(surface.code ?? 0)
@@ -4876,6 +4882,25 @@ describe('detached run collection', () => {
     }
   })
 
+  test('--cwd carry measures the same input tree as launching inside that worktree', () => {
+    const repo=realpathSync(mkdtempSync(join(tmpdir(),'orch-cwd-repo-'))), linked=join(repo,'.claude','worktrees','DEV-257-caller')
+    const binDir=mkdtempSync(join(tmpdir(),'orch-cwd-bin-'))
+    const git=(cwd:string,...args:string[])=>{const p=Bun.spawnSync(['git',...args],{cwd,env:hermeticGitEnv(),stdout:'pipe',stderr:'pipe'});if(p.exitCode!==0)throw new Error(p.stderr.toString());return p.stdout.toString().trim()}
+    try {
+      git(repo,'init','-b','main');git(repo,'config','user.email','orch-test@example.invalid');git(repo,'config','user.name','Orch Test')
+      writeFileSync(join(repo,'tracked.txt'),'base\n');git(repo,'add','.');git(repo,'commit','-m','fixture')
+      mkdirSync(join(repo,'.claude','worktrees'),{recursive:true});git(repo,'worktree','add','-b','feature/DEV-257',linked,'main')
+      writeFileSync(join(linked,'tracked.txt'),'carried\n');writeFileSync(join(linked,'untracked.txt'),'visible\n')
+      writeFileSync(join(binDir,'codex'),'#!/bin/sh\nprintf answer\n');chmodSync(join(binDir,'codex'),0o755)
+      upsertProject({name:'cwd-project',path:repo,canon:false,settings:{}})
+      const launch=(cwd:string,args:string[])=>{const p=Bun.spawnSync([process.execPath,CLI,'do','file-question','inspect','--agent','codex','--carry','--porcelain',...args],{cwd,env:{...process.env,ORCH_DB:process.env.ORCH_DB!,ORCH_DEPTH:'0',PATH:`${binDir}:${process.env.PATH ?? ''}`},stdout:'pipe',stderr:'pipe'});expect(p.exitCode,p.stderr.toString()).toBe(0);return Number(p.stdout.toString().trim())}
+      const fromRoot=launch(repo,['--cwd',linked]), fromTree=launch(linked,[])
+      for(const id of [fromRoot,fromTree]) {const deadline=Date.now()+5000;while(Date.now()<deadline){const row=db().query('SELECT status FROM run WHERE id=?').get(id) as {status:string};if(row.status!=='running')break;Bun.sleepSync(20)}}
+      const trees=[fromRoot,fromTree].map((id)=>(db().query('SELECT input_tree FROM run WHERE id=?').get(id) as {input_tree:string}).input_tree)
+      expect(trees[0]).toBeTruthy();expect(trees[0]).toBe(trees[1])
+    } finally { rmSync(repo,{recursive:true,force:true});rmSync(binDir,{recursive:true,force:true}) }
+  })
+
   test('do help names every job and every supported flag', () => {
     for (const help of ['--help', '-h']) {
       const r = orch('do', help)
@@ -4884,7 +4909,7 @@ describe('detached run collection', () => {
       for (const name of [
         '--agent', '--schema', '--mcp', '--model', '--label', '--probe', '--seed', '--key',
         '--repo', '--base', '--carry', '--avoid', '--distinct-from', '--file', '--detach', '--follow', '--quiet',
-        '--no-failover', '--porcelain',
+        '--no-failover', '--porcelain', '--cwd',
       ]) expect(r.out).toContain(name)
     }
   })
@@ -11536,6 +11561,32 @@ describe('scoped operator docs', () => {
       await client.close()
       await server.close()
     }
+  })
+
+  test('MCP workflow tools return lean indexes, needs, and one substituted step', async () => {
+    const definition = {
+      title: 'Choose', description: 'MCP fixture',
+      arguments: [{ name: 'key', required: true, description: 'Task key' }],
+      modes: [{ slug: 'careful', title: 'Careful', entry: 'Use the careful path?', steps: ['inspect'] }],
+      steps: [{ slug: 'inspect', title: 'Inspect', job: null, autonomy: 'manual', gate: null, body: 'Inspect {{key}}.' }],
+    }
+    const draft = setWorkflow('mcp-workflow', definition, 'test MCP', 'test')
+    promoteWorkflow('mcp-workflow', draft.n, 'publish MCP fixture', 'test')
+    const server = createDocsMcpServer()
+    const client = new Client({ name: 'orch-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport); await client.connect(clientTransport)
+    try {
+      const parse = (result: any) => JSON.parse((result.content[0] as {text:string}).text)
+      const listed = parse(await client.callTool({ name: 'list_workflows', arguments: {} }))
+      const needs = parse(await client.callTool({ name: 'compose_workflow', arguments: { slug: 'mcp-workflow' } }))
+      const composed = parse(await client.callTool({ name: 'compose_workflow', arguments: { slug: 'mcp-workflow', mode: 'careful', args: { key: 'DEV-257' } } }))
+      const step = parse(await client.callTool({ name: 'get_workflow_step', arguments: { slug: 'mcp-workflow', step: 'inspect', args: { key: 'DEV-257' } } }))
+      expect(listed.some((workflow:any)=>workflow.slug==='mcp-workflow')).toBe(true)
+      expect(needs.needs).toEqual({ mode: [{ slug:'careful',title:'Careful',entry:'Use the careful path?' }], arguments:['key'] })
+      expect(JSON.stringify(composed)).not.toContain('Inspect {{key}}')
+      expect(step.body).toBe('Inspect DEV-257.')
+    } finally { await client.close(); await server.close() }
   })
 
   test('MCP file_issue refuses a call missing evidence with an actionable message', async () => {

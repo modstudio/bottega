@@ -26,6 +26,9 @@ import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
 import { flagValue, flagValues, validateCliArgs } from './args.ts'
 import { completeReview, DISPOSITIONS, parseReviewOutput, recordReviews,
          reviewCalibration, triageFinding, type Disposition } from './review.ts'
+import { composeWorkflow, exportWorkflows, forkWorkflow, getWorkflowStep, importWorkflows,
+         listWorkflows, promoteWorkflow, retireWorkflow, setWorkflow, showWorkflow,
+         workflowVersions } from './workflows.ts'
 
 /**
  * How long `orch do` watches a detached run before handing it back.
@@ -689,6 +692,7 @@ function usage(): never {
       --seed=<spec>             same; quote a multi-token spec as one value in either form
       --key <KEY-123>           supply a required branch ticket key
       --repo <name>             attribute work launched outside a registered project
+      --cwd <path>              resolve and carry from this path as if orch started there
       --follow                  block and watch the run instead of returning its id
       --no-failover             do not retry vendor failures on another agent
 
@@ -792,6 +796,16 @@ function usage(): never {
       restore <scope> <subject|-> <slug> <rev> --reason TEXT [--author NAME]
       subjects [--json]  (--json: one JSON document)
       export <dir> | import <dir> --reason TEXT [--author NAME] | brief [--cwd P] | resumes [--cwd P]
+  orch workflow list [--json]  (--json: one JSON document)
+      show <slug> [--version N] [--json]  (--json: one JSON document)
+      set <slug> --file F --reason TEXT [--author NAME]
+      promote <slug> <n> --reason TEXT [--author NAME]
+      retire <slug> <n> --reason TEXT [--author NAME]
+      fork <slug> [--from N] --reason TEXT [--author NAME]
+      versions <slug> [--json]  (--json: one JSON document)
+      compose <slug> [--mode M] [--arg k=v]... [--json]  (--json: one JSON document)
+      step <slug> <step-slug> [--arg k=v]... [--json]  (--json: one JSON document)
+      export <dir> | import <dir> --reason TEXT [--author NAME]
   orch port baseline show <source> <target> [--json]  (--json: one JSON document)
       baseline set <source> <target> <commit> [--clear] [--json]  (--json: one JSON document)
       skip list <source> <target> [--json]  (--json: one JSON document)
@@ -840,6 +854,7 @@ function doUsage(): never {
   --seed=<spec>    same; quote a multi-token spec as one value in either form
   --key <KEY-123>  supply the ticket key required by some branch templates
   --repo <name>    attribute a run launched outside a registered project
+  --cwd <path>     resolve and carry from this path as if orch started there
   --file <path>    read the prompt from a file instead of argv or stdin
   --detach         print the run id and return immediately (the default)
   --porcelain      print exactly the run id, for machine callers
@@ -1439,6 +1454,63 @@ switch (cmd) {
     break
   }
 
+  case 'workflow': {
+    const sub = argv[1]
+    const json = has('json')
+    const print = (value: unknown, line?: string) => console.log(json ? JSON.stringify(value) : (line ?? JSON.stringify(value, null, 2)))
+    const numberFlag = (name: string) => {
+      const value = flag(name)
+      if (value === undefined) return undefined
+      const n = Number(value)
+      if (!Number.isInteger(n) || n < 1) throw new Error(`--${name} must be a positive integer`)
+      return n
+    }
+    const positionNumber = (value: string | undefined) => {
+      const n = Number(value)
+      if (!Number.isInteger(n) || n < 1) throw new Error('version must be a positive integer')
+      return n
+    }
+    const workflowArgs = () => Object.fromEntries(flagValues(argv, 'arg').map((pair) => {
+      const at = pair.indexOf('=')
+      if (at < 1) throw new Error(`invalid --arg "${pair}"; use k=v`)
+      return [pair.slice(0,at),pair.slice(at+1)]
+    }))
+    if (sub === 'list') {
+      const workflows = listWorkflows()
+      print(workflows, workflows.map((workflow) =>
+        `${workflow.slug}  ${workflow.title}  production=${workflow.production_n ?? '-'} draft=${workflow.draft_n ?? '-'}`,
+      ).join('\n'))
+    }
+    else if (sub === 'show') print(showWorkflow(argv[2]!,numberFlag('version')))
+    else if (sub === 'set') {
+      const file=flag('file'); if (!file) throw new Error('file is required')
+      print(setWorkflow(argv[2]!,JSON.parse(readFileSync(file,'utf8')),flag('reason'),flag('author')))
+    }
+    else if (sub === 'promote') print(promoteWorkflow(argv[2]!,positionNumber(argv[3]),flag('reason'),flag('author')))
+    else if (sub === 'retire') print(retireWorkflow(argv[2]!,positionNumber(argv[3]),flag('reason'),flag('author')))
+    else if (sub === 'fork') print(forkWorkflow(argv[2]!,numberFlag('from'),flag('reason'),flag('author')))
+    else if (sub === 'versions') print(workflowVersions(argv[2]!))
+    else if (sub === 'compose') {
+      const result=composeWorkflow(argv[2]!,flag('mode'),workflowArgs())
+      if (json) print(result)
+      else {
+        console.log(`${result.workflow.title} — ${result.mode?.title ?? 'choose a mode'}`)
+        if (result.needs.mode) for (const mode of result.needs.mode) console.log(`${mode.slug}: ${mode.entry}`)
+        if (result.needs.arguments) console.log(`missing required arguments: ${result.needs.arguments.join(', ')}`)
+        for (const step of result.steps) console.log(`${step.n}. ${step.slug} — ${step.title} [job=${step.job ?? '-'} autonomy=${step.autonomy} gate=${step.gate ?? '-'}]`)
+      }
+      if (Object.keys(result.needs).length) process.exitCode=2
+    }
+    else if (sub === 'step') {
+      const step = getWorkflowStep(argv[2]!, argv[3]!, workflowArgs())
+      print(step, step.body)
+    }
+    else if (sub === 'export') exportWorkflows(argv[2]!)
+    else if (sub === 'import') print(importWorkflows(argv[2]!,flag('reason'),flag('author')))
+    else throw new Error('unknown: orch workflow. Try list | show | set | promote | retire | fork | versions | compose | step | export | import')
+    break
+  }
+
   case 'issue': {
     const key = argv[1]
     if (!key) throw new Error('orch issue <TASK-KEY>')
@@ -1456,6 +1528,10 @@ switch (cmd) {
       throw new Error('--porcelain cannot be combined with --follow')
     }
     const requested = job(jobName)
+    const requestedCwd = flag('cwd')
+    if (requestedCwd && !existsSync(requestedCwd)) throw new Error(`--cwd does not exist: ${requestedCwd}`)
+    const callerCwd = requestedCwd ? realpathSync(requestedCwd) : process.cwd()
+    if (requestedCwd && !projectAt(callerCwd)) throw new Error(`--cwd is not inside a registered project: ${callerCwd}`)
     const explicitRepo = flag('repo')
     if (explicitRepo && !projectByName(explicitRepo)) {
       throw new Error(`unknown repo "${explicitRepo}". Registered: ${projectNames()}`)
@@ -1465,26 +1541,26 @@ switch (cmd) {
     const base = flag('base')
     if (base) {
       if (jobName !== 'implement') throw new Error('--base is only valid for the implement job')
-      resolveBase(process.cwd(), base)
+      resolveBase(callerCwd, base)
     }
     const seed = preflight(
-      jobName, process.cwd(), flag('seed'), flag('key'), base, false, false, flag('lens'),
+      jobName, callerCwd, flag('seed'), flag('key'), base, false, false, flag('lens'),
     )
-    if (requested.needs.readsRepo) warnCallerDrift(process.cwd(), base)
+    if (requested.needs.readsRepo) warnCallerDrift(callerCwd, base)
     const schema = flag('schema')
     // An unpinned run may route to Codex, so its schema has to be suitable
     // before detach() claims a row. An explicitly pinned non-Codex agent keeps
     // its own schema dialect and reads the caller's original file unchanged.
     if (schema && (!flag('agent') || flag('agent') === 'codex')) readStrictCodexSchema(schema)
     const { avoid, distinctModels } = await routeConstraints(flag('agent'))
-    if (!porcelain && !explicitRepo && !projectAt(process.cwd())) {
+    if (!porcelain && !explicitRepo && !projectAt(callerCwd)) {
       console.error(
         `! this run will not be attributed to any project; use --repo <name> ` +
         `(registered: ${projectNames()})`,
       )
     }
     if (!porcelain && !has('carry') && requested.needs.readsRepo &&
-        checkoutHasUncommittedWork(process.cwd())) {
+        checkoutHasUncommittedWork(callerCwd)) {
       console.error(
         '! this checkout has uncommitted work that will not be carried into the worker.\n' +
         '  pass --carry to send it with the run.',
@@ -1525,7 +1601,7 @@ switch (cmd) {
         agent: flag('agent'), schema, label: flag('label'), lens: flag('lens'),
         mcp: has('mcp'), model: flag('model'), probe: has('probe'), seed, key: flag('key'),
         repo: explicitRepo, base, avoid, distinctModels,
-        noFailover: has('no-failover'), carry: has('carry'),
+        noFailover: has('no-failover'), carry: has('carry'), cwd: callerCwd,
       })
       if (!porcelain) warnImplementContractConflicts(conflicts, id)
       printRunId(id)
@@ -1565,7 +1641,7 @@ switch (cmd) {
       agent: flag('agent'), schema, label: flag('label'), lens: flag('lens'),
       mcp: has('mcp'), model: flag('model'), probe: has('probe'), seed, key: flag('key'),
       repo: explicitRepo, base, avoid, distinctModels,
-      noFailover: has('no-failover'), carry: has('carry'),
+      noFailover: has('no-failover'), carry: has('carry'), cwd: callerCwd,
     })
     warnImplementContractConflicts(conflicts, id)
 

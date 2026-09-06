@@ -13,6 +13,7 @@ import {
   listLedgerRefs, listSkips, pairByProjects, removeLedgerRef, resolveLedgerRef,
   retireDoctrineRule, setBaseline, setLedgerRef,
 } from './porting.ts'
+import { composeWorkflow, getWorkflowStep, listWorkflows } from './workflows.ts'
 
 const text = (value: unknown) => ({
   content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value) }],
@@ -257,6 +258,26 @@ export async function fileIssue(
 
 export function createDocsMcpServer(): McpServer {
   const server = new McpServer({ name: 'orch', version: '0.1.0' })
+
+  server.registerTool('list_workflows', {
+    description: 'List workflow identities and their production and draft versions.',
+  }, async () => text(listWorkflows()))
+
+  server.registerTool('compose_workflow', {
+    description: 'Compose a workflow index without returning step bodies.',
+    inputSchema: {
+      slug: z.string().trim().min(1), mode: z.string().trim().min(1).optional(),
+      args: z.record(z.string(), z.string()).optional(),
+    },
+  }, async ({ slug, mode, args }) => text(composeWorkflow(slug, mode, args ?? {})))
+
+  server.registerTool('get_workflow_step', {
+    description: 'Fetch one reached workflow step with argument substitutions applied.',
+    inputSchema: {
+      slug: z.string().trim().min(1), step: z.string().trim().min(1),
+      args: z.record(z.string(), z.string()).optional(),
+    },
+  }, async ({ slug, step, args }) => text(getWorkflowStep(slug, step, args ?? {})))
 
   server.registerTool('list_projects', {
     description: 'List projects registered with the orchestrator.',

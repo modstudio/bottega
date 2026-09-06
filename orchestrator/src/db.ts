@@ -910,6 +910,7 @@ function migrate(d: Database) {
   `)
 
   migratePortSchema(d)
+  migrateWorkflowSchema(d)
 
   migrateScoreToMatrix(d)
   addColumn(d, 'score', 'fidelity', 'TEXT')
@@ -932,6 +933,111 @@ function migrate(d: Database) {
     ['lines_docs', 'INTEGER NOT NULL DEFAULT 0'], ['lines_config', 'INTEGER NOT NULL DEFAULT 0'],
     ['lines_generated', 'INTEGER NOT NULL DEFAULT 0'],
   ] as const) addColumn(d, 'metric', c, decl)
+}
+
+const WORKFLOW_DDL = `
+    CREATE TABLE IF NOT EXISTS workflow (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug TEXT NOT NULL UNIQUE,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS workflow_version (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      workflow_id INTEGER NOT NULL REFERENCES workflow(id) ON DELETE CASCADE,
+      n INTEGER NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('draft','production','retired')),
+      definition TEXT NOT NULL,
+      author TEXT NOT NULL CHECK (length(trim(author)) > 0),
+      reason TEXT NOT NULL CHECK (length(trim(reason)) > 0),
+      created_at TEXT NOT NULL,
+      promoted_at TEXT,
+      retired_at TEXT,
+      UNIQUE(workflow_id, n)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS workflow_one_production
+      ON workflow_version(workflow_id) WHERE status = 'production';
+    CREATE TABLE IF NOT EXISTS workflow_event (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      workflow_id INTEGER NOT NULL REFERENCES workflow(id) ON DELETE CASCADE,
+      version_n INTEGER NOT NULL,
+      event TEXT NOT NULL CHECK (event IN ('create','set','fork','import','promote','retire')),
+      author TEXT NOT NULL CHECK (length(trim(author)) > 0),
+      reason TEXT NOT NULL CHECK (length(trim(reason)) > 0),
+      session_id TEXT,
+      at TEXT NOT NULL,
+      FOREIGN KEY(workflow_id, version_n) REFERENCES workflow_version(workflow_id, n)
+    );
+    CREATE INDEX IF NOT EXISTS workflow_version_workflow ON workflow_version(workflow_id, n);
+    CREATE INDEX IF NOT EXISTS workflow_event_version ON workflow_event(workflow_id, version_n, id);
+  `
+
+function migrateWorkflowSchema(d: Database): void {
+  d.exec(WORKFLOW_DDL)
+  seedWorkflows(d)
+}
+
+const seedDefinition = (definition: unknown) => JSON.stringify(definition)
+
+function seedWorkflows(d: Database): void {
+  const seeds = [
+    {
+      slug: 'ship',
+      definition: {
+        title: 'Ship a task', description: 'Rebase, independently review, triage, fix, land, and close a task.',
+        arguments: [
+          { name: 'key', required: true, description: 'The task key.' },
+          { name: 'branch', required: true, description: 'The branch ref to land.' },
+          { name: 'worktree', required: true, description: "The branch's worktree path." },
+        ],
+        modes: [{ slug: 'default', title: 'Ship', default: true,
+          steps: ['rebase','lens','score','record','triage','complete','fix','land','close'] }],
+        steps: [
+          { slug: 'rebase', title: 'Rebase and verify', job: null, autonomy: 'auto', gate: 'bun run check', body: 'In `{{worktree}}`, run `git rebase main`, then run `bun run check`.' },
+          { slug: 'lens', title: 'Run independent review lenses', job: 'review-lens', autonomy: 'auto', gate: null, body: '<!-- verify: the proven transcript did not preserve a canonical lens-name set -->\nFrom the branch worktree, dispatch each named lens with `orch do review-lens --cwd {{worktree}} --carry --key {{key}} --lens <lens>`.' },
+          { slug: 'score', title: 'Score the lenses', job: null, autonomy: 'auto', gate: null, body: 'Read every lens result and run `orch score <run-id> <delivery> <quality> --note "..."` honestly for each.' },
+          { slug: 'record', title: 'Record the review', job: null, autonomy: 'auto', gate: null, body: 'Run `orch review record <run-id>...`. Findings are numbered across the whole review.' },
+          { slug: 'triage', title: 'Triage every finding', job: null, autonomy: 'ask', gate: null, body: 'The architect must mark every finding accepted, modified, rejected, or skipped with `orch review triage <review-id> <finding> <disposition>`.' },
+          { slug: 'complete', title: 'Complete the review', job: null, autonomy: 'auto', gate: null, body: 'After every finding is triaged, run `orch review complete <review-id>`.' },
+          { slug: 'fix', title: 'Fix accepted findings', job: 'implement', autonomy: 'ask', gate: null, body: 'Only if findings were accepted or modified, run `orch continue <original-run-id> "Fix the accepted review findings."`. Then loop back to `lens`, because the tree changed.' },
+          { slug: 'land', title: 'Land the branch', job: null, autonomy: 'ask', gate: null, body: 'Notify the other session first, then run `orch land {{branch}}`.' },
+          { slug: 'close', title: 'Close the task', job: null, autonomy: 'auto', gate: null, body: 'Run `hub task comment {{key}} "Shipped."`, then `hub task close {{key}}`, then `git push origin main`.' },
+        ],
+      },
+    },
+    {
+      slug: 'filed-issue',
+      definition: {
+        title: 'Resolve a filed issue', description: "A projection of issue.ts's coordinator for inspection.",
+        arguments: [{ name: 'key', required: true, description: 'The filed task key.' }],
+        modes: [{ slug: 'default', title: 'Resolve', default: true,
+          steps: ['diagnose','fix','verify','blast-radius','triage','land'] }],
+        steps: [
+          { slug: 'diagnose', title: 'Diagnose', job: 'diagnose', autonomy: 'auto', gate: null, body: 'Dispatch `orch do diagnose --key {{key}}` and establish the cause before editing.' },
+          { slug: 'fix', title: 'Fix', job: 'issue-worker', autonomy: 'auto', gate: null, body: 'Dispatch `orch do issue-worker --key {{key}}` with the diagnosis.' },
+          { slug: 'verify', title: 'Verify', job: null, autonomy: 'auto', gate: 'bun run check', body: 'Reproduce the original condition before and after the fix, then run the registered project gate.' },
+          { slug: 'blast-radius', title: 'Review blast radius', job: 'review-lens', autonomy: 'auto', gate: null, body: 'From the fix worktree run `orch do review-lens --carry --key {{key}} --lens issue-blast-radius`.' },
+          { slug: 'triage', title: 'Triage findings', job: null, autonomy: 'ask', gate: null, body: 'The architect triages every recorded finding before the issue can land.' },
+          { slug: 'land', title: 'Land', job: null, autonomy: 'ask', gate: null, body: 'Run the mechanical `orch land <branch>` gate only after verification and review are complete.' },
+        ],
+      },
+    },
+  ]
+  const now = nowIso()
+  const insert = d.transaction(() => {
+    for (const seed of seeds) {
+      if (d.query('SELECT id FROM workflow WHERE slug=?').get(seed.slug)) continue
+      const workflow = d.query('INSERT INTO workflow (slug, created_at) VALUES (?, ?) RETURNING id')
+        .get(seed.slug, now) as { id: number }
+      d.query(`INSERT INTO workflow_version
+        (workflow_id,n,status,definition,author,reason,created_at,promoted_at)
+        VALUES (?,1,'production',?,'seed','DEV-257 seed',?,?)`)
+        .run(workflow.id, seedDefinition(seed.definition), now, now)
+      d.query(`INSERT INTO workflow_event
+        (workflow_id,version_n,event,author,reason,session_id,at)
+        VALUES (?,1,'create','seed','DEV-257 seed',NULL,?)`).run(workflow.id, now)
+    }
+  })
+  insert()
 }
 
 /**
