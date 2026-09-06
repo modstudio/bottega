@@ -9,16 +9,13 @@ import { collectedTime, compactTokens, duration } from '@/lib/format'
 import { trpc } from '@/trpc/client'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { Input } from '@/components/input'
+import {
+  matchesRunSearch, runEasternTime, runVerdictText,
+  type SearchableLiveRun, type SearchableRun,
+} from '@/lib/run-search'
 
-type RunRow = {
-  id: number; agent: string; job: string | null; task: string | null; project: string | null
-  at: string; engaged: string; running: boolean; status: string; delivery: string | null
-  quality: string | null; tokens: number | null; costUsd: number | null; probe: boolean
-  lens: string | null
-}
-type LiveRow = {
-  id: number; agent: string; job: string; repo: string | null; elapsedMs: number; prompt_head: string
-}
+type RunRow = SearchableRun
+type LiveRow = SearchableLiveRun
 type RunsPayload = {
   collectedAt: string | null
   servingSince: string
@@ -32,16 +29,6 @@ type RunsPayload = {
 
 const compact = compactTokens
 const fmtMs = duration
-function easternTime(value: string, includeDay = false) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York', ...(includeDay ? { month: 'short', day: 'numeric' } : {}),
-    hour: 'numeric', minute: '2-digit', hour12: true,
-  }).formatToParts(new Date(value))
-  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? ''
-  const time = `${part('hour')}:${part('minute')} ${part('dayPeriod').toLowerCase()}`
-  return includeDay ? `${part('month')} ${part('day')} ${time}` : time
-}
-
 function Verdict({ row }: { row: RunRow }) {
   if (row.running) return <span className="inline-flex items-center gap-2 text-live"><LiveDot />running</span>
   if (row.delivery) {
@@ -49,7 +36,7 @@ function Verdict({ row }: { row: RunRow }) {
       : row.quality === 'mixed' || row.delivery === 'partial' ? 'warning'
         : row.quality === 'right' || row.delivery === 'full' ? 'success'
           : 'outline'
-    return <Badge variant={variant}>{row.delivery}{row.quality ? ` / ${row.quality}` : ''}</Badge>
+    return <Badge variant={variant}>{runVerdictText(row)}</Badge>
   }
   if (row.status !== 'ok') return <Badge variant="danger">{row.status}</Badge>
   if (row.probe) return <span className="text-muted-foreground">probe</span>
@@ -82,12 +69,7 @@ function RunsList() {
     [data.totals.failed.toLocaleString(), 'failed', 'counts against the agent'],
     [compact(data.totals.toks), 'vendor tokens', 'across every agent'],
   ] : []
-  const matches = (row: RunRow | LiveRow) => {
-    const visible = 'task' in row
-      ? [row.project, row.task, row.agent, row.job]
-      : [row.repo, row.agent, row.job]
-    return visible.some((value) => value?.toLowerCase().includes(search.trim().toLowerCase()))
-  }
+  const matches = (row: RunRow | LiveRow) => matchesRunSearch(row, search)
   const liveRows = data?.live.filter(matches) ?? []
   const runRows = data?.rows.filter(matches) ?? []
   const liveColumns: CollectionColumn<LiveRow>[] = [
@@ -106,7 +88,7 @@ function RunsList() {
     { id: 'verdict', label: 'Verdict', render: (row) => <Verdict row={row} /> },
     { id: 'tokens', label: 'Tokens', className: 'num', render: (row) => compact(row.tokens) },
     { id: 'cost', label: 'Cost', className: 'num', render: (row) => row.costUsd == null ? '-' : `$${row.costUsd.toFixed(2)}` },
-    { id: 'started', label: 'Started', render: (row) => easternTime(row.at, true) },
+    { id: 'started', label: 'Started', render: (row) => runEasternTime(row.at, true) },
     { id: 'open', label: '', render: () => <ChevronRight size={14} className="text-muted-foreground" /> },
   ]
 
