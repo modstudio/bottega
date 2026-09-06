@@ -259,7 +259,7 @@ test('Every write transaction is IMMEDIATE; a deferred transaction that later wr
 }, 20_000)
 
 test.failing('One lock per purpose', async () => {
-  const actorCode = `const{appendFileSync}=await import('node:fs');const{withProjectLock,withWorktreeCreateLock}=await import(process.argv[1]);const [repo,actor,file]=process.argv.slice(2);const log=e=>appendFileSync(file,JSON.stringify({at:new Date().toISOString(),event:e,actor,lock:'orch-landing.lock'})+'\\n');log('lock-wait');const action=()=>{log('lock-held');Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,80)};actor==='worker'?withWorktreeCreateLock(repo,action,2000):withProjectLock(repo,'landing',{session:actor,what:actor},action,2000,true);log('lock-released');log('exit')`
+  const actorCode = `const{appendFileSync,existsSync,readFileSync,readdirSync}=await import('node:fs');const{join}=await import('node:path');const{withProjectLock,withWorktreeCreateLock}=await import(process.argv[1]);const [repo,actor,file]=process.argv.slice(2);const log=(event,lock)=>appendFileSync(file,JSON.stringify({at:new Date().toISOString(),event,actor,...(lock?{lock}:{})})+'\\n');log('lock-wait');const action=()=>{const common=Bun.spawnSync(['git','rev-parse','--path-format=absolute','--git-common-dir'],{cwd:repo,stdout:'pipe'}).stdout.toString().trim();const held=readdirSync(common).filter(name=>name.endsWith('.lock')&&existsSync(join(common,name,'owner'))).filter(name=>{try{return JSON.parse(readFileSync(join(common,name,'owner'),'utf8')).pid===process.pid}catch{return false}});const lock=held.length===1?held[0]:'unknown';log('lock-held',lock);Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,80)};actor==='worker'?withWorktreeCreateLock(repo,action,2000):withProjectLock(repo,'landing',{session:actor,what:actor},action,2000,true);log('lock-released');log('exit')`
   const rng = rngFor(2)
   const names = rng.shuffle(['worker', 'lander', 'cleanup'])
   const children = names.map(async (actor) => {
@@ -274,6 +274,9 @@ test.failing('One lock per purpose', async () => {
   const intervals = names.map((actor) => ({ actor, rows: events(actor) }))
   const shared = intervals.flatMap(({ actor, rows }) => rows
     .filter((row) => row.event === 'lock-held').map((row) => ({ actor, lock: row.lock })))
+  expect(shared).toHaveLength(3)
+  expect(shared.every((row) => row.lock !== undefined && row.lock !== 'unknown'),
+    `lock observation itself failed\n${seedMessage()}`).toBe(true)
   expect(new Set(shared.map((row) => row.lock)).size, seedMessage()).toBe(3)
 }, 15_000)
 
