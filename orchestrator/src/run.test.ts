@@ -753,6 +753,71 @@ setInterval(() => {}, 1_000)
   })
 })
 
+describe('vendor termination markers', () => {
+  test('an exit-0 trailing marker is failed and excluded from routing evidence', async () => {
+    const script = join(dir, 'DEV-361-terminated-agent.ts')
+    writeFileSync(script, `#!/usr/bin/env bun
+process.stdout.write('I will inspect the requested files first.\\n[API Error: terminated]\\n')
+`)
+    chmodSync(script, 0o755)
+    const grok = AGENTS.grok!
+    const previousBin = grok.bin
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      grok.bin = script
+      const reserved = addRun({ agent: '(pending)', job: 'file-question', status: 'running' })
+      await expect(run({
+        job: 'file-question', prompt: 'inspect this', cwd: dir,
+        agent: 'grok', reserveId: reserved, noFailover: true,
+      })).rejects.toThrow('[API Error: terminated]')
+
+      expect(db().query(
+        'SELECT status, failure_kind, error, exit_code FROM run WHERE id=?',
+      ).get(reserved)).toEqual({
+        status: 'failed', failure_kind: 'truncated',
+        error: expect.stringContaining('[API Error: terminated]'), exit_code: 0,
+      })
+      expect(candidates('file-question').find((candidate) => candidate.agent === 'grok'))
+        .toMatchObject({ evidence: 0 })
+    } finally {
+      grok.bin = previousBin
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
+  test.each([
+    ['ordinary output', 'The requested handler returns the stored result after validation.'],
+    ['API error mentioned in prose', 'The handler swallows [API Error: terminated] instead of returning it.'],
+    ['short clean output', 'Done.'],
+  ])('keeps exit-0 %s successful', async (_case, output) => {
+    const script = join(dir, 'DEV-361-clean-agent.ts')
+    writeFileSync(script, `#!/usr/bin/env bun\nprocess.stdout.write(${JSON.stringify(output)})\n`)
+    chmodSync(script, 0o755)
+    const grok = AGENTS.grok!
+    const previousBin = grok.bin
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      grok.bin = script
+      const result = await run({
+        job: 'file-question', prompt: 'answer this', cwd: dir,
+        agent: 'grok', noFailover: true,
+      })
+      expect(db().query(
+        'SELECT status, failure_kind, error, exit_code FROM run WHERE id=?',
+      ).get(result.id)).toEqual({
+        status: 'ok', failure_kind: null, error: null, exit_code: 0,
+      })
+    } finally {
+      grok.bin = previousBin
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+})
+
 describe('the live ask channel always answers', () => {
   test('a ruling that lands is handed straight back', async () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })

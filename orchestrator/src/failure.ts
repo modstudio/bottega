@@ -21,7 +21,10 @@ export const FAILURE_KINDS = [
   'entitlement',
   'unreachable', 'timeout', 'denied', 'content_refusal',
   'interrupted',
-  /** The vendor exhausted its reply budget before emitting a result. */
+  /**
+   * The vendor exhausted its reply budget or stopped mid-generation before
+   * emitting a result, whatever caused it to stop.
+   */
   'truncated',
   /** The worker changed a registered checkout outside its disposable worktree. */
   'escaped',
@@ -146,6 +149,20 @@ const PATTERNS: [FailureKind, RegExp][] = [
   // permission was actually refused belong here.
   ['denied', /\b(permission (?:that|was) .*denied|auto-denied|requir(?:e|es|ed) the "?\w+"? permission|approval (?:denied|required|rejected))\b/i],
 ]
+
+const VENDOR_TERMINATION_MARKERS = [
+  '[API Error: terminated]',
+]
+
+/**
+ * A marker must be the whole trailing line. Reviews discuss API errors in
+ * ordinary prose, and matching that vocabulary mid-answer would discard a
+ * result that was actually delivered.
+ */
+export function hasVendorTerminationMarker(text: string): boolean {
+  const trailingLine = text.trimEnd().split('\n').at(-1)?.trim()
+  return VENDOR_TERMINATION_MARKERS.some((marker) => trailingLine === marker)
+}
 
 /**
  * Replies that are the vendor reporting a failure, not the agent answering.

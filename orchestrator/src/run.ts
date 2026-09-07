@@ -8,7 +8,7 @@ import { basename, dirname, join, relative } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import type { Database } from 'bun:sqlite'
 import {
-  classify, notify, isNonAnswer, detectBlockers, NEEDS_HUMAN, NEEDS_HUMAN_TITLE,
+  classify, notify, isNonAnswer, hasVendorTerminationMarker, detectBlockers, NEEDS_HUMAN, NEEDS_HUMAN_TITLE,
   FAILS_OVER,
 } from './failure.ts'
 import {
@@ -2899,11 +2899,16 @@ export async function run(opts: {
         failureKind = 'other'
       }
     } else {
-      status = exitCode === 0 && output ? 'ok' : 'failed'
+      const vendorTerminated = exitCode === 0 && hasVendorTerminationMarker(output)
+      status = exitCode === 0 && output && !vendorTerminated ? 'ok' : 'failed'
       error = status === 'failed'
-        ? errorTail(stderr.trim() || stdout.trim() || `exit ${exitCode}, empty output`)
+        ? errorTail(vendorTerminated
+          ? output
+          : stderr.trim() || stdout.trim() || `exit ${exitCode}, empty output`)
         : null
-      failureKind = status === 'failed'
+      failureKind = vendorTerminated
+        ? 'truncated'
+        : status === 'failed'
         ? classify(error, exitCode, timedOut, sandboxSelection.sandbox)
         : null
     }
