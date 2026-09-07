@@ -24,7 +24,7 @@ beforeEach(() => {
   // question cascades from run, but the delete order still matters: it is
   // listed first so a future FK-enforcing change cannot make this fail
   // mysteriously halfway through a suite.
-  db().exec('DELETE FROM canon_eval; DELETE FROM canon_pack; DELETE FROM monitor_condition; DELETE FROM monitor_invocation; DELETE FROM landing_review_carry; DELETE FROM landing_override; DELETE FROM review_finding; DELETE FROM review_lens; DELETE FROM review; DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc_revision; DELETE FROM doc; DELETE FROM run_message; DELETE FROM question; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run_mutation_audit; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
+  db().exec('DELETE FROM canon_eval; DELETE FROM canon_pack; DELETE FROM monitor_condition; DELETE FROM monitor_invocation; DELETE FROM landing_review_carry; DELETE FROM landing_override; DELETE FROM review_finding; DELETE FROM review_lens; DELETE FROM review; DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc_revision; DELETE FROM doc; DELETE FROM run_message; DELETE FROM question; DELETE FROM compared_pair; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run_mutation_audit; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
 })
 
 afterAll(() => {
