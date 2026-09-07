@@ -1,10 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import {
-  countRunningGates, GATE_CONCURRENCY_LIMIT, holdForGateCapacity, registerGatePid,
-  shouldHoldShard,
+  GATE_CONCURRENCY_LIMIT, holdForGateCapacity, shouldHoldShard, withGateSlot,
 } from './gate-load.ts'
 import type { HostLoad } from './gate-policy.ts'
 
@@ -47,16 +43,20 @@ describe('gate load hold', () => {
     expect(shouldHoldShard(idle({ gates: 3 }))).toBe(true)
   })
 
-  test('PID files count live gates and reap stale ones', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'orch-gates-'))
-    mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, '1'), '1\n')
-    const unregister = registerGatePid(process.pid, dir)
-    try {
-      expect(countRunningGates(dir, process.pid)).toBe(1)
-    } finally {
-      unregister()
-      rmSync(dir, { recursive: true, force: true })
-    }
+  test('withGateSlot holds then runs', async () => {
+    let n = 0
+    const sleeps: number[] = []
+    const result = await withGateSlot(async () => 'ok', {
+      measure: () => {
+        n++
+        return n === 1 ? idle({ gates: 3 }) : idle({ gates: 1 })
+      },
+      sleep: async (ms) => { sleeps.push(ms) },
+      pollMs: 25,
+      maxMs: 1_000,
+    })
+    expect(result).toBe('ok')
+    expect(sleeps.length).toBeGreaterThan(0)
+    expect(n).toBe(2)
   })
 })

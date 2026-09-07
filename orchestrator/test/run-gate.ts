@@ -11,7 +11,7 @@ import {
   shardTimeoutMs,
   weeklyFlakeCount,
 } from '../src/gate-policy.ts'
-import { holdForGateCapacity, measureHostLoad, registerGatePid } from '../src/gate-load.ts'
+import { measureHostLoad, withGateSlot } from '../src/gate-load.ts'
 
 type Result = { name: string; exitCode: number; files: string[]; flaky?: boolean }
 
@@ -91,8 +91,7 @@ async function flakeStore(): Promise<Database | null> {
   }
 }
 
-const unregister = registerGatePid()
-try {
+await withGateSlot(async () => {
   const store = await flakeStore()
   const unit = await spawnTest('orchestrator unit', ['bun', 'run', 'test:unit'], [], process.env)
   const cli = await Promise.all(map.shards.map(async (shard, index) => {
@@ -108,14 +107,7 @@ try {
     const result = await runWithRetry({
       name,
       files,
-      run: async () => {
-        const held = await holdForGateCapacity()
-        if (held.held) {
-          console.error(`${name} held ${held.delayedMs}ms for host load `
-            + `(gates=${held.load.gates} loadavg=${held.load.loadavg} ncpu=${held.load.ncpu})`)
-        }
-        return spawnTest(name, argv, files, env)
-      },
+      run: async () => spawnTest(name, argv, files, env),
       weeklyCount: (test, file) => store ? weeklyFlakeCount(store, test, file) : 0,
       recordFlake: (row) => {
         if (!store) {
@@ -139,6 +131,4 @@ try {
     console.error(`the prefixed Bun failure above names the failing test`)
   }
   process.exit(results.some((result) => result.exitCode !== 0) ? 1 : 0)
-} finally {
-  unregister()
-}
+})

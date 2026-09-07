@@ -9,7 +9,7 @@ export const FREE_MEM_FLOOR_BYTES = 1024 * 1024 * 1024
 export const GATE_HOLD_POLL_MS = 250
 export const GATE_HOLD_MAX_MS = 10 * 60_000
 
-export function gatePidDir(env: NodeJS.ProcessEnv = process.env): string {
+function gatePidDir(env: NodeJS.ProcessEnv = process.env): string {
   return env.ORCH_GATE_PIDS ?? join(tmpdir(), 'orch-gates')
 }
 
@@ -22,7 +22,7 @@ function processAlive(pid: number): boolean {
   }
 }
 
-export function countRunningGates(dir = gatePidDir(), selfPid = process.pid): number {
+function countRunningGates(dir = gatePidDir(), selfPid = process.pid): number {
   if (!existsSync(dir)) return 0
   let n = 0
   for (const name of readdirSync(dir)) {
@@ -38,7 +38,7 @@ export function countRunningGates(dir = gatePidDir(), selfPid = process.pid): nu
   return n
 }
 
-export function registerGatePid(
+function registerGatePid(
   pid = process.pid,
   dir = gatePidDir(),
 ): () => void {
@@ -64,14 +64,33 @@ export function shouldHoldShard(load: HostLoad, limit = GATE_CONCURRENCY_LIMIT):
   return load.gates > limit || load.loadavg >= load.ncpu || load.freeMem < FREE_MEM_FLOOR_BYTES
 }
 
-export async function holdForGateCapacity(opts: {
+type GateHoldOpts = {
   measure?: () => HostLoad
   sleep?: (ms: number) => Promise<void>
   now?: () => number
   pollMs?: number
   maxMs?: number
   limit?: number
-} = {}): Promise<{ delayedMs: number; held: boolean; load: HostLoad }> {
+}
+
+export async function withGateSlot<T>(
+  run: () => Promise<T>,
+  opts: GateHoldOpts = {},
+): Promise<T> {
+  const unregister = registerGatePid()
+  try {
+    const held = await holdForGateCapacity(opts)
+    if (held.held) {
+      console.error(`held ${held.delayedMs}ms for host load `
+        + `(gates=${held.load.gates} loadavg=${held.load.loadavg} ncpu=${held.load.ncpu})`)
+    }
+    return await run()
+  } finally {
+    unregister()
+  }
+}
+
+export async function holdForGateCapacity(opts: GateHoldOpts = {}): Promise<{ delayedMs: number; held: boolean; load: HostLoad }> {
   const measure = opts.measure ?? measureHostLoad
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   const now = opts.now ?? Date.now
