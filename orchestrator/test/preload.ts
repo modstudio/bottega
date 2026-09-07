@@ -21,10 +21,10 @@ const { bootstrapFixtureStore, db } = await import('../src/db.ts')
 bootstrapFixtureStore(process.env.ORCH_DB)
 
 beforeEach(() => {
-  // question cascades from run, but the delete order still matters: it is
-  // listed first so a future FK-enforcing change cannot make this fail
-  // mysteriously halfway through a suite.
-  db().exec('DELETE FROM canon_eval; DELETE FROM canon_pack; DELETE FROM monitor_condition; DELETE FROM monitor_invocation; DELETE FROM landing_review_carry; DELETE FROM landing_override; DELETE FROM review_finding; DELETE FROM review_lens; DELETE FROM review; DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc_revision; DELETE FROM doc; DELETE FROM run_message; DELETE FROM question; DELETE FROM compared_pair; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run_mutation_audit; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
+  // Dependants are deleted before their parents so a future FK-enforcing
+  // change cannot make cleanup fail mysteriously halfway through the suite.
+  // schema_meta is retained because it carries the bootstrap schema version and hash.
+  db().exec('DELETE FROM workflow_event; DELETE FROM workflow_version; DELETE FROM workflow; DELETE FROM canon_eval; DELETE FROM canon_pack; DELETE FROM monitor_condition; DELETE FROM monitor_invocation; DELETE FROM landing_review_carry; DELETE FROM landing_override; DELETE FROM review_finding; DELETE FROM review_lens; DELETE FROM review; DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc_revision; DELETE FROM doc; DELETE FROM run_message; DELETE FROM question; DELETE FROM blocker; DELETE FROM compared_pair; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run_mutation_audit; DELETE FROM run; DELETE FROM project; DELETE FROM metric; DELETE FROM spawn; DELETE FROM session_seen;')
 })
 
 afterAll(() => {
