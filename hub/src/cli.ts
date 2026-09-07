@@ -33,6 +33,33 @@ const flag = (name: string) => {
   return i >= 0 ? argv[i + 1] : undefined
 }
 const has = (name: string) => argv.includes(`--${name}`)
+const taskValueFlags = new Set([
+  '--project', '--title', '--status', '--parent', '--body', '--body-file',
+  '--allow-duplicate', '--role', '--version',
+])
+const taskHelpRequested = () => argv.slice(1).some((token, offset) => {
+  if (token !== 'help' && token !== '--help' && token !== '-h') return false
+  return !taskValueFlags.has(argv[offset])
+})
+
+const TASK_USAGE = `hub task new --project X --title "..." [--status Y] [--parent KEY]
+               [--body "..."|--body-file PATH] [--allow-duplicate "reason"]
+  hub task duplicates --project X --title "..." --json
+  hub task list [--project X] [--status Y] [--parent KEY] [--json]
+  hub task show <KEY> [--json]
+  hub task set <KEY> [--title "..."] [--status Y] [--parent KEY|--no-parent]
+               [--body "..."] [--force]
+  hub task close <KEY>
+  hub task comment <KEY> "..."
+  hub task tracker-new --project X --title "..." --body "..."
+  hub task doc new <KEY> --title "..." [--role handoff]
+               [--body "..."|--body-file PATH]
+  hub task doc list <KEY> [--json]
+  hub task doc show <ID> [--json]
+  hub task doc set <ID> [--title "..."] [--role handoff|--no-role]
+               [--body "..."|--body-file PATH] [--version TOKEN]
+  hub task doc rm <ID>
+  hub task import <file.json> backfill from a clustered commit history`
 
 const USAGE = `hub — every project's tasks in flight, what each cost, and the daily report
 
@@ -50,24 +77,7 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and the 
   hub rulings [--json]        open questions ingested from orch, with age
       --json                  one JSON document: {stale_after, questions}
 
-  hub task new --project X --title "..." [--status Y] [--parent KEY]
-               [--body "..."|--body-file PATH] [--allow-duplicate "reason"]
-  hub task duplicates --project X --title "..." --json
-  hub task list [--project X] [--status Y] [--parent KEY] [--json]
-  hub task show <KEY> [--json]
-  hub task set <KEY> [--title "..."] [--status Y] [--parent KEY|--no-parent]
-               [--body "..."] [--force]
-  hub task close <KEY>
-  hub task comment <KEY> "..."
-  hub task tracker-new --project X --title "..." --body "..."
-  hub task doc new <KEY> --title "..." [--role handoff]
-               [--body "..."|--body-file PATH]
-  hub task doc list <KEY> [--json]
-  hub task doc show <ID> [--json]
-  hub task doc set <ID> [--title "..."] [--role handoff|--no-role]
-               [--body "..."|--body-file PATH] [--version TOKEN]
-  hub task doc rm <ID>
-  hub task import <file.json> backfill from a clustered commit history
+  ${TASK_USAGE}
 
   hub send [--dry-run]        the daily report; --dry-run prints it instead
       --test                  send the real thing, but only to the test address,
@@ -146,6 +156,10 @@ function tasks() {
 
 async function task() {
   const sub = argv[1]
+  if (taskHelpRequested()) {
+    console.log(TASK_USAGE)
+    return
+  }
   const required = (name: string) => {
     const value = flag(name)
     // The next token is the value even when it begins with a dash. A title
@@ -458,7 +472,7 @@ try {
 const usesDatabase = cmd === 'collect' || cmd === 'tasks' || cmd === 'serve'
   || cmd === 'task' || cmd === 'send' || cmd === 'reconcile' || cmd === 'rulings'
   || cmd === 'doctor'
-if (usesDatabase) requireDatabase()
+if (usesDatabase && !(cmd === 'task' && taskHelpRequested())) requireDatabase()
 
 switch (cmd) {
   case 'migrate': {

@@ -236,6 +236,13 @@ describe('task duplicate guard', () => {
 })
 
 describe('task CLI dash-leading values', () => {
+  test('stores --help as a title value', () => {
+    const created = newTask('--project', 'alpha', '--title', '--help')
+
+    expect(created.exitCode).toBe(0)
+    expect(show(created.stdout).title).toBe('--help')
+  })
+
   test('stores a title that begins with two dashes verbatim', () => {
     const created = newTask('--project', 'alpha',
       '--title', '--base is advertised unconditionally ...', '--body', '...')
@@ -286,6 +293,57 @@ describe('task CLI dash-leading values', () => {
 
     expect(result.exitCode).toBe(1)
     expect(result.stderr).toContain('--project is required')
+  })
+})
+
+describe('task CLI help', () => {
+  test('help does not require or initialise a database', () => {
+    const absent = join(dir, 'help-absent.db')
+    const result = hubAt(absent, 'task', 'tracker-new', '--help')
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toContain('hub task tracker-new')
+    expect(existsSync(absent)).toBe(false)
+  })
+
+  test('prints task usage without writing for task, document, or tracker creation', () => {
+    const helpDatabase = join(dir, 'help.db')
+    migrateAt(helpDatabase)
+    const created = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha',
+      '--title', 'Ordinary create path', '--allow-duplicate', 'help test seed')
+    expect(created.exitCode).toBe(0)
+
+    const commands = [
+      ['task', 'new', '--project', 'alpha', '--title', 'Must not exist', '--help'],
+      ['task', 'doc', 'new', created.stdout, '--title', 'Must not exist', '--help'],
+      ['task', 'tracker-new', '--project', 'alpha', '--title', 'Must not exist',
+        '--body', 'Must not exist', '--help'],
+    ]
+    for (const args of commands) {
+      const result = hubAt(helpDatabase, ...args)
+      expect(result.exitCode).toBe(0)
+      expect(result.stderr).toBe('')
+      expect(result.stdout).toContain('hub task new')
+      expect(result.stdout).toContain('hub task tracker-new')
+      expect(result.stdout).not.toContain('hub collect')
+    }
+
+    const d = new Database(helpDatabase, { readonly: true })
+    expect(d.query('SELECT count(*) AS count FROM task').get()).toEqual({ count: 1 })
+    expect(d.query('SELECT count(*) AS count FROM task_document').get()).toEqual({ count: 0 })
+    d.close()
+  })
+
+  test('recognises help, --help, and -h throughout the task verb group', () => {
+    for (const args of [
+      ['task', 'help'],
+      ['task', 'list', '--help'],
+      ['task', 'set', 'DEV-1', '-h'],
+    ]) {
+      const result = hub(...args)
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toContain('hub task new')
+    }
   })
 })
 
