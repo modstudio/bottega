@@ -1188,7 +1188,7 @@ test('record-only closes the question, marks the chain stranded, and retry resta
     const offered = orch('score', String(second), 'full', 'right')
     expect(offered.code).toBe(0)
     expect(offered.out).toContain(
-      `pair: run ${first} (codex) on the same tree — record with --better-than ${first} | ` +
+      `pair: run ${first} (codex) is comparable (same prompt; same input tree) — record with --better-than ${first} | ` +
       `--worse-than ${first} | --same-as ${first}`,
     )
     expect(orch('score', String(second), 'full', 'right', '--worse-than', String(first)).code).toBe(0)
@@ -1217,7 +1217,132 @@ test('record-only closes the question, marks the chain stranded, and retry resta
     expect(orch('score', String(first), 'full', 'right').code).toBe(0)
     const scored = orch('score', String(second), 'full', 'right')
     expect(scored.code).toBe(0)
-    expect(scored.out).toContain(`pair: run ${first} (codex) on the same tree`)
+    expect(scored.out).toContain(`pair: run ${first} (codex) is comparable (same prompt; at least one input tree unrecorded)`)
+  })
+
+  test('judge closes a two-finding review and pair in one transaction', () => {
+    const partner = addRun({
+      agent: 'codex', job: 'review-lens', session: 'orch-test-session',
+      inputTree: 'judge-tree', lens: 'correctness', promptSha: 'same-task',
+    })
+    score(partner, 'full', 'right')
+    const subject = addRun({
+      agent: 'grok', job: 'review-lens', session: 'orch-test-session',
+      inputTree: 'judge-tree', lens: 'correctness', promptSha: 'same-task',
+    })
+    const reviewId = recordReview(subject, reviewReply(2, 'high'))
+
+    const judged = orch(
+      'judge', String(subject), 'full', 'right',
+      '--reproduced', 'all', '--coverage', 'adequate', '--limits', 'named',
+      '--overlap', 'unique', '--finding', '1=accepted:high',
+      '--finding', '2=rejected:below-bar', '--worse-than', String(partner),
+    )
+    expect(judged.code).toBe(0)
+    expect(db().query('SELECT delivery, quality FROM score WHERE run_id=?').get(subject))
+      .toEqual({ delivery: 'full', quality: 'right' })
+    expect(db().query(
+      'SELECT reproduced, coverage, limits, overlap FROM review_lens WHERE run_id=?',
+    ).get(subject)).toEqual({ reproduced: 'all', coverage: 'adequate', limits: 'named', overlap: 'unique' })
+    expect(db().query(
+      'SELECT ordinal, disposition, rejection_category, triaged_severity FROM review_finding WHERE review_id=? ORDER BY ordinal',
+    ).all(reviewId)).toEqual([
+      { ordinal: 1, disposition: 'accepted', rejection_category: null, triaged_severity: 'high' },
+      { ordinal: 2, disposition: 'rejected', rejection_category: 'below-bar', triaged_severity: null },
+    ])
+    expect(db().query('SELECT completed_at IS NOT NULL AS complete FROM review WHERE id=?').get(reviewId))
+      .toEqual({ complete: 1 })
+    expect(db().query('SELECT winner_run_id, loser_run_id FROM duel').all())
+      .toContainEqual({ winner_run_id: partner, loser_run_id: subject })
+  })
+
+  test('judge rolls every close-out write back when a finding flag fails during the transaction', () => {
+    const subject = addRun({
+      agent: 'grok', job: 'review-lens', session: 'orch-test-session',
+      lens: 'rollback', promptSha: 'rollback-task',
+    })
+    const reviewId = recordReview(subject, reviewReply(2, 'high'))
+    const judged = orch(
+      'judge', String(subject), 'full', 'right',
+      '--reproduced', 'all', '--coverage', 'adequate', '--limits', 'named',
+      '--overlap', 'unique', '--finding', '1=accepted:high',
+      '--finding', '2=rejected:NOT-A-STABLE-ID',
+    )
+    expect(judged.code).not.toBe(0)
+    expect(db().query('SELECT 1 FROM score WHERE run_id=?').get(subject)).toBeNull()
+    expect(db().query(
+      'SELECT reproduced, coverage, limits, overlap FROM review_lens WHERE run_id=?',
+    ).get(subject)).toEqual({ reproduced: null, coverage: null, limits: null, overlap: null })
+    expect(db().query('SELECT disposition FROM review_finding WHERE review_id=?').all(reviewId))
+      .toEqual([{ disposition: null }, { disposition: null }])
+    expect(db().query('SELECT completed_at FROM review WHERE id=?').get(reviewId))
+      .toEqual({ completed_at: null })
+  })
+
+  test('judge closes a writer score with fidelity', () => {
+    const subject = addRun({
+      agent: 'codex', job: 'implement', session: 'orch-test-session', promptSha: 'writer-task',
+    })
+    const judged = orch('judge', String(subject), 'full', 'right', 'faithful', '--note', 'matched spec')
+    expect(judged.code).toBe(0)
+    expect(db().query('SELECT delivery, quality, fidelity, note FROM score WHERE run_id=?').get(subject))
+      .toEqual({ delivery: 'full', quality: 'right', fidelity: 'faithful', note: 'matched spec' })
+  })
+
+  test('score and judge read notes from files and reject shell-fragment notes', () => {
+    const scoreRun = addRun({ agent: 'codex', job: 'file-question', session: 'orch-test-session' })
+    const notePath = join(dir, 'score-note.txt')
+    writeFileSync(notePath, 'long note\nwith a second line')
+    expect(orch('score', String(scoreRun), 'full', 'right', '--note-file', notePath).code).toBe(0)
+    expect(db().query('SELECT note FROM score WHERE run_id=?').get(scoreRun))
+      .toEqual({ note: 'long note\nwith a second line' })
+
+    const judgeRun = addRun({ agent: 'codex', job: 'implement', session: 'orch-test-session' })
+    expect(orch('judge', String(judgeRun), 'full', 'right', 'faithful', '--note-file', notePath).code).toBe(0)
+    const broken = addRun({ agent: 'codex', job: 'file-question', session: 'orch-test-session' })
+    const refused = orch('score', String(broken), 'full', 'right', '--note', '"unfinished')
+    expect(refused.code).not.toBe(0)
+    expect(refused.err).toContain('unexpanded shell fragment')
+    expect(refused.err).toContain('--note-file')
+    expect(db().query('SELECT 1 FROM score WHERE run_id=?').get(broken)).toBeNull()
+    const prose = addRun({ agent: 'codex', job: 'file-question', session: 'orch-test-session' })
+    expect(orch('score', String(prose), 'full', 'right', '--note', "worker's answer").code).toBe(0)
+  })
+
+  test('the Stop hook names judge and every missing findings flag', () => {
+    const subject = addRun({
+      agent: 'grok', job: 'review-lens', session: 'judge-hook-session', lens: 'correctness',
+    })
+    recordReview(subject, reviewReply(2, 'high'))
+    const reminder = scoreReminder('judge-hook-session').stdout.toString()
+    expect(reminder).toContain(`orch judge ${subject}`)
+    for (const flag of ['--reproduced', '--coverage', '--limits', '--overlap', '--finding 1=', '--finding 2=']) {
+      expect(reminder).toContain(flag)
+    }
+  })
+
+  test('same prompt pairs require matching trees when both exist and matching lenses', () => {
+    const scored = addRun({
+      agent: 'codex', job: 'review-lens', session: 'orch-test-session', promptSha: 'predicate',
+      inputTree: 'tree-a', lens: 'correctness',
+    })
+    score(scored, 'full', 'right')
+    const differentTree = addRun({
+      agent: 'grok', job: 'review-lens', session: 'orch-test-session', promptSha: 'predicate',
+      inputTree: 'tree-b', lens: 'correctness',
+    })
+    recordReview(differentTree, reviewReply(1, 'high'))
+    expect(orch('score', String(differentTree), 'full', 'right',
+      '--reproduced', 'all', '--coverage', 'adequate', '--limits', 'named', '--overlap', 'unique').out)
+      .not.toContain('pair:')
+    const differentLens = addRun({
+      agent: 'grok', job: 'review-lens', session: 'orch-test-session', promptSha: 'predicate',
+      inputTree: 'tree-a', lens: 'safety',
+    })
+    recordReview(differentLens, reviewReply(1, 'high'))
+    expect(orch('score', String(differentLens), 'full', 'right',
+      '--reproduced', 'all', '--coverage', 'adequate', '--limits', 'named', '--overlap', 'unique').out)
+      .not.toContain('pair:')
   })
 
 

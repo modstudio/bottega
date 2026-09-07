@@ -233,7 +233,8 @@ function scoreSuffix(jobName: string): string {
 }
 
 function pairHint(partner: { id: number; agent: string }): string {
-  return `pair: run ${partner.id} (${partner.agent}) on the same tree — record with ` +
+  const reason = 'reason' in partner ? String(partner.reason) : 'same task'
+  return `pair: run ${partner.id} (${partner.agent}) is comparable (${reason}) — record with ` +
     `--better-than ${partner.id} | --worse-than ${partner.id} | --same-as ${partner.id}`
 }
 
@@ -449,6 +450,36 @@ function flags(name: string): string[] {
 }
 const has = (n: string) => argv.includes(`--${n}`)
 
+function scoreNote(): string | null {
+  const inline = flag('note')
+  const file = flag('note-file')
+  if (inline !== undefined && file !== undefined) {
+    throw new Error('pass a score note with either --note or --note-file, not both')
+  }
+  const note = file === undefined ? inline : readFileSync(file, 'utf8')
+  if (note === undefined) return null
+  const unescaped = (quote: string) => {
+    let count = 0
+    for (let i = 0; i < note.length; i++) {
+      if (note[i] !== quote) continue
+      // Apostrophes inside words are prose, not shell quoting.
+      if (quote === "'" && /[\p{L}\p{N}]/u.test(note[i - 1] ?? '') &&
+          /[\p{L}\p{N}]/u.test(note[i + 1] ?? '')) continue
+      let slashes = 0
+      for (let j = i - 1; j >= 0 && note[j] === '\\'; j--) slashes++
+      if (slashes % 2 === 0) count++
+    }
+    return count
+  }
+  if (note.trim() === '``' || ['"', "'", '`'].some((quote) => unescaped(quote) % 2 !== 0)) {
+    throw new Error(
+      'score note looks like an unexpanded shell fragment (a lone backtick pair or an unbalanced quote); ' +
+      'put the note in a file and pass --note-file <path>',
+    )
+  }
+  return note
+}
+
 function requestedMcp(): McpRequest | undefined {
   const values = argv.filter((arg) => arg === '--mcp' || arg.startsWith('--mcp='))
   if (values.length > 1) throw new Error('--mcp may be supplied only once')
@@ -457,11 +488,12 @@ function requestedMcp(): McpRequest | undefined {
 }
 
 /** Flags that consume the next argument. Anything else is a boolean switch. */
-const VALUE_FLAGS = new Set(['--agent', '--file', '--schema', '--model', '--transport', '--note', '--message', '--unreviewed',
+const VALUE_FLAGS = new Set(['--agent', '--file', '--schema', '--model', '--transport', '--note', '--note-file', '--message', '--unreviewed',
                              '--id', '--job', '--limit', '--port', '--days', '--window', '--timeout', '--scorer',
                              '--seed', '--key', '--repo', '--base', '--review', '--avoid', '--distinct-from', '--label', '--lens', '--category', '--severity',
                              '--reproduced', '--coverage', '--limits', '--overlap', '--writer',
-                             '--better-than', '--n', '--scope', '--subject', '--title', '--cwd'])
+                             '--finding', '--better-than', '--worse-than', '--same-as', '--n',
+                             '--scope', '--subject', '--title', '--cwd'])
 
 type CleanupRow = {
   id: number; repo?: string | null; cwd?: string | null
@@ -1379,7 +1411,7 @@ function usage(): never {
 
   orch contract <job>          print the preamble prepended to that job's prompt
 
-  orch score <run-id> <none|partial|full> [wrong|mixed|right] [--note "..."]
+  orch score <run-id> <none|partial|full> [wrong|mixed|right] [--note "..."|--note-file PATH]
       delivery first (did an answer arrive), then quality (was it right).
       'none' takes no quality — there was nothing to judge.
       findings-producing lenses with an answer also require:
@@ -1392,6 +1424,11 @@ function usage(): never {
       --scorer <who>            record the named human/UI scorer; only the local
                                 hub-dashboard capability bypasses ownership
       --void                    retain the run and output, but exclude it from routing evidence
+  orch judge <run-id> <none|partial|full> [wrong|mixed|right] [drifted|partial|faithful]
+      closes scoring, findings triage/review completion, and any comparable pair in one call
+      --finding N=<accepted|modified|skipped>:<severity>
+      --finding N=rejected:<category>
+      --discard                 reclaim the terminal run's worktree after close-out
   orch recalibrate [--n 12]    re-score old outputs blind and measure agreement
       --scorer <who>            use the same scorer identity as orch score
       --force                   sample any scorer's old scores
@@ -4973,9 +5010,217 @@ switch (cmd) {
     break
   }
 
+  case 'judge': {
+    await Promise.all([loadJobs(), loadReview(), loadWorktree(), loadDockerResources()])
+    writableDb()
+    const requestedId = Number(argv[1])
+    if (!requestedId) usage()
+    const row = db().query(
+      `SELECT root.id, root.agent, root.job, root.status, root.session_id, root.failure_kind,
+              root.output_path, root.repo, root.cwd, root.worktree, root.branch, root.base_commit,
+              root.worktree_source
+         FROM run requested
+         JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
+        WHERE requested.id=?`,
+    ).get(requestedId) as {
+      id: number; agent: string; job: string; status: string; session_id: string | null
+      failure_kind: FailureKind | null; output_path: string | null; repo: string | null
+      cwd: string | null; worktree: string | null; branch: string | null
+      base_commit: string | null; worktree_source: Worktree['source'] | null
+    } | null
+    if (!row) throw new Error(`no run ${requestedId}`)
+    const id = row.id
+    if (['running', 'asking'].includes(row.status)) {
+      throw new Error(`run ${id} is ${row.status}, not terminal`)
+    }
+    if (row.agent === '(pending)') throw new Error(`run ${id} cannot be judged: no agent was selected`)
+    if (row.failure_kind === 'unevidenced' ||
+        (row.failure_kind && NOT_EVIDENCE.includes(row.failure_kind))) {
+      throw new Error(`run ${id} cannot be judged: failure kind '${row.failure_kind}' is not evidence`)
+    }
+    const owner = judgeability(row.session_id, sessionId())
+    if (!has('force') && owner.verdict === 'foreign') {
+      throw new Error(`run ${id} was made by another session (${owner.owner}); --force overrides`)
+    }
+    if (!has('force') && owner.verdict === 'anonymous') {
+      throw new Error(`run ${id} belongs to session ${owner.owner}, but no session identity is present; --force overrides`)
+    }
+    if (!has('force') && owner.verdict === 'unattributed' && !sessionId()) {
+      throw new Error(`run ${id} is unowned; CLAUDE_CODE_SESSION_ID is not set`)
+    }
+
+    const words = argv.slice(2).filter(
+      (a, i) => !a.startsWith('--') && !VALUE_FLAGS.has(argv.slice(2)[i - 1] ?? ''),
+    )
+    const delivery = words[0] as Delivery | undefined
+    const quality = words[1] as Quality | undefined
+    const fidelity = words[2] as Fidelity | undefined
+    if (!delivery || !DELIVERY.includes(delivery)) {
+      throw new Error(`delivery must be: ${DELIVERY.join(' | ')}`)
+    }
+    if (delivery === 'none' && quality) throw new Error("delivery 'none' takes no quality")
+    if (delivery !== 'none' && (!quality || !QUALITY.includes(quality))) {
+      throw new Error(`delivery '${delivery}' needs a quality: ${QUALITY.join(' | ')}`)
+    }
+    const writes = Boolean(JOBS[row.job]?.needs.writesRepo)
+    if (writes && delivery !== 'none' && (!fidelity || !FIDELITY.includes(fidelity))) {
+      throw new Error(`${row.job} needs fidelity: ${FIDELITY.join(' | ')}`)
+    }
+    if (!writes && fidelity) throw new Error(`${row.job} is judged on two axes only`)
+
+    const findingsJob = Boolean(job(row.job).findings)
+    const gradeNames = ['reproduced', 'coverage', 'limits', 'overlap'] as const
+    const gradeValues = {
+      reproduced: flag('reproduced'), coverage: flag('coverage'),
+      limits: flag('limits'), overlap: flag('overlap'),
+    }
+    const validGrades = {
+      reproduced: REVIEW_REPRODUCED, coverage: REVIEW_COVERAGE,
+      limits: REVIEW_LIMITS, overlap: REVIEW_OVERLAP,
+    } as const
+    for (const name of gradeNames) {
+      const value = gradeValues[name]
+      if (value !== undefined && !(validGrades[name] as readonly string[]).includes(value)) {
+        throw new Error(`--${name} must be: ${validGrades[name].join(' | ')}`)
+      }
+    }
+    let parsedOutput: ReturnType<typeof parseReviewOutput> = null
+    let reviewId: number | null = null
+    let reviewFindings: { ordinal: number }[] = []
+    if (findingsJob && delivery !== 'none') {
+      const lens = db().query('SELECT review_id FROM review_lens WHERE run_id=?').get(id) as
+        { review_id: number } | null
+      reviewId = lens?.review_id ?? null
+      if (!reviewId) {
+        if (row.output_path && existsSync(row.output_path)) {
+          parsedOutput = parseReviewOutput(readFileSync(row.output_path, 'utf8'))
+        }
+        if (!parsedOutput) throw new Error(`run ${id} has no recorded review; recover it with orch review record ${id}`)
+      } else {
+        reviewFindings = db().query(
+          'SELECT ordinal FROM review_finding WHERE review_id=? ORDER BY ordinal',
+        ).all(reviewId) as { ordinal: number }[]
+      }
+    }
+
+    const parsedFindings = flags('finding').map((value) => {
+      const matched = value.match(/^(\d+)=(accepted|modified|rejected|skipped):(.+)$/)
+      if (!matched) {
+        throw new Error(
+          `bad --finding ${JSON.stringify(value)}; use N=accepted:high or N=rejected:below-bar`,
+        )
+      }
+      const ordinal = Number(matched[1])
+      const disposition = matched[2] as Disposition
+      const detail = matched[3]!
+      if (disposition !== 'rejected' && !REVIEW_SEVERITY.includes(detail as any)) {
+        throw new Error(`finding ${ordinal} severity must be: ${REVIEW_SEVERITY.join(' | ')}`)
+      }
+      return {
+        ordinal, disposition,
+        category: disposition === 'rejected' ? detail : undefined,
+        severity: disposition === 'rejected' ? undefined : detail,
+      }
+    })
+    if (new Set(parsedFindings.map((finding) => finding.ordinal)).size !== parsedFindings.length) {
+      throw new Error('--finding names the same finding more than once')
+    }
+
+    const partners = pairPartners(id, sessionId())
+    const comparisonNames = ['better-than', 'worse-than', 'same-as'] as const
+    const suppliedComparisons = comparisonNames.filter((name) => flag(name) !== undefined)
+    if (suppliedComparisons.length > 1) {
+      throw new Error('--better-than, --worse-than, and --same-as are mutually exclusive')
+    }
+    const comparison = suppliedComparisons[0]
+    const comparisonIds = comparison ? parseRunIds(flag(comparison)!, `--${comparison}`) : []
+
+    const missing: string[] = []
+    if (findingsJob && delivery !== 'none') {
+      for (const name of gradeNames) if (!gradeValues[name]) missing.push(`--${name}`)
+      const expected = reviewId ? reviewFindings.map((finding) => finding.ordinal)
+        : parsedOutput!.findings.map((_, index) => index + 1)
+      for (const ordinal of expected) {
+        if (!parsedFindings.some((finding) => finding.ordinal === ordinal)) {
+          missing.push(`--finding ${ordinal}=<disposition>:<severity-or-category>`)
+        }
+      }
+      const unexpected = parsedFindings.find((finding) => !expected.includes(finding.ordinal))
+      if (unexpected) throw new Error(`review for run ${id} has no finding ${unexpected.ordinal}`)
+    } else if (parsedFindings.length || gradeNames.some((name) => gradeValues[name])) {
+      throw new Error(`${row.job} does not take findings close-out flags`)
+    }
+    if (partners.length && !comparison) {
+      missing.push(
+        `--better-than ${partners.map((partner) => partner.id).join(',')} | ` +
+        `--worse-than ${partners.map((partner) => partner.id).join(',')} | ` +
+        `--same-as ${partners.map((partner) => partner.id).join(',')}`,
+      )
+    }
+    if (comparison) {
+      const expected = partners.map((partner) => partner.id).sort((a, b) => a - b)
+      const actual = [...comparisonIds].sort((a, b) => a - b)
+      if (expected.length !== actual.length || expected.some((value, index) => value !== actual[index])) {
+        throw new Error(
+          `pair verdict must name every comparable partner: ${expected.join(', ') || 'none'}`,
+        )
+      }
+    }
+    if (missing.length) {
+      throw new Error(`orch judge ${id} is missing:\n${missing.map((item) => `  ${item}`).join('\n')}`)
+    }
+
+    const note = scoreNote()
+    let authority = runMutationActor(id)
+    const scoredAt = nowIso()
+    const wasScored = Boolean(db().query('SELECT 1 FROM score WHERE run_id=?').get(id))
+    writeTransaction(() => {
+      if (!(has('force') && !authority.actor)) authority = adoptRunMutation(authority, 'score')
+      if (findingsJob && delivery !== 'none') {
+        reviewId = gradeReviewLens(id, parsedOutput, gradeValues as ReviewGrades)
+      }
+      db().query(
+        `INSERT INTO score (run_id, delivery, quality, fidelity, note, scored_at, scored_by)
+         VALUES (?,?,?,?,?,?,?)
+         ON CONFLICT(run_id) DO UPDATE SET delivery=excluded.delivery, quality=excluded.quality,
+           fidelity=excluded.fidelity,
+           note=CASE
+             WHEN score.note IS NULL OR trim(score.note) = '' THEN excluded.note
+             WHEN excluded.note IS NULL OR trim(excluded.note) = '' THEN score.note
+             ELSE score.note || '\n\n--- re-scored ' || excluded.scored_at || ' ---\n' || excluded.note
+           END,
+           scored_at=excluded.scored_at`,
+      ).run(id, delivery, quality ?? null,
+        writes && delivery !== 'none' ? fidelity ?? null : null, note, scoredAt,
+        process.env.ORCH_SCORER ?? 'claude')
+      if (reviewId) {
+        for (const finding of parsedFindings) {
+          triageFinding(
+            reviewId, finding.ordinal, finding.disposition, finding.category, finding.severity,
+          )
+        }
+        completeReview(reviewId)
+      }
+      if (comparison === 'better-than') recordDuels(id, comparisonIds, sessionId(), scoredAt, has('force'))
+      if (comparison === 'worse-than') recordLosses(id, comparisonIds, sessionId(), scoredAt, has('force'))
+      if (comparison === 'same-as') recordTies(id, comparisonIds, sessionId(), scoredAt, has('force'))
+      auditRunMutation(authority, wasScored ? 'rescore' : 'score', auditReason())
+    })
+    console.log(`judged run ${id}: score${reviewId ? `, completed review ${reviewId}` : ''}` +
+      `${comparison ? ', pair recorded' : ''}`)
+
+    if (has('discard')) {
+      if (!row.worktree) throw new Error(`run ${id} has no worktree to discard`)
+      const discardAuthority = authorizeRunMutation(id, 'discard')
+      discardWorktree(row as CleanupRow, 'discarded', false, discardAuthority)
+    }
+    break
+  }
+
   case 'score': {
     await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadReview()])
     writableDb()
+    const note = scoreNote()
     const requestedId = Number(argv[1])
     if (!requestedId) usage()
     const row = db().query(
@@ -5210,7 +5455,7 @@ switch (cmd) {
                                              excluded.scored_at || ' ---\n' || excluded.note
                                          END,
                                          scored_at=excluded.scored_at`,
-      ).run(id, delivery, quality ?? null, scoredFidelity ?? null, flag('note') ?? null, scoredAt,
+      ).run(id, delivery, quality ?? null, scoredFidelity ?? null, note, scoredAt,
             scorer ?? process.env.ORCH_SCORER ?? 'claude')
       auditRunMutation(
         scoreAuthority, wasScored ? 'rescore' : 'score', auditReason(),

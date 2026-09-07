@@ -848,7 +848,7 @@ describe('the Stop hook and orch agree on what is unscored', () => {
     const offered = invoke()
     expect(offered.exitCode).toBe(0)
     expect(JSON.parse(offered.stdout.toString()).reason).toContain(
-      `pair: run ${first} (codex) on the same tree — record with --better-than ${first}`,
+      `orch judge ${second} full right --better-than ${first}`,
     )
 
     db().query(

@@ -5,7 +5,7 @@ import { ISSUE_WORKER_SCHEMA, validatesSchema, type IssueWorkerReply } from './c
 import { projectByName, type Project } from './projects.ts'
 import { run, type RunResult } from './run.ts'
 import { prepareSharedRefGuard, removeFor } from './worktree.ts'
-import { parseReviewOutput, recordReviews } from './review.ts'
+import { parseReviewOutput } from './review.ts'
 import { DB_PATH, db } from './db.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 
@@ -408,7 +408,9 @@ export async function workIssue(key: string): Promise<void> {
       label: `issue ${issue.key} blast radius`,
     }) : null
     const review = lens ? parseReviewOutput(lens.output) : null
-    if (lens && review) recordReviews([{ runId: lens.id, output: review }])
+    // Findings runs record their review as part of terminalisation. Parsing it
+    // here still decides coordinator readiness; capture no longer needs a
+    // second, issue-specific write.
     const ready = fix.status === 'done' && fix.outcome === 'fixed' &&
       fix.cause_location === diagnosis.cause_location &&
       before.text === diagnosis.before && after.text === fix.after && before.text !== after.text &&

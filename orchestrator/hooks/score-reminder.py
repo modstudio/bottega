@@ -45,8 +45,12 @@ def main() -> int:
         # stall Stop until Claude's own 600s hook deadline.
         con = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=2)
         rows = con.execute(
-            """SELECT r.id, r.agent, r.job, substr(COALESCE(r.label, r.prompt_head), 1, 60)
+            """SELECT r.id, r.agent, r.job, substr(COALESCE(r.label, r.prompt_head), 1, 60),
+                      s.delivery, s.quality, s.fidelity, review.id,
+                      rl.reproduced, rl.coverage, rl.limits, rl.overlap
                  FROM run r LEFT JOIN score s ON s.run_id = r.id
+                 LEFT JOIN review_lens rl ON rl.run_id = r.id
+                 LEFT JOIN review ON review.id = rl.review_id
                 WHERE r.session_id = ? AND r.status = 'ok'
                   -- A probe is excluded from routing and reporting by design, so
                   -- scoring one teaches the router nothing - which is this hook's
@@ -76,9 +80,10 @@ def main() -> int:
                   -- turn keeps that verdict while a later turn drifts — the
                   -- earliest turn winning by accident. Scores are already
                   -- mutable; what was missing was asking again.
-                  AND (s.delivery IS NULL
-                       OR s.scored_at < (SELECT MAX(COALESCE(c.started_at, ''))
-                                           FROM run c WHERE c.parent_run_id = r.id))
+                  AND ((s.delivery IS NULL
+                        OR s.scored_at < (SELECT MAX(COALESCE(c.started_at, ''))
+                                            FROM run c WHERE c.parent_run_id = r.id))
+                       OR (review.id IS NOT NULL AND review.completed_at IS NULL))
                 ORDER BY r.id""",
             (sid,),
         ).fetchall()
@@ -88,7 +93,18 @@ def main() -> int:
         ).fetchone()
         if has_compared_pairs:
             pairs = con.execute(
-                """SELECT newer.id, older.id, older.agent
+                """SELECT newer.id, older.id, older.agent,
+                          CASE
+                            WHEN newer.lens IS NOT NULL AND newer.input_tree IS NOT NULL
+                                 AND older.input_tree IS NOT NULL
+                              THEN 'same prompt and lens; same input tree'
+                            WHEN newer.lens IS NOT NULL
+                              THEN 'same prompt and lens; at least one input tree unrecorded'
+                            WHEN newer.input_tree IS NOT NULL AND older.input_tree IS NOT NULL
+                              THEN 'same prompt; same input tree'
+                            ELSE 'same prompt; at least one input tree unrecorded'
+                          END,
+                          newer.job, newer_score.delivery, newer_score.quality, newer_score.fidelity
                      FROM run newer
                      JOIN score newer_score ON newer_score.run_id = newer.id
                      JOIN run older ON older.id < newer.id
@@ -97,9 +113,10 @@ def main() -> int:
                       AND older.session_id = newer.session_id
                       AND COALESCE(older.probe, 0) = 0
                       AND older.evidence_excluded IS NULL
-                      AND ((newer.input_tree IS NOT NULL AND older.input_tree = newer.input_tree)
-                        OR (newer.input_tree IS NULL AND older.input_tree IS NULL
-                            AND older.prompt_sha = newer.prompt_sha))
+                      AND older.prompt_sha = newer.prompt_sha
+                      AND newer.lens IS older.lens
+                      AND (newer.input_tree IS NULL OR older.input_tree IS NULL
+                           OR older.input_tree = newer.input_tree)
                      JOIN score older_score ON older_score.run_id = older.id
                      LEFT JOIN compared_pair compared
                        ON compared.run_a_id = older.id AND compared.run_b_id = newer.id
@@ -112,7 +129,6 @@ def main() -> int:
                     ORDER BY newer.id, older.id""",
                 (sid,),
             ).fetchall()
-        con.close()
     except sqlite3.Error:
         return 0  # never block a session because of a database problem
 
@@ -126,20 +142,57 @@ def main() -> int:
     # fixed string, so adding one means adding it here too.
     WRITING_JOBS = {"implement", "fix"}
     lines = []
-    for i, a, j, p in rows:
-        axes = "<none|partial|full> [wrong|mixed|right]"
+    pairs_by_run = {}
+    for current, partner, agent, reason, pair_job, pair_delivery, pair_quality, pair_fidelity in pairs:
+        entry = pairs_by_run.setdefault(current, {
+            "job": pair_job, "delivery": pair_delivery, "quality": pair_quality,
+            "fidelity": pair_fidelity, "partners": [],
+        })
+        entry["partners"].append((partner, agent, reason))
+    for i, a, j, p, delivery, quality, fidelity, review_id, reproduced, coverage, limits, overlap in rows:
+        axes = delivery or "<none|partial|full>"
+        if delivery is None or delivery != "none":
+            axes += " " + (quality or "<wrong|mixed|right>")
         if j in WRITING_JOBS:
-            axes += " [drifted|partial|faithful]"
-        lines.append(f'  orch score {i} {axes} --note "..."   # {a}/{j}  {p}')
-    if pairs:
-        if lines:
-            lines.append("")
-        for current, partner, agent in pairs:
-            lines.append(f"  run {current}")
-            lines.append(
-                f"    pair: run {partner} ({agent}) on the same tree — record with "
-                f"--better-than {partner} | --worse-than {partner} | --same-as {partner}"
+            axes += " " + (fidelity or "<drifted|partial|faithful>")
+        missing = []
+        if review_id is not None:
+            for name, value, choices in [
+                ("reproduced", reproduced, "none|some|all"),
+                ("coverage", coverage, "empty|partial|adequate"),
+                ("limits", limits, "named|absent"),
+                ("overlap", overlap, "unique|shared|none|alone"),
+            ]:
+                if value is None:
+                    missing.append(f"--{name} <{choices}>")
+            ordinals = con.execute(
+                "SELECT ordinal FROM review_finding WHERE review_id=? AND disposition IS NULL ORDER BY ordinal",
+                (review_id,),
+            ).fetchall()
+            missing.extend(
+                f"--finding {ordinal}=<disposition>:<severity-or-category>"
+                for (ordinal,) in ordinals
             )
+        pair_entry = pairs_by_run.pop(i, None)
+        run_pairs = pair_entry["partners"] if pair_entry else []
+        if run_pairs:
+            ids = ",".join(str(partner) for partner, _, _ in run_pairs)
+            missing.append(f"--better-than {ids} | --worse-than {ids} | --same-as {ids}")
+        lines.append(f'  orch judge {i} {axes} {" ".join(missing)} --note "..."   # {a}/{j}  {p}'.replace("  --note", " --note"))
+        for partner, agent, reason in run_pairs:
+            lines.append(f"    comparable to run {partner} ({agent}): {reason}")
+    for current, pair_entry in pairs_by_run.items():
+        run_pairs = pair_entry["partners"]
+        ids = ",".join(str(partner) for partner, _, _ in run_pairs)
+        axes = pair_entry["delivery"]
+        if axes != "none":
+            axes += " " + pair_entry["quality"]
+        if pair_entry["job"] in WRITING_JOBS and axes != "none":
+            axes += " " + pair_entry["fidelity"]
+        lines.append(f"  orch judge {current} {axes} --better-than {ids} | --worse-than {ids} | --same-as {ids}")
+        for partner, agent, reason in run_pairs:
+            lines.append(f"    comparable to run {partner} ({agent}): {reason}")
+    con.close()
     if rows:
         intro = (
             f"{len(rows)} delegated run{'s' if len(rows) > 1 else ''} from this session "

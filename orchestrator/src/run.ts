@@ -43,7 +43,7 @@ import {
 } from './contract.ts'
 import {
   CALIBRATION_SUFFIX_RESERVE_BYTES, calibrationLine, cleanReviewEvidence,
-  parseReviewOutput, reviewCalibration,
+  parseReviewOutput, recordReview, reviewCalibration,
 } from './review.ts'
 import { createHasPlaceholder, projectAt, projects, stackAt,
          validateProjectSettings } from './projects.ts'
@@ -2767,10 +2767,11 @@ export async function run(opts: {
         `rejected question text: ${rejected}`
       error = error ? `${error}\n${note}` : note
     }
+    let parsedReview: ReturnType<typeof parseReviewOutput> = null
     if (status === 'ok' && requestedJob.findings) {
-      const review = parseReviewOutput(output)
-      if (review) {
-        const evidence = cleanReviewEvidence(claim.id, review)
+      parsedReview = parseReviewOutput(output)
+      if (parsedReview) {
+        const evidence = cleanReviewEvidence(claim.id, parsedReview)
         if (evidence.failure) {
           status = 'failed'
           error = evidence.failure
@@ -2966,6 +2967,12 @@ export async function run(opts: {
         }
         resolveRootFromLastTurn(db(), opts.resume.parent)
       }
+
+      // A parsed findings reply is the review event. Capture it in the same
+      // terminal transaction so a successful lens cannot exist in the gap
+      // between "ran" and "recorded". Manual `orch review record` remains the
+      // recovery path for historical or otherwise uncaptured outputs.
+      if (status === 'ok' && parsedReview) recordReview(claim.id, parsedReview)
     })
   }
 

@@ -161,6 +161,13 @@ skipped, and a review may be completed only after every finding is triaged.
 Thus an untriaged review remains visible rather than becoming indistinguishable
 from one that never ran.
 
+A findings run records that incomplete review itself when its parsed reply
+terminalises. `orch judge` is the close-out verb: it records the score, review
+grades, finding triage, review completion and any pair verdict together. A pair
+means the same task: root runs with the same job and identical prompt hash, and
+for findings work the same lens; their input trees must also match when both
+runs recorded one.
+
 Reviewer precision is:
 
     hits      = accepted + modified

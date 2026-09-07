@@ -140,7 +140,7 @@ describe('review-lens-inline has no checkout', () => {
       agent.parseReply = undefined
       process.env.ORCH_DEPTH = '0'
 
-      const cleanReply = report('changed.txt:1-2 — inspected changed behavior')
+      report('changed.txt:1-2 — inspected changed behavior')
       const clean = await runJob({
         job: 'review-lens', prompt: 'inspect', cwd: repo, agent: 'codex',
         lens: 'explicit-evidence-clean', review: 'feature/evidence',
@@ -151,7 +151,8 @@ describe('review-lens-inline has no checkout', () => {
         base_commit: base, input_tree: tree, head_commit: tip, review_ref: 'feature/evidence',
         changed_paths: JSON.stringify(['changed.txt', 'second.txt']),
       })
-      const recorded = recordReview(clean.id, cleanReply)
+      const recorded = (db().query('SELECT review_id FROM review_lens WHERE run_id=?').get(clean.id) as
+        { review_id: number }).review_id
       expect(db().query('SELECT files_covered FROM review_lens WHERE review_id=?').get(recorded))
         .toEqual({ files_covered: JSON.stringify(['changed.txt']) })
 

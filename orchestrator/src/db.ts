@@ -1124,14 +1124,27 @@ function recordComparedPair(a: number, b: number, at: string): void {
   ).run(runA, runB, at)
 }
 
-export type PairPartner = { id: number; agent: string }
-export type UnrecordedPair = { runId: number; partnerId: number; partnerAgent: string }
+export type PairPartner = { id: number; agent: string; reason: string }
+export type UnrecordedPair = {
+  runId: number; partnerId: number; partnerAgent: string; reason: string
+}
 
-/** Scored sibling roots from this session and input, not yet compared. */
+const PAIR_REASON_SQL = `CASE
+  WHEN subject.lens IS NOT NULL AND subject.input_tree IS NOT NULL
+       AND partner.input_tree IS NOT NULL
+    THEN 'same prompt and lens; same input tree'
+  WHEN subject.lens IS NOT NULL
+    THEN 'same prompt and lens; at least one input tree unrecorded'
+  WHEN subject.input_tree IS NOT NULL AND partner.input_tree IS NOT NULL
+    THEN 'same prompt; same input tree'
+  ELSE 'same prompt; at least one input tree unrecorded'
+END`
+
+/** Scored sibling roots for the same task in this session, not yet compared. */
 export function pairPartners(runId: number, sid: string | null): PairPartner[] {
   if (!sid) return []
   return db().query(
-    `SELECT partner.id, partner.agent
+    `SELECT partner.id, partner.agent, ${PAIR_REASON_SQL} AS reason
        FROM run subject
        JOIN run partner ON partner.id <> subject.id
         AND partner.parent_run_id IS NULL
@@ -1139,9 +1152,10 @@ export function pairPartners(runId: number, sid: string | null): PairPartner[] {
         AND partner.session_id = ?
         AND COALESCE(partner.probe, 0) = 0
         AND partner.evidence_excluded IS NULL
-        AND ((subject.input_tree IS NOT NULL AND partner.input_tree = subject.input_tree)
-          OR (subject.input_tree IS NULL AND partner.input_tree IS NULL
-              AND partner.prompt_sha = subject.prompt_sha))
+        AND partner.prompt_sha = subject.prompt_sha
+        AND (subject.lens IS partner.lens)
+        AND (subject.input_tree IS NULL OR partner.input_tree IS NULL
+             OR partner.input_tree = subject.input_tree)
        JOIN score partner_score ON partner_score.run_id = partner.id
        LEFT JOIN compared_pair compared
          ON compared.run_a_id = MIN(subject.id, partner.id)
@@ -1159,7 +1173,8 @@ export function pairPartners(runId: number, sid: string | null): PairPartner[] {
 export function unrecordedPairsForSession(sid: string | null): UnrecordedPair[] {
   if (!sid) return []
   return db().query(
-    `SELECT newer.id AS runId, older.id AS partnerId, older.agent AS partnerAgent
+    `SELECT newer.id AS runId, older.id AS partnerId, older.agent AS partnerAgent,
+            ${PAIR_REASON_SQL.replaceAll('subject.', 'newer.').replaceAll('partner.', 'older.')} AS reason
        FROM run newer
        JOIN score newer_score ON newer_score.run_id = newer.id
        JOIN run older ON older.id < newer.id
@@ -1168,9 +1183,10 @@ export function unrecordedPairsForSession(sid: string | null): UnrecordedPair[] 
         AND older.session_id = newer.session_id
         AND COALESCE(older.probe, 0) = 0
         AND older.evidence_excluded IS NULL
-        AND ((newer.input_tree IS NOT NULL AND older.input_tree = newer.input_tree)
-          OR (newer.input_tree IS NULL AND older.input_tree IS NULL
-              AND older.prompt_sha = newer.prompt_sha))
+        AND older.prompt_sha = newer.prompt_sha
+        AND (newer.lens IS older.lens)
+        AND (newer.input_tree IS NULL OR older.input_tree IS NULL
+             OR older.input_tree = newer.input_tree)
        JOIN score older_score ON older_score.run_id = older.id
        LEFT JOIN compared_pair compared
          ON compared.run_a_id = older.id AND compared.run_b_id = newer.id

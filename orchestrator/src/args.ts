@@ -418,8 +418,12 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
     case 'stop': return { args: argv.slice(1), shape: shape('orch stop <id>', 1) }
     case 'abandon': return { args: argv.slice(1), shape: shape('orch abandon <id> [--note TEXT] [--force]', 1, ['--note'], ['--force']) }
     case 'score': return { args: argv.slice(1), shape: shape(
-      `orch score <run-id> <none|partial|full> [wrong|mixed|right] [drifted|partial|faithful] [--note TEXT] ${REVIEW_GRADE_USAGE}`,
-      4, ['--note', '--better-than', '--worse-than', '--same-as', '--scorer', '--reproduced', '--coverage', '--limits', '--overlap'], ['--force', '--void'],
+      `orch score <run-id> <none|partial|full> [wrong|mixed|right] [drifted|partial|faithful] [--note TEXT|--note-file PATH] ${REVIEW_GRADE_USAGE}`,
+      4, ['--note', '--note-file', '--better-than', '--worse-than', '--same-as', '--scorer', '--reproduced', '--coverage', '--limits', '--overlap'], ['--force', '--void'],
+    ) }
+    case 'judge': return { args: argv.slice(1), shape: shape(
+      `orch judge <run-id> <none|partial|full> [wrong|mixed|right] [drifted|partial|faithful] [--finding N=DISPOSITION:DETAIL] [--note TEXT|--note-file PATH] ${REVIEW_GRADE_USAGE}`,
+      4, ['--finding', '--note', '--note-file', '--better-than', '--worse-than', '--same-as', '--reproduced', '--coverage', '--limits', '--overlap'], ['--discard', '--force'],
     ) }
     case 'recalibrate': return { args: argv.slice(1), shape: shape('orch recalibrate [--n N] [--scorer WHO] [--force]', 0, ['--n', '--scorer'], ['--force']) }
     case 'routing-backtest': return { args: argv.slice(1), shape: shape('orch routing-backtest [--job X] [--seed N] [--json]', 0, ['--job', '--seed'], ['--json']) }
