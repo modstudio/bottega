@@ -8,6 +8,7 @@ import { getTableConfig, type SQLiteTable } from 'drizzle-orm/sqlite-core'
 import * as declared from './schema.ts'
 import {
   applyMigrations, BASELINE_SCHEMA_HASH, baselineSchemaHash, canonicalSchemaHash,
+  expectedSchemaHash,
   MIGRATIONS_FOLDER, migrationJournal, migrationRefusal,
 } from './migrations.ts'
 
@@ -36,8 +37,28 @@ describe('Drizzle migration journal', () => {
     const comparison = fresh()
     expect(canonicalSchemaHash(d)).toBe(canonicalSchemaHash(comparison))
     expect(canonicalSchemaHash(d)).not.toBe(BASELINE_SCHEMA_HASH)
+    expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     comparison.close()
     d.close()
+  })
+
+  test('doctor matches the complete journal while preserving baseline adoption', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orch-doctor-current-'))
+    const currentPath = join(dir, 'current.db')
+    const current = new Database(currentPath)
+    applyMigrations(current)
+    current.close()
+    const doctor = Bun.spawnSync([process.execPath, join(import.meta.dir, 'cli.ts'), 'doctor'], {
+      env: { ...process.env, ORCH_DB: currentPath, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(doctor.exitCode, doctor.stderr.toString()).toBe(0)
+    expect(doctor.stdout.toString()).toContain('schema hash    match')
+
+    const legacyStore = legacy()
+    expect(canonicalSchemaHash(legacyStore)).toBe(BASELINE_SCHEMA_HASH)
+    expect(applyMigrations(legacyStore)).toEqual(['0000_bright_sleepwalker', '0001_landing_queue'])
+    legacyStore.close()
+    rmSync(dir, { recursive: true, force: true })
   })
 
   test('migration-owned expression indexes are present', () => {

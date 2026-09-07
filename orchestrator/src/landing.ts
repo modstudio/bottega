@@ -114,13 +114,46 @@ function verifyGuardBeforeFastForward(repoRoot: string): void {
   }
 }
 
-function gateFailureLines(output: string): string[] {
-  return output.split('\n').map(stripAnsi).filter((line) =>
-    /^\s*(?:\(fail\)|✗)\s+/.test(line) || /^\s*\d+\s+fail(?:s|ed)?\b/.test(line))
-}
-
 function stripAnsi(value: string): string {
   return value.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '')
+}
+
+const reporterBody = (line: string) => line.replace(
+  /^\s*(?:\[[^\]]+\]\s*)+(?=(?:\(pass\)|\(fail\)|✓|✗|\d+\s+fail))/,
+  '',
+)
+const failedTestLine = (line: string) => /^\s*(?:\(fail\)|✗)\s+/.test(reporterBody(line))
+const testResultLine = (line: string) => /^\s*(?:\(pass\)|\(fail\)|✓|✗)\s+/.test(reporterBody(line))
+const failureCountLine = (line: string) => /^\s*\d+\s+fail(?:s|ed)?\b/.test(reporterBody(line))
+const testFileHeading = (line: string) =>
+  /^\s*(?:\[[^\]]+\]\s*)?.+\.(?:test|spec)\.[cm]?[jt]sx?:\s*$/.test(line)
+const shardHeading = (line: string) =>
+  /^\s*(?:\[[^\]]+\]\s*)*\[?shard(?:\s+|:)[^\]]*\]?\s*$/i.test(line)
+
+/** Preserve each failed test's reporter context and assertion frame wherever it sits in the log. */
+function gateFailureLines(output: string): string[] {
+  const lines = output.split('\n').map(stripAnsi)
+  const blocks: string[] = []
+  for (let failure = 0; failure < lines.length; failure++) {
+    if (!failedTestLine(lines[failure]!)) continue
+    let file = failure - 1
+    while (file >= 0 && !testFileHeading(lines[file]!) && !shardHeading(lines[file]!)) file--
+    let shard = file - 1
+    while (shard >= 0 && !shardHeading(lines[shard]!)) shard--
+    if (shard >= 0 && shardHeading(lines[shard]!)) blocks.push(lines[shard]!)
+    if (file >= 0 && testFileHeading(lines[file]!)) blocks.push(lines[file]!)
+
+    let start = failure
+    while (start > file + 1 && !testResultLine(lines[start - 1]!)) start--
+    let end = failure + 1
+    while (end < lines.length && !testResultLine(lines[end]!) &&
+      !testFileHeading(lines[end]!) && !shardHeading(lines[end]!) &&
+      !failureCountLine(lines[end]!)) end++
+    blocks.push(...lines.slice(start, end))
+    blocks.push('')
+  }
+  const counts = lines.filter(failureCountLine)
+  return blocks.length ? [...blocks, ...counts] : counts
 }
 
 export function gateFailureSummary(
@@ -225,6 +258,36 @@ function worktreesForBranch(repoRoot: string, branch: string): string[] {
     else if (!line) path = null
   }
   return matches
+}
+
+function recordedLandingBlock(
+  project: string, branch: string, runId?: number,
+): { detail: string; invariant: string; command: string; worktree: string } | null {
+  const rows = runId === undefined
+    ? db().query(
+        `SELECT member.pre_confinement FROM run member
+          JOIN run root ON root.id=COALESCE(member.parent_run_id,member.id)
+         WHERE root.repo=? AND root.branch=? ORDER BY root.id DESC,member.turn DESC,member.id DESC`,
+      ).all(project, branch)
+    : db().query(
+        `SELECT pre_confinement FROM run
+          WHERE id=COALESCE((SELECT parent_run_id FROM run WHERE id=?),?)
+             OR parent_run_id=COALESCE((SELECT parent_run_id FROM run WHERE id=?),?)
+          ORDER BY turn DESC,id DESC`,
+      ).all(runId, runId, runId, runId)
+  for (const row of rows as { pre_confinement: string | null }[]) {
+    if (!row.pre_confinement) continue
+    try {
+      const parsed = JSON.parse(row.pre_confinement) as {
+        landingBlock?: { detail?: string; invariant?: string; command?: string; worktree?: string }
+      }
+      const block = parsed.landingBlock
+      if (!block?.detail || !block.invariant || !block.command || !block.worktree) continue
+      return { detail: block.detail, invariant: block.invariant, command: block.command,
+        worktree: block.worktree }
+    } catch { /* malformed historical receipt cannot create a landing block */ }
+  }
+  return null
 }
 
 type CheckoutState = {
@@ -1082,6 +1145,14 @@ function performLand(
   }
   const worktree = worktreesForBranch(repoRoot, branch)[0] ?? null
   if (!worktree || !existsSync(worktree)) {
+    const recordedBlock = recordedLandingBlock(project.name, branch, options.runId)
+    if (recordedBlock && !existsSync(recordedBlock.worktree)) {
+      throw namedError(
+        `refusing to land ${branch}: ${recordedBlock.detail}`,
+        recordedBlock.invariant,
+        recordedBlock.command,
+      )
+    }
     throw namedError(
       `branch ${branch} has no worktree and cannot be landed`,
       INVARIANT_LOCK_SCOPE,

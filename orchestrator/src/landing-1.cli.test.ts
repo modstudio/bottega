@@ -21,6 +21,31 @@ test('only bun\'s complete timeout line reports machine load', () => {
     )
   })
 
+  test('a buried multi-file failure retains shard, file, test and assertion frame', () => {
+    const output = [
+      '[worker-2] shard 2/4',
+      'src/passing.test.ts:',
+      '(pass) earlier file passes',
+      'src/early.test.ts:',
+      '  17 | expect(received).toBe(expected)',
+      'error: expect(received).toBe(expected)',
+      'Expected: 4',
+      'Received: 3',
+      '      at <anonymous> (src/early.test.ts:17:20)',
+      '(fail) early suite > reports the real assertion',
+      'src/later.test.ts:',
+      ...Array.from({ length: 50 }, (_, i) => `(pass) later test ${i + 1}`),
+      '50 pass',
+      '1 fail',
+    ].join('\n')
+    const summary = gateFailureSummary(output, '/tmp/multi-file-gate.log', 0)
+    expect(summary).toContain('[worker-2] shard 2/4')
+    expect(summary).toContain('src/early.test.ts:')
+    expect(summary).toContain('(fail) early suite > reports the real assertion')
+    expect(summary).toContain('error: expect(received).toBe(expected)\nExpected: 4\nReceived: 3')
+    expect(summary).toContain('at <anonymous> (src/early.test.ts:17:20)')
+  })
+
   test('completed sequencer residue is quit before the gate', async () => {
     const { repo, trees } = repoWithBranches(['sequencer-residue'])
     const marker = g(trees['sequencer-residue']!, 'rev-parse', '--path-format=absolute', '--git-path', 'AUTO_MERGE')

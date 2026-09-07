@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { DASHBOARD_CAPABILITY_PATH_ENV, DASHBOARD_CAPABILITY_TOKEN_ENV } from '../../shared/dashboard-capability.ts'
@@ -11,24 +11,127 @@ import { runCollectionDescribeFixture } from '../test/fixture.ts'
 
 describe("detached run collection", () => {
   const { CLI, orchInput, orch, scoreReminder, orchFrom, insert, dispatchArtifacts, expectNoDispatchArtifacts } = runCollectionDescribeFixture()
-test('confinement clear restores the pre-confinement outcome and audits the writer', () => {
-  const id = addRun({ agent: 'codex', job: 'implement', status: 'failed', session: 'orch-test-session' })
-  db().query('UPDATE run SET failure_kind=?, error=?, pre_confinement=? WHERE id=?').run(
-    'escaped', 'outside edit', JSON.stringify({ status: 'ok', failureKind: null, error: null }), id,
-  )
-  const cleared = orch(
-    'confinement', 'clear', String(id), '--writer', 'session-elsewhere', '--note', 'known edit',
-  )
-  expect(cleared.code, cleared.err).toBe(0)
-  expect(db().query('SELECT status,failure_kind,error FROM run WHERE id=?').get(id)).toEqual({
-    status: 'ok', failure_kind: null, error: null,
-  })
-  const audit = db().query('SELECT action,reason FROM run_mutation_audit WHERE run_id=?').get(id) as {
-    action: string; reason: string
+  const confinementArtifact = () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-confinement-clear-')))
+    const git = (cwd: string, ...args: string[]) => {
+      const child = Bun.spawnSync(['git', ...args], {
+        cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (child.exitCode !== 0) throw new Error(child.stderr.toString())
+      return child.stdout.toString().trim()
+    }
+    git(repo, 'init', '-b', 'main')
+    git(repo, 'config', 'user.email', 'orch-test@example.invalid')
+    git(repo, 'config', 'user.name', 'Orch Test')
+    writeFileSync(join(repo, 'base.txt'), 'base\n')
+    git(repo, 'add', 'base.txt'); git(repo, 'commit', '-m', 'base')
+    const branch = 'confinement-work'
+    const worktree = join(repo, 'trees', branch)
+    mkdirSync(dirname(worktree), { recursive: true })
+    git(repo, 'worktree', 'add', '-b', branch, worktree, 'main')
+    writeFileSync(join(worktree, 'change.txt'), 'change\n')
+    git(worktree, 'add', 'change.txt'); git(worktree, 'commit', '-m', 'change')
+    const tip = git(worktree, 'rev-parse', 'HEAD')
+    const tree = git(worktree, 'rev-parse', 'HEAD^{tree}')
+    const project = `confinement-${randomUUID()}`
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    const id = addRun({
+      agent: 'codex', job: 'implement', status: 'failed', session: 'orch-test-session',
+      repo: project, inputTree: tree, headCommit: tip,
+    })
+    db().query(
+      'UPDATE run SET worktree=?,branch=?,failure_kind=?,error=?,pre_confinement=? WHERE id=?',
+    ).run(worktree, branch, 'escaped', 'outside edit', JSON.stringify({
+      status: 'ok', failureKind: null, error: null,
+    }), id)
+    const audit = () => JSON.parse((db().query(
+      'SELECT reason FROM run_mutation_audit WHERE run_id=? AND action=\'reclassify\' ORDER BY rowid DESC',
+    ).get(id) as { reason: string }).reason) as Record<string, unknown>
+    return { repo, worktree, branch, tip, tree, project, id, git, audit }
   }
-  expect(audit.action).toBe('reclassify')
-  expect(JSON.parse(audit.reason)).toEqual({ writer: 'session-elsewhere', note: 'known edit' })
-})
+
+  test('confinement clear restores an unchanged artifact and audits both tips and trees', () => {
+    const fixture = confinementArtifact()
+    try {
+      const cleared = orch(
+        'confinement', 'clear', String(fixture.id), '--writer', 'session-elsewhere',
+        '--note', 'known edit',
+      )
+      expect(cleared.code, cleared.err).toBe(0)
+      expect(db().query('SELECT status,failure_kind,error FROM run WHERE id=?').get(fixture.id)).toEqual({
+        status: 'ok', failure_kind: null, error: null,
+      })
+      expect(fixture.audit()).toMatchObject({
+        writer: 'session-elsewhere', note: 'known edit', recordedTip: fixture.tip,
+        currentTip: fixture.tip, recordedTree: fixture.tree, currentTree: fixture.tree,
+        divergence: false, cleared: true,
+      })
+    } finally { rmSync(fixture.repo, { recursive: true, force: true }) }
+  })
+
+  test('confinement clear records a missing worktree block and landing names its recovery', () => {
+    const fixture = confinementArtifact()
+    try {
+      fixture.git(fixture.repo, 'worktree', 'remove', fixture.worktree)
+      const cleared = orch(
+        'confinement', 'clear', String(fixture.id), '--writer', 'operator', '--note', 'known edit',
+      )
+      expect(cleared.code, cleared.err).toBe(0)
+      expect(cleared.out).toContain(`landing remains blocked: recorded worktree ${fixture.worktree} is missing`)
+      expect(cleared.out).toContain(`cleared by: git worktree add ${fixture.worktree} ${fixture.branch}`)
+      const pre = JSON.parse((db().query('SELECT pre_confinement FROM run WHERE id=?').get(fixture.id) as
+        { pre_confinement: string }).pre_confinement)
+      expect(pre.landingBlock).toMatchObject({ worktree: fixture.worktree })
+      const landing = orchFrom(fixture.repo, 'orch-test-session',
+        'land', String(fixture.id), '--unreviewed', 'fixture')
+      expect(landing.code).not.toBe(0)
+      expect(landing.err).toContain(`recorded worktree ${fixture.worktree} is missing`)
+      expect(landing.err).toContain('invariant:')
+      expect(landing.err).toContain(`cleared by: git worktree add ${fixture.worktree} ${fixture.branch}`)
+    } finally { rmSync(fixture.repo, { recursive: true, force: true }) }
+  })
+
+  test('confinement clear refuses a moved tip without --tip and audits the divergence', () => {
+    const fixture = confinementArtifact()
+    try {
+      writeFileSync(join(fixture.worktree, 'later.txt'), 'later\n')
+      fixture.git(fixture.worktree, 'add', 'later.txt')
+      fixture.git(fixture.worktree, 'commit', '-m', 'later')
+      const currentTip = fixture.git(fixture.worktree, 'rev-parse', 'HEAD')
+      const refused = orch(
+        'confinement', 'clear', String(fixture.id), '--writer', 'operator', '--note', 'known edit',
+      )
+      expect(refused.code).not.toBe(0)
+      expect(refused.err).toContain(`pass --tip ${currentTip}`)
+      expect(db().query('SELECT failure_kind FROM run WHERE id=?').get(fixture.id))
+        .toEqual({ failure_kind: 'escaped' })
+      expect(fixture.audit()).toMatchObject({
+        recordedTip: fixture.tip, currentTip, divergence: true, suppliedTip: null, cleared: false,
+      })
+    } finally { rmSync(fixture.repo, { recursive: true, force: true }) }
+  })
+
+  test('confinement clear accepts an acknowledged moved tip and audits it', () => {
+    const fixture = confinementArtifact()
+    try {
+      writeFileSync(join(fixture.worktree, 'later.txt'), 'later\n')
+      fixture.git(fixture.worktree, 'add', 'later.txt')
+      fixture.git(fixture.worktree, 'commit', '-m', 'later')
+      const currentTip = fixture.git(fixture.worktree, 'rev-parse', 'HEAD')
+      const currentTree = fixture.git(fixture.worktree, 'rev-parse', 'HEAD^{tree}')
+      const cleared = orch(
+        'confinement', 'clear', String(fixture.id), '--writer', 'operator', '--note', 'known edit',
+        '--tip', currentTip,
+      )
+      expect(cleared.code, cleared.err).toBe(0)
+      expect(db().query('SELECT status,failure_kind FROM run WHERE id=?').get(fixture.id))
+        .toEqual({ status: 'ok', failure_kind: null })
+      expect(fixture.audit()).toMatchObject({
+        recordedTip: fixture.tip, currentTip, recordedTree: fixture.tree, currentTree,
+        divergence: true, suppliedTip: currentTip, cleared: true,
+      })
+    } finally { rmSync(fixture.repo, { recursive: true, force: true }) }
+  })
 test('record-only closes the question, marks the chain stranded, and retry restates the ruling', () => {
     const id = insert('asking', 'file-question')
     const prompt = join(dir, `record-only-${id}.prompt.txt`)

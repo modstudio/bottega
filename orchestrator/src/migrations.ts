@@ -266,6 +266,25 @@ export function baselineSchemaHash(folder = MIGRATIONS_FOLDER): string {
 
 export const BASELINE_SCHEMA_HASH = baselineSchemaHash()
 
+const expectedSchemaHashes = new Map<string, string>()
+
+/** Hash the schema produced by the complete journal, not only its adoption baseline. */
+export function expectedSchemaHash(folder = MIGRATIONS_FOLDER): string {
+  const cached = expectedSchemaHashes.get(folder)
+  if (cached) return cached
+  const d = new Database(':memory:')
+  try {
+    for (const entry of migrationJournal(folder)) {
+      executeMigrationSource(d, migrationSource(entry, folder))
+    }
+    const hash = canonicalSchemaHash(d)
+    expectedSchemaHashes.set(folder, hash)
+    return hash
+  } finally {
+    d.close()
+  }
+}
+
 function shape(values: string[]): string[] {
   return [...values].sort()
 }

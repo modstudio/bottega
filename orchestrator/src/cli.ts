@@ -105,6 +105,7 @@ async function loadTransport() {
   ;({ assertAcpAllowed, assertAcpReady, resolveTransportName, selectAgentForTransport } = transportModule)
 }
 let branchTip!: typeof import('./worktree.ts').branchTip
+let contentTree!: typeof import('./worktree.ts').contentTree
 let restoreBranch!: typeof import('./worktree.ts').restoreBranch
 let resolveBase!: typeof import('./worktree.ts').resolveBase
 let repoRootOf!: typeof import('./worktree.ts').repoRootOf
@@ -117,7 +118,7 @@ let projectLockState!: typeof import('./worktree.ts').projectLockState
 let takeCleanupLock!: typeof import('./worktree.ts').withCleanupLock
 let withWorktreeLease!: typeof import('./worktree.ts').withWorktreeLease
 let targetGitEnvironment!: typeof import('./worktree.ts').targetGitEnvironment
-async function loadWorktree() { worktreeModule ??= await import('./worktree.ts'); ({ branchTip, restoreBranch, resolveBase, repoRootOf, removeBranch, removeFor, unmergedBranch, checkoutHasUncommittedWork, callerDrift, projectLockState, withCleanupLock: takeCleanupLock, withWorktreeLease, targetGitEnvironment } = worktreeModule) }
+async function loadWorktree() { worktreeModule ??= await import('./worktree.ts'); ({ branchTip, contentTree, restoreBranch, resolveBase, repoRootOf, removeBranch, removeFor, unmergedBranch, checkoutHasUncommittedWork, callerDrift, projectLockState, withCleanupLock: takeCleanupLock, withWorktreeLease, targetGitEnvironment } = worktreeModule) }
 let WORKER_PREAMBLE!: typeof import('./contract.ts').WORKER_PREAMBLE
 let READONLY_PREAMBLE!: typeof import('./contract.ts').READONLY_PREAMBLE
 let NO_REPO_PREAMBLE!: typeof import('./contract.ts').NO_REPO_PREAMBLE
@@ -1463,7 +1464,7 @@ function usage(): never {
       --unreviewed REASON       land without matching review coverage and record why
       --status                  show the landing lock and exact/carried/invalid review coverage
       --queue                   wait visibly when your session already owns the landing lock
-  orch confinement clear <run-id> --writer TEXT --note TEXT
+  orch confinement clear <run-id> --writer TEXT --note TEXT [--tip OID]
       clear a spurious escaped classification, attributing the outside edit and auditing the ruling
   orch review list [--open|--complete] [--project P] [--since ISO] [--json]
   orch review show <id> [--json]
@@ -1814,43 +1815,116 @@ switch (cmd) {
 
   case 'confinement': {
     if (argv[1] !== 'clear') {
-      throw new Error('orch confinement clear <run-id> --writer <text> --note <text>')
+      throw new Error('orch confinement clear <run-id> --writer <text> --note <text> [--tip <current-tip>]')
     }
     const id = Number(argv[2])
     const writer = flag('writer')?.trim()
     const note = flag('note')?.trim()
     if (!id || !writer || !note) {
-      throw new Error('orch confinement clear <run-id> --writer <text> --note <text>')
+      throw new Error('orch confinement clear <run-id> --writer <text> --note <text> [--tip <current-tip>]')
     }
+    await loadWorktree()
     let authority = authorizeRunMutation(id, 'reclassify')
     const rows = db().query(
       `SELECT id, pre_confinement FROM run
         WHERE (id=? OR parent_run_id=?) AND failure_kind='escaped' ORDER BY turn,id`,
     ).all(authority.rootId, authority.rootId) as { id: number; pre_confinement: string | null }[]
     if (!rows.length) throw new Error(`run ${id}'s chain has no escaped classification to clear`)
+    const chain = db().query(
+      `SELECT repo, worktree, branch, head_commit, input_tree FROM run
+        WHERE id=? OR parent_run_id=? ORDER BY turn DESC,id DESC`,
+    ).all(authority.rootId, authority.rootId) as {
+      repo: string | null; worktree: string | null; branch: string | null
+      head_commit: string | null; input_tree: string | null
+    }[]
+    const recorded = <K extends keyof typeof chain[number]>(key: K) =>
+      chain.find((row) => row[key] !== null)?.[key] ?? null
+    const repo = recorded('repo')
+    const worktree = recorded('worktree')
+    const branch = recorded('branch')
+    const recordedTip = recorded('head_commit')
+    const recordedTree = recorded('input_tree')
+    if (!repo || !worktree || !branch || !recordedTip || !recordedTree) {
+      throw new Error(`run ${id}'s chain lacks a recorded repository, worktree, branch tip, or measured tree`)
+    }
+    const project = projectByName(repo)
+    if (!project) throw new Error(`run ${id}'s recorded project ${repo} is not registered`)
+    const inspect = (cwd: string, args: string[]) => {
+      const child = Bun.spawnSync(['git', ...args], {
+        cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
+      })
+      return child.exitCode === 0 ? child.stdout.toString().trim() : null
+    }
+    const currentTip = inspect(project.path, ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`])
+    if (!currentTip) throw new Error(`recorded branch ${branch} no longer exists in ${project.path}`)
+    const worktreeMissing = !existsSync(worktree)
+    const currentTree = worktreeMissing
+      ? inspect(project.path, ['rev-parse', '--verify', `${currentTip}^{tree}`])
+      : contentTree(worktree)
+    const suppliedTip = flag('tip')?.trim() ?? null
+    const divergence = currentTip !== recordedTip
+    const recoveryCommand = `git worktree add ${worktree} ${branch}`
+    const audit = {
+      writer, note, recordedTip, currentTip, recordedTree, currentTree,
+      worktree, branch, divergence, suppliedTip, cleared: false,
+    }
+    const auditOnly = () => writeTransaction(() => {
+      authority = adoptRunMutation(authority, 'receipt')
+      auditRunMutation(authority, 'reclassify', JSON.stringify(audit))
+    })
+    if (divergence && !suppliedTip) {
+      auditOnly()
+      throw new Error(
+        `refusing to clear escaped confinement: ${branch} moved from recorded tip ${recordedTip} to ${currentTip}; ` +
+        `pass --tip ${currentTip} to acknowledge the current artifact`,
+      )
+    }
+    if (suppliedTip && suppliedTip !== currentTip) {
+      auditOnly()
+      throw new Error(`refusing --tip ${suppliedTip}: ${branch}'s current tip is ${currentTip}`)
+    }
     const restore = rows.map((row) => {
       if (!row.pre_confinement) throw new Error(`run ${row.id} has no pre-confinement outcome to restore`)
       const value = JSON.parse(row.pre_confinement) as {
         status?: string; failureKind?: string | null; error?: string | null
+        landingBlock?: { detail: string; invariant: string; command: string; worktree: string } | null
       }
       if (!['ok', 'failed', 'asking', 'stopped', 'stale'].includes(value.status ?? '')) {
         throw new Error(`run ${row.id} has invalid pre-confinement status`)
       }
+      if (worktreeMissing) {
+        value.landingBlock = {
+          detail: `recorded worktree ${worktree} is missing for branch ${branch}`,
+          invariant: 'A cleared confinement chain needs its recorded worktree before landing.',
+          command: recoveryCommand,
+          worktree,
+        }
+      } else delete value.landingBlock
       return { row, value }
     })
     writeTransaction(() => {
       authority = adoptRunMutation(authority, 'receipt')
       const update = db().query(
-        'UPDATE run SET status=?, failure_kind=?, error=? WHERE id=? AND failure_kind=\'escaped\'',
+        'UPDATE run SET status=?, failure_kind=?, error=?, pre_confinement=? WHERE id=? AND failure_kind=\'escaped\'',
       )
       for (const { row, value } of restore) {
-        update.run(value.status!, value.failureKind ?? null, value.error ?? null, row.id)
+        update.run(
+          value.status!, value.failureKind ?? null, value.error ?? null, JSON.stringify(value), row.id,
+        )
       }
-      auditRunMutation(authority, 'reclassify', JSON.stringify({ writer, note }))
+      auditRunMutation(authority, 'reclassify', JSON.stringify({ ...audit, cleared: true,
+        landingBlock: worktreeMissing ? recoveryCommand : null }))
     })
     console.log(
       `cleared escaped confinement for chain ${authority.rootId}; outside edit attributed to ${writer}: ${note}`,
     )
+    if (worktreeMissing) {
+      console.log(
+        `landing remains blocked: recorded worktree ${worktree} is missing\n` +
+        `invariant: A cleared confinement chain needs its recorded worktree before landing.\n` +
+        `cleared by: ${recoveryCommand}`,
+      )
+    }
     break
   }
 
@@ -6039,8 +6113,8 @@ switch (cmd) {
     db()
     console.log(`database       ${DB_PATH}`)
     console.log(`open mode      ${databaseOpenMode()}`)
-    const { BASELINE_SCHEMA_HASH, canonicalSchemaHash } = await import('./migrations.ts')
-    console.log(`schema hash    ${canonicalSchemaHash(db()) === BASELINE_SCHEMA_HASH ? 'match' : 'DRIFT'}`)
+    const { expectedSchemaHash, canonicalSchemaHash } = await import('./migrations.ts')
+    console.log(`schema hash    ${canonicalSchemaHash(db()) === expectedSchemaHash() ? 'match' : 'DRIFT'}`)
     console.log(`resolved by    ${DATABASE_RESOLUTION.method}`)
     if (DATABASE_RESOLUTION.registeredPath && DATABASE_RESOLUTION.registeredPath !== DB_PATH) {
       console.log(`registered     ${DATABASE_RESOLUTION.registeredPath}  (resolved path won)`)
