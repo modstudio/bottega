@@ -5108,17 +5108,17 @@ switch (cmd) {
     let reviewId: number | null = null
     let storedGrades: Partial<Record<typeof gradeNames[number], string>> = {}
     let reviewFindings: { ordinal: number; disposition: string | null }[] = []
-    if (findingsJob && delivery !== 'none') {
+    if (findingsJob) {
       const lens = db().query(
         'SELECT review_id, reproduced, coverage, limits, overlap FROM review_lens WHERE run_id=?',
       ).get(id) as ({ review_id: number } & Record<typeof gradeNames[number], string | null>) | null
       reviewId = lens?.review_id ?? null
-      if (!reviewId) {
+      if (delivery !== 'none' && !reviewId) {
         if (row.output_path && existsSync(row.output_path)) {
           parsedOutput = parseReviewOutput(readFileSync(row.output_path, 'utf8'))
         }
         if (!parsedOutput) throw new Error(`run ${id} has no recorded review; recover it with orch review record ${id}`)
-      } else {
+      } else if (delivery !== 'none') {
         storedGrades = Object.fromEntries(
           gradeNames.flatMap((name) => lens?.[name] ? [[name, lens[name]]] : []),
         )
@@ -5223,12 +5223,16 @@ switch (cmd) {
         writes && delivery !== 'none' ? fidelity ?? null : null, note, scoredAt,
         process.env.ORCH_SCORER ?? 'claude')
       if (reviewId) {
-        for (const finding of parsedFindings) {
-          triageFinding(
-            reviewId, finding.ordinal, finding.disposition, finding.category, finding.severity,
-          )
+        if (delivery === 'none') {
+          db().query('UPDATE review SET completed_at=? WHERE id=?').run(scoredAt, reviewId)
+        } else {
+          for (const finding of parsedFindings) {
+            triageFinding(
+              reviewId, finding.ordinal, finding.disposition, finding.category, finding.severity,
+            )
+          }
+          completeReview(reviewId)
         }
-        completeReview(reviewId)
       }
       if (comparison === 'better-than') recordDuels(id, comparisonIds, sessionId(), scoredAt, has('force'))
       if (comparison === 'worse-than') recordLosses(id, comparisonIds, sessionId(), scoredAt, has('force'))

@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { DASHBOARD_CAPABILITY_PATH_ENV, DASHBOARD_CAPABILITY_TOKEN_ENV } from '../../shared/dashboard-capability.ts'
-import { MIN_SAMPLE, recordDuels, runJson, addRun, db, declaredCreate, dir, fakeDocker, hermeticGitEnv, recordReview, reviewReply, score, upsertProject } from '../test/fixture.ts'
+import { MIN_SAMPLE, recordDuels, runJson, addRun, db, declaredCreate, dir, fakeDocker, hermeticGitEnv, recordReview, reviewCalibration, reviewReply, score, upsertProject } from '../test/fixture.ts'
 
 import { runCollectionDescribeFixture } from '../test/fixture.ts'
 
@@ -1287,6 +1287,34 @@ test('record-only closes the question, marks the chain stranded, and retry resta
     expect(judged.code).toBe(0)
     expect(db().query('SELECT delivery, quality, fidelity, note FROM score WHERE run_id=?').get(subject))
       .toEqual({ delivery: 'full', quality: 'right', fidelity: 'faithful', note: 'matched spec' })
+  })
+
+  test('judge none closes review debt without entering reviewer calibration', () => {
+    const subject = addRun({
+      agent: 'grok', job: 'review-lens', session: 'none-review-session',
+      lens: 'none-delivery', model: 'none-model',
+    })
+    const reviewId = recordReview(subject, reviewReply(2, 'high'))
+    const before = reviewCalibration('none-delivery', 'grok', 'none-model')
+    expect(orchInput(['pending'], undefined, { CLAUDE_CODE_SESSION_ID: 'none-review-session' }).out)
+      .toContain(String(subject))
+    expect(scoreReminder('none-review-session').stdout.toString()).toContain(`orch judge ${subject}`)
+
+    const judged = orchInput(['judge', String(subject), 'none'], undefined, {
+      CLAUDE_CODE_SESSION_ID: 'none-review-session',
+    })
+
+    expect(judged.code).toBe(0)
+    expect(db().query('SELECT delivery, quality FROM score WHERE run_id=?').get(subject))
+      .toEqual({ delivery: 'none', quality: null })
+    expect(db().query('SELECT completed_at IS NOT NULL AS complete FROM review WHERE id=?').get(reviewId))
+      .toEqual({ complete: 1 })
+    expect(db().query('SELECT disposition FROM review_finding WHERE review_id=? ORDER BY ordinal').all(reviewId))
+      .toEqual([{ disposition: null }, { disposition: null }])
+    expect(orchInput(['pending'], undefined, { CLAUDE_CODE_SESSION_ID: 'none-review-session' }).out)
+      .not.toContain(String(subject))
+    expect(scoreReminder('none-review-session').stdout.toString()).not.toContain(`orch judge ${subject}`)
+    expect(reviewCalibration('none-delivery', 'grok', 'none-model')).toEqual(before)
   })
 
   test('judge lists every missing writer axis in one refusal', () => {
