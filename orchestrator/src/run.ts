@@ -1317,8 +1317,14 @@ export function changedRegisteredCheckouts(
   const changes: OutsideWorktreeWrite[] = []
   for (const current of after) {
     const original = prior.get(current.path)
-    const wrongHead = Boolean(current.expectedHead && current.head !== current.expectedHead)
-    if (!original || (!wrongHead && original.status === current.status && original.head === current.head)) continue
+    // Only a CHANGE between the two samples is an outside change. A checkout
+    // that sits on a branch other than its registered trunk before and after
+    // the run is a static fact about that project, not something this run did:
+    // on 2026-09-07 stopal's checkout on develop failed bottega runs that never
+    // touched it. The landing-side refusal (assertMainCheckoutOnTrunk) is where
+    // "the main checkout must be on trunk" belongs; here it is reported only
+    // when HEAD actually moved.
+    if (!original || (original.status === current.status && original.head === current.head)) continue
     const editor = liveCheckoutEditor(current.path)
     changes.push({
       project: current.project,

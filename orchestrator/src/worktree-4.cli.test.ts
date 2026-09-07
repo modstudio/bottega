@@ -253,13 +253,27 @@ describe('outside-worktree write observation', () => {
     }])
   })
 
-  test('the comparison reports a registered checkout whose HEAD is not trunk even when porcelain is unchanged', () => {
+  test('identical before and after samples never classify, whatever static property they carry', () => {
+    // A checkout parked on a branch other than its registered trunk is a fact
+    // about that project, not an outside change made during this run. Run 2600
+    // was failed on 2026-09-07 with before and after both reading
+    // "develop / clean" in a third project; the evidence of its innocence was
+    // printed inside its own failure message.
+    const parked = [
+      { project: 'one', path: '/one', status: '', head: 'develop', expectedHead: 'master' },
+      { project: 'two', path: '/two', status: ' M existing', head: 'topic', expectedHead: 'main' },
+      { project: 'three', path: '/three', status: '?? stray\0', head: null, expectedHead: 'main' },
+    ]
+    expect(changedRegisteredCheckouts(parked, parked.map((snapshot) => ({ ...snapshot })))).toEqual([])
+  })
+
+  test('a HEAD that moved between the samples classifies even when porcelain is clean both times', () => {
     expect(changedRegisteredCheckouts(
-      [{ project: 'one', path: '/one', status: '', head: 'topic', expectedHead: 'main' }],
+      [{ project: 'one', path: '/one', status: '', head: 'main', expectedHead: 'main' }],
       [{ project: 'one', path: '/one', status: '', head: 'topic', expectedHead: 'main' }],
     )).toEqual([{
       project: 'one', path: '/one', before: '', after: '',
-      beforeHead: 'topic', afterHead: 'topic', expectedHead: 'main',
+      beforeHead: 'main', afterHead: 'topic', expectedHead: 'main',
     }])
   })
 

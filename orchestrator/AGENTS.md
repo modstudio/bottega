@@ -820,8 +820,14 @@ The invariants are:
   landing's final reconcile then acts on a checkout whose HEAD is not the branch
   it is reconciling to. Sample `git -C <checkout> symbolic-ref --short HEAD`
   against the register's trunk at the same two moments as the status sample, and
-  treat a mismatch the same way: the run fails and its landing is blocked, and
-  the writer is not identified. Found on 2026-09-07, when run 2437 was classified
+  treat a HEAD that MOVED between them the same way: the run fails and its
+  landing is blocked, and the writer is not identified. A HEAD that is not trunk
+  at both moments is a static fact about that project and classifies nothing;
+  DEV-348 first shipped it as a static assertion and stopal's checkout parked on
+  develop failed bottega runs that never touched it (run 2600, identical before
+  and after printed in its own failure). "The main checkout must be on trunk"
+  belongs to landing (`landing.ts:assertMainCheckoutOnTrunk`), where it refuses
+  before any rebase. Found on 2026-09-07, when run 2437 was classified
   `escaped` for a dirty `AGENTS.md` that an architect session then COMMITTED in
   the main checkout — which cleared the dirt, moved HEAD, and left the detector
   with nothing to report.
