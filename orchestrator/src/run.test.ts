@@ -756,9 +756,10 @@ setInterval(() => {}, 1_000)
 describe('vendor termination markers', () => {
   const grokStream = (...lines: string[]) => `${lines.join('\n')}\n`
 
-  async function withGrokBin<T>(output: string, fn: () => Promise<T>): Promise<T> {
-    const script = join(dir, `DEV-361-agent-${Bun.hash(output).toString(16)}.ts`)
-    writeFileSync(script, `#!/usr/bin/env bun\nprocess.stdout.write(${JSON.stringify(output)})\n`)
+  async function withGrokBin<T>(output: string, exitCode: number, fn: () => Promise<T>): Promise<T> {
+    const script = join(dir, `DEV-361-agent-${Bun.hash(`${output}:${exitCode}`).toString(16)}.ts`)
+    writeFileSync(script,
+      `#!/usr/bin/env bun\nprocess.stdout.write(${JSON.stringify(output)})\nprocess.exit(${exitCode})\n`)
     chmodSync(script, 0o755)
     const grok = AGENTS.grok!
     const previousBin = grok.bin
@@ -779,18 +780,28 @@ describe('vendor termination markers', () => {
       JSON.stringify({ type: 'system', subtype: 'init', session_id: 'a' }),
       JSON.stringify({ type: 'result', result: 'I inspected the files.' }),
       '[API Error: terminated]',
-    )],
+    ), 0],
+    ['NDJSON result plus trailing marker at exit 1', grokStream(
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'a1' }),
+      JSON.stringify({ type: 'result', result: 'I inspected the files.' }),
+      '[API Error: terminated]',
+    ), 1],
     ['NDJSON with trailing marker and no result', grokStream(
       JSON.stringify({ type: 'system', subtype: 'init', session_id: 'b' }),
       '[API Error: terminated]',
-    )],
-    ['output that is only the marker', '[API Error: terminated]\n'],
+    ), 0],
+    ['output that is only the marker', '[API Error: terminated]\n', 0],
+    ['output that is only the marker at exit 1', '[API Error: terminated]\n', 1],
+    ['marker with trailing spaces and tabs', '[API Error: terminated]  \t\n', 0],
+    ['marker with trailing spaces and tabs at exit 1', '[API Error: terminated]  \t\n', 1],
+    ['marker with CRLF', '[API Error: terminated]\r\n', 0],
+    ['marker with CRLF at exit 1', '[API Error: terminated]\r\n', 1],
     ['plain text followed by the marker', grokStream(
       'I will inspect the requested files first.',
       '[API Error: terminated]',
-    )],
-  ])('records failed/truncated for %s', async (_case, output) => {
-    await withGrokBin(output, async () => {
+    ), 0],
+  ])('records failed/truncated for %s', async (_case, output, exitCode) => {
+    await withGrokBin(output, exitCode, async () => {
       const reserved = addRun({ agent: '(pending)', job: 'file-question', status: 'running' })
       await expect(run({
         job: 'file-question', prompt: 'inspect this', cwd: dir,
@@ -801,7 +812,7 @@ describe('vendor termination markers', () => {
         'SELECT status, failure_kind, error, exit_code FROM run WHERE id=?',
       ).get(reserved)).toEqual({
         status: 'failed', failure_kind: 'truncated',
-        error: expect.stringContaining('[API Error: terminated]'), exit_code: 0,
+        error: expect.stringContaining('[API Error: terminated]'), exit_code: exitCode,
       })
       expect(candidates('file-question').find((candidate) => candidate.agent === 'grok'))
         .toMatchObject({ evidence: 0 })
@@ -809,22 +820,99 @@ describe('vendor termination markers', () => {
   })
 
   test.each([
-    ['ordinary output', 'The requested handler returns the stored result after validation.'],
-    ['API error mentioned in prose', 'The handler swallows [API Error: terminated] instead of returning it.'],
-    ['short clean output', 'Done.'],
-    ['marker quoted inside a JSON string', grokStream(
-      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'quoted' }),
-      JSON.stringify({
-        type: 'result',
-        result: 'The handler swallows [API Error: terminated] instead of returning it.',
-      }),
-    )],
-  ])('keeps exit-0 %s successful', async (_case, output) => {
-    await withGrokBin(output, async () => {
+    ['ordinary output', 'The requested handler returns the stored result after validation.', 0],
+    ['ordinary output at exit 1', 'The requested handler returns the stored result after validation.', 1],
+    ['API error mentioned in prose', 'The handler swallows [API Error: terminated] instead of returning it.', 0],
+    ['API error mentioned in prose at exit 1', 'The handler swallows [API Error: terminated] instead of returning it.', 1],
+    ['quoted trailing marker', 'The answer is complete.\n"[API Error: terminated]"\n', 0],
+    ['quoted trailing marker at exit 1', 'The answer is complete.\n"[API Error: terminated]"\n', 1],
+    ['marker inside a closed code fence', 'The answer is complete.\n```\n[API Error: terminated]\n```\n', 0],
+    ['marker inside a closed code fence at exit 1', 'The answer is complete.\n```\n[API Error: terminated]\n```\n', 1],
+  ])('does not classify %s as truncated', async (_case, output, exitCode) => {
+    await withGrokBin(output, exitCode, async () => {
+      let runId: number
+      try {
+        const result = await run({
+          job: 'file-question', prompt: 'answer this', cwd: dir,
+          agent: 'grok', noFailover: true,
+        })
+        runId = result.id
+      } catch (error) {
+        runId = (error as Error & { runId: number }).runId
+      }
+      expect(db().query(
+        'SELECT status, failure_kind, error, exit_code FROM run WHERE id=?',
+      ).get(runId)).toMatchObject(exitCode === 0
+        ? { status: 'ok', failure_kind: null, error: null, exit_code: 0 }
+        : { status: 'failed', failure_kind: 'other', exit_code: 1 })
+    })
+  })
+})
+
+describe('agy error envelopes', () => {
+  async function withAgentBins<T>(agyOutput: string, fn: () => Promise<T>): Promise<T> {
+    const agyScript = join(dir, `DEV-362-agy-${Bun.hash(agyOutput).toString(16)}.ts`)
+    const grokScript = join(dir, 'DEV-362-grok-success.ts')
+    writeFileSync(agyScript, `#!/usr/bin/env bun\nprocess.stdout.write(${JSON.stringify(agyOutput)})\n`)
+    const grokOutput = [
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'fallback' }),
+      JSON.stringify({ type: 'result', result: 'Fallback completed.' }),
+      '',
+    ].join('\n')
+    writeFileSync(grokScript,
+      `#!/usr/bin/env bun\nprocess.stdout.write(${JSON.stringify(grokOutput)})\n`)
+    chmodSync(agyScript, 0o755)
+    chmodSync(grokScript, 0o755)
+    const agy = AGENTS.agy!
+    const grok = AGENTS.grok!
+    const previousAgy = agy.bin
+    const previousGrok = grok.bin
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      agy.bin = agyScript
+      grok.bin = grokScript
+      return await fn()
+    } finally {
+      agy.bin = previousAgy
+      grok.bin = previousGrok
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  }
+
+  test('an exit-0 ERROR envelope is entitlement evidence excluded and fails over', async () => {
+    const envelope = JSON.stringify({
+      status: 'ERROR',
+      response: '',
+      error: 'You do not have a valid license of this product. Please contact your administrator to request a license. (#3501)',
+    })
+    await withAgentBins(envelope, async () => {
       const result = await run({
-        job: 'file-question', prompt: 'answer this', cwd: dir,
-        agent: 'grok', noFailover: true,
+        job: 'summarize', prompt: 'summarize this', cwd: dir,
+        agent: 'agy', avoid: ['codex', 'qwen-local'],
       })
+      expect(result).toMatchObject({ agent: 'grok', output: 'Fallback completed.' })
+      const failed = db().query(
+        `SELECT id, status, failure_kind, exit_code FROM run
+          WHERE agent='agy' ORDER BY id DESC LIMIT 1`,
+      ).get() as { id: number; status: string; failure_kind: string; exit_code: number }
+      expect(failed).toMatchObject({ status: 'failed', failure_kind: 'entitlement', exit_code: 0 })
+      expect(db().query('SELECT retry_of, automatic_failover FROM run WHERE id=?').get(result.id))
+        .toEqual({ retry_of: failed.id, automatic_failover: 1 })
+      expect(candidates('summarize').find((candidate) => candidate.agent === 'agy'))
+        .toMatchObject({ evidence: 0 })
+    })
+  })
+
+  test('an ok envelope with a non-empty response records ok', async () => {
+    const envelope = JSON.stringify({ status: 'OK', response: 'The concise answer.' })
+    await withAgentBins(envelope, async () => {
+      const result = await run({
+        job: 'summarize', prompt: 'summarize this', cwd: dir,
+        agent: 'agy', noFailover: true,
+      })
+      expect(result).toMatchObject({ agent: 'agy', output: 'The concise answer.' })
       expect(db().query(
         'SELECT status, failure_kind, error, exit_code FROM run WHERE id=?',
       ).get(result.id)).toEqual({
