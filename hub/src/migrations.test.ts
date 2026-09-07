@@ -264,4 +264,30 @@ describe('hub migration journal', () => {
     }
     d.close()
   })
+
+  test('adoption names a rebuilt foreign key that the hash already includes', () => {
+    const missing =
+      'foreign-key {"table":"task_comment","id":0,"sequence":0,"targetTable":"task","from":"task_key","to":"key","onUpdate":"no action","onDelete":"cascade","match":"none"}'
+    const unexpected =
+      'foreign-key {"table":"task_comment","id":0,"sequence":0,"targetTable":"task","from":"task_key","to":"key","onUpdate":"no action","onDelete":"set null","match":"none"}'
+    const d = fresh()
+    d.exec('DROP TABLE hub_migrations')
+    d.exec(`DROP TABLE task_comment;
+      CREATE TABLE task_comment (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_key TEXT NOT NULL REFERENCES task(key) ON DELETE SET NULL,
+        body TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE INDEX task_comment_task ON task_comment(task_key, created_at);`)
+    expect(() => applyMigrations(d)).toThrow('refusing to adopt migration baseline')
+    try {
+      applyMigrations(d)
+    } catch (error) {
+      const message = String(error)
+      expect(message).toContain(`missing foreign-keys: ${missing}`)
+      expect(message).toContain(`unexpected foreign-keys: ${unexpected}`)
+    }
+    d.close()
+  })
 })

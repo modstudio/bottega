@@ -289,6 +289,57 @@ describe('Drizzle migration journal', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
+  test('adoption names a rebuilt CHECK that the hash already includes', () => {
+    const d = fresh()
+    d.exec('DROP TABLE orch_migrations')
+    d.exec(`DROP TABLE session_seen;
+      CREATE TABLE session_seen (
+        session_id TEXT PRIMARY KEY,
+        last_seen TEXT NOT NULL,
+        CHECK (length(session_id) > 0)
+      )`)
+    expect(() => applyMigrations(d)).toThrow('refusing to adopt migration baseline')
+    try {
+      applyMigrations(d)
+    } catch (error) {
+      const message = String(error)
+      expect(message).toContain('unexpected checks: check session_seen length(session_id)>0')
+      expect(message).toContain('missing checks: none')
+    }
+    d.close()
+  })
+
+  test('adoption names a rebuilt foreign key that the hash already includes', () => {
+    const missing =
+      'foreign-key {"table":"blocker","id":0,"sequence":0,"targetTable":"run","from":"run_id","to":"id","onUpdate":"no action","onDelete":"cascade","match":"none"}'
+    const unexpected =
+      'foreign-key {"table":"blocker","id":0,"sequence":0,"targetTable":"run","from":"run_id","to":"id","onUpdate":"no action","onDelete":"set null","match":"none"}'
+    const d = fresh()
+    d.exec('DROP TABLE orch_migrations')
+    d.exec(`DROP TABLE blocker;
+      CREATE TABLE blocker (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id INTEGER NOT NULL REFERENCES run(id) ON DELETE SET NULL,
+        at TEXT NOT NULL,
+        what TEXT NOT NULL,
+        why TEXT,
+        impact TEXT,
+        source TEXT NOT NULL CHECK (source IN ('declared','detected')),
+        kind TEXT
+      );
+      CREATE INDEX blocker_kind ON blocker(kind, at);
+      CREATE INDEX blocker_run ON blocker(run_id);`)
+    expect(() => applyMigrations(d)).toThrow('refusing to adopt migration baseline')
+    try {
+      applyMigrations(d)
+    } catch (error) {
+      const message = String(error)
+      expect(message).toContain(`missing foreign-keys: ${missing}`)
+      expect(message).toContain(`unexpected foreign-keys: ${unexpected}`)
+    }
+    d.close()
+  })
+
   test('a failed migration rolls back its DDL and journal record', () => {
     const dir = mkdtempSync(join(tmpdir(), 'orch-migration-rollback-'))
     mkdirSync(join(dir, 'meta'))
