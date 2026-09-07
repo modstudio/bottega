@@ -82,3 +82,70 @@ Notes from this run:
 - `(process)` is suite preload/fixture setup attributed before any test file is on the stack (1 bootstrap + fixture git).
 - `cli` counts argv containing `cli.ts`; `git` counts argv0 basename `git`; everything else is `other`.
 - landing-1: 920 Bun process calls (39 spawn + 881 spawnSync). lifecycle-harness: 958 (62 spawn + 896 spawnSync). Matches the spec lead of ~924 and ~959.
+
+## 2. Ordering-dependency search
+
+Every command in this section checked and propagated its own exit status. No
+failure reproduced, so there is no failure text or test change to list yet.
+
+### Every CLI file alone
+
+Wall for the whole search was 82 s with at most four independent Bun processes.
+
+| file | elapsed s | exit |
+|---|---:|---:|
+| src/agents-sandbox-1.cli.test.ts | 12 | 0 |
+| src/agents-sandbox-2.cli.test.ts | 7 | 0 |
+| src/agents.cli.test.ts | 17 | 0 |
+| src/canon.cli.test.ts | 7 | 0 |
+| src/catalog.cli.test.ts | 0 | 0 |
+| src/cli-answer.cli.test.ts | 18 | 0 |
+| src/cli-do-1.cli.test.ts | 17 | 0 |
+| src/cli-projects.cli.test.ts | 12 | 0 |
+| src/cli-runs.cli.test.ts | 18 | 0 |
+| src/docs.cli.test.ts | 7 | 0 |
+| src/evals.cli.test.ts | 1 | 0 |
+| src/git-environment-regression.cli.test.ts | 5 | 0 |
+| src/issue.cli.test.ts | 1 | 0 |
+| src/landing-1.cli.test.ts | 62 | 0 |
+| src/landing-2.cli.test.ts | 13 | 0 |
+| src/lifecycle-harness.cli.test.ts | 24 | 0 |
+| src/linked-worktree-database.cli.test.ts | 2 | 0 |
+| src/monitor.cli.test.ts | 20 | 0 |
+| src/projects.cli.test.ts | 2 | 0 |
+| src/review-1.cli.test.ts | 3 | 0 |
+| src/review-2.cli.test.ts | 14 | 0 |
+| src/review-3.cli.test.ts | 7 | 0 |
+| src/route.cli.test.ts | 1 | 0 |
+| src/run-1.cli.test.ts | 9 | 0 |
+| src/run-2.cli.test.ts | 10 | 0 |
+| src/workflows.cli.test.ts | 1 | 0 |
+| src/worktree-1.cli.test.ts | 11 | 0 |
+| src/worktree-2.cli.test.ts | 16 | 0 |
+| src/worktree-3.cli.test.ts | 14 | 0 |
+| src/worktree-4.cli.test.ts | 3 | 0 |
+| src/worktree-5.cli.test.ts | 10 | 0 |
+
+The route/scoring unit files also passed alone: `src/route.test.ts` (1 s),
+`src/review.test.ts` (<1 s), and `src/review-tier.test.ts` (<1 s).
+
+### Four measured-time shards alone
+
+The shard processes ran concurrently; wall was 97 s. File membership is shown
+in the shard table below in its eventual gate order.
+
+| shard | measured file total s | observed elapsed s | tests | exit |
+|---:|---:|---:|---:|---:|
+| 1 | 76.57 | 96 | 163 | 0 |
+| 2 | 76.24 | 97 | 191 | 0 |
+| 3 | 76.54 | 77 | 182 | 0 |
+| 4 | 76.07 | 91 | 297 | 0 |
+
+### Repeated and randomized routing search
+
+Because neither the files nor the four shards failed, the two routing files
+were repeated under enforced exit checking: `src/route.test.ts` passed 100/100
+runs (85 s wall) and `src/route.cli.test.ts` passed 100/100 runs (151 s wall).
+The route/scoring set (`route.test.ts`, `route.cli.test.ts`, `review.test.ts`,
+and `review-tier.test.ts`) then passed 100/100 runs with Bun test randomization
+and explicit seeds 1 through 100 (220 s wall). No test was changed.
