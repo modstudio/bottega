@@ -151,6 +151,31 @@ export const OrchBlockersSchema = z.object({
   }).passthrough()),
 }).passthrough()
 
+export const HarnessHealthSchema = z.object({
+  header: z.string(),
+  days: z.number().int().positive(),
+  from: z.iso.datetime(),
+  classes: z.array(z.object({
+    kind: z.string(),
+    count: z.number().int().nonnegative(),
+    totalTimeMs: z.number().nonnegative(),
+    meanTimeMs: z.number().nonnegative(),
+    firstSeen: nullableString,
+    lastSeen: nullableString,
+    clusters: z.array(z.object({
+      text: z.string(), count: z.number().int().positive(), exampleRunId: z.number().int(),
+    })),
+    sparkline: z.array(z.object({
+      day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), count: z.number().int().nonnegative(),
+    })),
+  })),
+  falseVerdicts: z.array(z.object({
+    kind: z.string(), verdicts: z.number().int().nonnegative(),
+    falseVerdicts: z.number().int().nonnegative(), rate: z.number().min(0).max(1),
+  })),
+  landingRefusals: z.number().int().nonnegative(),
+})
+
 export const OrchRunDetailSchema = z.object({
   id: z.number().int(),
   agent: z.string(),
@@ -182,4 +207,5 @@ export type OrchRunLineData = z.infer<typeof OrchRunLineDataSchema>
 export type OrchRunEnvelope = z.infer<typeof OrchRunEnvelopeSchema>
 export type OrchState = z.infer<typeof OrchStateSchema>
 export type OrchBlockers = z.infer<typeof OrchBlockersSchema>
+export type HarnessHealth = z.infer<typeof HarnessHealthSchema>
 export type OrchRunDetail = z.infer<typeof OrchRunDetailSchema>

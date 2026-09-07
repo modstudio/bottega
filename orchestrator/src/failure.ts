@@ -39,6 +39,23 @@ export const FAILURE_KINDS = [
 ] as const
 export type FailureKind = typeof FAILURE_KINDS[number]
 
+/** Remove volatile values while retaining the wording that identifies one failure shape. */
+export function clusterErrorText(value: string | null | undefined): string {
+  if (!value?.trim()) return ''
+  return value
+    .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, '')
+    .replace(/(?:file:\/\/)?(?:~\/|\/?(?:Users|private|tmp|var|opt|home)\/)[^\s'"`,;)]+/gi, '<path>')
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '<id>')
+    .replace(/\b(?:req(?:uest)?[-_]id[-_:=]?|req_)[a-z0-9_-]{6,}\b/gi, '<id>')
+    .replace(/\b(task|branch)\s+(?=[a-z0-9._\/-]*[a-z])(?:[a-z][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*\d[a-z0-9._-]*\b/gi, '$1 <id>')
+    .replace(/\b(?=[0-9a-f]{7,64}\b)(?=[0-9a-f]*[a-f])[0-9a-f]+\b/gi, '<id>')
+    .replace(/\b(run|session|request|call|pid|id)[- _:#=]+(?=[a-z0-9_-]*[a-z])[a-z0-9_-]*\d[a-z0-9_-]*\b/gi, '$1 <id>')
+    .replace(/\d+(?:\.\d+)?/g, '<n>')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+}
+
 const PATTERNS: [FailureKind, RegExp][] = [
   /**
    * Exit codes observed in run.exit_code, grouped by failure_kind and agent on

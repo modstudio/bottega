@@ -11,10 +11,10 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { DocScope } from '../../shared/docs.ts'
 import {
-  OrchBlockersSchema, OrchProjectListSchema, OrchProjectSchema, OrchRunDetailSchema,
+  HarnessHealthSchema, OrchBlockersSchema, OrchProjectListSchema, OrchProjectSchema, OrchRunDetailSchema,
   OrchRunEnvelopeSchema, OrchRunSchema, OrchStateSchema, OrchUnknownRunSchema,
   type OrchBlockers, type OrchProject, type OrchRun, type OrchRunDetail,
-  type OrchRunLineData,
+  type HarnessHealth, type OrchRunLineData,
 } from '../../shared/orch-contract.ts'
 export type { OrchProject, OrchRun, OrchRunDetail, OrchState } from '../../shared/orch-contract.ts'
 import {
@@ -217,21 +217,8 @@ export type OrchAgent = {
 export const state = (days: number | null) =>
   json(['state', ...(days ? ['--days', String(days)] : [])], OrchStateSchema)
 
-export type OrchHealth = {
-  header: string
-  days: number
-  from: string
-  classes: {
-    kind: string; count: number; totalTimeMs: number; meanTimeMs: number
-    firstSeen: string | null; lastSeen: string | null
-    clusters: { text: string; count: number; exampleRunId: number }[]
-    sparkline: { day: string; count: number }[]
-  }[]
-  falseVerdicts: { kind: string; verdicts: number; falseVerdicts: number; rate: number }[]
-  landingRefusals: number
-}
-
-export const health = (days: number) => jsonDocument<OrchHealth>(['health', '--days', String(days), '--json'])
+export const health = (days: number): Promise<HarnessHealth> =>
+  json(['health', '--days', String(days), '--json'], HarnessHealthSchema)
 
 export type OrchJob = {
   name: string

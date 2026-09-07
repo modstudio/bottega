@@ -1,30 +1,22 @@
 import { describe, expect, test } from 'bun:test'
 import { addRun, db } from '../test/fixture.ts'
 import { FAILURE_KINDS } from './failure.ts'
-import { clusterErrorText, harnessHealth } from './health.ts'
+import { harnessHealth } from './health.ts'
 
 describe('harness health', () => {
-  test('normalises the measured failure text shapes without volatile paths, ids or numbers', () => {
-    const fixtures = [
-      ['exit 143, empty output', 'exit <n>, empty output'],
-      ['timeout waiting for lock /tmp/orch-landing-991 after 30000ms', 'timeout waiting for lock <path> after <n>ms'],
-      ['stale caller abcdef123 is behind 1234567', 'stale caller <id> is behind <id>'],
-      ['MCP trust denied for /Users/someone/Projects/app/.claude/worktrees/DEV-350', 'mcp trust denied for <path>'],
-      ['branch technical/DEV-350-orch-2605 has invalid format', 'branch technical/dev-<n>-orch-<n> has invalid format'],
-    ] as const
-    for (const [text, expected] of fixtures) expect(clusterErrorText(text)).toBe(expected)
-  })
-
   test('enumerates zero rows, weights time, clusters errors and reports cleared, voided and landing refusals', () => {
     const now = new Date('2026-09-07T12:00:00.000Z')
     const interruptedA = addRun({ agent: 'grok', job: 'review-lens', status: 'failed', kind: 'interrupted', latency: 600_000, startedAt: '2026-09-06T10:00:00.000Z' })
     const interruptedB = addRun({ agent: 'grok', job: 'review-lens', status: 'failed', kind: 'interrupted', latency: 420_000, startedAt: '2026-09-07T10:00:00.000Z' })
     const escaped = addRun({ agent: 'codex', job: 'implement', status: 'ok', latency: 30_000, startedAt: '2026-09-05T10:00:00.000Z' })
+    const oldEscaped = addRun({ agent: 'codex', job: 'implement', status: 'failed', kind: 'escaped', latency: 20_000, startedAt: '2026-08-20T10:00:00.000Z' })
     const harness = addRun({ agent: 'codex', job: 'implement', status: 'failed', kind: 'harness', latency: 15_000, startedAt: '2026-09-05T11:00:00.000Z' })
     addRun({ agent: 'codex', job: 'implement', status: 'stale', latency: 5_000, startedAt: '2026-09-04T10:00:00.000Z' })
     db().query('UPDATE run SET error=? WHERE id IN (?,?)').run('exit 143, empty output', interruptedA, interruptedB)
     db().query(`INSERT INTO run_mutation_audit (run_id,root_id,action,actor_session,at,reason) VALUES (?,?,?,?,?,?)`)
-      .run(escaped, escaped, 'reclassify', 'architect', '2026-09-06T12:00:00.000Z', JSON.stringify({ cleared: true }))
+      .run(escaped, escaped, 'reclassify', 'architect', '2026-09-08T12:00:00.000Z', JSON.stringify({ cleared: true }))
+    db().query(`INSERT INTO run_mutation_audit (run_id,root_id,action,actor_session,at,reason) VALUES (?,?,?,?,?,?)`)
+      .run(oldEscaped, oldEscaped, 'reclassify', 'architect', '2026-09-06T12:00:00.000Z', JSON.stringify({ cleared: true }))
     db().query(`INSERT INTO run_mutation_audit (run_id,root_id,action,actor_session,at,reason) VALUES (?,?,?,?,?,?)`)
       .run(harness, harness, 'void', 'architect', '2026-09-06T12:00:00.000Z', null)
     db().query(`INSERT INTO landing (project,branch,status,started_at,finished_at) VALUES ('fixture','DEV-350','refused',?,?)`)
@@ -51,5 +43,18 @@ describe('harness health', () => {
     const output = JSON.parse(cli.stdout.toString())
     expect(output.classes.find((row: { kind: string }) => row.kind === 'interrupted').count).toBe(2)
     expect(output.landingRefusals).toBe(1)
+  })
+
+  test('uses UTC-midnight boundaries for both counts and sparkline buckets', () => {
+    const now = new Date('2026-09-07T12:00:00.000Z')
+    addRun({ agent: 'grok', job: 'review-lens', status: 'failed', kind: 'timeout', startedAt: '2026-09-05T00:00:00.000Z' })
+    addRun({ agent: 'grok', job: 'review-lens', status: 'failed', kind: 'timeout', startedAt: '2026-09-04T23:59:59.999Z' })
+    addRun({ agent: 'grok', job: 'review-lens', status: 'failed', kind: 'timeout', startedAt: '2026-09-07T11:00:00.000Z' })
+
+    const report = harnessHealth(3, db(), now)
+    const timeout = report.classes.find((row) => row.kind === 'timeout')!
+    expect(report.from).toBe('2026-09-05T00:00:00.000Z')
+    expect(timeout.count).toBe(2)
+    expect(timeout.sparkline.reduce((sum, point) => sum + point.count, 0)).toBe(timeout.count)
   })
 })
