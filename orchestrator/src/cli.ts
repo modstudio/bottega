@@ -2681,7 +2681,10 @@ switch (cmd) {
       throw new Error('--porcelain cannot be combined with --follow')
     }
     const requested = job(jobName)
-    const transport = resolveTransportName(flag('transport'))
+    const selectedRow = flag('agent') ? AGENTS[flag('agent')!] : undefined
+    const transport = flag('transport') === undefined && !process.env.ORCH_TRANSPORT && selectedRow
+      ? selectedRow.defaultTransport
+      : resolveTransportName(flag('transport'))
     if (transport === 'acp') {
       assertAcpAllowed(jobName, flag('agent'))
       assertAcpReady(flag('agent') ?? 'codex')

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { db, dir, run } from '../test/fixture.ts'
+import { addAgent, recordAgentProbe, removeAgent } from './agents.ts'
 import { chainTransport } from './run.ts'
 import { ask } from './ask.ts'
 import {
@@ -88,6 +89,35 @@ describe('ACP transport through run', () => {
       expect(db().query('SELECT status, transport, failure_kind FROM run WHERE id=?').get(result.id))
         .toEqual({ status: 'ok', transport: 'acp', failure_kind: null })
     } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
+  test('a registered agent adopts its ACP default without --transport', async () => {
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    addAgent('local-acp', {
+      harness: 'goose', backend: 'vllm', model: 'served/model', billing: 'subscription',
+    })
+    recordAgentProbe('local-acp', {
+      harness: 'goose', ok: true,
+      reply: { ok: true, output: 'ok' },
+      tool: { ok: true, output: 'REGISTRATION_PROBE_FILE_OK', toolEvents: 1, statuses: ['completed'] },
+      schema: { ok: true, output: '{"status":"ok"}' },
+      contextTokens: 131072, contextSource: 'declared',
+    })
+    try {
+      installFake(() => fakeResult({ output: 'ok', status: 'ok' }))
+      const result = await run({
+        job: 'file-question', prompt: 'read the file', cwd: dir,
+        agent: 'local-acp', noFailover: true,
+      })
+      expect(db().query('SELECT agent,transport FROM run WHERE id=?').get(result.id))
+        .toEqual({ agent: 'local-acp', transport: 'acp' })
+    } finally {
+      db().query("DELETE FROM run WHERE agent='local-acp'").run()
+      removeAgent('local-acp')
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
     }

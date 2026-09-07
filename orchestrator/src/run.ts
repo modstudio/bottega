@@ -1730,16 +1730,7 @@ export async function run(opts: {
   const writesJob = Boolean(requestedJob.needs.writesRepo)
   const repoJob = Boolean(requestedJob.needs.readsRepo)
   const forbidsRepo = requestedJob.needs.readsRepo === false
-  const transportName = resolveRunTransport(opts)
-  if (transportName === 'acp') {
-    try {
-      assertAcpAllowed(opts.job, opts.agent)
-      if (!isTestTransportInstalled()) assertAcpReady(opts.agent ?? 'codex')
-    } catch (e) {
-      if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
-      throw e
-    }
-  }
+  const requestedTransport = resolveRunTransport(opts)
   const callerCwd = opts.cwd ?? process.cwd()
   const seed = preflight(
     opts.job, callerCwd, opts.seed, opts.key, opts.base,
@@ -1910,7 +1901,7 @@ export async function run(opts: {
     // The STACK steers the route: an agent strong on PHP and weak on a Vue
     // component is two different agents to a router, and only this tells them
     // apart. Backs off to job-wide evidence until a stack cell has earned it.
-    : pick(opts.job, selectAgentForTransport(transportName, opts.agent),
+    : pick(opts.job, selectAgentForTransport(requestedTransport, opts.agent),
            Buffer.byteLength(prompt) + (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0) +
              (requiresCanonSource ? CANON_SOURCE_PROMPT_RESERVE_BYTES : 0),
            true, stackAt(callerCwd),
@@ -1935,6 +1926,18 @@ export async function run(opts: {
     const boundLine = `\n\n${jobBoundInstruction(requestedJob, boundMs)}`
     const split = prompt.lastIndexOf('\n---\n')
     prompt = split >= 0 ? prompt.slice(0, split) + boundLine + prompt.slice(split) : prompt + boundLine
+  }
+  const transportName = opts.resume || opts.transport !== undefined || process.env.ORCH_TRANSPORT
+    ? requestedTransport
+    : a.defaultTransport
+  if (transportName === 'acp') {
+    try {
+      assertAcpAllowed(opts.job, name)
+      if (!isTestTransportInstalled()) assertAcpReady(name)
+    } catch (e) {
+      if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
+      throw e
+    }
   }
   if (name === 'codex') {
     const versionRefusal = minimumCliVersionRefusal(a)
