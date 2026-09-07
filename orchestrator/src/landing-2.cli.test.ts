@@ -152,7 +152,13 @@ test('an explicit non-empty override lands and records the measured tree and rea
       expect(await unowned.exited).toBe(0)
       expect(g(repo, 'rev-parse', 'main')).toBe(g(repo, 'rev-parse', 'unowned'))
     } finally { rmSync(repo, { recursive: true, force: true }) }
-  })
+  // Five child landings in one test. DEV-348 added preflight work to each
+  // landing (sequencer-state check, trunk symbolic-ref sample, tier and
+  // dependency delta), so the five together crossed bun's 5 s default under
+  // any parallel load: four full gates timed out here on 2026-09-07 and the
+  // DEV-347 shard rebalance did not cure it. The bound is sized to the work,
+  // not widened to hide a load failure; each child still exits on its own.
+  }, 60_000)
 
   test('status reports a stale ref lock with age, recoverable contents, resolved ref, and no live owner', () => {
     const { repo } = repoWithBranches(['lock-source'])
