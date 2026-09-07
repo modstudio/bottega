@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
-import { existsSync, mkdirSync, realpathSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
@@ -279,6 +280,32 @@ export function migrateDatabase(): { path: string; versions: string[] } {
   } finally {
     d.close()
   }
+}
+
+/** One-time maintenance pass for roots whose original caller prompt remains on disk. */
+export function backfillSpecSha(): { updated: number; missing: number } {
+  if (DATABASE_RESOLUTION.linkedWorktreeBinary) throw new Error(LINKED_WORKTREE_SCHEMA_REFUSAL)
+  const database = writableDb()
+  const roots = database.query(
+    `SELECT id, prompt_path FROM run
+      WHERE parent_run_id IS NULL AND spec_sha IS NULL AND prompt_path IS NOT NULL`,
+  ).all() as { id: number; prompt_path: string }[]
+  let updated = 0
+  let missing = 0
+  writeTransaction(() => {
+    for (const root of roots) {
+      if (!existsSync(root.prompt_path)) {
+        missing++
+        continue
+      }
+      const prompt = readFileSync(root.prompt_path)
+      const specSha = createHash('sha256').update(prompt).digest('hex').slice(0, 16)
+      updated += database.query(
+        'UPDATE run SET spec_sha=? WHERE id=? AND spec_sha IS NULL',
+      ).run(specSha, root.id).changes
+    }
+  }, database)
+  return { updated, missing }
 }
 
 function runMutationAuthority(database: Database, runId: number): RootAuthority {
@@ -1132,12 +1159,12 @@ export type UnrecordedPair = {
 const PAIR_REASON_SQL = `CASE
   WHEN subject.lens IS NOT NULL AND subject.input_tree IS NOT NULL
        AND partner.input_tree IS NOT NULL
-    THEN 'same prompt and lens; same input tree'
+    THEN 'same task prompt and lens; same input tree'
   WHEN subject.lens IS NOT NULL
-    THEN 'same prompt and lens; at least one input tree unrecorded'
+    THEN 'same task prompt and lens; at least one input tree unrecorded'
   WHEN subject.input_tree IS NOT NULL AND partner.input_tree IS NOT NULL
-    THEN 'same prompt; same input tree'
-  ELSE 'same prompt; at least one input tree unrecorded'
+    THEN 'same task prompt; same input tree'
+  ELSE 'same task prompt; at least one input tree unrecorded'
 END`
 
 /** Scored sibling roots for the same task in this session, not yet compared. */
@@ -1152,7 +1179,8 @@ export function pairPartners(runId: number, sid: string | null): PairPartner[] {
         AND partner.session_id = ?
         AND COALESCE(partner.probe, 0) = 0
         AND partner.evidence_excluded IS NULL
-        AND partner.prompt_sha = subject.prompt_sha
+        AND subject.spec_sha IS NOT NULL
+        AND partner.spec_sha = subject.spec_sha
         AND (subject.lens IS partner.lens)
         AND (subject.input_tree IS NULL OR partner.input_tree IS NULL
              OR partner.input_tree = subject.input_tree)
@@ -1183,7 +1211,8 @@ export function unrecordedPairsForSession(sid: string | null): UnrecordedPair[] 
         AND older.session_id = newer.session_id
         AND COALESCE(older.probe, 0) = 0
         AND older.evidence_excluded IS NULL
-        AND older.prompt_sha = newer.prompt_sha
+        AND newer.spec_sha IS NOT NULL
+        AND older.spec_sha = newer.spec_sha
         AND (newer.lens IS older.lens)
         AND (newer.input_tree IS NULL OR older.input_tree IS NULL
              OR older.input_tree = newer.input_tree)

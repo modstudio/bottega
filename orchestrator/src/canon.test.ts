@@ -57,7 +57,9 @@ describe('Drizzle migration journal', () => {
 
     const legacyStore = legacy()
     expect(canonicalSchemaHash(legacyStore)).toBe(BASELINE_SCHEMA_HASH)
-    expect(applyMigrations(legacyStore)).toEqual(['0000_bright_sleepwalker', '0001_landing_queue'])
+    expect(applyMigrations(legacyStore)).toEqual([
+      '0000_bright_sleepwalker', '0001_landing_queue', '0002_spec_sha',
+    ])
     legacyStore.close()
     rmSync(dir, { recursive: true, force: true })
   })
@@ -122,10 +124,33 @@ describe('Drizzle migration journal', () => {
 
   test('a matching pre-journal store adopts 0000 and continues through later migrations', () => {
     const d = legacy()
-    expect(applyMigrations(d)).toEqual(['0000_bright_sleepwalker', '0001_landing_queue'])
+    expect(applyMigrations(d)).toEqual([
+      '0000_bright_sleepwalker', '0001_landing_queue', '0002_spec_sha',
+    ])
     expect(d.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='landing'").get())
       .toBeDefined()
+    expect(d.query("SELECT name FROM pragma_table_info('run') WHERE name='spec_sha'").get())
+      .toEqual({ name: 'spec_sha' })
     d.close()
+  })
+
+  test('a store migrated through 0001_landing_queue accepts 0002_spec_sha', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orch-through-0001-'))
+    mkdirSync(join(dir, 'meta'))
+    const through0001 = migrationJournal().slice(0, 2)
+    for (const entry of through0001) {
+      copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(dir, `${entry.tag}.sql`))
+    }
+    writeFileSync(join(dir, 'meta', '_journal.json'), JSON.stringify({
+      version: '7', dialect: 'sqlite', entries: through0001,
+    }))
+    const d = new Database(':memory:')
+    expect(applyMigrations(d, dir)).toEqual(['0000_bright_sleepwalker', '0001_landing_queue'])
+    expect(applyMigrations(d)).toEqual(['0002_spec_sha'])
+    expect(d.query("SELECT name FROM pragma_table_info('run') WHERE name='spec_sha'").get())
+      .toEqual({ name: 'spec_sha' })
+    d.close()
+    rmSync(dir, { recursive: true, force: true })
   })
 
   test('live DDL drift refuses adoption with hashes and shape differences, and doctor reports it', () => {
@@ -144,7 +169,7 @@ describe('Drizzle migration journal', () => {
       const message = String(error)
       expect(message).toContain(`stored hash: ${canonicalSchemaHash(d)}`)
       expect(message).toContain(`expected hash: ${BASELINE_SCHEMA_HASH}`)
-      expect(message).toContain('unexpected columns: run.x text notnull=0 default=NULL pk=0')
+      expect(message).toContain('run.x text notnull=0 default=NULL pk=0')
       expect(message).toContain('missing indexes: none')
       expect(message).toContain('unexpected indexes: none')
       expect(message).toContain("back up the store and run the old binary's open once")

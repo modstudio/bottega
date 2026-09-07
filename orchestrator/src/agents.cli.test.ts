@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { createHash } from 'node:crypto'
 import { runJson, AGENTS, NOT_EVIDENCE, READONLY_PREAMBLE, SHARED_OUTPUT_REASON, addRun, candidates, db, declaredCreate, dir, excludeSharedOutputRuns, hermeticGitEnv, pendingForSession, removeProject, retryModelForAgent, reviewReply, run, runDetail, runJob, score, upsertProject, weigh, writingFailoverRefusal } from '../test/fixture.ts'
 
 describe('retry keeps the work on the same agent', () => {
@@ -67,12 +68,15 @@ describe('retry keeps the work on the same agent', () => {
       const result = await runJob({
         job: 'file-question', prompt: original, cwd: dir, agent: 'codex',
       })
-      const row = db().query('SELECT prompt_path FROM run WHERE id=?').get(result.id) as
-        { prompt_path: string }
+      const row = db().query('SELECT prompt_path, prompt_sha, spec_sha FROM run WHERE id=?').get(result.id) as
+        { prompt_path: string; prompt_sha: string; spec_sha: string }
       expect(readFileSync(row.prompt_path, 'utf8')).toBe(original)
       const bound = readFileSync(boundBeside(row.prompt_path), 'utf8')
       expect(occurrences(bound, READONLY_PREAMBLE)).toBe(1)
       expect(bound.endsWith(original)).toBe(true)
+      expect(row.spec_sha).toBe(createHash('sha256').update(original).digest('hex').slice(0, 16))
+      expect(row.prompt_sha).toBe(createHash('sha256').update(bound).digest('hex').slice(0, 16))
+      expect(row.prompt_sha).not.toBe(row.spec_sha)
       expect(runDetail(result.id)?.prompt).toBe(original)
     } finally {
       agent.bin = origBin

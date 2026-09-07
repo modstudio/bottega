@@ -97,12 +97,12 @@ def main() -> int:
                           CASE
                             WHEN newer.lens IS NOT NULL AND newer.input_tree IS NOT NULL
                                  AND older.input_tree IS NOT NULL
-                              THEN 'same prompt and lens; same input tree'
+                              THEN 'same task prompt and lens; same input tree'
                             WHEN newer.lens IS NOT NULL
-                              THEN 'same prompt and lens; at least one input tree unrecorded'
+                              THEN 'same task prompt and lens; at least one input tree unrecorded'
                             WHEN newer.input_tree IS NOT NULL AND older.input_tree IS NOT NULL
-                              THEN 'same prompt; same input tree'
-                            ELSE 'same prompt; at least one input tree unrecorded'
+                              THEN 'same task prompt; same input tree'
+                            ELSE 'same task prompt; at least one input tree unrecorded'
                           END,
                           newer.job, newer_score.delivery, newer_score.quality, newer_score.fidelity
                      FROM run newer
@@ -113,7 +113,8 @@ def main() -> int:
                       AND older.session_id = newer.session_id
                       AND COALESCE(older.probe, 0) = 0
                       AND older.evidence_excluded IS NULL
-                      AND older.prompt_sha = newer.prompt_sha
+                      AND newer.spec_sha IS NOT NULL
+                      AND older.spec_sha = newer.spec_sha
                       AND newer.lens IS older.lens
                       AND (newer.input_tree IS NULL OR older.input_tree IS NULL
                            OR older.input_tree = newer.input_tree)

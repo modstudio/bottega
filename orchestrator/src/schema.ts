@@ -15,7 +15,8 @@ const id = () => integer('id').primaryKey({ autoIncrement: true })
 
 export const run = sqliteTable('run', {
   id: id(), startedAt: text('started_at').notNull(), agent: text().notNull(), job: text().notNull(),
-  repo: text(), cwd: text(), promptSha: text('prompt_sha').notNull(), promptBytes: integer('prompt_bytes').notNull(),
+  repo: text(), cwd: text(), promptSha: text('prompt_sha').notNull(), specSha: text('spec_sha'),
+  promptBytes: integer('prompt_bytes').notNull(),
   promptHead: text('prompt_head').notNull(), label: text(), lens: text(), latencyMs: integer('latency_ms'),
   exitCode: integer('exit_code'), outputBytes: integer('output_bytes'), outputPath: text('output_path'),
   promptPath: text('prompt_path'), vendorTokens: integer('vendor_tokens'), vendorCostUsd: real('vendor_cost_usd'),

@@ -15,6 +15,13 @@
       "when": 1788800400000,
       "tag": "0001_landing_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788804000000,
+      "tag": "0002_spec_sha",
+      "breakpoints": true
     }
   ]
 }

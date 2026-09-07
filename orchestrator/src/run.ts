@@ -1711,10 +1711,10 @@ export async function run(opts: {
         `UPDATE run SET status='failed', failure_kind='harness', error=? WHERE id=?`,
       ).run(message, failedId)
       else failedId = (db().query(
-        `INSERT INTO run (started_at,agent,job,repo,cwd,prompt_sha,prompt_bytes,prompt_head,
+        `INSERT INTO run (started_at,agent,job,repo,cwd,prompt_sha,spec_sha,prompt_bytes,prompt_head,
           status,session_id,failure_kind,error,docs_injected,mcp)
-         VALUES (?,'(pending)',?,?,?,?,?,?,'failed',?,'harness',?,0,?) RETURNING id`,
-      ).get(nowIso(), opts.job, opts.repo ?? repoOf(callerCwd), callerCwd, sha(originalPrompt),
+         VALUES (?,'(pending)',?,?,?,?,?,?,?,'failed',?,'harness',?,0,?) RETURNING id`,
+      ).get(nowIso(), opts.job, opts.repo ?? repoOf(callerCwd), callerCwd, sha(originalPrompt), sha(originalPrompt),
         Buffer.byteLength(originalPrompt), originalPrompt.slice(0, 200).replace(/\s+/g, ' '),
         opts.ownerSession ?? sessionId(), message, storedMcpRequest(opts.mcp)) as { id: number }).id
       throw Object.assign(new Error(`run ${failedId} could not start: ${message}`), { runId: failedId })
@@ -1920,14 +1920,14 @@ export async function run(opts: {
         // `orch answer` on the original found the wrong latest turn, and the
         // roll-up wrote its outcome nowhere. The two claim paths must agree on
         // every column that means something, and these mean the most.
-        `UPDATE run SET started_at=?, agent=?, job=?, repo=?, cwd=?, prompt_sha=?,
+        `UPDATE run SET started_at=?, agent=?, job=?, repo=?, cwd=?, prompt_sha=?, spec_sha=?,
                         prompt_bytes=?, prompt_head=?, label=?, status='running', probe=?, retry_of=?,
                         route_reason=?, branch=?, parent_run_id=?, turn=?, vendor_session=?, docs_injected=?, doc_revisions=?, canon_sha=?,
                         launch_cwd=?, launch_seed=?, launch_key=?, launch_base=?, no_failover=?,
                         automatic_failover=?, review_ref=?, pid=?, mcp=?, transport=?
           WHERE id=? RETURNING id`,
       ).get(
-        nowIso(), name, opts.job, opts.repo ?? repoOf(callerCwd), callerCwd, sha(prompt),
+        nowIso(), name, opts.job, opts.repo ?? repoOf(callerCwd), callerCwd, sha(prompt), sha(originalPrompt),
         Buffer.byteLength(prompt), head, opts.label ?? null, opts.probe ? 1 : 0, opts.retryOf ?? null, reason,
         branchOf(callerCwd),
         opts.resume?.parent ?? null, opts.resume ? opts.resume.turn : 1,
@@ -1944,13 +1944,13 @@ export async function run(opts: {
         opts.reserveId,
       ) as { id: number })
     : (db().query(
-        `INSERT INTO run (started_at, agent, job, repo, cwd, prompt_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of, route_reason, branch, parent_run_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
+        `INSERT INTO run (started_at, agent, job, repo, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of, route_reason, branch, parent_run_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
                           launch_cwd, launch_seed, launch_key, launch_base, no_failover,
                           automatic_failover, review_ref, pid, mcp, transport)
-         VALUES (?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+         VALUES (?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       ).get(
         nowIso(), name, opts.job, opts.repo ?? repoOf(callerCwd), callerCwd,
-        sha(prompt), Buffer.byteLength(prompt), head, opts.label ?? null,
+        sha(prompt), sha(originalPrompt), Buffer.byteLength(prompt), head, opts.label ?? null,
         // A resumed turn INHERITS the owning session rather than taking the
         // one that answered. The chain is one unit of work and one thing to
         // judge, and letting a second session adopt it by answering a question

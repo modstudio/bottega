@@ -3,7 +3,7 @@ import { Database } from 'bun:sqlite'
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { OrchRunEnvelopeSchema } from '../../shared/orch-contract.ts'
 import { runJson, AGENTS, JOBS, RUNS_DIR, addRun, bootstrapFixtureStore, callerDrift, db, declaredCreate, detachedRunOptions, dir, hermeticGitEnv, setDoc, upsertProject } from '../test/fixture.ts'
@@ -227,10 +227,12 @@ test('every --json surface has an enumerated and pinned output contract', () => 
       Bun.sleepSync(20)
     }
     const recorded = db().query(
-      'SELECT label, prompt_head, prompt_path FROM run WHERE id=?',
-    ).get(id) as { label: string; prompt_head: string; prompt_path: string }
+      'SELECT label, prompt_head, prompt_path, spec_sha FROM run WHERE id=?',
+    ).get(id) as { label: string; prompt_head: string; prompt_path: string; spec_sha: string }
     expect({ label: recorded.label, prompt_head: recorded.prompt_head })
       .toEqual({ label: 'security lens', prompt_head: 'one prompt' })
+    expect(recorded.spec_sha)
+      .toBe(createHash('sha256').update('one prompt').digest('hex').slice(0, 16))
     const listed = orch('runs', '--limit', '1')
     expect(listed.out).toContain('security lens')
     expect(listed.out).not.toContain('one prompt')

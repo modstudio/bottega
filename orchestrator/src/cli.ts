@@ -1085,10 +1085,10 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
   // either no new turn or a running turn already linked to its chain.
   const claimed = writeTransaction(() => {
     const inserted = db().query(
-      `INSERT INTO run (started_at, agent, job, repo, cwd, prompt_sha, prompt_bytes,
+      `INSERT INTO run (started_at, agent, job, repo, cwd, prompt_sha, spec_sha, prompt_bytes,
                       prompt_head, label, status, session_id, probe, parent_run_id, turn, mcp,
                       vendor_session)
-       SELECT ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?
+       SELECT ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (
           EXISTS (SELECT 1 FROM run root WHERE root.id = ? AND root.status NOT IN ('stopped','stale'))
           AND NOT EXISTS (
@@ -1099,6 +1099,7 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
        RETURNING id`,
     ).get(
       nowIso(), jobName, spec.repo ?? repoOf(cwd), cwd,
+      createHash('sha256').update(prompt).digest('hex').slice(0, 16),
       createHash('sha256').update(prompt).digest('hex').slice(0, 16),
       prompt.length, prompt.slice(0, 200).replace(/\s+/g, ' '), spec.label ?? null,
       sessionId(), spec.probe ? 1 : 0, spec.resume?.parent ?? null,
@@ -1532,7 +1533,8 @@ function usage(): never {
           --allow-incomplete    save a create command missing branch or seed configuration
       remove <name>
   orch init-db                  create the database for a fresh main checkout
-  orch migrate                  apply the canonical schema from the main-checkout binary
+  orch migrate [--backfill-spec-sha]
+                                apply schema; optionally hash surviving root prompt files
   orch doc list [--scope S] [--subject X] [--json]  (--json: one JSON document)
       show <slug> --scope S [--subject X] [--json]  (--json: one JSON document)
       set <slug> --scope S [--subject X] --title T --reason TEXT [--author NAME] [--delivery inject|demand] (--file F | body on stdin) [--json]  (--json: one JSON document)
@@ -1809,13 +1811,17 @@ switch (cmd) {
   }
 
   case 'migrate': {
-    const { migrateDatabase } = await import('./db.ts')
+    const { backfillSpecSha, migrateDatabase } = await import('./db.ts')
     const migrated = migrateDatabase()
     if (migrated.versions.length === 0) {
       console.log(`schema already current: ${migrated.path}`)
     } else {
       console.log(`migrated ${migrated.path}`)
       for (const version of migrated.versions) console.log(`  applied ${version}`)
+    }
+    if (has('backfill-spec-sha')) {
+      const backfilled = backfillSpecSha()
+      console.log(`spec_sha backfill: ${backfilled.updated} updated, ${backfilled.missing} prompt files missing`)
     }
     break
   }
@@ -5074,7 +5080,7 @@ switch (cmd) {
 
     const findingsJob = Boolean(job(row.job).findings)
     const gradeNames = ['reproduced', 'coverage', 'limits', 'overlap'] as const
-    const gradeValues = {
+    const suppliedGrades = {
       reproduced: flag('reproduced'), coverage: flag('coverage'),
       limits: flag('limits'), overlap: flag('overlap'),
     }
@@ -5083,17 +5089,19 @@ switch (cmd) {
       limits: REVIEW_LIMITS, overlap: REVIEW_OVERLAP,
     } as const
     for (const name of gradeNames) {
-      const value = gradeValues[name]
+      const value = suppliedGrades[name]
       if (value !== undefined && !(validGrades[name] as readonly string[]).includes(value)) {
         throw new Error(`--${name} must be: ${validGrades[name].join(' | ')}`)
       }
     }
     let parsedOutput: ReturnType<typeof parseReviewOutput> = null
     let reviewId: number | null = null
-    let reviewFindings: { ordinal: number }[] = []
+    let storedGrades: Partial<Record<typeof gradeNames[number], string>> = {}
+    let reviewFindings: { ordinal: number; disposition: string | null }[] = []
     if (findingsJob && delivery !== 'none') {
-      const lens = db().query('SELECT review_id FROM review_lens WHERE run_id=?').get(id) as
-        { review_id: number } | null
+      const lens = db().query(
+        'SELECT review_id, reproduced, coverage, limits, overlap FROM review_lens WHERE run_id=?',
+      ).get(id) as ({ review_id: number } & Record<typeof gradeNames[number], string | null>) | null
       reviewId = lens?.review_id ?? null
       if (!reviewId) {
         if (row.output_path && existsSync(row.output_path)) {
@@ -5101,11 +5109,17 @@ switch (cmd) {
         }
         if (!parsedOutput) throw new Error(`run ${id} has no recorded review; recover it with orch review record ${id}`)
       } else {
+        storedGrades = Object.fromEntries(
+          gradeNames.flatMap((name) => lens?.[name] ? [[name, lens[name]]] : []),
+        )
         reviewFindings = db().query(
-          'SELECT ordinal FROM review_finding WHERE review_id=? ORDER BY ordinal',
-        ).all(reviewId) as { ordinal: number }[]
+          'SELECT ordinal, disposition FROM review_finding WHERE review_id=? ORDER BY ordinal',
+        ).all(reviewId) as { ordinal: number; disposition: string | null }[]
       }
     }
+    const gradeValues = Object.fromEntries(gradeNames.map((name) => [
+      name, suppliedGrades[name] ?? storedGrades[name],
+    ])) as Record<typeof gradeNames[number], string | undefined>
 
     const parsedFindings = flags('finding').map((value) => {
       const matched = value.match(/^(\d+)=(accepted|modified|rejected|skipped):(.+)$/)
@@ -5141,16 +5155,18 @@ switch (cmd) {
 
     if (findingsJob && delivery !== 'none') {
       for (const name of gradeNames) if (!gradeValues[name]) missing.push(`--${name}`)
-      const expected = reviewId ? reviewFindings.map((finding) => finding.ordinal)
+      const allowed = reviewId ? reviewFindings.map((finding) => finding.ordinal)
         : parsedOutput!.findings.map((_, index) => index + 1)
+      const expected = reviewId ? reviewFindings.filter((finding) => finding.disposition === null)
+        .map((finding) => finding.ordinal) : allowed
       for (const ordinal of expected) {
         if (!parsedFindings.some((finding) => finding.ordinal === ordinal)) {
           missing.push(`--finding ${ordinal}=<disposition>:<severity-or-category>`)
         }
       }
-      const unexpected = parsedFindings.find((finding) => !expected.includes(finding.ordinal))
+      const unexpected = parsedFindings.find((finding) => !allowed.includes(finding.ordinal))
       if (unexpected) throw new Error(`review for run ${id} has no finding ${unexpected.ordinal}`)
-    } else if (parsedFindings.length || gradeNames.some((name) => gradeValues[name])) {
+    } else if (parsedFindings.length || gradeNames.some((name) => suppliedGrades[name])) {
       throw new Error(`${row.job} does not take findings close-out flags`)
     }
     if (partners.length && !comparison) {
@@ -5193,7 +5209,7 @@ switch (cmd) {
              ELSE score.note || '\n\n--- re-scored ' || excluded.scored_at || ' ---\n' || excluded.note
            END,
            scored_at=excluded.scored_at`,
-      ).run(id, delivery, quality ?? null,
+      ).run(id, delivery!, quality ?? null,
         writes && delivery !== 'none' ? fidelity ?? null : null, note, scoredAt,
         process.env.ORCH_SCORER ?? 'claude')
       if (reviewId) {

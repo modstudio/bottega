@@ -1188,7 +1188,7 @@ test('record-only closes the question, marks the chain stranded, and retry resta
     const offered = orch('score', String(second), 'full', 'right')
     expect(offered.code).toBe(0)
     expect(offered.out).toContain(
-      `pair: run ${first} (codex) is comparable (same prompt; same input tree) — record with --better-than ${first} | ` +
+      `pair: run ${first} (codex) is comparable (same task prompt; same input tree) — record with --better-than ${first} | ` +
       `--worse-than ${first} | --same-as ${first}`,
     )
     expect(orch('score', String(second), 'full', 'right', '--worse-than', String(first)).code).toBe(0)
@@ -1211,24 +1211,24 @@ test('record-only closes the question, marks the chain stranded, and retry resta
   })
 
 
-  test('inline roots with the same prompt hash are offered as partners', () => {
+  test('inline roots with the same task-prompt hash are offered as partners', () => {
     const first = addRun({ agent: 'codex', job: 'summarize', session: 'orch-test-session' })
     const second = addRun({ agent: 'grok', job: 'summarize', session: 'orch-test-session' })
     expect(orch('score', String(first), 'full', 'right').code).toBe(0)
     const scored = orch('score', String(second), 'full', 'right')
     expect(scored.code).toBe(0)
-    expect(scored.out).toContain(`pair: run ${first} (codex) is comparable (same prompt; at least one input tree unrecorded)`)
+    expect(scored.out).toContain(`pair: run ${first} (codex) is comparable (same task prompt; at least one input tree unrecorded)`)
   })
 
   test('judge closes a two-finding review and pair in one transaction', () => {
     const partner = addRun({
       agent: 'codex', job: 'review-lens', session: 'orch-test-session',
-      inputTree: 'judge-tree', lens: 'correctness', promptSha: 'same-task',
+      inputTree: 'judge-tree', lens: 'correctness', promptSha: 'bound-codex', specSha: 'same-task',
     })
     score(partner, 'full', 'right')
     const subject = addRun({
       agent: 'grok', job: 'review-lens', session: 'orch-test-session',
-      inputTree: 'judge-tree', lens: 'correctness', promptSha: 'same-task',
+      inputTree: 'judge-tree', lens: 'correctness', promptSha: 'bound-grok', specSha: 'same-task',
     })
     const reviewId = recordReview(subject, reviewReply(2, 'high'))
 
@@ -1334,14 +1334,14 @@ test('record-only closes the question, marks the chain stranded, and retry resta
     }
   })
 
-  test('same prompt pairs require matching trees when both exist and matching lenses', () => {
+  test('same task-prompt pairs allow different trees only when one is absent and require matching lenses', () => {
     const scored = addRun({
-      agent: 'codex', job: 'review-lens', session: 'orch-test-session', promptSha: 'predicate',
+      agent: 'codex', job: 'review-lens', session: 'orch-test-session', specSha: 'predicate',
       inputTree: 'tree-a', lens: 'correctness',
     })
     score(scored, 'full', 'right')
     const differentTree = addRun({
-      agent: 'grok', job: 'review-lens', session: 'orch-test-session', promptSha: 'predicate',
+      agent: 'grok', job: 'review-lens', session: 'orch-test-session', specSha: 'predicate',
       inputTree: 'tree-b', lens: 'correctness',
     })
     recordReview(differentTree, reviewReply(1, 'high'))
@@ -1349,7 +1349,7 @@ test('record-only closes the question, marks the chain stranded, and retry resta
       '--reproduced', 'all', '--coverage', 'adequate', '--limits', 'named', '--overlap', 'unique').out)
       .not.toContain('pair:')
     const differentLens = addRun({
-      agent: 'grok', job: 'review-lens', session: 'orch-test-session', promptSha: 'predicate',
+      agent: 'grok', job: 'review-lens', session: 'orch-test-session', specSha: 'predicate',
       inputTree: 'tree-a', lens: 'safety',
     })
     recordReview(differentLens, reviewReply(1, 'high'))

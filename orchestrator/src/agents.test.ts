@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { rmSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { createHash } from 'node:crypto'
 import { AGENTS, GENERIC_QUESTION_TOKENS, JOBS, LAND_PREAMBLE, NEEDS_HEALTH, OUTPUT_RESERVE, STALE_AFTER_MS, WAKE_COOLDOWN_MS, WORKER_PREAMBLE, addRun, available, candidates, classify, db, detectBlockers, dir, ensureLocalHealth, guide, isNonAnswer, localReachable, pick, resetLocalHealth, runJob, score, strictCodexSchema, unavailableReason, upsertProject, wakeDecision, workerPreamble, workerResumeGuard } from '../test/fixture.ts'
 
 describe('Codex strict output schemas', () => {
@@ -400,6 +401,9 @@ describe('vendor_session is recorded before the agent runs', () => {
       ].join('\n'))
       expect(readFileSync((db().query('SELECT prompt_path FROM run WHERE id=?').get(result.id) as
         { prompt_path: string }).prompt_path, 'utf8')).toBe('the resumed-turn message')
+      expect(db().query('SELECT spec_sha FROM run WHERE id=?').get(result.id)).toEqual({
+        spec_sha: createHash('sha256').update('the resumed-turn message').digest('hex').slice(0, 16),
+      })
     } finally {
       agent.bin = origBin
       agent.resumeArgv = origResume

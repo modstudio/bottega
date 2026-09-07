@@ -247,14 +247,16 @@ export function addRun(o: {
   headCommit?: string
   promptBytes?: number
   promptSha?: string
+  specSha?: string
 }): number {
   return (db().query(
-    `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head,
+    `INSERT INTO run (started_at, agent, job, prompt_sha, spec_sha, prompt_bytes, prompt_head,
                       status, latency_ms, probe, failure_kind, parent_run_id, turn, session_id, stack,
                       model, lens, repo, input_tree, head_commit)
-     VALUES (?,?,?,?,?,'head',?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+     VALUES (?,?,?,?,?,?,'head',?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
   ).get(
-    o.startedAt ?? new Date().toISOString(), o.agent, o.job, o.promptSha ?? 'sha', o.promptBytes ?? 10,
+    o.startedAt ?? new Date().toISOString(), o.agent, o.job, o.promptSha ?? 'sha',
+    o.specSha ?? o.promptSha ?? 'spec', o.promptBytes ?? 10,
     o.status ?? 'ok', o.latency ?? 1000, o.probe ?? 0, o.kind ?? null,
     o.parent ?? null, o.turn ?? 1, o.session ?? null, o.stack ?? null,
     o.model ?? AGENTS[o.agent]?.model ?? null, o.lens ?? null, o.repo ?? null,
