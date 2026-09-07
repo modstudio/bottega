@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto'
 import {
   AGENTS, JOBS, UNEVIDENCED_DELIVERABLE_ERROR, db, dir, hermeticGitEnv,
   jobTimeoutCeilingMinutes, listRunArtifacts, resolveJobTimeoutMs, runArtifactsDir,
-  runJob, upsertProject,
+  readDispatchState, runJob, upsertProject,
 } from '../test/fixture.ts'
 
 const CLI = new URL('cli.ts', import.meta.url).pathname
@@ -327,6 +327,44 @@ process.stdout.write(${JSON.stringify(JSON.stringify({
         status: 'failed', failure_kind: 'unevidenced',
         error: expect.stringContaining(`${UNEVIDENCED_DELIVERABLE_ERROR}: x`),
       })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(binDir, { recursive: true, force: true })
+    }
+  }, 20_000)
+
+  test('orch retry preserves a reader root deliverable contract and timeout', async () => {
+    const repo = repository()
+    const binDir = join(dir, `reader-retry-bin-${randomUUID()}`)
+    mkdirSync(binDir)
+    writeFileSync(join(binDir, 'grok'), [
+      '#!/usr/bin/env bun',
+      `const result = ${JSON.stringify(readerReply([]))}`,
+      `process.stdout.write(JSON.stringify({ type: 'result', result }) + '\\n')`,
+    ].join('\n'))
+    chmodSync(join(binDir, 'grok'), 0o755)
+    try {
+      const launched = orch(
+        repo, binDir,
+        'do', 'understand', '--deliverable', 'x', '--timeout', '17', 'measure',
+        '--agent', 'grok', '--no-failover', '--porcelain',
+      )
+      expect(launched.code).toBe(0)
+      const root = Number(launched.out.trim())
+      expect(waitFor(root)).toBe('failed')
+
+      const retried = orch(repo, binDir, 'retry', String(root), '--agent', 'grok', '--quiet')
+      expect(retried.code).toBe(1)
+      const child = db().query('SELECT id, failure_kind FROM run WHERE retry_of=?').get(root) as
+        { id: number; failure_kind: string } | null
+      expect(child, retried.err).not.toBeNull()
+      if (!child) throw new Error(retried.err)
+      expect(child.failure_kind).toBe('unevidenced')
+      expect(readDispatchState(child.id)).toEqual({ deliverables: ['x'], timeoutMinutes: 17 })
+      const promptPath = (db().query('SELECT prompt_path FROM run WHERE id=?').get(child.id) as
+        { prompt_path: string }).prompt_path
+      expect(readFileSync(promptPath.replace(/\.prompt\.txt$/, '.bound.txt'), 'utf8'))
+        .toContain('17 minutes')
     } finally {
       rmSync(repo, { recursive: true, force: true })
       rmSync(binDir, { recursive: true, force: true })

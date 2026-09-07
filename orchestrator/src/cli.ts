@@ -103,7 +103,8 @@ let mcpRequestFromStored!: typeof import('./run.ts').mcpRequestFromStored
 let storedMcpRequest!: typeof import('./run.ts').storedMcpRequest
 let retryModelForAgent!: typeof import('./run.ts').retryModelForAgent
 let chainTransport!: typeof import('./run.ts').chainTransport
-async function loadRun() { runModule ??= await import('./run.ts'); ({ repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses, implicitReviewWarning, packedResumePrompt, mcpRequestFromStored, storedMcpRequest, retryModelForAgent, chainTransport } = runModule) }
+let readDispatchState!: typeof import('./run.ts').readDispatchState
+async function loadRun() { runModule ??= await import('./run.ts'); ({ repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses, implicitReviewWarning, packedResumePrompt, mcpRequestFromStored, storedMcpRequest, retryModelForAgent, chainTransport, readDispatchState } = runModule) }
 let transportModule: typeof import('./transport.ts')
 let assertAcpAllowed!: typeof import('./transport.ts').assertAcpAllowed
 let assertAcpReady!: typeof import('./transport.ts').assertAcpReady
@@ -3116,14 +3117,14 @@ switch (cmd) {
     const row = db().query(
       `SELECT id, COALESCE(parent_run_id,id) root_id, agent, job, cwd, prompt_path,
               probe, status, failure_kind, mcp, mcp_error,
-              schema_path, model, lens, launch_seed, launch_key, launch_base, no_failover,
+              schema_path, model, lens, launch_cwd, launch_seed, launch_key, launch_base, no_failover,
               keep_tree
          FROM run WHERE id = ?`,
     ).get(id) as {
       id: number; root_id: number; agent: string; job: string; cwd: string | null
       prompt_path: string | null; probe: number; status: string; failure_kind: string | null
       mcp: number | null; mcp_error: string | null; schema_path: string | null; model: string | null; lens: string | null
-      launch_seed: string | null; launch_key: string | null; launch_base: string | null
+      launch_cwd: string | null; launch_seed: string | null; launch_key: string | null; launch_base: string | null
       no_failover: number; keep_tree: number
     } | null
     if (!row) throw new Error(`no run ${id}`)
@@ -3178,17 +3179,20 @@ switch (cmd) {
     const retryPrompt = recordedRulings.length
       ? `${originalPrompt}\n\n---\n\n${rulingPrompt(recordedRulings)}`
       : originalPrompt
+    const dispatch = readDispatchState(row.root_id)
     const newId = await detach(row.job, retryPrompt, {
       agent,
       schema: row.schema_path ?? undefined,
       mcp: mcpRequestFromStored(row.mcp, row.mcp_error),
       model: retryModelForAgent(row.agent, row.model, agent, flag('model')),
       lens: row.lens ?? undefined,
-      probe: !!row.probe, retryOf: id, cwd: row.cwd ?? undefined,
+      probe: !!row.probe, retryOf: id, cwd: row.launch_cwd ?? row.cwd ?? undefined,
       seed: row.launch_seed ?? undefined, key: row.launch_key ?? undefined,
       base: row.launch_base ?? undefined, noFailover: !!row.no_failover,
       transport: chainTransport(row.root_id) ?? undefined,
       keepTree: !!row.keep_tree,
+      deliverables: dispatch.deliverables,
+      timeoutMinutes: dispatch.timeoutMinutes ?? undefined,
     })
     auditRunMutation(retryAuthority, 'retry', `retried as run ${newId}`)
     console.error(`— run ${newId} is retry of ${id}`)

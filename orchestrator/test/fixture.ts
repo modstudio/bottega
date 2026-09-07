@@ -169,7 +169,8 @@ export const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePa
         changedRegisteredCheckouts, checkoutAliases, checkoutCaseSensitivity,
         retargetRepositoryPrompt, retargetRepositoryPromptForDispatch,
         packedResumePrompt, resolveReviewTarget, implicitReviewWarning, mcpRequestFromStored,
-        retryModelForAgent, run: runJob, listRunArtifacts, runArtifactsDir, runScratchDir } = await import('../src/run.ts')
+        retryModelForAgent, run: runJob, listRunArtifacts, runArtifactsDir, runScratchDir,
+        readDispatchState } = await import('../src/run.ts')
 export const run = runJob
 export const {
   CANON_EVALS, CANON_EVAL_LENS, TRACKED_EVAL_PATH, UNTRACKED_EVAL_PATH,
