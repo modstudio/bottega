@@ -495,6 +495,27 @@ function scoreNote(): string | null {
   return note
 }
 
+function recordScoreVerdict(
+  id: number, delivery: Delivery, quality: Quality | null, fidelity: Fidelity | null,
+  note: string | null, scoredAt: string, scorer: string,
+): void {
+  db().query(
+    `INSERT INTO score (run_id, delivery, quality, fidelity, note, scored_at, scored_by)
+     VALUES (?,?,?,?,?,?,?)
+     ON CONFLICT(run_id) DO UPDATE SET delivery=excluded.delivery, quality=excluded.quality,
+                                       fidelity=excluded.fidelity,
+                                       note=CASE
+                                         WHEN score.note IS NULL OR trim(score.note) = ''
+                                           THEN excluded.note
+                                         WHEN excluded.note IS NULL OR trim(excluded.note) = ''
+                                           THEN score.note
+                                         ELSE score.note || '\n\n--- re-scored ' ||
+                                           excluded.scored_at || ' ---\n' || excluded.note
+                                       END,
+                                       scored_at=excluded.scored_at`,
+  ).run(id, delivery, quality, fidelity, note, scoredAt, scorer)
+}
+
 function requestedMcp(): McpRequest | undefined {
   const values = argv.filter((arg) => arg === '--mcp' || arg.startsWith('--mcp='))
   if (values.length > 1) throw new Error('--mcp may be supplied only once')
@@ -5442,14 +5463,56 @@ switch (cmd) {
           `If you are certain (correcting a score you know to be wrong), --force.`,
       )
     }
+    const words = argv.slice(2).filter(
+      (a, i) => !a.startsWith('--') && !VALUE_FLAGS.has(argv.slice(2)[i - 1] ?? ''),
+    )
+    const delivery = words[0] as Delivery | undefined
+    const quality = words[1] as Quality | undefined
+    const fidelity = words[2] as Fidelity | undefined
     if (has('void')) {
+      const cannotRecord = row.failure_kind === 'unevidenced'
+        ? `${row.failure_kind} review`
+        : row.failure_kind && NOT_EVIDENCE.includes(row.failure_kind)
+          ? `failure kind '${row.failure_kind}' is not evidence`
+          : null
+      let scoredFidelity: Fidelity | undefined
+      if (!cannotRecord && delivery) {
+        if (!DELIVERY.includes(delivery)) {
+          throw new Error(`delivery must be one of: ${DELIVERY.join(' | ')}`)
+        }
+        if (delivery === 'none' && quality) {
+          throw new Error("delivery 'none' takes no quality: there was nothing to judge")
+        }
+        if (delivery !== 'none' && (!quality || !QUALITY.includes(quality))) {
+          throw new Error(`delivery '${delivery}' needs a quality: ${QUALITY.join(' | ')}`)
+        }
+        const needsFidelity = Boolean(JOBS[row.job]?.needs.writesRepo) && delivery !== 'none'
+        if (needsFidelity && (!fidelity || !FIDELITY.includes(fidelity))) {
+          throw new Error(`${row.job} writes code, so verdicts require a fidelity axis`)
+        }
+        scoredFidelity = needsFidelity ? fidelity : undefined
+      }
+      const scoredAt = nowIso()
       writeTransaction(() => {
         voidAuthority = adoptRunMutation(voidAuthority!, 'void')
         db().query('UPDATE run SET evidence_excluded=? WHERE id=?')
           .run('voided with orch score --void', id)
+        if (!cannotRecord && delivery) {
+          recordScoreVerdict(
+            id, delivery, quality ?? null, scoredFidelity ?? null, note, scoredAt,
+            scorer ?? process.env.ORCH_SCORER ?? 'claude',
+          )
+        }
         auditRunMutation(voidAuthority!, 'void', auditReason())
       })
-      console.log(`voided run ${id}: retained run and output; excluded from routing evidence`)
+      const verdictResult = cannotRecord
+        ? `verdict was not recorded: ${cannotRecord}`
+        : delivery
+          ? `verdict recorded: ${[delivery, quality, scoredFidelity].filter(Boolean).join(' ')}`
+          : 'no verdict was provided; existing verdict unchanged'
+      console.log(
+        `voided run ${id}: retained run and output; excluded from routing evidence; ${verdictResult}`,
+      )
       break
     }
     if (row.failure_kind === 'unevidenced') {
@@ -5483,12 +5546,6 @@ switch (cmd) {
     // --note "..."` put `--note` in the quality slot and was rejected as an
     // incoherent judgement, which is a confusing way to be told about a typo
     // you did not make.
-    const words = argv.slice(2).filter(
-      (a, i) => !a.startsWith('--') && !VALUE_FLAGS.has(argv.slice(2)[i - 1] ?? ''),
-    )
-    const delivery = words[0] as Delivery | undefined
-    const quality = words[1] as Quality | undefined
-    const fidelity = words[2] as Fidelity | undefined
     /**
      * A writing job is judged on a third axis, and is REQUIRED to be.
      *
@@ -5623,22 +5680,10 @@ switch (cmd) {
         scoreAuthority = adoptRunMutation(scoreAuthority, 'score')
       }
       if (reviewGrade) gradeReviewLens(id, reviewGrade.output, reviewGrade.grades)
-      db().query(
-        `INSERT INTO score (run_id, delivery, quality, fidelity, note, scored_at, scored_by)
-       VALUES (?,?,?,?,?,?,?)
-       ON CONFLICT(run_id) DO UPDATE SET delivery=excluded.delivery, quality=excluded.quality,
-                                         fidelity=excluded.fidelity,
-                                         note=CASE
-                                           WHEN score.note IS NULL OR trim(score.note) = ''
-                                             THEN excluded.note
-                                           WHEN excluded.note IS NULL OR trim(excluded.note) = ''
-                                             THEN score.note
-                                           ELSE score.note || '\n\n--- re-scored ' ||
-                                             excluded.scored_at || ' ---\n' || excluded.note
-                                         END,
-                                         scored_at=excluded.scored_at`,
-      ).run(id, delivery, quality ?? null, scoredFidelity ?? null, note, scoredAt,
-            scorer ?? process.env.ORCH_SCORER ?? 'claude')
+      recordScoreVerdict(
+        id, delivery, quality ?? null, scoredFidelity ?? null, note, scoredAt,
+        scorer ?? process.env.ORCH_SCORER ?? 'claude',
+      )
       auditRunMutation(
         scoreAuthority, wasScored ? 'rescore' : 'score', auditReason(),
       )
@@ -5975,7 +6020,7 @@ switch (cmd) {
               s.delivery, s.quality,
               COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason, r.sandbox
               ${json ? ', r.cwd, r.session_id, r.vendor_cost_usd, r.probe, r.exit_code, r.input_tree, r.head_commit, r.review_ref,'
-                        + ' r.prompt_path, r.branch, r.branch_kept, r.branch_kept_tip, r.retry_of, r.launch_key' : ''}
+                        + ' r.prompt_path, r.branch, r.branch_kept, r.branch_kept_tip, r.retry_of, r.launch_key, r.evidence_excluded' : ''}
          FROM run r
          ${unscoredJoin}
          JOIN run current_run ON current_run.id = (

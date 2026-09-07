@@ -467,7 +467,7 @@ test('record-only closes the question, marks the chain stranded, and retry resta
     expect(json.code).toBe(0)
     expect(Object.keys(runJson(json.out)).sort()).toEqual([
       'agent', 'answer_agent', 'branch', 'branch_kept', 'branch_kept_tip', 'cwd',
-      'delivery', 'error', 'exit_code', 'failover_chain', 'failure_kind', 'head_commit', 'id',
+      'delivery', 'error', 'evidence_excluded', 'exit_code', 'failover_chain', 'failure_kind', 'head_commit', 'id',
       'idle', 'idle_ms', 'input_tree', 'job', 'last_event_at', 'latency_ms', 'launch_key', 'probe', 'prompt_head',
       'prompt_path', 'quality', 'questions', 'repo', 'requested_id', 'resolved_from', 'retry_of', 'review_ref', 'route_reason',
       'sandbox', 'session_id', 'started_at', 'status', 'turns', 'vendor_cost_usd', 'vendor_tokens',
@@ -685,6 +685,19 @@ test('record-only closes the question, marks the chain stranded, and retry resta
     const json = orch('runs', '--json', '--id', String(id))
     expect(json.code).toBe(0)
     expect(runJson(json.out.trim().split('\n')[0]!).launch_key).toBe('DEV-7777')
+  })
+
+  test('runs --json publishes the same evidence exclusion as run detail', () => {
+    const id = addRun({ agent: 'codex', job: 'understand', status: 'ok' })
+    db().query('UPDATE run SET evidence_excluded=? WHERE id=?').run('operator void', id)
+
+    const listed = orch('runs', '--json', '--id', String(id))
+    const detail = orch('run', String(id))
+    expect(listed.code).toBe(0)
+    expect(detail.code).toBe(0)
+    expect(runJson(listed.out.trim()).evidence_excluded)
+      .toBe(JSON.parse(detail.out).evidence_excluded)
+    expect(runJson(listed.out.trim()).evidence_excluded).toBe('operator void')
   })
 
   test('waiting on a failed run exits non-zero', () => {

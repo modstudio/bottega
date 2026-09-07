@@ -57,6 +57,7 @@ def main() -> int:
                  LEFT JOIN review_lens rl ON rl.run_id = r.id
                  LEFT JOIN review ON review.id = rl.review_id
                 WHERE r.session_id = ? AND r.status = 'ok'
+                  AND r.evidence_excluded IS NULL
                   -- A probe is excluded from routing and reporting by design, so
                   -- scoring one teaches the router nothing - which is this hook's
                   -- own reason for existing. Demanding it is friction with no payoff.

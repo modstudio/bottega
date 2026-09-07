@@ -842,16 +842,24 @@ describe('vendor failure failover is one bounded unit of work', () => {
 })
 
 describe('a destroyed output is not evidence about the agent', () => {
-  test('score --void retains the run, output, and score but removes routing evidence', () => {
+  test('score --void records its verdict but removes routing and duel evidence', () => {
     const CLI = new URL('cli.ts', import.meta.url).pathname
     const outputPath = join(dir, 'voided-output.txt')
     writeFileSync(outputPath, 'the retained answer')
     const id = addRun({ agent: 'codex', job: 'review-lens' })
+    const partner = addRun({
+      agent: 'grok', job: 'review-lens', session: 'orch-test-session',
+      inputTree: 'voided-tree', specSha: 'voided-spec',
+    })
     db().query('UPDATE run SET output_path=?, session_id=? WHERE id=?')
       .run(outputPath, 'orch-test-session', id)
-    score(id, 'full', 'right')
+    db().query('UPDATE run SET input_tree=?, spec_sha=? WHERE id=?')
+      .run('voided-tree', 'voided-spec', id)
+    score(partner, 'full', 'right')
 
-    const p = Bun.spawnSync([process.execPath, CLI, 'score', String(id), '--void'], {
+    const p = Bun.spawnSync([
+      process.execPath, CLI, 'score', String(id), 'none', '--void', '--better-than', String(partner),
+    ], {
       env: {
         ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
         CLAUDE_CODE_SESSION_ID: 'orch-test-session',
@@ -860,16 +868,77 @@ describe('a destroyed output is not evidence about the agent', () => {
     })
     expect(p.exitCode).toBe(0)
     expect(new TextDecoder().decode(p.stdout)).toContain('retained run and output')
+    expect(new TextDecoder().decode(p.stdout)).toContain('verdict recorded: none')
     expect(readFileSync(outputPath, 'utf8')).toBe('the retained answer')
     expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id))
       .toEqual({ evidence_excluded: 'voided with orch score --void' })
-    expect(db().query('SELECT COUNT(*) n FROM score WHERE run_id=?').get(id)).toEqual({ n: 1 })
+    expect(db().query('SELECT delivery, quality FROM score WHERE run_id=?').get(id))
+      .toEqual({ delivery: 'none', quality: null })
+    expect(db().query('SELECT COUNT(*) n FROM duel WHERE winner_run_id=? OR loser_run_id=?').get(id, id))
+      .toEqual({ n: 0 })
     expect(db().query(
       'SELECT run_id, root_id, action, actor_session FROM run_mutation_audit WHERE run_id=?',
     ).get(id)).toEqual({
       run_id: id, root_id: id, action: 'void', actor_session: 'orch-test-session',
     })
     expect(candidates('review-lens').find((c) => c.agent === 'codex')!.evidence).toBe(0)
+
+    const reminder = Bun.spawnSync([
+      'python3', new URL('../hooks/score-reminder.py', import.meta.url).pathname,
+    ], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB! },
+      stdin: new TextEncoder().encode(JSON.stringify({ session_id: 'orch-test-session' })),
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(reminder.stdout.toString()).toBe('')
+  })
+
+  test('score --void rolls back the exclusion when recording the verdict fails', () => {
+    const CLI = new URL('cli.ts', import.meta.url).pathname
+    const id = addRun({ agent: 'codex', job: 'understand', session: 'orch-test-session' })
+    db().exec(
+      `CREATE TRIGGER reject_void_score BEFORE INSERT ON score
+       WHEN NEW.run_id = ${id}
+       BEGIN SELECT RAISE(ABORT, 'fixture score refusal'); END`,
+    )
+    try {
+      const p = Bun.spawnSync([process.execPath, CLI, 'score', String(id), 'none', '--void'], {
+        env: {
+          ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+        },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(p.exitCode).toBe(1)
+      expect(p.stderr.toString()).toContain('fixture score refusal')
+      expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id))
+        .toEqual({ evidence_excluded: null })
+      expect(db().query('SELECT COUNT(*) n FROM score WHERE run_id=?').get(id)).toEqual({ n: 0 })
+    } finally {
+      db().exec('DROP TRIGGER reject_void_score')
+    }
+  })
+
+  test('score --void says why a NOT_EVIDENCE failure verdict was not recorded', () => {
+    const CLI = new URL('cli.ts', import.meta.url).pathname
+    const id = addRun({
+      agent: 'codex', job: 'understand', status: 'failed', kind: 'quota',
+      session: 'orch-test-session',
+    })
+    const p = Bun.spawnSync([process.execPath, CLI, 'score', String(id), 'none', '--void'], {
+      env: {
+        ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+        CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+      },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(p.exitCode).toBe(0)
+    expect(p.stdout.toString()).toContain(
+      "verdict was not recorded: failure kind 'quota' is not evidence",
+    )
+    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id))
+      .toEqual({ evidence_excluded: 'voided with orch score --void' })
+    expect(db().query('SELECT COUNT(*) n FROM score WHERE run_id=?').get(id)).toEqual({ n: 0 })
   })
 
   test('score --void refuses a foreign owner and permits an attributed unowned run', () => {
