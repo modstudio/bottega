@@ -94,7 +94,12 @@ describe('hub migration journal', () => {
     const dir = mkdtempSync(join(tmpdir(), 'hub-live-adopt-'))
     const copy = join(dir, 'hub.db')
     copyLiveHub(copy)
+    // The live store is real data at real volume, which is what this test
+    // wants; whether it has already been migrated is per-machine state that a
+    // test must not depend on (it failed the first landing after hub migrate
+    // ran on this machine). Make the copy legacy by removing the journal table.
     const probe = new Database(copy)
+    probe.exec('DROP TABLE IF EXISTS hub_migrations')
     expect(probe.query("SELECT 1 FROM sqlite_master WHERE name='hub_migrations'").get()).toBeNull()
     probe.close()
     const migrated = hub(copy, 'migrate')
