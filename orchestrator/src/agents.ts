@@ -649,7 +649,7 @@ export const AGENTS: Record<string, Agent> = {
     defaultTransport: 'cli',
     acp: {
       mcpServers: true,
-      mcpReason: 'codex-acp 1.10.0 accepts the session/new mcpServers field; live orch-ask parity is pending a depth-zero run',
+      mcpReason: 'codex-acp 1.10.0 accepts session/new mcpServers, but the 2026-09-07 ask case returned prose without calling orch-ask',
       nativeElicitation: false,
       nativeElicitationReason: 'codex-acp 1.10.0 answered the requested user question as prose and emitted no elicitation/create',
     },
@@ -866,8 +866,8 @@ export const AGENTS: Record<string, Agent> = {
     caps: { readsRepo: true, mcp: true, discoversMcpFromCwd: true, schema: true, writesRepo: true, resumable: true },
     defaultTransport: 'cli',
     acp: {
-      mcpServers: true,
-      mcpReason: 'grok 1.0.13 accepts the session/new mcpServers field; live orch-ask parity is pending a depth-zero run',
+      mcpServers: false,
+      mcpReason: 'grok 1.0.13 rejects session/new with an stdio mcpServers entry as "Path not found."; its per-run GROK_HOME fallback delivered the live orch-answer ruling in the 2026-09-07 parity run',
       nativeElicitation: false,
       nativeElicitationReason: 'grok 1.0.13 reported ask_user_question unavailable and emitted no elicitation/create',
     },

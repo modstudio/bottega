@@ -180,10 +180,17 @@ export function acpSandboxProfile(
   }
 }
 
+/** Grok must create its leader inside the directory the run may write. */
+export function acpLeaderSocketPath(outPath: string, settingsPath?: string): string {
+  return settingsPath
+    ? join(dirname(settingsPath), 'grok-leader.sock')
+    : `${outPath}.leader.sock`
+}
+
 async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const grok = opts.agent.name === 'grok'
   const bin = opts.bin ?? (grok ? opts.agent.bin : resolveCodexAcpBin())
-  const leaderSocket = grok ? `${opts.outPath}.leader.sock` : null
+  const leaderSocket = grok ? acpLeaderSocketPath(opts.outPath, opts.srt?.settingsPath) : null
   const agentArgv = grok
     ? ['agent', 'stdio', '--leader-socket', leaderSocket!]
     : []
@@ -312,9 +319,10 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       clientInfo: { name: 'orch', version: '0.1.0' },
     })
     // The ruling channel is transport infrastructure, not a project MCP opt-in.
-    // ACP adapters do not inherit the vendor CLI's global MCP registration, so
-    // every real run carries orch-ask explicitly in session/new and session/load.
-    const mcpServers: acp.McpServer[] = opts.env.ORCH_RUN_ID && opts.env.ORCH_RUN_TOKEN
+    // codex-acp needs it on session/new. Grok loads the per-run config prepared
+    // in GROK_HOME; passing the same stdio server here makes 1.0.13 reject
+    // session/new with "Path not found."
+    const mcpServers: acp.McpServer[] = !grok && opts.env.ORCH_RUN_ID && opts.env.ORCH_RUN_TOKEN
       ? [{
           name: 'orch-ask',
           command: process.execPath,
@@ -412,6 +420,10 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
         closed = true
         finishEvents()
         try { connection?.close() } catch { /* already closed */ }
+        // Both paid adapters are long-lived stdio servers. A completed prompt is
+        // the end of this orch run, so do not leave the adapter (or Grok's
+        // per-run leader) alive after its result has been collected.
+        try { child.kill('SIGTERM') } catch { /* already exited */ }
         if (leaderSocket) rmSync(leaderSocket, { force: true })
         return result
       })()

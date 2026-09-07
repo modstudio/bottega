@@ -160,10 +160,15 @@ async function runAskCase(): Promise<Row> {
 
   const result = await promise
   const raw = readFileSync(result.outPath, 'utf8')
-  const continued = questionSeen && result.status === 'ok' && result.output.trim() === ruling
+  // Grok streams short progress messages as agent_message_chunk before its
+  // final answer. The ruling must be the terminal text; preceding narration
+  // does not mean the blocked MCP call failed to resume.
+  const continued = questionSeen && result.status === 'ok' && result.output.trim().endsWith(ruling)
   return {
     case: 'ask-answer', transport: 'acp',
-    outcome: continued ? 'ok' : result.status,
+    // A normal final answer without an orch question is not a successful
+    // round trip, even when the vendor itself ended the turn successfully.
+    outcome: continued ? 'ok' : 'failed',
     failureKind: continued ? '—' : questionSeen ? 'continuation' : 'capability',
     tokens: result.vendorTokens == null ? '—' : String(result.vendorTokens),
     latencyMs: result.latencyMs,

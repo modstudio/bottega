@@ -139,6 +139,7 @@ export function readonlyLensProfile(input: {
     ...toolchain,
     ...(input.nodeModuleLinks ?? linkedNodeModules(input.worktree)).map((path) => resolve(path)),
     join(homedir(), '.claude.json'),
+    process.execPath,
     ROOT,
   ])]
   const allowRead = candidateAllows.filter((allowed) =>
@@ -231,10 +232,10 @@ export function srtLaunchArgv(
 
 /** Keep Grok's registered stdio shape while making a linked-worktree build test its own proxy. */
 export function grokSandboxConfig(config: string): string {
-  return config.replace(
-    /(^\[mcp_servers\.orch-ask\]\s*$[\s\S]*?\bargs\s*=\s*\[\s*)"[^"]+"/m,
-    `$1${JSON.stringify(join(ROOT, 'src', 'cli.ts'))}`,
-  )
+  const section = /(\[mcp_servers\.orch-ask\]\s*\n[\s\S]*?)(?=\n\[|$)/
+  return config.replace(section, (body) => body
+    .replace(/(\bcommand\s*=\s*)"[^"]+"/, `$1${JSON.stringify(Bun.which('bun') ?? process.execPath)}`)
+    .replace(/(\bargs\s*=\s*\[\s*)"[^"]+"/, `$1${JSON.stringify(join(ROOT, 'src', 'ask-proxy.ts'))}`))
 }
 
 /**

@@ -2431,7 +2431,10 @@ export async function run(opts: {
       cwd,
       prompt,
       outPath,
-      session: vendorSession ?? undefined,
+      // ACP creates its initial session with session/new. Grok also mints an id
+      // for its CLI launch, but treating that fresh id as resumable makes ACP
+      // issue session/load against a session that cannot exist yet.
+      session: transportName === 'acp' ? opts.resume?.session : vendorSession ?? undefined,
       schemaPath: schemaPath ?? undefined,
       model: opts.model ?? a.model,
       home: sandboxEnvironment.HOME,

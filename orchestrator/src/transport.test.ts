@@ -93,6 +93,41 @@ describe('ACP transport through run', () => {
     }
   })
 
+  test('a fresh grok ACP run uses session/new rather than loading its minted CLI id', async () => {
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    let session: string | undefined
+    try {
+      const transport: AgentTransport = {
+        name: 'acp',
+        async start(opts) {
+          session = opts.session
+          const result = fakeResult({ output: 'ok', status: 'ok', sessionId: 'acp-created' })
+          return {
+            pid: 0, kill() {}, async prompt() {}, async *events() {}, async cancel() {},
+            async collect() { writeFileSync(opts.outPath, result.output); return result },
+          }
+        },
+        prompt(handle, text) { return handle.prompt(text) },
+        events(handle) { return handle.events() },
+        cancel(handle) { return handle.cancel() },
+        resume(opts) { return this.start(opts) },
+      }
+      installTestTransport(transport)
+      const result = await run({
+        job: 'summarize', prompt: 'summarise', cwd: dir,
+        agent: 'grok', transport: 'acp', noFailover: true,
+      })
+      expect(result.status).toBe('ok')
+      expect(session).toBeUndefined()
+      expect(db().query('SELECT vendor_session FROM run WHERE id=?').get(result.id))
+        .toEqual({ vendor_session: 'acp-created' })
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
   test('elicitation is asking', async () => {
     const priorDepth = process.env.ORCH_DEPTH
     process.env.ORCH_DEPTH = '0'

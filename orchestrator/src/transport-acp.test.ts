@@ -8,7 +8,9 @@ import {
   failureKindFromStop, isAcpPilotJob, outcomeFromTransport, resolveTransportName,
   selectAgentForTransport, stopErrorMessage, valueMatchesStrictSchema,
 } from './transport.ts'
-import { acpOutcome, acpSandboxProfile, normalizeAcpTurn } from './transport-acp.ts'
+import {
+  acpLeaderSocketPath, acpOutcome, acpSandboxProfile, normalizeAcpTurn,
+} from './transport-acp.ts'
 import {
   ACP_FIXTURE_CANCELLED_TEXT, ACP_FIXTURE_EDIT_PERMISSION, ACP_FIXTURE_ELICITATION,
   ACP_FIXTURE_GROK, ACP_FIXTURE_MALFORMED, ACP_FIXTURE_REFUSAL, ACP_FIXTURE_SCHEMA,
@@ -55,6 +57,9 @@ describe('ACP transport selection', () => {
       expect(agent.acp?.nativeElicitation).toBe(false)
       expect(agent.acp?.nativeElicitationReason).toMatch(/emitted no elicitation\/create|unavailable/)
     }
+    expect(AGENTS.codex!.acp?.mcpServers).toBe(true)
+    expect(AGENTS.grok!.acp?.mcpServers).toBe(false)
+    expect(AGENTS.grok!.acp?.mcpReason).toContain('GROK_HOME fallback delivered')
   })
 })
 
@@ -186,12 +191,16 @@ describe('ACP client-served fs is confined to the worktree', () => {
     const confined = acpSandboxProfile(profile, '/run/grok.leader.sock')
     expect(confined.network.allowUnixSockets).toEqual(['/run/grok.leader.sock'])
     expect(confined.filesystem).toEqual(profile.filesystem)
+    expect(acpLeaderSocketPath('/evidence/out.txt', '/run/settings.json'))
+      .toBe('/run/grok-leader.sock')
+    expect(acpLeaderSocketPath('/evidence/out.txt')).toBe('/evidence/out.txt.leader.sock')
   })
   test('a path inside the worktree is allowed; a path outside is refused by name', () => {
     const root = mkdtempSync(join(tmpdir(), 'orch-acp-fs-'))
     const inside = join(root, 'notes.txt')
     writeFileSync(inside, 'ok')
     expect(confineFsPath(inside, root)).toBe(realpathSync(inside))
+    expect(confineFsPath('notes.txt', root)).toBe(realpathSync(inside))
     expect(() => confineFsPath('/etc/passwd', root)).toThrow('ACP fs.readTextFile refused')
     expect(() => confineFsPath('/etc/passwd', root)).toThrow('outside the run worktree')
   })

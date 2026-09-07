@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module'
 import { existsSync, realpathSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Agent, ArgvOpts, SandboxLevel } from './agents.ts'
 import { job } from './jobs.ts'
@@ -292,12 +292,13 @@ export function confineFsPath(path: string, root: string): string {
   } catch {
     throw new Error(`ACP fs.readTextFile refused: worktree ${root} is not readable`)
   }
+  const rootedPath = isAbsolute(path) ? path : join(realRoot, path)
   let candidate: string
   try {
-    candidate = realpathSync(path)
+    candidate = realpathSync(rootedPath)
   } catch {
     try {
-      candidate = join(realpathSync(dirname(path)), basename(path))
+      candidate = join(realpathSync(dirname(rootedPath)), basename(rootedPath))
     } catch {
       throw new Error(`ACP fs.readTextFile refused: ${path} is outside the run worktree`)
     }
