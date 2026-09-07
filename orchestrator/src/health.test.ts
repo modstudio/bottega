@@ -45,6 +45,20 @@ describe('harness health', () => {
     expect(output.landingRefusals).toBe(1)
   })
 
+  test('lists landings that reached trunk with a post-step error', () => {
+    db().query(
+      `INSERT INTO landing (project, branch, status, started_at, error)
+       VALUES ('fixture', 'DEV-373', 'landed', ?, ?)`,
+    ).run('2026-09-07T10:00:00.000Z', 'landing reached trunk at abc, but hub migrate failed: stub-fail')
+    const cli = Bun.spawnSync([
+      process.execPath, new URL('./cli.ts', import.meta.url).pathname, 'health', '--days', '14',
+    ], { env: process.env, stdout: 'pipe', stderr: 'pipe' })
+    expect(cli.exitCode, cli.stderr.toString()).toBe(0)
+    expect(cli.stdout.toString()).toContain('landed with post-step error')
+    expect(cli.stdout.toString()).toContain('fixture DEV-373')
+    expect(cli.stdout.toString()).toContain('hub migrate failed: stub-fail')
+  })
+
   test('uses UTC-midnight boundaries for both counts and sparkline buckets', () => {
     const now = new Date('2026-09-07T12:00:00.000Z')
     addRun({ agent: 'grok', job: 'review-lens', status: 'failed', kind: 'timeout', startedAt: '2026-09-05T00:00:00.000Z' })

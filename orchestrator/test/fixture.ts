@@ -205,7 +205,8 @@ export const { orphanSafety, repoRootOf, createWorktree, createWithTool, createR
         reclaimStaleProjectLock, processStartTime, staleProjectLockHolder,
         unmergedBranch, assertCallerAncestry, checkoutHasUncommittedWork, callerDrift,
         changesIn, contentTree, removeFor, branchTip } = await import('../src/worktree.ts')
-export const { gateFailureSummary, land, landingStatus, landingReviewCoverage, resolveLandingBranch } = await import('../src/landing.ts')
+export const { gateFailureSummary, land, landingStatus, landingReviewCoverage, resolveLandingBranch,
+        setPostLandMigrateForFixture, landingsWithPostStepError } = await import('../src/landing.ts')
 export const { gitLocks, formatGitLocks } = await import('../src/git-locks.ts')
 export const { AGENTS, ARGV_PROMPT_BYTES, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,

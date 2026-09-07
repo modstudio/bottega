@@ -1243,18 +1243,46 @@ export function diffCarriesMigrationJournal(paths: string[]): boolean {
     path === 'hub/migrations' || path.startsWith('hub/migrations/'))
 }
 
+const defaultHubMigrateBin = resolve(new URL('../../bin/hub', import.meta.url).pathname)
+let hubMigrateBin = defaultHubMigrateBin
+let orchMigrate = migrateDatabase
+
+/** Fixture-only: stub post-land migrate so a test can fail hub without a real binary. */
+export function setPostLandMigrateForFixture(options: {
+  orch?: typeof migrateDatabase
+  hubBin?: string
+} | null): void {
+  orchMigrate = options?.orch ?? migrateDatabase
+  hubMigrateBin = options?.hubBin ?? defaultHubMigrateBin
+}
+
+export function landingsWithPostStepError(database = db()): {
+  project: string; branch: string; error: string
+}[] {
+  return database.query(
+    `SELECT project, branch, error FROM landing
+      WHERE status='landed' AND error IS NOT NULL ORDER BY id`,
+  ).all() as { project: string; branch: string; error: string }[]
+}
+
 function migrateLandedJournals(project: Project, trunkBefore: string, tip: string): void {
   const paths = git(project.path, ['diff', '--name-only', `${trunkBefore}..${tip}`])
     .split('\n').filter(Boolean)
   if (!diffCarriesMigrationJournal(paths)) return
-  const migrated = migrateDatabase()
-  if (migrated.versions.length === 0) console.log(`schema already current: ${migrated.path}`)
-  else {
-    console.log(`migrated ${migrated.path}`)
-    for (const version of migrated.versions) console.log(`  applied ${version}`)
+  try {
+    const migrated = orchMigrate()
+    if (migrated.versions.length === 0) console.log(`schema already current: ${migrated.path}`)
+    else {
+      console.log(`migrated ${migrated.path}`)
+      for (const version of migrated.versions) console.log(`  applied ${version}`)
+    }
+  } catch (error) {
+    throw new Error(
+      `landing reached trunk at ${tip}, but orch migrate failed: ` +
+      `${error instanceof Error ? error.message : String(error)}`,
+    )
   }
-  const hubBin = resolve(new URL('../../bin/hub', import.meta.url).pathname)
-  const hub = Bun.spawnSync([hubBin, 'migrate'], {
+  const hub = Bun.spawnSync([hubMigrateBin, 'migrate'], {
     cwd: project.path, env: process.env, stdout: 'pipe', stderr: 'pipe',
   })
   const hubOut = hub.stdout.toString().trim()
@@ -1346,5 +1374,8 @@ export function landingStatus(cwd: string): string {
     ? state.waiters.map((w) =>
         `  session ${w.session ?? 'unknown'}, pid ${w.pid}, landing ${w.what}, waiting ${age(w.since)}`).join('\n')
     : '  none'
-  return `${project.name} landing lock: ${holder}\nwaiters:\n${waiters}`
+  const postStep = landingsWithPostStepError().filter((row) => row.project === project.name)
+    .map((row) => `landed with post-step error\n  ${row.branch}: ${row.error}`)
+  return `${project.name} landing lock: ${holder}\nwaiters:\n${waiters}` +
+    (postStep.length ? `\n${postStep.join('\n')}` : '')
 }

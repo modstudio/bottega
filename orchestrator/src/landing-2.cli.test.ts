@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, realpathSync, mkdirSync, utimesSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addRun, db, formatGitLocks, hermeticGitEnv, landingReviewCoverage, landingStatus, resolveLandingBranch, upsertProject } from '../test/fixture.ts'
+import { addRun, db, formatGitLocks, hermeticGitEnv, land, landingReviewCoverage, landingStatus, resolveLandingBranch, setPostLandMigrateForFixture, upsertProject } from '../test/fixture.ts'
 
 import { landingDescribeFixture } from '../test/fixture.ts'
 
@@ -67,6 +67,43 @@ test('an explicit non-empty override lands and records the measured tree and rea
         'SELECT id FROM landing_override WHERE branch=?',
       ).get('override-refused')).toBeNull()
     } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a failing post-land hub migrate keeps status landed and surfaces the error', () => {
+    const { repo, trees } = repoWithBranches(['post-step-hub'])
+    const tree = trees['post-step-hub']!
+    mkdirSync(join(tree, 'orchestrator', 'migrations'), { recursive: true })
+    writeFileSync(join(tree, 'orchestrator', 'migrations', 'note.sql'), '-- journal\n')
+    g(tree, 'add', 'orchestrator/migrations/note.sql')
+    g(tree, 'commit', '-m', 'journal')
+    upsertProject({ name: 'landing-post-step', path: repo, settings: { trunk: 'main', gate: 'true' } })
+    const stubDir = mkdtempSync(join(tmpdir(), 'orch-hub-stub-'))
+    const stub = join(stubDir, 'hub')
+    writeFileSync(stub, '#!/bin/sh\necho stub-fail >&2\nexit 1\n')
+    chmodSync(stub, 0o755)
+    setPostLandMigrateForFixture({
+      orch: () => ({ path: 'stub', versions: [] }),
+      hubBin: stub,
+    })
+    try {
+      expect(() => land(repo, 'post-step-hub', { unreviewed: 'post-step fixture' })).toThrow(
+        'landing reached trunk at',
+      )
+      const row = db().query(
+        `SELECT status, error FROM landing WHERE branch=?`,
+      ).get('post-step-hub') as { status: string; error: string }
+      expect(row.status).toBe('landed')
+      expect(row.error).toContain('landing reached trunk at')
+      expect(row.error).toContain('hub migrate failed')
+      expect(row.error).toContain('stub-fail')
+      const status = landingStatus(repo)
+      expect(status).toContain('landed with post-step error')
+      expect(status).toContain(row.error)
+    } finally {
+      setPostLandMigrateForFixture(null)
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(stubDir, { recursive: true, force: true })
+    }
   })
 
   test('run ids resolve explicitly and status reads holder and waiters without acquiring', () => {
