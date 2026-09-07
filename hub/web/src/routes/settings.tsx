@@ -46,7 +46,7 @@ export const Route = createFileRoute('/settings')({ component: SettingsPage })
 
 function SettingsPage() {
   const { hours } = useWindowState()
-  const query = useQuery(trpc.settings.get.queryOptions({ hours }, { refetchInterval: 2000 }))
+  const query = useQuery(trpc.settings.get.queryOptions({ hours }, { refetchInterval: 10_000 }))
   const payload = query.data
   const data = payload?.data
   const [form, setForm] = useState<FormState | null>(null)

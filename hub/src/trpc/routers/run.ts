@@ -1,7 +1,7 @@
 import { TRPCError, initTRPC } from '@trpc/server'
 import { z } from 'zod'
 import { runDetail as orchRun, score as orchScore } from '../../orch.ts'
-import { strip, view } from '../../serve.ts'
+import { cachedOrchResponse, cachedStrip, view } from '../../serve.ts'
 import type { Context } from '../context.ts'
 
 const t = initTRPC.context<Context>().create()
@@ -18,14 +18,17 @@ export const runRouter = t.router({
       agent: z.string().max(64).default(''),
       project: z.string().max(64).default(''),
     }))
-    .query(async ({ input }) => ({
-      ...strip(input.hours),
-      view: 'runs' as const,
-      data: await view('runs', input.hours, {
-        agent: input.agent,
-        project: input.project,
+    .query(async ({ input }) => cachedOrchResponse(
+      `runs:${input.hours}:${input.agent}:${input.project}`,
+      async () => ({
+        ...await cachedStrip(input.hours),
+        view: 'runs' as const,
+        data: await view('runs', input.hours, {
+          agent: input.agent,
+          project: input.project,
+        }),
       }),
-    })),
+    )),
   get: t.procedure
     .input(z.object({ id: z.number().int().positive() }))
     .query(async ({ input }) => {

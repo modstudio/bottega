@@ -12,6 +12,7 @@ import {
 import { setWorkCounts, useWindowState } from '@/lib/window'
 import { trpc, type BoardResponse, type FlightResponse } from '@/trpc/client'
 import { compactTokens, duration, relativeTime, vendorFigures } from '@/lib/format'
+import { useNow } from '@/lib/clock'
 
 type WorkName = 'flight' | 'done'
 type TaskData = FlightResponse['data']
@@ -76,18 +77,19 @@ const columns = [
 
 type Sort = { col: typeof columns[number]['id']; dir: 1 | -1 }
 
-function RunLine({ run }: { run: Run }) {
+function RunLine({ run, now }: { run: Run; now: number }) {
   return (
     <div className="ml-6 grid grid-cols-[8rem_minmax(8rem,1fr)_6rem_5rem_7rem] gap-3 px-3 py-1 text-muted-foreground">
       <span>{run.agent ?? '-'}</span><span>{run.job || ''}</span>
-      <span className="text-right">{formatMs(run.ms)}</span><span className={run.running ? 'inline-flex items-center gap-2 text-live' : ''}>{run.running ? <><LiveDot />running</> : 'done'}</span>
+      <span className="text-right">{formatMs(run.running ? now - new Date(run.start).getTime() : run.ms)}</span><span className={run.running ? 'inline-flex items-center gap-2 text-live' : ''}>{run.running ? <><LiveDot />running</> : 'done'}</span>
       <span className="text-right">{compact(run.tokens)}{run.costUsd != null ? ` $${run.costUsd.toFixed(2)}` : ''}</span>
     </div>
   )
 }
 
-function TaskTable({ rows, from }: { rows: TaskRow[]; from: WorkName }) {
+function TaskTable({ rows, from, fetchedAt }: { rows: TaskRow[]; from: WorkName; fetchedAt: number }) {
   const navigate = useNavigate()
+  const now = useNow()
   const [sort, setSort] = useState<Sort>({ col: 'updated', dir: -1 })
   const [opened, setOpened] = useState<Set<string>>(() => new Set())
   const sorted = useMemo(() => {
@@ -111,7 +113,9 @@ function TaskTable({ rows, from }: { rows: TaskRow[]; from: WorkName }) {
         : column.id === 'title' ? row.title || <span className="text-muted-foreground">{row.source === 'git' ? 'title not known, derived from commits' : 'no tracker record yet'}</span>
           : column.id === 'status' ? <RecordStatus row={row} />
             : column.id === 'updated' ? <span className={row.workingNow ? 'text-live' : 'text-muted-foreground'}>{row.workingNow ? <><LiveDot /> now</> : ago(row.lastAt)}</span>
-              : column.id === 'engaged' ? <strong>{row.engaged}</strong>
+              : column.id === 'engaged' ? <strong>{row.runs.some((run) => run.running)
+                ? formatMs(row.engagedMs + Math.max(0, now - fetchedAt))
+                : row.engaged}</strong>
                 : column.id === 'claude' ? compact(row.claudeTokens)
                   : vendors(row),
   }))
@@ -127,7 +131,7 @@ function TaskTable({ rows, from }: { rows: TaskRow[]; from: WorkName }) {
     renderExpanded={(row) => {
       const runs = row.runs ?? []
       const visible = row.key && opened.has(row.key) ? runs : runs.filter((run) => run.running)
-      return visible.length ? <div className="bg-muted/20 px-5 py-1">{visible.map((run, index) => <RunLine key={`${run.start}:${index}`} run={run} />)}</div> : null
+      return visible.length ? <div className="bg-muted/20 px-5 py-1">{visible.map((run, index) => <RunLine key={`${run.start}:${index}`} run={run} now={now} />)}</div> : null
     }}
     empty={{ title: 'No tasks.' }}
   />
@@ -141,14 +145,14 @@ function LooseTable({ rows }: { rows: TaskRow[] }) {
   </TableRow>)}</TableBody></Table></div>
 }
 
-function TaskContent({ name, data }: { name: WorkName; data: TaskData }) {
+function TaskContent({ name, data, fetchedAt }: { name: WorkName; data: TaskData; fetchedAt: number }) {
   const window = useWindowState()
   const tasks = data.rows.filter((row) => row.key)
   const loose = data.rows.filter((row) => !row.key)
   const filtered = Boolean(window.filters.agent || window.filters.project || window.filters.source)
   const hasRows = data.rows.length > 0
   return <>
-    {tasks.length ? <TaskTable rows={tasks} from={name} /> : <EmptyState title={filtered ? 'No tasks match these filters.' : name === 'flight' ? 'No work is in flight.' : 'No tasks were completed in this window.'} hint={filtered ? 'Clear the filters or widen the window.' : name === 'flight' ? 'Work appears here when a task becomes active.' : 'Widen the window to see earlier completed work.'} />}
+    {tasks.length ? <TaskTable rows={tasks} from={name} fetchedAt={fetchedAt} /> : <EmptyState title={filtered ? 'No tasks match these filters.' : name === 'flight' ? 'No work is in flight.' : 'No tasks were completed in this window.'} hint={filtered ? 'Clear the filters or widen the window.' : name === 'flight' ? 'Work appears here when a task becomes active.' : 'Widen the window to see earlier completed work.'} />}
     {loose.length ? <section className="mt-7"><div className="mb-3 flex items-baseline gap-3"><h2 className="font-sans font-semibold">No ticket</h2><span className="text-muted-foreground">work these projects cannot attribute to a task</span></div><LooseTable rows={loose} /></section> : null}
     {data.dropped.length ? <p className="mt-5 max-w-4xl text-muted-foreground"><strong className="text-foreground">Not shown here:</strong> {data.dropped.map((item) => `${item.tasks} task${item.tasks === 1 ? '' : 's'} (${item.engaged}) ${item.reason}`).join('; ')}. In flight means being worked on right now, or marked active in its tracker.</p> : null}
     {data.unmappedStatuses.count ? <div className="mt-5 max-w-4xl"><EmptyState title={`${data.unmappedStatuses.count} external tasks with an unmapped status are not shown: ${data.unmappedStatuses.words.join(', ')}`} hint="The source words are preserved; hub will not guess their state." /></div> : null}
@@ -165,11 +169,11 @@ export function TaskView({ name }: { name: WorkName }) {
     : trpc.work.done.queryOptions({ hours: window.hours, filters: window.filters })
   // Keep the last result on screen while a new filter or window loads: a pending
   // state here unmounts the toolbar, which destroys the control being used.
-  const query = useQuery({ ...options, placeholderData: keepPreviousData, refetchInterval: menus ? false : 2000 })
+  const query = useQuery({ ...options, placeholderData: keepPreviousData, refetchInterval: menus ? false : 10_000 })
   const dropdown = (open: boolean) => setMenus((count) => Math.max(0, count + (open ? 1 : -1)))
   if (query.isPending) return <p className="text-muted-foreground">Loading {name}...</p>
   if (query.error) return <p className="text-destructive">{query.error.message}</p>
-  return <section><WindowChrome title={name === 'flight' ? 'In flight' : 'Done'} response={query.data} facets={query.data.data.facets} onDropdown={dropdown} /><TaskContent name={name} data={query.data.data} /></section>
+  return <section><WindowChrome title={name === 'flight' ? 'In flight' : 'Done'} response={query.data} facets={query.data.data.facets} onDropdown={dropdown} /><TaskContent name={name} data={query.data.data} fetchedAt={query.dataUpdatedAt} /></section>
 }
 
 type BoardCard = BoardResponse['data']['cards'][number]
@@ -201,7 +205,7 @@ export function BoardView() {
   const [settings, setSettings] = useState(readBoardSettings)
   const [search, setSearch] = useState('')
   const [why, setWhy] = useState(false)
-  const query = useQuery({ ...trpc.work.board.queryOptions({ hours: window.hours, filters: window.filters }), placeholderData: keepPreviousData, refetchInterval: menus ? false : 2000 })
+  const query = useQuery({ ...trpc.work.board.queryOptions({ hours: window.hours, filters: window.filters }), placeholderData: keepPreviousData, refetchInterval: menus ? false : 10_000 })
   const dropdown = (open: boolean) => setMenus((count) => Math.max(0, count + (open ? 1 : -1)))
   const remember = (next: Partial<typeof settings>) => setSettings((current) => {
     const value = { ...current, ...next }

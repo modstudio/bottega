@@ -24,7 +24,55 @@ import {
   projectNames, projects, trackerPresentation, type RegisteredProject,
 } from './projects.ts'
 
-const BLOCKERS_TTL_MS = 30_000
+export const ORCH_CACHE_TTL_MS = 30_000
+
+type CacheEntry<T> = { checkedAt: number; value?: T; pending?: Promise<T> }
+
+/** One load per key and TTL, including when several clients arrive together. */
+export class TtlCache {
+  private entries = new Map<string, CacheEntry<unknown>>()
+
+  constructor(
+    private readonly ttlMs: number,
+    private readonly clock: () => number = Date.now,
+  ) {}
+
+  get<T>(key: string, load: () => Promise<T> | T): Promise<T> {
+    const now = this.clock()
+    const cached = this.entries.get(key) as CacheEntry<T> | undefined
+    if (cached && now - cached.checkedAt < this.ttlMs) {
+      return cached.pending ?? Promise.resolve(cached.value as T)
+    }
+    if (cached?.pending) return cached.pending
+    const pending = Promise.resolve().then(load).then((value) => {
+      this.entries.set(key, { checkedAt: this.clock(), value })
+      return value
+    }, (cause) => {
+      this.entries.delete(key)
+      throw cause
+    })
+    this.entries.set(key, { checkedAt: now, value: cached?.value, pending })
+    return pending
+  }
+
+  clear(): void { this.entries.clear() }
+}
+
+const orchCache = new TtlCache(ORCH_CACHE_TTL_MS)
+
+/** Cache a complete orch-backed procedure response, including its strip. */
+export function cachedOrchResponse<T>(key: string, load: () => Promise<T> | T): Promise<T> {
+  return orchCache.get(key, load)
+}
+
+/** Test isolation for suites that replace the orch client or its backing rows. */
+export function clearOrchCache(): void { orchCache.clear() }
+
+/** The shared hub.db strip on an orch procedure follows the orch clock too. */
+export function cachedStrip(hours: number) {
+  return orchCache.get(`strip:${hours}`, () => strip(hours))
+}
+
 const blockerCache = new Map<number, {
   checkedAt: number
   value?: OrchBlockers
@@ -42,7 +90,7 @@ const blockerCache = new Map<number, {
 async function orchBlockers(days: number): Promise<OrchBlockers | null> {
   const now = Date.now()
   const cached = blockerCache.get(days)
-  if (cached && now - cached.checkedAt < BLOCKERS_TTL_MS) {
+  if (cached && now - cached.checkedAt < ORCH_CACHE_TTL_MS) {
     return cached.pending ?? cached.value ?? null
   }
   if (cached?.pending) return cached.pending
@@ -417,7 +465,10 @@ export async function view(name: View, hours: number,
     // the drift the orchestrator already fixed once, when its stats command and
     // its dashboard read 96% while the router, counting failures, used 69%.
     const days = Math.max(1, Math.ceil(hours / 24))
-    const [s, blockers] = await Promise.all([orchState(null), orchBlockers(days)])
+    const [s, blockers] = await Promise.all([
+      orchCache.get('state:all', () => orchState(null)),
+      orchBlockers(days),
+    ])
     return {
       guide: s.guide, matrix: s.matrix, health: s.health,
       blockerDays: days, blockers: blockers?.blockers ?? null,
@@ -436,12 +487,13 @@ export async function view(name: View, hours: number,
     // moment any history fell outside it: at 24h the band said 256 runs over a
     // table listing 328. That is precisely what the note below forbids, and it
     // was invisible only because every run in this database is a day old.
-    const raw = await readRuns(hoursAgo(hours))
+    const raw = await orchCache.get(`runs-data:${hours}`, () => readRuns(hoursAgo(hours)))
     const now = Date.now()
     // The counters and the live table come from the orchestrator's own state,
     // over the SAME window as the run list beneath them - a band that counts a
     // different period than the table under it is worse than no band.
-    const st = await orchState(Math.max(1, Math.round(hours / 24)))
+    const stateDays = Math.max(1, Math.round(hours / 24))
+    const st = await orchCache.get(`state:${stateDays}`, () => orchState(stateDays))
     // Shaped BEFORE it is filtered, because `project` is not a column. It is
     // derived by attribute() from the run's cwd and prompt, so filtering the
     // raw row would be filtering on r.repo alone - and would then disagree

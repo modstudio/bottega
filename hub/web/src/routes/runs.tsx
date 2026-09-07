@@ -9,6 +9,7 @@ import { collectedTime, compactTokens, duration, vendorFigures } from '@/lib/for
 import { trpc } from '@/trpc/client'
 import { Collection, type CollectionColumn } from '@/components/collection'
 import { Input } from '@/components/input'
+import { useNow } from '@/lib/clock'
 import {
   matchesRunSearch, runEasternTime, runVerdictText,
   type SearchableLiveRun, type SearchableRun,
@@ -55,9 +56,10 @@ function RunsList() {
   const windowState = useWindowState()
   const [openMenus, setOpenMenus] = useState(0)
   const [search, setSearch] = useState('')
+  const now = useNow()
   const query = useQuery(trpc.run.list.queryOptions({
     hours: windowState.hours, agent: windowState.filters.agent, project: windowState.filters.project,
-  }, { refetchInterval: openMenus ? false : 2000 }))
+  }, { refetchInterval: openMenus ? false : 30_000 }))
   const payload = query.data as unknown as RunsPayload | undefined
   const data = payload?.data
   const filtered = !!(windowState.filters.agent || windowState.filters.project)
@@ -77,7 +79,7 @@ function RunsList() {
     { id: 'agent', label: 'Agent', render: (row) => <span className="inline-flex items-center gap-2 text-live"><LiveDot />{row.agent}</span> },
     { id: 'job', label: 'Job', render: (row) => <span className="text-muted-foreground">{row.job}</span> },
     { id: 'project', label: 'Project', render: (row) => <ProjectMark name={row.repo} /> },
-    { id: 'elapsed', label: 'Elapsed', className: 'num', render: (row) => fmtMs(row.elapsedMs) },
+    { id: 'elapsed', label: 'Elapsed', className: 'num', render: (row) => fmtMs(row.elapsedMs + Math.max(0, now - query.dataUpdatedAt)) },
     { id: 'prompt', label: 'Prompt', render: (row) => <span className="block max-w-lg truncate text-muted-foreground">{row.prompt_head.slice(0, 90)}</span> },
   ]
   const runColumns: CollectionColumn<RunRow>[] = [
@@ -85,7 +87,7 @@ function RunsList() {
     { id: 'task', label: 'Task', render: (row) => <strong>{row.task ?? '-'}</strong> },
     { id: 'agent', label: 'Agent', render: (row) => row.agent },
     { id: 'job', label: 'Job', render: (row) => <span className="text-muted-foreground">{row.job || '-'}{row.lens ? ` ${row.lens}` : ''}{row.probe ? ' probe' : ''}</span> },
-    { id: 'took', label: 'Took', className: 'num', render: (row) => row.engaged },
+    { id: 'took', label: 'Took', className: 'num', render: (row) => row.running ? fmtMs(now - new Date(row.at).getTime()) : row.engaged },
     { id: 'verdict', label: 'Verdict', render: (row) => <Verdict row={row} /> },
     { id: 'tokens', label: 'Tokens', className: 'num', render: (row) => compact(row.tokens) },
     { id: 'cost', label: 'Cost', className: 'num', render: (row) => row.costUsd == null ? '-' : `$${row.costUsd.toFixed(2)}` },

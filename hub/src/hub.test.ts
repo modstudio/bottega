@@ -1,4 +1,4 @@
-import { expect, test, describe, spyOn } from 'bun:test'
+import { afterEach, expect, test, describe, spyOn } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,7 +25,9 @@ const { chainVendorTokens, executionSpans, ingestRuns } = await import('./ingest
 const { listOpenRulings, rulingsPayload, rulingsStaleAfter } = await import('./rulings.ts')
 const { runsSince } = await import('./collect.ts')
 const { boardTasks } = await import('./query.ts')
-const { view } = await import('./serve.ts')
+const { clearOrchCache, view } = await import('./serve.ts')
+
+afterEach(clearOrchCache)
 
 process.on('exit', () => {
   try { rmSync(testDir, { recursive: true, force: true }) } catch {}

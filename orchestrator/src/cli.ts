@@ -9,16 +9,6 @@ import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, nowIso,
          resolveRootFromLastTurn, chainScoreJoin, chainTerminationAt,
          authorizeRunMutation, runMutationActor,
          auditRunMutation, adoptRunMutation, writeTransaction, type RootAuthority } from './db.ts'
-import { JOBS, job } from './jobs.ts'
-import { AGENTS, available, installed, ensureLocalHealth,
-         unavailableReason, NEEDS_HEALTH, tryWake, wakeStatus,
-         lastWakeAttempt, readStrictCodexSchema, resumePromptByteLimit,
-         cliVersion, versionBelow } from './agents.ts'
-import { candidates, pick, scoreboard, MIN_SAMPLE, promptSizeBucketLabel } from './route.ts'
-import { guide } from './guide.ts'
-import { repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses,
-         implicitReviewWarning, packedResumePrompt, mcpRequestFromStored, storedMcpRequest,
-         retryModelForAgent, type DetachSpec, type McpRequest } from './run.ts'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync, unlinkSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, timingSafeEqual } from 'node:crypto'
@@ -26,38 +16,73 @@ import { z } from 'zod'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
 import { createHasPlaceholder, projectAt, projectByName, projects } from './projects.ts'
-import { branchTip, restoreBranch, resolveBase, repoRootOf, removeBranch, removeFor, unmergedBranch,
-         checkoutHasUncommittedWork, callerDrift, projectLockState,
-         withCleanupLock as takeCleanupLock, withWorktreeLease,
-         targetGitEnvironment, type Worktree } from './worktree.ts'
 import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
-import { WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE,
-         REVIEW_SEVERITY_INSTRUCTION, contractConflicts, rulingPrompt } from './contract.ts'
 import { collectResult, collectWait, resolveFailover, failoverSummary } from './collect.ts'
 import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
-import { grokTrustHeadings, grokTrustPathFromHeading } from './grok-trust.ts'
 import {
   ANSWER_WORKING_FORMS, CONTINUE_WORKING_FORMS, TELL_WORKING_FORMS,
   flagValue, flagValues, invalidUtf8Offset, nulByteOffset, parseAnswerTextSources,
   parseWorkerMessageArgs, refuseMisparsedMessage, validateCliArgs,
 } from './args.ts'
-import { cleanReviewEvidence, completeReview, coverageAudit, DISPOSITIONS, gradeReviewLens, parseReviewOutput, recordReviews,
-         getReview, listReviews, MIN_REVIEW_TRIAGED, REVIEW_WINDOW, reviewCalibration,
-         reviewCalibrationFleet, reviewPins, triageFinding, type Disposition,
-         type ReviewGrades } from './review.ts'
-import { classifyReviewTier, diffNumstat } from './review-tier.ts'
-import { composeWorkflow, exportWorkflows, forkWorkflow, getWorkflowStep, importWorkflows,
-         listWorkflows, promoteWorkflow, retireWorkflow, setWorkflow, showWorkflow,
-         workflowVersions } from './workflows.ts'
-import { bradleyTerry, gwetAc1, quadraticWeightedKappa } from './agreement.ts'
-import { routingBacktest, routingBacktestEnsemble, type RoutingBacktest } from './routing-backtest.ts'
-import { dockerRemovalCommand, dockerRunResources, leakedResourceLines,
-         orphanedDockerResources, orchRunId, resourcesForRuns,
-         type DockerResource } from './docker-resources.ts'
 import {
   DASHBOARD_CAPABILITY_PATH_ENV, DASHBOARD_CAPABILITY_TOKEN_ENV,
   type DashboardCapability,
 } from '../../shared/dashboard-capability.ts'
+
+type DetachSpec = import('./run.ts').DetachSpec
+type McpRequest = import('./run.ts').McpRequest
+type Worktree = import('./worktree.ts').Worktree
+type Disposition = import('./review.ts').Disposition
+type ReviewGrades = import('./review.ts').ReviewGrades
+type RoutingBacktest = import('./routing-backtest.ts').RoutingBacktest
+type DockerResource = import('./docker-resources.ts').DockerResource
+
+const invokedCommand = process.argv[2] ?? ''
+const leanCommand = new Set(['project', 'state', 'blockers']).has(invokedCommand)
+  || (invokedCommand === 'runs' && process.argv.includes('--json'))
+const lazy = async <T>(path: string): Promise<T> => leanCommand
+  ? {} as T
+  : await import(path) as T
+
+// Reporting commands above are intentionally independent of the dispatch kernel.
+// Other commands load it only when invoked, so a dashboard poll never constructs it.
+const { JOBS, job } = await lazy<typeof import('./jobs.ts')>('./jobs.ts')
+const { AGENTS, available, installed, ensureLocalHealth,
+        unavailableReason, NEEDS_HEALTH, tryWake, wakeStatus,
+        lastWakeAttempt, readStrictCodexSchema, resumePromptByteLimit,
+        cliVersion, versionBelow } = await lazy<typeof import('./agents.ts')>('./agents.ts')
+const { candidates, pick, scoreboard, MIN_SAMPLE, promptSizeBucketLabel } =
+  await lazy<typeof import('./route.ts')>('./route.ts')
+const { guide } = await lazy<typeof import('./guide.ts')>('./guide.ts')
+const { repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths,
+        terminateRunProcesses, implicitReviewWarning, packedResumePrompt,
+        mcpRequestFromStored, storedMcpRequest, retryModelForAgent } =
+  await lazy<typeof import('./run.ts')>('./run.ts')
+const { branchTip, restoreBranch, resolveBase, repoRootOf, removeBranch, removeFor,
+        unmergedBranch, checkoutHasUncommittedWork, callerDrift, projectLockState,
+        withCleanupLock: takeCleanupLock, withWorktreeLease, targetGitEnvironment } =
+  await lazy<typeof import('./worktree.ts')>('./worktree.ts')
+const { WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE,
+        REVIEW_SEVERITY_INSTRUCTION, contractConflicts, rulingPrompt } =
+  await lazy<typeof import('./contract.ts')>('./contract.ts')
+const { grokTrustHeadings, grokTrustPathFromHeading } =
+  await lazy<typeof import('./grok-trust.ts')>('./grok-trust.ts')
+const { cleanReviewEvidence, completeReview, coverageAudit, DISPOSITIONS,
+        gradeReviewLens, parseReviewOutput, recordReviews, getReview, listReviews,
+        MIN_REVIEW_TRIAGED, REVIEW_WINDOW, reviewCalibration, reviewCalibrationFleet,
+        reviewPins, triageFinding } = await lazy<typeof import('./review.ts')>('./review.ts')
+const { classifyReviewTier, diffNumstat } =
+  await lazy<typeof import('./review-tier.ts')>('./review-tier.ts')
+const { composeWorkflow, exportWorkflows, forkWorkflow, getWorkflowStep,
+        importWorkflows, listWorkflows, promoteWorkflow, retireWorkflow, setWorkflow,
+        showWorkflow, workflowVersions } = await lazy<typeof import('./workflows.ts')>('./workflows.ts')
+const { bradleyTerry, gwetAc1, quadraticWeightedKappa } =
+  await lazy<typeof import('./agreement.ts')>('./agreement.ts')
+const { routingBacktest, routingBacktestEnsemble } =
+  await lazy<typeof import('./routing-backtest.ts')>('./routing-backtest.ts')
+const { dockerRemovalCommand, dockerRunResources, leakedResourceLines,
+        orphanedDockerResources, orchRunId, resourcesForRuns } =
+  await lazy<typeof import('./docker-resources.ts')>('./docker-resources.ts')
 
 /**
  * How long `orch do` watches a detached run before handing it back.
@@ -1626,7 +1651,7 @@ async function readPrompt(): Promise<string> {
 try {
 
 validateCliArgs(argv)
-if (NEEDS_HEALTH.has(cmd ?? '')) await ensureLocalHealth()
+if (!leanCommand && NEEDS_HEALTH.has(cmd ?? '')) await ensureLocalHealth()
 
 switch (cmd) {
   case 'init-db': {

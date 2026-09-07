@@ -143,7 +143,7 @@ function RatioQuery() {
   const windowState = useWindowState()
   const [menus, setMenus] = useState(0)
   const input = { hours: windowState.hours, filters: windowState.filters }
-  const query = useQuery(trpc.insight.ratio.queryOptions(input, { refetchInterval: menus ? false : 2000 }))
+  const query = useQuery(trpc.insight.ratio.queryOptions(input, { refetchInterval: menus ? false : 10_000 }))
   const dropdown = (open: boolean) => setMenus((count) => Math.max(0, count + (open ? 1 : -1)))
   if (query.isPending) return <p className="text-muted-foreground">Loading ratio...</p>
   if (query.error) return <p className="text-destructive">could not load: {query.error.message}</p>
@@ -154,7 +154,7 @@ function SpendQuery() {
   const windowState = useWindowState()
   const [menus, setMenus] = useState(0)
   const input = { hours: windowState.hours, filters: windowState.filters }
-  const query = useQuery(trpc.insight.spend.queryOptions(input, { refetchInterval: menus ? false : 2000 }))
+  const query = useQuery(trpc.insight.spend.queryOptions(input, { refetchInterval: menus ? false : 10_000 }))
   const dropdown = (open: boolean) => setMenus((count) => Math.max(0, count + (open ? 1 : -1)))
   if (query.isPending) return <p className="text-muted-foreground">Loading spend...</p>
   if (query.error) return <p className="text-destructive">could not load: {query.error.message}</p>
@@ -165,7 +165,7 @@ function RoutingQuery() {
   const windowState = useWindowState()
   const [menus, setMenus] = useState(0)
   const input = { hours: windowState.hours, filters: windowState.filters }
-  const query = useQuery(trpc.insight.routing.queryOptions(input, { refetchInterval: menus ? false : 2000 }))
+  const query = useQuery(trpc.insight.routing.queryOptions(input, { refetchInterval: menus ? false : 30_000 }))
   const dropdown = (open: boolean) => setMenus((count) => Math.max(0, count + (open ? 1 : -1)))
   if (query.isPending) return <p className="text-muted-foreground">Loading routing...</p>
   if (query.error) return <p className="text-destructive">could not load: {query.error.message}</p>

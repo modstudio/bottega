@@ -1,6 +1,6 @@
 import { initTRPC } from '@trpc/server'
 import { z } from 'zod'
-import { strip, view } from '../../serve.ts'
+import { cachedOrchResponse, cachedStrip, strip, view } from '../../serve.ts'
 import type { Context } from '../context.ts'
 
 const t = initTRPC.context<Context>().create()
@@ -19,12 +19,17 @@ type SpendData = Extract<ViewData, { numerators: unknown }>
 type RoutingData = Extract<ViewData, { matrix: unknown }>
 
 const insightView = <Name extends 'ratio' | 'spend' | 'routing'>(name: Name) =>
-  t.procedure.input(input).query(async ({ input: value }) => ({
-    ...strip(value.hours),
-    view: name,
-    data: await view(name, value.hours, value.filters) as Name extends 'ratio'
-      ? RatioData : Name extends 'spend' ? SpendData : RoutingData,
-  }))
+  t.procedure.input(input).query(async ({ input: value }) => {
+    const load = async () => ({
+      ...(name === 'routing' ? await cachedStrip(value.hours) : strip(value.hours)),
+      view: name,
+      data: await view(name, value.hours, value.filters) as Name extends 'ratio'
+        ? RatioData : Name extends 'spend' ? SpendData : RoutingData,
+    })
+    return name === 'routing'
+      ? cachedOrchResponse(`routing:${value.hours}:${value.filters.agent}:${value.filters.project}`, load)
+      : load()
+  })
 
 export const insightRouter = t.router({
   routing: insightView('routing'),
