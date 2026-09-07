@@ -8893,6 +8893,14 @@ describe('detached run collection', () => {
     }
   }
   const orch = (...args: string[]) => orchInput(args)
+  const scoreReminder = (session: string) => Bun.spawnSync(
+    ['python3', new URL('../hooks/score-reminder.py', import.meta.url).pathname],
+    {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB! },
+      stdin: new TextEncoder().encode(JSON.stringify({ session_id: session })),
+      stdout: 'pipe', stderr: 'pipe',
+    },
+  )
   const orchFrom = (cwd: string, session: string, ...args: string[]) => {
     const p = Bun.spawnSync([process.execPath, CLI, ...args], {
       cwd,
@@ -10574,6 +10582,34 @@ describe('detached run collection', () => {
     const scored = orch('score', String(second), 'full', 'right')
     expect(scored.code).toBe(0)
     expect(scored.out).toContain(`pair: run ${first} (codex) on the same tree`)
+  })
+
+  test('a scored probe partner is excluded from score, pending, and Stop-hook pair offers', () => {
+    const probe = addRun({
+      agent: 'codex', job: 'file-question', session: 'orch-test-session',
+      inputTree: 'probe-tree', probe: 1,
+    })
+    const subject = addRun({
+      agent: 'grok', job: 'file-question', session: 'orch-test-session', inputTree: 'probe-tree',
+    })
+    expect(orch('score', String(probe), 'full', 'right').code).toBe(0)
+    expect(orch('score', String(subject), 'full', 'right').out).not.toContain('pair:')
+    expect(orch('pending').out).not.toContain(`--same-as ${probe}`)
+    expect(scoreReminder('orch-test-session').stdout.toString()).toBe('')
+  })
+
+  test('an evidence-excluded partner is excluded from score, pending, and Stop-hook pair offers', () => {
+    const excluded = addRun({
+      agent: 'codex', job: 'file-question', session: 'orch-test-session', inputTree: 'excluded-tree',
+    })
+    const subject = addRun({
+      agent: 'grok', job: 'file-question', session: 'orch-test-session', inputTree: 'excluded-tree',
+    })
+    expect(orch('score', String(excluded), 'full', 'right').code).toBe(0)
+    db().query('UPDATE run SET evidence_excluded=? WHERE id=?').run('fixture exclusion', excluded)
+    expect(orch('score', String(subject), 'full', 'right').out).not.toContain('pair:')
+    expect(orch('pending').out).not.toContain(`--same-as ${excluded}`)
+    expect(scoreReminder('orch-test-session').stdout.toString()).toBe('')
   })
 
   test('stats reports Bradley-Terry strengths once a job reaches MIN_SAMPLE duels', () => {

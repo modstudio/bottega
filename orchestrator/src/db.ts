@@ -2396,6 +2396,8 @@ export function pairPartners(runId: number, sid: string | null): PairPartner[] {
         AND partner.parent_run_id IS NULL
         AND partner.job = subject.job
         AND partner.session_id = ?
+        AND COALESCE(partner.probe, 0) = 0
+        AND partner.evidence_excluded IS NULL
         AND ((subject.input_tree IS NOT NULL AND partner.input_tree = subject.input_tree)
           OR (subject.input_tree IS NULL AND partner.input_tree IS NULL
               AND partner.prompt_sha = subject.prompt_sha))
@@ -2404,6 +2406,8 @@ export function pairPartners(runId: number, sid: string | null): PairPartner[] {
          ON compared.run_a_id = MIN(subject.id, partner.id)
         AND compared.run_b_id = MAX(subject.id, partner.id)
       WHERE subject.id = ?
+        AND COALESCE(subject.probe, 0) = 0
+        AND subject.evidence_excluded IS NULL
         AND datetime(partner_score.scored_at) >= datetime('now', '-24 hours')
         AND compared.run_a_id IS NULL
       ORDER BY partner.id`,
@@ -2421,6 +2425,8 @@ export function unrecordedPairsForSession(sid: string | null): UnrecordedPair[] 
         AND older.parent_run_id IS NULL
         AND older.job = newer.job
         AND older.session_id = newer.session_id
+        AND COALESCE(older.probe, 0) = 0
+        AND older.evidence_excluded IS NULL
         AND ((newer.input_tree IS NOT NULL AND older.input_tree = newer.input_tree)
           OR (newer.input_tree IS NULL AND older.input_tree IS NULL
               AND older.prompt_sha = newer.prompt_sha))
@@ -2428,6 +2434,8 @@ export function unrecordedPairsForSession(sid: string | null): UnrecordedPair[] 
        LEFT JOIN compared_pair compared
          ON compared.run_a_id = older.id AND compared.run_b_id = newer.id
       WHERE newer.parent_run_id IS NULL AND newer.session_id = ?
+        AND COALESCE(newer.probe, 0) = 0
+        AND newer.evidence_excluded IS NULL
         AND datetime(newer_score.scored_at) >= datetime('now', '-24 hours')
         AND datetime(older_score.scored_at) >= datetime('now', '-24 hours')
         AND compared.run_a_id IS NULL

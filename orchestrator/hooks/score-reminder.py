@@ -95,6 +95,8 @@ def main() -> int:
                       AND older.parent_run_id IS NULL
                       AND older.job = newer.job
                       AND older.session_id = newer.session_id
+                      AND COALESCE(older.probe, 0) = 0
+                      AND older.evidence_excluded IS NULL
                       AND ((newer.input_tree IS NOT NULL AND older.input_tree = newer.input_tree)
                         OR (newer.input_tree IS NULL AND older.input_tree IS NULL
                             AND older.prompt_sha = newer.prompt_sha))
@@ -102,6 +104,8 @@ def main() -> int:
                      LEFT JOIN compared_pair compared
                        ON compared.run_a_id = older.id AND compared.run_b_id = newer.id
                     WHERE newer.parent_run_id IS NULL AND newer.session_id = ?
+                      AND COALESCE(newer.probe, 0) = 0
+                      AND newer.evidence_excluded IS NULL
                       AND datetime(newer_score.scored_at) >= datetime('now', '-24 hours')
                       AND datetime(older_score.scored_at) >= datetime('now', '-24 hours')
                       AND compared.run_a_id IS NULL
