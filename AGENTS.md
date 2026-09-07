@@ -132,3 +132,161 @@ no key is recorded against the project with no task and the link cannot be recov
 **The project register is the authority** on key prefixes, worktree recipes,
 per-project notes and on which concerns a project keeps for itself (see above) —
 `orch project list --json`. Read it before concluding a project lacks something.
+
+## What this is for
+
+Bottega is orchestration that lives BELOW the primary frontier harness. It does
+not replace one. The harness above — where the architect designs, rules and
+judges — is swappable, and Claude Code is one adapter among possible others. A
+design that assumes a particular harness is wrong here.
+
+Two purposes, and they are one thing:
+
+**Delegation that costs nothing in judgement.** The architect brings a frontier
+model for what it is worth — design, rulings, synthesis — and the building goes
+to agents on flat-rate subscriptions and to local models. The scarce resource is
+the architect's attention and allotment, never money, which is why every surface
+here returns DECISIONS rather than data for the architect to reason over.
+
+**A lifecycle built for agents rather than retrofitted onto tools built for
+people.** Contracts, escalation, scored fidelity, review lenses, canon compiled
+into every prompt.
+
+Neither half is worth much alone. The delegation is only safe because the
+lifecycle machinery is what stops cheap tokens producing expensive rework.
+
+## Why delegating costs you nothing
+
+The obvious objection to sending work to a cheaper model is that you get cheaper
+work. It does not hold, and the reason is worth stating precisely.
+
+Any change has two parts: the decisions, and the typing. Most of what makes a
+change good is decided before a line is written — what the thing should do, which
+ambiguity resolves which way, what must not break. A worker forbidden to decide
+contributes none of that. It contributes the typing. The judgement in the diff is
+the architect's, arriving through a different pair of hands.
+
+So the question is never whether this model is as good as the frontier one. It is
+whether any decision leaked into the worker. Where none did, you lose nothing by
+delegating, because there was nothing of the worker's judgement in the result to
+lose.
+
+That is a claim about mechanism, not goodwill, and three things make it true
+rather than hopeful:
+
+- **The contract forbids it.** A worker reaching a judgement call stops and asks.
+  It does not resolve the ambiguity and build on its own answer.
+- **Asking is cheap enough to happen.** A durable escalation costs a turn and a
+  resume, which is enough friction that a worker facing three small ambiguities
+  batches them or quietly decides two. The live ask channel removes that: the
+  worker blocks mid-task, the ruling arrives, the turn survives. One working day
+  produced nine escalations, every one a real fork, and no silent guesses.
+- **Deviation is measured, not trusted.** Fidelity is a scored axis for exactly
+  this failure: an agent can return a complete, correct, tested change that
+  solves a DIFFERENT problem, and delivery and quality both read it as flawless.
+
+Asking is faithful and costs nothing. That must hold in the arithmetic or it does
+not hold at all — a worker penalised for asking learns to guess, and the argument
+collapses.
+
+## Why judge and route
+
+If workers supply typing rather than judgement, the remaining question is which
+one gets a given job. Not the best benchmark, the best marketing, or somebody's
+default — those describe a model in the abstract, and the work is never abstract.
+
+The evidence that decides is your own: runs on your repositories, scored on what
+you accepted and what you sent back, keyed to the shape of the work — job type,
+the stack it ran against, the lens it served. An agent strong on one stack and
+weak on another appears as two records rather than one average true of neither.
+
+It improves without anyone maintaining it. Every judgement is evidence, failures
+included: an agent that cannot do a job here has answered a question, and that
+answer is as useful as a success.
+
+## Opinionated, deliberately
+
+This platform has opinions and enforces them. One disposable worktree per run.
+Never push. Escalate every decision. A review before a landing, and a complete
+one. Canon compiled into every prompt. A verdict on every run before the next one
+routes.
+
+That is not incidental strictness; it is the product. Models are inconsistent —
+the same prompt on the same tree gives different work on different days, and gets
+less predictable as the task grows. The structure around them does not vary.
+Holding the process rigid is what converts an inconsistent generator into a
+consistent outcome, and every opinion above exists because its absence cost
+something real that is written down beside it.
+
+The cost is honest and worth stating: if you want to work a different way, this
+will fight you. The opinions are not suggestions and they are not configuration.
+Making them customisable — your structure, enforced with the same rigour — is a
+coherent thing to build and is not what this is. That is a decision, not an
+oversight, and not a priority now.
+
+## What we build, and what we buy
+
+Beyond the value proposition, lean on tried and tested. Do not hand-roll and do
+not reinvent.
+
+Build only what IS the product: the routing algorithm and the evidence model, the
+worker contract and its escalation, review tiers and reviewer calibration, canon,
+docs and the context injection that binds a prompt, and the attribution metric.
+
+Buy everything else, and prefer what another project on this machine already runs
+in production: authentication and organisations, database access and migrations,
+tenancy enforcement, transports, queues, object storage, hosting.
+
+A hand-rolled mechanism where a proven one exists is a defect, not a preference.
+Name it and replace it rather than extending it.
+
+## Tasks: inbox zero
+
+File a task for work being done NOW. Do not carry a backlog of ideas.
+
+A plan is not a set of tasks. Plans live in the doc store and become tasks at
+implementation time, not before. A board listing what someone might one day do
+cannot be read for what is actually happening, and every stale row costs a
+session the time to rule it out.
+
+This does not weaken "you file it, you fix it": a defect found while doing other
+work is still fixed or delegated in that session. It forbids the speculative
+backlog, not the record of real work.
+
+### The suggestion box
+
+Inbox zero only works if noticing something has somewhere to go that is not the
+board. That place is the suggestion box.
+
+It is **not a document**. It is a row and one verb — `orch note "<text>"`, on the
+CLI and over MCP — because a shared markdown ledger works only while exactly one
+session writes it, and two sessions appending a file is the lost-update class
+this estate has already met elsewhere.
+
+**An entry is one line of free text, and nothing else is asked of the author.**
+Project, run, branch, session, commit and any `file:line` in the text are derived
+at write time. A schema nobody fills in is a schema that gets skipped, and the
+cost of filing has to stay below the cost of ignoring what you just saw.
+
+**De-duplication happens at write time, by search, never by a job.** Writing a
+note shows the nearest existing entries; saying "same" increments that entry's
+count and appends a sighting rather than creating a second row. The count is the
+promotion signal, which is the rule this canon already carries: a thing seen once
+is an observation, and seen twice with cost it has earned a task. A scheduled job
+must never merge entries by text similarity — five distinct findings about one
+subsystem are five findings, and a similarity pass would have collapsed exactly
+that case on the day the mechanism was designed.
+
+**Staleness is mechanical, not editorial.** An entry is stale when its anchors
+are gone: the `file:line` no longer exists, the run row aged out, the branch
+landed or was deleted, the commit range fell behind trunk. The scheduled job
+MARKS stale and may DELETE only what is stale and count-1 and untouched for
+thirty days and never promoted. Anything else is a human's call.
+
+**Promotion is a human act.** `orch note promote <id>` files the task carrying
+the entry body and its sightings as evidence. The job never promotes, and the
+board never grows on its own.
+
+**The guardrail:** if an entry needs fields beyond text, tags and sightings, it
+has stopped being a note and become a task. Promote it. Do not build a second
+tracker inside the first one.
