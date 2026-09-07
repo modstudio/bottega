@@ -260,6 +260,11 @@ export function tryWriteContention(
       const d = new Database(DB_PATH, { readwrite: true, create: false })
       try {
         d.exec('PRAGMA busy_timeout = 0; PRAGMA foreign_keys = ON')
+        // The one-shot connection sits outside writeTransaction's stale-schema
+        // guard, so it checks the same invariant itself: a process writes only
+        // the schema version it opened.
+        const opened = openedUserVersion
+        if (opened !== null && readUserVersion(d) !== opened) return
         if (!contentionTableExists(d)) return
         insertContention(d, row)
       } finally { d.close() }
