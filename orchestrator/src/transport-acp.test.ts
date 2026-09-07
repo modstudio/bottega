@@ -9,7 +9,8 @@ import {
   selectAgentForTransport, stopErrorMessage, valueMatchesStrictSchema,
 } from './transport.ts'
 import {
-  acpLeaderSocketPath, acpOutcome, acpSandboxProfile, normalizeAcpTurn,
+  acpLeaderSocketPath, acpOutcome, acpSandboxProfile, grokEffectiveModel,
+  grokSessionMeta, normalizeAcpTurn,
 } from './transport-acp.ts'
 import {
   ACP_FIXTURE_CANCELLED_TEXT, ACP_FIXTURE_EDIT_PERMISSION, ACP_FIXTURE_ELICITATION,
@@ -60,6 +61,20 @@ describe('ACP transport selection', () => {
     expect(AGENTS.codex!.acp?.mcpServers).toBe(true)
     expect(AGENTS.grok!.acp?.mcpServers).toBe(false)
     expect(AGENTS.grok!.acp?.mcpReason).toContain('GROK_HOME fallback delivered')
+  })
+
+  test('grok model is passed through session/new and read back from the session', () => {
+    expect(grokSessionMeta('grok-4.5')).toEqual({ modelId: 'grok-4.5' })
+    expect(grokEffectiveModel({
+      models: { currentModelId: 'grok-4.5', availableModels: [] },
+    }, 'grok-4.5', true)).toBe('grok-4.5')
+  })
+
+  test('an explicit grok model the ACP session did not honour is refused with its anchor', () => {
+    expect(() => grokEffectiveModel({
+      models: { currentModelId: 'grok-4.6', availableModels: [] },
+    }, 'grok-4.5', true)).toThrow(`${ACP_PILOT_TASK} Grok ACP model refusal`)
+    expect(() => grokEffectiveModel({}, 'grok-4.5', true)).toThrow('no effective model')
   })
 })
 

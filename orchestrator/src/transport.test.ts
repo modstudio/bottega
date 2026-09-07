@@ -102,7 +102,9 @@ describe('ACP transport through run', () => {
         name: 'acp',
         async start(opts) {
           session = opts.session
-          const result = fakeResult({ output: 'ok', status: 'ok', sessionId: 'acp-created' })
+          const result = fakeResult({
+            output: 'ok', status: 'ok', sessionId: 'acp-created', effectiveModel: 'grok-4.5',
+          })
           return {
             pid: 0, kill() {}, async prompt() {}, async *events() {}, async cancel() {},
             async collect() { writeFileSync(opts.outPath, result.output); return result },
@@ -116,12 +118,14 @@ describe('ACP transport through run', () => {
       installTestTransport(transport)
       const result = await run({
         job: 'summarize', prompt: 'summarise', cwd: dir,
-        agent: 'grok', transport: 'acp', noFailover: true,
+        agent: 'grok', transport: 'acp', model: 'grok-4.5', noFailover: true,
       })
       expect(result.status).toBe('ok')
       expect(session).toBeUndefined()
       expect(db().query('SELECT vendor_session FROM run WHERE id=?').get(result.id))
         .toEqual({ vendor_session: 'acp-created' })
+      expect(db().query('SELECT model FROM run WHERE id=?').get(result.id))
+        .toEqual({ model: 'grok-4.5' })
     } finally {
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
@@ -329,6 +333,31 @@ describe('ACP transport through run', () => {
       expect(message).toContain('reply did not match the worker contract')
       expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(runId))
         .toEqual({ status: 'failed', failure_kind: 'other' })
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
+  test('grok ACP accepts an original-schema reply that omits an optional property', async () => {
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    const schemaPath = join(dir, 'acp-grok-optional-schema.json')
+    writeFileSync(schemaPath, JSON.stringify({
+      type: 'object', additionalProperties: false, required: ['answer'],
+      properties: { answer: { type: 'string' }, note: { type: 'string' } },
+    }))
+    try {
+      installFake(() => fakeResult({
+        output: '{"answer":"yes"}', status: 'ok', stopReason: 'end_turn',
+      }))
+      const result = await run({
+        job: 'summarize', prompt: 'answer via schema', cwd: dir, agent: 'grok',
+        transport: 'acp', schemaPath, noFailover: true,
+      })
+      expect(result.status).toBe('ok')
+      expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(result.id))
+        .toEqual({ status: 'ok', failure_kind: null })
     } finally {
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth

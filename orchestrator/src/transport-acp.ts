@@ -6,7 +6,8 @@ import * as acp from '@agentclientprotocol/sdk'
 import { srtLaunchArgv } from './sandbox.ts'
 import type { SandboxRuntimeConfig } from './sandbox.ts'
 import {
-  confineFsPath, decideAcpPermission, outcomeFromTransport, resolveCodexAcpBin, stopErrorMessage,
+  ACP_PILOT_TASK, confineFsPath, decideAcpPermission, outcomeFromTransport, resolveCodexAcpBin,
+  stopErrorMessage,
   type AgentTransport, type NormalizedEvent, type TransportHandle, type TransportResult,
   type TransportStartOpts,
 } from './transport.ts'
@@ -30,6 +31,31 @@ type AcpTurnInput = {
   timedOut?: boolean
   permissionEvents?: Extract<NormalizedEvent, { kind: 'permission' }>[]
   usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number; costUsd?: number } | null
+}
+
+type GrokSessionResponse = {
+  models?: { currentModelId?: unknown; availableModels?: unknown }
+  _meta?: Record<string, unknown> | null
+}
+
+/** Grok 1.0.13 accepts its ACP model as an extension on session/new. */
+export function grokSessionMeta(model: string | undefined): Record<string, unknown> | undefined {
+  return model ? { modelId: model } : undefined
+}
+
+/** Read back the model Grok says the session actually uses. */
+export function grokEffectiveModel(
+  response: GrokSessionResponse, requested: string | undefined, explicit: boolean,
+): string | null {
+  const current = response.models?.currentModelId
+  const effective = typeof current === 'string' && current.trim() ? current : null
+  if (explicit && (!effective || effective !== requested)) {
+    throw new Error(
+      `${ACP_PILOT_TASK} Grok ACP model refusal: requested ${JSON.stringify(requested)}; ` +
+      `session reported ${effective ? JSON.stringify(effective) : 'no effective model'}`,
+    )
+  }
+  return effective
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -221,6 +247,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   let closed = false
   let prompted = false
   let sessionId: string | null = opts.session ?? null
+  let effectiveModel: string | null = null
   let connection: acp.ClientConnection | null = null
   let ctx: acp.ClientContext | null = null
 
@@ -332,17 +359,28 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
         }]
       : []
     if (opts.session) {
-      await ctx.request(acp.methods.agent.session.load, {
+      const loaded = await ctx.request(acp.methods.agent.session.load, {
         // orch resumes the vendor conversation; the prompt is the ruling.
         cwd: opts.cwd, sessionId: opts.session, mcpServers,
       })
       sessionId = opts.session
+      if (grok) {
+        effectiveModel = grokEffectiveModel(
+          loaded as GrokSessionResponse, opts.model, Boolean(opts.modelExplicit),
+        )
+      }
     } else {
       const created = await ctx.request(acp.methods.agent.session.new, {
         // orch opens a read-only session with its per-run ruling channel.
         cwd: opts.cwd, mcpServers,
+        ...(grok ? { _meta: grokSessionMeta(opts.model) } : {}),
       })
       sessionId = created.sessionId
+      if (grok) {
+        effectiveModel = grokEffectiveModel(
+          created as GrokSessionResponse, opts.model, Boolean(opts.modelExplicit),
+        )
+      }
     }
     if (sessionId) pushEvent({ kind: 'session', sessionId })
   } catch (error) {
@@ -363,6 +401,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
 
   const handle: TransportHandle = {
     pid: child.pid ?? null,
+    effectiveModel,
     kill(sig) {
       try { child.kill(sig === 9 || sig === 'SIGKILL' ? 'SIGKILL' : 'SIGTERM') } catch { /* already gone */ }
     },
@@ -415,6 +454,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
           ? [stderr, elicitationFallback].filter(Boolean).join('\n')
           : stderr
         result.pid = child.pid ?? null
+        result.effectiveModel = effectiveModel
         writeFileSync(opts.outPath, result.output)
         if (result.stopReason) pushEvent({ kind: 'stop', reason: result.stopReason })
         closed = true

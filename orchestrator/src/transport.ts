@@ -67,6 +67,8 @@ export type TransportResult = {
     recommendation?: string | null
     why: string
   }>
+  /** Model the vendor session reports after applying transport configuration. */
+  effectiveModel?: string | null
 }
 
 export type TransportStartOpts = {
@@ -78,6 +80,8 @@ export type TransportStartOpts = {
   session?: string
   schemaPath?: string
   model?: string
+  /** Distinguishes an explicit --model from the agent's configured default. */
+  modelExplicit?: boolean
   home?: string
   startedAt: number
   write?: boolean
@@ -96,6 +100,8 @@ export type TransportStartOpts = {
 
 export type TransportHandle = {
   pid: number | null
+  /** Available once session/new or session/load has returned. */
+  effectiveModel?: string | null
   kill(sig?: number | string): void
   prompt(text: string): Promise<void>
   events(): AsyncIterable<NormalizedEvent>

@@ -48,7 +48,7 @@ const CASES: Array<{ id: string; prompt: string; schema?: boolean; timeoutMs?: n
   },
 ]
 
-type Row = {
+export type Row = {
   case: string
   transport: TransportName
   outcome: string
@@ -58,10 +58,7 @@ type Row = {
   rawBytes: number
 }
 
-const requestedAgent = process.argv[2] ?? 'codex'
-if (requestedAgent !== 'codex' && requestedAgent !== 'grok') {
-  throw new Error('usage: bun scripts/acp-parity.ts [codex|grok]')
-}
+let requestedAgent: 'codex' | 'grok' = 'codex'
 
 function cell(value: string, width: number): string {
   return value.length >= width ? value.slice(0, width) : value.padEnd(width)
@@ -176,57 +173,70 @@ async function runAskCase(): Promise<Row> {
   }
 }
 
-const cwd = process.cwd()
-const dir = mkdtempSync(join(tmpdir(), 'orch-acp-parity-'))
-mkdirSync(dir, { recursive: true })
+/** A timeout is the one deliberately failed case; every other turn must finish ok. */
+export function requiredParityPassed(rows: Row[]): boolean {
+  if (rows.length !== CASES.length * 2 + 1) return false
+  return rows.every((row) => row.case === 'timeout'
+    ? row.outcome === 'failed' && row.failureKind === 'timeout'
+    : row.outcome === 'ok')
+}
 
-const rows: Row[] = []
-for (const spec of CASES) {
-  for (const transportName of ['cli', 'acp'] as const) {
-    process.stderr.write(`${spec.id} ${transportName}...\n`)
-    try {
-      rows.push(await runCase(transportName, spec, cwd, dir))
-    } catch (error) {
-      rows.push({
-        case: spec.id,
-        transport: transportName,
-        outcome: 'failed',
-        failureKind: 'harness',
-        tokens: '—',
-        latencyMs: 0,
-        rawBytes: 0,
-      })
-      process.stderr.write(`  ${String((error as Error)?.message ?? error)}\n`)
+async function main(): Promise<void> {
+  const requested = process.argv[2] ?? 'codex'
+  if (requested !== 'codex' && requested !== 'grok') {
+    throw new Error('usage: bun scripts/acp-parity.ts [codex|grok]')
+  }
+  requestedAgent = requested
+  const cwd = process.cwd()
+  const dir = mkdtempSync(join(tmpdir(), 'orch-acp-parity-'))
+  mkdirSync(dir, { recursive: true })
+
+  const rows: Row[] = []
+  for (const spec of CASES) {
+    for (const transportName of ['cli', 'acp'] as const) {
+      process.stderr.write(`${spec.id} ${transportName}...\n`)
+      try {
+        rows.push(await runCase(transportName, spec, cwd, dir))
+      } catch (error) {
+        rows.push({
+          case: spec.id, transport: transportName, outcome: 'failed', failureKind: 'harness',
+          tokens: '—', latencyMs: 0, rawBytes: 0,
+        })
+        process.stderr.write(`  ${String((error as Error)?.message ?? error)}\n`)
+      }
     }
   }
+
+  process.stderr.write('ask-answer acp...\n')
+  try {
+    rows.push(await runAskCase())
+  } catch (error) {
+    rows.push({
+      case: 'ask-answer', transport: 'acp', outcome: 'failed', failureKind: 'harness',
+      tokens: '—', latencyMs: 0, rawBytes: 0,
+    })
+    process.stderr.write(`  ${String((error as Error)?.message ?? error)}\n`)
+  }
+
+  const header = [
+    cell('case', 16), cell('tr', 4), cell('outcome', 8),
+    cell('fail', 12), cell('tokens', 8), cell('ms', 8), cell('rawB', 8),
+  ].join(' ')
+  console.log(header)
+  console.log('-'.repeat(header.length))
+  for (const row of rows) {
+    console.log([
+      cell(row.case, 16), cell(row.transport, 4), cell(row.outcome, 8),
+      cell(row.failureKind, 12), cell(row.tokens, 8),
+      cell(String(row.latencyMs), 8), cell(String(row.rawBytes), 8),
+    ].join(' '))
+  }
+  console.log(`\nparity files: ${dir}`)
+  const nativeElicitation = AGENTS[requestedAgent]!.acp?.nativeElicitation
+  if (!nativeElicitation) {
+    console.log(`elicitation fallback: ${AGENTS[requestedAgent]!.acp?.nativeElicitationReason}`)
+  }
+  if (!requiredParityPassed(rows)) process.exitCode = 1
 }
 
-process.stderr.write('ask-answer acp...\n')
-try {
-  rows.push(await runAskCase())
-} catch (error) {
-  rows.push({
-    case: 'ask-answer', transport: 'acp', outcome: 'failed', failureKind: 'harness',
-    tokens: '—', latencyMs: 0, rawBytes: 0,
-  })
-  process.stderr.write(`  ${String((error as Error)?.message ?? error)}\n`)
-}
-
-const header = [
-  cell('case', 16), cell('tr', 4), cell('outcome', 8),
-  cell('fail', 12), cell('tokens', 8), cell('ms', 8), cell('rawB', 8),
-].join(' ')
-console.log(header)
-console.log('-'.repeat(header.length))
-for (const row of rows) {
-  console.log([
-    cell(row.case, 16), cell(row.transport, 4), cell(row.outcome, 8),
-    cell(row.failureKind, 12), cell(row.tokens, 8),
-    cell(String(row.latencyMs), 8), cell(String(row.rawBytes), 8),
-  ].join(' '))
-}
-console.log(`\nparity files: ${dir}`)
-const nativeElicitation = AGENTS[requestedAgent]!.acp?.nativeElicitation
-if (!nativeElicitation) {
-  console.log(`elicitation fallback: ${AGENTS[requestedAgent]!.acp?.nativeElicitationReason}`)
-}
+if (import.meta.main) await main()

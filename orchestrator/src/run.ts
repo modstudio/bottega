@@ -2370,6 +2370,7 @@ export async function run(opts: {
   let vendorTokens: number | null = null
   let costUsd: number | null = null
   let resolvedSession: string | null = vendorSession
+  let effectiveModel: string | null = null
   let contract: WorkerReply | null = null
   let contractObjects = 0
   let acceptedQuestions: ReturnType<typeof realQuestions> = []
@@ -2437,6 +2438,7 @@ export async function run(opts: {
       session: transportName === 'acp' ? opts.resume?.session : vendorSession ?? undefined,
       schemaPath: schemaPath ?? undefined,
       model: opts.model ?? a.model,
+      modelExplicit: opts.model !== undefined,
       home: sandboxEnvironment.HOME,
       startedAt: started,
       write: writes,
@@ -2460,6 +2462,8 @@ export async function run(opts: {
       : await t.start(startOpts)
     proc = handle
     live.add(handle)
+    effectiveModel = handle.effectiveModel ?? null
+    if (effectiveModel) db().query('UPDATE run SET model=? WHERE id=?').run(effectiveModel, claim.id)
     // The VENDOR CLI pid. pid stays the worker's for the whole run: after the
     // agent exits the worker is still parsing output and writing questions, and
     // a reaper that tested this pid would mark the run stale under a process
@@ -2492,6 +2496,7 @@ export async function run(opts: {
       a.outputCeilingStopReason !== null && reply.stopReason === a.outputCeilingStopReason
     vendorTokens = collected.tokens
     costUsd = collected.costUsd
+    effectiveModel = collected.effectiveModel ?? effectiveModel
     resolvedSession = collected.sessionId ?? vendorSession
     output = collected.output
     const transportQuestions = collected.asking
@@ -2556,7 +2561,11 @@ export async function run(opts: {
       !collected.asking && !acpVendorStop && (() => {
         let value: unknown
         try { value = JSON.parse(output) } catch { return true }
-        return !valueMatchesStrictSchema(readStrictCodexSchema(schemaPath!), value)
+        // Codex receives the normalised strict schema at schemaPath; Grok
+        // receives the caller's original schema. Validate each against the
+        // contract actually sent to that vendor.
+        const validationSchema = JSON.parse(readFileSync(schemaPath!, 'utf8'))
+        return !valueMatchesStrictSchema(validationSchema, value)
       })()
     if (acpVendorStop) {
       status = 'failed'
@@ -2902,14 +2911,15 @@ export async function run(opts: {
     writeTransaction(() => {
       db().query(
         `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
-                        vendor_tokens=?, vendor_cost_usd=?,
+                        vendor_tokens=?, vendor_cost_usd=?, model=COALESCE(?, model),
                         status=CASE WHEN status='stopped' THEN status ELSE ? END,
                         error=CASE WHEN status='stopped' THEN error ELSE ? END,
                         failure_kind=CASE WHEN status='stopped' THEN failure_kind ELSE ? END,
                         vendor_session=COALESCE(?, vendor_session), pre_confinement=? WHERE id=?`,
       ).run(
         Date.now() - started, exitCode, new TextEncoder().encode(output).byteLength, outPath, promptPath,
-        vendorTokens, costUsd, status, error, failureKind, resolvedSession, preConfinement, claim.id,
+        vendorTokens, costUsd, effectiveModel, status, error, failureKind,
+        resolvedSession, preConfinement, claim.id,
       )
 
       /**
