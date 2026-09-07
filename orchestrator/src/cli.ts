@@ -2476,9 +2476,9 @@ switch (cmd) {
       if (/^\d+$/.test(value)) {
         const runId = Number(value)
         const row = db().query(
-          'SELECT repo, branch, base_commit, input_tree, head_commit FROM run WHERE id=?',
+          'SELECT repo, job, branch, base_commit, input_tree, head_commit FROM run WHERE id=?',
         ).get(runId) as {
-          repo: string | null; branch: string | null; base_commit: string | null
+          repo: string | null; job: string; branch: string | null; base_commit: string | null
           input_tree: string | null; head_commit: string | null
         } | null
         if (!row) throw new Error(`no run ${runId}`)
@@ -2486,9 +2486,11 @@ switch (cmd) {
         if (!project) throw new Error(`run ${runId} has no registered project`)
         if (!row.base_commit) throw new Error(`run ${runId} has no recorded base commit`)
         // A writer run's input tree IS its base: what it built lives on its
-        // branch. Measure the branch tip when the branch still exists, and
-        // fall back to the reviewed input tree only for a reader (DEV-323).
-        const branchLive = row.branch && Bun.spawnSync(
+        // branch. Measure the branch tip when the branch still exists. A
+        // reader's input tree is the artifact it reviewed, so a reader keeps
+        // it even when a branch is recorded (DEV-323).
+        const writer = (() => { try { return job(row.job).needs.writesRepo } catch { return false } })()
+        const branchLive = writer && row.branch && Bun.spawnSync(
           ['git', 'show-ref', '--verify', '--quiet', `refs/heads/${row.branch}`],
           { cwd: project.path, env: targetGitEnvironment(project.path), stdout: 'pipe', stderr: 'pipe' },
         ).exitCode === 0
