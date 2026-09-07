@@ -14,6 +14,7 @@ import {
 
 type AcpUpdate = {
   sessionUpdate: string
+  toolCallId?: string
   content?: { type?: string; text?: string } | unknown[]
   title?: string
   status?: string
@@ -128,6 +129,14 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
   if (sessionId) events.push({ kind: 'session', sessionId })
   for (const event of input.permissionEvents ?? []) events.push(event)
 
+  // ACP splits one tool call across a `tool_call` (kind, title, locations,
+  // input) and later `tool_call_update`s (status, output). Goose sends the
+  // updates with nothing but the status, so an event built per update never
+  // carries both "completed" and the target, and the registration probe's
+  // readsRepo gate could not be satisfied by a harness that had read the file
+  // (2026-09-07, local-acp: three events, statuses unknown, unknown, completed,
+  // the sentinel in the final reply). Updates fold into the call they name.
+  const toolCalls = new Map<string, Extract<NormalizedEvent, { kind: 'tool' }>>()
   for (const raw of input.updates) {
     const update = asUpdate(isRecord(raw) && 'update' in raw ? raw.update : raw)
     if (!update) continue
@@ -141,16 +150,30 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
         break
       }
       case 'tool_call':
-      case 'tool_call_update':
-        events.push({
+      case 'tool_call_update': {
+        const known = update.toolCallId ? toolCalls.get(update.toolCallId) : undefined
+        if (update.sessionUpdate === 'tool_call_update' && known) {
+          if (update.status) known.status = update.status
+          if (update.title) known.title = update.title
+          if (update.kind) known.toolKind = update.kind
+          const target = toolCallTarget(update)
+          if (target) known.target = target
+          const result = toolCallResult(update)
+          if (result) known.result = result
+          break
+        }
+        const event: Extract<NormalizedEvent, { kind: 'tool' }> = {
           kind: 'tool',
           title: update.title ?? update.sessionUpdate,
           status: update.status,
           toolKind: update.kind,
           target: toolCallTarget(update),
           result: toolCallResult(update),
-        })
+        }
+        events.push(event)
+        if (update.toolCallId) toolCalls.set(update.toolCallId, event)
         break
+      }
       case 'usage_update':
         if (typeof update.used === 'number') {
           tokens = update.used

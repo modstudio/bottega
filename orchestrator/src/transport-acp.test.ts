@@ -309,3 +309,34 @@ describe('strict schema matching used on the ACP path', () => {
     expect(valueMatchesStrictSchema(schema, '{')).toBe(false)
   })
 })
+
+describe('tool_call_update folds into its tool_call', () => {
+  test('a goose-shaped read (call with target, update with only the status) satisfies the readsRepo probe gate', async () => {
+    const { registrationProbeReadsRepo } = await import('./agents.ts')
+    const result = normalizeAcpTurn({
+      sessionId: 's', stopReason: 'end_turn', updates: [
+        { update: { sessionUpdate: 'tool_call', toolCallId: 'call-1', title: 'read probe.txt', kind: 'read', status: 'pending', locations: [{ path: '/tmp/probe/probe.txt' }] } },
+        { update: { sessionUpdate: 'tool_call_update', toolCallId: 'call-1', status: 'in_progress' } },
+        { update: { sessionUpdate: 'tool_call_update', toolCallId: 'call-1', status: 'completed', rawOutput: 'REGISTRATION_PROBE_FILE_OK' } },
+        { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'The contents are REGISTRATION_PROBE_FILE_OK' } } },
+      ],
+    })
+    const tools = result.events.filter((event) => event.kind === 'tool')
+    expect(tools).toHaveLength(1)
+    expect(tools[0]).toMatchObject({ status: 'completed', toolKind: 'read', target: '/tmp/probe/probe.txt', result: 'REGISTRATION_PROBE_FILE_OK' })
+    expect(registrationProbeReadsRepo(result.events, result.output)).toBe(true)
+  })
+
+  test('an update naming no known call stays its own event, and an unrelated tool plus a hallucinated sentinel still fails the gate', async () => {
+    const { registrationProbeReadsRepo } = await import('./agents.ts')
+    const result = normalizeAcpTurn({
+      sessionId: 's', stopReason: 'end_turn', updates: [
+        { update: { sessionUpdate: 'tool_call', toolCallId: 'call-9', title: 'list directory', kind: 'execute', status: 'completed' } },
+        { update: { sessionUpdate: 'tool_call_update', toolCallId: 'orphan', status: 'completed' } },
+        { update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'REGISTRATION_PROBE_FILE_OK' } } },
+      ],
+    })
+    expect(result.events.filter((event) => event.kind === 'tool')).toHaveLength(2)
+    expect(registrationProbeReadsRepo(result.events, result.output)).toBe(false)
+  })
+})
