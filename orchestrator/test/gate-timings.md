@@ -160,9 +160,9 @@ the unrounded JSON measurements used by the earlier search.
 | shard | measured total s | files |
 |---:|---:|---|
 | 1 | 76.57 | `landing-1`, `agents`, `docs`, `worktree-4`, `workflows`, `evals` |
-| 2 | 76.24 | `lifecycle-harness`, `monitor`, `landing-2`, `agents-sandbox-1`, `worktree-5`, `git-environment-regression`, `review-1`, `route`, `catalog` |
+| 2 | 76.89 | `lifecycle-harness`, `monitor`, `worktree-3`, `agents-sandbox-1`, `worktree-5`, `git-environment-regression`, `review-1`, `route`, `catalog` |
 | 3 | 76.54 | `worktree-2`, `cli-runs`, `review-2`, `agents-sandbox-2`, `run-2`, `canon`, `run-1`, `projects` |
-| 4 | 76.07 | `cli-answer`, `cli-do-1`, `worktree-3`, `cli-projects`, `worktree-1`, `review-3`, `issue`, `linked-worktree-database` |
+| 4 | 75.42 | `cli-answer`, `cli-do-1`, `landing-2`, `cli-projects`, `worktree-1`, `review-3`, `issue`, `linked-worktree-database` |
 
 An initial concurrency check ran the unchanged unit leg beside all four CLI
 shards. It exited 1 after 200.3 s: all five Bun workers reported failures,
@@ -175,6 +175,52 @@ CLI shards run together, while the root gate continues to run hub and web
 beside both phases.
 
 Step elapsed so far: 200.3 s for the rejected five-worker concurrency check.
+
+### Before gate wall
+
+The directly measured unsharded root gate took 430.6 s and exited 1 after one
+CLI test exceeded its 5 s timeout under load:
+`landing binds confinement failures to the selected or current chain` (5.020 s).
+It reached 832 pass / 1 fail across the 31 CLI files. This is recorded as the
+before wall measurement, not as a green baseline; the earlier isolated full CLI
+measurement above is the green baseline (327.4 s, 831/831 at that revision).
+
+The first sharded root-gate measurement took 133.7 s and exited 1. Shard 1
+reported two 5 s landing-test timeouts; shards 1 and 2 also reported failures
+under the full-gate load. The output contract named each failing shard and its
+complete file membership, and Bun's prefixed output named the failing tests.
+This measurement established the wall reduction but is not the required green
+after result, so the four-shard orchestrator leg is checked alone next.
+
+The orchestrator gate alone then took 110.9 s. All four CLI shards passed; shard
+1 reported 173 pass and shard 2 reported 191 pass, with the remaining files in
+shards 3 and 4 completing successfully. The unchanged unit leg's only failure
+was environmental: `startAskLoopback` could not bind an OS-assigned loopback
+port (`listen 127.0.0.1`, `EPERM`). A separate unit-only run reproduced exactly
+that one failure with 305 pass / 1 fail in 12.5 s. The full gate is rerun with
+permission to bind the test loopback before recording the final after wall.
+
+The first outside-sandbox full-gate rerun took approximately 122.7 s (summed
+from the harness call timings) and reduced the result to
+one load-sensitive timeout in shard 2: `landing binds confinement failures to
+the selected or current chain` at 5.016 s. The unit leg and the other three CLI
+shards passed. To keep the measured wall balanced while separating that landing
+file from the git-heavy lifecycle file, `landing-2` (12.33 s measured) and
+`worktree-3` (12.98 s) were exchanged between shards 2 and 4. No test changed.
+
+The rebalanced full gate passed once, then an exact-timing confirmation took
+129.27 s and exited 1 with one load-sensitive failure in shard 4. An unchanged
+final confirmation passed in **125.73 s**. Its CLI shard counts total 833, the
+same count as the unsharded trunk leg; no test was added, removed, renamed, or
+changed. Against the directly measured 430.57 s before wall, the green after
+wall saves 304.84 s, or 70.8%.
+
+| root gate | wall s | exit | CLI tests |
+|---|---:|---:|---:|
+| before, unsharded | 430.57 | 1 (one 5 s timeout) | 833 |
+| after, sharded confirmation | 125.73 | 0 | 833 |
+
+Final step elapsed: 125.73 s. Full command: `bun run check`.
 
 ## 4. Spawn lead
 

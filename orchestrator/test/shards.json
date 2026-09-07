@@ -16,7 +16,7 @@
       "files": [
         "src/lifecycle-harness.cli.test.ts",
         "src/monitor.cli.test.ts",
-        "src/landing-2.cli.test.ts",
+        "src/worktree-3.cli.test.ts",
         "src/agents-sandbox-1.cli.test.ts",
         "src/worktree-5.cli.test.ts",
         "src/git-environment-regression.cli.test.ts",
@@ -43,7 +43,7 @@
       "files": [
         "src/cli-answer.cli.test.ts",
         "src/cli-do-1.cli.test.ts",
-        "src/worktree-3.cli.test.ts",
+        "src/landing-2.cli.test.ts",
         "src/cli-projects.cli.test.ts",
         "src/worktree-1.cli.test.ts",
         "src/review-3.cli.test.ts",
