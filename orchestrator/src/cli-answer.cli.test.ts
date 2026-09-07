@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ARGV_PROMPT_BYTES, addRun, db, dir, packResumePrompt, packedResumePrompt, rulingPrompt } from '../test/fixture.ts'
+import { ARGV_PROMPT_BYTES, addRun, db, dir, packResumePrompt, packedResumePrompt, recordReview, reviewReply, rulingPrompt } from '../test/fixture.ts'
 
 import { runCollectionDescribeFixture } from '../test/fixture.ts'
 
@@ -168,6 +168,30 @@ test('answer refuses six individually-legal --file rulings whose packed resume e
       expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before)
       expect(db().query('SELECT action FROM run_mutation_audit WHERE root_id=?').all(id)).toEqual([])
     }
+  })
+
+  test('a findings root with a recorded review cannot be re-terminalised', () => {
+    const root = addRun({
+      agent: 'codex', job: 'review-lens', status: 'ok', lens: 'correctness',
+      session: 'orch-test-session',
+    })
+    const reviewId = recordReview(root, reviewReply(1, 'high'))
+    const before = db().query(
+      `SELECT r.id, r.completed_at, rl.id lens_id, rl.run_id
+         FROM review r JOIN review_lens rl ON rl.review_id=r.id WHERE r.id=?`,
+    ).get(reviewId)
+    const runCount = (db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n
+
+    const result = orch('continue', String(root), 'review another turn')
+
+    expect(result.code).toBe(1)
+    expect(result.err).toContain("invariant: a recorded review is the run's product and is not re-terminalised")
+    expect(result.err).toContain('cleared by: dispatch a new review run')
+    expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(runCount)
+    expect(db().query(
+      `SELECT r.id, r.completed_at, rl.id lens_id, rl.run_id
+         FROM review r JOIN review_lens rl ON rl.review_id=r.id WHERE r.id=?`,
+    ).get(reviewId)).toEqual(before)
   })
 
   test('result on a still-running run exits 2, not 1', () => {

@@ -1244,6 +1244,16 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
   if (row.status === 'stopped' || row.status === 'stale') {
     throw new Error(`run ${id} is ${row.status} and cannot be continued`)
   }
+  const recordedReview = db().query(
+    'SELECT review_id FROM review_lens WHERE run_id=?',
+  ).get(row.id) as { review_id: number } | null
+  if (recordedReview) {
+    throw new Error(
+      `run ${id} has a recorded review and cannot be continued\n` +
+      "invariant: a recorded review is the run's product and is not re-terminalised\n" +
+      'cleared by: dispatch a new review run',
+    )
+  }
   const running = db().query(
     `SELECT id, turn FROM run
       WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
