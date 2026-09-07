@@ -141,7 +141,7 @@ describe('Drizzle migration journal', () => {
     d.close()
   })
 
-  test('a store migrated through 0001_landing_queue accepts 0002_spec_sha', () => {
+  test('a store migrated through 0001_landing_queue accepts later migrations', () => {
     const dir = mkdtempSync(join(tmpdir(), 'orch-through-0001-'))
     mkdirSync(join(dir, 'meta'))
     const through0001 = migrationJournal().slice(0, 2)
@@ -153,7 +153,7 @@ describe('Drizzle migration journal', () => {
     }))
     const d = new Database(':memory:')
     expect(applyMigrations(d, dir)).toEqual(['0000_bright_sleepwalker', '0001_landing_queue'])
-    expect(applyMigrations(d)).toEqual(['0002_spec_sha'])
+    expect(applyMigrations(d)).toEqual(['0002_spec_sha', '0003_keep_tree'])
     expect(d.query("SELECT name FROM pragma_table_info('run') WHERE name='spec_sha'").get())
       .toEqual({ name: 'spec_sha' })
     d.close()
