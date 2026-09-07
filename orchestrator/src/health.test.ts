@@ -34,6 +34,7 @@ describe('harness health', () => {
     expect(report.falseVerdicts.find((row) => row.kind === 'escaped')).toMatchObject({ verdicts: 1, falseVerdicts: 1, rate: 1 })
     expect(report.falseVerdicts.find((row) => row.kind === 'harness')).toMatchObject({ verdicts: 1, falseVerdicts: 1, rate: 1 })
     expect(report.landingRefusals).toBe(1)
+    expect(report.flakes).toEqual([])
     expect(report.header).toContain('never routing or scoring evidence')
     expect(report.header).toContain('reclassify audit rows with cleared:true')
     expect(report.header).toContain('Contention is waits, refusals and invalidations')
@@ -49,6 +50,43 @@ describe('harness health', () => {
     const output = JSON.parse(cli.stdout.toString())
     expect(output.classes.find((row: { kind: string }) => row.kind === 'interrupted').count).toBe(2)
     expect(output.landingRefusals).toBe(1)
+    expect(output.flakes).toEqual([])
+  })
+
+  test('shows the flake table', () => {
+    const now = new Date('2026-09-07T12:00:00.000Z')
+    db().query(
+      `INSERT INTO test_flake (test, file, load_at_failure, at) VALUES (?,?,?,?)`,
+    ).run(
+      'landing binds confinement',
+      'src/landing-2.cli.test.ts',
+      JSON.stringify({ gates: 4, loadavg: 5.1, ncpu: 8, freeMem: 1_500_000_000 }),
+      '2026-09-06T11:00:00.000Z',
+    )
+    db().query(
+      `INSERT INTO test_flake (test, file, load_at_failure, at) VALUES (?,?,?,?)`,
+    ).run(
+      'landing binds confinement',
+      'src/landing-2.cli.test.ts',
+      JSON.stringify({ gates: 3, loadavg: 4.2, ncpu: 8, freeMem: 2_000_000_000 }),
+      '2026-09-07T11:00:00.000Z',
+    )
+    const report = harnessHealth(14, db(), now)
+    expect(report.flakes).toEqual([{
+      test: 'landing binds confinement',
+      file: 'src/landing-2.cli.test.ts',
+      count: 2,
+      loadAtFailure: { gates: 3, loadavg: 4.2, ncpu: 8, freeMem: 2_000_000_000 },
+    }])
+    const cli = Bun.spawnSync([
+      process.execPath, new URL('./cli.ts', import.meta.url).pathname, 'health', '--days', '14',
+    ], { env: process.env, stdout: 'pipe', stderr: 'pipe' })
+    expect(cli.exitCode, cli.stderr.toString()).toBe(0)
+    const text = cli.stdout.toString()
+    expect(text).toContain('FLAKES')
+    expect(text).toContain('landing binds confinement')
+    expect(text).toContain('src/landing-2.cli.test.ts')
+    expect(text).toContain('gates=3')
   })
 
   test('lists landings that reached trunk with a post-step error', () => {

@@ -306,6 +306,17 @@ export const landing = sqliteTable('landing', {
   check('landing_status_check', sql`${t.status} in ('started','landed','refused','install_failed')`),
   index('landing_project_started').on(t.project, t.startedAt),
 ])
+export const testFlake = sqliteTable('test_flake', {
+  id: id(),
+  test: text().notNull(),
+  file: text().notNull(),
+  loadAtFailure: text('load_at_failure').notNull(),
+  at: text().notNull(),
+}, (t) => [
+  check('test_flake_load_json_check', sql`json_valid(${t.loadAtFailure})`),
+  index('test_flake_test_file_at').on(t.test, t.file, t.at),
+])
+
 export const landingReviewCarry = sqliteTable('landing_review_carry', {
   id: id(), /** @deprecated Use projectId. */ project: text().notNull(), projectId: integer('project_id').references(() => project.id, { onDelete: 'restrict' }), branch: text().notNull(), tip: text().notNull(), tree: text().notNull(), reviewId: integer('review_id').notNull().references(() => review.id),
   reviewedCommit: text('reviewed_commit').notNull(), reviewedTree: text('reviewed_tree').notNull(), patchId: text('patch_id').notNull(), oldBase: text('old_base').notNull(),

@@ -1770,6 +1770,33 @@ parallel launch loses most of its rows, which is to say the record of the very
 runs it was launching. Measured: 8 concurrent writers wrote 40 of 160 rows
 before, 160 of 160 after.
 
+## The test gate
+
+The gate is sized to this machine, not to an idle one. Nine failures in a day
+were bounds written for a quiet host: 5 s defaults on tests that spawn orch and
+git, a 1 s docker inventory bound, an 8 s elapsed assertion, a lock-waiter whose
+children took seconds to start under four concurrent gates. Two per-test bounds
+were raised by hand; this paragraph is the policy.
+
+Every CLI test file declares a size in `orchestrator/test/shards.json`: **short**
+(30 s), **moderate** (120 s) or **long** (600 s). The shard runner passes that
+bound; the unit leg keeps 5 s. Files that hold project locks or spawn landings
+are **exclusive** and never share a shard with each other.
+
+The gate retries a failed shard **once**, and only when the failure matches a
+named signal: a timeout, exit 143, a lock wait, or a listen EPERM. A pass after
+that fail is **FLAKY**: printed on the gate report and recorded in `test_flake`
+(test, file, count, load at failure), which `orch health` shows. Two flakes of
+one test in a week are printed as a question to the operator and are not retried
+again. There is no blanket retry.
+
+The shard runner measures host load — running gates, CPU, memory — and holds a
+shard while more than two gates are running, or while loadavg is at or above
+ncpu, or while free RAM is under 1 GiB. `gate-load.ts` is the same limit the
+landing queue consults. Sub-second product bounds that tests exercise (the
+sweep's docker inventory 1 s) are `ORCH_DOCKER_INVENTORY_TIMEOUT_MS`, set from
+the file's size class when the shard runs.
+
 ## Agent capabilities are not interchangeable
 
 An agent is a row: harness, backend, and model. The harness is the ACP-speaking

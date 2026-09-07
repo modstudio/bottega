@@ -2,6 +2,15 @@ import { existsSync } from 'node:fs'
 
 export const DOCKER_INVENTORY_TIMEOUT_MS = 1_000
 
+export function dockerInventoryTimeoutMs(
+  env: Record<string, string | undefined> = process.env,
+): number {
+  const raw = env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS
+  if (raw === undefined || raw === '') return DOCKER_INVENTORY_TIMEOUT_MS
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? n : DOCKER_INVENTORY_TIMEOUT_MS
+}
+
 export type DockerResourceKind = 'container' | 'volume'
 
 export type DockerResource = {
@@ -21,8 +30,9 @@ function list(kind: DockerResourceKind): { names: string[]; error: string | null
     : ['docker', 'volume', 'ls', '--format', '{{.Name}}']
   let p: ReturnType<typeof Bun.spawnSync>
   try {
+    const timeout = dockerInventoryTimeoutMs()
     p = Bun.spawnSync(args, {
-      stdout: 'pipe', stderr: 'pipe', timeout: DOCKER_INVENTORY_TIMEOUT_MS,
+      stdout: 'pipe', stderr: 'pipe', timeout,
     })
   } catch (error) {
     return {
@@ -34,7 +44,7 @@ function list(kind: DockerResourceKind): { names: string[]; error: string | null
     return {
       names: [],
       error: `docker ${args.slice(1, 3).join(' ')} inventory unavailable: ` +
-        `timed out after ${DOCKER_INVENTORY_TIMEOUT_MS}ms`,
+        `timed out after ${dockerInventoryTimeoutMs()}ms`,
     }
   }
   if (p.exitCode !== 0) {

@@ -57,6 +57,13 @@
       "when": 1788900000001,
       "tag": "0007_contention",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1788900000002,
+      "tag": "0006_test_flake",
+      "breakpoints": true
     }
   ]
 }

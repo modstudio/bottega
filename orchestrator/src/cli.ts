@@ -1554,7 +1554,7 @@ function usage(): never {
   orch reclassify-failures [--dry-run]
       reclassify stored unclassified vendor quota/auth failures from their error text;
       prints every matched row and before/after counts before writing
-  orch health [--days N] [--json] failure classes by count, time, last seen and false-verdict rate
+  orch health [--days N] [--json] failure classes by count, time, last seen, false-verdict rate and the flake table
   orch doctor                   agents, local endpoint, routing at a glance
   orch agent add <name> --harness H --backend B [--model M] [--base-url U] [--context-tokens N]
   orch agent set <name> [the add flags] [--enabled true|false] [--reason TEXT]
@@ -6535,6 +6535,18 @@ switch (cmd) {
         String(row.invalidationsCaused).padStart(22))
     }
     if (!report.contention.sessions.length) console.log('(none)')
+    console.log('\nFLAKES')
+    console.log('TEST'.padEnd(36) + 'FILE'.padEnd(36) + 'COUNT'.padStart(7) + '  LOAD')
+    if (!report.flakes?.length) console.log('(none)')
+    for (const row of report.flakes ?? []) {
+      const load = row.loadAtFailure
+      console.log(
+        row.test.slice(0, 35).padEnd(36)
+        + row.file.slice(0, 35).padEnd(36)
+        + String(row.count).padStart(7)
+        + `  gates=${load.gates} loadavg=${load.loadavg} ncpu=${load.ncpu} mem=${load.freeMem}`,
+      )
+    }
     break
   }
 

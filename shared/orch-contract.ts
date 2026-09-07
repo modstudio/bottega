@@ -175,6 +175,17 @@ export const HarnessHealthSchema = z.object({
     falseVerdicts: z.number().int().nonnegative(), rate: z.number().min(0).max(1),
   })),
   landingRefusals: z.number().int().nonnegative(),
+  flakes: z.array(z.object({
+    test: z.string(),
+    file: z.string(),
+    count: z.number().int().nonnegative(),
+    loadAtFailure: z.object({
+      gates: z.number(),
+      loadavg: z.number(),
+      ncpu: z.number(),
+      freeMem: z.number(),
+    }).passthrough(),
+  })).optional(),
   contention: z.object({
     resources: z.array(z.object({
       kind: z.string(),

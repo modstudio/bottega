@@ -87,9 +87,34 @@ export function harnessHealth(days = HEALTH_DEFAULT_DAYS, database: Database = d
   const landingRefusals = (database.query(
     `SELECT COUNT(*) n FROM landing WHERE status='refused' AND datetime(started_at) >= datetime(?)`,
   ).get(from) as { n: number }).n
+  const flakeTable = database.query(
+    "SELECT 1 AS n FROM sqlite_master WHERE type='table' AND name='test_flake'",
+  ).get() as { n: number } | null
+  const flakeRows = flakeTable ? database.query(
+    `SELECT f.test, f.file, c.count, f.load_at_failure
+       FROM test_flake f
+       JOIN (
+         SELECT test, file, COUNT(*) AS count, MAX(at) AS last_at
+           FROM test_flake
+          WHERE datetime(at) >= datetime(?)
+          GROUP BY test, file
+       ) c ON c.test=f.test AND c.file=f.file AND c.last_at=f.at
+      ORDER BY c.count DESC, f.test, f.file`,
+  ).all(from) as { test: string; file: string; count: number; load_at_failure: string }[] : []
+  const flakes = flakeRows.flatMap((row) => {
+    try {
+      const load = JSON.parse(row.load_at_failure) as {
+        gates: number; loadavg: number; ncpu: number; freeMem: number
+      }
+      if (![load.gates, load.loadavg, load.ncpu, load.freeMem].every(Number.isFinite)) return []
+      return [{ test: row.test, file: row.file, count: row.count, loadAtFailure: load }]
+    } catch {
+      return []
+    }
+  })
   return HarnessHealthSchema.parse({
     header: 'Harness health only — never routing or scoring evidence. Confinement clears are reclassify audit rows with cleared:true; landing refusals are reported separately. Contention is waits, refusals and invalidations on shared resources — never routing evidence.',
-    days, from, classes, falseVerdicts, landingRefusals,
+    days, from, classes, falseVerdicts, landingRefusals, flakes,
     contention: summarizeContention(database, from),
   })
 }
