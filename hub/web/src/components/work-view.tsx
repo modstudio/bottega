@@ -113,7 +113,7 @@ function TaskTable({ rows, from, fetchedAt }: { rows: TaskRow[]; from: WorkName;
         : column.id === 'title' ? row.title || <span className="text-muted-foreground">{row.source === 'git' ? 'title not known, derived from commits' : 'no tracker record yet'}</span>
           : column.id === 'status' ? <RecordStatus row={row} />
             : column.id === 'updated' ? <span className={row.workingNow ? 'text-live' : 'text-muted-foreground'}>{row.workingNow ? <><LiveDot /> now</> : ago(row.lastAt)}</span>
-              : column.id === 'engaged' ? <strong>{row.runs.some((run) => run.running)
+              : column.id === 'engaged' ? <strong>{row.workingNow
                 ? formatMs(row.engagedMs + Math.max(0, now - fetchedAt))
                 : row.engaged}</strong>
                 : column.id === 'claude' ? compact(row.claudeTokens)
@@ -137,11 +137,12 @@ function TaskTable({ rows, from, fetchedAt }: { rows: TaskRow[]; from: WorkName;
   />
 }
 
-function LooseTable({ rows }: { rows: TaskRow[] }) {
+function LooseTable({ rows, fetchedAt }: { rows: TaskRow[]; fetchedAt: number }) {
+  const now = useNow()
   return <div className="max-w-3xl overflow-x-auto border border-border"><Table className="text-[12px]"><TableHeader><TableRow>
     <TableHead>Project</TableHead><TableHead className="text-right">Updated</TableHead><TableHead className="text-right">Engaged</TableHead><TableHead className="text-right">Claude</TableHead><TableHead className="text-right">Vendor</TableHead>
   </TableRow></TableHeader><TableBody>{rows.map((row) => <TableRow key={row.project}>
-    <TableCell><ProjectMark name={row.project} /></TableCell><TableCell className="text-right text-muted-foreground">{row.workingNow ? 'now' : ago(row.lastAt)}</TableCell><TableCell className="text-right font-semibold">{row.engaged}</TableCell><TableCell className="text-right">{compact(row.claudeTokens)}</TableCell><TableCell className="text-right text-muted-foreground">{vendors(row)}</TableCell>
+    <TableCell><ProjectMark name={row.project} /></TableCell><TableCell className="text-right text-muted-foreground">{row.workingNow ? 'now' : ago(row.lastAt)}</TableCell><TableCell className="text-right font-semibold">{row.workingNow ? formatMs(row.engagedMs + Math.max(0, now - fetchedAt)) : row.engaged}</TableCell><TableCell className="text-right">{compact(row.claudeTokens)}</TableCell><TableCell className="text-right text-muted-foreground">{vendors(row)}</TableCell>
   </TableRow>)}</TableBody></Table></div>
 }
 
@@ -153,7 +154,7 @@ function TaskContent({ name, data, fetchedAt }: { name: WorkName; data: TaskData
   const hasRows = data.rows.length > 0
   return <>
     {tasks.length ? <TaskTable rows={tasks} from={name} fetchedAt={fetchedAt} /> : <EmptyState title={filtered ? 'No tasks match these filters.' : name === 'flight' ? 'No work is in flight.' : 'No tasks were completed in this window.'} hint={filtered ? 'Clear the filters or widen the window.' : name === 'flight' ? 'Work appears here when a task becomes active.' : 'Widen the window to see earlier completed work.'} />}
-    {loose.length ? <section className="mt-7"><div className="mb-3 flex items-baseline gap-3"><h2 className="font-sans font-semibold">No ticket</h2><span className="text-muted-foreground">work these projects cannot attribute to a task</span></div><LooseTable rows={loose} /></section> : null}
+    {loose.length ? <section className="mt-7"><div className="mb-3 flex items-baseline gap-3"><h2 className="font-sans font-semibold">No ticket</h2><span className="text-muted-foreground">work these projects cannot attribute to a task</span></div><LooseTable rows={loose} fetchedAt={fetchedAt} /></section> : null}
     {data.dropped.length ? <p className="mt-5 max-w-4xl text-muted-foreground"><strong className="text-foreground">Not shown here:</strong> {data.dropped.map((item) => `${item.tasks} task${item.tasks === 1 ? '' : 's'} (${item.engaged}) ${item.reason}`).join('; ')}. In flight means being worked on right now, or marked active in its tracker.</p> : null}
     {data.unmappedStatuses.count ? <div className="mt-5 max-w-4xl"><EmptyState title={`${data.unmappedStatuses.count} external tasks with an unmapped status are not shown: ${data.unmappedStatuses.words.join(', ')}`} hint="The source words are preserved; hub will not guess their state." /></div> : null}
     {tasks.length && window.filters.agent ? <p className="mt-5 max-w-4xl text-muted-foreground"><strong className="text-foreground">Filtered to tasks {window.filters.agent} worked on.</strong> The rows are the whole task: engaged time is still the union of every agent and session on it, not {window.filters.agent}'s share.</p> : null}

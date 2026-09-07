@@ -37,52 +37,132 @@ type ReviewGrades = import('./review.ts').ReviewGrades
 type RoutingBacktest = import('./routing-backtest.ts').RoutingBacktest
 type DockerResource = import('./docker-resources.ts').DockerResource
 
-const invokedCommand = process.argv[2] ?? ''
-const leanCommand = new Set(['project', 'state', 'blockers']).has(invokedCommand)
-  || (invokedCommand === 'runs' && process.argv.includes('--json'))
-const lazy = async <T>(path: string): Promise<T> => leanCommand
-  ? {} as T
-  : await import(path) as T
+let jobsModule: typeof import('./jobs.ts')
+let agentsModule: typeof import('./agents.ts')
+let routeModule: typeof import('./route.ts')
+let guideModule: typeof import('./guide.ts')
+let runModule: typeof import('./run.ts')
+let worktreeModule!: typeof import('./worktree.ts')
+let contractModule!: typeof import('./contract.ts')
+let grokTrustModule!: typeof import('./grok-trust.ts')
+let reviewModule!: typeof import('./review.ts')
+let reviewTierModule!: typeof import('./review-tier.ts')
+let workflowsModule!: typeof import('./workflows.ts')
+let agreementModule!: typeof import('./agreement.ts')
+let routingBacktestModule!: typeof import('./routing-backtest.ts')
+let dockerResourcesModule!: typeof import('./docker-resources.ts')
 
-// Reporting commands above are intentionally independent of the dispatch kernel.
-// Other commands load it only when invoked, so a dashboard poll never constructs it.
-const { JOBS, job } = await lazy<typeof import('./jobs.ts')>('./jobs.ts')
-const { AGENTS, available, installed, ensureLocalHealth,
-        unavailableReason, NEEDS_HEALTH, tryWake, wakeStatus,
-        lastWakeAttempt, readStrictCodexSchema, resumePromptByteLimit,
-        cliVersion, versionBelow } = await lazy<typeof import('./agents.ts')>('./agents.ts')
-const { candidates, pick, scoreboard, MIN_SAMPLE, promptSizeBucketLabel } =
-  await lazy<typeof import('./route.ts')>('./route.ts')
-const { guide } = await lazy<typeof import('./guide.ts')>('./guide.ts')
-const { repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths,
-        terminateRunProcesses, implicitReviewWarning, packedResumePrompt,
-        mcpRequestFromStored, storedMcpRequest, retryModelForAgent } =
-  await lazy<typeof import('./run.ts')>('./run.ts')
-const { branchTip, restoreBranch, resolveBase, repoRootOf, removeBranch, removeFor,
-        unmergedBranch, checkoutHasUncommittedWork, callerDrift, projectLockState,
-        withCleanupLock: takeCleanupLock, withWorktreeLease, targetGitEnvironment } =
-  await lazy<typeof import('./worktree.ts')>('./worktree.ts')
-const { WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE,
-        REVIEW_SEVERITY_INSTRUCTION, contractConflicts, rulingPrompt } =
-  await lazy<typeof import('./contract.ts')>('./contract.ts')
-const { grokTrustHeadings, grokTrustPathFromHeading } =
-  await lazy<typeof import('./grok-trust.ts')>('./grok-trust.ts')
-const { cleanReviewEvidence, completeReview, coverageAudit, DISPOSITIONS,
-        gradeReviewLens, parseReviewOutput, recordReviews, getReview, listReviews,
-        MIN_REVIEW_TRIAGED, REVIEW_WINDOW, reviewCalibration, reviewCalibrationFleet,
-        reviewPins, triageFinding } = await lazy<typeof import('./review.ts')>('./review.ts')
-const { classifyReviewTier, diffNumstat } =
-  await lazy<typeof import('./review-tier.ts')>('./review-tier.ts')
-const { composeWorkflow, exportWorkflows, forkWorkflow, getWorkflowStep,
-        importWorkflows, listWorkflows, promoteWorkflow, retireWorkflow, setWorkflow,
-        showWorkflow, workflowVersions } = await lazy<typeof import('./workflows.ts')>('./workflows.ts')
-const { bradleyTerry, gwetAc1, quadraticWeightedKappa } =
-  await lazy<typeof import('./agreement.ts')>('./agreement.ts')
-const { routingBacktest, routingBacktestEnsemble } =
-  await lazy<typeof import('./routing-backtest.ts')>('./routing-backtest.ts')
-const { dockerRemovalCommand, dockerRunResources, leakedResourceLines,
-        orphanedDockerResources, orchRunId, resourcesForRuns } =
-  await lazy<typeof import('./docker-resources.ts')>('./docker-resources.ts')
+let JOBS!: typeof import('./jobs.ts').JOBS
+let job!: typeof import('./jobs.ts').job
+async function loadJobs() { jobsModule ??= await import('./jobs.ts'); ({ JOBS, job } = jobsModule) }
+let AGENTS!: typeof import('./agents.ts').AGENTS
+let available!: typeof import('./agents.ts').available
+let installed!: typeof import('./agents.ts').installed
+let ensureLocalHealth!: typeof import('./agents.ts').ensureLocalHealth
+let unavailableReason!: typeof import('./agents.ts').unavailableReason
+let tryWake!: typeof import('./agents.ts').tryWake
+let wakeStatus!: typeof import('./agents.ts').wakeStatus
+let lastWakeAttempt!: typeof import('./agents.ts').lastWakeAttempt
+let readStrictCodexSchema!: typeof import('./agents.ts').readStrictCodexSchema
+let resumePromptByteLimit!: typeof import('./agents.ts').resumePromptByteLimit
+let cliVersion!: typeof import('./agents.ts').cliVersion
+let versionBelow!: typeof import('./agents.ts').versionBelow
+async function loadAgents() {
+  agentsModule ??= await import('./agents.ts')
+  ;({ AGENTS, available, installed, ensureLocalHealth, unavailableReason, tryWake,
+      wakeStatus, lastWakeAttempt, readStrictCodexSchema, resumePromptByteLimit,
+      cliVersion, versionBelow } = agentsModule)
+}
+let candidates!: typeof import('./route.ts').candidates
+let pick!: typeof import('./route.ts').pick
+let scoreboard!: typeof import('./route.ts').scoreboard
+let MIN_SAMPLE!: typeof import('./route.ts').MIN_SAMPLE
+let promptSizeBucketLabel!: typeof import('./route.ts').promptSizeBucketLabel
+async function loadRoute() { routeModule ??= await import('./route.ts'); ({ candidates, pick, scoreboard, MIN_SAMPLE, promptSizeBucketLabel } = routeModule) }
+let guide!: typeof import('./guide.ts').guide
+async function loadGuide() { guideModule ??= await import('./guide.ts'); ({ guide } = guideModule) }
+let repoOf!: typeof import('./run.ts').repoOf
+let preflight!: typeof import('./run.ts').preflight
+let preflightMcp!: typeof import('./run.ts').preflightMcp
+let KEEP_RUN_FILES_DAYS!: typeof import('./run.ts').KEEP_RUN_FILES_DAYS
+let RUNS_DIR!: typeof import('./run.ts').RUNS_DIR
+let runFilePaths!: typeof import('./run.ts').runFilePaths
+let terminateRunProcesses!: typeof import('./run.ts').terminateRunProcesses
+let implicitReviewWarning!: typeof import('./run.ts').implicitReviewWarning
+let packedResumePrompt!: typeof import('./run.ts').packedResumePrompt
+let mcpRequestFromStored!: typeof import('./run.ts').mcpRequestFromStored
+let storedMcpRequest!: typeof import('./run.ts').storedMcpRequest
+let retryModelForAgent!: typeof import('./run.ts').retryModelForAgent
+async function loadRun() { runModule ??= await import('./run.ts'); ({ repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses, implicitReviewWarning, packedResumePrompt, mcpRequestFromStored, storedMcpRequest, retryModelForAgent } = runModule) }
+let branchTip!: typeof import('./worktree.ts').branchTip
+let restoreBranch!: typeof import('./worktree.ts').restoreBranch
+let resolveBase!: typeof import('./worktree.ts').resolveBase
+let repoRootOf!: typeof import('./worktree.ts').repoRootOf
+let removeBranch!: typeof import('./worktree.ts').removeBranch
+let removeFor!: typeof import('./worktree.ts').removeFor
+let unmergedBranch!: typeof import('./worktree.ts').unmergedBranch
+let checkoutHasUncommittedWork!: typeof import('./worktree.ts').checkoutHasUncommittedWork
+let callerDrift!: typeof import('./worktree.ts').callerDrift
+let projectLockState!: typeof import('./worktree.ts').projectLockState
+let takeCleanupLock!: typeof import('./worktree.ts').withCleanupLock
+let withWorktreeLease!: typeof import('./worktree.ts').withWorktreeLease
+let targetGitEnvironment!: typeof import('./worktree.ts').targetGitEnvironment
+async function loadWorktree() { worktreeModule ??= await import('./worktree.ts'); ({ branchTip, restoreBranch, resolveBase, repoRootOf, removeBranch, removeFor, unmergedBranch, checkoutHasUncommittedWork, callerDrift, projectLockState, withCleanupLock: takeCleanupLock, withWorktreeLease, targetGitEnvironment } = worktreeModule) }
+let WORKER_PREAMBLE!: typeof import('./contract.ts').WORKER_PREAMBLE
+let READONLY_PREAMBLE!: typeof import('./contract.ts').READONLY_PREAMBLE
+let NO_REPO_PREAMBLE!: typeof import('./contract.ts').NO_REPO_PREAMBLE
+let REVIEW_SEVERITY_INSTRUCTION!: typeof import('./contract.ts').REVIEW_SEVERITY_INSTRUCTION
+let contractConflicts!: typeof import('./contract.ts').contractConflicts
+let rulingPrompt!: typeof import('./contract.ts').rulingPrompt
+async function loadContract() { contractModule ??= await import('./contract.ts'); ({ WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE, REVIEW_SEVERITY_INSTRUCTION, contractConflicts, rulingPrompt } = contractModule) }
+let grokTrustHeadings!: typeof import('./grok-trust.ts').grokTrustHeadings
+let grokTrustPathFromHeading!: typeof import('./grok-trust.ts').grokTrustPathFromHeading
+async function loadGrokTrust() { grokTrustModule ??= await import('./grok-trust.ts'); ({ grokTrustHeadings, grokTrustPathFromHeading } = grokTrustModule) }
+let cleanReviewEvidence!: typeof import('./review.ts').cleanReviewEvidence
+let completeReview!: typeof import('./review.ts').completeReview
+let coverageAudit!: typeof import('./review.ts').coverageAudit
+let DISPOSITIONS!: typeof import('./review.ts').DISPOSITIONS
+let gradeReviewLens!: typeof import('./review.ts').gradeReviewLens
+let parseReviewOutput!: typeof import('./review.ts').parseReviewOutput
+let recordReviews!: typeof import('./review.ts').recordReviews
+let getReview!: typeof import('./review.ts').getReview
+let listReviews!: typeof import('./review.ts').listReviews
+let MIN_REVIEW_TRIAGED!: typeof import('./review.ts').MIN_REVIEW_TRIAGED
+let REVIEW_WINDOW!: typeof import('./review.ts').REVIEW_WINDOW
+let reviewCalibration!: typeof import('./review.ts').reviewCalibration
+let reviewCalibrationFleet!: typeof import('./review.ts').reviewCalibrationFleet
+let reviewPins!: typeof import('./review.ts').reviewPins
+let triageFinding!: typeof import('./review.ts').triageFinding
+async function loadReview() { reviewModule ??= await import('./review.ts'); ({ cleanReviewEvidence, completeReview, coverageAudit, DISPOSITIONS, gradeReviewLens, parseReviewOutput, recordReviews, getReview, listReviews, MIN_REVIEW_TRIAGED, REVIEW_WINDOW, reviewCalibration, reviewCalibrationFleet, reviewPins, triageFinding } = reviewModule) }
+let classifyReviewTier!: typeof import('./review-tier.ts').classifyReviewTier
+let diffNumstat!: typeof import('./review-tier.ts').diffNumstat
+async function loadReviewTier() { reviewTierModule ??= await import('./review-tier.ts'); ({ classifyReviewTier, diffNumstat } = reviewTierModule) }
+let composeWorkflow!: typeof import('./workflows.ts').composeWorkflow
+let exportWorkflows!: typeof import('./workflows.ts').exportWorkflows
+let forkWorkflow!: typeof import('./workflows.ts').forkWorkflow
+let getWorkflowStep!: typeof import('./workflows.ts').getWorkflowStep
+let importWorkflows!: typeof import('./workflows.ts').importWorkflows
+let listWorkflows!: typeof import('./workflows.ts').listWorkflows
+let promoteWorkflow!: typeof import('./workflows.ts').promoteWorkflow
+let retireWorkflow!: typeof import('./workflows.ts').retireWorkflow
+let setWorkflow!: typeof import('./workflows.ts').setWorkflow
+let showWorkflow!: typeof import('./workflows.ts').showWorkflow
+let workflowVersions!: typeof import('./workflows.ts').workflowVersions
+async function loadWorkflows() { workflowsModule ??= await import('./workflows.ts'); ({ composeWorkflow, exportWorkflows, forkWorkflow, getWorkflowStep, importWorkflows, listWorkflows, promoteWorkflow, retireWorkflow, setWorkflow, showWorkflow, workflowVersions } = workflowsModule) }
+let bradleyTerry!: typeof import('./agreement.ts').bradleyTerry
+let gwetAc1!: typeof import('./agreement.ts').gwetAc1
+let quadraticWeightedKappa!: typeof import('./agreement.ts').quadraticWeightedKappa
+async function loadAgreement() { agreementModule ??= await import('./agreement.ts'); ({ bradleyTerry, gwetAc1, quadraticWeightedKappa } = agreementModule) }
+let routingBacktest!: typeof import('./routing-backtest.ts').routingBacktest
+let routingBacktestEnsemble!: typeof import('./routing-backtest.ts').routingBacktestEnsemble
+async function loadRoutingBacktest() { routingBacktestModule ??= await import('./routing-backtest.ts'); ({ routingBacktest, routingBacktestEnsemble } = routingBacktestModule) }
+let dockerRemovalCommand!: typeof import('./docker-resources.ts').dockerRemovalCommand
+let dockerRunResources!: typeof import('./docker-resources.ts').dockerRunResources
+let leakedResourceLines!: typeof import('./docker-resources.ts').leakedResourceLines
+let orphanedDockerResources!: typeof import('./docker-resources.ts').orphanedDockerResources
+let orchRunId!: typeof import('./docker-resources.ts').orchRunId
+let resourcesForRuns!: typeof import('./docker-resources.ts').resourcesForRuns
+async function loadDockerResources() { dockerResourcesModule ??= await import('./docker-resources.ts'); ({ dockerRemovalCommand, dockerRunResources, leakedResourceLines, orphanedDockerResources, orchRunId, resourcesForRuns } = dockerResourcesModule) }
 
 /**
  * How long `orch do` watches a detached run before handing it back.
@@ -1651,7 +1731,6 @@ async function readPrompt(): Promise<string> {
 try {
 
 validateCliArgs(argv)
-if (!leanCommand && NEEDS_HEALTH.has(cmd ?? '')) await ensureLocalHealth()
 
 switch (cmd) {
   case 'init-db': {
@@ -1702,6 +1781,7 @@ switch (cmd) {
   }
 
   case 'contract': {
+    await Promise.all([loadJobs(), loadContract()])
     const jobName = argv[1]
     if (!jobName) throw new Error('orch contract <job>')
     const selected = job(jobName)
@@ -1857,6 +1937,7 @@ switch (cmd) {
   }
 
   case 'canon': {
+    await loadJobs()
     const { allInjectChecks, allNumericLiterals, compilePack, diffPack, findingsForPack } = await import('./canon.ts')
     const sub = argv[1]
     const cwd = flag('cwd') ?? process.cwd()
@@ -2255,6 +2336,7 @@ switch (cmd) {
   }
 
   case 'workflow': {
+    await Promise.all([loadJobs(), loadWorkflows()])
     const sub = argv[1]
     const json = has('json')
     const print = (value: unknown, line?: string) => console.log(json ? JSON.stringify(value) : (line ?? JSON.stringify(value, null, 2)))
@@ -2320,6 +2402,8 @@ switch (cmd) {
   }
 
   case 'do': {
+    await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadRun(), loadWorktree(), loadContract()])
+    await ensureLocalHealth()
     const jobName = argv[1]
     if (!jobName) usage()
     if (jobName === '--help' || jobName === '-h') doUsage()
@@ -2457,6 +2541,7 @@ switch (cmd) {
   }
 
   case 'review': {
+    await Promise.all([loadJobs(), loadWorktree(), loadReview(), loadReviewTier()])
     const sub = argv[1]
     if (sub === '--help' || sub === '-h') reviewUsage()
     if (sub === 'list') {
@@ -2762,6 +2847,7 @@ switch (cmd) {
   }
 
   case 'result': {
+    await loadJobs()
     collectResult(db(), argv, scoreSuffix)
     const id = Number(argv[1])
     const chain = resolveFailover(db(), id)
@@ -2782,6 +2868,7 @@ switch (cmd) {
   }
 
   case 'retry': {
+    await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadRun(), loadWorktree(), loadContract()])
     const id = Number(argv[1])
     if (!id) usage()
     let retryAuthority = authorizeRunMutation(id, 'retry')
@@ -3111,6 +3198,7 @@ switch (cmd) {
    * to do it again.
    */
   case 'setup-ask': {
+    await loadAgents()
     const cmd = [process.execPath, new URL('cli.ts', import.meta.url).pathname, 'ask-server']
     // Every agent declaring `mcp`, not a hardcoded pair. qwen declares it and
     // was being left out, so the one free agent that could have used the live
@@ -3262,6 +3350,7 @@ switch (cmd) {
   }
 
   case 'inbox': {
+    await loadJobs()
     const sid = sessionId()
     const mine = !has('all')
     const project = mine ? projectAt(process.cwd()) : null
@@ -3435,6 +3524,7 @@ switch (cmd) {
    * guessing does not get used.
    */
   case 'answer': {
+    await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadRun(), loadWorktree(), loadContract()])
     const requestedId = Number(argv[1])
     if (!requestedId) usage()
     const row = db().query(
@@ -3807,6 +3897,7 @@ switch (cmd) {
    * turn the architect chose to spend, recorded like any other.
    */
   case 'continue': {
+    await Promise.all([loadJobs(), loadAgents(), loadRun(), loadWorktree(), loadContract()])
     const id = Number(argv[1])
     if (!id) usage()
     const chain = db().query(
@@ -3834,6 +3925,7 @@ switch (cmd) {
   }
 
   case 'diff': {
+    await Promise.all([loadJobs(), loadWorktree()])
     const id = Number(argv[1])
     if (!id) usage()
     const row = db().query(
@@ -4005,6 +4097,7 @@ switch (cmd) {
    * boundary.
    */
   case 'sweep': {
+    await Promise.all([loadJobs(), loadWorktree(), loadGrokTrust(), loadDockerResources()])
     const days = Number(flag('older-than') ?? 1)
     if (!Number.isFinite(days) || days < 0) {
       throw new Error('--older-than must be a finite, non-negative number')
@@ -4411,6 +4504,7 @@ switch (cmd) {
   }
 
   case 'discard': {
+    await Promise.all([loadWorktree(), loadDockerResources()])
     const id = Number(argv[1])
     if (!id) usage()
     let authority = authorizeRunMutation(id, 'discard')
@@ -4490,6 +4584,7 @@ switch (cmd) {
   }
 
   case 'stop': {
+    await Promise.all([loadRun(), loadWorktree(), loadDockerResources()])
     const id = Number(argv[1])
     if (!id) usage()
     let authority = authorizeRunMutation(id, 'stop')
@@ -4592,6 +4687,7 @@ switch (cmd) {
   }
 
   case 'abandon': {
+    await Promise.all([loadWorktree(), loadDockerResources()])
     const id = Number(argv[1])
     if (!id) usage()
     let authority = authorizeRunMutation(id, 'abandon')
@@ -4709,6 +4805,7 @@ switch (cmd) {
   }
 
   case 'score': {
+    await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadReview()])
     writableDb()
     const requestedId = Number(argv[1])
     if (!requestedId) usage()
@@ -4962,6 +5059,7 @@ switch (cmd) {
   }
 
   case 'recalibrate': {
+    await Promise.all([loadJobs(), loadAgreement()])
     const rawN = flag('n') ?? '12'
     const n = Number(rawN)
     if (!/^\d+$/.test(rawN) || !Number.isInteger(n) || n < 1) {
@@ -5069,6 +5167,7 @@ switch (cmd) {
   }
 
   case 'routing-backtest': {
+    await Promise.all([loadJobs(), loadAgents(), loadRoutingBacktest()])
     const jobFilter = flag('job')
     const seedFlag = flag('seed')
     const seed = seedFlag === undefined ? undefined : Number(seedFlag)
@@ -5184,6 +5283,7 @@ switch (cmd) {
   }
 
   case 'runs': {
+    await loadJobs()
     const jsonV1 = argv.includes('--json=v1')
     const json = has('json') || jsonV1
     const where: string[] = ['r.parent_run_id IS NULL']
@@ -5234,6 +5334,7 @@ switch (cmd) {
       )`)
       args.push(sinceFlag, sinceFlag, sinceFlag)
     }
+    const limit = Number(flag('limit') ?? (json ? 100000 : 20))
     let rows = db().query(
       `SELECT r.id, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
               current_run.status, current_run.failure_kind, current_run.error,
@@ -5248,9 +5349,9 @@ switch (cmd) {
             ORDER BY member.turn DESC, member.id DESC LIMIT 1
          )
          LEFT JOIN score s ON s.run_id = r.id
-         ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+        ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
         ORDER BY r.id DESC LIMIT ?`,
-    ).all(...args, 100000) as Record<string, unknown>[]
+    ).all(...args, limit) as Record<string, unknown>[]
 
     rows = rows.flatMap((r) => {
       const chain = resolveFailover(db(), Number(r.id))
@@ -5295,7 +5396,7 @@ switch (cmd) {
           recovery_hint: strandedRecovery(Number(r.id)),
         } : {}),
       }]
-    }).slice(0, Number(flag('limit') ?? (json ? 100000 : 20)))
+    })
 
     // Unknown means absent from orch, not merely absent from this presentation
     // (for example because an id names a child turn or another filter excludes
@@ -5377,6 +5478,8 @@ switch (cmd) {
   }
 
   case 'guide': {
+    await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadGuide()])
+    await ensureLocalHealth()
     const rawPromptBytes = flag('prompt-bytes')
     const promptBytes = rawPromptBytes === undefined ? undefined : Number(rawPromptBytes)
     if (promptBytes !== undefined &&
@@ -5491,6 +5594,7 @@ switch (cmd) {
   }
 
   case 'stats': {
+    await Promise.all([loadJobs(), loadRoute(), loadAgreement()])
     // scoreboard(), not a query of its own. The comment that used to sit here
     // claimed exactly that and had stopped being true: this filtered
     // status='ok' after the router stopped, so grok on review-lens read 96%
@@ -5548,6 +5652,8 @@ switch (cmd) {
   }
 
   case 'pick': {
+    await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadRun(), loadWorktree()])
+    await ensureLocalHealth()
     // --stack, or the stack of wherever you are standing. A route is a claim
     // about a job IN A CONTEXT, and reporting it without the context invites
     // reading a php verdict as a node one.
@@ -5589,6 +5695,7 @@ switch (cmd) {
   }
 
   case 'pending': {
+    await loadJobs()
     // Runs THIS session made that it has not judged. Exits 1 when any remain,
     // so a hook or a script can act on it.
     const rows = pendingForSession(sessionId())
@@ -5677,6 +5784,7 @@ switch (cmd) {
    * row's own vendor error would rewrite the agent's record.
    */
   case 'reclassify-failures': {
+    await loadJobs()
     type FailureRow = {
       id: number; agent: string; job: string; status: string
       failure_kind: string | null; error: string
@@ -5762,6 +5870,8 @@ switch (cmd) {
   }
 
   case 'doctor': {
+    await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadAgreement(), loadDockerResources()])
+    await ensureLocalHealth()
     const { LOCAL_BASE_URL, LOCAL_MODEL, LOCAL_CONTEXT_TOKENS } =
       await import('./agents.ts')
     // Probed BEFORE the agent list is printed, not after it. Doctor used to
@@ -5972,6 +6082,7 @@ switch (cmd) {
   }
 
   case 'jobs':
+    await loadJobs()
     if (process.argv.includes('--json')) {
       console.log(JSON.stringify(Object.values(JOBS).map((job) => ({
         name: job.name,
@@ -5994,6 +6105,8 @@ switch (cmd) {
     break
 
   case 'agents':
+    await loadAgents()
+    await ensureLocalHealth()
     if (process.argv.includes('--json')) {
       console.log(JSON.stringify(Object.values(AGENTS).map((a) => ({
         name: a.name,

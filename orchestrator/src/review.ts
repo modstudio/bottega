@@ -7,10 +7,18 @@ import {
 } from './db.ts'
 import { CANON_SOURCE_SCHEMA, REVIEW_SCHEMA, type CanonSource, type ReviewReply } from './contract.ts'
 import { job } from './jobs.ts'
-import { classifyReviewTier, diffNumstat, type ReviewTier } from './review-tier.ts'
+import type { ReviewTier } from './review-tier.ts'
 import { median } from './route.ts'
-import { targetGitEnvironment } from './worktree.ts'
-import { reviewCoverageVerdict, type CoverageGitRunner, type ReviewCoverageInput } from './landing.ts'
+import type { CoverageGitRunner, ReviewCoverageInput } from './landing.ts'
+
+const targetGitEnvironment = (repo: string) =>
+  (require('./worktree.ts') as typeof import('./worktree.ts')).targetGitEnvironment(repo)
+const reviewCoverageVerdict: typeof import('./landing.ts').reviewCoverageVerdict = (...args) =>
+  (require('./landing.ts') as typeof import('./landing.ts')).reviewCoverageVerdict(...args)
+const classifyReviewTier: typeof import('./review-tier.ts').classifyReviewTier = (...args) =>
+  (require('./review-tier.ts') as typeof import('./review-tier.ts')).classifyReviewTier(...args)
+const diffNumstat: typeof import('./review-tier.ts').diffNumstat = (...args) =>
+  (require('./review-tier.ts') as typeof import('./review-tier.ts')).diffNumstat(...args)
 
 export const REVIEW_WINDOW = 50
 /**
