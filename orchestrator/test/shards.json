@@ -1,0 +1,55 @@
+{
+  "shards": [
+    {
+      "measuredSeconds": 76.57,
+      "files": [
+        "src/landing-1.cli.test.ts",
+        "src/agents.cli.test.ts",
+        "src/docs.cli.test.ts",
+        "src/worktree-4.cli.test.ts",
+        "src/workflows.cli.test.ts",
+        "src/evals.cli.test.ts"
+      ]
+    },
+    {
+      "measuredSeconds": 76.24,
+      "files": [
+        "src/lifecycle-harness.cli.test.ts",
+        "src/monitor.cli.test.ts",
+        "src/landing-2.cli.test.ts",
+        "src/agents-sandbox-1.cli.test.ts",
+        "src/worktree-5.cli.test.ts",
+        "src/git-environment-regression.cli.test.ts",
+        "src/review-1.cli.test.ts",
+        "src/route.cli.test.ts",
+        "src/catalog.cli.test.ts"
+      ]
+    },
+    {
+      "measuredSeconds": 76.54,
+      "files": [
+        "src/worktree-2.cli.test.ts",
+        "src/cli-runs.cli.test.ts",
+        "src/review-2.cli.test.ts",
+        "src/agents-sandbox-2.cli.test.ts",
+        "src/run-2.cli.test.ts",
+        "src/canon.cli.test.ts",
+        "src/run-1.cli.test.ts",
+        "src/projects.cli.test.ts"
+      ]
+    },
+    {
+      "measuredSeconds": 76.07,
+      "files": [
+        "src/cli-answer.cli.test.ts",
+        "src/cli-do-1.cli.test.ts",
+        "src/worktree-3.cli.test.ts",
+        "src/cli-projects.cli.test.ts",
+        "src/worktree-1.cli.test.ts",
+        "src/review-3.cli.test.ts",
+        "src/issue.cli.test.ts",
+        "src/linked-worktree-database.cli.test.ts"
+      ]
+    }
+  ]
+}

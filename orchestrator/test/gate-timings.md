@@ -149,3 +149,29 @@ runs (85 s wall) and `src/route.cli.test.ts` passed 100/100 runs (151 s wall).
 The route/scoring set (`route.test.ts`, `route.cli.test.ts`, `review.test.ts`,
 and `review-tier.test.ts`) then passed 100/100 runs with Bun test randomization
 and explicit seeds 1 through 100 (220 s wall). No test was changed.
+
+## 3. Shard implementation
+
+`test/shards.json` is the checked-in allocation. It is longest-file-first,
+assigned to the currently lightest shard from the per-file measurements above;
+the small difference between rounded row sums and the search totals comes from
+the unrounded JSON measurements used by the earlier search.
+
+| shard | measured total s | files |
+|---:|---:|---|
+| 1 | 76.57 | `landing-1`, `agents`, `docs`, `worktree-4`, `workflows`, `evals` |
+| 2 | 76.24 | `lifecycle-harness`, `monitor`, `landing-2`, `agents-sandbox-1`, `worktree-5`, `git-environment-regression`, `review-1`, `route`, `catalog` |
+| 3 | 76.54 | `worktree-2`, `cli-runs`, `review-2`, `agents-sandbox-2`, `run-2`, `canon`, `run-1`, `projects` |
+| 4 | 76.07 | `cli-answer`, `cli-do-1`, `worktree-3`, `cli-projects`, `worktree-1`, `review-3`, `issue`, `linked-worktree-database` |
+
+An initial concurrency check ran the unchanged unit leg beside all four CLI
+shards. It exited 1 after 200.3 s: all five Bun workers reported failures,
+dominated by tests exceeding their 5 s timeout under contention (including two
+landing tests and `run checkout observation resolves fixture HEAD`). This is
+not an ordering reproduction: the same four CLI shards passed without the
+fifth Bun worker in the ordering search. The enforced cap is therefore four
+orchestrator test workers: the unchanged unit leg finishes first, then the four
+CLI shards run together, while the root gate continues to run hub and web
+beside both phases.
+
+Step elapsed so far: 200.3 s for the rejected five-worker concurrency check.
