@@ -145,6 +145,37 @@ describe('Drizzle migration journal', () => {
     d.close()
   })
 
+  test('ordinary index direction drift refuses adoption and doctor reports drift', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orch-index-direction-drift-'))
+    const path = join(dir, 'adoption.db')
+    const d = new Database(path)
+    applyMigrations(d)
+    d.exec(`DROP INDEX run_job_agent;
+      CREATE INDEX run_job_agent ON run(job DESC, agent);
+      DROP TABLE orch_migrations`)
+    expect(canonicalSchemaHash(d)).not.toBe(BASELINE_SCHEMA_HASH)
+    expect(() => applyMigrations(d)).toThrow('refusing to adopt migration baseline')
+    try {
+      applyMigrations(d)
+    } catch (error) {
+      expect(String(error)).toContain('unexpected indexes: run.run_job_agent')
+    }
+    d.close()
+
+    const doctorPath = join(dir, 'doctor.db')
+    const doctorStore = new Database(doctorPath)
+    applyMigrations(doctorStore)
+    doctorStore.exec(`DROP INDEX run_job_agent;
+      CREATE INDEX run_job_agent ON run(job DESC, agent)`)
+    doctorStore.close()
+    const doctor = Bun.spawnSync([process.execPath, join(import.meta.dir, 'cli.ts'), 'doctor'], {
+      env: { ...process.env, ORCH_DB: doctorPath, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(doctor.exitCode, doctor.stderr.toString()).toBe(0)
+    expect(doctor.stdout.toString()).toContain('schema hash    DRIFT')
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   test('legacy adoption continues through every later journal entry in one invocation', () => {
     const dir = mkdtempSync(join(tmpdir(), 'orch-adopt-forward-'))
     mkdirSync(join(dir, 'meta'))

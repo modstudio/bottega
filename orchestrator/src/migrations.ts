@@ -34,7 +34,7 @@ type IndexShape = {
   origin: string
   partial: number
   columns: string
-  specialSql: string | null
+  indexSql: string | null
 }
 type SchemaInventory = {
   tables: string[]
@@ -211,17 +211,17 @@ function schemaInventory(d: Database): SchemaInventory {
         cid: number
         name: string | null
       }[]
-      const expression = info.some((row) => row.cid === -2 || row.name === null)
-      const sql = expression || index.partial
-        ? (d.query("SELECT sql FROM sqlite_master WHERE type='index' AND name=?").get(index.name) as
-          { sql: string | null } | null)?.sql ?? null
-        : null
+      // sqlite_autoindex rows have no SQL. Every explicit index does: include
+      // it even when index_info names ordinary columns, because direction and
+      // collation are not present in that PRAGMA.
+      const sql = (d.query("SELECT sql FROM sqlite_master WHERE type='index' AND name=?").get(index.name) as
+        { sql: string | null } | null)?.sql ?? null
       indexes.push({
         table: table.name, name: index.name, unique: index.unique,
         origin: index.origin.toLowerCase(), partial: index.partial,
         columns: info.sort((a, b) => a.seqno - b.seqno)
           .map((row) => `${row.cid}:${row.name ?? '<expression>'}`).join(','),
-        specialSql: sql == null ? null : normalizeExpression(normalizeSql(withoutSqlComments(sql))),
+        indexSql: sql == null ? null : normalizeExpression(normalizeSql(withoutSqlComments(sql))),
       })
     }
     for (const expression of checkExpressions(table.sql)) checks.push({ table: table.name, expression })
