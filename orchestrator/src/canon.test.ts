@@ -483,7 +483,7 @@ describe('schema coexistence', () => {
     d.query(`INSERT INTO project (name, path, canon, settings) VALUES (?, '/p', 1, '{}')`).run(PLATFORM_SLUG)
     d.query(`INSERT INTO project (name, path, canon, settings) VALUES ('starship', '/s', 1, '{}')`).run()
     d.query(`INSERT INTO project (name, path, canon, settings) VALUES ('alephbeis', '/a', 1, '{}')`).run()
-    const bottega = (d.query('SELECT id FROM project WHERE name=?').get(PLATFORM_SLUG) as { id: number }).id
+    const platformId = (d.query('SELECT id FROM project WHERE name=?').get(PLATFORM_SLUG) as { id: number }).id
     const starship = (d.query("SELECT id FROM project WHERE name='starship'").get() as { id: number }).id
     const insertRun = (repo: string, projectId: number) =>
       (d.query(
@@ -494,8 +494,8 @@ describe('schema coexistence', () => {
     const aliased = (d.query("INSERT INTO review (recorded_at) VALUES ('t') RETURNING id").get() as { id: number }).id
     const mixedA = insertRun('starship', starship)
     const mixedB = insertRun('alephbeis', starship)
-    const aliasA = insertRun(PLATFORM_SLUG, bottega)
-    const aliasB = insertRun('devbox', bottega)
+    const aliasA = insertRun(PLATFORM_SLUG, platformId)
+    const aliasB = insertRun('devbox', platformId)
     const lens = (reviewId: number, runId: number, name: string) => {
       d.query(
         `INSERT INTO review_lens (review_id, run_id, lens, agent, standards_read, files_covered, commands_run, could_not_verify)
@@ -508,7 +508,7 @@ describe('schema coexistence', () => {
     lens(aliased, aliasB, 'b')
     expect(applyMigrations(d)).toEqual([])
     expect(d.query('SELECT project_id FROM review WHERE id=?').get(mixed)).toEqual({ project_id: null })
-    expect(d.query('SELECT project_id FROM review WHERE id=?').get(aliased)).toEqual({ project_id: bottega })
+    expect(d.query('SELECT project_id FROM review WHERE id=?').get(aliased)).toEqual({ project_id: platformId })
     d.close()
   })
 
