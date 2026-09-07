@@ -1755,11 +1755,11 @@ switch (cmd) {
   case 'migrate': {
     const { migrateDatabase } = await import('./db.ts')
     const migrated = migrateDatabase()
-    if (migrated.changes.length === 0) {
+    if (migrated.versions.length === 0) {
       console.log(`schema already current: ${migrated.path}`)
     } else {
       console.log(`migrated ${migrated.path}`)
-      for (const change of migrated.changes) console.log(`  added ${change}`)
+      for (const version of migrated.versions) console.log(`  applied ${version}`)
     }
     break
   }
@@ -5965,6 +5965,8 @@ switch (cmd) {
     db()
     console.log(`database       ${DB_PATH}`)
     console.log(`open mode      ${databaseOpenMode()}`)
+    const { BASELINE_SCHEMA_HASH, canonicalSchemaHash } = await import('./migrations.ts')
+    console.log(`schema hash    ${canonicalSchemaHash(db()) === BASELINE_SCHEMA_HASH ? 'match' : 'DRIFT'}`)
     console.log(`resolved by    ${DATABASE_RESOLUTION.method}`)
     if (DATABASE_RESOLUTION.registeredPath && DATABASE_RESOLUTION.registeredPath !== DB_PATH) {
       console.log(`registered     ${DATABASE_RESOLUTION.registeredPath}  (resolved path won)`)

@@ -41,8 +41,10 @@ function invoke(cli: string, cwd: string, args: string[], explicit?: string) {
 
 mkdirSync(main, { recursive: true })
 cpSync(join(sourceRoot, 'orchestrator', 'src'), join(main, 'orchestrator', 'src'), { recursive: true })
+cpSync(join(sourceRoot, 'orchestrator', 'migrations'), join(main, 'orchestrator', 'migrations'), { recursive: true })
 cpSync(join(sourceRoot, 'shared'), join(main, 'shared'), { recursive: true })
 symlinkSync(join(sourceRoot, 'node_modules'), join(main, 'node_modules'))
+symlinkSync(join(sourceRoot, 'orchestrator', 'node_modules'), join(main, 'orchestrator', 'node_modules'))
 git(main, 'init', '-b', 'main')
 git(main, 'config', 'user.email', 'linked-test@example.invalid')
 git(main, 'config', 'user.name', 'Linked Test')
@@ -59,23 +61,29 @@ const linkedCli = join(linked, 'orchestrator', 'src', 'cli.ts')
 afterAll(() => rmSync(fixtureRoot, { recursive: true, force: true }))
 
 describe('linked-worktree database protection', () => {
-  test('newer live store stays byte-identical while reads work and writes refuse', () => {
+  test('a store ahead of the binary journal is refused without changing it', () => {
     const store = new Database(liveStore)
     store.query(
       `INSERT INTO run
          (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status, session_id)
        VALUES ('2026-09-06T00:00:00.000Z','codex','implement','sha',1,'fixture','ok',?)`,
     ).run('linked-database-test')
-    store.exec("ALTER TABLE run ADD COLUMN future_evidence TEXT; UPDATE schema_meta SET value='future-binary' WHERE key='schema';")
+    store.query("INSERT INTO orch_migrations (hash,created_at,version) VALUES ('future',9999999999999,'0001_future')").run()
     store.close()
 
     expect(existsSync(`${liveStore}-wal`)).toBe(false)
     expect(existsSync(`${liveStore}-shm`)).toBe(false)
     const before = readFileSync(liveStore)
     const runs = invoke(linkedCli, linked, ['runs'])
-    expect(runs.exitCode).toBe(0)
-    expect(runs.stdout.toString()).toContain('fixture')
-    expect(runs.stderr.toString()).toContain('warning: canonical schema mismatch')
+    expect(runs.exitCode).not.toBe(0)
+    expect(runs.stderr.toString()).toContain('ahead of this binary')
+    expect(runs.stderr.toString()).toContain('0001_future')
+    expect(readFileSync(liveStore)).toEqual(before)
+    expect(existsSync(`${liveStore}-wal`)).toBe(false)
+    expect(existsSync(`${liveStore}-shm`)).toBe(false)
+    const cleanup = new Database(liveStore)
+    cleanup.exec("DELETE FROM orch_migrations WHERE version='0001_future'")
+    cleanup.close()
 
     const score = invoke(linkedCli, linked, ['score', '1', 'full', 'right', 'faithful', '--note', 'no'])
     expect(score.exitCode).not.toBe(0)
@@ -83,9 +91,6 @@ describe('linked-worktree database protection', () => {
       'refusing to write the live store from a linked worktree; set ORCH_DB explicitly ' +
       '(a copy for experiments, or the live path to insist)',
     )
-    expect(readFileSync(liveStore)).toEqual(before)
-    expect(existsSync(`${liveStore}-wal`)).toBe(false)
-    expect(existsSync(`${liveStore}-shm`)).toBe(false)
   })
 
   test('held-open WAL sidecars remain visible and unchanged to the ordinary read-only open', () => {
@@ -160,8 +165,7 @@ describe('linked-worktree database protection', () => {
       ['score', '1', 'full', 'right', 'faithful', '--note', 'explicit'], explicit,
     )
     expect(score.exitCode).toBe(0)
-    expect(score.stderr.toString()).toContain('invariant: Only the main checkout\'s binary migrates the store.')
-    expect(score.stderr.toString()).toContain('cleared by: orch migrate')
+    expect(score.stderr.toString()).not.toContain('invariant:')
     const checked = new Database(explicit, { readonly: true })
     expect(checked.query('SELECT delivery, quality, fidelity FROM score WHERE run_id=1').get())
       .toEqual({ delivery: 'full', quality: 'right', fidelity: 'faithful' })

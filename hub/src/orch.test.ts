@@ -180,6 +180,7 @@ describe('docSet stdin', () => {
       const copy = mkdtempSync(join(tmpdir(), 'hub-orch-main-'))
       mkdirSync(join(copy, 'orchestrator'), { recursive: true })
       cpSync(join(sourceRoot, 'orchestrator', 'src'), join(copy, 'orchestrator', 'src'), { recursive: true })
+      cpSync(join(sourceRoot, 'orchestrator', 'migrations'), join(copy, 'orchestrator', 'migrations'), { recursive: true })
       cpSync(join(sourceRoot, 'shared'), join(copy, 'shared'), { recursive: true })
       symlinkSync(join(sourceRoot, 'orchestrator', 'node_modules'), join(copy, 'orchestrator', 'node_modules'))
       const git = (cwd: string, ...args: string[]) => {

@@ -834,12 +834,16 @@ The invariants are:
   `database-location.ts:resolveDatabase` separates location from write authority.
   `db.ts:initializeDatabase` and `db.ts:migrateDatabase` refuse when
   `DATABASE_RESOLUTION.linkedWorktreeBinary` regardless of how the path was
-  chosen. `orch migrate` (main-checkout binary only) opens the store, runs
-  `applySchema`, and prints what changed; a missing `run.label` stops before any
-  query that needs that column. Tests bootstrap scratch stores through
-  `db.ts:applySchemaForFixture` / `bootstrapFixtureStore`, never the production
-  authority path. `db.ts:adoptRunMutation` governs chain ownership, not schema
-  authority.
+  chosen. `orch migrate` (main-checkout binary only) applies the ordered,
+  checksummed SQL files in Drizzle's journal and prints each applied version;
+  opening a behind or ahead store refuses before application queries run.
+  `schema.ts` is the typed declaration, but Drizzle Kit's generator is not
+  authoritative for this SQLite store: it cannot preserve table UNIQUE
+  constraints or COALESCE expression indexes, so migrations are hand-written
+  SQL whose baseline is trunk's canonical DDL verbatim. Tests bootstrap scratch
+  stores through `db.ts:applySchemaForFixture` / `bootstrapFixtureStore`, which
+  call the migrator, never the production authority path.
+  `db.ts:adoptRunMutation` governs chain ownership, not schema authority.
 - **Landing holds its lock only for the trunk re-check, guard verification and
   fast-forward, never for a gate.** A gate is long and proves a commit without
   owning trunk. A moved trunk releases the lock, re-gates, and re-acquires.

@@ -465,6 +465,7 @@ test(caseName.migration, async () => {
   rmSync(copy, { recursive: true, force: true })
   rmSync(linked, { recursive: true, force: true })
   cpSync(join(sourceRoot, 'orchestrator', 'src'), join(copy, 'orchestrator', 'src'), { recursive: true })
+  cpSync(join(sourceRoot, 'orchestrator', 'migrations'), join(copy, 'orchestrator', 'migrations'), { recursive: true })
   cpSync(join(sourceRoot, 'shared'), join(copy, 'shared'), { recursive: true })
   symlinkSync(join(sourceRoot, 'node_modules'), join(copy, 'node_modules'))
   symlinkSync(join(sourceRoot, 'orchestrator', 'node_modules'), join(copy, 'orchestrator', 'node_modules'))
@@ -472,9 +473,7 @@ test(caseName.migration, async () => {
   git(copy, 'add', '.'); git(copy, 'commit', '-m', 'DEV-321 linked fixture'); git(copy, 'worktree', 'add', '-b', 'DEV-321-linked', linked)
   const scratch = join(fixture, 'linked-migration.db')
   rmSync(scratch, { force: true })
-  const init = Bun.spawnSync([process.execPath, join(copy, 'orchestrator/src/cli.ts'), 'init-db'], { cwd: copy, env: gitEnv({ ORCH_DB: scratch, ORCH_DEPTH: '0' }), stdout: 'pipe', stderr: 'pipe' })
-  expect(init.exitCode, init.stderr.toString()).toBe(0)
-  const before = new Database(scratch); before.exec('ALTER TABLE run DROP COLUMN label'); before.close()
+  const empty = new Database(scratch); empty.close()
   const read = Bun.spawnSync([process.execPath, join(linked, 'orchestrator/src/cli.ts'), 'runs'], { cwd: linked, env: gitEnv({ ORCH_DB: scratch, ORCH_DEPTH: '0' }), stdout: 'pipe', stderr: 'pipe' })
   const checked = new Database(scratch, { readonly: true })
   const columns = checked.query('PRAGMA table_info(run)').all() as { name: string }[]; checked.close()
@@ -489,7 +488,7 @@ test(caseName.migration, async () => {
     cwd: copy, env: gitEnv({ ORCH_DB: scratch, ORCH_DEPTH: '0' }), stdout: 'pipe', stderr: 'pipe',
   })
   expect(migrated.exitCode, migrated.stderr.toString()).toBe(0)
-  expect(migrated.stdout.toString()).toContain('run.label')
+  expect(migrated.stdout.toString()).toContain('applied 0000_bright_sleepwalker')
   const restored = new Database(scratch, { readonly: true })
   const restoredCols = restored.query('PRAGMA table_info(run)').all() as { name: string }[]
   restored.close()
