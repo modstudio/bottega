@@ -1,14 +1,7 @@
 import { afterEach, expect, test, describe, spyOn } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { union, engagedMs, spansFromTimestamps, human, DEFAULT_IDLE_CAP_MS } from './interval.ts'
 import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
 
-// db.ts fixes its path at import time. Give this suite a disposable database
-// before dynamically loading modules that reach it.
-const testDir = mkdtempSync(join(tmpdir(), 'hub-test-'))
-process.env.HUB_DB = join(testDir, 'hub.db')
 const {
   attribute, keyFromWorktree, keyFromBranch, projectOf, projectOfKey, isInjected,
 } = await import('./attribute.ts')
@@ -24,14 +17,10 @@ const { commentTask, createTask, createTaskDocument, duplicateCandidates, duplic
 const { chainVendorTokens, executionSpans, ingestRuns } = await import('./ingest/runs.ts')
 const { listOpenRulings, rulingsPayload, rulingsStaleAfter } = await import('./rulings.ts')
 const { runsSince } = await import('./collect.ts')
-const { boardTasks } = await import('./query.ts')
+const { boardTasks, stripWindow } = await import('./query.ts')
 const { clearOrchCache, view } = await import('./serve.ts')
 
 afterEach(clearOrchCache)
-
-process.on('exit', () => {
-  try { rmSync(testDir, { recursive: true, force: true }) } catch {}
-})
 
 const at = (iso: string) => new Date(iso).getTime()
 
@@ -1028,6 +1017,29 @@ describe('local task tracker', () => {
 })
 
 describe('heterogeneous work rows', () => {
+  test('the windowed strip preserves the legacy interval row groups', () => {
+    const task = createTask({ project: 'workshop', title: 'Strip window fixture' })
+    db().query(
+      `INSERT INTO interval
+        (task_key, project, source, start_at, end_at, ref, open)
+       VALUES (?, 'workshop', 'claude', ?, ?, 'strip:task', 0),
+              (NULL, 'alpha', 'orch', ?, ?, 'strip:untracked', 0)`,
+    ).run(task.key,
+      '2031-01-02T10:00:00.000Z', '2031-01-02T11:00:00.000Z',
+      '2031-01-02T10:30:00.000Z', '2031-01-02T11:30:00.000Z')
+    const from = '2031-01-02T09:00:00.000Z'
+    const to = '2031-01-02T12:00:00.000Z'
+    const legacyGroups = (db().query<{ task_key: string | null; project: string | null }, [string, string]>(
+      `SELECT DISTINCT task_key, project FROM interval
+        WHERE end_at >= ? AND start_at < ? ORDER BY task_key, project`,
+    ).all(from, to)).map((row) => `${row.task_key ?? '(untracked)'}:${row.project}`)
+    const currentGroups = stripWindow(from, to).tasks
+      .map((row) => `${row.key ?? '(untracked)'}:${row.project}`)
+      .sort()
+
+    expect(currentGroups).toEqual(legacyGroups)
+  })
+
   test('row assembly attaches capabilities and the source filter narrows before serving', async () => {
     const local = createTask({ project: 'workshop', title: 'Source-filter local row' })
     upsertTrackerTask({

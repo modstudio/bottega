@@ -1,15 +1,8 @@
-import { afterAll, describe, expect, spyOn, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { describe, expect, spyOn, test } from 'bun:test'
 import { encodeOrchRunLine } from '../../shared/orch-contract.ts'
 
-const dir = mkdtempSync(join(tmpdir(), 'hub-reconcile-'))
-process.env.HUB_DB = join(dir, 'hub.db')
 const { db } = await import('./db.ts')
 const { reconcileOpenIntervals } = await import('./reconcile.ts')
-
-afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
 function add(id: number, ref: string, endAt: string) {
   db().query(

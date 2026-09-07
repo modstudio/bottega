@@ -1,5 +1,5 @@
 import { db, nowIso, type Project } from '../db.ts'
-import { KEY, projectOfKey } from '../attribute.ts'
+import { keyPattern, projectOfKey } from '../attribute.ts'
 import { projects } from '../projects.ts'
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
 
@@ -79,7 +79,7 @@ export function scanGit(since: string) {
         day = d
         const row = get(day)
         row.commits++
-        for (const k of (subject ?? '').match(KEY) ?? []) {
+        for (const k of (subject ?? '').match(keyPattern()) ?? []) {
           const key = k.toUpperCase()
           row.tasks.add(`${repo}:${key}`)
           const t = tasks.get(key)

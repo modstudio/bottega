@@ -3,13 +3,18 @@ import { resolve } from 'node:path'
 import { projects, projectRoot, type Project } from './projects.ts'
 import type { OrchRun } from './ingest/runs.ts'
 
-/** Every ticket key this estate issues, as one alternation. */
-const KEYS = [...new Set(projects().flatMap((project) => project.settings.keyPrefixes ?? []))]
-  .map((prefix) => prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-  .join('|')
+/** Every ticket key this estate issues, resolved only when attribution first needs it. */
+function keyPrefixes(): string {
+  return [...new Set(projects().flatMap((project) => project.settings.keyPrefixes ?? []))]
+    .map((prefix) => prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|')
+}
 
-/** A bare ticket key anywhere in a string. */
-export const KEY = new RegExp(KEYS ? `\\b(?:${KEYS})-\\d+` : '(?!)', 'g')
+/** A fresh bare-ticket matcher; constructing it is what lazily reads the register. */
+export function keyPattern(): RegExp {
+  const keys = keyPrefixes()
+  return new RegExp(keys ? `\\b(?:${keys})-\\d+` : '(?!)', 'g')
+}
 
 /** The worktree directory's own name, whatever is nested below it. */
 const WORKTREE_DIR = /\.claude\/worktrees\/([^/]+)/
@@ -34,13 +39,16 @@ const WORKTREE_DIR = /\.claude\/worktrees\/([^/]+)/
  * lookbehind rather than `\b`, because `_` IS a word character and `\b` finds
  * no boundary in `technical_sto_986`. That is the whole bug in one detail.
  */
-const WORKTREE_KEY = new RegExp(KEYS ? `(?<![A-Za-z0-9])(${KEYS})[-_](\\d+)` : '(?!)', 'i')
+function worktreeKeyPattern(): RegExp {
+  const keys = keyPrefixes()
+  return new RegExp(keys ? `(?<![A-Za-z0-9])(${keys})[-_](\\d+)` : '(?!)', 'i')
+}
 
 /** The ticket key a worktree path names, normalised, or null. */
 export function keyFromWorktree(cwd: string): string | null {
   const dir = cwd.match(WORKTREE_DIR)?.[1]
   if (!dir) return null
-  const m = dir.match(WORKTREE_KEY)
+  const m = dir.match(worktreeKeyPattern())
   if (!m) return null
   return `${m[1]!.toUpperCase()}-${m[2]}`
 }
@@ -139,7 +147,7 @@ export function attribute(input: {
   }
 
   for (const subject of input.commitSubjects ?? []) {
-    const m = subject.match(KEY)
+    const m = subject.match(keyPattern())
     if (m?.[0]) {
       const key = m[0].toUpperCase()
       return { project: projectOfKey(key) ?? project, key, via: 'commit' }
@@ -148,7 +156,7 @@ export function attribute(input: {
 
   for (const prompt of input.prompts ?? []) {
     if (isInjected(prompt)) continue
-    const m = prompt.match(KEY)
+    const m = prompt.match(keyPattern())
     if (m?.[0]) {
       const key = m[0].toUpperCase()
       // A key from prose only counts when it belongs to the repo the work was
@@ -200,7 +208,7 @@ export function keyFromBranch(
   branch: string | null | undefined, project: Project | null,
 ): string | null {
   if (!branch) return null
-  const m = branch.match(WORKTREE_KEY)
+  const m = branch.match(worktreeKeyPattern())
   if (!m) return null
   const key = `${m[1]!.toUpperCase()}-${m[2]}`
   const owner = projectOfKey(key)
@@ -215,7 +223,7 @@ export function keyFromPromptFile(
   if (promptFileKey.has(path)) return promptFileKey.get(path) ?? null
   let key: string | null = null
   try {
-    for (const m of readFileSync(path, 'utf8').matchAll(KEY)) {
+    for (const m of readFileSync(path, 'utf8').matchAll(keyPattern())) {
       const k = m[0]!.toUpperCase()
       // The same ownership rule prose keys already follow: a run in one project
       // mentioning an AB ticket is chatter, not time spent on it.

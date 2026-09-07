@@ -50,6 +50,30 @@ type IntervalRow = {
   open: number
 }
 
+type WindowIntervalRow = IntervalRow & {
+  task_project: string | null
+  task_title: string | null
+  task_status: string | null
+  task_status_category: string | null
+  task_source: string | null
+  task_updated_at: string | null
+  task_closed_at: string | null
+}
+
+/** One indexed overlap scan, with task metadata only for keys in that window. */
+function intervalsInWindow(from: string, to: string): WindowIntervalRow[] {
+  return db().query<WindowIntervalRow, [string, string]>(
+    `SELECT i.task_key, i.project, i.source, i.agent, i.job, i.start_at, i.end_at, i.open,
+            i.claude_tokens, i.vendor_tokens, i.vendor_cost_usd,
+            t.project AS task_project, t.title AS task_title, t.status AS task_status,
+            t.status_category AS task_status_category, t.source AS task_source,
+            t.updated_at AS task_updated_at, t.closed_at AS task_closed_at
+       FROM interval i LEFT JOIN task t ON t.key = i.task_key
+      WHERE i.end_at >= ? AND i.start_at < ?
+      ORDER BY i.start_at`,
+  ).all(from, to)
+}
+
 /**
  * When a span actually ends.
  *
@@ -94,16 +118,12 @@ function foldVendors(rows: IntervalRow[]): AgentSpend[] {
  * task-based denominator can see. Hiding it would flatter every number above it.
  */
 export function tasksInWindow(from: string, to: string): TaskRow[] {
-  const d = db()
-  const rows = d.query<IntervalRow, [string, string]>(
-    `SELECT task_key, project, source, agent, job, start_at, end_at, open,
-            claude_tokens, vendor_tokens, vendor_cost_usd
-       FROM interval
-      WHERE end_at >= ? AND start_at < ?
-      ORDER BY start_at`,
-  ).all(from, to)
+  return foldWindow(intervalsInWindow(from, to))
+}
 
-  const groups = new Map<string, IntervalRow[]>()
+function foldWindow(rows: WindowIntervalRow[]): TaskRow[] {
+
+  const groups = new Map<string, WindowIntervalRow[]>()
   for (const r of rows) {
     // An unattributed row is grouped by project, so one project's untracked hours do
     // not pool with another's into one meaningless bucket.
@@ -119,20 +139,12 @@ export function tasksInWindow(from: string, to: string): TaskRow[] {
     groups.set(id, list)
   }
 
-  const meta = new Map(
-    d.query<{ key: string; project: string; title: string | null; status: string | null
-              status_category: string | null; source: string; updated_at: string | null
-              closed_at: string | null }, []>(
-      `SELECT key, project, title, status, status_category, source, updated_at, closed_at FROM task`,
-    ).all().map((t) => [t.key, t]),
-  )
-
   const out: TaskRow[] = []
 
   for (const [id, list] of groups) {
     const unattributed = id.startsWith('\0')
     const key = unattributed ? null : id
-    const m = key ? meta.get(key) : undefined
+    const first = list[0]!
 
     const spans: Span[] = list.map((r) => ({
       start: new Date(r.start_at).getTime(),
@@ -141,17 +153,18 @@ export function tasksInWindow(from: string, to: string): TaskRow[] {
 
     out.push({
       key,
-      project: m?.project ?? list[0]!.project,
-      title: m?.title ?? null,
-      status: m?.status ?? null,
-      statusCategory: m?.status_category ?? null,
-      source: m?.source ?? (key ? 'git' : null),
-      sourceProtocol: m?.source === 'mcp'
-        ? projects().find((project) => project.name === m.project)?.settings.tracker?.protocol ?? null
+      project: first.task_project ?? first.project,
+      title: first.task_title,
+      status: first.task_status,
+      statusCategory: first.task_status_category,
+      source: first.task_source ?? (key ? 'git' : null),
+      sourceProtocol: first.task_source === 'mcp'
+        ? projects().find((project) => project.name === first.task_project)?.settings.tracker?.protocol ?? null
         : null,
       capabilities: key ? trackerCapabilities({
-        source: (m?.source ?? 'git') as TrackerRowSource,
-        project: projects().find((project) => project.name === (m?.project ?? list[0]!.project)) ?? null,
+        source: (first.task_source ?? 'git') as TrackerRowSource,
+        project: projects().find((project) =>
+          project.name === (first.task_project ?? first.project)) ?? null,
       }) : null,
       engagedMs: engagedMs(spans),
       claudeTokens: list.reduce((s, r) => s + r.claude_tokens, 0),
@@ -162,8 +175,8 @@ export function tasksInWindow(from: string, to: string): TaskRow[] {
       // stored end happens to fall after the window's edge.
       activeAgents: [...new Set(list.filter((r) => r.agent && r.open).map((r) => r.agent!))],
       workingNow: list.some((r) => r.open || endMs(r) >= Date.now() - DEFAULT_IDLE_CAP_MS),
-      updatedAt: m?.updated_at ?? null,
-      closedAt: m?.closed_at ?? null,
+      updatedAt: first.task_updated_at,
+      closedAt: first.task_closed_at,
       intervals: list.length,
       lastAt: Math.max(...spans.map((x) => x.end)),
     })
@@ -177,6 +190,20 @@ export function tasksInWindow(from: string, to: string): TaskRow[] {
   // moving. Recency also puts live tasks on top for free: an open span runs to
   // now, so it cannot be beaten.
   return out.sort((a, b) => b.lastAt - a.lastAt)
+}
+
+/** Everything the global strip derives from intervals, from one overlap scan. */
+export function stripWindow(from: string, to: string) {
+  const rows = intervalsInWindow(from, to)
+  const toMs = new Date(to).getTime()
+  return {
+    tasks: foldWindow(rows),
+    engagedMs: engagedMs(rows.map((row) => ({
+      start: new Date(row.start_at).getTime(),
+      end: Math.min(endMs(row), toMs),
+    }))),
+    orchRuns: rows.filter((row) => row.source === 'orch' && row.start_at >= from).length,
+  }
 }
 
 /** Tasks whose status became `done` inside the window. */
@@ -393,7 +420,7 @@ export type RatioDay = DayRow & {
  *   just as surely as one carrying none — and reading it as a ratio flatters
  *   the number by three orders of magnitude.
  */
-export function ratioDays(days = 14): RatioDay[] {
+export function ratioDays(days = 14, includeEngaged = true): RatioDay[] {
   const d = db()
   const since = new Date(Date.now() - days * 86400_000).toISOString().slice(0, 10)
   const today = new Date().toISOString().slice(0, 10)
@@ -417,7 +444,9 @@ export function ratioDays(days = 14): RatioDay[] {
       ...r,
       excluded,
       ratio: r.tasks > 0 ? Math.round(r.claude_tokens / r.tasks) : null,
-      engagedMs: estateEngagedMs(`${r.day}T00:00:00.000Z`, `${r.day}T23:59:59.999Z`),
+      engagedMs: includeEngaged
+        ? estateEngagedMs(`${r.day}T00:00:00.000Z`, `${r.day}T23:59:59.999Z`)
+        : 0,
     }
   })
 }
@@ -435,8 +464,8 @@ export type RatioSummary = {
 /** Fewer than this in either half and the denominator moves more than the thing measured. */
 const MIN_TASKS = 5
 
-export function ratioSummary(windowDays = 14): RatioSummary {
-  const days = ratioDays(windowDays)
+export function ratioSummary(windowDays = 14, includeEngaged = true): RatioSummary {
+  const days = ratioDays(windowDays, includeEngaged)
   const usable = days.filter((d) => !d.excluded && d.tasks > 0)
   const tokens = usable.reduce((s, d) => s + d.claude_tokens, 0)
   const tasks = usable.reduce((s, d) => s + d.tasks, 0)

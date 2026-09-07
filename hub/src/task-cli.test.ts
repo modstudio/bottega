@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -33,6 +33,11 @@ function hubAt(path: string, ...args: string[]) {
   }
 }
 
+function migrateAt(path: string) {
+  const result = hubAt(path, 'migrate')
+  expect(result.exitCode, result.stderr).toBe(0)
+}
+
 async function spawnedHubAt(path: string, args: string[], env: Record<string, string> = {}) {
   const proc = Bun.spawn(['bun', cli, ...args], {
     env: { ...process.env, HUB_DB: path, ...env },
@@ -63,6 +68,8 @@ function document(id: string) {
 }
 
 describe('task CLI bodies', () => {
+  beforeAll(() => migrateAt(database))
+
   test('queries refuse an absent database instead of reporting an empty finding', () => {
     const absent = join(dir, 'absent.db')
     for (const args of [['task', 'show', 'DEV-154'], ['task', 'list'], ['tasks'], ['rulings'], ['rulings', '--json']]) {
@@ -125,6 +132,8 @@ describe('task duplicate guard', () => {
   const firstTitle = DUPLICATE_TITLE_FIXTURE['DEV-265']
   const secondTitle = DUPLICATE_TITLE_FIXTURE['DEV-266']
 
+  beforeAll(() => migrateAt(duplicateDatabase))
+
   test('refuses the DEV-265/DEV-266 title pair, records an override, and permits an unrelated title', () => {
     const first = hubAt(duplicateDatabase, 'task', 'new', '--project', 'workshop',
       '--title', firstTitle, '--allow-duplicate', 'hub duplicate guard test seed')
@@ -154,6 +163,7 @@ describe('task duplicate guard', () => {
 
   test('serialises concurrent identical filings so the second sees and refuses the first', async () => {
     const concurrentDatabase = join(dir, 'concurrent-duplicates.db')
+    migrateAt(concurrentDatabase)
     const marker = join(dir, 'duplicate-search-complete')
     const args = ['task', 'new', '--project', 'workshop',
       '--title', 'Concurrent duplicate filing must serialize']
@@ -177,6 +187,7 @@ describe('task duplicate guard', () => {
 
   test('rolls task creation back when recording the duplicate reason fails', () => {
     const rollbackDatabase = join(dir, 'duplicate-comment-rollback.db')
+    migrateAt(rollbackDatabase)
     const seed = hubAt(rollbackDatabase, 'task', 'new', '--project', 'workshop',
       '--title', firstTitle, '--allow-duplicate', 'hub rollback test seed')
     expect(seed.exitCode).toBe(0)
@@ -201,6 +212,7 @@ describe('task duplicate guard', () => {
 
   test('refuses empty and whitespace-only titles before a body can bypass matching', () => {
     const titleDatabase = join(dir, 'required-title.db')
+    migrateAt(titleDatabase)
     const seed = hubAt(titleDatabase, 'task', 'new', '--project', 'workshop',
       '--title', 'Known report', '--body', 'identical evidence body',
       '--allow-duplicate', 'hub required title test seed')

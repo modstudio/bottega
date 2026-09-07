@@ -1,11 +1,5 @@
 import { expect, mock, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import type { RegisteredProject } from '../src/projects.ts'
-
-const testDir = mkdtempSync(join(tmpdir(), 'hub-tracker-live-'))
-process.env.HUB_DB = join(testDir, 'hub.db')
 
 const tracker = (id: number, name: string): RegisteredProject => ({
   id, name, path: `/fixtures/${name}`, stack: null, canon: true,
@@ -45,17 +39,13 @@ const { collectSlow } = await import('../src/collect.ts')
 const { projectAdd } = await import('../src/orch.ts')
 
 test('live tracker registry fixture', async () => {
-  try {
-    await collectSlow(true)
-    expect(initialized).toBe(1)
+  await collectSlow(true)
+  expect(initialized).toBe(1)
 
-    await projectAdd({ name: 'beta', path: '/fixtures/beta' })
-    await collectSlow(true)
+  await projectAdd({ name: 'beta', path: '/fixtures/beta' })
+  await collectSlow(true)
 
-    // Alpha is backed off after its quiet result; only the newly registered
-    // beta tracker connects on the second pass.
-    expect(initialized).toBe(2)
-  } finally {
-    rmSync(testDir, { recursive: true, force: true })
-  }
+  // Alpha is backed off after its quiet result; only the newly registered
+  // beta tracker connects on the second pass.
+  expect(initialized).toBe(2)
 })

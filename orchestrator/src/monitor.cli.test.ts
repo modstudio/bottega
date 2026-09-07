@@ -5,6 +5,14 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { addRun, allInjectChecks, db, deadRunningProcessConditions, dir, fileIssue, monitor, monitorHistory, nowIso, reconcileHub, rulingConditions, runWithDelayedStdoutReader, setDoc, upsertProject } from '../test/fixture.ts'
 
+function migrateHub(path: string): void {
+  const result = Bun.spawnSync([process.execPath,
+    new URL('../../hub/src/cli.ts', import.meta.url).pathname, 'migrate'], {
+    env: { ...process.env, HUB_DB: path }, stdout: 'pipe', stderr: 'pipe',
+  })
+  expect(result.exitCode, result.stderr.toString()).toBe(0)
+}
+
 describe('operational monitor record', () => {
   test('pipes a complete large human report before returning its condition status', async () => {
     const hubDb = join(dir, 'monitor-large-report-hub.db')
@@ -316,6 +324,7 @@ describe('operational monitor record', () => {
     const priorHubDb = process.env.HUB_DB
     const priorSession = process.env.CLAUDE_CODE_SESSION_ID
     process.env.HUB_DB = hubDb
+    migrateHub(hubDb)
     delete process.env.CLAUDE_CODE_SESSION_ID
     upsertProject({ name: PLATFORM_SLUG, path: process.cwd(), stack: 'typescript', canon: true,
       settings: { keyPrefixes: ['DEV'] } })
@@ -333,7 +342,7 @@ describe('operational monitor record', () => {
         monitor_invocation_id: invocation, session: null, project: PLATFORM_SLUG,
       })
       expect(Object.keys(filed).sort()).toEqual([
-        'duplicate_search_error', 'key', 'kind', 'monitor_invocation_id', 'project', 'reporter',
+        'duplicates', 'key', 'kind', 'monitor_invocation_id', 'project', 'reporter',
         'reporter_id', 'session', 'worker_run_id',
       ])
       const shown = Bun.spawnSync([new URL('../../bin/hub', import.meta.url).pathname,

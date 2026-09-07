@@ -77,18 +77,21 @@ const DEFAULTS: Report = {
   smtpPasswordRef: 'keychain:work-report-smtp',
   windowHours: 24,
   minMinutes: 15,
-  projects: projectNames(),
+  // Filled from the register at use time. Importing the tRPC graph must not
+  // shell the orchestrator before any procedure has been called.
+  projects: [],
   briefs: [],
   testTo: '',
 }
 
 export function getReport(): Report {
+  const defaults = { ...DEFAULTS, projects: projectNames() }
   const row = db().query<{ value: string }, []>(
     `SELECT value FROM setting WHERE key = 'report'`,
   ).get()
-  if (!row) return { ...DEFAULTS }
-  try { return { ...DEFAULTS, ...(JSON.parse(row.value) as Partial<Report>) } }
-  catch { return { ...DEFAULTS } }
+  if (!row) return defaults
+  try { return { ...defaults, ...(JSON.parse(row.value) as Partial<Report>) } }
+  catch { return defaults }
 }
 
 export function setReport(patch: Partial<Report>): Report {

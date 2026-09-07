@@ -226,6 +226,21 @@ A database shared between two concerns is how two concerns quietly become one â€
 the root canon's line, and the reason `orch runs` grew a `--json` flag rather
 than hub growing a second connection.
 
+## The database migrates explicitly
+
+Opening hub.db never changes its schema. `hub migrate` is the only schema
+writer: it applies the ordered, checksummed SQL journal under `hub/migrations`,
+and an ordinary open refuses a store whose journal is behind or ahead of the
+binary. This keeps a dashboard process from changing live state merely because
+some newer or older checkout happened to answer a request.
+
+The baseline is trunk's SQLite DDL verbatim, and later migrations are
+hand-written SQL. A generator is not authoritative for this SQLite store: it
+cannot be trusted to preserve every table constraint and partial index. The
+small `BEGIN IMMEDIATE` journal runner is deliberately a local twin of
+`orchestrator/src/migrations.ts`; sharing it would require `shared/` to know
+each concern's journal table, directory, invariant and recovery command.
+
 ## What a collect must never do
 
 **Overwrite a good reading with a worse one.** The orchestrator learned this by

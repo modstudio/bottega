@@ -7,6 +7,14 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { AGENTS, CanonBudgetError, JOBS, addRun, allNumericLiterals, brief, checkDoc, compileBrief, compilePack, consumeDoc, consumeDocument, createDocsMcpServer, db, deleteDoc, diffDocRevisions, diffPack, dir, docSubjects, docsForRun, exportDocs, fileIssue, getDoc, getDocRevision, hermeticGitEnv, importDocs, ledgerRef, listDocMetadata, listDocRevisions, listDocs, listOpenResumes, numericLiteralReport, parseResumeFrontmatter, promoteWorkflow, readDocs, recordPack, recordReview, removeDoc, removeProject, restoreDoc, resumeAge, reviewReply, runJob, setDoc, setWorkflow, upsertProject, writeDoc } from '../test/fixture.ts'
 
+const hubCli = new URL('../../hub/src/cli.ts', import.meta.url).pathname
+function migrateHub(path: string): void {
+  const result = Bun.spawnSync([process.execPath, hubCli, 'migrate'], {
+    env: { ...process.env, HUB_DB: path }, stdout: 'pipe', stderr: 'pipe',
+  })
+  expect(result.exitCode, result.stderr.toString()).toBe(0)
+}
+
 describe('scoped operator docs', () => {
   test('CRUD round-trips and set is a uniqueness-preserving upsert', () => {
     const first = setDoc({ scope: 'global', subject: null, slug: 'hello', title: 'Hello', body: 'one' })
@@ -706,6 +714,7 @@ describe('scoped operator docs', () => {
     const priorRunId = process.env.ORCH_RUN_ID
     const priorRunToken = process.env.ORCH_RUN_TOKEN
     process.env.HUB_DB = hubDb
+    migrateHub(hubDb)
     process.env.CLAUDE_CODE_SESSION_ID = 'reporting-test-session'
     process.env.ORCH_RUN_ID = '999999'
     process.env.ORCH_RUN_TOKEN = 'not-a-worker-token'
@@ -798,6 +807,7 @@ describe('scoped operator docs', () => {
     const priorHubDb = process.env.HUB_DB
     const priorSession = process.env.CLAUDE_CODE_SESSION_ID
     process.env.HUB_DB = hubDb
+    migrateHub(hubDb)
     process.env.CLAUDE_CODE_SESSION_ID = 'search-failure-session'
     upsertProject({
       name: PLATFORM_SLUG, path: process.cwd(), stack: 'typescript', canon: true,
@@ -848,6 +858,7 @@ describe('scoped operator docs', () => {
     const priorRunId = process.env.ORCH_RUN_ID
     const priorRunToken = process.env.ORCH_RUN_TOKEN
     process.env.HUB_DB = hubDb
+    migrateHub(hubDb)
     delete process.env.CLAUDE_CODE_SESSION_ID
     upsertProject({
       name: PLATFORM_SLUG, path: process.cwd(), stack: 'typescript', canon: true,

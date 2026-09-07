@@ -5,8 +5,8 @@ import { resolveAppStatic } from './app-static.ts'
 import { createContext } from './trpc/context.ts'
 import { appRouter } from './trpc/router.ts'
 import {
-  tasksInWindow, completedInWindow, estateEngagedMs, intervalsOf,
-  ratioSummary, spendGrid, endMs,
+  tasksInWindow, completedInWindow, intervalsOf,
+  ratioSummary, spendGrid, endMs, stripWindow,
   boardTasks,
 } from './query.ts'
 import { engagedMs, human } from './interval.ts'
@@ -188,9 +188,10 @@ function setting(key: string): string | null {
 export function strip(hours: number) {
   const from = hoursAgo(hours)
   const to = nowIso()
-  const rows = tasksInWindow(from, to)
+  const window = stripWindow(from, to)
+  const rows = window.tasks
   const active = new Set(rows.flatMap((r) => r.activeAgents))
-  const r = ratioSummary(14)
+  const r = ratioSummary(14, false)
   return {
     window: `${hours}h`,
     collectedAt: setting('collect.at'),
@@ -204,7 +205,7 @@ export function strip(hours: number) {
     // the new thing. This is the one fact that separates them.
     servingSince: STARTED_AT,
     collector: leaseHolder(),
-    engaged: human(estateEngagedMs(from, to)),
+    engaged: human(window.engagedMs),
     activeAgents: [...active],
     tasksShipped: r.tasks,
     counts: {
@@ -215,9 +216,7 @@ export function strip(hours: number) {
       done: rows.filter((x) => x.key && x.statusCategory === 'done').length,
       // Unscored delegated runs are a real chore queue, so the nav carries the
       // number rather than making you go and look.
-      runs: db().query<{ n: number }, [string]>(
-        `SELECT COUNT(*) AS n FROM interval WHERE source = 'orch' AND start_at >= ?`,
-      ).get(from)?.n ?? 0,
+      runs: window.orchRuns,
     },
   }
 }

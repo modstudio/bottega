@@ -1,21 +1,20 @@
 import { Database } from 'bun:sqlite'
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { mainCheckoutOf } from '../../shared/git.ts'
+import { applyMigrations, migrationRefusal } from './migrations.ts'
 
 export type { Project } from './projects.ts'
 
 const checkout = new URL('../..', import.meta.url).pathname
 const mainCheckout = mainCheckoutOf(checkout)
-const DB_PATH = process.env.HUB_DB ?? (mainCheckout ? join(mainCheckout, 'hub', 'hub.db') : null)
+export const DB_PATH = process.env.HUB_DB ?? (mainCheckout ? join(mainCheckout, 'hub', 'hub.db') : null)
 
 let handle: Database | null = null
 
 /** Refuse a query when there is no store to query; never manufacture an empty finding. */
 export function requireDatabase(): void {
-  if (!DB_PATH) {
-    throw new Error(`cannot resolve hub database: ${checkout} has no main git checkout`)
-  }
+  if (!DB_PATH) throw new Error(`cannot resolve hub database: ${checkout} has no main git checkout`)
   if (!existsSync(DB_PATH)) {
     throw new Error(`hub database is absent at ${DB_PATH}; cannot answer from missing data`)
   }
@@ -23,244 +22,49 @@ export function requireDatabase(): void {
 
 export function db(): Database {
   if (handle) return handle
-  if (!DB_PATH) {
-    throw new Error(`cannot resolve hub database: ${checkout} has no main git checkout`)
+  requireDatabase()
+  const d = new Database(DB_PATH!, { readwrite: true, create: false })
+  d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+  const refused = migrationRefusal(d)
+  if (refused) {
+    d.close()
+    throw new Error(refused)
   }
-  handle = new Database(DB_PATH, { create: true })
-  handle.exec('PRAGMA journal_mode = WAL')
-  // A collect run and a serving dashboard write and read the same file, and a
-  // fan-out can put several collect legs in flight at once. Without this a
-  // blocked writer fails instead of waiting — the orchestrator measured that
-  // directly: 8 concurrent writers landed 40 of 160 rows before it had a
-  // busy_timeout, and 160 of 160 after.
-  handle.exec('PRAGMA busy_timeout = 15000')
-  handle.exec('PRAGMA foreign_keys = ON')
-  migrate(handle)
-  return handle
+  d.exec(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
+    PRAGMA wal_autocheckpoint = 100;
+    PRAGMA journal_size_limit = 1048576;
+  `)
+  handle = d
+  return d
 }
 
 export const nowIso = () => new Date().toISOString()
 
-function migrate(d: Database) {
-  d.exec(`
-    CREATE TABLE IF NOT EXISTS task (
-      key             TEXT PRIMARY KEY,
-      project         TEXT NOT NULL,
-      title           TEXT,
-      status          TEXT,
-      -- The trackers each have their own status vocabulary; this is the
-      -- normalised one the dashboard groups on.
-      status_category TEXT CHECK (status_category IN ('open','active','review','done','dropped')),
-      opened_at       TEXT,
-      closed_at       TEXT,
-      updated_at      TEXT,
-      -- Where the row came from. 'git' means it was inferred from commit
-      -- subjects because no tracker was reachable, and carries no title or
-      -- status — the dashboard says so rather than showing a blank as fact.
-      source          TEXT NOT NULL CHECK (source IN ('mcp','git','local')),
-      first_seen      TEXT NOT NULL,
-      last_seen       TEXT NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS task_project ON task(project, status_category);
-
-    -- When a task changed state, which is NOT what a tracker's updated_at
-    -- tells you. "Completed in the last 48 hours" is answerable only from a
-    -- record of transitions, so the collector writes one every time it sees a
-    -- status it did not see last pass.
-    CREATE TABLE IF NOT EXISTS task_status_event (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      task_key    TEXT NOT NULL REFERENCES task(key) ON DELETE CASCADE,
-      at          TEXT NOT NULL,
-      from_status TEXT,
-      to_status   TEXT NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS tse_at ON task_status_event(at);
-    CREATE UNIQUE INDEX IF NOT EXISTS tse_one_per_change
-      ON task_status_event(task_key, to_status, at);
-
-    -- The heart of it: a half-open span during which SOMETHING was working.
-    --
-    -- Engaged time is the UNION of these per task, never their sum. Two agents
-    -- running at once contribute the wall-clock they overlap on, once — which
-    -- is the whole point: a session waiting on a delegated agent is not idle,
-    -- and two delegated agents running together did not take twice as long.
-    CREATE TABLE IF NOT EXISTS interval (
-      id              INTEGER PRIMARY KEY AUTOINCREMENT,
-      -- NULL where nothing named a task. Reported as an explicit unattributed
-      -- row per project rather than dropped: work carrying no ticket is the
-      -- blind spot every denominator here shares, so hiding it would flatter
-      -- every number on the page.
-      task_key        TEXT,
-      project         TEXT,
-      source          TEXT NOT NULL CHECK (source IN ('claude','codex','orch')),
-      agent           TEXT,
-      -- The job type an agent was given. Without it a nested run reads as
-      -- "grok, 5m, done", which says who and how long but not what.
-      job             TEXT,
-      start_at        TEXT NOT NULL,
-      end_at          TEXT NOT NULL,
-      claude_tokens   INTEGER NOT NULL DEFAULT 0,
-      vendor_tokens   INTEGER NOT NULL DEFAULT 0,
-      vendor_cost_usd REAL,
-      -- Session id or orch run id, so an implausible figure can be traced back
-      -- to the thing that produced it instead of being taken on faith.
-      ref             TEXT NOT NULL,
-      -- How the task key was decided, so a wrong attribution is diagnosable
-      -- rather than merely wrong.
-      via             TEXT,
-      -- Still going. An open span's end_at is only the moment the collector
-      -- last looked, so it must NOT be read as when the work stopped: doing so
-      -- made every live run read as finished one second after a collect, and
-      -- the "agents working now" count sat at zero through a seven-way fan-out.
-      -- Queries extend an open span to now instead.
-      open            INTEGER NOT NULL DEFAULT 0,
-      CHECK (end_at >= start_at)
-    );
-
-    CREATE INDEX IF NOT EXISTS interval_task ON interval(task_key, start_at);
-    CREATE INDEX IF NOT EXISTS interval_span ON interval(start_at, end_at);
-    -- Re-collecting a window must not double up what it already recorded. A
-    -- source+ref+start triple identifies one measurement.
-    CREATE UNIQUE INDEX IF NOT EXISTS interval_once
-      ON interval(source, ref, start_at);
-
-    -- When a task key was committed, so a session working in a plain checkout
-    -- can still be attributed. A worktree path names its task outright; a main
-    -- checkout names nothing, and 41% of all recorded spans were landing in the
-    -- untracked bucket for want of any other signal.
-    CREATE TABLE IF NOT EXISTS commit_key (
-      sha     TEXT PRIMARY KEY,
-      repo    TEXT NOT NULL,
-      task_key TEXT NOT NULL,
-      at      TEXT NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS commit_key_when ON commit_key(repo, at);
-
-    -- Day-grained totals, carried over from the orchestrator's metric table.
-    -- The lenses need denominators that only exist per day (commits, lines,
-    -- files), so this stays a separate grain rather than being derived.
-    CREATE TABLE IF NOT EXISTS day (
-      day             TEXT PRIMARY KEY,
-      claude_tokens   INTEGER NOT NULL DEFAULT 0,
-      cache_read      INTEGER NOT NULL DEFAULT 0,
-      messages        INTEGER NOT NULL DEFAULT 0,
-      tasks           INTEGER NOT NULL DEFAULT 0,
-      canon_tokens    INTEGER NOT NULL DEFAULT 0,
-      other_tokens    INTEGER NOT NULL DEFAULT 0,
-      commits         INTEGER NOT NULL DEFAULT 0,
-      files           INTEGER NOT NULL DEFAULT 0,
-      lines_product   INTEGER NOT NULL DEFAULT 0,
-      lines_test      INTEGER NOT NULL DEFAULT 0,
-      lines_docs      INTEGER NOT NULL DEFAULT 0,
-      lines_config    INTEGER NOT NULL DEFAULT 0,
-      lines_generated INTEGER NOT NULL DEFAULT 0,
-      collected_at    TEXT NOT NULL
-    );
-
-    -- What the settings tab writes. Secrets never land here: SMTP passwords
-    -- and MCP tokens stay in the Keychain and ~/.claude/.env, and the UI shows
-    -- only whether each resolves.
-    CREATE TABLE IF NOT EXISTS setting (
-      key   TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS send (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      at         TEXT NOT NULL,
-      window     TEXT NOT NULL,
-      recipients TEXT NOT NULL,
-      projects   TEXT NOT NULL,
-      items      INTEGER NOT NULL,
-      status     TEXT NOT NULL CHECK (status IN ('sent','skipped','failed')),
-      error      TEXT,
-      -- A test send is a real send to a different address. Marked rather than
-      -- hidden, so the log shows what actually left the machine, and rather
-      -- than left unmarked, so a test is never mistaken for the daily report
-      -- having gone out.
-      test       INTEGER NOT NULL DEFAULT 0
-    );
-
-    -- The local tracker's key counter. A table rather than max(key)+1 so a
-    -- deleted task never hands its number to a new one.
-    CREATE TABLE IF NOT EXISTS seq (
-      name TEXT PRIMARY KEY,
-      next INTEGER NOT NULL
-    );
-  `)
-
-  // Added after task first shipped. Keep this additive: hub.db is live state,
-  // and rebuilding task would put every interval and status event reference at
-  // unnecessary risk.
-  addColumn(d, 'task', 'parent_key', 'TEXT REFERENCES task(key) ON DELETE SET NULL')
-  addColumn(d, 'task', 'body', 'TEXT')
-  addColumn(d, 'task', 'assignee', 'TEXT')
-  addColumn(d, 'interval', 'session_id', 'TEXT')
-  d.exec(`
-    CREATE INDEX IF NOT EXISTS task_parent ON task(parent_key);
-
-    -- Questions ingested from orch runs JSON. Keyed on orch's question id,
-    -- which is stable across collects. The monitor reads this through
-    -- hub rulings, never by opening orch.db.
-    CREATE TABLE IF NOT EXISTS question (
-      question_id INTEGER PRIMARY KEY,
-      run_ref     TEXT NOT NULL,
-      root_ref    TEXT NOT NULL,
-      task_key    TEXT,
-      session_id  TEXT,
-      asked_at    TEXT NOT NULL,
-      answered_at TEXT
-    );
-    CREATE INDEX IF NOT EXISTS question_open ON question(answered_at) WHERE answered_at IS NULL;
-    CREATE INDEX IF NOT EXISTS question_root ON question(root_ref);
-
-
-    CREATE TABLE IF NOT EXISTS task_comment (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      task_key   TEXT NOT NULL REFERENCES task(key) ON DELETE CASCADE,
-      body       TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS task_comment_task ON task_comment(task_key, created_at);
-  `)
-
-  // Long-form working material belongs beside a task, not inside its short
-  // description. Most documents are deliberately untyped. A role exists only
-  // when a consumer must locate one particular document without guessing from
-  // its title; handoff is the first such consumer.
-  d.run(`
-    CREATE TABLE IF NOT EXISTS task_document (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      task_key   TEXT NOT NULL REFERENCES task(key) ON DELETE CASCADE,
-      role       TEXT CHECK (role IN ('handoff')),
-      title      TEXT NOT NULL,
-      body       TEXT NOT NULL,
-      -- This is an optimistic-concurrency token, not retained history. A body
-      -- replacement compares and writes it in one SQL statement so two
-      -- sessions cannot both pass a check in application code and overwrite.
-      version    TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    )
-  `)
-
-  d.exec(`
-    CREATE INDEX IF NOT EXISTS task_document_task
-      ON task_document(task_key, created_at, id);
-    CREATE UNIQUE INDEX IF NOT EXISTS task_document_one_role
-      ON task_document(task_key, role) WHERE role IS NOT NULL;
-  `)
+/** Fixture-only: build a scratch store through the production migration journal. */
+export function bootstrapFixtureStore(path: string): string {
+  mkdirSync(dirname(path), { recursive: true })
+  const d = new Database(path, { create: true })
+  try {
+    d.exec('PRAGMA foreign_keys = ON;')
+    applyMigrations(d)
+  } finally {
+    d.close()
+  }
+  return path
 }
 
-/** Columns added after the first schema shipped; SQLite has no IF NOT EXISTS here. */
-function addColumn(d: Database, table: string, col: string, decl: string) {
-  const cols = d.query(`PRAGMA table_info(${table})`).all() as { name: string }[]
-  if (!cols.some((candidate) => candidate.name === col)) {
-    d.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`)
+/** The only production path that creates or changes the hub schema. */
+export function migrateDatabase(): { path: string; versions: string[] } {
+  if (!DB_PATH) throw new Error(`cannot resolve hub database: ${checkout} has no main git checkout`)
+  mkdirSync(dirname(DB_PATH), { recursive: true })
+  const d = new Database(DB_PATH, { create: true })
+  try {
+    d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+    return { path: DB_PATH, versions: applyMigrations(d) }
+  } finally {
+    d.close()
   }
 }
 

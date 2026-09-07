@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
-import { db, nextImportedTaskKey, nowIso, requireDatabase } from './db.ts'
+import { DB_PATH, db, migrateDatabase, nextImportedTaskKey, nowIso, requireDatabase } from './db.ts'
+import { BASELINE_SCHEMA_HASH, canonicalSchemaHash } from './migrations.ts'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { ingestRuns } from './ingest/runs.ts'
 import { ingestTranscripts } from './ingest/transcripts.ts'
@@ -40,6 +41,8 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and the 
       --watch                 keep collecting on a clock; what launchd runs.
                               Safe beside a running dashboard: a lease in the
                               database means only one process collects.
+  hub migrate                 apply pending checksummed schema migrations
+  hub doctor                  report the live structural schema hash
   hub tasks [--hours N]       what has been worked on, newest window first
   hub serve [--port 7778]     the dashboard
   hub reconcile [--dry-run]   close open intervals whose orch runs are terminal
@@ -452,16 +455,25 @@ async function sendReport() {
  */
 try {
 
-// Collection and the two task-creation commands intentionally initialise a
-// machine's store. Every other data command is a query or mutation of existing
-// state and must not turn a missing store into a confident empty answer.
-const initialisesDatabase = cmd === 'collect'
-  || (cmd === 'task' && (argv[1] === 'new' || argv[1] === 'import'))
 const usesDatabase = cmd === 'collect' || cmd === 'tasks' || cmd === 'serve'
   || cmd === 'task' || cmd === 'send' || cmd === 'reconcile' || cmd === 'rulings'
-if (usesDatabase && !initialisesDatabase) requireDatabase()
+  || cmd === 'doctor'
+if (usesDatabase) requireDatabase()
 
 switch (cmd) {
+  case 'migrate': {
+    const migrated = migrateDatabase()
+    if (migrated.versions.length === 0) console.log(`schema already current: ${migrated.path}`)
+    else {
+      console.log(`migrated ${migrated.path}`)
+      for (const version of migrated.versions) console.log(`  applied ${version}`)
+    }
+    break
+  }
+  case 'doctor':
+    console.log(`database       ${DB_PATH}`)
+    console.log(`schema hash    ${canonicalSchemaHash(db()) === BASELINE_SCHEMA_HASH ? 'match' : 'DRIFT'}`)
+    break
   case 'collect':
     if (has('watch')) {
       console.log(`hub: collecting every ${20}s (fast) and ${300}s (slow); ctrl-c to stop`)

@@ -1,17 +1,10 @@
 /**
  * The collect lease, on a database of its own.
  *
- * A separate file because `db.ts` reads HUB_DB when it is first imported, and
- * static imports hoist above any assignment - so the path has to be set before
- * collect.ts is pulled in, which means importing it dynamically.
+ * A separate file so the preloaded migrated store and the process-wide lease
+ * handle are isolated from the larger behavioral fixture.
  */
 import { expect, test, describe } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-
-const dir = mkdtempSync(join(tmpdir(), 'hub-lease-'))
-process.env.HUB_DB = join(dir, 'lease.db')
 const { acquireLease, releaseLease, leaseHolder, withLease } = await import('./collect.ts')
 
 describe('collect lease', () => {
@@ -55,5 +48,3 @@ describe('collect lease', () => {
     expect(leaseHolder()).toBeNull()
   })
 })
-
-process.on('exit', () => { try { rmSync(dir, { recursive: true, force: true }) } catch {} })
