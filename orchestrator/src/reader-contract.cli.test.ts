@@ -73,8 +73,10 @@ const stubCodex = (body: string) => {
   }
 }
 
-const readerReply = (deliverables: { name: string; status: string; content: string }[]) =>
-  JSON.stringify({ deliverables, narrative: 'notes', files_written: null })
+const readerReply = (
+  deliverables: { name: string; status: string; content: string }[],
+  filesWritten: string[] | null = null,
+) => JSON.stringify({ deliverables, narrative: 'notes', files_written: filesWritten })
 
 describe('reader return contracts', () => {
   test('a diagnose reply missing a deliverable is unevidenced', async () => {
@@ -127,9 +129,11 @@ describe('reader return contracts', () => {
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 writeFileSync(join(process.env.ORCH_SCRATCH!, 'timing-table.txt'), 'file,ms\\na,1\\n')
+writeFileSync('named-evidence.txt', 'failing test: example\\n')
+writeFileSync('tracked.txt', 'fixture changed during diagnosis\\n')
 process.stdout.write(${JSON.stringify(readerReply([
       { name: 'x', status: 'delivered', content: 'see timing-table.txt' },
-    ]))})
+    ], ['named-evidence.txt']))})
 `)
     try {
       const result = await runJob({
@@ -141,6 +145,10 @@ process.stdout.write(${JSON.stringify(readerReply([
       expect(artifacts.some((p) => p.endsWith('timing-table.txt'))).toBe(true)
       expect(readFileSync(artifacts.find((p) => p.endsWith('timing-table.txt'))!, 'utf8'))
         .toContain('file,ms')
+      expect(readFileSync(artifacts.find((p) => p.endsWith('named-evidence.txt'))!, 'utf8'))
+        .toContain('failing test')
+      expect(readFileSync(artifacts.find((p) => p.endsWith('worktree.diff'))!, 'utf8'))
+        .toContain('fixture changed during diagnosis')
       const listed = Bun.spawnSync(
         [process.execPath, CLI, 'result', String(result.id), '--artifacts'],
         {
@@ -220,6 +228,12 @@ process.stdout.write(${JSON.stringify(JSON.stringify({
     )
     expect(r.exitCode).toBe(1)
     expect(r.stderr.toString()).toContain('file-question timeout ceiling is 20 minutes')
+    const help = Bun.spawnSync([process.execPath, CLI, 'do', '--help'], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(help.stdout.toString()).toContain('diagnose 40m/60m')
+    expect(help.stdout.toString()).toContain('file-question agent/20m')
   })
 
   test('orch do diagnose --deliverable x returns unevidenced when x is missing', async () => {

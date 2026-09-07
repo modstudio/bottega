@@ -58,10 +58,11 @@ let isReaderJob!: typeof import('./jobs.ts').isReaderJob
 let reclaimsTreeByDefault!: typeof import('./jobs.ts').reclaimsTreeByDefault
 let resolveJobTimeoutMs!: typeof import('./jobs.ts').resolveJobTimeoutMs
 let jobBoundInstructionForContract!: typeof import('./jobs.ts').jobBoundInstructionForContract
+let jobTimeoutHelp!: typeof import('./jobs.ts').jobTimeoutHelp
 async function loadJobs() {
   jobsModule ??= await import('./jobs.ts')
   ;({ JOBS, job, isReaderJob, reclaimsTreeByDefault, resolveJobTimeoutMs,
-      jobBoundInstructionForContract } = jobsModule)
+      jobBoundInstructionForContract, jobTimeoutHelp } = jobsModule)
 }
 let AGENTS!: typeof import('./agents.ts').AGENTS
 let available!: typeof import('./agents.ts').available
@@ -1614,6 +1615,7 @@ function doUsage(): never {
   orch do <job> [prompt]
 
   jobs: ${Object.keys(JOBS).join(', ')}
+  timeouts (default/ceiling): ${jobTimeoutHelp()}
 
   --agent <name>   force an agent instead of using the router
   --transport cli|acp  driver seam; default cli. acp covers codex/grok read-only jobs

@@ -72,6 +72,13 @@ export const JOB_TIMEOUTS = {
   'review-lens-inline': { defaultMinutes: null, ceilingMinutes: 20 },
 } as const satisfies Record<string, { defaultMinutes: number | null; ceilingMinutes: number }>
 
+/** Compact defaults/ceilings for `orch do --help`, derived from JOB_TIMEOUTS. */
+export function jobTimeoutHelp(): string {
+  return Object.entries(JOB_TIMEOUTS).map(([name, bounds]) =>
+    `${name} ${bounds.defaultMinutes == null ? 'agent' : `${bounds.defaultMinutes}m`}/${bounds.ceilingMinutes}m`,
+  ).join(', ')
+}
+
 export const READER_JOBS = ['diagnose', 'understand', 'file-question'] as const
 export type ReaderJob = typeof READER_JOBS[number]
 
