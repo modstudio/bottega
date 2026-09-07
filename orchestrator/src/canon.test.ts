@@ -15,7 +15,7 @@ import { getTableConfig, type SQLiteTable } from 'drizzle-orm/sqlite-core'
 import * as declared from './schema.ts'
 import {
   applyMigrations, BASELINE_SCHEMA_HASH, baselineSchemaHash, canonicalSchemaHash,
-  expectedSchemaHash,
+  expectedSchemaHash, JOURNAL_WHEN_ORDER,
   MIGRATIONS_FOLDER, migrationJournal, migrationRefusal,
 } from './migrations.ts'
 
@@ -393,6 +393,24 @@ describe('Drizzle migration journal', () => {
     const after = d.query("SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY type,name").all()
     expect(after).toEqual(before)
     d.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('a journal whose entries are idx-ordered but when-unordered is refused at load', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orch-when-unordered-'))
+    mkdirSync(join(dir, 'meta'))
+    writeFileSync(join(dir, 'meta', '_journal.json'), JSON.stringify({
+      version: '7', dialect: 'sqlite', entries: [
+        { idx: 0, version: '6', when: 100, tag: '0000_first', breakpoints: true },
+        { idx: 1, version: '6', when: 300, tag: '0001_later', breakpoints: true },
+        { idx: 2, version: '6', when: 200, tag: '0002_earlier', breakpoints: true },
+      ],
+    }))
+    expect(() => migrationJournal(dir)).toThrow(
+      'refusing to load a migration journal whose when values are not strictly increasing',
+    )
+    expect(() => migrationJournal(dir)).toThrow(`invariant: ${JOURNAL_WHEN_ORDER}`)
+    expect(() => migrationJournal(dir)).toThrow('0001_later@300 then 0002_earlier@200')
     rmSync(dir, { recursive: true, force: true })
   })
 })

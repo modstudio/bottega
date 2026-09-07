@@ -6,6 +6,7 @@ import { join } from 'node:path'
 export const MIGRATIONS_FOLDER = join(import.meta.dir, '..', 'migrations')
 export const MIGRATIONS_TABLE = 'orch_migrations'
 export const SCHEMA_INVARIANT = 'Only the main checkout\'s binary migrates the store.'
+export const JOURNAL_WHEN_ORDER = 'migration journal when values must be strictly increasing'
 
 type JournalEntry = { idx: number; when: number; tag: string }
 type ColumnShape = {
@@ -51,7 +52,19 @@ type SchemaInventory = {
 export function migrationJournal(folder = MIGRATIONS_FOLDER): JournalEntry[] {
   const journal = JSON.parse(readFileSync(join(folder, 'meta', '_journal.json'), 'utf8')) as
     { entries: JournalEntry[] }
-  return journal.entries
+  const entries = journal.entries
+  for (let i = 1; i < entries.length; i++) {
+    const previous = entries[i - 1]!
+    const current = entries[i]!
+    if (current.when <= previous.when) {
+      throw new Error(
+        `refusing to load a migration journal whose when values are not strictly increasing\n` +
+        `invariant: ${JOURNAL_WHEN_ORDER}\n` +
+        `${previous.tag}@${previous.when} then ${current.tag}@${current.when}`,
+      )
+    }
+  }
+  return entries
 }
 
 function migrationSource(entry: JournalEntry, folder = MIGRATIONS_FOLDER): string {
