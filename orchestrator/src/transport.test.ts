@@ -313,6 +313,30 @@ describe('ACP transport through run', () => {
     }
   })
 
+  test('ACP timeout with a trailing vendor marker is truncated, not timeout', async () => {
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      installFake(() => fakeResult({
+        output: 'partial', status: 'failed', stopReason: 'timeout',
+        failureKind: 'timeout', error: 'no reply within the run bound; the agent was killed',
+        exitCode: 143, stderr: '[API Error: terminated]\n',
+      }))
+      let runId: number | null = null
+      try {
+        await runAcp()
+      } catch (error) {
+        runId = (error as Error & { runId?: number }).runId ?? null
+      }
+      expect(runId).not.toBeNull()
+      expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(runId))
+        .toEqual({ status: 'failed', failure_kind: 'truncated' })
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
   test('cancel with partial text is interrupted', async () => {
     const priorDepth = process.env.ORCH_DEPTH
     process.env.ORCH_DEPTH = '0'
@@ -400,6 +424,37 @@ describe('ACP transport through run', () => {
       expect(message).toContain('reply did not match the worker contract')
       expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(runId))
         .toEqual({ status: 'failed', failure_kind: 'other' })
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
+  test('ACP schema mismatch with a trailing vendor marker is truncated, not other', async () => {
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    const schemaPath = join(dir, 'acp-schema-marker.json')
+    writeFileSync(schemaPath, JSON.stringify({
+      type: 'object', additionalProperties: false, required: ['verdict'],
+      properties: { verdict: { type: 'string', enum: ['true', 'false', 'undecidable'] } },
+    }))
+    try {
+      installFake(() => fakeResult({
+        output: '{', status: 'ok', stopReason: 'end_turn',
+        stderr: '[API Error: terminated]\n',
+      }))
+      let runId: number | null = null
+      try {
+        await run({
+          job: 'summarize', prompt: 'answer via schema', cwd: dir, agent: 'codex',
+          transport: 'acp', schemaPath, noFailover: true,
+        })
+      } catch (error) {
+        runId = (error as Error & { runId?: number }).runId ?? null
+      }
+      expect(runId).not.toBeNull()
+      expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(runId))
+        .toEqual({ status: 'failed', failure_kind: 'truncated' })
     } finally {
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth

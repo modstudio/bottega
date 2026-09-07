@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { readFileSync, writeFileSync, existsSync, mkdirSync, utimesSync, chmodSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, utimesSync, chmodSync, mkdtempSync, rmSync, realpathSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AGENTS, GENERIC_QUESTION_TOKENS, KEEP_RUN_FILES_DAYS, addDoctrineRule, addPair, addRun, addSkip, adoptRunMutation, ask, authorizeRunMutation, baselineForPair, candidates, db, detectBlockers, dir, duelMatrices, errorTail, hasRealQuestions, judgeability, ledgerRef, listDoctrineRules, listLedgerRefs, listPairs, listSkips, nowIso, parseRunIds, parseWorkerReply, parseWorkerReplyWithCount, pendingForSession, pick, projects, pruneRuns, realQuestions, recordDuels, resolveLedgerRef, retireDoctrineRule, run, runDetail, runFilePaths, score, sessionId, setBaseline, setLedgerRef, state, upsertProject, weigh, workerReply } from '../test/fixture.ts'
+import { AGENTS, GENERIC_QUESTION_TOKENS, KEEP_RUN_FILES_DAYS, addDoctrineRule, addPair, addRun, addSkip, adoptRunMutation, ask, authorizeRunMutation, baselineForPair, candidates, db, detectBlockers, dir, duelMatrices, errorTail, hasRealQuestions, hermeticGitEnv, judgeability, ledgerRef, listDoctrineRules, listLedgerRefs, listPairs, listSkips, nowIso, parseRunIds, parseWorkerReply, parseWorkerReplyWithCount, pendingForSession, pick, projects, pruneRuns, realQuestions, recordDuels, resolveLedgerRef, retireDoctrineRule, run, runDetail, runFilePaths, score, sessionId, setBaseline, setLedgerRef, state, upsertProject, weigh, workerReply } from '../test/fixture.ts'
 
 describe('porting data model', () => {
   test('stores pair progress and declined candidates with their reasons', () => {
@@ -900,6 +901,153 @@ setInterval(() => {}, 1_000)
       expect(candidates('file-question').find((candidate) => candidate.agent === 'grok'))
         .toMatchObject({ evidence: 0 })
     })
+  })
+
+  const askingContract = JSON.stringify(workerReply({
+    status: 'asking', files_changed: null, tests: null,
+    questions: [{
+      question: 'one table or two?', options: ['one', 'two'], recommendation: 'two',
+      why: 'the choice changes the public query shape',
+    }],
+  }))
+  const emptyDoneContract = JSON.stringify(workerReply({
+    files_changed: [], tests: { command: null, ran: false, passed: null, detail: null },
+  }))
+
+  async function withWritingRepo<T>(fn: (repo: string) => Promise<T>): Promise<T> {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-361-write-'))
+    const git = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+    }
+    writeFileSync(join(repo, 'seed.txt'), 'seed\n')
+    git('init', '-b', 'main')
+    git('config', 'user.email', 'orch-test@example.invalid')
+    git('config', 'user.name', 'Orch Test')
+    git('add', 'seed.txt')
+    git('commit', '-m', 'seed')
+    try {
+      return await fn(repo)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  }
+
+  test('a grok asking contract trailing the marker is truncated, not asking, and creates no inbox question', async () => {
+    const output = grokStream(
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'ask-marker' }),
+      JSON.stringify({ type: 'result', result: askingContract }),
+      '[API Error: terminated]',
+    )
+    await withGrokBin(output, 0, async () => {
+      await withWritingRepo(async (repo) => {
+        let runId: number | null = null
+        try {
+          const result = await run({
+            job: 'implement', prompt: 'build it', cwd: repo,
+            agent: 'grok', noFailover: true,
+          })
+          runId = result.id
+        } catch (error) {
+          runId = (error as Error & { runId?: number }).runId ?? null
+        }
+        expect(runId).not.toBeNull()
+        expect(db().query(
+          'SELECT status, failure_kind FROM run WHERE id=?',
+        ).get(runId!)).toEqual({ status: 'failed', failure_kind: 'truncated' })
+        expect((db().query('SELECT COUNT(*) n FROM question WHERE run_id=?').get(runId!) as { n: number }).n)
+          .toBe(0)
+        expect(candidates('implement').find((candidate) => candidate.agent === 'grok'))
+          .toMatchObject({ evidence: 0 })
+      })
+    })
+  })
+
+  test('a grok empty-done contract trailing the marker is truncated, not other', async () => {
+    const output = grokStream(
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'empty-done-marker' }),
+      JSON.stringify({ type: 'result', result: emptyDoneContract }),
+      '[API Error: terminated]',
+    )
+    await withGrokBin(output, 0, async () => {
+      await withWritingRepo(async (repo) => {
+        let runId: number | null = null
+        try {
+          await run({
+            job: 'implement', prompt: 'build it', cwd: repo,
+            agent: 'grok', noFailover: true,
+          })
+        } catch (error) {
+          runId = (error as Error & { runId?: number }).runId ?? null
+        }
+        expect(runId).not.toBeNull()
+        const row = db().query(
+          'SELECT status, failure_kind, error FROM run WHERE id=?',
+        ).get(runId!) as { status: string; failure_kind: string; error: string }
+        expect(row).toEqual({
+          status: 'failed', failure_kind: 'truncated',
+          error: expect.stringContaining('[API Error: terminated]'),
+        })
+        expect(row.failure_kind).not.toBe('other')
+        expect(row.error).not.toBe('reported done with no change and no test run')
+        expect(candidates('implement').find((candidate) => candidate.agent === 'grok'))
+          .toMatchObject({ evidence: 0 })
+      })
+    })
+  })
+
+  test('a confinement trip with the marker present records escaped, not truncated', async () => {
+    const watched = realpathSync(mkdtempSync(join(tmpdir(), 'orch-361-escape-')))
+    const git = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: watched, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+    }
+    git('init', '-b', 'main')
+    git('config', 'user.email', 'orch-test@example.invalid')
+    git('config', 'user.name', 'Orch Test')
+    writeFileSync(join(watched, 'tracked.txt'), 'base\n')
+    git('add', 'tracked.txt')
+    git('commit', '-m', 'fixture')
+    const script = join(dir, 'DEV-361-escape-marker.sh')
+    writeFileSync(script, `#!/bin/sh
+if [ -n "$ORCH_TEST_EXTERNAL_WRITE" ]; then printf 'outside\\n' > "$ORCH_TEST_EXTERNAL_WRITE"; fi
+printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"answer"}' '[API Error: terminated]'
+`)
+    chmodSync(script, 0o755)
+    upsertProject({ name: 'watched-marker-project', path: watched })
+    const grok = AGENTS.grok!
+    const previousBin = grok.bin
+    const priorDepth = process.env.ORCH_DEPTH
+    const priorTarget = process.env.ORCH_TEST_EXTERNAL_WRITE
+    process.env.ORCH_DEPTH = '0'
+    try {
+      grok.bin = script
+      process.env.ORCH_TEST_EXTERNAL_WRITE = join(watched, 'written-by-run.txt')
+      let runId: number | null = null
+      try {
+        await run({ job: 'file-question', prompt: 'write outside', cwd: dir, agent: 'grok', noFailover: true })
+      } catch (error) {
+        runId = (error as Error & { runId?: number }).runId ?? null
+      }
+      expect(runId).not.toBeNull()
+      const row = db().query(
+        'SELECT status, failure_kind FROM run WHERE id=?',
+      ).get(runId!) as { status: string; failure_kind: string }
+      expect(row.status).toBe('failed')
+      expect(['escaped', 'confinement_unverified']).toContain(row.failure_kind)
+      expect(row.failure_kind).not.toBe('truncated')
+    } finally {
+      grok.bin = previousBin
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      if (priorTarget === undefined) delete process.env.ORCH_TEST_EXTERNAL_WRITE
+      else process.env.ORCH_TEST_EXTERNAL_WRITE = priorTarget
+      rmSync(watched, { recursive: true, force: true })
+    }
   })
 })
 

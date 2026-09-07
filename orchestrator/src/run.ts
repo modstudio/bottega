@@ -2588,6 +2588,7 @@ export async function run(opts: {
   let failureKind: ReturnType<typeof classify> | null = null
   let artifactsPersisted = true
   let preConfinement: string | null = null
+  let vendorTerminatedStream: string | null = null
   let outsideWrites: OutsideWorktreeWrite[] = []
   let confinementFailures: CheckoutSampleFailure[] = []
   let askLoopback: AskLoopback | null = null
@@ -2697,6 +2698,8 @@ export async function run(opts: {
     const collected = await handle.collect()
     const stdout = collected.stdout
     const stderr = collected.stderr
+    // One derivation from the raw stream, carried through terminalisation.
+    vendorTerminatedStream = [stdout, stderr].find(hasVendorTerminationMarker) ?? null
     exitCode = collected.exitCode
     const reply = collected.parsed
     const replyError = reply?.error ?? collected.error
@@ -2790,17 +2793,6 @@ export async function run(opts: {
     } else if (outputCeilingReached) {
       status = 'failed'
       error = `response truncated at output ceiling (${reply!.stopReason})`
-      failureKind = 'truncated'
-    } else if (
-      hasVendorTerminationMarker(stdout) || hasVendorTerminationMarker(stderr)
-    ) {
-      // The marker is a fact about the raw stream. parseReply strips it from
-      // grok NDJSON, and replyError / isNonAnswer would stamp `other` on what
-      // remains — which counts as routing evidence. truncated does not.
-      // Checked before the timeout branches: the vendor already said it
-      // stopped; our timer firing afterwards is how long we then waited.
-      status = 'failed'
-      error = errorTail(hasVendorTerminationMarker(stdout) ? stdout : stderr)
       failureKind = 'truncated'
     } else if (timedOut && completedReplyAtTimeout) {
       /**
@@ -2977,7 +2969,8 @@ export async function run(opts: {
     }
 
     if (contract?.status === 'done' && contract.files_changed?.length === 0 &&
-        contract.tests?.ran === false && changes?.files.length === 0) {
+        contract.tests?.ran === false && changes?.files.length === 0 &&
+        failureKind !== 'truncated') {
       status = 'failed'
       error = 'reported done with no change and no test run'
       failureKind = 'other'
@@ -2997,6 +2990,21 @@ export async function run(opts: {
       const note = `${count} invalid question${count === 1 ? '' : 's'} dropped; ` +
         `rejected question text: ${rejected}`
       error = error ? `${error}\n${note}` : note
+    }
+    /**
+     * A raw stdout/stderr stream ending in a vendor termination marker means the
+     * vendor killed the session. Whatever else the run appears to be — an ACP stop
+     * reason, a schema mismatch, a parsed question, a worker contract reporting
+     * done — is an artefact of a stream that was cut off. Vendor truncation
+     * therefore outranks every vendor-derived classification. It does NOT outrank
+     * confinement (escaped, confinement_unverified), which outranks everything by
+     * existing design.
+     */
+    if (vendorTerminatedStream) {
+      status = 'failed'
+      error = errorTail(vendorTerminatedStream)
+      failureKind = 'truncated'
+      acceptedQuestions = []
     }
     let parsedReview: ReturnType<typeof parseReviewOutput> = null
     if (status === 'ok' && requestedJob.findings) {
