@@ -814,6 +814,17 @@ The invariants are:
   orch worktree is residue, not a hazard: each tree path carries a unique run id
   and never recurs, so sweep reports the entry for manual pruning (DEV-194).
 - **Every write transaction is IMMEDIATE; a deferred transaction that later writes is a lock-upgrade race under concurrent dispatch.**
+- **The escape check samples porcelain status, which cannot see a moved HEAD.**
+  A main checkout sitting on a branch that is not trunk reads CLEAN to that
+  sampler, so nothing trips — and it is the more dangerous state, because a
+  landing's final reconcile then acts on a checkout whose HEAD is not the branch
+  it is reconciling to. Sample `git -C <checkout> symbolic-ref --short HEAD`
+  against the register's trunk at the same two moments as the status sample, and
+  treat a mismatch the same way: the run fails and its landing is blocked, and
+  the writer is not identified. Found on 2026-09-07, when run 2437 was classified
+  `escaped` for a dirty `AGENTS.md` that an architect session then COMMITTED in
+  the main checkout — which cleared the dirt, moved HEAD, and left the detector
+  with nothing to report.
 - **A persistent porcelain-status change in a registered main checkout that was
   sampleable at launch, or a distinct sampleable caller checkout, during a run
   fails that run and blocks its landing;** unregistered or launch-unsampleable
@@ -1010,6 +1021,15 @@ refused fast-forward is a lost race, not a verdict — rebase onto the new trunk
 gate again, and retry, up to three attempts in total. Three losses in a row are
 no longer a race, and that is when the work needs judgement and comes back. A
 conflict is never resolved unsupervised.
+
+**An architect session with files to commit while workers are running uses a
+worktree, not a branch in the shared checkout.** This is the same rule as the one
+below, arriving from the other side. The harness's own default — if you are on
+the default branch, branch first — is correct everywhere except here, where every
+writing run watches the main checkout: cutting a branch there converts an
+ordinary commit into an escape classification for somebody else's run, and then
+into a moved HEAD that nothing detects. Branching is not the mistake. Branching
+in the checkout the workers are watching is.
 
 **Landing happens in the disposable worktree, never the main checkout.**
 DEV-120/121/122 were once landed in the main checkout; conflict markers were
