@@ -175,3 +175,19 @@ CLI shards run together, while the root gate continues to run hub and web
 beside both phases.
 
 Step elapsed so far: 200.3 s for the rejected five-worker concurrency check.
+
+## 4. Spawn lead
+
+| file | all process calls | cli.ts | git | other |
+|---|---:|---:|---:|---:|
+| `landing-1.cli.test.ts` | 920 | 2 | 869 | 49 |
+| `lifecycle-harness.cli.test.ts` | 958 | 21 | 875 | 62 |
+
+A shared CLI fixture process (one CLI per `describe`) is not a useful or
+feasible reduction for these files. Only 23 of their combined 1,878 process
+calls invoke `cli.ts`; 1,744 invoke git, and the CLI is a one-command process,
+not a reusable server. Making it persistent would require a new production
+transport and would not address the measured spawn source. Recommendation:
+leave the CLI lifecycle alone; separately investigate whether the git-heavy
+fixtures can assert the same behavior with fewer repository setup and query
+calls.
