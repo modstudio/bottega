@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { HarnessHealthSchema, type HarnessHealth } from '../../shared/orch-contract.ts'
 import { db } from './db.ts'
 import { clusterErrorText, FAILURE_KINDS, type FailureKind } from './failure.ts'
+import { summarizeContention } from './contention.ts'
 
 export const HEALTH_DEFAULT_DAYS = 14
 export const HEALTH_CLASSES = [...FAILURE_KINDS, 'stale', 'stopped'] as const
@@ -87,7 +88,8 @@ export function harnessHealth(days = HEALTH_DEFAULT_DAYS, database: Database = d
     `SELECT COUNT(*) n FROM landing WHERE status='refused' AND datetime(started_at) >= datetime(?)`,
   ).get(from) as { n: number }).n
   return HarnessHealthSchema.parse({
-    header: 'Harness health only — never routing or scoring evidence. Confinement clears are reclassify audit rows with cleared:true; landing refusals are reported separately.',
+    header: 'Harness health only — never routing or scoring evidence. Confinement clears are reclassify audit rows with cleared:true; landing refusals are reported separately. Contention is waits, refusals and invalidations on shared resources — never routing evidence.',
     days, from, classes, falseVerdicts, landingRefusals,
+    contention: summarizeContention(database, from),
   })
 }

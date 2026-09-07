@@ -926,6 +926,13 @@ The invariants are:
   holders can starve a long waiter. `worktree.ts:withProjectLock` records waiters
   whose names start with a monotonic ticket taken under mkdir-atomic discipline
   and acquisition consults that order.
+- **Every wait, refusal and invalidation on a shared resource is recorded where
+  it happens.** The shared resources are a project's trunk, its main checkout,
+  the stores, CPU, vendor quotas and walls, review evidence, the register, and
+  the purpose locks. `contention` is the ledger: each site writes its row in the
+  same transaction as its own record. `orch health` prices the class per
+  resource per session; `orch land --status` prints today's queue from those
+  rows. Never inferred later, and never routing evidence.
 - **Every refusal names the invariant it protects and the command that clears
   it.** A refusal without both leaves an operator unable to distinguish safety
   from mechanism or to recover without reading source.

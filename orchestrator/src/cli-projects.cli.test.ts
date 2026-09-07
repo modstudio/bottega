@@ -383,6 +383,23 @@ test('create commands must exist and be executable before dispatch', () => {
     }
   }, 20_000)
 
+  test('project set records register invalidation when trunk changes', () => {
+    upsertProject({ name: 'trunk-change', path: process.cwd(), settings: { trunk: 'main' } })
+    const r = orch('project', 'set', 'trunk-change', '--settings', '{"trunk":"develop"}')
+    expect(r.code).toBe(0)
+    expect(db().query(
+      `SELECT resource_kind, event_kind, resource_key, cause FROM contention WHERE resource_kind='register'`,
+    ).get()).toEqual({
+      resource_kind: 'register', event_kind: 'invalidation',
+      resource_key: 'trunk-change', cause: 'trunk main -> develop',
+    })
+    const unchanged = orch('project', 'set', 'trunk-change', '--settings', '{"gate":"true"}')
+    expect(unchanged.code).toBe(0)
+    expect(db().query(
+      "SELECT COUNT(*) AS n FROM contention WHERE resource_kind='register'",
+    ).get()).toEqual({ n: 1 })
+  })
+
   test('project set settings null deletes that key during a deep merge', () => {
     upsertProject({ name: 'merged', path: process.cwd(), settings: { a: { b: 1, c: 2 } } })
     const r = orch('project', 'set', 'merged', '--settings', '{"a":{"b":null}}')

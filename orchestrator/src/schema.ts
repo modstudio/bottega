@@ -7,6 +7,7 @@ import {
   DELIVERY, FIDELITY, MONITOR_SEVERITY, QUALITY, REVIEW_COVERAGE, REVIEW_LIMITS,
   REVIEW_OVERLAP, REVIEW_REPRODUCED, REVIEW_SEVERITY, RUN_MUTATION_ACTIONS,
 } from './db.ts'
+import { EVENT_KINDS, RESOURCE_KINDS } from './contention.ts'
 
 const values = (items: readonly string[]) => sql.raw(items.map((item) => `'${item}'`).join(','))
 const subjectlessScopes = DOC_SCOPES.filter((scope) => DOC_SCOPE_SUBJECT_KIND[scope] === null)
@@ -310,3 +311,16 @@ export const landingReviewCarry = sqliteTable('landing_review_carry', {
   reviewedCommit: text('reviewed_commit').notNull(), reviewedTree: text('reviewed_tree').notNull(), patchId: text('patch_id').notNull(), oldBase: text('old_base').notNull(),
   newBase: text('new_base').notNull(), sessionId: text('session_id'), at: text().notNull(),
 })
+
+export const contention = sqliteTable('contention', {
+  id: id(), at: text().notNull(), sessionId: text('session_id'),
+  resourceKind: text('resource_kind').notNull(), resourceKey: text('resource_key').notNull(),
+  eventKind: text('event_kind').notNull(), durationMs: integer('duration_ms'), cause: text(),
+  runId: integer('run_id'), landingId: integer('landing_id'),
+}, (t) => [
+  check('contention_resource_kind_check', sql`${t.resourceKind} in (${values(RESOURCE_KINDS)})`),
+  check('contention_event_kind_check', sql`${t.eventKind} in (${values(EVENT_KINDS)})`),
+  index('contention_kind_at').on(t.resourceKind, t.at),
+  index('contention_session_at').on(t.sessionId, t.at),
+  index('contention_landing').on(t.landingId),
+])

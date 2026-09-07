@@ -12,6 +12,7 @@ test('harness health has one validated cross-concern payload contract', () => {
     }],
     falseVerdicts: [{ kind: 'timeout', verdicts: 1, falseVerdicts: 0, rate: 0 }],
     landingRefusals: 0,
+    contention: { resources: [], sessions: [] },
   }
   expect(HarnessHealthSchema.parse(payload)).toEqual(payload)
   expect(() => HarnessHealthSchema.parse({ ...payload, landingRefusals: '0' })).toThrow()

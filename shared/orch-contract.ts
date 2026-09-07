@@ -174,6 +174,22 @@ export const HarnessHealthSchema = z.object({
     falseVerdicts: z.number().int().nonnegative(), rate: z.number().min(0).max(1),
   })),
   landingRefusals: z.number().int().nonnegative(),
+  contention: z.object({
+    resources: z.array(z.object({
+      kind: z.string(),
+      count: z.number().int().nonnegative(),
+      totalDurationMs: z.number().nonnegative(),
+      meanDurationMs: z.number().nonnegative(),
+      topKeys: z.array(z.object({
+        key: z.string(), count: z.number().int().positive(),
+      })),
+    })),
+    sessions: z.array(z.object({
+      sessionId: z.string(),
+      waitsSuffered: z.number().int().nonnegative(),
+      invalidationsCaused: z.number().int().nonnegative(),
+    })),
+  }),
 })
 
 export const OrchRunDetailSchema = z.object({

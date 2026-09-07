@@ -27,7 +27,8 @@ import { accessSync, appendFileSync, closeSync, constants, cpSync, existsSync,
 import { createHash, randomUUID } from 'node:crypto'
 import { platform, tmpdir } from 'node:os'
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { db, pidAlive, ROOT } from './db.ts'
+import { db, openWritableHandle, pidAlive, ROOT } from './db.ts'
+import { tryInsertContention } from './contention.ts'
 import { createHasPlaceholder, projectAt, type WorktreeCreate, type WorktreeTool } from './projects.ts'
 import { runRecipe, teardownRecipe, dbNameFor, type Recipe } from './recipe.ts'
 import { mainCheckoutOf, scrubbedGitEnv } from '../../shared/git.ts'
@@ -481,15 +482,28 @@ export function withProjectLock<T>(
   }
   mkdirSync(paths.waiters, { recursive: true })
   const deadline = Date.now() + timeoutMs
+  const waitStarted = Date.now()
+  let waited = false
   const waiterName = `${nextWaiterTicket(paths.waiters, deadline)}-${process.pid}-${incarnation}`
   const waiter = join(paths.waiters, waiterName)
   writeFileSync(waiter, `${JSON.stringify(participant)}\n`)
   const sleeper = new Int32Array(new SharedArrayBuffer(4))
   let lastWaitNotice = 0
   const waiting = (holder: ProjectLockParticipant | null) => {
+    waited = true
     if (!onWait || Date.now() - lastWaitNotice < 1_000) return
     lastWaitNotice = Date.now()
     onWait(holder, Math.max(0, deadline - Date.now()))
+  }
+  const lockSession = identity.session ?? process.env.CLAUDE_CODE_SESSION_ID ?? null
+  const recordLockTimeout = (held: ProjectLockParticipant | null) => {
+    tryInsertContention(openWritableHandle(), {
+      sessionId: lockSession, resourceKind: 'lock', resourceKey: name, eventKind: 'timeout',
+      durationMs: Math.max(0, Date.now() - waitStarted),
+      cause: held
+        ? `holder session ${held.session ?? 'unknown'}, pid ${held.pid}, ${held.what}`
+        : `timed out waiting for ${lockLabel(name)}`,
+    })
   }
 
   try {
@@ -498,6 +512,7 @@ export function withProjectLock<T>(
       if (first && first.name !== waiterName) {
         if (Date.now() >= deadline) {
           const held = projectLockParticipant(paths.owner)
+          recordLockTimeout(held)
           throw lockTimeout(name, timeoutMs, paths.lock, held)
         }
         waiting(projectLockParticipant(paths.owner))
@@ -514,7 +529,10 @@ export function withProjectLock<T>(
           console.error(`orch: reclaimed ${lockLabel(name)} lock from ${reclaimed.reason}: ${paths.lock}`)
           continue
         }
-        if (Date.now() >= deadline) throw lockTimeout(name, timeoutMs, paths.lock, held)
+        if (Date.now() >= deadline) {
+          recordLockTimeout(held)
+          throw lockTimeout(name, timeoutMs, paths.lock, held)
+        }
         waiting(held)
         Atomics.wait(sleeper, 0, 0, WORKTREE_CREATE_LOCK_POLL_MS)
         continue
@@ -524,6 +542,14 @@ export function withProjectLock<T>(
         writeFileSync(paths.owner, `${JSON.stringify(holder)}\n`)
         heldProjectLocks.add(paths.lock)
         rmSync(waiter, { force: true })
+        const waitedMs = Date.now() - waitStarted
+        if (waited && waitedMs > 0) {
+          tryInsertContention(openWritableHandle(), {
+            sessionId: lockSession, resourceKind: 'lock', resourceKey: name, eventKind: 'wait',
+            durationMs: waitedMs,
+            cause: `waited for ${lockLabel(name)}`,
+          })
+        }
         break
       } catch (e) {
         const ours = projectLockParticipant(paths.owner)

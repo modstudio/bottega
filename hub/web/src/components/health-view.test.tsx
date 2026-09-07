@@ -16,6 +16,7 @@ test('Health view renders rows and a last-seen sparkline from a stubbed client p
     }],
     falseVerdicts: [{ kind: 'escaped', verdicts: 2, falseVerdicts: 1, rate: 0.5 }],
     landingRefusals: 3,
+    contention: { resources: [], sessions: [] },
   }} />)
   expect(html).toContain('interrupted')
   expect(html).toContain('2026-09-06: 1')

@@ -568,6 +568,11 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
       }
       expect(recorded.status).toBe('failed')
       expect(recorded.failure_kind).toBe('escaped')
+      expect(db().query(
+        `SELECT resource_kind, event_kind, resource_key, run_id FROM contention WHERE run_id=?`,
+      ).get(dirtyRunId!)).toEqual({
+        resource_kind: 'main_checkout', event_kind: 'invalidation', resource_key: watched, run_id: dirtyRunId,
+      })
       expect(recorded.error).toContain(watched)
       expect(recorded.error).toContain('?? written-by-run.txt')
       expect(recorded.error).toContain('the writer is not established')

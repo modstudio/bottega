@@ -69,7 +69,7 @@ describe('Drizzle migration journal', () => {
     const legacyStore = legacy()
     expect(canonicalSchemaHash(legacyStore)).toBe(BASELINE_SCHEMA_HASH)
     expect(applyMigrations(legacyStore)).toEqual([
-      '0000_bright_sleepwalker', '0001_landing_queue', '0002_spec_sha', '0003_keep_tree', '0004_lens_catalogue', '0005_agent_registry', '0006_project_id_backfill',
+      '0000_bright_sleepwalker', '0001_landing_queue', '0002_spec_sha', '0003_keep_tree', '0004_lens_catalogue', '0005_agent_registry', '0006_project_id_backfill', '0006_contention',
     ])
     legacyStore.close()
     rmSync(dir, { recursive: true, force: true })
@@ -136,7 +136,7 @@ describe('Drizzle migration journal', () => {
   test('a matching pre-journal store adopts 0000 and continues through later migrations', () => {
     const d = legacy()
     expect(applyMigrations(d)).toEqual([
-      '0000_bright_sleepwalker', '0001_landing_queue', '0002_spec_sha', '0003_keep_tree', '0004_lens_catalogue', '0005_agent_registry', '0006_project_id_backfill',
+      '0000_bright_sleepwalker', '0001_landing_queue', '0002_spec_sha', '0003_keep_tree', '0004_lens_catalogue', '0005_agent_registry', '0006_project_id_backfill', '0006_contention',
     ])
     expect(d.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='landing'").get())
       .toBeDefined()
@@ -157,7 +157,7 @@ describe('Drizzle migration journal', () => {
     }))
     const d = new Database(':memory:')
     expect(applyMigrations(d, dir)).toEqual(['0000_bright_sleepwalker', '0001_landing_queue'])
-    expect(applyMigrations(d)).toEqual(['0002_spec_sha', '0003_keep_tree', '0004_lens_catalogue', '0005_agent_registry', '0006_project_id_backfill'])
+    expect(applyMigrations(d)).toEqual(['0002_spec_sha', '0003_keep_tree', '0004_lens_catalogue', '0005_agent_registry', '0006_project_id_backfill', '0006_contention'])
     expect(d.query("SELECT name FROM pragma_table_info('run') WHERE name='spec_sha'").get())
       .toEqual({ name: 'spec_sha' })
     d.close()
@@ -531,7 +531,7 @@ describe('schema coexistence', () => {
        VALUES ('t', 'a', 'implement', 'widget', 'sha', 1, 'h', 'ok')`,
     ).run()
     expect(d.query('SELECT project_id FROM run').get()).toEqual({ project_id: null })
-    expect(applyMigrations(d)).toEqual(['0006_project_id_backfill'])
+    expect(applyMigrations(d)).toEqual(['0006_project_id_backfill', '0006_contention'])
     const row = d.query(
       'SELECT project_id, (SELECT id FROM project WHERE name=?) expected FROM run',
     ).get('widget') as { project_id: number; expected: number }

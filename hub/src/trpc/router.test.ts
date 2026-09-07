@@ -26,6 +26,7 @@ const health = mock(async () => ({
     firstSeen: '2026-09-01T00:00:00.000Z', lastSeen: '2026-09-02T00:00:00.000Z',
     clusters: [], sparkline: [{ day: '2026-09-02', count: 2 }] }],
   falseVerdicts: [], landingRefusals: 1,
+  contention: { resources: [], sessions: [] },
 }))
 
 mock.module('../orch.ts', () => ({

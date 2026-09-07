@@ -10,6 +10,7 @@ import {
 import {
   applyMigrations, migrationRefusal, readUserVersion, staleWriteRefusal,
 } from './migrations.ts'
+import { contentionTableExists, insertContention } from './contention.ts'
 export { label } from './outcome.ts'
 export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
 
@@ -93,6 +94,14 @@ export function databaseOpenMode(): 'read-write' | 'read-only linked worktree' {
 /** Request the process connection for a mutation. */
 export function writableDb(): Database {
   return db(true)
+}
+
+/** Already-open writable handle, or null. Does not open a connection. */
+export function openWritableHandle(): Database | null {
+  if (!handle || linkedWorktreeReadOnly || registeredStoreWriteProtected || connectionWritable !== true) {
+    return null
+  }
+  return handle
 }
 
 /**
@@ -182,6 +191,13 @@ export function db(writable = false): Database {
   d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
   const refused = migrationRefusal(d)
   if (refused) {
+    try {
+      if (contentionTableExists(d) && !linkedWorktreeReadOnly) {
+        d.transaction(() => insertContention(d, {
+          resourceKind: 'store', resourceKey: DB_PATH, eventKind: 'refusal', cause: refused,
+        })).immediate()
+      }
+    } catch { /* still refuse; recording must not replace the refusal */ }
     d.close()
     throw new Error(refused)
   }

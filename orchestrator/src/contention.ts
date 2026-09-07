@@ -1,0 +1,140 @@
+import type { Database } from 'bun:sqlite'
+
+export const RESOURCE_KINDS = [
+  'trunk', 'main_checkout', 'store', 'cpu', 'vendor', 'review', 'register', 'lock',
+] as const
+export const EVENT_KINDS = ['wait', 'refusal', 'invalidation', 'retry', 'timeout'] as const
+
+export type ResourceKind = typeof RESOURCE_KINDS[number]
+export type EventKind = typeof EVENT_KINDS[number]
+
+export type ContentionWrite = {
+  at?: string
+  sessionId?: string | null
+  resourceKind: ResourceKind
+  resourceKey: string
+  eventKind: EventKind
+  durationMs?: number | null
+  cause?: string | null
+  runId?: number | null
+  landingId?: number | null
+}
+
+export type ContentionResourceSummary = {
+  kind: ResourceKind
+  count: number
+  totalDurationMs: number
+  meanDurationMs: number
+  topKeys: { key: string; count: number }[]
+}
+
+export type ContentionSessionSummary = {
+  sessionId: string
+  waitsSuffered: number
+  invalidationsCaused: number
+}
+
+export type ContentionSummary = {
+  resources: ContentionResourceSummary[]
+  sessions: ContentionSessionSummary[]
+}
+
+type ContentionRow = {
+  session_id: string | null
+  resource_kind: ResourceKind
+  resource_key: string
+  event_kind: EventKind
+  duration_ms: number | null
+  landing_id: number | null
+  cause: string | null
+  at: string
+}
+
+export const emptyContention = (): ContentionSummary => ({
+  resources: RESOURCE_KINDS.map((kind) => ({
+    kind, count: 0, totalDurationMs: 0, meanDurationMs: 0, topKeys: [],
+  })),
+  sessions: [],
+})
+
+export function contentionTableExists(d: Database): boolean {
+  return !!d.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='contention'").get()
+}
+
+export function insertContention(d: Database, row: ContentionWrite): void {
+  d.query(
+    `INSERT INTO contention
+       (at, session_id, resource_kind, resource_key, event_kind, duration_ms, cause, run_id, landing_id)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+  ).run(
+    row.at ?? new Date().toISOString(),
+    row.sessionId === undefined ? process.env.CLAUDE_CODE_SESSION_ID ?? null : row.sessionId,
+    row.resourceKind,
+    row.resourceKey,
+    row.eventKind,
+    row.durationMs ?? null,
+    row.cause ?? null,
+    row.runId ?? null,
+    row.landingId ?? null,
+  )
+}
+
+/** Best-effort insert that never throws, for lock sites that must not change behaviour. */
+export function tryInsertContention(handle: Database | null, row: ContentionWrite): void {
+  try {
+    if (!handle || !contentionTableExists(handle)) return
+    handle.transaction(() => insertContention(handle, row)).immediate()
+  } catch { /* CONSTRAINTS: recording must not change lock, landing or detector behaviour */ }
+}
+
+export function summarizeContention(d: Database, from: string): ContentionSummary {
+  if (!contentionTableExists(d)) return emptyContention()
+  const rows = d.query(
+    `SELECT session_id, resource_kind, resource_key, event_kind, duration_ms
+       FROM contention WHERE datetime(at) >= datetime(?)`,
+  ).all(from) as Omit<ContentionRow, 'landing_id' | 'cause' | 'at'>[]
+  const resources = RESOURCE_KINDS.map((kind): ContentionResourceSummary => {
+    const matching = rows.filter((row) => row.resource_kind === kind)
+    const totalDurationMs = matching.reduce((sum, row) => sum + Math.max(0, row.duration_ms ?? 0), 0)
+    const keys = new Map<string, number>()
+    for (const row of matching) keys.set(row.resource_key, (keys.get(row.resource_key) ?? 0) + 1)
+    const topKeys = [...keys].map(([key, count]) => ({ key, count }))
+      .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key)).slice(0, 3)
+    return {
+      kind, count: matching.length, totalDurationMs,
+      meanDurationMs: matching.length ? Math.round(totalDurationMs / matching.length) : 0,
+      topKeys,
+    }
+  })
+  const sessions = new Map<string, ContentionSessionSummary>()
+  const session = (id: string) => {
+    const found = sessions.get(id)
+    if (found) return found
+    const created = { sessionId: id, waitsSuffered: 0, invalidationsCaused: 0 }
+    sessions.set(id, created)
+    return created
+  }
+  for (const row of rows) {
+    if (!row.session_id) continue
+    if (row.event_kind === 'wait') session(row.session_id).waitsSuffered += 1
+    if (row.event_kind === 'invalidation') session(row.session_id).invalidationsCaused += 1
+  }
+  return {
+    resources,
+    sessions: [...sessions.values()].sort((a, b) => a.sessionId.localeCompare(b.sessionId)),
+  }
+}
+
+export function reviewInvalidationsSince(
+  d: Database, project: string, from: string,
+): { resourceKey: string; landingId: number | null; cause: string | null }[] {
+  if (!contentionTableExists(d)) return []
+  return d.query(
+    `SELECT c.resource_key AS resourceKey, c.landing_id AS landingId, c.cause AS cause
+       FROM contention c
+       JOIN landing l ON l.id = c.landing_id
+      WHERE c.resource_kind='review' AND c.event_kind='invalidation'
+        AND l.project=? AND datetime(c.at) >= datetime(?)
+      ORDER BY c.id`,
+  ).all(project, from) as { resourceKey: string; landingId: number | null; cause: string | null }[]
+}

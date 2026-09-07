@@ -697,6 +697,14 @@ describe('a conversation is one unit of work, not one per turn', () => {
     ).get(root)).toEqual({
       status: 'failed', error: expect.stringContaining('HTTP 402: no balance'), failure_kind: 'quota',
     })
+    const child = db().query(
+      'SELECT id FROM run WHERE parent_run_id=?',
+    ).get(root) as { id: number }
+    expect(db().query(
+      'SELECT resource_kind, event_kind, resource_key, run_id FROM contention WHERE run_id=?',
+    ).get(child.id)).toEqual({
+      resource_kind: 'vendor', event_kind: 'refusal', resource_key: 'grok', run_id: child.id,
+    })
     const after = candidates('understand').find((row) => row.agent === 'grok')!
     expect(after.evidence).toBe(before.evidence)
     expect(after.failures).toBe(before.failures)

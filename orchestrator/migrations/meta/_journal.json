@@ -50,6 +50,13 @@
       "when": 1788900000000,
       "tag": "0006_project_id_backfill",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1788900000001,
+      "tag": "0006_contention",
+      "breakpoints": true
     }
   ]
 }

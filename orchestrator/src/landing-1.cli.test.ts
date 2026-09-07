@@ -95,6 +95,12 @@ test('only bun\'s complete timeout line reports machine load', () => {
       expect(error).toContain('cleared by:')
       expect(db().query('SELECT status,error FROM landing WHERE branch=?').get('wrong-main-head'))
         .toMatchObject({ status: 'refused', error: expect.stringContaining('other-main-branch') })
+      expect(db().query(
+        `SELECT resource_kind, event_kind, resource_key FROM contention
+          WHERE landing_id=(SELECT id FROM landing WHERE branch='wrong-main-head')`,
+      ).get()).toEqual({
+        resource_kind: 'trunk', event_kind: 'refusal', resource_key: 'landing-wrong-main-head',
+      })
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
@@ -478,6 +484,11 @@ test('only bun\'s complete timeout line reports machine load', () => {
       expect(error).toContain(
         'gate timeout under load: 2 orch runs live (running + asking) machine-wide',
       )
+      expect(db().query(
+        "SELECT resource_kind, event_kind, resource_key FROM contention WHERE resource_kind='cpu'",
+      ).get()).toEqual({
+        resource_kind: 'cpu', event_kind: 'timeout', resource_key: 'landing-timeout-summary',
+      })
       const outputPath = error.match(/complete gate output: (.+\/output\.log)/)?.[1]
       expect(outputPath).toBeDefined()
       expect(readdirSync(dirname(outputPath!))).toEqual(['output.log'])
@@ -1246,6 +1257,11 @@ test('only bun\'s complete timeout line reports machine load', () => {
       expect(db().query(
         'SELECT old_base,new_base FROM landing_review_carry WHERE branch=?',
       ).get('stale-review')).toEqual({ old_base: oldBase, new_base: moved })
+      expect(db().query(
+        "SELECT resource_kind, event_kind, resource_key FROM contention WHERE event_kind='retry'",
+      ).get()).toEqual({
+        resource_kind: 'trunk', event_kind: 'retry', resource_key: 'landing-stale-review',
+      })
     } finally { rmSync(repo, { recursive: true, force: true }) }
   }, 15_000)
 })

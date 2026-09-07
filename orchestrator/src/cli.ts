@@ -3434,7 +3434,18 @@ switch (cmd) {
         w.startsWith('has a create command with a {seed} placeholder but no seeds list'))
       if (incomplete.length && !has('allow-incomplete')) throw new Error(incomplete.join('\n'))
       if (nextName !== name) renameProject(name,nextName)
-      upsertProject(candidate)
+      const previousTrunk = typeof p.settings.trunk === 'string' ? p.settings.trunk : null
+      const nextTrunk = typeof candidate.settings.trunk === 'string' ? candidate.settings.trunk : null
+      const { insertContention } = await import('./contention.ts')
+      writeTransaction(() => {
+        upsertProject(candidate)
+        if (previousTrunk !== nextTrunk) {
+          insertContention(db(), {
+            resourceKind: 'register', resourceKey: nextName, eventKind: 'invalidation',
+            cause: `trunk ${previousTrunk ?? '(unset)'} -> ${nextTrunk ?? '(unset)'}`,
+          })
+        }
+      })
       if (has('json')) {
         console.log(JSON.stringify(projectByName(nextName)))
         break
@@ -6508,6 +6519,23 @@ switch (cmd) {
       console.log(`landed with post-step error`.padEnd(25) + `${row.project} ${row.branch}`)
       console.log(`  ${row.error}`)
     }
+    console.log('\nCONTENTION (never routing evidence)')
+    console.log('KIND'.padEnd(25) + 'COUNT'.padStart(7) + 'TOTAL'.padStart(10) +
+      'MEAN'.padStart(10) + '  TOP KEYS')
+    for (const row of report.contention.resources) {
+      const keys = row.topKeys.length
+        ? row.topKeys.map((key) => `${key.key} (${key.count})`).join(', ')
+        : '-'
+      console.log(row.kind.padEnd(25) + String(row.count).padStart(7) +
+        duration(row.totalDurationMs).padStart(10) + duration(row.meanDurationMs).padStart(10) +
+        '  ' + keys)
+    }
+    console.log('SESSION'.padEnd(25) + 'WAITS'.padStart(7) + 'INVALIDATIONS CAUSED'.padStart(22))
+    for (const row of report.contention.sessions) {
+      console.log(row.sessionId.padEnd(25) + String(row.waitsSuffered).padStart(7) +
+        String(row.invalidationsCaused).padStart(22))
+    }
+    if (!report.contention.sessions.length) console.log('(none)')
     break
   }
 

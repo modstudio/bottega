@@ -1,0 +1,113 @@
+import { Database } from 'bun:sqlite'
+import { describe, expect, test } from 'bun:test'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { applyMigrations } from './migrations.ts'
+import { db, hermeticGitEnv, withProjectLock } from '../test/fixture.ts'
+import { insertContention, tryInsertContention } from './contention.ts'
+
+describe('contention ledger', () => {
+  test('withProjectLock wait and timeout each write a row', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-contention-lock-'))
+    const git = (args: string[]) => {
+      const result = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+    }
+    git(['init', '-b', 'main'])
+    git(['config', 'user.email', 'orch-test@example.invalid'])
+    git(['config', 'user.name', 'Orch Test'])
+    writeFileSync(join(repo, 'base.txt'), 'base\n')
+    git(['add', 'base.txt'])
+    git(['commit', '-m', 'base'])
+    expect(db()).toBeDefined()
+    const ready = join(repo, 'ready')
+    const release = join(repo, 'release')
+    const worktreeModule = new URL('./worktree.ts', import.meta.url).href
+    const holder = Bun.spawn([
+      process.execPath, '-e',
+      `const { writeFileSync, existsSync } = await import('node:fs');
+       const { withProjectLock } = await import(process.argv[1]);
+       withProjectLock(process.argv[2], 'landing', { session: 'holder', what: 'hold' }, () => {
+         writeFileSync(process.argv[3], '');
+         while (!existsSync(process.argv[4])) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+       }, 20_000, true)`,
+      worktreeModule, repo, ready, release,
+    ], { env: { ...process.env, ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe' })
+    try {
+      for (let i = 0; i < 200 && !existsSync(ready); i++) await Bun.sleep(5)
+      expect(existsSync(ready)).toBe(true)
+      expect(() => withProjectLock(
+        repo, 'landing', { session: 'waiter', what: 'wait' }, () => 'acquired', 80, true,
+      )).toThrow(/timed out after/)
+      const timeout = db().query(
+        `SELECT resource_kind, event_kind, resource_key, session_id FROM contention
+          WHERE event_kind='timeout' AND session_id='waiter'`,
+      ).get() as { resource_kind: string; event_kind: string; resource_key: string; session_id: string }
+      expect(timeout).toEqual({
+        resource_kind: 'lock', event_kind: 'timeout', resource_key: 'landing', session_id: 'waiter',
+      })
+      const dbModule = new URL('./db.ts', import.meta.url).href
+      const waiter = Bun.spawn([
+        process.execPath, '-e',
+        `const { db } = await import(process.argv[1]);
+         const { withProjectLock } = await import(process.argv[2]);
+         db();
+         withProjectLock(process.argv[3], 'landing', { session: 'queued', what: 'queued' }, () => 'ok', 20_000, true)`,
+        dbModule, worktreeModule, repo,
+      ], { env: { ...process.env, ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe' })
+      for (let i = 0; i < 50; i++) await Bun.sleep(10)
+      writeFileSync(release, '')
+      expect(await holder.exited).toBe(0)
+      expect(await waiter.exited).toBe(0)
+      const wait = db().query(
+        `SELECT resource_kind, event_kind, resource_key, session_id FROM contention
+          WHERE event_kind='wait' AND session_id='queued'`,
+      ).get() as { resource_kind: string; event_kind: string; resource_key: string; session_id: string }
+      expect(wait).toEqual({
+        resource_kind: 'lock', event_kind: 'wait', resource_key: 'landing', session_id: 'queued',
+      })
+    } finally {
+      holder.kill()
+      await holder.exited
+      rmSync(repo, { recursive: true, force: true })
+    }
+  }, 15_000)
+
+  test('a behind store that already has the table records store/refusal then refuses', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orch-contention-behind-'))
+    const path = join(dir, 'behind.db')
+    const seed = new Database(path)
+    seed.exec('PRAGMA foreign_keys=ON')
+    applyMigrations(seed)
+    seed.exec('DELETE FROM orch_migrations WHERE created_at=1788900000001')
+    expect(seed.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='contention'").get())
+      .toBeDefined()
+    seed.close()
+    const opened = Bun.spawnSync([
+      process.execPath, new URL('./cli.ts', import.meta.url).pathname, 'runs',
+    ], { env: { ...process.env, ORCH_DB: path, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe' })
+    expect(opened.exitCode).not.toBe(0)
+    expect(opened.stderr.toString()).toContain('cleared by: orch migrate')
+    const check = new Database(path)
+    expect(check.query(
+      'SELECT resource_kind, event_kind FROM contention',
+    ).get()).toEqual({ resource_kind: 'store', event_kind: 'refusal' })
+    check.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('tryInsertContention never throws when the handle is missing', () => {
+    expect(() => tryInsertContention(null, {
+      resourceKind: 'lock', resourceKey: 'landing', eventKind: 'wait',
+    })).not.toThrow()
+    insertContention(db(), {
+      resourceKind: 'cpu', resourceKey: 'fixture', eventKind: 'timeout', durationMs: 5,
+    })
+    expect(db().query(
+      "SELECT resource_kind, event_kind FROM contention WHERE resource_key='fixture'",
+    ).get()).toEqual({ resource_kind: 'cpu', event_kind: 'timeout' })
+  })
+})

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { addRun, db } from '../test/fixture.ts'
+import { insertContention } from './contention.ts'
 import { FAILURE_KINDS } from './failure.ts'
 import { harnessHealth } from './health.ts'
 
@@ -35,6 +36,11 @@ describe('harness health', () => {
     expect(report.landingRefusals).toBe(1)
     expect(report.header).toContain('never routing or scoring evidence')
     expect(report.header).toContain('reclassify audit rows with cleared:true')
+    expect(report.header).toContain('Contention is waits, refusals and invalidations')
+    expect(report.contention.resources.map((row) => row.kind)).toEqual([
+      'trunk', 'main_checkout', 'store', 'cpu', 'vendor', 'review', 'register', 'lock',
+    ])
+    expect(report.contention.resources.every((row) => row.count === 0)).toBe(true)
 
     const cli = Bun.spawnSync([
       process.execPath, new URL('./cli.ts', import.meta.url).pathname, 'health', '--days', '14', '--json',
@@ -70,5 +76,45 @@ describe('harness health', () => {
     expect(report.from).toBe('2026-09-05T00:00:00.000Z')
     expect(timeout.count).toBe(2)
     expect(timeout.sparkline.reduce((sum, point) => sum + point.count, 0)).toBe(timeout.count)
+  })
+
+  test('contention sums per resource and names waits suffered versus invalidations caused', () => {
+    const now = new Date('2026-09-07T12:00:00.000Z')
+    insertContention(db(), {
+      at: '2026-09-07T10:00:00.000Z', sessionId: 'session-a',
+      resourceKind: 'lock', resourceKey: 'landing', eventKind: 'wait', durationMs: 1_000,
+    })
+    insertContention(db(), {
+      at: '2026-09-07T10:01:00.000Z', sessionId: 'session-a',
+      resourceKind: 'lock', resourceKey: 'landing', eventKind: 'wait', durationMs: 3_000,
+    })
+    insertContention(db(), {
+      at: '2026-09-07T10:02:00.000Z', sessionId: 'session-b',
+      resourceKind: 'review', resourceKey: 'victim', eventKind: 'invalidation',
+      cause: 'review 9', landingId: 4,
+    })
+    insertContention(db(), {
+      at: '2026-09-06T10:00:00.000Z', sessionId: 'session-b',
+      resourceKind: 'lock', resourceKey: 'create', eventKind: 'wait', durationMs: 500,
+    })
+    insertContention(db(), {
+      at: '2026-08-01T10:00:00.000Z', sessionId: 'session-a',
+      resourceKind: 'lock', resourceKey: 'landing', eventKind: 'wait', durationMs: 9_000,
+    })
+
+    const report = harnessHealth(3, db(), now)
+    expect(report.contention.resources.find((row) => row.kind === 'lock')).toMatchObject({
+      count: 3, totalDurationMs: 4_500, meanDurationMs: 1_500,
+      topKeys: [{ key: 'landing', count: 2 }, { key: 'create', count: 1 }],
+    })
+    expect(report.contention.resources.find((row) => row.kind === 'review')).toMatchObject({
+      count: 1, totalDurationMs: 0, meanDurationMs: 0,
+      topKeys: [{ key: 'victim', count: 1 }],
+    })
+    expect(report.contention.sessions).toEqual([
+      { sessionId: 'session-a', waitsSuffered: 2, invalidationsCaused: 0 },
+      { sessionId: 'session-b', waitsSuffered: 1, invalidationsCaused: 1 },
+    ])
+    expect(report.header).toContain('never routing evidence')
   })
 })

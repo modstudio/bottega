@@ -7,7 +7,7 @@ import { addRun, db, formatGitLocks, hermeticGitEnv, land, landingReviewCoverage
 import { landingDescribeFixture } from '../test/fixture.ts'
 
 describe("landing is gated on the exact commit that reaches trunk", () => {
-  const { g, repoWithBranches, childLand, observeGitLocks } = landingDescribeFixture()
+  const { g, repoWithBranches, childLand, observeGitLocks, completedReview } = landingDescribeFixture()
 test('an explicit non-empty override lands and records the measured tree and reason', async () => {
     const { repo } = repoWithBranches(['override-review'])
     const project = 'landing-override-review'
@@ -116,7 +116,7 @@ test('an explicit non-empty override lands and records the measured tree and rea
     try {
       const tree = g(repo, 'rev-parse', 'HEAD^{tree}')
       expect(landingStatus(repo)).toBe(
-        'landing-status landing lock: free\nwaiters:\n  none',
+        'landing-status landing lock: free\nwaiters:\n  none\ninvalidated today:\n  none',
       )
       expect(landingReviewCoverage(repo)).toBe(
         `review coverage for main:\ncurrent tip tree: ${tree}\n  none`,
@@ -208,7 +208,7 @@ test('an explicit non-empty override lands and records the measured tree and rea
     utimesSync(lock, stale, stale)
     try {
       const { status, locks } = observeGitLocks(repo)
-      expect(status).toBe('landing-git-lock landing lock: free\nwaiters:\n  none')
+      expect(status).toBe('landing-git-lock landing lock: free\nwaiters:\n  none\ninvalidated today:\n  none')
       const formatted = formatGitLocks(repo)
       expect(formatted).toContain(`${lock} (age `)
       expect(Number(formatted.match(/main\.lock \(age (\d+)s\)/)?.[1])).toBeGreaterThanOrEqual(70)
@@ -358,6 +358,34 @@ test('an explicit non-empty override lands and records the measured tree and rea
       expect((await new Response(child.stderr).text())).toContain('uncommitted tracked changes')
       expect(g(repo, 'rev-parse', 'refs/heads/main')).toBe(trunk)
       expect(g(repo, 'log', '-1', '--format=%s', 'dirty-amend')).toBe('dirty-amend')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('landing that moves trunk under a reviewed branch records one invalidation naming both', async () => {
+    const { repo, trees } = repoWithBranches(['lander', 'victim'])
+    const project = 'landing-contention-invalidation'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const reviewId = completedReview(project, [g(trees.victim!, 'rev-parse', 'HEAD^{tree}')], {
+        branch: 'victim', baseCommit: g(repo, 'rev-parse', 'main'), launchCwd: trees.victim!,
+      })
+      const child = childLand(repo, 'lander')
+      expect(await child.exited).toBe(0)
+      const row = db().query(
+        `SELECT resource_kind, event_kind, resource_key, landing_id, cause
+           FROM contention WHERE event_kind='invalidation'`,
+      ).get() as {
+        resource_kind: string; event_kind: string; resource_key: string
+        landing_id: number; cause: string
+      }
+      const landing = db().query(
+        "SELECT id FROM landing WHERE branch='lander' AND status='landed'",
+      ).get() as { id: number }
+      expect(row).toEqual({
+        resource_kind: 'review', event_kind: 'invalidation', resource_key: 'victim',
+        landing_id: landing.id, cause: `review ${reviewId}`,
+      })
+      expect(landingStatus(repo)).toContain(`victim by landing ${landing.id} (review ${reviewId})`)
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 

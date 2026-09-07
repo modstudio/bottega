@@ -2,7 +2,8 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync
 import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
-import { db, liveRunCount, migrateDatabase, nowIso, sessionId, writableDb, ROOT } from './db.ts'
+import { db, liveRunCount, migrateDatabase, nowIso, openWritableHandle, sessionId, writableDb, writeTransaction, ROOT } from './db.ts'
+import { insertContention, reviewInvalidationsSince, tryInsertContention } from './contention.ts'
 import { projectAt, projectByName, type Project } from './projects.ts'
 import { classifyReviewTier, diffNumstat } from './review-tier.ts'
 import {
@@ -490,6 +491,7 @@ function runGate(
   const branchReflogBefore = reflogEntries(branchRef)
   const contentBefore = contentTree(worktree)
   console.log(`gate ${project.name}: ${gate}`)
+  const gateStarted = Date.now()
   const captureSetup = prepareGateCapture(project.name)
   const truncatedMarker = captureSetup.ok
     ? join(captureSetup.paths.directory, 'truncated')
@@ -534,6 +536,15 @@ function runGate(
     }
   }
   if (p.exitCode !== 0) {
+    const timedOut = (capturedOutput ?? '').split('\n').some((line) =>
+      /^\s*\^ this test timed out after \d+ms\.\s*$/.test(stripAnsi(line)))
+    if (timedOut) {
+      tryInsertContention(openWritableHandle(), {
+        resourceKind: 'cpu', resourceKey: project.name, eventKind: 'timeout',
+        durationMs: Math.max(0, Date.now() - gateStarted),
+        cause: `gate timeout under load: ${liveRunCount()} orch runs live (running + asking) machine-wide`,
+      })
+    }
     if (!captureSetup.ok) {
       throw new Error(
         `landing gate failed with exit ${p.exitCode}: ${gate}\n` +
@@ -1068,6 +1079,27 @@ function recordReviewCarry(carry: ReviewCarry | null): void {
   )
 }
 
+function recordReviewInvalidations(
+  project: Project, repoRoot: string, trunkOid: string, landedBranch: string, landingId: number,
+): void {
+  for (const review of completedReviews(project.name)) {
+    const branch = review.lenses.find((lens) => lens.branch)?.branch
+    if (!branch || branch === landedBranch) continue
+    if (!gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])) continue
+    try {
+      const victimTip = git(repoRoot, ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`])
+      const tree = git(repoRoot, ['rev-parse', `${victimTip}^{tree}`])
+      const exact = review.lenses.length > 0 && review.lenses.every((lens) => lens.tree === tree)
+      const containsTrunk = gitOk(repoRoot, ['merge-base', '--is-ancestor', trunkOid, victimTip])
+      if (!exact || containsTrunk) continue
+      insertContention(db(), {
+        resourceKind: 'review', resourceKey: branch, eventKind: 'invalidation',
+        cause: `review ${review.id}`, landingId,
+      })
+    } catch { /* a missing ref or tree is not this landing's invalidation */ }
+  }
+}
+
 function fastForward(
   repoRoot: string, worktree: string, branch: string, trunk: string, tip: string, expected: string,
   guard: SharedRefGuardEnvironment,
@@ -1100,7 +1132,10 @@ function fastForward(
 function performLand(
   cwd: string,
   branch: string,
-  options: { timeoutMs?: number; message?: string; unreviewed?: string; runId?: number; queue?: boolean } = {},
+  options: {
+    timeoutMs?: number; message?: string; unreviewed?: string; runId?: number
+    queue?: boolean; landingId?: number
+  } = {},
 ): { tip: string; trunkBefore: string; project: Project } {
   writableDb()
   const timeoutMs = options.timeoutMs ?? LANDING_LOCK_TIMEOUT_MS
@@ -1221,6 +1256,11 @@ function performLand(
         return { tip: outcome.tip, trunkBefore: outcome.currentTrunk, project }
       }
       losses += 1
+      insertContention(db(), {
+        resourceKind: 'trunk', resourceKey: project.name, eventKind: 'retry',
+        cause: `${trunk} moved from ${gatedTrunk} to ${outcome.currentTrunk}`,
+        landingId: options.landingId ?? null,
+      })
       if (losses >= 2) {
         throw namedError(
           `refusing to land ${branch}: ${trunk} moved again to ${outcome.currentTrunk} after re-gate`,
@@ -1325,11 +1365,16 @@ export function land(
   ).get(project.name, project.id, branch, sessionId(), nowIso()) as { id: number }
   let landed = false
   try {
-    const result = performLand(cwd, branch, options)
+    const result = performLand(cwd, branch, { ...options, landingId: landing.id })
     landed = true
-    db().query(
-      `UPDATE landing SET tip=?,trunk_before=?,status='landed',finished_at=? WHERE id=?`,
-    ).run(result.tip, result.trunkBefore, nowIso(), landing.id)
+    writeTransaction(() => {
+      db().query(
+        `UPDATE landing SET tip=?,trunk_before=?,status='landed',finished_at=? WHERE id=?`,
+      ).run(result.tip, result.trunkBefore, nowIso(), landing.id)
+      recordReviewInvalidations(
+        result.project, result.project.path, result.tip, branch, landing.id,
+      )
+    })
     try {
       installLandedPackages(result.project, result.trunkBefore, result.tip)
     } catch (error) {
@@ -1347,8 +1392,15 @@ export function land(
     return result.tip
   } catch (error) {
     if (!landed) {
-      db().query(`UPDATE landing SET status='refused',error=?,finished_at=? WHERE id=?`)
-        .run(error instanceof Error ? error.message : String(error), nowIso(), landing.id)
+      const message = error instanceof Error ? error.message : String(error)
+      writeTransaction(() => {
+        db().query(`UPDATE landing SET status='refused',error=?,finished_at=? WHERE id=?`)
+          .run(message, nowIso(), landing.id)
+        insertContention(db(), {
+          resourceKind: 'trunk', resourceKey: project.name, eventKind: 'refusal',
+          cause: message, landingId: landing.id,
+        })
+      })
     }
     throw error
   }
@@ -1376,6 +1428,14 @@ export function landingStatus(cwd: string): string {
     : '  none'
   const postStep = landingsWithPostStepError().filter((row) => row.project === project.name)
     .map((row) => `landed with post-step error\n  ${row.branch}: ${row.error}`)
+  const today = new Date()
+  today.setUTCHours(0, 0, 0, 0)
+  const invalidated = reviewInvalidationsSince(db(), project.name, today.toISOString())
+  const invalidationText = invalidated.length
+    ? invalidated.map((row) =>
+        `  ${row.resourceKey} by landing ${row.landingId}${row.cause ? ` (${row.cause})` : ''}`).join('\n')
+    : '  none'
   return `${project.name} landing lock: ${holder}\nwaiters:\n${waiters}` +
-    (postStep.length ? `\n${postStep.join('\n')}` : '')
+    (postStep.length ? `\n${postStep.join('\n')}` : '') +
+    `\ninvalidated today:\n${invalidationText}`
 }
