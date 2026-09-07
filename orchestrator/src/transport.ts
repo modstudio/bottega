@@ -1,10 +1,12 @@
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { existsSync, realpathSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Agent } from './agents.ts'
+import type { Agent, ArgvOpts, SandboxLevel } from './agents.ts'
 import { job } from './jobs.ts'
 import type { FailureKind } from './failure.ts'
 import { cliTransport } from './transport-cli.ts'
+import type { SandboxRuntimeConfig } from './sandbox.ts'
 
 const requireTransport = createRequire(import.meta.url)
 
@@ -23,7 +25,13 @@ export type NormalizedEvent =
   | { kind: 'usage'; tokens: number; costUsd: number | null }
   | { kind: 'session'; sessionId: string }
   | { kind: 'tool'; title: string; status?: string; toolKind?: string }
-  | { kind: 'permission'; title: string; optionKinds: string[] }
+  | {
+      kind: 'permission'
+      title: string
+      optionKinds: string[]
+      toolKind?: string
+      decision: 'allow' | 'reject'
+    }
   | { kind: 'elicitation'; message: string }
   | { kind: 'error'; error: string }
   | { kind: 'stop'; reason: string }
@@ -51,6 +59,8 @@ export type TransportResult = {
   pid: number | null
   events: NormalizedEvent[]
   asking: boolean
+  failureKind: FailureKind | null
+  status: 'ok' | 'asking' | 'failed'
   questions: Array<{
     question: string
     options?: string[]
@@ -63,8 +73,6 @@ export type TransportStartOpts = {
   agent: Agent
   cwd: string
   env: Record<string, string>
-  launchArgv: string[]
-  stdinPrompt?: string
   prompt: string
   outPath: string
   session?: string
@@ -72,6 +80,18 @@ export type TransportStartOpts = {
   model?: string
   home?: string
   startedAt: number
+  write?: boolean
+  sandbox?: SandboxLevel
+  mcp?: boolean
+  trustCwd?: string
+  writableRoots?: ArgvOpts['writableRoots']
+  gitObjectEnvironment?: ArgvOpts['gitObjectEnvironment']
+  gitConfigEnvironment?: ArgvOpts['gitConfigEnvironment']
+  srt?: { profile: SandboxRuntimeConfig; settingsPath: string }
+  /** ACP binary. CLI uses `agent.bin`. */
+  bin?: string
+  /** First turn vs resumeArgv. Session may exist on a first grok turn too. */
+  resume?: boolean
 }
 
 export type TransportHandle = {
@@ -85,7 +105,8 @@ export type TransportHandle = {
 
 /**
  * How an agent is driven. Policy and capabilities stay on `Agent`; this is
- * the spawn / protocol seam. Default is `cli`.
+ * the spawn / protocol seam. Default is `cli`. The CLI transport reads
+ * `Agent.argv` / `resumeArgv` / `parseReply` / `readSession`.
  */
 export type AgentTransport = {
   readonly name: TransportName
@@ -94,6 +115,17 @@ export type AgentTransport = {
   events(handle: TransportHandle): AsyncIterable<NormalizedEvent>
   cancel(handle: TransportHandle): Promise<void>
   resume(opts: TransportStartOpts & { session: string }): Promise<TransportHandle>
+}
+
+/** Test-only override so run() can be driven without a vendor binary. */
+let testTransport: AgentTransport | null = null
+
+export function installTestTransport(transport: AgentTransport | null): void {
+  testTransport = transport
+}
+
+export function isTestTransportInstalled(): boolean {
+  return testTransport !== null
 }
 
 export function isAcpPilotJob(name: string): name is AcpPilotJob {
@@ -108,6 +140,14 @@ export function resolveTransportName(
   if (!raw || raw === 'cli') return 'cli'
   if (raw === 'acp') return 'acp'
   throw new Error(`unknown transport "${raw}"; expected cli or acp`)
+}
+
+/** ACP pins to codex when the caller did not name an agent. */
+export function selectAgentForTransport(
+  transport: TransportName, agent?: string,
+): string | undefined {
+  if (transport === 'acp') return agent ?? 'codex'
+  return agent
 }
 
 /**
@@ -134,29 +174,43 @@ export function assertAcpAllowed(jobName: string, agentName: string | undefined)
   )
 }
 
+export function resolveCodexAcpBin(): string {
+  return process.env.ORCH_ACP_BIN ||
+    join(dirname(fileURLToPath(import.meta.url)), '..', 'node_modules', '.bin', 'codex-acp')
+}
+
+export function acpRuntimeGaps(opts?: {
+  sdkResolve?: () => string
+  binPath?: string
+  binExists?: (path: string) => boolean
+}): string | null {
+  const sdkResolve = opts?.sdkResolve ?? (() => requireTransport.resolve('@agentclientprotocol/sdk'))
+  const binPath = opts?.binPath ?? resolveCodexAcpBin()
+  const binExists = opts?.binExists ?? existsSync
+  try {
+    sdkResolve()
+  } catch {
+    return `ACP transport is a ${ACP_PILOT_TASK} pilot; the SDK @agentclientprotocol/sdk is not installed`
+  }
+  if (!binExists(binPath)) {
+    return `ACP transport is a ${ACP_PILOT_TASK} pilot; the codex-acp executable is not installed`
+  }
+  return null
+}
+
+export function assertAcpReady(): void {
+  const gap = acpRuntimeGaps()
+  if (gap) throw new Error(gap)
+}
+
 export function transportFor(name: TransportName): AgentTransport {
+  if (testTransport) return testTransport
   if (name === 'acp') {
     // Loaded only on the ACP opt-in so a source-only fixture without the
     // SDK still boots the default CLI path (linked-worktree-database.test).
     return (requireTransport('./transport-acp.ts') as typeof import('./transport-acp.ts')).acpTransport
   }
   return cliTransport
-}
-
-export function resolveCodexAcpBin(): string {
-  return process.env.ORCH_ACP_BIN ||
-    join(dirname(fileURLToPath(import.meta.url)), '..', 'node_modules', '.bin', 'codex-acp')
-}
-
-export function outcomeFromTransport(result: TransportResult): {
-  status: 'ok' | 'asking' | 'failed'
-  failureKind: FailureKind | null
-} {
-  if (result.asking) return { status: 'asking', failureKind: null }
-  if (result.error || result.exitCode !== 0 || !result.output.trim()) {
-    return { status: 'failed', failureKind: failureKindFromStop(result.stopReason, result.error) }
-  }
-  return { status: 'ok', failureKind: null }
 }
 
 export function failureKindFromStop(stopReason: string | null, error: string | null): FailureKind {
@@ -166,4 +220,138 @@ export function failureKindFromStop(stopReason: string | null, error: string | n
   if (stopReason === 'timeout') return 'timeout'
   if (error) return 'other'
   return 'other'
+}
+
+export function stopErrorMessage(stopReason: string): string {
+  if (stopReason === 'max_tokens') return 'response truncated at output ceiling (max_tokens)'
+  if (stopReason === 'refusal') return 'the agent refused to continue'
+  if (stopReason === 'timeout') return 'no reply within the run bound; the agent was killed'
+  if (stopReason === 'cancelled') return 'the turn was cancelled'
+  if (stopReason === 'max_turn_requests') return 'the turn exceeded its model-request budget'
+  return `ACP stop reason: ${stopReason}`
+}
+
+/**
+ * Fold a finished turn into orch's three terminal states.
+ *
+ * A non-end_turn stop is a failure even when the agent already streamed
+ * some text — except elicitation, which is asking.
+ */
+export function outcomeFromTransport(result: {
+  asking: boolean
+  error: string | null
+  exitCode: number
+  output: string
+  stopReason: string | null
+}): { status: 'ok' | 'asking' | 'failed'; failureKind: FailureKind | null } {
+  if (result.asking) return { status: 'asking', failureKind: null }
+  if (result.stopReason && result.stopReason !== 'end_turn') {
+    return { status: 'failed', failureKind: failureKindFromStop(result.stopReason, result.error) }
+  }
+  if (result.error || result.exitCode !== 0 || !result.output.trim()) {
+    return { status: 'failed', failureKind: failureKindFromStop(result.stopReason, result.error) }
+  }
+  return { status: 'ok', failureKind: null }
+}
+
+const READ_PERMISSION_KINDS = new Set(['read', 'search', 'think', 'fetch'])
+
+export function decideAcpPermission(
+  toolKind: string | undefined,
+  options: Array<{ optionId: string; kind: string }>,
+): { decision: 'allow' | 'reject'; outcome: { outcome: 'selected'; optionId: string } | { outcome: 'cancelled' } } {
+  const allowRead = READ_PERMISSION_KINDS.has(toolKind ?? '')
+  if (allowRead) {
+    const allow = options.find((option) => option.kind === 'allow_once')
+      ?? options.find((option) => option.kind === 'allow_always')
+    if (allow) return { decision: 'allow', outcome: { outcome: 'selected', optionId: allow.optionId } }
+  }
+  const reject = options.find((option) => option.kind === 'reject_once')
+    ?? options.find((option) => option.kind === 'reject_always')
+  if (reject) return { decision: 'reject', outcome: { outcome: 'selected', optionId: reject.optionId } }
+  return { decision: 'reject', outcome: { outcome: 'cancelled' } }
+}
+
+/**
+ * The orch process, not the sandboxed child, serves fs/read_text_file.
+ * Reads are confined to the run worktree by realpath prefix.
+ */
+export function confineFsPath(path: string, root: string): string {
+  let realRoot: string
+  try {
+    realRoot = realpathSync(root)
+  } catch {
+    throw new Error(`ACP fs.readTextFile refused: worktree ${root} is not readable`)
+  }
+  let candidate: string
+  try {
+    candidate = realpathSync(path)
+  } catch {
+    try {
+      candidate = join(realpathSync(dirname(path)), basename(path))
+    } catch {
+      throw new Error(`ACP fs.readTextFile refused: ${path} is outside the run worktree`)
+    }
+  }
+  const prefix = realRoot.endsWith('/') ? realRoot : `${realRoot}/`
+  if (candidate !== realRoot && !candidate.startsWith(prefix)) {
+    throw new Error(`ACP fs.readTextFile refused: ${path} is outside the run worktree`)
+  }
+  return candidate
+}
+
+type SchemaObject = Record<string, unknown>
+
+function isSchemaObject(value: unknown): value is SchemaObject {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function typeAllows(schema: SchemaObject, jsonType: string): boolean {
+  const type = schema.type
+  if (type === jsonType) return true
+  if (Array.isArray(type) && type.includes(jsonType)) return true
+  if (Array.isArray(schema.anyOf)) {
+    return schema.anyOf.some((part) => isSchemaObject(part) && typeAllows(part, jsonType))
+  }
+  return false
+}
+
+export function valueMatchesStrictSchema(schema: unknown, value: unknown): boolean {
+  if (!isSchemaObject(schema)) return false
+  if (value === null) return typeAllows(schema, 'null')
+  const jsonType = Array.isArray(value) ? 'array' : typeof value === 'number' ? 'number'
+    : typeof value === 'boolean' ? 'boolean' : typeof value === 'string' ? 'string'
+      : typeof value === 'object' ? 'object' : ''
+  if (!jsonType || !typeAllows(schema, jsonType)) {
+    if (Array.isArray(schema.anyOf)) {
+      return schema.anyOf.some((part) => valueMatchesStrictSchema(part, value))
+    }
+    return false
+  }
+  if (jsonType === 'object') {
+    const record = value as Record<string, unknown>
+    const properties = isSchemaObject(schema.properties) ? schema.properties : {}
+    const required = Array.isArray(schema.required) ? schema.required.map(String) : Object.keys(properties)
+    for (const name of required) {
+      if (!Object.hasOwn(record, name)) return false
+    }
+    if (schema.additionalProperties === false) {
+      for (const name of Object.keys(record)) {
+        if (!Object.hasOwn(properties, name)) return false
+      }
+    }
+    for (const [name, property] of Object.entries(properties)) {
+      if (!Object.hasOwn(record, name)) continue
+      if (!valueMatchesStrictSchema(property, record[name])) return false
+    }
+    return true
+  }
+  if (jsonType === 'array' && 'items' in schema) {
+    return (value as unknown[]).every((item) => valueMatchesStrictSchema(schema.items, item))
+  }
+  return true
+}
+
+export function schemaMismatchError(output: string): string {
+  return `reply did not match the worker contract:\n${output}`
 }

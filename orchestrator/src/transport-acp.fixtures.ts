@@ -105,8 +105,45 @@ export const ACP_FIXTURE_TRUNCATED = {
   stopReason: 'max_tokens' as const,
 }
 
+export const ACP_FIXTURE_TRUNCATED_TEXT = {
+  sessionId: 'sess_parity_trunc_text',
+  updates: [
+    {
+      sessionId: 'sess_parity_trunc_text',
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'partial answer' },
+      },
+    },
+  ],
+  stopReason: 'max_tokens' as const,
+}
+
+export const ACP_FIXTURE_CANCELLED_TEXT = {
+  sessionId: 'sess_parity_cancel_text',
+  updates: [
+    {
+      sessionId: 'sess_parity_cancel_text',
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'partial before cancel' },
+      },
+    },
+  ],
+  stopReason: 'cancelled' as const,
+}
+
 export const ACP_FIXTURE_REFUSAL = {
   sessionId: 'sess_parity_refusal',
   updates: [],
   stopReason: 'refusal' as const,
+}
+
+export const ACP_FIXTURE_EDIT_PERMISSION = {
+  toolKind: 'edit' as const,
+  title: 'Edit src/run.ts',
+  options: [
+    { optionId: 'allow-once', kind: 'allow_once' },
+    { optionId: 'reject-once', kind: 'reject_once' },
+  ],
 }

@@ -93,13 +93,16 @@ let packedResumePrompt!: typeof import('./run.ts').packedResumePrompt
 let mcpRequestFromStored!: typeof import('./run.ts').mcpRequestFromStored
 let storedMcpRequest!: typeof import('./run.ts').storedMcpRequest
 let retryModelForAgent!: typeof import('./run.ts').retryModelForAgent
-async function loadRun() { runModule ??= await import('./run.ts'); ({ repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses, implicitReviewWarning, packedResumePrompt, mcpRequestFromStored, storedMcpRequest, retryModelForAgent } = runModule) }
+let chainTransport!: typeof import('./run.ts').chainTransport
+async function loadRun() { runModule ??= await import('./run.ts'); ({ repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses, implicitReviewWarning, packedResumePrompt, mcpRequestFromStored, storedMcpRequest, retryModelForAgent, chainTransport } = runModule) }
 let transportModule: typeof import('./transport.ts')
 let assertAcpAllowed!: typeof import('./transport.ts').assertAcpAllowed
+let assertAcpReady!: typeof import('./transport.ts').assertAcpReady
 let resolveTransportName!: typeof import('./transport.ts').resolveTransportName
+let selectAgentForTransport!: typeof import('./transport.ts').selectAgentForTransport
 async function loadTransport() {
   transportModule ??= await import('./transport.ts')
-  ;({ assertAcpAllowed, resolveTransportName } = transportModule)
+  ;({ assertAcpAllowed, assertAcpReady, resolveTransportName, selectAgentForTransport } = transportModule)
 }
 let branchTip!: typeof import('./worktree.ts').branchTip
 let restoreBranch!: typeof import('./worktree.ts').restoreBranch
@@ -1265,6 +1268,7 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
     noFailover: !!launch.no_failover,
     mcp: mcpRequestFromStored(launch.mcp, launch.mcp_error),
     lens: launch.lens ?? undefined,
+    transport: chainTransport(id) ?? undefined,
     resume: {
       parent: id, agent: sessionFrom.agent, session: sessionFrom.vendor_session,
       turn: latest.turn + 1, sessionId: authority.owner,
@@ -2424,7 +2428,9 @@ switch (cmd) {
     const transport = resolveTransportName(flag('transport'))
     if (transport === 'acp') {
       assertAcpAllowed(jobName, flag('agent'))
+      assertAcpReady()
     }
+    const agent = selectAgentForTransport(transport, flag('agent'))
     const requestedCwd = flag('cwd')
     if (requestedCwd && !existsSync(requestedCwd)) throw new Error(`--cwd does not exist: ${requestedCwd}`)
     const callerCwd = requestedCwd ? realpathSync(requestedCwd) : process.cwd()
@@ -2502,8 +2508,7 @@ switch (cmd) {
     const detachByDefault = !has('follow')
     if (has('detach') || detachByDefault) {
       const id = await detach(jobName, prompt, {
-        agent: transport === 'acp' ? (flag('agent') ?? 'codex') : flag('agent'),
-        schema, label: flag('label'), lens: flag('lens'),
+        agent, schema, label: flag('label'), lens: flag('lens'),
         mcp: requestedMcp(), model: flag('model'), probe: has('probe'), seed, key: flag('key'),
         repo: explicitRepo, base, avoid, distinctModels, transport,
         noFailover: has('no-failover'), carry: has('carry'), review: reviewRef, cwd: callerCwd,
@@ -2543,8 +2548,7 @@ switch (cmd) {
      * genuinely stuck run still returns control rather than hanging for ever.
      */
     const id = await detach(jobName, prompt, {
-      agent: transport === 'acp' ? (flag('agent') ?? 'codex') : flag('agent'),
-      schema, label: flag('label'), lens: flag('lens'),
+      agent, schema, label: flag('label'), lens: flag('lens'),
       mcp: requestedMcp(), model: flag('model'), probe: has('probe'), seed, key: flag('key'),
       repo: explicitRepo, base, avoid, distinctModels, transport,
       noFailover: has('no-failover'), carry: has('carry'), review: reviewRef, cwd: callerCwd,
@@ -2960,6 +2964,7 @@ switch (cmd) {
       probe: !!row.probe, retryOf: id, cwd: row.cwd ?? undefined,
       seed: row.launch_seed ?? undefined, key: row.launch_key ?? undefined,
       base: row.launch_base ?? undefined, noFailover: !!row.no_failover,
+      transport: chainTransport(row.root_id) ?? undefined,
     })
     auditRunMutation(retryAuthority, 'retry', `retried as run ${newId}`)
     console.error(`— run ${newId} is retry of ${id}`)
@@ -3827,6 +3832,7 @@ switch (cmd) {
     try {
       childId = await detach(row.job, rulingPrompt(answers), {
         cwd: latest.cwd ?? row.cwd ?? process.cwd(),
+        transport: chainTransport(id) ?? undefined,
         resume: {
           parent: id,
           agent: resumeAgent,
@@ -5697,7 +5703,7 @@ switch (cmd) {
   }
 
   case 'pick': {
-    await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadRun(), loadWorktree()])
+    await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadRun(), loadWorktree(), loadTransport()])
     await ensureLocalHealth()
     // --stack, or the stack of wherever you are standing. A route is a claim
     // about a job IN A CONTEXT, and reporting it without the context invites
@@ -5712,7 +5718,9 @@ switch (cmd) {
     // explore=false: a report that spent the exploration coin would name a
     // different agent each time it was read.
     const lens = flag('lens')
-    const p = pick(jobName, flag('agent'), 0, false, stack,
+    const transport = resolveTransportName(flag('transport'))
+    if (transport === 'acp') assertAcpAllowed(jobName, flag('agent'))
+    const p = pick(jobName, selectAgentForTransport(transport, flag('agent')), 0, false, stack,
       { agents: avoid, models: distinctModels }, false, lens)
     const ev = evidenceFor(jobName, 0, stack, undefined, lens)
     const counts = (rows: typeof ev.cands) => rows

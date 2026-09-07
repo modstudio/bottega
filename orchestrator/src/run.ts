@@ -13,7 +13,6 @@ import {
 import {
   AGENTS, ensureLocalHealth, tryWake, readStrictCodexSchema, minimumCliVersionRefusal,
   LOCAL_BASE_URL,
-  type SandboxLevel,
 } from './agents.ts'
 import { job, type Job } from './jobs.ts'
 import { pick } from './route.ts'
@@ -53,10 +52,13 @@ import { resolveRunsDirectory } from './database-location.ts'
 import { resolveLandingBranch } from './landing.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES } from './result-output.ts'
 import { addedGrokTrustHeadings, grokTrustHeadings } from './grok-trust.ts'
-import { prepareSandboxHome, selectReadonlySandbox, srtLaunchArgv } from './sandbox.ts'
+import { prepareSandboxHome, selectReadonlySandbox } from './sandbox.ts'
 import { startAskLoopback, type AskLoopback } from './ask.ts'
 import {
-  resolveTransportName, assertAcpAllowed, transportFor, resolveCodexAcpBin, type TransportName,
+  resolveTransportName, assertAcpAllowed, assertAcpReady, transportFor,
+  selectAgentForTransport, isTestTransportInstalled, valueMatchesStrictSchema,
+  schemaMismatchError, stopErrorMessage, failureKindFromStop,
+  type TransportName, type TransportStartOpts,
 } from './transport.ts'
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
@@ -138,6 +140,27 @@ export function retryModelForAgent(
   const pin = AGENTS[retryAgent]
   if (!pin) throw new Error(`unknown agent "${retryAgent}"`)
   return pin.model
+}
+
+/** Latest stored transport on a chain. ORCH_TRANSPORT is not consulted. */
+export function chainTransport(rootId: number): TransportName | null {
+  const row = db().query(
+    `SELECT transport FROM run
+      WHERE (id = ? OR parent_run_id = ?) AND transport IS NOT NULL
+      ORDER BY turn DESC, id DESC LIMIT 1`,
+  ).get(rootId, rootId) as { transport: string } | null
+  return row?.transport === 'cli' || row?.transport === 'acp' ? row.transport : null
+}
+
+function resolveRunTransport(opts: {
+  transport?: TransportName
+  resume?: { parent: number }
+}): TransportName {
+  if (opts.resume) {
+    const inherited = chainTransport(opts.resume.parent)
+    if (inherited) return inherited
+  }
+  return resolveTransportName(opts.transport)
 }
 
 /** Translate the detached wire format into the names run() consumes. */
@@ -1505,10 +1528,11 @@ export async function run(opts: {
   const writesJob = Boolean(requestedJob.needs.writesRepo)
   const repoJob = Boolean(requestedJob.needs.readsRepo)
   const forbidsRepo = requestedJob.needs.readsRepo === false
-  const transportName = resolveTransportName(opts.transport)
+  const transportName = resolveRunTransport(opts)
   if (transportName === 'acp') {
     try {
       assertAcpAllowed(opts.job, opts.agent)
+      if (!isTestTransportInstalled()) assertAcpReady()
     } catch (e) {
       if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
       throw e
@@ -1676,7 +1700,7 @@ export async function run(opts: {
     // The STACK steers the route: an agent strong on PHP and weak on a Vue
     // component is two different agents to a router, and only this tells them
     // apart. Backs off to job-wide evidence until a stack cell has earned it.
-    : pick(opts.job, transportName === 'acp' ? (opts.agent ?? 'codex') : opts.agent,
+    : pick(opts.job, selectAgentForTransport(transportName, opts.agent),
            Buffer.byteLength(prompt) + (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0) +
              (requiresCanonSource ? CANON_SOURCE_PROMPT_RESERVE_BYTES : 0),
            true, stackAt(callerCwd),
@@ -1843,7 +1867,7 @@ export async function run(opts: {
                         prompt_bytes=?, prompt_head=?, label=?, status='running', probe=?, retry_of=?,
                         route_reason=?, branch=?, parent_run_id=?, turn=?, vendor_session=?, docs_injected=?, doc_revisions=?, canon_sha=?,
                         launch_cwd=?, launch_seed=?, launch_key=?, launch_base=?, no_failover=?,
-                        automatic_failover=?, review_ref=?, pid=?, mcp=?
+                        automatic_failover=?, review_ref=?, pid=?, mcp=?, transport=?
           WHERE id=? RETURNING id`,
       ).get(
         nowIso(), name, opts.job, opts.repo ?? repoOf(callerCwd), callerCwd, sha(prompt),
@@ -1859,13 +1883,14 @@ export async function run(opts: {
         pack?.sha256 ?? null,
         launchCwd, launchSeed, launchKey, launchBase, noFailover ? 1 : 0,
         opts.automaticFailover ? 1 : 0, opts.review ?? null, process.pid, storedMcpRequest(opts.mcp),
+        transportName,
         opts.reserveId,
       ) as { id: number })
     : (db().query(
         `INSERT INTO run (started_at, agent, job, repo, cwd, prompt_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of, route_reason, branch, parent_run_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
                           launch_cwd, launch_seed, launch_key, launch_base, no_failover,
-                          automatic_failover, review_ref, pid, mcp)
-         VALUES (?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+                          automatic_failover, review_ref, pid, mcp, transport)
+         VALUES (?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       ).get(
         nowIso(), name, opts.job, opts.repo ?? repoOf(callerCwd), callerCwd,
         sha(prompt), Buffer.byteLength(prompt), head, opts.label ?? null,
@@ -1882,6 +1907,7 @@ export async function run(opts: {
         pack?.sha256 ?? null,
         launchCwd, launchSeed, launchKey, launchBase, noFailover ? 1 : 0,
         opts.automaticFailover ? 1 : 0, opts.review ?? null, process.pid, storedMcpRequest(opts.mcp),
+        transportName,
       ) as { id: number })
 
   /**
@@ -2228,38 +2254,6 @@ export async function run(opts: {
   if (gitConfigEnvironment && writableRoots) {
     assertSharedRefGuardOutsideWritableRoots(gitConfigEnvironment.GIT_CONFIG_VALUE_0, writableRoots)
   }
-  const argvOpts = {
-    prompt,
-    out: outPath,
-    schema: a.caps.schema ? schemaPath : undefined,
-    // A WRITING JOB ALWAYS GETS MCP, whether or not the caller asked for it.
-    // The ask-server is delivered over MCP, and a worker told to escalate every
-    // design decision with no way to escalate would have exactly one option
-    // left: guess. The capability check still applies — an agent without MCP
-    // falls back to the durable `status: blocked` protocol, which is why that
-    // one remains the contract rather than an afterthought.
-    mcp: usingMcp,
-    trustCwd: mcpTrustGranted ? cwd : undefined,
-    model: opts.model,
-    write: writes,
-    session: vendorSession ?? undefined,
-    /**
-     * A repository job writes inside its own disposable worktree; anything
-     * else stays read-only. The job's declared `readsRepo` is the only input —
-     * a caller flag would let any invocation widen its own sandbox.
-     */
-    sandbox: repoJob ? 'workspace-write' as SandboxLevel : 'read-only' as SandboxLevel,
-    // Every repository job may write its own linked metadata. A writing worker
-    // additionally writes immutable common objects and its run branch ref and
-    // reflog; the reference hook refuses every other ref by exact name.
-    writableRoots,
-    gitObjectEnvironment,
-    gitConfigEnvironment,
-  }
-  const argv = opts.resume
-    ? a.resumeArgv!({ ...argvOpts, session: opts.resume.session })
-    : a.argv(argvOpts)
-
   const sandboxRoot = (db().query(
     'SELECT COALESCE(parent_run_id,id) AS id FROM run WHERE id=?',
   ).get(claim.id) as { id: number }).id
@@ -2291,11 +2285,6 @@ export async function run(opts: {
   const sandboxEnvironment = sandboxSelection.profile
     ? prepareSandboxHome(name, sandboxRunDir)
     : {}
-  const vendorBin = transportName === 'acp' ? resolveCodexAcpBin() : a.bin
-  const vendorArgv = transportName === 'acp' ? [] : argv
-  const launchArgv = sandboxSelection.sandbox === 'srt'
-    ? srtLaunchArgv(sandboxSelection.profile!, srtSettingsPath!, vendorBin, vendorArgv)
-    : [vendorBin, ...vendorArgv]
   const sandboxRouteReason = sandboxSelection.reason
     ? `${reason}; sandbox host: ${sandboxSelection.reason}`
     : reason
@@ -2376,34 +2365,36 @@ export async function run(opts: {
     if (sandboxSelection.sandbox === 'srt') {
       askLoopback = await startAskLoopback(claim.id, runToken)
     }
-    const transport = transportFor(transportName)
-    const handle = opts.resume && transportName === 'acp' && opts.resume.session
-      ? await transport.resume({
-          agent: a, cwd, launchArgv, prompt, outPath,
-          session: opts.resume.session,
-          schemaPath: schemaPath ?? undefined,
-          model: opts.model ?? a.model,
-          home: sandboxEnvironment.HOME,
-          startedAt: started,
-          env: childEnv(a, claim.id, runToken, {
-            ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment,
-            ...(askLoopback ? { ORCH_ASK_URL: askLoopback.url } : {}),
-          }),
-          stdinPrompt: undefined,
-        })
-      : await transport.start({
-          agent: a, cwd, launchArgv, prompt, outPath,
-          session: vendorSession ?? undefined,
-          schemaPath: schemaPath ?? undefined,
-          model: opts.model ?? a.model,
-          home: sandboxEnvironment.HOME,
-          startedAt: started,
-          env: childEnv(a, claim.id, runToken, {
-            ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment,
-            ...(askLoopback ? { ORCH_ASK_URL: askLoopback.url } : {}),
-          }),
-          stdinPrompt: transportName === 'cli' && a.stdin ? prompt : undefined,
-        })
+    const t = transportFor(transportName)
+    const startOpts: TransportStartOpts = {
+      agent: a,
+      cwd,
+      prompt,
+      outPath,
+      session: vendorSession ?? undefined,
+      schemaPath: schemaPath ?? undefined,
+      model: opts.model ?? a.model,
+      home: sandboxEnvironment.HOME,
+      startedAt: started,
+      write: writes,
+      sandbox: repoJob ? 'workspace-write' : 'read-only',
+      mcp: usingMcp,
+      trustCwd: mcpTrustGranted ? cwd : undefined,
+      writableRoots,
+      gitObjectEnvironment,
+      gitConfigEnvironment,
+      srt: sandboxSelection.profile && srtSettingsPath
+        ? { profile: sandboxSelection.profile, settingsPath: srtSettingsPath }
+        : undefined,
+      resume: Boolean(opts.resume),
+      env: childEnv(a, claim.id, runToken, {
+        ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment,
+        ...(askLoopback ? { ORCH_ASK_URL: askLoopback.url } : {}),
+      }),
+    }
+    const handle = opts.resume?.session
+      ? await t.resume({ ...startOpts, session: opts.resume.session, resume: true })
+      : await t.start(startOpts)
     proc = handle
     live.add(handle)
     // The VENDOR CLI pid. pid stays the worker's for the whole run: after the
@@ -2421,13 +2412,13 @@ export async function run(opts: {
     const boundMs = job(opts.job).timeoutMs ?? a.timeoutMs
     timer = setTimeout(() => {
       timedOut = true
-      void transport.cancel(handle)
+      void t.cancel(handle)
       // A CLI that ignores SIGTERM would otherwise keep the caller waiting for
       // ever, which is the thing the timeout exists to prevent.
       killer = setTimeout(() => { try { handle.kill(9) } catch { /* already gone */ } }, 5_000)
     }, boundMs)
 
-    if (transportName === 'acp') await transport.prompt(handle, prompt)
+    await t.prompt(handle, prompt)
     const collected = await handle.collect()
     const stdout = collected.stdout
     const stderr = collected.stderr
@@ -2448,6 +2439,12 @@ export async function run(opts: {
           why: item.why,
         }))
       : []
+    for (const event of collected.events) {
+      if (event.kind !== 'permission') continue
+      const line = `permission ${event.decision}: ${event.title}` +
+        (event.toolKind ? ` (${event.toolKind})` : '')
+      mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${line}` : line
+    }
 
     /**
      * A worker that stopped to ask is neither a success nor a failure.
@@ -2490,7 +2487,27 @@ export async function run(opts: {
 
     const completedReplyAtTimeout = contract?.status === 'done' ||
       (!writesJob && !replyError && !!output && !isNonAnswer(output))
-    if (outputCeilingReached) {
+    const acpVendorStop = transportName === 'acp' && collected.status === 'failed' &&
+      Boolean(collected.stopReason && collected.stopReason !== 'end_turn')
+    const acpSchemaMismatch = transportName === 'acp' && Boolean(schemaPath) &&
+      !collected.asking && !acpVendorStop && (() => {
+        let value: unknown
+        try { value = JSON.parse(output) } catch { return true }
+        return !valueMatchesStrictSchema(readStrictCodexSchema(schemaPath!), value)
+      })()
+    if (acpVendorStop) {
+      status = 'failed'
+      error = errorTail(collected.error ?? stopErrorMessage(collected.stopReason!))
+      failureKind = collected.failureKind ?? failureKindFromStop(collected.stopReason, collected.error)
+    } else if (acpSchemaMismatch) {
+      status = 'failed'
+      error = errorTail(schemaMismatchError(output))
+      failureKind = 'other'
+    } else if (collected.asking || acceptedQuestions.length) {
+      status = 'asking'
+      error = null
+      failureKind = null
+    } else if (outputCeilingReached) {
       status = 'failed'
       error = `response truncated at output ceiling (${reply!.stopReason})`
       failureKind = 'truncated'
@@ -2910,7 +2927,7 @@ export async function run(opts: {
     const first = db().query(
       `SELECT prompt_path, launch_cwd, launch_seed, launch_key, launch_base,
               no_failover, session_id, mcp, mcp_error, schema_path, probe, label, lens, repo,
-              base_commit, head_commit, review_ref
+              base_commit, head_commit, review_ref, transport
          FROM run WHERE id=?`,
     ).get(attempts[0]!.id) as {
       prompt_path: string | null; launch_cwd: string | null; launch_seed: string | null
@@ -2918,6 +2935,7 @@ export async function run(opts: {
       session_id: string | null; mcp: number | null; mcp_error: string | null; schema_path: string | null
       probe: number; label: string | null; lens: string | null; repo: string | null
       base_commit: string | null; head_commit: string | null; review_ref: string | null
+      transport: TransportName | null
     }
     const treeName = worktree?.path ?? '(none — read-only job)'
     if (first.no_failover || opts.noFailover) {
@@ -2953,6 +2971,8 @@ export async function run(opts: {
           job: opts.job,
           prompt: originalPrompt,
           agent: next.agent,
+          transport: first.transport === 'cli' || first.transport === 'acp'
+            ? first.transport : undefined,
           schemaPath: first.schema_path ?? undefined,
           mcp: mcpRequestFromStored(first.mcp, first.mcp_error),
           probe: !!first.probe,

@@ -1,5 +1,8 @@
 #!/usr/bin/env bun
 /**
+ * bun scripts/acp-parity.ts
+ * Run from orchestrator/ with codex on PATH.
+ *
  * Run the same five prompts through cli and acp transports against real
  * codex on this machine. Prints a table: outcome, failure kind, tokens,
  * latency, bytes of raw output.
@@ -9,7 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS } from '../src/agents.ts'
 import {
-  outcomeFromTransport, resolveCodexAcpBin, transportFor, type TransportName, type TransportResult,
+  outcomeFromTransport, transportFor, type TransportName, type TransportResult,
 } from '../src/transport.ts'
 
 const SCHEMA = {
@@ -65,37 +68,29 @@ async function runCase(
   const outPath = join(dir, `${spec.id}.${transportName}.out`)
   const schemaPath = spec.schema ? join(dir, `${spec.id}.schema.json`) : undefined
   if (schemaPath) writeFileSync(schemaPath, JSON.stringify(SCHEMA))
-  const argv = agent.argv({
-    prompt: spec.prompt, out: outPath, schema: schemaPath, write: false, sandbox: 'read-only',
-    model: agent.model,
-  })
-  const launchArgv = transportName === 'acp' ? [resolveCodexAcpBin()] : [agent.bin, ...argv]
   const transport = transportFor(transportName)
   const started = Date.now()
   const handle = await transport.start({
-    agent, cwd, launchArgv, prompt: spec.prompt, outPath,
+    agent, cwd, prompt: spec.prompt, outPath,
     schemaPath, model: agent.model, startedAt: started,
+    write: false, sandbox: 'read-only',
     env: Object.fromEntries(
       Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined),
     ),
-    stdinPrompt: transportName === 'cli' && agent.stdin ? spec.prompt : undefined,
   })
   let timer: ReturnType<typeof setTimeout> | null = null
   if (spec.timeoutMs != null) {
     timer = setTimeout(() => { void transport.cancel(handle) }, spec.timeoutMs)
   }
   try {
-    if (transportName === 'acp') await transport.prompt(handle, spec.prompt)
+    await transport.prompt(handle, spec.prompt)
     const result: TransportResult = await handle.collect()
     const folded = outcomeFromTransport(result)
-    const failureKind = folded.status === 'failed'
-      ? (result.stopReason === 'timeout' ? 'timeout' : folded.failureKind ?? 'other')
-      : '—'
     return {
       case: spec.id,
       transport: transportName,
       outcome: folded.status,
-      failureKind,
+      failureKind: folded.failureKind ?? '—',
       tokens: result.tokens == null ? '—' : String(result.tokens),
       latencyMs: Date.now() - started,
       rawBytes: Buffer.byteLength(result.raw),

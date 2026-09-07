@@ -443,6 +443,7 @@ export function applySchema(d: Database): void {
   addColumn(d, 'run', 'mcp_trust_granted', 'INTEGER')
   addColumn(d, 'run', 'mcp_trust_path', 'TEXT')
   addColumn(d, 'run', 'schema_path', 'TEXT')
+  addColumn(d, 'run', 'transport', "TEXT CHECK (transport IN ('cli','acp'))")
   addColumn(d, 'run', 'docs_injected', 'INTEGER')
   addColumn(d, 'run', 'doc_revisions', 'TEXT')
   addColumn(d, 'run', 'canon_sha', 'TEXT')
@@ -888,7 +889,11 @@ const RUN_DDL = `CREATE TABLE run (
       schema_path   TEXT,
       docs_injected INTEGER,
       doc_revisions TEXT,
-      canon_sha     TEXT
+      canon_sha     TEXT,
+      -- Driver seam. NULL on rows that predate the ACP pilot. Inherited by
+      -- answer, continue, retry and failover so ORCH_TRANSPORT is only the
+      -- initial default.
+      transport     TEXT CHECK (transport IN ('cli','acp'))
     )`
 
 const REVIEW_LENS_DDL = `CREATE TABLE review_lens (

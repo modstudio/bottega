@@ -1,6 +1,9 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import type {
-  AgentTransport, NormalizedEvent, TransportHandle, TransportResult, TransportStartOpts,
+import type { ArgvOpts } from './agents.ts'
+import { srtLaunchArgv } from './sandbox.ts'
+import {
+  outcomeFromTransport, type AgentTransport, type NormalizedEvent, type TransportHandle,
+  type TransportResult, type TransportStartOpts,
 } from './transport.ts'
 
 /** Codex reports "tokens used\\n<n>" on stderr; other agents report nothing. */
@@ -9,39 +12,33 @@ function parseVendorTokens(blob: string): number | null {
   return m ? Number(m[1]!.replace(/,/g, '')) : null
 }
 
-function eventsFromCli(opts: {
-  stdout: string
-  sessionId: string | null
-  tokens: number | null
-  costUsd: number | null
-  text: string
-  error: string | null
-  stopReason: string | null
-}): NormalizedEvent[] {
-  const events: NormalizedEvent[] = []
-  if (opts.sessionId) events.push({ kind: 'session', sessionId: opts.sessionId })
-  for (const line of opts.stdout.split('\n')) {
-    const s = line.trimStart()
-    if (!s.startsWith('{')) continue
-    try {
-      const e = JSON.parse(s) as { type?: string; item?: { type?: string; text?: string } }
-      if (e.type === 'item.completed' && e.item?.type === 'agent_message' && e.item.text) {
-        events.push({ kind: 'text', text: String(e.item.text) })
-      }
-    } catch { /* a half-written line is not an event */ }
-  }
-  if (opts.tokens !== null) events.push({ kind: 'usage', tokens: opts.tokens, costUsd: opts.costUsd })
-  if (opts.error) events.push({ kind: 'error', error: opts.error })
-  if (opts.stopReason) events.push({ kind: 'stop', reason: opts.stopReason })
-  else if (opts.text || opts.error) events.push({ kind: 'stop', reason: opts.error ? 'error' : 'end_turn' })
-  return events
-}
-
 function spawnCli(opts: TransportStartOpts): TransportHandle {
-  const p = Bun.spawn(opts.launchArgv, {
+  const argvOpts: ArgvOpts = {
+    prompt: opts.prompt,
+    out: opts.outPath,
+    schema: opts.schemaPath,
+    mcp: opts.mcp,
+    trustCwd: opts.trustCwd,
+    model: opts.model,
+    write: opts.write,
+    sandbox: opts.sandbox,
+    writableRoots: opts.writableRoots,
+    gitObjectEnvironment: opts.gitObjectEnvironment,
+    gitConfigEnvironment: opts.gitConfigEnvironment,
+    session: opts.session,
+  }
+  const argv = opts.resume && opts.session && opts.agent.resumeArgv
+    ? opts.agent.resumeArgv({ ...argvOpts, session: opts.session })
+    : opts.agent.argv(argvOpts)
+  const bin = opts.bin ?? opts.agent.bin
+  const launchArgv = opts.srt
+    ? srtLaunchArgv(opts.srt.profile, opts.srt.settingsPath, bin, argv)
+    : [bin, ...argv]
+  const stdinPrompt = opts.agent.stdin && !opts.resume ? opts.prompt : undefined
+  const p = Bun.spawn(launchArgv, {
     cwd: opts.cwd,
     env: opts.env,
-    stdin: opts.stdinPrompt !== undefined ? new TextEncoder().encode(opts.stdinPrompt) : 'ignore',
+    stdin: stdinPrompt !== undefined ? new TextEncoder().encode(stdinPrompt) : 'ignore',
     stdout: 'pipe',
     stderr: 'pipe',
   })
@@ -79,9 +76,15 @@ function spawnCli(opts: TransportStartOpts): TransportHandle {
         output = (reply?.text ?? stdout).trim()
         if (output) writeFileSync(opts.outPath, output)
       }
-      const stopReason = reply?.stopReason ?? (cancelled ? 'cancelled' : null)
-      const events = eventsFromCli({
-        stdout, sessionId, tokens, costUsd, text: output, error: replyError, stopReason,
+      const stopReason = reply?.stopReason ?? (cancelled ? 'timeout' : null)
+      const events: NormalizedEvent[] = []
+      if (sessionId) events.push({ kind: 'session', sessionId })
+      if (output) events.push({ kind: 'text', text: output })
+      if (tokens !== null) events.push({ kind: 'usage', tokens, costUsd })
+      if (replyError) events.push({ kind: 'error', error: replyError })
+      if (stopReason) events.push({ kind: 'stop', reason: stopReason })
+      const folded = outcomeFromTransport({
+        asking: false, error: replyError, exitCode, output, stopReason,
       })
       recordedEvents = events
       for (const wait of eventWaiters) wait(events)
@@ -90,7 +93,8 @@ function spawnCli(opts: TransportStartOpts): TransportHandle {
         output, stdout, stderr, raw: stdout,
         parsed: reply ?? null,
         tokens, costUsd, sessionId, stopReason, error: replyError,
-        exitCode, pid: p.pid, events, asking: false, questions: [],
+        exitCode, pid: p.pid, events, asking: false,
+        failureKind: folded.failureKind, status: folded.status, questions: [],
       }
     })()
     return collected
@@ -119,5 +123,5 @@ export const cliTransport: AgentTransport = {
   prompt(handle, text) { return handle.prompt(text) },
   events(handle) { return handle.events() },
   cancel(handle) { return handle.cancel() },
-  resume(opts) { return Promise.resolve(spawnCli(opts)) },
+  resume(opts) { return Promise.resolve(spawnCli({ ...opts, resume: true })) },
 }

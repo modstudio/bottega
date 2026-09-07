@@ -240,8 +240,9 @@ export function readStrictCodexSchema(path: string): JSONSchema {
 /**
  * Policy and capabilities for a vendor. How it is spawned lives on
  * `AgentTransport` (`cli` by default; `acp` is the DEV-342 codex pilot).
- * `argv` / `parseReply` / `readSession` remain here because the CLI transport
- * reads them, and existing tests mutate those fields.
+ * `argv` / `resumeArgv` / `parseReply` / `readSession` are the CLI transport's
+ * launch and parse surface — `cliTransport` reads them when it builds argv.
+ * They are not unused leftovers of the old inlined spawn.
  */
 export type Agent = {
   name: string

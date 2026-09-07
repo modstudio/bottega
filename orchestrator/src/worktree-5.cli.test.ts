@@ -1,9 +1,10 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, spyOn, test } from 'bun:test'
 import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync, utimesSync, chmodSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { AGENTS, addRun, contentTree, createReadOnlyWorktree, createWorktree, db, declaredCreate, fakeDocker, fakeDockerCommand, hermeticGitCommand, hermeticGitEnv, prepareSharedRefGuard, prepareWorktreeObjects, runJob, score, upsertProject } from '../test/fixture.ts'
+import { AGENTS, addRun, contentTree, createReadOnlyWorktree, createWorktree, db, declaredCreate, fakeDocker, fakeDockerCommand, hermeticGitCommand, hermeticGitEnv, prepareSharedRefGuard, prepareWorktreeObjects, runJob, score, upsertProject, worktreeGitDir } from '../test/fixture.ts'
+const worktreeMod = await import('./worktree.ts')
 
 describe('sweep only reclaims old orch-owned orphan worktrees', () => {
   const CLI = new URL('cli.ts', import.meta.url).pathname
@@ -773,21 +774,18 @@ describe('content tree measurement', () => {
       g('add', '.')
       g('commit', '-m', 'base')
       agent.bin = process.execPath
-      agent.argv = () => {
-        const paths = g('worktree', 'list', '--porcelain').split('\n')
-          .filter((line) => line.startsWith('worktree '))
-          .map((line) => line.slice('worktree '.length))
-        const worker = paths.find((path) => realpathSync(path) !== realpathSync(repo))
-        if (!worker) throw new Error('test did not find worker worktree')
-        const pointer = readFileSync(join(worker, '.git'), 'utf8').trim()
-        const gitDir = resolve(worker, pointer.slice('gitdir: '.length))
-        writeFileSync(join(gitDir, 'HEAD'), 'ref: refs/heads/missing-measurement-head\n')
-        return ['-e', `await Bun.write(${JSON.stringify(vendorMarker)}, 'started')`]
-      }
+      agent.argv = () => ['-e', `await Bun.write(${JSON.stringify(vendorMarker)}, 'started')`]
       agent.stdin = false
       agent.readsOut = false
       agent.parseReply = undefined
       process.env.ORCH_DEPTH = '0'
+      const originalCreate = worktreeMod.createReadOnlyWorktree
+      const createSpy = spyOn(worktreeMod, 'createReadOnlyWorktree').mockImplementation((...args) => {
+        const created = originalCreate(...args)
+        writeFileSync(join(worktreeGitDir(created.path), 'HEAD'),
+          'ref: refs/heads/missing-measurement-head\n')
+        return created
+      })
 
       let runId: number | undefined
       try {
@@ -797,6 +795,8 @@ describe('content tree measurement', () => {
         })
       } catch (error) {
         runId = (error as Error & { runId?: number }).runId
+      } finally {
+        createSpy.mockRestore()
       }
       expect(runId).toBeNumber()
       const row = db().query('SELECT status, failure_kind, error FROM run WHERE id=?').get(runId!) as

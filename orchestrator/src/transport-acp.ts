@@ -2,8 +2,10 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
 import { readFileSync, writeFileSync } from 'node:fs'
 import * as acp from '@agentclientprotocol/sdk'
-import type {
-  AgentTransport, NormalizedEvent, TransportHandle, TransportResult, TransportStartOpts,
+import {
+  confineFsPath, decideAcpPermission, outcomeFromTransport, resolveCodexAcpBin, stopErrorMessage,
+  type AgentTransport, type NormalizedEvent, type TransportHandle, type TransportResult,
+  type TransportStartOpts,
 } from './transport.ts'
 
 type AcpUpdate = {
@@ -23,6 +25,7 @@ type AcpTurnInput = {
   elicitation?: { message: string } | null
   error?: string | null
   timedOut?: boolean
+  permissionEvents?: Extract<NormalizedEvent, { kind: 'permission' }>[]
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -42,6 +45,9 @@ function textOf(content: AcpUpdate['content']): string {
 /**
  * Fold ACP session updates into orch's existing run facts: text, tokens,
  * session id, stop reason, and a terminal outcome. The store never sees ACP.
+ *
+ * A non-end_turn stop is a failure even when some agent text already arrived,
+ * except elicitation which is asking.
  */
 export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
   const events: NormalizedEvent[] = []
@@ -50,6 +56,7 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
   let costUsd: number | null = null
   let sessionId = input.sessionId ?? null
   if (sessionId) events.push({ kind: 'session', sessionId })
+  for (const event of input.permissionEvents ?? []) events.push(event)
 
   for (const raw of input.updates) {
     const update = asUpdate(isRecord(raw) && 'update' in raw ? raw.update : raw)
@@ -97,23 +104,28 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
   const output = chunks.join('')
   const asking = Boolean(input.elicitation)
   let error: string | null = input.error ?? null
-  if (!error && !asking && !output.trim() && stopReason && stopReason !== 'end_turn') {
-    error = `ACP stop reason: ${stopReason}`
+  if (!error && !asking && stopReason && stopReason !== 'end_turn') {
+    error = stopErrorMessage(stopReason)
   }
   if (!error && !asking && !output.trim() && !stopReason) {
     error = 'ACP turn produced no agent message'
   }
 
   const raw = input.updates.map((update) => JSON.stringify(update)).join('\n')
+  const folded = outcomeFromTransport({
+    asking, error, exitCode: 0, output, stopReason,
+  })
   let exitCode = 0
-  if (asking) exitCode = 0
-  else if (error) exitCode = stopReason === 'timeout' || stopReason === 'cancelled' ? 143 : 1
+  if (folded.status === 'failed') {
+    exitCode = stopReason === 'timeout' || stopReason === 'cancelled' ? 143 : 1
+  }
 
   return {
     output, stdout: raw, stderr: '', raw,
     parsed: { text: output, tokens, costUsd, stopReason, error: error ?? undefined },
     tokens, costUsd, sessionId, stopReason, error,
     exitCode, pid: null, events, asking,
+    failureKind: folded.failureKind, status: folded.status,
     questions: asking && input.elicitation
       ? [{
           question: input.elicitation.message,
@@ -124,9 +136,7 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
 }
 
 export function acpOutcome(result: TransportResult): 'ok' | 'asking' | 'failed' {
-  if (result.asking) return 'asking'
-  if (result.error || result.exitCode !== 0 || !result.output.trim()) return 'failed'
-  return 'ok'
+  return result.status
 }
 
 function webStream(child: ChildProcess): ReturnType<typeof acp.ndJsonStream> {
@@ -145,20 +155,9 @@ function readTextFile(path: string, line?: number | null, limit?: number | null)
   return lines.slice(start, end).join('\n')
 }
 
-function pickPermissionOption(
-  options: Array<{ optionId: string; kind: string }>,
-): { outcome: 'selected'; optionId: string } | { outcome: 'cancelled' } {
-  const allow = options.find((option) => option.kind === 'allow_once')
-    ?? options.find((option) => option.kind === 'allow_always')
-  if (allow) return { outcome: 'selected', optionId: allow.optionId }
-  return { outcome: 'cancelled' }
-}
-
 async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
-  const bin = opts.launchArgv[0]
-  if (!bin) throw new Error('ACP launch argv is empty')
-  const args = opts.launchArgv.slice(1)
-  const child = spawn(bin, args, {
+  const bin = opts.bin ?? resolveCodexAcpBin()
+  const child = spawn(bin, [], {
     cwd: opts.cwd,
     env: {
       ...opts.env,
@@ -174,6 +173,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
 
   const updates: unknown[] = []
   const liveEvents: NormalizedEvent[] = []
+  const permissionEvents: Extract<NormalizedEvent, { kind: 'permission' }>[] = []
   const eventWaiters: Array<(event: NormalizedEvent | null) => void> = []
   let elicitation: { message: string } | null = null
   let closed = false
@@ -190,22 +190,37 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
 
   const app = acp.client({ name: 'orch' })
     .onRequest(acp.methods.client.session.requestPermission, (req) => {
+      // orch replies allow/reject here; the sandboxed child does not. Read-class
+      // tools may run; edit/write/execute are rejected. Gap: the architect never
+      // sees the prompt — the decision is the pilot policy, not a ruling.
       const title = req.params.toolCall.title ?? 'tool'
+      const toolKind = req.params.toolCall.kind ?? undefined
       const optionKinds = req.params.options.map((option) => option.kind)
-      pushEvent({ kind: 'permission', title, optionKinds })
-      const selected = pickPermissionOption(req.params.options)
-      return { outcome: selected }
+      const decided = decideAcpPermission(toolKind, req.params.options)
+      const event: Extract<NormalizedEvent, { kind: 'permission' }> = {
+        kind: 'permission', title, optionKinds, toolKind, decision: decided.decision,
+      }
+      permissionEvents.push(event)
+      pushEvent(event)
+      return { outcome: decided.outcome }
     })
     .onRequest(acp.methods.client.elicitation.create, (req) => {
+      // orch maps the elicitation message onto the ask channel and cancels the
+      // form. Gap: the architect's ruling is not posted back as accept content;
+      // the next turn resumes via session/load instead.
       elicitation = { message: req.params.message }
       pushEvent({ kind: 'elicitation', message: req.params.message })
       return { action: 'cancel' as const }
     })
     .onRequest(acp.methods.client.fs.readTextFile, (req) => {
-      const content = readTextFile(req.params.path, req.params.line, req.params.limit)
+      // The orch process, not the sandboxed child, serves this read. Confine
+      // to the run worktree by realpath prefix; anything outside is refused.
+      const confined = confineFsPath(req.params.path, opts.cwd)
+      const content = readTextFile(confined, req.params.line, req.params.limit)
       return { content }
     })
     .onNotification(acp.methods.client.session.update, (req) => {
+      // orch records the update as a run event; the store never holds ACP.
       updates.push(req.params)
       const folded = normalizeAcpTurn({ sessionId, updates: [req.params] })
       for (const event of folded.events) {
@@ -220,6 +235,8 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
 
   try {
     await ctx.request(acp.methods.agent.initialize, {
+      // orch advertises fs.read + form elicitation; write/terminal stay off.
+      // Gap: usage_update.used is session context, not CLI input+output.
       protocolVersion: acp.PROTOCOL_VERSION,
       clientCapabilities: {
         fs: { readTextFile: true, writeTextFile: false },
@@ -229,11 +246,13 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     })
     if (opts.session) {
       await ctx.request(acp.methods.agent.session.load, {
+        // orch resumes the vendor conversation; the prompt is the ruling.
         cwd: opts.cwd, sessionId: opts.session, mcpServers: [],
       })
       sessionId = opts.session
     } else {
       const created = await ctx.request(acp.methods.agent.session.new, {
+        // orch opens a read-only session in the worktree; no MCP servers yet.
         cwd: opts.cwd, mcpServers: [],
       })
       sessionId = created.sessionId
@@ -246,7 +265,6 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   }
 
   let collectPromise: Promise<TransportResult> | null = null
-  let promptText = opts.prompt
   let cancelled = false
 
   const finishEvents = () => {
@@ -263,7 +281,6 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       if (!ctx || !sessionId) throw new Error('ACP session is not open')
       if (prompted) return
       prompted = true
-      promptText = text
       const blocks: acp.ContentBlock[] = [{ type: 'text', text }]
       if (opts.schemaPath) {
         try {
@@ -272,9 +289,10 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
             type: 'text',
             text: `\nRespond with JSON matching this schema and nothing else:\n${schema}`,
           })
-        } catch { /* schema is best-effort on ACP */ }
+        } catch { /* schema is best-effort on the wire; run.ts validates */ }
       }
       const promptWork = ctx.request(acp.methods.agent.session.prompt, {
+        // orch sends the bound prompt as text blocks; schema is also inlined.
         sessionId, prompt: blocks,
       })
       collectPromise = (async () => {
@@ -289,14 +307,11 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
         const stderr = Buffer.concat(stderrChunks).toString('utf8')
         const result = normalizeAcpTurn({
           sessionId, updates, stopReason, elicitation, error,
-          timedOut: cancelled && stopReason !== 'end_turn',
+          timedOut: cancelled,
+          permissionEvents,
         })
         result.stderr = stderr
         result.pid = child.pid ?? null
-        if (cancelled && result.stopReason !== 'end_turn') {
-          result.stopReason = result.stopReason ?? 'cancelled'
-          result.exitCode = 143
-        }
         writeFileSync(opts.outPath, result.output)
         if (result.stopReason) pushEvent({ kind: 'stop', reason: result.stopReason })
         closed = true
@@ -304,7 +319,6 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
         try { connection?.close() } catch { /* already closed */ }
         return result
       })()
-      void promptText
     },
     async *events() {
       for (const event of liveEvents) yield event
@@ -317,6 +331,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       }
     },
     async cancel() {
+      // orch tells the agent to stop; harness cancel is a timeout, matching run.ts.
       cancelled = true
       if (ctx && sessionId) {
         try {
@@ -340,5 +355,5 @@ export const acpTransport: AgentTransport = {
   prompt(handle, text) { return handle.prompt(text) },
   events(handle) { return handle.events() },
   cancel(handle) { return handle.cancel() },
-  resume(opts) { return openAcp(opts) },
+  resume(opts) { return openAcp({ ...opts, resume: true }) },
 }
