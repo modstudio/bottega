@@ -46,6 +46,10 @@ describe('runs collection search', () => {
 
     expect(matchesRunSearch({ ...completed, delivery: null, quality: null, status: 'failed' }, 'failed')).toBe(true)
     expect(matchesRunSearch({ ...completed, delivery: null, quality: null, probe: true }, 'probe')).toBe(true)
+    expect(matchesRunSearch(
+      { ...completed, evidence_excluded: 'voided with orch score --void' },
+      'Not routing evidence',
+    )).toBe(true)
   })
 
   test('live rows include every rendered text field, but not truncated prompt text', () => {

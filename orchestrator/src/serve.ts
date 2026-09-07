@@ -162,7 +162,11 @@ export function state(sinceDays: number | null = null) {
             COALESCE(SUM(COALESCE(r.vendor_tokens,0)), 0) toks,
             COALESCE(SUM(CASE WHEN s.delivery IS NOT NULL
                                AND COALESCE(r.failure_kind, '') NOT IN (${notEvidence})
-                              THEN 1 ELSE 0 END), 0) scored
+                               AND r.evidence_excluded IS NULL
+                              THEN 1 ELSE 0 END), 0) scored,
+            COALESCE(SUM(CASE WHEN s.delivery IS NOT NULL
+                               AND r.evidence_excluded IS NOT NULL
+                              THEN 1 ELSE 0 END), 0) voided
        FROM run r LEFT JOIN score s ON s.run_id = r.id
       WHERE r.started_at >= ?`,
   ).get(since)
@@ -243,9 +247,10 @@ export function runList(q: URLSearchParams) {
   if (status) { where.push('r.status = ?'); args.push(status) }
   // One dropdown over two columns: 'none' is a delivery, the rest are qualities.
   const verdict = q.get('verdict')
-  if (verdict === 'unscored') where.push('s.delivery IS NULL')
-  else if (verdict === 'none') where.push("s.delivery = 'none'")
-  else if (verdict) { where.push('s.quality = ?'); args.push(verdict) }
+  if (verdict === 'unscored') where.push('s.delivery IS NULL AND r.evidence_excluded IS NULL')
+  else if (verdict === 'none') where.push("s.delivery = 'none' AND r.evidence_excluded IS NULL")
+  else if (verdict === 'excluded') where.push('r.evidence_excluded IS NOT NULL')
+  else if (verdict) { where.push('s.quality = ? AND r.evidence_excluded IS NULL'); args.push(verdict) }
   const search = q.get('q')
   if (search) { where.push('COALESCE(r.label, r.prompt_head) LIKE ?'); args.push(`%${search}%`) }
 

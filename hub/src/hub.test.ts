@@ -423,6 +423,40 @@ describe('run ingest', () => {
     }
   })
 
+  test('the runs view passes evidence_excluded through to the list', async () => {
+    const run = runFixture({
+      id: 9821,
+      status: 'ok',
+      delivery: 'none',
+      evidence_excluded: 'voided with orch score --void',
+    })
+    const state = {
+      live: [], stale: 0, matrix: [], guide: [], health: [],
+      totals: { runs: 1, failed: 0, stale_n: 0, toks: 0, scored: 0, voided: 1 },
+      unscored: 0, spawns: [], agents: [], byRepo: [],
+    }
+    const spawn = spyOn(Bun, 'spawn').mockImplementation(((argv: string[]) => ({
+      stdout: new Blob([argv.includes('runs') ? JSON.stringify(run) : JSON.stringify(state)]),
+      stderr: new Blob(['']),
+      exited: Promise.resolve(0),
+      kill() {},
+    })) as unknown as typeof Bun.spawn)
+    try {
+      const result = await view('runs', 24) as {
+        totals: { scored: number; voided: number }
+        rows: { id: number; evidence_excluded: string | null; delivery: string | null }[]
+      }
+      expect(result.totals).toEqual(expect.objectContaining({ scored: 0, voided: 1 }))
+      expect(result.rows).toEqual([expect.objectContaining({
+        id: 9821,
+        delivery: 'none',
+        evidence_excluded: 'voided with orch score --void',
+      })])
+    } finally {
+      spawn.mockRestore()
+    }
+  })
+
   test('the runs view reports vendor tokens per agent without a combined total', async () => {
     const runs = [
       runFixture({ id: 9811, agent: 'grok', vendor_tokens: 1_200_000 }),

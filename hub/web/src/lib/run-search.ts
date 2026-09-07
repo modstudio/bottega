@@ -6,6 +6,7 @@ export type SearchableRun = {
   at: string; engaged: string; running: boolean; status: string; delivery: string | null
   quality: string | null; tokens: number | null; costUsd: number | null; probe: boolean
   lens: string | null
+  evidence_excluded?: string | null
 }
 
 export type SearchableLiveRun = {
@@ -35,7 +36,9 @@ export function runSearchText(row: SearchableRun | SearchableLiveRun) {
     return [
       row.project ?? PROJECT_FALLBACK, row.task ?? '-', row.agent,
       `${row.job || '-'}${row.lens ? ` ${row.lens}` : ''}${row.probe ? ' probe' : ''}`,
-      row.engaged, runVerdictText(row), compactTokens(row.tokens),
+      row.engaged, runVerdictText(row),
+      row.evidence_excluded ? `Not routing evidence: ${row.evidence_excluded}` : '',
+      compactTokens(row.tokens),
       row.costUsd == null ? '-' : `$${row.costUsd.toFixed(2)}`,
       runEasternTime(row.at, true),
     ].join(' ')

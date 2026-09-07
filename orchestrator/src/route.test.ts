@@ -843,29 +843,104 @@ describe('routing narrows to a stack only when that buys a comparison', () => {
 })
 
 describe('the Stop hook and orch agree on what is unscored', () => {
-  test("the hook's SQL carries every clause of UNSCORED_WHERE", () => {
+  const stripSqlComments = (sql: string) => sql.replace(/--[^\n]*/g, ' ')
+  const sqlClauses = (sql: string) =>
+    stripSqlComments(sql).split('AND').map((c) => c.trim().replace(/\s+/g, ' ')).filter(Boolean)
+
+  const hookOwedWhere = (source: string) => {
+    const start = source.indexOf('SELECT r.id, r.agent, r.job')
+    if (start < 0) throw new Error('hook owed-run query not found')
+    const order = source.indexOf('ORDER BY r.id', start)
+    const sql = source.slice(start, order)
+    const whereAt = sql.search(/\bWHERE\b/)
+    return sql.slice(whereAt + 'WHERE'.length)
+  }
+
+  const hookOnlyClause = (clause: string) =>
+    /\br\.session_id\b/.test(clause) || /\breview\./.test(clause)
+
+  const predicateDrift = (tsWhere: string, hookWhere: string) => {
+    const hookNorm = stripSqlComments(hookWhere).replace(/\s+/g, ' ')
+    const tsNorm = stripSqlComments(tsWhere).replace(/\s+/g, ' ')
+    return {
+      missingFromHook: sqlClauses(tsWhere).filter((c) => !hookNorm.includes(c)),
+      missingFromTs: sqlClauses(hookWhere).filter((c) => !hookOnlyClause(c) && !tsNorm.includes(c)),
+    }
+  }
+
+  test('the comparator fails when either copy has a unique clause', () => {
+    expect(predicateDrift('a AND b', 'a AND b AND extra')).toEqual({
+      missingFromHook: [], missingFromTs: ['extra'],
+    })
+    expect(predicateDrift('a AND b AND extra', 'a AND b')).toEqual({
+      missingFromHook: ['extra'], missingFromTs: [],
+    })
+    expect(predicateDrift("r.status = 'ok'", "r.session_id = ? AND r.status = 'ok'")).toEqual({
+      missingFromHook: [], missingFromTs: [],
+    })
+  })
+
+  test("UNSCORED_WHERE and the hook's owed-run predicate do not diverge in either direction", () => {
     /**
      * The hook is Python and cannot import the TypeScript definition, so its
      * predicate is a second copy — and it did what a second copy always does.
-     * `UNSCORED_WHERE` learned that a conversation is one unit of work; the
-     * hook did not, and spent a session demanding verdicts on two runs that
-     * `orch score` refuses to take, naming their root instead.
-     *
-     * This cannot make them one definition. It can make them fail together,
-     * which is the same guarantee the router and the dashboard get from
-     * sharing `scoreboard()`.
+     * A one-directional test (hook contains every UNSCORED_WHERE clause) let
+     * the hook grow `evidence_excluded IS NULL` while pending, unscoredCount,
+     * monitor and `runs --unscored` did not. Session scope and the incomplete-
+     * review reminder are hook-only; everything else must be the same set.
      */
     const hook = readFileSync(
       new URL('../hooks/score-reminder.py', import.meta.url).pathname, 'utf8',
     )
-    // Each clause of the real predicate, normalised to how SQL is written in
-    // both files. If UNSCORED_WHERE grows a condition, this fails until the
-    // hook grows it too.
-    for (const clause of UNSCORED_WHERE.split('AND').map((c) => c.trim().replace(/\s+/g, ' '))) {
-      expect(hook.replace(/\s+/g, ' ')).toContain(clause)
-    }
+    expect(predicateDrift(UNSCORED_WHERE, hookOwedWhere(hook))).toEqual({
+      missingFromHook: [], missingFromTs: [],
+    })
   })
 
+  test('score --void with no verdict closes the ledger for pending, count, monitor, runs and the hook', () => {
+    const session = 'void-no-verdict-session'
+    const id = addRun({ agent: 'codex', job: 'understand', session })
+    expect(pendingForSession(session).map((row) => row.id)).toEqual([id])
+    expect(unscoredCount()).toBe(1)
+
+    const CLI = new URL('cli.ts', import.meta.url).pathname
+    const env = {
+      ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+      CLAUDE_CODE_SESSION_ID: session,
+    }
+    const voided = Bun.spawnSync([process.execPath, CLI, 'score', String(id), '--void'], {
+      env, stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(voided.exitCode, voided.stderr.toString()).toBe(0)
+
+    const pending = pendingForSession(session)
+    const hook = Bun.spawnSync(
+      ['python3', new URL('../hooks/score-reminder.py', import.meta.url).pathname],
+      {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB! },
+        stdin: new TextEncoder().encode(JSON.stringify({ session_id: session })),
+        stdout: 'pipe', stderr: 'pipe',
+      },
+    )
+    const pendingCli = Bun.spawnSync([process.execPath, CLI, 'pending'], {
+      env, stdout: 'pipe', stderr: 'pipe',
+    })
+    const runs = Bun.spawnSync(
+      [process.execPath, CLI, 'runs', '--unscored', '--json', '--id', String(id)],
+      { env, stdout: 'pipe', stderr: 'pipe' },
+    )
+    const monitorIds = (db().query(
+      `SELECT r.id FROM run r LEFT JOIN score s ON s.run_id=r.id WHERE ${UNSCORED_WHERE}`,
+    ).all() as { id: number }[]).map((row) => row.id)
+
+    expect(pending).toEqual([])
+    expect(unscoredCount()).toBe(0)
+    expect(hook.stdout.toString()).toBe('')
+    expect(pendingCli.exitCode).toBe(0)
+    expect(pendingCli.stdout.toString()).toContain('nothing of yours is unscored')
+    expect(runs.stdout.toString().trim()).toBe('')
+    expect(monitorIds).not.toContain(id)
+  })
 
   test('the hook raises an unrecorded scored pair once', () => {
     const first = addRun({ agent: 'codex', job: 'craft', session: 'hook-session', inputTree: 'hook-tree' })

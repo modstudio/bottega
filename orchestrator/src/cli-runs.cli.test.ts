@@ -1186,7 +1186,18 @@ test('record-only closes the question, marks the chain stranded, and retry resta
 
     const r = orch('doctor')
     expect(r.code).toBe(0)
-    expect(r.out).toContain('runs 2, scored 1, unscored 0')
+    expect(r.out).toContain('runs 2, scored 1, voided 0, unscored 0')
+  })
+
+  test('doctor reports a voided verdict separately from scored routing evidence', () => {
+    score(insert('ok'), 'full', 'right')
+    const voided = insert('ok')
+    score(voided, 'full', 'right')
+    db().query("UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?").run(voided)
+
+    const r = orch('doctor')
+    expect(r.code).toBe(0)
+    expect(r.out).toContain('runs 2, scored 1, voided 1, unscored 0')
   })
 
   test('doctor lists orphaned run containers and volumes with removal commands', () => {

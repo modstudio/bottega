@@ -6838,15 +6838,18 @@ switch (cmd) {
     const counts = db().query(
       `SELECT COUNT(*) runs,
               (SELECT COUNT(*) FROM score s JOIN run r2 ON r2.id = s.run_id
-                WHERE COALESCE(r2.failure_kind, '') NOT IN (${notEvidence})) scored
+                WHERE COALESCE(r2.failure_kind, '') NOT IN (${notEvidence})
+                  AND r2.evidence_excluded IS NULL) scored,
+              (SELECT COUNT(*) FROM score s JOIN run r2 ON r2.id = s.run_id
+                WHERE r2.evidence_excluded IS NOT NULL) voided
          FROM run`,
-    ).get() as { runs: number; scored: number }
+    ).get() as { runs: number; scored: number; voided: number }
     // unscoredCount(), not runs - scored: that subtraction counts probes,
     // in-flight runs, failures and abandoned rows as debt, and reported 28
     // owing where `orch pending` — the command that tells you what to do about
     // it — reported none.
     const owed = unscoredCount()
-    console.log(`\nruns ${counts.runs}, scored ${counts.scored}, unscored ${owed}`)
+    console.log(`\nruns ${counts.runs}, scored ${counts.scored}, voided ${counts.voided}, unscored ${owed}`)
     const docker = dockerRunResources()
     const owners = db().query('SELECT id, repo, worktree, status FROM run').all() as {
       id: number; repo: string | null; worktree: string | null; status: string

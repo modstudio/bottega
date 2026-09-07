@@ -159,7 +159,7 @@ export const {
   JOBS, jobBoundInstructionForContract, resolveJobTimeoutMs, jobTimeoutCeilingMinutes,
   isReaderJob, READER_JOBS, JOB_TIMEOUTS,
 } = await import('../src/jobs.ts')
-export const { runDetail, state } = await import('../src/serve.ts')
+export const { runDetail, runList, state } = await import('../src/serve.ts')
 export const { classify, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOT_EVIDENCE, COOLS_DOWN, FAILS_OVER,
         isNonAnswer, detectBlockers } = await import('../src/failure.ts')
 export const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePaths, pruneRuns, KEEP_RUN_FILES_DAYS,

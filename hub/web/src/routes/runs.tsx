@@ -22,7 +22,7 @@ type RunsPayload = {
   servingSince: string
   activeAgents: string[]
   data: {
-    totals: { runs: number; scored: number; failed: number; stale_n: number }
+    totals: { runs: number; scored: number; voided?: number; failed: number; stale_n: number }
     vendors: { agent: string; tokens: number }[]; unscored: number
     facets: { agents: string[]; projects: string[] }; matched: number
     live: LiveRow[]; rows: RunRow[]
@@ -33,15 +33,19 @@ const compact = compactTokens
 const fmtMs = duration
 function Verdict({ row }: { row: RunRow }) {
   if (row.running) return <span className="inline-flex items-center gap-2 text-live"><LiveDot />running</span>
+  const exclusion = row.evidence_excluded
+    ? <p className="meta">Not routing evidence: {row.evidence_excluded}</p>
+    : null
   if (row.delivery) {
     const variant = row.quality === 'wrong' || row.delivery === 'none' ? 'danger'
       : row.quality === 'mixed' || row.delivery === 'partial' ? 'warning'
         : row.quality === 'right' || row.delivery === 'full' ? 'success'
           : 'outline'
-    return <Badge variant={variant}>{runVerdictText(row)}</Badge>
+    return <span><Badge variant={variant}>{runVerdictText(row)}</Badge>{exclusion}</span>
   }
-  if (row.status !== 'ok') return <Badge variant="danger">{row.status}</Badge>
-  if (row.probe) return <span className="text-muted-foreground">probe</span>
+  if (row.status !== 'ok') return <span><Badge variant="danger">{row.status}</Badge>{exclusion}</span>
+  if (row.probe) return <span><span className="text-muted-foreground">probe</span>{exclusion}</span>
+  if (exclusion) return exclusion
   return <Badge variant="outline">Unscored</Badge>
 }
 
@@ -68,6 +72,7 @@ function RunsList() {
     [data.totals.runs.toLocaleString(), 'runs', 'in this window'],
     [String(data.live.length), 'in flight', 'right now'],
     [data.totals.scored.toLocaleString(), 'scored', 'judged'],
+    [(data.totals.voided ?? 0).toLocaleString(), 'voided', 'not routing evidence'],
     [data.unscored.toLocaleString(), 'unscored', 'teaches the router nothing'],
     [data.totals.failed.toLocaleString(), 'failed', 'counts against the agent'],
     [vendorFigures(data.vendors), 'vendor tokens', 'per agent'],

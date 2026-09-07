@@ -68,6 +68,7 @@ export const OrchRunSchema = z.object({
   turns: z.array(OrchTurnSchema).optional(),
   questions: z.array(OrchQuestionSchema),
   launch_key: nullableString.optional(),
+  evidence_excluded: nullableString.optional(),
 }).passthrough().superRefine((run, context) => {
   const published = new Set((run.turns ?? []).map((turn) => turn.id))
   published.add(run.id)
@@ -127,6 +128,7 @@ export const OrchStateSchema = z.object({
   }).passthrough()),
   totals: z.object({
     runs: z.number(), failed: z.number(), stale_n: z.number(), toks: z.number(), scored: z.number(),
+    voided: z.number().optional(),
   }).passthrough(),
   unscored: z.number(),
   spawns: z.array(z.object({ decision: z.string(), why: z.string(), n: z.number() }).passthrough()),

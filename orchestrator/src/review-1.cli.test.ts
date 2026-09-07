@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, realpathSync, mkdirSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
-import { AGENTS, JOBS, MIN_REVIEW_TRIAGED, REVIEW_SCHEMA, VERIFY_CLAIM_SCHEMA, addRun, calibrationLine, cleanReviewEvidence, completeReview, contentTree, coverageAudit, db, dir, getReview, gradeReviewLens, hermeticGitEnv, listReviews, parseReviewReply, preflight, recordReview, recordReviews, removeProject, reviewCalibration, reviewCalibrationFleet, reviewReply, runJob, state, strictCodexSchema, triageFinding, upsertProject } from '../test/fixture.ts'
+import { AGENTS, JOBS, MIN_REVIEW_TRIAGED, REVIEW_SCHEMA, VERIFY_CLAIM_SCHEMA, addRun, calibrationLine, cleanReviewEvidence, completeReview, contentTree, coverageAudit, db, dir, getReview, gradeReviewLens, hermeticGitEnv, listReviews, parseReviewReply, preflight, recordReview, recordReviews, removeProject, reviewCalibration, reviewCalibrationFleet, reviewReply, runJob, score, state, strictCodexSchema, triageFinding, upsertProject } from '../test/fixture.ts'
 
 describe('review discipline', () => {
   test('clean review evidence must name work and intersect the measured change', () => {
@@ -610,6 +610,23 @@ describe('review discipline', () => {
       })
       expect(runGit('rev-parse', `refs/orch/reviewed/${runId}`)).toBe(commit)
     } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a completed review scored full right --void is not reviewer-precision evidence', () => {
+    const make = (voided: boolean) => {
+      const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'void-cal', lens: 'void-cal' })
+      const reviewId = recordReview(runId, reviewReply(1))
+      triageFinding(reviewId, 1, 'accepted')
+      completeReview(reviewId)
+      score(runId, 'full', 'right')
+      if (voided) {
+        db().query("UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?").run(runId)
+      }
+      return runId
+    }
+    make(false)
+    make(true)
+    expect(reviewCalibration('void-cal', 'codex', 'void-cal')).toMatchObject({ hits: 1, triaged: 1 })
   })
 
   test('precision counts accepted and modified as hits, rejects as misses, and skips nothing', () => {

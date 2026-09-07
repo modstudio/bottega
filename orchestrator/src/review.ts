@@ -742,7 +742,9 @@ function calibrationCell(
   const modelClause = model === undefined ? '' : 'AND rl.model IS ?'
   const reviews = database.query(
     `SELECT DISTINCT r.id FROM review r JOIN review_lens rl ON rl.review_id=r.id
+      JOIN run ON run.id=rl.run_id
       WHERE rl.lens=? AND rl.agent=? AND r.completed_at IS NOT NULL ${modelClause}
+        AND run.evidence_excluded IS NULL
         AND NOT EXISTS (SELECT 1 FROM score s WHERE s.run_id=rl.run_id AND s.delivery='none')
       ORDER BY r.completed_at DESC, r.id DESC LIMIT ?`,
   ).all(...(model === undefined ? [lens, agent, REVIEW_WINDOW] : [lens, agent, model, REVIEW_WINDOW])) as { id: number }[]

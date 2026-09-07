@@ -647,9 +647,12 @@ export function recordSessionSeen(sid: string | null = sessionId(), at = nowIso(
  * Scores were already mutable (`ON CONFLICT DO UPDATE`), so the fix is not to
  * allow re-scoring but to ASK for it: a verdict recorded before the chain's
  * latest turn finished is stale, and stale is a kind of unscored.
+ *
+ * A void closes the ledger whether or not a verdict was stored: excluded
+ * evidence is not an owed judgement.
  */
 export const UNSCORED_WHERE =
-  `r.status = 'ok' AND COALESCE(r.probe, 0) = 0 AND r.parent_run_id IS NULL
+  `r.status = 'ok' AND r.evidence_excluded IS NULL AND COALESCE(r.probe, 0) = 0 AND r.parent_run_id IS NULL
    AND COALESCE((SELECT c.status FROM run c WHERE c.parent_run_id = r.id
                   ORDER BY c.turn DESC LIMIT 1), r.status) <> 'running'
    AND (s.delivery IS NULL

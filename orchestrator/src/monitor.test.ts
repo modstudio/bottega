@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { NOT_EVIDENCE, PENDING_BOOTSTRAP_MS, STALE_AFTER_MS, addRun, candidates, db, nowIso, reapStale, score, state } from '../test/fixture.ts'
+import { NOT_EVIDENCE, PENDING_BOOTSTRAP_MS, STALE_AFTER_MS, addRun, candidates, db, nowIso, reapStale, runList, score, state } from '../test/fixture.ts'
 
 describe('reapStale', () => {
   test('a run older than the cutoff is untouched while its pid is alive', () => {
@@ -134,6 +134,30 @@ describe('the activity window', () => {
     score(interrupted, 'none')
 
     expect((state(null).totals as { scored: number }).scored).toBe(1)
+  })
+
+  test('a voided verdict is not scored routing evidence and is reported separately', () => {
+    score(agedRun(0, { agent: 'grok', job: 'craft' }), 'full', 'right')
+    const voided = agedRun(0, { agent: 'grok', job: 'craft' })
+    score(voided, 'full', 'right')
+    db().query("UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?").run(voided)
+
+    expect(state(null).totals as { scored: number; voided: number }).toEqual(
+      expect.objectContaining({ scored: 1, voided: 1 }),
+    )
+  })
+
+  test("a voided 'none' does not file under the plain none verdict filter", () => {
+    const plain = addRun({ agent: 'grok', job: 'craft' })
+    score(plain, 'none')
+    const voided = addRun({ agent: 'grok', job: 'craft' })
+    score(voided, 'none')
+    db().query("UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?").run(voided)
+
+    const none = runList(new URLSearchParams({ verdict: 'none' }))
+    const excluded = runList(new URLSearchParams({ verdict: 'excluded' }))
+    expect((none.rows as { id: number }[]).map((row) => row.id)).toEqual([plain])
+    expect((excluded.rows as { id: number }[]).map((row) => row.id)).toEqual([voided])
   })
 
   test('a fix can actually show up, which is the point of windowing at all', () => {

@@ -513,6 +513,7 @@ export async function view(name: View, hours: number,
         probe: !!r.probe,
         head: r.prompt_head,
         lens: promptLens(r.prompt_path),
+        evidence_excluded: r.evidence_excluded ?? null,
       }
     })
 
@@ -545,6 +546,7 @@ export async function view(name: View, hours: number,
       totals: {
         runs: st.totals.runs,
         scored: st.totals.scored,
+        voided: st.totals.voided ?? 0,
         failed: st.totals.failed,
         stale_n: st.totals.stale_n,
       },
