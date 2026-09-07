@@ -44,6 +44,10 @@ const NAME = new RegExp(`\\b${PLATFORM_NAME}\\b|\\b${PLATFORM_SLUG}\\b`, 'i')
 const leaks: string[] = []
 for (const rel of new Glob('**/*.{ts,tsx,js,mjs,json,py,sh}').scanSync({ cwd: ROOT })) {
   if (rel.includes('node_modules') || rel.startsWith('.git/') || rel.startsWith('hub/web/dist/')) continue
+  // Run artifacts are gitignored vendor output, not source: a sandboxed worker's
+  // session context quotes the canon that opens with the name. Policing them
+  // would keep this check red after every run and teach everyone to skip it.
+  if (rel.startsWith('orchestrator/runs/')) continue
   if (ALLOWED.has(rel)) continue
   // A lockfile records dependency names it did not choose.
   if (rel.endsWith('bun.lock') || rel.endsWith('package-lock.json')) continue
