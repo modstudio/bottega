@@ -290,8 +290,13 @@ describe('Drizzle migration journal', () => {
   })
 
   test('adoption names a rebuilt CHECK that the hash already includes', () => {
-    const d = fresh()
-    d.exec('DROP TABLE orch_migrations')
+    // A baseline-only store: adoption compares to journal entry 0, and a store
+    // built from the whole journal would list every later migration's CHECK as
+    // unexpected ahead of the one this test rebuilds.
+    const d = new Database(':memory:')
+    d.exec('PRAGMA foreign_keys=ON')
+    for (const statement of readFileSync(join(MIGRATIONS_FOLDER, `${migrationJournal()[0]!.tag}.sql`), 'utf8')
+      .split('--> statement-breakpoint')) if (statement.trim()) d.exec(statement)
     d.exec(`DROP TABLE session_seen;
       CREATE TABLE session_seen (
         session_id TEXT PRIMARY KEY,
