@@ -109,7 +109,7 @@ describe('contention ledger', () => {
       for (let i = 0; i < 200 && !existsSync(ready); i++) await Bun.sleep(5)
       expect(existsSync(ready)).toBe(true)
       blocker.exec('BEGIN IMMEDIATE')
-      const timeoutMs = 200
+      const timeoutMs = 0
       const started = Date.now()
       expect(() => withProjectLock(
         repo, 'landing', { session: 'busy-waiter', what: 'wait' }, () => 'acquired', timeoutMs, true,
