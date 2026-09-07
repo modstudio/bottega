@@ -37,14 +37,50 @@ const taskValueFlags = new Set([
   '--project', '--title', '--status', '--parent', '--body', '--body-file',
   '--allow-duplicate', '--role', '--version',
 ])
+const taskPositionalCounts = new Map([
+  ['new', 0],
+  ['duplicates', 0],
+  ['tracker-new', 0],
+  ['list', 0],
+  ['show', 1],
+  ['set', 1],
+  ['close', 1],
+  ['comment', 2],
+  ['import', 1],
+  ['doc new', 1],
+  ['doc list', 1],
+  ['doc show', 1],
+  ['doc set', 1],
+  ['doc rm', 1],
+  ['document new', 1],
+  ['document list', 1],
+  ['document show', 1],
+  ['document set', 1],
+  ['document rm', 1],
+])
+const isHelpToken = (token: string | undefined) =>
+  token === 'help' || token === '--help' || token === '-h'
 const taskHelpRequested = () => {
+  const verb = argv[1]
+  if (isHelpToken(verb)) return true
+  const hasAction = verb === 'doc' || verb === 'document'
+  const action = hasAction ? argv[2] : undefined
+  if (hasAction && isHelpToken(action)) return true
+  const command = hasAction ? `${verb} ${action}` : verb
+  const positionalStart = hasAction ? 3 : 2
+  const positionalCount = taskPositionalCounts.get(command ?? '') ?? 0
+  const positionals = argv.slice(positionalStart, positionalStart + positionalCount)
+  // A bare help token is help even where a positional is expected. Other
+  // dash-leading positional values are data and must not affect flag scanning.
+  if (positionals.some(isHelpToken)) return true
+
   let expectingValue = false
-  for (const token of argv.slice(1)) {
+  for (const token of argv.slice(positionalStart + positionalCount)) {
     if (expectingValue) {
       expectingValue = false
       continue
     }
-    if (token === 'help' || token === '--help' || token === '-h') return true
+    if (isHelpToken(token)) return true
     expectingValue = taskValueFlags.has(token)
   }
   return false

@@ -364,6 +364,54 @@ describe('task CLI help', () => {
     d.close()
   })
 
+  test('positional comment bodies named like flags do not hide trailing help', () => {
+    const helpDatabase = join(dir, 'comment-positional-help.db')
+    const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha',
+      '--title', 'Comment target')
+    expect(seed.exitCode).toBe(0)
+
+    const result = hubAt(helpDatabase, 'task', 'comment', seed.stdout, '--title', '--help')
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(result.stdout).toContain('hub task comment')
+
+    const d = new Database(helpDatabase, { readonly: true })
+    expect(d.query('SELECT count(*) AS count FROM task_comment').get()).toEqual({ count: 0 })
+    d.close()
+  })
+
+  test('a bare help token remains help when it occupies the comment body slot', () => {
+    const helpDatabase = join(dir, 'comment-bare-help.db')
+    const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha',
+      '--title', 'Bare help target')
+    expect(seed.exitCode).toBe(0)
+
+    const result = hubAt(helpDatabase, 'task', 'comment', seed.stdout, '--help')
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(result.stdout).toContain('hub task comment')
+
+    const d = new Database(helpDatabase, { readonly: true })
+    expect(d.query('SELECT count(*) AS count FROM task_comment').get()).toEqual({ count: 0 })
+    d.close()
+  })
+
+  test('positional import paths named like flags do not hide trailing help', () => {
+    const helpDatabase = join(dir, 'import-positional-help.db')
+    const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha',
+      '--title', 'Import count seed')
+    expect(seed.exitCode).toBe(0)
+
+    const result = hubAt(helpDatabase, 'task', 'import', '--title', '--help')
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(result.stdout).toContain('hub task import')
+
+    const d = new Database(helpDatabase, { readonly: true })
+    expect(d.query('SELECT count(*) AS count FROM task').get()).toEqual({ count: 1 })
+    d.close()
+  })
+
   test('flag-named title values expose trailing help before error-shaped parsing', () => {
     const helpDatabase = join(dir, 'flag-named-value-error-help.db')
     for (const valueFlag of ['--parent', '--status', '--body-file']) {
