@@ -115,8 +115,11 @@ export type CleanReviewEvidence =
   | { failure: null; note: string | null }
 
 export function normalizeCoveredPath(path: string): string {
-  const repositoryPath = path.trim().split(/[ \u2014]/, 1)[0] ?? ''
-  return repositoryPath.replace(/:\d+(?:-\d+)?$/, '').replace(/^\.\//, '')
+  const repositoryPath = path.trim()
+    .replace(/\s+(?:\u2014|-)\s+.+$/, '')
+    .trimEnd()
+    .replace(/:\d+(?:-\d+)?$/, '')
+  return repositoryPath.trim().replace(/^\.\//, '')
 }
 
 /** Classify the evidence on a findings:[] reply against the measured input tree. */

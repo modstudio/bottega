@@ -2621,8 +2621,12 @@ describe('review discipline', () => {
     const base = gg('rev-parse', 'HEAD')
     mkdirSync(join(repo, 'orchestrator', 'src'), { recursive: true })
     mkdirSync(join(repo, 'hub', 'src'), { recursive: true })
+    mkdirSync(join(repo, 'dir with space'), { recursive: true })
+    mkdirSync(join(repo, 'hyphenated-dir'), { recursive: true })
     writeFileSync(join(repo, 'orchestrator', 'src', 'x.ts'), 'changed\n')
     writeFileSync(join(repo, 'hub', 'src', 'x.ts'), 'also changed\n')
+    writeFileSync(join(repo, 'dir with space', 'file.ts'), 'spaced path\n')
+    writeFileSync(join(repo, 'hyphenated-dir', 'file-name.ts'), 'hyphenated path\n')
     gg('add', '.'); gg('commit', '-m', 'change')
     const tree = gg('rev-parse', 'HEAD^{tree}')
     upsertProject({ name: 'review-evidence-project', path: repo })
@@ -2637,14 +2641,20 @@ describe('review discipline', () => {
       })
 
       reply.provenance.commands_run = ['bun test']
-      for (const path of [
-        'orchestrator/src/x.ts', './orchestrator/src/x.ts', 'src/x.ts',
-        'orchestrator/src/x.ts:1-4 — inspected changed behavior',
-      ]) {
+      for (const [path, normalized] of ([
+        ['orchestrator/src/x.ts', 'orchestrator/src/x.ts'],
+        ['./orchestrator/src/x.ts', 'orchestrator/src/x.ts'],
+        ['src/x.ts', 'src/x.ts'],
+        ['orchestrator/src/x.ts:12', 'orchestrator/src/x.ts'],
+        ['orchestrator/src/x.ts:1-4 — inspected changed behavior', 'orchestrator/src/x.ts'],
+        ['orchestrator/src/x.ts - inspected changed behavior', 'orchestrator/src/x.ts'],
+        ['dir with space/file.ts:12 — inspected changed behavior', 'dir with space/file.ts'],
+        ['hyphenated-dir/file-name.ts:3-8 - inspected changed behavior', 'hyphenated-dir/file-name.ts'],
+      ] as const)) {
         reply.provenance.files_covered = [path]
         expect(cleanReviewEvidence(runId, reply)).toEqual({ failure: null, note: null })
+        expect(reply.provenance.files_covered).toEqual([normalized])
       }
-      expect(reply.provenance.files_covered).toEqual(['orchestrator/src/x.ts'])
 
       reply.provenance.files_covered = ['base.txt']
       expect(cleanReviewEvidence(runId, reply).failure).toContain('intersects none')
