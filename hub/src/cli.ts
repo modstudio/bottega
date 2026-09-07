@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { DB_PATH, db, migrateDatabase, nextImportedTaskKey, nowIso, requireDatabase } from './db.ts'
-import { BASELINE_SCHEMA_HASH, canonicalSchemaHash } from './migrations.ts'
+import { canonicalSchemaHash, expectedSchemaHash } from './migrations.ts'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { ingestRuns } from './ingest/runs.ts'
 import { ingestTranscripts } from './ingest/transcripts.ts'
@@ -472,7 +472,7 @@ switch (cmd) {
   }
   case 'doctor':
     console.log(`database       ${DB_PATH}`)
-    console.log(`schema hash    ${canonicalSchemaHash(db()) === BASELINE_SCHEMA_HASH ? 'match' : 'DRIFT'}`)
+    console.log(`schema hash    ${canonicalSchemaHash(db()) === expectedSchemaHash() ? 'match' : 'DRIFT'}`)
     break
   case 'collect':
     if (has('watch')) {

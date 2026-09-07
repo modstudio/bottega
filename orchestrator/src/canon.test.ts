@@ -34,6 +34,7 @@ describe('Drizzle migration journal', () => {
   test('the baseline hash remains the first migration while a fresh store includes later migrations', () => {
     const d = fresh()
     expect(BASELINE_SCHEMA_HASH).toBe(baselineSchemaHash())
+    expect(BASELINE_SCHEMA_HASH).toBe('d1e24ee1a94d0783dc00aab771997283bdcb58322bb784b6f375eb1bae982991')
     const comparison = fresh()
     expect(canonicalSchemaHash(d)).toBe(canonicalSchemaHash(comparison))
     expect(canonicalSchemaHash(d)).not.toBe(BASELINE_SCHEMA_HASH)
@@ -225,6 +226,66 @@ describe('Drizzle migration journal', () => {
     expect(d.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='adopted_followup'").get())
       .toBeDefined()
     d.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('a stray trigger refuses adoption and doctor reports DRIFT', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orch-stray-trigger-'))
+    const path = join(dir, 'adopt.db')
+    const d = new Database(path)
+    applyMigrations(d)
+    d.exec(`CREATE TRIGGER project_shadow AFTER INSERT ON project BEGIN SELECT 1; END`)
+    d.exec('DROP TABLE orch_migrations')
+    expect(() => applyMigrations(d)).toThrow('refusing to adopt migration baseline')
+    try {
+      applyMigrations(d)
+    } catch (error) {
+      const message = String(error)
+      expect(message).toContain('unexpected triggers:')
+      expect(message).toContain('project_shadow')
+      expect(message).not.toContain('unexpected triggers: none')
+    }
+    d.close()
+    const doctorPath = join(dir, 'doctor.db')
+    const doctorStore = new Database(doctorPath)
+    applyMigrations(doctorStore)
+    doctorStore.exec(`CREATE TRIGGER project_shadow AFTER INSERT ON project BEGIN SELECT 1; END`)
+    doctorStore.close()
+    const doctor = Bun.spawnSync([process.execPath, join(import.meta.dir, 'cli.ts'), 'doctor'], {
+      env: { ...process.env, ORCH_DB: doctorPath, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(doctor.exitCode, doctor.stderr.toString()).toBe(0)
+    expect(doctor.stdout.toString()).toContain('schema hash    DRIFT')
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('a stray view refuses adoption and doctor reports DRIFT', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orch-stray-view-'))
+    const path = join(dir, 'adopt.db')
+    const d = new Database(path)
+    applyMigrations(d)
+    d.exec(`CREATE VIEW project_names AS SELECT name FROM project`)
+    d.exec('DROP TABLE orch_migrations')
+    expect(() => applyMigrations(d)).toThrow('refusing to adopt migration baseline')
+    try {
+      applyMigrations(d)
+    } catch (error) {
+      const message = String(error)
+      expect(message).toContain('unexpected views:')
+      expect(message).toContain('project_names')
+      expect(message).not.toContain('unexpected views: none')
+    }
+    d.close()
+    const doctorPath = join(dir, 'doctor.db')
+    const doctorStore = new Database(doctorPath)
+    applyMigrations(doctorStore)
+    doctorStore.exec(`CREATE VIEW project_names AS SELECT name FROM project`)
+    doctorStore.close()
+    const doctor = Bun.spawnSync([process.execPath, join(import.meta.dir, 'cli.ts'), 'doctor'], {
+      env: { ...process.env, ORCH_DB: doctorPath, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(doctor.exitCode, doctor.stderr.toString()).toBe(0)
+    expect(doctor.stdout.toString()).toContain('schema hash    DRIFT')
     rmSync(dir, { recursive: true, force: true })
   })
 

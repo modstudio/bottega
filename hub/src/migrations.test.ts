@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { mainCheckoutOf } from '../../shared/git.ts'
 import {
   applyMigrations, BASELINE_SCHEMA_HASH, baselineSchemaHash, canonicalSchemaHash,
-  migrationJournal, migrationRefusal, MIGRATIONS_FOLDER,
+  expectedSchemaHash, migrationJournal, migrationRefusal, MIGRATIONS_FOLDER,
 } from './migrations.ts'
 
 const fresh = () => {
@@ -41,6 +41,8 @@ describe('hub migration journal', () => {
     const d = fresh()
     expect(canonicalSchemaHash(d)).toBe(BASELINE_SCHEMA_HASH)
     expect(BASELINE_SCHEMA_HASH).toBe(baselineSchemaHash())
+    expect(BASELINE_SCHEMA_HASH).toBe('903a8d96fe8c2b5f7edd253f2f85cc6b1dc66d1537b3a94b8cef5f2fb81ddfff')
+    expect(expectedSchemaHash()).toBe(BASELINE_SCHEMA_HASH)
     d.close()
   })
 
@@ -156,5 +158,110 @@ describe('hub migration journal', () => {
     expect(d.query("SELECT 1 FROM sqlite_master WHERE name='adopted_followup'").get()).toBeDefined()
     d.close()
     rmSync(folder, { recursive: true, force: true })
+  })
+
+  test('a stray trigger refuses adoption and doctor reports DRIFT', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hub-stray-trigger-'))
+    const path = join(dir, 'adopt.db')
+    const d = new Database(path)
+    applyMigrations(d)
+    d.exec(`CREATE TRIGGER setting_shadow AFTER INSERT ON setting BEGIN SELECT 1; END`)
+    d.exec('DROP TABLE hub_migrations')
+    expect(() => applyMigrations(d)).toThrow('refusing to adopt migration baseline')
+    try {
+      applyMigrations(d)
+    } catch (error) {
+      const message = String(error)
+      expect(message).toContain('unexpected triggers:')
+      expect(message).toContain('setting_shadow')
+      expect(message).not.toContain('unexpected triggers: none')
+    }
+    d.close()
+    const doctorPath = join(dir, 'doctor.db')
+    const doctorStore = new Database(doctorPath)
+    applyMigrations(doctorStore)
+    doctorStore.exec(`CREATE TRIGGER setting_shadow AFTER INSERT ON setting BEGIN SELECT 1; END`)
+    doctorStore.close()
+    const doctor = hub(doctorPath, 'doctor')
+    expect(doctor.exitCode, doctor.stderr.toString()).toBe(0)
+    expect(doctor.stdout.toString()).toContain('schema hash    DRIFT')
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('a stray view refuses adoption and doctor reports DRIFT', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hub-stray-view-'))
+    const path = join(dir, 'adopt.db')
+    const d = new Database(path)
+    applyMigrations(d)
+    d.exec(`CREATE VIEW setting_names AS SELECT key FROM setting`)
+    d.exec('DROP TABLE hub_migrations')
+    expect(() => applyMigrations(d)).toThrow('refusing to adopt migration baseline')
+    try {
+      applyMigrations(d)
+    } catch (error) {
+      const message = String(error)
+      expect(message).toContain('unexpected views:')
+      expect(message).toContain('setting_names')
+      expect(message).not.toContain('unexpected views: none')
+    }
+    d.close()
+    const doctorPath = join(dir, 'doctor.db')
+    const doctorStore = new Database(doctorPath)
+    applyMigrations(doctorStore)
+    doctorStore.exec(`CREATE VIEW setting_names AS SELECT key FROM setting`)
+    doctorStore.close()
+    const doctor = hub(doctorPath, 'doctor')
+    expect(doctor.exitCode, doctor.stderr.toString()).toBe(0)
+    expect(doctor.stdout.toString()).toContain('schema hash    DRIFT')
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('doctor matches the full journal, a stray column drifts, and legacy adoption still matches entry 0', () => {
+    const folder = mkdtempSync(join(tmpdir(), 'hub-expected-hash-'))
+    mkdirSync(join(folder, 'meta'))
+    const baseline = migrationJournal()[0]!
+    copyFileSync(join(MIGRATIONS_FOLDER, `${baseline.tag}.sql`), join(folder, `${baseline.tag}.sql`))
+    writeFileSync(join(folder, '0001_extra.sql'), 'CREATE TABLE extra (id INTEGER PRIMARY KEY);\n')
+    writeFileSync(join(folder, 'meta', '_journal.json'), JSON.stringify({
+      version: '7', dialect: 'sqlite', entries: [
+        { ...baseline, version: '6', breakpoints: true },
+        { idx: 1, version: '6', when: baseline.when + 1, tag: '0001_extra', breakpoints: true },
+      ],
+    }))
+    const d = new Database(':memory:')
+    d.exec('PRAGMA foreign_keys = ON')
+    applyMigrations(d, folder)
+    expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash(folder))
+    expect(canonicalSchemaHash(d)).not.toBe(BASELINE_SCHEMA_HASH)
+    d.exec('ALTER TABLE extra ADD COLUMN x TEXT')
+    expect(canonicalSchemaHash(d)).not.toBe(expectedSchemaHash(folder))
+    d.close()
+
+    const legacy = fresh()
+    legacy.exec('DROP TABLE hub_migrations')
+    expect(applyMigrations(legacy)).toEqual(['0000_hub_baseline'])
+    expect(canonicalSchemaHash(legacy)).toBe(BASELINE_SCHEMA_HASH)
+    legacy.close()
+    rmSync(folder, { recursive: true, force: true })
+  })
+
+  test('adoption names a rebuilt CHECK that the hash already includes', () => {
+    const d = fresh()
+    d.exec('DROP TABLE hub_migrations')
+    d.exec(`DROP TABLE seq;
+      CREATE TABLE seq (
+        name TEXT PRIMARY KEY,
+        next INTEGER NOT NULL,
+        CHECK (next > 0)
+      )`)
+    expect(() => applyMigrations(d)).toThrow('refusing to adopt migration baseline')
+    try {
+      applyMigrations(d)
+    } catch (error) {
+      const message = String(error)
+      expect(message).toContain('unexpected checks: check seq next>0')
+      expect(message).toContain('missing checks: none')
+    }
+    d.close()
   })
 })

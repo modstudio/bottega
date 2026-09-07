@@ -39,12 +39,16 @@ type IndexShape = {
   columns: string
   indexSql: string | null
 }
+type ViewShape = { name: string; sql: string | null }
+type TriggerShape = { name: string; table: string; sql: string | null }
 type SchemaInventory = {
   tables: string[]
   columns: ColumnShape[]
   foreignKeys: ForeignKeyShape[]
   indexes: IndexShape[]
   checks: { table: string; expression: string }[]
+  views: ViewShape[]
+  triggers: TriggerShape[]
 }
 
 export function migrationJournal(folder = MIGRATIONS_FOLDER): JournalEntry[] {
@@ -209,10 +213,23 @@ function schemaInventory(d: Database): SchemaInventory {
     }
     for (const expression of checkExpressions(table.sql)) checks.push({ table: table.name, expression })
   }
+  const views = (d.query(
+    `SELECT name, sql FROM sqlite_master WHERE type='view' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
+  ).all() as { name: string; sql: string | null }[]).map((row) => ({
+    name: row.name,
+    sql: row.sql == null ? null : normalizeExpression(normalizeSql(withoutSqlComments(row.sql))),
+  }))
+  const triggers = (d.query(
+    `SELECT name, tbl_name, sql FROM sqlite_master
+     WHERE type='trigger' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
+  ).all() as { name: string; tbl_name: string; sql: string | null }[]).map((row) => ({
+    name: row.name, table: row.tbl_name,
+    sql: row.sql == null ? null : normalizeExpression(normalizeSql(withoutSqlComments(row.sql))),
+  }))
   foreignKeys.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
   indexes.sort((a, b) => a.table.localeCompare(b.table) || a.name.localeCompare(b.name))
   checks.sort((a, b) => a.table.localeCompare(b.table) || a.expression.localeCompare(b.expression))
-  return { tables, columns, foreignKeys, indexes, checks }
+  return { tables, columns, foreignKeys, indexes, checks, views, triggers }
 }
 
 function inventoryLines(inventory: SchemaInventory): string[] {
@@ -223,6 +240,8 @@ function inventoryLines(inventory: SchemaInventory): string[] {
     ...inventory.foreignKeys.map((row) => `foreign-key ${JSON.stringify(row)}`),
     ...inventory.indexes.map((row) => `index ${JSON.stringify(row)}`),
     ...inventory.checks.map((row) => `check ${row.table} ${row.expression}`),
+    ...inventory.views.map((row) => `view ${row.name} ${row.sql ?? 'NULL'}`),
+    ...inventory.triggers.map((row) => `trigger ${row.table}.${row.name} ${row.sql ?? 'NULL'}`),
   ]
 }
 
@@ -249,6 +268,25 @@ export function baselineSchemaHash(folder = MIGRATIONS_FOLDER): string {
 
 export const BASELINE_SCHEMA_HASH = baselineSchemaHash()
 
+const expectedHashByFolder = new Map<string, string>()
+
+/** Structural hash of the store after every journal entry, cached per process. */
+export function expectedSchemaHash(folder = MIGRATIONS_FOLDER): string {
+  const cached = expectedHashByFolder.get(folder)
+  if (cached) return cached
+  const d = new Database(':memory:')
+  try {
+    for (const entry of migrationJournal(folder)) {
+      executeMigrationSource(d, migrationSource(entry, folder))
+    }
+    const hash = canonicalSchemaHash(d)
+    expectedHashByFolder.set(folder, hash)
+    return hash
+  } finally {
+    d.close()
+  }
+}
+
 function shape(values: string[]): string[] {
   return [...values].sort()
 }
@@ -263,6 +301,18 @@ function inventoryDiff(actual: SchemaInventory, expected: SchemaInventory): stri
   const indexKey = (row: IndexShape) => `${row.table}.${row.name} ${JSON.stringify(row)}`
   const actualIndexes = shape(actual.indexes.map(indexKey))
   const expectedIndexes = shape(expected.indexes.map(indexKey))
+  const checkKey = (row: { table: string; expression: string }) => `check ${row.table} ${row.expression}`
+  const actualChecks = shape(actual.checks.map(checkKey))
+  const expectedChecks = shape(expected.checks.map(checkKey))
+  const foreignKeyKey = (row: ForeignKeyShape) => `foreign-key ${JSON.stringify(row)}`
+  const actualForeignKeys = shape(actual.foreignKeys.map(foreignKeyKey))
+  const expectedForeignKeys = shape(expected.foreignKeys.map(foreignKeyKey))
+  const viewKey = (row: ViewShape) => `view ${row.name} ${row.sql ?? 'NULL'}`
+  const actualViews = shape(actual.views.map(viewKey))
+  const expectedViews = shape(expected.views.map(viewKey))
+  const triggerKey = (row: TriggerShape) => `trigger ${row.table}.${row.name} ${row.sql ?? 'NULL'}`
+  const actualTriggers = shape(actual.triggers.map(triggerKey))
+  const expectedTriggers = shape(expected.triggers.map(triggerKey))
   const difference = (left: string[], right: string[]) => left.filter((value) => !right.includes(value))
   return [
     `missing tables: ${difference(expectedTables, actualTables).join(', ') || 'none'}`,
@@ -271,6 +321,14 @@ function inventoryDiff(actual: SchemaInventory, expected: SchemaInventory): stri
     `unexpected columns: ${difference(actualColumns, expectedColumns).join(', ') || 'none'}`,
     `missing indexes: ${difference(expectedIndexes, actualIndexes).join(', ') || 'none'}`,
     `unexpected indexes: ${difference(actualIndexes, expectedIndexes).join(', ') || 'none'}`,
+    `missing checks: ${difference(expectedChecks, actualChecks).join(', ') || 'none'}`,
+    `unexpected checks: ${difference(actualChecks, expectedChecks).join(', ') || 'none'}`,
+    `missing foreign-keys: ${difference(expectedForeignKeys, actualForeignKeys).join(', ') || 'none'}`,
+    `unexpected foreign-keys: ${difference(actualForeignKeys, expectedForeignKeys).join(', ') || 'none'}`,
+    `missing views: ${difference(expectedViews, actualViews).join(', ') || 'none'}`,
+    `unexpected views: ${difference(actualViews, expectedViews).join(', ') || 'none'}`,
+    `missing triggers: ${difference(expectedTriggers, actualTriggers).join(', ') || 'none'}`,
+    `unexpected triggers: ${difference(actualTriggers, expectedTriggers).join(', ') || 'none'}`,
   ].join('\n')
 }
 
@@ -301,10 +359,10 @@ function recordMigration(d: Database, entry: JournalEntry, folder: string): void
 
 function adoptBaseline(d: Database, folder: string): string[] {
   if (tableExists(d, MIGRATIONS_TABLE)) return []
-  const applicationTables = (d.query(
-    "SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
-  ).get() as { n: number }).n
-  if (applicationTables === 0) return []
+  const applicationObjects = (d.query(
+    "SELECT COUNT(*) AS n FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND name<>?",
+  ).get(MIGRATIONS_TABLE) as { n: number }).n
+  if (applicationObjects === 0) return []
   const actualInventory = schemaInventory(d)
   const expectedInventory = baselineInventory(folder)
   const storedHash = canonicalSchemaHash(d)
