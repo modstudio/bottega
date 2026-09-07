@@ -674,17 +674,10 @@ setInterval(() => {}, 1_000)
     process.env.ORCH_DEPTH = '0'
     try {
       grok.bin = script
-      Object.defineProperty(grok, 'timeoutMs', {
-        configurable: true,
-        get: () => {
-          // The loaded reproduction took 598 ms. Three times that measured
-          // worst case guards only against a hung child; readiness decides pass.
-          const deadline = Date.now() + 3 * 598
-          while (!existsSync(ready) && Date.now() < deadline) Bun.sleepSync(5)
-          if (!existsSync(ready)) throw new Error('read-only agent did not become ready')
-          return 1
-        },
-      })
+      // The job bound is now compiled into the prompt before launch. Keep this
+      // fixture's forced wall kill declarative instead of making timeoutMs a
+      // readiness barrier whose getter cannot be read until after launch.
+      grok.timeoutMs = 3 * 598
       const result = await run({
         job: 'file-question', prompt: 'where is the implementation?', cwd: dir,
         agent: 'grok', noFailover: true,
