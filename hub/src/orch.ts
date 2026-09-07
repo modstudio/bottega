@@ -242,6 +242,10 @@ export type OrchAgentDefinition = {
 export const jobs = () => jsonDocument<OrchJob[]>(['jobs', '--json'])
 export const agents = () => jsonDocument<OrchAgentDefinition[]>(['agents', '--json'])
 
+/** Dispatch a curator like any other read-only run; its output remains the run record. */
+export const dispatchNoteCurator = (cwd: string, prompt: string): Promise<string> =>
+  orchProcess(['do', 'understand', '--cwd', cwd], 0, { stdin: prompt })
+
 export const run = (id: number): Promise<OrchRunDetail> =>
   json(['run', String(id)], OrchRunDetailSchema)
 export const runDetail = run

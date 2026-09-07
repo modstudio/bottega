@@ -25,6 +25,10 @@ import { printReconcile, reconcileOpenIntervals } from './reconcile.ts'
 import { listOpenRulings, rulingsPayload } from './rulings.ts'
 import { startDashboardCapability } from './orch.ts'
 import { hoursAgo } from './time.ts'
+import {
+  createNote, curateNotes, curatorEnabled, dropNote, listNotes, mergeNote, promoteNote,
+  setCuratorEnabled, staleNotes,
+} from './note.ts'
 
 const argv = process.argv.slice(2)
 const cmd = argv[0]
@@ -128,6 +132,15 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and the 
       --json                  one JSON document: {stale_after, questions}
 
   ${TASK_USAGE}
+
+  hub note "<text>" [--same-as ID|--new] [--area AREA]
+  hub note list [--project X] [--stale] [--json]
+  hub note same <ID> <ID>
+  hub note promote <ID>
+  hub note drop <ID> --reason "..."
+  hub note stale              mark vanished anchors and reap eligible notes
+  hub note curate [--scheduled]
+  hub note curator [--enable|--disable]
 
   hub send [--dry-run]        the daily report; --dry-run prints it instead
       --test                  send the real thing, but only to the test address,
@@ -446,6 +459,77 @@ async function task() {
   throw new Error('hub task <new|list|show|set|close|comment|import>')
 }
 
+async function note() {
+  const sub = argv[1]
+  if (sub === 'list') {
+    const rows = listNotes({ project: flag('project'), stale: has('stale') })
+    if (has('json')) console.log(JSON.stringify(rows))
+    else if (!rows.length) console.log('no notes')
+    else for (const row of rows) {
+      console.log(`${String(row.id).padEnd(5)} ${row.project.padEnd(12)} x${row.sightings}  ${row.text}`)
+    }
+    return
+  }
+  if (sub === 'same') {
+    const row = mergeNote(argv[2] ?? '', argv[3] ?? '')
+    console.log(`note ${row.id} now has ${row.sightings} sightings`)
+    return
+  }
+  if (sub === 'promote') {
+    const row = promoteNote(argv[2] ?? '')
+    console.log(`${row.promoted_task}`)
+    return
+  }
+  if (sub === 'drop') {
+    const reason = flag('reason')
+    if (!reason) throw new Error('hub note drop <id> --reason "..."')
+    const row = dropNote(argv[2] ?? '', reason)
+    console.log(`note ${row.id} dropped: ${row.stale_reason}`)
+    return
+  }
+  if (sub === 'stale') {
+    const result = await staleNotes()
+    for (const row of result.reasons) console.log(`note ${row.id}: ${row.reason}`)
+    console.log(`${result.marked} marked stale; ${result.deleted} deleted`)
+    return
+  }
+  if (sub === 'curate') {
+    const results = await curateNotes(has('scheduled'))
+    if (has('scheduled') && !curatorEnabled()) { console.log('note curator is disabled'); return }
+    for (const result of results) console.log(`${result.project}: ${result.result}`)
+    return
+  }
+  if (sub === 'curator') {
+    if (has('enable') === has('disable')) {
+      console.log(`note curator is ${curatorEnabled() ? 'enabled' : 'disabled'}`)
+      return
+    }
+    console.log(`note curator ${setCuratorEnabled(has('enable')) ? 'enabled' : 'disabled'}`)
+    return
+  }
+
+  const text = sub ?? ''
+  const same = flag('same-as')
+  let result = createNote({ text, area: flag('area'), sameAs: same ? Number(same) : undefined, forceNew: has('new') })
+  if (!result.note) {
+    const lines = result.candidates.map((candidate) =>
+      `${candidate.id} score ${candidate.score.toFixed(3)}  ${candidate.text}`)
+    if (!process.stdin.isTTY) {
+      throw new Error(`possible duplicate notes:\n${lines.join('\n')}\nPass --same-as <id> or --new.`)
+    }
+    console.log(`possible duplicate notes:\n${lines.join('\n')}`)
+    const answer = prompt("Enter a note id for the same finding, or 'new':")?.trim() ?? ''
+    result = /^\d+$/.test(answer)
+      ? createNote({ text, area: flag('area'), sameAs: Number(answer) })
+      : answer === 'new' ? createNote({ text, area: flag('area'), forceNew: true }) : result
+    if (!result.note) throw new Error('note not filed')
+  }
+  for (const candidate of result.candidates) {
+    console.log(`near ${candidate.id} score ${candidate.score.toFixed(3)}  ${candidate.text}`)
+  }
+  console.log(`note ${result.note.id} filed; ${result.note.sightings} sighting${result.note.sightings === 1 ? '' : 's'}`)
+}
+
 async function sendReport() {
   const r = getReport()
   const hours = Number(flag('hours') ?? r.windowHours)
@@ -521,7 +605,7 @@ try {
 
 const usesDatabase = cmd === 'collect' || cmd === 'tasks' || cmd === 'serve'
   || cmd === 'task' || cmd === 'send' || cmd === 'reconcile' || cmd === 'rulings'
-  || cmd === 'doctor'
+  || cmd === 'doctor' || cmd === 'note'
 if (usesDatabase && !(cmd === 'task' && taskHelpRequested())) requireDatabase()
 
 switch (cmd) {
@@ -576,6 +660,7 @@ switch (cmd) {
     break
   }
   case 'task': await task(); break
+  case 'note': await note(); break
   case 'send': await sendReport(); break
   case undefined:
   case 'help':

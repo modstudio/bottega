@@ -1,5 +1,5 @@
 import { createRootRoute, Link, Outlet } from '@tanstack/react-router'
-import { Activity, Bot, BookOpen, BriefcaseBusiness, CheckCircle2, CircleDollarSign, FolderGit2, GitCompareArrows, Kanban, Palette, Plane, Play, Route as RouteIcon, Settings } from 'lucide-react'
+import { Activity, Bot, BookOpen, BriefcaseBusiness, CheckCircle2, CircleDollarSign, FolderGit2, GitCompareArrows, Kanban, NotebookPen, Palette, Plane, Play, Route as RouteIcon, Settings } from 'lucide-react'
 import { PLATFORM_NAME } from '../../../../shared/brand.ts'
 import { useWindowState } from '@/lib/window'
 import { LiveDot } from '@/components/design-system'
@@ -10,6 +10,7 @@ const nav = [
   { to: '/done', label: 'Done', icon: CheckCircle2, count: 'done' },
   { to: '/projects', label: 'Projects', icon: FolderGit2 },
   { to: '/docs', label: 'Docs', icon: BookOpen },
+  { to: '/notes', label: 'Notes', icon: NotebookPen },
   { to: '/runs', label: 'Runs', icon: Play, count: 'runs' },
   { to: '/jobs', label: 'Jobs', icon: BriefcaseBusiness },
   { to: '/agents', label: 'Agents', icon: Bot },

@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync, realpathSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
@@ -626,6 +626,52 @@ describe('scoped operator docs', () => {
       await client.close()
       await server.close()
     }
+  })
+
+  test('MCP note refuses outside a registered project', async () => {
+    const server = createDocsMcpServer()
+    const client = new Client({ name: 'orch-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+    try {
+      const filed = await client.callTool({ name: 'note', arguments: { text: 'outside', new: true } })
+      expect(filed.isError).toBe(true)
+      expect(((filed as any).content[0] as { text: string }).text).toContain('no registered project contains')
+    } finally {
+      await client.close()
+      await server.close()
+    }
+  })
+
+  test('orch note files through hub with cwd and session anchors', () => {
+    mkdirSync(join(dir, 'note-project'), { recursive: true })
+    const cwd = realpathSync(join(dir, 'note-project'))
+    upsertProject({ name: 'note-project', path: cwd, stack: 'typescript', canon: true,
+      settings: { keyPrefixes: ['NTE'], trunk: 'main' } })
+    const hubDb = join(dir, 'note-cli-hub.db')
+    migrateHub(hubDb)
+    const filed = Bun.spawnSync([
+      process.execPath, new URL('./cli.ts', import.meta.url).pathname,
+      'note', 'CLI suggestion', '--new',
+    ], {
+      cwd,
+      env: { ...process.env, HUB_DB: hubDb, ORCH_DB: process.env.ORCH_DB!,
+        HUB_ORCH: new URL('../../bin/orch', import.meta.url).pathname,
+        CLAUDE_CODE_SESSION_ID: 'note-cli-session' },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(filed.exitCode, filed.stderr.toString()).toBe(0)
+    expect(filed.stdout.toString()).toContain('note ')
+    const listed = Bun.spawnSync([process.execPath, hubCli, 'note', 'list', '--project', 'note-project', '--json'], {
+      cwd, env: { ...process.env, HUB_DB: hubDb, ORCH_DB: process.env.ORCH_DB!,
+        HUB_ORCH: new URL('../../bin/orch', import.meta.url).pathname },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(listed.exitCode, listed.stderr.toString()).toBe(0)
+    const notes = JSON.parse(listed.stdout.toString())
+    expect(notes[0]).toMatchObject({ project: 'note-project', text: 'CLI suggestion' })
+    expect(notes[0].anchors[0]).toMatchObject({ cwd, session_id: 'note-cli-session' })
   })
 
   test('MCP file_issue refuses a defect missing reproduce_command with an actionable message', async () => {

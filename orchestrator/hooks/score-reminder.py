@@ -9,11 +9,27 @@ unscored runs before it finishes.
 Only runs THIS session made are raised. Nobody else can judge them: nobody else
 read the output.
 """
-import json, os, sqlite3, sys
+import json, os, sqlite3, subprocess, sys
 
 DB = os.environ.get("ORCH_DB") or os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "orch.db"
 )
+
+
+def hub_db():
+    if os.environ.get("HUB_DB"):
+        return os.environ["HUB_DB"]
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+    try:
+        common = subprocess.run(
+            ["git", "-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            capture_output=True, text=True, timeout=2, check=True,
+        ).stdout.strip()
+        if common:
+            root = os.path.dirname(common)
+    except Exception:
+        pass
+    return os.path.join(root, "hub", "hub.db")
 
 
 def main() -> int:
@@ -133,7 +149,23 @@ def main() -> int:
     except sqlite3.Error:
         return 0  # never block a session because of a database problem
 
-    if not rows and not pairs:
+    notes = []
+    note_store = hub_db()
+    if os.path.exists(note_store):
+        try:
+            hub = sqlite3.connect(f"file:{note_store}?mode=ro", uri=True, timeout=2)
+            notes = hub.execute(
+                """SELECT DISTINCT n.id, n.project, n.text
+                     FROM note n, json_each(n.anchors) sighting
+                    WHERE json_extract(sighting.value, '$.session_id') = ?
+                    ORDER BY n.id""",
+                (sid,),
+            ).fetchall()
+            hub.close()
+        except sqlite3.Error:
+            notes = []
+
+    if not rows and not pairs and not notes:
         return 0
 
     # A writing job takes a THIRD axis, and printing the two-axis form for one
@@ -194,13 +226,21 @@ def main() -> int:
         for partner, agent, reason in run_pairs:
             lines.append(f"    comparable to run {partner} ({agent}): {reason}")
     con.close()
+    if notes:
+        if lines:
+            lines.append("")
+        lines.append(f"{len(notes)} notes filed; keep, drop or promote with hub note:")
+        for note_id, project, note_text in notes:
+            lines.append(f"  {note_id}  {project}  {note_text[:80]}")
     if rows:
         intro = (
             f"{len(rows)} delegated run{'s' if len(rows) > 1 else ''} from this session "
             f"{'have' if len(rows) > 1 else 'has'} not been scored:"
         )
-    else:
+    elif pairs:
         intro = f"{len(pairs)} scored pair{'s' if len(pairs) > 1 else ''} await comparison:"
+    else:
+        intro = f"{len(notes)} note{'s' if len(notes) > 1 else ''} filed in this session:"
     guidance = ""
     if rows:
         guidance += (

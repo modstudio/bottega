@@ -7,6 +7,7 @@ import { workRouter } from './routers/work.ts'
 import { insightRouter } from './routers/insight.ts'
 import { settingsRouter } from './routers/settings.ts'
 import { catalogRouter } from './routers/catalog.ts'
+import { noteRouter } from './routers/note.ts'
 
 const t = initTRPC.context<Context>().create()
 
@@ -18,6 +19,7 @@ export const appRouter = t.router({
   insight: insightRouter,
   settings: settingsRouter,
   catalog: catalogRouter,
+  note: noteRouter,
 })
 
 export type AppRouter = typeof appRouter

@@ -1434,6 +1434,8 @@ function usage(): never {
   orch issue <TASK-KEY>         reproduce, diagnose, fix and independently verify one filed issue
 
   orch contract <job>          print the preamble prepended to that job's prompt
+  orch note "<text>" [--same-as ID|--new]
+                                file a cwd-bound suggestion through hub
 
   orch score <run-id> <none|partial|full> [wrong|mixed|right] [--note "..."|--note-file PATH]
       delivery first (did an answer arrive), then quality (was it right).
@@ -2621,6 +2623,16 @@ switch (cmd) {
     if (!key) throw new Error('orch issue <TASK-KEY>')
     const { workIssue } = await import('./issue.ts')
     await workIssue(key.toUpperCase())
+    break
+  }
+
+  case 'note': {
+    const noteText = argv[1]
+    if (!noteText?.trim()) throw new Error('orch note <text> [--same-as ID|--new]')
+    const { fileNote } = await import('./mcp.ts')
+    const same = flag('same-as')
+    const result = await fileNote({ text: noteText, ...(same ? { same_as: Number(same) } : {}), new: has('new') }, false)
+    console.log(result.output)
     break
   }
 

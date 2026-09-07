@@ -56,5 +56,5 @@ done
 
 echo
 echo "Active agents:"
-launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|orch-sweep|orch-monitor|orch-canon-eval' \
+launchctl list | grep -E 'brew-auto-upgrade|projects-morning-refresh|local-model-tunnel|orch-sweep|orch-monitor|orch-canon-eval|hub-note-maintenance' \
   || echo "  (none found)"

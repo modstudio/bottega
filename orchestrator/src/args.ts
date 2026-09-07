@@ -261,6 +261,9 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       shape: shape('orch migrate [--backfill-spec-sha]', 0, [], ['--backfill-spec-sha']),
     }
     case 'issue': return { args: argv.slice(1), shape: shape('orch issue <TASK-KEY>', 1) }
+    case 'note': return { args: argv.slice(1), shape: shape(
+      'orch note <text> [--same-as ID|--new]', 1, ['--same-as'], ['--new'],
+    ) }
     case 'land': return { args: argv.slice(1), shape: shape(
       'orch land <branch|run-id> [--message TEXT] [--file PATH] [--unreviewed REASON] | orch land --status',
       hasArg(argv, '--status') ? 0 : 1,

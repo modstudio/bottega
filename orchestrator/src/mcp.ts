@@ -60,9 +60,9 @@ export type DuplicateCandidate = {
   score: number
 }
 
-async function hubOutput(args: string[]): Promise<string> {
+async function hubOutput(args: string[], cwd = process.cwd()): Promise<string> {
   const child = Bun.spawn([HUB, ...args], {
-    env: { ...process.env }, stdout: 'pipe', stderr: 'pipe',
+    cwd, env: { ...process.env }, stdout: 'pipe', stderr: 'pipe',
   })
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(child.stdout).text(),
@@ -73,6 +73,23 @@ async function hubOutput(args: string[]): Promise<string> {
     throw new Error(stderr.trim() || stdout.trim() || `hub exited ${exitCode}`)
   }
   return stdout
+}
+
+export async function fileNote(input: { text: string; same_as?: number; new?: boolean }, requireChoice = true) {
+  if (input.same_as && input.new) throw new Error('same_as and new are mutually exclusive')
+  if (requireChoice && !input.same_as && !input.new) throw new Error('non-interactive note filing requires same_as or new')
+  let cwd = process.cwd()
+  const runId = Number(process.env.ORCH_RUN_ID ?? 0)
+  const token = process.env.ORCH_RUN_TOKEN ?? ''
+  if (runId > 0 && strictlyAuthenticatedWorkerRun(runId, token)) {
+    const worker = db().query<{ launch_cwd: string | null }, [number]>(
+      'SELECT launch_cwd FROM run WHERE id=?',
+    ).get(runId)
+    if (worker?.launch_cwd) cwd = worker.launch_cwd
+  }
+  if (!projectAt(cwd)) throw new Error(`cannot file note: no registered project contains ${cwd}`)
+  const args = ['note', input.text, ...(input.same_as ? ['--same-as', String(input.same_as)] : ['--new'])]
+  return { output: (await hubOutput(args, cwd)).trim() }
 }
 
 async function searchDuplicateIssues(title: string): Promise<
@@ -494,6 +511,15 @@ export function createDocsMcpServer(): McpServer {
       : { kind }
     return text(await fileIssue(issue, reporter, input.reporting_project))
   })
+
+  server.registerTool('note', {
+    description: 'File one suggestion-box note for the project containing the calling cwd.',
+    inputSchema: {
+      text: z.string().trim().min(1),
+      same_as: z.number().int().positive().optional(),
+      new: z.boolean().optional(),
+    },
+  }, async (input) => text(await fileNote(input)))
 
   return server
 }

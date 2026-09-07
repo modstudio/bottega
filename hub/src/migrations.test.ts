@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { mainCheckoutOf } from '../../shared/git.ts'
@@ -13,6 +13,16 @@ const fresh = () => {
   const d = new Database(':memory:')
   d.exec('PRAGMA foreign_keys = ON')
   applyMigrations(d)
+  return d
+}
+
+const baselineFresh = () => {
+  const d = new Database(':memory:')
+  d.exec('PRAGMA foreign_keys = ON')
+  const baseline = migrationJournal()[0]!
+  for (const statement of readFileSync(join(MIGRATIONS_FOLDER, `${baseline.tag}.sql`), 'utf8').split('--> statement-breakpoint')) {
+    if (statement.trim()) d.exec(statement)
+  }
   return d
 }
 
@@ -39,10 +49,10 @@ function copyLiveHub(dest: string): void {
 describe('hub migration journal', () => {
   test('fresh migrations equal trunk schema by structural hash', () => {
     const d = fresh()
-    expect(canonicalSchemaHash(d)).toBe(BASELINE_SCHEMA_HASH)
+    expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     expect(BASELINE_SCHEMA_HASH).toBe(baselineSchemaHash())
     expect(BASELINE_SCHEMA_HASH).toBe('903a8d96fe8c2b5f7edd253f2f85cc6b1dc66d1537b3a94b8cef5f2fb81ddfff')
-    expect(expectedSchemaHash()).toBe(BASELINE_SCHEMA_HASH)
+    expect(expectedSchemaHash()).toBe('a5f77cc39d19dc1a18469a0ab9d87c1a21344bb2ddb4382618109401d28b7958')
     d.close()
   })
 
@@ -77,14 +87,13 @@ describe('hub migration journal', () => {
   })
 
   test('a matching pre-journal store adopts 0000 without rebuilding its schema', () => {
-    const d = fresh()
-    d.exec('DROP TABLE hub_migrations')
+    const d = baselineFresh()
     const before = d.query(
       "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY type,name",
     ).all()
-    expect(applyMigrations(d)).toEqual(['0000_hub_baseline'])
+    expect(applyMigrations(d)).toEqual(['0000_hub_baseline', '0001_note'])
     const after = d.query(
-      "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name<>'hub_migrations' ORDER BY type,name",
+      "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name NOT IN ('hub_migrations','note','note_project_seen') ORDER BY type,name",
     ).all()
     expect(after).toEqual(before)
     d.close()
@@ -99,17 +108,19 @@ describe('hub migration journal', () => {
     // test must not depend on (it failed the first landing after hub migrate
     // ran on this machine). Make the copy legacy by removing the journal table.
     const probe = new Database(copy)
+    probe.exec("DROP TABLE IF EXISTS note; DELETE FROM setting WHERE key='note.curator.enabled'")
     probe.exec('DROP TABLE IF EXISTS hub_migrations')
     expect(probe.query("SELECT 1 FROM sqlite_master WHERE name='hub_migrations'").get()).toBeNull()
     probe.close()
     const migrated = hub(copy, 'migrate')
     expect(migrated.exitCode, migrated.stderr.toString()).toBe(0)
     expect(migrated.stdout.toString()).toContain('applied 0000_hub_baseline')
+    expect(migrated.stdout.toString()).toContain('applied 0001_note')
     const doctor = hub(copy, 'doctor')
     expect(doctor.exitCode, doctor.stderr.toString()).toBe(0)
     expect(doctor.stdout.toString()).toContain('schema hash    match')
     const d = new Database(copy)
-    expect(canonicalSchemaHash(d)).toBe(BASELINE_SCHEMA_HASH)
+    expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     d.close()
     rmSync(dir, { recursive: true, force: true })
   })
@@ -157,8 +168,7 @@ describe('hub migration journal', () => {
           tag: '0001_after_adoption', breakpoints: true },
       ],
     }))
-    const d = fresh()
-    d.exec('DROP TABLE hub_migrations')
+    const d = baselineFresh()
     expect(applyMigrations(d, folder)).toEqual([baseline.tag, '0001_after_adoption'])
     expect(d.query("SELECT 1 FROM sqlite_master WHERE name='adopted_followup'").get()).toBeDefined()
     d.close()
@@ -242,17 +252,15 @@ describe('hub migration journal', () => {
     expect(canonicalSchemaHash(d)).not.toBe(expectedSchemaHash(folder))
     d.close()
 
-    const legacy = fresh()
-    legacy.exec('DROP TABLE hub_migrations')
-    expect(applyMigrations(legacy)).toEqual(['0000_hub_baseline'])
-    expect(canonicalSchemaHash(legacy)).toBe(BASELINE_SCHEMA_HASH)
+    const legacy = baselineFresh()
+    expect(applyMigrations(legacy)).toEqual(['0000_hub_baseline', '0001_note'])
+    expect(canonicalSchemaHash(legacy)).toBe(expectedSchemaHash())
     legacy.close()
     rmSync(folder, { recursive: true, force: true })
   })
 
   test('adoption names a rebuilt CHECK that the hash already includes', () => {
-    const d = fresh()
-    d.exec('DROP TABLE hub_migrations')
+    const d = baselineFresh()
     d.exec(`DROP TABLE seq;
       CREATE TABLE seq (
         name TEXT PRIMARY KEY,
@@ -275,8 +283,7 @@ describe('hub migration journal', () => {
       'foreign-key {"table":"task_comment","id":0,"sequence":0,"targetTable":"task","from":"task_key","to":"key","onUpdate":"no action","onDelete":"cascade","match":"none"}'
     const unexpected =
       'foreign-key {"table":"task_comment","id":0,"sequence":0,"targetTable":"task","from":"task_key","to":"key","onUpdate":"no action","onDelete":"set null","match":"none"}'
-    const d = fresh()
-    d.exec('DROP TABLE hub_migrations')
+    const d = baselineFresh()
     d.exec(`DROP TABLE task_comment;
       CREATE TABLE task_comment (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
