@@ -129,7 +129,12 @@ export type ShardRunResult = {
   output: string
   files: string[]
   flaky?: boolean
+  flakyLine?: string
   question?: string
+}
+
+export function formatFlakyLine(name: string): string {
+  return `FLAKY ${name} passed after a named-signal failure`
 }
 
 export function timeoutMsForSize(size: TestSize): number {
@@ -241,6 +246,7 @@ export async function runWithRetry(opts: {
       exitCode: 0,
       output: second.output,
       flaky: true,
+      flakyLine: formatFlakyLine(opts.name),
     }
   }
   return { name: opts.name, files: opts.files, exitCode: second.exitCode, output: second.output }

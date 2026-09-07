@@ -1,10 +1,14 @@
 import { describe, expect, test } from 'bun:test'
 import { db } from '../test/fixture.ts'
 import {
+  DOCKER_INVENTORY_TIMEOUT_BY_SIZE,
+  ELAPSED_ASSERTION_MS,
+  TIMEOUT_MS,
   dockerInventoryTimeoutForSize,
   elapsedAssertionMs,
   elapsedLockTimeoutMs,
   failingTests,
+  formatFlakyLine,
   namedFailureSignal,
   recordTestFlake,
   runWithRetry,
@@ -19,20 +23,21 @@ import {
 describe('test size classes', () => {
   test('a size-class change moves a bound', () => {
     const files: Record<string, FilePolicy> = { 'src/a.cli.test.ts': { size: 'short' } }
-    expect(timeoutMsForSize('short')).toBe(30_000)
-    expect(timeoutMsForSize('moderate')).toBe(120_000)
-    expect(timeoutMsForSize('long')).toBe(600_000)
-    expect(shardTimeoutMs(files, ['src/a.cli.test.ts'])).toBe(30_000)
-    expect(dockerInventoryTimeoutForSize(files['src/a.cli.test.ts']!.size)).toBe(1_000)
-    expect(elapsedAssertionMs(files['src/a.cli.test.ts']!.size)).toBe(50)
-    expect(elapsedLockTimeoutMs('short')).toBe(250)
+    expect(timeoutMsForSize('short')).toBe(TIMEOUT_MS.short)
+    expect(timeoutMsForSize('moderate')).toBe(TIMEOUT_MS.moderate)
+    expect(timeoutMsForSize('long')).toBe(TIMEOUT_MS.long)
+    expect(shardTimeoutMs(files, ['src/a.cli.test.ts'])).toBe(TIMEOUT_MS.short)
+    expect(dockerInventoryTimeoutForSize(files['src/a.cli.test.ts']!.size))
+      .toBe(DOCKER_INVENTORY_TIMEOUT_BY_SIZE.short)
+    expect(elapsedAssertionMs(files['src/a.cli.test.ts']!.size)).toBe(ELAPSED_ASSERTION_MS.short)
+    expect(elapsedLockTimeoutMs('short')).toBe(ELAPSED_ASSERTION_MS.short * 5)
     files['src/a.cli.test.ts'] = { size: 'moderate' }
-    expect(shardTimeoutMs(files, ['src/a.cli.test.ts'])).toBe(120_000)
-    expect(dockerInventoryTimeoutForSize('moderate')).toBe(4_000)
-    expect(elapsedAssertionMs('moderate')).toBe(200)
-    expect(elapsedLockTimeoutMs('moderate')).toBe(1_000)
-    expect(dockerInventoryTimeoutForSize('long')).toBe(20_000)
-    expect(elapsedAssertionMs('long')).toBe(1_000)
+    expect(shardTimeoutMs(files, ['src/a.cli.test.ts'])).toBe(TIMEOUT_MS.moderate)
+    expect(dockerInventoryTimeoutForSize('moderate')).toBe(DOCKER_INVENTORY_TIMEOUT_BY_SIZE.moderate)
+    expect(elapsedAssertionMs('moderate')).toBe(ELAPSED_ASSERTION_MS.moderate)
+    expect(elapsedLockTimeoutMs('moderate')).toBe(ELAPSED_ASSERTION_MS.moderate * 5)
+    expect(dockerInventoryTimeoutForSize('long')).toBe(DOCKER_INVENTORY_TIMEOUT_BY_SIZE.long)
+    expect(elapsedAssertionMs('long')).toBe(ELAPSED_ASSERTION_MS.long)
   })
 
   test('parseShardMap names the file and the invalid entry', () => {
@@ -103,6 +108,8 @@ describe('named-signal retry', () => {
     expect(calls.n).toBe(2)
     expect(result.exitCode).toBe(0)
     expect(result.flaky).toBe(true)
+    expect(result.flakyLine).toBe(formatFlakyLine('shard 1'))
+    expect(result.flakyLine).toBe('FLAKY shard 1 passed after a named-signal failure')
     expect(flakes).toEqual([{
       file: 'src/a.cli.test.ts', test: 'landing binds confinement', signal: 'exit-143',
     }])
@@ -127,6 +134,7 @@ describe('named-signal retry', () => {
     expect(calls.n).toBe(1)
     expect(result.exitCode).toBe(1)
     expect(result.flaky).toBeUndefined()
+    expect(result.flakyLine).toBeUndefined()
     expect(flakes).toEqual([])
   })
 

@@ -119,7 +119,7 @@ await withGateSlot(async () => {
       },
     })
     if (result.question) console.error(result.question)
-    if (result.flaky) console.error(`FLAKY ${name} passed after a named-signal failure`)
+    if (result.flakyLine) console.error(result.flakyLine)
     return result
   }))
 
