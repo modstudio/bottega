@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { HarnessHealthSchema } from './orch-contract.ts'
+import { HarnessHealthSchema, OrchStateSchema } from './orch-contract.ts'
 
 test('harness health has one validated cross-concern payload contract', () => {
   const payload = {
@@ -16,4 +16,48 @@ test('harness health has one validated cross-concern payload contract', () => {
   }
   expect(HarnessHealthSchema.parse(payload)).toEqual(payload)
   expect(() => HarnessHealthSchema.parse({ ...payload, landingRefusals: '0' })).toThrow()
+})
+
+test('orch state accepts a constructed cooling string and caps.contextTokens number or null', () => {
+  const payload = {
+    live: [],
+    stale: 0,
+    matrix: [],
+    guide: [],
+    health: [
+      {
+        agent: 'grok', billing: 'subscription', cooling: 'quota 51m ago',
+        lastStatus: 'failed', lastKind: 'quota', minsAgo: 51,
+      },
+      {
+        agent: 'codex', billing: 'subscription', cooling: null,
+        lastStatus: 'ok', lastKind: null, minsAgo: 3,
+      },
+    ],
+    totals: { runs: 0, failed: 0, stale_n: 0, toks: 0, scored: 0 },
+    unscored: 0,
+    spawns: [],
+    agents: [
+      {
+        name: 'local-acp', billing: 'local',
+        caps: {
+          readsRepo: true, mcp: true, discoversMcpFromCwd: false, schema: false,
+          writesRepo: false, resumable: false, contextTokens: 131072,
+        },
+      },
+      {
+        name: 'agy', billing: 'subscription',
+        caps: {
+          readsRepo: false, mcp: false, discoversMcpFromCwd: false, schema: true,
+          writesRepo: false, resumable: false, contextTokens: null,
+        },
+      },
+    ],
+    byRepo: [],
+  }
+  const parsed = OrchStateSchema.parse(payload)
+  expect(parsed.health[0]!.cooling).toBe('quota 51m ago')
+  expect(parsed.health[1]!.cooling).toBeNull()
+  expect(parsed.agents[0]!.caps.contextTokens).toBe(131072)
+  expect(parsed.agents[1]!.caps.contextTokens).toBeNull()
 })

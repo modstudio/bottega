@@ -122,7 +122,7 @@ export const OrchStateSchema = z.object({
     provisional: z.boolean().optional(),
   }).passthrough()),
   health: z.array(z.object({
-    agent: z.string(), billing: z.string(), cooling: nullableNumber,
+    agent: z.string(), billing: z.string(), cooling: nullableString,
     lastStatus: nullableString, lastKind: nullableString, minsAgo: nullableNumber,
   }).passthrough()),
   totals: z.object({
@@ -131,7 +131,8 @@ export const OrchStateSchema = z.object({
   unscored: z.number(),
   spawns: z.array(z.object({ decision: z.string(), why: z.string(), n: z.number() }).passthrough()),
   agents: z.array(z.object({
-    name: z.string(), billing: z.string(), caps: z.record(z.string(), z.boolean()),
+    name: z.string(), billing: z.string(),
+    caps: z.object({ contextTokens: z.number().nullable().optional() }).catchall(z.boolean()),
   }).passthrough()),
   byRepo: z.array(z.object({
     repo: z.string(), agent: z.string(), runs: z.number(), toks: z.number(),
