@@ -1,5 +1,12 @@
 import { Database } from 'bun:sqlite'
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, setDefaultTimeout, test } from 'bun:test'
+
+// Six of these tests spawn the orch CLI and apply the whole migration journal
+// to scratch stores; each grew past bun's 5 s default as the journal gained
+// entries (0001, 0002) and the inventory widened, and they timed out in a
+// landing gate on 2026-09-07. The bound is sized to that work, like the CLI
+// leg's; it is not a hidden widening.
+setDefaultTimeout(30_000)
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
