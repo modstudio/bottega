@@ -2822,6 +2822,15 @@ export async function run(opts: {
       status = 'failed'
       error = `no reply within ${Math.round(boundMs / 60_000)}m; ${name} was killed`
       failureKind = 'timeout'
+    } else if (exitCode === 0 && (
+      hasVendorTerminationMarker(stdout) || hasVendorTerminationMarker(stderr)
+    )) {
+      // The marker is a fact about the raw stream. parseReply strips it from
+      // grok NDJSON, and replyError / isNonAnswer would stamp `other` on what
+      // remains — which counts as routing evidence. truncated does not.
+      status = 'failed'
+      error = errorTail(hasVendorTerminationMarker(stdout) ? stdout : stderr)
+      failureKind = 'truncated'
     } else if (replyError) {
       status = 'failed'
       error = errorTail(replyError)
@@ -2899,16 +2908,11 @@ export async function run(opts: {
         failureKind = 'other'
       }
     } else {
-      const vendorTerminated = exitCode === 0 && hasVendorTerminationMarker(output)
-      status = exitCode === 0 && output && !vendorTerminated ? 'ok' : 'failed'
+      status = exitCode === 0 && output ? 'ok' : 'failed'
       error = status === 'failed'
-        ? errorTail(vendorTerminated
-          ? output
-          : stderr.trim() || stdout.trim() || `exit ${exitCode}, empty output`)
+        ? errorTail(stderr.trim() || stdout.trim() || `exit ${exitCode}, empty output`)
         : null
-      failureKind = vendorTerminated
-        ? 'truncated'
-        : status === 'failed'
+      failureKind = status === 'failed'
         ? classify(error, exitCode, timedOut, sandboxSelection.sandbox)
         : null
     }

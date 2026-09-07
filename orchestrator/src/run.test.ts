@@ -754,11 +754,11 @@ setInterval(() => {}, 1_000)
 })
 
 describe('vendor termination markers', () => {
-  test('an exit-0 trailing marker is failed and excluded from routing evidence', async () => {
-    const script = join(dir, 'DEV-361-terminated-agent.ts')
-    writeFileSync(script, `#!/usr/bin/env bun
-process.stdout.write('I will inspect the requested files first.\\n[API Error: terminated]\\n')
-`)
+  const grokStream = (...lines: string[]) => `${lines.join('\n')}\n`
+
+  async function withGrokBin<T>(output: string, fn: () => Promise<T>): Promise<T> {
+    const script = join(dir, `DEV-361-agent-${Bun.hash(output).toString(16)}.ts`)
+    writeFileSync(script, `#!/usr/bin/env bun\nprocess.stdout.write(${JSON.stringify(output)})\n`)
     chmodSync(script, 0o755)
     const grok = AGENTS.grok!
     const previousBin = grok.bin
@@ -766,6 +766,31 @@ process.stdout.write('I will inspect the requested files first.\\n[API Error: te
     process.env.ORCH_DEPTH = '0'
     try {
       grok.bin = script
+      return await fn()
+    } finally {
+      grok.bin = previousBin
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  }
+
+  test.each([
+    ['NDJSON result plus trailing marker', grokStream(
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'a' }),
+      JSON.stringify({ type: 'result', result: 'I inspected the files.' }),
+      '[API Error: terminated]',
+    )],
+    ['NDJSON with trailing marker and no result', grokStream(
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'b' }),
+      '[API Error: terminated]',
+    )],
+    ['output that is only the marker', '[API Error: terminated]\n'],
+    ['plain text followed by the marker', grokStream(
+      'I will inspect the requested files first.',
+      '[API Error: terminated]',
+    )],
+  ])('records failed/truncated for %s', async (_case, output) => {
+    await withGrokBin(output, async () => {
       const reserved = addRun({ agent: '(pending)', job: 'file-question', status: 'running' })
       await expect(run({
         job: 'file-question', prompt: 'inspect this', cwd: dir,
@@ -780,27 +805,22 @@ process.stdout.write('I will inspect the requested files first.\\n[API Error: te
       })
       expect(candidates('file-question').find((candidate) => candidate.agent === 'grok'))
         .toMatchObject({ evidence: 0 })
-    } finally {
-      grok.bin = previousBin
-      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-      else process.env.ORCH_DEPTH = priorDepth
-    }
+    })
   })
 
   test.each([
     ['ordinary output', 'The requested handler returns the stored result after validation.'],
     ['API error mentioned in prose', 'The handler swallows [API Error: terminated] instead of returning it.'],
     ['short clean output', 'Done.'],
+    ['marker quoted inside a JSON string', grokStream(
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'quoted' }),
+      JSON.stringify({
+        type: 'result',
+        result: 'The handler swallows [API Error: terminated] instead of returning it.',
+      }),
+    )],
   ])('keeps exit-0 %s successful', async (_case, output) => {
-    const script = join(dir, 'DEV-361-clean-agent.ts')
-    writeFileSync(script, `#!/usr/bin/env bun\nprocess.stdout.write(${JSON.stringify(output)})\n`)
-    chmodSync(script, 0o755)
-    const grok = AGENTS.grok!
-    const previousBin = grok.bin
-    const priorDepth = process.env.ORCH_DEPTH
-    process.env.ORCH_DEPTH = '0'
-    try {
-      grok.bin = script
+    await withGrokBin(output, async () => {
       const result = await run({
         job: 'file-question', prompt: 'answer this', cwd: dir,
         agent: 'grok', noFailover: true,
@@ -810,11 +830,7 @@ process.stdout.write('I will inspect the requested files first.\\n[API Error: te
       ).get(result.id)).toEqual({
         status: 'ok', failure_kind: null, error: null, exit_code: 0,
       })
-    } finally {
-      grok.bin = previousBin
-      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
-      else process.env.ORCH_DEPTH = priorDepth
-    }
+    })
   })
 })
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { AGENTS, BETA_SCALE, COOLS_DOWN, FAILS_OVER, MIN_REVIEW_TRIAGED, MIN_SAMPLE, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOISE_BAND, NOT_EVIDENCE, POSTERIOR_NOISE_BAND, QUALITY_STEP, STANDING_EXPLORE_RATE, UNSCORED_WHERE, WEIGHT, addRun, candidates, classify, completeReview, currentPolicySelection, db, evidenceFor, label, median, nowIso, pendingForSession, pick, recordReview, reviewReply, score, scoreboard, triageFinding, unscoredCount, weigh, weightCase } from '../test/fixture.ts'
+import { resolveFailover } from './collect.ts'
 
 describe('failure classification', () => {
   test('contract failures fail over as scoreable none evidence without cooldown or notification', () => {
@@ -79,13 +80,31 @@ describe('failure classification', () => {
     expect(classify(licenseFailure)).toBe('entitlement')
     expect(classify('The vendor returned #3501')).not.toBe('entitlement')
     expect(classify('Agent execution terminated due to error.')).not.toBe('entitlement')
+    expect(classify('add a FailureKind entitlement for a vendor refusing to serve')).toBe('other')
+    expect(classify('there is no seat at the table for this concern')).toBe('other')
+    expect(classify('not a valid license identifier')).toBe('other')
+    expect(classify('permission was denied due to missing entitlement')).toBe('denied')
+    expect(classify(
+      'This content was flagged for possible cybersecurity risk regarding entitlement bypass',
+    )).toBe('content_refusal')
     expect(NOT_EVIDENCE).toContain('entitlement')
     expect(FAILS_OVER).toContain('entitlement')
     expect(COOLS_DOWN).toContain('entitlement')
     // Entitlement is ordered before auth because real licensing text can also
     // suggest signing in. Neither existing classification may drift as a result.
-    expect(classify('HTTP 429: rate limit exceeded')).toBe('quota')
+    expect(classify('HTTP 429: rate limit exceeded; request a license')).toBe('quota')
     expect(classify('please sign in')).toBe('auth')
+  })
+
+  test('an in-flight entitlement failover is settling, matching auth', () => {
+    const settle = (kind: string) => {
+      const id = addRun({ agent: 'codex', job: 'file-question', status: 'failed', kind })
+      db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, id)
+      return resolveFailover(db(), id).settling
+    }
+    expect(settle('auth')).toBe(true)
+    expect(settle('entitlement')).toBe(true)
+    expect(settle('unevidenced')).toBe(true)
   })
 
   test('confinement failures need a human but are not agent evidence or failover', () => {

@@ -112,7 +112,7 @@ const PATTERNS: [FailureKind, RegExp][] = [
   ['quota', /\b(402|429|quota|usage limit|rate.?limit|too many requests|out of (?:credit|tokens)|insufficient (?:credit|quota|balance)|balance (?:exhausted|depleted)|exceeded your|plan limit|monthly limit|upgrade your plan)\b/i],
   // Licensing text can also tell the user to sign in again, so entitlement must
   // win before `auth`. Match the licensing vocabulary, never a bare error code.
-  ['entitlement', /\b(valid licen[cs]e|not licen[cs]ed|request a licen[cs]e|no seat|entitlement)\b/i],
+  ['entitlement', /\b(have a valid licen[cs]e|not licen[cs]ed|request a licen[cs]e)\b/i],
   // The login is stale. Waiting does not fix it; re-authenticating does.
   ['auth', /\b(401|403|unauthori[sz]ed|forbidden|not (?:logged in|authenticated)|invalid (?:api )?key|expired token|please (?:log|sign) in|re-?authenticate)\b/i],
   /**

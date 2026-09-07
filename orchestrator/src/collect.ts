@@ -1,6 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { FAILS_OVER } from './failure.ts'
 import { failureReason, outcomeOf } from './outcome.ts'
 import type { ObservedDeadRun } from './db.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES, visibleTranscriptText } from './result-output.ts'
@@ -82,8 +83,7 @@ export function resolveFailover(database: Database, requestedId: number): {
     try { process.kill(pending.pid, 0); workerAlive = true } catch { /* terminal worker */ }
   }
   const settling = last.status === 'failed' &&
-    (last.failure_kind === 'quota' || last.failure_kind === 'auth' ||
-      last.failure_kind === 'content_refusal' || last.failure_kind === 'contract') &&
+    last.failure_kind != null && (FAILS_OVER as readonly string[]).includes(last.failure_kind) &&
     !pending.no_failover && !last.error?.includes('Failover refused:') && workerAlive
   return { requestedId, attempts, finalId: last.id, settling }
 }
