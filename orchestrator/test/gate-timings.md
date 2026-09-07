@@ -280,3 +280,15 @@ Two concurrent `bun run test:gate` (pair 1 of a planned three):
 | b | 513.1 (pair wall) | 1 | shard 1: `a killed holder is reclaimed, and another project never waits on it` — `expect(Date.now() - started).toBeLessThan(50)` received **92**. `withProjectLock` on the other project returned `ok`. Not a named signal; no retry. |
 
 Pairs 2 and 3 were not started.
+
+### Round 2, after the size-class bound (23f792f)
+
+Three consecutive concurrent `bun run test:gate` pairs on this branch, all green on both gates. Pairs 1 and 2 ran as orphans after the worker's turn was killed at the 45-minute wall; pair 3 was run by the architect's session. Logs: `/tmp/orch-375-gates/round2-pair{1,2,3}-{a,b}.log`, each showing all five legs and shard 1 `Ran 251 tests across 6 files`, 0 fail.
+
+| pair | gate a exit | gate b exit | shard 1 wall s (a / b) |
+|---:|---:|---:|---|
+| 1 | 0 | 0 | 132.7 / 132.3 |
+| 2 | 0 | 0 | 136.4 / 136.0 |
+| 3 | 0 | 0 | pair wall 145 |
+
+The round-1 miss (`a killed holder is reclaimed, and another project never waits on it`, 92 ms against a 50 ms bound) did not recur once the bound read from the size class.
