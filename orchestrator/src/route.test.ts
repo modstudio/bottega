@@ -69,6 +69,25 @@ describe('failure classification', () => {
     ])
   })
 
+  test('a missing product entitlement fails over, cools down and is not agent evidence', () => {
+    const licenseFailure = JSON.stringify({
+      status: 'ERROR',
+      response: '',
+      error: 'You do not have a valid license of this product. Please contact your administrator to request a license. If you are not an enterprise user and believe you are receiving this message as an error, please try using the latest version and logging in again. (#3501)',
+    })
+
+    expect(classify(licenseFailure)).toBe('entitlement')
+    expect(classify('The vendor returned #3501')).not.toBe('entitlement')
+    expect(classify('Agent execution terminated due to error.')).not.toBe('entitlement')
+    expect(NOT_EVIDENCE).toContain('entitlement')
+    expect(FAILS_OVER).toContain('entitlement')
+    expect(COOLS_DOWN).toContain('entitlement')
+    // Entitlement is ordered before auth because real licensing text can also
+    // suggest signing in. Neither existing classification may drift as a result.
+    expect(classify('HTTP 429: rate limit exceeded')).toBe('quota')
+    expect(classify('please sign in')).toBe('auth')
+  })
+
   test('confinement failures need a human but are not agent evidence or failover', () => {
     for (const kind of ['escaped', 'confinement_unverified'] as const) {
       expect(NEEDS_HUMAN).toContain(kind)
@@ -99,7 +118,7 @@ describe('failure classification', () => {
     // process tree, and orch itself being wrong are not capability evidence.
     // None of them may be averaged in with the agent's actual work.
     expect(NOT_EVIDENCE).toEqual([
-      'quota', 'auth', 'unreachable', 'content_refusal', 'interrupted', 'truncated', 'escaped',
+      'quota', 'auth', 'entitlement', 'unreachable', 'content_refusal', 'interrupted', 'truncated', 'escaped',
       'confinement_unverified', 'sandbox_denied', 'harness', 'abandoned',
     ])
     for (const kind of ['timeout', 'denied', 'other']) {
@@ -144,7 +163,7 @@ describe('failure classification', () => {
     // costs the whole recovery window.
     expect(NEEDS_HUMAN).toContain('unreachable')
     expect(COOLS_DOWN).not.toContain('unreachable')
-    expect(COOLS_DOWN).toEqual(['quota', 'auth'])
+    expect(COOLS_DOWN).toEqual(['quota', 'auth', 'entitlement'])
   })
 
   test('a peer that reset stays a timeout — it answered before it stopped', () => {

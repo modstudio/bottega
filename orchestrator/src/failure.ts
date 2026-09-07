@@ -13,7 +13,13 @@
  */
 /** Runtime vocabulary as well as a type: reporting must show zeroes for new kinds. */
 export const FAILURE_KINDS = [
-  'quota', 'auth', 'unreachable', 'timeout', 'denied', 'content_refusal',
+  'quota', 'auth',
+  /**
+   * The vendor will not serve this account for the product. Neither waiting nor
+   * re-authenticating fixes it; an administrator has to grant the entitlement.
+   */
+  'entitlement',
+  'unreachable', 'timeout', 'denied', 'content_refusal',
   'interrupted',
   /** The vendor exhausted its reply budget before emitting a result. */
   'truncated',
@@ -101,6 +107,9 @@ const PATTERNS: [FailureKind, RegExp][] = [
   ['harness', /Invalid schema for response_format/i],
   // The plan is out. Distinct from `auth` because waiting fixes it.
   ['quota', /\b(402|429|quota|usage limit|rate.?limit|too many requests|out of (?:credit|tokens)|insufficient (?:credit|quota|balance)|balance (?:exhausted|depleted)|exceeded your|plan limit|monthly limit|upgrade your plan)\b/i],
+  // Licensing text can also tell the user to sign in again, so entitlement must
+  // win before `auth`. Match the licensing vocabulary, never a bare error code.
+  ['entitlement', /\b(valid licen[cs]e|not licen[cs]ed|request a licen[cs]e|no seat|entitlement)\b/i],
   // The login is stale. Waiting does not fix it; re-authenticating does.
   ['auth', /\b(401|403|unauthori[sz]ed|forbidden|not (?:logged in|authenticated)|invalid (?:api )?key|expired token|please (?:log|sign) in|re-?authenticate)\b/i],
   /**
@@ -238,8 +247,8 @@ export const NEEDS_HUMAN_TITLE: Record<string, (agent: string) => string> = {
  *
  * NOT the same list as NEEDS_HUMAN, and the difference is the whole point: a
  * cooldown is for a condition that CANNOT BE OBSERVED WITHOUT SPENDING A RUN.
- * Quota and stale auth announce themselves only by failing, so the only way to
- * stop paying for the discovery is to stop asking for an hour.
+ * Quota, stale auth and missing entitlement announce themselves only by failing,
+ * so the only way to stop paying for the discovery is to stop asking for an hour.
  *
  * Reachability is the opposite. It is measured directly, before every routing
  * decision, for the price of one HTTP call to a socket on this machine — so a
@@ -248,11 +257,11 @@ export const NEEDS_HUMAN_TITLE: Record<string, (agent: string) => string> = {
  * serving again stayed out of routing for the rest of the hour, which defeats
  * the point of waking it at all.
  */
-export const COOLS_DOWN: FailureKind[] = ['quota', 'auth']
+export const COOLS_DOWN: FailureKind[] = ['quota', 'auth', 'entitlement']
 
 /** Failures where another vendor should receive the same prompt immediately. */
 export const FAILS_OVER: FailureKind[] = [
-  'quota', 'auth', 'content_refusal', 'contract', 'unevidenced',
+  'quota', 'auth', 'entitlement', 'content_refusal', 'contract', 'unevidenced',
 ]
 
 /**
@@ -273,7 +282,7 @@ export const FAILS_OVER: FailureKind[] = [
  * `unreachable` was carved out to stop.
  */
 export const NOT_EVIDENCE: FailureKind[] = [
-  'quota', 'auth', 'unreachable', 'content_refusal', 'interrupted', 'truncated', 'escaped',
+  'quota', 'auth', 'entitlement', 'unreachable', 'content_refusal', 'interrupted', 'truncated', 'escaped',
   'confinement_unverified', 'sandbox_denied', 'harness', 'abandoned',
 ]
 
