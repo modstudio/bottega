@@ -845,6 +845,16 @@ export const READER_DELIVERABLE_FIRST =
   'Write the deliverable to the result first and reason afterwards; ' +
   'a report composed only in thinking is lost at the output ceiling.'
 
+/** Bind the caller's ordered evidence request into the reader's first-turn prompt. */
+export function readerDeliverablesInstruction(names: string[]): string {
+  return [
+    `DECLARED DELIVERABLES (ordered JSON): ${JSON.stringify(names)}`,
+    'Return exactly one deliverables entry for every declared name, preserving each name exactly. ' +
+      'Its status must be delivered, blocked, or not-applicable; a blocked entry must give the reason in content. ' +
+      'A missing declared name terminalises the run as unevidenced. Put any additional prose in narrative.',
+  ].join('\n')
+}
+
 export const READONLY_PREAMBLE = `
 You are working in your own disposable worktree. It is a fresh checkout of this
 run's base commit. If the caller chose to carry their uncommitted work into it,

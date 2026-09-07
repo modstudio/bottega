@@ -41,7 +41,7 @@ import { recipeNotes } from './recipe.ts'
 import {
   workerPreamble, packResumePrompt, READONLY_PREAMBLE, NO_REPO_PREAMBLE, WORKER_SCHEMA, ISSUE_WORKER_SCHEMA, REVIEW_SCHEMA,
   REVIEW_SEVERITY_INSTRUCTION,
-  VERIFY_CLAIM_SCHEMA, READER_SCHEMA,
+  VERIFY_CLAIM_SCHEMA, READER_SCHEMA, readerDeliverablesInstruction,
   parseWorkerReplyWithCount, isAsking, realQuestions,
   parseReaderOutput, missingDeclaredDeliverables, UNEVIDENCED_DELIVERABLE_ERROR,
   type CanonSource, type WorkerReply,
@@ -1721,6 +1721,7 @@ export async function run(opts: {
 
   const requestedJob = job(opts.job)
   const inheritedDispatch = opts.resume ? readDispatchState(opts.resume.parent) : null
+  const declaredDeliverables = opts.deliverables ?? inheritedDispatch?.deliverables ?? []
   const timeoutMinutes = opts.timeoutMinutes ?? inheritedDispatch?.timeoutMinutes ?? undefined
   const writesJob = Boolean(requestedJob.needs.writesRepo)
   const repoJob = Boolean(requestedJob.needs.readsRepo)
@@ -1880,6 +1881,9 @@ export async function run(opts: {
 
   if (requestedJob.findings && !opts.resume) {
     prompt = `${REVIEW_SEVERITY_INSTRUCTION}\n\n${prompt}`
+  }
+  if (isReaderJob(opts.job) && !opts.resume) {
+    prompt = `${readerDeliverablesInstruction(declaredDeliverables)}\n\n${prompt}`
   }
 
   const requiresCanonSource = requestedJob.findings || opts.job === 'verify-claim'
@@ -2166,7 +2170,6 @@ export async function run(opts: {
     )
   const scratchDir = runScratchDir(claim.id)
   mkdirSync(scratchDir, { recursive: true })
-  const declaredDeliverables = opts.deliverables ?? inheritedDispatch?.deliverables ?? []
   writeDispatchState(claim.id, {
     deliverables: declaredDeliverables,
     timeoutMinutes: timeoutMinutes ?? null,

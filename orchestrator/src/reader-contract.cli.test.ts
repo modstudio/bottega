@@ -54,13 +54,13 @@ const waitFor = (id: number, ms = 15_000) => {
   throw new Error(`run ${id} still running`)
 }
 
-const stubCodex = (body: string) => {
+const stubCodex = (body: string, receivesPrompt = false) => {
   const agent = AGENTS.codex!
   const original = { bin: agent.bin, argv: agent.argv, readsOut: agent.readsOut, stdin: agent.stdin }
   const script = join(dir, `reader-agent-${randomUUID()}.ts`)
   writeFileSync(script, body)
   agent.bin = process.execPath
-  agent.argv = () => [script]
+  agent.argv = receivesPrompt ? ({ prompt }) => [script, prompt] : () => [script]
   agent.readsOut = false
   agent.stdin = false
   process.env.ORCH_DEPTH = '0'
@@ -79,6 +79,33 @@ const readerReply = (
 ) => JSON.stringify({ deliverables, narrative: 'notes', files_written: filesWritten })
 
 describe('reader return contracts', () => {
+  test('the reader receives and echoes its ordered declared deliverables', async () => {
+    const repo = repository()
+    const restore = stubCodex(`
+const prompt = process.argv[2] ?? ''
+const marker = 'DECLARED DELIVERABLES (ordered JSON): '
+const line = prompt.split('\\n').find((part) => part.startsWith(marker))
+const names = line ? JSON.parse(line.slice(marker.length)) : []
+process.stdout.write(JSON.stringify({
+  deliverables: names.map((name) => ({ name, status: 'delivered', content: 'echoed' })),
+  narrative: null,
+  files_written: null,
+}))
+`, true)
+    try {
+      const result = await runJob({
+        job: 'diagnose', prompt: 'measure', cwd: repo, agent: 'codex',
+        deliverables: ['per-file timing table', 'failing test name'], noFailover: true,
+      })
+      expect(result.status).toBe('ok')
+      expect(result.output).toContain('per-file timing table')
+      expect(result.output).toContain('failing test name')
+    } finally {
+      restore()
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('a diagnose reply missing a deliverable is unevidenced', async () => {
     const repo = repository()
     const restore = stubCodex(`process.stdout.write(${JSON.stringify(readerReply([]))})\n`)

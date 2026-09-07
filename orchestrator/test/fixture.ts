@@ -185,7 +185,7 @@ export const { summary } = await import('../src/metric.ts')
 export const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
         NO_REPO_PREAMBLE, WORKER_PREAMBLE, LAND_PREAMBLE, REVIEW_SCHEMA,
         READER_SCHEMA, parseReaderOutput, missingDeclaredDeliverables, UNEVIDENCED_DELIVERABLE_ERROR,
-        READER_DELIVERABLE_FIRST,
+        READER_DELIVERABLE_FIRST, readerDeliverablesInstruction,
         REVIEW_SEVERITY_INSTRUCTION, INFRASTRUCTURE_RECOVERY, COULD_NOT_VERIFY_INSTRUCTION,
         VERIFY_CLAIM_SCHEMA, ISSUE_WORKER_SCHEMA, workerPreamble, workerResumeGuard,
         rulingPrompt, packResumePrompt, contractConflicts, hasRealQuestions, realQuestions } = await import('../src/contract.ts')
