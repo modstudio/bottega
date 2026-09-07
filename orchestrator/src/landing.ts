@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { db, liveRunCount, migrateDatabase, nowIso, sessionId, tryWriteContention, writableDb, writeTransaction, ROOT } from './db.ts'
-import { insertContention, reviewInvalidationsSince } from './contention.ts'
+import { reviewInvalidationsSince } from './contention.ts'
 import { projectAt, projectByName, type Project } from './projects.ts'
 import { classifyReviewTier, diffNumstat } from './review-tier.ts'
 import {
@@ -869,12 +869,14 @@ function changedPaths(runner: CoverageGitRunner, from: string, to: string): Set<
 export function reviewCoverageVerdict(
   repoRoot: string, review: ReviewCoverageInput, tip: string, trunk: string,
   runner: CoverageGitRunner = landingCoverageGit(repoRoot),
+  opts?: { skipExact?: boolean },
 ): CoverageVerdict {
   const treeArgs = ['rev-parse', `${tip}^{tree}`]
   const treeResult = runner(treeArgs)
   if (!treeResult.ok) return { kind: 'invalid', reason: `git ${treeArgs.join(' ')} failed: ${treeResult.err}` }
   const tree = treeResult.out
-  if (review.lenses.length > 0 && review.lenses.every((lens) => lens.tree === tree)) {
+  if (!opts?.skipExact && review.lenses.length > 0 &&
+      review.lenses.every((lens) => lens.tree === tree)) {
     return { kind: 'exact' }
   }
   const reviewedTree = review.lenses[0]?.tree
@@ -1085,18 +1087,31 @@ function recordReviewInvalidations(
   for (const review of completedReviews(project.name)) {
     const branch = review.lenses.find((lens) => lens.branch)?.branch
     if (!branch || branch === landedBranch) continue
-    if (!gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])) continue
     try {
-      const victimTip = git(repoRoot, ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`])
-      const tree = git(repoRoot, ['rev-parse', `${victimTip}^{tree}`])
-      const exact = review.lenses.length > 0 && review.lenses.every((lens) => lens.tree === tree)
-      const containsTrunk = gitOk(repoRoot, ['merge-base', '--is-ancestor', trunkOid, victimTip])
-      if (!exact || containsTrunk) continue
-      insertContention(db(), {
+      const gitCwd = review.lenses.find((lens) => lens.launchCwd)?.launchCwd ?? repoRoot
+      if (!gitOk(gitCwd, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])) continue
+      const runner = landingCoverageGit(gitCwd)
+      const victimTip = git(gitCwd, ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`])
+      // Replay onto the new trunk so merge-base(tip, trunk) is the landed tip and
+      // patch-id/content compare the replay, not the unrebased tree. skipExact is
+      // required: the unrebased victim tree still matches the review.
+      const merge = runner(['merge-tree', '--write-tree', trunkOid, victimTip])
+      const mergeTree = merge.out.split('\n')[0]?.trim() ?? ''
+      const tree = /^[0-9a-f]{40,}$/i.test(mergeTree)
+        ? mergeTree
+        : git(gitCwd, ['rev-parse', `${victimTip}^{tree}`])
+      const synthetic = git(gitCwd, [
+        'commit-tree', tree, '-p', trunkOid, '-m', 'orch-contention-coverage',
+      ])
+      const verdict = reviewCoverageVerdict(
+        gitCwd, review, synthetic, trunkOid, runner, { skipExact: true },
+      )
+      if (verdict.kind !== 'invalid') continue
+      tryWriteContention({
         resourceKind: 'review', resourceKey: branch, eventKind: 'invalidation',
         cause: `review ${review.id}`, landingId,
       })
-    } catch { /* a missing ref or tree is not this landing's invalidation */ }
+    } catch { /* a missing path or tree is not this landing's invalidation */ }
   }
 }
 
@@ -1136,7 +1151,7 @@ function performLand(
     timeoutMs?: number; message?: string; unreviewed?: string; runId?: number
     queue?: boolean; landingId?: number
   } = {},
-): { tip: string; trunkBefore: string; project: Project } {
+): { tip: string; trunkBefore: string; project: Project; repoRoot: string } {
   writableDb()
   const timeoutMs = options.timeoutMs ?? LANDING_LOCK_TIMEOUT_MS
   const { project, repoRoot } = registeredProject(cwd)
@@ -1253,10 +1268,10 @@ function performLand(
           ? 'optimistic gate remained current'
           : 'after re-gate outside the landing lock'
         console.log(`landed ${branch} at ${outcome.tip} onto ${trunk} (${how})`)
-        return { tip: outcome.tip, trunkBefore: outcome.currentTrunk, project }
+        return { tip: outcome.tip, trunkBefore: outcome.currentTrunk, project, repoRoot }
       }
       losses += 1
-      insertContention(db(), {
+      tryWriteContention({
         resourceKind: 'trunk', resourceKey: project.name, eventKind: 'retry',
         cause: `${trunk} moved from ${gatedTrunk} to ${outcome.currentTrunk}`,
         landingId: options.landingId ?? null,
@@ -1371,10 +1386,10 @@ export function land(
       db().query(
         `UPDATE landing SET tip=?,trunk_before=?,status='landed',finished_at=? WHERE id=?`,
       ).run(result.tip, result.trunkBefore, nowIso(), landing.id)
-      recordReviewInvalidations(
-        result.project, result.project.path, result.tip, branch, landing.id,
-      )
     })
+    recordReviewInvalidations(
+      result.project, result.repoRoot, result.tip, branch, landing.id,
+    )
     try {
       installLandedPackages(result.project, result.trunkBefore, result.tip)
     } catch (error) {
@@ -1396,10 +1411,10 @@ export function land(
       writeTransaction(() => {
         db().query(`UPDATE landing SET status='refused',error=?,finished_at=? WHERE id=?`)
           .run(message, nowIso(), landing.id)
-        insertContention(db(), {
-          resourceKind: 'trunk', resourceKey: project.name, eventKind: 'refusal',
-          cause: message, landingId: landing.id,
-        })
+      })
+      tryWriteContention({
+        resourceKind: 'trunk', resourceKey: project.name, eventKind: 'refusal',
+        cause: message, landingId: landing.id,
       })
     }
     throw error
