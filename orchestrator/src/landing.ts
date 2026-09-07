@@ -2,8 +2,8 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync
 import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
-import { db, liveRunCount, migrateDatabase, nowIso, openWritableHandle, sessionId, writableDb, writeTransaction, ROOT } from './db.ts'
-import { insertContention, reviewInvalidationsSince, tryInsertContention } from './contention.ts'
+import { db, liveRunCount, migrateDatabase, nowIso, sessionId, tryWriteContention, writableDb, writeTransaction, ROOT } from './db.ts'
+import { insertContention, reviewInvalidationsSince } from './contention.ts'
 import { projectAt, projectByName, type Project } from './projects.ts'
 import { classifyReviewTier, diffNumstat } from './review-tier.ts'
 import {
@@ -539,7 +539,7 @@ function runGate(
     const timedOut = (capturedOutput ?? '').split('\n').some((line) =>
       /^\s*\^ this test timed out after \d+ms\.\s*$/.test(stripAnsi(line)))
     if (timedOut) {
-      tryInsertContention(openWritableHandle(), {
+      tryWriteContention({
         resourceKind: 'cpu', resourceKey: project.name, eventKind: 'timeout',
         durationMs: Math.max(0, Date.now() - gateStarted),
         cause: `gate timeout under load: ${liveRunCount()} orch runs live (running + asking) machine-wide`,

@@ -83,7 +83,7 @@ export function insertContention(d: Database, row: ContentionWrite): void {
 export function tryInsertContention(handle: Database | null, row: ContentionWrite): void {
   try {
     if (!handle || !contentionTableExists(handle)) return
-    handle.transaction(() => insertContention(handle, row)).immediate()
+    insertContention(handle, row)
   } catch { /* CONSTRAINTS: recording must not change lock, landing or detector behaviour */ }
 }
 

@@ -27,8 +27,7 @@ import { accessSync, appendFileSync, closeSync, constants, cpSync, existsSync,
 import { createHash, randomUUID } from 'node:crypto'
 import { platform, tmpdir } from 'node:os'
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { db, openWritableHandle, pidAlive, ROOT } from './db.ts'
-import { tryInsertContention } from './contention.ts'
+import { db, pidAlive, ROOT, tryWriteContention } from './db.ts'
 import { createHasPlaceholder, projectAt, type WorktreeCreate, type WorktreeTool } from './projects.ts'
 import { runRecipe, teardownRecipe, dbNameFor, type Recipe } from './recipe.ts'
 import { mainCheckoutOf, scrubbedGitEnv } from '../../shared/git.ts'
@@ -497,7 +496,7 @@ export function withProjectLock<T>(
   }
   const lockSession = identity.session ?? process.env.CLAUDE_CODE_SESSION_ID ?? null
   const recordLockTimeout = (held: ProjectLockParticipant | null) => {
-    tryInsertContention(openWritableHandle(), {
+    tryWriteContention({
       sessionId: lockSession, resourceKind: 'lock', resourceKey: name, eventKind: 'timeout',
       durationMs: Math.max(0, Date.now() - waitStarted),
       cause: held
@@ -544,7 +543,7 @@ export function withProjectLock<T>(
         rmSync(waiter, { force: true })
         const waitedMs = Date.now() - waitStarted
         if (waited && waitedMs > 0) {
-          tryInsertContention(openWritableHandle(), {
+          tryWriteContention({
             sessionId: lockSession, resourceKind: 'lock', resourceKey: name, eventKind: 'wait',
             durationMs: waitedMs,
             cause: `waited for ${lockLabel(name)}`,

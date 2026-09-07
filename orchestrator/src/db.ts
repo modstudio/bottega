@@ -193,9 +193,9 @@ export function db(writable = false): Database {
   if (refused) {
     try {
       if (contentionTableExists(d) && !linkedWorktreeReadOnly) {
-        d.transaction(() => insertContention(d, {
+        writeTransaction(() => insertContention(d, {
           resourceKind: 'store', resourceKey: DB_PATH, eventKind: 'refusal', cause: refused,
-        })).immediate()
+        }), d)
       }
     } catch { /* still refuse; recording must not replace the refusal */ }
     d.close()
@@ -248,6 +248,15 @@ export function liveRunCount(database: Database = db()): number {
 export function writeTransaction<T>(fn: () => T, database: Database = db(true)): T {
   const conn = refuseOrReloadStaleSchema(database, true)
   return conn.transaction(fn).immediate()
+}
+
+/** Best-effort contention insert through writeTransaction; never throws. */
+export function tryWriteContention(row: import('./contention.ts').ContentionWrite): void {
+  try {
+    const d = openWritableHandle()
+    if (!d || !contentionTableExists(d)) return
+    writeTransaction(() => insertContention(d, row), d)
+  } catch { /* CONSTRAINTS: recording must not change lock, landing or detector behaviour */ }
 }
 
 /** The sole path that may create the orchestrator database. */
