@@ -12,6 +12,7 @@ import {
   timeoutMsForSize,
   weeklyFlakeCount,
   exclusiveShareViolations,
+  parseShardMap,
   type FilePolicy,
 } from './gate-policy.ts'
 
@@ -32,6 +33,29 @@ describe('test size classes', () => {
     expect(elapsedLockTimeoutMs('moderate')).toBe(1_000)
     expect(dockerInventoryTimeoutForSize('long')).toBe(20_000)
     expect(elapsedAssertionMs('long')).toBe(1_000)
+  })
+
+  test('parseShardMap names the file and the invalid entry', () => {
+    const source = 'test/shards.json'
+    expect(() => parseShardMap({
+      files: { 'src/a.cli.test.ts': { size: 'huge' } },
+      shards: [{ files: ['src/a.cli.test.ts'] }],
+    }, source)).toThrow(`${source}: src/a.cli.test.ts has invalid size "huge"`)
+    expect(() => parseShardMap({
+      files: { 'src/a.cli.test.ts': { size: 'short', exclusive: 'yes' } },
+      shards: [{ files: ['src/a.cli.test.ts'] }],
+    }, source)).toThrow(`${source}: src/a.cli.test.ts has invalid exclusive "yes"`)
+    expect(() => parseShardMap({
+      files: { 'src/a.cli.test.ts': { size: 'short' } },
+      shards: [{ files: ['src/missing.cli.test.ts'] }],
+    }, source)).toThrow(`${source}: src/missing.cli.test.ts is missing from files`)
+    expect(parseShardMap({
+      files: { 'src/a.cli.test.ts': { size: 'short', exclusive: true } },
+      shards: [{ files: ['src/a.cli.test.ts'] }],
+    }, source)).toEqual({
+      files: { 'src/a.cli.test.ts': { size: 'short', exclusive: true } },
+      shards: [{ files: ['src/a.cli.test.ts'] }],
+    })
   })
 
   test('exclusive files never share a shard', () => {

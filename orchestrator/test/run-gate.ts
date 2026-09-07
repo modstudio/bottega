@@ -4,20 +4,19 @@ import shards from './shards.json'
 import {
   dockerInventoryTimeoutForSize,
   exclusiveShareViolations,
+  parseShardMap,
   recordTestFlake,
   runWithRetry,
   shardSize,
   shardTimeoutMs,
   weeklyFlakeCount,
-  type FilePolicy,
-  type ShardMap,
 } from '../src/gate-policy.ts'
 import { holdForGateCapacity, measureHostLoad, registerGatePid } from '../src/gate-load.ts'
 
 type Result = { name: string; exitCode: number; files: string[]; flaky?: boolean }
 
 const orchRoot = new URL('..', import.meta.url).pathname
-const map = shards as ShardMap
+const map = parseShardMap(shards, new URL('./shards.json', import.meta.url).pathname)
 const configured = map.shards.flatMap((shard) => shard.files)
 const present = readdirSync(new URL('../src', import.meta.url))
   .filter((file) => file.endsWith('.cli.test.ts'))
@@ -98,10 +97,9 @@ try {
   const unit = await spawnTest('orchestrator unit', ['bun', 'run', 'test:unit'], [], process.env)
   const cli = await Promise.all(map.shards.map(async (shard, index) => {
     const name = `orchestrator CLI shard ${index + 1}/${map.shards.length}`
-    const files = shard.files as string[]
-    const policy = map.files as Record<string, FilePolicy>
-    const timeout = shardTimeoutMs(policy, files)
-    const size = shardSize(policy, files)
+    const files = shard.files
+    const timeout = shardTimeoutMs(map.files, files)
+    const size = shardSize(map.files, files)
     const env = {
       ...process.env,
       ORCH_DOCKER_INVENTORY_TIMEOUT_MS: String(dockerInventoryTimeoutForSize(size)),

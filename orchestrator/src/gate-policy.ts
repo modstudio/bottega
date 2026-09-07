@@ -23,8 +23,28 @@ export const ELAPSED_ASSERTION_MS = {
   long: 1_000,
 } as const
 
-export const RETRY_SIGNALS = ['timeout', 'exit-143', 'lock-wait', 'listen-eperm'] as const
-export type RetrySignal = (typeof RETRY_SIGNALS)[number]
+export const RETRY_SIGNALS = [
+  {
+    signal: 'exit-143' as const,
+    match: (exitCode: number, _output: string) => exitCode === 143,
+  },
+  {
+    signal: 'timeout' as const,
+    match: (_exitCode: number, output: string) =>
+      /this test timed out after \d+ms/i.test(output) || /timed out after \d+ms/i.test(output),
+  },
+  {
+    signal: 'lock-wait' as const,
+    match: (_exitCode: number, output: string) =>
+      /lock wait|waiting for .{0,80} lock/i.test(output),
+  },
+  {
+    signal: 'listen-eperm' as const,
+    match: (_exitCode: number, output: string) =>
+      /listen[\s\S]{0,80}EPERM|EPERM[\s\S]{0,80}listen/i.test(output),
+  },
+]
+export type RetrySignal = (typeof RETRY_SIGNALS)[number]['signal']
 
 export const FLAKE_WEEK_MS = 7 * 24 * 60 * 60 * 1000
 export const FLAKE_WEEK_LIMIT = 2
@@ -36,6 +56,62 @@ export type ShardSpec = { measuredSeconds?: number; files: string[] }
 export type ShardMap = {
   files: Record<string, FilePolicy>
   shards: ShardSpec[]
+}
+
+function isTestSize(value: unknown): value is TestSize {
+  return typeof value === 'string' && (TEST_SIZES as readonly string[]).includes(value)
+}
+
+export function parseShardMap(raw: unknown, source: string): ShardMap {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error(`${source}: shard map must be an object`)
+  }
+  const value = raw as Record<string, unknown>
+  if (value.files === null || typeof value.files !== 'object' || Array.isArray(value.files)) {
+    throw new Error(`${source}: files must be an object`)
+  }
+  const files: Record<string, FilePolicy> = {}
+  for (const [path, entry] of Object.entries(value.files as Record<string, unknown>)) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw new Error(`${source}: ${path} is not a file policy`)
+    }
+    const policy = entry as Record<string, unknown>
+    if (!isTestSize(policy.size)) {
+      throw new Error(`${source}: ${path} has invalid size ${JSON.stringify(policy.size)}`)
+    }
+    if (policy.exclusive !== undefined && typeof policy.exclusive !== 'boolean') {
+      throw new Error(`${source}: ${path} has invalid exclusive ${JSON.stringify(policy.exclusive)}`)
+    }
+    files[path] = policy.exclusive === undefined
+      ? { size: policy.size }
+      : { size: policy.size, exclusive: policy.exclusive }
+  }
+  if (!Array.isArray(value.shards)) {
+    throw new Error(`${source}: shards must be an array`)
+  }
+  const shards: ShardSpec[] = []
+  for (const [index, shard] of value.shards.entries()) {
+    if (shard === null || typeof shard !== 'object' || Array.isArray(shard)) {
+      throw new Error(`${source}: shards[${index}] is not a shard`)
+    }
+    const spec = shard as Record<string, unknown>
+    if (!Array.isArray(spec.files) || spec.files.some((file) => typeof file !== 'string')) {
+      throw new Error(`${source}: shards[${index}].files must be a string array`)
+    }
+    const shardFiles = spec.files as string[]
+    for (const file of shardFiles) {
+      if (!files[file]) {
+        throw new Error(`${source}: ${file} is missing from files`)
+      }
+    }
+    const measured = spec.measuredSeconds
+    shards.push(
+      typeof measured === 'number'
+        ? { files: shardFiles, measuredSeconds: measured }
+        : { files: shardFiles },
+    )
+  }
+  return { files, shards }
 }
 
 export type HostLoad = {
@@ -88,13 +164,7 @@ export function shardTimeoutMs(files: Record<string, FilePolicy>, paths: string[
 }
 
 export function namedFailureSignal(exitCode: number, output: string): RetrySignal | null {
-  if (exitCode === 143) return 'exit-143'
-  if (/this test timed out after \d+ms/i.test(output) || /timed out after \d+ms/i.test(output)) {
-    return 'timeout'
-  }
-  if (/lock wait|waiting for .{0,80} lock/i.test(output)) return 'lock-wait'
-  if (/listen[\s\S]{0,80}EPERM|EPERM[\s\S]{0,80}listen/i.test(output)) return 'listen-eperm'
-  return null
+  return RETRY_SIGNALS.find((row) => row.match(exitCode, output))?.signal ?? null
 }
 
 export function failingTests(output: string): FailingTest[] {
