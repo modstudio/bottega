@@ -573,7 +573,7 @@ describe('schema coexistence', () => {
        VALUES ('t', 'a', 'implement', 'widget', 'sha', 1, 'h', 'ok')`,
     ).run()
     expect(d.query('SELECT project_id FROM run').get()).toEqual({ project_id: null })
-    expect(applyMigrations(d)).toEqual(['0006_project_id_backfill', '0007_contention'])
+    expect(applyMigrations(d)).toEqual(['0006_project_id_backfill', '0007_contention', '0008_test_flake'])
     const row = d.query(
       'SELECT project_id, (SELECT id FROM project WHERE name=?) expected FROM run',
     ).get('widget') as { project_id: number; expected: number }
