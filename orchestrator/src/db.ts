@@ -41,10 +41,9 @@ let handle: Database | null = null
 let connectionWritable: boolean | null = null
 
 export const LINKED_WORKTREE_WRITE_REFUSAL =
-  'refusing to write the main checkout\'s store from a linked-worktree binary; ' +
-  'point ORCH_DB at a copy for experiments, or set ORCH_DB_WRITE=1 to insist\n' +
-  'invariant: A linked-worktree binary reads the main store and never writes it, whatever names the path.\n' +
-  'cleared by: orch <command> from the main checkout, or ORCH_DB=<copy>, or ORCH_DB_WRITE=1'
+  'refusing to write run or project rows to the registered main store from a linked worktree\n' +
+  'invariant: A linked-worktree binary cannot write lifecycle rows to the registered main store.\n' +
+  'cleared by: orch <command> with ORCH_DB_WRITE=1, or set ORCH_DB to a scratch copy'
 
 export const LINKED_WORKTREE_SCHEMA_REFUSAL =
   'refusing to migrate the store from a linked-worktree binary; run it from the main checkout\n' +
@@ -79,6 +78,8 @@ export const linkedWorktreeReadOnly =
   && process.env.ORCH_DB_WRITE !== '1'
   && (DATABASE_RESOLUTION.method !== 'ORCH_DB'
     || (DATABASE_RESOLUTION.mainStorePath !== null && sameStore(DB_PATH, DATABASE_RESOLUTION.mainStorePath)))
+
+let registeredStoreWriteProtected = false
 
 export function databaseOpenMode(): 'read-write' | 'read-only linked worktree' {
   return linkedWorktreeReadOnly ? 'read-only linked worktree' : 'read-write'
@@ -121,7 +122,10 @@ export function closeDatabaseForFixture(): void {
 
 export function db(writable = false): Database {
   if (writable && linkedWorktreeReadOnly) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
-  if (handle) return handle
+  if (handle) {
+    if (writable && registeredStoreWriteProtected) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
+    return handle
+  }
   if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
   const sidecarsExist = existsSync(`${DB_PATH}-wal`) || existsSync(`${DB_PATH}-shm`)
   const readOnlyPath = linkedWorktreeReadOnly && !sidecarsExist
@@ -150,6 +154,12 @@ export function db(writable = false): Database {
   const registered = d.query('SELECT path FROM project WHERE name = ?').get(PLATFORM_SLUG) as
     { path: string } | null
   DATABASE_RESOLUTION.registeredPath = registered ? join(registered.path, 'orchestrator', 'orch.db') : null
+  registeredStoreWriteProtected = Boolean(
+    DATABASE_RESOLUTION.linkedWorktreeBinary &&
+    DATABASE_RESOLUTION.registeredPath &&
+    sameStore(DATABASE_RESOLUTION.registeredPath, DB_PATH) &&
+    process.env.ORCH_DB_WRITE !== '1'
+  )
   const registeredMissing = registered
     ? registeredRepositoryMissingDatabase(DATABASE_RESOLUTION, registered.path)
     : null
@@ -157,7 +167,7 @@ export function db(writable = false): Database {
     d.close()
     throw new Error(missingDatabaseMessage(registeredMissing))
   }
-  if (!linkedWorktreeReadOnly && databaseWritable(d)) {
+  if (!linkedWorktreeReadOnly && !registeredStoreWriteProtected && databaseWritable(d)) {
     d.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA synchronous = NORMAL;
@@ -169,6 +179,7 @@ export function db(writable = false): Database {
   }
   handle = d
   if (connectionWritable) reapStale(d)
+  if (writable && registeredStoreWriteProtected) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
   return d
 }
 

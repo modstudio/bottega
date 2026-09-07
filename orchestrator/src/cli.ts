@@ -459,7 +459,7 @@ function requestedMcp(): McpRequest | undefined {
 const VALUE_FLAGS = new Set(['--agent', '--file', '--schema', '--model', '--transport', '--note', '--message', '--unreviewed',
                              '--id', '--job', '--limit', '--port', '--days', '--window', '--timeout', '--scorer',
                              '--seed', '--key', '--repo', '--base', '--review', '--avoid', '--distinct-from', '--label', '--lens', '--category', '--severity',
-                             '--reproduced', '--coverage', '--limits', '--overlap',
+                             '--reproduced', '--coverage', '--limits', '--overlap', '--writer',
                              '--better-than', '--n', '--scope', '--subject', '--title', '--cwd'])
 
 type CleanupRow = {
@@ -471,7 +471,7 @@ type CleanupRow = {
 
 type BranchOwnerRow = {
   id: number; repo: string | null; cwd: string | null; worktree: string | null
-  status: string; scored: number
+  status: string; scored: number; evidence_excluded?: string | null
 }
 
 type WorktreeSharerRow = { id: number; status: string; scored: number }
@@ -697,7 +697,8 @@ function evidenceOwningBranchOwners(
   const project = row.repo ?? projectAt(repoRoot)?.name ?? null
   const candidates = db().query(
     `SELECT r.id, COALESCE(r.parent_run_id, r.id) AS root_id,
-            r.repo, r.cwd, r.worktree, r.status, s.delivery IS NOT NULL AS scored
+            r.repo, r.cwd, r.worktree, r.status, r.evidence_excluded,
+            s.delivery IS NOT NULL AS scored
        FROM run r ${chainScoreJoin('r', 's')}
       WHERE r.branch=?
         AND COALESCE(r.parent_run_id, r.id) <>
@@ -706,11 +707,24 @@ function evidenceOwningBranchOwners(
       ORDER BY r.id`,
   ).all(row.branch, row.id, row.id) as (BranchOwnerRow & { root_id: number })[]
   const matching = candidates.filter((candidate) => {
-    if (project && candidate.repo) return candidate.repo === project
+    if (project && candidate.repo && candidate.repo !== project) return false
     const candidateRoot = candidate.repo ? projectByName(candidate.repo)?.path : null
     const discovered = candidateRoot ?? repoRootOf(candidate.worktree ?? '') ??
       repoRootOf(candidate.cwd ?? '')
-    return discovered ? samePath(discovered, repoRoot) : false
+    if (!discovered || !samePath(discovered, repoRoot)) return false
+    if ((candidate.status === 'failed' || candidate.evidence_excluded) && candidate.repo) {
+      const trunk = projectByName(candidate.repo)?.settings.trunk
+      if (typeof trunk === 'string') {
+        const cherry = Bun.spawnSync(['git', 'cherry', trunk, row.branch!], {
+          cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
+        })
+        if (cherry.exitCode === 0) {
+          const commits = cherry.stdout.toString().trim().split('\n').filter(Boolean)
+          if (commits.every((line) => line.startsWith('-'))) return false
+        }
+      }
+    }
+    return true
   })
   const roots = new Set<number>()
   return matching.flatMap((candidate) => {
@@ -1447,6 +1461,9 @@ function usage(): never {
       --file PATH               same, reading the message from a file
       --unreviewed REASON       land without matching review coverage and record why
       --status                  show the landing lock and exact/carried/invalid review coverage
+      --queue                   wait visibly when your session already owns the landing lock
+  orch confinement clear <run-id> --writer TEXT --note TEXT
+      clear a spurious escaped classification, attributing the outside edit and auditing the ruling
   orch review list [--open|--complete] [--project P] [--since ISO] [--json]
   orch review show <id> [--json]
   orch review calibration [<lens> <agent> <model>] [--json]
@@ -1789,7 +1806,50 @@ switch (cmd) {
       ...(target.runId === null ? {} : { runId: target.runId }),
       ...(message === undefined ? {} : { message }),
       ...(unreviewed === undefined ? {} : { unreviewed }),
+      queue: has('queue'),
     })
+    break
+  }
+
+  case 'confinement': {
+    if (argv[1] !== 'clear') {
+      throw new Error('orch confinement clear <run-id> --writer <text> --note <text>')
+    }
+    const id = Number(argv[2])
+    const writer = flag('writer')?.trim()
+    const note = flag('note')?.trim()
+    if (!id || !writer || !note) {
+      throw new Error('orch confinement clear <run-id> --writer <text> --note <text>')
+    }
+    let authority = authorizeRunMutation(id, 'reclassify')
+    const rows = db().query(
+      `SELECT id, pre_confinement FROM run
+        WHERE (id=? OR parent_run_id=?) AND failure_kind='escaped' ORDER BY turn,id`,
+    ).all(authority.rootId, authority.rootId) as { id: number; pre_confinement: string | null }[]
+    if (!rows.length) throw new Error(`run ${id}'s chain has no escaped classification to clear`)
+    const restore = rows.map((row) => {
+      if (!row.pre_confinement) throw new Error(`run ${row.id} has no pre-confinement outcome to restore`)
+      const value = JSON.parse(row.pre_confinement) as {
+        status?: string; failureKind?: string | null; error?: string | null
+      }
+      if (!['ok', 'failed', 'asking', 'stopped', 'stale'].includes(value.status ?? '')) {
+        throw new Error(`run ${row.id} has invalid pre-confinement status`)
+      }
+      return { row, value }
+    })
+    writeTransaction(() => {
+      authority = adoptRunMutation(authority, 'receipt')
+      const update = db().query(
+        'UPDATE run SET status=?, failure_kind=?, error=? WHERE id=? AND failure_kind=\'escaped\'',
+      )
+      for (const { row, value } of restore) {
+        update.run(value.status!, value.failureKind ?? null, value.error ?? null, row.id)
+      }
+      auditRunMutation(authority, 'reclassify', JSON.stringify({ writer, note }))
+    })
+    console.log(
+      `cleared escaped confinement for chain ${authority.rootId}; outside edit attributed to ${writer}: ${note}`,
+    )
     break
   }
 
@@ -4541,18 +4601,31 @@ switch (cmd) {
     } | null
     if (!rootRow) throw new Error(`no run ${authority.rootId}`)
     const chain = db().query(
-      `SELECT id, worktree, branch, base_commit, worktree_source FROM run
+      `SELECT id, status, worktree, branch, base_commit, worktree_source FROM run
         WHERE id = ? OR parent_run_id = ? ORDER BY turn, id`,
     ).all(authority.rootId, authority.rootId) as {
-      id: number; worktree: string | null; branch: string | null; base_commit: string | null
+      id: number; status: string; worktree: string | null; branch: string | null; base_commit: string | null
       worktree_source: Worktree['source'] | null
     }[]
     const worktrees = [...new Set(chain.flatMap((turn) => turn.worktree ? [turn.worktree] : []))]
     if (worktrees.length > 1) {
-      throw new Error(
-        `refusing to discard chain ${authority.rootId}: its turns record several worktrees:\n` +
-        worktrees.map((worktree) => `  ${worktree}`).join('\n'),
-      )
+      const live = chain.filter((turn) => turn.worktree && ['running', 'asking'].includes(turn.status))
+      if (live.length) {
+        throw new Error(
+          `refusing to discard chain ${authority.rootId}: live turns still own worktrees:\n` +
+          live.map((turn) => `  run ${turn.id} (${turn.status}): ${turn.worktree}`).join('\n'),
+        )
+      }
+      for (const worktree of worktrees) {
+        const artifact = chain.find((turn) => turn.worktree === worktree)!
+        discardWorktree({
+          id: authority.rootId, repo: rootRow.repo, cwd: rootRow.cwd, worktree,
+          branch: artifact.branch ?? rootRow.branch,
+          base_commit: artifact.base_commit ?? rootRow.base_commit,
+          worktree_source: artifact.worktree_source ?? rootRow.worktree_source,
+        }, 'discarded', has('force'), authority)
+      }
+      break
     }
     const artifact = chain.find((turn) => turn.worktree === worktrees[0])
     const row = {

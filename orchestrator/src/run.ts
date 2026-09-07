@@ -26,6 +26,7 @@ import {
   prepareWorktreeObjects, prepareSharedRefGuard, carryWorkingState,
   assertSharedRefGuardOutsideWritableRoots,
   targetGitEnvironment,
+  scrubbedGitEnv,
   workerSharedGitRoots,
   contentTree,
   assertCallerAncestry, withWorktreeCreateLock, withWorktreeLease,
@@ -1012,6 +1013,8 @@ export type CheckoutStatusSnapshot = {
   project: string
   path: string
   status: string
+  head?: string | null
+  expectedHead?: string | null
 }
 
 export type OutsideWorktreeWrite = {
@@ -1019,9 +1022,13 @@ export type OutsideWorktreeWrite = {
   path: string
   before: string
   after: string
+  beforeHead?: string | null
+  afterHead?: string | null
+  expectedHead?: string | null
+  liveEditor?: string | null
 }
 
-type CheckoutToWatch = { project: string; path: string }
+type CheckoutToWatch = { project: string; path: string; expectedHead?: string | null }
 
 type CheckoutSampleFailure = CheckoutToWatch & { error: string }
 
@@ -1043,7 +1050,10 @@ function checkoutWatchSet(
   const failures: CheckoutSampleFailure[] = []
   const seen = new Set<string>()
   for (const checkout of [
-    ...projects().map(({ name, path }) => ({ project: name, path })),
+    ...projects().map(({ name, path, settings }) => ({
+      project: name, path,
+      expectedHead: typeof settings.trunk === 'string' ? settings.trunk : null,
+    })),
     ...additional,
   ]) {
     let canonical: string
@@ -1058,7 +1068,7 @@ function checkoutWatchSet(
     }
     if (canonical === active || seen.has(canonical)) continue
     seen.add(canonical)
-    watched.push({ project: checkout.project, path: canonical })
+    watched.push({ project: checkout.project, path: canonical, expectedHead: checkout.expectedHead ?? null })
   }
   return { watched, failures }
 }
@@ -1084,7 +1094,15 @@ function sampleCheckouts(watched: CheckoutToWatch[]): CheckoutSample {
         })
         continue
       }
-      snapshots.push({ project: checkout.project, path: checkout.path, status: p.stdout.toString() })
+      const symbolic = Bun.spawnSync(
+        ['git', '-C', checkout.path, 'symbolic-ref', '--short', 'HEAD'],
+        { env: { ...targetGitEnvironment(checkout.path), GIT_OPTIONAL_LOCKS: '0' }, stdout: 'pipe', stderr: 'pipe' },
+      )
+      snapshots.push({
+        project: checkout.project, path: checkout.path, status: p.stdout.toString(),
+        head: symbolic.exitCode === 0 ? symbolic.stdout.toString().trim() : null,
+        expectedHead: checkout.expectedHead ?? null,
+      })
     } catch (error) {
       failures.push({
         ...checkout,
@@ -1299,15 +1317,42 @@ export function changedRegisteredCheckouts(
   const changes: OutsideWorktreeWrite[] = []
   for (const current of after) {
     const original = prior.get(current.path)
-    if (!original || original.status === current.status) continue
+    const wrongHead = Boolean(current.expectedHead && current.head !== current.expectedHead)
+    if (!original || (!wrongHead && original.status === current.status && original.head === current.head)) continue
+    const editor = liveCheckoutEditor(current.path)
     changes.push({
       project: current.project,
       path: current.path,
       before: original.status,
       after: current.status,
+      ...(('head' in original || 'head' in current)
+        ? { beforeHead: original.head, afterHead: current.head, expectedHead: current.expectedHead }
+        : {}),
+      ...(editor ? { liveEditor: editor } : {}),
     })
   }
   return changes
+}
+
+function liveCheckoutEditor(checkout: string): string | null {
+  const gitDir = gitContext(checkout, 'rev-parse', '--path-format=absolute', '--git-dir')
+  const candidates = [gitDir ? join(gitDir, 'index.lock') : null]
+    .filter((path): path is string => Boolean(path && existsSync(path)))
+  const swaps = Bun.spawnSync(
+    ['find', checkout, '-type', 'f', '(', '-name', '.*.swp', '-o', '-name', '.*.swo', ')', '-print'],
+    { env: scrubbedGitEnv(), stdout: 'pipe', stderr: 'ignore' },
+  )
+  if (swaps.exitCode === 0) candidates.push(...swaps.stdout.toString().split('\n').filter(Boolean))
+  for (const path of candidates) {
+    const owner = Bun.spawnSync(['lsof', '-nP', '-Fpc', '--', path], {
+      env: scrubbedGitEnv(), stdout: 'pipe', stderr: 'ignore',
+    })
+    if (owner.exitCode !== 0) continue
+    const pid = owner.stdout.toString().split('\n').find((line) => line.startsWith('p'))?.slice(1)
+    const command = owner.stdout.toString().split('\n').find((line) => line.startsWith('c'))?.slice(1)
+    if (pid || command) return `${command ?? 'editor'} pid ${pid ?? 'unknown'} (${path})`
+  }
+  return null
 }
 
 function boundedConfinementError(message: string): string {
@@ -1324,7 +1369,13 @@ function escapedWriteError(changes: OutsideWorktreeWrite[]): string {
       ? status.split('\0').filter(Boolean).join('\n')
       : '(clean)'
     return `registered checkout ${change.project} at ${change.path}\n` +
-      `before:\n${porcelain(change.before)}\nafter:\n${porcelain(change.after)}`
+      (change.expectedHead && change.afterHead !== change.expectedHead
+        ? `symbolic HEAD is ${change.afterHead ?? '(detached)'}, expected registered trunk ${change.expectedHead}\n`
+        : '') +
+      `before HEAD: ${change.beforeHead ?? '(detached)'}\n` +
+      `after HEAD: ${change.afterHead ?? '(detached)'}\n` +
+      `before:\n${porcelain(change.before)}\nafter:\n${porcelain(change.after)}` +
+      (change.liveEditor ? `\nlive editor: ${change.liveEditor}` : '')
   }).join('\n\n')
   return boundedConfinementError(
     `persistent outside change observed during the run; the writer is not established:\n${detail}`,
@@ -2320,6 +2371,7 @@ export async function run(opts: {
   let status = 'failed'
   let error: string | null = null
   let failureKind: ReturnType<typeof classify> | null = null
+  let preConfinement: string | null = null
   let outsideWrites: OutsideWorktreeWrite[] = []
   let confinementFailures: CheckoutSampleFailure[] = []
   let askLoopback: AskLoopback | null = null
@@ -2345,7 +2397,9 @@ export async function run(opts: {
     mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${skipLines.join('\n')}` : skipLines.join('\n')
   }
   const beforeSample = { snapshots: sampledBefore.snapshots, failures: [] }
-  const watchedCheckouts = beforeSample.snapshots.map(({ project, path }) => ({ project, path }))
+  const watchedCheckouts = beforeSample.snapshots.map(({ project, path, expectedHead }) => ({
+    project, path, expectedHead,
+  }))
 
   try {
     if (repoJob) {
@@ -2771,10 +2825,12 @@ export async function run(opts: {
     // reply and diff remain stored, but an escaped write can never be an ok or
     // asking run and never inherits a failover-eligible vendor failure.
     if (confinementFailures.length) {
+      preConfinement = JSON.stringify({ status, failureKind, error })
       status = 'failed'
       failureKind = 'confinement_unverified'
       error = confinementUnverifiedError(confinementFailures)
     } else if (outsideWrites.length) {
+      preConfinement = JSON.stringify({ status, failureKind, error })
       status = 'failed'
       failureKind = 'escaped'
       error = escapedWriteError(outsideWrites)
@@ -2840,10 +2896,10 @@ export async function run(opts: {
                         status=CASE WHEN status='stopped' THEN status ELSE ? END,
                         error=CASE WHEN status='stopped' THEN error ELSE ? END,
                         failure_kind=CASE WHEN status='stopped' THEN failure_kind ELSE ? END,
-                        vendor_session=COALESCE(?, vendor_session) WHERE id=?`,
+                        vendor_session=COALESCE(?, vendor_session), pre_confinement=? WHERE id=?`,
       ).run(
         Date.now() - started, exitCode, new TextEncoder().encode(output).byteLength, outPath, promptPath,
-        vendorTokens, costUsd, status, error, failureKind, resolvedSession, claim.id,
+        vendorTokens, costUsd, status, error, failureKind, resolvedSession, preConfinement, claim.id,
       )
 
       /**

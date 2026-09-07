@@ -470,6 +470,7 @@ export function reclaimStaleProjectLock(
 export function withProjectLock<T>(
   repoRoot: string, name: string, identity: ProjectLockIdentity, action: () => T,
   timeoutMs = WORKTREE_CREATE_LOCK_TIMEOUT_MS, _exposeWaiters = false,
+  onWait?: (holder: ProjectLockParticipant | null, remainingMs: number) => void,
 ): T {
   const paths = projectLockPaths(repoRoot, name)
   if (heldProjectLocks.has(paths.lock)) return action()
@@ -484,6 +485,12 @@ export function withProjectLock<T>(
   const waiter = join(paths.waiters, waiterName)
   writeFileSync(waiter, `${JSON.stringify(participant)}\n`)
   const sleeper = new Int32Array(new SharedArrayBuffer(4))
+  let lastWaitNotice = 0
+  const waiting = (holder: ProjectLockParticipant | null) => {
+    if (!onWait || Date.now() - lastWaitNotice < 1_000) return
+    lastWaitNotice = Date.now()
+    onWait(holder, Math.max(0, deadline - Date.now()))
+  }
 
   try {
     while (true) {
@@ -493,6 +500,7 @@ export function withProjectLock<T>(
           const held = projectLockParticipant(paths.owner)
           throw lockTimeout(name, timeoutMs, paths.lock, held)
         }
+        waiting(projectLockParticipant(paths.owner))
         Atomics.wait(sleeper, 0, 0, WORKTREE_CREATE_LOCK_POLL_MS)
         continue
       }
@@ -507,6 +515,7 @@ export function withProjectLock<T>(
           continue
         }
         if (Date.now() >= deadline) throw lockTimeout(name, timeoutMs, paths.lock, held)
+        waiting(held)
         Atomics.wait(sleeper, 0, 0, WORKTREE_CREATE_LOCK_POLL_MS)
         continue
       }

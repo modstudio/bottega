@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getTableName } from 'drizzle-orm'
@@ -18,11 +18,25 @@ const fresh = () => {
   return d
 }
 
+const legacy = () => {
+  const d = new Database(':memory:')
+  d.exec('PRAGMA foreign_keys=ON')
+  const baseline = migrationJournal()[0]!
+  for (const statement of readFileSync(join(MIGRATIONS_FOLDER, `${baseline.tag}.sql`), 'utf8')
+    .split('--> statement-breakpoint')) {
+    if (statement.trim()) d.exec(statement)
+  }
+  return d
+}
+
 describe('Drizzle migration journal', () => {
-  test('fresh migration retains the canonical hash produced by trunk applySchema', () => {
+  test('the baseline hash remains the first migration while a fresh store includes later migrations', () => {
     const d = fresh()
-    expect(canonicalSchemaHash(d)).toBe(BASELINE_SCHEMA_HASH)
     expect(BASELINE_SCHEMA_HASH).toBe(baselineSchemaHash())
+    const comparison = fresh()
+    expect(canonicalSchemaHash(d)).toBe(canonicalSchemaHash(comparison))
+    expect(canonicalSchemaHash(d)).not.toBe(BASELINE_SCHEMA_HASH)
+    comparison.close()
     d.close()
   })
 
@@ -84,17 +98,11 @@ describe('Drizzle migration journal', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  test('a matching pre-journal store adopts 0000 without rebuilding its schema', () => {
-    const d = fresh()
-    d.exec('DROP TABLE orch_migrations')
-    const before = d.query(
-      "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY type,name",
-    ).all()
-    expect(applyMigrations(d)).toEqual(['0000_bright_sleepwalker'])
-    const after = d.query(
-      "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name<>'orch_migrations' ORDER BY type,name",
-    ).all()
-    expect(after).toEqual(before)
+  test('a matching pre-journal store adopts 0000 and continues through later migrations', () => {
+    const d = legacy()
+    expect(applyMigrations(d)).toEqual(['0000_bright_sleepwalker', '0001_landing_queue'])
+    expect(d.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='landing'").get())
+      .toBeDefined()
     d.close()
   })
 
@@ -102,8 +110,10 @@ describe('Drizzle migration journal', () => {
     const dir = mkdtempSync(join(tmpdir(), 'orch-ddl-drift-'))
     const path = join(dir, 'drift.db')
     const d = new Database(path)
-    applyMigrations(d)
-    d.exec('DROP TABLE orch_migrations; ALTER TABLE run ADD COLUMN x TEXT')
+    d.exec('PRAGMA foreign_keys=ON')
+    for (const statement of readFileSync(join(MIGRATIONS_FOLDER, `${migrationJournal()[0]!.tag}.sql`), 'utf8')
+      .split('--> statement-breakpoint')) if (statement.trim()) d.exec(statement)
+    d.exec('ALTER TABLE run ADD COLUMN x TEXT')
     expect(canonicalSchemaHash(d)).not.toBe(BASELINE_SCHEMA_HASH)
     expect(() => applyMigrations(d)).toThrow('refusing to adopt migration baseline')
     try {
@@ -132,8 +142,8 @@ describe('Drizzle migration journal', () => {
   })
 
   test('an added index refuses baseline adoption with the index difference', () => {
-    const d = fresh()
-    d.exec('DROP TABLE orch_migrations; CREATE INDEX unexpected_run_agent ON run(agent)')
+    const d = legacy()
+    d.exec('CREATE INDEX unexpected_run_agent ON run(agent)')
     expect(() => applyMigrations(d)).toThrow('refusing to adopt migration baseline')
     try {
       applyMigrations(d)
@@ -149,10 +159,11 @@ describe('Drizzle migration journal', () => {
     const dir = mkdtempSync(join(tmpdir(), 'orch-index-direction-drift-'))
     const path = join(dir, 'adoption.db')
     const d = new Database(path)
-    applyMigrations(d)
+    for (const statement of readFileSync(join(MIGRATIONS_FOLDER, `${migrationJournal()[0]!.tag}.sql`), 'utf8')
+      .split('--> statement-breakpoint')) if (statement.trim()) d.exec(statement)
     d.exec(`DROP INDEX run_job_agent;
       CREATE INDEX run_job_agent ON run(job DESC, agent);
-      DROP TABLE orch_migrations`)
+    `)
     expect(canonicalSchemaHash(d)).not.toBe(BASELINE_SCHEMA_HASH)
     expect(() => applyMigrations(d)).toThrow('refusing to adopt migration baseline')
     try {
@@ -188,8 +199,7 @@ describe('Drizzle migration journal', () => {
         { idx: 1, version: '6', when: baseline.when + 1, tag: '0001_after_adoption', breakpoints: true },
       ],
     }))
-    const d = fresh()
-    d.exec('DROP TABLE orch_migrations')
+    const d = legacy()
     expect(applyMigrations(d, dir)).toEqual([baseline.tag, '0001_after_adoption'])
     expect(d.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='adopted_followup'").get())
       .toBeDefined()

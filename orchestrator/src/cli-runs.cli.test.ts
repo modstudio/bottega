@@ -11,6 +11,24 @@ import { runCollectionDescribeFixture } from '../test/fixture.ts'
 
 describe("detached run collection", () => {
   const { CLI, orchInput, orch, scoreReminder, orchFrom, insert, dispatchArtifacts, expectNoDispatchArtifacts } = runCollectionDescribeFixture()
+test('confinement clear restores the pre-confinement outcome and audits the writer', () => {
+  const id = addRun({ agent: 'codex', job: 'implement', status: 'failed', session: 'orch-test-session' })
+  db().query('UPDATE run SET failure_kind=?, error=?, pre_confinement=? WHERE id=?').run(
+    'escaped', 'outside edit', JSON.stringify({ status: 'ok', failureKind: null, error: null }), id,
+  )
+  const cleared = orch(
+    'confinement', 'clear', String(id), '--writer', 'session-elsewhere', '--note', 'known edit',
+  )
+  expect(cleared.code, cleared.err).toBe(0)
+  expect(db().query('SELECT status,failure_kind,error FROM run WHERE id=?').get(id)).toEqual({
+    status: 'ok', failure_kind: null, error: null,
+  })
+  const audit = db().query('SELECT action,reason FROM run_mutation_audit WHERE run_id=?').get(id) as {
+    action: string; reason: string
+  }
+  expect(audit.action).toBe('reclassify')
+  expect(JSON.parse(audit.reason)).toEqual({ writer: 'session-elsewhere', note: 'known edit' })
+})
 test('record-only closes the question, marks the chain stranded, and retry restates the ruling', () => {
     const id = insert('asking', 'file-question')
     const prompt = join(dir, `record-only-${id}.prompt.txt`)

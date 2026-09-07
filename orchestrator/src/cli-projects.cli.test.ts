@@ -12,6 +12,40 @@ import { runCollectionDescribeFixture } from '../test/fixture.ts'
 
 describe("detached run collection", () => {
   const { CLI, orchInput, orch, orchFrom, insert, checkpointedOrch, lifecycleResult, dispatchArtifacts, expectNoDispatchArtifacts, expectCreateMigrationRefused } = runCollectionDescribeFixture()
+test('discard removes both non-live worktrees owned by one chain', () => {
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-discard-chain-trees-')))
+  const git = (cwd: string, ...args: string[]) => {
+    const result = Bun.spawnSync(['git', ...args], {
+      cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+  }
+  try {
+    git(repo, 'init', '-b', 'main')
+    git(repo, 'config', 'user.email', 'orch-test@example.invalid')
+    git(repo, 'config', 'user.name', 'Orch Test')
+    writeFileSync(join(repo, 'base.txt'), 'base\n')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-m', 'fixture')
+    const first = join(repo, 'first-tree')
+    const second = join(repo, 'second-tree')
+    git(repo, 'worktree', 'add', '-b', 'first-tree', first)
+    git(repo, 'worktree', 'add', '-b', 'second-tree', second)
+    upsertProject({ name: 'discard-chain-trees', path: repo, settings: { trunk: 'main' } })
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: 'orch-test-session' })
+    const child = addRun({ agent: 'codex', job: 'implement', status: 'failed', session: 'orch-test-session', parent: root, turn: 2 })
+    db().query('UPDATE run SET repo=?,cwd=?,worktree=?,branch=?,base_commit=?,worktree_source=? WHERE id=?')
+      .run('discard-chain-trees', first, first, 'first-tree', 'main', 'git', root)
+    db().query('UPDATE run SET repo=?,cwd=?,worktree=?,branch=?,base_commit=?,worktree_source=? WHERE id=?')
+      .run('discard-chain-trees', second, second, 'second-tree', 'main', 'git', child)
+    const discarded = orch('discard', String(root), '--force')
+    expect(discarded.code, discarded.err).toBe(0)
+    expect(existsSync(first)).toBe(false)
+    expect(existsSync(second)).toBe(false)
+    expect(db().query('SELECT count(*) n FROM run WHERE worktree IS NOT NULL AND (id=? OR parent_run_id=?)')
+      .get(root, root)).toEqual({ n: 0 })
+  } finally { rmSync(repo, { recursive: true, force: true }) }
+})
 test('create commands must exist and be executable before dispatch', () => {
     const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-create-command-')))
     const binDir = mkdtempSync(join(tmpdir(), 'orch-create-command-bin-'))

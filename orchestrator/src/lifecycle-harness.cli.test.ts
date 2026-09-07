@@ -657,7 +657,9 @@ test('The guard on disk is verified against HEAD before fast-forward', async () 
   expect(readFileSync(staged)).toEqual(readFileSync(hook))
   expect(git(repo, 'status', '--porcelain', '--', 'orchestrator/hooks/reference-transaction')).toBe('')
   expect(git(repo, 'rev-parse', 'HEAD')).not.toBe(trunkBefore)
-  expect(readFileSync(order, 'utf8').trim().split('\n')).toEqual(['guard-verify', 'fast-forward'])
+  expect(readFileSync(order, 'utf8').trim().split('\n')).toEqual([
+    'preflight', 'tier-and-dependencies', 'guard-verify', 'fast-forward',
+  ])
 }, 15_000)
 
 test('Landing versus cleanup of one tree take a per-artifact lease', async () => {

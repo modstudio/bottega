@@ -56,6 +56,9 @@ test('discard inventories leaks after successfully restoring a shared branch', (
     const target = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
     const owner = addRun({ agent: 'codex', job: 'implement', status: 'failed', repo: project })
     const tree = createWorktree(repo, target)
+    writeFileSync(join(tree.path, 'unlanded.txt'), 'not on trunk\n')
+    git(tree.path, 'add', 'unlanded.txt')
+    git(tree.path, 'commit', '-m', 'fixture: unlanded work')
     const tip = git(repo, 'rev-parse', tree.branch)
     const script = join(repo, 'delete-unscored-owner-branch.sh')
     writeFileSync(script,

@@ -1,9 +1,10 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import { isAbsolute, join, relative } from 'node:path'
+import { dirname, isAbsolute, join, relative } from 'node:path'
 import { db, liveRunCount, nowIso, sessionId, writableDb, ROOT } from './db.ts'
 import { projectAt, type Project } from './projects.ts'
+import { classifyReviewTier, diffNumstat } from './review-tier.ts'
 import {
   contentTree, prepareSharedRefGuard, projectLockState, repoRootOf, withProjectLock,
   withWorktreeLease, targetGitEnvironment, scrubbedGitEnv, type SharedRefGuardEnvironment,
@@ -17,6 +18,8 @@ const INVARIANT_LOCK_SCOPE =
   'Landing holds its lock only for the trunk re-check, guard verification and fast-forward, never for a gate.'
 const INVARIANT_GUARD_HEAD =
   'The guard on disk is verified against HEAD, not the index, before any fast-forward.'
+const INVARIANT_TRUNK_CHECKOUT =
+  'The registered main checkout must have its symbolic HEAD on the configured trunk.'
 export type SharedGuardResidue = {
   repoRoot: string
   hookPath: string
@@ -267,6 +270,73 @@ function recoveryRef(checkout: CheckoutState, preserved: string): string {
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`
+}
+
+function assertMainCheckoutOnTrunk(repoRoot: string, trunk: string): void {
+  const branch = inspectionGit(repoRoot, ['symbolic-ref', '--short', 'HEAD'])
+  if (branch.ok && branch.out === trunk) return
+  throw namedError(
+    `refusing landing: registered main checkout ${repoRoot} is on ${branch.ok ? branch.out : '(detached HEAD)'}, not ${trunk}`,
+    INVARIANT_TRUNK_CHECKOUT,
+    `git -C ${shellQuote(repoRoot)} switch ${shellQuote(trunk)}`,
+  )
+}
+
+function clearCompletedSequencerState(
+  worktree: string, branch: string, guard: SharedRefGuardEnvironment,
+): void {
+  const gitPath = (name: string) => git(worktree, ['rev-parse', '--path-format=absolute', '--git-path', name], guard)
+  const states = [
+    { name: 'CHERRY_PICK_HEAD', path: gitPath('CHERRY_PICK_HEAD'), quit: ['cherry-pick', '--quit'] },
+    { name: 'REBASE_HEAD', path: gitPath('REBASE_HEAD'), quit: ['rebase', '--quit'] },
+    { name: 'AUTO_MERGE', path: gitPath('AUTO_MERGE'), quit: null },
+  ].filter((state) => existsSync(state.path))
+  const unmerged = git(worktree, ['diff', '--name-only', '--diff-filter=U'], guard)
+  if (unmerged) {
+    throw namedError(
+      `refusing to land ${branch}: unmerged paths remain:\n${unmerged}`,
+      INVARIANT_FAILED_LANDING,
+      `git -C ${shellQuote(worktree)} status`,
+    )
+  }
+  if (!states.length) return
+  const staged = !gitOk(worktree, ['diff', '--cached', '--quiet', 'HEAD'], guard)
+  if (staged) return
+  for (const state of states) {
+    if (state.quit) git(worktree, state.quit, guard)
+    else rmSync(state.path, { force: true })
+    console.log(`quit completed ${state.name} state in ${worktree}`)
+  }
+}
+
+function packageDependencies(source: string): Record<string, string> {
+  try {
+    const parsed = JSON.parse(source) as Record<string, unknown>
+    return Object.assign({}, parsed.dependencies ?? {}, parsed.devDependencies ?? {}, parsed.optionalDependencies ?? {})
+  } catch { return {} }
+}
+
+function preGateFacts(repoRoot: string, from: string, tip: string): string[] {
+  const tier = classifyReviewTier({ files: diffNumstat(repoRoot, from, tip) })
+  console.log(`tier ${tier.tier} (risk ${tier.risk}, size ${tier.size})`)
+  for (const reason of tier.reasons) console.log(reason)
+  const paths = git(repoRoot, ['diff', '--name-only', `${from}..${tip}`])
+    .split('\n').filter((path) => path === 'package.json' || path.endsWith('/package.json'))
+  const affected: string[] = []
+  const delta: string[] = []
+  for (const path of paths) {
+    affected.push(dirname(path))
+    const before = inspectionGit(repoRoot, ['show', `${from}:${path}`])
+    const after = inspectionGit(repoRoot, ['show', `${tip}:${path}`])
+    const left = packageDependencies(before.ok ? before.out : '{}')
+    const right = packageDependencies(after.ok ? after.out : '{}')
+    for (const name of [...new Set([...Object.keys(left), ...Object.keys(right)])].sort()) {
+      if (left[name] !== right[name]) delta.push(`${path}: ${name} ${left[name] ?? '(absent)'} -> ${right[name] ?? '(absent)'}`)
+    }
+  }
+  console.log(delta.length ? `dependency delta:\n${delta.map((line) => `  ${line}`).join('\n')}` : 'dependency delta: none')
+  landingOrder('tier-and-dependencies')
+  return [...new Set(affected)]
 }
 
 function reconcileTrunkCheckouts(
@@ -557,6 +627,7 @@ function rebaseAndGate(
         `git -C ${shellQuote(worktree)} rebase --abort`,
       )
     }
+    preGateFacts(repoRoot, trunkOid, tip)
     try {
       return runGate(project, worktree, branch, guard)
     } catch (error) {
@@ -803,6 +874,7 @@ function coverageText(project: string, repoRoot: string, tip: string, trunk: str
 function requireReviewCoverage(
   project: Project, repoRoot: string, branch: string, tip: string, trunk: string,
 ): { tree: string; carry: ReviewCarry | null } {
+  landingOrder('coverage')
   const candidateTree = git(repoRoot, ['rev-parse', `${tip}^{tree}`])
   const reviews = completedReviews(project.name)
   if (reviews.some((review) => review.lenses.length > 0 &&
@@ -961,11 +1033,11 @@ function fastForward(
   reconcileTrunkCheckouts(trunkCheckouts, trunk, tip, expected, guard)
 }
 
-export function land(
+function performLand(
   cwd: string,
   branch: string,
-  options: { timeoutMs?: number; message?: string; unreviewed?: string; runId?: number } = {},
-): string {
+  options: { timeoutMs?: number; message?: string; unreviewed?: string; runId?: number; queue?: boolean } = {},
+): { tip: string; trunkBefore: string; project: Project } {
   writableDb()
   const timeoutMs = options.timeoutMs ?? LANDING_LOCK_TIMEOUT_MS
   const { project, repoRoot } = registeredProject(cwd)
@@ -983,6 +1055,14 @@ export function land(
       `project ${project.name} has no landing gate configured — set settings.gate before landing`,
       INVARIANT_LOCK_SCOPE,
       `orch project set ${project.name} --settings '{"gate":"<command>"}'`,
+    )
+  }
+  const existingLanding = projectLockState(repoRoot, LANDING_LOCK).holder
+  if (existingLanding && existingLanding.session && existingLanding.session === sessionId() && !options.queue) {
+    throw namedError(
+      `your own landing ${existingLanding.pid}, branch ${existingLanding.what}, started ${existingLanding.since}`,
+      'A session does not wait invisibly on its own landing.',
+      `wait for pid ${existingLanding.pid}, or pass --queue for a bounded visible wait`,
     )
   }
   if (!gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])) {
@@ -1019,7 +1099,10 @@ export function land(
 
   return withWorktreeLease(repoRoot, worktree, { session: sessionId(), what: `land ${branch}` }, () => {
     const guard = prepareSharedRefGuard(worktree)
+    clearCompletedSequencerState(worktree, branch, guard)
     assertLandingWorktreeReady(worktree, branch, guard)
+    assertMainCheckoutOnTrunk(repoRoot, trunk)
+    landingOrder('preflight')
     // A message-only amend changes the commit hash. The gate must run on the
     // commit that becomes trunk, so the message is rewritten before rebase.
     if (options.message !== undefined) amendLandingMessage(worktree, options.message, guard)
@@ -1039,6 +1122,7 @@ export function land(
     while (true) {
       const outcome = withProjectLock(repoRoot, LANDING_LOCK, { session: sessionId(), what: branch }, () => {
         verifyGuardBeforeFastForward(repoRoot)
+        assertMainCheckoutOnTrunk(repoRoot, trunk)
         const currentTrunk = trunkCommit(repoRoot, trunk, guard)
         if (currentTrunk === gatedTrunk) {
           const authorization = authorizeLanding(
@@ -1051,13 +1135,18 @@ export function land(
           return { kind: 'landed' as const, tip, currentTrunk }
         }
         return { kind: 'moved' as const, tip, currentTrunk }
-      }, timeoutMs, true)
+      }, timeoutMs, true, options.queue ? (holder, remainingMs) => {
+        console.log(
+          `queued behind landing ${holder?.pid ?? 'unknown'}, branch ${holder?.what ?? 'unknown'}; ` +
+          `${Math.ceil(remainingMs / 1000)}s remain`,
+        )
+      } : undefined)
       if (outcome.kind === 'landed') {
         const how = losses === 0
           ? 'optimistic gate remained current'
           : 'after re-gate outside the landing lock'
         console.log(`landed ${branch} at ${outcome.tip} onto ${trunk} (${how})`)
-        return outcome.tip
+        return { tip: outcome.tip, trunkBefore: recordedTrunk, project }
       }
       losses += 1
       if (losses >= 2) {
@@ -1074,6 +1163,58 @@ export function land(
       tip = rebaseAndGate(project, repoRoot, worktree, branch, trunk, gatedTrunk, guard)
     }
   }, timeoutMs)
+}
+
+function installLandedPackages(project: Project, trunkBefore: string, tip: string): void {
+  const packagePaths = git(project.path, ['diff', '--name-only', `${trunkBefore}..${tip}`])
+    .split('\n').filter((path) => path === 'package.json' || path.endsWith('/package.json'))
+  for (const relativePackage of packagePaths) {
+    const directory = join(project.path, dirname(relativePackage))
+    console.log(`installing landed dependencies in ${directory}: bun install --silent`)
+    const installed = Bun.spawnSync(['bun', 'install', '--silent'], {
+      cwd: directory, env: process.env, stdout: 'pipe', stderr: 'pipe',
+    })
+    if (installed.exitCode !== 0) {
+      const detail = installed.stderr.toString().trim() || installed.stdout.toString().trim() || `exit ${installed.exitCode}`
+      throw new Error(`landing reached trunk at ${tip}, but bun install --silent failed in ${directory}: ${detail}`)
+    }
+    console.log(`installed landed dependencies in ${directory}`)
+  }
+}
+
+export function land(
+  cwd: string,
+  branch: string,
+  options: { timeoutMs?: number; message?: string; unreviewed?: string; runId?: number; queue?: boolean } = {},
+): string {
+  writableDb()
+  const project = registeredProject(cwd).project
+  const landing = db().query(
+    `INSERT INTO landing (project,branch,status,session_id,started_at)
+     VALUES (?,?,'started',?,?) RETURNING id`,
+  ).get(project.name, branch, sessionId(), nowIso()) as { id: number }
+  let landed = false
+  try {
+    const result = performLand(cwd, branch, options)
+    landed = true
+    db().query(
+      `UPDATE landing SET tip=?,trunk_before=?,status='landed',finished_at=? WHERE id=?`,
+    ).run(result.tip, result.trunkBefore, nowIso(), landing.id)
+    try {
+      installLandedPackages(result.project, result.trunkBefore, result.tip)
+    } catch (error) {
+      db().query(`UPDATE landing SET status='install_failed',error=?,finished_at=? WHERE id=?`)
+        .run(error instanceof Error ? error.message : String(error), nowIso(), landing.id)
+      throw error
+    }
+    return result.tip
+  } catch (error) {
+    if (!landed) {
+      db().query(`UPDATE landing SET status='refused',error=?,finished_at=? WHERE id=?`)
+        .run(error instanceof Error ? error.message : String(error), nowIso(), landing.id)
+    }
+    throw error
+  }
 }
 
 export function landingReviewCoverage(cwd: string): string {

@@ -1,7 +1,19 @@
 import { afterAll, beforeEach } from 'bun:test'
 import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
+
+const discoveryEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
+  !key.startsWith('GIT_') && key !== 'ORCH_GUARDED_GIT_COMMON_DIR' && key !== 'ORCH_ALLOWED_GIT_REF'
+))
+const commonDir = Bun.spawnSync(['git', 'rev-parse', '--git-common-dir'], {
+  cwd: import.meta.dir, env: discoveryEnv, stdout: 'pipe', stderr: 'pipe',
+})
+if (commonDir.exitCode !== 0) throw new Error(commonDir.stderr.toString())
+export const REGISTERED_LIVE_STORE = resolve(
+  dirname(resolve(import.meta.dir, commonDir.stdout.toString().trim())),
+  'orchestrator', 'orch.db',
+)
 
 /**
  * A fresh store for every test, minted by this preload before any test file can
@@ -22,6 +34,8 @@ const store = join(dir, 'test.db')
 const template = join(dir, 'template.db')
 process.env.ORCH_DB = store
 process.env.ORCH_RUNS = join(dir, 'runs')
+export const PRELOAD_STORE = process.env.ORCH_DB
+export const PRELOAD_RUNS = process.env.ORCH_RUNS
 mkdirSync(process.env.ORCH_RUNS)
 
 const { DB_PATH, bootstrapFixtureStore, closeDatabaseForFixture } = await import('../src/db.ts')
@@ -60,6 +74,9 @@ const { db } = await import('../src/db.ts')
 let sequence: { name: string; seq: number }[] = []
 
 beforeEach(() => {
+  if (process.env.ORCH_DB && resolve(process.env.ORCH_DB) === REGISTERED_LIVE_STORE) {
+    throw new Error(`test process refuses registered live store: ${REGISTERED_LIVE_STORE}`)
+  }
   assertOwnedStore()
   try {
     sequence = db().query('SELECT name, seq FROM sqlite_sequence').all() as { name: string; seq: number }[]

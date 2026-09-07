@@ -21,6 +21,103 @@ test('only bun\'s complete timeout line reports machine load', () => {
     )
   })
 
+  test('completed sequencer residue is quit before the gate', async () => {
+    const { repo, trees } = repoWithBranches(['sequencer-residue'])
+    const marker = g(trees['sequencer-residue']!, 'rev-parse', '--path-format=absolute', '--git-path', 'AUTO_MERGE')
+    writeFileSync(marker, `${g(trees['sequencer-residue']!, 'rev-parse', 'HEAD')}\n`)
+    upsertProject({ name: 'landing-sequencer-residue', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const child = childLand(repo, 'sequencer-residue')
+      expect(await child.exited).toBe(0)
+      expect(existsSync(marker)).toBe(false)
+      expect(await new Response(child.stdout).text()).toContain('quit completed AUTO_MERGE state')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('preflight and coverage plus tier/dependency facts precede the gate', async () => {
+    const { repo, trees } = repoWithBranches(['ordered-preflight'])
+    const order = join(repo, 'landing-order')
+    const tree = trees['ordered-preflight']!
+    completedReview('landing-ordered-preflight', [g(tree, 'rev-parse', 'HEAD^{tree}')], {
+      branch: 'ordered-preflight', baseCommit: g(repo, 'rev-parse', 'main'), launchCwd: tree,
+    })
+    upsertProject({ name: 'landing-ordered-preflight', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const child = childLand(repo, 'ordered-preflight', { unreviewed: null }, {
+        ORCH_TEST_LANDING_ORDER: order,
+      })
+      expect(await child.exited).toBe(0)
+      const steps = readFileSync(order, 'utf8').trim().split('\n')
+      expect(steps.indexOf('preflight')).toBeLessThan(steps.indexOf('fast-forward'))
+      expect(steps.indexOf('coverage')).toBeLessThan(steps.indexOf('fast-forward'))
+      expect(steps.indexOf('tier-and-dependencies')).toBeLessThan(steps.indexOf('fast-forward'))
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a main checkout on another branch refuses before the gate and records its cause', async () => {
+    const { repo } = repoWithBranches(['wrong-main-head'])
+    g(repo, 'switch', '-c', 'other-main-branch')
+    upsertProject({ name: 'landing-wrong-main-head', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const child = childLand(repo, 'wrong-main-head')
+      expect(await child.exited).not.toBe(0)
+      const error = await new Response(child.stderr).text()
+      expect(error).toContain('is on other-main-branch, not main')
+      expect(error).toContain('invariant:')
+      expect(error).toContain('cleared by:')
+      expect(db().query('SELECT status,error FROM landing WHERE branch=?').get('wrong-main-head'))
+        .toMatchObject({ status: 'refused', error: expect.stringContaining('other-main-branch') })
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('landing installs a changed package in the main checkout and records the landed tip', async () => {
+    const { repo, trees } = repoWithBranches(['install-package'])
+    const tree = trees['install-package']!
+    writeFileSync(join(tree, 'package.json'), '{"dependencies":{"fixture":"1.0.0"}}\n')
+    g(tree, 'add', 'package.json')
+    g(tree, 'commit', '--amend', '--no-edit')
+    const fake = join(repo, 'fake-bin')
+    mkdirSync(fake)
+    writeFileSync(join(fake, 'bun'), `#!/bin/sh\npwd > ${JSON.stringify(join(repo, 'installed-at'))}\n`)
+    chmodSync(join(fake, 'bun'), 0o755)
+    upsertProject({ name: 'landing-install-package', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const child = childLand(repo, 'install-package', {}, { PATH: `${fake}:${process.env.PATH}` })
+      expect(await child.exited).toBe(0)
+      expect(readFileSync(join(repo, 'installed-at'), 'utf8').trim()).toBe(repo)
+      expect(db().query('SELECT status,tip,trunk_before FROM landing WHERE branch=?').get('install-package'))
+        .toMatchObject({ status: 'landed', tip: g(repo, 'rev-parse', 'main'), trunk_before: expect.any(String) })
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('an install failure exits non-zero after recording that trunk landed', async () => {
+    const { repo, trees } = repoWithBranches(['install-fails'])
+    const tree = trees['install-fails']!
+    writeFileSync(join(tree, 'package.json'), '{"dependencies":{"fixture":"1.0.0"}}\n')
+    g(tree, 'add', 'package.json')
+    g(tree, 'commit', '--amend', '--no-edit')
+    const fake = join(repo, 'fake-bin')
+    mkdirSync(fake)
+    writeFileSync(join(fake, 'bun'), '#!/bin/sh\necho install exploded >&2\nexit 7\n')
+    chmodSync(join(fake, 'bun'), 0o755)
+    upsertProject({ name: 'landing-install-fails', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const child = childLand(repo, 'install-fails', {}, { PATH: `${fake}:${process.env.PATH}` })
+      expect(await child.exited).not.toBe(0)
+      expect(g(repo, 'merge-base', '--is-ancestor', 'install-fails', 'main')).toBe('')
+      expect(db().query('SELECT status,tip,error FROM landing WHERE branch=?').get('install-fails'))
+        .toMatchObject({
+          status: 'install_failed', tip: g(repo, 'rev-parse', 'main'),
+          error: expect.stringContaining('install exploded'),
+        })
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   test('landing reconciles a clean checkout of trunk to the landed commit', async () => {
     const { repo } = repoWithBranches(['clean-landing'])
     upsertProject({ name: 'landing-clean-checkout', path: repo,
@@ -294,6 +391,33 @@ test('only bun\'s complete timeout line reports machine load', () => {
       rmSync(two, { recursive: true, force: true })
     }
   }, 30_000)
+
+  test('self-contention refuses within one second and names the owned landing', async () => {
+    const branch = 'self-contention'
+    const { repo } = repoWithBranches([branch])
+    const ready = join(repo, 'holder-ready')
+    const release = join(repo, 'holder-release')
+    upsertProject({ name: 'landing-self-contention', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
+    const holder = Bun.spawn([
+      process.execPath, '-e',
+      `const{existsSync,writeFileSync}=await import('node:fs');const{withProjectLock}=await import(process.argv[1]);withProjectLock(process.argv[2],'landing',{session:process.argv[3],what:process.argv[3]},()=>{writeFileSync(process.argv[4],'');while(!existsSync(process.argv[5]))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)},5000,true)`,
+      worktreeModule, repo, branch, ready, release,
+    ], { env: { ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe' })
+    try {
+      for (let i = 0; i < 200 && !existsSync(ready); i++) await Bun.sleep(5)
+      const started = Date.now()
+      const child = childLand(repo, branch)
+      expect(await child.exited).not.toBe(0)
+      expect(Date.now() - started).toBeLessThan(1_000)
+      const error = await new Response(child.stderr).text()
+      expect(error).toContain(`your own landing ${holder.pid}, branch ${branch}, started `)
+    } finally {
+      writeFileSync(release, '')
+      await holder.exited
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
 
   test('a project with no declared gate is refused before it can land', async () => {
     const { repo } = repoWithBranches(['ungated'])

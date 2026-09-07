@@ -908,6 +908,7 @@ The invariants are:
 
 | gap | invariant violated | code path (file:function) | what chunk 3 changes |
 |---|---|---|---|
+| DEV-348 live-store lifecycle rows | a linked-worktree binary cannot write run or project rows to the registered main store unless `ORCH_DB_WRITE=1` explicitly authorises it | `db.ts:db`, `db.ts:writableDb` | linked-worktree reads remain available; an explicit scratch `ORCH_DB` remains writable; naming the registered store is location, not write authority. |
 | DEV-314 | only the main-checkout binary migrates | `database-location.ts:resolveDatabase`; `db.ts:applySchema`, `rebuildTable`, `initializeDatabase`, `migrateDatabase` | closed in chunk 3 (`5cb76a2`, round 2): location is `ORCH_DB`; `initializeDatabase` refuses a linked-worktree binary regardless of path; `orch migrate` is the operator command; fixtures call `applySchemaForFixture`. |
 | DEV-316 | one lock per purpose; FIFO waiters; per-artifact lease | `worktree.ts:withWorktreeCreateLock`, `withProjectLock`, `withWorktreeLease`; `cli.ts:withCleanupLock`; `landing.ts:land` | closed in chunk 3 (`5cb76a2`, round 2): three purpose locks; lease first, purpose lock second; waiter names start with a monotonic ticket. |
 | DEV-318 | a chain resumes in its own stale checkout | `cli.ts:continueRun`, `detach`; `run.ts:preflight`, `run`, `namesRecordedRunTree`; `worktree.ts:assertCallerAncestry` | closed in chunk 3 (`5cb76a2`, round 2): exemption from explicit resume identity only; query by the identity in hand; stale new dispatch from a recorded cwd is not exempt. |

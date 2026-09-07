@@ -253,17 +253,30 @@ describe('outside-worktree write observation', () => {
     }])
   })
 
+  test('the comparison reports a registered checkout whose HEAD is not trunk even when porcelain is unchanged', () => {
+    expect(changedRegisteredCheckouts(
+      [{ project: 'one', path: '/one', status: '', head: 'topic', expectedHead: 'main' }],
+      [{ project: 'one', path: '/one', status: '', head: 'topic', expectedHead: 'main' }],
+    )).toEqual([{
+      project: 'one', path: '/one', before: '', after: '',
+      beforeHead: 'topic', afterHead: 'topic', expectedHead: 'main',
+    }])
+  })
+
   test('an explicitly watched caller worktree is observed even when the register names its main checkout', () => {
     const main = repository()
     const caller = realpathSync(mkdtempSync(join(tmpdir(), 'orch-outside-caller-')))
     git(main, 'worktree', 'add', '--detach', caller)
     try {
       expect(snapshotRegisteredCheckouts([{ project: 'watched-project', path: caller }]))
-        .toContainEqual({ project: 'watched-project', path: caller, status: '' })
+        .toContainEqual({
+          project: 'watched-project', path: caller, status: '', head: null, expectedHead: null,
+        })
       writeFileSync(join(caller, 'written-by-run.txt'), 'outside\n')
       expect(snapshotRegisteredCheckouts([{ project: 'watched-project', path: caller }]))
         .toContainEqual({
           project: 'watched-project', path: caller, status: '?? written-by-run.txt\u0000',
+          head: null, expectedHead: null,
         })
     } finally {
       git(main, 'worktree', 'remove', '--force', caller)
@@ -506,6 +519,7 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
       expect(JSON.parse(recorded.outside_worktree_writes)).toEqual([{
         project: 'watched-project', path: watched,
         before: '', after: '?? written-by-run.txt\u0000',
+        beforeHead: 'main', afterHead: 'main', expectedHead: null,
       }])
       expect(db().query('SELECT id FROM run WHERE retry_of=?').get(dirtyRunId!)).toBeNull()
       expect(candidates('file-question').find((item) => item.agent === 'grok'))
@@ -528,7 +542,7 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
       expect(JSON.parse(cleanRecorded.outside_worktree_writes)).toEqual([])
       expect(clean.worktree && existsSync(join(clean.worktree.path, 'inside-only.txt'))).toBe(true)
       expect(snapshotRegisteredCheckouts()).toEqual([
-        { project: 'watched-project', path: watched, status: '' },
+        { project: 'watched-project', path: watched, status: '', head: 'main', expectedHead: null },
       ])
 
       process.env.ORCH_TEST_INSIDE_WRITE = 'inside-resume.txt'

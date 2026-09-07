@@ -38,6 +38,7 @@ export const run = sqliteTable('run', {
   mcpError: text('mcp_error'), mcpTrustGranted: integer('mcp_trust_granted'), mcpTrustPath: text('mcp_trust_path'),
   schemaPath: text('schema_path'), docsInjected: integer('docs_injected'), docRevisions: text('doc_revisions'), canonSha: text('canon_sha'),
   transport: text(),
+  preConfinement: text('pre_confinement'),
 }, (t) => [
   check('run_status_check', sql`${t.status} in ('running','ok','failed','stale','asking','stopped')`),
   check('run_sandbox_check', sql`${t.sandbox} is null or ${t.sandbox} in ('host','srt')`),
@@ -239,6 +240,14 @@ export const portDoctrine = sqliteTable('port_doctrine', {
 export const landingOverride = sqliteTable('landing_override', {
   id: id(), project: text().notNull(), branch: text().notNull(), tip: text().notNull(), tree: text().notNull(), reason: text().notNull(), sessionId: text('session_id'), at: text().notNull(),
 }, (t) => [check('landing_override_reason_check', sql`length(trim(${t.reason})) > 0`)])
+export const landing = sqliteTable('landing', {
+  id: id(), project: text().notNull(), branch: text().notNull(), tip: text(),
+  trunkBefore: text('trunk_before'), status: text().notNull(), error: text(),
+  sessionId: text('session_id'), startedAt: text('started_at').notNull(), finishedAt: text('finished_at'),
+}, (t) => [
+  check('landing_status_check', sql`${t.status} in ('started','landed','refused','install_failed')`),
+  index('landing_project_started').on(t.project, t.startedAt),
+])
 export const landingReviewCarry = sqliteTable('landing_review_carry', {
   id: id(), project: text().notNull(), branch: text().notNull(), tip: text().notNull(), tree: text().notNull(), reviewId: integer('review_id').notNull().references(() => review.id),
   reviewedCommit: text('reviewed_commit').notNull(), reviewedTree: text('reviewed_tree').notNull(), patchId: text('patch_id').notNull(), oldBase: text('old_base').notNull(),

@@ -4,6 +4,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 
 const sourceRoot = join(dirname(new URL(import.meta.url).pathname), '../..')
 const fixtureRoot = mkdtempSync(join(tmpdir(), 'orch-linked-database-'))
@@ -56,6 +57,10 @@ git(main, 'commit', '-m', 'DEV-306 linked database fixture')
 const mainCli = join(main, 'orchestrator', 'src', 'cli.ts')
 const initialized = invoke(mainCli, main, ['init-db'], liveStore)
 if (initialized.exitCode !== 0) throw new Error(initialized.stderr.toString())
+const register = new Database(liveStore)
+register.query('INSERT INTO project (name,path,stack,canon,settings) VALUES (?,?,NULL,1,?)')
+  .run(PLATFORM_SLUG, main, '{}')
+register.close()
 
 git(main, 'worktree', 'add', '-b', 'technical/DEV-306-linked-test', linked)
 const linkedCli = join(linked, 'orchestrator', 'src', 'cli.ts')
@@ -90,7 +95,7 @@ describe('linked-worktree database protection', () => {
     const score = invoke(linkedCli, linked, ['score', '1', 'full', 'right', 'faithful', '--note', 'no'])
     expect(score.exitCode).not.toBe(0)
     expect(score.stderr.toString()).toContain(
-      'refusing to write the main checkout\'s store from a linked-worktree binary',
+      'refusing to write run or project rows to the registered main store from a linked worktree',
     )
   })
 
@@ -99,7 +104,7 @@ describe('linked-worktree database protection', () => {
     const score = invoke(linkedCli, linked, ['score', '1', 'full', 'right', 'faithful', '--note', 'named'], liveStore)
     expect(score.exitCode).not.toBe(0)
     expect(score.stderr.toString()).toContain(
-      'refusing to write the main checkout\'s store from a linked-worktree binary',
+      'refusing to write run or project rows to the registered main store from a linked worktree',
     )
     expect(score.stderr.toString()).toMatch(/^invariant: .+$/m)
     expect(score.stderr.toString()).toMatch(/^cleared by: .+$/m)
@@ -200,6 +205,37 @@ describe('linked-worktree database protection', () => {
     expect(checked.query("SELECT value FROM schema_meta WHERE key='schema'").get())
       .toEqual({ value: 'force-migration' })
     checked.close()
+  })
+
+  test('explicit ORCH_DB does not authorize writes to the registered main store', () => {
+    const store = new Database(liveStore)
+    const inserted = store.query(
+      `INSERT INTO run
+         (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status, session_id)
+       VALUES ('2026-09-07T00:00:00.000Z','codex','implement','guard',1,'guard','ok',?)
+       RETURNING id`,
+    ).get('linked-database-test') as { id: number }
+    store.close()
+
+    const refused = invoke(
+      linkedCli, linked,
+      ['score', String(inserted.id), 'full', 'right', 'faithful', '--note', 'refused'],
+      liveStore,
+    )
+    expect(refused.exitCode).not.toBe(0)
+    expect(refused.stderr.toString()).toContain(
+      'invariant: A linked-worktree binary cannot write lifecycle rows to the registered main store.',
+    )
+    expect(refused.stderr.toString()).toContain(
+      'cleared by: orch <command> with ORCH_DB_WRITE=1, or set ORCH_DB to a scratch copy',
+    )
+
+    const allowed = invoke(
+      linkedCli, linked,
+      ['score', String(inserted.id), 'full', 'right', 'faithful', '--note', 'allowed'],
+      liveStore, true,
+    )
+    expect(allowed.exitCode, allowed.stderr.toString()).toBe(0)
   })
 
   test('doctor reports the path and linked-worktree read-only mode', () => {
