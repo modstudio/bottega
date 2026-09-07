@@ -1264,4 +1264,48 @@ test('only bun\'s complete timeout line reports machine load', () => {
       })
     } finally { rmSync(repo, { recursive: true, force: true }) }
   }, 15_000)
+
+  test('a dropped contention table does not skip re-gate', async () => {
+    const { repo, trees } = repoWithBranches(['stale-review'])
+    const project = 'landing-stale-review-no-contention'
+    const gate = join(repo, 'review-gate.sh')
+    writeFileSync(gate, `#!/bin/sh\nset -eu\nc='${repo}/gate-count'; n=0; [ ! -e "$c" ] || n=$(cat "$c"); n=$((n+1)); echo "$n" > "$c"\nif [ "$n" = 1 ]; then touch '${repo}/first-review-gate'; while [ ! -e '${repo}/release-review-gate' ]; do sleep 0.01; done; fi\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate } })
+    const table = db().query(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='contention'",
+    ).get() as { sql: string }
+    const indexes = db().query(
+      "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='contention' AND sql IS NOT NULL",
+    ).all() as { sql: string }[]
+    db().exec('DROP TABLE contention')
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const reviewedTree = g(trees['stale-review']!, 'rev-parse', 'HEAD^{tree}')
+      completedReview(project, [reviewedTree], {
+        branch: 'stale-review', baseCommit: oldBase, launchCwd: trees['stale-review']!,
+      })
+      const child = childLand(repo, 'stale-review', { unreviewed: null })
+      for (let i = 0; i < 200 && !existsSync(join(repo, 'first-review-gate')); i++) await Bun.sleep(5)
+      writeFileSync(join(repo, 'trunk-move.txt'), 'move\n')
+      g(repo, 'add', 'trunk-move.txt')
+      g(repo, 'commit', '-m', 'move trunk')
+      const moved = g(repo, 'rev-parse', 'main')
+      writeFileSync(join(repo, 'release-review-gate'), '')
+      expect(await child.exited).toBe(0)
+      expect(g(repo, 'merge-base', '--is-ancestor', moved, 'main')).toBe('')
+      expect(db().query(
+        'SELECT old_base,new_base FROM landing_review_carry WHERE branch=?',
+      ).get('stale-review')).toEqual({ old_base: oldBase, new_base: moved })
+      expect(db().query(
+        "SELECT status FROM landing WHERE branch='stale-review'",
+      ).get()).toEqual({ status: 'landed' })
+    } finally {
+      try {
+        db().exec(table.sql)
+        for (const index of indexes) db().exec(index.sql)
+      } catch { /* restore is best-effort for later tests */ }
+      rmSync(repo, { recursive: true, force: true })
+    }
+  }, 15_000)
 })

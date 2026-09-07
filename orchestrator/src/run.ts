@@ -21,9 +21,8 @@ import {
 } from './jobs.ts'
 import { pick } from './route.ts'
 import {
-  db, nowIso, DB_PATH, sessionId, resolveRootFromLastTurn, writableDb, writeTransaction,
+  db, nowIso, DB_PATH, sessionId, resolveRootFromLastTurn, tryWriteContention, writableDb, writeTransaction,
 } from './db.ts'
-import { insertContention } from './contention.ts'
 import {
   createWorktree, createWithTool, createReadOnlyWorktree, createReadOnlyWithTool,
   toolFor, changesIn, repoRootOf, resolveBase, resolveReadOnlyBase, worktreeGitDir,
@@ -3139,23 +3138,6 @@ export async function run(opts: {
         vendorTokens, costUsd, effectiveModel, status, error, failureKind,
         resolvedSession, preConfinement, claim.id,
       )
-      const recorded = db().query(
-        'SELECT failure_kind FROM run WHERE id=?',
-      ).get(claim.id) as { failure_kind: string | null }
-      if (recorded.failure_kind === 'quota' || recorded.failure_kind === 'timeout') {
-        insertContention(db(), {
-          resourceKind: 'vendor', resourceKey: name,
-          eventKind: recorded.failure_kind === 'quota' ? 'refusal' : 'timeout',
-          durationMs: Date.now() - started, cause: error, runId: claim.id,
-        })
-      } else if (recorded.failure_kind === 'escaped' || recorded.failure_kind === 'confinement_unverified') {
-        insertContention(db(), {
-          resourceKind: 'main_checkout',
-          resourceKey: outsideWrites[0]?.path ?? confinementFailures[0]?.path ?? callerCwd,
-          eventKind: 'invalidation',
-          cause: error, runId: claim.id,
-        })
-      }
 
       /**
        * The facts, recorded without anyone's opinion.
@@ -3224,6 +3206,23 @@ export async function run(opts: {
         recordReview(opts.resume?.parent ?? claim.id, parsedReview)
       }
     })
+    const recorded = db().query(
+      'SELECT failure_kind FROM run WHERE id=?',
+    ).get(claim.id) as { failure_kind: string | null }
+    if (recorded.failure_kind === 'quota' || recorded.failure_kind === 'timeout') {
+      tryWriteContention({
+        resourceKind: 'vendor', resourceKey: name,
+        eventKind: recorded.failure_kind === 'quota' ? 'refusal' : 'timeout',
+        durationMs: Date.now() - started, cause: error, runId: claim.id,
+      })
+    } else if (recorded.failure_kind === 'escaped' || recorded.failure_kind === 'confinement_unverified') {
+      tryWriteContention({
+        resourceKind: 'main_checkout',
+        resourceKey: outsideWrites[0]?.path ?? confinementFailures[0]?.path ?? callerCwd,
+        eventKind: 'invalidation',
+        cause: error, runId: claim.id,
+      })
+    }
 
     try {
       persistRunArtifacts(

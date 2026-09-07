@@ -710,6 +710,29 @@ describe('a conversation is one unit of work, not one per turn', () => {
     expect(after.failures).toBe(before.failures)
   })
 
+  test('a dropped contention table does not roll back a terminal run', async () => {
+    const table = db().query(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='contention'",
+    ).get() as { sql: string }
+    const indexes = db().query(
+      "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='contention' AND sql IS NOT NULL",
+    ).all() as { sql: string }[]
+    db().exec('DROP TABLE contention')
+    try {
+      const root = addRun({ agent: 'grok', job: 'understand', status: 'asking' })
+      const outcome = await resumeWithGrok(root, JSON.stringify({
+        type: 'result', subtype: 'error_during_execution', errors: ['HTTP 402: no balance'],
+      }) + '\n')
+      expect(outcome.error?.message).toContain('HTTP 402: no balance')
+      expect(db().query(
+        'SELECT status, failure_kind FROM run WHERE id=?',
+      ).get(root)).toEqual({ status: 'failed', failure_kind: 'quota' })
+    } finally {
+      db().exec(table.sql)
+      for (const index of indexes) db().exec(index.sql)
+    }
+  })
+
   test('a successful resumed turn clears an earlier timeout from the root', async () => {
     const root = addRun({ agent: 'grok', job: 'understand', status: 'failed', kind: 'timeout' })
     db().query("UPDATE run SET error='timed out' WHERE id=?").run(root)
