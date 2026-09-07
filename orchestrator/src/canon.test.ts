@@ -19,6 +19,7 @@ import {
   MIGRATIONS_FOLDER, migrationJournal, migrationRefusal, readUserVersion,
   SCHEMA_LOCK_TABLE, schemaVersionLabel, splitMigrationSource,
 } from './migrations.ts'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db, enableSchemaReload, writeTransaction } from './db.ts'
 import { diffCarriesMigrationJournal } from './landing.ts'
 
@@ -475,6 +476,40 @@ describe('schema coexistence', () => {
     } catch (error) {
       expect(String(error)).toContain('cleared by: restart this process after orch migrate')
     }
+  })
+
+  test('review project_id backfill requires aliased lens repos to collapse to one project', () => {
+    const d = fresh()
+    d.query(`INSERT INTO project (name, path, canon, settings) VALUES (?, '/p', 1, '{}')`).run(PLATFORM_SLUG)
+    d.query(`INSERT INTO project (name, path, canon, settings) VALUES ('starship', '/s', 1, '{}')`).run()
+    d.query(`INSERT INTO project (name, path, canon, settings) VALUES ('alephbeis', '/a', 1, '{}')`).run()
+    const bottega = (d.query('SELECT id FROM project WHERE name=?').get(PLATFORM_SLUG) as { id: number }).id
+    const starship = (d.query("SELECT id FROM project WHERE name='starship'").get() as { id: number }).id
+    const insertRun = (repo: string, projectId: number) =>
+      (d.query(
+        `INSERT INTO run (started_at, agent, job, repo, project_id, prompt_sha, prompt_bytes, prompt_head, status)
+         VALUES ('t', 'a', 'review-lens', ?, ?, 'sha', 1, 'h', 'ok') RETURNING id`,
+      ).get(repo, projectId) as { id: number }).id
+    const mixed = (d.query("INSERT INTO review (recorded_at) VALUES ('t') RETURNING id").get() as { id: number }).id
+    const aliased = (d.query("INSERT INTO review (recorded_at) VALUES ('t') RETURNING id").get() as { id: number }).id
+    const mixedA = insertRun('starship', starship)
+    const mixedB = insertRun('alephbeis', starship)
+    const aliasA = insertRun(PLATFORM_SLUG, bottega)
+    const aliasB = insertRun('devbox', bottega)
+    const lens = (reviewId: number, runId: number, name: string) => {
+      d.query(
+        `INSERT INTO review_lens (review_id, run_id, lens, agent, standards_read, files_covered, commands_run, could_not_verify)
+         VALUES (?, ?, ?, 'codex', '[]', '[]', '[]', '[]')`,
+      ).run(reviewId, runId, name)
+    }
+    lens(mixed, mixedA, 'a')
+    lens(mixed, mixedB, 'b')
+    lens(aliased, aliasA, 'a')
+    lens(aliased, aliasB, 'b')
+    expect(applyMigrations(d)).toEqual([])
+    expect(d.query('SELECT project_id FROM review WHERE id=?').get(mixed)).toEqual({ project_id: null })
+    expect(d.query('SELECT project_id FROM review WHERE id=?').get(aliased)).toEqual({ project_id: bottega })
+    d.close()
   })
 
   test('a pre-migration row is repaired by the next migrate', () => {

@@ -34,5 +34,10 @@ UPDATE review SET project_id=(
     AND 1=(SELECT COUNT(DISTINCT r.project_id) FROM review_lens rl JOIN run r ON r.id=rl.run_id
             WHERE rl.review_id=review.id AND r.project_id IS NOT NULL)
     AND 0=(SELECT COUNT(*) FROM review_lens rl JOIN run r ON r.id=rl.run_id
-            WHERE rl.review_id=review.id AND r.project_id IS NULL);
+            WHERE rl.review_id=review.id AND r.project_id IS NULL)
+    AND 1=(SELECT COUNT(DISTINCT CASE
+              WHEN r.repo IN ('devbox','devbox-ops') THEN 'bottega'
+              ELSE r.repo
+            END) FROM review_lens rl JOIN run r ON r.id=rl.run_id
+            WHERE rl.review_id=review.id);
 -- /BACKFILL
