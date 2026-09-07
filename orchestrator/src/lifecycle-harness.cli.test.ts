@@ -396,7 +396,7 @@ test(caseName.fifo, async () => {
     const release = join(fixture, `fifo-release-${round}`)
     const ready = join(fixture, `fifo-ready-${round}`)
     rmSync(release, { force: true }); rmSync(ready, { force: true })
-    const code = `const{appendFileSync,existsSync,writeFileSync}=await import('node:fs');const{withProjectLock}=await import(process.argv[1]);const [repo,actor,file,ready,release,kind]=process.argv.slice(2);const log=e=>appendFileSync(file,JSON.stringify({at:new Date().toISOString(),event:e,actor,lock:'orch-landing.lock'})+'\\n');log('lock-wait');withProjectLock(repo,'landing',{session:actor,what:actor},()=>{log('lock-held');if(kind==='long'){writeFileSync(ready,'');while(!existsSync(release))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}},5000,true);log('lock-released')`
+    const code = `const{appendFileSync,existsSync,writeFileSync}=await import('node:fs');const{withProjectLock}=await import(process.argv[1]);const [repo,actor,file,ready,release,kind]=process.argv.slice(2);const log=e=>appendFileSync(file,JSON.stringify({at:new Date().toISOString(),event:e,actor,lock:'orch-landing.lock'})+'\\n');log('lock-wait');withProjectLock(repo,'landing',{session:actor,what:actor},()=>{log('lock-held');if(kind==='long'){writeFileSync(ready,'');while(!existsSync(release))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)}},20000,true);log('lock-released')`
     const spawn = (actor: string, kind = 'short') => Bun.spawn([process.execPath, '-e', code,
       worktreeModule, repo, actor, join(timelines, `${round}-${actor}.jsonl`), ready, release, kind],
     { env: gitEnv({ ORCH_DB: storePath }), stdout: 'pipe', stderr: 'pipe' })
@@ -427,7 +427,12 @@ test(caseName.fifo, async () => {
       )
     })
   }
-}, 15_000)
+  // The waiters here are three to seven bun children each importing
+  // worktree.ts before they can even queue; under a loaded machine that alone
+  // takes seconds, and a 5 s lock wait timed out four landing gates on
+  // 2026-09-07. The order assertion is what this case proves; the bounds are
+  // sized to the work, like the CLI leg's, not widened to hide a failure.
+}, 60_000)
 
 function namesRecordedRunTreeInChild(opts: {
   cwd: string; explicitCwd?: boolean; base?: string
