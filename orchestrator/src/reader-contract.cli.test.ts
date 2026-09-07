@@ -290,6 +290,12 @@ process.stdout.write(${JSON.stringify(readerReply([
 writeFileSync(${JSON.stringify(ready)}, 'ready\\n')
 await new Promise(() => {})
 `)
+    // The dispatch below runs in-process under whatever session the ambient
+    // environment names, while the stop is a child that names
+    // orch-test-session; under a landing gate run from an architect session
+    // the two differed and ownership refused the stop. Pin both to the same.
+    const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+    process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
     try {
       const pending = runJob({
         job: 'diagnose', prompt: 'measure', cwd: repo, agent: 'codex',
@@ -306,6 +312,8 @@ await new Promise(() => {})
       expect(db().query('SELECT status, error, failure_kind FROM run WHERE id=?').get(running.id))
         .toEqual({ status: 'stopped', error: 'stopped by architect', failure_kind: null })
     } finally {
+      if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+      else process.env.CLAUDE_CODE_SESSION_ID = priorSession
       restore()
       rmSync(ready, { force: true })
       rmSync(repo, { recursive: true, force: true })
