@@ -153,6 +153,7 @@ claim about the tree is not consulted for coverage. An empty findings array is a
 review only with provenance showing what was read, including a covered file from the measured
 change when its changed paths can be established. Without that coverage the run is an
 `unevidenced` failure of the agent, not a clean result; missing or malformed output is not a review.
+A review run records its branch and base so its coverage can carry across a rebase.
 
 Reviews are recorded when they happen and begin incomplete. Triage is a later
 act by the architect: each finding becomes accepted, modified, rejected, or

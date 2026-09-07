@@ -18430,8 +18430,11 @@ describe('review-lens-inline has no checkout', () => {
       }).exitCode).not.toBe(0)
       expect(JSON.parse(byBranch.output).text).toBe('branch\n')
       expect(db().query(
-        'SELECT input_tree, head_commit, review_ref FROM run WHERE id=?',
-      ).get(byBranch.id)).toEqual({ input_tree: tree, head_commit: tip, review_ref: 'feature/reviewed' })
+        'SELECT branch, base_commit, input_tree, head_commit, review_ref FROM run WHERE id=?',
+      ).get(byBranch.id)).toEqual({
+        branch: 'feature/reviewed', base_commit: git(repo, 'rev-parse', 'main'),
+        input_tree: tree, head_commit: tip, review_ref: 'feature/reviewed',
+      })
       const explicitReview = recordReview(byBranch.id, reviewReply(0))
       completeReview(explicitReview)
       expect(coverageAudit()).toEqual({ count: 0, review_ids: [], partial_review_ids: [] })
@@ -18472,6 +18475,13 @@ describe('review-lens-inline has no checkout', () => {
         if (oldAlternates === undefined) delete process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES
         else process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES = oldAlternates
       }
+
+      writeFileSync(join(repo, 'unrelated.txt'), 'trunk moved independently\n')
+      git(repo, 'add', 'unrelated.txt')
+      git(repo, 'commit', '-m', 'unrelated trunk move')
+      git(branchTree, 'rebase', 'main')
+      const coverage = landingReviewCoverage(branchTree)
+      expect(coverage).toContain(`review ${explicitReview}: carried (patch-id `)
     } finally {
       agent.bin = original.bin
       agent.argv = original.argv

@@ -1943,7 +1943,7 @@ export async function run(opts: {
           const result = db().query(
             'UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=?, worktree_source=? WHERE id=?',
           ).run(
-            created.path, created.path, created.branch || null,
+            created.path, created.path, reviewTarget?.branch ?? (created.branch || null),
             reviewTarget?.base ?? created.base, created.source ?? null, claim.id,
           )
           if (result.changes !== 1) throw new Error(`run ${claim.id} could not record its worktree`)
@@ -2051,7 +2051,8 @@ export async function run(opts: {
           `UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=?, worktree_source=?, carry_happened=?,
                           carry_base_commit=?, carry_tracked_paths=?, carry_untracked_paths=? WHERE id=?`,
         ).run(
-          inheritedWorktree.path, inheritedWorktree.path, inheritedWorktree.branch || null,
+          inheritedWorktree.path, inheritedWorktree.path,
+          reviewTarget?.branch ?? (inheritedWorktree.branch || null),
           reviewTarget?.base ?? inheritedWorktree.base, inheritedWorktree.source ?? null,
           carried ? (carried.tracked.length + carried.untracked.length > 0 ? 1 : 0) : null,
           carried?.base ?? null,
