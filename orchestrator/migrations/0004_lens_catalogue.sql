@@ -122,6 +122,16 @@ CREATE UNIQUE INDEX project_lens_profile_specific
 CREATE UNIQUE INDEX project_lens_profile_global
   ON project_lens_profile(project_id,axis) WHERE lens_id IS NULL;
 --> statement-breakpoint
+CREATE TABLE project_lens_profile_revision (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  selection_id INTEGER NOT NULL REFERENCES project_lens_profile(id) ON DELETE CASCADE,
+  prior_profile_name TEXT NOT NULL,
+  prior_selected_version INTEGER CHECK(prior_selected_version IS NULL OR prior_selected_version > 0),
+  reason TEXT NOT NULL CHECK(length(trim(reason)) > 0),
+  session_id TEXT,
+  at TEXT NOT NULL
+);
+--> statement-breakpoint
 
 INSERT INTO lens (id,title,question,excludes,slots,version,enabled) VALUES
  ('correctness','Correctness','Does the change do what the spec says on every path, including failure paths?','style and naming, performance, migration safety, security','{"type":"object","properties":{"framework_guidance":{"type":"string"},"commands":{"type":"string"}},"additionalProperties":false}',1,1),

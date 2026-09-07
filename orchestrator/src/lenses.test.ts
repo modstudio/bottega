@@ -29,6 +29,9 @@ describe('lens catalogue',()=>{
     expect(db().query("SELECT COUNT(*) n FROM lens_profile WHERE lens_id='correctness' AND name='node'").get()).toEqual({n:1})
     expect(resolveLens('correctness','one')!.body).toContain('Node.\n\nCOMMANDS\nbun test')
     expect(resolveLens('correctness','two')!.profiles[0]!.name).toBe('node')
+    selectProjectProfile({project:'one',axis:'framework',name:'default',lensId:'correctness',version:1,reason:'return to baseline'})
+    expect(db().query(`SELECT prior_profile_name,prior_selected_version,reason FROM project_lens_profile_revision`).get())
+      .toEqual({prior_profile_name:'node',prior_selected_version:null,reason:'return to baseline'})
   })
 
   test('unknown lenses remain free-form while disabled catalogue content refuses',()=>{
