@@ -552,6 +552,10 @@ export function candidates(
     }
     else if (unavailable) { eligible = false; why = unavailable }
     else if (a.billing === 'metered') { eligible = false; why = 'metered billing' }
+    else if (j.needs.readsRepo && !a.probedAt) {
+      eligible = false
+      why = 'unprobed agent is ineligible for repository jobs; run orch agent probe ' + name
+    }
     else if (promptBytes > a.maxPromptBytes) {
       eligible = false
       why = `prompt ${Math.round(promptBytes / 1024)}KB exceeds its ${Math.round(a.maxPromptBytes / 1024)}KB argv limit`

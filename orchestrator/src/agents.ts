@@ -1,8 +1,9 @@
 import { which } from 'bun'
-import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
+import { Database } from 'bun:sqlite'
+import { existsSync, readFileSync, writeFileSync, mkdtempSync, mkdirSync } from 'node:fs'
+import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { ROOT } from './db.ts'
+import { DB_PATH, ROOT, db as dbForAgents, writableDb, nowIso } from './db.ts'
 
 export type Caps = {
   /** Can navigate a repo on its own (find files, grep) without being handed them. */
@@ -246,6 +247,15 @@ export function readStrictCodexSchema(path: string): JSONSchema {
  */
 export type Agent = {
   name: string
+  harness?: string
+  backend?: string | null
+  baseUrl?: string | null
+  enabled?: boolean
+  disabledReason?: string | null
+  probedAt?: string | null
+  probeResult?: unknown
+  probePassed?: boolean
+  legacy?: boolean
   bin: string
   /** Oldest CLI release this harness has been verified against. */
   minimumCliVersion: string
@@ -452,60 +462,6 @@ export const LOCAL_MODEL = process.env.ORCH_LOCAL_MODEL ?? 'Qwen/Qwen3.6-35B-A3B
  */
 export const LOCAL_CONTEXT_TOKENS = Number(process.env.ORCH_LOCAL_CONTEXT ?? 131_072)
 
-/**
- * Recover qwen's session id from the chat recording it leaves on disk.
- *
- * qwen is the only free agent that can read a repo, so making it resumable is
- * worth more than making any of the paid ones resumable — an escalating worker
- * that costs nothing per turn is the cheapest possible place for a design
- * conversation to happen. It just does not make it easy: the id appears in no
- * flag, no banner and no line of `-o json` output. It is the FILENAME of the
- * transcript, under a directory named after the cwd with every non-alphanumeric
- * character replaced by a dash.
- *
- * MATCHED ON THE PROMPT, not on "the newest file". Newest is correct exactly
- * until two runs overlap, which is the normal shape of work here — a fan-out
- * launches several `orch do` processes at once, and this database already
- * carries an incident where concurrent runs interleaved and were attributed to
- * the wrong owner. Picking the newest chat file would resume one worker into
- * another's conversation, and the failure would be silent: the answer to a
- * design question would arrive in a session that was never asked it.
- *
- * So a candidate must satisfy both tests — written since this run started, and
- * opening with the exact prompt we sent. mtime alone is not enough and the
- * prompt alone is not either, because retrying an identical prompt is common.
- */
-export function qwenSession(
-  { cwd, prompt, startedAt, home }: {
-    cwd: string; prompt: string; startedAt: number; home?: string
-  },
-): string | null {
-  // How qwen slugifies a path for its project directory, verified against the
-  // directories it has already written: every run of non-alphanumerics becomes
-  // a single dash, leading dash included.
-  const slug = cwd.replace(/[^a-zA-Z0-9]+/g, '-')
-  const dir = join(home ?? process.env.HOME ?? '', '.qwen', 'projects', slug, 'chats')
-  let best: { id: string; mtime: number } | null = null
-  try {
-    for (const name of readdirSync(dir)) {
-      if (!name.endsWith('.jsonl')) continue
-      const path = join(dir, name)
-      const st = statSync(path)
-      // A second of slack: the file is created as the process starts, and
-      // filesystem timestamps and Date.now() need not agree to the millisecond.
-      if (st.mtimeMs < startedAt - 1000) continue
-      const first = readFileSync(path, 'utf8').split('\n', 1)[0] ?? ''
-      let text = ''
-      try { text = String(JSON.parse(first)?.message?.parts?.[0]?.text ?? '') } catch { continue }
-      if (text.trim() !== prompt.trim()) continue
-      if (!best || st.mtimeMs > best.mtime) {
-        best = { id: name.replace(/\.jsonl$/, ''), mtime: st.mtimeMs }
-      }
-    }
-  } catch { return null }  // no recording directory: nothing to resume
-  return best?.id ?? null
-}
-
 /** Shared shape: the reply could not be unwrapped, so take stdout at face value. */
 const rawReply = (stdout: string) => ({ text: stdout.trim(), tokens: null, costUsd: null })
 
@@ -629,7 +585,7 @@ function grokCommon(o: Omit<ArgvOpts, 'prompt' | 'session'>): string[] {
   return a
 }
 
-export const AGENTS: Record<string, Agent> = {
+const BUILTIN_AGENTS: Record<string, Agent> = {
   codex: {
     name: 'codex',
     bin: 'codex',
@@ -730,119 +686,6 @@ export const AGENTS: Record<string, Agent> = {
       }
       return null
     },
-  },
-  agy: {
-    name: 'agy',
-    bin: 'agy',
-    minimumCliVersion: '1.1.22',
-    model: process.env.ORCH_AGY_MODEL ?? 'gemini-3.1-pro-high',
-    billing: 'free',
-    // schema is true: --json-schema works, but only alongside --output-format
-    // json, which is now always passed. Availability rechecked directly from a
-    // shell in a scratch git repo: v1.1.22 returned the exact requested smoke
-    // token in 9.50s (5.07s reported agent duration), exit 0.
-    // Everything false but schema: it cannot open a file, so it certainly
-    // cannot edit one, and its headless mode has no session to resume.
-    caps: { readsRepo: false, mcp: false, discoversMcpFromCwd: false, schema: true, writesRepo: false, resumable: false },
-    defaultTransport: 'cli',
-    stdin: false,
-    maxPromptBytes: ARGV_PROMPT_BYTES,
-    readsOut: false,
-    // Context is inline, so it never navigates a repo; it is the quickest agent
-    // here and its one recorded hang gave up on its own at 305s.
-    timeoutMs: 10 * 60_000,
-    contextTokens: Number.POSITIVE_INFINITY,
-    // output-ceiling stop reason not yet observed; record it from a real run
-    outputCeilingStopReason: null,
-    notes: 'Antigravity Starter. Headless denies tool permissions, so context must be inline.',
-    argv({ prompt, schema, model }) {
-      // --print must use the attached form or it swallows the next flag.
-      const a = ['--mode', 'plan', '--model', model ?? 'gemini-3.1-pro-high',
-                 '--output-format', 'json']
-      if (schema) a.push('--json-schema', schema)
-      a.push(`--print=${prompt}`)
-      return a
-    },
-    parseReply(stdout) {
-      try {
-        const j = JSON.parse(stdout)
-        // With a schema it answers twice: prose in `response`, the constrained
-        // object in `structured_output`. The object is what was asked for.
-        const text = j.structured_output
-          ? JSON.stringify(j.structured_output)
-          : String(j.response ?? '').trim()
-        return { text, tokens: j.usage?.total_tokens ?? null, costUsd: null }
-      } catch { return rawReply(stdout) }
-    },
-  },
-  'qwen-local': {
-    name: 'qwen-local',
-    bin: 'qwen',
-    minimumCliVersion: '0.7.1',
-    // Whatever the endpoint is serving; envFor passes it as OPENAI_MODEL.
-    model: LOCAL_MODEL,
-    billing: 'local',
-    // Installation-specific MCP observations belong in agent docs; see
-    // `orch doc list --scope agent`. schema stays false — the docs describe --json-schema but
-    // version 0.7.1 does not implement it.
-    // writesRepo is false pending the same round-trip codex passed. `--approval-mode
-    // yolo` would almost certainly allow edits, but "almost certainly" is how an
-    // agent comes to report success having written nothing.
-    //
-    // resumable VERIFIED directly from a shell: the first turn stored the
-    // codeword COBALT-WREN-698 in 8.33s; `--resume` with the id recovered from
-    // its chat-recording filename recalled that exact FIRST-turn codeword in
-    // 9.28s. The filesystem remains the id route used by orch; see
-    // `qwenSession` for why the newest file is not good enough.
-    caps: { readsRepo: true, mcp: true, discoversMcpFromCwd: false, schema: false, writesRepo: false, resumable: true },
-    defaultTransport: 'cli',
-    stdin: false,
-    maxPromptBytes: ARGV_PROMPT_BYTES,
-    readsOut: false,
-    // Our own hardware, so a hang costs nothing but the caller's wait.
-    timeoutMs: 15 * 60_000,
-    // MEASURED, from the endpoint itself: `max_model_len: 65536`. The model
-    // card's 262K is the architecture's limit, not what is being served, and
-    // routing has to believe the server. `orch doctor` re-reads this from
-    // /v1/models and says so when the two disagree — re-serving with a
-    // different --max-model-len is a routing change, whether or not anyone
-    // remembers to edit this line.
-    contextTokens: LOCAL_CONTEXT_TOKENS,
-    // output-ceiling stop reason not yet observed; record it from a real run
-    outputCeilingStopReason: null,
-    notes: 'Qwen Code CLI on the local endpoint. Free per call, no quota.',
-    argv({ prompt, session }) {
-      // --approval-mode yolo because headless cannot answer a permission prompt.
-      // The endpoint is selected by env (see envFor), not by --openai-base-url:
-      // that flag does not switch it out of Gemini mode.
-      // -o json for the usage totals; the answer is on the terminal event.
-      // --chat-recording is what makes --resume work at all: without it the
-      // history is never written and a resume silently starts a fresh
-      // conversation, which is the worst of both worlds — the escalation is
-      // answered into a session that has forgotten the question.
-      return ['--approval-mode', 'yolo', '--chat-recording', '-o', 'json', prompt]
-    },
-    resumeArgv({ prompt, session }) {
-      return ['--approval-mode', 'yolo', '--chat-recording', '-o', 'json', '--resume', session, prompt]
-    },
-    readSession: qwenSession,
-    parseReply(stdout) {
-      try {
-        const events = JSON.parse(stdout)
-        const result = [...events].reverse().find((e: any) => e.type === 'result')
-        if (!result) return rawReply(stdout)
-        return {
-          text: String(result.result ?? '').trim(),
-          tokens: result.usage?.total_tokens ?? null,
-          costUsd: 0, // runs on our own hardware
-        }
-      } catch { return rawReply(stdout) }
-    },
-    env: () => ({
-      OPENAI_API_KEY: 'local',
-      OPENAI_BASE_URL: LOCAL_BASE_URL,
-      OPENAI_MODEL: LOCAL_MODEL,
-    }),
   },
   grok: {
     name: 'grok',
@@ -952,6 +795,356 @@ export const AGENTS: Record<string, Agent> = {
       } catch { return rawReply(stdout) }
     },
   },
+}
+
+/** Names seeded by the registry migration and therefore valid in job preferences. */
+export const MIGRATED_AGENT_NAMES = ['agy', 'codex', 'grok', 'qwen-local'] as const
+
+export const HARNESSES = ['codex', 'grok', 'opencode', 'goose', 'claude-code'] as const
+export const BACKENDS = ['vllm', 'ollama', 'lmstudio', 'vendor'] as const
+export type Harness = (typeof HARNESSES)[number]
+export type Backend = (typeof BACKENDS)[number]
+export type AgentRow = {
+  name: string; harness: string; backend: string | null; model: string; base_url: string | null
+  transport: 'cli' | 'acp'; caps: string; billing: Agent['billing']; enabled: number
+  disabled_reason: string | null; probed_at: string | null; probe_result: string | null
+}
+
+function rowAgent(row: AgentRow): Agent {
+  const stored = JSON.parse(row.caps) as Caps & { contextTokens?: number | null }
+  const harnessBuiltin = BUILTIN_AGENTS[row.harness]
+  const legacy = !HARNESSES.includes(row.harness as Harness)
+  const adapter = harnessBuiltin
+  const base: Agent = adapter ? { ...adapter } : {
+    name: row.name,
+    bin: row.harness,
+    minimumCliVersion: '0.0.0',
+    billing: row.billing,
+    model: row.model,
+    caps: stored,
+    defaultTransport: row.transport,
+    stdin: false,
+    maxPromptBytes: Number.POSITIVE_INFINITY,
+    readsOut: false,
+    timeoutMs: 20 * 60_000,
+    contextTokens: stored.contextTokens ?? 0,
+    outputCeilingStopReason: null,
+    notes: `${legacy ? 'Legacy agent; historical evidence only.' : `${row.harness} ACP harness.`}`,
+    argv() { throw new Error(`${row.name} has no CLI transport; use ACP`) },
+  }
+  return {
+    ...base,
+    name: row.name,
+    harness: row.harness,
+    backend: row.backend,
+    baseUrl: row.base_url,
+    model: row.model,
+    billing: row.billing,
+    caps: stored,
+    defaultTransport: row.transport,
+    contextTokens: Object.hasOwn(stored, 'contextTokens')
+      ? (stored.contextTokens === null ? Number.POSITIVE_INFINITY : stored.contextTokens!)
+      : 0,
+    enabled: Boolean(row.enabled),
+    disabledReason: row.disabled_reason,
+    probedAt: row.probed_at,
+    probeResult: row.probe_result ? JSON.parse(row.probe_result) : null,
+    probePassed: row.probe_result ? JSON.parse(row.probe_result).ok !== false : false,
+    legacy,
+    ...(row.base_url ? { env: () => ({
+      ...(base.env?.() ?? {}),
+      ORCH_LOCAL_BASE_URL: row.base_url!,
+      OPENAI_BASE_URL: row.base_url!,
+      OPENAI_API_KEY: 'local',
+      ...(row.harness === 'goose' ? {
+        GOOSE_PROVIDER: 'openai',
+        GOOSE_MODEL: row.model,
+        GOOSE_TELEMETRY_ENABLED: 'false',
+      } : {}),
+    }) } : {}),
+  }
+}
+
+const FALLBACK_AGENTS: Record<string, Agent> = {
+  ...BUILTIN_AGENTS,
+  ...Object.fromEntries([
+    {
+      name: 'agy', harness: 'agy', backend: 'vendor', model: 'gemini-3.1-pro-high',
+      base_url: null, transport: 'cli', billing: 'free', enabled: 0,
+      disabled_reason: 'no readsRepo; only two inline jobs and negligible evidence',
+      probed_at: '2026-09-07T00:00:00.000Z',
+      probe_result: '{"source":"migrated verified capabilities","legacy":true}',
+      caps: '{"readsRepo":false,"mcp":false,"discoversMcpFromCwd":false,"schema":true,"writesRepo":false,"resumable":false,"contextTokens":null}',
+    },
+    {
+      name: 'qwen-local', harness: 'qwen', backend: 'vllm', model: 'Qwen/Qwen3.6-35B-A3B',
+      base_url: null, transport: 'cli', billing: 'local', enabled: 0,
+      disabled_reason: 'retired bespoke driver; replacement is local-acp',
+      probed_at: '2026-09-07T00:00:00.000Z',
+      probe_result: '{"source":"migrated verified capabilities","legacy":true}',
+      caps: '{"readsRepo":true,"mcp":true,"discoversMcpFromCwd":false,"schema":false,"writesRepo":false,"resumable":false,"contextTokens":131072}',
+    },
+  ].map((row) => [row.name, rowAgent(row as AgentRow)])),
+}
+
+export function agentRows(): AgentRow[] {
+  if (!ROOT) return []
+  if (!existsSync(DB_PATH)) throw new Error(`orchestrator database does not exist: ${DB_PATH}`)
+  // Let the canonical opener diagnose a stranded WAL. SQLite cannot open this
+  // shape read-only without its shared-memory sidecar, and db() carries the
+  // actionable lifecycle refusal for it.
+  if (existsSync(`${DB_PATH}-wal`) && !existsSync(`${DB_PATH}-shm`)) {
+    return dbForAgents().query('SELECT * FROM agent ORDER BY name').all() as AgentRow[]
+  }
+  // Registry reads happen during jobs.ts import. Keep them genuinely read-only:
+  // reporting commands such as review coverage-audit promise not to alter the
+  // database bytes merely by importing the job/agent catalogues.
+  const database = new Database(DB_PATH, { readonly: true })
+  try {
+    return database.query('SELECT * FROM agent ORDER BY name').all() as AgentRow[]
+  } finally {
+    database.close()
+  }
+}
+
+let agentCache: Record<string, Agent> | null = null
+let agentCacheSignature: string | null = null
+function loadedAgents(): Record<string, Agent> {
+  try {
+    const rows = agentRows()
+    const signature = JSON.stringify(rows)
+    if (agentCache && signature === agentCacheSignature) return agentCache
+    agentCacheSignature = signature
+    const loaded = Object.fromEntries(rows.map((row) => [row.name, rowAgent(row)]))
+    for (const [name, agent] of Object.entries(loaded)) assertResumableAgent(name, agent, false)
+    return agentCache = loaded
+  } catch (error) {
+    if (String((error as Error).message).includes('database does not exist')) return FALLBACK_AGENTS
+    throw error
+  }
+}
+function invalidateAgents(): void { agentCache = null; agentCacheSignature = null }
+export const AGENTS: Record<string, Agent> = new Proxy({}, {
+  get: (_target, property) => loadedAgents()[property as string],
+  ownKeys: () => Reflect.ownKeys(loadedAgents()),
+  has: (_target, property) => property in loadedAgents(),
+  getOwnPropertyDescriptor: (_target, property) => property in loadedAgents()
+    ? { enumerable: true, configurable: true, value: loadedAgents()[property as string] }
+    : undefined,
+})
+
+export type AgentMutation = {
+  harness?: Harness; backend?: Backend; model?: string; baseUrl?: string | null
+  transport?: 'cli' | 'acp'; billing?: Agent['billing']; contextTokens?: number
+  enabled?: boolean; reason?: string
+}
+
+function assertAgentMutation(input: AgentMutation, adding: boolean): void {
+  if (input.harness && !HARNESSES.includes(input.harness)) throw new Error(`unknown harness "${input.harness}"`)
+  if (input.backend && !BACKENDS.includes(input.backend)) throw new Error(`unknown backend "${input.backend}"`)
+  if (input.transport && !['cli', 'acp'].includes(input.transport)) throw new Error(`unknown transport "${input.transport}"`)
+  if (input.billing && !['subscription','free','local','metered','unknown'].includes(input.billing)) {
+    throw new Error(`unknown billing "${input.billing}"`)
+  }
+  if (input.enabled === false && !input.reason?.trim()) {
+    throw new Error('disabling an agent requires --reason')
+  }
+  if (input.enabled !== false && input.reason !== undefined) {
+    throw new Error('--reason is only valid with --enabled false')
+  }
+  if (input.contextTokens !== undefined && (!Number.isInteger(input.contextTokens) || input.contextTokens <= 0)) {
+    throw new Error('--context-tokens must be a positive integer')
+  }
+  if (adding && (!input.harness || !input.backend || !input.model)) {
+    throw new Error('agent add requires --harness, --backend, and --model')
+  }
+}
+
+export function addAgent(name: string, input: AgentMutation): AgentRow {
+  assertAgentMutation(input, true)
+  const caps = {
+    readsRepo: false, mcp: false, discoversMcpFromCwd: false, schema: false,
+    writesRepo: false, resumable: false,
+    ...(input.contextTokens ? { contextTokens: input.contextTokens } : {}),
+  }
+  writableDb().query(
+    `INSERT INTO agent (name,harness,backend,model,base_url,transport,caps,billing,enabled,disabled_reason)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+  ).run(name, input.harness!, input.backend!, input.model!, input.baseUrl ?? null,
+    input.transport ?? 'acp', JSON.stringify(caps), input.billing ?? (input.backend === 'vendor' ? 'subscription' : 'local'),
+    input.enabled === false ? 0 : 1, input.enabled === false ? input.reason!.trim() : null)
+  invalidateAgents()
+  return agentRows().find((row) => row.name === name)!
+}
+
+export function setAgent(name: string, input: AgentMutation): AgentRow {
+  assertAgentMutation(input, false)
+  const current = agentRows().find((row) => row.name === name)
+  if (!current) throw new Error(`unknown agent "${name}"`)
+  const caps = JSON.parse(current.caps) as Record<string, unknown>
+  if (input.contextTokens !== undefined) caps.contextTokens = input.contextTokens
+  const enabled = input.enabled === undefined ? current.enabled : input.enabled ? 1 : 0
+  const reason = input.enabled === false ? input.reason!.trim()
+    : input.enabled === true ? null : current.disabled_reason
+  const harnessChanged = input.harness !== undefined && input.harness !== current.harness
+  let probedAt = current.probed_at
+  let probeResult = current.probe_result
+  if (harnessChanged) {
+    const previous = current.probe_result ? JSON.parse(current.probe_result) : null
+    const attempts = Array.isArray(previous?.attempts) ? previous.attempts : []
+    if (previous && !previous.pendingHarness) {
+      attempts.push({ harness: previous.harness ?? current.harness, result: previous })
+    }
+    probedAt = null
+    probeResult = JSON.stringify({ ok: false, pendingHarness: input.harness, attempts })
+  }
+  writableDb().query(
+    `UPDATE agent SET harness=?,backend=?,model=?,base_url=?,transport=?,caps=?,billing=?,enabled=?,disabled_reason=?,probed_at=?,probe_result=? WHERE name=?`,
+  ).run(input.harness ?? current.harness, input.backend ?? current.backend,
+    input.model ?? current.model, input.baseUrl === undefined ? current.base_url : input.baseUrl,
+    input.transport ?? current.transport, JSON.stringify(caps), input.billing ?? current.billing,
+    enabled, reason, probedAt, probeResult, name)
+  invalidateAgents()
+  return agentRows().find((row) => row.name === name)!
+}
+
+export function removeAgent(name: string): void {
+  const count = (dbForAgents().query('SELECT COUNT(*) n FROM run WHERE agent=?').get(name) as { n: number }).n
+  if (count) {
+    throw new Error(
+      `refusing to remove agent "${name}": ${count} run row${count === 1 ? '' : 's'} name it\n` +
+      `disable it instead: orch agent set ${name} --enabled false --reason <reason>`,
+    )
+  }
+  const result = writableDb().query('DELETE FROM agent WHERE name=?').run(name)
+  if (!result.changes) throw new Error(`unknown agent "${name}"`)
+  invalidateAgents()
+}
+
+export type RegistrationProbeResult = {
+  harness: string
+  ok: boolean
+  reply: { ok: boolean; output: string }
+  tool: { ok: boolean; output: string; toolEvents: number; statuses: string[] }
+  schema: { ok: boolean; output: string }
+  contextTokens: number | null
+  contextSource: 'harness' | 'declared' | null
+  attempts?: { harness: string; result: unknown }[]
+}
+
+export function recordAgentProbe(name: string, result: RegistrationProbeResult): void {
+  const row = agentRows().find((candidate) => candidate.name === name)
+  if (!row) throw new Error(`unknown agent "${name}"`)
+  const prior = JSON.parse(row.caps) as Caps & { contextTokens?: number | null }
+  const caps = {
+    ...prior,
+    readsRepo: result.tool.ok,
+    schema: result.schema.ok,
+    ...(result.contextTokens !== null ? { contextTokens: result.contextTokens } : {}),
+  }
+  writableDb().query('UPDATE agent SET caps=?,probed_at=?,probe_result=? WHERE name=?')
+    .run(JSON.stringify(caps), nowIso(), JSON.stringify(result), name)
+  if (name === 'local-acp' && result.ok) {
+    writableDb().query(`UPDATE agent SET enabled=0,disabled_reason=? WHERE name='qwen-local'`)
+      .run('retired bespoke driver; local-acp passed registration probe')
+  }
+  invalidateAgents()
+}
+
+/** Prove capabilities before routing spends a worktree discovering them. */
+export async function probeAgent(name: string): Promise<RegistrationProbeResult> {
+  const row = agentRows().find((candidate) => candidate.name === name)
+  if (!row) throw new Error(`unknown agent "${name}"`)
+  if (!HARNESSES.includes(row.harness as Harness)) {
+    throw new Error(`legacy agent "${name}" has no runnable harness`)
+  }
+  const agent = rowAgent(row)
+  if (which(agent.bin) === null) throw new Error(`${agent.harness} harness is not installed`)
+  const scratch = mkdtempSync(join(process.env.TMPDIR ?? '/tmp', 'orch-agent-probe-'))
+  mkdirSync(join(scratch, 'repo'))
+  writeFileSync(join(scratch, 'repo', 'probe.txt'), 'REGISTRATION_PROBE_FILE_OK\n')
+  const schemaPath = join(scratch, 'schema.json')
+  writeFileSync(schemaPath, JSON.stringify({
+    type: 'object', additionalProperties: false, required: ['status'],
+    properties: { status: { type: 'string', enum: ['ok'] } },
+  }))
+  const { transportFor } = await import('./transport.ts')
+  const transport = transportFor(agent.defaultTransport)
+  const runOne = async (id: string, prompt: string, schema?: string) => {
+    const started = Date.now()
+    const inserted = writableDb().query(
+      `INSERT INTO run
+       (started_at,agent,job,cwd,prompt_sha,prompt_bytes,prompt_head,probe,status,model,transport)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+    ).get(new Date(started).toISOString(), name, `agent-probe-${id}`, join(scratch, 'repo'),
+      createHash('sha256').update(prompt).digest('hex'), Buffer.byteLength(prompt), prompt.slice(0, 240),
+      1, 'running', agent.model, agent.defaultTransport) as { id: number }
+    try {
+      const handle = await transport.start({
+        agent, cwd: join(scratch, 'repo'), prompt, outPath: join(scratch, `${id}.out`),
+        schemaPath: schema, model: agent.model, modelExplicit: true, startedAt: Date.now(),
+        write: false, sandbox: 'read-only',
+        env: {
+          ...Object.fromEntries(Object.entries(process.env).filter((e): e is [string,string] => e[1] !== undefined)),
+          ...(agent.env?.() ?? {}),
+        },
+      })
+      try {
+        await transport.prompt(handle, prompt)
+        const outcome = await handle.collect()
+        writableDb().query(
+          `UPDATE run SET status=?,latency_ms=?,exit_code=?,output_bytes=?,error=? WHERE id=?`,
+        ).run(outcome.status === 'ok' ? 'ok' : 'failed', Date.now() - started,
+          outcome.status === 'ok' ? 0 : 1, Buffer.byteLength(outcome.output),
+          outcome.status === 'ok' ? null : outcome.output, inserted.id)
+        return outcome
+      } finally { try { handle.kill(9) } catch { /* exited */ } }
+    } catch (error) {
+      const detail = String((error as Error).message ?? error)
+      writableDb().query(
+        `UPDATE run SET status='failed',latency_ms=?,exit_code=1,error=? WHERE id=?`,
+      ).run(Date.now() - started, detail, inserted.id)
+      return {
+        status: 'failed' as const, output: detail,
+        parsed: null, events: [] as import('./transport.ts').NormalizedEvent[],
+      }
+    }
+  }
+  const reply = await runOne('reply', 'Reply with exactly: ok')
+  const tool = await runOne('tool', 'Read probe.txt with a file tool and reply with exactly its contents.')
+  const structured = await runOne('schema', 'Return status ok using the supplied schema.', schemaPath)
+  const parsedSchema = (() => {
+    try { return JSON.parse(structured.parsed?.text ?? structured.output) } catch { return null }
+  })()
+  const prior = JSON.parse(row.caps) as Caps & { contextTokens?: number | null }
+  const previousProbe = row.probe_result ? JSON.parse(row.probe_result) : null
+  const attempts = Array.isArray(previousProbe?.attempts) ? previousProbe.attempts : []
+  let contextTokens = Object.hasOwn(prior, 'contextTokens') ? prior.contextTokens ?? null : null
+  let contextSource: RegistrationProbeResult['contextSource'] = contextTokens ? 'declared' : null
+  if (row.base_url) {
+    const health = await localReachable(4000, row.base_url)
+    if (health.contextTokens) { contextTokens = health.contextTokens; contextSource = 'harness' }
+  }
+  const result: RegistrationProbeResult = {
+    harness: row.harness,
+    ok: false,
+    reply: { ok: reply.status === 'ok' && reply.output.trim().toLowerCase() === 'ok', output: reply.output },
+    tool: {
+      // ACP reports the harness tool lifecycle separately from its final prose.
+      // Goose emits an empty final message after a successful read, so the
+      // completed tool event is the capability proof; requiring echoed prose
+      // would classify the successful file operation as absent.
+      ok: tool.status === 'ok' && tool.events.some((e) => e.kind === 'tool' && e.status === 'completed'),
+      output: tool.output, toolEvents: tool.events.filter((e) => e.kind === 'tool').length,
+      statuses: tool.events.filter((e) => e.kind === 'tool').map((e) => e.status ?? 'unknown'),
+    },
+    schema: { ok: structured.status === 'ok' && parsedSchema?.status === 'ok', output: structured.output },
+    contextTokens, contextSource,
+    ...(attempts.length ? { attempts } : {}),
+  }
+  result.ok = result.reply.ok && result.tool.ok && result.schema.ok && contextTokens !== null
+  recordAgentProbe(name, result)
+  return result
 }
 
 /**
@@ -1120,6 +1313,9 @@ export function resetLocalHealth() {
 export function unavailableReason(name: string): string | null {
   const a = AGENTS[name]
   if (!a) return 'unknown agent'
+  if (a.enabled === false) return `disabled — ${a.disabledReason}`
+  if (a.probedAt && a.probePassed === false) return 'registration probe failed'
+  if (a.contextTokens === 0) return 'unprobed and has no declared context window'
   if (which(a.bin) === null) return 'not installed'
   if (a.billing === 'local') {
     // A local agent is only real once an endpoint is configured...
@@ -1197,7 +1393,8 @@ export function installed(): string[] {
  * Checked at import, like the `prefer` names above, because this is a
  * contradiction rather than a condition and should fail where it is written.
  */
-for (const [name, a] of Object.entries(AGENTS)) {
+function assertResumableAgent(name: string, a: Agent, requireExact: boolean): void {
+  if (a.enabled === false || a.legacy) return
   const hasId = Boolean(a.mintSession ?? a.readSession)
   if (a.caps.resumable && !(a.resumeArgv && hasId)) {
     throw new Error(
@@ -1205,9 +1402,10 @@ for (const [name, a] of Object.entries(AGENTS)) {
       `${a.resumeArgv ? '' : 'no resumeArgv; '}${hasId ? '' : 'no way to learn its session id'}`,
     )
   }
-  if (!a.caps.resumable && a.resumeArgv && hasId) {
+  if (requireExact && !a.caps.resumable && a.resumeArgv && hasId) {
     throw new Error(
       `agent "${name}" has everything needed to resume but declares resumable: false`,
     )
   }
 }
+for (const [name, a] of Object.entries(BUILTIN_AGENTS)) assertResumableAgent(name, a, true)

@@ -13,6 +13,20 @@ const subjectlessScopes = DOC_SCOPES.filter((scope) => DOC_SCOPE_SUBJECT_KIND[sc
 const subjectScopes = DOC_SCOPES.filter((scope) => DOC_SCOPE_SUBJECT_KIND[scope] !== null)
 const id = () => integer('id').primaryKey({ autoIncrement: true })
 
+export const agent = sqliteTable('agent', {
+  name: text().primaryKey(), harness: text().notNull(), backend: text(), model: text().notNull(),
+  baseUrl: text('base_url'), transport: text().notNull().default('cli'), caps: text().notNull(),
+  billing: text().notNull(), enabled: integer().notNull().default(1),
+  disabledReason: text('disabled_reason'), probedAt: text('probed_at'), probeResult: text('probe_result'),
+}, (t) => [
+  check('agent_transport_check', sql`${t.transport} in ('cli','acp')`),
+  check('agent_billing_check', sql`${t.billing} in ('subscription','free','local','metered','unknown')`),
+  check('agent_enabled_check', sql`${t.enabled} in (0,1)`),
+  check('agent_caps_json_check', sql`json_valid(${t.caps})`),
+  check('agent_probe_result_json_check', sql`${t.probeResult} is null or json_valid(${t.probeResult})`),
+  check('agent_disabled_reason_check', sql`(${t.enabled} = 1 and ${t.disabledReason} is null) or (${t.enabled} = 0 and length(trim(${t.disabledReason})) > 0)`),
+])
+
 export const run = sqliteTable('run', {
   id: id(), startedAt: text('started_at').notNull(), agent: text().notNull(), job: text().notNull(),
   /** @deprecated One-release mirror; use projectId. */

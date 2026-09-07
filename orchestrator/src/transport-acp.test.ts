@@ -9,7 +9,7 @@ import {
   selectAgentForTransport, stopErrorMessage, valueMatchesStrictSchema,
 } from './transport.ts'
 import {
-  acpLeaderSocketPath, acpOutcome, acpSandboxProfile, grokEffectiveModel,
+  acpHarnessArgv, acpLeaderSocketPath, acpOutcome, acpSandboxProfile, grokEffectiveModel,
   grokSessionMeta, normalizeAcpTurn,
 } from './transport-acp.ts'
 import {
@@ -20,6 +20,11 @@ import {
 } from './transport-acp.fixtures.ts'
 
 describe('ACP transport selection', () => {
+  test('model-agnostic harnesses expose their ACP stdio command', () => {
+    expect(acpHarnessArgv('opencode')).toEqual(['acp'])
+    expect(acpHarnessArgv('goose')).toEqual(['acp'])
+    expect(acpHarnessArgv('codex')).toEqual([])
+  })
   test('defaults to cli, honours the flag and ORCH_TRANSPORT', () => {
     expect(resolveTransportName(undefined, undefined)).toBe('cli')
     expect(resolveTransportName(undefined, '')).toBe('cli')

@@ -209,8 +209,7 @@ export const { gateFailureSummary, land, landingStatus, landingReviewCoverage, r
 export const { gitLocks, formatGitLocks } = await import('../src/git-locks.ts')
 export const { AGENTS, ARGV_PROMPT_BYTES, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
-        WAKE_COOLDOWN_MS, CODEX_EXEC_SANDBOX, CODEX_ASK_ENV_VARS, strictCodexSchema,
-        qwenSession } = await import('../src/agents.ts')
+        WAKE_COOLDOWN_MS, CODEX_EXEC_SANDBOX, CODEX_ASK_ENV_VARS, strictCodexSchema } = await import('../src/agents.ts')
 export const { listDocs, listDocMetadata, getDoc, setDoc: writeDoc, consumeDoc: consumeDocument, removeDoc: deleteDoc,
         docsForRun, exportDocs, importDocs: readDocs, brief, docSubjects,
         listOpenResumes, parseResumeFrontmatter, resumeAge, listDocRevisions, getDocRevision, restoreDoc,

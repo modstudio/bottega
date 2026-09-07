@@ -1751,17 +1751,28 @@ before, 160 of 160 after.
 
 ## Agent capabilities are not interchangeable
 
-- `readsRepo` — can find and open files unaided. **`agy` cannot**, and this is a
-  specialism rather than a defect. Measured on the same question: 13.0s when the
+An agent is a row: harness, backend, and model. The harness is the ACP-speaking
+tool, the backend is where inference runs, and the model is the effective model
+that run evidence names. None of those three is a capability declaration.
+
+**Capabilities come from `orch agent probe`, never from inference or a model
+card.** Registration asks for one exact reply, one real file-tool read, and one
+schema-bound reply, then records what happened and the context window the
+harness reported (or the declared window when it reports none). An inferred
+capability fails at use time and costs a worktree; a probed capability fails at
+registration and costs a minute. An unprobed row is therefore ineligible for
+repository work, and a row with no declared or probed window is ineligible for
+every job with a working set.
+
+- `readsRepo` — can find and open files unaided. **`agy` cannot.** Measured on the same question: 13.0s when the
   text is supplied inline, 3m 59s when it must read the file itself, and denied
   outright on a later attempt — headless mode soft-denies the `RunCommand` tool
   and cannot prompt for it. Allow-rules were tried and did not match what it
   actually requests.
 
-  So agy is the fastest of the three at judging what it is handed, and unusable
-  at fetching. Give it `summarize` and `review-lens-inline`; never a job needing
-  `readsRepo`. Its free tier is not the constraint — inline runs are as quick now
-  as on the first call.
+  It produced only two inline runs and negligible evidence, so its registry row
+  is disabled and retained solely as the referent for that history. Inline work
+  routes to the cheapest enabled inline-capable row instead.
 
   **The pack it needs costs nothing to build, and that is the point that was
   missed.** Assembling a self-contained pack sounds like reading the files, which
@@ -1864,29 +1875,22 @@ as a fresh root and the chain silently forked.
 
 ## Local model
 
-`qwen-local` drives the endpoint with Qwen Code. An earlier attempt used the Codex harness via
-`model_providers`, so AGENTS.md reading, `--output-schema` and MCP all still
-work with a local model behind them. Set `ORCH_LOCAL_BASE_URL` (and optionally
-`ORCH_LOCAL_MODEL`). It costs nothing per call, which makes it the right home
-for high-volume mechanical work.
+`local-acp` drives the OpenAI-compatible endpoint through a model-agnostic ACP
+harness. Set `ORCH_LOCAL_BASE_URL`; the registered row supplies the backend and
+model. Adding another local model is another row and probe, not another driver.
+`qwen-local` remains only as a disabled legacy referent so its historical runs
+keep their meaning.
 
 Being configured is not being reachable: `available()` checks the former,
 `orch doctor` checks the latter.
 
-**The local endpoint is driven by Qwen Code, not Codex.** Codex speaks only the
-OpenAI *Responses* API and sends the `developer` role, which this vLLM build
-rejects outright — verified: `system` and `assistant` are accepted alongside a
-user message, `developer` returns `Unexpected message role`. Qwen Code speaks
-plain `/v1/chat/completions`, so it works, and it is a Gemini CLI fork tuned for
-Qwen models, which is what is being served.
-
-Select the endpoint through the **environment**, not `--openai-base-url`: that
-flag does not switch it out of Gemini mode and yields an opaque 404.
-
-    OPENAI_API_KEY=local OPENAI_BASE_URL=… OPENAI_MODEL=… qwen --approval-mode yolo -o text "…"
-
-`--approval-mode yolo` is required because headless cannot answer a permission
-prompt. Measured: reads a file and answers correctly in **8-10s**.
+The harness speaks plain `/v1/chat/completions` to vLLM and ACP to orch. Its
+registration probe is the authority on file tools and structured output; the
+endpoint's `/v1/models` response is the authority on the served window. The
+current 131,072-token service fits repository errands but not `understand`,
+whose 131,072-token working set plus 16,384-token reply reserve requires the
+endpoint to be served at 147,456 tokens or more. That exclusion is routing
+working from a probed fact, not a reason to weaken the requirement.
 
 ### The window is a serving flag
 

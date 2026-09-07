@@ -3,6 +3,46 @@ import { rmSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { AGENTS, GENERIC_QUESTION_TOKENS, JOBS, LAND_PREAMBLE, NEEDS_HEALTH, OUTPUT_RESERVE, STALE_AFTER_MS, WAKE_COOLDOWN_MS, WORKER_PREAMBLE, addRun, available, candidates, classify, db, detectBlockers, dir, ensureLocalHealth, guide, isNonAnswer, jobTimeoutCeilingMinutes, localReachable, pick, resetLocalHealth, runJob, score, strictCodexSchema, unavailableReason, upsertProject, wakeDecision, workerPreamble, workerResumeGuard } from '../test/fixture.ts'
+import { addAgent, agentRows, recordAgentProbe, removeAgent, setAgent } from './agents.ts'
+
+describe('agent registry', () => {
+  test('migration preserves the four historical names and capabilities', () => {
+    expect(agentRows().map((row) => row.name)).toEqual(['agy', 'codex', 'grok', 'qwen-local'])
+    expect(AGENTS.codex!.caps).toMatchObject({ readsRepo: true, schema: true, writesRepo: true })
+    expect(AGENTS['qwen-local']!.caps).toMatchObject({ readsRepo: true, schema: false })
+    expect(AGENTS.agy!.legacy).toBe(true)
+  })
+
+  test('probe outcomes replace probed capabilities and disable the bespoke local driver', () => {
+    addAgent('local-acp', {
+      harness: 'opencode', backend: 'vllm', model: 'served/model', baseUrl: 'http://127.0.0.1:1/v1',
+      contextTokens: 65536,
+    })
+    recordAgentProbe('local-acp', {
+      harness: 'opencode',
+      ok: true,
+      reply: { ok: true, output: 'ok' },
+      tool: { ok: true, output: 'REGISTRATION_PROBE_FILE_OK', toolEvents: 1, statuses: ['completed'] },
+      schema: { ok: true, output: '{"status":"ok"}' },
+      contextTokens: 131072,
+      contextSource: 'harness',
+    })
+    expect(AGENTS['local-acp']!.caps).toMatchObject({ readsRepo: true, schema: true })
+    expect(AGENTS['local-acp']!.contextTokens).toBe(131072)
+    expect(AGENTS['qwen-local']!.enabled).toBe(false)
+  })
+
+  test('unprobed rows are excluded and removal refuses to orphan evidence', () => {
+    addAgent('new-local', { harness: 'opencode', backend: 'vllm', model: 'm' })
+    expect(unavailableReason('new-local')).toContain('unprobed')
+    addRun({ agent: 'new-local', job: 'summarize' })
+    expect(() => removeAgent('new-local')).toThrow('disable it instead: orch agent set new-local')
+    expect(() => setAgent('new-local', { enabled: false })).toThrow('requires --reason')
+    setAgent('new-local', { enabled: false, reason: 'retired in test' })
+    expect(unavailableReason('new-local')).toContain('retired in test')
+  })
+})
+
 
 describe('Codex strict output schemas', () => {
   test('normalizes nested objects and makes optional fields nullable', () => {
@@ -90,7 +130,7 @@ describe('a probe proves an agent is alive without vouching for it', () => {
   test('a probe bypasses cooling only, not the pinned agent\'s other exclusions', () => {
     addRun({ agent: 'agy', job: 'file-question', status: 'failed', kind: 'quota' })
     expect(() => pick('file-question', 'agy', 0, false, null, {}, true))
-      .toThrow('not eligible for file-question: lacks readsRepo')
+      .toThrow('not eligible for file-question: disabled')
   })
 
   test('a probe clears a cooldown, which is the only way to clear one early', () => {
@@ -214,7 +254,7 @@ describe('reachability is a routing input, not a run outcome', () => {
     const local = Object.values(AGENTS).find((a) => a.billing === 'local')!
     expect(available(local.name)).toBe(false)
     const why = unavailableReason(local.name)!
-    expect(why).toContain('unreachable')
+    expect(why).toContain('disabled')
     // And specifically NOT the answer it used to give, which sends you looking
     // for a binary that is sitting right there on PATH.
     expect(why).not.toContain('not installed')
@@ -226,7 +266,7 @@ describe('reachability is a routing input, not a run outcome', () => {
     // file-question is the job it is best at and would otherwise be preferred.
     const c = candidates('file-question').find((x) => x.agent === local.name)!
     expect(c.eligible).toBe(false)
-    expect(c.why).toContain('unreachable')
+    expect(c.why).toContain('disabled')
   })
 
   test('every command that reports a route also checks reachability', () => {
@@ -313,7 +353,10 @@ describe('a job only goes to an agent that can hold it', () => {
       for (const name of Object.keys(AGENTS)) {
         const c = candidates(job).find((x) => x.agent === name)!
         const tooSmall = windowOf(name) < needOf(job) + OUTPUT_RESERVE
-        if (tooSmall) {
+        if (AGENTS[name]!.enabled === false) {
+          expect(c.eligible).toBe(false)
+          expect(c.why).toContain('disabled')
+        } else if (tooSmall) {
           expect(c.eligible).toBe(false)
           expect(c.why).toContain('context')
         } else if (!c.eligible) {
@@ -326,7 +369,7 @@ describe('a job only goes to an agent that can hold it', () => {
 
   test('the reason names both numbers, so it can be acted on', () => {
     const fits = (n: string, j: string) => windowOf(n) >= needOf(j) + OUTPUT_RESERVE
-    const tight = Object.keys(AGENTS).find((n) =>
+    const tight = Object.keys(AGENTS).find((n) => AGENTS[n]!.enabled !== false &&
       Object.keys(JOBS).some((j) => !fits(n, j)))
     if (!tight) return  // every agent currently holds every job
     const job = Object.keys(JOBS).find((j) => !fits(tight, j))!
@@ -653,6 +696,7 @@ describe('only an agent that can be resumed may be asked to escalate', () => {
     // is written down where it is checked: a flag in a help text is not a
     // capability if orch has no id to resume with.
     for (const a of Object.values(AGENTS)) {
+      if (a.enabled === false || a.legacy) continue
       if (!a.caps.resumable) continue
       expect(a.resumeArgv).toBeDefined()
       expect(a.mintSession ?? a.readSession).toBeDefined()

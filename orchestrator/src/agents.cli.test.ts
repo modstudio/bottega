@@ -751,10 +751,10 @@ describe('vendor failure failover is one bounded unit of work', () => {
     }
   })
 
-  test('three quota deaths spend the attempt budget and name every agent', async () => {
+  test('quota failover tries every enabled agent and skips disabled legacy rows', async () => {
     const binDir = join(dir, 'budget-bin')
     mkdirSync(binDir, { recursive: true })
-    for (const bin of ['codex', 'agy']) {
+    for (const bin of ['codex']) {
       writeFileSync(join(binDir, bin), '#!/bin/sh\necho "HTTP 402: no balance" >&2\nexit 1\n')
       chmodSync(join(binDir, bin), 0o755)
     }
@@ -774,10 +774,9 @@ describe('vendor failure failover is one bounded unit of work', () => {
       const rows = db().query(
         'SELECT id, agent, retry_of, error FROM run ORDER BY id',
       ).all() as { id: number; agent: string; retry_of: number | null; error: string }[]
-      expect(rows).toHaveLength(3)
-      expect(rows.map((row) => row.agent)).toEqual(['codex', 'agy', 'grok'])
-      expect(rows[2]!.error).toContain('the 3-attempt budget was spent')
-      expect(rows[2]!.error).toContain('tried codex, agy, grok')
+      expect(rows).toHaveLength(2)
+      expect(rows.map((row) => row.agent)).toEqual(['codex', 'grok'])
+      expect(rows[1]!.error).toContain('after trying codex, grok')
     } finally {
       process.env.PATH = oldPath
       if (oldDepth === undefined) delete process.env.ORCH_DEPTH

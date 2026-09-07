@@ -72,7 +72,7 @@ function seeded(seed: number): () => number {
 function staticEligible(agent: string, jobName: string, promptBytes: number): boolean {
   const a = AGENTS[agent]
   const j = JOBS[jobName]
-  if (!a || !j || a.billing === 'metered' || promptBytes > a.maxPromptBytes) return false
+  if (!a || !j || a.enabled === false || a.legacy || a.billing === 'metered' || promptBytes > a.maxPromptBytes) return false
   if (a.contextTokens < j.contextTokens + OUTPUT_RESERVE) return false
   return !Object.entries(j.needs).some(([cap, need]) => need && !a.caps[cap as keyof typeof a.caps])
 }

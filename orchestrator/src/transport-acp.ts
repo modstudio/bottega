@@ -183,6 +183,12 @@ function webStream(child: ChildProcess): ReturnType<typeof acp.ndJsonStream> {
   return acp.ndJsonStream(input, output)
 }
 
+export function acpHarnessArgv(harness: string, leaderSocket?: string | null): string[] {
+  if (harness === 'grok') return ['agent', 'stdio', '--leader-socket', leaderSocket!]
+  if (harness === 'opencode' || harness === 'goose') return ['acp']
+  return []
+}
+
 function readTextFile(path: string, line?: number | null, limit?: number | null): string {
   const body = readFileSync(path, 'utf8')
   if (line == null && limit == null) return body
@@ -215,11 +221,10 @@ export function acpLeaderSocketPath(outPath: string, settingsPath?: string): str
 
 async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const grok = opts.agent.name === 'grok'
-  const bin = opts.bin ?? (grok ? opts.agent.bin : resolveCodexAcpBin())
+  const genericHarness = opts.agent.harness === 'opencode' || opts.agent.harness === 'goose'
+  const bin = opts.bin ?? (grok || genericHarness ? opts.agent.bin : resolveCodexAcpBin())
   const leaderSocket = grok ? acpLeaderSocketPath(opts.outPath, opts.srt?.settingsPath) : null
-  const agentArgv = grok
-    ? ['agent', 'stdio', '--leader-socket', leaderSocket!]
-    : []
+  const agentArgv = acpHarnessArgv(opts.agent.harness ?? opts.agent.name, leaderSocket)
   const profile = opts.srt ? acpSandboxProfile(opts.srt.profile, leaderSocket) : null
   const launch = profile && opts.srt
     ? srtLaunchArgv(profile, opts.srt.settingsPath, bin, agentArgv)
@@ -231,6 +236,24 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       NO_BROWSER: '1',
       INITIAL_AGENT_MODE: 'read-only',
       ...(opts.model ? { CODEX_CONFIG: JSON.stringify({ model: opts.model }) } : {}),
+      ...(opts.agent.harness === 'opencode' && opts.agent.baseUrl && opts.model ? {
+        OPENCODE_CONFIG_CONTENT: JSON.stringify({
+          model: `orch-local/${opts.model}`,
+          provider: {
+            'orch-local': {
+              npm: '@ai-sdk/openai-compatible',
+              name: 'orch local backend',
+              options: { baseURL: opts.agent.baseUrl, apiKey: 'local' },
+              models: { [opts.model]: { name: opts.model } },
+            },
+          },
+        }),
+      } : {}),
+      ...(opts.agent.harness === 'goose' ? {
+        XDG_STATE_HOME: opts.srt ? dirname(opts.srt.settingsPath) : dirname(opts.outPath),
+        XDG_DATA_HOME: opts.srt ? dirname(opts.srt.settingsPath) : dirname(opts.outPath),
+        XDG_CONFIG_HOME: opts.srt ? dirname(opts.srt.settingsPath) : dirname(opts.outPath),
+      } : {}),
     },
     stdio: ['pipe', 'pipe', 'pipe'],
   })
@@ -387,7 +410,8 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     closed = true
     try { child.kill('SIGTERM') } catch { /* already gone */ }
     if (leaderSocket) rmSync(leaderSocket, { force: true })
-    throw error
+    const stderr = Buffer.concat(stderrChunks).toString('utf8').trim()
+    throw new Error([String((error as Error)?.message ?? error), stderr].filter(Boolean).join('\n'))
   }
 
   let collectPromise: Promise<TransportResult> | null = null

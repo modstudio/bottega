@@ -76,11 +76,16 @@ let readStrictCodexSchema!: typeof import('./agents.ts').readStrictCodexSchema
 let resumePromptByteLimit!: typeof import('./agents.ts').resumePromptByteLimit
 let cliVersion!: typeof import('./agents.ts').cliVersion
 let versionBelow!: typeof import('./agents.ts').versionBelow
+let agentRows!: typeof import('./agents.ts').agentRows
+let addAgent!: typeof import('./agents.ts').addAgent
+let setAgent!: typeof import('./agents.ts').setAgent
+let removeAgent!: typeof import('./agents.ts').removeAgent
+let probeAgent!: typeof import('./agents.ts').probeAgent
 async function loadAgents() {
   agentsModule ??= await import('./agents.ts')
   ;({ AGENTS, available, installed, ensureLocalHealth, unavailableReason, tryWake,
       wakeStatus, lastWakeAttempt, readStrictCodexSchema, resumePromptByteLimit,
-      cliVersion, versionBelow } = agentsModule)
+      cliVersion, versionBelow, agentRows, addAgent, setAgent, removeAgent, probeAgent } = agentsModule)
 }
 let candidates!: typeof import('./route.ts').candidates
 let pick!: typeof import('./route.ts').pick
@@ -1551,6 +1556,11 @@ function usage(): never {
       prints every matched row and before/after counts before writing
   orch health [--days N] [--json] failure classes by count, time, last seen and false-verdict rate
   orch doctor                   agents, local endpoint, routing at a glance
+  orch agent add <name> --harness H --backend B --model M [--base-url U] [--context-tokens N]
+  orch agent set <name> [the add flags] [--enabled true|false] [--reason TEXT]
+  orch agent remove <name>      delete only an agent with no run evidence
+  orch agent probe <name>       run reply, file-tool, and structured-output registration probes
+  orch agent list [--json]      registered harness + backend + model rows and probe eligibility
   orch project [list] [--json]  the register: where work lives, and what it is built from
       --json                    print one JSON document (the published surface; never orch.db)
       add <path> [--name X] [--stack Y] [--no-canon] [--json]  (--json: one JSON document)
@@ -6731,6 +6741,69 @@ switch (cmd) {
       console.log(`${j.name.padEnd(15)} ${j.what}${needs}${axes}`)
     }
     break
+
+  case 'agent': {
+    await loadAgents()
+    const sub = argv[1]
+    const name = argv[2]
+    const mutation = () => {
+      const enabled = flag('enabled')
+      if (enabled !== undefined && enabled !== 'true' && enabled !== 'false') {
+        throw new Error('--enabled must be true or false')
+      }
+      const context = flag('context-tokens')
+      return {
+        ...(flag('harness') ? { harness: flag('harness') as any } : {}),
+        ...(flag('backend') ? { backend: flag('backend') as any } : {}),
+        ...(flag('model') ? { model: flag('model')! } : {}),
+        ...(flag('base-url') ? { baseUrl: flag('base-url')! } : {}),
+        ...(context ? { contextTokens: Number(context) } : {}),
+        ...(enabled !== undefined ? { enabled: enabled === 'true' } : {}),
+        ...(flag('reason') !== undefined ? { reason: flag('reason')! } : {}),
+      }
+    }
+    if (sub === 'add') console.log(JSON.stringify(addAgent(name!, mutation())))
+    else if (sub === 'set') console.log(JSON.stringify(setAgent(name!, mutation())))
+    else if (sub === 'remove') { removeAgent(name!); console.log(`removed ${name}`) }
+    else if (sub === 'probe') {
+      const result = await probeAgent(name!)
+      console.log(JSON.stringify(result, null, 2))
+      if (!result.ok) process.exitCode = 1
+    }
+    else if (sub === 'list') {
+      const rows = agentRows().map((row) => {
+        const caps = JSON.parse(row.caps)
+        const understandMinimum = 147_456
+        return {
+          name: row.name, harness: row.harness, backend: row.backend, model: row.model,
+          baseUrl: row.base_url, transport: row.transport, caps, billing: row.billing,
+          enabled: Boolean(row.enabled), disabledReason: row.disabled_reason,
+          probedAt: row.probed_at, probeResult: row.probe_result ? JSON.parse(row.probe_result) : null,
+          legacy: !['codex','grok','opencode','goose','claude-code'].includes(row.harness),
+          limitation: row.name === 'local-acp' && Number(caps.contextTokens ?? 0) < understandMinimum
+            ? `understand requires the endpoint served at ${understandMinimum} tokens or more`
+            : null,
+          eligibility: row.probe_result && JSON.parse(row.probe_result).ok === false
+            ? 'ineligible: registration probe failed'
+            : !Object.hasOwn(caps, 'contextTokens')
+            ? 'ineligible: no declared or probed context window'
+            : !row.probed_at
+            ? 'inline only: unprobed and ineligible for repository jobs'
+            : row.enabled ? 'eligible by registration' : `ineligible: disabled — ${row.disabled_reason}`,
+        }
+      })
+      if (process.argv.includes('--json')) console.log(JSON.stringify(rows))
+      else for (const row of rows) {
+        console.log(
+          `${row.name.padEnd(12)} ${row.enabled ? 'enabled ' : 'disabled'} ` +
+          `${row.harness}/${row.backend ?? '-'} ${row.model}` +
+          `${row.legacy ? ' [legacy]' : ''} — ${row.eligibility}` +
+          `${row.limitation ? `; ${row.limitation}` : ''}`,
+        )
+      }
+    }
+    break
+  }
 
   case 'agents':
     await loadAgents()

@@ -410,6 +410,19 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       if (!sub || !forms[sub]) return null
       return { args: argv.slice(2), shape: forms[sub] }
     }
+    case 'agent': {
+      if (topLevelOnly) return { args: [], shape: shape('orch agent', 0) }
+      const common = ['--harness','--backend','--model','--base-url','--context-tokens']
+      const forms: Record<string, CommandShape> = {
+        add: shape('orch agent add <name> --harness H --backend B --model M [--base-url U] [--context-tokens N]', 1, common),
+        set: shape('orch agent set <name> [registration flags] [--enabled true|false] [--reason TEXT]', 1, [...common, '--enabled', '--reason']),
+        remove: shape('orch agent remove <name>', 1),
+        list: shape('orch agent list [--json]', 0, [], ['--json']),
+        probe: shape('orch agent probe <name>', 1),
+      }
+      if (!sub || !forms[sub]) return null
+      return { args: argv.slice(2), shape: forms[sub] }
+    }
     case 'ask-server': return { args: argv.slice(1), shape: shape('orch ask-server', 0) }
     case 'setup-ask': return { args: argv.slice(1), shape: shape('orch setup-ask', 0) }
     case 'blockers': return { args: argv.slice(1), shape: shape('orch blockers [--days N] [--json]', 0, ['--days'], ['--json']) }

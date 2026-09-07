@@ -164,9 +164,10 @@ export function selectAgentForTransport(
  * every job that happens not to write.
  */
 export function assertAcpAllowed(jobName: string, agentName: string | undefined): void {
-  if (agentName && agentName !== 'codex' && agentName !== 'grok') {
+  const registered = agentName ? registeredAgent(agentName) : null
+  if (agentName && !['codex', 'grok'].includes(agentName) && registered?.defaultTransport !== 'acp') {
     throw new Error(
-      `ACP transport is a ${ACP_PILOT_TASK} pilot and is only available for codex or grok`,
+      `ACP transport is a ${ACP_PILOT_TASK} pilot and is only available for registered ACP agents`,
     )
   }
   if (isAcpPilotJob(jobName)) return
@@ -195,7 +196,9 @@ export function acpRuntimeGaps(opts?: {
   const sdkResolve = opts?.sdkResolve ?? (() => requireTransport.resolve('@agentclientprotocol/sdk'))
   const ajvResolve = opts?.ajvResolve ?? (() => requireTransport.resolve('ajv/dist/2020.js'))
   const agentName = opts?.agentName ?? 'codex'
-  const binPath = opts?.binPath ?? (agentName === 'grok' ? (Bun.which('grok') ?? 'grok') : resolveCodexAcpBin())
+  const registered = agentName ? registeredAgent(agentName) : null
+  const registeredBin = registered ? Bun.which(registered.bin) : null
+  const binPath = opts?.binPath ?? (agentName === 'grok' ? (Bun.which('grok') ?? 'grok') : registeredBin ?? resolveCodexAcpBin())
   const binExists = opts?.binExists ?? existsSync
   try {
     sdkResolve()
@@ -208,9 +211,16 @@ export function acpRuntimeGaps(opts?: {
     return `ACP transport is a ${ACP_PILOT_TASK} pilot; ajv is not installed`
   }
   if (!binExists(binPath)) {
-    return `ACP transport is a ${ACP_PILOT_TASK} pilot; the ${agentName === 'grok' ? 'grok' : 'codex-acp'} executable is not installed`
+    return `ACP transport is a ${ACP_PILOT_TASK} pilot; the ${agentName === 'grok' ? 'grok' : agentName === 'codex' ? 'codex-acp' : registered ? `${agentName} ACP harness` : 'codex-acp'} executable is not installed`
   }
   return null
+}
+
+function registeredAgent(name: string): Agent | null {
+  try {
+    const { AGENTS } = requireTransport('./agents.ts') as typeof import('./agents.ts')
+    return AGENTS[name] ?? null
+  } catch { return null }
 }
 
 export function assertAcpReady(agentName = 'codex'): void {

@@ -1,4 +1,4 @@
-import { AGENTS, type Caps } from './agents.ts'
+import { MIGRATED_AGENT_NAMES, type Caps } from './agents.ts'
 import { STALE_AFTER_MS } from './db.ts'
 
 export type Job = {
@@ -357,10 +357,10 @@ for (const [jobName, j] of Object.entries(JOBS)) {
   j.timeoutMs = timeouts.defaultMinutes == null ? undefined : timeouts.defaultMinutes * 60_000
   j.timeoutCeilingMs = timeouts.ceilingMinutes * 60_000
   for (const agent of j.prefer) {
-    if (!(agent in AGENTS)) {
+    if (!(MIGRATED_AGENT_NAMES as readonly string[]).includes(agent)) {
       throw new Error(
         `job "${jobName}" prefers unknown agent "${agent}" - ` +
-        `known agents: ${Object.keys(AGENTS).join(', ')}`,
+        `known agents: ${MIGRATED_AGENT_NAMES.join(', ')}`,
       )
     }
   }

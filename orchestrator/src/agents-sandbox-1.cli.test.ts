@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathS
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { qwenSession, AGENTS, CODEX_ASK_ENV_VARS, CODEX_EXEC_SANDBOX, addRun, assertCallerAncestry, assertSharedRefGuardOutsideWritableRoots, carryWorkingState, checkoutHasUncommittedWork, createWorktree, db, dir, hermeticGitEnv, prepareSharedRefGuard, prepareWorktreeObjects, removeFor, removeSharedRefGuard, runJob, upsertProject, workerReply, workerSharedGitRoots, worktreeGitDir } from '../test/fixture.ts'
+import { AGENTS, CODEX_ASK_ENV_VARS, CODEX_EXEC_SANDBOX, addRun, assertCallerAncestry, assertSharedRefGuardOutsideWritableRoots, carryWorkingState, checkoutHasUncommittedWork, createWorktree, db, dir, hermeticGitEnv, prepareSharedRefGuard, prepareWorktreeObjects, removeFor, removeSharedRefGuard, runJob, upsertProject, workerReply, workerSharedGitRoots, worktreeGitDir } from '../test/fixture.ts'
 
 describe("the sandbox an agent is launched with", () => {
 test('follows the job, not a project register entry', async () => {
@@ -1076,23 +1076,5 @@ test('follows the job, not a project register entry', async () => {
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
-  })
-
-
-  test('qwen session recovery reads a recording from the effective sandbox HOME', () => {
-    const home = mkdtempSync(join(tmpdir(), 'orch-qwen-home-'))
-    const cwd = '/runs/qwen-tree'
-    const prompt = 'recover this exact sandbox recording'
-    const slug = cwd.replace(/[^a-zA-Z0-9]+/g, '-')
-    const chats = join(home, '.qwen', 'projects', slug, 'chats')
-    mkdirSync(chats, { recursive: true })
-    writeFileSync(
-      join(chats, 'sandbox-session.jsonl'),
-      `${JSON.stringify({ message: { parts: [{ text: prompt }] } })}\n`,
-    )
-
-    expect(qwenSession({ cwd, prompt, startedAt: Date.now() - 100, home }))
-      .toBe('sandbox-session')
-    rmSync(home, { recursive: true, force: true })
   })
 })

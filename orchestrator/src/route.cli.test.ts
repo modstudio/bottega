@@ -618,7 +618,7 @@ describe('routing backtest statistics', () => {
     expect(replay).toBe(production)
   })
 
-  test("the replay's incumbent choice equals pick() when tied unproven challengers decide", () => {
+  test("the replay excludes a disabled legacy agent while retaining its historical rows", () => {
     const insert = db().query(
       `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
        VALUES (?,'full','right',?,'test')`,
@@ -641,7 +641,7 @@ describe('routing backtest statistics', () => {
 
     const selections = routingBacktest('summarize', 1).jobs[0]!.currentSelections
     expect(production).toBe('codex')
-    expect(selections).toEqual({ 'qwen-local': MIN_SAMPLE, [production]: 1 })
+    expect(selections).toEqual({ [production]: MIN_SAMPLE + 1 })
   })
 
   test('reports only replay choices for the filtered job', () => {
