@@ -184,7 +184,7 @@ export function cleanReviewEvidence(
 type RunRow = {
   id: number; agent: string; model: string | null; lens: string | null
   job: string; status: string; output_path: string | null; input_tree: string | null
-  head_commit: string | null; repo: string | null
+  head_commit: string | null; repo: string | null; project_id: number | null
   base_commit: string | null
 }
 
@@ -397,7 +397,7 @@ export function recordReviews(
   if (!entries.length) throw new Error('a review requires at least one lens run')
   const runs = entries.map(({ runId }) => {
     const run = database.query(
-      `SELECT id, agent, model, lens, job, status, output_path, input_tree, head_commit, repo, base_commit
+      `SELECT id, agent, model, lens, job, status, output_path, input_tree, head_commit, repo, project_id, base_commit
          FROM run WHERE id=?`,
     ).get(runId) as RunRow | null
     if (!run) throw new Error(`no run ${runId}`)
@@ -425,11 +425,12 @@ export function recordReviews(
   const reviewId = writeTransaction(() => {
     const tier = tierForRuns(runs, database)
     const review = database.query(
-      `INSERT INTO review (recorded_at, tier, tier_risk, tier_size, tier_reasons, tier_reason)
-       VALUES (?,?,?,?,?,?) RETURNING id`,
+      `INSERT INTO review (recorded_at, tier, tier_risk, tier_size, tier_reasons, tier_reason, project_id)
+       VALUES (?,?,?,?,?,?,?) RETURNING id`,
     ).get(nowIso(), tier?.tier ?? null, tier?.risk ?? null, tier?.size ?? null,
       tier ? JSON.stringify(tier.reasons) : null,
-      tier ? tier.reasons[tier.risk >= tier.size ? 0 : 1] : null) as { id: number }
+      tier ? tier.reasons[tier.risk >= tier.size ? 0 : 1] : null,
+      runs.every((run)=>run.project_id===runs[0]!.project_id)?runs[0]!.project_id:null) as { id: number }
     const insertLens = database.query(
       `INSERT INTO review_lens
          (review_id, run_id, lens, agent, model, tree_inspected, reviewed_tree, standards_read,

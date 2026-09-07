@@ -409,7 +409,7 @@ test('create commands must exist and be executable before dispatch', () => {
     expect(r.code).toBe(1)
     expect(r.err).toContain('unrecognised argument: gate')
     expect(r.err).toContain(
-      'working form: orch project set <name> [--stack X] [--path P] [--canon|--no-canon] [--settings JSON] [--json]',
+      'working form: orch project set <name> [--name NEW] [--stack X] [--path P] [--canon|--no-canon] [--settings JSON] [--json]',
     )
     expect(projects().find((project) => project.name === 'positional-settings')?.settings).toEqual({})
   })

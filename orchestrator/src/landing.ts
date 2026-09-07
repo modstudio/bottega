@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative } from 'node:path'
 import { db, liveRunCount, nowIso, sessionId, writableDb, ROOT } from './db.ts'
-import { projectAt, type Project } from './projects.ts'
+import { projectAt, projectByName, type Project } from './projects.ts'
 import { classifyReviewTier, diffNumstat } from './review-tier.ts'
 import {
   contentTree, prepareSharedRefGuard, projectLockState, repoRootOf, withProjectLock,
@@ -1042,10 +1042,10 @@ function recordLandingOverride(
 ): void {
   if (!override) return
   db().query(
-    `INSERT INTO landing_override (project, branch, tip, tree, reason, session_id, at)
-     VALUES (?,?,?,?,?,?,?)`,
+    `INSERT INTO landing_override (project, project_id, branch, tip, tree, reason, session_id, at)
+     VALUES (?,?,?,?,?,?,?,?)`,
   ).run(
-    override.project, override.branch, override.tip, override.tree, override.reason,
+    override.project, projectByName(override.project)?.id ?? null, override.branch, override.tip, override.tree, override.reason,
     sessionId(), nowIso(),
   )
 }
@@ -1054,11 +1054,11 @@ function recordReviewCarry(carry: ReviewCarry | null): void {
   if (!carry) return
   db().query(
     `INSERT INTO landing_review_carry
-       (project,branch,tip,tree,review_id,reviewed_commit,reviewed_tree,patch_id,
+       (project,project_id,branch,tip,tree,review_id,reviewed_commit,reviewed_tree,patch_id,
         old_base,new_base,session_id,at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
-    carry.project, carry.branch, carry.tip, carry.tree, carry.reviewId,
+    carry.project, projectByName(carry.project)?.id ?? null, carry.branch, carry.tip, carry.tree, carry.reviewId,
     carry.reviewedCommit, carry.reviewedTree, carry.patchId, carry.oldBase, carry.newBase,
     sessionId(), nowIso(),
   )
@@ -1262,9 +1262,9 @@ export function land(
   writableDb()
   const project = registeredProject(cwd).project
   const landing = db().query(
-    `INSERT INTO landing (project,branch,status,session_id,started_at)
-     VALUES (?,?,'started',?,?) RETURNING id`,
-  ).get(project.name, branch, sessionId(), nowIso()) as { id: number }
+    `INSERT INTO landing (project,project_id,branch,status,session_id,started_at)
+     VALUES (?,?,?,'started',?,?) RETURNING id`,
+  ).get(project.name, project.id, branch, sessionId(), nowIso()) as { id: number }
   let landed = false
   try {
     const result = performLand(cwd, branch, options)

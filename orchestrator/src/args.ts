@@ -346,6 +346,19 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       if (!sub || !forms[sub]) return null
       return { args: argv.slice(2), shape: forms[sub]! }
     }
+    case 'lens': {
+      if (topLevelOnly) return { args: [], shape: shape('orch lens', 0) }
+      if (sub === 'list') return { args: argv.slice(2), shape: shape('orch lens list [--json]',0,[],['--json']) }
+      if (sub === 'show') return { args: argv.slice(2), shape: shape('orch lens show <id> [--json]',1,[],['--json']) }
+      if (sub === 'set') return { args: argv.slice(2), shape: shape('orch lens set <id> --title T --question Q --excludes E (--slots JSON|--slots-file P) --enabled true|false --reason TEXT',1,['--title','--question','--excludes','--slots','--slots-file','--enabled','--reason']) }
+      if (sub === 'profile') {
+        const action=argv[2]
+        if(action==='list') return {args:argv.slice(3),shape:shape('orch lens profile list [<lens>] [--json]',1,[],['--json'])}
+        if(action==='show') return {args:argv.slice(3),shape:shape('orch lens profile show <lens> --axis A --name N [--json]',1,['--axis','--name'],['--json'])}
+        if(action==='set') return {args:argv.slice(3),shape:shape('orch lens profile set <lens> --axis A --name N (--body JSON|--body-file P) --enabled true|false --reason TEXT',1,['--axis','--name','--body','--body-file','--enabled','--reason'])}
+      }
+      return null
+    }
     case 'do': return { args: argv.slice(1), shape: shape(
       'orch do <job> [prompt] [--agent NAME] [--file PATH] [--schema PATH] [--model NAME] [--transport cli|acp] [--deliverable TEXT]... [--timeout MINUTES] [--keep-tree]', Infinity,
       ['--agent', '--avoid', '--distinct-from', '--base', '--review', '--file', '--schema', '--model', '--transport', '--label', '--lens', '--seed', '--key', '--repo', '--cwd', '--deliverable', '--timeout'],
@@ -389,7 +402,8 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       const forms: Record<string, CommandShape> = {
         list: shape('orch project list [--json]', 0, [], ['--json']),
         add: shape('orch project add <path> [--name X] [--stack Y] [--no-canon] [--json]', 1, ['--name', '--stack'], ['--no-canon', '--allow-incomplete', '--json']),
-        set: shape('orch project set <name> [--stack X] [--path P] [--canon|--no-canon] [--settings JSON] [--json]', 1, ['--stack', '--path', '--settings'], ['--canon', '--no-canon', '--allow-incomplete', '--json']),
+        set: shape('orch project set <name> [--name NEW] [--stack X] [--path P] [--canon|--no-canon] [--settings JSON] [--json]', 1, ['--name', '--stack', '--path', '--settings'], ['--canon', '--no-canon', '--allow-incomplete', '--json']),
+        'select-profile': shape('orch project select-profile <project> --axis A --name N [--lens ID] [--version N] --reason TEXT [--json]',1,['--axis','--name','--lens','--version','--reason'],['--json']),
         'migrate-create': shape('orch project migrate-create <name> [--apply]', 1, [], ['--apply']),
         remove: shape('orch project remove <name>', 1),
       }

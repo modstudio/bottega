@@ -354,10 +354,11 @@ export function recordPack(pack: Pack): void {
   const findings = findingsForPack(pack).reduce((sum, row) => sum + row.findings.length, 0)
   writeTransaction(() => {
     db().query('DELETE FROM canon_pack WHERE job=? AND project IS ?').run(pack.job, pack.project)
+    const projectId = pack.project ? projectByName(pack.project)?.id ?? null : null
     db().query(`INSERT INTO canon_pack
-      (job,project,sha256,bytes,doc_count,doc_revisions,compiled_at,findings)
-      VALUES (?,?,?,?,?,?,?,?)`).run(
-      pack.job, pack.project, pack.sha256, pack.bytes, pack.docs.length,
+      (job,project,project_id,sha256,bytes,doc_count,doc_revisions,compiled_at,findings)
+      VALUES (?,?,?,?,?,?,?,?,?)`).run(
+      pack.job, pack.project, projectId, pack.sha256, pack.bytes, pack.docs.length,
       JSON.stringify(pack.docs), nowIso(), findings,
     )
   })

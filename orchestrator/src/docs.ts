@@ -24,6 +24,7 @@ export type Doc = {
   id: number
   scope: DocScope
   subject: string | null
+  project_id: number | null
   slug: string
   title: string
   body: string
@@ -42,6 +43,7 @@ export type DocRevision = {
   doc_id: number
   scope: DocScope
   subject: string | null
+  project_id: number | null
   slug: string
   op: DocRevisionOp
   title: string
@@ -196,10 +198,10 @@ function insertRevision(doc: Doc, op: DocRevisionOp, context: DocWriteContext, a
   const identity = writeIdentity(context)
   db().query(
     `INSERT INTO doc_revision
-       (doc_id, scope, subject, slug, op, title, body, delivery, author, reason, session_id, at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+       (doc_id, scope, subject, project_id, slug, op, title, body, delivery, author, reason, session_id, at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
-    doc.id, doc.scope, doc.subject, doc.slug, op, doc.title, doc.body, doc.delivery,
+    doc.id, doc.scope, doc.subject, doc.project_id, doc.slug, op, doc.title, doc.body, doc.delivery,
     identity.author, identity.reason, identity.session, at,
   )
 }
@@ -221,9 +223,9 @@ function setDocWithOp(input: {
       doc = getDoc(input.scope, input.subject, input.slug)!
     } else {
       const id = (db().query(
-        `INSERT INTO doc (scope, subject, slug, title, body, delivery, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?,?) RETURNING id`,
-      ).get(input.scope, input.subject, input.slug, input.title, input.body, input.delivery ?? 'inject', at, at) as { id: number }).id
+        `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?) RETURNING id`,
+      ).get(input.scope, input.subject, input.scope==='project'?projectByName(input.subject!)!.id:null, input.slug, input.title, input.body, input.delivery ?? 'inject', at, at) as { id: number }).id
       doc = db().query('SELECT * FROM doc WHERE id=?').get(id) as Doc
     }
     insertRevision(doc, requestedOp ?? (existing ? 'set' : 'create'), input, at)
@@ -480,9 +482,9 @@ export function restoreDoc(
       doc = getDoc(scope, subject, slug)!
     } else {
       db().query(
-        `INSERT INTO doc (scope, subject, slug, title, body, delivery, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?,?)`,
-      ).run(scope, subject, slug, revision.title, revision.body, revision.delivery, at, at)
+        `INSERT INTO doc (scope, subject, project_id, slug, title, body, delivery, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+      ).run(scope, subject, scope==='project'?projectByName(subject!)?.id??null:null, slug, revision.title, revision.body, revision.delivery, at, at)
       doc = getDoc(scope, subject, slug)!
     }
     insertRevision(doc, 'restore', context, at)

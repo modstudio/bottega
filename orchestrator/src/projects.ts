@@ -21,7 +21,7 @@
  * two Laravel apps are the same stack, so a verdict from one is real
  * evidence about the other.
  */
-import { db, writableDb } from './db.ts'
+import { db, writableDb, writeTransaction } from './db.ts'
 
 export type Project = {
   id: number
@@ -283,9 +283,36 @@ export function upsertProject(p: {
   )
 }
 
+/** Rename the referent and refresh every deprecated one-release name mirror atomically. */
+export function renameProject(currentName: string, nextName: string): void {
+  writableDb()
+  if (!nextName.trim()) throw new Error('project --name must be non-empty')
+  const current = projectByName(currentName)
+  if (!current) throw new Error(`no project "${currentName}"`)
+  if (currentName !== nextName && projectByName(nextName)) throw new Error(`project "${nextName}" already exists`)
+  const d = db()
+  writeTransaction(() => {
+    d.query('UPDATE project SET name=? WHERE id=?').run(nextName, current.id)
+    for (const [table, column] of [
+      ['run','repo'], ['canon_pack','project'], ['landing','project'],
+      ['landing_override','project'], ['landing_review_carry','project'],
+    ]) d.query(`UPDATE ${table} SET ${column}=? WHERE project_id=?`).run(nextName,current.id)
+    d.query("UPDATE doc SET subject=? WHERE scope='project' AND project_id=?").run(nextName,current.id)
+    d.query("UPDATE doc_revision SET subject=? WHERE scope='project' AND project_id=?").run(nextName,current.id)
+  }, d)
+}
+
 export function removeProject(name: string): boolean {
   writableDb()
-  return db().query('DELETE FROM project WHERE name = ?').run(name).changes > 0
+  const project = projectByName(name)
+  if (!project) return false
+  const d=db()
+  return writeTransaction(()=>{
+    for(const table of ['run','canon_pack','landing','landing_override','landing_review_carry','doc','doc_revision','review']) {
+      d.query(`UPDATE ${table} SET project_id=NULL WHERE project_id=?`).run(project.id)
+    }
+    return d.query('DELETE FROM project WHERE id = ?').run(project.id).changes > 0
+  },d)
 }
 
 const CREATE_VARS = new Set(['branch', 'name', 'base', 'seed', 'key', 'path'])

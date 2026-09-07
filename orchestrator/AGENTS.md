@@ -133,12 +133,19 @@ trunk and running the gates there. It never pushes.
 
 ## Review lenses and reviewer calibration
 
-A lens is one narrow, named viewpoint applied independently to the artifact. It
+A lens is a sealed core with one global identity. It is one narrow, named viewpoint applied independently to the artifact. It
 owns one question, explicitly excludes questions owned by other lenses, reads
 the actual diff and checkout rather than the builder's conclusion, loads canon
 from its authoritative source, and returns evidence-bearing findings under the
 fixed review schema. Review work is read-only. Synthesis happens after the
 lenses, and evaluation is a separate act that re-derives each finding.
+
+Its variable payload is a named, versioned profile selected per axis by the
+project. Profiles belong to nobody: two projects selecting one profile share
+one row. A profile is selected, never inherited, overlaid or merged; when no
+selection exists the axis uses its profile named `default`. Content follows the
+selected profile. Reviewer precision follows the stable core identity, so a
+profile change does not fracture calibration evidence.
 
 Every findings-producing job requires `--lens <stable-id>`. This applies to
 `review-lens`, `review-lens-inline`, `safety`, and `craft`. `verify-claim` is not

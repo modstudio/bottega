@@ -29,6 +29,13 @@
       "when": 1788829200000,
       "tag": "0003_keep_tree",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1788831600000,
+      "tag": "0004_lens_catalogue",
+      "breakpoints": true
     }
   ]
 }

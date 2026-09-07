@@ -17,6 +17,7 @@ import { composeWorkflow, getWorkflowStep, listWorkflows } from './workflows.ts'
 import { checkDoc, repoRootForDoc } from './canon.ts'
 import { getReview, listReviews } from './review.ts'
 import { strictlyAuthenticatedWorkerRun } from './ask.ts'
+import { resolveLens } from './lenses.ts'
 
 const text = (value: unknown) => ({
   content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value) }],
@@ -267,6 +268,16 @@ export function createDocsMcpServer(): McpServer {
   server.registerTool('list_projects', {
     description: 'List projects registered with the orchestrator.',
   }, async () => text(projects()))
+
+  server.registerTool('get_lens', {
+    description: 'Get one resolved sealed lens core and the selected profile names for a registered project.',
+    inputSchema: { id: z.string().trim().min(1), project: z.string().trim().min(1) },
+  }, async ({ id, project }) => {
+    if (!projectByName(project)) throw new Error(`unknown project "${project}"`)
+    const lens = resolveLens(id, project)
+    if (!lens) throw new Error(`no catalogue lens "${id}"`)
+    return text(lens)
+  })
 
   server.registerTool('list_reviews', {
     description: 'List review records, findings counts, and current branch coverage.',

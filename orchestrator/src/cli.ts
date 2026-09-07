@@ -15,7 +15,7 @@ import { createHash, timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
-import { createHasPlaceholder, projectAt, projectByName, projects } from './projects.ts'
+import { createHasPlaceholder, projectAt, projectByName, projects, renameProject } from './projects.ts'
 import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
 import { collectResult, collectWait, resolveFailover, failoverSummary } from './collect.ts'
 import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
@@ -503,7 +503,8 @@ const VALUE_FLAGS = new Set(['--agent', '--file', '--schema', '--model', '--tran
                              '--seed', '--key', '--repo', '--base', '--review', '--avoid', '--distinct-from', '--label', '--lens', '--deliverable', '--category', '--severity',
                              '--reproduced', '--coverage', '--limits', '--overlap', '--writer',
                              '--finding', '--better-than', '--worse-than', '--same-as', '--n',
-                             '--scope', '--subject', '--title', '--cwd'])
+                             '--scope', '--subject', '--title', '--cwd', '--question', '--excludes', '--slots', '--slots-file',
+                             '--enabled', '--reason', '--axis', '--name', '--body', '--body-file', '--version'])
 
 type CleanupRow = {
   id: number; repo?: string | null; cwd?: string | null
@@ -1094,11 +1095,13 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
   // recoverable. One SQLite statement is the claim boundary: readers now see
   // either no new turn or a running turn already linked to its chain.
   const claimed = writeTransaction(() => {
+    const projectName = spec.repo ?? repoOf(cwd)
+    const projectId = projectName ? projectByName(projectName)?.id ?? null : null
     const inserted = db().query(
-      `INSERT INTO run (started_at, agent, job, repo, cwd, prompt_sha, spec_sha, prompt_bytes,
+      `INSERT INTO run (started_at, agent, job, repo, project_id, cwd, prompt_sha, spec_sha, prompt_bytes,
                       prompt_head, label, status, session_id, probe, parent_run_id, turn, mcp,
                       vendor_session)
-       SELECT ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?
+       SELECT ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (
           EXISTS (SELECT 1 FROM run root WHERE root.id = ? AND root.status NOT IN ('stopped','stale'))
           AND NOT EXISTS (
@@ -1108,7 +1111,7 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
         )
        RETURNING id`,
     ).get(
-      nowIso(), jobName, spec.repo ?? repoOf(cwd), cwd,
+      nowIso(), jobName, projectName, projectId, cwd,
       createHash('sha256').update(prompt).digest('hex').slice(0, 16),
       createHash('sha256').update(prompt).digest('hex').slice(0, 16),
       prompt.length, prompt.slice(0, 200).replace(/\s+/g, ' '), spec.label ?? null,
@@ -2618,6 +2621,27 @@ switch (cmd) {
     break
   }
 
+  case 'lens': {
+    const { listLenses,showLens,setLens,listProfiles,showProfile,setProfile }=await import('./lenses.ts')
+    const sub=argv[1]; const json=has('json'); const emit=(value:unknown,line?:string)=>console.log(json?JSON.stringify(value):(line??JSON.stringify(value,null,2)))
+    const enabled=()=>{const value=flag('enabled');if(value!=='true'&&value!=='false')throw new Error('--enabled must be true or false');return value==='true'}
+    const jsonSource=(inline:string,file:string,what:string)=>{const a=flag(inline),p=flag(file);if((a===undefined)===(p===undefined))throw new Error(`pass exactly one of --${inline} or --${file}`);return p?readFileSync(p,'utf8'):a!}
+    if(sub==='list'){const rows=listLenses();emit(rows,rows.map(x=>`${x.id}  v${x.version}  ${x.enabled?'enabled':'disabled'}  ${x.title}`).join('\n'))}
+    else if(sub==='show'){const row=showLens(argv[2]!);if(!row)throw new Error(`no lens "${argv[2]}"`);emit(row)}
+    else if(sub==='set'){
+      const id=argv[2],title=flag('title'),question=flag('question'),excludes=flag('excludes'),reason=flag('reason')
+      if(!id||title===undefined||question===undefined||excludes===undefined||!reason?.trim())throw new Error('lens set requires id, title, question, excludes, enabled, slots, and reason')
+      emit(setLens({id,title,question,excludes,slots:jsonSource('slots','slots-file','slots'),enabled:enabled(),reason}))
+    } else if(sub==='profile'){
+      const action=argv[2],id=argv[3]
+      if(action==='list'){const rows=listProfiles(id);emit(rows,rows.map(x=>`${x.lens_id}  ${x.axis}/${x.name}  v${x.version}  ${x.enabled?'enabled':'disabled'}`).join('\n'))}
+      else if(action==='show'){const row=showProfile(id!,flag('axis')!,flag('name')!);if(!row)throw new Error('no such lens profile');emit(row)}
+      else if(action==='set'){const reason=flag('reason');if(!id||!flag('axis')||!flag('name')||!reason?.trim())throw new Error('lens profile set requires lens, axis, name, enabled, body, and reason');emit(setProfile({lensId:id,axis:flag('axis')!,name:flag('name')!,body:jsonSource('body','body-file','body'),enabled:enabled(),reason}))}
+      else throw new Error('unknown: orch lens profile. Try list | show | set')
+    } else throw new Error('unknown: orch lens. Try list | show | set | profile')
+    break
+  }
+
   case 'issue': {
     const key = argv[1]
     if (!key) throw new Error('orch issue <TASK-KEY>')
@@ -3368,9 +3392,10 @@ switch (cmd) {
         try { settings = deepMerge(settings, JSON.parse(flag('settings')!)) as typeof settings }
         catch (e) { throw new Error(`--settings must be JSON: ${e}`) }
       }
+      const nextName = flag('name') ?? name
       const candidate = {
         id: p.id,
-        name,
+        name: nextName,
         path: flag('path') ?? p.path,
         stack: flag('stack') ?? p.stack,
         canon: has('no-canon') ? false : has('canon') ? true : p.canon,
@@ -3386,15 +3411,26 @@ switch (cmd) {
         w.startsWith('has a create command but no branch template') ||
         w.startsWith('has a create command with a {seed} placeholder but no seeds list'))
       if (incomplete.length && !has('allow-incomplete')) throw new Error(incomplete.join('\n'))
+      if (nextName !== name) renameProject(name,nextName)
       upsertProject(candidate)
       if (has('json')) {
-        console.log(JSON.stringify(projectByName(name)))
+        console.log(JSON.stringify(projectByName(nextName)))
         break
       }
-      console.log(`updated ${name}`)
-      for (const w of worktreeWarnings(projectByName(name)!)) {
+      console.log(`updated ${nextName}`)
+      for (const w of worktreeWarnings(projectByName(nextName)!)) {
         console.log(`${' '.repeat(14)} ! ${w}`)
       }
+      break
+    }
+
+    if (sub === 'select-profile') {
+      const { selectProjectProfile }=await import('./lenses.ts')
+      const name=argv[2],axis=flag('axis'),profile=flag('name'),reason=flag('reason'),versionText=flag('version')
+      if(!name||!axis||!profile||!reason?.trim())throw new Error('orch project select-profile <project> --axis A --name N [--lens ID] [--version N] --reason TEXT')
+      const version=versionText===undefined?undefined:Number(versionText)
+      const result=selectProjectProfile({project:name,axis,name:profile,lensId:flag('lens'),version,reason})
+      console.log(has('json')?JSON.stringify(result):`selected ${axis}/${profile} for ${name}${flag('lens')?` lens ${flag('lens')}`:' all lenses'}`)
       break
     }
 
@@ -6022,6 +6058,11 @@ switch (cmd) {
       throw new Error('--prompt-bytes must be a non-negative integer')
     }
     const gs = guide(flag('job'), promptBytes, flag('lens'))
+    if (flag('lens')) {
+      const { resolveLens }=await import('./lenses.ts'); const p=projectAt(process.cwd())
+      const resolved=resolveLens(flag('lens')!,p?.name??null)
+      console.log(`lens profiles: ${resolved ? resolved.profiles.map(x=>`${x.axis}=${x.name}@${x.version}`).join(', ') : 'free-form (no catalogue row)'}`)
+    }
     const size = (b: number) => (b >= 1024 ? `${Math.round(b / 1024)}KB` : `${Math.round(b)}B`)
     const tradeoffs: string[] = []
     let decided = 0, provisional = 0, blank = 0
@@ -6207,6 +6248,10 @@ switch (cmd) {
     const p = pick(jobName, selectAgentForTransport(transport, flag('agent')), 0, false, stack,
       { agents: avoid, models: distinctModels }, false, lens)
     const ev = evidenceFor(jobName, 0, stack, undefined, lens)
+    if (lens) {
+      const { resolveLens }=await import('./lenses.ts'); const resolved=resolveLens(lens,projectAt(process.cwd())?.name??null)
+      console.log(`selected profiles: ${resolved ? resolved.profiles.map(x=>`${x.axis}=${x.name}@${x.version}`).join(', ') : 'free-form (no catalogue row)'}`)
+    }
     const counts = (rows: typeof ev.cands) => rows
       .filter((candidate) => candidate.evidence > 0)
       .map((candidate) => `${candidate.agent}=${candidate.evidence}`)

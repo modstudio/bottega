@@ -15,7 +15,9 @@ const id = () => integer('id').primaryKey({ autoIncrement: true })
 
 export const run = sqliteTable('run', {
   id: id(), startedAt: text('started_at').notNull(), agent: text().notNull(), job: text().notNull(),
-  repo: text(), cwd: text(), promptSha: text('prompt_sha').notNull(), specSha: text('spec_sha'),
+  /** @deprecated One-release mirror; use projectId. */
+  repo: text(), projectId: integer('project_id').references(() => project.id, { onDelete: 'restrict' }),
+  cwd: text(), promptSha: text('prompt_sha').notNull(), specSha: text('spec_sha'),
   promptBytes: integer('prompt_bytes').notNull(),
   promptHead: text('prompt_head').notNull(), label: text(), lens: text(), latencyMs: integer('latency_ms'),
   exitCode: integer('exit_code'), outputBytes: integer('output_bytes'), outputPath: text('output_path'),
@@ -70,7 +72,8 @@ const docAddressChecks = <T extends { scope: any; subject: any; slug: any }>(t: 
 // migrations/0000_bright_sleepwalker.sql owns doc_address: Drizzle Kit 0.31.10 cannot express
 // COALESCE in an index without emitting malformed SQL.
 export const doc = sqliteTable('doc', {
-  id: integer().primaryKey(), scope: text().notNull(), subject: text(), slug: text().notNull(), title: text().notNull(),
+  id: integer().primaryKey(), scope: text().notNull(), /** @deprecated Project-scope mirror; use projectId. */ subject: text(), slug: text().notNull(), title: text().notNull(),
+  projectId: integer('project_id').references(() => project.id, { onDelete: 'restrict' }),
   body: text().notNull(), delivery: text().notNull().default('inject'), createdAt: text('created_at').notNull(), updatedAt: text('updated_at').notNull(),
 }, (t) => [
   ...docAddressChecks(t), check('doc_delivery_check', sql`${t.delivery} in ('inject','demand')`),
@@ -78,7 +81,8 @@ export const doc = sqliteTable('doc', {
 ])
 
 export const docRevision = sqliteTable('doc_revision', {
-  id: integer().primaryKey(), docId: integer('doc_id').notNull(), scope: text().notNull(), subject: text(), slug: text().notNull(),
+  id: integer().primaryKey(), docId: integer('doc_id').notNull(), scope: text().notNull(), /** @deprecated Project-scope mirror; use projectId. */ subject: text(), slug: text().notNull(),
+  projectId: integer('project_id').references(() => project.id, { onDelete: 'restrict' }),
   op: text().notNull(), title: text().notNull(), body: text().notNull(), delivery: text().notNull().default('inject'),
   author: text().notNull(), reason: text().notNull(), sessionId: text('session_id'), at: text().notNull(),
 }, (t) => [
@@ -91,7 +95,8 @@ export const docRevision = sqliteTable('doc_revision', {
 // migrations/0000_bright_sleepwalker.sql owns canon_pack_address: Drizzle Kit 0.31.10 cannot express
 // COALESCE in an index without emitting malformed SQL.
 export const canonPack = sqliteTable('canon_pack', {
-  id: integer().primaryKey(), job: text().notNull(), project: text(), sha256: text().notNull(), bytes: integer().notNull(),
+  id: integer().primaryKey(), job: text().notNull(), /** @deprecated Use projectId. */ project: text(),
+  projectId: integer('project_id').references(() => project.id, { onDelete: 'restrict' }), sha256: text().notNull(), bytes: integer().notNull(),
   docCount: integer('doc_count').notNull(), docRevisions: text('doc_revisions').notNull(), compiledAt: text('compiled_at').notNull(), findings: integer().notNull(),
 }, (t) => [unique('canon_pack_job_project_unique').on(t.job, t.project)])
 
@@ -156,6 +161,7 @@ export const blocker = sqliteTable('blocker', {
 export const review = sqliteTable('review', {
   id: id(), recordedAt: text('recorded_at').notNull(), completedAt: text('completed_at'), tier: integer(), tierRisk: integer('tier_risk'),
   tierSize: integer('tier_size'), tierReasons: text('tier_reasons'), tierReason: text('tier_reason'),
+  projectId: integer('project_id').references(() => project.id, { onDelete: 'restrict' }),
 })
 
 export const reviewLens = sqliteTable('review_lens', {
@@ -217,6 +223,35 @@ export const workflowEvent = sqliteTable('workflow_event', {
   check('workflow_event_reason_check', sql`length(trim(${t.reason})) > 0`), foreignKey({ columns: [t.workflowId, t.versionN], foreignColumns: [workflowVersion.workflowId, workflowVersion.n] }),
   index('workflow_event_version').on(t.workflowId, t.versionN, t.id)])
 
+export const lens = sqliteTable('lens', {
+  id: text().primaryKey(), title: text().notNull(), question: text().notNull(), excludes: text().notNull(),
+  slots: text().notNull(), version: integer().notNull(), enabled: integer().notNull().default(1),
+}, (t) => [check('lens_version_check', sql`${t.version} > 0`), check('lens_enabled_check', sql`${t.enabled} in (0,1)`)])
+export const lensRevision = sqliteTable('lens_revision', {
+  id: id(), lensId: text('lens_id').notNull().references(() => lens.id, { onDelete: 'cascade' }), version: integer().notNull(),
+  priorBody: text('prior_body').notNull(), reason: text().notNull(), sessionId: text('session_id'), at: text().notNull(),
+}, (t) => [unique('lens_revision_lens_version_unique').on(t.lensId, t.version),
+  check('lens_revision_reason_check', sql`length(trim(${t.reason})) > 0`)])
+export const lensProfile = sqliteTable('lens_profile', {
+  id: id(), lensId: text('lens_id').notNull().references(() => lens.id, { onDelete: 'cascade' }),
+  axis: text().notNull(), name: text().notNull(), version: integer().notNull(), body: text().notNull(), enabled: integer().notNull().default(1),
+}, (t) => [check('lens_profile_axis_check', sql`${t.axis} in ('framework','architecture')`),
+  check('lens_profile_version_check', sql`${t.version} > 0`), check('lens_profile_enabled_check', sql`${t.enabled} in (0,1)`),
+  unique('lens_profile_lens_axis_name_unique').on(t.lensId, t.axis, t.name)])
+export const lensProfileRevision = sqliteTable('lens_profile_revision', {
+  id: id(), profileId: integer('profile_id').notNull().references(() => lensProfile.id, { onDelete: 'cascade' }),
+  version: integer().notNull(), priorBody: text('prior_body').notNull(), reason: text().notNull(), sessionId: text('session_id'), at: text().notNull(),
+}, (t) => [unique('lens_profile_revision_profile_version_unique').on(t.profileId, t.version),
+  check('lens_profile_revision_reason_check', sql`length(trim(${t.reason})) > 0`)])
+export const projectLensProfile = sqliteTable('project_lens_profile', {
+  id: id(), projectId: integer('project_id').notNull().references(() => project.id, { onDelete: 'cascade' }),
+  lensId: text('lens_id').references(() => lens.id, { onDelete: 'cascade' }), axis: text().notNull(),
+  profileName: text('profile_name').notNull(), selectedVersion: integer('selected_version'),
+}, (t) => [check('project_lens_profile_axis_check', sql`${t.axis} in ('framework','architecture')`),
+  check('project_lens_profile_version_check', sql`${t.selectedVersion} is null or ${t.selectedVersion} > 0`),
+  uniqueIndex('project_lens_profile_specific').on(t.projectId, t.lensId, t.axis).where(sql`${t.lensId} is not null`),
+  uniqueIndex('project_lens_profile_global').on(t.projectId, t.axis).where(sql`${t.lensId} is null`)])
+
 export const portPair = sqliteTable('port_pair', {
   id: id(), sourceProjectId: integer('source_project_id').notNull().references(() => project.id, { onDelete: 'restrict' }),
   targetProjectId: integer('target_project_id').notNull().references(() => project.id, { onDelete: 'restrict' }), createdAt: text('created_at').notNull(),
@@ -240,10 +275,10 @@ export const portDoctrine = sqliteTable('port_doctrine', {
 }, (t) => [check('port_doctrine_number_check', sql`${t.number} > 0`)])
 
 export const landingOverride = sqliteTable('landing_override', {
-  id: id(), project: text().notNull(), branch: text().notNull(), tip: text().notNull(), tree: text().notNull(), reason: text().notNull(), sessionId: text('session_id'), at: text().notNull(),
+  id: id(), /** @deprecated Use projectId. */ project: text().notNull(), projectId: integer('project_id').references(() => project.id, { onDelete: 'restrict' }), branch: text().notNull(), tip: text().notNull(), tree: text().notNull(), reason: text().notNull(), sessionId: text('session_id'), at: text().notNull(),
 }, (t) => [check('landing_override_reason_check', sql`length(trim(${t.reason})) > 0`)])
 export const landing = sqliteTable('landing', {
-  id: id(), project: text().notNull(), branch: text().notNull(), tip: text(),
+  id: id(), /** @deprecated Use projectId. */ project: text().notNull(), projectId: integer('project_id').references(() => project.id, { onDelete: 'restrict' }), branch: text().notNull(), tip: text(),
   trunkBefore: text('trunk_before'), status: text().notNull(), error: text(),
   sessionId: text('session_id'), startedAt: text('started_at').notNull(), finishedAt: text('finished_at'),
 }, (t) => [
@@ -251,7 +286,7 @@ export const landing = sqliteTable('landing', {
   index('landing_project_started').on(t.project, t.startedAt),
 ])
 export const landingReviewCarry = sqliteTable('landing_review_carry', {
-  id: id(), project: text().notNull(), branch: text().notNull(), tip: text().notNull(), tree: text().notNull(), reviewId: integer('review_id').notNull().references(() => review.id),
+  id: id(), /** @deprecated Use projectId. */ project: text().notNull(), projectId: integer('project_id').references(() => project.id, { onDelete: 'restrict' }), branch: text().notNull(), tip: text().notNull(), tree: text().notNull(), reviewId: integer('review_id').notNull().references(() => review.id),
   reviewedCommit: text('reviewed_commit').notNull(), reviewedTree: text('reviewed_tree').notNull(), patchId: text('patch_id').notNull(), oldBase: text('old_base').notNull(),
   newBase: text('new_base').notNull(), sessionId: text('session_id'), at: text().notNull(),
 })
