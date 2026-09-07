@@ -73,6 +73,7 @@ export async function ask(o: {
   timeoutMs?: number
 }): Promise<AskResult> {
   writableDb()
+  db().query("UPDATE run SET status='asking' WHERE id=? AND status='running'").run(o.runId)
   const { id } = db().query(
     `INSERT INTO question (run_id, asked_at, question, options, recommendation, why)
      VALUES (?,?,?,?,?,?) RETURNING id`,
@@ -90,7 +91,10 @@ export async function ask(o: {
   // rather than relocate.
   for (;;) {
     const row = q.get(id) as { answer: string | null } | null
-    if (row) return { answered: true, answer: row.answer ?? '' }
+    if (row) {
+      db().query("UPDATE run SET status='running' WHERE id=? AND status='asking'").run(o.runId)
+      return { answered: true, answer: row.answer ?? '' }
+    }
     if (Date.now() >= deadline) {
       // The question STAYS OPEN. The architect may still want to see what was
       // asked, and the worker is about to report it in its final answer

@@ -2,15 +2,16 @@ import { describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { AGENTS } from './agents.ts'
 import {
   ACP_PILOT_TASK, acpRuntimeGaps, assertAcpAllowed, confineFsPath, decideAcpPermission,
   failureKindFromStop, isAcpPilotJob, outcomeFromTransport, resolveTransportName,
   selectAgentForTransport, stopErrorMessage, valueMatchesStrictSchema,
 } from './transport.ts'
-import { acpOutcome, normalizeAcpTurn } from './transport-acp.ts'
+import { acpOutcome, acpSandboxProfile, normalizeAcpTurn } from './transport-acp.ts'
 import {
   ACP_FIXTURE_CANCELLED_TEXT, ACP_FIXTURE_EDIT_PERMISSION, ACP_FIXTURE_ELICITATION,
-  ACP_FIXTURE_MALFORMED, ACP_FIXTURE_REFUSAL, ACP_FIXTURE_SCHEMA,
+  ACP_FIXTURE_GROK, ACP_FIXTURE_MALFORMED, ACP_FIXTURE_REFUSAL, ACP_FIXTURE_SCHEMA,
   ACP_FIXTURE_STRUCTURED_OK, ACP_FIXTURE_TIMEOUT, ACP_FIXTURE_TOOL_READ,
   ACP_FIXTURE_TRUNCATED, ACP_FIXTURE_TRUNCATED_TEXT,
 } from './transport-acp.fixtures.ts'
@@ -40,11 +41,20 @@ describe('ACP transport selection', () => {
     expect(() => assertAcpAllowed('fix', undefined)).toThrow('writing jobs')
   })
 
-  test('non-codex and jobs outside the allow-list are refused', () => {
-    expect(() => assertAcpAllowed('understand', 'grok')).toThrow('only available for codex')
+  test('paid ACP agents are allowed and jobs outside the allow-list are refused', () => {
+    expect(() => assertAcpAllowed('understand', 'grok')).not.toThrow()
     expect(() => assertAcpAllowed('review-lens', 'codex')).toThrow('allowed jobs')
     expect(() => assertAcpAllowed('understand', 'codex')).not.toThrow()
     expect(() => assertAcpAllowed('understand', undefined)).not.toThrow()
+  })
+
+  test('installed paid-agent capability rows record native elicitation as unsupported', () => {
+    for (const name of ['codex', 'grok']) {
+      const agent = AGENTS[name]!
+      expect(agent.defaultTransport).toBe('cli')
+      expect(agent.acp?.nativeElicitation).toBe(false)
+      expect(agent.acp?.nativeElicitationReason).toMatch(/emitted no elicitation\/create|unavailable/)
+    }
   })
 })
 
@@ -65,6 +75,13 @@ describe('ACP event fixtures normalise to orch outcomes', () => {
     const result = normalizeAcpTurn(ACP_FIXTURE_TOOL_READ)
     expect(acpOutcome(result)).toBe('ok')
     expect(result.output).toBe('"@devbox/orchestrator"')
+    expect(result.events.some((event) => event.kind === 'tool' && event.toolKind === 'read')).toBe(true)
+  })
+
+  test('grok updates use terminal input plus output usage, not session-context used', () => {
+    const result = normalizeAcpTurn(ACP_FIXTURE_GROK)
+    expect(result.output).toBe('@devbox/orchestrator')
+    expect(result.tokens).toBe(101_505)
     expect(result.events.some((event) => event.kind === 'tool' && event.toolKind === 'read')).toBe(true)
   })
 
@@ -161,6 +178,15 @@ describe('ACP defaults Codex and preflight names the missing piece', () => {
 })
 
 describe('ACP client-served fs is confined to the worktree', () => {
+  test('the grok leader socket is the only socket added to the srt profile', () => {
+    const profile = {
+      network: { allowedDomains: [], deniedDomains: [], allowUnixSockets: [], allowLocalBinding: true },
+      filesystem: { denyRead: [], allowRead: ['/tree'], allowWrite: ['/run'], denyWrite: [] },
+    }
+    const confined = acpSandboxProfile(profile, '/run/grok.leader.sock')
+    expect(confined.network.allowUnixSockets).toEqual(['/run/grok.leader.sock'])
+    expect(confined.filesystem).toEqual(profile.filesystem)
+  })
   test('a path inside the worktree is allowed; a path outside is refused by name', () => {
     const root = mkdtempSync(join(tmpdir(), 'orch-acp-fs-'))
     const inside = join(root, 'notes.txt')

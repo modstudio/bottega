@@ -98,7 +98,7 @@ export function gitObjectEnvironmentFor(
 
 export type DetachSpec = {
   agent?: string; schema?: string; mcp?: McpRequest; model?: string; probe?: boolean
-  /** Pilot opt-in. Default `cli`. `acp` is DEV-342 / codex / read-only jobs only. */
+  /** Selectable seam. Default stays `cli`; `acp` covers paid agents on read-only jobs. */
   transport?: TransportName
   label?: string
   lens?: string
@@ -1589,7 +1589,7 @@ export async function run(opts: {
   if (transportName === 'acp') {
     try {
       assertAcpAllowed(opts.job, opts.agent)
-      if (!isTestTransportInstalled()) assertAcpReady()
+      if (!isTestTransportInstalled()) assertAcpReady(opts.agent ?? 'codex')
     } catch (e) {
       if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
       throw e

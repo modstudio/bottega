@@ -3,6 +3,7 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { db, dir, run } from '../test/fixture.ts'
 import { chainTransport } from './run.ts'
+import { ask } from './ask.ts'
 import {
   installTestTransport, type AgentTransport, type TransportHandle, type TransportResult,
 } from './transport.ts'
@@ -110,6 +111,77 @@ describe('ACP transport through run', () => {
       else process.env.ORCH_DEPTH = priorDepth
     }
   })
+
+  test('a fake ACP elicitation round-trips through the real orch answer command', async () => {
+    const priorDepth = process.env.ORCH_DEPTH
+    const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+    process.env.ORCH_DEPTH = '0'
+    process.env.CLAUDE_CODE_SESSION_ID = 'acp-answer-test'
+    const CLI = join(import.meta.dir, 'cli.ts')
+    try {
+      const transport: AgentTransport = {
+        name: 'acp',
+        async start(opts) {
+          const handle: TransportHandle = {
+            pid: process.pid,
+            kill() { /* fake */ },
+            async prompt() { /* fake */ },
+            async *events() { /* fake */ },
+            async cancel() { /* fake */ },
+            async collect() {
+              const runId = Number(opts.env.ORCH_RUN_ID)
+              const waiting = ask({
+                runId, question: 'Which colour?', why: 'fake ACP elicitation', timeoutMs: 10_000,
+              })
+              for (let i = 0; i < 100; i++) {
+                const open = db().query(
+                  'SELECT id FROM question WHERE run_id=? AND answered_at IS NULL',
+                ).get(runId)
+                if (open) break
+                await Bun.sleep(10)
+              }
+              expect(db().query('SELECT status FROM run WHERE id=?').get(runId))
+                .toEqual({ status: 'asking' })
+              const answered = Bun.spawn(
+                [process.execPath, CLI, 'answer', String(runId), 'blue'],
+                {
+                  env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+                  stdout: 'pipe', stderr: 'pipe',
+                },
+              )
+              const [answer, exit, stderr] = await Promise.all([
+                waiting, answered.exited, new Response(answered.stderr).text(),
+              ])
+              expect(exit, stderr).toBe(0)
+              expect(answer).toEqual({ answered: true, answer: 'blue' })
+              expect(db().query('SELECT status FROM run WHERE id=?').get(runId))
+                .toEqual({ status: 'running' })
+              const result = fakeResult({ output: 'continued with blue', status: 'ok' })
+              writeFileSync(opts.outPath, result.output)
+              return result
+            },
+          }
+          return handle
+        },
+        prompt(handle, text) { return handle.prompt(text) },
+        events(handle) { return handle.events() },
+        cancel(handle) { return handle.cancel() },
+        resume(opts) { return this.start(opts) },
+      }
+      installTestTransport(transport)
+      const result = await runAcp('ask and continue')
+      expect(result.status).toBe('ok')
+      expect(result.output).toContain('continued with blue')
+      expect(db().query(
+        'SELECT answer, delivery_pending_at FROM question WHERE run_id=?',
+      ).get(result.id)).toEqual({ answer: 'blue', delivery_pending_at: null })
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+      else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+    }
+  }, 15_000)
 
   test('timeout with partial text is a timeout failure, not ok', async () => {
     const priorDepth = process.env.ORCH_DEPTH

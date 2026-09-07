@@ -1,16 +1,20 @@
 #!/usr/bin/env bun
 /**
  * bun scripts/acp-parity.ts
- * Run from orchestrator/ with codex on PATH.
+ * Run from orchestrator/ with codex and grok on PATH.
  *
- * Run the same five prompts through cli and acp transports against real
- * codex on this machine. Prints a table: outcome, failure kind, tokens,
+ * Run the same five prompts through cli and acp transports against one paid
+ * agent on this machine. The sixth row makes the ACP worker call the orch-ask
+ * MCP server, answers it through the real CLI, and requires that turn to continue.
+ * Prints a table: outcome, failure kind, tokens,
  * latency, bytes of raw output.
  */
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS } from '../src/agents.ts'
+import { db, ROOT } from '../src/db.ts'
+import { run } from '../src/run.ts'
 import {
   outcomeFromTransport, transportFor, type TransportName, type TransportResult,
 } from '../src/transport.ts'
@@ -54,6 +58,11 @@ type Row = {
   rawBytes: number
 }
 
+const requestedAgent = process.argv[2] ?? 'codex'
+if (requestedAgent !== 'codex' && requestedAgent !== 'grok') {
+  throw new Error('usage: bun scripts/acp-parity.ts [codex|grok]')
+}
+
 function cell(value: string, width: number): string {
   return value.length >= width ? value.slice(0, width) : value.padEnd(width)
 }
@@ -64,7 +73,7 @@ async function runCase(
   cwd: string,
   dir: string,
 ): Promise<Row> {
-  const agent = AGENTS.codex!
+  const agent = AGENTS[requestedAgent]!
   const outPath = join(dir, `${spec.id}.${transportName}.out`)
   const schemaPath = spec.schema ? join(dir, `${spec.id}.schema.json`) : undefined
   if (schemaPath) writeFileSync(schemaPath, JSON.stringify(SCHEMA))
@@ -101,6 +110,67 @@ async function runCase(
   }
 }
 
+async function runAskCase(): Promise<Row> {
+  const marker = `DEV-352-ask-${requestedAgent}-${Date.now()}`
+  const ruling = `ruling-${Date.now()}`
+  let settled = false
+  const promise = run({
+    job: 'summarize',
+    prompt:
+      `Call ask_orchestrator with question "What is the parity ruling for ${marker}?" and ` +
+      `why "This verifies the ACP ruling round trip." Wait for its answer, then reply ` +
+      `with exactly the answer and nothing else.`,
+    agent: requestedAgent,
+    transport: 'acp',
+    label: marker,
+    cwd: ROOT,
+    noFailover: true,
+    ownerSession: process.env.CLAUDE_CODE_SESSION_ID ?? marker,
+  }).finally(() => { settled = true })
+
+  let runId: number | null = null
+  let questionSeen = false
+  const deadline = Date.now() + 120_000
+  while (!settled && Date.now() < deadline) {
+    const row = db().query(
+      `SELECT r.id, EXISTS(SELECT 1 FROM question q WHERE q.run_id=r.id) asked
+         FROM run r WHERE r.label=? ORDER BY r.id DESC LIMIT 1`,
+    ).get(marker) as { id: number; asked: number } | null
+    if (row) runId = row.id
+    if (row?.asked) {
+      questionSeen = true
+      const answer = Bun.spawnSync({
+        cmd: [process.execPath, join(ROOT, 'src/cli.ts'), 'answer', String(row.id), ruling],
+        cwd: ROOT,
+        env: process.env,
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      if (answer.exitCode !== 0) {
+        throw new Error(`orch answer failed: ${answer.stderr.toString().trim()}`)
+      }
+      break
+    }
+    await Bun.sleep(100)
+  }
+  if (!questionSeen && !settled && runId != null) {
+    const pid = db().query('SELECT agent_pid FROM run WHERE id=?').get(runId) as
+      { agent_pid: number | null } | null
+    if (pid?.agent_pid) try { process.kill(pid.agent_pid, 'SIGTERM') } catch { /* exited */ }
+  }
+
+  const result = await promise
+  const raw = readFileSync(result.outPath, 'utf8')
+  const continued = questionSeen && result.status === 'ok' && result.output.trim() === ruling
+  return {
+    case: 'ask-answer', transport: 'acp',
+    outcome: continued ? 'ok' : result.status,
+    failureKind: continued ? '—' : questionSeen ? 'continuation' : 'capability',
+    tokens: result.vendorTokens == null ? '—' : String(result.vendorTokens),
+    latencyMs: result.latencyMs,
+    rawBytes: Buffer.byteLength(raw),
+  }
+}
+
 const cwd = process.cwd()
 const dir = mkdtempSync(join(tmpdir(), 'orch-acp-parity-'))
 mkdirSync(dir, { recursive: true })
@@ -126,6 +196,17 @@ for (const spec of CASES) {
   }
 }
 
+process.stderr.write('ask-answer acp...\n')
+try {
+  rows.push(await runAskCase())
+} catch (error) {
+  rows.push({
+    case: 'ask-answer', transport: 'acp', outcome: 'failed', failureKind: 'harness',
+    tokens: '—', latencyMs: 0, rawBytes: 0,
+  })
+  process.stderr.write(`  ${String((error as Error)?.message ?? error)}\n`)
+}
+
 const header = [
   cell('case', 16), cell('tr', 4), cell('outcome', 8),
   cell('fail', 12), cell('tokens', 8), cell('ms', 8), cell('rawB', 8),
@@ -140,3 +221,7 @@ for (const row of rows) {
   ].join(' '))
 }
 console.log(`\nparity files: ${dir}`)
+const nativeElicitation = AGENTS[requestedAgent]!.acp?.nativeElicitation
+if (!nativeElicitation) {
+  console.log(`elicitation fallback: ${AGENTS[requestedAgent]!.acp?.nativeElicitationReason}`)
+}

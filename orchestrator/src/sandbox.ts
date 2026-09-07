@@ -139,6 +139,7 @@ export function readonlyLensProfile(input: {
     ...toolchain,
     ...(input.nodeModuleLinks ?? linkedNodeModules(input.worktree)).map((path) => resolve(path)),
     join(homedir(), '.claude.json'),
+    ROOT,
   ])]
   const allowRead = candidateAllows.filter((allowed) =>
     !protectedDenies.some((denied) => isAtOrBelow(allowed, denied)))

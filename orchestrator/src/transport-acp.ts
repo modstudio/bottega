@@ -1,7 +1,10 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import * as acp from '@agentclientprotocol/sdk'
+import { srtLaunchArgv } from './sandbox.ts'
+import type { SandboxRuntimeConfig } from './sandbox.ts'
 import {
   confineFsPath, decideAcpPermission, outcomeFromTransport, resolveCodexAcpBin, stopErrorMessage,
   type AgentTransport, type NormalizedEvent, type TransportHandle, type TransportResult,
@@ -26,6 +29,7 @@ type AcpTurnInput = {
   error?: string | null
   timedOut?: boolean
   permissionEvents?: Extract<NormalizedEvent, { kind: 'permission' }>[]
+  usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number; costUsd?: number } | null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -52,8 +56,15 @@ function textOf(content: AcpUpdate['content']): string {
 export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
   const events: NormalizedEvent[] = []
   const chunks: string[] = []
-  let tokens: number | null = null
+  let tokens: number | null = input.usage
+    ? (input.usage.inputTokens ?? 0) + (input.usage.outputTokens ?? 0)
+    : null
+  if (input.usage?.totalTokens !== undefined &&
+      input.usage.inputTokens === undefined && input.usage.outputTokens === undefined) {
+    tokens = input.usage.totalTokens
+  }
   let costUsd: number | null = null
+  if (typeof input.usage?.costUsd === 'number') costUsd = input.usage.costUsd
   let sessionId = input.sessionId ?? null
   if (sessionId) events.push({ kind: 'session', sessionId })
   for (const event of input.permissionEvents ?? []) events.push(event)
@@ -140,7 +151,7 @@ export function acpOutcome(result: TransportResult): 'ok' | 'asking' | 'failed' 
 }
 
 function webStream(child: ChildProcess): ReturnType<typeof acp.ndJsonStream> {
-  if (!child.stdin || !child.stdout) throw new Error('codex-acp stdio is not a pipe')
+  if (!child.stdin || !child.stdout) throw new Error('ACP agent stdio is not a pipe')
   const input = Writable.toWeb(child.stdin)
   const output = Readable.toWeb(child.stdout) as unknown as ReadableStream<Uint8Array>
   return acp.ndJsonStream(input, output)
@@ -155,9 +166,32 @@ function readTextFile(path: string, line?: number | null, limit?: number | null)
   return lines.slice(start, end).join('\n')
 }
 
+/** Add only the per-run Grok leader socket to the profile persisted for srt. */
+export function acpSandboxProfile(
+  profile: SandboxRuntimeConfig, leaderSocket: string | null,
+): SandboxRuntimeConfig {
+  if (!leaderSocket) return profile
+  return {
+    ...profile,
+    network: {
+      ...profile.network,
+      allowUnixSockets: [...profile.network.allowUnixSockets, leaderSocket],
+    },
+  }
+}
+
 async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
-  const bin = opts.bin ?? resolveCodexAcpBin()
-  const child = spawn(bin, [], {
+  const grok = opts.agent.name === 'grok'
+  const bin = opts.bin ?? (grok ? opts.agent.bin : resolveCodexAcpBin())
+  const leaderSocket = grok ? `${opts.outPath}.leader.sock` : null
+  const agentArgv = grok
+    ? ['agent', 'stdio', '--leader-socket', leaderSocket!]
+    : []
+  const profile = opts.srt ? acpSandboxProfile(opts.srt.profile, leaderSocket) : null
+  const launch = profile && opts.srt
+    ? srtLaunchArgv(profile, opts.srt.settingsPath, bin, agentArgv)
+    : [bin, ...agentArgv]
+  const child = spawn(launch[0]!, launch.slice(1), {
     cwd: opts.cwd,
     env: {
       ...opts.env,
@@ -176,6 +210,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const permissionEvents: Extract<NormalizedEvent, { kind: 'permission' }>[] = []
   const eventWaiters: Array<(event: NormalizedEvent | null) => void> = []
   let elicitation: { message: string } | null = null
+  let elicitationFallback: string | null = null
   let closed = false
   let prompted = false
   let sessionId: string | null = opts.session ?? null
@@ -204,12 +239,44 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       pushEvent(event)
       return { outcome: decided.outcome }
     })
-    .onRequest(acp.methods.client.elicitation.create, (req) => {
-      // orch maps the elicitation message onto the ask channel and cancels the
-      // form. Gap: the architect's ruling is not posted back as accept content;
-      // the next turn resumes via session/load instead.
+    .onRequest(acp.methods.client.elicitation.create, async (req) => {
       elicitation = { message: req.params.message }
       pushEvent({ kind: 'elicitation', message: req.params.message })
+      if (req.params.mode === 'form') {
+        const requested = isRecord(req.params.requestedSchema) ? req.params.requestedSchema : {}
+        const properties = isRecord(requested.properties) ? requested.properties : {}
+        const fields = Object.entries(properties)
+        const stringFields = fields.filter(([, schema]) => {
+          if (!isRecord(schema)) return false
+          return schema.type === 'string' ||
+            (Array.isArray(schema.type) && schema.type.includes('string'))
+        })
+        if (fields.length === 1 && stringFields.length === 1) {
+          const runId = Number(opts.env.ORCH_RUN_ID ?? 0)
+          if (runId) {
+            const { ask } = await import('./ask.ts')
+            const { db } = await import('./db.ts')
+            db().query("UPDATE run SET status='asking' WHERE id=? AND status='running'").run(runId)
+            const answer = await ask({
+              runId,
+              question: req.params.message,
+              why: 'ACP form elicitation delivered through orch answer',
+            })
+            if (answer.answered) {
+              db().query("UPDATE run SET status='running' WHERE id=? AND status='asking'").run(runId)
+              elicitation = null
+              return { action: 'accept' as const, content: { [stringFields[0]![0]]: answer.answer } }
+            }
+            elicitationFallback = 'ACP elicitation received no ruling before the ask-channel timeout'
+          } else {
+            elicitationFallback = 'ACP elicitation had no authenticated orch run identity'
+          }
+        } else {
+          elicitationFallback = 'ACP elicitation schema was not exactly one string-compatible field'
+        }
+      } else {
+        elicitationFallback = `ACP elicitation mode ${req.params.mode} is not a one-field form`
+      }
       return { action: 'cancel' as const }
     })
     .onRequest(acp.methods.client.fs.readTextFile, (req) => {
@@ -244,16 +311,28 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       },
       clientInfo: { name: 'orch', version: '0.1.0' },
     })
+    // The ruling channel is transport infrastructure, not a project MCP opt-in.
+    // ACP adapters do not inherit the vendor CLI's global MCP registration, so
+    // every real run carries orch-ask explicitly in session/new and session/load.
+    const mcpServers: acp.McpServer[] = opts.env.ORCH_RUN_ID && opts.env.ORCH_RUN_TOKEN
+      ? [{
+          name: 'orch-ask',
+          command: process.execPath,
+          args: [join(dirname(import.meta.path), 'cli.ts'), 'ask-server'],
+          env: ['ORCH_ASK_URL', 'ORCH_RUN_ID', 'ORCH_RUN_TOKEN', 'ORCH_DB']
+            .flatMap((name) => opts.env[name] ? [{ name, value: opts.env[name]! }] : []),
+        }]
+      : []
     if (opts.session) {
       await ctx.request(acp.methods.agent.session.load, {
         // orch resumes the vendor conversation; the prompt is the ruling.
-        cwd: opts.cwd, sessionId: opts.session, mcpServers: [],
+        cwd: opts.cwd, sessionId: opts.session, mcpServers,
       })
       sessionId = opts.session
     } else {
       const created = await ctx.request(acp.methods.agent.session.new, {
-        // orch opens a read-only session in the worktree; no MCP servers yet.
-        cwd: opts.cwd, mcpServers: [],
+        // orch opens a read-only session with its per-run ruling channel.
+        cwd: opts.cwd, mcpServers,
       })
       sessionId = created.sessionId
     }
@@ -261,11 +340,13 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   } catch (error) {
     closed = true
     try { child.kill('SIGTERM') } catch { /* already gone */ }
+    if (leaderSocket) rmSync(leaderSocket, { force: true })
     throw error
   }
 
   let collectPromise: Promise<TransportResult> | null = null
   let cancelled = false
+  let terminalUsage: AcpTurnInput['usage'] = null
 
   const finishEvents = () => {
     for (const wait of eventWaiters) wait(null)
@@ -301,22 +382,37 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
         try {
           const response = await promptWork
           stopReason = response.stopReason
+          const meta = isRecord(response._meta) ? response._meta : null
+          const nested = meta && isRecord(meta.usage) ? meta.usage : null
+          const direct = isRecord(response.usage) ? response.usage : null
+          const usage = (nested ?? direct) as Record<string, unknown> | null
+          const inputTokens = usage && typeof usage.inputTokens === 'number' ? usage.inputTokens : undefined
+          const outputTokens = usage && typeof usage.outputTokens === 'number' ? usage.outputTokens : undefined
+          const totalTokens = usage && typeof usage.totalTokens === 'number' ? usage.totalTokens : undefined
+          const costTicks = usage && typeof usage.costUsdTicks === 'number' ? usage.costUsdTicks : undefined
+          terminalUsage = usage ? {
+            inputTokens, outputTokens, totalTokens,
+            costUsd: costTicks === undefined ? undefined : costTicks / 1_000_000_000,
+          } : null
         } catch (cause) {
           error = String((cause as Error)?.message ?? cause)
         }
         const stderr = Buffer.concat(stderrChunks).toString('utf8')
         const result = normalizeAcpTurn({
-          sessionId, updates, stopReason, elicitation, error,
+          sessionId, updates, stopReason, elicitation, error, usage: terminalUsage,
           timedOut: cancelled,
           permissionEvents,
         })
-        result.stderr = stderr
+        result.stderr = elicitationFallback
+          ? [stderr, elicitationFallback].filter(Boolean).join('\n')
+          : stderr
         result.pid = child.pid ?? null
         writeFileSync(opts.outPath, result.output)
         if (result.stopReason) pushEvent({ kind: 'stop', reason: result.stopReason })
         closed = true
         finishEvents()
         try { connection?.close() } catch { /* already closed */ }
+        if (leaderSocket) rmSync(leaderSocket, { force: true })
         return result
       })()
     },
@@ -339,6 +435,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
         } catch { /* agent may already be gone */ }
       }
       try { child.kill('SIGTERM') } catch { /* already gone */ }
+      if (leaderSocket) rmSync(leaderSocket, { force: true })
     },
     async collect() {
       if (!prompted) await handle.prompt(opts.prompt)

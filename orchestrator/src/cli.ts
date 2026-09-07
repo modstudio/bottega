@@ -1395,7 +1395,7 @@ function usage(): never {
                                 fan-out is done: N detaches, one wait.
       --porcelain               print exactly the run id, for machine callers
       --agent <name>            force an agent instead of routing
-      --transport cli|acp       driver seam; default cli. acp is a DEV-342 codex read-only pilot
+      --transport cli|acp       driver seam; default cli. acp covers codex/grok read-only jobs
       --avoid <agent>[,...]     route to any other agent when possible
       --distinct-from <id>[,...] avoid models used by earlier fan-out runs
       --base <ref>              ${baseHelp('base an implement or fix worktree on this git ref')}
@@ -1603,7 +1603,7 @@ function doUsage(): never {
   jobs: ${Object.keys(JOBS).join(', ')}
 
   --agent <name>   force an agent instead of using the router
-  --transport cli|acp  driver seam; default cli. acp is a DEV-342 codex read-only pilot
+  --transport cli|acp  driver seam; default cli. acp covers codex/grok read-only jobs
   --avoid <name,...> exclude agents while routing, unless none remain
   --distinct-from <id,...> exclude models used by earlier runs, unless none remain
   --base <ref>     ${baseHelp('base an implement or fix worktree on this verified git ref')}
@@ -2616,7 +2616,7 @@ switch (cmd) {
     const transport = resolveTransportName(flag('transport'))
     if (transport === 'acp') {
       assertAcpAllowed(jobName, flag('agent'))
-      assertAcpReady()
+      assertAcpReady(flag('agent') ?? 'codex')
     }
     const agent = selectAgentForTransport(transport, flag('agent'))
     const requestedCwd = flag('cwd')
@@ -3812,7 +3812,8 @@ switch (cmd) {
      * test that "proved" it wrote the answer with raw SQL, bypassing the very
      * guard that was refusing it.
      */
-    const live = open.filter((q) => q.owner_status === 'running' && pidAlive(q.owner_pid))
+    const live = open.filter((q) =>
+      (q.owner_status === 'running' || q.owner_status === 'asking') && pidAlive(q.owner_pid))
     const stopped = open.filter((q) => !live.includes(q))
     if (live.length && stopped.length) {
       const list = (questions: typeof open) => questions

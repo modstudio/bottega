@@ -10,8 +10,8 @@ import type { SandboxRuntimeConfig } from './sandbox.ts'
 
 const requireTransport = createRequire(import.meta.url)
 
-/** Pilot task that owns the ACP opt-in. Named in every refusal. */
-export const ACP_PILOT_TASK = 'DEV-342'
+/** Task that owns the ACP go/no-go. Named in every refusal. */
+export const ACP_PILOT_TASK = 'DEV-352'
 
 /** Read-only jobs the ACP pilot may run. Anything else is refused. */
 export const ACP_PILOT_JOBS = ['understand', 'file-question', 'verify-claim', 'summarize'] as const
@@ -158,9 +158,9 @@ export function selectAgentForTransport(
  * every job that happens not to write.
  */
 export function assertAcpAllowed(jobName: string, agentName: string | undefined): void {
-  if (agentName && agentName !== 'codex') {
+  if (agentName && agentName !== 'codex' && agentName !== 'grok') {
     throw new Error(
-      `ACP transport is a ${ACP_PILOT_TASK} pilot and is only available for codex`,
+      `ACP transport is a ${ACP_PILOT_TASK} pilot and is only available for codex or grok`,
     )
   }
   if (isAcpPilotJob(jobName)) return
@@ -184,10 +184,12 @@ export function acpRuntimeGaps(opts?: {
   ajvResolve?: () => string
   binPath?: string
   binExists?: (path: string) => boolean
+  agentName?: string
 }): string | null {
   const sdkResolve = opts?.sdkResolve ?? (() => requireTransport.resolve('@agentclientprotocol/sdk'))
   const ajvResolve = opts?.ajvResolve ?? (() => requireTransport.resolve('ajv/dist/2020.js'))
-  const binPath = opts?.binPath ?? resolveCodexAcpBin()
+  const agentName = opts?.agentName ?? 'codex'
+  const binPath = opts?.binPath ?? (agentName === 'grok' ? (Bun.which('grok') ?? 'grok') : resolveCodexAcpBin())
   const binExists = opts?.binExists ?? existsSync
   try {
     sdkResolve()
@@ -200,13 +202,13 @@ export function acpRuntimeGaps(opts?: {
     return `ACP transport is a ${ACP_PILOT_TASK} pilot; ajv is not installed`
   }
   if (!binExists(binPath)) {
-    return `ACP transport is a ${ACP_PILOT_TASK} pilot; the codex-acp executable is not installed`
+    return `ACP transport is a ${ACP_PILOT_TASK} pilot; the ${agentName === 'grok' ? 'grok' : 'codex-acp'} executable is not installed`
   }
   return null
 }
 
-export function assertAcpReady(): void {
-  const gap = acpRuntimeGaps()
+export function assertAcpReady(agentName = 'codex'): void {
+  const gap = acpRuntimeGaps({ agentName })
   if (gap) throw new Error(gap)
 }
 

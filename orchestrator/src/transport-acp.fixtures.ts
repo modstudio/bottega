@@ -147,3 +147,36 @@ export const ACP_FIXTURE_EDIT_PERMISSION = {
     { optionId: 'reject-once', kind: 'reject_once' },
   ],
 }
+
+/** Redacted from grok 1.0.13 `agent stdio`; usage is on the prompt response. */
+export const ACP_FIXTURE_GROK = {
+  sessionId: 'sess_grok_read',
+  updates: [
+    {
+      sessionId: 'sess_grok_read',
+      update: {
+        sessionUpdate: 'tool_call',
+        title: 'read_file',
+        _meta: { 'x.ai/tool': { kind: 'read' } },
+      },
+    },
+    {
+      sessionId: 'sess_grok_read',
+      update: {
+        sessionUpdate: 'tool_call_update',
+        title: 'Read orchestrator/package.json',
+        kind: 'read',
+        status: 'completed',
+      },
+    },
+    {
+      sessionId: 'sess_grok_read',
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: '@devbox/orchestrator' },
+      },
+    },
+  ],
+  stopReason: 'end_turn' as const,
+  usage: { inputTokens: 101_394, outputTokens: 111, totalTokens: 101_505 },
+}

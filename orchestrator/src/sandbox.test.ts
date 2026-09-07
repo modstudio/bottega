@@ -4,6 +4,7 @@ import { homedir } from 'node:os'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Project } from './projects.ts'
+import { ROOT } from './db.ts'
 import {
   grokSandboxConfig,
   READONLY_LENS_DENY_PATHS, readonlyLensProfile, readonlyNeedsDocker, selectReadonlySandbox,
@@ -53,6 +54,7 @@ describe('readonly-lens sandbox profile', () => {
     expect(profile.filesystem.allowRead).toEqual([
       '/runs/tree', '/runs/evidence', '/opt/toolchain/bin', '/usr/bin',
       '/projects/fixture/node_modules', join(homedir(), '.claude.json'),
+      ROOT,
     ])
     expect(profile.filesystem.allowWrite).toEqual(['/runs/tree', '/runs/evidence'])
     expect(profile.network.allowedDomains).toEqual([

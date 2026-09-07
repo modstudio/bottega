@@ -239,7 +239,7 @@ export function readStrictCodexSchema(path: string): JSONSchema {
 
 /**
  * Policy and capabilities for a vendor. How it is spawned lives on
- * `AgentTransport` (`cli` by default; `acp` is the DEV-342 codex pilot).
+ * `AgentTransport` (`cli` by default; `acp` is selectable for paid read-only jobs).
  * `argv` / `resumeArgv` / `parseReply` / `readSession` are the CLI transport's
  * launch and parse surface — `cliTransport` reads them when it builds argv.
  * They are not unused leftovers of the old inlined spawn.
@@ -274,6 +274,14 @@ export type Agent = {
    */
   model: string
   caps: Caps
+  /** Transport decision and the measured ACP capabilities for this installed adapter. */
+  defaultTransport: 'cli' | 'acp'
+  acp?: {
+    mcpServers: boolean
+    mcpReason: string
+    nativeElicitation: boolean
+    nativeElicitationReason: string
+  }
   /** Build argv for a one-shot run. `out` is a file the agent writes its final message to. */
   argv(opts: ArgvOpts): string[]
   /**
@@ -638,6 +646,13 @@ export const AGENTS: Record<string, Agent> = {
     // `thread.started` on the first line and `exec resume <thread_id>` recalled
     // the previous turn.
     caps: { readsRepo: true, mcp: true, discoversMcpFromCwd: false, schema: true, writesRepo: true, resumable: true },
+    defaultTransport: 'cli',
+    acp: {
+      mcpServers: true,
+      mcpReason: 'codex-acp 1.10.0 accepts the session/new mcpServers field; live orch-ask parity is pending a depth-zero run',
+      nativeElicitation: false,
+      nativeElicitationReason: 'codex-acp 1.10.0 answered the requested user question as prose and emitted no elicitation/create',
+    },
     mcpImpliesWrite: true,
     stdin: true,
     maxPromptBytes: Number.POSITIVE_INFINITY,
@@ -729,6 +744,7 @@ export const AGENTS: Record<string, Agent> = {
     // Everything false but schema: it cannot open a file, so it certainly
     // cannot edit one, and its headless mode has no session to resume.
     caps: { readsRepo: false, mcp: false, discoversMcpFromCwd: false, schema: true, writesRepo: false, resumable: false },
+    defaultTransport: 'cli',
     stdin: false,
     maxPromptBytes: ARGV_PROMPT_BYTES,
     readsOut: false,
@@ -779,6 +795,7 @@ export const AGENTS: Record<string, Agent> = {
     // 9.28s. The filesystem remains the id route used by orch; see
     // `qwenSession` for why the newest file is not good enough.
     caps: { readsRepo: true, mcp: true, discoversMcpFromCwd: false, schema: false, writesRepo: false, resumable: true },
+    defaultTransport: 'cli',
     stdin: false,
     maxPromptBytes: ARGV_PROMPT_BYTES,
     readsOut: false,
@@ -847,6 +864,13 @@ export const AGENTS: Record<string, Agent> = {
     // 28-byte file containing exactly GROK_WRITE_PROOF_2026_09_02 plus newline,
     // and exited 0 in 13.38s.
     caps: { readsRepo: true, mcp: true, discoversMcpFromCwd: true, schema: true, writesRepo: true, resumable: true },
+    defaultTransport: 'cli',
+    acp: {
+      mcpServers: true,
+      mcpReason: 'grok 1.0.13 accepts the session/new mcpServers field; live orch-ask parity is pending a depth-zero run',
+      nativeElicitation: false,
+      nativeElicitationReason: 'grok 1.0.13 reported ask_user_question unavailable and emitted no elicitation/create',
+    },
     stdin: false,
     maxPromptBytes: ARGV_PROMPT_BYTES,
     readsOut: false,
