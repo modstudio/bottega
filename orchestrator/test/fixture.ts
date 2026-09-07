@@ -1,10 +1,12 @@
 /** Shared test state and helpers. The preload establishes ORCH_DB before this module imports src. */
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, chmodSync, openSync, closeSync } from 'node:fs'
+import { afterEach, beforeEach, expect } from 'bun:test'
+import { appendFileSync, chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync,
+  readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { OrchRunEnvelopeSchema } from '../../shared/orch-contract.ts'
 import type { WorktreeCreate, WorktreeCreateArg } from '../src/projects.ts'
-import { dirname } from 'node:path'
 const dir = dirname(process.env.ORCH_DB!)
 export { dir }
 export const declaredCreate = (command: string, args: WorktreeCreateArg[]): WorktreeCreate =>
@@ -271,4 +273,283 @@ export function workerReply(overrides: Record<string, unknown> = {}): Record<str
     deviations: null, tests: { command: 'bun test', ran: true, passed: true, detail: null },
     blockers: null, ...overrides,
   }
+}
+
+export function landingDescribeFixture() {
+let landingFixtureRunId = 50_000
+  const landingModule = new URL('../src/landing.ts', import.meta.url).href
+  const gitLocksModule = new URL('../src/git-locks.ts', import.meta.url).href
+  const worktreeModule = new URL('../src/worktree.ts', import.meta.url).href
+  const g = (cwd: string, ...args: string[]) => {
+    const p = Bun.spawnSync(['git', ...args], {
+      cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+    return p.stdout.toString().trim()
+  }
+  const repoWithBranches = (branches: string[]) => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-land-')))
+    g(repo, 'init', '-b', 'main')
+    g(repo, 'config', 'user.email', 'orch-test@example.invalid')
+    g(repo, 'config', 'user.name', 'Orch Test')
+    appendFileSync(join(repo, '.git', 'info', 'exclude'), 'trees/\n.orch-run\n')
+    writeFileSync(join(repo, 'base.txt'), 'base\n')
+    g(repo, 'add', 'base.txt')
+    g(repo, 'commit', '-m', 'base')
+    const trees: Record<string, string> = {}
+    for (const branch of branches) {
+      const tree = join(repo, 'trees', branch)
+      mkdirSync(join(repo, 'trees'), { recursive: true })
+      g(repo, 'worktree', 'add', '-b', branch, tree, 'main')
+      writeFileSync(join(tree, '.orch-run'), `${landingFixtureRunId++}\n${repo}\nsource: git\n`)
+      writeFileSync(join(tree, `${branch}.txt`), `${branch}\n`)
+      g(tree, 'add', `${branch}.txt`)
+      g(tree, 'commit', '-m', branch)
+      trees[branch] = tree
+    }
+    return { repo, trees }
+  }
+  const childLand = (
+    repo: string, branch: string,
+    options: { message?: string; unreviewed?: string | null; runId?: number } = {},
+    extraEnv: Record<string, string | undefined> = {},
+  ) => {
+    const env: Record<string, string | undefined> = {
+      ...hermeticGitEnv(), ...extraEnv,
+      ORCH_DB: process.env.ORCH_DB!, CLAUDE_CODE_SESSION_ID: branch,
+    }
+    for (const [name, value] of Object.entries(env)) {
+      if (value === undefined) delete env[name]
+    }
+    return Bun.spawn(
+      [process.execPath, '-e',
+        `const { land } = await import(process.argv[1]); land(process.argv[2], process.argv[3], JSON.parse(process.argv[4]))`,
+        landingModule, repo, branch, JSON.stringify(options.unreviewed === null
+          ? { ...options, unreviewed: undefined }
+          : { unreviewed: 'existing landing fixture', ...options })],
+      { env, stdout: 'pipe', stderr: 'pipe' },
+    )
+  }
+  const observeGitLocks = (repo: string) => {
+    // Bun's implicit spawn environment is the process launch environment, even
+    // after process.env entries are deleted. Run the production observers in a
+    // scrubbed child so an orch worker's private object store cannot replace the
+    // scratch repository's object store.
+    const child = Bun.spawnSync(
+      [process.execPath, '-e', [
+        'const { landingStatus } = await import(process.argv[1])',
+        'const { gitLocks } = await import(process.argv[2])',
+        'console.log(JSON.stringify({ status: landingStatus(process.argv[3]), locks: gitLocks(process.argv[3]) }))',
+      ].join(';'), landingModule, gitLocksModule, repo],
+      { cwd: repo, env: hermeticGitEnv({ ORCH_DB: process.env.ORCH_DB! }),
+        stdout: 'pipe', stderr: 'pipe' },
+    )
+    if (child.exitCode !== 0) throw new Error(child.stderr.toString())
+    return JSON.parse(child.stdout.toString()) as {
+      status: string
+      locks: ReturnType<typeof gitLocks>
+    }
+  }
+  const completedReview = (
+    project: string, trees: (string | null)[],
+    source?: { branch: string; baseCommit: string; launchCwd: string },
+  ) => {
+    const entries = trees.map((tree, i) => ({
+      runId: addRun({ agent: 'codex', job: 'review-lens', model: 'test',
+        lens: `lens-${i + 1}`, repo: project, ...(tree ? { inputTree: tree } : {}) }),
+      output: reviewReply(0),
+    }))
+    if (source) {
+      const update = db().query(
+        'UPDATE run SET branch=?, base_commit=?, launch_cwd=?, head_commit=? WHERE id=?',
+      )
+      const headCommit = g(source.launchCwd, 'rev-parse', 'HEAD^{commit}')
+      for (const entry of entries) {
+        update.run(source.branch, source.baseCommit, source.launchCwd, headCommit, entry.runId)
+      }
+    }
+    const id = recordReviews(entries)
+    completeReview(id)
+    return id
+  }
+
+  const realTimeoutGate = (name: string) => {
+    const fixture = mkdtempSync(join(tmpdir(), 'orch-real-timeout-gate-'))
+    const testFile = join(fixture, 'buried-timeout.test.ts')
+    const quote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`
+    writeFileSync(testFile, [
+      "import { test } from 'bun:test'",
+      `test(${JSON.stringify(name)}, async () => { await Bun.sleep(50) }, 1)`,
+      "for (let i = 1; i <= 900; i++) test(`later test ${i}`, () => {})",
+    ].join('\n') + '\n')
+    return { fixture, gate: `${quote(process.execPath)} test ${quote(testFile)}` }
+  }
+  return { landingFixtureRunId, landingModule, gitLocksModule, worktreeModule, g, repoWithBranches, childLand, observeGitLocks, completedReview, realTimeoutGate }
+}
+
+export function runCollectionDescribeFixture() {
+const CLI = new URL('../src/cli.ts', import.meta.url).pathname
+  const orchInput = (args: string[], stdin?: string | Uint8Array, extraEnv: Record<string, string> = {}) => {
+    const p = Bun.spawnSync([process.execPath, CLI, ...args], {
+      // The suite may itself be run by an orch worker. CLI behavior under test
+      // starts at the user boundary, not at the inherited delegation depth.
+      env: {
+        ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+        CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+        ...extraEnv,
+      },
+      stdin: stdin === undefined ? undefined
+        : typeof stdin === 'string' ? new TextEncoder().encode(stdin) : stdin,
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    return {
+      code: p.exitCode,
+      out: new TextDecoder().decode(p.stdout),
+      err: new TextDecoder().decode(p.stderr),
+    }
+  }
+  const orch = (...args: string[]) => orchInput(args)
+  const scoreReminder = (session: string) => Bun.spawnSync(
+    ['python3', new URL('../hooks/score-reminder.py', import.meta.url).pathname],
+    {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB! },
+      stdin: new TextEncoder().encode(JSON.stringify({ session_id: session })),
+      stdout: 'pipe', stderr: 'pipe',
+    },
+  )
+  const orchFrom = (cwd: string, session: string, ...args: string[]) => {
+    const p = Bun.spawnSync([process.execPath, CLI, ...args], {
+      cwd,
+      env: {
+        ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+        CLAUDE_CODE_SESSION_ID: session,
+      },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    return { code: p.exitCode, out: p.stdout.toString(), err: p.stderr.toString() }
+  }
+  const insert = (status: string, job = 'file-question') => (db().query(
+    `INSERT INTO run (started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status)
+     VALUES (?, 'codex', ?, 'x', 1, 'x', ?) RETURNING id`,
+  ).get(new Date().toISOString(), job, status) as { id: number }).id
+  const checkpointedOrch = async (checkpoint: string, ...args: string[]) => {
+    const token = randomUUID()
+    const ready = join(dir, `lifecycle-ready-${token}`)
+    const release = join(dir, `lifecycle-release-${token}`)
+    const child = Bun.spawn([process.execPath, CLI, ...args], {
+      env: {
+        ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+        CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+        ORCH_TEST_LIFECYCLE_CHECKPOINT: checkpoint,
+        ORCH_TEST_LIFECYCLE_READY: ready,
+        ORCH_TEST_LIFECYCLE_RELEASE: release,
+      },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    const deadline = Date.now() + 5_000
+    while (!existsSync(ready) && Date.now() < deadline) await Bun.sleep(5)
+    expect(existsSync(ready)).toBe(true)
+    return { child, release }
+  }
+  const lifecycleResult = async (child: ReturnType<typeof Bun.spawn>) => {
+    const [code, out, err] = await Promise.all([
+      child.exited,
+      new Response(child.stdout as ReadableStream<Uint8Array>).text(),
+      new Response(child.stderr as ReadableStream<Uint8Array>).text(),
+    ])
+    return { code, out, err }
+  }
+  const dispatchArtifacts = (cwd: string) => {
+    const root = repoRootOf(cwd) ?? cwd
+    const trees = join(root, '.claude', 'worktrees')
+    return {
+      runs: (db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n,
+      prompts: existsSync(RUNS_DIR) ? readdirSync(RUNS_DIR).sort() : [],
+      lock: existsSync(join(root, '.git', 'orch-create.lock')),
+      worktrees: existsSync(trees) ? readdirSync(trees).sort() : null,
+    }
+  }
+  const expectNoDispatchArtifacts = (cwd: string, before: ReturnType<typeof dispatchArtifacts>) => {
+    expect(dispatchArtifacts(cwd)).toEqual(before)
+  }
+
+  const conflictingImplement = (extra: string[]) => {
+    const binDir = join(dir, `conflict-warn-bin-${extra.join('-') || 'human'}`)
+    mkdirSync(binDir, { recursive: true })
+    writeFileSync(join(binDir, 'codex'), '#!/bin/sh\nprintf \'answer\'\n')
+    chmodSync(join(binDir, 'codex'), 0o755)
+    return Bun.spawnSync(
+      [process.execPath, CLI, 'do', 'implement',
+        'Make the change.\nThen push the branch.', '--agent', 'codex', ...extra],
+      { cwd: dir, stdout: 'pipe', stderr: 'pipe', env: {
+        ...process.env, PATH: `${binDir}:${process.env.PATH}`, ORCH_DB: process.env.ORCH_DB!,
+        ORCH_DEPTH: '0', CLAUDE_CODE_SESSION_ID: 'orch-test-session', FORCE_COLOR: '1',
+      } },
+    )
+  }
+
+  const expectCreateMigrationRefused = (
+    name: string, create: string, token: string, position: number, kind = 'unsupported shell token',
+  ) => {
+    upsertProject({
+      name, path: process.cwd(), settings: { worktree: { create } } as any,
+    })
+    const r = orch('project', 'migrate-create', name, '--apply')
+    expect(r.code).toBe(0)
+    expect(r.out).toContain(`${kind} ${JSON.stringify(token)} at position ${position}; cannot migrate`)
+    expect(projectByName(name)!.settings.worktree?.create as any).toBe(create)
+  }
+  return { CLI, orchInput, orch, scoreReminder, orchFrom, insert, checkpointedOrch, lifecycleResult, dispatchArtifacts, expectNoDispatchArtifacts, conflictingImplement, expectCreateMigrationRefused }
+}
+
+export function worktreeDescribeFixture() {
+let priorCleanupSession: string | undefined
+  beforeEach(() => {
+    priorCleanupSession = process.env.CLAUDE_CODE_SESSION_ID
+    process.env.CLAUDE_CODE_SESSION_ID = 'worktree-owner-session'
+  })
+  afterEach(() => {
+    if (priorCleanupSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+    else process.env.CLAUDE_CODE_SESSION_ID = priorCleanupSession
+  })
+
+  const fromRoot = <T>(fn: () => T): T => {
+    const priorDepth = process.env.ORCH_DEPTH
+    try {
+      process.env.ORCH_DEPTH = '0'
+      return fn()
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  }
+
+  /**
+   * The bug shipped because every test called git from the main checkout.
+   * `--show-toplevel` is correct THERE and wrong from inside a worktree, which
+   * is exactly where one session ran orch and lost a day. The test
+   * therefore cds into a real nested worktree.
+   */
+  const git = (cwd: string, ...args: string[]) => {
+    const p = Bun.spawnSync(['git', ...args], {
+      cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+    return p.stdout.toString().trim()
+  }
+
+  function scratchRepo(): { repo: string; tree: string } {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-nested-'))
+    git(repo, 'init', '-b', 'main')
+    git(repo, 'config', 'user.email', 'orch-test@example.invalid')
+    git(repo, 'config', 'user.name', 'Orch Test')
+    writeFileSync(join(repo, 'kept.txt'), 'base\n')
+    git(repo, 'add', 'kept.txt')
+    git(repo, 'commit', '-m', 'base')
+    const tree = join(repo, '.claude', 'worktrees', 'AB-2581')
+    mkdirSync(join(repo, '.claude', 'worktrees'), { recursive: true })
+    git(repo, 'worktree', 'add', '-b', 'AB-2581', tree, 'main')
+    return { repo, tree }
+  }
+  return { priorCleanupSession, fromRoot, git, scratchRepo }
 }

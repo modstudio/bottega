@@ -1,0 +1,1102 @@
+import { describe, expect, test } from 'bun:test'
+import { rmSync, readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync, readdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { addRun, completeReview, contentTree, db, gateFailureSummary, hermeticGitEnv, land, landingReviewCoverage, prepareSharedRefGuard, projectLockState, recordReviews, reviewPins, reviewReply, upsertProject, withProjectLock } from '../test/fixture.ts'
+
+import { landingDescribeFixture } from '../test/fixture.ts'
+
+describe("landing is gated on the exact commit that reaches trunk", () => {
+  const { worktreeModule, g, repoWithBranches, childLand, completedReview, realTimeoutGate } = landingDescribeFixture()
+test('only bun\'s complete timeout line reports machine load', () => {
+    const unrelated = gateFailureSummary(
+      'backup timed out after 10ms\n1 fail\n', '/tmp/gate.log', 7,
+    )
+    expect(unrelated).not.toContain('gate timeout under load')
+    const bun = gateFailureSummary(
+      '\u001b[31m  ^ this test timed out after 5000ms.\u001b[0m\n1 fail\n',
+      '/tmp/gate.log', 7,
+    )
+    expect(bun).toContain(
+      'gate timeout under load: 7 orch runs live (running + asking) machine-wide',
+    )
+  })
+
+  test('landing reconciles a clean checkout of trunk to the landed commit', async () => {
+    const { repo } = repoWithBranches(['clean-landing'])
+    upsertProject({ name: 'landing-clean-checkout', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const child = childLand(repo, 'clean-landing')
+      expect(await child.exited).toBe(0)
+      const tip = g(repo, 'rev-parse', 'refs/heads/main')
+      expect(g(repo, 'rev-parse', 'HEAD')).toBe(tip)
+      expect(g(repo, 'write-tree')).toBe(g(repo, 'rev-parse', `${tip}^{tree}`))
+      expect(readFileSync(join(repo, 'clean-landing.txt'), 'utf8')).toBe('clean-landing\n')
+      expect(g(repo, 'status', '--porcelain=v1', '--untracked-files=all')).toBe('')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('nested landing keeps the outer worker guard after land returns or throws', () => {
+    for (const outcome of ['returns', 'throws'] as const) {
+      const branch = `nested-land-${outcome}`
+      const { repo, trees } = repoWithBranches([branch])
+      const tree = trees[branch]!
+      upsertProject({
+        name: `landing-guard-${outcome}`, path: repo,
+        settings: { trunk: 'main', gate: outcome === 'returns' ? 'true' : 'false' },
+      })
+      try {
+        const outerGuard = prepareSharedRefGuard(tree, `refs/heads/${branch}`)
+        if (outcome === 'returns') {
+          expect(() => land(repo, branch, { unreviewed: 'nested landing fixture' })).not.toThrow()
+        } else {
+          expect(() => land(repo, branch, { unreviewed: 'nested landing fixture' })).toThrow()
+        }
+        expect(existsSync(join(outerGuard.GIT_CONFIG_VALUE_0, 'reference-transaction'))).toBe(true)
+        const forbidden = Bun.spawnSync([
+          'git', 'update-ref', 'refs/heads/forbidden-after-land', 'HEAD',
+        ], {
+          cwd: tree, env: hermeticGitEnv(outerGuard), stdout: 'pipe', stderr: 'pipe',
+        })
+        expect(forbidden.exitCode).not.toBe(0)
+        expect(forbidden.stderr.toString()).toContain('this worker may update only')
+      } finally {
+        rmSync(repo, { recursive: true, force: true })
+      }
+    }
+  })
+
+  test('landing ignores worker global and system config while retaining the target user config', async () => {
+    const { repo } = repoWithBranches(['scrub-config'])
+    const workerHooks = join(repo, 'worker-hooks')
+    const workerConfig = join(repo, 'worker.gitconfig')
+    const targetHome = join(repo, 'target-home')
+    mkdirSync(workerHooks)
+    mkdirSync(targetHome)
+    writeFileSync(join(workerHooks, 'reference-transaction'), '#!/bin/sh\nexit 73\n')
+    chmodSync(join(workerHooks, 'reference-transaction'), 0o755)
+    writeFileSync(workerConfig, [
+      '[core]', `\thooksPath = ${workerHooks}`,
+      '[user]', '\tname = Worker Identity', '\temail = worker@example.invalid',
+    ].join('\n') + '\n')
+    writeFileSync(join(targetHome, '.gitconfig'), [
+      '[user]', '\tname = Target Identity', '\temail = target@example.invalid',
+    ].join('\n') + '\n')
+    g(repo, 'config', '--unset', 'user.name')
+    g(repo, 'config', '--unset', 'user.email')
+    upsertProject({ name: 'landing-scrub-config', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const child = childLand(repo, 'scrub-config', {
+        message: 'DEV-299 landing with target config',
+      }, {
+        HOME: targetHome,
+        GIT_CONFIG_GLOBAL: workerConfig,
+        GIT_CONFIG_SYSTEM: workerConfig,
+        GIT_CONFIG_NOSYSTEM: '1',
+      })
+      const exit = await child.exited
+      const error = await new Response(child.stderr).text()
+      expect(exit, error).toBe(0)
+      expect(g(repo, 'log', '-1', '--format=%cn', 'main')).toBe('Target Identity')
+      expect(() => g(repo, 'config', '--get', 'core.hooksPath')).toThrow()
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('landing reconciles around genuine tracked work without changing it', async () => {
+    const { repo } = repoWithBranches(['dirty-landing'])
+    writeFileSync(join(repo, 'base.txt'), 'work owned by another session\n')
+    upsertProject({ name: 'landing-dirty-checkout', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const child = childLand(repo, 'dirty-landing')
+      expect(await child.exited).toBe(0)
+      const output = (await new Response(child.stdout).text()) +
+        (await new Response(child.stderr).text())
+      const tip = g(repo, 'rev-parse', 'dirty-landing')
+      expect(g(repo, 'rev-parse', 'HEAD')).toBe(tip)
+      expect(g(repo, 'write-tree')).toBe(g(repo, 'rev-parse', `${tip}^{tree}`))
+      expect(readFileSync(join(repo, 'base.txt'), 'utf8')).toBe('work owned by another session\n')
+      expect(readFileSync(join(repo, 'dirty-landing.txt'), 'utf8')).toBe('dirty-landing\n')
+      expect(g(repo, 'status', '--short')).toBe('M base.txt')
+      expect(output).toContain(`reconciled checkout ${repo}`)
+      expect(output).not.toContain('CONDITION:')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('an untracked file neither blocks reconciliation nor enters the index', async () => {
+    const { repo } = repoWithBranches(['untracked-landing'])
+    writeFileSync(join(repo, 'orch.db.bak-test'), 'litter\n')
+    upsertProject({ name: 'landing-untracked-checkout', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const child = childLand(repo, 'untracked-landing')
+      expect(await child.exited).toBe(0)
+      const output = (await new Response(child.stdout).text()) +
+        (await new Response(child.stderr).text())
+      const tip = g(repo, 'rev-parse', 'untracked-landing')
+      expect(g(repo, 'write-tree')).toBe(g(repo, 'rev-parse', `${tip}^{tree}`))
+      expect(readFileSync(join(repo, 'untracked-landing.txt'), 'utf8')).toBe('untracked-landing\n')
+      expect(g(repo, 'status', '--short')).toBe('?? orch.db.bak-test')
+      expect(output).toContain(`reconciled checkout ${repo}`)
+      expect(output).not.toContain('CONDITION:')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a conflicting staged-only version is anchored and recoverable without changing working bytes', async () => {
+    const { repo, trees } = repoWithBranches(['staged-landing'])
+    writeFileSync(join(trees['staged-landing']!, 'base.txt'), 'landed version\n')
+    g(trees['staged-landing']!, 'add', 'base.txt')
+    g(trees['staged-landing']!, 'commit', '-m', 'DEV-219 touch staged path')
+    writeFileSync(join(repo, 'base.txt'), 'staged version\n')
+    g(repo, 'add', 'base.txt')
+    const indexBefore = g(repo, 'write-tree')
+    writeFileSync(join(repo, 'base.txt'), 'base\n')
+    const workingBefore = readFileSync(join(repo, 'base.txt'))
+    expect(() => g(repo, 'rev-parse', '--verify', 'refs/stash')).toThrow()
+    upsertProject({ name: 'landing-staged-checkout', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const child = childLand(repo, 'staged-landing')
+      expect(await child.exited).toBe(0)
+      const output = (await new Response(child.stdout).text()) +
+        (await new Response(child.stderr).text())
+      const tip = g(repo, 'rev-parse', 'staged-landing')
+      expect(g(repo, 'write-tree')).toBe(g(repo, 'rev-parse', `${tip}^{tree}`))
+      expect(readFileSync(join(repo, 'base.txt'))).toEqual(workingBefore)
+      expect(output).toContain('CONDITION: landing succeeded')
+      expect(output).toContain('Review and reconcile this checkout before using or committing it.')
+      const preserved = output.match(/previous index is preserved at (refs\/orch\/preserved-index\/\S+) \(([0-9a-f]+)\)/)
+      expect(preserved).not.toBeNull()
+      expect(g(repo, 'rev-parse', preserved![1]!)).toBe(preserved![2]!)
+      expect(() => g(repo, 'rev-parse', '--verify', 'refs/stash')).toThrow()
+      const command = output.split('\n').find((line) => line.startsWith('git -C '))
+      expect(command).toBeDefined()
+      const recovery = Bun.spawnSync(['sh', '-lc', command!], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(recovery.exitCode).toBe(0)
+      expect(g(repo, 'write-tree')).toBe(indexBefore)
+      expect(readFileSync(join(repo, 'base.txt'))).toEqual(workingBefore)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a previously stale and dirty trunk checkout is treated as holding work', async () => {
+    const { repo } = repoWithBranches(['prior-landing', 'next-landing'])
+    const staleIndex = g(repo, 'write-tree')
+    g(repo, 'update-ref', 'refs/heads/main', 'refs/heads/prior-landing', 'HEAD')
+    writeFileSync(join(repo, 'base.txt'), 'work in the stale checkout\n')
+    upsertProject({ name: 'landing-stale-dirty-checkout', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const child = childLand(repo, 'next-landing')
+      expect(await child.exited).toBe(0)
+      const output = (await new Response(child.stdout).text()) +
+        (await new Response(child.stderr).text())
+      expect(g(repo, 'write-tree')).toBe(g(repo, 'rev-parse', 'HEAD^{tree}'))
+      expect(readFileSync(join(repo, 'base.txt'), 'utf8')).toBe('work in the stale checkout\n')
+      expect(existsSync(join(repo, 'prior-landing.txt'))).toBe(false)
+      expect(existsSync(join(repo, 'next-landing.txt'))).toBe(false)
+      expect(output).toContain(`checkout ${repo} could not be reconciled because it holds tracked work`)
+      expect(output).toContain('prior-landing.txt')
+      expect(output).toContain('base.txt')
+      expect(output).toContain('Recover that exact index with:')
+      expect(g(repo, 'status', '--short')).toContain(' D prior-landing.txt')
+      expect(g(repo, 'status', '--short')).toContain(' D next-landing.txt')
+      expect(staleIndex).not.toBe(g(repo, 'write-tree'))
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('two-tree reconciliation refuses staged work on a touched file', () => {
+    const { repo } = repoWithBranches(['read-tree-landing'])
+    try {
+      const oldTrunk = g(repo, 'rev-parse', 'HEAD')
+      const tip = g(repo, 'rev-parse', 'refs/heads/read-tree-landing')
+      g(repo, 'update-ref', 'refs/heads/main', tip, oldTrunk)
+      writeFileSync(join(repo, 'read-tree-landing.txt'), 'locally staged work\n')
+      g(repo, 'add', 'read-tree-landing.txt')
+      const indexBefore = g(repo, 'write-tree')
+
+      expect(() => g(repo, 'read-tree', '-m', '-u', oldTrunk, tip)).toThrow()
+      expect(g(repo, 'write-tree')).toBe(indexBefore)
+      expect(readFileSync(join(repo, 'read-tree-landing.txt'), 'utf8'))
+        .toBe('locally staged work\n')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('two simultaneous landings both land and the stale gate is run again', async () => {
+    const { repo } = repoWithBranches(['first', 'second'])
+    const log = join(repo, 'gate.log')
+    const gate = join(repo, 'gate.sh')
+    writeFileSync(gate, `#!/bin/sh\nset -eu\nb=$(git branch --show-current)\nh=$(git rev-parse HEAD)\nprintf '%s %s\\n' "$b" "$h" >> '${log}'\nm='${repo}/first-gate-'$b\nif [ ! -e "$m" ]; then\n  touch "$m"\n  while [ ! -e '${repo}/first-gate-first' ] || [ ! -e '${repo}/first-gate-second' ]; do sleep 0.01; done\n  [ "$b" != second ] || sleep 0.2\nfi\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-pair', path: repo,
+      settings: { trunk: 'main', gate } })
+    try {
+      const first = childLand(repo, 'first')
+      const second = childLand(repo, 'second')
+      expect(await Promise.all([first.exited, second.exited])).toEqual([0, 0])
+      const rows = readFileSync(log, 'utf8').trim().split('\n').map((line) => line.split(' '))
+      expect(rows.filter(([branch]) => branch === 'first')).toHaveLength(1)
+      expect(rows.filter(([branch]) => branch === 'second')).toHaveLength(2)
+      const secondGates = rows.filter(([branch]) => branch === 'second').map(([, oid]) => oid)
+      expect(secondGates[0]).not.toBe(secondGates[1])
+      expect(g(repo, 'rev-parse', 'main')).toBe(secondGates[1])
+      expect(g(repo, 'show', 'main:first.txt')).toBe('first')
+      expect(g(repo, 'show', 'main:second.txt')).toBe('second')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a gate failure under the lock releases it for a waiting landing', async () => {
+    const { repo } = repoWithBranches(['fails', 'waits'])
+    const gate = join(repo, 'gate.sh')
+    writeFileSync(gate, `#!/bin/sh\nset -eu\nb=$(git branch --show-current)\nif [ "$b" = fails ]; then\n c='${repo}/fails-count'; n=0; [ ! -e "$c" ] || n=$(cat "$c"); n=$((n+1)); echo "$n" > "$c"\n if [ "$n" = 1 ]; then touch '${repo}/first-gate'; while [ ! -e '${repo}/trunk-moved' ]; do sleep 0.01; done\n else touch '${repo}/failing-under-lock'; sleep 0.15; exit 7; fi\nfi\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-failure', path: repo, settings: { trunk: 'main', gate } })
+    try {
+      const failing = childLand(repo, 'fails')
+      for (let i = 0; i < 200 && !existsSync(join(repo, 'first-gate')); i++) await Bun.sleep(5)
+      writeFileSync(join(repo, 'trunk.txt'), 'moved\n')
+      g(repo, 'add', 'trunk.txt')
+      g(repo, 'commit', '-m', 'move trunk')
+      writeFileSync(join(repo, 'trunk-moved'), '')
+      for (let i = 0; i < 200 && !existsSync(join(repo, 'failing-under-lock')); i++) await Bun.sleep(5)
+      const waiting = childLand(repo, 'waits')
+      expect(await failing.exited).not.toBe(0)
+      expect(await waiting.exited).toBe(0)
+      expect(g(repo, 'show', 'main:waits.txt')).toBe('waits')
+      expect(projectLockState(repo, 'landing').holder).toBeNull()
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  }, 15_000)
+
+  test('a killed holder is reclaimed, and another project never waits on it', async () => {
+    const one = repoWithBranches([]).repo
+    const two = repoWithBranches([]).repo
+    const hold = `const { withProjectLock } = await import(process.argv[1]); ` +
+      `withProjectLock(process.argv[2], 'landing', {session:'dead-session',what:'dead-branch'}, ` +
+      `() => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10000), 1000, true)`
+    const child = Bun.spawn([process.execPath, '-e', hold, worktreeModule, one], {
+      env: { ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe',
+    })
+    try {
+      for (let i = 0; i < 200 && !projectLockState(one, 'landing').holder; i++) await Bun.sleep(5)
+      expect(projectLockState(one, 'landing').holder?.what).toBe('dead-branch')
+      const started = Date.now()
+      expect(withProjectLock(two, 'landing', { session: 'other', what: 'other-branch' }, () => 'ok', 50, true)).toBe('ok')
+      expect(Date.now() - started).toBeLessThan(50)
+      child.kill('SIGKILL')
+      await child.exited
+      expect(withProjectLock(one, 'landing', { session: 'next', what: 'next-branch' }, () => 'reclaimed', 500, true)).toBe('reclaimed')
+    } finally {
+      child.kill()
+      await child.exited
+      rmSync(one, { recursive: true, force: true })
+      rmSync(two, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  test('a project with no declared gate is refused before it can land', async () => {
+    const { repo } = repoWithBranches(['ungated'])
+    upsertProject({ name: 'landing-ungated', path: repo, settings: { trunk: 'main' } })
+    try {
+      const child = childLand(repo, 'ungated')
+      expect(await child.exited).not.toBe(0)
+      expect((await new Response(child.stderr).text())).toContain(
+        'project landing-ungated has no landing gate configured',
+      )
+      expect(() => g(repo, 'merge-base', '--is-ancestor', 'ungated', 'main')).toThrow()
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a buried coloured bun timeout failure is repeated with machine load and complete output path', async () => {
+    const { repo } = repoWithBranches(['timeout-summary'])
+    const name = 'deeply buried coloured timeout test'
+    const timeout = realTimeoutGate(name)
+    upsertProject({ name: 'landing-timeout-summary', path: repo,
+      settings: { trunk: 'main', gate: timeout.gate } })
+    addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+    addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+    try {
+      const child = childLand(repo, 'timeout-summary', {}, {
+        NO_COLOR: undefined,
+        FORCE_COLOR: '1',
+      })
+      expect(await child.exited).not.toBe(0)
+      const error = await new Response(child.stderr).text()
+      expect(error).toContain(`✗ ${name}`)
+      expect(error).toContain('1 fail')
+      expect(error).toContain(
+        'gate timeout under load: 2 orch runs live (running + asking) machine-wide',
+      )
+      const outputPath = error.match(/complete gate output: (.+\/output\.log)/)?.[1]
+      expect(outputPath).toBeDefined()
+      expect(readdirSync(dirname(outputPath!))).toEqual(['output.log'])
+      const complete = readFileSync(outputPath!, 'utf8')
+      expect(complete).toContain('✗')
+      expect(complete).toContain(name)
+      expect(complete).toContain('\x1b[')
+      expect(complete).toContain('900 pass')
+      expect(complete).toContain('1 fail')
+      rmSync(dirname(outputPath!), { recursive: true, force: true })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(timeout.fixture, { recursive: true, force: true })
+    }
+  })
+
+  test('a buried NO_COLOR bun timeout failure keeps the alternate reporter name', async () => {
+    const { repo } = repoWithBranches(['timeout-no-color'])
+    const name = 'deeply buried no-colour timeout test'
+    const timeout = realTimeoutGate(name)
+    upsertProject({ name: 'landing-timeout-no-color', path: repo,
+      settings: { trunk: 'main', gate: timeout.gate } })
+    try {
+      const child = childLand(repo, 'timeout-no-color', {}, {
+        FORCE_COLOR: undefined,
+        CLICOLOR: undefined,
+        CLICOLOR_FORCE: undefined,
+        NO_COLOR: '1',
+      })
+      expect(await child.exited).not.toBe(0)
+      const error = await new Response(child.stderr).text()
+      expect(error).toContain(`(fail) ${name}`)
+      expect(error).toContain('1 fail')
+      expect(error).toContain('gate timeout under load: 0 orch runs live (running + asking) machine-wide')
+      const outputPath = error.match(/complete gate output: (.+\/output\.log)/)?.[1]
+      expect(outputPath).toBeDefined()
+      const complete = readFileSync(outputPath!, 'utf8')
+      expect(complete).toContain(`(fail) ${name}`)
+      expect(complete).not.toContain('\x1b[')
+      expect(complete).toContain('900 pass')
+      expect(complete).toContain('1 fail')
+      rmSync(dirname(outputPath!), { recursive: true, force: true })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(timeout.fixture, { recursive: true, force: true })
+    }
+  })
+
+  test('a failed gate with a leaked fifo writer names its truncated capture', async () => {
+    const { repo } = repoWithBranches(['leaked-gate-writer'])
+    const sleeperPid = join(repo, 'leaked-gate-writer.pid')
+    const gate = join(repo, 'leaked-gate-writer.sh')
+    writeFileSync(gate, `#!/bin/sh\nsleep 60 &\necho $! > "${sleeperPid}"\nexit 7\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-leaked-gate-writer', path: repo,
+      settings: { trunk: 'main', gate } })
+    const started = Date.now()
+    try {
+      const child = childLand(repo, 'leaked-gate-writer')
+      const exit = await child.exited
+      const error = await new Response(child.stderr).text()
+      expect(exit).not.toBe(0)
+      expect(Date.now() - started).toBeLessThan(8_000)
+      expect(error).toContain(
+        'gate output (TRUNCATED after 5 s: a process the gate left behind still held its output pipe):',
+      )
+      const outputPath = error.match(/output pipe\): (.+\/output\.log)/)?.[1]
+      expect(outputPath).toBeDefined()
+      rmSync(dirname(outputPath!), { recursive: true, force: true })
+    } finally {
+      if (existsSync(sleeperPid)) {
+        try { process.kill(Number(readFileSync(sleeperPid, 'utf8').trim()), 'SIGKILL') } catch {}
+      }
+      rmSync(repo, { recursive: true, force: true })
+    }
+  }, 15_000)
+
+  test('a successful gate with a leaked fifo writer still lands', async () => {
+    const { repo } = repoWithBranches(['successful-leaked-gate-writer'])
+    const sleeperPid = join(repo, 'successful-leaked-gate-writer.pid')
+    const gate = join(repo, 'successful-leaked-gate-writer.sh')
+    writeFileSync(gate, `#!/bin/sh\nsleep 60 &\necho $! > "${sleeperPid}"\nexit 0\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-successful-leaked-gate-writer', path: repo,
+      settings: { trunk: 'main', gate } })
+    const started = Date.now()
+    try {
+      const child = childLand(repo, 'successful-leaked-gate-writer')
+      const exit = await child.exited
+      const error = await new Response(child.stderr).text()
+      expect(exit, error).toBe(0)
+      expect(Date.now() - started).toBeLessThan(8_000)
+      expect(g(repo, 'rev-parse', 'main'))
+        .toBe(g(repo, 'rev-parse', 'successful-leaked-gate-writer'))
+    } finally {
+      if (existsSync(sleeperPid)) {
+        try { process.kill(Number(readFileSync(sleeperPid, 'utf8').trim()), 'SIGKILL') } catch {}
+      }
+      rmSync(repo, { recursive: true, force: true })
+    }
+  }, 15_000)
+
+  test('a failing test name printed after capture truncation is not claimed as captured', async () => {
+    const { repo } = repoWithBranches(['late-gate-writer'])
+    const writerPid = join(repo, 'late-gate-writer.pid')
+    const gate = join(repo, 'late-gate-writer.sh')
+    writeFileSync(gate,
+      `#!/bin/sh\n(sleep 6; echo '(fail) too-late test') &\necho $! > "${writerPid}"\nexit 7\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-late-gate-writer', path: repo,
+      settings: { trunk: 'main', gate } })
+    try {
+      const child = childLand(repo, 'late-gate-writer')
+      expect(await child.exited).not.toBe(0)
+      const error = await new Response(child.stderr).text()
+      expect(error).toContain('gate output (TRUNCATED after 5 s:')
+      expect(error).toContain('gate failures:\nno failing test named in the captured output')
+      expect(error).not.toContain('too-late test')
+      const outputPath = error.match(/output pipe\): (.+\/output\.log)/)?.[1]
+      expect(outputPath).toBeDefined()
+      rmSync(dirname(outputPath!), { recursive: true, force: true })
+    } finally {
+      if (existsSync(writerPid)) {
+        try { process.kill(Number(readFileSync(writerPid, 'utf8').trim()), 'SIGKILL') } catch {}
+      }
+      rmSync(repo, { recursive: true, force: true })
+    }
+  }, 15_000)
+
+  test('a capture setup failure runs the original gate and reports uncaptured output', async () => {
+    const { repo } = repoWithBranches(['capture-setup-failure'])
+    const marker = join(repo, 'gate-ran')
+    const gate = join(repo, 'capture-setup-failure.sh')
+    const bin = join(repo, 'capture-bin')
+    mkdirSync(bin)
+    writeFileSync(join(bin, 'mkfifo'), '#!/bin/sh\necho fixture mkfifo refusal >&2\nexit 9\n')
+    chmodSync(join(bin, 'mkfifo'), 0o755)
+    writeFileSync(gate, `#!/bin/sh\ntouch "${marker}"\nexit 7\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-capture-setup-failure', path: repo,
+      settings: { trunk: 'main', gate } })
+    try {
+      const child = childLand(repo, 'capture-setup-failure', {}, {
+        PATH: `${bin}:${process.env.PATH ?? ''}`,
+      })
+      expect(await child.exited).not.toBe(0)
+      const error = await new Response(child.stderr).text()
+      expect(existsSync(marker)).toBe(true)
+      expect(error).toContain(`landing gate failed with exit 7: ${gate}`)
+      expect(error).toContain('gate output not captured: fixture mkfifo refusal')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  for (const [name, command] of [
+    ['commits', `printf 'gate commit\\n' > gate-change.txt && git add gate-change.txt && git commit -m 'gate commit'`],
+    ['amends', `git commit --amend -m 'gate amended'`],
+    ['checks out another ref', `git checkout --detach main`],
+  ] as const) {
+    test(`refuses when the gate ${name} and names both HEAD OIDs`, async () => {
+      const branch = `gate-${name.replaceAll(' ', '-')}`
+      const { repo, trees } = repoWithBranches([branch])
+      const gate = join(repo, `${branch}.sh`)
+      writeFileSync(gate, `#!/bin/sh\nset -eu\n${command}\n`)
+      chmodSync(gate, 0o755)
+      upsertProject({ name: `landing-${branch}`, path: repo,
+        settings: { trunk: 'main', gate } })
+      try {
+        const before = g(trees[branch]!, 'rev-parse', 'HEAD')
+        const trunk = g(repo, 'rev-parse', 'main')
+        const child = childLand(repo, branch)
+        expect(await child.exited).not.toBe(0)
+        const after = g(trees[branch]!, 'rev-parse', 'HEAD')
+        const error = await new Response(child.stderr).text()
+        expect(after).toBe(before)
+        expect(error).toContain(gate)
+        expect(error).toContain(before)
+        expect(error).toContain(`moved HEAD from ${before} to `)
+        expect(error).toContain('restored branch tip')
+        expect(g(repo, 'rev-parse', 'main')).toBe(trunk)
+      } finally { rmSync(repo, { recursive: true, force: true }) }
+    })
+  }
+
+  test('refuses when the gate moves only the landing branch ref and names both OIDs', async () => {
+    const branch = 'gate-moves-branch-ref'
+    const { repo, trees } = repoWithBranches([branch])
+    const gate = join(repo, 'move-branch-ref.sh')
+    writeFileSync(gate, `#!/bin/sh\nset -eu\ngit checkout --detach\ngit update-ref refs/heads/${branch} refs/heads/main\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-moved-branch-ref', path: repo,
+      settings: { trunk: 'main', gate } })
+    try {
+      const before = g(trees[branch]!, 'rev-parse', 'HEAD')
+      const moved = g(repo, 'rev-parse', 'main')
+      const child = childLand(repo, branch)
+      expect(await child.exited).not.toBe(0)
+      const error = await new Response(child.stderr).text()
+      expect(g(trees[branch]!, 'rev-parse', 'HEAD')).toBe(before)
+      expect(g(repo, 'rev-parse', branch)).toBe(before)
+      expect(error).toContain(gate)
+      expect(error).toContain(before)
+      expect(error).toContain(moved)
+      expect(error).toContain('restored branch tip')
+      expect(g(repo, 'rev-parse', 'main')).toBe(moved)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('refuses a gate that checks out another tree and restores HEAD, naming new reflog entries', async () => {
+    const branch = 'gate-restores-head'
+    const { repo, trees } = repoWithBranches([branch])
+    const exercised = join(repo, 'exercised-tree')
+    const gate = join(repo, 'restore-head.sh')
+    writeFileSync(gate, `#!/bin/sh\nset -eu\ncandidate=$(git rev-parse HEAD)\ngit checkout --detach main\ngit rev-parse HEAD^{tree} > '${exercised}'\ngit reset --hard "$candidate"\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-restored-head', path: repo,
+      settings: { trunk: 'main', gate } })
+    try {
+      const candidate = g(trees[branch]!, 'rev-parse', 'HEAD')
+      const candidateTree = g(trees[branch]!, 'rev-parse', 'HEAD^{tree}')
+      const trunk = g(repo, 'rev-parse', 'main')
+      const child = childLand(repo, branch)
+      expect(await child.exited).not.toBe(0)
+      const error = await new Response(child.stderr).text()
+      expect(g(trees[branch]!, 'rev-parse', 'HEAD')).toBe(candidate)
+      expect(readFileSync(exercised, 'utf8').trim()).not.toBe(candidateTree)
+      expect(error).toContain(gate)
+      expect(error).toContain('HEAD reflog:')
+      expect(error).toContain('checkout: moving from')
+      expect(error).toContain(`reset: moving to ${candidate}`)
+      expect(g(repo, 'rev-parse', 'main')).toBe(trunk)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('refuses a gate that moves the branch away and back, naming its new reflog entries', async () => {
+    const branch = 'gate-restores-branch-ref'
+    const { repo, trees } = repoWithBranches([branch])
+    const gate = join(repo, 'restore-branch-ref.sh')
+    writeFileSync(gate, `#!/bin/sh\nset -eu\ncandidate=$(git rev-parse HEAD)\ngit update-ref -m 'gate branch away' refs/heads/${branch} refs/heads/main\ngit update-ref -m 'gate branch back' refs/heads/${branch} "$candidate"\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-restored-branch-ref', path: repo,
+      settings: { trunk: 'main', gate } })
+    try {
+      const candidate = g(trees[branch]!, 'rev-parse', 'HEAD')
+      const trunk = g(repo, 'rev-parse', 'main')
+      const child = childLand(repo, branch)
+      expect(await child.exited).not.toBe(0)
+      const error = await new Response(child.stderr).text()
+      expect(g(trees[branch]!, 'rev-parse', 'HEAD')).toBe(candidate)
+      expect(g(repo, 'rev-parse', branch)).toBe(candidate)
+      expect(error).toContain(gate)
+      expect(error).toContain(`refs/heads/${branch} reflog:`)
+      expect(error).toContain(candidate)
+      expect(error).toContain(trunk)
+      expect(error).toContain('gate branch away')
+      expect(error).toContain('gate branch back')
+      expect(g(repo, 'rev-parse', 'main')).toBe(trunk)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('refuses an away-and-back gate that shortens the reflogs', async () => {
+    const branch = 'gate-shortens-reflogs'
+    const { repo, trees } = repoWithBranches([branch])
+    const exercised = join(repo, 'shortened-exercised-tree')
+    const gate = join(repo, 'shorten-reflogs.sh')
+    writeFileSync(gate, `#!/bin/sh\nset -eu\ncandidate=$(git rev-parse HEAD)\ngit checkout --detach main\ngit rev-parse HEAD^{tree} > '${exercised}'\ngit reset --hard "$candidate"\ngit reflog expire --expire=now --all\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-shortened-reflogs', path: repo,
+      settings: { trunk: 'main', gate } })
+    try {
+      const candidate = g(trees[branch]!, 'rev-parse', 'HEAD')
+      const candidateTree = g(trees[branch]!, 'rev-parse', 'HEAD^{tree}')
+      const trunk = g(repo, 'rev-parse', 'main')
+      const child = childLand(repo, branch)
+      expect(await child.exited).not.toBe(0)
+      const error = await new Response(child.stderr).text()
+      expect(g(trees[branch]!, 'rev-parse', 'HEAD')).toBe(candidate)
+      expect(readFileSync(exercised, 'utf8').trim()).not.toBe(candidateTree)
+      expect(error).toContain(gate)
+      expect(error).toContain('HEAD reflog:')
+      expect(error).toContain('missing:')
+      expect(g(repo, 'rev-parse', 'main')).toBe(trunk)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a same-OID reset reflog entry is a no-op and still lands', async () => {
+    const branch = 'gate-soft-reset'
+    const { repo } = repoWithBranches([branch])
+    const gate = join(repo, 'soft-reset.sh')
+    writeFileSync(gate, '#!/bin/sh\nset -eu\ngit reset --soft HEAD\n')
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-soft-reset', path: repo,
+      settings: { trunk: 'main', gate } })
+    try {
+      const candidate = g(repo, 'rev-parse', branch)
+      const child = childLand(repo, branch)
+      expect(await child.exited).toBe(0)
+      expect(g(repo, 'rev-parse', 'main')).toBe(candidate)
+      expect(g(repo, 'rev-parse', branch)).toBe(candidate)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('refuses final content hidden from ordinary status and names both content trees', async () => {
+    const branch = 'gate-hides-content'
+    const { repo, trees } = repoWithBranches([branch])
+    const path = `${branch}.txt`
+    const gate = join(repo, 'hide-content.sh')
+    writeFileSync(gate, `#!/bin/sh\nset -eu\ngit update-index --assume-unchanged '${path}'\nprintf 'hidden gate change\\n' > '${path}'\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-hidden-content', path: repo,
+      settings: { trunk: 'main', gate } })
+    try {
+      const before = contentTree(trees[branch]!)
+      const trunk = g(repo, 'rev-parse', 'main')
+      const child = childLand(repo, branch)
+      expect(await child.exited).not.toBe(0)
+      const after = contentTree(trees[branch]!)
+      const error = await new Response(child.stderr).text()
+      expect(g(trees[branch]!, 'status', '--porcelain=v1', '--untracked-files=all')).toBe('')
+      expect(after).toBe(before)
+      expect(error).toContain(gate)
+      expect(error).toContain(before)
+      expect(error).toContain('changed the content tree from')
+      expect(error).toContain('restored branch tip')
+      expect(g(repo, 'rev-parse', 'main')).toBe(trunk)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a gate that does not move HEAD or the landing branch still lands', async () => {
+    const branch = 'gate-does-not-move'
+    const { repo } = repoWithBranches([branch])
+    const gate = join(repo, 'no-move.sh')
+    writeFileSync(gate, '#!/bin/sh\nset -eu\ngit rev-parse HEAD >/dev/null\n')
+    chmodSync(gate, 0o755)
+    upsertProject({ name: 'landing-no-move', path: repo,
+      settings: { trunk: 'main', gate } })
+    try {
+      const child = childLand(repo, branch)
+      expect(await child.exited).toBe(0)
+      expect(g(repo, 'rev-parse', 'main')).toBe(g(repo, 'rev-parse', branch))
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('refuses a green landing with no completed review and names the candidate tree', async () => {
+    const { repo, trees } = repoWithBranches(['unreviewed'])
+    upsertProject({ name: 'landing-unreviewed', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const tree = g(trees.unreviewed!, 'rev-parse', 'HEAD^{tree}')
+      const trunk = g(repo, 'rev-parse', 'main')
+      const child = childLand(repo, 'unreviewed', { unreviewed: null })
+      expect(await child.exited).not.toBe(0)
+      const error = await new Response(child.stderr).text()
+      expect(error).toContain(`candidate tree: ${tree}`)
+      expect(g(repo, 'rev-parse', 'main')).toBe(trunk)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('lands when every lens in a completed review measured the candidate tree', async () => {
+    const { repo, trees } = repoWithBranches(['reviewed'])
+    const project = 'landing-reviewed'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const tree = g(trees.reviewed!, 'rev-parse', 'HEAD^{tree}')
+      const reviewId = completedReview(project, [tree, tree])
+      expect(landingReviewCoverage(trees.reviewed!)).toContain(`review ${reviewId}: exact`)
+      const child = childLand(repo, 'reviewed', { unreviewed: null })
+      expect(await child.exited).toBe(0)
+      expect(g(repo, 'rev-parse', 'main')).toBe(g(repo, 'rev-parse', 'reviewed'))
+      expect(db().query(
+        'SELECT id FROM landing_review_carry WHERE branch=?',
+      ).get('reviewed')).toBeNull()
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('carries a pre-rebase review across an unrelated trunk move and records it', async () => {
+    const { repo, trees } = repoWithBranches(['carry-review'])
+    const project = 'landing-carry-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const reviewedCommit = g(repo, 'rev-parse', 'carry-review')
+      const reviewedTree = g(repo, 'rev-parse', 'carry-review^{tree}')
+      const reviewId = completedReview(project, [reviewedTree], {
+        branch: 'carry-review', baseCommit: oldBase, launchCwd: trees['carry-review']!,
+      })
+      expect(g(repo, 'rev-parse', `refs/orch/reviewed/${
+        (db().query('SELECT run_id FROM review_lens WHERE review_id=?').get(reviewId) as { run_id: number }).run_id
+      }`)).toBe(reviewedCommit)
+      writeFileSync(join(repo, 'unrelated.txt'), 'trunk only\n')
+      g(repo, 'add', 'unrelated.txt')
+      g(repo, 'commit', '-m', 'unrelated trunk move')
+      const newBase = g(repo, 'rev-parse', 'main')
+      g(trees['carry-review']!, 'rebase', 'main')
+      g(repo, 'reflog', 'expire', '--expire=now', '--all')
+      const beforeLandStatus = landingReviewCoverage(trees['carry-review']!)
+      expect(beforeLandStatus).toContain(`review ${reviewId}: carried (patch-id `)
+      expect(beforeLandStatus).toContain('(commit from pin)')
+      expect(beforeLandStatus).toContain(`${oldBase}..${newBase})`)
+      const child = childLand(repo, 'carry-review', { unreviewed: null })
+      expect(await child.exited).toBe(0)
+      const stdout = await new Response(child.stdout).text()
+      const row = db().query(
+        `SELECT project,branch,tip,tree,review_id,reviewed_commit,reviewed_tree,patch_id,
+                old_base,new_base
+           FROM landing_review_carry WHERE branch=?`,
+      ).get('carry-review') as Record<string, string | number>
+      expect(row).toEqual({
+        project, branch: 'carry-review', tip: g(repo, 'rev-parse', 'carry-review'),
+        tree: g(repo, 'rev-parse', 'carry-review^{tree}'), review_id: reviewId,
+        reviewed_commit: reviewedCommit, reviewed_tree: reviewedTree,
+        patch_id: expect.stringMatching(/^[0-9a-f]{40}$/), old_base: oldBase, new_base: newBase,
+      })
+      expect(stdout).toContain(
+        `review ${reviewId} carried: patch-id ${row.patch_id} unchanged across rebase ` +
+        `${oldBase}..${newBase}; gate green on ${row.tip}`,
+      )
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a mixed old and new lens set carries from the agreeing non-null pin', () => {
+    const { repo, trees } = repoWithBranches(['mixed-pin-review'])
+    const project = 'landing-mixed-pin-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const commit = g(repo, 'rev-parse', 'mixed-pin-review')
+      const tree = g(repo, 'rev-parse', 'mixed-pin-review^{tree}')
+      const entries = [
+        addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'new', repo: project,
+          inputTree: tree, headCommit: commit }),
+        addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'old', repo: project,
+          inputTree: tree }),
+      ]
+      for (const runId of entries) db().query(
+        'UPDATE run SET branch=?, base_commit=?, launch_cwd=? WHERE id=?',
+      ).run('mixed-pin-review', oldBase, trees['mixed-pin-review']!, runId)
+      const reviewId = recordReviews(entries.map((runId) => ({ runId, output: reviewReply(0) })))
+      completeReview(reviewId)
+      writeFileSync(join(repo, 'mixed-pin-trunk.txt'), 'unrelated\n')
+      g(repo, 'add', 'mixed-pin-trunk.txt')
+      g(repo, 'commit', '-m', 'move trunk')
+      g(trees['mixed-pin-review']!, 'rebase', 'main')
+      expect(landingReviewCoverage(trees['mixed-pin-review']!)).toContain(
+        `review ${reviewId}: carried (patch-id`,
+      )
+      expect(landingReviewCoverage(trees['mixed-pin-review']!)).toContain('(commit from pin)')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('an all-null legacy lens set carries from the existing commit walk', () => {
+    const { repo, trees } = repoWithBranches(['walk-review'])
+    const project = 'landing-walk-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const tree = g(repo, 'rev-parse', 'walk-review^{tree}')
+      const reviewId = completedReview(project, [tree], {
+        branch: 'walk-review', baseCommit: oldBase, launchCwd: trees['walk-review']!,
+      })
+      const runId = (db().query('SELECT run_id FROM review_lens WHERE review_id=?').get(reviewId) as
+        { run_id: number }).run_id
+      g(repo, 'update-ref', '-d', `refs/orch/reviewed/${runId}`)
+      db().query('UPDATE run SET head_commit=NULL WHERE id=?').run(runId)
+      writeFileSync(join(repo, 'walk-trunk.txt'), 'unrelated\n')
+      g(repo, 'add', 'walk-trunk.txt')
+      g(repo, 'commit', '-m', 'move trunk')
+      g(trees['walk-review']!, 'rebase', 'main')
+      const status = landingReviewCoverage(trees['walk-review']!)
+      expect(status).toContain(`review ${reviewId}: carried (patch-id`)
+      expect(status).toContain('(commit from walk)')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('review pins prune only completed reviews whose branch has landed', () => {
+    const { repo, trees } = repoWithBranches(['pin-prune'])
+    const project = 'landing-pin-prune'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const commit = g(repo, 'rev-parse', 'pin-prune')
+      const tree = g(repo, 'rev-parse', 'pin-prune^{tree}')
+      const completed = completedReview(project, [tree], {
+        branch: 'pin-prune', baseCommit: oldBase, launchCwd: trees['pin-prune']!,
+      })
+      const incompleteRun = addRun({
+        agent: 'codex', job: 'review-lens', model: 'test', lens: 'incomplete', repo: project,
+        inputTree: tree, headCommit: commit,
+      })
+      db().query('UPDATE run SET branch=?, base_commit=?, launch_cwd=? WHERE id=?')
+        .run('pin-prune', oldBase, trees['pin-prune']!, incompleteRun)
+      const incomplete = recordReviews([{ runId: incompleteRun, output: reviewReply(0) }])
+
+      expect(reviewPins(true).map((pin) => ({ review: pin.reviewId, deleted: pin.deleted })))
+        .toEqual([
+          { review: completed, deleted: false },
+          { review: incomplete, deleted: false },
+        ])
+      g(repo, 'update-ref', 'refs/heads/main', 'refs/heads/pin-prune')
+      const pruned = reviewPins(true)
+      expect(pruned.find((pin) => pin.reviewId === completed)?.deleted).toBe(true)
+      expect(pruned.find((pin) => pin.reviewId === incomplete)?.deleted).toBe(false)
+      expect(() => g(repo, 'rev-parse', `refs/orch/reviewed/${incompleteRun}`)).not.toThrow()
+      const completedRun = (db().query(
+        'SELECT run_id FROM review_lens WHERE review_id=?',
+      ).get(completed) as { run_id: number }).run_id
+      expect(() => g(repo, 'rev-parse', `refs/orch/reviewed/${completedRun}`)).toThrow()
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('discard and sweep leave reviewed-commit pins intact', () => {
+    for (const command of ['discard', 'sweep'] as const) {
+      const branch = `pin-${command}`
+      const { repo, trees } = repoWithBranches([branch])
+      const project = `landing-${branch}`
+      upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+      try {
+        const reviewId = completedReview(project, [g(repo, 'rev-parse', `${branch}^{tree}`)], {
+          branch, baseCommit: g(repo, 'rev-parse', 'main'), launchCwd: trees[branch]!,
+        })
+        const runId = (db().query(
+          'SELECT run_id FROM review_lens WHERE review_id=?',
+        ).get(reviewId) as { run_id: number }).run_id
+        const ref = `refs/orch/reviewed/${runId}`
+        const pinned = g(repo, 'rev-parse', ref)
+        db().query("UPDATE run SET worktree=?, started_at='2020-01-01T00:00:00.000Z' WHERE id=?")
+          .run(trees[branch]!, runId)
+        const args = command === 'discard'
+          ? ['discard', String(runId), '--force']
+          : ['sweep', '--older-than', '0', '--force']
+        const result = Bun.spawnSync([
+          process.execPath, new URL('cli.ts', import.meta.url).pathname, ...args,
+        ], {
+          cwd: repo,
+          env: {
+            ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+            CLAUDE_CODE_SESSION_ID: 'review-pin-owner',
+          },
+          stdout: 'pipe', stderr: 'pipe',
+        })
+        expect(result.exitCode).toBe(0)
+        expect(g(repo, 'rev-parse', ref)).toBe(pinned)
+      } finally { rmSync(repo, { recursive: true, force: true }) }
+    }
+  })
+
+  test('refuses a carry when trunk moved on a path touched by the change', async () => {
+    const { repo, trees } = repoWithBranches(['overlap-review'])
+    const project = 'landing-overlap-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      writeFileSync(join(repo, 'shared.txt'), Array.from({ length: 20 }, (_, i) => `line ${i}\n`).join(''))
+      g(repo, 'add', 'shared.txt')
+      g(repo, 'commit', '-m', 'shared base')
+      g(trees['overlap-review']!, 'rebase', 'main')
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const branchPath = join(trees['overlap-review']!, 'shared.txt')
+      const branchLines = readFileSync(branchPath, 'utf8').split('\n')
+      branchLines[1] = 'branch line'
+      writeFileSync(branchPath, branchLines.join('\n'))
+      g(trees['overlap-review']!, 'add', 'shared.txt')
+      g(trees['overlap-review']!, 'commit', '-m', 'branch shared change')
+      const reviewedTree = g(repo, 'rev-parse', 'overlap-review^{tree}')
+      completedReview(project, [reviewedTree], {
+        branch: 'overlap-review', baseCommit: oldBase, launchCwd: trees['overlap-review']!,
+      })
+      const trunkLines = readFileSync(join(repo, 'shared.txt'), 'utf8').split('\n')
+      trunkLines[18] = 'trunk line'
+      writeFileSync(join(repo, 'shared.txt'), trunkLines.join('\n'))
+      g(repo, 'add', 'shared.txt')
+      g(repo, 'commit', '-m', 'trunk shared change')
+      const child = childLand(repo, 'overlap-review', { unreviewed: null })
+      expect(await child.exited).not.toBe(0)
+      expect(await new Response(child.stderr).text()).toContain('invalid (overlapping paths)')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('refuses a carry when the branch gained content after review', async () => {
+    const { repo, trees } = repoWithBranches(['changed-review'])
+    const project = 'landing-changed-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const reviewedTree = g(repo, 'rev-parse', 'changed-review^{tree}')
+      completedReview(project, [reviewedTree], {
+        branch: 'changed-review', baseCommit: oldBase, launchCwd: trees['changed-review']!,
+      })
+      writeFileSync(join(trees['changed-review']!, 'after-review.txt'), 'new content\n')
+      g(trees['changed-review']!, 'add', 'after-review.txt')
+      g(trees['changed-review']!, 'commit', '-m', 'content after review')
+      expect(landingReviewCoverage(trees['changed-review']!)).toContain('invalid (patch-id differs)')
+      const child = childLand(repo, 'changed-review', { unreviewed: null })
+      expect(await child.exited).not.toBe(0)
+      expect(await new Response(child.stderr).text()).toContain('invalid (patch-id differs)')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a missing trunk cannot produce a carried review verdict', () => {
+    const branch = 'missing-trunk-review'
+    const { repo, trees } = repoWithBranches([branch])
+    const project = 'landing-missing-trunk-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'missing-trunk', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const reviewedTree = g(repo, 'rev-parse', `${branch}^{tree}`)
+      completedReview(project, [reviewedTree], {
+        branch, baseCommit: oldBase, launchCwd: trees[branch]!,
+      })
+      writeFileSync(join(trees[branch]!, 'after-review.txt'), 'new content\n')
+      g(trees[branch]!, 'add', 'after-review.txt')
+      g(trees[branch]!, 'commit', '-m', 'content after review')
+
+      const status = landingReviewCoverage(trees[branch]!)
+      expect(status).toContain('invalid (git merge-base')
+      expect(status).toContain('missing-trunk')
+      expect(status).not.toContain('carried')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('refuses a whitespace-only post-review change even when patch-id is unchanged', async () => {
+    const { repo, trees } = repoWithBranches(['whitespace-review'])
+    const project = 'landing-whitespace-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const reviewedTree = g(repo, 'rev-parse', 'whitespace-review^{tree}')
+      completedReview(project, [reviewedTree], {
+        branch: 'whitespace-review', baseCommit: oldBase, launchCwd: trees['whitespace-review']!,
+      })
+      writeFileSync(join(trees['whitespace-review']!, 'whitespace-review.txt'), 'whitespace-review \n')
+      g(trees['whitespace-review']!, 'add', 'whitespace-review.txt')
+      g(trees['whitespace-review']!, 'commit', '-m', 'whitespace after review')
+      const child = childLand(repo, 'whitespace-review', { unreviewed: null })
+      expect(await child.exited).not.toBe(0)
+      expect(await new Response(child.stderr).text()).toContain('invalid (content differs)')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('refuses a review when one lens has incomplete carry metadata', async () => {
+    const { repo, trees } = repoWithBranches(['partial-metadata-review'])
+    const project = 'landing-partial-metadata-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const reviewedTree = g(repo, 'rev-parse', 'partial-metadata-review^{tree}')
+      const reviewId = completedReview(project, [reviewedTree, reviewedTree], {
+        branch: 'partial-metadata-review', baseCommit: oldBase,
+        launchCwd: trees['partial-metadata-review']!,
+      })
+      const second = db().query(
+        'SELECT id FROM review_lens WHERE review_id=? ORDER BY id DESC LIMIT 1',
+      ).get(reviewId) as { id: number }
+      db().query('UPDATE run SET branch=NULL, base_commit=NULL WHERE id=(SELECT run_id FROM review_lens WHERE id=?)')
+        .run(second.id)
+      writeFileSync(join(repo, 'metadata-trunk.txt'), 'unrelated\n')
+      g(repo, 'add', 'metadata-trunk.txt')
+      g(repo, 'commit', '-m', 'move trunk for metadata')
+      const child = childLand(repo, 'partial-metadata-review', { unreviewed: null })
+      expect(await child.exited).not.toBe(0)
+      expect(await new Response(child.stderr).text()).toContain('invalid (lens metadata incomplete)')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('refuses a review when its lens base commits disagree', async () => {
+    const { repo, trees } = repoWithBranches(['disagreeing-bases-review'])
+    const project = 'landing-disagreeing-bases-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const reviewedCommit = g(repo, 'rev-parse', 'disagreeing-bases-review')
+      const reviewedTree = g(repo, 'rev-parse', 'disagreeing-bases-review^{tree}')
+      const reviewId = completedReview(project, [reviewedTree, reviewedTree], {
+        branch: 'disagreeing-bases-review', baseCommit: oldBase,
+        launchCwd: trees['disagreeing-bases-review']!,
+      })
+      const second = db().query(
+        'SELECT id FROM review_lens WHERE review_id=? ORDER BY id DESC LIMIT 1',
+      ).get(reviewId) as { id: number }
+      db().query('UPDATE run SET base_commit=? WHERE id=(SELECT run_id FROM review_lens WHERE id=?)')
+        .run(reviewedCommit, second.id)
+      writeFileSync(join(repo, 'bases-trunk.txt'), 'unrelated\n')
+      g(repo, 'add', 'bases-trunk.txt')
+      g(repo, 'commit', '-m', 'move trunk for bases')
+      const child = childLand(repo, 'disagreeing-bases-review', { unreviewed: null })
+      expect(await child.exited).not.toBe(0)
+      expect(await new Response(child.stderr).text()).toContain('invalid (lens bases disagree)')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('refuses a carry when no commit with the reviewed tree remains reachable', async () => {
+    const { repo, trees } = repoWithBranches(['missing-review'])
+    const project = 'landing-missing-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const reviewedCommit = g(repo, 'rev-parse', 'missing-review')
+      const reviewedTree = g(repo, 'rev-parse', 'missing-review^{tree}')
+      const reviewId = completedReview(project, [reviewedTree], {
+        branch: 'missing-review', baseCommit: oldBase, launchCwd: trees['missing-review']!,
+      })
+      const runId = (db().query('SELECT run_id FROM review_lens WHERE review_id=?').get(reviewId) as
+        { run_id: number }).run_id
+      g(repo, 'update-ref', '-d', `refs/orch/reviewed/${runId}`)
+      db().query('UPDATE run SET head_commit=NULL WHERE id=?').run(runId)
+      g(trees['missing-review']!, 'reset', '--hard', 'main')
+      writeFileSync(join(trees['missing-review']!, 'replacement.txt'), 'replacement\n')
+      g(trees['missing-review']!, 'add', 'replacement.txt')
+      g(trees['missing-review']!, 'commit', '-m', 'replacement history')
+      g(repo, 'reflog', 'expire', '--expire=now', '--all')
+      g(repo, 'gc', '--prune=now')
+      expect(() => g(repo, 'cat-file', '-e', `${reviewedCommit}^{commit}`)).toThrow()
+      const child = childLand(repo, 'missing-review', { unreviewed: null })
+      expect(await child.exited).not.toBe(0)
+      expect(await new Response(child.stderr).text()).toContain('invalid (reviewed commit not found)')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('one mismatched lens makes the whole completed review fail coverage', async () => {
+    const { repo, trees } = repoWithBranches(['mixed-review'])
+    const project = 'landing-mixed-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const tree = g(trees['mixed-review']!, 'rev-parse', 'HEAD^{tree}')
+      // New recordings refuse this grouping. Insert the legacy/inconsistent
+      // shape directly to prove landing still treats it as uncovered.
+      const one = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'one', repo: project })
+      const two = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'two', repo: project })
+      const review = (db().query(
+        "INSERT INTO review (recorded_at, completed_at) VALUES ('now','now') RETURNING id",
+      ).get() as { id: number }).id
+      const insert = db().query(
+        `INSERT INTO review_lens
+          (review_id,run_id,lens,agent,model,tree_inspected,reviewed_tree,standards_read,
+           files_covered,commands_run,could_not_verify) VALUES (?,?,?,?,?,NULL,?,'[]','[]','[]','[]')`,
+      )
+      insert.run(review, one, 'one', 'codex', 'm', tree)
+      insert.run(review, two, 'two', 'codex', 'm', '0000000000000000000000000000000000000000')
+      const child = childLand(repo, 'mixed-review', { unreviewed: null })
+      expect(await child.exited).not.toBe(0)
+      const error = await new Response(child.stderr).text()
+      expect(error).toContain('invalid (review lenses do not agree on one tree)')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a trunk move during landing carries the review after the serialized re-gate', async () => {
+    const { repo, trees } = repoWithBranches(['stale-review'])
+    const project = 'landing-stale-review'
+    const gate = join(repo, 'review-gate.sh')
+    writeFileSync(gate, `#!/bin/sh\nset -eu\nc='${repo}/gate-count'; n=0; [ ! -e "$c" ] || n=$(cat "$c"); n=$((n+1)); echo "$n" > "$c"\nif [ "$n" = 1 ]; then touch '${repo}/first-review-gate'; while [ ! -e '${repo}/release-review-gate' ]; do sleep 0.01; done; fi\n`)
+    chmodSync(gate, 0o755)
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const reviewedTree = g(trees['stale-review']!, 'rev-parse', 'HEAD^{tree}')
+      completedReview(project, [reviewedTree], {
+        branch: 'stale-review', baseCommit: oldBase, launchCwd: trees['stale-review']!,
+      })
+      const child = childLand(repo, 'stale-review', { unreviewed: null })
+      for (let i = 0; i < 200 && !existsSync(join(repo, 'first-review-gate')); i++) await Bun.sleep(5)
+      writeFileSync(join(repo, 'trunk-move.txt'), 'move\n')
+      g(repo, 'add', 'trunk-move.txt')
+      g(repo, 'commit', '-m', 'move trunk')
+      const moved = g(repo, 'rev-parse', 'main')
+      writeFileSync(join(repo, 'release-review-gate'), '')
+      expect(await child.exited).toBe(0)
+      expect(g(repo, 'merge-base', '--is-ancestor', moved, 'main')).toBe('')
+      expect(db().query(
+        'SELECT old_base,new_base FROM landing_review_carry WHERE branch=?',
+      ).get('stale-review')).toEqual({ old_base: oldBase, new_base: moved })
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  }, 15_000)
+})
