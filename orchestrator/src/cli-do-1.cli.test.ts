@@ -23,6 +23,7 @@ test('every --json surface has an enumerated and pinned output contract', () => 
       ORCH_DB: monitorDb, HUB_DB: hubDb, PATH: `${binDir}:${process.env.PATH ?? ''}`,
     }
     bootstrapFixtureStore(monitorDb)
+    bootstrapFixtureStore(process.env.ORCH_DB!)
     upsertProject({ name: 'json-source', path: '/w/json-source', settings: {} })
     upsertProject({ name: 'json-target', path: '/w/json-target',
       settings: { keyPrefixes: ['TGT'] } })
