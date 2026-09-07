@@ -979,22 +979,43 @@ export function setAgent(name: string, input: AgentMutation): AgentRow {
   assertAgentMutation(input, false)
   const current = agentRows().find((row) => row.name === name)
   if (!current) throw new Error(`unknown agent "${name}"`)
-  const caps = JSON.parse(current.caps) as Record<string, unknown>
-  if (input.contextTokens !== undefined) caps.contextTokens = input.contextTokens
+  let caps = JSON.parse(current.caps) as Record<string, unknown>
   const enabled = input.enabled === undefined ? current.enabled : input.enabled ? 1 : 0
   const reason = input.enabled === false ? input.reason!.trim()
     : input.enabled === true ? null : current.disabled_reason
-  const harnessChanged = input.harness !== undefined && input.harness !== current.harness
+  const identityChanged =
+    (input.harness !== undefined && input.harness !== current.harness) ||
+    (input.backend !== undefined && input.backend !== current.backend) ||
+    (input.model !== undefined && input.model !== current.model) ||
+    (input.baseUrl !== undefined && input.baseUrl !== current.base_url)
   let probedAt = current.probed_at
   let probeResult = current.probe_result
-  if (harnessChanged) {
+  if (identityChanged) {
     const previous = current.probe_result ? JSON.parse(current.probe_result) : null
     const attempts = Array.isArray(previous?.attempts) ? previous.attempts : []
-    if (previous && !previous.pendingHarness) {
+    if (previous && !previous.pendingIdentity) {
       attempts.push({ harness: previous.harness ?? current.harness, result: previous })
     }
+    const declaredContext = input.contextTokens ??
+      (previous?.contextSource === 'declared' ? Number(caps.contextTokens) : undefined)
+    caps = {
+      readsRepo: false, mcp: false, discoversMcpFromCwd: false, schema: false,
+      writesRepo: false, resumable: false,
+      ...(declaredContext ? { contextTokens: declaredContext } : {}),
+    }
     probedAt = null
-    probeResult = JSON.stringify({ ok: false, pendingHarness: input.harness, attempts })
+    probeResult = JSON.stringify({
+      ok: false,
+      pendingIdentity: {
+        harness: input.harness ?? current.harness,
+        backend: input.backend ?? current.backend,
+        model: input.model ?? current.model,
+        baseUrl: input.baseUrl === undefined ? current.base_url : input.baseUrl,
+      },
+      attempts,
+    })
+  } else if (input.contextTokens !== undefined) {
+    caps.contextTokens = input.contextTokens
   }
   writableDb().query(
     `UPDATE agent SET harness=?,backend=?,model=?,base_url=?,transport=?,caps=?,billing=?,enabled=?,disabled_reason=?,probed_at=?,probe_result=? WHERE name=?`,

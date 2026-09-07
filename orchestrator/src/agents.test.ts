@@ -72,6 +72,37 @@ describe('agent registry', () => {
     expect(JSON.parse(added.stdout.toString()).model).toBe('served/model')
     removeAgent('local-acp')
   })
+
+  test('every execution identity change invalidates the active probe and derived caps', () => {
+    const changes = [
+      { field: 'harness', mutation: { harness: 'opencode' as const } },
+      { field: 'backend', mutation: { backend: 'ollama' as const } },
+      { field: 'model', mutation: { model: 'next/model' } },
+      { field: 'baseUrl', mutation: { baseUrl: 'http://127.0.0.1:2/v1' } },
+    ]
+    for (const change of changes) {
+      const name = `identity-${change.field}`
+      addAgent(name, {
+        harness: 'goose', backend: 'vllm', model: 'served/model',
+        baseUrl: 'http://127.0.0.1:1/v1', contextTokens: 65536,
+      })
+      recordAgentProbe(name, {
+        harness: 'goose', ok: true,
+        reply: { ok: true, output: 'ok' },
+        tool: { ok: true, output: 'REGISTRATION_PROBE_FILE_OK', toolEvents: 1, statuses: ['completed'] },
+        schema: { ok: true, output: '{"status":"ok"}' },
+        contextTokens: 131072, contextSource: 'harness',
+      })
+      const changed = setAgent(name, change.mutation)
+      expect(changed.probed_at, change.field).toBeNull()
+      expect(JSON.parse(changed.caps), change.field).toMatchObject({ readsRepo: false, schema: false })
+      expect(JSON.parse(changed.caps).contextTokens, change.field).toBeUndefined()
+      const history = JSON.parse(changed.probe_result!)
+      expect(history.pendingIdentity[change.field], change.field).toBeDefined()
+      expect(history.attempts, change.field).toHaveLength(1)
+      removeAgent(name)
+    }
+  })
 })
 
 
