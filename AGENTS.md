@@ -240,6 +240,21 @@ tenancy enforcement, transports, queues, object storage, hosting.
 A hand-rolled mechanism where a proven one exists is a defect, not a preference.
 Name it and replace it rather than extending it.
 
+## Measure the class before fixing the instance
+
+The escape detector was patched three times at the instance on one day, each
+patch correct for the run it named, before the harness-health surface priced
+the class in a single table: 25 runs, 4.9 hours, sixteen of them another
+project's checkout changing under a worker that never touched it. That number
+chose the fix in minutes. The patches had chosen nothing.
+
+So the mechanism that monitors a failure class ranks above any fix for its
+latest instance. When planning an epic, put the surface that measures a class
+first; when proposing a fix, cite the number a surface already shows; when a
+fix lands, say what the surface shows afterwards. A fix without a measurement
+behind it is whack-a-mole, and the next instance arrives by a path nobody
+anticipated.
+
 ## Tasks: inbox zero
 
 File a task for work being done NOW. Do not carry a backlog of ideas.
