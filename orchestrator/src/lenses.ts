@@ -135,7 +135,12 @@ export function resolveLens(id:string,projectName:string|null,d:Database=db()) {
   if(!core) return null
   if(!core.enabled) throw new Error(disabledLensRefusal(id,`lens "${id}" is disabled`))
   const project=projectName?projectByName(projectName):null
-  const axes=d.query('SELECT DISTINCT axis FROM lens_profile WHERE lens_id=? ORDER BY axis').all(id) as {axis:LensAxis}[]
+  const axes=d.query(`SELECT axis FROM (
+    SELECT DISTINCT axis FROM lens_profile WHERE lens_id=? AND enabled=1
+    UNION
+    SELECT DISTINCT axis FROM project_lens_profile
+      WHERE project_id=? AND (lens_id=? OR lens_id IS NULL)
+  ) ORDER BY axis`).all(id,project?.id??-1,id) as {axis:LensAxis}[]
   const profiles:ProfileRow[]=[]
   for(const {axis} of axes){
     const selection=project?d.query(`SELECT profile_name,selected_version FROM project_lens_profile WHERE project_id=? AND axis=? AND (lens_id=? OR lens_id IS NULL) ORDER BY lens_id IS NULL LIMIT 1`).get(project.id,axis,id) as {profile_name:string;selected_version:number|null}|null:null

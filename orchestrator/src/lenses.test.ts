@@ -40,6 +40,13 @@ describe('lens catalogue',()=>{
     expect(()=>resolveLens('correctness','one')).toThrow('cleared by:')
   })
 
+  test('a disabled unselected profile does not introduce its axis',()=>{
+    upsertProject({name:'one',path:'/tmp/one',settings:{}})
+    const before=resolveLens('correctness','one')
+    setProfile({lensId:'correctness',axis:'architecture',name:'retired',body:'{}',enabled:false,reason:'probe disabled axis'})
+    expect(resolveLens('correctness','one')).toEqual(before)
+  })
+
   test('a copy of the live store migrates with every populated project reference resolved',()=>{
     const dir=mkdtempSync(join(tmpdir(),'orch-live-lens-'));const path=join(dir,'orch.db');copyFileSync(REGISTERED_LIVE_STORE,path)
     const live=new Database(path,{readwrite:true});live.exec('PRAGMA foreign_keys=ON')
