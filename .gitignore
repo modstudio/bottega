@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 .DS_Store
 
 # orchestrator: local state, never shared
@@ -26,7 +26,7 @@ ops/logs/
 !.claude/skills/port-feature/SKILL.md
 
 # orchestrator: bun installs typecheck deps locally; never shared
-orchestrator/node_modules/
+orchestrator/node_modules
 # Root too, for the same reason the two below are ignored: a delegated
 # worker's install step creates one, and it would otherwise ride into an
 # unrelated change.
@@ -47,10 +47,10 @@ hub.db-wal
 # Backups of it are the same private record, and the orchestrator's are already
 # ignored a few lines up - the pair had drifted.
 hub/hub.db.backup-*
-hub/node_modules/
+hub/node_modules
 hub/bun.lock
 hub/web/dist/
-hub/web/node_modules/
+hub/web/node_modules
 !hub/web/bun.lock
 
 # Screenshots and page snapshots taken while checking the dashboard by eye.

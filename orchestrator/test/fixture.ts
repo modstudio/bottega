@@ -7,7 +7,32 @@ import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { OrchRunEnvelopeSchema } from '../../shared/orch-contract.ts'
 import type { WorktreeCreate, WorktreeCreateArg } from '../src/projects.ts'
-const dir = dirname(process.env.ORCH_DB!)
+/**
+ * Everything below treats the store's directory as scratch: a git repository is
+ * initialised in it, a fake docker is written into it, worktrees are cut under
+ * it. On 2026-09-07 a test leg ran without the preload while ORCH_DB named the
+ * live store, so this module initialised a repository inside the main
+ * checkout's orchestrator/ and the suite wrote the live database. The preload
+ * refuses that; this module is imported directly by tests and refuses it too.
+ */
+function ownedScratchDirectory(): string {
+  const named = process.env.ORCH_DB
+  const scratch = named ? dirname(named) : null
+  let real: string | null = null
+  try { real = scratch ? realpathSync(scratch) : null } catch { real = null }
+  const owned = real !== null
+    && real.startsWith(`${realpathSync(tmpdir())}/`)
+    && real.split('/').pop()!.startsWith('orch-test-')
+  if (!owned) {
+    throw new Error(
+      `test fixture refuses to run: ORCH_DB is ${named ?? 'unset'}, not a store the test preload minted under ${tmpdir()}\n` +
+      'invariant: A test suite only ever writes a store its own preload created.\n' +
+      'cleared by: bun test from orchestrator/ with ORCH_DB unset',
+    )
+  }
+  return scratch!
+}
+const dir = ownedScratchDirectory()
 export { dir }
 export const declaredCreate = (command: string, args: WorktreeCreateArg[]): WorktreeCreate =>
   ({ command, args })

@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync, realpathSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
@@ -51,9 +51,17 @@ export const LINKED_WORKTREE_SCHEMA_REFUSAL =
   'invariant: Only the main checkout\'s binary migrates the store.\n' +
   'cleared by: orch migrate'
 
-/** Two paths name one file when their real paths agree; a path that does not exist compares by resolution. */
+/**
+ * Two paths name one file when their real paths agree. The file may not exist
+ * yet, so the directory is what gets resolved and the name is appended: a
+ * parent-directory alias or /tmp against /private/tmp then agrees before the
+ * file is created, which is what "whatever names the path" requires.
+ */
 function sameStore(a: string, b: string): boolean {
-  const real = (path: string) => { try { return realpathSync(path) } catch { return resolve(path) } }
+  const real = (path: string) => {
+    const dir = dirname(path)
+    try { return join(realpathSync(dir), basename(path)) } catch { return resolve(path) }
+  }
   return real(a) === real(b)
 }
 

@@ -864,14 +864,20 @@ The invariants are:
   `bin/orch` opened it for writing whenever `ORCH_DB` named it, and on
   2026-09-07 a worker's test leg emptied 27 tables that way — the third instance
   of DEV-314's class after DEV-153 and DEV-314 itself, each patched at the path
-  it arrived by. `db.ts:linkedWorktreeReadOnly` now refuses at the point the
+  it arrived by. The mechanism, read off the residue: `test/fixture.ts` takes
+  the store's directory as its scratch, and a test leg started without the
+  preload (from the repository root, or naming a file outside `orchestrator/`)
+  inherited the exported live path, initialised a git repository inside the
+  main checkout's `orchestrator/` at 08:07, and wrote the live database. That
+  nested repository then made every `orch` run from `orchestrator/` resolve a
+  store that did not exist, which is what the heartbeat had been reporting. `db.ts:linkedWorktreeReadOnly` now refuses at the point the
   write handle opens when the binary is linked and the path is the main
   checkout's store, under any name; `ORCH_DB_WRITE=1` is the operator's
   explicit insistence. Four kinds of prevention compose here: the weapon is
   removed (the test preload mints a fresh store per test and contains no
   clearing statement), the capability is restricted (this guard), the point of
-  damage is guarded (the preload refuses a store it did not create under the
-  temporary directory), and the vector stays honest (the register's worktree
+  damage is guarded (the preload and `test/fixture.ts` each refuse a store the
+  preload did not mint under the temporary directory), and the vector stays honest (the register's worktree
   note says the live path is read-only from a tree's binary).
 - **Landing holds its lock only for the trunk re-check, guard verification and
   fast-forward, never for a gate.** A gate is long and proves a commit without
