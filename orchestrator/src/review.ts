@@ -114,18 +114,27 @@ export type CleanReviewEvidence =
   | { failure: string; note: null }
   | { failure: null; note: string | null }
 
+export function normalizeCoveredPath(path: string): string {
+  const repositoryPath = path.trim().split(/[ \u2014]/, 1)[0] ?? ''
+  return repositoryPath.replace(/:\d+(?:-\d+)?$/, '').replace(/^\.\//, '')
+}
+
 /** Classify the evidence on a findings:[] reply against the measured input tree. */
 export function cleanReviewEvidence(
   runId: number, output: ReviewReply, database: Database = db(),
 ): CleanReviewEvidence {
-  if (output.findings.length) return { failure: null, note: null }
   const provenance = output.provenance
+  provenance.files_covered = provenance.files_covered.map(normalizeCoveredPath)
+  if (output.findings.length) return { failure: null, note: null }
   if (!provenance.files_covered.length && !provenance.commands_run.length) {
     return { failure: UNEVIDENCED_REVIEW_ERROR, note: null }
   }
   const run = database.query(
-    'SELECT repo, base_commit, input_tree FROM run WHERE id=?',
-  ).get(runId) as { repo: string | null; base_commit: string | null; input_tree: string | null } | null
+    'SELECT repo, base_commit, input_tree, review_ref, changed_paths FROM run WHERE id=?',
+  ).get(runId) as {
+    repo: string | null; base_commit: string | null; input_tree: string | null
+    review_ref: string | null; changed_paths: string | null
+  } | null
   const unavailable = (why: string): CleanReviewEvidence => ({
     failure: null,
     note: `clean review changed-path coverage not checked: ${why}`,
@@ -137,11 +146,13 @@ export function cleanReviewEvidence(
   if (!repo) return unavailable(`project ${run.repo} is not registered`)
   let changed: string[]
   try {
-    changed = diffNumstat(repo, run.base_commit, run.input_tree).map((file) => file.path)
+    changed = run.review_ref && run.changed_paths !== null
+      ? JSON.parse(run.changed_paths)
+      : diffNumstat(repo, run.base_commit, run.input_tree).map((file) => file.path)
   } catch (cause) {
     return unavailable(String((cause as Error)?.message ?? cause))
   }
-  const covered = provenance.files_covered.map((path) => path.replace(/^\.\//, ''))
+  const covered = provenance.files_covered
   // A reviewer commonly reports paths relative to the directory it worked in.
   // Any suffix match establishes some changed-file coverage. If one suffix is
   // ambiguous and matches two changed paths, that still counts for coverage:
@@ -422,6 +433,7 @@ export function recordReviews(
     let ordinal = 0
     entries.forEach(({ output }, index) => {
       const run = runs[index]!
+      output.provenance.files_covered = output.provenance.files_covered.map(normalizeCoveredPath)
       const lens = insertLens.get(review.id, run.id, run.lens, run.agent, run.model,
         output.provenance.tree_inspected ?? null, run.input_tree,
         JSON.stringify(output.provenance.standards_read),

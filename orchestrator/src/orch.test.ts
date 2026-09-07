@@ -2637,10 +2637,14 @@ describe('review discipline', () => {
       })
 
       reply.provenance.commands_run = ['bun test']
-      for (const path of ['orchestrator/src/x.ts', './orchestrator/src/x.ts', 'src/x.ts']) {
+      for (const path of [
+        'orchestrator/src/x.ts', './orchestrator/src/x.ts', 'src/x.ts',
+        'orchestrator/src/x.ts:1-4 — inspected changed behavior',
+      ]) {
         reply.provenance.files_covered = [path]
         expect(cleanReviewEvidence(runId, reply)).toEqual({ failure: null, note: null })
       }
+      expect(reply.provenance.files_covered).toEqual(['orchestrator/src/x.ts'])
 
       reply.provenance.files_covered = ['base.txt']
       expect(cleanReviewEvidence(runId, reply).failure).toContain('intersects none')
@@ -18322,6 +18326,7 @@ describe('review-lens-inline has no checkout', () => {
       reply.provenance.files_covered = [covered]
       reply.provenance.commands_run = [`git diff main...feature/evidence -- ${covered}`]
       writeFileSync(script, `console.log(${JSON.stringify(JSON.stringify(reply))})\n`)
+      return reply
     }
     try {
       git('init', '-b', 'main')
@@ -18330,7 +18335,6 @@ describe('review-lens-inline has no checkout', () => {
       writeFileSync(join(repo, 'untouched.txt'), 'base\n')
       git('add', '.')
       git('commit', '-m', 'fixture trunk')
-      const base = git('rev-parse', 'HEAD^{commit}')
       git('switch', '-c', 'feature/evidence')
       writeFileSync(join(repo, 'changed.txt'), 'first\n')
       git('add', '.')
@@ -18338,6 +18342,13 @@ describe('review-lens-inline has no checkout', () => {
       writeFileSync(join(repo, 'second.txt'), 'second\n')
       git('add', '.')
       git('commit', '-m', 'second branch commit')
+      git('switch', 'main')
+      writeFileSync(join(repo, 'trunk-only.txt'), 'unrelated trunk move\n')
+      git('add', 'trunk-only.txt')
+      git('commit', '-m', 'move trunk independently')
+      const base = git('rev-parse', 'HEAD^{commit}')
+      git('switch', 'feature/evidence')
+      git('rebase', 'main')
       const tip = git('rev-parse', 'HEAD^{commit}')
       const tree = git('rev-parse', 'HEAD^{tree}')
       git('switch', 'main')
@@ -18351,16 +18362,20 @@ describe('review-lens-inline has no checkout', () => {
       agent.parseReply = undefined
       process.env.ORCH_DEPTH = '0'
 
-      report('changed.txt')
+      const cleanReply = report('changed.txt:1-2 — inspected changed behavior')
       const clean = await runJob({
         job: 'review-lens', prompt: 'inspect', cwd: repo, agent: 'codex',
         lens: 'explicit-evidence-clean', review: 'feature/evidence',
       })
       expect(db().query(
-        'SELECT base_commit, input_tree, head_commit, review_ref FROM run WHERE id=?',
+        'SELECT base_commit, input_tree, head_commit, review_ref, changed_paths FROM run WHERE id=?',
       ).get(clean.id)).toEqual({
         base_commit: base, input_tree: tree, head_commit: tip, review_ref: 'feature/evidence',
+        changed_paths: JSON.stringify(['changed.txt', 'second.txt']),
       })
+      const recorded = recordReview(clean.id, cleanReply)
+      expect(db().query('SELECT files_covered FROM review_lens WHERE review_id=?').get(recorded))
+        .toEqual({ files_covered: JSON.stringify(['changed.txt']) })
 
       report('untouched.txt')
       await expect(runJob({
@@ -18369,6 +18384,22 @@ describe('review-lens-inline has no checkout', () => {
       })).rejects.toThrow(
         'clean review with no evidence: files_covered intersects none of the changed paths',
       )
+
+      report('untouched.txt')
+      let emptyRunId: number | undefined
+      try {
+        await runJob({
+          job: 'review-lens', prompt: 'inspect', cwd: repo, agent: 'codex',
+          lens: 'explicit-evidence-empty', review: 'main', noFailover: true,
+        })
+      } catch (cause) {
+        emptyRunId = (cause as Error & { runId?: number }).runId
+      }
+      expect(emptyRunId).toBeNumber()
+      expect(db().query('SELECT changed_paths FROM run WHERE id=?').get(emptyRunId!))
+        .toEqual({ changed_paths: '[]' })
+      expect(db().query('SELECT failure_kind FROM run WHERE id=?').get(emptyRunId!))
+        .toEqual({ failure_kind: 'unevidenced' })
     } finally {
       agent.bin = original.bin
       agent.argv = original.argv

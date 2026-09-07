@@ -897,6 +897,20 @@ function gitContext(cwd: string, ...args: string[]): string | null {
   } catch { return null }
 }
 
+function reviewChangedPaths(cwd: string, base: string, inputTree: string): string[] {
+  const args = ['diff', '--name-only', `${base}..${inputTree}`]
+  const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
+    env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
+  })
+  if (p.exitCode !== 0) {
+    throw new Error(
+      `could not measure explicit review paths with git ${args.join(' ')}: ` +
+      (p.stderr.toString().trim() || `exit ${p.exitCode}`),
+    )
+  }
+  return p.stdout.toString().trim().split('\n').filter(Boolean)
+}
+
 function checkoutRootAsAddressed(cwd: string): string | null {
   try {
     const p = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--show-prefix'], {
@@ -2339,8 +2353,12 @@ export async function run(opts: {
         worktree.path, provisionedMcpConfigLink, () => contentTree(worktree.path),
       )
       const headCommit = gitContext(worktree.path, 'rev-parse', '--verify', 'HEAD^{commit}')
-      const measured = db().query('UPDATE run SET input_tree=?, head_commit=? WHERE id=?')
-        .run(inputTree, headCommit, claim.id)
+      const changedPaths = reviewTarget
+        ? reviewChangedPaths(worktree.path, reviewTarget.base, inputTree)
+        : null
+      const measured = db().query(
+        'UPDATE run SET input_tree=?, head_commit=?, changed_paths=? WHERE id=?',
+      ).run(inputTree, headCommit, changedPaths ? JSON.stringify(changedPaths) : null, claim.id)
       if (measured.changes !== 1) throw new Error(`run ${claim.id} could not record its input tree`)
     }
     if (sandboxSelection.sandbox === 'srt') {
