@@ -908,13 +908,10 @@ export function agentRows(): AgentRow[] {
 }
 
 let agentCache: Record<string, Agent> | null = null
-let agentCacheSignature: string | null = null
 function loadedAgents(): Record<string, Agent> {
+  if (agentCache) return agentCache
   try {
     const rows = agentRows()
-    const signature = JSON.stringify(rows)
-    if (agentCache && signature === agentCacheSignature) return agentCache
-    agentCacheSignature = signature
     const loaded = Object.fromEntries(rows.map((row) => [row.name, rowAgent(row)]))
     for (const [name, agent] of Object.entries(loaded)) assertResumableAgent(name, agent, false)
     return agentCache = loaded
@@ -923,7 +920,8 @@ function loadedAgents(): Record<string, Agent> {
     throw error
   }
 }
-function invalidateAgents(): void { agentCache = null; agentCacheSignature = null }
+/** Reload registry rows at a mutation or long-lived reporting boundary. */
+export function refreshAgents(): void { agentCache = null }
 export const AGENTS: Record<string, Agent> = new Proxy({}, {
   get: (_target, property) => loadedAgents()[property as string],
   ownKeys: () => Reflect.ownKeys(loadedAgents()),
@@ -973,7 +971,7 @@ export function addAgent(name: string, input: AgentMutation): AgentRow {
   ).run(name, input.harness!, input.backend!, input.model!, input.baseUrl ?? null,
     input.transport ?? 'acp', JSON.stringify(caps), input.billing ?? (input.backend === 'vendor' ? 'subscription' : 'local'),
     input.enabled === false ? 0 : 1, input.enabled === false ? input.reason!.trim() : null)
-  invalidateAgents()
+  refreshAgents()
   return agentRows().find((row) => row.name === name)!
 }
 
@@ -1004,7 +1002,7 @@ export function setAgent(name: string, input: AgentMutation): AgentRow {
     input.model ?? current.model, input.baseUrl === undefined ? current.base_url : input.baseUrl,
     input.transport ?? current.transport, JSON.stringify(caps), input.billing ?? current.billing,
     enabled, reason, probedAt, probeResult, name)
-  invalidateAgents()
+  refreshAgents()
   return agentRows().find((row) => row.name === name)!
 }
 
@@ -1018,7 +1016,7 @@ export function removeAgent(name: string): void {
   }
   const result = writableDb().query('DELETE FROM agent WHERE name=?').run(name)
   if (!result.changes) throw new Error(`unknown agent "${name}"`)
-  invalidateAgents()
+  refreshAgents()
 }
 
 export type RegistrationProbeResult = {
@@ -1048,7 +1046,7 @@ export function recordAgentProbe(name: string, result: RegistrationProbeResult):
     writableDb().query(`UPDATE agent SET enabled=0,disabled_reason=? WHERE name='qwen-local'`)
       .run('retired bespoke driver; local-acp passed registration probe')
   }
-  invalidateAgents()
+  refreshAgents()
 }
 
 /** Prove capabilities before routing spends a worktree discovering them. */

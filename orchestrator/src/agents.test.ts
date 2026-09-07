@@ -41,6 +41,14 @@ describe('agent registry', () => {
     setAgent('new-local', { enabled: false, reason: 'retired in test' })
     expect(unavailableReason('new-local')).toContain('retired in test')
   })
+
+  test('a registry mutation invalidates the in-process row cache', () => {
+    expect(AGENTS['cache-new']).toBeUndefined()
+    addAgent('cache-new', { harness: 'goose', backend: 'vllm', model: 'm' })
+    expect(AGENTS['cache-new']?.model).toBe('m')
+    removeAgent('cache-new')
+    expect(AGENTS['cache-new']).toBeUndefined()
+  })
 })
 
 

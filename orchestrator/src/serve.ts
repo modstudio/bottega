@@ -8,7 +8,7 @@
  * failures, was using 69%. One page, one scoreboard.
  */
 import { db, reapStale, unscoredCount } from './db.ts'
-import { AGENTS } from './agents.ts'
+import { AGENTS, refreshAgents } from './agents.ts'
 import { JOBS } from './jobs.ts'
 import { scoreboard } from './route.ts'
 import { summary as metricSummary } from './metric.ts'
@@ -76,6 +76,9 @@ export function runDetail(id: number, receipt = false) {
  * imply otherwise.
  */
 export function state(sinceDays: number | null = null) {
+  // Hub refreshes this snapshot on its minute tick. Make that the explicit
+  // boundary at which a long-lived process adopts registry changes.
+  refreshAgents()
   const d = db()
   const notEvidence = NOT_EVIDENCE.map((kind) => `'${kind}'`).join(', ')
   const since = sinceDays
