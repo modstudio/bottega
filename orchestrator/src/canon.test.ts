@@ -1,13 +1,14 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getTableName } from 'drizzle-orm'
 import { getTableConfig, type SQLiteTable } from 'drizzle-orm/sqlite-core'
 import * as declared from './schema.ts'
 import {
-  applyMigrations, BASELINE_SCHEMA_HASH, canonicalSchemaHash, migrationRefusal,
+  applyMigrations, BASELINE_SCHEMA_HASH, baselineSchemaHash, canonicalSchemaHash,
+  MIGRATIONS_FOLDER, migrationJournal, migrationRefusal,
 } from './migrations.ts'
 
 const fresh = () => {
@@ -21,7 +22,7 @@ describe('Drizzle migration journal', () => {
   test('fresh migration retains the canonical hash produced by trunk applySchema', () => {
     const d = fresh()
     expect(canonicalSchemaHash(d)).toBe(BASELINE_SCHEMA_HASH)
-    expect(BASELINE_SCHEMA_HASH).toBe('e5d0fa17fb7fb3087e4fda38a8cb31be0793fb4b68849ef1ae6eb08a127a9292')
+    expect(BASELINE_SCHEMA_HASH).toBe(baselineSchemaHash())
     d.close()
   })
 
@@ -95,5 +96,78 @@ describe('Drizzle migration journal', () => {
     ).all()
     expect(after).toEqual(before)
     d.close()
+  })
+
+  test('live DDL drift refuses adoption with hashes and shape differences, and doctor reports it', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orch-ddl-drift-'))
+    const path = join(dir, 'drift.db')
+    const d = new Database(path)
+    applyMigrations(d)
+    d.exec('DROP TABLE orch_migrations; ALTER TABLE run ADD COLUMN x TEXT')
+    expect(canonicalSchemaHash(d)).not.toBe(BASELINE_SCHEMA_HASH)
+    expect(() => applyMigrations(d)).toThrow('refusing to adopt migration baseline')
+    try {
+      applyMigrations(d)
+    } catch (error) {
+      const message = String(error)
+      expect(message).toContain(`stored hash: ${canonicalSchemaHash(d)}`)
+      expect(message).toContain(`expected hash: ${BASELINE_SCHEMA_HASH}`)
+      expect(message).toContain('unexpected columns: run.x TEXT')
+      expect(message).toContain('missing indexes: none')
+      expect(message).toContain('unexpected indexes: none')
+      expect(message).toContain("back up the store and run the old binary's open once")
+    }
+    d.close()
+    const doctorPath = join(dir, 'doctor-drift.db')
+    const doctorStore = new Database(doctorPath)
+    applyMigrations(doctorStore)
+    doctorStore.exec('ALTER TABLE run ADD COLUMN x TEXT')
+    doctorStore.close()
+    const doctor = Bun.spawnSync([process.execPath, join(import.meta.dir, 'cli.ts'), 'doctor'], {
+      env: { ...process.env, ORCH_DB: doctorPath, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(doctor.exitCode, doctor.stderr.toString()).toBe(0)
+    expect(doctor.stdout.toString()).toContain('schema hash    DRIFT')
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('legacy adoption continues through every later journal entry in one invocation', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orch-adopt-forward-'))
+    mkdirSync(join(dir, 'meta'))
+    const baseline = migrationJournal()[0]!
+    copyFileSync(join(MIGRATIONS_FOLDER, `${baseline.tag}.sql`), join(dir, `${baseline.tag}.sql`))
+    writeFileSync(join(dir, '0001_after_adoption.sql'), 'CREATE TABLE adopted_followup (id INTEGER PRIMARY KEY);\n')
+    writeFileSync(join(dir, 'meta', '_journal.json'), JSON.stringify({
+      version: '7', dialect: 'sqlite', entries: [
+        { ...baseline, version: '6', breakpoints: true },
+        { idx: 1, version: '6', when: baseline.when + 1, tag: '0001_after_adoption', breakpoints: true },
+      ],
+    }))
+    const d = fresh()
+    d.exec('DROP TABLE orch_migrations')
+    expect(applyMigrations(d, dir)).toEqual([baseline.tag, '0001_after_adoption'])
+    expect(d.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='adopted_followup'").get())
+      .toBeDefined()
+    d.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('a failed migration rolls back its DDL and journal record', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orch-migration-rollback-'))
+    mkdirSync(join(dir, 'meta'))
+    writeFileSync(join(dir, '0000_failure.sql'),
+      'CREATE TABLE should_rollback (id INTEGER);\n--> statement-breakpoint\nINSERT INTO absent VALUES (1);\n')
+    writeFileSync(join(dir, 'meta', '_journal.json'), JSON.stringify({
+      version: '7', dialect: 'sqlite', entries: [
+        { idx: 0, version: '6', when: 1, tag: '0000_failure', breakpoints: true },
+      ],
+    }))
+    const d = new Database(':memory:')
+    const before = d.query("SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY type,name").all()
+    expect(() => applyMigrations(d, dir)).toThrow()
+    const after = d.query("SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY type,name").all()
+    expect(after).toEqual(before)
+    d.close()
+    rmSync(dir, { recursive: true, force: true })
   })
 })

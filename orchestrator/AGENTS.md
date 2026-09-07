@@ -842,7 +842,10 @@ The invariants are:
   constraints or COALESCE expression indexes, so migrations are hand-written
   SQL whose baseline is trunk's canonical DDL verbatim. Tests bootstrap scratch
   stores through `db.ts:applySchemaForFixture` / `bootstrapFixtureStore`, which
-  call the migrator, never the production authority path.
+  call the journal runner, never the production authority path. The runner reads
+  Drizzle's checksummed journal shape but applies each hand-written SQL file in
+  its own `BEGIN IMMEDIATE` transaction; it does not reach into Drizzle's private
+  migrator session or dialect.
   `db.ts:adoptRunMutation` governs chain ownership, not schema authority.
 - **Landing holds its lock only for the trunk re-check, guard verification and
   fast-forward, never for a gate.** A gate is long and proves a commit without

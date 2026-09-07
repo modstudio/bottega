@@ -2,36 +2,51 @@ import { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { drizzle } from 'drizzle-orm/bun-sqlite'
-import { migrate } from 'drizzle-orm/bun-sqlite/migrator'
-import type { MigrationMeta } from 'drizzle-orm/migrator'
-import { sql } from 'drizzle-orm'
 
 export const MIGRATIONS_FOLDER = join(import.meta.dir, '..', 'migrations')
 export const MIGRATIONS_TABLE = 'orch_migrations'
 export const SCHEMA_INVARIANT = 'Only the main checkout\'s binary migrates the store.'
 
 type JournalEntry = { idx: number; when: number; tag: string }
+type SchemaObject = { type: 'table' | 'index'; name: string; sql: string }
+type ColumnShape = {
+  table: string
+  name: string
+  type: string
+  notnull: number
+  defaultValue: string | null
+  primaryKey: number
+}
+type SchemaInventory = { objects: SchemaObject[]; columns: ColumnShape[] }
 
-export function migrationJournal(): JournalEntry[] {
-  const journal = JSON.parse(readFileSync(join(MIGRATIONS_FOLDER, 'meta', '_journal.json'), 'utf8')) as
+export function migrationJournal(folder = MIGRATIONS_FOLDER): JournalEntry[] {
+  const journal = JSON.parse(readFileSync(join(folder, 'meta', '_journal.json'), 'utf8')) as
     { entries: JournalEntry[] }
   return journal.entries
+}
+
+function migrationSource(entry: JournalEntry, folder = MIGRATIONS_FOLDER): string {
+  return readFileSync(join(folder, `${entry.tag}.sql`), 'utf8')
+}
+
+function migrationHash(entry: JournalEntry, folder = MIGRATIONS_FOLDER): string {
+  return createHash('sha256').update(migrationSource(entry, folder)).digest('hex')
 }
 
 function tableExists(d: Database, table: string): boolean {
   return !!d.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)
 }
 
-export function migrationState(d: Database): { pending: JournalEntry[]; ahead: string | null } {
-  const journal = migrationJournal()
+export function migrationState(
+  d: Database,
+  folder = MIGRATIONS_FOLDER,
+): { pending: JournalEntry[]; ahead: string | null } {
+  const journal = migrationJournal(folder)
   if (!tableExists(d, MIGRATIONS_TABLE)) return { pending: journal, ahead: null }
   const applied = d.query(
     `SELECT hash, created_at, version FROM ${MIGRATIONS_TABLE} ORDER BY created_at`,
   ).all() as { hash: string; created_at: number; version: string | null }[]
-  const expected = new Map(journal.map((entry) => [entry.when, createHash('sha256').update(
-    readFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), 'utf8'),
-  ).digest('hex')]))
+  const expected = new Map(journal.map((entry) => [entry.when, migrationHash(entry, folder)]))
   const latestJournal = journal.at(-1)
   const ahead = applied.find((row) => expected.get(Number(row.created_at)) !== row.hash)
   return {
@@ -56,32 +71,118 @@ export function migrationRefusal(d: Database): string | null {
   return null
 }
 
-function baselineTableNames(): string[] {
-  const migration = readFileSync(join(MIGRATIONS_FOLDER, `${migrationJournal()[0]!.tag}.sql`), 'utf8')
-  return [...migration.matchAll(/CREATE TABLE\s+(?:IF NOT EXISTS\s+)?[`"[]?([A-Za-z_][A-Za-z0-9_]*)/gi)]
-    .map((match) => match[1]!).filter((name) => name !== MIGRATIONS_TABLE).sort()
+/** Match trunk's schemaVersion canonicalisation: identifier quotes and whitespace are immaterial. */
+function normalizeSql(source: string): string {
+  return source
+    .replace(/"([A-Za-z_][A-Za-z0-9_]*)"|`([A-Za-z_][A-Za-z0-9_]*)`|\[([A-Za-z_][A-Za-z0-9_]*)\]/g,
+      (_match, quoted: string | undefined, backticked: string | undefined,
+        bracketed: string | undefined) => quoted ?? backticked ?? bracketed ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
-function tableDiff(d: Database): string {
-  const expected = baselineTableNames()
-  const actual = (d.query(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name<>? ORDER BY name",
-  ).all(MIGRATIONS_TABLE) as { name: string }[]).map((row) => row.name)
-  const missing = expected.filter((name) => !actual.includes(name))
-  const unexpected = actual.filter((name) => !expected.includes(name))
-  return [`missing tables: ${missing.join(', ') || 'none'}`, `unexpected tables: ${unexpected.join(', ') || 'none'}`].join('\n')
+function quoteIdentifier(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`
 }
 
-export function canonicalSchemaHash(d: Database): string | null {
+function schemaInventory(d: Database): SchemaInventory {
+  const objects = (d.query(
+    `SELECT type, name, sql FROM sqlite_master
+     WHERE type IN ('table','index') AND sql IS NOT NULL
+       AND name NOT LIKE 'sqlite_%' AND name<>?
+     ORDER BY type, name`,
+  ).all(MIGRATIONS_TABLE) as SchemaObject[]).map((row) => ({ ...row, sql: normalizeSql(row.sql) }))
+  const columns: ColumnShape[] = []
+  for (const table of objects.filter((row) => row.type === 'table')) {
+    const rows = d.query(`PRAGMA table_info(${quoteIdentifier(table.name)})`).all() as {
+      name: string
+      type: string
+      notnull: number
+      dflt_value: string | null
+      pk: number
+    }[]
+    for (const row of rows) {
+      columns.push({
+        table: table.name,
+        name: row.name,
+        type: normalizeSql(row.type),
+        notnull: row.notnull,
+        defaultValue: row.dflt_value == null ? null : normalizeSql(row.dflt_value),
+        primaryKey: row.pk,
+      })
+    }
+  }
+  return { objects, columns }
+}
+
+function inventoryLines(inventory: SchemaInventory): string[] {
+  return [
+    ...inventory.objects.map((row) => `${row.type} ${row.name} ${row.sql}`),
+    ...inventory.columns.map((row) =>
+      `column ${row.table}.${row.name} ${row.type} notnull=${row.notnull} default=${row.defaultValue ?? 'NULL'} pk=${row.primaryKey}`),
+  ]
+}
+
+export function canonicalSchemaHash(d: Database): string {
+  return createHash('sha256').update(inventoryLines(schemaInventory(d)).join('\n')).digest('hex')
+}
+
+function executeMigrationSource(d: Database, source: string): void {
+  for (const statement of source.split('--> statement-breakpoint')) {
+    if (statement.trim()) d.exec(statement)
+  }
+}
+
+export function baselineSchemaHash(folder = MIGRATIONS_FOLDER): string {
+  const baseline = migrationJournal(folder)[0]!
+  const d = new Database(':memory:')
   try {
-    return (d.query("SELECT value FROM schema_meta WHERE key='schema'").get() as
-      { value: string } | null)?.value ?? null
-  } catch { return null }
+    executeMigrationSource(d, migrationSource(baseline, folder))
+    return canonicalSchemaHash(d)
+  } finally {
+    d.close()
+  }
 }
 
-export const BASELINE_SCHEMA_HASH = 'e5d0fa17fb7fb3087e4fda38a8cb31be0793fb4b68849ef1ae6eb08a127a9292'
+export const BASELINE_SCHEMA_HASH = baselineSchemaHash()
 
-function ensureMigrationsTable(d: Database): void {
+function shape(values: string[]): string[] {
+  return [...values].sort()
+}
+
+function inventoryDiff(actual: SchemaInventory, expected: SchemaInventory): string {
+  const actualTables = shape(actual.objects.filter((row) => row.type === 'table').map((row) => row.name))
+  const expectedTables = shape(expected.objects.filter((row) => row.type === 'table').map((row) => row.name))
+  const columnKey = (row: ColumnShape) =>
+    `${row.table}.${row.name} ${row.type} notnull=${row.notnull} default=${row.defaultValue ?? 'NULL'} pk=${row.primaryKey}`
+  const actualColumns = shape(actual.columns.map(columnKey))
+  const expectedColumns = shape(expected.columns.map(columnKey))
+  const indexKey = (row: SchemaObject) => `${row.name} ${row.sql}`
+  const actualIndexes = shape(actual.objects.filter((row) => row.type === 'index').map(indexKey))
+  const expectedIndexes = shape(expected.objects.filter((row) => row.type === 'index').map(indexKey))
+  const difference = (left: string[], right: string[]) => left.filter((value) => !right.includes(value))
+  return [
+    `missing tables: ${difference(expectedTables, actualTables).join(', ') || 'none'}`,
+    `unexpected tables: ${difference(actualTables, expectedTables).join(', ') || 'none'}`,
+    `missing columns: ${difference(expectedColumns, actualColumns).join(', ') || 'none'}`,
+    `unexpected columns: ${difference(actualColumns, expectedColumns).join(', ') || 'none'}`,
+    `missing indexes: ${difference(expectedIndexes, actualIndexes).join(', ') || 'none'}`,
+    `unexpected indexes: ${difference(actualIndexes, expectedIndexes).join(', ') || 'none'}`,
+  ].join('\n')
+}
+
+function baselineInventory(folder = MIGRATIONS_FOLDER): SchemaInventory {
+  const baseline = migrationJournal(folder)[0]!
+  const d = new Database(':memory:')
+  try {
+    executeMigrationSource(d, migrationSource(baseline, folder))
+    return schemaInventory(d)
+  } finally {
+    d.close()
+  }
+}
+
+function createMigrationsTable(d: Database): void {
   d.exec(`CREATE TABLE IF NOT EXISTS ${MIGRATIONS_TABLE} (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     hash TEXT NOT NULL,
@@ -90,26 +191,34 @@ function ensureMigrationsTable(d: Database): void {
   )`)
 }
 
-function adoptBaseline(d: Database): string[] | null {
-  if (tableExists(d, MIGRATIONS_TABLE)) return null
+function recordMigration(d: Database, entry: JournalEntry, folder: string): void {
+  d.query(`INSERT INTO ${MIGRATIONS_TABLE} (hash,created_at,version) VALUES (?,?,?)`)
+    .run(migrationHash(entry, folder), entry.when, entry.tag)
+}
+
+function adoptBaseline(d: Database, folder: string): string[] {
+  if (tableExists(d, MIGRATIONS_TABLE)) return []
   const applicationTables = (d.query(
     "SELECT COUNT(*) AS n FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
   ).get() as { n: number }).n
-  if (applicationTables === 0) return null
-  if (canonicalSchemaHash(d) !== BASELINE_SCHEMA_HASH || tableDiff(d).includes('missing tables: none') === false ||
-      tableDiff(d).includes('unexpected tables: none') === false) {
+  if (applicationTables === 0) return []
+  const actualInventory = schemaInventory(d)
+  const expectedInventory = baselineInventory(folder)
+  const storedHash = canonicalSchemaHash(d)
+  const expectedHash = createHash('sha256').update(inventoryLines(expectedInventory).join('\n')).digest('hex')
+  if (storedHash !== expectedHash) {
     throw new Error(
-      `refusing to adopt migration baseline: the existing store does not match it\n${tableDiff(d)}\n` +
+      `refusing to adopt migration baseline: the existing store does not match it\n` +
+      `stored hash: ${storedHash}\nexpected hash: ${expectedHash}\n` +
+      `${inventoryDiff(actualInventory, expectedInventory)}\n` +
       `back up the store and run the old binary's open once`,
     )
   }
-  const entry = migrationJournal()[0]!
-  const source = readFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), 'utf8')
-  ensureMigrationsTable(d)
+  const entry = migrationJournal(folder)[0]!
   d.exec('BEGIN IMMEDIATE')
   try {
-    d.query(`INSERT INTO ${MIGRATIONS_TABLE} (hash,created_at,version) VALUES (?,?,?)`)
-      .run(createHash('sha256').update(source).digest('hex'), entry.when, entry.tag)
+    createMigrationsTable(d)
+    recordMigration(d, entry, folder)
     d.exec('COMMIT')
   } catch (error) {
     d.exec('ROLLBACK')
@@ -118,39 +227,25 @@ function adoptBaseline(d: Database): string[] | null {
   return [entry.tag]
 }
 
-/** Apply each journal entry through Drizzle's bun:sqlite migrator in its own IMMEDIATE transaction. */
-export function applyMigrations(d: Database): string[] {
-  const adopted = adoptBaseline(d)
-  if (adopted) return adopted
-  const state = migrationState(d)
+/** Apply each pending checksummed journal entry in its own IMMEDIATE transaction. */
+export function applyMigrations(d: Database, folder = MIGRATIONS_FOLDER): string[] {
+  const versions = adoptBaseline(d, folder)
+  const state = migrationState(d, folder)
   if (state.ahead) {
     throw new Error(`refusing to migrate a store ahead of this binary's migration journal: ${state.ahead}`)
   }
-  ensureMigrationsTable(d)
-  const before = new Set((d.query(`SELECT created_at FROM ${MIGRATIONS_TABLE}`).all() as
-    { created_at: number }[]).map((row) => Number(row.created_at)))
-  const database = drizzle(d)
-  const dialect = (database as any).dialect
-  const session = (database as any).session
-  const dialectMigrate = dialect.migrate.bind(dialect)
-  const sessionRun = session.run.bind(session)
-  session.run = (query: any) => {
-    const rendered = dialect.sqlToQuery(query).sql.trim().toUpperCase()
-    return sessionRun(rendered === 'BEGIN' ? sql.raw('BEGIN IMMEDIATE') : query)
+  for (const entry of state.pending) {
+    d.exec('BEGIN IMMEDIATE')
+    try {
+      createMigrationsTable(d)
+      executeMigrationSource(d, migrationSource(entry, folder))
+      recordMigration(d, entry, folder)
+      d.exec('COMMIT')
+      versions.push(entry.tag)
+    } catch (error) {
+      d.exec('ROLLBACK')
+      throw error
+    }
   }
-  dialect.migrate = (migrations: MigrationMeta[], currentSession: unknown, config: unknown) => {
-    for (const migration of migrations) dialectMigrate([migration], currentSession, config)
-  }
-  try {
-    migrate(database, { migrationsFolder: MIGRATIONS_FOLDER, migrationsTable: MIGRATIONS_TABLE })
-  } finally {
-    dialect.migrate = dialectMigrate
-    session.run = sessionRun
-  }
-  const journal = migrationJournal()
-  for (const entry of journal) {
-    d.query(`UPDATE ${MIGRATIONS_TABLE} SET version=? WHERE created_at=? AND version IS NULL`)
-      .run(entry.tag, entry.when)
-  }
-  return journal.filter((entry) => !before.has(entry.when)).map((entry) => entry.tag)
+  return versions
 }
