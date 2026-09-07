@@ -69,7 +69,7 @@ describe('Drizzle migration journal', () => {
     const legacyStore = legacy()
     expect(canonicalSchemaHash(legacyStore)).toBe(BASELINE_SCHEMA_HASH)
     expect(applyMigrations(legacyStore)).toEqual([
-      '0000_bright_sleepwalker', '0001_landing_queue', '0002_spec_sha', '0003_keep_tree', '0004_lens_catalogue', '0005_agent_registry', '0006_project_id_backfill', '0007_contention', '0006_test_flake', '0007_flake_signal',
+      '0000_bright_sleepwalker', '0001_landing_queue', '0002_spec_sha', '0003_keep_tree', '0004_lens_catalogue', '0005_agent_registry', '0006_project_id_backfill', '0007_contention', '0008_test_flake',
     ])
     legacyStore.close()
     rmSync(dir, { recursive: true, force: true })
@@ -136,7 +136,7 @@ describe('Drizzle migration journal', () => {
   test('a matching pre-journal store adopts 0000 and continues through later migrations', () => {
     const d = legacy()
     expect(applyMigrations(d)).toEqual([
-      '0000_bright_sleepwalker', '0001_landing_queue', '0002_spec_sha', '0003_keep_tree', '0004_lens_catalogue', '0005_agent_registry', '0006_project_id_backfill', '0007_contention', '0006_test_flake', '0007_flake_signal',
+      '0000_bright_sleepwalker', '0001_landing_queue', '0002_spec_sha', '0003_keep_tree', '0004_lens_catalogue', '0005_agent_registry', '0006_project_id_backfill', '0007_contention', '0008_test_flake',
     ])
     expect(d.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='landing'").get())
       .toBeDefined()
@@ -157,7 +157,7 @@ describe('Drizzle migration journal', () => {
     }))
     const d = new Database(':memory:')
     expect(applyMigrations(d, dir)).toEqual(['0000_bright_sleepwalker', '0001_landing_queue'])
-    expect(applyMigrations(d)).toEqual(['0002_spec_sha', '0003_keep_tree', '0004_lens_catalogue', '0005_agent_registry', '0006_project_id_backfill', '0007_contention', '0006_test_flake', '0007_flake_signal'])
+    expect(applyMigrations(d)).toEqual(['0002_spec_sha', '0003_keep_tree', '0004_lens_catalogue', '0005_agent_registry', '0006_project_id_backfill', '0007_contention', '0008_test_flake'])
     expect(d.query("SELECT name FROM pragma_table_info('run') WHERE name='spec_sha'").get())
       .toEqual({ name: 'spec_sha' })
     d.close()
@@ -447,37 +447,44 @@ describe('schema coexistence', () => {
     d.close()
   })
 
-  test('applying 0000 through 0007 stamps user_version 8 and a 0006 store migrates to 0007', () => {
+  test('applying 0000 through 0008 stamps user_version 9 and a 0007 store migrates to 0008', () => {
     const minted = fresh()
-    expect(journalLength()).toBe(8)
+    expect(journalLength()).toBe(9)
     expect(applyMigrations(minted)).toEqual([])
-    expect(readUserVersion(minted)).toBe(8)
+    expect(readUserVersion(minted)).toBe(9)
     expect(minted.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='contention'").get())
       .toBeDefined()
+    expect(minted.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='test_flake'").get())
+      .toBeDefined()
+    expect(minted.query("SELECT name FROM pragma_table_info('test_flake') WHERE name='signal'").get())
+      .toEqual({ name: 'signal' })
     minted.close()
 
-    const dir = mkdtempSync(join(tmpdir(), 'orch-through-0006-'))
+    const dir = mkdtempSync(join(tmpdir(), 'orch-through-0007-'))
     mkdirSync(join(dir, 'meta'))
-    const through0006 = migrationJournal().slice(0, 7)
-    for (const entry of through0006) {
+    const through0007 = migrationJournal().slice(0, 8)
+    for (const entry of through0007) {
       copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(dir, `${entry.tag}.sql`))
     }
     writeFileSync(join(dir, 'meta', '_journal.json'), JSON.stringify({
-      version: '7', dialect: 'sqlite', entries: through0006,
+      version: '7', dialect: 'sqlite', entries: through0007,
     }))
     const d = new Database(':memory:')
     d.exec('PRAGMA foreign_keys=ON')
     expect(applyMigrations(d, dir)).toEqual([
       '0000_bright_sleepwalker', '0001_landing_queue', '0002_spec_sha', '0003_keep_tree',
       '0004_lens_catalogue', '0005_agent_registry', '0006_project_id_backfill',
+      '0007_contention',
     ])
-    expect(readUserVersion(d)).toBe(7)
-    expect(d.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='contention'").get())
-      .toBeNull()
-    expect(applyMigrations(d)).toEqual(['0007_contention'])
     expect(readUserVersion(d)).toBe(8)
-    expect(d.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='contention'").get())
+    expect(d.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='test_flake'").get())
+      .toBeNull()
+    expect(applyMigrations(d)).toEqual(['0008_test_flake'])
+    expect(readUserVersion(d)).toBe(9)
+    expect(d.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='test_flake'").get())
       .toBeDefined()
+    expect(d.query("SELECT name FROM pragma_table_info('test_flake') WHERE name='signal'").get())
+      .toEqual({ name: 'signal' })
     d.close()
     rmSync(dir, { recursive: true, force: true })
   })

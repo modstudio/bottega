@@ -3,6 +3,7 @@ CREATE TABLE test_flake (
   test TEXT NOT NULL,
   file TEXT NOT NULL,
   load_at_failure TEXT NOT NULL,
+  signal TEXT,
   at TEXT NOT NULL,
   CHECK (json_valid(load_at_failure))
 );
