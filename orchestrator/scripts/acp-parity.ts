@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
  * bun scripts/acp-parity.ts
- * Run from orchestrator/ with codex and grok on PATH.
+ * Run from any directory with codex and grok on PATH.
  *
  * Run the same five prompts through cli and acp transports against one paid
  * agent on this machine. The sixth row makes the ACP worker call the orch-ask
@@ -11,7 +11,7 @@
  */
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { AGENTS } from '../src/agents.ts'
 import { db, ROOT } from '../src/db.ts'
 import { run } from '../src/run.ts'
@@ -26,27 +26,71 @@ const SCHEMA = {
   properties: { verdict: { type: 'string', enum: ['true', 'false', 'undecidable'] } },
 }
 
-const CASES: Array<{ id: string; prompt: string; schema?: boolean; timeoutMs?: number }> = [
-  { id: 'structured-ok', prompt: 'Reply with exactly this JSON and nothing else: {"status":"ok"}' },
+type SemanticReply = Pick<TransportResult, 'output' | 'parsed' | 'stopReason'>
+type CaseSpec = {
+  id: string
+  prompt: string
+  schema?: boolean
+  timeoutMs?: number
+  expected: (reply: SemanticReply) => boolean
+}
+
+export const ACP_PARITY_REPOSITORY_ROOT = resolve(import.meta.dir, '../..')
+
+const parsedJson = (reply: SemanticReply): unknown => {
+  try { return JSON.parse(reply.parsed?.text ?? reply.output) } catch { return null }
+}
+
+const CASES: CaseSpec[] = [
+  {
+    id: 'structured-ok',
+    prompt: 'Reply with exactly this JSON and nothing else: {"status":"ok"}',
+    expected: (reply) => {
+      const value = parsedJson(reply)
+      return typeof value === 'object' && value !== null &&
+        (value as Record<string, unknown>).status === 'ok'
+    },
+  },
   {
     id: 'tool-read',
     prompt: 'Read orchestrator/package.json and quote the JSON "name" field in one line.',
+    expected: (reply) => (reply.parsed?.text ?? reply.output).includes('@devbox/orchestrator'),
   },
   {
     id: 'schema',
     prompt: 'Is orchestrator/src/agents.ts a TypeScript file? Answer via the schema.',
     schema: true,
+    expected: (reply) => {
+      const value = parsedJson(reply)
+      return typeof value === 'object' && value !== null &&
+        (value as Record<string, unknown>).verdict === 'true'
+    },
   },
   {
     id: 'timeout',
     prompt: 'Sleep in a tool loop for ten minutes. Do not answer until that has elapsed.',
     timeoutMs: 500,
+    expected: (reply) => reply.stopReason === 'timeout',
   },
   {
     id: 'malformed',
     prompt: 'Reply with the single character { and nothing else. Do not close it. Do not write JSON.',
+    expected: (reply) => (reply.parsed?.text ?? reply.output).trim() === '{',
   },
 ]
+
+export function caseSemanticallyMatches(id: string, reply: SemanticReply): boolean {
+  return CASES.find((spec) => spec.id === id)?.expected(reply) ?? false
+}
+
+export function parityCaseVerdict(
+  id: string, transportStatus: string, failureKind: string | null, reply: SemanticReply,
+): Pick<Row, 'outcome' | 'failureKind'> {
+  if (transportStatus === 'ok' && !caseSemanticallyMatches(id, reply)) {
+    return { outcome: 'failed', failureKind: 'semantic' }
+  }
+  return { outcome: transportStatus, failureKind: failureKind ?? '—' }
+}
 
 export type Row = {
   case: string
@@ -66,7 +110,7 @@ function cell(value: string, width: number): string {
 
 async function runCase(
   transportName: TransportName,
-  spec: (typeof CASES)[number],
+  spec: CaseSpec,
   cwd: string,
   dir: string,
 ): Promise<Row> {
@@ -92,11 +136,11 @@ async function runCase(
     await transport.prompt(handle, spec.prompt)
     const result: TransportResult = await handle.collect()
     const folded = outcomeFromTransport(result)
+    const verdict = parityCaseVerdict(spec.id, folded.status, folded.failureKind, result)
     return {
       case: spec.id,
       transport: transportName,
-      outcome: folded.status,
-      failureKind: folded.failureKind ?? '—',
+      ...verdict,
       tokens: result.tokens == null ? '—' : String(result.tokens),
       latencyMs: Date.now() - started,
       rawBytes: Buffer.byteLength(result.raw),
@@ -187,7 +231,7 @@ async function main(): Promise<void> {
     throw new Error('usage: bun scripts/acp-parity.ts [codex|grok]')
   }
   requestedAgent = requested
-  const cwd = process.cwd()
+  const cwd = ACP_PARITY_REPOSITORY_ROOT
   const dir = mkdtempSync(join(tmpdir(), 'orch-acp-parity-'))
   mkdirSync(dir, { recursive: true })
 
