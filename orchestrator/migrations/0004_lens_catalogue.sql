@@ -125,7 +125,7 @@ CREATE UNIQUE INDEX project_lens_profile_global
 CREATE TABLE project_lens_profile_revision (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   selection_id INTEGER NOT NULL REFERENCES project_lens_profile(id) ON DELETE CASCADE,
-  prior_profile_name TEXT NOT NULL,
+  prior_profile_name TEXT,
   prior_selected_version INTEGER CHECK(prior_selected_version IS NULL OR prior_selected_version > 0),
   reason TEXT NOT NULL CHECK(length(trim(reason)) > 0),
   session_id TEXT,

@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { db,upsertProject } from '../test/fixture.ts'
 import { REGISTERED_LIVE_STORE } from '../test/preload.ts'
 import { applyMigrations } from './migrations.ts'
+import { sessionId } from './db.ts'
 import { listLenses,resolveLens,selectProjectProfile,setLens,setProfile } from './lenses.ts'
 import { preflight } from './run.ts'
 
@@ -26,12 +27,16 @@ describe('lens catalogue',()=>{
     expect(()=>setProfile({lensId:'correctness',axis:'framework',name:'node',body:'{"not_declared":"x"}',enabled:true,reason:'test'})).toThrow('undeclared slot')
     setProfile({lensId:'correctness',axis:'framework',name:'node',body:'{"framework_guidance":"Node.","commands":"bun test"}',enabled:true,reason:'test'})
     selectProjectProfile({project:'one',axis:'framework',name:'node',lensId:'correctness',reason:'test'})
+    expect(db().query(`SELECT prior_profile_name,prior_selected_version,reason,session_id,at
+      FROM project_lens_profile_revision WHERE reason='test'`).get()).toEqual({
+        prior_profile_name:null,prior_selected_version:null,reason:'test',session_id:sessionId(),at:expect.any(String),
+      })
     selectProjectProfile({project:'two',axis:'framework',name:'node',lensId:'correctness',reason:'test'})
     expect(db().query("SELECT COUNT(*) n FROM lens_profile WHERE lens_id='correctness' AND name='node'").get()).toEqual({n:1})
     expect(resolveLens('correctness','one')!.body).toContain('Node.\n\nCOMMANDS\nbun test')
     expect(resolveLens('correctness','two')!.profiles[0]!.name).toBe('node')
     selectProjectProfile({project:'one',axis:'framework',name:'default',lensId:'correctness',version:1,reason:'return to baseline'})
-    expect(db().query(`SELECT prior_profile_name,prior_selected_version,reason FROM project_lens_profile_revision`).get())
+    expect(db().query(`SELECT prior_profile_name,prior_selected_version,reason FROM project_lens_profile_revision WHERE reason='return to baseline'`).get())
       .toEqual({prior_profile_name:'node',prior_selected_version:null,reason:'return to baseline'})
   })
 

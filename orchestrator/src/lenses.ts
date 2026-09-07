@@ -126,11 +126,13 @@ export function selectProjectProfile(input:{project:string;axis:string;name:stri
   writeTransaction(()=>{
     const prior=d.query('SELECT id,profile_name,selected_version FROM project_lens_profile WHERE project_id=? AND lens_id IS ? AND axis=?')
       .get(project.id,input.lensId??null,axis) as {id:number;profile_name:string;selected_version:number|null}|null
-    if(prior) d.query(`INSERT INTO project_lens_profile_revision
-      (selection_id,prior_profile_name,prior_selected_version,reason,session_id,at) VALUES (?,?,?,?,?,?)`)
-      .run(prior.id,prior.profile_name,prior.selected_version,input.reason,sessionId(),nowIso())
     d.query(`INSERT INTO project_lens_profile (project_id,lens_id,axis,profile_name,selected_version) VALUES (?,?,?,?,?)
       ON CONFLICT DO UPDATE SET profile_name=excluded.profile_name,selected_version=excluded.selected_version`).run(project.id,input.lensId??null,axis,input.name,input.version??null)
+    const selection=d.query('SELECT id FROM project_lens_profile WHERE project_id=? AND lens_id IS ? AND axis=?')
+      .get(project.id,input.lensId??null,axis) as {id:number}
+    d.query(`INSERT INTO project_lens_profile_revision
+      (selection_id,prior_profile_name,prior_selected_version,reason,session_id,at) VALUES (?,?,?,?,?,?)`)
+      .run(selection.id,prior?.profile_name??null,prior?.selected_version??null,input.reason,sessionId(),nowIso())
   },d)
   return {project:project.name,lens:input.lensId??null,axis,name:input.name,version:input.version??null,reason:input.reason}
 }

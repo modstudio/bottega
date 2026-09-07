@@ -253,7 +253,7 @@ export const projectLensProfile = sqliteTable('project_lens_profile', {
   uniqueIndex('project_lens_profile_global').on(t.projectId, t.axis).where(sql`${t.lensId} is null`)])
 export const projectLensProfileRevision = sqliteTable('project_lens_profile_revision', {
   id: id(), selectionId: integer('selection_id').notNull().references(() => projectLensProfile.id, { onDelete: 'cascade' }),
-  priorProfileName: text('prior_profile_name').notNull(), priorSelectedVersion: integer('prior_selected_version'),
+  priorProfileName: text('prior_profile_name'), priorSelectedVersion: integer('prior_selected_version'),
   reason: text().notNull(), sessionId: text('session_id'), at: text().notNull(),
 }, (t) => [check('project_lens_profile_revision_version_check', sql`${t.priorSelectedVersion} is null or ${t.priorSelectedVersion} > 0`),
   check('project_lens_profile_revision_reason_check', sql`length(trim(${t.reason})) > 0`)])
