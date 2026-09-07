@@ -80,7 +80,7 @@ def main() -> int:
             }) + "\n")
             return 0
         brief_p = _start(orch, "doc", "brief", "--cwd", cwd)
-        resumes_p = _start(orch, "doc", "resumes", "--cwd", cwd)
+        resumes_p = _start(orch, "doc", "resumes", "--cwd", cwd, "--json")
         inbox_env = os.environ.copy()
         if sid:
             inbox_env["CLAUDE_CODE_SESSION_ID"] = sid
@@ -92,14 +92,50 @@ def main() -> int:
 
         context = brief.stdout if brief.returncode == 0 else ""
         lines = []
+        unreadable = []
         if resumes.returncode == 0:
-            lines = [ln for ln in resumes.stdout.splitlines() if ln.strip()]
+            try:
+                result = json.loads(resumes.stdout)
+                open_briefs = result["open"]
+                unreadable = result["unreadable"]
+                if (
+                    not isinstance(open_briefs, list)
+                    or not all(
+                        isinstance(item, dict)
+                        and isinstance(item.get("slug"), str)
+                        and isinstance(item.get("title"), str)
+                        and isinstance(item.get("age"), str)
+                        for item in open_briefs
+                    )
+                    or not isinstance(unreadable, list)
+                    or not all(
+                        isinstance(item, dict)
+                        and isinstance(item.get("slug"), str)
+                        and item.get("reason") in ("no-frontmatter", "no-readable-status")
+                        for item in unreadable
+                    )
+                ):
+                    raise ValueError("invalid resume list JSON")
+                lines = [
+                    f'{item["slug"]:<24} {item["title"]:<24} {item["age"]}'
+                    for item in open_briefs
+                ]
+            except Exception:
+                lines = []
+                unreadable = []
             if lines:
                 if context and not context.endswith("\n"):
                     context += "\n"
-                text = resumes.stdout
-                context += text if text.endswith("\n") else text + "\n"
+                context += "\n".join(lines) + "\n"
                 context += _resume_sentence(payload.get("source"), lines) + "\n"
+            if unreadable:
+                if context and not context.endswith("\n"):
+                    context += "\n"
+                for item in unreadable:
+                    context += (
+                        f'UNREADABLE RESUME BRIEF `{item["slug"]}`: '
+                        f'{item["reason"]}.\n'
+                    )
 
         answerable_count = foreign_count = unknown_count = 0
         inbox_failure = None
@@ -151,6 +187,10 @@ def main() -> int:
             slugs = ", ".join(f"`{line.split()[0]}`" for line in lines)
             noun = "brief" if len(lines) == 1 else "briefs"
             notices.append(f"Open resume {noun}: {slugs}.")
+        if unreadable:
+            slugs = ", ".join(f"`{item['slug']}`" for item in unreadable)
+            noun = "brief" if len(unreadable) == 1 else "briefs"
+            notices.append(f"Unreadable resume {noun}: {slugs}.")
 
         # Verify the heartbeat and hand over a ready-to-run Monitor command.
         # Do not launch it here: a hook cannot call Monitor, and backgrounding

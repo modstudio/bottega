@@ -584,6 +584,26 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
     }
   })
 
+  test('reports unreadable resume briefs without offering them as resumable', () => {
+    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    setDoc({
+      scope: 'resume', subject: 'known', slug: 'unreadable', title: 'Unreadable',
+      body: resumeBody('open', '2026-09-03T00:00:00.000Z'),
+    })
+    db().query('UPDATE doc SET body=? WHERE scope=? AND subject=? AND slug=?')
+      .run('BODY without frontmatter', 'resume', 'known', 'unreadable')
+
+    const result = runBrief({ cwd: '/w/known', source: 'clear' })
+    expect(result.exitCode).toBe(0)
+    const output = hookOutput(result)
+    expect(output.hookSpecificOutput.additionalContext).toContain(
+      'UNREADABLE RESUME BRIEF `unreadable`: no-frontmatter.',
+    )
+    expect(output.hookSpecificOutput.additionalContext).not.toContain('Offer to resume')
+    expect(output.systemMessage).toContain('Unreadable resume brief: `unreadable`.')
+    expect(output.systemMessage).not.toContain('Open resume brief')
+  })
+
   test('malformed stdin exits zero and prints nothing', () => {
     const p = Bun.spawnSync(['python3', hook], {
       stdin: new TextEncoder().encode('{not json'),

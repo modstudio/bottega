@@ -133,7 +133,10 @@ describe('scoped operator docs', () => {
   test('scope, slug, and every subject rule name a usable fix', () => {
     upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
     const put = (scope: string, subject: string | null, slug = 'ok') =>
-      setDoc({ scope, subject, slug, title: 'T', body: 'B' })
+      setDoc({
+        scope, subject, slug, title: 'T',
+        body: scope === 'resume' ? '---\nstatus: open\n---\n\nB' : 'B',
+      })
     expect(() => put('global', null, 'Bad')).toThrow('1-64')
     expect(() => put('global', null, 'a'.repeat(65))).toThrow('1-64')
     expect(() => put('unknown', null)).toThrow('valid scopes')
@@ -156,7 +159,10 @@ describe('scoped operator docs', () => {
     setDoc({ scope: 'global', subject: null, slug: 'global', title: 'Global', body: 'G' })
     setDoc({ scope: 'agent', subject: 'codex', slug: 'agent', title: 'Agent', body: 'A' })
     setDoc({ scope: 'machine', subject: null, slug: 'machine', title: 'Machine', body: 'M' })
-    setDoc({ scope: 'resume', subject: 'known', slug: 'epic', title: 'Resume', body: 'R' })
+    setDoc({
+      scope: 'resume', subject: 'known', slug: 'epic', title: 'Resume',
+      body: '---\nstatus: open\n---\n\nR',
+    })
     expect(docsForRun({ job: 'file-question', cwd: '/w/known/src' }).map((d) => d.title))
       .toEqual(['Global', 'Job', 'Project'])
   })
@@ -1318,9 +1324,9 @@ describe('scoped operator docs', () => {
     expect(resumeAge(now - 86_400_000, now)).toBe('1d')
   })
 
-  test('parseResumeFrontmatter rejects a missing or broken block and keeps known keys', () => {
+  test('parseResumeFrontmatter returns null only without a block and skips unreadable lines', () => {
     expect(parseResumeFrontmatter('no fence')).toBeNull()
-    expect(parseResumeFrontmatter('---\nstatus open\n---\n')).toBeNull()
+    expect(parseResumeFrontmatter('---\nstatus open\n---\n')).toEqual({})
     expect(parseResumeFrontmatter(resumeBody('open', '2026-09-03T00:00:00.000Z'))).toEqual({
       status: 'open', epic: 'demo', project: 'known', written: '2026-09-03T00:00:00.000Z',
     })
@@ -1344,8 +1350,10 @@ describe('scoped operator docs', () => {
     })
     setDoc({
       scope: 'resume', subject: 'known', slug: 'broken', title: 'Broken',
-      body: 'not frontmatter',
+      body: resumeBody('open'),
     })
+    db().query('UPDATE doc SET body=? WHERE scope=? AND subject=? AND slug=?')
+      .run('not frontmatter', 'resume', 'known', 'broken')
     setDoc({
       scope: 'resume', subject: 'other', slug: 'elsewhere', title: 'Other project',
       body: resumeBody('open', '2026-09-03T11:55:00.000Z'),
@@ -1354,12 +1362,55 @@ describe('scoped operator docs', () => {
       scope: 'project', subject: 'known', slug: 'not-a-resume', title: 'Project doc',
       body: resumeBody('open', '2026-09-03T11:59:00.000Z'),
     })
-    expect(listOpenResumes('/nowhere', now)).toEqual([])
-    expect(listOpenResumes('/w/known/src', now)).toEqual([
-      { slug: 'newer', title: 'Newer epic', age: '20m', at: Date.parse('2026-09-03T11:40:00.000Z') },
-      { slug: 'older', title: 'Older epic', age: '2d', at: Date.parse('2026-09-01T12:00:00.000Z') },
-    ])
+    expect(listOpenResumes('/nowhere', now)).toEqual({ open: [], unreadable: [] })
+    expect(listOpenResumes('/w/known/src', now)).toEqual({
+      open: [
+        { slug: 'newer', title: 'Newer epic', age: '20m', at: Date.parse('2026-09-03T11:40:00.000Z') },
+        { slug: 'older', title: 'Older epic', age: '2d', at: Date.parse('2026-09-01T12:00:00.000Z') },
+      ],
+      unreadable: [{ slug: 'broken', reason: 'no-frontmatter' }],
+    })
     expect(brief('/w/known/src')).not.toContain('Newer epic')
+  })
+
+  test('indented resume frontmatter cases A-D parse and list, with top-level keys winning', () => {
+    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    const cases = [
+      ['case-a', '---\nmetadata:\n  status: open\n  epic: nested\n---\n\nA', { status: 'open', epic: 'nested' }],
+      ['case-b', '---\nstatus: open\nepic: flat\n---\n\nB', { status: 'open', epic: 'flat' }],
+      ['case-c', '---\nstatus: open\nmetadata:\n  project: known\n---\n\nC', { status: 'open', project: 'known' }],
+      ['case-d', '---\nstatus: open\nproject: a long\n  wrapped value\n---\n\nD', { status: 'open', project: 'a long' }],
+    ] as const
+    for (const [slug, body, expected] of cases) {
+      setDoc({ scope: 'resume', subject: 'known', slug, title: slug, body: resumeBody('open') })
+      db().query('UPDATE doc SET body=? WHERE scope=? AND subject=? AND slug=?')
+        .run(body, 'resume', 'known', slug)
+      expect(parseResumeFrontmatter(body)).toEqual(expected)
+    }
+    const topWins = '---\nmetadata:\n  status: open\nstatus: consumed\n---\n\nDone'
+    expect(parseResumeFrontmatter(topWins)?.status).toBe('consumed')
+    setDoc({
+      scope: 'resume', subject: 'known', slug: 'top-wins', title: 'top-wins',
+      body: resumeBody('open'),
+    })
+    db().query('UPDATE doc SET body=? WHERE scope=? AND subject=? AND slug=?')
+      .run(topWins, 'resume', 'known', 'top-wins')
+
+    expect(listOpenResumes('/w/known').open.map((resume) => resume.slug).sort()).toEqual([
+      'case-a', 'case-b', 'case-c', 'case-d',
+    ])
+  })
+
+  test('setDoc refuses a resume without readable top-level status', () => {
+    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    expect(() => setDoc({
+      scope: 'resume', subject: 'known', slug: 'statusless', title: 'Statusless',
+      body: '---\nepic: demo\n---\n',
+    })).toThrow('resume doc "statusless" requires readable top-level YAML frontmatter')
+    expect(() => setDoc({
+      scope: 'resume', subject: 'known', slug: 'nested-only', title: 'Nested',
+      body: '---\nmetadata:\n  status: open\n---\n',
+    })).toThrow('"status: open" or "status: consumed"')
   })
 
   test('orch doc resumes prints padded columns and is silent when there are none', () => {
@@ -1381,4 +1432,32 @@ describe('scoped operator docs', () => {
     expect(age).toMatch(/^\d+[smhd]$/)
     expect(listed.out).not.toContain('scope')
   }, 20_000)
+
+  test('orch doc resumes reports unreadable briefs without changing human stdout', () => {
+    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    for (const [slug, body] of [
+      ['no-frontmatter', 'BODY'],
+      ['no-status', '---\nepic: demo\n---\n\nBODY'],
+    ]) {
+      setDoc({ scope: 'resume', subject: 'known', slug, title: slug, body: resumeBody('open') })
+      db().query('UPDATE doc SET body=? WHERE scope=? AND subject=? AND slug=?')
+        .run(body, 'resume', 'known', slug)
+    }
+    const human = orchCli(['doc', 'resumes', '--cwd', '/w/known'])
+    expect(human.code).toBe(0)
+    expect(human.out).toBe('')
+    expect(human.err).toContain('unreadable resume brief no-frontmatter: no-frontmatter')
+    expect(human.err).toContain('unreadable resume brief no-status: no-readable-status')
+
+    const json = orchCli(['doc', 'resumes', '--cwd', '/w/known', '--json'])
+    expect(json.code).toBe(0)
+    expect(JSON.parse(json.out)).toEqual({
+      open: [],
+      unreadable: [
+        { slug: 'no-frontmatter', reason: 'no-frontmatter' },
+        { slug: 'no-status', reason: 'no-readable-status' },
+      ],
+    })
+    expect(json.err).toBe('')
+  })
 })

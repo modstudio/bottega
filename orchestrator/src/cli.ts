@@ -1584,7 +1584,7 @@ function usage(): never {
       diff <scope> <subject|-> <slug> [<rev-a> [<rev-b>]]
       restore <scope> <subject|-> <slug> <rev> --reason TEXT [--author NAME]
       subjects [--json]  (--json: one JSON document)
-      export <dir> | import <dir> --reason TEXT [--author NAME] | brief [--cwd P] | resumes [--cwd P]
+      export <dir> | import <dir> --reason TEXT [--author NAME] | brief [--cwd P] | resumes [--cwd P] [--json]
   orch workflow list [--json]  (--json: one JSON document)
       show <slug> [--version N] [--json]  (--json: one JSON document)
       set <slug> --file F --reason TEXT [--author NAME]
@@ -2165,9 +2165,16 @@ switch (cmd) {
       break
     }
     if (sub === 'resumes') {
-      const rows = listOpenResumes(flag('cwd') ?? process.cwd())
-      for (const r of rows) {
+      const result = listOpenResumes(flag('cwd') ?? process.cwd())
+      if (has('json')) {
+        console.log(JSON.stringify(result))
+        break
+      }
+      for (const r of result.open) {
         console.log(`${r.slug.padEnd(24)} ${r.title.padEnd(24)} ${r.age}`)
+      }
+      for (const r of result.unreadable) {
+        console.error(`unreadable resume brief ${r.slug}: ${r.reason}`)
       }
       break
     }

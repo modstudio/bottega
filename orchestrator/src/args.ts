@@ -284,7 +284,7 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
         subjects: shape('orch doc subjects [--json]', 0, [], ['--json']),
         export: shape('orch doc export <dir>', 1), import: shape('orch doc import <dir> --reason TEXT [--author NAME]', 1, ['--reason', '--author']),
         brief: shape('orch doc brief [--cwd P]', 0, ['--cwd']),
-        resumes: shape('orch doc resumes [--cwd P]', 0, ['--cwd']),
+        resumes: shape('orch doc resumes [--cwd P] [--json]', 0, ['--cwd'], ['--json']),
       }
       if (!sub || !forms[sub]) return null
       return { args: argv.slice(2), shape: forms[sub] }

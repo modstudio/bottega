@@ -237,6 +237,14 @@ export function setDoc(input: {
   scope: string; subject: string | null; slug: string; title: string; body: string
   delivery?: 'inject' | 'demand'
 } & DocWriteContext): Doc {
+  if (input.scope === 'resume') {
+    const frontmatter = resumeFrontmatter(input.body)
+    if (!frontmatter?.top.status) {
+      throw new Error(
+        `resume doc "${input.slug}" requires readable top-level YAML frontmatter in the shape "status: open" or "status: consumed"`,
+      )
+    }
+  }
   return setDocWithOp(input)
 }
 
@@ -350,29 +358,41 @@ export type ResumeFrontmatter = { [K in typeof RESUME_FRONTMATTER_KEYS[number]]?
 
 /**
  * Status of a resume brief lives in the body's opening YAML, not in the
- * address. A missing or unreadable block is not open.
+ * address. An absent block is not open; an unreadable line is skipped rather
+ * than making the whole brief disappear.
  */
-export function parseResumeFrontmatter(body: string): ResumeFrontmatter | null {
+function resumeFrontmatter(body: string): {
+  top: ResumeFrontmatter
+  nested: ResumeFrontmatter
+} | null {
   const match = body.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
   if (!match) return null
-  const out: ResumeFrontmatter = {}
+  const top: ResumeFrontmatter = {}
+  const nested: ResumeFrontmatter = {}
   const known = new Set<string>(RESUME_FRONTMATTER_KEYS)
   for (const line of match[1]!.split(/\r?\n/)) {
     if (!line.trim()) continue
-    const kv = line.match(/^([A-Za-z][A-Za-z0-9_-]*):\s*(.*?)\s*$/)
-    if (!kv) return null
-    const key = kv[1]!
+    const kv = line.match(/^([ \t]*)([A-Za-z][A-Za-z0-9_-]*):\s*(.*?)\s*$/)
+    if (!kv) continue
+    const key = kv[2]!
     if (!known.has(key)) continue
-    let value = kv[2]!
+    let value = kv[3]!
     if (
       (value.startsWith('"') && value.endsWith('"') && value.length >= 2) ||
       (value.startsWith("'") && value.endsWith("'") && value.length >= 2)
     ) {
       value = value.slice(1, -1)
     }
-    out[key as keyof ResumeFrontmatter] = value
+    const target = kv[1] ? nested : top
+    target[key as keyof ResumeFrontmatter] = value
   }
-  return out
+  return { top, nested }
+}
+
+export function parseResumeFrontmatter(body: string): ResumeFrontmatter | null {
+  const parsed = resumeFrontmatter(body)
+  if (!parsed) return null
+  return { ...parsed.nested, ...parsed.top }
 }
 
 /** Single largest unit: Ns, Nm, Nh, Nd. */
@@ -388,6 +408,11 @@ export function resumeAge(fromMs: number, now = Date.now()): string {
 }
 
 export type OpenResume = { slug: string; title: string; age: string; at: number }
+export type UnreadableResume = {
+  slug: string
+  reason: 'no-frontmatter' | 'no-readable-status'
+}
+export type OpenResumeList = { open: OpenResume[]; unreadable: UnreadableResume[] }
 
 function resumeTimestampMs(written: string | undefined, createdAt: string): number {
   if (written) {
@@ -398,18 +423,27 @@ function resumeTimestampMs(written: string | undefined, createdAt: string): numb
   return Number.isNaN(fallback) ? 0 : fallback
 }
 
-export function listOpenResumes(cwd: string, now = Date.now()): OpenResume[] {
+export function listOpenResumes(cwd: string, now = Date.now()): OpenResumeList {
   const project = projectAt(cwd)
-  if (!project) return []
+  if (!project) return { open: [], unreadable: [] }
   const open: OpenResume[] = []
+  const unreadable: UnreadableResume[] = []
   for (const doc of listDocs({ scope: 'resume', subject: project.name })) {
     const fm = parseResumeFrontmatter(doc.body)
-    if (!fm || fm.status !== 'open') continue
+    if (!fm) {
+      unreadable.push({ slug: doc.slug, reason: 'no-frontmatter' })
+      continue
+    }
+    if (!fm.status) {
+      unreadable.push({ slug: doc.slug, reason: 'no-readable-status' })
+      continue
+    }
+    if (fm.status !== 'open') continue
     const at = resumeTimestampMs(fm.written, doc.created_at)
     open.push({ slug: doc.slug, title: doc.title, age: resumeAge(at, now), at })
   }
   open.sort((a, b) => b.at - a.at || a.slug.localeCompare(b.slug))
-  return open
+  return { open, unreadable }
 }
 
 export function exportDocs(dir: string): number {
