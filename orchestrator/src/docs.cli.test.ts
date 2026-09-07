@@ -1516,6 +1516,47 @@ describe('scoped operator docs', () => {
     })).toThrow('resume doc "duplicate-status" has more than one top-level status field')
   })
 
+  test('setDoc refuses an unrecognised resume status and names the value and the permitted two', () => {
+    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    expect(() => setDoc({
+      scope: 'resume', subject: 'known', slug: 'pending-brief', title: 'Pending',
+      body: resumeBody('pending'),
+    })).toThrow('resume doc "pending-brief" has unrecognised status "pending"; permitted values are "open" and "consumed"')
+  })
+
+  test('setDoc accepts open and consumed resume status, including quoted forms', () => {
+    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    const accepted = [
+      ['plain-open', 'open', 'open'],
+      ['plain-consumed', 'consumed', 'consumed'],
+      ['double-quoted-open', '"open"', 'open'],
+      ['single-quoted-open', "'open'", 'open'],
+      ['double-quoted-consumed', '"consumed"', 'consumed'],
+      ['single-quoted-consumed', "'consumed'", 'consumed'],
+    ] as const
+    for (const [slug, written, resolved] of accepted) {
+      const doc = setDoc({
+        scope: 'resume', subject: 'known', slug, title: slug, body: resumeBody(written),
+      })
+      expect(parseResumeFrontmatter(doc.body)?.status).toBe(resolved)
+    }
+  })
+
+  test('listOpenResumes reports a stored unrecognised status as unreadable rather than dropping it', () => {
+    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    setDoc({
+      scope: 'resume', subject: 'known', slug: 'pending-brief', title: 'Pending',
+      body: resumeBody('open'),
+    })
+    db().query('UPDATE doc SET body=? WHERE scope=? AND subject=? AND slug=?')
+      .run(resumeBody('pending'), 'resume', 'known', 'pending-brief')
+
+    expect(listOpenResumes('/w/known')).toEqual({
+      open: [],
+      unreadable: [{ slug: 'pending-brief', reason: 'unrecognised-status' }],
+    })
+  })
+
   test('orch doc resumes prints padded columns and is silent when there are none', () => {
     upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
     const empty = orchCli(['doc', 'resumes', '--cwd', '/w/known'])
@@ -1541,6 +1582,7 @@ describe('scoped operator docs', () => {
     for (const [slug, body] of [
       ['no-frontmatter', 'BODY'],
       ['no-status', '---\nepic: demo\n---\n\nBODY'],
+      ['pending-brief', resumeBody('pending')],
     ]) {
       setDoc({ scope: 'resume', subject: 'known', slug, title: slug, body: resumeBody('open') })
       db().query('UPDATE doc SET body=? WHERE scope=? AND subject=? AND slug=?')
@@ -1551,6 +1593,7 @@ describe('scoped operator docs', () => {
     expect(human.out).toBe('')
     expect(human.err).toContain('unreadable resume brief no-frontmatter: no-frontmatter')
     expect(human.err).toContain('unreadable resume brief no-status: no-readable-status')
+    expect(human.err).toContain('unreadable resume brief pending-brief: unrecognised-status')
 
     const json = orchCli(['doc', 'resumes', '--cwd', '/w/known', '--json'])
     expect(json.code).toBe(0)
@@ -1559,6 +1602,7 @@ describe('scoped operator docs', () => {
       unreadable: [
         { slug: 'no-frontmatter', reason: 'no-frontmatter' },
         { slug: 'no-status', reason: 'no-readable-status' },
+        { slug: 'pending-brief', reason: 'unrecognised-status' },
       ],
     })
     expect(json.err).toBe('')

@@ -662,6 +662,21 @@ exit 1
     expect(output.systemMessage).not.toContain('Open resume brief')
   })
 
+  test('accepts an unrecognised-status unreadable item and still emits the other hook sections', () => {
+    const { process: p, output } = runWithResumePayload(
+      '{"open":[],"unreadable":[{"slug":"pending-brief","reason":"unrecognised-status"}]}',
+    )
+    expect(p.exitCode).toBe(0)
+    expect(output.hookSpecificOutput.additionalContext).toContain('OPERATOR BRIEF')
+    expect(output.hookSpecificOutput.additionalContext).toContain(
+      'UNREADABLE RESUME BRIEF `pending-brief`: unrecognised-status.',
+    )
+    expect(output.systemMessage).toContain('Unreadable resume brief: `pending-brief`.')
+    expect(output.systemMessage).toContain('1 question waiting on your ruling.')
+    expect(output.systemMessage).not.toContain('Resume response was invalid')
+    expect(output.systemMessage).not.toContain('Open resume brief')
+  })
+
   test('malformed stdin exits zero and prints nothing', () => {
     const p = Bun.spawnSync(['python3', hook], {
       stdin: new TextEncoder().encode('{not json'),

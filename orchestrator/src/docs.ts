@@ -247,6 +247,12 @@ export function setDoc(input: {
     if (frontmatter.status?.occurrences && frontmatter.status.occurrences > 1) {
       throw new Error(`resume doc "${input.slug}" has more than one top-level status field`)
     }
+    const status = frontmatter.top.status
+    if (status !== 'open' && status !== 'consumed') {
+      throw new Error(
+        `resume doc "${input.slug}" has unrecognised status "${status}"; permitted values are "open" and "consumed"`,
+      )
+    }
   }
   return setDocWithOp(input)
 }
@@ -458,7 +464,7 @@ export function resumeAge(fromMs: number, now = Date.now()): string {
 export type OpenResume = { slug: string; title: string; age: string; at: number }
 export type UnreadableResume = {
   slug: string
-  reason: 'no-frontmatter' | 'no-readable-status'
+  reason: 'no-frontmatter' | 'no-readable-status' | 'unrecognised-status'
 }
 export type OpenResumeList = { open: OpenResume[]; unreadable: UnreadableResume[] }
 
@@ -484,6 +490,10 @@ export function listOpenResumes(cwd: string, now = Date.now()): OpenResumeList {
     }
     if (!fm.status) {
       unreadable.push({ slug: doc.slug, reason: 'no-readable-status' })
+      continue
+    }
+    if (fm.status !== 'open' && fm.status !== 'consumed') {
+      unreadable.push({ slug: doc.slug, reason: 'unrecognised-status' })
       continue
     }
     if (fm.status !== 'open') continue

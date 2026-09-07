@@ -128,7 +128,7 @@ def main() -> int:
                     if (
                         isinstance(item, dict)
                         and isinstance(item.get("slug"), str)
-                        and item.get("reason") in ("no-frontmatter", "no-readable-status")
+                        and item.get("reason") in ("no-frontmatter", "no-readable-status", "unrecognised-status")
                     ):
                         unreadable.append(item)
                     else:
