@@ -297,6 +297,13 @@ describe('task CLI dash-leading values', () => {
 })
 
 describe('task CLI help', () => {
+  function expectTaskUsage(result: ReturnType<typeof hubAt>) {
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(result.stdout).toContain('hub task new')
+    expect(result.stdout).toContain('hub task doc rm')
+  }
+
   test('help does not require or initialise a database', () => {
     const absent = join(dir, 'help-absent.db')
     const result = hubAt(absent, 'task', 'tracker-new', '--help')
@@ -361,6 +368,128 @@ describe('task CLI help', () => {
     expect(d.query('SELECT count(*) AS count FROM task_document').get()).toEqual({ count: 0 })
     expect(d.query('SELECT title, body FROM task WHERE key = ?').get(seed.stdout))
       .toEqual({ title: 'Original title', body: 'Original body' })
+    d.close()
+  })
+
+  test('task new does not let unsupported --version swallow help or create a row', () => {
+    const helpDatabase = join(dir, 'new-version-help.db')
+    const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha', '--title', 'Seed')
+    expect(seed.exitCode).toBe(0)
+
+    expectTaskUsage(hubAt(helpDatabase, 'task', 'new', '--project', 'alpha', '--title', 'Unsafe',
+      '--version', '--help', '--allow-duplicate', 'probe'))
+    expectTaskUsage(hubAt(helpDatabase, 'task', 'new', '--project', 'alpha', '--title', 'Twin',
+      '--help', '--allow-duplicate', 'probe'))
+
+    const d = new Database(helpDatabase, { readonly: true })
+    expect(d.query('SELECT count(*) AS count FROM task').get()).toEqual({ count: 1 })
+    d.close()
+  })
+
+  test('task new does not let unsupported --role swallow help or create a row', () => {
+    const helpDatabase = join(dir, 'new-role-help.db')
+    const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha', '--title', 'Seed')
+    expect(seed.exitCode).toBe(0)
+
+    expectTaskUsage(hubAt(helpDatabase, 'task', 'new', '--project', 'alpha', '--title', 'Unsafe',
+      '--role', '--help', '--allow-duplicate', 'probe'))
+    expectTaskUsage(hubAt(helpDatabase, 'task', 'new', '--project', 'alpha', '--title', 'Twin',
+      '--help', '--allow-duplicate', 'probe'))
+
+    const d = new Database(helpDatabase, { readonly: true })
+    expect(d.query('SELECT count(*) AS count FROM task').get()).toEqual({ count: 1 })
+    d.close()
+  })
+
+  test('task close does not let unsupported --title swallow help or close the task', () => {
+    const helpDatabase = join(dir, 'close-title-help.db')
+    const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha', '--title', 'Open task')
+    expect(seed.exitCode).toBe(0)
+
+    expectTaskUsage(hubAt(helpDatabase, 'task', 'close', seed.stdout, '--title', '--help'))
+    expectTaskUsage(hubAt(helpDatabase, 'task', 'close', seed.stdout, '--help'))
+
+    const d = new Database(helpDatabase, { readonly: true })
+    expect(d.query('SELECT status_category FROM task WHERE key = ?').get(seed.stdout))
+      .toEqual({ status_category: 'open' })
+    d.close()
+  })
+
+  test('task comment does not let unsupported --title swallow help or insert a comment', () => {
+    const helpDatabase = join(dir, 'comment-title-help.db')
+    const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha', '--title', 'Comment target')
+    expect(seed.exitCode).toBe(0)
+
+    expectTaskUsage(hubAt(helpDatabase, 'task', 'comment', seed.stdout, 'hello body', '--title', '--help'))
+    expectTaskUsage(hubAt(helpDatabase, 'task', 'comment', seed.stdout, 'hello body', '--help'))
+
+    const d = new Database(helpDatabase, { readonly: true })
+    expect(d.query('SELECT count(*) AS count FROM task_comment').get()).toEqual({ count: 0 })
+    d.close()
+  })
+
+  test('task set does not let unsupported --version swallow help or mutate the task', () => {
+    const helpDatabase = join(dir, 'set-version-help.db')
+    const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha', '--title', 'Original title')
+    expect(seed.exitCode).toBe(0)
+
+    expectTaskUsage(hubAt(helpDatabase, 'task', 'set', seed.stdout, '--title', 'Unsafe', '--version', '--help'))
+    expectTaskUsage(hubAt(helpDatabase, 'task', 'set', seed.stdout, '--title', 'Twin', '--help'))
+
+    const d = new Database(helpDatabase, { readonly: true })
+    expect(d.query('SELECT title FROM task WHERE key = ?').get(seed.stdout)).toEqual({ title: 'Original title' })
+    d.close()
+  })
+
+  test('task doc rm does not let unsupported --version swallow help or delete the document', () => {
+    const helpDatabase = join(dir, 'doc-rm-version-help.db')
+    const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha', '--title', 'Document target')
+    expect(seed.exitCode).toBe(0)
+    const created = hubAt(helpDatabase, 'task', 'doc', 'new', seed.stdout, '--title', 'Keep me')
+    expect(created.exitCode).toBe(0)
+
+    expectTaskUsage(hubAt(helpDatabase, 'task', 'doc', 'rm', created.stdout, '--version', '--help'))
+    expectTaskUsage(hubAt(helpDatabase, 'task', 'doc', 'rm', created.stdout, '--help'))
+
+    const d = new Database(helpDatabase, { readonly: true })
+    expect(d.query('SELECT title FROM task_document WHERE id = ?').get(created.stdout)).toEqual({ title: 'Keep me' })
+    d.close()
+  })
+
+  test('task doc new does not let unsupported --version swallow help or insert a document', () => {
+    const helpDatabase = join(dir, 'doc-new-version-help.db')
+    const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha', '--title', 'Document target')
+    expect(seed.exitCode).toBe(0)
+
+    expectTaskUsage(hubAt(helpDatabase, 'task', 'doc', 'new', seed.stdout, '--title', 'Unsafe',
+      '--version', '--help'))
+    expectTaskUsage(hubAt(helpDatabase, 'task', 'doc', 'new', seed.stdout, '--title', 'Twin', '--help'))
+
+    const d = new Database(helpDatabase, { readonly: true })
+    expect(d.query('SELECT count(*) AS count FROM task_document').get()).toEqual({ count: 0 })
+    d.close()
+  })
+
+  test('preserves task help boundaries for consumed values, positionals, and boolean flags', () => {
+    const helpDatabase = join(dir, 'help-boundaries.db')
+    const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha', '--title', 'Original title')
+    expect(seed.exitCode).toBe(0)
+
+    const parentValue = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha', '--title', 'Child',
+      '--parent', '--help')
+    expect(parentValue.exitCode).toBe(1)
+    expect(parentValue.stdout).not.toContain('hub task new')
+
+    for (const args of [
+      ['task', 'list', '--json', '--help'],
+      ['task', 'close', seed.stdout, '--json', '--help'],
+      ['task', 'set', seed.stdout, '--force', '--help'],
+    ]) expectTaskUsage(hubAt(helpDatabase, ...args))
+
+    const d = new Database(helpDatabase, { readonly: true })
+    expect(d.query('SELECT title, status_category FROM task WHERE key = ?').get(seed.stdout))
+      .toEqual({ title: 'Original title', status_category: 'open' })
+    expect(d.query('SELECT count(*) AS count FROM task').get()).toEqual({ count: 1 })
     d.close()
   })
 

@@ -33,30 +33,35 @@ const flag = (name: string) => {
   return i >= 0 ? argv[i + 1] : undefined
 }
 const has = (name: string) => argv.includes(`--${name}`)
-const taskValueFlags = new Set([
-  '--project', '--title', '--status', '--parent', '--body', '--body-file',
-  '--allow-duplicate', '--role', '--version',
-])
-const taskPositionalCounts = new Map([
-  ['new', 0],
-  ['duplicates', 0],
-  ['tracker-new', 0],
-  ['list', 0],
-  ['show', 1],
-  ['set', 1],
-  ['close', 1],
-  ['comment', 2],
-  ['import', 1],
-  ['doc new', 1],
-  ['doc list', 1],
-  ['doc show', 1],
-  ['doc set', 1],
-  ['doc rm', 1],
-  ['document new', 1],
-  ['document list', 1],
-  ['document show', 1],
-  ['document set', 1],
-  ['document rm', 1],
+const taskCommandShapes = new Map<string, {
+  positionalCount: number
+  valueFlags: ReadonlySet<string>
+}>([
+  ['new', { positionalCount: 0, valueFlags: new Set([
+    '--project', '--title', '--status', '--parent', '--body', '--body-file', '--allow-duplicate',
+  ]) }],
+  ['duplicates', { positionalCount: 0, valueFlags: new Set(['--project', '--title']) }],
+  ['tracker-new', { positionalCount: 0, valueFlags: new Set(['--project', '--title', '--body']) }],
+  ['list', { positionalCount: 0, valueFlags: new Set(['--project', '--status', '--parent']) }],
+  ['show', { positionalCount: 1, valueFlags: new Set() }],
+  ['set', { positionalCount: 1, valueFlags: new Set(['--title', '--status', '--parent', '--body']) }],
+  ['close', { positionalCount: 1, valueFlags: new Set() }],
+  ['comment', { positionalCount: 2, valueFlags: new Set() }],
+  ['import', { positionalCount: 1, valueFlags: new Set() }],
+  ['doc new', { positionalCount: 1, valueFlags: new Set(['--title', '--role', '--body', '--body-file']) }],
+  ['doc list', { positionalCount: 1, valueFlags: new Set() }],
+  ['doc show', { positionalCount: 1, valueFlags: new Set() }],
+  ['doc set', { positionalCount: 1, valueFlags: new Set([
+    '--title', '--role', '--body', '--body-file', '--version',
+  ]) }],
+  ['doc rm', { positionalCount: 1, valueFlags: new Set() }],
+  ['document new', { positionalCount: 1, valueFlags: new Set(['--title', '--role', '--body', '--body-file']) }],
+  ['document list', { positionalCount: 1, valueFlags: new Set() }],
+  ['document show', { positionalCount: 1, valueFlags: new Set() }],
+  ['document set', { positionalCount: 1, valueFlags: new Set([
+    '--title', '--role', '--body', '--body-file', '--version',
+  ]) }],
+  ['document rm', { positionalCount: 1, valueFlags: new Set() }],
 ])
 const isHelpToken = (token: string | undefined) =>
   token === 'help' || token === '--help' || token === '-h'
@@ -68,7 +73,8 @@ const taskHelpRequested = () => {
   if (hasAction && isHelpToken(action)) return true
   const command = hasAction ? `${verb} ${action}` : verb
   const positionalStart = hasAction ? 3 : 2
-  const positionalCount = taskPositionalCounts.get(command ?? '') ?? 0
+  const shape = taskCommandShapes.get(command ?? '')
+  const positionalCount = shape?.positionalCount ?? 0
   const positionals = argv.slice(positionalStart, positionalStart + positionalCount)
   // A bare help token is help even where a positional is expected. Other
   // dash-leading positional values are data and must not affect flag scanning.
@@ -81,7 +87,7 @@ const taskHelpRequested = () => {
       continue
     }
     if (isHelpToken(token)) return true
-    expectingValue = taskValueFlags.has(token)
+    expectingValue = shape?.valueFlags.has(token) ?? false
   }
   return false
 }
