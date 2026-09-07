@@ -33,8 +33,8 @@ const originalOrchEnv = Object.fromEntries(
   ['ORCH_DB', 'ORCH_RUNS', 'ORCH_DEPTH', 'CLAUDE_CODE_SESSION_ID']
     .map((name) => [name, process.env[name]]),
 )
-const storePath = join(fixture, 'orch.db')
-const runsPath = join(fixture, 'runs')
+const storePath = process.env.ORCH_DB!
+const runsPath = process.env.ORCH_RUNS!
 const home = join(fixture, 'home')
 const bin = join(fixture, 'bin')
 const repoPath = join(fixture, 'trunk')
@@ -49,8 +49,6 @@ const repo = realpathSync(repoPath)
 writeFileSync(join(bin, 'docker'), '#!/bin/sh\nexit 0\n')
 chmodSync(join(bin, 'docker'), 0o755)
 
-process.env.ORCH_DB = storePath
-process.env.ORCH_RUNS = runsPath
 process.env.HOME = home
 process.env.PATH = `${bin}:${process.env.PATH ?? ''}`
 process.env.ORCH_DEPTH = '0'
@@ -61,10 +59,6 @@ const cli = join(sourceRoot, 'orchestrator', 'src', 'cli.ts')
 const landingModule = new URL('./landing.ts', import.meta.url).href
 const worktreeModule = new URL('./worktree.ts', import.meta.url).href
 const runModule = new URL('./run.ts', import.meta.url).href
-
-if (!storePath.startsWith(`${fixture}/`)) {
-  throw new Error(`lifecycle harness ORCH_DB escaped its fixture: ${storePath}`)
-}
 
 const gitEnv = (extra: Record<string, string> = {}) => {
   const env = { ...process.env }
@@ -98,11 +92,6 @@ if (firstEvaluation) {
 }
 if (firstEvaluation) fixtureGlobal.__orchLifecycleBase = git(repo, 'rev-parse', 'HEAD')
 const fixtureBase = fixtureGlobal.__orchLifecycleBase!
-if (firstEvaluation) {
-  const { bootstrapFixtureStore } = await import('./db.ts')
-  bootstrapFixtureStore(storePath)
-}
-
 function store<T>(action: (database: Database) => T): T {
   const database = new Database(storePath)
   try { return action(database) } finally { database.close() }
