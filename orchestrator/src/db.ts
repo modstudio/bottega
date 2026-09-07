@@ -250,9 +250,21 @@ export function writeTransaction<T>(fn: () => T, database: Database = db(true)):
   return conn.transaction(fn).immediate()
 }
 
-/** Best-effort contention insert through writeTransaction; never throws. */
-export function tryWriteContention(row: import('./contention.ts').ContentionWrite): void {
+/** Best-effort contention insert; never throws. busyTimeoutMs 0 uses a one-shot connection. */
+export function tryWriteContention(
+  row: import('./contention.ts').ContentionWrite, opts?: { busyTimeoutMs?: number },
+): void {
   try {
+    if (linkedWorktreeReadOnly || registeredStoreWriteProtected) return
+    if (opts?.busyTimeoutMs === 0) {
+      const d = new Database(DB_PATH, { readwrite: true, create: false })
+      try {
+        d.exec('PRAGMA busy_timeout = 0; PRAGMA foreign_keys = ON')
+        if (!contentionTableExists(d)) return
+        insertContention(d, row)
+      } finally { d.close() }
+      return
+    }
     const d = openWritableHandle()
     if (!d || !contentionTableExists(d)) return
     writeTransaction(() => insertContention(d, row), d)

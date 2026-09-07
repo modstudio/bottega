@@ -137,7 +137,7 @@ for (const args of [
   if (p.exitCode !== 0) throw new Error(p.stderr.toString())
 }
 
-export const { db, nowIso, reapStale, pendingForSession, unscoredCount, judgeability, STALE_AFTER_MS,
+export const { db, DB_PATH, nowIso, reapStale, pendingForSession, unscoredCount, judgeability, STALE_AFTER_MS,
         PENDING_BOOTSTRAP_MS, WEIGHT, weigh, label, FIDELITY_PENALTY, UNSCORED_WHERE,
         excludeSharedOutputRuns, SHARED_OUTPUT_REASON, applySchema, recordDuels, duelMatrices,
         parseRunIds, recordSessionSeen, GENERIC_QUESTION_TOKENS,

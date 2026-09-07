@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { applyMigrations } from './migrations.ts'
-import { db, hermeticGitEnv, withProjectLock } from '../test/fixture.ts'
+import { db, DB_PATH, hermeticGitEnv, withProjectLock } from '../test/fixture.ts'
 import { insertContention, tryInsertContention } from './contention.ts'
 
 describe('contention ledger', () => {
@@ -70,6 +70,58 @@ describe('contention ledger', () => {
         resource_kind: 'lock', event_kind: 'wait', resource_key: 'landing', session_id: 'queued',
       })
     } finally {
+      holder.kill()
+      await holder.exited
+      rmSync(repo, { recursive: true, force: true })
+    }
+  }, 15_000)
+
+  test('lock timeout recording does not stall on a reserved store', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-contention-lock-busy-'))
+    const git = (args: string[]) => {
+      const result = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+    }
+    git(['init', '-b', 'main'])
+    git(['config', 'user.email', 'orch-test@example.invalid'])
+    git(['config', 'user.name', 'Orch Test'])
+    writeFileSync(join(repo, 'base.txt'), 'base\n')
+    git(['add', 'base.txt'])
+    git(['commit', '-m', 'base'])
+    expect(db()).toBeDefined()
+    const ready = join(repo, 'ready')
+    const release = join(repo, 'release')
+    const worktreeModule = new URL('./worktree.ts', import.meta.url).href
+    const holder = Bun.spawn([
+      process.execPath, '-e',
+      `const { writeFileSync, existsSync } = await import('node:fs');
+       const { withProjectLock } = await import(process.argv[1]);
+       withProjectLock(process.argv[2], 'landing', { session: 'holder', what: 'hold' }, () => {
+         writeFileSync(process.argv[3], '');
+         while (!existsSync(process.argv[4])) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+       }, 20_000, true)`,
+      worktreeModule, repo, ready, release,
+    ], { env: { ...process.env, ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe' })
+    const blocker = new Database(DB_PATH, { readwrite: true, create: false })
+    try {
+      for (let i = 0; i < 200 && !existsSync(ready); i++) await Bun.sleep(5)
+      expect(existsSync(ready)).toBe(true)
+      blocker.exec('BEGIN IMMEDIATE')
+      const timeoutMs = 200
+      const started = Date.now()
+      expect(() => withProjectLock(
+        repo, 'landing', { session: 'busy-waiter', what: 'wait' }, () => 'acquired', timeoutMs, true,
+      )).toThrow(/timed out after/)
+      expect(Date.now() - started).toBeLessThan(timeoutMs + 50)
+      expect(db().query(
+        "SELECT 1 FROM contention WHERE session_id='busy-waiter'",
+      ).get()).toBeNull()
+    } finally {
+      try { blocker.exec('ROLLBACK') } catch { /* already closed or not in a txn */ }
+      blocker.close()
+      writeFileSync(release, '')
       holder.kill()
       await holder.exited
       rmSync(repo, { recursive: true, force: true })

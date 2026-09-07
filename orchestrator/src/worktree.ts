@@ -495,6 +495,7 @@ export function withProjectLock<T>(
     onWait(holder, Math.max(0, deadline - Date.now()))
   }
   const lockSession = identity.session ?? process.env.CLAUDE_CODE_SESSION_ID ?? null
+  const lockContention = { busyTimeoutMs: 0 as const }
   const recordLockTimeout = (held: ProjectLockParticipant | null) => {
     tryWriteContention({
       sessionId: lockSession, resourceKind: 'lock', resourceKey: name, eventKind: 'timeout',
@@ -502,8 +503,9 @@ export function withProjectLock<T>(
       cause: held
         ? `holder session ${held.session ?? 'unknown'}, pid ${held.pid}, ${held.what}`
         : `timed out waiting for ${lockLabel(name)}`,
-    })
+    }, lockContention)
   }
+  let waitedMs = 0
 
   try {
     while (true) {
@@ -541,14 +543,7 @@ export function withProjectLock<T>(
         writeFileSync(paths.owner, `${JSON.stringify(holder)}\n`)
         heldProjectLocks.add(paths.lock)
         rmSync(waiter, { force: true })
-        const waitedMs = Date.now() - waitStarted
-        if (waited && waitedMs > 0) {
-          tryWriteContention({
-            sessionId: lockSession, resourceKind: 'lock', resourceKey: name, eventKind: 'wait',
-            durationMs: waitedMs,
-            cause: `waited for ${lockLabel(name)}`,
-          })
-        }
+        if (waited) waitedMs = Date.now() - waitStarted
         break
       } catch (e) {
         const ours = projectLockParticipant(paths.owner)
@@ -561,6 +556,13 @@ export function withProjectLock<T>(
       heldProjectLocks.delete(paths.lock)
       const ours = projectLockParticipant(paths.owner)
       if (ours?.incarnation === incarnation) rmSync(paths.lock, { recursive: true, force: true })
+      if (waitedMs > 0) {
+        tryWriteContention({
+          sessionId: lockSession, resourceKind: 'lock', resourceKey: name, eventKind: 'wait',
+          durationMs: waitedMs,
+          cause: `waited for ${lockLabel(name)}`,
+        }, lockContention)
+      }
     }
   } finally {
     rmSync(waiter, { force: true })
