@@ -1,18 +1,18 @@
 {
   "shards": [
     {
-      "measuredSeconds": 76.57,
+      "measuredSeconds": 76.86,
       "files": [
         "src/landing-1.cli.test.ts",
         "src/agents.cli.test.ts",
         "src/docs.cli.test.ts",
-        "src/worktree-4.cli.test.ts",
+        "src/run-1.cli.test.ts",
         "src/workflows.cli.test.ts",
         "src/evals.cli.test.ts"
       ]
     },
     {
-      "measuredSeconds": 76.24,
+      "measuredSeconds": 76.89,
       "files": [
         "src/lifecycle-harness.cli.test.ts",
         "src/monitor.cli.test.ts",
@@ -26,7 +26,7 @@
       ]
     },
     {
-      "measuredSeconds": 76.54,
+      "measuredSeconds": 76.25,
       "files": [
         "src/worktree-2.cli.test.ts",
         "src/cli-runs.cli.test.ts",
@@ -34,12 +34,12 @@
         "src/agents-sandbox-2.cli.test.ts",
         "src/run-2.cli.test.ts",
         "src/canon.cli.test.ts",
-        "src/run-1.cli.test.ts",
+        "src/worktree-4.cli.test.ts",
         "src/projects.cli.test.ts"
       ]
     },
     {
-      "measuredSeconds": 76.07,
+      "measuredSeconds": 75.42,
       "files": [
         "src/cli-answer.cli.test.ts",
         "src/cli-do-1.cli.test.ts",

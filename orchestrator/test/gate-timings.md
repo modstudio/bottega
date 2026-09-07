@@ -159,9 +159,9 @@ the unrounded JSON measurements used by the earlier search.
 
 | shard | measured total s | files |
 |---:|---:|---|
-| 1 | 76.57 | `landing-1`, `agents`, `docs`, `worktree-4`, `workflows`, `evals` |
+| 1 | 76.86 | `landing-1`, `agents`, `docs`, `run-1`, `workflows`, `evals` |
 | 2 | 76.89 | `lifecycle-harness`, `monitor`, `worktree-3`, `agents-sandbox-1`, `worktree-5`, `git-environment-regression`, `review-1`, `route`, `catalog` |
-| 3 | 76.54 | `worktree-2`, `cli-runs`, `review-2`, `agents-sandbox-2`, `run-2`, `canon`, `run-1`, `projects` |
+| 3 | 76.25 | `worktree-2`, `cli-runs`, `review-2`, `agents-sandbox-2`, `run-2`, `canon`, `worktree-4`, `projects` |
 | 4 | 75.42 | `cli-answer`, `cli-do-1`, `landing-2`, `cli-projects`, `worktree-1`, `review-3`, `issue`, `linked-worktree-database` |
 
 An initial concurrency check ran the unchanged unit leg beside all four CLI
@@ -221,6 +221,23 @@ wall saves 304.84 s, or 70.8%.
 | after, sharded confirmation | 125.73 | 0 | 833 |
 
 Final step elapsed: 125.73 s. Full command: `bun run check`.
+
+## Correctness fix round after DEV-348
+
+Rebased onto `03d1eaa`. The prior allocation kept `landing-1`, `landing-2`,
+`lifecycle-harness`, and `worktree-2` in distinct shards, but `worktree-4` also
+contains an index-lock test and shared shard 1 with `landing-1`. The allocation
+now puts both worktree lock files in shard 3 and swaps similarly measured
+`run-1` into shard 1. The four lock-heavy groups are isolated as follows:
+
+| shard | isolated lock-heavy files |
+|---:|---|
+| 1 | `landing-1.cli.test.ts` |
+| 2 | `lifecycle-harness.cli.test.ts` |
+| 3 | `worktree-2.cli.test.ts`, `worktree-4.cli.test.ts` |
+| 4 | `landing-2.cli.test.ts` |
+
+No assertion, test name, seed, timeout, or production module changed.
 
 ## 4. Spawn lead
 
