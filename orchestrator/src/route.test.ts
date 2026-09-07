@@ -844,8 +844,105 @@ describe('routing narrows to a stack only when that buys a comparison', () => {
 
 describe('the Stop hook and orch agree on what is unscored', () => {
   const stripSqlComments = (sql: string) => sql.replace(/--[^\n]*/g, ' ')
-  const sqlClauses = (sql: string) =>
-    stripSqlComments(sql).split('AND').map((c) => c.trim().replace(/\s+/g, ' ')).filter(Boolean)
+  const normalizeSql = (sql: string) =>
+    stripSqlComments(sql).replace(/\s+/g, ' ').trim().toLowerCase()
+
+  const HOOK_ONLY_AND = [normalizeSql('r.session_id = ?')]
+  const HOOK_ONLY_OR = [normalizeSql('review.id IS NOT NULL AND review.completed_at IS NULL')]
+
+  const isWordChar = (c: string | undefined) => c != null && /[A-Za-z0-9_]/.test(c)
+
+  const splitTopLevel = (sql: string, keyword: string): string[] => {
+    const parts: string[] = []
+    const kw = keyword.toLowerCase()
+    let depth = 0
+    let inString = false
+    let start = 0
+    for (let i = 0; i < sql.length; i++) {
+      const c = sql[i]
+      if (inString) {
+        if (c === "'") {
+          if (sql[i + 1] === "'") i++
+          else inString = false
+        }
+        continue
+      }
+      if (c === "'") { inString = true; continue }
+      if (c === '(') { depth++; continue }
+      if (c === ')') { depth--; continue }
+      if (
+        depth === 0
+        && sql.slice(i, i + kw.length).toLowerCase() === kw
+        && !isWordChar(sql[i - 1])
+        && !isWordChar(sql[i + kw.length])
+      ) {
+        parts.push(sql.slice(start, i).trim())
+        i += kw.length - 1
+        start = i + 1
+      }
+    }
+    parts.push(sql.slice(start).trim())
+    return parts.filter(Boolean)
+  }
+
+  const unwrapOneOuter = (sql: string): string => {
+    const s = sql.trim()
+    if (s.length < 2 || s[0] !== '(' || s[s.length - 1] !== ')') return s
+    let depth = 0
+    let inString = false
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i]
+      if (inString) {
+        if (c === "'") {
+          if (s[i + 1] === "'") i++
+          else inString = false
+        }
+        continue
+      }
+      if (c === "'") { inString = true; continue }
+      if (c === '(') depth++
+      else if (c === ')') {
+        depth--
+        if (depth === 0) return i === s.length - 1 ? s.slice(1, -1).trim() : s
+      }
+    }
+    return s
+  }
+
+  const unwrapAllOuter = (sql: string): string => {
+    let s = sql.trim()
+    for (;;) {
+      const next = unwrapOneOuter(s)
+      if (next === s) return s
+      s = next
+    }
+  }
+
+  const peelHookExemptions = (conjunct: string): string | null => {
+    const trimmed = conjunct.trim()
+    if (HOOK_ONLY_AND.includes(normalizeSql(trimmed))) return null
+
+    const inner = unwrapOneOuter(trimmed)
+    const disjuncts = splitTopLevel(inner, 'OR')
+    if (disjuncts.length < 2) return trimmed
+
+    const listed = (d: string) =>
+      HOOK_ONLY_OR.includes(normalizeSql(d)) || HOOK_ONLY_OR.includes(normalizeSql(unwrapAllOuter(d)))
+    const kept = disjuncts.filter((d) => !listed(d))
+    if (kept.length === disjuncts.length) return trimmed
+    if (kept.length === 0) return null
+    if (kept.length === 1) return kept[0].trim()
+    const joined = kept.join(' OR ')
+    return trimmed.startsWith('(') ? `(${joined})` : joined
+  }
+
+  const comparableConjuncts = (where: string, peelHook: boolean): string[] => {
+    const conjuncts = splitTopLevel(stripSqlComments(where), 'AND')
+    const kept = peelHook
+      ? conjuncts.map(peelHookExemptions).filter((c): c is string => c != null)
+      : conjuncts
+    return kept.map(normalizeSql).filter(Boolean)
+  }
 
   const hookOwedWhere = (source: string) => {
     const start = source.indexOf('SELECT r.id, r.agent, r.job')
@@ -856,16 +953,22 @@ describe('the Stop hook and orch agree on what is unscored', () => {
     return sql.slice(whereAt + 'WHERE'.length)
   }
 
-  const hookOnlyClause = (clause: string) =>
-    /\br\.session_id\b/.test(clause) || /\breview\./.test(clause)
+  const liveHookWhere = () => hookOwedWhere(
+    readFileSync(new URL('../hooks/score-reminder.py', import.meta.url).pathname, 'utf8'),
+  )
 
   const predicateDrift = (tsWhere: string, hookWhere: string) => {
-    const hookNorm = stripSqlComments(hookWhere).replace(/\s+/g, ' ')
-    const tsNorm = stripSqlComments(tsWhere).replace(/\s+/g, ' ')
+    const ts = comparableConjuncts(tsWhere, false)
+    const hook = comparableConjuncts(hookWhere, true)
     return {
-      missingFromHook: sqlClauses(tsWhere).filter((c) => !hookNorm.includes(c)),
-      missingFromTs: sqlClauses(hookWhere).filter((c) => !hookOnlyClause(c) && !tsNorm.includes(c)),
+      missingFromHook: ts.filter((c) => !hook.includes(c)),
+      missingFromTs: hook.filter((c) => !ts.includes(c)),
     }
+  }
+
+  const orOntoLast = (where: string, disjunct: string) => {
+    const parts = splitTopLevel(stripSqlComments(where), 'AND')
+    return [...parts.slice(0, -1), `(${parts.at(-1)} OR ${disjunct})`].join(' AND ')
   }
 
   test('the comparator fails when either copy has a unique clause', () => {
@@ -894,6 +997,83 @@ describe('the Stop hook and orch agree on what is unscored', () => {
     )
     expect(predicateDrift(UNSCORED_WHERE, hookOwedWhere(hook))).toEqual({
       missingFromHook: [], missingFromTs: [],
+    })
+  })
+
+  test('a conjunct already inside an OR-group is drift when added at the top level, both ways', () => {
+    const extra = 's.delivery IS NULL'
+    const hook = liveHookWhere()
+    expect(predicateDrift(`${UNSCORED_WHERE} AND ${extra}`, hook)).toEqual({
+      missingFromHook: predicateDrift(extra, '').missingFromHook,
+      missingFromTs: [],
+    })
+    expect(predicateDrift(UNSCORED_WHERE, `${hook} AND ${extra}`)).toEqual({
+      missingFromHook: [],
+      missingFromTs: predicateDrift('', extra).missingFromTs,
+    })
+  })
+
+  test('a genuinely unique clause is still caught, both ways', () => {
+    const extra = 'r.stack IS NULL'
+    const hook = liveHookWhere()
+    expect(predicateDrift(`${UNSCORED_WHERE} AND ${extra}`, hook)).toEqual({
+      missingFromHook: predicateDrift(extra, '').missingFromHook,
+      missingFromTs: [],
+    })
+    expect(predicateDrift(UNSCORED_WHERE, `${hook} AND ${extra}`)).toEqual({
+      missingFromHook: [],
+      missingFromTs: predicateDrift('', extra).missingFromTs,
+    })
+  })
+
+  test('flipping IS NULL to IS NOT NULL is still caught', () => {
+    const from = 'r.evidence_excluded IS NULL'
+    const to = 'r.evidence_excluded IS NOT NULL'
+    const hook = liveHookWhere()
+    expect(predicateDrift(UNSCORED_WHERE.replace(from, to), hook)).not.toEqual({
+      missingFromHook: [], missingFromTs: [],
+    })
+    expect(predicateDrift(UNSCORED_WHERE, hook.replace(from, to))).not.toEqual({
+      missingFromHook: [], missingFromTs: [],
+    })
+  })
+
+  test('reordering top-level conjuncts is not drift', () => {
+    const reordered = splitTopLevel(stripSqlComments(UNSCORED_WHERE), 'AND').toReversed().join(' AND ')
+    expect(predicateDrift(reordered, liveHookWhere())).toEqual({
+      missingFromHook: [], missingFromTs: [],
+    })
+  })
+
+  test('whitespace changes are not drift', () => {
+    const padded = stripSqlComments(UNSCORED_WHERE).replace(/\s+/g, '   \n')
+    expect(predicateDrift(padded, liveHookWhere())).toEqual({
+      missingFromHook: [], missingFromTs: [],
+    })
+  })
+
+  test('an unlisted disjunct OR\'d onto the delivery group is drift, both ways', () => {
+    const unlisted = 'r.stack IS NULL'
+    const hook = liveHookWhere()
+    expect(predicateDrift(orOntoLast(UNSCORED_WHERE, unlisted), hook)).not.toEqual({
+      missingFromHook: [], missingFromTs: [],
+    })
+    expect(predicateDrift(UNSCORED_WHERE, orOntoLast(hook, unlisted))).not.toEqual({
+      missingFromHook: [], missingFromTs: [],
+    })
+  })
+
+  test('a new AND conjunct that merely mentions r.session_id or review. is still caught', () => {
+    const hook = liveHookWhere()
+    const mentionsSession = 'COALESCE(r.session_id, \'\') <> \'\''
+    const mentionsReview = 'review.id IS NULL'
+    expect(predicateDrift(UNSCORED_WHERE, `${hook} AND ${mentionsSession}`)).toEqual({
+      missingFromHook: [],
+      missingFromTs: predicateDrift('', mentionsSession).missingFromTs,
+    })
+    expect(predicateDrift(UNSCORED_WHERE, `${hook} AND ${mentionsReview}`)).toEqual({
+      missingFromHook: [],
+      missingFromTs: predicateDrift('', mentionsReview).missingFromTs,
     })
   })
 
