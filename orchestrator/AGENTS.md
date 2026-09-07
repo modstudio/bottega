@@ -873,16 +873,30 @@ The invariants are:
   `DATABASE_RESOLUTION.linkedWorktreeBinary` regardless of how the path was
   chosen. `orch migrate` (main-checkout binary only) applies the ordered,
   checksummed SQL files in Drizzle's journal and prints each applied version;
-  opening a behind or ahead store refuses before application queries run.
+  opening a behind store refuses before application queries run. The migrator
+  stamps `PRAGMA user_version` with the applied journal length after each entry
+  and on every migrate even when nothing is pending; `user_version` 0 is
+  unstamped, not behind. `db()` reads it at open and at the start of every write
+  transaction: a process whose journal is shorter than the store refuses the
+  write (both anchored lines). `orch mcp` and `hub serve` re-read it on each
+  request and re-prepare (and re-advertise tools) instead of refusing. Migrations
+  run under one `BEGIN IMMEDIATE` lock on a schema-lock row so two binaries
+  cannot apply at once. Each SQL file may declare a `-- BACKFILL` /
+  `-- /BACKFILL` block that migrate re-executes idempotently; hashing uses the
+  DDL only so a backfill can evolve. `spec_sha` is backfilled in TypeScript on
+  every migrate. The ahead ceiling keys on idx (applied count vs journal
+  length), not the last entry's `when`; a when-unordered journal is still
+  refused at load. `orch land` runs `orch migrate` and `hub migrate` when the
+  landed diff carries a journal path.
   `schema.ts` is the typed declaration, but Drizzle Kit's generator is not
   authoritative for this SQLite store: it cannot preserve table UNIQUE
   constraints or COALESCE expression indexes, so migrations are hand-written
   SQL whose baseline is trunk's canonical DDL verbatim. Tests bootstrap scratch
   stores through `db.ts:applySchemaForFixture` / `bootstrapFixtureStore`, which
   call the journal runner, never the production authority path. The runner reads
-  Drizzle's checksummed journal shape but applies each hand-written SQL file in
-  its own `BEGIN IMMEDIATE` transaction; it does not reach into Drizzle's private
-  migrator session or dialect.
+  Drizzle's checksummed journal shape but applies each hand-written SQL file
+  under that one lock; it does not reach into Drizzle's private migrator session
+  or dialect. Expand-first for any column a running process still reads.
   `db.ts:adoptRunMutation` governs chain ownership, not schema authority.
 - **A linked-worktree binary reads the main store and never writes it, whatever
   names the path.** `ORCH_DB` locates a store; it never authorises a write. The

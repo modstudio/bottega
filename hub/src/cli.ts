@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { DB_PATH, db, migrateDatabase, nextImportedTaskKey, nowIso, requireDatabase } from './db.ts'
-import { canonicalSchemaHash, expectedSchemaHash } from './migrations.ts'
+import { canonicalSchemaHash, expectedSchemaHash, schemaVersionLabel } from './migrations.ts'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { ingestRuns } from './ingest/runs.ts'
 import { ingestTranscripts } from './ingest/transcripts.ts'
@@ -123,7 +123,7 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and the 
                               Safe beside a running dashboard: a lease in the
                               database means only one process collects.
   hub migrate                 apply pending checksummed schema migrations
-  hub doctor                  report the live structural schema hash
+  hub doctor                  report the live structural schema hash and user_version
   hub tasks [--hours N]       what has been worked on, newest window first
   hub serve [--port 7778]     the dashboard
   hub reconcile [--dry-run]   close open intervals whose orch runs are terminal
@@ -634,6 +634,7 @@ switch (cmd) {
   case 'doctor':
     console.log(`database       ${DB_PATH}`)
     console.log(`schema hash    ${canonicalSchemaHash(db()) === expectedSchemaHash() ? 'match' : 'DRIFT'}`)
+    console.log(`schema version ${schemaVersionLabel(db())}`)
     break
   case 'collect':
     if (has('watch')) {

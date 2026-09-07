@@ -7,7 +7,9 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   DATABASE_RESOLUTION, DB_PATH, missingDatabaseMessage, registeredRepositoryMissingDatabase,
 } from './database-location.ts'
-import { applyMigrations, migrationRefusal } from './migrations.ts'
+import {
+  applyMigrations, migrationRefusal, readUserVersion, staleWriteRefusal,
+} from './migrations.ts'
 export { label } from './outcome.ts'
 export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
 
@@ -40,6 +42,8 @@ export type RootAuthority = {
 
 let handle: Database | null = null
 let connectionWritable: boolean | null = null
+let openedUserVersion: number | null = null
+let schemaReload: ((from: number, to: number) => void) | null = null
 
 export const LINKED_WORKTREE_WRITE_REFUSAL =
   'refusing to write run or project rows to the registered main store from a linked worktree\n' +
@@ -119,13 +123,42 @@ export function closeDatabaseForFixture(): void {
   handle?.close()
   handle = null
   connectionWritable = null
+  openedUserVersion = null
+  schemaReload = null
+}
+
+/** Long-lived processes (orch mcp) reload instead of refusing a write after a migrate. */
+export function enableSchemaReload(onReload: (from: number, to: number) => void): void {
+  schemaReload = onReload
+}
+
+export function openedSchemaVersion(): number | null {
+  return openedUserVersion
+}
+
+function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
+  if (handle && d !== handle) return d
+  const actual = readUserVersion(d)
+  const opened = openedUserVersion
+  if (opened === null || actual === opened) return d
+  if (schemaReload) {
+    const from = opened
+    handle?.close()
+    handle = null
+    connectionWritable = null
+    openedUserVersion = null
+    schemaReload(from, actual)
+    return db(forWrite)
+  }
+  if (!forWrite) return d
+  throw new Error(staleWriteRefusal(actual, opened, 'restart this process after orch migrate'))
 }
 
 export function db(writable = false): Database {
   if (writable && linkedWorktreeReadOnly) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
   if (handle) {
     if (writable && registeredStoreWriteProtected) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
-    return handle
+    return refuseOrReloadStaleSchema(handle, writable)
   }
   if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
   const sidecarsExist = existsSync(`${DB_PATH}-wal`) || existsSync(`${DB_PATH}-shm`)
@@ -179,6 +212,7 @@ export function db(writable = false): Database {
     seedProjects(d)
   }
   handle = d
+  openedUserVersion = readUserVersion(d)
   if (connectionWritable) reapStale(d)
   if (writable && registeredStoreWriteProtected) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
   return d
@@ -195,7 +229,8 @@ export function liveRunCount(database: Database = db()): number {
 }
 
 /** Open the only sanctioned multi-statement write transaction. */
-export function writeTransaction<T>(fn: () => T, database: Database = db()): T {
+export function writeTransaction<T>(fn: () => T, database: Database = db(true)): T {
+  refuseOrReloadStaleSchema(database, true)
   return database.transaction(fn).immediate()
 }
 

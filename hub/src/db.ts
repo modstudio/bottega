@@ -2,7 +2,9 @@ import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { mainCheckoutOf } from '../../shared/git.ts'
-import { applyMigrations, migrationRefusal } from './migrations.ts'
+import {
+  applyMigrations, migrationRefusal, readUserVersion, staleWriteRefusal,
+} from './migrations.ts'
 
 export type { Project } from './projects.ts'
 
@@ -11,6 +13,8 @@ const mainCheckout = mainCheckoutOf(checkout)
 export const DB_PATH = process.env.HUB_DB ?? (mainCheckout ? join(mainCheckout, 'hub', 'hub.db') : null)
 
 let handle: Database | null = null
+let openedUserVersion: number | null = null
+let schemaReload: ((from: number, to: number) => void) | null = null
 
 /** Refuse a query when there is no store to query; never manufacture an empty finding. */
 export function requireDatabase(): void {
@@ -20,8 +24,41 @@ export function requireDatabase(): void {
   }
 }
 
+export function closeDatabaseForFixture(): void {
+  handle?.close()
+  handle = null
+  openedUserVersion = null
+  schemaReload = null
+}
+
+/** Long-lived processes (hub serve) reload instead of refusing a write after a migrate. */
+export function enableSchemaReload(onReload: (from: number, to: number) => void): void {
+  schemaReload = onReload
+}
+
+export function openedSchemaVersion(): number | null {
+  return openedUserVersion
+}
+
+function refuseOrReloadStaleSchema(d: Database, forWrite: boolean): Database {
+  if (handle && d !== handle) return d
+  const actual = readUserVersion(d)
+  const opened = openedUserVersion
+  if (opened === null || actual === opened) return d
+  if (schemaReload) {
+    const from = opened
+    handle?.close()
+    handle = null
+    openedUserVersion = null
+    schemaReload(from, actual)
+    return db()
+  }
+  if (!forWrite) return d
+  throw new Error(staleWriteRefusal(actual, opened, 'restart this process after hub migrate'))
+}
+
 export function db(): Database {
-  if (handle) return handle
+  if (handle) return refuseOrReloadStaleSchema(handle, false)
   requireDatabase()
   const d = new Database(DB_PATH!, { readwrite: true, create: false })
   d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
@@ -37,7 +74,14 @@ export function db(): Database {
     PRAGMA journal_size_limit = 1048576;
   `)
   handle = d
+  openedUserVersion = readUserVersion(d)
   return d
+}
+
+/** Open the only sanctioned multi-statement write transaction. */
+export function writeTransaction<T>(fn: () => T, database: Database = db()): T {
+  refuseOrReloadStaleSchema(database, true)
+  return database.transaction(fn).immediate()
 }
 
 export const nowIso = () => new Date().toISOString()

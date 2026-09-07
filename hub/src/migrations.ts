@@ -8,7 +8,11 @@ import { join } from 'node:path'
 // concern; moving those parameters into shared/ would make shared know both.
 export const MIGRATIONS_FOLDER = join(import.meta.dir, '..', 'migrations')
 export const MIGRATIONS_TABLE = 'hub_migrations'
+export const SCHEMA_LOCK_TABLE = 'hub_schema_lock'
 export const SCHEMA_INVARIANT = 'Only hub migrate changes the store schema.'
+export const CONNECTION_SCHEMA_INVARIANT = 'A process writes only the schema version it opened.'
+export const JOURNAL_WHEN_ORDER = 'migration journal when values must be strictly increasing'
+export const BACKFILL_UNCLOSED = 'migration backfill blocks must be closed by -- /BACKFILL'
 
 export type JournalEntry = { idx: number; when: number; tag: string }
 type ColumnShape = {
@@ -54,15 +58,72 @@ type SchemaInventory = {
 export function migrationJournal(folder = MIGRATIONS_FOLDER): JournalEntry[] {
   const journal = JSON.parse(readFileSync(join(folder, 'meta', '_journal.json'), 'utf8')) as
     { entries: JournalEntry[] }
-  return journal.entries
+  const entries = journal.entries
+  for (let i = 1; i < entries.length; i++) {
+    const previous = entries[i - 1]!
+    const current = entries[i]!
+    if (current.when <= previous.when) {
+      throw new Error(
+        `refusing to load a migration journal whose when values are not strictly increasing\n` +
+        `invariant: ${JOURNAL_WHEN_ORDER}\n` +
+        `${previous.tag}@${previous.when} then ${current.tag}@${current.when}`,
+      )
+    }
+  }
+  return entries
 }
 
 function migrationSource(entry: JournalEntry, folder = MIGRATIONS_FOLDER): string {
   return readFileSync(join(folder, `${entry.tag}.sql`), 'utf8')
 }
 
+/** DDL for hashing and one-time apply; backfill blocks are excluded so they can evolve. */
+export function splitMigrationSource(source: string): { ddl: string; backfill: string } {
+  const opens = source.match(/^[ \t]*--[ \t]*BACKFILL[ \t]*$/gm) ?? []
+  const closes = source.match(/^[ \t]*--[ \t]*\/BACKFILL[ \t]*$/gm) ?? []
+  if (opens.length !== closes.length) {
+    throw new Error(
+      `refusing to load a migration whose backfill block is not closed\n` +
+      `invariant: ${BACKFILL_UNCLOSED}`,
+    )
+  }
+  const blocks: string[] = []
+  const ddl = source.replace(
+    /^[ \t]*--[ \t]*BACKFILL[ \t]*\r?\n([\s\S]*?)^[ \t]*--[ \t]*\/BACKFILL[ \t]*\r?\n?/gm,
+    (_match, body: string) => {
+      blocks.push(body)
+      return ''
+    },
+  )
+  return { ddl, backfill: blocks.join('\n') }
+}
+
 function migrationHash(entry: JournalEntry, folder = MIGRATIONS_FOLDER): string {
-  return createHash('sha256').update(migrationSource(entry, folder)).digest('hex')
+  return createHash('sha256').update(splitMigrationSource(migrationSource(entry, folder)).ddl).digest('hex')
+}
+
+export function readUserVersion(d: Database): number {
+  return (d.query('PRAGMA user_version').get() as { user_version: number }).user_version
+}
+
+export function stampUserVersion(d: Database, version: number): void {
+  if (!Number.isInteger(version) || version < 0) throw new Error(`invalid user_version ${version}`)
+  d.exec(`PRAGMA user_version = ${version}`)
+}
+
+export function journalLength(folder = MIGRATIONS_FOLDER): number {
+  return migrationJournal(folder).length
+}
+
+export function schemaVersionLabel(d: Database): string {
+  const version = readUserVersion(d)
+  if (version === 0) return 'unstamped'
+  return String(version)
+}
+
+export function staleWriteRefusal(actual: number, opened: number, clearedBy: string): string {
+  return `refusing to write: the store schema is newer than this process (user_version ${actual}, opened ${opened})\n` +
+    `invariant: ${CONNECTION_SCHEMA_INVARIANT}\ncleared by: ${clearedBy}`
 }
 
 function tableExists(d: Database, table: string): boolean {
@@ -79,13 +140,12 @@ export function migrationState(
     `SELECT hash, created_at, version FROM ${MIGRATIONS_TABLE} ORDER BY created_at`,
   ).all() as { hash: string; created_at: number; version: string | null }[]
   const expected = new Map(journal.map((entry) => [entry.when, migrationHash(entry, folder)]))
-  const latestJournal = journal.at(-1)
   const ahead = applied.find((row) => expected.get(Number(row.created_at)) !== row.hash)
   return {
     pending: journal.filter((entry) => !applied.some((row) =>
       Number(row.created_at) === entry.when && row.hash === expected.get(entry.when))),
     ahead: ahead ? ahead.version ?? String(ahead.created_at) :
-      applied.some((row) => Number(row.created_at) > (latestJournal?.when ?? -1))
+      applied.length > journal.length
         ? applied.at(-1)?.version ?? String(applied.at(-1)?.created_at) : null,
   }
 }
@@ -164,9 +224,9 @@ function quoteIdentifier(value: string): string {
 function schemaInventory(d: Database): SchemaInventory {
   const tableRows = d.query(
     `SELECT name, sql FROM sqlite_master
-     WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name<>?
+     WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN (?, ?)
      ORDER BY name`,
-  ).all(MIGRATIONS_TABLE) as { name: string; sql: string }[]
+  ).all(MIGRATIONS_TABLE, SCHEMA_LOCK_TABLE) as { name: string; sql: string }[]
   const tables = tableRows.map((row) => row.name).sort()
   const columns: ColumnShape[] = []
   const foreignKeys: ForeignKeyShape[] = []
@@ -249,9 +309,21 @@ export function canonicalSchemaHash(d: Database): string {
   return createHash('sha256').update(inventoryLines(schemaInventory(d)).join('\n')).digest('hex')
 }
 
-function executeMigrationSource(d: Database, source: string): void {
+function executeStatements(d: Database, source: string): void {
   for (const statement of source.split('--> statement-breakpoint')) {
-    if (statement.trim()) d.exec(statement)
+    const executable = statement.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\n]*/g, '').trim()
+    if (executable) d.exec(statement)
+  }
+}
+
+function executeMigrationSource(d: Database, source: string): void {
+  executeStatements(d, splitMigrationSource(source).ddl)
+}
+
+function applyBackfills(d: Database, folder: string): void {
+  for (const entry of migrationJournal(folder)) {
+    const backfill = splitMigrationSource(migrationSource(entry, folder)).backfill
+    if (backfill.trim()) executeStatements(d, backfill)
   }
 }
 
@@ -352,6 +424,13 @@ function createMigrationsTable(d: Database): void {
   )`)
 }
 
+function ensureSchemaLock(d: Database): void {
+  d.exec(`CREATE TABLE IF NOT EXISTS ${SCHEMA_LOCK_TABLE} (
+    id INTEGER PRIMARY KEY CHECK (id = 1)
+  )`)
+  d.exec(`INSERT OR IGNORE INTO ${SCHEMA_LOCK_TABLE} (id) VALUES (1)`)
+}
+
 function recordMigration(d: Database, entry: JournalEntry, folder: string): void {
   d.query(`INSERT INTO ${MIGRATIONS_TABLE} (hash,created_at,version) VALUES (?,?,?)`)
     .run(migrationHash(entry, folder), entry.when, entry.tag)
@@ -360,8 +439,8 @@ function recordMigration(d: Database, entry: JournalEntry, folder: string): void
 function adoptBaseline(d: Database, folder: string): string[] {
   if (tableExists(d, MIGRATIONS_TABLE)) return []
   const applicationObjects = (d.query(
-    "SELECT COUNT(*) AS n FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND name<>?",
-  ).get(MIGRATIONS_TABLE) as { n: number }).n
+    "SELECT COUNT(*) AS n FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND name NOT IN (?, ?)",
+  ).get(MIGRATIONS_TABLE, SCHEMA_LOCK_TABLE) as { n: number }).n
   if (applicationObjects === 0) return []
   const actualInventory = schemaInventory(d)
   const expectedInventory = baselineInventory(folder)
@@ -376,37 +455,37 @@ function adoptBaseline(d: Database, folder: string): string[] {
     )
   }
   const entry = migrationJournal(folder)[0]!
-  d.exec('BEGIN IMMEDIATE')
-  try {
-    createMigrationsTable(d)
-    recordMigration(d, entry, folder)
-    d.exec('COMMIT')
-  } catch (error) {
-    d.exec('ROLLBACK')
-    throw error
-  }
+  createMigrationsTable(d)
+  recordMigration(d, entry, folder)
+  stampUserVersion(d, entry.idx + 1)
   return [entry.tag]
 }
 
-/** Apply each pending checksummed journal entry in its own IMMEDIATE transaction. */
+/** Apply pending journal entries and re-run backfills under one IMMEDIATE lock. */
 export function applyMigrations(d: Database, folder = MIGRATIONS_FOLDER): string[] {
-  const versions = adoptBaseline(d, folder)
-  const state = migrationState(d, folder)
-  if (state.ahead) {
-    throw new Error(`refusing to migrate a store ahead of this binary's migration journal: ${state.ahead}`)
-  }
-  for (const entry of state.pending) {
-    d.exec('BEGIN IMMEDIATE')
-    try {
+  d.exec('PRAGMA busy_timeout = 15000')
+  d.exec('BEGIN IMMEDIATE')
+  try {
+    ensureSchemaLock(d)
+    d.exec(`UPDATE ${SCHEMA_LOCK_TABLE} SET id = 1 WHERE id = 1`)
+    const versions = adoptBaseline(d, folder)
+    const state = migrationState(d, folder)
+    if (state.ahead) {
+      throw new Error(`refusing to migrate a store ahead of this binary's migration journal: ${state.ahead}`)
+    }
+    for (const entry of state.pending) {
       createMigrationsTable(d)
       executeMigrationSource(d, migrationSource(entry, folder))
       recordMigration(d, entry, folder)
-      d.exec('COMMIT')
+      stampUserVersion(d, entry.idx + 1)
       versions.push(entry.tag)
-    } catch (error) {
-      d.exec('ROLLBACK')
-      throw error
     }
+    applyBackfills(d, folder)
+    stampUserVersion(d, migrationJournal(folder).length)
+    d.exec('COMMIT')
+    return versions
+  } catch (error) {
+    try { d.exec('ROLLBACK') } catch { /* statement error already aborted the transaction */ }
+    throw error
   }
-  return versions
 }

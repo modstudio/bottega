@@ -15,9 +15,12 @@ import { getTableConfig, type SQLiteTable } from 'drizzle-orm/sqlite-core'
 import * as declared from './schema.ts'
 import {
   applyMigrations, BASELINE_SCHEMA_HASH, baselineSchemaHash, canonicalSchemaHash,
-  expectedSchemaHash, JOURNAL_WHEN_ORDER,
-  MIGRATIONS_FOLDER, migrationJournal, migrationRefusal,
+  CONNECTION_SCHEMA_INVARIANT, expectedSchemaHash, JOURNAL_WHEN_ORDER, journalLength,
+  MIGRATIONS_FOLDER, migrationJournal, migrationRefusal, readUserVersion,
+  SCHEMA_LOCK_TABLE, schemaVersionLabel, splitMigrationSource,
 } from './migrations.ts'
+import { db, enableSchemaReload, writeTransaction } from './db.ts'
+import { diffCarriesMigrationJournal } from './landing.ts'
 
 const fresh = () => {
   const d = new Database(':memory:')
@@ -65,7 +68,7 @@ describe('Drizzle migration journal', () => {
     const legacyStore = legacy()
     expect(canonicalSchemaHash(legacyStore)).toBe(BASELINE_SCHEMA_HASH)
     expect(applyMigrations(legacyStore)).toEqual([
-      '0000_bright_sleepwalker', '0001_landing_queue', '0002_spec_sha', '0003_keep_tree', '0004_lens_catalogue', '0005_agent_registry',
+      '0000_bright_sleepwalker', '0001_landing_queue', '0002_spec_sha', '0003_keep_tree', '0004_lens_catalogue', '0005_agent_registry', '0006_project_id_backfill',
     ])
     legacyStore.close()
     rmSync(dir, { recursive: true, force: true })
@@ -132,7 +135,7 @@ describe('Drizzle migration journal', () => {
   test('a matching pre-journal store adopts 0000 and continues through later migrations', () => {
     const d = legacy()
     expect(applyMigrations(d)).toEqual([
-      '0000_bright_sleepwalker', '0001_landing_queue', '0002_spec_sha', '0003_keep_tree', '0004_lens_catalogue', '0005_agent_registry',
+      '0000_bright_sleepwalker', '0001_landing_queue', '0002_spec_sha', '0003_keep_tree', '0004_lens_catalogue', '0005_agent_registry', '0006_project_id_backfill',
     ])
     expect(d.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='landing'").get())
       .toBeDefined()
@@ -153,7 +156,7 @@ describe('Drizzle migration journal', () => {
     }))
     const d = new Database(':memory:')
     expect(applyMigrations(d, dir)).toEqual(['0000_bright_sleepwalker', '0001_landing_queue'])
-    expect(applyMigrations(d)).toEqual(['0002_spec_sha', '0003_keep_tree', '0004_lens_catalogue', '0005_agent_registry'])
+    expect(applyMigrations(d)).toEqual(['0002_spec_sha', '0003_keep_tree', '0004_lens_catalogue', '0005_agent_registry', '0006_project_id_backfill'])
     expect(d.query("SELECT name FROM pragma_table_info('run') WHERE name='spec_sha'").get())
       .toEqual({ name: 'spec_sha' })
     d.close()
@@ -412,5 +415,150 @@ describe('Drizzle migration journal', () => {
     expect(() => migrationJournal(dir)).toThrow(`invariant: ${JOURNAL_WHEN_ORDER}`)
     expect(() => migrationJournal(dir)).toThrow('0001_later@300 then 0002_earlier@200')
     rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+describe('schema coexistence', () => {
+  test('the migrator stamps user_version to the journal length even when nothing is pending', () => {
+    const d = fresh()
+    expect(readUserVersion(d)).toBe(journalLength())
+    expect(schemaVersionLabel(d)).toBe(String(journalLength()))
+    expect(applyMigrations(d)).toEqual([])
+    expect(readUserVersion(d)).toBe(journalLength())
+    d.close()
+  })
+
+  test('doctor reports unstamped for user_version 0 rather than behind', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orch-unstamped-'))
+    const path = join(dir, 'store.db')
+    const d = new Database(path)
+    applyMigrations(d)
+    d.exec('PRAGMA user_version = 0')
+    expect(schemaVersionLabel(d)).toBe('unstamped')
+    d.close()
+    const doctor = Bun.spawnSync([process.execPath, join(import.meta.dir, 'cli.ts'), 'doctor'], {
+      env: { ...process.env, ORCH_DB: path, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(doctor.exitCode, doctor.stderr.toString()).toBe(0)
+    expect(doctor.stdout.toString()).toMatch(/^schema version unstamped$/m)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('a connection opened before a migration refuses its next write', () => {
+    db()
+    const other = new Database(process.env.ORCH_DB!)
+    other.exec(`PRAGMA user_version = ${journalLength() + 1}`)
+    other.close()
+    expect(() => writeTransaction(() => {
+      db().query('UPDATE project SET name = name WHERE 0').run()
+    })).toThrow(`invariant: ${CONNECTION_SCHEMA_INVARIANT}`)
+    try {
+      writeTransaction(() => { db().query('UPDATE project SET name = name WHERE 0').run() })
+    } catch (error) {
+      expect(String(error)).toContain('cleared by: restart this process after orch migrate')
+    }
+  })
+
+  test('a pre-migration row is repaired by the next migrate', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orch-backfill-repair-'))
+    mkdirSync(join(dir, 'meta'))
+    const through0005 = migrationJournal().slice(0, 6)
+    for (const entry of through0005) {
+      copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(dir, `${entry.tag}.sql`))
+    }
+    writeFileSync(join(dir, 'meta', '_journal.json'), JSON.stringify({
+      version: '7', dialect: 'sqlite', entries: through0005,
+    }))
+    const d = new Database(':memory:')
+    d.exec('PRAGMA foreign_keys=ON')
+    applyMigrations(d, dir)
+    d.query(`INSERT INTO project (name, path, canon, settings) VALUES ('widget', '/tmp/widget', 1, '{}')`).run()
+    d.query(
+      `INSERT INTO run (started_at, agent, job, repo, prompt_sha, prompt_bytes, prompt_head, status)
+       VALUES ('t', 'a', 'implement', 'widget', 'sha', 1, 'h', 'ok')`,
+    ).run()
+    expect(d.query('SELECT project_id FROM run').get()).toEqual({ project_id: null })
+    expect(applyMigrations(d)).toEqual(['0006_project_id_backfill'])
+    const row = d.query(
+      'SELECT project_id, (SELECT id FROM project WHERE name=?) expected FROM run',
+    ).get('widget') as { project_id: number; expected: number }
+    expect(row.project_id).toBe(row.expected)
+    d.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('two concurrent migrates serialise on the schema lock', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orch-concurrent-migrate-'))
+    const path = join(dir, 'store.db')
+    const run = () => {
+      const d = new Database(path)
+      const versions = applyMigrations(d)
+      d.close()
+      return versions
+    }
+    const [first, second] = await Promise.all([Promise.resolve().then(run), Promise.resolve().then(run)])
+    expect([...first, ...second].sort()).toEqual(migrationJournal().map((entry) => entry.tag).sort())
+    const seen = new Database(path)
+    expect(seen.query(
+      `SELECT version FROM ${'orch_migrations'} GROUP BY version HAVING COUNT(*) > 1`,
+    ).all()).toEqual([])
+    expect(readUserVersion(seen)).toBe(journalLength())
+    expect(seen.query(`SELECT 1 FROM sqlite_master WHERE name=?`).get(SCHEMA_LOCK_TABLE)).toBeDefined()
+    seen.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('the ahead ceiling keys on applied count, not the last entry when', () => {
+    const d = fresh()
+    const existing = d.query(
+      'SELECT hash, created_at, version FROM orch_migrations LIMIT 1',
+    ).get() as { hash: string; created_at: number; version: string }
+    d.query('INSERT INTO orch_migrations (hash, created_at, version) VALUES (?, ?, ?)').run(
+      existing.hash, existing.created_at, existing.version,
+    )
+    expect(migrationRefusal(d)).toContain('refusing to open a store ahead')
+    d.close()
+  })
+
+  test('backfill blocks are stripped from the hashed DDL and re-run every migrate', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orch-backfill-block-'))
+    mkdirSync(join(dir, 'meta'))
+    writeFileSync(join(dir, '0000_base.sql'), 'CREATE TABLE item (id INTEGER PRIMARY KEY, n INTEGER);\n')
+    writeFileSync(join(dir, '0001_fill.sql'),
+      '-- note\n-- BACKFILL\nINSERT INTO item (n) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM item WHERE n=1);\n-- /BACKFILL\n')
+    writeFileSync(join(dir, 'meta', '_journal.json'), JSON.stringify({
+      version: '7', dialect: 'sqlite', entries: [
+        { idx: 0, version: '6', when: 1, tag: '0000_base', breakpoints: true },
+        { idx: 1, version: '6', when: 2, tag: '0001_fill', breakpoints: true },
+      ],
+    }))
+    expect(splitMigrationSource(readFileSync(join(dir, '0001_fill.sql'), 'utf8')).ddl).toBe('-- note\n')
+    const d = new Database(':memory:')
+    expect(applyMigrations(d, dir)).toEqual(['0000_base', '0001_fill'])
+    expect(d.query('SELECT COUNT(*) n FROM item').get()).toEqual({ n: 1 })
+    d.exec('DELETE FROM item')
+    expect(applyMigrations(d, dir)).toEqual([])
+    expect(d.query('SELECT COUNT(*) n FROM item').get()).toEqual({ n: 1 })
+    expect(readUserVersion(d)).toBe(2)
+    d.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('diffCarriesMigrationJournal is true only for concern journal paths', () => {
+    expect(diffCarriesMigrationJournal(['orchestrator/src/db.ts'])).toBe(false)
+    expect(diffCarriesMigrationJournal(['orchestrator/migrations/0006_project_id_backfill.sql'])).toBe(true)
+    expect(diffCarriesMigrationJournal(['hub/migrations/meta/_journal.json'])).toBe(true)
+  })
+
+  test('reload mode re-prepares instead of refusing a write after user_version changes', () => {
+    const seen: Array<[number | null, number]> = []
+    db()
+    enableSchemaReload((from, to) => { seen.push([from, to]) })
+    const other = new Database(process.env.ORCH_DB!)
+    const next = journalLength() + 1
+    other.exec(`PRAGMA user_version = ${next}`)
+    other.close()
+    writeTransaction(() => { db().query('UPDATE project SET name = name WHERE 0').run() })
+    expect(seen).toEqual([[journalLength(), next]])
   })
 })

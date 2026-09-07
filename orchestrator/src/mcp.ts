@@ -3,7 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { resolve } from 'node:path'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { db, sessionId } from './db.ts'
+import { db, enableSchemaReload, sessionId } from './db.ts'
 import {
   consumeDoc, docsMarkdown, getDoc, getDocRevision, listDocMetadata, listDocRevisions, listDocs, setDoc,
 } from './docs.ts'
@@ -244,6 +244,18 @@ export async function fileIssue(
 
 export function createDocsMcpServer(): McpServer {
   const server = new McpServer({ name: 'orch', version: '0.1.0' })
+  enableSchemaReload((from, to) => {
+    console.error(`schema changed: re-preparing statements and re-advertising tools (user_version ${from} -> ${to})`)
+    server.sendToolListChanged()
+  })
+  const registerTool = server.registerTool.bind(server) as (
+    name: string, config: object, handler: (...args: never[]) => Promise<unknown>,
+  ) => unknown
+  server.registerTool = ((name: string, config: object, handler: (...args: never[]) => Promise<unknown>) =>
+    registerTool(name, config, async (...args: never[]) => {
+      db()
+      return handler(...args)
+    })) as typeof server.registerTool
 
   server.registerTool('list_workflows', {
     description: 'List workflow identities and their production and draft versions.',

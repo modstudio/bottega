@@ -43,6 +43,13 @@
       "when": 1788832800000,
       "tag": "0005_agent_registry",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1788900000000,
+      "tag": "0006_project_id_backfill",
+      "breakpoints": true
     }
   ]
 }

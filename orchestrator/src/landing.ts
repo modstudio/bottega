@@ -1,8 +1,8 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import { dirname, isAbsolute, join, relative } from 'node:path'
-import { db, liveRunCount, nowIso, sessionId, writableDb, ROOT } from './db.ts'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { db, liveRunCount, migrateDatabase, nowIso, sessionId, writableDb, ROOT } from './db.ts'
 import { projectAt, projectByName, type Project } from './projects.ts'
 import { classifyReviewTier, diffNumstat } from './review-tier.ts'
 import {
@@ -1237,6 +1237,36 @@ function performLand(
   }, timeoutMs)
 }
 
+export function diffCarriesMigrationJournal(paths: string[]): boolean {
+  return paths.some((path) =>
+    path === 'orchestrator/migrations' || path.startsWith('orchestrator/migrations/') ||
+    path === 'hub/migrations' || path.startsWith('hub/migrations/'))
+}
+
+function migrateLandedJournals(project: Project, trunkBefore: string, tip: string): void {
+  const paths = git(project.path, ['diff', '--name-only', `${trunkBefore}..${tip}`])
+    .split('\n').filter(Boolean)
+  if (!diffCarriesMigrationJournal(paths)) return
+  const migrated = migrateDatabase()
+  if (migrated.versions.length === 0) console.log(`schema already current: ${migrated.path}`)
+  else {
+    console.log(`migrated ${migrated.path}`)
+    for (const version of migrated.versions) console.log(`  applied ${version}`)
+  }
+  const hubBin = resolve(new URL('../../bin/hub', import.meta.url).pathname)
+  const hub = Bun.spawnSync([hubBin, 'migrate'], {
+    cwd: project.path, env: process.env, stdout: 'pipe', stderr: 'pipe',
+  })
+  const hubOut = hub.stdout.toString().trim()
+  const hubErr = hub.stderr.toString().trim()
+  if (hub.exitCode !== 0) {
+    throw new Error(
+      `landing reached trunk at ${tip}, but hub migrate failed: ${hubErr || hubOut || `exit ${hub.exitCode}`}`,
+    )
+  }
+  if (hubOut) console.log(hubOut)
+}
+
 function installLandedPackages(project: Project, trunkBefore: string, tip: string): void {
   const packagePaths = git(project.path, ['diff', '--name-only', `${trunkBefore}..${tip}`])
     .split('\n').filter((path) => path === 'package.json' || path.endsWith('/package.json'))
@@ -1276,6 +1306,13 @@ export function land(
       installLandedPackages(result.project, result.trunkBefore, result.tip)
     } catch (error) {
       db().query(`UPDATE landing SET status='install_failed',error=?,finished_at=? WHERE id=?`)
+        .run(error instanceof Error ? error.message : String(error), nowIso(), landing.id)
+      throw error
+    }
+    try {
+      migrateLandedJournals(result.project, result.trunkBefore, result.tip)
+    } catch (error) {
+      db().query(`UPDATE landing SET error=?,finished_at=? WHERE id=?`)
         .run(error instanceof Error ? error.message : String(error), nowIso(), landing.id)
       throw error
     }

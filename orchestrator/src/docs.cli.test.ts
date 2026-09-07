@@ -1,3 +1,4 @@
+import { Database } from 'bun:sqlite'
 import { describe, expect, spyOn, test } from 'bun:test'
 import { mkdtempSync, rmSync, readFileSync, realpathSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -517,6 +518,25 @@ describe('scoped operator docs', () => {
         accepted: 0, modified: 0, rejected: 0, skipped: 0 } })])
       expect(shown).toMatchObject({ id: reviewId, lenses: [{ run_id: runId, lens: 'mcp-review' }],
         findings: [{ evidence: 'evidence 1' }] })
+    } finally { await client.close(); await server.close() }
+  })
+
+  test('MCP re-advertises tools after a migration stamps a new user_version', async () => {
+    const server = createDocsMcpServer()
+    const advertised: string[] = []
+    spyOn(server, 'sendToolListChanged').mockImplementation(() => { advertised.push('changed') })
+    const client = new Client({ name: 'orch-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport); await client.connect(clientTransport)
+    try {
+      await client.callTool({ name: 'list_projects', arguments: {} })
+      expect(advertised).toEqual([])
+      const other = new Database(process.env.ORCH_DB!)
+      const current = (other.query('PRAGMA user_version').get() as { user_version: number }).user_version
+      other.exec(`PRAGMA user_version = ${current + 1}`)
+      other.close()
+      await client.callTool({ name: 'list_projects', arguments: {} })
+      expect(advertised).toEqual(['changed'])
     } finally { await client.close(); await server.close() }
   })
 

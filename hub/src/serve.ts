@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
-import { db, nowIso } from './db.ts'
+import { db, enableSchemaReload, nowIso } from './db.ts'
 import { resolveAppStatic } from './app-static.ts'
 import { createContext } from './trpc/context.ts'
 import { appRouter } from './trpc/router.ts'
@@ -618,6 +618,9 @@ export function serve(port: number) {
   // The lease means this is safe beside the launchd daemon: whichever holds it
   // collects, the other waits, and neither has to know the other exists.
   if (port !== 0) watch(`serve:${process.pid}`)
+  enableSchemaReload((from, to) => {
+    console.log(`schema changed: reloading query layer (user_version ${from} -> ${to})`)
+  })
 
   const server = Bun.serve({
     // A test send blocks on the summariser for a minute or so; Bun's default
@@ -630,6 +633,7 @@ export function serve(port: number) {
     // unauthenticated POST that runs a collect.
     hostname: '127.0.0.1',
     async fetch(req) {
+      db()
       const url = new URL(req.url)
 
       if (url.pathname.startsWith('/trpc')) {

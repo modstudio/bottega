@@ -234,6 +234,18 @@ and an ordinary open refuses a store whose journal is behind or ahead of the
 binary. This keeps a dashboard process from changing live state merely because
 some newer or older checkout happened to answer a request.
 
+The migrator stamps `PRAGMA user_version` with the applied journal length after
+each entry and on every migrate even when nothing is pending; `user_version` 0
+is unstamped, not behind. `db()` reads it at open and at the start of every
+write transaction: a process whose journal is shorter than the store refuses
+the write (both anchored lines). `hub serve` re-reads it on each request and
+reloads its query layer instead of refusing. Migrations run under one
+`BEGIN IMMEDIATE` lock on a schema-lock row. Each SQL file may declare a
+`-- BACKFILL` / `-- /BACKFILL` block that migrate re-executes idempotently;
+hashing uses the DDL only. The ahead ceiling keys on idx, not the last entry's
+`when`; a when-unordered journal is still refused at load. Expand-first for any
+column a running process still reads.
+
 The baseline is trunk's SQLite DDL verbatim, and later migrations are
 hand-written SQL. A generator is not authoritative for this SQLite store: it
 cannot be trusted to preserve every table constraint and partial index. The

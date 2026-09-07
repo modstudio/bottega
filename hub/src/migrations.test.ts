@@ -6,8 +6,11 @@ import { join } from 'node:path'
 import { mainCheckoutOf } from '../../shared/git.ts'
 import {
   applyMigrations, BASELINE_SCHEMA_HASH, baselineSchemaHash, canonicalSchemaHash,
-  expectedSchemaHash, migrationJournal, migrationRefusal, MIGRATIONS_FOLDER,
+  CONNECTION_SCHEMA_INVARIANT, expectedSchemaHash, JOURNAL_WHEN_ORDER, journalLength,
+  MIGRATIONS_FOLDER, migrationJournal, migrationRefusal, readUserVersion,
+  schemaVersionLabel, splitMigrationSource,
 } from './migrations.ts'
+import { closeDatabaseForFixture, db, enableSchemaReload, writeTransaction } from './db.ts'
 
 const fresh = () => {
   const d = new Database(':memory:')
@@ -93,7 +96,7 @@ describe('hub migration journal', () => {
     ).all()
     expect(applyMigrations(d)).toEqual(['0000_hub_baseline', '0001_note'])
     const after = d.query(
-      "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name NOT IN ('hub_migrations','note','note_project_seen') ORDER BY type,name",
+      "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name NOT IN ('hub_migrations','hub_schema_lock','note','note_project_seen') ORDER BY type,name",
     ).all()
     expect(after).toEqual(before)
     d.close()
@@ -301,5 +304,129 @@ describe('hub migration journal', () => {
       expect(message).toContain(`unexpected foreign-keys: ${unexpected}`)
     }
     d.close()
+  })
+
+  test('a journal whose entries are idx-ordered but when-unordered is refused at load', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hub-when-unordered-'))
+    mkdirSync(join(dir, 'meta'))
+    writeFileSync(join(dir, 'meta', '_journal.json'), JSON.stringify({
+      version: '7', dialect: 'sqlite', entries: [
+        { idx: 0, version: '6', when: 100, tag: '0000_first', breakpoints: true },
+        { idx: 1, version: '6', when: 300, tag: '0001_later', breakpoints: true },
+        { idx: 2, version: '6', when: 200, tag: '0002_earlier', breakpoints: true },
+      ],
+    }))
+    expect(() => migrationJournal(dir)).toThrow(`invariant: ${JOURNAL_WHEN_ORDER}`)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('the migrator stamps user_version to the journal length even when nothing is pending', () => {
+    const d = fresh()
+    expect(readUserVersion(d)).toBe(journalLength())
+    expect(schemaVersionLabel(d)).toBe(String(journalLength()))
+    expect(applyMigrations(d)).toEqual([])
+    expect(readUserVersion(d)).toBe(journalLength())
+    d.close()
+  })
+
+  test('doctor reports unstamped for user_version 0 rather than behind', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hub-unstamped-'))
+    const path = join(dir, 'store.db')
+    const d = new Database(path)
+    applyMigrations(d)
+    d.exec('PRAGMA user_version = 0')
+    expect(schemaVersionLabel(d)).toBe('unstamped')
+    d.close()
+    const doctor = hub(path, 'doctor')
+    expect(doctor.exitCode, doctor.stderr.toString()).toBe(0)
+    expect(doctor.stdout.toString()).toMatch(/^schema version unstamped$/m)
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('a connection opened before a migration refuses its next write', () => {
+    closeDatabaseForFixture()
+    db()
+    const other = new Database(process.env.HUB_DB!)
+    other.exec(`PRAGMA user_version = ${journalLength() + 1}`)
+    other.close()
+    expect(() => writeTransaction(() => {
+      db().query('UPDATE setting SET value = value WHERE 0').run()
+    })).toThrow(`invariant: ${CONNECTION_SCHEMA_INVARIANT}`)
+    closeDatabaseForFixture()
+    const reset = new Database(process.env.HUB_DB!)
+    applyMigrations(reset)
+    reset.close()
+  })
+
+  test('two concurrent migrates serialise on the schema lock', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hub-concurrent-migrate-'))
+    const path = join(dir, 'store.db')
+    const run = () => {
+      const d = new Database(path)
+      const versions = applyMigrations(d)
+      d.close()
+      return versions
+    }
+    const [first, second] = await Promise.all([Promise.resolve().then(run), Promise.resolve().then(run)])
+    expect([...first, ...second].sort()).toEqual(migrationJournal().map((entry) => entry.tag).sort())
+    const seen = new Database(path)
+    expect(seen.query(
+      'SELECT version FROM hub_migrations GROUP BY version HAVING COUNT(*) > 1',
+    ).all()).toEqual([])
+    expect(readUserVersion(seen)).toBe(journalLength())
+    seen.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('the ahead ceiling keys on applied count, not the last entry when', () => {
+    const d = fresh()
+    const existing = d.query(
+      'SELECT hash, created_at, version FROM hub_migrations LIMIT 1',
+    ).get() as { hash: string; created_at: number; version: string }
+    d.query('INSERT INTO hub_migrations (hash, created_at, version) VALUES (?, ?, ?)').run(
+      existing.hash, existing.created_at, existing.version,
+    )
+    expect(migrationRefusal(d)).toContain('refusing to open a store ahead')
+    d.close()
+  })
+
+  test('backfill blocks are stripped from the hashed DDL and re-run every migrate', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hub-backfill-block-'))
+    mkdirSync(join(dir, 'meta'))
+    writeFileSync(join(dir, '0000_base.sql'), 'CREATE TABLE item (id INTEGER PRIMARY KEY, n INTEGER);\n')
+    writeFileSync(join(dir, '0001_fill.sql'),
+      '-- note\n-- BACKFILL\nINSERT INTO item (n) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM item WHERE n=1);\n-- /BACKFILL\n')
+    writeFileSync(join(dir, 'meta', '_journal.json'), JSON.stringify({
+      version: '7', dialect: 'sqlite', entries: [
+        { idx: 0, version: '6', when: 1, tag: '0000_base', breakpoints: true },
+        { idx: 1, version: '6', when: 2, tag: '0001_fill', breakpoints: true },
+      ],
+    }))
+    expect(splitMigrationSource(readFileSync(join(dir, '0001_fill.sql'), 'utf8')).ddl).toBe('-- note\n')
+    const d = new Database(':memory:')
+    expect(applyMigrations(d, dir)).toEqual(['0000_base', '0001_fill'])
+    expect(d.query('SELECT COUNT(*) n FROM item').get()).toEqual({ n: 1 })
+    d.exec('DELETE FROM item')
+    expect(applyMigrations(d, dir)).toEqual([])
+    expect(d.query('SELECT COUNT(*) n FROM item').get()).toEqual({ n: 1 })
+    d.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('reload mode reloads the query layer after user_version changes', () => {
+    closeDatabaseForFixture()
+    const seen: number[] = []
+    db()
+    enableSchemaReload((_from, to) => { seen.push(to) })
+    const other = new Database(process.env.HUB_DB!)
+    const next = journalLength() + 1
+    other.exec(`PRAGMA user_version = ${next}`)
+    other.close()
+    db()
+    expect(seen).toEqual([next])
+    closeDatabaseForFixture()
+    const reset = new Database(process.env.HUB_DB!)
+    applyMigrations(reset)
+    reset.close()
   })
 })

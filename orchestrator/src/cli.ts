@@ -1574,7 +1574,7 @@ function usage(): never {
       remove <name>
   orch init-db                  create the database for a fresh main checkout
   orch migrate [--backfill-spec-sha]
-                                apply schema; optionally hash surviving root prompt files
+                                apply schema, stamp user_version, re-run backfills including spec_sha
   orch doc list [--scope S] [--subject X] [--json]  (--json: one JSON document)
       show <slug> --scope S [--subject X] [--json]  (--json: one JSON document)
       set <slug> --scope S [--subject X] --title T --reason TEXT [--author NAME] [--delivery inject|demand] (--file F | body on stdin) [--json]  (--json: one JSON document)
@@ -1863,10 +1863,8 @@ switch (cmd) {
       console.log(`migrated ${migrated.path}`)
       for (const version of migrated.versions) console.log(`  applied ${version}`)
     }
-    if (has('backfill-spec-sha')) {
-      const backfilled = backfillSpecSha()
-      console.log(`spec_sha backfill: ${backfilled.updated} updated, ${backfilled.missing} prompt files missing`)
-    }
+    const backfilled = backfillSpecSha()
+    console.log(`spec_sha backfill: ${backfilled.updated} updated, ${backfilled.missing} prompt files missing`)
     break
   }
 
@@ -6551,8 +6549,9 @@ switch (cmd) {
     db()
     console.log(`database       ${DB_PATH}`)
     console.log(`open mode      ${databaseOpenMode()}`)
-    const { expectedSchemaHash, canonicalSchemaHash } = await import('./migrations.ts')
+    const { expectedSchemaHash, canonicalSchemaHash, schemaVersionLabel } = await import('./migrations.ts')
     console.log(`schema hash    ${canonicalSchemaHash(db()) === expectedSchemaHash() ? 'match' : 'DRIFT'}`)
+    console.log(`schema version ${schemaVersionLabel(db())}`)
     console.log(`resolved by    ${DATABASE_RESOLUTION.method}`)
     if (DATABASE_RESOLUTION.registeredPath && DATABASE_RESOLUTION.registeredPath !== DB_PATH) {
       console.log(`registered     ${DATABASE_RESOLUTION.registeredPath}  (resolved path won)`)
