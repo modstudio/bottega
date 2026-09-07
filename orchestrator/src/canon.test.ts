@@ -447,6 +447,41 @@ describe('schema coexistence', () => {
     d.close()
   })
 
+  test('applying 0000 through 0007 stamps user_version 8 and a 0006 store migrates to 0007', () => {
+    const minted = fresh()
+    expect(journalLength()).toBe(8)
+    expect(applyMigrations(minted)).toEqual([])
+    expect(readUserVersion(minted)).toBe(8)
+    expect(minted.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='contention'").get())
+      .toBeDefined()
+    minted.close()
+
+    const dir = mkdtempSync(join(tmpdir(), 'orch-through-0006-'))
+    mkdirSync(join(dir, 'meta'))
+    const through0006 = migrationJournal().slice(0, 7)
+    for (const entry of through0006) {
+      copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(dir, `${entry.tag}.sql`))
+    }
+    writeFileSync(join(dir, 'meta', '_journal.json'), JSON.stringify({
+      version: '7', dialect: 'sqlite', entries: through0006,
+    }))
+    const d = new Database(':memory:')
+    d.exec('PRAGMA foreign_keys=ON')
+    expect(applyMigrations(d, dir)).toEqual([
+      '0000_bright_sleepwalker', '0001_landing_queue', '0002_spec_sha', '0003_keep_tree',
+      '0004_lens_catalogue', '0005_agent_registry', '0006_project_id_backfill',
+    ])
+    expect(readUserVersion(d)).toBe(7)
+    expect(d.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='contention'").get())
+      .toBeNull()
+    expect(applyMigrations(d)).toEqual(['0007_contention'])
+    expect(readUserVersion(d)).toBe(8)
+    expect(d.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='contention'").get())
+      .toBeDefined()
+    d.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   test('doctor reports unstamped for user_version 0 rather than behind', () => {
     const dir = mkdtempSync(join(tmpdir(), 'orch-unstamped-'))
     const path = join(dir, 'store.db')
