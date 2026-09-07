@@ -1064,7 +1064,7 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
     ? spec.seed
     : preflight(
         jobName, cwd, spec.seed, spec.key, spec.base, false, false, spec.lens,
-        spec.review, spec.carry,
+        spec.review, spec.carry, spec.repo,
       )
   if (!spec.resume) {
     // Who will run is knowable here, and a proven-failed grok attach must not
@@ -2697,7 +2697,7 @@ switch (cmd) {
     }
     const seed = preflight(
       jobName, callerCwd, flag('seed'), flag('key'), base, false, false, flag('lens'),
-      reviewRef, has('carry'),
+      reviewRef, has('carry'), explicitRepo,
     )
     if (requested.needs.readsRepo) warnCallerDrift(callerCwd, base)
     if (requested.findings && requested.needs.readsRepo && !reviewRef) {

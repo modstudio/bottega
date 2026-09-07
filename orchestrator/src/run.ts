@@ -600,6 +600,7 @@ export function preflight(
   lens?: string,
   reviewRef?: string,
   carry = false,
+  repo?: string,
 ): string | undefined {
   if (depth() >= MAX_DEPTH) {
     throw new Error(
@@ -620,7 +621,7 @@ export function preflight(
     throw new Error(`lens "${lens}" must be a lowercase stable id of at most 64 characters`)
   }
   if (lens) {
-    resolveLens(lens, projectAt(cwd)?.name ?? null)
+    resolveLens(lens, repo ?? projectAt(cwd)?.name ?? null)
   }
   const repoRoot = repoRootOf(cwd)
   if (jobName === 'review-lens' && repoRoot === null) {
@@ -1744,7 +1745,7 @@ export async function run(opts: {
     opts.job, callerCwd, opts.seed, opts.key, opts.base,
     opts.resume?.worktree != null,
     opts.reserveId !== undefined,
-    opts.lens, opts.resolvedReviewTarget ? undefined : opts.review, opts.carry,
+    opts.lens, opts.resolvedReviewTarget ? undefined : opts.review, opts.carry, opts.repo,
   )
   const reviewTarget = opts.resolvedReviewTarget ?? resolveReviewTarget(
     opts.job, opts.cwd ?? process.cwd(), opts.review, opts.carry,
