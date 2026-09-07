@@ -234,6 +234,48 @@ process.stdout.write(${JSON.stringify(JSON.stringify({
     }
   })
 
+  test('an artifact copy failure records a harness failure and preserves the tree', async () => {
+    const repo = repository()
+    const restore = stubCodex(`process.stdout.write(${JSON.stringify(readerReply([
+      { name: 'x', status: 'delivered', content: 'named evidence' },
+    ], ['missing-evidence.txt']))})\n`)
+    try {
+      let runId: number | undefined
+      try {
+        await runJob({
+          job: 'diagnose', prompt: 'measure', cwd: repo, agent: 'codex',
+          deliverables: ['x'], noFailover: true,
+        })
+      } catch (cause) {
+        runId = (cause as Error & { runId?: number }).runId
+      }
+      expect(runId).toBeNumber()
+      const row = db().query(
+        'SELECT status, failure_kind, error, worktree FROM run WHERE id=?',
+      ).get(runId!) as {
+        status: string; failure_kind: string; error: string; worktree: string | null
+      }
+      expect(row).toMatchObject({ status: 'failed', failure_kind: 'harness' })
+      expect(row.error).toContain(runArtifactsDir(runId!))
+      expect(row.error).toContain('missing-evidence.txt')
+      expect(row.worktree).not.toBeNull()
+      expect(existsSync(row.worktree!)).toBe(true)
+
+      const shown = Bun.spawnSync([process.execPath, CLI, 'result', String(runId)], {
+        env: {
+          ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+        },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(shown.exitCode).toBe(1)
+      expect(shown.stderr.toString()).toContain(runArtifactsDir(runId!))
+    } finally {
+      restore()
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('the timeout override respects the ceiling', () => {
     const fileQuestion = JOBS['file-question']!
     expect(jobTimeoutCeilingMinutes(fileQuestion)).toBe(20)

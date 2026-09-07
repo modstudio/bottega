@@ -1584,12 +1584,11 @@ function persistRunArtifacts(
   for (const named of filesWritten ?? []) {
     const source = named.startsWith('/') ? named
       : worktree ? join(worktree.path, named) : named
-    try {
-      if (!existsSync(source) || !statSync(source).isFile()) continue
-      copyFileSync(source, join(artifacts, basename(named)))
-    } catch (e) {
-      console.error(`orch: could not copy named file ${named} for run ${id}: ${e}`)
+    const destination = join(artifacts, basename(named))
+    if (!existsSync(source) || !statSync(source).isFile()) {
+      throw new Error(`could not copy named file ${source} to ${destination}: source is not a file`)
     }
+    copyFileSync(source, destination)
   }
 }
 
@@ -2553,6 +2552,7 @@ export async function run(opts: {
   let status = 'failed'
   let error: string | null = null
   let failureKind: ReturnType<typeof classify> | null = null
+  let artifactsPersisted = true
   let preConfinement: string | null = null
   let outsideWrites: OutsideWorktreeWrite[] = []
   let confinementFailures: CheckoutSampleFailure[] = []
@@ -3181,7 +3181,14 @@ export async function run(opts: {
         changes,
       )
     } catch (e) {
-      console.error(`orch: could not persist artifacts for run ${claim.id}: ${e}`)
+      artifactsPersisted = false
+      status = 'failed'
+      failureKind = 'harness'
+      error = `artifact persistence failed for ${runArtifactsDir(claim.id)}: ${String((e as Error)?.message ?? e)}`
+      db().query(`UPDATE run SET status='failed', failure_kind='harness', error=? WHERE id=?`)
+        .run(error, claim.id)
+      if (opts.resume) resolveRootFromLastTurn(db(), opts.resume.parent)
+      console.error(`orch: ${error}`)
     }
   }
 
@@ -3248,7 +3255,7 @@ export async function run(opts: {
         // The recursive successor has its own terminalisation path. Reclaim
         // this completed attempt before returning into it, otherwise this
         // frame never reaches the ordinary terminal reclaim below.
-        if (worktree && reclaimsTreeByDefault(opts.job) && !keepTree) {
+        if (artifactsPersisted && worktree && reclaimsTreeByDefault(opts.job) && !keepTree) {
           reclaimTerminalTree(claim.id, worktree)
         }
         return await run({
@@ -3301,7 +3308,7 @@ export async function run(opts: {
     }
   }
 
-  if (worktree && reclaimsTreeByDefault(opts.job) && !keepTree &&
+  if (artifactsPersisted && worktree && reclaimsTreeByDefault(opts.job) && !keepTree &&
       status !== 'asking' && status !== 'running') {
     reclaimTerminalTree(claim.id, worktree)
   }
