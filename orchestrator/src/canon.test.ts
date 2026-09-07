@@ -112,7 +112,7 @@ describe('Drizzle migration journal', () => {
       const message = String(error)
       expect(message).toContain(`stored hash: ${canonicalSchemaHash(d)}`)
       expect(message).toContain(`expected hash: ${BASELINE_SCHEMA_HASH}`)
-      expect(message).toContain('unexpected columns: run.x TEXT')
+      expect(message).toContain('unexpected columns: run.x text notnull=0 default=NULL pk=0')
       expect(message).toContain('missing indexes: none')
       expect(message).toContain('unexpected indexes: none')
       expect(message).toContain("back up the store and run the old binary's open once")
@@ -129,6 +129,20 @@ describe('Drizzle migration journal', () => {
     expect(doctor.exitCode, doctor.stderr.toString()).toBe(0)
     expect(doctor.stdout.toString()).toContain('schema hash    DRIFT')
     rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('an added index refuses baseline adoption with the index difference', () => {
+    const d = fresh()
+    d.exec('DROP TABLE orch_migrations; CREATE INDEX unexpected_run_agent ON run(agent)')
+    expect(() => applyMigrations(d)).toThrow('refusing to adopt migration baseline')
+    try {
+      applyMigrations(d)
+    } catch (error) {
+      const message = String(error)
+      expect(message).toContain('unexpected columns: none')
+      expect(message).toContain('unexpected indexes: run.unexpected_run_agent')
+    }
+    d.close()
   })
 
   test('legacy adoption continues through every later journal entry in one invocation', () => {

@@ -8,7 +8,6 @@ export const MIGRATIONS_TABLE = 'orch_migrations'
 export const SCHEMA_INVARIANT = 'Only the main checkout\'s binary migrates the store.'
 
 type JournalEntry = { idx: number; when: number; tag: string }
-type SchemaObject = { type: 'table' | 'index'; name: string; sql: string }
 type ColumnShape = {
   table: string
   name: string
@@ -17,7 +16,33 @@ type ColumnShape = {
   defaultValue: string | null
   primaryKey: number
 }
-type SchemaInventory = { objects: SchemaObject[]; columns: ColumnShape[] }
+type ForeignKeyShape = {
+  table: string
+  id: number
+  sequence: number
+  targetTable: string
+  from: string
+  to: string | null
+  onUpdate: string
+  onDelete: string
+  match: string
+}
+type IndexShape = {
+  table: string
+  name: string
+  unique: number
+  origin: string
+  partial: number
+  columns: string
+  specialSql: string | null
+}
+type SchemaInventory = {
+  tables: string[]
+  columns: ColumnShape[]
+  foreignKeys: ForeignKeyShape[]
+  indexes: IndexShape[]
+  checks: { table: string; expression: string }[]
+}
 
 export function migrationJournal(folder = MIGRATIONS_FOLDER): JournalEntry[] {
   const journal = JSON.parse(readFileSync(join(folder, 'meta', '_journal.json'), 'utf8')) as
@@ -81,19 +106,66 @@ function normalizeSql(source: string): string {
     .trim()
 }
 
+function withoutSqlComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\n]*/g, '')
+}
+
+/** Ignore SQL case and whitespace outside string literals, whose values remain case-sensitive. */
+function normalizeExpression(source: string): string {
+  let result = ''
+  let inString = false
+  for (let i = 0; i < source.length; i++) {
+    const char = source[i]!
+    if (char === "'") {
+      result += char
+      if (inString && source[i + 1] === "'") result += source[++i]!
+      else inString = !inString
+    } else if (inString) result += char
+    else if (!/\s/.test(char)) result += char.toLowerCase()
+  }
+  return result
+}
+
+function checkExpressions(source: string): string[] {
+  const sql = withoutSqlComments(source)
+  const expressions: string[] = []
+  const check = /\bcheck\s*\(/gi
+  for (let match = check.exec(sql); match; match = check.exec(sql)) {
+    const start = check.lastIndex
+    let depth = 1
+    let inString = false
+    let end = start
+    for (; end < sql.length && depth > 0; end++) {
+      const char = sql[end]!
+      if (char === "'") {
+        if (inString && sql[end + 1] === "'") end++
+        else inString = !inString
+      } else if (!inString && char === '(') depth++
+      else if (!inString && char === ')') depth--
+    }
+    if (depth !== 0) throw new Error(`unterminated CHECK expression: ${source.slice(match.index, match.index + 80)}`)
+    expressions.push(normalizeExpression(sql.slice(start, end - 1)))
+    check.lastIndex = end
+  }
+  return expressions.sort()
+}
+
 function quoteIdentifier(value: string): string {
   return `"${value.replaceAll('"', '""')}"`
 }
 
 function schemaInventory(d: Database): SchemaInventory {
-  const objects = (d.query(
-    `SELECT type, name, sql FROM sqlite_master
-     WHERE type IN ('table','index') AND sql IS NOT NULL
-       AND name NOT LIKE 'sqlite_%' AND name<>?
-     ORDER BY type, name`,
-  ).all(MIGRATIONS_TABLE) as SchemaObject[]).map((row) => ({ ...row, sql: normalizeSql(row.sql) }))
+  const tableRows = d.query(
+    `SELECT name, sql FROM sqlite_master
+     WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name<>?
+     ORDER BY name`,
+  ).all(MIGRATIONS_TABLE) as { name: string; sql: string }[]
+  const tables = tableRows.map((row) => row.name).sort()
   const columns: ColumnShape[] = []
-  for (const table of objects.filter((row) => row.type === 'table')) {
+  const foreignKeys: ForeignKeyShape[] = []
+  const indexes: IndexShape[] = []
+  const checks: { table: string; expression: string }[] = []
+  for (const table of tableRows) {
     const rows = d.query(`PRAGMA table_info(${quoteIdentifier(table.name)})`).all() as {
       name: string
       type: string
@@ -105,21 +177,69 @@ function schemaInventory(d: Database): SchemaInventory {
       columns.push({
         table: table.name,
         name: row.name,
-        type: normalizeSql(row.type),
+        type: normalizeSql(row.type).toLowerCase(),
         notnull: row.notnull,
-        defaultValue: row.dflt_value == null ? null : normalizeSql(row.dflt_value),
+        defaultValue: row.dflt_value == null ? null : normalizeExpression(row.dflt_value),
         primaryKey: row.pk,
       })
     }
+    columns.sort((a, b) => a.table.localeCompare(b.table) || a.name.localeCompare(b.name))
+    const fks = d.query(`PRAGMA foreign_key_list(${quoteIdentifier(table.name)})`).all() as {
+      id: number
+      seq: number
+      table: string
+      from: string
+      to: string | null
+      on_update: string
+      on_delete: string
+      match: string
+    }[]
+    foreignKeys.push(...fks.map((row) => ({
+      table: table.name, id: row.id, sequence: row.seq, targetTable: row.table,
+      from: row.from, to: row.to, onUpdate: row.on_update.toLowerCase(),
+      onDelete: row.on_delete.toLowerCase(), match: row.match.toLowerCase(),
+    })))
+    const listed = d.query(`PRAGMA index_list(${quoteIdentifier(table.name)})`).all() as {
+      name: string
+      unique: number
+      origin: string
+      partial: number
+    }[]
+    for (const index of listed) {
+      const info = d.query(`PRAGMA index_info(${quoteIdentifier(index.name)})`).all() as {
+        seqno: number
+        cid: number
+        name: string | null
+      }[]
+      const expression = info.some((row) => row.cid === -2 || row.name === null)
+      const sql = expression || index.partial
+        ? (d.query("SELECT sql FROM sqlite_master WHERE type='index' AND name=?").get(index.name) as
+          { sql: string | null } | null)?.sql ?? null
+        : null
+      indexes.push({
+        table: table.name, name: index.name, unique: index.unique,
+        origin: index.origin.toLowerCase(), partial: index.partial,
+        columns: info.sort((a, b) => a.seqno - b.seqno)
+          .map((row) => `${row.cid}:${row.name ?? '<expression>'}`).join(','),
+        specialSql: sql == null ? null : normalizeExpression(normalizeSql(withoutSqlComments(sql))),
+      })
+    }
+    for (const expression of checkExpressions(table.sql)) checks.push({ table: table.name, expression })
   }
-  return { objects, columns }
+  foreignKeys.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
+  indexes.sort((a, b) => a.table.localeCompare(b.table) || a.name.localeCompare(b.name))
+  checks.sort((a, b) => a.table.localeCompare(b.table) || a.expression.localeCompare(b.expression))
+  return { tables, columns, foreignKeys, indexes, checks }
 }
 
 function inventoryLines(inventory: SchemaInventory): string[] {
   return [
-    ...inventory.objects.map((row) => `${row.type} ${row.name} ${row.sql}`),
+    ...inventory.tables.map((table) => `table ${table}`),
     ...inventory.columns.map((row) =>
       `column ${row.table}.${row.name} ${row.type} notnull=${row.notnull} default=${row.defaultValue ?? 'NULL'} pk=${row.primaryKey}`),
+    ...inventory.foreignKeys.map((row) => `foreign-key ${JSON.stringify(row)}`),
+    ...inventory.indexes.map((row) => `index ${JSON.stringify(row)}`),
+    ...inventory.checks.map((row) => `check ${row.table} ${row.expression}`),
   ]
 }
 
@@ -151,15 +271,15 @@ function shape(values: string[]): string[] {
 }
 
 function inventoryDiff(actual: SchemaInventory, expected: SchemaInventory): string {
-  const actualTables = shape(actual.objects.filter((row) => row.type === 'table').map((row) => row.name))
-  const expectedTables = shape(expected.objects.filter((row) => row.type === 'table').map((row) => row.name))
+  const actualTables = shape(actual.tables)
+  const expectedTables = shape(expected.tables)
   const columnKey = (row: ColumnShape) =>
     `${row.table}.${row.name} ${row.type} notnull=${row.notnull} default=${row.defaultValue ?? 'NULL'} pk=${row.primaryKey}`
   const actualColumns = shape(actual.columns.map(columnKey))
   const expectedColumns = shape(expected.columns.map(columnKey))
-  const indexKey = (row: SchemaObject) => `${row.name} ${row.sql}`
-  const actualIndexes = shape(actual.objects.filter((row) => row.type === 'index').map(indexKey))
-  const expectedIndexes = shape(expected.objects.filter((row) => row.type === 'index').map(indexKey))
+  const indexKey = (row: IndexShape) => `${row.table}.${row.name} ${JSON.stringify(row)}`
+  const actualIndexes = shape(actual.indexes.map(indexKey))
+  const expectedIndexes = shape(expected.indexes.map(indexKey))
   const difference = (left: string[], right: string[]) => left.filter((value) => !right.includes(value))
   return [
     `missing tables: ${difference(expectedTables, actualTables).join(', ') || 'none'}`,
