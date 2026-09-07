@@ -2682,9 +2682,11 @@ switch (cmd) {
     }
     const requested = job(jobName)
     const selectedRow = flag('agent') ? AGENTS[flag('agent')!] : undefined
-    const transport = flag('transport') === undefined && !process.env.ORCH_TRANSPORT && selectedRow
+    const transportFlag = flag('transport')
+    const transportExplicit = transportFlag !== undefined || Boolean(process.env.ORCH_TRANSPORT)
+    const transport = !transportExplicit && selectedRow
       ? selectedRow.defaultTransport
-      : resolveTransportName(flag('transport'))
+      : resolveTransportName(transportFlag)
     if (transport === 'acp') {
       assertAcpAllowed(jobName, flag('agent'))
       assertAcpReady(flag('agent') ?? 'codex')
@@ -2780,7 +2782,8 @@ switch (cmd) {
       const id = await detach(jobName, prompt, {
         agent, schema, label: flag('label'), lens: flag('lens'),
         mcp: requestedMcp(), model: flag('model'), probe: has('probe'), seed, key: flag('key'),
-        repo: explicitRepo, base, avoid, distinctModels, transport,
+        repo: explicitRepo, base, avoid, distinctModels,
+        ...(transportExplicit ? { transport } : {}),
         noFailover: has('no-failover'), carry: has('carry'), review: reviewRef, cwd: callerCwd,
         deliverables, timeoutMinutes, keepTree,
       })
@@ -2821,7 +2824,8 @@ switch (cmd) {
     const id = await detach(jobName, prompt, {
       agent, schema, label: flag('label'), lens: flag('lens'),
       mcp: requestedMcp(), model: flag('model'), probe: has('probe'), seed, key: flag('key'),
-      repo: explicitRepo, base, avoid, distinctModels, transport,
+      repo: explicitRepo, base, avoid, distinctModels,
+      ...(transportExplicit ? { transport } : {}),
       noFailover: has('no-failover'), carry: has('carry'), review: reviewRef, cwd: callerCwd,
       deliverables, timeoutMinutes, keepTree,
     })

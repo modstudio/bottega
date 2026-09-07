@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { db, dir, run } from '../test/fixture.ts'
-import { addAgent, recordAgentProbe, removeAgent } from './agents.ts'
+import { AGENTS, db, dir, run } from '../test/fixture.ts'
+import { addAgent, recordAgentProbe, removeAgent, setAgent } from './agents.ts'
 import { chainTransport } from './run.ts'
 import { ask } from './ask.ts'
 import {
@@ -110,7 +110,7 @@ describe('ACP transport through run', () => {
     try {
       installFake(() => fakeResult({ output: 'ok', status: 'ok' }))
       const result = await run({
-        job: 'file-question', prompt: 'read the file', cwd: dir,
+        job: 'summarize', prompt: 'summarise this', cwd: dir,
         agent: 'local-acp', noFailover: true,
       })
       expect(db().query('SELECT agent,transport FROM run WHERE id=?').get(result.id))
@@ -118,6 +118,43 @@ describe('ACP transport through run', () => {
     } finally {
       db().query("DELETE FROM run WHERE agent='local-acp'").run()
       removeAgent('local-acp')
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
+  test('routing picks local-acp without --agent and records transport acp', async () => {
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    addAgent('local-acp', {
+      harness: 'goose', backend: 'vllm', model: 'served/model', billing: 'subscription',
+    })
+    recordAgentProbe('local-acp', {
+      harness: 'goose', ok: true,
+      reply: { ok: true, output: 'ok' },
+      tool: { ok: true, output: 'REGISTRATION_PROBE_FILE_OK', toolEvents: 1, statuses: ['completed'] },
+      schema: { ok: true, output: '{"status":"ok"}' },
+      contextTokens: 131072, contextSource: 'declared',
+    })
+    const restore = (['codex', 'grok', 'qwen-local'] as const).map((name) => ({
+      name, enabled: AGENTS[name]!.enabled !== false,
+    }))
+    for (const row of restore) {
+      if (row.enabled) setAgent(row.name, { enabled: false, reason: 'test routing to local-acp' })
+    }
+    try {
+      installFake(() => fakeResult({ output: 'ok', status: 'ok' }))
+      const result = await run({
+        job: 'summarize', prompt: 'summarise this', cwd: dir, noFailover: true,
+      })
+      expect(db().query('SELECT agent,transport FROM run WHERE id=?').get(result.id))
+        .toEqual({ agent: 'local-acp', transport: 'acp' })
+    } finally {
+      db().query("DELETE FROM run WHERE agent='local-acp'").run()
+      removeAgent('local-acp')
+      for (const row of restore) {
+        if (row.enabled) setAgent(row.name, { enabled: true })
+      }
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
     }
