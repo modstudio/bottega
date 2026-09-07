@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { AGENTS, COULD_NOT_VERIFY_INSTRUCTION, INFRASTRUCTURE_RECOVERY, ImportRefusalError, JOBS, NO_REPO_PREAMBLE, READER_DELIVERABLE_FIRST, READONLY_PREAMBLE, REVIEW_SCHEMA, REVIEW_SEVERITY_INSTRUCTION, WORKER_PREAMBLE, addRun, applyImport, baselineForPair, candidates, checkMessages, contractConflicts, db, dir, getDoc, hermeticGitEnv, inferredReadOnlyKey, ledgerRef, listDocRevisions, listDocs, listDoctrineRules, listPairs, listSkips, messageArchitect, messagesForRun, planImport, preflight, projectAt, projects, runJob, runWithDelayedStdoutReader, score, setDoc, sourceCoverage, upsertProject, weigh } from '../test/fixture.ts'
+import { AGENTS, COULD_NOT_VERIFY_INSTRUCTION, INFRASTRUCTURE_RECOVERY, ImportRefusalError, JOBS, NO_REPO_PREAMBLE, READER_DELIVERABLE_FIRST, READONLY_PREAMBLE, REVIEW_SCHEMA, REVIEW_SEVERITY_INSTRUCTION, WORKER_PREAMBLE, addRun, applyImport, baselineForPair, candidates, checkMessages, contractConflicts, db, dir, getDoc, hermeticGitEnv, inferredReadOnlyKey, jobBoundInstructionForContract, ledgerRef, listDocRevisions, listDocs, listDoctrineRules, listPairs, listSkips, messageArchitect, messagesForRun, planImport, preflight, projectAt, projects, runJob, runWithDelayedStdoutReader, score, setDoc, sourceCoverage, upsertProject, weigh } from '../test/fixture.ts'
 
 describe('read-only run task attribution', () => {
   const git = (cwd: string, ...args: string[]) => {
@@ -977,7 +977,8 @@ describe('job contracts are visible before submission', () => {
       expect(r.out).toBe(
         `${definition.findings ? `${REVIEW_SEVERITY_INSTRUCTION}\n\n` : ''}${definition.needs.writesRepo
           ? WORKER_PREAMBLE
-          : definition.needs.readsRepo ? READONLY_PREAMBLE : NO_REPO_PREAMBLE}\n`,
+          : definition.needs.readsRepo ? READONLY_PREAMBLE : NO_REPO_PREAMBLE}\n\n` +
+        `${jobBoundInstructionForContract(definition)}\n`,
       )
       expect(r.err).toBe('')
     }

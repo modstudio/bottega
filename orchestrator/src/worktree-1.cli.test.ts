@@ -868,7 +868,9 @@ exec git worktree add --detach "$1" "$2"
         return ['-e', 'console.log("inspected")']
       }
       process.env.ORCH_DEPTH = '0'
-      const result = await runJob({ job: 'file-question', prompt: 'inspect', cwd: tree, agent: 'codex' })
+      const result = await runJob({
+        job: 'file-question', prompt: 'inspect', cwd: tree, agent: 'codex', keepTree: true,
+      })
       expect(existsSync(invoked)).toBe(false)
       expect(result.worktree?.source).toBe('git')
       expect(result.worktree?.base).toBe(featureHead)
@@ -907,7 +909,9 @@ exec git worktree add --detach "$1" "$2"
         return ['-e', 'console.log("inspected")']
       }
       process.env.ORCH_DEPTH = '0'
-      const result = await runJob({ job: 'file-question', prompt: 'inspect', cwd: tree, agent: 'codex' })
+      const result = await runJob({
+        job: 'file-question', prompt: 'inspect', cwd: tree, agent: 'codex', keepTree: true,
+      })
       expect(sent).toContain(`This read-only run has the project's files at ${result.worktree!.base}. ${note}`)
       expect(sent).not.toContain('NO provisioned infrastructure')
       expect(sent).toContain('record what you could not run in could_not_verify')

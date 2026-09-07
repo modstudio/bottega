@@ -344,9 +344,9 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       return { args: argv.slice(2), shape: forms[sub]! }
     }
     case 'do': return { args: argv.slice(1), shape: shape(
-      'orch do <job> [prompt] [--agent NAME] [--file PATH] [--schema PATH] [--model NAME] [--transport cli|acp]', Infinity,
-      ['--agent', '--avoid', '--distinct-from', '--base', '--review', '--file', '--schema', '--model', '--transport', '--label', '--lens', '--seed', '--key', '--repo', '--cwd'],
-      ['--carry', '--mcp', '--quiet', '--probe', '--follow', '--detach', '--porcelain', '--no-failover', '--help'],
+      'orch do <job> [prompt] [--agent NAME] [--file PATH] [--schema PATH] [--model NAME] [--transport cli|acp] [--deliverable TEXT]... [--timeout MINUTES] [--keep-tree]', Infinity,
+      ['--agent', '--avoid', '--distinct-from', '--base', '--review', '--file', '--schema', '--model', '--transport', '--label', '--lens', '--seed', '--key', '--repo', '--cwd', '--deliverable', '--timeout'],
+      ['--carry', '--mcp', '--quiet', '--probe', '--follow', '--detach', '--porcelain', '--no-failover', '--help', '--keep-tree'],
       { optionalValueFlags: { '--mcp': ['prefer'] } },
     ) }
     case 'review': {
@@ -378,7 +378,7 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
     case 'state': return { args: argv.slice(1), shape: shape('orch state [--days N]', 0, ['--days']) }
     case 'run': return { args: argv.slice(1), shape: shape('orch run <run-id> [--receipt]', 1, [], ['--receipt']) }
     case 'search': return { args: argv.slice(1), shape: shape('orch search <file|function|task-key|text> [--limit N] [--full] [--json]', 1, ['--limit'], ['--full', '--json']) }
-    case 'result': return { args: argv.slice(1), shape: shape('orch result <run-id> [--quiet]', 1, [], ['--quiet']) }
+    case 'result': return { args: argv.slice(1), shape: shape('orch result <run-id> [--quiet] [--artifacts]', 1, [], ['--quiet', '--artifacts']) }
     case 'wait': return { args: argv.slice(1), shape: shape('orch wait <run-id>... [--timeout SECONDS]', Infinity, ['--timeout']) }
     case 'retry': return { args: argv.slice(1), shape: shape('orch retry <run-id> [--agent NAME] [--model MODEL] [--follow] [--quiet]', 1, ['--agent', '--model'], ['--follow', '--detach', '--quiet']) }
     case 'project': {

@@ -407,6 +407,7 @@ describe('vendor failure failover is one bounded unit of work', () => {
       const pending = runJob({
         job: 'review-lens', prompt: 'review the carried change', cwd: caller,
         repo: 'review-failover-no-base-project', agent: 'codex', lens: 'failover-no-base', carry: true,
+        keepTree: true,
       })
       for (let i = 0; i < 200 && !existsSync(firstReady); i++) await Bun.sleep(10)
       expect(existsSync(firstReady)).toBe(true)
@@ -549,6 +550,7 @@ describe('vendor failure failover is one bounded unit of work', () => {
       const result = await runJob({
         job: 'review-lens', prompt: 'inspect the requested branch', cwd: repo,
         agent: 'codex', lens: 'failover-review', review: 'feature/review-failover',
+        keepTree: true,
       })
       const rows = db().query(
         `SELECT id, agent, retry_of, input_tree, head_commit, review_ref

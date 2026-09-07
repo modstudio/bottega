@@ -19,7 +19,7 @@ describe('inspectable catalogs', () => {
       prefer: expect.any(Array), contextTokens: expect.any(Number),
     }))
     expect(Object.keys(rows[0]!).sort()).toEqual([
-      'contextTokens', 'findings', 'name', 'needs', 'prefer', 'timeoutMs', 'what',
+      'contextTokens', 'findings', 'name', 'needs', 'prefer', 'timeoutCeilingMs', 'timeoutMs', 'what',
     ])
     expect(run('jobs')).toContain(' [axes delivery,quality]')
   })

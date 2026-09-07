@@ -92,7 +92,7 @@ fi
     try {
       const result = await runJob({
         job: 'review-lens', prompt: 'review this', cwd: repo,
-        agent: 'grok', mcp: 'require', lens: 'trust',
+        agent: 'grok', mcp: 'require', lens: 'trust', keepTree: true,
       })
       const row = db().query(
         'SELECT mcp_trust_granted, mcp_trust_path FROM run WHERE id=?',
@@ -223,7 +223,7 @@ fi
     try {
       const result = await runJob({
         job: 'review-lens', prompt: 'review this', cwd: repo,
-        agent: 'grok', mcp: 'require', lens: 'mcp-cwd',
+        agent: 'grok', mcp: 'require', lens: 'mcp-cwd', keepTree: true,
       })
       expect(result.status).toBe('ok')
       expect(result.output).toContain('MCP preflight: linked .mcp.json -> ../../../.mcp.json')
@@ -266,7 +266,7 @@ fi
     try {
       const result = await runJob({
         job: 'review-lens', prompt: 'review this', cwd: repo,
-        agent: 'grok', mcp: 'require', lens: 'mcp-cwd',
+        agent: 'grok', mcp: 'require', lens: 'mcp-cwd', keepTree: true,
       })
       expect(result.status).toBe('ok')
       expect(lstatSync(join(result.worktree!.path, '.mcp.json')).isSymbolicLink()).toBe(false)
@@ -320,7 +320,7 @@ fi
     try {
       const result = await runJob({
         job: 'review-lens', prompt: 'review this', cwd: repo,
-        agent: 'grok', mcp: 'require', lens: 'mcp-cwd',
+        agent: 'grok', mcp: 'require', lens: 'mcp-cwd', keepTree: true,
       })
       expect(result.status).toBe('ok')
       expect(lstatSync(join(result.worktree!.path, '.mcp.json')).isSymbolicLink()).toBe(false)
@@ -359,7 +359,7 @@ fi
     try {
       const result = await runJob({
         job: 'review-lens', prompt: 'review this', cwd: caller, carry: true,
-        agent: 'grok', mcp: 'require', lens: 'mcp-cwd',
+        agent: 'grok', mcp: 'require', lens: 'mcp-cwd', keepTree: true,
       })
       expect(result.status).toBe('ok')
       expect(lstatSync(join(result.worktree!.path, '.mcp.json')).isSymbolicLink()).toBe(false)
@@ -392,7 +392,7 @@ fi
     try {
       await expect(runJob({
         job: 'review-lens', prompt: 'review this', cwd: repo,
-        agent: 'grok', mcp: 'require', lens: 'mcp-cwd',
+        agent: 'grok', mcp: 'require', lens: 'mcp-cwd', keepTree: true,
       })).rejects.toThrow('missing .mcp.json')
       expect(spawned).toBe(false)
     } finally {
@@ -422,7 +422,7 @@ fi
     try {
       const result = await runJob({
         job: 'review-lens', prompt: 'review this', cwd: repo,
-        agent: 'grok', mcp: 'prefer', lens: 'mcp-cwd',
+        agent: 'grok', mcp: 'prefer', lens: 'mcp-cwd', keepTree: true,
       })
       expect(result.status).toBe('ok')
       expect(db().query(
@@ -464,7 +464,7 @@ fi
     try {
       const root = await runJob({
         job: 'review-lens', prompt: 'review this', cwd: repo,
-        agent: 'grok', mcp: 'prefer', lens: 'mcp-cwd',
+        agent: 'grok', mcp: 'prefer', lens: 'mcp-cwd', keepTree: true,
       })
       expect((db().query('SELECT mcp FROM run WHERE id=?').get(root.id) as { mcp: number }).mcp)
         .toBe(2)

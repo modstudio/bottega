@@ -22,6 +22,13 @@
       "when": 1788804000000,
       "tag": "0002_spec_sha",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1788829200000,
+      "tag": "0003_keep_tree",
+      "breakpoints": true
     }
   ]
 }

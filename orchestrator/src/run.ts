@@ -1,6 +1,7 @@
 import {
   mkdirSync, mkdtempSync, readFileSync, existsSync, writeFileSync, readdirSync, rmSync,
   realpathSync, statSync, unlinkSync, symlinkSync, readlinkSync, lstatSync,
+  copyFileSync, renameSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative } from 'node:path'
@@ -14,7 +15,10 @@ import {
   AGENTS, ensureLocalHealth, tryWake, readStrictCodexSchema, minimumCliVersionRefusal,
   LOCAL_BASE_URL,
 } from './agents.ts'
-import { job, type Job } from './jobs.ts'
+import {
+  job, isReaderJob, reclaimsTreeByDefault, resolveJobTimeoutMs, jobBoundInstruction,
+  type Job,
+} from './jobs.ts'
 import { pick } from './route.ts'
 import {
   db, nowIso, DB_PATH, sessionId, resolveRootFromLastTurn, writableDb, writeTransaction,
@@ -29,7 +33,7 @@ import {
   scrubbedGitEnv,
   workerSharedGitRoots,
   contentTree,
-  assertCallerAncestry, withWorktreeCreateLock, withWorktreeLease,
+  assertCallerAncestry, withWorktreeCreateLock, withWorktreeLease, withCleanupLock,
   removeFor, type Worktree,
   type WorktreeObjectEnvironment, validateSeedWithTool,
 } from './worktree.ts'
@@ -37,8 +41,9 @@ import { recipeNotes } from './recipe.ts'
 import {
   workerPreamble, packResumePrompt, READONLY_PREAMBLE, NO_REPO_PREAMBLE, WORKER_SCHEMA, ISSUE_WORKER_SCHEMA, REVIEW_SCHEMA,
   REVIEW_SEVERITY_INSTRUCTION,
-  VERIFY_CLAIM_SCHEMA,
+  VERIFY_CLAIM_SCHEMA, READER_SCHEMA,
   parseWorkerReplyWithCount, isAsking, realQuestions,
+  parseReaderOutput, missingDeclaredDeliverables, UNEVIDENCED_DELIVERABLE_ERROR,
   type CanonSource, type WorkerReply,
 } from './contract.ts'
 import {
@@ -121,6 +126,12 @@ export type DetachSpec = {
   review?: string
   /** Preserve the session that owns a successor root. */
   ownerSession?: string | null
+  /** Declared reader deliverable names, from repeated `--deliverable`. */
+  deliverables?: string[]
+  /** `orch do --timeout` in minutes. */
+  timeoutMinutes?: number
+  /** Opt out of reclaim-at-terminalisation for lens and reader jobs. */
+  keepTree?: boolean
   /** Resume only: everything needed to continue a worker where it stopped. */
   resume?: {
     parent: number; agent: string; session: string; turn: number
@@ -171,17 +182,20 @@ export function detachedRunOptions(
   const {
     agent, schema, mcp, model, probe, transport, label, lens, seed, key, repo, base, avoid,
     distinctModels, retryOf, cwd, noFailover, carry, review, ownerSession, resume,
+    deliverables, timeoutMinutes, keepTree,
   } = spec
   // Adding a field to DetachSpec must fail typechecking until it is handled here.
   const consumed: Required<Record<keyof DetachSpec, unknown>> = {
     agent, schema, mcp, model, probe, transport, label, lens, seed, key, repo, base, avoid,
     distinctModels, retryOf, cwd, noFailover, carry, review, ownerSession, resume,
+    deliverables, timeoutMinutes, keepTree,
   }
   void consumed
   return {
     job: jobName, prompt, reserveId,
     agent, schemaPath: schema, mcp, model, probe, transport, label, lens, seed, key, repo, base, avoid,
     distinctModels, retryOf, cwd, noFailover, carry, review, ownerSession, resume,
+    deliverables, timeoutMinutes, keepTree,
   }
 }
 
@@ -1486,14 +1500,116 @@ export function pruneRuns(dir: string): void {
     for (const name of readdirSync(dir)) {
       const p = join(dir, name)
       try {
-        if (statSync(p).mtimeMs < cutoff) {
-          unlinkSync(p)
+        const st = statSync(p)
+        if (st.mtimeMs < cutoff) {
+          if (st.isDirectory()) rmSync(p, { recursive: true, force: true })
+          else unlinkSync(p)
           db().query('UPDATE run SET prompt_path=NULL WHERE prompt_path=?').run(p)
           db().query('UPDATE run SET output_path=NULL WHERE output_path=?').run(p)
         }
       } catch { /* raced, or busy */ }
     }
   } catch { /* no directory yet; nothing to prune */ }
+}
+
+export function runScratchDir(id: number, runsDir = RUNS_DIR): string {
+  return join(runsDir, String(id), 'scratch')
+}
+
+export function runArtifactsDir(id: number, runsDir = RUNS_DIR): string {
+  return join(runsDir, String(id), 'artifacts')
+}
+
+export function declaredDeliverablesPath(id: number, runsDir = RUNS_DIR): string {
+  return join(runsDir, String(id), 'deliverables.json')
+}
+
+export function listRunArtifacts(id: number, runsDir = RUNS_DIR): string[] {
+  const dir = runArtifactsDir(id, runsDir)
+  if (!existsSync(dir)) return []
+  const names = readdirSync(dir, { recursive: true })
+  const files: string[] = []
+  for (const name of names) {
+    const p = join(dir, String(name))
+    try { if (statSync(p).isFile()) files.push(p) } catch { /* raced */ }
+  }
+  return files.sort()
+}
+
+type DispatchState = { deliverables: string[]; timeoutMinutes: number | null }
+
+function writeDispatchState(id: number, state: DispatchState): void {
+  mkdirSync(join(RUNS_DIR, String(id)), { recursive: true })
+  writeFileSync(declaredDeliverablesPath(id), JSON.stringify(state))
+}
+
+export function readDispatchState(id: number): DispatchState {
+  const p = declaredDeliverablesPath(id)
+  if (!existsSync(p)) return { deliverables: [], timeoutMinutes: null }
+  try {
+    const value = JSON.parse(readFileSync(p, 'utf8')) as Partial<DispatchState> | string[]
+    if (Array.isArray(value)) {
+      return {
+        deliverables: value.every((item) => typeof item === 'string') ? value : [],
+        timeoutMinutes: null,
+      }
+    }
+    const deliverables = Array.isArray(value.deliverables) &&
+      value.deliverables.every((item) => typeof item === 'string') ? value.deliverables : []
+    const timeoutMinutes = typeof value.timeoutMinutes === 'number' ? value.timeoutMinutes : null
+    return { deliverables, timeoutMinutes }
+  } catch { return { deliverables: [], timeoutMinutes: null } }
+}
+
+export function readDeclaredDeliverables(id: number): string[] {
+  return readDispatchState(id).deliverables
+}
+
+function persistRunArtifacts(
+  id: number,
+  filesWritten: string[] | null,
+  worktree: Worktree | null,
+  changes: import('./worktree.ts').Changes | null,
+): void {
+  const scratch = runScratchDir(id)
+  const artifacts = runArtifactsDir(id)
+  mkdirSync(join(RUNS_DIR, String(id)), { recursive: true })
+  if (existsSync(scratch)) {
+    if (existsSync(artifacts)) rmSync(artifacts, { recursive: true, force: true })
+    renameSync(scratch, artifacts)
+  } else {
+    mkdirSync(artifacts, { recursive: true })
+  }
+  if (changes?.diff) writeFileSync(join(artifacts, 'worktree.diff'), changes.diff)
+  for (const named of filesWritten ?? []) {
+    const source = named.startsWith('/') ? named
+      : worktree ? join(worktree.path, named) : named
+    try {
+      if (!existsSync(source) || !statSync(source).isFile()) continue
+      copyFileSync(source, join(artifacts, basename(named)))
+    } catch (e) {
+      console.error(`orch: could not copy named file ${named} for run ${id}: ${e}`)
+    }
+  }
+}
+
+function reclaimTerminalTree(runId: number, worktree: Worktree): void {
+  try {
+    const identity = { session: sessionId(), what: `terminal reclaim ${runId}` }
+    withWorktreeLease(worktree.repoRoot, worktree.path, identity, () => {
+      withCleanupLock(worktree.repoRoot, identity, () => {
+        const result = removeFor(worktree, worktree.repoRoot, true, false, runId)
+        if (!result.removed) {
+          console.error(`orch: could not reclaim worktree for run ${runId}: ${result.detail}`)
+          return
+        }
+        db().query('UPDATE run SET worktree=NULL WHERE id=? AND worktree=?')
+          .run(runId, worktree.path)
+      })
+    })
+  } catch (e) {
+    console.error(`orch: could not reclaim worktree for run ${runId}: ${e}`)
+  }
 }
 
 /**
@@ -1592,12 +1708,20 @@ export async function run(opts: {
     sessionId: string | null
     worktree: Worktree | null
   }
+  /** Declared reader deliverable names, from repeated `--deliverable`. */
+  deliverables?: string[]
+  /** `orch do --timeout` in minutes. */
+  timeoutMinutes?: number
+  /** Opt out of reclaim-at-terminalisation for lens and reader jobs. */
+  keepTree?: boolean
   /** Immutable explicit-review target inherited only by automatic failover. */
   resolvedReviewTarget?: { branch: string; commit: string; base: string }
 }): Promise<RunResult> {
   writableDb()
 
   const requestedJob = job(opts.job)
+  const inheritedDispatch = opts.resume ? readDispatchState(opts.resume.parent) : null
+  const timeoutMinutes = opts.timeoutMinutes ?? inheritedDispatch?.timeoutMinutes ?? undefined
   const writesJob = Boolean(requestedJob.needs.writesRepo)
   const repoJob = Boolean(requestedJob.needs.readsRepo)
   const forbidsRepo = requestedJob.needs.readsRepo === false
@@ -1780,6 +1904,18 @@ export async function run(opts: {
            { agents: opts.avoid, models: opts.distinctModels, model: opts.model },
            opts.probe, opts.lens)
   const a = AGENTS[name]!
+  let boundMs: number
+  try {
+    boundMs = resolveJobTimeoutMs(requestedJob, a.timeoutMs, timeoutMinutes)
+  } catch (e) {
+    if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
+    throw e
+  }
+  if (!opts.resume) {
+    const boundLine = `\n\n${jobBoundInstruction(requestedJob, boundMs)}`
+    const split = prompt.lastIndexOf('\n---\n')
+    prompt = split >= 0 ? prompt.slice(0, split) + boundLine + prompt.slice(split) : prompt + boundLine
+  }
   if (name === 'codex') {
     const versionRefusal = minimumCliVersionRefusal(a)
     if (versionRefusal) {
@@ -1885,7 +2021,8 @@ export async function run(opts: {
     ? ISSUE_WORKER_SCHEMA
     : writesJob ? WORKER_SCHEMA
       : requestedJob.findings ? REVIEW_SCHEMA
-        : requestedJob.name === 'verify-claim' ? VERIFY_CLAIM_SCHEMA : null
+        : requestedJob.name === 'verify-claim' ? VERIFY_CLAIM_SCHEMA
+          : isReaderJob(opts.job) ? READER_SCHEMA : null
   const originalSchemaPath = generatedSchema && !opts.schemaPath
     ? (() => {
         const p = join(runsDir, `${stamp}.schema.json`)
@@ -2004,17 +2141,29 @@ export async function run(opts: {
     resolveSupersededTurn(db(), opts.resume.parent, opts.resume.turn - 1)
   }
   const runToken = randomUUID()
+  const inheritedKeepTree = opts.resume
+    ? Boolean((db().query('SELECT keep_tree FROM run WHERE id=?').get(opts.resume.parent) as
+        { keep_tree: number } | null)?.keep_tree)
+    : false
+  const keepTree = Boolean(opts.keepTree) || inheritedKeepTree
   db().query(
     `UPDATE run SET stack=?, model=?, run_token=?, mcp=?, mcp_server=?,
-                    mcp_connected=?, mcp_error=?, schema_path=?, lens=? WHERE id=?`,
+                    mcp_connected=?, mcp_error=?, schema_path=?, lens=?, keep_tree=? WHERE id=?`,
   )
     .run(
       stackAt(callerCwd), opts.model ?? a.model, runToken,
       storedMcpRequest(opts.mcp), mcpConnection?.server ?? null,
       mcpConnection?.connected == null ? null : mcpConnection.connected ? 1 : 0,
       mcpConnection?.error ?? (mcpMode ? 'no registered project identifies the canonical MCP server' : null),
-      opts.schemaPath ?? null, opts.lens ?? null, claim.id,
+      opts.schemaPath ?? null, opts.lens ?? null, keepTree ? 1 : 0, claim.id,
     )
+  const scratchDir = runScratchDir(claim.id)
+  mkdirSync(scratchDir, { recursive: true })
+  const declaredDeliverables = opts.deliverables ?? inheritedDispatch?.deliverables ?? []
+  writeDispatchState(claim.id, {
+    deliverables: declaredDeliverables,
+    timeoutMinutes: timeoutMinutes ?? null,
+  })
 
   /**
    * A repository worker never runs in the caller's checkout.
@@ -2470,6 +2619,7 @@ export async function run(opts: {
       resume: Boolean(opts.resume),
       env: childEnv(a, claim.id, runToken, {
         ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment,
+        ORCH_SCRATCH: scratchDir,
         ...(askLoopback ? { ORCH_ASK_URL: askLoopback.url } : {}),
       }),
     }
@@ -2489,10 +2639,8 @@ export async function run(opts: {
     // always the pid of a process that has already exited.
     db().query('UPDATE run SET agent_pid=? WHERE id=?').run(handle.pid, claim.id)
 
-    // The JOB's bound where it declares one, else the agent's. A job knows how
-    // long its own shape of work takes; an agent only knows what it has been
-    // asked before.
-    const boundMs = job(opts.job).timeoutMs ?? a.timeoutMs
+    // The JOB's bound where it declares one, else the agent's, overridden by
+    // --timeout and capped by the job ceiling. Computed once after routing.
     timer = setTimeout(() => {
       timedOut = true
       void t.cancel(handle)
@@ -2809,6 +2957,15 @@ export async function run(opts: {
         }
       }
     }
+    if (status === 'ok' && isReaderJob(opts.job) && declaredDeliverables.length) {
+      const reader = parseReaderOutput(output)
+      const missing = missingDeclaredDeliverables(declaredDeliverables, reader)
+      if (missing.length) {
+        status = 'failed'
+        error = `${UNEVIDENCED_DELIVERABLE_ERROR}: ${missing.join(', ')}`
+        failureKind = 'unevidenced'
+      }
+    }
 
     /**
      * The questions are written in the SAME `finally` as the row, so a blocked
@@ -3005,6 +3162,17 @@ export async function run(opts: {
         recordReview(opts.resume?.parent ?? claim.id, parsedReview)
       }
     })
+
+    try {
+      persistRunArtifacts(
+        claim.id,
+        isReaderJob(opts.job) ? parseReaderOutput(output)?.files_written ?? null : null,
+        worktree,
+        changes,
+      )
+    } catch (e) {
+      console.error(`orch: could not persist artifacts for run ${claim.id}: ${e}`)
+    }
   }
 
   // Quota and auth stop this agent working until a person acts. Notify at the
@@ -3093,6 +3261,9 @@ export async function run(opts: {
           avoid: opts.avoid,
           carry: opts.carry,
           review: first.review_ref ?? undefined,
+          deliverables: declaredDeliverables,
+          timeoutMinutes,
+          keepTree,
           resolvedReviewTarget: first.review_ref && first.base_commit && first.head_commit
             ? {
                 branch: resolveLandingBranch(first.review_ref).branch,
@@ -3112,6 +3283,11 @@ export async function run(opts: {
         )
       }
     }
+  }
+
+  if (worktree && reclaimsTreeByDefault(opts.job) && !keepTree &&
+      status !== 'asking' && status !== 'running') {
+    reclaimTerminalTree(claim.id, worktree)
   }
 
   if (status === 'failed') {

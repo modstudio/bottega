@@ -280,6 +280,111 @@ export type ReviewReply = {
   }
 }
 
+export const READER_DELIVERABLE_STATUSES = ['delivered', 'blocked', 'not-applicable'] as const
+export type ReaderDeliverableStatus = typeof READER_DELIVERABLE_STATUSES[number]
+
+/**
+ * Bound product of diagnose, understand, and file-question.
+ *
+ * The caller names the tables at dispatch. Each declared name must appear
+ * here as delivered, blocked with a reason in `content`, or not-applicable.
+ * A missing name without a blocked reason is unevidenced — the same class as
+ * a clean review with no coverage. Prose stays in `narrative`.
+ */
+export const READER_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['deliverables', 'narrative', 'files_written'],
+  properties: {
+    deliverables: {
+      type: 'array',
+      items: {
+        type: 'object', additionalProperties: false,
+        required: ['name', 'status', 'content'],
+        properties: {
+          name: { type: 'string' },
+          status: { type: 'string', enum: [...READER_DELIVERABLE_STATUSES] },
+          content: { type: 'string' },
+        },
+      },
+    },
+    narrative: { type: ['string', 'null'] },
+    files_written: { type: ['array', 'null'], items: { type: 'string' } },
+  },
+} as const
+
+export type ReaderReply = {
+  deliverables: { name: string; status: ReaderDeliverableStatus; content: string }[]
+  narrative: string | null
+  files_written: string[] | null
+}
+
+const isReaderStatus = (value: unknown): value is ReaderDeliverableStatus =>
+  typeof value === 'string' &&
+  (READER_DELIVERABLE_STATUSES as readonly string[]).includes(value)
+
+export function parseReaderReply(value: unknown): ReaderReply | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const v = value as Partial<ReaderReply>
+  if (!Array.isArray(v.deliverables)) return null
+  if (v.narrative !== null && typeof v.narrative !== 'string') return null
+  if (v.files_written !== null && v.files_written !== undefined &&
+      !(Array.isArray(v.files_written) && v.files_written.every((p) => typeof p === 'string'))) {
+    return null
+  }
+  const deliverables: ReaderReply['deliverables'] = []
+  for (const item of v.deliverables) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return null
+    const row = item as { name?: unknown; status?: unknown; content?: unknown }
+    if (typeof row.name !== 'string' || !isReaderStatus(row.status) || typeof row.content !== 'string') {
+      return null
+    }
+    deliverables.push({ name: row.name, status: row.status, content: row.content })
+  }
+  return {
+    deliverables,
+    narrative: v.narrative ?? null,
+    files_written: v.files_written ?? null,
+  }
+}
+
+export function parseReaderOutput(text: string): ReaderReply | null {
+  const candidates = [text.trim(), ...(text.match(/```(?:json)?\s*([\s\S]*?)```/gi) ?? [])
+    .map((x) => x.replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim())]
+  for (const candidate of candidates) {
+    try {
+      const parsed = parseReaderReply(JSON.parse(candidate))
+      if (parsed) return parsed
+    } catch { /* try an embedded object */ }
+  }
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start >= 0 && end > start) {
+    try { return parseReaderReply(JSON.parse(text.slice(start, end + 1))) } catch { /* invalid */ }
+  }
+  return null
+}
+
+export const UNEVIDENCED_DELIVERABLE_ERROR = 'missing declared deliverable without a blocked reason'
+
+/** A declared deliverable is evidenced when delivered, not-applicable, or blocked with a reason. */
+export function missingDeclaredDeliverables(
+  declared: string[], reply: ReaderReply | null,
+): string[] {
+  if (!declared.length) return []
+  const byName = new Map<string, ReaderReply['deliverables'][number]>()
+  for (const item of reply?.deliverables ?? []) {
+    if (!byName.has(item.name)) byName.set(item.name, item)
+  }
+  const missing: string[] = []
+  for (const name of declared) {
+    const entry = byName.get(name)
+    if (!entry) missing.push(name)
+    else if (entry.status === 'blocked' && !entry.content.trim()) missing.push(name)
+  }
+  return missing
+}
+
 /** verify-claim keeps its verdict contract; only its provenance is added. */
 export const VERIFY_CLAIM_SCHEMA = {
   type: 'object',

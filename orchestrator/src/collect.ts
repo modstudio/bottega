@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { failureReason, outcomeOf } from './outcome.ts'
 import type { ObservedDeadRun } from './db.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES, visibleTranscriptText } from './result-output.ts'
@@ -175,9 +176,9 @@ function utf8Tail(text: string, bytes: number): string {
 export function collectResult(
   database: Database, argv: string[], scoreSuffix: (job: string) => string = () => '',
 ): void {
-  const unknown = argv.slice(2).find((arg) => arg !== '--quiet')
+  const unknown = argv.slice(2).find((arg) => arg !== '--quiet' && arg !== '--artifacts')
   if (unknown) {
-    throw new Error(`unrecognised argument: ${unknown}\nworking form: orch result <run-id> [--quiet]`)
+    throw new Error(`unrecognised argument: ${unknown}\nworking form: orch result <run-id> [--quiet] [--artifacts]`)
   }
   const id = Number(argv[1])
   if (!id) throw new Error('orch result <run-id>')
@@ -196,6 +197,21 @@ export function collectResult(
     mcp_connected: number | null; mcp_error: string | null
   } | null
   if (!row) throw new Error(`no run ${id}`)
+
+  if (argv.includes('--artifacts')) {
+    const runsRoot = process.env.ORCH_RUNS
+      ?? (process.env.ORCH_DB ? join(dirname(process.env.ORCH_DB), 'runs') : null)
+    const dir = runsRoot ? join(runsRoot, String(chain.finalId), 'artifacts') : ''
+    const files: string[] = []
+    if (existsSync(dir)) {
+      for (const name of readdirSync(dir, { recursive: true })) {
+        const p = join(dir, String(name))
+        try { if (statSync(p).isFile()) files.push(p) } catch { /* raced */ }
+      }
+    }
+    if (!files.length) console.log('no artifacts')
+    else for (const file of files.sort()) console.log(file)
+  }
 
   const asking = row.status === 'asking' ? resolveAsking(database, row.id) : null
   const outcome = outcomeOf(row)

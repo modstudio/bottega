@@ -591,7 +591,9 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
       rmSync(join(watched, 'written-by-run.txt'))
       delete process.env.ORCH_TEST_EXTERNAL_WRITE
       process.env.ORCH_TEST_INSIDE_WRITE = 'inside-only.txt'
-      const clean = await run({ job: 'file-question', prompt: 'write inside', cwd: dir, agent: 'grok' })
+      const clean = await run({
+        job: 'file-question', prompt: 'write inside', cwd: dir, agent: 'grok', keepTree: true,
+      })
       const cleanRecorded = db().query(
         'SELECT status, failure_kind, outside_worktree_writes FROM run WHERE id=?',
       ).get(clean.id) as { status: string; failure_kind: string | null; outside_worktree_writes: string }
@@ -660,6 +662,7 @@ printf '%s\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"a
       console.error = (...args: unknown[]) => warnings.push(args.join(' '))
       const result = await run({
         job: 'file-question', prompt: 'proceed despite moved checkout', cwd: dir, agent: 'grok',
+        keepTree: true,
       })
       const row = db().query(
         'SELECT status, failure_kind, outside_worktree_writes FROM run WHERE id=?',

@@ -65,7 +65,7 @@ describe('Drizzle migration journal', () => {
     const legacyStore = legacy()
     expect(canonicalSchemaHash(legacyStore)).toBe(BASELINE_SCHEMA_HASH)
     expect(applyMigrations(legacyStore)).toEqual([
-      '0000_bright_sleepwalker', '0001_landing_queue', '0002_spec_sha',
+      '0000_bright_sleepwalker', '0001_landing_queue', '0002_spec_sha', '0003_keep_tree',
     ])
     legacyStore.close()
     rmSync(dir, { recursive: true, force: true })
@@ -132,7 +132,7 @@ describe('Drizzle migration journal', () => {
   test('a matching pre-journal store adopts 0000 and continues through later migrations', () => {
     const d = legacy()
     expect(applyMigrations(d)).toEqual([
-      '0000_bright_sleepwalker', '0001_landing_queue', '0002_spec_sha',
+      '0000_bright_sleepwalker', '0001_landing_queue', '0002_spec_sha', '0003_keep_tree',
     ])
     expect(d.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='landing'").get())
       .toBeDefined()

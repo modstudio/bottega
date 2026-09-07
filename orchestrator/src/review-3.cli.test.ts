@@ -192,7 +192,7 @@ describe('review-lens-inline has no checkout', () => {
       report('changed.txt:1-2 — inspected changed behavior')
       const clean = await runJob({
         job: 'review-lens', prompt: 'inspect', cwd: repo, agent: 'codex',
-        lens: 'explicit-evidence-clean', review: 'feature/evidence',
+        lens: 'explicit-evidence-clean', review: 'feature/evidence', keepTree: true,
       })
       expect(db().query(
         'SELECT base_commit, input_tree, head_commit, review_ref, changed_paths FROM run WHERE id=?',
@@ -281,7 +281,7 @@ describe('review-lens-inline has no checkout', () => {
 
       const byBranch = await runJob({
         job: 'review-lens', prompt: 'inspect', cwd: repo, agent: 'codex',
-        lens: 'explicit', review: 'feature/reviewed',
+        lens: 'explicit', review: 'feature/reviewed', keepTree: true,
       })
       expect(git(byBranch.worktree!.path, 'rev-parse', 'HEAD')).toBe(tip)
       expect(Bun.spawnSync(['git', 'symbolic-ref', '-q', 'HEAD'], {
@@ -302,7 +302,7 @@ describe('review-lens-inline has no checkout', () => {
       db().query('UPDATE run SET branch=? WHERE id=?').run('feature/reviewed', sourceRun)
       const byRun = await runJob({
         job: 'craft', prompt: 'inspect', cwd: repo, agent: 'codex',
-        lens: 'by-run', review: String(sourceRun),
+        lens: 'by-run', review: String(sourceRun), keepTree: true,
       })
       expect(git(byRun.worktree!.path, 'rev-parse', 'HEAD')).toBe(tip)
       expect(db().query('SELECT review_ref FROM run WHERE id=?').get(byRun.id))
@@ -316,7 +316,7 @@ describe('review-lens-inline has no checkout', () => {
       writeFileSync(join(branchTree, 'overlay.txt'), 'overlay\n')
       const carried = await runJob({
         job: 'safety', prompt: 'inspect', cwd: branchTree, agent: 'codex',
-        lens: 'carried-review', review: 'feature/reviewed', carry: true,
+        lens: 'carried-review', review: 'feature/reviewed', carry: true, keepTree: true,
       })
       expect(readFileSync(join(carried.worktree!.path, 'overlay.txt'), 'utf8')).toBe('overlay\n')
       expect(git(carried.worktree!.path, 'rev-parse', 'HEAD')).toBe(tip)
@@ -414,7 +414,7 @@ describe('review-lens-inline has no checkout', () => {
 
       const repository = await runJob({
         job: 'review-lens', prompt: `inspect ${repo}/project-only.txt`,
-        cwd: repo, agent: 'codex', lens: 'project',
+        cwd: repo, agent: 'codex', lens: 'project', keepTree: true,
       })
       const repositoryView = JSON.parse(repository.output) as {
         prompt: string; checkout: boolean; projectFile: boolean
@@ -432,7 +432,7 @@ describe('review-lens-inline has no checkout', () => {
 
       const nested = await runJob({
         job: 'review-lens', prompt: `inspect ${repo}/subdir/subject.txt`,
-        cwd: join(repo, 'subdir'), agent: 'codex', lens: 'nested',
+        cwd: join(repo, 'subdir'), agent: 'codex', lens: 'nested', keepTree: true,
       })
       const nestedView = JSON.parse(nested.output) as { prompt: string }
       expect(nestedView.prompt).toContain(`${nested.worktree!.path}/subdir/subject.txt`)
@@ -444,7 +444,7 @@ describe('review-lens-inline has no checkout', () => {
       const callerIndex = runGit('write-tree')
       const carried = await runJob({
         job: 'review-lens', prompt: 'inspect carried content', cwd: repo, agent: 'codex',
-        lens: 'carried', carry: true,
+        lens: 'carried', carry: true, keepTree: true,
       })
       const expected = contentTree(carried.worktree!.path)
       expect(db().query('SELECT input_tree, head_commit FROM run WHERE id=?').get(carried.id))

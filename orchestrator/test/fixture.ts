@@ -155,7 +155,10 @@ export const {
   missingDatabaseMessage, registeredRepositoryMissingDatabase, resolveDatabase, resolveRunsDirectory,
 } = await import('../src/database-location.ts')
 export const { dbNameFor, recipeNotes, runRecipe, fill } = await import('../src/recipe.ts')
-export const { JOBS } = await import('../src/jobs.ts')
+export const {
+  JOBS, jobBoundInstructionForContract, resolveJobTimeoutMs, jobTimeoutCeilingMinutes,
+  isReaderJob, READER_JOBS, JOB_TIMEOUTS,
+} = await import('../src/jobs.ts')
 export const { runDetail, state } = await import('../src/serve.ts')
 export const { classify, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOT_EVIDENCE, COOLS_DOWN, FAILS_OVER,
         isNonAnswer, detectBlockers } = await import('../src/failure.ts')
@@ -166,7 +169,7 @@ export const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePa
         changedRegisteredCheckouts, checkoutAliases, checkoutCaseSensitivity,
         retargetRepositoryPrompt, retargetRepositoryPromptForDispatch,
         packedResumePrompt, resolveReviewTarget, implicitReviewWarning, mcpRequestFromStored,
-        retryModelForAgent, run: runJob } = await import('../src/run.ts')
+        retryModelForAgent, run: runJob, listRunArtifacts, runArtifactsDir, runScratchDir } = await import('../src/run.ts')
 export const run = runJob
 export const {
   CANON_EVALS, CANON_EVAL_LENS, TRACKED_EVAL_PATH, UNTRACKED_EVAL_PATH,
@@ -181,6 +184,7 @@ export const retargetedPrompt = (
 export const { summary } = await import('../src/metric.ts')
 export const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
         NO_REPO_PREAMBLE, WORKER_PREAMBLE, LAND_PREAMBLE, REVIEW_SCHEMA,
+        READER_SCHEMA, parseReaderOutput, missingDeclaredDeliverables, UNEVIDENCED_DELIVERABLE_ERROR,
         READER_DELIVERABLE_FIRST,
         REVIEW_SEVERITY_INSTRUCTION, INFRASTRUCTURE_RECOVERY, COULD_NOT_VERIFY_INSTRUCTION,
         VERIFY_CLAIM_SCHEMA, ISSUE_WORKER_SCHEMA, workerPreamble, workerResumeGuard,

@@ -40,6 +40,7 @@ export const run = sqliteTable('run', {
   schemaPath: text('schema_path'), docsInjected: integer('docs_injected'), docRevisions: text('doc_revisions'), canonSha: text('canon_sha'),
   transport: text(),
   preConfinement: text('pre_confinement'),
+  keepTree: integer('keep_tree').notNull().default(0),
 }, (t) => [
   check('run_status_check', sql`${t.status} in ('running','ok','failed','stale','asking','stopped')`),
   check('run_sandbox_check', sql`${t.sandbox} is null or ${t.sandbox} in ('host','srt')`),

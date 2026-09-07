@@ -1,4 +1,5 @@
 import { AGENTS, type Caps } from './agents.ts'
+import { STALE_AFTER_MS } from './db.ts'
 
 export type Job = {
   name: string
@@ -35,11 +36,109 @@ export type Job = {
    *
    * Held below STALE_AFTER_MS, asserted in the suite, so a run always writes
    * its own terminal state rather than being swept out from under a process
-   * still working.
+   * still working. `timeoutCeilingMs` is the declared ceiling; the effective
+   * ceiling is that number capped just below the stale cutoff.
    */
   timeoutMs?: number
+  /** Declared ceiling for `orch do --timeout`, in ms, before the stale cap. */
+  timeoutCeilingMs?: number
   /** This job returns independently triageable review findings. */
   findings?: boolean
+}
+
+/**
+ * Default and ceiling timeouts, in minutes. Help text, the worker's bound
+ * sentence, and `orch do --timeout` all read from here.
+ *
+ * `defaultMinutes: null` means the selected agent's own bound, then the
+ * ceiling. Every ceiling is still capped just below STALE_AFTER_MS; when that
+ * cap wins, the `--timeout` refusal names the cutoff.
+ */
+export const JOB_TIMEOUTS = {
+  implement: { defaultMinutes: 45, ceilingMinutes: 90 },
+  'issue-worker': { defaultMinutes: 45, ceilingMinutes: 90 },
+  fix: { defaultMinutes: 30, ceilingMinutes: 60 },
+  land: { defaultMinutes: 30, ceilingMinutes: 60 },
+  diagnose: { defaultMinutes: 40, ceilingMinutes: 60 },
+  understand: { defaultMinutes: 40, ceilingMinutes: 60 },
+  'review-lens': { defaultMinutes: 30, ceilingMinutes: 45 },
+  safety: { defaultMinutes: 30, ceilingMinutes: 45 },
+  craft: { defaultMinutes: 30, ceilingMinutes: 45 },
+  'file-question': { defaultMinutes: null, ceilingMinutes: 20 },
+  'canon-lookup': { defaultMinutes: null, ceilingMinutes: 20 },
+  summarize: { defaultMinutes: null, ceilingMinutes: 20 },
+  'mcp-query': { defaultMinutes: null, ceilingMinutes: 20 },
+  'verify-claim': { defaultMinutes: null, ceilingMinutes: 20 },
+  'review-lens-inline': { defaultMinutes: null, ceilingMinutes: 20 },
+} as const satisfies Record<string, { defaultMinutes: number | null; ceilingMinutes: number }>
+
+export const READER_JOBS = ['diagnose', 'understand', 'file-question'] as const
+export type ReaderJob = typeof READER_JOBS[number]
+
+export function isReaderJob(name: string): name is ReaderJob {
+  return (READER_JOBS as readonly string[]).includes(name)
+}
+
+/** Lens and reader trees are reclaimed at terminalisation unless `--keep-tree`. */
+export function reclaimsTreeByDefault(name: string): boolean {
+  const j = JOBS[name]
+  return Boolean(j && (isReaderJob(name) || (j.findings && j.needs.readsRepo)))
+}
+
+export function jobTimeoutCeilingMs(j: Job): number {
+  const declared = j.timeoutCeilingMs ?? JOB_TIMEOUTS[j.name as keyof typeof JOB_TIMEOUTS].ceilingMinutes * 60_000
+  return Math.min(declared, STALE_AFTER_MS - 1)
+}
+
+export function jobTimeoutCeilingMinutes(j: Job): number {
+  return Math.floor(jobTimeoutCeilingMs(j) / 60_000)
+}
+
+export function timeoutCeilingRefusal(j: Job, requestedMinutes: number): string {
+  const declared = Math.round((j.timeoutCeilingMs ?? jobTimeoutCeilingMs(j)) / 60_000)
+  const effective = jobTimeoutCeilingMinutes(j)
+  const staleMinutes = Math.round(STALE_AFTER_MS / 60_000)
+  if (effective < declared) {
+    return `${j.name} timeout ceiling is ${effective} minutes ` +
+      `(stale cutoff ${staleMinutes}m wins over the job's ${declared}m ceiling); ` +
+      `got --timeout ${requestedMinutes}`
+  }
+  return `${j.name} timeout ceiling is ${effective} minutes; got --timeout ${requestedMinutes}`
+}
+
+/**
+ * Resolve the wall bound for a run. `overrideMinutes` is `orch do --timeout`.
+ * Throws if the override is not a positive integer or exceeds the ceiling.
+ */
+export function resolveJobTimeoutMs(
+  j: Job, agentTimeoutMs: number, overrideMinutes?: number,
+): number {
+  const ceiling = jobTimeoutCeilingMs(j)
+  if (overrideMinutes !== undefined) {
+    if (!Number.isInteger(overrideMinutes) || overrideMinutes < 1) {
+      throw new Error(`--timeout must be a positive integer number of minutes; got ${overrideMinutes}`)
+    }
+    const requested = overrideMinutes * 60_000
+    if (requested > ceiling) throw new Error(timeoutCeilingRefusal(j, overrideMinutes))
+    return requested
+  }
+  return Math.min(j.timeoutMs ?? agentTimeoutMs, ceiling)
+}
+
+/** One sentence naming this job's bound and where to write long tables. */
+export function jobBoundInstruction(j: Job, boundMs: number): string {
+  const minutes = Math.round(boundMs / 60_000)
+  return `This job's bound is ${minutes} minutes. When a step is long, write tables ` +
+    `incrementally to a named file under $ORCH_SCRATCH rather than holding them only in the final reply.`
+}
+
+export function jobBoundInstructionForContract(j: Job): string {
+  const defaults = JOB_TIMEOUTS[j.name as keyof typeof JOB_TIMEOUTS]
+  const bound = defaults?.defaultMinutes != null
+    ? `${defaults.defaultMinutes} minutes`
+    : `the selected agent's bound, capped at ${jobTimeoutCeilingMinutes(j)} minutes`
+  return `This job's bound is ${bound}. When a step is long, write tables ` +
+    `incrementally to a named file under $ORCH_SCRATCH rather than holding them only in the final reply.`
 }
 
 export const DEFAULT_PACK_BYTES = 96 * 1024
@@ -89,7 +188,6 @@ export const JOBS: Record<string, Job> = {
     needs: { readsRepo: true, writesRepo: true, resumable: true },
     prefer: ['codex'],
     contextTokens: DEEP,
-    timeoutMs: 45 * 60_000,
   },
   'review-lens': {
     name: 'review-lens',
@@ -106,9 +204,9 @@ export const JOBS: Record<string, Job> = {
      *
      * Matched to `fix` rather than to `implement`: a review is bounded work on
      * a known diff, not an open-ended build. The number is the reporting
-     * session's, from its own measurements, not my estimate.
+     * session's, from its own measurements, not my estimate. Defaults and
+     * ceilings live in JOB_TIMEOUTS.
      */
-    timeoutMs: 30 * 60_000,
     // A pack NAMES its sources rather than quoting them — quoting would mean the
     // orchestrator read them, which is the cost delegation exists to avoid. So a
     // lens must be able to open what the pack points at.
@@ -192,8 +290,7 @@ export const JOBS: Record<string, Job> = {
     prefer: ['codex'],
     contextTokens: DEEP,
     // Measured against a real one: fifteen files, then PHPStan and PHPUnit in
-    // Docker. Twenty minutes killed it after it had finished.
-    timeoutMs: 45 * 60_000,
+    // Docker. Twenty minutes killed it after it had finished. Bound in JOB_TIMEOUTS.
   },
   /**
    * A narrow, already-diagnosed change: the fault is known and the fix is
@@ -209,7 +306,7 @@ export const JOBS: Record<string, Job> = {
     prefer: ['codex'],
     contextTokens: ERRAND,
     // Narrower than `implement` by design, but still a build-and-verify cycle.
-    timeoutMs: 30 * 60_000,
+    // Bound in JOB_TIMEOUTS.
   },
   /**
    * Apply an already-produced run to a named branch and prove it passes before
@@ -224,7 +321,6 @@ export const JOBS: Record<string, Job> = {
     needs: { readsRepo: true, writesRepo: true, resumable: true },
     prefer: ['codex'],
     contextTokens: ERRAND,
-    timeoutMs: 30 * 60_000,
   },
   'mcp-query': {
     name: 'mcp-query',
@@ -247,6 +343,12 @@ export const JOBS: Record<string, Job> = {
  */
 for (const [jobName, j] of Object.entries(JOBS)) {
   j.packBytes ??= DEFAULT_PACK_BYTES
+  const timeouts = JOB_TIMEOUTS[jobName as keyof typeof JOB_TIMEOUTS]
+  if (!timeouts) {
+    throw new Error(`job "${jobName}" is missing from JOB_TIMEOUTS`)
+  }
+  j.timeoutMs = timeouts.defaultMinutes == null ? undefined : timeouts.defaultMinutes * 60_000
+  j.timeoutCeilingMs = timeouts.ceilingMinutes * 60_000
   for (const agent of j.prefer) {
     if (!(agent in AGENTS)) {
       throw new Error(

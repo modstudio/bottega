@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { rmSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
-import { AGENTS, GENERIC_QUESTION_TOKENS, JOBS, LAND_PREAMBLE, NEEDS_HEALTH, OUTPUT_RESERVE, STALE_AFTER_MS, WAKE_COOLDOWN_MS, WORKER_PREAMBLE, addRun, available, candidates, classify, db, detectBlockers, dir, ensureLocalHealth, guide, isNonAnswer, localReachable, pick, resetLocalHealth, runJob, score, strictCodexSchema, unavailableReason, upsertProject, wakeDecision, workerPreamble, workerResumeGuard } from '../test/fixture.ts'
+import { AGENTS, GENERIC_QUESTION_TOKENS, JOBS, LAND_PREAMBLE, NEEDS_HEALTH, OUTPUT_RESERVE, STALE_AFTER_MS, WAKE_COOLDOWN_MS, WORKER_PREAMBLE, addRun, available, candidates, classify, db, detectBlockers, dir, ensureLocalHealth, guide, isNonAnswer, jobTimeoutCeilingMinutes, localReachable, pick, resetLocalHealth, runJob, score, strictCodexSchema, unavailableReason, upsertProject, wakeDecision, workerPreamble, workerResumeGuard } from '../test/fixture.ts'
 
 describe('Codex strict output schemas', () => {
   test('normalizes nested objects and makes optional fields nullable', () => {
@@ -597,12 +597,20 @@ describe('only an agent that can be resumed may be asked to escalate', () => {
     expect(diagnose.needs).toEqual({ readsRepo: true })
     expect(diagnose.prefer).toEqual(['codex', 'grok'])
     expect(diagnose.contextTokens).toBe(JOBS.understand!.contextTokens)
+    expect(diagnose.timeoutMs).toBe(40 * 60_000)
+    expect(JOBS.understand!.timeoutMs).toBe(40 * 60_000)
 
     const land = JOBS.land!
     expect(land.needs).toEqual({ readsRepo: true, writesRepo: true, resumable: true })
     expect(land.prefer).toEqual(['codex'])
     expect(land.contextTokens).toBe(JOBS.fix!.contextTokens)
     expect(land.timeoutMs).toBe(30 * 60_000)
+  })
+
+  test('every job timeout ceiling stays below the stale cutoff', () => {
+    for (const j of Object.values(JOBS)) {
+      expect(jobTimeoutCeilingMinutes(j) * 60_000).toBeLessThan(STALE_AFTER_MS)
+    }
   })
 
   test('inline review declares that repository access is forbidden', () => {

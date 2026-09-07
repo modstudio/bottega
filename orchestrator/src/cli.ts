@@ -54,7 +54,15 @@ let dockerResourcesModule!: typeof import('./docker-resources.ts')
 
 let JOBS!: typeof import('./jobs.ts').JOBS
 let job!: typeof import('./jobs.ts').job
-async function loadJobs() { jobsModule ??= await import('./jobs.ts'); ({ JOBS, job } = jobsModule) }
+let isReaderJob!: typeof import('./jobs.ts').isReaderJob
+let reclaimsTreeByDefault!: typeof import('./jobs.ts').reclaimsTreeByDefault
+let resolveJobTimeoutMs!: typeof import('./jobs.ts').resolveJobTimeoutMs
+let jobBoundInstructionForContract!: typeof import('./jobs.ts').jobBoundInstructionForContract
+async function loadJobs() {
+  jobsModule ??= await import('./jobs.ts')
+  ;({ JOBS, job, isReaderJob, reclaimsTreeByDefault, resolveJobTimeoutMs,
+      jobBoundInstructionForContract } = jobsModule)
+}
 let AGENTS!: typeof import('./agents.ts').AGENTS
 let available!: typeof import('./agents.ts').available
 let installed!: typeof import('./agents.ts').installed
@@ -490,7 +498,7 @@ function requestedMcp(): McpRequest | undefined {
 /** Flags that consume the next argument. Anything else is a boolean switch. */
 const VALUE_FLAGS = new Set(['--agent', '--file', '--schema', '--model', '--transport', '--note', '--note-file', '--message', '--unreviewed',
                              '--id', '--job', '--limit', '--port', '--days', '--window', '--timeout', '--scorer',
-                             '--seed', '--key', '--repo', '--base', '--review', '--avoid', '--distinct-from', '--label', '--lens', '--category', '--severity',
+                             '--seed', '--key', '--repo', '--base', '--review', '--avoid', '--distinct-from', '--label', '--lens', '--deliverable', '--category', '--severity',
                              '--reproduced', '--coverage', '--limits', '--overlap', '--writer',
                              '--finding', '--better-than', '--worse-than', '--same-as', '--n',
                              '--scope', '--subject', '--title', '--cwd'])
@@ -1417,6 +1425,9 @@ function usage(): never {
       --cwd <path>              resolve and carry from this path as if orch started there
       --follow                  block and watch the run instead of returning its id
       --no-failover             do not retry vendor failures on another agent
+      --deliverable <text>      declare a named reader deliverable (repeatable; diagnose, understand, file-question)
+      --timeout <minutes>       override the job's default timeout, within that job's ceiling
+      --keep-tree               keep a lens or reader worktree instead of reclaiming it at terminalisation
 
   orch issue <TASK-KEY>         reproduce, diagnose, fix and independently verify one filed issue
 
@@ -1447,6 +1458,7 @@ function usage(): never {
                                 replay current routing and Thompson sampling over judgements
   orch wait <run-id>...         block until those runs finish (--timeout SECONDS, default 1800)
   orch result <run-id>          print a finished run's output; exit 2 if still running
+      --artifacts               list files kept under runs/<id>/artifacts/
   orch retry <run-id>           re-send a run's exact prompt [--agent NAME] [--model MODEL]
       --agent <name>            ... or to a different one, deliberately
   orch review tier <branch|run-id|from..to> classify review breadth without writing
@@ -1628,6 +1640,9 @@ function doUsage(): never {
   --follow         block and watch the run instead of returning its id
   --no-failover    do not retry vendor failures on another agent
   --quiet          print only the reply or run id
+  --deliverable T  declare a named reader deliverable (repeatable)
+  --timeout N      override the job default, in minutes, within the job ceiling
+  --keep-tree      keep a lens or reader worktree instead of reclaiming it
 `)
   process.exit(0)
 }
@@ -1990,7 +2005,10 @@ switch (cmd) {
     const preamble = selected.needs.writesRepo
       ? WORKER_PREAMBLE
       : selected.needs.readsRepo ? READONLY_PREAMBLE : NO_REPO_PREAMBLE
-    process.stdout.write((selected.findings ? `${REVIEW_SEVERITY_INSTRUCTION}\n\n` : '') + preamble + '\n')
+    process.stdout.write(
+      (selected.findings ? `${REVIEW_SEVERITY_INSTRUCTION}\n\n` : '') +
+      preamble + '\n\n' + jobBoundInstructionForContract(selected) + '\n',
+    )
     break
   }
 
@@ -2651,6 +2669,17 @@ switch (cmd) {
     // before detach() claims a row. An explicitly pinned non-Codex agent keeps
     // its own schema dialect and reads the caller's original file unchanged.
     if (schema && (!flag('agent') || flag('agent') === 'codex')) readStrictCodexSchema(schema)
+    const deliverables = flags('deliverable')
+    if (deliverables.length && !isReaderJob(jobName)) {
+      throw new Error('--deliverable is only valid for diagnose, understand, and file-question')
+    }
+    const timeoutRaw = flag('timeout')
+    const timeoutMinutes = timeoutRaw === undefined ? undefined : Number(timeoutRaw)
+    if (timeoutMinutes !== undefined) resolveJobTimeoutMs(requested, 1, timeoutMinutes)
+    if (has('keep-tree') && !reclaimsTreeByDefault(jobName)) {
+      throw new Error('--keep-tree is only valid for lens and reader jobs')
+    }
+    const keepTree = has('keep-tree')
     const { avoid, distinctModels } = await routeConstraints(flag('agent'))
     if (!porcelain && !explicitRepo && !projectAt(callerCwd)) {
       console.error(
@@ -2701,6 +2730,7 @@ switch (cmd) {
         mcp: requestedMcp(), model: flag('model'), probe: has('probe'), seed, key: flag('key'),
         repo: explicitRepo, base, avoid, distinctModels, transport,
         noFailover: has('no-failover'), carry: has('carry'), review: reviewRef, cwd: callerCwd,
+        deliverables, timeoutMinutes, keepTree,
       })
       if (!porcelain) warnImplementContractConflicts(conflicts, id)
       printRunId(id)
@@ -2741,6 +2771,7 @@ switch (cmd) {
       mcp: requestedMcp(), model: flag('model'), probe: has('probe'), seed, key: flag('key'),
       repo: explicitRepo, base, avoid, distinctModels, transport,
       noFailover: has('no-failover'), carry: has('carry'), review: reviewRef, cwd: callerCwd,
+      deliverables, timeoutMinutes, keepTree,
     })
     warnImplementContractConflicts(conflicts, id)
 
@@ -3083,14 +3114,15 @@ switch (cmd) {
     const row = db().query(
       `SELECT id, COALESCE(parent_run_id,id) root_id, agent, job, cwd, prompt_path,
               probe, status, failure_kind, mcp, mcp_error,
-              schema_path, model, lens, launch_seed, launch_key, launch_base, no_failover
+              schema_path, model, lens, launch_seed, launch_key, launch_base, no_failover,
+              keep_tree
          FROM run WHERE id = ?`,
     ).get(id) as {
       id: number; root_id: number; agent: string; job: string; cwd: string | null
       prompt_path: string | null; probe: number; status: string; failure_kind: string | null
       mcp: number | null; mcp_error: string | null; schema_path: string | null; model: string | null; lens: string | null
       launch_seed: string | null; launch_key: string | null; launch_base: string | null
-      no_failover: number
+      no_failover: number; keep_tree: number
     } | null
     if (!row) throw new Error(`no run ${id}`)
     // A writing job already has a worktree and a vendor session. Retry would
@@ -3154,6 +3186,7 @@ switch (cmd) {
       seed: row.launch_seed ?? undefined, key: row.launch_key ?? undefined,
       base: row.launch_base ?? undefined, noFailover: !!row.no_failover,
       transport: chainTransport(row.root_id) ?? undefined,
+      keepTree: !!row.keep_tree,
     })
     auditRunMutation(retryAuthority, 'retry', `retried as run ${newId}`)
     console.error(`— run ${newId} is retry of ${id}`)
@@ -4318,6 +4351,7 @@ switch (cmd) {
     const rows = db().query(
       `SELECT r.id, COALESCE(r.parent_run_id, r.id) root_id,
               r.repo, r.worktree, r.branch, r.base_commit, r.worktree_source, r.status, r.job,
+              r.keep_tree,
               (julianday('now') - julianday(r.started_at)) AS age_days,
               s.delivery IS NOT NULL AS scored
          FROM run r ${chainScoreJoin('r', 's')}
@@ -4327,7 +4361,7 @@ switch (cmd) {
       id: number; root_id: number; repo: string | null; worktree: string
       branch: string | null; base_commit: string | null; status: string
       worktree_source: Worktree['source'] | null
-      job: string; age_days: number; scored: number
+      job: string; keep_tree: number; age_days: number; scored: number
     }[]
 
     const { removeFor, sweepWithTool, repoRootOf, orphanSafety,
@@ -4345,6 +4379,10 @@ switch (cmd) {
       const current = db().query('SELECT worktree FROM run WHERE id=?').get(r.id) as
         { worktree: string | null } | null
       if (current?.worktree !== r.worktree) continue
+      if (r.keep_tree && !has('force')) {
+        keep(`${r.id}  kept on purpose (--keep-tree)`, 'kept on purpose (--keep-tree)')
+        continue
+      }
       if (r.age_days < days) {
         keep(`${r.id}  too recent (${r.age_days.toFixed(1)}d)`, 'under the age threshold')
         continue
@@ -6617,6 +6655,7 @@ switch (cmd) {
         prefer: job.prefer,
         contextTokens: job.contextTokens,
         timeoutMs: job.timeoutMs ?? null,
+        timeoutCeilingMs: job.timeoutCeilingMs ?? null,
         findings: Boolean(job.findings),
       }))))
       break

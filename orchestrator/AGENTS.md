@@ -155,6 +155,8 @@ change when its changed paths can be established. Without that coverage the run 
 `unevidenced` failure of the agent, not a clean result; missing or malformed output is not a review.
 A review run records its branch and base so its coverage can carry across a rebase.
 
+A measurement job — diagnose, understand, file-question — returns what it measured or says why not. The caller names the tables at dispatch; each is delivered, blocked with a reason, or not applicable. A conclusion without its table is unevidenced, the same class as a clean review with no coverage.
+
 Reviews are recorded when they happen and begin incomplete. Triage is a later
 act by the architect: each finding becomes accepted, modified, rejected, or
 skipped, and a review may be completed only after every finding is triaged.
