@@ -266,4 +266,68 @@ describe('ACP transport through run', () => {
       else process.env.ORCH_DEPTH = priorDepth
     }
   })
+
+  test('a syntactically valid reply that misses the verdict enum is the CLI unmatched-contract failure', async () => {
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    const schemaPath = join(dir, 'acp-enum-schema.json')
+    writeFileSync(schemaPath, JSON.stringify({
+      type: 'object', additionalProperties: false, required: ['verdict'],
+      properties: { verdict: { type: 'string', enum: ['true', 'false', 'undecidable'] } },
+    }))
+    try {
+      installFake(() => fakeResult({
+        output: '{"verdict":"garbage"}', status: 'ok', stopReason: 'end_turn',
+      }))
+      let runId: number | null = null
+      let message = ''
+      try {
+        await run({
+          job: 'summarize', prompt: 'answer via schema', cwd: dir, agent: 'codex',
+          transport: 'acp', schemaPath, noFailover: true,
+        })
+      } catch (error) {
+        runId = (error as Error & { runId?: number }).runId ?? null
+        message = (error as Error).message
+      }
+      expect(message).toContain('reply did not match the worker contract')
+      expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(runId))
+        .toEqual({ status: 'failed', failure_kind: 'other' })
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
+  test('an integer field given a float is the CLI unmatched-contract failure', async () => {
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    const schemaPath = join(dir, 'acp-integer-schema.json')
+    writeFileSync(schemaPath, JSON.stringify({
+      type: 'object', additionalProperties: false, required: ['count'],
+      properties: { count: { type: 'integer' } },
+    }))
+    try {
+      installFake(() => fakeResult({
+        output: '{"count":1.5}', status: 'ok', stopReason: 'end_turn',
+      }))
+      let runId: number | null = null
+      let message = ''
+      try {
+        await run({
+          job: 'summarize', prompt: 'answer via schema', cwd: dir, agent: 'codex',
+          transport: 'acp', schemaPath, noFailover: true,
+        })
+      } catch (error) {
+        runId = (error as Error & { runId?: number }).runId ?? null
+        message = (error as Error).message
+      }
+      expect(message).toContain('reply did not match the worker contract')
+      expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(runId))
+        .toEqual({ status: 'failed', failure_kind: 'other' })
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
 })

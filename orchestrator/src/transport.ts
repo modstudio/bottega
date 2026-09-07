@@ -2,6 +2,7 @@ import { createRequire } from 'node:module'
 import { existsSync, realpathSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import Ajv2020 from 'ajv/dist/2020.js'
 import type { Agent, ArgvOpts, SandboxLevel } from './agents.ts'
 import { job } from './jobs.ts'
 import type { FailureKind } from './failure.ts'
@@ -300,56 +301,16 @@ export function confineFsPath(path: string, root: string): string {
   return candidate
 }
 
-type SchemaObject = Record<string, unknown>
+const schemaValidator = new Ajv2020({ strict: false })
 
-function isSchemaObject(value: unknown): value is SchemaObject {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
-function typeAllows(schema: SchemaObject, jsonType: string): boolean {
-  const type = schema.type
-  if (type === jsonType) return true
-  if (Array.isArray(type) && type.includes(jsonType)) return true
-  if (Array.isArray(schema.anyOf)) {
-    return schema.anyOf.some((part) => isSchemaObject(part) && typeAllows(part, jsonType))
-  }
-  return false
-}
-
+/** Validate a reply against the same Codex-normalised schema the CLI path hands the vendor. */
 export function valueMatchesStrictSchema(schema: unknown, value: unknown): boolean {
-  if (!isSchemaObject(schema)) return false
-  if (value === null) return typeAllows(schema, 'null')
-  const jsonType = Array.isArray(value) ? 'array' : typeof value === 'number' ? 'number'
-    : typeof value === 'boolean' ? 'boolean' : typeof value === 'string' ? 'string'
-      : typeof value === 'object' ? 'object' : ''
-  if (!jsonType || !typeAllows(schema, jsonType)) {
-    if (Array.isArray(schema.anyOf)) {
-      return schema.anyOf.some((part) => valueMatchesStrictSchema(part, value))
-    }
+  if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) return false
+  try {
+    return schemaValidator.compile(schema)(value)
+  } catch {
     return false
   }
-  if (jsonType === 'object') {
-    const record = value as Record<string, unknown>
-    const properties = isSchemaObject(schema.properties) ? schema.properties : {}
-    const required = Array.isArray(schema.required) ? schema.required.map(String) : Object.keys(properties)
-    for (const name of required) {
-      if (!Object.hasOwn(record, name)) return false
-    }
-    if (schema.additionalProperties === false) {
-      for (const name of Object.keys(record)) {
-        if (!Object.hasOwn(properties, name)) return false
-      }
-    }
-    for (const [name, property] of Object.entries(properties)) {
-      if (!Object.hasOwn(record, name)) continue
-      if (!valueMatchesStrictSchema(property, record[name])) return false
-    }
-    return true
-  }
-  if (jsonType === 'array' && 'items' in schema) {
-    return (value as unknown[]).every((item) => valueMatchesStrictSchema(schema.items, item))
-  }
-  return true
 }
 
 export function schemaMismatchError(output: string): string {
