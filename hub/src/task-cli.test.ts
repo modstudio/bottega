@@ -334,6 +334,48 @@ describe('task CLI help', () => {
     d.close()
   })
 
+  test('a value named like a flag does not hide trailing help from writing verbs', () => {
+    const helpDatabase = join(dir, 'flag-named-value-help.db')
+    const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha',
+      '--title', 'Original title', '--body', 'Original body',
+      '--allow-duplicate', 'flag-named value help test seed')
+    expect(seed.exitCode).toBe(0)
+
+    const commands = [
+      ['task', 'new', '--project', 'alpha', '--title', '--title', '--help'],
+      ['task', 'new', '--project', 'alpha', '--title', '--project', '--help'],
+      ['task', 'new', '--project', 'alpha', '--title', '--body', '--help'],
+      ['task', 'new', '--project', 'alpha', '--title', '--allow-duplicate', '--help'],
+      ['task', 'doc', 'new', seed.stdout, '--title', '--version', '--help'],
+      ['task', 'set', seed.stdout, '--title', '--body', '--help'],
+    ]
+    for (const args of commands) {
+      const result = hubAt(helpDatabase, ...args)
+      expect(result.exitCode).toBe(0)
+      expect(result.stderr).toBe('')
+      expect(result.stdout).toContain('hub task new')
+    }
+
+    const d = new Database(helpDatabase, { readonly: true })
+    expect(d.query('SELECT count(*) AS count FROM task').get()).toEqual({ count: 1 })
+    expect(d.query('SELECT count(*) AS count FROM task_document').get()).toEqual({ count: 0 })
+    expect(d.query('SELECT title, body FROM task WHERE key = ?').get(seed.stdout))
+      .toEqual({ title: 'Original title', body: 'Original body' })
+    d.close()
+  })
+
+  test('flag-named title values expose trailing help before error-shaped parsing', () => {
+    const helpDatabase = join(dir, 'flag-named-value-error-help.db')
+    for (const valueFlag of ['--parent', '--status', '--body-file']) {
+      const result = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha',
+        '--title', valueFlag, '--help')
+      expect(result.exitCode).toBe(0)
+      expect(result.stderr).toBe('')
+      expect(result.stdout).toContain('hub task new')
+    }
+    expect(existsSync(helpDatabase)).toBe(false)
+  })
+
   test('recognises help, --help, and -h throughout the task verb group', () => {
     for (const args of [
       ['task', 'help'],

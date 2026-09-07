@@ -37,10 +37,18 @@ const taskValueFlags = new Set([
   '--project', '--title', '--status', '--parent', '--body', '--body-file',
   '--allow-duplicate', '--role', '--version',
 ])
-const taskHelpRequested = () => argv.slice(1).some((token, offset) => {
-  if (token !== 'help' && token !== '--help' && token !== '-h') return false
-  return !taskValueFlags.has(argv[offset])
-})
+const taskHelpRequested = () => {
+  let expectingValue = false
+  for (const token of argv.slice(1)) {
+    if (expectingValue) {
+      expectingValue = false
+      continue
+    }
+    if (token === 'help' || token === '--help' || token === '-h') return true
+    expectingValue = taskValueFlags.has(token)
+  }
+  return false
+}
 
 const TASK_USAGE = `hub task new --project X --title "..." [--status Y] [--parent KEY]
                [--body "..."|--body-file PATH] [--allow-duplicate "reason"]
