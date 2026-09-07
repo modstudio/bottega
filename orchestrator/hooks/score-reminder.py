@@ -16,20 +16,9 @@ DB = os.environ.get("ORCH_DB") or os.path.join(
 )
 
 
-def hub_db():
-    if os.environ.get("HUB_DB"):
-        return os.environ["HUB_DB"]
+def hub_bin():
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-    try:
-        common = subprocess.run(
-            ["git", "-C", root, "rev-parse", "--path-format=absolute", "--git-common-dir"],
-            capture_output=True, text=True, timeout=2, check=True,
-        ).stdout.strip()
-        if common:
-            root = os.path.dirname(common)
-    except Exception:
-        pass
-    return os.path.join(root, "hub", "hub.db")
+    return os.path.join(root, "bin", "hub")
 
 
 def main() -> int:
@@ -150,20 +139,14 @@ def main() -> int:
         return 0  # never block a session because of a database problem
 
     notes = []
-    note_store = hub_db()
-    if os.path.exists(note_store):
-        try:
-            hub = sqlite3.connect(f"file:{note_store}?mode=ro", uri=True, timeout=2)
-            notes = hub.execute(
-                """SELECT DISTINCT n.id, n.project, n.text
-                     FROM note n, json_each(n.anchors) sighting
-                    WHERE json_extract(sighting.value, '$.session_id') = ?
-                    ORDER BY n.id""",
-                (sid,),
-            ).fetchall()
-            hub.close()
-        except sqlite3.Error:
-            notes = []
+    try:
+        result = subprocess.run(
+            [hub_bin(), "note", "list", "--session", sid, "--json"],
+            capture_output=True, text=True, timeout=5, check=True,
+        )
+        notes = [(row["id"], row["project"], row["text"]) for row in json.loads(result.stdout)]
+    except Exception:
+        notes = []
 
     if not rows and not pairs and not notes:
         return 0

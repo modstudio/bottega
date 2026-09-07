@@ -7,6 +7,7 @@ import { db } from './db.ts'
 import { bootstrapFixtureStore } from './db.ts'
 import {
   createNote, deriveNoteAnchor, dropNote, getNote, mergeNote, staleNotes,
+  listActionableNotes, promoteNote,
   type NoteAnchor,
 } from './note.ts'
 
@@ -38,6 +39,28 @@ describe('suggestion notes', () => {
     expect(() => getNote(two.id)).toThrow(`no note ${two.id}`)
 
     expect(dropNote(one.id, 'superseded').stale_reason).toBe('dropped: superseded')
+  })
+
+  test('actionable notes exclude promoted and dropped rows', () => {
+    const session = `actionable-${crypto.randomUUID()}`
+    const make = (text: string) => createNote({ text, cwd: '/fixtures/repos/workshop', forceNew: true }).note
+    const open = make('Open curator observation')
+    const promoted = make('Promoted curator observation')
+    const dropped = make('Dropped curator observation')
+    const anchor = JSON.stringify([{ ...open.anchors[0], session_id: session }])
+    for (const note of [open, promoted, dropped]) db().query('UPDATE note SET anchors=? WHERE id=?').run(anchor, note.id)
+    promoteNote(promoted.id)
+    dropNote(dropped.id, 'resolved')
+    expect(listActionableNotes({ session }).map((note) => note.id)).toEqual([open.id])
+  })
+
+  test('reserved text requires the note new grammar', () => {
+    const cli = new URL('./cli.ts', import.meta.url).pathname
+    const result = Bun.spawnSync([process.execPath, cli, 'note', 'list', '--new'], {
+      env: process.env, stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(result.exitCode).not.toBe(0)
+    expect(result.stderr.toString()).toContain('hub note new "list"')
   })
 
   test('stale maintenance recognizes file, run, branch and commit anchors', async () => {

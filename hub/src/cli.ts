@@ -26,7 +26,7 @@ import { listOpenRulings, rulingsPayload } from './rulings.ts'
 import { startDashboardCapability } from './orch.ts'
 import { hoursAgo } from './time.ts'
 import {
-  createNote, curateNotes, curatorEnabled, dropNote, listNotes, mergeNote, promoteNote,
+  createNote, curateNotes, curatorEnabled, dropNote, listActionableNotes, listNotes, mergeNote, promoteNote,
   setCuratorEnabled, staleNotes,
 } from './note.ts'
 
@@ -133,8 +133,8 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and the 
 
   ${TASK_USAGE}
 
-  hub note "<text>" [--same-as ID|--new] [--area AREA]
-  hub note list [--project X] [--stale] [--json]
+  hub note new "<text>" [--same-as ID|--new] [--area AREA]
+  hub note list [--project X] [--stale] [--session ID] [--json]
   hub note same <ID> <ID>
   hub note promote <ID>
   hub note drop <ID> --reason "..."
@@ -461,8 +461,18 @@ async function task() {
 
 async function note() {
   const sub = argv[1]
+  const verbs = new Set(['list', 'same', 'promote', 'drop', 'stale', 'curate', 'curator'])
+  if (sub && verbs.has(sub) && (has('new') || flag('same-as'))) {
+    throw new Error(`to file the text "${sub}", use: hub note new "${sub}" [--new|--same-as ID]`)
+  }
   if (sub === 'list') {
-    const rows = listNotes({ project: flag('project'), stale: has('stale') })
+    if (argv[2] && !argv[2]!.startsWith('--')) {
+      throw new Error('to file the text "list", use: hub note new "list" [--new|--same-as ID]')
+    }
+    const session = flag('session')
+    const rows = session
+      ? listActionableNotes({ project: flag('project'), session })
+      : listNotes({ project: flag('project'), stale: has('stale') })
     if (has('json')) console.log(JSON.stringify(rows))
     else if (!rows.length) console.log('no notes')
     else for (const row of rows) {
@@ -508,7 +518,10 @@ async function note() {
     return
   }
 
-  const text = sub ?? ''
+  if (sub !== 'new') {
+    throw new Error(`hub note new <text> [--same-as ID|--new]; to file the text "${sub ?? ''}", put new before it`)
+  }
+  const text = argv[2] ?? ''
   const same = flag('same-as')
   let result = createNote({ text, area: flag('area'), sameAs: same ? Number(same) : undefined, forceNew: has('new') })
   if (!result.note) {

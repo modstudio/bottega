@@ -62,7 +62,7 @@ export type DuplicateCandidate = {
 
 async function hubOutput(args: string[], cwd = process.cwd()): Promise<string> {
   const child = Bun.spawn([HUB, ...args], {
-    cwd, env: { ...process.env }, stdout: 'pipe', stderr: 'pipe',
+    cwd, env: { ...process.env }, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe',
   })
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(child.stdout).text(),
@@ -75,9 +75,8 @@ async function hubOutput(args: string[], cwd = process.cwd()): Promise<string> {
   return stdout
 }
 
-export async function fileNote(input: { text: string; same_as?: number; new?: boolean }, requireChoice = true) {
+export async function fileNote(input: { text: string; same_as?: number; new?: boolean }) {
   if (input.same_as && input.new) throw new Error('same_as and new are mutually exclusive')
-  if (requireChoice && !input.same_as && !input.new) throw new Error('non-interactive note filing requires same_as or new')
   let cwd = process.cwd()
   const runId = Number(process.env.ORCH_RUN_ID ?? 0)
   const token = process.env.ORCH_RUN_TOKEN ?? ''
@@ -88,7 +87,8 @@ export async function fileNote(input: { text: string; same_as?: number; new?: bo
     if (worker?.launch_cwd) cwd = worker.launch_cwd
   }
   if (!projectAt(cwd)) throw new Error(`cannot file note: no registered project contains ${cwd}`)
-  const args = ['note', input.text, ...(input.same_as ? ['--same-as', String(input.same_as)] : ['--new'])]
+  const args = ['note', 'new', input.text,
+    ...(input.same_as ? ['--same-as', String(input.same_as)] : input.new ? ['--new'] : [])]
   return { output: (await hubOutput(args, cwd)).trim() }
 }
 
@@ -513,7 +513,7 @@ export function createDocsMcpServer(): McpServer {
   })
 
   server.registerTool('note', {
-    description: 'File one suggestion-box note for the project containing the calling cwd.',
+    description: 'File one cwd-bound suggestion-box note. If duplicate candidates are returned, retry with same_as or new.',
     inputSchema: {
       text: z.string().trim().min(1),
       same_as: z.number().int().positive().optional(),

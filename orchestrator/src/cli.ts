@@ -2631,7 +2631,7 @@ switch (cmd) {
     if (!noteText?.trim()) throw new Error('orch note <text> [--same-as ID|--new]')
     const { fileNote } = await import('./mcp.ts')
     const same = flag('same-as')
-    const result = await fileNote({ text: noteText, ...(same ? { same_as: Number(same) } : {}), new: has('new') }, false)
+    const result = await fileNote({ text: noteText, ...(same ? { same_as: Number(same) } : {}), new: has('new') })
     console.log(result.output)
     break
   }

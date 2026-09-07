@@ -72,16 +72,25 @@ export function deriveNoteAnchor(text: string, cwd = process.cwd(), env = proces
   }
 }
 
-export function listNotes(filters: { project?: string; stale?: boolean } = {}): NoteRow[] {
+export function listNotes(filters: { project?: string; stale?: boolean; session?: string; actionable?: boolean } = {}): NoteRow[] {
   const clauses: string[] = []
   const values: (string | number)[] = []
   if (filters.project) { registeredProject(filters.project); clauses.push('project = ?'); values.push(filters.project) }
   if (filters.stale !== undefined) clauses.push(filters.stale ? 'stale_at IS NOT NULL' : 'stale_at IS NULL')
+  if (filters.session) {
+    clauses.push("EXISTS (SELECT 1 FROM json_each(note.anchors) WHERE json_extract(value, '$.session_id') = ?)")
+    values.push(filters.session)
+  }
+  if (filters.actionable) clauses.push('stale_at IS NULL AND promoted_task IS NULL')
   const rows = db().query<Omit<NoteRow, 'anchors'> & { anchors: string }, (string | number)[]>(
     `SELECT * FROM note ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
      ORDER BY last_seen_at DESC, id DESC`,
   ).all(...values)
   return rows.map(decode)
+}
+
+export function listActionableNotes(filters: { project?: string; session?: string } = {}): NoteRow[] {
+  return listNotes({ ...filters, actionable: true })
 }
 
 export function getNote(value: number | string): NoteRow {
@@ -257,7 +266,7 @@ export async function curateNotes(scheduled = false): Promise<{ project: string;
   if (scheduled && !curatorEnabled()) return []
   const results: { project: string; result: string }[] = []
   for (const project of projects()) {
-    const notes = listNotes({ project: project.name, stale: false })
+    const notes = listActionableNotes({ project: project.name })
     if (!notes.length) continue
     const prompt = [
       'Re-read every open note below against this checkout. Return proposals only; make no changes.',

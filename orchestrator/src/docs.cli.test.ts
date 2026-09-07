@@ -674,6 +674,75 @@ describe('scoped operator docs', () => {
     expect(notes[0].anchors[0]).toMatchObject({ cwd, session_id: 'note-cli-session' })
   })
 
+  test('orch note without a duplicate choice returns candidates and files nothing', () => {
+    mkdirSync(join(dir, 'note-duplicate-project'), { recursive: true })
+    const cwd = realpathSync(join(dir, 'note-duplicate-project'))
+    upsertProject({ name: 'note-duplicate-project', path: cwd, stack: 'typescript', canon: true,
+      settings: { keyPrefixes: ['NDP'], trunk: 'main' } })
+    const hubDb = join(dir, 'note-duplicate-hub.db')
+    migrateHub(hubDb)
+    const env = { ...process.env, HUB_DB: hubDb, ORCH_DB: process.env.ORCH_DB!,
+      HUB_ORCH: new URL('../../bin/orch', import.meta.url).pathname }
+    const hubFiled = Bun.spawnSync([
+      process.execPath, hubCli, 'note', 'new', 'Collector loses active run intervals', '--new',
+    ], { cwd, env, stdout: 'pipe', stderr: 'pipe' })
+    expect(hubFiled.exitCode, hubFiled.stderr.toString()).toBe(0)
+
+    const offered = Bun.spawnSync([
+      process.execPath, new URL('./cli.ts', import.meta.url).pathname,
+      'note', 'Collector loses the active run interval',
+    ], { cwd, env, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' })
+    expect(offered.exitCode).not.toBe(0)
+    expect(offered.stderr.toString()).toContain('possible duplicate notes:')
+    expect(offered.stderr.toString()).toContain('Pass --same-as <id> or --new.')
+
+    const listed = Bun.spawnSync([process.execPath, hubCli, 'note', 'list', '--project', 'note-duplicate-project', '--json'], {
+      cwd, env, stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(JSON.parse(listed.stdout.toString())).toHaveLength(1)
+  })
+
+  test('the Stop hook lists only actionable notes through hub', () => {
+    mkdirSync(join(dir, 'note-hook-project'), { recursive: true })
+    const cwd = realpathSync(join(dir, 'note-hook-project'))
+    upsertProject({ name: 'note-hook-project', path: cwd, stack: 'typescript', canon: true,
+      settings: { keyPrefixes: ['NHP'], trunk: 'main' } })
+    const hubDb = join(dir, 'note-hook-hub.db')
+    migrateHub(hubDb)
+    const session = 'actionable-note-hook-session'
+    const env = { ...process.env, HUB_DB: hubDb, ORCH_DB: process.env.ORCH_DB!,
+      HUB_ORCH: new URL('../../bin/orch', import.meta.url).pathname,
+      CLAUDE_CODE_SESSION_ID: session }
+    const orchCli = new URL('./cli.ts', import.meta.url).pathname
+    for (const text of ['Promoted hook note', 'Dropped hook note', 'Actionable hook note']) {
+      const filed = Bun.spawnSync([process.execPath, orchCli, 'note', text, '--new'], {
+        cwd, env, stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(filed.exitCode, filed.stderr.toString()).toBe(0)
+    }
+    const listed = Bun.spawnSync([process.execPath, hubCli, 'note', 'list', '--project', 'note-hook-project', '--json'], {
+      cwd, env, stdout: 'pipe', stderr: 'pipe',
+    })
+    const notes = JSON.parse(listed.stdout.toString()) as { id: number; text: string }[]
+    const id = (text: string) => notes.find((note) => note.text === text)!.id
+    for (const args of [
+      ['note', 'promote', String(id('Promoted hook note'))],
+      ['note', 'drop', String(id('Dropped hook note')), '--reason', 'resolved'],
+    ]) {
+      const changed = Bun.spawnSync([process.execPath, hubCli, ...args], { cwd, env, stdout: 'pipe', stderr: 'pipe' })
+      expect(changed.exitCode, changed.stderr.toString()).toBe(0)
+    }
+
+    const hook = Bun.spawnSync(['python3', new URL('../hooks/score-reminder.py', import.meta.url).pathname], {
+      env, stdin: new TextEncoder().encode(JSON.stringify({ session_id: session })), stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(hook.exitCode, hook.stderr.toString()).toBe(0)
+    const reason = JSON.parse(hook.stdout.toString()).reason as string
+    expect(reason).toContain('Actionable hook note')
+    expect(reason).not.toContain('Promoted hook note')
+    expect(reason).not.toContain('Dropped hook note')
+  })
+
   test('MCP file_issue refuses a defect missing reproduce_command with an actionable message', async () => {
     const server = createDocsMcpServer()
     const client = new Client({ name: 'orch-test', version: '1.0.0' })
