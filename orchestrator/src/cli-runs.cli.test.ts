@@ -1,13 +1,144 @@
 import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { DASHBOARD_CAPABILITY_PATH_ENV, DASHBOARD_CAPABILITY_TOKEN_ENV } from '../../shared/dashboard-capability.ts'
 import { MIN_SAMPLE, recordDuels, runJson, addRun, db, declaredCreate, dir, fakeDocker, hermeticGitEnv, recordReview, reviewCalibration, reviewReply, score, upsertProject } from '../test/fixture.ts'
 
 import { runCollectionDescribeFixture } from '../test/fixture.ts'
+
+/**
+ * The derived graph is STATIC relative imports only. That catches the case
+ * that actually happens — someone adds a static import of a heavy module into
+ * the degraded path, which is precisely how failure.ts arrived and broke this.
+ * It does NOT catch a future dynamic import of a heavy module into orch.ts's
+ * fallback branch.
+ *
+ * Bun erases `import type` at runtime (checked: `import type` from a missing
+ * file still loads). collect.ts's type-only import of db.ts is therefore not
+ * part of this graph and must not be copied.
+ *
+ * Derive the closure to decide what the shadow copies, so the fixture cannot
+ * go stale. Assert it equals this declared set so growth is a reviewed act
+ * rather than a silent edit to a copy list.
+ */
+const DEGRADED_COLLECTION_GRAPH = [
+  'collect.ts',
+  'failure.ts',
+  'orch.ts',
+  'outcome.ts',
+  'result-output.ts',
+] as const
+
+const DEGRADED_HEAVY_MODULES = [
+  'agents.ts',
+  'cli.ts',
+  'landing.ts',
+  'route.ts',
+  'run.ts',
+  'worktree.ts',
+] as const
+
+const SRC_DIR = dirname(new URL(import.meta.url).pathname)
+
+function staticRelativeSpecifiers(source: string): string[] {
+  const specifiers: string[] = []
+  for (const match of source.matchAll(/^import\s+([\s\S]*?)\s+from\s+['"]([^'"]+)['"]\s*;?\s*$/gm)) {
+    const clause = match[1]!.trim()
+    if (clause === 'type' || clause.startsWith('type ')) continue
+    const spec = match[2]!
+    if (spec.startsWith('.')) specifiers.push(spec)
+  }
+  for (const match of source.matchAll(/^import\s+['"]([^'"]+)['"]\s*;?\s*$/gm)) {
+    const spec = match[1]!
+    if (spec.startsWith('.')) specifiers.push(spec)
+  }
+  for (const match of source.matchAll(/^export\s+(?!type\b)[\s\S]*?\sfrom\s+['"]([^'"]+)['"]\s*;?\s*$/gm)) {
+    const spec = match[1]!
+    if (spec.startsWith('.')) specifiers.push(spec)
+  }
+  return specifiers
+}
+
+function staticRelativeImportClosure(entryPath: string): string[] {
+  const root = dirname(entryPath)
+  const seen = new Set<string>()
+  const queue = [resolve(entryPath)]
+  while (queue.length) {
+    const file = queue.pop()!
+    if (seen.has(file)) continue
+    seen.add(file)
+    const source = readFileSync(file, 'utf8')
+    for (const spec of staticRelativeSpecifiers(source)) {
+      queue.push(resolve(dirname(file), spec))
+    }
+  }
+  return [...seen].map((file) => relative(root, file)).sort()
+}
+
+function assertNoHeavyDegradedModules(files: Iterable<string>): void {
+  const present = new Set(files)
+  for (const name of DEGRADED_HEAVY_MODULES) {
+    if (present.has(name)) {
+      throw new Error(`degraded collection graph includes heavy module ${name}`)
+    }
+  }
+}
+
+function assertDegradedCollectionGraph(files: Iterable<string>): void {
+  assertNoHeavyDegradedModules(files)
+  const actual = [...files].sort()
+  const expected = [...DEGRADED_COLLECTION_GRAPH].sort()
+  if (actual.length !== expected.length || actual.some((name, i) => name !== expected[i])) {
+    throw new Error(
+      `degraded collection graph drifted: got ${actual.join(', ') || '(empty)'}; expected ${expected.join(', ')}`,
+    )
+  }
+}
+
+function writeDegradedShadow(shadow: string): string[] {
+  const files = staticRelativeImportClosure(join(SRC_DIR, 'orch.ts'))
+  assertDegradedCollectionGraph(files)
+  mkdirSync(shadow, { recursive: true })
+  for (const rel of files) {
+    if (rel === 'cli.ts') continue
+    const dest = join(shadow, rel)
+    mkdirSync(dirname(dest), { recursive: true })
+    writeFileSync(dest, readFileSync(join(SRC_DIR, rel), 'utf8'))
+  }
+  writeFileSync(join(shadow, 'cli.ts'), '<<<<<<< ours\n')
+  return files
+}
+
+describe('degraded collection import graph', () => {
+  test('derived closure matches the declared set and includes failure.ts without a hand-written copy list', () => {
+    const files = staticRelativeImportClosure(join(SRC_DIR, 'orch.ts'))
+    expect(files).toContain('failure.ts')
+    assertDegradedCollectionGraph(files)
+  })
+
+  test('heavy-module assertion fails by name if cli.ts, run.ts or agents.ts enter the graph', () => {
+    expect(() => assertNoHeavyDegradedModules(['orch.ts', 'cli.ts']))
+      .toThrow(/heavy module cli\.ts/)
+    expect(() => assertNoHeavyDegradedModules(['orch.ts', 'run.ts']))
+      .toThrow(/heavy module run\.ts/)
+    expect(() => assertNoHeavyDegradedModules(['orch.ts', 'agents.ts']))
+      .toThrow(/heavy module agents\.ts/)
+    expect(() => assertDegradedCollectionGraph([
+      ...DEGRADED_COLLECTION_GRAPH, 'run.ts',
+    ])).toThrow(/heavy module run\.ts/)
+    expect(() => assertNoHeavyDegradedModules([...DEGRADED_COLLECTION_GRAPH])).not.toThrow()
+  })
+
+  test('type-only and dynamic relative imports are not followed', () => {
+    expect(staticRelativeSpecifiers("import type { ObservedDeadRun } from './db.ts'\n")).toEqual([])
+    expect(staticRelativeSpecifiers("import { FAILS_OVER } from './failure.ts'\n")).toEqual(['./failure.ts'])
+    expect(staticRelativeSpecifiers("await import('./cli.ts')\n")).toEqual([])
+    expect(staticRelativeSpecifiers("const { initializeDatabase } = await import('./db.ts')\n")).toEqual([])
+  })
+})
 
 describe("detached run collection", () => {
   const { CLI, orchInput, orch, scoreReminder, orchFrom, insert, dispatchArtifacts, expectNoDispatchArtifacts } = runCollectionDescribeFixture()
@@ -604,11 +735,7 @@ test('record-only closes the question, marks the chain stranded, and retry resta
     db().query('UPDATE run SET output_path=? WHERE id=?').run(output, id)
 
     const shadow = join(dir, 'degraded-result-cli')
-    mkdirSync(shadow, { recursive: true })
-    for (const file of ['orch.ts', 'collect.ts', 'outcome.ts', 'result-output.ts']) {
-      writeFileSync(join(shadow, file), readFileSync(new URL(file, import.meta.url).pathname, 'utf8'))
-    }
-    writeFileSync(join(shadow, 'cli.ts'), '<<<<<<< ours\n')
+    writeDegradedShadow(shadow)
 
     const r = Bun.spawnSync([process.execPath, join(shadow, 'orch.ts'), 'result', String(id), '--quiet'], {
       env: { ...process.env, ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe',
@@ -627,11 +754,7 @@ test('record-only closes the question, marks the chain stranded, and retry resta
     db().query("UPDATE run SET failure_kind='harness', error='agent stopped' WHERE id=?").run(failed)
 
     const shadow = join(dir, 'degraded-wait-cli')
-    mkdirSync(shadow, { recursive: true })
-    for (const file of ['orch.ts', 'collect.ts', 'outcome.ts', 'result-output.ts']) {
-      writeFileSync(join(shadow, file), readFileSync(new URL(file, import.meta.url).pathname, 'utf8'))
-    }
-    writeFileSync(join(shadow, 'cli.ts'), '<<<<<<< ours\n')
+    writeDegradedShadow(shadow)
 
     const r = Bun.spawnSync(
       [process.execPath, join(shadow, 'orch.ts'), 'wait', String(ok), String(failed)],
