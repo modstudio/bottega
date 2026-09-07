@@ -16,6 +16,7 @@ type InsightName = keyof Outputs
 type RatioData = Outputs['ratio']['data']
 type SpendData = Outputs['spend']['data']
 type RoutingData = Outputs['routing']['data']
+type HealthData = Outputs['health']['data']
 type Strip = Omit<Outputs['ratio'], 'view' | 'data'>
 
 const number = new Intl.NumberFormat('en-US')
@@ -139,6 +140,21 @@ function RoutingView({ data }: { data: RoutingData }) {
   </>
 }
 
+export function HealthView({ data }: { data: HealthData }) {
+  const rows = data.classes
+  const formatTime = (ms: number) => ms < 60_000 ? `${(ms / 1000).toFixed(1)}s`
+    : ms < 3_600_000 ? `${(ms / 60_000).toFixed(1)}m` : `${(ms / 3_600_000).toFixed(1)}h`
+  return <>
+    <p className="mb-3 text-muted-foreground">{data.header}</p>
+    <div className="overflow-x-auto border border-border"><Table><TableHeader><TableRow><TableHead>Failure class</TableHead><TableHead className="text-right">Count</TableHead><TableHead className="text-right">Total</TableHead><TableHead className="text-right">Mean</TableHead><TableHead>Last seen</TableHead><TableHead>Window activity</TableHead></TableRow></TableHeader><TableBody>{rows.map((row) => {
+      const peak = Math.max(1, ...row.sparkline.map((point) => point.count))
+      return <TableRow key={row.kind}><TableCell className="font-semibold">{row.kind}</TableCell><TableCell className="text-right">{row.count}</TableCell><TableCell className="text-right">{formatTime(row.totalTimeMs)}</TableCell><TableCell className="text-right text-muted-foreground">{formatTime(row.meanTimeMs)}</TableCell><TableCell className="text-muted-foreground">{row.lastSeen ? row.lastSeen.slice(0, 10) : '-'}</TableCell><TableCell><div className="flex h-6 items-end gap-px" title={row.sparkline.map((point) => `${point.day}: ${point.count}`).join('\n')}>{row.sparkline.map((point) => <span key={point.day} className="w-1.5 bg-foreground" style={{ height: point.count ? `${Math.max(3, Math.round(point.count / peak * 24))}px` : '1px', opacity: point.count ? 1 : 0.15 }} />)}</div></TableCell></TableRow>
+    })}</TableBody></Table></div>
+    <SectionHead title="False harness verdicts" detail={`${data.landingRefusals} landing refusal${data.landingRefusals === 1 ? '' : 's'} reported separately`} />
+    <div className="overflow-x-auto border border-border"><Table><TableHeader><TableRow><TableHead>Kind</TableHead><TableHead className="text-right">Later cleared or voided</TableHead><TableHead className="text-right">All verdicts</TableHead><TableHead className="text-right">Rate</TableHead></TableRow></TableHeader><TableBody>{data.falseVerdicts.filter((row) => row.verdicts > 0).map((row) => <TableRow key={row.kind}><TableCell className="font-semibold">{row.kind}</TableCell><TableCell className="text-right">{row.falseVerdicts}</TableCell><TableCell className="text-right">{row.verdicts}</TableCell><TableCell className="text-right">{(row.rate * 100).toFixed(1)}%</TableCell></TableRow>)}</TableBody></Table></div>
+  </>
+}
+
 function RatioQuery() {
   const windowState = useWindowState()
   const [menus, setMenus] = useState(0)
@@ -172,7 +188,17 @@ function RoutingQuery() {
   return <section><InsightChrome title="Routing" response={query.data} onDropdown={dropdown} /><RoutingView data={query.data.data} /></section>
 }
 
+function HealthQuery() {
+  const windowState = useWindowState()
+  const input = { hours: windowState.hours, filters: windowState.filters }
+  const query = useQuery(trpc.insight.health.queryOptions(input, { refetchInterval: 30_000 }))
+  if (query.isPending) return <p className="text-muted-foreground">Loading health...</p>
+  if (query.error) return <p className="text-destructive">could not load: {query.error.message}</p>
+  return <section><InsightChrome title="Health" response={query.data} onDropdown={() => {}} /><HealthView data={query.data.data} /></section>
+}
+
 export function InsightView({ name }: { name: InsightName }) {
+  if (name === 'health') return <HealthQuery />
   if (name === 'ratio') return <RatioQuery />
   if (name === 'spend') return <SpendQuery />
   return <RoutingQuery />

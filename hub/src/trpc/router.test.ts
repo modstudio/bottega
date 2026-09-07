@@ -20,9 +20,16 @@ const docHistory = mock(async (_scope: string, _subject: string | null, _slug: s
 const docSubjects = mock(async () => ({ project: [] as string[], agent: [] as string[], job: [] as string[] }))
 const jobs = mock(async () => [])
 const agents = mock(async () => [])
+const health = mock(async () => ({
+  header: 'Harness health only — never routing evidence.', days: 14, from: '2026-08-24T00:00:00.000Z',
+  classes: [{ kind: 'interrupted', count: 2, totalTimeMs: 1_000, meanTimeMs: 500,
+    firstSeen: '2026-09-01T00:00:00.000Z', lastSeen: '2026-09-02T00:00:00.000Z',
+    clusters: [], sparkline: [{ day: '2026-09-02', count: 2 }] }],
+  falseVerdicts: [], landingRefusals: 1,
+}))
 
 mock.module('../orch.ts', () => ({
-  docList, docGet, docSet, docRemove, docHistory, docSubjects, jobs, agents,
+  docList, docGet, docSet, docRemove, docHistory, docSubjects, jobs, agents, health,
 }))
 
 const { appRouter } = await import('./router.ts')
@@ -82,6 +89,16 @@ describe('project.list', () => {
         error: null,
       },
     })
+  })
+})
+
+describe('insight.health', () => {
+  test('renders its response from the stubbed orch client', async () => {
+    const response = await caller.insight.health({ hours: 168, filters: { agent: '', project: '' } })
+    expect(health).toHaveBeenCalledWith(7)
+    expect(response.view).toBe('health')
+    expect(response.data.classes[0]?.kind).toBe('interrupted')
+    expect(response.data.landingRefusals).toBe(1)
   })
 })
 

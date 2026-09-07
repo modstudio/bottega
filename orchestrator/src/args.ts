@@ -441,6 +441,7 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
     case 'metric': return { args: argv.slice(1), shape: shape('orch metric [collect] [--days N] [--window N]', 1, ['--days', '--window'], [], { allowedPositionals: ['collect'] }) }
     case 'serve': return { args: argv.slice(1), shape: shape('orch serve', 0) }
     case 'reclassify-failures': return { args: argv.slice(1), shape: shape('orch reclassify-failures [--dry-run]', 0, [], ['--dry-run']) }
+    case 'health': return { args: argv.slice(1), shape: shape('orch health [--days N] [--json]', 0, ['--days'], ['--json']) }
     case 'doctor': return { args: argv.slice(1), shape: shape('orch doctor [--wake]', 0, [], ['--wake']) }
     case 'jobs': return { args: argv.slice(1), shape: shape('orch jobs [--json]', 0, [], ['--json']) }
     case 'agents': return { args: argv.slice(1), shape: shape('orch agents [--json]', 0, [], ['--json']) }

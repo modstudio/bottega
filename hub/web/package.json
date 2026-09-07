@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "bun test",
     "build": "vite build",
     "typecheck": "tsc --noEmit"
   },

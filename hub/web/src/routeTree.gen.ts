@@ -16,6 +16,7 @@ import { Route as DesignRouteImport } from './routes/design'
 import { Route as DocsRouteImport } from './routes/docs'
 import { Route as DoneRouteImport } from './routes/done'
 import { Route as FlightRouteImport } from './routes/flight'
+import { Route as HealthRouteImport } from './routes/health'
 import { Route as JobsRouteImport } from './routes/jobs'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as RatioRouteImport } from './routes/ratio'
@@ -63,6 +64,11 @@ const DoneRoute = DoneRouteImport.update({
 const FlightRoute = FlightRouteImport.update({
   id: '/flight',
   path: '/flight',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HealthRoute = HealthRouteImport.update({
+  id: '/health',
+  path: '/health',
   getParentRoute: () => rootRouteImport,
 } as any)
 const JobsRoute = JobsRouteImport.update({
@@ -139,6 +145,7 @@ export interface FileRoutesByFullPath {
   '/docs': typeof DocsRouteWithChildren
   '/done': typeof DoneRouteWithChildren
   '/flight': typeof FlightRouteWithChildren
+  '/health': typeof HealthRoute
   '/jobs': typeof JobsRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
@@ -161,6 +168,7 @@ export interface FileRoutesByTo {
   '/docs': typeof DocsRouteWithChildren
   '/done': typeof DoneRouteWithChildren
   '/flight': typeof FlightRouteWithChildren
+  '/health': typeof HealthRoute
   '/jobs': typeof JobsRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
@@ -184,6 +192,7 @@ export interface FileRoutesById {
   '/docs': typeof DocsRouteWithChildren
   '/done': typeof DoneRouteWithChildren
   '/flight': typeof FlightRouteWithChildren
+  '/health': typeof HealthRoute
   '/jobs': typeof JobsRoute
   '/projects': typeof ProjectsRouteWithChildren
   '/ratio': typeof RatioRoute
@@ -208,6 +217,7 @@ export interface FileRouteTypes {
     | '/docs'
     | '/done'
     | '/flight'
+    | '/health'
     | '/jobs'
     | '/projects'
     | '/ratio'
@@ -230,6 +240,7 @@ export interface FileRouteTypes {
     | '/docs'
     | '/done'
     | '/flight'
+    | '/health'
     | '/jobs'
     | '/projects'
     | '/ratio'
@@ -252,6 +263,7 @@ export interface FileRouteTypes {
     | '/docs'
     | '/done'
     | '/flight'
+    | '/health'
     | '/jobs'
     | '/projects'
     | '/ratio'
@@ -275,6 +287,7 @@ export interface RootRouteChildren {
   DocsRoute: typeof DocsRouteWithChildren
   DoneRoute: typeof DoneRouteWithChildren
   FlightRoute: typeof FlightRouteWithChildren
+  HealthRoute: typeof HealthRoute
   JobsRoute: typeof JobsRoute
   ProjectsRoute: typeof ProjectsRouteWithChildren
   RatioRoute: typeof RatioRoute
@@ -333,6 +346,13 @@ declare module '@tanstack/react-router' {
       path: '/flight'
       fullPath: '/flight'
       preLoaderRoute: typeof FlightRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/health': {
+      id: '/health'
+      path: '/health'
+      fullPath: '/health'
+      preLoaderRoute: typeof HealthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/jobs': {
@@ -500,6 +520,7 @@ const rootRouteChildren: RootRouteChildren = {
   DocsRoute: DocsRouteWithChildren,
   DoneRoute: DoneRouteWithChildren,
   FlightRoute: FlightRouteWithChildren,
+  HealthRoute: HealthRoute,
   JobsRoute: JobsRoute,
   ProjectsRoute: ProjectsRouteWithChildren,
   RatioRoute: RatioRoute,

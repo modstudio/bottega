@@ -1,6 +1,7 @@
 import { initTRPC } from '@trpc/server'
 import { z } from 'zod'
 import { cachedOrchResponse, cachedStrip, strip, view } from '../../serve.ts'
+import { health } from '../../orch.ts'
 import type { Context } from '../context.ts'
 
 const t = initTRPC.context<Context>().create()
@@ -32,6 +33,12 @@ const insightView = <Name extends 'ratio' | 'spend' | 'routing'>(name: Name) =>
   })
 
 export const insightRouter = t.router({
+  health: t.procedure.input(input).query(({ input: value }) => {
+    const days = Math.max(1, Math.ceil(value.hours / 24))
+    return cachedOrchResponse(`health:${days}`, async () => ({
+      ...await cachedStrip(value.hours), view: 'health' as const, data: await health(days),
+    }))
+  }),
   routing: insightView('routing'),
   ratio: insightView('ratio'),
   spend: insightView('spend'),

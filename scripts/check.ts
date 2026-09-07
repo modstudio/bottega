@@ -27,6 +27,7 @@ const legs: Leg[] = [
     commands: [
       { cwd: `${root}hub/web`, argv: ['bun', 'install', '--silent'] },
       { cwd: `${root}hub/web`, argv: ['bun', 'run', 'typecheck'] },
+      { cwd: `${root}hub/web`, argv: ['bun', 'run', 'test'] },
       { cwd: `${root}hub/web`, argv: ['bun', 'run', 'build'] },
     ],
   },

@@ -11,30 +11,33 @@
  * reported rather than swallowed: a real vendor failure that classifies as
  * `other` is the signal to add its actual wording here.
  */
-export type FailureKind =
-  | 'quota' | 'auth' | 'unreachable' | 'timeout' | 'denied' | 'content_refusal'
-  | 'interrupted'
+/** Runtime vocabulary as well as a type: reporting must show zeroes for new kinds. */
+export const FAILURE_KINDS = [
+  'quota', 'auth', 'unreachable', 'timeout', 'denied', 'content_refusal',
+  'interrupted',
   /** The vendor exhausted its reply budget before emitting a result. */
-  | 'truncated'
+  'truncated',
   /** The worker changed a registered checkout outside its disposable worktree. */
-  | 'escaped'
+  'escaped',
   /** Orch could not verify a watched checkout's before/after status. */
-  | 'confinement_unverified'
+  'confinement_unverified',
   /** Sandbox Runtime denied a read the job needed. */
-  | 'sandbox_denied'
+  'sandbox_denied',
   /**
    * ORCH's own fault: a bad schema, a missing flag, a precondition it should
    * have checked before spending a run. Set at the point in the code that knows
    * it is the harness at fault, plus the vendor's exact invalid-schema message
    * as a last defence when its strict validator learns a constraint before us.
    */
-  | 'harness'
+  'harness',
   /** The agent satisfied the reply schema but violated its behavioural contract. */
-  | 'contract'
+  'contract',
   /** A clean review reply that does not establish it reviewed the dispatched change. */
-  | 'unevidenced'
-  | 'abandoned'
-  | 'other'
+  'unevidenced',
+  'abandoned',
+  'other',
+] as const
+export type FailureKind = typeof FAILURE_KINDS[number]
 
 const PATTERNS: [FailureKind, RegExp][] = [
   /**

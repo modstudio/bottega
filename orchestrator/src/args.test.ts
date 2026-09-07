@@ -12,7 +12,7 @@ describe('CLI argument recognition', () => {
       'search', 'result', 'wait', 'retry', 'project', 'ask-server', 'setup-ask', 'blockers', 'monitor',
       'inbox', 'answer', 'tell', 'continue', 'diff', 'sweep', 'discard', 'stop', 'abandon', 'score',
       'recalibrate', 'routing-backtest', 'runs', 'guide', 'spawns', 'stats', 'pick', 'pending', 'metric', 'serve',
-      'reclassify-failures', 'doctor', 'jobs', 'agents',
+      'reclassify-failures', 'health', 'doctor', 'jobs', 'agents',
     ]
     for (const command of commands) expect(isCliCommand(command)).toBeTrue()
     expect(isCliCommand('nosuch')).toBeFalse()

@@ -1530,6 +1530,7 @@ function usage(): never {
   orch reclassify-failures [--dry-run]
       reclassify stored unclassified vendor quota/auth failures from their error text;
       prints every matched row and before/after counts before writing
+  orch health [--days N] [--json] failure classes by count, time, last seen and false-verdict rate
   orch doctor                   agents, local endpoint, routing at a glance
   orch project [list] [--json]  the register: where work lives, and what it is built from
       --json                    print one JSON document (the published surface; never orch.db)
@@ -6349,6 +6350,39 @@ switch (cmd) {
     break
   }
 
+  case 'health': {
+    const { harnessHealth } = await import('./health.ts')
+    const report = harnessHealth(flag('days') ? Number(flag('days')) : undefined)
+    if (has('json')) {
+      console.log(JSON.stringify(report))
+      break
+    }
+    const duration = (ms: number) => ms < 60_000
+      ? `${(ms / 1000).toFixed(1)}s`
+      : ms < 3_600_000 ? `${(ms / 60_000).toFixed(1)}m` : `${(ms / 3_600_000).toFixed(1)}h`
+    console.log(report.header)
+    console.log(`window: ${report.days} days from ${report.from}`)
+    console.log('\nFAILURE CLASS'.padEnd(25) + 'COUNT'.padStart(7) + 'TOTAL'.padStart(10) +
+      'MEAN'.padStart(10) + '  FIRST SEEN'.padEnd(27) + 'LAST SEEN')
+    for (const row of report.classes) {
+      console.log(row.kind.padEnd(25) + String(row.count).padStart(7) +
+        duration(row.totalTimeMs).padStart(10) + duration(row.meanTimeMs).padStart(10) + '  ' +
+        (row.firstSeen ?? '-').padEnd(25) + (row.lastSeen ?? '-'))
+      for (const cluster of row.clusters) {
+        console.log(`  ${cluster.count}x [run ${cluster.exampleRunId}] ${cluster.text}`)
+      }
+    }
+    console.log('\nFALSE HARNESS VERDICTS')
+    console.log('KIND'.padEnd(25) + 'FALSE'.padStart(7) + 'TOTAL'.padStart(7) + 'RATE'.padStart(9))
+    for (const row of report.falseVerdicts.filter((row) => row.verdicts || row.falseVerdicts)) {
+      console.log(row.kind.padEnd(25) + String(row.falseVerdicts).padStart(7) +
+        String(row.verdicts).padStart(7) + `${(row.rate * 100).toFixed(1)}%`.padStart(9))
+    }
+    console.log(`landing refused`.padEnd(25) + String(report.landingRefusals).padStart(7) +
+      '      -        -')
+    break
+  }
+
   case 'doctor': {
     await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadAgreement(), loadDockerResources()])
     await ensureLocalHealth()
@@ -6397,6 +6431,13 @@ switch (cmd) {
     console.log(`resolved by    ${DATABASE_RESOLUTION.method}`)
     if (DATABASE_RESOLUTION.registeredPath && DATABASE_RESOLUTION.registeredPath !== DB_PATH) {
       console.log(`registered     ${DATABASE_RESOLUTION.registeredPath}  (resolved path won)`)
+    }
+    const { harnessHealth } = await import('./health.ts')
+    const costlyFailures = harnessHealth().classes.filter((row) => row.count > 0)
+      .sort((a, b) => b.totalTimeMs - a.totalTimeMs || a.kind.localeCompare(b.kind)).slice(0, 2)
+    console.log('harness health top live classes by total time (14 days; never routing evidence)')
+    for (const row of costlyFailures) {
+      console.log(`  ${row.kind.padEnd(24)} ${(row.totalTimeMs / 60_000).toFixed(1)}m  last ${row.lastSeen}`)
     }
     const latestCalibration = db().query(
       'SELECT MAX(at) AS at FROM calibration',
