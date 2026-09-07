@@ -898,17 +898,41 @@ test('record-only closes the question, marks the chain stranded, and retry resta
   })
 
   test('an empty lens defaults reproduced and overlap while delivery none captures nothing', () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-empty-lens-score-')))
+    const git = (...args: string[]) => {
+      const child = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (child.exitCode !== 0) throw new Error(child.stderr.toString())
+      return child.stdout.toString().trim()
+    }
+    git('init', '-b', 'main')
+    git('config', 'user.email', 'orch-test@example.invalid')
+    git('config', 'user.name', 'Orch Test')
+    writeFileSync(join(repo, 'base.txt'), 'base\n')
+    git('add', '.'); git('commit', '-m', 'base')
+    const base = git('rev-parse', 'HEAD')
+    writeFileSync(join(repo, 'file.ts'), 'changed\n')
+    git('add', '.'); git('commit', '-m', 'change')
+    const tree = git('rev-parse', 'HEAD^{tree}')
+    const project = `empty-lens-${randomUUID()}`
+    upsertProject({ name: project, path: repo })
+    try {
     const empty = insert('ok', 'craft')
     const output = join(dir, `empty-review-${empty}.json`)
     writeFileSync(output, JSON.stringify(reviewReply(0)))
-    db().query('UPDATE run SET session_id=?, lens=?, model=?, output_path=? WHERE id=?')
-      .run('orch-test-session', 'craft', 'test-model', output, empty)
+    db().query(
+      'UPDATE run SET session_id=?, lens=?, model=?, output_path=?, repo=?, base_commit=?, input_tree=? WHERE id=?',
+    ).run('orch-test-session', 'craft', 'test-model', output, project, base, tree, empty)
     const scored = orch('score', String(empty), 'full', 'right',
       '--coverage', 'partial', '--limits', 'named')
     expect(scored.code).toBe(0)
     expect(db().query(
       'SELECT reproduced, coverage, limits, overlap FROM review_lens WHERE run_id=?',
     ).get(empty)).toEqual({ reproduced: 'none', coverage: 'partial', limits: 'named', overlap: 'none' })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
 
     const failed = insert('failed', 'safety')
     db().query("UPDATE run SET session_id=?, failure_kind='other' WHERE id=?")

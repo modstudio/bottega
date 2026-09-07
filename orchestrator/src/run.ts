@@ -202,6 +202,24 @@ export function detachedRunOptions(
 
 const EXPLICIT_REVIEW_JOBS = new Set(['review-lens', 'safety', 'craft'])
 
+/** Trunk merge-base of a reviewed commit. Same resolution for --review and implicit lenses. */
+function resolveReviewMergeBase(cwd: string, commit: string, trunk: string): string | null {
+  const trunkCommit = resolveBase(cwd, `${trunk}^{commit}`)
+  return gitContext(cwd, 'merge-base', commit, trunkCommit)
+}
+
+/** Coverage base for a findings job dispatched without --review. Null if unmeasurable. */
+function implicitReviewCoverageBase(cwd: string): string | null {
+  const trunk = projectAt(cwd)?.settings.trunk?.trim()
+  if (!trunk) return null
+  try {
+    const commit = resolveBase(cwd, 'HEAD')
+    return resolveReviewMergeBase(cwd, commit, trunk)
+  } catch {
+    return null
+  }
+}
+
 export function resolveReviewTarget(
   jobName: string, cwd: string, reviewRef?: string, carry = false,
 ): { branch: string; commit: string; base: string } | null {
@@ -237,8 +255,7 @@ export function resolveReviewTarget(
     )
   }
   const commit = resolveBase(cwd, `${branch}^{commit}`)
-  const trunkCommit = resolveBase(cwd, `${trunk}^{commit}`)
-  const base = gitContext(cwd, 'merge-base', commit, trunkCommit)
+  const base = resolveReviewMergeBase(cwd, commit, trunk)
   if (!base) {
     throw new Error(`cannot find merge-base between review target ${branch} and trunk ${trunk}`)
   }
@@ -1741,6 +1758,10 @@ export async function run(opts: {
   const reviewTarget = opts.resolvedReviewTarget ?? resolveReviewTarget(
     opts.job, opts.cwd ?? process.cwd(), opts.review, opts.carry,
   )
+  const implicitCoverageBase = !reviewTarget && requestedJob.findings
+    ? implicitReviewCoverageBase(callerCwd)
+    : null
+  const coverageBase = reviewTarget?.base ?? implicitCoverageBase
   // Programmatic callers get the same ordering guarantee as the CLI: a bad
   // ref is refused before a run row or worktree exists.
   if (opts.base) {
@@ -2238,7 +2259,7 @@ export async function run(opts: {
             'UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=?, worktree_source=? WHERE id=?',
           ).run(
             created.path, created.path, reviewTarget?.branch ?? (created.branch || null),
-            reviewTarget?.base ?? created.base, created.source ?? null, claim.id,
+            coverageBase ?? created.base, created.source ?? null, claim.id,
           )
           if (result.changes !== 1) throw new Error(`run ${claim.id} could not record its worktree`)
         }
@@ -2347,7 +2368,7 @@ export async function run(opts: {
         ).run(
           inheritedWorktree.path, inheritedWorktree.path,
           reviewTarget?.branch ?? (inheritedWorktree.branch || null),
-          reviewTarget?.base ?? inheritedWorktree.base, inheritedWorktree.source ?? null,
+          coverageBase ?? inheritedWorktree.base, inheritedWorktree.source ?? null,
           carried ? (carried.tracked.length + carried.untracked.length > 0 ? 1 : 0) : null,
           carried?.base ?? null,
           carried ? JSON.stringify(carried.tracked) : null,
@@ -2971,10 +2992,10 @@ export async function run(opts: {
       parsedReview = parseReviewOutput(output)
       if (parsedReview) {
         const evidence = cleanReviewEvidence(claim.id, parsedReview)
-        if (evidence.failure) {
+        if (evidence.failure !== null) {
           status = 'failed'
           error = evidence.failure
-          failureKind = 'unevidenced'
+          failureKind = evidence.kind
         } else if (evidence.note) {
           error = error ? `${error}\n${evidence.note}` : evidence.note
         }

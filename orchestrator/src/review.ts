@@ -119,7 +119,7 @@ export const UNEVIDENCED_REVIEW_ERROR =
   'clean review with no evidence: files_covered and commands_run are empty'
 
 export type CleanReviewEvidence =
-  | { failure: string; note: null }
+  | { failure: string; note: null; kind: 'unevidenced' | 'harness' }
   | { failure: null; note: string | null }
 
 export function normalizeCoveredPath(path: string): string {
@@ -138,7 +138,7 @@ export function cleanReviewEvidence(
   provenance.files_covered = provenance.files_covered.map(normalizeCoveredPath)
   if (output.findings.length) return { failure: null, note: null }
   if (!provenance.files_covered.length && !provenance.commands_run.length) {
-    return { failure: UNEVIDENCED_REVIEW_ERROR, note: null }
+    return { failure: UNEVIDENCED_REVIEW_ERROR, note: null, kind: 'unevidenced' }
   }
   const run = database.query(
     'SELECT repo, base_commit, input_tree, review_ref, changed_paths FROM run WHERE id=?',
@@ -147,8 +147,9 @@ export function cleanReviewEvidence(
     review_ref: string | null; changed_paths: string | null
   } | null
   const unavailable = (why: string): CleanReviewEvidence => ({
-    failure: null,
-    note: `clean review changed-path coverage not checked: ${why}`,
+    failure: `clean review changed-path coverage not checked: ${why}`,
+    note: null,
+    kind: 'harness',
   })
   if (!run?.repo || !run.base_commit || !run.input_tree) {
     return unavailable('run lacks repo, base_commit, or input_tree')
@@ -163,6 +164,7 @@ export function cleanReviewEvidence(
   } catch (cause) {
     return unavailable(String((cause as Error)?.message ?? cause))
   }
+  if (!changed.length) return unavailable('changed-path set is empty')
   const covered = provenance.files_covered
   // A reviewer commonly reports paths relative to the directory it worked in.
   // Any suffix match establishes some changed-file coverage. If one suffix is
@@ -176,6 +178,7 @@ export function cleanReviewEvidence(
     return {
       failure: 'clean review with no evidence: files_covered intersects none of the changed paths',
       note: null,
+      kind: 'unevidenced',
     }
   }
   return { failure: null, note: null }

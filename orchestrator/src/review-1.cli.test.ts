@@ -37,7 +37,8 @@ describe('review discipline', () => {
       reply.provenance.files_covered = []
       reply.provenance.commands_run = []
       expect(cleanReviewEvidence(runId, reply)).toEqual({
-        failure: 'clean review with no evidence: files_covered and commands_run are empty', note: null,
+        failure: 'clean review with no evidence: files_covered and commands_run are empty',
+        note: null, kind: 'unevidenced',
       })
 
       reply.provenance.commands_run = ['bun test']
@@ -57,7 +58,9 @@ describe('review discipline', () => {
       }
 
       reply.provenance.files_covered = ['base.txt']
-      expect(cleanReviewEvidence(runId, reply).failure).toContain('intersects none')
+      expect(cleanReviewEvidence(runId, reply)).toMatchObject({
+        failure: expect.stringContaining('intersects none'), kind: 'unevidenced',
+      })
 
       const segmentBase = gg('rev-parse', 'HEAD')
       mkdirSync(join(repo, 'foo'), { recursive: true })
@@ -66,12 +69,57 @@ describe('review discipline', () => {
       db().query('UPDATE run SET base_commit=?, input_tree=? WHERE id=?')
         .run(segmentBase, gg('rev-parse', 'HEAD^{tree}'), runId)
       reply.provenance.files_covered = ['x.ts']
-      expect(cleanReviewEvidence(runId, reply).failure).toContain('intersects none')
+      expect(cleanReviewEvidence(runId, reply)).toMatchObject({
+        failure: expect.stringContaining('intersects none'), kind: 'unevidenced',
+      })
 
+      const emptyHead = gg('rev-parse', 'HEAD')
+      const emptyTree = gg('rev-parse', 'HEAD^{tree}')
+      db().query('UPDATE run SET base_commit=?, input_tree=? WHERE id=?')
+        .run(emptyHead, emptyTree, runId)
+      const empty = cleanReviewEvidence(runId, reply)
+      expect(empty).toEqual({
+        failure: 'clean review changed-path coverage not checked: changed-path set is empty',
+        note: null, kind: 'harness',
+      })
+
+      const notGit = mkdtempSync(join(tmpdir(), 'orch-review-not-git-'))
+      upsertProject({ name: 'review-evidence-project', path: notGit })
+      db().query('UPDATE run SET base_commit=?, input_tree=? WHERE id=?')
+        .run(emptyHead, emptyTree, runId)
+      const thrown = cleanReviewEvidence(runId, reply)
+      expect(thrown).toEqual({
+        failure: expect.stringContaining('changed-path coverage not checked'),
+        note: null, kind: 'harness',
+      })
+      expect(thrown.failure === 'clean review changed-path coverage not checked: changed-path set is empty')
+        .toBe(false)
+      upsertProject({ name: 'review-evidence-project', path: repo })
+      rmSync(notGit, { recursive: true, force: true })
+
+      reply.findings = [{
+        severity: 'major', location: 'file.ts:1', evidence: 'evidence 1',
+        proposed_correction: 'fix 1',
+      }]
       db().query('UPDATE run SET input_tree=NULL WHERE id=?').run(runId)
+      expect(cleanReviewEvidence(runId, reply)).toEqual({ failure: null, note: null })
+      reply.findings = []
+
       const unknown = cleanReviewEvidence(runId, reply)
-      expect(unknown.failure).toBeNull()
-      expect(unknown.note).toContain('changed-path coverage not checked')
+      expect(unknown).toEqual({
+        failure: 'clean review changed-path coverage not checked: run lacks repo, base_commit, or input_tree',
+        note: null, kind: 'harness',
+      })
+
+      db().query('UPDATE run SET base_commit=?, input_tree=? WHERE id=?')
+        .run(emptyHead, emptyTree, runId)
+      removeProject('review-evidence-project')
+      const unregistered = cleanReviewEvidence(runId, reply)
+      expect(unregistered).toEqual({
+        failure: 'clean review changed-path coverage not checked: project review-evidence-project is not registered',
+        note: null, kind: 'harness',
+      })
+      upsertProject({ name: 'review-evidence-project', path: repo })
 
     } finally {
       removeProject('review-evidence-project')
@@ -756,7 +804,7 @@ describe('review discipline', () => {
     const original = { bin: agent.bin, argv: agent.argv, stdin: agent.stdin, readsOut: agent.readsOut }
     let sent = ''
     let sentSchema: string | undefined
-    const output = JSON.stringify(reviewReply(0))
+    const output = JSON.stringify(reviewReply(1))
     try {
       // Qualifying evidence exists for the selected agent and nowhere else.
       const evidenceRun = addRun({ agent: 'codex', job: 'review-lens-inline',
