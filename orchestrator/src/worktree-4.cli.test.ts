@@ -253,6 +253,25 @@ describe('outside-worktree write observation', () => {
     }])
   })
 
+  test('the watch set is the run\'s own project plus the caller checkout, never a third project', async () => {
+    const { checkoutWatchSet } = await import('./run.ts')
+    const one = repository()
+    const two = repository()
+    upsertProject({ name: 'own-project', path: one })
+    upsertProject({ name: 'third-project', path: two })
+    const caller = repository()
+    const own = checkoutWatchSet([{ project: 'own-project', path: caller }], undefined, 'own-project').watched
+      .map((checkout) => checkout.path)
+    expect(own).toContain(realpathSync(one))
+    expect(own).toContain(realpathSync(caller))
+    expect(own).not.toContain(realpathSync(two))
+    // No resolved project keeps the wide set: an unregistered caller has no
+    // narrower fact to stand on.
+    const wide = checkoutWatchSet([], undefined, null).watched.map((checkout) => checkout.path)
+    expect(wide).toContain(realpathSync(one))
+    expect(wide).toContain(realpathSync(two))
+  })
+
   test('identical before and after samples never classify, whatever static property they carry', () => {
     // A checkout parked on a branch other than its registered trunk is a fact
     // about that project, not an outside change made during this run. Run 2600

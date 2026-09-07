@@ -1042,15 +1042,31 @@ type CheckoutCandidates = {
   failures: CheckoutSampleFailure[]
 }
 
-function checkoutWatchSet(
-  additional: CheckoutToWatch[] = [], activeWorktree?: string,
+/**
+ * The checkouts a run is confined against: the registered main checkout of
+ * the run's OWN project, plus the caller checkout it was dispatched from.
+ *
+ * It used to be every registered project. Measured on 2026-09-07 with the
+ * harness-health surface: 25 runs escaped in one day, 4.9 hours of worker
+ * time, and sixteen of them were a THIRD project's checkout changing (a
+ * canon edit in adanim, a fixture removed in alephbeis, stopal's release step
+ * moving develop to master) while a bottega worker that never touched it was
+ * in flight. Every session on the machine was an unwitting adversary to every
+ * other session's writers. A change in another project is not this run's
+ * escape; `ownProject` null (no project resolved) keeps the wide set, since
+ * an unregistered caller has no narrower fact to stand on.
+ */
+export function checkoutWatchSet(
+  additional: CheckoutToWatch[] = [], activeWorktree?: string, ownProject: string | null | undefined = undefined,
 ): CheckoutCandidates {
   const active = activeWorktree ? realpathSync(activeWorktree) : null
   const watched: CheckoutToWatch[] = []
   const failures: CheckoutSampleFailure[] = []
   const seen = new Set<string>()
+  const registered = projects()
+    .filter(({ name }) => ownProject === undefined || ownProject === null || name === ownProject)
   for (const checkout of [
-    ...projects().map(({ name, path, settings }) => ({
+    ...registered.map(({ name, path, settings }) => ({
       project: name, path,
       expectedHead: typeof settings.trunk === 'string' ? settings.trunk : null,
     })),
@@ -2389,7 +2405,7 @@ export async function run(opts: {
     ? [{ project: opts.repo ?? repoOf(callerCwd) ?? '(caller)', path: callerCwd }]
     : []
   const candidates = worktree
-    ? checkoutWatchSet(callerWatch, worktree.path)
+    ? checkoutWatchSet(callerWatch, worktree.path, opts.repo ?? repoOf(callerCwd) ?? null)
     : { watched: [], failures: [] }
   const sampledBefore = sampleCheckouts(candidates.watched)
   const skipped = [...candidates.failures, ...sampledBefore.failures]

@@ -838,9 +838,13 @@ The invariants are:
   `escaped` for a dirty `AGENTS.md` that an architect session then COMMITTED in
   the main checkout — which cleared the dirt, moved HEAD, and left the detector
   with nothing to report.
-- **A persistent porcelain-status change in a registered main checkout that was
-  sampleable at launch, or a distinct sampleable caller checkout, during a run
-  fails that run and blocks its landing;** unregistered or launch-unsampleable
+- **The watch set is the run's own project plus the caller checkout, never a
+  third project.** Measured 2026-09-07: 25 escapes in a day, 4.9 hours, sixteen
+  of them another project's checkout changing under a worker that never touched
+  it. A change elsewhere is not this run's escape.
+- **A persistent porcelain-status change in the run's own registered main
+  checkout that was sampleable at launch, or a distinct sampleable caller
+  checkout, during a run fails that run and blocks its landing;** unregistered or launch-unsampleable
   paths, ignored paths, writes reverted before exit, clean-to-clean commits and
   writes after exit are not seen, and the writer is not identified.
 - **A resume is always possible on a stale checkout.** The caller-at-trunk check
