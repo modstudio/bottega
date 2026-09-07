@@ -294,12 +294,14 @@ export function consumeDoc(
   let yaml = frontmatter[2]!
   const field = (name: string) =>
     new RegExp(`(^|\\r?\\n)([ \\t]*${name}[ \\t]*:[ \\t]*)([^\\r\\n]*)(?=\\r?\\n|$)`, 'm')
-  const status = yaml.match(field('status'))
+  const topStatusField = new RegExp(`(^|\\r?\\n)(status[ \\t]*:[ \\t]*)([^\\r\\n]*)(?=\\r?\\n|$)`, 'm')
+  const statusField = topStatusField.test(yaml) ? topStatusField : field('status')
+  const status = yaml.match(statusField)
   if (!status) throw new Error(`${scope} doc "${slug}" has no status field in its YAML frontmatter`)
   const statusValue = status[3]!.trim().replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, '$1$2')
   if (statusValue === 'consumed') return { ...doc, already_consumed: true }
 
-  yaml = yaml.replace(field('status'), `$1$2consumed`)
+  yaml = yaml.replace(statusField, `$1$2consumed`)
   const consumedAt = nowIso()
   const stamps = [
     ['consumed', consumedAt],
@@ -312,7 +314,7 @@ export function consumeDoc(
     else missing.push(`${name}: ${value}`)
   }
   if (missing.length) {
-    yaml = yaml.replace(field('status'), `$1$2$3${newline}${missing.join(newline)}`)
+    yaml = yaml.replace(statusField, `$1$2$3${newline}${missing.join(newline)}`)
   }
 
   const contentStart = frontmatter.index! + 3 + newline.length

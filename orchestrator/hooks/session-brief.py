@@ -36,10 +36,10 @@ def _wait(proc, deadline):
         return subprocess.CompletedProcess(proc.args, -1, "", None)
 
 
-def _resume_sentence(source, lines):
+def _resume_sentence(source, open_briefs):
     continuation = source in ("clear", "compact", "fork")
-    if len(lines) == 1:
-        slug = lines[0].split()[0]
+    if len(open_briefs) == 1:
+        slug = open_briefs[0]["slug"]
         if continuation:
             return (
                 f"Open resume brief `{slug}`. Offer to resume from it; "
@@ -91,43 +91,55 @@ def main() -> int:
         inbox = _wait(inbox_p, deadline)
 
         context = brief.stdout if brief.returncode == 0 else ""
+        open_briefs = []
         lines = []
         unreadable = []
+        resume_failure = None
         if resumes.returncode == 0:
             try:
                 result = json.loads(resumes.stdout)
-                open_briefs = result["open"]
-                unreadable = result["unreadable"]
-                if (
-                    not isinstance(open_briefs, list)
-                    or not all(
+                if not isinstance(result, dict):
+                    raise ValueError("invalid resume list JSON")
+                raw_open = result.get("open")
+                raw_unreadable = result.get("unreadable")
+                if not isinstance(raw_open, list):
+                    resume_failure = "Resume response was invalid; brief state is unknown."
+                    raw_open = []
+                for item in raw_open:
+                    if (
                         isinstance(item, dict)
                         and isinstance(item.get("slug"), str)
+                        and item["slug"]
+                        and not any(char.isspace() for char in item["slug"])
                         and isinstance(item.get("title"), str)
                         and isinstance(item.get("age"), str)
-                        for item in open_briefs
-                    )
-                    or not isinstance(unreadable, list)
-                    or not all(
+                    ):
+                        open_briefs.append(item)
+                    else:
+                        resume_failure = "Resume response was invalid; brief state is unknown."
+                if not isinstance(raw_unreadable, list):
+                    resume_failure = "Resume response was invalid; brief state is unknown."
+                    raw_unreadable = []
+                for item in raw_unreadable:
+                    if (
                         isinstance(item, dict)
                         and isinstance(item.get("slug"), str)
                         and item.get("reason") in ("no-frontmatter", "no-readable-status")
-                        for item in unreadable
-                    )
-                ):
-                    raise ValueError("invalid resume list JSON")
+                    ):
+                        unreadable.append(item)
+                    else:
+                        resume_failure = "Resume response was invalid; brief state is unknown."
                 lines = [
                     f'{item["slug"]:<24} {item["title"]:<24} {item["age"]}'
                     for item in open_briefs
                 ]
             except Exception:
-                lines = []
-                unreadable = []
+                resume_failure = "Resume response was invalid; brief state is unknown."
             if lines:
                 if context and not context.endswith("\n"):
                     context += "\n"
                 context += "\n".join(lines) + "\n"
-                context += _resume_sentence(payload.get("source"), lines) + "\n"
+                context += _resume_sentence(payload.get("source"), open_briefs) + "\n"
             if unreadable:
                 if context and not context.endswith("\n"):
                     context += "\n"
@@ -171,6 +183,8 @@ def main() -> int:
                 notices.append(f"operator brief refused: {first}")
         if inbox_failure:
             notices.append(inbox_failure)
+        if resume_failure:
+            notices.append(resume_failure)
         if answerable_count:
             noun = "question" if answerable_count == 1 else "questions"
             notices.append(f"{answerable_count} {noun} waiting on your ruling.")
@@ -183,9 +197,9 @@ def main() -> int:
             noun = "question" if unknown_count == 1 else "questions"
             verb = "has" if unknown_count == 1 else "have"
             notices.append(f"{unknown_count} visible {noun} {verb} unknown owner liveness.")
-        if lines:
-            slugs = ", ".join(f"`{line.split()[0]}`" for line in lines)
-            noun = "brief" if len(lines) == 1 else "briefs"
+        if open_briefs:
+            slugs = ", ".join(f"`{item['slug']}`" for item in open_briefs)
+            noun = "brief" if len(open_briefs) == 1 else "briefs"
             notices.append(f"Open resume {noun}: {slugs}.")
         if unreadable:
             slugs = ", ".join(f"`{item['slug']}`" for item in unreadable)

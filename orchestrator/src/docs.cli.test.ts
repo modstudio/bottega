@@ -1299,6 +1299,28 @@ describe('scoped operator docs', () => {
     expect(getDoc('global', null, 'taken')).toEqual(before)
   })
 
+  test('consumeDoc consults and patches a top-level open status after nested consumed status', () => {
+    const body = '---\nmetadata:\n  status: consumed\nstatus: open\n---\n\nBODY\n'
+    setDoc({ scope: 'global', subject: null, slug: 'top-open', title: 'Top open', body })
+
+    const result = consumeDoc('global', null, 'top-open')
+
+    expect(result.already_consumed).toBe(false)
+    expect(result.body).toContain('metadata:\n  status: consumed\nstatus: consumed\n')
+    expect(parseResumeFrontmatter(result.body)?.status).toBe('consumed')
+  })
+
+  test('consumeDoc patches the top-level status and leaves an earlier nested open status unchanged', () => {
+    const body = '---\nmetadata:\n  status: open\nstatus: open\n---\n\nBODY\n'
+    setDoc({ scope: 'global', subject: null, slug: 'both-open', title: 'Both open', body })
+
+    const result = consumeDoc('global', null, 'both-open')
+
+    expect(result.already_consumed).toBe(false)
+    expect(result.body).toContain('metadata:\n  status: open\nstatus: consumed\n')
+    expect(parseResumeFrontmatter(result.body)?.status).toBe('consumed')
+  })
+
   test('consumeDoc rejects documents without frontmatter or a status field', () => {
     setDoc({ scope: 'global', subject: null, slug: 'plain', title: 'Plain', body: 'BODY\n' })
     setDoc({ scope: 'global', subject: null, slug: 'statusless', title: 'Statusless', body: '---\nepic: demo\n---\nBODY\n' })

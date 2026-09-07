@@ -390,6 +390,35 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
   }
   const resumeBody = (status: string, written: string) =>
     `---\nstatus: ${status}\nepic: demo\nproject: known\nwritten: ${written}\n---\n\nSECRET BODY\nNEXT ACTION\n`
+  const runWithResumePayload = (resumePayload: string) => {
+    const root = mkdtempSync(join(tmpdir(), 'session-brief-resume-payload-'))
+    const hooksDir = join(root, 'orchestrator', 'hooks')
+    mkdirSync(hooksDir, { recursive: true })
+    mkdirSync(join(root, 'bin'), { recursive: true })
+    copyFileSync(hook, join(hooksDir, 'session-brief.py'))
+    const fakeOrch = join(root, 'bin', 'orch')
+    writeFileSync(
+      fakeOrch,
+      `#!/bin/sh
+if [ "$1" = "doc" ] && [ "$2" = "brief" ]; then echo "OPERATOR BRIEF"; exit 0; fi
+if [ "$1" = "doc" ] && [ "$2" = "resumes" ]; then printf '%s\\n' '${resumePayload}'; exit 0; fi
+if [ "$1" = "inbox" ]; then echo '[{"session_liveness":"live","can_answer":true}]'; exit 0; fi
+exit 1
+`,
+    )
+    chmodSync(fakeOrch, 0o755)
+    try {
+      const p = Bun.spawnSync(['python3', join(hooksDir, 'session-brief.py')], {
+        stdin: new TextEncoder().encode(JSON.stringify({
+          cwd: '/w/known', source: 'compact', session_id: 'reader',
+        })),
+        stdout: 'pipe', stderr: 'pipe', env: process.env,
+      })
+      return { process: p, output: hookOutput(p) }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
 
   test('prints nothing on compact, clear and fork when there are no open briefs', () => {
     for (const source of ['compact', 'clear', 'fork']) {
@@ -485,7 +514,7 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
     const fakeOrch = join(root, 'bin', 'orch')
     writeFileSync(
       fakeOrch,
-      '#!/bin/sh\nif [ "$1" = "inbox" ]; then echo "not-json"; fi\nexit 0\n',
+      '#!/bin/sh\nif [ "$1" = "inbox" ]; then echo "not-json"; else echo \'{"open":[],"unreadable":[]}\'; fi\nexit 0\n',
     )
     chmodSync(fakeOrch, 0o755)
     try {
@@ -513,7 +542,7 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
     const fakeOrch = join(root, 'bin', 'orch')
     writeFileSync(
       fakeOrch,
-      '#!/bin/sh\nif [ "$1" = "inbox" ]; then exit 7; fi\nexit 0\n',
+      '#!/bin/sh\nif [ "$1" = "inbox" ]; then exit 7; else echo \'{"open":[],"unreadable":[]}\'; fi\nexit 0\n',
     )
     chmodSync(fakeOrch, 0o755)
     try {
@@ -541,7 +570,7 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
     const fakeOrch = join(root, 'bin', 'orch')
     writeFileSync(
       fakeOrch,
-      '#!/bin/sh\nif [ "$1" = "inbox" ]; then exec sleep 20; fi\nexit 0\n',
+      '#!/bin/sh\nif [ "$1" = "inbox" ]; then exec sleep 20; else echo \'{"open":[],"unreadable":[]}\'; fi\nexit 0\n',
     )
     chmodSync(fakeOrch, 0o755)
     try {
@@ -613,6 +642,52 @@ describe('session-brief hook lists open resumes without injecting bodies', () =>
     expect(p.exitCode).toBe(0)
     expect(p.stdout.toString()).toBe('')
   })
+
+  test('rejects a whitespace-containing resume slug without blanking other hook output', () => {
+    const { process: p, output } = runWithResumePayload(
+      '{"open":[{"slug":"hello world","title":"T","age":"1d"}],"unreadable":[]}',
+    )
+    expect(p.exitCode).toBe(0)
+    expect(output.hookSpecificOutput.additionalContext).toContain('OPERATOR BRIEF')
+    expect(output.systemMessage).toContain('1 question waiting on your ruling.')
+    expect(output.systemMessage).toContain('Resume response was invalid; brief state is unknown.')
+    expect(output.systemMessage).not.toContain('`hello`')
+  })
+
+  test('rejects an all-whitespace resume slug instead of treating its title as the slug', () => {
+    const { output } = runWithResumePayload(
+      '{"open":[{"slug":"   ","title":"forged-brief","age":"1d"}],"unreadable":[]}',
+    )
+    expect(output.hookSpecificOutput.additionalContext).toContain('OPERATOR BRIEF')
+    expect(output.systemMessage).toContain('Resume response was invalid; brief state is unknown.')
+    expect(output.systemMessage).not.toContain('`forged-brief`')
+  })
+
+  test('rejects an empty resume slug without blanking operator and inbox output', () => {
+    const { process: p, output } = runWithResumePayload(
+      '{"open":[{"slug":"","title":"","age":""}],"unreadable":[]}',
+    )
+    expect(p.exitCode).toBe(0)
+    expect(p.stdout.toString()).not.toBe('')
+    expect(output.hookSpecificOutput.additionalContext).toContain('OPERATOR BRIEF')
+    expect(output.systemMessage).toContain('1 question waiting on your ruling.')
+    expect(output.systemMessage).toContain('Resume response was invalid; brief state is unknown.')
+  })
+
+  for (const [name, payload] of [
+    ['null unreadable', '{"open":[{"slug":"epic-name","title":"Title","age":"1d"}],"unreadable":null}'],
+    ['missing unreadable', '{"open":[{"slug":"epic-name","title":"Title","age":"1d"}]}'],
+    ['invalid unreadable item', '{"open":[{"slug":"epic-name","title":"Title","age":"1d"}],"unreadable":[{"slug":"x","reason":"unknown"}]}'],
+  ]) {
+    test(`keeps a valid open brief and reports ${name}`, () => {
+      const { output } = runWithResumePayload(payload)
+      expect(output.hookSpecificOutput.additionalContext).toContain(
+        'Open resume brief `epic-name`.',
+      )
+      expect(output.systemMessage).toContain('Open resume brief: `epic-name`.')
+      expect(output.systemMessage).toContain('Resume response was invalid; brief state is unknown.')
+    })
+  }
 
   test('one open brief: cold start asks, continuation offers, never dumps the body', () => {
     upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
