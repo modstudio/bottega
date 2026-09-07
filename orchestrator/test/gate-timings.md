@@ -239,6 +239,19 @@ now puts both worktree lock files in shard 3 and swaps similarly measured
 
 No assertion, test name, seed, timeout, or production module changed.
 
+### Consecutive full-gate confirmation
+
+| attempt | wall s | exit | outcome |
+|---:|---:|---:|---|
+| 1 | 141.02 | 1 | shard 4: `landing-2.cli.test.ts` — `landing binds confinement failures to the selected or current chain` exceeded Bun's 5 s test ceiling; the child was terminated with exit 143 |
+
+Three consecutive greens could not be reached: the first confirmation failed
+on the same accepted correctness finding after the ruled isolation was applied.
+Per the fix-round instruction, testing stopped here rather than widening a
+timeout or changing test semantics. The assertion is Bun's test-timeout
+contract (`this test timed out after 5000ms`); the test body begins at
+`src/landing-2.cli.test.ts:91`.
+
 ## 4. Spawn lead
 
 | file | all process calls | cli.ts | git | other |
