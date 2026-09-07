@@ -343,6 +343,7 @@ describe('task CLI help', () => {
 
   test('a value named like a flag does not hide trailing help from writing verbs', () => {
     const helpDatabase = join(dir, 'flag-named-value-help.db')
+    migrateAt(helpDatabase)
     const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha',
       '--title', 'Original title', '--body', 'Original body',
       '--allow-duplicate', 'flag-named value help test seed')
@@ -373,6 +374,7 @@ describe('task CLI help', () => {
 
   test('task new does not let unsupported --version swallow help or create a row', () => {
     const helpDatabase = join(dir, 'new-version-help.db')
+    migrateAt(helpDatabase)
     const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha', '--title', 'Seed')
     expect(seed.exitCode).toBe(0)
 
@@ -388,6 +390,7 @@ describe('task CLI help', () => {
 
   test('task new does not let unsupported --role swallow help or create a row', () => {
     const helpDatabase = join(dir, 'new-role-help.db')
+    migrateAt(helpDatabase)
     const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha', '--title', 'Seed')
     expect(seed.exitCode).toBe(0)
 
@@ -403,6 +406,7 @@ describe('task CLI help', () => {
 
   test('task close does not let unsupported --title swallow help or close the task', () => {
     const helpDatabase = join(dir, 'close-title-help.db')
+    migrateAt(helpDatabase)
     const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha', '--title', 'Open task')
     expect(seed.exitCode).toBe(0)
 
@@ -417,6 +421,7 @@ describe('task CLI help', () => {
 
   test('task comment does not let unsupported --title swallow help or insert a comment', () => {
     const helpDatabase = join(dir, 'comment-title-help.db')
+    migrateAt(helpDatabase)
     const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha', '--title', 'Comment target')
     expect(seed.exitCode).toBe(0)
 
@@ -430,6 +435,7 @@ describe('task CLI help', () => {
 
   test('task set does not let unsupported --version swallow help or mutate the task', () => {
     const helpDatabase = join(dir, 'set-version-help.db')
+    migrateAt(helpDatabase)
     const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha', '--title', 'Original title')
     expect(seed.exitCode).toBe(0)
 
@@ -443,6 +449,7 @@ describe('task CLI help', () => {
 
   test('task doc rm does not let unsupported --version swallow help or delete the document', () => {
     const helpDatabase = join(dir, 'doc-rm-version-help.db')
+    migrateAt(helpDatabase)
     const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha', '--title', 'Document target')
     expect(seed.exitCode).toBe(0)
     const created = hubAt(helpDatabase, 'task', 'doc', 'new', seed.stdout, '--title', 'Keep me')
@@ -458,6 +465,7 @@ describe('task CLI help', () => {
 
   test('task doc new does not let unsupported --version swallow help or insert a document', () => {
     const helpDatabase = join(dir, 'doc-new-version-help.db')
+    migrateAt(helpDatabase)
     const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha', '--title', 'Document target')
     expect(seed.exitCode).toBe(0)
 
@@ -472,6 +480,7 @@ describe('task CLI help', () => {
 
   test('preserves task help boundaries for consumed values, positionals, and boolean flags', () => {
     const helpDatabase = join(dir, 'help-boundaries.db')
+    migrateAt(helpDatabase)
     const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha', '--title', 'Original title')
     expect(seed.exitCode).toBe(0)
 
@@ -495,6 +504,7 @@ describe('task CLI help', () => {
 
   test('positional comment bodies named like flags do not hide trailing help', () => {
     const helpDatabase = join(dir, 'comment-positional-help.db')
+    migrateAt(helpDatabase)
     const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha',
       '--title', 'Comment target')
     expect(seed.exitCode).toBe(0)
@@ -511,6 +521,7 @@ describe('task CLI help', () => {
 
   test('a bare help token remains help when it occupies the comment body slot', () => {
     const helpDatabase = join(dir, 'comment-bare-help.db')
+    migrateAt(helpDatabase)
     const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha',
       '--title', 'Bare help target')
     expect(seed.exitCode).toBe(0)
@@ -527,6 +538,7 @@ describe('task CLI help', () => {
 
   test('positional import paths named like flags do not hide trailing help', () => {
     const helpDatabase = join(dir, 'import-positional-help.db')
+    migrateAt(helpDatabase)
     const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha',
       '--title', 'Import count seed')
     expect(seed.exitCode).toBe(0)
