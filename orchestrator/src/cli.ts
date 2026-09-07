@@ -1556,7 +1556,7 @@ function usage(): never {
       prints every matched row and before/after counts before writing
   orch health [--days N] [--json] failure classes by count, time, last seen and false-verdict rate
   orch doctor                   agents, local endpoint, routing at a glance
-  orch agent add <name> --harness H --backend B --model M [--base-url U] [--context-tokens N]
+  orch agent add <name> --harness H --backend B [--model M] [--base-url U] [--context-tokens N]
   orch agent set <name> [the add flags] [--enabled true|false] [--reason TEXT]
   orch agent remove <name>      delete only an agent with no run evidence
   orch agent probe <name>       run reply, file-tool, and structured-output registration probes
@@ -6634,6 +6634,14 @@ switch (cmd) {
     console.log(`\nlocal endpoint  ${LOCAL_BASE_URL || '(ORCH_LOCAL_BASE_URL unset)'}`)
     console.log(`local model     ${LOCAL_MODEL}`)
     console.log(`reachable       ${r.ok ? 'yes' : 'NO'} — ${r.detail}`)
+    const localRegistered = LOCAL_BASE_URL && agentRows().some((row) =>
+      Boolean(row.enabled) && row.transport === 'acp' && row.base_url === LOCAL_BASE_URL)
+    if (LOCAL_BASE_URL && !localRegistered) {
+      const configuredModel = process.env.ORCH_LOCAL_MODEL
+      console.log(configuredModel
+        ? `register        orch agent add local-acp --harness goose --backend vllm --model ${configuredModel} --base-url ${LOCAL_BASE_URL}`
+        : 'register        ORCH_LOCAL_MODEL is required before registering local-acp')
+    }
     if (!r.ok && LOCAL_BASE_URL) {
       // Reporting commands do not have side effects, so doctor only sends a
       // packet when asked in as many words. `orch do` wakes on its own; a
@@ -6765,7 +6773,20 @@ switch (cmd) {
         ...(flag('reason') !== undefined ? { reason: flag('reason')! } : {}),
       }
     }
-    if (sub === 'add') console.log(JSON.stringify(addAgent(name!, mutation())))
+    if (sub === 'add') {
+      const input = mutation()
+      if (!input.model) {
+        const configuredModel = process.env.ORCH_LOCAL_MODEL?.trim()
+        if (!configuredModel) {
+          throw new Error(
+            'agent add requires --model or ORCH_LOCAL_MODEL\n' +
+            'cleared by: pass --model or set ORCH_LOCAL_MODEL',
+          )
+        }
+        input.model = configuredModel
+      }
+      console.log(JSON.stringify(addAgent(name!, input)))
+    }
     else if (sub === 'set') console.log(JSON.stringify(setAgent(name!, mutation())))
     else if (sub === 'remove') { removeAgent(name!); console.log(`removed ${name}`) }
     else if (sub === 'probe') {

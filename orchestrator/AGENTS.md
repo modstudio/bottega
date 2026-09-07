@@ -1875,9 +1875,12 @@ as a fresh root and the chain silently forked.
 
 ## Local model
 
-`local-acp` drives the OpenAI-compatible endpoint through a model-agnostic ACP
-harness. Set `ORCH_LOCAL_BASE_URL`; the registered row supplies the backend and
-model. Adding another local model is another row and probe, not another driver.
+`local-acp` drives the OpenAI-compatible endpoint through the model-agnostic
+Goose ACP harness. Register it on each machine with
+`orch agent add local-acp --harness goose --backend vllm --model "$ORCH_LOCAL_MODEL" --base-url "$ORCH_LOCAL_BASE_URL"`,
+then probe it. `orch doctor` prints the filled-in command when both variables
+are set and no enabled ACP row points at that endpoint. Adding another local
+model is another row and probe, not another driver.
 `qwen-local` remains only as a disabled legacy referent so its historical runs
 keep their meaning.
 

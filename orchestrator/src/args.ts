@@ -414,7 +414,7 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       if (topLevelOnly) return { args: [], shape: shape('orch agent', 0) }
       const common = ['--harness','--backend','--model','--base-url','--context-tokens']
       const forms: Record<string, CommandShape> = {
-        add: shape('orch agent add <name> --harness H --backend B --model M [--base-url U] [--context-tokens N]', 1, common),
+        add: shape('orch agent add <name> --harness H --backend B [--model M] [--base-url U] [--context-tokens N]', 1, common),
         set: shape('orch agent set <name> [registration flags] [--enabled true|false] [--reason TEXT]', 1, [...common, '--enabled', '--reason']),
         remove: shape('orch agent remove <name>', 1),
         list: shape('orch agent list [--json]', 0, [], ['--json']),

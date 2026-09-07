@@ -49,6 +49,29 @@ describe('agent registry', () => {
     removeAgent('cache-new')
     expect(AGENTS['cache-new']).toBeUndefined()
   })
+
+  test('CLI registration reads the local model and doctor prints the per-machine command', () => {
+    const cli = new URL('cli.ts', import.meta.url).pathname
+    const env = {
+      ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+      ORCH_LOCAL_BASE_URL: 'http://127.0.0.1:1/v1', ORCH_LOCAL_MODEL: 'served/model',
+    }
+    const doctor = Bun.spawnSync([process.execPath, cli, 'doctor'], {
+      env, stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(doctor.exitCode).toBe(0)
+    expect(doctor.stdout.toString()).toContain(
+      'orch agent add local-acp --harness goose --backend vllm --model served/model ' +
+      '--base-url http://127.0.0.1:1/v1',
+    )
+    const added = Bun.spawnSync([
+      process.execPath, cli, 'agent', 'add', 'local-acp', '--harness', 'goose',
+      '--backend', 'vllm', '--base-url', 'http://127.0.0.1:1/v1',
+    ], { env, stdout: 'pipe', stderr: 'pipe' })
+    expect(added.exitCode, added.stderr.toString()).toBe(0)
+    expect(JSON.parse(added.stdout.toString()).model).toBe('served/model')
+    removeAgent('local-acp')
+  })
 })
 
 
