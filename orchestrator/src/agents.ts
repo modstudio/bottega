@@ -1040,6 +1040,32 @@ export function removeAgent(name: string): void {
   refreshAgents()
 }
 
+export const REGISTRATION_PROBE_FILE = 'probe.txt'
+export const REGISTRATION_PROBE_SENTINEL = 'REGISTRATION_PROBE_FILE_OK'
+
+function namesProbeFile(value: string): boolean {
+  const normalized = value.replaceAll('\\', '/')
+  return normalized === REGISTRATION_PROBE_FILE ||
+    normalized.endsWith(`/${REGISTRATION_PROBE_FILE}`) ||
+    new RegExp(`(?:^|[\\s"'/])${REGISTRATION_PROBE_FILE.replace('.', '\\.')}(?:$|[\\s"'])`).test(normalized)
+}
+
+/** True only for a completed read of the probe file whose result or final reply carries the sentinel. */
+export function registrationProbeReadsRepo(
+  events: import('./transport.ts').NormalizedEvent[],
+  output: string,
+): boolean {
+  const reads = events.filter((event) =>
+    event.kind === 'tool' &&
+    event.status === 'completed' &&
+    event.toolKind === 'read' &&
+    (namesProbeFile(event.target ?? '') || namesProbeFile(event.title)))
+  if (!reads.length) return false
+  return reads.some((event) => event.kind === 'tool' &&
+    typeof event.result === 'string' && event.result.includes(REGISTRATION_PROBE_SENTINEL)) ||
+    output.includes(REGISTRATION_PROBE_SENTINEL)
+}
+
 export type RegistrationProbeResult = {
   harness: string
   ok: boolean
@@ -1081,7 +1107,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
   if (which(agent.bin) === null) throw new Error(`${agent.harness} harness is not installed`)
   const scratch = mkdtempSync(join(process.env.TMPDIR ?? '/tmp', 'orch-agent-probe-'))
   mkdirSync(join(scratch, 'repo'))
-  writeFileSync(join(scratch, 'repo', 'probe.txt'), 'REGISTRATION_PROBE_FILE_OK\n')
+  writeFileSync(join(scratch, 'repo', REGISTRATION_PROBE_FILE), `${REGISTRATION_PROBE_SENTINEL}\n`)
   const schemaPath = join(scratch, 'schema.json')
   writeFileSync(schemaPath, JSON.stringify({
     type: 'object', additionalProperties: false, required: ['status'],
@@ -1130,7 +1156,8 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
     }
   }
   const reply = await runOne('reply', 'Reply with exactly: ok')
-  const tool = await runOne('tool', 'Read probe.txt with a file tool and reply with exactly its contents.')
+  const tool = await runOne('tool',
+    `Read ${REGISTRATION_PROBE_FILE} with a file tool and reply with exactly its contents.`)
   const structured = await runOne('schema', 'Return status ok using the supplied schema.', schemaPath)
   const parsedSchema = (() => {
     try { return JSON.parse(structured.parsed?.text ?? structured.output) } catch { return null }
@@ -1151,9 +1178,10 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
     tool: {
       // ACP reports the harness tool lifecycle separately from its final prose.
       // Goose emits an empty final message after a successful read, so the
-      // completed tool event is the capability proof; requiring echoed prose
-      // would classify the successful file operation as absent.
-      ok: tool.status === 'ok' && tool.events.some((e) => e.kind === 'tool' && e.status === 'completed'),
+      // sentinel may live in the tool result rather than the echoed reply.
+      // Any completed tool is not enough: the read must target the probe file
+      // and the exact sentinel must appear in that result or the final reply.
+      ok: tool.status === 'ok' && registrationProbeReadsRepo(tool.events, tool.output),
       output: tool.output, toolEvents: tool.events.filter((e) => e.kind === 'tool').length,
       statuses: tool.events.filter((e) => e.kind === 'tool').map((e) => e.status ?? 'unknown'),
     },

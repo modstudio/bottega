@@ -103,6 +103,25 @@ describe('ACP event fixtures normalise to orch outcomes', () => {
     expect(result.events.some((event) => event.kind === 'tool' && event.toolKind === 'read')).toBe(true)
   })
 
+  test('a completed read captures the target path and tool result', () => {
+    const result = normalizeAcpTurn({
+      sessionId: 'sess_probe',
+      updates: [{
+        sessionUpdate: 'tool_call',
+        title: 'Read probe.txt',
+        kind: 'read',
+        status: 'completed',
+        locations: [{ path: '/tmp/repo/probe.txt' }],
+        content: [{ type: 'content', content: { type: 'text', text: 'REGISTRATION_PROBE_FILE_OK\n' } }],
+      }],
+      stopReason: 'end_turn',
+    })
+    expect(result.events.some((event) => event.kind === 'tool' &&
+      event.toolKind === 'read' && event.status === 'completed' &&
+      event.target === '/tmp/repo/probe.txt' &&
+      event.result === 'REGISTRATION_PROBE_FILE_OK\n')).toBe(true)
+  })
+
   test('grok updates use terminal input plus output usage, not session-context used', () => {
     const result = normalizeAcpTurn(ACP_FIXTURE_GROK)
     expect(result.output).toBe('@devbox/orchestrator')

@@ -14,12 +14,15 @@ import {
 
 type AcpUpdate = {
   sessionUpdate: string
-  content?: { type?: string; text?: string }
+  content?: { type?: string; text?: string } | unknown[]
   title?: string
   status?: string
   kind?: string
   used?: number
   cost?: { amount?: number; currency?: string } | null
+  locations?: Array<{ path?: string }>
+  rawInput?: unknown
+  rawOutput?: unknown
 }
 
 type AcpTurnInput = {
@@ -68,8 +71,38 @@ function asUpdate(value: unknown): AcpUpdate | null {
 }
 
 function textOf(content: AcpUpdate['content']): string {
-  if (content?.type === 'text' && typeof content.text === 'string') return content.text
+  if (content && !Array.isArray(content) && content.type === 'text' && typeof content.text === 'string') {
+    return content.text
+  }
   return ''
+}
+
+function toolCallTarget(update: AcpUpdate): string | undefined {
+  if (Array.isArray(update.locations)) {
+    for (const location of update.locations) {
+      if (typeof location?.path === 'string' && location.path) return location.path
+    }
+  }
+  if (isRecord(update.rawInput) && typeof update.rawInput.path === 'string' && update.rawInput.path) {
+    return update.rawInput.path
+  }
+  return undefined
+}
+
+function toolCallResult(update: AcpUpdate): string | undefined {
+  if (typeof update.rawOutput === 'string' && update.rawOutput) return update.rawOutput
+  if (!Array.isArray(update.content)) return undefined
+  const parts: string[] = []
+  for (const item of update.content) {
+    if (!isRecord(item)) continue
+    if (item.type === 'content' && isRecord(item.content) &&
+        item.content.type === 'text' && typeof item.content.text === 'string') {
+      parts.push(item.content.text)
+    } else if (item.type === 'text' && typeof item.text === 'string') {
+      parts.push(item.text)
+    }
+  }
+  return parts.length ? parts.join('') : undefined
 }
 
 /**
@@ -114,6 +147,8 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
           title: update.title ?? update.sessionUpdate,
           status: update.status,
           toolKind: update.kind,
+          target: toolCallTarget(update),
+          result: toolCallResult(update),
         })
         break
       case 'usage_update':

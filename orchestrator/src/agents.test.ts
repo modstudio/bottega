@@ -3,7 +3,7 @@ import { rmSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { AGENTS, GENERIC_QUESTION_TOKENS, JOBS, LAND_PREAMBLE, NEEDS_HEALTH, OUTPUT_RESERVE, STALE_AFTER_MS, WAKE_COOLDOWN_MS, WORKER_PREAMBLE, addRun, available, candidates, classify, db, detectBlockers, dir, ensureLocalHealth, guide, isNonAnswer, jobTimeoutCeilingMinutes, localReachable, pick, resetLocalHealth, runJob, score, strictCodexSchema, unavailableReason, upsertProject, wakeDecision, workerPreamble, workerResumeGuard } from '../test/fixture.ts'
-import { addAgent, agentRows, recordAgentProbe, removeAgent, setAgent } from './agents.ts'
+import { addAgent, agentRows, recordAgentProbe, registrationProbeReadsRepo, removeAgent, setAgent } from './agents.ts'
 
 describe('agent registry', () => {
   test('migration preserves the four historical names and capabilities', () => {
@@ -102,6 +102,24 @@ describe('agent registry', () => {
       expect(history.attempts, change.field).toHaveLength(1)
       removeAgent(name)
     }
+  })
+
+  test('an unrelated tool event plus a hallucinated sentinel does not grant readsRepo', () => {
+    expect(registrationProbeReadsRepo([
+      { kind: 'tool', title: 'Search src', status: 'completed', toolKind: 'search', target: 'src' },
+    ], 'REGISTRATION_PROBE_FILE_OK')).toBe(false)
+    expect(registrationProbeReadsRepo([
+      {
+        kind: 'tool', title: 'Read README.md', status: 'completed', toolKind: 'read',
+        target: '/tmp/repo/README.md', result: 'unrelated file',
+      },
+    ], 'REGISTRATION_PROBE_FILE_OK')).toBe(false)
+    expect(registrationProbeReadsRepo([
+      {
+        kind: 'tool', title: 'Read probe.txt', status: 'completed', toolKind: 'read',
+        target: '/tmp/repo/probe.txt', result: 'REGISTRATION_PROBE_FILE_OK\n',
+      },
+    ], '')).toBe(true)
   })
 })
 
