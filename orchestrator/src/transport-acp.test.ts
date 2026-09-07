@@ -148,6 +148,16 @@ describe('ACP defaults Codex and preflight names the missing piece', () => {
     expect(gap).toContain(ACP_PILOT_TASK)
     expect(gap).toContain('codex-acp')
   })
+
+  test('preflight names a missing ajv', () => {
+    const gap = acpRuntimeGaps({
+      sdkResolve: () => '/fake/sdk',
+      ajvResolve: () => { throw new Error('Cannot find module') },
+      binExists: () => true,
+    })
+    expect(gap).toContain(ACP_PILOT_TASK)
+    expect(gap).toContain('ajv')
+  })
 })
 
 describe('ACP client-served fs is confined to the worktree', () => {

@@ -6044,6 +6044,9 @@ switch (cmd) {
       `sandbox        srt ${srtInstalled() ? 'installed' : 'NOT INSTALLED'} at ${SRT_BIN}`,
     )
     console.log(`sandbox agents ${srtAgents.join(', ') || '(none)'} (read-only repository jobs)`)
+    const { acpRuntimeGaps } = await import('./transport.ts')
+    const acpGap = acpRuntimeGaps()
+    console.log(`acp            ${acpGap ?? 'ready'}`)
     console.log(`\nlocal endpoint  ${LOCAL_BASE_URL || '(ORCH_LOCAL_BASE_URL unset)'}`)
     console.log(`local model     ${LOCAL_MODEL}`)
     console.log(`reachable       ${r.ok ? 'yes' : 'NO'} — ${r.detail}`)

@@ -2,7 +2,6 @@ import { createRequire } from 'node:module'
 import { existsSync, realpathSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import Ajv2020 from 'ajv/dist/2020.js'
 import type { Agent, ArgvOpts, SandboxLevel } from './agents.ts'
 import { job } from './jobs.ts'
 import type { FailureKind } from './failure.ts'
@@ -182,16 +181,23 @@ export function resolveCodexAcpBin(): string {
 
 export function acpRuntimeGaps(opts?: {
   sdkResolve?: () => string
+  ajvResolve?: () => string
   binPath?: string
   binExists?: (path: string) => boolean
 }): string | null {
   const sdkResolve = opts?.sdkResolve ?? (() => requireTransport.resolve('@agentclientprotocol/sdk'))
+  const ajvResolve = opts?.ajvResolve ?? (() => requireTransport.resolve('ajv/dist/2020.js'))
   const binPath = opts?.binPath ?? resolveCodexAcpBin()
   const binExists = opts?.binExists ?? existsSync
   try {
     sdkResolve()
   } catch {
     return `ACP transport is a ${ACP_PILOT_TASK} pilot; the SDK @agentclientprotocol/sdk is not installed`
+  }
+  try {
+    ajvResolve()
+  } catch {
+    return `ACP transport is a ${ACP_PILOT_TASK} pilot; ajv is not installed`
   }
   if (!binExists(binPath)) {
     return `ACP transport is a ${ACP_PILOT_TASK} pilot; the codex-acp executable is not installed`
@@ -301,13 +307,23 @@ export function confineFsPath(path: string, root: string): string {
   return candidate
 }
 
-const schemaValidator = new Ajv2020({ strict: false })
+type Ajv2020Ctor = new (opts?: { strict?: boolean }) => { compile(schema: object): (value: unknown) => boolean }
+let schemaValidator: InstanceType<Ajv2020Ctor> | null = null
+
+function loadAjvValidator(): InstanceType<Ajv2020Ctor> {
+  if (schemaValidator) return schemaValidator
+  const loaded = requireTransport('ajv/dist/2020.js') as Ajv2020Ctor & { default?: Ajv2020Ctor }
+  const Ajv2020 = typeof loaded === 'function' ? loaded : loaded.default
+  if (typeof Ajv2020 !== 'function') throw new Error('ajv/dist/2020.js did not export a constructor')
+  schemaValidator = new Ajv2020({ strict: false })
+  return schemaValidator
+}
 
 /** Validate a reply against the same Codex-normalised schema the CLI path hands the vendor. */
 export function valueMatchesStrictSchema(schema: unknown, value: unknown): boolean {
   if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) return false
   try {
-    return schemaValidator.compile(schema)(value)
+    return loadAjvValidator().compile(schema)(value)
   } catch {
     return false
   }
