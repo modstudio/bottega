@@ -804,6 +804,7 @@ export function pick(
   probe = false,
   /** Stable findings viewpoint used for reviewer-precision calibration. */
   lens?: string,
+  rng: () => number = Math.random,
 ): { agent: string; reason: string } {
   const j = job(jobName)
   const ev = evidenceFor(jobName, promptBytes, stack, avoid.model, lens)
@@ -877,7 +878,7 @@ export function pick(
   const notExplored = failingEvals.map((row) =>
     `${row.agent} not explored: failing canon eval ${row.slug}`)
   const withConstraint = (reason: string) => [reason, ...notExplored].join('; ')
-  const selected = currentPolicySelection(eligible, j.prefer, explore, Math.random, explorationExcluded)
+  const selected = currentPolicySelection(eligible, j.prefer, explore, rng, explorationExcluded)
   const chosen = selected.chosen
   const policy = explore ? 'thompson' : 'mean'
   if (selected.mode === 'challenger') return {

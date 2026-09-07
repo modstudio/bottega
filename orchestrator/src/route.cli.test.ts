@@ -631,14 +631,9 @@ describe('routing backtest statistics', () => {
       insert.run(id, `2026-01-${day}T01:00:00.000Z`)
     }
 
-    const random = Math.random
-    Math.random = () => 0
-    let production: string
-    try {
-      production = pick('summarize').agent
-    } finally {
-      Math.random = random
-    }
+    const production = pick(
+      'summarize', undefined, 0, true, undefined, {}, false, undefined, () => 0,
+    ).agent
     const sixth = addRun({
       agent: production, job: 'summarize', startedAt: '2026-01-06T00:00:00.000Z',
     })
