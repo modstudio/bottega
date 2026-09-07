@@ -239,13 +239,13 @@ export function setDoc(input: {
 } & DocWriteContext): Doc {
   if (input.scope === 'resume') {
     const frontmatter = resumeFrontmatter(input.body)
-    if (frontmatter?.status?.occurrences && frontmatter.status.occurrences > 1) {
-      throw new Error(`resume doc "${input.slug}" has more than one top-level status field`)
-    }
     if (!frontmatter?.top.status) {
       throw new Error(
         `resume doc "${input.slug}" requires readable top-level YAML frontmatter in the shape "status: open" or "status: consumed"`,
       )
+    }
+    if (frontmatter.status?.occurrences && frontmatter.status.occurrences > 1) {
+      throw new Error(`resume doc "${input.slug}" has more than one top-level status field`)
     }
   }
   return setDocWithOp(input)
@@ -297,18 +297,7 @@ export function consumeDoc(
   let yaml = frontmatter[2]!
   const field = (name: string) =>
     new RegExp(`(^|\\r?\\n)([ \\t]*${name}[ \\t]*:[ \\t]*)([^\\r\\n]*)(?=\\r?\\n|$)`, 'm')
-  const resolvedStatus = () => resolveTopLevelStatus(yaml) ?? (() => {
-    const nested = yaml.match(field('status'))
-    if (!nested) return null
-    const raw = nested[3]!
-    const valueStart = nested.index! + nested[1]!.length + nested[2]!.length
-    return {
-      value: raw.trim().replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, '$1$2'),
-      valueStart,
-      valueEnd: valueStart + raw.length,
-      occurrences: 1,
-    }
-  })()
+  const resolvedStatus = () => resolveStatus(yaml)
   const status = resolvedStatus()
   if (!status) throw new Error(`${scope} doc "${slug}" has no status field in its YAML frontmatter`)
   if (status.value === 'consumed') return { ...doc, already_consumed: true }
@@ -372,7 +361,7 @@ export function brief(cwd: string): string {
 
 const RESUME_FRONTMATTER_KEYS = ['status', 'epic', 'project', 'written', 'consumed', 'consumed_by'] as const
 export type ResumeFrontmatter = { [K in typeof RESUME_FRONTMATTER_KEYS[number]]?: string }
-export type ResolvedTopLevelStatus = {
+export type ResolvedStatus = {
   value: string
   valueStart: number
   valueEnd: number
@@ -384,13 +373,17 @@ export type ResolvedTopLevelStatus = {
  * the rest of the recovery artifact byte-for-byte. A column-zero `status:` inside
  * a quoted multi-line scalar is therefore read as a key; adopting a YAML parser is
  * a separate decision. The last column-zero occurrence wins, matching the prior
- * parser behaviour and the common YAML-loader treatment of duplicate keys.
+ * parser behaviour and the common YAML-loader treatment of duplicate keys. When
+ * there is no column-zero status, the last nested occurrence wins instead.
  */
-export function resolveTopLevelStatus(yaml: string): ResolvedTopLevelStatus | null {
-  const pattern = /(^|\r?\n)(status[ \t]*:[ \t]*)([^\r\n]*)(?=\r?\n|$)/g
-  let resolved: ResolvedTopLevelStatus | null = null
+export function resolveStatus(yaml: string): ResolvedStatus | null {
+  const topLevel = /(^|\r?\n)(status[ \t]*:[ \t]*)([^\r\n]*)(?=\r?\n|$)/g
+  const nested = /(^|\r?\n)([ \t]+status[ \t]*:[ \t]*)([^\r\n]*)(?=\r?\n|$)/g
+  const matches = [...yaml.matchAll(topLevel)]
+  const governing = matches.length ? matches : [...yaml.matchAll(nested)]
+  let resolved: ResolvedStatus | null = null
   let occurrences = 0
-  for (const match of yaml.matchAll(pattern)) {
+  for (const match of governing) {
     occurrences++
     const raw = match[3]!
     const valueStart = match.index! + match[1]!.length + match[2]!.length
@@ -413,7 +406,7 @@ export function resolveTopLevelStatus(yaml: string): ResolvedTopLevelStatus | nu
 function resumeFrontmatter(body: string): {
   top: ResumeFrontmatter
   nested: ResumeFrontmatter
-  status: ResolvedTopLevelStatus | null
+  status: ResolvedStatus | null
 } | null {
   const match = body.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
   if (!match) return null
@@ -426,7 +419,6 @@ function resumeFrontmatter(body: string): {
     if (!kv) continue
     const key = kv[2]!
     if (!known.has(key)) continue
-    if (!kv[1] && key === 'status') continue
     let value = kv[3]!
     if (
       (value.startsWith('"') && value.endsWith('"') && value.length >= 2) ||
@@ -437,15 +429,18 @@ function resumeFrontmatter(body: string): {
     const target = kv[1] ? nested : top
     target[key as keyof ResumeFrontmatter] = value
   }
-  const status = resolveTopLevelStatus(match[1]!)
-  if (status) top.status = status.value
+  const status = resolveStatus(match[1]!)
   return { top, nested, status }
 }
 
 export function parseResumeFrontmatter(body: string): ResumeFrontmatter | null {
   const parsed = resumeFrontmatter(body)
   if (!parsed) return null
-  return { ...parsed.nested, ...parsed.top }
+  return {
+    ...parsed.nested,
+    ...parsed.top,
+    ...(parsed.status ? { status: parsed.status.value } : {}),
+  }
 }
 
 /** Single largest unit: Ns, Nm, Nh, Nd. */

@@ -1443,6 +1443,59 @@ describe('scoped operator docs', () => {
     expect(listOpenResumes('/w/known').open.map((resume) => resume.slug)).not.toContain('legacy-duplicate')
   })
 
+  test('the last nested status controls parsing, listing, and consumption', () => {
+    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    const cases = [
+      ['nested-open', '---\nmetadata:\n  status: consumed\ndetail:\n  status: open\n---\n\nBODY\n', 'open'],
+      ['nested-consumed', '---\nmetadata:\n  status: open\ndetail:\n  status: consumed\n---\n\nBODY\n', 'consumed'],
+      ['quoted-nested-open', '---\nmetadata:\n  status: "consumed"\ndetail:\n  status: \'open\'\n---\n\nBODY\n', 'open'],
+      ['quoted-nested-consumed', '---\nmetadata:\n  status: \'open\'\ndetail:\n  status: "consumed"\n---\n\nBODY\n', 'consumed'],
+    ] as const
+
+    for (const [slug, body, status] of cases) {
+      setDoc({
+        scope: 'resume', subject: 'known', slug, title: slug,
+        body: resumeBody('open'),
+      })
+      db().query('UPDATE doc SET body=? WHERE scope=? AND subject=? AND slug=?')
+        .run(body, 'resume', 'known', slug)
+
+      expect(parseResumeFrontmatter(body)?.status).toBe(status)
+      expect(listOpenResumes('/w/known').open.map((resume) => resume.slug).includes(slug))
+        .toBe(status === 'open')
+
+      const consumed = consumeDoc('resume', 'known', slug)
+      expect(consumed.already_consumed).toBe(status === 'consumed')
+      if (status === 'open') {
+        expect(parseResumeFrontmatter(consumed.body)?.status).toBe('consumed')
+        expect(listOpenResumes('/w/known').open.map((resume) => resume.slug)).not.toContain(slug)
+      } else {
+        expect(consumed.body).toBe(body)
+        expect(consumed.body).not.toContain('consumed_by:')
+      }
+    }
+  })
+
+  test('round-three status forms still resolve and consume correctly', () => {
+    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    const bodies = [
+      '---\r\nstatus: "consumed"\r\nstatus: \'open\'\r\n---\r\n\r\nBODY',
+      '---\nmetadata:\n  status: consumed\nstatus: open\n---\n\nBODY',
+      '---\nstatus: "open"\n---\n\nBODY',
+      '---\nmetadata:\n  status: open\n---\n\nBODY',
+    ] as const
+
+    for (const [index, body] of bodies.entries()) {
+      const slug = `round-three-${index}`
+      setDoc({ scope: 'global', subject: null, slug, title: slug, body })
+      expect(parseResumeFrontmatter(body)?.status).toBe('open')
+      const consumed = consumeDoc('global', null, slug)
+      expect(consumed.already_consumed).toBe(false)
+      expect(parseResumeFrontmatter(consumed.body)?.status).toBe('consumed')
+      expect(consumed.body).toContain('consumed_by:')
+    }
+  })
+
   test('setDoc refuses a resume without readable top-level status', () => {
     upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
     expect(() => setDoc({
