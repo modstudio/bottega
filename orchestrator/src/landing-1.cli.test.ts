@@ -4,6 +4,12 @@ import { dirname, join } from 'node:path'
 import { addRun, completeReview, contentTree, db, gateFailureSummary, hermeticGitEnv, land, landingReviewCoverage, prepareSharedRefGuard, projectLockState, recordReviews, reviewPins, reviewReply, upsertProject, withProjectLock } from '../test/fixture.ts'
 
 import { landingDescribeFixture } from '../test/fixture.ts'
+import shards from '../test/shards.json'
+import { elapsedAssertionMs, elapsedLockTimeoutMs, type TestSize } from './gate-policy.ts'
+
+const landingSize = (shards.files['src/landing-1.cli.test.ts'] as { size: TestSize }).size
+const ELAPSED_MS = elapsedAssertionMs(landingSize)
+const LOCK_TIMEOUT_MS = elapsedLockTimeoutMs(landingSize)
 
 describe("landing is gated on the exact commit that reaches trunk", () => {
   const { worktreeModule, g, repoWithBranches, childLand, completedReview, realTimeoutGate } = landingDescribeFixture()
@@ -410,8 +416,8 @@ test('only bun\'s complete timeout line reports machine load', () => {
       for (let i = 0; i < 200 && !projectLockState(one, 'landing').holder; i++) await Bun.sleep(5)
       expect(projectLockState(one, 'landing').holder?.what).toBe('dead-branch')
       const started = Date.now()
-      expect(withProjectLock(two, 'landing', { session: 'other', what: 'other-branch' }, () => 'ok', 50, true)).toBe('ok')
-      expect(Date.now() - started).toBeLessThan(50)
+      expect(withProjectLock(two, 'landing', { session: 'other', what: 'other-branch' }, () => 'ok', LOCK_TIMEOUT_MS, true)).toBe('ok')
+      expect(Date.now() - started).toBeLessThan(ELAPSED_MS)
       child.kill('SIGKILL')
       await child.exited
       expect(withProjectLock(one, 'landing', { session: 'next', what: 'next-branch' }, () => 'reclaimed', 500, true)).toBe('reclaimed')

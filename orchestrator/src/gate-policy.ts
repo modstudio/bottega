@@ -16,6 +16,13 @@ export const DOCKER_INVENTORY_TIMEOUT_BY_SIZE = {
   long: 20_000,
 } as const
 
+/** Elapsed assertions that must stay well under a lock wait. */
+export const ELAPSED_ASSERTION_MS = {
+  short: 50,
+  moderate: 200,
+  long: 1_000,
+} as const
+
 export const RETRY_SIGNALS = ['timeout', 'exit-143', 'lock-wait', 'listen-eperm'] as const
 export type RetrySignal = (typeof RETRY_SIGNALS)[number]
 
@@ -55,6 +62,15 @@ export function timeoutMsForSize(size: TestSize): number {
 
 export function dockerInventoryTimeoutForSize(size: TestSize): number {
   return DOCKER_INVENTORY_TIMEOUT_BY_SIZE[size]
+}
+
+export function elapsedAssertionMs(size: TestSize): number {
+  return ELAPSED_ASSERTION_MS[size]
+}
+
+/** Lock wait used with elapsedAssertionMs; a real wait must exceed the elapsed bound. */
+export function elapsedLockTimeoutMs(size: TestSize): number {
+  return elapsedAssertionMs(size) * 5
 }
 
 export function shardSize(files: Record<string, FilePolicy>, paths: string[]): TestSize {

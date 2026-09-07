@@ -267,3 +267,16 @@ transport and would not address the measured spawn source. Recommendation:
 leave the CLI lifecycle alone; separately investigate whether the git-heavy
 fixtures can assert the same behavior with fewer repository setup and query
 calls.
+
+## DEV-375 size-class gate (2026-09-07)
+
+Single full `bun run check` on this branch: **270 s, exit 0**.
+
+Two concurrent `bun run test:gate` (pair 1 of a planned three):
+
+| gate | wall s | exit | notes |
+|---|---:|---:|---|
+| a | 513.1 (pair wall) | 0 | green under the other gate |
+| b | 513.1 (pair wall) | 1 | shard 1: `a killed holder is reclaimed, and another project never waits on it` — `expect(Date.now() - started).toBeLessThan(50)` received **92**. `withProjectLock` on the other project returned `ok`. Not a named signal; no retry. |
+
+Pairs 2 and 3 were not started.

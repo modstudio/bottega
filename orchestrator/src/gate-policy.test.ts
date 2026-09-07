@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { db } from '../test/fixture.ts'
 import {
   dockerInventoryTimeoutForSize,
+  elapsedAssertionMs,
+  elapsedLockTimeoutMs,
   failingTests,
   namedFailureSignal,
   recordTestFlake,
@@ -21,10 +23,15 @@ describe('test size classes', () => {
     expect(timeoutMsForSize('long')).toBe(600_000)
     expect(shardTimeoutMs(files, ['src/a.cli.test.ts'])).toBe(30_000)
     expect(dockerInventoryTimeoutForSize(files['src/a.cli.test.ts']!.size)).toBe(1_000)
+    expect(elapsedAssertionMs(files['src/a.cli.test.ts']!.size)).toBe(50)
+    expect(elapsedLockTimeoutMs('short')).toBe(250)
     files['src/a.cli.test.ts'] = { size: 'moderate' }
     expect(shardTimeoutMs(files, ['src/a.cli.test.ts'])).toBe(120_000)
     expect(dockerInventoryTimeoutForSize('moderate')).toBe(4_000)
+    expect(elapsedAssertionMs('moderate')).toBe(200)
+    expect(elapsedLockTimeoutMs('moderate')).toBe(1_000)
     expect(dockerInventoryTimeoutForSize('long')).toBe(20_000)
+    expect(elapsedAssertionMs('long')).toBe(1_000)
   })
 
   test('exclusive files never share a shard', () => {

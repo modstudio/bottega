@@ -58,6 +58,14 @@ describe('harness health', () => {
     db().query(
       `INSERT INTO test_flake (test, file, load_at_failure, at) VALUES (?,?,?,?)`,
     ).run(
+      'a killed holder is reclaimed, and another project never waits on it',
+      'src/landing-1.cli.test.ts',
+      JSON.stringify({ gates: 2, loadavg: 0, ncpu: 0, freeMem: 0, elapsedMs: 92, boundMs: 50 }),
+      '2026-09-07T18:00:00.000Z',
+    )
+    db().query(
+      `INSERT INTO test_flake (test, file, load_at_failure, at) VALUES (?,?,?,?)`,
+    ).run(
       'landing binds confinement',
       'src/landing-2.cli.test.ts',
       JSON.stringify({ gates: 4, loadavg: 5.1, ncpu: 8, freeMem: 1_500_000_000 }),
@@ -72,12 +80,20 @@ describe('harness health', () => {
       '2026-09-07T11:00:00.000Z',
     )
     const report = harnessHealth(14, db(), now)
-    expect(report.flakes).toEqual([{
-      test: 'landing binds confinement',
-      file: 'src/landing-2.cli.test.ts',
-      count: 2,
-      loadAtFailure: { gates: 3, loadavg: 4.2, ncpu: 8, freeMem: 2_000_000_000 },
-    }])
+    expect(report.flakes).toEqual([
+      {
+        test: 'landing binds confinement',
+        file: 'src/landing-2.cli.test.ts',
+        count: 2,
+        loadAtFailure: { gates: 3, loadavg: 4.2, ncpu: 8, freeMem: 2_000_000_000 },
+      },
+      {
+        test: 'a killed holder is reclaimed, and another project never waits on it',
+        file: 'src/landing-1.cli.test.ts',
+        count: 1,
+        loadAtFailure: { gates: 2, loadavg: 0, ncpu: 0, freeMem: 0, elapsedMs: 92, boundMs: 50 },
+      },
+    ])
     const cli = Bun.spawnSync([
       process.execPath, new URL('./cli.ts', import.meta.url).pathname, 'health', '--days', '14',
     ], { env: process.env, stdout: 'pipe', stderr: 'pipe' })

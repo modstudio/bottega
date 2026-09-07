@@ -13,7 +13,7 @@
     "src/evals.cli.test.ts": { "size": "short" },
     "src/git-environment-regression.cli.test.ts": { "size": "short" },
     "src/issue.cli.test.ts": { "size": "short" },
-    "src/landing-1.cli.test.ts": { "size": "short", "exclusive": true },
+    "src/landing-1.cli.test.ts": { "size": "moderate", "exclusive": true },
     "src/landing-2.cli.test.ts": { "size": "short", "exclusive": true },
     "src/lifecycle-harness.cli.test.ts": { "size": "short", "exclusive": true },
     "src/linked-worktree-database.cli.test.ts": { "size": "short" },

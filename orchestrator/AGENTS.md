@@ -1794,8 +1794,10 @@ The shard runner measures host load — running gates, CPU, memory — and holds
 shard while more than two gates are running, or while loadavg is at or above
 ncpu, or while free RAM is under 1 GiB. `gate-load.ts` is the same limit the
 landing queue consults. Sub-second product bounds that tests exercise (the
-sweep's docker inventory 1 s) are `ORCH_DOCKER_INVENTORY_TIMEOUT_MS`, set from
-the file's size class when the shard runs.
+sweep's docker inventory 1 s, and elapsed assertions that must stay well under
+a lock wait) are set from the file's size class: docker via
+`ORCH_DOCKER_INVENTORY_TIMEOUT_MS` when the shard runs; elapsed via
+`elapsedAssertionMs` (short 50, moderate 200, long 1000).
 
 ## Agent capabilities are not interchangeable
 
