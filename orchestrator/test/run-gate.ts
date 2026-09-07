@@ -37,6 +37,8 @@ async function pump(stream: ReadableStream<Uint8Array>, name: string, error: boo
   if (pending) (error ? console.error : console.log)(`[${name}] ${pending}`)
 }
 
+export const CLI_TEST_TIMEOUT_MS = 30_000
+
 async function run(name: string, argv: string[], files: string[]): Promise<Result> {
   const child = Bun.spawn(argv, { cwd: orchRoot, stdout: 'pipe', stderr: 'pipe' })
   await Promise.all([
@@ -52,7 +54,11 @@ async function run(name: string, argv: string[], files: string[]): Promise<Resul
 const unit = await run('orchestrator unit', ['bun', 'run', 'test:unit'], [])
 const cli = await Promise.all(shards.shards.map((shard, index) => run(
     `orchestrator CLI shard ${index + 1}/${shards.shards.length}`,
-    ['bun', 'test', ...shard.files],
+    // CLI tests spawn real orch processes and git; bun's 5 s default is sized
+    // for unit tests and, with several gates and workers sharing the machine,
+    // single landing tests were crossing it on 2026-09-07. The bound is per
+    // test and sized to that work; the unit leg keeps the default.
+    ['bun', 'test', '--timeout', String(CLI_TEST_TIMEOUT_MS), ...shard.files],
     shard.files,
   )))
 const results = [unit, ...cli]
