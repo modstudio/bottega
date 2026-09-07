@@ -265,6 +265,24 @@ test('record-only closes the question, marks the chain stranded, and retry resta
     expect(json.out.trim().split('\n').map((line) => runJson(line).id)).toEqual([root])
   })
 
+  test('runs --unscored applies its filter before --limit', () => {
+    const older = [
+      addRun({ agent: 'codex', job: 'understand' }),
+      addRun({ agent: 'grok', job: 'understand' }),
+    ]
+    const newer = [
+      addRun({ agent: 'codex', job: 'understand' }),
+      addRun({ agent: 'grok', job: 'understand' }),
+      addRun({ agent: 'codex', job: 'understand' }),
+    ]
+    for (const id of newer) score(id, 'full', 'right')
+
+    const result = orch('runs', '--unscored', '--json', '--limit', '2')
+    expect(result.code, result.err).toBe(0)
+    expect(result.out.trim().split('\n').filter(Boolean).map(runJson).map((row) => row.id))
+      .toEqual(older.reverse())
+  })
+
   test('runs --id returns the union requested and reports unknown ids', () => {
     const first = insert('ok', 'implement')
     insert('ok', 'implement')

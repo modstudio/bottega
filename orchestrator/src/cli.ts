@@ -5296,6 +5296,41 @@ switch (cmd) {
     const agentFlag = flag('agent')
     if (agentFlag) { where.push('r.agent = ?'); args.push(agentFlag) }
     const onlyUnscored = has('unscored')
+    const unscoredCte = onlyUnscored ? `WITH RECURSIVE failover_chain(origin_id, root_id) AS (
+      SELECT root.id, root.id FROM run root WHERE root.parent_run_id IS NULL
+      UNION ALL
+      SELECT chain.origin_id, successor.id
+        FROM failover_chain chain
+        JOIN run successor ON successor.id = (
+          SELECT next.id FROM run next
+           WHERE next.automatic_failover = 1
+             AND next.retry_of IN (
+               SELECT member.id FROM run member
+                WHERE member.id = chain.root_id OR member.parent_run_id = chain.root_id
+             )
+           ORDER BY next.id LIMIT 1
+        )
+    ), final_failover(origin_id, root_id) AS (
+      SELECT chain.origin_id, chain.root_id
+        FROM failover_chain chain
+       WHERE NOT EXISTS (
+         SELECT 1 FROM run next
+          WHERE next.automatic_failover = 1
+            AND next.retry_of IN (
+              SELECT member.id FROM run member
+               WHERE member.id = chain.root_id OR member.parent_run_id = chain.root_id
+            )
+       )
+    )` : ''
+    const unscoredJoin = onlyUnscored ? 'JOIN final_failover final ON final.origin_id = r.id' : ''
+    if (onlyUnscored) {
+      const owedWhere = UNSCORED_WHERE.replaceAll('r.', 'owed.').replaceAll('s.', 'owed_score.')
+      where.push(`EXISTS (
+        SELECT 1 FROM run owed
+        LEFT JOIN score owed_score ON owed_score.run_id = owed.id
+        WHERE owed.id = final.root_id AND ${owedWhere}
+      )`)
+    }
     const sinceFlag = flag('since')
     const requestedIds = [...new Set(flags('id').map((value) => {
       const id = Number(value)
@@ -5336,13 +5371,15 @@ switch (cmd) {
     }
     const limit = Number(flag('limit') ?? (json ? 100000 : 20))
     let rows = db().query(
-      `SELECT r.id, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
+      `${unscoredCte}
+       SELECT r.id, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
               current_run.status, current_run.failure_kind, current_run.error,
               s.delivery, s.quality,
               COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason, r.sandbox
               ${json ? ', r.cwd, r.session_id, r.vendor_cost_usd, r.probe, r.exit_code, r.input_tree, r.head_commit, r.review_ref,'
                         + ' r.prompt_path, r.branch, r.branch_kept, r.branch_kept_tip, r.retry_of, r.launch_key' : ''}
          FROM run r
+         ${unscoredJoin}
          JOIN run current_run ON current_run.id = (
            SELECT member.id FROM run member
             WHERE member.id = r.id OR member.parent_run_id = r.id
@@ -5356,13 +5393,6 @@ switch (cmd) {
     rows = rows.flatMap((r) => {
       const chain = resolveFailover(db(), Number(r.id))
       const final = chain.attempts.at(-1)!
-      if (onlyUnscored) {
-        const owed = db().query(
-          `SELECT 1 ok FROM run r LEFT JOIN score s ON s.run_id=r.id
-            WHERE r.id=? AND ${UNSCORED_WHERE}`,
-        ).get(final.rootId)
-        if (!owed) return []
-      }
       const current = json ? {} : db().query(
         `SELECT status, latency_ms, vendor_tokens, route_reason, probe, output_path
            FROM run WHERE id=?`,
