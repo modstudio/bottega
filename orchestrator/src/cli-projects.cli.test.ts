@@ -400,6 +400,25 @@ test('create commands must exist and be executable before dispatch', () => {
     ).get()).toEqual({ n: 1 })
   })
 
+  test('project set still writes when the contention table is absent', () => {
+    upsertProject({ name: 'trunk-no-contention', path: process.cwd(), settings: { trunk: 'main' } })
+    const table = db().query(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='contention'",
+    ).get() as { sql: string }
+    const indexes = db().query(
+      "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='contention' AND sql IS NOT NULL",
+    ).all() as { sql: string }[]
+    db().exec('DROP TABLE contention')
+    try {
+      const r = orch('project', 'set', 'trunk-no-contention', '--settings', '{"trunk":"develop"}')
+      expect(r.code, r.err).toBe(0)
+      expect(projectByName('trunk-no-contention')!.settings.trunk).toBe('develop')
+    } finally {
+      db().exec(table.sql)
+      for (const index of indexes) db().exec(index.sql)
+    }
+  })
+
   test('project set settings null deletes that key during a deep merge', () => {
     upsertProject({ name: 'merged', path: process.cwd(), settings: { a: { b: 1, c: 2 } } })
     const r = orch('project', 'set', 'merged', '--settings', '{"a":{"b":null}}')

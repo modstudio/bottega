@@ -8,7 +8,7 @@ import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, nowIso,
          pairPartners, unrecordedPairsForSession, parseRunIds, recordSessionSeen, SESSION_LIVE_MS,
          resolveRootFromLastTurn, chainScoreJoin, chainTerminationAt,
          authorizeRunMutation, runMutationActor,
-         auditRunMutation, adoptRunMutation, writeTransaction, type RootAuthority } from './db.ts'
+         auditRunMutation, adoptRunMutation, writeTransaction, tryWriteContention, type RootAuthority } from './db.ts'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync, unlinkSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, timingSafeEqual } from 'node:crypto'
@@ -3436,16 +3436,15 @@ switch (cmd) {
       if (nextName !== name) renameProject(name,nextName)
       const previousTrunk = typeof p.settings.trunk === 'string' ? p.settings.trunk : null
       const nextTrunk = typeof candidate.settings.trunk === 'string' ? candidate.settings.trunk : null
-      const { insertContention } = await import('./contention.ts')
       writeTransaction(() => {
         upsertProject(candidate)
-        if (previousTrunk !== nextTrunk) {
-          insertContention(db(), {
-            resourceKind: 'register', resourceKey: nextName, eventKind: 'invalidation',
-            cause: `trunk ${previousTrunk ?? '(unset)'} -> ${nextTrunk ?? '(unset)'}`,
-          })
-        }
       })
+      if (previousTrunk !== nextTrunk) {
+        tryWriteContention({
+          resourceKind: 'register', resourceKey: nextName, eventKind: 'invalidation',
+          cause: `trunk ${previousTrunk ?? '(unset)'} -> ${nextTrunk ?? '(unset)'}`,
+        })
+      }
       if (has('json')) {
         console.log(JSON.stringify(projectByName(nextName)))
         break
