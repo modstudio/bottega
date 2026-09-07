@@ -1423,6 +1423,26 @@ describe('scoped operator docs', () => {
     ])
   })
 
+  test('the last duplicate top-level status controls listing and consumption', () => {
+    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    setDoc({
+      scope: 'resume', subject: 'known', slug: 'legacy-duplicate', title: 'Legacy duplicate',
+      body: resumeBody('open'),
+    })
+    const duplicate = '---\nstatus: consumed\nstatus: open\nepic: demo\n---\n\nNEXT ACTION\n'
+    db().query('UPDATE doc SET body=? WHERE scope=? AND subject=? AND slug=?')
+      .run(duplicate, 'resume', 'known', 'legacy-duplicate')
+
+    expect(parseResumeFrontmatter(duplicate)?.status).toBe('open')
+    expect(listOpenResumes('/w/known').open.map((resume) => resume.slug)).toContain('legacy-duplicate')
+
+    const consumed = consumeDoc('resume', 'known', 'legacy-duplicate')
+    expect(consumed.already_consumed).toBe(false)
+    expect(consumed.body).toContain('status: consumed\nstatus: consumed\n')
+    expect(parseResumeFrontmatter(consumed.body)?.status).toBe('consumed')
+    expect(listOpenResumes('/w/known').open.map((resume) => resume.slug)).not.toContain('legacy-duplicate')
+  })
+
   test('setDoc refuses a resume without readable top-level status', () => {
     upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
     expect(() => setDoc({
@@ -1433,6 +1453,14 @@ describe('scoped operator docs', () => {
       scope: 'resume', subject: 'known', slug: 'nested-only', title: 'Nested',
       body: '---\nmetadata:\n  status: open\n---\n',
     })).toThrow('"status: open" or "status: consumed"')
+  })
+
+  test('setDoc refuses duplicate top-level resume statuses and names the slug', () => {
+    upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
+    expect(() => setDoc({
+      scope: 'resume', subject: 'known', slug: 'duplicate-status', title: 'Duplicate',
+      body: '---\nstatus: consumed\nstatus: open\n---\n',
+    })).toThrow('resume doc "duplicate-status" has more than one top-level status field')
   })
 
   test('orch doc resumes prints padded columns and is silent when there are none', () => {

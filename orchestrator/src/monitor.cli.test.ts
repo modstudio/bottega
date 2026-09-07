@@ -419,6 +419,35 @@ exit 1
       rmSync(root, { recursive: true, force: true })
     }
   }
+  const runWithResumeCommand = (resumeCommand: string) => {
+    const root = mkdtempSync(join(tmpdir(), 'session-brief-resume-command-'))
+    const hooksDir = join(root, 'orchestrator', 'hooks')
+    mkdirSync(hooksDir, { recursive: true })
+    mkdirSync(join(root, 'bin'), { recursive: true })
+    copyFileSync(hook, join(hooksDir, 'session-brief.py'))
+    const fakeOrch = join(root, 'bin', 'orch')
+    writeFileSync(
+      fakeOrch,
+      `#!/bin/sh
+if [ "$1" = "doc" ] && [ "$2" = "brief" ]; then echo "OPERATOR BRIEF"; exit 0; fi
+if [ "$1" = "doc" ] && [ "$2" = "resumes" ]; then ${resumeCommand}; fi
+if [ "$1" = "inbox" ]; then echo '[{"session_liveness":"live","can_answer":true}]'; exit 0; fi
+exit 1
+`,
+    )
+    chmodSync(fakeOrch, 0o755)
+    try {
+      const p = Bun.spawnSync(['python3', join(hooksDir, 'session-brief.py')], {
+        stdin: new TextEncoder().encode(JSON.stringify({
+          cwd: '/w/known', source: 'compact', session_id: 'reader',
+        })),
+        stdout: 'pipe', stderr: 'pipe', env: process.env,
+      })
+      return { process: p, output: hookOutput(p) }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
 
   test('prints nothing on compact, clear and fork when there are no open briefs', () => {
     for (const source of ['compact', 'clear', 'fork']) {
@@ -674,6 +703,49 @@ exit 1
     expect(output.systemMessage).toContain('Resume response was invalid; brief state is unknown.')
   })
 
+  test('enforces the document slug contract on resume payloads', () => {
+    const outside = runWithResumePayload(
+      '{"open":[{"slug":"../outside","title":"T","age":"1d"}],"unreadable":[]}',
+    ).output
+    expect(outside.systemMessage).toContain('Resume response was invalid; brief state is unknown.')
+    expect(outside.systemMessage).not.toContain('`../outside`')
+
+    const valid = runWithResumePayload(
+      '{"open":[{"slug":"a-valid-slug","title":"T","age":"1d"}],"unreadable":[]}',
+    ).output
+    expect(valid.systemMessage).toContain('Open resume brief: `a-valid-slug`.')
+    expect(valid.systemMessage).not.toContain('Resume response was invalid')
+
+    const tooLong = 'a'.repeat(65)
+    const overLimit = runWithResumePayload(JSON.stringify({
+      open: [{ slug: tooLong, title: 'T', age: '1d' }], unreadable: [],
+    })).output
+    expect(overLimit.systemMessage).toContain('Resume response was invalid; brief state is unknown.')
+    expect(overLimit.systemMessage).not.toContain(`\`${tooLong}\``)
+  })
+
+  test('a failed resume command is visible without blanking operator and inbox output', () => {
+    const { process: p, output } = runWithResumeCommand(
+      'echo "first failure" >&2; echo "second failure" >&2; exit 7',
+    )
+    expect(p.exitCode).toBe(0)
+    expect(output.hookSpecificOutput.additionalContext).toContain('OPERATOR BRIEF')
+    expect(output.systemMessage).toContain(
+      'Resume command failed with exit 7: first failure; brief state is unknown.',
+    )
+    expect(output.systemMessage).toContain('1 question waiting on your ruling.')
+  })
+
+  test('a resume timeout is visible without blanking operator and inbox output', () => {
+    const { process: p, output } = runWithResumeCommand('exec sleep 20')
+    expect(p.exitCode).toBe(0)
+    expect(output.hookSpecificOutput.additionalContext).toContain('OPERATOR BRIEF')
+    expect(output.systemMessage).toContain(
+      'Resume observation timed out; brief state is unknown.',
+    )
+    expect(output.systemMessage).toContain('1 question waiting on your ruling.')
+  }, 15_000)
+
   for (const [name, payload] of [
     ['null unreadable', '{"open":[{"slug":"epic-name","title":"Title","age":"1d"}],"unreadable":null}'],
     ['missing unreadable', '{"open":[{"slug":"epic-name","title":"Title","age":"1d"}]}'],
@@ -788,7 +860,11 @@ exit 1
     copyFileSync(hook, join(hooksDir, 'session-brief.py'))
     writeFileSync(
       join(root, 'bin', 'orch'),
-      '#!/bin/sh\nif [ "$1" = "inbox" ]; then echo "[]"; exit 0; fi\nexit 1\n',
+      '#!/bin/sh\n' +
+      'if [ "$1" = "inbox" ]; then echo "[]"; exit 0; fi\n' +
+      'if [ "$1" = "doc" ] && [ "$2" = "resumes" ]; then echo \'{"open":[],"unreadable":[]}\'; exit 0; fi\n' +
+      'if [ "$1" = "doc" ] && [ "$2" = "brief" ]; then exit 0; fi\n' +
+      'exit 1\n',
     )
     chmodSync(join(root, 'bin', 'orch'), 0o755)
     const copiedHeartbeat = join(hooksDir, 'orch-heartbeat.sh')

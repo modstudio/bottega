@@ -239,6 +239,9 @@ export function setDoc(input: {
 } & DocWriteContext): Doc {
   if (input.scope === 'resume') {
     const frontmatter = resumeFrontmatter(input.body)
+    if (frontmatter?.status?.occurrences && frontmatter.status.occurrences > 1) {
+      throw new Error(`resume doc "${input.slug}" has more than one top-level status field`)
+    }
     if (!frontmatter?.top.status) {
       throw new Error(
         `resume doc "${input.slug}" requires readable top-level YAML frontmatter in the shape "status: open" or "status: consumed"`,
@@ -294,14 +297,23 @@ export function consumeDoc(
   let yaml = frontmatter[2]!
   const field = (name: string) =>
     new RegExp(`(^|\\r?\\n)([ \\t]*${name}[ \\t]*:[ \\t]*)([^\\r\\n]*)(?=\\r?\\n|$)`, 'm')
-  const topStatusField = new RegExp(`(^|\\r?\\n)(status[ \\t]*:[ \\t]*)([^\\r\\n]*)(?=\\r?\\n|$)`, 'm')
-  const statusField = topStatusField.test(yaml) ? topStatusField : field('status')
-  const status = yaml.match(statusField)
+  const resolvedStatus = () => resolveTopLevelStatus(yaml) ?? (() => {
+    const nested = yaml.match(field('status'))
+    if (!nested) return null
+    const raw = nested[3]!
+    const valueStart = nested.index! + nested[1]!.length + nested[2]!.length
+    return {
+      value: raw.trim().replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, '$1$2'),
+      valueStart,
+      valueEnd: valueStart + raw.length,
+      occurrences: 1,
+    }
+  })()
+  const status = resolvedStatus()
   if (!status) throw new Error(`${scope} doc "${slug}" has no status field in its YAML frontmatter`)
-  const statusValue = status[3]!.trim().replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, '$1$2')
-  if (statusValue === 'consumed') return { ...doc, already_consumed: true }
+  if (status.value === 'consumed') return { ...doc, already_consumed: true }
 
-  yaml = yaml.replace(statusField, `$1$2consumed`)
+  yaml = yaml.slice(0, status.valueStart) + 'consumed' + yaml.slice(status.valueEnd)
   const consumedAt = nowIso()
   const stamps = [
     ['consumed', consumedAt],
@@ -314,7 +326,10 @@ export function consumeDoc(
     else missing.push(`${name}: ${value}`)
   }
   if (missing.length) {
-    yaml = yaml.replace(statusField, `$1$2$3${newline}${missing.join(newline)}`)
+    const consumedStatus = resolvedStatus()!
+    const consumedStatusEnd = consumedStatus.valueEnd
+    yaml = yaml.slice(0, consumedStatusEnd) + newline + missing.join(newline)
+      + yaml.slice(consumedStatusEnd)
   }
 
   const contentStart = frontmatter.index! + 3 + newline.length
@@ -357,6 +372,38 @@ export function brief(cwd: string): string {
 
 const RESUME_FRONTMATTER_KEYS = ['status', 'epic', 'project', 'written', 'consumed', 'consumed_by'] as const
 export type ResumeFrontmatter = { [K in typeof RESUME_FRONTMATTER_KEYS[number]]?: string }
+export type ResolvedTopLevelStatus = {
+  value: string
+  valueStart: number
+  valueEnd: number
+  occurrences: number
+}
+
+/**
+ * Frontmatter is matched by regex, not parsed as YAML, so consumeDoc can preserve
+ * the rest of the recovery artifact byte-for-byte. A column-zero `status:` inside
+ * a quoted multi-line scalar is therefore read as a key; adopting a YAML parser is
+ * a separate decision. The last column-zero occurrence wins, matching the prior
+ * parser behaviour and the common YAML-loader treatment of duplicate keys.
+ */
+export function resolveTopLevelStatus(yaml: string): ResolvedTopLevelStatus | null {
+  const pattern = /(^|\r?\n)(status[ \t]*:[ \t]*)([^\r\n]*)(?=\r?\n|$)/g
+  let resolved: ResolvedTopLevelStatus | null = null
+  let occurrences = 0
+  for (const match of yaml.matchAll(pattern)) {
+    occurrences++
+    const raw = match[3]!
+    const valueStart = match.index! + match[1]!.length + match[2]!.length
+    resolved = {
+      value: raw.trim().replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, '$1$2'),
+      valueStart,
+      valueEnd: valueStart + raw.length,
+      occurrences,
+    }
+  }
+  if (resolved) resolved.occurrences = occurrences
+  return resolved
+}
 
 /**
  * Status of a resume brief lives in the body's opening YAML, not in the
@@ -366,6 +413,7 @@ export type ResumeFrontmatter = { [K in typeof RESUME_FRONTMATTER_KEYS[number]]?
 function resumeFrontmatter(body: string): {
   top: ResumeFrontmatter
   nested: ResumeFrontmatter
+  status: ResolvedTopLevelStatus | null
 } | null {
   const match = body.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
   if (!match) return null
@@ -378,6 +426,7 @@ function resumeFrontmatter(body: string): {
     if (!kv) continue
     const key = kv[2]!
     if (!known.has(key)) continue
+    if (!kv[1] && key === 'status') continue
     let value = kv[3]!
     if (
       (value.startsWith('"') && value.endsWith('"') && value.length >= 2) ||
@@ -388,7 +437,9 @@ function resumeFrontmatter(body: string): {
     const target = kv[1] ? nested : top
     target[key as keyof ResumeFrontmatter] = value
   }
-  return { top, nested }
+  const status = resolveTopLevelStatus(match[1]!)
+  if (status) top.status = status.value
+  return { top, nested, status }
 }
 
 export function parseResumeFrontmatter(body: string): ResumeFrontmatter | null {

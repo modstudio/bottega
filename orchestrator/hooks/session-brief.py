@@ -2,6 +2,7 @@
 """SessionStart hook: operator brief, then any open resume briefs, for this checkout."""
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -29,7 +30,8 @@ def _kill(proc):
 
 def _wait(proc, deadline):
     try:
-        stdout, _ = proc.communicate(timeout=max(0, deadline - time.monotonic()))
+        timeout = None if proc.poll() is not None else max(0, deadline - time.monotonic())
+        stdout, _ = proc.communicate(timeout=timeout)
         return subprocess.CompletedProcess(proc.args, proc.returncode, stdout or "", _ or "")
     except Exception:
         _kill(proc)
@@ -106,11 +108,13 @@ def main() -> int:
                     resume_failure = "Resume response was invalid; brief state is unknown."
                     raw_open = []
                 for item in raw_open:
+                    slug = item.get("slug") if isinstance(item, dict) else None
                     if (
                         isinstance(item, dict)
-                        and isinstance(item.get("slug"), str)
-                        and item["slug"]
-                        and not any(char.isspace() for char in item["slug"])
+                        and isinstance(slug, str)
+                        # Source of truth: docs.ts validateHistoricAddress. Slugs are 1-64
+                        # lowercase letters, digits, or hyphens, starting alphanumeric.
+                        and re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", slug)
                         and isinstance(item.get("title"), str)
                         and isinstance(item.get("age"), str)
                     ):
@@ -148,6 +152,18 @@ def main() -> int:
                         f'UNREADABLE RESUME BRIEF `{item["slug"]}`: '
                         f'{item["reason"]}.\n'
                     )
+        elif resumes.returncode == -1:
+            resume_failure = "Resume observation timed out; brief state is unknown."
+        else:
+            first = next(
+                (line.strip() for line in (resumes.stderr or "").splitlines() if line.strip()),
+                None,
+            )
+            detail = f": {first}" if first else ""
+            resume_failure = (
+                f"Resume command failed with exit {resumes.returncode}{detail}; "
+                "brief state is unknown."
+            )
 
         answerable_count = foreign_count = unknown_count = 0
         inbox_failure = None
