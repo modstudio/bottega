@@ -692,6 +692,7 @@ function samePath(a: string, b: string): boolean {
 /** A branch is shared only inside one repository, and active or unjudged owners protect it. */
 function evidenceOwningBranchOwners(
   row: { id: number; repo?: string | null; branch: string | null }, repoRoot: string,
+  branchTipBeforeRemoval?: string | null,
 ): BranchOwnerRow[] {
   if (!row.branch) return []
   const project = row.repo ?? projectAt(repoRoot)?.name ?? null
@@ -715,7 +716,7 @@ function evidenceOwningBranchOwners(
     if ((candidate.status === 'failed' || candidate.evidence_excluded) && candidate.repo) {
       const trunk = projectByName(candidate.repo)?.settings.trunk
       if (typeof trunk === 'string') {
-        const cherry = Bun.spawnSync(['git', 'cherry', trunk, row.branch!], {
+        const cherry = Bun.spawnSync(['git', 'cherry', trunk, branchTipBeforeRemoval ?? row.branch!], {
           cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
         })
         if (cherry.exitCode === 0) {
@@ -915,7 +916,7 @@ function discardWorktree(
       source: row.worktree_source ?? undefined,
     }, repoRoot, force, ownersBefore.length > 0, row.id)
     const sharersAfter = evidenceOwningWorktreeSharers(row)
-    const ownersAfter = evidenceOwningBranchOwners(row, repoRoot)
+    const ownersAfter = evidenceOwningBranchOwners(row, repoRoot, branchSnapshot)
     let branchWarning: string | null = null
     if (row.branch) {
       const ownership = verifyBranchOwnershipAfterCleanup(
@@ -4264,7 +4265,7 @@ switch (cmd) {
             : null
           const res = removeFor(w, repoRoot, false, ownersBefore.length > 0, r.id)
           const sharersAfter = evidenceOwningWorktreeSharers(r)
-          const ownersAfter = evidenceOwningBranchOwners(r, repoRoot)
+          const ownersAfter = evidenceOwningBranchOwners(r, repoRoot, snapshot)
           if (r.branch) {
             const outcome = verifyBranchOwnershipAfterCleanup(
               r.id, repoRoot, r.branch, snapshot, ownersBefore, ownersAfter,
@@ -4425,7 +4426,7 @@ switch (cmd) {
             }
             const res = removeFor(w, p.path, false, ownersBefore.length > 0, runId ?? undefined)
             const sharersAfter = evidenceOwningWorktreeSharers(worktreeRow)
-            const ownersAfter = evidenceOwningBranchOwners(ownerRow, p.path)
+            const ownersAfter = evidenceOwningBranchOwners(ownerRow, p.path, snapshot)
             if (safe.branch) {
               const outcome = verifyBranchOwnershipAfterCleanup(
                 runId ?? -1, p.path, safe.branch, snapshot, ownersBefore, ownersAfter,
@@ -4653,7 +4654,7 @@ switch (cmd) {
         authority = adoptRunMutation(authority, 'discard')
         const snapshot = branchTip(repoRoot, row.branch_kept!)
         const removed = removeBranch(repoRoot, row.branch_kept!)
-        const ownersAfter = evidenceOwningBranchOwners(ownerRow, repoRoot)
+        const ownersAfter = evidenceOwningBranchOwners(ownerRow, repoRoot, snapshot)
         const outcome = verifyBranchOwnershipAfterCleanup(
           row.id, repoRoot, row.branch_kept!, snapshot, ownersBefore, ownersAfter,
         )
@@ -4885,7 +4886,7 @@ switch (cmd) {
       }
       const snapshot = branchTip(repoRoot, cleanupRow.branch!)
       const removed = removeBranch(repoRoot, cleanupRow.branch!)
-      const ownersAfter = evidenceOwningBranchOwners(cleanupRow, repoRoot)
+      const ownersAfter = evidenceOwningBranchOwners(cleanupRow, repoRoot, snapshot)
       const outcome = verifyBranchOwnershipAfterCleanup(
         cleanupRow.id, repoRoot, cleanupRow.branch!, snapshot, ownersBefore, ownersAfter,
       )

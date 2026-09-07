@@ -263,6 +263,30 @@ describe('outside-worktree write observation', () => {
     }])
   })
 
+  test('the escape trip attributes a live process holding the checkout index lock', async () => {
+    const repo = repository()
+    const lock = join(repo, '.git', 'index.lock')
+    const ready = join(repo, 'lock-ready')
+    const release = join(repo, 'lock-release')
+    const holder = Bun.spawn([process.execPath, '-e',
+      `const{closeSync,existsSync,openSync,writeFileSync}=await import('node:fs');const fd=openSync(process.argv[1],'w');writeFileSync(process.argv[2],'');while(!existsSync(process.argv[3]))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10);closeSync(fd)`,
+      lock, ready, release], { stdout: 'pipe', stderr: 'pipe' })
+    try {
+      for (let i = 0; i < 200 && !existsSync(ready); i++) await Bun.sleep(5)
+      expect(existsSync(ready)).toBe(true)
+      const changes = changedRegisteredCheckouts(
+        [{ project: 'watched', path: repo, status: '', head: 'main', expectedHead: 'main' }],
+        [{ project: 'watched', path: repo, status: '?? changed', head: 'main', expectedHead: 'main' }],
+      )
+      expect(changes[0]?.liveEditor).toContain(`pid ${holder.pid}`)
+      expect(changes[0]?.liveEditor).toContain(lock)
+    } finally {
+      writeFileSync(release, '')
+      await holder.exited
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('an explicitly watched caller worktree is observed even when the register names its main checkout', () => {
     const main = repository()
     const caller = realpathSync(mkdtempSync(join(tmpdir(), 'orch-outside-caller-')))

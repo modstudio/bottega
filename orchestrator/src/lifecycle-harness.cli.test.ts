@@ -125,6 +125,8 @@ const failingCaseNames = [] as const
 
 const caseName = {
   lockPurpose: 'One lock per purpose',
+  lensAttach: 'Attaching a read-only lens tree never takes the landing lock',
+  selfContention: 'A session does not wait invisibly on its own landing',
   fifo: 'A lock waiter is served in arrival order',
   resume: 'A resume is always possible on a stale checkout: attachment never waits on the landing lock',
   migration: 'Only the main checkout binary migrates the store',
@@ -334,6 +336,58 @@ test(caseName.lockPurpose, async () => {
   violation(caseName.lockPurpose, seedMessage(), () => {
     expect(new Set(shared.map((row) => row.lock)).size, seedMessage()).toBe(3)
   })
+}, 15_000)
+
+test(caseName.lensAttach, async () => {
+  const held = join(fixture, 'lens-landing-held')
+  const release = join(fixture, 'lens-landing-release')
+  const attached = join(fixture, 'lens-attached')
+  rmSync(held, { force: true }); rmSync(release, { force: true }); rmSync(attached, { force: true })
+  const holder = Bun.spawn([process.execPath, '-e',
+    `const{existsSync,writeFileSync}=await import('node:fs');const{withProjectLock}=await import(process.argv[1]);withProjectLock(process.argv[2],'landing',{session:'lander',what:'landing'},()=>{writeFileSync(process.argv[3],'');while(!existsSync(process.argv[4]))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)},5000,true)`,
+    worktreeModule, repo, held, release], {
+    env: gitEnv({ ORCH_DB: storePath }), stdout: 'pipe', stderr: 'pipe',
+  })
+  let lens: Parameters<typeof result>[0] | null = null
+  try {
+    await waitFor(held)
+    lens = Bun.spawn([process.execPath, '-e',
+      `const{writeFileSync}=await import('node:fs');const{createReadOnlyWorktree}=await import(process.argv[1]);createReadOnlyWorktree(process.argv[2],Number(process.argv[3]),process.argv[4]);writeFileSync(process.argv[5],'')`,
+      worktreeModule, repo, '900001', fixtureBase, attached], {
+      env: gitEnv({ ORCH_DB: storePath }), stdout: 'pipe', stderr: 'pipe',
+    })
+    await waitFor(attached, 1_000)
+    expect(existsSync(release)).toBe(false)
+  } finally {
+    writeFileSync(release, '')
+  }
+  const [holderResult, lensResult] = await Promise.all([result(holder), result(lens!)])
+  expect(holderResult.code, holderResult.err).toBe(0)
+  expect(lensResult.code, lensResult.err).toBe(0)
+}, 15_000)
+
+test(caseName.selfContention, async () => {
+  const branch = 'self-contention-harness'
+  addBranch(branch)
+  const held = join(fixture, 'self-landing-held')
+  const release = join(fixture, 'self-landing-release')
+  rmSync(held, { force: true }); rmSync(release, { force: true })
+  const holder = Bun.spawn([process.execPath, '-e',
+    `const{existsSync,writeFileSync}=await import('node:fs');const{withProjectLock}=await import(process.argv[1]);withProjectLock(process.argv[2],'landing',{session:process.argv[3],what:process.argv[3]},()=>{writeFileSync(process.argv[4],'');while(!existsSync(process.argv[5]))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)},5000,true)`,
+    worktreeModule, repo, branch, held, release], {
+    env: gitEnv({ ORCH_DB: storePath }), stdout: 'pipe', stderr: 'pipe',
+  })
+  try {
+    await waitFor(held)
+    const started = Date.now()
+    const refused = await result(childLand(branch))
+    expect(Date.now() - started).toBeLessThan(1_000)
+    expect(refused.code).not.toBe(0)
+    expect(refused.err).toContain(`your own landing ${holder.pid}, branch ${branch}, started `)
+  } finally {
+    writeFileSync(release, '')
+    await result(holder)
+  }
 }, 15_000)
 
 test(caseName.fifo, async () => {
@@ -658,7 +712,7 @@ test('The guard on disk is verified against HEAD before fast-forward', async () 
   expect(git(repo, 'status', '--porcelain', '--', 'orchestrator/hooks/reference-transaction')).toBe('')
   expect(git(repo, 'rev-parse', 'HEAD')).not.toBe(trunkBefore)
   expect(readFileSync(order, 'utf8').trim().split('\n')).toEqual([
-    'preflight', 'tier-and-dependencies', 'guard-verify', 'fast-forward',
+    'preflight', 'tier-and-dependencies', 'gate', 'guard-verify', 'fast-forward',
   ])
 }, 15_000)
 

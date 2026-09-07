@@ -50,9 +50,9 @@ test('only bun\'s complete timeout line reports machine load', () => {
       })
       expect(await child.exited).toBe(0)
       const steps = readFileSync(order, 'utf8').trim().split('\n')
-      expect(steps.indexOf('preflight')).toBeLessThan(steps.indexOf('fast-forward'))
-      expect(steps.indexOf('coverage')).toBeLessThan(steps.indexOf('fast-forward'))
-      expect(steps.indexOf('tier-and-dependencies')).toBeLessThan(steps.indexOf('fast-forward'))
+      expect(steps.indexOf('preflight')).toBeLessThan(steps.indexOf('gate'))
+      expect(steps.indexOf('coverage')).toBeLessThan(steps.indexOf('gate'))
+      expect(steps.indexOf('tier-and-dependencies')).toBeLessThan(steps.indexOf('gate'))
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 

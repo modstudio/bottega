@@ -382,6 +382,7 @@ function reconcileTrunkCheckouts(
 function runGate(
   project: Project, worktree: string, branch: string, guard: SharedRefGuardEnvironment,
 ): string {
+  landingOrder('gate')
   const gate = typeof project.settings.gate === 'string' ? project.settings.gate.trim() : ''
   if (!gate) {
     throw new Error(
@@ -1146,7 +1147,7 @@ function performLand(
           ? 'optimistic gate remained current'
           : 'after re-gate outside the landing lock'
         console.log(`landed ${branch} at ${outcome.tip} onto ${trunk} (${how})`)
-        return { tip: outcome.tip, trunkBefore: recordedTrunk, project }
+        return { tip: outcome.tip, trunkBefore: outcome.currentTrunk, project }
       }
       losses += 1
       if (losses >= 2) {

@@ -29,14 +29,17 @@ function git(cwd: string, ...args: string[]): void {
   if (result.exitCode !== 0) throw new Error(result.stderr.toString())
 }
 
-function invoke(cli: string, cwd: string, args: string[], explicit?: string, extra: Record<string, string> = {}) {
+function invoke(
+  cli: string, cwd: string, args: string[], explicit?: string,
+  extra: Record<string, string> | boolean = {},
+) {
   const env: Record<string, string | undefined> = {
     ...process.env, ORCH_DEPTH: '0', CLAUDE_CODE_SESSION_ID: 'linked-database-test',
   }
   delete env.ORCH_DB
   delete env.ORCH_DB_WRITE
   if (explicit) env.ORCH_DB = explicit
-  Object.assign(env, extra)
+  Object.assign(env, extra === true ? { ORCH_DB_WRITE: '1' } : extra)
   return Bun.spawnSync([process.execPath, cli, ...args], {
     cwd, env, stdout: 'pipe', stderr: 'pipe',
   })

@@ -456,6 +456,41 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
     }
   })
 
+  test('a failed unscored run does not pin a branch whose patch is already on trunk', () => {
+    const { repo, tree } = scratchRepo()
+    writeFileSync(join(tree, 'landed.txt'), 'landed patch\n')
+    git(tree, 'add', 'landed.txt')
+    git(tree, 'commit', '-m', 'DEV-348 landed patch')
+    writeFileSync(join(repo, 'other.txt'), 'unrelated trunk change\n')
+    git(repo, 'add', 'other.txt')
+    git(repo, 'commit', '-m', 'DEV-348 unrelated trunk')
+    git(repo, 'cherry-pick', 'AB-2581')
+    upsertProject({ name: 'landed-failed-pin', path: repo, settings: { trunk: 'main' } })
+    const root = addRun({ agent: 'codex', job: 'implement', session: 'worktree-owner-session' })
+    const failed = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+    db().query('UPDATE run SET repo=?,cwd=?,worktree=?,branch=?,base_commit=? WHERE id=?')
+      .run('landed-failed-pin', tree, tree, 'AB-2581', git(repo, 'rev-parse', 'main'), root)
+    db().query('UPDATE run SET repo=?,cwd=?,branch=? WHERE id=?')
+      .run('landed-failed-pin', repo, 'AB-2581', failed)
+    try {
+      const discarded = Bun.spawnSync([
+        process.execPath, new URL('cli.ts', import.meta.url).pathname,
+        'discard', String(root), '--force',
+      ], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: 'worktree-owner-session' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(discarded.exitCode, discarded.stderr.toString()).toBe(0)
+      expect(existsSync(tree)).toBe(false)
+      expect(Bun.spawnSync(['git', 'show-ref', '--verify', '--quiet', 'refs/heads/AB-2581'], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      }).exitCode).not.toBe(0)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('discard uses a registered project remove template', () => {
     const { repo } = scratchRepo()
     const tree = createWorktree(repo, 880)
