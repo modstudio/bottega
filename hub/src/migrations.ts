@@ -312,7 +312,7 @@ export function canonicalSchemaHash(d: Database): string {
 function executeStatements(d: Database, source: string): void {
   for (const statement of source.split('--> statement-breakpoint')) {
     const executable = statement.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\n]*/g, '').trim()
-    if (executable) d.exec(statement)
+    if (executable) d.exec(executable)
   }
 }
 

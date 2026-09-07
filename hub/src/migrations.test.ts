@@ -306,6 +306,24 @@ describe('hub migration journal', () => {
     d.close()
   })
 
+  test('a colliding later INSERT rolls back tables, user_version, journal and lock', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hub-pk-collide-'))
+    mkdirSync(join(dir, 'meta'))
+    writeFileSync(join(dir, '0000_collide.sql'),
+      'CREATE TABLE boom (id INTEGER PRIMARY KEY);\n--> statement-breakpoint\nINSERT INTO boom (id) VALUES (1);\n--> statement-breakpoint\nINSERT INTO boom (id) VALUES (1);\n')
+    writeFileSync(join(dir, 'meta', '_journal.json'), JSON.stringify({
+      version: '7', dialect: 'sqlite', entries: [
+        { idx: 0, version: '6', when: 1, tag: '0000_collide', breakpoints: true },
+      ],
+    }))
+    const d = new Database(':memory:')
+    expect(() => applyMigrations(d, dir)).toThrow()
+    expect(d.query("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY name").all()).toEqual([])
+    expect(readUserVersion(d)).toBe(0)
+    d.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   test('a journal whose entries are idx-ordered but when-unordered is refused at load', () => {
     const dir = mkdtempSync(join(tmpdir(), 'hub-when-unordered-'))
     mkdirSync(join(dir, 'meta'))
