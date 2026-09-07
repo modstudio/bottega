@@ -1289,6 +1289,19 @@ test('record-only closes the question, marks the chain stranded, and retry resta
       .toEqual({ delivery: 'full', quality: 'right', fidelity: 'faithful', note: 'matched spec' })
   })
 
+  test('judge lists every missing writer axis in one refusal', () => {
+    const subject = addRun({
+      agent: 'codex', job: 'implement', session: 'orch-test-session', promptSha: 'missing-writer',
+    })
+    const judged = orch('judge', String(subject))
+    expect(judged.code).not.toBe(0)
+    expect(judged.err).toContain(`orch judge ${subject} is missing:`)
+    for (const axis of ['<none|partial|full>', '<wrong|mixed|right>', '<drifted|partial|faithful>']) {
+      expect(judged.err).toContain(axis)
+    }
+    expect(db().query('SELECT 1 FROM score WHERE run_id=?').get(subject)).toBeNull()
+  })
+
   test('score and judge read notes from files and reject shell-fragment notes', () => {
     const scoreRun = addRun({ agent: 'codex', job: 'file-question', session: 'orch-test-session' })
     const notePath = join(dir, 'score-note.txt')

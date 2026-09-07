@@ -5,6 +5,55 @@ import { join } from 'node:path'
 import { landingReviewCoverage, AGENTS, MIN_SAMPLE, addRun, completeReview, contentTree, coverageAudit, db, dir, evidenceFor, guide, hermeticGitEnv, implicitReviewWarning, pick, recordReview, resolveReviewTarget, reviewReply, runJob, score, upsertProject } from '../test/fixture.ts'
 
 describe('review-lens-inline has no checkout', () => {
+  test('a resumed findings turn records its review against the root run', async () => {
+    const agent = AGENTS.codex!
+    const original = {
+      bin: agent.bin, resumeArgv: agent.resumeArgv, stdin: agent.stdin,
+      readsOut: agent.readsOut, parseReply: agent.parseReply,
+    }
+    const priorDepth = process.env.ORCH_DEPTH
+    const script = join(dir, `resumed-review-${Math.random().toString(16).slice(2)}.ts`)
+    const promptPath = join(dir, `resumed-review-${Math.random().toString(16).slice(2)}.prompt.txt`)
+    const root = addRun({
+      agent: 'codex', job: 'review-lens-inline', status: 'asking',
+      session: 'orch-test-session', lens: 'resumed-review',
+    })
+    writeFileSync(script, `process.stdout.write(${JSON.stringify(JSON.stringify(reviewReply(1)))})\n`)
+    writeFileSync(promptPath, 'original review prompt')
+    db().query('UPDATE run SET prompt_path=?, vendor_session=? WHERE id=?')
+      .run(promptPath, 'review-vendor-session', root)
+    try {
+      agent.bin = process.execPath
+      agent.resumeArgv = () => [script]
+      agent.stdin = false
+      agent.readsOut = false
+      agent.parseReply = undefined
+      process.env.ORCH_DEPTH = '0'
+      const resumed = await runJob({
+        job: 'review-lens-inline', prompt: 'continue', agent: 'codex',
+        lens: 'resumed-review',
+        resume: {
+          parent: root, agent: 'codex', session: 'review-vendor-session', turn: 2,
+          sessionId: 'orch-test-session', worktree: null,
+        },
+      })
+      expect(resumed.status).toBe('ok')
+      expect(db().query('SELECT status FROM run WHERE id=?').get(root)).toEqual({ status: 'ok' })
+      expect(db().query('SELECT review_id FROM review_lens WHERE run_id=?').get(root)).not.toBeNull()
+      expect(db().query('SELECT review_id FROM review_lens WHERE run_id=?').get(resumed.id)).toBeNull()
+    } finally {
+      agent.bin = original.bin
+      agent.resumeArgv = original.resumeArgv
+      agent.stdin = original.stdin
+      agent.readsOut = original.readsOut
+      agent.parseReply = original.parseReply
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(script, { force: true })
+      rmSync(promptPath, { force: true })
+    }
+  })
+
   test('run 1715 shape completes as unevidenced and result wraps it as incomplete', async () => {
     const agent = AGENTS.codex!
     const original = { bin: agent.bin, argv: agent.argv, stdin: agent.stdin, readsOut: agent.readsOut }

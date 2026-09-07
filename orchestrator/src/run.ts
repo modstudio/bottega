@@ -2972,7 +2972,9 @@ export async function run(opts: {
       // terminal transaction so a successful lens cannot exist in the gap
       // between "ran" and "recorded". Manual `orch review record` remains the
       // recovery path for historical or otherwise uncaptured outputs.
-      if (status === 'ok' && parsedReview) recordReview(claim.id, parsedReview)
+      if (status === 'ok' && parsedReview) {
+        recordReview(opts.resume?.parent ?? claim.id, parsedReview)
+      }
     })
   }
 

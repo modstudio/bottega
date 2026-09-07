@@ -5055,16 +5055,20 @@ switch (cmd) {
     const delivery = words[0] as Delivery | undefined
     const quality = words[1] as Quality | undefined
     const fidelity = words[2] as Fidelity | undefined
-    if (!delivery || !DELIVERY.includes(delivery)) {
+    const missing: string[] = []
+    if (!delivery) missing.push(`<${DELIVERY.join('|')}>`)
+    else if (!DELIVERY.includes(delivery)) {
       throw new Error(`delivery must be: ${DELIVERY.join(' | ')}`)
     }
     if (delivery === 'none' && quality) throw new Error("delivery 'none' takes no quality")
-    if (delivery !== 'none' && (!quality || !QUALITY.includes(quality))) {
-      throw new Error(`delivery '${delivery}' needs a quality: ${QUALITY.join(' | ')}`)
+    if (delivery !== 'none' && !quality) missing.push(`<${QUALITY.join('|')}>`)
+    else if (quality && !QUALITY.includes(quality)) {
+      throw new Error(`quality must be: ${QUALITY.join(' | ')}`)
     }
     const writes = Boolean(JOBS[row.job]?.needs.writesRepo)
-    if (writes && delivery !== 'none' && (!fidelity || !FIDELITY.includes(fidelity))) {
-      throw new Error(`${row.job} needs fidelity: ${FIDELITY.join(' | ')}`)
+    if (writes && delivery !== 'none' && !fidelity) missing.push(`<${FIDELITY.join('|')}>`)
+    else if (fidelity && !FIDELITY.includes(fidelity)) {
+      throw new Error(`fidelity must be: ${FIDELITY.join(' | ')}`)
     }
     if (!writes && fidelity) throw new Error(`${row.job} is judged on two axes only`)
 
@@ -5135,7 +5139,6 @@ switch (cmd) {
     const comparison = suppliedComparisons[0]
     const comparisonIds = comparison ? parseRunIds(flag(comparison)!, `--${comparison}`) : []
 
-    const missing: string[] = []
     if (findingsJob && delivery !== 'none') {
       for (const name of gradeNames) if (!gradeValues[name]) missing.push(`--${name}`)
       const expected = reviewId ? reviewFindings.map((finding) => finding.ordinal)
