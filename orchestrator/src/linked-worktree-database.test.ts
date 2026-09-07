@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -42,6 +42,7 @@ function invoke(cli: string, cwd: string, args: string[], explicit?: string) {
 mkdirSync(main, { recursive: true })
 cpSync(join(sourceRoot, 'orchestrator', 'src'), join(main, 'orchestrator', 'src'), { recursive: true })
 cpSync(join(sourceRoot, 'shared'), join(main, 'shared'), { recursive: true })
+symlinkSync(join(sourceRoot, 'node_modules'), join(main, 'node_modules'))
 git(main, 'init', '-b', 'main')
 git(main, 'config', 'user.email', 'linked-test@example.invalid')
 git(main, 'config', 'user.name', 'Linked Test')

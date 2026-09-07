@@ -8,7 +8,7 @@ import {
   decodeRunsJson, docArgv, docGet, docRemove, docSet, projectArgv,
   startDashboardCapability, stopDashboardCapability,
 } from './orch.ts'
-import { encodeOrchRunLine } from '../../shared/orch-contract.ts'
+import { encodeOrchRunLine, OrchBlockersSchema } from '../../shared/orch-contract.ts'
 
 const runFixture = {
   id: 42,
@@ -42,6 +42,36 @@ test('v1 and v2 run lines decode to the same run', () => {
   const v2 = encodeOrchRunLine(runFixture, 2)
   expect(decodeRunsJson(v1)).toEqual(decodeRunsJson(v2))
   expect(decodeRunsJson(v2)).toEqual([runFixture])
+})
+
+test('orch-owned run and blocker fields remain optional to hub', () => {
+  const runWithoutTurn = {
+    ...runFixture,
+    turns: runFixture.turns.map(({ turn: _turn, ...turn }) => turn),
+  }
+  expect(decodeRunsJson(encodeOrchRunLine(runWithoutTurn, 2))).toEqual([runWithoutTurn])
+  expect(OrchBlockersSchema.parse({
+    blockers: [{
+      kind: null, source: 'declared', runs: 1, projects: 1,
+      agents: ['codex'], example: null,
+    }],
+  })).toEqual({
+    blockers: [{
+      kind: null, source: 'declared', runs: 1, projects: 1,
+      agents: ['codex'], example: null,
+    }],
+  })
+})
+
+test('malformed NDJSON reports its physical line number', () => {
+  expect(() => decodeRunsJson(`\n${encodeOrchRunLine(runFixture, 2)}\nnot-json`))
+    .toThrow('line 3')
+})
+
+test('an unknown envelope kind reports its physical line number', () => {
+  const other = JSON.stringify({ schema_version: 2, kind: 'other', data: runFixture })
+  expect(() => decodeRunsJson(`${encodeOrchRunLine(runFixture, 2)}\n\n${other}`))
+    .toThrow('line 3')
 })
 
 test('only the orch client invokes bin/orch', () => {

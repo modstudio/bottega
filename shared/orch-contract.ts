@@ -36,7 +36,7 @@ export const OrchTurnSchema = z.object({
   vendor_tokens: nullableNumber,
   vendor_cost_usd: nullableNumber,
   status: z.string(),
-  turn: z.number().int(),
+  turn: z.number().int().optional(),
 }).passthrough()
 
 export const OrchQuestionSchema = z.object({
@@ -139,14 +139,14 @@ export const OrchStateSchema = z.object({
 }).passthrough()
 
 export const OrchBlockersSchema = z.object({
-  days: z.number(),
+  days: z.number().optional(),
   blockers: z.array(z.object({
     kind: nullableString,
     source: z.enum(['declared', 'detected']),
     runs: z.number(),
     projects: z.number(),
     agents: z.array(z.string()),
-    lastAt: z.string(),
+    lastAt: z.string().optional(),
     example: nullableString,
   }).passthrough()),
 }).passthrough()
