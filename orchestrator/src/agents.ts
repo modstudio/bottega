@@ -237,6 +237,12 @@ export function readStrictCodexSchema(path: string): JSONSchema {
   return strictCodexSchema(parsed)
 }
 
+/**
+ * Policy and capabilities for a vendor. How it is spawned lives on
+ * `AgentTransport` (`cli` by default; `acp` is the DEV-342 codex pilot).
+ * `argv` / `parseReply` / `readSession` remain here because the CLI transport
+ * reads them, and existing tests mutate those fields.
+ */
 export type Agent = {
   name: string
   bin: string

@@ -37,6 +37,7 @@ describe('CLI argument recognition', () => {
       ['doc', 'consume', 'slug', '--scope', 'global'],
       ['doc', 'rm', 'slug', '--scope', 'global'], ['doc', 'export', 'docs'],
       ['doc', 'import', 'docs'], ['do', 'summarize', '--cwd', '/tmp/project', 'a', 'multi-word', 'prompt'],
+      ['do', 'understand', '--transport', 'acp', 'reply ok'],
       ['review', 'record', '12', '13'],
       ['review', 'list', '--open', '--project', 'known', '--since', '2026-01-01T00:00:00Z', '--json'],
       ['review', 'show', '12', '--json'], ['review', '--help'],

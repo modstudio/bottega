@@ -117,12 +117,14 @@ test('every --json surface has an enumerated and pinned output contract', () => 
     }
     expect(detachedRunOptions('implement', 'prompt', 42, {
       agent: 'codex', schema: '/tmp/schema.json', mcp: true, model: 'model', probe: true,
+      transport: 'cli',
       label: 'security lens', lens: 'security', seed: 'small', key: 'DEV-63', repo: 'project', base: 'main', avoid: ['grok'],
       distinctModels: ['other-model'], retryOf: 7, cwd: '/tmp/repo', noFailover: true, carry: true,
       review: 'feature/DEV-63', ownerSession: 'owner', resume,
     })).toEqual({
       job: 'implement', prompt: 'prompt', reserveId: 42,
       agent: 'codex', schemaPath: '/tmp/schema.json', mcp: true, model: 'model', probe: true,
+      transport: 'cli',
       label: 'security lens', lens: 'security', seed: 'small', key: 'DEV-63', repo: 'project', base: 'main', avoid: ['grok'],
       distinctModels: ['other-model'], retryOf: 7, cwd: '/tmp/repo', noFailover: true, carry: true,
       review: 'feature/DEV-63', ownerSession: 'owner', resume,

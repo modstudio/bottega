@@ -341,8 +341,8 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       return { args: argv.slice(2), shape: forms[sub]! }
     }
     case 'do': return { args: argv.slice(1), shape: shape(
-      'orch do <job> [prompt] [--agent NAME] [--file PATH] [--schema PATH] [--model NAME]', Infinity,
-      ['--agent', '--avoid', '--distinct-from', '--base', '--review', '--file', '--schema', '--model', '--label', '--lens', '--seed', '--key', '--repo', '--cwd'],
+      'orch do <job> [prompt] [--agent NAME] [--file PATH] [--schema PATH] [--model NAME] [--transport cli|acp]', Infinity,
+      ['--agent', '--avoid', '--distinct-from', '--base', '--review', '--file', '--schema', '--model', '--transport', '--label', '--lens', '--seed', '--key', '--repo', '--cwd'],
       ['--carry', '--mcp', '--quiet', '--probe', '--follow', '--detach', '--porcelain', '--no-failover', '--help'],
       { optionalValueFlags: { '--mcp': ['prefer'] } },
     ) }

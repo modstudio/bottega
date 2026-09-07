@@ -94,6 +94,13 @@ let mcpRequestFromStored!: typeof import('./run.ts').mcpRequestFromStored
 let storedMcpRequest!: typeof import('./run.ts').storedMcpRequest
 let retryModelForAgent!: typeof import('./run.ts').retryModelForAgent
 async function loadRun() { runModule ??= await import('./run.ts'); ({ repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses, implicitReviewWarning, packedResumePrompt, mcpRequestFromStored, storedMcpRequest, retryModelForAgent } = runModule) }
+let transportModule: typeof import('./transport.ts')
+let assertAcpAllowed!: typeof import('./transport.ts').assertAcpAllowed
+let resolveTransportName!: typeof import('./transport.ts').resolveTransportName
+async function loadTransport() {
+  transportModule ??= await import('./transport.ts')
+  ;({ assertAcpAllowed, resolveTransportName } = transportModule)
+}
 let branchTip!: typeof import('./worktree.ts').branchTip
 let restoreBranch!: typeof import('./worktree.ts').restoreBranch
 let resolveBase!: typeof import('./worktree.ts').resolveBase
@@ -446,7 +453,7 @@ function requestedMcp(): McpRequest | undefined {
 }
 
 /** Flags that consume the next argument. Anything else is a boolean switch. */
-const VALUE_FLAGS = new Set(['--agent', '--file', '--schema', '--model', '--note', '--message', '--unreviewed',
+const VALUE_FLAGS = new Set(['--agent', '--file', '--schema', '--model', '--transport', '--note', '--message', '--unreviewed',
                              '--id', '--job', '--limit', '--port', '--days', '--window', '--timeout', '--scorer',
                              '--seed', '--key', '--repo', '--base', '--review', '--avoid', '--distinct-from', '--label', '--lens', '--category', '--severity',
                              '--reproduced', '--coverage', '--limits', '--overlap',
@@ -1325,6 +1332,7 @@ function usage(): never {
                                 fan-out is done: N detaches, one wait.
       --porcelain               print exactly the run id, for machine callers
       --agent <name>            force an agent instead of routing
+      --transport cli|acp       driver seam; default cli. acp is a DEV-342 codex read-only pilot
       --avoid <agent>[,...]     route to any other agent when possible
       --distinct-from <id>[,...] avoid models used by earlier fan-out runs
       --base <ref>              ${baseHelp('base an implement or fix worktree on this git ref')}
@@ -1523,6 +1531,7 @@ function doUsage(): never {
   jobs: ${Object.keys(JOBS).join(', ')}
 
   --agent <name>   force an agent instead of using the router
+  --transport cli|acp  driver seam; default cli. acp is a DEV-342 codex read-only pilot
   --avoid <name,...> exclude agents while routing, unless none remain
   --distinct-from <id,...> exclude models used by earlier runs, unless none remain
   --base <ref>     ${baseHelp('base an implement or fix worktree on this verified git ref')}
@@ -2402,7 +2411,7 @@ switch (cmd) {
   }
 
   case 'do': {
-    await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadRun(), loadWorktree(), loadContract()])
+    await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadRun(), loadWorktree(), loadContract(), loadTransport()])
     await ensureLocalHealth()
     const jobName = argv[1]
     if (!jobName) usage()
@@ -2412,6 +2421,10 @@ switch (cmd) {
       throw new Error('--porcelain cannot be combined with --follow')
     }
     const requested = job(jobName)
+    const transport = resolveTransportName(flag('transport'))
+    if (transport === 'acp') {
+      assertAcpAllowed(jobName, flag('agent'))
+    }
     const requestedCwd = flag('cwd')
     if (requestedCwd && !existsSync(requestedCwd)) throw new Error(`--cwd does not exist: ${requestedCwd}`)
     const callerCwd = requestedCwd ? realpathSync(requestedCwd) : process.cwd()
@@ -2489,9 +2502,10 @@ switch (cmd) {
     const detachByDefault = !has('follow')
     if (has('detach') || detachByDefault) {
       const id = await detach(jobName, prompt, {
-        agent: flag('agent'), schema, label: flag('label'), lens: flag('lens'),
+        agent: transport === 'acp' ? (flag('agent') ?? 'codex') : flag('agent'),
+        schema, label: flag('label'), lens: flag('lens'),
         mcp: requestedMcp(), model: flag('model'), probe: has('probe'), seed, key: flag('key'),
-        repo: explicitRepo, base, avoid, distinctModels,
+        repo: explicitRepo, base, avoid, distinctModels, transport,
         noFailover: has('no-failover'), carry: has('carry'), review: reviewRef, cwd: callerCwd,
       })
       if (!porcelain) warnImplementContractConflicts(conflicts, id)
@@ -2529,9 +2543,10 @@ switch (cmd) {
      * genuinely stuck run still returns control rather than hanging for ever.
      */
     const id = await detach(jobName, prompt, {
-      agent: flag('agent'), schema, label: flag('label'), lens: flag('lens'),
+      agent: transport === 'acp' ? (flag('agent') ?? 'codex') : flag('agent'),
+      schema, label: flag('label'), lens: flag('lens'),
       mcp: requestedMcp(), model: flag('model'), probe: has('probe'), seed, key: flag('key'),
-      repo: explicitRepo, base, avoid, distinctModels,
+      repo: explicitRepo, base, avoid, distinctModels, transport,
       noFailover: has('no-failover'), carry: has('carry'), review: reviewRef, cwd: callerCwd,
     })
     warnImplementContractConflicts(conflicts, id)

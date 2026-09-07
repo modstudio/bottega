@@ -55,6 +55,9 @@ import { TRUNCATED_TRANSCRIPT_BYTES } from './result-output.ts'
 import { addedGrokTrustHeadings, grokTrustHeadings } from './grok-trust.ts'
 import { prepareSandboxHome, selectReadonlySandbox, srtLaunchArgv } from './sandbox.ts'
 import { startAskLoopback, type AskLoopback } from './ask.ts'
+import {
+  resolveTransportName, assertAcpAllowed, transportFor, resolveCodexAcpBin, type TransportName,
+} from './transport.ts'
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
 
@@ -92,6 +95,8 @@ export function gitObjectEnvironmentFor(
 
 export type DetachSpec = {
   agent?: string; schema?: string; mcp?: McpRequest; model?: string; probe?: boolean
+  /** Pilot opt-in. Default `cli`. `acp` is DEV-342 / codex / read-only jobs only. */
+  transport?: TransportName
   label?: string
   lens?: string
   /** How much database the worktree gets, where the project asks for a choice. */
@@ -140,18 +145,18 @@ export function detachedRunOptions(
   jobName: string, prompt: string, reserveId: number, spec: DetachSpec,
 ) {
   const {
-    agent, schema, mcp, model, probe, label, lens, seed, key, repo, base, avoid,
+    agent, schema, mcp, model, probe, transport, label, lens, seed, key, repo, base, avoid,
     distinctModels, retryOf, cwd, noFailover, carry, review, ownerSession, resume,
   } = spec
   // Adding a field to DetachSpec must fail typechecking until it is handled here.
   const consumed: Required<Record<keyof DetachSpec, unknown>> = {
-    agent, schema, mcp, model, probe, label, lens, seed, key, repo, base, avoid,
+    agent, schema, mcp, model, probe, transport, label, lens, seed, key, repo, base, avoid,
     distinctModels, retryOf, cwd, noFailover, carry, review, ownerSession, resume,
   }
   void consumed
   return {
     job: jobName, prompt, reserveId,
-    agent, schemaPath: schema, mcp, model, probe, label, lens, seed, key, repo, base, avoid,
+    agent, schemaPath: schema, mcp, model, probe, transport, label, lens, seed, key, repo, base, avoid,
     distinctModels, retryOf, cwd, noFailover, carry, review, ownerSession, resume,
   }
 }
@@ -826,12 +831,6 @@ function bindSignals() {
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 16)
 
-/** Codex reports "tokens used\n<n>" on stderr; other agents report nothing. */
-function parseVendorTokens(blob: string): number | null {
-  const m = blob.match(/tokens used\s*\n?\s*([\d,]+)/i)
-  return m ? Number(m[1]!.replace(/,/g, '')) : null
-}
-
 /**
  * Keep BOTH ENDS of a failing agent's output.
  *
@@ -1431,6 +1430,8 @@ export async function run(opts: {
   /** Stable identity used to calibrate findings-producing review jobs. */
   lens?: string
   model?: string
+  /** Pilot opt-in. Default `cli`. */
+  transport?: TransportName
   cwd?: string
   /** Explicit routing attribution when the caller is outside the registered project. */
   repo?: string
@@ -1504,6 +1505,15 @@ export async function run(opts: {
   const writesJob = Boolean(requestedJob.needs.writesRepo)
   const repoJob = Boolean(requestedJob.needs.readsRepo)
   const forbidsRepo = requestedJob.needs.readsRepo === false
+  const transportName = resolveTransportName(opts.transport)
+  if (transportName === 'acp') {
+    try {
+      assertAcpAllowed(opts.job, opts.agent)
+    } catch (e) {
+      if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
+      throw e
+    }
+  }
   const callerCwd = opts.cwd ?? process.cwd()
   const seed = preflight(
     opts.job, callerCwd, opts.seed, opts.key, opts.base,
@@ -1666,7 +1676,7 @@ export async function run(opts: {
     // The STACK steers the route: an agent strong on PHP and weak on a Vue
     // component is two different agents to a router, and only this tells them
     // apart. Backs off to job-wide evidence until a stack cell has earned it.
-    : pick(opts.job, opts.agent,
+    : pick(opts.job, transportName === 'acp' ? (opts.agent ?? 'codex') : opts.agent,
            Buffer.byteLength(prompt) + (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0) +
              (requiresCanonSource ? CANON_SOURCE_PROMPT_RESERVE_BYTES : 0),
            true, stackAt(callerCwd),
@@ -2281,9 +2291,11 @@ export async function run(opts: {
   const sandboxEnvironment = sandboxSelection.profile
     ? prepareSandboxHome(name, sandboxRunDir)
     : {}
+  const vendorBin = transportName === 'acp' ? resolveCodexAcpBin() : a.bin
+  const vendorArgv = transportName === 'acp' ? [] : argv
   const launchArgv = sandboxSelection.sandbox === 'srt'
-    ? srtLaunchArgv(sandboxSelection.profile!, srtSettingsPath!, a.bin, argv)
-    : [a.bin, ...argv]
+    ? srtLaunchArgv(sandboxSelection.profile!, srtSettingsPath!, vendorBin, vendorArgv)
+    : [vendorBin, ...vendorArgv]
   const sandboxRouteReason = sandboxSelection.reason
     ? `${reason}; sandbox host: ${sandboxSelection.reason}`
     : reason
@@ -2364,18 +2376,36 @@ export async function run(opts: {
     if (sandboxSelection.sandbox === 'srt') {
       askLoopback = await startAskLoopback(claim.id, runToken)
     }
-    const p = Bun.spawn(launchArgv, {
-      cwd,
-      env: childEnv(a, claim.id, runToken, {
-        ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment,
-        ...(askLoopback ? { ORCH_ASK_URL: askLoopback.url } : {}),
-      }),
-      stdin: a.stdin ? new TextEncoder().encode(prompt) : 'ignore',
-      stdout: 'pipe',
-      stderr: 'pipe',
-    })
-    proc = p
-    live.add(p)
+    const transport = transportFor(transportName)
+    const handle = opts.resume && transportName === 'acp' && opts.resume.session
+      ? await transport.resume({
+          agent: a, cwd, launchArgv, prompt, outPath,
+          session: opts.resume.session,
+          schemaPath: schemaPath ?? undefined,
+          model: opts.model ?? a.model,
+          home: sandboxEnvironment.HOME,
+          startedAt: started,
+          env: childEnv(a, claim.id, runToken, {
+            ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment,
+            ...(askLoopback ? { ORCH_ASK_URL: askLoopback.url } : {}),
+          }),
+          stdinPrompt: undefined,
+        })
+      : await transport.start({
+          agent: a, cwd, launchArgv, prompt, outPath,
+          session: vendorSession ?? undefined,
+          schemaPath: schemaPath ?? undefined,
+          model: opts.model ?? a.model,
+          home: sandboxEnvironment.HOME,
+          startedAt: started,
+          env: childEnv(a, claim.id, runToken, {
+            ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment,
+            ...(askLoopback ? { ORCH_ASK_URL: askLoopback.url } : {}),
+          }),
+          stdinPrompt: transportName === 'cli' && a.stdin ? prompt : undefined,
+        })
+    proc = handle
+    live.add(handle)
     // The VENDOR CLI pid. pid stays the worker's for the whole run: after the
     // agent exits the worker is still parsing output and writing questions, and
     // a reaper that tested this pid would mark the run stale under a process
@@ -2383,7 +2413,7 @@ export async function run(opts: {
     //
     // Recorded HERE, before the wait, not after it. Written afterwards it is
     // always the pid of a process that has already exited.
-    db().query('UPDATE run SET agent_pid=? WHERE id=?').run(p.pid, claim.id)
+    db().query('UPDATE run SET agent_pid=? WHERE id=?').run(handle.pid, claim.id)
 
     // The JOB's bound where it declares one, else the agent's. A job knows how
     // long its own shape of work takes; an agent only knows what it has been
@@ -2391,46 +2421,33 @@ export async function run(opts: {
     const boundMs = job(opts.job).timeoutMs ?? a.timeoutMs
     timer = setTimeout(() => {
       timedOut = true
-      try { p.kill('SIGTERM') } catch { /* already gone */ }
+      void transport.cancel(handle)
       // A CLI that ignores SIGTERM would otherwise keep the caller waiting for
       // ever, which is the thing the timeout exists to prevent.
-      killer = setTimeout(() => { try { p.kill(9) } catch { /* already gone */ } }, 5_000)
+      killer = setTimeout(() => { try { handle.kill(9) } catch { /* already gone */ } }, 5_000)
     }, boundMs)
 
-    const [stdout, stderr] = await Promise.all([
-      new Response(p.stdout).text(),
-      new Response(p.stderr).text(),
-    ])
-    exitCode = await p.exited
-
-    // Agents that report their own usage answer inside a JSON envelope; unwrap it
-    // so the stored output is the reply and the token count is not lost.
-    const reply = a.parseReply?.(stdout)
-    const replyError = reply?.error ?? null
+    if (transportName === 'acp') await transport.prompt(handle, prompt)
+    const collected = await handle.collect()
+    const stdout = collected.stdout
+    const stderr = collected.stderr
+    exitCode = collected.exitCode
+    const reply = collected.parsed
+    const replyError = reply?.error ?? collected.error
     const outputCeilingReached = !!reply && !reply.text.trim() &&
       a.outputCeilingStopReason !== null && reply.stopReason === a.outputCeilingStopReason
-    vendorTokens = reply?.tokens ?? parseVendorTokens(stderr) ?? parseVendorTokens(stdout)
-    costUsd = reply?.costUsd ?? null
-
-    // The id an agent named for ITSELF, recovered now that it has run. Minted
-    // ids are already in hand and must not be overwritten by a failed lookup.
-    resolvedSession = vendorSession ??
-      a.readSession?.({
-        stdout, cwd, prompt, startedAt: started,
-        home: sandboxEnvironment.HOME,
-      }) ?? null
-
-    if (replyError) {
-      // The envelope says the reply failed, but stdout is still the transcript
-      // of everything that happened before it did. Keep it raw: both ends of a
-      // failure are evidence, and the vendor error alone is only one end.
-      output = stdout
-      writeFileSync(outPath, output)
-    } else if (a.readsOut && existsSync(outPath)) output = readFileSync(outPath, 'utf8').trim()
-    if (!replyError && !output) {
-      output = (reply?.text ?? stdout).trim()
-      if (output) writeFileSync(outPath, output)
-    }
+    vendorTokens = collected.tokens
+    costUsd = collected.costUsd
+    resolvedSession = collected.sessionId ?? vendorSession
+    output = collected.output
+    const transportQuestions = collected.asking
+      ? collected.questions.map((item) => ({
+          question: item.question,
+          options: item.options ?? null,
+          recommendation: item.recommendation ?? null,
+          why: item.why,
+        }))
+      : []
 
     /**
      * A worker that stopped to ask is neither a success nor a failure.
@@ -2465,7 +2482,7 @@ export async function run(opts: {
       contractObjects = parsed.contractObjects
     }
     const questionsControlStatus = isAsking(contract) || contract?.status === 'done'
-    acceptedQuestions = questionsControlStatus ? realQuestions(contract) : []
+    acceptedQuestions = questionsControlStatus ? realQuestions(contract) : transportQuestions
     const acceptedQuestionSet = new Set(acceptedQuestions)
     droppedQuestions = questionsControlStatus
       ? (contract?.questions ?? []).filter((item) => !acceptedQuestionSet.has(item))

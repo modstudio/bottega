@@ -16,6 +16,8 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@agentclientprotocol/codex-acp": "^1.10.0",
+    "@agentclientprotocol/sdk": "^1.4.0",
     "@anthropic-ai/sandbox-runtime": "^0.0.75",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "zod": "^4"
