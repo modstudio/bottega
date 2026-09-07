@@ -28,6 +28,7 @@ export function runVerdictText(row: SearchableRun) {
   if (row.delivery) return `${row.delivery}${row.quality ? ` / ${row.quality}` : ''}`
   if (row.status !== 'ok') return row.status
   if (row.probe) return 'probe'
+  if (row.evidence_excluded) return ''
   return 'Unscored'
 }
 

@@ -52,6 +52,29 @@ describe('runs collection search', () => {
     )).toBe(true)
   })
 
+  test('a voided unscored run is not found by Unscored and is found by the exclusion', () => {
+    const voidedUnscored = {
+      ...completed,
+      delivery: null,
+      quality: null,
+      evidence_excluded: 'voided with orch score --void',
+    }
+    expect(matchesRunSearch(voidedUnscored, 'Unscored')).toBe(false)
+    expect(matchesRunSearch(voidedUnscored, 'Not routing evidence')).toBe(true)
+  })
+
+  test('a voided full/right still matches its stored verdict and the exclusion', () => {
+    const voidedFull = {
+      ...completed,
+      delivery: 'full',
+      quality: 'right',
+      evidence_excluded: 'voided with orch score --void',
+    }
+    expect(matchesRunSearch(voidedFull, 'full')).toBe(true)
+    expect(matchesRunSearch(voidedFull, 'right')).toBe(true)
+    expect(matchesRunSearch(voidedFull, 'Not routing evidence')).toBe(true)
+  })
+
   test('live rows include every rendered text field, but not truncated prompt text', () => {
     for (const query of ['grok', 'implement', 'starship', '1m 32s', 'collection search']) {
       expect(matchesRunSearch(live, query)).toBe(true)
