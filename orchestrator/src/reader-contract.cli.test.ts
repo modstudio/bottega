@@ -276,6 +276,42 @@ process.stdout.write(${JSON.stringify(JSON.stringify({
     }
   })
 
+  test('an artifact persistence failure cannot overwrite a concurrent operator stop', async () => {
+    const repo = repository()
+    const ready = join(dir, `reader-persist-stop-${randomUUID()}.ready`)
+    const restore = stubCodex(`
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+mkdirSync(join(process.env.ORCH_SCRATCH, 'evidence.txt'))
+writeFileSync('evidence.txt', 'named evidence\\n')
+process.stdout.write(${JSON.stringify(readerReply([
+      { name: 'x', status: 'delivered', content: 'named evidence' },
+    ], ['evidence.txt']))})
+writeFileSync(${JSON.stringify(ready)}, 'ready\\n')
+await new Promise(() => {})
+`)
+    try {
+      const pending = runJob({
+        job: 'diagnose', prompt: 'measure', cwd: repo, agent: 'codex',
+        deliverables: ['x'], noFailover: true,
+      })
+      for (let i = 0; i < 500 && !existsSync(ready); i++) await Bun.sleep(10)
+      expect(existsSync(ready)).toBe(true)
+      const running = db().query(
+        `SELECT id FROM run WHERE status='running' ORDER BY id DESC LIMIT 1`,
+      ).get() as { id: number }
+      const stopped = orch(repo, dir, 'stop', String(running.id))
+      expect(stopped.code, stopped.err).toBe(0)
+      try { await pending } catch { /* the stopped vendor did not complete */ }
+      expect(db().query('SELECT status, error, failure_kind FROM run WHERE id=?').get(running.id))
+        .toEqual({ status: 'stopped', error: 'stopped by architect', failure_kind: null })
+    } finally {
+      restore()
+      rmSync(ready, { force: true })
+      rmSync(repo, { recursive: true, force: true })
+    }
+  }, 20_000)
+
   test('the timeout override respects the ceiling', () => {
     const fileQuestion = JOBS['file-question']!
     expect(jobTimeoutCeilingMinutes(fileQuestion)).toBe(20)

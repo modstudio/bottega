@@ -3185,7 +3185,13 @@ export async function run(opts: {
       status = 'failed'
       failureKind = 'harness'
       error = `artifact persistence failed for ${runArtifactsDir(claim.id)}: ${String((e as Error)?.message ?? e)}`
-      db().query(`UPDATE run SET status='failed', failure_kind='harness', error=? WHERE id=?`)
+      db().query(
+        `UPDATE run SET
+           status=CASE WHEN status='stopped' THEN status ELSE 'failed' END,
+           error=CASE WHEN status='stopped' THEN error ELSE ? END,
+           failure_kind=CASE WHEN status='stopped' THEN failure_kind ELSE 'harness' END
+         WHERE id=?`,
+      )
         .run(error, claim.id)
       if (opts.resume) resolveRootFromLastTurn(db(), opts.resume.parent)
       console.error(`orch: ${error}`)
