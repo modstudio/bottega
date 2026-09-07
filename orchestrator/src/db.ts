@@ -230,8 +230,8 @@ export function liveRunCount(database: Database = db()): number {
 
 /** Open the only sanctioned multi-statement write transaction. */
 export function writeTransaction<T>(fn: () => T, database: Database = db(true)): T {
-  refuseOrReloadStaleSchema(database, true)
-  return database.transaction(fn).immediate()
+  const conn = refuseOrReloadStaleSchema(database, true)
+  return conn.transaction(fn).immediate()
 }
 
 /** The sole path that may create the orchestrator database. */

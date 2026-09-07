@@ -447,4 +447,22 @@ describe('hub migration journal', () => {
     applyMigrations(reset)
     reset.close()
   })
+
+  test('writeTransaction after reload writes on the new handle, not the closed one', () => {
+    closeDatabaseForFixture()
+    enableSchemaReload(() => {})
+    const held = db()
+    const other = new Database(process.env.HUB_DB!)
+    other.exec(`PRAGMA user_version = ${journalLength() + 1}`)
+    other.close()
+    writeTransaction(() => {
+      db().query("INSERT INTO setting (key, value) VALUES ('held-reload', '1')").run()
+    }, held)
+    expect(() => held.query('SELECT 1').get()).toThrow('closed')
+    expect(db().query("SELECT value FROM setting WHERE key='held-reload'").get()).toEqual({ value: '1' })
+    closeDatabaseForFixture()
+    const reset = new Database(process.env.HUB_DB!)
+    applyMigrations(reset)
+    reset.close()
+  })
 })

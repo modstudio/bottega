@@ -579,4 +579,17 @@ describe('schema coexistence', () => {
     writeTransaction(() => { db().query('UPDATE project SET name = name WHERE 0').run() })
     expect(seen).toEqual([[journalLength(), next]])
   })
+
+  test('writeTransaction after reload writes on the new handle, not the closed one', () => {
+    enableSchemaReload(() => {})
+    const held = db()
+    const other = new Database(process.env.ORCH_DB!)
+    other.exec(`PRAGMA user_version = ${journalLength() + 1}`)
+    other.close()
+    writeTransaction(() => {
+      db().query("INSERT INTO project (name, path, canon, settings) VALUES ('held-reload', '/held', 1, '{}')").run()
+    }, held)
+    expect(() => held.query('SELECT 1').get()).toThrow('closed')
+    expect(db().query("SELECT name FROM project WHERE name='held-reload'").get()).toEqual({ name: 'held-reload' })
+  })
 })
