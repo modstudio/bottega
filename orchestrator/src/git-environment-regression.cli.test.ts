@@ -29,23 +29,23 @@ describe('representative production git paths ignore inherited worker routing', 
     }
   })
 
-  const rerun = (name: string) => {
+  const rerun = (file: string, name: string) => {
     const p = Bun.spawnSync([
-      process.execPath, 'test', new URL('orch.test.ts', import.meta.url).pathname,
+      process.execPath, 'test', new URL(file, import.meta.url).pathname,
       '--test-name-pattern', name,
     ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
     expect(p.exitCode, `${p.stdout.toString()}\n${p.stderr.toString()}`).toBe(0)
   }
 
   test('landing pins resolve in a fixture repository', () => {
-    rerun('lands when every lens in a completed review measured the candidate tree')
+    rerun('landing-1.cli.test.ts', 'lands when every lens in a completed review measured the candidate tree')
   })
 
   test('run checkout observation resolves fixture HEAD', () => {
-    rerun('a real run records an external write and a clean run records none')
+    rerun('worktree-4.cli.test.ts', 'a real run records an external write and a clean run records none')
   })
 
   test('review-lens resolves the project tree from an empty directory', () => {
-    rerun('runs from an empty directory while review-lens still receives the project tree')
+    rerun('review-3.cli.test.ts', 'runs from an empty directory while review-lens still receives the project tree')
   })
 })

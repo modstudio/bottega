@@ -7,7 +7,9 @@
   "scripts": {
     "orch": "bun src/orch.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test:unit": "bun test --path-ignore-patterns '**/*.cli.test.ts'",
+    "test:cli": "bun test .cli.test.ts",
+    "test": "bun test/run-split.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
