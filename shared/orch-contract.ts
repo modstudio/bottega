@@ -152,6 +152,13 @@ export const OrchBlockersSchema = z.object({
   }).passthrough()),
 }).passthrough()
 
+export const HostLoadSchema = z.object({
+  gates: z.number(),
+  loadavg: z.number(),
+  ncpu: z.number(),
+  freeMem: z.number(),
+})
+
 export const HarnessHealthSchema = z.object({
   header: z.string(),
   days: z.number().int().positive(),
@@ -179,12 +186,8 @@ export const HarnessHealthSchema = z.object({
     test: z.string(),
     file: z.string(),
     count: z.number().int().nonnegative(),
-    loadAtFailure: z.object({
-      gates: z.number(),
-      loadavg: z.number(),
-      ncpu: z.number(),
-      freeMem: z.number(),
-    }).passthrough(),
+    loadAtFailure: HostLoadSchema,
+    signal: z.string().nullable(),
   })).optional(),
   contention: z.object({
     resources: z.array(z.object({

@@ -18,6 +18,7 @@ import {
   exclusiveShareViolations,
   parseShardMap,
   type FilePolicy,
+  type HostLoad,
 } from './gate-policy.ts'
 
 describe('test size classes', () => {
@@ -175,9 +176,19 @@ describe('named-signal retry', () => {
     recordTestFlake(db(), {
       test: 'landing binds confinement',
       file: 'src/a.cli.test.ts',
-      load: { gates: 3, loadavg: 4.2, ncpu: 8, freeMem: 2_000_000_000 },
+      load: {
+        gates: 3, loadavg: 4.2, ncpu: 8, freeMem: 2_000_000_000,
+        elapsedMs: 92, boundMs: 50,
+      } as HostLoad,
+      signal: 'exit-143',
       at: '2026-09-07T11:00:00.000Z',
     })
     expect(weeklyFlakeCount(db(), 'landing binds confinement', 'src/a.cli.test.ts', now)).toBe(1)
+    const stored = db().query(`SELECT load_at_failure, signal FROM test_flake`).get() as
+      { load_at_failure: string; signal: string }
+    expect(JSON.parse(stored.load_at_failure)).toEqual({
+      gates: 3, loadavg: 4.2, ncpu: 8, freeMem: 2_000_000_000,
+    })
+    expect(stored.signal).toBe('exit-143')
   })
 })

@@ -115,7 +115,9 @@ await withGateSlot(async () => {
             + 'linked worktree cannot persist the flake table')
           return
         }
-        recordTestFlake(store, { test: row.test, file: row.file, load: measureHostLoad() })
+        recordTestFlake(store, {
+          test: row.test, file: row.file, load: measureHostLoad(), signal: row.signal,
+        })
       },
     })
     if (result.question) console.error(result.question)

@@ -1,4 +1,6 @@
 import type { Database } from 'bun:sqlite'
+import type { z } from 'zod'
+import { HostLoadSchema } from '../../shared/orch-contract.ts'
 
 export const TEST_SIZES = ['short', 'moderate', 'long'] as const
 export type TestSize = (typeof TEST_SIZES)[number]
@@ -114,12 +116,7 @@ export function parseShardMap(raw: unknown, source: string): ShardMap {
   return { files, shards }
 }
 
-export type HostLoad = {
-  gates: number
-  loadavg: number
-  ncpu: number
-  freeMem: number
-}
+export type HostLoad = z.infer<typeof HostLoadSchema>
 
 export type FailingTest = { file: string; test: string }
 
@@ -210,11 +207,17 @@ export function weeklyFlakeCount(
 
 export function recordTestFlake(
   database: Database,
-  row: { test: string; file: string; load: HostLoad; at?: string },
+  row: { test: string; file: string; load: HostLoad; signal: RetrySignal; at?: string },
 ): void {
   database.query(
-    `INSERT INTO test_flake (test, file, load_at_failure, at) VALUES (?,?,?,?)`,
-  ).run(row.test, row.file, JSON.stringify(row.load), row.at ?? new Date().toISOString())
+    `INSERT INTO test_flake (test, file, load_at_failure, signal, at) VALUES (?,?,?,?,?)`,
+  ).run(
+    row.test,
+    row.file,
+    JSON.stringify(HostLoadSchema.parse(row.load)),
+    row.signal,
+    row.at ?? new Date().toISOString(),
+  )
 }
 
 export async function runWithRetry(opts: {

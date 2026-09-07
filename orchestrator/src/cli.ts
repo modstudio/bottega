@@ -6544,7 +6544,8 @@ switch (cmd) {
         row.test.slice(0, 35).padEnd(36)
         + row.file.slice(0, 35).padEnd(36)
         + String(row.count).padStart(7)
-        + `  gates=${load.gates} loadavg=${load.loadavg} ncpu=${load.ncpu} mem=${load.freeMem}`,
+        + `  gates=${load.gates} loadavg=${load.loadavg} ncpu=${load.ncpu} mem=${load.freeMem}`
+        + ` signal=${row.signal ?? '-'}`,
       )
     }
     break

@@ -56,27 +56,30 @@ describe('harness health', () => {
   test('shows the flake table', () => {
     const now = new Date('2026-09-07T12:00:00.000Z')
     db().query(
-      `INSERT INTO test_flake (test, file, load_at_failure, at) VALUES (?,?,?,?)`,
+      `INSERT INTO test_flake (test, file, load_at_failure, signal, at) VALUES (?,?,?,?,?)`,
     ).run(
       'a killed holder is reclaimed, and another project never waits on it',
       'src/landing-1.cli.test.ts',
-      JSON.stringify({ gates: 2, loadavg: 0, ncpu: 0, freeMem: 0, elapsedMs: 92, boundMs: 50 }),
+      JSON.stringify({ gates: 2, loadavg: 0, ncpu: 0, freeMem: 0 }),
+      'timeout',
       '2026-09-07T18:00:00.000Z',
     )
     db().query(
-      `INSERT INTO test_flake (test, file, load_at_failure, at) VALUES (?,?,?,?)`,
+      `INSERT INTO test_flake (test, file, load_at_failure, signal, at) VALUES (?,?,?,?,?)`,
     ).run(
       'landing binds confinement',
       'src/landing-2.cli.test.ts',
       JSON.stringify({ gates: 4, loadavg: 5.1, ncpu: 8, freeMem: 1_500_000_000 }),
+      'exit-143',
       '2026-09-06T11:00:00.000Z',
     )
     db().query(
-      `INSERT INTO test_flake (test, file, load_at_failure, at) VALUES (?,?,?,?)`,
+      `INSERT INTO test_flake (test, file, load_at_failure, signal, at) VALUES (?,?,?,?,?)`,
     ).run(
       'landing binds confinement',
       'src/landing-2.cli.test.ts',
       JSON.stringify({ gates: 3, loadavg: 4.2, ncpu: 8, freeMem: 2_000_000_000 }),
+      'exit-143',
       '2026-09-07T11:00:00.000Z',
     )
     const report = harnessHealth(14, db(), now)
@@ -86,12 +89,14 @@ describe('harness health', () => {
         file: 'src/landing-2.cli.test.ts',
         count: 2,
         loadAtFailure: { gates: 3, loadavg: 4.2, ncpu: 8, freeMem: 2_000_000_000 },
+        signal: 'exit-143',
       },
       {
         test: 'a killed holder is reclaimed, and another project never waits on it',
         file: 'src/landing-1.cli.test.ts',
         count: 1,
-        loadAtFailure: { gates: 2, loadavg: 0, ncpu: 0, freeMem: 0, elapsedMs: 92, boundMs: 50 },
+        loadAtFailure: { gates: 2, loadavg: 0, ncpu: 0, freeMem: 0 },
+        signal: 'timeout',
       },
     ])
     const cli = Bun.spawnSync([
@@ -103,6 +108,7 @@ describe('harness health', () => {
     expect(text).toContain('landing binds confinement')
     expect(text).toContain('src/landing-2.cli.test.ts')
     expect(text).toContain('gates=3')
+    expect(text).toContain('signal=exit-143')
   })
 
   test('lists landings that reached trunk with a post-step error', () => {

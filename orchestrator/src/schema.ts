@@ -311,6 +311,7 @@ export const testFlake = sqliteTable('test_flake', {
   test: text().notNull(),
   file: text().notNull(),
   loadAtFailure: text('load_at_failure').notNull(),
+  signal: text(),
   at: text().notNull(),
 }, (t) => [
   check('test_flake_load_json_check', sql`json_valid(${t.loadAtFailure})`),

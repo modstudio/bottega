@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite'
-import { HarnessHealthSchema, type HarnessHealth } from '../../shared/orch-contract.ts'
+import { HarnessHealthSchema, HostLoadSchema, type HarnessHealth } from '../../shared/orch-contract.ts'
 import { db } from './db.ts'
 import { clusterErrorText, FAILURE_KINDS, type FailureKind } from './failure.ts'
 import { summarizeContention } from './contention.ts'
@@ -91,7 +91,7 @@ export function harnessHealth(days = HEALTH_DEFAULT_DAYS, database: Database = d
     "SELECT 1 AS n FROM sqlite_master WHERE type='table' AND name='test_flake'",
   ).get() as { n: number } | null
   const flakeRows = flakeTable ? database.query(
-    `SELECT f.test, f.file, c.count, f.load_at_failure
+    `SELECT f.test, f.file, c.count, f.load_at_failure, f.signal
        FROM test_flake f
        JOIN (
          SELECT test, file, COUNT(*) AS count, MAX(at) AS last_at
@@ -100,14 +100,17 @@ export function harnessHealth(days = HEALTH_DEFAULT_DAYS, database: Database = d
           GROUP BY test, file
        ) c ON c.test=f.test AND c.file=f.file AND c.last_at=f.at
       ORDER BY c.count DESC, f.test, f.file`,
-  ).all(from) as { test: string; file: string; count: number; load_at_failure: string }[] : []
+  ).all(from) as {
+    test: string; file: string; count: number; load_at_failure: string; signal: string | null
+  }[] : []
   const flakes = flakeRows.flatMap((row) => {
     try {
-      const load = JSON.parse(row.load_at_failure) as {
-        gates: number; loadavg: number; ncpu: number; freeMem: number
-      }
-      if (![load.gates, load.loadavg, load.ncpu, load.freeMem].every(Number.isFinite)) return []
-      return [{ test: row.test, file: row.file, count: row.count, loadAtFailure: load }]
+      const load = HostLoadSchema.safeParse(JSON.parse(row.load_at_failure))
+      if (!load.success) return []
+      return [{
+        test: row.test, file: row.file, count: row.count,
+        loadAtFailure: load.data, signal: row.signal,
+      }]
     } catch {
       return []
     }
