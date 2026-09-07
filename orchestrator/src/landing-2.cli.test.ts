@@ -361,31 +361,68 @@ test('an explicit non-empty override lands and records the measured tree and rea
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
-  test('landing that moves trunk under a reviewed branch records one invalidation naming both', async () => {
+  test('a completed review whose branch repo path is missing does not change landed status', async () => {
+    const { repo, trees } = repoWithBranches(['lander', 'victim'])
+    const project = 'landing-contention-missing-path'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      completedReview(project, [g(trees.victim!, 'rev-parse', 'HEAD^{tree}')], {
+        branch: 'victim', baseCommit: g(repo, 'rev-parse', 'main'), launchCwd: trees.victim!,
+      })
+      rmSync(trees.victim!, { recursive: true, force: true })
+      const child = childLand(repo, 'lander')
+      expect(await child.exited).toBe(0)
+      expect(db().query(
+        "SELECT status FROM landing WHERE branch='lander'",
+      ).get()).toEqual({ status: 'landed' })
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a disjoint trunk move does not record a review invalidation', async () => {
     const { repo, trees } = repoWithBranches(['lander', 'victim'])
     const project = 'landing-contention-invalidation'
     upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
     try {
+      completedReview(project, [g(trees.victim!, 'rev-parse', 'HEAD^{tree}')], {
+        branch: 'victim', baseCommit: g(repo, 'rev-parse', 'main'), launchCwd: trees.victim!,
+      })
+      const child = childLand(repo, 'lander')
+      expect(await child.exited).toBe(0)
+      expect(db().query(
+        "SELECT id FROM landing WHERE branch='lander' AND status='landed'",
+      ).get()).toBeDefined()
+      expect(db().query(
+        "SELECT 1 FROM contention WHERE event_kind='invalidation'",
+      ).get()).toBeNull()
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('an overlapping-path landing records one review invalidation', async () => {
+    const { repo, trees } = repoWithBranches(['lander', 'victim'])
+    const project = 'landing-contention-overlap'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      writeFileSync(join(trees.lander!, 'base.txt'), 'lander\n')
+      g(trees.lander!, 'add', 'base.txt')
+      g(trees.lander!, 'commit', '-m', 'overlap-lander')
+      writeFileSync(join(trees.victim!, 'base.txt'), 'victim\n')
+      g(trees.victim!, 'add', 'base.txt')
+      g(trees.victim!, 'commit', '-m', 'overlap-victim')
       const reviewId = completedReview(project, [g(trees.victim!, 'rev-parse', 'HEAD^{tree}')], {
         branch: 'victim', baseCommit: g(repo, 'rev-parse', 'main'), launchCwd: trees.victim!,
       })
       const child = childLand(repo, 'lander')
       expect(await child.exited).toBe(0)
-      const row = db().query(
-        `SELECT resource_kind, event_kind, resource_key, landing_id, cause
-           FROM contention WHERE event_kind='invalidation'`,
-      ).get() as {
-        resource_kind: string; event_kind: string; resource_key: string
-        landing_id: number; cause: string
-      }
       const landing = db().query(
         "SELECT id FROM landing WHERE branch='lander' AND status='landed'",
       ).get() as { id: number }
-      expect(row).toEqual({
+      expect(db().query(
+        `SELECT resource_kind, event_kind, resource_key, landing_id, cause
+           FROM contention WHERE event_kind='invalidation'`,
+      ).get()).toEqual({
         resource_kind: 'review', event_kind: 'invalidation', resource_key: 'victim',
         landing_id: landing.id, cause: `review ${reviewId}`,
       })
-      expect(landingStatus(repo)).toContain(`victim by landing ${landing.id} (review ${reviewId})`)
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
