@@ -628,3 +628,13 @@ describe('schema coexistence', () => {
     expect(db().query("SELECT name FROM project WHERE name='held-reload'").get()).toEqual({ name: 'held-reload' })
   })
 })
+
+describe('stripSqlComments feeds exec text that keeps quoted comment markers', () => {
+  test('a quoted -- or /* survives, real comments go, and a trailing comment cannot swallow a failure', () => {
+    const { stripSqlComments } = require('./migrations.ts') as typeof import('./migrations.ts')
+    expect(stripSqlComments("INSERT INTO t (v) VALUES ('a -- b'); -- seed\n")).toBe("INSERT INTO t (v) VALUES ('a -- b'); \n")
+    expect(stripSqlComments("SELECT '/* not a comment */' /* real */ FROM t")).toBe("SELECT '/* not a comment */'  FROM t")
+    expect(stripSqlComments("SELECT 'it''s -- fine' FROM t")).toBe("SELECT 'it''s -- fine' FROM t")
+    expect(stripSqlComments("INSERT INTO boom (id) VALUES (1); -- again").trim()).toBe('INSERT INTO boom (id) VALUES (1);')
+  })
+})

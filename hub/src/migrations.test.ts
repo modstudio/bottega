@@ -466,3 +466,11 @@ describe('hub migration journal', () => {
     reset.close()
   })
 })
+
+describe('stripSqlComments keeps quoted comment markers', () => {
+  test('quoted -- and /* survive while real comments are removed', () => {
+    const { stripSqlComments } = require('./migrations.ts') as typeof import('./migrations.ts')
+    expect(stripSqlComments("INSERT INTO t (v) VALUES ('a -- b'); -- seed\n")).toBe("INSERT INTO t (v) VALUES ('a -- b'); \n")
+    expect(stripSqlComments("SELECT '/* x */' /* real */ FROM t")).toBe("SELECT '/* x */'  FROM t")
+  })
+})

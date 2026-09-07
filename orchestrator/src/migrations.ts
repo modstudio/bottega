@@ -170,8 +170,45 @@ function normalizeSql(source: string): string {
     .trim()
 }
 
+/**
+ * Strip SQL comments outside string literals. A regex strip corrupts a quoted
+ * '--' or '/*', and the stripped text is what reaches exec, so the walk has to
+ * know where strings are. Single-quoted literals with '' escapes are the only
+ * string form these journals use.
+ */
+export function stripSqlComments(source: string): string {
+  let result = ''
+  let inString = false
+  for (let i = 0; i < source.length; i++) {
+    const char = source[i]!
+    if (inString) {
+      result += char
+      if (char === "'") {
+        if (source[i + 1] === "'") result += source[++i]!
+        else inString = false
+      }
+      continue
+    }
+    if (char === "'") { inString = true; result += char; continue }
+    if (char === '-' && source[i + 1] === '-') {
+      const end = source.indexOf('\n', i)
+      if (end === -1) break
+      i = end - 1
+      continue
+    }
+    if (char === '/' && source[i + 1] === '*') {
+      const end = source.indexOf('*/', i + 2)
+      if (end === -1) break
+      i = end + 1
+      continue
+    }
+    result += char
+  }
+  return result
+}
+
 function withoutSqlComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\n]*/g, '')
+  return stripSqlComments(source)
 }
 
 /** Ignore SQL case and whitespace outside string literals, whose values remain case-sensitive. */
@@ -328,7 +365,7 @@ export function canonicalSchemaHash(d: Database): string {
 
 function executeStatements(d: Database, source: string): void {
   for (const statement of source.split('--> statement-breakpoint')) {
-    const executable = statement.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\n]*/g, '').trim()
+    const executable = stripSqlComments(statement).trim()
     if (executable) d.exec(executable)
   }
 }
