@@ -308,11 +308,11 @@ describe('vendor failure failover is one bounded unit of work', () => {
       const result = await pending
       expect(result.agent).toBe('grok')
       const rows = db().query(
-        `SELECT id, agent, status, failure_kind, retry_of, base_commit
+        `SELECT id, agent, status, failure_kind, retry_of, base_commit, worktree
            FROM run WHERE repo='review-failover-project' ORDER BY id`,
       ).all() as {
         id: number; agent: string; status: string; failure_kind: string | null
-        retry_of: number | null; base_commit: string
+        retry_of: number | null; base_commit: string; worktree: string | null
       }[]
       expect(rows).toHaveLength(2)
       expect(rows[0]).toMatchObject({
@@ -321,6 +321,7 @@ describe('vendor failure failover is one bounded unit of work', () => {
       expect(rows[1]).toMatchObject({
         agent: 'grok', status: 'ok', retry_of: rows[0]!.id, base_commit: originalBase,
       })
+      expect(rows.map((row) => row.worktree)).toEqual([null, null])
       expect(git(repo, 'rev-parse', 'main')).not.toBe(originalBase)
     } finally {
       codex.bin = priorCodex.bin; codex.argv = priorCodex.argv; codex.stdin = priorCodex.stdin
@@ -430,11 +431,11 @@ describe('vendor failure failover is one bounded unit of work', () => {
       }).exitCode).not.toBe(0)
 
       const rows = db().query(
-        `SELECT id, agent, status, failure_kind, retry_of, base_commit, worktree_source
+        `SELECT id, agent, status, failure_kind, retry_of, base_commit, worktree_source, worktree
            FROM run WHERE repo='review-failover-no-base-project' ORDER BY id`,
       ).all() as {
         id: number; agent: string; status: string; failure_kind: string | null; retry_of: number | null
-        base_commit: string; worktree_source: string | null
+        base_commit: string; worktree_source: string | null; worktree: string | null
       }[]
       expect(rows).toHaveLength(2)
       expect(rows[0]).toMatchObject({
@@ -445,6 +446,7 @@ describe('vendor failure failover is one bounded unit of work', () => {
         agent: 'grok', status: 'ok', retry_of: rows[0]!.id,
         base_commit: originalBase, worktree_source: 'git',
       })
+      expect(rows.every((row) => row.worktree !== null)).toBe(true)
       expect(existsSync(projectInvoked)).toBe(false)
     } finally {
       if (!existsSync(releaseFirst)) writeFileSync(releaseFirst, 'release\n')

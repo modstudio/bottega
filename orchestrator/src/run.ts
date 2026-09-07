@@ -3245,6 +3245,12 @@ export async function run(opts: {
           `orch: run ${claim.id} failed over after ${name} ${failureKind}; ` +
           `starting the same prompt on ${next.agent}`,
         )
+        // The recursive successor has its own terminalisation path. Reclaim
+        // this completed attempt before returning into it, otherwise this
+        // frame never reaches the ordinary terminal reclaim below.
+        if (worktree && reclaimsTreeByDefault(opts.job) && !keepTree) {
+          reclaimTerminalTree(claim.id, worktree)
+        }
         return await run({
           job: opts.job,
           prompt: originalPrompt,
