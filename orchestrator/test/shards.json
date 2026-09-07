@@ -47,6 +47,7 @@
         "src/cli-projects.cli.test.ts",
         "src/worktree-1.cli.test.ts",
         "src/review-3.cli.test.ts",
+        "src/reader-contract.cli.test.ts",
         "src/issue.cli.test.ts",
         "src/linked-worktree-database.cli.test.ts"
       ]

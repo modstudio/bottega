@@ -1906,7 +1906,14 @@ export async function run(opts: {
   const a = AGENTS[name]!
   let boundMs: number
   try {
-    boundMs = resolveJobTimeoutMs(requestedJob, a.timeoutMs, timeoutMinutes)
+    // A durable historical row can name an agent that is no longer registered.
+    // Preserve the reserved resume row long enough for the existing harness
+    // failure path to record that fact; timeout validation must not erase it.
+    boundMs = resolveJobTimeoutMs(
+      requestedJob,
+      a?.timeoutMs ?? requestedJob.timeoutCeilingMs ?? 20 * 60_000,
+      timeoutMinutes,
+    )
   } catch (e) {
     if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
     throw e
