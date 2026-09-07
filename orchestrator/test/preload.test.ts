@@ -1,13 +1,21 @@
 import { expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
-import { db } from '../src/db.ts'
+import { readFileSync, realpathSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { DB_PATH, db } from '../src/db.ts'
 
-test('the preload clears every persistent table except schema and migration metadata', () => {
-  const persistent = db().query<{ name: string }, []>(
-    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('schema_meta','orch_migrations') ORDER BY name",
-  ).all().map(({ name }) => name)
+test('the preload creates a store and never clears one', () => {
   const preload = readFileSync(new URL('./preload.ts', import.meta.url), 'utf8')
-  const cleared = [...preload.matchAll(/DELETE FROM ([a-z_]+)/g)].map((match) => match[1]!).sort()
+  expect(preload).not.toMatch(/DELETE FROM/)
+  expect(preload).not.toMatch(/TRUNCATE/)
+})
 
-  expect(cleared).toEqual(persistent)
+test('the suite runs against a store the preload minted under the temporary directory', () => {
+  expect(DB_PATH).toBe(process.env.ORCH_DB)
+  expect(realpathSync(DB_PATH).startsWith(realpathSync(tmpdir()))).toBe(true)
+  db().query('INSERT INTO session_seen (session_id, last_seen) VALUES (?, ?)').run('preload-test', '2026-09-07T00:00:00.000Z')
+})
+
+test('a row written by one test is absent from the next because the store is fresh, not cleared', () => {
+  const { n } = db().query('SELECT COUNT(*) AS n FROM session_seen').get() as { n: number }
+  expect(n).toBe(0)
 })

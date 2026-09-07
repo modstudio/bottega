@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
-import { existsSync, mkdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, mkdirSync, realpathSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
@@ -41,18 +41,36 @@ let handle: Database | null = null
 let connectionWritable: boolean | null = null
 
 export const LINKED_WORKTREE_WRITE_REFUSAL =
-  'refusing to write the live store from a linked worktree; set ORCH_DB explicitly ' +
-  '(a copy for experiments, or the live path to insist)\n' +
-  'invariant: Only the main checkout\'s binary migrates the store.\n' +
-  'cleared by: orch migrate'
+  'refusing to write the main checkout\'s store from a linked-worktree binary; ' +
+  'point ORCH_DB at a copy for experiments, or set ORCH_DB_WRITE=1 to insist\n' +
+  'invariant: A linked-worktree binary reads the main store and never writes it, whatever names the path.\n' +
+  'cleared by: orch <command> from the main checkout, or ORCH_DB=<copy>, or ORCH_DB_WRITE=1'
 
 export const LINKED_WORKTREE_SCHEMA_REFUSAL =
   'refusing to migrate the store from a linked-worktree binary; run it from the main checkout\n' +
   'invariant: Only the main checkout\'s binary migrates the store.\n' +
   'cleared by: orch migrate'
 
+/** Two paths name one file when their real paths agree; a path that does not exist compares by resolution. */
+function sameStore(a: string, b: string): boolean {
+  const real = (path: string) => { try { return realpathSync(path) } catch { return resolve(path) } }
+  return real(a) === real(b)
+}
+
+/**
+ * ORCH_DB used to authorise a linked-worktree binary to write whatever it named,
+ * and the dispatcher exports the live path to every worker. A worker's own test
+ * leg therefore held a write handle on the live store from a tree whose binary
+ * should only ever have read it (DEV-314's class, third instance 2026-09-07:
+ * every row in 27 tables deleted). Location and write authority are separate:
+ * a linked binary may read the main store under any name and never writes it.
+ * ORCH_DB_WRITE=1 is the operator's explicit, recorded insistence.
+ */
 export const linkedWorktreeReadOnly =
-  DATABASE_RESOLUTION.linkedWorktreeBinary && DATABASE_RESOLUTION.method !== 'ORCH_DB'
+  DATABASE_RESOLUTION.linkedWorktreeBinary
+  && process.env.ORCH_DB_WRITE !== '1'
+  && (DATABASE_RESOLUTION.method !== 'ORCH_DB'
+    || (DATABASE_RESOLUTION.mainStorePath !== null && sameStore(DB_PATH, DATABASE_RESOLUTION.mainStorePath)))
 
 export function databaseOpenMode(): 'read-write' | 'read-only linked worktree' {
   return linkedWorktreeReadOnly ? 'read-only linked worktree' : 'read-write'
@@ -80,6 +98,17 @@ function databaseWritable(d: Database): boolean {
     connectionWritable = false
   }
   return connectionWritable
+}
+
+/**
+ * Fixture-only: drop the process handle so the next db() opens whatever store
+ * ORCH_DB names afresh. The test preload mints a new store per test and never
+ * clears one, which needs the cached handle released between tests.
+ */
+export function closeDatabaseForFixture(): void {
+  handle?.close()
+  handle = null
+  connectionWritable = null
 }
 
 export function db(writable = false): Database {

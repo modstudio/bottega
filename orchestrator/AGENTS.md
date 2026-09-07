@@ -858,6 +858,21 @@ The invariants are:
   its own `BEGIN IMMEDIATE` transaction; it does not reach into Drizzle's private
   migrator session or dialect.
   `db.ts:adoptRunMutation` governs chain ownership, not schema authority.
+- **A linked-worktree binary reads the main store and never writes it, whatever
+  names the path.** `ORCH_DB` locates a store; it never authorises a write. The
+  dispatcher exports the live path to every worker (`run.ts`), so a worker's own
+  `bin/orch` opened it for writing whenever `ORCH_DB` named it, and on
+  2026-09-07 a worker's test leg emptied 27 tables that way — the third instance
+  of DEV-314's class after DEV-153 and DEV-314 itself, each patched at the path
+  it arrived by. `db.ts:linkedWorktreeReadOnly` now refuses at the point the
+  write handle opens when the binary is linked and the path is the main
+  checkout's store, under any name; `ORCH_DB_WRITE=1` is the operator's
+  explicit insistence. Four kinds of prevention compose here: the weapon is
+  removed (the test preload mints a fresh store per test and contains no
+  clearing statement), the capability is restricted (this guard), the point of
+  damage is guarded (the preload refuses a store it did not create under the
+  temporary directory), and the vector stays honest (the register's worktree
+  note says the live path is read-only from a tree's binary).
 - **Landing holds its lock only for the trunk re-check, guard verification and
   fast-forward, never for a gate.** A gate is long and proves a commit without
   owning trunk. A moved trunk releases the lock, re-gates, and re-acquires.

@@ -14,6 +14,8 @@ export type DatabaseResolution = {
   repositoryCandidateExisted: boolean
   initializable: boolean
   linkedWorktreeBinary: boolean
+  /** The store beside the binary's main checkout, whatever ORCH_DB names. */
+  mainStorePath: string | null
 }
 
 export const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
@@ -85,20 +87,21 @@ export function resolveDatabase(
   env: Record<string, string | undefined> = process.env as Record<string, string | undefined>,
   binaryRoot = ROOT,
 ): DatabaseResolution {
+  const binaryRepository = repositoryRootFromGit(binaryRoot) ?? repositoryRootFromDotGit(binaryRoot)
+  const mainStorePath = binaryRepository ? join(binaryRepository.root, 'orchestrator', 'orch.db') : null
   if (env.ORCH_DB) {
-    const binaryRepository = repositoryRootFromGit(binaryRoot) ?? repositoryRootFromDotGit(binaryRoot)
     return {
       path: resolve(env.ORCH_DB), method: 'ORCH_DB', tried: [resolve(env.ORCH_DB)], registeredPath: null,
       repositoryRoot: null, repositoryCandidate: null, repositoryCandidateExisted: false,
       initializable: true,
       linkedWorktreeBinary: Boolean(binaryRepository?.linked),
+      mainStorePath,
     }
   }
 
   const binaryRelative = join(binaryRoot, 'orch.db')
   const tried: string[] = []
   const repository = repositoryRootFromGit(cwd) ?? repositoryRootFromDotGit(cwd)
-  const binaryRepository = repositoryRootFromGit(binaryRoot) ?? repositoryRootFromDotGit(binaryRoot)
   if (repository) {
     const candidate = join(repository.root, 'orchestrator', 'orch.db')
     tried.push(candidate)
@@ -115,6 +118,7 @@ export function resolveDatabase(
         // main checkout's binary may initialize that checkout.
         initializable: Boolean(binaryRepository && !binaryRepository.linked),
         linkedWorktreeBinary: Boolean(binaryRepository?.linked),
+        mainStorePath,
       }
     }
   }
@@ -129,6 +133,7 @@ export function resolveDatabase(
         repositoryCandidate: repository ? join(repository.root, 'orchestrator', 'orch.db') : null,
         repositoryCandidateExisted: false, initializable: false,
         linkedWorktreeBinary: true,
+        mainStorePath,
       }
     }
   }
@@ -141,6 +146,7 @@ export function resolveDatabase(
       repositoryCandidate: repository ? join(repository.root, 'orchestrator', 'orch.db') : null,
       repositoryCandidateExisted: false, initializable: true,
       linkedWorktreeBinary: false,
+      mainStorePath,
     }
   }
 

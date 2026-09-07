@@ -28,12 +28,14 @@ function git(cwd: string, ...args: string[]): void {
   if (result.exitCode !== 0) throw new Error(result.stderr.toString())
 }
 
-function invoke(cli: string, cwd: string, args: string[], explicit?: string) {
+function invoke(cli: string, cwd: string, args: string[], explicit?: string, extra: Record<string, string> = {}) {
   const env: Record<string, string | undefined> = {
     ...process.env, ORCH_DEPTH: '0', CLAUDE_CODE_SESSION_ID: 'linked-database-test',
   }
   delete env.ORCH_DB
+  delete env.ORCH_DB_WRITE
   if (explicit) env.ORCH_DB = explicit
+  Object.assign(env, extra)
   return Bun.spawnSync([process.execPath, cli, ...args], {
     cwd, env, stdout: 'pipe', stderr: 'pipe',
   })
@@ -88,9 +90,35 @@ describe('linked-worktree database protection', () => {
     const score = invoke(linkedCli, linked, ['score', '1', 'full', 'right', 'faithful', '--note', 'no'])
     expect(score.exitCode).not.toBe(0)
     expect(score.stderr.toString()).toContain(
-      'refusing to write the live store from a linked worktree; set ORCH_DB explicitly ' +
-      '(a copy for experiments, or the live path to insist)',
+      'refusing to write the main checkout\'s store from a linked-worktree binary',
     )
+  })
+
+  test('ORCH_DB naming the live store does not authorise a linked binary to write it', () => {
+    const before = readFileSync(liveStore)
+    const score = invoke(linkedCli, linked, ['score', '1', 'full', 'right', 'faithful', '--note', 'named'], liveStore)
+    expect(score.exitCode).not.toBe(0)
+    expect(score.stderr.toString()).toContain(
+      'refusing to write the main checkout\'s store from a linked-worktree binary',
+    )
+    expect(score.stderr.toString()).toMatch(/^invariant: .+$/m)
+    expect(score.stderr.toString()).toMatch(/^cleared by: .+$/m)
+    expect(readFileSync(liveStore)).toEqual(before)
+    const read = invoke(linkedCli, linked, ['runs'], liveStore)
+    expect(read.exitCode).toBe(0)
+  })
+
+  test('ORCH_DB_WRITE=1 is the operator\'s explicit insistence and opens the live store for writing', () => {
+    const score = invoke(
+      linkedCli, linked, ['score', '1', 'full', 'right', 'faithful', '--note', 'insisted'], liveStore,
+      { ORCH_DB_WRITE: '1' },
+    )
+    expect(score.stderr.toString()).toBe('')
+    expect(score.exitCode).toBe(0)
+    const checked = new Database(liveStore, { readonly: true })
+    const row = checked.query("SELECT note FROM score WHERE run_id = 1 AND note = 'insisted'").get()
+    checked.close()
+    expect(row).not.toBeNull()
   })
 
   test('held-open WAL sidecars remain visible and unchanged to the ordinary read-only open', () => {
