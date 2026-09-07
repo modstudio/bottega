@@ -4,8 +4,8 @@ import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, nowIso,
          REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP,
          REVIEW_SEVERITY,
          type ReviewReproduced, type ReviewCoverage, type ReviewLimits, type ReviewOverlap,
-         reapStale, pidAlive, STALE_AFTER_MS, UNSCORED_WHERE, recordDuels, duelMatrices,
-         parseRunIds, recordSessionSeen, SESSION_LIVE_MS,
+         reapStale, pidAlive, STALE_AFTER_MS, UNSCORED_WHERE, recordDuels, recordLosses, recordTies, duelMatrices,
+         pairPartners, unrecordedPairsForSession, parseRunIds, recordSessionSeen, SESSION_LIVE_MS,
          resolveRootFromLastTurn, chainScoreJoin, chainTerminationAt,
          authorizeRunMutation, runMutationActor,
          auditRunMutation, adoptRunMutation, writeTransaction, type RootAuthority } from './db.ts'
@@ -49,7 +49,7 @@ import { classifyReviewTier, diffNumstat } from './review-tier.ts'
 import { composeWorkflow, exportWorkflows, forkWorkflow, getWorkflowStep, importWorkflows,
          listWorkflows, promoteWorkflow, retireWorkflow, setWorkflow, showWorkflow,
          workflowVersions } from './workflows.ts'
-import { gwetAc1 } from './agreement.ts'
+import { bradleyTerry, gwetAc1, quadraticWeightedKappa } from './agreement.ts'
 import { routingBacktest, routingBacktestEnsemble, type RoutingBacktest } from './routing-backtest.ts'
 import { dockerRemovalCommand, dockerRunResources, leakedResourceLines,
          orphanedDockerResources, orchRunId, resourcesForRuns,
@@ -114,6 +114,11 @@ function scoreSuffix(jobName: string): string {
       ` [--limits ${REVIEW_LIMITS.join('|')}] [--overlap ${REVIEW_OVERLAP.join('|')}]`
     : ''
   return (writes ? ' [drifted|partial|faithful]' : '') + reviewGrades
+}
+
+function pairHint(partner: { id: number; agent: string }): string {
+  return `pair: run ${partner.id} (${partner.agent}) on the same tree — record with ` +
+    `--better-than ${partner.id} | --worse-than ${partner.id} | --same-as ${partner.id}`
 }
 
 /**
@@ -1249,6 +1254,8 @@ function usage(): never {
       --limits <${REVIEW_LIMITS.join('|')}> --overlap <${REVIEW_OVERLAP.join('|')}>
       only the session that MADE a run may score it; --force overrides.
       --better-than <id>[,<id>] record this run winning a pairwise comparison
+      --worse-than <id>[,<id>]  record the named run winning the comparison
+      --same-as <id>[,<id>]     mark a tie without recording a duel
       --scorer <who>            record the named human/UI scorer; only the local
                                 hub-dashboard capability bypasses ownership
       --void                    retain the run and output, but exclude it from routing evidence
@@ -4873,10 +4880,22 @@ switch (cmd) {
       reviewGrade = { output, grades: raw as ReviewGrades }
     }
 
-    const betterThan = flag('better-than')
-    const loserIds = betterThan === undefined ? [] : parseRunIds(betterThan, '--better-than')
-    if (loserIds.length) {
-      recordDuels(id, loserIds, sessionId(), nowIso(), has('force'))
+    const comparisonFlags = ['better-than', 'worse-than', 'same-as'] as const
+    const suppliedComparisons = comparisonFlags.filter((name) => flag(name) !== undefined)
+    if (suppliedComparisons.length > 1) {
+      throw new Error('--better-than, --worse-than, and --same-as are mutually exclusive')
+    }
+    const comparison = suppliedComparisons[0]
+    if (comparison) {
+      const otherIds = parseRunIds(flag(comparison)!, `--${comparison}`)
+      const comparedAt = nowIso()
+      if (comparison === 'better-than') {
+        recordDuels(id, otherIds, sessionId(), comparedAt, has('force'))
+      } else if (comparison === 'worse-than') {
+        recordLosses(id, otherIds, sessionId(), comparedAt, has('force'))
+      } else {
+        recordTies(id, otherIds, sessionId(), comparedAt, has('force'))
+      }
     }
 
     const wasScored = Boolean(db().query('SELECT 1 FROM score WHERE run_id=?').get(id))
@@ -4911,6 +4930,9 @@ switch (cmd) {
     console.log(
       `run ${id} (${row.agent}/${row.job}) scored ${axes}  [${w}]`,
     )
+    if (!comparison) {
+      for (const partner of pairPartners(id, sessionId())) console.log(pairHint(partner))
+    }
     break
   }
 
@@ -4946,6 +4968,7 @@ switch (cmd) {
       original: [Delivery, Quality | null, Fidelity | null]
       fresh: [Delivery, Quality | null, Fidelity | null]
     }[] = []
+    const calibrationAt = nowIso()
     try {
       for (const row of sample) {
         const output = readFileSync(row.output_path!, 'utf8')
@@ -4988,7 +5011,7 @@ switch (cmd) {
         db().query(
           `INSERT INTO calibration (run_id, delivery, quality, fidelity, at, session_id)
            VALUES (?,?,?,?,?,?)`,
-        ).run(row.id, ...fresh, nowIso(), sessionId())
+        ).run(row.id, ...fresh, calibrationAt, sessionId())
         results.push({
           original: [row.original_delivery, row.original_quality, row.original_fidelity], fresh,
         })
@@ -5008,23 +5031,11 @@ switch (cmd) {
       const pairs = results.map((r) => [r.original[axis.at], r.fresh[axis.at]] as const)
         .filter((p) => p[0] != null && p[1] != null) as [string, string][]
       if (!pairs.length) continue
-      const countsA = axis.levels.map((level) => pairs.filter((p) => p[0] === level).length)
-      const countsB = axis.levels.map((level) => pairs.filter((p) => p[1] === level).length)
-      const distance = (a: string, b: string) => {
-        const d = axis.levels.indexOf(a) - axis.levels.indexOf(b)
-        return (d * d) / 4
-      }
-      const observed = pairs.reduce((sum, p) => sum + distance(p[0], p[1]), 0) / pairs.length
-      let expected = 0
-      for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) {
-        expected += countsA[a]! * countsB[b]! * distance(axis.levels[a]!, axis.levels[b]!)
-      }
-      expected /= pairs.length * pairs.length
-      if (expected === 0) {
+      const kappa = quadraticWeightedKappa(pairs, axis.levels)
+      if (kappa === null) {
         const ac1 = gwetAc1(pairs, axis.levels)
         console.log(`${axis.name}: n=${pairs.length} kappa=n/a ac1=${ac1 === null ? 'n/a' : ac1.toFixed(3)} reading=not measurable`)
       } else {
-        const kappa = 1 - observed / expected
         const ac1 = gwetAc1(pairs, axis.levels)
         console.log(`${axis.name}: n=${pairs.length} kappa=${kappa.toFixed(3)} ac1=${ac1 === null ? 'n/a' : ac1.toFixed(3)} reading=${reading(kappa)}`)
       }
@@ -5482,6 +5493,20 @@ switch (cmd) {
       }
     }
     for (const matrix of matrices) {
+      const duelCount = matrix.agents.reduce((sum, agent) => sum +
+        matrix.agents.reduce((agentSum, opponent) => agentSum + matrix.cells[agent]![opponent]!.wins, 0), 0)
+      if (duelCount >= MIN_SAMPLE) {
+        const strengths = bradleyTerry(
+          matrix.agents,
+          (winner, loser) => matrix.cells[winner]![loser]!.wins,
+        )
+        console.log(`\n${matrix.job} Bradley-Terry strengths (${duelCount} duels)`)
+        console.log('agent        strength')
+        for (const row of strengths) {
+          console.log(`${row.agent.padEnd(12)} ${row.strength.toFixed(3).padStart(8)}`)
+        }
+        continue
+      }
       const width = Math.max(7, ...matrix.agents.map((agent) => agent.length))
       console.log(`\n${matrix.job} duels (wins-losses)`)
       console.log(`${'agent'.padEnd(width)} ${matrix.agents.map((a) => a.padStart(width)).join(' ')}`)
@@ -5542,10 +5567,20 @@ switch (cmd) {
     // Runs THIS session made that it has not judged. Exits 1 when any remain,
     // so a hook or a script can act on it.
     const rows = pendingForSession(sessionId())
-    if (!rows.length) { console.log('nothing of yours is unscored'); break }
-    console.log(`${rows.length} run${rows.length === 1 ? '' : 's'} you made are unscored:\n`)
-    for (const r of rows) {
-      console.log(`  orch score ${r.id} <none|partial|full> [wrong|mixed|right]   # ${r.agent}/${r.job}  ${r.prompt_head.slice(0, 40)}`)
+    const pairs = unrecordedPairsForSession(sessionId())
+    if (!rows.length && !pairs.length) { console.log('nothing of yours is unscored or awaiting comparison'); break }
+    if (rows.length) {
+      console.log(`${rows.length} run${rows.length === 1 ? '' : 's'} you made are unscored:\n`)
+      for (const r of rows) {
+        console.log(`  orch score ${r.id} <none|partial|full> [wrong|mixed|right]   # ${r.agent}/${r.job}  ${r.prompt_head.slice(0, 40)}`)
+      }
+    }
+    if (pairs.length) {
+      console.log(`${rows.length ? '\n' : ''}${pairs.length} scored pair${pairs.length === 1 ? '' : 's'} await comparison:\n`)
+      for (const pair of pairs) {
+        console.log(`  run ${pair.runId}`)
+        console.log(`    ${pairHint({ id: pair.partnerId, agent: pair.partnerAgent })}`)
+      }
     }
     console.log('\nOnly you know whether these answers were useful. An unscored run')
     console.log('teaches the router nothing, and a guessed score teaches it something false.')
@@ -5745,6 +5780,52 @@ switch (cmd) {
     console.log(`resolved by    ${DATABASE_RESOLUTION.method}`)
     if (DATABASE_RESOLUTION.registeredPath && DATABASE_RESOLUTION.registeredPath !== DB_PATH) {
       console.log(`registered     ${DATABASE_RESOLUTION.registeredPath}  (resolved path won)`)
+    }
+    const latestCalibration = db().query(
+      'SELECT MAX(at) AS at FROM calibration',
+    ).get() as { at: string | null }
+    if (latestCalibration.at) {
+      const calibrationRows = db().query(
+        `SELECT s.delivery original_delivery, c.delivery fresh_delivery,
+                s.quality original_quality, c.quality fresh_quality,
+                s.fidelity original_fidelity, c.fidelity fresh_fidelity
+           FROM calibration c JOIN score s ON s.run_id = c.run_id
+          WHERE c.at = ?`,
+      ).all(latestCalibration.at) as Record<string, string | null>[]
+      console.log(`scorer calibration  ${latestCalibration.at}`)
+      const calibrationAxes = [
+        { name: 'delivery', levels: DELIVERY as readonly string[] },
+        { name: 'quality', levels: QUALITY as readonly string[] },
+        { name: 'fidelity', levels: FIDELITY as readonly string[] },
+      ]
+      for (const axis of calibrationAxes) {
+        const pairs = calibrationRows.map((row) => [
+          row[`original_${axis.name}`], row[`fresh_${axis.name}`],
+        ] as const).filter((pair) => pair[0] !== null && pair[1] !== null) as [string, string][]
+        if (!pairs.length) continue
+        const kappa = quadraticWeightedKappa(pairs, axis.levels)
+        const ac1 = gwetAc1(pairs, axis.levels)
+        console.log(
+          `  ${axis.name.padEnd(8)} n=${pairs.length} ` +
+          `kappa=${kappa === null ? 'n/a' : kappa.toFixed(3)} ` +
+          `ac1=${ac1 === null ? 'n/a' : ac1.toFixed(3)}`,
+        )
+      }
+    } else {
+      console.log('scorer calibration  never')
+    }
+    const scoresSinceCalibration = (db().query(
+      `SELECT COUNT(*) n FROM score
+        WHERE ? IS NULL OR datetime(scored_at) > datetime(?)`,
+    ).get(latestCalibration.at, latestCalibration.at) as { n: number }).n
+    const calibrationStale = !latestCalibration.at ||
+      Date.now() - new Date(latestCalibration.at).getTime() >= 30 * 86_400_000 ||
+      scoresSinceCalibration >= 100
+    if (calibrationStale) {
+      console.log(
+        `recalibrate: ${scoresSinceCalibration} scores since last blind check; ` +
+        'run orch recalibrate --n 12',
+      )
     }
     console.log('agents')
     for (const a of Object.values(AGENTS)) {

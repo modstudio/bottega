@@ -1191,6 +1191,17 @@ function migrate(d: Database) {
     );
     CREATE INDEX IF NOT EXISTS duel_job ON duel(job);
 
+    -- A comparison may be a win, loss, or tie. Duels hold the directional
+    -- evidence; this ordered pair records all three so each fan-out pair is
+    -- offered only until the scorer has compared it once.
+    CREATE TABLE IF NOT EXISTS compared_pair (
+      run_a_id   INTEGER NOT NULL REFERENCES run(id) ON DELETE CASCADE,
+      run_b_id   INTEGER NOT NULL REFERENCES run(id) ON DELETE CASCADE,
+      compared_at TEXT NOT NULL,
+      PRIMARY KEY (run_a_id, run_b_id),
+      CHECK (run_a_id < run_b_id)
+    );
+
     -- A second reading of an old score, kept apart so measuring the scorer can
     -- never rewrite the verdict the router actually learned from.
     CREATE TABLE IF NOT EXISTS calibration (
@@ -2105,7 +2116,8 @@ export type Fidelity = 'drifted' | 'partial' | 'faithful'
  *
  * Deliberately coarse. Three levels an axis is what a person can apply the same
  * way twice, months apart, which matters more than resolution when the whole
- * corpus is under a hundred judgements and five decide a route.
+ * corpus is 1,425 judgements (`orch stats`, measured 2026-09-06) and five
+ * decide a route.
  */
 export const WEIGHT: Record<Delivery, Record<Quality, number> | number> = {
   none: -0.5,
@@ -2259,16 +2271,14 @@ export function parseRunIds(value: string, flagName: string): number[] {
   return ids
 }
 
-/** Record one winner against every named loser after validating the comparison. */
-export function recordDuels(
-  winnerRunId: number,
-  loserRunIds: number[],
+function validateComparisons(
+  runId: number,
+  otherRunIds: number[],
   callerSession: string | null,
-  at: string,
   force = false,
-): void {
+): { job: string } {
   writableDb()
-  const ids = [winnerRunId, ...loserRunIds]
+  const ids = [runId, ...otherRunIds]
   const rows = db().query(
     `SELECT id, job, session_id FROM run WHERE id IN (${ids.map(() => '?').join(',')})`,
   ).all(...ids) as { id: number; job: string; session_id: string | null }[]
@@ -2276,16 +2286,16 @@ export function recordDuels(
   for (const id of ids) {
     if (!byId.has(id)) throw new Error(`no run ${id}`)
   }
-  const winner = byId.get(winnerRunId)!
-  for (const loserId of loserRunIds) {
-    if (loserId === winnerRunId) {
-      throw new Error(`run ${winnerRunId} cannot be better than itself`)
+  const subject = byId.get(runId)!
+  for (const otherId of otherRunIds) {
+    if (otherId === runId) {
+      throw new Error(`run ${runId} cannot be better than itself`)
     }
-    const loser = byId.get(loserId)!
-    if (loser.job !== winner.job) {
+    const other = byId.get(otherId)!
+    if (other.job !== subject.job) {
       throw new Error(
-        `runs ${winnerRunId} and ${loserId} cannot be compared: ` +
-        `jobs differ (${winner.job} and ${loser.job})`,
+        `runs ${runId} and ${otherId} cannot be compared: ` +
+        `jobs differ (${subject.job} and ${other.job})`,
       )
     }
   }
@@ -2302,6 +2312,18 @@ export function recordDuels(
       }
     }
   }
+  return { job: subject.job }
+}
+
+/** Record one winner against every named loser after validating the comparison. */
+export function recordDuels(
+  winnerRunId: number,
+  loserRunIds: number[],
+  callerSession: string | null,
+  at: string,
+  force = false,
+): void {
+  const winner = validateComparisons(winnerRunId, loserRunIds, callerSession, force)
   const insert = db().query(
     `INSERT INTO duel (job, winner_run_id, loser_run_id, session_id, at)
      VALUES (?,?,?,?,?) ON CONFLICT(winner_run_id, loser_run_id) DO NOTHING`,
@@ -2309,8 +2331,108 @@ export function recordDuels(
   writeTransaction(() => {
     for (const loserId of loserRunIds) {
       insert.run(winner.job, winnerRunId, loserId, callerSession, at)
+      recordComparedPair(winnerRunId, loserId, at)
     }
   })
+}
+
+/** Record every named winner over one loser after validating the whole set. */
+export function recordLosses(
+  loserRunId: number,
+  winnerRunIds: number[],
+  callerSession: string | null,
+  at: string,
+  force = false,
+): void {
+  const loser = validateComparisons(loserRunId, winnerRunIds, callerSession, force)
+  const insert = db().query(
+    `INSERT INTO duel (job, winner_run_id, loser_run_id, session_id, at)
+     VALUES (?,?,?,?,?) ON CONFLICT(winner_run_id, loser_run_id) DO NOTHING`,
+  )
+  writeTransaction(() => {
+    for (const winnerId of winnerRunIds) {
+      insert.run(loser.job, winnerId, loserRunId, callerSession, at)
+      recordComparedPair(winnerId, loserRunId, at)
+    }
+  })
+}
+
+function orderedPair(a: number, b: number): [number, number] {
+  return a < b ? [a, b] : [b, a]
+}
+
+/** Mark scored roots as compared without adding directional duel evidence. */
+export function recordTies(
+  runId: number,
+  otherRunIds: number[],
+  callerSession: string | null,
+  at: string,
+  force = false,
+): void {
+  validateComparisons(runId, otherRunIds, callerSession, force)
+  writeTransaction(() => {
+    for (const otherId of otherRunIds) recordComparedPair(runId, otherId, at)
+  })
+}
+
+function recordComparedPair(a: number, b: number, at: string): void {
+  const [runA, runB] = orderedPair(a, b)
+  db().query(
+    `INSERT INTO compared_pair (run_a_id, run_b_id, compared_at) VALUES (?,?,?)
+     ON CONFLICT(run_a_id, run_b_id) DO NOTHING`,
+  ).run(runA, runB, at)
+}
+
+export type PairPartner = { id: number; agent: string }
+export type UnrecordedPair = { runId: number; partnerId: number; partnerAgent: string }
+
+/** Scored sibling roots from this session and input, not yet compared. */
+export function pairPartners(runId: number, sid: string | null): PairPartner[] {
+  if (!sid) return []
+  return db().query(
+    `SELECT partner.id, partner.agent
+       FROM run subject
+       JOIN run partner ON partner.id <> subject.id
+        AND partner.parent_run_id IS NULL
+        AND partner.job = subject.job
+        AND partner.session_id = ?
+        AND ((subject.input_tree IS NOT NULL AND partner.input_tree = subject.input_tree)
+          OR (subject.input_tree IS NULL AND partner.input_tree IS NULL
+              AND partner.prompt_sha = subject.prompt_sha))
+       JOIN score partner_score ON partner_score.run_id = partner.id
+       LEFT JOIN compared_pair compared
+         ON compared.run_a_id = MIN(subject.id, partner.id)
+        AND compared.run_b_id = MAX(subject.id, partner.id)
+      WHERE subject.id = ?
+        AND datetime(partner_score.scored_at) >= datetime('now', '-24 hours')
+        AND compared.run_a_id IS NULL
+      ORDER BY partner.id`,
+  ).all(sid, runId) as PairPartner[]
+}
+
+/** Each recent, scored, comparable pair once, oriented toward the newer run. */
+export function unrecordedPairsForSession(sid: string | null): UnrecordedPair[] {
+  if (!sid) return []
+  return db().query(
+    `SELECT newer.id AS runId, older.id AS partnerId, older.agent AS partnerAgent
+       FROM run newer
+       JOIN score newer_score ON newer_score.run_id = newer.id
+       JOIN run older ON older.id < newer.id
+        AND older.parent_run_id IS NULL
+        AND older.job = newer.job
+        AND older.session_id = newer.session_id
+        AND ((newer.input_tree IS NOT NULL AND older.input_tree = newer.input_tree)
+          OR (newer.input_tree IS NULL AND older.input_tree IS NULL
+              AND older.prompt_sha = newer.prompt_sha))
+       JOIN score older_score ON older_score.run_id = older.id
+       LEFT JOIN compared_pair compared
+         ON compared.run_a_id = older.id AND compared.run_b_id = newer.id
+      WHERE newer.parent_run_id IS NULL AND newer.session_id = ?
+        AND datetime(newer_score.scored_at) >= datetime('now', '-24 hours')
+        AND datetime(older_score.scored_at) >= datetime('now', '-24 hours')
+        AND compared.run_a_id IS NULL
+      ORDER BY newer.id, older.id`,
+  ).all(sid) as UnrecordedPair[]
 }
 
 /** The directed duel evidence, grouped into one agent-by-agent matrix per job. */

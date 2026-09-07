@@ -419,7 +419,7 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
     case 'abandon': return { args: argv.slice(1), shape: shape('orch abandon <id> [--note TEXT] [--force]', 1, ['--note'], ['--force']) }
     case 'score': return { args: argv.slice(1), shape: shape(
       `orch score <run-id> <none|partial|full> [wrong|mixed|right] [drifted|partial|faithful] [--note TEXT] ${REVIEW_GRADE_USAGE}`,
-      4, ['--note', '--better-than', '--scorer', '--reproduced', '--coverage', '--limits', '--overlap'], ['--force', '--void'],
+      4, ['--note', '--better-than', '--worse-than', '--same-as', '--scorer', '--reproduced', '--coverage', '--limits', '--overlap'], ['--force', '--void'],
     ) }
     case 'recalibrate': return { args: argv.slice(1), shape: shape('orch recalibrate [--n N] [--scorer WHO] [--force]', 0, ['--n', '--scorer'], ['--force']) }
     case 'routing-backtest': return { args: argv.slice(1), shape: shape('orch routing-backtest [--job X] [--seed N] [--json]', 0, ['--job', '--seed'], ['--json']) }

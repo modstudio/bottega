@@ -82,11 +82,37 @@ def main() -> int:
                 ORDER BY r.id""",
             (sid,),
         ).fetchall()
+        pairs = []
+        has_compared_pairs = con.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='compared_pair'"
+        ).fetchone()
+        if has_compared_pairs:
+            pairs = con.execute(
+                """SELECT newer.id, older.id, older.agent
+                     FROM run newer
+                     JOIN score newer_score ON newer_score.run_id = newer.id
+                     JOIN run older ON older.id < newer.id
+                      AND older.parent_run_id IS NULL
+                      AND older.job = newer.job
+                      AND older.session_id = newer.session_id
+                      AND ((newer.input_tree IS NOT NULL AND older.input_tree = newer.input_tree)
+                        OR (newer.input_tree IS NULL AND older.input_tree IS NULL
+                            AND older.prompt_sha = newer.prompt_sha))
+                     JOIN score older_score ON older_score.run_id = older.id
+                     LEFT JOIN compared_pair compared
+                       ON compared.run_a_id = older.id AND compared.run_b_id = newer.id
+                    WHERE newer.parent_run_id IS NULL AND newer.session_id = ?
+                      AND datetime(newer_score.scored_at) >= datetime('now', '-24 hours')
+                      AND datetime(older_score.scored_at) >= datetime('now', '-24 hours')
+                      AND compared.run_a_id IS NULL
+                    ORDER BY newer.id, older.id""",
+                (sid,),
+            ).fetchall()
         con.close()
     except sqlite3.Error:
         return 0  # never block a session because of a database problem
 
-    if not rows:
+    if not rows and not pairs:
         return 0
 
     # A writing job takes a THIRD axis, and printing the two-axis form for one
@@ -101,15 +127,38 @@ def main() -> int:
         if j in WRITING_JOBS:
             axes += " [drifted|partial|faithful]"
         lines.append(f'  orch score {i} {axes} --note "..."   # {a}/{j}  {p}')
-    print(json.dumps({
-        "decision": "block",
-        "reason": (
+    if pairs:
+        if lines:
+            lines.append("")
+        for current, partner, agent in pairs:
+            lines.append(f"  run {current}")
+            lines.append(
+                f"    pair: run {partner} ({agent}) on the same tree — record with "
+                f"--better-than {partner} | --worse-than {partner} | --same-as {partner}"
+            )
+    if rows:
+        intro = (
             f"{len(rows)} delegated run{'s' if len(rows) > 1 else ''} from this session "
-            f"{'have' if len(rows) > 1 else 'has'} not been scored:\n\n" + "\n".join(lines) + "\n\n"
+            f"{'have' if len(rows) > 1 else 'has'} not been scored:"
+        )
+    else:
+        intro = f"{len(pairs)} scored pair{'s' if len(pairs) > 1 else ''} await comparison:"
+    guidance = ""
+    if rows:
+        guidance += (
             "Score each one from what you actually saw in its output. An unscored run "
             "teaches the router nothing; a guessed score teaches it something false. "
             "If a run's output was never used, score it honestly on whether it answered "
             "the question, then continue."
+        )
+    if pairs:
+        guidance += (" " if guidance else "") + (
+            "Record each pair once from the outputs you already read."
+        )
+    print(json.dumps({
+        "decision": "block",
+        "reason": (
+            intro + "\n\n" + "\n".join(lines) + "\n\n" + guidance
         ),
     }))
     return 0

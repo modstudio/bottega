@@ -194,10 +194,10 @@ has **5+ judgements**. Below that the declared preference wins, because a score
 from two runs is noise and routing on it would lock in whichever agent happened
 to go first.
 
-Pairwise judgements are recorded because humans give A-vs-B judgements more
-consistently than absolute grades, and a fan-out already produces the pairs.
-Routing does not use these duels yet; `orch stats` reports them while the
-evidence accumulates.
+Pairwise judgements are collected at score time because humans give A-vs-B
+judgements more consistently than absolute grades, and a fan-out already
+produces the pairs. `orch stats` reports Bradley-Terry strengths once a job has
+enough duels. Routing still does not use them; the evidence accumulates first.
 
 An off-policy backtest cannot decide a routing change from this judgement log
 because disagreements have no counterfactual outcome. The standing challenger
@@ -295,9 +295,9 @@ badly. A failed or abandoned run scores here too, at the `none` weight.
 
 **Three levels an axis, deliberately.** Not five: a scale is only worth its
 resolution if the same run gets the same score twice, months apart, and named
-levels do that where numbers do not. The corpus is under a hundred judgements
-and five decide a route, so consistency is worth more than fineness — and the
-existing distribution shows a ceiling, not a shortage of levels. Ties are
+levels do that where numbers do not. The corpus is 1,425 judgements (`orch
+stats`, measured 2026-09-06) and five decide a route, so consistency is worth
+more than fineness — and the existing distribution shows a ceiling, not a shortage of levels. Ties are
 already broken by cost and latency, which are facts rather than opinions.
 
 ### Measuring the scorer
@@ -1733,7 +1733,7 @@ no such ceiling.
 
 ```
 orch do <job> [prompt]      route, run, record  (--file, stdin, --agent, --schema, --mcp, --probe)
-orch score <id> <none|partial|full> [wrong|mixed|right] [--better-than <id>[,<id>]]
+orch score <id> <none|partial|full> [wrong|mixed|right] [--better-than|--worse-than|--same-as <id>[,<id>]]
                                                          delivery, quality, and optional duels
 orch runs [--unscored]      what ran, what is unjudged
 orch monitor                detect and record stuck machine state; --history reads prior passes

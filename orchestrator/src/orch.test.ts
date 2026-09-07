@@ -1667,7 +1667,7 @@ const { candidates, weightCase, scoreboard, median, evidenceFor, pick,
         BETA_SCALE, POSTERIOR_NOISE_BAND, currentPolicySelection } = await import('./route.ts')
 const { guide } = await import('./guide.ts')
 const { validateCliArgs } = await import('./args.ts')
-const { gwetAc1 } = await import('./agreement.ts')
+const { bradleyTerry, gwetAc1 } = await import('./agreement.ts')
 const { routingBacktest, routingBacktestEnsemble, ROUTING_BACKTEST_SEEDS } = await import('./routing-backtest.ts')
 const { projects, projectAt, projectByName, stackAt, upsertProject, removeProject } = await import('./projects.ts')
 const {
@@ -2208,7 +2208,7 @@ beforeEach(() => {
   // question cascades from run, but the delete order still matters: it is
   // listed first so a future FK-enforcing change cannot make this fail
   // mysteriously halfway through a suite.
-  db().exec('DELETE FROM canon_eval; DELETE FROM canon_pack; DELETE FROM monitor_condition; DELETE FROM monitor_invocation; DELETE FROM landing_review_carry; DELETE FROM landing_override; DELETE FROM review_finding; DELETE FROM review_lens; DELETE FROM review; DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc_revision; DELETE FROM doc; DELETE FROM run_message; DELETE FROM question; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run_mutation_audit; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
+  db().exec('DELETE FROM canon_eval; DELETE FROM canon_pack; DELETE FROM monitor_condition; DELETE FROM monitor_invocation; DELETE FROM landing_review_carry; DELETE FROM landing_override; DELETE FROM review_finding; DELETE FROM review_lens; DELETE FROM review; DELETE FROM port_ref_source; DELETE FROM port_ref; DELETE FROM port_skip; DELETE FROM port_baseline; DELETE FROM port_pair; DELETE FROM port_doctrine; DELETE FROM doc_revision; DELETE FROM doc; DELETE FROM run_message; DELETE FROM question; DELETE FROM compared_pair; DELETE FROM duel; DELETE FROM calibration; DELETE FROM score; DELETE FROM run_mutation_audit; DELETE FROM run; DELETE FROM project; DELETE FROM session_seen;')
 })
 
 afterAll(() => {
@@ -8489,6 +8489,24 @@ describe('recalibrating the scorer', () => {
 })
 
 describe('routing backtest statistics', () => {
+  test('Bradley-Terry orders known duel strengths and the pseudo-duel prior keeps finite values', () => {
+    const evidence: Record<string, Record<string, number>> = {
+      alpha: { beta: 4, gamma: 3 },
+      beta: { alpha: 1, gamma: 3 },
+      gamma: { alpha: 0, beta: 1 },
+    }
+    const fitted = bradleyTerry(
+      ['alpha', 'beta', 'gamma'],
+      (winner, loser) => evidence[winner]?.[loser] ?? 0,
+    )
+    expect(fitted.map((row) => row.agent)).toEqual(['alpha', 'beta', 'gamma'])
+    expect(fitted.every((row) => Number.isFinite(row.strength) && row.strength > 0)).toBe(true)
+    expect(fitted.reduce((sum, row) => sum + row.strength, 0)).toBeCloseTo(3, 10)
+
+    const separated = bradleyTerry(['winner', 'loser'], (winner) => winner === 'winner' ? 100 : 0)
+    expect(separated.every((row) => Number.isFinite(row.strength) && row.strength > 0)).toBe(true)
+  })
+
   test('maps both judgement extremes to whole Beta observations', () => {
     expect(betaContribution(-0.5)).toEqual({ successes: 0, failures: 1 })
     expect(betaContribution(1)).toEqual({ successes: 1, failures: 0 })
@@ -10520,6 +10538,57 @@ describe('detached run collection', () => {
     expect(db().query('SELECT * FROM score WHERE run_id=?').get(id)).toBeNull()
   })
 
+  test('scoring same-tree roots offers a pair and --worse-than records the inverse duel', () => {
+    const first = addRun({ agent: 'codex', job: 'file-question', session: 'orch-test-session', inputTree: 'tree' })
+    const second = addRun({ agent: 'grok', job: 'file-question', session: 'orch-test-session', inputTree: 'tree' })
+    expect(orch('score', String(first), 'full', 'right').out).not.toContain('pair:')
+
+    const offered = orch('score', String(second), 'full', 'right')
+    expect(offered.code).toBe(0)
+    expect(offered.out).toContain(
+      `pair: run ${first} (codex) on the same tree — record with --better-than ${first} | ` +
+      `--worse-than ${first} | --same-as ${first}`,
+    )
+    expect(orch('score', String(second), 'full', 'right', '--worse-than', String(first)).code).toBe(0)
+    expect(db().query(
+      'SELECT winner_run_id, loser_run_id FROM duel',
+    ).all()).toEqual([{ winner_run_id: first, loser_run_id: second }])
+    expect(orch('pending').out).not.toContain(`--same-as ${first}`)
+  })
+
+  test('--same-as marks a scored pair compared without adding a duel', () => {
+    const first = addRun({ agent: 'codex', job: 'file-question', session: 'orch-test-session', inputTree: 'tie-tree' })
+    const second = addRun({ agent: 'grok', job: 'file-question', session: 'orch-test-session', inputTree: 'tie-tree' })
+    expect(orch('score', String(first), 'full', 'right').code).toBe(0)
+    expect(orch('score', String(second), 'full', 'right', '--same-as', String(first)).code).toBe(0)
+    expect(db().query('SELECT COUNT(*) n FROM duel').get()).toEqual({ n: 0 })
+    expect(db().query('SELECT run_a_id, run_b_id FROM compared_pair').all())
+      .toEqual([{ run_a_id: first, run_b_id: second }])
+    expect(orch('pending').out).not.toContain(`--same-as ${first}`)
+  })
+
+  test('inline roots with the same prompt hash are offered as partners', () => {
+    const first = addRun({ agent: 'codex', job: 'summarize', session: 'orch-test-session' })
+    const second = addRun({ agent: 'grok', job: 'summarize', session: 'orch-test-session' })
+    expect(orch('score', String(first), 'full', 'right').code).toBe(0)
+    const scored = orch('score', String(second), 'full', 'right')
+    expect(scored.code).toBe(0)
+    expect(scored.out).toContain(`pair: run ${first} (codex) on the same tree`)
+  })
+
+  test('stats reports Bradley-Terry strengths once a job reaches MIN_SAMPLE duels', () => {
+    for (let i = 0; i < MIN_SAMPLE; i++) {
+      const winner = addRun({ agent: 'codex', job: 'craft', session: 'orch-test-session' })
+      const loser = addRun({ agent: 'grok', job: 'craft', session: 'orch-test-session' })
+      recordDuels(winner, [loser], 'orch-test-session', new Date().toISOString())
+    }
+    const stats = orch('stats', '--job', 'craft')
+    expect(stats.code).toBe(0)
+    expect(stats.out).toContain(`craft Bradley-Terry strengths (${MIN_SAMPLE} duels)`)
+    expect(stats.out).toContain('codex')
+    expect(stats.out).not.toContain('wins-losses')
+  })
+
   test("score refuses a run whose agent is '(pending)'", () => {
     const id = insert('failed')
     db().query("UPDATE run SET agent='(pending)' WHERE id=?").run(id)
@@ -10892,6 +10961,37 @@ describe('detached run collection', () => {
     expect(r.code).toBe(0)
     expect(r.out).toContain('runs 2, scored 1, unscored 0')
   })
+
+  test('doctor prints latest calibration axes and reminds at age and score thresholds', () => {
+    const calibrated = addRun({ agent: 'codex', job: 'file-question' })
+    db().query(
+      `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
+       VALUES (?,'full','right',?,'claude')`,
+    ).run(calibrated, '2026-01-01T00:00:00.000Z')
+    db().query(
+      `INSERT INTO calibration (run_id, delivery, quality, fidelity, at, session_id)
+       VALUES (?,'full','right',NULL,?,?)`,
+    ).run(calibrated, '2026-01-02T00:00:00.000Z', 'calibration-session')
+
+    const aged = orch('doctor')
+    expect(aged.code).toBe(0)
+    expect(aged.out).toContain('delivery n=1 kappa=n/a ac1=1.000')
+    expect(aged.out).toContain('quality  n=1 kappa=n/a ac1=1.000')
+    expect(aged.out).toContain('recalibrate: 0 scores since last blind check; run orch recalibrate --n 12')
+
+    const recent = new Date().toISOString()
+    db().query('UPDATE calibration SET at=?').run(recent)
+    for (let i = 0; i < 100; i++) {
+      const id = addRun({ agent: 'codex', job: 'file-question' })
+      db().query(
+        `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
+         VALUES (?,'full','right',?,'claude')`,
+      ).run(id, new Date(Date.now() + 1_000 + i).toISOString())
+    }
+    const byCount = orch('doctor')
+    expect(byCount.code).toBe(0)
+    expect(byCount.out).toContain('recalibrate: 100 scores since last blind check; run orch recalibrate --n 12')
+  }, 20_000)
 
   test('doctor lists orphaned run containers and volumes with removal commands', () => {
     const id = addRun({ agent: 'codex', job: 'implement', repo: 'adanim' })
@@ -19720,6 +19820,34 @@ describe('the Stop hook and orch agree on what is unscored', () => {
     for (const clause of UNSCORED_WHERE.split('AND').map((c) => c.trim().replace(/\s+/g, ' '))) {
       expect(hook.replace(/\s+/g, ' ')).toContain(clause)
     }
+  })
+
+  test('the hook raises an unrecorded scored pair once', () => {
+    const first = addRun({ agent: 'codex', job: 'craft', session: 'hook-session', inputTree: 'hook-tree' })
+    const second = addRun({ agent: 'grok', job: 'craft', session: 'hook-session', inputTree: 'hook-tree' })
+    const at = new Date().toISOString()
+    for (const id of [first, second]) {
+      db().query(
+        `INSERT INTO score (run_id, delivery, quality, scored_at)
+         VALUES (?,'full','right',?)`,
+      ).run(id, at)
+    }
+    const hook = new URL('../hooks/score-reminder.py', import.meta.url).pathname
+    const invoke = () => Bun.spawnSync(['python3', hook], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB! },
+      stdin: new TextEncoder().encode(JSON.stringify({ session_id: 'hook-session' })),
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    const offered = invoke()
+    expect(offered.exitCode).toBe(0)
+    expect(JSON.parse(offered.stdout.toString()).reason).toContain(
+      `pair: run ${first} (codex) on the same tree — record with --better-than ${first}`,
+    )
+
+    db().query(
+      'INSERT INTO compared_pair (run_a_id, run_b_id, compared_at) VALUES (?,?,?)',
+    ).run(first, second, at)
+    expect(invoke().stdout.toString()).toBe('')
   })
 })
 
