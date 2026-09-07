@@ -847,6 +847,60 @@ describe('vendor termination markers', () => {
         : { status: 'failed', failure_kind: 'other', exit_code: 1 })
     })
   })
+
+  async function withHangingGrokBin<T>(output: string, fn: (ready: string) => Promise<T>): Promise<T> {
+    const script = join(dir, `DEV-361-hang-${Bun.hash(output).toString(16)}.ts`)
+    const ready = `${script}.ready`
+    writeFileSync(script, `#!/usr/bin/env bun
+process.on('SIGTERM', () => process.exit(143))
+process.stdout.write(${JSON.stringify(output)})
+await Bun.write(${JSON.stringify(ready)}, 'ready\\n')
+setInterval(() => {}, 1_000)
+`)
+    chmodSync(script, 0o755)
+    const grok = AGENTS.grok!
+    const previousBin = grok.bin
+    const previousTimeout = Object.getOwnPropertyDescriptor(grok, 'timeoutMs')!
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      grok.bin = script
+      grok.timeoutMs = 3 * 598
+      return await fn(ready)
+    } finally {
+      grok.bin = previousBin
+      Object.defineProperty(grok, 'timeoutMs', previousTimeout)
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  }
+
+  test.each([
+    ['marker after a complete NDJSON result, killed by our timer', grokStream(
+      JSON.stringify({ type: 'system', subtype: 'init', session_id: 'wall-a' }),
+      JSON.stringify({ type: 'result', result: 'I inspected the files.' }),
+      '[API Error: terminated]',
+    )],
+    ['marker alone, killed by our timer', '[API Error: terminated]\n'],
+  ])('records failed/truncated for %s', async (_case, output) => {
+    await withHangingGrokBin(output, async (ready) => {
+      const reserved = addRun({ agent: '(pending)', job: 'file-question', status: 'running' })
+      await expect(run({
+        job: 'file-question', prompt: 'inspect this', cwd: dir,
+        agent: 'grok', reserveId: reserved, noFailover: true,
+      })).rejects.toThrow('[API Error: terminated]')
+
+      expect(existsSync(ready)).toBe(true)
+      expect(db().query(
+        'SELECT status, failure_kind, error, exit_code FROM run WHERE id=?',
+      ).get(reserved)).toEqual({
+        status: 'failed', failure_kind: 'truncated',
+        error: expect.stringContaining('[API Error: terminated]'), exit_code: 143,
+      })
+      expect(candidates('file-question').find((candidate) => candidate.agent === 'grok'))
+        .toMatchObject({ evidence: 0 })
+    })
+  })
 })
 
 describe('the live ask channel always answers', () => {

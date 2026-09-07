@@ -2791,6 +2791,17 @@ export async function run(opts: {
       status = 'failed'
       error = `response truncated at output ceiling (${reply!.stopReason})`
       failureKind = 'truncated'
+    } else if (
+      hasVendorTerminationMarker(stdout) || hasVendorTerminationMarker(stderr)
+    ) {
+      // The marker is a fact about the raw stream. parseReply strips it from
+      // grok NDJSON, and replyError / isNonAnswer would stamp `other` on what
+      // remains — which counts as routing evidence. truncated does not.
+      // Checked before the timeout branches: the vendor already said it
+      // stopped; our timer firing afterwards is how long we then waited.
+      status = 'failed'
+      error = errorTail(hasVendorTerminationMarker(stdout) ? stdout : stderr)
+      failureKind = 'truncated'
     } else if (timedOut && completedReplyAtTimeout) {
       /**
        * IT FINISHED, AND THEN WE KILLED IT.
@@ -2822,15 +2833,6 @@ export async function run(opts: {
       status = 'failed'
       error = `no reply within ${Math.round(boundMs / 60_000)}m; ${name} was killed`
       failureKind = 'timeout'
-    } else if (
-      hasVendorTerminationMarker(stdout) || hasVendorTerminationMarker(stderr)
-    ) {
-      // The marker is a fact about the raw stream. parseReply strips it from
-      // grok NDJSON, and replyError / isNonAnswer would stamp `other` on what
-      // remains — which counts as routing evidence. truncated does not.
-      status = 'failed'
-      error = errorTail(hasVendorTerminationMarker(stdout) ? stdout : stderr)
-      failureKind = 'truncated'
     } else if (replyError) {
       status = 'failed'
       error = errorTail(replyError)
