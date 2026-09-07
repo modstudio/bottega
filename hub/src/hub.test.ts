@@ -17,7 +17,7 @@ const { commentTask, createTask, createTaskDocument, duplicateCandidates, duplic
 const { chainVendorTokens, executionSpans, ingestRuns } = await import('./ingest/runs.ts')
 const { listOpenRulings, rulingsPayload, rulingsStaleAfter } = await import('./rulings.ts')
 const { runsSince } = await import('./collect.ts')
-const { boardTasks, stripWindow } = await import('./query.ts')
+const { boardTasks, stripWindow, endMs } = await import('./query.ts')
 const { clearOrchCache, view } = await import('./serve.ts')
 
 afterEach(clearOrchCache)
@@ -1017,27 +1017,73 @@ describe('local task tracker', () => {
 })
 
 describe('heterogeneous work rows', () => {
-  test('the windowed strip preserves the legacy interval row groups', () => {
+  test('the windowed strip returns the same rows as the unfiltered task join', () => {
     const task = createTask({ project: 'workshop', title: 'Strip window fixture' })
     db().query(
       `INSERT INTO interval
-        (task_key, project, source, start_at, end_at, ref, open)
-       VALUES (?, 'workshop', 'claude', ?, ?, 'strip:task', 0),
-              (NULL, 'alpha', 'orch', ?, ?, 'strip:untracked', 0)`,
+        (task_key, project, source, start_at, end_at, ref, open, claude_tokens)
+       VALUES (?, 'workshop', 'claude', ?, ?, 'strip:task', 0, 11),
+              (NULL, 'alpha', 'orch', ?, ?, 'strip:untracked', 0, 0),
+              (?, 'workshop', 'claude', ?, ?, 'strip:outside', 0, 99)`,
     ).run(task.key,
       '2031-01-02T10:00:00.000Z', '2031-01-02T11:00:00.000Z',
-      '2031-01-02T10:30:00.000Z', '2031-01-02T11:30:00.000Z')
+      '2031-01-02T10:30:00.000Z', '2031-01-02T11:30:00.000Z',
+      task.key,
+      '2030-01-01T00:00:00.000Z', '2030-01-01T01:00:00.000Z')
     const from = '2031-01-02T09:00:00.000Z'
     const to = '2031-01-02T12:00:00.000Z'
-    const legacyGroups = (db().query<{ task_key: string | null; project: string | null }, [string, string]>(
-      `SELECT DISTINCT task_key, project FROM interval
-        WHERE end_at >= ? AND start_at < ? ORDER BY task_key, project`,
-    ).all(from, to)).map((row) => `${row.task_key ?? '(untracked)'}:${row.project}`)
-    const currentGroups = stripWindow(from, to).tasks
-      .map((row) => `${row.key ?? '(untracked)'}:${row.project}`)
-      .sort()
+    type LegacyInterval = {
+      task_key: string | null; project: string | null; source: string
+      start_at: string; end_at: string; open: number; claude_tokens: number
+    }
+    const intervals = db().query<LegacyInterval, [string, string]>(
+      `SELECT task_key, project, source, start_at, end_at, open, claude_tokens
+         FROM interval WHERE end_at >= ? AND start_at < ? ORDER BY start_at`,
+    ).all(from, to)
+    const meta = new Map(
+      db().query<{
+        key: string; project: string; title: string | null
+        status_category: string | null; source: string | null
+      }, []>(
+        `SELECT key, project, title, status_category, source FROM task`,
+      ).all().map((row) => [row.key, row]),
+    )
+    const groups = new Map<string, LegacyInterval[]>()
+    for (const row of intervals) {
+      const id = row.task_key ?? `\0unattributed:${row.project ?? 'unknown'}`
+      const list = groups.get(id) ?? []
+      list.push(row)
+      groups.set(id, list)
+    }
+    const legacy = [...groups.entries()].map(([id, list]) => {
+      const key = id.startsWith('\0') ? null : id
+      const taskRow = key ? meta.get(key) : undefined
+      return {
+        key,
+        project: taskRow?.project ?? list[0]!.project,
+        title: taskRow?.title ?? null,
+        statusCategory: taskRow?.status_category ?? null,
+        source: taskRow?.source ?? (key ? 'git' : null),
+        engagedMs: engagedMs(list.map((row) => ({
+          start: new Date(row.start_at).getTime(), end: endMs(row),
+        }))),
+        claudeTokens: list.reduce((sum, row) => sum + row.claude_tokens, 0),
+        intervals: list.length,
+      }
+    }).sort((a, b) => `${a.key}:${a.project}`.localeCompare(`${b.key}:${b.project}`))
+    const current = stripWindow(from, to).tasks.map((row) => ({
+      key: row.key,
+      project: row.project,
+      title: row.title,
+      statusCategory: row.statusCategory,
+      source: row.source,
+      engagedMs: row.engagedMs,
+      claudeTokens: row.claudeTokens,
+      intervals: row.intervals,
+    })).sort((a, b) => `${a.key}:${a.project}`.localeCompare(`${b.key}:${b.project}`))
 
-    expect(currentGroups).toEqual(legacyGroups)
+    expect(current).toEqual(legacy)
+    expect(current).toHaveLength(2)
   })
 
   test('row assembly attaches capabilities and the source filter narrows before serving', async () => {
