@@ -1,9 +1,12 @@
+import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
-import { readdirSync, readFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CanonBudgetError, JOBS, compilePack, dir, setDoc, upsertProject } from '../test/fixture.ts'
 import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from './pack-budget.ts'
 import { checkPackBudget } from '../scripts/check-pack-budget.ts'
+import { applyMigrations, MIGRATIONS_FOLDER, migrationJournal } from './migrations.ts'
 
 const ROOT = new URL('../..', import.meta.url).pathname.replace(/\/$/, '')
 
@@ -63,5 +66,51 @@ describe('canon pack budget', () => {
     }
     expect(() => compilePack({ job: 'understand', cwd: dir })).not.toThrow()
     JOBS.understand!.packBytes = old
+  })
+
+  const script = join(ROOT, 'orchestrator/scripts/check-pack-budget.ts')
+  const runBudget = (orchDb: string | undefined) => Bun.spawnSync(
+    [process.execPath, script],
+    {
+      env: { ...process.env, ...(orchDb === undefined ? {} : { ORCH_DB: orchDb }) },
+      stdout: 'pipe', stderr: 'pipe',
+    },
+  )
+
+  test('the CLI reads a current store in place and says so', () => {
+    const result = runBudget(process.env.ORCH_DB)
+    expect(result.exitCode, result.stderr.toString()).toBe(0)
+    expect(result.stdout.toString()).toContain('canon pack budget: reading live store in place (read-only)')
+    expect(result.stdout.toString()).toContain('canon pack budget ok')
+  })
+
+  test('the CLI mints a fixture store when there is no live store', () => {
+    const result = runBudget(join(tmpdir(), 'orch-pack-budget-missing', 'orch.db'))
+    expect(result.exitCode, result.stderr.toString()).toBe(0)
+    expect(result.stdout.toString()).toContain('canon pack budget: no live store; checking fixture-minted store')
+    expect(result.stdout.toString()).toContain('canon pack budget ok')
+  })
+
+  test('the CLI copies a behind live store, migrates the copy, and checks packs there', () => {
+    const folder = mkdtempSync(join(tmpdir(), 'orch-pack-behind-journal-'))
+    mkdirSync(join(folder, 'meta'))
+    const prefix = migrationJournal().slice(0, -1)
+    for (const entry of prefix) {
+      copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
+    }
+    writeFileSync(join(folder, 'meta', '_journal.json'), JSON.stringify({
+      version: '7', dialect: 'sqlite', entries: prefix,
+    }))
+    const store = join(folder, 'behind.db')
+    const d = new Database(store)
+    d.exec('PRAGMA foreign_keys=ON')
+    applyMigrations(d, folder)
+    d.close()
+    const result = runBudget(store)
+    expect(result.exitCode, result.stderr.toString()).toBe(0)
+    expect(result.stdout.toString()).toContain(
+      'canon pack budget: copied live store, migrated the copy, checking packs there',
+    )
+    expect(result.stdout.toString()).toContain('canon pack budget ok')
   })
 })
