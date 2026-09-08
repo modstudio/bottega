@@ -17,6 +17,7 @@ import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
 import { JOBS } from './jobs.ts'
 import { projectAt, projectByName } from './projects.ts'
 import { compileBrief } from './canon.ts'
+import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from './pack-budget.ts'
 
 export { DOC_SCOPES, type DocScope }
 
@@ -57,7 +58,22 @@ export type DocRevision = {
 export type DocRevisionMetadata = Omit<DocRevision, 'title' | 'body' | 'delivery' | 'session_id' | 'doc_id' | 'scope' | 'subject' | 'slug'> & {
   bytes: number
 }
-export type DocWriteContext = { author?: string; reason: string }
+export type DocWriteContext = { author?: string; reason: string; forceInject?: string }
+
+function assertInjectSize(input: { body: string; delivery?: 'inject' | 'demand'; forceInject?: string }): void {
+  if (input.delivery !== 'inject') return
+  const bytes = Buffer.byteLength(input.body)
+  if (bytes <= MAX_INJECT_DOC_BYTES) return
+  if (input.forceInject?.trim()) return
+  const current = db().query("SELECT COALESCE(MAX(bytes), 0) AS bytes FROM canon_pack").get() as { bytes: number }
+  const headroom = DEFAULT_PACK_BYTES - current.bytes
+  throw new Error(
+    `inject document is ${bytes} bytes; threshold is ${MAX_INJECT_DOC_BYTES} bytes; ` +
+    `current pack is ${current.bytes} bytes with ${headroom} bytes headroom\n` +
+    'invariant: oversized narrative belongs on demand so an accepted write cannot break the canon pack gate\n' +
+    'cleared by: use --delivery demand, shorten the document, or pass --force-inject "<reason>"',
+  )
+}
 
 export type DocListFilters = {
   scope?: string
@@ -213,6 +229,8 @@ function setDocWithOp(input: {
   writableDb()
   validate(input.scope, input.subject, input.slug)
   writeIdentity(input)
+  const prior = getDoc(input.scope, input.subject, input.slug)
+  assertInjectSize({ ...input, delivery: input.delivery ?? prior?.delivery ?? 'inject' })
   return writeTransaction(() => {
     const existing = getDoc(input.scope, input.subject, input.slug)
     const at = nowIso()

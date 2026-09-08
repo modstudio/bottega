@@ -148,7 +148,8 @@ export function jobBoundInstructionForContract(j: Job): string {
     `incrementally to a named file under $ORCH_SCRATCH rather than holding them only in the final reply.`
 }
 
-export const DEFAULT_PACK_BYTES = 96 * 1024
+export { DEFAULT_PACK_BYTES } from './pack-budget.ts'
+import { DEFAULT_PACK_BYTES } from './pack-budget.ts'
 
 /**
  * A short bounded errand: one question, a handful of files, an answer.

@@ -2152,7 +2152,9 @@ switch (cmd) {
       if (delivery !== undefined && delivery !== 'inject' && delivery !== 'demand') {
         throw new Error('--delivery must be inject or demand')
       }
-      const doc = setDoc({ scope, subject, slug, title, body, reason, author: flag('author'),
+      const forceInject = flag('force-inject')
+      if (has('force-inject') && !forceInject?.trim()) throw new Error('--force-inject requires a non-empty reason')
+      const doc = setDoc({ scope, subject, slug, title, body, reason, author: flag('author'), forceInject,
         delivery: delivery as 'inject' | 'demand' | undefined })
       const { checkDoc, repoRootForDoc } = await import('./canon.ts')
       const root = repoRootForDoc(doc)

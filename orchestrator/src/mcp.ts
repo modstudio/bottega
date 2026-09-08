@@ -349,12 +349,14 @@ export function createDocsMcpServer(): McpServer {
       scope: z.string(), subject: z.string().nullable().optional(), slug: z.string(),
       title: z.string(), body: z.string(),
       delivery: z.enum(['inject', 'demand']).optional(),
+      force_inject: z.string().trim().min(1).optional()
+        .describe('Required justification when an injected document exceeds the write-time size threshold.'),
       reason: z.string({ error: 'reason is required: explain why this operator doc is changing' }).trim()
         .min(1, 'reason is required: explain why this operator doc is changing'),
       author: z.string().trim().min(1).optional(),
     },
-  }, async ({ scope, subject, slug, title, body, delivery, reason, author }) => {
-    const doc = setDoc({ scope, subject: subject ?? null, slug, title, body, delivery, reason, author })
+  }, async ({ scope, subject, slug, title, body, delivery, force_inject, reason, author }) => {
+    const doc = setDoc({ scope, subject: subject ?? null, slug, title, body, delivery, forceInject: force_inject, reason, author })
     const root = repoRootForDoc(doc)
     return text({ ...doc, warnings: root ? checkDoc(body, { repoRoot: root }) : [] })
   })

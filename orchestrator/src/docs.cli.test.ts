@@ -214,7 +214,7 @@ describe('scoped operator docs', () => {
   })
 
   test('brief has its own 64 KiB refusal', () => {
-    setDoc({ scope: 'global', subject: null, slug: 'too-big', title: 'Large', body: 'x'.repeat(70 * 1024) })
+    setDoc({ scope: 'global', subject: null, slug: 'too-big', title: 'Large', body: 'x'.repeat(70 * 1024), forceInject: 'exercise brief ceiling' })
     expect(() => compileBrief(dir)).toThrow(CanonBudgetError)
   })
 
@@ -415,7 +415,7 @@ describe('scoped operator docs', () => {
     const bad = invoke()
     expect(bad.exitCode).toBe(1)
     expect(JSON.parse(bad.stdout.toString())).toMatchObject({
-      pack: { job: 'understand', bytes: expect.any(Number), budgetBytes: 96 * 1024 },
+      pack: { job: 'understand', bytes: expect.any(Number), budgetBytes: 64 * 1024 },
       findings: [{ kind: 'orch-command', token: 'orch nosuch' }],
       numericLiterals: [expect.objectContaining({
         source: 'register:canon-cli notes', numeral: '9,999', classification: 'RESTATED',
