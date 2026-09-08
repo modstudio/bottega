@@ -129,6 +129,16 @@ repository run. Jobs whose
 entire context is inline, including `summarize` and `review-lens-inline`, create
 no worktree.
 
+**A registered main checkout stays clean; work happens in a worktree.** Before
+a run is created for a project, dispatch refreshes that project's main index
+and refuses tracked modifications, naming the dirty paths and the worktree
+directory to use instead (both anchored lines). Untracked files warn and do
+not block; ignored files are silent. Default on; a project opts out with
+`{"requireCleanMain": false}` in its register settings. Resumes skip the check.
+The known end state is a bare main with trunk as an ordinary worktree; that is
+recorded as `orch doc show bare-main-end-state --scope project --subject bottega`
+and is not built here.
+
 A review agent may edit and execute tests to verify a hypothesis. Those edits
 are scratch evidence, never a proposed patch: the review's findings are its
 product, and a review worktree diff must not be landed. Implement and fix agents
@@ -2097,3 +2107,31 @@ too. The repo's `.githooks/commit-msg` refuses the same patterns for any commit
 made outside the tool. The harness appends these trailers by default and will
 keep trying; the rule is the house's, and the hook is what makes it hold.
 Enable the git side once per clone with `git config core.hooksPath .githooks`.
+
+**Main-checkout edits are refused in the architect harness.**
+`hooks/protect-main-checkout.py` is a Claude Code `PreToolUse` hook on `Write`,
+`Edit` and `NotebookEdit` only. It denies a tracked-file edit inside any
+registered main checkout and names the worktree to use instead (both anchored
+lines). It does not run on Bash, so landings, orch and ordinary builds are not
+blocked. A project that declared `{"requireCleanMain": false}` is exempt, same
+as dispatch. Fail-open on a missing database, a malformed payload, or git
+failure. This is harness-specific and lives here, not in the root `AGENTS.md`.
+Register it beside the other hooks with an absolute path in Claude settings:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/absolute/path/to/bottega/orchestrator/hooks/protect-main-checkout.py"
+          }
+        ]
+      }
+    ]
+  }
+}
+```

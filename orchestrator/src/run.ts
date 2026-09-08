@@ -51,7 +51,7 @@ import {
   CALIBRATION_SUFFIX_RESERVE_BYTES, calibrationLine, cleanReviewEvidence,
   parseReviewOutput, recordReview, reviewCalibration,
 } from './review.ts'
-import { assertRegisterBranches, createHasPlaceholder, projectAt, projectByName, projects, stackAt,
+import { assertMainCheckoutClean, assertRegisterBranches, createHasPlaceholder, projectAt, projectByName, projects, stackAt,
          validateStoredProjectSettings } from './projects.ts'
 import { compilePack, recordPack } from './canon.ts'
 import { seedGuidance } from './args.ts'
@@ -625,6 +625,14 @@ export function preflightMcp(opts: {
   if (why && mode === 'require') throw new Error(why)
 }
 
+const warnedMainCheckouts = new Set<string>()
+
+function warnMainCheckoutUntracked(path: string, warning: string): void {
+  if (warnedMainCheckouts.has(path)) return
+  warnedMainCheckouts.add(path)
+  console.error(warning)
+}
+
 /**
  * Everything knowable BEFORE a row exists, checked where no row exists yet.
  *
@@ -655,6 +663,13 @@ export function preflight(
       `refusing to delegate at depth ${depth()}: this process is itself a delegated agent. ` +
         'Answer the question with the tools you have, or hand it back to the caller.',
     )
+  }
+  if (!reusesWorktree) {
+    const named = repo?.trim() ? projectByName(repo) : projectAt(cwd)
+    if (named) {
+      const warning = assertMainCheckoutClean(named)
+      if (warning) warnMainCheckoutUntracked(named.path, warning)
+    }
   }
   const j = job(jobName)
   resolveReviewTarget(jobName, cwd, reviewRef, carry)

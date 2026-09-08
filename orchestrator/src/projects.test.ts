@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, readFileSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { dbNameFor, recipeNotes, runRecipe } from '../test/fixture.ts'
+import { dbNameFor, hermeticGitEnv, recipeNotes, runRecipe } from '../test/fixture.ts'
 import { provisionDb } from './recipe.ts'
-import { undeclaredCommitHooks, validateProjectSettings, validateStoredProjectSettings } from './projects.ts'
+import {
+  MAIN_CHECKOUT_INVARIANT, assertMainCheckoutClean, inspectMainCheckout, mainCheckoutWorktreeHint,
+  undeclaredCommitHooks, validateProjectSettings, validateStoredProjectSettings,
+} from './projects.ts'
 
 describe('a project can declare a worktree instead of writing one', () => {
   test('MCP server and probe declarations have actionable narrow shapes', () => {
@@ -123,5 +126,113 @@ describe('commit hook cost', () => {
     expect(undeclaredCommitHooks(project)).toContain('gate undeclared')
     expect(undeclaredCommitHooks({ ...project, settings: { gate: 'bun test' } })).toBeNull()
     rmSync(path, { recursive: true, force: true })
+  })
+})
+
+describe('main checkout cleanliness', () => {
+  const git = (cwd: string, ...args: string[]) => {
+    const result = Bun.spawnSync(['git', ...args], {
+      cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+    return result.stdout.toString().trim()
+  }
+  const scratch = () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-main-clean-'))
+    git(repo, 'init', '-b', 'main')
+    git(repo, 'config', 'user.email', 'orch-test@example.invalid')
+    git(repo, 'config', 'user.name', 'Orch Test')
+    writeFileSync(join(repo, 'tracked.txt'), 'fixture\n')
+    writeFileSync(join(repo, '.gitignore'), 'ignored.txt\n')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-m', 'fixture')
+    return repo
+  }
+  const project = (repo: string, settings: Record<string, unknown> = {}) => ({
+    id: 1, name: 'clean-main', path: repo, stack: null, canon: false, settings,
+  })
+
+  test('requireCleanMain must be a boolean when declared', () => {
+    expect(validateProjectSettings({ requireCleanMain: false })).toEqual([])
+    expect(validateProjectSettings({ requireCleanMain: true })).toEqual([])
+    expect(validateProjectSettings({ requireCleanMain: 'false' as any }))
+      .toEqual(['requireCleanMain must be a boolean'])
+  })
+
+  test('a clean checkout is silent', () => {
+    const repo = scratch()
+    try {
+      expect(inspectMainCheckout(repo)).toEqual({ dirtyTracked: [], untracked: [] })
+      expect(assertMainCheckoutClean(project(repo))).toBeNull()
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a tracked modification refuses, names the path, and carries both anchored lines', () => {
+    const repo = scratch()
+    try {
+      writeFileSync(join(repo, 'tracked.txt'), 'dirty\n')
+      expect(inspectMainCheckout(repo)).toEqual({ dirtyTracked: ['tracked.txt'], untracked: [] })
+      expect(() => assertMainCheckoutClean(project(repo))).toThrow(MAIN_CHECKOUT_INVARIANT)
+      try {
+        assertMainCheckoutClean(project(repo))
+      } catch (error) {
+        const text = String(error)
+        expect(text).toContain(`main checkout ${repo} has tracked modifications: tracked.txt`)
+        expect(text).toContain(`work from a worktree under ${mainCheckoutWorktreeHint(repo)} instead`)
+        expect(text).toMatch(/^invariant: .+$/m)
+        expect(text).toContain(`cleared by: git -C ${repo} stash push -- tracked.txt`)
+      }
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('an untracked file warns and does not refuse', () => {
+    const repo = scratch()
+    try {
+      writeFileSync(join(repo, 'scratch.db'), 'untracked\n')
+      expect(inspectMainCheckout(repo)).toEqual({ dirtyTracked: [], untracked: ['scratch.db'] })
+      expect(assertMainCheckoutClean(project(repo))).toContain('scratch.db')
+      expect(assertMainCheckoutClean(project(repo))).toContain('they do not block dispatch')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('an ignored file is silent', () => {
+    const repo = scratch()
+    try {
+      writeFileSync(join(repo, 'ignored.txt'), 'ignored\n')
+      expect(inspectMainCheckout(repo)).toEqual({ dirtyTracked: [], untracked: [] })
+      expect(assertMainCheckoutClean(project(repo))).toBeNull()
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a project with the exemption declared is clean while dirty', () => {
+    const repo = scratch()
+    try {
+      writeFileSync(join(repo, 'tracked.txt'), 'dirty\n')
+      expect(assertMainCheckoutClean(project(repo, { requireCleanMain: false }))).toBeNull()
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a registered subdirectory of a git checkout is not a main checkout', () => {
+    const repo = scratch()
+    const nested = join(repo, 'nested')
+    try {
+      mkdirSync(nested)
+      expect(inspectMainCheckout(nested)).toBeNull()
+      expect(assertMainCheckoutClean(project(nested))).toBeNull()
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a stale index (touch without a content change) is clean only because refresh ran', () => {
+    const repo = scratch()
+    try {
+      utimesSync(join(repo, 'tracked.txt'), 1, 1)
+      const stale = Bun.spawnSync(
+        ['git', '-C', repo, 'diff-index', '--quiet', 'HEAD', '--'],
+        { env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' },
+      )
+      expect(stale.exitCode).toBe(1)
+      expect(inspectMainCheckout(repo)).toEqual({ dirtyTracked: [], untracked: [] })
+      expect(assertMainCheckoutClean(project(repo))).toBeNull()
+    } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 })

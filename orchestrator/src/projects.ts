@@ -21,7 +21,7 @@
  * two Laravel apps are the same stack, so a verdict from one is real
  * evidence about the other.
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { scrubbedGitEnv } from '../../shared/git.ts'
 import { db, writableDb, writeTransaction } from './db.ts'
@@ -83,6 +83,13 @@ export type ProjectSettings = {
   productionBranch?: string
   /** The project's complete landing gate, run from the branch worktree. */
   gate?: string
+  /**
+   * Whether dispatch refuses tracked modifications in this project's main
+   * checkout. Default ON: absent and true both enforce it. A project opts out
+   * with `{"requireCleanMain": false}`, the same settings blob it uses for
+   * every other concern it keeps for itself.
+   */
+  requireCleanMain?: boolean
   /** Display colour, for anything that draws a project. */
   color?: string
   /**
@@ -385,6 +392,9 @@ export function validateProjectSettings(settings: ProjectSettings): string[] {
   )) {
     problems.push('secretPaths must be an array of non-empty path strings')
   }
+  if (settings.requireCleanMain !== undefined && typeof settings.requireCleanMain !== 'boolean') {
+    problems.push('requireCleanMain must be a boolean')
+  }
   if (settings.mcpServer !== undefined &&
       (typeof settings.mcpServer !== 'string' || !settings.mcpServer.trim())) {
     problems.push('mcpServer must be a non-empty string')
@@ -470,6 +480,140 @@ export function assertRegisterBranches(project: Pick<Project, 'name' | 'path' | 
     'invariant: the register landing branch agrees with the main checkout and its integration-branch canon\n' +
     `cleared by: check out ${check.landing ?? '<landing-branch>'} in ${project.path} or correct it with orch project set ${project.name} --settings '{"trunk":"<branch>"}'`,
   )
+}
+
+export const MAIN_CHECKOUT_INVARIANT =
+  'A registered main checkout stays clean; work happens in a worktree'
+
+/** Default ON. Only an explicit false is an exemption. */
+export function requiresCleanMain(settings: ProjectSettings): boolean {
+  return settings.requireCleanMain !== false
+}
+
+export function mainCheckoutWorktreeHint(projectPath: string): string {
+  return join(projectPath, '.claude', 'worktrees')
+}
+
+export type MainCheckoutInspection = {
+  dirtyTracked: string[]
+  untracked: string[]
+}
+
+/**
+ * Cleanliness of one main checkout.
+ *
+ * Encoded, not inferred:
+ * - tracked modifications block
+ * - untracked files warn and do not block (orch.db and build output live there)
+ * - ignored files are silent
+ * - submodules: `--ignore-submodules=untracked`, so a dirty gitlink or tracked
+ *   change inside a submodule still blocks, and untracked files inside a
+ *   submodule are not this checkout's untracked set
+ *
+ * Commands, in order: `git update-index -q --refresh`, then
+ * `git diff-index --quiet HEAD --`, then `git diff --quiet HEAD --`.
+ * Status-like reads pass `--no-optional-locks`. Every git argv ends with `--`.
+ * The registered path must be the git toplevel; a subdirectory is not a main
+ * checkout and is left alone.
+ */
+export function inspectMainCheckout(projectPath: string): MainCheckoutInspection | null {
+  const toplevel = gitAt(projectPath, ['rev-parse', '--path-format=absolute', '--show-toplevel'])
+  if (toplevel.code !== 0 || !toplevel.stdout.trim()) return null
+  let registered: string
+  let root: string
+  try {
+    registered = realpathSync(projectPath)
+    root = realpathSync(toplevel.stdout.trim())
+  } catch {
+    return null
+  }
+  if (registered !== root) return null
+  gitAt(projectPath, ['update-index', '-q', '--refresh'])
+  const index = gitAt(projectPath, [
+    'diff-index', '--quiet', 'HEAD', '--ignore-submodules=untracked', '--',
+  ])
+  const work = gitAt(projectPath, [
+    'diff', '--quiet', 'HEAD', '--ignore-submodules=untracked', '--',
+  ])
+  if (!isQuietResult(index) && !isQuietResult(work)) return null
+  const dirty = isDirtyQuiet(index) || isDirtyQuiet(work)
+  const dirtyTracked = dirty ? uniquePaths([
+    ...nulPaths(gitAt(projectPath, [
+      'diff-index', '--name-only', '-z', 'HEAD', '--ignore-submodules=untracked', '--',
+    ]).stdout),
+    ...nulPaths(gitAt(projectPath, [
+      'diff', '--name-only', '-z', 'HEAD', '--ignore-submodules=untracked', '--',
+    ]).stdout),
+  ]) : []
+  if (dirty && !dirtyTracked.length) dirtyTracked.push('(tracked modifications)')
+  const status = gitAt(projectPath, [
+    'status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=untracked', '--',
+  ])
+  return { dirtyTracked, untracked: porcelainUntracked(status.stdout) }
+}
+
+export function mainCheckoutRefusal(
+  project: Pick<Project, 'name' | 'path'>, dirtyTracked: string[],
+): string {
+  const hint = mainCheckoutWorktreeHint(project.path)
+  return (
+    `${project.name}: main checkout ${project.path} has tracked modifications: ${dirtyTracked.join(', ')}\n` +
+    `work from a worktree under ${hint} instead\n` +
+    `invariant: ${MAIN_CHECKOUT_INVARIANT}\n` +
+    `cleared by: git -C ${project.path} stash push -- ${dirtyTracked.join(' ')}`
+  )
+}
+
+/** Throws on tracked dirt. Returns an untracked warning, or null when silent. */
+export function assertMainCheckoutClean(
+  project: Pick<Project, 'name' | 'path' | 'settings'>,
+): string | null {
+  if (!requiresCleanMain(project.settings)) return null
+  const inspection = inspectMainCheckout(project.path)
+  if (!inspection) return null
+  if (inspection.dirtyTracked.length) {
+    throw new Error(mainCheckoutRefusal(project, inspection.dirtyTracked))
+  }
+  if (!inspection.untracked.length) return null
+  const hint = mainCheckoutWorktreeHint(project.path)
+  return (
+    `! ${project.name}: main checkout ${project.path} has untracked files: ${inspection.untracked.join(', ')}\n` +
+    `  they do not block dispatch; work from a worktree under ${hint}`
+  )
+}
+
+type GitResult = { code: number; stdout: string }
+
+function gitAt(path: string, args: string[]): GitResult {
+  if (!existsSync(path)) return { code: 128, stdout: '' }
+  const result = Bun.spawnSync(['git', '-C', path, '--no-optional-locks', ...args], {
+    env: scrubbedGitEnv(), stdout: 'pipe', stderr: 'pipe',
+  })
+  return { code: result.exitCode ?? 128, stdout: result.stdout.toString() }
+}
+
+function isQuietResult(result: GitResult): boolean {
+  return result.code === 0 || result.code === 1
+}
+
+function isDirtyQuiet(result: GitResult): boolean {
+  return result.code === 1
+}
+
+function nulPaths(stdout: string): string[] {
+  return stdout.split('\0').map((path) => path.trim()).filter(Boolean)
+}
+
+function uniquePaths(paths: string[]): string[] {
+  return [...new Set(paths)]
+}
+
+function porcelainUntracked(stdout: string): string[] {
+  const paths: string[] = []
+  for (const record of stdout.split('\0')) {
+    if (record.startsWith('?? ')) paths.push(record.slice(3))
+  }
+  return paths
 }
 
 function configuredHooksPath(projectPath: string): string | null {

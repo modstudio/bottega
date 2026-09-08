@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync, readdirSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync, readdirSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { OrchRunEnvelopeSchema } from '../../shared/orch-contract.ts'
 import { runJson, AGENTS, JOBS, RUNS_DIR, addRun, bootstrapFixtureStore, callerDrift, db, declaredCreate, detachedRunOptions, dir, hermeticGitEnv, setDoc, upsertProject } from '../test/fixture.ts'
+import { MAIN_CHECKOUT_INVARIANT, mainCheckoutWorktreeHint } from './projects.ts'
 
 import { runCollectionDescribeFixture } from '../test/fixture.ts'
 
@@ -344,6 +345,117 @@ test('every --json surface has an enumerated and pinned output contract', () => 
       ]) expect(r.out).toContain(name)
     }
   })
+
+  test('dispatch preflight enforces a clean registered main checkout', () => {
+    const git = (cwd: string, ...args: string[]) => {
+      const result = Bun.spawnSync(['git', ...args], {
+        cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+      return result.stdout.toString().trim()
+    }
+    const makeRepo = (name: string) => {
+      const repo = realpathSync(mkdtempSync(join(tmpdir(), `orch-main-${name}-`)))
+      git(repo, 'init', '-b', 'main')
+      git(repo, 'config', 'user.email', 'orch-test@example.invalid')
+      git(repo, 'config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'tracked.txt'), 'fixture\n')
+      writeFileSync(join(repo, '.gitignore'), 'ignored.txt\n')
+      git(repo, 'add', '.')
+      git(repo, 'commit', '-m', 'fixture')
+      return repo
+    }
+    const binDir = mkdtempSync(join(tmpdir(), 'orch-main-bin-'))
+    writeFileSync(join(binDir, 'codex'), '#!/bin/sh\nprintf answer\n')
+    chmodSync(join(binDir, 'codex'), 0o755)
+    const dispatch = (repo: string, extra: string[] = []) => Bun.spawnSync(
+      [process.execPath, CLI, 'do', 'file-question', 'inspect', '--agent', 'codex', '--porcelain', ...extra],
+      {
+        cwd: repo, stdout: 'pipe', stderr: 'pipe',
+        env: {
+          ...hermeticGitEnv(), PATH: `${binDir}:${process.env.PATH ?? ''}`,
+          ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+        },
+      },
+    )
+    const repos: string[] = []
+    try {
+      const clean = makeRepo('clean')
+      repos.push(clean)
+      upsertProject({ name: 'main-clean', path: clean, canon: false, settings: {} })
+      const ok = dispatch(clean)
+      expect(ok.exitCode, ok.stderr.toString()).toBe(0)
+      expect(ok.stdout.toString()).toMatch(/^\d+\n$/)
+      expect(ok.stderr.toString()).not.toContain('untracked files')
+      expect(ok.stderr.toString()).not.toContain('tracked modifications')
+
+      const dirty = makeRepo('dirty')
+      repos.push(dirty)
+      upsertProject({ name: 'main-dirty', path: dirty, canon: false, settings: {} })
+      writeFileSync(join(dirty, 'tracked.txt'), 'changed\n')
+      const runsBefore = (db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n
+      const refused = dispatch(dirty)
+      expect(refused.exitCode).not.toBe(0)
+      expect(refused.stdout.toString()).toBe('')
+      expect(refused.stderr.toString()).toContain('tracked.txt')
+      expect(refused.stderr.toString()).toContain(`work from a worktree under ${mainCheckoutWorktreeHint(dirty)} instead`)
+      expect(refused.stderr.toString()).toContain(`invariant: ${MAIN_CHECKOUT_INVARIANT}`)
+      expect(refused.stderr.toString()).toContain(`cleared by: git -C ${dirty} stash push -- tracked.txt`)
+      expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(runsBefore)
+
+      const untracked = makeRepo('untracked')
+      repos.push(untracked)
+      upsertProject({ name: 'main-untracked', path: untracked, canon: false, settings: {} })
+      writeFileSync(join(untracked, 'scratch.db'), 'untracked\n')
+      const warned = dispatch(untracked)
+      expect(warned.exitCode, warned.stderr.toString()).toBe(0)
+      expect(warned.stdout.toString()).toMatch(/^\d+\n$/)
+      expect(warned.stderr.toString()).toContain('scratch.db')
+      expect(warned.stderr.toString()).toContain('they do not block dispatch')
+      expect(warned.stderr.toString()).not.toContain('tracked modifications')
+
+      const ignored = makeRepo('ignored')
+      repos.push(ignored)
+      upsertProject({ name: 'main-ignored', path: ignored, canon: false, settings: {} })
+      writeFileSync(join(ignored, 'ignored.txt'), 'ignored\n')
+      const silent = dispatch(ignored)
+      expect(silent.exitCode, silent.stderr.toString()).toBe(0)
+      expect(silent.stdout.toString()).toMatch(/^\d+\n$/)
+      expect(silent.stderr.toString()).not.toContain('ignored.txt')
+      expect(silent.stderr.toString()).not.toContain('untracked files')
+      expect(silent.stderr.toString()).not.toContain('tracked modifications')
+
+      const exempt = makeRepo('exempt')
+      repos.push(exempt)
+      upsertProject({
+        name: 'main-exempt', path: exempt, canon: false,
+        settings: { requireCleanMain: false },
+      })
+      writeFileSync(join(exempt, 'tracked.txt'), 'still dirty\n')
+      const allowed = dispatch(exempt)
+      expect(allowed.exitCode, allowed.stderr.toString()).toBe(0)
+      expect(allowed.stdout.toString()).toMatch(/^\d+\n$/)
+      expect(allowed.stderr.toString()).not.toContain('tracked modifications')
+
+      const stale = makeRepo('stale')
+      repos.push(stale)
+      upsertProject({ name: 'main-stale', path: stale, canon: false, settings: {} })
+      utimesSync(join(stale, 'tracked.txt'), 1, 1)
+      const staleIndex = Bun.spawnSync(
+        ['git', '-C', stale, 'diff-index', '--quiet', 'HEAD', '--'],
+        { env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' },
+      )
+      expect(staleIndex.exitCode).toBe(1)
+      const refreshed = dispatch(stale)
+      expect(refreshed.exitCode, refreshed.stderr.toString()).toBe(0)
+      expect(refreshed.stdout.toString()).toMatch(/^\d+\n$/)
+      expect(refreshed.stderr.toString()).not.toContain('tracked modifications')
+    } finally {
+      rmSync(binDir, { recursive: true, force: true })
+      for (const repo of repos) rmSync(repo, { recursive: true, force: true })
+    }
+  }, 20_000)
 
   test('a missing required dispatch flag exits non-zero without claiming a run', () => {
     upsertProject({
