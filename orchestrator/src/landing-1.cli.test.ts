@@ -488,8 +488,14 @@ test('only bun\'s complete timeout line reports machine load', () => {
         expect(g(repo, 'rev-parse', branch)).toBe(before)
         expect(g(tree, 'write-tree')).toBe(indexBefore)
         const error = await new Response(child.stderr).text()
-        expect(error).toContain(`restored branch tip ${before}`)
-        expect(error).toContain('index to the pre-squash state')
+        if (refusal === 'authorization') {
+          // Unreviewed content is refused at enqueue, before any squash runs.
+          expect(error).toContain('refusing to land unreviewed content')
+          expect(error).not.toContain('restored branch tip')
+        } else {
+          expect(error).toContain(`restored branch tip ${before}`)
+          expect(error).toContain('index to the pre-squash state')
+        }
       } finally { rmSync(repo, { recursive: true, force: true }) }
     })
   }

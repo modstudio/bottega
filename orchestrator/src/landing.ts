@@ -2360,6 +2360,13 @@ function assertEnqueuePreconditions(
   const worktree = worktreesForBranch(repoRoot, branch).find((path) => existsSync(path))
   if (!worktree) return null
   assertLandingWorktreeReady(worktree, branch)
+  // Refuse unreviewed content at enqueue so the caller hears it now rather than
+  // from a refused queue row later. Outdated flags are cleared only inside the
+  // landing, after the squash, where the authorized tip is the one that lands.
+  if (options.unreviewed !== undefined) return null
+  if (!trunk || !gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${trunk}`])) return null
+  const tip = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'])
+  authorizeLanding(project, repoRoot, worktree, branch, tip, trunk, options.runId, options.unreviewed)
   return null
 }
 
