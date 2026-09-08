@@ -568,10 +568,6 @@ export function candidates(
       eligible = false
       why = `not declared for ${jobName}`
     }
-    else if (a.maxConcurrent && runningRunIds.length >= a.maxConcurrent) {
-      eligible = false
-      why = `at capacity (${a.maxConcurrent} running)`
-    }
     else if (cooling && coolingProbeAgent !== name) {
       eligible = false
       why = `vendor ${cooling}; retry after ${COOLDOWN_MIN}m or run a successful probe to clear it`
@@ -607,6 +603,10 @@ export function candidates(
       for (const [cap, need] of Object.entries(j.needs)) {
         if (need && !a.caps[cap as keyof typeof a.caps]) { eligible = false; why = `lacks ${cap}`; break }
       }
+    }
+    if (eligible && a.maxConcurrent && runningRunIds.length >= a.maxConcurrent) {
+      eligible = false
+      why = `at capacity (${a.maxConcurrent} running)`
     }
     return {
       agent: name,
@@ -788,6 +788,11 @@ export type CurrentPolicySelection<T extends CurrentPolicyCandidate> = {
   tied: number
 }
 
+function capacityRefusal(candidate: Pick<Candidate, 'agent' | 'maxConcurrent' | 'runningRunIds'>): string {
+  return `agent ${candidate.agent} is at capacity ` +
+    `(${candidate.maxConcurrent} running: ${candidate.runningRunIds.join(', ')})`
+}
+
 /**
  * The incumbent ranking policy, independent of where its evidence came from.
  *
@@ -869,16 +874,18 @@ export function pick(
       : cands
     const c = probeCandidates.find((x) => x.agent === override)
     if (!c) throw new Error(`unknown agent "${override}"`)
+    if (c.maxConcurrent !== null && c.runningRunIds.length >= c.maxConcurrent) {
+      throw new Error(capacityRefusal(c))
+    }
     if (!c.eligible) throw new Error(`agent "${override}" not eligible for ${jobName}: ${c.why}`)
     return { agent: override, reason: 'explicit --agent' }
   }
   const blockedPreferred = cands.find((candidate) =>
-    candidate.preferred && candidate.maxConcurrent !== null &&
+    candidate.preferred && candidate.why.startsWith('at capacity') && candidate.maxConcurrent !== null &&
     candidate.runningRunIds.length >= candidate.maxConcurrent)
   if (blockedPreferred && !avoid.noWaitCapacity) {
     throw new Error(
-      `preferred agent ${blockedPreferred.agent} is at capacity ` +
-      `(${blockedPreferred.maxConcurrent} running: ${blockedPreferred.runningRunIds.join(', ')})\n` +
+      `${capacityRefusal(blockedPreferred)}\n` +
       'invariant: a preferred local lane waits at its declared capacity instead of silently spending another lane\n' +
       'cleared by: wait for the named runs or pass --no-wait-capacity',
     )

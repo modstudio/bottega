@@ -241,8 +241,27 @@ describe('agent registry', () => {
     expect(() => pick('file-question', undefined, 0, false)).toThrow(
       new RegExp(`at capacity \\(1 running: ${running}\\)`),
     )
+    expect(() => pick('file-question', 'capped-local', 0, false)).toThrow(
+      new RegExp(`at capacity \\(1 running: ${running}\\)`),
+    )
     const fallback = pick('file-question', undefined, 0, false, undefined, { noWaitCapacity: true })
     expect(fallback.agent).not.toBe('capped-local')
+  })
+
+  test('an ineligible preferred row does not trigger the preferred capacity wait', () => {
+    eligibleLocal('wrong-job-local')
+    setAgent('wrong-job-local', {
+      jobs: ['file-question'], preferredJobs: ['file-question'], maxConcurrent: 1,
+    })
+    recordAgentProbe('wrong-job-local', {
+      harness: 'codex', ok: false,
+      reply: { ok: true, output: 'ok' },
+      tool: { ok: false, output: 'missed probe file', toolEvents: 0, statuses: [] },
+      schema: { ok: true, output: '{"status":"ok"}' },
+      contextTokens: 200_000, contextSource: 'declared',
+    })
+    addRun({ agent: 'wrong-job-local', job: 'summarize', status: 'running' })
+    expect(pick('file-question', undefined, 0, false).agent).not.toBe('wrong-job-local')
   })
 })
 
