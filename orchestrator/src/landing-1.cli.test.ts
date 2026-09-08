@@ -1153,6 +1153,39 @@ test('only bun\'s complete timeout line reports machine load', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  test('a binary payload replacement after review changes the stable patch-id', async () => {
+    const branch = 'binary-review'
+    const { repo, trees } = repoWithBranches([branch])
+    const project = 'landing-binary-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const binaryPath = join(trees[branch]!, 'payload.bin')
+      writeFileSync(binaryPath, Buffer.from([0, 1, 2, 3]))
+      g(trees[branch]!, 'add', 'payload.bin')
+      g(trees[branch]!, 'commit', '-m', 'add binary payload')
+      const reviewedTree = g(repo, 'rev-parse', `${branch}^{tree}`)
+      const reviewId = completedReview(project, [reviewedTree], {
+        branch, baseCommit: oldBase, launchCwd: trees[branch]!,
+      })
+      const reviewedPatch = (db().query('SELECT patch_id FROM review WHERE id=?').get(reviewId) as
+        { patch_id: string }).patch_id
+
+      writeFileSync(binaryPath, Buffer.from([0, 9, 8, 7]))
+      g(trees[branch]!, 'add', 'payload.bin')
+      g(trees[branch]!, 'commit', '-m', 'replace binary payload')
+
+      expect(landingReviewCoverage(trees[branch]!)).toContain('invalid (patch-id differs)')
+      const child = childLand(repo, branch, { unreviewed: null })
+      expect(await child.exited).not.toBe(0)
+      expect(await new Response(child.stderr).text()).toContain('invalid (patch-id differs)')
+      expect((db().query('SELECT patch_id FROM review WHERE id=?').get(reviewId) as
+        { patch_id: string }).patch_id).toBe(reviewedPatch)
+      expect(db().query('SELECT outdated_at, outdated_reason FROM review WHERE id=?').get(reviewId))
+        .toEqual({ outdated_at: expect.any(String), outdated_reason: 'patch-id differs' })
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   test('refuses a review when one lens has incomplete carry metadata', async () => {
     const { repo, trees } = repoWithBranches(['partial-metadata-review'])
     const project = 'landing-partial-metadata-review'

@@ -10,6 +10,7 @@ import { job } from './jobs.ts'
 import type { ReviewTier } from './review-tier.ts'
 import { median } from './route.ts'
 import type { CoverageGitRunner, ReviewCoverageInput } from './landing.ts'
+import { changeIdentity } from './change-identity.ts'
 
 const targetGitEnvironment = (repo: string) =>
   (require('./worktree.ts') as typeof import('./worktree.ts')).targetGitEnvironment(repo)
@@ -451,14 +452,15 @@ export function recordReviews(
     if (!run.repo || !run.base_commit || !run.head_commit) return null
     const repo = projectPath(database, run.repo)
     if (!repo) return null
-    const diff = git(repo, ['diff', `${run.base_commit}..${run.head_commit}`])
     const paths = git(repo, ['diff', '--name-only', `${run.base_commit}..${run.head_commit}`])
     const message = git(repo, ['log', '--format=%B', `${run.base_commit}..${run.head_commit}`])
-    if (!diff.ok || !paths.ok || !message.ok) return null
-    const patch = git(repo, ['patch-id', '--stable'], true, diff.stdout)
-    if (!patch.ok) return null
+    if (!paths.ok || !message.ok) return null
+    let patchId: string
+    try {
+      patchId = changeIdentity((args, stdin) => git(repo, args, true, stdin), run.base_commit, run.head_commit)
+    } catch { return null }
     return {
-      patchId: patch.out.split(/\s+/)[0] ?? '',
+      patchId,
       paths: paths.out ? paths.out.split('\n').sort() : [],
       message: message.out,
     }

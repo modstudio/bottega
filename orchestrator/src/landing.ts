@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join, relative } from 'node:path'
 import { spawn } from 'node:child_process'
 import { db, liveRunCount, nowIso, sessionId, tryWriteContention, writableDb, writeTransaction, ROOT } from './db.ts'
 import { reviewInvalidationsSince } from './contention.ts'
+import { changeIdentity, type ChangeIdentityGitResult, type ChangeIdentityGitRunner } from './change-identity.ts'
 import { projectAt, projectByName, type Project } from './projects.ts'
 import { classifyReviewTier, diffNumstat } from './review-tier.ts'
 import {
@@ -841,8 +842,8 @@ export type CoverageVerdict =
   | ({ kind: 'carried'; class: 'trivial-rebase' | 'no-code-change'; resolution: 'pin' | 'walk' } & Omit<ReviewCarry, 'project' | 'branch'>)
   | { kind: 'invalid'; reason: string; resolution?: 'pin' | 'walk' }
 
-export type CoverageGitResult = { ok: boolean; out: string; err: string; stdout: Uint8Array }
-export type CoverageGitRunner = (args: string[], stdin?: Uint8Array) => CoverageGitResult
+export type CoverageGitResult = ChangeIdentityGitResult
+export type CoverageGitRunner = ChangeIdentityGitRunner
 
 function landingCoverageGit(repoRoot: string): CoverageGitRunner {
   return (args, stdin) => {
@@ -903,14 +904,6 @@ function commitForTree(
   return { commit: null, resolution: 'walk' }
 }
 
-function patchId(runner: CoverageGitRunner, from: string, to: string): string {
-  const diff = runner(['diff', `${from}..${to}`])
-  if (!diff.ok) throw new Error(`git diff ${from}..${to} failed: ${diff.err}`)
-  const id = runner(['patch-id', '--stable'], diff.stdout)
-  if (!id.ok) throw new Error(`git patch-id --stable failed: ${id.err}`)
-  return id.out.split(/\s+/)[0] ?? ''
-}
-
 function changedPaths(runner: CoverageGitRunner, from: string, to: string): Set<string> {
   const args = ['diff', '--name-only', `${from}..${to}`]
   const output = coverageOutput(runner(args), args)
@@ -967,8 +960,8 @@ export function reviewCoverageVerdict(
   const trunkPaths = changedPaths(runner, oldBase, newBase)
   const overlap = [...changePaths].filter((path) => trunkPaths.has(path))
   if (overlap.length) return { kind: 'invalid', reason: `overlapping paths: ${overlap.sort().join(', ')}`, resolution: resolved.resolution }
-  const reviewedPatch = review.patchId || patchId(runner, oldBase, reviewedCommit)
-  const candidatePatch = patchId(runner, newBase, tip)
+  const reviewedPatch = review.patchId || changeIdentity(runner, oldBase, reviewedCommit)
+  const candidatePatch = changeIdentity(runner, newBase, tip)
   if (!reviewedPatch || reviewedPatch !== candidatePatch) {
     return { kind: 'invalid', reason: 'patch-id differs', resolution: resolved.resolution }
   }
