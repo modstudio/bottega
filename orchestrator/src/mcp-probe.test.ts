@@ -64,8 +64,11 @@ describe('MCP endpoint allowlist', () => {
 describe('wrong-project refusal', () => {
   test('names the extra servers and ignores orch-ask', () => {
     expect(wrongProjectReason('starship', ['starship', 'orch-ask'])).toBeNull()
-    expect(wrongProjectReason('starship', ['starship', 'alephbeis', 'orch-ask']))
-      .toBe('wrong project: alephbeis')
+    // bottega's tracked .mcp.json lists every project's server beside the required one
+    expect(wrongProjectReason('starship', ['starship', 'stopal', 'alephbeis', 'orch-ask'])).toBeNull()
+    expect(wrongProjectReason('starship', ['alephbeis', 'orch-ask']))
+      .toBe('wrong project: saw alephbeis and not starship')
+    expect(wrongProjectReason('starship', ['orch-ask'])).toBeNull()
   })
 })
 
@@ -314,7 +317,7 @@ cat ${JSON.stringify(reply)}
     writeFileSync(script, `#!/bin/sh
 for arg in "$@"; do
   if [ "$arg" = "doctor" ]; then
-    printf '%s' '{"servers":[{"name":"fixture-project","healthy":true,"checks":[]},{"name":"alephbeis","healthy":true,"checks":[]}]}'
+    printf '%s' '{"servers":[{"name":"alephbeis","healthy":true,"checks":[]}]}'
     exit 0
   fi
 done
@@ -343,7 +346,7 @@ exit 0
       ).get(runId!) as { status: string; mcp_connected: number | null; mcp_error: string }
       expect(row.status).toBe('failed')
       expect(row.mcp_connected).toBe(0)
-      expect(row.mcp_error).toBe('wrong project: alephbeis')
+      expect(row.mcp_error).toBe('wrong project: saw alephbeis and not fixture-project')
       expect(existsSync(join(repo, 'started'))).toBe(false)
     } finally {
       grok.bin = previous
@@ -410,10 +413,14 @@ exit 0
       }
       expect(row.status).toBe('failed')
       expect(row.mcp_connected).toBe(0)
-      expect(row.mcp_error).toBe('wrong project: alephbeis')
+      // The required server is present beside alephbeis, so this is not a
+      // wrong-project tree; the probe fails on the unreachable endpoint and
+      // records every configured name.
+      expect(row.mcp_error).not.toStartWith('wrong project')
       const probe = parseMcpProbe(row.mcp_probe)
       expect(probe?.ok).toBe(false)
-      expect(probe?.error).toBe('wrong project: alephbeis')
+      expect(probe?.error).toBe(row.mcp_error)
+      expect(probe?.namesSeen).toContain('fixture-project')
       expect(probe?.namesSeen).toContain('alephbeis')
       expect(existsSync(join(repo, 'started'))).toBe(false)
     } finally {

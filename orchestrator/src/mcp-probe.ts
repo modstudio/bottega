@@ -73,9 +73,17 @@ export function resolveMcpServerUrl(config: McpServerConfig | undefined): string
   return config?.url ?? null
 }
 
+/**
+ * A tree is the wrong project's only when the REQUIRED server is absent and
+ * another project's server is what the tree sees instead (DEV-194's shape: a
+ * worktree discovering a different .mcp.json). Bottega's tracked .mcp.json
+ * registers every project's server deliberately, so extra names beside a
+ * present required server are not evidence of anything.
+ */
 export function wrongProjectReason(required: string, namesSeen: string[]): string | null {
-  const extra = namesSeen.filter((name) => name && name !== required && !ALLOWED_EXTRA_SERVERS.has(name))
-  return extra.length ? `wrong project: ${extra.join(', ')}` : null
+  if (namesSeen.includes(required)) return null
+  const extra = namesSeen.filter((name) => name && !ALLOWED_EXTRA_SERVERS.has(name))
+  return extra.length ? `wrong project: saw ${extra.join(', ')} and not ${required}` : null
 }
 
 function encodeMessage(payload: unknown): Buffer {

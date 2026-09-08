@@ -2567,8 +2567,9 @@ export async function run(opts: {
           probeTool,
           wrap,
         })
-        const mismatched = wrongProjectReason(mcpServerName, probe.namesSeen)
-        const recorded = mismatched ? { ...probe, ok: false, error: mismatched } : probe
+        // The probe runs only when the required server is in .mcp.json, so the
+        // wrong-project question is already answered; the doctor path asks it.
+        const recorded = probe
         db().query('UPDATE run SET mcp_probe=? WHERE id=?').run(storedMcpProbe(recorded), claim.id)
         if (!recorded.ok) {
           mcpConnection = {
