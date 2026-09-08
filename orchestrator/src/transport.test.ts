@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { AGENTS, db, dir, replyFileInstruction, run } from '../test/fixture.ts'
 import { addAgent, recordAgentProbe, removeAgent, setAgent } from './agents.ts'
@@ -219,6 +219,32 @@ describe('ACP transport through run', () => {
       expect(message).toContain('did not match the worker contract')
       expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(runId))
         .toEqual({ status: 'failed', failure_kind: 'contract' })
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
+  test('a missing-file text reply writes the unwrapped answer to output_path', async () => {
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      installFake(() => fakeResult({
+        output: JSON.stringify({ answer: 'plain answer' }), status: 'ok',
+      }))
+      const result = await runAcp()
+      expect(result.status).toBe('ok')
+      expect(result.output).toBe('plain answer')
+      expect(readFileSync(result.outPath, 'utf8')).toBe('plain answer')
+      const printed = Bun.spawnSync([
+        process.execPath, new URL('cli.ts', import.meta.url).pathname, 'result', String(result.id),
+      ], {
+        cwd: dir,
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(printed.exitCode).toBe(0)
+      expect(printed.stdout.toString()).toBe('plain answer\n')
     } finally {
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth

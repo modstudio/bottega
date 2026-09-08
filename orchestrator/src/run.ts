@@ -2867,6 +2867,7 @@ export async function run(opts: {
         const value = JSON.parse(output)
         if (valueMatchesStrictSchema(TEXT_REPLY_SCHEMA, value)) output = value.answer
       } catch { /* Missing-file fallback may be the legacy plain-text result. */ }
+      writeFileSync(outPath, output)
     }
     if (!replyFilePresent && opts.schemaPath) {
       let value: unknown
