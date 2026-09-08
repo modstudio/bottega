@@ -749,7 +749,7 @@ export function pairReasonSql(
   leftRun: string, rightRun: string, leftReview: string, rightReview: string,
 ): string {
   const left = sqlAlias(leftRun)
-  const right = sqlAlias(rightRun)
+  sqlAlias(rightRun)
   const leftChange = sqlAlias(leftReview)
   const rightChange = sqlAlias(rightReview)
   return `CASE
