@@ -21,7 +21,7 @@ import {
 import { pick } from './route.ts'
 import {
   db, nowIso, DB_PATH, sessionId, resolveRootFromLastTurn, tryWriteContention, writableDb, writeTransaction,
-  enableSchemaReload,
+  enableSchemaReload, teardownTerminalRunResources,
 } from './db.ts'
 import { CONNECTION_SCHEMA_INVARIANT } from './migrations.ts'
 import {
@@ -78,7 +78,6 @@ import {
   type TransportName, type TransportStartOpts,
 } from './transport.ts'
 import { teeTransportEvents } from './events.ts'
-import { teardownRunResources } from './docker-resources.ts'
 import { checkpointRun, DEFAULT_CHECKPOINT_MINUTES, latestCheckpoint } from './checkpoint.ts'
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
@@ -1583,6 +1582,7 @@ export function reconcileRun(id: number): string {
       id,
     )
   })
+  teardownTerminalRunResources(db(), id)
   return `reconciled run ${id} as ${snapshot.status}`
 }
 
@@ -2600,6 +2600,7 @@ export async function run(opts: {
          failure_kind=CASE WHEN status='stopped' THEN failure_kind ELSE 'harness' END,
          latency_ms=? WHERE id=?`,
     ).run(why, Date.now() - started, claim.id)
+    teardownTerminalRunResources(db(), claim.id)
     throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
   }
 
@@ -2654,6 +2655,7 @@ export async function run(opts: {
     db().query(
       `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
     ).run(why, Date.now() - started, claim.id)
+    teardownTerminalRunResources(db(), claim.id)
     throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
   }
   const srtSettingsPath = sandboxSelection.profile
@@ -2711,6 +2713,7 @@ export async function run(opts: {
           db().query(
             `UPDATE run SET status='failed', error=?, failure_kind='mcp_unverified', latency_ms=? WHERE id=?`,
           ).run(why, Date.now() - started, claim.id)
+          teardownTerminalRunResources(db(), claim.id)
           throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
         }
         if (!recorded.ok) {
@@ -2729,6 +2732,7 @@ export async function run(opts: {
         db().query(
           `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
         ).run(why, Date.now() - started, claim.id)
+        teardownTerminalRunResources(db(), claim.id)
         throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
       }
     } else {
@@ -2755,6 +2759,7 @@ export async function run(opts: {
           db().query(
             `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
           ).run(why, Date.now() - started, claim.id)
+          teardownTerminalRunResources(db(), claim.id)
           throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
         }
         mcpConnection = { ...mcpConnection, error: `mirror: ${mismatched}` }
@@ -3616,9 +3621,7 @@ export async function run(opts: {
     if (!recorded) {
       throw new Error(`run ${claim.id} disappeared before terminalisation`)
     }
-    if (['ok', 'failed', 'stale', 'stopped'].includes(recorded.status)) {
-      teardownRunResources(claim.id)
-    }
+    teardownTerminalRunResources(db(), claim.id)
     if (recorded.failure_kind === 'quota' || recorded.failure_kind === 'timeout') {
       tryWriteContention({
         resourceKind: 'vendor', resourceKey: name,
@@ -3656,6 +3659,7 @@ export async function run(opts: {
       )
         .run(error, claim.id)
       if (opts.resume) resolveRootFromLastTurn(db(), opts.resume.parent)
+      teardownTerminalRunResources(db(), claim.id)
       console.error(`orch: ${error}`)
     }
   }

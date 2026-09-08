@@ -1,12 +1,17 @@
 import { Database } from 'bun:sqlite'
-import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   DATABASE_RESOLUTION, DB_PATH, missingDatabaseMessage, registeredRepositoryMissingDatabase,
+  resolveRunsDirectory,
 } from './database-location.ts'
+import {
+  dockerRunResources, resourcesForRuns, teardownRunResources, type DockerTeardown,
+} from './docker-resources.ts'
+import { repoRootOf, withCleanupLock, withWorktreeLease } from './worktree.ts'
 import {
   applyMigrations, migrationRefusal, readUserVersion, staleWriteRefusal,
 } from './migrations.ts'
@@ -807,6 +812,115 @@ export function chainScoreJoin(runAlias: string, scoreAlias: string): string {
     `COALESCE(${runAlias}.parent_run_id, ${runAlias}.id)`
 }
 
+export type WorktreeSharerRow = { id: number; status: string; scored: number }
+
+/** The single evidence-owner rule used by cleanup and terminal resource teardown. */
+export function evidenceOwningWorktreeSharers(
+  database: Database, row: { id: number; worktree: string },
+): WorktreeSharerRow[] {
+  const candidates = database.query(
+    `SELECT r.id, COALESCE(r.parent_run_id, r.id) AS root_id,
+            r.status, ${EVIDENCE_CLOSED_SQL} AS scored
+       FROM run r ${chainScoreJoin('r', 's')}
+      WHERE r.worktree = ?
+        AND COALESCE(r.parent_run_id, r.id) <>
+            COALESCE((SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?), ?)
+        AND (r.status NOT IN ('ok','failed','stale','stopped') OR ${EVIDENCE_OPEN_SQL})
+      ORDER BY r.id`,
+  ).all(row.worktree, row.id, row.id) as (WorktreeSharerRow & { root_id: number })[]
+  const roots = new Set<number>()
+  return candidates.flatMap((candidate) => {
+    if (roots.has(candidate.root_id)) return []
+    roots.add(candidate.root_id)
+    return [{ ...candidate, id: candidate.root_id }]
+  })
+}
+
+/** Liveness is any live row on the tree, including another turn in this conversation. */
+export function hasLiveWorktreeSharer(database: Database, worktree: string): boolean {
+  return database.query(
+    "SELECT 1 present FROM run WHERE worktree=? AND status IN ('running','asking') LIMIT 1",
+  ).get(worktree) !== null
+}
+
+export type TerminalDockerTeardown = DockerTeardown & {
+  outcome: 'removed' | 'live-sibling' | 'nothing'
+}
+
+/** Best-effort container reclamation for every terminal transition in a conversation. */
+export function teardownTerminalRunResources(database: Database, runId: number): TerminalDockerTeardown {
+  const nothing = (): TerminalDockerTeardown => ({
+    complete: true, errors: [], removed: 0, skipped: false, outcome: 'nothing',
+  })
+  const row = database.query(
+    'SELECT status, worktree FROM run WHERE id=?',
+  ).get(runId) as { status: string; worktree: string | null } | null
+  if (!row || !['ok', 'failed', 'stale', 'stopped'].includes(row.status)) return nothing()
+  if (row.worktree && hasLiveWorktreeSharer(database, row.worktree)) {
+    return { ...nothing(), skipped: true, outcome: 'live-sibling' }
+  }
+  const ids = database.query(
+    `SELECT id FROM run WHERE COALESCE(parent_run_id, id) =
+      (SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?)`,
+  ).all(runId) as { id: number }[]
+  const inventory = resourcesForRuns(ids.map(({ id }) => id), dockerRunResources())
+  const failures = new Set(inventory.errors)
+  const containerRunIds = new Set(
+    inventory.resources.filter((resource) => resource.kind === 'container')
+      .map((resource) => resource.runId),
+  )
+  let removed = 0
+  let skipped = false
+  const remove = () => {
+    for (const id of containerRunIds) {
+      const result = teardownRunResources(
+        id, inventory,
+        () => !row.worktree || !hasLiveWorktreeSharer(database, row.worktree),
+      )
+      removed += result.removed
+      skipped ||= result.skipped
+      for (const error of result.errors) failures.add(error)
+      if (skipped) break
+    }
+  }
+  if (row.worktree && containerRunIds.size) {
+    const repoRoot = repoRootOf(row.worktree)
+    if (!repoRoot) {
+      failures.add(`Docker teardown unavailable: cannot resolve repository for ${row.worktree}`)
+    } else {
+      const identity = { session: sessionId(), what: `terminal Docker teardown for run ${runId}` }
+      try {
+        withWorktreeLease(repoRoot, row.worktree, identity, () => {
+          withCleanupLock(repoRoot, identity, remove)
+        })
+      } catch (error) {
+        failures.add(`Docker teardown unavailable: ${(error as Error).message}`)
+      }
+    }
+  } else {
+    remove()
+  }
+  if (!inventory.resources.length && inventory.errors.length) {
+    for (const error of inventory.errors) console.error(`orch: ${error}`)
+  }
+  if (failures.size) {
+    try {
+      const path = join(resolveRunsDirectory(DATABASE_RESOLUTION), String(runId), 'events.jsonl')
+      mkdirSync(dirname(path), { recursive: true })
+      appendFileSync(path, `${JSON.stringify({
+        ts: nowIso(), type: 'text', text: `Docker teardown incomplete: ${[...failures].join('; ')}`,
+      })}\n`)
+    } catch { /* teardown remains best-effort even when its durable trace cannot be written */ }
+  }
+  return {
+    complete: failures.size === 0,
+    errors: [...failures],
+    removed,
+    skipped,
+    outcome: skipped ? 'live-sibling' : removed ? 'removed' : 'nothing',
+  }
+}
+
 /** Runs this session made that nobody has judged. */
 export function pendingForSession(sid: string | null) {
   if (!sid) return []
@@ -1083,6 +1197,7 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
         WHERE id IN (${ended.map(() => '?').join(',')})`,
     ).all(...ended) as { id: number }[]
     for (const { id } of roots) resolveRootFromLastTurn(d, id)
+    for (const id of ended) teardownTerminalRunResources(d, id)
   }
   return dead.length + abandonedBootstrap.length
 }

@@ -661,6 +661,33 @@ exec ${JSON.stringify(actualGit)} "$@"
     }
   })
 
+  test('sweep and doctor report terminal resources in a retained tree without removal commands', () => {
+    const project = `retained-resource-${randomUUID()}`
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
+    const tree = mkdtempSync(join(tmpdir(), `orch-${id}-retained-`))
+    db().query('UPDATE run SET worktree=? WHERE id=?').run(tree, id)
+    const docker = fakeDocker([`orch-${id}-web`], [`orch-${id}_${project}-pgdata`])
+    try {
+      const sweep = orchWithEnv(docker.env, 'sweep', '--dry-run')
+      expect(sweep.code).toBe(0)
+      expect(sweep.err).toContain('retained worktree Docker resources: 2')
+      expect(sweep.err).toContain('no removal suggested')
+      expect(sweep.err).not.toContain('docker rm')
+
+      const doctor = Bun.spawnSync([process.execPath, CLI, 'doctor'], {
+        env: { ...process.env, ...docker.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(doctor.exitCode).toBe(0)
+      expect(doctor.stdout.toString()).toContain('docker retained worktree resources  2')
+      expect(doctor.stdout.toString()).toContain('informational, no removal suggested')
+      expect(doctor.stdout.toString()).not.toContain(`docker rm -f orch-${id}-web`)
+    } finally {
+      rmSync(tree, { recursive: true, force: true })
+      rmSync(docker.dir, { recursive: true, force: true })
+    }
+  })
+
   test('an aged no-verdict void reaches reclaim proof rather than the unjudged-evidence guard', () => {
     const old = new Date(Date.now() - 3 * 86_400_000).toISOString()
     const id = addRun({ agent: 'codex', job: 'understand', status: 'ok', startedAt: old })

@@ -12,6 +12,7 @@ import { projectLockState, targetGitEnvironment } from './worktree.ts'
 import { reclaimBranch, reclaimWorktree } from './reclaim.ts'
 import { allInjectChecks, storedPackDrift } from './canon.ts'
 import { idleLabel, idleMsSince, idleWarnMs } from './events.ts'
+import { classifiedDockerResources, dockerRunResources } from './docker-resources.ts'
 
 const HUB = new URL('../../bin/hub', import.meta.url).pathname
 
@@ -259,6 +260,22 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
 
   conditions.push(...deadRunningProcessConditions(clock))
   conditions.push(...idleRunConditions(clock))
+
+  const runDocker = dockerRunResources()
+  errors.push(...runDocker.errors)
+  const dockerOwners = database.query(
+    'SELECT id, repo, worktree, status FROM run',
+  ).all() as { id: number; repo: string | null; worktree: string | null; status: string }[]
+  for (const item of classifiedDockerResources(runDocker.resources, dockerOwners)) {
+    if (item.condition !== 'retained-worktree-resources') continue
+    add({
+      kind: 'retained-worktree-docker-resource', subject: item.resource.name, since: null,
+      severity: 'informational',
+      detail: `${item.resource.kind} belongs to terminal run ${item.resource.runId} in a retained worktree`,
+      action: 'informational; no removal suggested because the retained tree may have been re-served',
+      affectedProject: item.project,
+    })
+  }
 
   const stale = database.query(
     `SELECT id, started_at, error, session_id FROM run WHERE status='stale'`,

@@ -9,7 +9,9 @@ import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, nowIso,
          resolveRootFromLastTurn, chainScoreJoin, chainTerminationAt,
          EVIDENCE_CLOSED_SQL, EVIDENCE_OPEN_SQL, voidedSql, activeSql, runTotals,
          authorizeRunMutation, runMutationActor,
-         auditRunMutation, adoptRunMutation, writeTransaction, tryWriteContention, type RootAuthority } from './db.ts'
+         auditRunMutation, adoptRunMutation, writeTransaction, tryWriteContention,
+         evidenceOwningWorktreeSharers as sharedWorktreeSharers, teardownTerminalRunResources,
+         type RootAuthority } from './db.ts'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync, unlinkSync, openSync, fstatSync, closeSync, constants } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, timingSafeEqual } from 'node:crypto'
@@ -192,10 +194,10 @@ async function loadRoutingBacktest() { routingBacktestModule ??= await import('.
 let dockerRemovalCommand!: typeof import('./docker-resources.ts').dockerRemovalCommand
 let dockerRunResources!: typeof import('./docker-resources.ts').dockerRunResources
 let leakedResourceLines!: typeof import('./docker-resources.ts').leakedResourceLines
-let orphanedDockerResources!: typeof import('./docker-resources.ts').orphanedDockerResources
+let classifiedDockerResources!: typeof import('./docker-resources.ts').classifiedDockerResources
 let orchRunId!: typeof import('./docker-resources.ts').orchRunId
 let resourcesForRuns!: typeof import('./docker-resources.ts').resourcesForRuns
-async function loadDockerResources() { dockerResourcesModule ??= await import('./docker-resources.ts'); ({ dockerRemovalCommand, dockerRunResources, leakedResourceLines, orphanedDockerResources, orchRunId, resourcesForRuns } = dockerResourcesModule) }
+async function loadDockerResources() { dockerResourcesModule ??= await import('./docker-resources.ts'); ({ classifiedDockerResources, dockerRemovalCommand, dockerRunResources, leakedResourceLines, orchRunId, resourcesForRuns } = dockerResourcesModule) }
 
 /**
  * How long `orch do` watches a detached run before handing it back.
@@ -872,22 +874,7 @@ function withCleanupLock<T>(
 function evidenceOwningWorktreeSharers(
   row: { id: number; worktree: string },
 ): WorktreeSharerRow[] {
-  const candidates = db().query(
-    `SELECT r.id, COALESCE(r.parent_run_id, r.id) AS root_id,
-            r.status, ${EVIDENCE_CLOSED_SQL} AS scored
-       FROM run r ${chainScoreJoin('r', 's')}
-      WHERE r.worktree = ?
-        AND COALESCE(r.parent_run_id, r.id) <>
-            COALESCE((SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?), ?)
-        AND (r.status NOT IN ('ok','failed','stale','stopped') OR ${EVIDENCE_OPEN_SQL})
-      ORDER BY r.id`,
-  ).all(row.worktree, row.id, row.id) as (WorktreeSharerRow & { root_id: number })[]
-  const roots = new Set<number>()
-  return candidates.flatMap((candidate) => {
-    if (roots.has(candidate.root_id)) return []
-    roots.add(candidate.root_id)
-    return [{ ...candidate, id: candidate.root_id }]
-  })
+  return sharedWorktreeSharers(db(), row)
 }
 
 /** One removed tree clears every pointer held by the same conversation. */
@@ -5118,9 +5105,18 @@ switch (cmd) {
     const owners = db().query('SELECT id, repo, worktree, status FROM run').all() as {
       id: number; repo: string | null; worktree: string | null; status: string
     }[]
-    for (const { resource, project } of orphanedDockerResources(inventory.resources, owners)) {
+    const classified = classifiedDockerResources(inventory.resources, owners)
+    for (const { resource, project, condition } of classified) {
+      if (condition === 'retained-worktree-resources') continue
       const key = `${resource.kind}:${resource.name}`
       if (!leaked.has(key)) leaked.set(key, { resource, project, runId: resource.runId })
+    }
+    const retained = classified.filter(({ condition }) => condition === 'retained-worktree-resources')
+    if (retained.length) {
+      console.error(`\n${dry ? 'would report ' : ''}retained worktree Docker resources: ${retained.length}`)
+      for (const { resource, project } of retained) {
+        console.error(`  ${resource.kind} ${resource.name} re-served or retained by project ${project} (run ${resource.runId}); no removal suggested`)
+      }
     }
     if (leaked.size) {
       cleanupFailed = true
@@ -5306,9 +5302,22 @@ switch (cmd) {
     // attributed or reclaimed. Stop the vendor, but let the coordinator see
     // the stopped row and finish cleanup.
     terminateRunProcesses(row.id, row.pid ? [row.pid] : [])
+    const dockerTeardown = teardownTerminalRunResources(db(), row.id)
     console.log(`stopped run ${row.id}`)
     if (cleanupRow.worktree) {
-      console.log(`kept worktree ${cleanupRow.worktree} and branch ${cleanupRow.branch ?? '(unknown)'} for continuation`)
+      const dockerMessage = !dockerTeardown.complete
+        ? dockerTeardown.removed
+          ? 'reclaimed Docker containers, but reclamation was incomplete'
+          : 'Docker container reclamation was incomplete'
+        : dockerTeardown.outcome === 'removed'
+          ? 'reclaimed Docker containers'
+          : dockerTeardown.outcome === 'live-sibling'
+            ? 'left Docker containers in place because another live run still owns the tree'
+            : 'found no Docker containers to reclaim'
+      console.log(
+        `kept worktree ${cleanupRow.worktree} and branch ${cleanupRow.branch ?? '(unknown)'} as files; ` +
+        dockerMessage,
+      )
     }
     break
   }
@@ -5378,6 +5387,7 @@ switch (cmd) {
       return { row, cleanupRow }
     })
     const { row, cleanupRow } = abandoned
+    teardownTerminalRunResources(db(), row.id)
     console.log(`abandoned run ${row.id}`)
 
     if (cleanupRow.worktree) {
@@ -7167,11 +7177,17 @@ switch (cmd) {
     const owners = db().query('SELECT id, repo, worktree, status FROM run').all() as {
       id: number; repo: string | null; worktree: string | null; status: string
     }[]
-    const orphans = orphanedDockerResources(docker.resources, owners)
+    const classified = classifiedDockerResources(docker.resources, owners)
+    const orphans = classified.filter(({ condition }) => condition === 'leaked')
+    const retained = classified.filter(({ condition }) => condition === 'retained-worktree-resources')
     console.log(`\ndocker orphans  ${orphans.length}`)
     for (const { resource, project } of orphans) {
       console.log(`  ${resource.kind} ${resource.name} — project ${project}, run ${resource.runId}`)
       console.log(`    ${dockerRemovalCommand(resource)}`)
+    }
+    console.log(`docker retained worktree resources  ${retained.length}`)
+    for (const { resource, project } of retained) {
+      console.log(`  ${resource.kind} ${resource.name} — project ${project}, run ${resource.runId}; informational, no removal suggested`)
     }
     for (const error of docker.errors) console.log(`  inventory unavailable: ${error}`)
     for (const j of Object.keys(JOBS)) {

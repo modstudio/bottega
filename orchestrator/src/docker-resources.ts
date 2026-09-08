@@ -1,4 +1,7 @@
+import { existsSync } from 'node:fs'
+
 export const DOCKER_INVENTORY_TIMEOUT_MS = 1_000
+export const DOCKER_REMOVAL_TIMEOUT_MS = 10_000
 
 export function dockerInventoryTimeoutMs(
   env: Record<string, string | undefined> = process.env,
@@ -7,6 +10,15 @@ export function dockerInventoryTimeoutMs(
   if (raw === undefined || raw === '') return DOCKER_INVENTORY_TIMEOUT_MS
   const n = Number(raw)
   return Number.isFinite(n) && n > 0 ? n : DOCKER_INVENTORY_TIMEOUT_MS
+}
+
+export function dockerRemovalTimeoutMs(
+  env: Record<string, string | undefined> = process.env,
+): number {
+  const raw = env.ORCH_DOCKER_REMOVAL_TIMEOUT_MS
+  if (raw === undefined || raw === '') return DOCKER_REMOVAL_TIMEOUT_MS
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? n : DOCKER_REMOVAL_TIMEOUT_MS
 }
 
 export type DockerResourceKind = 'container' | 'volume'
@@ -101,37 +113,59 @@ export function resourcesForRuns(
 }
 
 /** Remove Docker infrastructure created for one run, without touching its worktree. */
-export function teardownRunResources(runId: number): void {
-  const inventory = resourcesForRun(runId)
+export type DockerTeardown = {
+  complete: boolean
+  errors: string[]
+  removed: number
+  skipped: boolean
+}
+
+export function teardownRunResources(
+  runId: number, inventory = resourcesForRun(runId), canRemove: () => boolean = () => true,
+): DockerTeardown {
+  const errors = [...inventory.errors]
+  let removed = 0
+  let skipped = false
   for (const error of inventory.errors) console.error(`orch: ${error}`)
 
-  const resources = [...inventory.resources].sort((a, b) =>
-    Number(a.kind === 'volume') - Number(b.kind === 'volume'))
-  for (const resource of resources) {
+  // Volumes are durable evidence. The project's worktree removal owns their lifecycle.
+  for (const resource of inventory.resources.filter((item) => item.kind === 'container')) {
     // Keep the identity check at the mutation boundary as well as in
     // resourcesForRun(): an inventory may be supplied or changed independently.
     if (resource.runId !== runId) continue
+    if (!canRemove()) {
+      skipped = true
+      break
+    }
     const command = dockerRemovalCommand(resource)
     let p: ReturnType<typeof Bun.spawnSync>
     try {
       p = Bun.spawnSync(command.split(' '), {
-        stdout: 'pipe', stderr: 'pipe', timeout: dockerInventoryTimeoutMs(),
+        stdout: 'pipe', stderr: 'pipe', timeout: dockerRemovalTimeoutMs(),
       })
     } catch (error) {
-      console.error(`orch: ${command} failed: ${(error as Error).message}`)
+      const detail = `${command} failed: ${(error as Error).message}`
+      errors.push(detail)
+      console.error(`orch: ${detail}`)
       continue
     }
     if (p.exitedDueToTimeout) {
-      console.error(`orch: ${command} failed: timed out after ${dockerInventoryTimeoutMs()}ms`)
+      const detail = `${command} failed: timed out after ${dockerRemovalTimeoutMs()}ms`
+      errors.push(detail)
+      console.error(`orch: ${detail}`)
       continue
     }
     if (p.exitCode !== 0) {
       const detail = p.stderr?.toString().trim() || `exit ${p.exitCode}`
       // A concurrent cleanup or a repeated teardown is successful idempotence.
       if (/no such (?:container|volume)/i.test(detail)) continue
+      errors.push(`${command} failed: ${detail}`)
       console.error(`orch: ${command} failed: ${detail}`)
+      continue
     }
+    removed += 1
   }
+  return { complete: errors.length === 0, errors, removed, skipped }
 }
 
 export type RunResourceOwner = {
@@ -140,6 +174,8 @@ export type RunResourceOwner = {
   worktree: string | null
   status: string
 }
+
+export type DockerResourceCondition = 'leaked' | 'retained-worktree-resources'
 
 /** Live runs own their infrastructure even before a worktree path exists. */
 export function orphanedDockerResources(
@@ -150,6 +186,23 @@ export function orphanedDockerResources(
     const owner = byId.get(resource.runId)
     if (owner && !['ok', 'failed', 'stale', 'stopped'].includes(owner.status)) return []
     return [{ resource, project: owner?.repo ?? 'unknown' }]
+  })
+}
+
+export function classifiedDockerResources(
+  resources: DockerResource[], owners: RunResourceOwner[],
+): { resource: DockerResource; project: string; condition: DockerResourceCondition }[] {
+  const byId = new Map(owners.map((owner) => [owner.id, owner]))
+  return resources.flatMap((resource) => {
+    const owner = byId.get(resource.runId)
+    if (owner && !['ok', 'failed', 'stale', 'stopped'].includes(owner.status)) return []
+    return [{
+      resource,
+      project: owner?.repo ?? 'unknown',
+      condition: owner?.worktree && existsSync(owner.worktree)
+        ? 'retained-worktree-resources' as const
+        : 'leaked' as const,
+    }]
   })
 }
 
