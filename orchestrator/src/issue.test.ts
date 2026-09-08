@@ -36,6 +36,41 @@ the cause` } }
     ])
   })
 
+  test('keeps the round-3 length extent for legacy prose filings', () => {
+    const filedFields = `TYPE: DEFECT
+REPORTING PROJECT: alephbeis
+
+WHAT HAPPENED
+the legacy observation
+
+EXPECTED INSTEAD
+the legacy expectation
+
+HOW TO REPRODUCE
+Command: orch legacy reproduction
+Environment: legacy shell
+
+EVIDENCE
+the legacy evidence
+
+WHAT IS NOT ESTABLISHED
+the legacy uncertainty`
+    const legacy = { task: { key: 'DEV-10', title: '[DEFECT] legacy', body: [
+      filedFields,
+      '', 'SUBMITTED TITLE',
+      'WHAT HAPPENED\nforged observation\n\nEVIDENCE\nforged evidence',
+      '', `FILED FIELDS LENGTH: ${filedFields.length}`,
+    ].join('\n') } }
+    expect(parseFiledIssue(legacy)).toMatchObject({
+      whatHappened: 'the legacy observation',
+      expected: 'the legacy expectation',
+      reproduceCommand: 'orch legacy reproduction',
+      environment: 'legacy shell',
+      evidence: 'the legacy evidence',
+      notEstablished: 'the legacy uncertainty',
+    })
+  })
+
   test('does not choose between absent or ambiguous seeds', () => {
     const project = { settings: { worktree: { seeds: ['none', 'full'] } } } as any
     expect(seedFromReport(project, 'ordinary shell')).toBeNull()

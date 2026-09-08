@@ -18,6 +18,7 @@ import { checkDoc, repoRootForDoc } from './canon.ts'
 import { getReview, listReviews } from './review.ts'
 import { strictlyAuthenticatedWorkerRun } from './ask.ts'
 import { resolveLens } from './lenses.ts'
+import { filedIssueDataLine } from './issue.ts'
 
 const text = (value: unknown) => ({
   content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value) }],
@@ -241,6 +242,19 @@ export async function fileIssue(
     input.not_established,
   ].join('\n')
   const body = [
+    filedIssueDataLine({
+      version: 1,
+      kind: input.kind,
+      reporting_project: project.name,
+      submitted_title: input.title ?? null,
+      what_happened: input.what_happened,
+      expected: input.expected,
+      reproduce_command: input.kind === 'defect' ? input.reproduce_command : null,
+      environment: input.kind === 'defect' ? input.environment : null,
+      evidence: input.evidence,
+      not_established: input.not_established,
+    }),
+    '',
     filedFields,
     ...duplicateRecord,
     ...(input.title === undefined ? [] : ['', 'SUBMITTED TITLE', input.title]),

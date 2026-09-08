@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, chmodSync, copyFileSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { addRun, allInjectChecks, db, deadRunningProcessConditions, dir, fileIssue, monitor, monitorHistory, nowIso, reconcileHub, rulingConditions, runWithDelayedStdoutReader, setDoc, upsertProject } from '../test/fixture.ts'
+import { addRun, allInjectChecks, db, deadRunningProcessConditions, dir, fileIssue, monitor, monitorHistory, nowIso, parseFiledIssue, reconcileHub, rulingConditions, runWithDelayedStdoutReader, setDoc, upsertProject } from '../test/fixture.ts'
 
 function migrateHub(path: string): void {
   const result = Bun.spawnSync([process.execPath,
@@ -348,10 +348,19 @@ describe('operational monitor record', () => {
       const shown = Bun.spawnSync([new URL('../../bin/hub', import.meta.url).pathname,
         'task', 'show', filed.key, '--json'], { env: { ...process.env }, stdout: 'pipe' })
       const task = JSON.parse(shown.stdout.toString()).task
+      expect(task.body).toStartWith('FILED ISSUE DATA: {')
       expect(task.body).toContain('REPORTER KIND: MONITOR')
       expect(task.body).toContain(`REPORTING MONITOR INVOCATION: ${invocation}`)
       expect(task.body).toContain('AFFECTED PROJECT: starship')
       expect(task.body).not.toContain('REPORTING SESSION:')
+      expect(parseFiledIssue({ task })).toMatchObject({
+        kind: 'defect', reportingProject: PLATFORM_SLUG,
+        whatHappened: 'A detector is unavailable',
+        expected: 'The detector has machine-readable state',
+        reproduceCommand: 'orch monitor', environment: 'test monitor pass',
+        evidence: `monitor invocation ${invocation}`,
+        notEstablished: 'The state contract is not designed',
+      })
     } finally {
       rmSync(hubDb, { force: true }); rmSync(`${hubDb}-shm`, { force: true }); rmSync(`${hubDb}-wal`, { force: true })
       if (priorHubDb === undefined) delete process.env.HUB_DB; else process.env.HUB_DB = priorHubDb

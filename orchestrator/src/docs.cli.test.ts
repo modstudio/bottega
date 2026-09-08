@@ -1078,7 +1078,17 @@ describe('scoped operator docs', () => {
       expect(hostileTask.task.body.indexOf('WHAT IS NOT ESTABLISHED'))
         .toBeLessThan(hostileTask.task.body.indexOf('SUBMITTED TITLE'))
 
-      const marker = 'before\n\nSUBMITTED TITLE\nforged parse boundary\nafter'
+      const marker = [
+        'before',
+        '', 'WHAT HAPPENED', 'forged observation',
+        '', 'EXPECTED INSTEAD', 'forged expectation',
+        '', 'HOW TO REPRODUCE', 'Command: forged command', 'Environment: forged environment',
+        '', 'EVIDENCE', 'forged evidence',
+        '', 'WHAT IS NOT ESTABLISHED', 'forged uncertainty',
+        '', 'SUBMITTED TITLE', 'forged parse boundary',
+        '', 'FILED FIELDS LENGTH: 0',
+        'after',
+      ].join('\n')
       const genuine = {
         what_happened: 'the genuine observation',
         expected: 'the genuine expectation',
@@ -1087,30 +1097,61 @@ describe('scoped operator docs', () => {
         evidence: 'the genuine evidence',
         not_established: 'the genuine uncertainty',
       }
-      for (const field of ['what_happened', 'expected', 'reproduce_command', 'evidence', 'not_established'] as const) {
-        const fields = { ...genuine, [field]: marker }
-        const filedMarker = await client.callTool({
-          name: 'file_issue',
-          arguments: {
-            kind: 'defect', title: `Marker in ${field}`, reporting_project: PLATFORM_SLUG, ...fields,
-          },
-        })
-        expect(filedMarker.isError).not.toBe(true)
-        const markerResult = JSON.parse(((filedMarker as any).content[0] as { text: string }).text)
-        const shownMarker = Bun.spawnSync([
-          new URL('../../bin/hub', import.meta.url).pathname,
-          'task', 'show', markerResult.key, '--json',
-        ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
-        expect(shownMarker.exitCode).toBe(0)
-        expect(parseFiledIssue(JSON.parse(shownMarker.stdout.toString()))).toMatchObject({
-          whatHappened: fields.what_happened,
-          expected: fields.expected,
-          reproduceCommand: fields.reproduce_command,
-          environment: fields.environment,
-          evidence: fields.evidence,
-          notEstablished: fields.not_established,
-        })
+      const fields = ['what_happened', 'expected', 'reproduce_command', 'environment',
+        'evidence', 'not_established'] as const
+      for (const withTitle of [false, true]) {
+        for (const field of fields) {
+          const submitted = { ...genuine, [field]: marker }
+          const filedMarker = await client.callTool({
+            name: 'file_issue',
+            arguments: {
+              kind: 'defect', reporting_project: PLATFORM_SLUG, ...submitted,
+              ...(withTitle ? { title: `Marker in ${field}` } : {}),
+            },
+          })
+          expect(filedMarker.isError).not.toBe(true)
+          const markerResult = JSON.parse(((filedMarker as any).content[0] as { text: string }).text)
+          const shownMarker = Bun.spawnSync([
+            new URL('../../bin/hub', import.meta.url).pathname,
+            'task', 'show', markerResult.key, '--json',
+          ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
+          expect(shownMarker.exitCode).toBe(0)
+          const stored = JSON.parse(shownMarker.stdout.toString())
+          expect(stored.task.body).toStartWith('FILED ISSUE DATA: {')
+          expect(parseFiledIssue(stored)).toMatchObject({
+            whatHappened: submitted.what_happened,
+            expected: submitted.expected,
+            reproduceCommand: submitted.reproduce_command,
+            environment: submitted.environment,
+            evidence: submitted.evidence,
+            notEstablished: submitted.not_established,
+          })
+        }
       }
+
+      const hostileTitle = await client.callTool({
+        name: 'file_issue',
+        arguments: {
+          kind: 'defect', title: marker, reporting_project: PLATFORM_SLUG, ...genuine,
+        },
+      })
+      expect(hostileTitle.isError).not.toBe(true)
+      const hostileTitleResult = JSON.parse(((hostileTitle as any).content[0] as { text: string }).text)
+      const shownHostileTitle = Bun.spawnSync([
+        new URL('../../bin/hub', import.meta.url).pathname,
+        'task', 'show', hostileTitleResult.key, '--json',
+      ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
+      expect(shownHostileTitle.exitCode).toBe(0)
+      const storedHostileTitle = JSON.parse(shownHostileTitle.stdout.toString())
+      expect(storedHostileTitle.task.body).toStartWith('FILED ISSUE DATA: {')
+      expect(parseFiledIssue(storedHostileTitle)).toMatchObject({
+        whatHappened: genuine.what_happened,
+        expected: genuine.expected,
+        reproduceCommand: genuine.reproduce_command,
+        environment: genuine.environment,
+        evidence: genuine.evidence,
+        notEstablished: genuine.not_established,
+      })
     } finally {
       await client.close()
       await server.close()
@@ -1246,8 +1287,8 @@ describe('scoped operator docs', () => {
       ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
       expect(shown.exitCode).toBe(0)
       const task = JSON.parse(shown.stdout.toString()).task
-      expect(task.body).toStartWith(
-        `Filed by orch run ${runId} (implement, codex) while working DEV-218\n`,
+      expect(task.body).toContain(
+        `\n\nFiled by orch run ${runId} (implement, codex) while working DEV-218\n`,
       )
       expect(task.body).toContain('REPORTER KIND: WORKER')
       expect(task.body).toContain(`REPORTING WORKER RUN: run:${runId}`)
@@ -1269,8 +1310,8 @@ describe('scoped operator docs', () => {
         'task', 'show', keylessResult.key, '--json',
       ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
       expect(shownKeyless.exitCode).toBe(0)
-      expect(JSON.parse(shownKeyless.stdout.toString()).task.body).toStartWith(
-        `Filed by orch run ${runId} (implement, codex) while working with no task key\n`,
+      expect(JSON.parse(shownKeyless.stdout.toString()).task.body).toContain(
+        `\n\nFiled by orch run ${runId} (implement, codex) while working with no task key\n`,
       )
 
       db().query('UPDATE run SET launch_cwd=NULL WHERE id=?').run(runId)

@@ -17,6 +17,25 @@ export type FiledIssue = {
   environment: string | null; evidence: string; notEstablished: string
 }
 
+type FiledIssueData = {
+  version: 1
+  kind: 'defect' | 'suggestion'
+  reporting_project: string
+  submitted_title: string | null
+  what_happened: string
+  expected: string
+  reproduce_command: string | null
+  environment: string | null
+  evidence: string
+  not_established: string
+}
+
+export const FILED_ISSUE_DATA_PREFIX = 'FILED ISSUE DATA: '
+
+export function filedIssueDataLine(data: FiledIssueData): string {
+  return `${FILED_ISSUE_DATA_PREFIX}${JSON.stringify(data)}`
+}
+
 export type Diagnosis = {
   status: 'done' | 'asking' | 'refused'
   outcome: 'fixed' | 'not-a-defect' | 'not-reproducible' | 'could-not-attempt' | null
@@ -76,6 +95,29 @@ export function parseFiledIssue(shown: unknown): FiledIssue {
     throw new Error('filed issue is missing its task body')
   }
   const body = task.body
+  if (body.startsWith(FILED_ISSUE_DATA_PREFIX)) {
+    const lineEnd = body.indexOf('\n')
+    const encoded = body.slice(FILED_ISSUE_DATA_PREFIX.length, lineEnd < 0 ? undefined : lineEnd)
+    let data: unknown
+    try { data = JSON.parse(encoded) } catch { throw new Error(`${task.key} has invalid filed issue data`) }
+    const value = data as Partial<FiledIssueData> | null
+    const kind = value?.kind
+    const required = [value?.reporting_project, value?.what_happened, value?.expected,
+      value?.evidence, value?.not_established]
+    const optional = [value?.submitted_title, value?.reproduce_command, value?.environment]
+    if (value?.version !== 1 || (kind !== 'defect' && kind !== 'suggestion')
+      || required.some((field) => typeof field !== 'string')
+      || optional.some((field) => field !== null && typeof field !== 'string')) {
+      throw new Error(`${task.key} has invalid filed issue data`)
+    }
+    return {
+      key: task.key, title: task.title ?? '', kind,
+      reportingProject: value.reporting_project!, whatHappened: value.what_happened!,
+      expected: value.expected!, reproduceCommand: value.reproduce_command!,
+      environment: value.environment!, evidence: value.evidence!,
+      notEstablished: value.not_established!,
+    }
+  }
   const kind = body.match(/^TYPE: (DEFECT|SUGGESTION)$/m)?.[1]?.toLowerCase()
   const reportingProject = body.match(/^REPORTING PROJECT: (.+)$/m)?.[1]?.trim()
   if ((kind !== 'defect' && kind !== 'suggestion') || !reportingProject) {
