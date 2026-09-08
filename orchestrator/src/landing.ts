@@ -38,6 +38,18 @@ function namedError(detail: string, invariant: string, command: string): Error {
   return new Error(`${detail}\ninvariant: ${invariant}\ncleared by: ${command}`)
 }
 
+function assertNotProductionBranch(project: Project, trunk: string, branch: string): void {
+  const production = typeof project.settings.productionBranch === 'string'
+    ? project.settings.productionBranch.trim() : ''
+  if (!production) return
+  if (production !== trunk && branch !== production) return
+  throw namedError(
+    `landing ${branch} would touch configured production branch ${production}`,
+    'Landing fast-forwards only the registered landing branch; production deployment is a separate lifecycle.',
+    `orch project set ${project.name} --settings '{"trunk":"<landing-branch>","productionBranch":"${production}"}'`,
+  )
+}
+
 function inspectionGit(cwd: string, args: string[]): { ok: boolean; out: string; err: string } {
   const env = scrubbedGitEnv()
   delete env.GIT_INDEX_FILE
@@ -1242,24 +1254,7 @@ function performLand(
       `orch project set ${project.name} --settings '{"trunk":"<branch>"}'`,
     )
   }
-  const productionBranch = typeof project.settings.productionBranch === 'string'
-    ? project.settings.productionBranch.trim() : ''
-  if (productionBranch && (productionBranch === trunk || productionBranch === branch)) {
-    throw namedError(
-      `landing ${branch} would touch configured production branch ${productionBranch}`,
-      'Landings fast-forward only the registered integration branch; production deployment is a separate lifecycle.',
-      `orch project set ${project.name} --settings '{"trunk":"<integration>","productionBranch":"<production>"}'`,
-    )
-  }
-  const production = typeof project.settings.productionBranch === 'string'
-    ? project.settings.productionBranch.trim() : ''
-  if (production && (production === trunk || branch === production)) {
-    throw namedError(
-      `landing would touch configured production branch ${production}`,
-      'Landing fast-forwards only the registered landing branch; production deployment is a separate lifecycle.',
-      `orch project set ${project.name} --settings '{"trunk":"<landing-branch>","productionBranch":"${production}"}'`,
-    )
-  }
+  assertNotProductionBranch(project, trunk, branch)
   const gate = typeof project.settings.gate === 'string' ? project.settings.gate.trim() : ''
   if (!gate) {
     throw namedError(
@@ -2244,6 +2239,8 @@ function assertEnqueuePreconditions(
   repoRoot: string, project: Project, branch: string,
   options: { unreviewed?: string; runId?: number },
 ): ReturnType<typeof authorizeLanding> | null {
+  const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
+  assertNotProductionBranch(project, trunk, branch)
   if (!gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])) {
     throw namedError(
       `branch ${branch} does not exist in project ${project.name}`,
@@ -2263,7 +2260,6 @@ function assertEnqueuePreconditions(
   if (!worktree) return null
   assertLandingWorktreeReady(worktree, branch)
   if (options.unreviewed !== undefined) return null
-  const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
   if (!trunk || !gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${trunk}`])) return null
   const tip = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'])
   return authorizeLanding(project, repoRoot, worktree, branch, tip, trunk, options.runId, options.unreviewed)

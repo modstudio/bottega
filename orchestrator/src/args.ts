@@ -277,7 +277,7 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       const forms: Record<string, CommandShape> = {
         list: shape('orch doc list [--scope S] [--subject X] [--json]', 0, ['--scope', '--subject'], ['--json']),
         show: shape('orch doc show <slug> --scope S [--subject X] [--json]', 1, ['--scope', '--subject'], ['--json']),
-        set: shape('orch doc set <slug> --scope S [--subject X] --title T --reason TEXT [--author NAME] [--delivery inject|demand] (--file F | body on stdin) [--json]', 1, ['--scope', '--subject', '--title', '--file', '--reason', '--author', '--delivery'], ['--json']),
+        set: shape('orch doc set <slug> --scope S [--subject X] --title T --reason TEXT [--author NAME] [--delivery inject|demand] [--force-inject REASON] (--file F | body on stdin) [--json]', 1, ['--scope', '--subject', '--title', '--file', '--reason', '--author', '--delivery', '--force-inject'], ['--json']),
         consume: shape('orch doc consume <slug> --scope S [--subject X] [--reason TEXT] [--author NAME] [--json]', 1, ['--scope', '--subject', '--reason', '--author'], ['--json']),
         rm: shape('orch doc rm <slug> --scope S [--subject X] --reason TEXT [--author NAME] [--json]', 1, ['--scope', '--subject', '--reason', '--author'], ['--json']),
         history: shape('orch doc history <scope> <subject|-> <slug> [--json]', 3, [], ['--json']),
@@ -403,7 +403,7 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       if (topLevelOnly) return { args: [], shape: shape('orch project', 0) }
       const forms: Record<string, CommandShape> = {
         list: shape('orch project list [--json]', 0, [], ['--json']),
-        add: shape('orch project add <path> [--name X] [--stack Y] [--no-canon] [--json]', 1, ['--name', '--stack'], ['--no-canon', '--allow-incomplete', '--json']),
+        add: shape('orch project add <path> [--name X] [--stack Y] [--no-canon] [--settings JSON] [--json]', 1, ['--name', '--stack', '--settings'], ['--no-canon', '--allow-incomplete', '--json']),
         set: shape('orch project set <name> [--name NEW] [--stack X] [--path P] [--canon|--no-canon] [--settings JSON] [--json]', 1, ['--name', '--stack', '--path', '--settings'], ['--canon', '--no-canon', '--allow-incomplete', '--json']),
         'select-profile': shape('orch project select-profile <project> --axis A --name N [--lens ID] [--version N] --reason TEXT [--json]',1,['--axis','--name','--lens','--version','--reason'],['--json']),
         'migrate-create': shape('orch project migrate-create <name> [--apply]', 1, [], ['--apply']),
@@ -417,9 +417,10 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       const common = ['--harness','--backend','--model','--base-url','--context-tokens']
       const forms: Record<string, CommandShape> = {
         add: shape('orch agent add <name> --harness H --backend B [--model M] [--base-url U] [--context-tokens N]', 1, common),
-        set: shape('orch agent set <name> [registration flags] [--enabled true|false] [--reason TEXT]', 1, [...common, '--enabled', '--reason']),
+        set: shape('orch agent set <name> [registration flags] [--jobs JOB,...|any] [--prefer JOB,...] [--max-concurrent N] [--enabled true|false] [--reason TEXT]', 1, [...common, '--enabled', '--reason', '--jobs', '--prefer', '--max-concurrent']),
         remove: shape('orch agent remove <name>', 1),
         list: shape('orch agent list [--json]', 0, [], ['--json']),
+        show: shape('orch agent show <name>', 1),
         probe: shape('orch agent probe <name>', 1),
       }
       if (!sub || !forms[sub]) return null

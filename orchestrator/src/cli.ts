@@ -3465,7 +3465,14 @@ switch (cmd) {
       // straight at the project and can correct it. A guess that reruns on
       // every routing decision is a guess nobody ever reviews.
       const stack = flag('stack') ?? sniffStack(path)
-      const candidate = { id: 0, name, path, stack, canon: !has('no-canon'), settings: {} }
+      let settings = {} as import('./projects.ts').ProjectSettings
+      if (flag('settings')) {
+        try { settings = JSON.parse(flag('settings')!) as typeof settings }
+        catch (e) { throw new Error(`--settings must be JSON: ${e}`) }
+        const malformed = validateProjectSettings(settings)
+        if (malformed.length) throw new Error(malformed.join('\n'))
+      }
+      const candidate = { id: 0, name, path, stack, canon: !has('no-canon'), settings }
       const incomplete = worktreeWarnings(candidate).filter((w) =>
         w.startsWith('has a create command but no branch template') ||
         w.startsWith('has a create command with a {seed} placeholder but no seeds list'))

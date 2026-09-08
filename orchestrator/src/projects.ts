@@ -424,7 +424,7 @@ export function registerBranchCheck(project: Pick<Project, 'name' | 'path' | 'se
   const canonPath = join(project.path, 'AGENTS.md')
   if (existsSync(canonPath)) {
     const canon = readFileSync(canonPath, 'utf8')
-    const match = canon.match(/\bintegration branch\s+(?:is|:)\s*[`'\"]?([A-Za-z0-9._/-]+)/i)
+    const match = canon.match(/\bintegration branch\s+(?:is|:)\s*[`'\"]?([A-Za-z0-9](?:[A-Za-z0-9._/-]*[A-Za-z0-9])?)/i)
     canonIntegration = match?.[1] ?? null
   }
   const problems: string[] = []

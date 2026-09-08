@@ -69,6 +69,19 @@ test('an explicit non-empty override lands and records the measured tree and rea
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  test('refuses to land a configured production branch, with both anchored lines', () => {
+    const { repo } = repoWithBranches(['release-cut'])
+    upsertProject({
+      name: 'landing-production', path: repo,
+      settings: { trunk: 'main', productionBranch: 'release-cut', gate: 'true' },
+    })
+    try {
+      expect(() => land(repo, 'release-cut', { unreviewed: 'production fixture' })).toThrow(
+        /landing release-cut would touch configured production branch release-cut[\s\S]*invariant: Landing fast-forwards only the registered landing branch[\s\S]*cleared by: orch project set landing-production --settings/,
+      )
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   test('a failing post-land hub migrate records that landing succeeded and install failed', () => {
     const { repo, trees } = repoWithBranches(['post-step-hub'])
     const tree = trees['post-step-hub']!

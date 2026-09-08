@@ -12,6 +12,23 @@ import { runCollectionDescribeFixture } from '../test/fixture.ts'
 
 describe("detached run collection", () => {
   const { CLI, orchInput, orch, orchFrom, insert, checkpointedOrch, lifecycleResult, dispatchArtifacts, expectNoDispatchArtifacts, expectCreateMigrationRefused } = runCollectionDescribeFixture()
+  const git = (cwd: string, ...args: string[]) => {
+    const result = Bun.spawnSync(['git', ...args], {
+      cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+    return result.stdout.toString().trim()
+  }
+  const registerRepo = (branch: string) => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-register-')))
+    git(repo, 'init', '-b', branch)
+    git(repo, 'config', 'user.email', 'orch-test@example.invalid')
+    git(repo, 'config', 'user.name', 'Orch Test')
+    writeFileSync(join(repo, 'tracked.txt'), 'fixture\n')
+    git(repo, 'add', '.')
+    git(repo, 'commit', '-m', 'fixture')
+    return repo
+  }
 test('discard removes both non-live worktrees owned by one chain', () => {
   const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-discard-chain-trees-')))
   const git = (cwd: string, ...args: string[]) => {
@@ -384,45 +401,97 @@ test('create commands must exist and be executable before dispatch', () => {
   }, 20_000)
 
   test('project set records register invalidation when trunk changes', () => {
-    const head = Bun.spawnSync(['git', 'branch', '--show-current'], {
-      cwd: process.cwd(), stdout: 'pipe',
-    }).stdout.toString().trim()
-    upsertProject({ name: 'trunk-change', path: process.cwd(), settings: { trunk: 'main' } })
-    const r = orch('project', 'set', 'trunk-change', '--settings', `{"trunk":"${head}"}`)
-    expect(r.code).toBe(0)
-    expect(db().query(
-      `SELECT resource_kind, event_kind, resource_key, cause FROM contention WHERE resource_kind='register'`,
-    ).get()).toEqual({
-      resource_kind: 'register', event_kind: 'invalidation',
-      resource_key: 'trunk-change', cause: `trunk main -> ${head}`,
-    })
-    const unchanged = orch('project', 'set', 'trunk-change', '--settings', '{"gate":"true"}')
-    expect(unchanged.code).toBe(0)
-    expect(db().query(
-      "SELECT COUNT(*) AS n FROM contention WHERE resource_kind='register'",
-    ).get()).toEqual({ n: 1 })
+    const repo = registerRepo('main')
+    try {
+      upsertProject({ name: 'trunk-change', path: repo, settings: { trunk: 'main' } })
+      git(repo, 'checkout', '-b', 'develop')
+      const r = orchFrom(repo, 'orch-test-session', 'project', 'set', 'trunk-change', '--settings', '{"trunk":"develop"}')
+      expect(r.code, r.err).toBe(0)
+      expect(db().query(
+        `SELECT resource_kind, event_kind, resource_key, cause FROM contention WHERE resource_kind='register'`,
+      ).get()).toEqual({
+        resource_kind: 'register', event_kind: 'invalidation',
+        resource_key: 'trunk-change', cause: 'trunk main -> develop',
+      })
+      const unchanged = orchFrom(repo, 'orch-test-session', 'project', 'set', 'trunk-change', '--settings', '{"gate":"true"}')
+      expect(unchanged.code, unchanged.err).toBe(0)
+      expect(db().query(
+        "SELECT COUNT(*) AS n FROM contention WHERE resource_kind='register'",
+      ).get()).toEqual({ n: 1 })
+    } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
   test('project set still writes when the contention table is absent', () => {
-    const head = Bun.spawnSync(['git', 'branch', '--show-current'], {
-      cwd: process.cwd(), stdout: 'pipe',
-    }).stdout.toString().trim()
-    upsertProject({ name: 'trunk-no-contention', path: process.cwd(), settings: { trunk: head } })
-    const table = db().query(
-      "SELECT sql FROM sqlite_master WHERE type='table' AND name='contention'",
-    ).get() as { sql: string }
-    const indexes = db().query(
-      "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='contention' AND sql IS NOT NULL",
-    ).all() as { sql: string }[]
-    db().exec('DROP TABLE contention')
+    const repo = registerRepo('main')
     try {
-      const r = orch('project', 'set', 'trunk-no-contention', '--settings', '{"gate":"true"}')
+      upsertProject({ name: 'trunk-no-contention', path: repo, settings: { trunk: 'main' } })
+      const table = db().query(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='contention'",
+      ).get() as { sql: string }
+      const indexes = db().query(
+        "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='contention' AND sql IS NOT NULL",
+      ).all() as { sql: string }[]
+      db().exec('DROP TABLE contention')
+      try {
+        const r = orchFrom(repo, 'orch-test-session', 'project', 'set', 'trunk-no-contention', '--settings', '{"gate":"true"}')
+        expect(r.code, r.err).toBe(0)
+        expect(projectByName('trunk-no-contention')!.settings.trunk).toBe('main')
+        expect(projectByName('trunk-no-contention')!.settings.gate).toBe('true')
+      } finally {
+        db().exec(table.sql)
+        for (const index of indexes) db().exec(index.sql)
+      }
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('project set refuses a trunk that is not checkout HEAD, with both anchored lines', () => {
+    const repo = registerRepo('main')
+    try {
+      upsertProject({ name: 'trunk-mismatch', path: repo, settings: { trunk: 'main' } })
+      const r = orchFrom(repo, 'orch-test-session', 'project', 'set', 'trunk-mismatch', '--settings', '{"trunk":"develop"}')
+      expect(r.code).toBe(1)
+      expect(r.err).toContain('checkout HEAD is main, not landing branch develop')
+      expect(r.err).toContain('invariant: the register landing branch agrees with the main checkout and its integration-branch canon')
+      expect(r.err).toContain('cleared by:')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('project add refuses a declared trunk that is not checkout HEAD', () => {
+    const repo = registerRepo('main')
+    try {
+      const r = orchFrom(repo, 'orch-test-session', 'project', 'add', repo, '--name', 'add-mismatch',
+        '--no-canon', '--settings', '{"trunk":"develop"}')
+      expect(r.code).toBe(1)
+      expect(r.err).toContain('checkout HEAD is main, not landing branch develop')
+      expect(r.err).toContain('invariant:')
+      expect(r.err).toContain('cleared by:')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('project set refuses a landing branch that disagrees with integration-branch canon', () => {
+    const repo = registerRepo('main')
+    try {
+      writeFileSync(join(repo, 'AGENTS.md'), 'The integration branch is develop.\n')
+      git(repo, 'add', 'AGENTS.md')
+      git(repo, 'commit', '-m', 'canon')
+      upsertProject({ name: 'canon-mismatch', path: repo, settings: { trunk: 'main' } })
+      const r = orchFrom(repo, 'orch-test-session', 'project', 'set', 'canon-mismatch', '--settings', '{"gate":"true"}')
+      expect(r.code).toBe(1)
+      expect(r.err).toContain('canon names integration branch develop, not landing branch main')
+      expect(r.err).toContain('invariant:')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('doctor reports a checkout off its landing branch as a register question, not a failure', () => {
+    const repo = registerRepo('main')
+    try {
+      git(repo, 'checkout', '-b', 'topic')
+      upsertProject({ name: 'off-trunk', path: repo, settings: { trunk: 'main' } })
+      const r = orch('doctor')
       expect(r.code, r.err).toBe(0)
-      expect(projectByName('trunk-no-contention')!.settings.trunk).toBe('develop')
-    } finally {
-      db().exec(table.sql)
-      for (const index of indexes) db().exec(index.sql)
-    }
+      expect(r.out).toContain('register questions (not run failures):')
+      expect(r.out).toContain('off-trunk: checkout HEAD is topic, not landing branch main')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
   test('project set settings null deletes that key during a deep merge', () => {
