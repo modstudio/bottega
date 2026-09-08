@@ -353,20 +353,16 @@ const LOCK_EX = 2
 const LOCK_NB = 4
 const LOCK_UN = 8
 
-export function projectLockRuntimeDir(
-  repoRoot: string, env: { [key: string]: string | undefined; XDG_RUNTIME_DIR?: string } = process.env,
-): string {
+export function projectLockDir(repoRoot: string): string {
   const common = realpathSync(resolve(repoRoot, git(['rev-parse', '--git-common-dir'], repoRoot)))
-  const base = env.XDG_RUNTIME_DIR && isAbsolute(env.XDG_RUNTIME_DIR) ? env.XDG_RUNTIME_DIR : tmpdir()
-  const key = `${basename(dirname(common))}-${createHash('sha256').update(common).digest('hex').slice(0, 16)}`
-  return join(base, 'orch', key)
+  return join(common, 'orch', 'locks')
 }
 
 function projectLockPaths(repoRoot: string, name: string): {
   lock: string; owner: string; waiters: string
 } {
   if (!/^[a-z][a-z0-9-]*$/.test(name)) throw new Error(`invalid project lock name: ${name}`)
-  const runtime = projectLockRuntimeDir(repoRoot)
+  const runtime = projectLockDir(repoRoot)
   return {
     lock: join(runtime, `orch-${name}.lock`),
     owner: join(runtime, `orch-${name}.owner`),

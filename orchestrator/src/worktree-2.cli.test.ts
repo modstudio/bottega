@@ -2,24 +2,58 @@ import { describe, expect, spyOn, test } from 'bun:test'
 import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addRun, compoundCreate, createWithTool, createWorktree, db, declaredCreate, fakeDocker, hermeticGitCommand, hermeticGitEnv, nowIso, prepareSharedRefGuard, processStartTime, projectLockRuntimeDir, reclaimStaleProjectLock, resolveBase, runJob, staleProjectLockHolder, upsertProject, withWorktreeCreateLock } from '../test/fixture.ts'
+import { addRun, compoundCreate, createWithTool, createWorktree, db, declaredCreate, fakeDocker, hermeticGitCommand, hermeticGitEnv, nowIso, prepareSharedRefGuard, processStartTime, projectLockDir, reclaimStaleProjectLock, resolveBase, runJob, staleProjectLockHolder, upsertProject, withWorktreeCreateLock } from '../test/fixture.ts'
 
 import { worktreeDescribeFixture } from '../test/fixture.ts'
 
 describe("a worktree is resolved against the main checkout, not the caller cwd", () => {
   const { git, scratchRepo } = worktreeDescribeFixture()
-test('project lock state resolves under XDG runtime or the per-user temporary directory', () => {
+test('project lock state resolves under the shared git common directory regardless of environment', () => {
   const { repo } = scratchRepo()
+  const priorXdg = process.env.XDG_RUNTIME_DIR
   try {
     const xdg = mkdtempSync(join(tmpdir(), 'orch-xdg-'))
-    expect(projectLockRuntimeDir(repo, { XDG_RUNTIME_DIR: xdg })).toStartWith(`${xdg}/orch/`)
-    const fallback = projectLockRuntimeDir(repo, {})
-    expect(fallback).toStartWith(`${tmpdir()}/orch/`)
-    expect(projectLockRuntimeDir(repo, { XDG_RUNTIME_DIR: xdg })).not.toStartWith(`${repo}/`)
-    expect(fallback).not.toStartWith(`${repo}/`)
+    const expected = realpathSync(join(repo, '.git'))
+    expect(projectLockDir(repo)).toBe(join(expected, 'orch', 'locks'))
+    process.env.XDG_RUNTIME_DIR = xdg
+    expect(projectLockDir(repo)).toBe(join(expected, 'orch', 'locks'))
     const linked=join(repo,'linked-runtime-key');git(repo,'worktree','add','-b','runtime-key',linked,'HEAD')
-    expect(projectLockRuntimeDir(linked,{ XDG_RUNTIME_DIR: xdg })).toBe(projectLockRuntimeDir(repo,{ XDG_RUNTIME_DIR: xdg }))
-  } finally { rmSync(repo, { recursive: true, force: true }) }
+    expect(projectLockDir(linked)).toBe(projectLockDir(repo))
+  } finally {
+    if (priorXdg === undefined) delete process.env.XDG_RUNTIME_DIR
+    else process.env.XDG_RUNTIME_DIR = priorXdg
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
+test('two environment bases contend on the shared checkout lock', async () => {
+  const { repo } = scratchRepo()
+  const linked = join(repo, 'linked-lock-contender')
+  git(repo, 'worktree', 'add', '-b', 'lock-contender', linked, 'HEAD')
+  const ready = join(repo, 'two-base-ready')
+  const release = join(repo, 'two-base-release')
+  const xdgOne = mkdtempSync(join(tmpdir(), 'orch-xdg-one-'))
+  const xdgTwo = mkdtempSync(join(tmpdir(), 'orch-xdg-two-'))
+  const child = Bun.spawn([process.execPath, '-e',
+    `const{existsSync,writeFileSync}=await import('node:fs');const{withProjectLock}=await import(process.argv[1]);withProjectLock(process.argv[2],'landing',{session:'one',what:'base-one'},()=>{writeFileSync(process.argv[3],'');while(!existsSync(process.argv[4]))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)},5000,true)`,
+    new URL('./worktree.ts', import.meta.url).href, repo, ready, release,
+  ], { env: { ...hermeticGitEnv(), XDG_RUNTIME_DIR: xdgOne }, stdout: 'pipe', stderr: 'pipe' })
+  try {
+    for (let i = 0; i < 200 && !existsSync(ready); i++) await Bun.sleep(5)
+    expect(existsSync(ready)).toBe(true)
+    const contender = Bun.spawnSync([process.execPath, '-e',
+      `const{withProjectLock}=await import(process.argv[1]);withProjectLock(process.argv[2],'landing',{session:'two',what:'base-two'},()=>{},30,true)`,
+      new URL('./worktree.ts', import.meta.url).href, linked,
+    ], { env: { ...hermeticGitEnv(), XDG_RUNTIME_DIR: xdgTwo }, stdout: 'pipe', stderr: 'pipe' })
+    expect(contender.exitCode).not.toBe(0)
+    expect(contender.stderr.toString()).toContain('timed out')
+  } finally {
+    writeFileSync(release, '')
+    await child.exited
+    rmSync(repo, { recursive: true, force: true })
+    rmSync(xdgOne, { recursive: true, force: true })
+    rmSync(xdgTwo, { recursive: true, force: true })
+  }
 })
 test('a resumed turn waits for cleanup and refuses a worktree removed under the lifecycle lock', async () => {
     const { repo } = scratchRepo()
