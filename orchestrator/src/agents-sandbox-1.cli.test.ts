@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathS
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { AGENTS, CODEX_ASK_ENV_VARS, CODEX_EXEC_SANDBOX, addRun, assertCallerAncestry, assertSharedRefGuardOutsideWritableRoots, carryWorkingState, checkoutHasUncommittedWork, createWorktree, db, dir, hermeticGitEnv, prepareSharedRefGuard, prepareWorktreeObjects, removeFor, removeSharedRefGuard, runJob, upsertProject, workerReply, workerSharedGitRoots, worktreeGitDir } from '../test/fixture.ts'
+import { AGENTS, CODEX_ASK_ENV_VARS, CODEX_EXEC_SANDBOX, addRun, assertCallerAncestry, assertSharedRefGuardOutsideWritableRoots, carryWorkingState, checkoutHasUncommittedWork, createWorktree, db, dir, hermeticGitEnv, prepareSharedRefGuard, prepareWorktreeObjects, removeFor, removeSharedRefGuard, reviewReply, runJob, upsertProject, workerReply, workerSharedGitRoots, worktreeGitDir } from '../test/fixture.ts'
 
 describe("the sandbox an agent is launched with", () => {
 test('follows the job, not a project register entry', async () => {
@@ -46,6 +46,7 @@ test('follows the job, not a project register entry', async () => {
       await runJob({ job: 'file-question', prompt: 'p', cwd: repo, agent: 'codex' })
       upsertProject({ name: 'sandbox-dispatch', path: repo })
       await runJob({ job: 'file-question', prompt: 'p', cwd: repo, agent: 'codex' })
+      writeFileSync(script, `process.stdout.write(${JSON.stringify(JSON.stringify(reviewReply(1)))})\n`)
       await runJob({ job: 'review-lens-inline', prompt: 'p', cwd: repo, agent: 'codex', lens: 'inline' })
 
       expect(launched).toEqual(['workspace-write', 'workspace-write', 'read-only'])

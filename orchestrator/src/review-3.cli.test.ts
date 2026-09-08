@@ -445,7 +445,13 @@ describe('review-lens-inline has no checkout', () => {
       const tip = git(repo, 'rev-parse', 'feature/reviewed^{commit}')
       const tree = git(repo, 'rev-parse', 'feature/reviewed^{tree}')
       upsertProject({ name: 'explicit-review-fixture', path: repo, settings: { trunk: 'main' } })
-      writeFileSync(script, "console.log(JSON.stringify({ cwd: process.cwd(), text: await Bun.file('subject.txt').text() }))\n")
+      writeFileSync(script, [
+        "const view = { cwd: process.cwd(), text: await Bun.file('subject.txt').text() }",
+        `const reply = ${JSON.stringify(reviewReply(0))}`,
+        "reply.provenance.files_covered = ['subject.txt']",
+        "reply.provenance.docs_read = [JSON.stringify(view)]",
+        "console.log(JSON.stringify(reply))",
+      ].join('\n'))
       agent.bin = process.execPath
       agent.argv = () => [script]
       agent.stdin = false
@@ -461,14 +467,15 @@ describe('review-lens-inline has no checkout', () => {
       expect(Bun.spawnSync(['git', 'symbolic-ref', '-q', 'HEAD'], {
         cwd: byBranch.worktree!.path, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
       }).exitCode).not.toBe(0)
-      expect(JSON.parse(byBranch.output).text).toBe('branch\n')
+      expect(JSON.parse(JSON.parse(byBranch.output).provenance.docs_read[0]).text).toBe('branch\n')
       expect(db().query(
         'SELECT branch, base_commit, input_tree, head_commit, review_ref FROM run WHERE id=?',
       ).get(byBranch.id)).toEqual({
         branch: 'feature/reviewed', base_commit: git(repo, 'rev-parse', 'main'),
         input_tree: tree, head_commit: tip, review_ref: 'feature/reviewed',
       })
-      const explicitReview = recordReview(byBranch.id, reviewReply(0))
+      const explicitReview = (db().query('SELECT review_id FROM review_lens WHERE run_id=?').get(byBranch.id) as
+        { review_id: number }).review_id
       completeReview(explicitReview)
       expect(coverageAudit()).toEqual({ count: 0, review_ids: [], partial_review_ids: [] })
 
@@ -557,13 +564,16 @@ describe('review-lens-inline has no checkout', () => {
       writeFileSync(script, [
         "import { existsSync } from 'node:fs'",
         "const prompt = await Bun.stdin.text()",
-        "console.log(JSON.stringify({",
+        "const view = {",
         "  cwd: process.cwd(),",
         "  prompt,",
         "  checkout: existsSync('.git'),",
         "  projectFile: existsSync('project-only.txt'),",
         "  receivedPack: prompt.includes('SELF_CONTAINED_FACT'),",
-        "}))",
+        "}",
+        `const reply = ${JSON.stringify(reviewReply(1))}`,
+        "reply.findings[0].evidence = JSON.stringify(view)",
+        "console.log(JSON.stringify(reply))",
       ].join('\n'))
       agent.bin = process.execPath
       agent.argv = () => [script]
@@ -575,7 +585,7 @@ describe('review-lens-inline has no checkout', () => {
       const inline = await runJob({
         job: 'review-lens-inline', prompt: 'SELF_CONTAINED_FACT', cwd: repo, agent: 'codex', lens: 'inline',
       })
-      const inlineView = JSON.parse(inline.output) as {
+      const inlineView = JSON.parse(JSON.parse(inline.output).findings[0].evidence) as {
         cwd: string; prompt: string; checkout: boolean; projectFile: boolean; receivedPack: boolean
       }
       expect(inlineView.checkout).toBe(false)
@@ -590,7 +600,7 @@ describe('review-lens-inline has no checkout', () => {
         job: 'review-lens', prompt: `inspect ${repo}/project-only.txt`,
         cwd: repo, agent: 'codex', lens: 'project', keepTree: true,
       })
-      const repositoryView = JSON.parse(repository.output) as {
+      const repositoryView = JSON.parse(JSON.parse(repository.output).findings[0].evidence) as {
         prompt: string; checkout: boolean; projectFile: boolean
       }
       expect(repositoryView.checkout).toBe(true)
@@ -608,7 +618,7 @@ describe('review-lens-inline has no checkout', () => {
         job: 'review-lens', prompt: `inspect ${repo}/subdir/subject.txt`,
         cwd: join(repo, 'subdir'), agent: 'codex', lens: 'nested', keepTree: true,
       })
-      const nestedView = JSON.parse(nested.output) as { prompt: string }
+      const nestedView = JSON.parse(JSON.parse(nested.output).findings[0].evidence) as { prompt: string }
       expect(nestedView.prompt).toContain(`${nested.worktree!.path}/subdir/subject.txt`)
       expect(nestedView.prompt).not.toContain(`${nested.worktree!.path}/subject.txt`)
 

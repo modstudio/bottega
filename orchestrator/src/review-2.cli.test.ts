@@ -1,9 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync, lstatSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { AGENTS, VERIFY_CLAIM_SCHEMA, addRun, assertGrokTrustEligible, canonSourceFor, canonSourceInstruction, db, declaredCreate, dir, grokMcpConnection, hermeticGitCommand, hermeticGitEnv, mcpRequestFromStored, preflightMcp, runJob, upsertProject, validateCliArgs } from '../test/fixture.ts'
+import { AGENTS, VERIFY_CLAIM_SCHEMA, addRun, assertGrokTrustEligible, canonSourceFor, canonSourceInstruction, db, declaredCreate, dir, grokMcpConnection, hermeticGitCommand, hermeticGitEnv, mcpRequestFromStored, preflightMcp, reviewReply, runJob, upsertProject, validateCliArgs } from '../test/fixture.ts'
+
+const GROK_REVIEW_EVENT = JSON.stringify({
+  type: 'result', subtype: 'success', result: JSON.stringify(reviewReply(1)),
+})
+const CODEX_REVIEW_EVENT = JSON.stringify({
+  type: 'item.completed', item: { type: 'agent_message', text: JSON.stringify(reviewReply(1)) },
+})
 
 describe('review-lens MCP provenance', () => {
   let priorGrokHome: string | undefined
@@ -55,6 +62,67 @@ describe('review-lens MCP provenance', () => {
     return repo
   }
 
+  const codexReview = async (repo: string, tools: string[], mcp: boolean) => {
+    const script = join(dir, `codex-provenance-${randomUUID()}.ts`)
+    const reply = reviewReply(1)
+    reply.provenance.mcp_tools = tools
+    writeFileSync(script, `process.stdout.write(${JSON.stringify(JSON.stringify(reply))})\n`)
+    const agent = AGENTS.codex!
+    const original = { bin: agent.bin, argv: agent.argv, readsOut: agent.readsOut, stdin: agent.stdin }
+    agent.bin = process.execPath
+    agent.argv = () => [script]
+    agent.readsOut = false
+    agent.stdin = false
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      try {
+        return await runJob({ job: 'review-lens', prompt: 'review', cwd: repo,
+          agent: 'codex', mcp, lens: 'provenance-shapes', keepTree: true, noFailover: true })
+      } catch (error) {
+        const runId = (error as { runId?: number }).runId
+        if (!runId) throw error
+        return db().query('SELECT id, status, error FROM run WHERE id=?').get(runId) as
+          { id: number; status: string; error: string }
+      }
+    } finally {
+      agent.bin = original.bin
+      agent.argv = original.argv
+      agent.readsOut = original.readsOut
+      agent.stdin = original.stdin
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(script, { force: true })
+    }
+  }
+
+  test('provenance rejects only another registered project MCP prefix', async () => {
+    const repo = mcpRepo(true)
+    upsertProject({ name: 'other-project', path: join(repo, 'not-this-project'),
+      settings: { mcpServer: 'other-server' } })
+    try {
+      for (const tool of ['get_doc', 'mcp__fixture-project__get_doc', 'orch-ask.get_doc']) {
+        const result = await codexReview(repo, [tool], true)
+        expect(result.status, tool).toBe('ok')
+      }
+      const wrong = await codexReview(repo, ['other-server.get_doc'], true)
+      expect(wrong.status).toBe('failed')
+      expect(wrong.error).toContain('wrong project: provenance names other-server.get_doc')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('silent provenance requires requested MCP degradation', async () => {
+    const repo = mcpRepo(false)
+    try {
+      const plain = await codexReview(repo, [], false)
+      const requested = await codexReview(repo, [], true)
+      expect(db().query('SELECT provenance_status FROM run WHERE id=?').get(plain.id))
+        .toEqual({ provenance_status: null })
+      expect(db().query('SELECT provenance_status FROM run WHERE id=?').get(requested.id))
+        .toEqual({ provenance_status: 'silent' })
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   test('grants only an orch-cut tree and names the invariant for a caller checkout', () => {
     expect(() => assertGrokTrustEligible('/tmp/orch-tree', {
       worktree: '/tmp/orch-tree', worktree_source: 'git',
@@ -77,7 +145,7 @@ if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
   printf '%s' '{"servers":[{"name":"fixture-project","healthy":true,"checks":[]}]}'
 else
   printf '%s' "$*" > "$GROK_HOME/spawn-argv"
-  printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
+  printf '%s\n' '${GROK_REVIEW_EVENT}'
 fi
 `)
     chmodSync(script, 0o755)
@@ -211,7 +279,7 @@ if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
   test -L .mcp.json || exit 97
   printf '%s' '{"servers":[{"name":"fixture-project","healthy":true,"checks":[]}]}'
 else
-  printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
+  printf '%s\n' '${GROK_REVIEW_EVENT}'
 fi
 `)
     chmodSync(script, 0o755)
@@ -255,7 +323,7 @@ if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
 else
   rm .mcp.json
   printf '%s\n' '{"worker":true}' > .mcp.json
-  printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
+  printf '%s\n' '${GROK_REVIEW_EVENT}'
 fi
 `)
     chmodSync(script, 0o755)
@@ -309,7 +377,7 @@ if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
   test -f .mcp.json && test ! -L .mcp.json || exit 97
   printf '%s' '{"servers":[{"name":"fixture-project","healthy":true,"checks":[]}]}'
 else
-  printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
+  printf '%s\n' '${GROK_REVIEW_EVENT}'
 fi
 `)
     chmodSync(script, 0o755)
@@ -348,7 +416,7 @@ if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
   test -f .mcp.json && test ! -L .mcp.json || exit 97
   printf '%s' '{"servers":[{"name":"fixture-project","healthy":true,"checks":[]}]}'
 else
-  printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
+  printf '%s\n' '${GROK_REVIEW_EVENT}'
 fi
 `)
     chmodSync(script, 0o755)
@@ -411,7 +479,7 @@ fi
 if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
   printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"label":"unavailable","passed":false,"detail":"server down"}]}]}'
 else
-  printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
+  printf '%s\n' '${GROK_REVIEW_EVENT}'
 fi
 `)
     chmodSync(script, 0o755)
@@ -451,7 +519,7 @@ fi
 if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
   printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"label":"unavailable","passed":false,"detail":"server down"}]}]}'
 else
-  printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
+  printf '%s\n' '${GROK_REVIEW_EVENT}'
 fi
 `)
     chmodSync(script, 0o755)
@@ -469,6 +537,8 @@ fi
       })
       expect((db().query('SELECT mcp FROM run WHERE id=?').get(root.id) as { mcp: number }).mcp)
         .toBe(2)
+      db().query('DELETE FROM review WHERE id=(SELECT review_id FROM review_lens WHERE run_id=?)')
+        .run(root.id)
       unlinkSync(root.outPath)
       expect(existsSync(root.outPath)).toBe(false)
       agent.bin = original.bin; agent.argv = original.argv
@@ -484,7 +554,7 @@ fi
         },
         stdout: 'pipe', stderr: 'pipe',
       })
-      expect(continued.exitCode).toBe(0)
+      expect(continued.exitCode, `${continued.stdout.toString()}\n${continued.stderr.toString()}`).toBe(0)
       const childId = Number(continued.stdout.toString().replace(/\u001B\[[0-9;]*m/g, '').trim().split('\n')[0])
       expect(childId).toBeGreaterThan(0)
       const invoke = (...args: string[]) => Bun.spawnSync([
@@ -655,7 +725,7 @@ if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
   printf '%s' '{"servers":[{"name":"orch","healthy":true,"checks":[]}]}'
 else
   printf '%s\n' '{"type":"system","subtype":"init"}'
-  printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
+  printf '%s\n' '${GROK_REVIEW_EVENT}'
 fi
 `)
     chmodSync(script, 0o755)
@@ -699,7 +769,7 @@ fi
     const original = { bin: agent.bin, argv: agent.argv, readsOut: agent.readsOut }
     const script = join(dir, 'fake-codex-wrong-project-prefer.sh')
     writeFileSync(script, `#!/bin/sh
-printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"no findings"}}'
+printf '%s\n' '${CODEX_REVIEW_EVENT}'
 printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}'
 `)
     chmodSync(script, 0o755)
@@ -783,7 +853,7 @@ if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
   exit 99
 fi
 printf '%s\n' '{"type":"system","subtype":"init"}'
-printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
+  printf '%s\n' '${GROK_REVIEW_EVENT}'
 `)
     chmodSync(script, 0o755)
     const agent = AGENTS.grok!
@@ -875,7 +945,7 @@ exit 0
     }
     const script = join(dir, 'fake-codex-unverified-lens.sh')
     writeFileSync(script, `#!/bin/sh
-printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"no findings"}}'
+printf '%s\n' '${CODEX_REVIEW_EVENT}'
 printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}'
 `)
     chmodSync(script, 0o755)
