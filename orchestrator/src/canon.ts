@@ -216,7 +216,7 @@ export class CanonBudgetError extends Error {
     super([
       `canon pack is ${pack.bytes} bytes; budget is ${pack.budgetBytes} bytes`,
       ...rows,
-      'remedies: mark a document demand, or raise packBytes for this job',
+      'remedy: demote the named largest inject sections to demand documents',
     ].join('\n'))
     this.name = 'CanonBudgetError'
   }
