@@ -617,7 +617,12 @@ printf '%s\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"a
         job: 'summarize', prompt: 'no checkout required', cwd: dir, agent: 'grok',
       })
       expect(noTree.worktree).toBeNull()
-      expect(warnings.some((line) => line.includes('confinement watch skipped'))).toBe(false)
+      expect(warnings.some((line) => line.includes('confinement watch skipped'))).toBe(true)
+      const noTreeRow = db().query('SELECT output_path FROM run WHERE id=?').get(noTree.id) as
+        { output_path: string }
+      expect(readFileSync(noTreeRow.output_path, 'utf8')).toContain(
+        `confinement watch skipped moved-project at ${moved}:`,
+      )
     } finally {
       console.error = originalError
       grok.bin = previousBin
