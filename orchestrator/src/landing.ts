@@ -1274,7 +1274,7 @@ function performLand(
         cause: `${trunk} moved from ${gatedTrunk} to ${outcome.currentTrunk}`,
         landingId: options.landingId ?? null,
       })
-      if (losses >= 2) {
+      if (losses >= 3) {
         throw namedError(
           `refusing to land ${branch}: ${trunk} moved again to ${outcome.currentTrunk} after re-gate`,
           INVARIANT_LOCK_SCOPE,
@@ -1288,6 +1288,12 @@ function performLand(
       tip = rebaseAndGate(project, repoRoot, worktree, branch, trunk, gatedTrunk, guard)
     }
   }, timeoutMs)
+}
+
+class MergeGroupTrunkMoved extends Error {
+  constructor(readonly from: string, readonly to: string) {
+    super(`trunk moved during merge-group gate from ${from} to ${to}`)
+  }
 }
 
 export function diffCarriesMigrationJournal(paths: string[]): boolean {
@@ -1786,6 +1792,7 @@ function rebaseBranchesOntoTrunk(
 function processMergeGroup(
   cwd: string, rows: LandingRow[],
   options: { timeoutMs?: number; unreviewed?: string; strandLive?: string },
+  losses = 0,
 ): void {
   if (rows.length === 1) {
     processOneLanding(cwd, rows[0]!, options)
@@ -1828,11 +1835,7 @@ function processMergeGroup(
       assertMainCheckoutOnTrunk(repoRoot, trunk)
       const current = git(repoRoot, ['rev-parse', `refs/heads/${trunk}^{commit}`])
       if (current !== trunkOid) {
-        throw namedError(
-          `trunk moved during merge-group gate`,
-          INVARIANT_LOCK_SCOPE,
-          `orch land --drain`,
-        )
+        throw new MergeGroupTrunkMoved(trunkOid, current)
       }
       refuseOrWaitLiveRuns(
         project, repoRoot, groupPath, trunkOid, tip, options.strandLive,
@@ -1873,6 +1876,29 @@ function processMergeGroup(
       throw error
     }
     console.log(`landed merge-group of ${rows.map((row) => row.branch).join(', ')} at ${tip}`)
+  } catch (error) {
+    if (!(error instanceof MergeGroupTrunkMoved)) throw error
+    tryWriteContention({
+      resourceKind: 'trunk', resourceKey: project.name, eventKind: 'retry',
+      cause: `${trunk} moved from ${error.from} to ${error.to}`,
+      landingId: rows[0]!.id,
+    })
+    if (losses + 1 >= 3) {
+      const refusal = namedError(
+        `refusing merge-group: ${trunk} moved during three gated attempts`,
+        INVARIANT_LOCK_SCOPE,
+        `orch land <branch>`,
+      )
+      for (const row of rows) {
+        db().query(
+          `UPDATE landing SET status='refused',error=?,finished_at=?,claim_pid=NULL,claim_session=NULL WHERE id=?`,
+        ).run(refusal.message, nowIso(), row.id)
+      }
+      throw refusal
+    }
+    cleanup()
+    console.log(`${trunk} moved during merge-group gate; rebuilding and re-gating the group`)
+    processMergeGroup(cwd, rows, options, losses + 1)
   } finally {
     cleanup()
   }

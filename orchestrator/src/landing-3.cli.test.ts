@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   addRun, allocateLandingJournals, db, drainQueue, hermeticGitEnv, land, landingStatus,
@@ -50,6 +50,45 @@ describe('DEV-370 landing queue and branch ownership', () => {
       expect(g(repo, 'ls-tree', '-r', '--name-only', 'main')).not.toContain('fail-gate.txt')
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
+
+  test('a merge group rebuilds on a moved trunk and lands after re-gating', () => {
+    const { repo } = repoWithBranches(['move-group-a', 'move-group-b'])
+    const gate = join(repo, 'move-group-gate.sh')
+    writeFileSync(gate, `#!/bin/sh\nset -eu\nc='${repo}/gate-count'; n=0; [ ! -e "$c" ] || n=$(cat "$c"); n=$((n+1)); echo "$n" > "$c"\nif [ "$n" = 1 ]; then echo move > '${repo}/trunk-move.txt'; git -c core.hooksPath=/dev/null -C '${repo}' add trunk-move.txt; git -c core.hooksPath=/dev/null -C '${repo}' commit -m 'move trunk'; fi\n`)
+    Bun.spawnSync(['chmod', '+x', gate])
+    upsertProject({ name: 'landing-group-move', path: repo, settings: { trunk: 'main', gate } })
+    try {
+      land(repo, 'move-group-a', { unreviewed: 'a', wait: false })
+      land(repo, 'move-group-b', { unreviewed: 'b', wait: false })
+      drainQueue(repo)
+      expect(g(repo, 'ls-tree', '-r', '--name-only', 'main')).toContain('move-group-a.txt')
+      expect(g(repo, 'ls-tree', '-r', '--name-only', 'main')).toContain('move-group-b.txt')
+      expect(readFileSync(join(repo, 'gate-count'), 'utf8')).toBe('2\n')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a single landing gets three gated attempts and refuses after a third trunk move', () => {
+    for (const moves of [2, 3]) {
+      const { repo } = repoWithBranches([`move-single-${moves}`])
+      const gate = join(repo, 'move-single-gate.sh')
+      writeFileSync(gate, `#!/bin/sh\nset -eu\nc='${repo}/gate-count'; n=0; [ ! -e "$c" ] || n=$(cat "$c"); n=$((n+1)); echo "$n" > "$c"\nif [ "$n" -le ${moves} ]; then echo "$n" > '${repo}/trunk-move.txt'; git -c core.hooksPath=/dev/null -C '${repo}' add trunk-move.txt; git -c core.hooksPath=/dev/null -C '${repo}' commit -m "move trunk $n"; fi\n`)
+      Bun.spawnSync(['chmod', '+x', gate])
+      upsertProject({ name: `landing-single-move-${moves}`, path: repo, settings: { trunk: 'main', gate } })
+      try {
+        if (moves === 2) {
+          land(repo, `move-single-${moves}`, { unreviewed: 'moves' })
+          expect(readFileSync(join(repo, 'gate-count'), 'utf8')).toBe('3\n')
+        } else {
+          expect(() => land(repo, `move-single-${moves}`, { unreviewed: 'moves' })).toThrow(
+            'moved again',
+          )
+          expect(db().query(
+            'SELECT status FROM landing WHERE project=? ORDER BY id DESC LIMIT 1',
+          ).get(`landing-single-move-${moves}`)).toEqual({ status: 'refused' })
+        }
+      } finally { rmSync(repo, { recursive: true, force: true }) }
+    }
+  }, 15_000)
 
   test('an overlapping queued landing is marked rebase_required and a disjoint one is not', () => {
     const { repo, trees } = repoWithBranches(['overlap-a', 'disjoint-c'])
