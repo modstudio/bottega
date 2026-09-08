@@ -224,6 +224,37 @@ Making them customisable — your structure, enforced with the same rigour — i
 coherent thing to build and is not what this is. That is a decision, not an
 oversight, and not a priority now.
 
+## A rule binds while it stands, and is replaceable
+
+Canon binds in one direction only: while a rule is written here it is not to be
+worked around, reinterpreted into nothing, or excepted for the case in hand. If it
+is written, it holds.
+
+It does not bind in the other direction. Canon is where an answer was recorded so
+it would not have to be re-derived. It is not evidence that the answer is still
+the best one. The authority in this repository is best practice, current solutions
+and evidence-backed improvement; canon is their record, not their source.
+
+**The default is open.** Any rule may be challenged on evidence, and nothing here
+is defended on the grounds that it is already written down.
+
+**Closure is explicit or it does not exist.** A question that has been argued and
+settled says so in its own entry, with the reason, and is thereafter closed.
+Silence closes nothing, and an absent objection is not a settled one.
+
+**The failure this prevents leaves no trace.** An agent reads a rule, stops, and
+builds the lesser thing, because the better thing would have meant proposing a
+change. It exits zero, breaks no test, and is indistinguishable afterwards from a
+decision someone made deliberately. Every other failure in this repository
+announces itself; this one is silent, which is why the rule is written down rather
+than assumed.
+
+**Replacing a rule is a deliberate act.** Bring the evidence and the replacement
+together, name what is overruled, and record the ruling. The rule holds until that
+happens: proposing a replacement is not licence to act as though it already
+landed.
+
+
 ## What we build, and what we buy
 
 Beyond the value proposition, lean on tried and tested. Do not hand-roll and do
