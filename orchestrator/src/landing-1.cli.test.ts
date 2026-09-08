@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { rmSync, readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync, readdirSync } from 'node:fs'
+import { rmSync, readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync, readdirSync, rmdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { addRun, cleanCompletedSequencerState, completeReview, contentTree, db, gateFailureSummary, getReview, hermeticGitEnv, land, landingReviewCoverage, listReviews, prepareSharedRefGuard, projectLockState, recordReviews, reviewPins, reviewReply, upsertProject, withProjectLock } from '../test/fixture.ts'
 
@@ -78,7 +78,7 @@ test('only bun\'s complete timeout line reports machine load', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
-  test('a leftover rebase directory without a live ref is refused', () => {
+  test('ordinary leftover rebase residue is cleared by confirmed rebase quit', () => {
     const { repo, trees } = repoWithBranches(['stale-rebase'])
     const tree = trees['stale-rebase']!
     try {
@@ -89,8 +89,44 @@ test('only bun\'s complete timeout line reports machine load', () => {
       const rebaseDir = dirname(marker) + '/rebase-merge'
       rmSync(marker, { force: true })
       g(tree, 'reset', '--hard', 'ORIG_HEAD')
-      expect(() => cleanCompletedSequencerState(tree)).toThrow(/residue rebase-merge was not created by this landing process[\s\S]*invariant:[\s\S]*cleared by: git -C .* rebase --abort/)
+      let message = ''
+      try { cleanCompletedSequencerState(tree) } catch (error) { message = (error as Error).message }
+      expect(message).toMatch(/residue rebase-merge was not created by this landing process[\s\S]*invariant:[\s\S]*cleared by: first confirm no rebase process is running against .*; then git -C .* rebase --quit/)
       expect(existsSync(rebaseDir)).toBe(true)
+      // The conflicting rebase child has exited, which is this fixture's liveness confirmation.
+      expect(Bun.spawnSync(['git', 'rebase', '--quit'], { cwd: tree, env: hermeticGitEnv() }).exitCode).toBe(0)
+      expect(() => cleanCompletedSequencerState(tree)).not.toThrow()
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('empty rebase residue is cleared by removing its exact git-path', () => {
+    const { repo, trees } = repoWithBranches(['empty-rebase-residue'])
+    const tree = trees['empty-rebase-residue']!
+    const rebaseDir = g(tree, 'rev-parse', '--path-format=absolute', '--git-path', 'rebase-merge')
+    try {
+      mkdirSync(rebaseDir)
+      let message = ''
+      try { cleanCompletedSequencerState(tree) } catch (error) { message = (error as Error).message }
+      expect(message).toContain(`cleared by: rmdir -- '${rebaseDir}'`)
+      rmdirSync(rebaseDir)
+      expect(() => cleanCompletedSequencerState(tree)).not.toThrow()
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('partial rebase residue with orig-head is cleared by confirmed quit without moving HEAD', () => {
+    const { repo, trees } = repoWithBranches(['partial-rebase-residue'])
+    const tree = trees['partial-rebase-residue']!
+    const rebaseDir = g(tree, 'rev-parse', '--path-format=absolute', '--git-path', 'rebase-merge')
+    try {
+      mkdirSync(rebaseDir)
+      writeFileSync(join(rebaseDir, 'orig-head'), `${g(tree, 'rev-parse', 'HEAD^')}\n`)
+      const before = g(tree, 'rev-parse', 'HEAD')
+      let message = ''
+      try { cleanCompletedSequencerState(tree) } catch (error) { message = (error as Error).message }
+      expect(message).toMatch(/cleared by: first confirm no rebase process is running against .*; then git -C .* rebase --quit/)
+      expect(Bun.spawnSync(['git', 'rebase', '--quit'], { cwd: tree, env: hermeticGitEnv() }).exitCode).toBe(0)
+      expect(g(tree, 'rev-parse', 'HEAD')).toBe(before)
+      expect(() => cleanCompletedSequencerState(tree)).not.toThrow()
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
@@ -125,7 +161,7 @@ test('only bun\'s complete timeout line reports machine load', () => {
     }
   })
 
-  test('a live merge is refused without touching rebase residue', () => {
+  test('a live merge plus empty rebase residue names and clears both findings', () => {
     const { repo, trees } = repoWithBranches(['merge-one', 'merge-two'])
     const tree = trees['merge-one']!
     try {
@@ -134,8 +170,15 @@ test('only bun\'s complete timeout line reports machine load', () => {
       expect(Bun.spawnSync(['git', 'merge', 'merge-two'], { cwd: tree, env: hermeticGitEnv() }).exitCode).not.toBe(0)
       const rebaseDir = join(g(tree, 'rev-parse', '--path-format=absolute', '--git-dir'), 'rebase-merge')
       mkdirSync(rebaseDir)
-      expect(() => cleanCompletedSequencerState(tree)).toThrow('live Git operation MERGE_HEAD')
+      let message = ''
+      try { cleanCompletedSequencerState(tree) } catch (error) { message = (error as Error).message }
+      expect(message).toContain('live Git operation MERGE_HEAD')
+      expect(message).toContain('Git operation residue rebase-merge')
       expect(existsSync(rebaseDir)).toBe(true)
+      expect(Bun.spawnSync(['git', 'merge', '--abort'], { cwd: tree, env: hermeticGitEnv() }).exitCode).toBe(0)
+      rmdirSync(rebaseDir)
+      g(tree, 'update-ref', '-d', 'AUTO_MERGE')
+      expect(() => cleanCompletedSequencerState(tree)).not.toThrow()
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
