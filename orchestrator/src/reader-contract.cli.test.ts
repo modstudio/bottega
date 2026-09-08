@@ -150,6 +150,33 @@ process.stdout.write(JSON.stringify({
     }
   })
 
+  test('files_written naming scratch/reply.json survives the scratch-to-artifacts rename', async () => {
+    const repo = repository()
+    const restore = stubCodex(`
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+const reply = join(process.env.ORCH_SCRATCH!, 'reply.json')
+const body = ${JSON.stringify(readerReply([
+      { name: 'answer', status: 'delivered', content: '@devbox/orchestrator' },
+    ], ['REPLY_PATH']))}
+writeFileSync(reply, body.replace('REPLY_PATH', reply))
+process.stdout.write('I completed the repository question.\\n')
+`)
+    try {
+      const result = await runJob({
+        job: 'file-question', prompt: 'name field', cwd: repo, agent: 'codex',
+        deliverables: ['answer'], noFailover: true,
+      })
+      expect(result.status).toBe('ok')
+      expect(JSON.parse(result.output).deliverables[0].content).toBe('@devbox/orchestrator')
+      const artifacts = listRunArtifacts(result.id)
+      expect(artifacts.some((p) => p.endsWith('reply.json'))).toBe(true)
+    } finally {
+      restore()
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('artifacts are copied and listed', async () => {
     const repo = repository()
     const restore = stubCodex(`

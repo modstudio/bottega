@@ -1574,10 +1574,17 @@ function persistRunArtifacts(
     const source = named.startsWith('/') ? named
       : worktree ? join(worktree.path, named) : named
     const destination = join(artifacts, basename(named))
-    if (!existsSync(source) || !statSync(source).isFile()) {
+    // Scratch was renamed onto artifacts above. A files_written path that still
+    // names the old scratch location (reply.json is the usual case) already
+    // lives at the destination.
+    const from = source === scratch || source.startsWith(`${scratch}/`)
+      ? join(artifacts, relative(scratch, source))
+      : source
+    if (from === destination && existsSync(destination) && statSync(destination).isFile()) continue
+    if (!existsSync(from) || !statSync(from).isFile()) {
       throw new Error(`could not copy named file ${source} to ${destination}: source is not a file`)
     }
-    copyFileSync(source, destination)
+    copyFileSync(from, destination)
   }
 }
 
