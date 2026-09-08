@@ -177,6 +177,15 @@ const rngFor = (caseNo: number, round = 0) =>
 const seedMessage = () => `ORCH_HARNESS_SEED=${defaultSeed}\n${mergedTimeline()}`
 
 type Event = { at: string; event: string; actor: string; lock?: string; pid?: number | null }
+function assertOneLockPerPurpose(rows: { actor: string; lock?: string }[]): void {
+  expect(rows).toHaveLength(3)
+  expect(rows.every((row) => row.lock !== undefined && row.lock !== 'unknown'),
+    `lock observation itself failed\n${seedMessage()}`).toBe(true)
+  expect(new Set(rows.map((row) => row.lock)).size, seedMessage()).toBe(3)
+}
+function assertLandingLockNotHeldAtGate(rows: Event[]): void {
+  expect(rows.every((row) => row.pid === null), seedMessage()).toBe(true)
+}
 function events(actor: string): Event[] {
   const path = join(timelines, `${actor}.jsonl`)
   if (!existsSync(path)) return []
@@ -255,7 +264,8 @@ function configureSettings(settings: Record<string, unknown>): void {
     JSON.stringify(settings)))
 }
 function waiterExists(what: string): boolean {
-  const path = join(git(repo, 'rev-parse', '--git-common-dir'), 'orch-landing.waiters')
+  const path = join(git(repo, 'rev-parse', '--git-common-dir'),
+    'orch', 'locks', 'orch-landing.waiters')
   if (!existsSync(path)) return false
   return readdirSync(path).some((name) => {
     try { return JSON.parse(readFileSync(join(path, name), 'utf8')).what === what } catch { return false }
@@ -313,7 +323,7 @@ test('Every write transaction is IMMEDIATE; a deferred transaction that later wr
 })
 
 test(caseName.lockPurpose, async () => {
-  const actorCode = `const{appendFileSync,existsSync,readFileSync,readdirSync}=await import('node:fs');const{join}=await import('node:path');const{withProjectLock,withWorktreeCreateLock,withCleanupLock}=await import(process.argv[1]);const [repo,actor,file]=process.argv.slice(2);const log=(event,lock)=>appendFileSync(file,JSON.stringify({at:new Date().toISOString(),event,actor,...(lock?{lock}:{})})+'\\n');log('lock-wait');const action=()=>{const common=Bun.spawnSync(['git','rev-parse','--path-format=absolute','--git-common-dir'],{cwd:repo,stdout:'pipe'}).stdout.toString().trim();const held=readdirSync(common).filter(name=>name.endsWith('.lock')&&existsSync(join(common,name,'owner'))).filter(name=>{try{return JSON.parse(readFileSync(join(common,name,'owner'),'utf8')).pid===process.pid}catch{return false}});const lock=held.length===1?held[0]:'unknown';log('lock-held',lock);Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,80)};if(actor==='worker')withWorktreeCreateLock(repo,action,2000);else if(actor==='cleanup')withCleanupLock(repo,{session:actor,what:actor},action,2000);else withProjectLock(repo,'landing',{session:actor,what:actor},action,2000,true);log('lock-released');log('exit')`
+  const actorCode = `const{appendFileSync,existsSync,readFileSync}=await import('node:fs');const{join}=await import('node:path');const{projectLockDir,withProjectLock,withWorktreeCreateLock,withCleanupLock}=await import(process.argv[1]);const [repo,actor,file]=process.argv.slice(2);const log=(event,lock)=>appendFileSync(file,JSON.stringify({at:new Date().toISOString(),event,actor,...(lock?{lock}:{})})+'\\n');log('lock-wait');const purpose=actor==='worker'?'create':actor==='cleanup'?'cleanup':'landing';const action=()=>{const base=projectLockDir(repo);const lock=join(base,'orch-'+purpose+'.lock');const owner=join(base,'orch-'+purpose+'.owner');const observed=existsSync(lock)&&existsSync(owner)&&JSON.parse(readFileSync(owner,'utf8')).pid===process.pid?lock:'unknown';log('lock-held',observed);Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,80)};if(actor==='worker')withWorktreeCreateLock(repo,action,2000);else if(actor==='cleanup')withCleanupLock(repo,{session:actor,what:actor},action,2000);else withProjectLock(repo,'landing',{session:actor,what:actor},action,2000,true);log('lock-released');log('exit')`
   const rng = rngFor(2)
   const names = rng.shuffle(['worker', 'lander', 'cleanup'])
   const children = names.map(async (actor) => {
@@ -330,13 +340,19 @@ test(caseName.lockPurpose, async () => {
   const intervals = names.map((actor) => ({ actor, rows: events(actor) }))
   const shared = intervals.flatMap(({ actor, rows }) => rows
     .filter((row) => row.event === 'lock-held').map((row) => ({ actor, lock: row.lock })))
-  expect(shared).toHaveLength(3)
-  expect(shared.every((row) => row.lock !== undefined && row.lock !== 'unknown'),
-    `lock observation itself failed\n${seedMessage()}`).toBe(true)
   violation(caseName.lockPurpose, seedMessage(), () => {
-    expect(new Set(shared.map((row) => row.lock)).size, seedMessage()).toBe(3)
+    assertOneLockPerPurpose(shared)
   })
 }, 15_000)
+
+test('One lock per purpose assertion rejects two purposes sharing a path', () => {
+  const shared = [
+    { actor: 'worker', lock: '/common/orch/locks/shared.lock' },
+    { actor: 'lander', lock: '/common/orch/locks/shared.lock' },
+    { actor: 'cleanup', lock: '/common/orch/locks/orch-cleanup.lock' },
+  ]
+  expect(() => assertOneLockPerPurpose(shared)).toThrow()
+})
 
 test(caseName.lensAttach, async () => {
   const held = join(fixture, 'lens-landing-held')
@@ -559,7 +575,7 @@ test(caseName.landingGate, async () => {
   const release = branches.map((branch) => join(fixture, `${branch}-release`))
   release.forEach((path) => rmSync(path, { force: true }))
   const gate = join(fixture, 'barrier-gate.ts')
-  writeFileSync(gate, `#!/usr/bin/env bun\nimport{appendFileSync,existsSync}from'node:fs';import{resolve,join}from'node:path';const actor=Bun.spawnSync(['git','branch','--show-current'],{stdout:'pipe'}).stdout.toString().trim();const common=Bun.spawnSync(['git','rev-parse','--git-common-dir'],{stdout:'pipe'}).stdout.toString().trim();const lock=resolve(process.cwd(),common,'orch-landing.lock');appendFileSync('${join(timelines, 'gates.jsonl')}',JSON.stringify({at:new Date().toISOString(),event:'gate-start',actor,lock,pid:existsSync(join(lock,'owner'))?JSON.parse(await Bun.file(join(lock,'owner')).text()).pid:null})+'\\n');const release='${fixture}/'+actor+'-release';while(!existsSync(release))await Bun.sleep(5);appendFileSync('${join(timelines, 'gates.jsonl')}',JSON.stringify({at:new Date().toISOString(),event:'gate-end',actor,lock})+'\\n')\n`)
+  writeFileSync(gate, `#!/usr/bin/env bun\nimport{appendFileSync,existsSync}from'node:fs';import{resolve,join}from'node:path';const actor=Bun.spawnSync(['git','branch','--show-current'],{stdout:'pipe'}).stdout.toString().trim();const common=Bun.spawnSync(['git','rev-parse','--git-common-dir'],{stdout:'pipe'}).stdout.toString().trim();const base=resolve(process.cwd(),common,'orch','locks');const lock=join(base,'orch-landing.lock');const owner=join(base,'orch-landing.owner');appendFileSync('${join(timelines, 'gates.jsonl')}',JSON.stringify({at:new Date().toISOString(),event:'gate-start',actor,lock,pid:existsSync(owner)?JSON.parse(await Bun.file(owner).text()).pid:null})+'\\n');const release='${fixture}/'+actor+'-release';while(!existsSync(release))await Bun.sleep(5);appendFileSync('${join(timelines, 'gates.jsonl')}',JSON.stringify({at:new Date().toISOString(),event:'gate-end',actor,lock})+'\\n')\n`)
   chmodSync(gate, 0o755); configure(gate)
   const landers = branches.map((branch) => childLand(branch))
   const landingResults = landers.map(result)
@@ -569,8 +585,24 @@ test(caseName.landingGate, async () => {
   const gateStarts = events('gates').filter(e => e.event === 'gate-start')
   expect(gateStarts.length).toBeGreaterThanOrEqual(2)
   violation(caseName.landingGate, seedMessage(), () => {
-    expect(gateStarts.every(e => e.pid === null), seedMessage()).toBe(true)
+    assertLandingLockNotHeldAtGate(gateStarts)
   })
+})
+
+test('Landing gate assertion rejects a deliberately held landing lock', async () => {
+  const { projectLockDir, withProjectLock } = await import('./worktree.ts')
+  const base = projectLockDir(repo)
+  let observed: Event | null = null
+  withProjectLock(repo, 'landing', { session: 'meta-test', what: 'held-across-gate' }, () => {
+    const owner = join(base, 'orch-landing.owner')
+    observed = {
+      at: new Date().toISOString(), event: 'gate-start', actor: 'meta-test',
+      lock: join(base, 'orch-landing.lock'),
+      pid: JSON.parse(readFileSync(owner, 'utf8')).pid as number,
+    }
+  }, 1_000, true)
+  expect(observed?.pid).toBe(process.pid)
+  expect(() => assertLandingLockNotHeldAtGate([observed!])).toThrow()
 })
 
 test(caseName.failedLanding, async () => {
