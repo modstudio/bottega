@@ -41,7 +41,10 @@ test('review-lens preflight requires a git checkout', () => {
     const { repo } = scratchRepo()
     upsertProject({
       name: 'wrong-register-branch', path: repo,
-      settings: { trunk: 'develop', worktree: { create: declaredCreate(), branch: '{key}' } },
+      settings: {
+        trunk: 'develop',
+        worktree: { create: declaredCreate('scripts/worktree', ['create', '{branch}']), branch: '{key}' },
+      },
     })
     expect(() => fromRoot(() => preflight('file-question', repo))).toThrow(
       /invariant: the register landing branch agrees.*orch project set wrong-register-branch/s,
