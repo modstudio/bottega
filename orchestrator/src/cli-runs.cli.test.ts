@@ -293,20 +293,27 @@ describe("detached run collection", () => {
           `SELECT COUNT(*) n FROM run WHERE (id=? OR parent_run_id=?)
             AND failure_kind IN ('escaped','confinement_unverified')`,
         ).get(fixture.id, fixture.id)).toEqual({ n: 0 })
-        expect(fixture.audit().transitions).toEqual([
+        const clearAudit = fixture.audit()
+        expect(clearAudit.writer).toBe('operator')
+        expect(clearAudit.writer).not.toBe('')
+        expect(clearAudit.note).toBe('known edit')
+        expect(clearAudit.note).not.toBe('')
+        expect(clearAudit.transitions).toEqual([
           { runId: fixture.id, mode: rootSnapshot ? 'restored' : 'forward' },
           { runId: turn, mode: turnSnapshot ? 'restored' : 'forward' },
         ])
-        expect(fixture.audit().priorOutcomes).toEqual([
+        expect(clearAudit.priorOutcomes).toEqual([
           { runId: fixture.id, failureKind: kind, error: 'confinement block' },
           { runId: turn, failureKind: kind, error: 'confinement block' },
         ])
         const rootAfter = db().query(
-          'SELECT status,error,pre_confinement,confinement FROM run WHERE id=?',
+          'SELECT status,failure_kind,error,pre_confinement,confinement FROM run WHERE id=?',
         ).get(fixture.id) as {
-          status: string; error: string | null; pre_confinement: string; confinement: string | null
+          status: string; failure_kind: string | null; error: string | null
+          pre_confinement: string; confinement: string | null
         }
         expect(rootAfter.status).toBe(turnSnapshot ? 'ok' : 'failed')
+        expect(rootAfter.failure_kind).toBeNull()
         expect(rootAfter.error).toBe(turnSnapshot ? null
           : 'confinement cleared forward by operator: known edit; pre-confinement outcome unavailable')
         expect(JSON.parse(rootAfter.pre_confinement).clearMode)
