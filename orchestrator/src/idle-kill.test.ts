@@ -137,6 +137,15 @@ describe('silence and CPU', () => {
     }).kill).toBe(false)
   })
 
+  test('an unobservable process table is not idle', () => {
+    expect(shouldIdleKill({
+      lastEventAt: last, startedAt: started, pid: 10, asking: false, openQuestion: false,
+      alreadyTimedOut: false, alreadyIdleKilled: false, now, thresholdMs: 5 * 60_000,
+      samples: [],
+    })).toMatchObject({ kill: false, reason: 'process table unobservable' })
+    expect(isWorkerCpuIdle(10, [])).toBe(false)
+  })
+
   test('the wall owns the run once it has fired', () => {
     expect(shouldIdleKill({
       lastEventAt: last, startedAt: started, pid: 10, asking: false, openQuestion: false,

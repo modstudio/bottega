@@ -3016,7 +3016,11 @@ export async function run(opts: {
     idleTimer = setInterval(() => {
       if (idleCheckInFlight || timedOut || idleKilled) return
       idleCheckInFlight = true
-      void maybeIdleKill().finally(() => { idleCheckInFlight = false })
+      void maybeIdleKill()
+        .catch((error) => {
+          console.error(`orch: run ${claim.id} idle check failed: ${error}`)
+        })
+        .finally(() => { idleCheckInFlight = false })
     }, idlePollMs(jobIdleKillMs(opts.job)))
 
     const teeing = teeTransportEvents(handle.events(), claim.id)

@@ -75,11 +75,17 @@ export function parsePsTable(text: string): ProcessSample[] {
 }
 
 export function sampleProcesses(): ProcessSample[] {
-  const p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,%cpu=,state='], {
-    stdout: 'pipe', stderr: 'pipe',
-  })
-  if (p.exitCode !== 0) return []
-  return parsePsTable(p.stdout.toString())
+  try {
+    const p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,%cpu=,state='], {
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    if (p.exitCode !== 0) return []
+    return parsePsTable(p.stdout.toString())
+  } catch {
+    // Bun.spawnSync throws EPERM rather than returning non-zero. An
+    // unobservable process table must read as not idle.
+    return []
+  }
 }
 
 export function descendantPids(root: number, samples: ProcessSample[]): number[] {
@@ -371,7 +377,11 @@ export function shouldIdleKill(opts: {
     return { kill: false, idleMs, reason: 'silence below threshold' }
   }
   const samples = opts.samples ?? sampleProcesses()
-  if (!isWorkerCpuIdle(pid, samples)) {
+  const cpu = processGroupCpuPercent(pid, samples)
+  if (cpu === null) {
+    return { kill: false, idleMs, reason: 'process table unobservable' }
+  }
+  if (cpu >= CPU_IDLE_PERCENT) {
     return { kill: false, idleMs, reason: 'quiet but burning CPU' }
   }
   return { kill: true, idleMs, reason: null }
