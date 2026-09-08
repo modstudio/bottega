@@ -221,6 +221,30 @@ describe("detached run collection", () => {
     } finally { rmSync(fixture.repo, { recursive: true, force: true }) }
   })
 
+  test('confinement clear refuses a zero-row guarded update without a success audit', () => {
+    const fixture = confinementArtifact('confinement_unverified')
+    try {
+      db().exec(
+        `CREATE TRIGGER ignore_confinement_clear BEFORE UPDATE OF status ON run
+          WHEN OLD.id=${fixture.id} AND OLD.failure_kind='confinement_unverified'
+          BEGIN SELECT RAISE(IGNORE); END`,
+      )
+      const cleared = orch(
+        'confinement', 'clear', String(fixture.id), '--writer', 'operator', '--note', 'known edit',
+      )
+      expect(cleared.code).toBe(1)
+      expect(cleared.err).toContain(
+        `run ${fixture.id}'s confinement classification changed before it could be cleared`,
+      )
+      expect(db().query('SELECT status,failure_kind,error FROM run WHERE id=?').get(fixture.id))
+        .toEqual({ status: 'failed', failure_kind: 'confinement_unverified', error: 'confinement block' })
+      expect(db().query(
+        `SELECT COUNT(*) n FROM run_mutation_audit
+          WHERE root_id=? AND action='reclassify' AND json_extract(reason,'$.cleared')=1`,
+      ).get(fixture.id)).toEqual({ n: 0 })
+    } finally { rmSync(fixture.repo, { recursive: true, force: true }) }
+  })
+
   test('confinement refusals execute the working clear remedy for every kind and chain shape', () => {
     for (const kind of ['escaped', 'confinement_unverified'] as const) {
       for (const rootSnapshot of [true, false]) {

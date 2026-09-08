@@ -2134,14 +2134,24 @@ switch (cmd) {
     })
     writeTransaction(() => {
       authority = adoptRunMutation(authority, 'receipt')
+      const current = db().query(
+        `SELECT id FROM run WHERE (id=? OR parent_run_id=?)
+          AND failure_kind IN ('escaped','confinement_unverified') ORDER BY turn,id`,
+      ).all(authority.rootId, authority.rootId) as { id: number }[]
+      if (current.length !== rows.length || current.some(({ id }, index) => id !== rows[index]!.id)) {
+        throw new Error(`run ${id}'s confinement classification changed before it could be cleared`)
+      }
       const update = db().query(
         `UPDATE run SET status=?, failure_kind=?, error=?, pre_confinement=? WHERE id=?
           AND failure_kind IN ('escaped','confinement_unverified')`,
       )
       for (const { row, value } of transitions) {
-        update.run(
+        const changed = update.run(
           value.status!, value.failureKind ?? null, value.error ?? null, JSON.stringify(value), row.id,
         )
+        if (changed.changes !== 1) {
+          throw new Error(`run ${row.id}'s confinement classification changed before it could be cleared`)
+        }
       }
       resolveRootFromLastTurn(db(), authority.rootId)
       auditRunMutation(authority, 'reclassify', JSON.stringify({ ...audit, cleared: true,
