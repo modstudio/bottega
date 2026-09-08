@@ -3976,7 +3976,7 @@ switch (cmd) {
     const row = db().query(
       `SELECT root.id, root.agent, root.job, root.cwd, root.worktree, root.branch,
               root.base_commit, root.vendor_session, root.status, root.session_id,
-              root.turn, root.parent_run_id, root.worktree_source
+              root.turn, root.parent_run_id, root.worktree_source, root.evidence_excluded
          FROM run requested
          JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
         WHERE requested.id = ?`,
@@ -3986,6 +3986,7 @@ switch (cmd) {
       vendor_session: string | null; status: string; session_id: string | null
       turn: number; parent_run_id: number | null
       worktree_source: Worktree['source'] | null
+      evidence_excluded: string | null
     } | null
     if (!row) throw new Error(`no run ${requestedId}`)
     const id = row.id
@@ -4019,6 +4020,17 @@ switch (cmd) {
         asked.n
           ? `run ${id} has already been ruled on; its current status is ${row.status}`
           : `run ${id} has no questions to answer; its current status is ${row.status}`,
+      )
+    }
+
+    // A ruling resumes a live chain. Stopped, failed, stale and voided roots
+    // used to record the answer and spawn a new turn, which is retry's job.
+    if (row.evidence_excluded !== null ||
+        (row.status !== 'running' && row.status !== 'asking')) {
+      throw new Error(
+        `run ${id} is ${row.evidence_excluded !== null ? 'voided' : row.status}. ` +
+        'invariant: a ruling resumes a live chain; a terminal chain is retried or abandoned. ' +
+        `orch retry ${id} --agent <name> (carries the recorded ruling) or orch abandon ${id}`,
       )
     }
 
@@ -4065,13 +4077,9 @@ switch (cmd) {
     const recordOnly = has('record-only')
     const skipResume = recordOnly && !ownersLive
     if (!ownersLive && !stopped.every((q) =>
-      q.owner_status === 'asking' || q.owner_status === 'failed' ||
-      q.owner_status === 'stale' || q.owner_status === 'stopped')) {
+      q.owner_status === 'asking' || q.owner_status === 'running')) {
       const states = stopped.map((q) => `q${q.id} (run ${q.owner_id}, ${q.owner_status})`).join(', ')
-      throw new Error(`run ${id} has questions whose owners are not waiting or stopped: ${states}`)
-    }
-    if (!ownersLive && !['asking', 'stopped', 'failed', 'stale'].includes(row.status)) {
-      throw new Error(`run ${id} is ${row.status}, not waiting on a ruling`)
+      throw new Error(`run ${id} has questions whose owners are not waiting: ${states}`)
     }
 
     const latest = db().query(

@@ -124,34 +124,47 @@ test('answer refuses six individually-legal --file rulings whose packed resume e
 
     const r = orch('answer', String(id), 'yes')
     expect(r.code).toBe(1)
-    expect(r.err).toContain('the ruling was NOT recorded')
-    expect(r.err).not.toContain('owners are not waiting or stopped')
+    expect(r.err).toContain('invariant: a ruling resumes a live chain; a terminal chain is retried or abandoned')
+    expect(r.err).toContain(`orch retry ${id} --agent <name>`)
+    expect(r.err).toContain(`orch abandon ${id}`)
+    expect(r.err).not.toContain('the ruling was NOT recorded')
     expect(db().query(
       'SELECT answer, answered_by, answered_at FROM question WHERE run_id=?',
     ).get(id)).toEqual({ answer: null, answered_by: null, answered_at: null })
   })
 
-  test('the owner may answer a failed root and resume its chain', () => {
-    for (const status of ['failed']) {
+  test('answer refuses a terminal or voided chain without writing', () => {
+    const cases: { status: string; excluded: string | null }[] = [
+      { status: 'failed', excluded: null },
+      { status: 'stopped', excluded: null },
+      { status: 'stale', excluded: null },
+      { status: 'asking', excluded: 'voided with orch score --void' },
+    ]
+    for (const { status, excluded } of cases) {
       const id = addRun({ agent: 'missing-test-agent', job: 'implement', status })
-      const prompt = join(dir, `answer-${status}-${id}.prompt.txt`)
-      writeFileSync(prompt, 'original implementation spec')
-      db().query('UPDATE run SET session_id=?, vendor_session=?, prompt_path=? WHERE id=?')
-        .run('orch-test-session', `${status}-vendor-session`, prompt, id)
+      db().query('UPDATE run SET session_id=? WHERE id=?').run('orch-test-session', id)
+      if (excluded !== null) {
+        db().query('UPDATE run SET evidence_excluded=? WHERE id=?').run(excluded, id)
+      }
       db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
         .run(id, new Date().toISOString(), `${status} question?`)
 
       const before = (db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n
       const result = orch('answer', String(id), `${status} ruling`)
-      expect(result.code).toBe(0)
-      expect(result.out).toContain(`resumed run ${id} as run`)
+      expect(result.code).toBe(1)
+      expect(result.err).toContain(
+        'invariant: a ruling resumes a live chain; a terminal chain is retried or abandoned',
+      )
+      expect(result.err).toContain(`orch retry ${id} --agent <name>`)
+      expect(result.err).toContain(`orch abandon ${id}`)
+      expect(result.out).not.toContain(`resumed run ${id} as run`)
       expect(db().query(
-        'SELECT answer, answered_by FROM question WHERE run_id=?',
-      ).get(id)).toEqual({ answer: `${status} ruling`, answered_by: 'orch-test-session' })
+        'SELECT answer, answered_by, answered_at FROM question WHERE run_id=?',
+      ).get(id)).toEqual({ answer: null, answered_by: null, answered_at: null })
       expect(db().query(
-        'SELECT action, actor_session FROM run_mutation_audit WHERE run_id=?',
-      ).get(id)).toEqual({ action: 'answer', actor_session: 'orch-test-session' })
-      expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before + 1)
+        'SELECT action FROM run_mutation_audit WHERE run_id=?',
+      ).all(id)).toEqual([])
+      expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before)
     }
   })
 
