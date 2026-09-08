@@ -1468,7 +1468,7 @@ export function landingsWithPostStepError(database = db()): {
 }[] {
   return database.query(
     `SELECT project, branch, error FROM landing
-      WHERE status='landed' AND error IS NOT NULL ORDER BY id`,
+      WHERE status='install_failed' AND error IS NOT NULL ORDER BY id`,
   ).all() as { project: string; branch: string; error: string }[]
 }
 
@@ -1724,7 +1724,7 @@ function finishLanded(
     const output = migrateLandedJournals(result.project, result.trunkBefore, result.tip)
     appendStep(landingId, 'migrate', Date.now() - started, output)
   } catch (error) {
-    db().query(`UPDATE landing SET error=?,finished_at=? WHERE id=?`)
+    db().query(`UPDATE landing SET status='install_failed',error=?,finished_at=?,claim_pid=NULL,claim_session=NULL WHERE id=?`)
       .run(error instanceof Error ? error.message : String(error), nowIso(), landingId)
     throw error
   }
@@ -1870,7 +1870,7 @@ function processMergeGroup(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       for (const row of rows) {
-        db().query(`UPDATE landing SET error=?,finished_at=? WHERE id=?`).run(message, nowIso(), row.id)
+        db().query(`UPDATE landing SET status='install_failed',error=?,finished_at=?,claim_pid=NULL,claim_session=NULL WHERE id=?`).run(message, nowIso(), row.id)
       }
       throw error
     }

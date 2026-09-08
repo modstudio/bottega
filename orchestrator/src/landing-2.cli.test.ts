@@ -69,7 +69,7 @@ test('an explicit non-empty override lands and records the measured tree and rea
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
-  test('a failing post-land hub migrate keeps status landed and surfaces the error', () => {
+  test('a failing post-land hub migrate records that landing succeeded and install failed', () => {
     const { repo, trees } = repoWithBranches(['post-step-hub'])
     const tree = trees['post-step-hub']!
     mkdirSync(join(tree, 'orchestrator', 'migrations'), { recursive: true })
@@ -92,7 +92,7 @@ test('an explicit non-empty override lands and records the measured tree and rea
       const row = db().query(
         `SELECT status, error FROM landing WHERE branch=?`,
       ).get('post-step-hub') as { status: string; error: string }
-      expect(row.status).toBe('landed')
+      expect(row.status).toBe('install_failed')
       expect(row.error).toContain('landing reached trunk at')
       expect(row.error).toContain('hub migrate failed')
       expect(row.error).toContain('stub-fail')
