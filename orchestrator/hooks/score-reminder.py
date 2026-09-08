@@ -144,9 +144,6 @@ def main() -> int:
         return 0  # never block a session because of a database problem
 
     notes = []
-    stamp = os.path.join(
-        os.environ.get("TMPDIR", "/tmp"), f"orch-note-reminder-{sid}",
-    )
     try:
         result = subprocess.run(
             [hub_bin(), "note", "list", "--session", sid, "--json"],
@@ -155,13 +152,6 @@ def main() -> int:
         notes = [(row["id"], row["project"], row["text"]) for row in json.loads(result.stdout)]
     except Exception:
         notes = []
-    if notes and os.path.exists(stamp):
-        notes = []
-    elif notes:
-        try:
-            open(stamp, "w").close()
-        except OSError:
-            pass
 
     if not rows and not pairs and not notes:
         return 0
