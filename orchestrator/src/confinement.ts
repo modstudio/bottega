@@ -269,11 +269,18 @@ export function classifyDivergence(input: {
 }): ConfinementEvent | null {
   const prior = new Map(input.before.map((snapshot) => [snapshot.path, snapshot]))
   const own = new Set(input.ownDiffPaths)
-  let classification: ConfinementClass | null = null
   const divergentPaths: string[] = []
   const overlappingPaths: string[] = []
-  let attributed: FrozenCheckout | null = null
-  let headMoved = false
+  const strength: Record<ConfinementClass, number> = {
+    non_overlapping: 1,
+    edit_commit_cycle: 2,
+    overlapping: 3,
+  }
+  let selected: {
+    checkout: FrozenCheckout
+    classification: ConfinementClass
+    headMoved: boolean
+  } | null = null
   for (const current of input.after) {
     const original = prior.get(current.path)
     if (!original) continue
@@ -285,35 +292,36 @@ export function classifyDivergence(input: {
       || original.untrackedHash !== current.untrackedHash
     const porcelainMoved = original.status !== current.status
     if (!oidMoved && !treeMoved && !porcelainMoved && original.head === current.head) continue
-    attributed = current
-    if (oidMoved) headMoved = true
+    const checkoutOverlaps: string[] = []
     for (const path of changedPaths.length ? changedPaths : paths) {
       divergentPaths.push(path)
-      if (own.has(path)) overlappingPaths.push(path)
+      if (own.has(path)) {
+        overlappingPaths.push(path)
+        checkoutOverlaps.push(path)
+      }
     }
     const cleanTree = !current.status && !porcelainMoved
-    if (oidMoved && cleanTree && overlappingPaths.length === 0) {
-      if (classification !== 'overlapping') classification = 'edit_commit_cycle'
-    } else if (overlappingPaths.length) {
-      classification = 'overlapping'
-    } else if (classification !== 'overlapping' && classification !== 'edit_commit_cycle') {
-      classification = 'non_overlapping'
-    } else if (classification === 'edit_commit_cycle' && !cleanTree) {
-      classification = overlappingPaths.length ? 'overlapping' : 'non_overlapping'
+    const classification: ConfinementClass = checkoutOverlaps.length
+      ? 'overlapping'
+      : oidMoved && cleanTree
+        ? 'edit_commit_cycle'
+        : 'non_overlapping'
+    if (!selected || strength[classification] > strength[selected.classification]) {
+      selected = { checkout: current, classification, headMoved: oidMoved }
     }
   }
-  if (!classification || !attributed) return null
-  const who = attributeDivergence(input.database, attributed, {
-    startedAt: input.startedAt, headMoved,
+  if (!selected) return null
+  const who = attributeDivergence(input.database, selected.checkout, {
+    startedAt: input.startedAt, headMoved: selected.headMoved,
   })
   return {
-    classification,
-    checkout: attributed.path,
+    classification: selected.classification,
+    checkout: selected.checkout.path,
     ...who,
     divergentPaths: [...new Set(divergentPaths)],
     overlappingPaths: [...new Set(overlappingPaths)],
     chainRoot: input.chainRoot,
-    tripTip: attributed.headOid,
+    tripTip: selected.checkout.headOid,
     freeze: input.before,
     after: input.after,
   }

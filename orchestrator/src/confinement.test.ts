@@ -109,6 +109,51 @@ describe('divergence classification', () => {
     })
   })
 
+  test.each([
+    ['main first', ['/main', '/caller']],
+    ['main last', ['/caller', '/main']],
+  ] as const)('an overlapping checkout supplies the whole event when it is %s', (_, order) => {
+    db().query(
+      `INSERT INTO landing (project, branch, status, session_id, started_at, finished_at)
+       VALUES ('main-project', 'DEV-372', 'landed', 'sess-main', ?, ?)`,
+    ).run('2026-09-07T10:30:00.000Z', '2026-09-07T10:31:00.000Z')
+    db().query(
+      `INSERT INTO landing (project, branch, status, session_id, started_at, finished_at)
+       VALUES ('caller-project', 'DEV-372', 'landed', 'sess-caller', ?, ?)`,
+    ).run('2026-09-07T10:30:00.000Z', '2026-09-07T10:31:00.000Z')
+    const beforeByPath = new Map([
+      ['/main', frozen({ project: 'main-project', path: '/main', headOid: 'main-before' })],
+      ['/caller', frozen({ project: 'caller-project', path: '/caller', headOid: 'caller-before' })],
+    ])
+    const afterByPath = new Map([
+      ['/main', frozen({
+        project: 'main-project', path: '/main', status: ' M src/a.ts\0',
+        indexTree: 'main-after-tree', headOid: 'main-after',
+      })],
+      ['/caller', frozen({
+        project: 'caller-project', path: '/caller', status: ' M stray.ts\0',
+        indexTree: 'caller-after-tree', headOid: 'caller-after',
+      })],
+    ])
+    const event = classifyDivergence({
+      before: order.map((path) => beforeByPath.get(path)!),
+      after: order.map((path) => afterByPath.get(path)!),
+      ownDiffPaths: ['src/a.ts'],
+      chainRoot: '111',
+      database: db(),
+      startedAt: '2026-09-07T10:00:00.000Z',
+    })
+    expect(event).toMatchObject({
+      classification: 'overlapping',
+      checkout: '/main',
+      tripTip: 'main-after',
+      attribution: 'landing',
+      landingSession: 'sess-main',
+      overlappingPaths: ['src/a.ts'],
+    })
+    expect(new Set(event!.divergentPaths)).toEqual(new Set(['src/a.ts', 'stray.ts']))
+  })
+
   test('sessionForPid reads the run that holds that pid', () => {
     const id = addRun({
       agent: 'codex', job: 'implement', status: 'running', session: 'sess-pid',
