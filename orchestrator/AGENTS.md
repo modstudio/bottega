@@ -590,15 +590,15 @@ to act on, because nothing downstream can route around them, so each raises a
 macOS notification at the moment it happens rather than waiting to be found in a
 log.
 
-An **escaped** failure means the worker changed the porcelain status of a
-registered checkout or the caller checkout outside its own worktree. It is
-not evidence about the agent because the writer is not established, never
-fails over to another vendor, and landing that chain is refused even with
-`--unreviewed`. **Confinement unverified** means a checkout in the frozen watch
+An **escaped** failure means an outside change overlapped the run's own diff.
+It is classified and attributed (lock holder, landing session, or unattributed),
+never fails over to another vendor, and landing that chain is refused even with
+`--unreviewed`. A non-overlapping divergence is recorded on the run and does
+not fail it. **Confinement unverified** means a checkout in the frozen watch
 set could not be sampled after the run; it has the same terminal and
 landing-blocking effect, but records an observer failure rather than a change.
 A checkout unavailable before launch is excluded with a warning that names the
-stale register entry.
+stale register entry. The detector never drops findings, scores, or the review.
 
 **Routing then avoids that agent for an hour**, unless it is the only one left -
 refusing to run is worse than trying an agent that may have recovered. Only the
@@ -841,32 +841,27 @@ The invariants are:
   orch worktree is residue, not a hazard: each tree path carries a unique run id
   and never recurs, so sweep reports the entry for manual pruning (DEV-194).
 - **Every write transaction is IMMEDIATE; a deferred transaction that later writes is a lock-upgrade race under concurrent dispatch.**
-- **The escape check samples porcelain status, which cannot see a moved HEAD.**
-  A main checkout sitting on a branch that is not trunk reads CLEAN to that
-  sampler, so nothing trips — and it is the more dangerous state, because a
-  landing's final reconcile then acts on a checkout whose HEAD is not the branch
-  it is reconciling to. Sample `git -C <checkout> symbolic-ref --short HEAD`
-  against the register's trunk at the same two moments as the status sample, and
-  treat a HEAD that MOVED between them the same way: the run fails and its
-  landing is blocked, and the writer is not identified. A HEAD that is not trunk
-  at both moments is a static fact about that project and classifies nothing;
-  DEV-348 first shipped it as a static assertion and stopal's checkout parked on
-  develop failed bottega runs that never touched it (run 2600, identical before
-  and after printed in its own failure). "The main checkout must be on trunk"
-  belongs to landing (`landing.ts:assertMainCheckoutOnTrunk`), where it refuses
-  before any rebase. Found on 2026-09-07, when run 2437 was classified
-  `escaped` for a dirty `AGENTS.md` that an architect session then COMMITTED in
-  the main checkout — which cleared the dirt, moved HEAD, and left the detector
-  with nothing to report.
+- **Divergence is classified and attributed, never fatal by itself.** At launch
+  the detector freezes, for the run's own project main checkout and the caller
+  checkout, the tree hash (`git write-tree` of the index plus a hash of
+  untracked non-ignored paths) and HEAD; at exit it re-hashes. Porcelain is the
+  cheap pre-check. A sample taken within one second of the checkout's index
+  mtime is untrusted and re-taken. A HEAD that moved with a clean tree is an
+  edit-commit cycle by someone else. Attribution is the index.lock holder pid
+  and its session, or the landing session that moved HEAD, or unattributed.
+  "The main checkout must be on trunk" still belongs to landing
+  (`landing.ts:assertMainCheckoutOnTrunk`).
 - **The watch set is the run's own project plus the caller checkout, never a
   third project.** Measured 2026-09-07: 25 escapes in a day, 4.9 hours, sixteen
   of them another project's checkout changing under a worker that never touched
   it. A change elsewhere is not this run's escape.
-- **A persistent porcelain-status change in the run's own registered main
-  checkout that was sampleable at launch, or a distinct sampleable caller
-  checkout, during a run fails that run and blocks its landing;** unregistered or launch-unsampleable
-  paths, ignored paths, writes reverted before exit, clean-to-clean commits and
-  writes after exit are not seen, and the writer is not identified.
+- **Only an overlapping outside change blocks a landing.** If the run's own
+  diff overlaps the divergent paths the run is `escaped` (`confinement:
+  overlapping outside change`) and landing refuses until the architect rules;
+  otherwise the run completes with the attributed event on its row. Evidence is
+  never dropped by the detector: findings stay in `orch result`, the run stays
+  scoreable, and a review records itself. The chain root and trip-time tip are
+  snapshotted so `orch confinement clear` needs neither `--tip` nor hand seeding.
 - **A resume is always possible on a stale checkout.** The caller-at-trunk check
   stops a new dispatch from stale input; it must never apply to a chain resuming
   in its own worktree, nor to `--base` / `--cwd` forms that name a recorded run's

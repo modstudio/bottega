@@ -178,6 +178,11 @@ export const HarnessHealthSchema = z.object({
     sparkline: z.array(z.object({
       day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), count: z.number().int().nonnegative(),
     })),
+    attribution: z.object({
+      lock_holder: z.number().int().nonnegative(),
+      landing: z.number().int().nonnegative(),
+      unattributed: z.number().int().nonnegative(),
+    }).optional(),
   })),
   falseVerdicts: z.array(z.object({
     kind: z.string(), verdicts: z.number().int().nonnegative(),

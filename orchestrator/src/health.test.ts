@@ -31,6 +31,9 @@ describe('harness health', () => {
       clusters: [{ text: 'exit <n>, empty output', count: 2, exampleRunId: interruptedA }],
     })
     expect(report.classes.find((row) => row.kind === 'stale')?.count).toBe(1)
+    expect(report.classes.find((row) => row.kind === 'escaped')?.attribution).toEqual({
+      lock_holder: 0, landing: 0, unattributed: 0,
+    })
     expect(report.falseVerdicts.find((row) => row.kind === 'escaped')).toMatchObject({ verdicts: 1, falseVerdicts: 1, rate: 1 })
     expect(report.falseVerdicts.find((row) => row.kind === 'harness')).toMatchObject({ verdicts: 1, falseVerdicts: 1, rate: 1 })
     expect(report.landingRefusals).toBe(1)
@@ -123,6 +126,35 @@ describe('harness health', () => {
     expect(cli.stdout.toString()).toContain('landed with post-step error')
     expect(cli.stdout.toString()).toContain('fixture DEV-373')
     expect(cli.stdout.toString()).toContain('hub migrate failed: stub-fail')
+  })
+
+  test('escaped class attribution counts every confinement event in the window', () => {
+    const now = new Date('2026-09-07T12:00:00.000Z')
+    const overlapping = addRun({
+      agent: 'codex', job: 'implement', status: 'failed', kind: 'escaped',
+      startedAt: '2026-09-06T10:00:00.000Z',
+    })
+    const completed = addRun({
+      agent: 'codex', job: 'implement', status: 'ok',
+      startedAt: '2026-09-06T11:00:00.000Z',
+    })
+    const landing = addRun({
+      agent: 'codex', job: 'implement', status: 'ok',
+      startedAt: '2026-09-07T09:00:00.000Z',
+    })
+    db().query('UPDATE run SET confinement=? WHERE id=?').run(JSON.stringify({
+      classification: 'overlapping', attribution: 'lock_holder',
+    }), overlapping)
+    db().query('UPDATE run SET confinement=? WHERE id=?').run(JSON.stringify({
+      classification: 'non_overlapping', attribution: 'unattributed',
+    }), completed)
+    db().query('UPDATE run SET confinement=? WHERE id=?').run(JSON.stringify({
+      classification: 'edit_commit_cycle', attribution: 'landing',
+    }), landing)
+    const report = harnessHealth(14, db(), now)
+    expect(report.classes.find((row) => row.kind === 'escaped')?.attribution).toEqual({
+      lock_holder: 1, landing: 1, unattributed: 1,
+    })
   })
 
   test('uses UTC-midnight boundaries for both counts and sparkline buckets', () => {

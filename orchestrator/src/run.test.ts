@@ -1015,6 +1015,7 @@ setInterval(() => {}, 1_000)
     const script = join(dir, 'DEV-361-escape-marker.sh')
     writeFileSync(script, `#!/bin/sh
 if [ -n "$ORCH_TEST_EXTERNAL_WRITE" ]; then printf 'outside\\n' > "$ORCH_TEST_EXTERNAL_WRITE"; fi
+printf 'inside\\n' > tracked.txt
 printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"answer"}' '[API Error: terminated]'
 `)
     chmodSync(script, 0o755)
@@ -1026,10 +1027,10 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
     process.env.ORCH_DEPTH = '0'
     try {
       grok.bin = script
-      process.env.ORCH_TEST_EXTERNAL_WRITE = join(watched, 'written-by-run.txt')
+      process.env.ORCH_TEST_EXTERNAL_WRITE = join(watched, 'tracked.txt')
       let runId: number | null = null
       try {
-        await run({ job: 'file-question', prompt: 'write outside', cwd: dir, agent: 'grok', noFailover: true })
+        await run({ job: 'implement', prompt: 'write outside', cwd: watched, agent: 'grok', noFailover: true })
       } catch (error) {
         runId = (error as Error & { runId?: number }).runId ?? null
       }

@@ -1191,6 +1191,7 @@ test('create commands must exist and be executable before dispatch', () => {
     expect(listed.code).toBe(0)
     const document = JSON.parse(listed.out) as Record<string, unknown>[]
     expect(() => OrchProjectListSchema.parse(document)).not.toThrow()
+    expect(document[0]).toMatchObject({ commit_hooks_skipped: true })
     delete document[0]!.path
     expect(() => OrchProjectListSchema.parse(document)).toThrow()
   })

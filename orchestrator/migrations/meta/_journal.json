@@ -78,6 +78,13 @@
       "when": 1788900000004,
       "tag": "0010_landing_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1788900000005,
+      "tag": "0011_run_confinement",
+      "breakpoints": true
     }
   ]
 }

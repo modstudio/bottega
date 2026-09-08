@@ -3,6 +3,7 @@ import { HarnessHealthSchema, HostLoadSchema, type HarnessHealth } from '../../s
 import { db } from './db.ts'
 import { clusterErrorText, FAILURE_KINDS, type FailureKind } from './failure.ts'
 import { summarizeContention } from './contention.ts'
+import { attributionCounts, parseConfinement } from './confinement.ts'
 
 export const HEALTH_DEFAULT_DAYS = 14
 export const HEALTH_CLASSES = [...FAILURE_KINDS, 'stale', 'stopped'] as const
@@ -115,9 +116,22 @@ export function harnessHealth(days = HEALTH_DEFAULT_DAYS, database: Database = d
       return []
     }
   })
+  const confinementTable = database.query(
+    "SELECT 1 AS n FROM pragma_table_info('run') WHERE name='confinement'",
+  ).get() as { n: number } | null
+  const attribution = confinementTable ? attributionCounts(
+    (database.query(
+      `SELECT confinement FROM run
+        WHERE confinement IS NOT NULL AND datetime(started_at) >= datetime(?)`,
+    ).all(from) as { confinement: string | null }[])
+      .map((row) => parseConfinement(row.confinement)),
+  ) : { lock_holder: 0, landing: 0, unattributed: 0 }
+  const classesWithAttribution = classes.map((row) =>
+    row.kind === 'escaped' ? { ...row, attribution } : row)
+
   return HarnessHealthSchema.parse({
     header: 'Harness health only — never routing or scoring evidence. Confinement clears are reclassify audit rows with cleared:true; landing refusals are reported separately. Contention is waits, refusals and invalidations on shared resources — never routing evidence.',
-    days, from, classes, falseVerdicts, landingRefusals, flakes,
+    days, from, classes: classesWithAttribution, falseVerdicts, landingRefusals, flakes,
     contention: summarizeContention(database, from),
   })
 }

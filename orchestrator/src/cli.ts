@@ -1982,9 +1982,11 @@ switch (cmd) {
     await loadWorktree()
     let authority = authorizeRunMutation(id, 'reclassify')
     const rows = db().query(
-      `SELECT id, pre_confinement FROM run
+      `SELECT id, pre_confinement, confinement FROM run
         WHERE (id=? OR parent_run_id=?) AND failure_kind='escaped' ORDER BY turn,id`,
-    ).all(authority.rootId, authority.rootId) as { id: number; pre_confinement: string | null }[]
+    ).all(authority.rootId, authority.rootId) as {
+      id: number; pre_confinement: string | null; confinement: string | null
+    }[]
     if (!rows.length) throw new Error(`run ${id}'s chain has no escaped classification to clear`)
     const chain = db().query(
       `SELECT repo, worktree, branch, head_commit, input_tree FROM run
@@ -2018,17 +2020,26 @@ switch (cmd) {
       ? inspect(project.path, ['rev-parse', '--verify', `${currentTip}^{tree}`])
       : contentTree(worktree)
     const suppliedTip = flag('tip')?.trim() ?? null
+    const snapshotted = rows.map((row) => {
+      try {
+        const parsed = row.confinement ? JSON.parse(row.confinement) as {
+          tripTip?: string | null; chainRoot?: string | null
+        } : null
+        return parsed
+      } catch { return null }
+    }).find((value) => value?.tripTip || value?.chainRoot)
     const divergence = currentTip !== recordedTip
     const recoveryCommand = `git worktree add ${worktree} ${branch}`
     const audit = {
       writer, note, recordedTip, currentTip, recordedTree, currentTree,
       worktree, branch, divergence, suppliedTip, cleared: false,
+      tripTip: snapshotted?.tripTip ?? null, chainRoot: snapshotted?.chainRoot ?? null,
     }
     const auditOnly = () => writeTransaction(() => {
       authority = adoptRunMutation(authority, 'receipt')
       auditRunMutation(authority, 'reclassify', JSON.stringify(audit))
     })
-    if (divergence && !suppliedTip) {
+    if (divergence && !suppliedTip && !snapshotted?.tripTip && !snapshotted?.chainRoot) {
       auditOnly()
       throw new Error(
         `refusing to clear escaped confinement: ${branch} moved from recorded tip ${recordedTip} to ${currentTip}; ` +
@@ -3408,7 +3419,10 @@ switch (cmd) {
        */
       if (has('json')) {
         console.log(JSON.stringify(all.map((project) => ({
-          ...project, problems: validateProjectSettings(project.settings),
+          ...project,
+          problems: validateProjectSettings(project.settings),
+          commit_hooks_skipped: true,
+          gate: typeof project.settings.gate === 'string' ? project.settings.gate : null,
         }))))
         break
       }
@@ -6632,6 +6646,13 @@ switch (cmd) {
       for (const cluster of row.clusters) {
         console.log(`  ${cluster.count}x [run ${cluster.exampleRunId}] ${cluster.text}`)
       }
+      if (row.kind === 'escaped' && row.attribution) {
+        console.log(
+          `  attribution  lock_holder=${row.attribution.lock_holder}` +
+          ` landing=${row.attribution.landing}` +
+          ` unattributed=${row.attribution.unattributed}`,
+        )
+      }
     }
     console.log('\nFALSE HARNESS VERDICTS')
     console.log('KIND'.padEnd(25) + 'FALSE'.padStart(7) + 'TOTAL'.padStart(7) + 'RATE'.padStart(9))
@@ -6887,6 +6908,12 @@ switch (cmd) {
     // owing where `orch pending` — the command that actually tells you what
     // to do about it — reported none.
     console.log(`\nruns ${counts.runs}, scored ${counts.scored}, voided ${counts.voided}, unscored ${counts.unscored}`)
+    const { projects: registeredProjects, undeclaredCommitHooks } = await import('./projects.ts')
+    const hookFlags = registeredProjects().map(undeclaredCommitHooks).filter(Boolean)
+    if (hookFlags.length) {
+      console.log('\ncommit hooks skipped in worker trees; landing gate must declare the checks:')
+      for (const line of hookFlags) console.log(`  ${line}`)
+    }
     const docker = dockerRunResources()
     const owners = db().query('SELECT id, repo, worktree, status FROM run').all() as {
       id: number; repo: string | null; worktree: string | null; status: string

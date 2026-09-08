@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathS
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import * as ts from 'typescript'
-import { AGENTS, candidates, changedRegisteredCheckouts, checkoutAliases, checkoutCaseSensitivity, db, dir, hermeticGitEnv, mainCheckoutOf, orphanSafety, removeFor, retargetRepositoryPrompt, retargetRepositoryPromptForDispatch, retargetedPrompt, run, scrubbedGitEnv, snapshotRegisteredCheckouts, targetGitEnvironment, upsertProject } from '../test/fixture.ts'
+import { AGENTS, candidates, changedRegisteredCheckouts, checkoutAliases, checkoutCaseSensitivity, db, dir, hermeticGitEnv, land, mainCheckoutOf, orphanSafety, removeFor, retargetRepositoryPrompt, retargetRepositoryPromptForDispatch, retargetedPrompt, reviewReply, run, scrubbedGitEnv, snapshotRegisteredCheckouts, targetGitEnvironment, upsertProject, workerReply } from '../test/fixture.ts'
 
 describe('production git environments', () => {
   test('the shared scrub removes worker git routing and preserves unrelated variables', () => {
@@ -549,34 +549,30 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
     try {
       grok.bin = script
       process.env.ORCH_TEST_EXTERNAL_WRITE = join(watched, 'written-by-run.txt')
-      let dirtyRunId: number | null = null
-      try {
-        await run({ job: 'file-question', prompt: 'write outside', cwd: dir, agent: 'grok' })
-      } catch (error) {
-        dirtyRunId = (error as Error & { runId?: number }).runId ?? null
-      }
-      expect(dirtyRunId).not.toBeNull()
+      const dirty = await run({ job: 'file-question', prompt: 'write outside', cwd: dir, agent: 'grok' })
+      const dirtyRunId = dirty.id
       const recorded = db().query(
         `SELECT status, failure_kind, error, outside_worktree_writes, output_path,
-                worktree, branch, base_commit, worktree_source
+                worktree, branch, base_commit, worktree_source, confinement
            FROM run WHERE id=?`,
       ).get(dirtyRunId!) as {
-        status: string; failure_kind: string; error: string
+        status: string; failure_kind: string | null; error: string | null
         outside_worktree_writes: string; output_path: string
         worktree: string | null; branch: string | null; base_commit: string | null
         worktree_source: 'recipe' | 'git' | 'readonly_recipe' | null
+        confinement: string | null
       }
-      expect(recorded.status).toBe('failed')
-      expect(recorded.failure_kind).toBe('escaped')
+      expect(recorded.status).toBe('ok')
+      expect(recorded.failure_kind).toBeNull()
       expect(db().query(
         `SELECT resource_kind, event_kind, resource_key, run_id FROM contention WHERE run_id=?`,
-      ).get(dirtyRunId!)).toEqual({
-        resource_kind: 'main_checkout', event_kind: 'invalidation', resource_key: watched, run_id: dirtyRunId,
-      })
-      expect(recorded.error).toContain(watched)
-      expect(recorded.error).toContain('?? written-by-run.txt')
-      expect(recorded.error).toContain('the writer is not established')
-      expect(Buffer.byteLength(recorded.error)).toBeLessThanOrEqual(1500)
+      ).get(dirtyRunId!)).toBeNull()
+      const event = JSON.parse(recorded.confinement!) as {
+        classification: string; attribution: string; divergentPaths: string[]
+      }
+      expect(event.classification).toBe('non_overlapping')
+      expect(event.attribution).toBe('unattributed')
+      expect(event.divergentPaths).toContain('written-by-run.txt')
       expect(readFileSync(recorded.output_path, 'utf8')).toContain('answer')
       expect(JSON.parse(recorded.outside_worktree_writes)).toEqual([{
         project: 'watched-project', path: watched,
@@ -760,6 +756,182 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
       if (priorTarget === undefined) delete process.env.ORCH_TEST_HIDE_GIT
       else process.env.ORCH_TEST_HIDE_GIT = priorTarget
       rmSync(watched, { recursive: true, force: true })
+    }
+  })
+
+  test('an overlapping outside edit blocks with attribution and a contention row', async () => {
+    const repo = repository()
+    const script = join(dir, 'DEV-372-overlap-agent.sh')
+    writeFileSync(script, `#!/bin/sh
+printf 'outside\\n' > "$ORCH_TEST_EXTERNAL_WRITE"
+printf 'inside\\n' > overlap.txt
+printf '%s\\n' '${JSON.stringify(workerReply({ files_changed: ['overlap.txt'] }))}'
+`)
+    chmodSync(script, 0o755)
+    upsertProject({ name: 'overlap-project', path: repo })
+    const grok = AGENTS.grok!
+    const previousBin = grok.bin
+    const priorDepth = process.env.ORCH_DEPTH
+    const priorTarget = process.env.ORCH_TEST_EXTERNAL_WRITE
+    process.env.ORCH_DEPTH = '0'
+    process.env.ORCH_TEST_EXTERNAL_WRITE = join(repo, 'overlap.txt')
+    let runId: number | null = null
+    try {
+      grok.bin = script
+      try {
+        await run({ job: 'implement', prompt: 'overlap', cwd: repo, agent: 'grok', noFailover: true })
+      } catch (error) {
+        runId = (error as Error & { runId?: number }).runId ?? null
+      }
+      expect(runId).not.toBeNull()
+      const recorded = db().query(
+        'SELECT status, failure_kind, error, confinement FROM run WHERE id=?',
+      ).get(runId!) as { status: string; failure_kind: string; error: string; confinement: string }
+      expect(recorded.status).toBe('failed')
+      expect(recorded.failure_kind).toBe('escaped')
+      expect(recorded.error).toContain('confinement: overlapping outside change')
+      expect(recorded.error).toContain('attribution: unattributed')
+      const event = JSON.parse(recorded.confinement) as { overlappingPaths: string[]; attribution: string }
+      expect(event.overlappingPaths).toContain('overlap.txt')
+      expect(event.attribution).toBe('unattributed')
+      expect(db().query(
+        'SELECT resource_kind, event_kind FROM contention WHERE run_id=?',
+      ).get(runId!)).toEqual({ resource_kind: 'main_checkout', event_kind: 'invalidation' })
+    } finally {
+      grok.bin = previousBin
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      if (priorTarget === undefined) delete process.env.ORCH_TEST_EXTERNAL_WRITE
+      else process.env.ORCH_TEST_EXTERNAL_WRITE = priorTarget
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a diverged lens keeps its findings and records the review', async () => {
+    const repo = repository()
+    const script = join(dir, 'DEV-372-lens-agent.sh')
+    writeFileSync(script, `#!/bin/sh
+printf 'stray\\n' > "$ORCH_TEST_EXTERNAL_WRITE"
+printf '%s\\n' '{"type":"system","subtype":"init"}'
+printf '%s\\n' ${JSON.stringify(JSON.stringify({
+      type: 'result', subtype: 'success', result: JSON.stringify({
+        ...reviewReply(1),
+        provenance: {
+          ...reviewReply(1).provenance,
+          files_covered: ['tracked.txt'],
+          commands_run: ['git diff -- tracked.txt'],
+        },
+      }),
+    }))}
+`)
+    chmodSync(script, 0o755)
+    upsertProject({ name: 'lens-project', path: repo })
+    const grok = AGENTS.grok!
+    const previousBin = grok.bin
+    const priorDepth = process.env.ORCH_DEPTH
+    const priorTarget = process.env.ORCH_TEST_EXTERNAL_WRITE
+    process.env.ORCH_DEPTH = '0'
+    process.env.ORCH_TEST_EXTERNAL_WRITE = join(repo, 'stray-lens.txt')
+    try {
+      grok.bin = script
+      let result: Awaited<ReturnType<typeof run>>
+      try {
+        result = await run({
+          job: 'review-lens', prompt: 'review this', cwd: repo, agent: 'grok', lens: 'craft',
+        })
+      } catch (error) {
+        const id = (error as Error & { runId?: number }).runId
+        throw new Error(`${(error as Error).message} row=${JSON.stringify(id ? db().query('SELECT status, failure_kind, error FROM run WHERE id=?').get(id) : null)}`)
+      }
+      expect(result.status).toBe('ok')
+      const recorded = db().query(
+        'SELECT failure_kind, confinement, output_path FROM run WHERE id=?',
+      ).get(result.id) as { failure_kind: string | null; confinement: string; output_path: string }
+      expect(recorded.failure_kind).toBeNull()
+      expect(JSON.parse(recorded.confinement).classification).toBe('non_overlapping')
+      expect(readFileSync(recorded.output_path, 'utf8')).toContain('findings')
+      expect(db().query('SELECT review_id FROM review_lens WHERE run_id=?').get(result.id)).toBeTruthy()
+    } finally {
+      grok.bin = previousBin
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      if (priorTarget === undefined) delete process.env.ORCH_TEST_EXTERNAL_WRITE
+      else process.env.ORCH_TEST_EXTERNAL_WRITE = priorTarget
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('own-checkout HEAD move completes and lands', async () => {
+    const repo = repository()
+    const script = join(dir, 'DEV-372-pull-agent.sh')
+    writeFileSync(script, `#!/bin/sh
+printf 'inside\\n' > pulled.txt
+git add pulled.txt
+git -c user.email=orch-test@example.invalid -c user.name='Orch Test' commit -m 'DEV-372 pull-safe' >/dev/null
+printf '%s\\n' '{"type":"system","subtype":"init"}'
+printf '%s\\n' ${JSON.stringify(JSON.stringify({
+      type: 'result', subtype: 'success',
+      result: JSON.stringify(workerReply({ files_changed: ['pulled.txt'] })),
+    }))}
+`)
+    chmodSync(script, 0o755)
+    upsertProject({ name: 'pull-project', path: repo, settings: { trunk: 'main', gate: 'true' } })
+    const grok = AGENTS.grok!
+    const previousBin = grok.bin
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      grok.bin = script
+      const result = await run({
+        job: 'implement', prompt: 'pull-safe', cwd: repo, agent: 'grok', noFailover: true,
+      })
+      expect(result.status).toBe('ok')
+      const recorded = db().query(
+        'SELECT failure_kind, confinement, branch FROM run WHERE id=?',
+      ).get(result.id) as { failure_kind: string | null; confinement: string | null; branch: string }
+      expect(recorded.failure_kind).toBeNull()
+      land(repo, recorded.branch, { runId: result.id, unreviewed: 'DEV-372 git-pull reproduction' })
+    } finally {
+      grok.bin = previousBin
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('worker commits skip project commit-msg hooks for implement and fix', async () => {
+    for (const job of ['implement', 'fix'] as const) {
+      const repo = repository()
+      const hooks = join(repo, '.githooks')
+      mkdirSync(hooks)
+      const marker = join(repo, `hook-fired-${job}`)
+      writeFileSync(join(hooks, 'commit-msg'), `#!/bin/sh\nprintf fired > '${marker}'\n`)
+      chmodSync(join(hooks, 'commit-msg'), 0o755)
+      git(repo, 'config', 'core.hooksPath', hooks)
+      const script = join(dir, `DEV-372-hook-${job}.sh`)
+      writeFileSync(script, `#!/bin/sh
+printf 'x\\n' > hooked.txt
+git add hooked.txt
+git -c user.email=orch-test@example.invalid -c user.name='Orch Test' commit -m 'DEV-372 worker commit'
+printf '%s\\n' '${JSON.stringify(workerReply({ files_changed: ['hooked.txt'] }))}'
+`)
+      chmodSync(script, 0o755)
+      upsertProject({ name: `hooks-${job}`, path: repo, settings: { gate: 'true' } })
+      const grok = AGENTS.grok!
+      const previousBin = grok.bin
+      const priorDepth = process.env.ORCH_DEPTH
+      process.env.ORCH_DEPTH = '0'
+      try {
+        grok.bin = script
+        const result = await run({ job, prompt: 'commit', cwd: repo, agent: 'grok', noFailover: true })
+        expect(result.status).toBe('ok')
+        expect(existsSync(marker)).toBe(false)
+      } finally {
+        grok.bin = previousBin
+        if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+        else process.env.ORCH_DEPTH = priorDepth
+        rmSync(repo, { recursive: true, force: true })
+      }
     }
   })
 })

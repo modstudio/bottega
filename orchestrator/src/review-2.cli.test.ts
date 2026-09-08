@@ -590,6 +590,7 @@ printf '%s' '{"servers":[{"name":"starship","healthy":false,"checks":[{"label":"
       .toEqual({
         server: 'starship', connected: false,
         error: 'folder untrusted: repo-local server not started: re-run with --trust',
+        namesSeen: ['starship'],
       })
   })
 

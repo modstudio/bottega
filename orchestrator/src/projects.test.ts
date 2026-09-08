@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { dbNameFor, recipeNotes, runRecipe } from '../test/fixture.ts'
+import { undeclaredCommitHooks } from './projects.ts'
 
 describe('a project can declare a worktree instead of writing one', () => {
   test('a derived database name is safe for both engines', () => {
@@ -55,5 +56,21 @@ describe('a project can declare a worktree instead of writing one', () => {
     const dir = mkdtempSync(join(tmpdir(), 'recipe-'))
     expect(runRecipe({}, dir, 'db_wt_1', '')).toEqual([])
     rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+describe('commit hook cost', () => {
+  test('doctor flags a project whose gate declares nothing while hooks carry pre-commit checks', () => {
+    const path = mkdtempSync(join(tmpdir(), 'orch-hooks-gate-'))
+    const hooks = join(path, '.githooks')
+    mkdirSync(hooks)
+    writeFileSync(join(hooks, 'commit-msg'), '#!/bin/sh\nexit 0\n')
+    chmodSync(join(hooks, 'commit-msg'), 0o755)
+    const project = {
+      id: 1, name: 'hooks-project', path, stack: null, canon: false, settings: {},
+    }
+    expect(undeclaredCommitHooks(project)).toContain('gate undeclared')
+    expect(undeclaredCommitHooks({ ...project, settings: { gate: 'bun test' } })).toBeNull()
+    rmSync(path, { recursive: true, force: true })
   })
 })

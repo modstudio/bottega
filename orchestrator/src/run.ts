@@ -61,7 +61,13 @@ import { resolveLandingBranch } from './landing.ts'
 import { resolveLens } from './lenses.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES } from './result-output.ts'
 import { addedGrokTrustHeadings, grokTrustHeadings } from './grok-trust.ts'
-import { prepareSandboxHome, selectReadonlySandbox } from './sandbox.ts'
+import { prepareSandboxHome, selectReadonlySandbox, srtLaunchArgv } from './sandbox.ts'
+import {
+  classifyDivergence, freezeCheckouts, overlappingError, type ConfinementEvent,
+} from './confinement.ts'
+import {
+  probeMcpServer, readMcpConfig, resolveMcpServerUrl, storedMcpProbe, wrongProjectReason,
+} from './mcp-probe.ts'
 import { startAskLoopback, type AskLoopback } from './ask.ts'
 import {
   resolveTransportName, assertAcpAllowed, assertAcpReady, transportFor,
@@ -360,6 +366,7 @@ export type McpConnection = {
   server: string
   connected: boolean | null
   error: string | null
+  namesSeen?: string[]
 }
 
 export type McpMode = 'require' | 'prefer'
@@ -481,20 +488,21 @@ export function grokMcpConnection(
       }[] }[]
     }
     const found = report.servers?.find((candidate) => candidate.name === server)
+    const available = (report.servers ?? [])
+      .map((candidate) => candidate.name)
+      .filter((name): name is string => Boolean(name))
     if (found) {
       const error = (found.checks ?? [])
         .filter((check) => check.passed === false)
         .map((check) => [check.label, check.detail, check.hint].filter(Boolean).join(': '))
         .join('; ')
-      return { server, connected: found.healthy === true, error: error || null }
+      return { server, connected: found.healthy === true, error: error || null, namesSeen: available }
     }
-    const available = (report.servers ?? [])
-      .map((candidate) => candidate.name)
-      .filter((name): name is string => Boolean(name))
     const listed = available.length ? available.join(', ') : '(none)'
     return {
       server,
       connected: false,
+      namesSeen: available,
       error: [
         stderr, stdout,
         `MCP server '${server}' was not reported. Available: ${listed}`,
@@ -1418,25 +1426,6 @@ function boundedConfinementError(message: string): string {
     .toString('utf8').replace(/\uFFFD$/, '') + suffix.toString()
 }
 
-function escapedWriteError(changes: OutsideWorktreeWrite[]): string {
-  const detail = changes.map((change) => {
-    const porcelain = (status: string) => status
-      ? status.split('\0').filter(Boolean).join('\n')
-      : '(clean)'
-    return `registered checkout ${change.project} at ${change.path}\n` +
-      (change.expectedHead && change.afterHead !== change.expectedHead
-        ? `symbolic HEAD is ${change.afterHead ?? '(detached)'}, expected registered trunk ${change.expectedHead}\n`
-        : '') +
-      `before HEAD: ${change.beforeHead ?? '(detached)'}\n` +
-      `after HEAD: ${change.afterHead ?? '(detached)'}\n` +
-      `before:\n${porcelain(change.before)}\nafter:\n${porcelain(change.after)}` +
-      (change.liveEditor ? `\nlive editor: ${change.liveEditor}` : '')
-  }).join('\n\n')
-  return boundedConfinementError(
-    `persistent outside change observed during the run; the writer is not established:\n${detail}`,
-  )
-}
-
 function confinementUnverifiedError(failures: CheckoutSampleFailure[]): string {
   return boundedConfinementError(
     'checkout confinement could not be verified:\n' + failures.map((failure) =>
@@ -2328,7 +2317,10 @@ export async function run(opts: {
       // boundary closes was a reviewer reading the caller's HEAD and treating
       // it as part of an inline pack. An empty directory gives the process no
       // checkout at all, while launch_cwd retains project attribution.
-      isolatedCwd = mkdtempSync(join(tmpdir(), `orch-no-repo-${claim.id}-`))
+      const scratchRoot = (() => {
+        try { return realpathSync(tmpdir()) } catch { return tmpdir() }
+      })()
+      isolatedCwd = mkdtempSync(join(scratchRoot, `orch-no-repo-${claim.id}-`))
       cwd = isolatedCwd
       db().query('UPDATE run SET cwd=? WHERE id=?').run(cwd, claim.id)
     } else if (repoJob) {
@@ -2542,10 +2534,16 @@ export async function run(opts: {
           `Grok remained untrusted after scoped trust for ${cwd}: ${mcpConnection.error}`,
         )
       }
+      const mismatched = wrongProjectReason(server, mcpConnection.namesSeen ?? [])
+      if (mismatched) {
+        mcpConnection = { ...mcpConnection, connected: false, error: mismatched }
+      }
       if (mcpConnection.connected === false && mcpMode === 'prefer') {
         mcpConnection = {
           ...mcpConnection,
-          error: `mirror: ${mcpConnection.error ?? `server '${server}' could not be attached`}`,
+          error: mcpConnection.error?.startsWith('wrong project:')
+            ? mcpConnection.error
+            : `mirror: ${mcpConnection.error ?? `server '${server}' could not be attached`}`,
         }
         usingMcp = false
       }
@@ -2609,6 +2607,12 @@ export async function run(opts: {
     'SELECT COALESCE(parent_run_id,id) AS id FROM run WHERE id=?',
   ).get(claim.id) as { id: number }).id
   const sandboxRunDir = join(runsDir, `sandbox-${sandboxRoot}`)
+  const mcpConfig = readMcpConfig(cwd)
+  const mcpServerName = mcpConnection?.server
+    ?? projectAt(callerCwd)?.settings.mcpServer
+    ?? projectAt(callerCwd)?.name
+    ?? null
+  const mcpEndpoint = mcpServerName ? resolveMcpServerUrl(mcpConfig[mcpServerName]) : null
   let sandboxSelection: ReturnType<typeof selectReadonlySandbox>
   try {
     sandboxSelection = selectReadonlySandbox({
@@ -2622,6 +2626,7 @@ export async function run(opts: {
       override: process.env.ORCH_SANDBOX,
       path: process.env.PATH,
       localBaseUrl: LOCAL_BASE_URL,
+      mcpEndpoint: mcpMode ? mcpEndpoint : null,
     })
   } catch (e) {
     const why = String((e as Error)?.message ?? e)
@@ -2645,6 +2650,59 @@ export async function run(opts: {
     const header = `sandbox host: ${sandboxSelection.reason}`
     mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${header}` : header
     console.error(`orch: run ${claim.id} ${header}`)
+  }
+
+  if (mcpMode && mcpServerName) {
+    const probeConfig = mcpConfig[mcpServerName]
+    if (probeConfig?.url || probeConfig?.command) {
+      try {
+        const projectSettings = projectAt(callerCwd)?.settings as
+          { mcp?: { probe_tool?: string } } | undefined
+        const probeTool = projectSettings?.mcp?.probe_tool ?? null
+        const wrap = sandboxSelection.profile && srtSettingsPath
+          ? (bin: string, args: string[]) => srtLaunchArgv(
+              sandboxSelection.profile!, srtSettingsPath, bin, args,
+            )
+          : undefined
+        const probe = await probeMcpServer({
+          server: mcpServerName,
+          config: probeConfig,
+          cwd,
+          env: childEnv(a, claim.id, runToken, {
+            ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment,
+          }),
+          probeTool,
+          wrap,
+        })
+        db().query('UPDATE run SET mcp_probe=? WHERE id=?').run(storedMcpProbe(probe), claim.id)
+        if (!probe.ok) {
+          mcpConnection = {
+            server: mcpServerName, connected: false, error: probe.error,
+            namesSeen: probe.namesSeen,
+          }
+          db().query(
+            `UPDATE run SET mcp_connected=0, mcp_error=? WHERE id=?`,
+          ).run(probe.error, claim.id)
+          if (mcpMode === 'require') {
+            const why =
+              `MCP was requested, but server '${mcpServerName}' could not be attached` +
+              `${probe.error ? `: ${probe.error}` : '.'} The agent was not started.`
+            db().query(
+              `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
+            ).run(why, Date.now() - started, claim.id)
+            throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
+          }
+          usingMcp = false
+        }
+      } catch (error) {
+        if ((error as { runId?: number }).runId === claim.id) throw error
+        const why = String((error as Error)?.message ?? error)
+        db().query(
+          `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
+        ).run(why, Date.now() - started, claim.id)
+        throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
+      }
+    }
   }
 
   bindSignals()
@@ -2677,6 +2735,8 @@ export async function run(opts: {
   let vendorTerminatedStream: string | null = null
   let outsideWrites: OutsideWorktreeWrite[] = []
   let confinementFailures: CheckoutSampleFailure[] = []
+  let confinementEvent: ConfinementEvent | null = null
+  let frozenBefore: import('./confinement.ts').FrozenCheckout[] = []
   let askLoopback: AskLoopback | null = null
   // Start after orch's own worktree and hook setup, immediately before the
   // vendor process. The interval establishes when a change happened, not who
@@ -2703,6 +2763,7 @@ export async function run(opts: {
   const watchedCheckouts = beforeSample.snapshots.map(({ project, path, expectedHead }) => ({
     project, path, expectedHead,
   }))
+  frozenBefore = freezeCheckouts(watchedCheckouts)
 
   try {
     if (repoJob) {
@@ -3010,6 +3071,7 @@ export async function run(opts: {
     if (proc) live.delete(proc)
     if (askLoopback) await askLoopback.close()
 
+    let frozenAfter: import('./confinement.ts').FrozenCheckout[] = []
     try {
       const afterSample = sampleCheckouts(watchedCheckouts)
       confinementFailures.push(...afterSample.failures.map((failure) => ({
@@ -3018,6 +3080,7 @@ export async function run(opts: {
       outsideWrites = changedRegisteredCheckouts(
         beforeSample.snapshots, afterSample.snapshots,
       )
+      frozenAfter = freezeCheckouts(watchedCheckouts)
       db().query('UPDATE run SET outside_worktree_writes=? WHERE id=?')
         .run(JSON.stringify(outsideWrites), claim.id)
     } catch (e) {
@@ -3054,6 +3117,19 @@ export async function run(opts: {
         changes = null
         console.error(`orch: could not read the diff for run ${claim.id}: ${e}`)
       }
+    }
+
+    if (frozenBefore.length && frozenAfter.length && !confinementFailures.length) {
+      const startedAt = (db().query('SELECT started_at, head_commit FROM run WHERE id=?').get(claim.id) as
+        { started_at: string; head_commit: string | null } | null)
+      confinementEvent = classifyDivergence({
+        before: frozenBefore,
+        after: frozenAfter,
+        ownDiffPaths: changes?.files ?? [],
+        chainRoot: startedAt?.head_commit ?? null,
+        database: db(),
+        startedAt: startedAt?.started_at ?? new Date(started).toISOString(),
+      })
     }
 
     if (contract?.status === 'done' && contract.files_changed?.length === 0 &&
@@ -3095,9 +3171,9 @@ export async function run(opts: {
       acceptedQuestions = []
     }
     let parsedReview: ReturnType<typeof parseReviewOutput> = null
-    if (status === 'ok' && requestedJob.findings) {
+    if (requestedJob.findings && output && (status === 'ok' || confinementEvent)) {
       parsedReview = parseReviewOutput(output)
-      if (parsedReview) {
+      if (parsedReview && status === 'ok' && confinementEvent?.classification !== 'overlapping') {
         const evidence = cleanReviewEvidence(claim.id, parsedReview)
         if (evidence.failure !== null) {
           status = 'failed'
@@ -3172,11 +3248,11 @@ export async function run(opts: {
       status = 'failed'
       failureKind = 'confinement_unverified'
       error = confinementUnverifiedError(confinementFailures)
-    } else if (outsideWrites.length) {
+    } else if (confinementEvent?.classification === 'overlapping') {
       preConfinement = JSON.stringify({ status, failureKind, error })
       status = 'failed'
       failureKind = 'escaped'
-      error = escapedWriteError(outsideWrites)
+      error = overlappingError(confinementEvent)
     }
 
     /**
@@ -3256,12 +3332,13 @@ export async function run(opts: {
                         status=CASE WHEN status='stopped' THEN status ELSE ? END,
                         error=CASE WHEN status='stopped' THEN error ELSE ? END,
                         failure_kind=CASE WHEN status='stopped' THEN failure_kind ELSE ? END,
-                        vendor_session=COALESCE(?, vendor_session), pre_confinement=?,
+                        vendor_session=COALESCE(?, vendor_session), pre_confinement=?, confinement=?,
                         unreconciled=0 WHERE id=?`,
       ).run(
         Date.now() - started, exitCode, new TextEncoder().encode(output).byteLength, outPath, promptPath,
         vendorTokens, costUsd, effectiveModel, status, error, failureKind,
-        resolvedSession, preConfinement, claim.id,
+        resolvedSession, preConfinement,
+        confinementEvent ? JSON.stringify(confinementEvent) : null, claim.id,
       )
 
       /**
@@ -3327,7 +3404,7 @@ export async function run(opts: {
       // terminal transaction so a successful lens cannot exist in the gap
       // between "ran" and "recorded". Manual `orch review record` remains the
       // recovery path for historical or otherwise uncaptured outputs.
-      if (status === 'ok' && parsedReview) {
+      if (parsedReview && (status === 'ok' || failureKind === 'escaped')) {
         recordReview(opts.resume?.parent ?? claim.id, parsedReview)
       }
     })
@@ -3363,7 +3440,7 @@ export async function run(opts: {
         eventKind: recorded.failure_kind === 'quota' ? 'refusal' : 'timeout',
         durationMs: Date.now() - started, cause: error, runId: claim.id,
       })
-    } else if (recorded.failure_kind === 'escaped' || recorded.failure_kind === 'confinement_unverified') {
+    } else if (recorded?.failure_kind === 'escaped' || recorded?.failure_kind === 'confinement_unverified') {
       tryWriteContention({
         resourceKind: 'main_checkout',
         resourceKey: outsideWrites[0]?.path ?? confinementFailures[0]?.path ?? callerCwd,

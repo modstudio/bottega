@@ -5,6 +5,7 @@ import {
 import { delimiter, isAbsolute, join, relative, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { ROOT } from './db.ts'
+import { mcpEndpointAllowlist } from './mcp-probe.ts'
 import type { Project } from './projects.ts'
 
 export type SandboxRuntimeConfig = {
@@ -100,6 +101,7 @@ export function readonlyLensProfile(input: {
   path?: string
   localBaseUrl?: string
   nodeModuleLinks?: string[]
+  mcpEndpoint?: string | null
 }): SandboxRuntimeConfig {
   const toolchain = (input.path ?? process.env.PATH ?? '')
     .split(delimiter).filter(Boolean).map((path) => resolve(path))
@@ -148,6 +150,7 @@ export function readonlyLensProfile(input: {
     network: {
       allowedDomains: [...new Set([
         ...vendorDomains, 'localhost', '127.0.0.1', '[::1]',
+        ...mcpEndpointAllowlist(input.mcpEndpoint),
       ])],
       deniedDomains: [],
       allowUnixSockets: [],
@@ -193,6 +196,7 @@ export function selectReadonlySandbox(input: {
   override?: string
   path?: string
   localBaseUrl?: string
+  mcpEndpoint?: string | null
 }): SandboxSelection {
   if (!isReadonlySandboxCandidate(input) || !input.worktree || !input.project) {
     return { sandbox: 'host', profile: null, reason: null }
@@ -211,6 +215,7 @@ export function selectReadonlySandbox(input: {
     profile: readonlyLensProfile({
       worktree: input.worktree, runsDir: input.runsDir, project: input.project,
       agent: input.agent, path: input.path, localBaseUrl: input.localBaseUrl,
+      mcpEndpoint: input.mcpEndpoint,
     }),
   }
 }

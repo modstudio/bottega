@@ -61,6 +61,8 @@ export const run = sqliteTable('run', {
   lastEventAt: text('last_event_at'),
   mintedBranch: text('minted_branch'),
   unreconciled: integer().notNull().default(0),
+  mcpProbe: text('mcp_probe'),
+  confinement: text(),
 }, (t) => [
   check('run_status_check', sql`${t.status} in ('running','ok','failed','stale','asking','stopped')`),
   check('run_unreconciled_check', sql`${t.unreconciled} in (0,1)`),

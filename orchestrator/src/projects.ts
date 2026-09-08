@@ -21,6 +21,9 @@
  * two Laravel apps are the same stack, so a verdict from one is real
  * evidence about the other.
  */
+import { existsSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { scrubbedGitEnv } from '../../shared/git.ts'
 import { db, writableDb, writeTransaction } from './db.ts'
 
 export type Project = {
@@ -398,6 +401,30 @@ export function validateProjectSettings(settings: ProjectSettings): string[] {
     }
   }
   return problems
+}
+
+function configuredHooksPath(projectPath: string): string | null {
+  if (existsSync(join(projectPath, '.githooks'))) return join(projectPath, '.githooks')
+  const configured = Bun.spawnSync(['git', '-C', projectPath, 'config', '--path', 'core.hooksPath'], {
+    env: scrubbedGitEnv(), stdout: 'pipe', stderr: 'ignore',
+  })
+  if (configured.exitCode === 0) {
+    const value = configured.stdout.toString().trim()
+    if (value) return value.startsWith('/') ? value : resolve(projectPath, value)
+  }
+  const gitHooks = join(projectPath, '.git', 'hooks')
+  return existsSync(gitHooks) ? gitHooks : null
+}
+
+/** Doctor: a gate that declares nothing while the hooks directory carries pre-commit checks. */
+export function undeclaredCommitHooks(project: Project): string | null {
+  if (typeof project.settings.gate === 'string' && project.settings.gate.trim()) return null
+  const hooks = configuredHooksPath(project.path)
+  if (!hooks) return null
+  const checks = ['pre-commit', 'commit-msg', 'pre-push']
+    .filter((name) => existsSync(join(hooks, name)))
+  if (!checks.length) return null
+  return `${project.name}: gate undeclared while hooks carry pre-commit checks (${checks.join(', ')} in ${hooks})`
 }
 
 function validateCreate(create: unknown, at: string, allowedVars: Set<string>): string[] {
