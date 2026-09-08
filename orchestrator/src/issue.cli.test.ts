@@ -38,7 +38,7 @@ describe('issue blast-radius review tree', () => {
       writeFileSync(script, [
         "const git = (...args: string[]) => Bun.spawnSync(['git', ...args], { stdout: 'pipe' }).stdout.toString().trim()",
         "const inspected = { head: git('rev-parse', 'HEAD'), diff: git('diff', 'HEAD', '--', 'reviewed.txt') }",
-        "console.log(JSON.stringify({ findings: [{ severity: 'major', location: 'reviewed.txt:1', evidence: JSON.stringify(inspected), proposed_correction: 'fixture correction' }], provenance: { tree_inspected: inspected.head, standards_read: ['AGENTS.md'], model_used: 'fixture', files_covered: ['reviewed.txt'], commands_run: ['git rev-parse HEAD', 'git diff HEAD -- reviewed.txt'], mcp_tools: [], docs_read: [], could_not_verify: [], substitutes: [], canon_source: 'repo fallback' } }))",
+        "console.log(JSON.stringify({ findings: [{ severity: 'major', location: 'reviewed.txt:1', evidence: JSON.stringify(inspected), proposed_correction: 'fixture correction' }], provenance: { tree_inspected: inspected.head, standards_read: ['AGENTS.md'], model_used: 'fixture', files_covered: ['reviewed.txt'], commands_run: ['git rev-parse HEAD', 'git diff HEAD -- reviewed.txt'], mcp_tools: [], docs_read: [], could_not_verify: [], substitutes: [], canon_source: 'unknown' } }))",
       ].join('\n'))
       agent.bin = process.execPath
       agent.argv = () => [script]
