@@ -507,7 +507,7 @@ test('create commands must exist and be executable before dispatch', () => {
     expect(orch('inbox', '--all').out).toContain(`run ${id}`)
     expect(orch('inbox', '--all').out).toContain('stale (terminal)')
     expect(JSON.parse(orch('inbox', '--all', '--json').out)).toContainEqual(
-      expect.objectContaining({ run_id: id, status: 'stale' }),
+      expect.objectContaining({ run_id: id, status: 'stale', can_answer: false }),
     )
   }, 20_000)
 

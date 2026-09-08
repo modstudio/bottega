@@ -3841,7 +3841,8 @@ switch (cmd) {
         // which a last-seen timestamp cannot establish.
         session_live: q.session_recent ? true : null,
         session_liveness: q.session_recent ? 'live' : 'unknown',
-        can_answer: canAnswer(q.session_id),
+        can_answer: q.root_evidence_excluded === null &&
+          ['running', 'asking'].includes(q.root_status) && canAnswer(q.session_id),
         question: q.question,
         options: q.options ? JSON.parse(q.options) as string[] : [],
         recommendation: q.recommendation,
