@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { rmSync, readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync, readdirSync, rmdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { addRun, cleanCompletedSequencerState, completeReview, contentTree, db, gateFailureSummary, getReview, hermeticGitEnv, land, landingReviewCoverage, listReviews, prepareSharedRefGuard, projectLockState, recordReviews, reviewPins, reviewReply, upsertProject, withProjectLock } from '../test/fixture.ts'
 
 import { landingDescribeFixture } from '../test/fixture.ts'
@@ -13,6 +14,15 @@ const LOCK_TIMEOUT_MS = elapsedLockTimeoutMs(landingSize)
 
 describe("landing is gated on the exact commit that reaches trunk", () => {
   const { worktreeModule, g, repoWithBranches, childLand, completedReview, realTimeoutGate } = landingDescribeFixture()
+  const orchModule = fileURLToPath(new URL('./orch.ts', import.meta.url))
+  const childOrchLand = (repo: string, branch: string) => Bun.spawn(
+    [process.execPath, orchModule, 'land', branch, '--unreviewed', 'residue fixture', '--wait'],
+    {
+      cwd: repo,
+      env: { ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB!, CLAUDE_CODE_SESSION_ID: branch },
+      stdout: 'pipe', stderr: 'pipe',
+    },
+  )
 test('only bun\'s complete timeout line reports machine load', () => {
     const unrelated = gateFailureSummary(
       'backup timed out after 10ms\n1 fail\n', '/tmp/gate.log', 7,
@@ -99,34 +109,52 @@ test('only bun\'s complete timeout line reports machine load', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
-  test('empty rebase residue is cleared by removing its exact git-path', () => {
+  test('orch land reports empty rebase residue and its remedy unblocks the next landing', async () => {
     const { repo, trees } = repoWithBranches(['empty-rebase-residue'])
     const tree = trees['empty-rebase-residue']!
     const rebaseDir = g(tree, 'rev-parse', '--path-format=absolute', '--git-path', 'rebase-merge')
+    upsertProject({ name: 'landing-empty-rebase-residue', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
     try {
       mkdirSync(rebaseDir)
-      let message = ''
-      try { cleanCompletedSequencerState(tree) } catch (error) { message = (error as Error).message }
-      expect(message).toContain(`cleared by: rmdir -- '${rebaseDir}'`)
-      rmdirSync(rebaseDir)
-      expect(() => cleanCompletedSequencerState(tree)).not.toThrow()
+      expect(g(tree, 'symbolic-ref', '--short', 'HEAD')).toBe('empty-rebase-residue')
+      const first = childOrchLand(repo, 'empty-rebase-residue')
+      expect(await first.exited).not.toBe(0)
+      const message = await new Response(first.stderr).text()
+      expect(message).toContain(
+        `refusing cleanup in ${tree}: Git operation residue rebase-merge was not created by this landing process\n` +
+        'invariant: Git operation residue is cleaned only when orch started the operation and its child process has exited.\n' +
+        `cleared by: rmdir -- '${rebaseDir}'`,
+      )
+      expect(Bun.spawnSync(['rmdir', '--', rebaseDir], { stdout: 'pipe', stderr: 'pipe' }).exitCode).toBe(0)
+      const second = childOrchLand(repo, 'empty-rebase-residue')
+      expect(await second.exited, await new Response(second.stderr).text()).toBe(0)
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
-  test('partial rebase residue with orig-head is cleared by confirmed quit without moving HEAD', () => {
+  test('orch land reports non-empty rebase residue and its remedy unblocks the next landing', async () => {
     const { repo, trees } = repoWithBranches(['partial-rebase-residue'])
     const tree = trees['partial-rebase-residue']!
     const rebaseDir = g(tree, 'rev-parse', '--path-format=absolute', '--git-path', 'rebase-merge')
+    upsertProject({ name: 'landing-partial-rebase-residue', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
     try {
       mkdirSync(rebaseDir)
       writeFileSync(join(rebaseDir, 'orig-head'), `${g(tree, 'rev-parse', 'HEAD^')}\n`)
       const before = g(tree, 'rev-parse', 'HEAD')
-      let message = ''
-      try { cleanCompletedSequencerState(tree) } catch (error) { message = (error as Error).message }
-      expect(message).toMatch(/cleared by: first confirm no rebase process is running against .*; then git -C .* rebase --quit/)
+      expect(g(tree, 'symbolic-ref', '--short', 'HEAD')).toBe('partial-rebase-residue')
+      const first = childOrchLand(repo, 'partial-rebase-residue')
+      expect(await first.exited).not.toBe(0)
+      const message = await new Response(first.stderr).text()
+      expect(message).toContain(
+        `refusing cleanup in ${tree}: Git operation residue rebase-merge was not created by this landing process\n` +
+        'invariant: Git operation residue is cleaned only when orch started the operation and its child process has exited.\n' +
+        `cleared by: first confirm no rebase process is running against '${tree}'; then git -C '${tree}' rebase --quit`,
+      )
       expect(Bun.spawnSync(['git', 'rebase', '--quit'], { cwd: tree, env: hermeticGitEnv() }).exitCode).toBe(0)
       expect(g(tree, 'rev-parse', 'HEAD')).toBe(before)
-      expect(() => cleanCompletedSequencerState(tree)).not.toThrow()
+      const second = childOrchLand(repo, 'partial-rebase-residue')
+      expect(await second.exited, await new Response(second.stderr).text()).toBe(0)
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 

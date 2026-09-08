@@ -3,7 +3,7 @@
  *
  * Refusal contract for chunk 3 (each clause is a complete line):
  *   invariant: <the invariant's bolded phrase from orchestrator/AGENTS.md>
- *   cleared by: <a literal orch or git invocation>
+ *   cleared by: <a literal orch, git, or residue-removal invocation>
  *
  * Every expected failure records evidence only when its invariant expectation
  * fails. Chunk 3 removes a repaired case from failingCaseNames, changes it to
@@ -111,7 +111,7 @@ afterAll(() => {
 const defaultSeed = Number(process.env.ORCH_HARNESS_SEED ?? '1') >>> 0
 const rounds = Math.max(1, Number(process.env.ORCH_HARNESS_ROUNDS ?? '3'))
 const invariantLine = /^invariant: .+$/m
-const clearingLine = /^cleared by: (?:orch|git) .+$/m
+const clearingLine = /^cleared by: (?:orch|git|rmdir) .+$/m
 
 const refusalSiteNames = [
   'caller ancestry', 'missing trunk setting', 'missing gate setting',

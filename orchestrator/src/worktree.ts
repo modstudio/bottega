@@ -461,7 +461,8 @@ export function projectLockState(repoRoot: string, name: string): ProjectLockSta
   return {
     path: paths.lock,
     holder: kernelLockHeld(paths.lock) ? projectLockParticipant(paths.owner) : null,
-    waiters: waiterEntries(paths.waiters).map((entry) => entry.participant),
+    waiters: [...waiterEntries(join(paths.waiters, '.legacy')), ...waiterEntries(paths.waiters)]
+      .map((entry) => entry.participant),
   }
 }
 
@@ -600,44 +601,86 @@ export function withProjectLock<T>(
     return withKernelProjectLock(repoRoot, name, identity, action, timeoutMs, exposeWaiters, onWait)
   }
   const deadline = Date.now() + timeoutMs
+  const waitStarted = Date.now()
+  let waitedForLegacy = false
   const sleeper = new Int32Array(new SharedArrayBuffer(4))
-  for (;;) {
-    try {
-      mkdirSync(legacy)
-      break
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-      const holder = projectLockParticipant(join(legacy, 'owner'))
-      const stale = holder && staleProjectLockHolder(holder)
-      if (holder && stale) {
-        const gone = `${legacy}.stale-${process.pid}-${randomUUID()}`
-        try {
-          renameSync(legacy, gone)
-          const renamed = projectLockParticipant(join(gone, 'owner'))
-          if (renamed?.incarnation === holder.incarnation) rmSync(gone, { recursive: true, force: true })
-          else renameSync(gone, legacy)
-        } catch { /* another contender changed the legacy gate */ }
+  const paths = projectLockPaths(repoRoot, name)
+  const incarnation = randomUUID()
+  const participant: ProjectLockParticipant = {
+    pid: process.pid, startTime: processStartTime(process.pid), incarnation,
+    session: identity.session, what: identity.what, since: new Date().toISOString(),
+  }
+  mkdirSync(paths.waiters, { recursive: true })
+  const legacyWaiters = join(paths.waiters, '.legacy')
+  mkdirSync(legacyWaiters, { recursive: true })
+  const waiterName = `${nextWaiterTicket(legacyWaiters, deadline)}-${process.pid}-${incarnation}`
+  const waiter = join(legacyWaiters, waiterName)
+  writeFileSync(waiter, `${JSON.stringify(participant)}\n`)
+  const lockSession = identity.session ?? process.env.CLAUDE_CODE_SESSION_ID ?? null
+  const recordLegacyContention = (eventKind: 'timeout' | 'wait', holder: ProjectLockParticipant | null) => {
+    tryWriteContention({
+      sessionId: lockSession, resourceKind: 'lock', resourceKey: name, eventKind,
+      durationMs: Math.max(0, Date.now() - waitStarted),
+      cause: holder
+        ? `holder session ${holder.session ?? 'unknown'}, pid ${holder.pid}, ${holder.what}`
+        : `${eventKind === 'timeout' ? 'timed out waiting' : 'waited'} for ${lockLabel(name)}`,
+    }, { busyTimeoutMs: 0 })
+  }
+  try {
+    for (;;) {
+      const first = waiterEntries(legacyWaiters)[0]
+      if (first && first.name !== waiterName) {
+        const holder = projectLockParticipant(join(legacy, 'owner'))
+        if (Date.now() >= deadline) {
+          recordLegacyContention('timeout', holder)
+          throw lockTimeout(name, timeoutMs, legacy, holder)
+        }
+        waitedForLegacy = true
+        onWait?.(holder, Math.max(0, deadline - Date.now()))
+        Atomics.wait(sleeper, 0, 0, WORKTREE_CREATE_LOCK_POLL_MS)
         continue
       }
-      if (Date.now() >= deadline) throw lockTimeout(name, timeoutMs, legacy, holder)
-      onWait?.(holder, Math.max(0, deadline - Date.now()))
-      Atomics.wait(sleeper, 0, 0, WORKTREE_CREATE_LOCK_POLL_MS)
+      try {
+        mkdirSync(legacy)
+        break
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+        const holder = projectLockParticipant(join(legacy, 'owner'))
+        const stale = holder && staleProjectLockHolder(holder)
+        if (holder && stale) {
+          const gone = `${legacy}.stale-${process.pid}-${randomUUID()}`
+          try {
+            renameSync(legacy, gone)
+            const renamed = projectLockParticipant(join(gone, 'owner'))
+            if (renamed?.incarnation === holder.incarnation) rmSync(gone, { recursive: true, force: true })
+            else renameSync(gone, legacy)
+          } catch { /* another contender changed the legacy gate */ }
+          continue
+        }
+        if (Date.now() >= deadline) {
+          recordLegacyContention('timeout', holder)
+          throw lockTimeout(name, timeoutMs, legacy, holder)
+        }
+        waitedForLegacy = true
+        onWait?.(holder, Math.max(0, deadline - Date.now()))
+        Atomics.wait(sleeper, 0, 0, WORKTREE_CREATE_LOCK_POLL_MS)
+      }
     }
-  }
-  const incarnation = randomUUID()
-  try {
-    writeFileSync(join(legacy, 'owner'), `${JSON.stringify({
-      pid: process.pid, startTime: processStartTime(process.pid), incarnation,
-      session: identity.session, what: identity.what, since: new Date().toISOString(),
-    })}\n`)
+    writeFileSync(join(legacy, 'owner'), `${JSON.stringify(participant)}\n`)
     heldProjectLocks.add(legacy)
-    return withKernelProjectLock(
-      repoRoot, name, identity, action, Math.max(0, deadline - Date.now()), exposeWaiters, onWait,
-    )
+    rmSync(waiter, { force: true })
+    try {
+      return withKernelProjectLock(
+        repoRoot, name, identity, action, Math.max(0, deadline - Date.now()), exposeWaiters, onWait,
+      )
+    } finally {
+      if (waitedForLegacy) recordLegacyContention('wait', null)
+    }
   } finally {
     heldProjectLocks.delete(legacy)
     const ours = projectLockParticipant(join(legacy, 'owner'))
     if (ours?.incarnation === incarnation) rmSync(legacy, { recursive: true, force: true })
+    rmSync(waiter, { force: true })
   }
 }
 

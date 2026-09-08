@@ -762,13 +762,6 @@ function rebaseInProgress(worktree: string, guard?: SharedRefGuardEnvironment): 
 function assertLandingWorktreeReady(
   worktree: string, branch: string, guard?: SharedRefGuardEnvironment,
 ): void {
-  if (rebaseInProgress(worktree, guard)) {
-    throw namedError(
-      `refusing to land ${branch}: a rebase is in progress in ${worktree}`,
-      INVARIANT_FAILED_LANDING,
-      `git -C ${shellQuote(worktree)} rebase --abort`,
-    )
-  }
   const dirty = git(worktree, ['status', '--porcelain=v1', '--untracked-files=no'], guard)
   if (dirty) {
     throw namedError(
@@ -2379,6 +2372,7 @@ function assertEnqueuePreconditions(
   }
   const worktree = worktreesForBranch(repoRoot, branch).find((path) => existsSync(path))
   if (!worktree) return null
+  cleanCompletedSequencerState(worktree)
   assertLandingWorktreeReady(worktree, branch)
   // Refuse unreviewed content at enqueue so the caller hears it now rather than
   // from a refused queue row later. Outdated flags are cleared only inside the
