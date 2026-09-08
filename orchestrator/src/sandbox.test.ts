@@ -146,6 +146,24 @@ describe('readonly-lens sandbox profile', () => {
     ])
   })
 
+  test('a host override records the lost isolate confinement only for no-repo runs', () => {
+    const shared = {
+      agent: 'grok', writesRepo: false, worktree: '/runs/isolates/42',
+      runsDir: '/runs/sandbox-42', project: fixtureProject(), override: 'host',
+    }
+    const noRepo = selectReadonlySandbox({ ...shared, readsRepo: false })
+    const repository = selectReadonlySandbox({ ...shared, readsRepo: true })
+
+    expect(noRepo).toEqual({
+      sandbox: 'host', profile: null,
+      reason: 'ORCH_SANDBOX=host skipped the no-repo isolate sandbox; run is unconfined',
+    })
+    expect(noRepo.reason).not.toBe(repository.reason)
+    expect(repository).toEqual({
+      sandbox: 'host', profile: null, reason: 'ORCH_SANDBOX=host',
+    })
+  })
+
   test('a no-repo sandbox never silently falls back when its root or project is missing', () => {
     expect(() => selectReadonlySandbox({
       agent: 'grok', readsRepo: false, writesRepo: false,

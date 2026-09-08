@@ -417,7 +417,10 @@ describe('a probe proves an agent is alive without vouching for it', () => {
         job: 'summarize', prompt: 'reply', agent: 'grok', probe: true, noFailover: true,
       })
       expect(probe.agent).toBe('grok')
-      expect(probe.output).toBe('probe reached spawn')
+      expect(probe.output).toBe(
+        'sandbox host: ORCH_SANDBOX=host skipped the no-repo isolate sandbox; run is unconfined\n\n' +
+        'probe reached spawn',
+      )
       expect(db().query('SELECT status, probe FROM run WHERE id=?').get(probe.id))
         .toEqual({ status: 'ok', probe: 1 })
       expect(candidates('summarize').find((c) => c.agent === 'grok')!.cooling).toBeNull()

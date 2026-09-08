@@ -210,7 +210,9 @@ export function selectReadonlySandbox(input: {
   if (input.override === 'host') {
     return {
       sandbox: 'host', profile: null,
-      reason: input.readsRepo ? 'ORCH_SANDBOX=host' : null,
+      reason: input.readsRepo
+        ? 'ORCH_SANDBOX=host'
+        : 'ORCH_SANDBOX=host skipped the no-repo isolate sandbox; run is unconfined',
     }
   }
   if (!input.worktree) {
