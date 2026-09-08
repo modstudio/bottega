@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathS
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import * as ts from 'typescript'
-import { AGENTS, candidates, changedRegisteredCheckouts, checkoutAliases, checkoutCaseSensitivity, db, dir, hermeticGitEnv, land, mainCheckoutOf, orphanSafety, removeFor, retargetRepositoryPrompt, retargetRepositoryPromptForDispatch, retargetedPrompt, reviewReply, run, scrubbedGitEnv, snapshotRegisteredCheckouts, targetGitEnvironment, upsertProject, workerReply } from '../test/fixture.ts'
+import { AGENTS, candidates, checkoutAliases, checkoutCaseSensitivity, db, dir, hermeticGitEnv, land, mainCheckoutOf, orphanSafety, removeFor, retargetRepositoryPrompt, retargetRepositoryPromptForDispatch, retargetedPrompt, reviewReply, run, scrubbedGitEnv, snapshotRegisteredCheckouts, targetGitEnvironment, upsertProject, workerReply } from '../test/fixture.ts'
 
 describe('production git environments', () => {
   test('the shared scrub removes worker git routing and preserves unrelated variables', () => {
@@ -240,19 +240,6 @@ describe('outside-worktree write observation', () => {
     return repo
   }
 
-  test('the comparison names a changed checkout and ignores an unchanged one', () => {
-    const before = [
-      { project: 'one', path: '/one', status: '' },
-      { project: 'two', path: '/two', status: ' M existing' },
-    ]
-    expect(changedRegisteredCheckouts(before, [
-      { project: 'one', path: '/one', status: '?? new.txt\0' },
-      { project: 'two', path: '/two', status: ' M existing' },
-    ])).toEqual([{
-      project: 'one', path: '/one', before: '', after: '?? new.txt\0',
-    }])
-  })
-
   test('the watch set is the run\'s own project plus the caller checkout, never a third project', async () => {
     const { checkoutWatchSet } = await import('./run.ts')
     const one = repository()
@@ -270,54 +257,6 @@ describe('outside-worktree write observation', () => {
     const wide = checkoutWatchSet([], undefined, null).watched.map((checkout) => checkout.path)
     expect(wide).toContain(realpathSync(one))
     expect(wide).toContain(realpathSync(two))
-  })
-
-  test('identical before and after samples never classify, whatever static property they carry', () => {
-    // A checkout parked on a branch other than its registered trunk is a fact
-    // about that project, not an outside change made during this run. Run 2600
-    // was failed on 2026-09-07 with before and after both reading
-    // "develop / clean" in a third project; the evidence of its innocence was
-    // printed inside its own failure message.
-    const parked = [
-      { project: 'one', path: '/one', status: '', head: 'develop', expectedHead: 'master' },
-      { project: 'two', path: '/two', status: ' M existing', head: 'topic', expectedHead: 'main' },
-      { project: 'three', path: '/three', status: '?? stray\0', head: null, expectedHead: 'main' },
-    ]
-    expect(changedRegisteredCheckouts(parked, parked.map((snapshot) => ({ ...snapshot })))).toEqual([])
-  })
-
-  test('a HEAD that moved between the samples classifies even when porcelain is clean both times', () => {
-    expect(changedRegisteredCheckouts(
-      [{ project: 'one', path: '/one', status: '', head: 'main', expectedHead: 'main' }],
-      [{ project: 'one', path: '/one', status: '', head: 'topic', expectedHead: 'main' }],
-    )).toEqual([{
-      project: 'one', path: '/one', before: '', after: '',
-      beforeHead: 'main', afterHead: 'topic', expectedHead: 'main',
-    }])
-  })
-
-  test('the escape trip attributes a live process holding the checkout index lock', async () => {
-    const repo = repository()
-    const lock = join(repo, '.git', 'index.lock')
-    const ready = join(repo, 'lock-ready')
-    const release = join(repo, 'lock-release')
-    const holder = Bun.spawn([process.execPath, '-e',
-      `const{closeSync,existsSync,openSync,writeFileSync}=await import('node:fs');const fd=openSync(process.argv[1],'w');writeFileSync(process.argv[2],'');while(!existsSync(process.argv[3]))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10);closeSync(fd)`,
-      lock, ready, release], { stdout: 'pipe', stderr: 'pipe' })
-    try {
-      for (let i = 0; i < 200 && !existsSync(ready); i++) await Bun.sleep(5)
-      expect(existsSync(ready)).toBe(true)
-      const changes = changedRegisteredCheckouts(
-        [{ project: 'watched', path: repo, status: '', head: 'main', expectedHead: 'main' }],
-        [{ project: 'watched', path: repo, status: '?? changed', head: 'main', expectedHead: 'main' }],
-      )
-      expect(changes[0]?.liveEditor).toContain(`pid ${holder.pid}`)
-      expect(changes[0]?.liveEditor).toContain(lock)
-    } finally {
-      writeFileSync(release, '')
-      await holder.exited
-      rmSync(repo, { recursive: true, force: true })
-    }
   })
 
   test('an explicitly watched caller worktree is observed even when the register names its main checkout', () => {
@@ -552,12 +491,12 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
       const dirty = await run({ job: 'file-question', prompt: 'write outside', cwd: dir, agent: 'grok' })
       const dirtyRunId = dirty.id
       const recorded = db().query(
-        `SELECT status, failure_kind, error, outside_worktree_writes, output_path,
+        `SELECT status, failure_kind, error, output_path,
                 worktree, branch, base_commit, worktree_source, confinement
            FROM run WHERE id=?`,
       ).get(dirtyRunId!) as {
         status: string; failure_kind: string | null; error: string | null
-        outside_worktree_writes: string; output_path: string
+        output_path: string
         worktree: string | null; branch: string | null; base_commit: string | null
         worktree_source: 'recipe' | 'git' | 'readonly_recipe' | null
         confinement: string | null
@@ -574,11 +513,6 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
       expect(event.attribution).toBe('unattributed')
       expect(event.divergentPaths).toContain('written-by-run.txt')
       expect(readFileSync(recorded.output_path, 'utf8')).toContain('answer')
-      expect(JSON.parse(recorded.outside_worktree_writes)).toEqual([{
-        project: 'watched-project', path: watched,
-        before: '', after: '?? written-by-run.txt\u0000',
-        beforeHead: 'main', afterHead: 'main', expectedHead: null,
-      }])
       expect(db().query('SELECT id FROM run WHERE retry_of=?').get(dirtyRunId!)).toBeNull()
       expect(candidates('file-question').find((item) => item.agent === 'grok'))
         .toMatchObject({ failures: 0, evidence: 0, score: null })
@@ -596,10 +530,9 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
         job: 'file-question', prompt: 'write inside', cwd: dir, agent: 'grok', keepTree: true,
       })
       const cleanRecorded = db().query(
-        'SELECT status, failure_kind, outside_worktree_writes FROM run WHERE id=?',
-      ).get(clean.id) as { status: string; failure_kind: string | null; outside_worktree_writes: string }
+        'SELECT status, failure_kind FROM run WHERE id=?',
+      ).get(clean.id) as { status: string; failure_kind: string | null }
       expect(cleanRecorded).toMatchObject({ status: 'ok', failure_kind: null })
-      expect(JSON.parse(cleanRecorded.outside_worktree_writes)).toEqual([])
       expect(clean.worktree && existsSync(join(clean.worktree.path, 'inside-only.txt'))).toBe(true)
       expect(snapshotRegisteredCheckouts()).toEqual([
         { project: 'watched-project', path: watched, status: '', head: 'main', expectedHead: null },
@@ -666,12 +599,11 @@ printf '%s\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"a
         keepTree: true,
       })
       const row = db().query(
-        'SELECT status, failure_kind, outside_worktree_writes FROM run WHERE id=?',
+        'SELECT status, failure_kind FROM run WHERE id=?',
       ).get(result.id) as {
-        status: string; failure_kind: string | null; outside_worktree_writes: string
+        status: string; failure_kind: string | null
       }
       expect(row).toMatchObject({ status: 'ok', failure_kind: null })
-      expect(JSON.parse(row.outside_worktree_writes)).toEqual([])
       expect(warnings.filter((line) => line.includes('confinement watch skipped'))).toEqual([
         expect.stringContaining(
           `confinement watch skipped moved-project at ${moved}:`,

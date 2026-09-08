@@ -47,6 +47,8 @@ export type ConfinementEvent = {
 
 export type CheckoutToWatch = { project: string; path: string; expectedHead?: string | null }
 
+export type FreezeFailure = CheckoutToWatch & { error: string }
+
 function git(cwd: string, args: string[]): { ok: boolean; stdout: string; stderr: string } {
   const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
     env: { ...targetGitEnvironment(cwd), GIT_OPTIONAL_LOCKS: '0' },
@@ -116,11 +118,16 @@ export function indexIsUntrusted(cwd: string, now = Date.now()): boolean {
   }
 }
 
-function samplePorcelain(cwd: string): { status: string; head: string | null } {
+function samplePorcelain(cwd: string):
+  { ok: true; status: string; head: string | null } | { ok: false; error: string } {
   const status = git(cwd, ['status', '--porcelain=v1', '-z', '--untracked-files=all'])
+  if (!status.ok) {
+    return { ok: false, error: status.stderr.trim() || 'git status failed' }
+  }
   const symbolic = git(cwd, ['symbolic-ref', '--short', 'HEAD'])
   return {
-    status: status.ok ? status.stdout : '',
+    ok: true,
+    status: status.stdout,
     head: symbolic.ok ? symbolic.stdout.trim() || null : null,
   }
 }
@@ -136,6 +143,7 @@ export function freezeCheckout(
     untrusted = indexIsUntrusted(checkout.path, Date.now())
   }
   const porcelain = samplePorcelain(checkout.path)
+  if (!porcelain.ok) throw new Error(porcelain.error)
   return {
     project: checkout.project,
     path: checkout.path,
@@ -152,8 +160,20 @@ export function freezeCheckout(
 export function freezeCheckouts(
   watched: CheckoutToWatch[],
   opts: { now?: number; wait?: (ms: number) => void } = {},
-): FrozenCheckout[] {
-  return watched.map((checkout) => freezeCheckout(checkout, opts))
+): { snapshots: FrozenCheckout[]; failures: FreezeFailure[] } {
+  const snapshots: FrozenCheckout[] = []
+  const failures: FreezeFailure[] = []
+  for (const checkout of watched) {
+    try {
+      snapshots.push(freezeCheckout(checkout, opts))
+    } catch (error) {
+      failures.push({
+        ...checkout,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+  return { snapshots, failures }
 }
 
 function lockHolderPids(checkout: string): ConfinementLockHolder[] {

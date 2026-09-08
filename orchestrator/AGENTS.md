@@ -844,8 +844,9 @@ The invariants are:
 - **Divergence is classified and attributed, never fatal by itself.** At launch
   the detector freezes, for the run's own project main checkout and the caller
   checkout, the tree hash (`git write-tree` of the index plus a hash of
-  untracked non-ignored paths) and HEAD; at exit it re-hashes. Porcelain is the
-  cheap pre-check. A sample taken within one second of the checkout's index
+  untracked non-ignored paths) and HEAD; at exit it re-hashes. Porcelain is a
+  field of that freeze, not a second detector and not `outside_worktree_writes`.
+  A sample taken within one second of the checkout's index
   mtime is untrusted and re-taken. A HEAD that moved with a clean tree is an
   edit-commit cycle by someone else. Attribution is the index.lock holder pid
   and its session, or the landing session that moved HEAD, or unattributed.

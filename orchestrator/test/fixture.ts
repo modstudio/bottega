@@ -167,7 +167,7 @@ export const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePa
         RUNS_DIR, grokMcpConnection, assertGrokTrustEligible, writingFailoverRefusal, resolveSupersededTurn,
         resolveRootFromLastTurn, gitObjectEnvironmentFor, inferredReadOnlyKey,
         canonSourceFor, canonSourceInstruction, snapshotRegisteredCheckouts,
-        changedRegisteredCheckouts, checkoutAliases, checkoutCaseSensitivity,
+        checkoutAliases, checkoutCaseSensitivity,
         retargetRepositoryPrompt, retargetRepositoryPromptForDispatch,
         packedResumePrompt, resolveReviewTarget, implicitReviewWarning, mcpRequestFromStored,
         retryModelForAgent, run: runJob, listRunArtifacts, runArtifactsDir, runScratchDir,

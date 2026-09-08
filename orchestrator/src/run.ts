@@ -32,7 +32,6 @@ import {
   prepareWorktreeObjects, prepareSharedRefGuard, carryWorkingState,
   assertSharedRefGuardOutsideWritableRoots,
   targetGitEnvironment,
-  scrubbedGitEnv,
   workerSharedGitRoots,
   contentTree,
   assertCallerAncestry, withWorktreeCreateLock, withWorktreeLease, withCleanupLock,
@@ -63,7 +62,8 @@ import { TRUNCATED_TRANSCRIPT_BYTES } from './result-output.ts'
 import { addedGrokTrustHeadings, grokTrustHeadings } from './grok-trust.ts'
 import { prepareSandboxHome, selectReadonlySandbox, srtLaunchArgv } from './sandbox.ts'
 import {
-  classifyDivergence, freezeCheckouts, overlappingError, type ConfinementEvent,
+  classifyDivergence, freezeCheckouts, overlappingError, type CheckoutToWatch,
+  type ConfinementEvent, type FreezeFailure,
 } from './confinement.ts'
 import {
   probeMcpServer, readMcpConfig, resolveMcpServerUrl, storedMcpProbe, wrongProjectReason,
@@ -1058,29 +1058,9 @@ export type CheckoutStatusSnapshot = {
   expectedHead?: string | null
 }
 
-export type OutsideWorktreeWrite = {
-  project: string
-  path: string
-  before: string
-  after: string
-  beforeHead?: string | null
-  afterHead?: string | null
-  expectedHead?: string | null
-  liveEditor?: string | null
-}
-
-type CheckoutToWatch = { project: string; path: string; expectedHead?: string | null }
-
-type CheckoutSampleFailure = CheckoutToWatch & { error: string }
-
-type CheckoutSample = {
-  snapshots: CheckoutStatusSnapshot[]
-  failures: CheckoutSampleFailure[]
-}
-
 type CheckoutCandidates = {
   watched: CheckoutToWatch[]
-  failures: CheckoutSampleFailure[]
+  failures: FreezeFailure[]
 }
 
 /**
@@ -1102,7 +1082,7 @@ export function checkoutWatchSet(
 ): CheckoutCandidates {
   const active = activeWorktree ? realpathSync(activeWorktree) : null
   const watched: CheckoutToWatch[] = []
-  const failures: CheckoutSampleFailure[] = []
+  const failures: FreezeFailure[] = []
   const seen = new Set<string>()
   const registered = projects()
     .filter(({ name }) => ownProject === undefined || ownProject === null || name === ownProject)
@@ -1130,58 +1110,22 @@ export function checkoutWatchSet(
   return { watched, failures }
 }
 
-function sampleCheckouts(watched: CheckoutToWatch[]): CheckoutSample {
-  const snapshots: CheckoutStatusSnapshot[] = []
-  const failures: CheckoutSampleFailure[] = []
-  for (const checkout of watched) {
-    try {
-      const p = Bun.spawnSync(
-        ['git', '-C', checkout.path, 'status', '--porcelain=v1', '-z', '--untracked-files=all'],
-        {
-          // Status may otherwise take an optional lock to refresh index stat
-          // data. Observation must not itself write to a watched checkout.
-          env: { ...targetGitEnvironment(checkout.path), GIT_OPTIONAL_LOCKS: '0' },
-          stdout: 'pipe', stderr: 'pipe',
-        },
-      )
-      if (p.exitCode !== 0) {
-        failures.push({
-          ...checkout,
-          error: p.stderr.toString().trim() || `git status exited ${p.exitCode}`,
-        })
-        continue
-      }
-      const symbolic = Bun.spawnSync(
-        ['git', '-C', checkout.path, 'symbolic-ref', '--short', 'HEAD'],
-        { env: { ...targetGitEnvironment(checkout.path), GIT_OPTIONAL_LOCKS: '0' }, stdout: 'pipe', stderr: 'pipe' },
-      )
-      snapshots.push({
-        project: checkout.project, path: checkout.path, status: p.stdout.toString(),
-        head: symbolic.exitCode === 0 ? symbolic.stdout.toString().trim() : null,
-        expectedHead: checkout.expectedHead ?? null,
-      })
-    } catch (error) {
-      failures.push({
-        ...checkout,
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
-  }
-  return { snapshots, failures }
-}
-
 /**
  * Cheap observation of registered main checkouts, outside a run's worktree.
  *
- * Porcelain status deliberately bounds the check: it sees tracked and
- * untracked working-tree changes without hashing every file in every project.
- * The exported observer retains its historical snapshots-only surface. Run
- * enforcement uses the fixed watch set and preserves sampling failures too.
+ * The freeze is the observer: porcelain, tree hashes and HEAD together. The
+ * exported surface stays snapshots-only for callers that only need porcelain.
  */
 export function snapshotRegisteredCheckouts(
   additional: CheckoutToWatch[] = [],
 ): CheckoutStatusSnapshot[] {
-  return sampleCheckouts(checkoutWatchSet(additional).watched).snapshots
+  return freezeCheckouts(checkoutWatchSet(additional).watched).snapshots.map((snapshot) => ({
+    project: snapshot.project,
+    path: snapshot.path,
+    status: snapshot.status,
+    head: snapshot.head,
+    expectedHead: snapshot.expectedHead,
+  }))
 }
 
 /**
@@ -1367,57 +1311,6 @@ export function retargetRepositoryPromptForDispatch(
   return result.prompt
 }
 
-export function changedRegisteredCheckouts(
-  before: CheckoutStatusSnapshot[], after: CheckoutStatusSnapshot[],
-): OutsideWorktreeWrite[] {
-  const prior = new Map(before.map((snapshot) => [snapshot.path, snapshot]))
-  const changes: OutsideWorktreeWrite[] = []
-  for (const current of after) {
-    const original = prior.get(current.path)
-    // Only a CHANGE between the two samples is an outside change. A checkout
-    // that sits on a branch other than its registered trunk before and after
-    // the run is a static fact about that project, not something this run did:
-    // on 2026-09-07 stopal's checkout on develop failed bottega runs that never
-    // touched it. The landing-side refusal (assertMainCheckoutOnTrunk) is where
-    // "the main checkout must be on trunk" belongs; here it is reported only
-    // when HEAD actually moved.
-    if (!original || (original.status === current.status && original.head === current.head)) continue
-    const editor = liveCheckoutEditor(current.path)
-    changes.push({
-      project: current.project,
-      path: current.path,
-      before: original.status,
-      after: current.status,
-      ...(('head' in original || 'head' in current)
-        ? { beforeHead: original.head, afterHead: current.head, expectedHead: current.expectedHead }
-        : {}),
-      ...(editor ? { liveEditor: editor } : {}),
-    })
-  }
-  return changes
-}
-
-function liveCheckoutEditor(checkout: string): string | null {
-  const gitDir = gitContext(checkout, 'rev-parse', '--path-format=absolute', '--git-dir')
-  const candidates = [gitDir ? join(gitDir, 'index.lock') : null]
-    .filter((path): path is string => Boolean(path && existsSync(path)))
-  const swaps = Bun.spawnSync(
-    ['find', checkout, '-type', 'f', '(', '-name', '.*.swp', '-o', '-name', '.*.swo', ')', '-print'],
-    { env: scrubbedGitEnv(), stdout: 'pipe', stderr: 'ignore' },
-  )
-  if (swaps.exitCode === 0) candidates.push(...swaps.stdout.toString().split('\n').filter(Boolean))
-  for (const path of candidates) {
-    const owner = Bun.spawnSync(['lsof', '-nP', '-Fpc', '--', path], {
-      env: scrubbedGitEnv(), stdout: 'pipe', stderr: 'ignore',
-    })
-    if (owner.exitCode !== 0) continue
-    const pid = owner.stdout.toString().split('\n').find((line) => line.startsWith('p'))?.slice(1)
-    const command = owner.stdout.toString().split('\n').find((line) => line.startsWith('c'))?.slice(1)
-    if (pid || command) return `${command ?? 'editor'} pid ${pid ?? 'unknown'} (${path})`
-  }
-  return null
-}
-
 function boundedConfinementError(message: string): string {
   const bytes = Buffer.from(message)
   if (bytes.length <= 1500) return message
@@ -1426,7 +1319,7 @@ function boundedConfinementError(message: string): string {
     .toString('utf8').replace(/\uFFFD$/, '') + suffix.toString()
 }
 
-function confinementUnverifiedError(failures: CheckoutSampleFailure[]): string {
+function confinementUnverifiedError(failures: FreezeFailure[]): string {
   return boundedConfinementError(
     'checkout confinement could not be verified:\n' + failures.map((failure) =>
       `registered checkout ${failure.project} at ${failure.path}: ${failure.error}`,
@@ -2733,8 +2626,7 @@ export async function run(opts: {
   let artifactsPersisted = true
   let preConfinement: string | null = null
   let vendorTerminatedStream: string | null = null
-  let outsideWrites: OutsideWorktreeWrite[] = []
-  let confinementFailures: CheckoutSampleFailure[] = []
+  let confinementFailures: FreezeFailure[] = []
   let confinementEvent: ConfinementEvent | null = null
   let frozenBefore: import('./confinement.ts').FrozenCheckout[] = []
   let askLoopback: AskLoopback | null = null
@@ -2747,8 +2639,8 @@ export async function run(opts: {
   const candidates = worktree
     ? checkoutWatchSet(callerWatch, worktree.path, opts.repo ?? repoOf(callerCwd) ?? null)
     : { watched: [], failures: [] }
-  const sampledBefore = sampleCheckouts(candidates.watched)
-  const skipped = [...candidates.failures, ...sampledBefore.failures]
+  const beforeFreeze = freezeCheckouts(candidates.watched)
+  const skipped = [...candidates.failures, ...beforeFreeze.failures]
   // A detached child's stderr reaches nobody, so the skip also rides the output
   // header that `orch result` prints (lens run 2290): the register is stale and
   // the project unwatched on every later run until somebody reads this.
@@ -2759,11 +2651,10 @@ export async function run(opts: {
   if (skipLines.length) {
     mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${skipLines.join('\n')}` : skipLines.join('\n')
   }
-  const beforeSample = { snapshots: sampledBefore.snapshots, failures: [] }
-  const watchedCheckouts = beforeSample.snapshots.map(({ project, path, expectedHead }) => ({
-    project, path, expectedHead,
+  frozenBefore = beforeFreeze.snapshots
+  const watchedCheckouts = frozenBefore.map(({ project, path, expectedHead }) => ({
+    project, path, expectedHead: expectedHead ?? undefined,
   }))
-  frozenBefore = freezeCheckouts(watchedCheckouts)
 
   try {
     if (repoJob) {
@@ -3073,21 +2964,16 @@ export async function run(opts: {
 
     let frozenAfter: import('./confinement.ts').FrozenCheckout[] = []
     try {
-      const afterSample = sampleCheckouts(watchedCheckouts)
-      confinementFailures.push(...afterSample.failures.map((failure) => ({
+      const afterFreeze = freezeCheckouts(watchedCheckouts)
+      confinementFailures.push(...afterFreeze.failures.map((failure) => ({
         ...failure, error: `after snapshot: ${failure.error}`,
       })))
-      outsideWrites = changedRegisteredCheckouts(
-        beforeSample.snapshots, afterSample.snapshots,
-      )
-      frozenAfter = freezeCheckouts(watchedCheckouts)
-      db().query('UPDATE run SET outside_worktree_writes=? WHERE id=?')
-        .run(JSON.stringify(outsideWrites), claim.id)
+      frozenAfter = afterFreeze.snapshots
     } catch (e) {
       // A failure in the observation machinery itself cannot safely fabricate
       // which checkout was unreadable. Keep the original outcome and make the
-      // harness fault visible; sampled checkout failures take the binding path.
-      console.error(`orch: could not record outside-worktree writes for run ${claim.id}: ${e}`)
+      // harness fault visible; freeze failures take the binding path.
+      console.error(`orch: could not freeze watched checkouts for run ${claim.id}: ${e}`)
     }
 
     // The directory contains no input and is useful only while the vendor is
@@ -3443,7 +3329,10 @@ export async function run(opts: {
     } else if (recorded?.failure_kind === 'escaped' || recorded?.failure_kind === 'confinement_unverified') {
       tryWriteContention({
         resourceKind: 'main_checkout',
-        resourceKey: outsideWrites[0]?.path ?? confinementFailures[0]?.path ?? callerCwd,
+        resourceKey: (confinementEvent
+          ? confinementEvent.after.find((row) => row.headOid === confinementEvent.tripTip)?.path
+            ?? confinementEvent.after[0]?.path
+          : confinementFailures[0]?.path) ?? callerCwd,
         eventKind: 'invalidation',
         cause: error, runId: claim.id,
       })
