@@ -277,6 +277,20 @@ tenancy enforcement, transports, queues, object storage, hosting.
 A hand-rolled mechanism where a proven one exists is a defect, not a preference.
 Name it and replace it rather than extending it.
 
+### A review round is scoped by the round before it
+
+Round 1 is the only full review. Every later round repeats ONLY the lenses whose
+dimension the fix touched, briefed with what the previous round found and told
+not to re-derive it. A full repeat is not thoroughness; it is paying again for an
+answer already bought.
+
+- **A clean round ends the ladder.** Do not run another to feel sure.
+- **Concurrency has a ceiling.** Past four concurrent lenses you buy wall time
+  with wall time.
+- **Land on the evidence you hold.** When a gate cannot be satisfied, record why
+  and land; re-presenting a decision already recommended costs a turn and
+  changes nothing.
+
 ## Measure the class before fixing the instance
 
 The escape detector was patched three times at the instance on one day, each
