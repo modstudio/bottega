@@ -33,7 +33,9 @@ describe('suggestion notes', () => {
       ...process.env, HUB_DB: path,
       HUB_ORCH: new URL('../test/project-register.ts', import.meta.url).pathname,
     }
-    const payload = Bun.spawnSync([process.execPath, hub, 'note', 'new', 'help', '--new'], {
+    const payload = Bun.spawnSync([
+      process.execPath, hub, 'note', 'new', 'help', '--new', '--area', 'workshop',
+    ], {
       env, stdout: 'pipe', stderr: 'pipe',
     })
     expect(payload.exitCode, payload.stderr.toString()).toBe(0)
