@@ -966,7 +966,7 @@ export function reviewCoverageVerdict(
   const changePaths = changedPaths(runner, oldBase, reviewedCommit)
   const trunkPaths = changedPaths(runner, oldBase, newBase)
   const overlap = [...changePaths].filter((path) => trunkPaths.has(path))
-  if (overlap.length) return { kind: 'invalid', reason: `overlapping paths) paths: ${overlap.sort().join(', ')}`, resolution: resolved.resolution }
+  if (overlap.length) return { kind: 'invalid', reason: `overlapping paths: ${overlap.sort().join(', ')}`, resolution: resolved.resolution }
   const reviewedPatch = review.patchId || patchId(runner, oldBase, reviewedCommit)
   const candidatePatch = patchId(runner, newBase, tip)
   if (!reviewedPatch || reviewedPatch !== candidatePatch) {
