@@ -58,26 +58,21 @@ export type Job = {
  * cap wins, the `--timeout` refusal names the cutoff.
  */
 /**
- * Jobs that legitimately wait on a service outside the vendor process tree.
- * CPU idle only covers descendants of the vendor pid, so these get a longer
- * idle bound instead of a protection we do not have:
- *   implement, fix, issue-worker, land, review-lens, safety, craft — Docker
- *   mcp-query — MCP servers
- *   file-question, summarize, canon-lookup — local-stack (prefer local-acp)
- * The rest keep the measured 15m default.
+ * The CPU sample cannot observe waits outside the vendor tree at all — Docker,
+ * an MCP server, local-stack, a lock, a remote API the vendor CLI is blocked
+ * on. Silence-plus-CPU therefore does not protect an external wait, so the
+ * default idle bound must be the longer one for every job. The short measured
+ * bound is only for jobs known to be entirely CPU-local. None currently are:
+ * every job can wait on a tool, a subprocess, or a service the sample cannot
+ * see. Invert, do not enumerate the hole.
  */
-export const EXTERNAL_WAIT_JOBS = [
-  'implement', 'fix', 'issue-worker', 'land',
-  'review-lens', 'safety', 'craft',
-  'mcp-query',
-  'file-question', 'summarize', 'canon-lookup',
-] as const
+export const CPU_LOCAL_JOBS = [] as const
 
 export function jobIdleKillMs(name: string, env: NodeJS.ProcessEnv = process.env): number {
   if (env.ORCH_IDLE_KILL_MS !== undefined && env.ORCH_IDLE_KILL_MS !== '') return idleKillMs(env)
-  return (EXTERNAL_WAIT_JOBS as readonly string[]).includes(name)
-    ? DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS
-    : DEFAULT_IDLE_KILL_MS
+  return (CPU_LOCAL_JOBS as readonly string[]).includes(name)
+    ? DEFAULT_IDLE_KILL_MS
+    : DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS
 }
 
 export const JOB_TIMEOUTS = {

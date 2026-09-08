@@ -10,7 +10,7 @@ import { pidAlive } from './db.ts'
 import { formatIdleKillError, idleKillMayProceed, idleKillMs, isGroupKillablePgid, isUninterruptible, isWorkerCpuIdle,
   parseIdleReclaimedMs, parsePsTable, runHasLiveDescendants, shouldIdleKill, terminateProcessGroup,
   DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS, DEFAULT_IDLE_KILL_MS } from './idle-kill.ts'
-import { EXTERNAL_WAIT_JOBS, jobIdleKillMs } from './jobs.ts'
+import { CPU_LOCAL_JOBS, JOB_TIMEOUTS, jobIdleKillMs } from './jobs.ts'
 import { isRoutingEvidence } from './route.ts'
 import { harnessHealth } from './health.ts'
 import { installTestTransport, type AgentTransport, type TransportResult } from './transport.ts'
@@ -53,23 +53,18 @@ describe('idle kill threshold', () => {
     expect(idleKillMs({ ORCH_IDLE_KILL_MS: '400' })).toBe(400)
   })
 
-  test('jobs that wait outside the vendor tree get a longer idle bound', () => {
+  test('the long idle bound is the default; only CPU-local jobs may use the short one', () => {
     expect(DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS).toBe(30 * 60_000)
-    expect([...EXTERNAL_WAIT_JOBS]).toEqual([
-      'implement', 'fix', 'issue-worker', 'land',
-      'review-lens', 'safety', 'craft',
-      'mcp-query',
-      'file-question', 'summarize', 'canon-lookup',
-    ])
-    for (const name of EXTERNAL_WAIT_JOBS) {
+    expect([...CPU_LOCAL_JOBS]).toEqual([])
+    for (const name of Object.keys(JOBS)) {
       expect(jobIdleKillMs(name, {})).toBe(30 * 60_000)
     }
-    expect(jobIdleKillMs('understand', {})).toBe(15 * 60_000)
-    expect(jobIdleKillMs('diagnose', {})).toBe(15 * 60_000)
-    expect(jobIdleKillMs('verify-claim', {})).toBe(15 * 60_000)
-    expect(jobIdleKillMs('review-lens-inline', {})).toBe(15 * 60_000)
+    expect(jobIdleKillMs('understand', {})).toBe(30 * 60_000)
+    expect(jobIdleKillMs('diagnose', {})).toBe(30 * 60_000)
+    expect(jobIdleKillMs('verify-claim', {})).toBe(30 * 60_000)
+    expect(jobIdleKillMs('review-lens-inline', {})).toBe(30 * 60_000)
     expect(jobIdleKillMs('implement', { ORCH_IDLE_KILL_MS: '400' })).toBe(400)
-    for (const name of Object.keys(JOBS)) {
+    for (const name of Object.keys(JOB_TIMEOUTS)) {
       expect(jobIdleKillMs(name, {})).toBeGreaterThan(0)
     }
   })

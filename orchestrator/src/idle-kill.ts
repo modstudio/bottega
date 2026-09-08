@@ -24,9 +24,10 @@ import { idleMsSince } from './events.ts'
  */
 export const DEFAULT_IDLE_KILL_MS = 15 * 60_000
 /**
- * Longer idle bound for jobs that wait on a service outside the vendor tree.
- * 30m is twice the measured 15m default and still below implement's 45m wall.
- * For jobs whose wall is ≤ 30m the wall fires first; that is deliberate.
+ * Default idle bound for every job that is not known to be entirely CPU-local.
+ * 30m is twice the measured 15m gap bound. The CPU sample cannot see waits
+ * outside the vendor tree, so this generous default is the safe one; the short
+ * bound is the exception.
  */
 export const DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS = 30 * 60_000
 export const DEFAULT_IDLE_GRACE_MS = 5_000
@@ -113,8 +114,9 @@ export function descendantPids(root: number, samples: ProcessSample[]): number[]
  * work inside the vendor process tree, and nothing else. A worker blocked
  * on local-stack, the docker daemon, a lock, or a slow network call reads
  * 0% here because those processes are not descendants. Silence-plus-CPU
- * therefore does not protect an external wait; jobs that legitimately wait
- * on one of those services use a longer idle bound instead.
+ * therefore does not protect an external wait, so the idle bound defaults
+ * to the longer one for every job; only a job known to be entirely CPU-local
+ * may use the short measured bound.
  */
 export function processGroupCpuPercent(pid: number, samples: ProcessSample[]): number | null {
   if (pid <= 0) return null
