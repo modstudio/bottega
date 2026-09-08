@@ -255,6 +255,16 @@ describe("detached run collection", () => {
       { kind, rootSnapshot: true, turnSnapshot: false, addressByTurn: false },
       { kind, rootSnapshot: false, turnSnapshot: false, addressByTurn: true },
     ])
+    // These rows are deliberate: the original reduction correlated
+    // addressByTurn === !rootSnapshot and omitted both opposite pairings.
+    // Do not trim them without preserving full pairwise coverage.
+    cases.push(
+      { kind: 'escaped', rootSnapshot: true, turnSnapshot: true, addressByTurn: true },
+      {
+        kind: 'confinement_unverified', rootSnapshot: false,
+        turnSnapshot: false, addressByTurn: false,
+      },
+    )
     for (const { kind, rootSnapshot, turnSnapshot, addressByTurn } of cases) {
       const fixture = confinementArtifact(kind)
       try {
@@ -330,9 +340,9 @@ describe("detached run collection", () => {
         expect(Number(resumed.out.trim())).toBeGreaterThan(turn)
       } finally { rmSync(fixture.repo, { recursive: true, force: true }) }
     }
-  // Measured here after reducing to eight cases: 4,873ms, 5,145ms, 4,673ms, 5,315ms.
-  // The 20s bound leaves 3.7x margin over the 5,315ms worst case.
-  }, 20_000)
+    // Ten-case measurements on this host: 19,085ms, 20,517ms, 14,708ms, 8,984ms.
+    // The 120s bound leaves 5.8x margin over the 20,517ms measured worst case.
+  }, 120_000)
 
   test('confinement clear records a missing worktree block and landing names its recovery', () => {
     const fixture = confinementArtifact()
