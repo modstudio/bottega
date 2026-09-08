@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync, readdirSync, symlinkSync, renameSync } from 'node:fs'
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync, readdirSync, symlinkSync, renameSync, appendFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import * as ts from 'typescript'
@@ -768,7 +768,7 @@ printf 'inside\\n' > overlap.txt
 printf '%s\\n' '${JSON.stringify(workerReply({ files_changed: ['overlap.txt'] }))}'
 `)
     chmodSync(script, 0o755)
-    upsertProject({ name: 'overlap-project', path: repo })
+    upsertProject({ name: 'overlap-project', path: repo, settings: { trunk: 'main', gate: 'true' } })
     const grok = AGENTS.grok!
     const previousBin = grok.bin
     const priorDepth = process.env.ORCH_DEPTH
@@ -861,10 +861,20 @@ printf '%s\\n' ${JSON.stringify(JSON.stringify({
     }
   })
 
-  test('own-checkout HEAD move completes and lands', async () => {
+  test('own-checkout git pull from a worktree completes and lands', async () => {
     const repo = repository()
+    const caller = join(repo, '.claude', 'worktrees', 'session')
+    mkdirSync(join(repo, '.claude', 'worktrees'), { recursive: true })
+    appendFileSync(join(repo, '.git', 'info', 'exclude'), '.claude/\n')
+    git(repo, 'worktree', 'add', '-b', 'session-caller', caller)
     const script = join(dir, 'DEV-372-pull-agent.sh')
     writeFileSync(script, `#!/bin/sh
+MAIN="$ORCH_TEST_MAIN"
+printf 'pulled\\n' > "$MAIN/extra.txt"
+env -i HOME="$HOME" PATH="$PATH" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+  git -C "$MAIN" -c user.email=orch-test@example.invalid -c user.name='Orch Test' add extra.txt
+env -i HOME="$HOME" PATH="$PATH" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null \
+  git -C "$MAIN" -c user.email=orch-test@example.invalid -c user.name='Orch Test' commit -m 'simulated pull'
 printf 'inside\\n' > pulled.txt
 git add pulled.txt
 git -c user.email=orch-test@example.invalid -c user.name='Orch Test' commit -m 'DEV-372 pull-safe' >/dev/null
@@ -879,22 +889,28 @@ printf '%s\\n' ${JSON.stringify(JSON.stringify({
     const grok = AGENTS.grok!
     const previousBin = grok.bin
     const priorDepth = process.env.ORCH_DEPTH
+    const priorMain = process.env.ORCH_TEST_MAIN
     process.env.ORCH_DEPTH = '0'
+    process.env.ORCH_TEST_MAIN = repo
     try {
       grok.bin = script
       const result = await run({
-        job: 'implement', prompt: 'pull-safe', cwd: repo, agent: 'grok', noFailover: true,
+        job: 'implement', prompt: 'pull-safe', cwd: caller, agent: 'grok', noFailover: true,
       })
       expect(result.status).toBe('ok')
+      expect(git(repo, 'log', '-1', '--pretty=%s')).toBe('simulated pull')
       const recorded = db().query(
         'SELECT failure_kind, confinement, branch FROM run WHERE id=?',
       ).get(result.id) as { failure_kind: string | null; confinement: string | null; branch: string }
       expect(recorded.failure_kind).toBeNull()
+      expect(JSON.parse(recorded.confinement!).classification).toBe('edit_commit_cycle')
       land(repo, recorded.branch, { runId: result.id, unreviewed: 'DEV-372 git-pull reproduction' })
     } finally {
       grok.bin = previousBin
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
+      if (priorMain === undefined) delete process.env.ORCH_TEST_MAIN
+      else process.env.ORCH_TEST_MAIN = priorMain
       rmSync(repo, { recursive: true, force: true })
     }
   })

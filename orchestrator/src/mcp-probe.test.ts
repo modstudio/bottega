@@ -12,6 +12,35 @@ const fixtureProject = {
   id: 1, name: 'fixture', path: '/projects/fixture', stack: 'node', canon: true, settings: {},
 }
 
+function writeMintedStdioServer(dir: string): string {
+  const server = join(dir, 'minted-mcp-server.ts')
+  writeFileSync(server, `
+let buf = Buffer.alloc(0)
+const reply = (id: number, result: unknown) => {
+  const body = Buffer.from(JSON.stringify({ jsonrpc: '2.0', id, result }))
+  process.stdout.write('Content-Length: ' + body.length + '\\r\\n\\r\\n')
+  process.stdout.write(body)
+}
+process.stdin.on('data', (chunk) => {
+  buf = Buffer.concat([buf, chunk])
+  while (true) {
+    const text = buf.toString('utf8')
+    const match = /^Content-Length:\\s*(\\d+)\\r\\n\\r\\n/.exec(text)
+    if (!match) return
+    const offset = match[0].length
+    const length = Number(match[1])
+    if (buf.length < offset + length) return
+    const message = JSON.parse(buf.subarray(offset, offset + length).toString('utf8'))
+    buf = buf.subarray(offset + length)
+    if (message.method === 'initialize') reply(message.id, { protocolVersion: '2024-11-05', capabilities: {}, serverInfo: { name: 'minted' } })
+    else if (message.method === 'tools/list') reply(message.id, { tools: [{ name: 'ping' }] })
+    else if (message.method === 'tools/call') reply(message.id, { content: [{ type: 'text', text: 'pong' }] })
+  }
+})
+`)
+  return server
+}
+
 describe('MCP endpoint allowlist', () => {
   test('adds host and host:port from the registered server URL and nothing else', () => {
     expect(mcpEndpointAllowlist('https://mcp.example.test:8443/sse')).toEqual([
@@ -43,31 +72,7 @@ describe('wrong-project refusal', () => {
 describe('in-confinement probe', () => {
   test('lists tools on a minted stdio server and calls the named probe tool', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'orch-mcp-probe-'))
-    const server = join(dir, 'server.ts')
-    writeFileSync(server, `
-let buf = Buffer.alloc(0)
-const reply = (id: number, result: unknown) => {
-  const body = Buffer.from(JSON.stringify({ jsonrpc: '2.0', id, result }))
-  process.stdout.write('Content-Length: ' + body.length + '\\r\\n\\r\\n')
-  process.stdout.write(body)
-}
-process.stdin.on('data', (chunk) => {
-  buf = Buffer.concat([buf, chunk])
-  while (true) {
-    const text = buf.toString('utf8')
-    const match = /^Content-Length:\\s*(\\d+)\\r\\n\\r\\n/.exec(text)
-    if (!match) return
-    const offset = match[0].length
-    const length = Number(match[1])
-    if (buf.length < offset + length) return
-    const message = JSON.parse(buf.subarray(offset, offset + length).toString('utf8'))
-    buf = buf.subarray(offset + length)
-    if (message.method === 'initialize') reply(message.id, { protocolVersion: '2024-11-05', capabilities: {}, serverInfo: { name: 'minted' } })
-    else if (message.method === 'tools/list') reply(message.id, { tools: [{ name: 'ping' }] })
-    else if (message.method === 'tools/call') reply(message.id, { content: [{ type: 'text', text: 'pong' }] })
-  }
-})
-`)
+    const server = writeMintedStdioServer(dir)
     const result = await probeMcpServer({
       server: 'fixture-project',
       config: { name: 'fixture-project', command: process.execPath, args: [server] },
@@ -187,6 +192,137 @@ exit 0
       expect(row.failure_kind).toBe('harness')
       expect(row.mcp_connected).toBe(0)
       expect(JSON.parse(row.mcp_probe).ok).toBe('err')
+      expect(existsSync(join(repo, 'started'))).toBe(false)
+    } finally {
+      grok.bin = previous
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('require with a reachable stdio server launches and records listed tools', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-mcp-reachable-'))
+    const git = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+    }
+    git('init', '-b', 'main')
+    git('config', 'user.email', 'orch-test@example.invalid')
+    git('config', 'user.name', 'Orch Test')
+    writeFileSync(join(repo, 'tracked.txt'), 'base\n')
+    git('add', 'tracked.txt')
+    const server = writeMintedStdioServer(repo)
+    writeFileSync(join(repo, '.mcp.json'), JSON.stringify({
+      mcpServers: {
+        'fixture-project': { command: process.execPath, args: [server] },
+      },
+    }))
+    git('add', '.mcp.json')
+    git('commit', '-m', 'base')
+    upsertProject({ name: 'fixture-project', path: repo, settings: { mcpServer: 'fixture-project' } })
+    const reply = join(dir, 'DEV-372-reachable-reply.json')
+    writeFileSync(reply, JSON.stringify(reviewReply(0)))
+    const script = join(dir, 'DEV-372-reachable-start.sh')
+    writeFileSync(script, `#!/bin/sh
+for arg in "$@"; do
+  if [ "$arg" = "doctor" ]; then
+    printf '%s' '{"servers":[{"name":"fixture-project","healthy":true,"checks":[]}]}'
+    exit 0
+  fi
+done
+printf started > "${join(repo, 'started')}"
+cat ${JSON.stringify(reply)}
+`)
+    chmodSync(script, 0o755)
+    const grok = AGENTS.grok!
+    const previous = grok.bin
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    grok.bin = script
+    try {
+      let runId: number | null = null
+      try {
+        runId = (await runJob({
+          job: 'review-lens', prompt: 'review', cwd: repo, agent: 'grok',
+          mcp: true, lens: 'craft',
+        })).id
+      } catch (error) {
+        runId = (error as Error & { runId?: number }).runId ?? null
+      }
+      expect(runId).not.toBeNull()
+      expect(existsSync(join(repo, 'started'))).toBe(true)
+      const row = db().query(
+        'SELECT mcp_connected, mcp_probe FROM run WHERE id=?',
+      ).get(runId!) as { mcp_connected: number | null; mcp_probe: string }
+      expect(row.mcp_connected).not.toBe(0)
+      const probe = JSON.parse(row.mcp_probe) as { ok: string; tool: string; detail: string }
+      expect(probe.ok).toBe('ok')
+      expect(probe.tool).toBe('tools/list')
+      expect(probe.detail).toBe('listed: 1 tools')
+    } finally {
+      grok.bin = previous
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('require records wrong-project tools and starts no agent', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-mcp-wrong-project-'))
+    const git = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+    }
+    git('init', '-b', 'main')
+    git('config', 'user.email', 'orch-test@example.invalid')
+    git('config', 'user.name', 'Orch Test')
+    writeFileSync(join(repo, 'tracked.txt'), 'base\n')
+    git('add', 'tracked.txt')
+    writeFileSync(join(repo, '.mcp.json'), JSON.stringify({
+      mcpServers: { 'fixture-project': { url: 'http://127.0.0.1:1/mcp' } },
+    }))
+    git('add', '.mcp.json')
+    git('commit', '-m', 'base')
+    upsertProject({ name: 'fixture-project', path: repo, settings: { mcpServer: 'fixture-project' } })
+    const script = join(dir, 'DEV-372-wrong-project.sh')
+    writeFileSync(script, `#!/bin/sh
+for arg in "$@"; do
+  if [ "$arg" = "doctor" ]; then
+    printf '%s' '{"servers":[{"name":"fixture-project","healthy":true,"checks":[]},{"name":"alephbeis","healthy":true,"checks":[]}]}'
+    exit 0
+  fi
+done
+printf started > "${join(repo, 'started')}"
+exit 0
+`)
+    chmodSync(script, 0o755)
+    const grok = AGENTS.grok!
+    const previous = grok.bin
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    grok.bin = script
+    try {
+      let runId: number | null = null
+      try {
+        await runJob({
+          job: 'review-lens', prompt: 'review', cwd: repo, agent: 'grok',
+          mcp: true, lens: 'craft',
+        })
+      } catch (error) {
+        runId = (error as Error & { runId?: number }).runId ?? null
+      }
+      expect(runId).not.toBeNull()
+      const row = db().query(
+        'SELECT status, mcp_connected, mcp_error FROM run WHERE id=?',
+      ).get(runId!) as { status: string; mcp_connected: number | null; mcp_error: string }
+      expect(row.status).toBe('failed')
+      expect(row.mcp_connected).toBe(0)
+      expect(row.mcp_error).toBe('wrong project: alephbeis')
       expect(existsSync(join(repo, 'started'))).toBe(false)
     } finally {
       grok.bin = previous

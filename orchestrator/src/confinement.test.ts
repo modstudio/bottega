@@ -2,10 +2,10 @@ import { describe, expect, test } from 'bun:test'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { db } from '../test/fixture.ts'
+import { addRun, db } from '../test/fixture.ts'
 import {
   classifyDivergence, freezeCheckout, indexIsUntrusted, porcelainPaths,
-  UNTRUSTED_RETRY_WAIT_MS, type FrozenCheckout,
+  sessionForPid, UNTRUSTED_RETRY_WAIT_MS, type FrozenCheckout,
 } from './confinement.ts'
 
 const frozen = (over: Partial<FrozenCheckout> & Pick<FrozenCheckout, 'path'>): FrozenCheckout => ({
@@ -83,6 +83,35 @@ describe('divergence classification', () => {
       before: [snapshot], after: [snapshot], ownDiffPaths: ['src/a.ts'],
       chainRoot: '111', database: db(), startedAt: '2026-09-07T10:00:00.000Z',
     })).toBeNull()
+  })
+
+  test('a landing that moved HEAD is attributed from the landing table', () => {
+    db().query(
+      `INSERT INTO landing (project, branch, status, session_id, started_at, finished_at)
+       VALUES ('fixture', 'DEV-372', 'landed', 'sess-land', ?, ?)`,
+    ).run('2026-09-07T10:30:00.000Z', '2026-09-07T10:31:00.000Z')
+    const event = classifyDivergence({
+      before: [frozen({ path: '/repo', headOid: '111', indexTree: 'aaa' })],
+      after: [frozen({ path: '/repo', headOid: '222', indexTree: 'ddd', status: '' })],
+      ownDiffPaths: ['src/a.ts'],
+      chainRoot: '111',
+      database: db(),
+      startedAt: '2026-09-07T10:00:00.000Z',
+    })
+    expect(event).toMatchObject({
+      classification: 'edit_commit_cycle',
+      attribution: 'landing',
+      landingSession: 'sess-land',
+    })
+  })
+
+  test('sessionForPid reads the run that holds that pid', () => {
+    const id = addRun({
+      agent: 'codex', job: 'implement', status: 'running', session: 'sess-pid',
+    })
+    db().query('UPDATE run SET pid=? WHERE id=?').run(4242, id)
+    expect(sessionForPid(db(), 4242)).toBe('sess-pid')
+    expect(sessionForPid(db(), 1)).toBeNull()
   })
 })
 

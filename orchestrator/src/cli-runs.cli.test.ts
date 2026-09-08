@@ -242,6 +242,30 @@ describe("detached run collection", () => {
     } finally { rmSync(fixture.repo, { recursive: true, force: true }) }
   })
 
+  test('confinement clear uses a snapshotted trip tip and does not need --tip', () => {
+    const fixture = confinementArtifact()
+    try {
+      writeFileSync(join(fixture.worktree, 'later.txt'), 'later\n')
+      fixture.git(fixture.worktree, 'add', 'later.txt')
+      fixture.git(fixture.worktree, 'commit', '-m', 'later')
+      const currentTip = fixture.git(fixture.worktree, 'rev-parse', 'HEAD')
+      db().query('UPDATE run SET confinement=? WHERE id=?').run(JSON.stringify({
+        classification: 'overlapping', attribution: 'unattributed',
+        tripTip: currentTip, chainRoot: fixture.tip,
+      }), fixture.id)
+      const cleared = orch(
+        'confinement', 'clear', String(fixture.id), '--writer', 'operator', '--note', 'known edit',
+      )
+      expect(cleared.code, cleared.err).toBe(0)
+      expect(db().query('SELECT status,failure_kind FROM run WHERE id=?').get(fixture.id))
+        .toEqual({ status: 'ok', failure_kind: null })
+      expect(fixture.audit()).toMatchObject({
+        recordedTip: fixture.tip, currentTip, divergence: true, suppliedTip: null, cleared: true,
+        tripTip: currentTip, chainRoot: fixture.tip,
+      })
+    } finally { rmSync(fixture.repo, { recursive: true, force: true }) }
+  })
+
   test('confinement clear accepts an acknowledged moved tip and audits it', () => {
     const fixture = confinementArtifact()
     try {
