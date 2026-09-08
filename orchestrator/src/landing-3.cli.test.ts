@@ -9,7 +9,7 @@ import { landingDescribeFixture } from '../test/fixture.ts'
 
 describe('DEV-370 landing queue and branch ownership', () => {
   const CLI = new URL('cli.ts', import.meta.url).pathname
-  const { g, repoWithBranches, childLand } = landingDescribeFixture()
+  const { g, repoWithBranches, childLand, completedReview } = landingDescribeFixture()
 
   test('two sessions enqueue and both land without a hand-off', async () => {
     const { repo } = repoWithBranches(['queue-a', 'queue-b'])
@@ -71,6 +71,94 @@ describe('DEV-370 landing queue and branch ownership', () => {
         { branch: 'conflict-b', status: 'refused', claim_pid: null },
       ])
       expect(readFileSync(join(repo, 'shared.txt'), 'utf8')).toBe('a\n')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a member advanced after enqueue is refused while the pinned peer lands', () => {
+    const { repo, trees } = repoWithBranches(['advanced-a', 'advanced-b'])
+    upsertProject({ name: 'landing-advanced-member', path: repo, settings: { trunk: 'main', gate: 'true' } })
+    const at = new Date().toISOString()
+    const flags = JSON.stringify([{ name: '_flags', unreviewed: 'fixture' }])
+    try {
+      for (const branch of ['advanced-a', 'advanced-b']) {
+        db().query(
+          `INSERT INTO landing (project,branch,tip,status,started_at,requested_at,path_set,steps)
+           VALUES ('landing-advanced-member',?,?,'queued',?,?,'[]',?)`,
+        ).run(branch, g(repo, 'rev-parse', branch), at, at, flags)
+      }
+      writeFileSync(join(trees['advanced-a']!, 'later.txt'), 'later\n')
+      g(trees['advanced-a']!, 'add', 'later.txt')
+      g(trees['advanced-a']!, 'commit', '-m', 'advanced after enqueue')
+      drainQueue(repo)
+      expect(db().query(
+        `SELECT branch,status FROM landing WHERE project='landing-advanced-member' ORDER BY id`,
+      ).all()).toEqual([
+        { branch: 'advanced-a', status: 'refused' },
+        { branch: 'advanced-b', status: 'landed' },
+      ])
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a member whose review carry fails is dropped while an overridden peer lands', () => {
+    const { repo, trees } = repoWithBranches(['carry-bad', 'carry-ok'])
+    const project = 'landing-group-carry-fail'
+    const reviewedTree = g(trees['carry-bad']!, 'rev-parse', 'HEAD^{tree}')
+    completedReview(project, [reviewedTree], {
+      branch: 'carry-bad', baseCommit: g(repo, 'rev-parse', 'main'), launchCwd: trees['carry-bad']!,
+    })
+    writeFileSync(join(trees['carry-bad']!, 'after-review.txt'), 'unreviewed\n')
+    g(trees['carry-bad']!, 'add', 'after-review.txt')
+    g(trees['carry-bad']!, 'commit', '-m', 'change after review')
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    const at = new Date().toISOString()
+    try {
+      for (const [branch, steps] of [
+        ['carry-bad', JSON.stringify([{ name: '_flags' }])],
+        ['carry-ok', JSON.stringify([{ name: '_flags', unreviewed: 'fixture' }])],
+      ]) {
+        db().query(
+          `INSERT INTO landing (project,branch,tip,status,started_at,requested_at,path_set,steps)
+           VALUES (?,?,?,'queued',?,?,'[]',?)`,
+        ).run(project, branch, g(repo, 'rev-parse', branch), at, at, steps)
+      }
+      drainQueue(repo)
+      expect(db().query(
+        `SELECT branch,status FROM landing WHERE project=? ORDER BY id`,
+      ).all(project)).toEqual([
+        { branch: 'carry-bad', status: 'refused' },
+        { branch: 'carry-ok', status: 'landed' },
+      ])
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('--unreviewed is scoped to one merge-group member', () => {
+    const { repo, trees } = repoWithBranches(['override-one', 'reviewed-two'])
+    const project = 'landing-group-member-flags'
+    completedReview(project, [g(trees['reviewed-two']!, 'rev-parse', 'HEAD^{tree}')], {
+      branch: 'reviewed-two', baseCommit: g(repo, 'rev-parse', 'main'), launchCwd: trees['reviewed-two']!,
+    })
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    const at = new Date().toISOString()
+    try {
+      for (const [branch, steps] of [
+        ['override-one', JSON.stringify([{ name: '_flags', unreviewed: 'only this member' }])],
+        ['reviewed-two', JSON.stringify([{ name: '_flags' }])],
+      ]) {
+        db().query(
+          `INSERT INTO landing (project,branch,tip,status,started_at,requested_at,path_set,steps)
+           VALUES (?,?,?,'queued',?,?,'[]',?)`,
+        ).run(project, branch, g(repo, 'rev-parse', branch), at, at, steps)
+      }
+      drainQueue(repo)
+      expect(db().query(
+        `SELECT COUNT(*) n FROM landing_override WHERE project=?`,
+      ).get(project)).toEqual({ n: 1 })
+      expect(db().query(
+        `SELECT branch,status FROM landing WHERE project=? ORDER BY id`,
+      ).all(project)).toEqual([
+        { branch: 'override-one', status: 'landed' },
+        { branch: 'reviewed-two', status: 'landed' },
+      ])
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 

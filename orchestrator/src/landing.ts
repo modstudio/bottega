@@ -1031,6 +1031,7 @@ function requireReviewCoverage(
 function authorizeLanding(
   project: Project, repoRoot: string, worktree: string, branch: string, tip: string, trunk: string,
   runId?: number, unreviewed?: string,
+  ownership?: { worktree: string; tip: string },
 ): {
   override: { project: string; branch: string; tip: string; tree: string; reason: string } | null
   carry: ReviewCarry | null
@@ -1054,12 +1055,12 @@ function authorizeLanding(
     const realOrNull = (path: string): string | null => {
       try { return realpathSync(path) } catch { return null }
     }
-    const landingReal = realOrNull(worktree)
+    const landingReal = realOrNull(ownership?.worktree ?? worktree)
     const owners = recorded.filter((candidate) => {
       if (!candidate.worktree || landingReal === null) return false
       if (realOrNull(candidate.worktree) !== landingReal) return false
       try {
-        return git(candidate.worktree, ['rev-parse', '--verify', 'HEAD^{commit}']) === tip
+        return git(candidate.worktree, ['rev-parse', '--verify', 'HEAD^{commit}']) === (ownership?.tip ?? tip)
       } catch {
         return false
       }
@@ -1689,6 +1690,21 @@ function queuedLandings(project: string): LandingRow[] {
   ).all(project) as LandingRow[]
 }
 
+function refuseChangedEnqueuedTips(project: string, repoRoot: string): void {
+  for (const row of queuedLandings(project)) {
+    if (row.tip === null) continue
+    const current = gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${row.branch}`])
+      ? git(repoRoot, ['rev-parse', `refs/heads/${row.branch}^{commit}`]) : null
+    if (current === row.tip) continue
+    const message = `refusing ${row.branch}: current tip ${current ?? 'missing'} differs from enqueued tip ${row.tip ?? 'missing'}` +
+      `\ninvariant: the enqueued tip is what was authorized` +
+      `\ncleared by: orch land ${row.branch}`
+    db().query(
+      `UPDATE landing SET status='refused',error=?,finished_at=?,claim_pid=NULL,claim_session=NULL WHERE id=?`,
+    ).run(message, nowIso(), row.id)
+  }
+}
+
 function claimPidIsDead(pid: unknown): pid is number {
   if (!Number.isSafeInteger(pid) || Number(pid) <= 0) return false
   try {
@@ -1874,10 +1890,18 @@ function processOneLanding(
 }
 
 function rebaseBranchesOntoTrunk(
-  repoRoot: string, worktree: string, trunkOid: string, branches: string[],
-): string {
+  repoRoot: string, worktree: string, trunkOid: string, rows: LandingRow[],
+): { row: LandingRow; from: string; to: string }[] {
   git(worktree, ['checkout', '--detach', trunkOid])
-  for (const branch of branches) {
+  const ranges: { row: LandingRow; from: string; to: string }[] = []
+  for (const row of rows) {
+    const branch = row.branch
+    const current = git(repoRoot, ['rev-parse', `refs/heads/${branch}^{commit}`])
+    if (row.tip !== null && current !== row.tip) {
+      throw new MergeGroupMemberFailure(branch,
+        `current tip ${current} differs from enqueued tip ${row.tip}`)
+    }
+    const from = git(worktree, ['rev-parse', 'HEAD'])
     const mergeBase = git(repoRoot, ['merge-base', trunkOid, `refs/heads/${branch}`])
     const commits = git(repoRoot, ['rev-list', '--reverse', `${mergeBase}..refs/heads/${branch}`])
       .split('\n').filter(Boolean)
@@ -1896,8 +1920,11 @@ function rebaseBranchesOntoTrunk(
         ).message)
       }
     }
+    const flags = flagsOf(row)
+    if (flags.message !== undefined) amendLandingMessage(worktree, flags.message, prepareSharedRefGuard(worktree))
+    ranges.push({ row, from, to: git(worktree, ['rev-parse', 'HEAD']) })
   }
-  return git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'])
+  return ranges
 }
 
 function processMergeGroup(
@@ -1926,12 +1953,29 @@ function processMergeGroup(
   let fastForwarded = false
   try {
     const started = Date.now()
-    rebaseBranchesOntoTrunk(repoRoot, groupPath, trunkOid, rows.map((row) => row.branch))
-    const allocated = allocateLandingJournals(groupPath, trunkOid)
+    const ranges = rebaseBranchesOntoTrunk(repoRoot, groupPath, trunkOid, rows)
+    const authorizations: ReturnType<typeof authorizeLanding>[] = []
+    for (const { row, from, to } of ranges) {
+      const flags = flagsOf(row)
+      try {
+        authorizations.push(authorizeLanding(
+          project, repoRoot, groupPath, row.branch, to, from, undefined, flags.unreviewed,
+          { worktree: ensureLandingWorktree(repoRoot, row.branch),
+            tip: row.tip ?? git(repoRoot, ['rev-parse', `refs/heads/${row.branch}^{commit}`]) },
+        ))
+      } catch (error) {
+        throw new MergeGroupMemberFailure(
+          row.branch, error instanceof Error ? error.message : String(error),
+        )
+      }
+    }
+    const taskKeys = ranges.flatMap(({ row }) => row.branch.match(/[A-Z]+-\d+/)?.[0] ?? [])
+    const allocated = allocateLandingJournals(groupPath, trunkOid, undefined, taskKeys)
     if (allocated.length) {
       console.log(`allocated journal ${allocated.map((row) => `${row.from} -> ${row.to}`).join(', ')}`)
     }
     const tip = git(groupPath, ['rev-parse', '--verify', 'HEAD^{commit}'])
+    allocationParentIfMechanical(repoRoot, tip, rows[0]!.branch)
     git(groupPath, ['checkout', '-B', groupBranch, tip])
     const guard = prepareSharedRefGuard(groupPath)
     try {
@@ -1949,14 +1993,19 @@ function processMergeGroup(
       if (current !== trunkOid) {
         throw new MergeGroupTrunkMoved(trunkOid, current)
       }
-      refuseOrWaitLiveRuns(
-        project, repoRoot, groupPath, trunkOid, tip, options.strandLive,
-        options.timeoutMs ?? LANDING_LOCK_TIMEOUT_MS, rows[0]!.id,
-      )
+      for (const { row, from, to } of ranges) {
+        refuseOrWaitLiveRuns(
+          project, repoRoot, groupPath, from, to, flagsOf(row).strandLive,
+          options.timeoutMs ?? LANDING_LOCK_TIMEOUT_MS, row.id,
+        )
+      }
       git(repoRoot, ['update-ref', `refs/heads/${trunk}`, tip, trunkOid])
       fastForwarded = true
     }, options.timeoutMs ?? LANDING_LOCK_TIMEOUT_MS)
     for (const row of rows) {
+      const authorization = authorizations[rows.indexOf(row)]!
+      recordLandingOverride(authorization.override)
+      recordReviewCarry(authorization.carry)
       writeTransaction(() => {
         db().query(
           `UPDATE landing SET tip=?,trunk_before=?,status='landed',finished_at=?,claim_pid=NULL,claim_session=NULL WHERE id=?`,
@@ -2152,6 +2201,7 @@ export function drainQueue(
       repoRoot, QUEUE_LOCK, { session: sessionId(), what: `drain ${project.name}` },
       (): 'done' | 'wait' | LandingRow[] => {
         reclaimDeadLandingClaims(project.name)
+        refuseChangedEnqueuedTips(project.name, repoRoot)
         if (options.untilId) {
           const row = db().query('SELECT status FROM landing WHERE id=?').get(options.untilId) as
             { status: string } | null
@@ -2225,12 +2275,13 @@ export function land(
   const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
   const requestedAt = nowIso()
   const paths = trunk ? pathSetOf(repoRoot, trunk, branch) : []
+  const enqueuedTip = git(repoRoot, ['rev-parse', `refs/heads/${branch}^{commit}`])
   const landing = db().query(
     `INSERT INTO landing
-       (project,project_id,branch,status,session_id,started_at,requested_at,path_set,steps)
-     VALUES (?,?,?,'queued',?,?,?,?,?) RETURNING id`,
+       (project,project_id,branch,tip,status,session_id,started_at,requested_at,path_set,steps)
+     VALUES (?,?,?,?,'queued',?,?,?,?,?) RETURNING id`,
   ).get(
-    project.name, project.id, branch, sessionId(), requestedAt, requestedAt,
+    project.name, project.id, branch, enqueuedTip, sessionId(), requestedAt, requestedAt,
     JSON.stringify(paths),
     JSON.stringify([{
       name: '_flags',
