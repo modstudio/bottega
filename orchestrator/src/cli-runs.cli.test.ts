@@ -5,7 +5,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { DASHBOARD_CAPABILITY_PATH_ENV, DASHBOARD_CAPABILITY_TOKEN_ENV } from '../../shared/dashboard-capability.ts'
-import { MIN_SAMPLE, recordDuels, runJson, addRun, db, declaredCreate, dir, fakeDocker, hermeticGitEnv, recordReview, reviewCalibration, reviewReply, score, state, upsertProject } from '../test/fixture.ts'
+import { MIN_SAMPLE, recordDuels, runJson, addRun, db, declaredCreate, dir, fakeDocker, hermeticGitEnv, pairPartners, recordReview, reviewCalibration, reviewReply, score, state, unrecordedPairsForSession, upsertProject } from '../test/fixture.ts'
 
 import { runCollectionDescribeFixture } from '../test/fixture.ts'
 
@@ -1626,6 +1626,24 @@ test('record-only closes the question, marks the chain stranded, and retry resta
     stamp(differentLens, 'patch-a', ['a.ts'])
     expect(orch('score', String(differentLens), 'full', 'right', ...grades).out)
       .not.toContain('pair:')
+
+    const recorded = addRun({
+      agent: 'codex', job: 'review-lens', session: 'mixed-change-session', specSha: 'mixed-change',
+      inputTree: 'tree-a', lens: 'correctness',
+    })
+    const unrecorded = addRun({
+      agent: 'grok', job: 'review-lens', session: 'mixed-change-session', specSha: 'mixed-change',
+      inputTree: 'tree-a', lens: 'correctness',
+    })
+    score(recorded, 'full', 'right')
+    score(unrecorded, 'full', 'right')
+    stamp(recorded, 'patch-a', ['a.ts'])
+    expect(pairPartners(recorded, 'mixed-change-session')).toEqual([])
+    expect(pairPartners(unrecorded, 'mixed-change-session')).toEqual([])
+    expect(unrecordedPairsForSession('mixed-change-session')).toEqual([])
+    const reminder = scoreReminder('mixed-change-session').stdout.toString()
+    expect(reminder).not.toContain(`run ${recorded}`)
+    expect(reminder).not.toContain(`run ${unrecorded}`)
   })
 
   test('pending says rescore when a later turn moved a judged chain', () => {

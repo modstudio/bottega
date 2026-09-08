@@ -141,6 +141,7 @@ export const { db, DB_PATH, nowIso, reapStale, pendingForSession, unscoredCount,
         PENDING_BOOTSTRAP_MS, WEIGHT, weigh, label, FIDELITY_PENALTY, UNSCORED_WHERE,
         EVIDENCE_CLOSED_SQL, EVIDENCE_OPEN_SQL, VOIDED_SQL, voidedSql, activeSql, SCORED_EVIDENCE_SQL, runTotals,
         excludeSharedOutputRuns, SHARED_OUTPUT_REASON, applySchema, recordDuels, duelMatrices,
+        pairPartners, unrecordedPairsForSession,
         parseRunIds, recordSessionSeen, GENERIC_QUESTION_TOKENS,
         bootstrapFixtureStore, authorizeRunMutation, adoptRunMutation, sessionId } = await import('../src/db.ts')
 export const { candidates, weightCase, scoreboard, median, evidenceFor, pick,
