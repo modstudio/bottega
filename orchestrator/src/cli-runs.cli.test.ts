@@ -468,7 +468,7 @@ test('record-only closes the question, marks the chain stranded, and retry resta
     expect(Object.keys(runJson(json.out)).sort()).toEqual([
       'agent', 'answer_agent', 'branch', 'branch_kept', 'branch_kept_tip', 'cwd',
       'delivery', 'error', 'exit_code', 'failover_chain', 'failure_kind', 'head_commit', 'id',
-      'input_tree', 'job', 'latency_ms', 'launch_key', 'probe', 'prompt_head',
+      'idle', 'idle_ms', 'input_tree', 'job', 'last_event_at', 'latency_ms', 'launch_key', 'probe', 'prompt_head',
       'prompt_path', 'quality', 'questions', 'repo', 'requested_id', 'resolved_from', 'retry_of', 'review_ref', 'route_reason',
       'sandbox', 'session_id', 'started_at', 'status', 'turns', 'vendor_cost_usd', 'vendor_tokens',
     ].sort())

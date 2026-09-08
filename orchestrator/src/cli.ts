@@ -6061,7 +6061,8 @@ switch (cmd) {
       const startedAt = String(r.current_started_at ?? r.started_at)
       const idle = live ? idleLabel(lastEventAt, startedAt) : null
       const since = live ? idleMsSince(lastEventAt, startedAt) : null
-      return { ...r, idle, idle_ms: since }
+      const { current_started_at: _currentStartedAt, ...rest } = r
+      return { ...rest, idle, idle_ms: since }
     })
 
     // JSON Lines, so a consumer can stream it and a truncated read loses only
