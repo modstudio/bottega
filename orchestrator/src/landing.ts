@@ -1545,7 +1545,7 @@ function allocationParentIfMechanical(
     const [status, ...paths] = line.split('\t')
     if (!status || !paths.length || !paths.every(allowedRoot)) return false
     if (status === 'M') return paths.every((path) => path.endsWith('/meta/_journal.json'))
-    return status.startsWith('R') || status === 'A' || status === 'D'
+    return status.startsWith('R') || status === 'A'
   })
   if (!allowed) {
     throw namedError(

@@ -1,11 +1,14 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { Database } from 'bun:sqlite'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   addRun, allocateLandingJournals, db, drainQueue, hermeticGitEnv, land, landingStatus,
   persistTerminalSnapshot, reconcileRun, setPostLandMigrateForFixture, upsertProject,
 } from '../test/fixture.ts'
 import { landingDescribeFixture } from '../test/fixture.ts'
+import { applyMigrations, MIGRATIONS_FOLDER } from './migrations.ts'
 
 describe('DEV-370 landing queue and branch ownership', () => {
   const CLI = new URL('cli.ts', import.meta.url).pathname
@@ -451,6 +454,31 @@ describe('DEV-370 landing queue and branch ownership', () => {
       ])
       expect(g(repo, 'show', '-s', '--format=%s', 'main')).toBe('DEV-370 allocate journal at landing')
       expect(g(repo, 'show', '-s', '--format=%b', 'main')).toContain('Member task: DEV-370')
+
+      const migrated = mkdtempSync(join(tmpdir(), 'landing-journal-apply-'))
+      mkdirSync(join(migrated, 'meta'))
+      const trunkEntries = JSON.parse(readFileSync(join(MIGRATIONS_FOLDER, 'meta', '_journal.json'), 'utf8')) as {
+        version: string; dialect: string; entries: { idx: number; tag: string; when: number }[]
+      }
+      for (const entry of trunkEntries.entries) {
+        copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(migrated, `${entry.tag}.sql`))
+      }
+      writeFileSync(join(migrated, '0011_b.sql'), '-- 0011_b\n')
+      writeFileSync(join(migrated, 'meta', '_journal.json'), JSON.stringify({
+        version: trunkEntries.version,
+        dialect: trunkEntries.dialect,
+        entries: [...trunkEntries.entries, {
+          idx: 11, tag: '0011_b', when: Math.max(W, trunkEntries.entries.at(-1)!.when) + 1,
+          version: '6', breakpoints: true,
+        }],
+      }))
+      const store = new Database(':memory:')
+      expect(applyMigrations(store)).toHaveLength(11)
+      expect(store.query('PRAGMA user_version').get()).toEqual({ user_version: 11 })
+      expect(applyMigrations(store, migrated)).toEqual(['0011_b'])
+      expect(store.query('PRAGMA user_version').get()).toEqual({ user_version: 12 })
+      store.close()
+      rmSync(migrated, { recursive: true, force: true })
     } finally {
       setPostLandMigrateForFixture(null)
       rmSync(repo, { recursive: true, force: true })
