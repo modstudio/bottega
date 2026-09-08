@@ -636,6 +636,20 @@ printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"l
     }
   })
 
+  test('preflightMcp dispatches from a register-shaped legacy row with declared MCP settings', () => {
+    const cwd = dir
+    upsertProject({
+      name: 'legacy-mcp-project', path: cwd,
+      settings: {
+        worktree: { create: 'scripts/worktree create "{branch}"' } as any,
+        mcpServer: 'legacy-mcp', mcp: { probe_tool: 'task.list' },
+      },
+    })
+    expect(() => preflightMcp({
+      mcp: true, cwd, job: 'mcp-query', prompt: 'read the task', agent: 'codex',
+    })).not.toThrow()
+  })
+
   test('preflightMcp leaves cwd-discovered config decisions until the worker tree exists', () => {
     const cwd = dir
     upsertProject({ name: 'fixture-project', path: cwd, settings: { mcpServer: 'orch' } })

@@ -53,7 +53,7 @@ import {
   parseReviewOutput, recordReview, reviewCalibration,
 } from './review.ts'
 import { assertRegisterBranches, createHasPlaceholder, projectAt, projectByName, projects, stackAt,
-         validateProjectSettings } from './projects.ts'
+         validateStoredProjectSettings } from './projects.ts'
 import { compilePack, recordPack } from './canon.ts'
 import { seedGuidance } from './args.ts'
 import { resolveRunsDirectory } from './database-location.ts'
@@ -594,7 +594,7 @@ export function preflightMcp(opts: {
   if (!mode) return
   const project = projectAt(opts.cwd)
   if (!project) return
-  const malformed = validateProjectSettings(project.settings)
+  const malformed = validateStoredProjectSettings(project.settings)
   if (malformed.length) throw new Error(malformed.join('\n'))
   const { agent: name } = pick(
     opts.job, opts.agent, opts.prompt.length, true, stackAt(opts.cwd),
@@ -684,8 +684,7 @@ export function preflight(
   if (project?.settings.worktree) assertRegisterBranches(project)
   const tool = project?.settings.worktree ?? null
   if (project) {
-    const malformed = validateProjectSettings(project.settings).filter((problem) =>
-      !(typeof tool?.create === 'string' && problem === 'worktree.create is a shell string; migrate it (DEV-308)'))
+    const malformed = validateStoredProjectSettings(project.settings)
     if (malformed.length) throw new Error(malformed.join('\n'))
   }
   const effectiveSeed = seed

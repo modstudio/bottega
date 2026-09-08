@@ -420,6 +420,13 @@ export function validateProjectSettings(settings: ProjectSettings): string[] {
   return problems
 }
 
+/** Validate a stored row without re-refusing its unchanged legacy create string. */
+export function validateStoredProjectSettings(settings: ProjectSettings): string[] {
+  return validateProjectSettings(settings).filter((problem) =>
+    !(typeof settings.worktree?.create === 'string' &&
+      problem === 'worktree.create is a shell string; migrate it (DEV-308)'))
+}
+
 export type RegisterBranchCheck = {
   head: string | null
   landing: string | null

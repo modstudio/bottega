@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { dbNameFor, recipeNotes, runRecipe } from '../test/fixture.ts'
 import { provisionDb } from './recipe.ts'
-import { undeclaredCommitHooks, validateProjectSettings } from './projects.ts'
+import { undeclaredCommitHooks, validateProjectSettings, validateStoredProjectSettings } from './projects.ts'
 
 describe('a project can declare a worktree instead of writing one', () => {
   test('MCP server and probe declarations have actionable narrow shapes', () => {
@@ -15,6 +15,20 @@ describe('a project can declare a worktree instead of writing one', () => {
         'mcpServer must be a non-empty string',
         'mcp.probe_tool must be a plain non-empty tool name',
       ])
+  })
+
+  test('stored legacy create is tolerated without hiding malformed MCP declarations', () => {
+    expect(validateStoredProjectSettings({
+      worktree: { create: 'scripts/worktree create {branch}' } as any,
+      mcpServer: 'project', mcp: { probe_tool: 'task.list' },
+    })).toEqual([])
+    expect(validateStoredProjectSettings({
+      worktree: { create: 'scripts/worktree create {branch}' } as any,
+      mcpServer: ' ', mcp: { probe_tool: 'task list' },
+    })).toEqual([
+      'mcpServer must be a non-empty string',
+      'mcp.probe_tool must be a plain non-empty tool name',
+    ])
   })
   test('a derived database name is safe for both engines', () => {
     // Postgres folds unquoted identifiers to lower case and MySQL forbids most
