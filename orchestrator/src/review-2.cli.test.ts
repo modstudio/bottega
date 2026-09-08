@@ -62,10 +62,12 @@ describe('review-lens MCP provenance', () => {
     return repo
   }
 
-  const codexReview = async (repo: string, tools: string[], mcp: boolean) => {
+  const codexReview = async (
+    repo: string, tools: string[], mcp: boolean,
+  ): Promise<{ id: number; status: string; error: string | null }> => {
     const script = join(dir, `codex-provenance-${randomUUID()}.ts`)
-    const reply = reviewReply(1)
-    reply.provenance.mcp_tools = tools
+    const baseReply = reviewReply(1)
+    const reply = { ...baseReply, provenance: { ...baseReply.provenance, mcp_tools: tools } }
     writeFileSync(script, `process.stdout.write(${JSON.stringify(JSON.stringify(reply))})\n`)
     const agent = AGENTS.codex!
     const original = { bin: agent.bin, argv: agent.argv, readsOut: agent.readsOut, stdin: agent.stdin }
@@ -77,8 +79,9 @@ describe('review-lens MCP provenance', () => {
     process.env.ORCH_DEPTH = '0'
     try {
       try {
-        return await runJob({ job: 'review-lens', prompt: 'review', cwd: repo,
+        const result = await runJob({ job: 'review-lens', prompt: 'review', cwd: repo,
           agent: 'codex', mcp, lens: 'provenance-shapes', keepTree: true, noFailover: true })
+        return { id: result.id, status: result.status, error: null }
       } catch (error) {
         const runId = (error as { runId?: number }).runId
         if (!runId) throw error

@@ -1061,6 +1061,7 @@ function authorizeLanding(
 ): {
   override: { project: string; branch: string; tip: string; tree: string; reason: string } | null
   carry: ReviewCarry | null
+  validReviewIds: number[]
 } {
   let rootId: number | null
   if (runId !== undefined) {
