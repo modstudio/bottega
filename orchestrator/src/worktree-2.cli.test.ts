@@ -561,6 +561,34 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
     }
   })
 
+  test('discard does not treat a no-verdict void as unjudged shared evidence', () => {
+    const { repo } = scratchRepo()
+    const target = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+    const voided = addRun({ agent: 'codex', job: 'understand', status: 'ok' })
+    const tree = createWorktree(repo, target)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, target)
+    db().query("UPDATE run SET cwd=?, worktree=?, branch=?, evidence_excluded=? WHERE id=?")
+      .run(repo, tree.path, tree.branch, 'voided with orch score --void', voided)
+    try {
+      const CLI = new URL('cli.ts', import.meta.url).pathname
+      const p = Bun.spawnSync(
+        [process.execPath, CLI, 'discard', String(target), '--force'],
+        {
+          env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+          stdout: 'pipe', stderr: 'pipe',
+        },
+      )
+      expect(p.exitCode).toBe(0)
+      expect(p.stderr.toString()).not.toContain('and unscored')
+      expect(existsSync(tree.path)).toBe(false)
+      expect(db().query('SELECT worktree FROM run WHERE id=?').get(target))
+        .toEqual({ worktree: null })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('discard refuses to remove a worktree that still holds another unscored run evidence', () => {
     const { repo } = scratchRepo()
     const target = addRun({ agent: 'codex', job: 'implement', status: 'ok' })

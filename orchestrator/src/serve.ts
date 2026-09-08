@@ -7,7 +7,7 @@
  * command and its dashboard read 96% on review-lens while the router, counting
  * failures, was using 69%. One page, one scoreboard.
  */
-import { db, reapStale, unscoredCount } from './db.ts'
+import { db, reapStale, runTotals } from './db.ts'
 import { AGENTS, refreshAgents } from './agents.ts'
 import { JOBS } from './jobs.ts'
 import { scoreboard } from './route.ts'
@@ -15,7 +15,6 @@ import { summary as metricSummary } from './metric.ts'
 import { guide } from './guide.ts'
 import { candidates } from './route.ts'
 import { readFileSync, existsSync } from 'node:fs'
-import { NOT_EVIDENCE } from './failure.ts'
 import { projectAt } from './projects.ts'
 import { reviewCalibration } from './review.ts'
 import { messagesForRun, receiptMessagesForArchitect } from './mailbox.ts'
@@ -80,7 +79,6 @@ export function state(sinceDays: number | null = null) {
   // boundary at which a long-lived process adopts registry changes.
   refreshAgents()
   const d = db()
-  const notEvidence = NOT_EVIDENCE.map((kind) => `'${kind}'`).join(', ')
   const since = sinceDays
     ? new Date(Date.now() - sinceDays * 86_400_000).toISOString()
     : '0000'
@@ -151,34 +149,16 @@ export function state(sinceDays: number | null = null) {
   // counters that would show a fix working stay frozen at the pre-fix number:
   // the nine stale runs all predate the try/finally, and would have sat on this
   // band for ever announcing a bug that no longer exists.
-  const totals = d.query(
-    // COALESCE on every SUM: over an empty window SUM returns NULL, not zero,
-    // while COUNT returns zero — so a quiet day answered `failed: null` beside
-    // `runs: 0`. The page coerces it, but an API that reports "no failures" as
-    // null is one bad `??` away from reporting it as "unknown".
-    `SELECT COUNT(*) runs,
-            COALESCE(SUM(CASE WHEN r.status='failed' THEN 1 ELSE 0 END), 0) failed,
-            COALESCE(SUM(CASE WHEN r.status='stale' THEN 1 ELSE 0 END), 0) stale_n,
-            COALESCE(SUM(COALESCE(r.vendor_tokens,0)), 0) toks,
-            COALESCE(SUM(CASE WHEN s.delivery IS NOT NULL
-                               AND COALESCE(r.failure_kind, '') NOT IN (${notEvidence})
-                               AND r.evidence_excluded IS NULL
-                              THEN 1 ELSE 0 END), 0) scored,
-            COALESCE(SUM(CASE WHEN s.delivery IS NOT NULL
-                               AND r.evidence_excluded IS NOT NULL
-                              THEN 1 ELSE 0 END), 0) voided
-       FROM run r LEFT JOIN score s ON s.run_id = r.id
-      WHERE r.started_at >= ?`,
-  ).get(since)
+  //
+  // Doctor prints the same scored/voided/unscored buckets from runTotals();
+  // a second query here is how a no-verdict void vanished from one surface
+  // and not the other.
+  const counted = runTotals(sinceDays ? since : undefined)
+  const { unscored, ...totals } = counted
 
   // The runs tab counts everything ever, whatever the band is showing, so the
   // badge on it does not change meaning when the window does.
   const allTimeRuns = (d.query(`SELECT COUNT(*) n FROM run`).get() as { n: number }).n
-
-  // Computed, not derived by subtraction on the client. `runs - scored` counted
-  // probes, in-flight runs and failures as debt; this is the same rule
-  // `orch pending` uses, over the same window as the rest of the band.
-  const unscored = unscoredCount(sinceDays ? since : undefined)
 
   // A first run has no metric table, which is not a fault. Anything else is,
   // and the dashboard has been through this once already: a swallowed render

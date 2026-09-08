@@ -5,7 +5,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { DASHBOARD_CAPABILITY_PATH_ENV, DASHBOARD_CAPABILITY_TOKEN_ENV } from '../../shared/dashboard-capability.ts'
-import { MIN_SAMPLE, recordDuels, runJson, addRun, db, declaredCreate, dir, fakeDocker, hermeticGitEnv, recordReview, reviewCalibration, reviewReply, score, upsertProject } from '../test/fixture.ts'
+import { MIN_SAMPLE, recordDuels, runJson, addRun, db, declaredCreate, dir, fakeDocker, hermeticGitEnv, recordReview, reviewCalibration, reviewReply, score, state, upsertProject } from '../test/fixture.ts'
 
 import { runCollectionDescribeFixture } from '../test/fixture.ts'
 
@@ -1198,6 +1198,39 @@ test('record-only closes the question, marks the chain stranded, and retry resta
     const r = orch('doctor')
     expect(r.code).toBe(0)
     expect(r.out).toContain('runs 2, scored 1, voided 1, unscored 0')
+  })
+
+  test('a no-verdict void is accounted for by doctor and state totals, which agree', () => {
+    const kept = insert('ok')
+    score(kept, 'full', 'right')
+    const voidedWithVerdict = insert('ok')
+    score(voidedWithVerdict, 'full', 'right')
+    db().query("UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?")
+      .run(voidedWithVerdict)
+    const noVerdict = insert('ok')
+    db().query("UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?")
+      .run(noVerdict)
+
+    const r = orch('doctor')
+    expect(r.code).toBe(0)
+    expect(r.out).toContain('runs 3, scored 1, voided 2, unscored 0')
+    const totals = state(null).totals as { runs: number; scored: number; voided: number }
+    expect(totals).toEqual(expect.objectContaining({ runs: 3, scored: 1, voided: 2 }))
+    expect(state(null).unscored).toBe(0)
+  })
+
+  test('a voided not-evidence run is voided, not dropped from every bucket', () => {
+    const interrupted = insert('failed')
+    db().query("UPDATE run SET failure_kind='interrupted' WHERE id=?").run(interrupted)
+    db().query("UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?")
+      .run(interrupted)
+
+    const r = orch('doctor')
+    expect(r.code).toBe(0)
+    expect(r.out).toContain('runs 1, scored 0, voided 1, unscored 0')
+    expect(state(null).totals as { scored: number; voided: number }).toEqual(
+      expect.objectContaining({ scored: 0, voided: 1 }),
+    )
   })
 
   test('doctor lists orphaned run containers and volumes with removal commands', () => {

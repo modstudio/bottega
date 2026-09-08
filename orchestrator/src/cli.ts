@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, nowIso, sessionId, judgeability, pendingForSession, unscoredCount, weigh,
+import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, nowIso, sessionId, judgeability, pendingForSession, weigh,
          DELIVERY, QUALITY, FIDELITY, type Delivery, type Quality, type Fidelity,
          REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP,
          REVIEW_SEVERITY,
@@ -7,6 +7,7 @@ import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, nowIso,
          reapStale, pidAlive, STALE_AFTER_MS, UNSCORED_WHERE, recordDuels, recordLosses, recordTies, duelMatrices,
          pairPartners, unrecordedPairsForSession, parseRunIds, recordSessionSeen, SESSION_LIVE_MS,
          resolveRootFromLastTurn, chainScoreJoin, chainTerminationAt,
+         EVIDENCE_CLOSED_SQL, EVIDENCE_OPEN_SQL, runTotals,
          authorizeRunMutation, runMutationActor,
          auditRunMutation, adoptRunMutation, writeTransaction, tryWriteContention, type RootAuthority } from './db.ts'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync, unlinkSync } from 'node:fs'
@@ -769,12 +770,12 @@ function evidenceOwningBranchOwners(
   const candidates = db().query(
     `SELECT r.id, COALESCE(r.parent_run_id, r.id) AS root_id,
             r.repo, r.cwd, r.worktree, r.status, r.evidence_excluded,
-            s.delivery IS NOT NULL AS scored
+            ${EVIDENCE_CLOSED_SQL} AS scored
        FROM run r ${chainScoreJoin('r', 's')}
       WHERE r.branch=?
         AND COALESCE(r.parent_run_id, r.id) <>
             COALESCE((SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?), ?)
-        AND (r.status NOT IN ('ok','failed','stale','stopped') OR s.delivery IS NULL)
+        AND (r.status NOT IN ('ok','failed','stale','stopped') OR ${EVIDENCE_OPEN_SQL})
       ORDER BY r.id`,
   ).all(row.branch, row.id, row.id) as (BranchOwnerRow & { root_id: number })[]
   const matching = candidates.filter((candidate) => {
@@ -823,12 +824,12 @@ function evidenceOwningWorktreeSharers(
 ): WorktreeSharerRow[] {
   const candidates = db().query(
     `SELECT r.id, COALESCE(r.parent_run_id, r.id) AS root_id,
-            r.status, s.delivery IS NOT NULL AS scored
+            r.status, ${EVIDENCE_CLOSED_SQL} AS scored
        FROM run r ${chainScoreJoin('r', 's')}
       WHERE r.worktree = ?
         AND COALESCE(r.parent_run_id, r.id) <>
             COALESCE((SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?), ?)
-        AND (r.status NOT IN ('ok','failed','stale','stopped') OR s.delivery IS NULL)
+        AND (r.status NOT IN ('ok','failed','stale','stopped') OR ${EVIDENCE_OPEN_SQL})
       ORDER BY r.id`,
   ).all(row.worktree, row.id, row.id) as (WorktreeSharerRow & { root_id: number })[]
   const roots = new Set<number>()
@@ -4465,10 +4466,10 @@ switch (cmd) {
    * evidence exactly where it is most useful. That argues for a DELAY, not for
    * never. A tree nobody has looked at in a day is not being read.
    *
-   * So the rule is: terminal, old enough, and scored. Scored is the important
-   * one — an unjudged run is one somebody still owes a verdict on, and its diff
-   * is the evidence they would judge it from. No flag overrides that evidence
-   * boundary.
+   * So the rule is: terminal, old enough, and closed. A stored verdict or a
+   * void closes the evidence boundary — an unjudged run is one somebody still
+   * owes a verdict on, and its diff is the evidence they would judge it from.
+   * No flag overrides that boundary.
    */
   case 'sweep': {
     await Promise.all([loadJobs(), loadWorktree(), loadGrokTrust(), loadDockerResources()])
@@ -4483,7 +4484,7 @@ switch (cmd) {
               r.repo, r.worktree, r.branch, r.base_commit, r.worktree_source, r.status, r.job,
               r.keep_tree,
               (julianday('now') - julianday(r.started_at)) AS age_days,
-              s.delivery IS NOT NULL AS scored
+              ${EVIDENCE_CLOSED_SQL} AS scored
          FROM run r ${chainScoreJoin('r', 's')}
         WHERE r.worktree IS NOT NULL AND r.status IN ('ok','failed','stale','stopped')
         ORDER BY r.id`,
@@ -6834,22 +6835,12 @@ switch (cmd) {
                    ` Set ORCH_LOCAL_CONTEXT=${r.contextTokens} or re-serve.`),
       )
     }
-    const notEvidence = NOT_EVIDENCE.map((kind) => `'${kind}'`).join(', ')
-    const counts = db().query(
-      `SELECT COUNT(*) runs,
-              (SELECT COUNT(*) FROM score s JOIN run r2 ON r2.id = s.run_id
-                WHERE COALESCE(r2.failure_kind, '') NOT IN (${notEvidence})
-                  AND r2.evidence_excluded IS NULL) scored,
-              (SELECT COUNT(*) FROM score s JOIN run r2 ON r2.id = s.run_id
-                WHERE r2.evidence_excluded IS NOT NULL) voided
-         FROM run`,
-    ).get() as { runs: number; scored: number; voided: number }
-    // unscoredCount(), not runs - scored: that subtraction counts probes,
+    const counts = runTotals()
+    // runTotals().unscored, not runs - scored: that subtraction counts probes,
     // in-flight runs, failures and abandoned rows as debt, and reported 28
-    // owing where `orch pending` — the command that tells you what to do about
-    // it — reported none.
-    const owed = unscoredCount()
-    console.log(`\nruns ${counts.runs}, scored ${counts.scored}, voided ${counts.voided}, unscored ${owed}`)
+    // owing where `orch pending` — the command that actually tells you what
+    // to do about it — reported none.
+    console.log(`\nruns ${counts.runs}, scored ${counts.scored}, voided ${counts.voided}, unscored ${counts.unscored}`)
     const docker = dockerRunResources()
     const owners = db().query('SELECT id, repo, worktree, status FROM run').all() as {
       id: number; repo: string | null; worktree: string | null; status: string

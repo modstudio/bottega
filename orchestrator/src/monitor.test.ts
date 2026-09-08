@@ -147,6 +147,17 @@ describe('the activity window', () => {
     )
   })
 
+  test('a no-verdict void is voided once, not missing and not scored', () => {
+    score(agedRun(0, { agent: 'grok', job: 'craft' }), 'full', 'right')
+    const noVerdict = agedRun(0, { agent: 'grok', job: 'craft' })
+    db().query("UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?").run(noVerdict)
+
+    expect(state(null).totals as { runs: number; scored: number; voided: number }).toEqual(
+      expect.objectContaining({ runs: 2, scored: 1, voided: 1 }),
+    )
+    expect(state(null).unscored).toBe(0)
+  })
+
   test("a voided 'none' does not file under the plain none verdict filter", () => {
     const plain = addRun({ agent: 'grok', job: 'craft' })
     score(plain, 'none')

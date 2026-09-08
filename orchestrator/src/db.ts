@@ -11,6 +11,7 @@ import {
   applyMigrations, migrationRefusal, readUserVersion, staleWriteRefusal,
 } from './migrations.ts'
 import { contentionTableExists, insertContention } from './contention.ts'
+import { NOT_EVIDENCE } from './failure.ts'
 export { label } from './outcome.ts'
 export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
 
@@ -658,6 +659,74 @@ export const UNSCORED_WHERE =
    AND (s.delivery IS NULL
         OR s.scored_at < (SELECT MAX(COALESCE(c.started_at, ''))
                             FROM run c WHERE c.parent_run_id = r.id))`
+
+/**
+ * The evidence boundary: a run leaves the owed-judgement ledger in two ways,
+ * a stored verdict or `evidence_excluded` set by a void. Every consumer of
+ * that boundary reads these fragments. Do not restate them in SQL.
+ *
+ * Void stamps the conversation root. A child turn must see that stamp the
+ * same way chainScoreJoin makes it see the root's score, or a no-verdict
+ * void would still pin a tree held by a later turn.
+ */
+export const EVIDENCE_EXCLUDED_SQL =
+  `(SELECT evidence_root.evidence_excluded FROM run evidence_root
+     WHERE evidence_root.id = COALESCE(r.parent_run_id, r.id))`
+
+export const EVIDENCE_CLOSED_SQL =
+  `(s.delivery IS NOT NULL OR ${EVIDENCE_EXCLUDED_SQL} IS NOT NULL)`
+
+export const EVIDENCE_OPEN_SQL =
+  `(s.delivery IS NULL AND ${EVIDENCE_EXCLUDED_SQL} IS NULL)`
+
+/**
+ * Voided is the exclusion stamp, not a routing-evidence count, so it does
+ * not apply the NOT_EVIDENCE filter the scored count uses. A voided
+ * interrupted run is still voided. Filtering it here would drop a no-verdict
+ * void of a NOT_EVIDENCE run from every bucket, which is the class this
+ * helper exists to close.
+ */
+export const VOIDED_SQL = `r.evidence_excluded IS NOT NULL`
+
+const NOT_EVIDENCE_SQL = NOT_EVIDENCE.map((kind) => `'${kind}'`).join(', ')
+
+export const SCORED_EVIDENCE_SQL =
+  `s.delivery IS NOT NULL
+   AND r.evidence_excluded IS NULL
+   AND COALESCE(r.failure_kind, '') NOT IN (${NOT_EVIDENCE_SQL})`
+
+export type RunTotals = {
+  runs: number
+  scored: number
+  voided: number
+  failed: number
+  stale_n: number
+  toks: number
+  unscored: number
+}
+
+/**
+ * Doctor and `state().totals` both read this. Window with `sinceIso` the
+ * same way `unscoredCount` does; omit it for the lifetime counts doctor
+ * prints.
+ */
+export function runTotals(sinceIso?: string): RunTotals {
+  const row = db().query(
+    // COALESCE on every SUM: over an empty window SUM returns NULL, not zero,
+    // while COUNT returns zero — so a quiet day answered `failed: null` beside
+    // `runs: 0`. The page coerces it, but an API that reports "no failures" as
+    // null is one bad `??` away from reporting it as "unknown".
+    `SELECT COUNT(*) runs,
+            COALESCE(SUM(CASE WHEN r.status='failed' THEN 1 ELSE 0 END), 0) failed,
+            COALESCE(SUM(CASE WHEN r.status='stale' THEN 1 ELSE 0 END), 0) stale_n,
+            COALESCE(SUM(COALESCE(r.vendor_tokens,0)), 0) toks,
+            COALESCE(SUM(CASE WHEN ${SCORED_EVIDENCE_SQL} THEN 1 ELSE 0 END), 0) scored,
+            COALESCE(SUM(CASE WHEN ${VOIDED_SQL} THEN 1 ELSE 0 END), 0) voided
+       FROM run r LEFT JOIN score s ON s.run_id = r.id
+      ${sinceIso ? 'WHERE r.started_at >= ?' : ''}`,
+  ).get(...(sinceIso ? [sinceIso] : [])) as Omit<RunTotals, 'unscored'>
+  return { ...row, unscored: unscoredCount(sinceIso) }
+}
 
 /** Join the one score owned by a conversation root to any of its turns. */
 export function chainScoreJoin(runAlias: string, scoreAlias: string): string {

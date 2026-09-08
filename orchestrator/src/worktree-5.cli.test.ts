@@ -634,6 +634,59 @@ exec ${JSON.stringify(actualGit)} "$@"
     }
   })
 
+  test('an aged no-verdict void is reclaimed rather than kept as unjudged evidence', () => {
+    const old = new Date(Date.now() - 3 * 86_400_000).toISOString()
+    const id = addRun({ agent: 'codex', job: 'understand', status: 'ok', startedAt: old })
+    db().query("UPDATE run SET worktree=?, evidence_excluded=? WHERE id=?")
+      .run(`/tmp/dev364-void-${id}`, 'voided with orch score --void', id)
+
+    const r = orch('sweep', '--dry-run', '--older-than', '1')
+    expect(r.code).toBe(0)
+    expect(r.out).toContain(`would reclaim ${id}  /tmp/dev364-void-${id}`)
+    expect(r.out).toContain('would reclaim 1, kept 0')
+    expect(r.out).not.toContain('unscored — its diff is the evidence')
+  })
+
+  test('an aged actually unscored run is still kept as unjudged evidence', () => {
+    const old = new Date(Date.now() - 3 * 86_400_000).toISOString()
+    const id = addRun({ agent: 'codex', job: 'understand', status: 'ok', startedAt: old })
+    db().query('UPDATE run SET worktree=? WHERE id=?').run(`/tmp/dev364-unscored-${id}`, id)
+
+    const r = orch('sweep', '--dry-run', '--older-than', '1')
+    expect(r.code).toBe(0)
+    expect(r.out).toContain(`${id}  unscored — its diff is the evidence`)
+    expect(r.out).toContain('would reclaim 0, kept 1')
+    expect(r.out).not.toContain(`would reclaim ${id}`)
+  })
+
+  test('a no-verdict void does not block sweep of a shared tree; an unscored sharer still does', () => {
+    const old = new Date(Date.now() - 3 * 86_400_000).toISOString()
+    const tree = '/tmp/dev364-shared-tree'
+    const target = addRun({ agent: 'codex', job: 'implement', status: 'ok', startedAt: old })
+    score(target, 'full', 'right')
+    const voided = addRun({ agent: 'codex', job: 'understand', status: 'ok', startedAt: old })
+    const unscored = addRun({ agent: 'codex', job: 'implement', status: 'failed', startedAt: old })
+    db().query('UPDATE run SET worktree=? WHERE id=?').run(tree, target)
+    db().query("UPDATE run SET worktree=?, evidence_excluded=? WHERE id=?")
+      .run(tree, 'voided with orch score --void', voided)
+    db().query('UPDATE run SET worktree=? WHERE id=?').run(tree, unscored)
+
+    const blocked = orch('sweep', '--dry-run', '--older-than', '1')
+    expect(blocked.code).toBe(0)
+    expect(blocked.out).toContain('shared with evidence-owning run(s)')
+    expect(blocked.out).toContain(`${unscored} (failed, unscored)`)
+    expect(blocked.out).not.toContain(`${voided} (ok, unscored)`)
+    expect(blocked.out).not.toContain(`would reclaim ${target}`)
+
+    db().query('UPDATE run SET worktree=NULL WHERE id=?').run(unscored)
+    const released = orch('sweep', '--dry-run', '--older-than', '1')
+    expect(released.code).toBe(0)
+    expect(released.out).toContain(`would reclaim ${target}  ${tree}`)
+    expect(released.out).toContain(`would reclaim ${voided}  ${tree}`)
+    expect(released.out).not.toContain('unscored — its diff is the evidence')
+    expect(released.out).not.toContain('shared with evidence-owning run(s)')
+  })
+
   test('more than ten kept rows are summarised by reason; --dry-run lists every row', () => {
     const recent: number[] = []
     const unscored: number[] = []
