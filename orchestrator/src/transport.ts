@@ -309,12 +309,13 @@ export function decideAcpPermission(
  * The orch process, not the sandboxed child, serves fs/read_text_file.
  * Reads are confined to the run worktree by realpath prefix.
  */
-export function confineFsPath(path: string, root: string): string {
+export function confineFsPath(path: string, root: string, method = 'readTextFile'): string {
+  const rootName = method === 'readTextFile' ? 'run worktree' : 'allowed root'
   let realRoot: string
   try {
     realRoot = realpathSync(root)
   } catch {
-    throw new Error(`ACP fs.readTextFile refused: worktree ${root} is not readable`)
+    throw new Error(`ACP fs.${method} refused: ${method === 'readTextFile' ? 'worktree' : 'root'} ${root} is not readable`)
   }
   const rootedPath = isAbsolute(path) ? path : join(realRoot, path)
   let candidate: string
@@ -324,12 +325,12 @@ export function confineFsPath(path: string, root: string): string {
     try {
       candidate = join(realpathSync(dirname(rootedPath)), basename(rootedPath))
     } catch {
-      throw new Error(`ACP fs.readTextFile refused: ${path} is outside the run worktree`)
+      throw new Error(`ACP fs.${method} refused: ${path} is outside the ${rootName}`)
     }
   }
   const prefix = realRoot.endsWith('/') ? realRoot : `${realRoot}/`
   if (candidate !== realRoot && !candidate.startsWith(prefix)) {
-    throw new Error(`ACP fs.readTextFile refused: ${path} is outside the run worktree`)
+    throw new Error(`ACP fs.${method} refused: ${path} is outside the ${rootName}`)
   }
   return candidate
 }

@@ -279,7 +279,9 @@ export function collectResult(
   if (!argv.includes('--quiet')) {
     console.error(
       `\n— run ${row.id} · ${row.agent} · ${dur(row.latency_ms)}` +
-        (row.vendor_tokens ? ` · ${row.vendor_tokens.toLocaleString()} vendor tokens` : '') +
+        (row.vendor_tokens !== null
+          ? ` · ${row.vendor_tokens.toLocaleString()} vendor tokens`
+          : ' · vendor tokens not reported') +
         `\n  score it:  ${scoreHint(row.id, row.job, row.parent_run_id, scoreSuffix)}` +
         baseNote + mcpNote(row) + evidenceNote(row),
     )

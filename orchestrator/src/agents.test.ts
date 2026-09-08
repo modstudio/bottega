@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { rmSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
-import { AGENTS, GENERIC_QUESTION_TOKENS, JOBS, LAND_PREAMBLE, NEEDS_HEALTH, OUTPUT_RESERVE, STALE_AFTER_MS, WAKE_COOLDOWN_MS, WORKER_PREAMBLE, addRun, available, candidates, classify, db, detectBlockers, dir, ensureLocalHealth, guide, isNonAnswer, jobTimeoutCeilingMinutes, localReachable, pick, resetLocalHealth, runJob, score, strictCodexSchema, unavailableReason, upsertProject, wakeDecision, workerPreamble, workerResumeGuard } from '../test/fixture.ts'
+import { AGENTS, GENERIC_QUESTION_TOKENS, JOBS, LAND_PREAMBLE, NEEDS_HEALTH, OUTPUT_RESERVE, STALE_AFTER_MS, WAKE_COOLDOWN_MS, WORKER_PREAMBLE, addRun, available, candidates, classify, db, detectBlockers, dir, ensureLocalHealth, guide, isNonAnswer, jobTimeoutCeilingMinutes, localReachable, pick, replyFileInstruction, resetLocalHealth, runJob, score, strictCodexSchema, unavailableReason, upsertProject, wakeDecision, workerPreamble, workerResumeGuard } from '../test/fixture.ts'
 import { addAgent, agentRows, recordAgentProbe, registrationProbeReadsRepo, removeAgent, setAgent } from './agents.ts'
 
 describe('agent registry', () => {
@@ -24,10 +24,11 @@ describe('agent registry', () => {
       reply: { ok: true, output: 'ok' },
       tool: { ok: true, output: 'REGISTRATION_PROBE_FILE_OK', toolEvents: 1, statuses: ['completed'] },
       schema: { ok: true, output: '{"status":"ok"}' },
+      file: { ok: true, output: '{"status":"ok"}' },
       contextTokens: 131072,
       contextSource: 'harness',
     })
-    expect(AGENTS['local-acp']!.caps).toMatchObject({ readsRepo: true, schema: true })
+    expect(AGENTS['local-acp']!.caps).toMatchObject({ readsRepo: true, schema: true, replyFile: true })
     expect(AGENTS['local-acp']!.contextTokens).toBe(131072)
     expect(AGENTS['qwen-local']!.enabled).toBe(false)
   })
@@ -40,6 +41,23 @@ describe('agent registry', () => {
     expect(() => setAgent('new-local', { enabled: false })).toThrow('requires --reason')
     setAgent('new-local', { enabled: false, reason: 'retired in test' })
     expect(unavailableReason('new-local')).toContain('retired in test')
+  })
+
+  test('a harness that cannot write the reply file is ineligible', () => {
+    addAgent('no-reply-file', {
+      harness: 'goose', backend: 'vllm', model: 'm', contextTokens: 65536,
+    })
+    recordAgentProbe('no-reply-file', {
+      harness: 'goose', ok: false,
+      reply: { ok: true, output: 'ok' },
+      tool: { ok: true, output: 'REGISTRATION_PROBE_FILE_OK', toolEvents: 1, statuses: ['completed'] },
+      schema: { ok: false, output: 'done' },
+      file: { ok: false, output: '' },
+      contextTokens: 65536, contextSource: 'declared',
+    })
+    expect(AGENTS['no-reply-file']!.caps.replyFile).toBe(false)
+    expect(unavailableReason('no-reply-file')).toBe('registration probe failed')
+    removeAgent('no-reply-file')
   })
 
   test('a registry mutation invalidates the in-process row cache', () => {
@@ -91,6 +109,7 @@ describe('agent registry', () => {
         reply: { ok: true, output: 'ok' },
         tool: { ok: true, output: 'REGISTRATION_PROBE_FILE_OK', toolEvents: 1, statuses: ['completed'] },
         schema: { ok: true, output: '{"status":"ok"}' },
+        file: { ok: true, output: '{"status":"ok"}' },
         contextTokens: 131072, contextSource: 'harness',
       })
       const changed = setAgent(name, change.mutation)
@@ -517,6 +536,7 @@ describe('vendor_session is recorded before the agent runs', () => {
         },
       })
       expect(sent).toBe([
+        replyFileInstruction('READER_SCHEMA'), '',
         'REMINDER FROM THE ORIGINAL SPEC', '', 's'.repeat(600), '',
         'Do not decide what the spec did not settle; ask.',
         'You may commit to your own throwaway branch. Do not push, merge into trunk, or rewrite history.',

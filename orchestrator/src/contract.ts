@@ -46,6 +46,24 @@ import { GENERIC_QUESTION_TOKENS } from './db.ts'
  */
 const nullableStrings = { type: ['array', 'null'], items: { type: 'string' } } as const
 
+/** On-disk contract for jobs whose public result remains plain text. */
+export const TEXT_REPLY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['answer'],
+  properties: { answer: { type: 'string' } },
+} as const
+
+export const REPLY_FILE_NAME = 'reply.json'
+
+/** The file contract is identical across harnesses; schema flags are an extra guarantee. */
+export function replyFileInstruction(schemaName: string): string {
+  return `REPLY CONTRACT\n\n` +
+    `Your reply schema is ${schemaName}. Before your final message, write the structured reply ` +
+    `as valid JSON to $ORCH_SCRATCH/${REPLY_FILE_NAME}. Orch reads that file first and falls back ` +
+    `to the final message only when the file is missing. The final message must follow the same schema.`
+}
+
 export const WORKER_SCHEMA = {
   type: 'object',
   additionalProperties: false,

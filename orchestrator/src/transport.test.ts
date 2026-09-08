@@ -41,10 +41,16 @@ describe('ACP transport through run', () => {
     ...opts,
   })
 
-  const installFake = (resultFor: (opts: { prompt: string; resume?: boolean }) => TransportResult) => {
+  const installFake = (resultFor: (opts: {
+    prompt: string; resume?: boolean; scratch?: string
+  }) => TransportResult) => {
     let resumed = false
-    const handleFor = (start: { prompt: string; outPath: string; resume?: boolean }): TransportHandle => {
-      const collected = resultFor({ prompt: start.prompt, resume: start.resume })
+    const handleFor = (start: {
+      prompt: string; outPath: string; resume?: boolean; env: Record<string, string>
+    }): TransportHandle => {
+      const collected = resultFor({
+        prompt: start.prompt, resume: start.resume, scratch: start.env.ORCH_SCRATCH,
+      })
       return {
         pid: collected.pid,
         kill() { /* fake */ },
@@ -59,13 +65,13 @@ describe('ACP transport through run', () => {
     }
     const transport: AgentTransport = {
       name: 'acp',
-      async start(opts) { return handleFor({ prompt: opts.prompt, outPath: opts.outPath }) },
+      async start(opts) { return handleFor({ prompt: opts.prompt, outPath: opts.outPath, env: opts.env }) },
       prompt(handle, text) { return handle.prompt(text) },
       events(handle) { return handle.events() },
       cancel(handle) { return handle.cancel() },
       async resume(opts) {
         resumed = true
-        return handleFor({ prompt: opts.prompt, outPath: opts.outPath, resume: true })
+        return handleFor({ prompt: opts.prompt, outPath: opts.outPath, env: opts.env, resume: true })
       },
     }
     installTestTransport(transport)
@@ -94,6 +100,59 @@ describe('ACP transport through run', () => {
     }
   })
 
+  test('a goose-shaped prose final uses the valid reply file as the result', async () => {
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    const structured = JSON.stringify({
+      deliverables: [{ name: 'answer', status: 'delivered', content: 'from file' }],
+      narrative: null, files_written: null,
+    })
+    try {
+      installFake(({ scratch }) => {
+        writeFileSync(join(scratch!, 'reply.json'), structured)
+        return fakeResult({ output: 'I completed the repository question.', status: 'ok' })
+      })
+      const result = await run({
+        job: 'file-question', prompt: 'inspect one file', cwd: dir, agent: 'codex',
+        transport: 'acp', noFailover: true, deliverables: ['answer'],
+      })
+      expect(result.status).toBe('ok')
+      expect(JSON.parse(result.output).deliverables[0].content).toBe('from file')
+      const printed = Bun.spawnSync([
+        process.execPath, new URL('cli.ts', import.meta.url).pathname, 'result', String(result.id),
+      ], {
+        cwd: dir,
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(printed.exitCode).toBe(0)
+      expect(printed.stderr.toString()).toContain('vendor tokens not reported')
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
+  test('a missing reply file falls back to the structured final message', async () => {
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    const structured = JSON.stringify({
+      deliverables: [{ name: 'answer', status: 'delivered', content: 'from final' }],
+      narrative: null, files_written: null,
+    })
+    try {
+      installFake(() => fakeResult({ output: structured, status: 'ok' }))
+      const result = await run({
+        job: 'file-question', prompt: 'inspect one file', cwd: dir, agent: 'codex',
+        transport: 'acp', noFailover: true, deliverables: ['answer'],
+      })
+      expect(JSON.parse(result.output).deliverables[0].content).toBe('from final')
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
   test('a registered agent adopts its ACP default without --transport', async () => {
     const priorDepth = process.env.ORCH_DEPTH
     process.env.ORCH_DEPTH = '0'
@@ -105,6 +164,7 @@ describe('ACP transport through run', () => {
       reply: { ok: true, output: 'ok' },
       tool: { ok: true, output: 'REGISTRATION_PROBE_FILE_OK', toolEvents: 1, statuses: ['completed'] },
       schema: { ok: true, output: '{"status":"ok"}' },
+      file: { ok: true, output: '{"status":"ok"}' },
       contextTokens: 131072, contextSource: 'declared',
     })
     try {
@@ -134,6 +194,7 @@ describe('ACP transport through run', () => {
       reply: { ok: true, output: 'ok' },
       tool: { ok: true, output: 'REGISTRATION_PROBE_FILE_OK', toolEvents: 1, statuses: ['completed'] },
       schema: { ok: true, output: '{"status":"ok"}' },
+      file: { ok: true, output: '{"status":"ok"}' },
       contextTokens: 131072, contextSource: 'declared',
     })
     const restore = (['codex', 'grok', 'qwen-local'] as const).map((name) => ({

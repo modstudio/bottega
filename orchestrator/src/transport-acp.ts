@@ -413,6 +413,15 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       const content = readTextFile(confined, req.params.line, req.params.limit)
       return { content }
     })
+    .onRequest(acp.methods.client.fs.writeTextFile, (req) => {
+      // ACP has no result object. The one write it receives is the universal
+      // reply carrier, confined to the run's artifact scratch directory.
+      const scratch = opts.env.ORCH_SCRATCH
+      if (!scratch) throw new Error('ACP fs.writeTextFile refused: ORCH_SCRATCH is not set')
+      const confined = confineFsPath(req.params.path, scratch, 'writeTextFile')
+      writeFileSync(confined, req.params.content)
+      return {}
+    })
     .onNotification(acp.methods.client.session.update, (req) => {
       // orch records the update as a run event; the store never holds ACP.
       updates.push(req.params)
@@ -429,11 +438,11 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
 
   try {
     await ctx.request(acp.methods.agent.initialize, {
-      // orch advertises fs.read + form elicitation; write/terminal stay off.
+      // ACP has no result object, so the reply file is the one advertised write.
       // Gap: usage_update.used is session context, not CLI input+output.
       protocolVersion: acp.PROTOCOL_VERSION,
       clientCapabilities: {
-        fs: { readTextFile: true, writeTextFile: false },
+        fs: { readTextFile: true, writeTextFile: true },
         elicitation: { form: {} },
       },
       clientInfo: { name: 'orch', version: '0.1.0' },

@@ -1221,6 +1221,13 @@ one scores an agent for work it has not done. A reply that does not parse at all
 is a **failure**, for the mirror-image reason: a writing run that never said what
 it did has left a diff that could be anything.
 
+**A reply is a file.** Every contract names its JSON schema and requires the
+worker to write `$ORCH_SCRATCH/reply.json`. The harness reads that artifact
+first and falls back to the final message only when it is absent. Native schema
+flags remain an extra guarantee where a harness provides them; they are not the
+carrier, because ACP defines no result object or output-schema field. The
+registration probe must write and validate this file before the row is eligible.
+
 ## Delegate what is specifiable; keep what is still being discovered
 
 The line is not "Claude designs, agents implement". It is **whether a spec
@@ -1965,15 +1972,14 @@ Being configured is not being reachable: `available()` checks the former,
 
 The harness speaks plain `/v1/chat/completions` to vLLM and ACP to orch. Its
 registration probe is the authority on file tools and structured output; the
-endpoint's `/v1/models` response is the authority on the served window. The
-current 131,072-token service fits repository errands but not `understand`,
-whose 131,072-token working set plus 16,384-token reply reserve requires the
-endpoint to be served at 147,456 tokens or more. That exclusion is routing
+endpoint's `/v1/models` response is the authority on the served window.
+`local-acp` must be served at **147,456 tokens or more**: `understand` needs a
+131,072-token working set plus a 16,384-token reply reserve. That exclusion is routing
 working from a probed fact, not a reason to weaken the requirement.
 
 ### The window is a serving flag
 
-**Now served at 131,072.** It was 65,536, and that ceiling excluded the local
+It was served at 65,536, and that ceiling excluded the local
 model from `review-lens` and `understand` — between them 74% of everything ever
 delegated — leaving it eligible for 16% of the work.
 

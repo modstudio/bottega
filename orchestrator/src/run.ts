@@ -41,6 +41,7 @@ import {
 import { recipeNotes } from './recipe.ts'
 import {
   workerPreamble, packResumePrompt, READONLY_PREAMBLE, NO_REPO_PREAMBLE, WORKER_SCHEMA, ISSUE_WORKER_SCHEMA, REVIEW_SCHEMA,
+  TEXT_REPLY_SCHEMA, REPLY_FILE_NAME, replyFileInstruction,
   REVIEW_SEVERITY_INSTRUCTION,
   VERIFY_CLAIM_SCHEMA, READER_SCHEMA, readerDeliverablesInstruction,
   parseWorkerReplyWithCount, isAsking, realQuestions,
@@ -1823,6 +1824,19 @@ export async function run(opts: {
     return [tool.notes ?? '', generated].filter(Boolean).join('\n\n')
   })()
   const originalPrompt = opts.prompt
+  const generatedSchema = requestedJob.name === 'issue-worker'
+    ? ISSUE_WORKER_SCHEMA
+    : writesJob ? WORKER_SCHEMA
+      : requestedJob.findings ? REVIEW_SCHEMA
+        : requestedJob.name === 'verify-claim' ? VERIFY_CLAIM_SCHEMA
+          : isReaderJob(opts.job) ? READER_SCHEMA : TEXT_REPLY_SCHEMA
+  const replySchemaName = opts.schemaPath
+    ? basename(opts.schemaPath)
+    : requestedJob.name === 'issue-worker' ? 'ISSUE_WORKER_SCHEMA'
+      : writesJob ? 'WORKER_SCHEMA'
+        : requestedJob.findings ? 'REVIEW_SCHEMA'
+          : requestedJob.name === 'verify-claim' ? 'VERIFY_CLAIM_SCHEMA'
+            : isReaderJob(opts.job) ? 'READER_SCHEMA' : 'TEXT_REPLY_SCHEMA'
   const runProjectName = opts.repo ?? repoOf(callerCwd)
   const runProjectId = runProjectName ? projectByName(runProjectName)?.id ?? null : null
   let pack: ReturnType<typeof compilePack> | null = null
@@ -1873,6 +1887,7 @@ export async function run(opts: {
   if (isReaderJob(opts.job) && !opts.resume) {
     prompt = `${readerDeliverablesInstruction(declaredDeliverables)}\n\n${prompt}`
   }
+  prompt = `${replyFileInstruction(replySchemaName)}\n\n${prompt}`
 
   const requiresCanonSource = requestedJob.findings || opts.job === 'verify-claim'
 
@@ -2024,19 +2039,14 @@ export async function run(opts: {
    * is a deliberate act by someone who wants a different contract, and silently
    * overriding it would make the flag a lie.
    */
-  const generatedSchema = requestedJob.name === 'issue-worker'
-    ? ISSUE_WORKER_SCHEMA
-    : writesJob ? WORKER_SCHEMA
-      : requestedJob.findings ? REVIEW_SCHEMA
-        : requestedJob.name === 'verify-claim' ? VERIFY_CLAIM_SCHEMA
-          : isReaderJob(opts.job) ? READER_SCHEMA : null
   const originalSchemaPath = generatedSchema && !opts.schemaPath
     ? (() => {
         const p = join(runsDir, `${stamp}.schema.json`)
         writeFileSync(p, JSON.stringify(generatedSchema, null, 2))
         return p
-      })()
+    })()
     : opts.schemaPath
+  const textReplyContract = !opts.schemaPath && generatedSchema === TEXT_REPLY_SCHEMA
   // Codex's --output-schema is OpenAI strict structured output. Its copy is
   // normalized beside the prompt; the caller's file remains byte-for-byte
   // untouched for Grok, whose --json-schema accepts ordinary JSON Schema.
@@ -2474,10 +2484,13 @@ export async function run(opts: {
   // read existing objects through a common-store alternate. Writing jobs use
   // the common store so commits survive removal of the disposable tree.
   const gitObjectEnvironment = gitObjectEnvironmentFor(name, requestedJob, worktree)
-  const writableRoots = repoJob && worktree
-    ? [worktreeGitDir(worktree.path),
-        ...(writesJob ? workerSharedGitRoots(worktree.path, worktree.branch) : [])]
-    : undefined
+  const writableRoots = [
+    scratchDir,
+    ...(repoJob && worktree
+      ? [worktreeGitDir(worktree.path),
+          ...(writesJob ? workerSharedGitRoots(worktree.path, worktree.branch) : [])]
+      : []),
+  ]
   const gitConfigEnvironment = worktree
     ? prepareSharedRefGuard(
         worktree.path,
@@ -2652,6 +2665,8 @@ export async function run(opts: {
   let costUsd: number | null = null
   let resolvedSession: string | null = vendorSession
   let effectiveModel: string | null = null
+  let replyFileError: string | null = null
+  let replyFilePresent = false
   let contract: WorkerReply | null = null
   let contractObjects = 0
   let acceptedQuestions: ReturnType<typeof realQuestions> = []
@@ -2790,6 +2805,38 @@ export async function run(opts: {
     effectiveModel = collected.effectiveModel ?? effectiveModel
     resolvedSession = collected.sessionId ?? vendorSession
     output = collected.output
+    const replyFile = join(scratchDir, REPLY_FILE_NAME)
+    if (existsSync(replyFile)) {
+      replyFilePresent = true
+      const fileOutput = readFileSync(replyFile, 'utf8')
+      let value: unknown
+      try { value = JSON.parse(fileOutput) } catch { value = null }
+      const validationSchema = JSON.parse(readFileSync(originalSchemaPath!, 'utf8'))
+      if (!valueMatchesStrictSchema(validationSchema, value)) {
+        replyFileError = schemaMismatchError(fileOutput)
+        output = fileOutput
+      } else {
+        output = textReplyContract
+          ? (value as { answer: string }).answer
+          : fileOutput
+      }
+      writeFileSync(outPath, output)
+    } else if (textReplyContract) {
+      // The public result stays plain text. A conforming fallback final message
+      // uses the file envelope, while legacy prose remains readable.
+      try {
+        const value = JSON.parse(output)
+        if (valueMatchesStrictSchema(TEXT_REPLY_SCHEMA, value)) output = value.answer
+      } catch { /* Missing-file fallback may be the legacy plain-text result. */ }
+    }
+    if (!replyFilePresent && opts.schemaPath) {
+      let value: unknown
+      try { value = JSON.parse(output) } catch { value = null }
+      const validationSchema = JSON.parse(readFileSync(originalSchemaPath!, 'utf8'))
+      if (!valueMatchesStrictSchema(validationSchema, value)) {
+        replyFileError = schemaMismatchError(output)
+      }
+    }
     const transportQuestions = collected.asking
       ? collected.questions.map((item) => ({
           question: item.question,
@@ -2848,23 +2895,13 @@ export async function run(opts: {
       (!writesJob && !replyError && !!output && !isNonAnswer(output))
     const acpVendorStop = transportName === 'acp' && collected.status === 'failed' &&
       Boolean(collected.stopReason && collected.stopReason !== 'end_turn')
-    const acpSchemaMismatch = transportName === 'acp' && Boolean(schemaPath) &&
-      !collected.asking && !acpVendorStop && (() => {
-        let value: unknown
-        try { value = JSON.parse(output) } catch { return true }
-        // Codex receives the normalised strict schema at schemaPath; Grok
-        // receives the caller's original schema. Validate each against the
-        // contract actually sent to that vendor.
-        const validationSchema = JSON.parse(readFileSync(schemaPath!, 'utf8'))
-        return !valueMatchesStrictSchema(validationSchema, value)
-      })()
     if (acpVendorStop) {
       status = 'failed'
       error = errorTail(collected.error ?? stopErrorMessage(collected.stopReason!))
       failureKind = collected.failureKind ?? failureKindFromStop(collected.stopReason, collected.error)
-    } else if (acpSchemaMismatch) {
+    } else if (replyFileError) {
       status = 'failed'
-      error = errorTail(schemaMismatchError(output))
+      error = errorTail(replyFileError)
       failureKind = 'other'
     } else if (collected.asking || acceptedQuestions.length) {
       status = 'asking'

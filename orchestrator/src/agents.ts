@@ -1,6 +1,6 @@
 import { which } from 'bun'
 import { Database } from 'bun:sqlite'
-import { existsSync, readFileSync, writeFileSync, mkdtempSync, mkdirSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { DB_PATH, ROOT, db as dbForAgents, writableDb, nowIso } from './db.ts'
@@ -14,6 +14,8 @@ export type Caps = {
   discoversMcpFromCwd: boolean
   /** Can be bound to a JSON schema for its final message. */
   schema: boolean
+  /** Proved by registration: writes the universal structured reply artifact. */
+  replyFile?: boolean
   /**
    * Can EDIT the checkout it is pointed at, headlessly, without a prompt.
    *
@@ -1072,6 +1074,7 @@ export type RegistrationProbeResult = {
   reply: { ok: boolean; output: string }
   tool: { ok: boolean; output: string; toolEvents: number; statuses: string[] }
   schema: { ok: boolean; output: string }
+  file?: { ok: boolean; output: string }
   contextTokens: number | null
   contextSource: 'harness' | 'declared' | null
   attempts?: { harness: string; result: unknown }[]
@@ -1085,6 +1088,7 @@ export function recordAgentProbe(name: string, result: RegistrationProbeResult):
     ...prior,
     readsRepo: result.tool.ok,
     schema: result.schema.ok,
+    replyFile: result.file?.ok ?? false,
     ...(result.contextTokens !== null ? { contextTokens: result.contextTokens } : {}),
   }
   writableDb().query('UPDATE agent SET caps=?,probed_at=?,probe_result=? WHERE name=?')
@@ -1113,7 +1117,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
     type: 'object', additionalProperties: false, required: ['status'],
     properties: { status: { type: 'string', enum: ['ok'] } },
   }))
-  const { transportFor } = await import('./transport.ts')
+  const { transportFor, valueMatchesStrictSchema } = await import('./transport.ts')
   const transport = transportFor(agent.defaultTransport)
   const runOne = async (id: string, prompt: string, schema?: string) => {
     const started = Date.now()
@@ -1128,10 +1132,12 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
       const handle = await transport.start({
         agent, cwd: join(scratch, 'repo'), prompt, outPath: join(scratch, `${id}.out`),
         schemaPath: schema, model: agent.model, modelExplicit: true, startedAt: Date.now(),
-        write: false, sandbox: 'read-only',
+        write: true, sandbox: 'workspace-write',
+        writableRoots: [scratch],
         env: {
           ...Object.fromEntries(Object.entries(process.env).filter((e): e is [string,string] => e[1] !== undefined)),
           ...(agent.env?.() ?? {}),
+          ORCH_SCRATCH: scratch,
         },
       })
       try {
@@ -1158,9 +1164,19 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
   const reply = await runOne('reply', 'Reply with exactly: ok')
   const tool = await runOne('tool',
     `Read ${REGISTRATION_PROBE_FILE} with a file tool and reply with exactly its contents.`)
-  const structured = await runOne('schema', 'Return status ok using the supplied schema.', schemaPath)
+  const replyPath = join(scratch, 'reply.json')
+  rmSync(replyPath, { force: true })
+  const structured = await runOne(
+    'schema',
+    'Write {"status":"ok"} to $ORCH_SCRATCH/reply.json, then return a final message using the supplied schema.',
+    schemaPath,
+  )
   const parsedSchema = (() => {
     try { return JSON.parse(structured.parsed?.text ?? structured.output) } catch { return null }
+  })()
+  const fileOutput = existsSync(replyPath) ? readFileSync(replyPath, 'utf8') : ''
+  const parsedFile = (() => {
+    try { return JSON.parse(fileOutput) } catch { return null }
   })()
   const prior = JSON.parse(row.caps) as Caps & { contextTokens?: number | null }
   const previousProbe = row.probe_result ? JSON.parse(row.probe_result) : null
@@ -1186,10 +1202,11 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
       statuses: tool.events.filter((e) => e.kind === 'tool').map((e) => e.status ?? 'unknown'),
     },
     schema: { ok: structured.status === 'ok' && parsedSchema?.status === 'ok', output: structured.output },
+    file: { ok: valueMatchesStrictSchema(JSON.parse(readFileSync(schemaPath, 'utf8')), parsedFile), output: fileOutput },
     contextTokens, contextSource,
     ...(attempts.length ? { attempts } : {}),
   }
-  result.ok = result.reply.ok && result.tool.ok && result.schema.ok && contextTokens !== null
+  result.ok = result.reply.ok && result.tool.ok && result.file!.ok && contextTokens !== null
   recordAgentProbe(name, result)
   return result
 }
