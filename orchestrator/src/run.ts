@@ -681,7 +681,7 @@ export function preflight(
   // demanding either again blocks every ruling.
   if (reusesWorktree) return seed
   const project = projectAt(cwd)
-  if (project) assertRegisterBranches(project)
+  if (project?.settings.worktree) assertRegisterBranches(project)
   const tool = project?.settings.worktree ?? null
   if (project) {
     const malformed = validateProjectSettings(project.settings).filter((problem) =>
