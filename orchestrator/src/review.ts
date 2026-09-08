@@ -164,19 +164,27 @@ export function cleanReviewEvidence(
     if (stored) changed = stored
     else {
       const run = database.query(
-        'SELECT repo, base_commit, input_tree, head_commit FROM run WHERE id=?',
+        'SELECT repo, base_commit, input_tree, head_commit, changed_paths FROM run WHERE id=?',
       ).get(runId) as {
         repo: string | null; base_commit: string | null; input_tree: string | null
-        head_commit: string | null
+        head_commit: string | null; changed_paths: string | null
       } | null
       if (!run?.repo || !run.base_commit || (!run.input_tree && !run.head_commit)) {
         return unavailable('run lacks repo, base_commit, or input_tree')
       }
-      const repo = projectPath(database, run.repo)
-      if (!repo) return unavailable(`project ${run.repo} is not registered`)
-      const identity = measureChangeIdentity(repo, run.base_commit, run.head_commit ?? run.input_tree!)
-      if (!identity) return unavailable('git diff --name-only failed')
-      changed = identity.paths
+      if (run.changed_paths !== null) {
+        const parsed = JSON.parse(run.changed_paths)
+        if (!Array.isArray(parsed) || parsed.some((path) => typeof path !== 'string')) {
+          throw new Error('run changed_paths is not a JSON array of paths')
+        }
+        changed = parsed
+      } else {
+        const repo = projectPath(database, run.repo)
+        if (!repo) return unavailable(`project ${run.repo} is not registered`)
+        const identity = measureChangeIdentity(repo, run.base_commit, run.input_tree ?? run.head_commit!)
+        if (!identity) return unavailable('git diff --name-only failed')
+        changed = identity.paths
+      }
     }
   } catch (cause) {
     return unavailable(String((cause as Error)?.message ?? cause))

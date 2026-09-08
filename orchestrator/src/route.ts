@@ -159,7 +159,9 @@ type RoutingWindowRow = {
 export function routingEvidenceWindow<T extends RoutingWindowRow>(
   rows: T[], agent: string, currentModel: string,
 ): { rows: T[]; evidenceModel: string | null } {
-  const modelRows = rows.filter((row) => row.agent === agent && row.model === currentModel)
+  const modelRows = rows.filter((row) =>
+    row.agent === agent && (row.model === currentModel || row.model === null),
+  )
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt) || b.id - a.id)
     .slice(0, EVIDENCE_WINDOW)
   return { rows: modelRows, evidenceModel: currentModel }
