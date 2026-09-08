@@ -246,80 +246,85 @@ describe("detached run collection", () => {
   })
 
   test('confinement refusals execute the working clear remedy for every kind and chain shape', () => {
-    for (const kind of ['escaped', 'confinement_unverified'] as const) {
-      for (const rootSnapshot of [true, false]) {
-        for (const turnSnapshot of [true, false]) {
-          for (const addressByTurn of [false, true]) {
-            const fixture = confinementArtifact(kind)
-            try {
-              const turn = addConfinementTurn(fixture, kind)
-              if (!rootSnapshot) {
-                db().query('UPDATE run SET pre_confinement=NULL WHERE id=?').run(fixture.id)
-              }
-              if (!turnSnapshot) {
-                db().query('UPDATE run SET pre_confinement=NULL WHERE id=?').run(turn)
-              }
-              if (kind === 'escaped') {
-                db().query('UPDATE run SET confinement=? WHERE id=?')
-                  .run(JSON.stringify({ marker: 'root' }), fixture.id)
-                db().query('UPDATE run SET confinement=? WHERE id=?')
-                  .run(JSON.stringify({ marker: 'turn' }), turn)
-              }
-              const addressed = addressByTurn ? turn : fixture.id
-              const refused = orch('continue', String(addressed), 'resume confinement-blocked chain')
-              expect(refused.code).toBe(1)
-              expect(refused.err).toContain(`run ${addressed} is ${kind}`)
-              expect(refused.err).toContain(rootSnapshot && turnSnapshot
-                ? 'snapshots available: clear restores the pre-confinement outcomes'
-                : 'snapshot missing in this chain: clear uses the available snapshots and moves missing outcomes forward')
-              expect(refused.err).toContain(
-                'invariant: an escaped or confinement-unverified chain is not resumed until the classification is cleared',
-              )
-              const remedy = `orch confinement clear ${addressed} --writer TEXT --note TEXT`
-              expect(refused.err).toContain(`cleared by: ${remedy}`)
-
-              // Execute the named remedy, replacing only its documented placeholders.
-              const cleared = orch(
-                'confinement', 'clear', String(addressed), '--writer', 'operator', '--note', 'known edit',
-              )
-              expect(cleared.code, cleared.err).toBe(0)
-              expect(db().query(
-                `SELECT COUNT(*) n FROM run WHERE (id=? OR parent_run_id=?)
-                  AND failure_kind IN ('escaped','confinement_unverified')`,
-              ).get(fixture.id, fixture.id)).toEqual({ n: 0 })
-              expect(fixture.audit().transitions).toEqual([
-                { runId: fixture.id, mode: rootSnapshot ? 'restored' : 'forward' },
-                { runId: turn, mode: turnSnapshot ? 'restored' : 'forward' },
-              ])
-              expect(fixture.audit().priorOutcomes).toEqual([
-                { runId: fixture.id, failureKind: kind, error: 'confinement block' },
-                { runId: turn, failureKind: kind, error: 'confinement block' },
-              ])
-              const rootAfter = db().query(
-                'SELECT status,error,pre_confinement,confinement FROM run WHERE id=?',
-              ).get(fixture.id) as {
-                status: string; error: string | null; pre_confinement: string; confinement: string | null
-              }
-              expect(rootAfter.status).toBe(turnSnapshot ? 'ok' : 'failed')
-              expect(rootAfter.error).toBe(turnSnapshot ? null
-                : 'confinement cleared forward by operator: known edit; pre-confinement outcome unavailable')
-              expect(JSON.parse(rootAfter.pre_confinement).clearMode)
-                .toBe(turnSnapshot ? 'restored' : 'forward')
-              expect(rootAfter.confinement).toBe(kind === 'escaped'
-                ? JSON.stringify({ marker: 'turn' })
-                : null)
-
-              const resumed = orchInput(
-                ['continue', String(fixture.id), 'resume cleared chain'], undefined,
-                { ORCH_EXEC_PATH: '/usr/bin/true' },
-              )
-              expect(resumed.code, resumed.err).toBe(0)
-              expect(Number(resumed.out.trim())).toBeGreaterThan(turn)
-            } finally { rmSync(fixture.repo, { recursive: true, force: true }) }
-          }
+    // Four pairwise cases per kind cover both addressing forms and every
+    // root/latest snapshot state without paying for their 16-case Cartesian
+    // product. Adding a case means remeasuring the timeout documented below.
+    const cases = (['escaped', 'confinement_unverified'] as const).flatMap((kind) => [
+      { kind, rootSnapshot: true, turnSnapshot: true, addressByTurn: false },
+      { kind, rootSnapshot: false, turnSnapshot: true, addressByTurn: true },
+      { kind, rootSnapshot: true, turnSnapshot: false, addressByTurn: false },
+      { kind, rootSnapshot: false, turnSnapshot: false, addressByTurn: true },
+    ])
+    for (const { kind, rootSnapshot, turnSnapshot, addressByTurn } of cases) {
+      const fixture = confinementArtifact(kind)
+      try {
+        const turn = addConfinementTurn(fixture, kind)
+        if (!rootSnapshot) {
+          db().query('UPDATE run SET pre_confinement=NULL WHERE id=?').run(fixture.id)
         }
-      }
+        if (!turnSnapshot) {
+          db().query('UPDATE run SET pre_confinement=NULL WHERE id=?').run(turn)
+        }
+        if (kind === 'escaped') {
+          db().query('UPDATE run SET confinement=? WHERE id=?')
+            .run(JSON.stringify({ marker: 'root' }), fixture.id)
+          db().query('UPDATE run SET confinement=? WHERE id=?')
+            .run(JSON.stringify({ marker: 'turn' }), turn)
+        }
+        const addressed = addressByTurn ? turn : fixture.id
+        const refused = orch('continue', String(addressed), 'resume confinement-blocked chain')
+        expect(refused.code).toBe(1)
+        expect(refused.err).toContain(`run ${addressed} is ${kind}`)
+        expect(refused.err).toContain(rootSnapshot && turnSnapshot
+          ? 'snapshots available: clear restores the pre-confinement outcomes'
+          : 'snapshot missing in this chain: clear uses the available snapshots and moves missing outcomes forward')
+        expect(refused.err).toContain(
+          'invariant: an escaped or confinement-unverified chain is not resumed until the classification is cleared',
+        )
+        const remedy = `orch confinement clear ${addressed} --writer TEXT --note TEXT`
+        expect(refused.err).toContain(`cleared by: ${remedy}`)
+
+        // Execute the named remedy, replacing only its documented placeholders.
+        const cleared = orch(
+          'confinement', 'clear', String(addressed), '--writer', 'operator', '--note', 'known edit',
+        )
+        expect(cleared.code, cleared.err).toBe(0)
+        expect(db().query(
+          `SELECT COUNT(*) n FROM run WHERE (id=? OR parent_run_id=?)
+            AND failure_kind IN ('escaped','confinement_unverified')`,
+        ).get(fixture.id, fixture.id)).toEqual({ n: 0 })
+        expect(fixture.audit().transitions).toEqual([
+          { runId: fixture.id, mode: rootSnapshot ? 'restored' : 'forward' },
+          { runId: turn, mode: turnSnapshot ? 'restored' : 'forward' },
+        ])
+        expect(fixture.audit().priorOutcomes).toEqual([
+          { runId: fixture.id, failureKind: kind, error: 'confinement block' },
+          { runId: turn, failureKind: kind, error: 'confinement block' },
+        ])
+        const rootAfter = db().query(
+          'SELECT status,error,pre_confinement,confinement FROM run WHERE id=?',
+        ).get(fixture.id) as {
+          status: string; error: string | null; pre_confinement: string; confinement: string | null
+        }
+        expect(rootAfter.status).toBe(turnSnapshot ? 'ok' : 'failed')
+        expect(rootAfter.error).toBe(turnSnapshot ? null
+          : 'confinement cleared forward by operator: known edit; pre-confinement outcome unavailable')
+        expect(JSON.parse(rootAfter.pre_confinement).clearMode)
+          .toBe(turnSnapshot ? 'restored' : 'forward')
+        expect(rootAfter.confinement).toBe(kind === 'escaped'
+          ? JSON.stringify({ marker: 'turn' })
+          : null)
+
+        const resumed = orchInput(
+          ['continue', String(fixture.id), 'resume cleared chain'], undefined,
+          { ORCH_EXEC_PATH: '/usr/bin/true' },
+        )
+        expect(resumed.code, resumed.err).toBe(0)
+        expect(Number(resumed.out.trim())).toBeGreaterThan(turn)
+      } finally { rmSync(fixture.repo, { recursive: true, force: true }) }
     }
+  // Measured here after reducing to eight cases: 4,873ms, 5,145ms, 4,673ms, 5,315ms.
+  // The 20s bound leaves 3.7x margin over the 5,315ms worst case.
   }, 20_000)
 
   test('confinement clear records a missing worktree block and landing names its recovery', () => {
