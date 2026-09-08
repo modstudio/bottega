@@ -22,7 +22,9 @@ import {
 import { pick } from './route.ts'
 import {
   db, nowIso, DB_PATH, sessionId, resolveRootFromLastTurn, tryWriteContention, writableDb, writeTransaction,
+  enableSchemaReload,
 } from './db.ts'
+import { CONNECTION_SCHEMA_INVARIANT } from './migrations.ts'
 import {
   createWorktree, createWithTool, createReadOnlyWorktree, createReadOnlyWithTool,
   toolFor, changesIn, repoRootOf, resolveBase, resolveReadOnlyBase, worktreeGitDir,
@@ -680,12 +682,6 @@ export function preflight(
       `this project's worktree create command has no branch template.\n` +
       `Set the worktree branch key with:\n` +
       `  orch project set ${project!.name} --settings '{"worktree":{"branch":"<template>"}}'`,
-    )
-  }
-  if (writesJob && baseRef && tool?.create && !createHasPlaceholder(tool.create, 'base')) {
-    problems.push(
-      `project ${project!.name} cannot honour --base because its worktree create template ` +
-      `${JSON.stringify(tool.create)} has no {base} slot`,
     )
   }
   if (writesJob && tool?.branch?.includes('{key}') && !key) {
@@ -1547,6 +1543,92 @@ export function declaredDeliverablesPath(id: number, runsDir = RUNS_DIR): string
   return join(runsDir, String(id), 'deliverables.json')
 }
 
+export function runTerminalResultPath(id: number, runsDir = RUNS_DIR): string {
+  return join(runsDir, String(id), 'result.json')
+}
+
+export function runTerminalReplyPath(id: number, runsDir = RUNS_DIR): string {
+  return join(runsDir, String(id), 'reply.txt')
+}
+
+export type TerminalSnapshot = {
+  status: string
+  error: string | null
+  failureKind: string | null
+  output: string
+  outputPath: string
+  promptPath: string
+  exitCode: number | null
+  latencyMs: number
+  vendorTokens: number | null
+  vendorCostUsd: number | null
+  model: string | null
+  vendorSession: string | null
+  preConfinement: string | null
+  filesChanged: number | null
+  changedPaths: string | null
+  linesAdded: number | null
+  linesRemoved: number | null
+  testsRan: number | null
+  testsPassed: number | null
+  deviations: number | null
+  escalations: number | null
+}
+
+export function persistTerminalSnapshot(id: number, snapshot: TerminalSnapshot): void {
+  mkdirSync(join(RUNS_DIR, String(id)), { recursive: true })
+  writeFileSync(runTerminalReplyPath(id), snapshot.output)
+  writeFileSync(runTerminalResultPath(id), JSON.stringify(snapshot))
+}
+
+export function readTerminalSnapshot(id: number): TerminalSnapshot | null {
+  const path = runTerminalResultPath(id)
+  if (!existsSync(path)) return null
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as TerminalSnapshot
+  } catch {
+    return null
+  }
+}
+
+/** Record a terminal row from the run directory after a schema-reload failure. */
+export function reconcileRun(id: number): string {
+  writableDb()
+  const snapshot = readTerminalSnapshot(id)
+  if (!snapshot) {
+    throw new Error(
+      `run ${id} has no persisted terminal snapshot\n` +
+      `invariant: ${CONNECTION_SCHEMA_INVARIANT}\n` +
+      `cleared by: the worker must persist reply.txt and result.json before the row write`,
+    )
+  }
+  const row = db().query('SELECT id, unreconciled, status FROM run WHERE id=?').get(id) as
+    { id: number; unreconciled: number; status: string } | null
+  if (!row) throw new Error(`no run ${id}`)
+  writeTransaction(() => {
+    db().query(
+      `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
+                      vendor_tokens=?, vendor_cost_usd=?, model=COALESCE(?, model),
+                      status=?, error=?, failure_kind=?, vendor_session=COALESCE(?, vendor_session),
+                      pre_confinement=?, unreconciled=0,
+                      files_changed=?, changed_paths=?, lines_added=?, lines_removed=?,
+                      tests_ran=?, tests_passed=?, deviations=?, escalations=?
+        WHERE id=?`,
+    ).run(
+      snapshot.latencyMs, snapshot.exitCode,
+      new TextEncoder().encode(snapshot.output).byteLength,
+      snapshot.outputPath, snapshot.promptPath,
+      snapshot.vendorTokens, snapshot.vendorCostUsd, snapshot.model,
+      snapshot.status, snapshot.error, snapshot.failureKind, snapshot.vendorSession,
+      snapshot.preConfinement,
+      snapshot.filesChanged, snapshot.changedPaths, snapshot.linesAdded, snapshot.linesRemoved,
+      snapshot.testsRan, snapshot.testsPassed, snapshot.deviations, snapshot.escalations,
+      id,
+    )
+  })
+  return `reconciled run ${id} as ${snapshot.status}`
+}
+
 export function listRunArtifacts(id: number, runsDir = RUNS_DIR): string[] {
   const dir = runArtifactsDir(id, runsDir)
   if (!existsSync(dir)) return []
@@ -1620,7 +1702,7 @@ function reclaimTerminalTree(runId: number, worktree: Worktree): void {
     const identity = { session: sessionId(), what: `terminal reclaim ${runId}` }
     withWorktreeLease(worktree.repoRoot, worktree.path, identity, () => {
       withCleanupLock(worktree.repoRoot, identity, () => {
-        const result = removeFor(worktree, worktree.repoRoot, true, false, runId)
+        const result = removeFor(worktree, worktree.repoRoot, true, false, runId, false)
         if (!result.removed) {
           console.error(`orch: could not reclaim worktree for run ${runId}: ${result.detail}`)
           return
@@ -1740,6 +1822,7 @@ export async function run(opts: {
   resolvedReviewTarget?: { branch: string; commit: string; base: string }
 }): Promise<RunResult> {
   writableDb()
+  enableSchemaReload(() => {})
 
   const requestedJob = job(opts.job)
   const inheritedDispatch = opts.resume ? readDispatchState(opts.resume.parent) : null
@@ -1767,8 +1850,8 @@ export async function run(opts: {
   // ref is refused before a run row or worktree exists.
   if (opts.base) {
     const internalRepositoryFailover = opts.automaticFailover && requestedJob.needs.readsRepo
-    if (opts.job !== 'implement' && opts.job !== 'fix' && !internalRepositoryFailover) {
-      throw new Error('--base is only valid for the implement and fix jobs')
+    if (opts.job !== 'implement' && opts.job !== 'fix' && opts.job !== 'land' && !internalRepositoryFailover) {
+      throw new Error('--base is only valid for the implement, fix and land jobs')
     }
   }
   const readOnlyBase = repoJob && !writesJob && !opts.resume?.worktree
@@ -2257,9 +2340,10 @@ export async function run(opts: {
         if (!repoRoot) throw new Error(`not a git repository: ${callerCwd}`)
         const recordWorktree = (created: Worktree) => {
           const result = db().query(
-            'UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=?, worktree_source=? WHERE id=?',
+            'UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=?, worktree_source=? WHERE id=?',
           ).run(
             created.path, created.path, reviewTarget?.branch ?? (created.branch || null),
+            created.mintedBranch ?? null,
             coverageBase ?? created.base, created.source ?? null, claim.id,
           )
           if (result.changes !== 1) throw new Error(`run ${claim.id} could not record its worktree`)
@@ -2364,11 +2448,12 @@ export async function run(opts: {
           }
         }
         db().query(
-          `UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=?, worktree_source=?, carry_happened=?,
+          `UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=?, worktree_source=?, carry_happened=?,
                           carry_base_commit=?, carry_tracked_paths=?, carry_untracked_paths=? WHERE id=?`,
         ).run(
           inheritedWorktree.path, inheritedWorktree.path,
           reviewTarget?.branch ?? (inheritedWorktree.branch || null),
+          inheritedWorktree.mintedBranch ?? null,
           coverageBase ?? inheritedWorktree.base, inheritedWorktree.source ?? null,
           carried ? (carried.tracked.length + carried.untracked.length > 0 ? 1 : 0) : null,
           carried?.base ?? null,
@@ -3147,14 +3232,32 @@ export async function run(opts: {
       console.error(`orch: could not record blockers for run ${claim.id}: ${e}`)
     }
 
-    writeTransaction(() => {
+    const terminalSnapshot: TerminalSnapshot = {
+      status, error, failureKind, output, outputPath: outPath, promptPath,
+      exitCode, latencyMs: Date.now() - started,
+      vendorTokens, vendorCostUsd: costUsd, model: effectiveModel,
+      vendorSession: resolvedSession, preConfinement,
+      filesChanged: writesJob ? changes?.files.length ?? null : null,
+      changedPaths: writesJob && changes ? JSON.stringify(changes.files) : null,
+      linesAdded: writesJob ? changes?.insertions ?? null : null,
+      linesRemoved: writesJob ? changes?.deletions ?? null : null,
+      testsRan: writesJob ? (contract?.tests ? (contract.tests.ran ? 1 : 0) : null) : null,
+      testsPassed: writesJob
+        ? (contract?.tests?.passed === undefined ? null : contract.tests.passed ? 1 : 0)
+        : null,
+      deviations: writesJob ? contract?.deviations?.length ?? null : null,
+      escalations: writesJob ? acceptedQuestions.length : null,
+    }
+    persistTerminalSnapshot(claim.id, terminalSnapshot)
+    const writeTerminalRow = () => writeTransaction(() => {
       db().query(
         `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
                         vendor_tokens=?, vendor_cost_usd=?, model=COALESCE(?, model),
                         status=CASE WHEN status='stopped' THEN status ELSE ? END,
                         error=CASE WHEN status='stopped' THEN error ELSE ? END,
                         failure_kind=CASE WHEN status='stopped' THEN failure_kind ELSE ? END,
-                        vendor_session=COALESCE(?, vendor_session), pre_confinement=? WHERE id=?`,
+                        vendor_session=COALESCE(?, vendor_session), pre_confinement=?,
+                        unreconciled=0 WHERE id=?`,
       ).run(
         Date.now() - started, exitCode, new TextEncoder().encode(output).byteLength, outPath, promptPath,
         vendorTokens, costUsd, effectiveModel, status, error, failureKind,
@@ -3228,9 +3331,32 @@ export async function run(opts: {
         recordReview(opts.resume?.parent ?? claim.id, parsedReview)
       }
     })
+    try {
+      writeTerminalRow()
+    } catch (terminalError) {
+      const detail = terminalError instanceof Error ? terminalError.message : String(terminalError)
+      try {
+        writeTerminalRow()
+      } catch (retryError) {
+        const retry = retryError instanceof Error ? retryError.message : String(retryError)
+        try {
+          db().query(
+            `UPDATE run SET unreconciled=1, error=? WHERE id=? AND status IN ('running','asking')`,
+          ).run(
+            `unreconciled: reply at ${runTerminalReplyPath(claim.id)}; ` +
+            `cleared by: orch reconcile ${claim.id}  (${retry})`,
+            claim.id,
+          )
+        } catch { /* the snapshot is on disk; the row write is what failed */ }
+        console.error(`orch: run ${claim.id} left unreconciled: ${detail}`)
+      }
+    }
     const recorded = db().query(
       'SELECT failure_kind FROM run WHERE id=?',
-    ).get(claim.id) as { failure_kind: string | null }
+    ).get(claim.id) as { failure_kind: string | null } | null
+    if (!recorded) {
+      throw new Error(`run ${claim.id} disappeared before terminalisation`)
+    }
     if (recorded.failure_kind === 'quota' || recorded.failure_kind === 'timeout') {
       tryWriteContention({
         resourceKind: 'vendor', resourceKey: name,

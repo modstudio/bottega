@@ -2,6 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync
 import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { spawn } from 'node:child_process'
 import { db, liveRunCount, migrateDatabase, nowIso, sessionId, tryWriteContention, writableDb, writeTransaction, ROOT } from './db.ts'
 import { reviewInvalidationsSince } from './contention.ts'
 import { projectAt, projectByName, type Project } from './projects.ts'
@@ -12,6 +13,7 @@ import {
 } from './worktree.ts'
 
 const LANDING_LOCK = 'landing'
+const QUEUE_LOCK = 'queue'
 const LANDING_LOCK_TIMEOUT_MS = 5 * 60_000
 const GATE_FAILURE_TAIL_LINES = 40
 const INVARIANT_FAILED_LANDING = 'A failed landing leaves the branch worktree as it found it.'
@@ -1149,7 +1151,7 @@ function performLand(
   branch: string,
   options: {
     timeoutMs?: number; message?: string; unreviewed?: string; runId?: number
-    queue?: boolean; landingId?: number
+    queue?: boolean; landingId?: number; strandLive?: string
   } = {},
 ): { tip: string; trunkBefore: string; project: Project; repoRoot: string } {
   writableDb()
@@ -1193,22 +1195,7 @@ function performLand(
       `git show-ref --verify refs/heads/${trunk}`,
     )
   }
-  const worktree = worktreesForBranch(repoRoot, branch)[0] ?? null
-  if (!worktree || !existsSync(worktree)) {
-    const recordedBlock = recordedLandingBlock(project.name, branch, options.runId)
-    if (recordedBlock && !existsSync(recordedBlock.worktree)) {
-      throw namedError(
-        `refusing to land ${branch}: ${recordedBlock.detail}`,
-        recordedBlock.invariant,
-        recordedBlock.command,
-      )
-    }
-    throw namedError(
-      `branch ${branch} has no worktree and cannot be landed`,
-      INVARIANT_LOCK_SCOPE,
-      `git worktree add .claude/worktrees/${branch} ${branch}`,
-    )
-  }
+  const worktree = ensureLandingWorktree(repoRoot, branch, options.runId)
   if (branch === trunk || gitOk(repoRoot, [
     'merge-base', '--is-ancestor', `refs/heads/${branch}`, `refs/heads/${trunk}`,
   ])) {
@@ -1250,6 +1237,10 @@ function performLand(
           const authorization = authorizeLanding(
             project, repoRoot, worktree, branch, tip, gatedTrunk,
             options.runId, options.unreviewed,
+          )
+          refuseOrWaitLiveRuns(
+            project, repoRoot, worktree, gatedTrunk, tip, options.strandLive, options.timeoutMs ?? timeoutMs,
+            options.landingId ?? null,
           )
           fastForward(repoRoot, worktree, branch, trunk, tip, gatedTrunk, guard)
           recordLandingOverride(authorization.override)
@@ -1367,58 +1358,429 @@ function installLandedPackages(project: Project, trunkBefore: string, tip: strin
   }
 }
 
-export function land(
-  cwd: string,
-  branch: string,
-  options: { timeoutMs?: number; message?: string; unreviewed?: string; runId?: number; queue?: boolean } = {},
-): string {
-  writableDb()
-  const project = registeredProject(cwd).project
-  const landing = db().query(
-    `INSERT INTO landing (project,project_id,branch,status,session_id,started_at)
-     VALUES (?,?,?,'started',?,?) RETURNING id`,
-  ).get(project.name, project.id, branch, sessionId(), nowIso()) as { id: number }
-  let landed = false
+type LandingRow = {
+  id: number; project: string; branch: string; status: string
+  path_set: string | null; steps: string | null; session_id: string | null
+  requested_at: string | null; causing_landing_id: number | null
+  tip: string | null; error: string | null
+}
+
+type LandingStep = {
+  name: string; duration_ms?: number
+  unreviewed?: string; strandLive?: string; message?: string
+}
+
+function parseSteps(raw: string | null): LandingStep[] {
+  if (!raw) return []
   try {
-    const result = performLand(cwd, branch, { ...options, landingId: landing.id })
-    landed = true
-    writeTransaction(() => {
-      db().query(
-        `UPDATE landing SET tip=?,trunk_before=?,status='landed',finished_at=? WHERE id=?`,
-      ).run(result.tip, result.trunkBefore, nowIso(), landing.id)
-    })
-    recordReviewInvalidations(
-      result.project, result.repoRoot, result.tip, branch, landing.id,
+    const parsed = JSON.parse(raw) as unknown
+    return Array.isArray(parsed) ? parsed as LandingStep[] : []
+  } catch { return [] }
+}
+
+function appendStep(id: number, name: string, durationMs: number): void {
+  const row = db().query('SELECT steps FROM landing WHERE id=?').get(id) as { steps: string | null } | null
+  const steps = [...parseSteps(row?.steps ?? null), { name, duration_ms: durationMs }]
+  db().query('UPDATE landing SET steps=? WHERE id=?').run(JSON.stringify(steps), id)
+}
+
+function flagsOf(row: LandingRow): { unreviewed?: string; strandLive?: string; message?: string } {
+  const flags = parseSteps(row.steps).find((step) => step.name === '_flags')
+  if (!flags) return {}
+  return {
+    ...(flags.unreviewed ? { unreviewed: flags.unreviewed } : {}),
+    ...(flags.strandLive ? { strandLive: flags.strandLive } : {}),
+    ...(flags.message ? { message: flags.message } : {}),
+  }
+}
+
+function pathSetOf(repoRoot: string, trunk: string, branch: string): string[] {
+  try {
+    return git(repoRoot, ['diff', '--name-only', `${trunk}...${branch}`]).split('\n').filter(Boolean)
+  } catch { return [] }
+}
+
+function pathsOverlap(a: string[], b: string[]): boolean {
+  const other = new Set(b)
+  return a.some((path) => other.has(path))
+}
+
+function queuedLandings(project: string): LandingRow[] {
+  return db().query(
+    `SELECT id, project, branch, status, path_set, steps, session_id, requested_at,
+            causing_landing_id, tip, error
+       FROM landing WHERE project=? AND status='queued' ORDER BY id`,
+  ).all(project) as LandingRow[]
+}
+
+function ensureLandingWorktree(repoRoot: string, branch: string, runId?: number): string {
+  const existing = worktreesForBranch(repoRoot, branch)[0]
+  if (existing && existsSync(existing)) return existing
+  const recordedBlock = recordedLandingBlock(
+    registeredProject(repoRoot).project.name, branch, runId,
+  )
+  if (recordedBlock && !existsSync(recordedBlock.worktree)) {
+    throw namedError(
+      `refusing to land ${branch}: ${recordedBlock.detail}`,
+      recordedBlock.invariant,
+      recordedBlock.command,
     )
-    try {
-      installLandedPackages(result.project, result.trunkBefore, result.tip)
-    } catch (error) {
-      db().query(`UPDATE landing SET status='install_failed',error=?,finished_at=? WHERE id=?`)
-        .run(error instanceof Error ? error.message : String(error), nowIso(), landing.id)
-      throw error
-    }
-    try {
-      migrateLandedJournals(result.project, result.trunkBefore, result.tip)
-    } catch (error) {
-      db().query(`UPDATE landing SET error=?,finished_at=? WHERE id=?`)
-        .run(error instanceof Error ? error.message : String(error), nowIso(), landing.id)
-      throw error
-    }
-    return result.tip
+  }
+  const path = join(repoRoot, '.claude', 'worktrees', `orch-land-${branch.replace(/[^A-Za-z0-9._-]+/g, '-')}`)
+  mkdirSync(dirname(path), { recursive: true })
+  if (existsSync(path)) gitOk(repoRoot, ['worktree', 'remove', '--force', path])
+  git(repoRoot, ['worktree', 'add', path, branch])
+  return path
+}
+
+function liveRunIds(): { id: number; job: string }[] {
+  return db().query(
+    `SELECT id, job FROM run WHERE status IN ('running','asking') ORDER BY id`,
+  ).all() as { id: number; job: string }[]
+}
+
+function refuseOrWaitLiveRuns(
+  project: Project, repoRoot: string, worktree: string, from: string, tip: string,
+  strandLive: string | undefined, timeoutMs: number, landingId: number | null,
+): void {
+  const paths = git(worktree, ['diff', '--name-only', `${from}..${tip}`]).split('\n').filter(Boolean)
+  if (!diffCarriesMigrationJournal(paths)) return
+  const live = liveRunIds()
+  if (!live.length) return
+  for (const run of live) {
+    tryWriteContention({
+      resourceKind: 'store', resourceKey: String(run.id), eventKind: 'invalidation',
+      cause: `journal landing would strand run ${run.id} (${run.job})`,
+      runId: run.id, landingId,
+    })
+  }
+  const names = live.map((run) => `${run.id} (${run.job})`).join(', ')
+  console.log(`journal landing would strand live runs: ${names}`)
+  if (strandLive) {
+    console.log(`proceeding with --strand-live: ${strandLive}`)
+    return
+  }
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline && liveRunIds().length) {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200)
+  }
+  const remaining = liveRunIds()
+  if (!remaining.length) return
+  throw namedError(
+    `refusing to land: journal diff would strand live runs ${remaining.map((run) => run.id).join(', ')}`,
+    'A landing whose diff carries a journal entry does not silently strand in-flight runs.',
+    `wait for those runs to terminalise, or orch land <branch> --strand-live <reason>`,
+  )
+}
+
+function recordOverlapInvalidations(
+  project: Project, repoRoot: string, landedPaths: string[], landedBranch: string, landingId: number,
+): void {
+  const queued = db().query(
+    `SELECT id, branch, path_set FROM landing
+      WHERE project=? AND status='queued' AND id!=? AND branch!=?`,
+  ).all(project.name, landingId, landedBranch) as { id: number; branch: string; path_set: string | null }[]
+  for (const row of queued) {
+    const paths = row.path_set ? JSON.parse(row.path_set) as string[] : []
+    if (!pathsOverlap(landedPaths, paths)) continue
+    db().query(
+      `UPDATE landing SET status='rebase_required', causing_landing_id=?, error=? WHERE id=?`,
+    ).run(landingId, `path set overlaps landing ${landingId}`, row.id)
+    tryWriteContention({
+      resourceKind: 'trunk', resourceKey: row.branch, eventKind: 'invalidation',
+      cause: `path overlap with landing ${landingId}`, landingId,
+    })
+    console.log(`rebase required for ${row.branch} (overlaps landing ${landingId})`)
+  }
+  recordReviewInvalidations(project, repoRoot, git(repoRoot, ['rev-parse', 'HEAD']), landedBranch, landingId)
+}
+
+function finishLanded(
+  landingId: number, cwd: string, branch: string,
+  result: { tip: string; trunkBefore: string; project: Project; repoRoot: string },
+  options: { timeoutMs?: number; message?: string; unreviewed?: string; runId?: number; strandLive?: string },
+): string {
+  writeTransaction(() => {
+    db().query(
+      `UPDATE landing SET tip=?,trunk_before=?,status='landed',finished_at=? WHERE id=?`,
+    ).run(result.tip, result.trunkBefore, nowIso(), landingId)
+  })
+  const landedPaths = git(result.repoRoot, ['diff', '--name-only', `${result.trunkBefore}..${result.tip}`])
+    .split('\n').filter(Boolean)
+  recordOverlapInvalidations(result.project, result.repoRoot, landedPaths, branch, landingId)
+  try {
+    const started = Date.now()
+    installLandedPackages(result.project, result.trunkBefore, result.tip)
+    appendStep(landingId, 'install', Date.now() - started)
   } catch (error) {
-    if (!landed) {
-      const message = error instanceof Error ? error.message : String(error)
+    db().query(`UPDATE landing SET status='install_failed',error=?,finished_at=? WHERE id=?`)
+      .run(error instanceof Error ? error.message : String(error), nowIso(), landingId)
+    throw error
+  }
+  try {
+    const started = Date.now()
+    migrateLandedJournals(result.project, result.trunkBefore, result.tip)
+    appendStep(landingId, 'migrate', Date.now() - started)
+  } catch (error) {
+    db().query(`UPDATE landing SET error=?,finished_at=? WHERE id=?`)
+      .run(error instanceof Error ? error.message : String(error), nowIso(), landingId)
+    throw error
+  }
+  return result.tip
+}
+
+function processOneLanding(
+  cwd: string, row: LandingRow,
+  options: { timeoutMs?: number; message?: string; unreviewed?: string; runId?: number; strandLive?: string },
+): void {
+  db().query(`UPDATE landing SET status='running' WHERE id=?`).run(row.id)
+  const started = Date.now()
+  const flags = flagsOf(row)
+  try {
+    const result = performLand(cwd, row.branch, {
+      ...options, ...flags, landingId: row.id,
+    })
+    appendStep(row.id, 'rebase-gate-ff', Date.now() - started)
+    finishLanded(row.id, cwd, row.branch, result, options)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const current = db().query('SELECT status FROM landing WHERE id=?').get(row.id) as { status: string } | null
+    if (current && current.status !== 'landed' && current.status !== 'install_failed') {
       writeTransaction(() => {
         db().query(`UPDATE landing SET status='refused',error=?,finished_at=? WHERE id=?`)
-          .run(message, nowIso(), landing.id)
+          .run(message, nowIso(), row.id)
       })
       tryWriteContention({
-        resourceKind: 'trunk', resourceKey: project.name, eventKind: 'refusal',
-        cause: message, landingId: landing.id,
+        resourceKind: 'trunk', resourceKey: row.project, eventKind: 'refusal',
+        cause: message, landingId: row.id,
       })
     }
     throw error
   }
+}
+
+function rebaseBranchesOntoTrunk(
+  repoRoot: string, worktree: string, trunkOid: string, branches: string[],
+): string {
+  git(worktree, ['checkout', '--detach', trunkOid])
+  for (const branch of branches) {
+    const mergeBase = git(repoRoot, ['merge-base', trunkOid, `refs/heads/${branch}`])
+    const commits = git(repoRoot, ['rev-list', '--reverse', `${mergeBase}..refs/heads/${branch}`])
+      .split('\n').filter(Boolean)
+    for (const commit of commits) {
+      const picked = Bun.spawnSync(['git', 'cherry-pick', commit], {
+        cwd: worktree, env: scrubbedGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (picked.exitCode !== 0) {
+        Bun.spawnSync(['git', 'cherry-pick', '--abort'], {
+          cwd: worktree, env: scrubbedGitEnv(), stdout: 'pipe', stderr: 'pipe',
+        })
+        throw namedError(
+          `merge-group cherry-pick of ${commit} from ${branch} failed: ${picked.stderr.toString().trim()}`,
+          INVARIANT_FAILED_LANDING,
+          `git -C ${shellQuote(worktree)} status`,
+        )
+      }
+    }
+  }
+  return git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'])
+}
+
+function processMergeGroup(
+  cwd: string, rows: LandingRow[],
+  options: { timeoutMs?: number; unreviewed?: string; strandLive?: string },
+): void {
+  if (rows.length === 1) {
+    processOneLanding(cwd, rows[0]!, options)
+    return
+  }
+  const { project, repoRoot } = registeredProject(cwd)
+  const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
+  const trunkOid = git(repoRoot, ['rev-parse', `refs/heads/${trunk}^{commit}`])
+  const groupBranch = `orch/land-group-${rows[0]!.id}`
+  const groupPath = join(repoRoot, '.claude', 'worktrees', groupBranch.replace(/\//g, '-'))
+  mkdirSync(dirname(groupPath), { recursive: true })
+  if (existsSync(groupPath)) gitOk(repoRoot, ['worktree', 'remove', '--force', groupPath])
+  git(repoRoot, ['worktree', 'add', '-b', groupBranch, groupPath, trunkOid])
+  const cleanup = () => {
+    gitOk(repoRoot, ['worktree', 'remove', '--force', groupPath])
+    gitOk(repoRoot, ['branch', '-D', groupBranch])
+    gitOk(repoRoot, ['worktree', 'prune'])
+  }
+  try {
+    const started = Date.now()
+    const tip = rebaseBranchesOntoTrunk(repoRoot, groupPath, trunkOid, rows.map((row) => row.branch))
+    git(groupPath, ['checkout', '-B', groupBranch, tip])
+    const guard = prepareSharedRefGuard(groupPath)
+    try {
+      runGate(project, groupPath, groupBranch, guard)
+    } catch (error) {
+      cleanup()
+      bisectMergeGroup(cwd, rows, options, error)
+      return
+    }
+    appendStep(rows[0]!.id, 'merge-group-gate', Date.now() - started)
+    withProjectLock(repoRoot, LANDING_LOCK, { session: sessionId(), what: `group ${rows[0]!.id}` }, () => {
+      verifyGuardBeforeFastForward(repoRoot)
+      assertMainCheckoutOnTrunk(repoRoot, trunk)
+      const current = git(repoRoot, ['rev-parse', `refs/heads/${trunk}^{commit}`])
+      if (current !== trunkOid) {
+        throw namedError(
+          `trunk moved during merge-group gate`,
+          INVARIANT_LOCK_SCOPE,
+          `orch land --drain`,
+        )
+      }
+      refuseOrWaitLiveRuns(
+        project, repoRoot, groupPath, trunkOid, tip, options.strandLive,
+        options.timeoutMs ?? LANDING_LOCK_TIMEOUT_MS, rows[0]!.id,
+      )
+      git(repoRoot, ['update-ref', `refs/heads/${trunk}`, tip, trunkOid])
+    }, options.timeoutMs ?? LANDING_LOCK_TIMEOUT_MS)
+    for (const row of rows) {
+      writeTransaction(() => {
+        db().query(
+          `UPDATE landing SET tip=?,trunk_before=?,status='landed',finished_at=? WHERE id=?`,
+        ).run(tip, trunkOid, nowIso(), row.id)
+      })
+      const landedPaths = git(repoRoot, ['diff', '--name-only', `${trunkOid}..${tip}`]).split('\n').filter(Boolean)
+      recordOverlapInvalidations(project, repoRoot, landedPaths, row.branch, row.id)
+    }
+    console.log(`landed merge-group of ${rows.map((row) => row.branch).join(', ')} at ${tip}`)
+  } finally {
+    cleanup()
+  }
+}
+
+function bisectMergeGroup(
+  cwd: string, rows: LandingRow[],
+  options: { timeoutMs?: number; unreviewed?: string; strandLive?: string },
+  error: unknown,
+): void {
+  if (rows.length === 1) {
+    const message = error instanceof Error ? error.message : String(error)
+    db().query(`UPDATE landing SET status='refused',error=?,finished_at=? WHERE id=?`)
+      .run(message, nowIso(), rows[0]!.id)
+    tryWriteContention({
+      resourceKind: 'trunk', resourceKey: rows[0]!.project, eventKind: 'refusal',
+      cause: message, landingId: rows[0]!.id,
+    })
+    console.log(`merge-group isolated culprit ${rows[0]!.branch}`)
+    return
+  }
+  const mid = Math.ceil(rows.length / 2)
+  const left = rows.slice(0, mid)
+  const right = rows.slice(mid)
+  for (const row of right) db().query(`UPDATE landing SET status='queued' WHERE id=? AND status='running'`).run(row.id)
+  try {
+    processMergeGroup(cwd, left, options)
+  } catch (leftError) {
+    bisectMergeGroup(cwd, left, options, leftError)
+    return
+  }
+  try {
+    processMergeGroup(cwd, right, options)
+  } catch (rightError) {
+    bisectMergeGroup(cwd, right, options, rightError)
+  }
+}
+
+function spawnDrain(repoRoot: string): void {
+  const cli = new URL('./cli.ts', import.meta.url).pathname
+  const child = spawn(process.execPath, [cli, 'land', '--drain'], {
+    cwd: repoRoot,
+    env: { ...process.env, ORCH_DEPTH: '0' },
+    detached: true,
+    stdio: 'ignore',
+  })
+  child.unref()
+}
+
+export function drainQueue(
+  cwd: string,
+  options: { timeoutMs?: number; unreviewed?: string; strandLive?: string; untilId?: number } = {},
+): void {
+  writableDb()
+  const { project, repoRoot } = registeredProject(cwd)
+  withProjectLock(repoRoot, QUEUE_LOCK, { session: sessionId(), what: `drain ${project.name}` }, () => {
+    while (true) {
+      if (options.untilId) {
+        const row = db().query('SELECT status FROM landing WHERE id=?').get(options.untilId) as
+          { status: string } | null
+        if (row && !['queued', 'running'].includes(row.status)) return
+      }
+      const queued = queuedLandings(project.name).filter((row) =>
+        gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${row.branch}`]))
+      if (!queued.length) {
+        if (options.untilId) {
+          const row = db().query('SELECT status FROM landing WHERE id=?').get(options.untilId) as
+            { status: string } | null
+          if (row && ['queued', 'running'].includes(row.status)) {
+            throw new Error(`landing ${options.untilId} stuck ${row.status} with an empty queue`)
+          }
+        }
+        return
+      }
+      const group = !options.untilId && queued.length >= 2 ? queued : [queued[0]!]
+      try {
+        if (group.length >= 2) processMergeGroup(cwd, group, options)
+        else processOneLanding(cwd, group[0]!, options)
+      } catch (error) {
+        if (options.untilId) {
+          const row = db().query('SELECT status FROM landing WHERE id=?').get(options.untilId) as
+            { status: string } | null
+          if (row?.status === 'landed' || row?.status === 'install_failed') return
+          if (row?.status === 'refused' || row?.status === 'rebase_required') throw error
+          continue
+        }
+        const message = error instanceof Error ? error.message : String(error)
+        console.error(`orch land --drain: ${message}`)
+      }
+    }
+  }, options.timeoutMs ?? LANDING_LOCK_TIMEOUT_MS)
+}
+
+export function land(
+  cwd: string,
+  branch: string,
+  options: {
+    timeoutMs?: number; message?: string; unreviewed?: string; runId?: number
+    queue?: boolean; wait?: boolean; strandLive?: string
+  } = {},
+): string {
+  writableDb()
+  const { project, repoRoot } = registeredProject(cwd)
+  const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
+  const requestedAt = nowIso()
+  const paths = trunk ? pathSetOf(repoRoot, trunk, branch) : []
+  const landing = db().query(
+    `INSERT INTO landing
+       (project,project_id,branch,status,session_id,started_at,requested_at,path_set,steps)
+     VALUES (?,?,?,'queued',?,?,?,?,?) RETURNING id`,
+  ).get(
+    project.name, project.id, branch, sessionId(), requestedAt, requestedAt,
+    JSON.stringify(paths),
+    JSON.stringify([{
+      name: '_flags',
+      ...(options.unreviewed ? { unreviewed: options.unreviewed } : {}),
+      ...(options.strandLive ? { strandLive: options.strandLive } : {}),
+      ...(options.message ? { message: options.message } : {}),
+    }]),
+  ) as { id: number }
+  const ahead = queuedLandings(project.name).filter((row) => row.id < landing.id).length
+  const position = ahead + 1
+  console.log(`queued ${branch} at position ${position} (landing ${landing.id})`)
+  const wait = options.wait !== false
+  if (!wait) {
+    if (!projectLockState(repoRoot, QUEUE_LOCK).holder) spawnDrain(repoRoot)
+    return `queued ${branch} at position ${position}`
+  }
+  drainQueue(cwd, { ...options, untilId: landing.id })
+  const row = db().query('SELECT status, tip, error FROM landing WHERE id=?').get(landing.id) as
+    { status: string; tip: string | null; error: string | null }
+  if (row.error) throw new Error(row.error)
+  if (row.status === 'landed') return row.tip ?? ''
+  throw new Error(`landing ${landing.id} ${row.status}`)
 }
 
 export function landingReviewCoverage(cwd: string): string {
@@ -1432,14 +1794,31 @@ export function landingReviewCoverage(cwd: string): string {
 export function landingStatus(cwd: string): string {
   const { project, repoRoot } = registeredProject(cwd)
   const state = projectLockState(repoRoot, LANDING_LOCK)
+  const queue = projectLockState(repoRoot, QUEUE_LOCK)
   const age = (since: string) => `${Math.max(0, Math.round((Date.now() - Date.parse(since)) / 1000))}s`
   const holder = state.holder
     ? `held by session ${state.holder.session ?? 'unknown'}, pid ${state.holder.pid}, ` +
       `landing ${state.holder.what}, for ${age(state.holder.since)}`
     : 'free'
+  const queueHolder = queue.holder
+    ? `held by session ${queue.holder.session ?? 'unknown'}, pid ${queue.holder.pid}, ` +
+      `${queue.holder.what}, for ${age(queue.holder.since)}`
+    : 'free'
   const waiters = state.waiters.length
     ? state.waiters.map((w) =>
         `  session ${w.session ?? 'unknown'}, pid ${w.pid}, landing ${w.what}, waiting ${age(w.since)}`).join('\n')
+    : '  none'
+  const queued = db().query(
+    `SELECT id, branch, status, session_id, path_set FROM landing
+      WHERE project=? AND status IN ('queued','running','rebase_required') ORDER BY id`,
+  ).all(project.name) as {
+    id: number; branch: string; status: string; session_id: string | null; path_set: string | null
+  }[]
+  const queueText = queued.length
+    ? queued.map((row) => {
+        const paths = row.path_set ? (JSON.parse(row.path_set) as string[]).join(', ') : '(none)'
+        return `  ${row.status} landing ${row.id} ${row.branch} session ${row.session_id ?? 'unknown'} paths ${paths}`
+      }).join('\n')
     : '  none'
   const postStep = landingsWithPostStepError().filter((row) => row.project === project.name)
     .map((row) => `landed with post-step error\n  ${row.branch}: ${row.error}`)
@@ -1451,6 +1830,7 @@ export function landingStatus(cwd: string): string {
         `  ${row.resourceKey} by landing ${row.landingId}${row.cause ? ` (${row.cause})` : ''}`).join('\n')
     : '  none'
   return `${project.name} landing lock: ${holder}\nwaiters:\n${waiters}` +
+    `\nqueue lock: ${queueHolder}\nqueue:\n${queueText}` +
     (postStep.length ? `\n${postStep.join('\n')}` : '') +
     `\ninvalidated today:\n${invalidationText}`
 }

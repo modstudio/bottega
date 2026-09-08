@@ -71,6 +71,13 @@
       "when": 1788900000003,
       "tag": "0009_run_last_event",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1788900000004,
+      "tag": "0010_landing_queue",
+      "breakpoints": true
     }
   ]
 }

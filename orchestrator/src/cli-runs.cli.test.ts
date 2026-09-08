@@ -1321,7 +1321,7 @@ test('record-only closes the question, marks the chain stranded, and retry resta
     expect(r.err).not.toContain('ENOENT')
   })
 
-  test('an unsupported explicit base is rejected before submit creates a run', () => {
+  test('an explicit base without a {base} slot is not refused at preflight', () => {
     upsertProject({
       name: 'cannot-base', path: process.cwd(),
       settings: {
@@ -1330,17 +1330,12 @@ test('record-only closes the question, marks the chain stranded, and retry resta
         },
       },
     })
-    const before = dispatchArtifacts(process.cwd())
     const r = orch(
       'do', 'implement', '--base', 'HEAD', '--file', '/definitely/not/a/prompt',
     )
     expect(r.code).toBe(1)
-    expect(r.err).toContain(
-      'project cannot-base cannot honour --base because its worktree create template ' +
-      '{"command":"scripts/worktree","args":["create","{branch}"]} has no {base} slot',
-    )
-    expect(r.err).not.toContain('ENOENT')
-    expectNoDispatchArtifacts(process.cwd(), before)
+    expect(r.err).not.toContain('cannot honour --base')
+    expect(r.err).not.toContain('has no {base} slot')
   })
 
   test('non-commit bases are refused before every dispatch artifact', () => {

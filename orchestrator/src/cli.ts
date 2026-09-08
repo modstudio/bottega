@@ -16,7 +16,7 @@ import { createHash, timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
-import { createHasPlaceholder, projectAt, projectByName, projects, renameProject } from './projects.ts'
+import { projectAt, projectByName, projects, renameProject } from './projects.ts'
 import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
 import { collectResult, collectWait, resolveFailover, failoverSummary } from './collect.ts'
 import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
@@ -528,6 +528,7 @@ function requestedMcp(): McpRequest | undefined {
 const VALUE_FLAGS = new Set(['--agent', '--file', '--schema', '--model', '--transport', '--note', '--note-file', '--message', '--unreviewed',
                              '--id', '--job', '--limit', '--port', '--days', '--window', '--timeout', '--scorer',
                              '--seed', '--key', '--repo', '--base', '--review', '--avoid', '--distinct-from', '--label', '--lens', '--deliverable', '--category', '--severity',
+                             '--strand-live',
                              '--reproduced', '--coverage', '--limits', '--overlap', '--writer',
                              '--finding', '--better-than', '--worse-than', '--same-as', '--n',
                              '--scope', '--subject', '--title', '--cwd', '--question', '--excludes', '--slots', '--slots-file',
@@ -538,6 +539,7 @@ type CleanupRow = {
   worktree: string; branch: string | null
   base_commit: string | null
   worktree_source?: 'recipe' | 'git' | 'readonly_recipe' | null
+  minted_branch?: string | null
 }
 
 type BranchOwnerRow = {
@@ -953,9 +955,29 @@ function verifyBranchOwnershipAfterCleanup(
  * orphans the directory, still on disk, no longer named by any run, and
  * nothing left that knows to try again.
  */
+function mintedBranchForCleanup(row: CleanupRow): string | null {
+  if (row.minted_branch) return row.minted_branch
+  try {
+    const found = db().query(
+      `SELECT minted_branch, branch, job FROM run WHERE id=?`,
+    ).get(row.id) as { minted_branch: string | null; branch: string | null; job: string } | null
+    if (found?.minted_branch) return found.minted_branch
+    if (found && ['implement', 'fix', 'land', 'issue-worker'].includes(found.job) && found.branch) {
+      return found.branch
+    }
+    const chained = db().query(
+      `SELECT minted_branch FROM run
+        WHERE minted_branch IS NOT NULL AND (id=? OR parent_run_id=?)
+        ORDER BY id LIMIT 1`,
+    ).get(row.id, row.id) as { minted_branch: string | null } | null
+    return chained?.minted_branch ?? null
+  } catch { return null }
+}
+
 function discardWorktree(
   row: CleanupRow, verb: 'discarded' | 'abandoned', force = false,
   auditAuthority?: RootAuthority,
+  forceBusy = false,
 ): void {
   const preliminarySharers = evidenceOwningWorktreeSharers(row)
   if (preliminarySharers.length) {
@@ -968,30 +990,32 @@ function discardWorktree(
       throw new SharedWorktreeEvidenceError(row.worktree, sharers)
     }
 
+    const minted = mintedBranchForCleanup(row)
     const ownersBefore = evidenceOwningBranchOwners(row, repoRoot)
-    const branchSnapshot = row.branch ? branchTip(repoRoot, row.branch) : null
+    const branchSnapshot = minted ? branchTip(repoRoot, minted) : null
     let protectedBranch: ReturnType<typeof unmergedBranch> = null
     let afterCutCount: number | null = null
-    if (!force && row.branch) {
-      protectedBranch = unmergedBranch(repoRoot, row.branch, null)
+    if (!force && minted) {
+      protectedBranch = unmergedBranch(repoRoot, minted, null)
       afterCutCount = row.base_commit
-        ? (unmergedBranch(repoRoot, row.branch, row.base_commit)?.count ?? 0)
+        ? (unmergedBranch(repoRoot, minted, row.base_commit)?.count ?? 0)
         : null
     }
     if (auditAuthority) auditAuthority = adoptRunMutation(auditAuthority, 'discard')
     const r = removeFor({
       path: row.worktree,
-      branch: row.branch ?? `orch/${row.id}`,
+      branch: minted ?? '',
       base: row.base_commit ?? '',
       repoRoot,
       source: row.worktree_source ?? undefined,
-    }, repoRoot, force, ownersBefore.length > 0, row.id)
+      mintedBranch: minted,
+    }, repoRoot, force || forceBusy, ownersBefore.length > 0 || !minted, row.id, force && !forceBusy)
     const sharersAfter = evidenceOwningWorktreeSharers(row)
     const ownersAfter = evidenceOwningBranchOwners(row, repoRoot, branchSnapshot)
     let branchWarning: string | null = null
-    if (row.branch) {
+    if (minted) {
       const ownership = verifyBranchOwnershipAfterCleanup(
-        row.id, repoRoot, row.branch, branchSnapshot, ownersBefore, ownersAfter,
+        row.id, repoRoot, minted, branchSnapshot, ownersBefore, ownersAfter,
       )
       if (ownership.refusal) throw new Error(ownership.refusal)
       branchWarning = ownership.warning
@@ -999,24 +1023,27 @@ function discardWorktree(
     if (sharersAfter.length) {
       throw new SharedWorktreeEvidenceError(row.worktree, sharersAfter)
     }
-    if (protectedBranch && row.branch && ownersBefore.length === 0 && ownersAfter.length === 0) {
-      const after = branchTip(repoRoot, row.branch)
+    if (protectedBranch && minted && ownersBefore.length === 0 && ownersAfter.length === 0) {
+      const after = branchTip(repoRoot, minted)
       if (after !== null && after !== protectedBranch.tip) {
         throw new Error(
-          `protected branch ${row.branch} moved from ${protectedBranch.tip} to ${after} during cleanup; ` +
+          `protected branch ${minted} moved from ${protectedBranch.tip} to ${after} during cleanup; ` +
           `it was left at ${after}`,
         )
       }
       if (after === null) {
-        const restored = restoreBranch(repoRoot, row.branch, protectedBranch.tip)
+        const restored = restoreBranch(repoRoot, minted, protectedBranch.tip)
         if (!restored.ok) {
-          throw new Error(restoreRefusal(row.id, row.branch, protectedBranch.tip, restored.error))
+          throw new Error(restoreRefusal(row.id, minted, protectedBranch.tip, restored.error))
         }
-        branchWarning = `project remove tool deleted protected branch ${row.branch}; ` +
+        branchWarning = `project remove tool deleted protected branch ${minted}; ` +
           `restored ${protectedBranch.tip}`
       }
     }
     if (!r.removed) throw new Error(r.detail)
+    if (!minted && row.branch) {
+      console.log(`branch ${row.branch} kept (review subject, not owned by run ${row.id})`)
+    }
     if (branchWarning) console.error(branchWarning)
     const project = row.repo ?? projectAt(repoRoot)?.name ?? 'unknown'
     const inventory = resourcesForConversation(row.id)
@@ -1420,10 +1447,7 @@ function strandedRecovery(rootId: number): string {
 }
 
 function baseHelp(description: string): string {
-  const create = projectAt(process.cwd())?.settings.worktree?.create
-  return create && !createHasPlaceholder(create, 'base')
-    ? `${description} (unsupported for this project's create arguments: no {base})`
-    : description
+  return description
 }
 
 function usage(): never {
@@ -1438,7 +1462,7 @@ function usage(): never {
       --transport cli|acp       driver seam; default cli. acp covers codex/grok read-only jobs
       --avoid <agent>[,...]     route to any other agent when possible
       --distinct-from <id>[,...] avoid models used by earlier fan-out runs
-      --base <ref>              ${baseHelp('base an implement or fix worktree on this git ref')}
+      --base <ref>              ${baseHelp('base an implement, fix or land worktree on this git commit')}
       --review <branch|run-id>  review that branch tip explicitly (review-lens, safety, craft)
       --carry                   carry this checkout's uncommitted work into the worker (off by default)
       --file <path>             read the prompt from a file
@@ -1555,12 +1579,15 @@ function usage(): never {
       several questions: orch answer <id> --q<qid> "<ruling>" --q<qid> "<ruling>"
   orch diff <id>                inspect a run's worktree diff (review diffs are scratch)
       --since-base              compare with the recorded base instead of current trunk
-  orch land <branch|run-id>     gate and fast-forward one explicit branch into configured trunk
+  orch land <branch|run-id>     enqueue a landing; a per-project queue owns rebase, gate, fast-forward and migrate
+      --wait                    block until this landing terminals (default is enqueue and return)
       --message TEXT            amend the branch tip's message, then gate that commit
       --file PATH               same, reading the message from a file
       --unreviewed REASON       land without matching review coverage and record why
-      --status                  show the landing lock and exact/carried/invalid review coverage
-      --queue                   wait visibly when your session already owns the landing lock
+      --strand-live REASON      land a journal-carrying diff while runs are live, naming why
+      --status                  print queued and in-review branches, path sets, and locks
+      --drain                   process the project's queue until empty (started by enqueue when needed)
+  orch reconcile <id>           write a terminal run row from the persisted reply after a schema move
   orch confinement clear <run-id> --writer TEXT --note TEXT [--tip OID]
       clear a spurious escaped classification, attributing the outside edit and auditing the ruling
   orch review list [--open|--complete] [--project P] [--since ISO] [--json]
@@ -1662,7 +1689,7 @@ function doUsage(): never {
   --transport cli|acp  driver seam; default cli. acp covers codex/grok read-only jobs
   --avoid <name,...> exclude agents while routing, unless none remain
   --distinct-from <id,...> exclude models used by earlier runs, unless none remain
-  --base <ref>     ${baseHelp('base an implement or fix worktree on this verified git ref')}
+  --base <ref>     ${baseHelp('base an implement, fix or land worktree on this verified git commit')}
   --review <ref>   review this branch or run id (review-lens, safety, craft)
   --carry          carry this checkout's uncommitted work into the worker (off by default)
   --schema <path>  require JSON schema; Codex normalizes it to OpenAI strict mode
@@ -1894,14 +1921,18 @@ switch (cmd) {
   }
 
   case 'land': {
-    const { land, landingStatus, resolveLandingBranch } = await import('./landing.ts')
+    const { drainQueue, land, landingStatus, resolveLandingBranch } = await import('./landing.ts')
     if (has('status')) {
       console.log(landingStatus(process.cwd()))
       break
     }
+    if (has('drain')) {
+      drainQueue(process.cwd())
+      break
+    }
     const value = argv[1]
     if (!value || value.startsWith('--')) {
-      throw new Error('orch land <branch|run-id> [--message TEXT] [--file PATH] [--unreviewed REASON] | orch land --status')
+      throw new Error('orch land <branch|run-id> [--message TEXT] [--file PATH] [--unreviewed REASON] [--wait] | orch land --status')
     }
     const fromMessage = flag('message')
     const fromFile = flag('file')
@@ -1914,12 +1945,29 @@ switch (cmd) {
     const target = resolveLandingBranch(value)
     if (target.runId !== null) console.log(`run ${target.runId} resolves to branch ${target.branch}`)
     const unreviewed = flag('unreviewed')
-    land(process.cwd(), target.branch, {
+    const strandLive = flag('strand-live')
+    if (unreviewed !== undefined && !unreviewed.trim()) {
+      throw new Error('--unreviewed requires a non-empty reason')
+    }
+    if (strandLive !== undefined && !strandLive.trim()) {
+      throw new Error('--strand-live requires a non-empty reason')
+    }
+    const result = land(process.cwd(), target.branch, {
       ...(target.runId === null ? {} : { runId: target.runId }),
       ...(message === undefined ? {} : { message }),
       ...(unreviewed === undefined ? {} : { unreviewed }),
-      queue: has('queue'),
+      ...(strandLive === undefined ? {} : { strandLive }),
+      wait: has('wait'),
     })
+    if (result) console.log(result)
+    break
+  }
+
+  case 'reconcile': {
+    const { reconcileRun } = await import('./run.ts')
+    const id = Number(argv[1])
+    if (!id) throw new Error('orch reconcile <id>')
+    console.log(reconcileRun(id))
     break
   }
 
@@ -2735,8 +2783,8 @@ switch (cmd) {
     const base = flag('base')
     const reviewRef = flag('review')
     if (base) {
-      if (jobName !== 'implement' && jobName !== 'fix') {
-        throw new Error('--base is only valid for the implement and fix jobs')
+      if (jobName !== 'implement' && jobName !== 'fix' && jobName !== 'land') {
+        throw new Error('--base is only valid for the implement, fix and land jobs')
       }
       resolveBase(callerCwd, base)
     }
@@ -5056,7 +5104,7 @@ switch (cmd) {
         console.log(`worktree ${stoppedWorktree} cleanup left to its creation coordinator`)
       } else {
         try {
-          await discardWorktree(cleanupRow as CleanupRow, 'discarded', true)
+          await discardWorktree(cleanupRow as CleanupRow, 'discarded', false, undefined, true)
           reclaimed = true
         } catch (error) {
           if (error instanceof SharedWorktreeEvidenceError) {

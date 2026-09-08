@@ -59,8 +59,11 @@ export const run = sqliteTable('run', {
   preConfinement: text('pre_confinement'),
   keepTree: integer('keep_tree').notNull().default(0),
   lastEventAt: text('last_event_at'),
+  mintedBranch: text('minted_branch'),
+  unreconciled: integer().notNull().default(0),
 }, (t) => [
   check('run_status_check', sql`${t.status} in ('running','ok','failed','stale','asking','stopped')`),
+  check('run_unreconciled_check', sql`${t.unreconciled} in (0,1)`),
   check('run_sandbox_check', sql`${t.sandbox} is null or ${t.sandbox} in ('host','srt')`),
   check('run_worktree_source_check', sql`${t.worktreeSource} is null or ${t.worktreeSource} in ('recipe','git','readonly_recipe')`),
   check('run_transport_check', sql`${t.transport} is null or ${t.transport} in ('cli','acp')`),
@@ -303,8 +306,12 @@ export const landing = sqliteTable('landing', {
   id: id(), /** @deprecated Use projectId. */ project: text().notNull(), projectId: integer('project_id').references(() => project.id, { onDelete: 'restrict' }), branch: text().notNull(), tip: text(),
   trunkBefore: text('trunk_before'), status: text().notNull(), error: text(),
   sessionId: text('session_id'), startedAt: text('started_at').notNull(), finishedAt: text('finished_at'),
+  pathSet: text('path_set'), requestedAt: text('requested_at'), steps: text(),
+  causingLandingId: integer('causing_landing_id'),
 }, (t) => [
-  check('landing_status_check', sql`${t.status} in ('started','landed','refused','install_failed')`),
+  check('landing_status_check', sql`${t.status} in ('queued','running','landed','refused','install_failed','rebase_required')`),
+  check('landing_path_set_json_check', sql`${t.pathSet} is null or json_valid(${t.pathSet})`),
+  check('landing_steps_json_check', sql`${t.steps} is null or json_valid(${t.steps})`),
   index('landing_project_started').on(t.project, t.startedAt),
 ])
 export const testFlake = sqliteTable('test_flake', {

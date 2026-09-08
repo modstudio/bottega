@@ -775,13 +775,24 @@ single fix round, because acting on half the review defeats the pair.
 
 ### LANDING
 
-Sessions announce each landing as `LANDING` before it begins and `LANDED` with
-the files named after it finishes, because an ordered queue only exists when
-both ends are visible. Carry a lens from an older tree manually with DEV-270's
-four facts instead of re-lensing it. Rebase a branch that has fallen behind
-trunk in the same breath as its resume or lens dispatch; the harness refuses a
-stale caller. Retry a landing once when a ceiling flake stops it, then record
-the flake on DEV-315 rather than opening another task.
+One queue per project owns the cycle: enqueue, rebase, gate, fast-forward,
+migrate. `orch land <branch|run>` records a queued landing row and returns the
+queue position unless `--wait`. A drain process (started by enqueue when no
+queue lock holder exists, exiting when the queue is empty) takes the head,
+rebases it onto current trunk, runs the gate on the commit that will become
+trunk, fast-forwards, then runs install and migrate. The landing lock stays
+fast-forward-only and is never held across a gate. When two or more entries
+are queued, the drain rebases them in order onto trunk in a throwaway
+worktree, gates that tip, fast-forwards trunk to it on green, and bisects on
+red so only the culprit is refused. After each landing, queued or reviewed
+branches whose path set overlaps the landed diff are marked rebase-required;
+disjoint reviews carry by patch-id. `orch land --status` prints the queue,
+path sets, sessions, and locks. Do not announce LANDING/LANDED by message.
+Carry a lens from an older tree manually with DEV-270's four facts instead of
+re-lensing it. Rebase a branch that has fallen behind trunk in the same breath
+as its resume or lens dispatch; the harness refuses a stale caller. Retry a
+landing once when a ceiling flake stops it, then record the flake on DEV-315
+rather than opening another task.
 
 ### END
 
@@ -919,9 +930,13 @@ The invariants are:
   damage is guarded (the preload and `test/fixture.ts` each refuse a store the
   preload did not mint under the temporary directory), and the vector stays honest (the register's worktree
   note says the live path is read-only from a tree's binary).
+- **One queue per project owns the cycle.** Enqueue is the default; a drain
+  process holds `orch-queue.lock` while it rebases, gates, fast-forwards and
+  migrates, then exits. The landing lock remains fast-forward-only.
 - **Landing holds its lock only for the trunk re-check, guard verification and
   fast-forward, never for a gate.** A gate is long and proves a commit without
   owning trunk. A moved trunk releases the lock, re-gates, and re-acquires.
+  A merge-group gate runs on the exact commit that becomes trunk.
 - **A lock waiter is served in arrival order.** Otherwise a stream of short
   holders can starve a long waiter. `worktree.ts:withProjectLock` records waiters
   whose names start with a monotonic ticket taken under mkdir-atomic discipline

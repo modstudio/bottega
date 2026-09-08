@@ -103,7 +103,7 @@ exit 17
     rmSync(repo, { recursive: true, force: true })
   })
 
-  test('preflight refuses an explicit base a command template cannot honor', () => {
+  test('preflight accepts an explicit base even when a command template has no {base} slot', () => {
     const { repo } = scratchRepo()
     upsertProject({
       name: 'no-base-placeholder', path: realpathSync(repo),
@@ -114,13 +114,16 @@ exit 17
       },
     })
     try {
-      expect(() => fromRoot(() => preflight(
-        'implement', realpathSync(repo), undefined, undefined, 'main',
-      )))
-        .toThrow(
-          'project no-base-placeholder cannot honour --base because its worktree create template ' +
-          '{"command":"scripts/worktree","args":["create","{branch}"]} has no {base} slot',
-        )
+      try {
+        fromRoot(() => preflight(
+          'implement', realpathSync(repo), undefined, undefined, 'main',
+        ))
+        throw new Error('expected preflight to throw')
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        expect(message).toContain('absent or not executable')
+        expect(message).not.toContain('has no {base} slot')
+      }
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }

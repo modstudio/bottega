@@ -115,9 +115,11 @@ test('an explicit non-empty override lands and records the measured tree and rea
     upsertProject({ name: 'landing-status', path: repo, settings: { trunk: 'main', gate: 'true' } })
     try {
       const tree = g(repo, 'rev-parse', 'HEAD^{tree}')
-      expect(landingStatus(repo)).toBe(
-        'landing-status landing lock: free\nwaiters:\n  none\ninvalidated today:\n  none',
-      )
+      expect(landingStatus(repo)).toContain('landing-status landing lock: free')
+      expect(landingStatus(repo)).toContain('waiters:\n  none')
+      expect(landingStatus(repo)).toContain('queue lock: free')
+      expect(landingStatus(repo)).toContain('queue:\n  none')
+      expect(landingStatus(repo)).toContain('invalidated today:\n  none')
       expect(landingReviewCoverage(repo)).toBe(
         `review coverage for main:\ncurrent tip tree: ${tree}\n  none`,
       )
@@ -208,7 +210,10 @@ test('an explicit non-empty override lands and records the measured tree and rea
     utimesSync(lock, stale, stale)
     try {
       const { status, locks } = observeGitLocks(repo)
-      expect(status).toBe('landing-git-lock landing lock: free\nwaiters:\n  none\ninvalidated today:\n  none')
+      expect(status).toContain('landing-git-lock landing lock: free')
+      expect(status).toContain('waiters:\n  none')
+      expect(status).toContain('queue lock: free')
+      expect(status).toContain('invalidated today:\n  none')
       const formatted = formatGitLocks(repo)
       expect(formatted).toContain(`${lock} (age `)
       expect(Number(formatted.match(/main\.lock \(age (\d+)s\)/)?.[1])).toBeGreaterThanOrEqual(70)
@@ -291,7 +296,7 @@ test('an explicit non-empty override lands and records the measured tree and rea
     }
     try {
       const landed = Bun.spawnSync(
-        [process.execPath, CLI, 'land', String(id), '--message', 'architect fuller message',
+        [process.execPath, CLI, 'land', String(id), '--wait', '--message', 'architect fuller message',
           '--unreviewed', 'existing landing fixture'],
         { cwd: repo, env: cliEnv, stdout: 'pipe', stderr: 'pipe' },
       )
@@ -321,7 +326,7 @@ test('an explicit non-empty override lands and records the measured tree and rea
     const CLI = new URL('cli.ts', import.meta.url).pathname
     try {
       const landed = Bun.spawnSync(
-        [process.execPath, CLI, 'land', 'land-from-file', '--file', body,
+        [process.execPath, CLI, 'land', 'land-from-file', '--wait', '--file', body,
           '--unreviewed', 'existing landing fixture'],
         { cwd: repo, env: { ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
           stdout: 'pipe', stderr: 'pipe' },

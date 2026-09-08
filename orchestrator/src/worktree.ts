@@ -44,6 +44,8 @@ export type Worktree = {
   repoRoot: string
   /** The lifecycle that created this tree, and therefore owns its removal. */
   source?: 'recipe' | 'git' | 'readonly_recipe'
+  /** Branch this run minted. Null/absent means it must never delete row.branch. */
+  mintedBranch?: string | null
 }
 
 /**
@@ -1412,23 +1414,14 @@ function createWithToolUnlocked(
     return createFromRecipe(tool, tool.recipe, repoRoot, runId, key, baseRef, record, detached)
   }
 
-  if (baseRef && !createHasPlaceholder(tool.create, 'base')) {
-    throw new Error(
-      `this project's command-based worktree path cannot honor --base because its create ` +
-      `arguments do not declare {base}`,
-    )
-  }
-
   const branch = (tool.branch ?? 'orch/{id}')
     .replace(/\{id\}/g, String(runId))
     .replace(/\{key\}/g, key ?? '')
   const name = `orch-${runId}`
-  // A command tool receives the caller's base only through {base}; the guard
-  // above refuses an explicit base when the template has no way to receive it.
-  // Without an explicit request, some tools deliberately resolve their own
-  // floor; HEAD is only the template default, and the created tree is inspected
-  // below before its base is recorded.
-  const base = baseRef && createHasPlaceholder(tool.create, 'base')
+  // A base is a commit, not a recipe argument. {base} is passed when the
+  // template has a slot; without one the branch is still cut at that commit
+  // after the tool returns.
+  const base = baseRef
     ? resolveBase(repoRoot, baseRef)
     : git(['rev-parse', 'HEAD'], repoRoot)
   const vars = { branch, name, base, seed: seed ?? '', key: key ?? '', path: '' }
@@ -1536,7 +1529,19 @@ function createWithToolUnlocked(
   // commit from the tree it actually created so the run record and every later
   // diff name that floor rather than the caller checkout's incidental HEAD.
   const actualBase = gitOk(['rev-parse', 'HEAD'], path) ?? base
-  const worktree = { path, branch, base: actualBase, repoRoot, source: 'recipe' as const }
+  if (!detached) {
+    const dirty = gitOk(['status', '--porcelain=v1', '--untracked-files=no'], path)
+    if (baseRef && !dirty) git(['checkout', '-B', branch, base], path)
+    else gitOk(['checkout', '-B', branch], path)
+  }
+  const worktree = {
+    path,
+    branch: detached ? '' : branch,
+    base: gitOk(['rev-parse', 'HEAD'], path) ?? actualBase,
+    repoRoot,
+    source: 'recipe' as const,
+    mintedBranch: detached ? null : branch,
+  }
   try {
     attributeWorktree(worktree, runId, record)
     verifyFreshWorktree(worktree)
@@ -1569,7 +1574,10 @@ function createWorktreeUnlocked(
     throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
   }
   git(['worktree', 'add', ...(detached ? ['--detach'] : ['-b', branch]), path, base], repoRoot)
-  const worktree = { path, branch, base, repoRoot, source: 'git' as const }
+  const worktree = {
+    path, branch: detached ? '' : branch, base, repoRoot, source: 'git' as const,
+    mintedBranch: detached ? null : branch,
+  }
   attributeWorktree(worktree, runId, record)
   verifyFreshWorktree(worktree)
   return worktree
@@ -1613,7 +1621,9 @@ export function createReadOnlyWithTool(
     }
     branch = gitOk(['symbolic-ref', '--quiet', '--short', 'HEAD'], path) ?? ''
     if (branch) throw new Error(`the project's read-only worktree tool created attached branch ${branch}`)
-    const worktree = { path, branch: '', base, repoRoot, source: 'readonly_recipe' as const }
+    const worktree = {
+      path, branch: '', base, repoRoot, source: 'readonly_recipe' as const, mintedBranch: null,
+    }
     attributeWorktree(worktree, runId, record)
     verifyFreshWorktree(worktree)
     return worktree
@@ -1843,7 +1853,10 @@ function createFromRecipe(
     : git(['rev-parse', 'HEAD'], repoRoot)
 
   git(['worktree', 'add', ...(detached ? ['--detach'] : ['-b', branch]), path, base], repoRoot)
-  const w: Worktree = { path, branch, base, repoRoot, source: 'recipe' }
+  const w: Worktree = {
+    path, branch: detached ? '' : branch, base, repoRoot, source: 'recipe',
+    mintedBranch: detached ? null : branch,
+  }
   attributeWorktree(w, runId, record)
 
   const dbName = dbNameFor(repoRoot.split('/').pop() ?? 'app', runId)
@@ -2070,20 +2083,38 @@ function removeReadOnlyTree(
   return result.out ? { ...reconciled, output: result.out } : reconciled
 }
 
+const WRITER_JOBS = new Set(['implement', 'fix', 'land', 'issue-worker'])
+
+function mintedBranchOwnedBy(w: Worktree, runId?: number): string | null {
+  if (runId !== undefined) {
+    try {
+      const row = db().query('SELECT minted_branch, branch, job FROM run WHERE id=?').get(runId) as
+        { minted_branch: string | null; branch: string | null; job: string } | null
+      if (row?.minted_branch) return row.minted_branch
+      if (row && WRITER_JOBS.has(row.job) && row.branch) return row.branch
+      if (row) return null
+    } catch { /* a store mid-migrate has no minted_branch yet */ }
+  }
+  return w.mintedBranch ?? null
+}
+
 /** Remove a tree through the lifecycle declared by its registered project. */
 export function removeFor(
   w: Worktree, repoRoot: string, forceOrchTree = false, keepBranch = false, runId?: number,
+  forceUnmerged = false,
 ): { removed: boolean; detail: string; output?: string } {
   // Read ownership before any removal path can take the marker with the tree.
   // The caller id remains a fallback for legacy/already-missing trees only.
   const owningRunId = markedWorktreeRunId(w.path) ?? runId
+  const minted = mintedBranchOwnedBy(w, owningRunId ?? runId)
+  const owned = { ...w, branch: minted ?? '' }
   const project = projectAt(repoRoot)
   const tool = project?.settings.worktree
-  const retainBranch = keepBranch ||
-    (!forceOrchTree && unmergedBranch(repoRoot, w.branch, null) !== null)
+  const retainBranch = keepBranch || !minted ||
+    (!forceUnmerged && unmergedBranch(repoRoot, minted, null) !== null)
   let result: { removed: boolean; detail: string; output?: string }
   if (w.source === 'readonly_recipe') {
-    const removed = removeReadOnlyTree(tool ?? {}, w, keepBranch)
+    const removed = removeReadOnlyTree(tool ?? {}, owned, retainBranch)
     result = removed.output
       ? { ...removed, output: `${project!.name} readonly remove:\n${removed.output}` }
       : removed
@@ -2091,8 +2122,8 @@ export function removeFor(
     const projectOwned = w.source === 'recipe' ||
       (w.source === undefined && Boolean(tool))
     const removed: { removed: boolean; detail: string; output?: string } = tool && projectOwned
-      ? removeWithTool(tool, w, forceOrchTree, retainBranch)
-      : removeWorktree(w, retainBranch)
+      ? removeWithTool(tool, owned, forceOrchTree, retainBranch)
+      : removeWorktree(owned, retainBranch)
     result = removed.output
       ? { ...removed, output: `${project!.name} remove:\n${removed.output}` }
       : removed
@@ -2113,14 +2144,15 @@ export function sweepWithTool(
 }
 
 export function removeWorktree(w: Worktree, keepBranch = false): { removed: boolean; detail: string } {
+  const deleteBranch = Boolean(w.branch) && !keepBranch
   // Already gone is a SUCCESS, not an error. A worktree deleted by hand, or one
   // in a scratch repository that has since been cleaned up, leaves a database
   // pointer that ought to be clearable — refusing would strand it for ever.
   if (!existsSync(w.path)) {
     gitOk(['worktree', 'prune'], w.repoRoot)
-    if (!keepBranch) gitOk(['branch', '-D', w.branch], w.repoRoot)
-    const branch = branchTip(w.repoRoot, w.branch)
-    return branch !== null && !keepBranch
+    if (deleteBranch) gitOk(['branch', '-D', w.branch], w.repoRoot)
+    const branch = deleteBranch ? branchTip(w.repoRoot, w.branch) : null
+    return branch !== null
       ? { removed: false, detail: `git could not remove branch ${w.branch}; it remains at ${branch}` }
       : { removed: true, detail: `${w.path} was already gone` }
   }
@@ -2131,14 +2163,14 @@ export function removeWorktree(w: Worktree, keepBranch = false): { removed: bool
   // worktree produced exactly the orphan the comment warned about, announced
   // as a success.
   const gone = gitOk(['worktree', 'remove', '--force', w.path], w.repoRoot) !== null
-  if (!keepBranch) gitOk(['branch', '-D', w.branch], w.repoRoot)
+  if (deleteBranch) gitOk(['branch', '-D', w.branch], w.repoRoot)
   // Prunes the administrative record if the directory went missing by other
   // means, so `git worktree list` does not accumulate ghosts.
   gitOk(['worktree', 'prune'], w.repoRoot)
-  const branch = branchTip(w.repoRoot, w.branch)
-  return (gone || !existsSync(w.path)) && (keepBranch || branch === null)
+  const branch = deleteBranch ? branchTip(w.repoRoot, w.branch) : null
+  return (gone || !existsSync(w.path)) && (!deleteBranch || branch === null)
     ? { removed: true, detail: w.path }
-    : branch !== null && !keepBranch
+    : branch !== null
     ? { removed: false, detail: `git could not remove branch ${w.branch}; it remains at ${branch}` }
     : { removed: false, detail: `git could not remove ${w.path}; it is still on disk` }
 }

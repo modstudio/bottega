@@ -320,13 +320,23 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
     }
   })
 
-  test('an explicit base is refused when a command template cannot receive it', () => {
+  test('an explicit base without {base} still cuts the key-named branch at that commit', () => {
     const { repo, tree } = scratchRepo()
+    const custom = join(repo, 'elsewhere', 'no-slot-747')
     try {
-      expect(() => createWithTool(
-        { create: declaredCreate('echo', ['nowhere']), branch: 'task/{id}' }, tree, 747,
-        undefined, undefined, 'main',
-      )).toThrow('command-based worktree path cannot honor --base')
+      const expected = resolveBase(repo, 'main')
+      const w = createWithTool(
+        {
+          create: compoundCreate(
+            `${hermeticGitCommand} worktree add "${custom}" HEAD >/dev/null && echo "${custom}"`),
+          branch: 'task/{id}',
+          remove: 'git worktree remove {path}',
+        },
+        tree, 747, undefined, undefined, 'main',
+      )
+      expect(w.mintedBranch).toBe('task/747')
+      expect(git(w.path, 'rev-parse', 'HEAD')).toBe(expected)
+      expect(git(repo, 'rev-parse', 'refs/heads/task/747')).toBe(expected)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
