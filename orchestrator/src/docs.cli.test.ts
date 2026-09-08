@@ -205,7 +205,7 @@ describe('scoped operator docs', () => {
         'SELECT status,failure_kind,error,mcp FROM run ORDER BY id DESC LIMIT 1',
       ).get() as any
       expect(row).toMatchObject({ status: 'failed', failure_kind: 'harness', mcp: 2 })
-      expect(row.error).toContain('mark a document demand')
+      expect(row.error).toContain('demote the named largest inject sections')
     } finally {
       JOBS.understand!.packBytes = old
       if (oldDepth === undefined) delete process.env.ORCH_DEPTH
@@ -214,7 +214,12 @@ describe('scoped operator docs', () => {
   })
 
   test('brief has its own 64 KiB refusal', () => {
-    setDoc({ scope: 'global', subject: null, slug: 'too-big', title: 'Large', body: 'x'.repeat(70 * 1024), forceInject: 'exercise brief ceiling' })
+    const doc = setDoc({
+      scope: 'global', subject: null, slug: 'too-big', title: 'Large',
+      body: 'x'.repeat(70 * 1024), delivery: 'demand',
+    })
+    // Bypass the write gate to retain coverage of the independent read-time guard.
+    db().query("UPDATE doc SET delivery='inject' WHERE id=?").run(doc.id)
     expect(() => compileBrief(dir)).toThrow(CanonBudgetError)
   })
 
