@@ -82,7 +82,7 @@ test('an explicit non-empty override lands and records the measured tree and rea
     writeFileSync(stub, '#!/bin/sh\necho stub-fail >&2\nexit 1\n')
     chmodSync(stub, 0o755)
     setPostLandMigrateForFixture({
-      orch: () => ({ path: 'stub', versions: [] }),
+      orchBin: '/usr/bin/true',
       hubBin: stub,
     })
     try {

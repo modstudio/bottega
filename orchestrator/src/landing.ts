@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
-import { db, liveRunCount, migrateDatabase, nowIso, sessionId, tryWriteContention, writableDb, writeTransaction, ROOT } from './db.ts'
+import { db, liveRunCount, nowIso, sessionId, tryWriteContention, writableDb, writeTransaction, ROOT } from './db.ts'
 import { reviewInvalidationsSince } from './contention.ts'
 import { projectAt, projectByName, type Project } from './projects.ts'
 import { classifyReviewTier, diffNumstat } from './review-tier.ts'
@@ -1453,17 +1453,14 @@ export function allocateLandingJournals(
   return rewritten
 }
 
-const defaultHubMigrateBin = resolve(new URL('../../bin/hub', import.meta.url).pathname)
-let hubMigrateBin = defaultHubMigrateBin
-let orchMigrate = migrateDatabase
+let fixtureMigrateBins: { orchBin: string; hubBin: string } | null = null
 
 /** Fixture-only: stub post-land migrate so a test can fail hub without a real binary. */
 export function setPostLandMigrateForFixture(options: {
-  orch?: typeof migrateDatabase
+  orchBin?: string
   hubBin?: string
 } | null): void {
-  orchMigrate = options?.orch ?? migrateDatabase
-  hubMigrateBin = options?.hubBin ?? defaultHubMigrateBin
+  fixtureMigrateBins = options
 }
 
 export function landingsWithPostStepError(database = db()): {
@@ -1475,34 +1472,33 @@ export function landingsWithPostStepError(database = db()): {
   ).all() as { project: string; branch: string; error: string }[]
 }
 
-function migrateLandedJournals(project: Project, trunkBefore: string, tip: string): void {
+function migrateLandedJournals(project: Project, trunkBefore: string, tip: string): string {
   const paths = git(project.path, ['diff', '--name-only', `${trunkBefore}..${tip}`])
     .split('\n').filter(Boolean)
-  if (!diffCarriesMigrationJournal(paths)) return
-  try {
-    const migrated = orchMigrate()
-    if (migrated.versions.length === 0) console.log(`schema already current: ${migrated.path}`)
-    else {
-      console.log(`migrated ${migrated.path}`)
-      for (const version of migrated.versions) console.log(`  applied ${version}`)
+  if (!diffCarriesMigrationJournal(paths)) return ''
+  const env = { ...process.env }
+  delete env.ORCH_DB
+  delete env.ORCH_DEPTH
+  const bins = fixtureMigrateBins ?? {
+    orchBin: join(project.path, 'bin', 'orch'), hubBin: join(project.path, 'bin', 'hub'),
+  }
+  const captured: string[] = []
+  for (const [name, bin] of [['orch', bins.orchBin], ['hub', bins.hubBin]] as const) {
+    const migrated = Bun.spawnSync([bin, 'migrate'], {
+      cwd: project.path, env, stdout: 'pipe', stderr: 'pipe',
+    })
+    const out = migrated.stdout.toString().trim()
+    const err = migrated.stderr.toString().trim()
+    if (migrated.exitCode !== 0) {
+      throw new Error(
+        `landing reached trunk at ${tip}, but ${name} migrate failed: ${err || out || `exit ${migrated.exitCode}`}` +
+        `; clear from the main checkout with: ${name} migrate`,
+      )
     }
-  } catch (error) {
-    throw new Error(
-      `landing reached trunk at ${tip}, but orch migrate failed: ` +
-      `${error instanceof Error ? error.message : String(error)}`,
-    )
+    captured.push(`${name}: ${out || '(no output)'}`)
+    if (out) console.log(out)
   }
-  const hub = Bun.spawnSync([hubMigrateBin, 'migrate'], {
-    cwd: project.path, env: process.env, stdout: 'pipe', stderr: 'pipe',
-  })
-  const hubOut = hub.stdout.toString().trim()
-  const hubErr = hub.stderr.toString().trim()
-  if (hub.exitCode !== 0) {
-    throw new Error(
-      `landing reached trunk at ${tip}, but hub migrate failed: ${hubErr || hubOut || `exit ${hub.exitCode}`}`,
-    )
-  }
-  if (hubOut) console.log(hubOut)
+  return captured.join('\n')
 }
 
 function installLandedPackages(project: Project, trunkBefore: string, tip: string): void {
@@ -1533,6 +1529,7 @@ type LandingRow = {
 type LandingStep = {
   name: string; duration_ms?: number
   unreviewed?: string; strandLive?: string; message?: string
+  output?: string
 }
 
 function parseSteps(raw: string | null): LandingStep[] {
@@ -1543,9 +1540,11 @@ function parseSteps(raw: string | null): LandingStep[] {
   } catch { return [] }
 }
 
-function appendStep(id: number, name: string, durationMs: number): void {
+function appendStep(id: number, name: string, durationMs: number, output?: string): void {
   const row = db().query('SELECT steps FROM landing WHERE id=?').get(id) as { steps: string | null } | null
-  const steps = [...parseSteps(row?.steps ?? null), { name, duration_ms: durationMs }]
+  const steps = [...parseSteps(row?.steps ?? null), {
+    name, duration_ms: durationMs, ...(output ? { output } : {}),
+  }]
   db().query('UPDATE landing SET steps=? WHERE id=?').run(JSON.stringify(steps), id)
 }
 
@@ -1722,8 +1721,8 @@ function finishLanded(
   }
   try {
     const started = Date.now()
-    migrateLandedJournals(result.project, result.trunkBefore, result.tip)
-    appendStep(landingId, 'migrate', Date.now() - started)
+    const output = migrateLandedJournals(result.project, result.trunkBefore, result.tip)
+    appendStep(landingId, 'migrate', Date.now() - started, output)
   } catch (error) {
     db().query(`UPDATE landing SET error=?,finished_at=? WHERE id=?`)
       .run(error instanceof Error ? error.message : String(error), nowIso(), landingId)
@@ -1866,8 +1865,8 @@ function processMergeGroup(
     }
     try {
       const migrateStarted = Date.now()
-      migrateLandedJournals(project, trunkOid, tip)
-      for (const row of rows) appendStep(row.id, 'migrate', Date.now() - migrateStarted)
+      const output = migrateLandedJournals(project, trunkOid, tip)
+      for (const row of rows) appendStep(row.id, 'migrate', Date.now() - migrateStarted, output)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       for (const row of rows) {

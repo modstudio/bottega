@@ -293,7 +293,7 @@ describe('DEV-370 landing queue and branch ownership', () => {
     g(tree, 'commit', '-m', 'provisional journal')
     upsertProject({ name: 'landing-journal-remap', path: repo, settings: { trunk: 'main', gate: 'true' } })
     setPostLandMigrateForFixture({
-      orch: () => ({ path: 'stub', versions: [] }),
+      orchBin: '/usr/bin/true',
       hubBin: '/usr/bin/true',
     })
     try {
@@ -312,6 +312,32 @@ describe('DEV-370 landing queue and branch ownership', () => {
       setPostLandMigrateForFixture(null)
       rmSync(repo, { recursive: true, force: true })
     }
+  })
+
+  test('post-land migration invokes the registered main checkout binaries with a scrubbed environment', () => {
+    const { repo, trees } = repoWithBranches(['main-binary-migrate'])
+    const tree = trees['main-binary-migrate']!
+    mkdirSync(join(tree, 'orchestrator', 'migrations'), { recursive: true })
+    writeFileSync(join(tree, 'orchestrator', 'migrations', 'note.sql'), '-- journal\n')
+    g(tree, 'add', 'orchestrator/migrations/note.sql')
+    g(tree, 'commit', '-m', 'journal')
+    mkdirSync(join(repo, 'bin'), { recursive: true })
+    for (const name of ['orch', 'hub']) {
+      writeFileSync(join(repo, 'bin', name), `#!/bin/sh\nprintf '%s|%s|%s|%s\\n' "$PWD" "$1" "\${ORCH_DB-unset}" "\${ORCH_DEPTH-unset}" >> '${repo}/migrate-invocations'\necho ${name}-output\n`)
+      Bun.spawnSync(['chmod', '+x', join(repo, 'bin', name)])
+    }
+    upsertProject({ name: 'landing-main-binary', path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      land(repo, 'main-binary-migrate', { unreviewed: 'fixture' })
+      expect(readFileSync(join(repo, 'migrate-invocations'), 'utf8')).toBe(
+        `${repo}|migrate|unset|unset\n${repo}|migrate|unset|unset\n`,
+      )
+      const row = db().query(
+        `SELECT steps FROM landing WHERE project='landing-main-binary'`,
+      ).get() as { steps: string }
+      expect(row.steps).toContain('orch-output')
+      expect(row.steps).toContain('hub-output')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
   test('a hand-written idx that disagrees with the filename prefix is refused, naming both', () => {
