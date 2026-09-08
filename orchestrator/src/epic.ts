@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { db } from './db.ts'
+import { targetGitEnvironment } from './worktree.ts'
 
 const HUB = new URL('../../bin/hub', import.meta.url).pathname
 
@@ -192,7 +193,7 @@ function commitSubjects(database: Database): Map<number, Map<string, string>> {
   const result = new Map<number, Map<string, string>>()
   for (const project of projects) {
     const git = Bun.spawnSync(['git', 'log', '--all', '--format=%H%x09%s'], {
-      cwd: project.path, stdout: 'pipe', stderr: 'pipe', env: { ...process.env },
+      cwd: project.path, stdout: 'pipe', stderr: 'pipe', env: targetGitEnvironment(project.path),
     })
     if (git.exitCode !== 0) continue
     const rows = new Map<string, string>()
