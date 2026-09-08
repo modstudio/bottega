@@ -3367,10 +3367,7 @@ export async function run(opts: {
       const event = confinementEvent
       tryWriteContention({
         resourceKind: 'main_checkout',
-        resourceKey: (event
-          ? event.after.find((row) => row.headOid === event.tripTip)?.path
-            ?? event.after[0]?.path
-          : confinementFailures[0]?.path) ?? callerCwd,
+        resourceKey: event?.checkout ?? confinementFailures[0]?.path ?? callerCwd,
         eventKind: 'invalidation',
         cause: error, runId: claim.id,
       })

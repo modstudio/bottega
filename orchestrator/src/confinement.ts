@@ -33,6 +33,8 @@ export type ConfinementLockHolder = {
 
 export type ConfinementEvent = {
   classification: ConfinementClass
+  /** Absent on events recorded before DEV-372. */
+  checkout?: string
   attribution: AttributionKind
   lockHolder: ConfinementLockHolder | null
   landingSession: string | null
@@ -306,6 +308,7 @@ export function classifyDivergence(input: {
   })
   return {
     classification,
+    checkout: attributed.path,
     ...who,
     divergentPaths: [...new Set(divergentPaths)],
     overlappingPaths: [...new Set(overlappingPaths)],

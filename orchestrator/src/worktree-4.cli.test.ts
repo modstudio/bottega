@@ -761,6 +761,12 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
 
   test('an overlapping outside edit blocks with attribution and a contention row', async () => {
     const repo = repository()
+    const caller = join(repo, '.claude', 'worktrees', 'dirty-caller')
+    mkdirSync(dirname(caller), { recursive: true })
+    const added = Bun.spawnSync(['git', 'worktree', 'add', '-b', 'DEV-372-dirty-caller', caller], {
+      cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    if (added.exitCode !== 0) throw new Error(added.stderr.toString())
     const script = join(dir, 'DEV-372-overlap-agent.sh')
     writeFileSync(script, `#!/bin/sh
 printf 'outside\\n' > "$ORCH_TEST_EXTERNAL_WRITE"
@@ -774,12 +780,12 @@ printf '%s\\n' '${JSON.stringify(workerReply({ files_changed: ['overlap.txt'] })
     const priorDepth = process.env.ORCH_DEPTH
     const priorTarget = process.env.ORCH_TEST_EXTERNAL_WRITE
     process.env.ORCH_DEPTH = '0'
-    process.env.ORCH_TEST_EXTERNAL_WRITE = join(repo, 'overlap.txt')
+    process.env.ORCH_TEST_EXTERNAL_WRITE = join(caller, 'overlap.txt')
     let runId: number | null = null
     try {
       grok.bin = script
       try {
-        await run({ job: 'implement', prompt: 'overlap', cwd: repo, agent: 'grok', noFailover: true })
+        await run({ job: 'implement', prompt: 'overlap', cwd: caller, agent: 'grok', noFailover: true })
       } catch (error) {
         runId = (error as Error & { runId?: number }).runId ?? null
       }
@@ -793,11 +799,14 @@ printf '%s\\n' '${JSON.stringify(workerReply({ files_changed: ['overlap.txt'] })
       expect(recorded.error).toContain('attribution: unattributed')
       const event = parseConfinement(recorded.confinement)
       expect(event?.classification).toBe('overlapping')
+      expect(event?.checkout).toBe(realpathSync(caller))
       expect(event?.attribution).toBe('unattributed')
       expect(event?.overlappingPaths).toContain('overlap.txt')
       expect(db().query(
-        'SELECT resource_kind, event_kind FROM contention WHERE run_id=?',
-      ).get(runId!)).toEqual({ resource_kind: 'main_checkout', event_kind: 'invalidation' })
+        'SELECT resource_kind, resource_key, event_kind FROM contention WHERE run_id=?',
+      ).get(runId!)).toEqual({
+        resource_kind: 'main_checkout', resource_key: realpathSync(caller), event_kind: 'invalidation',
+      })
     } finally {
       grok.bin = previousBin
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH

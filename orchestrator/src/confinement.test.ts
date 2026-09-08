@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { addRun, db } from '../test/fixture.ts'
 import {
-  classifyDivergence, freezeCheckout, indexIsUntrusted, porcelainPaths,
+  classifyDivergence, freezeCheckout, indexIsUntrusted, parseConfinement, porcelainPaths,
   sessionForPid, UNTRUSTED_RETRY_WAIT_MS, type FrozenCheckout,
 } from './confinement.ts'
 
@@ -39,6 +39,7 @@ describe('divergence classification', () => {
     })
     expect(event).toMatchObject({
       classification: 'overlapping',
+      checkout: '/repo',
       attribution: 'unattributed',
       overlappingPaths: ['src/a.ts'],
       chainRoot: '111',
@@ -59,6 +60,9 @@ describe('divergence classification', () => {
       overlappingPaths: [],
       divergentPaths: ['stray.txt'],
     })
+    const historical = { ...event }
+    delete historical.checkout
+    expect(parseConfinement(JSON.stringify(historical))?.checkout).toBeUndefined()
   })
 
   test('HEAD moved with a clean tree is an edit-commit cycle', () => {
