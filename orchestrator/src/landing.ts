@@ -385,31 +385,23 @@ export function cleanCompletedSequencerState(
     )
   }
 
-  const states = [
-    { name: 'CHERRY_PICK_HEAD', path: gitPath('CHERRY_PICK_HEAD'), quit: ['cherry-pick', '--quit'] },
-    { name: 'MERGE_HEAD', path: gitPath('MERGE_HEAD'), quit: ['merge', '--quit'] },
-    { name: 'REBASE_HEAD', path: gitPath('rebase-merge'), quit: ['rebase', '--quit'] },
-    { name: 'REBASE_HEAD', path: gitPath('rebase-apply'), quit: ['rebase', '--quit'] },
-    { name: 'REVERT_HEAD', path: gitPath('REVERT_HEAD'), quit: ['revert', '--quit'] },
-    { name: 'AUTO_MERGE', path: gitPath('AUTO_MERGE'), quit: null },
+  const residue = [
+    { name: 'rebase-merge', path: gitPath('rebase-merge'), command: 'rebase --abort' },
+    { name: 'rebase-apply', path: gitPath('rebase-apply'), command: 'rebase --abort' },
+    { name: 'CHERRY_PICK_HEAD', path: gitPath('CHERRY_PICK_HEAD'), command: 'cherry-pick --abort' },
+    { name: 'MERGE_HEAD', path: gitPath('MERGE_HEAD'), command: 'merge --abort' },
+    { name: 'REVERT_HEAD', path: gitPath('REVERT_HEAD'), command: 'revert --abort' },
+    { name: 'AUTO_MERGE', path: gitPath('AUTO_MERGE'), command: 'update-ref -d AUTO_MERGE' },
   ].filter((state) => existsSync(state.path))
-  const unmerged = git(worktree, ['diff', '--name-only', '--diff-filter=U'], guard)
-  if (unmerged) {
+  if (residue.length) {
     throw namedError(
-      `refusing cleanup in ${worktree}: unmerged paths remain:\n${unmerged}`,
-      INVARIANT_FAILED_LANDING,
-      `git -C ${shellQuote(worktree)} status`,
+      `refusing cleanup in ${worktree}: Git operation residue ${residue.map(({ name }) => name).join(', ')} was not created by this landing process`,
+      'Git operation residue is cleaned only when orch started the operation and its child process has exited.',
+      [...new Set(residue.map(({ command }) =>
+        `git -C ${shellQuote(worktree)} ${command}`))].join(' or '),
     )
   }
-  if (!states.length) return { live: [], cleaned: [] }
-  const staged = !gitOk(worktree, ['diff', '--cached', '--quiet', 'HEAD'], guard)
-  if (staged) return { live: [], cleaned: [] }
-  for (const state of states) {
-    if (state.quit) git(worktree, state.quit, guard)
-    else rmSync(state.path, { force: true })
-    console.log(`quit completed ${state.name} state in ${worktree}`)
-  }
-  return { live: [], cleaned: [...new Set(states.map(({ name }) => name))] }
+  return { live: [], cleaned: [] }
 }
 
 function packageDependencies(source: string): Record<string, string> {

@@ -52,7 +52,7 @@ test('only bun\'s complete timeout line reports machine load', () => {
     expect(summary).toContain('at <anonymous> (src/early.test.ts:17:20)')
   })
 
-  test('completed sequencer residue is quit before the gate', async () => {
+  test('unowned sequencer residue is refused before the gate', async () => {
     const { repo, trees } = repoWithBranches(['sequencer-residue'])
     const marker = g(trees['sequencer-residue']!, 'rev-parse', '--path-format=absolute', '--git-path', 'AUTO_MERGE')
     writeFileSync(marker, `${g(trees['sequencer-residue']!, 'rev-parse', 'HEAD')}\n`)
@@ -60,9 +60,9 @@ test('only bun\'s complete timeout line reports machine load', () => {
       settings: { trunk: 'main', gate: 'true' } })
     try {
       const child = childLand(repo, 'sequencer-residue')
-      expect(await child.exited).toBe(0)
-      expect(existsSync(marker)).toBe(false)
-      expect(await new Response(child.stdout).text()).toContain('quit completed AUTO_MERGE state')
+      expect(await child.exited).not.toBe(0)
+      expect(existsSync(marker)).toBe(true)
+      expect(await new Response(child.stderr).text()).toMatch(/was not created by this landing process[\s\S]*invariant:[\s\S]*cleared by:/)
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
@@ -78,7 +78,7 @@ test('only bun\'s complete timeout line reports machine load', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
-  test('a leftover rebase directory without a live ref is quit', () => {
+  test('a leftover rebase directory without a live ref is refused', () => {
     const { repo, trees } = repoWithBranches(['stale-rebase'])
     const tree = trees['stale-rebase']!
     try {
@@ -89,9 +89,40 @@ test('only bun\'s complete timeout line reports machine load', () => {
       const rebaseDir = dirname(marker) + '/rebase-merge'
       rmSync(marker, { force: true })
       g(tree, 'reset', '--hard', 'ORIG_HEAD')
-      expect(cleanCompletedSequencerState(tree).cleaned).toContain('REBASE_HEAD')
-      expect(existsSync(rebaseDir)).toBe(false)
+      expect(() => cleanCompletedSequencerState(tree)).toThrow(/residue rebase-merge was not created by this landing process[\s\S]*invariant:[\s\S]*cleared by: git -C .* rebase --abort/)
+      expect(existsSync(rebaseDir)).toBe(true)
     } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('an applying rebase with no REBASE_HEAD is refused without cleanup', async () => {
+    const { repo, trees } = repoWithBranches(['applying-rebase'])
+    const tree = trees['applying-rebase']!
+    const editor = join(repo, 'pause-sequence-editor.sh')
+    const ready = join(repo, 'sequence-editor-ready')
+    const release = join(repo, 'sequence-editor-release')
+    writeFileSync(editor, '#!/bin/sh\ntouch "$ORCH_TEST_READY"\nwhile test ! -e "$ORCH_TEST_RELEASE"; do sleep 0.01; done\n')
+    chmodSync(editor, 0o755)
+    const child = Bun.spawn(['git', 'rebase', '-i', 'main'], {
+      cwd: tree,
+      env: { ...hermeticGitEnv(), GIT_SEQUENCE_EDITOR: editor,
+        ORCH_TEST_READY: ready, ORCH_TEST_RELEASE: release },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    try {
+      for (let i = 0; i < 500 && !existsSync(ready); i++) await Bun.sleep(10)
+      expect(existsSync(ready)).toBe(true)
+      expect(Bun.spawnSync(['git', 'rev-parse', '--verify', 'REBASE_HEAD'], {
+        cwd: tree, env: hermeticGitEnv(), stdout: 'ignore', stderr: 'ignore',
+      }).exitCode).not.toBe(0)
+      const rebaseDir = g(tree, 'rev-parse', '--path-format=absolute', '--git-path', 'rebase-merge')
+      expect(existsSync(rebaseDir)).toBe(true)
+      expect(() => cleanCompletedSequencerState(tree)).toThrow(/residue rebase-merge was not created by this landing process/)
+      expect(existsSync(rebaseDir)).toBe(true)
+    } finally {
+      writeFileSync(release, '')
+      await child.exited
+      rmSync(repo, { recursive: true, force: true })
+    }
   })
 
   test('a live merge is refused without touching rebase residue', () => {
@@ -970,6 +1001,9 @@ test('only bun\'s complete timeout line reports machine load', () => {
       g(repo, 'commit', '-m', 'unrelated trunk move')
       const newBase = g(repo, 'rev-parse', 'main')
       g(trees['carry-review']!, 'rebase', 'main')
+      // This fixture owns the completed rebase, so it may clear the AUTO_MERGE
+      // pseudo-ref that git 2.50 leaves behind after the child has exited.
+      g(trees['carry-review']!, 'update-ref', '-d', 'AUTO_MERGE')
       g(repo, 'reflog', 'expire', '--expire=now', '--all')
       const beforeLandStatus = landingReviewCoverage(trees['carry-review']!)
       expect(beforeLandStatus).toContain(`review ${reviewId}: carried (patch-id `)
