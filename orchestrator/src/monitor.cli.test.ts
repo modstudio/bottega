@@ -473,7 +473,7 @@ exit 1
   })
 
   test('a refused operator brief is fail-open and visible in systemMessage', () => {
-    setDoc({ scope: 'global', subject: null, slug: 'oversize', title: 'Oversize', body: 'x'.repeat(70 * 1024) })
+    setDoc({ scope: 'global', subject: null, slug: 'oversize', title: 'Oversize', body: 'x'.repeat(70 * 1024), forceInject: 'exercise brief ceiling' })
     const p = runBrief({ cwd: dir, source: 'startup', session_id: 'sid-budget' })
     expect(p.exitCode).toBe(0)
     const out = hookOutput(p)
@@ -484,7 +484,7 @@ exit 1
   })
 
   test('a refused operator brief preserves the coloured CLI error in systemMessage', () => {
-    setDoc({ scope: 'global', subject: null, slug: 'oversize', title: 'Oversize', body: 'x'.repeat(70 * 1024) })
+    setDoc({ scope: 'global', subject: null, slug: 'oversize', title: 'Oversize', body: 'x'.repeat(70 * 1024), forceInject: 'exercise brief ceiling' })
     const p = runBrief(
       { cwd: dir, source: 'startup', session_id: 'sid-budget' },
       {},
