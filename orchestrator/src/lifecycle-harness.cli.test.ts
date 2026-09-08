@@ -310,7 +310,7 @@ test('Every write transaction is IMMEDIATE; a deferred transaction that later wr
     expect(checked.query('SELECT answer FROM question WHERE run_id=?').get(asking.id)).toEqual({ answer: 'yes' })
     checked.close()
   }
-}, 20_000)
+})
 
 test(caseName.lockPurpose, async () => {
   const actorCode = `const{appendFileSync,existsSync,readFileSync,readdirSync}=await import('node:fs');const{join}=await import('node:path');const{withProjectLock,withWorktreeCreateLock,withCleanupLock}=await import(process.argv[1]);const [repo,actor,file]=process.argv.slice(2);const log=(event,lock)=>appendFileSync(file,JSON.stringify({at:new Date().toISOString(),event,actor,...(lock?{lock}:{})})+'\\n');log('lock-wait');const action=()=>{const common=Bun.spawnSync(['git','rev-parse','--path-format=absolute','--git-common-dir'],{cwd:repo,stdout:'pipe'}).stdout.toString().trim();const held=readdirSync(common).filter(name=>name.endsWith('.lock')&&existsSync(join(common,name,'owner'))).filter(name=>{try{return JSON.parse(readFileSync(join(common,name,'owner'),'utf8')).pid===process.pid}catch{return false}});const lock=held.length===1?held[0]:'unknown';log('lock-held',lock);Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,80)};if(actor==='worker')withWorktreeCreateLock(repo,action,2000);else if(actor==='cleanup')withCleanupLock(repo,{session:actor,what:actor},action,2000);else withProjectLock(repo,'landing',{session:actor,what:actor},action,2000,true);log('lock-released');log('exit')`
@@ -552,7 +552,7 @@ test(caseName.migration, async () => {
   const restoredCols = restored.query('PRAGMA table_info(run)').all() as { name: string }[]
   restored.close()
   expect(restoredCols.some((column) => column.name === 'label')).toBe(true)
-}, 20_000)
+})
 
 test(caseName.landingGate, async () => {
   const branches = ['gate-one', 'gate-two']; branches.forEach(addBranch)
@@ -571,7 +571,7 @@ test(caseName.landingGate, async () => {
   violation(caseName.landingGate, seedMessage(), () => {
     expect(gateStarts.every(e => e.pid === null), seedMessage()).toBe(true)
   })
-}, 20_000)
+})
 
 test(caseName.failedLanding, async () => {
   const tree = addBranch('failed-landing')
@@ -750,7 +750,7 @@ test('Landing versus cleanup of one tree take a per-artifact lease', async () =>
   expect(cleaned.code, cleaned.err).toBe(0)
   expect(heldDuringGate, seedMessage()).toBe(false)
   expect(events('lease-cleanup').some((e) => e.event === 'lock-held')).toBe(true)
-}, 20_000)
+})
 
 test('A failed landing leaves uncommitted tracked and untracked carry byte-identical', async () => {
   const cases: { name: string; setup: (tree: string) => void; refuseBeforeRebase: boolean }[] = [
