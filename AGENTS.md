@@ -277,6 +277,31 @@ tenancy enforcement, transports, queues, object storage, hosting.
 A hand-rolled mechanism where a proven one exists is a defect, not a preference.
 Name it and replace it rather than extending it.
 
+### Research before the spec, every task
+
+The build/buy line above is not obvious at the moment of writing a spec, and a
+spec written without checking is where hand-rolling enters. So the check is a
+STEP, not a disposition: before a task is specified and dispatched, find out
+what the current best practice and modern design for it are, and whether the
+problem already has a known, proven solution.
+
+The two halves of a task rarely have the same answer. What IS the product is
+novel — there is nothing to buy, and searching returns prior art for a
+different problem, which is worth knowing precisely so it is not adopted by
+mistake. The INTERNAL MACHINERY around it is almost never novel, and a
+maintained library usually exists. A task is normally both, and the research is
+what separates them.
+
+THIS IS THE ARCHITECT'S STEP AND CANNOT BE DELEGATED DOWNWARD. No external
+agent reaches the network; a worker asked to check prior art will answer from
+memory and sound certain. The research goes to a Claude subagent whose prompt
+says NEEDS-WEB, and its conclusion is written into the spec so the worker
+inherits the ruling rather than the question.
+
+Record the negative result too. "Searched, nothing published, everyone
+hand-rolls this" is a finding that belongs in the spec, because without it the
+next session pays for the same search and reaches the same answer.
+
 ### A review round is scoped by the round before it
 
 Round 1 is the only full review. Every later round repeats ONLY the lenses whose
