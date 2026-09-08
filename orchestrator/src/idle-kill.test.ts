@@ -195,6 +195,36 @@ describe('process group termination', () => {
     expect(isUninterruptible('U')).toBe(true)
   })
 
+  test('a wrapper that exits still SIGKILLs a surviving child, including after reparent', async () => {
+    const alive = new Set([42, 43])
+    const signals: Array<{ pid: number; signal: NodeJS.Signals | number }> = []
+    const result = await terminateProcessGroup(42, {
+      graceMs: 20, killConfirmMs: 20,
+      deps: {
+        kill(pid, signal) {
+          signals.push({ pid, signal })
+          if (signal === 'SIGTERM' && pid === 42) alive.delete(42)
+          if (signal === 'SIGKILL' && pid === 43) alive.delete(43)
+        },
+        alive: (pid) => alive.has(pid),
+        sample: () => {
+          const rows: Array<{ pid: number; ppid: number; pgid: number; cpu: number; state: string }> = []
+          if (alive.has(42)) rows.push({ pid: 42, ppid: 1, pgid: 42, cpu: 0, state: 'S' })
+          if (alive.has(43)) rows.push({ pid: 43, ppid: alive.has(42) ? 42 : 1, pgid: 42, cpu: 0, state: 'S' })
+          return rows
+        },
+        // Unknown coordinator pgid: walk descendants, never group-kill.
+        selfPgid: () => null,
+        wait: async () => {},
+      },
+    })
+    expect(result.exited).toBe(true)
+    expect(result.unkillable).toBe(false)
+    expect(signals.some((row) => row.pid === 42 && row.signal === 'SIGTERM')).toBe(true)
+    expect(signals.some((row) => row.pid === 43 && row.signal === 'SIGKILL')).toBe(true)
+    expect(alive.has(43)).toBe(false)
+  })
+
   test('a real sleeper is signalled and exits without looping', async () => {
     const child = Bun.spawn(['sleep', '30'], { stdout: 'ignore', stderr: 'ignore' })
     expect(child.pid).toBeGreaterThan(0)

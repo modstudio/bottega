@@ -165,6 +165,7 @@ export type TerminateResult = {
   unkillable: boolean
   reason: string | null
   pgid: number | null
+  pids: number[]
 }
 
 const defaultDeps: TerminateDeps = {
@@ -202,17 +203,38 @@ function signalTree(
   return null
 }
 
+function liveTreePids(
+  root: number, tracked: Iterable<number>, deps: TerminateDeps,
+): number[] {
+  const samples = deps.sample()
+  const ids = new Set<number>([...tracked, ...descendantPids(root, samples)])
+  return [...ids].filter((pid) => pid > 1 && deps.alive(pid))
+}
+
+/** Wait on the whole tree, not the root. A wrapper that exits is not the tree dead. */
 async function waitUntilDead(
-  pid: number, budgetMs: number, deps: TerminateDeps,
+  root: number, tracked: Iterable<number>, budgetMs: number, deps: TerminateDeps,
 ): Promise<boolean> {
   const started = Date.now()
   while (Date.now() - started < budgetMs) {
-    if (!deps.alive(pid)) return true
+    if (liveTreePids(root, tracked, deps).length === 0) return true
     const remaining = budgetMs - (Date.now() - started)
     if (remaining <= 0) break
     await deps.wait(Math.min(50, remaining))
   }
-  return !deps.alive(pid)
+  return liveTreePids(root, tracked, deps).length === 0
+}
+
+function rememberTree(root: number, tracked: Set<number>, samples: ProcessSample[]): void {
+  for (const pid of descendantPids(root, samples)) tracked.add(pid)
+}
+
+function signalSurvivors(
+  tracked: Iterable<number>, signal: NodeJS.Signals | number, deps: TerminateDeps,
+): void {
+  for (const pid of tracked) {
+    if (pid > 1 && deps.alive(pid)) deps.kill(pid, signal)
+  }
 }
 
 /**
@@ -229,22 +251,32 @@ export async function terminateProcessGroup(
     deps?: Partial<TerminateDeps>
   } = {},
 ): Promise<TerminateResult> {
-  if (pid <= 0) return { exited: true, unkillable: false, reason: null, pgid: null }
+  if (pid <= 0) return { exited: true, unkillable: false, reason: null, pgid: null, pids: [] }
   const deps: TerminateDeps = { ...defaultDeps, ...opts.deps }
   const graceMs = opts.graceMs ?? DEFAULT_IDLE_GRACE_MS
   const killConfirmMs = opts.killConfirmMs ?? DEFAULT_IDLE_KILL_CONFIRM_MS
+  const tracked = new Set<number>([pid])
   const first = deps.sample()
+  rememberTree(pid, tracked, first)
   const pgid = signalTree(pid, 'SIGTERM', deps, first)
-  if (await waitUntilDead(pid, graceMs, deps)) {
-    return { exited: true, unkillable: false, reason: null, pgid }
+  if (await waitUntilDead(pid, tracked, graceMs, deps)) {
+    return { exited: true, unkillable: false, reason: null, pgid, pids: [...tracked] }
   }
   const beforeKill = deps.sample()
+  rememberTree(pid, tracked, beforeKill)
   signalTree(pid, 'SIGKILL', deps, beforeKill)
-  if (await waitUntilDead(pid, killConfirmMs, deps)) {
-    return { exited: true, unkillable: false, reason: null, pgid }
+  // Re-walk and signal tracked survivors individually so a grandchild that
+  // reparented after the wrapper exited is not missed by descendantPids.
+  signalSurvivors(tracked, 'SIGKILL', deps)
+  if (await waitUntilDead(pid, tracked, killConfirmMs, deps)) {
+    return { exited: true, unkillable: false, reason: null, pgid, pids: [...tracked] }
   }
   const after = deps.sample()
-  const dState = groupHasUninterruptible(pid, after)
+  const dState = groupHasUninterruptible(pid, after) ||
+    [...tracked].some((child) => {
+      const row = after.find((sample) => sample.pid === child)
+      return row ? isUninterruptible(row.state) : false
+    })
   return {
     exited: false,
     unkillable: true,
@@ -252,6 +284,7 @@ export async function terminateProcessGroup(
       ? 'process did not exit after SIGKILL (D-state); needs a human'
       : 'process did not exit after SIGKILL; needs a human',
     pgid,
+    pids: [...tracked],
   }
 }
 
