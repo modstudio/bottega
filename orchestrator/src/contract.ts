@@ -533,8 +533,6 @@ answer, and you stop and wait. A blocker is something only the environment can
 fix, and you carry on without it and say so.
 
 ${INFRASTRUCTURE_RECOVERY}
-
-${REVIEW_PROVENANCE_INSTRUCTION}
 `.trim()
 
 /**
@@ -886,6 +884,8 @@ deliverable, not your diff: every change you make here is scratch work and must
 never be treated as a proposed change to land. Do not commit, push, or merge.
 
 ${INFRASTRUCTURE_RECOVERY}
+
+${REVIEW_PROVENANCE_INSTRUCTION}
 
 You may file with file_issue a defect you find OUTSIDE the artifact under
 review — a broken tool, a wrong doc, a failure in another path. A finding about
