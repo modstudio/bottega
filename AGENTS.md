@@ -330,6 +330,59 @@ fix lands, say what the surface shows afterwards. A fix without a measurement
 behind it is whack-a-mole, and the next instance arrives by a path nobody
 anticipated.
 
+## Reasonable caution, and a measure for what escapes it
+
+**Take reasonable caution, then build a way to measure what goes outside it.
+That is the whole obligation. It does not extend to anticipating every case.**
+
+This is a governing rule. It outranks the instinct to make a thing safe by
+enumeration, and it applies to provisioning, teardown, permissions, and every
+other place an agent is deciding how much it is allowed to do.
+
+**Standing up and tearing down are ordinary steps, not dangerous ones.** A task
+builds and the same task tears down; the pairing is the process, not an optional
+politeness at the end of it. An agent that leaves its infrastructure behind has
+not been careful, it has moved the cost onto the machine and onto whoever reads
+the board next. The only leftovers worth a conversation are the ones a stopped
+process could not release. Everything else goes back on the normal path, without
+ceremony and without asking.
+
+**"It might be needed later" is not caution.** It is a guess wearing caution's
+clothes, and it costs more than it protects. Name what would actually be lost and
+say where else it exists. Work committed to a branch is in the branch. A
+database that can be provisioned again is not evidence. The narrow set of things
+that genuinely exist in one place only - uncommitted work, an unpushed branch,
+production data - is the set that earns protection, and it is much smaller than
+the set agents typically defend.
+
+**Weigh the stakes honestly.** Almost everything here is local and recoverable,
+and the worst realistic loss is a day's work. That is not nothing, and it is also
+not production. A caution calibrated for irreversible damage, applied to
+reversible work, is not free: it burns review rounds, it leaves resources
+allocated, and it teaches agents to refuse ordinary instructions.
+
+**Where a case cannot be established, do the safe thing once and report it.** The
+answer to an unrecognised situation is a conservative default plus a visible
+record - never a new special case. A default that does nothing and escalates is
+correct for every shape at once, including the shapes nobody has thought of yet,
+which is why it ends the enumeration instead of extending it. A guard that
+handles many cases and misses one is worse than a plain conservative default,
+because it invites confidence it has not earned.
+
+**The escalation is the load-bearing half.** A conservative default with no
+measurement is indistinguishable from doing nothing, and that is how a system
+that meant to be careful stops working at all. Whatever the default declines to
+do must surface where someone will see it, and must say which condition it could
+not establish - see the section above: the measurement outranks the fix.
+
+The evidence is this repository's own. One teardown guard took three review
+rounds, each finding a further exotic shape and answering it with more
+cleverness; inverting the default ended it in one. Separately, treating teardown
+as somebody else's step left twelve containers, several hundred worktrees and a
+thirty-process tree alive behind finished runs. And a rule that kept a worktree
+because its run was unscored - caution, by intent - ended up teaching sessions to
+refuse an operator's direct request to clean up, on grounds that were not true.
+
 ## Tasks: inbox zero
 
 File a task for work being done NOW. Do not carry a backlog of ideas.
