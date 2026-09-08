@@ -594,6 +594,8 @@ export function preflightMcp(opts: {
   if (!mode) return
   const project = projectAt(opts.cwd)
   if (!project) return
+  const malformed = validateProjectSettings(project.settings)
+  if (malformed.length) throw new Error(malformed.join('\n'))
   const { agent: name } = pick(
     opts.job, opts.agent, opts.prompt.length, true, stackAt(opts.cwd),
     { agents: opts.avoid, models: opts.distinctModels, model: opts.model },
@@ -681,7 +683,7 @@ export function preflight(
   const project = projectAt(cwd)
   if (project) assertRegisterBranches(project)
   const tool = project?.settings.worktree ?? null
-  if (project && tool?.create && typeof tool.create !== 'string') {
+  if (project) {
     const malformed = validateProjectSettings(project.settings)
     if (malformed.length) throw new Error(malformed.join('\n'))
   }

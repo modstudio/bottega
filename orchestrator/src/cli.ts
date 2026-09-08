@@ -3569,12 +3569,8 @@ switch (cmd) {
         canon: has('no-canon') ? false : has('canon') ? true : p.canon,
         settings,
       }
-      const createChanged = JSON.stringify(p.settings.worktree?.create) !==
-        JSON.stringify(candidate.settings.worktree?.create)
-      if (createChanged) {
-        const malformed = validateProjectSettings(candidate.settings)
-        if (malformed.length) throw new Error(malformed.join('\n'))
-      }
+      const malformed = validateProjectSettings(candidate.settings)
+      if (malformed.length) throw new Error(malformed.join('\n'))
       const incomplete = worktreeWarnings(candidate).filter((w) =>
         w.startsWith('has a create command but no branch template') ||
         w.startsWith('has a create command with a {seed} placeholder but no seeds list'))

@@ -65,6 +65,8 @@ export type ProjectSettings = {
   keyPrefixes?: string[]
   /** MCP server this project's agents attach to. Defaults to the project name. */
   mcpServer?: string
+  /** A cheap plain-named read tool used to prove the MCP attachment. */
+  mcp?: { probe_tool?: string }
   /**
    * How this tracker's task states map onto the vocabulary used here.
    *
@@ -382,6 +384,19 @@ export function validateProjectSettings(settings: ProjectSettings): string[] {
     settings.secretPaths.some((path) => typeof path !== 'string' || !path.trim())
   )) {
     problems.push('secretPaths must be an array of non-empty path strings')
+  }
+  if (settings.mcpServer !== undefined &&
+      (typeof settings.mcpServer !== 'string' || !settings.mcpServer.trim())) {
+    problems.push('mcpServer must be a non-empty string')
+  }
+  if (settings.mcp !== undefined &&
+      (!settings.mcp || typeof settings.mcp !== 'object' || Array.isArray(settings.mcp))) {
+    problems.push('mcp must be an object')
+  } else if (settings.mcp?.probe_tool !== undefined) {
+    const tool = settings.mcp.probe_tool
+    if (typeof tool !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(tool)) {
+      problems.push('mcp.probe_tool must be a plain non-empty tool name')
+    }
   }
   const readonly = settings.worktree?.readonly_create
   if (readonly && !createHasPlaceholder(readonly, 'path')) {
