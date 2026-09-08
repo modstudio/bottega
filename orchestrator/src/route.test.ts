@@ -137,7 +137,7 @@ describe('failure classification', () => {
     // process tree, and orch itself being wrong are not capability evidence.
     // None of them may be averaged in with the agent's actual work.
     expect(NOT_EVIDENCE).toEqual([
-      'quota', 'auth', 'entitlement', 'unreachable', 'content_refusal', 'interrupted', 'truncated', 'escaped',
+      'quota', 'auth', 'entitlement', 'unreachable', 'context', 'cost', 'content_refusal', 'interrupted', 'truncated', 'escaped',
       'confinement_unverified', 'sandbox_denied', 'mcp_unverified', 'harness', 'abandoned',
     ])
     for (const kind of ['timeout', 'denied', 'other']) {
