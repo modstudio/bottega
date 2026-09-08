@@ -2,12 +2,23 @@ import { describe, expect, spyOn, test } from 'bun:test'
 import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addRun, compoundCreate, createWithTool, createWorktree, db, declaredCreate, fakeDocker, hermeticGitCommand, hermeticGitEnv, nowIso, prepareSharedRefGuard, processStartTime, reclaimStaleProjectLock, resolveBase, runJob, staleProjectLockHolder, upsertProject, withWorktreeCreateLock } from '../test/fixture.ts'
+import { addRun, compoundCreate, createWithTool, createWorktree, db, declaredCreate, fakeDocker, hermeticGitCommand, hermeticGitEnv, nowIso, prepareSharedRefGuard, processStartTime, projectLockRuntimeDir, reclaimStaleProjectLock, resolveBase, runJob, staleProjectLockHolder, upsertProject, withWorktreeCreateLock } from '../test/fixture.ts'
 
 import { worktreeDescribeFixture } from '../test/fixture.ts'
 
 describe("a worktree is resolved against the main checkout, not the caller cwd", () => {
   const { git, scratchRepo } = worktreeDescribeFixture()
+test('project lock state resolves under XDG runtime or the per-user temporary directory', () => {
+  const { repo } = scratchRepo()
+  try {
+    const xdg = mkdtempSync(join(tmpdir(), 'orch-xdg-'))
+    expect(projectLockRuntimeDir(repo, { XDG_RUNTIME_DIR: xdg })).toStartWith(`${xdg}/orch/`)
+    const fallback = projectLockRuntimeDir(repo, {})
+    expect(fallback).toStartWith(`${tmpdir()}/orch/`)
+    expect(projectLockRuntimeDir(repo, { XDG_RUNTIME_DIR: xdg })).not.toStartWith(`${repo}/`)
+    expect(fallback).not.toStartWith(`${repo}/`)
+  } finally { rmSync(repo, { recursive: true, force: true }) }
+})
 test('a resumed turn waits for cleanup and refuses a worktree removed under the lifecycle lock', async () => {
     const { repo } = scratchRepo()
     const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
@@ -95,72 +106,41 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
     }
   })
 
-  test('a creation lock held by a live owner waits and names its holder on timeout', () => {
+  test('a creation lock held by flock waits and names its holder on timeout', async () => {
     const { repo } = scratchRepo()
-    const lock = join(repo, '.git', 'orch-create.lock')
+    const ready = join(repo, 'lock-ready')
+    const release = join(repo, 'lock-release')
+    const child = Bun.spawn([process.execPath, '-e',
+      `const{existsSync,writeFileSync}=await import('node:fs');const{withWorktreeCreateLock}=await import(process.argv[1]);withWorktreeCreateLock(process.argv[2],()=>{writeFileSync(process.argv[3],'');while(!existsSync(process.argv[4]))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)},20000)`,
+      new URL('./worktree.ts', import.meta.url).href, repo, ready, release,
+    ], { env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
     try {
-      mkdirSync(lock)
-      writeFileSync(join(lock, 'owner'), `${process.pid}\n`)
+      for (let attempts = 0; attempts < 100 && !existsSync(ready); attempts++) await Bun.sleep(5)
       expect(() => withWorktreeCreateLock(repo, () => undefined, 20)).toThrow(
         new RegExp(
           `timed out after 0\\.02s waiting for this project's worktree creation lock ` +
-          `\\(holder session unknown, pid ${process.pid}, worktree creation, held for \\d+s\\)`,
+          `\\(holder session unknown, pid ${child.pid}, worktree creation, held for \\d+s\\)`,
         ),
       )
     } finally {
-      rmSync(repo, { recursive: true, force: true })
-    }
-  })
-
-  test('a creation lock held by a dead owner is reclaimed and reported', () => {
-    const { repo } = scratchRepo()
-    const lock = join(repo, '.git', 'orch-create.lock')
-    const reportedLock = join(realpathSync(join(repo, '.git')), 'orch-create.lock')
-    const deadPid = 2_147_483_647
-    const errors: string[] = []
-    const originalError = console.error
-    try {
-      mkdirSync(lock)
-      writeFileSync(join(lock, 'owner'), `${deadPid}\n`)
-      console.error = (...args: unknown[]) => errors.push(args.join(' '))
-      expect(withWorktreeCreateLock(repo, () => 'created', 20)).toBe('created')
-      expect(errors).toEqual([
-        `orch: reclaimed worktree creation lock from dead holder pid ${deadPid}: ${reportedLock}`,
-      ])
-      expect(existsSync(lock)).toBe(false)
-    } finally {
-      console.error = originalError
-      rmSync(repo, { recursive: true, force: true })
-    }
-  })
-
-  test('a fresh ownerless lock is not reclaimed during the owner-write race', async () => {
-    const { repo } = scratchRepo()
-    const lock = join(repo, '.git', 'orch-create.lock')
-    const child = Bun.spawn([
-      process.execPath, '-e',
-      `
-        const { mkdirSync, writeFileSync, rmSync } = await import('node:fs')
-        mkdirSync(process.argv[1])
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150)
-        writeFileSync(process.argv[1] + '/owner', process.pid + '\\n')
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150)
-        rmSync(process.argv[1], { recursive: true })
-      `,
-      lock,
-    ], { stdout: 'pipe', stderr: 'pipe' })
-    try {
-      for (let attempts = 0; attempts < 100 && !existsSync(lock); attempts++) await Bun.sleep(5)
-      expect(existsSync(lock)).toBe(true)
-      let entered = false
-      expect(() => withWorktreeCreateLock(repo, () => { entered = true }, 20)).toThrow(
-        /timed out after 0\.02s waiting for this project's worktree creation lock/,
-      )
-      expect(entered).toBe(false)
-      expect(await child.exited).toBe(0)
-    } finally {
+      writeFileSync(release, '')
       child.kill()
       await child.exited
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('legacy checkout lock and waiter directories are neither adopted nor removed', () => {
+    const { repo } = scratchRepo()
+    const lock = join(repo, '.git', 'orch-create.lock')
+    const waiters = join(repo, 'orch-create.waiters')
+    try {
+      mkdirSync(lock)
+      mkdirSync(waiters)
+      expect(withWorktreeCreateLock(repo, () => 'created', 20)).toBe('created')
+      expect(existsSync(lock)).toBe(true)
+      expect(existsSync(waiters)).toBe(true)
+    } finally {
       rmSync(repo, { recursive: true, force: true })
     }
   })

@@ -209,7 +209,7 @@ export const { orphanSafety, repoRootOf, createWorktree, createWithTool, createR
         assertSharedRefGuardOutsideWritableRoots, removeSharedRefGuard,
         workerSharedGitRoots,
         carryWorkingState, withWorktreeCreateLock, withProjectLock, projectLockState,
-        reclaimStaleProjectLock, processStartTime, staleProjectLockHolder,
+        reclaimStaleProjectLock, processStartTime, projectLockRuntimeDir, staleProjectLockHolder,
         unmergedBranch, assertCallerAncestry, checkoutHasUncommittedWork, callerDrift,
         changesIn, contentTree, removeFor, branchTip } = await import('../src/worktree.ts')
 export const { drainQueue, gateFailureSummary, land, landingStatus, landingReviewCoverage, resolveLandingBranch,

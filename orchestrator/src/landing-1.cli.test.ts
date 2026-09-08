@@ -442,7 +442,7 @@ test('only bun\'s complete timeout line reports machine load', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   }, 15_000)
 
-  test('a killed holder is reclaimed, and another project never waits on it', async () => {
+  test('a killed holder releases its kernel lock, and another project never waits on it', async () => {
     const one = repoWithBranches([]).repo
     const two = repoWithBranches([]).repo
     const hold = `const { withProjectLock } = await import(process.argv[1]); ` +
@@ -459,7 +459,7 @@ test('only bun\'s complete timeout line reports machine load', () => {
       expect(Date.now() - started).toBeLessThan(ELAPSED_MS)
       child.kill('SIGKILL')
       await child.exited
-      expect(withProjectLock(one, 'landing', { session: 'next', what: 'next-branch' }, () => 'reclaimed', 500, true)).toBe('reclaimed')
+      expect(withProjectLock(one, 'landing', { session: 'next', what: 'next-branch' }, () => 'acquired', 500, true)).toBe('acquired')
     } finally {
       child.kill()
       await child.exited

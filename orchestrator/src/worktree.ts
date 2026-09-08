@@ -25,6 +25,7 @@ import { accessSync, appendFileSync, closeSync, constants, cpSync, existsSync,
          fchmodSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync,
          realpathSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
+import { dlopen, FFIType } from 'bun:ffi'
 import { platform, tmpdir } from 'node:os'
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { db, pidAlive, ROOT, tryWriteContention } from './db.ts'
@@ -344,13 +345,43 @@ export function staleProjectLockHolder(holder: ProjectLockParticipant): string |
   return null
 }
 
+const flockLibrary = dlopen(platform() === 'darwin' ? '/usr/lib/libSystem.B.dylib' : 'libc.so.6', {
+  flock: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
+})
+const flock = flockLibrary.symbols.flock
+const LOCK_EX = 2
+const LOCK_NB = 4
+const LOCK_UN = 8
+
+export function projectLockRuntimeDir(
+  repoRoot: string, env: { [key: string]: string | undefined; XDG_RUNTIME_DIR?: string } = process.env,
+): string {
+  const common = realpathSync(resolve(repoRoot, git(['rev-parse', '--git-common-dir'], repoRoot)))
+  const base = env.XDG_RUNTIME_DIR && isAbsolute(env.XDG_RUNTIME_DIR) ? env.XDG_RUNTIME_DIR : tmpdir()
+  const key = `${basename(repoRoot)}-${createHash('sha256').update(common).digest('hex').slice(0, 16)}`
+  return join(base, 'orch', key)
+}
+
 function projectLockPaths(repoRoot: string, name: string): {
   lock: string; owner: string; waiters: string
 } {
   if (!/^[a-z][a-z0-9-]*$/.test(name)) throw new Error(`invalid project lock name: ${name}`)
-  const common = realpathSync(resolve(repoRoot, git(['rev-parse', '--git-common-dir'], repoRoot)))
-  const lock = join(common, `orch-${name}.lock`)
-  return { lock, owner: join(lock, 'owner'), waiters: join(common, `orch-${name}.waiters`) }
+  const runtime = projectLockRuntimeDir(repoRoot)
+  return {
+    lock: join(runtime, `orch-${name}.lock`),
+    owner: join(runtime, `orch-${name}.owner`),
+    waiters: join(runtime, `orch-${name}.waiters`),
+  }
+}
+
+function kernelLockHeld(path: string): boolean {
+  if (!existsSync(path)) return false
+  const fd = openSync(path, constants.O_RDWR)
+  try {
+    if (flock(fd, LOCK_EX | LOCK_NB) !== 0) return true
+    flock(fd, LOCK_UN)
+    return false
+  } finally { closeSync(fd) }
 }
 
 function lockLabel(name: string): string {
@@ -428,44 +459,23 @@ export function projectLockState(repoRoot: string, name: string): ProjectLockSta
   const paths = projectLockPaths(repoRoot, name)
   return {
     path: paths.lock,
-    holder: projectLockParticipant(paths.owner),
+    holder: kernelLockHeld(paths.lock) ? projectLockParticipant(paths.owner) : null,
     waiters: waiterEntries(paths.waiters).map((entry) => entry.participant),
   }
 }
 
-/**
- * Remove a lock only when the renamed directory still holds the incarnation
- * that was classified stale. A replacement that won the pathname is put back.
- */
+/** Kernel locks are released on process death, so there is no stale lock to reclaim. */
 export function reclaimStaleProjectLock(
   repoRoot: string, name: string,
 ): { holder: ProjectLockParticipant; reason: string; path: string } | null {
-  const paths = projectLockPaths(repoRoot, name)
-  const holder = projectLockParticipant(paths.owner)
-  if (holder === null) return null
-  const reason = staleProjectLockHolder(holder)
-  if (reason === null) return null
-  const classified = holder.incarnation
-  reclaimCheckpoint()
-  const stale = `${paths.lock}.stale-${process.pid}-${randomUUID()}`
-  try { renameSync(paths.lock, stale) } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw error
-  }
-  const renamed = projectLockParticipant(join(stale, 'owner'))
-  if (classified !== null && renamed?.incarnation !== classified) {
-    try { renameSync(stale, paths.lock) } catch { /* replacement already occupies the pathname */ }
-    return null
-  }
-  rmSync(stale, { recursive: true, force: true })
-  return { holder, reason, path: paths.lock }
+  projectLockPaths(repoRoot, name)
+  return null
 }
 
 /**
- * The mkdir lock shared by repository-wide operations.
+ * The flock(2) lock shared by repository-wide operations.
  *
- * Names keep unrelated resources separate while retaining the proven atomic
- * acquisition, bounded wait and dead-owner reclamation used for worktrees.
+ * Names keep unrelated resources separate while retaining bounded waiting.
  * Waiters are served in arrival order so a stream of short holders cannot
  * pass a process that arrived first.
  */
@@ -508,6 +518,7 @@ export function withProjectLock<T>(
     }, lockContention)
   }
   let waitedMs = 0
+  let lockFd: number | null = null
 
   try {
     while (true) {
@@ -522,16 +533,10 @@ export function withProjectLock<T>(
         Atomics.wait(sleeper, 0, 0, WORKTREE_CREATE_LOCK_POLL_MS)
         continue
       }
-      try {
-        mkdirSync(paths.lock)
-      } catch (e) {
-        if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+      const candidate = openSync(paths.lock, constants.O_CREAT | constants.O_RDWR, 0o600)
+      if (flock(candidate, LOCK_EX | LOCK_NB) !== 0) {
+        closeSync(candidate)
         const held = projectLockParticipant(paths.owner)
-        const reclaimed = reclaimStaleProjectLock(repoRoot, name)
-        if (reclaimed !== null) {
-          console.error(`orch: reclaimed ${lockLabel(name)} lock from ${reclaimed.reason}: ${paths.lock}`)
-          continue
-        }
         if (Date.now() >= deadline) {
           recordLockTimeout(held)
           throw lockTimeout(name, timeoutMs, paths.lock, held)
@@ -543,13 +548,14 @@ export function withProjectLock<T>(
       try {
         const holder = { ...participant, since: new Date().toISOString() }
         writeFileSync(paths.owner, `${JSON.stringify(holder)}\n`)
+        lockFd = candidate
         heldProjectLocks.add(paths.lock)
         rmSync(waiter, { force: true })
         if (waited) waitedMs = Date.now() - waitStarted
         break
       } catch (e) {
-        const ours = projectLockParticipant(paths.owner)
-        if (ours?.incarnation === incarnation) rmSync(paths.lock, { recursive: true, force: true })
+        flock(candidate, LOCK_UN)
+        closeSync(candidate)
         throw e
       }
     }
@@ -557,7 +563,11 @@ export function withProjectLock<T>(
     try { return action() } finally {
       heldProjectLocks.delete(paths.lock)
       const ours = projectLockParticipant(paths.owner)
-      if (ours?.incarnation === incarnation) rmSync(paths.lock, { recursive: true, force: true })
+      if (lockFd !== null) {
+        flock(lockFd, LOCK_UN)
+        closeSync(lockFd)
+      }
+      if (ours?.incarnation === incarnation) rmSync(paths.owner, { force: true })
       if (waitedMs > 0) {
         tryWriteContention({
           sessionId: lockSession, resourceKind: 'lock', resourceKey: name, eventKind: 'wait',
@@ -584,17 +594,17 @@ function lockTimeout(
     `timed out after ${timeoutMs / 1000}s waiting for this project's ${label} lock${detail}: ${lock}\n` +
     `invariant: A lock waiter is served in arrival order.\n` +
     `cleared by: the holder${held ? ` (pid ${held.pid})` : ''} finishing; ` +
-    'orch monitor names a dead holder, which the next acquisition reclaims',
+    'the kernel releases the lock if its process exits',
   )
 }
 
 /**
  * Serialize worktree creation and resume attribution for one repository.
  *
- * The directory creation is the lock operation: mkdir is atomic even when the
- * contenders are unrelated processes. The lock lives in the common git directory,
- * so callers from the main checkout and any linked worktree contend on the same
- * path, while unrelated projects do not. It deliberately surrounds project tools
+ * flock(2) is the lock operation, while FIFO tickets preserve arrival order.
+ * Runtime paths are keyed by the common git directory, so callers from the main
+ * checkout and any linked worktree contend while unrelated projects do not.
+ * It deliberately surrounds project tools
  * and recipes as well as orch's own git calls; a fetch inside a project recipe was
  * the operation that exposed the original race.
  */
@@ -628,16 +638,6 @@ export function withWorktreeLease<T>(
   timeoutMs = WORKTREE_CREATE_LOCK_TIMEOUT_MS,
 ): T {
   return withProjectLock(repoRoot, worktreeLeaseName(worktreePath), identity, action, timeoutMs)
-}
-
-function reclaimCheckpoint(): void {
-  if (process.env.ORCH_TEST_LOCK_RECLAIM_CHECKPOINT !== 'classified') return
-  const ready = process.env.ORCH_TEST_LOCK_RECLAIM_READY
-  const release = process.env.ORCH_TEST_LOCK_RECLAIM_RELEASE
-  if (!ready || !release) return
-  writeFileSync(ready, 'classified\n')
-  const sleeper = new Int32Array(new SharedArrayBuffer(4))
-  while (!existsSync(release)) Atomics.wait(sleeper, 0, 0, 10)
 }
 
 const REF_GUARD_WRAPPER_MARKER = '# orch shared-ref guard wrapper\n'
