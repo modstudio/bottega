@@ -7,7 +7,7 @@ import {
   NEEDS_HUMAN, NOT_EVIDENCE, run, upsertProject,
 } from '../test/fixture.ts'
 import { pidAlive } from './db.ts'
-import { formatIdleKillError, idleKillMs, isUninterruptible, isWorkerCpuIdle,
+import { formatIdleKillError, idleKillMs, isGroupKillablePgid, isUninterruptible, isWorkerCpuIdle,
   parseIdleReclaimedMs, parsePsTable, shouldIdleKill, terminateProcessGroup,
   DEFAULT_IDLE_KILL_MS } from './idle-kill.ts'
 import { isRoutingEvidence } from './route.ts'
@@ -115,6 +115,39 @@ describe('silence and CPU', () => {
 })
 
 describe('process group termination', () => {
+  test('unknown selfPgid never group-kills; pgid 0 and 1 are rejected', async () => {
+    expect(isGroupKillablePgid(50, null)).toBe(false)
+    expect(isGroupKillablePgid(1, 50)).toBe(false)
+    expect(isGroupKillablePgid(0, 50)).toBe(false)
+    expect(isGroupKillablePgid(50, 50)).toBe(false)
+    expect(isGroupKillablePgid(50, 1)).toBe(true)
+
+    const groupSignals = (opts: {
+      vendorPgid: number
+      selfPgid: number | null
+    }) => {
+      const signals: Array<{ pid: number; signal: NodeJS.Signals | number }> = []
+      return terminateProcessGroup(100, {
+        graceMs: 5, killConfirmMs: 5,
+        deps: {
+          kill(pid, signal) { signals.push({ pid, signal }) },
+          alive: () => false,
+          sample: () => [{ pid: 100, ppid: 1, pgid: opts.vendorPgid, cpu: 0, state: 'S' }],
+          selfPgid: () => opts.selfPgid,
+          wait: async () => {},
+        },
+      }).then(() => signals)
+    }
+
+    const unknownSelf = await groupSignals({ vendorPgid: 50, selfPgid: null })
+    expect(unknownSelf.some((row) => row.pid === -50)).toBe(false)
+    expect(unknownSelf.some((row) => row.pid === 100)).toBe(true)
+
+    const pgidOne = await groupSignals({ vendorPgid: 1, selfPgid: 50 })
+    expect(pgidOne.some((row) => row.pid === -1)).toBe(false)
+    expect(pgidOne.some((row) => row.pid === 100)).toBe(true)
+  })
+
   test('SIGTERM then confirm, then SIGKILL; a process that will not die is bounded', async () => {
     const signals: Array<{ pid: number; signal: NodeJS.Signals | number }> = []
     let alive = true

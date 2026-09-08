@@ -133,6 +133,19 @@ export function groupHasUninterruptible(pid: number, samples: ProcessSample[]): 
   return samples.some((row) => pids.has(row.pid) && isUninterruptible(row.state))
 }
 
+/**
+ * Group-kill only when our own pgid is known and the target differs.
+ * Unknown selfPgid used to take `pgid !== null`, which is the coordinator's
+ * session on a detached `orch do` (setsid: coordinator pgid equals its pid,
+ * and the vendor inherits it). pgid 0 and 1 are rejected outright: 0 is not a
+ * process group, and kill(-1) is every process the user can signal.
+ */
+export function isGroupKillablePgid(pgid: number | null | undefined, selfPgid: number | null): boolean {
+  if (pgid == null || pgid <= 1) return false
+  if (selfPgid == null) return false
+  return pgid !== selfPgid
+}
+
 export type TerminateDeps = {
   kill: (pid: number, signal: NodeJS.Signals | number) => void
   alive: (pid: number) => boolean
@@ -173,12 +186,14 @@ function signalTree(
   // is signalling only the direct child when it is a shell or wrapper that
   // does not forward signals: the real worker never sees SIGTERM, rides out
   // the grace period, and is SIGKILLed with no cleanup.
-  if (pgid && pgid !== selfPgid) {
+  // Unknown coordinator pgid means walk descendants — never group-kill on an
+  // unproven assumption.
+  if (isGroupKillablePgid(pgid, selfPgid) && pgid != null) {
     deps.kill(-pgid, signal)
-  } else {
-    for (const child of descendantPids(pid, samples)) deps.kill(child, signal)
+    return pgid
   }
-  return pgid
+  for (const child of descendantPids(pid, samples)) deps.kill(child, signal)
+  return null
 }
 
 async function waitUntilDead(
