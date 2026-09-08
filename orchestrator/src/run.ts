@@ -3129,7 +3129,7 @@ export async function run(opts: {
     })
     if (parsedReview && provenanceWrongProjectTool && status === 'ok') {
       status = 'failed'
-      error = `wrong project: provenance names ${provenanceWrongProjectTool}, expected ${mcpConnection?.server}`
+      error = `wrong project: provenance names ${provenanceWrongProjectTool}, expected ${ownMcpServer}`
       failureKind = 'contract'
     }
     if (status === 'ok' && isReaderJob(opts.job) && declaredDeliverables.length) {

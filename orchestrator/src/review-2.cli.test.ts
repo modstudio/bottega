@@ -112,6 +112,10 @@ describe('review-lens MCP provenance', () => {
       const wrong = await codexReview(repo, ['other-server.get_doc'], true)
       expect(wrong.status).toBe('failed')
       expect(wrong.error).toContain('wrong project: provenance names other-server.get_doc')
+      const wrongWithoutMcp = await codexReview(repo, ['other-server.get_doc'], false)
+      expect(wrongWithoutMcp.status).toBe('failed')
+      expect(wrongWithoutMcp.error).toContain('wrong project: provenance names other-server.get_doc')
+      expect(wrongWithoutMcp.error).toContain('fixture-project')
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
