@@ -239,9 +239,9 @@ export function collectResult(
   if (row.review_provenance) {
     try {
       const provenance = JSON.parse(row.review_provenance) as { could_not_verify?: string[]; substitutes?: string[] }
-      console.log(`PROVENANCE${row.provenance_status ? ` (${row.provenance_status})` : ''}`)
-      console.log(`  could not verify: ${provenance.could_not_verify?.join('; ') || 'none'}`)
-      console.log(`  substitutes: ${provenance.substitutes?.join('; ') || 'none'}`)
+      console.error(`PROVENANCE${row.provenance_status ? ` (${row.provenance_status})` : ''}`)
+      console.error(`  could not verify: ${provenance.could_not_verify?.join('; ') || 'none'}`)
+      console.error(`  substitutes: ${provenance.substitutes?.join('; ') || 'none'}`)
     } catch { /* a legacy malformed value remains visible in the raw output */ }
   }
   if (!outcome.ok) {
