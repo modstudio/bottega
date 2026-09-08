@@ -340,7 +340,7 @@ test('every --json surface has an enumerated and pinned output contract', () => 
       for (const name of [
         '--agent', '--schema', '--mcp', '--model', '--label', '--probe', '--seed', '--key',
         '--repo', '--base', '--carry', '--avoid', '--distinct-from', '--file', '--detach', '--follow', '--quiet',
-        '--no-failover', '--porcelain', '--cwd',
+        '--no-failover', '--no-wait-capacity', '--porcelain', '--cwd',
       ]) expect(r.out).toContain(name)
     }
   })

@@ -1496,6 +1496,7 @@ function usage(): never {
       --cwd <path>              resolve and carry from this path as if orch started there
       --follow                  block and watch the run instead of returning its id
       --no-failover             do not retry vendor failures on another agent
+      --no-wait-capacity        take the next eligible agent when the preferred row is at its concurrency cap
       --deliverable <text>      declare a named reader deliverable (repeatable; diagnose, understand, file-question)
       --timeout <minutes>       override the job's default timeout, within that job's ceiling
       --keep-tree               keep a lens or reader worktree instead of reclaiming it at terminalisation
@@ -1624,7 +1625,7 @@ function usage(): never {
   orch health [--days N] [--json] failure classes by count, time, last seen, false-verdict rate and the flake table
   orch doctor                   agents, local endpoint, routing at a glance
   orch agent add <name> --harness H --backend B [--model M] [--base-url U] [--context-tokens N]
-  orch agent set <name> [the add flags] [--enabled true|false] [--reason TEXT]
+  orch agent set <name> [the add flags] [--jobs JOB,...|any] [--prefer JOB,...] [--max-concurrent N] [--enabled true|false] [--reason TEXT]
   orch agent remove <name>      delete only an agent with no run evidence
   orch agent probe <name>       run reply, file-tool, and structured-output registration probes
   orch agent list [--json]      registered harness + backend + model rows and probe eligibility
@@ -1725,6 +1726,7 @@ function doUsage(): never {
   --porcelain      print exactly the run id, for machine callers
   --follow         block and watch the run instead of returning its id
   --no-failover    do not retry vendor failures on another agent
+  --no-wait-capacity  take the next eligible agent when the preferred row is at its concurrency cap
   --quiet          print only the reply or run id
   --deliverable T  declare a named reader deliverable (repeatable)
   --timeout N      override the job default, in minutes, within the job ceiling
@@ -1915,6 +1917,11 @@ try {
 
 validateCliArgs(argv)
 if ((argv.includes('--help') || argv.includes('-h')) && cmd && cmd !== '--help' && cmd !== '-h') {
+  if (cmd === 'do') {
+    await loadJobs()
+    doUsage()
+  }
+  if (cmd === 'review') reviewUsage()
   const { commandShape } = await import('./args.ts')
   const selected = commandShape(argv)
   if (selected) {
