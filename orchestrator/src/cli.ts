@@ -4744,7 +4744,7 @@ switch (cmd) {
         const source = markedWorktreeSource(path)
         const w = {
           path, branch: safe.branch, base: '', repoRoot: p.path,
-          source,
+          source, mintedBranch: safe.branch,
         }
         const runId = orchRunId(entry.name)
         try {

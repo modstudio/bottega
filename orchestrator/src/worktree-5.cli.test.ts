@@ -456,8 +456,8 @@ exec ${JSON.stringify(actualGit)} "$@"
         },
       },
     })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, tree, branch, id)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, tree, branch, branch, id)
     db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, branch, owner)
     try {
       const r = orchWithEnv(managedEnv, 'sweep', '--older-than', '0', '--force')
@@ -533,7 +533,7 @@ exec ${JSON.stringify(actualGit)} "$@"
       name: project, path: repo,
       settings: { trunk: 'main', worktree: { remove: "echo 'protected work' >&2; exit 7" } },
     })
-    db().query('UPDATE run SET worktree=?, branch=? WHERE id=?').run(tree, `orch/${id}`, id)
+    db().query('UPDATE run SET worktree=?, branch=?, minted_branch=? WHERE id=?').run(tree, `orch/${id}`, `orch/${id}`, id)
     try {
       const r = orch('sweep', '--older-than', '0', '--force')
       expect(r.code).not.toBe(0)
@@ -565,7 +565,7 @@ exec ${JSON.stringify(actualGit)} "$@"
         },
       },
     })
-    db().query('UPDATE run SET worktree=?, branch=? WHERE id=?').run(tree, `orch/${id}`, id)
+    db().query('UPDATE run SET worktree=?, branch=?, minted_branch=? WHERE id=?').run(tree, `orch/${id}`, `orch/${id}`, id)
     const docker = fakeDockerCommand("echo 'stub inventory failure' >&2; exit 127")
     try {
       const r = orchWithEnv(docker.env, 'sweep', '--older-than', '0', '--force')
@@ -597,7 +597,7 @@ exec ${JSON.stringify(actualGit)} "$@"
         },
       },
     })
-    db().query('UPDATE run SET worktree=?, branch=? WHERE id=?').run(tree, `orch/${id}`, id)
+    db().query('UPDATE run SET worktree=?, branch=?, minted_branch=? WHERE id=?').run(tree, `orch/${id}`, `orch/${id}`, id)
     const docker = fakeDocker([], [`orch-${id}_${project}-pgdata`])
     try {
       const r = orchWithEnv(docker.env, 'sweep', '--older-than', '0', '--force')

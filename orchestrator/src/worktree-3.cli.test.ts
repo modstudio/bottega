@@ -22,8 +22,8 @@ test('discard inventories leaks after successfully restoring a shared branch', (
       name: project, path: realpathSync(repo),
       settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
     })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, target)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, target)
     db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, tree.branch, owner)
     const docker = fakeDocker([`orch-${target}-leaked`], [])
     try {
@@ -68,8 +68,8 @@ test('discard inventories leaks after successfully restoring a shared branch', (
       name: project, path: realpathSync(repo),
       settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
     })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, target)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, target)
     db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, tree.branch, owner)
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
@@ -113,8 +113,8 @@ test('discard inventories leaks after successfully restoring a shared branch', (
         },
       },
     })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, target)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, target)
     db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, tree.branch, owner)
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
@@ -162,8 +162,8 @@ test('discard inventories leaks after successfully restoring a shared branch', (
       name: project, path: realpathSync(repo),
       settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
     })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, target)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, target)
     db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, tree.branch, owner)
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
@@ -212,8 +212,8 @@ test('discard inventories leaks after successfully restoring a shared branch', (
       name: 'leaking-tool', path: realpathSync(repo),
       settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
     })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, id)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     const docker = fakeDocker(
       [`orch-${id}-postgres-1`, 'unrelated-container'],
       [`orch-${id}_adanim-pgdata`, 'unrelated-volume'],
@@ -249,8 +249,8 @@ test('discard inventories leaks after successfully restoring a shared branch', (
       name: 'inventory-tool', path: realpathSync(repo),
       settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
     })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, id)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     const docker = fakeDockerCommand("echo 'docker unavailable' >&2; exit 127")
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
@@ -280,8 +280,8 @@ test('discard inventories leaks after successfully restoring a shared branch', (
       name: 'slow-inventory-tool', path: realpathSync(repo),
       settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
     })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, id)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     const docker = fakeDockerCommand('sleep 5')
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
@@ -315,8 +315,8 @@ test('discard inventories leaks after successfully restoring a shared branch', (
         trunk: 'main', worktree: { remove: `printf removed > "${called}"` },
       },
     })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, gone, `orch/${id}`, id)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, gone, `orch/${id}`, `orch/${id}`, id)
     const docker = fakeDocker([], [])
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
@@ -375,8 +375,8 @@ test('discard inventories leaks after successfully restoring a shared branch', (
       settings: { worktree: { remove: "echo 'dirty tree refused' >&2; exit 7" } },
     })
     const id = addRun({ agent: 'codex', job: 'implement' })
-    db().query('UPDATE run SET worktree=?, branch=? WHERE id=?')
-      .run(tree.path, tree.branch, id)
+    db().query('UPDATE run SET worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id), '--force'], {
@@ -397,8 +397,8 @@ test('discard inventories leaks after successfully restoring a shared branch', (
     const { repo } = scratchRepo()
     const tree = createWorktree(repo, 882)
     const id = addRun({ agent: 'codex', job: 'implement' })
-    db().query('UPDATE run SET worktree=?, branch=? WHERE id=?')
-      .run(tree.path, tree.branch, id)
+    db().query('UPDATE run SET worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
       const env = { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
@@ -436,8 +436,8 @@ test('discard inventories leaks after successfully restoring a shared branch', (
       settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
     })
     const id = addRun({ agent: 'codex', job: 'implement' })
-    db().query('UPDATE run SET repo=?, cwd=?, worktree=?, branch=? WHERE id=?')
-      .run('protected-tool', repo, tree.path, tree.branch, id)
+    db().query('UPDATE run SET repo=?, cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run('protected-tool', repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
@@ -495,8 +495,8 @@ test('discard inventories leaks after successfully restoring a shared branch', (
     git(tree.path, 'add', 'architect.txt')
     git(tree.path, 'commit', '-m', 'architect work')
     const id = addRun({ agent: 'codex', job: 'implement' })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, id)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id), '--force'], {
@@ -536,8 +536,8 @@ test('discard inventories leaks after successfully restoring a shared branch', (
       name: project, path: realpathSync(repo),
       settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
     })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, id)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
@@ -566,8 +566,8 @@ test('discard inventories leaks after successfully restoring a shared branch', (
     git(repo, 'merge', '--ff-only', tree.branch)
     upsertProject({ name: 'merged-trunk', path: realpathSync(repo), settings: { trunk: 'main' } })
     const id = addRun({ agent: 'codex', job: 'implement' })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, id)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
@@ -589,8 +589,8 @@ test('discard inventories leaks after successfully restoring a shared branch', (
     git(tree.path, 'commit', '-m', 'architect work')
     upsertProject({ name: 'abandon-trunk', path: realpathSync(repo), settings: { trunk: 'main' } })
     const id = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, id)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'abandon', String(id)], {
@@ -627,8 +627,8 @@ test('discard inventories leaks after successfully restoring a shared branch', (
       git(repo, 'reset', '--hard', 'HEAD~1')
       upsertProject({ name: project, path: realpathSync(repo), settings: { trunk: 'main' } })
       db().query(
-        `UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=?, started_at=? WHERE id=?`,
-      ).run(repo, tree.path, tree.branch, tip, '2020-01-01T00:00:00.000Z', id)
+        `UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=?, started_at=? WHERE id=?`,
+      ).run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, tip, '2020-01-01T00:00:00.000Z', id)
       if (cleanup === 'sweep') {
         db().query(
           `INSERT INTO score (run_id, delivery, quality, fidelity, scored_at)
@@ -661,8 +661,8 @@ test('discard inventories leaks after successfully restoring a shared branch', (
     const tree = createWorktree(repo, 887)
     upsertProject({ name: 'no-trunk-discard', path: realpathSync(repo), settings: {} })
     const id = addRun({ agent: 'codex', job: 'implement' })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, id)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
@@ -683,8 +683,8 @@ test('discard inventories leaks after successfully restoring a shared branch', (
     const tree = createWorktree(repo, 888)
     upsertProject({ name: 'no-trunk-abandon', path: realpathSync(repo), settings: {} })
     const id = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, id)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'abandon', String(id)], {
@@ -713,8 +713,8 @@ test('discard inventories leaks after successfully restoring a shared branch', (
     })
     const tree = createWorktree(repo, 890, 'origin/main')
     const id = addRun({ agent: 'codex', job: 'implement' })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, tree.base, id)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, tree.base, id)
     try {
       expect(git(repo, 'rev-list', '--count', `main..${tree.branch}`)).not.toBe('0')
       const CLI = new URL('cli.ts', import.meta.url).pathname
@@ -748,8 +748,8 @@ test('discard inventories leaks after successfully restoring a shared branch', (
     git(tree.path, 'commit', '-m', 'architect work')
     const tip = git(tree.path, 'rev-parse', 'HEAD')
     const id = addRun({ agent: 'codex', job: 'implement' })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, tree.base, id)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, tree.base, id)
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {

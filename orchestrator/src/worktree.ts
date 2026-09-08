@@ -1260,7 +1260,8 @@ export function seedArgv(create: WorktreeCreate | string | undefined, seed: stri
 /** Fill a trusted project command without running it. */
 export function fillTool(template: string, vars: Record<string, string>): string {
   return template.replace(/\{(\w+)\}/g, (placeholder, k: string, offset: number) => {
-    const value = vars[k] ?? ''
+    if (!(k in vars)) return ''
+    const value = vars[k]!
     const quote = quoteAt(template, offset)
     if (quote === "'") return value.replace(/'/g, "'\\''")
     if (quote === '"') return value.replace(/[\\"$`]/g, '\\$&')
@@ -2007,7 +2008,9 @@ export function removeWithTool(
     return removeWorktree(w, keepBranch)
   }
 
-  const r = runShellTool(tool.remove, { name, branch: w.branch, path: w.path }, w.repoRoot)
+  const vars: Record<string, string> = { name, path: w.path }
+  if (w.branch) vars.branch = w.branch
+  const r = runShellTool(tool.remove, vars, w.repoRoot)
   if (r.ok && !existsSync(w.path)) {
     const branchAfter = branchTip(w.repoRoot, w.branch)
     if (branchAfter !== null && branchAfter !== branchBefore &&
@@ -2103,6 +2106,8 @@ export function removeFor(
   // The caller id remains a fallback for legacy/already-missing trees only.
   const owningRunId = markedWorktreeRunId(w.path) ?? runId
   const minted = mintedBranchOwnedBy(w, owningRunId ?? runId)
+  // Unminted: the git branch is not ours to name to a project tool. Pass the
+  // tree only. Minted: the tool receives that branch name, never ''.
   const owned = { ...w, branch: minted ?? '' }
   const project = projectAt(repoRoot)
   const tool = project?.settings.worktree
