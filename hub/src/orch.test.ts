@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync,
+  chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync,
+  symlinkSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
   decodeRunsJson, docArgv, docGet, docRemove, docSet, projectArgv,
-  startDashboardCapability, stopDashboardCapability,
+  resolveOrchExecutable, startDashboardCapability, stopDashboardCapability,
 } from './orch.ts'
 import { encodeOrchRunLine, OrchBlockersSchema } from '../../shared/orch-contract.ts'
 
@@ -87,6 +88,34 @@ test('only the orch client invokes bin/orch', () => {
       ? [path.slice(root.length)] : []
   })
   expect(violations).toEqual([])
+})
+
+test('orch resolution falls back from a stale configured path and reports both locations on failure', () => {
+  const root = mkdtempSync(join(tmpdir(), 'hub-orch-resolution-'))
+  const bin = join(root, 'bin')
+  mkdirSync(bin)
+  const found = join(bin, 'orch')
+  writeFileSync(found, '#!/bin/sh\nexit 0\n')
+  chmodSync(found, 0o755)
+  const priorOrch = process.env.HUB_ORCH
+  const priorPath = process.env.PATH
+  try {
+    process.env.HUB_ORCH = join(root, 'stale', 'bin', 'orch')
+    process.env.PATH = bin
+    expect(resolveOrchExecutable()).toBe(found)
+
+    process.env.PATH = join(root, 'empty-bin')
+    expect(() => resolveOrchExecutable()).toThrow(
+      `configured path ${process.env.HUB_ORCH}; PATH found nothing`,
+    )
+    expect(() => resolveOrchExecutable()).not.toThrow(/moved|renamed/)
+  } finally {
+    if (priorOrch === undefined) delete process.env.HUB_ORCH
+    else process.env.HUB_ORCH = priorOrch
+    if (priorPath === undefined) delete process.env.PATH
+    else process.env.PATH = priorPath
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('dashboard scoring capability is private and bound to this hub process', () => {

@@ -5,10 +5,10 @@
  * concerns quietly become one, which is the root canon's line and the reason
  * `orch` grew `--json` flags rather than hub growing a second connection.
  */
-import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { accessSync, chmodSync, constants, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { delimiter, join, resolve } from 'node:path'
 import type { DocScope } from '../../shared/docs.ts'
 import {
   HarnessHealthSchema, OrchBlockersSchema, OrchProjectListSchema, OrchProjectSchema, OrchRunDetailSchema,
@@ -24,20 +24,27 @@ import {
 import { refreshProjects } from './projects.ts'
 let dashboardCapability: { dir: string; path: string; token: string } | null = null
 
-/** Resolve the executable afresh so a server follows its checkout when it moves. */
-function orchPath(): string {
-  if (process.env.HUB_ORCH) return process.env.HUB_ORCH
-  const root = Bun.spawnSync(['git', 'rev-parse', '--show-toplevel'], {
-    cwd: process.cwd(), stdout: 'pipe', stderr: 'ignore',
+/** Resolve the executable for every call made by a long-lived hub process. */
+export function resolveOrchExecutable(): string {
+  const configured = process.env.HUB_ORCH?.trim()
+    || resolve(new URL('../..', import.meta.url).pathname, 'bin/orch')
+  if (existsSync(configured)) return configured
+  const found = process.env.PATH?.split(delimiter).find((directory) => {
+    try {
+      accessSync(resolve(directory || '.', 'orch'), constants.X_OK)
+      return true
+    } catch { return false }
   })
-  const checkout = root.exitCode === 0 ? root.stdout.toString().trim() : ''
-  return resolve(checkout || new URL('../..', import.meta.url).pathname, 'bin/orch')
+  const foundPath = found === undefined ? null : resolve(found || '.', 'orch')
+  if (foundPath) return foundPath
+  throw missingBinary(configured, foundPath)
 }
 
-function missingBinary(path: string): Error {
+function missingBinary(configured: string, found: string | null): Error {
   return new Error(
-    `orch is not at ${path}. This server was started from a checkout that has ` +
-    `since moved or been renamed; restart it from the current one.`,
+    `orch executable unavailable at call time: configured path ${configured}; ` +
+    `PATH found ${found ?? 'nothing'}. Correct HUB_ORCH or PATH, then restart the hub server ` +
+    `or the orch MCP server that launched it.`,
   )
 }
 
@@ -67,8 +74,7 @@ async function orchProcess(
   timeoutMs = 20_000,
   opts: { stdin?: string; env?: Record<string, string> } = {},
 ): Promise<string> {
-  const path = orchPath()
-  if (!existsSync(path)) throw missingBinary(path)
+  const path = resolveOrchExecutable()
   const proc = Bun.spawn([path, ...args], {
     env: { ...process.env, ...opts.env },
     stdout: 'pipe',
@@ -151,8 +157,7 @@ export const blockers = (days: number): Promise<OrchBlockers> =>
   json(['blockers', '--days', String(days), '--json'], OrchBlockersSchema)
 
 export function projectList(): OrchProject[] {
-  const path = orchPath()
-  if (!existsSync(path)) throw missingBinary(path)
+  const path = resolveOrchExecutable()
   const proc = Bun.spawnSync([path, 'project', 'list', '--json'], {
     env: { ...process.env }, stdout: 'pipe', stderr: 'pipe', timeout: 20_000,
   })

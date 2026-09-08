@@ -3940,6 +3940,9 @@ switch (cmd) {
       }
       if (result.conditions.length || result.errors.length) {
         lines.push(`monitor ${result.id}: ${result.conditions.length} condition(s), ${result.errors.length} observation error(s)`)
+        if (result.errors.length) {
+          lines.push('PARTIAL: the condition list is incomplete because one or more observations failed.')
+        }
         for (const condition of result.conditions) {
           const old = condition.ageMs == null ? 'age unknown' : `${Math.round(condition.ageMs / 60_000)}m old`
           const sev = condition.severity ? `  ${condition.severity}` : ''

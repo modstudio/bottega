@@ -1169,6 +1169,61 @@ describe('scoped operator docs', () => {
     }
   })
 
+  test('MCP file_issue resolves orch at call time when the server starts in another project', async () => {
+    const hubDb = join(dir, 'file-issue-call-time-hub.db')
+    const foreignCwd = join(dir, 'file-issue-foreign-cwd')
+    mkdirSync(foreignCwd, { recursive: true })
+    migrateHub(hubDb)
+    upsertProject({
+      name: 'file-issue-foreign', path: foreignCwd, stack: 'typescript', canon: true,
+      settings: { keyPrefixes: ['FOREIGN'] },
+    })
+    upsertProject({
+      name: PLATFORM_SLUG, path: join(dir, 'file-issue-platform'), stack: 'typescript', canon: true,
+      settings: { keyPrefixes: ['DEV'] },
+    })
+    const priorCwd = process.cwd()
+    const priorHubDb = process.env.HUB_DB
+    const priorHubOrch = process.env.HUB_ORCH
+    const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+    process.env.HUB_DB = hubDb
+    process.env.CLAUDE_CODE_SESSION_ID = 'call-time-resolution-session'
+    delete process.env.HUB_ORCH
+    process.chdir(foreignCwd)
+    const server = createDocsMcpServer()
+    const client = new Client({ name: 'orch-call-time-test', version: '1.0.0' })
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+    await server.connect(serverTransport)
+    await client.connect(clientTransport)
+    try {
+      const filed = await client.callTool({
+        name: 'file_issue',
+        arguments: {
+          kind: 'suggestion',
+          what_happened: 'The MCP server can file from a registered non-bottega cwd',
+          expected: 'The write resolves the orch executable when the call is made',
+          evidence: 'The server was created after changing cwd to a project with no bin/orch',
+          not_established: 'No behavior outside executable resolution is asserted',
+          reporting_project: PLATFORM_SLUG,
+        },
+      })
+      expect(filed.isError, JSON.stringify(filed)).not.toBe(true)
+      expect(JSON.parse(((filed as any).content[0] as { text: string }).text)).toMatchObject({
+        key: 'DEV-1', project: PLATFORM_SLUG,
+      })
+    } finally {
+      process.chdir(priorCwd)
+      if (priorHubDb === undefined) delete process.env.HUB_DB
+      else process.env.HUB_DB = priorHubDb
+      if (priorHubOrch === undefined) delete process.env.HUB_ORCH
+      else process.env.HUB_ORCH = priorHubOrch
+      if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+      else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+      await client.close()
+      await server.close()
+    }
+  })
+
   test('file_issue files while making a failed duplicate search explicit in output and body', async () => {
     const hubDb = join(dir, 'file-issue-search-failure-hub.db')
     const priorHubDb = process.env.HUB_DB

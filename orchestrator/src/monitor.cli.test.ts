@@ -331,6 +331,26 @@ echo '[]'
     rmSync(syncDir, { recursive: true, force: true })
   }, 20_000)
 
+  test('marks the human condition list partial when an observation fails', () => {
+    const hubDb = join(dir, 'monitor-partial-hub.db')
+    const binDir = join(dir, 'monitor-partial-bin')
+    mkdirSync(binDir)
+    writeFileSync(join(binDir, 'docker'), '#!/bin/sh\necho inventory-offline >&2\nexit 17\n')
+    chmodSync(join(binDir, 'docker'), 0o755)
+    migrateHub(hubDb)
+    const cli = new URL('cli.ts', import.meta.url).pathname
+    const run = Bun.spawnSync([process.execPath, cli, 'monitor'], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0', HUB_DB: hubDb,
+        PATH: `${binDir}:${process.env.PATH ?? ''}` },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(run.exitCode).toBe(1)
+    expect(run.stdout.toString()).toContain(
+      'PARTIAL: the condition list is incomplete because one or more observations failed.',
+    )
+    expect(run.stderr.toString()).toContain('observation failed: docker volume inventory unavailable: inventory-offline')
+  })
+
   test('pipes a complete large human report before returning its condition status', async () => {
     const hubDb = join(dir, 'monitor-large-report-hub.db')
     const binDir = join(dir, 'monitor-large-report-bin')
@@ -378,6 +398,9 @@ echo '[]'
       `canon: ${canonFindings} stale references in ${canonDocs} docs`,
       `monitor ${record.id}: ${record.findings} condition(s), ${record.errors} observation error(s)`,
     ]
+    if (record.errors) {
+      lines.push('PARTIAL: the condition list is incomplete because one or more observations failed.')
+    }
     for (const condition of conditions) {
       const old = condition.age_ms == null
         ? 'age unknown'
