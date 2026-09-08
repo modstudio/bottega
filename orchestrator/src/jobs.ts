@@ -173,7 +173,7 @@ export const JOBS: Record<string, Job> = {
     name: 'file-question',
     what: 'Answer a question about files in this repo, citing paths and lines.',
     needs: { readsRepo: true },
-    prefer: ['qwen-local', 'codex', 'grok'],
+    prefer: ['local-acp', 'codex', 'grok'],
     contextTokens: ERRAND,
   },
   understand: {
@@ -261,14 +261,14 @@ export const JOBS: Record<string, Job> = {
     name: 'canon-lookup',
     what: 'Report what the canon states about a topic, quoting the governing file.',
     needs: { readsRepo: true },
-    prefer: ['qwen-local', 'codex', 'grok'],
+    prefer: ['local-acp', 'codex', 'grok'],
     contextTokens: ERRAND,
   },
   summarize: {
     name: 'summarize',
     what: 'Condense supplied text. Context is inline; no repo access needed.',
     needs: {},
-    prefer: ['qwen-local', 'agy'],
+    prefer: ['local-acp', 'agy'],
     contextTokens: ERRAND,
   },
   /**

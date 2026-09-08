@@ -803,9 +803,18 @@ function capacityRefusal(candidate: Pick<Candidate, 'agent' | 'maxConcurrent' | 
 export function currentPolicySelection<T extends CurrentPolicyCandidate>(
   candidates: readonly T[], prefer: readonly string[], explore = true, rng: () => number = Math.random,
   explorationExcluded: ReadonlySet<string> = new Set(),
+  declaredPreferences: ReadonlySet<string> = new Set(),
 ): CurrentPolicySelection<T> {
   const proven = candidates.filter((c) => c.evidence >= MIN_SAMPLE && c.score !== null)
   const unproven = candidates.filter((c) => c.evidence < MIN_SAMPLE)
+
+  for (const name of prefer) {
+    if (!declaredPreferences.has(name)) continue
+    const preferred = unproven.find((candidate) =>
+      candidate.agent === name && worthExploring(candidate) &&
+      !explorationExcluded.has(candidate.agent))
+    if (preferred) return { chosen: preferred, mode: 'preference', tied: 0 }
+  }
 
   if (proven.length > 0) {
     const worthTrying = unproven.filter((candidate) =>
@@ -935,7 +944,10 @@ export function pick(
     `${row.agent} not explored: failing canon eval ${row.slug}`)
   const withConstraint = (reason: string) => [reason, ...notExplored].join('; ')
   const declaredPreferences = eligible.filter((candidate) => candidate.preferred).map((candidate) => candidate.agent)
-  const selected = currentPolicySelection(eligible, [...declaredPreferences, ...j.prefer], explore, rng, explorationExcluded)
+  const selected = currentPolicySelection(
+    eligible, [...declaredPreferences, ...j.prefer], explore, rng, explorationExcluded,
+    new Set(declaredPreferences),
+  )
   const chosen = selected.chosen
   const policy = explore ? 'thompson' : 'mean'
   if (selected.mode === 'challenger') return {

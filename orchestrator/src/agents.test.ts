@@ -218,15 +218,26 @@ describe('agent registry', () => {
     expect(chosen.reason).toContain('preference')
   })
 
-  test('at five judged runs the measured rate wins over preference', () => {
+  test('a preferred agent stays first until its own cell has five judgements', () => {
     eligibleLocal('preferred-local')
     setAgent('preferred-local', { jobs: ['file-question'], preferredJobs: ['file-question'] })
     for (let i = 0; i < 5; i++) {
       score(addRun({ agent: 'codex', job: 'file-question', status: 'ok' }), 'full', 'right')
     }
+    expect(pick('file-question', undefined, 0, false).agent).toBe('preferred-local')
+    for (let i = 0; i < 5; i++) {
+      score(addRun({ agent: 'preferred-local', job: 'file-question', status: 'ok' }), 'full', 'mixed')
+    }
     const chosen = pick('file-question', undefined, 0, false)
-    expect(chosen.agent).toBe('codex')
+    expect(chosen.agent).not.toBe('preferred-local')
     expect(chosen.reason).not.toContain('preference')
+  })
+
+  test('local-acp is the declared errand preference and disabled qwen is never canon preference', () => {
+    expect(JOBS['file-question']!.prefer[0]).toBe('local-acp')
+    expect(JOBS.summarize!.prefer[0]).toBe('local-acp')
+    expect(JOBS['canon-lookup']!.prefer).toEqual(['local-acp', 'codex', 'grok'])
+    expect(JOBS['canon-lookup']!.prefer).not.toContain('qwen-local')
   })
 
   test('a row at its concurrency cap is excluded and a preferred cap refuses with the running id', () => {
