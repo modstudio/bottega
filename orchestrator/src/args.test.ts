@@ -24,7 +24,7 @@ describe('CLI argument recognition', () => {
       ['land', '12', '--message', 'fuller reasoning'], ['land', '12', '--file', 'msg.txt'],
       ['issue', 'DEV-175'], ['contract', 'implement'],
       ['reclaim', 'worktree', '/tmp/orch-12', '--dry-run'],
-      ['reclaim', 'branch', 'bottega:technical/DEV-391-orch-3035', '--dry-run'],
+      ['reclaim', 'branch', 'demo:technical/DEV-391-orch-3035', '--dry-run'],
       ['workflow','list','--json'], ['workflow','show','ship','--version','1'],
       ['workflow','set','ship','--file','ship.json','--reason','change'],
       ['workflow','promote','ship','2','--reason','ready'], ['workflow','retire','ship','2','--reason','withdrawn'],
