@@ -146,7 +146,7 @@ def main() -> int:
     notes = []
     try:
         result = subprocess.run(
-            [hub_bin(), "note", "list", "--session", sid, "--json"],
+            [hub_bin(), "note", "list", "--session", sid, "--actionable", "--json"],
             capture_output=True, text=True, timeout=5, check=True,
         )
         notes = [(row["id"], row["project"], row["text"]) for row in json.loads(result.stdout)]
