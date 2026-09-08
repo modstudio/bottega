@@ -337,7 +337,7 @@ await new Promise(() => {})
       expect(stopped.code, stopped.err).toBe(0)
       try { await pending } catch { /* the stopped vendor did not complete */ }
       expect(db().query('SELECT status, error, failure_kind FROM run WHERE id=?').get(running.id))
-        .toEqual({ status: 'stopped', error: 'stopped by architect', failure_kind: null })
+        .toEqual({ status: 'stopped', error: 'stopped by architect', failure_kind: 'stopped' })
     } finally {
       if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
       else process.env.CLAUDE_CODE_SESSION_ID = priorSession
