@@ -45,6 +45,10 @@ export type Candidate = {
    * needs no waiting out.
    */
   cooling: string | null
+  declared: string[] | null
+  preferred: boolean
+  maxConcurrent: number | null
+  runningRunIds: number[]
 }
 
 /**
@@ -555,7 +559,20 @@ export function candidates(
     let eligible = true
     let why = ''
     const unavailable = unavailableReason(name)
-    if (cooling && coolingProbeAgent !== name) {
+    const runningRunIds = (db().query(
+      "SELECT id FROM run WHERE agent=? AND status='running' AND probe=0 ORDER BY id",
+    ).all(name) as { id: number }[]).map((row) => row.id)
+    const declared = a.jobs ?? null
+    const preferred = Boolean(a.preferredJobs?.includes(jobName))
+    if (declared && !declared.includes(jobName)) {
+      eligible = false
+      why = `not declared for ${jobName}`
+    }
+    else if (a.maxConcurrent && runningRunIds.length >= a.maxConcurrent) {
+      eligible = false
+      why = `at capacity (${a.maxConcurrent} running)`
+    }
+    else if (cooling && coolingProbeAgent !== name) {
       eligible = false
       why = `vendor ${cooling}; retry after ${COOLDOWN_MIN}m or run a successful probe to clear it`
     }
@@ -610,6 +627,10 @@ export function candidates(
       eligible,
       why,
       cooling,
+      declared,
+      preferred,
+      maxConcurrent: a.maxConcurrent ?? null,
+      runningRunIds,
     }
   })
 
@@ -816,7 +837,7 @@ export function pick(
   explore = true,
   stack?: string | null,
   /** Agents and effective models a fan-out has already used. */
-  avoid: { agents?: string[]; models?: string[]; model?: string } = {},
+  avoid: { agents?: string[]; models?: string[]; model?: string; noWaitCapacity?: boolean } = {},
   /** An explicit calibration probe may test whether its named agent recovered. */
   probe = false,
   /** Stable findings viewpoint used for reviewer-precision calibration. */
@@ -850,6 +871,17 @@ export function pick(
     if (!c) throw new Error(`unknown agent "${override}"`)
     if (!c.eligible) throw new Error(`agent "${override}" not eligible for ${jobName}: ${c.why}`)
     return { agent: override, reason: 'explicit --agent' }
+  }
+  const blockedPreferred = cands.find((candidate) =>
+    candidate.preferred && candidate.maxConcurrent !== null &&
+    candidate.runningRunIds.length >= candidate.maxConcurrent)
+  if (blockedPreferred && !avoid.noWaitCapacity) {
+    throw new Error(
+      `preferred agent ${blockedPreferred.agent} is at capacity ` +
+      `(${blockedPreferred.maxConcurrent} running: ${blockedPreferred.runningRunIds.join(', ')})\n` +
+      'invariant: a preferred local lane waits at its declared capacity instead of silently spending another lane\n' +
+      'cleared by: wait for the named runs or pass --no-wait-capacity',
+    )
   }
   let eligible = cands.filter((c) => c.eligible)
   const excluded: string[] = []
@@ -895,7 +927,8 @@ export function pick(
   const notExplored = failingEvals.map((row) =>
     `${row.agent} not explored: failing canon eval ${row.slug}`)
   const withConstraint = (reason: string) => [reason, ...notExplored].join('; ')
-  const selected = currentPolicySelection(eligible, j.prefer, explore, rng, explorationExcluded)
+  const declaredPreferences = eligible.filter((candidate) => candidate.preferred).map((candidate) => candidate.agent)
+  const selected = currentPolicySelection(eligible, [...declaredPreferences, ...j.prefer], explore, rng, explorationExcluded)
   const chosen = selected.chosen
   const policy = explore ? 'thompson' : 'mean'
   if (selected.mode === 'challenger') return {

@@ -92,6 +92,13 @@
       "when": 1788900000006,
       "tag": "0012_review_identity_provenance",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1788900000007,
+      "tag": "0013_agent_declarations",
+      "breakpoints": true
     }
   ]
 }

@@ -6477,6 +6477,7 @@ switch (cmd) {
     for (const c of ev.cands) {
       console.log(
         `  ${c.agent.padEnd(7)} ${c.eligible ? 'eligible' : 'excluded'.padEnd(8)}` +
+          ` declared=${c.declared?.join(',') ?? 'any'} preferred=${c.preferred ? 'yes' : 'no'}` +
           ` runs=${String(c.runs).padStart(3)} judged=${String(c.evidence).padStart(3)}` +
           ` score=${c.score === null ? "—" : (c.score * 100).toFixed(0) + "%"}` +
           ` shrunk=${c.shrunk === null ? "—" : (c.shrunk * 100).toFixed(0) + "%"}  ${c.why}`,
@@ -7017,6 +7018,11 @@ switch (cmd) {
         throw new Error('--enabled must be true or false')
       }
       const context = flag('context-tokens')
+      const jobs = flag('jobs')
+      const prefer = flag('prefer')
+      const maxConcurrent = flag('max-concurrent')
+      const parseJobs = (value: string | undefined) => value === undefined ? undefined
+        : value === 'any' ? null : value.split(',').map((job) => job.trim())
       return {
         ...(flag('harness') ? { harness: flag('harness') as any } : {}),
         ...(flag('backend') ? { backend: flag('backend') as any } : {}),
@@ -7025,6 +7031,9 @@ switch (cmd) {
         ...(context ? { contextTokens: Number(context) } : {}),
         ...(enabled !== undefined ? { enabled: enabled === 'true' } : {}),
         ...(flag('reason') !== undefined ? { reason: flag('reason')! } : {}),
+        ...(jobs !== undefined ? { jobs: parseJobs(jobs) } : {}),
+        ...(prefer !== undefined ? { preferredJobs: parseJobs(prefer) ?? [] } : {}),
+        ...(maxConcurrent !== undefined ? { maxConcurrent: Number(maxConcurrent) } : {}),
       }
     }
     if (sub === 'add') {
@@ -7048,6 +7057,17 @@ switch (cmd) {
       console.log(JSON.stringify(result, null, 2))
       if (!result.ok) process.exitCode = 1
     }
+    else if (sub === 'show') {
+      const row = agentRows().find((candidate) => candidate.name === name)
+      if (!row) throw new Error(`unknown agent "${name}"`)
+      const judged = db().query(
+        `SELECT job, COUNT(*) AS count FROM run r JOIN score s ON s.run_id=r.id WHERE r.agent=? GROUP BY job ORDER BY job`,
+      ).all(name) as { job: string; count: number }[]
+      console.log(JSON.stringify({
+        ...row, caps: JSON.parse(row.caps),
+        probeResult: row.probe_result ? JSON.parse(row.probe_result) : null, judged,
+      }, null, 2))
+    }
     else if (sub === 'list') {
       const rows = agentRows().map((row) => {
         const caps = JSON.parse(row.caps)
@@ -7056,6 +7076,9 @@ switch (cmd) {
           name: row.name, harness: row.harness, backend: row.backend, model: row.model,
           baseUrl: row.base_url, transport: row.transport, caps, billing: row.billing,
           enabled: Boolean(row.enabled), disabledReason: row.disabled_reason,
+          jobs: row.jobs ? JSON.parse(row.jobs) : null,
+          preferredJobs: row.preferred_jobs ? JSON.parse(row.preferred_jobs) : [],
+          maxConcurrent: row.max_concurrent,
           probedAt: row.probed_at, probeResult: row.probe_result ? JSON.parse(row.probe_result) : null,
           legacy: !['codex','grok','opencode','goose','claude-code'].includes(row.harness),
           limitation: row.name === 'local-acp' && Number(caps.contextTokens ?? 0) < understandMinimum
@@ -7076,6 +7099,7 @@ switch (cmd) {
           `${row.name.padEnd(12)} ${row.enabled ? 'enabled ' : 'disabled'} ` +
           `${row.harness}/${row.backend ?? '-'} ${row.model}` +
           `${row.legacy ? ' [legacy]' : ''} — ${row.eligibility}` +
+          `; jobs ${row.jobs?.join(',') ?? 'any'}; prefer ${row.preferredJobs.join(',') || '-'}; cap ${row.maxConcurrent ?? 'none'}` +
           `${row.limitation ? `; ${row.limitation}` : ''}`,
         )
       }

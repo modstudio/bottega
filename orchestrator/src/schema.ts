@@ -19,12 +19,16 @@ export const agent = sqliteTable('agent', {
   baseUrl: text('base_url'), transport: text().notNull().default('cli'), caps: text().notNull(),
   billing: text().notNull(), enabled: integer().notNull().default(1),
   disabledReason: text('disabled_reason'), probedAt: text('probed_at'), probeResult: text('probe_result'),
+  jobs: text(), preferredJobs: text('preferred_jobs'), maxConcurrent: integer('max_concurrent'),
 }, (t) => [
   check('agent_transport_check', sql`${t.transport} in ('cli','acp')`),
   check('agent_billing_check', sql`${t.billing} in ('subscription','free','local','metered','unknown')`),
   check('agent_enabled_check', sql`${t.enabled} in (0,1)`),
   check('agent_caps_json_check', sql`json_valid(${t.caps})`),
   check('agent_probe_result_json_check', sql`${t.probeResult} is null or json_valid(${t.probeResult})`),
+  check('agent_jobs_json_check', sql`${t.jobs} is null or json_valid(${t.jobs})`),
+  check('agent_preferred_jobs_json_check', sql`${t.preferredJobs} is null or json_valid(${t.preferredJobs})`),
+  check('agent_max_concurrent_check', sql`${t.maxConcurrent} is null or ${t.maxConcurrent} > 0`),
   check('agent_disabled_reason_check', sql`(${t.enabled} = 1 and ${t.disabledReason} is null) or (${t.enabled} = 0 and length(trim(${t.disabledReason})) > 0)`),
 ])
 

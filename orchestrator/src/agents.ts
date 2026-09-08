@@ -258,6 +258,9 @@ export type Agent = {
   probeResult?: unknown
   probePassed?: boolean
   legacy?: boolean
+  jobs?: string[] | null
+  preferredJobs?: string[]
+  maxConcurrent?: number | null
   bin: string
   /** Oldest CLI release this harness has been verified against. */
   minimumCliVersion: string
@@ -810,6 +813,7 @@ export type AgentRow = {
   name: string; harness: string; backend: string | null; model: string; base_url: string | null
   transport: 'cli' | 'acp'; caps: string; billing: Agent['billing']; enabled: number
   disabled_reason: string | null; probed_at: string | null; probe_result: string | null
+  jobs: string | null; preferred_jobs: string | null; max_concurrent: number | null
 }
 
 function rowAgent(row: AgentRow): Agent {
@@ -853,6 +857,9 @@ function rowAgent(row: AgentRow): Agent {
     probeResult: row.probe_result ? JSON.parse(row.probe_result) : null,
     probePassed: row.probe_result ? JSON.parse(row.probe_result).ok !== false : false,
     legacy,
+    jobs: row.jobs ? JSON.parse(row.jobs) : null,
+    preferredJobs: row.preferred_jobs ? JSON.parse(row.preferred_jobs) : [],
+    maxConcurrent: row.max_concurrent,
     ...(row.base_url ? { env: () => ({
       ...(base.env?.() ?? {}),
       ORCH_LOCAL_BASE_URL: row.base_url!,
@@ -937,6 +944,7 @@ export type AgentMutation = {
   harness?: Harness; backend?: Backend; model?: string; baseUrl?: string | null
   transport?: 'cli' | 'acp'; billing?: Agent['billing']; contextTokens?: number
   enabled?: boolean; reason?: string
+  jobs?: string[] | null; preferredJobs?: string[]; maxConcurrent?: number | null
 }
 
 function assertAgentMutation(input: AgentMutation, adding: boolean): void {
@@ -954,6 +962,15 @@ function assertAgentMutation(input: AgentMutation, adding: boolean): void {
   }
   if (input.contextTokens !== undefined && (!Number.isInteger(input.contextTokens) || input.contextTokens <= 0)) {
     throw new Error('--context-tokens must be a positive integer')
+  }
+  for (const [flag, jobs] of [['--jobs', input.jobs], ['--prefer', input.preferredJobs]] as const) {
+    if (jobs !== undefined && jobs !== null && (!Array.isArray(jobs) || jobs.some((job) => !job.trim()))) {
+      throw new Error(`${flag} must be any or a comma-separated list of jobs`)
+    }
+  }
+  if (input.maxConcurrent !== undefined && input.maxConcurrent !== null &&
+      (!Number.isInteger(input.maxConcurrent) || input.maxConcurrent <= 0)) {
+    throw new Error('--max-concurrent must be a positive integer')
   }
   if (adding && (!input.harness || !input.backend || !input.model)) {
     throw new Error('agent add requires --harness, --backend, and --model')
@@ -1020,11 +1037,15 @@ export function setAgent(name: string, input: AgentMutation): AgentRow {
     caps.contextTokens = input.contextTokens
   }
   writableDb().query(
-    `UPDATE agent SET harness=?,backend=?,model=?,base_url=?,transport=?,caps=?,billing=?,enabled=?,disabled_reason=?,probed_at=?,probe_result=? WHERE name=?`,
+    `UPDATE agent SET harness=?,backend=?,model=?,base_url=?,transport=?,caps=?,billing=?,enabled=?,disabled_reason=?,probed_at=?,probe_result=?,jobs=?,preferred_jobs=?,max_concurrent=? WHERE name=?`,
   ).run(input.harness ?? current.harness, input.backend ?? current.backend,
     input.model ?? current.model, input.baseUrl === undefined ? current.base_url : input.baseUrl,
     input.transport ?? current.transport, JSON.stringify(caps), input.billing ?? current.billing,
-    enabled, reason, probedAt, probeResult, name)
+    enabled, reason, probedAt, probeResult,
+    input.jobs === undefined ? current.jobs : input.jobs === null ? null : JSON.stringify(input.jobs),
+    input.preferredJobs === undefined ? current.preferred_jobs : JSON.stringify(input.preferredJobs),
+    input.maxConcurrent === undefined ? current.max_concurrent : input.maxConcurrent,
+    name)
   refreshAgents()
   return agentRows().find((row) => row.name === name)!
 }
