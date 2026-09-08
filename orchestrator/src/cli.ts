@@ -1297,14 +1297,24 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
 }
 
 function refuseEscapedChain(id: number): void {
-  const row = db().query(
-    `SELECT id, failure_kind FROM run
+  const root = db().query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
+    .get(id) as { root_id: number } | null
+  const rows = root ? db().query(
+    `SELECT id, failure_kind, pre_confinement FROM run
       WHERE (id=? OR parent_run_id=?) AND failure_kind IN ('escaped','confinement_unverified')
-      ORDER BY id DESC LIMIT 1`,
-  ).get(id, id) as { id: number; failure_kind: string } | null
-  if (!row) return
+      ORDER BY id DESC`,
+  ).all(root.root_id, root.root_id) as {
+    id: number; failure_kind: string; pre_confinement: string | null
+  }[] : []
+  if (!rows.length) return
+  const kind = rows[0]!.failure_kind
+  const recovery = kind === 'escaped'
+    ? rows.some((row) => !row.pre_confinement)
+      ? 'snapshot missing in this chain: clear uses the available snapshots and moves missing outcomes forward'
+      : 'snapshots available: clear restores the pre-confinement outcomes'
+    : 'classification requires an operator ruling before the chain can resume'
   throw new Error(
-    `run ${id} is ${row.failure_kind}\n` +
+    `run ${id} is ${kind} (${recovery})\n` +
     'invariant: an escaped or confinement-unverified chain is not resumed until the classification is cleared\n' +
     `cleared by: orch confinement clear ${id} --writer TEXT --note TEXT`,
   )
@@ -2098,11 +2108,15 @@ switch (cmd) {
       auditOnly()
       throw new Error(`refusing --tip ${suppliedTip}: ${branch}'s current tip is ${currentTip}`)
     }
-    const restore = rows.map((row) => {
-      if (!row.pre_confinement) throw new Error(`run ${row.id} has no pre-confinement outcome to restore`)
-      const value = JSON.parse(row.pre_confinement) as {
+    const transitions = rows.map((row) => {
+      const mode = row.pre_confinement ? 'restored' : 'forward'
+      const value = (row.pre_confinement ? JSON.parse(row.pre_confinement) : {
+        status: 'failed', failureKind: null,
+        error: `escaped confinement cleared forward by ${writer}: ${note}; pre-confinement outcome unavailable`,
+      }) as {
         status?: string; failureKind?: string | null; error?: string | null
         landingBlock?: { detail: string; invariant: string; command: string; worktree: string } | null
+        clearMode?: 'restored' | 'forward'
       }
       if (!['ok', 'failed', 'asking', 'stopped', 'stale'].includes(value.status ?? '')) {
         throw new Error(`run ${row.id} has invalid pre-confinement status`)
@@ -2115,20 +2129,22 @@ switch (cmd) {
           worktree,
         }
       } else delete value.landingBlock
-      return { row, value }
+      value.clearMode = mode
+      return { row, value, mode }
     })
     writeTransaction(() => {
       authority = adoptRunMutation(authority, 'receipt')
       const update = db().query(
         'UPDATE run SET status=?, failure_kind=?, error=?, pre_confinement=? WHERE id=? AND failure_kind=\'escaped\'',
       )
-      for (const { row, value } of restore) {
+      for (const { row, value } of transitions) {
         update.run(
           value.status!, value.failureKind ?? null, value.error ?? null, JSON.stringify(value), row.id,
         )
       }
       resolveRootFromLastTurn(db(), authority.rootId)
       auditRunMutation(authority, 'reclassify', JSON.stringify({ ...audit, cleared: true,
+        transitions: transitions.map(({ row, mode }) => ({ runId: row.id, mode })),
         landingBlock: worktreeMissing ? recoveryCommand : null }))
     })
     console.log(

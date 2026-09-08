@@ -172,14 +172,29 @@ describe("detached run collection", () => {
       repo: project, inputTree: tree, headCommit: tip,
     })
     db().query(
-      'UPDATE run SET worktree=?,branch=?,failure_kind=?,error=?,pre_confinement=? WHERE id=?',
+      'UPDATE run SET worktree=?,branch=?,failure_kind=?,error=?,pre_confinement=?,vendor_session=? WHERE id=?',
     ).run(worktree, branch, 'escaped', 'outside edit', JSON.stringify({
       status: 'ok', failureKind: null, error: null,
-    }), id)
+    }), 'confinement-test-session', id)
     const audit = () => JSON.parse((db().query(
-      'SELECT reason FROM run_mutation_audit WHERE run_id=? AND action=\'reclassify\' ORDER BY rowid DESC',
+      'SELECT reason FROM run_mutation_audit WHERE root_id=? AND action=\'reclassify\' ORDER BY rowid DESC',
     ).get(id) as { reason: string }).reason) as Record<string, unknown>
     return { repo, worktree, branch, tip, tree, project, id, git, audit }
+  }
+
+  const addEscapedTurn = (fixture: ReturnType<typeof confinementArtifact>) => {
+    const id = addRun({
+      agent: 'missing-test-agent', job: 'implement', status: 'failed', kind: 'escaped',
+      parent: fixture.id, turn: 2, session: 'orch-test-session', repo: fixture.project,
+      inputTree: fixture.tree, headCommit: fixture.tip,
+    })
+    db().query(
+      `UPDATE run SET worktree=?, branch=?, error='outside edit', pre_confinement=?, vendor_session=?
+        WHERE id=?`,
+    ).run(fixture.worktree, fixture.branch, JSON.stringify({
+      status: 'ok', failureKind: null, error: null,
+    }), 'confinement-test-session', id)
+    return id
   }
 
   test('confinement clear restores an unchanged artifact and audits both tips and trees', () => {
@@ -199,6 +214,47 @@ describe("detached run collection", () => {
         divergence: false, cleared: true,
       })
     } finally { rmSync(fixture.repo, { recursive: true, force: true }) }
+  })
+
+  test('escaped refusals name and execute the working clear remedy for every chain shape', () => {
+    for (const rootSnapshot of [true, false]) {
+      for (const addressByTurn of [false, true]) {
+        const fixture = confinementArtifact()
+        try {
+          const turn = addEscapedTurn(fixture)
+          if (!rootSnapshot) {
+            db().query('UPDATE run SET pre_confinement=NULL WHERE id=?').run(fixture.id)
+          }
+          const addressed = addressByTurn ? turn : fixture.id
+          const refused = orch('continue', String(addressed), 'resume escaped chain')
+          expect(refused.code).toBe(1)
+          expect(refused.err).toContain(rootSnapshot
+            ? 'snapshots available: clear restores the pre-confinement outcomes'
+            : 'snapshot missing in this chain: clear uses the available snapshots and moves missing outcomes forward')
+          expect(refused.err).toContain(
+            'invariant: an escaped or confinement-unverified chain is not resumed until the classification is cleared',
+          )
+          const remedy = `orch confinement clear ${addressed} --writer TEXT --note TEXT`
+          expect(refused.err).toContain(`cleared by: ${remedy}`)
+
+          // Execute the named remedy, replacing only its documented placeholders.
+          const cleared = orch(
+            'confinement', 'clear', String(addressed), '--writer', 'operator', '--note', 'known edit',
+          )
+          expect(cleared.code, cleared.err).toBe(0)
+          expect(db().query(
+            `SELECT COUNT(*) n FROM run WHERE (id=? OR parent_run_id=?) AND failure_kind='escaped'`,
+          ).get(fixture.id, fixture.id)).toEqual({ n: 0 })
+          expect(fixture.audit().transitions).toEqual(rootSnapshot
+            ? [{ runId: fixture.id, mode: 'restored' }, { runId: turn, mode: 'restored' }]
+            : [{ runId: fixture.id, mode: 'forward' }, { runId: turn, mode: 'restored' }])
+
+          const resumed = orch('continue', String(fixture.id), 'resume cleared chain')
+          expect(resumed.code, resumed.err).toBe(0)
+          expect(Number(resumed.out.trim())).toBeGreaterThan(turn)
+        } finally { rmSync(fixture.repo, { recursive: true, force: true }) }
+      }
+    }
   })
 
   test('confinement clear records a missing worktree block and landing names its recovery', () => {
