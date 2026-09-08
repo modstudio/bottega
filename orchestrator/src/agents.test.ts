@@ -309,7 +309,9 @@ describe('agent registry', () => {
     expect(JOBS['file-question']!.prefer[0]).toBe('local-acp')
     expect(JOBS.summarize!.prefer[0]).toBe('local-acp')
     expect(JOBS['canon-lookup']!.prefer).toEqual(['local-acp', 'codex', 'grok'])
-    expect(JOBS['canon-lookup']!.prefer).not.toContain('qwen-local')
+    for (const [name, declared] of Object.entries(JOBS)) {
+      expect(declared.prefer, name).not.toContain('qwen-local')
+    }
   })
 
   test('a row at its concurrency cap is excluded and a preferred cap refuses with the running id', () => {

@@ -254,7 +254,7 @@ export const JOBS: Record<string, Job> = {
     name: 'verify-claim',
     what: 'Check one specific claim against the code and report true, false or undecidable.',
     needs: { readsRepo: true },
-    prefer: ['codex', 'grok', 'qwen-local'],
+    prefer: ['codex', 'grok'],
     contextTokens: ERRAND,
   },
   'canon-lookup': {
