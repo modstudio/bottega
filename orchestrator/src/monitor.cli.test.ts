@@ -363,6 +363,13 @@ describe('operational monitor record', () => {
 describe('session-brief hook lists open resumes without injecting bodies', () => {
   const hook = new URL('../hooks/session-brief.py', import.meta.url).pathname
   const heartbeat = new URL('../hooks/orch-heartbeat.sh', import.meta.url).pathname
+  const bypassOversizeWriteGate = () => {
+    const doc = setDoc({
+      scope: 'global', subject: null, slug: 'oversize', title: 'Oversize',
+      body: 'x'.repeat(70 * 1024), delivery: 'demand',
+    })
+    db().query("UPDATE doc SET delivery='inject' WHERE id=?").run(doc.id)
+  }
   const runBrief = (
     payload: object,
     extraEnv: Record<string, string> = {},
@@ -473,7 +480,7 @@ exit 1
   })
 
   test('a refused operator brief is fail-open and visible in systemMessage', () => {
-    setDoc({ scope: 'global', subject: null, slug: 'oversize', title: 'Oversize', body: 'x'.repeat(70 * 1024), forceInject: 'exercise brief ceiling' })
+    bypassOversizeWriteGate()
     const p = runBrief({ cwd: dir, source: 'startup', session_id: 'sid-budget' })
     expect(p.exitCode).toBe(0)
     const out = hookOutput(p)
@@ -484,7 +491,7 @@ exit 1
   })
 
   test('a refused operator brief preserves the coloured CLI error in systemMessage', () => {
-    setDoc({ scope: 'global', subject: null, slug: 'oversize', title: 'Oversize', body: 'x'.repeat(70 * 1024), forceInject: 'exercise brief ceiling' })
+    bypassOversizeWriteGate()
     const p = runBrief(
       { cwd: dir, source: 'startup', session_id: 'sid-budget' },
       {},
