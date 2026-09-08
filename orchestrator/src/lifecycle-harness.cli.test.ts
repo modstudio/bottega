@@ -586,49 +586,21 @@ test(caseName.failedLanding, async () => {
   })
 }, 15_000)
 
-test('A reclaim removes exactly the acquisition it classified as stale', async () => {
-  const { withProjectLock } = await import('./worktree.ts')
-  const deadPid = 2_147_483_647
-  const lock = join(git(repo, 'rev-parse', '--path-format=absolute', '--git-common-dir'), 'orch-landing.lock')
-  mkdirSync(lock, { recursive: true })
-  writeFileSync(join(lock, 'owner'), `${JSON.stringify({
-    pid: deadPid, startTime: null, incarnation: 'classified-a',
-    session: 'dead', what: 'stale-holder', since: new Date(0).toISOString(),
-  })}\n`)
-  const ready = join(fixture, 'reclaim-ready')
-  const release = join(fixture, 'reclaim-release')
-  const done = join(fixture, 'reclaim-done')
-  rmSync(ready, { force: true }); rmSync(release, { force: true }); rmSync(done, { force: true })
+test('A killed lock holder releases exactly its kernel-held acquisition', async () => {
+  const { projectLockState, withProjectLock } = await import('./worktree.ts')
+  const ready = join(fixture, 'kernel-lock-ready')
+  rmSync(ready, { force: true })
   const child = Bun.spawn([process.execPath, '-e',
-    `const{writeFileSync}=await import('node:fs');const{reclaimStaleProjectLock}=await import(process.argv[1]);const result=reclaimStaleProjectLock(process.argv[2],'landing');writeFileSync(process.argv[3],JSON.stringify(result))`,
-    worktreeModule, repo, done], {
-    env: gitEnv({
-      ORCH_DB: storePath,
-      ORCH_TEST_LOCK_RECLAIM_CHECKPOINT: 'classified',
-      ORCH_TEST_LOCK_RECLAIM_READY: ready,
-      ORCH_TEST_LOCK_RECLAIM_RELEASE: release,
-    }),
-    stdout: 'pipe', stderr: 'pipe',
+    `const{writeFileSync}=await import('node:fs');const{withProjectLock}=await import(process.argv[1]);withProjectLock(process.argv[2],'landing',{session:'dead',what:'killed-holder'},()=>{writeFileSync(process.argv[3],'');Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10000)},20000,true)`,
+    worktreeModule, repo, ready], {
+    env: gitEnv({ ORCH_DB: storePath }), stdout: 'pipe', stderr: 'pipe',
   })
   await waitFor(ready)
-  rmSync(lock, { recursive: true, force: true })
-  const liveIncarnation = withProjectLock(repo, 'landing', { session: 'live', what: 'replacement' }, () => {
-    const live = JSON.parse(readFileSync(join(lock, 'owner'), 'utf8')) as { incarnation: string }
-    writeFileSync(release, '')
-    const sleeper = new Int32Array(new SharedArrayBuffer(4))
-    const deadline = Date.now() + 5000
-    while (!existsSync(done)) {
-      if (Date.now() >= deadline) throw new Error(`reclaim child did not finish\n${seedMessage()}`)
-      Atomics.wait(sleeper, 0, 0, 10)
-    }
-    expect(JSON.parse(readFileSync(join(lock, 'owner'), 'utf8')).incarnation).toBe(live.incarnation)
-    return live.incarnation
-  }, 8000, true)
-  expect(liveIncarnation).toBeDefined()
-  expect(JSON.parse(readFileSync(done, 'utf8'))).toBeNull()
-  const reclaimed = await result(child)
-  expect(reclaimed.code, reclaimed.err).toBe(0)
-  expect(existsSync(lock)).toBe(false)
+  expect(projectLockState(repo, 'landing').holder?.what).toBe('killed-holder')
+  child.kill('SIGKILL')
+  await child.exited
+  expect(withProjectLock(repo, 'landing', { session: 'live', what: 'replacement' }, () => 'acquired', 1000, true)).toBe('acquired')
+  expect(projectLockState(repo, 'landing').holder).toBeNull()
 }, 15_000)
 
 class RefusalSetupError extends Error {}
