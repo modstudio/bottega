@@ -291,7 +291,12 @@ test('discard inventories leaks after successfully restoring a shared branch', (
         env: { ...process.env, ...docker.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
         stdout: 'pipe', stderr: 'pipe',
       })
-      expect(Date.now() - started).toBeLessThan(3_000)
+      // The bound derives from the inventory timeout the shard runner hands
+      // this file (run-gate sets it per size class), not from a quiet-machine
+      // literal: discard takes two bounded inventory calls (containers, then
+      // volumes), so it must return within twice that timeout plus overhead.
+      const inventoryMs = Number(process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS ?? 1000)
+      expect(Date.now() - started).toBeLessThan(inventoryMs * 2 + 2_000)
       expect(p.exitCode).not.toBe(0)
       expect(p.stderr.toString()).toContain('inventory unavailable')
       expect(p.stderr.toString()).toContain('timed out')
