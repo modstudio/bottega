@@ -25,10 +25,13 @@ describe('agent registry', () => {
       tool: { ok: true, output: 'REGISTRATION_PROBE_FILE_OK', toolEvents: 1, statuses: ['completed'] },
       schema: { ok: true, output: '{"status":"ok"}' },
       file: { ok: true, output: '{"status":"ok"}' },
+      mcp: { verifiable: true, output: 'pong' },
       contextTokens: 131072,
       contextSource: 'harness',
     })
-    expect(AGENTS['local-acp']!.caps).toMatchObject({ readsRepo: true, schema: true, replyFile: true })
+    expect(AGENTS['local-acp']!.caps).toMatchObject({
+      readsRepo: true, schema: true, replyFile: true, mcp: true,
+    })
     expect(AGENTS['local-acp']!.contextTokens).toBe(131072)
     expect(AGENTS['qwen-local']!.enabled).toBe(false)
   })

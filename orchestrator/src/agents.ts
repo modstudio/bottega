@@ -1118,6 +1118,7 @@ export function recordAgentProbe(name: string, result: RegistrationProbeResult):
     ...prior,
     readsRepo: result.tool.ok,
     schema: result.schema.ok,
+    mcp: result.mcp?.verifiable ?? false,
     replyFile: result.file?.ok ?? false,
     ...(result.contextTokens !== null ? { contextTokens: result.contextTokens } : {}),
   }
@@ -1246,31 +1247,37 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
   const mcpVerifiable = !needs.mcp && declared
     ? true
     : mcpToolCallsObservable(mcpRun.events, mcpRun.output)
+  const replyOk = reply.status === 'ok' && reply.output.trim().toLowerCase() === 'ok'
+  const toolOk = !needs.tool || (tool.status === 'ok' && registrationProbeReadsRepo(tool.events, tool.output))
+  const schemaOk = !needs.schema || (structured.status === 'ok' && parsedSchema?.status === 'ok')
+  const fileOk = !needs.schema || valueMatchesStrictSchema(
+    JSON.parse(readFileSync(schemaPath, 'utf8')), parsedFile,
+  )
   const perJob = Object.fromEntries(declaredJobs.map((jobName) => {
     const job = JOBS[jobName]
     return [jobName, {
-      reply: true,
-      ...(job?.needs.readsRepo ? { tool: true } : {}),
-      ...(job?.needs.writesRepo || job?.findings ? { schema: true } : {}),
-      ...(job?.needs.mcp ? { mcp: true } : {}),
+      reply: replyOk,
+      ...(job?.needs.readsRepo ? { tool: toolOk } : {}),
+      ...(job?.needs.writesRepo || job?.findings ? { schema: schemaOk } : {}),
+      ...(job?.needs.mcp ? { mcp: mcpVerifiable } : {}),
     }]
   }))
   const result: RegistrationProbeResult = {
     harness: row.harness,
     ok: false,
-    reply: { ok: reply.status === 'ok' && reply.output.trim().toLowerCase() === 'ok', output: reply.output },
+    reply: { ok: replyOk, output: reply.output },
     tool: {
       // ACP reports the harness tool lifecycle separately from its final prose.
       // Goose emits an empty final message after a successful read, so the
       // sentinel may live in the tool result rather than the echoed reply.
       // Any completed tool is not enough: the read must target the probe file
       // and the exact sentinel must appear in that result or the final reply.
-      ok: !needs.tool || (tool.status === 'ok' && registrationProbeReadsRepo(tool.events, tool.output)),
+      ok: toolOk,
       output: tool.output, toolEvents: tool.events.filter((e) => e.kind === 'tool').length,
       statuses: tool.events.filter((e) => e.kind === 'tool').map((e) => e.status ?? 'unknown'),
     },
-    schema: { ok: !needs.schema || (structured.status === 'ok' && parsedSchema?.status === 'ok'), output: structured.output },
-    file: { ok: valueMatchesStrictSchema(JSON.parse(readFileSync(schemaPath, 'utf8')), parsedFile), output: fileOutput },
+    schema: { ok: schemaOk, output: structured.output },
+    file: { ok: fileOk, output: fileOutput },
     mcp: { verifiable: mcpVerifiable, output: mcpRun.output },
     jobs: perJob,
     contextTokens, contextSource,
@@ -1278,8 +1285,8 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
   }
   // Cloud agents declare no ceiling deliberately (canon: not the binding
   // constraint here); only a local endpoint must report its window.
-  result.ok = result.reply.ok && result.tool.ok && result.file!.ok &&
-    (contextTokens !== null || !row.base_url)
+  result.ok = result.reply.ok && result.tool.ok && result.schema.ok && result.file!.ok &&
+    (!needs.mcp || mcpVerifiable) && (contextTokens !== null || !row.base_url)
   recordAgentProbe(name, result)
   return result
 }
