@@ -134,7 +134,8 @@ test('an explicit non-empty override lands and records the measured tree and rea
       expect(landingStatus(repo)).toContain('queue:\n  none')
       expect(landingStatus(repo)).toContain('invalidated today:\n  none')
       expect(landingReviewCoverage(repo)).toBe(
-        `review coverage for main:\ncurrent tip tree: ${tree}\n  none`,
+        `review coverage for main:\nbranch: main\ncandidate tree: ${tree}\n` +
+        'current patch-id: \nlenses present: none\nlenses missing: correctness',
       )
     }
     finally { rmSync(repo, { recursive: true, force: true }) }

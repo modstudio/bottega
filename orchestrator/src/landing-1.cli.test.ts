@@ -214,11 +214,11 @@ test('only bun\'s complete timeout line reports machine load', () => {
     const { repo, trees } = repoWithBranches(['ordered-preflight'])
     const order = join(repo, 'landing-order')
     const tree = trees['ordered-preflight']!
+    upsertProject({ name: 'landing-ordered-preflight', path: repo,
+      settings: { trunk: 'main', gate: 'true' } })
     completedReview('landing-ordered-preflight', [g(tree, 'rev-parse', 'HEAD^{tree}')], {
       branch: 'ordered-preflight', baseCommit: g(repo, 'rev-parse', 'main'), launchCwd: tree,
     })
-    upsertProject({ name: 'landing-ordered-preflight', path: repo,
-      settings: { trunk: 'main', gate: 'true' } })
     try {
       const child = childLand(repo, 'ordered-preflight', { unreviewed: null }, {
         ORCH_TEST_LANDING_ORDER: order,
@@ -1027,14 +1027,55 @@ test('only bun\'s complete timeout line reports machine load', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  test('a stale branch review yields bounded coverage output without unrelated rerun directives', async () => {
+    const branch = 'bounded-review-output'
+    const { repo, trees } = repoWithBranches([branch])
+    const project = 'landing-bounded-review-output'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      completedReview(project, [g(repo, 'rev-parse', `${branch}^{tree}`)], {
+        branch, baseCommit: oldBase, launchCwd: trees[branch]!,
+      })
+      for (let i = 0; i < 100; i++) {
+        const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'test',
+          lens: `missing-catalogue-${i}`, repo: project })
+        db().query('UPDATE run SET branch=? WHERE id=?').run(`other-${i}`, runId)
+        const reviewId = (db().query(
+          "INSERT INTO review (recorded_at,completed_at) VALUES ('now','now') RETURNING id",
+        ).get() as { id: number }).id
+        db().query(
+          `INSERT INTO review_lens
+             (review_id,run_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify)
+           VALUES (?,?,?,?,?,'[]','[]','[]','[]')`,
+        ).run(reviewId, runId, `missing-catalogue-${i}`, 'codex', 'test')
+      }
+      writeFileSync(join(trees[branch]!, 'after-review.txt'), 'new content\n')
+      g(trees[branch]!, 'add', 'after-review.txt')
+      g(trees[branch]!, 'commit', '-m', 'change after review')
+
+      const child = childLand(repo, branch, { unreviewed: null })
+      expect(await child.exited).not.toBe(0)
+      const error = await new Response(child.stderr).text()
+      expect(error.length).toBeLessThan(2_000)
+      expect(error).toContain('lenses present: none')
+      expect(error).toContain('lenses missing: lens-1')
+      expect(error).toContain('review data problems: 101 (example:')
+      expect(error).not.toContain('other-99')
+      expect(error).not.toContain('--lens missing-catalogue-')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   test('lands when every lens in a completed review measured the candidate tree', async () => {
     const { repo, trees } = repoWithBranches(['reviewed'])
     const project = 'landing-reviewed'
     upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
     try {
       const tree = g(trees.reviewed!, 'rev-parse', 'HEAD^{tree}')
-      const reviewId = completedReview(project, [tree, tree])
-      expect(landingReviewCoverage(trees.reviewed!)).toContain(`review ${reviewId}: exact`)
+      completedReview(project, [tree, tree], {
+        branch: 'reviewed', baseCommit: g(repo, 'rev-parse', 'main'), launchCwd: trees.reviewed!,
+      })
+      expect(landingReviewCoverage(trees.reviewed!)).toContain('lenses present: lens-1, lens-2')
       const child = childLand(repo, 'reviewed', { unreviewed: null })
       expect(await child.exited).toBe(0)
       expect(g(repo, 'rev-parse', 'main')).toBe(g(repo, 'rev-parse', 'reviewed'))
@@ -1234,8 +1275,8 @@ test('only bun\'s complete timeout line reports machine load', () => {
     }
   })
 
-  test('refuses a carry when trunk moved on a path touched by the change', async () => {
-    const { repo, trees } = repoWithBranches(['overlap-review'])
+  test('carries current-patch coverage when unrelated reviews and trunk touch the same path', async () => {
+    const { repo, trees } = repoWithBranches(['overlap-review', 'unrelated-review'])
     const project = 'landing-overlap-review'
     upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
     try {
@@ -1243,7 +1284,17 @@ test('only bun\'s complete timeout line reports machine load', () => {
       g(repo, 'add', 'shared.txt')
       g(repo, 'commit', '-m', 'shared base')
       g(trees['overlap-review']!, 'rebase', 'main')
+      g(trees['unrelated-review']!, 'rebase', 'main')
       const oldBase = g(repo, 'rev-parse', 'main')
+      const unrelatedPath = join(trees['unrelated-review']!, 'shared.txt')
+      const unrelatedLines = readFileSync(unrelatedPath, 'utf8').split('\n')
+      unrelatedLines[5] = 'unrelated branch line'
+      writeFileSync(unrelatedPath, unrelatedLines.join('\n'))
+      g(trees['unrelated-review']!, 'add', 'shared.txt')
+      g(trees['unrelated-review']!, 'commit', '-m', 'unrelated shared change')
+      completedReview(project, [g(repo, 'rev-parse', 'unrelated-review^{tree}')], {
+        branch: 'unrelated-review', baseCommit: oldBase, launchCwd: trees['unrelated-review']!,
+      })
       const branchPath = join(trees['overlap-review']!, 'shared.txt')
       const branchLines = readFileSync(branchPath, 'utf8').split('\n')
       branchLines[1] = 'branch line'
@@ -1260,8 +1311,8 @@ test('only bun\'s complete timeout line reports machine load', () => {
       g(repo, 'add', 'shared.txt')
       g(repo, 'commit', '-m', 'trunk shared change')
       const child = childLand(repo, 'overlap-review', { unreviewed: null })
-      expect(await child.exited).not.toBe(0)
-      expect(await new Response(child.stderr).text()).toContain('invalid (overlapping paths:')
+      expect(await child.exited).toBe(0)
+      expect(g(repo, 'rev-parse', 'main')).toBe(g(repo, 'rev-parse', 'overlap-review'))
       expect(db().query('SELECT outdated_at, outdated_reason FROM review ORDER BY id DESC LIMIT 1').get())
         .toEqual({ outdated_at: null, outdated_reason: null })
     } finally { rmSync(repo, { recursive: true, force: true }) }
@@ -1281,12 +1332,13 @@ test('only bun\'s complete timeout line reports machine load', () => {
       writeFileSync(join(trees['changed-review']!, 'after-review.txt'), 'new content\n')
       g(trees['changed-review']!, 'add', 'after-review.txt')
       g(trees['changed-review']!, 'commit', '-m', 'content after review')
-      expect(landingReviewCoverage(trees['changed-review']!)).toContain('invalid (patch-id differs)')
+      expect(landingReviewCoverage(trees['changed-review']!)).toContain('lenses missing: lens-1')
       const child = childLand(repo, 'changed-review', { unreviewed: null })
       expect(await child.exited).not.toBe(0)
       const stderr = await new Response(child.stderr).text()
-      expect(stderr).toContain('invalid (patch-id differs)')
-      expect(stderr).toContain('orch do review-lens --review changed-review --lens lens-1')
+      expect(stderr).toContain('1 review not evidence (example: review')
+      expect(stderr).toContain('patch-id differs')
+      expect(stderr).toContain('lenses missing: lens-1')
       expect(db().query('SELECT outdated_at, outdated_reason FROM review ORDER BY id DESC LIMIT 1').get())
         .toEqual({ outdated_at: expect.any(String), outdated_reason: 'patch-id differs' })
       g(trees['changed-review']!, 'reset', '--hard', reviewedCommit)
@@ -1341,7 +1393,8 @@ test('only bun\'s complete timeout line reports machine load', () => {
       g(trees[branch]!, 'commit', '-m', 'content after review')
 
       const status = landingReviewCoverage(trees[branch]!)
-      expect(status).toContain('invalid (git merge-base')
+      expect(status).toContain('1 review not evidence (example: review')
+      expect(status).toContain('git merge-base')
       expect(status).toContain('missing-trunk')
       expect(status).not.toContain('carried')
     } finally { rmSync(repo, { recursive: true, force: true }) }
@@ -1387,10 +1440,10 @@ test('only bun\'s complete timeout line reports machine load', () => {
       g(trees[branch]!, 'add', 'payload.bin')
       g(trees[branch]!, 'commit', '-m', 'replace binary payload')
 
-      expect(landingReviewCoverage(trees[branch]!)).toContain('invalid (patch-id differs)')
+      expect(landingReviewCoverage(trees[branch]!)).toContain('lenses missing: lens-1')
       const child = childLand(repo, branch, { unreviewed: null })
       expect(await child.exited).not.toBe(0)
-      expect(await new Response(child.stderr).text()).toContain('invalid (patch-id differs)')
+      expect(await new Response(child.stderr).text()).toContain('patch-id differs')
       expect((db().query('SELECT patch_id FROM review WHERE id=?').get(reviewId) as
         { patch_id: string }).patch_id).toBe(reviewedPatch)
       expect(db().query('SELECT outdated_at, outdated_reason FROM review WHERE id=?').get(reviewId))
@@ -1419,7 +1472,7 @@ test('only bun\'s complete timeout line reports machine load', () => {
       g(repo, 'commit', '-m', 'move trunk for metadata')
       const child = childLand(repo, 'partial-metadata-review', { unreviewed: null })
       expect(await child.exited).not.toBe(0)
-      expect(await new Response(child.stderr).text()).toContain('invalid (lens metadata incomplete)')
+      expect(await new Response(child.stderr).text()).toContain('lens metadata incomplete')
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
@@ -1445,7 +1498,7 @@ test('only bun\'s complete timeout line reports machine load', () => {
       g(repo, 'commit', '-m', 'move trunk for bases')
       const child = childLand(repo, 'disagreeing-bases-review', { unreviewed: null })
       expect(await child.exited).not.toBe(0)
-      expect(await new Response(child.stderr).text()).toContain('invalid (lens bases disagree)')
+      expect(await new Response(child.stderr).text()).toContain('lens bases disagree')
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
@@ -1473,7 +1526,7 @@ test('only bun\'s complete timeout line reports machine load', () => {
       expect(() => g(repo, 'cat-file', '-e', `${reviewedCommit}^{commit}`)).toThrow()
       const child = childLand(repo, 'missing-review', { unreviewed: null })
       expect(await child.exited).not.toBe(0)
-      expect(await new Response(child.stderr).text()).toContain('invalid (reviewed commit not found)')
+      expect(await new Response(child.stderr).text()).toContain('1 review not evidence')
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
@@ -1500,7 +1553,7 @@ test('only bun\'s complete timeout line reports machine load', () => {
       const child = childLand(repo, 'mixed-review', { unreviewed: null })
       expect(await child.exited).not.toBe(0)
       const error = await new Response(child.stderr).text()
-      expect(error).toContain('invalid (review lenses do not agree on one tree)')
+      expect(error).toContain('lenses present: none')
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
