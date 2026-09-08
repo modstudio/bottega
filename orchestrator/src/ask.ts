@@ -29,6 +29,7 @@
  * so the fast path degrades into the slow one rather than into a hang.
  */
 import { db, nowIso, writableDb } from './db.ts'
+import { appendRunEvent } from './events.ts'
 import { checkMessages, messageArchitect } from './mailbox.ts'
 import { createConnection, createServer, type Socket } from 'node:net'
 
@@ -93,6 +94,9 @@ export async function ask(o: {
     const row = q.get(id) as { answer: string | null } | null
     if (row) {
       db().query("UPDATE run SET status='running' WHERE id=? AND status='asking'").run(o.runId)
+      appendRunEvent(o.runId, {
+        ts: nowIso(), type: 'text', text: 'ruling delivered; worker resumed',
+      })
       return { answered: true, answer: row.answer ?? '' }
     }
     if (Date.now() >= deadline) {

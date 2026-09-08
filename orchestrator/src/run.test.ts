@@ -1055,6 +1055,8 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
 describe('the live ask channel always answers', () => {
   test('a ruling that lands is handed straight back', async () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const stale = '2026-09-08T00:01:00.000Z'
+    db().query('UPDATE run SET last_event_at=?, started_at=? WHERE id=?').run(stale, stale, run)
     const pending = ask({ runId: run, question: 'one table or two?', timeoutMs: 10_000 })
     for (let i = 0; i < 50; i++) {
       const q = db().query('SELECT id FROM question WHERE run_id = ?').get(run) as { id: number } | null
@@ -1066,6 +1068,11 @@ describe('the live ask channel always answers', () => {
       await new Promise((r) => setTimeout(r, 20))
     }
     expect(await pending).toEqual({ answered: true, answer: 'two' })
+    const row = db().query('SELECT last_event_at, status FROM run WHERE id=?').get(run) as {
+      last_event_at: string; status: string
+    }
+    expect(row.status).toBe('running')
+    expect(Date.parse(row.last_event_at)).toBeGreaterThan(Date.parse(stale))
   })
 
   test('a live question is answerable through the command, not only in SQL', () => {

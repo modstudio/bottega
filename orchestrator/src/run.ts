@@ -2990,6 +2990,23 @@ export async function run(opts: {
         boundMs,
       })
       const checkpoint = createCheckpoint(true)
+      const afterCheckpoint = db().query(
+        'SELECT status FROM run WHERE id=?',
+      ).get(claim.id) as { status: string } | null
+      const askedDuringCheckpoint = afterCheckpoint?.status === 'asking' || Boolean(
+        db().query(
+          'SELECT 1 n FROM question WHERE run_id=? AND answered_at IS NULL LIMIT 1',
+        ).get(claim.id),
+      )
+      if (askedDuringCheckpoint) {
+        idleKilled = false
+        idleKillError = null
+        appendRunEvent(claim.id, {
+          ts: nowIso(), type: 'text',
+          text: 'idle kill aborted: worker asked during checkpoint',
+        })
+        return
+      }
       const prior = latestCheckpoint(db(), opts.resume?.parent ?? claim.id)
       if (!idleKillMayProceed(checkpoint, Boolean(prior))) {
         idleKilled = false
