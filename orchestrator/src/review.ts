@@ -225,7 +225,12 @@ function reviewChangeRange(run: Pick<RunRow,
     }
     return { from: run.base_commit, to: run.input_tree, paths }
   }
-  const fallback = run.head_commit ?? run.input_tree
+  // An implicit carried review has no explicit changed-path snapshot, but its
+  // committed range is empty while the launch-time input tree contains the
+  // reviewed overlay. Preserve that existing clean-review fallback.
+  const fallback = run.head_commit === run.base_commit && run.input_tree
+    ? run.input_tree
+    : run.head_commit ?? run.input_tree
   return fallback ? { from: run.base_commit, to: fallback, paths: null } : null
 }
 
