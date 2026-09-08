@@ -138,7 +138,7 @@ describe('failure classification', () => {
     // None of them may be averaged in with the agent's actual work.
     expect(NOT_EVIDENCE).toEqual([
       'quota', 'auth', 'entitlement', 'unreachable', 'content_refusal', 'interrupted', 'truncated', 'escaped',
-      'confinement_unverified', 'sandbox_denied', 'harness', 'abandoned',
+      'confinement_unverified', 'sandbox_denied', 'mcp_unverified', 'harness', 'abandoned',
     ])
     for (const kind of ['timeout', 'denied', 'other']) {
       expect(NOT_EVIDENCE).not.toContain(kind)

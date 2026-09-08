@@ -241,7 +241,7 @@ exit 0
         status: string; failure_kind: string; mcp_connected: number | null; mcp_probe: string
       }
       expect(row.status).toBe('failed')
-      expect(row.failure_kind).toBe('mcp-unverified')
+      expect(row.failure_kind).toBe('mcp_unverified')
       expect(row.mcp_connected).toBe(0)
       expect(parseMcpProbe(row.mcp_probe)?.ok).toBe(false)
       expect(existsSync(join(repo, 'started'))).toBe(false)

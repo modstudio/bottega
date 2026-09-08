@@ -2568,9 +2568,11 @@ export async function run(opts: {
         if (callEvidence.connected !== 1 && mcpMode === 'require') {
           const why = callEvidence.connected === 0
             ? `MCP tool call failed on ${mcpServerName}: ${callEvidence.error}`
-            : `mcp unverifiable on ${name}: ${callEvidence.error}`
+            : `mcp unverifiable on ${name}: ${callEvidence.error}` +
+              `\ninvariant: --mcp means a proven tool call, never a handshake` +
+              `\ncleared by: orch project set ${projectAt(callerCwd)?.name ?? '<project>'} --settings '{"mcp":{"probe_tool":"<a cheap read tool on ${mcpServerName}>"}}'`
           db().query(
-            `UPDATE run SET status='failed', error=?, failure_kind='mcp-unverified', latency_ms=? WHERE id=?`,
+            `UPDATE run SET status='failed', error=?, failure_kind='mcp_unverified', latency_ms=? WHERE id=?`,
           ).run(why, Date.now() - started, claim.id)
           throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
         }
