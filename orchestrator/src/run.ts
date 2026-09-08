@@ -1505,6 +1505,7 @@ export type TerminalSnapshot = {
   model: string | null
   vendorSession: string | null
   preConfinement: string | null
+  confinement: string | null
   filesChanged: number | null
   changedPaths: string | null
   linesAdded: number | null
@@ -1550,7 +1551,7 @@ export function reconcileRun(id: number): string {
       `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
                       vendor_tokens=?, vendor_cost_usd=?, model=COALESCE(?, model),
                       status=?, error=?, failure_kind=?, vendor_session=COALESCE(?, vendor_session),
-                      pre_confinement=?, unreconciled=0,
+                      pre_confinement=?, confinement=?, unreconciled=0,
                       files_changed=?, changed_paths=?, lines_added=?, lines_removed=?,
                       tests_ran=?, tests_passed=?, deviations=?, escalations=?
         WHERE id=?`,
@@ -1560,7 +1561,7 @@ export function reconcileRun(id: number): string {
       snapshot.outputPath, snapshot.promptPath,
       snapshot.vendorTokens, snapshot.vendorCostUsd, snapshot.model,
       snapshot.status, snapshot.error, snapshot.failureKind, snapshot.vendorSession,
-      snapshot.preConfinement,
+      snapshot.preConfinement, snapshot.confinement,
       snapshot.filesChanged, snapshot.changedPaths, snapshot.linesAdded, snapshot.linesRemoved,
       snapshot.testsRan, snapshot.testsPassed, snapshot.deviations, snapshot.escalations,
       id,
@@ -3469,6 +3470,7 @@ export async function run(opts: {
       exitCode, latencyMs: Date.now() - started,
       vendorTokens, vendorCostUsd: costUsd, model: effectiveModel,
       vendorSession: resolvedSession, preConfinement,
+      confinement: confinementEvent ? JSON.stringify(confinementEvent) : null,
       filesChanged: writesJob ? changes?.files.length ?? null : null,
       changedPaths: writesJob && changes ? JSON.stringify(changes.files) : null,
       linesAdded: writesJob ? changes?.insertions ?? null : null,

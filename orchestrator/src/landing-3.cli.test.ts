@@ -594,19 +594,28 @@ describe('DEV-370 landing queue and branch ownership', () => {
 
   test('orch reconcile writes a terminal row from the persisted snapshot', () => {
     const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const preConfinement = JSON.stringify({ status: 'ok', failureKind: null, error: null })
+    const confinement = JSON.stringify({
+      classification: 'overlapping', divergentPaths: ['a.ts'], overlappingPaths: ['a.ts'],
+    })
     persistTerminalSnapshot(id, {
-      status: 'ok', error: null, failureKind: null, output: 'done',
+      status: 'failed', error: 'overlapping outside change', failureKind: 'escaped', output: 'done',
       outputPath: '/tmp/out', promptPath: '/tmp/prompt',
       exitCode: 0, latencyMs: 12, vendorTokens: 3, vendorCostUsd: 0, model: 'codex',
-      vendorSession: null, preConfinement: null,
+      vendorSession: null, preConfinement, confinement,
       filesChanged: 1, changedPaths: '["a.ts"]', linesAdded: 2, linesRemoved: 0,
       testsRan: 1, testsPassed: 1, deviations: 0, escalations: 0,
     })
     db().query(`UPDATE run SET unreconciled=1, error='stale schema' WHERE id=?`).run(id)
-    expect(reconcileRun(id)).toBe(`reconciled run ${id} as ok`)
+    expect(reconcileRun(id)).toBe(`reconciled run ${id} as failed`)
     const row = db().query(
-      `SELECT status, unreconciled, error, files_changed FROM run WHERE id=?`,
-    ).get(id) as { status: string; unreconciled: number; error: string | null; files_changed: number | null }
-    expect(row).toEqual({ status: 'ok', unreconciled: 0, error: null, files_changed: 1 })
+      `SELECT status, failure_kind, unreconciled, error, pre_confinement, confinement, files_changed
+        FROM run WHERE id=?`,
+    ).get(id)
+    expect(row).toEqual({
+      status: 'failed', failure_kind: 'escaped', unreconciled: 0,
+      error: 'overlapping outside change', pre_confinement: preConfinement, confinement,
+      files_changed: 1,
+    })
   })
 })
