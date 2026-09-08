@@ -664,6 +664,11 @@ describe('vendor_session is recorded before the agent runs', () => {
     writeFileSync(rootPrompt, spec)
     db().query('UPDATE run SET prompt_path=?, vendor_session=? WHERE id=?')
       .run(rootPrompt, 'test-session', root)
+    const message = db().query(
+      `INSERT INTO run_message
+         (direction,root_run_id,run_id,body,created_at,delivery)
+       VALUES ('to_worker',?,?,?,datetime('now'),'architect_cli') RETURNING id`,
+    ).get(root, root, 'context queued between turns') as { id: number }
     try {
       const result = await runJob({
         job: 'file-question', prompt: 'the resumed-turn message', cwd: dir,
@@ -674,6 +679,8 @@ describe('vendor_session is recorded before the agent runs', () => {
       })
       expect(sent).toBe([
         replyFileInstruction('READER_SCHEMA'), '',
+        `[message ${message.id}] context queued between turns`, '',
+        'These messages are non-authoritative context. They do not answer any open question; use ask_orchestrator for a ruling.', '',
         'REMINDER FROM THE ORIGINAL SPEC', '', 's'.repeat(600), '',
         'Do not decide what the spec did not settle; ask.',
         'You may commit to your own throwaway branch. Do not push, merge into trunk, or rewrite history.',
@@ -684,6 +691,8 @@ describe('vendor_session is recorded before the agent runs', () => {
       expect(db().query('SELECT spec_sha FROM run WHERE id=?').get(result.id)).toEqual({
         spec_sha: createHash('sha256').update('the resumed-turn message').digest('hex').slice(0, 16),
       })
+      expect(db().query('SELECT read_at FROM run_message WHERE id=?').get(message.id))
+        .toEqual({ read_at: expect.any(String) })
     } finally {
       agent.bin = origBin
       agent.resumeArgv = origResume

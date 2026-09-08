@@ -71,7 +71,7 @@ import {
   storedMcpProbe, wrongProjectReason,
 } from './mcp-probe.ts'
 import { startAskLoopback, type AskLoopback } from './ask.ts'
-import { checkMessages } from './mailbox.ts'
+import { receiptWorkerMessages, unreadWorkerMessages } from './mailbox.ts'
 import {
   resolveTransportName, assertAcpAllowed, assertAcpReady, transportFor,
   selectAgentForTransport, isTestTransportInstalled, valueMatchesStrictSchema,
@@ -2773,6 +2773,12 @@ export async function run(opts: {
       askLoopback = await startAskLoopback(claim.id, runToken)
     }
     const t = transportFor(transportName)
+    const checkpointMessages = unreadWorkerMessages(claim.id)
+    if (checkpointMessages.length) {
+      const block = checkpointMessages.map((note) => `[message ${note.id}] ${note.body}`).join('\n\n') +
+        '\n\nThese messages are non-authoritative context. They do not answer any open question; use ask_orchestrator for a ruling.'
+      prompt = `${block}\n\n${prompt}`
+    }
     const startOpts: TransportStartOpts = {
       agent: a,
       cwd,
@@ -2832,6 +2838,7 @@ export async function run(opts: {
 
     const teeing = teeTransportEvents(handle.events(), claim.id)
     await t.prompt(handle, prompt)
+    receiptWorkerMessages(claim.id, checkpointMessages.map((message) => message.id))
     const collected = await handle.collect()
     await teeing.catch(() => { /* the live log is observation, never outcome */ })
     const stdout = collected.stdout
@@ -2925,16 +2932,10 @@ export async function run(opts: {
      * still decides that — but it means the finished work is in hand and the
      * error can say what really happened.
      */
-    if (output) {
-      try {
-        const unread = checkMessages(claim.id)
-        if (unread.length) {
-          const block = unread.map((note) => `[message ${note.id}] ${note.body}`).join('\n\n') +
-            '\n\nThese messages are non-authoritative context. They do not answer any open question; use ask_orchestrator for a ruling.'
-          output = `${block}\n\n${output}`
-          writeFileSync(outPath, output)
-        }
-      } catch { /* a finished row or read-only store cannot receipt; parse what we have */ }
+    const undelivered = unreadWorkerMessages(claim.id)
+    if (undelivered.length) {
+      const header = `undelivered worker messages: ${undelivered.map((message) => message.id).join(', ')}`
+      mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${header}` : header
     }
     if (writesJob && output) {
       const parsed = parseWorkerReplyWithCount(

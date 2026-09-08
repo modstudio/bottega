@@ -271,6 +271,32 @@ describe('ACP transport through run', () => {
     }
   })
 
+  test('a message queued after the live checkpoint stays unread and is reported undelivered', async () => {
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      let messageId = 0
+      installFake(() => {
+        const running = db().query(
+          "SELECT id,COALESCE(parent_run_id,id) root_id FROM run WHERE status='running' ORDER BY id DESC LIMIT 1",
+        ).get() as { id: number; root_id: number }
+        messageId = (db().query(
+          `INSERT INTO run_message
+             (direction,root_run_id,run_id,body,created_at,delivery)
+           VALUES ('to_worker',?,?,?,datetime('now'),'architect_cli') RETURNING id`,
+        ).get(running.root_id, running.id, 'too late for the final turn') as { id: number }).id
+        return fakeResult({ output: 'finished answer', status: 'ok' })
+      })
+      const result = await runAcp()
+      expect(result.output).toContain(`undelivered worker messages: ${messageId}`)
+      expect(db().query('SELECT read_at FROM run_message WHERE id=?').get(messageId))
+        .toEqual({ read_at: null })
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
   test('a registered agent adopts its ACP default without --transport', async () => {
     const priorDepth = process.env.ORCH_DEPTH
     process.env.ORCH_DEPTH = '0'

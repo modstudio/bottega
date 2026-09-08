@@ -103,6 +103,29 @@ export function checkMessages(runId: number): RunMessage[] {
   })
 }
 
+/** Inspect queued worker context without claiming that a turn consumed it. */
+export function unreadWorkerMessages(runId: number): RunMessage[] {
+  const run = identity(runId)
+  if (!run) throw new Error(`no run ${runId}`)
+  return db().query(
+    `SELECT * FROM run_message
+      WHERE root_run_id = ? AND direction = 'to_worker' AND read_at IS NULL
+      ORDER BY id`,
+  ).all(run.root_id) as RunMessage[]
+}
+
+/** Receipt only messages already placed into a prompt submitted to the worker. */
+export function receiptWorkerMessages(runId: number, ids: number[]): void {
+  if (!ids.length || linkedWorktreeReadOnly) return
+  const run = identity(runId)
+  if (!run || run.status !== 'running') return
+  const slots = ids.map(() => '?').join(',')
+  db().query(
+    `UPDATE run_message SET read_at=?, read_by=?
+      WHERE root_run_id=? AND direction='to_worker' AND read_at IS NULL AND id IN (${slots})`,
+  ).run(nowIso(), run.vendor_session, run.root_id, ...ids)
+}
+
 export function messagesForRun(id: number): RunMessage[] {
   const run = identity(id)
   if (!run) return []
