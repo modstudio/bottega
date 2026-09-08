@@ -384,14 +384,17 @@ test('create commands must exist and be executable before dispatch', () => {
   }, 20_000)
 
   test('project set records register invalidation when trunk changes', () => {
+    const head = Bun.spawnSync(['git', 'branch', '--show-current'], {
+      cwd: process.cwd(), stdout: 'pipe',
+    }).stdout.toString().trim()
     upsertProject({ name: 'trunk-change', path: process.cwd(), settings: { trunk: 'main' } })
-    const r = orch('project', 'set', 'trunk-change', '--settings', '{"trunk":"develop"}')
+    const r = orch('project', 'set', 'trunk-change', '--settings', `{"trunk":"${head}"}`)
     expect(r.code).toBe(0)
     expect(db().query(
       `SELECT resource_kind, event_kind, resource_key, cause FROM contention WHERE resource_kind='register'`,
     ).get()).toEqual({
       resource_kind: 'register', event_kind: 'invalidation',
-      resource_key: 'trunk-change', cause: 'trunk main -> develop',
+      resource_key: 'trunk-change', cause: `trunk main -> ${head}`,
     })
     const unchanged = orch('project', 'set', 'trunk-change', '--settings', '{"gate":"true"}')
     expect(unchanged.code).toBe(0)
@@ -401,7 +404,10 @@ test('create commands must exist and be executable before dispatch', () => {
   })
 
   test('project set still writes when the contention table is absent', () => {
-    upsertProject({ name: 'trunk-no-contention', path: process.cwd(), settings: { trunk: 'main' } })
+    const head = Bun.spawnSync(['git', 'branch', '--show-current'], {
+      cwd: process.cwd(), stdout: 'pipe',
+    }).stdout.toString().trim()
+    upsertProject({ name: 'trunk-no-contention', path: process.cwd(), settings: { trunk: head } })
     const table = db().query(
       "SELECT sql FROM sqlite_master WHERE type='table' AND name='contention'",
     ).get() as { sql: string }
@@ -410,7 +416,7 @@ test('create commands must exist and be executable before dispatch', () => {
     ).all() as { sql: string }[]
     db().exec('DROP TABLE contention')
     try {
-      const r = orch('project', 'set', 'trunk-no-contention', '--settings', '{"trunk":"develop"}')
+      const r = orch('project', 'set', 'trunk-no-contention', '--settings', '{"gate":"true"}')
       expect(r.code, r.err).toBe(0)
       expect(projectByName('trunk-no-contention')!.settings.trunk).toBe('develop')
     } finally {

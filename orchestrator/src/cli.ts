@@ -3404,7 +3404,7 @@ switch (cmd) {
    */
   case 'project': {
     const { projects, upsertProject, removeProject, sniffStack, projectByName,
-            worktreeWarnings, validateProjectSettings, migrateCreate } = await import('./projects.ts')
+            worktreeWarnings, validateProjectSettings, migrateCreate, assertRegisterBranches } = await import('./projects.ts')
     const sub = argv[1] ?? 'list'
 
     if (sub === 'list') {
@@ -3470,6 +3470,7 @@ switch (cmd) {
         w.startsWith('has a create command but no branch template') ||
         w.startsWith('has a create command with a {seed} placeholder but no seeds list'))
       if (incomplete.length && !has('allow-incomplete')) throw new Error(incomplete.join('\n'))
+      assertRegisterBranches(candidate)
       upsertProject(candidate)
       if (has('json')) {
         console.log(JSON.stringify(projectByName(name)))
@@ -3540,6 +3541,7 @@ switch (cmd) {
         w.startsWith('has a create command but no branch template') ||
         w.startsWith('has a create command with a {seed} placeholder but no seeds list'))
       if (incomplete.length && !has('allow-incomplete')) throw new Error(incomplete.join('\n'))
+      assertRegisterBranches(candidate)
       if (nextName !== name) renameProject(name,nextName)
       const previousTrunk = typeof p.settings.trunk === 'string' ? p.settings.trunk : null
       const nextTrunk = typeof candidate.settings.trunk === 'string' ? candidate.settings.trunk : null
@@ -6960,11 +6962,17 @@ switch (cmd) {
     // owing where `orch pending` — the command that actually tells you what
     // to do about it — reported none.
     console.log(`\nruns ${counts.runs}, scored ${counts.scored}, voided ${counts.voided}, unscored ${counts.unscored}`)
-    const { projects: registeredProjects, undeclaredCommitHooks } = await import('./projects.ts')
+    const { projects: registeredProjects, undeclaredCommitHooks, registerBranchCheck } = await import('./projects.ts')
     const hookFlags = registeredProjects().map(undeclaredCommitHooks).filter(Boolean)
     if (hookFlags.length) {
       console.log('\ncommit hooks skipped in worker trees; landing gate must declare the checks:')
       for (const line of hookFlags) console.log(`  ${line}`)
+    }
+    const registerQuestions = registeredProjects().flatMap((project) =>
+      registerBranchCheck(project).problems.map((problem) => `${project.name}: ${problem}`))
+    if (registerQuestions.length) {
+      console.log('\nregister questions (not run failures):')
+      for (const question of registerQuestions) console.log(`  ${question}`)
     }
     const docker = dockerRunResources()
     const owners = db().query('SELECT id, repo, worktree, status FROM run').all() as {

@@ -21,7 +21,7 @@
  * two Laravel apps are the same stack, so a verdict from one is real
  * evidence about the other.
  */
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { scrubbedGitEnv } from '../../shared/git.ts'
 import { db, writableDb, writeTransaction } from './db.ts'
@@ -77,6 +77,8 @@ export type ProjectSettings = {
   states?: Record<string, 'backlog' | 'open' | 'active' | 'review' | 'done' | 'dropped'>
   /** What the trunk is called here. Several of these are `develop`, not `main`. */
   trunk?: string
+  /** Branch production deploys from when it is distinct from the landing branch. */
+  productionBranch?: string
   /** The project's complete landing gate, run from the branch worktree. */
   gate?: string
   /** Display colour, for anything that draws a project. */
@@ -401,6 +403,51 @@ export function validateProjectSettings(settings: ProjectSettings): string[] {
     }
   }
   return problems
+}
+
+export type RegisterBranchCheck = {
+  head: string | null
+  landing: string | null
+  canonIntegration: string | null
+  problems: string[]
+}
+
+/** Verify branch facts at registration time; never guess a detached HEAD. */
+export function registerBranchCheck(project: Pick<Project, 'name' | 'path' | 'settings'>): RegisterBranchCheck {
+  const landing = typeof project.settings.trunk === 'string' && project.settings.trunk.trim()
+    ? project.settings.trunk.trim() : null
+  const headResult = Bun.spawnSync(['git', '-C', project.path, 'symbolic-ref', '--quiet', '--short', 'HEAD'], {
+    env: scrubbedGitEnv(), stdout: 'pipe', stderr: 'ignore',
+  })
+  const head = headResult.exitCode === 0 ? headResult.stdout.toString().trim() || null : null
+  let canonIntegration: string | null = null
+  const canonPath = join(project.path, 'AGENTS.md')
+  if (existsSync(canonPath)) {
+    const canon = readFileSync(canonPath, 'utf8')
+    const match = canon.match(/\bintegration branch\s+(?:is|:)\s*[`'\"]?([A-Za-z0-9._/-]+)/i)
+    canonIntegration = match?.[1] ?? null
+  }
+  const problems: string[] = []
+  if (landing && head !== landing) problems.push(`checkout HEAD is ${head ?? 'detached'}, not landing branch ${landing}`)
+  if (landing && canonIntegration && canonIntegration !== landing) {
+    problems.push(`canon names integration branch ${canonIntegration}, not landing branch ${landing}`)
+  }
+  const production = typeof project.settings.productionBranch === 'string'
+    ? project.settings.productionBranch.trim() : ''
+  if (landing && production && production === landing) {
+    problems.push(`production branch ${production} must be distinct from landing branch ${landing}`)
+  }
+  return { head, landing, canonIntegration, problems }
+}
+
+export function assertRegisterBranches(project: Pick<Project, 'name' | 'path' | 'settings'>): void {
+  const check = registerBranchCheck(project)
+  if (!check.problems.length) return
+  throw new Error(
+    `${project.name}: ${check.problems.join('; ')}\n` +
+    'invariant: the register landing branch agrees with the main checkout and its integration-branch canon\n' +
+    `cleared by: check out ${check.landing ?? '<landing-branch>'} in ${project.path} or correct it with orch project set ${project.name} --settings '{"trunk":"<branch>"}'`,
+  )
 }
 
 function configuredHooksPath(projectPath: string): string | null {

@@ -1242,6 +1242,24 @@ function performLand(
       `orch project set ${project.name} --settings '{"trunk":"<branch>"}'`,
     )
   }
+  const productionBranch = typeof project.settings.productionBranch === 'string'
+    ? project.settings.productionBranch.trim() : ''
+  if (productionBranch && (productionBranch === trunk || productionBranch === branch)) {
+    throw namedError(
+      `landing ${branch} would touch configured production branch ${productionBranch}`,
+      'Landings fast-forward only the registered integration branch; production deployment is a separate lifecycle.',
+      `orch project set ${project.name} --settings '{"trunk":"<integration>","productionBranch":"<production>"}'`,
+    )
+  }
+  const production = typeof project.settings.productionBranch === 'string'
+    ? project.settings.productionBranch.trim() : ''
+  if (production && (production === trunk || branch === production)) {
+    throw namedError(
+      `landing would touch configured production branch ${production}`,
+      'Landing fast-forwards only the registered landing branch; production deployment is a separate lifecycle.',
+      `orch project set ${project.name} --settings '{"trunk":"<landing-branch>","productionBranch":"${production}"}'`,
+    )
+  }
   const gate = typeof project.settings.gate === 'string' ? project.settings.gate.trim() : ''
   if (!gate) {
     throw namedError(
