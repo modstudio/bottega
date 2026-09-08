@@ -7,7 +7,7 @@ import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, nowIso,
          reapStale, pidAlive, STALE_AFTER_MS, UNSCORED_WHERE, recordDuels, recordLosses, recordTies, duelMatrices,
          pairPartners, unrecordedPairsForSession, parseRunIds, recordSessionSeen, SESSION_LIVE_MS,
          resolveRootFromLastTurn, chainScoreJoin, chainTerminationAt,
-         EVIDENCE_CLOSED_SQL, EVIDENCE_OPEN_SQL, runTotals,
+         EVIDENCE_CLOSED_SQL, EVIDENCE_OPEN_SQL, voidedSql, activeSql, runTotals,
          authorizeRunMutation, runMutationActor,
          auditRunMutation, adoptRunMutation, writeTransaction, tryWriteContention, type RootAuthority } from './db.ts'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync, unlinkSync } from 'node:fs'
@@ -3795,21 +3795,23 @@ switch (cmd) {
     const allRows = db().query(
       `SELECT q.id, q.run_id, q.asked_at, q.question, q.options, q.recommendation, q.why,
               r.agent, r.job, r.repo, r.status, r.session_id,
-              root.status root_status, root.evidence_excluded root_evidence_excluded,
+              root.status root_status,
+              ${activeSql('root')} root_active,
+              ${voidedSql('root')} root_voided,
               COALESCE(r.parent_run_id, r.id) root_id,
               ${sessionRecent} session_recent
          FROM question q JOIN run r ON r.id = q.run_id
          JOIN run root ON root.id = COALESCE(r.parent_run_id, r.id)
          ${seenJoin}
         WHERE ${mine
-          ? "q.answered_at IS NULL AND root.status IN ('running','asking') AND root.evidence_excluded IS NULL"
-          : "q.answered_at IS NULL OR root.status NOT IN ('running','asking') OR root.evidence_excluded IS NOT NULL"}
+          ? `q.answered_at IS NULL AND ${activeSql('root')}`
+          : `q.answered_at IS NULL OR NOT (${activeSql('root')})`}
         ORDER BY q.run_id, q.id`,
     ).all(...(hasSessionSeen ? [cutoff] : [])) as {
       id: number; run_id: number; asked_at: string; question: string; options: string | null
       recommendation: string | null; why: string | null
       agent: string; job: string; repo: string | null; status: string; session_id: string | null
-      root_status: string; root_evidence_excluded: string | null
+      root_status: string; root_active: number; root_voided: number
       root_id: number; session_recent: number
     }[]
     // The default is a VIEW of the project containing cwd. Ownership remains
@@ -3822,8 +3824,7 @@ switch (cmd) {
         : allRows.filter((q) => sid !== null && q.session_id === sid)
       : allRows
     const canAnswer = (owner: string | null) => owner === null || (sid !== null && owner === sid)
-    const active = rows.filter((q) =>
-      q.root_evidence_excluded === null && ['running', 'asking'].includes(q.root_status))
+    const active = rows.filter((q) => q.root_active)
     const terminal = rows.filter((q) => !active.includes(q))
     const answerable = active.filter((q) => canAnswer(q.session_id))
     const visible = active.filter((q) => !canAnswer(q.session_id))
@@ -3841,13 +3842,12 @@ switch (cmd) {
         // which a last-seen timestamp cannot establish.
         session_live: q.session_recent ? true : null,
         session_liveness: q.session_recent ? 'live' : 'unknown',
-        can_answer: q.root_evidence_excluded === null &&
-          ['running', 'asking'].includes(q.root_status) && canAnswer(q.session_id),
+        can_answer: Boolean(q.root_active) && canAnswer(q.session_id),
         question: q.question,
         options: q.options ? JSON.parse(q.options) as string[] : [],
         recommendation: q.recommendation,
         why: q.why,
-        status: q.root_evidence_excluded ? 'voided' : q.root_status,
+        status: q.root_voided ? 'voided' : q.root_status,
       }))))
       break
     }
@@ -3949,7 +3949,7 @@ switch (cmd) {
       }
     }
     for (const q of terminal) {
-      const status = q.root_evidence_excluded ? 'voided' : q.root_status
+      const status = q.root_voided ? 'voided' : q.root_status
       console.log(
         `\nrun ${q.root_id} · ${q.agent}/${q.job}${q.repo ? ` · ${q.repo}` : ''} · ` +
         `${status} (terminal)`,

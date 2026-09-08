@@ -877,6 +877,22 @@ test('every --json surface has an enumerated and pinned output contract', () => 
     })
   })
 
+  test('inbox treats an empty-string exclusion as voided, matching VOIDED_SQL', () => {
+    const id = insert('asking', 'implement')
+    db().query('UPDATE run SET session_id=?, evidence_excluded=? WHERE id=?')
+      .run('orch-test-session', '', id)
+    db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
+      .run(id, new Date().toISOString(), 'empty exclusion?')
+
+    expect(orch('inbox').out).not.toContain(`run ${id}`)
+    const listed = orch('inbox', '--all')
+    expect(listed.out).toContain(`run ${id}`)
+    expect(listed.out).toContain('voided (terminal)')
+    expect(JSON.parse(orch('inbox', '--all', '--json').out)).toContainEqual(
+      expect.objectContaining({ run_id: id, status: 'voided', can_answer: false }),
+    )
+  })
+
   test('bare inbox scopes visibility by checkout while ownership stays session-scoped', () => {
     // BEFORE: cwd was not a term in the filter, so both invocations rendered
     // both stale-owner questions under the adoptable heading. AFTER: the same

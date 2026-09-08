@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import { AGENTS, BETA_SCALE, COOLS_DOWN, EVIDENCE_WINDOW, FAILS_OVER, MIN_REVIEW_TRIAGED, MIN_SAMPLE, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOISE_BAND, NOT_EVIDENCE, POSTERIOR_NOISE_BAND, QUALITY_STEP, STANDING_EXPLORE_RATE, UNSCORED_WHERE, WEIGHT, addRun, candidates, classify, completeReview, currentPolicySelection, db, evidenceFor, label, median, nowIso, pendingForSession, pick, recordReview, reviewReply, score, scoreboard, standingExploreRate, triageFinding, unscoredCount, weigh, weightCase } from '../test/fixture.ts'
+import { AGENTS, BETA_SCALE, COOLS_DOWN, EVIDENCE_WINDOW, FAILS_OVER, MIN_REVIEW_TRIAGED, MIN_SAMPLE, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOISE_BAND, NOT_EVIDENCE, POSTERIOR_NOISE_BAND, QUALITY_STEP, STANDING_EXPLORE_RATE, UNSCORED_WHERE, VOIDED_SQL, WEIGHT, activeSql, addRun, candidates, classify, completeReview, currentPolicySelection, db, evidenceFor, label, median, nowIso, pendingForSession, pick, recordReview, reviewReply, score, scoreboard, standingExploreRate, triageFinding, unscoredCount, voidedSql, weigh, weightCase } from '../test/fixture.ts'
 import { resolveFailover } from './collect.ts'
 
 describe('failure classification', () => {
@@ -1156,5 +1156,42 @@ describe('the Stop hook and orch agree on what is unscored', () => {
       'INSERT INTO compared_pair (run_a_id, run_b_id, compared_at) VALUES (?,?,?)',
     ).run(first, second, at)
     expect(invoke().stdout.toString()).toBe('')
+  })
+
+  test('inbox voided membership is VOIDED_SQL, not a second copy', () => {
+    const cli = readFileSync(new URL('./cli.ts', import.meta.url), 'utf8')
+    const start = cli.indexOf("case 'inbox':")
+    const end = cli.indexOf("case 'answer':")
+    expect(start).toBeGreaterThanOrEqual(0)
+    expect(end).toBeGreaterThan(start)
+    const inbox = cli.slice(start, end)
+    expect(inbox).toContain("activeSql('root')")
+    expect(inbox).toContain("voidedSql('root')")
+    expect(inbox).not.toMatch(/evidence_excluded/)
+    expect(predicateDrift(VOIDED_SQL.replaceAll('r.', 'root.'), voidedSql('root'))).toEqual({
+      missingFromHook: [], missingFromTs: [],
+    })
+    expect(predicateDrift(
+      VOIDED_SQL.replaceAll('r.', 'root.').replace('IS NOT NULL', 'IS NULL'),
+      voidedSql('root'),
+    )).not.toEqual({ missingFromHook: [], missingFromTs: [] })
+    expect(activeSql('root')).toBe(
+      `root.status IN ('running','asking') AND NOT (${voidedSql('root')})`,
+    )
+  })
+
+  test('empty-string exclusion is voided in SQL, matching IS NOT NULL not truthiness', () => {
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+    db().query("UPDATE run SET evidence_excluded='' WHERE id=?").run(id)
+    const row = db().query(
+      `SELECT ${voidedSql('r')} AS voided, ${activeSql('r')} AS active FROM run r WHERE id=?`,
+    ).get(id) as { voided: number; active: number }
+    expect(row).toEqual({ voided: 1, active: 0 })
+    const nulled = db().query(
+      `SELECT ${voidedSql('r')} AS voided, ${activeSql('r')} AS active FROM run r WHERE id=?`,
+    ).get(addRun({ agent: 'codex', job: 'implement', status: 'asking' })) as {
+      voided: number; active: number
+    }
+    expect(nulled).toEqual({ voided: 0, active: 1 })
   })
 })

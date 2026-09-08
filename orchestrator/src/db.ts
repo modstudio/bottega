@@ -685,8 +685,20 @@ export const EVIDENCE_OPEN_SQL =
  * interrupted run is still voided. Filtering it here would drop a no-verdict
  * void of a NOT_EVIDENCE run from every bucket, which is the class this
  * helper exists to close.
+ *
+ * Empty string is voided: the predicate is IS NOT NULL, not JS truthiness.
+ * Inbox filtering and rendering consume these flags; do not restate them.
  */
-export const VOIDED_SQL = `r.evidence_excluded IS NOT NULL`
+export function voidedSql(alias = 'r'): string {
+  return `${alias}.evidence_excluded IS NOT NULL`
+}
+
+export const VOIDED_SQL = voidedSql()
+
+/** A live chain: running or asking, and not voided. */
+export function activeSql(alias = 'r'): string {
+  return `${alias}.status IN ('running','asking') AND NOT (${voidedSql(alias)})`
+}
 
 const NOT_EVIDENCE_SQL = NOT_EVIDENCE.map((kind) => `'${kind}'`).join(', ')
 
