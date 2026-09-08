@@ -1114,18 +1114,19 @@ test('only bun\'s complete timeout line reports machine load', () => {
   })
 
   test("a refused landing outdates only the candidate branch's review", async () => {
+    const parent = 'parent-review'
     const candidate = 'candidate-review'
-    const unrelated = 'unrelated-review'
-    const { repo, trees } = repoWithBranches([candidate, unrelated])
+    const { repo, trees } = repoWithBranches([parent, candidate])
     const project = 'landing-scoped-outdated-review'
     upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
     try {
+      g(trees[candidate]!, 'rebase', parent)
       const oldBase = g(repo, 'rev-parse', 'main')
+      const parentReview = completedReview(project, [g(repo, 'rev-parse', `${parent}^{tree}`)], {
+        branch: parent, baseCommit: oldBase, launchCwd: trees[parent]!,
+      })
       const candidateReview = completedReview(project, [g(repo, 'rev-parse', `${candidate}^{tree}`)], {
         branch: candidate, baseCommit: oldBase, launchCwd: trees[candidate]!,
-      })
-      const unrelatedReview = completedReview(project, [g(repo, 'rev-parse', `${unrelated}^{tree}`)], {
-        branch: unrelated, baseCommit: oldBase, launchCwd: trees[unrelated]!,
       })
       writeFileSync(join(trees[candidate]!, 'after-review.txt'), 'new candidate content\n')
       g(trees[candidate]!, 'add', 'after-review.txt')
@@ -1135,7 +1136,7 @@ test('only bun\'s complete timeout line reports machine load', () => {
       expect(await child.exited).not.toBe(0)
       expect(db().query('SELECT outdated_at, outdated_reason FROM review WHERE id=?').get(candidateReview))
         .toEqual({ outdated_at: expect.any(String), outdated_reason: 'patch-id differs' })
-      expect(db().query('SELECT outdated_at, outdated_reason FROM review WHERE id=?').get(unrelatedReview))
+      expect(db().query('SELECT outdated_at, outdated_reason FROM review WHERE id=?').get(parentReview))
         .toEqual({ outdated_at: null, outdated_reason: null })
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
