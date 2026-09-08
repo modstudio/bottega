@@ -1601,6 +1601,10 @@ function usage(): never {
   orch monitor [--backstop]     detect, record, report, and safely reconcile machine state
       --history [--limit N]     query recorded invocations; --json emits one JSON document
       --json                    emit one JSON document; silent on a clean live pass
+  orch reclaim worktree <path> [--dry-run]
+      remove an orch worktree only after recipe/base, clean-state, reachability, and liveness proofs
+  orch reclaim branch <project>:<branch> [--dry-run]
+      remove a local branch only when every commit is reachable or its exact kept tip is recorded
   orch inbox [--all] [--json]   design questions a worker is waiting on you to rule on
       --json                    print one JSON document
   orch peek <run-id> [--events N] [--json]
@@ -3873,6 +3877,18 @@ switch (cmd) {
     break
   }
 
+  case 'reclaim': {
+    const { reclaimBranch, reclaimWorktree } = await import('./reclaim.ts')
+    const kind = argv[1]
+    const subject = argv[2]!
+    const result = kind === 'worktree'
+      ? reclaimWorktree(subject, { dryRun: has('dry-run') })
+      : reclaimBranch(subject, { dryRun: has('dry-run') })
+    if (!result.ok) throw new Error(result.action)
+    console.log(result.action)
+    break
+  }
+
   case 'inbox': {
     await loadJobs()
     const sid = sessionId()
@@ -4660,10 +4676,11 @@ switch (cmd) {
     const rows = db().query(
       `SELECT r.id, COALESCE(r.parent_run_id, r.id) root_id,
               r.repo, r.worktree, r.branch, r.base_commit, r.worktree_source, r.status, r.job,
-              r.keep_tree,
+              r.keep_tree, r.pid, r.agent_pid, r.session_id, seen.last_seen AS session_last_seen,
               (julianday('now') - julianday(r.started_at)) AS age_days,
               ${EVIDENCE_CLOSED_SQL} AS scored
          FROM run r ${chainScoreJoin('r', 's')}
+         LEFT JOIN session_seen seen ON seen.session_id=r.session_id
         WHERE r.worktree IS NOT NULL AND r.status IN ('ok','failed','stale','stopped')
         ORDER BY r.id`,
     ).all() as {
@@ -4671,6 +4688,8 @@ switch (cmd) {
       branch: string | null; base_commit: string | null; status: string
       worktree_source: Worktree['source'] | null
       job: string; keep_tree: number; age_days: number; scored: number
+      pid: number | null; agent_pid: number | null; session_id: string | null
+      session_last_seen: string | null
     }[]
 
     const { removeFor, sweepWithTool, repoRootOf, orphanSafety,
@@ -4692,8 +4711,17 @@ switch (cmd) {
         keep(`${r.id}  kept on purpose (--keep-tree)`, 'kept on purpose (--keep-tree)')
         continue
       }
-      if (r.age_days < days) {
-        keep(`${r.id}  too recent (${r.age_days.toFixed(1)}d)`, 'under the age threshold')
+      if (r.pid && pidAlive(r.pid)) {
+        keep(`${r.id}  live worker pid ${r.pid} — kept`, 'live owner — kept')
+        continue
+      }
+      if (r.agent_pid && pidAlive(r.agent_pid)) {
+        keep(`${r.id}  live agent pid ${r.agent_pid} — kept`, 'live owner — kept')
+        continue
+      }
+      const sessionSeenAt = r.session_last_seen ? Date.parse(r.session_last_seen) : Number.NaN
+      if (r.session_id && Number.isFinite(sessionSeenAt) && Date.now() - sessionSeenAt <= SESSION_LIVE_MS) {
+        keep(`${r.id}  live session ${r.session_id} — kept`, 'live owner — kept')
         continue
       }
       if (!r.scored && !has('force')) {

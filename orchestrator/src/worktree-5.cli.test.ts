@@ -687,13 +687,14 @@ exec ${JSON.stringify(actualGit)} "$@"
     expect(released.out).not.toContain('shared with evidence-owning run(s)')
   })
 
-  test('more than ten kept rows are summarised by reason; --dry-run lists every row', () => {
+  test('terminal scored rows are reclaimable regardless of age while unscored rows stay evidence', () => {
     const recent: number[] = []
     const unscored: number[] = []
     const old = new Date(Date.now() - 3 * 86_400_000).toISOString()
     for (let i = 0; i < 6; i++) {
       const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
       db().query('UPDATE run SET worktree=? WHERE id=?').run(`/tmp/dev148-recent-${i}`, id)
+      score(id, 'full', 'right')
       recent.push(id)
     }
     for (let i = 0; i < 5; i++) {
@@ -702,22 +703,11 @@ exec ${JSON.stringify(actualGit)} "$@"
       unscored.push(id)
     }
 
-    const summarised = orch('sweep')
-    expect(summarised.code).toBe(0)
-    expect(summarised.out).toContain('reclaimed 0, kept 11')
-    expect(summarised.out).toContain('6  under the age threshold')
-    expect(summarised.out).toContain('5  unscored — its diff is the evidence')
-    expect(summarised.out).toContain('orch sweep --dry-run lists every kept row')
-    for (const id of recent) expect(summarised.out).not.toContain(`${id}  too recent`)
-    for (const id of unscored) expect(summarised.out).not.toContain(`${id}  unscored`)
-
     const listed = orch('sweep', '--dry-run')
     expect(listed.code).toBe(0)
-    expect(listed.out).toContain('would reclaim 0, kept 11')
-    expect(listed.out).toContain('6  under the age threshold')
+    expect(listed.out).toContain('would reclaim 6, kept 5')
     expect(listed.out).toContain('5  unscored — its diff is the evidence')
-    expect(listed.out).not.toContain('lists every kept row')
-    for (const id of recent) expect(listed.out).toContain(`${id}  too recent`)
+    for (const id of recent) expect(listed.out).toContain(`would reclaim ${id}`)
     for (const id of unscored) expect(listed.out).toContain(`${id}  unscored — its diff is the evidence`)
   })
 

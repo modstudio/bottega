@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, chmodSync, copyFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync, mkdirSync, chmodSync, copyFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
@@ -14,6 +14,39 @@ function migrateHub(path: string): void {
 }
 
 describe('operational monitor record', () => {
+  test('reports machine-wide while automatic reclaim is scoped to the invoked project', async () => {
+    const local = mkdtempSync(join(tmpdir(), 'monitor-local-'))
+    const foreign = mkdtempSync(join(tmpdir(), 'monitor-foreign-'))
+    const localTree = join(local, '.claude', 'worktrees', 'orch-local')
+    const foreignTree = join(foreign, '.claude', 'worktrees', 'orch-foreign')
+    mkdirSync(localTree, { recursive: true })
+    mkdirSync(foreignTree, { recursive: true })
+    const localRoot = realpathSync(local)
+    const foreignRoot = realpathSync(foreign)
+    upsertProject({ name: 'monitor-local', path: localRoot, settings: { trunk: 'main' } })
+    upsertProject({ name: 'monitor-foreign', path: foreignRoot, settings: { trunk: 'main' } })
+    const priorCwd = process.cwd()
+    try {
+      process.chdir(localRoot)
+      const result = await monitor('invoked')
+      const localSubject = realpathSync(localTree)
+      const foreignSubject = realpathSync(foreignTree)
+      const localCondition = result.conditions.find((row) => row.subject === localSubject)
+      const foreignCondition = result.conditions.find((row) => row.subject === foreignSubject)
+      expect(localCondition?.action).toBe(`refused; no run row records worktree ${localSubject}`)
+      expect(foreignCondition?.action).toBe(
+        'reported; reclaim refused by monitor scope: monitor-foreign is outside invoked project monitor-local',
+      )
+      expect(result.conditions.filter((row) => row.action.includes('established verb'))).toHaveLength(0)
+      expect(existsSync(localTree)).toBe(true)
+      expect(existsSync(foreignTree)).toBe(true)
+    } finally {
+      process.chdir(priorCwd)
+      rmSync(local, { recursive: true, force: true })
+      rmSync(foreign, { recursive: true, force: true })
+    }
+  })
+
   test('pipes a complete large human report before returning its condition status', async () => {
     const hubDb = join(dir, 'monitor-large-report-hub.db')
     const binDir = join(dir, 'monitor-large-report-bin')

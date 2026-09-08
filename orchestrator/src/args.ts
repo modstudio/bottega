@@ -437,6 +437,15 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       'orch monitor [--backstop|--history] [--limit N] [--json]', 0, ['--limit'],
       ['--backstop', '--history', '--json'],
     ) }
+    case 'reclaim': {
+      if (topLevelOnly) return { args: [], shape: shape('orch reclaim', 0) }
+      const forms: Record<string, CommandShape> = {
+        worktree: shape('orch reclaim worktree <path> [--dry-run]', 1, [], ['--dry-run']),
+        branch: shape('orch reclaim branch <project>:<branch> [--dry-run]', 1, [], ['--dry-run']),
+      }
+      if (!sub || !forms[sub]) return null
+      return { args: argv.slice(2), shape: forms[sub] }
+    }
     case 'inbox': return { args: argv.slice(1), shape: shape('orch inbox [--all] [--json]', 0, [], ['--all', '--json']) }
     case 'peek': return { args: argv.slice(1), shape: shape(
       'orch peek <run-id> [--events N] [--json]', 1, ['--events'], ['--json'],

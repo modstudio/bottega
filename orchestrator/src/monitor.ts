@@ -6,8 +6,9 @@ import {
 } from './db.ts'
 import { fileIssue } from './mcp.ts'
 import { gitLocks } from './git-locks.ts'
-import { projects } from './projects.ts'
+import { projectAt, projects } from './projects.ts'
 import { projectLockState, targetGitEnvironment } from './worktree.ts'
+import { reclaimBranch, reclaimWorktree } from './reclaim.ts'
 import { allInjectChecks, storedPackDrift } from './canon.ts'
 import { idleLabel, idleMsSince, idleWarnMs } from './events.ts'
 
@@ -233,6 +234,7 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
   }
   const add = (condition: Omit<MonitorCondition, 'ageMs'> & { ageMs?: number | null }) =>
     conditions.push({ ...condition, ageMs: condition.ageMs ?? age(condition.since, clock) })
+  const reclaimProject = projectAt(process.cwd())
 
   const asking = database.query(
     `SELECT id, started_at, session_id FROM run WHERE status='asking'
@@ -296,9 +298,18 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
         `SELECT 1 FROM run WHERE worktree=? AND status IN ('running','asking') LIMIT 1`,
       ).get(path)
       const since = new Date(statSync(path).mtimeMs).toISOString()
-      if (!live) add({ kind: 'worktree-without-live-run', subject: path, since,
-        detail: `${project.name} worktree has no running or asking run`,
-        action: 'reported; removal requires reconstructibility proof and an established verb' })
+      if (!live) {
+        let action: string
+        if (reclaimProject?.name !== project.name) {
+          action = `reported; reclaim refused by monitor scope: ${project.name} is outside invoked project ${reclaimProject?.name ?? 'unknown'}`
+        } else {
+          try { action = reclaimWorktree(path, { clock }).action }
+          catch (cause) { action = `reported; reclaim errored: ${String((cause as Error).message ?? cause)}` }
+        }
+        add({ kind: 'worktree-without-live-run', subject: path, since,
+          detail: `${project.name} worktree has no running or asking run`, action,
+          affectedProject: project.name })
+      }
     }
 
     const worktreeRefs = new Set((git(project.path, ['worktree', 'list', '--porcelain']) ?? '')
@@ -310,9 +321,17 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
     for (const branch of branches) {
       if (worktreeRefs.has(branch.branch)) continue
       if (git(project.path, ['show-ref', '--verify', '--quiet', `refs/heads/${branch.branch}`]) === null) continue
-      add({ kind: 'branch-without-worktree', subject: `${project.name}:${branch.branch}`,
+      const subject = `${project.name}:${branch.branch}`
+      let action: string
+      if (reclaimProject?.name !== project.name) {
+        action = `reported; reclaim refused by monitor scope: ${project.name} is outside invoked project ${reclaimProject?.name ?? 'unknown'}`
+      } else {
+        try { action = reclaimBranch(subject).action }
+        catch (cause) { action = `reported; reclaim errored: ${String((cause as Error).message ?? cause)}` }
+      }
+      add({ kind: 'branch-without-worktree', subject,
         since: branch.started_at, detail: `${project.name} branch ${branch.branch} has no worktree`,
-        action: 'reported; branch deletion requires reachability proof and an established verb' })
+        action, affectedProject: project.name })
     }
   }
 
