@@ -193,19 +193,18 @@ type DurationMetrics = Pick<EpicTaskScore,
 
 /** All arithmetic is epoch-millisecond UTC. Rendering may choose a timezone; computation never does. */
 function durationMetrics(runs: RunRow[], clock: number): DurationMetrics {
-  const intervals = runs.flatMap((run): { start: number; end: number; duration: number }[] => {
+  const intervals = runs.flatMap((run): { run: RunRow; start: number; end: number; duration: number }[] => {
     if (run.latency_ms === null) return []
     const start = utcMillis(run.started_at)
     const duration = Math.max(0, run.latency_ms)
-    return Number.isFinite(start) ? [{ start, end: start + duration, duration }] : []
+    return Number.isFinite(start) ? [{ run, start, end: start + duration, duration }] : []
   }).sort((a, b) => a.start - b.start || a.end - b.end)
   const durations = intervals.map((interval) => interval.duration).sort((a, b) => a - b)
+  // Ghost freshness asks when evidence last arrived, not when a timed run ended.
   const anchor = (run: RunRow) => utcMillis(run.last_event_at ?? run.started_at)
-  const idleMs = runs.reduce((sum, run) => {
-    if (run.latency_ms === null) return sum
-    const end = utcMillis(run.started_at) + run.latency_ms
-    const last = anchor(run)
-    return sum + (Number.isFinite(end) && Number.isFinite(last) ? Math.max(0, end - last) : 0)
+  const idleMs = intervals.reduce((sum, interval) => {
+    const last = anchor(interval.run)
+    return sum + (Number.isFinite(last) ? Math.max(0, interval.end - last) : 0)
   }, 0)
   return {
     agentTimeMs: durations.reduce((sum, duration) => sum + duration, 0),

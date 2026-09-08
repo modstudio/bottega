@@ -160,6 +160,16 @@ describe('epic scoreboard', () => {
     })
   })
 
+  test('negative latency uses one clamped run end for occupancy and idle', () => {
+    const run = timedRun('DEV-NEGATIVE', 0, -60_000)
+    db().query('UPDATE run SET last_event_at=? WHERE id=?')
+      .run(new Date(intervalOrigin - 60_000).toISOString(), run)
+    expect(intervalScore('DEV-NEGATIVE').children[0]).toMatchObject({
+      agentTimeMs: 0, occupancyMs: 0, elapsedSpanMs: 0,
+      runDurationMeanMs: 0, runDurationP95Ms: 0, idleMinutes: 1,
+    })
+  })
+
   test('computes offset-less SQLite idle timestamps as UTC outside a UTC process', () => {
     const run = addRun({
       agent: 'codex', job: 'implement', status: 'ok', latency: 120_000,
