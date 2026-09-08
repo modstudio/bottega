@@ -114,7 +114,12 @@ describe('contention ledger', () => {
       expect(() => withProjectLock(
         repo, 'landing', { session: 'busy-waiter', what: 'wait' }, () => 'acquired', timeoutMs, true,
       )).toThrow(/timed out after/)
-      expect(Date.now() - started).toBeLessThan(timeoutMs + 50)
+      // The invariant is that recording never waits the 15 s busy_timeout while
+      // a lock timeout is being thrown. A 50 ms bound proved it on an idle
+      // machine and failed at 292 ms under two concurrent lens suites; a bound
+      // an order of magnitude below busy_timeout proves the same thing and
+      // survives load (DEV-375's size-class rule for sub-second bounds).
+      expect(Date.now() - started).toBeLessThan(timeoutMs + 2_000)
       expect(db().query(
         "SELECT 1 FROM contention WHERE session_id='busy-waiter'",
       ).get()).toBeNull()
