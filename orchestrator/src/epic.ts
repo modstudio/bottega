@@ -172,9 +172,8 @@ export function epicScoreboard(
       architectCommits: null,
     }
   })
-  const total = totalRow(rows)
   const attributedRuns = runs.filter((row) => runKey(row) !== null)
-  Object.assign(total, durationMetrics(attributedRuns, clock))
+  const total = totalRow(rows, durationMetrics(attributedRuns, clock))
   return {
     epicKey,
     membership: {
@@ -253,7 +252,7 @@ function commitSubjects(database: Database): Map<number, Map<string, string>> {
   return result
 }
 
-function totalRow(rows: EpicTaskScore[]): EpicTaskScore {
+function totalRow(rows: EpicTaskScore[], timing: DurationMetrics): EpicTaskScore {
   const byJob: Record<string, number> = {}
   const causes: Record<string, number> = {}
   for (const row of rows) {
@@ -265,12 +264,7 @@ function totalRow(rows: EpicTaskScore[]): EpicTaskScore {
   return {
     key: 'TOTAL', title: '', status: null,
     runs: { total: rows.reduce((sum, row) => sum + row.runs.total, 0), byJob: Object.fromEntries(Object.entries(byJob).sort()) },
-    agentTimeMs: rows.reduce((sum, row) => sum + row.agentTimeMs, 0),
-    occupancyMs: rows.reduce((sum, row) => sum + row.occupancyMs, 0),
-    elapsedSpanMs: rows.length ? Math.max(...rows.map((row) => row.elapsedSpanMs)) : 0,
-    runDurationMeanMs: null,
-    runDurationP95Ms: null,
-    ghostRuns: rows.reduce((sum, row) => sum + row.ghostRuns, 0),
+    ...timing,
     vendorTokens: nullableSum(rows.map((row) => row.vendorTokens)),
     vendorCostUsd: nullableSum(rows.map((row) => row.vendorCostUsd)),
     unreportedUsageRuns: {
