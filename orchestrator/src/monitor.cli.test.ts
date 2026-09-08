@@ -1025,6 +1025,19 @@ fi
     }
   })
 
+  test('WAITING names idle when the last event is older than the warn threshold', () => {
+    const live = addRun({ agent: 'grok', job: 'implement', status: 'running', session: 'heartbeat-idle' })
+    db().query('UPDATE run SET last_event_at=?, latency_ms=NULL WHERE id=?')
+      .run(new Date(Date.now() - 12 * 60_000).toISOString(), live)
+    const p = Bun.spawnSync([heartbeat, 'heartbeat-idle', '0', '1'], {
+      stdout: 'pipe', stderr: 'pipe', env: process.env,
+    })
+    expect(p.exitCode, p.stderr.toString()).toBe(0)
+    expect(p.stdout.toString()).toContain('WAITING')
+    expect(p.stdout.toString()).toContain(` ${live}/implement grok running`)
+    expect(p.stdout.toString()).toContain('idle 12m')
+  })
+
   test('first-sight terminal runs report once, with harness failures distinguished', () => {
     const harness = addRun({ agent: 'codex', job: 'implement', status: 'failed', latency: 1500 })
     const failed = addRun({ agent: 'grok', job: 'fix', status: 'failed', latency: 1500 })

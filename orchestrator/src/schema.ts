@@ -58,6 +58,7 @@ export const run = sqliteTable('run', {
   transport: text(),
   preConfinement: text('pre_confinement'),
   keepTree: integer('keep_tree').notNull().default(0),
+  lastEventAt: text('last_event_at'),
 }, (t) => [
   check('run_status_check', sql`${t.status} in ('running','ok','failed','stale','asking','stopped')`),
   check('run_sandbox_check', sql`${t.sandbox} is null or ${t.sandbox} in ('host','srt')`),

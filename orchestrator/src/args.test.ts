@@ -10,7 +10,7 @@ describe('CLI argument recognition', () => {
     const commands = [
       'init-db', 'migrate', 'issue', 'land', 'contract', 'doc', 'canon', 'port', 'mcp', 'do', 'review', 'state', 'run',
       'search', 'result', 'wait', 'retry', 'project', 'ask-server', 'setup-ask', 'blockers', 'monitor',
-      'inbox', 'answer', 'tell', 'continue', 'diff', 'sweep', 'discard', 'stop', 'abandon', 'score',
+      'inbox', 'peek', 'answer', 'tell', 'continue', 'diff', 'sweep', 'discard', 'stop', 'abandon', 'score',
       'recalibrate', 'routing-backtest', 'runs', 'guide', 'spawns', 'stats', 'pick', 'pending', 'metric', 'serve',
       'reclassify-failures', 'health', 'doctor', 'jobs', 'agents',
     ]
@@ -69,6 +69,7 @@ describe('CLI argument recognition', () => {
       ['answer', '12', '--q31', '--file', 'a.txt', '--q32', '--file', 'b.txt'],
       ['answer', '12', '--q31', 'first ruling', '--q32', '--file', 'b.txt'],
       ['tell', '12', 'context', 'for', 'the worker'], ['tell', '12', '--file', 'note.md'],
+      ['tell', '12', '--ping', 'context'], ['peek', '12'], ['peek', '12', '--events', '3', '--json'],
       ['continue', '12', 'one more change'], ['continue', '12', '--file', 'msg.txt'],
       ['continue', '12', 'hello', 'world'], ['diff', '12', '--quiet'], ['discard', '12', '--force'],
       ['stop', '12'], ['abandon', '12', '--note', 'superseded'],

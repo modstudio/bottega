@@ -67,6 +67,7 @@ import {
   schemaMismatchError, stopErrorMessage, failureKindFromStop,
   type TransportName, type TransportStartOpts,
 } from './transport.ts'
+import { teeTransportEvents } from './events.ts'
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
 
@@ -2694,8 +2695,10 @@ export async function run(opts: {
       killer = setTimeout(() => { try { handle.kill(9) } catch { /* already gone */ } }, 5_000)
     }, boundMs)
 
+    const teeing = teeTransportEvents(handle.events(), claim.id)
     await t.prompt(handle, prompt)
     const collected = await handle.collect()
+    await teeing
     const stdout = collected.stdout
     const stderr = collected.stderr
     // One derivation from the raw stream, carried through terminalisation.

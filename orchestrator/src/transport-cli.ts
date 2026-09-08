@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import type { ArgvOpts } from './agents.ts'
+import { eventsFromVendorLine } from './events.ts'
 import { srtLaunchArgv } from './sandbox.ts'
 import {
   outcomeFromTransport, type AgentTransport, type NormalizedEvent, type TransportHandle,
@@ -10,6 +11,35 @@ import {
 function parseVendorTokens(blob: string): number | null {
   const m = blob.match(/tokens used\s*\n?\s*([\d,]+)/i)
   return m ? Number(m[1]!.replace(/,/g, '')) : null
+}
+
+async function readStdoutLines(
+  stream: ReadableStream<Uint8Array>,
+  onLine: (line: string) => void,
+): Promise<string> {
+  const decoder = new TextDecoder()
+  let buf = ''
+  let stdout = ''
+  const reader = stream.getReader()
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let nl = buf.indexOf('\n')
+    while (nl >= 0) {
+      const line = buf.slice(0, nl)
+      buf = buf.slice(nl + 1)
+      stdout += `${line}\n`
+      onLine(line)
+      nl = buf.indexOf('\n')
+    }
+  }
+  buf += decoder.decode()
+  if (buf) {
+    stdout += buf
+    onLine(buf)
+  }
+  return stdout
 }
 
 function spawnCli(opts: TransportStartOpts): TransportHandle {
@@ -45,16 +75,30 @@ function spawnCli(opts: TransportStartOpts): TransportHandle {
 
   let cancelled = false
   let collected: Promise<TransportResult> | null = null
-  const eventWaiters: Array<(events: NormalizedEvent[]) => void> = []
-  let recordedEvents: NormalizedEvent[] | null = null
+  const liveEvents: NormalizedEvent[] = []
+  const eventWaiters: Array<() => void> = []
+  let closed = false
+
+  const pushEvent = (event: NormalizedEvent) => {
+    liveEvents.push(event)
+    eventWaiters.shift()?.()
+  }
+
+  const stdoutTask = readStdoutLines(p.stdout, (line) => {
+    for (const event of eventsFromVendorLine(line)) pushEvent(event)
+  })
+  const stderrTask = new Response(p.stderr).text()
+
+  const finishEvents = () => {
+    closed = true
+    for (const waiter of eventWaiters) waiter()
+    eventWaiters.length = 0
+  }
 
   const collect = (): Promise<TransportResult> => {
     if (collected) return collected
     collected = (async () => {
-      const [stdout, stderr] = await Promise.all([
-        new Response(p.stdout).text(),
-        new Response(p.stderr).text(),
-      ])
+      const [stdout, stderr] = await Promise.all([stdoutTask, stderrTask])
       const exitCode = await p.exited
       const reply = opts.agent.parseReply?.(stdout)
       const replyError = reply?.error ?? null
@@ -86,9 +130,7 @@ function spawnCli(opts: TransportStartOpts): TransportHandle {
       const folded = outcomeFromTransport({
         asking: false, error: replyError, exitCode, output, stopReason,
       })
-      recordedEvents = events
-      for (const wait of eventWaiters) wait(events)
-      eventWaiters.length = 0
+      finishEvents()
       return {
         output, stdout, stderr, raw: stdout,
         parsed: reply ?? null,
@@ -105,8 +147,15 @@ function spawnCli(opts: TransportStartOpts): TransportHandle {
     kill(sig) { try { p.kill(sig === 9 || sig === 'SIGKILL' ? 9 : 'SIGTERM') } catch { /* already gone */ } },
     async prompt() { /* first-turn prompt is on argv / stdin */ },
     async *events() {
-      const result = await collect()
-      for (const event of recordedEvents ?? result.events) yield event
+      let i = 0
+      for (;;) {
+        if (i < liveEvents.length) {
+          yield liveEvents[i++]!
+          continue
+        }
+        if (closed) break
+        await new Promise<void>((resolve) => { eventWaiters.push(resolve) })
+      }
     },
     async cancel() {
       cancelled = true

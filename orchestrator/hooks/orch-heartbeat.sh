@@ -172,8 +172,12 @@ for line in sys.stdin:
         age = "%dm%02ds" % (el // 60, el % 60)
     except Exception:
         age = "?"
-    ids.append(str(d.get("id")))
-    out.append("%s/%s %s %s %s" % (d.get("id"), d.get("job"), d.get("agent"), d.get("status"), age))
+    idle = d.get("idle")
+    idle_note = ""
+    if isinstance(idle, str) and idle.startswith("idle "):
+        idle_note = " " + idle
+    ids.append(str(d.get("id")) + ("i" if idle_note else ""))
+    out.append("%s/%s %s %s %s%s" % (d.get("id"), d.get("job"), d.get("agent"), d.get("status"), age, idle_note))
 if not saw:
     raise SystemExit(2)
 # count \t detail \t state-key (ids only - elapsed must never enter the key)

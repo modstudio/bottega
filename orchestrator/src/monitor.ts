@@ -9,6 +9,7 @@ import { gitLocks } from './git-locks.ts'
 import { projects } from './projects.ts'
 import { projectLockState, targetGitEnvironment } from './worktree.ts'
 import { allInjectChecks, storedPackDrift } from './canon.ts'
+import { idleLabel, idleMsSince, idleWarnMs } from './events.ts'
 
 const HUB = new URL('../../bin/hub', import.meta.url).pathname
 
@@ -58,6 +59,26 @@ function elapsedDetail(elapsedMs: number | null): string {
   if (elapsedMs < 60_000) return `elapsed ${Math.round(elapsedMs / 1000)}s`
   if (elapsedMs < 3_600_000) return `elapsed ${Math.round(elapsedMs / 60_000)}m`
   return `elapsed ${(elapsedMs / 3_600_000).toFixed(1)}h`
+}
+
+/** Report live runs whose vendor stream has gone quiet. Nothing is killed. */
+export function idleRunConditions(clock = Date.now()): MonitorCondition[] {
+  const threshold = idleWarnMs()
+  const running = db().query(
+    `SELECT id, started_at, last_event_at, agent, job FROM run WHERE status='running'`,
+  ).all() as {
+    id: number; started_at: string; last_event_at: string | null; agent: string; job: string
+  }[]
+  return running.flatMap((run): MonitorCondition[] => {
+    const label = idleLabel(run.last_event_at, run.started_at, clock, threshold)
+    if (!label) return []
+    const ageMs = idleMsSince(run.last_event_at, run.started_at, clock)
+    return [{
+      kind: 'idle', subject: `run:${run.id}`, since: run.last_event_at ?? run.started_at, ageMs,
+      detail: `run ${run.id} ${run.agent}/${run.job} ${label}`,
+      action: 'reported; nothing was signalled',
+    }]
+  })
 }
 
 /** Report vendor processes that vanished while their run still claims to be running. */
@@ -224,6 +245,7 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
     action: 'reported; abandoning or resuming is an intent decision' })
 
   conditions.push(...deadRunningProcessConditions(clock))
+  conditions.push(...idleRunConditions(clock))
 
   const stale = database.query(
     `SELECT id, started_at, error FROM run WHERE status='stale'`,

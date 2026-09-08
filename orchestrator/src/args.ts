@@ -58,6 +58,7 @@ export const ANSWER_WORKING_FORMS =
 export const TELL_WORKING_FORMS =
   `  orch tell <id> "<message>"\n` +
   `  orch tell <id> --file <path>\n` +
+  `  orch tell <id> --ping "<message>"\n` +
   `  orch tell <id>  (message on stdin)`
 
 export const CONTINUE_WORKING_FORMS =
@@ -431,13 +432,16 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       ['--backstop', '--history', '--json'],
     ) }
     case 'inbox': return { args: argv.slice(1), shape: shape('orch inbox [--all] [--json]', 0, [], ['--all', '--json']) }
+    case 'peek': return { args: argv.slice(1), shape: shape(
+      'orch peek <run-id> [--events N] [--json]', 1, ['--events'], ['--json'],
+    ) }
     case 'answer': return { args: argv.slice(1), shape: shape(
       'orch answer <id> [--record-only] ["<ruling>"] [--file PATH] [--q<ID> "<ruling>"] [--q<ID> --file PATH] [--follow]', Infinity,
       ['--file'], ['--follow', '--detach', '--quiet', '--record-only'],
       { dynamicValueFlag: /^--q\d+$/, messagePositionals: true },
     ) }
     case 'tell': return { args: argv.slice(1), shape: shape(
-      'orch tell <run-id> ["<message>"] [--file PATH]', Infinity, ['--file'], [],
+      'orch tell <run-id> ["<message>"] [--file PATH] [--ping]', Infinity, ['--file'], ['--ping'],
       { messagePositionals: true },
     ) }
     case 'continue': return { args: argv.slice(1), shape: shape(

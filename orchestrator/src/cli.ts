@@ -1514,8 +1514,11 @@ function usage(): never {
       --json                    emit one JSON document; silent on a clean live pass
   orch inbox [--all] [--json]   design questions a worker is waiting on you to rule on
       --json                    print one JSON document
+  orch peek <run-id> [--events N] [--json]
+                                observe a worker's event stream without interrupting it
   orch tell <id> ["<message>"]   queue non-authoritative context for a running worker
       --file <path>             read a long message from a file
+      --ping                    also print the peek summary as of queue time
   orch setup-ask                register the live ask channel with codex and grok
   orch answer <id> ["<ruling>"] rule from argv, --file, or stdin; resume detached
       --file <path>             read the ruling from a file
@@ -3129,7 +3132,8 @@ switch (cmd) {
     const id = Number(argv[1])
     if (!id) usage()
     const sources = parseWorkerMessageArgs(argv.slice(2), {
-      usage: 'orch tell <run-id> ["<message>"] [--file PATH]',
+      usage: 'orch tell <run-id> ["<message>"] [--file PATH] [--ping]',
+      booleans: ['--ping'],
     })
     const body = (await readMessageText({
       missing: 'no message: pass it as an argument, via --file, or on stdin',
@@ -3143,6 +3147,25 @@ switch (cmd) {
       `queued message ${message.id} for run ${message.root_run_id} ` +
       `(turn ${message.run_id}); it has not been read`,
     )
+    if (has('ping')) {
+      const { formatPeek, peekRun } = await import('./events.ts')
+      console.log(formatPeek(peekRun(message.run_id)))
+    }
+    break
+  }
+
+  case 'peek': {
+    const id = Number(argv[1])
+    if (!id) usage()
+    const eventsFlag = flag('events')
+    const events = eventsFlag === undefined ? undefined : Number(eventsFlag)
+    if (events !== undefined && (!Number.isInteger(events) || events < 0)) {
+      throw new Error('--events must be a non-negative integer')
+    }
+    const { formatPeek, peekRun } = await import('./events.ts')
+    const summary = peekRun(id, { events })
+    if (has('json')) console.log(JSON.stringify(summary))
+    else console.log(formatPeek(summary))
     break
   }
 
@@ -5857,6 +5880,7 @@ switch (cmd) {
 
   case 'runs': {
     await loadJobs()
+    const { idleLabel, idleMsSince } = await import('./events.ts')
     const jsonV1 = argv.includes('--json=v1')
     const json = has('json') || jsonV1
     const where: string[] = ['r.parent_run_id IS NULL']
@@ -5947,6 +5971,7 @@ switch (cmd) {
       `${unscoredCte}
        SELECT r.id, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
               current_run.status, current_run.failure_kind, current_run.error,
+              current_run.last_event_at, current_run.started_at AS current_started_at,
               s.delivery, s.quality,
               COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason, r.sandbox
               ${json ? ', r.cwd, r.session_id, r.vendor_cost_usd, r.probe, r.exit_code, r.input_tree, r.head_commit, r.review_ref,'
@@ -6030,6 +6055,15 @@ switch (cmd) {
         })))
     }
 
+    rows = rows.map((r) => {
+      const live = r.status === 'running'
+      const lastEventAt = (r.last_event_at as string | null) ?? null
+      const startedAt = String(r.current_started_at ?? r.started_at)
+      const idle = live ? idleLabel(lastEventAt, startedAt) : null
+      const since = live ? idleMsSince(lastEventAt, startedAt) : null
+      return { ...r, idle, idle_ms: since }
+    })
+
     // JSON Lines, so a consumer can stream it and a truncated read loses only
     // the last record. This is a published interface: `hub` reads it rather
     // than opening orch.db, because a database shared between two concerns is
@@ -6057,7 +6091,8 @@ switch (cmd) {
         `${identity.padStart(4)}  ${String((r.failover_chain as string[]).join('→')).padEnd(6)} ${String(r.job).padEnd(14)}` +
           // 'running' is not a failure, and a null latency is not zero seconds.
           ` ${String(r.status === 'failed' ? status.toUpperCase() : status).padEnd(10)}` +
-          ` ${dur(r.latency_ms as number | null).padStart(8)}  ${String(r.prompt_head).slice(0, 60)}`,
+          ` ${dur(r.latency_ms as number | null).padStart(8)}  ${String(r.prompt_head).slice(0, 60)}` +
+          (r.idle ? `  ${r.idle}` : ''),
       )
       if (stranded) console.log(`      ${r.recovery_hint}`)
       else if (r.status === 'asking') console.log(`      ${outcome.line.slice(status.length + 3)}`)

@@ -24,7 +24,15 @@ export type NormalizedEvent =
   | { kind: 'text'; text: string }
   | { kind: 'usage'; tokens: number; costUsd: number | null }
   | { kind: 'session'; sessionId: string }
-  | { kind: 'tool'; title: string; status?: string; toolKind?: string; target?: string; result?: string }
+  | {
+      kind: 'tool'
+      title: string
+      status?: string
+      toolKind?: string
+      target?: string
+      result?: string
+      locations?: Array<{ path: string }>
+    }
   | {
       kind: 'permission'
       title: string

@@ -160,8 +160,19 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
           if (target) known.target = target
           const result = toolCallResult(update)
           if (result) known.result = result
+          const paths = Array.isArray(update.locations)
+            ? update.locations.flatMap((location) =>
+                typeof location?.path === 'string' && location.path ? [{ path: location.path }] : [],
+              )
+            : []
+          if (paths.length) known.locations = [...(known.locations ?? []), ...paths]
           break
         }
+        const locations = Array.isArray(update.locations)
+          ? update.locations.flatMap((location) =>
+              typeof location?.path === 'string' && location.path ? [{ path: location.path }] : [],
+            )
+          : undefined
         const event: Extract<NormalizedEvent, { kind: 'tool' }> = {
           kind: 'tool',
           title: update.title ?? update.sessionUpdate,
@@ -169,6 +180,7 @@ export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
           toolKind: update.kind,
           target: toolCallTarget(update),
           result: toolCallResult(update),
+          ...(locations?.length ? { locations } : {}),
         }
         events.push(event)
         if (update.toolCallId) toolCalls.set(update.toolCallId, event)
