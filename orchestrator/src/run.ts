@@ -3115,9 +3115,15 @@ export async function run(opts: {
         }
       }
     }
+    const ownMcpServer = mcpConnection?.server
+    const otherProjectMcpServers = new Set(projects()
+      .map((project) => project.settings.mcpServer ?? project.name)
+      .filter((server) => server !== ownMcpServer && server !== 'orch' && server !== 'orch-ask'))
     const provenanceWrongProjectTool = parsedReview?.provenance.mcp_tools.find((tool) => {
-      const server = tool.split(/[.:/]/, 1)[0]
-      return Boolean(server && mcpConnection?.server && server !== mcpConnection.server)
+      const claude = tool.match(/^mcp__([^_]+)__/)
+      const qualified = tool.match(/^([^.:/]+)[.:/]/)
+      const server = claude?.[1] ?? qualified?.[1]
+      return Boolean(server && otherProjectMcpServers.has(server))
     })
     if (parsedReview && provenanceWrongProjectTool && status === 'ok') {
       status = 'failed'
