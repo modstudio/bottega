@@ -3,7 +3,15 @@ import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync, mkdirSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { addRun, allInjectChecks, db, deadRunningProcessConditions, dir, fileIssue, monitor, monitorHistory, nowIso, parseFiledIssue, reconcileHub, rulingConditions, runWithDelayedStdoutReader, setDoc, upsertProject } from '../test/fixture.ts'
+import { addRun, allInjectChecks, db, deadRunningProcessConditions, dir, fileIssue, hermeticGitEnv, monitor, monitorHistory, nowIso, parseFiledIssue, reconcileHub, rulingConditions, runWithDelayedStdoutReader, score, setDoc, upsertProject } from '../test/fixture.ts'
+
+function git(cwd: string, ...args: string[]): string {
+  const result = Bun.spawnSync(['git', ...args], {
+    cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+  })
+  if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+  return result.stdout.toString().trim()
+}
 
 function migrateHub(path: string): void {
   const result = Bun.spawnSync([process.execPath,
@@ -14,6 +22,62 @@ function migrateHub(path: string): void {
 }
 
 describe('operational monitor record', () => {
+  test('monitor previews owned reclaim candidates and ignores review subjects', async () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'monitor-reclaim-')))
+    git(repo, 'init', '-b', 'main')
+    git(repo, 'config', 'user.email', 'orch-test@example.invalid')
+    git(repo, 'config', 'user.name', 'Orch Test')
+    writeFileSync(join(repo, 'base.txt'), 'base\n')
+    git(repo, 'add', 'base.txt')
+    git(repo, 'commit', '-m', 'base')
+    const base = git(repo, 'rev-parse', 'HEAD')
+    const project = `monitor-reclaim-${repo.split('/').pop()}`
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+
+    const treeRun = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
+    score(treeRun, 'full', 'right', 'faithful')
+    const treeBranch = `technical/DEV-391-tree-${treeRun}`
+    const tree = join(repo, '.claude', 'worktrees', `orch-${treeRun}`)
+    git(repo, 'worktree', 'add', '-b', treeBranch, tree, 'main')
+    db().query(
+      `UPDATE run SET worktree=?, cwd=?, branch=?, minted_branch=?, base_commit=?,
+                      worktree_source='git' WHERE id=?`,
+    ).run(tree, tree, treeBranch, treeBranch, base, treeRun)
+
+    const branchRun = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
+    score(branchRun, 'full', 'right', 'faithful')
+    const ownedBranch = `technical/DEV-391-owned-${branchRun}`
+    git(repo, 'branch', ownedBranch, 'main')
+    db().query('UPDATE run SET branch=?, minted_branch=? WHERE id=?')
+      .run(ownedBranch, ownedBranch, branchRun)
+
+    const reviewRun = addRun({ agent: 'codex', job: 'review-lens', status: 'ok', repo: project })
+    score(reviewRun, 'full', 'right', 'faithful')
+    const reviewSubject = 'technical/DEV-391-review-subject'
+    git(repo, 'branch', reviewSubject, 'main')
+    db().query('UPDATE run SET branch=?, minted_branch=NULL WHERE id=?')
+      .run(reviewSubject, reviewRun)
+
+    const priorCwd = process.cwd()
+    try {
+      process.chdir(repo)
+      const result = await monitor('invoked')
+      expect(result.conditions.some((row) => row.subject === `${project}:${reviewSubject}`)).toBe(false)
+      const treeCondition = result.conditions.find((row) => row.subject === tree)
+      expect(treeCondition, JSON.stringify(result.conditions, null, 2)).toBeDefined()
+      expect(treeCondition?.action)
+        .toContain(`would reclaim worktree ${tree}`)
+      expect(result.conditions.find((row) => row.subject === `${project}:${ownedBranch}`)?.action)
+        .toContain(`would reclaim branch ${project}:${ownedBranch}`)
+      expect(result.conditions.filter((row) => row.action.startsWith('would reclaim'))).toHaveLength(2)
+      expect(existsSync(tree)).toBe(true)
+      expect(git(repo, 'show-ref', '--verify', `refs/heads/${ownedBranch}`)).not.toBe('')
+    } finally {
+      process.chdir(priorCwd)
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('reports machine-wide while automatic reclaim is scoped to the invoked project', async () => {
     const local = mkdtempSync(join(tmpdir(), 'monitor-local-'))
     const foreign = mkdtempSync(join(tmpdir(), 'monitor-foreign-'))

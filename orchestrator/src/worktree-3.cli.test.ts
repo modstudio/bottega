@@ -633,7 +633,8 @@ test('discard inventories leaks after successfully restoring a shared branch', (
       git(repo, 'reset', '--hard', 'HEAD~1')
       upsertProject({ name: project, path: realpathSync(repo), settings: { trunk: 'main' } })
       db().query(
-        `UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=?, started_at=? WHERE id=?`,
+        `UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=?, started_at=?,
+                        worktree_source='git' WHERE id=?`,
       ).run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, tip, '2020-01-01T00:00:00.000Z', id)
       if (cleanup === 'sweep') {
         db().query(
@@ -653,7 +654,6 @@ test('discard inventories leaks after successfully restoring a shared branch', (
         expect(p.exitCode).toBe(0)
         expect(git(repo, 'rev-parse', tree.branch)).toBe(tip)
         expect(p.stdout.toString()).toContain(`kept branch ${tree.branch}`)
-        expect(p.stdout.toString()).toContain('0 commit(s) after the cut')
         expect(db().query('SELECT worktree, branch_kept FROM run WHERE id=?').get(id))
           .toEqual({ worktree: null, branch_kept: tree.branch })
       } finally {

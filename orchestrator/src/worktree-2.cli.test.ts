@@ -635,10 +635,13 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
   for (const cleanup of ['discard', 'sweep'] as const) {
     test(`${cleanup} reclaims one scored multi-turn conversation`, () => {
       const { repo } = scratchRepo()
+      const project = `${cleanup}-conversation-${repo.split('/').pop()}`
+      upsertProject({ name: project, path: realpathSync(repo), settings: { trunk: 'main' } })
       const startedAt = new Date(Date.now() - 86_400_000).toISOString()
-      const root = addRun({ agent: 'codex', job: 'implement', status: 'ok', startedAt })
+      const root = addRun({ agent: 'codex', job: 'implement', status: 'ok', startedAt, repo: project })
       const child = addRun({
         agent: 'codex', job: 'implement', status: 'ok', parent: root, turn: 2, startedAt,
+        repo: project,
       })
       const tree = createWorktree(repo, root)
       db().query(
@@ -646,8 +649,10 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
          VALUES (?,'full','right','faithful',?)`,
       ).run(root, nowIso())
       for (const id of [root, child]) {
-        db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
-          .run(tree.path, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
+        db().query(
+          `UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=?,
+                          worktree_source='git' WHERE id=?`,
+        ).run(tree.path, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, tree.base, id)
       }
       const docker = fakeDocker([], [])
       try {
@@ -812,7 +817,7 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
     }
   })
 
-  test('sweep refuses when a project tool moves a pre-teardown unique branch tip', () => {
+  test('sweep refuses a unique branch before the project teardown tool can move it', () => {
     const { repo } = scratchRepo()
     const project = `sweep-moved-unique-${repo.split('/').pop()}`
     const id = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
@@ -837,7 +842,8 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
       settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
     })
     db().query(
-      `UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=?, started_at=? WHERE id=?`,
+      `UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=?, started_at=?,
+                      worktree_source='recipe' WHERE id=?`,
     ).run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, tree.base, '2020-01-01T00:00:00.000Z', id)
     db().query(
       `INSERT INTO score (run_id, delivery, quality, fidelity, scored_at)
@@ -853,9 +859,9 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
         },
       )
       expect(p.exitCode).not.toBe(0)
-      expect(p.stderr.toString()).toContain(`moved unique branch ${tree.branch}`)
-      expect(p.stderr.toString()).toContain(later)
-      expect(git(repo, 'rev-parse', tree.branch)).toBe(later)
+      expect(p.stderr.toString()).toContain('commits unreachable from landing branch main')
+      expect(git(repo, 'rev-parse', tree.branch)).toBe(first)
+      expect(existsSync(tree.path)).toBe(true)
       expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
         .toEqual({ worktree: tree.path })
     } finally {
@@ -933,9 +939,17 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
         name: project, path: realpathSync(repo),
         settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
       })
-      db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
-        .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, target)
+      db().query(
+        `UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=?,
+                        worktree_source='recipe' WHERE id=?`,
+      ).run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, tree.base, target)
       db().query('UPDATE run SET cwd=? WHERE id=?').run(repo, owner)
+      if (cleanup === 'sweep') {
+        db().query(
+          `INSERT INTO score (run_id, delivery, quality, fidelity, scored_at)
+           VALUES (?,'full','right','faithful',?)`,
+        ).run(target, nowIso())
+      }
       try {
         const CLI = new URL('cli.ts', import.meta.url).pathname
         const args = cleanup === 'sweep'

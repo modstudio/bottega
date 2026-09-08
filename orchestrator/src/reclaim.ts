@@ -1,10 +1,10 @@
 import { existsSync, realpathSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { db, EVIDENCE_CLOSED_SQL, chainScoreJoin, pidAlive, SESSION_LIVE_MS, sessionId, writableDb, writeTransaction } from './db.ts'
 import { projectAt, projectByName } from './projects.ts'
 import {
-  branchTip, removeFor, targetGitEnvironment, withCleanupLock, withWorktreeCreateLock,
-  withWorktreeLease,
+  branchTip, removeFor, restoreBranch, targetGitEnvironment, withCleanupLock, withWorktreeCreateLock,
+  withWorktreeLease, orphanSafety,
   type Worktree,
 } from './worktree.ts'
 
@@ -16,6 +16,8 @@ type ReclaimRun = {
   repo: string | null
   worktree: string
   branch: string | null
+  branch_kept: string | null
+  branch_kept_tip: string | null
   minted_branch: string | null
   base_commit: string | null
   worktree_source: Worktree['source'] | null
@@ -25,6 +27,7 @@ type ReclaimRun = {
   session_id: string | null
   session_last_seen: string | null
   scored: number
+  keep_tree: number
 }
 
 function git(cwd: string, args: string[]): { ok: boolean; out: string } {
@@ -44,9 +47,10 @@ function refuse(missing: string): ReclaimResult {
 function runRows(path: string): ReclaimRun[] {
   const rows = db().query(
     `SELECT r.id, COALESCE(r.parent_run_id, r.id) root_id, r.repo, r.worktree,
-            r.branch, r.minted_branch, r.base_commit, r.worktree_source, r.status,
+            r.branch, r.branch_kept, r.branch_kept_tip, r.minted_branch,
+            r.base_commit, r.worktree_source, r.status,
             r.pid, r.agent_pid, r.session_id, seen.last_seen session_last_seen,
-            ${EVIDENCE_CLOSED_SQL} AS scored
+            ${EVIDENCE_CLOSED_SQL} AS scored, r.keep_tree
        FROM run r ${chainScoreJoin('r', 's')}
        LEFT JOIN session_seen seen ON seen.session_id=r.session_id
       WHERE r.worktree IS NOT NULL ORDER BY r.id`,
@@ -57,6 +61,20 @@ function runRows(path: string): ReclaimRun[] {
   }
   const wanted = canonical(path)
   return rows.filter((row) => canonical(row.worktree) === wanted)
+}
+
+function branchRows(project: string, branch: string): ReclaimRun[] {
+  return db().query(
+    `SELECT r.id, COALESCE(r.parent_run_id, r.id) root_id, r.repo,
+            COALESCE(r.worktree, '') worktree, r.branch, r.branch_kept,
+            r.branch_kept_tip, r.minted_branch,
+            r.base_commit, r.worktree_source, r.status, r.pid, r.agent_pid,
+            r.session_id, seen.last_seen session_last_seen,
+            ${EVIDENCE_CLOSED_SQL} AS scored, r.keep_tree
+       FROM run r ${chainScoreJoin('r', 's')}
+       LEFT JOIN session_seen seen ON seen.session_id=r.session_id
+      WHERE r.repo=? AND r.minted_branch=? ORDER BY r.id`,
+  ).all(project, branch) as ReclaimRun[]
 }
 
 function liveOwner(row: ReclaimRun, clock: number): string | null {
@@ -76,69 +94,127 @@ function absentCommits(repoRoot: string, subject: string, trunk: string): string
   return result.ok ? result.out.split('\n').filter(Boolean) : null
 }
 
+type WorktreeProof = {
+  result: ReclaimResult
+  rows?: ReclaimRun[]
+  project?: NonNullable<ReturnType<typeof projectByName>>
+}
+
+function proveRunOwners(rows: ReclaimRun[], clock: number): ReclaimResult | null {
+  for (const row of rows) {
+    const live = liveOwner(row, clock)
+    if (live) return refuse(live)
+    if (!['ok', 'failed', 'stale', 'stopped'].includes(row.status)) {
+      return refuse(`run ${row.id} status ${row.status} is not terminal`)
+    }
+  }
+  return null
+}
+
+function proveWorktree(path: string, clock: number): WorktreeProof {
+  const rows = runRows(path)
+  if (!rows.length) return { result: refuse(`no run row records worktree ${path}`) }
+  const row = rows[0]!
+  const project = row.repo ? projectByName(row.repo) : projectAt(path)
+  if (!project) return { result: refuse(`worktree ${path} has no registered project`) }
+  const registeredPath = realpathSync(project.path)
+  if (path === registeredPath) {
+    return { result: refuse(`worktree ${path} is the project's registered checkout`) }
+  }
+  const worktreesRoot = resolve(registeredPath, '.claude', 'worktrees')
+  const fromRoot = relative(worktreesRoot, path)
+  // The exact registered checkout has its own refusal above. Keeping it out of
+  // this predicate makes each destructive guard independently defeat-testable.
+  if (path !== registeredPath &&
+      (!fromRoot || fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot))) {
+    return { result: refuse(`worktree ${path} is not beneath project worktrees directory ${worktreesRoot}`) }
+  }
+  const owners = proveRunOwners(rows, clock)
+  if (owners) return { result: owners }
+  for (const lockedRow of rows) {
+    if (!lockedRow.scored) return { result: refuse(`run ${lockedRow.root_id} is unscored; its diff is still evidence`) }
+    if (lockedRow.keep_tree) return { result: refuse(`run ${lockedRow.id} records keep_tree; its worktree is protected`) }
+    if (!lockedRow.worktree_source) return { result: refuse(`run ${lockedRow.id} records no worktree creation source`) }
+    if (!lockedRow.base_commit) return { result: refuse(`run ${lockedRow.id} records no base commit`) }
+  }
+  const trunk = typeof project.settings.trunk === 'string' && project.settings.trunk.trim()
+    ? project.settings.trunk : null
+  if (!trunk) return { result: refuse(`project ${project.name} records no landing branch`) }
+  const base = git(project.path, ['cat-file', '-e', `${row.base_commit}^{commit}`])
+  if (!base.ok) {
+    return { result: refuse(`recorded base commit ${row.base_commit} could not be inspected: ${base.out || 'unknown error'}`) }
+  }
+  if (existsSync(path)) {
+    const safety = orphanSafety(path, project.path, trunk)
+    if (!safety.removable && safety.detail === 'not a registered git worktree') {
+      return { result: refuse(`worktree safety could not be proved: ${safety.detail}`) }
+    }
+    const status = git(path, ['status', '--porcelain', '--untracked-files=all'])
+    if (!status.ok) return { result: refuse(`git status could not inspect ${path}: ${status.out || 'unknown error'}`) }
+    const dirty = status.out.split('\n').filter(Boolean).map((line) => line.slice(3))
+    if (dirty.length) return { result: refuse(`uncommitted paths block reclaim: ${dirty.join(', ')}`) }
+    const absent = absentCommits(path, 'HEAD', trunk)
+    if (absent === null) return { result: refuse(`reachability from landing branch ${trunk} could not be inspected`) }
+    if (absent.length) return { result: refuse(`commits unreachable from landing branch ${trunk}: ${absent.join(', ')}`) }
+  }
+  return {
+    result: { ok: true, action: `would reclaim worktree ${path}; run recipe/base and clean reachable git state proved reconstructibility` },
+    rows, project,
+  }
+}
+
 /** Reclaim one worktree only after its run rows and git state prove it reconstructible. */
 export function reclaimWorktree(
   requestedPath: string, options: { dryRun?: boolean; clock?: number } = {},
 ): ReclaimResult {
   const path = existsSync(requestedPath) ? realpathSync(requestedPath) : resolve(requestedPath)
-  if (!existsSync(path)) return refuse(`worktree ${path} does not exist`)
-  const rows = runRows(path)
-  if (!rows.length) return refuse(`no run row records worktree ${path}`)
-  const row = rows[0]!
-  const project = row.repo ? projectByName(row.repo) : projectAt(path)
-  if (!project) return refuse(`worktree ${path} has no registered project`)
+  const preview = proveWorktree(path, options.clock ?? Date.now())
+  if (!preview.result.ok || options.dryRun) return preview.result
+  const project = preview.project!
   const owner = { session: sessionId(), what: `reclaim worktree ${path}` }
-  return withWorktreeLease(project.path, path, owner, () =>
+  return withWorktreeCreateLock(project.path, () => withWorktreeLease(project.path, path, owner, () =>
     withCleanupLock(project.path, owner, () => {
-      const lockedRows = runRows(path)
-      if (!lockedRows.length) return refuse(`no run row records worktree ${path}`)
-      const clock = options.clock ?? Date.now()
-      for (const lockedRow of lockedRows) {
-        const live = liveOwner(lockedRow, clock)
-        if (live) return refuse(live)
-        if (!['ok', 'failed', 'stale', 'stopped'].includes(lockedRow.status)) {
-          return refuse(`run ${lockedRow.id} status ${lockedRow.status} is not terminal`)
-        }
-        if (!lockedRow.scored) return refuse(`run ${lockedRow.root_id} is unscored; its diff is still evidence`)
-        if (!lockedRow.worktree_source) return refuse(`run ${lockedRow.id} records no worktree creation source`)
-        if (!lockedRow.base_commit) return refuse(`run ${lockedRow.id} records no base commit`)
-      }
+      const proof = proveWorktree(path, options.clock ?? Date.now())
+      if (!proof.result.ok) return proof.result
+      const lockedRows = proof.rows!
       const lockedRow = lockedRows[0]!
-      const trunk = typeof project.settings.trunk === 'string' && project.settings.trunk.trim()
-        ? project.settings.trunk : null
-      if (!trunk) return refuse(`project ${project.name} records no landing branch`)
-      const base = git(project.path, ['cat-file', '-e', `${lockedRow.base_commit}^{commit}`])
-      if (!base.ok) return refuse(`recorded base commit ${lockedRow.base_commit} is unavailable`)
-
-      const status = git(path, ['status', '--porcelain', '--untracked-files=all'])
-      if (!status.ok) return refuse(`git status could not inspect ${path}: ${status.out || 'unknown error'}`)
-      const dirty = status.out.split('\n').filter(Boolean).map((line) => line.slice(3))
-      if (dirty.length) return refuse(`uncommitted paths block reclaim: ${dirty.join(', ')}`)
-
-      const absent = absentCommits(project.path, 'HEAD', trunk)
-      if (absent === null) return refuse(`reachability from landing branch ${trunk} could not be inspected`)
-      if (absent.length) return refuse(`commits unreachable from landing branch ${trunk}: ${absent.join(', ')}`)
-      if (options.dryRun) {
-        return { ok: true, action: `would reclaim worktree ${path}; run recipe/base and clean reachable git state proved reconstructibility` }
-      }
 
       writableDb()
-      const minted = lockedRow.minted_branch ?? lockedRow.branch ?? ''
+      const minted = lockedRow.minted_branch ?? ''
+      const branchBefore = minted ? branchTip(project.path, minted) : null
       const removed = removeFor({
         path, branch: minted, mintedBranch: lockedRow.minted_branch,
         base: lockedRow.base_commit!, repoRoot: project.path,
         source: lockedRow.worktree_source ?? undefined,
-      }, project.path, false, false, lockedRow.id)
+      }, project.path, false, true, lockedRow.id)
       if (!removed.removed) return refuse(removed.detail)
-      const clear = db().query('UPDATE run SET worktree=NULL WHERE id=?')
-      writeTransaction(() => lockedRows.forEach((record) => clear.run(record.id)))
-      return { ok: true, action: `reclaimed worktree ${path}; ${removed.detail}` }
-    }, 5 * 60_000), 5 * 60_000)
+      if (minted && branchBefore) {
+        const branchAfter = branchTip(project.path, minted)
+        if (branchAfter === null) {
+          const restored = restoreBranch(project.path, minted, branchBefore)
+          if (!restored.ok) {
+            return refuse(`project remove tool deleted branch ${minted}, and restoring ${branchBefore} failed: ${restored.error}`)
+          }
+        } else if (branchAfter !== branchBefore) {
+          return refuse(`project remove tool moved unique branch ${minted} from ${branchBefore} to ${branchAfter}; it was left at ${branchAfter}`)
+        }
+      }
+      const clear = db().query(
+        'UPDATE run SET worktree=NULL, branch_kept=?, branch_kept_tip=? WHERE id=?',
+      )
+      writeTransaction(() => lockedRows.forEach((record) =>
+        clear.run(minted || null, branchBefore, record.id)))
+      return {
+        ok: true,
+        action: `reclaimed worktree ${path}; ${removed.detail}` +
+          (minted && branchBefore ? `; kept branch ${minted}` : ''),
+      }
+    }, 5 * 60_000), 5 * 60_000), 5 * 60_000)
 }
 
 /** Reclaim one local branch only when its commits remain reachable or its exact kept tip is recorded. */
 export function reclaimBranch(
-  subject: string, options: { dryRun?: boolean } = {},
+  subject: string, options: { dryRun?: boolean; clock?: number } = {},
 ): ReclaimResult {
   const colon = subject.indexOf(':')
   if (colon < 1 || colon === subject.length - 1) {
@@ -148,31 +224,51 @@ export function reclaimBranch(
   const branch = subject.slice(colon + 1)
   const project = projectByName(projectName)
   if (!project) return refuse(`project ${projectName} is not registered`)
+  const trunk = typeof project.settings.trunk === 'string' && project.settings.trunk.trim()
+    ? project.settings.trunk : null
+  if (trunk === branch) {
+    return refuse(`branch ${projectName}:${branch} is the registered landing branch`)
+  }
+  const production = typeof project.settings.productionBranch === 'string'
+    ? project.settings.productionBranch.trim() : ''
+  if (production === branch) {
+    return refuse(`branch ${projectName}:${branch} is the registered production branch`)
+  }
+  const prove = (): { result: ReclaimResult; tip?: string } => {
+    const rows = branchRows(projectName, branch)
+    if (!rows.length) return { result: refuse(`no run row records minted branch ${projectName}:${branch}`) }
+    const owners = proveRunOwners(rows, options.clock ?? Date.now())
+    if (owners) return { result: owners }
+    const tip = branchTip(project.path, branch)
+    if (!tip) return { result: refuse(`branch ${projectName}:${branch} does not exist`) }
+    const worktrees = git(project.path, ['worktree', 'list', '--porcelain'])
+    if (!worktrees.ok) {
+      return { result: refuse(`checked-out worktrees could not be inspected: ${worktrees.out || 'unknown error'}`) }
+    }
+    const checkedOut = worktrees.out
+      .split('\n').some((line) => line === `branch refs/heads/${branch}`)
+    if (checkedOut) return { result: refuse(`branch ${projectName}:${branch} is checked out in a worktree`) }
+    if (!trunk) return { result: refuse(`project ${projectName} records no landing branch`) }
+    const recorded = rows.some((row) =>
+      row.branch_kept === branch && row.branch_kept_tip === tip)
+    const absent = absentCommits(project.path, branch, trunk)
+    if (absent === null) return { result: refuse(`reachability from landing branch ${trunk} could not be inspected`) }
+    if (absent.length && !recorded) {
+      return { result: refuse(`commits unreachable from landing branch ${trunk}: ${absent.join(', ')}`) }
+    }
+    const proof = recorded ? `tip ${tip} is recorded in branch_kept_tip` : `every commit is reachable from ${trunk}`
+    return {
+      result: { ok: true, action: `would reclaim branch ${projectName}:${branch}; ${proof}` },
+      tip,
+    }
+  }
+  const preview = prove()
+  if (!preview.result.ok || options.dryRun) return preview.result
   const owner = { session: sessionId(), what: `reclaim branch ${projectName}:${branch}` }
   return withWorktreeCreateLock(project.path, () => withCleanupLock(project.path, owner, () => {
-    const tip = branchTip(project.path, branch)
-    if (!tip) return refuse(`branch ${projectName}:${branch} does not exist`)
-    const checkedOut = git(project.path, ['worktree', 'list', '--porcelain']).out
-      .split('\n').some((line) => line === `branch refs/heads/${branch}`)
-    if (checkedOut) return refuse(`branch ${projectName}:${branch} is checked out in a worktree`)
-    const trunk = typeof project.settings.trunk === 'string' && project.settings.trunk.trim()
-      ? project.settings.trunk : null
-    if (!trunk) return refuse(`project ${projectName} records no landing branch`)
-
-    const kept = db().query(
-      `SELECT id, branch_kept_tip FROM run
-        WHERE repo=? AND (branch=? OR branch_kept=?) AND branch_kept_tip IS NOT NULL ORDER BY id`,
-    ).all(projectName, branch, branch) as { id: number; branch_kept_tip: string | null }[]
-    const recorded = kept.some((row) => row.branch_kept_tip === tip)
-    const absent = absentCommits(project.path, branch, trunk)
-    if (absent === null) return refuse(`reachability from landing branch ${trunk} could not be inspected`)
-    if (absent.length && !recorded) {
-      return refuse(`commits unreachable from landing branch ${trunk}: ${absent.join(', ')}`)
-    }
-    if (options.dryRun) {
-      const proof = recorded ? `tip ${tip} is recorded in branch_kept_tip` : `every commit is reachable from ${trunk}`
-      return { ok: true, action: `would reclaim branch ${projectName}:${branch}; ${proof}` }
-    }
+    const lockedProof = prove()
+    if (!lockedProof.result.ok) return lockedProof.result
+    const tip = lockedProof.tip!
 
     writableDb()
     const deleted = git(project.path, ['update-ref', '-d', `refs/heads/${branch}`, tip])

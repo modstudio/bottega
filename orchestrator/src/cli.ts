@@ -4692,7 +4692,7 @@ switch (cmd) {
       session_last_seen: string | null
     }[]
 
-    const { removeFor, sweepWithTool, repoRootOf, orphanSafety,
+    const { removeFor, sweepWithTool, orphanSafety,
             isOrchWorktree, markedWorktreeSource } =
       await import('./worktree.ts')
     const { projectAt } = await import('./projects.ts')
@@ -4709,6 +4709,12 @@ switch (cmd) {
       if (current?.worktree !== r.worktree) continue
       if (r.keep_tree && !has('force')) {
         keep(`${r.id}  kept on purpose (--keep-tree)`, 'kept on purpose (--keep-tree)')
+        continue
+      }
+      // Sweep is unattended, so age remains a backstop in addition to the
+      // proof-bearing reclaim verb's state, ownership and git guards.
+      if (r.age_days < days) {
+        keep(`${r.id}  too recent (${r.age_days.toFixed(1)}d)`, 'under the age threshold')
         continue
       }
       if (r.pid && pidAlive(r.pid)) {
@@ -4741,101 +4747,76 @@ switch (cmd) {
         )
         continue
       }
-      if (dry) { console.log(`would reclaim ${r.id}  ${r.worktree}`); done++; continue }
-
-      const repoRoot = (r.repo ? projectByName(r.repo)?.path : null) ??
-        repoRootOf(r.worktree) ?? projectAt(r.worktree)?.path ?? process.cwd()
-      const w = {
-        path: r.worktree, branch: r.branch ?? `orch/${r.id}`,
-        base: r.base_commit ?? '', repoRoot, source: r.worktree_source ?? undefined,
+      const { reclaimWorktree } = await import('./reclaim.ts')
+      if (dry) {
+        const preview = reclaimWorktree(r.worktree, { dryRun: true })
+        if (preview.ok) {
+          console.log(`would reclaim ${r.id}  ${r.worktree}`)
+          done++
+        } else {
+          keep(`${r.id}  ${preview.action}`, preview.action)
+        }
+        continue
       }
+
       try {
-        withCleanupLock(repoRoot, `sweep run ${r.id}`, r.worktree, () => {
-          const lockedSharers = evidenceOwningWorktreeSharers(r)
-          if (lockedSharers.length) {
-            const owners = lockedSharers.map((owner) =>
-              `${owner.id} (${owner.status}${owner.scored ? '' : ', unscored'})`).join(', ')
-            keep(
-              `${r.id}  shared with evidence-owning run(s): ${owners}`,
-              'shared with evidence-owning run(s)',
-            )
-            return
-          }
-          const ownersBefore = evidenceOwningBranchOwners(r, repoRoot)
-          const snapshot = r.branch ? branchTip(repoRoot, r.branch) : null
-          const protectedBranch = r.branch ? unmergedBranch(repoRoot, r.branch, null) : null
-          const afterCutCount = protectedBranch && r.base_commit
-            ? (unmergedBranch(repoRoot, r.branch!, r.base_commit)?.count ?? 0)
-            : null
-          const res = removeFor(w, repoRoot, false, ownersBefore.length > 0, r.id)
+        const before = resourcesForConversation(r.id)
+        for (const error of before.errors) inventoryErrors.add(error)
+        if (before.errors.length) {
+          cleanupFailed = true
+          console.error(`could not verify reclaim ${r.id}: inventory unavailable`)
+          continue
+        }
+        const pointerRows = db().query('SELECT id FROM run WHERE worktree=?').all(r.worktree) as
+          { id: number }[]
+        const restorePointers = () => writeTransaction(() => {
+          const restore = db().query('UPDATE run SET worktree=? WHERE id=?')
+          for (const row of pointerRows) restore.run(r.worktree, row.id)
+        })
+        const res = reclaimWorktree(r.worktree)
+        if (res.ok) {
           const sharersAfter = evidenceOwningWorktreeSharers(r)
-          const ownersAfter = evidenceOwningBranchOwners(r, repoRoot, snapshot)
-          if (r.branch) {
-            const outcome = verifyBranchOwnershipAfterCleanup(
-              r.id, repoRoot, r.branch, snapshot, ownersBefore, ownersAfter,
-            )
-            if (outcome.warning) console.error(`run ${r.id}: ${outcome.warning}`)
-            if (outcome.refusal) {
-              cleanupFailed = true
-              console.error(`could not reclaim ${r.id}: ${outcome.refusal}`)
-              return
-            }
-          }
           if (sharersAfter.length) {
             cleanupFailed = true
+            restorePointers()
             const owners = sharersAfter.map((owner) =>
               `${owner.id} (${owner.status}${owner.scored ? '' : ', unscored'})`).join(', ')
-            keep(
-              `${r.id}  shared with evidence-owning run(s): ${owners}`,
-              'shared with evidence-owning run(s)',
+            console.error(
+              `could not reclaim ${r.id}: worktree ${r.worktree} was acquired during cleanup by run(s) ${owners}`,
             )
-            console.error(`could not reclaim ${r.id}: worktree ${r.worktree} was acquired during cleanup by run(s) ${owners}`)
-            return
+            continue
           }
-          if (res.removed) {
-            const project = r.repo ?? projectAt(repoRoot)?.name ?? 'unknown'
-            const inventory = resourcesForConversation(r.id)
-            for (const error of inventory.errors) inventoryErrors.add(error)
-            if (inventory.errors.length) {
-              cleanupFailed = true
-              console.error(`could not verify reclaim ${r.id}: inventory unavailable`)
-              return
-            }
+          const project = r.repo ?? projectAt(r.worktree)?.name ?? 'unknown'
+          const inventory = resourcesForConversation(r.id)
+          for (const error of inventory.errors) inventoryErrors.add(error)
+          if (inventory.errors.length) {
+            cleanupFailed = true
+            restorePointers()
+            console.error(`could not verify reclaim ${r.id}: inventory unavailable`)
+          } else {
             const left = inventory.resources
             if (left.length) {
               cleanupFailed = true
+              restorePointers()
               for (const resource of left) leaked.set(`${resource.kind}:${resource.name}`, {
                 resource, project, runId: r.id,
               })
               console.error(`could not fully reclaim ${r.id}: project ${project}'s remove tool leaked Docker resources`)
             } else {
-              const keptProtectedBranch = protectedBranch && r.branch &&
-                branchTip(repoRoot, r.branch) ? r.branch : null
               writeTransaction(() => {
-                clearConversationWorktree(r.id, r.worktree, keptProtectedBranch)
                 auditRunMutation(
                   { runId: r.id, rootId: r.root_id, owner: null, actor: sessionId() },
                   'sweep',
                 )
               })
-              console.log(`reclaimed ${r.id}  ${res.detail}`)
-              if (res.output) console.log(res.output)
-              if (protectedBranch && keptProtectedBranch) {
-                console.log(keptBranchLine(
-                  keptProtectedBranch, protectedBranch.count, afterCutCount, r.id,
-                ))
-              }
-              const owner = ownersAfter[0] ?? ownersBefore[0] ?? null
-              if (owner && r.branch) {
-                console.log(`branch ${r.branch} left because run ${owner.id} records it`)
-              }
+              console.log(`reclaimed ${r.id}  ${res.action}`)
               done++
             }
-          } else {
-            cleanupFailed = true
-            console.error(`could not reclaim ${r.id}: ${res.detail}`)
           }
-        })
+        } else {
+          cleanupFailed = true
+          console.error(`could not reclaim ${r.id}: ${res.action}`)
+        }
       } catch (error) {
         cleanupFailed = true
         console.error(

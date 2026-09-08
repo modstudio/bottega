@@ -1063,7 +1063,10 @@ test('only bun\'s complete timeout line reports machine load', () => {
         ).get(reviewId) as { run_id: number }).run_id
         const ref = `refs/orch/reviewed/${runId}`
         const pinned = g(repo, 'rev-parse', ref)
-        db().query("UPDATE run SET worktree=?, started_at='2020-01-01T00:00:00.000Z' WHERE id=?")
+        db().query(
+          `UPDATE run SET worktree=?, worktree_source='git',
+                          started_at='2020-01-01T00:00:00.000Z' WHERE id=?`,
+        )
           .run(trees[branch]!, runId)
         const args = command === 'discard'
           ? ['discard', String(runId), '--force']
@@ -1078,7 +1081,7 @@ test('only bun\'s complete timeout line reports machine load', () => {
           },
           stdout: 'pipe', stderr: 'pipe',
         })
-        expect(result.exitCode).toBe(0)
+        expect(result.exitCode).toBe(command === 'discard' ? 0 : 1)
         expect(g(repo, 'rev-parse', ref)).toBe(pinned)
       } finally { rmSync(repo, { recursive: true, force: true }) }
     }

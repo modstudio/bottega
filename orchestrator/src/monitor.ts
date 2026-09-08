@@ -303,7 +303,7 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
         if (reclaimProject?.name !== project.name) {
           action = `reported; reclaim refused by monitor scope: ${project.name} is outside invoked project ${reclaimProject?.name ?? 'unknown'}`
         } else {
-          try { action = reclaimWorktree(path, { clock }).action }
+          try { action = reclaimWorktree(path, { clock, dryRun: true }).action }
           catch (cause) { action = `reported; reclaim errored: ${String((cause as Error).message ?? cause)}` }
         }
         add({ kind: 'worktree-without-live-run', subject: path, since,
@@ -315,8 +315,8 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
     const worktreeRefs = new Set((git(project.path, ['worktree', 'list', '--porcelain']) ?? '')
       .split('\n').filter((line) => line.startsWith('branch refs/heads/')).map((line) => line.slice(18)))
     const branches = database.query(
-      `SELECT DISTINCT branch, MIN(started_at) started_at FROM run
-        WHERE repo=? AND branch IS NOT NULL GROUP BY branch`,
+      `SELECT minted_branch branch, MIN(started_at) started_at FROM run
+        WHERE repo=? AND minted_branch IS NOT NULL GROUP BY minted_branch`,
     ).all(project.name) as { branch: string; started_at: string }[]
     for (const branch of branches) {
       if (worktreeRefs.has(branch.branch)) continue
@@ -326,7 +326,7 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
       if (reclaimProject?.name !== project.name) {
         action = `reported; reclaim refused by monitor scope: ${project.name} is outside invoked project ${reclaimProject?.name ?? 'unknown'}`
       } else {
-        try { action = reclaimBranch(subject).action }
+        try { action = reclaimBranch(subject, { dryRun: true }).action }
         catch (cause) { action = `reported; reclaim errored: ${String((cause as Error).message ?? cause)}` }
       }
       add({ kind: 'branch-without-worktree', subject,

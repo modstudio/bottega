@@ -210,6 +210,19 @@ exec ${JSON.stringify(actualGit)} "$@"
     }
   })
 
+  test('a young remembered worktree keeps the sweep age backstop', () => {
+    const recent = new Date().toISOString()
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'ok', startedAt: recent })
+    score(id, 'full', 'right', 'faithful')
+    const tree = `/tmp/dev391-young-remembered-${id}`
+    db().query('UPDATE run SET worktree=? WHERE id=?').run(tree, id)
+
+    const r = orch('sweep', '--older-than', '1', '--dry-run')
+    expect(r.code).toBe(0)
+    expect(r.out).toContain(`${id}  too recent (0.0d)`)
+    expect(r.out).not.toContain(`would reclaim ${id}`)
+  })
+
   test('a fresh directory is reclaimable by the latest turn in its named run chain', () => {
     const repo = scratchRepo()
     const project = `sweep-${repo.split('/').pop()}`
@@ -442,6 +455,7 @@ exec ${JSON.stringify(actualGit)} "$@"
     const id = addRun({
       agent: 'codex', job: 'implement', status: 'ok', repo: project, startedAt: old,
     })
+    score(id, 'full', 'right')
     const owner = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: project })
     const branch = `orch/${id}`
     const tree = join(repo, '.claude', 'worktrees', `orch-${id}`)
@@ -456,14 +470,15 @@ exec ${JSON.stringify(actualGit)} "$@"
         },
       },
     })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
-      .run(repo, tree, branch, branch, id)
+    db().query(
+      `UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=?,
+                      worktree_source='recipe' WHERE id=?`,
+    ).run(repo, tree, branch, branch, git(repo, 'rev-parse', 'main'), id)
     db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, branch, owner)
     try {
       const r = orchWithEnv(managedEnv, 'sweep', '--older-than', '0', '--force')
       expect(r.code).toBe(0)
-      expect(r.err).toContain(`project remove tool deleted shared branch ${branch}`)
-      expect(r.err).toContain('The tip at deletion was not observable.')
+      expect(r.err).not.toContain(`project remove tool deleted shared branch ${branch}`)
       expect(git(repo, 'rev-parse', branch)).toBe(git(repo, 'rev-parse', 'main'))
       expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
         .toEqual({ worktree: null })
@@ -527,13 +542,17 @@ exec ${JSON.stringify(actualGit)} "$@"
       agent: 'codex', job: 'implement', status: 'ok', repo: project,
       startedAt: new Date(Date.now() - 86_400_000).toISOString(),
     })
+    score(id, 'full', 'right')
     const tree = join(repo, '.claude', 'worktrees', `orch-${id}`)
     git(repo, 'worktree', 'add', '-b', `orch/${id}`, tree, 'main')
     upsertProject({
       name: project, path: repo,
       settings: { trunk: 'main', worktree: { remove: "echo 'protected work' >&2; exit 7" } },
     })
-    db().query('UPDATE run SET worktree=?, branch=?, minted_branch=? WHERE id=?').run(tree, `orch/${id}`, `orch/${id}`, id)
+    db().query(
+      `UPDATE run SET worktree=?, branch=?, minted_branch=?, base_commit=?,
+                      worktree_source='recipe' WHERE id=?`,
+    ).run(tree, `orch/${id}`, `orch/${id}`, git(repo, 'rev-parse', 'main'), id)
     try {
       const r = orch('sweep', '--older-than', '0', '--force')
       expect(r.code).not.toBe(0)
@@ -553,6 +572,7 @@ exec ${JSON.stringify(actualGit)} "$@"
       agent: 'codex', job: 'implement', status: 'ok', repo: project,
       startedAt: new Date(Date.now() - 86_400_000).toISOString(),
     })
+    score(id, 'full', 'right')
     const tree = join(repo, '.claude', 'worktrees', `orch-${id}`)
     git(repo, 'worktree', 'add', '-b', `orch/${id}`, tree, 'main')
     upsertProject({
@@ -565,7 +585,10 @@ exec ${JSON.stringify(actualGit)} "$@"
         },
       },
     })
-    db().query('UPDATE run SET worktree=?, branch=?, minted_branch=? WHERE id=?').run(tree, `orch/${id}`, `orch/${id}`, id)
+    db().query(
+      `UPDATE run SET worktree=?, branch=?, minted_branch=?, base_commit=?,
+                      worktree_source='recipe' WHERE id=?`,
+    ).run(tree, `orch/${id}`, `orch/${id}`, git(repo, 'rev-parse', 'main'), id)
     const docker = fakeDockerCommand("echo 'stub inventory failure' >&2; exit 127")
     try {
       const r = orchWithEnv(docker.env, 'sweep', '--older-than', '0', '--force')
@@ -585,6 +608,7 @@ exec ${JSON.stringify(actualGit)} "$@"
     const repo = scratchRepo()
     const project = `sweep-${repo.split('/').pop()}`
     const id = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
+    score(id, 'full', 'right')
     const tree = join(repo, '.claude', 'worktrees', `orch-${id}`)
     git(repo, 'worktree', 'add', '-b', `orch/${id}`, tree, 'main')
     upsertProject({
@@ -597,7 +621,10 @@ exec ${JSON.stringify(actualGit)} "$@"
         },
       },
     })
-    db().query('UPDATE run SET worktree=?, branch=?, minted_branch=? WHERE id=?').run(tree, `orch/${id}`, `orch/${id}`, id)
+    db().query(
+      `UPDATE run SET worktree=?, branch=?, minted_branch=?, base_commit=?,
+                      worktree_source='recipe' WHERE id=?`,
+    ).run(tree, `orch/${id}`, `orch/${id}`, git(repo, 'rev-parse', 'main'), id)
     const docker = fakeDocker([], [`orch-${id}_${project}-pgdata`])
     try {
       const r = orchWithEnv(docker.env, 'sweep', '--older-than', '0', '--force')
@@ -634,7 +661,7 @@ exec ${JSON.stringify(actualGit)} "$@"
     }
   })
 
-  test('an aged no-verdict void is reclaimed rather than kept as unjudged evidence', () => {
+  test('an aged no-verdict void reaches reclaim proof rather than the unjudged-evidence guard', () => {
     const old = new Date(Date.now() - 3 * 86_400_000).toISOString()
     const id = addRun({ agent: 'codex', job: 'understand', status: 'ok', startedAt: old })
     db().query("UPDATE run SET worktree=?, evidence_excluded=? WHERE id=?")
@@ -642,8 +669,8 @@ exec ${JSON.stringify(actualGit)} "$@"
 
     const r = orch('sweep', '--dry-run', '--older-than', '1')
     expect(r.code).toBe(0)
-    expect(r.out).toContain(`would reclaim ${id}  /tmp/dev364-void-${id}`)
-    expect(r.out).toContain('would reclaim 1, kept 0')
+    expect(r.out).toContain(`${id}  refused; worktree /tmp/dev364-void-${id} has no registered project`)
+    expect(r.out).toContain('would reclaim 0, kept 1')
     expect(r.out).not.toContain('unscored — its diff is the evidence')
   })
 
@@ -681,13 +708,13 @@ exec ${JSON.stringify(actualGit)} "$@"
     db().query('UPDATE run SET worktree=NULL WHERE id=?').run(unscored)
     const released = orch('sweep', '--dry-run', '--older-than', '1')
     expect(released.code).toBe(0)
-    expect(released.out).toContain(`would reclaim ${target}  ${tree}`)
-    expect(released.out).toContain(`would reclaim ${voided}  ${tree}`)
+    expect(released.out).toContain(`${target}  refused; worktree ${tree} has no registered project`)
+    expect(released.out).toContain(`${voided}  refused; worktree ${tree} has no registered project`)
     expect(released.out).not.toContain('unscored — its diff is the evidence')
     expect(released.out).not.toContain('shared with evidence-owning run(s)')
   })
 
-  test('terminal scored rows are reclaimable regardless of age while unscored rows stay evidence', () => {
+  test('sweep age-protects recent scored rows while old unscored rows stay evidence', () => {
     const recent: number[] = []
     const unscored: number[] = []
     const old = new Date(Date.now() - 3 * 86_400_000).toISOString()
@@ -705,9 +732,10 @@ exec ${JSON.stringify(actualGit)} "$@"
 
     const listed = orch('sweep', '--dry-run')
     expect(listed.code).toBe(0)
-    expect(listed.out).toContain('would reclaim 6, kept 5')
+    expect(listed.out).toContain('would reclaim 0, kept 11')
+    expect(listed.out).toContain('6  under the age threshold')
     expect(listed.out).toContain('5  unscored — its diff is the evidence')
-    for (const id of recent) expect(listed.out).toContain(`would reclaim ${id}`)
+    for (const id of recent) expect(listed.out).toContain(`${id}  too recent`)
     for (const id of unscored) expect(listed.out).toContain(`${id}  unscored — its diff is the evidence`)
   })
 
