@@ -661,6 +661,27 @@ describe('a conversation is one unit of work, not one per turn', () => {
     expect(pendingForSession('restored-root').map((row) => row.id)).toEqual([succeeded])
   })
 
+  test('an escaped turn rolls its restorable outcome and confinement event onto the root', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+    const snapshot = JSON.stringify({ status: 'ok', failureKind: null, error: null })
+    const confinement = JSON.stringify({
+      classification: 'overlapping', attribution: 'unattributed',
+      divergentPaths: ['artifact.ts'], overlappingPaths: ['artifact.ts'],
+    })
+    const turn = addRun({
+      agent: 'codex', job: 'implement', status: 'failed', parent: root, turn: 2, kind: 'escaped',
+    })
+    db().query('UPDATE run SET pre_confinement=?, confinement=? WHERE id=?')
+      .run(snapshot, confinement, turn)
+
+    expect(resolveRootFromLastTurn(db(), root)).toBe(1)
+    expect(db().query(
+      'SELECT status, failure_kind, pre_confinement, confinement FROM run WHERE id=?',
+    ).get(root)).toEqual({
+      status: 'failed', failure_kind: 'escaped', pre_confinement: snapshot, confinement,
+    })
+  })
+
   test('a restored root is scoreable once a later turn completes', () => {
     const root = addRun({
       agent: 'codex', job: 'implement', status: 'asking', session: 'restored-later',

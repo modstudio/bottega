@@ -950,6 +950,18 @@ export function resolveRootFromLastTurn(database: Database, rootId: number): num
            WHERE last.id = root.id OR last.parent_run_id = root.id
            ORDER BY last.turn DESC, last.id DESC
            LIMIT 1
+        ),
+            pre_confinement = (
+          SELECT last.pre_confinement FROM run last
+           WHERE last.id = root.id OR last.parent_run_id = root.id
+           ORDER BY last.turn DESC, last.id DESC
+           LIMIT 1
+        ),
+            confinement = (
+          SELECT last.confinement FROM run last
+           WHERE last.id = root.id OR last.parent_run_id = root.id
+           ORDER BY last.turn DESC, last.id DESC
+           LIMIT 1
         )
       WHERE root.id = ?
         AND root.parent_run_id IS NULL
