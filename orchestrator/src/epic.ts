@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { db, STALE_AFTER_MS } from './db.ts'
+import { flagsOf } from './landing.ts'
 import { targetGitEnvironment } from './worktree.ts'
 
 const HUB = new URL('../../bin/hub', import.meta.url).pathname
@@ -128,10 +129,9 @@ export function epicScoreboard(
     }
     const reasons: EpicTaskScore['strandings']['reasons'] = []
     for (const landing of taskLandings.filter((row) => ['landed', 'install_failed'].includes(row.status))) {
-      let flags: any = null
-      try { flags = (JSON.parse(landing.steps ?? '[]') as any[]).find((step) => step?.name === '_flags') } catch { flags = null }
-      if (typeof flags?.strandLive === 'string') reasons.push({ landingId: landing.id, kind: 'strand-live', reason: flags.strandLive })
-      if (typeof flags?.unreviewed === 'string') reasons.push({ landingId: landing.id, kind: 'unreviewed', reason: flags.unreviewed })
+      const flags = flagsOf(landing)
+      if (flags.strandLive) reasons.push({ landingId: landing.id, kind: 'strand-live', reason: flags.strandLive })
+      if (flags.unreviewed) reasons.push({ landingId: landing.id, kind: 'unreviewed', reason: flags.unreviewed })
     }
     const earlierBranches = new Set<string>()
     let branchDrift = 0

@@ -1824,7 +1824,7 @@ function appendStep(id: number, name: string, durationMs: number, output?: strin
   db().query('UPDATE landing SET steps=? WHERE id=?').run(JSON.stringify(steps), id)
 }
 
-function flagsOf(row: LandingRow): { unreviewed?: string; strandLive?: string; message?: string; keepCheckpoints?: boolean } {
+export function flagsOf(row: Pick<LandingRow, 'steps'>): { unreviewed?: string; strandLive?: string; message?: string; keepCheckpoints?: boolean } {
   const flags = parseSteps(row.steps).find((step) => step.name === '_flags')
   if (!flags) return {}
   return {
