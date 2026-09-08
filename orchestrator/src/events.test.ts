@@ -7,9 +7,9 @@ import {
 } from './events.ts'
 import { idleRunConditions } from './monitor.ts'
 
-const cli = (args: string[], env: Record<string, string> = {}) => {
+const cli = (args: string[], env: Record<string, string> = {}, cwd = dir) => {
   const p = Bun.spawnSync([process.execPath, join(import.meta.dir, 'cli.ts'), ...args], {
-    cwd: dir,
+    cwd,
     env: {
       ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
       CLAUDE_CODE_SESSION_ID: 'orch-test-session', ...env,
@@ -110,9 +110,8 @@ emit('{"type":"result","subtype":"success","result":"done","usage":{"input_token
       expect(during.event_count).toBeGreaterThanOrEqual(2)
       expect(during.events.some((event) => event.type === 'text' && event.text.includes('working'))).toBe(true)
       expect(during.events.some((event) => event.type === 'tool_call' && event.title === 'Read')).toBe(true)
-      await Bun.sleep(400)
-      const later = peekRun(reserved)
-      expect(later.seconds_since_last_event ?? 0).toBeGreaterThanOrEqual(during.seconds_since_last_event ?? 0)
+      const later = peekRun(reserved, { now: Date.now() + 2_000 })
+      expect(later.seconds_since_last_event ?? 0).toBeGreaterThan(during.seconds_since_last_event ?? 0)
       await running
       const finished = peekRun(reserved)
       expect(finished.status).not.toBe('running')
@@ -122,6 +121,13 @@ emit('{"type":"result","subtype":"success","result":"done","usage":{"input_token
       expect(peeked.code, peeked.err).toBe(0)
       expect(peeked.out).toContain(`run ${reserved}`)
       expect(peeked.out).toContain('working on it')
+      const elsewhere = join(dir, `peek-cwd-${reserved}`)
+      mkdirSync(elsewhere)
+      const fromElsewhere = cli(['peek', String(reserved), '--json'], {}, elsewhere)
+      expect(fromElsewhere.code, fromElsewhere.err).toBe(0)
+      const body = JSON.parse(fromElsewhere.out) as { event_count: number; vendor_tokens: number }
+      expect(body.event_count).toBeGreaterThanOrEqual(2)
+      expect(body.vendor_tokens).toBe(7)
     } finally {
       grok.bin = previous
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
@@ -149,10 +155,15 @@ emit('{"type":"result","subtype":"success","result":"done","usage":{"input_token
     expect(peeked.event_count).toBe(2)
     expect(peeked.vendor_tokens).toBe(11)
     expect(formatPeek(peeked)).toContain('still going')
+    const limited = peekRun(id, { events: 1 })
+    expect(limited.event_count).toBe(2)
+    expect(limited.events).toEqual([{ type: 'usage', tokens: 11 }])
     const conditions = idleRunConditions(Date.now())
     expect(conditions.some((row) => row.subject === `run:${id}`)).toBe(false)
     db().query("UPDATE run SET status='running' WHERE id=?").run(id)
-    expect(idleRunConditions().some((row) => row.kind === 'idle' && row.subject === `run:${id}`)).toBe(true)
+    expect(idleRunConditions().some((row) =>
+      row.kind === 'idle' && row.subject === `run:${id}` && row.detail.includes('idle 6m'),
+    )).toBe(true)
   })
 
   test('tell --ping queues the note and prints the peek summary', () => {
