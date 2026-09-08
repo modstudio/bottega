@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { createHash } from 'node:crypto'
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync, lstatSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -689,6 +690,53 @@ fi
     }
   })
 
+  test('prefer binds mirror provenance once after a wrong-project worker-tree probe', async () => {
+    const repo = mcpRepo(false)
+    writeFileSync(join(repo, '.mcp.json'), JSON.stringify({
+      mcpServers: { unrelated: { command: '/bin/false' } },
+    }))
+    const agent = AGENTS.codex!
+    const original = { bin: agent.bin, argv: agent.argv, readsOut: agent.readsOut }
+    const script = join(dir, 'fake-codex-wrong-project-prefer.sh')
+    writeFileSync(script, `#!/bin/sh
+printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"no findings"}}'
+printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}'
+`)
+    chmodSync(script, 0o755)
+    let sent = ''
+    agent.bin = script
+    agent.readsOut = false
+    agent.argv = ({ prompt }) => { sent = prompt; return [] }
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      const result = await runJob({
+        job: 'review-lens', prompt: 'review this', cwd: repo, carry: true,
+        agent: 'codex', mcp: 'prefer', lens: 'mcp-worker-tree', keepTree: true,
+      })
+      expect(result.status).toBe('ok')
+      expect(sent.match(/Canon source provenance:/g)).toHaveLength(1)
+      expect(sent).toContain(canonSourceInstruction('mirror'))
+      const row = db().query(
+        'SELECT mcp_error, prompt_path, prompt_sha, prompt_bytes FROM run WHERE id=?',
+      ).get(result.id) as {
+        mcp_error: string; prompt_path: string; prompt_sha: string; prompt_bytes: number
+      }
+      expect(row.mcp_error.match(/mirror:/g)).toHaveLength(1)
+      const bound = readFileSync(row.prompt_path.replace(/\.prompt\.txt$/, '.bound.txt'), 'utf8')
+      expect(bound).toBe(sent)
+      expect(row.prompt_bytes).toBe(Buffer.byteLength(bound))
+      expect(row.prompt_sha).toBe(createHash('sha256').update(bound).digest('hex').slice(0, 16))
+    } finally {
+      agent.bin = original.bin
+      agent.argv = original.argv
+      agent.readsOut = original.readsOut
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('a user-scope required server is refused only when doctor does not report it', async () => {
     const script = join(dir, 'DEV-372-user-scope-doctor.sh')
     writeFileSync(script, `#!/bin/sh
@@ -728,7 +776,7 @@ fi
     }
   })
 
-  test('a lens without --mcp receives mirror provenance and does not run the MCP doctor', async () => {
+  test('a lens without --mcp receives unknown provenance and does not run the MCP doctor', async () => {
     const script = join(dir, 'fake-grok-no-mcp-lens.sh')
     writeFileSync(script, `#!/bin/sh
 if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
@@ -754,7 +802,7 @@ printf '%s\n' '{"type":"result","subtype":"success","result":"no findings"}'
         job: 'review-lens', prompt: 'review this', cwd: dir, agent: 'grok', mcp: false, lens: 'mcp',
       })
       expect(result.status).toBe('ok')
-      expect(sent).toContain(canonSourceInstruction('mirror'))
+      expect(sent).toContain(canonSourceInstruction('unknown'))
       expect(db().query(
         'SELECT mcp, mcp_server, mcp_connected, mcp_error FROM run WHERE id=?',
       ).get(result.id)).toEqual({
@@ -899,7 +947,7 @@ printf '%s\n' '{"type":"result","subtype":"success","result":"{\\"verdict\\":\\"
         job: 'verify-claim', prompt: 'verify this', cwd: dir, agent: 'grok', mcp: false,
       })
       expect(result.status).toBe('ok')
-      expect(sent).toContain(canonSourceInstruction('mirror'))
+      expect(sent).toContain(canonSourceInstruction('unknown'))
       expect(JSON.parse(readFileSync(sentSchema!, 'utf8'))).toEqual(VERIFY_CLAIM_SCHEMA)
     } finally {
       agent.bin = originalBin

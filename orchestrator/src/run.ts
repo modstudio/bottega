@@ -1960,10 +1960,6 @@ export async function run(opts: {
   let mcpConnection = deferredCwdMcpPreflight
     ? null
     : probeRequestedMcp(opts.mcp, name, callerCwd)
-  if (requiresCanonSource && !deferredCwdMcpPreflight) {
-    const source = canonSourceFor(Boolean(mcpMode), mcpConnection, repoJob)
-    prompt += `\n\n${canonSourceInstruction(source)}`
-  }
   const mcpWhy = mcpConnection ? mcpAttachRefusal(mcpConnection) : null
   if (mcpWhy && mcpMode === 'require') {
     if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
@@ -2450,12 +2446,6 @@ export async function run(opts: {
       )
       const refusal = mcpAttachRefusal(mcpConnection)
       if (refusal && mcpMode === 'require') throw new Error(refusal)
-      if (requiresCanonSource) {
-        prompt += `\n\n${canonSourceInstruction(canonSourceFor(true, mcpConnection, repoJob))}`
-        writeFileSync(promptPath.replace(/\.prompt\.txt$/, '.bound.txt'), prompt)
-        db().query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE id=?')
-          .run(sha(prompt), Buffer.byteLength(prompt), claim.id)
-      }
     } else if (mcpConnection?.connected === false && mcpMode === 'prefer') {
       mcpConnection = {
         ...mcpConnection,
@@ -2629,6 +2619,13 @@ export async function run(opts: {
         db().query('UPDATE run SET mcp_error=? WHERE id=?').run(mcpConnection.error, claim.id)
       }
     }
+  }
+
+  if (requiresCanonSource) {
+    prompt += `\n\n${canonSourceInstruction(canonSourceFor(true, mcpConnection, repoJob))}`
+    writeFileSync(promptPath.replace(/\.prompt\.txt$/, '.bound.txt'), prompt)
+    db().query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE id=?')
+      .run(sha(prompt), Buffer.byteLength(prompt), claim.id)
   }
 
   bindSignals()
