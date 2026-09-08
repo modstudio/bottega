@@ -2273,7 +2273,13 @@ export function drainQueue(
         const queued = queuedLandings(project.name).filter((row) =>
           gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${row.branch}`]))
         if (queued.length) {
-          const group = !options.untilId && queued.length >= 2 ? queued : [queued[0]!]
+          // A waiter drains its OWN row first. Picking queued[0] let a second
+          // lander claim the first lander's row while the first sat in the wait
+          // branch on its own, so the second's row was never gated: two
+          // concurrent landings hung until their bound (DEV-380, four refused
+          // landings on 2026-09-08). Without untilId the whole queue is a group.
+          const own = options.untilId ? queued.find((row) => row.id === options.untilId) : undefined
+          const group = !options.untilId && queued.length >= 2 ? queued : [own ?? queued[0]!]
           claimLandingRows(group)
           return group
         }
