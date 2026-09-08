@@ -66,7 +66,7 @@ import {
   type ConfinementEvent, type FreezeFailure,
 } from './confinement.ts'
 import {
-  probeMcpServer, readMcpConfig, resolveMcpServerUrl, storedMcpProbe, wrongProjectReason,
+  namesSeenAt, probeMcpServer, readMcpConfig, resolveMcpServerUrl, storedMcpProbe, wrongProjectReason,
 } from './mcp-probe.ts'
 import { startAskLoopback, type AskLoopback } from './ask.ts'
 import {
@@ -2597,6 +2597,36 @@ export async function run(opts: {
           `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
         ).run(why, Date.now() - started, claim.id)
         throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
+      }
+    } else {
+      const namesSeen = namesSeenAt(cwd)
+      const mismatched = wrongProjectReason(mcpServerName, namesSeen)
+      if (mismatched) {
+        const recorded: import('./mcp-probe.ts').McpProbeResult = {
+          server: mcpServerName,
+          tool: 'tools/list',
+          ok: false,
+          error: mismatched,
+          durationMs: 0,
+          detail: null,
+          namesSeen,
+        }
+        mcpConnection = {
+          server: mcpServerName, connected: false, error: mismatched, namesSeen,
+        }
+        db().query(
+          'UPDATE run SET mcp_connected=0, mcp_error=?, mcp_probe=? WHERE id=?',
+        ).run(mismatched, storedMcpProbe(recorded), claim.id)
+        if (mcpMode === 'require') {
+          const why = mcpAttachRefusal(mcpConnection)!
+          db().query(
+            `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
+          ).run(why, Date.now() - started, claim.id)
+          throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
+        }
+        mcpConnection = { ...mcpConnection, error: `mirror: ${mismatched}` }
+        usingMcp = false
+        db().query('UPDATE run SET mcp_error=? WHERE id=?').run(mcpConnection.error, claim.id)
       }
     }
   }

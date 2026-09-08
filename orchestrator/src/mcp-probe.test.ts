@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS, db, dir, hermeticGitEnv, reviewReply, runJob, upsertProject } from '../test/fixture.ts'
 import {
-  mcpEndpointAllowlist, parseMcpConfig, parseMcpProbe, probeMcpServer, storedMcpProbe, wrongProjectReason,
+  mcpEndpointAllowlist, namesSeenAt, parseMcpConfig, parseMcpProbe, probeMcpServer, storedMcpProbe,
+  wrongProjectReason,
 } from './mcp-probe.ts'
 import { readonlyLensProfile } from './sandbox.ts'
 
@@ -69,6 +70,18 @@ describe('wrong-project refusal', () => {
     expect(wrongProjectReason('starship', ['alephbeis', 'orch-ask']))
       .toBe('wrong project: saw alephbeis and not starship')
     expect(wrongProjectReason('starship', ['orch-ask'])).toBeNull()
+    expect(wrongProjectReason('orch', [
+      'starship', 'stopal', 'alephbeis', 'youtrack-starship', 'youtrack-alephbeis',
+    ])).toBeNull()
+  })
+
+  test('an absent config has no wrong-project evidence', () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'orch-mcp-no-config-'))
+    try {
+      expect(wrongProjectReason('fixture-project', namesSeenAt(cwd))).toBeNull()
+    } finally {
+      rmSync(cwd, { recursive: true, force: true })
+    }
   })
 })
 
@@ -356,6 +369,71 @@ exit 0
     }
   })
 
+  test('codex refuses a different project config before agent start', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-mcp-codex-wrong-project-'))
+    const git = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+    }
+    git('init', '-b', 'main')
+    git('config', 'user.email', 'orch-test@example.invalid')
+    git('config', 'user.name', 'Orch Test')
+    writeFileSync(join(repo, 'tracked.txt'), 'base\n')
+    writeFileSync(join(repo, '.mcp.json'), JSON.stringify({
+      mcpServers: { alephbeis: { url: 'http://127.0.0.1:1/mcp' } },
+    }))
+    git('add', 'tracked.txt', '.mcp.json')
+    git('commit', '-m', 'base')
+    upsertProject({ name: 'fixture-project', path: repo, settings: { mcpServer: 'fixture-project' } })
+    const script = join(dir, 'DEV-372-codex-wrong-project.sh')
+    writeFileSync(script, `#!/bin/sh
+if [ "$1" = "--version" ]; then printf '%s\\n' 'codex-cli 0.153.4'; exit 0; fi
+printf started > "${join(repo, 'started')}"
+exit 0
+`)
+    chmodSync(script, 0o755)
+    const codex = AGENTS.codex!
+    const previous = { bin: codex.bin, argv: codex.argv }
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    codex.bin = script
+    codex.argv = () => []
+    try {
+      let runId: number | null = null
+      try {
+        await runJob({
+          job: 'review-lens', prompt: 'review', cwd: repo, agent: 'codex',
+          mcp: true, lens: 'craft',
+        })
+      } catch (error) {
+        runId = (error as Error & { runId?: number }).runId ?? null
+      }
+      expect(runId).not.toBeNull()
+      const row = db().query(
+        'SELECT status, mcp_connected, mcp_error, mcp_probe FROM run WHERE id=?',
+      ).get(runId!) as {
+        status: string; mcp_connected: number; mcp_error: string; mcp_probe: string
+      }
+      expect(row).toMatchObject({
+        status: 'failed', mcp_connected: 0,
+        mcp_error: 'wrong project: saw alephbeis and not fixture-project',
+      })
+      expect(parseMcpProbe(row.mcp_probe)).toMatchObject({
+        server: 'fixture-project', tool: 'tools/list', ok: false,
+        error: 'wrong project: saw alephbeis and not fixture-project',
+      })
+      expect(existsSync(join(repo, 'started'))).toBe(false)
+    } finally {
+      codex.bin = previous.bin
+      codex.argv = previous.argv
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('require records extra .mcp.json servers from the probe when doctor does not', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-mcp-probe-wrong-project-'))
     const git = (...args: string[]) => {
@@ -506,4 +584,3 @@ describe('mcp config parse', () => {
     expect(parsed.local?.command).toBe('bun')
   })
 })
-

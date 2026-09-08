@@ -689,6 +689,45 @@ fi
     }
   })
 
+  test('a user-scope required server is refused only when doctor does not report it', async () => {
+    const script = join(dir, 'DEV-372-user-scope-doctor.sh')
+    writeFileSync(script, `#!/bin/sh
+if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
+  printf '%s' '{"servers":[{"name":"starship","healthy":true,"checks":[]},{"name":"stopal","healthy":true,"checks":[]},{"name":"alephbeis","healthy":true,"checks":[]},{"name":"youtrack-starship","healthy":true,"checks":[]},{"name":"youtrack-alephbeis","healthy":true,"checks":[]}]}'
+else
+  printf started > "${join(dir, 'DEV-372-user-scope-started')}"
+fi
+`)
+    chmodSync(script, 0o755)
+    const agent = AGENTS.grok!
+    const originalBin = agent.bin
+    const cwd = dir
+    upsertProject({ name: 'fixture-project', path: cwd, settings: { mcpServer: 'orch' } })
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    agent.bin = script
+    let runId: number | null = null
+    try {
+      try {
+        await runJob({
+          job: 'review-lens', prompt: 'review this', cwd, agent: 'grok', mcp: true, lens: 'mcp',
+        })
+      } catch (error) {
+        runId = (error as Error & { runId?: number }).runId ?? null
+      }
+      expect(runId).not.toBeNull()
+      const row = db().query('SELECT mcp_error FROM run WHERE id=?').get(runId!) as { mcp_error: string }
+      expect(row.mcp_error).toContain("MCP server 'orch' was not reported")
+      expect(row.mcp_error).not.toContain('wrong project:')
+      expect(existsSync(join(dir, 'DEV-372-user-scope-started'))).toBe(false)
+    } finally {
+      agent.bin = originalBin
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(join(dir, 'DEV-372-user-scope-started'), { force: true })
+    }
+  })
+
   test('a lens without --mcp receives mirror provenance and does not run the MCP doctor', async () => {
     const script = join(dir, 'fake-grok-no-mcp-lens.sh')
     writeFileSync(script, `#!/bin/sh

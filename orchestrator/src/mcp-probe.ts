@@ -21,7 +21,7 @@ export type McpServerConfig = {
 
 const ALLOWED_EXTRA_SERVERS = new Set(['orch-ask', 'orch'])
 
-function namesSeenAt(cwd: string): string[] {
+export function namesSeenAt(cwd: string): string[] {
   return [...new Set([...Object.keys(readMcpConfig(cwd)), ...ALLOWED_EXTRA_SERVERS])]
 }
 
@@ -81,6 +81,7 @@ export function resolveMcpServerUrl(config: McpServerConfig | undefined): string
  * present required server are not evidence of anything.
  */
 export function wrongProjectReason(required: string, namesSeen: string[]): string | null {
+  if (ALLOWED_EXTRA_SERVERS.has(required)) return null
   if (namesSeen.includes(required)) return null
   const extra = namesSeen.filter((name) => name && !ALLOWED_EXTRA_SERVERS.has(name))
   return extra.length ? `wrong project: saw ${extra.join(', ')} and not ${required}` : null
