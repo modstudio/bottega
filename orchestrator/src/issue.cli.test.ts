@@ -37,7 +37,8 @@ describe('issue blast-radius review tree', () => {
       const fixHead = runGit(fixTree, 'rev-parse', 'HEAD')
       writeFileSync(script, [
         "const git = (...args: string[]) => Bun.spawnSync(['git', ...args], { stdout: 'pipe' }).stdout.toString().trim()",
-        "console.log(JSON.stringify({ head: git('rev-parse', 'HEAD'), diff: git('diff', 'HEAD', '--', 'reviewed.txt') }))",
+        "const inspected = { head: git('rev-parse', 'HEAD'), diff: git('diff', 'HEAD', '--', 'reviewed.txt') }",
+        "console.log(JSON.stringify({ findings: [{ severity: 'major', location: 'reviewed.txt:1', evidence: JSON.stringify(inspected), proposed_correction: 'fixture correction' }], provenance: { tree_inspected: inspected.head, standards_read: ['AGENTS.md'], model_used: 'fixture', files_covered: ['reviewed.txt'], commands_run: ['git rev-parse HEAD', 'git diff HEAD -- reviewed.txt'], mcp_tools: [], docs_read: [], could_not_verify: [], substitutes: [], canon_source: 'repo fallback' } }))",
       ].join('\n'))
       agent.bin = process.execPath
       agent.argv = () => [script]
@@ -54,8 +55,10 @@ describe('issue blast-radius review tree', () => {
         job: 'review-lens', prompt: 'inspect the fix', cwd: fixTree,
         agent: 'codex', lens: 'issue-blast-radius', key: 'DEV-261', carry: true,
       })
-      const projectReceived = JSON.parse(fromProject.output) as { head: string; diff: string }
-      const received = JSON.parse(review.output) as { head: string; diff: string }
+      const projectReply = JSON.parse(fromProject.output) as { findings: Array<{ evidence: string }> }
+      const reviewReply = JSON.parse(review.output) as { findings: Array<{ evidence: string }> }
+      const projectReceived = JSON.parse(projectReply.findings[0]!.evidence) as { head: string; diff: string }
+      const received = JSON.parse(reviewReply.findings[0]!.evidence) as { head: string; diff: string }
       expect(projectReceived).toEqual({ head: trunkHead, diff: '' })
       expect(received).toEqual({ head: fixHead, diff: '' })
     } finally {

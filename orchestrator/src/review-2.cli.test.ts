@@ -108,6 +108,7 @@ describe('review-lens MCP provenance', () => {
         const result = await codexReview(repo, [tool], true)
         expect(result.status, tool).toBe('ok')
       }
+      expect((await codexReview(repo, ['fixture-project.get_doc'], false)).status).toBe('ok')
       const wrong = await codexReview(repo, ['other-server.get_doc'], true)
       expect(wrong.status).toBe('failed')
       expect(wrong.error).toContain('wrong project: provenance names other-server.get_doc')

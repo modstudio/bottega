@@ -3115,12 +3115,14 @@ export async function run(opts: {
         }
       }
     }
-    const ownMcpServer = mcpConnection?.server
+    const ownProject = runProjectName ? projectByName(runProjectName) : undefined
+    const ownMcpServer = mcpConnection?.server ??
+      (ownProject ? ownProject.settings.mcpServer ?? ownProject.name : undefined)
     const otherProjectMcpServers = new Set(projects()
       .map((project) => project.settings.mcpServer ?? project.name)
       .filter((server) => server !== ownMcpServer && server !== 'orch' && server !== 'orch-ask'))
     const provenanceWrongProjectTool = parsedReview?.provenance.mcp_tools.find((tool) => {
-      const claude = tool.match(/^mcp__([^_]+)__/)
+      const claude = tool.match(/^mcp__(.+?)__/)
       const qualified = tool.match(/^([^.:/]+)[.:/]/)
       const server = claude?.[1] ?? qualified?.[1]
       return Boolean(server && otherProjectMcpServers.has(server))

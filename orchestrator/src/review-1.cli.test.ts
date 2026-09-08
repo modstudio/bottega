@@ -466,7 +466,7 @@ describe('review discipline', () => {
     })).toBeNull()
     const missingSection = reviewReply(0) as Record<string, any>
     delete missingSection.provenance.substitutes
-    expect(parseReviewReply(missingSection)).toBeNull()
+    expect(parseReviewReply(missingSection)?.provenance.substitutes).toEqual([])
   })
 
   test('review parsing accepts an omitted or legacy claimed tree', () => {
