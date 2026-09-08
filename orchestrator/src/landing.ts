@@ -387,8 +387,10 @@ export function cleanCompletedSequencerState(
 
   const states = [
     { name: 'CHERRY_PICK_HEAD', path: gitPath('CHERRY_PICK_HEAD'), quit: ['cherry-pick', '--quit'] },
+    { name: 'MERGE_HEAD', path: gitPath('MERGE_HEAD'), quit: ['merge', '--quit'] },
     { name: 'REBASE_HEAD', path: gitPath('rebase-merge'), quit: ['rebase', '--quit'] },
     { name: 'REBASE_HEAD', path: gitPath('rebase-apply'), quit: ['rebase', '--quit'] },
+    { name: 'REVERT_HEAD', path: gitPath('REVERT_HEAD'), quit: ['revert', '--quit'] },
     { name: 'AUTO_MERGE', path: gitPath('AUTO_MERGE'), quit: null },
   ].filter((state) => existsSync(state.path))
   const unmerged = git(worktree, ['diff', '--name-only', '--diff-filter=U'], guard)
