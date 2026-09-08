@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, realpathSync, mkdirSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
+import { changeIdentity } from './change-identity.ts'
 import { AGENTS, JOBS, MIN_REVIEW_TRIAGED, REVIEW_SCHEMA, VERIFY_CLAIM_SCHEMA, addRun, calibrationLine, cleanReviewEvidence, completeReview, contentTree, coverageAudit, db, dir, getReview, gradeReviewLens, hermeticGitEnv, listReviews, parseReviewReply, preflight, recordReview, recordReviews, removeProject, reviewCalibration, reviewCalibrationFleet, reviewReply, runJob, score, state, strictCodexSchema, triageFinding, upsertProject } from '../test/fixture.ts'
 
 describe('review discipline', () => {
@@ -298,6 +299,52 @@ describe('review discipline', () => {
       { runId: first, output: reviewReply(0) }, { runId: second, output: reviewReply(0) },
     ])).toThrow('project-one, project-two')
     expect(db().query('SELECT COUNT(*) AS n FROM review').get()).toEqual({ n: 0 })
+  })
+
+  test('a carried review stores the persist-time change identity when base through HEAD is empty', () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-carried-review-identity-')))
+    const git = (args: string[], stdin?: Uint8Array) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdin, stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return { stdout: new Uint8Array(p.stdout), stderr: p.stderr.toString(), exitCode: p.exitCode }
+    }
+    const gg = (...args: string[]) => new TextDecoder().decode(git(args).stdout).trim()
+    try {
+      gg('init', '-b', 'main')
+      gg('config', 'user.email', 'orch-test@example.invalid')
+      gg('config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'reviewed.txt'), 'base\n')
+      gg('add', 'reviewed.txt')
+      gg('commit', '-m', 'DEV-377 fixture base')
+      const base = gg('rev-parse', 'HEAD')
+      writeFileSync(join(repo, 'reviewed.txt'), 'carried change\n')
+      const inputTree = contentTree(repo)
+      upsertProject({ name: 'carried-review-identity', path: repo, settings: { trunk: 'main' } })
+      const runId = addRun({
+        agent: 'codex', job: 'review-lens', model: 'm', lens: 'correctness',
+        repo: 'carried-review-identity', inputTree, headCommit: base,
+      })
+      db().query(
+        'UPDATE run SET base_commit=?, review_ref=?, changed_paths=? WHERE id=?',
+      ).run(base, 'feature/carried', JSON.stringify(['reviewed.txt']), runId)
+
+      const reviewId = recordReviews([{ runId, output: reviewReply(0) }])
+      const expectedPatchId = changeIdentity((args, stdin) => {
+        const result = git(args, stdin)
+        return {
+          ok: result.exitCode === 0, stdout: result.stdout,
+          out: new TextDecoder().decode(result.stdout).trim(), err: result.stderr,
+        }
+      }, base, inputTree)
+      expect(db().query('SELECT patch_id, path_set FROM review WHERE id=?').get(reviewId)).toEqual({
+        patch_id: expectedPatchId,
+        path_set: JSON.stringify(['reviewed.txt']),
+      })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
   })
 
   test('review help exits zero and names every review verb', () => {

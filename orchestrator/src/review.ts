@@ -164,24 +164,20 @@ export function cleanReviewEvidence(
     if (stored) changed = stored
     else {
       const run = database.query(
-        'SELECT repo, base_commit, input_tree, head_commit, changed_paths FROM run WHERE id=?',
-      ).get(runId) as {
-        repo: string | null; base_commit: string | null; input_tree: string | null
-        head_commit: string | null; changed_paths: string | null
-      } | null
-      if (!run?.repo || !run.base_commit || (!run.input_tree && !run.head_commit)) {
+        'SELECT repo, base_commit, input_tree, head_commit, review_ref, changed_paths FROM run WHERE id=?',
+      ).get(runId) as (Pick<RunRow,
+        'base_commit' | 'input_tree' | 'head_commit' | 'review_ref' | 'changed_paths'
+      > & { repo: string | null }) | null
+      const range = run ? reviewChangeRange(run) : null
+      if (!run?.repo || !range) {
         return unavailable('run lacks repo, base_commit, or input_tree')
       }
-      if (run.changed_paths !== null) {
-        const parsed = JSON.parse(run.changed_paths)
-        if (!Array.isArray(parsed) || parsed.some((path) => typeof path !== 'string')) {
-          throw new Error('run changed_paths is not a JSON array of paths')
-        }
-        changed = parsed
+      if (range.paths !== null) {
+        changed = range.paths
       } else {
         const repo = projectPath(database, run.repo)
         if (!repo) return unavailable(`project ${run.repo} is not registered`)
-        const identity = measureChangeIdentity(repo, run.base_commit, run.input_tree ?? run.head_commit!)
+        const identity = measureChangeIdentity(repo, range.from, range.to)
         if (!identity) return unavailable('git diff --name-only failed')
         changed = identity.paths
       }
@@ -213,7 +209,24 @@ type RunRow = {
   id: number; agent: string; model: string | null; lens: string | null
   job: string; status: string; output_path: string | null; input_tree: string | null
   head_commit: string | null; repo: string | null; project_id: number | null
-  base_commit: string | null
+  base_commit: string | null; review_ref: string | null; changed_paths: string | null
+}
+
+type ReviewChangeRange = { from: string; to: string; paths: string[] | null }
+
+function reviewChangeRange(run: Pick<RunRow,
+  'base_commit' | 'input_tree' | 'head_commit' | 'review_ref' | 'changed_paths'
+>): ReviewChangeRange | null {
+  if (!run.base_commit) return null
+  if (run.changed_paths !== null && run.input_tree) {
+    const paths = JSON.parse(run.changed_paths)
+    if (!Array.isArray(paths) || paths.some((path) => typeof path !== 'string')) {
+      throw new Error('run changed_paths is not a JSON array of paths')
+    }
+    return { from: run.base_commit, to: run.input_tree, paths }
+  }
+  const fallback = run.head_commit ?? run.input_tree
+  return fallback ? { from: run.base_commit, to: fallback, paths: null } : null
 }
 
 function tierForRuns(runs: RunRow[], database: Database): ReviewTier | null {
@@ -465,7 +478,8 @@ export function recordReviews(
   if (!entries.length) throw new Error('a review requires at least one lens run')
   const runs = entries.map(({ runId }) => {
     const run = database.query(
-      `SELECT id, agent, model, lens, job, status, output_path, input_tree, head_commit, repo, project_id, base_commit
+      `SELECT id, agent, model, lens, job, status, output_path, input_tree, head_commit, repo, project_id,
+              base_commit, review_ref, changed_paths
          FROM run WHERE id=?`,
     ).get(runId) as RunRow | null
     if (!run) throw new Error(`no run ${runId}`)
@@ -492,10 +506,12 @@ export function recordReviews(
   }
   const identity = (() => {
     const run = runs[0]!
-    if (!run.repo || !run.base_commit || !run.head_commit) return null
+    const range = reviewChangeRange(run)
+    if (!run.repo || !range) return null
     const repo = projectPath(database, run.repo)
     if (!repo) return null
-    return measureChangeIdentity(repo, run.base_commit, run.head_commit)
+    const measured = measureChangeIdentity(repo, range.from, range.to)
+    return measured && range.paths !== null ? { ...measured, paths: range.paths } : measured
   })()
   const reviewId = writeTransaction(() => {
     const tier = tierForRuns(runs, database)
