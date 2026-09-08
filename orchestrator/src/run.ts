@@ -2910,7 +2910,9 @@ export async function run(opts: {
     // Recorded HERE, before the wait, not after it. Written afterwards it is
     // always the pid of a process that has already exited.
     // Idle is silence of the VENDOR, not of orch's own setup. last_event_at
-    // starts here so a slow worktree cut cannot burn the idle-kill budget.
+    // and the reclaimed-wall clock both start here so a slow worktree cut
+    // cannot burn either budget.
+    const vendorStartedAt = Date.now()
     db().query(
       'UPDATE run SET agent_pid=?, last_event_at=COALESCE(last_event_at, ?) WHERE id=?',
     ).run(handle.pid, nowIso(), claim.id)
@@ -2971,7 +2973,7 @@ export async function run(opts: {
       })
       if (!decision.kill) return
       idleKilled = true
-      const elapsed = Date.now() - started
+      const elapsed = Date.now() - vendorStartedAt
       idleKillError = formatIdleKillError({
         idleMs: decision.idleMs ?? 0,
         reclaimedMs: Math.max(0, boundMs - elapsed),

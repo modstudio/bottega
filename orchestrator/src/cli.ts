@@ -6210,6 +6210,7 @@ switch (cmd) {
   case 'runs': {
     await loadJobs()
     const { idleLabel, idleMsSince } = await import('./events.ts')
+    const { parseIdleReclaimedMs } = await import('./idle-kill.ts')
     const jsonV1 = argv.includes('--json=v1')
     const json = has('json') || jsonV1
     const where: string[] = ['r.parent_run_id IS NULL']
@@ -6393,11 +6394,11 @@ switch (cmd) {
       const since = live ? idleMsSince(lastEventAt, startedAt) : null
       const { current_started_at: _currentStartedAt, ...rest } = r
       const reclaimed = r.failure_kind === 'idle'
-        ? (String(r.error ?? '').match(/reclaimed_ms=(\d+)/)?.[1] ?? null)
+        ? parseIdleReclaimedMs(String(r.error ?? ''))
         : null
       return {
         ...rest, idle, idle_ms: since,
-        reclaimed_ms: reclaimed != null ? Number(reclaimed) : null,
+        reclaimed_ms: reclaimed,
       }
     })
 

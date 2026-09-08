@@ -484,6 +484,9 @@ describe('live idle kill', () => {
       expect(row.status).toBe('failed')
       expect(row.error).toContain('idle-killed')
       expect(row.error).toContain('reclaimed_ms=')
+      const reclaimed = parseIdleReclaimedMs(row.error)
+      expect(reclaimed).toBeGreaterThan(15_000)
+      expect(reclaimed).toBeLessThanOrEqual(20_000)
       expect(isRoutingEvidence({ status: row.status, delivery: null, failureKind: row.failure_kind })).toBe(false)
     } finally {
       grok.bin = previousBin
