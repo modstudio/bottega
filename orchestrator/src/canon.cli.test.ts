@@ -203,7 +203,9 @@ process.stdout.write(JSON.stringify(body))
         stdout: 'pipe', stderr: 'pipe',
       })
       expect(inbox.exitCode).toBe(0)
-      expect(JSON.parse(inbox.stdout.toString())).toEqual([])
+      expect(JSON.parse(inbox.stdout.toString())).toEqual([
+        expect.objectContaining({ run_id: first[0]!.runId, status: 'ok' }),
+      ])
       const runListing = Bun.spawnSync([
         process.execPath, cli, 'runs', '--id', String(first[0]!.runId), '--json',
       ], {
