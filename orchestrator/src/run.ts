@@ -531,10 +531,12 @@ export function grokMcpConnection(
  * unverified, not connected:false. Routing around grok's attach failure is
  * DEV-194 and is not done here.
  */
-function mcpConnectionFor(name: string, cwd: string, server: string, trust = false): McpConnection {
+function mcpConnectionFor(
+  name: string, cwd: string, server: string, trust = false, includeStore = true,
+): McpConnection {
   if (name === 'grok') {
     const grok = AGENTS.grok!
-    return grokMcpConnection(grok.bin, cwd, server, childEnv(grok), trust)
+    return grokMcpConnection(grok.bin, cwd, server, childEnv(grok, undefined, undefined, {}, includeStore), trust)
   }
   return {
     server,
@@ -553,11 +555,19 @@ function mcpAttachRefusal(connection: McpConnection): string | null {
 
 export function assertGrokTrustEligible(
   cwd: string,
-  recorded: { worktree: string | null; worktree_source: string | null } | null,
+  recorded: {
+    id?: number
+    cwd?: string | null
+    worktree: string | null
+    worktree_source: string | null
+  } | null,
+  runsDir = RUNS_DIR,
 ): void {
   const orchCut = recorded?.worktree === cwd &&
     ['recipe', 'git', 'readonly_recipe'].includes(recorded.worktree_source ?? '')
-  if (orchCut) return
+  const orchIsolate = recorded?.worktree === null && recorded.id !== undefined &&
+    recorded.cwd === cwd && noRepoIsolatePath(recorded.id, runsDir) === cwd
+  if (orchCut || orchIsolate) return
   throw new Error(
     `refusing Grok trust for ${cwd}: trust is granted only to trees orch cut; ` +
     'removed tree paths never recur',
@@ -825,7 +835,7 @@ const ALLOW_ENV_PREFIX =
 
 function childEnv(
   a: (typeof AGENTS)[string], runId?: number, runToken?: string,
-  extra: Record<string, string> = {},
+  extra: Record<string, string> = {}, includeStore = true,
 ): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) {
@@ -861,8 +871,10 @@ function childEnv(
    * Residual exposure: the canon accepts that a worktree worker reads the real
    * register.
    */
-  env.ORCH_DB = DB_PATH
-  return { ...env, ...(a.env?.() ?? {}), ...extra }
+  if (includeStore) env.ORCH_DB = DB_PATH
+  const child = { ...env, ...(a.env?.() ?? {}), ...extra }
+  if (!includeStore) delete child.ORCH_DB
+  return child
 }
 
 /**
@@ -2053,7 +2065,7 @@ export async function run(opts: {
    */
   const mcpMode = requestedMcpMode(opts.mcp)
   const deferredCwdMcpPreflight = Boolean(
-    mcpMode && repoJob && a.caps.discoversMcpFromCwd && projectAt(callerCwd),
+    mcpMode && projectAt(callerCwd) && (forbidsRepo || (repoJob && a.caps.discoversMcpFromCwd)),
   )
   let mcpConnection = deferredCwdMcpPreflight
     ? null
@@ -2499,21 +2511,26 @@ export async function run(opts: {
       if (config.error) {
         mcpConnection = { server, connected: false, error: config.error }
       } else {
+        const grokTrust = name === 'grok'
         const recorded = db().query(
-          'SELECT worktree, worktree_source FROM run WHERE id=?',
-        ).get(claim.id) as { worktree: string | null; worktree_source: string | null } | null
-        assertGrokTrustEligible(cwd, recorded)
-        const beforeTrust = grokTrustHeadings()
-        mcpTrustGranted = true
+          'SELECT id, cwd, worktree, worktree_source FROM run WHERE id=?',
+        ).get(claim.id) as {
+          id: number; cwd: string | null; worktree: string | null; worktree_source: string | null
+        } | null
+        if (grokTrust) assertGrokTrustEligible(cwd, recorded, runsDir)
+        const beforeTrust = grokTrust ? grokTrustHeadings() : []
+        mcpTrustGranted = grokTrust
         // Record the attempt before doctor: the trusted invocation may write its
         // store and then fail, and that remains a grant orch made.
-        db().query('UPDATE run SET mcp_trust_granted=1 WHERE id=?').run(claim.id)
+        if (grokTrust) db().query('UPDATE run SET mcp_trust_granted=1 WHERE id=?').run(claim.id)
         try {
-          mcpConnection = mcpConnectionFor(name, cwd, server, true)
+          mcpConnection = mcpConnectionFor(name, cwd, server, grokTrust, repoJob)
         } finally {
-          const added = addedGrokTrustHeadings(beforeTrust, grokTrustHeadings())
-          db().query('UPDATE run SET mcp_trust_path=? WHERE id=?')
-            .run(added.length ? JSON.stringify(added) : null, claim.id)
+          if (grokTrust) {
+            const added = addedGrokTrustHeadings(beforeTrust, grokTrustHeadings())
+            db().query('UPDATE run SET mcp_trust_path=? WHERE id=?')
+              .run(added.length ? JSON.stringify(added) : null, claim.id)
+          }
         }
       }
       if (mcpTrustGranted && mcpConnection.connected === false &&
@@ -2604,7 +2621,7 @@ export async function run(opts: {
       agent: name,
       readsRepo: repoJob,
       writesRepo: writesJob,
-      worktree: worktree?.path ?? null,
+      worktree: worktree?.path ?? isolatedCwd,
       runsDir: sandboxRunDir,
       project: projectAt(callerCwd),
       readonlyNotes: toolFor(callerCwd)?.readonly_notes,
@@ -2655,7 +2672,7 @@ export async function run(opts: {
           cwd,
           env: childEnv(a, claim.id, runToken, {
             ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment,
-          }),
+          }, repoJob),
           probeTool,
           wrap,
         })
@@ -2854,7 +2871,7 @@ export async function run(opts: {
         ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment,
         ORCH_SCRATCH: scratchDir,
         ...(askLoopback ? { ORCH_ASK_URL: askLoopback.url } : {}),
-      }),
+      }, repoJob),
     }
     const handle = opts.resume?.session && !opts.resume.fresh
       ? await t.resume({ ...startOpts, session: opts.resume.session, resume: true })

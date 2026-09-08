@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import {
+  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync,
+} from 'node:fs'
 import { homedir } from 'node:os'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,7 +10,7 @@ import { ROOT } from './db.ts'
 import {
   grokSandboxConfig,
   READONLY_LENS_DENY_PATHS, readonlyLensProfile, readonlyNeedsDocker, selectReadonlySandbox,
-  srtLaunchArgv,
+  SRT_BIN, srtLaunchArgv,
 } from './sandbox.ts'
 import { classify, NOT_EVIDENCE } from './failure.ts'
 
@@ -129,6 +131,63 @@ describe('readonly-lens sandbox profile', () => {
 
   test('a note merely saying Docker is unavailable does not disable confinement', () => {
     expect(readonlyNeedsDocker('Docker is unavailable in read-only worktrees; use bun tests.')).toBe(false)
+  })
+
+  test('a no-repo Grok run uses its isolate as the sandbox root', () => {
+    const selected = selectReadonlySandbox({
+      agent: 'grok', readsRepo: false, writesRepo: false,
+      worktree: '/runs/isolates/42', runsDir: '/runs/sandbox-42',
+      project: fixtureProject(), path: '/usr/bin',
+    })
+    expect(selected.sandbox).toBe('srt')
+    expect(selected.profile?.filesystem.allowRead).toContain('/runs/isolates/42')
+    expect(selected.profile?.filesystem.allowWrite).toEqual([
+      '/runs/isolates/42', '/runs/sandbox-42',
+    ])
+  })
+
+  test('a no-repo sandbox never silently falls back when its root or project is missing', () => {
+    expect(() => selectReadonlySandbox({
+      agent: 'grok', readsRepo: false, writesRepo: false,
+      worktree: null, runsDir: '/runs/sandbox-42', project: fixtureProject(),
+    })).toThrow('no-repo sandbox refusal: the sandbox root is missing')
+    expect(() => selectReadonlySandbox({
+      agent: 'grok', readsRepo: false, writesRepo: false,
+      worktree: '/runs/isolates/42', runsDir: '/runs/sandbox-42', project: null,
+    })).toThrow('the launch directory does not resolve to a registered project')
+  })
+
+  test('an srt profile rooted at an isolate cannot read an outside path', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'orch-no-repo-boundary-'))
+    const isolate = join(parent, 'isolate')
+    const evidence = join(parent, 'evidence')
+    const outside = join(parent, 'outside.txt')
+    const mcpSource = join(parent, 'project.mcp.json')
+    mkdirSync(isolate)
+    mkdirSync(evidence)
+    writeFileSync(outside, 'secret outside the isolate')
+    writeFileSync(mcpSource, '{"mcpServers":{}}')
+    symlinkSync(mcpSource, join(isolate, '.mcp.json'))
+    try {
+      const profile = readonlyLensProfile({
+        worktree: isolate, runsDir: evidence, agent: 'grok',
+        project: fixtureProject({ secretPaths: [outside] }),
+        path: '/bin:/usr/bin', nodeModuleLinks: [],
+      })
+      const readableConfig = Bun.spawnSync(srtLaunchArgv(
+        profile, join(evidence, 'settings.json'), '/bin/cat', [join(isolate, '.mcp.json')],
+      ), { stdout: 'pipe', stderr: 'pipe' })
+      expect(readableConfig.exitCode, readableConfig.stderr.toString()).toBe(0)
+      expect(readableConfig.stdout.toString()).toBe('{"mcpServers":{}}')
+      const launched = Bun.spawnSync(srtLaunchArgv(
+        profile, join(evidence, 'settings.json'), '/bin/sh', ['-c', `cat ${JSON.stringify(outside)}`],
+      ), { stdout: 'pipe', stderr: 'pipe' })
+      expect(existsSync(SRT_BIN)).toBe(true)
+      expect(launched.exitCode).not.toBe(0)
+      expect(launched.stdout.toString()).not.toContain('secret outside the isolate')
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
   })
 
   test('codex and writing jobs stay on the host seam', () => {

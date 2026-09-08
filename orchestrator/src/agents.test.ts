@@ -900,6 +900,29 @@ describe('childEnv allowlists the vendor CLI environment', () => {
     }
   })
 
+  test('a no-repo worker is not handed the orchestrator database', async () => {
+    const script = join(dir, 'dump-no-repo-env-dev363.ts')
+    writeFileSync(script, 'process.stdout.write(JSON.stringify(process.env))\n')
+    const agent = AGENTS.codex!
+    const original = { bin: agent.bin, argv: agent.argv }
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    agent.bin = process.execPath
+    agent.argv = () => [script]
+    try {
+      const result = await runJob({
+        job: 'summarize', prompt: 'dump env', cwd: dir, agent: 'codex', noFailover: true,
+      })
+      expect((JSON.parse(result.output) as Record<string, string>).ORCH_DB).toBeUndefined()
+    } finally {
+      agent.bin = original.bin
+      agent.argv = original.argv
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(script, { force: true })
+    }
+  })
+
   test('a resumed spawn hands the child the turn id and the token minted for that turn', async () => {
     const script = join(dir, 'dump-env-resume-dev289.ts')
     writeFileSync(script, 'process.stdout.write(JSON.stringify(process.env))\n')

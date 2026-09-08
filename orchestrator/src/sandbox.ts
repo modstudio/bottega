@@ -182,7 +182,7 @@ export function isReadonlySandboxCandidate(input: {
   readsRepo: boolean
   writesRepo: boolean
 }): boolean {
-  return input.agent !== 'codex' && input.readsRepo && !input.writesRepo
+  return input.agent !== 'codex' && !input.writesRepo
 }
 
 export function selectReadonlySandbox(input: {
@@ -198,13 +198,28 @@ export function selectReadonlySandbox(input: {
   localBaseUrl?: string
   mcpEndpoint?: string | null
 }): SandboxSelection {
-  if (!isReadonlySandboxCandidate(input) || !input.worktree || !input.project) {
+  if (!isReadonlySandboxCandidate(input)) {
     return { sandbox: 'host', profile: null, reason: null }
   }
   if (input.override === 'host') {
-    return { sandbox: 'host', profile: null, reason: 'ORCH_SANDBOX=host' }
+    return {
+      sandbox: 'host', profile: null,
+      reason: input.readsRepo ? 'ORCH_SANDBOX=host' : null,
+    }
   }
-  if (readonlyNeedsDocker(input.readonlyNotes)) {
+  if (!input.worktree) {
+    throw new Error(
+      `${input.readsRepo ? 'readonly repository' : 'no-repo'} sandbox refusal: ` +
+      'the sandbox root is missing',
+    )
+  }
+  if (!input.project) {
+    throw new Error(
+      `${input.readsRepo ? 'readonly repository' : 'no-repo'} sandbox refusal: ` +
+      'the launch directory does not resolve to a registered project',
+    )
+  }
+  if (input.readsRepo && readonlyNeedsDocker(input.readonlyNotes)) {
     return {
       sandbox: 'host', profile: null,
       reason: 'project worktree.readonly_notes says read-only checks need Docker',

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS, db, dir, hermeticGitEnv, reviewReply, runJob, upsertProject } from '../test/fixture.ts'
@@ -126,6 +126,70 @@ describe('in-confinement probe', () => {
       connected: 1, error: 'verified: successful tool call ping',
     })
     rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('a no-repo MCP run receives project config and executes its strict tool-call probe', async () => {
+    const project = mkdtempSync(join(tmpdir(), 'orch-no-repo-mcp-'))
+    const git = (...args: string[]) => {
+      const result = Bun.spawnSync(['git', ...args], {
+        cwd: project, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+    }
+    git('init', '-b', 'main')
+    git('config', 'user.email', 'orch-test@example.invalid')
+    git('config', 'user.name', 'Orch Test')
+    const server = writeMintedStdioServer(project)
+    writeFileSync(join(project, '.mcp.json'), JSON.stringify({
+      mcpServers: { fixture: { command: process.execPath, args: [server] } },
+    }))
+    git('add', '.')
+    git('commit', '-m', 'fixture')
+    upsertProject({
+      name: 'fixture', path: project,
+      settings: { mcpServer: 'fixture', mcp: { probe_tool: 'ping' } },
+    })
+    const capture = join(dir, 'DEV-363-no-repo-mcp-capture.ts')
+    writeFileSync(capture, `
+import { existsSync, readFileSync } from 'node:fs'
+process.stdout.write(JSON.stringify({
+  cwd: process.cwd(),
+  hasMcpJson: existsSync('.mcp.json'),
+  config: JSON.parse(readFileSync('.mcp.json', 'utf8')),
+  orchDb: process.env.ORCH_DB ?? null,
+}))
+`)
+    const codex = AGENTS.codex!
+    const original = { bin: codex.bin, argv: codex.argv }
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    codex.bin = process.execPath
+    codex.argv = () => [capture]
+    try {
+      const result = await runJob({
+        job: 'mcp-query', prompt: 'ask the configured server', cwd: project,
+        agent: 'codex', mcp: true, noFailover: true,
+      })
+      const view = JSON.parse(result.output.slice(result.output.lastIndexOf('\n\n') + 2)) as {
+        cwd: string; hasMcpJson: boolean; config: unknown; orchDb: string | null
+      }
+      expect(view.cwd).toContain(`/isolates/${result.id}`)
+      expect(view.hasMcpJson).toBe(true)
+      expect(view.config).toEqual(JSON.parse(readFileSync(join(project, '.mcp.json'), 'utf8')))
+      expect(view.orchDb).toBeNull()
+      const row = db().query(
+        'SELECT mcp_probe, mcp_connected FROM run WHERE id=?',
+      ).get(result.id) as { mcp_probe: string; mcp_connected: number }
+      expect(parseMcpProbe(row.mcp_probe)).toMatchObject({ ok: true, tool: 'ping' })
+      expect(row.mcp_connected).toBe(1)
+    } finally {
+      codex.bin = original.bin
+      codex.argv = original.argv
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(capture, { force: true })
+      rmSync(project, { recursive: true, force: true })
+    }
   })
 
   test('a handshake without a tool call is unverified and an error is disconnected', () => {

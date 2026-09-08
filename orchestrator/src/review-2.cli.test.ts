@@ -143,6 +143,18 @@ describe('review-lens MCP provenance', () => {
     )
   })
 
+  test('grants trust to an orch-created no-repo isolate but not its caller checkout', () => {
+    const runs = '/tmp/orch-runs'
+    const isolate = '/tmp/orch-runs/isolates/42'
+    const recorded = {
+      id: 42, cwd: isolate, worktree: null, worktree_source: null,
+    }
+    expect(() => assertGrokTrustEligible(isolate, recorded, runs)).not.toThrow()
+    expect(() => assertGrokTrustEligible('/tmp/caller-checkout', recorded, runs)).toThrow(
+      'refusing Grok trust for /tmp/caller-checkout',
+    )
+  })
+
   test('passes scoped trust to doctor and spawn and records every new heading verbatim', async () => {
     const repo = mcpRepo(true)
     const script = join(dir, 'fake-grok-trust-round-trip.sh')
