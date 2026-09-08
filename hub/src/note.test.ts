@@ -28,6 +28,9 @@ describe('suggestion notes', () => {
   test('bare help is a subcommand only, never the note payload', () => {
     const path = join(scratch, 'note-help.db')
     bootstrapFixtureStore(path)
+    const seeded = new Database(path)
+    seeded.query('UPDATE project SET path = ? WHERE name = ?').run(scratch, 'workshop')
+    seeded.close()
     const hub = new URL('./cli.ts', import.meta.url).pathname
     const env = {
       ...process.env, HUB_DB: path,
@@ -36,7 +39,7 @@ describe('suggestion notes', () => {
     const payload = Bun.spawnSync([
       process.execPath, hub, 'note', 'new', 'help', '--new', '--area', 'workshop',
     ], {
-      env, stdout: 'pipe', stderr: 'pipe',
+      cwd: scratch, env, stdout: 'pipe', stderr: 'pipe',
     })
     expect(payload.exitCode, payload.stderr.toString()).toBe(0)
     const stored = new Database(path, { readonly: true })
