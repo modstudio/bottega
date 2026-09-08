@@ -2636,12 +2636,16 @@ export async function run(opts: {
   // Start after orch's own worktree and hook setup, immediately before the
   // vendor process. The interval establishes when a change happened, not who
   // wrote it: an architect or concurrent landing can change a watched checkout.
-  const callerWatch = worktree && !opts.resume
-    ? [{ project: opts.repo ?? repoOf(callerCwd) ?? '(caller)', path: callerCwd }]
+  const callerProject = projectAt(callerCwd)
+  const callerCheckout = callerProject
+    ? gitContext(callerCwd, 'rev-parse', '--show-toplevel') ?? callerCwd
+    : null
+  const callerWatch = callerCheckout && callerCheckout !== isolatedCwd
+    ? [{ project: callerProject!.name, path: callerCheckout }]
     : []
-  const candidates = worktree
-    ? checkoutWatchSet(callerWatch, worktree.path, opts.repo ?? repoOf(callerCwd) ?? null)
-    : { watched: [], failures: [] }
+  const candidates = checkoutWatchSet(
+    callerWatch, worktree?.path, opts.repo ?? callerProject?.name ?? null,
+  )
   const beforeFreeze = freezeCheckouts(candidates.watched)
   const skipped = [...candidates.failures, ...beforeFreeze.failures]
   // A detached child's stderr reaches nobody, so the skip also rides the output

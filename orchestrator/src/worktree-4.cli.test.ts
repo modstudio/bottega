@@ -629,6 +629,75 @@ printf '%s\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"a
     }
   })
 
+  test('no-worktree and resumed runs watch registered caller checkouts', async () => {
+    const repo = repository()
+    const caller = join(repo, '.claude', 'worktrees', 'distinct-caller')
+    const script = join(dir, 'DEV-372-identity-watch-agent.sh')
+    writeFileSync(script, `#!/bin/sh
+if [ -n "$ORCH_TEST_EXTERNAL_WRITE" ]; then printf 'outside\\n' > "$ORCH_TEST_EXTERNAL_WRITE"; fi
+printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"answer"}'
+`)
+    chmodSync(script, 0o755)
+    upsertProject({ name: 'identity-watch-project', path: repo })
+    const grok = AGENTS.grok!
+    const previousBin = grok.bin
+    const priorDepth = process.env.ORCH_DEPTH
+    const priorTarget = process.env.ORCH_TEST_EXTERNAL_WRITE
+    process.env.ORCH_DEPTH = '0'
+    grok.bin = script
+    try {
+      process.env.ORCH_TEST_EXTERNAL_WRITE = join(repo, 'summary-edit.txt')
+      const summary = await run({
+        job: 'summarize', prompt: 'watch the caller without a worktree', cwd: repo, agent: 'grok',
+      })
+      expect(summary.worktree).toBeNull()
+      const summaryRow = db().query(
+        'SELECT status, failure_kind, confinement FROM run WHERE id=?',
+      ).get(summary.id) as { status: string; failure_kind: string | null; confinement: string }
+      expect(summaryRow).toMatchObject({ status: 'ok', failure_kind: null })
+      const summaryEvent = parseConfinement(summaryRow.confinement)
+      expect(summaryEvent).toMatchObject({
+        classification: 'non_overlapping', attribution: 'unattributed',
+      })
+      expect(summaryEvent?.after.map(({ path }) => path)).toContain(realpathSync(repo))
+      rmSync(join(repo, 'summary-edit.txt'))
+
+      delete process.env.ORCH_TEST_EXTERNAL_WRITE
+      const first = await run({
+        job: 'file-question', prompt: 'create a resumable chain', cwd: repo, agent: 'grok', keepTree: true,
+      })
+      expect(first.worktree).not.toBeNull()
+      mkdirSync(dirname(caller), { recursive: true })
+      const added = Bun.spawnSync(['git', 'worktree', 'add', '-b', 'DEV-372-distinct-caller', caller], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (added.exitCode !== 0) throw new Error(added.stderr.toString())
+      process.env.ORCH_TEST_EXTERNAL_WRITE = join(caller, 'resume-edit.txt')
+      const resumed = await run({
+        job: 'file-question', prompt: 'resume from a distinct caller checkout', cwd: caller,
+        resume: {
+          parent: first.id, agent: 'grok', session: 'test-session', turn: 2,
+          sessionId: 'orch-test-session', worktree: first.worktree,
+        },
+      })
+      const resumedRow = db().query(
+        'SELECT status, failure_kind, confinement FROM run WHERE id=?',
+      ).get(resumed.id) as { status: string; failure_kind: string | null; confinement: string }
+      expect(resumedRow).toMatchObject({ status: 'ok', failure_kind: null })
+      const resumedEvent = parseConfinement(resumedRow.confinement)
+      expect(resumedEvent?.classification).toBe('non_overlapping')
+      expect(resumedEvent?.after.map(({ path }) => path)).toContain(realpathSync(caller))
+      if (first.worktree) expect(removeFor(first.worktree, first.worktree.repoRoot).removed).toBe(true)
+    } finally {
+      grok.bin = previousBin
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      if (priorTarget === undefined) delete process.env.ORCH_TEST_EXTERNAL_WRITE
+      else process.env.ORCH_TEST_EXTERNAL_WRITE = priorTarget
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('a checkout that cannot be sampled after launch fails confinement verification', async () => {
     const watched = repository()
     const hiddenGit = join(watched, '.git-hidden')
