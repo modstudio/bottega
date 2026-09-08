@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative } from 'node:path'
@@ -377,28 +377,35 @@ export function cleanCompletedSequencerState(
   const gitPath = (name: string) => git(worktree, ['rev-parse', '--path-format=absolute', '--git-path', name], guard)
   const live = OPERATION_REFS.filter(({ name }) =>
     gitOk(worktree, ['rev-parse', '--verify', name], guard))
-  if (live.length) {
-    throw namedError(
-      `refusing cleanup in ${worktree}: live Git operation${live.length === 1 ? '' : 's'} ${live.map(({ name }) => name).join(', ')}`,
-      'Git operation residue is cleaned only when no operation pseudo-ref is live.',
-      live.map(({ command }) => `git -C ${shellQuote(worktree)} ${command}`).join(' or '),
-    )
-  }
 
   const residue = [
-    { name: 'rebase-merge', path: gitPath('rebase-merge'), command: 'rebase --abort' },
-    { name: 'rebase-apply', path: gitPath('rebase-apply'), command: 'rebase --abort' },
+    { name: 'rebase-merge', path: gitPath('rebase-merge'), command: '' },
+    { name: 'rebase-apply', path: gitPath('rebase-apply'), command: '' },
     { name: 'CHERRY_PICK_HEAD', path: gitPath('CHERRY_PICK_HEAD'), command: 'cherry-pick --abort' },
     { name: 'MERGE_HEAD', path: gitPath('MERGE_HEAD'), command: 'merge --abort' },
     { name: 'REVERT_HEAD', path: gitPath('REVERT_HEAD'), command: 'revert --abort' },
     { name: 'AUTO_MERGE', path: gitPath('AUTO_MERGE'), command: 'update-ref -d AUTO_MERGE' },
-  ].filter((state) => existsSync(state.path))
-  if (residue.length) {
+  ].filter((state) => existsSync(state.path) && !live.some(({ name }) => name === state.name))
+  if (live.length || residue.length) {
+    const findings = [
+      ...(live.length ? [`live Git operation${live.length === 1 ? '' : 's'} ${live.map(({ name }) => name).join(', ')}`] : []),
+      ...(residue.length ? [`Git operation residue ${residue.map(({ name }) => name).join(', ')} was not created by this landing process`] : []),
+    ]
+    const recoveries = [
+      ...live.map(({ command }) => `git -C ${shellQuote(worktree)} ${command}`),
+      ...residue.map(({ name, path, command }) => {
+        if (name !== 'rebase-merge' && name !== 'rebase-apply') {
+          return `git -C ${shellQuote(worktree)} ${command}`
+        }
+        if (readdirSync(path).length === 0) return `rmdir -- ${shellQuote(path)}`
+        return `first confirm no rebase process is running against ${shellQuote(worktree)}; then ` +
+          `git -C ${shellQuote(worktree)} rebase --quit`
+      }),
+    ]
     throw namedError(
-      `refusing cleanup in ${worktree}: Git operation residue ${residue.map(({ name }) => name).join(', ')} was not created by this landing process`,
+      `refusing cleanup in ${worktree}: ${findings.join('; ')}`,
       'Git operation residue is cleaned only when orch started the operation and its child process has exited.',
-      [...new Set(residue.map(({ command }) =>
-        `git -C ${shellQuote(worktree)} ${command}`))].join(' or '),
+      [...new Set(recoveries)].join('; then '),
     )
   }
   return { live: [], cleaned: [] }
