@@ -3273,7 +3273,8 @@ export async function run(opts: {
     persistTerminalSnapshot(claim.id, terminalSnapshot)
     const reviewProvenance = parsedReview ? JSON.stringify(parsedReview.provenance) : null
     const provenanceSilent = parsedReview && parsedReview.provenance.could_not_verify.length === 0 && (
-      parsedReview.provenance.substitutes.length > 0 || mcpConnection?.connected !== true ||
+      parsedReview.provenance.substitutes.length > 0 ||
+      (mcpMode !== null && mcpConnection?.connected !== true) ||
       Boolean(provenanceWrongProjectTool)
     )
     const writeTerminalRow = () => writeTransaction(() => {
