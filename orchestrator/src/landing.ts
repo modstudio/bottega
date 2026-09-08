@@ -687,19 +687,19 @@ function restoreLandingState(
       copyFileSync(state.indexBackup, state.indexPath)
     }
   } catch (restoreError) {
-    return namedError(
+    return Object.assign(namedError(
       `${detail}\nrestore after failed landing also failed: ${String(restoreError)}`,
       INVARIANT_FAILED_LANDING,
       `git -C ${shellQuote(worktree)} reset --hard ${state.tip}`,
-    )
+    ), { reviewRework: reviewRework(cause) })
   } finally {
     discardLandingState(state)
   }
-  return namedError(
+  return Object.assign(namedError(
     `${detail}\nrestored branch tip ${state.tip} and index to the pre-squash state`,
     INVARIANT_FAILED_LANDING,
     `git -C ${shellQuote(worktree)} reset --hard ${state.tip}`,
-  )
+  ), { reviewRework: reviewRework(cause) })
 }
 
 /** Fold checkpoint deltas into the next authored commit, retaining a trailing checkpoint. */
@@ -1396,11 +1396,14 @@ function performLand(
     // commit that becomes trunk, so the message is rewritten before rebase.
     if (options.message !== undefined) amendLandingMessage(worktree, options.message, guard)
     if (options.unreviewed === undefined) {
-      authorizeLanding(
+      const authorization = authorizeLanding(
         project, repoRoot, worktree, branch,
         git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'], guard), recordedTrunk,
         options.runId, options.unreviewed,
       )
+      for (const reviewId of authorization.validReviewIds) {
+        db().query('UPDATE review SET outdated_at=NULL, outdated_reason=NULL WHERE id=?').run(reviewId)
+      }
     }
     let gatedTrunk = recordedTrunk
     let tip = rebaseAndGate(
