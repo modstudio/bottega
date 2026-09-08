@@ -7,7 +7,8 @@ import { mainCheckoutOf } from '../../shared/git.ts'
 import {
   applyMigrations, BASELINE_SCHEMA_HASH, baselineSchemaHash, canonicalSchemaHash,
   CONNECTION_SCHEMA_INVARIANT, expectedSchemaHash, JOURNAL_WHEN_ORDER, journalLength,
-  MIGRATIONS_FOLDER, migrationJournal, migrationRefusal, readUserVersion,
+  MIGRATIONS_FOLDER, MIGRATIONS_TABLE, migrationJournal, migrationRefusal, readUserVersion,
+  SCHEMA_LOCK_TABLE,
   schemaVersionLabel, splitMigrationSource,
 } from './migrations.ts'
 import { closeDatabaseForFixture, db, enableSchemaReload, writeTransaction } from './db.ts'
@@ -27,6 +28,63 @@ const baselineFresh = () => {
     if (statement.trim()) d.exec(statement)
   }
   return d
+}
+
+type ApplicationObject = { type: 'table' | 'index' | 'view' | 'trigger'; name: string; tbl_name: string }
+
+const applicationObjects = (d: Database): ApplicationObject[] => d.query<ApplicationObject, [string, string]>(
+  `SELECT type,name,tbl_name FROM sqlite_master
+    WHERE type IN ('table','index','view','trigger')
+      AND name NOT LIKE 'sqlite_%' AND name NOT IN (?, ?)
+    ORDER BY type,name`,
+).all(MIGRATIONS_TABLE, SCHEMA_LOCK_TABLE)
+
+const applicationSchemaRows = (d: Database) => d.query(
+  `SELECT type,name,sql FROM sqlite_master
+    WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name NOT IN (?, ?)
+    ORDER BY type,name`,
+).all(MIGRATIONS_TABLE, SCHEMA_LOCK_TABLE)
+
+const quoteIdentifier = (value: string) => `"${value.replaceAll('"', '""')}"`
+
+/** Reduce any later journal state to the baseline application-object inventory. */
+function stripPostBaselineApplicationObjects(d: Database): void {
+  const baseline = baselineFresh()
+  const baselineNames = new Set(applicationObjects(baseline).map((row) => `${row.type}:${row.name}`))
+  baseline.close()
+  const extras = applicationObjects(d).filter((row) => !baselineNames.has(`${row.type}:${row.name}`))
+
+  // Remove dependants before their tables. Indexes and triggers would fall
+  // with a table, but dropping them explicitly also handles additions to a
+  // baseline table. Views go first because they may read a later table.
+  for (const type of ['trigger', 'view', 'index'] as const) {
+    for (const row of extras.filter((candidate) => candidate.type === type)) {
+      d.exec(`DROP ${type.toUpperCase()} ${quoteIdentifier(row.name)}`)
+    }
+  }
+
+  const tables = new Set(extras.filter((row) => row.type === 'table').map((row) => row.name))
+  const children = new Map<string, string[]>()
+  for (const child of tables) {
+    const foreignKeys = d.query<{ table: string }, []>(`PRAGMA foreign_key_list(${quoteIdentifier(child)})`).all()
+    for (const foreignKey of foreignKeys) {
+      if (!tables.has(foreignKey.table)) continue
+      const list = children.get(foreignKey.table) ?? []
+      list.push(child)
+      children.set(foreignKey.table, list)
+    }
+  }
+  const dropped = new Set<string>()
+  const visiting = new Set<string>()
+  const dropChildFirst = (table: string): void => {
+    if (dropped.has(table) || visiting.has(table)) return
+    visiting.add(table)
+    for (const child of children.get(table) ?? []) dropChildFirst(child)
+    visiting.delete(table)
+    d.exec(`DROP TABLE ${quoteIdentifier(table)}`)
+    dropped.add(table)
+  }
+  for (const table of tables) dropChildFirst(table)
 }
 
 const cli = new URL('./cli.ts', import.meta.url).pathname
@@ -91,13 +149,10 @@ describe('hub migration journal', () => {
 
   test('a matching pre-journal store adopts 0000 without rebuilding its schema', () => {
     const d = baselineFresh()
-    const before = d.query(
-      "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY type,name",
-    ).all()
+    const before = applicationSchemaRows(d)
     expect(applyMigrations(d)).toEqual(['0000_hub_baseline', '0001_note', '0002_note_acknowledgement'])
-    const after = d.query(
-      "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name NOT IN ('hub_migrations','hub_schema_lock','note','note_project_seen','note_acknowledgement','note_acknowledgement_session') ORDER BY type,name",
-    ).all()
+    stripPostBaselineApplicationObjects(d)
+    const after = applicationSchemaRows(d)
     expect(after).toEqual(before)
     d.close()
   })
@@ -109,9 +164,12 @@ describe('hub migration journal', () => {
     // The live store is real data at real volume, which is what this test
     // wants; whether it has already been migrated is per-machine state that a
     // test must not depend on (it failed the first landing after hub migrate
-    // ran on this machine). Make the copy legacy by removing the journal table.
+    // ran on this machine). Reduce the copy to the baseline object inventory,
+    // then make it legacy by removing the journal table. The child-first strip
+    // is derived rather than naming every additive table by hand.
     const probe = new Database(copy)
-    probe.exec("DROP TABLE IF EXISTS note; DELETE FROM setting WHERE key='note.curator.enabled'")
+    stripPostBaselineApplicationObjects(probe)
+    probe.exec("DELETE FROM setting WHERE key='note.curator.enabled'")
     probe.exec('DROP TABLE IF EXISTS hub_migrations')
     expect(probe.query("SELECT 1 FROM sqlite_master WHERE name='hub_migrations'").get()).toBeNull()
     probe.close()
