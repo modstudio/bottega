@@ -89,8 +89,7 @@ describe('DEV-370 landing queue and branch ownership', () => {
   })
 
   test('stop keeps a review subject branch and deletes a minted implement branch', () => {
-    const { repo, trees } = repoWithBranches(['DEV-370-subject'])
-    const subject = trees['DEV-370-subject']!
+    const { repo } = repoWithBranches(['DEV-370-subject'])
     const subjectTip = g(repo, 'rev-parse', 'DEV-370-subject')
     const reviewTree = join(repo, 'trees', 'review-detached')
     mkdirSync(join(repo, 'trees'), { recursive: true })
