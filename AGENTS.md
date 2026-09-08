@@ -292,11 +292,10 @@ mistake. The INTERNAL MACHINERY around it is almost never novel, and a
 maintained library usually exists. A task is normally both, and the research is
 what separates them.
 
-THIS IS THE ARCHITECT'S STEP AND CANNOT BE DELEGATED DOWNWARD. No external
-agent reaches the network; a worker asked to check prior art will answer from
-memory and sound certain. The research goes to a Claude subagent whose prompt
-says NEEDS-WEB, and its conclusion is written into the spec so the worker
-inherits the ruling rather than the question.
+THIS IS THE ARCHITECT'S STEP AND CANNOT BE DELEGATED DOWNWARD. The architect
+does the research on a web-capable path. A worker that cannot reach the network
+inherits the conclusion in the spec — the ruling rather than the question —
+instead of being asked to check prior art from memory.
 
 Record the negative result too. "Searched, nothing published, everyone
 hand-rolls this" is a finding that belongs in the spec, because without it the

@@ -1724,6 +1724,11 @@ could do. **Web work is allowed, but it declares itself** — `NEEDS-WEB` in the
 first 200 characters of the prompt or description. Only that opening is checked
 so a quoted repository excerpt deep in a prompt does not become a declaration.
 
+For this Claude adapter, the architect's web-capable path for the required
+pre-spec research is a Claude subagent whose prompt begins `NEEDS-WEB`. The
+root canon states the harness-neutral requirement and puts the resulting ruling
+in the spec; this is the adapter-specific mechanism that performs it here.
+
 **A URL is not a declaration.** It used to be, and that quietly restored the
 rewording path this gate had just removed: any prompt that happened to quote a
 docs link or a stack trace was allowed, without anyone having decided it needed
