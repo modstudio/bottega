@@ -1702,6 +1702,7 @@ function usage(): never {
       reclassify stored unclassified vendor quota/auth failures from their error text;
       prints every matched row and before/after counts before writing
   orch health [--days N] [--json] failure classes by count, time, last seen, false-verdict rate and the flake table
+  orch epic <TASK-KEY> [--json] one computed scoreboard for an epic and its child tasks
   orch doctor                   agents, local endpoint, routing at a glance
   orch agent add <name> --harness H --backend B [--model M] [--base-url U] [--context-tokens N]
   orch agent set <name> [the add flags] [--jobs JOB,...|any] [--prefer JOB,...] [--max-concurrent N] [--enabled true|false] [--reason TEXT]
@@ -6895,6 +6896,15 @@ switch (cmd) {
         + ` signal=${row.signal ?? '-'}`,
       )
     }
+    break
+  }
+
+  case 'epic': {
+    const { epicChildren, epicScoreboard, renderEpicHuman } = await import('./epic.ts')
+    const epicKey = argv[1]
+    if (!epicKey) throw new Error('orch epic <TASK-KEY> [--json]')
+    const report = epicScoreboard(epicKey, await epicChildren(epicKey))
+    console.log(has('json') ? JSON.stringify(report) : renderEpicHuman(report))
     break
   }
 
