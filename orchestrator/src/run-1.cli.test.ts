@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { AGENTS, COULD_NOT_VERIFY_INSTRUCTION, INFRASTRUCTURE_RECOVERY, ImportRefusalError, JOBS, NO_REPO_PREAMBLE, READER_DELIVERABLE_FIRST, READONLY_PREAMBLE, REVIEW_SCHEMA, REVIEW_SEVERITY_INSTRUCTION, WORKER_PREAMBLE, addRun, applyImport, baselineForPair, candidates, checkMessages, contractConflicts, db, dir, getDoc, hermeticGitEnv, inferredReadOnlyKey, jobBoundInstructionForContract, ledgerRef, listDocRevisions, listDocs, listDoctrineRules, listPairs, listSkips, messageArchitect, messagesForRun, planImport, preflight, projectAt, projects, runJob, runWithDelayedStdoutReader, score, setDoc, sourceCoverage, upsertProject, weigh } from '../test/fixture.ts'
+import { AGENTS, COULD_NOT_VERIFY_INSTRUCTION, INFRASTRUCTURE_RECOVERY, ImportRefusalError, JOBS, NO_REPO_PREAMBLE, READER_DELIVERABLE_FIRST, READONLY_PREAMBLE, REVIEW_PROVENANCE_INSTRUCTION, REVIEW_SCHEMA, REVIEW_SEVERITY_INSTRUCTION, WORKER_PREAMBLE, addRun, applyImport, baselineForPair, candidates, checkMessages, contractConflicts, db, dir, getDoc, hermeticGitEnv, inferredReadOnlyKey, jobBoundInstructionForContract, ledgerRef, listDocRevisions, listDocs, listDoctrineRules, listPairs, listSkips, messageArchitect, messagesForRun, planImport, preflight, projectAt, projects, runJob, runWithDelayedStdoutReader, score, setDoc, sourceCoverage, upsertProject, weigh } from '../test/fixture.ts'
 
 describe('read-only run task attribution', () => {
   const git = (cwd: string, ...args: string[]) => {
@@ -959,6 +959,16 @@ describe('job contracts are visible before submission', () => {
       REVIEW_SCHEMA.properties.provenance.properties.could_not_verify.description
     expect(paragraphInstruction).toBe(COULD_NOT_VERIFY_INSTRUCTION)
     expect(schemaInstruction).toBe(paragraphInstruction)
+  })
+
+  test('review contract prose names every provenance list dropped with schema binding', () => {
+    const text = contract('review-lens').out.replace(/\s+/g, ' ')
+    expect(text).toContain(REVIEW_PROVENANCE_INSTRUCTION)
+    expect(text).toContain('provenance.mcp_tools')
+    expect(text).toContain('provenance.docs_read')
+    expect(text).toContain('provenance.substitutes')
+    expect(text).toContain('Empty arrays are valid')
+    expect(text).toContain('<server>.<tool>')
   })
 
   test('writing and reading workers file findings instead of leaving only mailbox notes', () => {

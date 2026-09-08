@@ -227,6 +227,10 @@ export const COULD_NOT_VERIFY_INSTRUCTION =
   'State every unavailable or unverified source in the open-ended could_not_verify list, and name every substitute used. ' +
   'A review which could not execute the suite must say so there and must not present static reasoning as an executed check.'
 
+export const REVIEW_PROVENANCE_INSTRUCTION =
+  'Review provenance must include provenance.mcp_tools, provenance.docs_read, and provenance.substitutes as string arrays. ' +
+  'Empty arrays are valid. Write each mcp_tools entry as <server>.<tool>.'
+
 /**
  * The fixed product of every findings-producing review job.
  *
@@ -529,6 +533,8 @@ answer, and you stop and wait. A blocker is something only the environment can
 fix, and you carry on without it and say so.
 
 ${INFRASTRUCTURE_RECOVERY}
+
+${REVIEW_PROVENANCE_INSTRUCTION}
 `.trim()
 
 /**
