@@ -7,6 +7,8 @@ The first stop is held long enough to arm Monitor. A dead worker can remain
 recorded live forever, so the same observed run set is never allowed to wedge a
 session on every later stop.
 """
+from __future__ import annotations  # bool | None must parse on macOS system python 3.9
+
 import hashlib
 import json
 import os

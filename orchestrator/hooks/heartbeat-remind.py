@@ -6,6 +6,8 @@ under Monitor, waiting work and a worker asking for a ruling look exactly like
 an abandoned session to the operator. Dispatch creates that obligation, so this
 hook puts the runnable command back in the model's context at that moment.
 """
+from __future__ import annotations  # bool | None must parse on macOS system python 3.9
+
 import json
 import os
 import shlex
