@@ -143,7 +143,9 @@ describe('degraded collection import graph', () => {
 
 describe("detached run collection", () => {
   const { CLI, orchInput, orch, scoreReminder, orchFrom, insert, dispatchArtifacts, expectNoDispatchArtifacts } = runCollectionDescribeFixture()
-  const confinementArtifact = () => {
+  const confinementArtifact = (
+    kind: 'escaped' | 'confinement_unverified' = 'escaped',
+  ) => {
     const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-confinement-clear-')))
     const git = (cwd: string, ...args: string[]) => {
       const child = Bun.spawnSync(['git', ...args], {
@@ -173,7 +175,7 @@ describe("detached run collection", () => {
     })
     db().query(
       'UPDATE run SET worktree=?,branch=?,failure_kind=?,error=?,pre_confinement=?,vendor_session=? WHERE id=?',
-    ).run(worktree, branch, 'escaped', 'outside edit', JSON.stringify({
+    ).run(worktree, branch, kind, 'confinement block', JSON.stringify({
       status: 'ok', failureKind: null, error: null,
     }), 'confinement-test-session', id)
     const audit = () => JSON.parse((db().query(
@@ -182,14 +184,17 @@ describe("detached run collection", () => {
     return { repo, worktree, branch, tip, tree, project, id, git, audit }
   }
 
-  const addEscapedTurn = (fixture: ReturnType<typeof confinementArtifact>) => {
+  const addConfinementTurn = (
+    fixture: ReturnType<typeof confinementArtifact>,
+    kind: 'escaped' | 'confinement_unverified' = 'escaped',
+  ) => {
     const id = addRun({
-      agent: 'missing-test-agent', job: 'implement', status: 'failed', kind: 'escaped',
+      agent: 'missing-test-agent', job: 'implement', status: 'failed', kind,
       parent: fixture.id, turn: 2, session: 'orch-test-session', repo: fixture.project,
       inputTree: fixture.tree, headCommit: fixture.tip,
     })
     db().query(
-      `UPDATE run SET worktree=?, branch=?, error='outside edit', pre_confinement=?, vendor_session=?
+      `UPDATE run SET worktree=?, branch=?, error='confinement block', pre_confinement=?, vendor_session=?
         WHERE id=?`,
     ).run(fixture.worktree, fixture.branch, JSON.stringify({
       status: 'ok', failureKind: null, error: null,
@@ -216,43 +221,47 @@ describe("detached run collection", () => {
     } finally { rmSync(fixture.repo, { recursive: true, force: true }) }
   })
 
-  test('escaped refusals name and execute the working clear remedy for every chain shape', () => {
-    for (const rootSnapshot of [true, false]) {
-      for (const addressByTurn of [false, true]) {
-        const fixture = confinementArtifact()
-        try {
-          const turn = addEscapedTurn(fixture)
-          if (!rootSnapshot) {
-            db().query('UPDATE run SET pre_confinement=NULL WHERE id=?').run(fixture.id)
-          }
-          const addressed = addressByTurn ? turn : fixture.id
-          const refused = orch('continue', String(addressed), 'resume escaped chain')
-          expect(refused.code).toBe(1)
-          expect(refused.err).toContain(rootSnapshot
-            ? 'snapshots available: clear restores the pre-confinement outcomes'
-            : 'snapshot missing in this chain: clear uses the available snapshots and moves missing outcomes forward')
-          expect(refused.err).toContain(
-            'invariant: an escaped or confinement-unverified chain is not resumed until the classification is cleared',
-          )
-          const remedy = `orch confinement clear ${addressed} --writer TEXT --note TEXT`
-          expect(refused.err).toContain(`cleared by: ${remedy}`)
+  test('confinement refusals execute the working clear remedy for every kind and chain shape', () => {
+    for (const kind of ['escaped', 'confinement_unverified'] as const) {
+      for (const rootSnapshot of [true, false]) {
+        for (const addressByTurn of [false, true]) {
+          const fixture = confinementArtifact(kind)
+          try {
+            const turn = addConfinementTurn(fixture, kind)
+            if (!rootSnapshot) {
+              db().query('UPDATE run SET pre_confinement=NULL WHERE id=?').run(fixture.id)
+            }
+            const addressed = addressByTurn ? turn : fixture.id
+            const refused = orch('continue', String(addressed), 'resume confinement-blocked chain')
+            expect(refused.code).toBe(1)
+            expect(refused.err).toContain(`run ${addressed} is ${kind}`)
+            expect(refused.err).toContain(rootSnapshot
+              ? 'snapshots available: clear restores the pre-confinement outcomes'
+              : 'snapshot missing in this chain: clear uses the available snapshots and moves missing outcomes forward')
+            expect(refused.err).toContain(
+              'invariant: an escaped or confinement-unverified chain is not resumed until the classification is cleared',
+            )
+            const remedy = `orch confinement clear ${addressed} --writer TEXT --note TEXT`
+            expect(refused.err).toContain(`cleared by: ${remedy}`)
 
-          // Execute the named remedy, replacing only its documented placeholders.
-          const cleared = orch(
-            'confinement', 'clear', String(addressed), '--writer', 'operator', '--note', 'known edit',
-          )
-          expect(cleared.code, cleared.err).toBe(0)
-          expect(db().query(
-            `SELECT COUNT(*) n FROM run WHERE (id=? OR parent_run_id=?) AND failure_kind='escaped'`,
-          ).get(fixture.id, fixture.id)).toEqual({ n: 0 })
-          expect(fixture.audit().transitions).toEqual(rootSnapshot
-            ? [{ runId: fixture.id, mode: 'restored' }, { runId: turn, mode: 'restored' }]
-            : [{ runId: fixture.id, mode: 'forward' }, { runId: turn, mode: 'restored' }])
+            // Execute the named remedy, replacing only its documented placeholders.
+            const cleared = orch(
+              'confinement', 'clear', String(addressed), '--writer', 'operator', '--note', 'known edit',
+            )
+            expect(cleared.code, cleared.err).toBe(0)
+            expect(db().query(
+              `SELECT COUNT(*) n FROM run WHERE (id=? OR parent_run_id=?)
+                AND failure_kind IN ('escaped','confinement_unverified')`,
+            ).get(fixture.id, fixture.id)).toEqual({ n: 0 })
+            expect(fixture.audit().transitions).toEqual(rootSnapshot
+              ? [{ runId: fixture.id, mode: 'restored' }, { runId: turn, mode: 'restored' }]
+              : [{ runId: fixture.id, mode: 'forward' }, { runId: turn, mode: 'restored' }])
 
-          const resumed = orch('continue', String(fixture.id), 'resume cleared chain')
-          expect(resumed.code, resumed.err).toBe(0)
-          expect(Number(resumed.out.trim())).toBeGreaterThan(turn)
-        } finally { rmSync(fixture.repo, { recursive: true, force: true }) }
+            const resumed = orch('continue', String(fixture.id), 'resume cleared chain')
+            expect(resumed.code, resumed.err).toBe(0)
+            expect(Number(resumed.out.trim())).toBeGreaterThan(turn)
+          } finally { rmSync(fixture.repo, { recursive: true, force: true }) }
+        }
       }
     }
   })

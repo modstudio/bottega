@@ -557,25 +557,6 @@ test('create commands must exist and be executable before dispatch', () => {
     expect(JSON.stringify(projectByName('help-target'))).toBe(before)
   })
 
-  test('answer and continue refuse escaped and confinement-unverified chains naming clear', () => {
-    for (const kind of ['escaped', 'confinement_unverified'] as const) {
-      const id = insert('failed', 'implement')
-      db().query('UPDATE run SET session_id=?, failure_kind=? WHERE id=?')
-        .run('orch-test-session', kind, id)
-      db().query(
-        'INSERT INTO question (run_id, asked_at, question, why) VALUES (?,?,?,?)',
-      ).run(id, new Date().toISOString(), 'should we?', 'need a ruling')
-      const answered = orch('answer', String(id), 'yes, do that')
-      expect(answered.code).toBe(1)
-      expect(answered.err).toContain(kind)
-      expect(answered.err).toContain('invariant:')
-      expect(answered.err).toContain(`orch confinement clear ${id}`)
-      const continued = orch('continue', String(id), 'keep going')
-      expect(continued.code).toBe(1)
-      expect(continued.err).toContain(`orch confinement clear ${id}`)
-    }
-  })
-
   test('an unattributed run warns with the explicit repo remedy', () => {
     const r = orch('do', 'summarize', '--file', '/definitely/not/a/prompt')
     expect(r.code).toBe(1)
