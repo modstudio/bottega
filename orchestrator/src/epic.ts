@@ -43,13 +43,15 @@ type RunRow = {
   vendor_tokens: number | null; vendor_cost_usd: number | null
   launch_key: string | null; branch: string | null; parent_run_id: number | null
   turn: number; last_event_at: string | null
+  project_id: number | null; head_commit: string | null
 }
 type LandingRow = {
   id: number; branch: string; status: string; error: string | null; steps: string | null
+  project_id: number | null; tip: string | null
 }
 type ReviewRow = {
   id: number; completed_at: string | null; outdated_at: string | null; patch_id: string | null
-  launch_key: string | null; branch: string | null
+  launch_key: string | null; branch: string | null; head_commit: string | null; project_id: number | null
 }
 
 const keyInBranch = (branch: string | null, keys: readonly string[]): string | null => {
@@ -59,33 +61,40 @@ const keyInBranch = (branch: string | null, keys: readonly string[]): string | n
 
 /**
  * Evidence attribution is deliberately ordered. run.launch_key is authoritative
- * when present; otherwise the task key embedded in run.branch is used. Landings
- * have only landing.branch. Reviews inherit the same run attribution through
- * review_lens. Commit subjects are not used because orch does not store them as
- * task evidence. Evidence naming a non-child key, or no child by either route,
- * is outside this epic rather than being silently assigned to its nearest task.
+ * when present; otherwise the task key embedded in run.branch and then its head
+ * commit subject are used. Landings use landing.branch and then the tip subject.
+ * Reviews inherit the same run attribution through review_lens. Evidence naming
+ * a non-child launch key, or no child by any route, is outside this epic rather
+ * than being silently assigned to its nearest task.
  */
 export function epicScoreboard(epicKey: string, children: EpicChild[], database: Database = db()): EpicScoreboard {
   const keys = children.map((child) => child.key.toUpperCase())
   const childByKey = new Map(children.map((child) => [child.key.toUpperCase(), child]))
   const runs = database.query(
     `SELECT id,started_at,job,latency_ms,vendor_tokens,vendor_cost_usd,launch_key,branch,
-            parent_run_id,turn,last_event_at FROM run ORDER BY started_at,id`,
+            parent_run_id,turn,last_event_at,project_id,head_commit FROM run ORDER BY started_at,id`,
   ).all() as RunRow[]
   const landings = database.query(
-    `SELECT id,branch,status,error,steps FROM landing ORDER BY started_at,id`,
+    `SELECT id,branch,status,error,steps,project_id,tip FROM landing ORDER BY started_at,id`,
   ).all() as LandingRow[]
   const reviews = database.query(
-    `SELECT DISTINCT review.id,review.completed_at,review.outdated_at,review.patch_id,run.launch_key,run.branch
+    `SELECT DISTINCT review.id,review.completed_at,review.outdated_at,review.patch_id,run.launch_key,run.branch,
+            run.head_commit,run.project_id
        FROM review JOIN review_lens ON review_lens.review_id=review.id
        JOIN run ON run.id=review_lens.run_id ORDER BY review.id`,
   ).all() as ReviewRow[]
+  const subjects = commitSubjects(database)
 
-  const runKey = (row: Pick<RunRow, 'launch_key' | 'branch'>): string | null => {
+  const subjectKey = (projectId: number | null, commit: string | null) =>
+    keyInBranch(projectId && commit ? subjects.get(projectId)?.get(commit) ?? null : null, keys)
+
+  const runKey = (row: Pick<RunRow, 'launch_key' | 'branch' | 'project_id' | 'head_commit'>): string | null => {
     const launch = row.launch_key?.toUpperCase()
-    return launch ? (childByKey.has(launch) ? launch : null) : keyInBranch(row.branch, keys)
+    if (launch) return childByKey.has(launch) ? launch : null
+    return keyInBranch(row.branch, keys) ?? subjectKey(row.project_id, row.head_commit)
   }
-  const landingKey = (row: LandingRow) => keyInBranch(row.branch, keys)
+  const landingKey = (row: LandingRow) =>
+    keyInBranch(row.branch, keys) ?? subjectKey(row.project_id, row.tip)
   const reviewKey = (row: ReviewRow) => runKey(row)
 
   const rows = children.map((child): EpicTaskScore => {
@@ -133,7 +142,8 @@ export function epicScoreboard(epicKey: string, children: EpicChild[], database:
       vendorTokens: tokenRows.length ? tokenRows.reduce((sum, run) => sum + run.vendor_tokens!, 0) : null,
       vendorCostUsd: costRows.length ? costRows.reduce((sum, run) => sum + run.vendor_cost_usd!, 0) : null,
       unreportedUsageRuns: { tokens: taskRuns.length - tokenRows.length, cost: taskRuns.length - costRows.length },
-      lensRounds: new Set(taskReviews.map((review) => review.patch_id ?? `review:${review.id}`)).size,
+      lensRounds: new Set(taskReviews.map((review) =>
+        review.patch_id ?? review.head_commit ?? `review:${review.id}`)).size,
       fixRounds: rootFixRuns.length,
       landings: {
         attempted: taskLandings.length,
@@ -163,8 +173,8 @@ export function epicScoreboard(epicKey: string, children: EpicChild[], database:
     epicKey,
     membership: {
       source: `hub task list --parent ${epicKey} --json`,
-      runEvidence: 'run.launch_key, falling back to a child key embedded in run.branch',
-      landingEvidence: 'a child key embedded in landing.branch',
+      runEvidence: 'run.launch_key, falling back to a child key embedded in run.branch, then the head commit subject',
+      landingEvidence: 'a child key embedded in landing.branch, falling back to the landed tip commit subject',
       reviewEvidence: 'the attributed run joined through review_lens',
       unmatchedEvidence: 'a key seen only outside those routes, or naming a non-child, is not assigned to this epic',
     },
@@ -175,6 +185,24 @@ export function epicScoreboard(epicKey: string, children: EpicChild[], database:
       needed: 'record commit author role and task/run attribution when an architect commits on a run branch',
     }],
   }
+}
+
+function commitSubjects(database: Database): Map<number, Map<string, string>> {
+  const projects = database.query('SELECT id,path FROM project ORDER BY id').all() as { id: number; path: string }[]
+  const result = new Map<number, Map<string, string>>()
+  for (const project of projects) {
+    const git = Bun.spawnSync(['git', 'log', '--all', '--format=%H%x09%s'], {
+      cwd: project.path, stdout: 'pipe', stderr: 'pipe', env: { ...process.env },
+    })
+    if (git.exitCode !== 0) continue
+    const rows = new Map<string, string>()
+    for (const line of git.stdout.toString().split('\n')) {
+      const tab = line.indexOf('\t')
+      if (tab > 0) rows.set(line.slice(0, tab), line.slice(tab + 1))
+    }
+    result.set(project.id, rows)
+  }
+  return result
 }
 
 function totalRow(rows: EpicTaskScore[]): EpicTaskScore {
@@ -246,9 +274,10 @@ const usage = (value: number | null, missing: number, cost = false) => value ===
 
 export function renderEpicHuman(report: EpicScoreboard): string {
   const rows = [...report.children, report.total]
-  const lines = [`EPIC ${report.epicKey}`, 'TASK         RUNS BY JOB                         WALL    SPAN      TOKENS          COST  LENS FIX  LAND A/L/R  REV R/C/O  STR IDLE CONT/DRIFT']
+  const jobWidth = Math.max(11, ...rows.map((row) => jobs(row).length))
+  const lines = [`EPIC ${report.epicKey}`, `TASK         ${'RUNS BY JOB'.padEnd(jobWidth)} WALL    SPAN      TOKENS          COST  LENS FIX  LAND A/L/R  REV R/C/O  STR IDLE CONT/DRIFT`]
   for (const row of rows) lines.push(
-    `${row.key.padEnd(12)} ${jobs(row).slice(0, 34).padEnd(35)} ${duration(row.wallTimeMs).padStart(7)} ${duration(row.elapsedSpanMs).padStart(7)} ` +
+    `${row.key.padEnd(12)} ${jobs(row).padEnd(jobWidth)} ${duration(row.wallTimeMs).padStart(7)} ${duration(row.elapsedSpanMs).padStart(7)} ` +
     `${usage(row.vendorTokens, row.unreportedUsageRuns.tokens).padStart(15)} ${usage(row.vendorCostUsd, row.unreportedUsageRuns.cost, true).padStart(8)} ` +
     `${String(row.lensRounds).padStart(5)} ${String(row.fixRounds).padStart(3)}  ` +
     `${`${row.landings.attempted}/${row.landings.landed}/${row.landings.refused}`.padStart(10)}  ` +
