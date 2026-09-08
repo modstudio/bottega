@@ -977,7 +977,7 @@ export function reviewCoverageVerdict(
   if (JSON.stringify(reviewedPaths) !== JSON.stringify(candidatePaths)) {
     return { kind: 'invalid', reason: 'path set differs', resolution: resolved.resolution }
   }
-  const messageResult = runner(['log', '-1', '--format=%B', tip])
+  const messageResult = runner(['log', '--format=%B', `${newBase}..${tip}`])
   const message = messageResult.ok ? messageResult.out : ''
   return {
     kind: 'carried', class: review.commitMessage !== null && review.commitMessage !== undefined &&

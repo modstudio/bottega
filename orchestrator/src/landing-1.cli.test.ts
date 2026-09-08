@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { rmSync, readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { addRun, completeReview, contentTree, db, gateFailureSummary, hermeticGitEnv, land, landingReviewCoverage, prepareSharedRefGuard, projectLockState, recordReviews, reviewPins, reviewReply, upsertProject, withProjectLock } from '../test/fixture.ts'
+import { addRun, completeReview, contentTree, db, gateFailureSummary, getReview, hermeticGitEnv, land, landingReviewCoverage, listReviews, prepareSharedRefGuard, projectLockState, recordReviews, reviewPins, reviewReply, upsertProject, withProjectLock } from '../test/fixture.ts'
 
 import { landingDescribeFixture } from '../test/fixture.ts'
 import shards from '../test/shards.json'
@@ -872,6 +872,9 @@ test('only bun\'s complete timeout line reports machine load', () => {
     upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
     try {
       const oldBase = g(repo, 'rev-parse', 'main')
+      writeFileSync(join(trees['carry-review']!, 'second.txt'), 'second commit\n')
+      g(trees['carry-review']!, 'add', 'second.txt')
+      g(trees['carry-review']!, 'commit', '-m', 'second branch message')
       const reviewedCommit = g(repo, 'rev-parse', 'carry-review')
       const reviewedTree = g(repo, 'rev-parse', 'carry-review^{tree}')
       const reviewId = completedReview(project, [reviewedTree], {

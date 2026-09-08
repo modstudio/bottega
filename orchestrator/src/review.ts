@@ -284,14 +284,13 @@ function projectRecord(database: Database, name: string): { path: string; trunk:
 }
 
 function currentCoverage(
-  reviewId: number, project: string | null, lenses: ReviewReadLens[], database: Database,
+  review: ReviewCoverageInput, project: string | null, database: Database,
 ): ReviewListRow['coverage'] {
   if (!project) return null
   const registered = projectRecord(database, project)
   if (!registered?.trunk) return null
-  const branches = [...new Set(lenses.map((lens) => lens.branch).filter((x): x is string => Boolean(x)))]
+  const branches = [...new Set(review.lenses.map((lens) => lens.branch).filter((x): x is string => Boolean(x)))]
   if (!branches.length) return null
-  const review: ReviewCoverageInput = { id: reviewId, lenses }
   const verdicts = branches.flatMap((branch) => {
     const ref = `refs/heads/${branch}`
     const runner = reviewGit(registered.path)
@@ -328,7 +327,7 @@ export function listReviews(
             COUNT(DISTINCT CASE WHEN rf.disposition='modified' THEN rf.id END) AS findings_modified,
             COUNT(DISTINCT CASE WHEN rf.disposition='rejected' THEN rf.id END) AS findings_rejected,
             COUNT(DISTINCT CASE WHEN rf.disposition='skipped' THEN rf.id END) AS findings_skipped,
-            run.repo AS project
+            run.repo AS project, r.patch_id, r.path_set, r.commit_message, r.outdated_reason
        FROM review r JOIN review_lens rl ON rl.review_id=r.id JOIN run ON run.id=rl.run_id
        LEFT JOIN review_finding rf ON rf.review_id=r.id
        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
@@ -345,7 +344,9 @@ export function listReviews(
       findings: { total: row.findings_total, triaged: row.findings_triaged,
         accepted: row.findings_accepted, modified: row.findings_modified,
         rejected: row.findings_rejected, skipped: row.findings_skipped },
-      coverage: currentCoverage(row.id, row.project, lenses, database),
+      coverage: currentCoverage({ id: row.id, lenses, patchId: row.patch_id,
+        pathSet: row.path_set, commitMessage: row.commit_message,
+        outdatedReason: row.outdated_reason }, row.project, database),
     }
   })
 }
@@ -367,7 +368,9 @@ export function getReview(reviewId: number, database: Database = db()) {
     tier_reason: review.tier_reason, projects,
     change_identity: { patch_id: review.patch_id, path_set: review.path_set ? JSON.parse(review.path_set) : null },
     outdated_at: review.outdated_at, outdated_reason: review.outdated_reason,
-    current_class: projects.length === 1 ? currentCoverage(reviewId, projects[0]!, lenses, database) : null,
+    current_class: projects.length === 1 ? currentCoverage({ id: reviewId, lenses,
+      patchId: review.patch_id, pathSet: review.path_set, commitMessage: review.commit_message,
+      outdatedReason: review.outdated_reason }, projects[0]!, database) : null,
     lenses: lenses.map((lens) => {
       const project = projects.length === 1 ? projectRecord(database, projects[0]!) : null
       const pin = project ? git(project.path, ['rev-parse', '--verify', lens.reviewRef], true) : { ok: false, out: '' }
@@ -450,7 +453,7 @@ export function recordReviews(
     if (!repo) return null
     const diff = git(repo, ['diff', `${run.base_commit}..${run.head_commit}`])
     const paths = git(repo, ['diff', '--name-only', `${run.base_commit}..${run.head_commit}`])
-    const message = git(repo, ['log', '-1', '--format=%B', run.head_commit])
+    const message = git(repo, ['log', '--format=%B', `${run.base_commit}..${run.head_commit}`])
     if (!diff.ok || !paths.ok || !message.ok) return null
     const patch = git(repo, ['patch-id', '--stable'], true, diff.stdout)
     if (!patch.ok) return null
