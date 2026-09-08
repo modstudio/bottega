@@ -1,6 +1,6 @@
 import { db, nowIso, type Project } from './db.ts'
 import { tasksInWindow, completedInWindow, reportEngagedMs } from './query.ts'
-import { human } from './interval.ts'
+import { human } from '../../shared/interval.ts'
 import { getReport, smtpPassword, type Report, type Brief } from './settings.ts'
 import { projectColor } from './projects.ts'
 import { summarize } from './orch.ts'

@@ -1,5 +1,5 @@
 import { db } from './db.ts'
-import { engagedMs, union, DEFAULT_IDLE_CAP_MS, type Span } from './interval.ts'
+import { engagedMs, union, DEFAULT_IDLE_CAP_MS, type Span } from '../../shared/interval.ts'
 import { projects } from './projects.ts'
 import { trackerCapabilities, type Capabilities, type TrackerRowSource } from '../../shared/trackers.ts'
 

@@ -9,7 +9,7 @@ import {
   ratioSummary, spendGrid, endMs, stripWindow,
   boardTasks,
 } from './query.ts'
-import { engagedMs, human } from './interval.ts'
+import { engagedMs, human } from '../../shared/interval.ts'
 import { chainVendorTokens, executionSpans } from './ingest/runs.ts'
 import { attributeRun } from './attribute.ts'
 import { promptLens } from './excerpt.ts'
@@ -19,7 +19,7 @@ import { blockers as readBlockers, readRuns, state as orchState } from './orch.t
 import type { OrchBlockers } from '../../shared/orch-contract.ts'
 import { getReport, secretStatus } from './settings.ts'
 import { gather, lastSends, summarise, renderHtml, renderText, send as sendMail, recordSend } from './report.ts'
-import { human as humanMs } from './interval.ts'
+import { human as humanMs } from '../../shared/interval.ts'
 import {
   projectNames, projects, trackerPresentation, type RegisteredProject,
 } from './projects.ts'

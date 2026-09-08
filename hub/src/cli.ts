@@ -15,7 +15,7 @@ import {
 } from './task.ts'
 import { gather, summarise, renderHtml, renderText, send, recordSend } from './report.ts'
 import { getReport } from './settings.ts'
-import { human } from './interval.ts'
+import { human } from '../../shared/interval.ts'
 import { serve } from './serve.ts'
 import { projectOf } from './attribute.ts'
 import { projects } from './projects.ts'

@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import { engagedMs } from '../../shared/interval.ts'
 import { db, STALE_AFTER_MS } from './db.ts'
 import { flagsOf } from './landing.ts'
 import { targetGitEnvironment } from './worktree.ts'
@@ -198,22 +199,6 @@ function durationMetrics(runs: RunRow[], clock: number): DurationMetrics {
     const duration = Math.max(0, run.latency_ms)
     return Number.isFinite(start) ? [{ start, end: start + duration, duration }] : []
   }).sort((a, b) => a.start - b.start || a.end - b.end)
-  let occupancyMs = 0
-  let mergedStart: number | null = null
-  let mergedEnd: number | null = null
-  for (const interval of intervals) {
-    if (mergedStart === null) {
-      mergedStart = interval.start
-      mergedEnd = interval.end
-    } else if (interval.start <= mergedEnd!) {
-      mergedEnd = Math.max(mergedEnd!, interval.end)
-    } else {
-      occupancyMs += mergedEnd! - mergedStart
-      mergedStart = interval.start
-      mergedEnd = interval.end
-    }
-  }
-  if (mergedStart !== null) occupancyMs += mergedEnd! - mergedStart
   const durations = intervals.map((interval) => interval.duration).sort((a, b) => a - b)
   const anchor = (run: RunRow) => utcMillis(run.last_event_at ?? run.started_at)
   const idleMs = runs.reduce((sum, run) => {
@@ -224,7 +209,7 @@ function durationMetrics(runs: RunRow[], clock: number): DurationMetrics {
   }, 0)
   return {
     agentTimeMs: durations.reduce((sum, duration) => sum + duration, 0),
-    occupancyMs,
+    occupancyMs: engagedMs(intervals),
     elapsedSpanMs: intervals.length
       ? Math.max(...intervals.map((interval) => interval.end)) - intervals[0]!.start : 0,
     runDurationMeanMs: durations.length

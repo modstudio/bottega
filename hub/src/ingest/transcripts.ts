@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { db, nowIso } from '../db.ts'
 import { attribute, isInjected, projectOf } from '../attribute.ts'
-import { spansFromTimestamps, union, DEFAULT_IDLE_CAP_MS } from '../interval.ts'
+import { spansFromTimestamps, union, DEFAULT_IDLE_CAP_MS } from '../../../shared/interval.ts'
 
 const CLAUDE_ROOT = `${process.env.HOME}/.claude/projects`
 

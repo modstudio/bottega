@@ -1,5 +1,5 @@
 import { afterEach, expect, test, describe, spyOn } from 'bun:test'
-import { union, engagedMs, spansFromTimestamps, human, DEFAULT_IDLE_CAP_MS } from './interval.ts'
+import { union, engagedMs, spansFromTimestamps, human, DEFAULT_IDLE_CAP_MS } from '../../shared/interval.ts'
 import { DUPLICATE_TITLE_FIXTURE } from './duplicate-matcher.fixture.ts'
 
 const {

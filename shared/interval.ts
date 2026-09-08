@@ -80,3 +80,4 @@ export function human(ms: number): string {
   if (m) return `${m}m ${sec}s`
   return `${sec}s`
 }
+
