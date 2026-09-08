@@ -2005,6 +2005,9 @@ function rebaseBranchesOntoTrunk(
       }
     }
     const flags = flagsOf(row)
+    if (!flags.keepCheckpoints) {
+      squashCheckpointCommits(worktree, from, prepareSharedRefGuard(worktree))
+    }
     if (flags.message !== undefined) amendLandingMessage(worktree, flags.message, prepareSharedRefGuard(worktree))
     ranges.push({ row, from, to: git(worktree, ['rev-parse', 'HEAD']) })
   }
