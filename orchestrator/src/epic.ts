@@ -139,12 +139,6 @@ export function epicScoreboard(
       if (run.branch) earlierBranches.add(run.branch)
     }
     const rootFixRuns = taskRuns.filter((run) => run.job === 'fix' && run.parent_run_id === null)
-    const idleMs = taskRuns.reduce((sum, run) => {
-      if (run.latency_ms === null) return sum
-      const end = Date.parse(run.started_at) + run.latency_ms
-      const last = Date.parse(run.last_event_at ?? run.started_at)
-      return sum + (Number.isFinite(end) && Number.isFinite(last) ? Math.max(0, end - last) : 0)
-    }, 0)
     return {
       key, title: child.title ?? '', status: child.status ?? null,
       runs: { total: taskRuns.length, byJob: Object.fromEntries(Object.entries(byJob).sort()) },
@@ -167,7 +161,6 @@ export function epicScoreboard(
         outdated: taskReviews.filter((review) => review.outdated_at !== null).length,
       },
       strandings: { count: new Set(reasons.map((reason) => reason.landingId)).size, reasons },
-      idleMinutes: Math.round(idleMs / 60_000),
       continuations: { count: taskRuns.filter((run) => run.turn > 1).length, branchDrift },
       architectCommits: null,
     }
@@ -193,7 +186,8 @@ export function epicScoreboard(
 }
 
 type DurationMetrics = Pick<EpicTaskScore,
-  'agentTimeMs' | 'occupancyMs' | 'elapsedSpanMs' | 'runDurationMeanMs' | 'runDurationP95Ms' | 'ghostRuns'>
+  'agentTimeMs' | 'occupancyMs' | 'elapsedSpanMs' | 'runDurationMeanMs' | 'runDurationP95Ms' |
+  'ghostRuns' | 'idleMinutes'>
 
 /** All arithmetic is epoch-millisecond UTC. Rendering may choose a timezone; computation never does. */
 function durationMetrics(runs: RunRow[], clock: number): DurationMetrics {
@@ -221,6 +215,12 @@ function durationMetrics(runs: RunRow[], clock: number): DurationMetrics {
   if (mergedStart !== null) occupancyMs += mergedEnd! - mergedStart
   const durations = intervals.map((interval) => interval.duration).sort((a, b) => a - b)
   const anchor = (run: RunRow) => utcMillis(run.last_event_at ?? run.started_at)
+  const idleMs = runs.reduce((sum, run) => {
+    if (run.latency_ms === null) return sum
+    const end = utcMillis(run.started_at) + run.latency_ms
+    const last = anchor(run)
+    return sum + (Number.isFinite(end) && Number.isFinite(last) ? Math.max(0, end - last) : 0)
+  }, 0)
   return {
     agentTimeMs: durations.reduce((sum, duration) => sum + duration, 0),
     occupancyMs,
@@ -231,6 +231,7 @@ function durationMetrics(runs: RunRow[], clock: number): DurationMetrics {
     runDurationP95Ms: durations.length ? durations[Math.ceil(durations.length * 0.95) - 1]! : null,
     ghostRuns: runs.filter((run) => run.status === 'running' && run.latency_ms === null &&
       Number.isFinite(anchor(run)) && clock - anchor(run) >= STALE_AFTER_MS).length,
+    idleMinutes: Math.round(idleMs / 60_000),
   }
 }
 
@@ -288,7 +289,6 @@ function totalRow(rows: EpicTaskScore[], timing: DurationMetrics): EpicTaskScore
       count: rows.reduce((sum, row) => sum + row.strandings.count, 0),
       reasons: rows.flatMap((row) => row.strandings.reasons),
     },
-    idleMinutes: rows.reduce((sum, row) => sum + row.idleMinutes, 0),
     continuations: {
       count: rows.reduce((sum, row) => sum + row.continuations.count, 0),
       branchDrift: rows.reduce((sum, row) => sum + row.continuations.branchDrift, 0),

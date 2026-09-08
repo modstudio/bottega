@@ -85,6 +85,24 @@ describe('epic scoreboard', () => {
     expect(renderEpicHuman(report)).toContain('TOTAL')
   })
 
+  test('computes offset-less SQLite idle timestamps as UTC outside a UTC process', () => {
+    const run = addRun({
+      agent: 'codex', job: 'implement', status: 'ok', latency: 120_000,
+      startedAt: '2026-09-08T10:00:00.000',
+    })
+    db().query(`UPDATE run SET launch_key='DEV-TZ',last_event_at='2026-09-08T10:01:00.000Z' WHERE id=?`).run(run)
+    const previous = process.env.TZ
+    process.env.TZ = 'America/New_York'
+    try {
+      const report = epicScoreboard('DEV-TZ-PARENT', [{ key: 'DEV-TZ' }], db())
+      expect(report.children[0]!.idleMinutes).toBe(1)
+      expect(report.total.idleMinutes).toBe(1)
+    } finally {
+      if (previous === undefined) delete process.env.TZ
+      else process.env.TZ = previous
+    }
+  })
+
   test('shells out to hub for child membership and CLI views use that result', async () => {
     const hubDb = join(dir, 'epic-hub.db')
     upsertProject({ name: 'epic-fixture', path: dir, settings: { keyPrefixes: ['DEV'] } })
