@@ -78,10 +78,10 @@ import {
   schemaMismatchError, stopErrorMessage, failureKindFromStop,
   type TransportName, type TransportStartOpts, type TransportResult,
 } from './transport.ts'
-import { teeTransportEvents } from './events.ts'
+import { appendRunEvent, teeTransportEvents } from './events.ts'
 import { checkpointRun, DEFAULT_CHECKPOINT_MINUTES, latestCheckpoint } from './checkpoint.ts'
 import {
-  formatIdleKillError, idlePollMs, shouldIdleKill, terminateProcessGroup,
+  formatIdleKillError, idleKillMayProceed, idlePollMs, shouldIdleKill, terminateProcessGroup,
 } from './idle-kill.ts'
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
@@ -2978,7 +2978,19 @@ export async function run(opts: {
         boundMs,
       })
       const checkpoint = createCheckpoint(true)
-      if (checkpoint?.created || latestCheckpoint(db(), opts.resume?.parent ?? claim.id)) {
+      const prior = latestCheckpoint(db(), opts.resume?.parent ?? claim.id)
+      if (!idleKillMayProceed(checkpoint, Boolean(prior))) {
+        idleKilled = false
+        idleKillError = null
+        const why = checkpoint?.error ?? 'checkpoint failed'
+        console.error(`orch: run ${claim.id} idle kill aborted: ${why}; no prior checkpoint, leaving the worker for the wall`)
+        appendRunEvent(claim.id, {
+          ts: nowIso(), type: 'text',
+          text: `idle kill aborted: ${why}; no prior checkpoint, leaving the worker for the wall`,
+        })
+        return
+      }
+      if (checkpoint?.created || prior) {
         db().query('UPDATE run SET work_preserved=1 WHERE id=?').run(claim.id)
       }
       void t.cancel(handle)

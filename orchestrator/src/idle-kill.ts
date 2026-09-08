@@ -330,6 +330,20 @@ export type IdleKillDecision = {
   reason: string | null
 }
 
+/**
+ * Preserving work is the purpose of idle kill. If the final checkpoint
+ * failed and nothing earlier exists, do not kill: leave the worker for
+ * the wall. Killing would discard in-memory buffers with work_preserved=0.
+ */
+export function idleKillMayProceed(
+  checkpoint: { created: boolean; error: string | null } | null,
+  hasPriorCheckpoint: boolean,
+): boolean {
+  if (checkpoint == null) return true
+  if (checkpoint.error && !hasPriorCheckpoint) return false
+  return true
+}
+
 export function shouldIdleKill(opts: {
   lastEventAt: string | null | undefined
   startedAt: string

@@ -7,7 +7,7 @@ import {
   JOBS, NEEDS_HUMAN, NOT_EVIDENCE, run, upsertProject,
 } from '../test/fixture.ts'
 import { pidAlive } from './db.ts'
-import { formatIdleKillError, idleKillMs, isGroupKillablePgid, isUninterruptible, isWorkerCpuIdle,
+import { formatIdleKillError, idleKillMayProceed, idleKillMs, isGroupKillablePgid, isUninterruptible, isWorkerCpuIdle,
   parseIdleReclaimedMs, parsePsTable, shouldIdleKill, terminateProcessGroup,
   DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS, DEFAULT_IDLE_KILL_MS } from './idle-kill.ts'
 import { EXTERNAL_WAIT_JOBS, jobIdleKillMs } from './jobs.ts'
@@ -88,6 +88,16 @@ describe('idle kill classification', () => {
     addRun({ agent: 'grok', job: 'implement', status: 'failed', kind: 'idle' })
     expect(candidates('implement').find((item) => item.agent === 'grok'))
       .toMatchObject({ failures: 0, evidence: 0, score: null })
+  })
+})
+
+describe('checkpoint failure aborts the kill', () => {
+  test('a failed final checkpoint with no prior does not proceed', () => {
+    expect(idleKillMayProceed(null, false)).toBe(true)
+    expect(idleKillMayProceed({ created: true, error: null }, false)).toBe(true)
+    expect(idleKillMayProceed({ created: false, error: null }, false)).toBe(true)
+    expect(idleKillMayProceed({ created: false, error: 'git status failed' }, true)).toBe(true)
+    expect(idleKillMayProceed({ created: false, error: 'git status failed' }, false)).toBe(false)
   })
 })
 
@@ -330,6 +340,76 @@ describe('live idle kill', () => {
     expect(candidates('implement').find((item) => item.agent === 'codex'))
       .toMatchObject({ failures: 0, evidence: 0 })
   }, 20_000)
+
+  test('a failed checkpoint with no prior leaves the worker for the wall', async () => {
+    const main = repo()
+    const createPath = join(main, 'create.cjs')
+    writeFileSync(createPath, `const {spawnSync}=require('child_process');const {mkdirSync}=require('fs');` +
+      `const {join}=require('path');const branch=process.argv.at(-1);const root=${JSON.stringify(main)};` +
+      `const path=join(root,'trees',branch);mkdirSync(join(root,'trees'),{recursive:true});` +
+      `const p=spawnSync('git',['worktree','add','-b',branch,path,'main'],{cwd:root,stdio:['ignore','ignore','inherit']});` +
+      `if(p.status)process.exit(p.status);process.stdout.write(path+'\\n')`)
+    upsertProject({ name: `idle-kill-abort`, path: main,
+      settings: { trunk: 'main', worktree: {
+        create: declaredCreate(process.execPath, [createPath, '{branch}']),
+        branch: '{key}-orch-{id}',
+      } } })
+    const transport: AgentTransport = {
+      name: 'cli',
+      async start(opts) {
+        const script = join(opts.cwd, 'idle-worker.sh')
+        writeFileSync(script, `#!/bin/sh\nset -e\necho worker > worker.txt\ngit add worker.txt\n` +
+          `git commit -m "DEV-389 worker commit" >/dev/null\necho dirty >> file.txt\n` +
+          `rm -rf .git\nsleep 2\n`)
+        chmodSync(script, 0o755)
+        const child = Bun.spawn([script], {
+          cwd: opts.cwd, env: opts.env, stdout: 'ignore', stderr: 'ignore',
+        })
+        const empty: TransportResult = {
+          stdout: '', stderr: '', raw: '', parsed: null, output: '', tokens: null, costUsd: null,
+          sessionId: null, stopReason: null, error: null, exitCode: 0, pid: child.pid,
+          events: [], asking: false, failureKind: null, status: 'failed', questions: [],
+        }
+        return {
+          pid: child.pid, kill(sig) { try { child.kill(sig === 9 ? 9 : 'SIGTERM') } catch { /* gone */ } },
+          async prompt() {}, async *events() {}, async cancel() { try { child.kill('SIGTERM') } catch { /* gone */ } },
+          async collect() {
+            empty.exitCode = await child.exited
+            return empty
+          },
+        }
+      },
+      prompt(handle, text) { return handle.prompt(text) },
+      events(handle) { return handle.events() },
+      cancel(handle) { return handle.cancel() },
+      resume(opts) { return this.start(opts) },
+    }
+    installTestTransport(transport)
+    process.env.ORCH_IDLE_KILL_MS = '400'
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    let runId: number | null = null
+    try {
+      try {
+        const result = await run({
+          job: 'implement', prompt: 'edit the tracked file', cwd: main,
+          agent: 'codex', key: 'DEV-389', noFailover: true,
+        })
+        runId = result.id
+      } catch (error) {
+        runId = (error as Error & { runId?: number }).runId ?? null
+      }
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+    expect(runId).not.toBeNull()
+    const row = db().query('SELECT failure_kind,error,status FROM run WHERE id=?').get(runId) as {
+      failure_kind: string | null; error: string | null; status: string
+    }
+    expect(row.failure_kind).not.toBe('idle')
+    expect(row.error ?? '').not.toContain('idle-killed')
+  }, 15_000)
 
   test('a quiet CPU-burning worker is not idle-killed; the wall still fires independently', async () => {
     const grok = AGENTS.grok!
