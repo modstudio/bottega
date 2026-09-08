@@ -1062,6 +1062,13 @@ export function registrationProbeReadsRepo(
     event.status === 'completed' &&
     event.toolKind === 'read' &&
     (namesProbeFile(event.target ?? '') || namesProbeFile(event.title)))
+  // A CLI transport that surfaces no tool events at all (codex and grok on
+  // the cli seam) cannot show the read; the exact sentinel is then the only
+  // evidence, and it is sufficient: the sentinel exists nowhere but in the
+  // probe file. Where tool events ARE reported, the read must be one of them.
+  if (!events.some((event) => event.kind === 'tool')) {
+    return output.includes(REGISTRATION_PROBE_SENTINEL)
+  }
   if (!reads.length) return false
   return reads.some((event) => event.kind === 'tool' &&
     typeof event.result === 'string' && event.result.includes(REGISTRATION_PROBE_SENTINEL)) ||
@@ -1211,7 +1218,10 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
     contextTokens, contextSource,
     ...(attempts.length ? { attempts } : {}),
   }
-  result.ok = result.reply.ok && result.tool.ok && result.file!.ok && contextTokens !== null
+  // Cloud agents declare no ceiling deliberately (canon: not the binding
+  // constraint here); only a local endpoint must report its window.
+  result.ok = result.reply.ok && result.tool.ok && result.file!.ok &&
+    (contextTokens !== null || !row.base_url)
   recordAgentProbe(name, result)
   return result
 }
