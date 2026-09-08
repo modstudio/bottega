@@ -1510,6 +1510,16 @@ function allocateOneJournal(
   return rewritten
 }
 
+/**
+ * The landing-authored allocation commit carries the landing's own task key
+ * (or 'orch' when the branch names none) and is recognised by shape, never by
+ * a fixed key: a landing in another project must not cite DEV-370.
+ */
+const ALLOCATION_SUBJECT = /^(?:[A-Z]+-\d+|orch) allocate journal at landing$/
+function allocationSubject(taskKey: string | undefined): string {
+  return `${taskKey ?? 'orch'} allocate journal at landing`
+}
+
 /** Rewrite added journal entries to the next free idx/when/tag before the gate. */
 export function allocateLandingJournals(
   worktree: string, fromOid: string, guard?: SharedRefGuardEnvironment, taskKeys: string[] = [],
@@ -1526,7 +1536,7 @@ export function allocateLandingJournals(
   if (!dirty) return rewritten
   const body = [...new Set(taskKeys)].map((key) => `Member task: ${key}`).join('\n')
   git(worktree, [
-    'commit', '-m', 'DEV-370 allocate journal at landing',
+    'commit', '-m', allocationSubject(taskKeys[0]),
     ...(body ? ['-m', body] : []),
   ], guard)
   return rewritten
@@ -1536,7 +1546,7 @@ function allocationParentIfMechanical(
   repoRoot: string, tip: string, branch: string,
 ): string | null {
   const subject = git(repoRoot, ['show', '-s', '--format=%s', tip])
-  if (subject !== 'DEV-370 allocate journal at landing') return null
+  if (!ALLOCATION_SUBJECT.test(subject)) return null
   const parent = git(repoRoot, ['rev-parse', `${tip}^`])
   const changed = git(repoRoot, ['diff', '--name-status', '-M', `${parent}..${tip}`]).split('\n').filter(Boolean)
   const allowedRoot = (path: string) =>

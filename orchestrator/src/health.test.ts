@@ -114,7 +114,7 @@ describe('harness health', () => {
   test('lists landings that reached trunk with a post-step error', () => {
     db().query(
       `INSERT INTO landing (project, branch, status, started_at, error)
-       VALUES ('fixture', 'DEV-373', 'landed', ?, ?)`,
+       VALUES ('fixture', 'DEV-373', 'install_failed', ?, ?)`,
     ).run('2026-09-07T10:00:00.000Z', 'landing reached trunk at abc, but hub migrate failed: stub-fail')
     const cli = Bun.spawnSync([
       process.execPath, new URL('./cli.ts', import.meta.url).pathname, 'health', '--days', '14',
