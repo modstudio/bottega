@@ -281,4 +281,44 @@ describe('main checkout cleanliness', () => {
       rmSync(repo, { recursive: true, force: true })
     }
   })
+
+  test('an unrunnable git is indeterminate and fails open', () => {
+    const repo = scratch()
+    const empty = mkdtempSync(join(tmpdir(), 'orch-empty-path-'))
+    try {
+      writeFileSync(join(repo, 'tracked.txt'), 'dirty\n')
+      const child = Bun.spawnSync(
+        [process.execPath, '--eval', `
+          const { inspectMainCheckout, assertMainCheckoutClean } = await import(${JSON.stringify(new URL('./projects.ts', import.meta.url).href)});
+          const repo = ${JSON.stringify(repo)};
+          let threw = false;
+          let inspection;
+          let asserted;
+          try {
+            inspection = inspectMainCheckout(repo);
+            asserted = assertMainCheckoutClean({
+              id: 1, name: 'clean-main', path: repo, stack: null, canon: false, settings: {},
+            });
+          } catch (error) {
+            threw = true;
+            asserted = String(error);
+          }
+          process.stdout.write(JSON.stringify({ threw, inspection, asserted }));
+        `],
+        { stdout: 'pipe', stderr: 'pipe', env: { ...process.env, PATH: empty } },
+      )
+      expect(child.exitCode, child.stderr.toString()).toBe(0)
+      const body = JSON.parse(child.stdout.toString()) as {
+        threw: boolean
+        inspection: unknown
+        asserted: unknown
+      }
+      expect(body.threw).toBe(false)
+      expect(body.inspection).toBeNull()
+      expect(body.asserted).toBeNull()
+    } finally {
+      rmSync(empty, { recursive: true, force: true })
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
 })

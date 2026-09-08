@@ -515,6 +515,8 @@ export type MainCheckoutInspection = {
  * Status-like reads pass `--no-optional-locks`. Every git argv ends with `--`.
  * The registered path must be the git toplevel; a subdirectory is not a main
  * checkout and is left alone.
+ *
+ * An unrunnable git is INDETERMINATE: this returns null and the caller fails open.
  */
 export function inspectMainCheckout(projectPath: string): MainCheckoutInspection | null {
   const toplevel = gitAt(projectPath, ['rev-parse', '--path-format=absolute', '--show-toplevel'])
@@ -591,12 +593,16 @@ type GitResult = { code: number; stdout: string }
 
 function gitAt(path: string, args: string[]): GitResult {
   if (!existsSync(path)) return { code: 128, stdout: '' }
-  const env = scrubbedGitEnv()
-  delete env.GIT_INDEX_FILE
-  const result = Bun.spawnSync(['git', '-C', path, '--no-optional-locks', ...args], {
-    env, stdout: 'pipe', stderr: 'pipe',
-  })
-  return { code: result.exitCode ?? 128, stdout: result.stdout.toString() }
+  try {
+    const env = scrubbedGitEnv()
+    delete env.GIT_INDEX_FILE
+    const result = Bun.spawnSync(['git', '-C', path, '--no-optional-locks', ...args], {
+      env, stdout: 'pipe', stderr: 'pipe',
+    })
+    return { code: result.exitCode ?? 128, stdout: result.stdout?.toString() ?? '' }
+  } catch {
+    return { code: 128, stdout: '' }
+  }
 }
 
 function isQuietResult(result: GitResult): boolean {
