@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { rmSync, readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { addRun, completeReview, contentTree, db, gateFailureSummary, getReview, hermeticGitEnv, land, landingReviewCoverage, listReviews, prepareSharedRefGuard, projectLockState, recordReviews, reviewPins, reviewReply, upsertProject, withProjectLock } from '../test/fixture.ts'
+import { addRun, cleanCompletedSequencerState, completeReview, contentTree, db, gateFailureSummary, getReview, hermeticGitEnv, land, landingReviewCoverage, listReviews, prepareSharedRefGuard, projectLockState, recordReviews, reviewPins, reviewReply, upsertProject, withProjectLock } from '../test/fixture.ts'
 
 import { landingDescribeFixture } from '../test/fixture.ts'
 import shards from '../test/shards.json'
@@ -63,6 +63,48 @@ test('only bun\'s complete timeout line reports machine load', () => {
       expect(await child.exited).toBe(0)
       expect(existsSync(marker)).toBe(false)
       expect(await new Response(child.stdout).text()).toContain('quit completed AUTO_MERGE state')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a stopped rebase is live and residue cleanup refuses it', () => {
+    const { repo, trees } = repoWithBranches(['live-rebase'])
+    const tree = trees['live-rebase']!
+    try {
+      writeFileSync(join(repo, 'conflict'), 'trunk\n'); g(repo, 'add', 'conflict'); g(repo, 'commit', '-m', 'DEV-388 trunk conflict')
+      writeFileSync(join(tree, 'conflict'), 'branch\n'); g(tree, 'add', 'conflict'); g(tree, 'commit', '-m', 'DEV-388 branch conflict')
+      expect(Bun.spawnSync(['git', 'rebase', 'main'], { cwd: tree, env: hermeticGitEnv() }).exitCode).not.toBe(0)
+      expect(() => cleanCompletedSequencerState(tree)).toThrow(/live Git operation REBASE_HEAD[\s\S]*invariant:[\s\S]*cleared by: git -C .* rebase --abort/)
+      expect(g(tree, 'rev-parse', '--verify', 'REBASE_HEAD')).not.toBe('')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a leftover rebase directory without a live ref is quit', () => {
+    const { repo, trees } = repoWithBranches(['stale-rebase'])
+    const tree = trees['stale-rebase']!
+    try {
+      writeFileSync(join(repo, 'conflict'), 'trunk\n'); g(repo, 'add', 'conflict'); g(repo, 'commit', '-m', 'DEV-388 trunk conflict')
+      writeFileSync(join(tree, 'conflict'), 'branch\n'); g(tree, 'add', 'conflict'); g(tree, 'commit', '-m', 'DEV-388 branch conflict')
+      expect(Bun.spawnSync(['git', 'rebase', 'main'], { cwd: tree, env: hermeticGitEnv() }).exitCode).not.toBe(0)
+      const marker = g(tree, 'rev-parse', '--path-format=absolute', '--git-path', 'REBASE_HEAD')
+      const rebaseDir = dirname(marker) + '/rebase-merge'
+      rmSync(marker, { force: true })
+      g(tree, 'reset', '--hard', 'ORIG_HEAD')
+      expect(cleanCompletedSequencerState(tree).cleaned).toContain('REBASE_HEAD')
+      expect(existsSync(rebaseDir)).toBe(false)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a live merge is refused without touching rebase residue', () => {
+    const { repo, trees } = repoWithBranches(['merge-one', 'merge-two'])
+    const tree = trees['merge-one']!
+    try {
+      writeFileSync(join(tree, 'conflict'), 'one\n'); g(tree, 'add', 'conflict'); g(tree, 'commit', '-m', 'DEV-388 merge one')
+      writeFileSync(trees['merge-two']! + '/conflict', 'two\n'); g(trees['merge-two']!, 'add', 'conflict'); g(trees['merge-two']!, 'commit', '-m', 'DEV-388 merge two')
+      expect(Bun.spawnSync(['git', 'merge', 'merge-two'], { cwd: tree, env: hermeticGitEnv() }).exitCode).not.toBe(0)
+      const rebaseDir = join(g(tree, 'rev-parse', '--path-format=absolute', '--git-dir'), 'rebase-merge')
+      mkdirSync(rebaseDir)
+      expect(() => cleanCompletedSequencerState(tree)).toThrow('live Git operation MERGE_HEAD')
+      expect(existsSync(rebaseDir)).toBe(true)
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 

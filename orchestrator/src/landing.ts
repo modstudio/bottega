@@ -364,31 +364,50 @@ function assertMainCheckoutOnTrunk(repoRoot: string, trunk: string): void {
   )
 }
 
-function clearCompletedSequencerState(
-  worktree: string, branch: string, guard: SharedRefGuardEnvironment,
-): void {
+const OPERATION_REFS = [
+  { name: 'REBASE_HEAD', command: 'rebase --abort' },
+  { name: 'MERGE_HEAD', command: 'merge --abort' },
+  { name: 'CHERRY_PICK_HEAD', command: 'cherry-pick --abort' },
+  { name: 'REVERT_HEAD', command: 'revert --abort' },
+] as const
+
+export function cleanCompletedSequencerState(
+  worktree: string, guard?: SharedRefGuardEnvironment,
+): { live: string[]; cleaned: string[] } {
   const gitPath = (name: string) => git(worktree, ['rev-parse', '--path-format=absolute', '--git-path', name], guard)
+  const live = OPERATION_REFS.filter(({ name }) =>
+    gitOk(worktree, ['rev-parse', '--verify', name], guard))
+  if (live.length) {
+    throw namedError(
+      `refusing cleanup in ${worktree}: live Git operation${live.length === 1 ? '' : 's'} ${live.map(({ name }) => name).join(', ')}`,
+      'Git operation residue is cleaned only when no operation pseudo-ref is live.',
+      live.map(({ command }) => `git -C ${shellQuote(worktree)} ${command}`).join(' or '),
+    )
+  }
+
   const states = [
     { name: 'CHERRY_PICK_HEAD', path: gitPath('CHERRY_PICK_HEAD'), quit: ['cherry-pick', '--quit'] },
-    { name: 'REBASE_HEAD', path: gitPath('REBASE_HEAD'), quit: ['rebase', '--quit'] },
+    { name: 'REBASE_HEAD', path: gitPath('rebase-merge'), quit: ['rebase', '--quit'] },
+    { name: 'REBASE_HEAD', path: gitPath('rebase-apply'), quit: ['rebase', '--quit'] },
     { name: 'AUTO_MERGE', path: gitPath('AUTO_MERGE'), quit: null },
   ].filter((state) => existsSync(state.path))
   const unmerged = git(worktree, ['diff', '--name-only', '--diff-filter=U'], guard)
   if (unmerged) {
     throw namedError(
-      `refusing to land ${branch}: unmerged paths remain:\n${unmerged}`,
+      `refusing cleanup in ${worktree}: unmerged paths remain:\n${unmerged}`,
       INVARIANT_FAILED_LANDING,
       `git -C ${shellQuote(worktree)} status`,
     )
   }
-  if (!states.length) return
+  if (!states.length) return { live: [], cleaned: [] }
   const staged = !gitOk(worktree, ['diff', '--cached', '--quiet', 'HEAD'], guard)
-  if (staged) return
+  if (staged) return { live: [], cleaned: [] }
   for (const state of states) {
     if (state.quit) git(worktree, state.quit, guard)
     else rmSync(state.path, { force: true })
     console.log(`quit completed ${state.name} state in ${worktree}`)
   }
+  return { live: [], cleaned: [...new Set(states.map(({ name }) => name))] }
 }
 
 function packageDependencies(source: string): Record<string, string> {
@@ -1384,7 +1403,7 @@ function performLand(
 
   return withWorktreeLease(repoRoot, worktree, { session: sessionId(), what: `land ${branch}` }, () => {
     const guard = prepareSharedRefGuard(worktree)
-    clearCompletedSequencerState(worktree, branch, guard)
+    cleanCompletedSequencerState(worktree, guard)
     assertLandingWorktreeReady(worktree, branch, guard)
     assertMainCheckoutOnTrunk(repoRoot, trunk)
     landingOrder('preflight')
