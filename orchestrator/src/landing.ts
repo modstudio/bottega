@@ -1029,8 +1029,21 @@ function requireReviewCoverage(
       .run(nowIso(), verdict.reason, review.id)
   }
   const reruns = verdicts.flatMap(({ review, verdict }) => verdict.kind === 'invalid'
-    ? review.lenses.map((lens) => `review ${review.id} (${verdict.reason}); re-run lens ${lens.lens}: ` +
-      `orch do review-lens --review ${branch} --lens ${lens.lens}`)
+    ? review.lenses.map((lens) => {
+      let introduced = ''
+      if (verdict.reason.startsWith('overlapping paths')) {
+        try {
+          const landings = db().query(
+            `SELECT DISTINCT landing_id FROM contention
+             WHERE resource_kind='review' AND resource_key=? AND event_kind='invalidation'
+               AND cause=? AND landing_id IS NOT NULL ORDER BY landing_id`,
+          ).all(branch, `review ${review.id}`) as { landing_id: number }[]
+          if (landings.length) introduced = `; introduced by landing${landings.length === 1 ? '' : 's'} ${landings.map((row) => row.landing_id).join(', ')}`
+        } catch { /* an older store has no contention ledger */ }
+      }
+      return `review ${review.id} (${verdict.reason}${introduced}); re-run lens ${lens.lens}: ` +
+        `orch do review-lens --review ${branch} --lens ${lens.lens}`
+    })
     : [])
   throw namedError(
     `refusing to land unreviewed content\ncandidate tree: ${candidateTree}\n` +
