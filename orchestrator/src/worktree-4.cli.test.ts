@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import * as ts from 'typescript'
 import { AGENTS, candidates, checkoutAliases, checkoutCaseSensitivity, db, dir, hermeticGitEnv, land, mainCheckoutOf, orphanSafety, removeFor, retargetRepositoryPrompt, retargetRepositoryPromptForDispatch, retargetedPrompt, reviewReply, run, scrubbedGitEnv, snapshotRegisteredCheckouts, targetGitEnvironment, upsertProject, workerReply } from '../test/fixture.ts'
+import { parseConfinement } from './confinement.ts'
 
 describe('production git environments', () => {
   test('the shared scrub removes worker git routing and preserves unrelated variables', () => {
@@ -506,12 +507,10 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
       expect(db().query(
         `SELECT resource_kind, event_kind, resource_key, run_id FROM contention WHERE run_id=?`,
       ).get(dirtyRunId!)).toBeNull()
-      const event = JSON.parse(recorded.confinement!) as {
-        classification: string; attribution: string; divergentPaths: string[]
-      }
-      expect(event.classification).toBe('non_overlapping')
-      expect(event.attribution).toBe('unattributed')
-      expect(event.divergentPaths).toContain('written-by-run.txt')
+      const event = parseConfinement(recorded.confinement)
+      expect(event?.classification).toBe('non_overlapping')
+      expect(event?.attribution).toBe('unattributed')
+      expect(event?.divergentPaths).toContain('written-by-run.txt')
       expect(readFileSync(recorded.output_path, 'utf8')).toContain('answer')
       expect(db().query('SELECT id FROM run WHERE retry_of=?').get(dirtyRunId!)).toBeNull()
       expect(candidates('file-question').find((item) => item.agent === 'grok'))
@@ -723,9 +722,10 @@ printf '%s\\n' '${JSON.stringify(workerReply({ files_changed: ['overlap.txt'] })
       expect(recorded.failure_kind).toBe('escaped')
       expect(recorded.error).toContain('confinement: overlapping outside change')
       expect(recorded.error).toContain('attribution: unattributed')
-      const event = JSON.parse(recorded.confinement) as { overlappingPaths: string[]; attribution: string }
-      expect(event.overlappingPaths).toContain('overlap.txt')
-      expect(event.attribution).toBe('unattributed')
+      const event = parseConfinement(recorded.confinement)
+      expect(event?.classification).toBe('overlapping')
+      expect(event?.attribution).toBe('unattributed')
+      expect(event?.overlappingPaths).toContain('overlap.txt')
       expect(db().query(
         'SELECT resource_kind, event_kind FROM contention WHERE run_id=?',
       ).get(runId!)).toEqual({ resource_kind: 'main_checkout', event_kind: 'invalidation' })
@@ -780,7 +780,9 @@ printf '%s\\n' ${JSON.stringify(JSON.stringify({
         'SELECT failure_kind, confinement, output_path FROM run WHERE id=?',
       ).get(result.id) as { failure_kind: string | null; confinement: string; output_path: string }
       expect(recorded.failure_kind).toBeNull()
-      expect(JSON.parse(recorded.confinement).classification).toBe('non_overlapping')
+      const event = parseConfinement(recorded.confinement)
+      expect(event?.classification).toBe('non_overlapping')
+      expect(event?.attribution).toBe('unattributed')
       expect(readFileSync(recorded.output_path, 'utf8')).toContain('findings')
       expect(db().query('SELECT review_id FROM review_lens WHERE run_id=?').get(result.id)).toBeTruthy()
     } finally {
@@ -835,7 +837,9 @@ printf '%s\\n' ${JSON.stringify(JSON.stringify({
         'SELECT failure_kind, confinement, branch FROM run WHERE id=?',
       ).get(result.id) as { failure_kind: string | null; confinement: string | null; branch: string }
       expect(recorded.failure_kind).toBeNull()
-      expect(JSON.parse(recorded.confinement!).classification).toBe('edit_commit_cycle')
+      const event = parseConfinement(recorded.confinement)
+      expect(event?.classification).toBe('edit_commit_cycle')
+      expect(event?.attribution).toBe('unattributed')
       land(repo, recorded.branch, { runId: result.id, unreviewed: 'DEV-372 git-pull reproduction' })
     } finally {
       grok.bin = previousBin
