@@ -321,4 +321,19 @@ describe('main checkout cleanliness', () => {
       rmSync(repo, { recursive: true, force: true })
     }
   })
+
+  test('a contended index.lock is indeterminate and does not refuse', () => {
+    const repo = scratch()
+    try {
+      utimesSync(join(repo, 'tracked.txt'), 1, 1)
+      writeFileSync(join(repo, '.git', 'index.lock'), '')
+      const stale = Bun.spawnSync(
+        ['git', '-C', repo, 'diff-index', '--quiet', 'HEAD', '--'],
+        { env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' },
+      )
+      expect(stale.exitCode).toBe(1)
+      expect(inspectMainCheckout(repo)).toBeNull()
+      expect(assertMainCheckoutClean(project(repo))).toBeNull()
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
 })

@@ -452,6 +452,16 @@ test('every --json surface has an enumerated and pinned output contract', () => 
       expect(refreshed.exitCode, refreshed.stderr.toString()).toBe(0)
       expect(refreshed.stdout.toString()).toMatch(/^\d+\n$/)
       expect(refreshed.stderr.toString()).not.toContain('tracked modifications')
+
+      const locked = makeRepo('locked')
+      repos.push(locked)
+      upsertProject({ name: 'main-locked', path: locked, canon: false, settings: {} })
+      utimesSync(join(locked, 'tracked.txt'), 1, 1)
+      writeFileSync(join(locked, '.git', 'index.lock'), '')
+      const contended = dispatch(locked)
+      expect(contended.exitCode, contended.stderr.toString()).toBe(0)
+      expect(contended.stdout.toString()).toMatch(/^\d+\n$/)
+      expect(contended.stderr.toString()).not.toContain('tracked modifications')
     } finally {
       rmSync(binDir, { recursive: true, force: true })
       for (const repo of repos) rmSync(repo, { recursive: true, force: true })

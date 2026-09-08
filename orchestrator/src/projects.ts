@@ -516,7 +516,9 @@ export type MainCheckoutInspection = {
  * The registered path must be the git toplevel; a subdirectory is not a main
  * checkout and is left alone.
  *
- * An unrunnable git is INDETERMINATE: this returns null and the caller fails open.
+ * An unrunnable git, or a refresh that could not run (index.lock), is
+ * INDETERMINATE: this returns null and the caller fails open. A false
+ * refusal on a clean tree is worse than a missed dirty one.
  */
 export function inspectMainCheckout(projectPath: string): MainCheckoutInspection | null {
   const toplevel = gitAt(projectPath, ['rev-parse', '--path-format=absolute', '--show-toplevel'])
@@ -530,7 +532,8 @@ export function inspectMainCheckout(projectPath: string): MainCheckoutInspection
     return null
   }
   if (registered !== root) return null
-  gitAt(projectPath, ['update-index', '-q', '--refresh'])
+  const refresh = gitAt(projectPath, ['update-index', '-q', '--refresh'])
+  if (refresh.code !== 0) return null
   const index = gitAt(projectPath, [
     'diff-index', '--quiet', 'HEAD', '--ignore-submodules=untracked', '--',
   ])
