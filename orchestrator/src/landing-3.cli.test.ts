@@ -463,20 +463,24 @@ describe('DEV-370 landing queue and branch ownership', () => {
       for (const entry of trunkEntries.entries) {
         copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(migrated, `${entry.tag}.sql`))
       }
-      writeFileSync(join(migrated, '0011_b.sql'), '-- 0011_b\n')
+      // Sized from the real journal so a sibling branch landing another entry
+      // does not break this assertion.
+      const next = trunkEntries.entries.length
+      const nextTag = `${String(next).padStart(4, '0')}_b`
+      writeFileSync(join(migrated, `${nextTag}.sql`), `-- ${nextTag}\n`)
       writeFileSync(join(migrated, 'meta', '_journal.json'), JSON.stringify({
         version: trunkEntries.version,
         dialect: trunkEntries.dialect,
         entries: [...trunkEntries.entries, {
-          idx: 11, tag: '0011_b', when: Math.max(W, trunkEntries.entries.at(-1)!.when) + 1,
+          idx: next, tag: nextTag, when: Math.max(W, trunkEntries.entries.at(-1)!.when) + 1,
           version: '6', breakpoints: true,
         }],
       }))
       const store = new Database(':memory:')
-      expect(applyMigrations(store)).toHaveLength(11)
-      expect(store.query('PRAGMA user_version').get()).toEqual({ user_version: 11 })
-      expect(applyMigrations(store, migrated)).toEqual(['0011_b'])
-      expect(store.query('PRAGMA user_version').get()).toEqual({ user_version: 12 })
+      expect(applyMigrations(store)).toHaveLength(next)
+      expect(store.query('PRAGMA user_version').get()).toEqual({ user_version: next })
+      expect(applyMigrations(store, migrated)).toEqual([nextTag])
+      expect(store.query('PRAGMA user_version').get()).toEqual({ user_version: next + 1 })
       store.close()
       rmSync(migrated, { recursive: true, force: true })
     } finally {
