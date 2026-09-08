@@ -1521,6 +1521,7 @@ type LandingRow = {
   path_set: string | null; steps: string | null; session_id: string | null
   requested_at: string | null; causing_landing_id: number | null
   tip: string | null; error: string | null
+  claim_pid: number | null; claim_session: string | null
 }
 
 type LandingStep = {
@@ -1566,9 +1567,47 @@ function pathsOverlap(a: string[], b: string[]): boolean {
 function queuedLandings(project: string): LandingRow[] {
   return db().query(
     `SELECT id, project, branch, status, path_set, steps, session_id, requested_at,
-            causing_landing_id, tip, error
+            causing_landing_id, tip, error, claim_pid, claim_session
        FROM landing WHERE project=? AND status='queued' ORDER BY id`,
   ).all(project) as LandingRow[]
+}
+
+function claimPidIsDead(pid: unknown): pid is number {
+  if (!Number.isSafeInteger(pid) || Number(pid) <= 0) return false
+  try {
+    process.kill(Number(pid), 0)
+    return false
+  } catch (error) {
+    return error instanceof Error && 'code' in error && error.code === 'ESRCH'
+  }
+}
+
+function reclaimDeadLandingClaims(project: string): void {
+  const running = db().query(
+    `SELECT id, branch, claim_pid, claim_session FROM landing
+      WHERE project=? AND status='running'`,
+  ).all(project) as { id: number; branch: string; claim_pid: number | null; claim_session: string | null }[]
+  for (const row of running) {
+    if (!claimPidIsDead(row.claim_pid)) continue
+    const message = `landing ${row.id} ${row.branch} was claimed by dead pid ${row.claim_pid}` +
+      ` (session ${row.claim_session ?? 'unknown'}); the branch may hold a half-done rebase` +
+      `\ninvariant: a running landing has a live owner` +
+      `\ncleared by: orch land ${row.branch}`
+    db().query(
+      `UPDATE landing SET status='refused',error=?,finished_at=?,claim_pid=NULL,claim_session=NULL
+        WHERE id=? AND status='running' AND claim_pid=?`,
+    ).run(message, nowIso(), row.id, row.claim_pid)
+  }
+}
+
+function claimLandingRows(rows: LandingRow[]): void {
+  for (const row of rows) {
+    db().query(
+      `UPDATE landing SET status='running',claim_pid=?,claim_session=? WHERE id=?`,
+    ).run(process.pid, sessionId(), row.id)
+    row.claim_pid = process.pid
+    row.claim_session = sessionId()
+  }
 }
 
 function ensureLandingWorktree(repoRoot: string, branch: string, runId?: number): string {
@@ -1642,7 +1681,7 @@ function recordOverlapInvalidations(
     const paths = row.path_set ? JSON.parse(row.path_set) as string[] : []
     if (!pathsOverlap(landedPaths, paths)) continue
     db().query(
-      `UPDATE landing SET status='rebase_required', causing_landing_id=?, error=? WHERE id=?`,
+      `UPDATE landing SET status='rebase_required', causing_landing_id=?, error=?,claim_pid=NULL,claim_session=NULL WHERE id=?`,
     ).run(landingId, `path set overlaps landing ${landingId}`, row.id)
     tryWriteContention({
       resourceKind: 'trunk', resourceKey: row.branch, eventKind: 'invalidation',
@@ -1660,7 +1699,7 @@ function finishLanded(
 ): string {
   writeTransaction(() => {
     db().query(
-      `UPDATE landing SET tip=?,trunk_before=?,status='landed',finished_at=? WHERE id=?`,
+      `UPDATE landing SET tip=?,trunk_before=?,status='landed',finished_at=?,claim_pid=NULL,claim_session=NULL WHERE id=?`,
     ).run(result.tip, result.trunkBefore, nowIso(), landingId)
   })
   const landedPaths = git(result.repoRoot, ['diff', '--name-only', `${result.trunkBefore}..${result.tip}`])
@@ -1671,7 +1710,7 @@ function finishLanded(
     installLandedPackages(result.project, result.trunkBefore, result.tip)
     appendStep(landingId, 'install', Date.now() - started)
   } catch (error) {
-    db().query(`UPDATE landing SET status='install_failed',error=?,finished_at=? WHERE id=?`)
+    db().query(`UPDATE landing SET status='install_failed',error=?,finished_at=?,claim_pid=NULL,claim_session=NULL WHERE id=?`)
       .run(error instanceof Error ? error.message : String(error), nowIso(), landingId)
     throw error
   }
@@ -1691,7 +1730,7 @@ function processOneLanding(
   cwd: string, row: LandingRow,
   options: { timeoutMs?: number; message?: string; unreviewed?: string; runId?: number; strandLive?: string },
 ): void {
-  db().query(`UPDATE landing SET status='running' WHERE id=?`).run(row.id)
+  claimLandingRows([row])
   const started = Date.now()
   const flags = flagsOf(row)
   try {
@@ -1705,7 +1744,7 @@ function processOneLanding(
     const current = db().query('SELECT status FROM landing WHERE id=?').get(row.id) as { status: string } | null
     if (current && current.status !== 'landed' && current.status !== 'install_failed') {
       writeTransaction(() => {
-        db().query(`UPDATE landing SET status='refused',error=?,finished_at=? WHERE id=?`)
+        db().query(`UPDATE landing SET status='refused',error=?,finished_at=?,claim_pid=NULL,claim_session=NULL WHERE id=?`)
           .run(message, nowIso(), row.id)
       })
       tryWriteContention({
@@ -1752,7 +1791,7 @@ function processMergeGroup(
     processOneLanding(cwd, rows[0]!, options)
     return
   }
-  for (const row of rows) db().query(`UPDATE landing SET status='running' WHERE id=?`).run(row.id)
+  claimLandingRows(rows)
   const { project, repoRoot } = registeredProject(cwd)
   const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
   const trunkOid = git(repoRoot, ['rev-parse', `refs/heads/${trunk}^{commit}`])
@@ -1804,7 +1843,7 @@ function processMergeGroup(
     for (const row of rows) {
       writeTransaction(() => {
         db().query(
-          `UPDATE landing SET tip=?,trunk_before=?,status='landed',finished_at=? WHERE id=?`,
+          `UPDATE landing SET tip=?,trunk_before=?,status='landed',finished_at=?,claim_pid=NULL,claim_session=NULL WHERE id=?`,
         ).run(tip, trunkOid, nowIso(), row.id)
       })
       const landedPaths = git(repoRoot, ['diff', '--name-only', `${trunkOid}..${tip}`]).split('\n').filter(Boolean)
@@ -1817,7 +1856,7 @@ function processMergeGroup(
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       for (const row of rows) {
-        db().query(`UPDATE landing SET status='install_failed',error=?,finished_at=? WHERE id=?`)
+        db().query(`UPDATE landing SET status='install_failed',error=?,finished_at=?,claim_pid=NULL,claim_session=NULL WHERE id=?`)
           .run(message, nowIso(), row.id)
       }
       throw error
@@ -1846,7 +1885,7 @@ function bisectMergeGroup(
 ): void {
   if (rows.length === 1) {
     const message = error instanceof Error ? error.message : String(error)
-    db().query(`UPDATE landing SET status='refused',error=?,finished_at=? WHERE id=?`)
+    db().query(`UPDATE landing SET status='refused',error=?,finished_at=?,claim_pid=NULL,claim_session=NULL WHERE id=?`)
       .run(message, nowIso(), rows[0]!.id)
     tryWriteContention({
       resourceKind: 'trunk', resourceKey: rows[0]!.project, eventKind: 'refusal',
@@ -1858,7 +1897,7 @@ function bisectMergeGroup(
   const mid = Math.ceil(rows.length / 2)
   const left = rows.slice(0, mid)
   const right = rows.slice(mid)
-  for (const row of right) db().query(`UPDATE landing SET status='queued' WHERE id=? AND status='running'`).run(row.id)
+  for (const row of right) db().query(`UPDATE landing SET status='queued',claim_pid=NULL,claim_session=NULL WHERE id=? AND status='running'`).run(row.id)
   try {
     processMergeGroup(cwd, left, options)
   } catch (leftError) {
@@ -1931,10 +1970,12 @@ export function drainQueue(
   writableDb()
   const { project, repoRoot } = registeredProject(cwd)
   const lockTimeout = options.timeoutMs ?? LANDING_LOCK_TIMEOUT_MS
+  const waitDeadline = Date.now() + lockTimeout
   while (true) {
     const picked = withProjectLock(
       repoRoot, QUEUE_LOCK, { session: sessionId(), what: `drain ${project.name}` },
       (): 'done' | 'wait' | LandingRow[] => {
+        reclaimDeadLandingClaims(project.name)
         if (options.untilId) {
           const row = db().query('SELECT status FROM landing WHERE id=?').get(options.untilId) as
             { status: string } | null
@@ -1944,7 +1985,7 @@ export function drainQueue(
           gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${row.branch}`]))
         if (queued.length) {
           const group = !options.untilId && queued.length >= 2 ? queued : [queued[0]!]
-          for (const row of group) db().query(`UPDATE landing SET status='running' WHERE id=?`).run(row.id)
+          claimLandingRows(group)
           return group
         }
         if (!options.untilId) return 'done'
@@ -1960,6 +2001,15 @@ export function drainQueue(
     )
     if (picked === 'done') return
     if (picked === 'wait') {
+      if (Date.now() >= waitDeadline) {
+        const row = db().query(
+          'SELECT claim_pid,claim_session FROM landing WHERE id=?',
+        ).get(options.untilId!) as { claim_pid: number | null; claim_session: string | null } | null
+        throw new Error(
+          `timed out waiting for landing ${options.untilId}, claimed by pid ${row?.claim_pid ?? 'unknown'}` +
+          ` (session ${row?.claim_session ?? 'unknown'}); inspect with orch land --status`,
+        )
+      }
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
       continue
     }

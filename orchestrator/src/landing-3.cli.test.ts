@@ -192,6 +192,44 @@ describe('DEV-370 landing queue and branch ownership', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  test('the next drain refuses a landing claimed by a dead process', () => {
+    const { repo } = repoWithBranches([])
+    upsertProject({ name: 'landing-dead-claim', path: repo, settings: { trunk: 'main', gate: 'true' } })
+    const at = new Date().toISOString()
+    try {
+      db().query(
+        `INSERT INTO landing (project,branch,status,session_id,started_at,requested_at,claim_pid,claim_session)
+         VALUES ('landing-dead-claim','dead-branch','running','owner',?,?,2147483647,'dead-session')`,
+      ).run(at, at)
+      drainQueue(repo)
+      const row = db().query(
+        `SELECT status,error,claim_pid,claim_session FROM landing WHERE project='landing-dead-claim'`,
+      ).get() as { status: string; error: string; claim_pid: number | null; claim_session: string | null }
+      expect(row.status).toBe('refused')
+      expect(row.error).toContain('dead pid 2147483647')
+      expect(row.error).toContain('session dead-session')
+      expect(row.error).toContain('orch land dead-branch')
+      expect(row.claim_pid).toBeNull()
+      expect(row.claim_session).toBeNull()
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a live landing claim is waited on and the bounded wait names its owner and status command', () => {
+    const { repo } = repoWithBranches([])
+    upsertProject({ name: 'landing-live-claim', path: repo, settings: { trunk: 'main', gate: 'true' } })
+    const at = new Date().toISOString()
+    try {
+      const row = db().query(
+        `INSERT INTO landing (project,branch,status,session_id,started_at,requested_at,claim_pid,claim_session)
+         VALUES ('landing-live-claim','live-branch','running','owner',?,?,?,?) RETURNING id`,
+      ).get(at, at, process.pid, 'live-session') as { id: number }
+      expect(() => drainQueue(repo, { untilId: row.id, timeoutMs: 80 })).toThrow(
+        new RegExp(`timed out waiting for landing ${row.id}, claimed by pid ${process.pid}.*live-session.*orch land --status`),
+      )
+      expect(db().query('SELECT status FROM landing WHERE id=?').get(row.id)).toEqual({ status: 'running' })
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   const writeJournal = (
     tree: string, folder: string,
     entries: { idx: number; tag: string; when: number }[],

@@ -308,6 +308,7 @@ export const landing = sqliteTable('landing', {
   sessionId: text('session_id'), startedAt: text('started_at').notNull(), finishedAt: text('finished_at'),
   pathSet: text('path_set'), requestedAt: text('requested_at'), steps: text(),
   causingLandingId: integer('causing_landing_id'),
+  claimPid: integer('claim_pid'), claimSession: text('claim_session'),
 }, (t) => [
   check('landing_status_check', sql`${t.status} in ('queued','running','landed','refused','install_failed','rebase_required')`),
   check('landing_path_set_json_check', sql`${t.pathSet} is null or json_valid(${t.pathSet})`),

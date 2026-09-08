@@ -19,17 +19,20 @@ CREATE TABLE landing_new (
   path_set TEXT CHECK (path_set IS NULL OR json_valid(path_set)),
   requested_at TEXT,
   steps TEXT CHECK (steps IS NULL OR json_valid(steps)),
-  causing_landing_id INTEGER
+  causing_landing_id INTEGER,
+  claim_pid INTEGER,
+  claim_session TEXT
 );
 --> statement-breakpoint
 INSERT INTO landing_new (
   id, project, project_id, branch, tip, trunk_before, status, error,
-  session_id, started_at, finished_at, path_set, requested_at, steps, causing_landing_id
+  session_id, started_at, finished_at, path_set, requested_at, steps, causing_landing_id,
+  claim_pid, claim_session
 )
 SELECT
   id, project, project_id, branch, tip, trunk_before,
   CASE status WHEN 'started' THEN 'running' ELSE status END,
-  error, session_id, started_at, finished_at, NULL, started_at, NULL, NULL
+  error, session_id, started_at, finished_at, NULL, started_at, NULL, NULL, NULL, NULL
 FROM landing;
 --> statement-breakpoint
 DROP TABLE landing;
