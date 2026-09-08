@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -10,7 +10,9 @@ import { pidAlive } from './db.ts'
 import { formatIdleKillError, idleKillMayProceed, idleKillMs, installTestProcessSampler, isGroupKillablePgid, isUninterruptible, isWorkerCpuIdle,
   parseIdleReclaimedMs, parsePsTable, runHasLiveDescendants, shouldIdleKill, terminateProcessGroup,
   DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS, DEFAULT_IDLE_KILL_MS } from './idle-kill.ts'
+import { PRESERVATION_FAILED_FILE } from './checkpoint.ts'
 import { CPU_LOCAL_JOBS, IDLE_BELOW_WALL_MS, JOB_TIMEOUTS, jobDeclaredWallMs, jobIdleKillMs } from './jobs.ts'
+import { runScratchDir } from './run.ts'
 import { isRoutingEvidence } from './route.ts'
 import { harnessHealth } from './health.ts'
 import { installTestTransport, type AgentTransport, type TransportResult } from './transport.ts'
@@ -524,7 +526,7 @@ describe('live idle kill', () => {
         const script = join(opts.cwd, 'idle-worker.sh')
         writeFileSync(script, `#!/bin/sh\nset -e\necho worker > worker.txt\ngit add worker.txt\n` +
           `git commit -m "DEV-389 worker commit" >/dev/null\necho dirty >> file.txt\n` +
-          `rm -rf .git\nsleep 2\n`)
+          `chmod 000 .git\necho gone > .idle-git-gone\nexec sleep 3600\n`)
         chmodSync(script, 0o755)
         const child = Bun.spawn([script], {
           cwd: opts.cwd, env: opts.env, stdout: 'ignore', stderr: 'ignore',
@@ -549,21 +551,68 @@ describe('live idle kill', () => {
       resume(opts) { return this.start(opts) },
     }
     installTestTransport(transport)
+    installTestProcessSampler(() => {
+      const rows = db().query(
+        'SELECT agent_pid, worktree FROM run WHERE agent_pid IS NOT NULL',
+      ).all() as { agent_pid: number; worktree: string | null }[]
+      return rows.flatMap((row) => {
+        if (row.agent_pid <= 1) return []
+        // Stay unobservable until the worker has made git unreadable so the
+        // checkpoint fails rather than racing a successful commit.
+        if (!row.worktree || !existsSync(join(row.worktree, '.idle-git-gone'))) return []
+        return [{ pid: row.agent_pid, ppid: 1, pgid: row.agent_pid, cpu: 0, state: 'S' }]
+      })
+    })
     process.env.ORCH_IDLE_KILL_MS = '400'
     const priorDepth = process.env.ORCH_DEPTH
     process.env.ORCH_DEPTH = '0'
     let runId: number | null = null
+    let vendorPid: number | null = null
+    const pending = run({
+      job: 'implement', prompt: 'edit the tracked file', cwd: main,
+      agent: 'codex', key: 'DEV-389', noFailover: true, keepTree: true,
+    }).then((result) => {
+      runId = result.id
+      return result
+    }).catch((error: Error & { runId?: number }) => {
+      runId = error.runId ?? runId
+    })
     try {
-      try {
-        const result = await run({
-          job: 'implement', prompt: 'edit the tracked file', cwd: main,
-          agent: 'codex', key: 'DEV-389', noFailover: true,
-        })
-        runId = result.id
-      } catch (error) {
-        runId = (error as Error & { runId?: number }).runId ?? null
+      const deadline = Date.now() + 12_000
+      while (Date.now() < deadline) {
+        const row = db().query(
+          'SELECT id, agent_pid FROM run WHERE agent_pid IS NOT NULL ORDER BY id DESC LIMIT 1',
+        ).get() as { id: number; agent_pid: number } | null
+        if (row) {
+          runId = row.id
+          vendorPid = row.agent_pid
+          if (existsSync(join(runScratchDir(row.id), PRESERVATION_FAILED_FILE))) break
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50))
       }
+      expect(runId).not.toBeNull()
+      const notePath = join(runScratchDir(runId!), PRESERVATION_FAILED_FILE)
+      expect(existsSync(notePath)).toBe(true)
+      expect(vendorPid).not.toBeNull()
+      expect(pidAlive(vendorPid!)).toBe(true)
+      const note = JSON.parse(readFileSync(notePath, 'utf8')) as {
+        preservation_failed: boolean; error: string
+      }
+      expect(note.preservation_failed).toBe(true)
+      expect(note.error.length).toBeGreaterThan(0)
+      expect(existsSync(join(runScratchDir(runId!), '..', 'preservation', PRESERVATION_FAILED_FILE))).toBe(true)
     } finally {
+      if (runId) {
+        const tree = db().query('SELECT worktree FROM run WHERE id=?').get(runId) as
+          { worktree: string | null } | null
+        if (tree?.worktree) {
+          try { chmodSync(join(tree.worktree, '.git'), 0o644) } catch { /* already gone */ }
+        }
+      }
+      if (vendorPid && pidAlive(vendorPid)) {
+        try { process.kill(vendorPid, 'SIGTERM') } catch { /* gone */ }
+      }
+      try { await pending } catch { /* the worker is standing down for the wall */ }
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
     }
@@ -573,7 +622,7 @@ describe('live idle kill', () => {
     }
     expect(row.failure_kind).not.toBe('idle')
     expect(row.error ?? '').not.toContain('idle-killed')
-  }, 15_000)
+  }, 20_000)
 
   test('a quiet CPU-burning worker is not idle-killed; the wall still fires independently', async () => {
     const grok = AGENTS.grok!
