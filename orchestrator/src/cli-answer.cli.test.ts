@@ -274,6 +274,49 @@ test('answer refuses six individually-legal --file rulings whose packed resume e
     }
   }, 45_000)
 
+  test('a checkpoint continues in a fresh vendor turn with or without a recorded session', () => {
+    for (const vendorSession of [null, 'old-session']) {
+      const binDir = mkdtempSync(join(tmpdir(), 'orch-fake-codex-checkpoint-'))
+      const argv = join(binDir, 'argv.txt')
+      writeFileSync(join(binDir, 'codex'), `#!/bin/sh\nprintf '%s\\n' "$@" > '${argv}'\nexit 0\n`)
+      chmodSync(join(binDir, 'codex'), 0o755)
+      const root = insert('ok', 'file-question')
+      const prompt = join(dir, `checkpoint-root-${root}.prompt.txt`)
+      writeFileSync(prompt, 'the root checkpoint spec')
+      db().query('UPDATE run SET vendor_session=?, agent=?, prompt_path=? WHERE id=?')
+        .run(vendorSession, 'codex', prompt, root)
+      db().query(
+        `INSERT INTO run_checkpoint (run_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
+         VALUES (?,1,?,'item 1',1,?)`,
+      ).run(root, 'a'.repeat(40), new Date().toISOString())
+      try {
+        const r = orchInput(
+          ['continue', String(root), 'caller follow-up'], undefined,
+          { PATH: `${binDir}:${process.env.PATH ?? ''}` },
+        )
+        expect(r.code, r.err).toBe(0)
+        const childId = Number(r.out.replace(/\u001B\[[0-9;]*m/g, '').trim().split('\n')[0])
+        orch('wait', String(childId), '--timeout', '15')
+        const launched = readFileSync(argv, 'utf8')
+        expect(launched).not.toContain('resume')
+        const child = db().query(
+          'SELECT parent_run_id,turn,vendor_session,prompt_path FROM run WHERE id=?',
+        ).get(childId) as {
+          parent_run_id: number; turn: number; vendor_session: string | null; prompt_path: string
+        }
+        expect(child.parent_run_id).toBe(root)
+        expect(child.turn).toBe(2)
+        expect(child.vendor_session).not.toBe('old-session')
+        const sent = readFileSync(child.prompt_path, 'utf8')
+        expect(sent).toContain('CHECKPOINT RESUME')
+        expect(sent).toContain('the root checkpoint spec')
+        expect(sent).toContain('caller follow-up')
+      } finally {
+        rmSync(binDir, { recursive: true, force: true })
+      }
+    }
+  }, 45_000)
+
   test('continue --file reads the follow-up without shell interpolation', () => {
     const binDir = mkdtempSync(join(tmpdir(), 'orch-fake-codex-continue-file-'))
     writeFileSync(join(binDir, 'codex'), '#!/bin/sh\nexit 0\n')

@@ -150,7 +150,9 @@ export type DetachSpec = {
   keepTree?: boolean
   /** Resume only: everything needed to continue a worker where it stopped. */
   resume?: {
-    parent: number; agent: string; session: string; turn: number
+    parent: number; agent: string; session?: string; turn: number
+    /** Continue the chain and retained tree in a new vendor conversation. */
+    fresh?: boolean
     sessionId: string | null
     worktree: Worktree | null
   }
@@ -1733,7 +1735,9 @@ export async function run(opts: {
   resume?: {
     parent: number
     agent: string
-    session: string
+    session?: string
+    /** Continue the chain and retained tree in a new vendor conversation. */
+    fresh?: boolean
     turn: number
     /** Inherited so the chain stays owned by the session that started it. */
     sessionId: string | null
@@ -1906,7 +1910,7 @@ export async function run(opts: {
   const docsSection = pack?.docs.length
     ? `WHAT THE OPERATOR WANTS YOU TO KNOW\n\n${pack.markdown}`
     : ''
-  let prompt = writesJob && !opts.resume
+  let prompt = writesJob && (!opts.resume || opts.resume.fresh)
     ? [
         workerPreamble(opts.job),
         infra ? `\nYOUR WORKTREE'S INFRASTRUCTURE\n\n${infra}` : '',
@@ -1914,20 +1918,20 @@ export async function run(opts: {
         `\n---\n\nTHE SPEC\n\n${originalPrompt}`,
       ].filter(Boolean).join('\n')
     // A read-only worker gets a much shorter brief, and only on a first turn.
-    : opts.resume
+    : opts.resume && !opts.resume.fresh
       ? packedResumePrompt(opts.job, originalPrompt, opts.resume.parent)
       : [repoJob ? READONLY_PREAMBLE : NO_REPO_PREAMBLE,
           infra ? `YOUR WORKTREE'S INFRASTRUCTURE\n\n${infra}` : '',
           docsSection, `---\n\n${originalPrompt}`]
           .filter(Boolean).join('\n\n')
 
-  if (requestedJob.findings && !opts.resume) {
+  if (requestedJob.findings && (!opts.resume || opts.resume.fresh)) {
     prompt = `${REVIEW_SEVERITY_INSTRUCTION}\n\n${prompt}`
     const resolvedLens = resolveLens(opts.lens!, opts.repo ?? repoOf(callerCwd))
     if (resolvedLens) prompt += `\n\n${resolvedLens.body}`
     else console.error(`lens ${opts.lens}: no catalogue row; dispatching the free-form lens unchanged`)
   }
-  if (isReaderJob(opts.job) && !opts.resume) {
+  if (isReaderJob(opts.job) && (!opts.resume || opts.resume.fresh)) {
     prompt = `${readerDeliverablesInstruction(declaredDeliverables)}\n\n${prompt}`
   }
   prompt = `${replyFileInstruction(replySchemaName)}\n\n${prompt}`
@@ -2038,7 +2042,9 @@ export async function run(opts: {
   // Minted before the spawn when the agent lets us choose, so the resume handle
   // exists even for a worker that dies mid-turn. codex and qwen name their own
   // and are read back afterwards instead.
-  const vendorSession: string | null = opts.resume?.session ?? a.mintSession?.() ?? null
+  const vendorSession: string | null = opts.resume && !opts.resume.fresh
+    ? opts.resume.session ?? null
+    : a.mintSession?.() ?? null
 
   const runsDir = RUNS_DIR
   mkdirSync(runsDir, { recursive: true })
@@ -2792,7 +2798,7 @@ export async function run(opts: {
       // ACP creates its initial session with session/new. Grok also mints an id
       // for its CLI launch, but treating that fresh id as resumable makes ACP
       // issue session/load against a session that cannot exist yet.
-      session: transportName === 'acp' ? opts.resume?.session : vendorSession ?? undefined,
+      session: transportName === 'acp' && !opts.resume?.fresh ? opts.resume?.session : vendorSession ?? undefined,
       schemaPath: schemaPath ?? undefined,
       model: opts.model ?? a.model,
       modelExplicit: opts.model !== undefined,
@@ -2808,14 +2814,14 @@ export async function run(opts: {
       srt: sandboxSelection.profile && srtSettingsPath
         ? { profile: sandboxSelection.profile, settingsPath: srtSettingsPath }
         : undefined,
-      resume: Boolean(opts.resume),
+      resume: Boolean(opts.resume && !opts.resume.fresh),
       env: childEnv(a, claim.id, runToken, {
         ...(gitConfigEnvironment ?? {}), ...sandboxEnvironment,
         ORCH_SCRATCH: scratchDir,
         ...(askLoopback ? { ORCH_ASK_URL: askLoopback.url } : {}),
       }),
     }
-    const handle = opts.resume?.session
+    const handle = opts.resume?.session && !opts.resume.fresh
       ? await t.resume({ ...startOpts, session: opts.resume.session, resume: true })
       : await t.start(startOpts)
     proc = handle

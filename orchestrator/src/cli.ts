@@ -1361,29 +1361,39 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
     cwd: string | null; worktree: string | null; branch: string | null; base_commit: string | null
     worktree_source: Worktree['source'] | null
   }
-  const sessionFrom = latest.vendor_session
+  const checkpointContext = (await import('./checkpoint.ts'))
+    .checkpointResumeContext(db(), id, latest.worktree)
+  const sessionFrom = checkpointContext ? null : latest.vendor_session
     ? latest
     : db().query(
         `SELECT id, agent, vendor_session, turn
            FROM run WHERE (id = ? OR parent_run_id = ?) AND vendor_session IS NOT NULL
           ORDER BY turn DESC LIMIT 1`,
       ).get(id, id) as { id: number; agent: string; vendor_session: string; turn: number } | null
-  if (!sessionFrom?.vendor_session) {
+  if (!checkpointContext && !sessionFrom?.vendor_session) {
     throw new Error(`run ${id} recorded no session id, so ${latest.agent} cannot be resumed`)
   }
-  if (!latest.vendor_session) {
+  if (!checkpointContext && !latest.vendor_session) {
     console.error(
       `run ${id}: newest turn ${latest.id} recorded no session id; ` +
-      `resuming ${sessionFrom.agent} with the session from run ${sessionFrom.id} (turn ${sessionFrom.turn})`,
+      `resuming ${sessionFrom!.agent} with the session from run ${sessionFrom!.id} (turn ${sessionFrom!.turn})`,
     )
   }
-  const checkpointContext = (await import('./checkpoint.ts'))
-    .checkpointResumeContext(db(), id, latest.worktree)
-  const basePrompt = message
-    ?? 'Continue from where you stopped and finish the spec. If you reached a ' +
-       'decision that is not yours, stop and ask as before.'
-  const prompt = checkpointContext ? `${checkpointContext}\n\n${basePrompt}` : basePrompt
-  const assembledLimit = argvResumeLimit(sessionFrom.agent)
+  let prompt: string
+  if (checkpointContext) {
+    const rootPrompt = db().query('SELECT prompt_path FROM run WHERE id=?').get(id) as
+      { prompt_path: string | null }
+    if (!rootPrompt.prompt_path || !existsSync(rootPrompt.prompt_path)) {
+      throw new Error(`run ${id} checkpoint cannot continue: its original prompt file is unavailable`)
+    }
+    prompt = [checkpointContext, readFileSync(rootPrompt.prompt_path, 'utf8'), message]
+      .filter((part): part is string => Boolean(part)).join('\n\n')
+  } else {
+    prompt = message
+      ?? 'Continue from where you stopped and finish the spec. If you reached a ' +
+         'decision that is not yours, stop and ask as before.'
+  }
+  const assembledLimit = checkpointContext ? undefined : argvResumeLimit(sessionFrom!.agent)
   if (assembledLimit !== undefined) {
     const packed = packedResumePrompt(row.job, prompt, id)
     const assembled = Buffer.byteLength(packed, 'utf8')
@@ -1418,7 +1428,9 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
     lens: launch.lens ?? undefined,
     transport: chainTransport(id) ?? undefined,
     resume: {
-      parent: id, agent: sessionFrom.agent, session: sessionFrom.vendor_session,
+      parent: id, agent: checkpointContext ? latest.agent : sessionFrom!.agent,
+      session: checkpointContext ? undefined : sessionFrom!.vendor_session ?? undefined,
+      fresh: Boolean(checkpointContext),
       turn: latest.turn + 1, sessionId: authority.owner,
       worktree: latest.worktree
         ? {
