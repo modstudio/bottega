@@ -41,7 +41,7 @@ import {
 import { recipeNotes } from './recipe.ts'
 import {
   workerPreamble, packResumePrompt, READONLY_PREAMBLE, NO_REPO_PREAMBLE, WORKER_SCHEMA, ISSUE_WORKER_SCHEMA, REVIEW_SCHEMA,
-  TEXT_REPLY_SCHEMA, REPLY_FILE_NAME, replyFileInstruction,
+  TEXT_REPLY_SCHEMA, TEXT_REPLY_SCHEMA_NAME, REPLY_FILE_NAME, replyFileInstruction,
   REVIEW_SEVERITY_INSTRUCTION,
   VERIFY_CLAIM_SCHEMA, READER_SCHEMA, readerDeliverablesInstruction,
   parseWorkerReplyWithCount, isAsking, realQuestions,
@@ -1836,7 +1836,7 @@ export async function run(opts: {
       : writesJob ? 'WORKER_SCHEMA'
         : requestedJob.findings ? 'REVIEW_SCHEMA'
           : requestedJob.name === 'verify-claim' ? 'VERIFY_CLAIM_SCHEMA'
-            : isReaderJob(opts.job) ? 'READER_SCHEMA' : 'TEXT_REPLY_SCHEMA'
+            : isReaderJob(opts.job) ? 'READER_SCHEMA' : TEXT_REPLY_SCHEMA_NAME
   const runProjectName = opts.repo ?? repoOf(callerCwd)
   const runProjectId = runProjectName ? projectByName(runProjectName)?.id ?? null : null
   let pack: ReturnType<typeof compilePack> | null = null

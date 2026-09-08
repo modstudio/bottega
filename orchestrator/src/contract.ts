@@ -54,6 +54,9 @@ export const TEXT_REPLY_SCHEMA = {
   properties: { answer: { type: 'string' } },
 } as const
 
+/** Prompt-facing name of TEXT_REPLY_SCHEMA; the printed result stays the unwrapped string. */
+export const TEXT_REPLY_SCHEMA_NAME = 'text-reply'
+
 export const REPLY_FILE_NAME = 'reply.json'
 
 /** The file contract is identical across harnesses; schema flags are an extra guarantee. */

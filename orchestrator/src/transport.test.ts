@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { AGENTS, db, dir, run } from '../test/fixture.ts'
+import { AGENTS, db, dir, replyFileInstruction, run } from '../test/fixture.ts'
 import { addAgent, recordAgentProbe, removeAgent, setAgent } from './agents.ts'
 import { chainTransport } from './run.ts'
 import { ask } from './ask.ts'
@@ -127,6 +127,54 @@ describe('ACP transport through run', () => {
       })
       expect(printed.exitCode).toBe(0)
       expect(printed.stderr.toString()).toContain('vendor tokens not reported')
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
+  test('a text-reply file unwraps to the printed answer string', async () => {
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      let seen = ''
+      installFake(({ prompt, scratch }) => {
+        seen = prompt
+        writeFileSync(join(scratch!, 'reply.json'), JSON.stringify({ answer: 'plain answer' }))
+        return fakeResult({ output: 'I am done.', status: 'ok' })
+      })
+      const result = await runAcp()
+      expect(seen).toContain(replyFileInstruction('text-reply'))
+      expect(result.status).toBe('ok')
+      expect(result.output).toBe('plain answer')
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
+  test('an invalid reply.json is a contract failure', async () => {
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      installFake(({ scratch }) => {
+        writeFileSync(join(scratch!, 'reply.json'), '{')
+        return fakeResult({ output: 'prose that would have been the answer', status: 'ok' })
+      })
+      let runId: number | null = null
+      let message = ''
+      try {
+        await run({
+          job: 'file-question', prompt: 'inspect one file', cwd: dir, agent: 'codex',
+          transport: 'acp', noFailover: true, deliverables: ['answer'],
+        })
+      } catch (error) {
+        runId = (error as Error & { runId?: number }).runId ?? null
+        message = (error as Error).message
+      }
+      expect(message).toContain('reply did not match the worker contract')
+      expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(runId))
+        .toEqual({ status: 'failed', failure_kind: 'other' })
     } finally {
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
