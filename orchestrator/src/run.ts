@@ -684,7 +684,8 @@ export function preflight(
   if (project) assertRegisterBranches(project)
   const tool = project?.settings.worktree ?? null
   if (project) {
-    const malformed = validateProjectSettings(project.settings)
+    const malformed = validateProjectSettings(project.settings).filter((problem) =>
+      !(typeof tool?.create === 'string' && problem === 'worktree.create is a shell string; migrate it (DEV-308)'))
     if (malformed.length) throw new Error(malformed.join('\n'))
   }
   const effectiveSeed = seed

@@ -3569,7 +3569,10 @@ switch (cmd) {
         canon: has('no-canon') ? false : has('canon') ? true : p.canon,
         settings,
       }
-      const malformed = validateProjectSettings(candidate.settings)
+      const malformed = validateProjectSettings(candidate.settings).filter((problem) =>
+        !(typeof p.settings.worktree?.create === 'string' &&
+          candidate.settings.worktree?.create === p.settings.worktree.create &&
+          problem === 'worktree.create is a shell string; migrate it (DEV-308)'))
       if (malformed.length) throw new Error(malformed.join('\n'))
       const incomplete = worktreeWarnings(candidate).filter((w) =>
         w.startsWith('has a create command but no branch template') ||
