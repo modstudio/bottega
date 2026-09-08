@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'bun:test'
-import { addRun, db } from '../test/fixture.ts'
-import { epicScoreboard, renderEpicHuman } from './epic.ts'
+import { join } from 'node:path'
+import { addRun, db, dir, upsertProject } from '../test/fixture.ts'
+import { epicChildren, epicScoreboard, renderEpicHuman } from './epic.ts'
+
+const hubCli = new URL('../../hub/src/cli.ts', import.meta.url).pathname
+const orchCli = new URL('./cli.ts', import.meta.url).pathname
+function hub(args: string[], hubDb: string) {
+  return Bun.spawnSync([process.execPath, hubCli, ...args], {
+    env: { ...process.env, HUB_DB: hubDb }, stdout: 'pipe', stderr: 'pipe',
+  })
+}
 
 describe('epic scoreboard', () => {
   test('computes every recorded metric once for human and JSON views', () => {
@@ -64,5 +73,37 @@ describe('epic scoreboard', () => {
     expect(report.children).toEqual([])
     expect(report.total).toMatchObject({ runs: { total: 0, byJob: {} }, vendorTokens: null })
     expect(renderEpicHuman(report)).toContain('TOTAL')
+  })
+
+  test('shells out to hub for child membership and CLI views use that result', async () => {
+    const hubDb = join(dir, 'epic-hub.db')
+    upsertProject({ name: 'epic-fixture', path: dir, settings: { keyPrefixes: ['DEV'] } })
+    expect(hub(['migrate'], hubDb).exitCode).toBe(0)
+    const parent = hub(['task', 'new', '--project', 'epic-fixture', '--title', 'parent'], hubDb)
+    expect(parent.exitCode, parent.stderr.toString()).toBe(0)
+    const parentKey = parent.stdout.toString().trim()
+    for (const title of ['child one', 'child two']) {
+      const child = hub([
+        'task', 'new', '--project', 'epic-fixture', '--title', title, '--parent', parentKey,
+        '--allow-duplicate', 'epic CLI membership fixture',
+      ], hubDb)
+      expect(child.exitCode, child.stderr.toString()).toBe(0)
+    }
+    const prior = process.env.HUB_DB
+    process.env.HUB_DB = hubDb
+    try {
+      expect((await epicChildren(parentKey)).map((child) => child.title)).toEqual(['child one', 'child two'])
+    } finally {
+      if (prior === undefined) delete process.env.HUB_DB
+      else process.env.HUB_DB = prior
+    }
+    const env = { ...process.env, HUB_DB: hubDb, ORCH_DB: process.env.ORCH_DB! }
+    const human = Bun.spawnSync([process.execPath, orchCli, 'epic', parentKey], { env, stdout: 'pipe', stderr: 'pipe' })
+    const json = Bun.spawnSync([process.execPath, orchCli, 'epic', parentKey, '--json'], { env, stdout: 'pipe', stderr: 'pipe' })
+    expect(human.exitCode, human.stderr.toString()).toBe(0)
+    expect(json.exitCode, json.stderr.toString()).toBe(0)
+    const report = JSON.parse(json.stdout.toString())
+    expect(report.children.map((child: any) => child.title)).toEqual(['child one', 'child two'])
+    for (const child of report.children) expect(human.stdout.toString()).toContain(child.key)
   })
 })
