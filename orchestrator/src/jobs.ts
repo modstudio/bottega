@@ -1,5 +1,6 @@
 import { MIGRATED_AGENT_NAMES, type Caps } from './agents.ts'
 import { STALE_AFTER_MS } from './db.ts'
+import { DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS, DEFAULT_IDLE_KILL_MS, idleKillMs } from './idle-kill.ts'
 
 export type Job = {
   name: string
@@ -56,6 +57,29 @@ export type Job = {
  * ceiling. Every ceiling is still capped just below STALE_AFTER_MS; when that
  * cap wins, the `--timeout` refusal names the cutoff.
  */
+/**
+ * Jobs that legitimately wait on a service outside the vendor process tree.
+ * CPU idle only covers descendants of the vendor pid, so these get a longer
+ * idle bound instead of a protection we do not have:
+ *   implement, fix, issue-worker, land, review-lens, safety, craft — Docker
+ *   mcp-query — MCP servers
+ *   file-question, summarize, canon-lookup — local-stack (prefer local-acp)
+ * The rest keep the measured 15m default.
+ */
+export const EXTERNAL_WAIT_JOBS = [
+  'implement', 'fix', 'issue-worker', 'land',
+  'review-lens', 'safety', 'craft',
+  'mcp-query',
+  'file-question', 'summarize', 'canon-lookup',
+] as const
+
+export function jobIdleKillMs(name: string, env: NodeJS.ProcessEnv = process.env): number {
+  if (env.ORCH_IDLE_KILL_MS !== undefined && env.ORCH_IDLE_KILL_MS !== '') return idleKillMs(env)
+  return (EXTERNAL_WAIT_JOBS as readonly string[]).includes(name)
+    ? DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS
+    : DEFAULT_IDLE_KILL_MS
+}
+
 export const JOB_TIMEOUTS = {
   implement: { defaultMinutes: 45, ceilingMinutes: 90 },
   'issue-worker': { defaultMinutes: 45, ceilingMinutes: 90 },

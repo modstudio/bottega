@@ -15,7 +15,7 @@ import {
   LOCAL_BASE_URL,
 } from './agents.ts'
 import {
-  job, isReaderJob, reclaimsTreeByDefault, resolveJobTimeoutMs, jobBoundInstruction,
+  job, isReaderJob, jobIdleKillMs, reclaimsTreeByDefault, resolveJobTimeoutMs, jobBoundInstruction,
   type Job,
 } from './jobs.ts'
 import { pick } from './route.ts'
@@ -2962,10 +2962,12 @@ export async function run(opts: {
       const openQuestion = db().query(
         'SELECT 1 n FROM question WHERE run_id=? AND answered_at IS NULL LIMIT 1',
       ).get(claim.id) as { n: number } | null
+      const idleThresholdMs = jobIdleKillMs(opts.job)
       const decision = shouldIdleKill({
         lastEventAt: row.last_event_at, startedAt: row.started_at, pid: handle.pid,
         asking: row.status === 'asking', openQuestion: Boolean(openQuestion),
         alreadyTimedOut: timedOut, alreadyIdleKilled: idleKilled,
+        thresholdMs: idleThresholdMs,
       })
       if (!decision.kill) return
       idleKilled = true
@@ -3003,7 +3005,7 @@ export async function run(opts: {
       if (idleCheckInFlight || timedOut || idleKilled) return
       idleCheckInFlight = true
       void maybeIdleKill().finally(() => { idleCheckInFlight = false })
-    }, idlePollMs())
+    }, idlePollMs(jobIdleKillMs(opts.job)))
 
     const teeing = teeTransportEvents(handle.events(), claim.id)
     await t.prompt(handle, prompt)

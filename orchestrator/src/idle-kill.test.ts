@@ -4,12 +4,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   AGENTS, addRun, candidates, classify, db, declaredCreate, dir, hermeticGitEnv,
-  NEEDS_HUMAN, NOT_EVIDENCE, run, upsertProject,
+  JOBS, NEEDS_HUMAN, NOT_EVIDENCE, run, upsertProject,
 } from '../test/fixture.ts'
 import { pidAlive } from './db.ts'
 import { formatIdleKillError, idleKillMs, isGroupKillablePgid, isUninterruptible, isWorkerCpuIdle,
   parseIdleReclaimedMs, parsePsTable, shouldIdleKill, terminateProcessGroup,
-  DEFAULT_IDLE_KILL_MS } from './idle-kill.ts'
+  DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS, DEFAULT_IDLE_KILL_MS } from './idle-kill.ts'
+import { EXTERNAL_WAIT_JOBS, jobIdleKillMs } from './jobs.ts'
 import { isRoutingEvidence } from './route.ts'
 import { harnessHealth } from './health.ts'
 import { installTestTransport, type AgentTransport, type TransportResult } from './transport.ts'
@@ -50,6 +51,27 @@ describe('idle kill threshold', () => {
     expect(DEFAULT_IDLE_KILL_MS).toBe(15 * 60_000)
     expect(idleKillMs({})).toBe(15 * 60_000)
     expect(idleKillMs({ ORCH_IDLE_KILL_MS: '400' })).toBe(400)
+  })
+
+  test('jobs that wait outside the vendor tree get a longer idle bound', () => {
+    expect(DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS).toBe(30 * 60_000)
+    expect([...EXTERNAL_WAIT_JOBS]).toEqual([
+      'implement', 'fix', 'issue-worker', 'land',
+      'review-lens', 'safety', 'craft',
+      'mcp-query',
+      'file-question', 'summarize', 'canon-lookup',
+    ])
+    for (const name of EXTERNAL_WAIT_JOBS) {
+      expect(jobIdleKillMs(name, {})).toBe(30 * 60_000)
+    }
+    expect(jobIdleKillMs('understand', {})).toBe(15 * 60_000)
+    expect(jobIdleKillMs('diagnose', {})).toBe(15 * 60_000)
+    expect(jobIdleKillMs('verify-claim', {})).toBe(15 * 60_000)
+    expect(jobIdleKillMs('review-lens-inline', {})).toBe(15 * 60_000)
+    expect(jobIdleKillMs('implement', { ORCH_IDLE_KILL_MS: '400' })).toBe(400)
+    for (const name of Object.keys(JOBS)) {
+      expect(jobIdleKillMs(name, {})).toBeGreaterThan(0)
+    }
   })
 })
 

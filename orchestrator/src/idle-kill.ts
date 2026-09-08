@@ -23,6 +23,12 @@ import { idleMsSince } from './events.ts'
  * this kill.
  */
 export const DEFAULT_IDLE_KILL_MS = 15 * 60_000
+/**
+ * Longer idle bound for jobs that wait on a service outside the vendor tree.
+ * 30m is twice the measured 15m default and still below implement's 45m wall.
+ * For jobs whose wall is ≤ 30m the wall fires first; that is deliberate.
+ */
+export const DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS = 30 * 60_000
 export const DEFAULT_IDLE_GRACE_MS = 5_000
 export const DEFAULT_IDLE_KILL_CONFIRM_MS = 5_000
 /** ps %cpu of a sleeping process is 0.0; a busy loop is ~100. 1% is scheduler noise, not work. */
@@ -97,12 +103,12 @@ export function descendantPids(root: number, samples: ProcessSample[]): number[]
 }
 
 /**
- * Our idle test is stricter than the industry's, and that is deliberate.
- * Every system found keys on output/log silence alone; none polls CPU.
- * We require silence AND no CPU so a worker legitimately blocked on a
- * slow local model — quiet but busy — is not killed. Silence alone
- * would kill it. The CPU we poll is the worker process group (the vendor
- * pid and its descendants), not the whole machine.
+ * CPU sample coverage: the vendor pid and its descendants only. That is
+ * work inside the vendor process tree, and nothing else. A worker blocked
+ * on local-stack, the docker daemon, a lock, or a slow network call reads
+ * 0% here because those processes are not descendants. Silence-plus-CPU
+ * therefore does not protect an external wait; jobs that legitimately wait
+ * on one of those services use a longer idle bound instead.
  */
 export function processGroupCpuPercent(pid: number, samples: ProcessSample[]): number | null {
   if (pid <= 0) return null
