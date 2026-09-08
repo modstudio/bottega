@@ -49,42 +49,50 @@ const quoteIdentifier = (value: string) => `"${value.replaceAll('"', '""')}"`
 
 /** Reduce any later journal state to the baseline application-object inventory. */
 function stripPostBaselineApplicationObjects(d: Database): void {
-  const baseline = baselineFresh()
-  const baselineNames = new Set(applicationObjects(baseline).map((row) => `${row.type}:${row.name}`))
-  baseline.close()
-  const extras = applicationObjects(d).filter((row) => !baselineNames.has(`${row.type}:${row.name}`))
+  const foreignKeys = d.query<{ foreign_keys: number }, []>('PRAGMA foreign_keys').get()?.foreign_keys ?? 0
+  // baselineFresh enables enforcement while a live copy uses Bun's default of
+  // OFF; normalize the strip itself so both probe paths exercise one behavior.
+  d.exec('PRAGMA foreign_keys = OFF')
+  try {
+    const baseline = baselineFresh()
+    const baselineNames = new Set(applicationObjects(baseline).map((row) => `${row.type}:${row.name}`))
+    baseline.close()
+    const extras = applicationObjects(d).filter((row) => !baselineNames.has(`${row.type}:${row.name}`))
 
-  // Remove dependants before their tables. Indexes and triggers would fall
-  // with a table, but dropping them explicitly also handles additions to a
-  // baseline table. Views go first because they may read a later table.
-  for (const type of ['trigger', 'view', 'index'] as const) {
-    for (const row of extras.filter((candidate) => candidate.type === type)) {
-      d.exec(`DROP ${type.toUpperCase()} ${quoteIdentifier(row.name)}`)
+    // Remove dependants before their tables. Indexes and triggers would fall
+    // with a table, but dropping them explicitly also handles additions to a
+    // baseline table. Views go first because they may read a later table.
+    for (const type of ['trigger', 'view', 'index'] as const) {
+      for (const row of extras.filter((candidate) => candidate.type === type)) {
+        d.exec(`DROP ${type.toUpperCase()} ${quoteIdentifier(row.name)}`)
+      }
     }
-  }
 
-  const tables = new Set(extras.filter((row) => row.type === 'table').map((row) => row.name))
-  const children = new Map<string, string[]>()
-  for (const child of tables) {
-    const foreignKeys = d.query<{ table: string }, []>(`PRAGMA foreign_key_list(${quoteIdentifier(child)})`).all()
-    for (const foreignKey of foreignKeys) {
-      if (!tables.has(foreignKey.table)) continue
-      const list = children.get(foreignKey.table) ?? []
-      list.push(child)
-      children.set(foreignKey.table, list)
+    const tables = new Set(extras.filter((row) => row.type === 'table').map((row) => row.name))
+    const children = new Map<string, string[]>()
+    for (const child of tables) {
+      const references = d.query<{ table: string }, []>(`PRAGMA foreign_key_list(${quoteIdentifier(child)})`).all()
+      for (const reference of references) {
+        if (!tables.has(reference.table)) continue
+        const list = children.get(reference.table) ?? []
+        list.push(child)
+        children.set(reference.table, list)
+      }
     }
+    const dropped = new Set<string>()
+    const visiting = new Set<string>()
+    const dropChildFirst = (table: string): void => {
+      if (dropped.has(table) || visiting.has(table)) return
+      visiting.add(table)
+      for (const child of children.get(table) ?? []) dropChildFirst(child)
+      visiting.delete(table)
+      d.exec(`DROP TABLE ${quoteIdentifier(table)}`)
+      dropped.add(table)
+    }
+    for (const table of tables) dropChildFirst(table)
+  } finally {
+    d.exec(`PRAGMA foreign_keys = ${foreignKeys ? 'ON' : 'OFF'}`)
   }
-  const dropped = new Set<string>()
-  const visiting = new Set<string>()
-  const dropChildFirst = (table: string): void => {
-    if (dropped.has(table) || visiting.has(table)) return
-    visiting.add(table)
-    for (const child of children.get(table) ?? []) dropChildFirst(child)
-    visiting.delete(table)
-    d.exec(`DROP TABLE ${quoteIdentifier(table)}`)
-    dropped.add(table)
-  }
-  for (const table of tables) dropChildFirst(table)
 }
 
 const cli = new URL('./cli.ts', import.meta.url).pathname
@@ -154,6 +162,34 @@ describe('hub migration journal', () => {
     stripPostBaselineApplicationObjects(d)
     const after = applicationSchemaRows(d)
     expect(after).toEqual(before)
+    d.close()
+  })
+
+  test('the adoption strip handles populated foreign-key cycles and restores enforcement', () => {
+    const expected = baselineFresh()
+    const baselineSchema = applicationSchemaRows(expected)
+    expected.close()
+
+    const d = baselineFresh()
+    d.exec('PRAGMA foreign_keys = OFF')
+    d.exec(`
+      CREATE TABLE later_a (
+        id INTEGER PRIMARY KEY,
+        later_b_id INTEGER NOT NULL REFERENCES later_b(id)
+      );
+      CREATE TABLE later_b (
+        id INTEGER PRIMARY KEY,
+        later_a_id INTEGER NOT NULL REFERENCES later_a(id)
+      );
+      INSERT INTO later_a (id,later_b_id) VALUES (1,1);
+      INSERT INTO later_b (id,later_a_id) VALUES (1,1);
+    `)
+    d.exec('PRAGMA foreign_keys = ON')
+
+    stripPostBaselineApplicationObjects(d)
+
+    expect(applicationSchemaRows(d)).toEqual(baselineSchema)
+    expect(d.query<{ foreign_keys: number }, []>('PRAGMA foreign_keys').get()?.foreign_keys).toBe(1)
     d.close()
   })
 
