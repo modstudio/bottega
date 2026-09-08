@@ -592,17 +592,16 @@ test(caseName.landingGate, async () => {
 test('Landing gate assertion rejects a deliberately held landing lock', async () => {
   const { projectLockDir, withProjectLock } = await import('./worktree.ts')
   const base = projectLockDir(repo)
-  let observed: Event | null = null
-  withProjectLock(repo, 'landing', { session: 'meta-test', what: 'held-across-gate' }, () => {
+  const observed = withProjectLock(repo, 'landing', { session: 'meta-test', what: 'held-across-gate' }, (): Event => {
     const owner = join(base, 'orch-landing.owner')
-    observed = {
+    return {
       at: new Date().toISOString(), event: 'gate-start', actor: 'meta-test',
       lock: join(base, 'orch-landing.lock'),
       pid: JSON.parse(readFileSync(owner, 'utf8')).pid as number,
     }
   }, 1_000, true)
-  expect(observed?.pid).toBe(process.pid)
-  expect(() => assertLandingLockNotHeldAtGate([observed!])).toThrow()
+  expect(observed.pid).toBe(process.pid)
+  expect(() => assertLandingLockNotHeldAtGate([observed])).toThrow()
 })
 
 test(caseName.failedLanding, async () => {
