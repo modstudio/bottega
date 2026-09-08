@@ -44,7 +44,8 @@ export type EpicScoreboard = {
 }
 
 type RunRow = {
-  id: number; started_at: string; job: string; status: string; latency_ms: number | null
+  id: number; started_at: string; job: string; status: string; failure_kind: string | null
+  latency_ms: number | null
   vendor_tokens: number | null; vendor_cost_usd: number | null
   launch_key: string | null; branch: string | null; parent_run_id: number | null
   turn: number; last_event_at: string | null
@@ -83,7 +84,7 @@ export function epicScoreboard(
   const keys = children.map((child) => child.key.toUpperCase())
   const childByKey = new Map(children.map((child) => [child.key.toUpperCase(), child]))
   const runs = database.query(
-    `SELECT id,started_at,job,status,latency_ms,vendor_tokens,vendor_cost_usd,launch_key,branch,
+    `SELECT id,started_at,job,status,failure_kind,latency_ms,vendor_tokens,vendor_cost_usd,launch_key,branch,
             parent_run_id,turn,last_event_at,project_id,head_commit FROM run ORDER BY started_at,id`,
   ).all() as RunRow[]
   const landings = database.query(
@@ -229,8 +230,10 @@ function durationMetrics(runs: RunRow[], clock: number): DurationMetrics {
     runDurationMeanMs: durations.length
       ? durations.reduce((sum, duration) => sum + duration, 0) / durations.length : null,
     runDurationP95Ms: durations.length ? durations[Math.ceil(durations.length * 0.95) - 1]! : null,
-    ghostRuns: runs.filter((run) => run.status === 'running' && run.latency_ms === null &&
-      Number.isFinite(anchor(run)) && clock - anchor(run) >= STALE_AFTER_MS).length,
+    ghostRuns: runs.filter((run) => run.latency_ms === null && (
+      (run.status === 'running' && Number.isFinite(anchor(run)) && clock - anchor(run) >= STALE_AFTER_MS) ||
+      (run.status === 'stale' && run.failure_kind === 'interrupted')
+    )).length,
     idleMinutes: Math.round(idleMs / 60_000),
   }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
-import { addRun, db, dir, upsertProject } from '../test/fixture.ts'
+import { addRun, db, dir, reapStale, upsertProject } from '../test/fixture.ts'
 import { epicChildren, epicScoreboard, renderEpicHuman } from './epic.ts'
 
 const hubCli = new URL('../../hub/src/cli.ts', import.meta.url).pathname
@@ -66,6 +66,18 @@ describe('epic scoreboard', () => {
       runs: { total: 4 }, agentTimeMs: 210_000, occupancyMs: 150_000, elapsedSpanMs: 330_000,
       runDurationMeanMs: 70_000, runDurationP95Ms: 120_000, ghostRuns: 1,
       landings: { attempted: 2, landed: 1, refused: 1 }, reviews: { recorded: 1, completed: 1, outdated: 1 },
+    })
+    expect(reapStale(db())).toBe(1)
+    expect(db().query('SELECT status,failure_kind,latency_ms FROM run WHERE id=?').get(ghost)).toEqual({
+      status: 'stale', failure_kind: 'interrupted', latency_ms: null,
+    })
+    const afterReap = epicScoreboard('DEV-500', [
+      { key: 'DEV-501', title: 'worked' }, { key: 'DEV-502', title: 'empty' },
+    ], db(), Date.parse('2026-09-08T12:00:00.000Z'))
+    expect(afterReap.children[0]!.ghostRuns).toBe(1)
+    expect(afterReap.total.ghostRuns).toBe(1)
+    expect(afterReap.total).toMatchObject({
+      agentTimeMs: 210_000, occupancyMs: 150_000, elapsedSpanMs: 330_000,
     })
 
     const human = renderEpicHuman(report)
