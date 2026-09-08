@@ -60,19 +60,58 @@ export type DocRevisionMetadata = Omit<DocRevision, 'title' | 'body' | 'delivery
 }
 export type DocWriteContext = { author?: string; reason: string; forceInject?: string }
 
-function assertInjectSize(input: { body: string; delivery?: 'inject' | 'demand'; forceInject?: string }): void {
+function assertInjectSize(input: {
+  scope: string; subject: string | null; slug: string; title: string; body: string
+  delivery?: 'inject' | 'demand'; forceInject?: string
+}): void {
   if (input.delivery !== 'inject') return
   const bytes = Buffer.byteLength(input.body)
-  if (bytes <= MAX_INJECT_DOC_BYTES) return
-  if (input.forceInject?.trim()) return
-  const current = db().query("SELECT COALESCE(MAX(bytes), 0) AS bytes FROM canon_pack").get() as { bytes: number }
-  const headroom = DEFAULT_PACK_BYTES - current.bytes
-  throw new Error(
-    `inject document is ${bytes} bytes; threshold is ${MAX_INJECT_DOC_BYTES} bytes; ` +
-    `current pack is ${current.bytes} bytes with ${headroom} bytes headroom\n` +
-    'invariant: oversized narrative belongs on demand so an accepted write cannot break the canon pack gate\n' +
-    'cleared by: use --delivery demand, shorten the document, or pass --force-inject "<reason>"',
-  )
+  if (bytes > MAX_INJECT_DOC_BYTES && !input.forceInject?.trim()) {
+    const current = db().query("SELECT COALESCE(MAX(bytes), 0) AS bytes FROM canon_pack").get() as { bytes: number }
+    const headroom = DEFAULT_PACK_BYTES - current.bytes
+    throw new Error(
+      `inject document is ${bytes} bytes; threshold is ${MAX_INJECT_DOC_BYTES} bytes; ` +
+      `current pack is ${current.bytes} bytes with ${headroom} bytes headroom\n` +
+      'invariant: oversized narrative belongs on demand so an accepted write cannot break the canon pack gate\n' +
+      'cleared by: use --delivery demand, shorten the document, or pass --force-inject "<reason>"',
+    )
+  }
+
+  if (!['global', 'job', 'project'].includes(input.scope)) return
+  const projectRows = db().query('SELECT name,path FROM project ORDER BY name').all() as
+    { name: string; path: string }[]
+  const projectsToCheck = input.scope === 'project'
+    ? projectRows.filter((project) => project.name === input.subject)
+    : projectRows.length ? projectRows : [{ name: '_', path: process.cwd() }]
+  const jobsToCheck = input.scope === 'job' && input.subject
+    ? [input.subject]
+    : Object.keys(JOBS)
+  const identity = `${input.scope}/${input.subject ?? '_'}/${input.slug}`
+  for (const project of projectsToCheck) {
+    for (const jobName of jobsToCheck) {
+      const selected = docsForRun({ job: jobName, cwd: project.path })
+        .filter((doc) => `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}` !== identity)
+      const proposed: Doc = {
+        id: -1, project_id: null, scope: input.scope as DocScope, subject: input.subject,
+        slug: input.slug, title: input.title, body: input.body, delivery: 'inject',
+        created_at: '', updated_at: '',
+      }
+      const docs = [...selected, proposed]
+      const packBytes = Buffer.byteLength(docsMarkdown(docs))
+      const budget = JOBS[jobName]?.packBytes ?? DEFAULT_PACK_BYTES
+      if (packBytes <= budget) continue
+      const largest = docs.map((doc) => ({
+        name: `${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`,
+        bytes: Buffer.byteLength(`## ${doc.title}\n\n${doc.body}`),
+      })).sort((a, b) => b.bytes - a.bytes).slice(0, 3)
+      throw new Error(
+        `canon pack ${jobName}/${project.name} would be ${packBytes} bytes, ` +
+        `${packBytes - budget} bytes over its ${budget} byte ceiling\n` +
+        `largest inject sections to demote: ${largest.map((doc) => `${doc.name} (${doc.bytes} bytes)`).join(', ')}\n` +
+        'cleared by: demote the named largest inject sections to demand documents',
+      )
+    }
+  }
 }
 
 export type DocListFilters = {

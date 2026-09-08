@@ -68,6 +68,24 @@ describe('canon pack budget', () => {
     JOBS.understand!.packBytes = old
   })
 
+  test('a small inject write is refused when its affected pack would cross the ceiling', () => {
+    upsertProject({ name: 'proposed-pack-budget', path: dir, settings: { trunk: 'main' } })
+    setDoc({
+      scope: 'global', subject: null, slug: 'pack-base', title: 'Pack base',
+      body: 'b'.repeat(2_000),
+    })
+    const old = JOBS['file-question']!.packBytes
+    JOBS['file-question']!.packBytes = compilePack({ job: 'file-question', cwd: dir }).bytes + 5_000
+    try {
+      expect(() => setDoc({
+        scope: 'job', subject: 'file-question', slug: 'six-kib', title: 'Six KiB',
+        body: 'x'.repeat(6 * 1024),
+      })).toThrow(/canon pack file-question\/[^ ]+ would be .* bytes over.*largest inject sections to demote/s)
+    } finally {
+      JOBS['file-question']!.packBytes = old
+    }
+  })
+
   const script = join(ROOT, 'orchestrator/scripts/check-pack-budget.ts')
   const runBudget = (orchDb: string | undefined) => Bun.spawnSync(
     [process.execPath, script],
