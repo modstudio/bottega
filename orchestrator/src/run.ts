@@ -79,7 +79,7 @@ import {
   type TransportName, type TransportStartOpts, type TransportResult,
 } from './transport.ts'
 import { appendRunEvent, teeTransportEvents } from './events.ts'
-import { checkpointRun, DEFAULT_CHECKPOINT_MINUTES, latestCheckpoint } from './checkpoint.ts'
+import { checkpointRun, DEFAULT_CHECKPOINT_MINUTES, latestCheckpoint, recordFailedIdlePreservation } from './checkpoint.ts'
 import {
   formatIdleKillError, idleKillMayProceed, idlePollMs, runHasLiveDescendants, shouldIdleKill,
   terminateProcessGroup,
@@ -3018,9 +3018,8 @@ export async function run(opts: {
         idleKillError = null
         const why = checkpoint?.error ?? 'checkpoint failed'
         console.error(`orch: run ${claim.id} idle kill aborted: ${why}; no prior checkpoint, leaving the worker for the wall`)
-        appendRunEvent(claim.id, {
-          ts: nowIso(), type: 'text',
-          text: `idle kill aborted: ${why}; no prior checkpoint, leaving the worker for the wall`,
+        recordFailedIdlePreservation({
+          runId: claim.id, scratchDir, worktree: worktree?.path ?? null, error: why,
         })
         return
       }

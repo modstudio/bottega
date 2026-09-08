@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import type { Database } from 'bun:sqlite'
 import { nowIso } from './db.ts'
 import { appendRunEvent } from './events.ts'
@@ -12,6 +12,7 @@ import { targetGitEnvironment } from './worktree.ts'
  */
 
 export const PROGRESS_FILE_NAME = 'progress.json'
+export const PRESERVATION_FAILED_FILE = 'preservation-failed.json'
 export const DEFAULT_CHECKPOINT_MINUTES = 10
 
 export function progressFileInstruction(): string {
@@ -95,6 +96,39 @@ export function checkpointRun(input: {
      VALUES (?,?,?,?,?,?)`,
   ).run(input.runId, checkpointNo, commit.out, taskPointer, input.final ? 1 : 0, nowIso())
   return { created: true, commit: commit.out, checkpointNo, taskPointer, error: null }
+}
+
+/**
+ * A failed idle-kill checkpoint must still capture what it can before
+ * standing down. The wall path is not the first place anyone should learn
+ * that preservation failed.
+ */
+export function recordFailedIdlePreservation(input: {
+  runId: number
+  scratchDir: string
+  worktree: string | null
+  error: string
+}): { notePath: string; snapshotDir: string } {
+  const at = nowIso()
+  appendRunEvent(input.runId, {
+    ts: at, type: 'text',
+    text: `idle kill aborted: preservation failed: ${input.error}; no prior checkpoint, leaving the worker for the wall`,
+  })
+  mkdirSync(input.scratchDir, { recursive: true })
+  let files: string[] | null = null
+  if (input.worktree && existsSync(input.worktree)) {
+    try { files = readdirSync(input.worktree) } catch { files = null }
+  }
+  const notePath = join(input.scratchDir, PRESERVATION_FAILED_FILE)
+  writeFileSync(notePath, `${JSON.stringify({
+    preservation_failed: true, error: input.error, at, files,
+  })}\n`)
+  const snapshotDir = join(dirname(input.scratchDir), 'preservation')
+  try {
+    if (existsSync(snapshotDir)) rmSync(snapshotDir, { recursive: true, force: true })
+    cpSync(input.scratchDir, snapshotDir, { recursive: true })
+  } catch { /* the event log and the note are the minimum */ }
+  return { notePath, snapshotDir }
 }
 
 export function latestCheckpoint(database: Database, rootId: number): {

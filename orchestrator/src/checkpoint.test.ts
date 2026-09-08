@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { addRun, db, declaredCreate, hermeticGitEnv, prepareSharedRefGuard, run, upsertProject, validateCliArgs } from '../test/fixture.ts'
-import { checkpointResumeContext, checkpointRun, readTaskPointer } from './checkpoint.ts'
+import {
+  checkpointResumeContext, checkpointRun, PRESERVATION_FAILED_FILE, readTaskPointer,
+  recordFailedIdlePreservation,
+} from './checkpoint.ts'
 import { runEventsPath } from './events.ts'
 import { squashCheckpointCommits } from './landing.ts'
 import { installTestTransport, type AgentTransport, type TransportResult } from './transport.ts'
@@ -37,6 +40,28 @@ function git(root: string, ...args: string[]): string {
   if (p.exitCode !== 0) throw new Error(p.stderr.toString())
   return p.stdout.toString().trim()
 }
+
+describe('failed idle-kill preservation', () => {
+  test('records the failure and snapshots scratch before standing down', () => {
+    const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const scratch = mkdtempSync(join(tmpdir(), 'orch-preserve-')); roots.push(scratch)
+    const tree = mkdtempSync(join(tmpdir(), 'orch-tree-')); roots.push(tree)
+    writeFileSync(join(scratch, 'notes.txt'), 'still on disk\n')
+    writeFileSync(join(tree, 'worker.txt'), 'uncommitted\n')
+    const result = recordFailedIdlePreservation({
+      runId, scratchDir: scratch, worktree: tree, error: 'git status failed',
+    })
+    const note = JSON.parse(readFileSync(result.notePath, 'utf8')) as {
+      preservation_failed: boolean; error: string; files: string[]
+    }
+    expect(note.preservation_failed).toBe(true)
+    expect(note.error).toBe('git status failed')
+    expect(note.files).toContain('worker.txt')
+    expect(readFileSync(runEventsPath(runId), 'utf8')).toContain('preservation failed: git status failed')
+    expect(existsSync(join(result.snapshotDir, PRESERVATION_FAILED_FILE))).toBe(true)
+    expect(readFileSync(join(result.snapshotDir, 'notes.txt'), 'utf8')).toBe('still on disk\n')
+  })
+})
 
 describe('harness-owned checkpoints', () => {
   test('commits tracked work, records progress, and leaves untracked files alone', () => {
