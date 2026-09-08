@@ -153,6 +153,23 @@ describe('ACP transport through run', () => {
     }
   })
 
+  test('a present reply.json with a stray key is still the unwrapped answer', async () => {
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      installFake(({ scratch }) => {
+        writeFileSync(join(scratch!, 'reply.json'), JSON.stringify({ answer: 'plain answer', extra: 1 }))
+        return fakeResult({ output: 'I am done.', status: 'ok' })
+      })
+      const result = await runAcp()
+      expect(result.status).toBe('ok')
+      expect(result.output).toBe('plain answer')
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
   test('an invalid reply.json is a contract failure', async () => {
     const priorDepth = process.env.ORCH_DEPTH
     process.env.ORCH_DEPTH = '0'
@@ -172,9 +189,36 @@ describe('ACP transport through run', () => {
         runId = (error as Error & { runId?: number }).runId ?? null
         message = (error as Error).message
       }
-      expect(message).toContain('reply did not match the worker contract')
+      expect(message).toContain('reply.json')
+      expect(message).toContain('did not match the worker contract')
       expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(runId))
-        .toEqual({ status: 'failed', failure_kind: 'other' })
+        .toEqual({ status: 'failed', failure_kind: 'contract' })
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+  })
+
+  test('a non-JSON reply.json is a contract failure naming the file', async () => {
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    try {
+      installFake(({ scratch }) => {
+        writeFileSync(join(scratch!, 'reply.json'), '{')
+        return fakeResult({ output: 'prose that would have been the answer', status: 'ok' })
+      })
+      let runId: number | null = null
+      let message = ''
+      try {
+        await runAcp()
+      } catch (error) {
+        runId = (error as Error & { runId?: number }).runId ?? null
+        message = (error as Error).message
+      }
+      expect(message).toContain('reply.json')
+      expect(message).toContain('did not match the worker contract')
+      expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(runId))
+        .toEqual({ status: 'failed', failure_kind: 'contract' })
     } finally {
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth

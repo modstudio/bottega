@@ -44,7 +44,7 @@ import {
   TEXT_REPLY_SCHEMA, TEXT_REPLY_SCHEMA_NAME, REPLY_FILE_NAME, replyFileInstruction,
   REVIEW_SEVERITY_INSTRUCTION,
   VERIFY_CLAIM_SCHEMA, READER_SCHEMA, readerDeliverablesInstruction,
-  parseWorkerReplyWithCount, isAsking, realQuestions,
+  parseWorkerReplyWithCount, isAsking, realQuestions, validatesSchema,
   parseReaderOutput, missingDeclaredDeliverables, UNEVIDENCED_DELIVERABLE_ERROR,
   type CanonSource, type WorkerReply,
 } from './contract.ts'
@@ -1554,6 +1554,34 @@ export function readDeclaredDeliverables(id: number): string[] {
   return readDispatchState(id).deliverables
 }
 
+/** Present reply.json is accepted by the same lenient parsers as a missing-file fallback. */
+function presentReplyFileMatches(opts: {
+  text: string
+  schema: unknown
+  customSchema: boolean
+  writesJob: boolean
+  issueWorker: boolean
+  findings: boolean
+  reader: boolean
+}): boolean {
+  const schema = opts.schema as Parameters<typeof validatesSchema>[1]
+  if (opts.customSchema) {
+    let value: unknown
+    try { value = JSON.parse(opts.text) } catch { return false }
+    return validatesSchema(value, schema)
+  }
+  if (opts.writesJob) {
+    return parseWorkerReplyWithCount(
+      opts.text, opts.issueWorker ? ISSUE_WORKER_SCHEMA : WORKER_SCHEMA,
+    ).reply !== null
+  }
+  if (opts.findings) return parseReviewOutput(opts.text) !== null
+  if (opts.reader) return parseReaderOutput(opts.text) !== null
+  let value: unknown
+  try { value = JSON.parse(opts.text) } catch { return false }
+  return validatesSchema(value, schema)
+}
+
 function persistRunArtifacts(
   id: number,
   filesWritten: string[] | null,
@@ -2816,16 +2844,20 @@ export async function run(opts: {
     if (existsSync(replyFile)) {
       replyFilePresent = true
       const fileOutput = readFileSync(replyFile, 'utf8')
-      let value: unknown
-      try { value = JSON.parse(fileOutput) } catch { value = null }
+      output = fileOutput
       const validationSchema = JSON.parse(readFileSync(originalSchemaPath!, 'utf8'))
-      if (!valueMatchesStrictSchema(validationSchema, value)) {
-        replyFileError = schemaMismatchError(fileOutput)
-        output = fileOutput
-      } else {
-        output = textReplyContract
-          ? (value as { answer: string }).answer
-          : fileOutput
+      if (!presentReplyFileMatches({
+        text: fileOutput,
+        schema: validationSchema,
+        customSchema: Boolean(opts.schemaPath),
+        writesJob,
+        issueWorker: requestedJob.name === 'issue-worker',
+        findings: Boolean(requestedJob.findings),
+        reader: isReaderJob(opts.job),
+      })) {
+        replyFileError = `${REPLY_FILE_NAME} did not match the worker contract:\n${fileOutput}`
+      } else if (textReplyContract) {
+        output = (JSON.parse(fileOutput) as { answer: string }).answer
       }
       writeFileSync(outPath, output)
     } else if (textReplyContract) {
@@ -2909,7 +2941,7 @@ export async function run(opts: {
     } else if (replyFileError) {
       status = 'failed'
       error = errorTail(replyFileError)
-      failureKind = 'other'
+      failureKind = replyFilePresent ? 'contract' : 'other'
     } else if (collected.asking || acceptedQuestions.length) {
       status = 'asking'
       error = null
