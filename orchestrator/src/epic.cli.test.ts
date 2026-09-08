@@ -13,7 +13,8 @@ function hub(args: string[], hubDb: string) {
 
 describe('epic scoreboard', () => {
   test('computes every recorded metric once for human and JSON views', () => {
-    const first = addRun({ agent: 'codex', job: 'implement', status: 'failed', latency: 120_000, startedAt: '2026-09-08T10:00:00.000Z' })
+    // Offset-less SQLite ISO text is UTC, not the machine's local timezone.
+    const first = addRun({ agent: 'codex', job: 'implement', status: 'failed', latency: 120_000, startedAt: '2026-09-08T10:00:00.000' })
     db().query(`UPDATE run SET launch_key='DEV-501',branch='DEV-501-orch-1',vendor_tokens=NULL,
       vendor_cost_usd=NULL,last_event_at='2026-09-08T10:01:00.000Z' WHERE id=?`).run(first)
     const continued = addRun({ agent: 'codex', job: 'implement', status: 'ok', latency: 60_000, parent: first, turn: 2, startedAt: '2026-09-08T10:01:00.000Z' })

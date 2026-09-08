@@ -64,6 +64,11 @@ const keyInBranch = (branch: string | null, keys: readonly string[]): string | n
   return keys.find((key) => new RegExp(`(^|[^A-Z0-9])${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^0-9]|$)`, 'i').test(branch)) ?? null
 }
 
+/** SQLite stores ISO text without timezone semantics; an absent offset means UTC here. */
+const utcMillis = (value: string): number => Date.parse(
+  /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value) ? value : `${value}Z`,
+)
+
 /**
  * Evidence attribution is deliberately ordered. run.launch_key is authoritative
  * when present; otherwise the task key embedded in run.branch and then its head
@@ -195,7 +200,7 @@ type DurationMetrics = Pick<EpicTaskScore,
 function durationMetrics(runs: RunRow[], clock: number): DurationMetrics {
   const intervals = runs.flatMap((run): { start: number; end: number; duration: number }[] => {
     if (run.latency_ms === null) return []
-    const start = Date.parse(run.started_at)
+    const start = utcMillis(run.started_at)
     const duration = Math.max(0, run.latency_ms)
     return Number.isFinite(start) ? [{ start, end: start + duration, duration }] : []
   }).sort((a, b) => a.start - b.start || a.end - b.end)
@@ -216,7 +221,7 @@ function durationMetrics(runs: RunRow[], clock: number): DurationMetrics {
   }
   if (mergedStart !== null) occupancyMs += mergedEnd! - mergedStart
   const durations = intervals.map((interval) => interval.duration).sort((a, b) => a - b)
-  const anchor = (run: RunRow) => Date.parse(run.last_event_at ?? run.started_at)
+  const anchor = (run: RunRow) => utcMillis(run.last_event_at ?? run.started_at)
   return {
     agentTimeMs: durations.reduce((sum, duration) => sum + duration, 0),
     occupancyMs,
