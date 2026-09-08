@@ -96,15 +96,19 @@ export function harnessHealth(days = HEALTH_DEFAULT_DAYS, database: Database = d
   ).get() as { n: number } | null
   let mcpProbeFailures = 0
   let mcpUnprobed = 0
+  const mcpUnverified = new Map<string, number>()
   if (mcpProbeColumn) {
     const mcpRows = database.query(
-      `SELECT mcp_probe FROM run
+      `SELECT agent, mcp_probe FROM run
         WHERE mcp IN (1, 2) AND datetime(started_at) >= datetime(?)`,
-    ).all(from) as { mcp_probe: string | null }[]
+    ).all(from) as { agent: string; mcp_probe: string | null }[]
     for (const row of mcpRows) {
       const probe = parseMcpProbe(row.mcp_probe)
       if (!probe) mcpUnprobed++
       else if (!probe.ok) mcpProbeFailures++
+      if (!probe || !probe.ok || probe.tool === 'tools/list') {
+        mcpUnverified.set(row.agent, (mcpUnverified.get(row.agent) ?? 0) + 1)
+      }
     }
   }
   const flakeTable = database.query(
@@ -156,9 +160,12 @@ export function harnessHealth(days = HEALTH_DEFAULT_DAYS, database: Database = d
       : row)
 
   return HarnessHealthSchema.parse({
-    header: 'Harness health only — never routing or scoring evidence. Confinement clears are reclassify audit rows with cleared:true; landing refusals are reported separately. Contention is waits, refusals and invalidations on shared resources — never routing evidence.',
+    header: 'Harness health only — never routing or scoring evidence. Review measurement gaps are harness failures from bb28501 on 2026-09-07; that step is reclassification, not regression. Confinement clears are reclassify audit rows with cleared:true; landing refusals are reported separately. Contention is waits, refusals and invalidations on shared resources — never routing evidence.',
     days, from, classes: classesWithAttribution, falseVerdicts, landingRefusals,
-    mcpProbeFailures, mcpUnprobed, flakes,
+    mcpProbeFailures, mcpUnprobed,
+    mcpUnverifiedByAgent: [...mcpUnverified].map(([agent, count]) => ({ agent, count }))
+      .sort((a, b) => b.count - a.count || a.agent.localeCompare(b.agent)),
+    flakes,
     contention: summarizeContention(database, from),
   })
 }

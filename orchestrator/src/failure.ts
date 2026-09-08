@@ -32,6 +32,8 @@ export const FAILURE_KINDS = [
   'confinement_unverified',
   /** Sandbox Runtime denied a read the job needed. */
   'sandbox_denied',
+  /** A strict MCP run could not prove a successful tool call before launch. */
+  'mcp-unverified',
   /**
    * ORCH's own fault: a bad schema, a missing flag, a precondition it should
    * have checked before spending a run. Set at the point in the code that knows
@@ -300,7 +302,7 @@ export const FAILS_OVER: FailureKind[] = [
  */
 export const NOT_EVIDENCE: FailureKind[] = [
   'quota', 'auth', 'entitlement', 'unreachable', 'content_refusal', 'interrupted', 'truncated', 'escaped',
-  'confinement_unverified', 'sandbox_denied', 'harness', 'abandoned',
+  'confinement_unverified', 'sandbox_denied', 'mcp-unverified', 'harness', 'abandoned',
 ]
 
 /**

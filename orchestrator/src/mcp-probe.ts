@@ -300,3 +300,15 @@ export function parseMcpProbe(value: string | null | undefined): McpProbeResult 
     return null
   }
 }
+
+export type McpCallEvidence = { connected: 0 | 1 | null; error: string | null }
+
+/** Connection evidence means a successful named tool call, never a handshake. */
+export function mcpCallEvidence(result: McpProbeResult | null): McpCallEvidence {
+  if (!result) return { connected: null, error: 'unverified: no tool call observed' }
+  if (!result.ok) return { connected: 0, error: result.error ?? 'MCP probe failed' }
+  if (result.tool === 'tools/list') {
+    return { connected: null, error: 'unverified: no tool call observed' }
+  }
+  return { connected: 1, error: `verified: successful tool call ${result.tool}` }
+}

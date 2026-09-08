@@ -1464,8 +1464,8 @@ function usage(): never {
       --carry                   carry this checkout's uncommitted work into the worker (off by default)
       --file <path>             read the prompt from a file
       --schema <path>           bind JSON schema (Codex normalizes it to OpenAI strict mode)
-      --mcp                     require live MCP; refuse if attachment fails
-      --mcp=prefer              prefer live MCP; disclose and use the mirror if attachment fails
+      --mcp                     require a successful pre-launch MCP tool call
+      --mcp=prefer              record MCP call evidence; continue if unavailable or unverified
       --model <name>            override the agent's model
       --label <text>            name this run in listings and pending reminders
       --lens <stable-id>        required identity for findings-producing review jobs
@@ -1691,8 +1691,8 @@ function doUsage(): never {
   --review <ref>   review this branch or run id (review-lens, safety, craft)
   --carry          carry this checkout's uncommitted work into the worker (off by default)
   --schema <path>  require JSON schema; Codex normalizes it to OpenAI strict mode
-  --mcp            require live MCP; refuse if attachment fails
-  --mcp=prefer     prefer live MCP; disclose and use the mirror if attachment fails
+  --mcp            require a successful pre-launch MCP tool call
+  --mcp=prefer     record MCP call evidence; continue if unavailable or unverified
   --model <name>   override the selected agent's model
   --label <text>   name this run in listings and pending reminders
   --lens <id>      stable identity required by findings-producing review jobs
@@ -6687,6 +6687,10 @@ switch (cmd) {
       '      -        -')
     console.log(`mcp unprobed`.padEnd(25) + String(report.mcpUnprobed).padStart(7) +
       '      -        -')
+    for (const row of report.mcpUnverifiedByAgent ?? []) {
+      console.log(`mcp unverified ${row.agent}`.padEnd(25) + String(row.count).padStart(7) +
+        '      -        -')
+    }
     const { landingsWithPostStepError } = await import('./landing.ts')
     for (const row of landingsWithPostStepError()) {
       console.log(`landed with post-step error`.padEnd(25) + `${row.project} ${row.branch}`)

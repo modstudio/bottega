@@ -177,6 +177,12 @@ means the same task: root runs with the same job and identical caller-prompt has
 for findings work the same lens; their input trees must also match when both
 runs recorded one.
 
+**Evidence identity is one tuple:** the caller prompt (`spec_sha`), the change
+(stable patch-id plus touched path set), the lens, and the effective model.
+Gates, pair offers, voids, reminders and routing each consume the dimensions
+relevant to their question from that tuple; none substitutes bound-prompt hash,
+tree identity, agent name or row status for one of them.
+
 Reviewer precision is:
 
     hits      = accepted + modified

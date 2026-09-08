@@ -204,6 +204,9 @@ export const HarnessHealthSchema = z.object({
   landingRefusals: z.number().int().nonnegative(),
   mcpProbeFailures: z.number().int().nonnegative(),
   mcpUnprobed: z.number().int().nonnegative(),
+  mcpUnverifiedByAgent: z.array(z.object({
+    agent: z.string(), count: z.number().int().nonnegative(),
+  })).optional(),
   flakes: z.array(z.object({
     test: z.string(),
     file: z.string(),

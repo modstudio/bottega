@@ -163,12 +163,16 @@ describe('harness health', () => {
     const report = harnessHealth(14, db(), now)
     expect(report.mcpProbeFailures).toBe(1)
     expect(report.mcpUnprobed).toBe(1)
+    expect(report.mcpUnverifiedByAgent).toEqual([
+      { agent: 'grok', count: 2 }, { agent: 'codex', count: 1 },
+    ])
     const cli = Bun.spawnSync([
       process.execPath, new URL('./cli.ts', import.meta.url).pathname, 'health', '--days', '14',
     ], { env: process.env, stdout: 'pipe', stderr: 'pipe' })
     expect(cli.exitCode, cli.stderr.toString()).toBe(0)
     expect(cli.stdout.toString()).toContain('mcp probe failures')
     expect(cli.stdout.toString()).toContain('mcp unprobed')
+    expect(cli.stdout.toString()).toContain('mcp unverified grok')
   })
 
   test('escaped class attribution counts every confinement event in the window', () => {

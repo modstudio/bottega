@@ -66,7 +66,8 @@ import {
   type ConfinementEvent, type FreezeFailure,
 } from './confinement.ts'
 import {
-  namesSeenAt, probeMcpServer, readMcpConfig, resolveMcpServerUrl, storedMcpProbe, wrongProjectReason,
+  mcpCallEvidence, namesSeenAt, probeMcpServer, readMcpConfig, resolveMcpServerUrl,
+  storedMcpProbe, wrongProjectReason,
 } from './mcp-probe.ts'
 import { startAskLoopback, type AskLoopback } from './ask.ts'
 import {
@@ -2560,7 +2561,19 @@ export async function run(opts: {
         // The probe runs only when the required server is in .mcp.json, so the
         // wrong-project question is already answered; the doctor path asks it.
         const recorded = probe
-        db().query('UPDATE run SET mcp_probe=? WHERE id=?').run(storedMcpProbe(recorded), claim.id)
+        const callEvidence = mcpCallEvidence(recorded)
+        db().query(
+          'UPDATE run SET mcp_probe=?, mcp_connected=?, mcp_error=? WHERE id=?',
+        ).run(storedMcpProbe(recorded), callEvidence.connected, callEvidence.error, claim.id)
+        if (callEvidence.connected !== 1 && mcpMode === 'require') {
+          const why = callEvidence.connected === 0
+            ? `MCP tool call failed on ${mcpServerName}: ${callEvidence.error}`
+            : `mcp unverifiable on ${name}: ${callEvidence.error}`
+          db().query(
+            `UPDATE run SET status='failed', error=?, failure_kind='mcp-unverified', latency_ms=? WHERE id=?`,
+          ).run(why, Date.now() - started, claim.id)
+          throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
+        }
         if (!recorded.ok) {
           mcpConnection = {
             server: mcpServerName, connected: false, error: recorded.error,
@@ -2569,15 +2582,6 @@ export async function run(opts: {
           db().query(
             `UPDATE run SET mcp_connected=0, mcp_error=? WHERE id=?`,
           ).run(recorded.error, claim.id)
-          if (mcpMode === 'require') {
-            const why =
-              `MCP was requested, but server '${mcpServerName}' could not be attached` +
-              `${recorded.error ? `: ${recorded.error}` : '.'} The agent was not started.`
-            db().query(
-              `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
-            ).run(why, Date.now() - started, claim.id)
-            throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
-          }
           usingMcp = false
         }
       } catch (error) {

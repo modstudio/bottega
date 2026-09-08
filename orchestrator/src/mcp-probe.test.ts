@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS, db, dir, hermeticGitEnv, reviewReply, runJob, upsertProject } from '../test/fixture.ts'
 import {
-  mcpEndpointAllowlist, namesSeenAt, parseMcpConfig, parseMcpProbe, probeMcpServer, storedMcpProbe,
+  mcpCallEvidence, mcpEndpointAllowlist, namesSeenAt, parseMcpConfig, parseMcpProbe, probeMcpServer, storedMcpProbe,
   wrongProjectReason,
 } from './mcp-probe.ts'
 import { readonlyLensProfile } from './sandbox.ts'
@@ -122,7 +122,23 @@ describe('in-confinement probe', () => {
     expect(stored?.server).toBe('fixture-project')
     expect(stored?.durationMs).toBe(result.durationMs)
     expect(stored?.namesSeen).toEqual(result.namesSeen)
+    expect(mcpCallEvidence(stored)).toEqual({
+      connected: 1, error: 'verified: successful tool call ping',
+    })
     rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('a handshake without a tool call is unverified and an error is disconnected', () => {
+    const handshake = {
+      server: 'fixture-project', tool: 'tools/list', ok: true, error: null,
+      durationMs: 1, detail: 'listed: 1 tools', namesSeen: ['fixture-project'],
+    }
+    expect(mcpCallEvidence(handshake)).toEqual({
+      connected: null, error: 'unverified: no tool call observed',
+    })
+    expect(mcpCallEvidence({ ...handshake, ok: false, error: 'HTTP 403' })).toEqual({
+      connected: 0, error: 'HTTP 403',
+    })
   })
 
   test('records err when the HTTP endpoint is unreachable', async () => {
@@ -225,7 +241,7 @@ exit 0
         status: string; failure_kind: string; mcp_connected: number | null; mcp_probe: string
       }
       expect(row.status).toBe('failed')
-      expect(row.failure_kind).toBe('harness')
+      expect(row.failure_kind).toBe('mcp-unverified')
       expect(row.mcp_connected).toBe(0)
       expect(parseMcpProbe(row.mcp_probe)?.ok).toBe(false)
       expect(existsSync(join(repo, 'started'))).toBe(false)
@@ -258,7 +274,10 @@ exit 0
     }))
     git('add', '.mcp.json')
     git('commit', '-m', 'base')
-    upsertProject({ name: 'fixture-project', path: repo, settings: { mcpServer: 'fixture-project' } })
+    upsertProject({
+      name: 'fixture-project', path: repo,
+      settings: { mcpServer: 'fixture-project', mcp: { probe_tool: 'ping' } },
+    })
     const reply = join(dir, 'DEV-372-reachable-reply.json')
     writeFileSync(reply, JSON.stringify(reviewReply(0)))
     const script = join(dir, 'DEV-372-reachable-start.sh')
@@ -293,11 +312,11 @@ cat ${JSON.stringify(reply)}
       const row = db().query(
         'SELECT mcp_connected, mcp_probe FROM run WHERE id=?',
       ).get(runId!) as { mcp_connected: number | null; mcp_probe: string }
-      expect(row.mcp_connected).not.toBe(0)
+      expect(row.mcp_connected).toBe(1)
       const probe = parseMcpProbe(row.mcp_probe)
       expect(probe?.ok).toBe(true)
-      expect(probe?.tool).toBe('tools/list')
-      expect(probe?.detail).toBe('listed: 1 tools')
+      expect(probe?.tool).toBe('ping')
+      expect(probe?.detail).toBe('listed: 1 tools; called ping')
       expect(probe?.namesSeen).toContain('fixture-project')
     } finally {
       grok.bin = previous
