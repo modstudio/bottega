@@ -267,6 +267,10 @@ describe("detached run collection", () => {
                 { runId: fixture.id, mode: rootSnapshot ? 'restored' : 'forward' },
                 { runId: turn, mode: turnSnapshot ? 'restored' : 'forward' },
               ])
+              expect(fixture.audit().priorOutcomes).toEqual([
+                { runId: fixture.id, failureKind: kind, error: 'confinement block' },
+                { runId: turn, failureKind: kind, error: 'confinement block' },
+              ])
               const rootAfter = db().query(
                 'SELECT status,error,pre_confinement,confinement FROM run WHERE id=?',
               ).get(fixture.id) as {

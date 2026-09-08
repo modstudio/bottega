@@ -2044,11 +2044,12 @@ switch (cmd) {
     const { parseConfinement } = await import('./confinement.ts')
     let authority = authorizeRunMutation(id, 'reclassify')
     const rows = db().query(
-      `SELECT id, pre_confinement, confinement FROM run
+      `SELECT id, failure_kind, error, pre_confinement, confinement FROM run
         WHERE (id=? OR parent_run_id=?)
           AND failure_kind IN ('escaped','confinement_unverified') ORDER BY turn,id`,
     ).all(authority.rootId, authority.rootId) as {
-      id: number; pre_confinement: string | null; confinement: string | null
+      id: number; failure_kind: string; error: string | null
+      pre_confinement: string | null; confinement: string | null
     }[]
     if (!rows.length) throw new Error(`run ${id}'s chain has no confinement classification to clear`)
     const chain = db().query(
@@ -2145,6 +2146,9 @@ switch (cmd) {
       resolveRootFromLastTurn(db(), authority.rootId)
       auditRunMutation(authority, 'reclassify', JSON.stringify({ ...audit, cleared: true,
         transitions: transitions.map(({ row, mode }) => ({ runId: row.id, mode })),
+        priorOutcomes: rows.map((row) => ({
+          runId: row.id, failureKind: row.failure_kind, error: row.error,
+        })),
         landingBlock: worktreeMissing ? recoveryCommand : null }))
     })
     console.log(
