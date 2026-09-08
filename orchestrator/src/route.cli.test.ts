@@ -202,7 +202,7 @@ describe('routing evidence scope', () => {
     expect(cell.score).toBe(candidate.score)
   })
 
-  test('current-model evidence is used at MIN_SAMPLE and otherwise falls back across models', () => {
+  test('a swapped model starts a fresh posterior and does not inherit older-model evidence', () => {
     const current = AGENTS.codex!.model
     for (let i = 0; i < MIN_SAMPLE; i++) {
       score(addRun({ agent: 'codex', job: 'review-lens', model: 'older-model' }), 'full', 'wrong')
@@ -212,9 +212,10 @@ describe('routing evidence scope', () => {
     }
 
     let candidate = candidates('review-lens').find((c) => c.agent === 'codex')!
-    expect(candidate.evidence).toBe(MIN_SAMPLE * 2 - 1)
-    expect(candidate.evidenceModel).toBeNull()
-    expect(pick('review-lens', undefined, 0, false).reason).toContain('across models')
+    expect(candidate.evidence).toBe(MIN_SAMPLE - 1)
+    expect(candidate.evidenceModel).toBe(current)
+    expect(candidate.score).toBe(1)
+    expect(pick('review-lens', undefined, 0, false).reason).not.toContain('across models')
 
     score(addRun({ agent: 'codex', job: 'review-lens', model: current }), 'full', 'right')
     candidate = candidates('review-lens').find((c) => c.agent === 'codex')!
@@ -583,7 +584,7 @@ describe('routing backtest statistics', () => {
     expect(after).toEqual(before)
   })
 
-  test('late-scored pre-window model evidence gives replay the production pick', () => {
+  test('late-scored older-model rows never enter the current-model posterior', () => {
     const insert = db().query(
       `INSERT INTO score (run_id, delivery, quality, scored_at, scored_by)
        VALUES (?,?,?,?, 'test')`,
@@ -601,21 +602,9 @@ describe('routing backtest statistics', () => {
       insert.run(id, 'full', 'right', new Date(Date.parse(startedAt) + 3_600_000).toISOString())
     }
 
-    const seed = 1
-    const before = routingBacktest('fix', seed).jobs[0]!.currentSelections
-    const production = pick('fix', undefined, 0, false).agent
-    addRun({
-      agent: production, job: 'fix', model: AGENTS[production]!.model,
-      startedAt: new Date(base + 51 * 86_400_000).toISOString(),
-    })
-    const after = routingBacktest('fix', seed).jobs[0]!.currentSelections
-    const agents = new Set([...Object.keys(before), ...Object.keys(after)])
-    const replay = [...agents].find((agent) => (after[agent] ?? 0) - (before[agent] ?? 0) === 1)
-
     expect(candidates('fix').find((candidate) => candidate.agent === 'codex')).toMatchObject({
-      evidence: EVIDENCE_WINDOW, evidenceModel: null, score: 1,
+      evidence: MIN_SAMPLE, evidenceModel: currentModel, score: 0,
     })
-    expect(replay).toBe(production)
   })
 
   test("the replay excludes a disabled legacy agent while retaining its historical rows", () => {

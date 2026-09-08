@@ -811,11 +811,14 @@ export function chainScoreJoin(runAlias: string, scoreAlias: string): string {
 export function pendingForSession(sid: string | null) {
   if (!sid) return []
   return db().query(
-    `SELECT r.id, r.agent, r.job, r.repo, COALESCE(r.label, r.prompt_head) AS prompt_head
+    `SELECT r.id, r.agent, r.job, r.repo, COALESCE(r.label, r.prompt_head) AS prompt_head,
+            CASE WHEN s.delivery IS NOT NULL THEN 1 ELSE 0 END AS rescore
        FROM run r LEFT JOIN score s ON s.run_id = r.id
       WHERE r.session_id = ? AND ${UNSCORED_WHERE}
       ORDER BY r.id`,
-  ).all(sid) as { id: number; agent: string; job: string; repo: string | null; prompt_head: string }[]
+  ).all(sid) as {
+    id: number; agent: string; job: string; repo: string | null; prompt_head: string; rescore: number
+  }[]
 }
 
 /** How many runs are owed a judgement, by the same rule, across every session. */

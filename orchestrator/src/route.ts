@@ -25,7 +25,7 @@ export type Candidate = {
    * MIN_SAMPLE measures, and it never exceeds the number of runs behind it.
    */
   evidence: number
-  /** Configured model whose evidence is used, or null when the agent-level fallback is used. */
+  /** Configured model whose evidence is used. Never another model's posterior. */
   evidenceModel: string | null
   /** Mean verdict weight, or null until anything has been judged. */
   score: number | null
@@ -151,20 +151,18 @@ type RoutingWindowRow = {
 }
 
 /**
- * Production's evidence window: dispatch chronology first, then model choice.
- * A late judgement does not make an old dispatch recent, and pre-window rows
- * cannot be pulled back in merely because they use the current model.
+ * Production's evidence window: current model only, then dispatch chronology.
+ * A swapped model starts a fresh posterior. Older-model rows never fill the
+ * cell; the decaying exploration floor is what keeps a thin new model from
+ * routing on noise.
  */
 export function routingEvidenceWindow<T extends RoutingWindowRow>(
   rows: T[], agent: string, currentModel: string,
 ): { rows: T[]; evidenceModel: string | null } {
-  const recent = rows.filter((row) => row.agent === agent)
+  const modelRows = rows.filter((row) => row.agent === agent && row.model === currentModel)
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt) || b.id - a.id)
     .slice(0, EVIDENCE_WINDOW)
-  const modelRows = recent.filter((row) => row.model === currentModel)
-  return modelRows.length >= MIN_SAMPLE
-    ? { rows: modelRows, evidenceModel: currentModel }
-    : { rows: recent, evidenceModel: null }
+  return { rows: modelRows, evidenceModel: currentModel }
 }
 
 /** COOLS_DOWN as a SQL list, so the query uses the canonical vocabulary. */
@@ -832,7 +830,7 @@ export function pick(
     ? `lens ${ev.lens} cell`
     : ev.level === 'stack' ? `stack ${ev.stack} cell` : 'job-wide cell'
   const scope = (c: Candidate) => ` in ${evidenceCell}` +
-    (c.evidenceModel ? ` on model ${c.evidenceModel}` : ' across models')
+    (c.evidenceModel ? ` on model ${c.evidenceModel}` : '')
   if (override) {
     if (avoid.agents?.includes(override)) {
       throw new Error(`--agent ${override} contradicts --avoid ${override}`)

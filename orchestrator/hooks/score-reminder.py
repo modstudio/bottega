@@ -199,7 +199,11 @@ def main() -> int:
         if run_pairs:
             ids = ",".join(str(partner) for partner, _, _ in run_pairs)
             missing.append(f"--better-than {ids} | --worse-than {ids} | --same-as {ids}")
-        lines.append(f'  orch judge {i} {axes} {" ".join(missing)} --note "..."   # {a}/{j}  {p}'.replace("  --note", " --note"))
+        suffix = "  rescore" if delivery is not None else ""
+        lines.append(
+            f'  orch judge {i} {axes} {" ".join(missing)} --note "..."   # {a}/{j}  {p}{suffix}'
+            .replace("  --note", " --note")
+        )
         for partner, agent, reason in run_pairs:
             lines.append(f"    comparable to run {partner} ({agent}): {reason}")
     for current, pair_entry in pairs_by_run.items():
@@ -221,9 +225,12 @@ def main() -> int:
         for note_id, project, note_text in notes:
             lines.append(f"  {note_id}  {project}  {note_text[:80]}")
     if rows:
+        needs_rescore = any(delivery is not None for _, _, _, _, delivery, _, _, _, _, _, _, _ in rows)
         intro = (
             f"{len(rows)} delegated run{'s' if len(rows) > 1 else ''} from this session "
-            f"{'have' if len(rows) > 1 else 'has'} not been scored:"
+            f"{'have' if len(rows) > 1 else 'has'} not been scored"
+            + ("; rescore those a later turn moved" if needs_rescore else "")
+            + ":"
         )
     elif pairs:
         intro = f"{len(pairs)} scored pair{'s' if len(pairs) > 1 else ''} await comparison:"

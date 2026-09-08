@@ -1130,6 +1130,22 @@ describe('the Stop hook and orch agree on what is unscored', () => {
     expect(monitorIds).not.toContain(id)
   })
 
+  test('the Stop hook stands down once per session including the note reminder', () => {
+    addRun({ agent: 'codex', job: 'craft', session: 'hook-once-session' })
+    const hook = new URL('../hooks/score-reminder.py', import.meta.url).pathname
+    const invoke = (payload: Record<string, unknown>) => Bun.spawnSync(['python3', hook], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB! },
+      stdin: new TextEncoder().encode(JSON.stringify(payload)),
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    const first = invoke({ session_id: 'hook-once-session' })
+    expect(first.exitCode).toBe(0)
+    expect(JSON.parse(first.stdout.toString()).reason).toContain('not been scored')
+    const second = invoke({ session_id: 'hook-once-session', stop_hook_active: true })
+    expect(second.exitCode).toBe(0)
+    expect(second.stdout.toString()).toBe('')
+  })
+
   test('the hook raises an unrecorded scored pair once', () => {
     const first = addRun({ agent: 'codex', job: 'craft', session: 'hook-session', inputTree: 'hook-tree' })
     const second = addRun({ agent: 'grok', job: 'craft', session: 'hook-session', inputTree: 'hook-tree' })

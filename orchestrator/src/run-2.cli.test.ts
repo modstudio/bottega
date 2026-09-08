@@ -643,15 +643,38 @@ describe('a conversation is one unit of work, not one per turn', () => {
     expect(db().query('SELECT status, failure_kind FROM run WHERE id=?').get(failed))
       .toEqual({ status: 'failed', failure_kind: 'timeout' })
 
-    const succeeded = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+    const succeeded = addRun({
+      agent: 'codex', job: 'implement', status: 'asking', session: 'restored-root',
+    })
     db().query(
       `INSERT INTO question (run_id, asked_at, question, answer, answered_at)
        VALUES (?,?,?,?,?)`,
     ).run(succeeded, nowIso(), 'which way?', 'that way', nowIso())
-    addRun({ agent: 'codex', job: 'implement', status: 'ok', parent: succeeded, turn: 2 })
+    addRun({
+      agent: 'codex', job: 'implement', status: 'ok', parent: succeeded, turn: 2,
+      session: 'restored-root',
+    })
+    expect(pendingForSession('restored-root')).toEqual([])
     expect(resolveRootFromLastTurn(db(), succeeded)).toBe(1)
     expect(db().query('SELECT status FROM run WHERE id=?').get(succeeded))
       .toEqual({ status: 'ok' })
+    expect(pendingForSession('restored-root').map((row) => row.id)).toEqual([succeeded])
+  })
+
+  test('a restored root is scoreable once a later turn completes', () => {
+    const root = addRun({
+      agent: 'codex', job: 'implement', status: 'asking', session: 'restored-later',
+    })
+    db().query(
+      `INSERT INTO question (run_id, asked_at, question, answer, answered_at)
+       VALUES (?,?,?,?,?)`,
+    ).run(root, nowIso(), 'which way?', 'that way', nowIso())
+    addRun({
+      agent: 'codex', job: 'implement', status: 'ok', parent: root, turn: 2, session: 'restored-later',
+    })
+    expect(pendingForSession('restored-later')).toEqual([])
+    expect(resolveRootFromLastTurn(db(), root)).toBe(1)
+    expect(pendingForSession('restored-later').map((row) => row.id)).toEqual([root])
   })
 
   test('a resumed truncation rolls up through run and stays excluded', async () => {

@@ -1628,6 +1628,30 @@ test('record-only closes the question, marks the chain stranded, and retry resta
       .not.toContain('pair:')
   })
 
+  test('pending says rescore when a later turn moved a judged chain', () => {
+    const root = addRun({ agent: 'codex', job: 'implement', session: 'orch-test-session' })
+    expect(orch('score', String(root), 'full', 'right', 'faithful').code).toBe(0)
+    addRun({
+      agent: 'codex', job: 'implement', parent: root, turn: 2, session: 'orch-test-session',
+    })
+    const pending = orch('pending')
+    expect(pending.code).toBe(1)
+    expect(pending.out).toContain(`orch score ${root}`)
+    expect(pending.out).toContain('rescore')
+  })
+
+  test('score --void without a new verdict keeps the existing score', () => {
+    const id = addRun({ agent: 'codex', job: 'file-question', session: 'orch-test-session' })
+    expect(orch('score', String(id), 'full', 'right').code).toBe(0)
+    const voided = orch('score', String(id), '--void')
+    expect(voided.code).toBe(0)
+    expect(voided.out).toContain('existing verdict unchanged')
+    expect(db().query('SELECT delivery, quality FROM score WHERE run_id=?').get(id))
+      .toEqual({ delivery: 'full', quality: 'right' })
+    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id))
+      .toEqual({ evidence_excluded: 'voided with orch score --void' })
+  })
+
   test('no pair offer across different spec_sha', () => {
     const first = addRun({
       agent: 'codex', job: 'file-question', session: 'orch-test-session', specSha: 'task-a',

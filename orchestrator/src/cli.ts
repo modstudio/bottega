@@ -2077,6 +2077,7 @@ switch (cmd) {
           value.status!, value.failureKind ?? null, value.error ?? null, JSON.stringify(value), row.id,
         )
       }
+      resolveRootFromLastTurn(db(), authority.rootId)
       auditRunMutation(authority, 'reclassify', JSON.stringify({ ...audit, cleared: true,
         landingBlock: worktreeMissing ? recoveryCommand : null }))
     })
@@ -6493,7 +6494,10 @@ switch (cmd) {
     if (rows.length) {
       console.log(`${rows.length} run${rows.length === 1 ? '' : 's'} you made are unscored:\n`)
       for (const r of rows) {
-        console.log(`  orch score ${r.id} <none|partial|full> [wrong|mixed|right]   # ${r.agent}/${r.job}  ${r.prompt_head.slice(0, 40)}`)
+        console.log(
+          `  orch score ${r.id} <none|partial|full> [wrong|mixed|right]   # ${r.agent}/${r.job}  ${r.prompt_head.slice(0, 40)}` +
+          (r.rescore ? '  rescore' : ''),
+        )
       }
     }
     if (pairs.length) {

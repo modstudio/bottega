@@ -269,8 +269,9 @@ challenger rates remain separate: they answer whether an agent has been tried
 enough at all, while Thompson answers which proven agent the evidence supports.
 The standing-challenger floor decays from 10% with the proven leader's judgement
 count in that evidence cell, bottoming out at 3%. A model swapped behind an
-agent name starts a fresh model-specific posterior rather than inheriting the
-old model's evidence once the new model reaches the evidence floor.
+agent name starts a fresh model-specific posterior and does not inherit the old
+model's mean; until it has enough of its own judgements it is unproven and
+enters through that decaying floor.
 
 For findings jobs, reviewer precision breaks a tie inside the noise band when
 the named lens has enough triage evidence. A measured precision outranks an
@@ -344,7 +345,10 @@ scoring: the CLI hint, the run-completion line, the Stop hook and the gate's
 deny message all said `good|partial|bad`. It was used once in fifty-eight
 judgements, and run 279 — 57 bytes of vendor error — was filed as a quality
 problem because nothing better was on offer. A level that is not offered does
-not exist.
+not exist. A run's evidence identity is the caller prompt (`spec_sha`), the
+change (`patch_id` and path set), the lens, and the effective model; pair
+offers, the unevidenced gate, void, pending, the Stop hook and routing keys
+read that tuple.
 
 **Calibration runs are marked `--probe` and never count as evidence.** A smoke
 test that asks an agent to reply `ok` proves the plumbing works and nothing
@@ -530,13 +534,12 @@ seven days now, with 24 hours, 30 days and all-time beside it, remembered
 per-browser.
 
 The routing matrix and guide do not take that dashboard window. Their evidence
-has its own bound: `EVIDENCE_WINDOW=40`, the most recent judgements for a job and
-agent. Within that window evidence is keyed by job, agent and the agent's current
-model once that model has `MIN_SAMPLE`; below it, the same agent's evidence falls
-back across models. A vendor silently swapped the model behind an agent and the
-new model inherited the old model's mean as though nothing had changed. The
-model key stops that inheritance once the new model has enough evidence, and
-the fallback keeps a fresh model from routing on noise before it does.
+has its own bound: `EVIDENCE_WINDOW=40`, the most recent judgements for a job,
+agent, and the agent's current model. A vendor silently swapped the model behind
+an agent and the new model inherited the old model's mean as though nothing had
+changed. Evidence for an agent now uses only that current model's rows, so a
+swap starts a fresh posterior. The decaying standing-exploration floor is what
+keeps a thin new model from routing on noise before it has its own sample.
 
 The per-repo tallies never take either window: they report activity rather than
 routing evidence. The counters sit on a different tab, and the band says so in
