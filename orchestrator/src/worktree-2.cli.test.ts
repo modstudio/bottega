@@ -17,6 +17,8 @@ test('project lock state resolves under XDG runtime or the per-user temporary di
     expect(fallback).toStartWith(`${tmpdir()}/orch/`)
     expect(projectLockRuntimeDir(repo, { XDG_RUNTIME_DIR: xdg })).not.toStartWith(`${repo}/`)
     expect(fallback).not.toStartWith(`${repo}/`)
+    const linked=join(repo,'linked-runtime-key');git(repo,'worktree','add','-b','runtime-key',linked,'HEAD')
+    expect(projectLockRuntimeDir(linked,{ XDG_RUNTIME_DIR: xdg })).toBe(projectLockRuntimeDir(repo,{ XDG_RUNTIME_DIR: xdg }))
   } finally { rmSync(repo, { recursive: true, force: true }) }
 })
 test('a resumed turn waits for cleanup and refuses a worktree removed under the lifecycle lock', async () => {

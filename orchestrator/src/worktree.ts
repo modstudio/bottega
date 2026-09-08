@@ -358,7 +358,7 @@ export function projectLockRuntimeDir(
 ): string {
   const common = realpathSync(resolve(repoRoot, git(['rev-parse', '--git-common-dir'], repoRoot)))
   const base = env.XDG_RUNTIME_DIR && isAbsolute(env.XDG_RUNTIME_DIR) ? env.XDG_RUNTIME_DIR : tmpdir()
-  const key = `${basename(repoRoot)}-${createHash('sha256').update(common).digest('hex').slice(0, 16)}`
+  const key = `${basename(dirname(common))}-${createHash('sha256').update(common).digest('hex').slice(0, 16)}`
   return join(base, 'orch', key)
 }
 
