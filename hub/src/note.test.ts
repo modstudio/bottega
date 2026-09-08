@@ -107,6 +107,7 @@ console.log(${JSON.stringify(JSON.stringify([
     expect(acknowledgeNote(note.id, session).alreadyAcknowledged).toBe(true)
     expect(listNotes({ session }).map((row) => row.id)).not.toContain(note.id)
     expect(listNotes({ session: otherSession }).map((row) => row.id)).toContain(note.id)
+    expect(listNotes({ session: [otherSession, session] }).map((row) => row.id)).not.toContain(note.id)
     expect(listNotes({ session, kept: true }).map((row) => row.id)).toContain(note.id)
 
     db().query('UPDATE note SET anchors=?, sightings=sightings+1, last_seen_at=? WHERE id=?').run(

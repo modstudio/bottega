@@ -36,6 +36,8 @@ const flag = (name: string) => {
   const i = argv.indexOf(`--${name}`)
   return i >= 0 ? argv[i + 1] : undefined
 }
+const flags = (name: string) => argv.flatMap((value, index) =>
+  value === `--${name}` && argv[index + 1] ? [argv[index + 1]!] : [])
 const has = (name: string) => argv.includes(`--${name}`)
 const taskCommandShapes = new Map<string, {
   positionalCount: number
@@ -481,8 +483,10 @@ async function note() {
       throw new Error('to file the text "list", use: hub note new "list" [--new|--same-as ID]')
     }
     if (has('actionable') && has('kept')) throw new Error('--actionable and --kept are mutually exclusive')
-    const session = flag('session') ?? (has('kept') ? noteSessionId() ?? undefined : undefined)
-    if (has('kept') && !session) throw new Error('hub note list --kept requires --session ID or a session environment')
+    const sessions = flags('session')
+    if (has('kept') && !sessions.length && noteSessionId()) sessions.push(noteSessionId()!)
+    if (has('kept') && !sessions.length) throw new Error('hub note list --kept requires --session ID or a session environment')
+    const session = sessions.length ? sessions : undefined
     const rows = has('actionable')
       ? listActionableNotes({ project: flag('project'), session })
       : listNotes({ project: flag('project'), stale: has('stale'), session, kept: has('kept') })

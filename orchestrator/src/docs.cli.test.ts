@@ -817,7 +817,7 @@ describe('scoped operator docs', () => {
     })
     expect(kept.exitCode, kept.stderr.toString()).toBe(0)
     const afterKeep = Bun.spawnSync(['python3', new URL('../hooks/score-reminder.py', import.meta.url).pathname], {
-      env, stdin: new TextEncoder().encode(JSON.stringify({ session_id: session })), stdout: 'pipe', stderr: 'pipe',
+      env, stdin: new TextEncoder().encode(JSON.stringify({ session_id: `payload-${session}` })), stdout: 'pipe', stderr: 'pipe',
     })
     expect(afterKeep.exitCode, afterKeep.stderr.toString()).toBe(0)
     expect(afterKeep.stdout.toString()).toBe('')

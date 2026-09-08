@@ -78,23 +78,31 @@ export function noteSessionId(env = process.env): string | null {
 }
 
 export function listNotes(filters: {
-  project?: string; stale?: boolean; session?: string; actionable?: boolean; kept?: boolean
+  project?: string; stale?: boolean; session?: string | string[]; actionable?: boolean; kept?: boolean
 } = {}): NoteRow[] {
   const clauses: string[] = []
   const values: (string | number)[] = []
-  if (filters.kept && !filters.session) throw new Error('listing kept notes requires a session')
+  const sessions = [...new Set(
+    (Array.isArray(filters.session) ? filters.session : filters.session ? [filters.session] : [])
+      .map((session) => session.trim()).filter(Boolean),
+  )]
+  if (filters.kept && !sessions.length) throw new Error('listing kept notes requires a session')
   if (filters.project) { registeredProject(filters.project); clauses.push('note.project = ?'); values.push(filters.project) }
   if (filters.stale !== undefined) clauses.push(filters.stale ? 'note.stale_at IS NOT NULL' : 'note.stale_at IS NULL')
-  if (filters.session) {
-    clauses.push("EXISTS (SELECT 1 FROM json_each(note.anchors) WHERE json_extract(value, '$.session_id') = ?)")
-    values.push(filters.session)
+  if (sessions.length) {
+    const candidates = sessions.map(() => '?').join(',')
+    clauses.push(`EXISTS (
+      SELECT 1 FROM json_each(note.anchors)
+       WHERE json_extract(value, '$.session_id') IN (${candidates})
+    )`)
+    values.push(...sessions)
     clauses.push(`${filters.kept ? '' : 'NOT '}EXISTS (
       SELECT 1 FROM note_acknowledgement acknowledgement
        WHERE acknowledgement.note_id = note.id
-         AND acknowledgement.session_id = ?
+         AND acknowledgement.session_id IN (${candidates})
          AND acknowledgement.sightings = note.sightings
     )`)
-    values.push(filters.session)
+    values.push(...sessions)
   }
   if (filters.actionable) clauses.push('note.stale_at IS NULL AND note.promoted_task IS NULL')
   const rows = db().query<Omit<NoteRow, 'anchors'> & { anchors: string }, (string | number)[]>(
@@ -104,7 +112,7 @@ export function listNotes(filters: {
   return rows.map(decode)
 }
 
-export function listActionableNotes(filters: { project?: string; session?: string } = {}): NoteRow[] {
+export function listActionableNotes(filters: { project?: string; session?: string | string[] } = {}): NoteRow[] {
   return listNotes({ ...filters, actionable: true })
 }
 

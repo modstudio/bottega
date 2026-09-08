@@ -41,7 +41,13 @@ def main() -> int:
     # reminder either stood down entirely, or raised another session's runs —
     # and a session told it is blocking on runs it never read will eventually
     # score them, which is the one thing this file exists to prevent.
-    sid = payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID")
+    # Remote Control can make the payload identity differ from the shell's.
+    # Notes belong to either observed identity, and an acknowledgement by
+    # either one suppresses the reminder, so carry the ordered set to hub.
+    session_ids = list(dict.fromkeys(filter(None, [
+        payload.get("session_id"), os.environ.get("CLAUDE_CODE_SESSION_ID")
+    ])))
+    sid = session_ids[0] if session_ids else None
     if not sid or not os.path.exists(DB):
         return 0
 
@@ -145,8 +151,12 @@ def main() -> int:
 
     notes = []
     try:
+        note_args = [hub_bin(), "note", "list"]
+        for session_id in session_ids:
+            note_args.extend(["--session", session_id])
+        note_args.extend(["--actionable", "--json"])
         result = subprocess.run(
-            [hub_bin(), "note", "list", "--session", sid, "--actionable", "--json"],
+            note_args,
             capture_output=True, text=True, timeout=5, check=True,
         )
         notes = [(row["id"], row["project"], row["text"]) for row in json.loads(result.stdout)]
