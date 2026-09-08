@@ -256,6 +256,10 @@ Status surfaces use the posterior mean instead, so reading a guide or `orch
 pick` does not spend a draw or make the answer jitter. The unproven and standing
 challenger rates remain separate: they answer whether an agent has been tried
 enough at all, while Thompson answers which proven agent the evidence supports.
+The standing-challenger floor decays from 10% with the proven leader's judgement
+count in that evidence cell, bottoming out at 3%. A model swapped behind an
+agent name starts a fresh model-specific posterior rather than inheriting the
+old model's evidence once the new model reaches the evidence floor.
 
 For findings jobs, reviewer precision breaks a tie inside the noise band when
 the named lens has enough triage evidence. A measured precision outranks an

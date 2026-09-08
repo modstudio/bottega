@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import { AGENTS, BETA_SCALE, COOLS_DOWN, FAILS_OVER, MIN_REVIEW_TRIAGED, MIN_SAMPLE, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOISE_BAND, NOT_EVIDENCE, POSTERIOR_NOISE_BAND, QUALITY_STEP, STANDING_EXPLORE_RATE, UNSCORED_WHERE, WEIGHT, addRun, candidates, classify, completeReview, currentPolicySelection, db, evidenceFor, label, median, nowIso, pendingForSession, pick, recordReview, reviewReply, score, scoreboard, triageFinding, unscoredCount, weigh, weightCase } from '../test/fixture.ts'
+import { AGENTS, BETA_SCALE, COOLS_DOWN, EVIDENCE_WINDOW, FAILS_OVER, MIN_REVIEW_TRIAGED, MIN_SAMPLE, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOISE_BAND, NOT_EVIDENCE, POSTERIOR_NOISE_BAND, QUALITY_STEP, STANDING_EXPLORE_RATE, UNSCORED_WHERE, WEIGHT, addRun, candidates, classify, completeReview, currentPolicySelection, db, evidenceFor, label, median, nowIso, pendingForSession, pick, recordReview, reviewReply, score, scoreboard, standingExploreRate, triageFinding, unscoredCount, weigh, weightCase } from '../test/fixture.ts'
 import { resolveFailover } from './collect.ts'
 
 describe('failure classification', () => {
@@ -707,6 +707,14 @@ describe('routing exploration', () => {
     } finally {
       Math.random = random
     }
+  })
+
+  test('the standing exploration floor decays with the leader cell evidence', () => {
+    expect(standingExploreRate(MIN_SAMPLE)).toBe(0.10)
+    expect(standingExploreRate(4 * MIN_SAMPLE)).toBe(0.05)
+    expect(standingExploreRate(EVIDENCE_WINDOW)).toBe(
+      Math.max(0.03, 0.10 / Math.sqrt(8)),
+    )
   })
 
   test('the standing draw skips a challenger whose scored history is all none', () => {

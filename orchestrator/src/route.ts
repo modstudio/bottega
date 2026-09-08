@@ -184,6 +184,15 @@ export const EXPLORE_RATE = 0.25
 
 /** Keep testing proven challengers so a leader cannot hold the route forever. */
 export const STANDING_EXPLORE_RATE = 0.10
+export const STANDING_EXPLORE_FLOOR = 0.03
+
+/** The leader's cell evidence decays the standing draw, without retiring it. */
+export function standingExploreRate(leaderEvidence: number): number {
+  return Math.max(
+    STANDING_EXPLORE_FLOOR,
+    STANDING_EXPLORE_RATE / Math.sqrt(leaderEvidence / MIN_SAMPLE),
+  )
+}
 
 /**
  * The gap between two adjacent quality levels: right to mixed, mixed to wrong.
@@ -778,7 +787,7 @@ export function currentPolicySelection<T extends CurrentPolicyCandidate>(
     const ranked = thompsonRank(proven, explore, rng)
     const best = ranked.chosen
     if (explore && unproven.length === 0 && proven.length === candidates.length &&
-        rng() < STANDING_EXPLORE_RATE) {
+        rng() < standingExploreRate(best.evidence)) {
       const challenger = [...proven]
         .filter((c) => c.agent !== best.agent && worthExploring(c) && !explorationExcluded.has(c.agent))
         .sort((a, b) => a.evidence - b.evidence)[0]

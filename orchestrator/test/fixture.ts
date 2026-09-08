@@ -145,7 +145,8 @@ export const { db, DB_PATH, nowIso, reapStale, pendingForSession, unscoredCount,
         bootstrapFixtureStore, authorizeRunMutation, adoptRunMutation, sessionId } = await import('../src/db.ts')
 export const { candidates, weightCase, scoreboard, median, evidenceFor, pick,
         NOISE_BAND, QUALITY_STEP, MIN_SAMPLE, OUTPUT_RESERVE, EVIDENCE_WINDOW,
-        STANDING_EXPLORE_RATE, PROMPT_SIZE_BOUNDARY, promptSizeBucket, betaContribution,
+        STANDING_EXPLORE_RATE, STANDING_EXPLORE_FLOOR, standingExploreRate,
+        PROMPT_SIZE_BOUNDARY, promptSizeBucket, betaContribution,
         BETA_SCALE, POSTERIOR_NOISE_BAND, currentPolicySelection } = await import('../src/route.ts')
 export const { guide } = await import('../src/guide.ts')
 export const { validateCliArgs } = await import('../src/args.ts')
