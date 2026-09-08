@@ -10,10 +10,26 @@ import { applyMigrations, MIGRATIONS_FOLDER, migrationJournal } from './migratio
 
 const ROOT = new URL('../..', import.meta.url).pathname.replace(/\/$/, '')
 
+/**
+ * Walk THIS tree's sources, not every copy of them on disk.
+ *
+ * `.claude/worktrees` and `orchestrator/runs` both hold whole copies of the
+ * source tree - a retained worker worktree, and a run's archived artifacts.
+ * Descending into them made this invariant measure repository HISTORY: 152
+ * assignments were reported where one was expected, because worktrees cut
+ * before DEFAULT_PACK_BYTES moved out of jobs.ts still carry the old
+ * assignment. It also pushed the walk past its 5s budget at 6547ms.
+ *
+ * Excluding them by name is deliberate rather than clever: the alternative,
+ * a gitignore-aware walk, would silently change what this invariant covers
+ * whenever the ignore file changes.
+ */
+const UNWALKED = new Set(['node_modules', 'dist', '.claude', 'runs'])
+
 function walkTs(dir: string): string[] {
   const out: string[] = []
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name === 'node_modules' || entry.name === 'dist') continue
+    if (UNWALKED.has(entry.name)) continue
     const path = join(dir, entry.name)
     if (entry.isDirectory()) out.push(...walkTs(path))
     else if (entry.name.endsWith('.ts')) out.push(path)
