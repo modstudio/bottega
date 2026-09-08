@@ -3099,6 +3099,11 @@ export async function run(opts: {
     let parsedReview: ReturnType<typeof parseReviewOutput> = null
     if (requestedJob.findings && output && (status === 'ok' || confinementEvent)) {
       parsedReview = parseReviewOutput(output)
+      if (!parsedReview && status === 'ok') {
+        status = 'failed'
+        error = 'reply did not match the review contract: mandatory PROVENANCE section missing or malformed'
+        failureKind = 'contract'
+      }
       if (parsedReview && status === 'ok' && confinementEvent?.classification !== 'overlapping') {
         const evidence = cleanReviewEvidence(claim.id, parsedReview)
         if (evidence.failure !== null) {
@@ -3109,6 +3114,15 @@ export async function run(opts: {
           error = error ? `${error}\n${evidence.note}` : evidence.note
         }
       }
+    }
+    const provenanceWrongProjectTool = parsedReview?.provenance.mcp_tools.find((tool) => {
+      const server = tool.split(/[.:/]/, 1)[0]
+      return Boolean(server && mcpConnection?.server && server !== mcpConnection.server)
+    })
+    if (parsedReview && provenanceWrongProjectTool && status === 'ok') {
+      status = 'failed'
+      error = `wrong project: provenance names ${provenanceWrongProjectTool}, expected ${mcpConnection?.server}`
+      failureKind = 'contract'
     }
     if (status === 'ok' && isReaderJob(opts.job) && declaredDeliverables.length) {
       const reader = parseReaderOutput(output)
@@ -3254,10 +3268,7 @@ export async function run(opts: {
     const reviewProvenance = parsedReview ? JSON.stringify(parsedReview.provenance) : null
     const provenanceSilent = parsedReview && parsedReview.provenance.could_not_verify.length === 0 && (
       parsedReview.provenance.substitutes.length > 0 || mcpConnection?.connected !== true ||
-      parsedReview.provenance.mcp_tools.some((tool) => {
-        const server = tool.split(/[.:/]/, 1)[0]
-        return Boolean(server && mcpConnection?.server && server !== mcpConnection.server)
-      })
+      Boolean(provenanceWrongProjectTool)
     )
     const writeTerminalRow = () => writeTransaction(() => {
       db().query(
