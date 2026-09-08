@@ -3,7 +3,8 @@ import { resolve } from 'node:path'
 import { db, EVIDENCE_CLOSED_SQL, chainScoreJoin, pidAlive, SESSION_LIVE_MS, sessionId, writableDb, writeTransaction } from './db.ts'
 import { projectAt, projectByName } from './projects.ts'
 import {
-  branchTip, removeBranch, removeFor, targetGitEnvironment, withCleanupLock, withWorktreeLease,
+  branchTip, removeFor, targetGitEnvironment, withCleanupLock, withWorktreeCreateLock,
+  withWorktreeLease,
   type Worktree,
 } from './worktree.ts'
 
@@ -147,35 +148,40 @@ export function reclaimBranch(
   const branch = subject.slice(colon + 1)
   const project = projectByName(projectName)
   if (!project) return refuse(`project ${projectName} is not registered`)
-  const tip = branchTip(project.path, branch)
-  if (!tip) return refuse(`branch ${projectName}:${branch} does not exist`)
-  const trunk = typeof project.settings.trunk === 'string' && project.settings.trunk.trim()
-    ? project.settings.trunk : null
-  if (!trunk) return refuse(`project ${projectName} records no landing branch`)
+  const owner = { session: sessionId(), what: `reclaim branch ${projectName}:${branch}` }
+  return withWorktreeCreateLock(project.path, () => withCleanupLock(project.path, owner, () => {
+    const tip = branchTip(project.path, branch)
+    if (!tip) return refuse(`branch ${projectName}:${branch} does not exist`)
+    const checkedOut = git(project.path, ['worktree', 'list', '--porcelain']).out
+      .split('\n').some((line) => line === `branch refs/heads/${branch}`)
+    if (checkedOut) return refuse(`branch ${projectName}:${branch} is checked out in a worktree`)
+    const trunk = typeof project.settings.trunk === 'string' && project.settings.trunk.trim()
+      ? project.settings.trunk : null
+    if (!trunk) return refuse(`project ${projectName} records no landing branch`)
 
-  const kept = db().query(
-    `SELECT id, branch_kept_tip FROM run
-      WHERE repo=? AND (branch=? OR branch_kept=?) AND branch_kept_tip IS NOT NULL ORDER BY id`,
-  ).all(projectName, branch, branch) as { id: number; branch_kept_tip: string | null }[]
-  const recorded = kept.some((row) => row.branch_kept_tip === tip)
-  const absent = absentCommits(project.path, branch, trunk)
-  if (absent === null) return refuse(`reachability from landing branch ${trunk} could not be inspected`)
-  if (absent.length && !recorded) {
-    return refuse(`commits unreachable from landing branch ${trunk}: ${absent.join(', ')}`)
-  }
-  if (options.dryRun) {
-    const proof = recorded ? `tip ${tip} is recorded in branch_kept_tip` : `every commit is reachable from ${trunk}`
-    return { ok: true, action: `would reclaim branch ${projectName}:${branch}; ${proof}` }
-  }
+    const kept = db().query(
+      `SELECT id, branch_kept_tip FROM run
+        WHERE repo=? AND (branch=? OR branch_kept=?) AND branch_kept_tip IS NOT NULL ORDER BY id`,
+    ).all(projectName, branch, branch) as { id: number; branch_kept_tip: string | null }[]
+    const recorded = kept.some((row) => row.branch_kept_tip === tip)
+    const absent = absentCommits(project.path, branch, trunk)
+    if (absent === null) return refuse(`reachability from landing branch ${trunk} could not be inspected`)
+    if (absent.length && !recorded) {
+      return refuse(`commits unreachable from landing branch ${trunk}: ${absent.join(', ')}`)
+    }
+    if (options.dryRun) {
+      const proof = recorded ? `tip ${tip} is recorded in branch_kept_tip` : `every commit is reachable from ${trunk}`
+      return { ok: true, action: `would reclaim branch ${projectName}:${branch}; ${proof}` }
+    }
 
-  writableDb()
-  try {
-    if (!removeBranch(project.path, branch)) return refuse(`git did not delete branch ${projectName}:${branch}`)
-  } catch (cause) {
-    return refuse(`git did not delete branch ${projectName}:${branch}: ${String((cause as Error).message ?? cause)}`)
-  }
-  db().query(
-    'UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE repo=? AND branch_kept=?',
-  ).run(projectName, branch)
-  return { ok: true, action: `reclaimed branch ${projectName}:${branch}` }
+    writableDb()
+    const deleted = git(project.path, ['update-ref', '-d', `refs/heads/${branch}`, tip])
+    if (!deleted.ok || branchTip(project.path, branch) !== null) {
+      return refuse(`git did not delete branch ${projectName}:${branch} at proved tip ${tip}: ${deleted.out || 'ref moved'}`)
+    }
+    db().query(
+      'UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE repo=? AND branch_kept=?',
+    ).run(projectName, branch)
+    return { ok: true, action: `reclaimed branch ${projectName}:${branch}` }
+  }, 5 * 60_000), 5 * 60_000)
 }
