@@ -21,7 +21,11 @@ const shape = (
   valueFlags: readonly string[] = [],
   booleanFlags: readonly string[] = [],
   extra: Pick<CommandShape, 'dynamicValueFlag' | 'allowedPositionals' | 'messagePositionals' | 'optionalValueFlags'> = {},
-): CommandShape => ({ usage, maxPositionals, valueFlags, booleanFlags, ...extra })
+): CommandShape => ({
+  usage, maxPositionals, valueFlags,
+  booleanFlags: [...new Set([...booleanFlags, '--help', '-h'])],
+  ...extra,
+})
 
 const hasArg = (argv: string[], arg: string) => argv.includes(arg)
 
@@ -364,7 +368,7 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
     case 'do': return { args: argv.slice(1), shape: shape(
       'orch do <job> [prompt] [--agent NAME] [--file PATH] [--schema PATH] [--model NAME] [--transport cli|acp] [--deliverable TEXT]... [--timeout MINUTES] [--keep-tree]', Infinity,
       ['--agent', '--avoid', '--distinct-from', '--base', '--review', '--file', '--schema', '--model', '--transport', '--label', '--lens', '--seed', '--key', '--repo', '--cwd', '--deliverable', '--timeout'],
-      ['--carry', '--mcp', '--quiet', '--probe', '--follow', '--detach', '--porcelain', '--no-failover', '--help', '--keep-tree'],
+      ['--carry', '--mcp', '--quiet', '--probe', '--follow', '--detach', '--porcelain', '--no-failover', '--help', '--keep-tree', '--no-wait-capacity'],
       { optionalValueFlags: { '--mcp': ['prefer'] } },
     ) }
     case 'review': {

@@ -95,6 +95,10 @@ const taskHelpRequested = () => {
   }
   return false
 }
+const hubHelpRequested = () => {
+  if (cmd === 'task') return taskHelpRequested()
+  return argv.some((token) => token === '--help' || token === '-h' || token === 'help')
+}
 
 const TASK_USAGE = `hub task new --project X --title "..." [--status Y] [--parent KEY]
                [--body "..."|--body-file PATH] [--allow-duplicate "reason"]
@@ -616,10 +620,15 @@ async function sendReport() {
  */
 try {
 
+if (hubHelpRequested()) {
+  console.log(cmd === 'task' ? TASK_USAGE : USAGE)
+  process.exit(0)
+}
+
 const usesDatabase = cmd === 'collect' || cmd === 'tasks' || cmd === 'serve'
   || cmd === 'task' || cmd === 'send' || cmd === 'reconcile' || cmd === 'rulings'
   || cmd === 'doctor' || cmd === 'note'
-if (usesDatabase && !(cmd === 'task' && taskHelpRequested())) requireDatabase()
+if (usesDatabase) requireDatabase()
 
 switch (cmd) {
   case 'migrate': {

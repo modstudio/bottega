@@ -1297,6 +1297,20 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
   return id
 }
 
+function refuseEscapedChain(id: number): void {
+  const row = db().query(
+    `SELECT id, failure_kind FROM run
+      WHERE (id=? OR parent_run_id=?) AND failure_kind IN ('escaped','confinement_unverified')
+      ORDER BY id DESC LIMIT 1`,
+  ).get(id, id) as { id: number; failure_kind: string } | null
+  if (!row) return
+  throw new Error(
+    `run ${id} is ${row.failure_kind}\n` +
+    'invariant: an escaped or confinement-unverified chain is not resumed until the classification is cleared\n' +
+    `cleared by: orch confinement clear ${id} --writer TEXT --note TEXT`,
+  )
+}
+
 /** Resume a root run through the one path shared by `continue` and writing retries. */
 async function continueRun(id: number, message?: string): Promise<{ childId: number; job: string }> {
   let authority = authorizeRunMutation(id, 'continue')
@@ -1305,6 +1319,7 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
   ).get(id) as
     { id: number; job: string; parent_run_id: number | null; status: string } | null
   if (!row) throw new Error(`no run ${id}`)
+  refuseEscapedChain(id)
   if (row.parent_run_id) {
     throw new Error(`run ${id} is a turn of run ${row.parent_run_id}; continue that one`)
   }
@@ -1899,6 +1914,14 @@ async function readPrompt(): Promise<string> {
 try {
 
 validateCliArgs(argv)
+if ((argv.includes('--help') || argv.includes('-h')) && cmd && cmd !== '--help' && cmd !== '-h') {
+  const { commandShape } = await import('./args.ts')
+  const selected = commandShape(argv)
+  if (selected) {
+    console.log(selected.shape.usage)
+    process.exit(0)
+  }
+}
 
 switch (cmd) {
   case 'init-db': {
@@ -2872,7 +2895,8 @@ switch (cmd) {
         mcp: requestedMcp(), model: flag('model'), probe: has('probe'), seed, key: flag('key'),
         repo: explicitRepo, base, avoid, distinctModels,
         ...(transportExplicit ? { transport } : {}),
-        noFailover: has('no-failover'), carry: has('carry'), review: reviewRef, cwd: callerCwd,
+        noFailover: has('no-failover'), noWaitCapacity: has('no-wait-capacity'),
+        carry: has('carry'), review: reviewRef, cwd: callerCwd,
         deliverables, timeoutMinutes, keepTree,
       })
       if (!porcelain) warnImplementContractConflicts(conflicts, id)
@@ -4006,6 +4030,7 @@ switch (cmd) {
     } | null
     if (!row) throw new Error(`no run ${requestedId}`)
     const id = row.id
+    refuseEscapedChain(id)
     let answerAuthority = authorizeRunMutation(requestedId, 'answer')
 
     /**
@@ -6483,13 +6508,20 @@ switch (cmd) {
         : `  evidence: ${ev.level === 'stack' ? `${ev.stack} only` : 'all stacks'}` +
           `${stack && ev.level === 'job' ? ` (too little on ${stack} to compare agents there)` : ''}\n`),
     )
-    for (const c of ev.cands) {
+    const listed = [...ev.cands].sort((a, b) => {
+      const rank = (candidate: typeof a) =>
+        AGENTS[candidate.agent]?.billing === 'local' && candidate.preferred ? 0 : 1
+      return rank(a) - rank(b)
+    })
+    for (const c of listed) {
+      const probe = AGENTS[c.agent]?.probeResult as { mcp?: { verifiable?: boolean } } | null
+      const mcpNote = probe?.mcp && probe.mcp.verifiable === false ? ' mcp: unverifiable' : ''
       console.log(
         `  ${c.agent.padEnd(7)} ${c.eligible ? 'eligible' : 'excluded'.padEnd(8)}` +
           ` declared=${c.declared?.join(',') ?? 'any'} preferred=${c.preferred ? 'yes' : 'no'}` +
           ` runs=${String(c.runs).padStart(3)} judged=${String(c.evidence).padStart(3)}` +
           ` score=${c.score === null ? "—" : (c.score * 100).toFixed(0) + "%"}` +
-          ` shrunk=${c.shrunk === null ? "—" : (c.shrunk * 100).toFixed(0) + "%"}  ${c.why}`,
+          ` shrunk=${c.shrunk === null ? "—" : (c.shrunk * 100).toFixed(0) + "%"}  ${c.why}${mcpNote}`,
       )
     }
     console.log(`\n  (a rate steers routing only at ${MIN_SAMPLE}+ scored runs)`)
@@ -6770,13 +6802,30 @@ switch (cmd) {
     // status column and the routing table below it cannot contradict
     // each other.
     const r = await ensureLocalHealth()
-    const { compilePack, findingsForPack } = await import('./canon.ts')
-    const doctorPack = compilePack({ job: 'understand', cwd: process.cwd() })
+    const { CanonBudgetError, compilePack, findingsForPack } = await import('./canon.ts')
+    const { listDocs } = await import('./docs.ts')
+    const { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } = await import('./pack-budget.ts')
+    let doctorPack
+    try { doctorPack = compilePack({ job: 'understand', cwd: process.cwd() }) }
+    catch (error) {
+      if (!(error instanceof CanonBudgetError)) throw error
+      doctorPack = error.pack
+    }
     const doctorFindings = findingsForPack(doctorPack).reduce((n, row) => n + row.findings.length, 0)
+    const packHeadroom = doctorPack.budgetBytes - doctorPack.bytes
     const { CANON_EVALS, currentCanonEvalSha, latestCanonEvals } = await import('./evals.ts')
     const latestEvals = latestCanonEvals()
     const { isReadonlySandboxCandidate, srtInstalled, SRT_BIN } = await import('./sandbox.ts')
-    console.log(`canon          ${doctorFindings} finding(s) in ${doctorPack.bytes}/${doctorPack.budgetBytes} bytes`)
+    console.log(`canon          ${doctorFindings} finding(s) in ${doctorPack.bytes}/${doctorPack.budgetBytes} bytes (${packHeadroom} bytes headroom; ceiling ${DEFAULT_PACK_BYTES})`)
+    const oversized = listDocs().filter((doc) =>
+      doc.delivery === 'inject' && Buffer.byteLength(doc.body) > MAX_INJECT_DOC_BYTES)
+      .sort((a, b) => Buffer.byteLength(b.body) - Buffer.byteLength(a.body))
+    if (oversized.length) {
+      console.log('canon oversize')
+      for (const doc of oversized) {
+        console.log(`  ${Buffer.byteLength(doc.body)}  ${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`)
+      }
+    }
     console.log('canon evals')
     for (const ev of CANON_EVALS) {
       const rows = latestEvals.filter((row) => row.slug === ev.slug)
@@ -6880,6 +6929,21 @@ switch (cmd) {
       }
       if (predatesFileContract(a)) {
         console.log(`  ${fileContractProbeReason(a.name)}`)
+      }
+    }
+    for (const row of agentRows()) {
+      if (row.billing !== 'local') continue
+      const probedAt = row.probed_at ? Date.parse(row.probed_at) : NaN
+      const ageDays = Number.isFinite(probedAt) ? (Date.now() - probedAt) / 86_400_000 : null
+      const probe = row.probe_result ? JSON.parse(row.probe_result) as { ok?: boolean } : null
+      const stale = ageDays !== null && ageDays > 7
+      const failed = probe?.ok === false
+      const age = ageDays === null ? 'never' : `${ageDays.toFixed(1)}d`
+      if (stale || failed) {
+        console.log(`local probe     ${row.name} FAIL ${age}${failed ? ' probe failed' : ' exceeds 7 days'}`)
+        process.exitCode = 1
+      } else {
+        console.log(`local probe     ${row.name} ${age}`)
       }
     }
     const srtAgents = Object.values(AGENTS)

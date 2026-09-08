@@ -1,5 +1,6 @@
 import { CanonBudgetError, compilePack } from '../src/canon.ts'
 import { JOBS } from '../src/jobs.ts'
+import { DEFAULT_PACK_BYTES } from '../src/pack-budget.ts'
 import { projects } from '../src/projects.ts'
 
 export function checkPackBudget(): string[] {
@@ -22,5 +23,5 @@ if (import.meta.main) {
     console.error(`canon pack budget failed for ${failures.length} project/job combination(s):\n${failures.join('\n\n')}`)
     process.exit(1)
   }
-  console.log('canon pack budget ok')
+  console.log(`canon pack budget ok (ceiling ${DEFAULT_PACK_BYTES} bytes)`)
 }

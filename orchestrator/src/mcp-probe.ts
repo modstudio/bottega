@@ -1,5 +1,47 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
+
+/** True when a transcript contains a completed MCP/tool call the probe can observe. */
+export function mcpToolCallsObservable(
+  events: { kind: string; status?: string }[], output: string,
+): boolean {
+  const tools = events.filter((event) => event.kind === 'tool')
+  if (tools.some((event) => event.status === 'completed')) return true
+  return /\bping\b/i.test(output) && /\bpong\b/i.test(output)
+}
+
+/** Mint a one-tool stdio MCP server used by the registration MCP probe. */
+export function mintStdioPingServer(dir: string): string {
+  const server = join(dir, 'minted-mcp-server.ts')
+  writeFileSync(server, `
+let buf = Buffer.alloc(0)
+const reply = (id, result) => {
+  const body = Buffer.from(JSON.stringify({ jsonrpc: '2.0', id, result }))
+  process.stdout.write('Content-Length: ' + body.length + '\\r\\n\\r\\n')
+  process.stdout.write(body)
+}
+process.stdin.on('data', (chunk) => {
+  buf = Buffer.concat([buf, chunk])
+  while (true) {
+    const text = buf.toString('utf8')
+    const match = /^Content-Length:\\s*(\\d+)\\r\\n\\r\\n/.exec(text)
+    if (!match) return
+    const offset = match[0].length
+    const length = Number(match[1])
+    if (buf.length < offset + length) return
+    const message = JSON.parse(buf.subarray(offset, offset + length).toString('utf8'))
+    buf = buf.subarray(offset + length)
+    if (message.method === 'initialize') reply(message.id, { protocolVersion: '2024-11-05', capabilities: {}, serverInfo: { name: 'minted' } })
+    else if (message.method === 'tools/list') reply(message.id, { tools: [{ name: 'ping', inputSchema: { type: 'object' } }] })
+    else if (message.method === 'tools/call') reply(message.id, { content: [{ type: 'text', text: 'pong' }] })
+  }
+})
+`)
+  writeFileSync(join(dir, '.mcp.json'), JSON.stringify({
+    mcpServers: { minted: { command: process.execPath, args: [server] } },
+  }))
+  return server
+}
 
 export type McpProbeResult = {
   server: string

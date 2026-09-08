@@ -72,8 +72,12 @@ for ((i = 1; i <= MAX; i++)); do
   # orch failure would therefore announce all-clear while work was still
   # running - the precise failure this file exists to prevent. Distinguish
   # "orch said nothing" from "orch did not answer".
-  inbox_raw=$(CLAUDE_CODE_SESSION_ID="$SID" "$ORCH" inbox --all --json 2>/dev/null); inbox_rc=$?
-  runs_raw=$("$ORCH" runs --limit 200 --json 2>/dev/null); runs_rc=$?
+  inbox_err=$(mktemp)
+  runs_err=$(mktemp)
+  inbox_raw=$(CLAUDE_CODE_SESSION_ID="$SID" "$ORCH" inbox --all --json 2>"$inbox_err"); inbox_rc=$?
+  runs_raw=$("$ORCH" runs --limit 200 --json 2>"$runs_err"); runs_rc=$?
+  last_err=$(tail -n 1 "$inbox_err" "$runs_err" 2>/dev/null | grep -v '^==>' | grep -v '^$' | tail -n 1)
+  rm -f "$inbox_err" "$runs_err"
   if [ ! -d "$ROOT" ]; then
     echo "DEGRADED: launch directory removed; re-arm from the main checkout"
     exit 2
@@ -192,7 +196,7 @@ for event in events:
     since_emit=$((since_emit + 1))
     if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
       prev_key="$key"; since_emit=0
-      echo "[$(date +%H:%M:%S)] DEGRADED - orch observation failed (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc). State unknown; NOT concluding clear."
+      echo "[$(date +%H:%M:%S)] DEGRADED - orch observation failed (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc). State unknown; NOT concluding clear.${last_err:+ last stderr: $last_err}"
     fi
     sleep "$INTERVAL"; continue
   fi

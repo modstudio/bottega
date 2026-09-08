@@ -15,6 +15,16 @@ const scratch = mkdtempSync(join(tmpdir(), 'hub-note-'))
 afterAll(() => rmSync(scratch, { recursive: true, force: true }))
 
 describe('suggestion notes', () => {
+  test('note curate --help prints usage without running curate', () => {
+    const hub = new URL('./cli.ts', import.meta.url).pathname
+    const result = Bun.spawnSync([process.execPath, hub, 'note', 'curate', '--help'], {
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout.toString()).toContain('hub note curate')
+    expect(result.stderr.toString()).not.toContain('curator')
+  })
+
   test('create derives cwd, file content, run and session anchors', () => {
     const file = join(scratch, 'anchor.ts')
     writeFileSync(file, 'first\nanchored line\n')

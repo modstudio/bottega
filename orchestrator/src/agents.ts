@@ -1103,6 +1103,8 @@ export type RegistrationProbeResult = {
   tool: { ok: boolean; output: string; toolEvents: number; statuses: string[] }
   schema: { ok: boolean; output: string }
   file?: { ok: boolean; output: string }
+  mcp?: { verifiable: boolean; output: string }
+  jobs?: Record<string, { reply?: boolean; tool?: boolean; schema?: boolean; mcp?: boolean }>
   contextTokens: number | null
   contextSource: 'harness' | 'declared' | null
   attempts?: { harness: string; result: unknown }[]
@@ -1151,8 +1153,22 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
     properties: { status: { type: 'string', enum: ['ok'] } },
   }))
   const { transportFor, valueMatchesStrictSchema } = await import('./transport.ts')
+  const { mintStdioPingServer, mcpToolCallsObservable } = await import('./mcp-probe.ts')
+  const { JOBS } = await import('./jobs.ts')
+  mintStdioPingServer(join(scratch, 'repo'))
+  const declared = row.jobs ? JSON.parse(row.jobs) as string[] : null
+  const declaredJobs = declared ?? Object.keys(JOBS)
+  const needs = { tool: false, schema: false, mcp: false }
+  for (const name of declaredJobs) {
+    const job = JOBS[name]
+    if (!job) continue
+    if (job.needs.readsRepo) needs.tool = true
+    if (job.needs.writesRepo || job.findings) needs.schema = true
+    if (job.needs.mcp) needs.mcp = true
+  }
+  if (!declared) { needs.tool = true; needs.schema = true; needs.mcp = true }
   const transport = transportFor(agent.defaultTransport)
-  const runOne = async (id: string, prompt: string, schema?: string) => {
+  const runOne = async (id: string, prompt: string, schema?: string, mcp = false) => {
     const started = Date.now()
     const inserted = writableDb().query(
       `INSERT INTO run
@@ -1166,7 +1182,7 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
         agent, cwd: join(scratch, 'repo'), prompt, outPath: join(scratch, `${id}.out`),
         schemaPath: schema, model: agent.model, modelExplicit: true, startedAt: Date.now(),
         write: true, sandbox: 'workspace-write',
-        writableRoots: [scratch],
+        writableRoots: [scratch], mcp,
         env: {
           ...Object.fromEntries(Object.entries(process.env).filter((e): e is [string,string] => e[1] !== undefined)),
           ...(agent.env?.() ?? {}),
@@ -1195,15 +1211,22 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
     }
   }
   const reply = await runOne('reply', 'Reply with exactly: ok')
-  const tool = await runOne('tool',
+  const tool = needs.tool ? await runOne('tool',
     `Read ${REGISTRATION_PROBE_FILE} with a file tool and reply with exactly its contents.`)
+    : { status: 'ok' as const, output: 'skipped: not required for declared jobs', events: [] as import('./transport.ts').NormalizedEvent[] }
   const replyPath = join(scratch, 'reply.json')
   rmSync(replyPath, { force: true })
-  const structured = await runOne(
-    'schema',
-    'Write {"status":"ok"} to $ORCH_SCRATCH/reply.json, then return a final message using the supplied schema.',
-    schemaPath,
-  )
+  const structured = needs.schema
+    ? await runOne(
+      'schema',
+      'Write {"status":"ok"} to $ORCH_SCRATCH/reply.json, then return a final message using the supplied schema.',
+      schemaPath,
+    )
+    : { status: 'ok' as const, output: 'skipped: not required for declared jobs', parsed: { text: '{"status":"ok"}' }, events: [] as import('./transport.ts').NormalizedEvent[] }
+  const mcpRun = needs.mcp || !declared
+    ? await runOne('mcp',
+      'Call the ping MCP tool and reply with exactly its result.', undefined, true)
+    : { status: 'ok' as const, output: 'skipped: not required for declared jobs', events: [] as import('./transport.ts').NormalizedEvent[] }
   const parsedSchema = (() => {
     try { return JSON.parse(structured.parsed?.text ?? structured.output) } catch { return null }
   })()
@@ -1220,6 +1243,18 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
     const health = await localReachable(4000, row.base_url)
     if (health.contextTokens) { contextTokens = health.contextTokens; contextSource = 'harness' }
   }
+  const mcpVerifiable = !needs.mcp && declared
+    ? true
+    : mcpToolCallsObservable(mcpRun.events, mcpRun.output)
+  const perJob = Object.fromEntries(declaredJobs.map((jobName) => {
+    const job = JOBS[jobName]
+    return [jobName, {
+      reply: true,
+      ...(job?.needs.readsRepo ? { tool: true } : {}),
+      ...(job?.needs.writesRepo || job?.findings ? { schema: true } : {}),
+      ...(job?.needs.mcp ? { mcp: true } : {}),
+    }]
+  }))
   const result: RegistrationProbeResult = {
     harness: row.harness,
     ok: false,
@@ -1230,12 +1265,14 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
       // sentinel may live in the tool result rather than the echoed reply.
       // Any completed tool is not enough: the read must target the probe file
       // and the exact sentinel must appear in that result or the final reply.
-      ok: tool.status === 'ok' && registrationProbeReadsRepo(tool.events, tool.output),
+      ok: !needs.tool || (tool.status === 'ok' && registrationProbeReadsRepo(tool.events, tool.output)),
       output: tool.output, toolEvents: tool.events.filter((e) => e.kind === 'tool').length,
       statuses: tool.events.filter((e) => e.kind === 'tool').map((e) => e.status ?? 'unknown'),
     },
-    schema: { ok: structured.status === 'ok' && parsedSchema?.status === 'ok', output: structured.output },
+    schema: { ok: !needs.schema || (structured.status === 'ok' && parsedSchema?.status === 'ok'), output: structured.output },
     file: { ok: valueMatchesStrictSchema(JSON.parse(readFileSync(schemaPath, 'utf8')), parsedFile), output: fileOutput },
+    mcp: { verifiable: mcpVerifiable, output: mcpRun.output },
+    jobs: perJob,
     contextTokens, contextSource,
     ...(attempts.length ? { attempts } : {}),
   }

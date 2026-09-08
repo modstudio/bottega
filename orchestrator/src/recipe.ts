@@ -75,6 +75,24 @@ export type Recipe = {
 /** One step's outcome, kept so a failure can say which step and why. */
 export type StepResult = { step: string; ok: boolean; detail: string }
 
+function verifySqlCounts(result: StepResult & { out: string }, step: string): StepResult {
+  const numbers = result.out.trim().split(/\s+/).map(Number)
+  const tables = numbers[0]
+  const constraints = numbers[1]
+  if (!result.ok || !Number.isFinite(tables) || !Number.isFinite(constraints)) {
+    return {
+      step: `${step} verify`,
+      ok: false,
+      detail: `restore reported success but row/constraint counts were not readable: ${result.out || result.detail}`,
+    }
+  }
+  return {
+    step: `${step} verify`,
+    ok: true,
+    detail: `${tables} tables, ${constraints} constraints`,
+  }
+}
+
 function sh(cmd: string, cwd: string, env?: Record<string, string>): StepResult & { out: string } {
   const p = Bun.spawnSync(['sh', '-c', cmd], {
     cwd, stdout: 'pipe', stderr: 'pipe',
@@ -144,8 +162,13 @@ export function provisionDb(
         `${psql} -v ON_ERROR_STOP=1 -c 'CREATE DATABASE "${dbName}" TEMPLATE "${db.template}"'`,
         cwd,
       )
+      const counts = sh(
+        `${psql} -v ON_ERROR_STOP=1 -d "${dbName}" -tAc "SELECT (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema')) || ' ' || (SELECT COUNT(*) FROM information_schema.table_constraints WHERE table_schema NOT IN ('pg_catalog','information_schema'))"`,
+        cwd,
+      )
+      const verified = verifySqlCounts(counts, `clone ${db.template}`)
       return [{ ...drop, step: 'drop database if it exists' },
-              { ...create, step: `clone ${db.template}` }]
+              { ...create, step: `clone ${db.template}` }, verified]
     }
     case 'mysql-dump': {
       const mysql = db.mysql ?? 'mysql'
@@ -158,7 +181,12 @@ export function provisionDb(
         cwd,
       )
       const load = sh(`${mysql} ${dbName} < ${fill(db.dump, { db: dbName })}`, cwd)
-      return [{ ...create, step: 'create database' }, { ...load, step: 'load dump' }]
+      const counts = sh(
+        `${mysql} -N -e "SELECT (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${dbName}') AS tables, (SELECT COUNT(*) FROM information_schema.table_constraints WHERE table_schema='${dbName}') AS constraints"`,
+        cwd,
+      )
+      const verified = verifySqlCounts(counts, 'load dump')
+      return [{ ...create, step: 'create database' }, { ...load, step: 'load dump' }, verified]
     }
     case 'compose': {
       const up = sh(fill(db.up, { db: dbName }), cwd)

@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, readFileSync, writeFileSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { dbNameFor, recipeNotes, runRecipe } from '../test/fixture.ts'
+import { provisionDb } from './recipe.ts'
 import { undeclaredCommitHooks } from './projects.ts'
 
 describe('a project can declare a worktree instead of writing one', () => {
@@ -50,6 +51,33 @@ describe('a project can declare a worktree instead of writing one', () => {
     const notes = recipeNotes({ serve: 'bun dev --port {port}', database: { kind: 'none' } }, 'x', '8080')
     expect(notes).toContain('NEVER verify against a server you did not start')
     expect(notes).toContain('8080')
+  })
+
+  test('a SQL restore that exits 0 without readable counts is a failure', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'recipe-restore-'))
+    const mysql = join(dir, 'mysql')
+    writeFileSync(mysql, '#!/bin/sh\nexit 0\n')
+    chmodSync(mysql, 0o755)
+    writeFileSync(join(dir, 'dump.sql'), 'SELECT 1;\n')
+    const steps = provisionDb(
+      { kind: 'mysql-dump', dump: join(dir, 'dump.sql'), mysql }, 'app_wt_1', dir,
+    )
+    expect(steps.at(-1)!.ok).toBe(false)
+    expect(steps.at(-1)!.detail).toContain('counts were not readable')
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test('a SQL restore records table and constraint counts after load', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'recipe-restore-ok-'))
+    const mysql = join(dir, 'mysql')
+    writeFileSync(mysql, '#!/bin/sh\necho "4 9"\nexit 0\n')
+    chmodSync(mysql, 0o755)
+    writeFileSync(join(dir, 'dump.sql'), 'SELECT 1;\n')
+    const steps = provisionDb(
+      { kind: 'mysql-dump', dump: join(dir, 'dump.sql'), mysql }, 'app_wt_1', dir,
+    )
+    expect(steps.at(-1)).toMatchObject({ ok: true, detail: '4 tables, 9 constraints' })
+    rmSync(dir, { recursive: true, force: true })
   })
 
   test('an empty recipe is plain git, which is right where a checkout is just files', () => {

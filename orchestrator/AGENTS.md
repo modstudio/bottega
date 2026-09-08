@@ -76,7 +76,13 @@ time it is due. Three things make it structural rather than remembered:
   rather than proceeding under the shared id.
 - `orch pending` lists your own unscored runs and exits non-zero while any remain.
 - A **Stop hook** raises them before a session finishes, once per turn — it stands
-  down if it has already asked, so it can never trap a session in a loop.
+  down if it has already asked, so it can never trap a session in a loop. The
+  note listing stands down after one listing per session.
+- `orch answer` and `orch continue` refuse escaped and confinement-unverified
+  chains, naming `orch confinement clear`. Unread `orch tell` messages are
+  surfaced at the harness checkpoint before the final parse. Every write verb
+  prints usage on `--help` with no side effects. The heartbeat keeps the last
+  stderr line on a DEGRADED tick.
 
 **Never score a run you did not read.** A guessed verdict teaches the router
 something false, which is worse than the visible gap an unscored run leaves.
@@ -1473,7 +1479,9 @@ nobody has looked at in a day is not being read.
 
 `orch sweep` runs nightly and takes only runs that are terminal, older than a
 day, and **already scored** — an unjudged run is one whose diff is the evidence
-somebody still owes a verdict on. Then each project's own sweep runs, because a
+somebody still owes a verdict on. It reports what it kept and why. A restore
+path that runs SQL checks table and constraint counts after, never exit status
+alone. Then each project's own sweep runs, because a
 database whose worktree directory somebody deleted by hand is invisible to orch
 entirely: no row points at it and there is nothing left to remove.
 
@@ -1670,7 +1678,9 @@ markdown beside 34 live task keys belonging to other projects.
 
 **An inferred capability fails at the moment of use; a declared one fails at
 registration.** The first costs a worktree, a vendor clone and someone's
-afternoon. The second costs a sentence when the project is set up.
+afternoon. The second costs a sentence when the project is set up. Registration
+checks the declared landing branch against HEAD and any canon integration-branch
+rule; landings never fast-forward a configured production branch.
 
 The reverse mistake is still the same defect. A fact that does not vary by
 project must not be copied into project settings: five copies go stale in four

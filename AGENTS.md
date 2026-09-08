@@ -132,6 +132,12 @@ no key is recorded against the project with no task and the link cannot be recov
 **The project register is the authority** on key prefixes, worktree recipes,
 per-project notes and on which concerns a project keeps for itself (see above) —
 `orch project list --json`. Read it before concluding a project lacks something.
+`orch project add` and `orch project set` verify a declared landing branch against
+the checkout's HEAD and, where canon names an integration branch, against that;
+a mismatch refuses with both anchored lines. The register distinguishes the
+landing branch from an optional production branch, and `orch land` refuses to
+touch production. `orch doctor` reports a main checkout whose HEAD is not its
+landing branch as a register question, never a run failure.
 
 ## What this is for
 

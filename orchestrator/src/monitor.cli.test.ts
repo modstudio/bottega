@@ -1025,6 +1025,26 @@ fi
     }
   })
 
+  test('a degraded tick keeps the last orch stderr line', () => {
+    const f = fixture(`#!/bin/sh
+if [ "$1" = "inbox" ]; then
+  echo 'store is locked by pid 99' >&2
+  exit 1
+fi
+echo '{"id":1,"job":"implement","agent":"codex","status":"running","session_id":"owner","started_at":"2026-09-05T00:00:00.000Z"}'
+`)
+    try {
+      const p = Bun.spawnSync([f.heartbeat, 'owner', '0', '1'], {
+        stdout: 'pipe', stderr: 'pipe', env: process.env,
+      })
+      expect(p.exitCode).toBe(0)
+      expect(p.stdout.toString()).toContain('DEGRADED - orch observation failed')
+      expect(p.stdout.toString()).toContain('last stderr: store is locked by pid 99')
+    } finally {
+      rmSync(f.root, { recursive: true, force: true })
+    }
+  })
+
   test('WAITING names idle when the last event is older than the warn threshold', () => {
     const live = addRun({ agent: 'grok', job: 'implement', status: 'running', session: 'heartbeat-idle' })
     db().query('UPDATE run SET last_event_at=?, latency_ms=NULL WHERE id=?')

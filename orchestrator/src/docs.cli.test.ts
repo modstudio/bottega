@@ -218,6 +218,45 @@ describe('scoped operator docs', () => {
     expect(() => compileBrief(dir)).toThrow(CanonBudgetError)
   })
 
+  test('inject writes above 8 KiB refuse unless force-inject; demand of any size succeeds', () => {
+    const body = 'x'.repeat(9 * 1024)
+    expect(() => setDoc({
+      scope: 'global', subject: null, slug: 'inject-too-big', title: 'Too big', body, delivery: 'inject',
+    })).toThrow(/inject document is \d+ bytes; threshold is 8192 bytes; current pack is \d+ bytes with -?\d+ bytes headroom/)
+    expect(() => setDoc({
+      scope: 'global', subject: null, slug: 'inject-too-big', title: 'Too big', body, delivery: 'inject',
+    })).toThrow('invariant: oversized narrative belongs on demand')
+    expect(() => setDoc({
+      scope: 'global', subject: null, slug: 'inject-too-big', title: 'Too big', body, delivery: 'inject',
+    })).toThrow('cleared by: use --delivery demand')
+    const forced = setDoc({
+      scope: 'global', subject: null, slug: 'inject-forced', title: 'Forced', body,
+      delivery: 'inject', forceInject: 'operator override',
+    })
+    expect(forced.delivery).toBe('inject')
+    const demand = setDoc({
+      scope: 'global', subject: null, slug: 'demand-any-size', title: 'Demand',
+      body: 'y'.repeat(20 * 1024), delivery: 'demand',
+    })
+    expect(demand.delivery).toBe('demand')
+  })
+
+  test('doctor lists inject docs over the write threshold on a canon oversize line', () => {
+    setDoc({
+      scope: 'global', subject: null, slug: 'oversize-inject', title: 'Oversize inject',
+      body: 'z'.repeat(9 * 1024), delivery: 'inject', forceInject: 'keep for doctor listing',
+    })
+    const cli = new URL('cli.ts', import.meta.url).pathname
+    const doctor = Bun.spawnSync([process.execPath, cli, 'doctor'], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(doctor.exitCode, doctor.stderr.toString()).toBe(0)
+    expect(doctor.stdout.toString()).toContain('canon oversize')
+    expect(doctor.stdout.toString()).toContain('global/_/oversize-inject')
+    expect(doctor.stdout.toString()).toMatch(/headroom/)
+  })
+
   test('checkDoc validates tracked paths, commands, jobs and scripts from backticked tokens', () => {
     const repo = mkdtempSync(join(tmpdir(), 'canon-check-'))
     try {

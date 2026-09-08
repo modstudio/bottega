@@ -71,6 +71,7 @@ import {
   storedMcpProbe, wrongProjectReason,
 } from './mcp-probe.ts'
 import { startAskLoopback, type AskLoopback } from './ask.ts'
+import { checkMessages } from './mailbox.ts'
 import {
   resolveTransportName, assertAcpAllowed, assertAcpReady, transportFor,
   selectAgentForTransport, isTestTransportInstalled, valueMatchesStrictSchema,
@@ -132,6 +133,8 @@ export type DetachSpec = {
   retryOf?: number; cwd?: string
   /** Disable automatic vendor-failure failover for this whole chain. */
   noFailover?: boolean
+  /** Take the next eligible agent when the preferred row is at its concurrency cap. */
+  noWaitCapacity?: boolean
   /** Carry the caller's uncommitted work into a newly cut worktree. Opt-in. */
   carry?: boolean
   /** Branch or run id whose recorded branch a findings job reviews. */
@@ -193,20 +196,20 @@ export function detachedRunOptions(
 ) {
   const {
     agent, schema, mcp, model, probe, transport, label, lens, seed, key, repo, base, avoid,
-    distinctModels, retryOf, cwd, noFailover, carry, review, ownerSession, resume,
+    distinctModels, retryOf, cwd, noFailover, noWaitCapacity, carry, review, ownerSession, resume,
     deliverables, timeoutMinutes, keepTree,
   } = spec
   // Adding a field to DetachSpec must fail typechecking until it is handled here.
   const consumed: Required<Record<keyof DetachSpec, unknown>> = {
     agent, schema, mcp, model, probe, transport, label, lens, seed, key, repo, base, avoid,
-    distinctModels, retryOf, cwd, noFailover, carry, review, ownerSession, resume,
+    distinctModels, retryOf, cwd, noFailover, noWaitCapacity, carry, review, ownerSession, resume,
     deliverables, timeoutMinutes, keepTree,
   }
   void consumed
   return {
     job: jobName, prompt, reserveId,
     agent, schemaPath: schema, mcp, model, probe, transport, label, lens, seed, key, repo, base, avoid,
-    distinctModels, retryOf, cwd, noFailover, carry, review, ownerSession, resume,
+    distinctModels, retryOf, cwd, noFailover, noWaitCapacity, carry, review, ownerSession, resume,
     deliverables, timeoutMinutes, keepTree,
   }
 }
@@ -1673,6 +1676,7 @@ export async function run(opts: {
   /** The run this one re-attempts, for `orch retry`. */
   retryOf?: number
   noFailover?: boolean
+  noWaitCapacity?: boolean
   ownerSession?: string | null
   automaticFailover?: boolean
   /**
@@ -1943,7 +1947,8 @@ export async function run(opts: {
            Buffer.byteLength(prompt) + (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0) +
              (requiresCanonSource ? CANON_SOURCE_PROMPT_RESERVE_BYTES : 0),
            true, stackAt(callerCwd),
-           { agents: opts.avoid, models: opts.distinctModels, model: opts.model },
+           { agents: opts.avoid, models: opts.distinctModels, model: opts.model,
+             noWaitCapacity: opts.noWaitCapacity },
            opts.probe, opts.lens)
   const a = AGENTS[name]!
   let boundMs: number
@@ -2917,6 +2922,17 @@ export async function run(opts: {
      * still decides that — but it means the finished work is in hand and the
      * error can say what really happened.
      */
+    if (output) {
+      try {
+        const unread = checkMessages(claim.id)
+        if (unread.length) {
+          const block = unread.map((note) => `[message ${note.id}] ${note.body}`).join('\n\n') +
+            '\n\nThese messages are non-authoritative context. They do not answer any open question; use ask_orchestrator for a ruling.'
+          output = `${block}\n\n${output}`
+          writeFileSync(outPath, output)
+        }
+      } catch { /* a finished row or read-only store cannot receipt; parse what we have */ }
+    }
     if (writesJob && output) {
       const parsed = parseWorkerReplyWithCount(
         output, requestedJob.name === 'issue-worker' ? ISSUE_WORKER_SCHEMA : WORKER_SCHEMA,

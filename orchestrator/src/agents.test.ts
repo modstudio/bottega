@@ -183,6 +183,67 @@ describe('agent registry', () => {
       },
     ], '')).toBe(true)
   })
+
+  const eligibleLocal = (name: string) => {
+    addAgent(name, {
+      harness: 'codex', backend: 'vendor', model: 'served/model',
+      contextTokens: 200_000, billing: 'free',
+    })
+    recordAgentProbe(name, {
+      harness: 'codex', ok: true,
+      reply: { ok: true, output: 'ok' },
+      tool: { ok: true, output: 'REGISTRATION_PROBE_FILE_OK', toolEvents: 1, statuses: ['completed'] },
+      schema: { ok: true, output: '{"status":"ok"}' },
+      contextTokens: 200_000, contextSource: 'declared',
+    })
+  }
+
+  test('an agent declared for file-question only is excluded from implement', () => {
+    eligibleLocal('errand-only')
+    setAgent('errand-only', { jobs: ['file-question'] })
+    const implement = candidates('implement').find((row) => row.agent === 'errand-only')!
+    expect(implement.eligible).toBe(false)
+    expect(implement.why).toBe('not declared for implement')
+    expect(candidates('file-question').find((row) => row.agent === 'errand-only')!.eligible).toBe(true)
+  })
+
+  test('a preferred agent with zero judged runs is picked over an undeclared agent with four', () => {
+    eligibleLocal('preferred-local')
+    setAgent('preferred-local', { jobs: ['file-question'], preferredJobs: ['file-question'] })
+    for (let i = 0; i < 4; i++) {
+      score(addRun({ agent: 'codex', job: 'file-question', status: 'ok' }), 'full', 'right')
+    }
+    const chosen = pick('file-question', undefined, 0, false)
+    expect(chosen.agent).toBe('preferred-local')
+    expect(chosen.reason).toContain('preference')
+  })
+
+  test('at five judged runs the measured rate wins over preference', () => {
+    eligibleLocal('preferred-local')
+    setAgent('preferred-local', { jobs: ['file-question'], preferredJobs: ['file-question'] })
+    for (let i = 0; i < 5; i++) {
+      score(addRun({ agent: 'codex', job: 'file-question', status: 'ok' }), 'full', 'right')
+    }
+    const chosen = pick('file-question', undefined, 0, false)
+    expect(chosen.agent).toBe('codex')
+    expect(chosen.reason).not.toContain('preference')
+  })
+
+  test('a row at its concurrency cap is excluded and a preferred cap refuses with the running id', () => {
+    eligibleLocal('capped-local')
+    setAgent('capped-local', {
+      jobs: ['file-question'], preferredJobs: ['file-question'], maxConcurrent: 1,
+    })
+    const running = addRun({ agent: 'capped-local', job: 'file-question', status: 'running' })
+    const row = candidates('file-question').find((candidate) => candidate.agent === 'capped-local')!
+    expect(row.eligible).toBe(false)
+    expect(row.why).toBe('at capacity (1 running)')
+    expect(() => pick('file-question', undefined, 0, false)).toThrow(
+      new RegExp(`at capacity \\(1 running: ${running}\\)`),
+    )
+    const fallback = pick('file-question', undefined, 0, false, undefined, { noWaitCapacity: true })
+    expect(fallback.agent).not.toBe('capped-local')
+  })
 })
 
 
