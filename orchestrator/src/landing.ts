@@ -910,6 +910,19 @@ function changedPaths(runner: CoverageGitRunner, from: string, to: string): Set<
   return new Set(output ? output.split('\n') : [])
 }
 
+function reviewBelongsToCandidate(
+  runner: CoverageGitRunner, review: ReviewCoverageInput, branch: string, tip: string,
+): boolean {
+  if (review.lenses.some((lens) => lens.branch === branch)) return true
+  const reviewedTrees = new Set(review.lenses.map((lens) => lens.tree).filter(Boolean))
+  for (const tree of reviewedTrees) {
+    const reviewedCommit = commitForTree(runner, review, tree!)
+    if (reviewedCommit.commit &&
+        runner(['merge-base', '--is-ancestor', reviewedCommit.commit, tip]).ok) return true
+  }
+  return false
+}
+
 export function reviewCoverageVerdict(
   repoRoot: string, review: ReviewCoverageInput, tip: string, trunk: string,
   runner: CoverageGitRunner = landingCoverageGit(repoRoot),
@@ -1020,6 +1033,7 @@ function requireReviewCoverage(
   }
   const reworked = verdicts.flatMap(({ review, verdict }) =>
     verdict.kind === 'invalid' && ['patch-id differs', 'path set differs'].includes(verdict.reason)
+      && reviewBelongsToCandidate(landingCoverageGit(repoRoot), review, branch, tip)
       ? [{ id: review.id, reason: verdict.reason }] : [])
   const reruns = verdicts.flatMap(({ review, verdict }) => verdict.kind === 'invalid'
     ? review.lenses.map((lens) => {

@@ -1113,6 +1113,33 @@ test('only bun\'s complete timeout line reports machine load', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  test("a refused landing outdates only the candidate branch's review", async () => {
+    const candidate = 'candidate-review'
+    const unrelated = 'unrelated-review'
+    const { repo, trees } = repoWithBranches([candidate, unrelated])
+    const project = 'landing-scoped-outdated-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      const candidateReview = completedReview(project, [g(repo, 'rev-parse', `${candidate}^{tree}`)], {
+        branch: candidate, baseCommit: oldBase, launchCwd: trees[candidate]!,
+      })
+      const unrelatedReview = completedReview(project, [g(repo, 'rev-parse', `${unrelated}^{tree}`)], {
+        branch: unrelated, baseCommit: oldBase, launchCwd: trees[unrelated]!,
+      })
+      writeFileSync(join(trees[candidate]!, 'after-review.txt'), 'new candidate content\n')
+      g(trees[candidate]!, 'add', 'after-review.txt')
+      g(trees[candidate]!, 'commit', '-m', 'change candidate after review')
+
+      const child = childLand(repo, candidate, { unreviewed: null })
+      expect(await child.exited).not.toBe(0)
+      expect(db().query('SELECT outdated_at, outdated_reason FROM review WHERE id=?').get(candidateReview))
+        .toEqual({ outdated_at: expect.any(String), outdated_reason: 'patch-id differs' })
+      expect(db().query('SELECT outdated_at, outdated_reason FROM review WHERE id=?').get(unrelatedReview))
+        .toEqual({ outdated_at: null, outdated_reason: null })
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   test('a missing trunk cannot produce a carried review verdict', () => {
     const branch = 'missing-trunk-review'
     const { repo, trees } = repoWithBranches([branch])
