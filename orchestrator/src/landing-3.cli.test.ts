@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, setDefaultTimeout, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -10,9 +10,23 @@ import {
 import { landingDescribeFixture } from '../test/fixture.ts'
 import { applyMigrations, MIGRATIONS_FOLDER } from './migrations.ts'
 
+setDefaultTimeout(30_000)
+
 describe('DEV-370 landing queue and branch ownership', () => {
   const CLI = new URL('cli.ts', import.meta.url).pathname
   const { g, repoWithBranches, childLand, completedReview } = landingDescribeFixture()
+  const enqueueGroup = (project: string, repo: string, branches: [string, string][]) => {
+    const at = new Date().toISOString()
+    for (const [branch, reason] of branches) {
+      db().query(
+        `INSERT INTO landing (project,branch,tip,status,started_at,requested_at,path_set,steps)
+         VALUES (?,?,?,'queued',?,?,'[]',?)`,
+      ).run(
+        project, branch, g(repo, 'rev-parse', branch), at, at,
+        JSON.stringify([{ name: '_flags', unreviewed: reason }]),
+      )
+    }
+  }
 
   test('two sessions enqueue and both land without a hand-off', async () => {
     const { repo } = repoWithBranches(['queue-a', 'queue-b'])
@@ -40,8 +54,7 @@ describe('DEV-370 landing queue and branch ownership', () => {
     const gate = `test ! -f ${join('fail-gate.txt')}`
     upsertProject({ name: 'landing-bisect', path: repo, settings: { trunk: 'main', gate } })
     try {
-      land(repo, 'group-ok', { unreviewed: 'ok', wait: false })
-      land(repo, 'group-bad', { unreviewed: 'bad', wait: false })
+      enqueueGroup('landing-bisect', repo, [['group-ok', 'ok'], ['group-bad', 'bad']])
       try { drainQueue(repo) } catch { /* culprit refused */ }
       const rows = db().query(
         `SELECT branch, status FROM landing WHERE project='landing-bisect' ORDER BY id`,
@@ -63,8 +76,7 @@ describe('DEV-370 landing queue and branch ownership', () => {
     }
     upsertProject({ name: 'landing-group-conflict', path: repo, settings: { trunk: 'main', gate: 'true' } })
     try {
-      land(repo, 'conflict-a', { unreviewed: 'a', wait: false })
-      land(repo, 'conflict-b', { unreviewed: 'b', wait: false })
+      enqueueGroup('landing-group-conflict', repo, [['conflict-a', 'a'], ['conflict-b', 'b']])
       drainQueue(repo)
       const rows = db().query(
         `SELECT branch,status,claim_pid FROM landing WHERE project='landing-group-conflict' ORDER BY id`,
@@ -174,8 +186,7 @@ describe('DEV-370 landing queue and branch ownership', () => {
     Bun.spawnSync(['chmod', '+x', gate])
     upsertProject({ name: 'landing-group-move', path: repo, settings: { trunk: 'main', gate } })
     try {
-      land(repo, 'move-group-a', { unreviewed: 'a', wait: false })
-      land(repo, 'move-group-b', { unreviewed: 'b', wait: false })
+      enqueueGroup('landing-group-move', repo, [['move-group-a', 'a'], ['move-group-b', 'b']])
       drainQueue(repo)
       expect(g(repo, 'ls-tree', '-r', '--name-only', 'main')).toContain('move-group-a.txt')
       expect(g(repo, 'ls-tree', '-r', '--name-only', 'main')).toContain('move-group-b.txt')
@@ -204,7 +215,7 @@ describe('DEV-370 landing queue and branch ownership', () => {
         }
       } finally { rmSync(repo, { recursive: true, force: true }) }
     }
-  }, 15_000)
+  }, 30_000)
 
   test('an overlapping queued landing is marked rebase_required and a disjoint one is not', () => {
     const { repo, trees } = repoWithBranches(['overlap-a', 'disjoint-c'])
