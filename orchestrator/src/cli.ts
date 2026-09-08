@@ -1647,6 +1647,7 @@ function usage(): never {
   orch canon check [--cwd P] [--job J] [--all] [--json]
   orch canon diff [--cwd P] [--job J] [--json]
   orch canon eval [--slug S] [--agent A] [--json] [--force]
+      --force                   re-run even when canon is unchanged since last pass
   orch canon evals [--json]  (--json: one JSON document)
   orch port baseline show <source> <target> [--json]  (--json: one JSON document)
       baseline set <source> <target> <commit> [--clear] [--json]  (--json: one JSON document)
