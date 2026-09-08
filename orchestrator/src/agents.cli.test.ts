@@ -3,7 +3,7 @@ import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, exist
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { createHash } from 'node:crypto'
-import { runJson, AGENTS, NOT_EVIDENCE, READONLY_PREAMBLE, SHARED_OUTPUT_REASON, addRun, candidates, db, declaredCreate, dir, excludeSharedOutputRuns, hermeticGitEnv, pendingForSession, removeProject, retryModelForAgent, reviewReply, run, runDetail, runJob, score, upsertProject, weigh, writingFailoverRefusal } from '../test/fixture.ts'
+import { runJson, AGENTS, NOT_EVIDENCE, READONLY_PREAMBLE, SHARED_OUTPUT_REASON, addRun, candidates, db, declaredCreate, dir, excludeSharedOutputRuns, hermeticGitEnv, pendingForSession, removeProject, replyFileInstruction, retryModelForAgent, reviewReply, run, runDetail, runJob, score, upsertProject, weigh, writingFailoverRefusal } from '../test/fixture.ts'
 
 describe('retry keeps the work on the same agent', () => {
   test('a changed retry agent uses its pin unless an explicit model overrides it', () => {
@@ -73,6 +73,7 @@ describe('retry keeps the work on the same agent', () => {
       expect(readFileSync(row.prompt_path, 'utf8')).toBe(original)
       const bound = readFileSync(boundBeside(row.prompt_path), 'utf8')
       expect(occurrences(bound, READONLY_PREAMBLE)).toBe(1)
+      expect(bound.startsWith(replyFileInstruction('READER_SCHEMA'))).toBe(true)
       expect(bound.endsWith(original)).toBe(true)
       expect(row.spec_sha).toBe(createHash('sha256').update(original).digest('hex').slice(0, 16))
       expect(row.prompt_sha).toBe(createHash('sha256').update(bound).digest('hex').slice(0, 16))
@@ -104,7 +105,11 @@ describe('retry keeps the work on the same agent', () => {
     ).run(promptPath, schemaPath, 'retry-model', dir, id)
 
     const binDir = mkdtempSync(join(tmpdir(), 'orch-fake-grok-retry-'))
-    writeFileSync(join(binDir, 'grok'), '#!/bin/sh\necho ok\nexit 0\n')
+    writeFileSync(join(binDir, 'grok'),
+      '#!/bin/sh\n'
+      + 'echo \'{"answer":"ok"}\' > "$ORCH_SCRATCH/reply.json"\n'
+      + 'echo ok\n'
+      + 'exit 0\n')
     chmodSync(join(binDir, 'grok'), 0o755)
     try {
       const r = orch(['retry', String(id)], { PATH: `${binDir}:${process.env.PATH ?? ''}` })
@@ -124,6 +129,7 @@ describe('retry keeps the work on the same agent', () => {
       expect(readFileSync(child!.prompt_path, 'utf8')).toBe(original)
       const bound = readFileSync(boundBeside(child!.prompt_path), 'utf8')
       expect(occurrences(bound, READONLY_PREAMBLE)).toBe(1)
+      expect(bound.startsWith(replyFileInstruction('retry-schema.json'))).toBe(true)
       expect(bound.endsWith(original)).toBe(true)
     } finally {
       rmSync(binDir, { recursive: true, force: true })
