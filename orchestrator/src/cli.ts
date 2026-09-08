@@ -29,8 +29,6 @@ import {
   DASHBOARD_CAPABILITY_PATH_ENV, DASHBOARD_CAPABILITY_TOKEN_ENV,
   type DashboardCapability,
 } from '../../shared/dashboard-capability.ts'
-import { AttributionKindSchema } from '../../shared/orch-contract.ts'
-import { parseConfinement } from './confinement.ts'
 
 type DetachSpec = import('./run.ts').DetachSpec
 type McpRequest = import('./run.ts').McpRequest
@@ -1982,6 +1980,7 @@ switch (cmd) {
       throw new Error('orch confinement clear <run-id> --writer <text> --note <text> [--tip <current-tip>]')
     }
     await loadWorktree()
+    const { parseConfinement } = await import('./confinement.ts')
     let authority = authorizeRunMutation(id, 'reclassify')
     const rows = db().query(
       `SELECT id, pre_confinement, confinement FROM run
@@ -6623,6 +6622,7 @@ switch (cmd) {
 
   case 'health': {
     const { harnessHealth } = await import('./health.ts')
+    const { AttributionKindSchema } = await import('../../shared/orch-contract.ts')
     const report = harnessHealth(flag('days') ? Number(flag('days')) : undefined)
     if (has('json')) {
       console.log(JSON.stringify(report))

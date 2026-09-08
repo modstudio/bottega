@@ -27,6 +27,7 @@ import { runCollectionDescribeFixture } from '../test/fixture.ts'
 const DEGRADED_COLLECTION_GRAPH = [
   'collect.ts',
   'failure.ts',
+  'mcp-probe.ts',
   'orch.ts',
   'outcome.ts',
   'result-output.ts',
