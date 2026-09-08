@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite'
-import { db } from './db.ts'
+import { db, STALE_AFTER_MS } from './db.ts'
 import { targetGitEnvironment } from './worktree.ts'
 
 const HUB = new URL('../../bin/hub', import.meta.url).pathname
@@ -11,8 +11,12 @@ export type EpicTaskScore = {
   title: string
   status: string | null
   runs: { total: number; byJob: Record<string, number> }
-  wallTimeMs: number
+  agentTimeMs: number
+  occupancyMs: number
   elapsedSpanMs: number
+  runDurationMeanMs: number | null
+  runDurationP95Ms: number | null
+  ghostRuns: number
   vendorTokens: number | null
   vendorCostUsd: number | null
   unreportedUsageRuns: { tokens: number; cost: number }
@@ -40,7 +44,7 @@ export type EpicScoreboard = {
 }
 
 type RunRow = {
-  id: number; started_at: string; job: string; latency_ms: number | null
+  id: number; started_at: string; job: string; status: string; latency_ms: number | null
   vendor_tokens: number | null; vendor_cost_usd: number | null
   launch_key: string | null; branch: string | null; parent_run_id: number | null
   turn: number; last_event_at: string | null
@@ -68,11 +72,13 @@ const keyInBranch = (branch: string | null, keys: readonly string[]): string | n
  * a non-child launch key, or no child by any route, is outside this epic rather
  * than being silently assigned to its nearest task.
  */
-export function epicScoreboard(epicKey: string, children: EpicChild[], database: Database = db()): EpicScoreboard {
+export function epicScoreboard(
+  epicKey: string, children: EpicChild[], database: Database = db(), clock = Date.now(),
+): EpicScoreboard {
   const keys = children.map((child) => child.key.toUpperCase())
   const childByKey = new Map(children.map((child) => [child.key.toUpperCase(), child]))
   const runs = database.query(
-    `SELECT id,started_at,job,latency_ms,vendor_tokens,vendor_cost_usd,launch_key,branch,
+    `SELECT id,started_at,job,status,latency_ms,vendor_tokens,vendor_cost_usd,launch_key,branch,
             parent_run_id,turn,last_event_at,project_id,head_commit FROM run ORDER BY started_at,id`,
   ).all() as RunRow[]
   const landings = database.query(
@@ -105,8 +111,7 @@ export function epicScoreboard(epicKey: string, children: EpicChild[], database:
     const taskReviews = reviews.filter((row) => reviewKey(row) === key)
     const byJob: Record<string, number> = {}
     for (const run of taskRuns) byJob[run.job] = (byJob[run.job] ?? 0) + 1
-    const ends = taskRuns.flatMap((run) => run.latency_ms === null ? [] : [Date.parse(run.started_at) + run.latency_ms])
-    const starts = taskRuns.map((run) => Date.parse(run.started_at)).filter(Number.isFinite)
+    const timing = durationMetrics(taskRuns, clock)
     const tokenRows = taskRuns.filter((run) => run.vendor_tokens !== null)
     const costRows = taskRuns.filter((run) => run.vendor_cost_usd !== null)
     const refused = taskLandings.filter((landing) => landing.status === 'refused')
@@ -138,8 +143,7 @@ export function epicScoreboard(epicKey: string, children: EpicChild[], database:
     return {
       key, title: child.title ?? '', status: child.status ?? null,
       runs: { total: taskRuns.length, byJob: Object.fromEntries(Object.entries(byJob).sort()) },
-      wallTimeMs: taskRuns.reduce((sum, run) => sum + Math.max(0, run.latency_ms ?? 0), 0),
-      elapsedSpanMs: starts.length && ends.length ? Math.max(0, Math.max(...ends) - Math.min(...starts)) : 0,
+      ...timing,
       vendorTokens: tokenRows.length ? tokenRows.reduce((sum, run) => sum + run.vendor_tokens!, 0) : null,
       vendorCostUsd: costRows.length ? costRows.reduce((sum, run) => sum + run.vendor_cost_usd!, 0) : null,
       unreportedUsageRuns: { tokens: taskRuns.length - tokenRows.length, cost: taskRuns.length - costRows.length },
@@ -165,11 +169,7 @@ export function epicScoreboard(epicKey: string, children: EpicChild[], database:
   })
   const total = totalRow(rows)
   const attributedRuns = runs.filter((row) => runKey(row) !== null)
-  const totalStarts = attributedRuns.map((run) => Date.parse(run.started_at)).filter(Number.isFinite)
-  const totalEnds = attributedRuns.flatMap((run) => run.latency_ms === null
-    ? [] : [Date.parse(run.started_at) + run.latency_ms]).filter(Number.isFinite)
-  total.elapsedSpanMs = totalStarts.length && totalEnds.length
-    ? Math.max(0, Math.max(...totalEnds) - Math.min(...totalStarts)) : 0
+  Object.assign(total, durationMetrics(attributedRuns, clock))
   return {
     epicKey,
     membership: {
@@ -185,6 +185,48 @@ export function epicScoreboard(epicKey: string, children: EpicChild[], database:
       metric: 'architect commits on run branches',
       needed: 'record commit author role and task/run attribution when an architect commits on a run branch',
     }],
+  }
+}
+
+type DurationMetrics = Pick<EpicTaskScore,
+  'agentTimeMs' | 'occupancyMs' | 'elapsedSpanMs' | 'runDurationMeanMs' | 'runDurationP95Ms' | 'ghostRuns'>
+
+/** All arithmetic is epoch-millisecond UTC. Rendering may choose a timezone; computation never does. */
+function durationMetrics(runs: RunRow[], clock: number): DurationMetrics {
+  const intervals = runs.flatMap((run): { start: number; end: number; duration: number }[] => {
+    if (run.latency_ms === null) return []
+    const start = Date.parse(run.started_at)
+    const duration = Math.max(0, run.latency_ms)
+    return Number.isFinite(start) ? [{ start, end: start + duration, duration }] : []
+  }).sort((a, b) => a.start - b.start || a.end - b.end)
+  let occupancyMs = 0
+  let mergedStart: number | null = null
+  let mergedEnd: number | null = null
+  for (const interval of intervals) {
+    if (mergedStart === null) {
+      mergedStart = interval.start
+      mergedEnd = interval.end
+    } else if (interval.start <= mergedEnd!) {
+      mergedEnd = Math.max(mergedEnd!, interval.end)
+    } else {
+      occupancyMs += mergedEnd! - mergedStart
+      mergedStart = interval.start
+      mergedEnd = interval.end
+    }
+  }
+  if (mergedStart !== null) occupancyMs += mergedEnd! - mergedStart
+  const durations = intervals.map((interval) => interval.duration).sort((a, b) => a - b)
+  const anchor = (run: RunRow) => Date.parse(run.last_event_at ?? run.started_at)
+  return {
+    agentTimeMs: durations.reduce((sum, duration) => sum + duration, 0),
+    occupancyMs,
+    elapsedSpanMs: intervals.length
+      ? Math.max(...intervals.map((interval) => interval.end)) - intervals[0]!.start : 0,
+    runDurationMeanMs: durations.length
+      ? durations.reduce((sum, duration) => sum + duration, 0) / durations.length : null,
+    runDurationP95Ms: durations.length ? durations[Math.ceil(durations.length * 0.95) - 1]! : null,
+    ghostRuns: runs.filter((run) => run.status === 'running' && run.latency_ms === null &&
+      Number.isFinite(anchor(run)) && clock - anchor(run) >= STALE_AFTER_MS).length,
   }
 }
 
@@ -218,8 +260,12 @@ function totalRow(rows: EpicTaskScore[]): EpicTaskScore {
   return {
     key: 'TOTAL', title: '', status: null,
     runs: { total: rows.reduce((sum, row) => sum + row.runs.total, 0), byJob: Object.fromEntries(Object.entries(byJob).sort()) },
-    wallTimeMs: rows.reduce((sum, row) => sum + row.wallTimeMs, 0),
+    agentTimeMs: rows.reduce((sum, row) => sum + row.agentTimeMs, 0),
+    occupancyMs: rows.reduce((sum, row) => sum + row.occupancyMs, 0),
     elapsedSpanMs: rows.length ? Math.max(...rows.map((row) => row.elapsedSpanMs)) : 0,
+    runDurationMeanMs: null,
+    runDurationP95Ms: null,
+    ghostRuns: rows.reduce((sum, row) => sum + row.ghostRuns, 0),
     vendorTokens: nullableSum(rows.map((row) => row.vendorTokens)),
     vendorCostUsd: nullableSum(rows.map((row) => row.vendorCostUsd)),
     unreportedUsageRuns: {
@@ -267,7 +313,7 @@ export async function epicChildren(epicKey: string): Promise<EpicChild[]> {
   return parsed as EpicChild[]
 }
 
-const duration = (ms: number) => ms < 60_000 ? `${(ms / 1000).toFixed(1)}s`
+const duration = (ms: number | null) => ms === null ? 'NULL' : ms < 60_000 ? `${(ms / 1000).toFixed(1)}s`
   : ms < 3_600_000 ? `${(ms / 60_000).toFixed(1)}m` : `${(ms / 3_600_000).toFixed(1)}h`
 const jobs = (row: EpicTaskScore) => Object.entries(row.runs.byJob).map(([job, count]) => `${job}=${count}`).join(',') || '-'
 const usage = (value: number | null, missing: number, cost = false) => value === null ? 'NULL'
@@ -276,9 +322,10 @@ const usage = (value: number | null, missing: number, cost = false) => value ===
 export function renderEpicHuman(report: EpicScoreboard): string {
   const rows = [...report.children, report.total]
   const jobWidth = Math.max(11, ...rows.map((row) => jobs(row).length))
-  const lines = [`EPIC ${report.epicKey}`, `TASK         ${'RUNS BY JOB'.padEnd(jobWidth)} WALL    SPAN      TOKENS          COST  LENS FIX  LAND A/L/R  REV R/C/O  STR IDLE CONT/DRIFT`]
+  const lines = [`EPIC ${report.epicKey}`, `TASK         ${'RUNS BY JOB'.padEnd(jobWidth)} AGENT   OCCUP   SPAN    MEAN     P95 GHOST      TOKENS          COST  LENS FIX  LAND A/L/R  REV R/C/O  STR IDLE CONT/DRIFT`]
   for (const row of rows) lines.push(
-    `${row.key.padEnd(12)} ${jobs(row).padEnd(jobWidth)} ${duration(row.wallTimeMs).padStart(7)} ${duration(row.elapsedSpanMs).padStart(7)} ` +
+    `${row.key.padEnd(12)} ${jobs(row).padEnd(jobWidth)} ${duration(row.agentTimeMs).padStart(7)} ${duration(row.occupancyMs).padStart(7)} ` +
+    `${duration(row.elapsedSpanMs).padStart(7)} ${duration(row.runDurationMeanMs).padStart(7)} ${duration(row.runDurationP95Ms).padStart(7)} ${String(row.ghostRuns).padStart(5)} ` +
     `${usage(row.vendorTokens, row.unreportedUsageRuns.tokens).padStart(15)} ${usage(row.vendorCostUsd, row.unreportedUsageRuns.cost, true).padStart(8)} ` +
     `${String(row.lensRounds).padStart(5)} ${String(row.fixRounds).padStart(3)}  ` +
     `${`${row.landings.attempted}/${row.landings.landed}/${row.landings.refused}`.padStart(10)}  ` +
