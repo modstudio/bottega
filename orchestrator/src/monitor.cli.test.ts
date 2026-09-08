@@ -343,7 +343,7 @@ describe('operational monitor record', () => {
       })
       expect(Object.keys(filed).sort()).toEqual([
         'duplicates', 'key', 'kind', 'monitor_invocation_id', 'project', 'reporter',
-        'reporter_id', 'session', 'worker_run_id',
+        'reporter_id', 'session', 'title', 'title_shortened', 'worker_run_id',
       ])
       const shown = Bun.spawnSync([new URL('../../bin/hub', import.meta.url).pathname,
         'task', 'show', filed.key, '--json'], { env: { ...process.env }, stdout: 'pipe' })

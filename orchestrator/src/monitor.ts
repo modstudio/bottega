@@ -356,6 +356,7 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
     if (prior) { condition.issueKey = prior.issue_key; continue }
     try {
       const filed = await fileIssue({ kind: 'defect',
+        title: `Monitor cannot safely handle ${condition.subject}`,
         what_happened: `Monitor cannot safely handle ${condition.subject}: ${condition.detail}`,
         expected: 'The monitor needs a machine-readable detector or an established command so it can report or repair this condition without inference or direct database writes.',
         reproduce_command: 'orch monitor',

@@ -61,12 +61,13 @@ export const ISSUE_DIAGNOSIS_SCHEMA = {
   },
 } as const
 
-function section(body: string, heading: string, next: string[]): string {
-  const start = body.indexOf(`${heading}\n`)
+function section(body: string, heading: string, next: string[], boundary: number): string {
+  const parsedBody = body.slice(0, boundary)
+  const start = parsedBody.indexOf(`${heading}\n`)
   if (start < 0) return ''
   const from = start + heading.length + 1
-  const ends = next.map((h) => body.indexOf(`\n\n${h}\n`, from)).filter((n) => n >= 0)
-  return body.slice(from, ends.length ? Math.min(...ends) : undefined).trim()
+  const ends = next.map((h) => parsedBody.indexOf(`\n\n${h}\n`, from)).filter((n) => n >= 0)
+  return parsedBody.slice(from, ends.length ? Math.min(...ends) : undefined).trim()
 }
 
 export function parseFiledIssue(shown: unknown): FiledIssue {
@@ -80,17 +81,23 @@ export function parseFiledIssue(shown: unknown): FiledIssue {
   if ((kind !== 'defect' && kind !== 'suggestion') || !reportingProject) {
     throw new Error(`${task.key} is not a filed issue: TYPE and REPORTING PROJECT are required`)
   }
+  const lengthRecord = body.match(/\n\nFILED FIELDS LENGTH: ([0-9]+)$/)
+  const recordedBoundary = lengthRecord ? Number(lengthRecord[1]) : -1
+  const submittedTitle = body.lastIndexOf('\n\nSUBMITTED TITLE\n')
+  const parsedBoundary = recordedBoundary >= 0 && recordedBoundary <= (lengthRecord?.index ?? -1)
+    ? recordedBoundary
+    : submittedTitle < 0 ? body.length : submittedTitle
   const headings = ['EXPECTED INSTEAD', 'HOW TO REPRODUCE', 'EVIDENCE', 'WHAT IS NOT ESTABLISHED']
-  const how = section(body, 'HOW TO REPRODUCE', ['EVIDENCE', 'WHAT IS NOT ESTABLISHED'])
+  const how = section(body, 'HOW TO REPRODUCE', ['EVIDENCE', 'WHAT IS NOT ESTABLISHED'], parsedBoundary)
   const command = how.match(/^Command: ([\s\S]*?)(?:\nEnvironment:|$)/)?.[1]?.trim() ?? null
   const environment = how.match(/(?:^|\n)Environment: ([\s\S]*)$/)?.[1]?.trim() ?? null
   return {
     key: task.key, title: task.title ?? '', kind, reportingProject,
-    whatHappened: section(body, 'WHAT HAPPENED', headings),
-    expected: section(body, 'EXPECTED INSTEAD', headings.slice(1)),
+    whatHappened: section(body, 'WHAT HAPPENED', headings, parsedBoundary),
+    expected: section(body, 'EXPECTED INSTEAD', headings.slice(1), parsedBoundary),
     reproduceCommand: command, environment,
-    evidence: section(body, 'EVIDENCE', ['WHAT IS NOT ESTABLISHED']),
-    notEstablished: section(body, 'WHAT IS NOT ESTABLISHED', []),
+    evidence: section(body, 'EVIDENCE', ['WHAT IS NOT ESTABLISHED'], parsedBoundary),
+    notEstablished: section(body, 'WHAT IS NOT ESTABLISHED', [], parsedBoundary),
   }
 }
 

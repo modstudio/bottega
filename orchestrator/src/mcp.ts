@@ -40,6 +40,7 @@ const reporterFields = {
 
 type FileIssueInput = {
   kind: 'defect'
+  title?: string
   what_happened: string
   expected: string
   reproduce_command: string
@@ -48,6 +49,7 @@ type FileIssueInput = {
   not_established: string
 } | {
   kind: 'suggestion'
+  title?: string
   what_happened: string
   expected: string
   evidence: string
@@ -59,6 +61,22 @@ export type DuplicateCandidate = {
   status: string | null
   title: string
   score: number
+}
+
+const FILED_ISSUE_TITLE_MAX = 200
+
+function filedIssueTitle(input: FileIssueInput) {
+  const submitted = input.title
+  const normalized = (submitted?.trim() ? submitted : input.what_happened)
+    .replace(/\s+/g, ' ').trim()
+  const prefixed = `[${input.kind.toUpperCase()}] ${normalized}`
+  const shortened = prefixed.length > FILED_ISSUE_TITLE_MAX
+  return {
+    title: shortened
+      ? `${prefixed.slice(0, FILED_ISSUE_TITLE_MAX - 1).trimEnd()}…`
+      : prefixed,
+    shortened,
+  }
 }
 
 async function hubOutput(args: string[], cwd = process.cwd()): Promise<string> {
@@ -178,7 +196,7 @@ export async function fileIssue(
     throw new Error(`cannot file issue: no registered project contains ${cwd}`)
   }
   const type = input.kind.toUpperCase()
-  const title = `[${type}] ${input.what_happened}`
+  const { title, shortened: titleShortened } = filedIssueTitle(input)
   const duplicateSearch = await searchDuplicateIssues(title)
   const duplicateRecord = duplicateSearch.duplicates?.length
     ? [
@@ -190,7 +208,7 @@ export async function fileIssue(
     : duplicateSearch.error
       ? ['', 'DUPLICATE SEARCH FAILED', duplicateSearch.error]
       : []
-  const body = [
+  const filedFields = [
     ...(worker
       ? [`Filed by orch run ${worker.id} (${worker.job}, ${worker.agent}) while working ${
         worker.launch_key ?? 'with no task key'}`]
@@ -221,7 +239,13 @@ export async function fileIssue(
     '',
     'WHAT IS NOT ESTABLISHED',
     input.not_established,
+  ].join('\n')
+  const body = [
+    filedFields,
     ...duplicateRecord,
+    ...(input.title === undefined ? [] : ['', 'SUBMITTED TITLE', input.title]),
+    '',
+    `FILED FIELDS LENGTH: ${filedFields.length}`,
   ].join('\n')
   let stdout: string
   try {
@@ -233,6 +257,7 @@ export async function fileIssue(
     throw new Error(`could not file issue through hub: ${error instanceof Error ? error.message : String(error)}`)
   }
   return { key: stdout.trim(), kind: input.kind, session, project: project.name,
+    title, title_shortened: titleShortened,
     reporter: worker ? 'worker' : reporter.kind, reporter_id: reporterId,
     worker_run_id: worker?.id ?? null,
     ...(worker ? { origin: worker.launch_key } : {}),
@@ -480,6 +505,7 @@ export function createDocsMcpServer(): McpServer {
     description: `File an actionable defect or suggestion against ${PLATFORM_SLUG} through hub, returning likely duplicate tasks.`,
     inputSchema: z.discriminatedUnion('kind', [z.object({
       kind: z.literal('defect').describe('How the filed issue should be read.'),
+      title: z.string().optional().describe('Preferred task title. Whitespace is normalized and titles over 200 characters are shortened; the response reports truncation.'),
       what_happened: requiredReportField(
         'what_happened', 'state the observed behavior or proposed change',
       ),
@@ -501,6 +527,7 @@ export function createDocsMcpServer(): McpServer {
       ...reporterFields,
     }), z.object({
       kind: z.literal('suggestion').describe('How the filed issue should be read.'),
+      title: z.string().optional().describe('Preferred task title. Whitespace is normalized and titles over 200 characters are shortened; the response reports truncation.'),
       what_happened: requiredReportField(
         'what_happened', 'state the observed behavior or proposed change',
       ),

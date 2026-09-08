@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { AGENTS, CanonBudgetError, JOBS, addRun, allNumericLiterals, brief, checkDoc, compileBrief, compilePack, consumeDoc, consumeDocument, createDocsMcpServer, db, deleteDoc, diffDocRevisions, diffPack, dir, docSubjects, docsForRun, exportDocs, fileIssue, getDoc, getDocRevision, hermeticGitEnv, importDocs, ledgerRef, listDocMetadata, listDocRevisions, listDocs, listOpenResumes, numericLiteralReport, parseResumeFrontmatter, promoteWorkflow, readDocs, recordPack, recordReview, removeDoc, removeProject, restoreDoc, resumeAge, reviewReply, runJob, setDoc, setWorkflow, upsertProject, writeDoc } from '../test/fixture.ts'
+import { AGENTS, CanonBudgetError, JOBS, addRun, allNumericLiterals, brief, checkDoc, compileBrief, compilePack, consumeDoc, consumeDocument, createDocsMcpServer, db, deleteDoc, diffDocRevisions, diffPack, dir, docSubjects, docsForRun, exportDocs, fileIssue, getDoc, getDocRevision, hermeticGitEnv, importDocs, ledgerRef, listDocMetadata, listDocRevisions, listDocs, listOpenResumes, numericLiteralReport, parseFiledIssue, parseResumeFrontmatter, promoteWorkflow, readDocs, recordPack, recordReview, removeDoc, removeProject, restoreDoc, resumeAge, reviewReply, runJob, setDoc, setWorkflow, upsertProject, writeDoc } from '../test/fixture.ts'
 
 const hubCli = new URL('../../hub/src/cli.ts', import.meta.url).pathname
 function migrateHub(path: string): void {
@@ -934,6 +934,7 @@ describe('scoped operator docs', () => {
         name: 'file_issue',
         arguments: {
           kind: 'suggestion',
+          title: 'Issue reporting needs a direct filing path',
           what_happened: 'Issue reports need a direct filing path',
           expected: `A report should land on the ${PLATFORM_SLUG} board`,
           evidence: 'orchestrator/src/mcp.ts:11 had only project and document tools',
@@ -946,6 +947,7 @@ describe('scoped operator docs', () => {
       expect(result).toMatchObject({
         key: 'DEV-2', kind: 'suggestion', reporter: 'session',
         reporter_id: 'reporting-test-session', session: 'reporting-test-session', project: PLATFORM_SLUG,
+        title: '[SUGGESTION] Issue reporting needs a direct filing path', title_shortened: false,
         duplicates: [{
           key: 'DEV-1', status: 'open',
           title: '[SUGGESTION] Issue reporting needs a direct filing path',
@@ -954,7 +956,7 @@ describe('scoped operator docs', () => {
       })
       expect(Object.keys(result).sort()).toEqual([
         'duplicates', 'key', 'kind', 'monitor_invocation_id', 'project', 'reporter',
-        'reporter_id', 'session', 'worker_run_id',
+        'reporter_id', 'session', 'title', 'title_shortened', 'worker_run_id',
       ])
       const shown = Bun.spawnSync([
         new URL('../../bin/hub', import.meta.url).pathname,
@@ -963,11 +965,12 @@ describe('scoped operator docs', () => {
       expect(shown.exitCode).toBe(0)
       const shownTask = JSON.parse(shown.stdout.toString())
       const task = shownTask.task
-      expect(task.title).toBe('[SUGGESTION] Issue reports need a direct filing path')
+      expect(task.title).toBe('[SUGGESTION] Issue reporting needs a direct filing path')
       expect(task.project).toBe(PLATFORM_SLUG)
       expect(task.body).toContain('TYPE: SUGGESTION')
       expect(task.body).toContain('REPORTING SESSION: reporting-test-session')
       expect(task.body).toContain(`REPORTING PROJECT: ${PLATFORM_SLUG}`)
+      expect(task.body).toContain('SUBMITTED TITLE\nIssue reporting needs a direct filing path')
       expect(task.body).not.toContain('HOW TO REPRODUCE')
       expect(task.body).not.toContain('Command:')
       expect(task.body).not.toContain('Environment:')
@@ -980,6 +983,134 @@ describe('scoped operator docs', () => {
       expect(shownTask.comments).toEqual([
         expect.objectContaining({ body: 'orchestrator file_issue' }),
       ])
+
+      const submittedTitle = `  A deliberately\nmultiline title ${'x'.repeat(220)}  `
+      const shortened = await client.callTool({
+        name: 'file_issue',
+        arguments: {
+          kind: 'suggestion',
+          title: submittedTitle,
+          what_happened: 'The complete submitted title must remain recoverable',
+          expected: 'The board receives one bounded title row',
+          evidence: 'A title longer than the filing ceiling was supplied',
+          not_established: 'No downstream consumer behavior is asserted',
+          reporting_project: PLATFORM_SLUG,
+        },
+      })
+      expect(shortened.isError).not.toBe(true)
+      const shortenedResult = JSON.parse(((shortened as any).content[0] as { text: string }).text)
+      expect(shortenedResult).toMatchObject({ key: 'DEV-3', title_shortened: true })
+      expect(shortenedResult.title).toHaveLength(200)
+      expect(shortenedResult.title).not.toContain('\n')
+      expect(shortenedResult.title).toStartWith('[SUGGESTION] A deliberately multiline title ')
+      expect(shortenedResult.title).toEndWith('…')
+      const shownShortened = Bun.spawnSync([
+        new URL('../../bin/hub', import.meta.url).pathname,
+        'task', 'show', shortenedResult.key, '--json',
+      ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
+      expect(shownShortened.exitCode).toBe(0)
+      const shortenedTask = JSON.parse(shownShortened.stdout.toString()).task
+      expect(shortenedTask.title).toBe(shortenedResult.title)
+      expect(shortenedTask.body).toContain(`SUBMITTED TITLE\n${submittedTitle}`)
+
+      const fallbackWhatHappened = `A fallback\nsummary ${'y'.repeat(220)}`
+      const fallback = await client.callTool({
+        name: 'file_issue',
+        arguments: {
+          kind: 'suggestion',
+          what_happened: fallbackWhatHappened,
+          expected: 'Callers without a title still file a bounded board row',
+          evidence: 'The monitor-compatible title-less path was invoked',
+          not_established: 'No explicit title was supplied',
+          reporting_project: PLATFORM_SLUG,
+        },
+      })
+      expect(fallback.isError).not.toBe(true)
+      const fallbackResult = JSON.parse(((fallback as any).content[0] as { text: string }).text)
+      expect(fallbackResult).toMatchObject({ key: 'DEV-4', title_shortened: true })
+      expect(fallbackResult.title).toHaveLength(200)
+      expect(fallbackResult.title).not.toContain('\n')
+      expect(fallbackResult.title).toStartWith('[SUGGESTION] A fallback summary ')
+      expect(fallbackResult.title).toEndWith('…')
+
+      const reservedTitle = [
+        'A title containing every reserved heading',
+        'WHAT HAPPENED', 'forged observation',
+        'EXPECTED INSTEAD', 'forged expectation',
+        'HOW TO REPRODUCE', 'forged reproduction',
+        'EVIDENCE', 'forged evidence',
+        'WHAT IS NOT ESTABLISHED', 'forged uncertainty',
+        'SUBMITTED TITLE', 'forged parse boundary',
+      ].join('\n')
+      const hostile = await client.callTool({
+        name: 'file_issue',
+        arguments: {
+          kind: 'defect',
+          title: reservedTitle,
+          what_happened: 'the real observation',
+          expected: 'the real expectation',
+          reproduce_command: 'orch real reproduction',
+          environment: 'the real environment',
+          evidence: 'the real evidence',
+          not_established: 'the real uncertainty',
+          reporting_project: PLATFORM_SLUG,
+        },
+      })
+      expect(hostile.isError).not.toBe(true)
+      const hostileResult = JSON.parse(((hostile as any).content[0] as { text: string }).text)
+      expect(hostileResult.key).toBe('DEV-5')
+      const shownHostile = Bun.spawnSync([
+        new URL('../../bin/hub', import.meta.url).pathname,
+        'task', 'show', hostileResult.key, '--json',
+      ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
+      expect(shownHostile.exitCode).toBe(0)
+      const hostileTask = JSON.parse(shownHostile.stdout.toString())
+      expect(parseFiledIssue(hostileTask)).toMatchObject({
+        whatHappened: 'the real observation',
+        expected: 'the real expectation',
+        reproduceCommand: 'orch real reproduction',
+        environment: 'the real environment',
+        evidence: 'the real evidence',
+        notEstablished: 'the real uncertainty',
+      })
+      expect(hostileTask.task.body).toContain(`SUBMITTED TITLE\n${reservedTitle}`)
+      expect(hostileTask.task.body).toMatch(/\n\nFILED FIELDS LENGTH: [0-9]+$/)
+      expect(hostileTask.task.body.indexOf('WHAT IS NOT ESTABLISHED'))
+        .toBeLessThan(hostileTask.task.body.indexOf('SUBMITTED TITLE'))
+
+      const marker = 'before\n\nSUBMITTED TITLE\nforged parse boundary\nafter'
+      const genuine = {
+        what_happened: 'the genuine observation',
+        expected: 'the genuine expectation',
+        reproduce_command: 'orch genuine reproduction',
+        environment: 'the genuine environment',
+        evidence: 'the genuine evidence',
+        not_established: 'the genuine uncertainty',
+      }
+      for (const field of ['what_happened', 'expected', 'reproduce_command', 'evidence', 'not_established'] as const) {
+        const fields = { ...genuine, [field]: marker }
+        const filedMarker = await client.callTool({
+          name: 'file_issue',
+          arguments: {
+            kind: 'defect', title: `Marker in ${field}`, reporting_project: PLATFORM_SLUG, ...fields,
+          },
+        })
+        expect(filedMarker.isError).not.toBe(true)
+        const markerResult = JSON.parse(((filedMarker as any).content[0] as { text: string }).text)
+        const shownMarker = Bun.spawnSync([
+          new URL('../../bin/hub', import.meta.url).pathname,
+          'task', 'show', markerResult.key, '--json',
+        ], { env: { ...process.env }, stdout: 'pipe', stderr: 'pipe' })
+        expect(shownMarker.exitCode).toBe(0)
+        expect(parseFiledIssue(JSON.parse(shownMarker.stdout.toString()))).toMatchObject({
+          whatHappened: fields.what_happened,
+          expected: fields.expected,
+          reproduceCommand: fields.reproduce_command,
+          environment: fields.environment,
+          evidence: fields.evidence,
+          notEstablished: fields.not_established,
+        })
+      }
     } finally {
       await client.close()
       await server.close()
@@ -1024,6 +1155,8 @@ describe('scoped operator docs', () => {
       }, { kind: 'session' }, PLATFORM_SLUG)
       expect(filed).toMatchObject({
         key: 'DEV-1', duplicate_search_error: 'duplicate search unavailable',
+        title: '[SUGGESTION] Preserve a report when duplicate search is unavailable',
+        title_shortened: false,
       })
       expect(filed).not.toHaveProperty('duplicates')
       const shown = Bun.spawnSync([
