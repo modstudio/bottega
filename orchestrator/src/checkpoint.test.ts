@@ -140,14 +140,15 @@ describe('harness-owned checkpoints', () => {
     { kind: 'quota', error: "You've hit your usage limit" },
   ] as const) test(`${failure.kind} preserves modified work on the run branch`, async () => {
     const root = repo()
+    const main = resolve(root, git(root, 'rev-parse', '--git-common-dir'), '..')
     const createScript = `const {spawnSync}=require('child_process');const {mkdirSync}=require('fs');` +
-      `const {join}=require('path');const branch=process.argv.at(-1);const root=${JSON.stringify(root)};` +
+      `const {join}=require('path');const branch=process.argv.at(-1);const root=${JSON.stringify(main)};` +
       `const path=join(root,'trees',branch);mkdirSync(join(root,'trees'),{recursive:true});` +
       `const p=spawnSync('git',['worktree','add','-b',branch,path,'main'],{cwd:root,stdio:['ignore','ignore','inherit']});` +
       `if(p.status)process.exit(p.status);process.stdout.write(path+'\\n')`
-    const createPath = join(root, 'create.cjs')
+    const createPath = join(main, 'create.cjs')
     writeFileSync(createPath, createScript)
-    upsertProject({ name: `checkpoint-${failure.kind}`, path: root,
+    upsertProject({ name: `checkpoint-${failure.kind}`, path: main,
       settings: { trunk: 'main', worktree: {
         create: declaredCreate(process.execPath, [createPath, '{branch}']),
         branch: '{key}-orch-{id}',
@@ -181,7 +182,7 @@ describe('harness-owned checkpoints', () => {
     let runId: number | null = null
     let thrown = ''
     try {
-      const result = await run({ job: 'implement', prompt: 'edit the tracked file', cwd: root,
+      const result = await run({ job: 'implement', prompt: 'edit the tracked file', cwd: main,
         agent: 'codex', key: 'DEV-374', noFailover: true })
       runId = result.id
     } catch (error) {
@@ -198,6 +199,64 @@ describe('harness-owned checkpoints', () => {
     expect(row.failure_kind, row.error).toBe(failure.kind)
     expect(row.work_preserved).toBe(1)
     expect(git(row.worktree, 'show', '-s', '--format=%s')).toBe(`DEV-374 checkpoint run ${runId} #1`)
-    expect(git(root, 'rev-parse', row.branch)).toBe(git(row.worktree, 'rev-parse', 'HEAD'))
+    expect(git(main, 'rev-parse', row.branch)).toBe(git(row.worktree, 'rev-parse', 'HEAD'))
   })
+
+  test('SIGTERM checkpoints a dirty live writing run as final', async () => {
+    const root = repo()
+    const main = resolve(root, git(root, 'rev-parse', '--git-common-dir'), '..')
+    const project = `checkpoint-signal-${Date.now()}`
+    const createPath = join(main, 'create-signal.cjs')
+    writeFileSync(createPath,
+      `const {spawnSync}=require('child_process');const {mkdirSync}=require('fs');` +
+      `const {join}=require('path');const branch=process.argv.at(-1);const root=${JSON.stringify(main)};` +
+      `const path=join(root,'trees',branch);mkdirSync(join(root,'trees'),{recursive:true});` +
+      `const p=spawnSync('git',['worktree','add','-b',branch,path,'main'],{cwd:root,stdio:['ignore','ignore','inherit']});` +
+      `if(p.status)process.exit(p.status);process.stdout.write(path+'\\n')`)
+    upsertProject({ name: project, path: main,
+      settings: { trunk: 'main', worktree: {
+        create: declaredCreate(process.execPath, [createPath, '{branch}']),
+        branch: '{key}-orch-{id}',
+      } } })
+    const runner = join(main, 'signal-runner.ts')
+    const runModule = new URL('./run.ts', import.meta.url).href
+    const transportModule = new URL('./transport.ts', import.meta.url).href
+    writeFileSync(runner, `
+      import { writeFileSync } from 'node:fs'
+      import { join } from 'node:path'
+      import { run } from ${JSON.stringify(runModule)}
+      import { installTestTransport } from ${JSON.stringify(transportModule)}
+      installTestTransport({ name: 'cli', async start(opts) {
+        writeFileSync(join(opts.cwd, 'file.txt'), 'signal dirty\\n')
+        return { pid: 0, kill() {}, async prompt() {}, async *events() {}, async cancel() {},
+          async collect() { await new Promise(resolve => setTimeout(resolve, 60_000)); throw new Error('late') } }
+      }, prompt(h,t){return h.prompt(t)}, events(h){return h.events()}, cancel(h){return h.cancel()}, resume(o){return this.start(o)} })
+      await run({ job: 'implement', prompt: 'dirty then wait', cwd: ${JSON.stringify(main)},
+        agent: 'codex', key: 'DEV-374', noFailover: true })
+    `)
+    const child = Bun.spawn([process.execPath, runner], {
+      cwd: main, env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    let row: { id: number; worktree: string; branch: string } | null = null
+    for (let i = 0; i < 200; i++) {
+      row = db().query(
+        `SELECT id,worktree,branch FROM run WHERE repo=? AND status='running' AND worktree IS NOT NULL
+          AND agent_pid IS NOT NULL ORDER BY id DESC LIMIT 1`,
+      ).get(project) as typeof row
+      if (row) break
+      await Bun.sleep(10)
+    }
+    expect(row).not.toBeNull()
+    await Bun.sleep(100)
+    child.kill('SIGTERM')
+    expect(await child.exited).toBe(130)
+    const checkpoint = db().query(
+      'SELECT commit_sha,final FROM run_checkpoint WHERE run_id=? ORDER BY checkpoint_no DESC LIMIT 1',
+    ).get(row!.id) as { commit_sha: string; final: number } | null
+    expect(checkpoint?.final).toBe(1)
+    expect(git(row!.worktree, 'rev-parse', 'HEAD')).toBe(checkpoint!.commit_sha)
+    expect((db().query('SELECT work_preserved FROM run WHERE id=?').get(row!.id) as
+      { work_preserved: number }).work_preserved).toBe(1)
+  }, 30_000)
 })

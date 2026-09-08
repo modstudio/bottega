@@ -874,6 +874,17 @@ function childEnv(
  * a subscription keeps being spent on an answer no one will read.
  */
 const live = new Set<{ kill(sig?: number | string): void }>()
+type LiveProcess = { kill(sig?: number | string): void }
+type LiveCheckpoint = {
+  runId: number
+  rootId: number
+  worktree: string
+  branch: string
+  taskKey: string
+  scratchDir: string
+  guardEnvironment: NodeJS.ProcessEnv
+}
+const liveCheckpoints = new Map<LiveProcess, LiveCheckpoint>()
 
 /** Terminate the process pair recorded for a run, while allowing its coordinator to survive. */
 export function terminateRunProcesses(id: number, exclude: number[] = []): number[] {
@@ -891,13 +902,33 @@ export function terminateRunProcesses(id: number, exclude: number[] = []): numbe
   return pids
 }
 let signalsBound = false
+let terminating = false
 
 function bindSignals() {
   if (signalsBound) return
   signalsBound = true
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     process.on(sig, () => {
+      if (terminating) return
+      terminating = true
+      // Preserve the old delayed exit as the hard fallback, widened to the
+      // coordinator's five-second shutdown bound while final checkpoints run.
+      setTimeout(() => process.exit(130), 5_000)
       for (const p of live) { try { p.kill('SIGTERM') } catch { /* already gone */ } }
+      for (const checkpoint of liveCheckpoints.values()) {
+        const result = checkpointRun({
+          database: db(), runId: checkpoint.runId, worktree: checkpoint.worktree,
+          branch: checkpoint.branch, taskKey: checkpoint.taskKey,
+          scratchDir: checkpoint.scratchDir,
+          guardEnvironment: checkpoint.guardEnvironment, final: true,
+        })
+        if (result.created || latestCheckpoint(db(), checkpoint.rootId)) {
+          db().query('UPDATE run SET work_preserved=1 WHERE id=?').run(checkpoint.runId)
+        }
+        if (result.error) {
+          console.error(`orch: run ${checkpoint.runId} final checkpoint failed: ${result.error}`)
+        }
+      }
       // The `finally` in run() writes the terminal row; give it the turn it
       // needs before the process goes away.
       setTimeout(() => process.exit(130), 250)
@@ -2852,6 +2883,13 @@ export async function run(opts: {
         () => { createCheckpoint(false) },
         (requestedJob.checkpointMinutes ?? DEFAULT_CHECKPOINT_MINUTES) * 60_000,
       )
+      if (worktree && launchKey) {
+        liveCheckpoints.set(handle, {
+          runId: claim.id, rootId: opts.resume?.parent ?? claim.id,
+          worktree: worktree.path, branch: worktree.branch, taskKey: launchKey,
+          scratchDir, guardEnvironment: gitConfigEnvironment ?? {},
+        })
+      }
     }
 
     // The JOB's bound where it declares one, else the agent's, overridden by
@@ -3125,7 +3163,10 @@ export async function run(opts: {
     if (timer) clearTimeout(timer)
     if (killer) clearTimeout(killer)
     if (checkpointTimer) clearInterval(checkpointTimer)
-    if (proc) live.delete(proc)
+    if (proc) {
+      live.delete(proc)
+      liveCheckpoints.delete(proc)
+    }
     if (askLoopback) await askLoopback.close()
 
     const recordedState = db().query('SELECT status FROM run WHERE id=?').get(claim.id) as
