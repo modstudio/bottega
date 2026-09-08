@@ -2,7 +2,7 @@ import { describe, expect, spyOn, test } from 'bun:test'
 import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addRun, compoundCreate, createWithTool, createWorktree, db, declaredCreate, fakeDocker, hermeticGitCommand, hermeticGitEnv, nowIso, prepareSharedRefGuard, processStartTime, projectLockDir, reclaimStaleProjectLock, resolveBase, runJob, staleProjectLockHolder, upsertProject, withWorktreeCreateLock } from '../test/fixture.ts'
+import { addRun, compoundCreate, createWithTool, createWorktree, db, declaredCreate, fakeDocker, hermeticGitCommand, hermeticGitEnv, nowIso, prepareSharedRefGuard, processStartTime, projectLockDir, reclaimStaleProjectLock, resolveBase, runJob, staleProjectLockHolder, upsertProject, withProjectLock, withWorktreeCreateLock } from '../test/fixture.ts'
 
 import { worktreeDescribeFixture } from '../test/fixture.ts'
 
@@ -53,6 +53,53 @@ test('two environment bases contend on the shared checkout lock', async () => {
     rmSync(repo, { recursive: true, force: true })
     rmSync(xdgOne, { recursive: true, force: true })
     rmSync(xdgTwo, { recursive: true, force: true })
+  }
+})
+
+test('legacy and kernel lock holders exclude each other in both directions', async () => {
+  const { repo } = scratchRepo()
+  const common = realpathSync(join(repo, '.git'))
+  const legacy = join(common, 'orch-landing.lock')
+  const module = new URL('./worktree.ts', import.meta.url).href
+  const oldReady = join(repo, 'old-ready')
+  const oldRelease = join(repo, 'old-release')
+  const newReady = join(repo, 'new-ready')
+  const newRelease = join(repo, 'new-release')
+  const oldHolder = Bun.spawn([process.execPath, '-e',
+    `const{existsSync,mkdirSync,rmSync,writeFileSync}=await import('node:fs');const[path,ready,release]=process.argv.slice(1);mkdirSync(path);writeFileSync(path+'/owner',JSON.stringify({pid:process.pid,startTime:null,incarnation:'legacy-holder',session:'legacy',what:'legacy landing',since:new Date().toISOString()}));writeFileSync(ready,'');while(!existsSync(release))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10);rmSync(path,{recursive:true})`,
+    legacy, oldReady, oldRelease,
+  ], { env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
+  try {
+    for (let i = 0; i < 200 && !existsSync(oldReady); i++) await Bun.sleep(5)
+    expect(existsSync(oldReady)).toBe(true)
+    expect(() => withWorktreeCreateLock(repo, () => undefined, 30)).not.toThrow()
+    expect(() => withProjectLock(
+      repo, 'landing', { session: 'new', what: 'new landing' }, () => undefined, 30, true,
+    )).toThrow('timed out')
+    writeFileSync(oldRelease, '')
+    expect(await oldHolder.exited).toBe(0)
+
+    const newHolder = Bun.spawn([process.execPath, '-e',
+      `const{existsSync,writeFileSync}=await import('node:fs');const{withProjectLock}=await import(process.argv[1]);withProjectLock(process.argv[2],'landing',{session:'new',what:'new landing'},()=>{writeFileSync(process.argv[3],'');while(!existsSync(process.argv[4]))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)},5000,true)`,
+      module, repo, newReady, newRelease,
+    ], { env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
+    try {
+      for (let i = 0; i < 200 && !existsSync(newReady); i++) await Bun.sleep(5)
+      expect(existsSync(newReady)).toBe(true)
+      expect(existsSync(legacy)).toBe(true)
+      const oldTaker = Bun.spawnSync([process.execPath, '-e',
+        `const{existsSync,mkdirSync}=require('node:fs');if(!existsSync(process.argv[1]))process.exit(20);try{mkdirSync(process.argv[1]);process.exit(21)}catch(error){if(error.code!=='EEXIST')throw error;process.exit(19)}`, legacy,
+      ], { env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
+      expect(oldTaker.exitCode).toBe(19)
+    } finally {
+      writeFileSync(newRelease, '')
+      await newHolder.exited
+    }
+  } finally {
+    writeFileSync(oldRelease, '')
+    oldHolder.kill()
+    await oldHolder.exited
+    rmSync(repo, { recursive: true, force: true })
   }
 })
 test('a resumed turn waits for cleanup and refuses a worktree removed under the lifecycle lock', async () => {
@@ -173,7 +220,7 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
     try {
       mkdirSync(lock)
       mkdirSync(waiters)
-      expect(withWorktreeCreateLock(repo, () => 'created', 20)).toBe('created')
+      expect(() => withWorktreeCreateLock(repo, () => 'created', 20)).toThrow('timed out')
       expect(existsSync(lock)).toBe(true)
       expect(existsSync(waiters)).toBe(true)
     } finally {

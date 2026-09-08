@@ -358,6 +358,11 @@ export function projectLockDir(repoRoot: string): string {
   return join(common, 'orch', 'locks')
 }
 
+function legacyProjectLockPath(repoRoot: string, name: string): string {
+  const common = realpathSync(resolve(repoRoot, git(['rev-parse', '--git-common-dir'], repoRoot)))
+  return join(common, `orch-${name}.lock`)
+}
+
 function projectLockPaths(repoRoot: string, name: string): {
   lock: string; owner: string; waiters: string
 } {
@@ -475,7 +480,7 @@ export function reclaimStaleProjectLock(
  * Waiters are served in arrival order so a stream of short holders cannot
  * pass a process that arrived first.
  */
-export function withProjectLock<T>(
+function withKernelProjectLock<T>(
   repoRoot: string, name: string, identity: ProjectLockIdentity, action: () => T,
   timeoutMs = WORKTREE_CREATE_LOCK_TIMEOUT_MS, _exposeWaiters = false,
   onWait?: (holder: ProjectLockParticipant | null, remainingMs: number) => void,
@@ -574,6 +579,65 @@ export function withProjectLock<T>(
     }
   } finally {
     rmSync(waiter, { force: true })
+  }
+}
+
+/**
+ * Hold the pre-flock mkdir lock as a compatibility gate around the kernel lock.
+ *
+ * The legacy path is acquired first and the kernel path second everywhere; release
+ * is in reverse order. This prevents a process loaded before the flock migration
+ * from overlapping one loaded after it. The legacy gate can be removed once no
+ * process predating the migration commit can still be running.
+ */
+export function withProjectLock<T>(
+  repoRoot: string, name: string, identity: ProjectLockIdentity, action: () => T,
+  timeoutMs = WORKTREE_CREATE_LOCK_TIMEOUT_MS, exposeWaiters = false,
+  onWait?: (holder: ProjectLockParticipant | null, remainingMs: number) => void,
+): T {
+  const legacy = legacyProjectLockPath(repoRoot, name)
+  if (heldProjectLocks.has(legacy)) {
+    return withKernelProjectLock(repoRoot, name, identity, action, timeoutMs, exposeWaiters, onWait)
+  }
+  const deadline = Date.now() + timeoutMs
+  const sleeper = new Int32Array(new SharedArrayBuffer(4))
+  for (;;) {
+    try {
+      mkdirSync(legacy)
+      break
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      const holder = projectLockParticipant(join(legacy, 'owner'))
+      const stale = holder && staleProjectLockHolder(holder)
+      if (holder && stale) {
+        const gone = `${legacy}.stale-${process.pid}-${randomUUID()}`
+        try {
+          renameSync(legacy, gone)
+          const renamed = projectLockParticipant(join(gone, 'owner'))
+          if (renamed?.incarnation === holder.incarnation) rmSync(gone, { recursive: true, force: true })
+          else renameSync(gone, legacy)
+        } catch { /* another contender changed the legacy gate */ }
+        continue
+      }
+      if (Date.now() >= deadline) throw lockTimeout(name, timeoutMs, legacy, holder)
+      onWait?.(holder, Math.max(0, deadline - Date.now()))
+      Atomics.wait(sleeper, 0, 0, WORKTREE_CREATE_LOCK_POLL_MS)
+    }
+  }
+  const incarnation = randomUUID()
+  try {
+    writeFileSync(join(legacy, 'owner'), `${JSON.stringify({
+      pid: process.pid, startTime: processStartTime(process.pid), incarnation,
+      session: identity.session, what: identity.what, since: new Date().toISOString(),
+    })}\n`)
+    heldProjectLocks.add(legacy)
+    return withKernelProjectLock(
+      repoRoot, name, identity, action, Math.max(0, deadline - Date.now()), exposeWaiters, onWait,
+    )
+  } finally {
+    heldProjectLocks.delete(legacy)
+    const ours = projectLockParticipant(join(legacy, 'owner'))
+    if (ours?.incarnation === incarnation) rmSync(legacy, { recursive: true, force: true })
   }
 }
 
