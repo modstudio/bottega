@@ -2950,7 +2950,8 @@ switch (cmd) {
       const review = getReview(reviewId)
       if (has('json')) console.log(JSON.stringify(review))
       else {
-        console.log(`review ${review.id} recorded=${review.recorded_at} completed=${review.completed_at ?? '—'} projects=${review.projects.join(',') || '—'} tier/risk/size=${review.tier ?? '—'}/${review.risk ?? '—'}/${review.size ?? '—'}`)
+        console.log(`review ${review.id} recorded=${review.recorded_at} completed=${review.completed_at ?? '—'} projects=${review.projects.join(',') || '—'} tier/risk/size=${review.tier ?? '—'}/${review.risk ?? '—'}/${review.size ?? '—'} current=${review.current_class ?? '—'}`)
+        if (review.outdated_reason) console.log(`outdated ${review.outdated_at}: ${review.outdated_reason}`)
         for (const lens of review.lenses) {
           console.log(`lens run ${lens.run_id}: ${lens.lens} ${lens.agent}/${lens.model ?? '—'} tree=${lens.reviewed_tree ?? '—'} head=${lens.head_commit ?? '—'}`)
           console.log(`  ref ${lens.review_ref}: ${lens.pin.resolves ? lens.pin.commit : 'unresolved'}`)
