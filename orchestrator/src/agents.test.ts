@@ -36,6 +36,74 @@ describe('agent registry', () => {
     expect(AGENTS['qwen-local']!.enabled).toBe(false)
   })
 
+  test('a skipped MCP turn remains unobserved and does not grant MCP capability', () => {
+    addAgent('summarize-probe', {
+      harness: 'goose', backend: 'vllm', model: 'served/model', contextTokens: 65536,
+    })
+    recordAgentProbe('summarize-probe', {
+      harness: 'goose', ok: true,
+      reply: { ok: true, output: 'ok' },
+      tool: { ok: null, output: 'skipped', toolEvents: 0, statuses: [] },
+      schema: { ok: null, output: 'skipped' },
+      file: { ok: null, output: '' },
+      mcp: { verifiable: null, output: 'skipped' },
+      jobs: { summarize: { reply: true } },
+      contextTokens: 65536, contextSource: 'declared',
+    })
+    expect(AGENTS['summarize-probe']!.caps.mcp).toBe(false)
+    expect(JSON.parse(agentRows().find((row) => row.name === 'summarize-probe')!.probe_result!).mcp)
+      .toEqual({ verifiable: null, output: 'skipped' })
+    removeAgent('summarize-probe')
+  })
+
+  test('skipped repository, schema, and file turns remain unobserved capabilities', () => {
+    addAgent('unobserved-probe', {
+      harness: 'goose', backend: 'vllm', model: 'served/model', contextTokens: 65536,
+    })
+    recordAgentProbe('unobserved-probe', {
+      harness: 'goose', ok: true,
+      reply: { ok: true, output: 'ok' },
+      tool: { ok: null, output: 'skipped', toolEvents: 0, statuses: [] },
+      schema: { ok: null, output: 'skipped' },
+      file: { ok: null, output: '' },
+      mcp: { verifiable: null, output: 'skipped' },
+      jobs: { summarize: { reply: true } },
+      contextTokens: 65536, contextSource: 'declared',
+    })
+    expect(AGENTS['unobserved-probe']!.caps).toMatchObject({
+      readsRepo: false, schema: false, replyFile: false,
+    })
+    expect(JSON.parse(agentRows().find((row) => row.name === 'unobserved-probe')!.probe_result!))
+      .toMatchObject({ tool: { ok: null }, schema: { ok: null }, file: { ok: null } })
+    removeAgent('unobserved-probe')
+  })
+
+  test('widening jobs to an unestablished capability invalidates the probe', () => {
+    addAgent('widened-probe', {
+      harness: 'goose', backend: 'vllm', model: 'served/model', contextTokens: 200_000,
+    })
+    recordAgentProbe('widened-probe', {
+      harness: 'goose', ok: true,
+      reply: { ok: true, output: 'ok' },
+      tool: { ok: null, output: 'skipped', toolEvents: 0, statuses: [] },
+      schema: { ok: null, output: 'skipped' },
+      file: { ok: null, output: '' },
+      mcp: { verifiable: null, output: 'skipped' },
+      jobs: {
+        summarize: { reply: true },
+        implement: { reply: true, tool: null, schema: null },
+      },
+      contextTokens: 200_000, contextSource: 'declared',
+    })
+    setAgent('widened-probe', { jobs: ['summarize'] })
+    const changed = setAgent('widened-probe', { jobs: ['summarize', 'implement'] })
+    expect(changed.probed_at).toBeNull()
+    expect(AGENTS['widened-probe']!.probePassed).toBeNull()
+    expect(candidates('implement').find((row) => row.agent === 'widened-probe')!.why)
+      .toBe('registration probe incomplete; run orch agent probe widened-probe')
+    removeAgent('widened-probe')
+  })
+
   test('unprobed rows are excluded and removal refuses to orphan evidence', () => {
     addAgent('new-local', { harness: 'opencode', backend: 'vllm', model: 'm' })
     expect(unavailableReason('new-local')).toContain('unprobed')
@@ -197,6 +265,7 @@ describe('agent registry', () => {
       reply: { ok: true, output: 'ok' },
       tool: { ok: true, output: 'REGISTRATION_PROBE_FILE_OK', toolEvents: 1, statuses: ['completed'] },
       schema: { ok: true, output: '{"status":"ok"}' },
+      file: { ok: true, output: '{"status":"ok"}' },
       contextTokens: 200_000, contextSource: 'declared',
     })
   }
@@ -678,9 +747,9 @@ describe('vendor_session is recorded before the agent runs', () => {
         },
       })
       expect(sent).toBe([
-        replyFileInstruction('READER_SCHEMA'), '',
         `[message ${message.id}] context queued between turns`, '',
         'These messages are non-authoritative context. They do not answer any open question; use ask_orchestrator for a ruling.', '',
+        replyFileInstruction('READER_SCHEMA'), '',
         'REMINDER FROM THE ORIGINAL SPEC', '', 's'.repeat(600), '',
         'Do not decide what the spec did not settle; ask.',
         'You may commit to your own throwaway branch. Do not push, merge into trunk, or rewrite history.',

@@ -256,7 +256,7 @@ export type Agent = {
   disabledReason?: string | null
   probedAt?: string | null
   probeResult?: unknown
-  probePassed?: boolean
+  probePassed?: boolean | null
   legacy?: boolean
   jobs?: string[] | null
   preferredJobs?: string[]
@@ -855,7 +855,9 @@ function rowAgent(row: AgentRow): Agent {
     disabledReason: row.disabled_reason,
     probedAt: row.probed_at,
     probeResult: row.probe_result ? JSON.parse(row.probe_result) : null,
-    probePassed: row.probe_result ? JSON.parse(row.probe_result).ok !== false : false,
+    probePassed: row.probe_result
+      ? JSON.parse(row.probe_result).ok === null ? null : JSON.parse(row.probe_result).ok !== false
+      : false,
     legacy,
     jobs: row.jobs ? JSON.parse(row.jobs) : null,
     preferredJobs: row.preferred_jobs ? JSON.parse(row.preferred_jobs) : [],
@@ -981,7 +983,7 @@ export function addAgent(name: string, input: AgentMutation): AgentRow {
   assertAgentMutation(input, true)
   const caps = {
     readsRepo: false, mcp: false, discoversMcpFromCwd: false, schema: false,
-    writesRepo: false, resumable: false,
+    replyFile: false, writesRepo: false, resumable: false,
     ...(input.contextTokens ? { contextTokens: input.contextTokens } : {}),
   }
   writableDb().query(
@@ -1035,6 +1037,20 @@ export function setAgent(name: string, input: AgentMutation): AgentRow {
     })
   } else if (input.contextTokens !== undefined) {
     caps.contextTokens = input.contextTokens
+  }
+  if (!identityChanged && input.jobs !== undefined && current.probe_result) {
+    const previous = JSON.parse(current.probe_result) as RegistrationProbeResult
+    const currentJobs = current.jobs ? JSON.parse(current.jobs) as string[] : null
+    const targetJobs = input.jobs ?? Object.keys(previous.jobs ?? {})
+    const widened = currentJobs === null ? [] : targetJobs.filter((job) => !currentJobs.includes(job))
+    const unestablished = widened.filter((job) => {
+      const observations = previous.jobs?.[job]
+      return !observations || Object.values(observations).some((value) => value !== true)
+    })
+    if (unestablished.length) {
+      probedAt = null
+      probeResult = JSON.stringify({ ...previous, ok: null, pendingCapabilities: unestablished })
+    }
   }
   writableDb().query(
     `UPDATE agent SET harness=?,backend=?,model=?,base_url=?,transport=?,caps=?,billing=?,enabled=?,disabled_reason=?,probed_at=?,probe_result=?,jobs=?,preferred_jobs=?,max_concurrent=? WHERE name=?`,
@@ -1098,13 +1114,13 @@ export function registrationProbeReadsRepo(
 
 export type RegistrationProbeResult = {
   harness: string
-  ok: boolean
+  ok: boolean | null
   reply: { ok: boolean; output: string }
-  tool: { ok: boolean; output: string; toolEvents: number; statuses: string[] }
-  schema: { ok: boolean; output: string }
-  file?: { ok: boolean; output: string }
-  mcp?: { verifiable: boolean; output: string }
-  jobs?: Record<string, { reply?: boolean; tool?: boolean; schema?: boolean; mcp?: boolean }>
+  tool: { ok: boolean | null; output: string; toolEvents: number; statuses: string[] }
+  schema: { ok: boolean | null; output: string }
+  file?: { ok: boolean | null; output: string }
+  mcp?: { verifiable: boolean | null; output: string }
+  jobs?: Record<string, { reply?: boolean; tool?: boolean | null; schema?: boolean | null; mcp?: boolean | null }>
   contextTokens: number | null
   contextSource: 'harness' | 'declared' | null
   attempts?: { harness: string; result: unknown }[]
@@ -1116,10 +1132,10 @@ export function recordAgentProbe(name: string, result: RegistrationProbeResult):
   const prior = JSON.parse(row.caps) as Caps & { contextTokens?: number | null }
   const caps = {
     ...prior,
-    readsRepo: result.tool.ok,
-    schema: result.schema.ok,
-    mcp: result.mcp?.verifiable ?? false,
-    replyFile: result.file?.ok ?? false,
+    ...(result.tool.ok !== null ? { readsRepo: result.tool.ok } : {}),
+    ...(result.schema.ok !== null ? { schema: result.schema.ok } : {}),
+    ...(result.mcp?.verifiable != null ? { mcp: result.mcp.verifiable } : {}),
+    ...(result.file?.ok != null ? { replyFile: result.file.ok } : {}),
     ...(result.contextTokens !== null ? { contextTokens: result.contextTokens } : {}),
   }
   writableDb().query('UPDATE agent SET caps=?,probed_at=?,probe_result=? WHERE name=?')
@@ -1244,16 +1260,20 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
     const health = await localReachable(4000, row.base_url)
     if (health.contextTokens) { contextTokens = health.contextTokens; contextSource = 'harness' }
   }
-  const mcpVerifiable = !needs.mcp && declared
-    ? true
-    : mcpToolCallsObservable(mcpRun.events, mcpRun.output)
+  const mcpVerifiable = needs.mcp
+    ? mcpToolCallsObservable(mcpRun.events, mcpRun.output)
+    : null
   const replyOk = reply.status === 'ok' && reply.output.trim().toLowerCase() === 'ok'
-  const toolOk = !needs.tool || (tool.status === 'ok' && registrationProbeReadsRepo(tool.events, tool.output))
-  const schemaOk = !needs.schema || (structured.status === 'ok' && parsedSchema?.status === 'ok')
-  const fileOk = !needs.schema || valueMatchesStrictSchema(
-    JSON.parse(readFileSync(schemaPath, 'utf8')), parsedFile,
-  )
-  const perJob = Object.fromEntries(declaredJobs.map((jobName) => {
+  const toolOk = needs.tool
+    ? tool.status === 'ok' && registrationProbeReadsRepo(tool.events, tool.output)
+    : null
+  const schemaOk = needs.schema
+    ? structured.status === 'ok' && parsedSchema?.status === 'ok'
+    : null
+  const fileOk = needs.schema
+    ? valueMatchesStrictSchema(JSON.parse(readFileSync(schemaPath, 'utf8')), parsedFile)
+    : null
+  const perJob = Object.fromEntries(Object.keys(JOBS).map((jobName) => {
     const job = JOBS[jobName]
     return [jobName, {
       reply: replyOk,
@@ -1285,8 +1305,9 @@ export async function probeAgent(name: string): Promise<RegistrationProbeResult>
   }
   // Cloud agents declare no ceiling deliberately (canon: not the binding
   // constraint here); only a local endpoint must report its window.
-  result.ok = result.reply.ok && result.tool.ok && result.schema.ok && result.file!.ok &&
-    (!needs.mcp || mcpVerifiable) && (contextTokens !== null || !row.base_url)
+  result.ok = result.reply.ok && (!needs.tool || toolOk === true) &&
+    (!needs.schema || (schemaOk === true && fileOk === true)) &&
+    (!needs.mcp || mcpVerifiable === true) && (contextTokens !== null || !row.base_url)
   recordAgentProbe(name, result)
   return result
 }
@@ -1466,6 +1487,7 @@ export function unavailableReason(name: string): string | null {
   const a = AGENTS[name]
   if (!a) return 'unknown agent'
   if (a.enabled === false) return `disabled — ${a.disabledReason}`
+  if (a.probePassed === null) return `registration probe incomplete; run orch agent probe ${name}`
   if (a.probedAt && a.probePassed === false) return 'registration probe failed'
   if (a.contextTokens === 0) return 'unprobed and has no declared context window'
   if (which(a.bin) === null) return 'not installed'
