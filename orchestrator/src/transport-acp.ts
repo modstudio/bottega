@@ -116,12 +116,14 @@ function toolCallResult(update: AcpUpdate): string | undefined {
 export function normalizeAcpTurn(input: AcpTurnInput): TransportResult {
   const events: NormalizedEvent[] = []
   const chunks: string[] = []
-  let tokens: number | null = input.usage
-    ? (input.usage.inputTokens ?? 0) + (input.usage.outputTokens ?? 0)
-    : null
-  if (input.usage?.totalTokens !== undefined &&
-      input.usage.inputTokens === undefined && input.usage.outputTokens === undefined) {
-    tokens = input.usage.totalTokens
+  const reportedInput = typeof input.usage?.inputTokens === 'number'
+  const reportedOutput = typeof input.usage?.outputTokens === 'number'
+  const reportedTotal = typeof input.usage?.totalTokens === 'number'
+  let tokens: number | null = null
+  if (reportedInput || reportedOutput) {
+    tokens = (input.usage!.inputTokens ?? 0) + (input.usage!.outputTokens ?? 0)
+  } else if (reportedTotal) {
+    tokens = input.usage!.totalTokens!
   }
   let costUsd: number | null = null
   if (typeof input.usage?.costUsd === 'number') costUsd = input.usage.costUsd
@@ -540,10 +542,11 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
           const outputTokens = usage && typeof usage.outputTokens === 'number' ? usage.outputTokens : undefined
           const totalTokens = usage && typeof usage.totalTokens === 'number' ? usage.totalTokens : undefined
           const costTicks = usage && typeof usage.costUsdTicks === 'number' ? usage.costUsdTicks : undefined
-          terminalUsage = usage ? {
-            inputTokens, outputTokens, totalTokens,
-            costUsd: costTicks === undefined ? undefined : costTicks / 1_000_000_000,
-          } : null
+          const costUsd = costTicks === undefined ? undefined : costTicks / 1_000_000_000
+          terminalUsage = inputTokens !== undefined || outputTokens !== undefined ||
+            totalTokens !== undefined || costUsd !== undefined
+            ? { inputTokens, outputTokens, totalTokens, costUsd }
+            : null
         } catch (cause) {
           error = String((cause as Error)?.message ?? cause)
         }

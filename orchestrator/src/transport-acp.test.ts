@@ -96,6 +96,39 @@ describe('ACP event fixtures normalise to orch outcomes', () => {
     expect(result.events.some((event) => event.kind === 'stop' && event.reason === 'end_turn')).toBe(true)
   })
 
+  test('PromptResponse.usage without token fields stays unreported rather than 0', () => {
+    const result = normalizeAcpTurn({
+      sessionId: 'sess_no_usage',
+      updates: [{
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'ok' },
+        },
+      }],
+      stopReason: 'end_turn',
+      usage: {},
+    })
+    expect(result.tokens).toBeNull()
+    expect(result.costUsd).toBeNull()
+    expect(result.events.some((event) => event.kind === 'usage')).toBe(false)
+  })
+
+  test('PromptResponse.usage records vendor tokens and cost when emitted', () => {
+    const result = normalizeAcpTurn({
+      sessionId: 'sess_usage',
+      updates: [{
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'ok' },
+        },
+      }],
+      stopReason: 'end_turn',
+      usage: { inputTokens: 10, outputTokens: 5, costUsd: 0.002 },
+    })
+    expect(result.tokens).toBe(15)
+    expect(result.costUsd).toBe(0.002)
+  })
+
   test('a tool-using read records the tool and the answer', () => {
     const result = normalizeAcpTurn(ACP_FIXTURE_TOOL_READ)
     expect(acpOutcome(result)).toBe('ok')
