@@ -591,8 +591,10 @@ type GitResult = { code: number; stdout: string }
 
 function gitAt(path: string, args: string[]): GitResult {
   if (!existsSync(path)) return { code: 128, stdout: '' }
+  const env = scrubbedGitEnv()
+  delete env.GIT_INDEX_FILE
   const result = Bun.spawnSync(['git', '-C', path, '--no-optional-locks', ...args], {
-    env: scrubbedGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    env, stdout: 'pipe', stderr: 'pipe',
   })
   return { code: result.exitCode ?? 128, stdout: result.stdout.toString() }
 }

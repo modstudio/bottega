@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { createHash } from 'node:crypto'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, readFileSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -258,5 +259,26 @@ describe('main checkout cleanliness', () => {
       expect(inspectMainCheckout(repo)).toEqual({ dirtyTracked: [], untracked: [] })
       expect(assertMainCheckoutClean(project(repo))).toBeNull()
     } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('inspection does not write a foreign GIT_INDEX_FILE', () => {
+    const repo = scratch()
+    const tree = join(tmpdir(), `orch-sibling-tree-${Date.now()}`)
+    const previous = process.env.GIT_INDEX_FILE
+    try {
+      git(repo, 'worktree', 'add', '-b', 'sibling', tree, 'main')
+      const siblingIndex = git(tree, 'rev-parse', '--path-format=absolute', '--git-path', 'index')
+      const before = createHash('sha256').update(readFileSync(siblingIndex)).digest('hex')
+      utimesSync(join(repo, 'tracked.txt'), 1, 1)
+      process.env.GIT_INDEX_FILE = siblingIndex
+      expect(inspectMainCheckout(repo)).toEqual({ dirtyTracked: [], untracked: [] })
+      expect(assertMainCheckoutClean(project(repo))).toBeNull()
+      expect(createHash('sha256').update(readFileSync(siblingIndex)).digest('hex')).toBe(before)
+    } finally {
+      if (previous === undefined) delete process.env.GIT_INDEX_FILE
+      else process.env.GIT_INDEX_FILE = previous
+      rmSync(tree, { recursive: true, force: true })
+      rmSync(repo, { recursive: true, force: true })
+    }
   })
 })
