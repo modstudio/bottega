@@ -11,6 +11,19 @@ function hub(args: string[], hubDb: string) {
   })
 }
 
+const intervalOrigin = Date.parse('2026-09-08T10:00:00.000Z')
+function timedRun(key: string, startOffsetMs: number, latency: number): number {
+  const run = addRun({
+    agent: 'codex', job: 'implement', status: 'ok', latency,
+    startedAt: new Date(intervalOrigin + startOffsetMs).toISOString(),
+  })
+  db().query('UPDATE run SET launch_key=? WHERE id=?').run(key, run)
+  return run
+}
+const intervalScore = (...keys: string[]) => epicScoreboard(
+  'DEV-INTERVALS', keys.map((key) => ({ key })), db(), intervalOrigin + 3_600_000,
+)
+
 describe('epic scoreboard', () => {
   test('computes every recorded metric once for human and JSON views', () => {
     // Offset-less SQLite ISO text is UTC, not the machine's local timezone.
@@ -95,6 +108,56 @@ describe('epic scoreboard', () => {
     expect(report.children).toEqual([])
     expect(report.total).toMatchObject({ runs: { total: 0, byJob: {} }, vendorTokens: null })
     expect(renderEpicHuman(report)).toContain('TOTAL')
+  })
+
+  test('total occupancy unions overlapping children instead of adding child occupancy', () => {
+    timedRun('DEV-A', 0, 120_000)
+    timedRun('DEV-B', 60_000, 120_000)
+    const report = intervalScore('DEV-A', 'DEV-B')
+    expect(report.children.map((row) => row.occupancyMs)).toEqual([120_000, 120_000])
+    expect(report.total.occupancyMs).toBe(180_000)
+    expect(report.total.occupancyMs).not.toBe(240_000)
+  })
+
+  test('shared-start runs union within one child', () => {
+    timedRun('DEV-SHARED', 0, 60_000)
+    timedRun('DEV-SHARED', 0, 120_000)
+    expect(intervalScore('DEV-SHARED').children[0]).toMatchObject({
+      agentTimeMs: 180_000, occupancyMs: 120_000, elapsedSpanMs: 120_000,
+    })
+  })
+
+  test('touching runs occupy their full span', () => {
+    timedRun('DEV-TOUCH', 0, 120_000)
+    timedRun('DEV-TOUCH', 120_000, 120_000)
+    // Equal sums cannot discriminate whether the zero-width seam was merged.
+    expect(intervalScore('DEV-TOUCH').children[0]).toMatchObject({
+      agentTimeMs: 240_000, occupancyMs: 240_000, elapsedSpanMs: 240_000,
+    })
+  })
+
+  test('zero-length runs affect span but not occupancy', () => {
+    timedRun('DEV-ZERO-PLUS', 0, 0)
+    timedRun('DEV-ZERO-PLUS', 60_000, 60_000)
+    timedRun('DEV-ZERO-ALONE', 0, 0)
+    const report = intervalScore('DEV-ZERO-PLUS', 'DEV-ZERO-ALONE')
+    expect(report.children[0]).toMatchObject({ occupancyMs: 60_000, elapsedSpanMs: 120_000 })
+    expect(report.children[1]).toMatchObject({ occupancyMs: 0, elapsedSpanMs: 0 })
+  })
+
+  test('a single timed run has identical agent, occupancy, and span durations', () => {
+    timedRun('DEV-SINGLE', 0, 90_000)
+    expect(intervalScore('DEV-SINGLE').children[0]).toMatchObject({
+      agentTimeMs: 90_000, occupancyMs: 90_000, elapsedSpanMs: 90_000,
+    })
+  })
+
+  test('occupancy and span are independent of insertion order', () => {
+    timedRun('DEV-REVERSE', 300_000, 60_000)
+    timedRun('DEV-REVERSE', 0, 120_000)
+    expect(intervalScore('DEV-REVERSE').children[0]).toMatchObject({
+      agentTimeMs: 180_000, occupancyMs: 180_000, elapsedSpanMs: 360_000,
+    })
   })
 
   test('computes offset-less SQLite idle timestamps as UTC outside a UTC process', () => {
