@@ -22,6 +22,16 @@ export const FAILURE_KINDS = [
   'unreachable', 'timeout', 'context', 'cost', 'stopped', 'denied', 'content_refusal',
   'interrupted',
   /**
+   * The run coordinator checkpointed and terminated a worker that had gone
+   * silent with no CPU. Neither success nor failure of the agent — the same
+   * treatment `asking` already gets. Classified at kill time because the
+   * metadata cannot be reconstructed later; excluded from routing evidence
+   * by the same seam as quota and auth. Honest limit: no published source
+   * addresses excluding an infra kill from a worker competence score; this
+   * is extension by analogy with `--void`.
+   */
+  'idle',
+  /**
    * The vendor exhausted its reply budget or stopped mid-generation before
    * emitting a result, whatever caused it to stop.
    */
@@ -105,6 +115,7 @@ const PATTERNS: [FailureKind, RegExp][] = [
    * exit code must not be swallowed.
    */
   ['interrupted', /^exit (?:130|137|143), empty output$/],
+  ['idle', /idle-killed after /],
   // Codex should never reach the vendor with a schema OpenAI strict mode will
   // reject: agents.ts normalizes and validates it before launch. Keep the
   // vendor's last line of defence classified as our harness fault, never as
@@ -225,7 +236,11 @@ export function classify(
   timedOut = false,
   /** Recorded run sandbox. Only srt denials are sandbox routing evidence. */
   sandbox?: 'host' | 'srt' | null,
+  /** Whether the idle-kill terminator fired. Classified at kill time, not from the exit. */
+  idleKilled = false,
 ): FailureKind {
+  if (idleKilled) return 'idle'
+  if (error && /idle-killed after /.test(error)) return 'idle'
   if (exitCode != null && SIGNAL_EXITS.has(exitCode)) {
     // OUR timer kills with the same signal as a harness does, so the exit code
     // alone cannot tell them apart — only the caller knows which fired. Ours is
@@ -303,7 +318,7 @@ export const FAILS_OVER: FailureKind[] = [
  * `unreachable` was carved out to stop.
  */
 export const NOT_EVIDENCE: FailureKind[] = [
-  'quota', 'auth', 'entitlement', 'unreachable', 'context', 'cost', 'content_refusal', 'interrupted', 'truncated', 'escaped',
+  'quota', 'auth', 'entitlement', 'unreachable', 'context', 'cost', 'content_refusal', 'interrupted', 'idle', 'truncated', 'escaped',
   'confinement_unverified', 'sandbox_denied', 'mcp_unverified', 'harness', 'abandoned',
 ]
 

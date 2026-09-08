@@ -71,7 +71,7 @@ function elapsedDetail(elapsedMs: number | null): string {
   return `elapsed ${(elapsedMs / 3_600_000).toFixed(1)}h`
 }
 
-/** Report live runs whose vendor stream has gone quiet. Nothing is killed. */
+/** Report live runs whose vendor stream has gone quiet. The coordinator, not the monitor, checkpoints and terminates past the idle-kill threshold. */
 export function idleRunConditions(clock = Date.now()): MonitorCondition[] {
   const threshold = idleWarnMs()
   const running = db().query(
@@ -87,7 +87,7 @@ export function idleRunConditions(clock = Date.now()): MonitorCondition[] {
     return [{
       kind: 'idle', subject: `run:${run.id}`, since: run.last_event_at ?? run.started_at, ageMs,
       detail: `run ${run.id} ${run.agent}/${run.job} ${label}`,
-      action: 'reported; nothing was signalled',
+      action: 'reported; the run coordinator checkpoints and terminates past the idle-kill threshold',
       ownerSession: run.session_id,
     }]
   })

@@ -6388,10 +6388,17 @@ switch (cmd) {
       const live = r.status === 'running'
       const lastEventAt = (r.last_event_at as string | null) ?? null
       const startedAt = String(r.current_started_at ?? r.started_at)
-      const idle = live ? idleLabel(lastEventAt, startedAt) : null
+      const idle = live ? idleLabel(lastEventAt, startedAt)
+        : r.failure_kind === 'idle' ? 'idle-killed' : null
       const since = live ? idleMsSince(lastEventAt, startedAt) : null
       const { current_started_at: _currentStartedAt, ...rest } = r
-      return { ...rest, idle, idle_ms: since }
+      const reclaimed = r.failure_kind === 'idle'
+        ? (String(r.error ?? '').match(/reclaimed_ms=(\d+)/)?.[1] ?? null)
+        : null
+      return {
+        ...rest, idle, idle_ms: since,
+        reclaimed_ms: reclaimed != null ? Number(reclaimed) : null,
+      }
     })
 
     // JSON Lines, so a consumer can stream it and a truncated read loses only
@@ -6430,6 +6437,11 @@ switch (cmd) {
         console.log(`      ${failureReason(r as {
           status: string; error: string | null; failure_kind: string | null; exit_code: number | null
         })}`)
+      }
+      if (r.failure_kind === 'idle') {
+        const reclaimed = r.reclaimed_ms as number | null
+        console.log(`      idle-killed` +
+          (reclaimed != null ? `; reclaimed ${dur(reclaimed)} of wall` : ''))
       }
       // The reason is where a fan-out says its exclusions ran out. Hiding it
       // here would leave the database honest and the human-facing command not.
@@ -6878,7 +6890,10 @@ switch (cmd) {
       console.log(row.kind.padEnd(25) + String(row.count).padStart(7) +
         duration(row.totalTimeMs).padStart(10) + duration(row.meanTimeMs).padStart(10) +
         String(row.workPreserved).padStart(11) + '  ' +
-        (row.firstSeen ?? '-').padEnd(25) + (row.lastSeen ?? '-'))
+        (row.firstSeen ?? '-').padEnd(25) + (row.lastSeen ?? '-') +
+        (row.kind === 'idle' && row.reclaimedMs
+          ? `  reclaimed ${duration(row.reclaimedMs)}`
+          : ''))
       for (const cluster of row.clusters) {
         console.log(`  ${cluster.count}x [run ${cluster.exampleRunId}] ${cluster.text}`)
       }

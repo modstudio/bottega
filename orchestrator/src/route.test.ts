@@ -137,7 +137,7 @@ describe('failure classification', () => {
     // process tree, and orch itself being wrong are not capability evidence.
     // None of them may be averaged in with the agent's actual work.
     expect(NOT_EVIDENCE).toEqual([
-      'quota', 'auth', 'entitlement', 'unreachable', 'context', 'cost', 'content_refusal', 'interrupted', 'truncated', 'escaped',
+      'quota', 'auth', 'entitlement', 'unreachable', 'context', 'cost', 'content_refusal', 'interrupted', 'idle', 'truncated', 'escaped',
       'confinement_unverified', 'sandbox_denied', 'mcp_unverified', 'harness', 'abandoned',
     ])
     for (const kind of ['timeout', 'denied', 'other']) {
@@ -166,6 +166,16 @@ describe('failure classification', () => {
     // and the same command run detached would not have produced it.
     expect(COOLS_DOWN).not.toContain('interrupted')
     expect(NEEDS_HUMAN).not.toContain('interrupted')
+  })
+
+  test('an idle kill is not agent evidence, a cooldown, a page, or a failover', () => {
+    expect(NOT_EVIDENCE).toContain('idle')
+    expect(COOLS_DOWN).not.toContain('idle')
+    expect(NEEDS_HUMAN).not.toContain('idle')
+    expect(FAILS_OVER).not.toContain('idle')
+    addRun({ agent: 'grok', job: 'implement', status: 'failed', kind: 'idle' })
+    expect(candidates('implement').find((item) => item.agent === 'grok'))
+      .toMatchObject({ failures: 0, evidence: 0, score: null, cooling: null })
   })
 
   test('a content refusal fails over without cooling or paging', () => {

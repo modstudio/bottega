@@ -76,10 +76,13 @@ import {
   resolveTransportName, assertAcpAllowed, assertAcpReady, transportFor,
   selectAgentForTransport, isTestTransportInstalled, valueMatchesStrictSchema,
   schemaMismatchError, stopErrorMessage, failureKindFromStop,
-  type TransportName, type TransportStartOpts,
+  type TransportName, type TransportStartOpts, type TransportResult,
 } from './transport.ts'
 import { teeTransportEvents } from './events.ts'
 import { checkpointRun, DEFAULT_CHECKPOINT_MINUTES, latestCheckpoint } from './checkpoint.ts'
+import {
+  formatIdleKillError, idlePollMs, shouldIdleKill, terminateProcessGroup,
+} from './idle-kill.ts'
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
 
@@ -2779,7 +2782,11 @@ export async function run(opts: {
   let timer: ReturnType<typeof setTimeout> | null = null
   let killer: ReturnType<typeof setTimeout> | null = null
   let checkpointTimer: ReturnType<typeof setInterval> | null = null
+  let idleTimer: ReturnType<typeof setInterval> | null = null
   let timedOut = false
+  let idleKilled = false
+  let idleKillError: string | null = null
+  let idleUnkillable = false
   let exitCode = -1
   let output = ''
   let vendorTokens: number | null = null
@@ -2902,7 +2909,11 @@ export async function run(opts: {
     //
     // Recorded HERE, before the wait, not after it. Written afterwards it is
     // always the pid of a process that has already exited.
-    db().query('UPDATE run SET agent_pid=? WHERE id=?').run(handle.pid, claim.id)
+    // Idle is silence of the VENDOR, not of orch's own setup. last_event_at
+    // starts here so a slow worktree cut cannot burn the idle-kill budget.
+    db().query(
+      'UPDATE run SET agent_pid=?, last_event_at=COALESCE(last_event_at, ?) WHERE id=?',
+    ).run(handle.pid, nowIso(), claim.id)
 
     const createCheckpoint = (final = false) => {
       if (!writesJob || !worktree || !launchKey) return null
@@ -2928,9 +2939,10 @@ export async function run(opts: {
       }
     }
 
-    // The JOB's bound where it declares one, else the agent's, overridden by
-    // --timeout and capped by the job ceiling. Computed once after routing.
+    // Two timeouts, composed, not one: the wall stays, and idle kill is the
+    // second, shorter no-activity bound. Do not replace the wall.
     timer = setTimeout(() => {
+      if (idleKilled) return
       timedOut = true
       void t.cancel(handle)
       // A CLI that ignores SIGTERM would otherwise keep the caller waiting for
@@ -2938,10 +2950,65 @@ export async function run(opts: {
       killer = setTimeout(() => { try { handle.kill(9) } catch { /* already gone */ } }, 5_000)
     }, boundMs)
 
+    let forceCollect: ((result: TransportResult) => void) | null = null
+    const forcedCollect = new Promise<TransportResult>((resolve) => {
+      forceCollect = resolve
+    })
+    const maybeIdleKill = async () => {
+      const row = db().query(
+        'SELECT status, last_event_at, started_at FROM run WHERE id=?',
+      ).get(claim.id) as { status: string; last_event_at: string | null; started_at: string } | null
+      if (!row) return
+      const openQuestion = db().query(
+        'SELECT 1 n FROM question WHERE run_id=? AND answered_at IS NULL LIMIT 1',
+      ).get(claim.id) as { n: number } | null
+      const decision = shouldIdleKill({
+        lastEventAt: row.last_event_at, startedAt: row.started_at, pid: handle.pid,
+        asking: row.status === 'asking', openQuestion: Boolean(openQuestion),
+        alreadyTimedOut: timedOut, alreadyIdleKilled: idleKilled,
+      })
+      if (!decision.kill) return
+      idleKilled = true
+      const elapsed = Date.now() - started
+      idleKillError = formatIdleKillError({
+        idleMs: decision.idleMs ?? 0,
+        reclaimedMs: Math.max(0, boundMs - elapsed),
+        boundMs,
+      })
+      const checkpoint = createCheckpoint(true)
+      if (checkpoint?.created || latestCheckpoint(db(), opts.resume?.parent ?? claim.id)) {
+        db().query('UPDATE run SET work_preserved=1 WHERE id=?').run(claim.id)
+      }
+      void t.cancel(handle)
+      const terminated = await terminateProcessGroup(handle.pid ?? 0)
+      idleUnkillable = terminated.unkillable
+      if (terminated.unkillable) {
+        idleKillError = formatIdleKillError({
+          idleMs: decision.idleMs ?? 0,
+          reclaimedMs: Math.max(0, boundMs - elapsed),
+          boundMs,
+          unkillable: true,
+          unkillableReason: terminated.reason,
+        })
+        forceCollect?.({
+          stdout: '', stderr: idleKillError, raw: '', parsed: null, output: '',
+          tokens: null, costUsd: null, sessionId: null, stopReason: 'timeout',
+          error: idleKillError, exitCode: -1, pid: handle.pid ?? 0,
+          events: [], asking: false, failureKind: 'idle', status: 'failed', questions: [],
+        })
+      }
+    }
+    let idleCheckInFlight = false
+    idleTimer = setInterval(() => {
+      if (idleCheckInFlight || timedOut || idleKilled) return
+      idleCheckInFlight = true
+      void maybeIdleKill().finally(() => { idleCheckInFlight = false })
+    }, idlePollMs())
+
     const teeing = teeTransportEvents(handle.events(), claim.id)
     await t.prompt(handle, prompt)
     receiptWorkerMessages(claim.id, checkpointMessages.map((message) => message.id))
-    const collected = await handle.collect()
+    const collected = await Promise.race([handle.collect(), forcedCollect])
     await teeing.catch(() => { /* the live log is observation, never outcome */ })
     const stdout = collected.stdout
     const stderr = collected.stderr
@@ -3073,6 +3140,10 @@ export async function run(opts: {
       status = 'failed'
       error = `response truncated at output ceiling (${reply!.stopReason})`
       failureKind = 'truncated'
+    } else if (idleKilled) {
+      status = 'failed'
+      error = errorTail(idleKillError ?? 'idle-killed with no CPU')
+      failureKind = 'idle'
     } else if (timedOut && completedReplyAtTimeout) {
       /**
        * IT FINISHED, AND THEN WE KILLED IT.
@@ -3199,6 +3270,7 @@ export async function run(opts: {
     if (timer) clearTimeout(timer)
     if (killer) clearTimeout(killer)
     if (checkpointTimer) clearInterval(checkpointTimer)
+    if (idleTimer) clearInterval(idleTimer)
     if (proc) {
       live.delete(proc)
       liveCheckpoints.delete(proc)
@@ -3209,7 +3281,7 @@ export async function run(opts: {
       { status: string } | null
     const preserveAtTerminal = writesJob && worktree && launchKey && (
       recordedState?.status === 'stopped' ||
-      failureKind === 'timeout' || failureKind === 'quota' || failureKind === 'context' || failureKind === 'cost'
+      failureKind === 'timeout' || failureKind === 'idle' || failureKind === 'quota' || failureKind === 'context' || failureKind === 'cost'
     )
     if (preserveAtTerminal) {
       const checkpoint = checkpointRun({
@@ -3661,6 +3733,12 @@ export async function run(opts: {
     notify(
       NEEDS_HUMAN_TITLE[failureKind]?.(name) ?? `${name} needs attention`,
       `${opts.job} failed. Routing will avoid it until it succeeds again.`,
+    )
+  }
+  if (idleUnkillable) {
+    notify(
+      `${name} idle kill did not terminate`,
+      `run ${claim.id} still alive after SIGKILL; needs a human`,
     )
   }
 

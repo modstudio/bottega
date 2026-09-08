@@ -1151,6 +1151,7 @@ describe('the exit code decides a signal death, not the vendor prose', () => {
     // is a fact about the room, and only the second is excluded from evidence.
     expect(classify('no reply within 20m', 143, true)).toBe('timeout')
     expect(classify('no reply within 20m', 143, false)).toBe('interrupted')
+    expect(classify('no reply within 20m', 143, false, null, true)).toBe('idle')
   })
 
   test('an ordinary failure is still read from its text', () => {

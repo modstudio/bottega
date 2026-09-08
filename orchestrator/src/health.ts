@@ -4,6 +4,7 @@ import {
 } from '../../shared/orch-contract.ts'
 import { db } from './db.ts'
 import { clusterErrorText, FAILURE_KINDS, type FailureKind } from './failure.ts'
+import { parseIdleReclaimedMs } from './idle-kill.ts'
 import { summarizeContention } from './contention.ts'
 import { attributionCounts, parseConfinement } from './confinement.ts'
 import { parseMcpProbe } from './mcp-probe.ts'
@@ -52,9 +53,13 @@ export function harnessHealth(days = HEALTH_DEFAULT_DAYS, database: Database = d
     }
     const clusters = [...grouped].map(([text, value]) => ({ text, ...value }))
       .sort((a, b) => b.count - a.count || a.text.localeCompare(b.text)).slice(0, 3)
+    const reclaimedMs = kind === 'idle'
+      ? matching.reduce((sum, row) => sum + (parseIdleReclaimedMs(row.error) ?? 0), 0)
+      : undefined
     return {
       kind, count: matching.length, totalTimeMs,
       workPreserved: matching.filter((row) => row.work_preserved === 1).length,
+      ...(reclaimedMs !== undefined ? { reclaimedMs } : {}),
       meanTimeMs: matching.length ? Math.round(totalTimeMs / matching.length) : 0,
       firstSeen: matching[0]?.started_at ?? null,
       lastSeen: matching.at(-1)?.started_at ?? null,
