@@ -374,7 +374,10 @@ test('only bun\'s complete timeout line reports machine load', () => {
       expect(files).toContain('first.txt')
       expect(files).toContain('second.txt')
       const rows = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean)
-      expect(rows.length).toBeGreaterThanOrEqual(2)
+      // Two waiters now form one merge group (DEV-380: a waiter drains its own
+      // row with every older queued row), so one gate proves the combined tip;
+      // before the queue each landing gated alone and the second re-gated.
+      expect(rows.length).toBeGreaterThanOrEqual(1)
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 

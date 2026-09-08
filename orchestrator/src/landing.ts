@@ -2278,8 +2278,15 @@ export function drainQueue(
           // branch on its own, so the second's row was never gated: two
           // concurrent landings hung until their bound (DEV-380, four refused
           // landings on 2026-09-08). Without untilId the whole queue is a group.
+          // A waiter drains its own row, together with every OLDER row still
+          // queued, so it never jumps work a drain would have grouped ahead of
+          // it (review 368); a waiter whose row is gone takes queued[0].
           const own = options.untilId ? queued.find((row) => row.id === options.untilId) : undefined
-          const group = !options.untilId && queued.length >= 2 ? queued : [own ?? queued[0]!]
+          const group = !options.untilId
+            ? (queued.length >= 2 ? queued : [queued[0]!])
+            : own
+              ? queued.filter((row) => row.id <= own.id)
+              : [queued[0]!]
           claimLandingRows(group)
           return group
         }
