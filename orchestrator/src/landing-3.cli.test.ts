@@ -51,6 +51,29 @@ describe('DEV-370 landing queue and branch ownership', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  test('a conflicting merge-group member is refused and the remaining member lands on the next pick', () => {
+    const { repo, trees } = repoWithBranches(['conflict-a', 'conflict-b'])
+    for (const [branch, value] of [['conflict-a', 'a'], ['conflict-b', 'b']] as const) {
+      writeFileSync(join(trees[branch]!, 'shared.txt'), `${value}\n`)
+      g(trees[branch]!, 'add', 'shared.txt')
+      g(trees[branch]!, 'commit', '-m', `shared ${value}`)
+    }
+    upsertProject({ name: 'landing-group-conflict', path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      land(repo, 'conflict-a', { unreviewed: 'a', wait: false })
+      land(repo, 'conflict-b', { unreviewed: 'b', wait: false })
+      drainQueue(repo)
+      const rows = db().query(
+        `SELECT branch,status,claim_pid FROM landing WHERE project='landing-group-conflict' ORDER BY id`,
+      ).all() as { branch: string; status: string; claim_pid: number | null }[]
+      expect(rows).toEqual([
+        { branch: 'conflict-a', status: 'landed', claim_pid: null },
+        { branch: 'conflict-b', status: 'refused', claim_pid: null },
+      ])
+      expect(readFileSync(join(repo, 'shared.txt'), 'utf8')).toBe('a\n')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   test('a merge group rebuilds on a moved trunk and lands after re-gating', () => {
     const { repo } = repoWithBranches(['move-group-a', 'move-group-b'])
     const gate = join(repo, 'move-group-gate.sh')

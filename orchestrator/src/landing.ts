@@ -1296,6 +1296,10 @@ class MergeGroupTrunkMoved extends Error {
   }
 }
 
+class MergeGroupMemberFailure extends Error {
+  constructor(readonly branch: string, detail: string) { super(detail) }
+}
+
 export function diffCarriesMigrationJournal(paths: string[]): boolean {
   return paths.some((path) =>
     path === 'orchestrator/migrations' || path.startsWith('orchestrator/migrations/') ||
@@ -1777,11 +1781,11 @@ function rebaseBranchesOntoTrunk(
         Bun.spawnSync(['git', 'cherry-pick', '--abort'], {
           cwd: worktree, env: scrubbedGitEnv(), stdout: 'pipe', stderr: 'pipe',
         })
-        throw namedError(
+        throw new MergeGroupMemberFailure(branch, namedError(
           `merge-group cherry-pick of ${commit} from ${branch} failed: ${picked.stderr.toString().trim()}`,
           INVARIANT_FAILED_LANDING,
           `git -C ${shellQuote(worktree)} status`,
-        )
+        ).message)
       }
     }
   }
@@ -1811,6 +1815,7 @@ function processMergeGroup(
     gitOk(repoRoot, ['branch', '-D', groupBranch])
     gitOk(repoRoot, ['worktree', 'prune'])
   }
+  let fastForwarded = false
   try {
     const started = Date.now()
     rebaseBranchesOntoTrunk(repoRoot, groupPath, trunkOid, rows.map((row) => row.branch))
@@ -1841,6 +1846,7 @@ function processMergeGroup(
         options.timeoutMs ?? LANDING_LOCK_TIMEOUT_MS, rows[0]!.id,
       )
       git(repoRoot, ['update-ref', `refs/heads/${trunk}`, tip, trunkOid])
+      fastForwarded = true
     }, options.timeoutMs ?? LANDING_LOCK_TIMEOUT_MS)
     for (const row of rows) {
       writeTransaction(() => {
@@ -1876,7 +1882,44 @@ function processMergeGroup(
     }
     console.log(`landed merge-group of ${rows.map((row) => row.branch).join(', ')} at ${tip}`)
   } catch (error) {
-    if (!(error instanceof MergeGroupTrunkMoved)) throw error
+    if (error instanceof MergeGroupMemberFailure) {
+      const failed = rows.find((row) => row.branch === error.branch)
+      writeTransaction(() => {
+        for (const row of rows) {
+          if (row.id === failed?.id) {
+            db().query(
+              `UPDATE landing SET status='refused',error=?,finished_at=?,claim_pid=NULL,claim_session=NULL WHERE id=?`,
+            ).run(
+              `${error.message}\ninvariant: a conflicting merge-group member is refused without stranding its peers` +
+              `\ncleared by: orch land ${row.branch}`,
+              nowIso(), row.id,
+            )
+          } else {
+            db().query(
+              `UPDATE landing SET status='queued',claim_pid=NULL,claim_session=NULL WHERE id=?`,
+            ).run(row.id)
+          }
+        }
+      })
+      return
+    }
+    if (!(error instanceof MergeGroupTrunkMoved)) {
+      if (!fastForwarded) {
+        const message = error instanceof Error ? error.message : String(error)
+        writeTransaction(() => {
+          for (const row of rows) {
+            db().query(
+              `UPDATE landing SET status='refused',error=?,finished_at=?,claim_pid=NULL,claim_session=NULL WHERE id=?`,
+            ).run(
+              `${message}\ninvariant: a merge-group member never remains running after processing returns` +
+              `\ncleared by: orch land ${row.branch}`,
+              nowIso(), row.id,
+            )
+          }
+        })
+      }
+      throw error
+    }
     tryWriteContention({
       resourceKind: 'trunk', resourceKey: project.name, eventKind: 'retry',
       cause: `${trunk} moved from ${error.from} to ${error.to}`,
