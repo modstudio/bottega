@@ -173,6 +173,7 @@ export const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePa
         retargetRepositoryPrompt, retargetRepositoryPromptForDispatch,
         packedResumePrompt, resolveReviewTarget, implicitReviewWarning, mcpRequestFromStored,
         retryModelForAgent, run: runJob, listRunArtifacts, runArtifactsDir, runScratchDir,
+        noRepoIsolatePath,
         readDispatchState, persistTerminalSnapshot, reconcileRun } = await import('../src/run.ts')
 export const run = runJob
 export const {

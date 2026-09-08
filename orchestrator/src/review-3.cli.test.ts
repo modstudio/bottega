@@ -2,9 +2,15 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { landingReviewCoverage, AGENTS, MIN_SAMPLE, addRun, completeReview, contentTree, coverageAudit, db, dir, evidenceFor, guide, hermeticGitEnv, implicitReviewWarning, pick, recordReview, resolveReviewTarget, reviewReply, runJob, score, upsertProject } from '../test/fixture.ts'
+import { landingReviewCoverage, AGENTS, MIN_SAMPLE, addRun, completeReview, contentTree, coverageAudit, db, dir, evidenceFor, guide, hermeticGitEnv, implicitReviewWarning, noRepoIsolatePath, pick, recordReview, resolveReviewTarget, reviewReply, runJob, score, upsertProject } from '../test/fixture.ts'
 
 describe('review-lens-inline has no checkout', () => {
+  test('the no-repo isolate is deterministically named below an owned runs directory', () => {
+    const ownedRuns = '/var/lib/orch/runs'
+    expect(noRepoIsolatePath(42, ownedRuns)).toBe('/var/lib/orch/runs/isolates/42')
+    expect(noRepoIsolatePath(42, ownedRuns).startsWith(tmpdir())).toBe(false)
+  })
+
   test('a resumed findings turn records its review against the root run', async () => {
     const agent = AGENTS.codex!
     const original = {
@@ -562,15 +568,21 @@ describe('review-lens-inline has no checkout', () => {
       runGit('add', '.gitignore', 'project-only.txt', 'subdir/subject.txt')
       runGit('commit', '-m', 'fixture')
       writeFileSync(script, [
-        "import { existsSync } from 'node:fs'",
+        "import { existsSync, readFileSync, statSync } from 'node:fs'",
         "const prompt = await Bun.stdin.text()",
+        "let plantedMcp = false",
+        "try { plantedMcp = readFileSync('.mcp.json', 'utf8').includes('STALE_TRUST') } catch {}",
         "const view = {",
         "  cwd: process.cwd(),",
         "  prompt,",
         "  checkout: existsSync('.git'),",
         "  projectFile: existsSync('project-only.txt'),",
+        "  plantedMcp,",
+        "  mode: statSync('.').mode & 0o777,",
+        "  parentMode: statSync('..').mode & 0o777,",
         "  receivedPack: prompt.includes('SELF_CONTAINED_FACT'),",
         "}",
+        "if (prompt.includes('CAPTURE_NO_REPO')) { console.log(JSON.stringify(view)); process.exit(0) }",
         `const reply = ${JSON.stringify(reviewReply(1))}`,
         "reply.findings[0].evidence = JSON.stringify(view)",
         "console.log(JSON.stringify(reply))",
@@ -586,15 +598,53 @@ describe('review-lens-inline has no checkout', () => {
         job: 'review-lens-inline', prompt: 'SELF_CONTAINED_FACT', cwd: repo, agent: 'codex', lens: 'inline',
       })
       const inlineView = JSON.parse(JSON.parse(inline.output).findings[0].evidence) as {
-        cwd: string; prompt: string; checkout: boolean; projectFile: boolean; receivedPack: boolean
+        cwd: string; prompt: string; checkout: boolean; projectFile: boolean
+        mode: number; parentMode: number; receivedPack: boolean
       }
       expect(inlineView.checkout).toBe(false)
       expect(inlineView.projectFile).toBe(false)
+      expect(inlineView.mode).toBe(0o700)
+      expect(inlineView.parentMode).toBe(0o700)
       expect(inlineView.receivedPack).toBe(true)
+      expect(inlineView.cwd).toContain(`/isolates/${inline.id}`)
       expect(existsSync(inlineView.cwd)).toBe(false)
       expect(inline.worktree).toBeNull()
       expect(db().query('SELECT input_tree, head_commit FROM run WHERE id=?').get(inline.id))
         .toEqual({ input_tree: null, head_commit: null })
+
+      // Recreate the exact removed pathname and plant the trust-triggering
+      // filename from the incident. A later run id must select a different
+      // pathname rather than inheriting anything from this one.
+      mkdirSync(inlineView.cwd, { recursive: true })
+      writeFileSync(join(inlineView.cwd, '.mcp.json'), 'STALE_TRUST\n')
+
+      const isolatePaths = new Set([inlineView.cwd])
+      for (const job of ['summarize', 'mcp-query'] as const) {
+        const isolated = await runJob({
+          job, prompt: 'CAPTURE_NO_REPO', cwd: repo, agent: 'codex', noFailover: true,
+        })
+        const view = JSON.parse(isolated.output) as {
+          cwd: string; checkout: boolean; projectFile: boolean
+          plantedMcp: boolean; mode: number; parentMode: number
+        }
+        expect(view.cwd).toContain(`/isolates/${isolated.id}`)
+        expect(view.cwd).not.toBe(inlineView.cwd)
+        expect(view.checkout).toBe(false)
+        expect(view.projectFile).toBe(false)
+        expect(view.plantedMcp).toBe(false)
+        expect(view.mode).toBe(0o700)
+        expect(view.parentMode).toBe(0o700)
+        expect(isolatePaths.has(view.cwd)).toBe(false)
+        isolatePaths.add(view.cwd)
+        expect(existsSync(view.cwd)).toBe(false)
+        expect(isolated.worktree).toBeNull()
+        expect(db().query('SELECT cwd, worktree, input_tree, head_commit FROM run WHERE id=?').get(isolated.id))
+          .toEqual({
+            cwd: expect.stringContaining(`/isolates/${isolated.id}`),
+            worktree: null, input_tree: null, head_commit: null,
+          })
+      }
+      expect(isolatePaths.size).toBe(3)
 
       const repository = await runJob({
         job: 'review-lens', prompt: `inspect ${repo}/project-only.txt`,
@@ -648,6 +698,10 @@ describe('review-lens-inline has no checkout', () => {
       if (oldDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = oldDepth
       rmSync(repo, { recursive: true, force: true })
+      const inlineRows = db().query(
+        "SELECT cwd FROM run WHERE job IN ('review-lens-inline', 'summarize', 'mcp-query') AND cwd LIKE '%/isolates/%'",
+      ).all() as { cwd: string }[]
+      for (const row of inlineRows) rmSync(row.cwd, { recursive: true, force: true })
       rmSync(script, { force: true })
     }
   })

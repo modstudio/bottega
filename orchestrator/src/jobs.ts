@@ -269,7 +269,7 @@ export const JOBS: Record<string, Job> = {
   summarize: {
     name: 'summarize',
     what: 'Condense supplied text. Context is inline; no repo access needed.',
-    needs: {},
+    needs: { readsRepo: false },
     prefer: ['local-acp', 'agy'],
     contextTokens: ERRAND,
   },
@@ -335,7 +335,7 @@ export const JOBS: Record<string, Job> = {
   'mcp-query': {
     name: 'mcp-query',
     what: 'Answer using this machine’s MCP servers (tracker, docs store, database).',
-    needs: { mcp: true },
+    needs: { readsRepo: false, mcp: true },
     prefer: ['codex', 'grok'],
     contextTokens: DEEP,
   },

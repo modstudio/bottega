@@ -1,9 +1,8 @@
 import {
-  mkdirSync, mkdtempSync, readFileSync, existsSync, writeFileSync, readdirSync, rmSync,
+  mkdirSync, readFileSync, existsSync, writeFileSync, readdirSync, rmSync,
   realpathSync, statSync, unlinkSync, symlinkSync, readlinkSync, lstatSync,
-  copyFileSync, renameSync,
+  copyFileSync, renameSync, chmodSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import type { Database } from 'bun:sqlite'
@@ -1459,6 +1458,10 @@ export function runScratchDir(id: number, runsDir = RUNS_DIR): string {
   return join(runsDir, String(id), 'scratch')
 }
 
+export function noRepoIsolatePath(id: number, runsDir = RUNS_DIR): string {
+  return join(runsDir, 'isolates', String(id))
+}
+
 export function runArtifactsDir(id: number, runsDir = RUNS_DIR): string {
   return join(runsDir, String(id), 'artifacts')
 }
@@ -2301,10 +2304,11 @@ export async function run(opts: {
       // boundary closes was a reviewer reading the caller's HEAD and treating
       // it as part of an inline pack. An empty directory gives the process no
       // checkout at all, while launch_cwd retains project attribution.
-      const scratchRoot = (() => {
-        try { return realpathSync(tmpdir()) } catch { return tmpdir() }
-      })()
-      isolatedCwd = mkdtempSync(join(scratchRoot, `orch-no-repo-${claim.id}-`))
+      const isolateRoot = join(runsDir, 'isolates')
+      mkdirSync(isolateRoot, { recursive: true, mode: 0o700 })
+      chmodSync(isolateRoot, 0o700)
+      isolatedCwd = noRepoIsolatePath(claim.id, runsDir)
+      mkdirSync(isolatedCwd, { mode: 0o700 })
       cwd = isolatedCwd
       db().query('UPDATE run SET cwd=? WHERE id=?').run(cwd, claim.id)
     } else if (repoJob) {

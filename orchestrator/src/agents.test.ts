@@ -973,8 +973,10 @@ describe('only an agent that can be resumed may be asked to escalate', () => {
     }
   })
 
-  test('inline review declares that repository access is forbidden', () => {
+  test('inline jobs declare that repository access is forbidden', () => {
     expect(JOBS['review-lens-inline']!.needs).toEqual({ readsRepo: false })
+    expect(JOBS.summarize!.needs).toEqual({ readsRepo: false })
+    expect(JOBS['mcp-query']!.needs).toEqual({ readsRepo: false, mcp: true })
     expect(JOBS['review-lens']!.needs).toEqual({ readsRepo: true })
   })
 
