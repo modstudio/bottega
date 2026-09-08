@@ -48,7 +48,7 @@ export type ReviewListRow = {
   size: number | null
   lens_count: number
   findings: { total: number; triaged: number; accepted: number; modified: number; rejected: number; skipped: number }
-  coverage: 'exact' | 'carried' | 'stale' | null
+  coverage: 'exact' | 'trivial-rebase' | 'no-code-change' | 'stale' | null
 }
 
 type ReviewReadLens = ReviewCoverageInput['lenses'][number] & {
@@ -287,11 +287,13 @@ function currentCoverage(
     const tip = runner(['rev-parse', '--verify', ref])
     if (!tip.ok) return [null]
     const verdict = reviewCoverageVerdict(registered.path, review, tip.out, registered.trunk, runner)
-    return [verdict.kind === 'invalid' ? 'stale' as const : verdict.kind]
+    return [verdict.kind === 'invalid' ? 'stale' as const
+      : verdict.kind === 'carried' ? verdict.class : verdict.kind]
   })
   if (verdicts.includes(null)) return null
   if (verdicts.includes('stale')) return 'stale'
-  return verdicts.includes('carried') ? 'carried' : 'exact'
+  return verdicts.includes('no-code-change') ? 'no-code-change'
+    : verdicts.includes('trivial-rebase') ? 'trivial-rebase' : 'exact'
 }
 
 export function listReviews(
