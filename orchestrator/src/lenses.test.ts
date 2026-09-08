@@ -4,6 +4,7 @@ import { applyMigrations } from './migrations.ts'
 import { sessionId } from './db.ts'
 import { listLenses,resolveLens,selectProjectProfile,setLens,setProfile } from './lenses.ts'
 import { preflight } from './run.ts'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 
 describe('lens catalogue',()=>{
   test('six seeded cores render their default profile for every registered project',()=>{
@@ -76,7 +77,7 @@ describe('lens catalogue',()=>{
 
   test('the project-id repair resolves every populated project reference',()=>{
     upsertProject({name:'one',path:'/tmp/one',settings:{}})
-    upsertProject({name:'bottega',path:'/tmp/bottega',settings:{}})
+    upsertProject({name:PLATFORM_SLUG,path:`/tmp/${PLATFORM_SLUG}`,settings:{}})
     const runId=addRun({agent:'codex',job:'review-lens',repo:'one'})
     const renamedRunId=addRun({agent:'codex',job:'review-lens',repo:'devbox'})
     const live=db();live.exec('PRAGMA foreign_keys=ON')
@@ -101,7 +102,7 @@ describe('lens catalogue',()=>{
 
     expect(applyMigrations(live)).toEqual([])
     expect(live.query('SELECT project_id FROM run WHERE id=?').get(renamedRunId)).toEqual({
-      project_id:(live.query("SELECT id FROM project WHERE name='bottega'").get() as {id:number}).id,
+      project_id:(live.query(`SELECT id FROM project WHERE name='${PLATFORM_SLUG}'`).get() as {id:number}).id,
     })
     for(const [table,where] of [
         ['run','repo IS NOT NULL'],['canon_pack','project IS NOT NULL'],['landing','1'],
