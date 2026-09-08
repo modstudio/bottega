@@ -3329,11 +3329,12 @@ export async function run(opts: {
         durationMs: Date.now() - started, cause: error, runId: claim.id,
       })
     } else if (recorded?.failure_kind === 'escaped' || recorded?.failure_kind === 'confinement_unverified') {
+      const event = confinementEvent
       tryWriteContention({
         resourceKind: 'main_checkout',
-        resourceKey: (confinementEvent
-          ? confinementEvent.after.find((row) => row.headOid === confinementEvent.tripTip)?.path
-            ?? confinementEvent.after[0]?.path
+        resourceKey: (event
+          ? event.after.find((row) => row.headOid === event.tripTip)?.path
+            ?? event.after[0]?.path
           : confinementFailures[0]?.path) ?? callerCwd,
         eventKind: 'invalidation',
         cause: error, runId: claim.id,
