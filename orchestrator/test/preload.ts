@@ -34,6 +34,11 @@ const store = join(dir, 'test.db')
 const template = join(dir, 'template.db')
 process.env.ORCH_DB = store
 process.env.ORCH_RUNS = join(dir, 'runs')
+// A fixture landing runs a gate of its own. It must count only fixture gates:
+// with the machine's pid directory inherited, a landing spawned inside a gate
+// saw the outer gates and held for host capacity until its test expired (four
+// landings refused on one lifecycle test on 2026-09-08).
+process.env.ORCH_GATE_PIDS = join(dir, 'gates')
 export const PRELOAD_STORE = process.env.ORCH_DB
 export const PRELOAD_RUNS = process.env.ORCH_RUNS
 mkdirSync(process.env.ORCH_RUNS)
@@ -115,6 +120,7 @@ afterAll(() => {
   closeDatabaseForFixture()
   delete process.env.ORCH_DB
   delete process.env.ORCH_RUNS
+  delete process.env.ORCH_GATE_PIDS
   if (originalPath === undefined) delete process.env.PATH
   else process.env.PATH = originalPath
   rmSync(dir, { recursive: true, force: true })
