@@ -8,7 +8,7 @@ import {
 } from '../test/fixture.ts'
 import { pidAlive } from './db.ts'
 import { formatIdleKillError, idleKillMayProceed, idleKillMs, isGroupKillablePgid, isUninterruptible, isWorkerCpuIdle,
-  parseIdleReclaimedMs, parsePsTable, shouldIdleKill, terminateProcessGroup,
+  parseIdleReclaimedMs, parsePsTable, runHasLiveDescendants, shouldIdleKill, terminateProcessGroup,
   DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS, DEFAULT_IDLE_KILL_MS } from './idle-kill.ts'
 import { EXTERNAL_WAIT_JOBS, jobIdleKillMs } from './jobs.ts'
 import { isRoutingEvidence } from './route.ts'
@@ -242,6 +242,22 @@ describe('process group termination', () => {
     expect(signals.some((row) => row.pid === 42 && row.signal === 'SIGTERM')).toBe(true)
     expect(signals.some((row) => row.pid === 43 && row.signal === 'SIGKILL')).toBe(true)
     expect(alive.has(43)).toBe(false)
+  })
+
+  test('live descendants, including tracked reparented pids, block reclaim', () => {
+    const samples = parsePsTable('  10   1  10   0.0 S\n  11  10  10   0.0 S\n')
+    expect(runHasLiveDescendants([10], [], {
+      sample: () => samples, alive: (pid) => pid === 11,
+    })).toBe(true)
+    expect(runHasLiveDescendants([10], [], {
+      sample: () => samples, alive: () => false,
+    })).toBe(false)
+    expect(runHasLiveDescendants([10], [99], {
+      sample: () => [], alive: (pid) => pid === 99,
+    })).toBe(true)
+    expect(runHasLiveDescendants([null, 0], [], {
+      sample: () => samples, alive: () => true,
+    })).toBe(false)
   })
 
   test('a real sleeper is signalled and exits without looping', async () => {

@@ -81,7 +81,8 @@ import {
 import { appendRunEvent, teeTransportEvents } from './events.ts'
 import { checkpointRun, DEFAULT_CHECKPOINT_MINUTES, latestCheckpoint } from './checkpoint.ts'
 import {
-  formatIdleKillError, idleKillMayProceed, idlePollMs, shouldIdleKill, terminateProcessGroup,
+  formatIdleKillError, idleKillMayProceed, idlePollMs, runHasLiveDescendants, shouldIdleKill,
+  terminateProcessGroup,
 } from './idle-kill.ts'
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
@@ -1683,7 +1684,15 @@ function persistRunArtifacts(
   }
 }
 
-function reclaimTerminalTree(runId: number, worktree: Worktree): void {
+function reclaimTerminalTree(runId: number, worktree: Worktree, extraPids: number[] = []): void {
+  const row = db().query('SELECT agent_pid FROM run WHERE id=?').get(runId) as
+    { agent_pid: number | null } | null
+  // agent_pid is the vendor. run.pid is this coordinator, which is still
+  // alive here by construction and must not block reclaim.
+  if (runHasLiveDescendants([row?.agent_pid], extraPids)) {
+    console.error(`orch: could not reclaim worktree for run ${runId}: process tree still alive`)
+    return
+  }
   try {
     const identity = { session: sessionId(), what: `terminal reclaim ${runId}` }
     withWorktreeLease(worktree.repoRoot, worktree.path, identity, () => {
@@ -2787,6 +2796,7 @@ export async function run(opts: {
   let idleKilled = false
   let idleKillError: string | null = null
   let idleUnkillable = false
+  let idleTreePids: number[] = []
   let exitCode = -1
   let output = ''
   let vendorTokens: number | null = null
@@ -2997,6 +3007,7 @@ export async function run(opts: {
       }
       void t.cancel(handle)
       const terminated = await terminateProcessGroup(handle.pid ?? 0)
+      idleTreePids = terminated.pids
       idleUnkillable = terminated.unkillable
       if (terminated.unkillable) {
         idleKillError = formatIdleKillError({
@@ -3819,7 +3830,7 @@ export async function run(opts: {
         // this completed attempt before returning into it, otherwise this
         // frame never reaches the ordinary terminal reclaim below.
         if (artifactsPersisted && worktree && reclaimsTreeByDefault(opts.job) && !keepTree) {
-          reclaimTerminalTree(claim.id, worktree)
+          reclaimTerminalTree(claim.id, worktree, idleTreePids)
         }
         return await run({
           job: opts.job,
@@ -3873,7 +3884,7 @@ export async function run(opts: {
 
   if (artifactsPersisted && worktree && reclaimsTreeByDefault(opts.job) && !keepTree &&
       status !== 'asking' && status !== 'running') {
-    reclaimTerminalTree(claim.id, worktree)
+    reclaimTerminalTree(claim.id, worktree, idleTreePids)
   }
 
   if (status === 'failed') {

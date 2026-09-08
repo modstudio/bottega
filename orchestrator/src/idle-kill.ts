@@ -341,6 +341,27 @@ export type IdleKillDecision = {
  * failed and nothing earlier exists, do not kill: leave the worker for
  * the wall. Killing would discard in-memory buffers with work_preserved=0.
  */
+/**
+ * The same tree walk termination uses. A half-terminated wrapper that
+ * exited while a child lives still blocks reclaim: removeFor with
+ * forceOrchTree would otherwise delete the worktree under a live process.
+ */
+export function runHasLiveDescendants(
+  roots: Array<number | null | undefined>,
+  extra: Iterable<number> = [],
+  deps: Partial<TerminateDeps> = {},
+): boolean {
+  const resolved: TerminateDeps = { ...defaultDeps, ...deps }
+  const samples = resolved.sample()
+  const ids = new Set<number>([...extra])
+  for (const root of roots) {
+    if (root && root > 1) {
+      for (const pid of descendantPids(root, samples)) ids.add(pid)
+    }
+  }
+  return [...ids].some((pid) => pid > 1 && resolved.alive(pid))
+}
+
 export function idleKillMayProceed(
   checkpoint: { created: boolean; error: string | null } | null,
   hasPriorCheckpoint: boolean,
