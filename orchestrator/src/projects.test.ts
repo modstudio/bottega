@@ -180,7 +180,31 @@ describe('main checkout cleanliness', () => {
         expect(text).toContain(`main checkout ${repo} has tracked modifications: tracked.txt`)
         expect(text).toContain(`work from a worktree under ${mainCheckoutWorktreeHint(repo)} instead`)
         expect(text).toMatch(/^invariant: .+$/m)
-        expect(text).toContain(`cleared by: git -C ${repo} stash push -- tracked.txt`)
+        expect(text).toContain(`cleared by: orch do --cwd '${mainCheckoutWorktreeHint(repo)}/<tree>'`)
+        expect(text).not.toContain('stash')
+      }
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a dirty path with spaces and command substitution is not interpolated into cleared-by', () => {
+    const repo = scratch()
+    try {
+      const nasty = '$(touch pwned) and space.txt'
+      writeFileSync(join(repo, nasty), 'fixture\n')
+      git(repo, 'add', nasty)
+      git(repo, 'commit', '-m', 'nasty')
+      writeFileSync(join(repo, nasty), 'dirty\n')
+      try {
+        assertMainCheckoutClean(project(repo))
+        throw new Error('expected refusal')
+      } catch (error) {
+        const text = String(error)
+        const hint = mainCheckoutWorktreeHint(repo)
+        const cleared = text.split('\n').find((line) => line.startsWith('cleared by:'))
+        expect(text).toContain(nasty)
+        expect(cleared).toBe(`cleared by: orch do --cwd '${hint}/<tree>'`)
+        expect(cleared).not.toContain('stash')
+        expect(cleared).not.toContain('$(touch pwned)')
       }
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })

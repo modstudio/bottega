@@ -401,7 +401,8 @@ test('every --json surface has an enumerated and pinned output contract', () => 
       expect(refused.stderr.toString()).toContain('tracked.txt')
       expect(refused.stderr.toString()).toContain(`work from a worktree under ${mainCheckoutWorktreeHint(dirty)} instead`)
       expect(refused.stderr.toString()).toContain(`invariant: ${MAIN_CHECKOUT_INVARIANT}`)
-      expect(refused.stderr.toString()).toContain(`cleared by: git -C ${dirty} stash push -- tracked.txt`)
+      expect(refused.stderr.toString()).toContain(`cleared by: orch do --cwd '${mainCheckoutWorktreeHint(dirty)}/<tree>'`)
+      expect(refused.stderr.toString()).not.toContain('stash')
       expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(runsBefore)
 
       const untracked = makeRepo('untracked')

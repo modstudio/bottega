@@ -113,6 +113,10 @@ def tracked_in_main(root, path):
     return result is not None and result.returncode == 0
 
 
+def shell_quote(value):
+    return "'" + value.replace("'", "'\\''") + "'"
+
+
 def deny(project, path):
     hint = os.path.join(project["path"], ".claude", "worktrees")
     rel = os.path.relpath(path, project["path"])
@@ -124,7 +128,7 @@ def deny(project, path):
                 f"{project['name']}: refusing edit to tracked file {rel} in main checkout {project['path']}\n"
                 f"work from a worktree under {hint} instead\n"
                 f"invariant: {INVARIANT}\n"
-                f"cleared by: orch do --cwd {hint}/<tree>"
+                f"cleared by: orch do --cwd {shell_quote(hint + '/<tree>')}"
             ),
         }
     }))

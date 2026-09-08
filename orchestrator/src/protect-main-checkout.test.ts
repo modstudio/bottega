@@ -52,7 +52,7 @@ describe('architect-side main checkout edit hook', () => {
       expect(reason).toContain('tracked.txt')
       expect(reason).toContain(`work from a worktree under ${mainCheckoutWorktreeHint(repo)} instead`)
       expect(reason).toContain(`invariant: ${MAIN_CHECKOUT_INVARIANT}`)
-      expect(reason).toContain(`cleared by: orch do --cwd ${mainCheckoutWorktreeHint(repo)}/<tree>`)
+      expect(reason).toContain(`cleared by: orch do --cwd '${mainCheckoutWorktreeHint(repo)}/<tree>'`)
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 

@@ -552,6 +552,11 @@ export function inspectMainCheckout(projectPath: string): MainCheckoutInspection
   return { dirtyTracked, untracked: porcelainUntracked(status.stdout) }
 }
 
+/** POSIX single-quote so a cleared-by line can be pasted into a shell. */
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`
+}
+
 export function mainCheckoutRefusal(
   project: Pick<Project, 'name' | 'path'>, dirtyTracked: string[],
 ): string {
@@ -560,7 +565,7 @@ export function mainCheckoutRefusal(
     `${project.name}: main checkout ${project.path} has tracked modifications: ${dirtyTracked.join(', ')}\n` +
     `work from a worktree under ${hint} instead\n` +
     `invariant: ${MAIN_CHECKOUT_INVARIANT}\n` +
-    `cleared by: git -C ${project.path} stash push -- ${dirtyTracked.join(' ')}`
+    `cleared by: orch do --cwd ${shellQuote(`${hint}/<tree>`)}`
   )
 }
 
