@@ -52,7 +52,7 @@ import {
   CALIBRATION_SUFFIX_RESERVE_BYTES, calibrationLine, cleanReviewEvidence,
   parseReviewOutput, recordReview, reviewCalibration,
 } from './review.ts'
-import { createHasPlaceholder, projectAt, projectByName, projects, stackAt,
+import { assertRegisterBranches, createHasPlaceholder, projectAt, projectByName, projects, stackAt,
          validateProjectSettings } from './projects.ts'
 import { compilePack, recordPack } from './canon.ts'
 import { seedGuidance } from './args.ts'
@@ -679,6 +679,7 @@ export function preflight(
   // demanding either again blocks every ruling.
   if (reusesWorktree) return seed
   const project = projectAt(cwd)
+  if (project) assertRegisterBranches(project)
   const tool = project?.settings.worktree ?? null
   if (project && tool?.create && typeof tool.create !== 'string') {
     const malformed = validateProjectSettings(project.settings)

@@ -37,6 +37,18 @@ test('review-lens preflight requires a git checkout', () => {
     rmSync(repo, { recursive: true, force: true })
   })
 
+  test('repository dispatch refuses a register landing branch that disagrees with HEAD', () => {
+    const { repo } = scratchRepo()
+    upsertProject({
+      name: 'wrong-register-branch', path: repo,
+      settings: { trunk: 'develop', worktree: { create: declaredCreate(), branch: '{key}' } },
+    })
+    expect(() => fromRoot(() => preflight('file-question', repo))).toThrow(
+      /invariant: the register landing branch agrees.*orch project set wrong-register-branch/s,
+    )
+    rmSync(repo, { recursive: true, force: true })
+  })
+
   test('preflight lets a legacy create reach worktree creation with its string arguments', () => {
     const { repo } = scratchRepo()
     const capture = join(repo, 'legacy-create-argv')
