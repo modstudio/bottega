@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Database } from 'bun:sqlite'
@@ -28,13 +28,17 @@ describe('suggestion notes', () => {
   test('bare help is a subcommand only, never the note payload', () => {
     const path = join(scratch, 'note-help.db')
     bootstrapFixtureStore(path)
-    const seeded = new Database(path)
-    seeded.query('UPDATE project SET path = ? WHERE name = ?').run(scratch, 'workshop')
-    seeded.close()
+    const register = join(scratch, 'note-help-register')
+    writeFileSync(register, `#!/usr/bin/env bun
+console.log(${JSON.stringify(JSON.stringify([
+  { id: 1, name: 'workshop', path: realpathSync(scratch), stack: null, canon: true, settings: {} },
+]))})
+`)
+    chmodSync(register, 0o755)
     const hub = new URL('./cli.ts', import.meta.url).pathname
     const env = {
       ...process.env, HUB_DB: path,
-      HUB_ORCH: new URL('../test/project-register.ts', import.meta.url).pathname,
+      HUB_ORCH: register,
     }
     const payload = Bun.spawnSync([
       process.execPath, hub, 'note', 'new', 'help', '--new', '--area', 'workshop',
@@ -43,7 +47,7 @@ describe('suggestion notes', () => {
     })
     expect(payload.exitCode, payload.stderr.toString()).toBe(0)
     const stored = new Database(path, { readonly: true })
-    expect(stored.query<{ text: string }, []>('SELECT text FROM note').get()).toEqual({ text: 'help' })
+    expect(stored.query<{ text: string }, []>("SELECT text FROM note WHERE text = 'help'").get()).toEqual({ text: 'help' })
     stored.close()
     const command = Bun.spawnSync([process.execPath, hub, 'note', 'help'], {
       env, stdout: 'pipe', stderr: 'pipe',
