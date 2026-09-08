@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
-  addRun, db, drainQueue, hermeticGitEnv, land, landingStatus, upsertProject,
+  addRun, allocateLandingJournals, db, drainQueue, hermeticGitEnv, land, landingStatus,
+  persistTerminalSnapshot, reconcileRun, setPostLandMigrateForFixture, upsertProject,
 } from '../test/fixture.ts'
 import { landingDescribeFixture } from '../test/fixture.ts'
 
@@ -131,6 +132,26 @@ describe('DEV-370 landing queue and branch ownership', () => {
     expect(Bun.spawnSync(['git', 'show-ref', '--verify', '--quiet', `refs/heads/${mintedRef}`], {
       cwd: repo, env: hermeticGitEnv(),
     }).exitCode).not.toBe(0)
+
+    const unmintedId = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: 'landing-stop' })
+    const unmintedRef = `orch/${unmintedId}`
+    const unmintedTree = join(repo, 'trees', `orch-${unmintedId}`)
+    g(repo, 'worktree', 'add', '-b', unmintedRef, unmintedTree, 'main')
+    db().query(
+      `UPDATE run SET worktree=?, branch=?, minted_branch=NULL, worktree_source='git', session_id=? WHERE id=?`,
+    ).run(unmintedTree, unmintedRef, 'landing-stop-session', unmintedId)
+    const stopUnminted = Bun.spawnSync([process.execPath, CLI, 'stop', String(unmintedId)], {
+      cwd: repo, env: {
+        ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+        CLAUDE_CODE_SESSION_ID: 'landing-stop-session',
+      },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(stopUnminted.exitCode, stopUnminted.stderr.toString()).toBe(0)
+    expect(stopUnminted.stdout.toString()).toContain(
+      `branch ${unmintedRef} kept (review subject, not owned by run ${unmintedId})`,
+    )
+    expect(g(repo, 'rev-parse', unmintedRef)).toBeTruthy()
   })
 
   test('a journal landing with a live run records store/invalidation and names the run', () => {
@@ -170,5 +191,104 @@ describe('DEV-370 landing queue and branch ownership', () => {
       expect(text).toContain('session-one')
       expect(text).toContain('session-two')
     } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  const writeJournal = (
+    tree: string, folder: string,
+    entries: { idx: number; tag: string; when: number }[],
+  ) => {
+    mkdirSync(join(tree, folder, 'meta'), { recursive: true })
+    for (const entry of entries) {
+      writeFileSync(join(tree, folder, `${entry.tag}.sql`), `-- ${entry.tag}\n`)
+    }
+    writeFileSync(join(tree, folder, 'meta', '_journal.json'), `${JSON.stringify({
+      version: '7', dialect: 'sqlite',
+      entries: entries.map((entry) => ({ ...entry, version: '6', breakpoints: true })),
+    }, null, 2)}\n`)
+  }
+
+  test('landing rewrites an added journal entry to the next free idx and tag', () => {
+    const { repo, trees } = repoWithBranches(['journal-remap'])
+    const tree = trees['journal-remap']!
+    writeJournal(tree, 'orchestrator/migrations', [
+      { idx: 9, tag: '0009_provisional', when: 1788900000003 },
+    ])
+    g(tree, 'add', 'orchestrator/migrations')
+    g(tree, 'commit', '-m', 'provisional journal')
+    upsertProject({ name: 'landing-journal-remap', path: repo, settings: { trunk: 'main', gate: 'true' } })
+    setPostLandMigrateForFixture({
+      orch: () => ({ path: 'stub', versions: [] }),
+      hubBin: '/usr/bin/true',
+    })
+    try {
+      land(repo, 'journal-remap', { unreviewed: 'journal-remap' })
+      expect(g(repo, 'ls-tree', '-r', '--name-only', 'main')).toContain(
+        'orchestrator/migrations/0000_provisional.sql',
+      )
+      expect(g(repo, 'ls-tree', '-r', '--name-only', 'main')).not.toContain(
+        'orchestrator/migrations/0009_provisional.sql',
+      )
+      const journal = JSON.parse(g(repo, 'show', 'main:orchestrator/migrations/meta/_journal.json')) as {
+        entries: { idx: number; tag: string }[]
+      }
+      expect(journal.entries).toEqual([expect.objectContaining({ idx: 0, tag: '0000_provisional' })])
+    } finally {
+      setPostLandMigrateForFixture(null)
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('a hand-written idx that disagrees with the filename prefix is refused, naming both', () => {
+    const { repo, trees } = repoWithBranches(['journal-disagree'])
+    const tree = trees['journal-disagree']!
+    writeJournal(tree, 'orchestrator/migrations', [
+      { idx: 9, tag: '0008_wrong', when: 2 },
+    ])
+    g(tree, 'add', 'orchestrator/migrations')
+    g(tree, 'commit', '-m', 'disagree')
+    const from = g(repo, 'rev-parse', 'main')
+    expect(() => allocateLandingJournals(tree, from)).toThrow(
+      /hand-written idx 9 disagrees with filename prefix 8 \(0008_wrong\)/,
+    )
+    rmSync(repo, { recursive: true, force: true })
+  })
+
+  test('a hand-written idx that collides with trunk\'s idx for the same tag is refused, naming both', () => {
+    const { repo, trees } = repoWithBranches(['journal-collide'])
+    writeJournal(repo, 'orchestrator/migrations', [
+      { idx: 0, tag: '0000_base', when: 1 },
+    ])
+    g(repo, 'add', 'orchestrator/migrations')
+    g(repo, 'commit', '-m', 'trunk journal')
+    const tree = trees['journal-collide']!
+    g(tree, 'merge', '--no-edit', '-m', 'sync', 'main')
+    writeJournal(tree, 'orchestrator/migrations', [
+      { idx: 5, tag: '0000_base', when: 1 },
+    ])
+    g(tree, 'add', 'orchestrator/migrations')
+    g(tree, 'commit', '-m', 'colliding idx')
+    const from = g(repo, 'rev-parse', 'main')
+    expect(() => allocateLandingJournals(tree, from)).toThrow(
+      /hand-written idx 5 collides with trunk's 0 for 0000_base/,
+    )
+    rmSync(repo, { recursive: true, force: true })
+  })
+
+  test('orch reconcile writes a terminal row from the persisted snapshot', () => {
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    persistTerminalSnapshot(id, {
+      status: 'ok', error: null, failureKind: null, output: 'done',
+      outputPath: '/tmp/out', promptPath: '/tmp/prompt',
+      exitCode: 0, latencyMs: 12, vendorTokens: 3, vendorCostUsd: 0, model: 'codex',
+      vendorSession: null, preConfinement: null,
+      filesChanged: 1, changedPaths: '["a.ts"]', linesAdded: 2, linesRemoved: 0,
+      testsRan: 1, testsPassed: 1, deviations: 0, escalations: 0,
+    })
+    db().query(`UPDATE run SET unreconciled=1, error='stale schema' WHERE id=?`).run(id)
+    expect(reconcileRun(id)).toBe(`reconciled run ${id} as ok`)
+    const row = db().query(
+      `SELECT status, unreconciled, error, files_changed FROM run WHERE id=?`,
+    ).get(id) as { status: string; unreconciled: number; error: string | null; files_changed: number | null }
+    expect(row).toEqual({ status: 'ok', unreconciled: 0, error: null, files_changed: 1 })
   })
 })

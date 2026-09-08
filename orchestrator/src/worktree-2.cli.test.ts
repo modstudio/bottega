@@ -478,8 +478,8 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
     upsertProject({ name: 'landed-failed-pin', path: repo, settings: { trunk: 'main' } })
     const root = addRun({ agent: 'codex', job: 'implement', session: 'worktree-owner-session' })
     const failed = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
-    db().query('UPDATE run SET repo=?,cwd=?,worktree=?,branch=?,base_commit=? WHERE id=?')
-      .run('landed-failed-pin', tree, tree, 'AB-2581', git(repo, 'rev-parse', 'main'), root)
+    db().query('UPDATE run SET repo=?,cwd=?,worktree=?,branch=?,minted_branch=?,base_commit=? WHERE id=?')
+      .run('landed-failed-pin', tree, tree, 'AB-2581', 'AB-2581', git(repo, 'rev-parse', 'main'), root)
     db().query('UPDATE run SET repo=?,cwd=?,branch=? WHERE id=?')
       .run('landed-failed-pin', repo, 'AB-2581', failed)
     try {
@@ -516,8 +516,8 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
       settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
     })
     const id = addRun({ agent: 'codex', job: 'implement' })
-    db().query('UPDATE run SET worktree=?, branch=? WHERE id=?')
-      .run(tree.path, tree.branch, id)
+    db().query('UPDATE run SET worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
@@ -544,8 +544,8 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
       settings: { trunk: 'main', worktree: { remove: "echo 'protected work' >&2; exit 7" } },
     })
     const id = addRun({ agent: 'codex', job: 'implement' })
-    db().query('UPDATE run SET worktree=?, branch=? WHERE id=?')
-      .run(tree.path, tree.branch, id)
+    db().query('UPDATE run SET worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
@@ -606,10 +606,10 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
     const tree = createWorktree(repo, target)
     const evidence = join(tree.path, 'uncommitted-evidence.txt')
     writeFileSync(evidence, 'review me\n')
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, target)
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, owner)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, target)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, owner)
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
       const p = Bun.spawnSync(
@@ -646,8 +646,8 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
          VALUES (?,'full','right','faithful',?)`,
       ).run(root, nowIso())
       for (const id of [root, child]) {
-        db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-          .run(tree.path, tree.path, tree.branch, id)
+        db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+          .run(tree.path, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
       }
       const docker = fakeDocker([], [])
       try {
@@ -683,8 +683,8 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
        VALUES (?,'full','right','faithful',?)`,
     ).run(root, nowIso())
     for (const id of [root, child]) {
-      db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-        .run(tree.path, tree.path, tree.branch, id)
+      db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+        .run(tree.path, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     }
     const container = `orch-${root}-postgres-1`
     const docker = fakeDocker([container], [])
@@ -721,8 +721,8 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
       name: project, path: realpathSync(repo),
       settings: { trunk: 'main', worktree: { remove: 'true' } },
     })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, tree.base, id)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, tree.base, id)
     const docker = fakeDocker([], [])
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
@@ -753,8 +753,8 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
       name: project, path: realpathSync(repo),
       settings: { trunk: 'main', worktree: { remove: 'true' } },
     })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, tree.base, id)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, tree.base, id)
     const docker = fakeDocker([], [])
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
@@ -791,8 +791,8 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
       name: project, path: realpathSync(repo),
       settings: { trunk: 'main', worktree: { remove: `sh "${script}" {branch}` } },
     })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, tree.base, id)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, tree.base, id)
     const docker = fakeDocker([], [])
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
@@ -837,8 +837,8 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
       settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
     })
     db().query(
-      `UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=?, started_at=? WHERE id=?`,
-    ).run(repo, tree.path, tree.branch, tree.base, '2020-01-01T00:00:00.000Z', id)
+      `UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=?, started_at=? WHERE id=?`,
+    ).run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, tree.base, '2020-01-01T00:00:00.000Z', id)
     db().query(
       `INSERT INTO score (run_id, delivery, quality, fidelity, scored_at)
        VALUES (?,'full','right','faithful',?)`,
@@ -875,8 +875,8 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
       `INSERT INTO score (run_id, delivery, quality, fidelity, scored_at)
        VALUES (?,'full','right','faithful',?)`,
     ).run(id, nowIso())
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, gone, `orch/${id}`, id)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, gone, `orch/${id}`, `orch/${id}`, id)
     upsertProject({
       name: project, path: realpathSync(repo),
       settings: { trunk: 'main', worktree: { remove: 'true' } },
@@ -933,8 +933,8 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
         name: project, path: realpathSync(repo),
         settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
       })
-      db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-        .run(repo, tree.path, tree.branch, target)
+      db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+        .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, target)
       db().query('UPDATE run SET cwd=? WHERE id=?').run(repo, owner)
       try {
         const CLI = new URL('cli.ts', import.meta.url).pathname
@@ -985,8 +985,8 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
       name: project, path: realpathSync(repo),
       settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
     })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, treePath, branch, target)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, treePath, branch, branch, target)
     db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, branch, owner)
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
@@ -1032,8 +1032,8 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
       name: project, path: realpathSync(repo),
       settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
     })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, target)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, target)
     db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, tree.branch, owner)
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
@@ -1082,8 +1082,8 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
       name: project, path: realpathSync(repo),
       settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
     })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, treePath, branch, target)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, treePath, branch, branch, target)
     db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, branch, owner)
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname
@@ -1128,8 +1128,8 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
       name: project, path: realpathSync(repo),
       settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
     })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, target)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, target)
     db().query('UPDATE run SET cwd=? WHERE id=?').run(repo, owner)
     try {
       const CLI = new URL('cli.ts', import.meta.url).pathname

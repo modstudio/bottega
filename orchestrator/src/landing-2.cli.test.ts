@@ -287,8 +287,8 @@ test('an explicit non-empty override lands and records the measured tree and rea
       name: 'landing-then-discard', path: repo, settings: { trunk: 'main', gate: 'true' },
     })
     const id = addRun({ agent: 'codex', job: 'implement' })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(repo, tree, 'land-then-discard', id)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, tree, 'land-then-discard', 'land-then-discard', id)
     const CLI = new URL('cli.ts', import.meta.url).pathname
     const cliEnv = {
       ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',

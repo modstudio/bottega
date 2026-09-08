@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
@@ -23,6 +23,9 @@ const INVARIANT_GUARD_HEAD =
   'The guard on disk is verified against HEAD, not the index, before any fast-forward.'
 const INVARIANT_TRUNK_CHECKOUT =
   'The registered main checkout must have its symbolic HEAD on the configured trunk.'
+const INVARIANT_JOURNAL_ALLOCATION =
+  "Landing rewrites a branch's added journal entries to the next free values and refuses a hand-written idx that collides with trunk's or disagrees, naming both."
+const JOURNAL_FOLDERS = ['orchestrator/migrations', 'hub/migrations'] as const
 export type SharedGuardResidue = {
   repoRoot: string
   hookPath: string
@@ -696,6 +699,10 @@ function rebaseAndGate(
   try {
     console.log(`rebase ${branch} onto ${trunk} at ${trunkOid}`)
     git(worktree, ['rebase', trunkOid], guard)
+    const allocated = allocateLandingJournals(worktree, trunkOid, guard)
+    if (allocated.length) {
+      console.log(`allocated journal ${allocated.map((row) => `${row.from} -> ${row.to}`).join(', ')}`)
+    }
     const tip = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'], guard)
     if (tip === trunkOid) {
       throw namedError(
@@ -1289,6 +1296,157 @@ export function diffCarriesMigrationJournal(paths: string[]): boolean {
     path === 'hub/migrations' || path.startsWith('hub/migrations/'))
 }
 
+type MigrationJournalEntry = {
+  idx: number; version: string; when: number; tag: string; breakpoints?: boolean
+}
+type MigrationJournal = {
+  version?: string; dialect?: string; entries: MigrationJournalEntry[]
+}
+
+function parseMigrationJournal(raw: string): MigrationJournal {
+  const parsed = JSON.parse(raw) as { version?: string; dialect?: string; entries?: unknown }
+  if (!Array.isArray(parsed.entries)) return { version: parsed.version, dialect: parsed.dialect, entries: [] }
+  return {
+    version: parsed.version, dialect: parsed.dialect,
+    entries: parsed.entries.filter((entry): entry is MigrationJournalEntry => {
+      if (!entry || typeof entry !== 'object') return false
+      const row = entry as MigrationJournalEntry
+      return Number.isInteger(row.idx) && typeof row.tag === 'string' && Number.isFinite(row.when)
+    }),
+  }
+}
+
+function journalAtCommit(
+  worktree: string, oid: string, folder: string, guard?: SharedRefGuardEnvironment,
+): MigrationJournal {
+  try {
+    return parseMigrationJournal(git(worktree, ['show', `${oid}:${folder}/meta/_journal.json`], guard))
+  } catch {
+    return { version: '7', dialect: 'sqlite', entries: [] }
+  }
+}
+
+function journalOnDisk(worktree: string, folder: string): MigrationJournal {
+  const path = join(worktree, folder, 'meta', '_journal.json')
+  if (!existsSync(path)) return { version: '7', dialect: 'sqlite', entries: [] }
+  return parseMigrationJournal(readFileSync(path, 'utf8'))
+}
+
+function journalTagParts(tag: string): { prefix: number; suffix: string } | null {
+  const match = tag.match(/^(\d+)_(.+)$/)
+  if (!match) return null
+  return { prefix: Number(match[1]), suffix: match[2]! }
+}
+
+function paddedJournalTag(idx: number, suffix: string): string {
+  return `${String(idx).padStart(4, '0')}_${suffix}`
+}
+
+function allocateOneJournal(
+  worktree: string, fromOid: string, folder: string, guard?: SharedRefGuardEnvironment,
+): { from: string; to: string }[] {
+  const trunk = journalAtCommit(worktree, fromOid, folder, guard)
+  const working = journalOnDisk(worktree, folder)
+  const trunkByTag = new Map(trunk.entries.map((entry) => [entry.tag, entry]))
+  const added = working.entries.filter((entry) => !trunkByTag.has(entry.tag))
+  for (const entry of working.entries) {
+    const onTrunk = trunkByTag.get(entry.tag)
+    if (onTrunk && onTrunk.idx !== entry.idx) {
+      throw namedError(
+        `refusing to land: hand-written idx ${entry.idx} collides with trunk's ${onTrunk.idx} for ${entry.tag}`,
+        INVARIANT_JOURNAL_ALLOCATION,
+        `edit ${folder}/meta/_journal.json`,
+      )
+    }
+  }
+  if (!added.length) return []
+  for (const entry of added) {
+    const parts = journalTagParts(entry.tag)
+    if (!parts) {
+      throw namedError(
+        `refusing to land: journal tag ${entry.tag} has no numeric prefix`,
+        INVARIANT_JOURNAL_ALLOCATION,
+        `edit ${folder}/meta/_journal.json`,
+      )
+    }
+    if (parts.prefix !== entry.idx) {
+      throw namedError(
+        `refusing to land: hand-written idx ${entry.idx} disagrees with filename prefix ${parts.prefix} (${entry.tag})`,
+        INVARIANT_JOURNAL_ALLOCATION,
+        `edit ${folder}/meta/_journal.json`,
+      )
+    }
+  }
+  const maxTrunkIdx = trunk.entries.reduce((max, entry) => Math.max(max, entry.idx), -1)
+  let nextIdx = maxTrunkIdx + 1
+  let nextWhen = trunk.entries.reduce((max, entry) => Math.max(max, entry.when), 0) + 1
+  const addedOrdered = [...added].sort((a, b) => a.idx - b.idx || a.tag.localeCompare(b.tag))
+  const remap = new Map<string, { idx: number; when: number; tag: string }>()
+  for (const entry of addedOrdered) {
+    const parts = journalTagParts(entry.tag)!
+    const tag = paddedJournalTag(nextIdx, parts.suffix)
+    const when = Math.max(nextWhen, entry.when)
+    remap.set(entry.tag, { idx: nextIdx, when, tag })
+    nextIdx += 1
+    nextWhen = when + 1
+  }
+  const rewritten: { from: string; to: string }[] = []
+  let changed = false
+  for (const entry of addedOrdered) {
+    const mapped = remap.get(entry.tag)!
+    if (entry.idx !== mapped.idx || entry.when !== mapped.when || entry.tag !== mapped.tag) changed = true
+    if (entry.tag !== mapped.tag) {
+      const fromPath = join(worktree, folder, `${entry.tag}.sql`)
+      const toPath = join(worktree, folder, `${mapped.tag}.sql`)
+      if (!existsSync(fromPath)) {
+        throw namedError(
+          `refusing to land: journal tag ${entry.tag} has no ${folder}/${entry.tag}.sql`,
+          INVARIANT_JOURNAL_ALLOCATION,
+          `add ${folder}/${entry.tag}.sql`,
+        )
+      }
+      if (existsSync(toPath)) {
+        throw namedError(
+          `refusing to land: cannot rename ${entry.tag} to ${mapped.tag}; ${mapped.tag}.sql already exists`,
+          INVARIANT_JOURNAL_ALLOCATION,
+          `inspect ${folder}/${mapped.tag}.sql`,
+        )
+      }
+      renameSync(fromPath, toPath)
+    }
+    rewritten.push({ from: entry.tag, to: mapped.tag })
+  }
+  if (!changed) return []
+  const entries = working.entries.map((entry) => {
+    const mapped = remap.get(entry.tag)
+    return mapped ? { ...entry, idx: mapped.idx, when: mapped.when, tag: mapped.tag } : entry
+  }).sort((a, b) => a.idx - b.idx)
+  writeFileSync(
+    join(worktree, folder, 'meta', '_journal.json'),
+    `${JSON.stringify({
+      version: working.version ?? '7',
+      dialect: working.dialect ?? 'sqlite',
+      entries,
+    }, null, 2)}\n`,
+  )
+  return rewritten
+}
+
+/** Rewrite added journal entries to the next free idx/when/tag before the gate. */
+export function allocateLandingJournals(
+  worktree: string, fromOid: string, guard?: SharedRefGuardEnvironment,
+): { from: string; to: string }[] {
+  const rewritten: { from: string; to: string }[] = []
+  for (const folder of JOURNAL_FOLDERS) rewritten.push(...allocateOneJournal(worktree, fromOid, folder, guard))
+  if (!rewritten.length) return rewritten
+  const existing = JOURNAL_FOLDERS.filter((folder) => existsSync(join(worktree, folder)))
+  if (existing.length) git(worktree, ['add', '-A', '--', ...existing], guard)
+  const dirty = git(worktree, ['status', '--porcelain=v1', '--untracked-files=all'], guard)
+  if (!dirty) return rewritten
+  git(worktree, ['commit', '--amend', '--no-edit'], guard)
+  return rewritten
+}
+
 const defaultHubMigrateBin = resolve(new URL('../../bin/hub', import.meta.url).pathname)
 let hubMigrateBin = defaultHubMigrateBin
 let orchMigrate = migrateDatabase
@@ -1594,6 +1752,7 @@ function processMergeGroup(
     processOneLanding(cwd, rows[0]!, options)
     return
   }
+  for (const row of rows) db().query(`UPDATE landing SET status='running' WHERE id=?`).run(row.id)
   const { project, repoRoot } = registeredProject(cwd)
   const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
   const trunkOid = git(repoRoot, ['rev-parse', `refs/heads/${trunk}^{commit}`])
@@ -1609,7 +1768,12 @@ function processMergeGroup(
   }
   try {
     const started = Date.now()
-    const tip = rebaseBranchesOntoTrunk(repoRoot, groupPath, trunkOid, rows.map((row) => row.branch))
+    rebaseBranchesOntoTrunk(repoRoot, groupPath, trunkOid, rows.map((row) => row.branch))
+    const allocated = allocateLandingJournals(groupPath, trunkOid)
+    if (allocated.length) {
+      console.log(`allocated journal ${allocated.map((row) => `${row.from} -> ${row.to}`).join(', ')}`)
+    }
+    const tip = git(groupPath, ['rev-parse', '--verify', 'HEAD^{commit}'])
     git(groupPath, ['checkout', '-B', groupBranch, tip])
     const guard = prepareSharedRefGuard(groupPath)
     try {
@@ -1645,6 +1809,29 @@ function processMergeGroup(
       })
       const landedPaths = git(repoRoot, ['diff', '--name-only', `${trunkOid}..${tip}`]).split('\n').filter(Boolean)
       recordOverlapInvalidations(project, repoRoot, landedPaths, row.branch, row.id)
+    }
+    try {
+      const installStarted = Date.now()
+      installLandedPackages(project, trunkOid, tip)
+      for (const row of rows) appendStep(row.id, 'install', Date.now() - installStarted)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      for (const row of rows) {
+        db().query(`UPDATE landing SET status='install_failed',error=?,finished_at=? WHERE id=?`)
+          .run(message, nowIso(), row.id)
+      }
+      throw error
+    }
+    try {
+      const migrateStarted = Date.now()
+      migrateLandedJournals(project, trunkOid, tip)
+      for (const row of rows) appendStep(row.id, 'migrate', Date.now() - migrateStarted)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      for (const row of rows) {
+        db().query(`UPDATE landing SET error=?,finished_at=? WHERE id=?`).run(message, nowIso(), row.id)
+      }
+      throw error
     }
     console.log(`landed merge-group of ${rows.map((row) => row.branch).join(', ')} at ${tip}`)
   } finally {

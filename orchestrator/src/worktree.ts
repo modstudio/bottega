@@ -2083,16 +2083,12 @@ function removeReadOnlyTree(
   return result.out ? { ...reconciled, output: result.out } : reconciled
 }
 
-const WRITER_JOBS = new Set(['implement', 'fix', 'land', 'issue-worker'])
-
 function mintedBranchOwnedBy(w: Worktree, runId?: number): string | null {
   if (runId !== undefined) {
     try {
-      const row = db().query('SELECT minted_branch, branch, job FROM run WHERE id=?').get(runId) as
-        { minted_branch: string | null; branch: string | null; job: string } | null
-      if (row?.minted_branch) return row.minted_branch
-      if (row && WRITER_JOBS.has(row.job) && row.branch) return row.branch
-      if (row) return null
+      const row = db().query('SELECT minted_branch FROM run WHERE id=?').get(runId) as
+        { minted_branch: string | null } | null
+      if (row) return row.minted_branch
     } catch { /* a store mid-migrate has no minted_branch yet */ }
   }
   return w.mintedBranch ?? null

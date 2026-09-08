@@ -959,12 +959,9 @@ function mintedBranchForCleanup(row: CleanupRow): string | null {
   if (row.minted_branch) return row.minted_branch
   try {
     const found = db().query(
-      `SELECT minted_branch, branch, job FROM run WHERE id=?`,
-    ).get(row.id) as { minted_branch: string | null; branch: string | null; job: string } | null
+      `SELECT minted_branch FROM run WHERE id=?`,
+    ).get(row.id) as { minted_branch: string | null } | null
     if (found?.minted_branch) return found.minted_branch
-    if (found && ['implement', 'fix', 'land', 'issue-worker'].includes(found.job) && found.branch) {
-      return found.branch
-    }
     const chained = db().query(
       `SELECT minted_branch FROM run
         WHERE minted_branch IS NOT NULL AND (id=? OR parent_run_id=?)
