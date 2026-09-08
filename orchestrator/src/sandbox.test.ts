@@ -202,6 +202,18 @@ describe('readonly-lens sandbox profile', () => {
     }
   })
 
+  test('repository candidates keep their missing-root and missing-project host fallbacks', () => {
+    for (const input of [
+      { worktree: null, project: fixtureProject() },
+      { worktree: '/runs/tree', project: null },
+    ]) {
+      expect(selectReadonlySandbox({
+        agent: 'grok', readsRepo: true, writesRepo: false,
+        runsDir: '/runs/evidence', ...input,
+      })).toEqual({ sandbox: 'host', profile: null, reason: null })
+    }
+  })
+
   test('sandbox denial classification is conditioned on srt and accepts every absolute path', () => {
     const hostDenial = 'cat: /Users/operator/.ssh/orch-sentinel: Operation not permitted'
     expect(classify(hostDenial, 1, false, 'host')).toBe('other')

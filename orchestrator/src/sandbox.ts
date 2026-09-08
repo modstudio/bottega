@@ -201,6 +201,12 @@ export function selectReadonlySandbox(input: {
   if (!isReadonlySandboxCandidate(input)) {
     return { sandbox: 'host', profile: null, reason: null }
   }
+  // Preserve the repository seam exactly: an unregistered or not-yet-cut
+  // readonly checkout was already a host run. No-repo jobs have no such
+  // fallback because their isolate is the boundary this selector must build.
+  if (input.readsRepo && (!input.worktree || !input.project)) {
+    return { sandbox: 'host', profile: null, reason: null }
+  }
   if (input.override === 'host') {
     return {
       sandbox: 'host', profile: null,
