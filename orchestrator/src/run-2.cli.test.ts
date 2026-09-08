@@ -43,7 +43,8 @@ describe('a writing worker must return evidence of completed work', () => {
     agent.bin = process.execPath
     agent.resumeArgv = (o) => {
       expect(o.sandbox).toBe('workspace-write')
-      expect(o.writableRoots).toEqual([
+      expect(o.writableRoots![0]?.endsWith('/scratch')).toBe(true)
+      expect(o.writableRoots!.slice(1)).toEqual([
         worktreeGitDir(tree.path), ...workerSharedGitRoots(tree.path, tree.branch),
       ])
       return [script]
