@@ -77,13 +77,24 @@ export async function withGateSlot<T>(
   run: () => Promise<T>,
   opts: GateHoldOpts = {},
 ): Promise<T> {
+  // Hold BEFORE registering. A waiter with a PID file counts as a running gate
+  // to every other starter, so three that start together each saw gates=3,
+  // all held, and all entered when the cap expired (review 346). The measure
+  // counts only registered runners, so the would-be self is added here to
+  // keep shouldHoldShard's meaning: total gates including this one, over the
+  // limit, holds.
+  const measure = opts.measure ?? measureHostLoad
+  const asRunner = (): HostLoad => {
+    const load = measure()
+    return { ...load, gates: load.gates + 1 }
+  }
+  const held = await holdForGateCapacity({ ...opts, measure: asRunner })
+  if (held.held) {
+    console.error(`held ${held.delayedMs}ms for host load `
+      + `(gates=${held.load.gates} loadavg=${held.load.loadavg} ncpu=${held.load.ncpu})`)
+  }
   const unregister = registerGatePid()
   try {
-    const held = await holdForGateCapacity(opts)
-    if (held.held) {
-      console.error(`held ${held.delayedMs}ms for host load `
-        + `(gates=${held.load.gates} loadavg=${held.load.loadavg} ncpu=${held.load.ncpu})`)
-    }
     return await run()
   } finally {
     unregister()
