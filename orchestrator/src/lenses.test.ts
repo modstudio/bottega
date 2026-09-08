@@ -1,11 +1,8 @@
 import { describe,expect,test } from 'bun:test'
-import { Database } from 'bun:sqlite'
-import { copyFileSync,mkdtempSync,rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { db,upsertProject } from '../test/fixture.ts'
-import { REGISTERED_LIVE_STORE } from '../test/preload.ts'
-import { applyMigrations } from './migrations.ts'
+import { addRun,db,upsertProject } from '../test/fixture.ts'
+import { MIGRATIONS_FOLDER,splitMigrationSource } from './migrations.ts'
 import { sessionId } from './db.ts'
 import { listLenses,resolveLens,selectProjectProfile,setLens,setProfile } from './lenses.ts'
 import { preflight } from './run.ts'
@@ -79,18 +76,36 @@ describe('lens catalogue',()=>{
     }
   })
 
-  test('a copy of the live store migrates with every populated project reference resolved',()=>{
-    const dir=mkdtempSync(join(tmpdir(),'orch-live-lens-'));const path=join(dir,'orch.db');copyFileSync(REGISTERED_LIVE_STORE,path)
-    const live=new Database(path,{readwrite:true});live.exec('PRAGMA foreign_keys=ON')
-    try {
-      applyMigrations(live)
-      for(const [table,where] of [
+  test('the project-id repair resolves every populated project reference',()=>{
+    upsertProject({name:'one',path:'/tmp/one',settings:{}})
+    const runId=addRun({agent:'codex',job:'review-lens',repo:'one'})
+    const live=db();live.exec('PRAGMA foreign_keys=ON')
+    live.query('UPDATE run SET project_id=NULL WHERE id=?').run(runId)
+    live.query(`INSERT INTO canon_pack (id,job,project,sha256,bytes,doc_count,doc_revisions,compiled_at,findings,project_id)
+      VALUES (8001,'review-lens','one','sha',1,1,'[]','now',0,NULL)`).run()
+    live.query(`INSERT INTO review (id,recorded_at,project_id) VALUES (8002,'now',NULL)`).run()
+    live.query(`INSERT INTO review_lens (review_id,run_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+      VALUES (8002,?,'correctness','codex','[]','[]','[]','[]')`).run(runId)
+    live.query(`INSERT INTO landing (id,project,branch,status,started_at,project_id) VALUES (8003,'one','branch','queued','now',NULL)`).run()
+    live.query(`INSERT INTO landing_override (id,project,branch,tip,tree,reason,at,project_id)
+      VALUES (8004,'one','branch','tip','tree','test','now',NULL)`).run()
+    live.query(`INSERT INTO landing_review_carry
+      (id,project,branch,tip,tree,review_id,reviewed_commit,reviewed_tree,patch_id,old_base,new_base,at,project_id)
+      VALUES (8005,'one','branch','tip','tree',8002,'commit','tree','patch','old','new','now',NULL)`).run()
+    live.query(`INSERT INTO doc (id,scope,subject,slug,title,body,created_at,updated_at,project_id)
+      VALUES (8006,'project','one','probe','Probe','body','now','now',NULL)`).run()
+    live.query(`INSERT INTO doc_revision
+      (id,doc_id,scope,subject,slug,op,title,body,author,reason,at,project_id)
+      VALUES (8007,8006,'project','one','probe','create','Probe','body','test','test','now',NULL)`).run()
+
+    const source=readFileSync(join(MIGRATIONS_FOLDER,'0006_project_id_backfill.sql'),'utf8')
+    live.exec(splitMigrationSource(source).backfill.replaceAll('--> statement-breakpoint',''))
+    for(const [table,where] of [
         ['run','repo IS NOT NULL'],['canon_pack','project IS NOT NULL'],['landing','1'],
         ['landing_override','1'],['landing_review_carry','1'],['doc',"scope='project'"],['doc_revision',"scope='project'"],
       ]) expect((live.query(`SELECT COUNT(*) n FROM ${table} WHERE ${where} AND project_id IS NULL`).get() as {n:number}).n,table).toBe(0)
-      expect((live.query(`SELECT COUNT(*) n FROM review rv WHERE rv.project_id IS NULL
+    expect((live.query(`SELECT COUNT(*) n FROM review rv WHERE rv.project_id IS NULL
         AND 1=(SELECT COUNT(DISTINCT r.project_id) FROM review_lens rl JOIN run r ON r.id=rl.run_id WHERE rl.review_id=rv.id)
         AND 0=(SELECT COUNT(*) FROM review_lens rl JOIN run r ON r.id=rl.run_id WHERE rl.review_id=rv.id AND r.project_id IS NULL)`).get() as {n:number}).n).toBe(0)
-    } finally {live.close();rmSync(dir,{recursive:true,force:true})}
   })
 })
