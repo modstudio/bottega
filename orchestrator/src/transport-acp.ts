@@ -538,8 +538,10 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
         } catch (cause) {
           error = String((cause as Error)?.message ?? cause)
         }
+        let result: ReturnType<typeof normalizeAcpTurn>
+        try {
         const stderr = Buffer.concat(stderrChunks).toString('utf8')
-        const result = normalizeAcpTurn({
+        result = normalizeAcpTurn({
           sessionId, updates, stopReason, elicitation, error, usage: terminalUsage,
           timedOut: cancelled,
           permissionEvents,
@@ -551,8 +553,11 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
         result.effectiveModel = effectiveModel
         writeFileSync(opts.outPath, result.output)
         if (result.stopReason) pushEvent({ kind: 'stop', reason: result.stopReason })
-        closed = true
-        finishEvents()
+        } finally {
+          // Waiters on events() must wake on every exit path (review 349).
+          closed = true
+          finishEvents()
+        }
         try { connection?.close() } catch { /* already closed */ }
         // Both paid adapters are long-lived stdio servers. A completed prompt is
         // the end of this orch run, so do not leave the adapter (or Grok's

@@ -2698,7 +2698,7 @@ export async function run(opts: {
     const teeing = teeTransportEvents(handle.events(), claim.id)
     await t.prompt(handle, prompt)
     const collected = await handle.collect()
-    await teeing
+    await teeing.catch(() => { /* the live log is observation, never outcome */ })
     const stdout = collected.stdout
     const stderr = collected.stderr
     // One derivation from the raw stream, carried through terminalisation.

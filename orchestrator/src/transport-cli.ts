@@ -98,6 +98,7 @@ function spawnCli(opts: TransportStartOpts): TransportHandle {
   const collect = (): Promise<TransportResult> => {
     if (collected) return collected
     collected = (async () => {
+     try {
       const [stdout, stderr] = await Promise.all([stdoutTask, stderrTask])
       const exitCode = await p.exited
       const reply = opts.agent.parseReply?.(stdout)
@@ -138,6 +139,11 @@ function spawnCli(opts: TransportStartOpts): TransportHandle {
         exitCode, pid: p.pid, events, asking: false,
         failureKind: folded.failureKind, status: folded.status, questions: [],
       }
+     } finally {
+      // Waiters on events() must wake on every exit, including a throw
+      // from writeFileSync, parseReply or readSession (review 349).
+      finishEvents()
+     }
     })()
     return collected
   }

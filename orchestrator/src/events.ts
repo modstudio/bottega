@@ -97,8 +97,12 @@ function touchLastEventAt(runId: number, ts: string): void {
 }
 
 export function appendRunEvent(runId: number, event: RunLogEvent, path = runEventsPath(runId)): void {
-  mkdirSync(dirname(path), { recursive: true })
-  appendFileSync(path, `${JSON.stringify(event)}\n`)
+  // Best-effort, like touchLastEventAt: the live log observes the vendor
+  // stream and must never fail the run or reach its outcome (review 349).
+  try {
+    mkdirSync(dirname(path), { recursive: true })
+    appendFileSync(path, `${JSON.stringify(event)}\n`)
+  } catch { /* a missing or unwritable run directory loses the log line, nothing else */ }
   touchLastEventAt(runId, event.ts)
 }
 
@@ -155,9 +159,11 @@ export async function teeTransportEvents(
 ): Promise<void> {
   const log = createEventLog(runId)
   try {
-    for await (const event of events) log.observe(event as StreamEvent)
-  } finally {
-    log.flush()
+    for await (const event of events) {
+      try { log.observe(event as StreamEvent) } catch { /* observation never rejects the tee */ }
+    }
+  } catch { /* an events source that throws ends the tee, not the run */ } finally {
+    try { log.flush() } catch { /* same */ }
   }
 }
 

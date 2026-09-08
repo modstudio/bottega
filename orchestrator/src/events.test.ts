@@ -179,3 +179,28 @@ emit('{"type":"result","subtype":"success","result":"done","usage":{"input_token
     expect(told.out).toContain('editing the handler')
   })
 })
+
+describe('the live log is observation, never outcome', () => {
+  test('an unwritable events path loses the line and throws nothing', async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { appendRunEvent, teeTransportEvents } = await import('./events.ts')
+    const dir = mkdtempSync(join(tmpdir(), 'orch-events-unwritable-'))
+    try {
+      const blocker = join(dir, 'events.jsonl')
+      writeFileSync(join(dir, 'parent'), '')
+      // The parent of the path is a regular file, so mkdir and append both fail.
+      const bad = join(dir, 'parent', 'events.jsonl')
+      expect(() => appendRunEvent(0, { ts: new Date().toISOString(), type: 'text', text: 'x' }, bad)).not.toThrow()
+      expect(() => appendRunEvent(0, { ts: new Date().toISOString(), type: 'text', text: 'x' }, blocker)).not.toThrow()
+      async function* broken() {
+        yield { kind: 'text', text: 'one' }
+        throw new Error('vendor stream broke')
+      }
+      await expect(teeTransportEvents(broken(), 0)).resolves.toBeUndefined()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
