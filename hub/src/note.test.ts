@@ -6,8 +6,8 @@ import { Database } from 'bun:sqlite'
 import { db } from './db.ts'
 import { bootstrapFixtureStore } from './db.ts'
 import {
-  createNote, deriveNoteAnchor, dropNote, getNote, mergeNote, staleNotes,
-  listActionableNotes, promoteNote,
+  acknowledgeNote, createNote, deriveNoteAnchor, dropNote, getNote, mergeNote, staleNotes,
+  listActionableNotes, listNotes, promoteNote,
   type NoteAnchor,
 } from './note.ts'
 
@@ -93,6 +93,53 @@ console.log(${JSON.stringify(JSON.stringify([
     promoteNote(promoted.id)
     dropNote(dropped.id, 'resolved')
     expect(listActionableNotes({ session }).map((note) => note.id)).toEqual([open.id])
+  })
+
+  test('keep acknowledges one session idempotently and a further sighting clears it', () => {
+    const session = `keep-${crypto.randomUUID()}`
+    const otherSession = `other-${crypto.randomUUID()}`
+    const note = createNote({ text: `Keep observation ${crypto.randomUUID()}`, cwd: '/fixtures/repos/workshop', forceNew: true }).note
+    const anchor = { ...note.anchors[0]!, session_id: session }
+    const otherAnchor = { ...anchor, session_id: otherSession }
+    db().query('UPDATE note SET anchors=?, sightings=2 WHERE id=?').run(JSON.stringify([anchor, otherAnchor]), note.id)
+
+    expect(acknowledgeNote(note.id, session).alreadyAcknowledged).toBe(false)
+    expect(acknowledgeNote(note.id, session).alreadyAcknowledged).toBe(true)
+    expect(listNotes({ session }).map((row) => row.id)).not.toContain(note.id)
+    expect(listNotes({ session: otherSession }).map((row) => row.id)).toContain(note.id)
+    expect(listNotes({ session, kept: true }).map((row) => row.id)).toContain(note.id)
+
+    db().query('UPDATE note SET anchors=?, sightings=sightings+1, last_seen_at=? WHERE id=?').run(
+      JSON.stringify([anchor, otherAnchor, anchor]), new Date().toISOString(), note.id,
+    )
+    expect(listNotes({ session }).map((row) => row.id)).toContain(note.id)
+    expect(listNotes({ session: otherSession }).map((row) => row.id)).toContain(note.id)
+    expect(listNotes({ session, kept: true }).map((row) => row.id)).not.toContain(note.id)
+  })
+
+  test('note keep accepts multiple ids and kept listings are auditable', () => {
+    const path = join(scratch, `note-keep-${crypto.randomUUID()}.db`)
+    bootstrapFixtureStore(path)
+    const stored = new Database(path)
+    const session = `cli-keep-${crypto.randomUUID()}`
+    const anchor = JSON.stringify([{ cwd: scratch, project: 'workshop', files: [], run_id: null, branch: null, commit: null, session_id: session }])
+    const at = new Date().toISOString()
+    const ids = ['first kept note', 'second kept note'].map((text) => Number(stored.query(
+      `INSERT INTO note(project,text,anchors,sightings,created_at,last_seen_at) VALUES ('workshop',?,?,1,?,?)`,
+    ).run(text, anchor, at, at).lastInsertRowid))
+    stored.close()
+    const cli = new URL('./cli.ts', import.meta.url).pathname
+    const env = { ...process.env, HUB_DB: path, CLAUDE_CODE_SESSION_ID: session }
+    const kept = Bun.spawnSync([process.execPath, cli, 'note', 'keep', ...ids.map(String)], { env, stdout: 'pipe', stderr: 'pipe' })
+    expect(kept.exitCode, kept.stderr.toString()).toBe(0)
+    expect(kept.stdout.toString()).toContain(`note ${ids[0]} kept for this session`)
+    expect(kept.stdout.toString()).toContain(`note ${ids[1]} kept for this session`)
+    const repeated = Bun.spawnSync([process.execPath, cli, 'note', 'keep', String(ids[0])], { env, stdout: 'pipe', stderr: 'pipe' })
+    expect(repeated.exitCode, repeated.stderr.toString()).toBe(0)
+    expect(repeated.stdout.toString()).toContain(`note ${ids[0]} already kept for this session`)
+    const listed = Bun.spawnSync([process.execPath, cli, 'note', 'list', '--kept', '--json'], { env, stdout: 'pipe', stderr: 'pipe' })
+    expect(listed.exitCode, listed.stderr.toString()).toBe(0)
+    expect(JSON.parse(listed.stdout.toString()).map((row: { id: number }) => row.id)).toEqual(ids.slice().reverse())
   })
 
   test('reserved text requires the note new grammar', () => {

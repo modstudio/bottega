@@ -55,7 +55,7 @@ describe('hub migration journal', () => {
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
     expect(BASELINE_SCHEMA_HASH).toBe(baselineSchemaHash())
     expect(BASELINE_SCHEMA_HASH).toBe('903a8d96fe8c2b5f7edd253f2f85cc6b1dc66d1537b3a94b8cef5f2fb81ddfff')
-    expect(expectedSchemaHash()).toBe('a5f77cc39d19dc1a18469a0ab9d87c1a21344bb2ddb4382618109401d28b7958')
+    expect(expectedSchemaHash()).toBe('943613471e7150d03db0b3e6116c380fc73ad453f0f055d6de38f291807c5f42')
     d.close()
   })
 
@@ -94,9 +94,9 @@ describe('hub migration journal', () => {
     const before = d.query(
       "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY type,name",
     ).all()
-    expect(applyMigrations(d)).toEqual(['0000_hub_baseline', '0001_note'])
+    expect(applyMigrations(d)).toEqual(['0000_hub_baseline', '0001_note', '0002_note_acknowledgement'])
     const after = d.query(
-      "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name NOT IN ('hub_migrations','hub_schema_lock','note','note_project_seen') ORDER BY type,name",
+      "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name NOT IN ('hub_migrations','hub_schema_lock','note','note_project_seen','note_acknowledgement','note_acknowledgement_session') ORDER BY type,name",
     ).all()
     expect(after).toEqual(before)
     d.close()
@@ -119,6 +119,7 @@ describe('hub migration journal', () => {
     expect(migrated.exitCode, migrated.stderr.toString()).toBe(0)
     expect(migrated.stdout.toString()).toContain('applied 0000_hub_baseline')
     expect(migrated.stdout.toString()).toContain('applied 0001_note')
+    expect(migrated.stdout.toString()).toContain('applied 0002_note_acknowledgement')
     const doctor = hub(copy, 'doctor')
     expect(doctor.exitCode, doctor.stderr.toString()).toBe(0)
     expect(doctor.stdout.toString()).toContain('schema hash    match')
@@ -256,7 +257,7 @@ describe('hub migration journal', () => {
     d.close()
 
     const legacy = baselineFresh()
-    expect(applyMigrations(legacy)).toEqual(['0000_hub_baseline', '0001_note'])
+    expect(applyMigrations(legacy)).toEqual(['0000_hub_baseline', '0001_note', '0002_note_acknowledgement'])
     expect(canonicalSchemaHash(legacy)).toBe(expectedSchemaHash())
     legacy.close()
     rmSync(folder, { recursive: true, force: true })

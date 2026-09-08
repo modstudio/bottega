@@ -811,6 +811,16 @@ describe('scoped operator docs', () => {
     expect(reason).toContain('Actionable hook note')
     expect(reason).not.toContain('Promoted hook note')
     expect(reason).not.toContain('Dropped hook note')
+
+    const kept = Bun.spawnSync([process.execPath, hubCli, 'note', 'keep', String(id('Actionable hook note'))], {
+      cwd, env, stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(kept.exitCode, kept.stderr.toString()).toBe(0)
+    const afterKeep = Bun.spawnSync(['python3', new URL('../hooks/score-reminder.py', import.meta.url).pathname], {
+      env, stdin: new TextEncoder().encode(JSON.stringify({ session_id: session })), stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(afterKeep.exitCode, afterKeep.stderr.toString()).toBe(0)
+    expect(afterKeep.stdout.toString()).toBe('')
   })
 
   test('MCP file_issue refuses a defect missing reproduce_command with an actionable message', async () => {

@@ -31,6 +31,7 @@ export type NoteRow = {
 }
 
 export type NoteCandidate = { id: number; project: string; text: string; score: number }
+export type NoteAcknowledgement = { note: NoteRow; alreadyAcknowledged: boolean }
 
 const git = (cwd: string, ...args: string[]): string | null => {
   const result = Bun.spawnSync(['git', '-C', cwd, ...args], { stdout: 'pipe', stderr: 'ignore' })
@@ -72,19 +73,33 @@ export function deriveNoteAnchor(text: string, cwd = process.cwd(), env = proces
   }
 }
 
-export function listNotes(filters: { project?: string; stale?: boolean; session?: string; actionable?: boolean } = {}): NoteRow[] {
+export function noteSessionId(env = process.env): string | null {
+  return env.CLAUDE_CODE_SESSION_ID ?? env.CODEX_THREAD_ID ?? null
+}
+
+export function listNotes(filters: {
+  project?: string; stale?: boolean; session?: string; actionable?: boolean; kept?: boolean
+} = {}): NoteRow[] {
   const clauses: string[] = []
   const values: (string | number)[] = []
-  if (filters.project) { registeredProject(filters.project); clauses.push('project = ?'); values.push(filters.project) }
-  if (filters.stale !== undefined) clauses.push(filters.stale ? 'stale_at IS NOT NULL' : 'stale_at IS NULL')
+  if (filters.kept && !filters.session) throw new Error('listing kept notes requires a session')
+  if (filters.project) { registeredProject(filters.project); clauses.push('note.project = ?'); values.push(filters.project) }
+  if (filters.stale !== undefined) clauses.push(filters.stale ? 'note.stale_at IS NOT NULL' : 'note.stale_at IS NULL')
   if (filters.session) {
     clauses.push("EXISTS (SELECT 1 FROM json_each(note.anchors) WHERE json_extract(value, '$.session_id') = ?)")
     values.push(filters.session)
+    clauses.push(`${filters.kept ? '' : 'NOT '}EXISTS (
+      SELECT 1 FROM note_acknowledgement acknowledgement
+       WHERE acknowledgement.note_id = note.id
+         AND acknowledgement.session_id = ?
+         AND acknowledgement.sightings = note.sightings
+    )`)
+    values.push(filters.session)
   }
-  if (filters.actionable) clauses.push('stale_at IS NULL AND promoted_task IS NULL')
+  if (filters.actionable) clauses.push('note.stale_at IS NULL AND note.promoted_task IS NULL')
   const rows = db().query<Omit<NoteRow, 'anchors'> & { anchors: string }, (string | number)[]>(
-    `SELECT * FROM note ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
-     ORDER BY last_seen_at DESC, id DESC`,
+    `SELECT note.* FROM note ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
+     ORDER BY note.last_seen_at DESC, note.id DESC`,
   ).all(...values)
   return rows.map(decode)
 }
@@ -100,6 +115,22 @@ export function getNote(value: number | string): NoteRow {
   ).get(id)
   if (!row) throw new Error(`no note ${id}`)
   return decode(row)
+}
+
+export function acknowledgeNote(value: number | string, session: string): NoteAcknowledgement {
+  const sessionId = session.trim()
+  if (!sessionId) throw new Error('cannot keep note: no session identity')
+  const note = getNote(value)
+  const existing = db().query<{ sightings: number }, [number, string]>(
+    'SELECT sightings FROM note_acknowledgement WHERE note_id=? AND session_id=?',
+  ).get(note.id, sessionId)
+  if (existing?.sightings === note.sightings) return { note, alreadyAcknowledged: true }
+  db().query(
+    `INSERT INTO note_acknowledgement (note_id,session_id,acknowledged_at,sightings) VALUES (?,?,?,?)
+     ON CONFLICT(note_id,session_id) DO UPDATE SET
+       acknowledged_at=excluded.acknowledged_at, sightings=excluded.sightings`,
+  ).run(note.id, sessionId, nowIso(), note.sightings)
+  return { note, alreadyAcknowledged: false }
 }
 
 export function noteCandidates(text: string, project?: string): NoteCandidate[] {

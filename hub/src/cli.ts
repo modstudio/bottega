@@ -26,8 +26,8 @@ import { listOpenRulings, rulingsPayload } from './rulings.ts'
 import { startDashboardCapability } from './orch.ts'
 import { hoursAgo } from './time.ts'
 import {
-  createNote, curateNotes, curatorEnabled, dropNote, listActionableNotes, listNotes, mergeNote, promoteNote,
-  setCuratorEnabled, staleNotes,
+  acknowledgeNote, createNote, curateNotes, curatorEnabled, dropNote, listActionableNotes, listNotes, mergeNote,
+  noteSessionId, promoteNote, setCuratorEnabled, staleNotes,
 } from './note.ts'
 
 const argv = process.argv.slice(2)
@@ -144,8 +144,9 @@ const USAGE = `hub — every project's tasks in flight, what each cost, and the 
   ${TASK_USAGE}
 
   hub note new "<text>" [--same-as ID|--new] [--area AREA]
-  hub note list [--project X] [--stale] [--session ID] [--json]
+  hub note list [--project X] [--stale] [--session ID] [--actionable|--kept] [--json]
   hub note same <ID> <ID>
+  hub note keep <ID>...
   hub note promote <ID>
   hub note drop <ID> --reason "..."
   hub note stale              mark vanished anchors and reap eligible notes
@@ -471,7 +472,7 @@ async function task() {
 
 async function note() {
   const sub = argv[1]
-  const verbs = new Set(['list', 'same', 'promote', 'drop', 'stale', 'curate', 'curator'])
+  const verbs = new Set(['list', 'same', 'keep', 'promote', 'drop', 'stale', 'curate', 'curator'])
   if (sub && verbs.has(sub) && (has('new') || flag('same-as'))) {
     throw new Error(`to file the text "${sub}", use: hub note new "${sub}" [--new|--same-as ID]`)
   }
@@ -479,14 +480,27 @@ async function note() {
     if (argv[2] && !argv[2]!.startsWith('--')) {
       throw new Error('to file the text "list", use: hub note new "list" [--new|--same-as ID]')
     }
-    const session = flag('session')
-    const rows = session
+    if (has('actionable') && has('kept')) throw new Error('--actionable and --kept are mutually exclusive')
+    const session = flag('session') ?? (has('kept') ? noteSessionId() ?? undefined : undefined)
+    if (has('kept') && !session) throw new Error('hub note list --kept requires --session ID or a session environment')
+    const rows = has('actionable')
       ? listActionableNotes({ project: flag('project'), session })
-      : listNotes({ project: flag('project'), stale: has('stale') })
+      : listNotes({ project: flag('project'), stale: has('stale'), session, kept: has('kept') })
     if (has('json')) console.log(JSON.stringify(rows))
     else if (!rows.length) console.log('no notes')
     else for (const row of rows) {
       console.log(`${String(row.id).padEnd(5)} ${row.project.padEnd(12)} x${row.sightings}  ${row.text}`)
+    }
+    return
+  }
+  if (sub === 'keep') {
+    const ids = argv.slice(2).filter((value) => !value.startsWith('--'))
+    if (!ids.length) throw new Error('hub note keep <id>...')
+    const session = noteSessionId()
+    if (!session) throw new Error('hub note keep requires a session environment')
+    for (const id of ids) {
+      const result = acknowledgeNote(id, session)
+      console.log(`note ${result.note.id} ${result.alreadyAcknowledged ? 'already kept' : 'kept'} for this session`)
     }
     return
   }
