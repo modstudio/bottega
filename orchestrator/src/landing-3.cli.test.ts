@@ -337,6 +337,68 @@ describe('DEV-370 landing queue and branch ownership', () => {
     }
   })
 
+  test('a concurrent journal collision is resolved and allocated above trunk', () => {
+    const W = 1788900000004
+    const { repo, trees } = repoWithBranches(['DEV-370-journal-concurrent'])
+    const tree = trees['DEV-370-journal-concurrent']!
+    writeJournal(repo, 'orchestrator/migrations', [{ idx: 10, tag: '0010_a', when: W }])
+    g(repo, 'add', 'orchestrator/migrations')
+    g(repo, 'commit', '-m', 'DEV-370 trunk journal')
+    writeJournal(tree, 'orchestrator/migrations', [{ idx: 10, tag: '0010_b', when: W }])
+    g(tree, 'add', 'orchestrator/migrations')
+    g(tree, 'commit', '-m', 'DEV-370 branch journal')
+    upsertProject({ name: 'landing-journal-concurrent', path: repo, settings: { trunk: 'main', gate: 'true' } })
+    setPostLandMigrateForFixture({ orchBin: '/usr/bin/true', hubBin: '/usr/bin/true' })
+    try {
+      land(repo, 'DEV-370-journal-concurrent', { unreviewed: 'fixture' })
+      const files = g(repo, 'ls-tree', '-r', '--name-only', 'main')
+      expect(files).toContain('orchestrator/migrations/0011_b.sql')
+      expect(files).not.toContain('orchestrator/migrations/0010_b.sql')
+      const journal = JSON.parse(g(repo, 'show', 'main:orchestrator/migrations/meta/_journal.json')) as {
+        entries: { idx: number; tag: string; when: number }[]
+      }
+      expect(journal.entries).toEqual([
+        expect.objectContaining({ idx: 10, tag: '0010_a', when: W }),
+        expect.objectContaining({ idx: 11, tag: '0011_b', when: W + 1 }),
+      ])
+      expect(g(repo, 'show', '-s', '--format=%s', 'main')).toBe('DEV-370 allocate journal at landing')
+      expect(g(repo, 'show', '-s', '--format=%b', 'main')).toContain('Member task: DEV-370')
+    } finally {
+      setPostLandMigrateForFixture(null)
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('two branch journal entries are allocated in branch order with increasing when values', () => {
+    const { repo, trees } = repoWithBranches(['DEV-370-journal-two'])
+    const tree = trees['DEV-370-journal-two']!
+    writeJournal(repo, 'orchestrator/migrations', [{ idx: 10, tag: '0010_a', when: 100 }])
+    g(repo, 'add', 'orchestrator/migrations')
+    g(repo, 'commit', '-m', 'DEV-370 trunk journal')
+    writeJournal(tree, 'orchestrator/migrations', [
+      { idx: 10, tag: '0010_b', when: 100 },
+      { idx: 11, tag: '0011_c', when: 101 },
+    ])
+    g(tree, 'add', 'orchestrator/migrations')
+    g(tree, 'commit', '-m', 'DEV-370 branch journals')
+    upsertProject({ name: 'landing-journal-two', path: repo, settings: { trunk: 'main', gate: 'true' } })
+    setPostLandMigrateForFixture({ orchBin: '/usr/bin/true', hubBin: '/usr/bin/true' })
+    try {
+      land(repo, 'DEV-370-journal-two', { unreviewed: 'fixture' })
+      const journal = JSON.parse(g(repo, 'show', 'main:orchestrator/migrations/meta/_journal.json')) as {
+        entries: { idx: number; tag: string; when: number }[]
+      }
+      expect(journal.entries.map(({ idx, tag, when }) => ({ idx, tag, when }))).toEqual([
+        { idx: 10, tag: '0010_a', when: 100 },
+        { idx: 11, tag: '0011_b', when: 101 },
+        { idx: 12, tag: '0012_c', when: 102 },
+      ])
+    } finally {
+      setPostLandMigrateForFixture(null)
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('post-land migration invokes the registered main checkout binaries with a scrubbed environment', () => {
     const { repo, trees } = repoWithBranches(['main-binary-migrate'])
     const tree = trees['main-binary-migrate']!
@@ -397,6 +459,19 @@ describe('DEV-370 landing queue and branch ownership', () => {
       /hand-written idx 5 collides with trunk's 0 for 0000_base/,
     )
     rmSync(repo, { recursive: true, force: true })
+  })
+
+  test('journal loading refuses duplicate and unordered when values', () => {
+    for (const [name, entries, message] of [
+      ['duplicate', [{ idx: 0, tag: '0000_a', when: 2 }, { idx: 1, tag: '0001_b', when: 2 }], 'duplicate when 2'],
+      ['unordered', [{ idx: 0, tag: '0000_a', when: 3 }, { idx: 1, tag: '0001_b', when: 2 }], 'unordered when 2 after 3'],
+    ] as const) {
+      const { repo, trees } = repoWithBranches([`journal-${name}`])
+      const tree = trees[`journal-${name}`]!
+      writeJournal(tree, 'orchestrator/migrations', [...entries])
+      expect(() => allocateLandingJournals(tree, g(repo, 'rev-parse', 'main'))).toThrow(message)
+      rmSync(repo, { recursive: true, force: true })
+    }
   })
 
   test('orch reconcile writes a terminal row from the persisted snapshot', () => {

@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative } from 'node:path'
 import { spawn } from 'node:child_process'
 import { db, liveRunCount, nowIso, sessionId, tryWriteContention, writableDb, writeTransaction, ROOT } from './db.ts'
 import { reviewInvalidationsSince } from './contention.ts'
@@ -660,6 +660,46 @@ function assertLandingWorktreeReady(
   }
 }
 
+function continueRebaseWithJournalConflictResolution(
+  worktree: string, trunkOid: string, guard: SharedRefGuardEnvironment,
+): boolean {
+  const start = Bun.spawnSync(['git', 'rebase', trunkOid], {
+    cwd: worktree, env: { ...targetGitEnvironment(worktree), ...guard }, stdout: 'pipe', stderr: 'pipe',
+  })
+  if (start.exitCode === 0) return false
+  let resolvedJournal = false
+  let failure = start.stderr.toString().trim()
+  while (rebaseInProgress(worktree, guard)) {
+    const conflicts = git(worktree, ['diff', '--name-only', '--diff-filter=U'], guard).split('\n').filter(Boolean)
+    if (!conflicts.length || conflicts.some((path) =>
+      path !== 'orchestrator/migrations/meta/_journal.json' &&
+      path !== 'hub/migrations/meta/_journal.json')) {
+      throw new Error(failure || 'rebase conflict')
+    }
+    for (const path of conflicts) {
+      resolvedJournal = true
+      const trunk = parseMigrationJournal(git(worktree, ['show', `:2:${path}`], guard))
+      const incoming = parseMigrationJournal(git(worktree, ['show', `:3:${path}`], guard))
+      const trunkTags = new Set(trunk.entries.map((entry) => entry.tag))
+      const entries = [...trunk.entries, ...incoming.entries.filter((entry) => !trunkTags.has(entry.tag))]
+      writeFileSync(join(worktree, path), `${JSON.stringify({
+        version: trunk.version ?? incoming.version ?? '7',
+        dialect: trunk.dialect ?? incoming.dialect ?? 'sqlite',
+        entries,
+      }, null, 2)}\n`)
+      git(worktree, ['add', '--', path], guard)
+    }
+    const continued = Bun.spawnSync(['git', 'rebase', '--continue'], {
+      cwd: worktree,
+      env: { ...targetGitEnvironment(worktree), ...guard, GIT_EDITOR: 'true' },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    if (continued.exitCode === 0) return resolvedJournal
+    failure = continued.stderr.toString().trim()
+  }
+  throw new Error(failure || 'rebase failed')
+}
+
 function rebaseAndGate(
   project: Project, repoRoot: string, worktree: string, branch: string, trunk: string,
   trunkOid: string, guard: SharedRefGuardEnvironment,
@@ -698,8 +738,11 @@ function rebaseAndGate(
   }
   try {
     console.log(`rebase ${branch} onto ${trunk} at ${trunkOid}`)
-    git(worktree, ['rebase', trunkOid], guard)
-    const allocated = allocateLandingJournals(worktree, trunkOid, guard)
+    const resolvedJournalConflict = continueRebaseWithJournalConflictResolution(worktree, trunkOid, guard)
+    const taskKey = branch.match(/[A-Z]+-\d+/)?.[0]
+    const allocated = allocateLandingJournals(
+      worktree, trunkOid, guard, taskKey ? [taskKey] : [], resolvedJournalConflict,
+    )
     if (allocated.length) {
       console.log(`allocated journal ${allocated.map((row) => `${row.from} -> ${row.to}`).join(', ')}`)
     }
@@ -1241,7 +1284,7 @@ function performLand(
         assertMainCheckoutOnTrunk(repoRoot, trunk)
         const currentTrunk = trunkCommit(repoRoot, trunk, guard)
         if (currentTrunk === gatedTrunk) {
-          const authorization = authorizeLanding(
+          const authorization = authorizeLandingTip(
             project, repoRoot, worktree, branch, tip, gatedTrunk,
             options.runId, options.unreviewed,
           )
@@ -1313,10 +1356,10 @@ type MigrationJournal = {
   version?: string; dialect?: string; entries: MigrationJournalEntry[]
 }
 
-function parseMigrationJournal(raw: string): MigrationJournal {
+function parseMigrationJournal(raw: string, allowDuplicateWhen = false): MigrationJournal {
   const parsed = JSON.parse(raw) as { version?: string; dialect?: string; entries?: unknown }
   if (!Array.isArray(parsed.entries)) return { version: parsed.version, dialect: parsed.dialect, entries: [] }
-  return {
+  const journal = {
     version: parsed.version, dialect: parsed.dialect,
     entries: parsed.entries.filter((entry): entry is MigrationJournalEntry => {
       if (!entry || typeof entry !== 'object') return false
@@ -1324,22 +1367,45 @@ function parseMigrationJournal(raw: string): MigrationJournal {
       return Number.isInteger(row.idx) && typeof row.tag === 'string' && Number.isFinite(row.when)
     }),
   }
+  const whens = new Set<number>()
+  let previous = -Infinity
+  for (const entry of journal.entries) {
+    if (!allowDuplicateWhen && whens.has(entry.when)) {
+      throw namedError(
+        `refusing journal with duplicate when ${entry.when}`,
+        INVARIANT_JOURNAL_ALLOCATION,
+        'edit migrations/meta/_journal.json so every when is unique',
+      )
+    }
+    if (!allowDuplicateWhen && entry.when <= previous) {
+      throw namedError(
+        `refusing journal with unordered when ${entry.when} after ${previous}`,
+        INVARIANT_JOURNAL_ALLOCATION,
+        'edit migrations/meta/_journal.json so when values are strictly increasing',
+      )
+    }
+    whens.add(entry.when)
+    previous = entry.when
+  }
+  return journal
 }
 
 function journalAtCommit(
   worktree: string, oid: string, folder: string, guard?: SharedRefGuardEnvironment,
 ): MigrationJournal {
+  let raw: string
   try {
-    return parseMigrationJournal(git(worktree, ['show', `${oid}:${folder}/meta/_journal.json`], guard))
+    raw = git(worktree, ['show', `${oid}:${folder}/meta/_journal.json`], guard)
   } catch {
     return { version: '7', dialect: 'sqlite', entries: [] }
   }
+  return parseMigrationJournal(raw)
 }
 
-function journalOnDisk(worktree: string, folder: string): MigrationJournal {
+function journalOnDisk(worktree: string, folder: string, allowDuplicateWhen = false): MigrationJournal {
   const path = join(worktree, folder, 'meta', '_journal.json')
   if (!existsSync(path)) return { version: '7', dialect: 'sqlite', entries: [] }
-  return parseMigrationJournal(readFileSync(path, 'utf8'))
+  return parseMigrationJournal(readFileSync(path, 'utf8'), allowDuplicateWhen)
 }
 
 function journalTagParts(tag: string): { prefix: number; suffix: string } | null {
@@ -1354,9 +1420,10 @@ function paddedJournalTag(idx: number, suffix: string): string {
 
 function allocateOneJournal(
   worktree: string, fromOid: string, folder: string, guard?: SharedRefGuardEnvironment,
+  allowDuplicateWhen = false,
 ): { from: string; to: string }[] {
   const trunk = journalAtCommit(worktree, fromOid, folder, guard)
-  const working = journalOnDisk(worktree, folder)
+  const working = journalOnDisk(worktree, folder, allowDuplicateWhen)
   const trunkByTag = new Map(trunk.entries.map((entry) => [entry.tag, entry]))
   const added = working.entries.filter((entry) => !trunkByTag.has(entry.tag))
   for (const entry of working.entries) {
@@ -1444,20 +1511,60 @@ function allocateOneJournal(
 
 /** Rewrite added journal entries to the next free idx/when/tag before the gate. */
 export function allocateLandingJournals(
-  worktree: string, fromOid: string, guard?: SharedRefGuardEnvironment,
+  worktree: string, fromOid: string, guard?: SharedRefGuardEnvironment, taskKeys: string[] = [],
+  allowDuplicateWhen = false,
 ): { from: string; to: string }[] {
   const rewritten: { from: string; to: string }[] = []
-  for (const folder of JOURNAL_FOLDERS) rewritten.push(...allocateOneJournal(worktree, fromOid, folder, guard))
+  for (const folder of JOURNAL_FOLDERS) {
+    rewritten.push(...allocateOneJournal(worktree, fromOid, folder, guard, allowDuplicateWhen))
+  }
   if (!rewritten.length) return rewritten
   const existing = JOURNAL_FOLDERS.filter((folder) => existsSync(join(worktree, folder)))
   if (existing.length) git(worktree, ['add', '-A', '--', ...existing], guard)
   const dirty = git(worktree, ['status', '--porcelain=v1', '--untracked-files=all'], guard)
   if (!dirty) return rewritten
-  git(worktree, ['commit', '--amend', '--no-edit'], guard)
+  const body = [...new Set(taskKeys)].map((key) => `Member task: ${key}`).join('\n')
+  git(worktree, [
+    'commit', '-m', 'DEV-370 allocate journal at landing',
+    ...(body ? ['-m', body] : []),
+  ], guard)
   return rewritten
 }
 
-let fixtureMigrateBins: { orchBin: string; hubBin: string } | null = null
+function allocationParentIfMechanical(
+  repoRoot: string, tip: string, branch: string,
+): string | null {
+  const subject = git(repoRoot, ['show', '-s', '--format=%s', tip])
+  if (subject !== 'DEV-370 allocate journal at landing') return null
+  const parent = git(repoRoot, ['rev-parse', `${tip}^`])
+  const changed = git(repoRoot, ['diff', '--name-status', '-M', `${parent}..${tip}`]).split('\n').filter(Boolean)
+  const allowedRoot = (path: string) =>
+    path.startsWith('orchestrator/migrations/') || path.startsWith('hub/migrations/')
+  const allowed = changed.length > 0 && changed.every((line) => {
+    const [status, ...paths] = line.split('\t')
+    if (!status || !paths.length || !paths.every(allowedRoot)) return false
+    if (status === 'M') return paths.every((path) => path.endsWith('/meta/_journal.json'))
+    return status.startsWith('R') || status === 'A' || status === 'D'
+  })
+  if (!allowed) {
+    throw namedError(
+      `refusing ${branch}: landing-authored journal allocation touched a non-journal path`,
+      'Every landed commit is covered by a review, the four-fact carry, an explicit override, or the mechanical journal-allocation rule.',
+      `orch land ${branch}`,
+    )
+  }
+  return parent
+}
+
+function authorizeLandingTip(
+  project: Project, repoRoot: string, worktree: string, branch: string, tip: string, trunk: string,
+  runId?: number, unreviewed?: string,
+): ReturnType<typeof authorizeLanding> {
+  const memberTip = allocationParentIfMechanical(repoRoot, tip, branch) ?? tip
+  return authorizeLanding(project, repoRoot, worktree, branch, memberTip, trunk, runId, unreviewed)
+}
+
+let fixtureMigrateBins: { orchBin?: string; hubBin?: string } | null = null
 
 /** Fixture-only: stub post-land migrate so a test can fail hub without a real binary. */
 export function setPostLandMigrateForFixture(options: {
@@ -1483,8 +1590,9 @@ function migrateLandedJournals(project: Project, trunkBefore: string, tip: strin
   const env = { ...process.env }
   delete env.ORCH_DB
   delete env.ORCH_DEPTH
-  const bins = fixtureMigrateBins ?? {
-    orchBin: join(project.path, 'bin', 'orch'), hubBin: join(project.path, 'bin', 'hub'),
+  const bins = {
+    orchBin: fixtureMigrateBins?.orchBin ?? join(project.path, 'bin', 'orch'),
+    hubBin: fixtureMigrateBins?.hubBin ?? join(project.path, 'bin', 'hub'),
   }
   const captured: string[] = []
   for (const [name, bin] of [['orch', bins.orchBin], ['hub', bins.hubBin]] as const) {
