@@ -1,8 +1,6 @@
 import { describe,expect,test } from 'bun:test'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { addRun,db,upsertProject } from '../test/fixture.ts'
-import { MIGRATIONS_FOLDER,splitMigrationSource } from './migrations.ts'
+import { applyMigrations } from './migrations.ts'
 import { sessionId } from './db.ts'
 import { listLenses,resolveLens,selectProjectProfile,setLens,setProfile } from './lenses.ts'
 import { preflight } from './run.ts'
@@ -78,9 +76,12 @@ describe('lens catalogue',()=>{
 
   test('the project-id repair resolves every populated project reference',()=>{
     upsertProject({name:'one',path:'/tmp/one',settings:{}})
+    upsertProject({name:'bottega',path:'/tmp/bottega',settings:{}})
     const runId=addRun({agent:'codex',job:'review-lens',repo:'one'})
+    const renamedRunId=addRun({agent:'codex',job:'review-lens',repo:'devbox'})
     const live=db();live.exec('PRAGMA foreign_keys=ON')
     live.query('UPDATE run SET project_id=NULL WHERE id=?').run(runId)
+    live.query('UPDATE run SET project_id=NULL WHERE id=?').run(renamedRunId)
     live.query(`INSERT INTO canon_pack (id,job,project,sha256,bytes,doc_count,doc_revisions,compiled_at,findings,project_id)
       VALUES (8001,'review-lens','one','sha',1,1,'[]','now',0,NULL)`).run()
     live.query(`INSERT INTO review (id,recorded_at,project_id) VALUES (8002,'now',NULL)`).run()
@@ -98,8 +99,10 @@ describe('lens catalogue',()=>{
       (id,doc_id,scope,subject,slug,op,title,body,author,reason,at,project_id)
       VALUES (8007,8006,'project','one','probe','create','Probe','body','test','test','now',NULL)`).run()
 
-    const source=readFileSync(join(MIGRATIONS_FOLDER,'0006_project_id_backfill.sql'),'utf8')
-    live.exec(splitMigrationSource(source).backfill.replaceAll('--> statement-breakpoint',''))
+    expect(applyMigrations(live)).toEqual([])
+    expect(live.query('SELECT project_id FROM run WHERE id=?').get(renamedRunId)).toEqual({
+      project_id:(live.query("SELECT id FROM project WHERE name='bottega'").get() as {id:number}).id,
+    })
     for(const [table,where] of [
         ['run','repo IS NOT NULL'],['canon_pack','project IS NOT NULL'],['landing','1'],
         ['landing_override','1'],['landing_review_carry','1'],['doc',"scope='project'"],['doc_revision',"scope='project'"],
