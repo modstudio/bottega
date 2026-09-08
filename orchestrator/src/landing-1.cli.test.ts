@@ -883,10 +883,12 @@ test('only bun\'s complete timeout line reports machine load', () => {
       expect(g(repo, 'rev-parse', `refs/orch/reviewed/${
         (db().query('SELECT run_id FROM review_lens WHERE review_id=?').get(reviewId) as { run_id: number }).run_id
       }`)).toBe(reviewedCommit)
-      db().query('UPDATE review SET commit_message=? WHERE id=?').run(
-        g(trees['carry-review']!, 'log', '-1', '--format=%B'), reviewId,
-      )
-      g(trees['carry-review']!, 'commit', '--amend', '-m', 'amended review message')
+      const earlier = g(repo, 'rev-parse', `${reviewedCommit}^`)
+      const amendedEarlier = g(repo, 'commit-tree', `${earlier}^{tree}`, '-p', oldBase,
+        '-m', 'amended earlier message')
+      const rewrittenTip = g(repo, 'commit-tree', `${reviewedCommit}^{tree}`, '-p', amendedEarlier,
+        '-m', 'second branch message')
+      g(repo, 'update-ref', 'refs/heads/carry-review', rewrittenTip, reviewedCommit)
       writeFileSync(join(repo, 'unrelated.txt'), 'trunk only\n')
       g(repo, 'add', 'unrelated.txt')
       g(repo, 'commit', '-m', 'unrelated trunk move')
@@ -896,6 +898,9 @@ test('only bun\'s complete timeout line reports machine load', () => {
       const beforeLandStatus = landingReviewCoverage(trees['carry-review']!)
       expect(beforeLandStatus).toContain(`review ${reviewId}: carried (patch-id `)
       expect(beforeLandStatus).toContain('class no-code-change')
+      expect(listReviews({ project }).find((review) => review.id === reviewId)?.coverage)
+        .toBe('no-code-change')
+      expect(getReview(reviewId).current_class).toBe('no-code-change')
       expect(beforeLandStatus).toContain('(commit from pin)')
       expect(beforeLandStatus).toContain(`${oldBase}..${newBase})`)
       const child = childLand(repo, 'carry-review', { unreviewed: null })
@@ -1072,7 +1077,9 @@ test('only bun\'s complete timeout line reports machine load', () => {
       g(repo, 'commit', '-m', 'trunk shared change')
       const child = childLand(repo, 'overlap-review', { unreviewed: null })
       expect(await child.exited).not.toBe(0)
-      expect(await new Response(child.stderr).text()).toContain('invalid (overlapping paths)')
+      expect(await new Response(child.stderr).text()).toContain('invalid (overlapping paths:')
+      expect(db().query('SELECT outdated_at, outdated_reason FROM review ORDER BY id DESC LIMIT 1').get())
+        .toEqual({ outdated_at: null, outdated_reason: null })
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
@@ -1082,6 +1089,7 @@ test('only bun\'s complete timeout line reports machine load', () => {
     upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
     try {
       const oldBase = g(repo, 'rev-parse', 'main')
+      const reviewedCommit = g(repo, 'rev-parse', 'changed-review')
       const reviewedTree = g(repo, 'rev-parse', 'changed-review^{tree}')
       completedReview(project, [reviewedTree], {
         branch: 'changed-review', baseCommit: oldBase, launchCwd: trees['changed-review']!,
@@ -1095,8 +1103,13 @@ test('only bun\'s complete timeout line reports machine load', () => {
       const stderr = await new Response(child.stderr).text()
       expect(stderr).toContain('invalid (patch-id differs)')
       expect(stderr).toContain('orch do review-lens --review changed-review --lens lens-1')
-      expect(db().query('SELECT outdated_reason FROM review ORDER BY id DESC LIMIT 1').get())
-        .toEqual({ outdated_reason: 'patch-id differs' })
+      expect(db().query('SELECT outdated_at, outdated_reason FROM review ORDER BY id DESC LIMIT 1').get())
+        .toEqual({ outdated_at: expect.any(String), outdated_reason: 'patch-id differs' })
+      g(trees['changed-review']!, 'reset', '--hard', reviewedCommit)
+      const exact = childLand(repo, 'changed-review', { unreviewed: null })
+      expect(await exact.exited).toBe(0)
+      expect(db().query('SELECT outdated_at, outdated_reason FROM review ORDER BY id DESC LIMIT 1').get())
+        .toEqual({ outdated_at: null, outdated_reason: null })
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 

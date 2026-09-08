@@ -1007,13 +1007,14 @@ function coverageText(project: string, repoRoot: string, tip: string, trunk: str
 
 function requireReviewCoverage(
   project: Project, repoRoot: string, branch: string, tip: string, trunk: string,
-): { tree: string; carry: ReviewCarry | null } {
+): { tree: string; carry: ReviewCarry | null; validReviewIds: number[] } {
   landingOrder('coverage')
   const candidateTree = git(repoRoot, ['rev-parse', `${tip}^{tree}`])
   const reviews = completedReviews(project.name)
-  if (reviews.some((review) => review.lenses.length > 0 &&
-      review.lenses.every((lens) => lens.tree === candidateTree))) {
-    return { tree: candidateTree, carry: null }
+  const exact = reviews.filter((review) => review.lenses.length > 0 &&
+    review.lenses.every((lens) => lens.tree === candidateTree))
+  if (exact.length) {
+    return { tree: candidateTree, carry: null, validReviewIds: exact.map((review) => review.id) }
   }
   const verdicts = reviews.map((review) => ({ review, verdict: reviewCoverageVerdict(repoRoot, review, tip, trunk) }))
   const carried = verdicts.find((item) => item.verdict.kind === 'carried')
@@ -1021,13 +1022,12 @@ function requireReviewCoverage(
     return {
       tree: candidateTree,
       carry: { project: project.name, branch, ...carried.verdict },
+      validReviewIds: [carried.review.id],
     }
   }
-  for (const { review, verdict } of verdicts) {
-    if (verdict.kind !== 'invalid' || !['patch-id differs', 'path set differs'].includes(verdict.reason)) continue
-    db().query('UPDATE review SET outdated_at=COALESCE(outdated_at,?), outdated_reason=? WHERE id=?')
-      .run(nowIso(), verdict.reason, review.id)
-  }
+  const reworked = verdicts.flatMap(({ review, verdict }) =>
+    verdict.kind === 'invalid' && ['patch-id differs', 'path set differs'].includes(verdict.reason)
+      ? [{ id: review.id, reason: verdict.reason }] : [])
   const reruns = verdicts.flatMap(({ review, verdict }) => verdict.kind === 'invalid'
     ? review.lenses.map((lens) => {
       let introduced = ''
@@ -1045,13 +1045,13 @@ function requireReviewCoverage(
         `orch do review-lens --review ${branch} --lens ${lens.lens}`
     })
     : [])
-  throw namedError(
+  throw Object.assign(namedError(
     `refusing to land unreviewed content\ncandidate tree: ${candidateTree}\n` +
     `${coverageText(project.name, repoRoot, tip, trunk)}\n` +
     `${reruns.join('\n')}`,
     INVARIANT_LOCK_SCOPE,
     reruns[0]?.replace(/^.*: /, '') ?? `orch do review-lens --review ${branch} --lens <id>`,
-  )
+  ), { reviewRework: reworked })
 }
 
 function authorizeLanding(
@@ -1123,10 +1123,11 @@ function authorizeLanding(
       `tree: ${tree}\nreason: ${reason}\n` +
       '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!',
     )
-    return { override: { project: project.name, branch, tip, tree, reason }, carry: null }
+    return { override: { project: project.name, branch, tip, tree, reason }, carry: null,
+      validReviewIds: [] as number[] }
   }
   const coverage = requireReviewCoverage(project, repoRoot, branch, tip, trunk)
-  return { override: null, carry: coverage.carry }
+  return { override: null, carry: coverage.carry, validReviewIds: coverage.validReviewIds }
 }
 
 function recordLandingOverride(
@@ -1915,6 +1916,10 @@ function processOneLanding(
       writeTransaction(() => {
         db().query(`UPDATE landing SET status='refused',error=?,finished_at=?,claim_pid=NULL,claim_session=NULL WHERE id=?`)
           .run(message, nowIso(), row.id)
+        for (const review of reviewRework(error)) {
+          db().query('UPDATE review SET outdated_at=COALESCE(outdated_at,?), outdated_reason=? WHERE id=?')
+            .run(nowIso(), review.reason, review.id)
+        }
       })
       tryWriteContention({
         resourceKind: 'trunk', resourceKey: row.project, eventKind: 'refusal',
@@ -2183,6 +2188,11 @@ function spawnDrain(repoRoot: string): void {
   child.unref()
 }
 
+function reviewRework(error: unknown): { id: number; reason: string }[] {
+  const rows = (error as { reviewRework?: unknown } | null)?.reviewRework
+  return Array.isArray(rows) ? rows as { id: number; reason: string }[] : []
+}
+
 function recordRefusedLanding(project: Project, branch: string, error: unknown): void {
   const at = nowIso()
   const message = error instanceof Error ? error.message : String(error)
@@ -2192,13 +2202,17 @@ function recordRefusedLanding(project: Project, branch: string, error: unknown):
          (project,project_id,branch,status,error,session_id,started_at,finished_at,requested_at)
        VALUES (?,?,?,'refused',?,?,?,?,?)`,
     ).run(project.name, project.id, branch, message, sessionId(), at, at, at)
+    for (const review of reviewRework(error)) {
+      db().query('UPDATE review SET outdated_at=COALESCE(outdated_at,?), outdated_reason=? WHERE id=?')
+        .run(at, review.reason, review.id)
+    }
   })
 }
 
 function assertEnqueuePreconditions(
   repoRoot: string, project: Project, branch: string,
   options: { unreviewed?: string; runId?: number },
-): void {
+): ReturnType<typeof authorizeLanding> | null {
   if (!gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])) {
     throw namedError(
       `branch ${branch} does not exist in project ${project.name}`,
@@ -2215,13 +2229,13 @@ function assertEnqueuePreconditions(
     )
   }
   const worktree = worktreesForBranch(repoRoot, branch).find((path) => existsSync(path))
-  if (!worktree) return
+  if (!worktree) return null
   assertLandingWorktreeReady(worktree, branch)
-  if (options.unreviewed !== undefined) return
+  if (options.unreviewed !== undefined) return null
   const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
-  if (!trunk || !gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${trunk}`])) return
+  if (!trunk || !gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${trunk}`])) return null
   const tip = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'])
-  authorizeLanding(project, repoRoot, worktree, branch, tip, trunk, options.runId, options.unreviewed)
+  return authorizeLanding(project, repoRoot, worktree, branch, tip, trunk, options.runId, options.unreviewed)
 }
 
 export function drainQueue(
@@ -2302,8 +2316,9 @@ export function land(
 ): string {
   writableDb()
   const { project, repoRoot } = registeredProject(cwd)
+  let preauthorization: ReturnType<typeof authorizeLanding> | null
   try {
-    assertEnqueuePreconditions(repoRoot, project, branch, options)
+    preauthorization = assertEnqueuePreconditions(repoRoot, project, branch, options)
   } catch (error) {
     recordRefusedLanding(project, branch, error)
     throw error
@@ -2312,20 +2327,26 @@ export function land(
   const requestedAt = nowIso()
   const paths = trunk ? pathSetOf(repoRoot, trunk, branch) : []
   const enqueuedTip = git(repoRoot, ['rev-parse', `refs/heads/${branch}^{commit}`])
-  const landing = db().query(
-    `INSERT INTO landing
+  const landing = writeTransaction(() => {
+    const row = db().query(
+      `INSERT INTO landing
        (project,project_id,branch,tip,status,session_id,started_at,requested_at,path_set,steps)
      VALUES (?,?,?,?,'queued',?,?,?,?,?) RETURNING id`,
-  ).get(
-    project.name, project.id, branch, enqueuedTip, sessionId(), requestedAt, requestedAt,
-    JSON.stringify(paths),
-    JSON.stringify([{
-      name: '_flags',
-      ...(options.unreviewed ? { unreviewed: options.unreviewed } : {}),
-      ...(options.strandLive ? { strandLive: options.strandLive } : {}),
-      ...(options.message ? { message: options.message } : {}),
-    }]),
-  ) as { id: number }
+    ).get(
+      project.name, project.id, branch, enqueuedTip, sessionId(), requestedAt, requestedAt,
+      JSON.stringify(paths),
+      JSON.stringify([{
+        name: '_flags',
+        ...(options.unreviewed ? { unreviewed: options.unreviewed } : {}),
+        ...(options.strandLive ? { strandLive: options.strandLive } : {}),
+        ...(options.message ? { message: options.message } : {}),
+      }]),
+    ) as { id: number }
+    for (const reviewId of preauthorization?.validReviewIds ?? []) {
+      db().query('UPDATE review SET outdated_at=NULL, outdated_reason=NULL WHERE id=?').run(reviewId)
+    }
+    return row
+  })
   const ahead = queuedLandings(project.name).filter((row) => row.id < landing.id).length
   const position = ahead + 1
   console.log(`queued ${branch} at position ${position} (landing ${landing.id})`)
