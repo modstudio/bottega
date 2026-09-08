@@ -3126,7 +3126,13 @@ export async function run(opts: {
       (!writesJob && !replyError && !!output && !isNonAnswer(output))
     const acpVendorStop = transportName === 'acp' && collected.status === 'failed' &&
       Boolean(collected.stopReason && collected.stopReason !== 'end_turn')
-    if (acpVendorStop) {
+    // Idle kill outranks the transport stop reason on every transport. ACP
+    // cancel otherwise records stopReason timeout, which is routing evidence.
+    if (idleKilled) {
+      status = 'failed'
+      error = errorTail(idleKillError ?? 'idle-killed with no CPU')
+      failureKind = 'idle'
+    } else if (acpVendorStop) {
       status = 'failed'
       error = errorTail(collected.error ?? stopErrorMessage(collected.stopReason!))
       failureKind = collected.failureKind ?? failureKindFromStop(collected.stopReason, collected.error)
@@ -3142,10 +3148,6 @@ export async function run(opts: {
       status = 'failed'
       error = `response truncated at output ceiling (${reply!.stopReason})`
       failureKind = 'truncated'
-    } else if (idleKilled) {
-      status = 'failed'
-      error = errorTail(idleKillError ?? 'idle-killed with no CPU')
-      failureKind = 'idle'
     } else if (timedOut && completedReplyAtTimeout) {
       /**
        * IT FINISHED, AND THEN WE KILLED IT.

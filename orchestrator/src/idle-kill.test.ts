@@ -365,10 +365,70 @@ describe('live idle kill', () => {
       expect(row.status).toBe('failed')
       expect(row.error).toContain('idle-killed')
       expect(row.error).toContain('reclaimed_ms=')
+      expect(isRoutingEvidence({ status: row.status, delivery: null, failureKind: row.failure_kind })).toBe(false)
     } finally {
       grok.bin = previousBin
       grok.timeoutMs = previousTimeout
       delete process.env.ORCH_DEPTH
+    }
+  }, 15_000)
+
+  test('an ACP idle kill is recorded as idle, not the transport timeout, and is not evidence', async () => {
+    const transport: AgentTransport = {
+      name: 'acp',
+      async start() {
+        const child = Bun.spawn(['sleep', '3600'], { stdout: 'ignore', stderr: 'ignore' })
+        let cancelled = false
+        return {
+          pid: child.pid, kill(sig) { try { child.kill(sig === 9 ? 9 : 'SIGTERM') } catch { /* gone */ } },
+          async prompt() {}, async *events() {},
+          async cancel() { cancelled = true; try { child.kill('SIGTERM') } catch { /* gone */ } },
+          async collect() {
+            await child.exited
+            return {
+              stdout: '', stderr: '', raw: '', parsed: null, output: '',
+              tokens: null, costUsd: null, sessionId: 'acp-idle',
+              stopReason: cancelled ? 'timeout' : 'end_turn',
+              error: cancelled ? 'no reply within the run bound; the agent was killed' : null,
+              exitCode: 143, pid: child.pid, events: [], asking: false,
+              failureKind: cancelled ? 'timeout' : null,
+              status: 'failed', questions: [],
+            }
+          },
+        }
+      },
+      prompt(handle, text) { return handle.prompt(text) },
+      events(handle) { return handle.events() },
+      cancel(handle) { return handle.cancel() },
+      resume(opts) { return this.start(opts) },
+    }
+    installTestTransport(transport)
+    process.env.ORCH_IDLE_KILL_MS = '400'
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    let runId: number | null = null
+    try {
+      try {
+        const result = await run({
+          job: 'summarize', prompt: 'hello', cwd: dir, agent: 'grok',
+          transport: 'acp', noFailover: true,
+        })
+        runId = result.id
+      } catch (error) {
+        runId = (error as Error & { runId?: number }).runId ?? null
+      }
+      expect(runId).not.toBeNull()
+      const row = db().query('SELECT failure_kind,status,error FROM run WHERE id=?').get(runId) as {
+        failure_kind: string | null; status: string; error: string | null
+      }
+      expect(row.failure_kind).toBe('idle')
+      expect(row.status).toBe('failed')
+      expect(row.error).toContain('idle-killed')
+      expect(row.error).not.toContain('no reply within the run bound')
+      expect(isRoutingEvidence({ status: row.status, delivery: null, failureKind: row.failure_kind })).toBe(false)
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
     }
   }, 15_000)
 })
