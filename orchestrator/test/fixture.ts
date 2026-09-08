@@ -119,7 +119,7 @@ export const hermeticGitEnv = (extra: Record<string, string> = {}) => ({
 })
 export const originalTestPath = process.env.PATH
 export const cleanDockerBin = join(dir, 'clean-docker-bin')
-mkdirSync(cleanDockerBin)
+mkdirSync(cleanDockerBin, { recursive: true })
 writeFileSync(join(cleanDockerBin, 'docker'), '#!/bin/sh\nexit 0\n')
 chmodSync(join(cleanDockerBin, 'docker'), 0o755)
 process.env.PATH = `${cleanDockerBin}:${originalTestPath ?? ''}`

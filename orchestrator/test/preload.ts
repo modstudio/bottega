@@ -1,5 +1,5 @@
 import { afterAll, beforeEach } from 'bun:test'
-import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 
@@ -39,6 +39,13 @@ process.env.ORCH_RUNS = join(dir, 'runs')
 // saw the outer gates and held for host capacity until its test expired (four
 // landings refused on one lifecycle test on 2026-09-08).
 process.env.ORCH_GATE_PIDS = join(dir, 'gates')
+// Terminalisation now inventories Docker for every run. Keep the whole suite
+// hermetic, including test files that do not import the shared fixture.
+const cleanDockerBin = join(dir, 'clean-docker-bin')
+mkdirSync(cleanDockerBin)
+writeFileSync(join(cleanDockerBin, 'docker'), '#!/bin/sh\nexit 0\n')
+chmodSync(join(cleanDockerBin, 'docker'), 0o755)
+process.env.PATH = `${cleanDockerBin}:${originalPath ?? ''}`
 export const PRELOAD_STORE = process.env.ORCH_DB
 export const PRELOAD_RUNS = process.env.ORCH_RUNS
 mkdirSync(process.env.ORCH_RUNS)

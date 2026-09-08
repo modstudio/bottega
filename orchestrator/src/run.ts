@@ -78,6 +78,7 @@ import {
   type TransportName, type TransportStartOpts,
 } from './transport.ts'
 import { teeTransportEvents } from './events.ts'
+import { teardownRunResources } from './docker-resources.ts'
 import { checkpointRun, DEFAULT_CHECKPOINT_MINUTES, latestCheckpoint } from './checkpoint.ts'
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
@@ -3610,10 +3611,13 @@ export async function run(opts: {
       }
     }
     const recorded = db().query(
-      'SELECT failure_kind FROM run WHERE id=?',
-    ).get(claim.id) as { failure_kind: string | null } | null
+      'SELECT status, failure_kind FROM run WHERE id=?',
+    ).get(claim.id) as { status: string; failure_kind: string | null } | null
     if (!recorded) {
       throw new Error(`run ${claim.id} disappeared before terminalisation`)
+    }
+    if (['ok', 'failed', 'stale', 'stopped'].includes(recorded.status)) {
+      teardownRunResources(claim.id)
     }
     if (recorded.failure_kind === 'quota' || recorded.failure_kind === 'timeout') {
       tryWriteContention({

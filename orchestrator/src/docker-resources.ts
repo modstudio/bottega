@@ -1,5 +1,3 @@
-import { existsSync } from 'node:fs'
-
 export const DOCKER_INVENTORY_TIMEOUT_MS = 1_000
 
 export function dockerInventoryTimeoutMs(
@@ -102,6 +100,40 @@ export function resourcesForRuns(
   }
 }
 
+/** Remove Docker infrastructure created for one run, without touching its worktree. */
+export function teardownRunResources(runId: number): void {
+  const inventory = resourcesForRun(runId)
+  for (const error of inventory.errors) console.error(`orch: ${error}`)
+
+  const resources = [...inventory.resources].sort((a, b) =>
+    Number(a.kind === 'volume') - Number(b.kind === 'volume'))
+  for (const resource of resources) {
+    // Keep the identity check at the mutation boundary as well as in
+    // resourcesForRun(): an inventory may be supplied or changed independently.
+    if (resource.runId !== runId) continue
+    const command = dockerRemovalCommand(resource)
+    let p: ReturnType<typeof Bun.spawnSync>
+    try {
+      p = Bun.spawnSync(command.split(' '), {
+        stdout: 'pipe', stderr: 'pipe', timeout: dockerInventoryTimeoutMs(),
+      })
+    } catch (error) {
+      console.error(`orch: ${command} failed: ${(error as Error).message}`)
+      continue
+    }
+    if (p.exitedDueToTimeout) {
+      console.error(`orch: ${command} failed: timed out after ${dockerInventoryTimeoutMs()}ms`)
+      continue
+    }
+    if (p.exitCode !== 0) {
+      const detail = p.stderr?.toString().trim() || `exit ${p.exitCode}`
+      // A concurrent cleanup or a repeated teardown is successful idempotence.
+      if (/no such (?:container|volume)/i.test(detail)) continue
+      console.error(`orch: ${command} failed: ${detail}`)
+    }
+  }
+}
+
 export type RunResourceOwner = {
   id: number
   repo: string | null
@@ -116,8 +148,7 @@ export function orphanedDockerResources(
   const byId = new Map(owners.map((owner) => [owner.id, owner]))
   return resources.flatMap((resource) => {
     const owner = byId.get(resource.runId)
-    if (owner && (!['ok', 'failed', 'stale', 'stopped'].includes(owner.status) ||
-        (owner.worktree !== null && existsSync(owner.worktree)))) return []
+    if (owner && !['ok', 'failed', 'stale', 'stopped'].includes(owner.status)) return []
     return [{ resource, project: owner?.repo ?? 'unknown' }]
   })
 }
