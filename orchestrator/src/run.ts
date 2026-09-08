@@ -1684,12 +1684,16 @@ function persistRunArtifacts(
   }
 }
 
-function reclaimTerminalTree(runId: number, worktree: Worktree, extraPids: number[] = []): void {
+function reclaimTerminalTree(
+  runId: number, worktree: Worktree, extraPids: number[] = [], pgid: number | null = null,
+): void {
   const row = db().query('SELECT agent_pid FROM run WHERE id=?').get(runId) as
     { agent_pid: number | null } | null
   // agent_pid is the vendor. run.pid is this coordinator, which is still
   // alive here by construction and must not block reclaim.
-  if (runHasLiveDescendants([row?.agent_pid], extraPids)) {
+  // Re-sample: a T0 census plus descendantPids(root) cannot see a grandchild
+  // born after the first sample and reparented when the wrapper died.
+  if (runHasLiveDescendants([row?.agent_pid], extraPids, {}, pgid)) {
     console.error(`orch: could not reclaim worktree for run ${runId}: process tree still alive`)
     return
   }
@@ -2797,6 +2801,7 @@ export async function run(opts: {
   let idleKillError: string | null = null
   let idleUnkillable = false
   let idleTreePids: number[] = []
+  let idleTreePgid: number | null = null
   let exitCode = -1
   let output = ''
   let vendorTokens: number | null = null
@@ -3025,6 +3030,7 @@ export async function run(opts: {
       void t.cancel(handle)
       const terminated = await terminateProcessGroup(handle.pid ?? 0)
       idleTreePids = terminated.pids
+      idleTreePgid = terminated.pgid
       idleUnkillable = terminated.unkillable
       if (terminated.unkillable) {
         idleKillError = formatIdleKillError({
@@ -3863,7 +3869,7 @@ export async function run(opts: {
         // this completed attempt before returning into it, otherwise this
         // frame never reaches the ordinary terminal reclaim below.
         if (artifactsPersisted && worktree && reclaimsTreeByDefault(opts.job) && !keepTree) {
-          reclaimTerminalTree(claim.id, worktree, idleTreePids)
+          reclaimTerminalTree(claim.id, worktree, idleTreePids, idleTreePgid)
         }
         return await run({
           job: opts.job,
@@ -3917,7 +3923,7 @@ export async function run(opts: {
 
   if (artifactsPersisted && worktree && reclaimsTreeByDefault(opts.job) && !keepTree &&
       status !== 'asking' && status !== 'running') {
-    reclaimTerminalTree(claim.id, worktree, idleTreePids)
+    reclaimTerminalTree(claim.id, worktree, idleTreePids, idleTreePgid)
   }
 
   if (status === 'failed') {

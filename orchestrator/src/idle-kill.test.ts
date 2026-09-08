@@ -271,6 +271,48 @@ describe('process group termination', () => {
     })).toBe(false)
   })
 
+  test('a grandchild born after the first sample is re-sampled and SIGKILLed', async () => {
+    const alive = new Set([42])
+    let n = 0
+    let spawned = false
+    const signals: Array<{ pid: number; signal: NodeJS.Signals | number }> = []
+    const result = await terminateProcessGroup(42, {
+      graceMs: 20, killConfirmMs: 20,
+      deps: {
+        kill(pid, signal) {
+          signals.push({ pid, signal })
+          if (signal === 'SIGTERM' && (pid === 42 || pid === -42)) alive.delete(42)
+          if (signal === 'SIGKILL' && (pid === 43 || pid === -42)) alive.delete(43)
+        },
+        alive: (pid) => alive.has(pid),
+        sample: () => {
+          n += 1
+          if (n > 1 && !spawned) { alive.add(43); spawned = true }
+          const rows: Array<{ pid: number; ppid: number; pgid: number; cpu: number; state: string }> = []
+          if (alive.has(42)) rows.push({ pid: 42, ppid: 1, pgid: 42, cpu: 0, state: 'S' })
+          if (alive.has(43)) rows.push({ pid: 43, ppid: 1, pgid: 42, cpu: 0, state: 'S' })
+          return rows
+        },
+        selfPgid: () => null,
+        wait: async () => {},
+      },
+    })
+    expect(result.exited).toBe(true)
+    expect(result.unkillable).toBe(false)
+    expect(signals.some((row) => row.pid === 43 && row.signal === 'SIGKILL')).toBe(true)
+    expect(alive.has(43)).toBe(false)
+  })
+
+  test('reclaim re-samples; a late reparented child blocks via pgid', () => {
+    const late = [{ pid: 99, ppid: 1, pgid: 10, cpu: 0, state: 'S' }]
+    expect(runHasLiveDescendants([10], [10], {
+      sample: () => late, alive: (pid) => pid === 99,
+    }, 10)).toBe(true)
+    expect(runHasLiveDescendants([10], [10], {
+      sample: () => late, alive: (pid) => pid === 99,
+    })).toBe(false)
+  })
+
   test('a real sleeper is signalled and exits without looping', async () => {
     const child = Bun.spawn(['sleep', '30'], { stdout: 'ignore', stderr: 'ignore' })
     expect(child.pid).toBeGreaterThan(0)

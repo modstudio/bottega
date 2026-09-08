@@ -219,30 +219,47 @@ function signalTree(
   return null
 }
 
+function pidsSharingPgid(pgid: number | null | undefined, samples: ProcessSample[]): number[] {
+  if (pgid == null || pgid <= 1) return []
+  return samples.filter((row) => row.pgid === pgid).map((row) => row.pid)
+}
+
+/**
+ * Re-sample, do not trust the T0 census. A grandchild born after the first
+ * sample, then reparented when the wrapper died, is invisible to
+ * descendantPids(root) and to a tracked set frozen at T0. Union current
+ * descendants of every known pid with anyone still in the vendor pgid.
+ */
+function rememberTree(
+  root: number, tracked: Set<number>, samples: ProcessSample[], pgid?: number | null,
+): void {
+  const seeds = new Set<number>([root, ...tracked, ...pidsSharingPgid(pgid, samples)])
+  for (const seed of seeds) {
+    for (const pid of descendantPids(seed, samples)) tracked.add(pid)
+  }
+  for (const pid of pidsSharingPgid(pgid, samples)) tracked.add(pid)
+}
+
 function liveTreePids(
-  root: number, tracked: Iterable<number>, deps: TerminateDeps,
+  root: number, tracked: Set<number>, deps: TerminateDeps, pgid: number | null,
 ): number[] {
   const samples = deps.sample()
-  const ids = new Set<number>([...tracked, ...descendantPids(root, samples)])
-  return [...ids].filter((pid) => pid > 1 && deps.alive(pid))
+  rememberTree(root, tracked, samples, pgid)
+  return [...tracked].filter((pid) => pid > 1 && deps.alive(pid))
 }
 
 /** Wait on the whole tree, not the root. A wrapper that exits is not the tree dead. */
 async function waitUntilDead(
-  root: number, tracked: Iterable<number>, budgetMs: number, deps: TerminateDeps,
+  root: number, tracked: Set<number>, budgetMs: number, deps: TerminateDeps, pgid: number | null,
 ): Promise<boolean> {
   const started = Date.now()
   while (Date.now() - started < budgetMs) {
-    if (liveTreePids(root, tracked, deps).length === 0) return true
+    if (liveTreePids(root, tracked, deps, pgid).length === 0) return true
     const remaining = budgetMs - (Date.now() - started)
     if (remaining <= 0) break
     await deps.wait(Math.min(50, remaining))
   }
-  return liveTreePids(root, tracked, deps).length === 0
-}
-
-function rememberTree(root: number, tracked: Set<number>, samples: ProcessSample[]): void {
-  for (const pid of descendantPids(root, samples)) tracked.add(pid)
+  return liveTreePids(root, tracked, deps, pgid).length === 0
 }
 
 function signalSurvivors(
@@ -273,18 +290,21 @@ export async function terminateProcessGroup(
   const killConfirmMs = opts.killConfirmMs ?? DEFAULT_IDLE_KILL_CONFIRM_MS
   const tracked = new Set<number>([pid])
   const first = deps.sample()
-  rememberTree(pid, tracked, first)
-  const pgid = signalTree(pid, 'SIGTERM', deps, first)
-  if (await waitUntilDead(pid, tracked, graceMs, deps)) {
+  const vendorPgid = first.find((row) => row.pid === pid)?.pgid ?? null
+  rememberTree(pid, tracked, first, vendorPgid)
+  const groupPgid = signalTree(pid, 'SIGTERM', deps, first)
+  const pgid = groupPgid ?? vendorPgid
+  if (await waitUntilDead(pid, tracked, graceMs, deps, pgid)) {
     return { exited: true, unkillable: false, reason: null, pgid, pids: [...tracked] }
   }
+  // Re-sample before SIGKILL. The T0 census cannot see a grandchild born
+  // after the first sample, and descendantPids(root) cannot see one that
+  // reparented once the wrapper died.
   const beforeKill = deps.sample()
-  rememberTree(pid, tracked, beforeKill)
+  rememberTree(pid, tracked, beforeKill, pgid)
   signalTree(pid, 'SIGKILL', deps, beforeKill)
-  // Re-walk and signal tracked survivors individually so a grandchild that
-  // reparented after the wrapper exited is not missed by descendantPids.
   signalSurvivors(tracked, 'SIGKILL', deps)
-  if (await waitUntilDead(pid, tracked, killConfirmMs, deps)) {
+  if (await waitUntilDead(pid, tracked, killConfirmMs, deps, pgid)) {
     return { exited: true, unkillable: false, reason: null, pgid, pids: [...tracked] }
   }
   const after = deps.sample()
@@ -360,11 +380,12 @@ export function runHasLiveDescendants(
   roots: Array<number | null | undefined>,
   extra: Iterable<number> = [],
   deps: Partial<TerminateDeps> = {},
+  pgid?: number | null,
 ): boolean {
   const resolved: TerminateDeps = { ...defaultDeps, ...deps }
   const samples = resolved.sample()
-  const ids = new Set<number>([...extra])
-  for (const root of roots) {
+  const ids = new Set<number>([...extra, ...pidsSharingPgid(pgid, samples)])
+  for (const root of [...roots, ...extra]) {
     if (root && root > 1) {
       for (const pid of descendantPids(root, samples)) ids.add(pid)
     }
