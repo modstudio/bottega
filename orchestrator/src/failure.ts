@@ -19,7 +19,7 @@ export const FAILURE_KINDS = [
    * re-authenticating fixes it; an administrator has to grant the entitlement.
    */
   'entitlement',
-  'unreachable', 'timeout', 'denied', 'content_refusal',
+  'unreachable', 'timeout', 'context', 'cost', 'stopped', 'denied', 'content_refusal',
   'interrupted',
   /**
    * The vendor exhausted its reply budget or stopped mid-generation before
@@ -110,6 +110,8 @@ const PATTERNS: [FailureKind, RegExp][] = [
   // vendor's last line of defence classified as our harness fault, never as
   // scoreable evidence about the model.
   ['harness', /Invalid schema for response_format/i],
+  ['context', /\b(context (?:window|length|limit)|maximum context|max(?:imum)? tokens for (?:this )?context)\b/i],
+  ['cost', /\b(cost limit|budget (?:limit )?(?:exceeded|reached)|maximum cost)\b/i],
   // The plan is out. Distinct from `auth` because waiting fixes it.
   ['quota', /\b(402|429|quota|usage limit|rate.?limit|too many requests|out of (?:credit|tokens)|insufficient (?:credit|quota|balance)|balance (?:exhausted|depleted)|exceeded your|plan limit|monthly limit|upgrade your plan)\b/i],
   // Licensing text can also tell the user to sign in again, so entitlement must
@@ -301,7 +303,7 @@ export const FAILS_OVER: FailureKind[] = [
  * `unreachable` was carved out to stop.
  */
 export const NOT_EVIDENCE: FailureKind[] = [
-  'quota', 'auth', 'entitlement', 'unreachable', 'content_refusal', 'interrupted', 'truncated', 'escaped',
+  'quota', 'auth', 'entitlement', 'unreachable', 'context', 'cost', 'content_refusal', 'interrupted', 'truncated', 'escaped',
   'confinement_unverified', 'sandbox_denied', 'mcp_unverified', 'harness', 'abandoned',
 ]
 

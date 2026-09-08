@@ -9,7 +9,7 @@ import { attributionCounts, parseConfinement } from './confinement.ts'
 import { parseMcpProbe } from './mcp-probe.ts'
 
 export const HEALTH_DEFAULT_DAYS = 14
-export const HEALTH_CLASSES = [...FAILURE_KINDS, 'stale', 'stopped'] as const
+export const HEALTH_CLASSES = [...FAILURE_KINDS, 'stale'] as const
 export type HealthClass = FailureKind | 'stale' | 'stopped'
 
 type HealthClassRow = HarnessHealth['classes'][number] & { kind: HealthClass }
@@ -18,6 +18,7 @@ type HealthVerdictRow = HarnessHealth['falseVerdicts'][number]
 type RunRow = {
   id: number; started_at: string; latency_ms: number | null
   failure_kind: FailureKind | null; status: string; error: string | null
+  work_preserved: number
 }
 
 const classOf = (row: RunRow): HealthClass | null =>
@@ -32,7 +33,7 @@ export function harnessHealth(days = HEALTH_DEFAULT_DAYS, database: Database = d
   ))
   const from = firstDay.toISOString()
   const runs = database.query(
-    `SELECT id,started_at,latency_ms,failure_kind,status,error FROM run
+    `SELECT id,started_at,latency_ms,failure_kind,status,error,work_preserved FROM run
       WHERE datetime(started_at) >= datetime(?) ORDER BY started_at,id`,
   ).all(from) as RunRow[]
   const dayKeys = Array.from({ length: days }, (_, offset) =>
@@ -53,6 +54,7 @@ export function harnessHealth(days = HEALTH_DEFAULT_DAYS, database: Database = d
       .sort((a, b) => b.count - a.count || a.text.localeCompare(b.text)).slice(0, 3)
     return {
       kind, count: matching.length, totalTimeMs,
+      workPreserved: matching.filter((row) => row.work_preserved === 1).length,
       meanTimeMs: matching.length ? Math.round(totalTimeMs / matching.length) : 0,
       firstSeen: matching[0]?.started_at ?? null,
       lastSeen: matching.at(-1)?.started_at ?? null,

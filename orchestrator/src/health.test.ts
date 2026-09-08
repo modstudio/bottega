@@ -24,7 +24,7 @@ describe('harness health', () => {
       .run('2026-09-06T13:00:00.000Z', '2026-09-06T13:01:00.000Z')
 
     const report = harnessHealth(14, db(), now)
-    expect(report.classes.map((row) => row.kind)).toEqual([...FAILURE_KINDS, 'stale', 'stopped'])
+    expect(report.classes.map((row) => row.kind)).toEqual([...FAILURE_KINDS, 'stale'])
     expect(report.classes.find((row) => row.kind === 'interrupted')).toMatchObject({
       count: 2, totalTimeMs: 1_020_000, meanTimeMs: 510_000,
       firstSeen: '2026-09-06T10:00:00.000Z', lastSeen: '2026-09-07T10:00:00.000Z',

@@ -251,6 +251,9 @@ export function failureKindFromStop(stopReason: string | null, error: string | n
   if (stopReason === 'refusal') return 'content_refusal'
   if (stopReason === 'cancelled') return 'interrupted'
   if (stopReason === 'timeout') return 'timeout'
+  if (stopReason === 'max_turn_requests') return 'context'
+  if (stopReason === 'context_window' || stopReason === 'context_limit') return 'context'
+  if (stopReason === 'cost_limit') return 'cost'
   if (error) return 'other'
   return 'other'
 }

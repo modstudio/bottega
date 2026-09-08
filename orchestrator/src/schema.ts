@@ -69,6 +69,7 @@ export const run = sqliteTable('run', {
   confinement: text(),
   reviewProvenance: text('review_provenance'),
   provenanceStatus: text('provenance_status'),
+  workPreserved: integer('work_preserved').notNull().default(0),
 }, (t) => [
   check('run_status_check', sql`${t.status} in ('running','ok','failed','stale','asking','stopped')`),
   check('run_unreconciled_check', sql`${t.unreconciled} in (0,1)`),
@@ -77,6 +78,16 @@ export const run = sqliteTable('run', {
   check('run_transport_check', sql`${t.transport} is null or ${t.transport} in ('cli','acp')`),
   index('run_job_agent').on(t.job, t.agent),
 ])
+
+export const runCheckpoint = sqliteTable('run_checkpoint', {
+  id: id(),
+  runId: integer('run_id').notNull().references(() => run.id, { onDelete: 'cascade' }),
+  checkpointNo: integer('checkpoint_no').notNull(),
+  commitSha: text('commit_sha').notNull(),
+  taskPointer: text('task_pointer'),
+  final: integer().notNull().default(0),
+  createdAt: text('created_at').notNull(),
+}, (t) => [unique('run_checkpoint_run_no_unique').on(t.runId, t.checkpointNo)])
 
 export const score = sqliteTable('score', {
   id: id(), runId: integer('run_id').notNull().references(() => run.id, { onDelete: 'cascade' }),

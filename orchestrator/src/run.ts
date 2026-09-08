@@ -79,6 +79,7 @@ import {
   type TransportName, type TransportStartOpts,
 } from './transport.ts'
 import { teeTransportEvents } from './events.ts'
+import { checkpointRun, DEFAULT_CHECKPOINT_MINUTES, latestCheckpoint } from './checkpoint.ts'
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
 
@@ -2121,6 +2122,9 @@ export async function run(opts: {
   const launchKey = inheritedLaunch?.launch_key ?? attributedKey
   const launchBase = inheritedLaunch?.launch_base ?? opts.base ?? null
   const noFailover = inheritedLaunch ? !!inheritedLaunch.no_failover : !!opts.noFailover
+  // A repository row has no artifact address until creation returns one.
+  const claimedCwd = repoJob ? null : callerCwd
+  const claimedBranch = repoJob ? null : branchOf(callerCwd)
   // A reserved row is FILLED IN, not inserted: the id is already in the
   // caller's hands and printed, so allocating a second one here would hand back
   // an id that never finishes.
@@ -2140,9 +2144,9 @@ export async function run(opts: {
                         automatic_failover=?, review_ref=?, pid=?, mcp=?, transport=?
           WHERE id=? RETURNING id`,
       ).get(
-        nowIso(), name, opts.job, runProjectName, runProjectId, callerCwd, sha(prompt), sha(originalPrompt),
+        nowIso(), name, opts.job, runProjectName, runProjectId, claimedCwd, sha(prompt), sha(originalPrompt),
         Buffer.byteLength(prompt), head, opts.label ?? null, opts.probe ? 1 : 0, opts.retryOf ?? null, reason,
-        branchOf(callerCwd),
+        claimedBranch,
         opts.resume?.parent ?? null, opts.resume ? opts.resume.turn : 1,
         // Known before spawn: minted (grok) or inherited on resume. A SIGKILL
         // or an exec.ts bootstrap failure never reaches the finally that used
@@ -2162,7 +2166,7 @@ export async function run(opts: {
                           automatic_failover, review_ref, pid, mcp, transport)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
       ).get(
-        nowIso(), name, opts.job, runProjectName, runProjectId, callerCwd,
+        nowIso(), name, opts.job, runProjectName, runProjectId, claimedCwd,
         sha(prompt), sha(originalPrompt), Buffer.byteLength(prompt), head, opts.label ?? null,
         // A resumed turn INHERITS the owning session rather than taking the
         // one that answered. The chain is one unit of work and one thing to
@@ -2170,7 +2174,7 @@ export async function run(opts: {
         // would be the ownership rule leaking through a new door — the same
         // door `--detach` had to be stopped from opening.
         opts.resume ? opts.resume.sessionId : (opts.ownerSession ?? sessionId()),
-        opts.probe ? 1 : 0, opts.retryOf ?? null, reason, branchOf(callerCwd),
+        opts.probe ? 1 : 0, opts.retryOf ?? null, reason, claimedBranch,
         opts.resume?.parent ?? null, opts.resume ? opts.resume.turn : 1,
         vendorSession,
         pack?.docs.length ?? 0, pack ? JSON.stringify(pack.docs.map((doc) => doc.revisionId)) : null,
@@ -2701,6 +2705,7 @@ export async function run(opts: {
   let proc: { kill(sig?: number | string): void } | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
   let killer: ReturnType<typeof setTimeout> | null = null
+  let checkpointTimer: ReturnType<typeof setInterval> | null = null
   let timedOut = false
   let exitCode = -1
   let output = ''
@@ -2825,6 +2830,22 @@ export async function run(opts: {
     // Recorded HERE, before the wait, not after it. Written afterwards it is
     // always the pid of a process that has already exited.
     db().query('UPDATE run SET agent_pid=? WHERE id=?').run(handle.pid, claim.id)
+
+    const createCheckpoint = (final = false) => {
+      if (!writesJob || !worktree || !launchKey) return null
+      const result = checkpointRun({
+        database: db(), runId: claim.id, worktree: worktree.path,
+        branch: worktree.branch, taskKey: launchKey, scratchDir, final,
+      })
+      if (result.error) console.error(`orch: run ${claim.id} checkpoint failed: ${result.error}`)
+      return result
+    }
+    if (writesJob) {
+      checkpointTimer = setInterval(
+        () => { createCheckpoint(false) },
+        (requestedJob.checkpointMinutes ?? DEFAULT_CHECKPOINT_MINUTES) * 60_000,
+      )
+    }
 
     // The JOB's bound where it declares one, else the agent's, overridden by
     // --timeout and capped by the job ceiling. Computed once after routing.
@@ -3096,8 +3117,26 @@ export async function run(opts: {
   } finally {
     if (timer) clearTimeout(timer)
     if (killer) clearTimeout(killer)
+    if (checkpointTimer) clearInterval(checkpointTimer)
     if (proc) live.delete(proc)
     if (askLoopback) await askLoopback.close()
+
+    const recordedState = db().query('SELECT status FROM run WHERE id=?').get(claim.id) as
+      { status: string } | null
+    const preserveAtTerminal = writesJob && worktree && launchKey && (
+      recordedState?.status === 'stopped' ||
+      failureKind === 'timeout' || failureKind === 'quota' || failureKind === 'context' || failureKind === 'cost'
+    )
+    if (preserveAtTerminal) {
+      const checkpoint = checkpointRun({
+        database: db(), runId: claim.id, worktree: worktree!.path,
+        branch: worktree!.branch, taskKey: launchKey!, scratchDir, final: true,
+      })
+      if (checkpoint.created || latestCheckpoint(db(), opts.resume?.parent ?? claim.id)) {
+        db().query('UPDATE run SET work_preserved=1 WHERE id=?').run(claim.id)
+      }
+      if (checkpoint.error) console.error(`orch: run ${claim.id} final checkpoint failed: ${checkpoint.error}`)
+    }
 
     let frozenAfter: import('./confinement.ts').FrozenCheckout[] = []
     try {

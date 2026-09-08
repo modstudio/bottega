@@ -1,4 +1,5 @@
 import { REVIEW_SEVERITY } from './db.ts'
+import { progressFileInstruction } from './checkpoint.ts'
 
 /**
  * What an implementation worker is told, and what it must hand back.
@@ -64,7 +65,9 @@ export function replyFileInstruction(schemaName: string): string {
   return `REPLY CONTRACT\n\n` +
     `Your reply schema is ${schemaName}. Before your final message, write the structured reply ` +
     `as valid JSON to $ORCH_SCRATCH/${REPLY_FILE_NAME}. Orch reads that file first and falls back ` +
-    `to the final message only when the file is missing. The final message must follow the same schema.`
+    `to the final message only when the file is missing. The final message must follow the same schema.` +
+    (schemaName === 'WORKER_SCHEMA' || schemaName === 'ISSUE_WORKER_SCHEMA'
+      ? `\n\n${progressFileInstruction()}` : '')
 }
 
 export const WORKER_SCHEMA = {

@@ -243,7 +243,7 @@ describe('DEV-370 landing queue and branch ownership', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
-  test('stop keeps a review subject branch and deletes a minted implement branch', () => {
+  test('stop keeps review and implement branches for continuation', () => {
     const { repo } = repoWithBranches(['DEV-370-subject'])
     const subjectTip = g(repo, 'rev-parse', 'DEV-370-subject')
     const reviewTree = join(repo, 'trees', 'review-detached')
@@ -263,9 +263,7 @@ describe('DEV-370 landing queue and branch ownership', () => {
       stdout: 'pipe', stderr: 'pipe',
     })
     expect(stopReview.exitCode, stopReview.stderr.toString()).toBe(0)
-    expect(stopReview.stdout.toString()).toContain(
-      `branch DEV-370-subject kept (review subject, not owned by run ${reviewId})`,
-    )
+    expect(stopReview.stdout.toString()).toContain(`kept worktree ${reviewTree}`)
     expect(g(repo, 'rev-parse', 'DEV-370-subject')).toBe(subjectTip)
 
     const mintedId = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: 'landing-stop' })
@@ -285,7 +283,7 @@ describe('DEV-370 landing queue and branch ownership', () => {
     expect(stopMinted.exitCode, stopMinted.stderr.toString()).toBe(0)
     expect(Bun.spawnSync(['git', 'show-ref', '--verify', '--quiet', `refs/heads/${mintedRef}`], {
       cwd: repo, env: hermeticGitEnv(),
-    }).exitCode).not.toBe(0)
+    }).exitCode).toBe(0)
 
     const unmintedId = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: 'landing-stop' })
     const unmintedRef = `orch/${unmintedId}`
@@ -302,9 +300,7 @@ describe('DEV-370 landing queue and branch ownership', () => {
       stdout: 'pipe', stderr: 'pipe',
     })
     expect(stopUnminted.exitCode, stopUnminted.stderr.toString()).toBe(0)
-    expect(stopUnminted.stdout.toString()).toContain(
-      `branch ${unmintedRef} kept (review subject, not owned by run ${unmintedId})`,
-    )
+    expect(stopUnminted.stdout.toString()).toContain(`kept worktree ${unmintedTree}`)
     expect(g(repo, 'rev-parse', unmintedRef)).toBeTruthy()
   })
 

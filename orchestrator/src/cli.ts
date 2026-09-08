@@ -133,11 +133,10 @@ let removeFor!: typeof import('./worktree.ts').removeFor
 let unmergedBranch!: typeof import('./worktree.ts').unmergedBranch
 let checkoutHasUncommittedWork!: typeof import('./worktree.ts').checkoutHasUncommittedWork
 let callerDrift!: typeof import('./worktree.ts').callerDrift
-let projectLockState!: typeof import('./worktree.ts').projectLockState
 let takeCleanupLock!: typeof import('./worktree.ts').withCleanupLock
 let withWorktreeLease!: typeof import('./worktree.ts').withWorktreeLease
 let targetGitEnvironment!: typeof import('./worktree.ts').targetGitEnvironment
-async function loadWorktree() { worktreeModule ??= await import('./worktree.ts'); ({ branchTip, contentTree, restoreBranch, resolveBase, repoRootOf, removeBranch, removeFor, unmergedBranch, checkoutHasUncommittedWork, callerDrift, projectLockState, withCleanupLock: takeCleanupLock, withWorktreeLease, targetGitEnvironment } = worktreeModule) }
+async function loadWorktree() { worktreeModule ??= await import('./worktree.ts'); ({ branchTip, contentTree, restoreBranch, resolveBase, repoRootOf, removeBranch, removeFor, unmergedBranch, checkoutHasUncommittedWork, callerDrift, withCleanupLock: takeCleanupLock, withWorktreeLease, targetGitEnvironment } = worktreeModule) }
 let WORKER_PREAMBLE!: typeof import('./contract.ts').WORKER_PREAMBLE
 let READONLY_PREAMBLE!: typeof import('./contract.ts').READONLY_PREAMBLE
 let NO_REPO_PREAMBLE!: typeof import('./contract.ts').NO_REPO_PREAMBLE
@@ -1157,7 +1156,7 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
                       vendor_session)
        SELECT ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (
-          EXISTS (SELECT 1 FROM run root WHERE root.id = ? AND root.status NOT IN ('stopped','stale'))
+          EXISTS (SELECT 1 FROM run root WHERE root.id = ? AND root.status <> 'stale')
           AND NOT EXISTS (
             SELECT 1 FROM run
              WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
@@ -1165,7 +1164,7 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
         )
        RETURNING id`,
     ).get(
-      nowIso(), jobName, projectName, projectId, cwd,
+      nowIso(), jobName, projectName, projectId, null,
       createHash('sha256').update(prompt).digest('hex').slice(0, 16),
       createHash('sha256').update(prompt).digest('hex').slice(0, 16),
       prompt.length, prompt.slice(0, 200).replace(/\s+/g, ' '), spec.label ?? null,
@@ -1190,7 +1189,7 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
   if (!claimed) {
     const root = db().query('SELECT status FROM run WHERE id=?').get(spec.resume!.parent) as
       { status: string } | null
-    if (root && ['stopped', 'stale'].includes(root.status)) {
+    if (root?.status === 'stale') {
       throw new Error(`run ${spec.resume!.parent} is ${root.status} and cannot be continued`)
     }
     const running = db().query(
@@ -1323,7 +1322,7 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
   if (row.parent_run_id) {
     throw new Error(`run ${id} is a turn of run ${row.parent_run_id}; continue that one`)
   }
-  if (row.status === 'stopped' || row.status === 'stale') {
+  if (row.status === 'stale') {
     throw new Error(`run ${id} is ${row.status} and cannot be continued`)
   }
   const recordedReview = db().query(
@@ -1378,9 +1377,12 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
       `resuming ${sessionFrom.agent} with the session from run ${sessionFrom.id} (turn ${sessionFrom.turn})`,
     )
   }
-  const prompt = message
+  const checkpointContext = (await import('./checkpoint.ts'))
+    .checkpointResumeContext(db(), id, latest.worktree)
+  const basePrompt = message
     ?? 'Continue from where you stopped and finish the spec. If you reached a ' +
        'decision that is not yours, stop and ask as before.'
+  const prompt = checkpointContext ? `${checkpointContext}\n\n${basePrompt}` : basePrompt
   const assembledLimit = argvResumeLimit(sessionFrom.agent)
   if (assembledLimit !== undefined) {
     const packed = packedResumePrompt(row.job, prompt, id)
@@ -1400,7 +1402,12 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
     launch_base: string | null; no_failover: number; mcp: number | null; mcp_error: string | null
     lens: string | null
   }
-  authority = writeTransaction(() => adoptRunMutation(authority, 'continue'))
+  authority = writeTransaction(() => {
+    const adopted = adoptRunMutation(authority, 'continue')
+    // Stop preserves the artifact specifically so this transition can reopen it.
+    db().query("UPDATE run SET status='failed' WHERE id=? AND status='stopped'").run(id)
+    return adopted
+  })
   const childId = await detach(row.job, prompt, {
     cwd: latest.cwd ?? process.cwd(),
     seed: launch.launch_seed ?? undefined,
@@ -1963,7 +1970,7 @@ switch (cmd) {
     }
     const value = argv[1]
     if (!value || value.startsWith('--')) {
-      throw new Error('orch land <branch|run-id> [--message TEXT] [--file PATH] [--unreviewed REASON] [--wait] | orch land --status')
+      throw new Error('orch land <branch|run-id> [--message TEXT] [--file PATH] [--unreviewed REASON] [--keep-checkpoints] [--wait] | orch land --status')
     }
     const fromMessage = flag('message')
     const fromFile = flag('file')
@@ -1988,6 +1995,7 @@ switch (cmd) {
       ...(message === undefined ? {} : { message }),
       ...(unreviewed === undefined ? {} : { unreviewed }),
       ...(strandLive === undefined ? {} : { strandLive }),
+      keepCheckpoints: has('keep-checkpoints'),
       wait: has('wait'),
     })
     if (result) console.log(result)
@@ -5144,7 +5152,7 @@ switch (cmd) {
 
       authority = adoptRunMutation(authority, 'stop')
       const changed = db().query(
-        "UPDATE run SET status='stopped', error='stopped by architect', failure_kind=NULL WHERE id=? AND status='running'",
+        "UPDATE run SET status='stopped', error='stopped by architect', failure_kind='stopped' WHERE id=? AND status='running'",
       ).run(row.id)
       if (changed.changes !== 1) {
         const current = readChain()
@@ -5154,7 +5162,7 @@ switch (cmd) {
       }
       if (row.id !== authority.rootId) {
         db().query(
-          "UPDATE run SET status='stopped', error='stopped by architect', failure_kind=NULL WHERE id=?",
+          "UPDATE run SET status='stopped', error='stopped by architect', failure_kind='stopped' WHERE id=?",
         ).run(authority.rootId)
       }
       db().query(
@@ -5180,33 +5188,7 @@ switch (cmd) {
     terminateRunProcesses(row.id, row.pid ? [row.pid] : [])
     console.log(`stopped run ${row.id}`)
     if (cleanupRow.worktree) {
-      const stoppedWorktree = cleanupRow.worktree
-      let reclaimed = false
-      const repoRoot = cleanupRepoRoot(cleanupRow)
-      const creationHolder = repoRoot ? projectLockState(repoRoot, 'landing').holder : null
-      if (creationHolder?.what === 'worktree creation') {
-        console.log(`worktree ${stoppedWorktree} cleanup left to its creation coordinator`)
-      } else {
-        try {
-          await discardWorktree(cleanupRow as CleanupRow, 'discarded', false, undefined, true)
-          reclaimed = true
-        } catch (error) {
-          if (error instanceof SharedWorktreeEvidenceError) {
-            const owners = error.sharers.map((owner) =>
-              `${owner.id} (${owner.status}${owner.scored ? '' : ', unscored'})`).join(', ')
-            console.log(`worktree ${error.worktree} kept for runs ${owners}`)
-          } else {
-            console.error(
-              `worktree ${stoppedWorktree} was not reclaimed after stopping run ${row.id}: ` +
-              `${error instanceof Error ? error.message : String(error)}`,
-            )
-          }
-        }
-      }
-      if (reclaimed && row.id !== authority.rootId) {
-        db().query('UPDATE run SET worktree=NULL WHERE id=? AND worktree=?')
-          .run(authority.rootId, stoppedWorktree)
-      }
+      console.log(`kept worktree ${cleanupRow.worktree} and branch ${cleanupRow.branch ?? '(unknown)'} for continuation`)
     }
     break
   }
@@ -6726,10 +6708,11 @@ switch (cmd) {
     console.log(report.header)
     console.log(`window: ${report.days} days from ${report.from}`)
     console.log('\nFAILURE CLASS'.padEnd(25) + 'COUNT'.padStart(7) + 'TOTAL'.padStart(10) +
-      'MEAN'.padStart(10) + '  FIRST SEEN'.padEnd(27) + 'LAST SEEN')
+      'MEAN'.padStart(10) + 'PRESERVED'.padStart(11) + '  FIRST SEEN'.padEnd(27) + 'LAST SEEN')
     for (const row of report.classes) {
       console.log(row.kind.padEnd(25) + String(row.count).padStart(7) +
-        duration(row.totalTimeMs).padStart(10) + duration(row.meanTimeMs).padStart(10) + '  ' +
+        duration(row.totalTimeMs).padStart(10) + duration(row.meanTimeMs).padStart(10) +
+        String(row.workPreserved).padStart(11) + '  ' +
         (row.firstSeen ?? '-').padEnd(25) + (row.lastSeen ?? '-'))
       for (const cluster of row.clusters) {
         console.log(`  ${cluster.count}x [run ${cluster.exampleRunId}] ${cluster.text}`)

@@ -270,9 +270,9 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       'orch note <text> [--same-as ID|--new]', 1, ['--same-as'], ['--new'],
     ) }
     case 'land': return { args: argv.slice(1), shape: shape(
-      'orch land <branch|run-id> [--message TEXT] [--file PATH] [--unreviewed REASON] [--wait] [--strand-live REASON] | orch land --status | orch land --drain',
+      'orch land <branch|run-id> [--message TEXT] [--file PATH] [--unreviewed REASON] [--wait] [--strand-live REASON] [--keep-checkpoints] | orch land --status | orch land --drain',
       hasArg(argv, '--status') || hasArg(argv, '--drain') ? 0 : 1,
-      ['--message', '--file', '--unreviewed', '--strand-live'], ['--status', '--queue', '--wait', '--drain'],
+      ['--message', '--file', '--unreviewed', '--strand-live'], ['--status', '--queue', '--wait', '--drain', '--keep-checkpoints'],
     ) }
     case 'reconcile': return { args: argv.slice(1), shape: shape('orch reconcile <id>', 1) }
     case 'contract': return { args: argv.slice(1), shape: shape('orch contract <job>', 1) }

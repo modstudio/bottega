@@ -187,6 +187,7 @@ export const HarnessHealthSchema = z.object({
     count: z.number().int().nonnegative(),
     totalTimeMs: z.number().nonnegative(),
     meanTimeMs: z.number().nonnegative(),
+    workPreserved: z.number().int().nonnegative(),
     firstSeen: nullableString,
     lastSeen: nullableString,
     clusters: z.array(z.object({

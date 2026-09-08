@@ -857,6 +857,11 @@ gate that sits outside `orch-landing.lock`.
 
 The invariants are:
 
+- **No limit loses staged work.** Writing runs checkpoint staged and modified
+  tracked files on their run branch every ten minutes and once more on wall,
+  quota, context, cost, or operator stop. The checkpoint row binds its commit
+  to the worker's explicit `progress.json` task pointer; continuation receives
+  that pointer and recent branch history. Stop keeps the worktree and branch.
 - **The guard lives outside every root the worker can write.** A guard the
   constrained party can delete is advisory; it is published under the common
   git dir, which is not a writable root, and dispatch refuses a run whose guard
@@ -1097,6 +1102,14 @@ An implement or fix worker gets a **throwaway git worktree**, a spec, and a
 contract. It edits freely and may commit to its own branch, because commits make
 units of work and authorship visible. It may not push, merge into trunk, or
 rewrite history. The branch diff is still the thing the architect judges.
+
+The harness checkpoints staged and modified tracked work every ten minutes and
+at every limit or stop. A worker may rely on that safety net, and records the
+last completed item in `$ORCH_SCRATCH/progress.json` after each item so a new
+turn resumes from an explicit task pointer rather than inferred prose. Landing
+folds each checkpoint into the authored commit that follows it; a trailing
+checkpoint remains visible, and `orch land --keep-checkpoints` preserves the
+checkpoint history verbatim.
 
 This is an authorship boundary, not ceremony. A run once returned with four
 thousand lines of another session's uncommitted work carried into its tree, and

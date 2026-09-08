@@ -648,6 +648,34 @@ function amendLandingMessage(
   git(worktree, ['commit', '--amend', '-m', message], guard)
 }
 
+const CHECKPOINT_SUBJECT = /^[A-Z]+-\d+ checkpoint run \d+ #\d+$/
+
+/** Fold checkpoint deltas into the next authored commit, retaining a trailing checkpoint. */
+export function squashCheckpointCommits(
+  worktree: string, trunkOid: string, guard?: SharedRefGuardEnvironment,
+): boolean {
+  const commits = git(worktree, ['rev-list', '--reverse', `${trunkOid}..HEAD`], guard)
+    .split('\n').filter(Boolean)
+  const subjects = commits.map((commit) =>
+    git(worktree, ['show', '-s', '--format=%s', commit], guard))
+  if (!subjects.some((subject) => CHECKPOINT_SUBJECT.test(subject))) return false
+  git(worktree, ['reset', '--hard', trunkOid], guard)
+  let pendingCheckpoint: string | null = null
+  for (let i = 0; i < commits.length; i++) {
+    const commit = commits[i]!
+    const checkpoint = CHECKPOINT_SUBJECT.test(subjects[i]!)
+    git(worktree, ['cherry-pick', '--no-commit', commit], guard)
+    if (checkpoint) {
+      pendingCheckpoint = commit
+      continue
+    }
+    git(worktree, ['commit', '-C', commit], guard)
+    pendingCheckpoint = null
+  }
+  if (pendingCheckpoint) git(worktree, ['commit', '-C', pendingCheckpoint], guard)
+  return true
+}
+
 function rebaseInProgress(worktree: string, guard?: SharedRefGuardEnvironment): boolean {
   const gitDir = git(worktree, ['rev-parse', '--path-format=absolute', '--git-dir'], guard)
   return existsSync(join(gitDir, 'rebase-merge')) || existsSync(join(gitDir, 'rebase-apply'))
@@ -1240,7 +1268,7 @@ function performLand(
   branch: string,
   options: {
     timeoutMs?: number; message?: string; unreviewed?: string; runId?: number
-    queue?: boolean; landingId?: number; strandLive?: string
+    queue?: boolean; landingId?: number; strandLive?: string; keepCheckpoints?: boolean
   } = {},
 ): { tip: string; trunkBefore: string; project: Project; repoRoot: string } {
   writableDb()
@@ -1302,10 +1330,11 @@ function performLand(
     assertLandingWorktreeReady(worktree, branch, guard)
     assertMainCheckoutOnTrunk(repoRoot, trunk)
     landingOrder('preflight')
+    const recordedTrunk = trunkCommit(repoRoot, trunk, guard)
+    if (!options.keepCheckpoints) squashCheckpointCommits(worktree, recordedTrunk, guard)
     // A message-only amend changes the commit hash. The gate must run on the
     // commit that becomes trunk, so the message is rewritten before rebase.
     if (options.message !== undefined) amendLandingMessage(worktree, options.message, guard)
-    const recordedTrunk = trunkCommit(repoRoot, trunk, guard)
     if (options.unreviewed === undefined) {
       authorizeLanding(
         project, repoRoot, worktree, branch,
@@ -1694,7 +1723,7 @@ type LandingRow = {
 
 type LandingStep = {
   name: string; duration_ms?: number
-  unreviewed?: string; strandLive?: string; message?: string
+  unreviewed?: string; strandLive?: string; message?: string; keepCheckpoints?: boolean
   output?: string
 }
 
@@ -1714,13 +1743,14 @@ function appendStep(id: number, name: string, durationMs: number, output?: strin
   db().query('UPDATE landing SET steps=? WHERE id=?').run(JSON.stringify(steps), id)
 }
 
-function flagsOf(row: LandingRow): { unreviewed?: string; strandLive?: string; message?: string } {
+function flagsOf(row: LandingRow): { unreviewed?: string; strandLive?: string; message?: string; keepCheckpoints?: boolean } {
   const flags = parseSteps(row.steps).find((step) => step.name === '_flags')
   if (!flags) return {}
   return {
     ...(flags.unreviewed ? { unreviewed: flags.unreviewed } : {}),
     ...(flags.strandLive ? { strandLive: flags.strandLive } : {}),
     ...(flags.message ? { message: flags.message } : {}),
+    ...(flags.keepCheckpoints ? { keepCheckpoints: true } : {}),
   }
 }
 
@@ -2353,7 +2383,7 @@ export function land(
   branch: string,
   options: {
     timeoutMs?: number; message?: string; unreviewed?: string; runId?: number
-    queue?: boolean; wait?: boolean; strandLive?: string
+    queue?: boolean; wait?: boolean; strandLive?: string; keepCheckpoints?: boolean
   } = {},
 ): string {
   writableDb()
@@ -2382,6 +2412,7 @@ export function land(
         ...(options.unreviewed ? { unreviewed: options.unreviewed } : {}),
         ...(options.strandLive ? { strandLive: options.strandLive } : {}),
         ...(options.message ? { message: options.message } : {}),
+        ...(options.keepCheckpoints ? { keepCheckpoints: true } : {}),
       }]),
     ) as { id: number }
     for (const reviewId of preauthorization?.validReviewIds ?? []) {

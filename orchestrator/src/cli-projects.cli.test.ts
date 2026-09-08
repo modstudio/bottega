@@ -625,7 +625,7 @@ test('create commands must exist and be executable before dispatch', () => {
     )
   }, 20_000)
 
-  test('stop terminates a running vendor and reclaims its recorded worktree', async () => {
+  test('stop terminates a running vendor and keeps its recorded worktree', async () => {
     const vendor = Bun.spawn(['sleep', '30'])
     const id = insert('running', 'implement')
     const worktree = createWorktree(dir, id)
@@ -639,9 +639,9 @@ test('create commands must exist and be executable before dispatch', () => {
       expect(await vendor.exited).not.toBe(0)
       expect(db().query('SELECT status, error, failure_kind, worktree FROM run WHERE id=?').get(id))
         .toEqual({
-          status: 'stopped', error: 'stopped by architect', failure_kind: null, worktree: null,
+          status: 'stopped', error: 'stopped by architect', failure_kind: 'stopped', worktree: worktree.path,
         })
-      expect(existsSync(worktree.path)).toBe(false)
+      expect(existsSync(worktree.path)).toBe(true)
       const candidate = candidates('implement').find((item) => item.agent === 'codex')!
       expect(candidate.evidence).toBe(0)
       expect(candidate.failures).toBe(0)
@@ -667,7 +667,7 @@ test('create commands must exist and be executable before dispatch', () => {
       const result = orch('stop', String(stopped))
       expect(result.code).toBe(0)
       expect(result.out).toContain(`stopped run ${stopped}`)
-      expect(result.out).toContain(`worktree ${worktree} kept for runs ${owner} (failed, unscored)`)
+      expect(result.out).toContain(`kept worktree ${worktree}`)
       expect(await vendor.exited).not.toBe(0)
       expect(readFileSync(evidence, 'utf8')).toBe('unjudged work\n')
       expect(db().query('SELECT status, worktree FROM run WHERE id=?').get(stopped))

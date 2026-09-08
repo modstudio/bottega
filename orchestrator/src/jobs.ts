@@ -44,6 +44,8 @@ export type Job = {
   timeoutCeilingMs?: number
   /** This job returns independently triageable review findings. */
   findings?: boolean
+  /** Harness-owned checkpoint cadence for writing work; defaults to ten minutes. */
+  checkpointMinutes?: number
 }
 
 /**
