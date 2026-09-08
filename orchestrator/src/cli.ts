@@ -29,6 +29,8 @@ import {
   DASHBOARD_CAPABILITY_PATH_ENV, DASHBOARD_CAPABILITY_TOKEN_ENV,
   type DashboardCapability,
 } from '../../shared/dashboard-capability.ts'
+import { AttributionKindSchema } from '../../shared/orch-contract.ts'
+import { parseConfinement } from './confinement.ts'
 
 type DetachSpec = import('./run.ts').DetachSpec
 type McpRequest = import('./run.ts').McpRequest
@@ -2020,14 +2022,8 @@ switch (cmd) {
       ? inspect(project.path, ['rev-parse', '--verify', `${currentTip}^{tree}`])
       : contentTree(worktree)
     const suppliedTip = flag('tip')?.trim() ?? null
-    const snapshotted = rows.map((row) => {
-      try {
-        const parsed = row.confinement ? JSON.parse(row.confinement) as {
-          tripTip?: string | null; chainRoot?: string | null
-        } : null
-        return parsed
-      } catch { return null }
-    }).find((value) => value?.tripTip || value?.chainRoot)
+    const snapshotted = rows.map((row) => parseConfinement(row.confinement))
+      .find((value) => value?.tripTip || value?.chainRoot)
     const divergence = currentTip !== recordedTip
     const recoveryCommand = `git worktree add ${worktree} ${branch}`
     const audit = {
@@ -6648,9 +6644,9 @@ switch (cmd) {
       }
       if (row.kind === 'escaped' && row.attribution) {
         console.log(
-          `  attribution  lock_holder=${row.attribution.lock_holder}` +
-          ` landing=${row.attribution.landing}` +
-          ` unattributed=${row.attribution.unattributed}`,
+          '  attribution  ' + AttributionKindSchema.options
+            .map((kind) => `${kind}=${row.attribution![kind]}`)
+            .join(' '),
         )
       }
     }

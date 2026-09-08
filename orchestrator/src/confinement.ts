@@ -2,16 +2,16 @@ import { createHash } from 'node:crypto'
 import { existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Database } from 'bun:sqlite'
+import {
+  AttributionKindSchema, ConfinementClassSchema, emptyAttribution,
+  type AttributionKind, type ConfinementClass,
+} from '../../shared/orch-contract.ts'
 import { targetGitEnvironment } from './worktree.ts'
 
 export const UNTRUSTED_INDEX_WINDOW_MS = 1000
 export const UNTRUSTED_RETRY_WAIT_MS = 1100
 
-export type AttributionKind = 'lock_holder' | 'landing' | 'unattributed'
-export type ConfinementClass =
-  | 'overlapping'
-  | 'non_overlapping'
-  | 'edit_commit_cycle'
+export type { AttributionKind, ConfinementClass }
 
 export type FrozenCheckout = {
   project: string
@@ -349,17 +349,16 @@ export function parseConfinement(value: string | null): ConfinementEvent | null 
   if (!value) return null
   try {
     const parsed = JSON.parse(value) as ConfinementEvent
-    if (!parsed?.classification || !parsed.attribution) return null
+    if (!ConfinementClassSchema.safeParse(parsed?.classification).success) return null
+    if (!AttributionKindSchema.safeParse(parsed?.attribution).success) return null
     return parsed
   } catch {
     return null
   }
 }
 
-export function attributionCounts(events: Array<ConfinementEvent | null>): {
-  lock_holder: number; landing: number; unattributed: number
-} {
-  const counts = { lock_holder: 0, landing: 0, unattributed: 0 }
+export function attributionCounts(events: Array<ConfinementEvent | null>): Record<AttributionKind, number> {
+  const counts = emptyAttribution()
   for (const event of events) {
     if (!event) continue
     counts[event.attribution] += 1

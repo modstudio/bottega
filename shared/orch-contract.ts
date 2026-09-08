@@ -161,6 +161,23 @@ export const HostLoadSchema = z.object({
   freeMem: z.number(),
 })
 
+export const AttributionKindSchema = z.enum(['lock_holder', 'landing', 'unattributed'])
+export const ConfinementClassSchema = z.enum(['overlapping', 'non_overlapping', 'edit_commit_cycle'])
+export type AttributionKind = z.infer<typeof AttributionKindSchema>
+export type ConfinementClass = z.infer<typeof ConfinementClassSchema>
+
+export const AttributionCountsSchema = z.object(
+  Object.fromEntries(
+    AttributionKindSchema.options.map((kind) => [kind, z.number().int().nonnegative()]),
+  ) as { [K in AttributionKind]: z.ZodNumber },
+)
+
+export function emptyAttribution(): Record<AttributionKind, number> {
+  return Object.fromEntries(
+    AttributionKindSchema.options.map((kind) => [kind, 0]),
+  ) as Record<AttributionKind, number>
+}
+
 export const HarnessHealthSchema = z.object({
   header: z.string(),
   days: z.number().int().positive(),
@@ -178,11 +195,7 @@ export const HarnessHealthSchema = z.object({
     sparkline: z.array(z.object({
       day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), count: z.number().int().nonnegative(),
     })),
-    attribution: z.object({
-      lock_holder: z.number().int().nonnegative(),
-      landing: z.number().int().nonnegative(),
-      unattributed: z.number().int().nonnegative(),
-    }).optional(),
+    attribution: AttributionCountsSchema.optional(),
   })),
   falseVerdicts: z.array(z.object({
     kind: z.string(), verdicts: z.number().int().nonnegative(),

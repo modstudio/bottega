@@ -1,5 +1,7 @@
 import type { Database } from 'bun:sqlite'
-import { HarnessHealthSchema, HostLoadSchema, type HarnessHealth } from '../../shared/orch-contract.ts'
+import {
+  AttributionKindSchema, emptyAttribution, HarnessHealthSchema, HostLoadSchema, type HarnessHealth,
+} from '../../shared/orch-contract.ts'
 import { db } from './db.ts'
 import { clusterErrorText, FAILURE_KINDS, type FailureKind } from './failure.ts'
 import { summarizeContention } from './contention.ts'
@@ -142,9 +144,16 @@ export function harnessHealth(days = HEALTH_DEFAULT_DAYS, database: Database = d
         WHERE confinement IS NOT NULL AND datetime(started_at) >= datetime(?)`,
     ).all(from) as { confinement: string | null }[])
       .map((row) => parseConfinement(row.confinement)),
-  ) : { lock_holder: 0, landing: 0, unattributed: 0 }
+  ) : emptyAttribution()
   const classesWithAttribution = classes.map((row) =>
-    row.kind === 'escaped' ? { ...row, attribution } : row)
+    row.kind === 'escaped'
+      ? {
+          ...row,
+          attribution: Object.fromEntries(
+            AttributionKindSchema.options.map((kind) => [kind, attribution[kind]]),
+          ) as typeof attribution,
+        }
+      : row)
 
   return HarnessHealthSchema.parse({
     header: 'Harness health only — never routing or scoring evidence. Confinement clears are reclassify audit rows with cleared:true; landing refusals are reported separately. Contention is waits, refusals and invalidations on shared resources — never routing evidence.',
