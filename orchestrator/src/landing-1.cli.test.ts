@@ -466,6 +466,34 @@ test('only bun\'s complete timeout line reports machine load', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  for (const refusal of ['authorization', 'gate'] as const) {
+    test(`${refusal} refusal after checkpoint squash restores the original tip and index`, async () => {
+      const branch = `checkpoint-${refusal}`
+      const { repo, trees } = repoWithBranches([branch])
+      const tree = trees[branch]!
+      writeFileSync(join(tree, `${branch}.txt`), 'checkpoint delta\n')
+      g(tree, 'add', `${branch}.txt`)
+      g(tree, 'commit', '-m', `DEV-374 checkpoint run 99 #1`)
+      writeFileSync(join(tree, 'authored.txt'), 'authored delta\n')
+      g(tree, 'add', 'authored.txt')
+      g(tree, 'commit', '-m', 'DEV-374 authored work')
+      const before = g(tree, 'rev-parse', 'HEAD')
+      const indexBefore = g(tree, 'write-tree')
+      upsertProject({ name: `landing-${branch}`, path: repo,
+        settings: { trunk: 'main', gate: refusal === 'gate' ? 'false' : 'true' } })
+      try {
+        const child = childLand(repo, branch, refusal === 'authorization' ? { unreviewed: null } : {})
+        expect(await child.exited).not.toBe(0)
+        expect(g(tree, 'rev-parse', 'HEAD')).toBe(before)
+        expect(g(repo, 'rev-parse', branch)).toBe(before)
+        expect(g(tree, 'write-tree')).toBe(indexBefore)
+        const error = await new Response(child.stderr).text()
+        expect(error).toContain(`restored branch tip ${before}`)
+        expect(error).toContain('index to the pre-squash state')
+      } finally { rmSync(repo, { recursive: true, force: true }) }
+    })
+  }
+
   test('a buried coloured bun timeout failure is repeated with machine load and complete output path', async () => {
     const { repo } = repoWithBranches(['timeout-summary'])
     const name = 'deeply buried coloured timeout test'

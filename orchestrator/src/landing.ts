@@ -650,6 +650,58 @@ function amendLandingMessage(
 
 const CHECKPOINT_SUBJECT = /^[A-Z]+-\d+ checkpoint run \d+ #\d+$/
 
+type LandingState = { tip: string; branch: string; indexPath: string; indexBackup: string | null }
+
+function captureLandingState(
+  worktree: string, guard?: SharedRefGuardEnvironment,
+): LandingState {
+  const tip = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'], guard)
+  const branch = git(worktree, ['symbolic-ref', '--short', 'HEAD'], guard)
+  const gitDir = git(worktree, ['rev-parse', '--path-format=absolute', '--git-dir'], guard)
+  const indexPath = join(gitDir, 'index')
+  const indexBackup = existsSync(indexPath)
+    ? `${indexPath}.orch-pre-squash-${process.pid}-${randomUUID()}`
+    : null
+  if (indexBackup) copyFileSync(indexPath, indexBackup)
+  return { tip, branch, indexPath, indexBackup }
+}
+
+function discardLandingState(state: LandingState): void {
+  if (state.indexBackup) rmSync(state.indexBackup, { force: true })
+}
+
+function restoreLandingState(
+  worktree: string, state: LandingState, cause: unknown,
+  guard?: SharedRefGuardEnvironment,
+): Error {
+  const detail = cause instanceof Error ? cause.message : String(cause)
+  try {
+    gitOk(worktree, ['cherry-pick', '--abort'], guard)
+    gitOk(worktree, ['rebase', '--abort'], guard)
+    const head = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'], guard)
+    if (head !== state.tip) git(worktree, ['reset', '--keep', state.tip], guard)
+    git(worktree, ['checkout', state.tip, '--', '.'], guard)
+    git(worktree, ['update-ref', `refs/heads/${state.branch}`, state.tip], guard)
+    git(worktree, ['checkout', state.branch], guard)
+    if (state.indexBackup && existsSync(state.indexBackup)) {
+      copyFileSync(state.indexBackup, state.indexPath)
+    }
+  } catch (restoreError) {
+    return namedError(
+      `${detail}\nrestore after failed landing also failed: ${String(restoreError)}`,
+      INVARIANT_FAILED_LANDING,
+      `git -C ${shellQuote(worktree)} reset --hard ${state.tip}`,
+    )
+  } finally {
+    discardLandingState(state)
+  }
+  return namedError(
+    `${detail}\nrestored branch tip ${state.tip} and index to the pre-squash state`,
+    INVARIANT_FAILED_LANDING,
+    `git -C ${shellQuote(worktree)} reset --hard ${state.tip}`,
+  )
+}
+
 /** Fold checkpoint deltas into the next authored commit, retaining a trailing checkpoint. */
 export function squashCheckpointCommits(
   worktree: string, trunkOid: string, guard?: SharedRefGuardEnvironment,
@@ -659,21 +711,27 @@ export function squashCheckpointCommits(
   const subjects = commits.map((commit) =>
     git(worktree, ['show', '-s', '--format=%s', commit], guard))
   if (!subjects.some((subject) => CHECKPOINT_SUBJECT.test(subject))) return false
-  git(worktree, ['reset', '--hard', trunkOid], guard)
-  let pendingCheckpoint: string | null = null
-  for (let i = 0; i < commits.length; i++) {
-    const commit = commits[i]!
-    const checkpoint = CHECKPOINT_SUBJECT.test(subjects[i]!)
-    git(worktree, ['cherry-pick', '--no-commit', commit], guard)
-    if (checkpoint) {
-      pendingCheckpoint = commit
-      continue
+  const original = captureLandingState(worktree, guard)
+  try {
+    git(worktree, ['reset', '--hard', trunkOid], guard)
+    let pendingCheckpoint: string | null = null
+    for (let i = 0; i < commits.length; i++) {
+      const commit = commits[i]!
+      const checkpoint = CHECKPOINT_SUBJECT.test(subjects[i]!)
+      git(worktree, ['cherry-pick', '--no-commit', commit], guard)
+      if (checkpoint) {
+        pendingCheckpoint = commit
+        continue
+      }
+      git(worktree, ['commit', '-C', commit], guard)
+      pendingCheckpoint = null
     }
-    git(worktree, ['commit', '-C', commit], guard)
-    pendingCheckpoint = null
+    if (pendingCheckpoint) git(worktree, ['commit', '-C', pendingCheckpoint], guard)
+    discardLandingState(original)
+    return true
+  } catch (error) {
+    throw restoreLandingState(worktree, original, error, guard)
   }
-  if (pendingCheckpoint) git(worktree, ['commit', '-C', pendingCheckpoint], guard)
-  return true
 }
 
 function rebaseInProgress(worktree: string, guard?: SharedRefGuardEnvironment): boolean {
@@ -1331,7 +1389,9 @@ function performLand(
     assertMainCheckoutOnTrunk(repoRoot, trunk)
     landingOrder('preflight')
     const recordedTrunk = trunkCommit(repoRoot, trunk, guard)
-    if (!options.keepCheckpoints) squashCheckpointCommits(worktree, recordedTrunk, guard)
+    const original = captureLandingState(worktree, guard)
+    try {
+      if (!options.keepCheckpoints) squashCheckpointCommits(worktree, recordedTrunk, guard)
     // A message-only amend changes the commit hash. The gate must run on the
     // commit that becomes trunk, so the message is rewritten before rebase.
     if (options.message !== undefined) amendLandingMessage(worktree, options.message, guard)
@@ -1398,6 +1458,11 @@ function performLand(
       )
       gatedTrunk = outcome.currentTrunk
       tip = rebaseAndGate(project, repoRoot, worktree, branch, trunk, gatedTrunk, guard)
+    }
+    } catch (error) {
+      throw restoreLandingState(worktree, original, error, guard)
+    } finally {
+      discardLandingState(original)
     }
   }, timeoutMs)
 }
@@ -2292,10 +2357,7 @@ function assertEnqueuePreconditions(
   const worktree = worktreesForBranch(repoRoot, branch).find((path) => existsSync(path))
   if (!worktree) return null
   assertLandingWorktreeReady(worktree, branch)
-  if (options.unreviewed !== undefined) return null
-  if (!trunk || !gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${trunk}`])) return null
-  const tip = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'])
-  return authorizeLanding(project, repoRoot, worktree, branch, tip, trunk, options.runId, options.unreviewed)
+  return null
 }
 
 export function drainQueue(
@@ -2391,9 +2453,8 @@ export function land(
 ): string {
   writableDb()
   const { project, repoRoot } = registeredProject(cwd)
-  let preauthorization: ReturnType<typeof authorizeLanding> | null
   try {
-    preauthorization = assertEnqueuePreconditions(repoRoot, project, branch, options)
+    assertEnqueuePreconditions(repoRoot, project, branch, options)
   } catch (error) {
     recordRefusedLanding(project, branch, error)
     throw error
@@ -2418,9 +2479,6 @@ export function land(
         ...(options.keepCheckpoints ? { keepCheckpoints: true } : {}),
       }]),
     ) as { id: number }
-    for (const reviewId of preauthorization?.validReviewIds ?? []) {
-      db().query('UPDATE review SET outdated_at=NULL, outdated_reason=NULL WHERE id=?').run(reviewId)
-    }
     return row
   })
   const ahead = queuedLandings(project.name).filter((row) => row.id < landing.id).length
