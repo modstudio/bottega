@@ -11,6 +11,38 @@ describe('review-lens-inline has no checkout', () => {
     expect(noRepoIsolatePath(42, ownedRuns).startsWith(tmpdir())).toBe(false)
   })
 
+  test('summarize runs under srt from an unregistered directory', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'orch-unregistered-summary-'))
+    const script = join(dir, 'unregistered-summary-worker.ts')
+    writeFileSync(script, `console.log(JSON.stringify({ type: 'result', subtype: 'success', result: 'summary from anywhere' }))\n`)
+    const agent = AGENTS.grok!
+    const original = { bin: agent.bin, argv: agent.argv }
+    const oldSandbox = process.env.ORCH_SANDBOX
+    const oldDepth = process.env.ORCH_DEPTH
+    try {
+      agent.bin = process.execPath
+      agent.argv = () => [script]
+      delete process.env.ORCH_SANDBOX
+      process.env.ORCH_DEPTH = '0'
+      const result = await runJob({
+        job: 'summarize', prompt: 'summarize inline context', cwd,
+        agent: 'grok', noFailover: true,
+      })
+      expect(result.output).toBe('summary from anywhere')
+      expect(db().query('SELECT sandbox FROM run WHERE id=?').get(result.id))
+        .toEqual({ sandbox: 'srt' })
+    } finally {
+      agent.bin = original.bin
+      agent.argv = original.argv
+      if (oldSandbox === undefined) delete process.env.ORCH_SANDBOX
+      else process.env.ORCH_SANDBOX = oldSandbox
+      if (oldDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = oldDepth
+      rmSync(cwd, { recursive: true, force: true })
+      rmSync(script, { force: true })
+    }
+  })
+
   test('a resumed findings turn records its review against the root run', async () => {
     const agent = AGENTS.codex!
     const original = {

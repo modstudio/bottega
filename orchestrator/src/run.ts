@@ -583,8 +583,9 @@ function probeRequestedMcp(mcp: McpRequest | undefined, agent: string, cwd: stri
 
 /**
  * Refuse a --mcp dispatch that routing would send to an agent whose attach
- * we can prove failed. Cwd-discovered repository MCP is deferred until the
- * worker tree exists, but the vendor process still never starts on refusal.
+ * we can prove failed. No-repo MCP and cwd-discovered repository MCP are
+ * deferred until the isolate exists, but the vendor process still never
+ * starts on refusal.
  *
  * Consults pick() for who will actually run. An unpinned job that prefers
  * Codex is not refused because grok happens to be eligible; a pinned Codex
@@ -615,7 +616,7 @@ export function preflightMcp(opts: {
     opts.lens,
   )
   const selected = AGENTS[name]!
-  if (selected.caps.discoversMcpFromCwd && job(opts.job).needs.readsRepo) {
+  if (!job(opts.job).needs.readsRepo || selected.caps.discoversMcpFromCwd) {
     return
   }
   const connection = probeRequestedMcp(mode, name, opts.cwd)
@@ -2623,6 +2624,7 @@ export async function run(opts: {
       writesRepo: writesJob,
       worktree: worktree?.path ?? isolatedCwd,
       runsDir: sandboxRunDir,
+      scratchDir,
       project: projectAt(callerCwd),
       readonlyNotes: toolFor(callerCwd)?.readonly_notes,
       override: process.env.ORCH_SANDBOX,

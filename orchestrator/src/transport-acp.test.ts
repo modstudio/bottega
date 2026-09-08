@@ -258,7 +258,7 @@ describe('ACP client-served fs is confined to the worktree', () => {
   test('the grok leader socket is the only socket added to the srt profile', () => {
     const profile = {
       network: { allowedDomains: [], deniedDomains: [], allowUnixSockets: [], allowLocalBinding: true },
-      filesystem: { denyRead: [], allowRead: ['/tree'], allowWrite: ['/run'], denyWrite: [] },
+      filesystem: { denyRead: [], allowWithinDeny: ['/tree'], allowWrite: ['/run'], denyWrite: [] },
     }
     const confined = acpSandboxProfile(profile, '/run/grok.leader.sock')
     expect(confined.network.allowUnixSockets).toEqual(['/run/grok.leader.sock'])

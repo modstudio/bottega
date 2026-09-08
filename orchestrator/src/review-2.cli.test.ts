@@ -648,6 +648,37 @@ printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"l
     }
   })
 
+  test('orch do defers a no-repo Grok MCP doctor to its isolate', () => {
+    const cwd = realpathSync(dir)
+    upsertProject({ name: 'fixture-project', path: cwd, settings: {} })
+    const binDir = join(dir, 'no-repo-production-preflight-bin')
+    mkdirSync(binDir, { recursive: true })
+    writeFileSync(join(binDir, 'grok'), `#!/bin/sh
+if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
+  printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"label":"folder untrusted","passed":false,"detail":"repo-local server not started"}]}]}'
+  exit 0
+fi
+exit 99
+`)
+    chmodSync(join(binDir, 'grok'), 0o755)
+    const CLI = new URL('cli.ts', import.meta.url).pathname
+    const result = Bun.spawnSync([
+      process.execPath, CLI, 'do', 'mcp-query', 'query the server', '--mcp', '--agent', 'grok',
+    ], {
+      cwd,
+      env: {
+        ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+        CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+        PATH: `${binDir}:${process.env.PATH ?? ''}`,
+      },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(result.exitCode, result.stderr.toString()).toBe(0)
+    const id = Number(result.stdout.toString().trim())
+    expect(id).toBeGreaterThan(0)
+    expect(db().query('SELECT job FROM run WHERE id=?').get(id)).toEqual({ job: 'mcp-query' })
+  })
+
   test('preflightMcp dispatches from a register-shaped legacy row with declared MCP settings', () => {
     const cwd = dir
     upsertProject({

@@ -17,7 +17,8 @@ export type SandboxRuntimeConfig = {
   }
   filesystem: {
     denyRead: string[]
-    allowRead: string[]
+    /** Paths allowed back inside denyRead entries; reads are otherwise allow-by-default. */
+    allowWithinDeny: string[]
     allowWrite: string[]
     denyWrite: string[]
   }
@@ -49,7 +50,8 @@ function expandHome(path: string): string {
   return path
 }
 
-export function resolveSecretPaths(project: Project): string[] {
+export function resolveSecretPaths(project: Project | null): string[] {
+  if (!project) return []
   return (project.settings.secretPaths ?? []).map((entry) => {
     const expanded = expandHome(entry)
     return isAbsolute(expanded) ? resolve(expanded) : resolve(project.path, expanded)
@@ -96,7 +98,8 @@ function localHost(baseUrl: string): string[] {
 export function readonlyLensProfile(input: {
   worktree: string
   runsDir: string
-  project: Project
+  scratchDir?: string
+  project: Project | null
   agent: string
   path?: string
   localBaseUrl?: string
@@ -110,6 +113,7 @@ export function readonlyLensProfile(input: {
     : input.agent === 'qwen-local' ? localHost(input.localBaseUrl ?? '') : []
   const worktree = resolve(input.worktree)
   const runsDir = resolve(input.runsDir)
+  const scratchDir = input.scratchDir ? resolve(input.scratchDir) : null
   const protectedDenies = [
     ...READONLY_LENS_DENY_PATHS.map(expandHome).map((path) => resolve(path)),
     ...resolveSecretPaths(input.project),
@@ -144,7 +148,9 @@ export function readonlyLensProfile(input: {
     process.execPath,
     ROOT,
   ])]
-  const allowRead = candidateAllows.filter((allowed) =>
+  // SRT reads are allow-by-default. This list only carves paths back out of
+  // denyRead; it is not, and must not be read as, a read confinement boundary.
+  const allowWithinDeny = candidateAllows.filter((allowed) =>
     !protectedDenies.some((denied) => isAtOrBelow(allowed, denied)))
   return {
     network: {
@@ -164,8 +170,8 @@ export function readonlyLensProfile(input: {
         ...protectedDenies,
         ...READONLY_LENS_DENY_SOCKETS,
       ],
-      allowRead,
-      allowWrite: [worktree, runsDir],
+      allowWithinDeny,
+      allowWrite: [...new Set([worktree, runsDir, ...(scratchDir ? [scratchDir] : [])])],
       denyWrite: [],
     },
   }
@@ -191,6 +197,7 @@ export function selectReadonlySandbox(input: {
   writesRepo: boolean
   worktree: string | null
   runsDir: string
+  scratchDir?: string
   project: Project | null
   readonlyNotes?: string
   override?: string
@@ -221,12 +228,6 @@ export function selectReadonlySandbox(input: {
       'the sandbox root is missing',
     )
   }
-  if (!input.project) {
-    throw new Error(
-      `${input.readsRepo ? 'readonly repository' : 'no-repo'} sandbox refusal: ` +
-      'the launch directory does not resolve to a registered project',
-    )
-  }
   if (input.readsRepo && readonlyNeedsDocker(input.readonlyNotes)) {
     return {
       sandbox: 'host', profile: null,
@@ -236,7 +237,8 @@ export function selectReadonlySandbox(input: {
   return {
     sandbox: 'srt', reason: null,
     profile: readonlyLensProfile({
-      worktree: input.worktree, runsDir: input.runsDir, project: input.project,
+      worktree: input.worktree, runsDir: input.runsDir, scratchDir: input.scratchDir,
+      project: input.project,
       agent: input.agent, path: input.path, localBaseUrl: input.localBaseUrl,
       mcpEndpoint: input.mcpEndpoint,
     }),
@@ -254,7 +256,17 @@ export function srtLaunchArgv(
   bin: string,
   argv: string[],
 ): string[] {
-  writeFileSync(settingsPath, JSON.stringify(profile, null, 2))
+  const { allowWithinDeny, ...filesystem } = profile.filesystem
+  // `allowRead` is SRT's external name for exceptions to denyRead. Keep the
+  // emitted settings byte-for-byte equivalent while the orch profile names
+  // the field for what it actually does.
+  const settings = { ...profile, filesystem: {
+    denyRead: filesystem.denyRead,
+    allowRead: allowWithinDeny,
+    allowWrite: filesystem.allowWrite,
+    denyWrite: filesystem.denyWrite,
+  } }
+  writeFileSync(settingsPath, JSON.stringify(settings, null, 2))
   return [SRT_BIN, '--settings', settingsPath, '--', bin, ...argv]
 }
 

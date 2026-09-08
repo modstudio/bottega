@@ -53,7 +53,7 @@ describe('readonly-lens sandbox profile', () => {
       '/var/run/docker.sock',
       '/run/docker.sock',
     ])
-    expect(profile.filesystem.allowRead).toEqual([
+    expect(profile.filesystem.allowWithinDeny).toEqual([
       '/runs/tree', '/runs/evidence', '/opt/toolchain/bin', '/usr/bin',
       '/projects/fixture/node_modules', join(homedir(), '.claude.json'),
       process.execPath,
@@ -76,7 +76,7 @@ describe('readonly-lens sandbox profile', () => {
       path: '/usr/bin', nodeModuleLinks: [],
     })
     expect(profile.filesystem.denyRead).toContain(claudeConfig)
-    expect(profile.filesystem.allowRead).not.toContain(claudeConfig)
+    expect(profile.filesystem.allowWithinDeny).not.toContain(claudeConfig)
   })
 
   test('a denied parent removes an allowed linked dependency child', () => {
@@ -85,7 +85,7 @@ describe('readonly-lens sandbox profile', () => {
       project: fixtureProject({ secretPaths: ['/projects/fixture/dependencies'] }),
       path: '/usr/bin', nodeModuleLinks: ['/projects/fixture/dependencies/node_modules'],
     })
-    expect(profile.filesystem.allowRead).not.toContain('/projects/fixture/dependencies/node_modules')
+    expect(profile.filesystem.allowWithinDeny).not.toContain('/projects/fixture/dependencies/node_modules')
   })
 
   test('a registered secret inside the worktree refuses the profile', () => {
@@ -113,7 +113,15 @@ describe('readonly-lens sandbox profile', () => {
     })
     const argv = srtLaunchArgv(profile, path, 'grok', ['--flag'])
     expect(argv.slice(-3)).toEqual(['--', 'grok', '--flag'])
-    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(profile)
+    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({
+      ...profile,
+      filesystem: {
+        denyRead: profile.filesystem.denyRead,
+        allowRead: profile.filesystem.allowWithinDeny,
+        allowWrite: profile.filesystem.allowWrite,
+        denyWrite: profile.filesystem.denyWrite,
+      },
+    })
     rmSync(dir, { recursive: true, force: true })
   })
 
@@ -137,12 +145,13 @@ describe('readonly-lens sandbox profile', () => {
     const selected = selectReadonlySandbox({
       agent: 'grok', readsRepo: false, writesRepo: false,
       worktree: '/runs/isolates/42', runsDir: '/runs/sandbox-42',
+      scratchDir: '/runs/42/scratch',
       project: fixtureProject(), path: '/usr/bin',
     })
     expect(selected.sandbox).toBe('srt')
-    expect(selected.profile?.filesystem.allowRead).toContain('/runs/isolates/42')
+    expect(selected.profile?.filesystem.allowWithinDeny).toContain('/runs/isolates/42')
     expect(selected.profile?.filesystem.allowWrite).toEqual([
-      '/runs/isolates/42', '/runs/sandbox-42',
+      '/runs/isolates/42', '/runs/sandbox-42', '/runs/42/scratch',
     ])
   })
 
@@ -164,18 +173,18 @@ describe('readonly-lens sandbox profile', () => {
     })
   })
 
-  test('a no-repo sandbox never silently falls back when its root or project is missing', () => {
+  test('a no-repo sandbox requires its root but not a registered project', () => {
     expect(() => selectReadonlySandbox({
       agent: 'grok', readsRepo: false, writesRepo: false,
       worktree: null, runsDir: '/runs/sandbox-42', project: fixtureProject(),
     })).toThrow('no-repo sandbox refusal: the sandbox root is missing')
-    expect(() => selectReadonlySandbox({
+    expect(selectReadonlySandbox({
       agent: 'grok', readsRepo: false, writesRepo: false,
       worktree: '/runs/isolates/42', runsDir: '/runs/sandbox-42', project: null,
-    })).toThrow('the launch directory does not resolve to a registered project')
+    }).sandbox).toBe('srt')
   })
 
-  test('an srt profile rooted at an isolate cannot read an outside path', () => {
+  test('an srt profile allows reads outside the isolate unless the path is explicitly denied', () => {
     const parent = mkdtempSync(join(tmpdir(), 'orch-no-repo-boundary-'))
     const isolate = join(parent, 'isolate')
     const evidence = join(parent, 'evidence')
@@ -189,7 +198,7 @@ describe('readonly-lens sandbox profile', () => {
     try {
       const profile = readonlyLensProfile({
         worktree: isolate, runsDir: evidence, agent: 'grok',
-        project: fixtureProject({ secretPaths: [outside] }),
+        project: fixtureProject(),
         path: '/bin:/usr/bin', nodeModuleLinks: [],
       })
       const readableConfig = Bun.spawnSync(srtLaunchArgv(
@@ -201,8 +210,35 @@ describe('readonly-lens sandbox profile', () => {
         profile, join(evidence, 'settings.json'), '/bin/sh', ['-c', `cat ${JSON.stringify(outside)}`],
       ), { stdout: 'pipe', stderr: 'pipe' })
       expect(existsSync(SRT_BIN)).toBe(true)
-      expect(launched.exitCode).not.toBe(0)
-      expect(launched.stdout.toString()).not.toContain('secret outside the isolate')
+      expect(launched.exitCode, launched.stderr.toString()).toBe(0)
+      expect(launched.stdout.toString()).toContain('secret outside the isolate')
+    } finally {
+      rmSync(parent, { recursive: true, force: true })
+    }
+  })
+
+  test('an srt profile lets a run write its contracted scratch reply', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'orch-srt-reply-'))
+    const isolate = join(parent, 'isolate')
+    const evidence = join(parent, 'sandbox')
+    const scratch = join(parent, 'run', 'scratch')
+    mkdirSync(isolate)
+    mkdirSync(evidence)
+    mkdirSync(scratch, { recursive: true })
+    try {
+      const profile = readonlyLensProfile({
+        worktree: isolate, runsDir: evidence, scratchDir: scratch,
+        agent: 'grok', project: null, path: '/bin:/usr/bin', nodeModuleLinks: [],
+      })
+      expect(profile.filesystem.allowWrite).toContain(scratch)
+      const reply = join(scratch, 'reply.json')
+      const launched = Bun.spawnSync(srtLaunchArgv(
+        profile, join(evidence, 'settings.json'), '/bin/sh',
+        ['-c', `printf '{"status":"done"}' > ${JSON.stringify(reply)}`],
+      ), { stdout: 'pipe', stderr: 'pipe' })
+      expect(existsSync(SRT_BIN)).toBe(true)
+      expect(launched.exitCode, launched.stderr.toString()).toBe(0)
+      expect(readFileSync(reply, 'utf8')).toBe('{"status":"done"}')
     } finally {
       rmSync(parent, { recursive: true, force: true })
     }
