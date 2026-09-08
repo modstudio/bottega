@@ -25,6 +25,28 @@ describe('suggestion notes', () => {
     expect(result.stderr.toString()).not.toContain('curator')
   })
 
+  test('bare help is a subcommand only, never the note payload', () => {
+    const path = join(scratch, 'note-help.db')
+    bootstrapFixtureStore(path)
+    const hub = new URL('./cli.ts', import.meta.url).pathname
+    const env = {
+      ...process.env, HUB_DB: path,
+      HUB_ORCH: new URL('../test/project-register.ts', import.meta.url).pathname,
+    }
+    const payload = Bun.spawnSync([process.execPath, hub, 'note', 'new', 'help', '--new'], {
+      env, stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(payload.exitCode, payload.stderr.toString()).toBe(0)
+    const stored = new Database(path, { readonly: true })
+    expect(stored.query<{ text: string }, []>('SELECT text FROM note').get()).toEqual({ text: 'help' })
+    stored.close()
+    const command = Bun.spawnSync([process.execPath, hub, 'note', 'help'], {
+      env, stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(command.exitCode).toBe(0)
+    expect(command.stdout.toString()).toContain('hub note new')
+  })
+
   test('create derives cwd, file content, run and session anchors', () => {
     const file = join(scratch, 'anchor.ts')
     writeFileSync(file, 'first\nanchored line\n')

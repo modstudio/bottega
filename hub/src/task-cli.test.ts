@@ -519,7 +519,7 @@ describe('task CLI help', () => {
     d.close()
   })
 
-  test('a bare help token remains help when it occupies the comment body slot', () => {
+  test('a help-shaped flag remains payload when it occupies the comment body slot', () => {
     const helpDatabase = join(dir, 'comment-bare-help.db')
     migrateAt(helpDatabase)
     const seed = hubAt(helpDatabase, 'task', 'new', '--project', 'alpha',
@@ -529,10 +529,10 @@ describe('task CLI help', () => {
     const result = hubAt(helpDatabase, 'task', 'comment', seed.stdout, '--help')
     expect(result.exitCode).toBe(0)
     expect(result.stderr).toBe('')
-    expect(result.stdout).toContain('hub task comment')
+    expect(result.stdout).toContain('commented')
 
     const d = new Database(helpDatabase, { readonly: true })
-    expect(d.query('SELECT count(*) AS count FROM task_comment').get()).toEqual({ count: 0 })
+    expect(d.query('SELECT body FROM task_comment').get()).toEqual({ body: '--help' })
     d.close()
   })
 

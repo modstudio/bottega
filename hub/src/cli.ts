@@ -79,11 +79,6 @@ const taskHelpRequested = () => {
   const positionalStart = hasAction ? 3 : 2
   const shape = taskCommandShapes.get(command ?? '')
   const positionalCount = shape?.positionalCount ?? 0
-  const positionals = argv.slice(positionalStart, positionalStart + positionalCount)
-  // A bare help token is help even where a positional is expected. Other
-  // dash-leading positional values are data and must not affect flag scanning.
-  if (positionals.some(isHelpToken)) return true
-
   let expectingValue = false
   for (const token of argv.slice(positionalStart + positionalCount)) {
     if (expectingValue) {
@@ -97,7 +92,18 @@ const taskHelpRequested = () => {
 }
 const hubHelpRequested = () => {
   if (cmd === 'task') return taskHelpRequested()
-  return argv.some((token) => token === '--help' || token === '-h' || token === 'help')
+  if (isHelpToken(cmd) || argv[1] === 'help') return true
+  const valueFlags = new Set([
+    '--area', '--hours', '--only', '--parent', '--port', '--project', '--reason', '--role',
+    '--same-as', '--session', '--since', '--status', '--title', '--body', '--body-file', '--version',
+  ])
+  let expectingValue = false
+  for (const token of argv.slice(1)) {
+    if (expectingValue) { expectingValue = false; continue }
+    if (token === '--help' || token === '-h') return true
+    expectingValue = valueFlags.has(token)
+  }
+  return false
 }
 
 const TASK_USAGE = `hub task new --project X --title "..." [--status Y] [--parent KEY]
