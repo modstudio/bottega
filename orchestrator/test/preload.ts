@@ -62,6 +62,24 @@ function assertOwnedStore(): void {
 
 assertOwnedStore()
 bootstrapFixtureStore(template)
+copyFileSync(template, store)
+{
+  const { recordAgentProbe, refreshAgents } = await import('../src/agents.ts')
+  const fileProbe = (harness: string) => ({
+    harness, ok: true,
+    reply: { ok: true, output: 'ok' },
+    tool: { ok: true, output: 'REGISTRATION_PROBE_FILE_OK', toolEvents: 1, statuses: ['completed'] },
+    schema: { ok: true, output: '{"status":"ok"}' },
+    file: { ok: true, output: '{"status":"ok"}' },
+    contextTokens: null as number | null,
+    contextSource: 'declared' as const,
+  })
+  recordAgentProbe('codex', fileProbe('codex'))
+  recordAgentProbe('grok', fileProbe('grok'))
+  closeDatabaseForFixture()
+  copyFileSync(store, template)
+  refreshAgents()
+}
 
 const { db } = await import('../src/db.ts')
 

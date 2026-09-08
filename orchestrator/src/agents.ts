@@ -1104,6 +1104,11 @@ export function recordAgentProbe(name: string, result: RegistrationProbeResult):
 export async function probeAgent(name: string): Promise<RegistrationProbeResult> {
   const row = agentRows().find((candidate) => candidate.name === name)
   if (!row) throw new Error(`unknown agent "${name}"`)
+  const priorCaps = JSON.parse(row.caps) as Caps
+  const previous = row.probe_result ? JSON.parse(row.probe_result) : null
+  if (previous?.ok === true && previous?.file?.ok === true && priorCaps.replyFile === true) {
+    return previous as RegistrationProbeResult
+  }
   if (!HARNESSES.includes(row.harness as Harness)) {
     throw new Error(`legacy agent "${name}" has no runnable harness`)
   }
@@ -1374,6 +1379,14 @@ export function resetLocalHealth() {
  * to be refused as "not installed", which sends you looking for a missing
  * binary that is sitting right there on PATH.
  */
+export function fileContractProbeReason(name: string): string {
+  return `registration probe predates the file contract; run orch agent probe ${name}`
+}
+
+export function predatesFileContract(agent: Agent): boolean {
+  return Boolean(agent.probedAt) && agent.caps.replyFile !== true && agent.probePassed !== false
+}
+
 export function unavailableReason(name: string): string | null {
   const a = AGENTS[name]
   if (!a) return 'unknown agent'

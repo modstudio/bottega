@@ -82,11 +82,14 @@ let addAgent!: typeof import('./agents.ts').addAgent
 let setAgent!: typeof import('./agents.ts').setAgent
 let removeAgent!: typeof import('./agents.ts').removeAgent
 let probeAgent!: typeof import('./agents.ts').probeAgent
+let fileContractProbeReason!: typeof import('./agents.ts').fileContractProbeReason
+let predatesFileContract!: typeof import('./agents.ts').predatesFileContract
 async function loadAgents() {
   agentsModule ??= await import('./agents.ts')
   ;({ AGENTS, available, installed, ensureLocalHealth, unavailableReason, tryWake,
       wakeStatus, lastWakeAttempt, readStrictCodexSchema, resumePromptByteLimit,
-      cliVersion, versionBelow, agentRows, addAgent, setAgent, removeAgent, probeAgent } = agentsModule)
+      cliVersion, versionBelow, agentRows, addAgent, setAgent, removeAgent, probeAgent,
+      fileContractProbeReason, predatesFileContract } = agentsModule)
 }
 let candidates!: typeof import('./route.ts').candidates
 let pick!: typeof import('./route.ts').pick
@@ -6858,6 +6861,9 @@ switch (cmd) {
         console.log(
           `  WARNING: ${a.name} ${version.parsed} is below minimum ${a.minimumCliVersion}`,
         )
+      }
+      if (predatesFileContract(a)) {
+        console.log(`  ${fileContractProbeReason(a.name)}`)
       }
     }
     const srtAgents = Object.values(AGENTS)

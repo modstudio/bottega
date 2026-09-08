@@ -3,7 +3,7 @@ import { rmSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { AGENTS, GENERIC_QUESTION_TOKENS, JOBS, LAND_PREAMBLE, NEEDS_HEALTH, OUTPUT_RESERVE, STALE_AFTER_MS, WAKE_COOLDOWN_MS, WORKER_PREAMBLE, addRun, available, candidates, classify, db, detectBlockers, dir, ensureLocalHealth, guide, isNonAnswer, jobTimeoutCeilingMinutes, localReachable, pick, replyFileInstruction, resetLocalHealth, runJob, score, strictCodexSchema, unavailableReason, upsertProject, wakeDecision, workerPreamble, workerResumeGuard } from '../test/fixture.ts'
-import { addAgent, agentRows, recordAgentProbe, registrationProbeReadsRepo, removeAgent, setAgent } from './agents.ts'
+import { addAgent, agentRows, probeAgent, recordAgentProbe, refreshAgents, registrationProbeReadsRepo, removeAgent, setAgent } from './agents.ts'
 
 describe('agent registry', () => {
   test('migration preserves the four historical names and capabilities', () => {
@@ -41,6 +41,52 @@ describe('agent registry', () => {
     expect(() => setAgent('new-local', { enabled: false })).toThrow('requires --reason')
     setAgent('new-local', { enabled: false, reason: 'retired in test' })
     expect(unavailableReason('new-local')).toContain('retired in test')
+  })
+
+  test('a migrated row without file.ok is ineligible for repository jobs until a real probe', async () => {
+    addAgent('migrated-file', {
+      harness: 'codex', backend: 'vendor', model: 'gpt-5.6-sol', contextTokens: 200_000,
+    })
+    db().query(
+      `UPDATE agent SET probed_at=?, probe_result=?, caps=? WHERE name=?`,
+    ).run(
+      '2026-09-07T00:00:00.000Z',
+      '{"source":"migrated verified capabilities"}',
+      JSON.stringify({
+        readsRepo: true, mcp: true, discoversMcpFromCwd: false, schema: true,
+        writesRepo: true, resumable: true, contextTokens: 200_000,
+      }),
+      'migrated-file',
+    )
+    refreshAgents()
+    const excluded = candidates('file-question').find((item) => item.agent === 'migrated-file')!
+    expect(excluded.eligible).toBe(false)
+    expect(excluded.why).toBe(
+      'registration probe predates the file contract; run orch agent probe migrated-file',
+    )
+    const cli = new URL('cli.ts', import.meta.url).pathname
+    const doctor = Bun.spawnSync([process.execPath, cli, 'doctor'], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(doctor.exitCode).toBe(0)
+    expect(doctor.stdout.toString()).toContain(
+      'registration probe predates the file contract; run orch agent probe migrated-file',
+    )
+    recordAgentProbe('migrated-file', {
+      harness: 'codex', ok: true,
+      reply: { ok: true, output: 'ok' },
+      tool: { ok: true, output: 'REGISTRATION_PROBE_FILE_OK', toolEvents: 1, statuses: ['completed'] },
+      schema: { ok: true, output: '{"status":"ok"}' },
+      file: { ok: true, output: '{"status":"ok"}' },
+      contextTokens: 200_000, contextSource: 'declared',
+    })
+    const eligible = candidates('file-question').find((item) => item.agent === 'migrated-file')!
+    expect(eligible.eligible).toBe(true)
+    const repeated = await probeAgent('migrated-file')
+    expect(repeated.ok).toBe(true)
+    expect(repeated.file?.ok).toBe(true)
+    removeAgent('migrated-file')
   })
 
   test('a harness that cannot write the reply file is ineligible', () => {

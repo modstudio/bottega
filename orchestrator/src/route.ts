@@ -1,5 +1,5 @@
 import { db, WEIGHT, FIDELITY_PENALTY, weigh } from './db.ts'
-import { AGENTS, unavailableReason } from './agents.ts'
+import { AGENTS, fileContractProbeReason, predatesFileContract, unavailableReason } from './agents.ts'
 import { job, JOBS } from './jobs.ts'
 import { COOLS_DOWN, NOT_EVIDENCE } from './failure.ts'
 import { reviewCalibration } from './review.ts'
@@ -564,6 +564,10 @@ export function candidates(
     else if (j.needs.readsRepo && !a.probedAt) {
       eligible = false
       why = 'unprobed agent is ineligible for repository jobs; run orch agent probe ' + name
+    }
+    else if (j.needs.readsRepo && predatesFileContract(a)) {
+      eligible = false
+      why = fileContractProbeReason(name)
     }
     else if (promptBytes > a.maxPromptBytes) {
       eligible = false
