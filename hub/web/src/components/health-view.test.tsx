@@ -16,6 +16,8 @@ test('Health view renders rows and a last-seen sparkline from a stubbed client p
     }],
     falseVerdicts: [{ kind: 'escaped', verdicts: 2, falseVerdicts: 1, rate: 0.5 }],
     landingRefusals: 3,
+    mcpProbeFailures: 0,
+    mcpUnprobed: 0,
     contention: { resources: [], sessions: [] },
   }} />)
   expect(html).toContain('interrupted')

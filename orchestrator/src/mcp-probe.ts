@@ -21,6 +21,10 @@ export type McpServerConfig = {
 
 const ALLOWED_EXTRA_SERVERS = new Set(['orch-ask', 'orch'])
 
+function namesSeenAt(cwd: string): string[] {
+  return [...new Set([...Object.keys(readMcpConfig(cwd)), ...ALLOWED_EXTRA_SERVERS])]
+}
+
 export function parseMcpConfig(source: string): Record<string, McpServerConfig> {
   let parsed: unknown
   try { parsed = JSON.parse(source) } catch { return {} }
@@ -187,9 +191,10 @@ export async function probeMcpServer(input: {
   wrap?: (command: string, args: string[]) => string[]
 }): Promise<McpProbeResult> {
   const started = Date.now()
+  const namesSeen = namesSeenAt(input.cwd)
   const fail = (error: string, tool = 'tools/list'): McpProbeResult => ({
     server: input.server, tool, ok: false, error, durationMs: Date.now() - started,
-    detail: null, namesSeen: [input.server],
+    detail: null, namesSeen,
   })
   if (!input.config) return fail(`MCP server '${input.server}' is not in .mcp.json`)
   const initialize = {
@@ -230,7 +235,7 @@ export async function probeMcpServer(input: {
     error: null,
     durationMs: Date.now() - started,
     detail: `listed: ${listed.length} tools`,
-    namesSeen: [input.server],
+    namesSeen,
   }
   if (!input.probeTool) return result
   const call = {
@@ -272,12 +277,17 @@ export async function probeMcpServer(input: {
 }
 
 export function storedMcpProbe(result: McpProbeResult): string {
-  return JSON.stringify({
-    server: result.server,
-    tool: result.tool,
-    ok: result.ok ? 'ok' : 'err',
-    error: result.error,
-    duration: result.durationMs,
-    detail: result.detail,
-  })
+  return JSON.stringify(result)
+}
+
+export function parseMcpProbe(value: string | null | undefined): McpProbeResult | null {
+  if (!value) return null
+  try {
+    const parsed = JSON.parse(value) as McpProbeResult
+    if (typeof parsed?.ok !== 'boolean' || typeof parsed.server !== 'string') return null
+    if (!Array.isArray(parsed.namesSeen) || typeof parsed.durationMs !== 'number') return null
+    return parsed
+  } catch {
+    return null
+  }
 }

@@ -37,6 +37,8 @@ describe('harness health', () => {
     expect(report.falseVerdicts.find((row) => row.kind === 'escaped')).toMatchObject({ verdicts: 1, falseVerdicts: 1, rate: 1 })
     expect(report.falseVerdicts.find((row) => row.kind === 'harness')).toMatchObject({ verdicts: 1, falseVerdicts: 1, rate: 1 })
     expect(report.landingRefusals).toBe(1)
+    expect(report.mcpProbeFailures).toBe(0)
+    expect(report.mcpUnprobed).toBe(0)
     expect(report.flakes).toEqual([])
     expect(report.header).toContain('never routing or scoring evidence')
     expect(report.header).toContain('reclassify audit rows with cleared:true')
@@ -53,6 +55,8 @@ describe('harness health', () => {
     const output = JSON.parse(cli.stdout.toString())
     expect(output.classes.find((row: { kind: string }) => row.kind === 'interrupted').count).toBe(2)
     expect(output.landingRefusals).toBe(1)
+    expect(output.mcpProbeFailures).toBe(0)
+    expect(output.mcpUnprobed).toBe(0)
     expect(output.flakes).toEqual([])
   })
 
@@ -126,6 +130,45 @@ describe('harness health', () => {
     expect(cli.stdout.toString()).toContain('landed with post-step error')
     expect(cli.stdout.toString()).toContain('fixture DEV-373')
     expect(cli.stdout.toString()).toContain('hub migrate failed: stub-fail')
+  })
+
+  test('counts failed probes and --mcp runs that never stored a parseable probe', () => {
+    const now = new Date('2026-09-07T12:00:00.000Z')
+    const failed = addRun({
+      agent: 'grok', job: 'review-lens', status: 'failed', kind: 'harness',
+      startedAt: '2026-09-06T10:00:00.000Z',
+    })
+    const unprobed = addRun({
+      agent: 'codex', job: 'review-lens', status: 'ok',
+      startedAt: '2026-09-06T11:00:00.000Z',
+    })
+    const ok = addRun({
+      agent: 'grok', job: 'review-lens', status: 'ok',
+      startedAt: '2026-09-07T09:00:00.000Z',
+    })
+    const ignored = addRun({
+      agent: 'codex', job: 'file-question', status: 'ok',
+      startedAt: '2026-09-07T09:30:00.000Z',
+    })
+    db().query('UPDATE run SET mcp=1, mcp_probe=? WHERE id=?').run(JSON.stringify({
+      server: 'fixture', tool: 'tools/list', ok: false, error: 'unreachable',
+      durationMs: 12, detail: null, namesSeen: ['fixture', 'orch-ask', 'orch'],
+    }), failed)
+    db().query('UPDATE run SET mcp=1, mcp_probe=NULL WHERE id=?').run(unprobed)
+    db().query('UPDATE run SET mcp=2, mcp_probe=? WHERE id=?').run(JSON.stringify({
+      server: 'fixture', tool: 'tools/list', ok: true, error: null,
+      durationMs: 8, detail: 'listed: 1 tools', namesSeen: ['fixture', 'orch-ask', 'orch'],
+    }), ok)
+    db().query('UPDATE run SET mcp=0, mcp_probe=NULL WHERE id=?').run(ignored)
+    const report = harnessHealth(14, db(), now)
+    expect(report.mcpProbeFailures).toBe(1)
+    expect(report.mcpUnprobed).toBe(1)
+    const cli = Bun.spawnSync([
+      process.execPath, new URL('./cli.ts', import.meta.url).pathname, 'health', '--days', '14',
+    ], { env: process.env, stdout: 'pipe', stderr: 'pipe' })
+    expect(cli.exitCode, cli.stderr.toString()).toBe(0)
+    expect(cli.stdout.toString()).toContain('mcp probe failures')
+    expect(cli.stdout.toString()).toContain('mcp unprobed')
   })
 
   test('escaped class attribution counts every confinement event in the window', () => {

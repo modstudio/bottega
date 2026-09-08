@@ -25,7 +25,7 @@ const health = mock(async () => ({
   classes: [{ kind: 'interrupted', count: 2, totalTimeMs: 1_000, meanTimeMs: 500,
     firstSeen: '2026-09-01T00:00:00.000Z', lastSeen: '2026-09-02T00:00:00.000Z',
     clusters: [], sparkline: [{ day: '2026-09-02', count: 2 }] }],
-  falseVerdicts: [], landingRefusals: 1,
+  falseVerdicts: [], landingRefusals: 1, mcpProbeFailures: 0, mcpUnprobed: 0,
   contention: { resources: [], sessions: [] },
 }))
 

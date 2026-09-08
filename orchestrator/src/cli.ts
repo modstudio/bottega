@@ -6662,6 +6662,10 @@ switch (cmd) {
     }
     console.log(`landing refused`.padEnd(25) + String(report.landingRefusals).padStart(7) +
       '      -        -')
+    console.log(`mcp probe failures`.padEnd(25) + String(report.mcpProbeFailures).padStart(7) +
+      '      -        -')
+    console.log(`mcp unprobed`.padEnd(25) + String(report.mcpUnprobed).padStart(7) +
+      '      -        -')
     const { landingsWithPostStepError } = await import('./landing.ts')
     for (const row of landingsWithPostStepError()) {
       console.log(`landed with post-step error`.padEnd(25) + `${row.project} ${row.branch}`)

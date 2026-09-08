@@ -2567,19 +2567,21 @@ export async function run(opts: {
           probeTool,
           wrap,
         })
-        db().query('UPDATE run SET mcp_probe=? WHERE id=?').run(storedMcpProbe(probe), claim.id)
-        if (!probe.ok) {
+        const mismatched = wrongProjectReason(mcpServerName, probe.namesSeen)
+        const recorded = mismatched ? { ...probe, ok: false, error: mismatched } : probe
+        db().query('UPDATE run SET mcp_probe=? WHERE id=?').run(storedMcpProbe(recorded), claim.id)
+        if (!recorded.ok) {
           mcpConnection = {
-            server: mcpServerName, connected: false, error: probe.error,
-            namesSeen: probe.namesSeen,
+            server: mcpServerName, connected: false, error: recorded.error,
+            namesSeen: recorded.namesSeen,
           }
           db().query(
             `UPDATE run SET mcp_connected=0, mcp_error=? WHERE id=?`,
-          ).run(probe.error, claim.id)
+          ).run(recorded.error, claim.id)
           if (mcpMode === 'require') {
             const why =
               `MCP was requested, but server '${mcpServerName}' could not be attached` +
-              `${probe.error ? `: ${probe.error}` : '.'} The agent was not started.`
+              `${recorded.error ? `: ${recorded.error}` : '.'} The agent was not started.`
             db().query(
               `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
             ).run(why, Date.now() - started, claim.id)

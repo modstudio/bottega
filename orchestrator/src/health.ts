@@ -4,6 +4,7 @@ import { db } from './db.ts'
 import { clusterErrorText, FAILURE_KINDS, type FailureKind } from './failure.ts'
 import { summarizeContention } from './contention.ts'
 import { attributionCounts, parseConfinement } from './confinement.ts'
+import { parseMcpProbe } from './mcp-probe.ts'
 
 export const HEALTH_DEFAULT_DAYS = 14
 export const HEALTH_CLASSES = [...FAILURE_KINDS, 'stale', 'stopped'] as const
@@ -88,6 +89,22 @@ export function harnessHealth(days = HEALTH_DEFAULT_DAYS, database: Database = d
   const landingRefusals = (database.query(
     `SELECT COUNT(*) n FROM landing WHERE status='refused' AND datetime(started_at) >= datetime(?)`,
   ).get(from) as { n: number }).n
+  const mcpProbeColumn = database.query(
+    "SELECT 1 AS n FROM pragma_table_info('run') WHERE name='mcp_probe'",
+  ).get() as { n: number } | null
+  let mcpProbeFailures = 0
+  let mcpUnprobed = 0
+  if (mcpProbeColumn) {
+    const mcpRows = database.query(
+      `SELECT mcp_probe FROM run
+        WHERE mcp IN (1, 2) AND datetime(started_at) >= datetime(?)`,
+    ).all(from) as { mcp_probe: string | null }[]
+    for (const row of mcpRows) {
+      const probe = parseMcpProbe(row.mcp_probe)
+      if (!probe) mcpUnprobed++
+      else if (!probe.ok) mcpProbeFailures++
+    }
+  }
   const flakeTable = database.query(
     "SELECT 1 AS n FROM sqlite_master WHERE type='table' AND name='test_flake'",
   ).get() as { n: number } | null
@@ -131,7 +148,8 @@ export function harnessHealth(days = HEALTH_DEFAULT_DAYS, database: Database = d
 
   return HarnessHealthSchema.parse({
     header: 'Harness health only — never routing or scoring evidence. Confinement clears are reclassify audit rows with cleared:true; landing refusals are reported separately. Contention is waits, refusals and invalidations on shared resources — never routing evidence.',
-    days, from, classes: classesWithAttribution, falseVerdicts, landingRefusals, flakes,
+    days, from, classes: classesWithAttribution, falseVerdicts, landingRefusals,
+    mcpProbeFailures, mcpUnprobed, flakes,
     contention: summarizeContention(database, from),
   })
 }

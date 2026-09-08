@@ -5,6 +5,7 @@ import { FAILS_OVER } from './failure.ts'
 import { failureReason, outcomeOf } from './outcome.ts'
 import type { ObservedDeadRun } from './db.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES, visibleTranscriptText } from './result-output.ts'
+import { parseMcpProbe } from './mcp-probe.ts'
 
 export const COLLECTION_COMMANDS = new Set(['result', 'wait'])
 
@@ -130,19 +131,29 @@ function shellArg(value: string): string {
 function mcpNote(row: {
   agent: string; cwd: string | null; mcp: number | null; mcp_server: string | null
   mcp_connected: number | null; mcp_error: string | null
+  mcp_probe: string | null
 }): string {
   if (!row.mcp) return ''
   const source = row.mcp_server ?? 'project MCP'
-  if (row.mcp_connected === 1) return `\n  mcp:       ${source} connected`
-  if (row.mcp_connected === 0 && row.mcp_error?.startsWith('mirror:')) {
-    return `\n  mcp:       ${source} NOT CONNECTED — ${row.mcp_error}` +
+  let note = ''
+  if (row.mcp_connected === 1) note = `\n  mcp:       ${source} connected`
+  else if (row.mcp_connected === 0 && row.mcp_error?.startsWith('mirror:')) {
+    note = `\n  mcp:       ${source} NOT CONNECTED — ${row.mcp_error}` +
       '\n  MIRROR — not the live database'
+  } else {
+    const state = row.mcp_connected === 0 ? 'NOT CONNECTED' : 'UNVERIFIED'
+    note = `\n  mcp:       ${source} ${state}`
+    if (row.mcp_error) note += ` — ${row.mcp_error}`
   }
-  const state = row.mcp_connected === 0 ? 'NOT CONNECTED' : 'UNVERIFIED'
-  let note = `\n  mcp:       ${source} ${state}`
-  if (row.mcp_error) note += ` — ${row.mcp_error}`
   if (row.agent === 'grok' && row.cwd && /folder untrusted/i.test(row.mcp_error ?? '')) {
     note += `\n  trust:     grok --cwd ${shellArg(row.cwd)} --trust`
+  }
+  const probe = parseMcpProbe(row.mcp_probe)
+  if (probe) {
+    note += `\n  mcp_probe: ${probe.ok ? 'ok' : 'fail'} ${probe.tool} ${probe.durationMs}ms`
+    if (probe.detail) note += ` — ${probe.detail}`
+    if (probe.error) note += ` — ${probe.error}`
+    if (probe.namesSeen.length) note += `\n  names:     ${probe.namesSeen.join(', ')}`
   }
   return note
 }
@@ -186,7 +197,7 @@ export function collectResult(
   const row = database.query(
     `SELECT id, agent, job, status, latency_ms, vendor_tokens, output_path, error,
             failure_kind, exit_code, parent_run_id, evidence_excluded, base_commit,
-            cwd, mcp, mcp_server, mcp_connected, mcp_error
+            cwd, mcp, mcp_server, mcp_connected, mcp_error, mcp_probe
        FROM run WHERE id = ?`,
   ).get(chain.finalId) as {
     id: number; agent: string; job: string; status: string; latency_ms: number | null
@@ -194,7 +205,7 @@ export function collectResult(
     failure_kind: string | null; exit_code: number | null; parent_run_id: number | null
     evidence_excluded: string | null; base_commit: string | null
     cwd: string | null; mcp: number | null; mcp_server: string | null
-    mcp_connected: number | null; mcp_error: string | null
+    mcp_connected: number | null; mcp_error: string | null; mcp_probe: string | null
   } | null
   if (!row) throw new Error(`no run ${id}`)
 

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS, db, dir, hermeticGitEnv, reviewReply, runJob, upsertProject } from '../test/fixture.ts'
 import {
-  mcpEndpointAllowlist, parseMcpConfig, probeMcpServer, storedMcpProbe, wrongProjectReason,
+  mcpEndpointAllowlist, parseMcpConfig, parseMcpProbe, probeMcpServer, storedMcpProbe, wrongProjectReason,
 } from './mcp-probe.ts'
 import { readonlyLensProfile } from './sandbox.ts'
 
@@ -70,6 +70,24 @@ describe('wrong-project refusal', () => {
 })
 
 describe('in-confinement probe', () => {
+  test('namesSeen is the parsed config keys plus allowed extras', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orch-mcp-names-'))
+    writeFileSync(join(dir, '.mcp.json'), JSON.stringify({
+      mcpServers: {
+        'fixture-project': { url: 'http://127.0.0.1:1/mcp' },
+        alephbeis: { url: 'http://127.0.0.1:1/alephbeis' },
+      },
+    }))
+    const result = await probeMcpServer({
+      server: 'fixture-project',
+      config: { name: 'fixture-project', url: 'http://127.0.0.1:1/mcp' },
+      cwd: dir,
+      env: { ...process.env } as Record<string, string>,
+    })
+    expect(result.namesSeen.sort()).toEqual(['alephbeis', 'fixture-project', 'orch', 'orch-ask'])
+    rmSync(dir, { recursive: true, force: true })
+  })
+
   test('lists tools on a minted stdio server and calls the named probe tool', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'orch-mcp-probe-'))
     const server = writeMintedStdioServer(dir)
@@ -83,9 +101,11 @@ describe('in-confinement probe', () => {
     expect(result.ok).toBe(true)
     expect(result.tool).toBe('ping')
     expect(result.detail).toContain('listed: 1 tools')
-    const stored = JSON.parse(storedMcpProbe(result))
-    expect(stored.ok).toBe('ok')
-    expect(stored.server).toBe('fixture-project')
+    const stored = parseMcpProbe(storedMcpProbe(result))
+    expect(stored?.ok).toBe(true)
+    expect(stored?.server).toBe('fixture-project')
+    expect(stored?.durationMs).toBe(result.durationMs)
+    expect(stored?.namesSeen).toEqual(result.namesSeen)
     rmSync(dir, { recursive: true, force: true })
   })
 
@@ -98,7 +118,7 @@ describe('in-confinement probe', () => {
     })
     expect(result.ok).toBe(false)
     expect(result.error).toBeTruthy()
-    expect(JSON.parse(storedMcpProbe(result)).ok).toBe('err')
+    expect(parseMcpProbe(storedMcpProbe(result))?.ok).toBe(false)
   })
 
   test('HTTP tools/list succeeds against a local stand-in and wrap can refuse it', async () => {
@@ -191,7 +211,7 @@ exit 0
       expect(row.status).toBe('failed')
       expect(row.failure_kind).toBe('harness')
       expect(row.mcp_connected).toBe(0)
-      expect(JSON.parse(row.mcp_probe).ok).toBe('err')
+      expect(parseMcpProbe(row.mcp_probe)?.ok).toBe(false)
       expect(existsSync(join(repo, 'started'))).toBe(false)
     } finally {
       grok.bin = previous
@@ -258,10 +278,11 @@ cat ${JSON.stringify(reply)}
         'SELECT mcp_connected, mcp_probe FROM run WHERE id=?',
       ).get(runId!) as { mcp_connected: number | null; mcp_probe: string }
       expect(row.mcp_connected).not.toBe(0)
-      const probe = JSON.parse(row.mcp_probe) as { ok: string; tool: string; detail: string }
-      expect(probe.ok).toBe('ok')
-      expect(probe.tool).toBe('tools/list')
-      expect(probe.detail).toBe('listed: 1 tools')
+      const probe = parseMcpProbe(row.mcp_probe)
+      expect(probe?.ok).toBe(true)
+      expect(probe?.tool).toBe('tools/list')
+      expect(probe?.detail).toBe('listed: 1 tools')
+      expect(probe?.namesSeen).toContain('fixture-project')
     } finally {
       grok.bin = previous
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
@@ -332,6 +353,77 @@ exit 0
     }
   })
 
+  test('require records extra .mcp.json servers from the probe when doctor does not', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-mcp-probe-wrong-project-'))
+    const git = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+    }
+    git('init', '-b', 'main')
+    git('config', 'user.email', 'orch-test@example.invalid')
+    git('config', 'user.name', 'Orch Test')
+    writeFileSync(join(repo, 'tracked.txt'), 'base\n')
+    git('add', 'tracked.txt')
+    writeFileSync(join(repo, '.mcp.json'), JSON.stringify({
+      mcpServers: {
+        'fixture-project': { url: 'http://127.0.0.1:1/mcp' },
+        alephbeis: { url: 'http://127.0.0.1:1/alephbeis' },
+      },
+    }))
+    git('add', '.mcp.json')
+    git('commit', '-m', 'base')
+    upsertProject({ name: 'fixture-project', path: repo, settings: { mcpServer: 'fixture-project' } })
+    const script = join(dir, 'DEV-372-probe-wrong-project.sh')
+    writeFileSync(script, `#!/bin/sh
+for arg in "$@"; do
+  if [ "$arg" = "doctor" ]; then
+    printf '%s' '{"servers":[{"name":"fixture-project","healthy":true,"checks":[]}]}'
+    exit 0
+  fi
+done
+printf started > "${join(repo, 'started')}"
+exit 0
+`)
+    chmodSync(script, 0o755)
+    const grok = AGENTS.grok!
+    const previous = grok.bin
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    grok.bin = script
+    try {
+      let runId: number | null = null
+      try {
+        await runJob({
+          job: 'review-lens', prompt: 'review', cwd: repo, agent: 'grok',
+          mcp: true, lens: 'craft',
+        })
+      } catch (error) {
+        runId = (error as Error & { runId?: number }).runId ?? null
+      }
+      expect(runId).not.toBeNull()
+      const row = db().query(
+        'SELECT status, mcp_connected, mcp_error, mcp_probe FROM run WHERE id=?',
+      ).get(runId!) as {
+        status: string; mcp_connected: number | null; mcp_error: string; mcp_probe: string
+      }
+      expect(row.status).toBe('failed')
+      expect(row.mcp_connected).toBe(0)
+      expect(row.mcp_error).toBe('wrong project: alephbeis')
+      const probe = parseMcpProbe(row.mcp_probe)
+      expect(probe?.ok).toBe(false)
+      expect(probe?.error).toBe('wrong project: alephbeis')
+      expect(probe?.namesSeen).toContain('alephbeis')
+      expect(existsSync(join(repo, 'started'))).toBe(false)
+    } finally {
+      grok.bin = previous
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('prefer with an unreachable server launches and records 0', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-mcp-prefer-'))
     const git = (...args: string[]) => {
@@ -385,7 +477,7 @@ cat ${JSON.stringify(reply)}
         'SELECT mcp_connected, mcp_probe FROM run WHERE id=?',
       ).get(runId!) as { mcp_connected: number | null; mcp_probe: string }
       expect(row.mcp_connected).toBe(0)
-      expect(JSON.parse(row.mcp_probe).ok).toBe('err')
+      expect(parseMcpProbe(row.mcp_probe)?.ok).toBe(false)
     } finally {
       grok.bin = previous
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
