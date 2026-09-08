@@ -635,13 +635,13 @@ function amendLandingMessage(
   git(worktree, ['commit', '--amend', '-m', message], guard)
 }
 
-function rebaseInProgress(worktree: string, guard: SharedRefGuardEnvironment): boolean {
+function rebaseInProgress(worktree: string, guard?: SharedRefGuardEnvironment): boolean {
   const gitDir = git(worktree, ['rev-parse', '--path-format=absolute', '--git-dir'], guard)
   return existsSync(join(gitDir, 'rebase-merge')) || existsSync(join(gitDir, 'rebase-apply'))
 }
 
 function assertLandingWorktreeReady(
-  worktree: string, branch: string, guard: SharedRefGuardEnvironment,
+  worktree: string, branch: string, guard?: SharedRefGuardEnvironment,
 ): void {
   if (rebaseInProgress(worktree, guard)) {
     throw namedError(
@@ -1883,48 +1883,101 @@ function spawnDrain(repoRoot: string): void {
   child.unref()
 }
 
+function recordRefusedLanding(project: Project, branch: string, error: unknown): void {
+  const at = nowIso()
+  const message = error instanceof Error ? error.message : String(error)
+  writeTransaction(() => {
+    db().query(
+      `INSERT INTO landing
+         (project,project_id,branch,status,error,session_id,started_at,finished_at,requested_at)
+       VALUES (?,?,?,'refused',?,?,?,?,?)`,
+    ).run(project.name, project.id, branch, message, sessionId(), at, at, at)
+  })
+}
+
+function assertEnqueuePreconditions(
+  repoRoot: string, project: Project, branch: string,
+  options: { unreviewed?: string; runId?: number },
+): void {
+  if (!gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])) {
+    throw namedError(
+      `branch ${branch} does not exist in project ${project.name}`,
+      INVARIANT_LOCK_SCOPE,
+      `git show-ref --verify refs/heads/${branch}`,
+    )
+  }
+  const recordedBlock = recordedLandingBlock(project.name, branch, options.runId)
+  if (recordedBlock && !existsSync(recordedBlock.worktree)) {
+    throw namedError(
+      `refusing to land ${branch}: ${recordedBlock.detail}`,
+      recordedBlock.invariant,
+      recordedBlock.command,
+    )
+  }
+  const worktree = worktreesForBranch(repoRoot, branch).find((path) => existsSync(path))
+  if (!worktree) return
+  assertLandingWorktreeReady(worktree, branch)
+  if (options.unreviewed !== undefined) return
+  const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
+  if (!trunk || !gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${trunk}`])) return
+  const tip = git(worktree, ['rev-parse', '--verify', 'HEAD^{commit}'])
+  authorizeLanding(project, repoRoot, worktree, branch, tip, trunk, options.runId, options.unreviewed)
+}
+
 export function drainQueue(
   cwd: string,
   options: { timeoutMs?: number; unreviewed?: string; strandLive?: string; untilId?: number } = {},
 ): void {
   writableDb()
   const { project, repoRoot } = registeredProject(cwd)
-  withProjectLock(repoRoot, QUEUE_LOCK, { session: sessionId(), what: `drain ${project.name}` }, () => {
-    while (true) {
+  const lockTimeout = options.timeoutMs ?? LANDING_LOCK_TIMEOUT_MS
+  while (true) {
+    const picked = withProjectLock(
+      repoRoot, QUEUE_LOCK, { session: sessionId(), what: `drain ${project.name}` },
+      (): 'done' | 'wait' | LandingRow[] => {
+        if (options.untilId) {
+          const row = db().query('SELECT status FROM landing WHERE id=?').get(options.untilId) as
+            { status: string } | null
+          if (row && !['queued', 'running'].includes(row.status)) return 'done'
+        }
+        const queued = queuedLandings(project.name).filter((row) =>
+          gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${row.branch}`]))
+        if (queued.length) {
+          const group = !options.untilId && queued.length >= 2 ? queued : [queued[0]!]
+          for (const row of group) db().query(`UPDATE landing SET status='running' WHERE id=?`).run(row.id)
+          return group
+        }
+        if (!options.untilId) return 'done'
+        const row = db().query('SELECT status FROM landing WHERE id=?').get(options.untilId) as
+          { status: string } | null
+        if (row?.status === 'running') return 'wait'
+        if (row?.status === 'queued') {
+          throw new Error(`landing ${options.untilId} stuck ${row.status} with an empty queue`)
+        }
+        return 'done'
+      },
+      lockTimeout,
+    )
+    if (picked === 'done') return
+    if (picked === 'wait') {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
+      continue
+    }
+    try {
+      if (picked.length >= 2) processMergeGroup(cwd, picked, options)
+      else processOneLanding(cwd, picked[0]!, options)
+    } catch (error) {
       if (options.untilId) {
         const row = db().query('SELECT status FROM landing WHERE id=?').get(options.untilId) as
           { status: string } | null
-        if (row && !['queued', 'running'].includes(row.status)) return
+        if (row?.status === 'landed' || row?.status === 'install_failed') return
+        if (row?.status === 'refused' || row?.status === 'rebase_required') throw error
+        continue
       }
-      const queued = queuedLandings(project.name).filter((row) =>
-        gitOk(repoRoot, ['show-ref', '--verify', '--quiet', `refs/heads/${row.branch}`]))
-      if (!queued.length) {
-        if (options.untilId) {
-          const row = db().query('SELECT status FROM landing WHERE id=?').get(options.untilId) as
-            { status: string } | null
-          if (row && ['queued', 'running'].includes(row.status)) {
-            throw new Error(`landing ${options.untilId} stuck ${row.status} with an empty queue`)
-          }
-        }
-        return
-      }
-      const group = !options.untilId && queued.length >= 2 ? queued : [queued[0]!]
-      try {
-        if (group.length >= 2) processMergeGroup(cwd, group, options)
-        else processOneLanding(cwd, group[0]!, options)
-      } catch (error) {
-        if (options.untilId) {
-          const row = db().query('SELECT status FROM landing WHERE id=?').get(options.untilId) as
-            { status: string } | null
-          if (row?.status === 'landed' || row?.status === 'install_failed') return
-          if (row?.status === 'refused' || row?.status === 'rebase_required') throw error
-          continue
-        }
-        const message = error instanceof Error ? error.message : String(error)
-        console.error(`orch land --drain: ${message}`)
-      }
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`orch land --drain: ${message}`)
     }
-  }, options.timeoutMs ?? LANDING_LOCK_TIMEOUT_MS)
+  }
 }
 
 export function land(
@@ -1937,6 +1990,12 @@ export function land(
 ): string {
   writableDb()
   const { project, repoRoot } = registeredProject(cwd)
+  try {
+    assertEnqueuePreconditions(repoRoot, project, branch, options)
+  } catch (error) {
+    recordRefusedLanding(project, branch, error)
+    throw error
+  }
   const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
   const requestedAt = nowIso()
   const paths = trunk ? pathSetOf(repoRoot, trunk, branch) : []
