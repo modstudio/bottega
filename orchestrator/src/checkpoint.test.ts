@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { addRun, db, declaredCreate, hermeticGitEnv, run, upsertProject, validateCliArgs } from '../test/fixture.ts'
+import { join, resolve } from 'node:path'
+import { addRun, db, declaredCreate, hermeticGitEnv, prepareSharedRefGuard, run, upsertProject, validateCliArgs } from '../test/fixture.ts'
 import { checkpointResumeContext, checkpointRun, readTaskPointer } from './checkpoint.ts'
+import { runEventsPath } from './events.ts'
 import { squashCheckpointCommits } from './landing.ts'
 import { installTestTransport, type AgentTransport, type TransportResult } from './transport.ts'
 
@@ -26,8 +27,9 @@ function repo(): string {
   g('config', 'user.email', 'test@example.com')
   writeFileSync(join(root, 'file.txt'), 'base\n')
   g('add', 'file.txt'); g('commit', '-m', 'DEV-374 base')
-  g('switch', '-c', 'DEV-374-checkpoint')
-  return root
+  const tree = join(root, 'tree')
+  g('worktree', 'add', '-b', 'DEV-374-checkpoint', tree, 'main')
+  return tree
 }
 
 function git(root: string, ...args: string[]): string {
@@ -46,13 +48,61 @@ describe('harness-owned checkpoints', () => {
     writeFileSync(join(scratch, 'progress.json'), JSON.stringify({ task_pointer: 'item 2 complete', note: 'ok' }))
     expect(readTaskPointer(scratch)).toBe('item 2 complete')
     const result = checkpointRun({ database: db(), runId, worktree: root,
-      branch: 'DEV-374-checkpoint', taskKey: 'DEV-374', scratchDir: scratch, final: true })
+      branch: 'DEV-374-checkpoint', taskKey: 'DEV-374', scratchDir: scratch,
+      guardEnvironment: prepareSharedRefGuard(root, 'refs/heads/DEV-374-checkpoint'), final: true })
     expect(result.created).toBe(true)
     expect(git(root, 'show', '-s', '--format=%s')).toBe(`DEV-374 checkpoint run ${runId} #1`)
     expect(git(root, 'status', '--porcelain')).toBe('?? untracked.txt')
     expect(db().query('SELECT commit_sha,task_pointer,final FROM run_checkpoint WHERE run_id=?').get(runId))
       .toEqual({ commit_sha: result.commit, task_pointer: 'item 2 complete', final: 1 })
     expect(checkpointResumeContext(db(), runId, root)).toContain('Last completed item: item 2 complete')
+  })
+
+  test('a changed HEAD is refused adjacent to commit and records the refusal', () => {
+    const root = repo()
+    const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const scratch = mkdtempSync(join(tmpdir(), 'orch-progress-')); roots.push(scratch)
+    writeFileSync(join(root, 'file.txt'), 'dirty\n')
+    git(root, 'switch', '-c', 'other-branch')
+    const before = git(root, 'rev-parse', 'HEAD')
+    const result = checkpointRun({ database: db(), runId, worktree: root,
+      branch: 'DEV-374-checkpoint', taskKey: 'DEV-374', scratchDir: scratch,
+      guardEnvironment: prepareSharedRefGuard(root, 'refs/heads/DEV-374-checkpoint') })
+    expect(result.created).toBe(false)
+    expect(result.error).toContain('expected branch DEV-374-checkpoint, found other-branch')
+    expect(git(root, 'rev-parse', 'HEAD')).toBe(before)
+    expect(readFileSync(runEventsPath(runId), 'utf8')).toContain('checkpoint refused')
+  })
+
+  test('the shared-ref guard refuses a checkpoint moving any other ref', () => {
+    const root = repo()
+    const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const scratch = mkdtempSync(join(tmpdir(), 'orch-progress-')); roots.push(scratch)
+    writeFileSync(join(root, 'file.txt'), 'dirty\n')
+    const before = git(root, 'rev-parse', 'HEAD')
+    const result = checkpointRun({ database: db(), runId, worktree: root,
+      branch: 'DEV-374-checkpoint', taskKey: 'DEV-374', scratchDir: scratch,
+      guardEnvironment: prepareSharedRefGuard(root, 'refs/heads/not-the-run-branch') })
+    expect(result.created).toBe(false)
+    expect(result.error).toContain('this worker may update only refs/heads/not-the-run-branch')
+    expect(git(root, 'rev-parse', 'HEAD')).toBe(before)
+  })
+
+  test('an index lock records a run event and creates no checkpoint', () => {
+    const root = repo()
+    const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    const scratch = mkdtempSync(join(tmpdir(), 'orch-progress-')); roots.push(scratch)
+    writeFileSync(join(root, 'file.txt'), 'dirty\n')
+    const gitDir = git(root, 'rev-parse', '--git-dir')
+    writeFileSync(resolve(root, gitDir, 'index.lock'), 'held')
+    const before = git(root, 'rev-parse', 'HEAD')
+    const result = checkpointRun({ database: db(), runId, worktree: root,
+      branch: 'DEV-374-checkpoint', taskKey: 'DEV-374', scratchDir: scratch,
+      guardEnvironment: prepareSharedRefGuard(root, 'refs/heads/DEV-374-checkpoint') })
+    expect(result.created).toBe(false)
+    expect(result.error).toContain('index.lock')
+    expect(git(root, 'rev-parse', 'HEAD')).toBe(before)
+    expect(readFileSync(runEventsPath(runId), 'utf8')).toContain('index.lock')
   })
 
   test('landing folds checkpoints into the following worker commit and can preserve them', () => {

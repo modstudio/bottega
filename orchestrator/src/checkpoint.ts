@@ -2,7 +2,14 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Database } from 'bun:sqlite'
 import { nowIso } from './db.ts'
+import { appendRunEvent } from './events.ts'
 import { targetGitEnvironment } from './worktree.ts'
+
+/**
+ * A checkpoint is a delta folded into the next authored commit at landing.
+ * Bytes captured while the worker is mid-write are corrected by the next
+ * checkpoint or by the worker's own commit; checkpointing never locks the worker.
+ */
 
 export const PROGRESS_FILE_NAME = 'progress.json'
 export const DEFAULT_CHECKPOINT_MINUTES = 10
@@ -25,9 +32,11 @@ export function readTaskPointer(scratchDir: string): string | null {
   } catch { return null }
 }
 
-function git(cwd: string, args: string[]): { ok: boolean; out: string; error: string } {
+function git(
+  cwd: string, args: string[], guardEnvironment: NodeJS.ProcessEnv,
+): { ok: boolean; out: string; error: string } {
   const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
-    env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
+    env: { ...targetGitEnvironment(cwd), ...guardEnvironment }, stdout: 'pipe', stderr: 'pipe',
   })
   return {
     ok: p.exitCode === 0,
@@ -52,6 +61,7 @@ export function checkpointRun(input: {
   branch: string
   taskKey: string
   scratchDir: string
+  guardEnvironment: NodeJS.ProcessEnv
   final?: boolean
 }): CheckpointResult {
   const previous = input.database.query(
@@ -59,21 +69,27 @@ export function checkpointRun(input: {
   ).get(input.runId) as { n: number }
   const checkpointNo = previous.n + 1
   const taskPointer = readTaskPointer(input.scratchDir)
-  const currentBranch = git(input.worktree, ['rev-parse', '--abbrev-ref', 'HEAD'])
-  if (!currentBranch.ok || currentBranch.out !== input.branch) {
-    return { created: false, commit: null, checkpointNo, taskPointer,
-      error: `checkpoint refused: expected branch ${input.branch}, found ${currentBranch.out || currentBranch.error}` }
+  const refusal = (error: string): CheckpointResult => {
+    appendRunEvent(input.runId, { ts: nowIso(), type: 'text', text: `checkpoint failed: ${error}` })
+    return { created: false, commit: null, checkpointNo, taskPointer, error }
   }
-  const dirty = git(input.worktree, ['status', '--porcelain', '--untracked-files=no'])
-  if (!dirty.ok) return { created: false, commit: null, checkpointNo, taskPointer, error: dirty.error }
+  const dirty = git(input.worktree, ['status', '--porcelain', '--untracked-files=no'], input.guardEnvironment)
+  if (!dirty.ok) return refusal(dirty.error)
   if (!dirty.out) return { created: false, commit: null, checkpointNo, taskPointer, error: null }
-  const staged = git(input.worktree, ['add', '-u'])
-  if (!staged.ok) return { created: false, commit: null, checkpointNo, taskPointer, error: staged.error }
+  const staged = git(input.worktree, ['add', '-u'], input.guardEnvironment)
+  if (!staged.ok) return refusal(staged.error)
+  // Adjacent to commit so the checked branch is the ref the commit will move.
+  const currentBranch = git(input.worktree, ['symbolic-ref', '--short', 'HEAD'], input.guardEnvironment)
+  if (!currentBranch.ok || currentBranch.out !== input.branch) {
+    return refusal(
+      `checkpoint refused: expected branch ${input.branch}, found ${currentBranch.out || currentBranch.error}`,
+    )
+  }
   const subject = `${input.taskKey} checkpoint run ${input.runId} #${checkpointNo}`
-  const committed = git(input.worktree, ['commit', '-m', subject])
-  if (!committed.ok) return { created: false, commit: null, checkpointNo, taskPointer, error: committed.error }
-  const commit = git(input.worktree, ['rev-parse', 'HEAD'])
-  if (!commit.ok) return { created: false, commit: null, checkpointNo, taskPointer, error: commit.error }
+  const committed = git(input.worktree, ['commit', '-m', subject], input.guardEnvironment)
+  if (!committed.ok) return refusal(committed.error)
+  const commit = git(input.worktree, ['rev-parse', 'HEAD'], input.guardEnvironment)
+  if (!commit.ok) return refusal(commit.error)
   input.database.query(
     `INSERT INTO run_checkpoint (run_id,checkpoint_no,commit_sha,task_pointer,final,created_at)
      VALUES (?,?,?,?,?,?)`,
@@ -99,7 +115,7 @@ export function checkpointResumeContext(
   const checkpoint = latestCheckpoint(database, rootId)
   if (!checkpoint) return null
   const log = worktree
-    ? git(worktree, ['log', '--oneline', '--decorate=no', '--max-count=8']).out
+    ? git(worktree, ['log', '--oneline', '--decorate=no', '--max-count=8'], {}).out
     : ''
   return [
     'CHECKPOINT RESUME',

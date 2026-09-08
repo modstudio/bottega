@@ -2841,7 +2841,8 @@ export async function run(opts: {
       if (!writesJob || !worktree || !launchKey) return null
       const result = checkpointRun({
         database: db(), runId: claim.id, worktree: worktree.path,
-        branch: worktree.branch, taskKey: launchKey, scratchDir, final,
+        branch: worktree.branch, taskKey: launchKey, scratchDir,
+        guardEnvironment: gitConfigEnvironment ?? {}, final,
       })
       if (result.error) console.error(`orch: run ${claim.id} checkpoint failed: ${result.error}`)
       return result
@@ -3136,7 +3137,8 @@ export async function run(opts: {
     if (preserveAtTerminal) {
       const checkpoint = checkpointRun({
         database: db(), runId: claim.id, worktree: worktree!.path,
-        branch: worktree!.branch, taskKey: launchKey!, scratchDir, final: true,
+        branch: worktree!.branch, taskKey: launchKey!, scratchDir,
+        guardEnvironment: gitConfigEnvironment ?? {}, final: true,
       })
       if (checkpoint.created || latestCheckpoint(db(), opts.resume?.parent ?? claim.id)) {
         db().query('UPDATE run SET work_preserved=1 WHERE id=?').run(claim.id)
