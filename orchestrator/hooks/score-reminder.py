@@ -211,7 +211,7 @@ def main() -> int:
             missing.append(f"--better-than {ids} | --worse-than {ids} | --same-as {ids}")
         suffix = "  rescore" if delivery is not None else ""
         lines.append(
-            f'  orch score {i} {axes} {" ".join(missing)} --note "..."   # {a}/{j}  {p}{suffix}'
+            f'  orch judge {i} {axes} {" ".join(missing)} --note "..."   # {a}/{j}  {p}{suffix}'
             .replace("  --note", " --note")
         )
         for partner, agent, reason in run_pairs:
@@ -224,7 +224,7 @@ def main() -> int:
             axes += " " + pair_entry["quality"]
         if pair_entry["job"] in WRITING_JOBS and axes != "none":
             axes += " " + pair_entry["fidelity"]
-        lines.append(f"  orch score {current} {axes} --better-than {ids} | --worse-than {ids} | --same-as {ids}")
+        lines.append(f"  orch judge {current} {axes} --better-than {ids} | --worse-than {ids} | --same-as {ids}")
         for partner, agent, reason in run_pairs:
             lines.append(f"    comparable to run {partner} ({agent}): {reason}")
     con.close()
