@@ -101,17 +101,19 @@ def main() -> int:
             pairs = con.execute(
                 """SELECT newer.id, older.id, older.agent,
                           CASE
-                            WHEN newer.lens IS NOT NULL AND newer.input_tree IS NOT NULL
-                                 AND older.input_tree IS NOT NULL
-                              THEN 'same task prompt and lens; same input tree'
+                            WHEN newer.lens IS NOT NULL AND newer_review.patch_id IS NOT NULL
+                                 AND older_review.patch_id IS NOT NULL
+                              THEN 'same task prompt and lens; same change'
                             WHEN newer.lens IS NOT NULL
-                              THEN 'same task prompt and lens; at least one input tree unrecorded'
-                            WHEN newer.input_tree IS NOT NULL AND older.input_tree IS NOT NULL
-                              THEN 'same task prompt; same input tree'
-                            ELSE 'same task prompt; at least one input tree unrecorded'
+                              THEN 'same task prompt and lens; at least one change unrecorded'
+                            WHEN newer_review.patch_id IS NOT NULL AND older_review.patch_id IS NOT NULL
+                              THEN 'same task prompt; same change'
+                            ELSE 'same task prompt; at least one change unrecorded'
                           END,
                           newer.job, newer_score.delivery, newer_score.quality, newer_score.fidelity
                      FROM run newer
+                     LEFT JOIN review_lens newer_lens ON newer_lens.run_id = newer.id
+                     LEFT JOIN review newer_review ON newer_review.id = newer_lens.review_id
                      JOIN score newer_score ON newer_score.run_id = newer.id
                      JOIN run older ON older.id < newer.id
                       AND older.parent_run_id IS NULL
@@ -119,17 +121,19 @@ def main() -> int:
                       AND older.session_id = newer.session_id
                       AND COALESCE(older.probe, 0) = 0
                       AND older.evidence_excluded IS NULL
-                      AND newer.spec_sha IS NOT NULL
-                      AND older.spec_sha = newer.spec_sha
-                      AND newer.lens IS older.lens
-                      AND (newer.input_tree IS NULL OR older.input_tree IS NULL
-                           OR older.input_tree = newer.input_tree)
+                     LEFT JOIN review_lens older_lens ON older_lens.run_id = older.id
+                     LEFT JOIN review older_review ON older_review.id = older_lens.review_id
                      JOIN score older_score ON older_score.run_id = older.id
                      LEFT JOIN compared_pair compared
                        ON compared.run_a_id = older.id AND compared.run_b_id = newer.id
                     WHERE newer.parent_run_id IS NULL AND newer.session_id = ?
                       AND COALESCE(newer.probe, 0) = 0
                       AND newer.evidence_excluded IS NULL
+                      AND newer.spec_sha IS NOT NULL
+                      AND older.spec_sha = newer.spec_sha
+                      AND (newer.lens IS older.lens)
+                      AND newer_review.patch_id IS older_review.patch_id
+                      AND newer_review.path_set IS older_review.path_set
                       AND datetime(newer_score.scored_at) >= datetime('now', '-24 hours')
                       AND datetime(older_score.scored_at) >= datetime('now', '-24 hours')
                       AND compared.run_a_id IS NULL

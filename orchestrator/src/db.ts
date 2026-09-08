@@ -707,6 +707,63 @@ export const SCORED_EVIDENCE_SQL =
    AND r.evidence_excluded IS NULL
    AND COALESCE(r.failure_kind, '') NOT IN (${NOT_EVIDENCE_SQL})`
 
+/**
+ * One evidence identity: caller prompt (`spec_sha`), change (`review.patch_id`
+ * and `review.path_set` from changeIdentity()), lens, and effective model.
+ * Pair offers, the unevidenced gate, void, reminders and routing keys read
+ * this tuple. Do not restate it, and do not key those surfaces on input_tree.
+ *
+ * Change identity lives on the review row. A run without a review has NULL
+ * patch_id and path_set; NULL IS NULL, so two unrecorded changes still pair
+ * on spec_sha and lens.
+ */
+function sqlAlias(name: string): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+    throw new Error('evidence-tuple aliases must be SQL identifiers')
+  }
+  return name
+}
+
+export function changeIdentityJoin(runAlias: string, lensAlias: string, reviewAlias: string): string {
+  const run = sqlAlias(runAlias)
+  const lens = sqlAlias(lensAlias)
+  const review = sqlAlias(reviewAlias)
+  return `LEFT JOIN review_lens ${lens} ON ${lens}.run_id = ${run}.id
+          LEFT JOIN review ${review} ON ${review}.id = ${lens}.review_id`
+}
+
+export function sameTaskSql(leftRun: string, rightRun: string): string {
+  const left = sqlAlias(leftRun)
+  const right = sqlAlias(rightRun)
+  return `${left}.spec_sha IS NOT NULL AND ${right}.spec_sha = ${left}.spec_sha
+        AND (${left}.lens IS ${right}.lens)`
+}
+
+export function sameChangeSql(leftReview: string, rightReview: string): string {
+  const left = sqlAlias(leftReview)
+  const right = sqlAlias(rightReview)
+  return `${left}.patch_id IS ${right}.patch_id AND ${left}.path_set IS ${right}.path_set`
+}
+
+export function pairReasonSql(
+  leftRun: string, rightRun: string, leftReview: string, rightReview: string,
+): string {
+  const left = sqlAlias(leftRun)
+  const right = sqlAlias(rightRun)
+  const leftChange = sqlAlias(leftReview)
+  const rightChange = sqlAlias(rightReview)
+  return `CASE
+  WHEN ${left}.lens IS NOT NULL AND ${leftChange}.patch_id IS NOT NULL
+       AND ${rightChange}.patch_id IS NOT NULL
+    THEN 'same task prompt and lens; same change'
+  WHEN ${left}.lens IS NOT NULL
+    THEN 'same task prompt and lens; at least one change unrecorded'
+  WHEN ${leftChange}.patch_id IS NOT NULL AND ${rightChange}.patch_id IS NOT NULL
+    THEN 'same task prompt; same change'
+  ELSE 'same task prompt; at least one change unrecorded'
+END`
+}
+
 export type RunTotals = {
   runs: number
   scored: number
@@ -1317,34 +1374,21 @@ export type UnrecordedPair = {
   runId: number; partnerId: number; partnerAgent: string; reason: string
 }
 
-const PAIR_REASON_SQL = `CASE
-  WHEN subject.lens IS NOT NULL AND subject.input_tree IS NOT NULL
-       AND partner.input_tree IS NOT NULL
-    THEN 'same task prompt and lens; same input tree'
-  WHEN subject.lens IS NOT NULL
-    THEN 'same task prompt and lens; at least one input tree unrecorded'
-  WHEN subject.input_tree IS NOT NULL AND partner.input_tree IS NOT NULL
-    THEN 'same task prompt; same input tree'
-  ELSE 'same task prompt; at least one input tree unrecorded'
-END`
-
-/** Scored sibling roots for the same task in this session, not yet compared. */
+/** Scored sibling roots for the same task and change in this session, not yet compared. */
 export function pairPartners(runId: number, sid: string | null): PairPartner[] {
   if (!sid) return []
   return db().query(
-    `SELECT partner.id, partner.agent, ${PAIR_REASON_SQL} AS reason
+    `SELECT partner.id, partner.agent,
+            ${pairReasonSql('subject', 'partner', 'subject_review', 'partner_review')} AS reason
        FROM run subject
+       ${changeIdentityJoin('subject', 'subject_lens', 'subject_review')}
        JOIN run partner ON partner.id <> subject.id
         AND partner.parent_run_id IS NULL
         AND partner.job = subject.job
         AND partner.session_id = ?
         AND COALESCE(partner.probe, 0) = 0
         AND partner.evidence_excluded IS NULL
-        AND subject.spec_sha IS NOT NULL
-        AND partner.spec_sha = subject.spec_sha
-        AND (subject.lens IS partner.lens)
-        AND (subject.input_tree IS NULL OR partner.input_tree IS NULL
-             OR partner.input_tree = subject.input_tree)
+       ${changeIdentityJoin('partner', 'partner_lens', 'partner_review')}
        JOIN score partner_score ON partner_score.run_id = partner.id
        LEFT JOIN compared_pair compared
          ON compared.run_a_id = MIN(subject.id, partner.id)
@@ -1352,6 +1396,8 @@ export function pairPartners(runId: number, sid: string | null): PairPartner[] {
       WHERE subject.id = ?
         AND COALESCE(subject.probe, 0) = 0
         AND subject.evidence_excluded IS NULL
+        AND ${sameTaskSql('subject', 'partner')}
+        AND ${sameChangeSql('subject_review', 'partner_review')}
         AND datetime(partner_score.scored_at) >= datetime('now', '-24 hours')
         AND compared.run_a_id IS NULL
       ORDER BY partner.id`,
@@ -1363,8 +1409,9 @@ export function unrecordedPairsForSession(sid: string | null): UnrecordedPair[] 
   if (!sid) return []
   return db().query(
     `SELECT newer.id AS runId, older.id AS partnerId, older.agent AS partnerAgent,
-            ${PAIR_REASON_SQL.replaceAll('subject.', 'newer.').replaceAll('partner.', 'older.')} AS reason
+            ${pairReasonSql('newer', 'older', 'newer_review', 'older_review')} AS reason
        FROM run newer
+       ${changeIdentityJoin('newer', 'newer_lens', 'newer_review')}
        JOIN score newer_score ON newer_score.run_id = newer.id
        JOIN run older ON older.id < newer.id
         AND older.parent_run_id IS NULL
@@ -1372,17 +1419,15 @@ export function unrecordedPairsForSession(sid: string | null): UnrecordedPair[] 
         AND older.session_id = newer.session_id
         AND COALESCE(older.probe, 0) = 0
         AND older.evidence_excluded IS NULL
-        AND newer.spec_sha IS NOT NULL
-        AND older.spec_sha = newer.spec_sha
-        AND (newer.lens IS older.lens)
-        AND (newer.input_tree IS NULL OR older.input_tree IS NULL
-             OR older.input_tree = newer.input_tree)
+       ${changeIdentityJoin('older', 'older_lens', 'older_review')}
        JOIN score older_score ON older_score.run_id = older.id
        LEFT JOIN compared_pair compared
          ON compared.run_a_id = older.id AND compared.run_b_id = newer.id
       WHERE newer.parent_run_id IS NULL AND newer.session_id = ?
         AND COALESCE(newer.probe, 0) = 0
         AND newer.evidence_excluded IS NULL
+        AND ${sameTaskSql('newer', 'older')}
+        AND ${sameChangeSql('newer_review', 'older_review')}
         AND datetime(newer_score.scored_at) >= datetime('now', '-24 hours')
         AND datetime(older_score.scored_at) >= datetime('now', '-24 hours')
         AND compared.run_a_id IS NULL

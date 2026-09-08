@@ -127,6 +127,44 @@ describe('review discipline', () => {
     }
   })
 
+  test('clean review coverage reads the recorded change path set, not run.changed_paths', () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-review-path-set-')))
+    const gg = (...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    gg('init', '-b', 'main'); gg('config', 'user.email', 'orch-test@example.invalid')
+    gg('config', 'user.name', 'Orch Test')
+    writeFileSync(join(repo, 'base.txt'), 'base\n'); gg('add', '.'); gg('commit', '-m', 'base')
+    writeFileSync(join(repo, 'kept.ts'), 'kept\n'); gg('add', '.'); gg('commit', '-m', 'change')
+    upsertProject({ name: 'review-path-set-project', path: repo })
+    const runId = addRun({
+      agent: 'codex', job: 'review-lens', repo: 'review-path-set-project',
+      lens: 'correctness', inputTree: gg('rev-parse', 'HEAD^{tree}'),
+      headCommit: gg('rev-parse', 'HEAD'),
+    })
+    db().query('UPDATE run SET base_commit=?, changed_paths=? WHERE id=?')
+      .run(gg('rev-parse', 'HEAD~1'), JSON.stringify(['kept.ts']), runId)
+    const reviewId = recordReview(runId, reviewReply(1, 'high'))
+    db().query('UPDATE review SET path_set=? WHERE id=?').run(JSON.stringify(['recorded.ts']), reviewId)
+    try {
+      const reply = reviewReply(0) as any
+      reply.provenance.commands_run = ['bun test']
+      reply.provenance.files_covered = ['recorded.ts']
+      expect(cleanReviewEvidence(runId, reply)).toEqual({ failure: null, note: null })
+      reply.provenance.files_covered = ['kept.ts']
+      expect(cleanReviewEvidence(runId, reply)).toMatchObject({
+        failure: expect.stringContaining('intersects none'), kind: 'unevidenced',
+      })
+    } finally {
+      removeProject('review-path-set-project')
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('list and show expose open, complete, stale, findings, grading, and pin state', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-review-read-'))
     const gg = (...args: string[]) => {

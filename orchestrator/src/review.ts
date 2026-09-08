@@ -143,7 +143,7 @@ export function normalizeCoveredPath(path: string): string {
   return repositoryPath.trim().replace(/^\.\//, '')
 }
 
-/** Classify the evidence on a findings:[] reply against the measured input tree. */
+/** Classify the evidence on a findings:[] reply against the recorded change path set. */
 export function cleanReviewEvidence(
   runId: number, output: ReviewReply, database: Database = db(),
 ): CleanReviewEvidence {
@@ -153,27 +153,31 @@ export function cleanReviewEvidence(
   if (!provenance.files_covered.length && !provenance.commands_run.length) {
     return { failure: UNEVIDENCED_REVIEW_ERROR, note: null, kind: 'unevidenced' }
   }
-  const run = database.query(
-    'SELECT repo, base_commit, input_tree, review_ref, changed_paths FROM run WHERE id=?',
-  ).get(runId) as {
-    repo: string | null; base_commit: string | null; input_tree: string | null
-    review_ref: string | null; changed_paths: string | null
-  } | null
   const unavailable = (why: string): CleanReviewEvidence => ({
     failure: `clean review changed-path coverage not checked: ${why}`,
     note: null,
     kind: 'harness',
   })
-  if (!run?.repo || !run.base_commit || !run.input_tree) {
-    return unavailable('run lacks repo, base_commit, or input_tree')
-  }
-  const repo = projectPath(database, run.repo)
-  if (!repo) return unavailable(`project ${run.repo} is not registered`)
   let changed: string[]
   try {
-    changed = run.review_ref && run.changed_paths !== null
-      ? JSON.parse(run.changed_paths)
-      : diffNumstat(repo, run.base_commit, run.input_tree).map((file) => file.path)
+    const stored = storedChangePathSet(runId, database)
+    if (stored) changed = stored
+    else {
+      const run = database.query(
+        'SELECT repo, base_commit, input_tree, head_commit FROM run WHERE id=?',
+      ).get(runId) as {
+        repo: string | null; base_commit: string | null; input_tree: string | null
+        head_commit: string | null
+      } | null
+      if (!run?.repo || !run.base_commit || (!run.input_tree && !run.head_commit)) {
+        return unavailable('run lacks repo, base_commit, or input_tree')
+      }
+      const repo = projectPath(database, run.repo)
+      if (!repo) return unavailable(`project ${run.repo} is not registered`)
+      const identity = measureChangeIdentity(repo, run.base_commit, run.head_commit ?? run.input_tree!)
+      if (!identity) return unavailable('git diff --name-only failed')
+      changed = identity.paths
+    }
   } catch (cause) {
     return unavailable(String((cause as Error)?.message ?? cause))
   }
@@ -239,6 +243,37 @@ function tierForRuns(runs: RunRow[], database: Database): ReviewTier | null {
 }
 
 const pinRef = (runId: number) => `refs/orch/reviewed/${runId}`
+
+function storedChangePathSet(runId: number, database: Database): string[] | null {
+  const row = database.query(
+    `SELECT review.path_set FROM review_lens
+       JOIN review ON review.id = review_lens.review_id
+      WHERE review_lens.run_id=?`,
+  ).get(runId) as { path_set: string | null } | null
+  if (!row || row.path_set === null) return null
+  const parsed = JSON.parse(row.path_set)
+  if (!Array.isArray(parsed) || parsed.some((path) => typeof path !== 'string')) {
+    throw new Error('review path_set is not a JSON array of paths')
+  }
+  return parsed
+}
+
+function measureChangeIdentity(
+  repo: string, from: string, to: string,
+): { patchId: string; paths: string[]; message: string } | null {
+  const paths = git(repo, ['diff', '--name-only', `${from}..${to}`])
+  const message = git(repo, ['log', '--format=%B', `${from}..${to}`])
+  if (!paths.ok) return null
+  let patchId: string
+  try {
+    patchId = changeIdentity((args, stdin) => git(repo, args, true, stdin), from, to)
+  } catch { return null }
+  return {
+    patchId,
+    paths: paths.out ? paths.out.split('\n').sort() : [],
+    message: message.ok ? message.out : '',
+  }
+}
 
 function git(repo: string, args: string[], _hermetic = false, stdin?: Uint8Array): { ok: boolean; out: string; err: string; stdout: Uint8Array } {
   const p = Bun.spawnSync(['git', ...args], {
@@ -452,18 +487,7 @@ export function recordReviews(
     if (!run.repo || !run.base_commit || !run.head_commit) return null
     const repo = projectPath(database, run.repo)
     if (!repo) return null
-    const paths = git(repo, ['diff', '--name-only', `${run.base_commit}..${run.head_commit}`])
-    const message = git(repo, ['log', '--format=%B', `${run.base_commit}..${run.head_commit}`])
-    if (!paths.ok || !message.ok) return null
-    let patchId: string
-    try {
-      patchId = changeIdentity((args, stdin) => git(repo, args, true, stdin), run.base_commit, run.head_commit)
-    } catch { return null }
-    return {
-      patchId,
-      paths: paths.out ? paths.out.split('\n').sort() : [],
-      message: message.out,
-    }
+    return measureChangeIdentity(repo, run.base_commit, run.head_commit)
   })()
   const reviewId = writeTransaction(() => {
     const tier = tierForRuns(runs, database)

@@ -1412,7 +1412,7 @@ test('record-only closes the question, marks the chain stranded, and retry resta
     const offered = orch('score', String(second), 'full', 'right')
     expect(offered.code).toBe(0)
     expect(offered.out).toContain(
-      `pair: run ${first} (codex) is comparable (same task prompt; same input tree) — record with --better-than ${first} | ` +
+      `pair: run ${first} (codex) is comparable (same task prompt; at least one change unrecorded) — record with --better-than ${first} | ` +
       `--worse-than ${first} | --same-as ${first}`,
     )
     expect(orch('score', String(second), 'full', 'right', '--worse-than', String(first)).code).toBe(0)
@@ -1441,7 +1441,7 @@ test('record-only closes the question, marks the chain stranded, and retry resta
     expect(orch('score', String(first), 'full', 'right').code).toBe(0)
     const scored = orch('score', String(second), 'full', 'right')
     expect(scored.code).toBe(0)
-    expect(scored.out).toContain(`pair: run ${first} (codex) is comparable (same task prompt; at least one input tree unrecorded)`)
+    expect(scored.out).toContain(`pair: run ${first} (codex) is comparable (same task prompt; at least one change unrecorded)`)
   })
 
   test('judge closes a two-finding review and pair in one transaction', () => {
@@ -1586,28 +1586,57 @@ test('record-only closes the question, marks the chain stranded, and retry resta
     }
   })
 
-  test('same task-prompt pairs allow different trees only when one is absent and require matching lenses', () => {
+  test('same task-prompt pairs key on recorded change identity and matching lenses', () => {
+    const stamp = (runId: number, patchId: string, paths: string[]) => {
+      recordReview(runId, reviewReply(1, 'high'))
+      db().query(
+        `UPDATE review SET patch_id=?, path_set=?
+          WHERE id=(SELECT review_id FROM review_lens WHERE run_id=?)`,
+      ).run(patchId, JSON.stringify(paths), runId)
+    }
+    const grades = [
+      '--reproduced', 'all', '--coverage', 'adequate', '--limits', 'named', '--overlap', 'unique',
+    ] as const
     const scored = addRun({
       agent: 'codex', job: 'review-lens', session: 'orch-test-session', specSha: 'predicate',
       inputTree: 'tree-a', lens: 'correctness',
     })
     score(scored, 'full', 'right')
-    const differentTree = addRun({
+    stamp(scored, 'patch-a', ['a.ts'])
+    const differentChange = addRun({
+      agent: 'grok', job: 'review-lens', session: 'orch-test-session', specSha: 'predicate',
+      inputTree: 'tree-a', lens: 'correctness',
+    })
+    stamp(differentChange, 'patch-b', ['b.ts'])
+    expect(orch('score', String(differentChange), 'full', 'right', ...grades).out)
+      .not.toContain('pair:')
+    const sameChange = addRun({
       agent: 'grok', job: 'review-lens', session: 'orch-test-session', specSha: 'predicate',
       inputTree: 'tree-b', lens: 'correctness',
     })
-    recordReview(differentTree, reviewReply(1, 'high'))
-    expect(orch('score', String(differentTree), 'full', 'right',
-      '--reproduced', 'all', '--coverage', 'adequate', '--limits', 'named', '--overlap', 'unique').out)
-      .not.toContain('pair:')
+    stamp(sameChange, 'patch-a', ['a.ts'])
+    const offered = orch('score', String(sameChange), 'full', 'right', ...grades)
+    expect(offered.out).toContain(
+      `pair: run ${scored} (codex) is comparable (same task prompt and lens; same change)`,
+    )
     const differentLens = addRun({
       agent: 'grok', job: 'review-lens', session: 'orch-test-session', specSha: 'predicate',
       inputTree: 'tree-a', lens: 'safety',
     })
-    recordReview(differentLens, reviewReply(1, 'high'))
-    expect(orch('score', String(differentLens), 'full', 'right',
-      '--reproduced', 'all', '--coverage', 'adequate', '--limits', 'named', '--overlap', 'unique').out)
+    stamp(differentLens, 'patch-a', ['a.ts'])
+    expect(orch('score', String(differentLens), 'full', 'right', ...grades).out)
       .not.toContain('pair:')
+  })
+
+  test('no pair offer across different spec_sha', () => {
+    const first = addRun({
+      agent: 'codex', job: 'file-question', session: 'orch-test-session', specSha: 'task-a',
+    })
+    const second = addRun({
+      agent: 'grok', job: 'file-question', session: 'orch-test-session', specSha: 'task-b',
+    })
+    expect(orch('score', String(first), 'full', 'right').code).toBe(0)
+    expect(orch('score', String(second), 'full', 'right').out).not.toContain('pair:')
   })
 
 
