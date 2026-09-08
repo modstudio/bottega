@@ -223,7 +223,9 @@ export const REVIEW_SEVERITY_INSTRUCTION =
   `Every finding severity must use the architect's closed scale: ${REVIEW_SEVERITY.join(' | ')}.`
 
 export const COULD_NOT_VERIFY_INSTRUCTION =
-  'A review which could not execute the suite must say so in could_not_verify AND must not present static reasoning as an executed check.'
+  'PROVENANCE is mandatory and must name sources actually read, not intended sources. ' +
+  'State every unavailable or unverified source in the open-ended could_not_verify list, and name every substitute used. ' +
+  'A review which could not execute the suite must say so there and must not present static reasoning as an executed check.'
 
 /**
  * The fixed product of every findings-producing review job.
@@ -253,18 +255,21 @@ export const REVIEW_SCHEMA = {
     provenance: {
       type: 'object', additionalProperties: false,
       required: ['standards_read', 'model_used', 'files_covered',
-        'commands_run', 'could_not_verify', 'canon_source'],
+        'commands_run', 'mcp_tools', 'docs_read', 'could_not_verify', 'substitutes', 'canon_source'],
       properties: {
         tree_inspected: { type: 'string' },
         standards_read: { type: 'array', items: { type: 'string' } },
         model_used: { type: 'string' },
         files_covered: { type: 'array', items: { type: 'string' } },
         commands_run: { type: 'array', items: { type: 'string' } },
+        mcp_tools: { type: 'array', description: 'MCP tools actually read, including the server name.', items: { type: 'string' } },
+        docs_read: { type: 'array', description: 'Operator documents actually read, named by slug.', items: { type: 'string' } },
         could_not_verify: {
           type: 'array',
           description: COULD_NOT_VERIFY_INSTRUCTION,
           items: { type: 'string' },
         },
+        substitutes: { type: 'array', description: 'Any substitute source used in place of a requested source.', items: { type: 'string' } },
         canon_source: CANON_SOURCE_SCHEMA,
       },
     },
@@ -275,7 +280,8 @@ export type ReviewReply = {
   findings: { severity: string; location: string; evidence: string; proposed_correction: string }[]
   provenance: {
     tree_inspected?: string; standards_read: string[]; model_used: string
-    files_covered: string[]; commands_run: string[]; could_not_verify: string[]
+    files_covered: string[]; commands_run: string[]; mcp_tools: string[]; docs_read: string[]
+    could_not_verify: string[]; substitutes: string[]
     canon_source: CanonSource
   }
 }

@@ -1,5 +1,5 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -773,6 +773,10 @@ function rebaseAndGate(
 
 export type ReviewCoverageInput = {
   id: number
+  patchId?: string | null
+  pathSet?: string | null
+  commitMessage?: string | null
+  outdatedReason?: string | null
   lenses: {
     lens: string
     runId: number
@@ -787,7 +791,8 @@ export type ReviewCoverageInput = {
 
 function completedReviews(project: string): ReviewCoverageInput[] {
   const rows = db().query(
-    `SELECT r.id, rl.lens, rl.run_id, rl.reviewed_tree, run.input_tree,
+    `SELECT r.id, r.patch_id, r.path_set, r.commit_message, r.outdated_reason,
+            rl.lens, rl.run_id, rl.reviewed_tree, run.input_tree,
             run.branch, run.base_commit, run.launch_cwd, run.head_commit
        FROM review r
        JOIN review_lens rl ON rl.review_id=r.id
@@ -799,13 +804,15 @@ function completedReviews(project: string): ReviewCoverageInput[] {
       )
       ORDER BY r.id, rl.id`,
   ).all(project) as {
-    id: number; lens: string; run_id: number; reviewed_tree: string | null
+    id: number; patch_id: string | null; path_set: string | null; commit_message: string | null
+    outdated_reason: string | null; lens: string; run_id: number; reviewed_tree: string | null
     input_tree: string | null; branch: string | null; base_commit: string | null
     launch_cwd: string | null; head_commit: string | null
   }[]
   const grouped = new Map<number, ReviewCoverageInput>()
   for (const row of rows) {
-    const review = grouped.get(row.id) ?? { id: row.id, lenses: [] }
+    const review = grouped.get(row.id) ?? { id: row.id, patchId: row.patch_id, pathSet: row.path_set,
+      commitMessage: row.commit_message, outdatedReason: row.outdated_reason, lenses: [] }
     review.lenses.push({
       lens: row.lens, runId: row.run_id, tree: row.reviewed_tree,
       inputTree: row.input_tree, branch: row.branch, baseCommit: row.base_commit,
@@ -831,7 +838,7 @@ type ReviewCarry = {
 
 export type CoverageVerdict =
   | { kind: 'exact' }
-  | ({ kind: 'carried'; resolution: 'pin' | 'walk' } & Omit<ReviewCarry, 'project' | 'branch'>)
+  | ({ kind: 'carried'; class: 'trivial-rebase' | 'no-code-change'; resolution: 'pin' | 'walk' } & Omit<ReviewCarry, 'project' | 'branch'>)
   | { kind: 'invalid'; reason: string; resolution?: 'pin' | 'walk' }
 
 export type CoverageGitResult = { ok: boolean; out: string; err: string; stdout: Uint8Array }
@@ -904,14 +911,6 @@ function patchId(runner: CoverageGitRunner, from: string, to: string): string {
   return id.out.split(/\s+/)[0] ?? ''
 }
 
-function contentHash(runner: CoverageGitRunner, from: string, to: string): string {
-  const diff = runner(['diff', '--no-color', '--no-ext-diff', '-U0', '--no-renames', `${from}..${to}`])
-  if (!diff.ok) throw new Error(`git diff ${from}..${to} failed: ${diff.err}`)
-  const canonical = new TextDecoder().decode(diff.stdout).split('\n')
-    .filter((line) => !line.startsWith('index ')).join('\n')
-  return createHash('sha256').update(canonical).digest('hex')
-}
-
 function changedPaths(runner: CoverageGitRunner, from: string, to: string): Set<string> {
   const args = ['diff', '--name-only', `${from}..${to}`]
   const output = coverageOutput(runner(args), args)
@@ -967,17 +966,23 @@ export function reviewCoverageVerdict(
   const changePaths = changedPaths(runner, oldBase, reviewedCommit)
   const trunkPaths = changedPaths(runner, oldBase, newBase)
   const overlap = [...changePaths].filter((path) => trunkPaths.has(path))
-  if (overlap.length) return { kind: 'invalid', reason: 'overlapping paths', resolution: resolved.resolution }
-  const reviewedPatch = patchId(runner, oldBase, reviewedCommit)
+  if (overlap.length) return { kind: 'invalid', reason: `overlapping paths) paths: ${overlap.sort().join(', ')}`, resolution: resolved.resolution }
+  const reviewedPatch = review.patchId || patchId(runner, oldBase, reviewedCommit)
   const candidatePatch = patchId(runner, newBase, tip)
   if (!reviewedPatch || reviewedPatch !== candidatePatch) {
     return { kind: 'invalid', reason: 'patch-id differs', resolution: resolved.resolution }
   }
-  if (contentHash(runner, oldBase, reviewedCommit) !== contentHash(runner, newBase, tip)) {
-    return { kind: 'invalid', reason: 'content differs', resolution: resolved.resolution }
+  const candidatePaths = [...changedPaths(runner, newBase, tip)].sort()
+  const reviewedPaths = review.pathSet ? JSON.parse(review.pathSet) as string[] : [...changePaths].sort()
+  if (JSON.stringify(reviewedPaths) !== JSON.stringify(candidatePaths)) {
+    return { kind: 'invalid', reason: 'path set differs', resolution: resolved.resolution }
   }
+  const messageResult = runner(['log', '-1', '--format=%B', tip])
+  const message = messageResult.ok ? messageResult.out : ''
   return {
-    kind: 'carried', resolution: resolved.resolution, tip, tree, reviewId: review.id, reviewedCommit, reviewedTree,
+    kind: 'carried', class: review.commitMessage !== null && review.commitMessage !== undefined &&
+      review.commitMessage !== message ? 'no-code-change' : 'trivial-rebase',
+    resolution: resolved.resolution, tip, tree, reviewId: review.id, reviewedCommit, reviewedTree,
     patchId: candidatePatch, oldBase, newBase,
   }
 }
@@ -990,7 +995,7 @@ function coverageText(project: string, repoRoot: string, tip: string, trunk: str
         const verdict = reviewCoverageVerdict(repoRoot, review, tip, trunk)
         if (verdict.kind === 'exact') return `review ${review.id}: exact`
         if (verdict.kind === 'carried') {
-          return `review ${review.id}: carried (patch-id ${verdict.patchId}; ` +
+          return `review ${review.id}: carried (patch-id ${verdict.patchId}; class ${verdict.class}; ` +
             `${verdict.oldBase}..${verdict.newBase}) (commit from ${verdict.resolution})`
         }
         return `review ${review.id}: invalid (${verdict.reason}) ` +
@@ -1018,13 +1023,21 @@ function requireReviewCoverage(
       carry: { project: project.name, branch, ...carried.verdict },
     }
   }
+  for (const { review, verdict } of verdicts) {
+    if (verdict.kind !== 'invalid' || !['patch-id differs', 'path set differs'].includes(verdict.reason)) continue
+    db().query('UPDATE review SET outdated_at=COALESCE(outdated_at,?), outdated_reason=? WHERE id=?')
+      .run(nowIso(), verdict.reason, review.id)
+  }
+  const reruns = verdicts.flatMap(({ review, verdict }) => verdict.kind === 'invalid'
+    ? review.lenses.map((lens) => `review ${review.id} (${verdict.reason}); re-run lens ${lens.lens}: ` +
+      `orch do review-lens --review ${branch} --lens ${lens.lens}`)
+    : [])
   throw namedError(
     `refusing to land unreviewed content\ncandidate tree: ${candidateTree}\n` +
     `${coverageText(project.name, repoRoot, tip, trunk)}\n` +
-    'A rebase onto moved trunk changes the tree, so re-run the review lenses from the rebased branch ' +
-    '(with --carry) and record them.',
+    `${reruns.join('\n')}`,
     INVARIANT_LOCK_SCOPE,
-    'orch do review-lens --carry',
+    reruns[0]?.replace(/^.*: /, '') ?? `orch do review-lens --review ${branch} --lens <id>`,
   )
 }
 

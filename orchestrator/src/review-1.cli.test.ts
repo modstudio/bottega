@@ -449,7 +449,7 @@ describe('review discipline', () => {
     }
     expect(REVIEW_SCHEMA.properties.provenance.required).toEqual([
       'standards_read', 'model_used', 'files_covered',
-      'commands_run', 'could_not_verify', 'canon_source',
+      'commands_run', 'mcp_tools', 'docs_read', 'could_not_verify', 'substitutes', 'canon_source',
     ])
     expect(REVIEW_SCHEMA.properties.provenance.properties.canon_source)
       .toBe(VERIFY_CLAIM_SCHEMA.properties.provenance.properties.canon_source)
@@ -464,6 +464,9 @@ describe('review discipline', () => {
     expect(parseReviewReply({
       ...reviewReply(0), provenance: { ...reviewReply(0).provenance, canon_source: 'connected' },
     })).toBeNull()
+    const missingSection = reviewReply(0) as Record<string, any>
+    delete missingSection.provenance.substitutes
+    expect(parseReviewReply(missingSection)).toBeNull()
   })
 
   test('review parsing accepts an omitted or legacy claimed tree', () => {

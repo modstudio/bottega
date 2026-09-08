@@ -197,7 +197,8 @@ export function collectResult(
   const row = database.query(
     `SELECT id, agent, job, status, latency_ms, vendor_tokens, output_path, error,
             failure_kind, exit_code, parent_run_id, evidence_excluded, base_commit,
-            cwd, mcp, mcp_server, mcp_connected, mcp_error, mcp_probe
+            cwd, mcp, mcp_server, mcp_connected, mcp_error, mcp_probe,
+            review_provenance, provenance_status
        FROM run WHERE id = ?`,
   ).get(chain.finalId) as {
     id: number; agent: string; job: string; status: string; latency_ms: number | null
@@ -206,6 +207,7 @@ export function collectResult(
     evidence_excluded: string | null; base_commit: string | null
     cwd: string | null; mcp: number | null; mcp_server: string | null
     mcp_connected: number | null; mcp_error: string | null; mcp_probe: string | null
+    review_provenance: string | null; provenance_status: string | null
   } | null
   if (!row) throw new Error(`no run ${id}`)
 
@@ -234,6 +236,14 @@ export function collectResult(
   const output = row.output_path && existsSync(row.output_path)
     ? readFileSync(row.output_path, 'utf8')
     : null
+  if (row.review_provenance) {
+    try {
+      const provenance = JSON.parse(row.review_provenance) as { could_not_verify?: string[]; substitutes?: string[] }
+      console.log(`PROVENANCE${row.provenance_status ? ` (${row.provenance_status})` : ''}`)
+      console.log(`  could not verify: ${provenance.could_not_verify?.join('; ') || 'none'}`)
+      console.log(`  substitutes: ${provenance.substitutes?.join('; ') || 'none'}`)
+    } catch { /* a legacy malformed value remains visible in the raw output */ }
+  }
   if (!outcome.ok) {
     if (output !== null) {
       if (row.failure_kind === 'truncated') {

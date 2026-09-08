@@ -158,6 +158,16 @@ export function harnessHealth(days = HEALTH_DEFAULT_DAYS, database: Database = d
           ) as typeof attribution,
         }
       : row)
+  const provenanceColumn = database.query(
+    "SELECT 1 AS n FROM pragma_table_info('run') WHERE name='review_provenance'",
+  ).get() as { n: number } | null
+  const provenance = provenanceColumn ? (database.query(
+    `SELECT agent,
+       SUM(CASE WHEN json_array_length(json_extract(review_provenance,'$.substitutes')) > 0 THEN 1 ELSE 0 END) substituted,
+       SUM(CASE WHEN provenance_status='silent' THEN 1 ELSE 0 END) silent
+       FROM run WHERE review_provenance IS NOT NULL AND datetime(started_at) >= datetime(?)
+       GROUP BY agent ORDER BY agent`,
+  ).all(from) as { agent: string; substituted: number; silent: number }[]) : []
 
   return HarnessHealthSchema.parse({
     header: 'Harness health only — never routing or scoring evidence. Review measurement gaps are harness failures from bb28501 on 2026-09-07; that step is reclassification, not regression. Confinement clears are reclassify audit rows with cleared:true; landing refusals are reported separately. Contention is waits, refusals and invalidations on shared resources — never routing evidence.',
@@ -165,7 +175,7 @@ export function harnessHealth(days = HEALTH_DEFAULT_DAYS, database: Database = d
     mcpProbeFailures, mcpUnprobed,
     mcpUnverifiedByAgent: [...mcpUnverified].map(([agent, count]) => ({ agent, count }))
       .sort((a, b) => b.count - a.count || a.agent.localeCompare(b.agent)),
-    flakes,
+    provenance, flakes,
     contention: summarizeContention(database, from),
   })
 }

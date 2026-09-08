@@ -102,7 +102,7 @@ describe('behavioural canon evals', () => {
     }],
     provenance: {
       standards_read: ['AGENTS.md'], model_used: 'stub', files_covered: [TRACKED_EVAL_PATH],
-      commands_run: [], could_not_verify: [], canon_source: 'unknown' as const,
+      commands_run: [], mcp_tools: [], docs_read: [], could_not_verify: [], substitutes: [], canon_source: 'unknown' as const,
     },
   }
   const untrackedReview = {
@@ -124,7 +124,7 @@ describe('behavioural canon evals', () => {
     }],
     provenance: {
       standards_read: ['AGENTS.md'], model_used: 'stub', files_covered: ['scripts/add.ts'],
-      commands_run: [reproduce], could_not_verify: [], canon_source: 'unknown' as const,
+      commands_run: [reproduce], mcp_tools: [], docs_read: [], could_not_verify: [], substitutes: [], canon_source: 'unknown' as const,
     },
   }
   const proseReview = {

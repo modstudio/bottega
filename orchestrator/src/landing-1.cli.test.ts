@@ -866,7 +866,7 @@ test('only bun\'s complete timeout line reports machine load', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
-  test('carries a pre-rebase review across an unrelated trunk move and records it', async () => {
+  test('carries a message-only amendment across an unrelated trunk move as no-code-change', async () => {
     const { repo, trees } = repoWithBranches(['carry-review'])
     const project = 'landing-carry-review'
     upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
@@ -880,6 +880,10 @@ test('only bun\'s complete timeout line reports machine load', () => {
       expect(g(repo, 'rev-parse', `refs/orch/reviewed/${
         (db().query('SELECT run_id FROM review_lens WHERE review_id=?').get(reviewId) as { run_id: number }).run_id
       }`)).toBe(reviewedCommit)
+      db().query('UPDATE review SET commit_message=? WHERE id=?').run(
+        g(trees['carry-review']!, 'log', '-1', '--format=%B'), reviewId,
+      )
+      g(trees['carry-review']!, 'commit', '--amend', '-m', 'amended review message')
       writeFileSync(join(repo, 'unrelated.txt'), 'trunk only\n')
       g(repo, 'add', 'unrelated.txt')
       g(repo, 'commit', '-m', 'unrelated trunk move')
@@ -888,6 +892,7 @@ test('only bun\'s complete timeout line reports machine load', () => {
       g(repo, 'reflog', 'expire', '--expire=now', '--all')
       const beforeLandStatus = landingReviewCoverage(trees['carry-review']!)
       expect(beforeLandStatus).toContain(`review ${reviewId}: carried (patch-id `)
+      expect(beforeLandStatus).toContain('class no-code-change')
       expect(beforeLandStatus).toContain('(commit from pin)')
       expect(beforeLandStatus).toContain(`${oldBase}..${newBase})`)
       const child = childLand(repo, 'carry-review', { unreviewed: null })
@@ -1084,7 +1089,11 @@ test('only bun\'s complete timeout line reports machine load', () => {
       expect(landingReviewCoverage(trees['changed-review']!)).toContain('invalid (patch-id differs)')
       const child = childLand(repo, 'changed-review', { unreviewed: null })
       expect(await child.exited).not.toBe(0)
-      expect(await new Response(child.stderr).text()).toContain('invalid (patch-id differs)')
+      const stderr = await new Response(child.stderr).text()
+      expect(stderr).toContain('invalid (patch-id differs)')
+      expect(stderr).toContain('orch do review-lens --review changed-review --lens lens-1')
+      expect(db().query('SELECT outdated_reason FROM review ORDER BY id DESC LIMIT 1').get())
+        .toEqual({ outdated_reason: 'patch-id differs' })
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
@@ -1110,7 +1119,7 @@ test('only bun\'s complete timeout line reports machine load', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
-  test('refuses a whitespace-only post-review change even when patch-id is unchanged', async () => {
+  test('carries a whitespace-only post-review change when stable patch-id is unchanged', async () => {
     const { repo, trees } = repoWithBranches(['whitespace-review'])
     const project = 'landing-whitespace-review'
     upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
@@ -1124,8 +1133,7 @@ test('only bun\'s complete timeout line reports machine load', () => {
       g(trees['whitespace-review']!, 'add', 'whitespace-review.txt')
       g(trees['whitespace-review']!, 'commit', '-m', 'whitespace after review')
       const child = childLand(repo, 'whitespace-review', { unreviewed: null })
-      expect(await child.exited).not.toBe(0)
-      expect(await new Response(child.stderr).text()).toContain('invalid (content differs)')
+      expect(await child.exited).toBe(0)
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 

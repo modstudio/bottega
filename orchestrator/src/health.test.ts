@@ -118,6 +118,19 @@ describe('harness health', () => {
     expect(text).toContain('signal=exit-143')
   })
 
+  test('counts substituted and silent provenance by agent', () => {
+    const now = new Date('2026-09-07T12:00:00.000Z')
+    const substituted = addRun({ agent: 'grok', job: 'review-lens', startedAt: '2026-09-07T10:00:00.000Z' })
+    const silent = addRun({ agent: 'grok', job: 'review-lens', startedAt: '2026-09-07T11:00:00.000Z' })
+    db().query('UPDATE run SET review_provenance=?, provenance_status=? WHERE id=?')
+      .run(JSON.stringify({ substitutes: ['mirror for requested MCP'], could_not_verify: ['MCP unavailable'] }), null, substituted)
+    db().query('UPDATE run SET review_provenance=?, provenance_status=? WHERE id=?')
+      .run(JSON.stringify({ substitutes: [], could_not_verify: [] }), 'silent', silent)
+    expect(harnessHealth(1, db(), now).provenance).toEqual([
+      { agent: 'grok', substituted: 1, silent: 1 },
+    ])
+  })
+
   test('lists landings that reached trunk with a post-step error', () => {
     db().query(
       `INSERT INTO landing (project, branch, status, started_at, error)

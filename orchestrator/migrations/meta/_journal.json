@@ -85,6 +85,13 @@
       "when": 1788900000005,
       "tag": "0011_run_confinement",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1788900000006,
+      "tag": "0012_review_identity_provenance",
+      "breakpoints": true
     }
   ]
 }

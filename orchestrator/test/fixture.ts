@@ -307,7 +307,8 @@ export const reviewReply = (findings = 1, severity = 'major') => ({
   })),
   provenance: {
     tree_inspected: 'abc123', standards_read: ['AGENTS.md'], model_used: 'reported-by-reviewer',
-    files_covered: ['file.ts'], commands_run: ['bun test'], could_not_verify: [],
+    files_covered: ['file.ts'], commands_run: ['bun test'], mcp_tools: [], docs_read: [],
+    could_not_verify: [], substitutes: [],
     canon_source: 'live database' as const,
   },
 })

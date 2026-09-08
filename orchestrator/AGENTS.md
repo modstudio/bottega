@@ -160,7 +160,12 @@ claim about the tree is not consulted for coverage. An empty findings array is a
 review only with provenance showing what was read, including a covered file from the measured
 change when its changed paths can be established. Without that coverage the run is an
 `unevidenced` failure of the agent, not a clean result; missing or malformed output is not a review.
-A review run records its branch and base so its coverage can carry across a rebase.
+A review is pinned to the change it read: its stable patch id and touched path
+set, with the reviewed tree retained as a secondary fact. A rebase over
+disjoint trunk work that preserves that patch keeps the review, as does a
+commit-message-only amendment. Rework changes the patch and outdates the row;
+landing names each exact lens to re-run against the tip. Overlapping trunk work
+still requires review of the composition even when git replayed it cleanly.
 
 A measurement job — diagnose, understand, file-question — returns what it measured or says why not. The caller names the tables at dispatch; each is delivered, blocked with a reason, or not applicable. A conclusion without its table is unevidenced, the same class as a clean review with no coverage.
 
@@ -821,7 +826,7 @@ sessions have used the split twice.
 
 A run: `reserved → attached → running → asking → ok | failed | stopped | stale`; a chain inherits its last turn's state.
 
-A branch: `cut → built → reviewed → rebased → landed | abandoned`; a rebase invalidates the review's exact match, and the pin or the four-fact carry re-establishes it.
+A branch: `cut → built → reviewed → rebased → landed | abandoned`; review follows a patch-preserving rebase over disjoint paths, while rework outdates it.
 
 Trunk: `free | locked-by-landing`.
 

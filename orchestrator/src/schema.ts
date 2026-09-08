@@ -63,6 +63,8 @@ export const run = sqliteTable('run', {
   unreconciled: integer().notNull().default(0),
   mcpProbe: text('mcp_probe'),
   confinement: text(),
+  reviewProvenance: text('review_provenance'),
+  provenanceStatus: text('provenance_status'),
 }, (t) => [
   check('run_status_check', sql`${t.status} in ('running','ok','failed','stale','asking','stopped')`),
   check('run_unreconciled_check', sql`${t.unreconciled} in (0,1)`),
@@ -183,6 +185,8 @@ export const review = sqliteTable('review', {
   id: id(), recordedAt: text('recorded_at').notNull(), completedAt: text('completed_at'), tier: integer(), tierRisk: integer('tier_risk'),
   tierSize: integer('tier_size'), tierReasons: text('tier_reasons'), tierReason: text('tier_reason'),
   projectId: integer('project_id').references(() => project.id, { onDelete: 'restrict' }),
+  patchId: text('patch_id'), pathSet: text('path_set'), commitMessage: text('commit_message'),
+  outdatedAt: text('outdated_at'), outdatedReason: text('outdated_reason'),
 })
 
 export const reviewLens = sqliteTable('review_lens', {
@@ -190,6 +194,8 @@ export const reviewLens = sqliteTable('review_lens', {
   runId: integer('run_id').notNull().unique().references(() => run.id, { onDelete: 'cascade' }), lens: text().notNull(), agent: text().notNull(),
   model: text(), treeInspected: text('tree_inspected'), reviewedTree: text('reviewed_tree'), standardsRead: text('standards_read').notNull(),
   filesCovered: text('files_covered').notNull(), commandsRun: text('commands_run').notNull(), couldNotVerify: text('could_not_verify').notNull(),
+  mcpTools: text('mcp_tools').notNull().default('[]'), docsRead: text('docs_read').notNull().default('[]'),
+  substitutes: text().notNull().default('[]'),
   reproduced: text(), coverage: text(), limits: text(), overlap: text(),
 }, (t) => [
   check('review_lens_reproduced_check', sql`${t.reproduced} is null or ${t.reproduced} in (${values(REVIEW_REPRODUCED)})`),

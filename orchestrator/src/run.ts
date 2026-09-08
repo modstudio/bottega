@@ -3251,6 +3251,14 @@ export async function run(opts: {
       escalations: writesJob ? acceptedQuestions.length : null,
     }
     persistTerminalSnapshot(claim.id, terminalSnapshot)
+    const reviewProvenance = parsedReview ? JSON.stringify(parsedReview.provenance) : null
+    const provenanceSilent = parsedReview && parsedReview.provenance.could_not_verify.length === 0 && (
+      parsedReview.provenance.substitutes.length > 0 || mcpConnection?.connected !== true ||
+      parsedReview.provenance.mcp_tools.some((tool) => {
+        const server = tool.split(/[.:/]/, 1)[0]
+        return Boolean(server && mcpConnection?.server && server !== mcpConnection.server)
+      })
+    )
     const writeTerminalRow = () => writeTransaction(() => {
       db().query(
         `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
@@ -3259,12 +3267,14 @@ export async function run(opts: {
                         error=CASE WHEN status='stopped' THEN error ELSE ? END,
                         failure_kind=CASE WHEN status='stopped' THEN failure_kind ELSE ? END,
                         vendor_session=COALESCE(?, vendor_session), pre_confinement=?, confinement=?,
+                        review_provenance=?, provenance_status=?,
                         unreconciled=0 WHERE id=?`,
       ).run(
         Date.now() - started, exitCode, new TextEncoder().encode(output).byteLength, outPath, promptPath,
         vendorTokens, costUsd, effectiveModel, status, error, failureKind,
         resolvedSession, preConfinement,
-        confinementEvent ? JSON.stringify(confinementEvent) : null, claim.id,
+        confinementEvent ? JSON.stringify(confinementEvent) : null,
+        reviewProvenance, provenanceSilent ? 'silent' : null, claim.id,
       )
 
       /**

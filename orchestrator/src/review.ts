@@ -80,7 +80,7 @@ export function parseReviewReply(value: unknown): ReviewReply | null {
   const p = v.provenance
   const provenanceKeys = [
     'standards_read', 'model_used', 'files_covered', 'commands_run',
-    'could_not_verify', 'canon_source',
+    'mcp_tools', 'docs_read', 'could_not_verify', 'substitutes', 'canon_source',
   ]
   if (!p || typeof p !== 'object' || Array.isArray(p) ||
       !(exactKeys(p, provenanceKeys) || exactKeys(p, ['tree_inspected', ...provenanceKeys])) ||
@@ -88,7 +88,8 @@ export function parseReviewReply(value: unknown): ReviewReply | null {
         typeof p.tree_inspected !== 'string') ||
       typeof p.model_used !== 'string' ||
       !isStrings(p.standards_read) || !isStrings(p.files_covered) ||
-      !isStrings(p.commands_run) || !isStrings(p.could_not_verify) ||
+      !isStrings(p.commands_run) || !isStrings(p.mcp_tools) || !isStrings(p.docs_read) ||
+      !isStrings(p.could_not_verify) || !isStrings(p.substitutes) ||
       !isCanonSource(p.canon_source)) return null
   if (!v.findings.every((f) => f && typeof f === 'object' && !Array.isArray(f) &&
       exactKeys(f, ['severity', 'location', 'evidence', 'proposed_correction']) &&
@@ -338,7 +339,8 @@ export function listReviews(
 
 export function getReview(reviewId: number, database: Database = db()) {
   const review = database.query(
-    'SELECT id, recorded_at, completed_at, tier, tier_risk, tier_size, tier_reasons, tier_reason FROM review WHERE id=?',
+    `SELECT id, recorded_at, completed_at, tier, tier_risk, tier_size, tier_reasons, tier_reason,
+            patch_id, path_set, commit_message, outdated_at, outdated_reason FROM review WHERE id=?`,
   ).get(reviewId) as any
   if (!review) throw new Error(`no review ${reviewId}`)
   const lenses = reviewReadLenses(reviewId, database)
@@ -350,6 +352,9 @@ export function getReview(reviewId: number, database: Database = db()) {
     tier: review.tier, risk: review.tier_risk, size: review.tier_size,
     tier_reasons: review.tier_reasons ? JSON.parse(review.tier_reasons) : null,
     tier_reason: review.tier_reason, projects,
+    change_identity: { patch_id: review.patch_id, path_set: review.path_set ? JSON.parse(review.path_set) : null },
+    outdated_at: review.outdated_at, outdated_reason: review.outdated_reason,
+    current_class: projects.length === 1 ? currentCoverage(reviewId, projects[0]!, lenses, database) : null,
     lenses: lenses.map((lens) => {
       const project = projects.length === 1 ? projectRecord(database, projects[0]!) : null
       const pin = project ? git(project.path, ['rev-parse', '--verify', lens.reviewRef], true) : { ok: false, out: '' }
@@ -425,20 +430,40 @@ export function recordReviews(
         `run ${run.id}: ${run.input_tree ?? 'NULL'}`).join('\n')}`,
     )
   }
+  const identity = (() => {
+    const run = runs[0]!
+    if (!run.repo || !run.base_commit || !run.head_commit) return null
+    const repo = projectPath(database, run.repo)
+    if (!repo) return null
+    const diff = git(repo, ['diff', `${run.base_commit}..${run.head_commit}`])
+    const paths = git(repo, ['diff', '--name-only', `${run.base_commit}..${run.head_commit}`])
+    const message = git(repo, ['log', '-1', '--format=%B', run.head_commit])
+    if (!diff.ok || !paths.ok || !message.ok) return null
+    const patch = git(repo, ['patch-id', '--stable'], true, diff.stdout)
+    if (!patch.ok) return null
+    return {
+      patchId: patch.out.split(/\s+/)[0] ?? '',
+      paths: paths.out ? paths.out.split('\n').sort() : [],
+      message: message.out,
+    }
+  })()
   const reviewId = writeTransaction(() => {
     const tier = tierForRuns(runs, database)
     const review = database.query(
-      `INSERT INTO review (recorded_at, tier, tier_risk, tier_size, tier_reasons, tier_reason, project_id)
-       VALUES (?,?,?,?,?,?,?) RETURNING id`,
+      `INSERT INTO review (recorded_at, tier, tier_risk, tier_size, tier_reasons, tier_reason, project_id,
+                           patch_id, path_set, commit_message)
+       VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING id`,
     ).get(nowIso(), tier?.tier ?? null, tier?.risk ?? null, tier?.size ?? null,
       tier ? JSON.stringify(tier.reasons) : null,
       tier ? tier.reasons[tier.risk >= tier.size ? 0 : 1] : null,
-      runs.every((run)=>run.project_id===runs[0]!.project_id)?runs[0]!.project_id:null) as { id: number }
+      runs.every((run)=>run.project_id===runs[0]!.project_id)?runs[0]!.project_id:null,
+      identity?.patchId ?? null, identity ? JSON.stringify(identity.paths) : null,
+      identity?.message ?? null) as { id: number }
     const insertLens = database.query(
       `INSERT INTO review_lens
          (review_id, run_id, lens, agent, model, tree_inspected, reviewed_tree, standards_read,
-          files_covered, commands_run, could_not_verify)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+          files_covered, commands_run, could_not_verify, mcp_tools, docs_read, substitutes)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
     )
     const insert = database.query(
       `INSERT INTO review_finding
@@ -453,7 +478,8 @@ export function recordReviews(
         output.provenance.tree_inspected ?? null, run.input_tree,
         JSON.stringify(output.provenance.standards_read),
         JSON.stringify(output.provenance.files_covered), JSON.stringify(output.provenance.commands_run),
-        JSON.stringify(output.provenance.could_not_verify)) as { id: number }
+        JSON.stringify(output.provenance.could_not_verify), JSON.stringify(output.provenance.mcp_tools),
+        JSON.stringify(output.provenance.docs_read), JSON.stringify(output.provenance.substitutes)) as { id: number }
       output.findings.forEach((finding) => insert.run(
         review.id, lens.id, ++ordinal, finding.severity, finding.location, finding.evidence,
         finding.proposed_correction,
