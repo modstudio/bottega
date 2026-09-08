@@ -78,12 +78,23 @@ export function parseReviewReply(value: unknown): ReviewReply | null {
   if (!v || typeof v !== 'object' || Array.isArray(v) || !exactKeys(v, ['findings', 'provenance']) ||
       !Array.isArray(v.findings)) return null
   const p = v.provenance
+  // The three DEV-371 provenance lists are demanded by the schema, but an agent
+  // whose schema binding was dropped (codex with MCP tools active) follows the
+  // prose contract only; an absent list reads as empty rather than as a
+  // malformed reply, so a review is never lost to a missing empty array.
   const provenanceKeys = [
     'standards_read', 'model_used', 'files_covered', 'commands_run',
-    'mcp_tools', 'docs_read', 'could_not_verify', 'substitutes', 'canon_source',
+    'could_not_verify', 'canon_source',
   ]
+  const optionalLists = ['mcp_tools', 'docs_read', 'substitutes'] as const
+  if (p && typeof p === 'object' && !Array.isArray(p)) {
+    for (const key of optionalLists) {
+      if (!(key in p)) (p as Record<string, unknown>)[key] = []
+    }
+  }
+  const withLists = (keys: string[]) => [...keys, ...optionalLists]
   if (!p || typeof p !== 'object' || Array.isArray(p) ||
-      !(exactKeys(p, provenanceKeys) || exactKeys(p, ['tree_inspected', ...provenanceKeys])) ||
+      !(exactKeys(p, withLists(provenanceKeys)) || exactKeys(p, withLists(['tree_inspected', ...provenanceKeys]))) ||
       (p.tree_inspected !== undefined && p.tree_inspected !== null &&
         typeof p.tree_inspected !== 'string') ||
       typeof p.model_used !== 'string' ||
