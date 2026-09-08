@@ -8,7 +8,7 @@ test('Health view renders rows and a last-seen sparkline from a stubbed client p
     days: 14,
     from: '2026-08-24T00:00:00.000Z',
     classes: [{
-      kind: 'interrupted', count: 2, totalTimeMs: 1_020_000, meanTimeMs: 510_000,
+      kind: 'interrupted', count: 2, totalTimeMs: 1_020_000, meanTimeMs: 510_000, workPreserved: 1,
       firstSeen: '2026-09-06T10:00:00.000Z', lastSeen: '2026-09-07T10:00:00.000Z',
       clusters: [], sparkline: [
         { day: '2026-09-06', count: 1 }, { day: '2026-09-07', count: 1 },

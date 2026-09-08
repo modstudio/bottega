@@ -168,7 +168,7 @@ test('answer refuses six individually-legal --file rulings whose packed resume e
     }
   })
 
-  test('stopped and stale roots cannot claim another continuation turn', () => {
+  test('stopped roots resume while stale roots cannot claim another continuation turn', () => {
     for (const status of ['stopped', 'stale']) {
       const id = addRun({ agent: 'missing-test-agent', job: 'implement', status })
       db().query('UPDATE run SET session_id=?, vendor_session=? WHERE id=?')
@@ -176,10 +176,18 @@ test('answer refuses six individually-legal --file rulings whose packed resume e
       const before = (db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n
 
       const result = orch('continue', String(id), 'resume after lifecycle mutation')
-      expect(result.code).toBe(1)
-      expect(result.err).toContain(`run ${id} is ${status} and cannot be continued`)
-      expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before)
-      expect(db().query('SELECT action FROM run_mutation_audit WHERE root_id=?').all(id)).toEqual([])
+      if (status === 'stopped') {
+        expect(result.code).toBe(0)
+        expect(Number(result.out.trim())).toBeGreaterThan(id)
+        expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before + 1)
+        expect(db().query('SELECT action FROM run_mutation_audit WHERE root_id=?').all(id))
+          .toEqual([{ action: 'continue' }])
+      } else {
+        expect(result.code).toBe(1)
+        expect(result.err).toContain(`run ${id} is stale and cannot be continued`)
+        expect((db().query('SELECT COUNT(*) n FROM run').get() as { n: number }).n).toBe(before)
+        expect(db().query('SELECT action FROM run_mutation_audit WHERE root_id=?').all(id)).toEqual([])
+      }
     }
   })
 
