@@ -7,10 +7,10 @@ import {
   JOBS, NEEDS_HUMAN, NOT_EVIDENCE, run, upsertProject,
 } from '../test/fixture.ts'
 import { pidAlive } from './db.ts'
-import { formatIdleKillError, idleKillMayProceed, idleKillMs, isGroupKillablePgid, isUninterruptible, isWorkerCpuIdle,
+import { formatIdleKillError, idleKillMayProceed, idleKillMs, installTestProcessSampler, isGroupKillablePgid, isUninterruptible, isWorkerCpuIdle,
   parseIdleReclaimedMs, parsePsTable, runHasLiveDescendants, shouldIdleKill, terminateProcessGroup,
   DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS, DEFAULT_IDLE_KILL_MS } from './idle-kill.ts'
-import { CPU_LOCAL_JOBS, JOB_TIMEOUTS, jobIdleKillMs } from './jobs.ts'
+import { CPU_LOCAL_JOBS, IDLE_BELOW_WALL_MS, JOB_TIMEOUTS, jobDeclaredWallMs, jobIdleKillMs } from './jobs.ts'
 import { isRoutingEvidence } from './route.ts'
 import { harnessHealth } from './health.ts'
 import { installTestTransport, type AgentTransport, type TransportResult } from './transport.ts'
@@ -18,6 +18,7 @@ import { installTestTransport, type AgentTransport, type TransportResult } from 
 const roots: string[] = []
 afterEach(() => {
   installTestTransport(null)
+  installTestProcessSampler(null)
   delete process.env.ORCH_IDLE_KILL_MS
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
@@ -56,17 +57,32 @@ describe('idle kill threshold', () => {
   test('the long idle bound is the default; only CPU-local jobs may use the short one', () => {
     expect(DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS).toBe(30 * 60_000)
     expect([...CPU_LOCAL_JOBS]).toEqual([])
-    for (const name of Object.keys(JOBS)) {
-      expect(jobIdleKillMs(name, {})).toBe(30 * 60_000)
-    }
     expect(jobIdleKillMs('understand', {})).toBe(30 * 60_000)
     expect(jobIdleKillMs('diagnose', {})).toBe(30 * 60_000)
-    expect(jobIdleKillMs('verify-claim', {})).toBe(30 * 60_000)
-    expect(jobIdleKillMs('review-lens-inline', {})).toBe(30 * 60_000)
+    expect(jobIdleKillMs('implement', {})).toBe(30 * 60_000)
     expect(jobIdleKillMs('implement', { ORCH_IDLE_KILL_MS: '400' })).toBe(400)
     for (const name of Object.keys(JOB_TIMEOUTS)) {
       expect(jobIdleKillMs(name, {})).toBeGreaterThan(0)
     }
+  })
+
+  test('idle is strictly below the wall for every job', () => {
+    expect(IDLE_BELOW_WALL_MS).toBe(60_000)
+    for (const name of Object.keys(JOBS)) {
+      const wall = jobDeclaredWallMs(name)
+      expect(wall).toBeGreaterThan(0)
+      const idle = jobIdleKillMs(name, {})
+      expect(idle).toBeLessThan(wall!)
+      expect(jobIdleKillMs(name, {}, wall!)).toBeLessThan(wall!)
+    }
+    expect(jobIdleKillMs('fix', {})).toBe(30 * 60_000 - IDLE_BELOW_WALL_MS)
+    expect(jobIdleKillMs('review-lens', {})).toBe(30 * 60_000 - IDLE_BELOW_WALL_MS)
+    expect(jobIdleKillMs('safety', {})).toBe(30 * 60_000 - IDLE_BELOW_WALL_MS)
+    expect(jobIdleKillMs('craft', {})).toBe(30 * 60_000 - IDLE_BELOW_WALL_MS)
+    expect(jobIdleKillMs('land', {})).toBe(30 * 60_000 - IDLE_BELOW_WALL_MS)
+    expect(jobIdleKillMs('summarize', {})).toBe(20 * 60_000 - IDLE_BELOW_WALL_MS)
+    expect(jobIdleKillMs('verify-claim', {})).toBe(20 * 60_000 - IDLE_BELOW_WALL_MS)
+    expect(jobIdleKillMs('review-lens-inline', {})).toBe(20 * 60_000 - IDLE_BELOW_WALL_MS)
   })
 })
 
@@ -359,6 +375,92 @@ describe('live idle kill', () => {
     expect(isRoutingEvidence({ status: row.status, delivery: null, failureKind: row.failure_kind })).toBe(false)
     expect(candidates('implement').find((item) => item.agent === 'codex'))
       .toMatchObject({ failures: 0, evidence: 0 })
+  }, 20_000)
+
+  test('a completed reply.json outranks an idle kill', async () => {
+    const main = repo()
+    const createPath = join(main, 'create.cjs')
+    writeFileSync(createPath, `const {spawnSync}=require('child_process');const {mkdirSync}=require('fs');` +
+      `const {join}=require('path');const branch=process.argv.at(-1);const root=${JSON.stringify(main)};` +
+      `const path=join(root,'trees',branch);mkdirSync(join(root,'trees'),{recursive:true});` +
+      `const p=spawnSync('git',['worktree','add','-b',branch,path,'main'],{cwd:root,stdio:['ignore','ignore','inherit']});` +
+      `if(p.status)process.exit(p.status);process.stdout.write(path+'\\n')`)
+    upsertProject({ name: `idle-kill-reply`, path: main,
+      settings: { trunk: 'main', worktree: {
+        create: declaredCreate(process.execPath, [createPath, '{branch}']),
+        branch: '{key}-orch-{id}',
+      } } })
+    const reply = JSON.stringify({
+      status: 'done',
+      summary: 'already finished',
+      files_changed: ['file.txt'],
+      questions: null,
+      deviations: null,
+      tests: { command: 'true', ran: true, passed: true, detail: null },
+      blockers: null,
+    })
+    const transport: AgentTransport = {
+      name: 'cli',
+      async start(opts) {
+        const script = join(opts.cwd, 'idle-worker.sh')
+        writeFileSync(script, `#!/bin/sh\nset -e\necho worker > worker.txt\ngit add worker.txt\n` +
+          `git commit -m "DEV-389 worker commit" >/dev/null\n` +
+          `printf '%s\\n' ${JSON.stringify(reply)} > "$ORCH_SCRATCH/reply.json"\nexec sleep 3600\n`)
+        chmodSync(script, 0o755)
+        const child = Bun.spawn([script], {
+          cwd: opts.cwd, env: opts.env, stdout: 'ignore', stderr: 'ignore',
+        })
+        const empty: TransportResult = {
+          stdout: '', stderr: '', raw: '', parsed: null, output: '', tokens: null, costUsd: null,
+          sessionId: null, stopReason: null, error: null, exitCode: 143, pid: child.pid,
+          events: [], asking: false, failureKind: null, status: 'failed', questions: [],
+        }
+        return {
+          pid: child.pid, kill(sig) { try { child.kill(sig === 9 ? 9 : 'SIGTERM') } catch { /* gone */ } },
+          async prompt() {}, async *events() {}, async cancel() { try { child.kill('SIGTERM') } catch { /* gone */ } },
+          async collect() {
+            empty.exitCode = await child.exited
+            return empty
+          },
+        }
+      },
+      prompt(handle, text) { return handle.prompt(text) },
+      events(handle) { return handle.events() },
+      cancel(handle) { return handle.cancel() },
+      resume(opts) { return this.start(opts) },
+    }
+    installTestTransport(transport)
+    installTestProcessSampler(() => {
+      const rows = db().query(
+        'SELECT agent_pid FROM run WHERE agent_pid IS NOT NULL',
+      ).all() as { agent_pid: number }[]
+      return rows.filter((row) => row.agent_pid > 1).map((row) => ({
+        pid: row.agent_pid, ppid: 1, pgid: row.agent_pid, cpu: 0, state: 'S',
+      }))
+    })
+    process.env.ORCH_IDLE_KILL_MS = '400'
+    const priorDepth = process.env.ORCH_DEPTH
+    process.env.ORCH_DEPTH = '0'
+    let runId: number | null = null
+    try {
+      const result = await run({
+        job: 'implement', prompt: 'edit the tracked file', cwd: main,
+        agent: 'codex', key: 'DEV-389', noFailover: true,
+      })
+      runId = result.id
+    } catch (error) {
+      runId = (error as Error & { runId?: number }).runId ?? null
+    } finally {
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+    }
+    expect(runId).not.toBeNull()
+    const row = db().query('SELECT failure_kind,status,error FROM run WHERE id=?').get(runId) as {
+      failure_kind: string | null; status: string; error: string | null
+    }
+    expect(row.status).toBe('ok')
+    expect(row.failure_kind).toBeNull()
+    expect(row.error ?? '').not.toContain('idle-killed')
   }, 20_000)
 
   test('a failed checkpoint with no prior leaves the worker for the wall', async () => {

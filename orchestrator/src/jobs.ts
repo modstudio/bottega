@@ -68,11 +68,32 @@ export type Job = {
  */
 export const CPU_LOCAL_JOBS = [] as const
 
-export function jobIdleKillMs(name: string, env: NodeJS.ProcessEnv = process.env): number {
-  if (env.ORCH_IDLE_KILL_MS !== undefined && env.ORCH_IDLE_KILL_MS !== '') return idleKillMs(env)
-  return (CPU_LOCAL_JOBS as readonly string[]).includes(name)
-    ? DEFAULT_IDLE_KILL_MS
-    : DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS
+/** Idle must sit below the wall so the two timers cannot race. */
+export const IDLE_BELOW_WALL_MS = 60_000
+
+export function jobDeclaredWallMs(name: string): number | null {
+  const bounds = JOB_TIMEOUTS[name as keyof typeof JOB_TIMEOUTS]
+  if (!bounds) return null
+  if (bounds.defaultMinutes != null) return bounds.defaultMinutes * 60_000
+  return bounds.ceilingMinutes * 60_000
+}
+
+export function clampIdleKillMs(idleMs: number, wallMs: number): number {
+  if (!(wallMs > 0) || idleMs < wallMs) return idleMs
+  const gap = wallMs > IDLE_BELOW_WALL_MS ? IDLE_BELOW_WALL_MS : 1
+  return Math.max(0, wallMs - gap)
+}
+
+export function jobIdleKillMs(
+  name: string, env: NodeJS.ProcessEnv = process.env, wallMs?: number,
+): number {
+  const raw = env.ORCH_IDLE_KILL_MS !== undefined && env.ORCH_IDLE_KILL_MS !== ''
+    ? idleKillMs(env)
+    : (CPU_LOCAL_JOBS as readonly string[]).includes(name)
+      ? DEFAULT_IDLE_KILL_MS
+      : DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS
+  const wall = wallMs ?? jobDeclaredWallMs(name)
+  return wall != null ? clampIdleKillMs(raw, wall) : raw
 }
 
 export const JOB_TIMEOUTS = {

@@ -2974,7 +2974,7 @@ export async function run(opts: {
       const openQuestion = db().query(
         'SELECT 1 n FROM question WHERE run_id=? AND answered_at IS NULL LIMIT 1',
       ).get(claim.id) as { n: number } | null
-      const idleThresholdMs = jobIdleKillMs(opts.job)
+      const idleThresholdMs = jobIdleKillMs(opts.job, process.env, boundMs)
       const decision = shouldIdleKill({
         lastEventAt: row.last_event_at, startedAt: row.started_at, pid: handle.pid,
         asking: row.status === 'asking', openQuestion: Boolean(openQuestion),
@@ -3034,7 +3034,7 @@ export async function run(opts: {
           console.error(`orch: run ${claim.id} idle check failed: ${error}`)
         })
         .finally(() => { idleCheckInFlight = false })
-    }, idlePollMs(jobIdleKillMs(opts.job)))
+    }, idlePollMs(jobIdleKillMs(opts.job, process.env, boundMs)))
 
     const teeing = teeTransportEvents(handle.events(), claim.id)
     await t.prompt(handle, prompt)
@@ -3155,9 +3155,25 @@ export async function run(opts: {
       (!writesJob && !replyError && !!output && !isNonAnswer(output))
     const acpVendorStop = transportName === 'acp' && collected.status === 'failed' &&
       Boolean(collected.stopReason && collected.stopReason !== 'end_turn')
-    // Idle kill outranks the transport stop reason on every transport. ACP
-    // cancel otherwise records stopReason timeout, which is routing evidence.
-    if (idleKilled) {
+    // A completed reply outranks an idle kill, exactly as the wall recovery
+    // does: a parsed contract or a reply.json already on disk is finished work,
+    // not an idle failure. Idle still outranks the transport stop reason so an
+    // ACP/CLI cancel does not rewrite the kill as a timeout.
+    const completedReply = completedReplyAtTimeout ||
+      (replyFilePresent && !replyFileError && (contract?.status === 'done' || !writesJob))
+    if (idleKilled && completedReply) {
+      status = acceptedQuestions.length ? 'asking' : 'ok'
+      error = null
+      failureKind = null
+      console.error(
+        `orch: run ${claim.id} had already returned a complete reply when idle-killed. ` +
+        `Recorded ${status}.`,
+      )
+    } else if (idleKilled && (collected.asking || acceptedQuestions.length)) {
+      status = 'asking'
+      error = null
+      failureKind = null
+    } else if (idleKilled) {
       status = 'failed'
       error = errorTail(idleKillError ?? 'idle-killed with no CPU')
       failureKind = 'idle'

@@ -75,7 +75,15 @@ export function parsePsTable(text: string): ProcessSample[] {
   return samples
 }
 
+/** Test-only override so idle detection does not depend on `ps`. */
+let testProcessSampler: (() => ProcessSample[]) | null = null
+
+export function installTestProcessSampler(sampler: (() => ProcessSample[]) | null): void {
+  testProcessSampler = sampler
+}
+
 export function sampleProcesses(): ProcessSample[] {
+  if (testProcessSampler) return testProcessSampler()
   try {
     const p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,%cpu=,state='], {
       stdout: 'pipe', stderr: 'pipe',
