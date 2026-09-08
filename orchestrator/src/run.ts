@@ -2622,7 +2622,9 @@ export async function run(opts: {
   }
 
   if (requiresCanonSource) {
-    prompt += `\n\n${canonSourceInstruction(canonSourceFor(true, mcpConnection, repoJob))}`
+    // Bound once, after every MCP path has settled mcpConnection. A run that
+    // never asked for MCP reads the mirror, as the early bind used to say.
+    prompt += `\n\n${canonSourceInstruction(canonSourceFor(Boolean(mcpMode), mcpConnection, repoJob))}`
     writeFileSync(promptPath.replace(/\.prompt\.txt$/, '.bound.txt'), prompt)
     db().query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE id=?')
       .run(sha(prompt), Buffer.byteLength(prompt), claim.id)
