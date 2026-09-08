@@ -202,6 +202,7 @@ test('discard inventories leaks after successfully restoring a shared branch', (
     const tree = {
       path: join(repo, '.claude', 'worktrees', `DEV-207-orch-${id}`),
       branch: `orch/${id}`,
+      mintedBranch: `orch/${id}`,
     }
     git(repo, 'worktree', 'add', '-b', tree.branch, tree.path, 'main')
     const script = join(repo, 'remove-but-leak.sh')
