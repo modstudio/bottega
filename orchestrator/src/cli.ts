@@ -3795,16 +3795,21 @@ switch (cmd) {
     const allRows = db().query(
       `SELECT q.id, q.run_id, q.asked_at, q.question, q.options, q.recommendation, q.why,
               r.agent, r.job, r.repo, r.status, r.session_id,
+              root.status root_status, root.evidence_excluded root_evidence_excluded,
               COALESCE(r.parent_run_id, r.id) root_id,
               ${sessionRecent} session_recent
          FROM question q JOIN run r ON r.id = q.run_id
+         JOIN run root ON root.id = COALESCE(r.parent_run_id, r.id)
          ${seenJoin}
-        WHERE q.answered_at IS NULL
+        WHERE ${mine
+          ? "q.answered_at IS NULL AND root.status IN ('running','asking') AND root.evidence_excluded IS NULL"
+          : "q.answered_at IS NULL OR root.status NOT IN ('running','asking') OR root.evidence_excluded IS NOT NULL"}
         ORDER BY q.run_id, q.id`,
     ).all(...(hasSessionSeen ? [cutoff] : [])) as {
       id: number; run_id: number; asked_at: string; question: string; options: string | null
       recommendation: string | null; why: string | null
       agent: string; job: string; repo: string | null; status: string; session_id: string | null
+      root_status: string; root_evidence_excluded: string | null
       root_id: number; session_recent: number
     }[]
     // The default is a VIEW of the project containing cwd. Ownership remains
@@ -3817,8 +3822,11 @@ switch (cmd) {
         : allRows.filter((q) => sid !== null && q.session_id === sid)
       : allRows
     const canAnswer = (owner: string | null) => owner === null || (sid !== null && owner === sid)
-    const answerable = rows.filter((q) => canAnswer(q.session_id))
-    const visible = rows.filter((q) => !canAnswer(q.session_id))
+    const active = rows.filter((q) =>
+      q.root_evidence_excluded === null && ['running', 'asking'].includes(q.root_status))
+    const terminal = rows.filter((q) => !active.includes(q))
+    const answerable = active.filter((q) => canAnswer(q.session_id))
+    const visible = active.filter((q) => !canAnswer(q.session_id))
 
     if (has('json')) {
       console.log(JSON.stringify(rows.map((q) => ({
@@ -3838,6 +3846,7 @@ switch (cmd) {
         options: q.options ? JSON.parse(q.options) as string[] : [],
         recommendation: q.recommendation,
         why: q.why,
+        status: q.root_evidence_excluded ? 'voided' : q.root_status,
       }))))
       break
     }
@@ -3923,7 +3932,7 @@ switch (cmd) {
     }
     if (visible.length) {
       console.log('\nvisible here, but owned by another session:')
-      for (const q of visible) {
+    for (const q of visible) {
         const liveness = q.session_recent ? 'live' : 'unknown'
         console.log(
           `\n  [q${q.id}] run ${q.run_id} · ${q.job} · ${q.agent}` +
@@ -3937,6 +3946,14 @@ switch (cmd) {
         if (q.recommendation) console.log(`        recommendation: ${q.recommendation}`)
         console.log('        only the owning session may rule; visibility does not transfer authority')
       }
+    }
+    for (const q of terminal) {
+      const status = q.root_evidence_excluded ? 'voided' : q.root_status
+      console.log(
+        `\nrun ${q.root_id} · ${q.agent}/${q.job}${q.repo ? ` · ${q.repo}` : ''} · ` +
+        `${status} (terminal)`,
+      )
+      console.log(`  [q${q.id}] ${q.question}`)
     }
     break
   }
@@ -5084,6 +5101,10 @@ switch (cmd) {
           "UPDATE run SET status='stopped', error='stopped by architect', failure_kind=NULL WHERE id=?",
         ).run(authority.rootId)
       }
+      db().query(
+        `UPDATE question SET delivery_pending_at=NULL
+          WHERE run_id IN (SELECT id FROM run WHERE id=? OR parent_run_id=?)`,
+      ).run(authority.rootId, authority.rootId)
       auditRunMutation(authority, 'stop', auditReason())
       return { row, cleanupRow }
     })
@@ -5186,10 +5207,14 @@ switch (cmd) {
         )
       }
       db().query(
-        `UPDATE question SET answered_by=?, answered_at=?, answer='(abandoned)'
+        `UPDATE question SET answered_by=?, answered_at=?, answer='(abandoned)', delivery_pending_at=NULL
           WHERE answered_at IS NULL AND run_id IN
             (SELECT id FROM run WHERE id=? OR parent_run_id=?)`,
       ).run(callerSession ?? 'anonymous (no session id)', at, authority.rootId, authority.rootId)
+      db().query(
+        `UPDATE question SET delivery_pending_at=NULL
+          WHERE run_id IN (SELECT id FROM run WHERE id=? OR parent_run_id=?)`,
+      ).run(authority.rootId, authority.rootId)
       resolveRootFromLastTurn(db(), authority.rootId)
       auditRunMutation(authority, 'abandon', note ?? null)
       return { row, cleanupRow }

@@ -478,7 +478,7 @@ test('create commands must exist and be executable before dispatch', () => {
     expect(r.err).not.toContain('ENOENT')
   })
 
-  test('abandon retires an asking run and removes it from both inbox views', () => {
+  test('abandon retires an asking run from the live inbox and keeps it in all as terminal', () => {
     const id = insert('asking', 'implement')
     db().query('UPDATE run SET session_id=? WHERE id=?').run('orch-test-session', id)
     db().query(
@@ -497,13 +497,18 @@ test('create commands must exist and be executable before dispatch', () => {
       status: 'stale', error: 'abandoned by architect: superseded', failure_kind: 'abandoned',
     })
     const question = db().query(
-      'SELECT answer, answered_by, answered_at FROM question WHERE run_id=?',
-    ).get(id) as { answer: string; answered_by: string; answered_at: string | null }
+      'SELECT answer, answered_by, answered_at, delivery_pending_at FROM question WHERE run_id=?',
+    ).get(id) as { answer: string; answered_by: string; answered_at: string | null; delivery_pending_at: string | null }
     expect(question.answer).toBe('(abandoned)')
     expect(question.answered_by).toBe('orch-test-session')
     expect(question.answered_at).not.toBeNull()
+    expect(question.delivery_pending_at).toBeNull()
     expect(orch('inbox').out).not.toContain(`run ${id}`)
-    expect(orch('inbox', '--all').out).not.toContain(`run ${id}`)
+    expect(orch('inbox', '--all').out).toContain(`run ${id}`)
+    expect(orch('inbox', '--all').out).toContain('stale (terminal)')
+    expect(JSON.parse(orch('inbox', '--all', '--json').out)).toContainEqual(
+      expect.objectContaining({ run_id: id, status: 'stale' }),
+    )
   }, 20_000)
 
   test('stop terminates a running vendor and reclaims its recorded worktree', async () => {
