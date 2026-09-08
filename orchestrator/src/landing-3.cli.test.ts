@@ -106,7 +106,7 @@ describe('DEV-370 landing queue and branch ownership', () => {
     const { repo, trees } = repoWithBranches(['carry-bad', 'carry-ok'])
     const project = 'landing-group-carry-fail'
     const reviewedTree = g(trees['carry-bad']!, 'rev-parse', 'HEAD^{tree}')
-    completedReview(project, [reviewedTree], {
+    const reviewId = completedReview(project, [reviewedTree], {
       branch: 'carry-bad', baseCommit: g(repo, 'rev-parse', 'main'), launchCwd: trees['carry-bad']!,
     })
     writeFileSync(join(trees['carry-bad']!, 'after-review.txt'), 'unreviewed\n')
@@ -131,6 +131,8 @@ describe('DEV-370 landing queue and branch ownership', () => {
         { branch: 'carry-bad', status: 'refused' },
         { branch: 'carry-ok', status: 'landed' },
       ])
+      expect(db().query('SELECT outdated_at, outdated_reason FROM review WHERE id=?').get(reviewId))
+        .toEqual({ outdated_at: expect.any(String), outdated_reason: 'patch-id differs' })
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 

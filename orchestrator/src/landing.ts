@@ -1367,7 +1367,11 @@ class MergeGroupTrunkMoved extends Error {
 }
 
 class MergeGroupMemberFailure extends Error {
-  constructor(readonly branch: string, detail: string) { super(detail) }
+  constructor(
+    readonly branch: string,
+    detail: string,
+    readonly reviewRework: { id: number; reason: string }[] = [],
+  ) { super(detail) }
 }
 
 export function diffCarriesMigrationJournal(paths: string[]): boolean {
@@ -1915,10 +1919,7 @@ function processOneLanding(
       writeTransaction(() => {
         db().query(`UPDATE landing SET status='refused',error=?,finished_at=?,claim_pid=NULL,claim_session=NULL WHERE id=?`)
           .run(message, nowIso(), row.id)
-        for (const review of reviewRework(error)) {
-          db().query('UPDATE review SET outdated_at=COALESCE(outdated_at,?), outdated_reason=? WHERE id=?')
-            .run(nowIso(), review.reason, review.id)
-        }
+        markReviewsOutdated(reviewRework(error))
       })
       tryWriteContention({
         resourceKind: 'trunk', resourceKey: row.project, eventKind: 'refusal',
@@ -2006,6 +2007,7 @@ function processMergeGroup(
       } catch (error) {
         throw new MergeGroupMemberFailure(
           row.branch, error instanceof Error ? error.message : String(error),
+          reviewRework(error),
         )
       }
     }
@@ -2097,6 +2099,7 @@ function processMergeGroup(
             ).run(row.id)
           }
         }
+        markReviewsOutdated(reviewRework(error))
       })
       return
     }
@@ -2150,8 +2153,12 @@ function bisectMergeGroup(
 ): void {
   if (rows.length === 1) {
     const message = error instanceof Error ? error.message : String(error)
-    db().query(`UPDATE landing SET status='refused',error=?,finished_at=?,claim_pid=NULL,claim_session=NULL WHERE id=?`)
-      .run(message, nowIso(), rows[0]!.id)
+    const at = nowIso()
+    writeTransaction(() => {
+      db().query(`UPDATE landing SET status='refused',error=?,finished_at=?,claim_pid=NULL,claim_session=NULL WHERE id=?`)
+        .run(message, at, rows[0]!.id)
+      markReviewsOutdated(reviewRework(error), at)
+    })
     tryWriteContention({
       resourceKind: 'trunk', resourceKey: rows[0]!.project, eventKind: 'refusal',
       cause: message, landingId: rows[0]!.id,
@@ -2192,6 +2199,16 @@ function reviewRework(error: unknown): { id: number; reason: string }[] {
   return Array.isArray(rows) ? rows as { id: number; reason: string }[] : []
 }
 
+function markReviewsOutdated(
+  reviews: { id: number; reason: string }[],
+  at: string = nowIso(),
+): void {
+  for (const review of reviews) {
+    db().query('UPDATE review SET outdated_at=COALESCE(outdated_at,?), outdated_reason=? WHERE id=?')
+      .run(at, review.reason, review.id)
+  }
+}
+
 function recordRefusedLanding(project: Project, branch: string, error: unknown): void {
   const at = nowIso()
   const message = error instanceof Error ? error.message : String(error)
@@ -2201,10 +2218,7 @@ function recordRefusedLanding(project: Project, branch: string, error: unknown):
          (project,project_id,branch,status,error,session_id,started_at,finished_at,requested_at)
        VALUES (?,?,?,'refused',?,?,?,?,?)`,
     ).run(project.name, project.id, branch, message, sessionId(), at, at, at)
-    for (const review of reviewRework(error)) {
-      db().query('UPDATE review SET outdated_at=COALESCE(outdated_at,?), outdated_reason=? WHERE id=?')
-        .run(at, review.reason, review.id)
-    }
+    markReviewsOutdated(reviewRework(error), at)
   })
 }
 
