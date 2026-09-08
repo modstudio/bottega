@@ -5,6 +5,7 @@ const allowed = new Set([
     'bun:sqlite', 'node:fs', 'node:path', 'node:crypto', 'node:child_process',
     'node:readline/promises', 'zod', './db.ts', './projects.ts', './failure.ts',
     './collect.ts', './outcome.ts', './args.ts', '../../shared/dashboard-capability.ts',
+    '../../shared/monitor-capability.ts',
 ])
 
 function offendingImports(source: string): string[] {

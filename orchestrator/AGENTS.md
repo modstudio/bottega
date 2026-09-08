@@ -1431,11 +1431,18 @@ part of the CLI rather than development tooling.
 
 `hooks/session-brief.py` fails open: it asks `orch doc brief` for the cwd and
 adds only successful output to a new session, then `orch doc resumes` for the
-same cwd. When that list is non-empty it appends the list and one sentence —
+same cwd and claims monitor conditions addressed to the starting session. When
+the resume list is non-empty it appends the list and one sentence —
 ask before loading on `startup`/`resume`, offer to resume on `clear`/`compact`/`fork`.
-It never fetches a brief body and never resumes anything itself. On any error,
-timeout, or missing binary it prints nothing and exits 0. Register it alongside
-the other hooks with an absolute path in Claude settings:
+It never fetches a brief body and never resumes anything itself. Addressed monitor
+conditions use at-least-once delivery: a hook reads without consuming, emits, and
+only then acknowledges, so interruption may repeat a notice but cannot lose one.
+Unowned findings remain in the monitor report. During a session
+`hooks/orch-heartbeat.sh` reads and acknowledges the same addressed stream. These
+two hooks are the delivery paths: the machine-wide monitor does not push into a
+harness channel. On any error, timeout, or missing binary the
+SessionStart hook exits 0. Register it alongside the other hooks with an absolute
+path in Claude settings:
 
 ```json
 {
@@ -1931,7 +1938,8 @@ orch do <job> [prompt]      route, run, record  (--file, stdin, --agent, --schem
 orch score <id> <none|partial|full> [wrong|mixed|right] [--better-than|--worse-than|--same-as <id>[,<id>]]
                                                          delivery, quality, and optional duels
 orch runs [--unscored]      what ran, what is unjudged
-orch monitor                detect and record stuck machine state; --history reads prior passes
+orch monitor                detect and record stuck machine state; --history reads prior passes;
+                            --notices claims this session's addressed findings for its hooks
 orch search <query>         consult notes, rulings, findings, and saved outputs
 orch stats [--job X]        score, median latency, vendor tokens and cost per agent per job
 orch guide [--job X]        what to use for what: best, quickest, and what is still a guess

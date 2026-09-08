@@ -245,9 +245,10 @@ export const monitorInvocation = sqliteTable('monitor_invocation', {
 export const monitorCondition = sqliteTable('monitor_condition', {
   id: id(), invocationId: integer('invocation_id').notNull().references(() => monitorInvocation.id, { onDelete: 'cascade' }), kind: text().notNull(),
   subject: text().notNull(), conditionSince: text('condition_since'), ageMs: integer('age_ms'), detail: text().notNull(), action: text().notNull(),
-  issueKey: text('issue_key'), severity: text(),
+  issueKey: text('issue_key'), severity: text(), ownerSessionId: text('owner_session_id'), deliveredAt: text('delivered_at'),
 }, (t) => [check('monitor_condition_severity_check', sql`${t.severity} is null or ${t.severity} in (${values(MONITOR_SEVERITY)})`),
-  unique('monitor_condition_invocation_kind_subject_unique').on(t.invocationId, t.kind, t.subject), index('monitor_condition_kind').on(t.kind, t.invocationId)])
+  unique('monitor_condition_invocation_kind_subject_unique').on(t.invocationId, t.kind, t.subject), index('monitor_condition_kind').on(t.kind, t.invocationId),
+  index('monitor_condition_owner_delivery').on(t.ownerSessionId, t.deliveredAt)])
 
 export const schemaMeta = sqliteTable('schema_meta', { key: text().primaryKey(), value: text().notNull() })
 

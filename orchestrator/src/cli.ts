@@ -10,7 +10,7 @@ import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, nowIso,
          EVIDENCE_CLOSED_SQL, EVIDENCE_OPEN_SQL, voidedSql, activeSql, runTotals,
          authorizeRunMutation, runMutationActor,
          auditRunMutation, adoptRunMutation, writeTransaction, tryWriteContention, type RootAuthority } from './db.ts'
-import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync, unlinkSync } from 'node:fs'
+import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync, unlinkSync, openSync, fstatSync, closeSync, constants } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
@@ -29,6 +29,10 @@ import {
   DASHBOARD_CAPABILITY_PATH_ENV, DASHBOARD_CAPABILITY_TOKEN_ENV,
   type DashboardCapability,
 } from '../../shared/dashboard-capability.ts'
+import {
+  MONITOR_CAPABILITY_PATH_ENV, MONITOR_CAPABILITY_TOKEN_ENV,
+  type MonitorCapability,
+} from '../../shared/monitor-capability.ts'
 
 type DetachSpec = import('./run.ts').DetachSpec
 type McpRequest = import('./run.ts').McpRequest
@@ -609,6 +613,48 @@ function dashboardScoreAuthorized(scorer: string | undefined): boolean {
       words[index + 1] === 'serve')
   } catch {
     return false
+  }
+}
+
+function monitorDeliveryAuthorized(): boolean {
+  const path = process.env[MONITOR_CAPABILITY_PATH_ENV]
+  const presented = process.env[MONITOR_CAPABILITY_TOKEN_ENV]
+  if (!path || !presented || typeof process.getuid !== 'function') return false
+  let capabilityFd: number | undefined
+  try {
+    const uid = process.getuid()
+    const dir = lstatSync(dirname(path))
+    if (!dir.isDirectory() || dir.isSymbolicLink()) return false
+    if (dir.uid !== uid || (dir.mode & 0o777) !== 0o700) return false
+    capabilityFd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+    const file = fstatSync(capabilityFd)
+    if (!file.isFile() || file.uid !== uid || (file.mode & 0o777) !== 0o600) return false
+    const capability = JSON.parse(readFileSync(capabilityFd, 'utf8')) as MonitorCapability
+    if (!Number.isInteger(capability.pid) || capability.pid < 1 || typeof capability.token !== 'string') return false
+    const expected = Buffer.from(capability.token)
+    const actual = Buffer.from(presented)
+    if (expected.length !== actual.length || !timingSafeEqual(expected, actual) ||
+        capability.pid !== process.ppid || !pidAlive(capability.pid)) return false
+    const observed = Bun.spawnSync(['/bin/ps', '-p', String(capability.pid), '-o', 'command='], {
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    if (observed.exitCode !== 0) return false
+    const words = new TextDecoder().decode(observed.stdout).trim().split(/\s+/)
+    let executable = words[0]
+    const interpreter = executable ? basename(executable) : ''
+    if (/^(?:python(?:3(?:\.\d+)?)?|ba?sh|zsh|dash)$/i.test(interpreter)) {
+      executable = words[1]
+    }
+    if (!executable) return false
+    const deliveryHooks = new Set([
+      realpathSync(new URL('../hooks/orch-heartbeat.sh', import.meta.url).pathname),
+      realpathSync(new URL('../hooks/session-brief.py', import.meta.url).pathname),
+    ])
+    try { return deliveryHooks.has(realpathSync(executable)) } catch { return false }
+  } catch {
+    return false
+  } finally {
+    if (capabilityFd !== undefined) closeSync(capabilityFd)
   }
 }
 const KEPT_ROW_LIMIT = 10
@@ -1600,6 +1646,8 @@ function usage(): never {
       --json                    print one JSON document (the published surface; never orch.db)
   orch monitor [--backstop]     detect, record, report, and safely reconcile machine state
       --history [--limit N]     query recorded invocations; --json emits one JSON document
+      --notices                 read this session's addressed conditions without consuming them
+      --ack-notices IDS         mark emitted notice ids delivered (hook capability required)
       --json                    emit one JSON document; silent on a clean live pass
   orch reclaim worktree <path> [--dry-run]
       remove an orch worktree only after recipe/base, clean-state, reachability, and liveness proofs
@@ -3837,7 +3885,25 @@ switch (cmd) {
   }
 
   case 'monitor': {
-    const { monitor, monitorHistory } = await import('./monitor.ts')
+    const { claimMonitorNotices, markMonitorNoticesDelivered, monitor, monitorHistory } = await import('./monitor.ts')
+    if (flag('ack-notices') !== undefined) {
+      const sid = sessionId()
+      if (!sid) throw new Error('monitor notice acknowledgement requires CLAUDE_CODE_SESSION_ID')
+      if (!monitorDeliveryAuthorized()) throw new Error('monitor notice acknowledgement requires a live delivery-hook capability')
+      const ids = flag('ack-notices')!.split(',').map((value) => Number(value))
+      markMonitorNoticesDelivered(sid, ids)
+      break
+    }
+    if (has('notices')) {
+      const sid = sessionId()
+      if (!sid) throw new Error('monitor notices require CLAUDE_CODE_SESSION_ID')
+      const rows = claimMonitorNotices(sid)
+      if (has('json')) await writeStdout(`${JSON.stringify(rows)}\n`)
+      else for (const condition of rows) {
+        console.log(`MONITOR ${condition.kind} ${condition.subject}: ${condition.detail}`)
+      }
+      break
+    }
     if (has('history')) {
       const rows = monitorHistory(Number(flag('limit') ?? 20))
       if (has('json')) await writeStdout(`${JSON.stringify(rows)}\n`)
@@ -3846,7 +3912,8 @@ switch (cmd) {
         for (const condition of row.conditions) {
           const old = condition.age_ms == null ? 'age unknown' : `${Math.round(condition.age_ms / 60_000)}m old`
           const sev = condition.severity ? `  ${condition.severity}` : ''
-          console.log(`  ${condition.kind}${sev}  ${condition.subject}  ${old}  ${condition.action}`)
+          const owner = condition.owner_session_id ? `  owner ${condition.owner_session_id}` : ''
+          console.log(`  ${condition.kind}${sev}  ${condition.subject}  ${old}${owner}  ${condition.action}`)
         }
       }
       break
@@ -3865,7 +3932,8 @@ switch (cmd) {
         for (const condition of result.conditions) {
           const old = condition.ageMs == null ? 'age unknown' : `${Math.round(condition.ageMs / 60_000)}m old`
           const sev = condition.severity ? `  ${condition.severity}` : ''
-          lines.push(`  ${condition.kind}${sev}  ${condition.subject}  ${old}\n    ${condition.detail}\n    ${condition.action}${condition.issueKey ? `; ${condition.issueKey}` : ''}`)
+          const owner = condition.ownerSession ? `  owner ${condition.ownerSession}` : ''
+          lines.push(`  ${condition.kind}${sev}  ${condition.subject}  ${old}${owner}\n    ${condition.detail}\n    ${condition.action}${condition.issueKey ? `; ${condition.issueKey}` : ''}`)
         }
         for (const error of result.errors) console.error(`  observation failed: ${error}`)
       }

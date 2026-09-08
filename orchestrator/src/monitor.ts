@@ -2,7 +2,8 @@ import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
-  db, liveRuns, nowIso, pidAlive, UNSCORED_WHERE, writableDb, type MonitorSeverity,
+  db, liveRuns, nowIso, pidAlive, UNSCORED_WHERE, writableDb, writeTransaction,
+  type MonitorSeverity,
 } from './db.ts'
 import { fileIssue } from './mcp.ts'
 import { gitLocks } from './git-locks.ts'
@@ -24,6 +25,7 @@ export type MonitorCondition = {
   issueKey?: string | null
   affectedProject?: string
   severity?: MonitorSeverity | null
+  ownerSession?: string | null
 }
 
 export type MonitorResult = {
@@ -34,6 +36,11 @@ export type MonitorResult = {
   conditions: MonitorCondition[]
   errors: string[]
   canon: { findings: number; docs: number }
+}
+
+export type MonitorNotice = Omit<MonitorCondition, 'detail' | 'action'> & {
+  noticeId: number
+  detail: string
 }
 
 const age = (since: string | null, clock: number) => {
@@ -66,9 +73,10 @@ function elapsedDetail(elapsedMs: number | null): string {
 export function idleRunConditions(clock = Date.now()): MonitorCondition[] {
   const threshold = idleWarnMs()
   const running = db().query(
-    `SELECT id, started_at, last_event_at, agent, job FROM run WHERE status='running'`,
+    `SELECT id, started_at, last_event_at, agent, job, session_id FROM run WHERE status='running'`,
   ).all() as {
     id: number; started_at: string; last_event_at: string | null; agent: string; job: string
+    session_id: string | null
   }[]
   return running.flatMap((run): MonitorCondition[] => {
     const label = idleLabel(run.last_event_at, run.started_at, clock, threshold)
@@ -78,6 +86,7 @@ export function idleRunConditions(clock = Date.now()): MonitorCondition[] {
       kind: 'idle', subject: `run:${run.id}`, since: run.last_event_at ?? run.started_at, ageMs,
       detail: `run ${run.id} ${run.agent}/${run.job} ${label}`,
       action: 'reported; nothing was signalled',
+      ownerSession: run.session_id,
     }]
   })
 }
@@ -85,10 +94,10 @@ export function idleRunConditions(clock = Date.now()): MonitorCondition[] {
 /** Report vendor processes that vanished while their run still claims to be running. */
 export function deadRunningProcessConditions(clock = Date.now()): MonitorCondition[] {
   const running = db().query(
-    `SELECT id, started_at, pid, agent_pid, output_bytes FROM run WHERE status='running'`,
+    `SELECT id, started_at, pid, agent_pid, output_bytes, session_id FROM run WHERE status='running'`,
   ).all() as {
     id: number; started_at: string; pid: number | null; agent_pid: number | null
-    output_bytes: number | null
+    output_bytes: number | null; session_id: string | null
   }[]
   return running.flatMap((run): MonitorCondition[] => {
     // PID reuse makes this deliberately conservative: a reused pid looks live
@@ -105,6 +114,7 @@ export function deadRunningProcessConditions(clock = Date.now()): MonitorConditi
       detail: `run ${run.id} is running but agent pid ${run.agent_pid} is gone; ` +
         `${worker}; ${elapsedDetail(ageMs)}; output ${run.output_bytes ?? 'unknown'} bytes`,
       action: 'reported; disposition and status repair require intent',
+      ownerSession: run.session_id,
     }]
   })
 }
@@ -151,6 +161,7 @@ export function rulingConditions(clock = Date.now()): { conditions: MonitorCondi
       detail: `task ${task} waiting on a ruling; session ${session}; ${elapsedDetail(ageMs)}`,
       action: 'reported; it does not answer',
       severity: ageMs >= threshold ? 'attention' : 'informational',
+      ownerSession: row.session_id,
     }]
   }).sort((a, b) => a.detail.localeCompare(b.detail) || a.subject.localeCompare(b.subject))
   return { conditions, errors: [] }
@@ -244,22 +255,24 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
   ).all() as { id: number; started_at: string; session_id: string | null }[]
   for (const run of asking) add({ kind: 'asking-run', subject: `run:${run.id}`, since: run.started_at,
     detail: `run ${run.id} is waiting on a ruling; session ${run.session_id ?? 'unknown'}`,
-    action: 'reported; abandoning or resuming is an intent decision' })
+    action: 'reported; abandoning or resuming is an intent decision', ownerSession: run.session_id })
 
   conditions.push(...deadRunningProcessConditions(clock))
   conditions.push(...idleRunConditions(clock))
 
   const stale = database.query(
-    `SELECT id, started_at, error FROM run WHERE status='stale'`,
-  ).all() as { id: number; started_at: string; error: string | null }[]
+    `SELECT id, started_at, error, session_id FROM run WHERE status='stale'`,
+  ).all() as { id: number; started_at: string; error: string | null; session_id: string | null }[]
   for (const run of stale) add({ kind: 'stale-run', subject: `run:${run.id}`, since: run.started_at,
-    detail: run.error ?? `run ${run.id} is stale`, action: 'reported; disposition requires intent' })
+    detail: run.error ?? `run ${run.id} is stale`, action: 'reported; disposition requires intent',
+    ownerSession: run.session_id })
 
   const unscored = database.query(
-    `SELECT r.id, r.started_at FROM run r LEFT JOIN score s ON s.run_id=r.id WHERE ${UNSCORED_WHERE}`,
-  ).all() as { id: number; started_at: string }[]
+    `SELECT r.id, r.started_at, r.session_id FROM run r LEFT JOIN score s ON s.run_id=r.id WHERE ${UNSCORED_WHERE}`,
+  ).all() as { id: number; started_at: string; session_id: string | null }[]
   for (const run of unscored) add({ kind: 'unscored-run', subject: `run:${run.id}`, since: run.started_at,
-    detail: `completed run ${run.id} has no score`, action: 'reported; only its owning reader may score it' })
+    detail: `completed run ${run.id} has no score`, action: 'reported; only its owning reader may score it',
+    ownerSession: run.session_id })
 
   for (const project of projects()) {
     for (const lockName of ['create', 'landing', 'cleanup']) {
@@ -358,13 +371,29 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
     subject: `invocation:${invocation}:${index + 1}`, since: startedAt, detail,
     action: 'reported; no state was inferred from the unavailable observation' }))
 
-  const insert = database.query(
-    `INSERT INTO monitor_condition
-      (invocation_id,kind,subject,condition_since,age_ms,detail,action,issue_key,severity)
-     VALUES (?,?,?,?,?,?,?,?,?)`,
-  )
-  for (const c of conditions) insert.run(invocation, c.kind, c.subject, c.since, c.ageMs,
-    c.detail, c.action, c.issueKey ?? null, c.severity ?? null)
+  // Delivery inheritance is one atomic read/write unit. Two monitor passes may
+  // otherwise both observe no prior delivery and create duplicate pending rows.
+  writeTransaction(() => {
+    const insert = database.query(
+      `INSERT INTO monitor_condition
+        (invocation_id,kind,subject,condition_since,age_ms,detail,action,issue_key,severity,
+         owner_session_id,delivered_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    )
+    const priorDelivery = database.query(
+      `SELECT delivered_at FROM monitor_condition
+        WHERE kind=? AND subject=? AND condition_since IS ? AND owner_session_id IS ?
+          AND delivered_at IS NOT NULL
+        ORDER BY id DESC LIMIT 1`,
+    )
+    for (const c of conditions) {
+      const owner = c.ownerSession ?? null
+      const prior = owner ? priorDelivery.get(c.kind, c.subject, c.since, owner) as
+        { delivered_at: string } | null : null
+      insert.run(invocation, c.kind, c.subject, c.since, c.ageMs,
+        c.detail, c.action, c.issueKey ?? null, c.severity ?? null, owner, prior?.delivered_at ?? null)
+    }
+  }, database)
 
   const unavailable = conditions.filter((c) => c.kind === 'detector-unavailable' || c.kind === 'dead-lock')
   for (const condition of unavailable) {
@@ -402,7 +431,62 @@ export function monitorHistory(limit = 20): unknown[] {
        'kind',c.kind,'subject',c.subject,'condition_since',c.condition_since,
        'age_ms',c.age_ms,'detail',c.detail,'action',c.action,'issue_key',c.issue_key,
        'severity',c.severity
+       ,'owner_session_id',c.owner_session_id,'delivered_at',c.delivered_at
      )) FROM monitor_condition c WHERE c.invocation_id=i.id) conditions
        FROM monitor_invocation i ORDER BY i.id DESC LIMIT ?`,
   ).all(limit).map((row: any) => ({ ...row, conditions: JSON.parse(row.conditions ?? '[]') }))
+}
+
+function deliveredDetail(row: {
+  kind: string; subject: string; age_ms: number | null; run_status: string | null; run_project: string | null
+}): string {
+  const age = row.age_ms == null ? 'age unknown' : `age ${Math.round(row.age_ms / 60_000)}m`
+  const status = row.run_status ? `, status ${row.run_status}` : ''
+  const project = row.run_project ? `, project ${row.run_project}` : ''
+  return `Orch detected ${row.kind} for ${row.subject} (${age}${status}${project}); inspect the referenced record deliberately.`
+}
+
+/** Read addressed findings without consuming them. A failed consumer gets them again. */
+export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
+  if (!ownerSession.trim()) throw new Error('monitor notices require a session id')
+  const rows = db().query(
+      `SELECT c.id, c.kind, c.subject, c.condition_since, c.age_ms,
+              c.issue_key, c.severity, c.owner_session_id,
+              r.status run_status, r.repo run_project
+         FROM monitor_condition c
+         LEFT JOIN run r ON c.subject=('run:' || r.id)
+        WHERE c.owner_session_id=? AND c.delivered_at IS NULL
+          AND c.id = (
+            SELECT MAX(newest.id) FROM monitor_condition newest
+             WHERE newest.kind=c.kind AND newest.subject=c.subject
+               AND newest.condition_since IS c.condition_since
+               AND newest.owner_session_id=c.owner_session_id
+          )
+        ORDER BY c.id`,
+    ).all(ownerSession) as {
+      id: number; kind: string; subject: string; condition_since: string | null; age_ms: number | null
+      issue_key: string | null; severity: MonitorSeverity | null; owner_session_id: string
+      run_status: string | null; run_project: string | null
+    }[]
+  return rows.map((row) => ({
+      noticeId: row.id,
+      kind: row.kind, subject: row.subject, since: row.condition_since, ageMs: row.age_ms,
+      detail: deliveredDetail(row), issueKey: row.issue_key,
+      severity: row.severity, ownerSession: row.owner_session_id,
+    }))
+}
+
+/** Acknowledge only rows the hook has already emitted to its consumer. */
+export function markMonitorNoticesDelivered(ownerSession: string, ids: number[], deliveredAt = nowIso()): void {
+  if (!ownerSession.trim()) throw new Error('monitor notice acknowledgement requires a session id')
+  if (!ids.length || ids.some((id) => !Number.isInteger(id) || id < 1)) {
+    throw new Error('monitor notice acknowledgement requires positive notice ids')
+  }
+  const database = writableDb()
+  writeTransaction(() => {
+    const mark = database.query(
+      `UPDATE monitor_condition SET delivered_at=? WHERE id=? AND owner_session_id=? AND delivered_at IS NULL`,
+    )
+    for (const id of new Set(ids)) mark.run(deliveredAt, id, ownerSession)
+  }, database)
 }

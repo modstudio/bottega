@@ -30,10 +30,10 @@
 # it needs something. Exit 0 with no output is the "nothing to say" answer, and
 # the Monitor tool reports the exit itself.
 #
-# This is deliberately SESSION-SCOPED. Machine-wide operational state - runs
-# stuck asking whose session has gone, dead-process runs, orphan worktrees,
-# unscored runs - is `orch monitor` (DEV-198), which answers a different
-# question for a different consumer. Do not grow this into that.
+# Detection remains deliberately machine-wide in `orch monitor` (DEV-198).
+# This hook does not reproduce those detectors: it only claims the conditions
+# the monitor already addressed to this session. Conditions without an owner
+# stay in the monitor report for the fixer queue.
 #
 # Usage:  orch-heartbeat.sh <session-id> [interval-seconds] [max-ticks]
 # Arm it under the Monitor tool; each emitted line becomes one notification.
@@ -53,6 +53,7 @@ SID="${1:?session id required (Claude session_id; orch records it on every run)}
 INTERVAL="${2:-60}"
 MAX="${3:-60}"
 KEEPALIVE_TICKS="${KEEPALIVE_TICKS:-15}"   # re-announce an unchanged state this often
+NOTICE_TIMEOUT_SECONDS="${NOTICE_TIMEOUT_SECONDS:-5}"
 
 prev_key=""
 since_emit=0
@@ -76,7 +77,6 @@ for ((i = 1; i <= MAX; i++)); do
   runs_err=$(mktemp)
   inbox_raw=$(CLAUDE_CODE_SESSION_ID="$SID" "$ORCH" inbox --all --json 2>"$inbox_err"); inbox_rc=$?
   runs_raw=$("$ORCH" runs --limit 200 --json 2>"$runs_err"); runs_rc=$?
-  last_err=$(tail -n 1 "$inbox_err" "$runs_err" 2>/dev/null | grep -v '^==>' | grep -v '^$' | tail -n 1)
   rm -f "$inbox_err" "$runs_err"
   if [ ! -d "$ROOT" ]; then
     echo "DEGRADED: launch directory removed; re-arm from the main checkout"
@@ -130,8 +130,6 @@ for line in sys.stdin:
         raise SystemExit(2)
     if d.get("failure_kind") is not None and not isinstance(d.get("failure_kind"), str):
         raise SystemExit(2)
-    if d.get("error") is not None and not isinstance(d.get("error"), str):
-        raise SystemExit(2)
     if d.get("session_id") != sid:
         continue
     status = d.get("status")
@@ -162,10 +160,8 @@ for line in sys.stdin:
         else:
             seconds = round(latency / 1000)
             duration = "%dm%02ds" % (seconds // 60, seconds % 60)
-        error = (d.get("error") or "").splitlines()[0] if d.get("error") else ""
-        error = error.replace("\t", " ").replace("\r", " ")
         events.append((str(d["id"]), "1" if recent else "0", status, d["job"], d["agent"],
-                       d.get("failure_kind") or "-", duration, error))
+                       d.get("failure_kind") or "-", duration))
     # `asking` counts as live. A heartbeat that watches only `running` reports
     # CLEAR while a worker sits blocked - the exact failure this file prevents.
     if status not in ("running", "asking"):
@@ -196,7 +192,7 @@ for event in events:
     since_emit=$((since_emit + 1))
     if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
       prev_key="$key"; since_emit=0
-      echo "[$(date +%H:%M:%S)] DEGRADED - orch observation failed (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc). State unknown; NOT concluding clear.${last_err:+ last stderr: $last_err}"
+      echo "[$(date +%H:%M:%S)] DEGRADED - orch observation failed (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc). State unknown; NOT concluding clear. Inspect orch diagnostics directly."
     fi
     sleep "$INTERVAL"; continue
   fi
@@ -208,7 +204,7 @@ for event in events:
   detail=${rest%%$'\t'*}; ids=${rest#*$'\t'}
   n=${n:-0}
 
-  while IFS=$'\t' read -r record id recent status job agent failure_kind latency error; do
+  while IFS=$'\t' read -r record id recent status job agent failure_kind latency; do
     [ "$record" = "EVENT" ] || continue
     case " $reported_ids " in
       *" $id "*) continue ;;
@@ -218,28 +214,124 @@ for event in events:
     if [ "$status" = "ok" ]; then
       echo "FINISHED $id/$job $agent $latency"
     elif [ "$failure_kind" = "harness" ]; then
-      echo "HARNESS-REFUSED $id/$job $agent $failure_kind $latency $error"
+      echo "HARNESS-REFUSED $id/$job $agent $failure_kind $latency; inspect with 'orch run $id'"
     else
-      echo "FAILED $id/$job $agent $failure_kind $latency $error"
+      echo "FAILED $id/$job $agent $failure_kind $latency; inspect with 'orch run $id'"
     fi
   done <<< "$observed"
 
   key="$asking|$n|$ids"
   since_emit=$((since_emit + 1))
-  if [ "$key" = "$prev_key" ] && [ "$since_emit" -lt "$KEEPALIVE_TICKS" ]; then
-    sleep "$INTERVAL"; continue
+  should_exit=0
+  if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
+    prev_key="$key"; since_emit=0
+    ts=$(date +%H:%M:%S)
+    if [ "$asking" -gt 0 ]; then
+      echo "[$ts] BLOCKED - $asking question(s) waiting on you: run 'orch inbox', then 'orch answer <id>'. $n run(s) live."
+    elif [ "$n" -gt 0 ]; then
+      echo "[$ts] WAITING - $n run(s), nothing needed from you: $detail"
+    else
+      should_exit=1
+    fi
+  elif [ "$asking" -eq 0 ] && [ "$n" -eq 0 ]; then
+    should_exit=1
   fi
-  prev_key="$key"; since_emit=0
 
-  ts=$(date +%H:%M:%S)
-  if [ "$asking" -gt 0 ]; then
-    echo "[$ts] BLOCKED - $asking question(s) waiting on you: run 'orch inbox', then 'orch answer <id>'. $n run(s) live."
-  elif [ "$n" -gt 0 ]; then
-    echo "[$ts] WAITING - $n run(s), nothing needed from you: $detail"
-  else
-    exit 0
+  # Health above is complete and, when actionable, already on stdout. Only now
+  # may supplemental notice work begin; neither a fetch nor an acknowledgement
+  # can suppress BLOCKED/WAITING/CLEAR for this tick.
+  monitor_err=$(mktemp)
+  monitor_out=$(mktemp)
+  monitor_timed_out=$(mktemp)
+  CLAUDE_CODE_SESSION_ID="$SID" "$ORCH" monitor --notices --json >"$monitor_out" 2>"$monitor_err" &
+  monitor_pid=$!
+  (
+    sleep "$NOTICE_TIMEOUT_SECONDS"
+    if kill -0 "$monitor_pid" 2>/dev/null; then
+      printf 'timed-out\n' >"$monitor_timed_out"
+      kill "$monitor_pid" 2>/dev/null || true
+    fi
+  ) &
+  monitor_watchdog=$!
+  wait "$monitor_pid"; monitor_rc=$?
+  kill "$monitor_watchdog" 2>/dev/null || true
+  wait "$monitor_watchdog" 2>/dev/null || true
+  monitor_raw=$(<"$monitor_out")
+  if [ -s "$monitor_timed_out" ]; then monitor_rc=124; fi
+  rm -f "$monitor_err" "$monitor_out" "$monitor_timed_out"
+
+  monitor_observed=$(printf '%s' "$monitor_raw" | SID="$SID" python3 -c '
+import sys, json, os
+try:
+    rows = json.load(sys.stdin)
+except Exception:
+    raise SystemExit(2)
+if not isinstance(rows, list):
+    raise SystemExit(2)
+for row in rows:
+    if not isinstance(row, dict) or not isinstance(row.get("noticeId"), int):
+        raise SystemExit(2)
+    if not all(isinstance(row.get(key), str) for key in ("kind", "subject", "detail")):
+        raise SystemExit(2)
+    if row.get("ownerSession") != os.environ["SID"]:
+        raise SystemExit(2)
+    values = [row[key].replace("\t", " ").replace("\r", " ").replace("\n", " ")
+              for key in ("kind", "subject", "detail")]
+    print(str(row["noticeId"]) + "\tMONITOR " + values[0] + " " + values[1] + ": " + values[2])
+' 2>/dev/null); monitor_parse_rc=$?
+
+  if [ "$monitor_rc" -ne 0 ] || [ "$monitor_parse_rc" -ne 0 ]; then
+    echo "[$(date +%H:%M:%S)] DEGRADED - monitor notices unavailable (rc=$monitor_rc parse=$monitor_parse_rc). Health state still follows inbox and runs; inspect monitor diagnostics directly."
+  elif [ -n "$monitor_observed" ]; then
+    monitor_ids=$(printf '%s\n' "$monitor_observed" | cut -f1 | paste -sd, -)
+    CAP_DIR=""
+    CAP_DIR=$(mktemp -d 2>/dev/null); cap_mint_rc=$?
+    if [ "$cap_mint_rc" -eq 0 ]; then
+      CAP_PATH="$CAP_DIR/capability.json"
+      CAP_TOKEN=$(python3 -c '
+import json, os, secrets, sys
+token = secrets.token_hex(32)
+with open(sys.argv[1], "x", encoding="utf-8") as f:
+    os.chmod(sys.argv[1], 0o600)
+    json.dump({"token": token, "pid": int(sys.argv[2])}, f)
+print(token)
+' "$CAP_PATH" "$$" 2>/dev/null); cap_mint_rc=$?
+    fi
+    if [ "$cap_mint_rc" -ne 0 ]; then
+      [ -z "${CAP_DIR:-}" ] || rm -rf "$CAP_DIR"
+      echo "[$(date +%H:%M:%S)] DEGRADED - monitor notice delivery capability unavailable. Health state still follows inbox and runs."
+    elif printf '%s\n' "$monitor_observed" | cut -f2-; then
+      export ORCH_MONITOR_CAPABILITY_PATH="$CAP_PATH"
+      export ORCH_MONITOR_CAPABILITY_TOKEN="$CAP_TOKEN"
+      ack_timed_out=$(mktemp)
+      CLAUDE_CODE_SESSION_ID="$SID" "$ORCH" monitor --ack-notices "$monitor_ids" >/dev/null 2>&1 &
+      ack_pid=$!
+      (
+        sleep "$NOTICE_TIMEOUT_SECONDS"
+        if kill -0 "$ack_pid" 2>/dev/null; then
+          printf 'timed-out\n' >"$ack_timed_out"
+          kill "$ack_pid" 2>/dev/null || true
+        fi
+      ) &
+      ack_watchdog=$!
+      wait "$ack_pid"; ack_rc=$?
+      kill "$ack_watchdog" 2>/dev/null || true
+      wait "$ack_watchdog" 2>/dev/null || true
+      if [ -s "$ack_timed_out" ]; then ack_rc=124; fi
+      rm -f "$ack_timed_out"
+      rm -rf "$CAP_DIR"
+      unset ORCH_MONITOR_CAPABILITY_PATH ORCH_MONITOR_CAPABILITY_TOKEN
+      if [ "$ack_rc" -ne 0 ]; then
+        echo "[$(date +%H:%M:%S)] DEGRADED - monitor notice acknowledgement failed; delivered notices may repeat. Health state still follows inbox and runs."
+      fi
+    fi
   fi
-  sleep "$INTERVAL"
+
+  if [ "$should_exit" -eq 1 ]; then
+    exit 0
+  else
+    sleep "$INTERVAL"
+  fi
 done
 
 # Bounded on purpose: an unbounded poll against a service whose failure mode is

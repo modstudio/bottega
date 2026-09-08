@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""SessionStart hook: operator brief, then any open resume briefs, for this checkout."""
+"""SessionStart hook: operator/resume briefs and monitor findings addressed here."""
 import json
 import os
 import re
+import secrets
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 
@@ -63,7 +66,14 @@ def _resume_sentence(source, open_briefs):
 
 
 def main() -> int:
-    brief_p = resumes_p = inbox_p = None
+    brief_p = resumes_p = inbox_p = monitor_p = None
+    capability_dir = None
+    output = None
+    monitor_notices = []
+    inbox_env = None
+    notice_timeout = 1.0
+    acknowledgement_timeout = 1.0
+    notice_deadline = None
     try:
         payload = json.load(sys.stdin)
         cwd = payload.get("cwd")
@@ -73,13 +83,13 @@ def main() -> int:
         orch = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "bin", "orch"))
         if not os.access(orch, os.X_OK):
             message = f"Inbox command is missing or not executable: {orch}; question state is unknown."
-            sys.stdout.write(json.dumps({
+            output = {
                 "hookSpecificOutput": {
                     "hookEventName": "SessionStart",
                     "additionalContext": "",
                 },
                 "systemMessage": message,
-            }) + "\n")
+            }
             return 0
         brief_p = _start(orch, "doc", "brief", "--cwd", cwd)
         resumes_p = _start(orch, "doc", "resumes", "--cwd", cwd, "--json")
@@ -87,6 +97,21 @@ def main() -> int:
         if sid:
             inbox_env["CLAUDE_CODE_SESSION_ID"] = sid
         inbox_p = _start(orch, "inbox", "--all", "--json", env=inbox_env)
+        monitor_failure = None
+        if sid:
+            try:
+                capability_dir = tempfile.mkdtemp(prefix="orch-monitor-hook-")
+                capability_path = os.path.join(capability_dir, "capability.json")
+                capability_token = secrets.token_hex(32)
+                with open(capability_path, "x", encoding="utf-8") as capability_file:
+                    os.chmod(capability_path, 0o600)
+                    json.dump({"token": capability_token, "pid": os.getpid()}, capability_file)
+                inbox_env["ORCH_MONITOR_CAPABILITY_PATH"] = capability_path
+                inbox_env["ORCH_MONITOR_CAPABILITY_TOKEN"] = capability_token
+                monitor_p = _start(orch, "monitor", "--notices", "--json", env=inbox_env)
+                notice_deadline = time.monotonic() + notice_timeout
+            except Exception:
+                monitor_failure = "Monitor notice delivery failed; addressed condition state is unknown."
         deadline = time.monotonic() + 10
         brief = _wait(brief_p, deadline)
         resumes = _wait(resumes_p, deadline)
@@ -244,23 +269,103 @@ def main() -> int:
                         context += "\n"
                     context += line + "\n"
 
-        if not context and not notices:
-            return 0
-        output = {
-            "hookSpecificOutput": {
-                "hookEventName": "SessionStart",
-                "additionalContext": context,
+        # Health is complete and retained before notice work begins. Notice delivery is
+        # supplemental: no failure in minting, fetching, parsing, or acknowledging may
+        # cost the SessionStart object that carries brief and question state.
+        health_context = context
+        health_notices = list(notices)
+        if health_context or health_notices:
+            output = {
+                "hookSpecificOutput": {
+                    "hookEventName": "SessionStart",
+                    "additionalContext": health_context,
+                }
             }
-        }
-        if notices:
-            output["systemMessage"] = " ".join(notices)
-        sys.stdout.write(json.dumps(output) + "\n")
+            if health_notices:
+                output["systemMessage"] = " ".join(health_notices)
+        if monitor_p is not None:
+            try:
+                monitor = _wait(monitor_p, notice_deadline)
+                if monitor.returncode == 0:
+                    monitor_notices = json.loads(monitor.stdout)
+                    if not isinstance(monitor_notices, list) or not all(
+                        isinstance(item, dict)
+                        and isinstance(item.get("kind"), str)
+                        and isinstance(item.get("subject"), str)
+                        and isinstance(item.get("detail"), str)
+                        and isinstance(item.get("noticeId"), int)
+                        and item.get("ownerSession") == sid
+                        for item in monitor_notices
+                    ):
+                        raise ValueError("invalid monitor notice JSON")
+                elif monitor.returncode == -1:
+                    monitor_failure = "Monitor notice observation timed out; addressed condition state is unknown."
+                else:
+                    first = next(
+                        (line.strip() for line in (monitor.stderr or "").splitlines() if line.strip()),
+                        None,
+                    )
+                    detail = f": {first}" if first else ""
+                    monitor_failure = (
+                        f"Monitor notice command failed with exit {monitor.returncode}{detail}; "
+                        "addressed condition state is unknown."
+                    )
+            except Exception:
+                monitor_notices = []
+                monitor_failure = "Monitor notice delivery failed; addressed condition state is unknown."
+
+        context = health_context
+        notices = health_notices
+        if monitor_failure:
+            notices.append(monitor_failure)
+        if monitor_notices:
+            if context and not context.endswith("\n"):
+                context += "\n"
+            for item in monitor_notices:
+                context += (
+                    f'MONITOR {item["kind"]} {item["subject"]}: '
+                    f'{item["detail"]}\n'
+                )
+            noun = "condition" if len(monitor_notices) == 1 else "conditions"
+            notices.append(f"Monitor addressed {len(monitor_notices)} {noun} to this session.")
+
+        if context or notices:
+            output = {
+                "hookSpecificOutput": {
+                    "hookEventName": "SessionStart",
+                    "additionalContext": context,
+                }
+            }
+            if notices:
+                output["systemMessage"] = " ".join(notices)
     except Exception:
         pass
     finally:
+        # Emission is deliberately outside the catch-all above. Once health has been
+        # assembled, no exception in supplemental notice work can swallow it.
+        if output is not None:
+            sys.stdout.write(json.dumps(output) + "\n")
+            sys.stdout.flush()
+        if monitor_notices and inbox_env is not None:
+            try:
+                subprocess.run(
+                    [orch, "monitor", "--ack-notices", ",".join(
+                        str(item["noticeId"]) for item in monitor_notices
+                    )],
+                    env=inbox_env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=acknowledgement_timeout,
+                    check=False,
+                )
+            except Exception:
+                pass
         _kill(brief_p)
         _kill(resumes_p)
         _kill(inbox_p)
+        _kill(monitor_p)
+        if capability_dir:
+            shutil.rmtree(capability_dir, ignore_errors=True)
     return 0
 
 

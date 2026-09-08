@@ -434,8 +434,8 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
     case 'setup-ask': return { args: argv.slice(1), shape: shape('orch setup-ask', 0) }
     case 'blockers': return { args: argv.slice(1), shape: shape('orch blockers [--days N] [--json]', 0, ['--days'], ['--json']) }
     case 'monitor': return { args: argv.slice(1), shape: shape(
-      'orch monitor [--backstop|--history] [--limit N] [--json]', 0, ['--limit'],
-      ['--backstop', '--history', '--json'],
+      'orch monitor [--backstop|--history|--notices|--ack-notices IDS] [--limit N] [--json]', 0, ['--limit', '--ack-notices'],
+      ['--backstop', '--history', '--notices', '--json'],
     ) }
     case 'reclaim': {
       if (topLevelOnly) return { args: [], shape: shape('orch reclaim', 0) }
