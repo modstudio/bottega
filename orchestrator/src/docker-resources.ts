@@ -173,6 +173,7 @@ export type RunResourceOwner = {
   repo: string | null
   worktree: string | null
   status: string
+  retentionReason?: string | null
 }
 
 export type DockerResourceCondition = 'leaked' | 'retained-worktree-resources'
@@ -191,17 +192,24 @@ export function orphanedDockerResources(
 
 export function classifiedDockerResources(
   resources: DockerResource[], owners: RunResourceOwner[],
-): { resource: DockerResource; project: string; condition: DockerResourceCondition }[] {
+): {
+  resource: DockerResource
+  project: string
+  condition: DockerResourceCondition
+  reason: string | null
+}[] {
   const byId = new Map(owners.map((owner) => [owner.id, owner]))
   return resources.flatMap((resource) => {
     const owner = byId.get(resource.runId)
-    if (owner && !['ok', 'failed', 'stale', 'stopped'].includes(owner.status)) return []
+    if (owner && !owner.retentionReason
+      && !['ok', 'failed', 'stale', 'stopped'].includes(owner.status)) return []
     return [{
       resource,
       project: owner?.repo ?? 'unknown',
-      condition: owner?.worktree && existsSync(owner.worktree)
+      condition: owner?.retentionReason || owner?.worktree && existsSync(owner.worktree)
         ? 'retained-worktree-resources' as const
         : 'leaked' as const,
+      reason: owner?.retentionReason ?? null,
     }]
   })
 }

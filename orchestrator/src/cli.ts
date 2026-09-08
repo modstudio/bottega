@@ -11,6 +11,7 @@ import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, nowIso,
          authorizeRunMutation, runMutationActor,
          auditRunMutation, adoptRunMutation, writeTransaction, tryWriteContention,
          evidenceOwningWorktreeSharers as sharedWorktreeSharers, teardownTerminalRunResources,
+         terminalDockerRetentionReasonForRun,
          type RootAuthority } from './db.ts'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync, unlinkSync, openSync, fstatSync, closeSync, constants } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -5102,9 +5103,15 @@ switch (cmd) {
     const inventory = dockerRunResources()
     for (const error of inventory.errors) inventoryErrors.add(error)
     if (inventory.errors.length) cleanupFailed = true
-    const owners = db().query('SELECT id, repo, worktree, status FROM run').all() as {
+    const inventoryOwnerIds = new Set(inventory.resources.map(({ runId }) => runId))
+    const owners = (db().query('SELECT id, repo, worktree, status FROM run').all() as {
       id: number; repo: string | null; worktree: string | null; status: string
-    }[]
+    }[]).map((owner) => ({
+      ...owner,
+      retentionReason: inventoryOwnerIds.has(owner.id)
+        ? terminalDockerRetentionReasonForRun(db(), owner.id)
+        : null,
+    }))
     const classified = classifiedDockerResources(inventory.resources, owners)
     for (const { resource, project, condition } of classified) {
       if (condition === 'retained-worktree-resources') continue
@@ -5114,8 +5121,8 @@ switch (cmd) {
     const retained = classified.filter(({ condition }) => condition === 'retained-worktree-resources')
     if (retained.length) {
       console.error(`\n${dry ? 'would report ' : ''}retained worktree Docker resources: ${retained.length}`)
-      for (const { resource, project } of retained) {
-        console.error(`  ${resource.kind} ${resource.name} re-served or retained by project ${project} (run ${resource.runId}); no removal suggested`)
+      for (const { resource, project, reason } of retained) {
+        console.error(`  ${resource.kind} ${resource.name} re-served or retained by project ${project} (run ${resource.runId}); ${reason ? `removal could not be ascertained: ${reason}; ` : ''}no removal suggested`)
       }
     }
     if (leaked.size) {
@@ -5313,10 +5320,16 @@ switch (cmd) {
           ? 'reclaimed Docker containers'
           : dockerTeardown.outcome === 'live-sibling'
             ? 'left Docker containers in place because another live run still owns the tree'
+            : dockerTeardown.outcome === 'unascertainable'
+              ? `left Docker containers in place because removal could not be ascertained: ${dockerTeardown.reason}`
             : 'found no Docker containers to reclaim'
       console.log(
         `kept worktree ${cleanupRow.worktree} and branch ${cleanupRow.branch ?? '(unknown)'} as files; ` +
         dockerMessage,
+      )
+    } else if (dockerTeardown.outcome === 'unascertainable') {
+      console.log(
+        `left Docker containers in place because removal could not be ascertained: ${dockerTeardown.reason}`,
       )
     }
     break
@@ -7174,9 +7187,15 @@ switch (cmd) {
       for (const question of registerQuestions) console.log(`  ${question}`)
     }
     const docker = dockerRunResources()
-    const owners = db().query('SELECT id, repo, worktree, status FROM run').all() as {
+    const dockerOwnerIds = new Set(docker.resources.map(({ runId }) => runId))
+    const owners = (db().query('SELECT id, repo, worktree, status FROM run').all() as {
       id: number; repo: string | null; worktree: string | null; status: string
-    }[]
+    }[]).map((owner) => ({
+      ...owner,
+      retentionReason: dockerOwnerIds.has(owner.id)
+        ? terminalDockerRetentionReasonForRun(db(), owner.id)
+        : null,
+    }))
     const classified = classifiedDockerResources(docker.resources, owners)
     const orphans = classified.filter(({ condition }) => condition === 'leaked')
     const retained = classified.filter(({ condition }) => condition === 'retained-worktree-resources')
@@ -7186,8 +7205,8 @@ switch (cmd) {
       console.log(`    ${dockerRemovalCommand(resource)}`)
     }
     console.log(`docker retained worktree resources  ${retained.length}`)
-    for (const { resource, project } of retained) {
-      console.log(`  ${resource.kind} ${resource.name} — project ${project}, run ${resource.runId}; informational, no removal suggested`)
+    for (const { resource, project, reason } of retained) {
+      console.log(`  ${resource.kind} ${resource.name} — project ${project}, run ${resource.runId}; informational, ${reason ? `removal could not be ascertained: ${reason}; ` : ''}no removal suggested`)
     }
     for (const error of docker.errors) console.log(`  inventory unavailable: ${error}`)
     for (const j of Object.keys(JOBS)) {

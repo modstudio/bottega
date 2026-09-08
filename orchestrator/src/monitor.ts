@@ -2,7 +2,8 @@ import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
-  db, liveRuns, nowIso, pidAlive, UNSCORED_WHERE, writableDb, writeTransaction,
+  db, liveRuns, nowIso, pidAlive, terminalDockerRetentionReasonForRun, UNSCORED_WHERE, writableDb,
+  writeTransaction,
   type MonitorSeverity,
 } from './db.ts'
 import { fileIssue } from './mcp.ts'
@@ -263,16 +264,26 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
 
   const runDocker = dockerRunResources()
   errors.push(...runDocker.errors)
-  const dockerOwners = database.query(
+  const dockerOwnerIds = new Set(runDocker.resources.map(({ runId }) => runId))
+  const dockerOwners = (database.query(
     'SELECT id, repo, worktree, status FROM run',
-  ).all() as { id: number; repo: string | null; worktree: string | null; status: string }[]
+  ).all() as { id: number; repo: string | null; worktree: string | null; status: string }[])
+    .map((owner) => ({
+      ...owner,
+      retentionReason: dockerOwnerIds.has(owner.id)
+        ? terminalDockerRetentionReasonForRun(database, owner.id)
+        : null,
+    }))
   for (const item of classifiedDockerResources(runDocker.resources, dockerOwners)) {
     if (item.condition !== 'retained-worktree-resources') continue
     add({
       kind: 'retained-worktree-docker-resource', subject: item.resource.name, since: null,
       severity: 'informational',
-      detail: `${item.resource.kind} belongs to terminal run ${item.resource.runId} in a retained worktree`,
-      action: 'informational; no removal suggested because the retained tree may have been re-served',
+      detail: `${item.resource.kind} belongs to terminal run ${item.resource.runId}; ` +
+        (item.reason
+          ? `removal could not be ascertained: ${item.reason}`
+          : 'its worktree is retained'),
+      action: 'informational; retained resources require review before any removal',
       affectedProject: item.project,
     })
   }

@@ -1401,7 +1401,7 @@ test('record-only closes the question, marks the chain stranded, and retry resta
     )
   })
 
-  test('doctor lists orphaned run containers and volumes with removal commands', () => {
+  test('doctor retains resources whose repository root is unresolvable', () => {
     const id = addRun({ agent: 'codex', job: 'implement', repo: 'adanim' })
     db().query('UPDATE run SET worktree=? WHERE id=?')
       .run(`/tmp/missing/orch-${id}`, id)
@@ -1419,11 +1419,13 @@ test('record-only closes the question, marks the chain stranded, and retry resta
       })
       const out = p.stdout.toString()
       expect(p.exitCode).toBe(0)
-      expect(out).toContain('docker orphans  2')
+      expect(out).toContain('docker orphans  0')
+      expect(out).toContain('docker retained worktree resources  2')
       expect(out).toContain(`container orch-${id}-postgres-1 — project adanim, run ${id}`)
-      expect(out).toContain(`docker rm -f orch-${id}-postgres-1`)
       expect(out).toContain(`volume orch-${id}_adanim-pgdata — project adanim, run ${id}`)
-      expect(out).toContain(`docker volume rm orch-${id}_adanim-pgdata`)
+      expect(out).toContain('removal could not be ascertained: unresolvable repository root')
+      expect(out).not.toContain(`docker rm -f orch-${id}-postgres-1`)
+      expect(out).not.toContain(`docker volume rm orch-${id}_adanim-pgdata`)
       expect(out).not.toContain('ordinary-container')
     } finally {
       rmSync(docker.dir, { recursive: true, force: true })

@@ -932,7 +932,7 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
     }
   })
 
-  test('stopped runs are swept and their surviving infrastructure is reported by sweep and doctor', () => {
+  test('stopped runs with gone trees retain surviving infrastructure for review', () => {
     const { repo } = scratchRepo()
     const project = `stopped-resource-${repo.split('/').pop()}`
     const id = addRun({
@@ -969,9 +969,10 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
       )
       expect(doctor.exitCode).toBe(0)
       expect(doctor.stdout.toString()).toContain(container)
-      expect(doctor.stdout.toString()).toContain(`docker rm -f ${container}`)
       expect(doctor.stdout.toString()).toContain(volume)
-      expect(doctor.stdout.toString()).toContain(`docker volume rm ${volume}`)
+      expect(doctor.stdout.toString()).toContain('removal could not be ascertained: unresolvable repository root')
+      expect(doctor.stdout.toString()).not.toContain(`docker rm -f ${container}`)
+      expect(doctor.stdout.toString()).not.toContain(`docker volume rm ${volume}`)
     } finally {
       rmSync(repo, { recursive: true, force: true })
       rmSync(docker.dir, { recursive: true, force: true })

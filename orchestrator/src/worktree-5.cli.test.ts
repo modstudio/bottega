@@ -639,7 +639,7 @@ exec ${JSON.stringify(actualGit)} "$@"
     }
   })
 
-  test('sweep dry-run names existing orphan containers and volumes', () => {
+  test('sweep dry-run retains containers and volumes without a recorded worktree', () => {
     const project = `dry-run-leak-${randomUUID()}`
     const id = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
     const docker = fakeDocker(
@@ -648,13 +648,13 @@ exec ${JSON.stringify(actualGit)} "$@"
     )
     try {
       const r = orchWithEnv(docker.env, 'sweep', '--dry-run')
-      expect(r.code).not.toBe(0)
-      expect(r.err).toContain('would report leaked Docker resources: 2')
+      expect(r.code).toBe(0)
+      expect(r.err).toContain('would report retained worktree Docker resources: 2')
       expect(r.err).toContain(
-        `would report container orch-${id}-postgres-1 leaked by project ${project} (run ${id})`,
+        `container orch-${id}-postgres-1 re-served or retained by project ${project} (run ${id}); removal could not be ascertained: no recorded worktree`,
       )
       expect(r.err).toContain(
-        `would report volume orch-${id}_${project}-pgdata leaked by project ${project} (run ${id})`,
+        `volume orch-${id}_${project}-pgdata re-served or retained by project ${project} (run ${id}); removal could not be ascertained: no recorded worktree`,
       )
     } finally {
       rmSync(docker.dir, { recursive: true, force: true })
@@ -665,25 +665,52 @@ exec ${JSON.stringify(actualGit)} "$@"
     const project = `retained-resource-${randomUUID()}`
     const id = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
     const tree = mkdtempSync(join(tmpdir(), `orch-${id}-retained-`))
+    expect(Bun.spawnSync(['git', 'init', '-q', tree]).exitCode).toBe(0)
     db().query('UPDATE run SET worktree=? WHERE id=?').run(tree, id)
-    const docker = fakeDocker([`orch-${id}-web`], [`orch-${id}_${project}-pgdata`])
+    const noTree = addRun({ agent: 'codex', job: 'implement', status: 'asking', repo: project })
+    addRun({ agent: 'codex', job: 'implement', status: 'failed', repo: project,
+      parent: noTree, turn: 2 })
+    const goneTree = addRun({ agent: 'codex', job: 'implement', status: 'failed', repo: project })
+    db().query('UPDATE run SET worktree=? WHERE id=?').run(join(tree, 'gone'), goneTree)
+    const sharedTree = mkdtempSync(join(tmpdir(), `orch-${id}-shared-`))
+    expect(Bun.spawnSync(['git', 'init', '-q', sharedTree]).exitCode).toBe(0)
+    const terminalSharer = addRun({ agent: 'codex', job: 'implement', status: 'failed', repo: project })
+    const liveSharer = addRun({ agent: 'codex', job: 'implement', status: 'asking', repo: project })
+    db().query('UPDATE run SET worktree=? WHERE id=?').run(sharedTree, terminalSharer)
+    db().query('UPDATE run SET worktree=? WHERE id=?').run(`${sharedTree}/`, liveSharer)
+    const docker = fakeDocker([
+      `orch-${id}-web`, `orch-${noTree}-web`, `orch-${goneTree}-web`, `orch-${terminalSharer}-web`,
+    ], [`orch-${id}_${project}-pgdata`])
     try {
       const sweep = orchWithEnv(docker.env, 'sweep', '--dry-run')
       expect(sweep.code).toBe(0)
-      expect(sweep.err).toContain('retained worktree Docker resources: 2')
+      expect(sweep.err).toContain('retained worktree Docker resources: 5')
+      expect(sweep.err).toContain('removal could not be ascertained: no recorded worktree')
+      expect(sweep.err).toContain('removal could not be ascertained: unresolvable repository root')
+      expect(sweep.err).toContain('removal could not be ascertained: live sharer present')
       expect(sweep.err).toContain('no removal suggested')
       expect(sweep.err).not.toContain('docker rm')
+
+      const observed = orchWithEnv(docker.env, 'monitor')
+      expect(observed.out).toContain('retained-worktree-docker-resource')
+      expect(observed.out).toContain('removal could not be ascertained: no recorded worktree')
+      expect(observed.out).toContain('removal could not be ascertained: unresolvable repository root')
+      expect(observed.out).toContain('removal could not be ascertained: live sharer present')
 
       const doctor = Bun.spawnSync([process.execPath, CLI, 'doctor'], {
         env: { ...process.env, ...docker.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
         stdout: 'pipe', stderr: 'pipe',
       })
       expect(doctor.exitCode).toBe(0)
-      expect(doctor.stdout.toString()).toContain('docker retained worktree resources  2')
+      expect(doctor.stdout.toString()).toContain('docker retained worktree resources  5')
+      expect(doctor.stdout.toString()).toContain('removal could not be ascertained: no recorded worktree')
+      expect(doctor.stdout.toString()).toContain('removal could not be ascertained: unresolvable repository root')
+      expect(doctor.stdout.toString()).toContain('removal could not be ascertained: live sharer present')
       expect(doctor.stdout.toString()).toContain('informational, no removal suggested')
       expect(doctor.stdout.toString()).not.toContain(`docker rm -f orch-${id}-web`)
     } finally {
       rmSync(tree, { recursive: true, force: true })
+      rmSync(sharedTree, { recursive: true, force: true })
       rmSync(docker.dir, { recursive: true, force: true })
     }
   })

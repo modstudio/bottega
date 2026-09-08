@@ -34,6 +34,18 @@ import { runRecipe, teardownRecipe, dbNameFor, type Recipe } from './recipe.ts'
 import { mainCheckoutOf, scrubbedGitEnv } from '../../shared/git.ts'
 export { scrubbedGitEnv } from '../../shared/git.ts'
 
+/** Preserve the root separator while removing spelling-only trailing separators. */
+export function withoutTrailingSeparators(path: string): string {
+  let end = path.length
+  while (end > 1 && path[end - 1] === sep) end--
+  return path.slice(0, end)
+}
+
+/** Use physical identity where it is available, and the recorded spelling otherwise. */
+export function realpathOrSpelled(path: string): string {
+  try { return realpathSync(path) } catch { return path }
+}
+
 export type Worktree = {
   /** Where the worker actually runs. */
   path: string

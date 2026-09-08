@@ -27,6 +27,7 @@ import { CONNECTION_SCHEMA_INVARIANT } from './migrations.ts'
 import {
   createWorktree, createWithTool, createReadOnlyWorktree, createReadOnlyWithTool,
   toolFor, changesIn, repoRootOf, resolveBase, resolveReadOnlyBase, worktreeGitDir,
+  realpathOrSpelled, withoutTrailingSeparators,
   createCommandExists,
   prepareWorktreeObjects, prepareSharedRefGuard, carryWorkingState,
   assertSharedRefGuardOutsideWritableRoots,
@@ -760,10 +761,6 @@ export function preflight(
   return effectiveSeed
 }
 
-function realpathOrSpelled(path: string): string {
-  try { return realpathSync(path) } catch { return path }
-}
-
 /**
  * Chain roots, not rows: every turn of a resumed chain records the same
  * worktree (eleven rows for one tree in the live store), and the exemption
@@ -1203,12 +1200,6 @@ export function snapshotRegisteredCheckouts(
  * content: once the tree has been copied, every occurrence must point at the
  * copy or an agent following the pack escapes the isolation boundary.
  */
-function withoutTrailingSeparators(path: string): string {
-  let end = path.length
-  while (end > 1 && path[end - 1] === '/') end--
-  return path.slice(0, end)
-}
-
 const UNICODE_ALPHANUMERIC_OR_MARK = /[\p{L}\p{N}\p{M}]/u
 const PATH_NAME_CHARACTER = /[\p{L}\p{N}\p{M}_.-]/u
 const SHELL_PATH_BOUNDARY = /[;&|<>()`$]/
