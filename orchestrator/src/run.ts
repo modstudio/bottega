@@ -1865,8 +1865,8 @@ export function closeOutRun(
     detail: `live run(s): ${live.map((owner) => `${owner.id} (${owner.status})`).join(', ')}`,
   }
   const agentPids = (db().query(
-    'SELECT agent_pid FROM run WHERE id=? OR parent_run_id=? ORDER BY id',
-  ).all(row.root_id, row.root_id) as { agent_pid: number | null }[])
+    'SELECT agent_pid FROM run WHERE worktree=? ORDER BY id',
+  ).all(treePath) as { agent_pid: number | null }[])
     .map((turn) => turn.agent_pid)
   const processInventory = processTable()
   if (!processInventory.ascertainable) return {

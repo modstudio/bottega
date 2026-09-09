@@ -120,6 +120,38 @@ test('a live terminal sibling turn process retains the conversation tree', () =>
   }
 })
 
+test('a live terminal process on another root sharing the worktree retains the tree', () => {
+  const f = fixture()
+  const sleeper = Bun.spawn(['sleep', '30'], { stdout: 'pipe', stderr: 'pipe' })
+  try {
+    const sibling = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: f.project })
+    db().query('UPDATE run SET worktree=?, branch=?, agent_pid=? WHERE id=?')
+      .run(f.tree.path, f.tree.branch, sleeper.pid, sibling)
+    installTestProcessInventory({ ascertainable: true, rows: [
+      { pid: sleeper.pid, ppid: process.pid, pgid: sleeper.pid, command: 'sleep 30' },
+    ] })
+    const result = closeOutRun(f.id, { intent: 'explicit' })
+    expect(result.outcome).toBe('live')
+    expect(result.detail).toBe('process tree still alive')
+    expect(existsSync(f.tree.path)).toBe(true)
+  } finally {
+    sleeper.kill()
+    rmSync(f.repo, { recursive: true, force: true })
+  }
+})
+
+test("the Stop hook's non-blocking close-out command parses and runs", () => {
+  const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const orch = new URL('../../bin/orch', import.meta.url).pathname
+  const result = Bun.spawnSync([orch, 'close-out', String(id), '--non-blocking'], {
+    env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+    stdout: 'pipe', stderr: 'pipe',
+  })
+  expect(result.exitCode, result.stderr.toString()).toBe(0)
+  expect(result.stderr.toString()).not.toContain('unrecognised argument')
+  expect(result.stdout.toString()).toContain(`absent run ${id}: no worktree`)
+})
+
 test('unascertainable process inventory retains the tree with the missing condition', () => {
   const f = fixture()
   try {
