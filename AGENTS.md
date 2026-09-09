@@ -383,6 +383,40 @@ thirty-process tree alive behind finished runs. And a rule that kept a worktree
 because its run was unscored - caution, by intent - ended up teaching sessions to
 refuse an operator's direct request to clean up, on grounds that were not true.
 
+**Every verb declares which question it is asking.** This rule was read in
+opposite directions by two sessions within a day of being written, and both
+readings were faithful. "Tearing down is an ordinary step, without ceremony and
+without asking" licensed deleting a shared resource; "a default that does nothing
+and escalates is correct for every shape at once" licensed refusing to. Nothing
+above said which question was being asked, so the same paragraph answered both.
+
+The danger was not that two answers exist. It was ONE PREDICATE SERVING BOTH, so
+a caller inherited an answer to a question it had never asked. Two questions look
+alike and take opposite defaults:
+
+- **Is anyone ALIVE on this resource?** Scoped to what is actually alive, which
+  includes a participant blocked waiting on an answer - asking is alive, not
+  idle. A finished participant is not alive, and treating it as though it were
+  reports work as live that demonstrably is not, which stops the ordinary path
+  from ever running.
+- **Does anyone still CLAIM this resource?** Every recorded pointer counts,
+  whatever its state. Clear the pointers rather than orphaning them.
+
+Do not read that as a lookup table of two scopes; it would drift the first time
+somebody adds a third caller. The rule is that each verb states its own question
+and gets an answer to that one. A shared helper that answers "who is here"
+without saying which sense it means is the defect, however correct either answer
+is on its own.
+
+**The conservative default governs DESTRUCTION, not reclamation.** The test is
+whether the operation can be undone by doing it again. Removing something that
+can be rebuilt is reversible and belongs on the ordinary path; removing the last
+copy of something is not, and earns the default plus its escalation. "Teardown"
+is not the distinguishing word - the same predicate failed in both directions on
+one branch, destroying a resource a live participant still pointed at, and, read
+the other way, reporting finished work as live and disabling the path built to
+reclaim it.
+
 ## Tasks: inbox zero
 
 File a task for work being done NOW. Do not carry a backlog of ideas.
