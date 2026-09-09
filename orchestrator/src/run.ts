@@ -3335,9 +3335,8 @@ export async function run(opts: {
   // Only the handle the signal path and the finally need. Typing it as the full
   // Subprocess would widen stdout/stderr back to "pipe or fd or nothing", which
   // is what the narrowed `p` inside the try exists to avoid.
-  let proc: { kill(sig?: number | string): void } | null = null
+  let proc: { pid?: number | null; kill(sig?: number | string): void } | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
-  let killer: ReturnType<typeof setTimeout> | null = null
   let checkpointTimer: ReturnType<typeof setInterval> | null = null
   let idleTimer: ReturnType<typeof setInterval> | null = null
   let timedOut = false
@@ -3506,9 +3505,9 @@ export async function run(opts: {
       if (idleKilled) return
       timedOut = true
       void t.cancel(handle)
-      // A CLI that ignores SIGTERM would otherwise keep the caller waiting for
-      // ever, which is the thing the timeout exists to prevent.
-      killer = setTimeout(() => { try { handle.kill(9) } catch { /* already gone */ } }, 5_000)
+      // Descendant-aware SIGTERM, bounded grace, then SIGKILL. A CLI that
+      // ignores SIGTERM would otherwise keep the caller waiting for ever.
+      void terminateProcessGroup(handle.pid ?? 0)
     }, boundMs)
 
     let forceCollect: ((result: TransportResult) => void) | null = null
@@ -3883,13 +3882,13 @@ export async function run(opts: {
     failureKind = proc ? 'other' : 'harness'
   } finally {
     if (timer) clearTimeout(timer)
-    if (killer) clearTimeout(killer)
     if (checkpointTimer) clearInterval(checkpointTimer)
     if (idleTimer) clearInterval(idleTimer)
     if (proc) {
       live.delete(proc)
       liveCheckpoints.delete(proc)
     }
+    if (proc?.pid) await terminateProcessGroup(proc.pid)
     if (askLoopback) await askLoopback.close()
 
     const recordedState = db().query('SELECT status FROM run WHERE id=?').get(claim.id) as

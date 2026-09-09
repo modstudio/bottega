@@ -159,6 +159,11 @@ export const {
 } = await import('../src/database-location.ts')
 export const { dbNameFor, recipeNotes, runRecipe, fill } = await import('../src/recipe.ts')
 export const {
+  parseWorktreeDatabaseName, parseRetainedRef, parseRefGuardRunId, databasesFromNames,
+  installTestDatabaseInventory, worktreeDatabaseInventory, retainedRefInventory, refGuardInventory,
+} = await import('../src/resource-inventory.ts')
+export const { terminateProcessGroup } = await import('../src/idle-kill.ts')
+export const {
   JOBS, jobBoundInstructionForContract, resolveJobTimeoutMs, jobTimeoutCeilingMinutes,
   isReaderJob, READER_JOBS, JOB_TIMEOUTS,
 } = await import('../src/jobs.ts')
@@ -245,7 +250,7 @@ export const { createDocsMcpServer, fileIssue } = await import('../src/mcp.ts')
 export const { setWorkflow, promoteWorkflow } = await import('../src/workflows.ts')
 export const { compilePack, compileBrief, checkDoc, CanonBudgetError, recordPack, diffPack,
         allInjectChecks, allNumericLiterals, numericLiteralReport } = await import('../src/canon.ts')
-export const { claimMonitorNotices, markMonitorNoticesDelivered, deadRunningProcessConditions, reconcileHub, rulingConditions, monitorHistory, monitor, formatMonitorPass, displayConditions } =
+export const { claimMonitorNotices, markMonitorNoticesDelivered, deadRunningProcessConditions, terminalProcessAliveConditions, worktreeDatabaseConditions, retainedRefConditions, refGuardConditions, reconcileHub, rulingConditions, monitorHistory, monitor, formatMonitorPass, displayConditions } =
   await import('../src/monitor.ts')
 export const { listPairs, addPair, baselineForPair, setBaseline, listSkips, addSkip,
         setLedgerRef, ledgerRef, listLedgerRefs, resolveLedgerRef,
@@ -279,6 +284,20 @@ export function addRun(o: {
     o.model ?? AGENTS[o.agent]?.model ?? null, o.lens ?? null, o.repo ?? null,
     o.inputTree ?? null, o.headCommit ?? null,
   ) as { id: number }).id
+}
+
+/** Bounded teardown for a test-spawned child. Never signals the suite process. */
+export async function reapTestProcess(pid: number | null | undefined): Promise<void> {
+  if (!pid || pid <= 1 || pid === process.pid) return
+  await terminateProcessGroup(pid, { graceMs: 500, killConfirmMs: 500 })
+}
+
+export async function reapTestRun(runId: number | null | undefined): Promise<void> {
+  if (!runId) return
+  const row = db().query('SELECT pid, agent_pid FROM run WHERE id=?').get(runId) as
+    { pid: number | null; agent_pid: number | null } | null
+  await reapTestProcess(row?.agent_pid)
+  if (row?.pid !== row?.agent_pid) await reapTestProcess(row?.pid)
 }
 
 export function fakeDocker(containers: string[], volumes: string[]): { dir: string; env: Record<string, string> } {

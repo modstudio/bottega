@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import type { ArgvOpts } from './agents.ts'
 import { eventsFromVendorLine } from './events.ts'
+import { terminateProcessGroup } from './idle-kill.ts'
 import { srtLaunchArgv } from './sandbox.ts'
 import {
   outcomeFromTransport, type AgentTransport, type NormalizedEvent, type TransportHandle,
@@ -150,7 +151,7 @@ function spawnCli(opts: TransportStartOpts): TransportHandle {
 
   const handle: TransportHandle = {
     pid: p.pid,
-    kill(sig) { try { p.kill(sig === 9 || sig === 'SIGKILL' ? 9 : 'SIGTERM') } catch { /* already gone */ } },
+    kill(_sig) { void terminateProcessGroup(p.pid) },
     async prompt() { /* first-turn prompt is on argv / stdin */ },
     async *events() {
       let i = 0
@@ -165,7 +166,7 @@ function spawnCli(opts: TransportStartOpts): TransportHandle {
     },
     async cancel() {
       cancelled = true
-      try { p.kill('SIGTERM') } catch { /* already gone */ }
+      void terminateProcessGroup(p.pid)
     },
     collect,
   }

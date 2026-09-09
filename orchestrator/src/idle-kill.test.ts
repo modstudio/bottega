@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   AGENTS, addRun, candidates, classify, db, declaredCreate, dir, hermeticGitEnv,
-  JOBS, NEEDS_HUMAN, NOT_EVIDENCE, run, upsertProject,
+  JOBS, NEEDS_HUMAN, NOT_EVIDENCE, reapTestProcess, reapTestRun, run, upsertProject,
 } from '../test/fixture.ts'
 import { pidAlive } from './db.ts'
 import { formatIdleKillError, idleKillMayProceed, idleKillMs, installTestProcessSampler, isGroupKillablePgid, isUninterruptible, isWorkerCpuIdle,
@@ -358,13 +358,17 @@ describe('process group termination', () => {
 
   test('a real sleeper is signalled and exits without looping', async () => {
     const child = Bun.spawn(['sleep', '30'], { detached: true, stdout: 'ignore', stderr: 'ignore' })
-    expect(child.pid).toBeGreaterThan(0)
-    expectOwnProcessGroup(child.pid)
-    const result = await terminateProcessGroup(child.pid, { graceMs: 500, killConfirmMs: 500 })
-    expect(result.unkillable).toBe(false)
-    expect(result.exited).toBe(true)
-    expect(await child.exited).not.toBe(null)
-    expect(pidAlive(child.pid)).toBe(false)
+    try {
+      expect(child.pid).toBeGreaterThan(0)
+      expectOwnProcessGroup(child.pid)
+      const result = await terminateProcessGroup(child.pid, { graceMs: 500, killConfirmMs: 500 })
+      expect(result.unkillable).toBe(false)
+      expect(result.exited).toBe(true)
+      expect(await child.exited).not.toBe(null)
+      expect(pidAlive(child.pid)).toBe(false)
+    } finally {
+      await reapTestProcess(child.pid)
+    }
   })
 })
 
@@ -445,6 +449,7 @@ describe('live idle kill', () => {
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
     }
+    try {
     expect(runId).not.toBeNull()
     const row = db().query(
       'SELECT failure_kind,work_preserved,worktree,branch,error,status FROM run WHERE id=?',
@@ -462,6 +467,9 @@ describe('live idle kill', () => {
     expect(isRoutingEvidence({ status: row.status, delivery: null, failureKind: row.failure_kind })).toBe(false)
     expect(candidates('implement').find((item) => item.agent === 'codex'))
       .toMatchObject({ failures: 0, evidence: 0 })
+    } finally {
+      await reapTestRun(runId)
+    }
   }, 20_000)
 
   test('a completed reply.json outranks an idle kill', async () => {
@@ -542,6 +550,7 @@ describe('live idle kill', () => {
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
     }
+    try {
     expect(runId).not.toBeNull()
     const row = db().query('SELECT failure_kind,status,error FROM run WHERE id=?').get(runId) as {
       failure_kind: string | null; status: string; error: string | null
@@ -549,6 +558,9 @@ describe('live idle kill', () => {
     expect(row.status).toBe('ok')
     expect(row.failure_kind).toBeNull()
     expect(row.error ?? '').not.toContain('idle-killed')
+    } finally {
+      await reapTestRun(runId)
+    }
   }, 20_000)
 
   test('a failed checkpoint with no prior leaves the worker for the wall', async () => {
@@ -654,9 +666,7 @@ describe('live idle kill', () => {
           try { chmodSync(join(tree.worktree, '.git'), 0o644) } catch { /* already gone */ }
         }
       }
-      if (vendorPid && pidAlive(vendorPid)) {
-        try { process.kill(vendorPid, 'SIGTERM') } catch { /* gone */ }
-      }
+      await reapTestProcess(vendorPid)
       try { await pending } catch { /* the worker is standing down for the wall */ }
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
@@ -678,10 +688,10 @@ describe('live idle kill', () => {
     chmodSync(script, 0o755)
     process.env.ORCH_IDLE_KILL_MS = '400'
     process.env.ORCH_DEPTH = '0'
+    let runId: number | null = null
     try {
       grok.bin = script
       grok.timeoutMs = 2_500
-      let runId: number | null = null
       try {
         const result = await run({
           job: 'summarize', prompt: 'hello', cwd: dir, agent: 'grok', noFailover: true,
@@ -701,6 +711,7 @@ describe('live idle kill', () => {
       grok.bin = previousBin
       grok.timeoutMs = previousTimeout
       delete process.env.ORCH_DEPTH
+      await reapTestRun(runId)
     }
   }, 15_000)
 
@@ -713,10 +724,10 @@ describe('live idle kill', () => {
     chmodSync(script, 0o755)
     process.env.ORCH_IDLE_KILL_MS = '400'
     process.env.ORCH_DEPTH = '0'
+    let runId: number | null = null
     try {
       grok.bin = script
       grok.timeoutMs = 20_000
-      let runId: number | null = null
       try {
         const result = await run({
           job: 'summarize', prompt: 'hello', cwd: dir, agent: 'grok', noFailover: true,
@@ -741,6 +752,7 @@ describe('live idle kill', () => {
       grok.bin = previousBin
       grok.timeoutMs = previousTimeout
       delete process.env.ORCH_DEPTH
+      await reapTestRun(runId)
     }
   }, 15_000)
 
@@ -803,6 +815,48 @@ describe('live idle kill', () => {
     } finally {
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
+      await reapTestRun(runId)
+    }
+  }, 15_000)
+
+  test('the wall kill sweeps a descendant of the vendor, not only the direct child', async () => {
+    const grok = AGENTS.grok!
+    const previousBin = grok.bin
+    const previousTimeout = grok.timeoutMs
+    const script = join(dir, 'fork-sleep.sh')
+    const childPidFile = join(dir, 'fork-sleep.child')
+    writeFileSync(script,
+      `#!/bin/sh\nsleep 3600 &\necho $! > ${JSON.stringify(childPidFile)}\nsleep 3600\n`)
+    chmodSync(script, 0o755)
+    process.env.ORCH_IDLE_KILL_MS = '60000'
+    process.env.ORCH_DEPTH = '0'
+    let runId: number | null = null
+    let childPid: number | null = null
+    try {
+      grok.bin = script
+      grok.timeoutMs = 2_500
+      try {
+        const result = await run({
+          job: 'summarize', prompt: 'hello', cwd: dir, agent: 'grok', noFailover: true,
+        })
+        runId = result.id
+      } catch (error) {
+        runId = (error as Error & { runId?: number }).runId ?? null
+      }
+      const raw = existsSync(childPidFile) ? readFileSync(childPidFile, 'utf8').trim() : ''
+      childPid = raw ? Number(raw) : null
+      expect(childPid).toBeGreaterThan(1)
+      expect(pidAlive(childPid!)).toBe(false)
+      const row = db().query('SELECT agent_pid FROM run WHERE id=?').get(runId) as
+        { agent_pid: number | null } | null
+      if (row?.agent_pid) expect(pidAlive(row.agent_pid)).toBe(false)
+    } finally {
+      grok.bin = previousBin
+      grok.timeoutMs = previousTimeout
+      delete process.env.ORCH_IDLE_KILL_MS
+      delete process.env.ORCH_DEPTH
+      await reapTestProcess(childPid)
+      await reapTestRun(runId)
     }
   }, 15_000)
 })

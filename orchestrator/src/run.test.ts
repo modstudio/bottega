@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, utimesSync, chmodSync, mkdtempSync, rmSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AGENTS, GENERIC_QUESTION_TOKENS, KEEP_RUN_FILES_DAYS, addDoctrineRule, addPair, addRun, addSkip, adoptRunMutation, ask, authorizeRunMutation, baselineForPair, candidates, db, detectBlockers, dir, duelMatrices, errorTail, hasRealQuestions, hermeticGitEnv, judgeability, ledgerRef, listDoctrineRules, listLedgerRefs, listPairs, listSkips, nowIso, parseRunIds, parseWorkerReply, parseWorkerReplyWithCount, pendingForSession, pick, projects, pruneRuns, realQuestions, recordDuels, resolveLedgerRef, retireDoctrineRule, run, runDetail, runFilePaths, score, sessionId, setBaseline, setLedgerRef, state, upsertProject, weigh, workerReply } from '../test/fixture.ts'
+import { AGENTS, GENERIC_QUESTION_TOKENS, KEEP_RUN_FILES_DAYS, addDoctrineRule, addPair, addRun, addSkip, adoptRunMutation, ask, authorizeRunMutation, baselineForPair, candidates, db, detectBlockers, dir, duelMatrices, errorTail, hasRealQuestions, hermeticGitEnv, judgeability, ledgerRef, listDoctrineRules, listLedgerRefs, listPairs, listSkips, nowIso, parseRunIds, parseWorkerReply, parseWorkerReplyWithCount, pendingForSession, pick, projects, pruneRuns, realQuestions, recordDuels, reapTestRun, resolveLedgerRef, retireDoctrineRule, run, runDetail, runFilePaths, score, sessionId, setBaseline, setLedgerRef, state, upsertProject, weigh, workerReply } from '../test/fixture.ts'
 
 describe('porting data model', () => {
   test('stores pair progress and declined candidates with their reasons', () => {
@@ -673,6 +673,7 @@ setInterval(() => {}, 1_000)
     const previousTimeout = Object.getOwnPropertyDescriptor(grok, 'timeoutMs')!
     const priorDepth = process.env.ORCH_DEPTH
     process.env.ORCH_DEPTH = '0'
+    let runId: number | null = null
     try {
       grok.bin = script
       // The job bound is now compiled into the prompt before launch. Keep this
@@ -683,6 +684,7 @@ setInterval(() => {}, 1_000)
         job: 'file-question', prompt: 'where is the implementation?', cwd: dir,
         agent: 'grok', noFailover: true,
       })
+      runId = result.id
       const row = db().query(
         'SELECT status, failure_kind, exit_code, output_bytes FROM run WHERE id=?',
       ).get(result.id) as {
@@ -709,6 +711,7 @@ setInterval(() => {}, 1_000)
       Object.defineProperty(grok, 'timeoutMs', previousTimeout)
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
+      await reapTestRun(runId)
     }
   })
 
@@ -724,10 +727,10 @@ setInterval(() => {}, 1_000)
     const previousTimeout = grok.timeoutMs
     const priorDepth = process.env.ORCH_DEPTH
     process.env.ORCH_DEPTH = '0'
+    let runId: number | null = null
     try {
       grok.bin = script
       grok.timeoutMs = 250
-      let runId: number | null = null
       try {
         await run({
           job: 'file-question', prompt: 'where is the implementation?', cwd: dir,
@@ -750,6 +753,7 @@ setInterval(() => {}, 1_000)
       grok.timeoutMs = previousTimeout
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
+      await reapTestRun(runId)
     }
   })
 })
@@ -886,6 +890,7 @@ setInterval(() => {}, 1_000)
   ])('records failed/truncated for %s', async (_case, output) => {
     await withHangingGrokBin(output, async (ready) => {
       const reserved = addRun({ agent: '(pending)', job: 'file-question', status: 'running' })
+      try {
       await expect(run({
         job: 'file-question', prompt: 'inspect this', cwd: dir,
         agent: 'grok', reserveId: reserved, noFailover: true,
@@ -900,6 +905,9 @@ setInterval(() => {}, 1_000)
       })
       expect(candidates('file-question').find((candidate) => candidate.agent === 'grok'))
         .toMatchObject({ evidence: 0 })
+      } finally {
+        await reapTestRun(reserved)
+      }
     })
   })
 

@@ -3,6 +3,7 @@ import { Readable, Writable } from 'node:stream'
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import * as acp from '@agentclientprotocol/sdk'
+import { terminateProcessGroup } from './idle-kill.ts'
 import { srtLaunchArgv } from './sandbox.ts'
 import type { SandboxRuntimeConfig } from './sandbox.ts'
 import {
@@ -507,8 +508,8 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const handle: TransportHandle = {
     pid: child.pid ?? null,
     effectiveModel,
-    kill(sig) {
-      try { child.kill(sig === 9 || sig === 'SIGKILL' ? 'SIGKILL' : 'SIGTERM') } catch { /* already gone */ }
+    kill(_sig) {
+      void terminateProcessGroup(child.pid ?? 0)
     },
     async prompt(text) {
       if (!ctx || !sessionId) throw new Error('ACP session is not open')
@@ -597,7 +598,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
           await ctx.notify(acp.methods.agent.session.cancel, { sessionId })
         } catch { /* agent may already be gone */ }
       }
-      try { child.kill('SIGTERM') } catch { /* already gone */ }
+      void terminateProcessGroup(child.pid ?? 0)
       if (leaderSocket) rmSync(leaderSocket, { force: true })
     },
     async collect() {

@@ -14,6 +14,10 @@ import { reclaimBranch, reclaimWorktree } from './reclaim.ts'
 import { allInjectChecks, storedPackDrift } from './canon.ts'
 import { idleLabel, idleMsSince, idleWarnMs } from './events.ts'
 import { classifiedDockerResources, dockerRunResources } from './docker-resources.ts'
+import { runHasLiveDescendants } from './idle-kill.ts'
+import {
+  refGuardInventory, retainedRefInventory, worktreeDatabaseInventory,
+} from './resource-inventory.ts'
 
 const HUB = new URL('../../bin/hub', import.meta.url).pathname
 
@@ -113,6 +117,36 @@ export function idleRunConditions(clock = Date.now()): MonitorCondition[] {
       detail: `run ${run.id} ${run.agent}/${run.job} ${label}`,
       action: 'reported; the run coordinator checkpoints and terminates past the idle-kill threshold',
       ownerSession: run.session_id,
+    }]
+  })
+}
+
+const TERMINAL_RUN_STATUSES = "('ok','failed','stale','stopped')"
+
+/** Report recorded pids and descendants that outlived a terminal run. Observation only. */
+export function terminalProcessAliveConditions(clock = Date.now()): MonitorCondition[] {
+  const terminal = db().query(
+    `SELECT id, started_at, pid, agent_pid FROM run
+      WHERE status IN ${TERMINAL_RUN_STATUSES}
+        AND (pid IS NOT NULL OR agent_pid IS NOT NULL)`,
+  ).all() as { id: number; started_at: string; pid: number | null; agent_pid: number | null }[]
+  return terminal.flatMap((run): MonitorCondition[] => {
+    const roots = [...new Set(
+      [run.pid, run.agent_pid].filter((pid): pid is number => pid != null && pid > 1),
+    )]
+    if (!roots.length) return []
+    const live = roots.filter((pid) => pidAlive(pid))
+    const descendantsLive = !live.length && runHasLiveDescendants(roots)
+    if (!live.length && !descendantsLive) return []
+    const reported = live[0] ?? roots[0]!
+    const who = live.length
+      ? live.map((pid) => pid === run.agent_pid && pid !== run.pid ? `agent pid ${pid}` : `pid ${pid}`).join(' and ')
+      : `a descendant of pid ${roots.join('/')}`
+    return [{
+      kind: 'terminal-process-alive', subject: `run:${run.id}:pid:${reported}`, since: run.started_at,
+      ageMs: age(run.started_at, clock),
+      detail: `terminal run ${run.id} still has live ${who}; pid reuse means identity must be verified before signalling`,
+      action: `run orch close-out ${run.id}; an unverified process is reported and never killed`,
     }]
   })
 }
@@ -254,6 +288,70 @@ function dockerConditions(clock: number): { conditions: MonitorCondition[]; erro
   return { conditions, errors: [] }
 }
 
+function liveRunIds(database: ReturnType<typeof db>): Set<number> {
+  const rows = database.query(
+    `SELECT id FROM run WHERE status IN ('running','asking')`,
+  ).all() as { id: number }[]
+  return new Set(rows.map((row) => row.id))
+}
+
+export function worktreeDatabaseConditions(clock: number): { conditions: MonitorCondition[]; errors: string[] } {
+  const listed = worktreeDatabaseInventory()
+  if (!listed.ascertainable) return { conditions: [], errors: [listed.reason] }
+  const live = liveRunIds(db())
+  const conditions = listed.databases.flatMap((item): MonitorCondition[] => {
+    if (live.has(item.runId)) return []
+    return [{
+      kind: 'orphan-worktree-database',
+      subject: `${item.engine}:${item.name}`,
+      since: null,
+      ageMs: age(null, clock),
+      detail: `${item.engine} database ${item.name} belongs to ${item.project} run ${item.runId}`,
+      action: 'reported; no established removal verb',
+      affectedProject: item.project,
+    }]
+  })
+  return { conditions, errors: [] }
+}
+
+export function retainedRefConditions(clock: number): { conditions: MonitorCondition[]; errors: string[] } {
+  const listed = retainedRefInventory()
+  if (!listed.ascertainable) return { conditions: [], errors: [listed.reason] }
+  const live = liveRunIds(db())
+  const conditions = listed.items.flatMap((item): MonitorCondition[] => {
+    if (live.has(item.runId)) return []
+    return [{
+      kind: 'orphan-retained-ref',
+      subject: `${item.project}:${item.ref}`,
+      since: null,
+      ageMs: age(null, clock),
+      detail: `${item.ref} at ${item.sha} pins ${item.project} run ${item.runId}`,
+      action: 'reported; no established removal verb',
+      affectedProject: item.project,
+    }]
+  })
+  return { conditions, errors: [] }
+}
+
+export function refGuardConditions(clock: number): { conditions: MonitorCondition[]; errors: string[] } {
+  const listed = refGuardInventory()
+  if (!listed.ascertainable) return { conditions: [], errors: [listed.reason] }
+  const live = liveRunIds(db())
+  const conditions = listed.items.flatMap((item): MonitorCondition[] => {
+    if (live.has(item.runId)) return []
+    return [{
+      kind: 'orphan-ref-guard',
+      subject: item.path,
+      since: null,
+      ageMs: age(null, clock),
+      detail: `shared ref-guard metadata for ${item.project} run ${item.runId} remains at ${item.path}`,
+      action: 'reported; no established removal verb',
+      affectedProject: item.project,
+    }]
+  })
+  return { conditions, errors: [] }
+}
+
 /** Observe machine state, record the pass, and make no judgement-shaped repair. */
 export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock = Date.now()): Promise<MonitorResult> {
   const database = writableDb()
@@ -338,15 +436,7 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
     detail: run.error ?? `run ${run.id} is stale`, action: 'reported; disposition requires intent',
     ownerSession: run.session_id })
 
-  const terminalProcesses = database.query(
-    `SELECT id,started_at,pid FROM run
-      WHERE status IN ('ok','failed','stale','stopped') AND pid IS NOT NULL`,
-  ).all() as { id: number; started_at: string; pid: number }[]
-  for (const run of terminalProcesses) if (pidAlive(run.pid)) add({
-    kind: 'terminal-process-alive', subject: `run:${run.id}:pid:${run.pid}`, since: run.started_at,
-    detail: `terminal run ${run.id} still records live pid ${run.pid}; pid reuse means identity must be verified before signalling`,
-    action: `run orch close-out ${run.id}; an unverified process is reported and never killed`,
-  })
+  conditions.push(...terminalProcessAliveConditions(clock))
 
   const unscored = database.query(
     `SELECT r.id, r.started_at, r.session_id FROM run r LEFT JOIN score s ON s.run_id=r.id WHERE ${UNSCORED_WHERE}`,
@@ -463,6 +553,15 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
   const docker = dockerConditions(clock)
   conditions.push(...docker.conditions)
   errors.push(...docker.errors)
+  const worktreeDatabases = worktreeDatabaseConditions(clock)
+  conditions.push(...worktreeDatabases.conditions)
+  errors.push(...worktreeDatabases.errors)
+  const retainedRefs = retainedRefConditions(clock)
+  conditions.push(...retainedRefs.conditions)
+  errors.push(...retainedRefs.errors)
+  const refGuards = refGuardConditions(clock)
+  conditions.push(...refGuards.conditions)
+  errors.push(...refGuards.errors)
 
   for (const drift of storedPackDrift()) add({
     kind: 'canon-pack-drift', subject: `${drift.job}/${drift.project ?? '_'}`, since: null,
