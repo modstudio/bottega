@@ -330,6 +330,7 @@ export const landing = sqliteTable('landing', {
   id: id(), /** @deprecated Use projectId. */ project: text().notNull(), projectId: integer('project_id').references(() => project.id, { onDelete: 'restrict' }), branch: text().notNull(), tip: text(),
   trunkBefore: text('trunk_before'), status: text().notNull(), error: text(),
   sessionId: text('session_id'), startedAt: text('started_at').notNull(), finishedAt: text('finished_at'),
+  heartbeatDeliveredAt: text('heartbeat_delivered_at'),
   pathSet: text('path_set'), requestedAt: text('requested_at'), steps: text(),
   causingLandingId: integer('causing_landing_id'),
   claimPid: integer('claim_pid'), claimSession: text('claim_session'),

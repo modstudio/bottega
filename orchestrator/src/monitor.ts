@@ -474,6 +474,23 @@ function deliveredDetail(row: {
   return `Orch detected ${row.kind} for ${row.subject} (${age}${status}${project}); inspect the referenced record deliberately.`
 }
 
+function landingNoticeDetail(row: {
+  id: number; branch: string; status: string; started_at: string; finished_at: string | null
+}): string {
+  const started = Date.parse(row.started_at)
+  const finished = row.finished_at === null ? started : Date.parse(row.finished_at)
+  const elapsed = Number.isFinite(started) && Number.isFinite(finished)
+    ? Math.max(0, Math.round((finished - started) / 1000)) : null
+  const duration = elapsed === null ? '?'
+    : elapsed >= 60 ? `${Math.floor(elapsed / 60)}m${String(elapsed % 60).padStart(2, '0')}s`
+    : `${elapsed.toFixed(1)}s`
+  const event = row.status === 'refused' ? 'LANDING-REFUSED'
+    : row.status === 'rebase_required' ? 'LANDING-REBASE-REQUIRED'
+    : 'LANDING-INSTALL-FAILED'
+  const branch = row.branch.replace(/[\t\r\n]/g, ' ')
+  return `${event} ${row.id}/${branch} ${duration}; inspect with 'orch land --status'`
+}
+
 /** Read addressed findings without consuming them. A failed consumer gets them again. */
 export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
   if (!ownerSession.trim()) throw new Error('monitor notices require a session id')
@@ -496,12 +513,31 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
       issue_key: string | null; severity: MonitorSeverity | null; owner_session_id: string
       run_status: string | null; run_project: string | null
     }[]
-  return rows.map((row) => ({
+  const conditions = rows.map((row) => ({
       noticeId: row.id,
       kind: row.kind, subject: row.subject, since: row.condition_since, ageMs: row.age_ms,
       detail: deliveredDetail(row), issueKey: row.issue_key,
       severity: row.severity, ownerSession: row.owner_session_id,
     }))
+  const landings = db().query(
+    `SELECT id, branch, status, started_at, finished_at, session_id
+       FROM landing
+      WHERE session_id=? AND heartbeat_delivered_at IS NULL
+        AND status IN ('refused','rebase_required','install_failed')
+      ORDER BY id`,
+  ).all(ownerSession) as {
+    id: number; branch: string; status: string; started_at: string; finished_at: string | null
+    session_id: string
+  }[]
+  return [...conditions, ...landings.map((row): MonitorNotice => ({
+    noticeId: row.id,
+    kind: `landing-${row.status.replaceAll('_', '-')}`,
+    subject: `landing:${row.id}`,
+    since: row.finished_at ?? row.started_at,
+    ageMs: null,
+    detail: landingNoticeDetail(row),
+    ownerSession: row.session_id,
+  }))]
 }
 
 /** Acknowledge only rows the hook has already emitted to its consumer. */
@@ -516,5 +552,13 @@ export function markMonitorNoticesDelivered(ownerSession: string, ids: number[],
       `UPDATE monitor_condition SET delivered_at=? WHERE id=? AND owner_session_id=? AND delivered_at IS NULL`,
     )
     for (const id of new Set(ids)) mark.run(deliveredAt, id, ownerSession)
+    const markLanding = database.query(
+      `UPDATE landing SET heartbeat_delivered_at=?
+        WHERE id=? AND session_id=? AND heartbeat_delivered_at IS NULL
+          AND status IN ('refused','rebase_required','install_failed')`,
+    )
+    // Notice ids are source-local. If a condition and landing share an integer,
+    // both were returned to this owner and the one acknowledgement receipts both.
+    for (const id of new Set(ids)) markLanding.run(deliveredAt, id, ownerSession)
   }, database)
 }

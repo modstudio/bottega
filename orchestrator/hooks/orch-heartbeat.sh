@@ -59,7 +59,6 @@ NOTICE_TIMEOUT_SECONDS="${NOTICE_TIMEOUT_SECONDS:-5}"
 prev_key=""
 since_emit=0
 reported_ids=""
-reported_landing_ids=""
 
 for ((i = 1; i <= MAX; i++)); do
   if [ ! -d "$ROOT" ]; then
@@ -202,8 +201,7 @@ try:
     connection = sqlite3.connect("file:" + path + "?mode=ro", uri=True, timeout=2)
     rows = connection.execute(
         "SELECT id, branch, status, started_at, finished_at FROM landing "
-        "WHERE session_id = ? AND status IN "
-        "(\"queued\",\"running\",\"refused\",\"rebase_required\",\"install_failed\") ORDER BY id",
+        "WHERE session_id = ? AND status IN (\"queued\",\"running\") ORDER BY id",
         (os.environ["SID"],),
     ).fetchall()
 finally:
@@ -212,7 +210,7 @@ finally:
     except Exception:
         pass
 now = datetime.datetime.now(datetime.timezone.utc)
-live, ids, events = [], [], []
+live, ids = [], []
 for landing_id, branch, status, started_at, finished_at in rows:
     if not isinstance(landing_id, int) or not all(isinstance(v, str) for v in (branch, status, started_at)):
         raise SystemExit(2)
@@ -226,27 +224,7 @@ for landing_id, branch, status, started_at, finished_at in rows:
         age = "%dm%02ds" % (elapsed // 60, elapsed % 60)
         ids.append(str(landing_id))
         live.append("%s/%s %s %s" % (landing_id, branch, status, age))
-    elif status in ("refused", "rebase_required", "install_failed"):
-        # rebase_required deliberately has no finished_at. It is terminal for
-        # this watcher, though, so announce it once without putting it in the
-        # live state key (where it would remain forever). install_failed does
-        # have finished_at and, like refused, is a terminal failure the owning
-        # session must learn about.
-        terminal_at = finished_at if isinstance(finished_at, str) else (
-            now.isoformat() if status == "rebase_required" and finished_at is None else None
-        )
-        if terminal_at is None:
-            raise SystemExit(2)
-        try:
-            finished = datetime.datetime.fromisoformat(terminal_at.replace("Z", "+00:00"))
-            elapsed = max(0, round((finished - started).total_seconds()))
-            duration = "%dm%02ds" % (elapsed // 60, elapsed % 60) if elapsed >= 60 else "%.1fs" % elapsed
-        except Exception:
-            raise SystemExit(2)
-        events.append((str(landing_id), branch, status, duration))
 print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
-for event in events:
-    print("EVENT", *event, sep="\t")
 ' 2>/dev/null); landings_parse_rc=$?
 
   if [ "$inbox_rc" -ne 0 ] || [ "$runs_rc" -ne 0 ] || \
@@ -288,21 +266,6 @@ for event in events:
       echo "FAILED $id/$job $agent $failure_kind $latency; inspect with 'orch run $id'"
     fi
   done <<< "$observed"
-
-  while IFS=$'\t' read -r record id branch status duration; do
-    [ "$record" = "EVENT" ] || continue
-    case " $reported_landing_ids " in
-      *" $id "*) continue ;;
-    esac
-    reported_landing_ids="$reported_landing_ids $id"
-    case "$status" in
-      refused) event="LANDING-REFUSED" ;;
-      rebase_required) event="LANDING-REBASE-REQUIRED" ;;
-      install_failed) event="LANDING-INSTALL-FAILED" ;;
-      *) continue ;;
-    esac
-    echo "$event $id/$branch $duration; inspect with 'orch land --status'"
-  done <<< "$landings_observed"
 
   key="$asking|$n|$ids|$landing_n|$landing_ids"
   since_emit=$((since_emit + 1))
@@ -366,7 +329,10 @@ for row in rows:
         raise SystemExit(2)
     values = [row[key].replace("\t", " ").replace("\r", " ").replace("\n", " ")
               for key in ("kind", "subject", "detail")]
-    print(str(row["noticeId"]) + "\tMONITOR " + values[0] + " " + values[1] + ": " + values[2])
+    message = values[2] if values[0].startswith("landing-") else (
+        "MONITOR " + values[0] + " " + values[1] + ": " + values[2]
+    )
+    print(str(row["noticeId"]) + "\t" + message)
 ' 2>/dev/null); monitor_parse_rc=$?
 
   if [ "$monitor_rc" -ne 0 ] || [ "$monitor_parse_rc" -ne 0 ]; then

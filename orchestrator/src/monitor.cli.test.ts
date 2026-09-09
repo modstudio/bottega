@@ -34,6 +34,31 @@ function migrateHub(path: string): void {
 }
 
 describe('operational monitor record', () => {
+  test('landing notices are read without consuming and acknowledged only for their owner', () => {
+    const started = '2026-09-09T00:00:00.000Z'
+    const finished = '2026-09-09T00:00:03.000Z'
+    const landing = (db().query(
+      `INSERT INTO landing (project,branch,status,session_id,started_at,finished_at)
+       VALUES (?,?,?,?,?,?) RETURNING id`,
+    ).get(PLATFORM_SLUG, 'DEV-438-notice', 'refused', 'landing-owner', started, finished) as { id: number }).id
+
+    const first = claimMonitorNotices('landing-owner')
+    expect(first).toEqual([expect.objectContaining({
+      noticeId: landing,
+      kind: 'landing-refused',
+      subject: `landing:${landing}`,
+      ownerSession: 'landing-owner',
+      detail: `LANDING-REFUSED ${landing}/DEV-438-notice 3.0s; inspect with 'orch land --status'`,
+    })])
+    expect(claimMonitorNotices('landing-owner')).toEqual(first)
+    expect(claimMonitorNotices('somebody-else')).toEqual([])
+
+    markMonitorNoticesDelivered('somebody-else', [landing], '2026-09-09T00:01:00.000Z')
+    expect(claimMonitorNotices('landing-owner')).toEqual(first)
+    markMonitorNoticesDelivered('landing-owner', [landing], '2026-09-09T00:02:00.000Z')
+    expect(claimMonitorNotices('landing-owner')).toEqual([])
+  })
+
   test('monitor previews owned reclaim candidates and ignores review subjects', async () => {
     const repo = realpathSync(mkdtempSync(join(tmpdir(), 'monitor-reclaim-')))
     git(repo, 'init', '-b', 'main')

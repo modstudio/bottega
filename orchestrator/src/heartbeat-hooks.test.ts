@@ -32,7 +32,8 @@ function fixture(orchBody: string) {
 function landingDb(root: string, rows: Array<{ id: number; session: string; status: string }>) {
   const db = new Database(join(root, 'orchestrator', 'orch.db'))
   db.run(`CREATE TABLE landing (id INTEGER PRIMARY KEY, project TEXT NOT NULL, branch TEXT NOT NULL,
-    status TEXT NOT NULL, session_id TEXT, started_at TEXT NOT NULL, finished_at TEXT)`)
+    status TEXT NOT NULL, session_id TEXT, started_at TEXT NOT NULL, finished_at TEXT,
+    heartbeat_delivered_at TEXT)`)
   for (const row of rows) {
     db.run('INSERT INTO landing (id, project, branch, status, session_id, started_at) VALUES (?,?,?,?,?,?)',
       [row.id, PLATFORM_SLUG, 'b', row.status, row.session, '2026-09-08T00:00:00Z'])
@@ -176,7 +177,33 @@ if [ "$1" = "inbox" ]; then
 elif [ "$1" = "runs" ]; then
   echo '{"id":1,"job":"implement","agent":"codex","status":"ok","session_id":"other","started_at":"2026-09-08T00:00:00Z","latency_ms":1}'
 elif [ "$1" = "monitor" ]; then
-  echo '[]'
+  if [ "$2" = "--notices" ]; then
+    python3 -c '
+import datetime, json, os, sqlite3
+db = sqlite3.connect(os.environ["ORCH_DB"])
+rows = db.execute("SELECT id,branch,status,session_id,started_at,finished_at FROM landing WHERE session_id=? AND heartbeat_delivered_at IS NULL AND status IN (?,?,?) ORDER BY id", (os.environ["CLAUDE_CODE_SESSION_ID"], "refused", "rebase_required", "install_failed")).fetchall()
+out = []
+for i, branch, status, session, started_at, finished_at in rows:
+    started = datetime.datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+    finished = datetime.datetime.fromisoformat((finished_at or started_at).replace("Z", "+00:00"))
+    elapsed = max(0, round((finished - started).total_seconds()))
+    duration = "%dm%02ds" % (elapsed // 60, elapsed % 60) if elapsed >= 60 else "%.1fs" % elapsed
+    event = {"refused":"LANDING-REFUSED","rebase_required":"LANDING-REBASE-REQUIRED","install_failed":"LANDING-INSTALL-FAILED"}[status]
+    out.append({"noticeId":i,"kind":"landing-" + status.replace("_", "-"),"subject":"landing:" + str(i),"detail":event + " " + str(i) + "/" + branch + " " + duration + "; inspect with " + chr(39) + "orch land --status" + chr(39),"ownerSession":session})
+print(json.dumps(out))
+'
+  elif [ "$2" = "--ack-notices" ]; then
+    if [ "\${KILL_ON_LANDING_ACK:-}" = "1" ]; then kill -9 "$PPID"; exit 137; fi
+    IDS="$3" python3 -c '
+import datetime, os, sqlite3
+db = sqlite3.connect(os.environ["ORCH_DB"])
+for value in os.environ["IDS"].split(","):
+    db.execute("UPDATE landing SET heartbeat_delivered_at=? WHERE id=? AND session_id=? AND heartbeat_delivered_at IS NULL", (datetime.datetime.now(datetime.timezone.utc).isoformat(), int(value), os.environ["CLAUDE_CODE_SESSION_ID"]))
+db.commit()
+'
+  else
+    exit 20
+  fi
 else
   exit 20
 fi`
@@ -224,7 +251,7 @@ fi`
     store.close()
     const out = await output
     expect(await p.exited).toBe(0)
-    expect(out.match(/LANDING-REFUSED 31\/DEV-423-refused/g)).toHaveLength(1)
+    expect(out.match(/LANDING-REFUSED 31\/DEV-423-refused/g), out).toHaveLength(1)
     expect(out).toContain("inspect with 'orch land --status'")
   })
 
@@ -236,7 +263,7 @@ fi`
       ['DEV-423-needs-rebase', new Date(Date.now() - 2_000).toISOString()])
     const p = Bun.spawn([f.heartbeat, 'landing-rebase', '0.1', '8'], {
       stdout: 'pipe', stderr: 'pipe',
-      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.02' },
+      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.2' },
     })
     const output = new Response(p.stdout).text()
     await Bun.sleep(500)
@@ -245,7 +272,7 @@ fi`
     const out = await output
     expect(await p.exited).toBe(0)
     expect(out.match(/WAITING/g)).toHaveLength(1)
-    expect(out.match(/LANDING-REBASE-REQUIRED 41\/DEV-423-needs-rebase/g)).toHaveLength(1)
+    expect(out.match(/LANDING-REBASE-REQUIRED 41\/DEV-423-needs-rebase/g), out).toHaveLength(1)
     expect(out).not.toContain('CLEAR')
     expect(out).not.toContain('HEARTBEAT ENDED')
   })
@@ -259,7 +286,7 @@ fi`
     store.close()
     const p = Bun.spawn([f.heartbeat, 'landing-late-rebase', '0.1', '3'], {
       stdout: 'pipe', stderr: 'pipe',
-      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.02' },
+      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.2' },
     })
     const out = await new Response(p.stdout).text()
     expect(await p.exited).toBe(0)
@@ -304,6 +331,70 @@ fi`
     expect(out.match(/LANDING-INSTALL-FAILED 45\/DEV-423-install-failed/g)).toHaveLength(1)
     expect(out).not.toContain('WAITING')
     expect(out).not.toContain('HEARTBEAT ENDED')
+  })
+
+  test('receipts survive re-arming and preserve refusals created while no watcher is armed', async () => {
+    const f = fixture(heartbeatOrch)
+    const dbPath = landingDb(f.root, [
+      { id: 51, session: 'landing-receipts', status: 'refused' },
+      { id: 52, session: 'landing-receipts', status: 'refused' },
+      { id: 53, session: 'landing-receipts', status: 'landed' },
+    ])
+    const store = new Database(dbPath)
+    const finished = new Date().toISOString()
+    store.run('UPDATE landing SET branch=?, finished_at=?, heartbeat_delivered_at=? WHERE id=51',
+      ['DEV-438-already-seen', finished, finished])
+    store.run('UPDATE landing SET branch=?, finished_at=? WHERE id=52', ['DEV-438-new', finished])
+    store.run('UPDATE landing SET branch=?, finished_at=? WHERE id=53', ['DEV-438-offline', finished])
+
+    const arm = () => Bun.spawnSync([f.heartbeat, 'landing-receipts', '0', '1'], {
+      stdout: 'pipe', stderr: 'pipe',
+      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.2' },
+    })
+    const first = arm()
+    expect(first.exitCode, first.stderr.toString()).toBe(0)
+    expect(first.stdout.toString()).not.toContain('DEV-438-already-seen')
+    expect(first.stdout.toString().match(/LANDING-REFUSED 52\/DEV-438-new/g)).toHaveLength(1)
+    expect(store.query('SELECT heartbeat_delivered_at FROM landing WHERE id=52').get())
+      .toEqual({ heartbeat_delivered_at: expect.any(String) })
+
+    const second = arm()
+    expect(second.exitCode, second.stderr.toString()).toBe(0)
+    expect(second.stdout.toString()).toBe('')
+
+    store.run("UPDATE landing SET status='install_failed', finished_at=? WHERE id=53", [new Date().toISOString()])
+    const afterOfflineFailure = arm()
+    expect(afterOfflineFailure.exitCode, afterOfflineFailure.stderr.toString()).toBe(0)
+    expect(afterOfflineFailure.stdout.toString().match(
+      /LANDING-INSTALL-FAILED 53\/DEV-438-offline/g,
+    )).toHaveLength(1)
+    store.close()
+  })
+
+  test('a process killed after emission but before acknowledgement re-emits next arming', () => {
+    const f = fixture(heartbeatOrch)
+    const dbPath = landingDb(f.root, [{ id: 61, session: 'landing-interrupted', status: 'refused' }])
+    const store = new Database(dbPath)
+    store.run('UPDATE landing SET branch=?, finished_at=? WHERE id=61',
+      ['DEV-438-interrupted', new Date().toISOString()])
+    const interrupted = Bun.spawnSync([f.heartbeat, 'landing-interrupted', '0', '1'], {
+      stdout: 'pipe', stderr: 'pipe',
+      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.2', KILL_ON_LANDING_ACK: '1' },
+    })
+    expect(interrupted.exitCode).not.toBe(0)
+    expect(interrupted.stdout.toString()).toContain('LANDING-REFUSED 61/DEV-438-interrupted')
+    expect(store.query('SELECT heartbeat_delivered_at FROM landing WHERE id=61').get())
+      .toEqual({ heartbeat_delivered_at: null })
+
+    const rearmed = Bun.spawnSync([f.heartbeat, 'landing-interrupted', '0', '1'], {
+      stdout: 'pipe', stderr: 'pipe',
+      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.2' },
+    })
+    expect(rearmed.exitCode, rearmed.stderr.toString()).toBe(0)
+    expect(rearmed.stdout.toString()).toContain('LANDING-REFUSED 61/DEV-438-interrupted')
+    expect(store.query('SELECT heartbeat_delivered_at FROM landing WHERE id=61').get())
+      .toEqual({ heartbeat_delivered_at: expect.any(String) })
+    store.close()
   })
 
   test('heartbeat exits silently when this session has no runs or landings', async () => {
