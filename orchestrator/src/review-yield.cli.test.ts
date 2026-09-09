@@ -4,8 +4,8 @@ import { renderReviewYieldHuman, reviewYield } from './review-yield.ts'
 
 const cli = new URL('./cli.ts', import.meta.url).pathname
 
-function addReview(recordedAt: string): number {
-  db().query('INSERT INTO review (recorded_at) VALUES (?)').run(recordedAt)
+function addReview(recordedAt: string, patchId: string): number {
+  db().query('INSERT INTO review (recorded_at,patch_id) VALUES (?,?)').run(recordedAt, patchId)
   return Number((db().query('SELECT last_insert_rowid() AS id').get() as { id: number }).id)
 }
 
@@ -37,7 +37,7 @@ function addFinding(
 }
 
 function fixture() {
-  const first = addReview('2026-09-08T10:00:00Z')
+  const first = addReview('2026-09-08T10:00:00Z', 'patch-1')
   const firstCorrectness = addLens(first, { lens: 'correctness', agent: 'codex', model: 'gpt-a', minutes: 10, overlap: 'shared' })
   const secondCorrectness = addLens(first, { lens: 'correctness', agent: 'grok', model: 'gpt-b', minutes: 20, overlap: 'unique' })
   const firstCraft = addLens(first, { lens: 'craft', agent: 'codex', model: 'gpt-a', minutes: 30, overlap: 'alone' })
@@ -46,13 +46,13 @@ function fixture() {
   addFinding(first, secondCorrectness, 3, 'critical', 'modified')
   addFinding(first, firstCraft, 4, 'medium', 'skipped')
 
-  const second = addReview('2026-09-08T11:00:00Z')
+  const second = addReview('2026-09-08T11:00:00Z', 'patch-2')
   const secondA = addLens(second, { lens: 'correctness', agent: 'codex', model: 'gpt-a', minutes: 40, overlap: 'alone' })
   const secondB = addLens(second, { lens: 'craft', agent: 'grok', model: 'gpt-b', minutes: 50, overlap: 'alone' })
   addFinding(second, secondA, 1, 'medium', 'accepted', 'high')
   addFinding(second, secondB, 2, 'low', null)
 
-  const third = addReview('2026-09-08T12:00:00Z')
+  const third = addReview('2026-09-08T12:00:00Z', 'patch-3')
   addLens(third, { lens: 'correctness', agent: 'codex', model: 'gpt-a', minutes: 60, overlap: 'none' })
   const thirdB = addLens(third, { lens: 'craft', agent: 'grok', model: 'gpt-b', minutes: 70, overlap: 'none' })
   addFinding(third, thirdB, 1, 'critical', 'rejected')

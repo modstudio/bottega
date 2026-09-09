@@ -50,6 +50,7 @@ type LensRow = {
   lens_id: number
   review_id: number
   recorded_at: string
+  patch_id: string | null
   project: string | null
   run_repo: string | null
   launch_key: string | null
@@ -58,6 +59,8 @@ type LensRow = {
   agent: string
   model: string | null
   latency_ms: number | null
+  input_tree: string | null
+  head_commit: string | null
   overlap: string | null
 }
 
@@ -81,9 +84,9 @@ export function reviewYield(
   filters: ReviewYieldFilters = {}, database: Database = db(),
 ): ReviewYieldReport {
   const lensRows = database.query(
-    `SELECT rl.id AS lens_id, r.id AS review_id, r.recorded_at, p.name AS project,
+    `SELECT rl.id AS lens_id, r.id AS review_id, r.recorded_at, r.patch_id, p.name AS project,
             run.repo AS run_repo, run.launch_key, run.branch, rl.lens, rl.agent,
-            rl.model, run.latency_ms, rl.overlap
+            rl.model, run.latency_ms, run.input_tree, run.head_commit, rl.overlap
        FROM review_lens rl
        JOIN review r ON r.id=rl.review_id
        JOIN run ON run.id=rl.run_id
@@ -97,21 +100,20 @@ export function reviewYield(
   const findings = new Map<number, FindingRow[]>()
   for (const row of findingRows) findings.set(row.review_lens_id, [...(findings.get(row.review_lens_id) ?? []), row])
 
-  const reviewIdentity = new Map<number, string>()
-  for (const row of lensRows) {
-    if (!reviewIdentity.has(row.review_id)) {
-      reviewIdentity.set(row.review_id,
-        normalized(row.launch_key) ?? normalized(row.branch) ?? `review:${row.review_id}`)
-    }
+  const roundKey = (row: LensRow) => {
+    const task = normalized(row.launch_key) ?? normalized(row.branch) ?? `review:${row.review_id}`
+    const artifact = row.patch_id ?? row.input_tree ?? row.head_commit ?? `review:${row.review_id}`
+    return `${task}\0${artifact}`
   }
-  const ordinal = new Map<number, number>()
+  const ordinal = new Map<string, number>()
   const seen = new Map<string, number>()
   for (const row of lensRows) {
-    if (ordinal.has(row.review_id)) continue
-    const identity = reviewIdentity.get(row.review_id)!
-    const next = (seen.get(identity) ?? 0) + 1
-    seen.set(identity, next)
-    ordinal.set(row.review_id, next)
+    const key = roundKey(row)
+    if (ordinal.has(key)) continue
+    const task = key.slice(0, key.indexOf('\0'))
+    const next = (seen.get(task) ?? 0) + 1
+    seen.set(task, next)
+    ordinal.set(key, next)
   }
 
   const wanted = {
@@ -125,7 +127,7 @@ export function reviewYield(
     if (wanted.lens && normalized(row.lens) !== wanted.lens) return false
     if (wanted.agent && normalized(row.agent) !== wanted.agent) return false
     return true
-  }).map((row) => ({ ...row, round: ordinal.get(row.review_id)!, findings: findings.get(row.lens_id) ?? [] }))
+  }).map((row) => ({ ...row, round: ordinal.get(roundKey(row))!, findings: findings.get(row.lens_id) ?? [] }))
 
   return {
     filters: {
