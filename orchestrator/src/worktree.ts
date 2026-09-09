@@ -1464,14 +1464,14 @@ export function validateSeedWithTool(cwd: string, seed?: string): void {
   if (!existsSync(worktreeTool)) return
 
   const usage = Bun.spawnSync([worktreeTool], {
-    cwd: repoRoot, stdout: 'pipe', stderr: 'pipe',
+    cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
   })
   const advertised = `${usage.stdout.toString()}${usage.stderr.toString()}`
   if (!/scripts\/worktree resolve(?:\s|\[)/.test(advertised)) return
 
   const resolved = Bun.spawnSync(
     [worktreeTool, 'resolve', ...seedArgv(project.settings.worktree?.create, seed)],
-    { cwd: repoRoot, stdout: 'pipe', stderr: 'pipe' },
+    { cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe' },
   )
   if (resolved.exitCode === 0) return
   const out = `${resolved.stdout.toString()}${resolved.stderr.toString()}`.trim()
@@ -1499,7 +1499,7 @@ export function validateSeedWithTool(cwd: string, seed?: string): void {
  */
 export function createWithTool(
   tool: WorktreeTool, cwd: string, runId: number, seed?: string, key?: string, baseRef?: string,
-  record?: RecordWorktree, detached = false,
+  record?: RecordWorktree, detached = false, existingBranch?: string,
 ): Worktree {
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
@@ -1514,7 +1514,7 @@ export function createWithTool(
   return withWorktreeCreateLock(
     repoRoot,
     () => createWithToolUnlocked(
-      tool, repoRoot, runId, seed, key, baseRef, record, detached, projectName,
+      tool, repoRoot, runId, seed, key, baseRef, record, detached, projectName, existingBranch,
     ),
   )
 }
@@ -1522,7 +1522,7 @@ export function createWithTool(
 function createWithToolUnlocked(
   tool: WorktreeTool, repoRoot: string, runId: number, seed?: string, key?: string,
   baseRef?: string, record?: RecordWorktree, detached = false,
-  projectName = '(unregistered)',
+  projectName = '(unregistered)', existingBranch?: string,
 ): Worktree {
   // The project's own naming rule wins where it has one. `orch/<id>` is fine
   // where nothing enforces a convention and is refused outright where something
@@ -1543,12 +1543,14 @@ function createWithToolUnlocked(
         "this project's worktree settings declare neither `create` nor `recipe`",
       )
     }
-    return createFromRecipe(tool, tool.recipe, repoRoot, runId, key, baseRef, record, detached)
+    return createFromRecipe(
+      tool, tool.recipe, repoRoot, runId, key, baseRef, record, detached, existingBranch,
+    )
   }
 
-  const branch = (tool.branch ?? 'orch/{id}')
-    .replace(/\{id\}/g, String(runId))
-    .replace(/\{key\}/g, key ?? '')
+  const branch = existingBranch ?? (tool.branch ?? 'orch/{id}')
+      .replace(/\{id\}/g, String(runId))
+      .replace(/\{key\}/g, key ?? '')
   const name = `orch-${runId}`
   // A base is a commit, not a recipe argument. {base} is passed when the
   // template has a slot; without one the branch is still cut at that commit
@@ -1557,7 +1559,7 @@ function createWithToolUnlocked(
     ? resolveBase(repoRoot, baseRef)
     : git(['rev-parse', 'HEAD'], repoRoot)
   const vars = { branch, name, base, seed: seed ?? '', key: key ?? '', path: '' }
-  const r = runCreateTool(tool.create, vars, repoRoot)
+  const r = runCreateTool(tool.create, vars, repoRoot, targetGitEnvironment(repoRoot))
   if (!r.ok) throw new Error(`the project's worktree tool failed:\n${r.out.slice(-1500)}`)
 
   /**
@@ -1672,7 +1674,7 @@ function createWithToolUnlocked(
     base: gitOk(['rev-parse', 'HEAD'], path) ?? actualBase,
     repoRoot,
     source: 'recipe' as const,
-    mintedBranch: detached ? null : branch,
+    mintedBranch: detached || existingBranch ? null : branch,
   }
   try {
     attributeWorktree(worktree, runId, record)
@@ -1691,6 +1693,25 @@ export function createWorktree(
   return withWorktreeCreateLock(
     repoRoot, () => createWorktreeUnlocked(repoRoot, runId, baseRef, record, detached),
   )
+}
+
+/** Cut a new disposable tree on a task branch that already exists. */
+export function createWorktreeForBranch(
+  cwd: string, runId: number, branch: string, record?: RecordWorktree,
+): Worktree {
+  const repoRoot = repoRootOf(cwd)
+  if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
+  const base = resolveBase(repoRoot, branch)
+  const path = join(repoRoot, '.claude', 'worktrees', `orch-${runId}`)
+  mkdirSync(dirname(path), { recursive: true })
+  if (existsSync(path)) throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
+  git(['worktree', 'add', path, branch], repoRoot)
+  const worktree: Worktree = {
+    path, branch, base, repoRoot, source: 'git', mintedBranch: null,
+  }
+  attributeWorktree(worktree, runId, record)
+  verifyFreshWorktree(worktree)
+  return worktree
 }
 
 function createWorktreeUnlocked(
@@ -1961,11 +1982,11 @@ export function carryWorkingState(cwd: string, worktree: Worktree): CarriedWorki
  */
 function createFromRecipe(
   tool: WorktreeTool, recipe: Recipe, repoRoot: string, runId: number, key?: string,
-  baseRef?: string, record?: RecordWorktree, detached = false,
+  baseRef?: string, record?: RecordWorktree, detached = false, existingBranch?: string,
 ): Worktree {
-  const branch = (tool.branch ?? 'orch/{id}')
-    .replace(/\{id\}/g, String(runId))
-    .replace(/\{key\}/g, key ?? '')
+  const branch = existingBranch ?? (tool.branch ?? 'orch/{id}')
+      .replace(/\{id\}/g, String(runId))
+      .replace(/\{key\}/g, key ?? '')
   const name = `orch-${runId}`
   const dir = join(repoRoot, '.claude', 'worktrees')
   mkdirSync(dir, { recursive: true })
@@ -1984,10 +2005,16 @@ function createFromRecipe(
     ? (gitOk(['rev-parse', recipe.baseRef], repoRoot) ?? git(['rev-parse', 'HEAD'], repoRoot))
     : git(['rev-parse', 'HEAD'], repoRoot)
 
-  git(['worktree', 'add', ...(detached ? ['--detach'] : ['-b', branch]), path, base], repoRoot)
+  git(
+    [
+      'worktree', 'add', ...(detached ? ['--detach'] : existingBranch ? [] : ['-b', branch]),
+      path, existingBranch && !detached ? branch : base,
+    ],
+    repoRoot,
+  )
   const w: Worktree = {
     path, branch: detached ? '' : branch, base, repoRoot, source: 'recipe',
-    mintedBranch: detached ? null : branch,
+    mintedBranch: detached || existingBranch ? null : branch,
   }
   attributeWorktree(w, runId, record)
 
@@ -2116,6 +2143,7 @@ export function changesIn(w: Worktree, sinceBase = false): Changes {
  */
 export function removeWithTool(
   tool: WorktreeTool, w: Worktree, forceOrchTree = false, keepBranch = false,
+  runId?: number,
 ): { removed: boolean; detail: string; output?: string } {
   const name = w.path.split('/').pop() ?? w.path
   const branchBefore = branchTip(w.repoRoot, w.branch)
@@ -2127,7 +2155,9 @@ export function removeWithTool(
   // anything down once the worktree has been deleted.
   if (!tool.remove) {
     if (tool.recipe) {
-      const runId = Number(name.replace(/^orch-/, '')) || 0
+      // Recipe infrastructure is owned by the run that is being discarded,
+      // never by an id inferred from another run's retained directory.
+      if (runId === undefined) return removeWorktree(w, keepBranch)
       const dbName = dbNameFor(w.repoRoot.split('/').pop() ?? 'app', runId)
       const cwd = existsSync(w.path) ? w.path : w.repoRoot
       for (const step of teardownRecipe(
@@ -2233,10 +2263,11 @@ export function removeFor(
   w: Worktree, repoRoot: string, forceOrchTree = false, keepBranch = false, runId?: number,
   forceUnmerged = false,
 ): { removed: boolean; detail: string; output?: string } {
-  // Read ownership before any removal path can take the marker with the tree.
-  // The caller id remains a fallback for legacy/already-missing trees only.
-  const owningRunId = markedWorktreeRunId(w.path) ?? runId
-  const minted = mintedBranchOwnedBy(w, owningRunId ?? runId)
+  // The marker identifies who created a tree; it does not transfer that run's
+  // branch ownership to a later attacher. Cleanup names only the discarding
+  // run's minted branch.
+  const owningRunId = runId ?? markedWorktreeRunId(w.path)
+  const minted = mintedBranchOwnedBy(w, runId)
   // Unminted: the git branch is not ours to name to a project tool. Pass the
   // tree only. Minted: the tool receives that branch name, never ''.
   const owned = { ...w, branch: minted ?? '' }
@@ -2254,7 +2285,7 @@ export function removeFor(
     const projectOwned = w.source === 'recipe' ||
       (w.source === undefined && Boolean(tool))
     const removed: { removed: boolean; detail: string; output?: string } = tool && projectOwned
-      ? removeWithTool(tool, owned, forceOrchTree, retainBranch)
+      ? removeWithTool(tool, owned, forceOrchTree, retainBranch, runId)
       : removeWorktree(owned, retainBranch)
     result = removed.output
       ? { ...removed, output: `${project!.name} remove:\n${removed.output}` }

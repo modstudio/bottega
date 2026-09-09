@@ -170,6 +170,7 @@ export const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePa
         resolveRootFromLastTurn, gitObjectEnvironmentFor, inferredReadOnlyKey,
         canonSourceFor, canonSourceInstruction, snapshotRegisteredCheckouts,
         checkoutAliases, checkoutCaseSensitivity,
+        resolveTaskBranch, taskBranchCandidacySql,
         retargetRepositoryPrompt, retargetRepositoryPromptForDispatch,
         packedResumePrompt, resolveReviewTarget, implicitReviewWarning, mcpRequestFromStored,
         retryModelForAgent, run: runJob, listRunArtifacts, runArtifactsDir, runScratchDir,
@@ -204,7 +205,7 @@ export const { cleanReviewEvidence, parseReviewReply, recordReview, recordReview
         MIN_REVIEW_TRIAGED } = await import('../src/review.ts')
 export const { ask } = await import('../src/ask.ts')
 export const { checkMessages, messageArchitect, messagesForRun } = await import('../src/mailbox.ts')
-export const { orphanSafety, repoRootOf, createWorktree, createWithTool, createReadOnlyWorktree,
+export const { orphanSafety, repoRootOf, createWorktree, createWorktreeForBranch, createWithTool, createReadOnlyWorktree,
         createReadOnlyWithTool, resolveBase, fillTool,
         seedArgv, createArgv, worktreeGitDir, prepareWorktreeObjects, prepareSharedRefGuard,
         assertSharedRefGuardOutsideWritableRoots, removeSharedRefGuard,
@@ -613,5 +614,9 @@ let priorCleanupSession: string | undefined
     git(repo, 'worktree', 'add', '-b', 'AB-2581', tree, 'main')
     return { repo, tree }
   }
-  return { priorCleanupSession, fromRoot, git, scratchRepo }
+  function markScratchRepoOwner(repo: string, tree: string, runId: number): void {
+    appendFileSync(join(repo, '.git', 'info', 'exclude'), '.orch-run\n')
+    writeFileSync(join(tree, '.orch-run'), `${runId}\n${repo}\nsource: git\n`)
+  }
+  return { priorCleanupSession, fromRoot, git, scratchRepo, markScratchRepoOwner }
 }

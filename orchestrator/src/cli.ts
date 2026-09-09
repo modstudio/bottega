@@ -10,7 +10,7 @@ import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, nowIso,
          EVIDENCE_CLOSED_SQL, voidedSql, activeSql, runTotals,
          authorizeRunMutation, runMutationActor,
          auditRunMutation, adoptRunMutation, writeTransaction, tryWriteContention,
-         evidenceOwningWorktreeSharers,
+         liveWorktreeSharers, otherConversationWorktreeSharers,
          teardownTerminalRunResources,
          terminalDockerRetentionReasonForRun,
          type WorktreeSharerRow, type RootAuthority } from './db.ts'
@@ -559,11 +559,12 @@ type BranchOwnerRow = {
   status: string; scored: number; evidence_excluded?: string | null
 }
 
-class SharedWorktreeEvidenceError extends Error {
+class SharedWorktreeClaimError extends Error {
   constructor(readonly worktree: string, readonly sharers: WorktreeSharerRow[]) {
     super(
-      `worktree ${worktree} is actively used by other runs:\n` +
-      sharers.map((row) => `  run ${row.id} is ${row.status}`).join('\n'),
+      `worktree ${worktree} is still claimed by other conversations:\n` +
+      sharers.map((row) =>
+        `  run ${row.id} is ${row.status}${row.scored ? '' : ' and unscored'}`).join('\n'),
     )
   }
 }
@@ -927,9 +928,10 @@ function verifyBranchOwnershipAfterCleanup(
  * directory out from under run 669 mid-task. It was also that task's own
  * worktree, seeded, not a throwaway.
  *
- * So the tree goes only when no other active conversation is using it. A
- * non-terminal run may still be writing there. Refusal keeps every pointer
- * intact so a later cleanup can retry after those owners finish.
+ * So the tree goes only when no other conversation still points at it. A
+ * refusal releases the discarding conversation's pointer under the cleanup
+ * lock, so another conversation may retry only after every sibling has
+ * explicitly relinquished ownership.
  *
  * The repo root is resolved from the worktree when it still exists, and
  * from HERE when it does not — `repoRootOf` on a deleted directory can
@@ -959,15 +961,21 @@ function discardWorktree(
   auditAuthority?: RootAuthority,
   forceBusy = false,
 ): void {
-  const preliminarySharers = evidenceOwningWorktreeSharers(db(), row)
-  if (preliminarySharers.length) {
-    throw new SharedWorktreeEvidenceError(row.worktree, preliminarySharers)
-  }
   const repoRoot = cleanupRepoRoot(row) ?? process.cwd()
   withCleanupLock(repoRoot, `${row.id}`, row.worktree, () => {
-    const sharers = evidenceOwningWorktreeSharers(db(), row)
+    const sharers = otherConversationWorktreeSharers(db(), row)
     if (sharers.length) {
-      throw new SharedWorktreeEvidenceError(row.worktree, sharers)
+      writeTransaction(() => {
+        clearConversationWorktree(row.id, row.worktree)
+        if (auditAuthority) {
+          auditAuthority = adoptRunMutation(auditAuthority, 'discard')
+          auditRunMutation(auditAuthority, 'discard', auditReason())
+        }
+      })
+      const claim = new SharedWorktreeClaimError(row.worktree, sharers)
+      claim.message += `\nthis conversation's pointer on ${row.worktree} was released; ` +
+        'the tree will be collectable once the remaining pointers are released'
+      throw claim
     }
 
     const minted = mintedBranchForCleanup(row)
@@ -990,7 +998,7 @@ function discardWorktree(
       source: row.worktree_source ?? undefined,
       mintedBranch: minted,
     }, repoRoot, force || forceBusy, ownersBefore.length > 0 || !minted, row.id, force && !forceBusy)
-    const sharersAfter = evidenceOwningWorktreeSharers(db(), row)
+    const sharersAfter = otherConversationWorktreeSharers(db(), row)
     const ownersAfter = evidenceOwningBranchOwners(row, repoRoot, branchSnapshot)
     let branchWarning: string | null = null
     if (minted) {
@@ -1001,7 +1009,12 @@ function discardWorktree(
       branchWarning = ownership.warning
     }
     if (sharersAfter.length) {
-      throw new SharedWorktreeEvidenceError(row.worktree, sharersAfter)
+      const claim = new SharedWorktreeClaimError(row.worktree, sharersAfter)
+      claim.message =
+        `another conversation claimed ${row.worktree} during cleanup; ` +
+        `the tree has already been removed and this conversation's pointer was not released.\n` +
+        `${claim.message}\nResolve the listed conversations' stale pointers, then retry this cleanup.`
+      throw claim
     }
     if (protectedBranch && minted && ownersBefore.length === 0 && ownersAfter.length === 0) {
       const after = branchTip(repoRoot, minted)
@@ -4829,7 +4842,7 @@ switch (cmd) {
           withCleanupLock(p.path, `sweep ${label}`, path, () => {
             const ownerRow = { id: runId ?? -1, repo: p.name, branch: safe.branch }
             const worktreeRow = { id: runId ?? -1, worktree: path }
-            const sharersBefore = evidenceOwningWorktreeSharers(db(), worktreeRow)
+            const sharersBefore = liveWorktreeSharers(db(), worktreeRow)
             if (sharersBefore.length) {
               const owners = sharersBefore.map((owner) =>
                 `${owner.id} (${owner.status})`).join(', ')
@@ -4846,7 +4859,7 @@ switch (cmd) {
               return
             }
             const res = removeFor(w, p.path, false, ownersBefore.length > 0, runId ?? undefined)
-            const sharersAfter = evidenceOwningWorktreeSharers(db(), worktreeRow)
+            const sharersAfter = liveWorktreeSharers(db(), worktreeRow)
             const ownersAfter = evidenceOwningBranchOwners(ownerRow, p.path, snapshot)
             if (safe.branch) {
               const outcome = verifyBranchOwnershipAfterCleanup(
@@ -5292,12 +5305,60 @@ switch (cmd) {
       auditRunMutation(authority, 'abandon', note ?? null)
       return { row, cleanupRow }
     })
-    const { row } = abandoned
+    const { row, cleanupRow } = abandoned
+    teardownTerminalRunResources(db(), row.id)
     console.log(`abandoned run ${row.id}`)
 
-    const closed = closeOutRun(authority.rootId, { intent: 'explicit' })
-    console.log(`${closed.outcome} worktree: ${closed.detail}`)
-    if (closed.outcome === 'failed') process.exitCode = 1
+    if (cleanupRow.worktree) {
+      await discardWorktree(cleanupRow as CleanupRow, 'abandoned', has('force'))
+      break
+    }
+
+    console.log(`worktree cleanup skipped: run ${id} has no worktree`)
+    if (!cleanupRow.branch) {
+      console.log(`branch cleanup skipped: run ${id} has no branch`)
+      break
+    }
+
+    const repoRoot = cleanupRepoRoot(cleanupRow)
+    if (!repoRoot) {
+      console.log(`branch ${cleanupRow.branch} cleanup skipped: repository root not found`)
+      break
+    }
+    withCleanupLock(repoRoot, `abandon run ${id}`, cleanupRow.worktree, () => {
+      const ownersBefore = evidenceOwningBranchOwners(cleanupRow, repoRoot)
+      if (ownersBefore.length) {
+        console.log(`branch ${cleanupRow.branch} left because run ${ownersBefore[0]!.id} records it`)
+        return
+      }
+      let protectedBranch: ReturnType<typeof unmergedBranch> = null
+      let afterCutCount: number | null = null
+      if (!has('force')) {
+        protectedBranch = unmergedBranch(repoRoot, cleanupRow.branch!, null)
+        afterCutCount = cleanupRow.base_commit
+          ? (unmergedBranch(repoRoot, cleanupRow.branch!, cleanupRow.base_commit)?.count ?? 0)
+          : null
+      }
+      if (protectedBranch) {
+        db().query('UPDATE run SET branch_kept=?, branch_kept_tip=NULL WHERE id=?')
+          .run(cleanupRow.branch, authority.rootId)
+        console.log(keptBranchLine(
+          cleanupRow.branch!, protectedBranch.count, afterCutCount, authority.rootId,
+        ))
+        return
+      }
+      const snapshot = branchTip(repoRoot, cleanupRow.branch!)
+      const removed = removeBranch(repoRoot, cleanupRow.branch!)
+      const ownersAfter = evidenceOwningBranchOwners(cleanupRow, repoRoot, snapshot)
+      const outcome = verifyBranchOwnershipAfterCleanup(
+        cleanupRow.id, repoRoot, cleanupRow.branch!, snapshot, ownersBefore, ownersAfter,
+      )
+      if (outcome.refusal) throw new Error(outcome.refusal)
+      if (outcome.warning) console.error(outcome.warning)
+      console.log(removed
+        ? `deleted branch ${cleanupRow.branch}`
+        : `branch ${cleanupRow.branch} cleanup skipped: branch does not exist`)
+    })
     break
   }
 

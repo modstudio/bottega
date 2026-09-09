@@ -21,13 +21,13 @@ import {
 import { pick } from './route.ts'
 import {
   db, nowIso, DB_PATH, sessionId, pidAlive, resolveRootFromLastTurn, tryWriteContention, writableDb, writeTransaction,
-  enableSchemaReload, evidenceOwningWorktreeSharers, teardownTerminalRunResources,
+  enableSchemaReload, liveWorktreeSharers, teardownTerminalRunResources,
   worktreePathSpellings,
 } from './db.ts'
 import { CONNECTION_SCHEMA_INVARIANT } from './migrations.ts'
 import { proveWorktreeReconstructible } from './reclaim.ts'
 import {
-  createWorktree, createWithTool, createReadOnlyWorktree, createReadOnlyWithTool,
+  createWorktree, createWorktreeForBranch, createWithTool, createReadOnlyWorktree, createReadOnlyWithTool,
   toolFor, changesIn, repoRootOf, resolveBase, resolveReadOnlyBase, worktreeGitDir,
   realpathOrSpelled, withoutTrailingSeparators,
   createCommandExists,
@@ -54,7 +54,7 @@ import {
 } from './contract.ts'
 import {
   CALIBRATION_SUFFIX_RESERVE_BYTES, calibrationLine, cleanReviewEvidence,
-  parseReviewOutput, recordReview, reviewCalibration,
+  parseReviewOutput, recordReview, reviewCalibration, reviewRunEvidenceSql,
 } from './review.ts'
 import { assertMainCheckoutClean, assertRegisterBranches, createHasPlaceholder, projectAt, projectByName, projects, stackAt,
          validateStoredProjectSettings } from './projects.ts'
@@ -1118,6 +1118,156 @@ function gitContext(cwd: string, ...args: string[]): string | null {
   } catch { return null }
 }
 
+type TaskBranchCandidate = {
+  branch: string
+  tip: string
+  commitCount: number
+  mergeBase: string
+  projectId: number
+  projectName: string
+  runIds: number[]
+  worktree: Worktree | null
+}
+
+/** Branch state is a separate question from whether a run's review is admissible evidence. */
+export function taskBranchCandidacySql(runAlias = 'candidate'): string {
+  return `${runAlias}.status <> 'stopped'`
+}
+
+function taskBranchGit(cwd: string, ...args: string[]): string {
+  const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
+    env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
+  })
+  if (p.exitCode !== 0) {
+    throw new Error(
+      `git ${args.join(' ')} failed while resolving the task branch: ` +
+      (p.stderr.toString().trim() || `exit ${p.exitCode}`),
+    )
+  }
+  return p.stdout.toString().trim()
+}
+
+function checkedOutWorktree(repoRoot: string, branch: string): string | null {
+  let path: string | null = null
+  for (const line of taskBranchGit(repoRoot, 'worktree', 'list', '--porcelain').split('\n')) {
+    if (line.startsWith('worktree ')) path = line.slice('worktree '.length)
+    else if (line === `branch refs/heads/${branch}`) return path
+    else if (!line) path = null
+  }
+  return null
+}
+
+/**
+ * Resolve one task branch by evidence and patch content, never by run order or ancestry alone.
+ *
+ * The CTE gives the shared review boundary its expected `run_id` address without
+ * copying that predicate. The stopped condition is deliberately layered beside
+ * it: calibration consumes `reviewRunEvidenceSql`, and branch liveness is a
+ * different question from review admissibility.
+ */
+export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCandidate | null {
+  const repoRoot = repoRootOf(cwd)
+  const project = projectAt(cwd) ?? (repoRoot
+    ? projects().find((candidate) =>
+        realpathOrSpelled(candidate.path) === realpathOrSpelled(repoRoot)) ?? null
+    : null)
+  if (!project || !repoRoot) return null
+  const rows = db().query(
+    `WITH candidate AS (SELECT run.*, run.id AS run_id FROM run)
+     SELECT candidate.id, candidate.branch, candidate.worktree,
+            candidate.worktree_source
+       FROM candidate
+      WHERE candidate.launch_key=?
+        AND (candidate.project_id=? OR (candidate.project_id IS NULL AND candidate.repo=?))
+        AND candidate.branch IS NOT NULL
+        AND ${taskBranchCandidacySql('candidate')}
+        AND ${reviewRunEvidenceSql('candidate', 'candidate')}
+      ORDER BY candidate.id`,
+  ).all(launchKey, project.id, project.name) as {
+    id: number
+    branch: string
+    worktree: string | null
+    worktree_source: string | null
+  }[]
+  if (rows.length === 0) return null
+
+  const trunk = project.settings.trunk?.trim()
+  if (!trunk) {
+    throw new Error(
+      `project ${project.name} has no trunk configured; task branch content cannot be resolved`,
+    )
+  }
+
+  const byBranch = new Map<string, typeof rows>()
+  for (const row of rows) byBranch.set(row.branch, [...(byBranch.get(row.branch) ?? []), row])
+  const trunkTip = taskBranchGit(repoRoot, 'rev-parse', '--verify', '--end-of-options', `${trunk}^{commit}`)
+  const candidates: TaskBranchCandidate[] = []
+  for (const [branch, branchRows] of byBranch) {
+    let tip: string
+    try {
+      tip = taskBranchGit(
+        repoRoot, 'rev-parse', '--verify', '--end-of-options', `refs/heads/${branch}^{commit}`,
+      )
+    } catch {
+      continue
+    }
+    const mergeBase = taskBranchGit(repoRoot, 'merge-base', trunkTip, tip)
+    const commitCount = Number(taskBranchGit(repoRoot, 'rev-list', '--count', `${mergeBase}..${tip}`))
+    if (!Number.isSafeInteger(commitCount) || commitCount < 1) continue
+
+    // The two supported landing shapes leave different patch-id evidence.
+    // Preserve the original commits for a multi-commit cherry-pick, then also
+    // compare the net patch for a squash landing. An ancestry-only merged check
+    // cannot see either and must not decide task ownership.
+    const individual = taskBranchGit(repoRoot, 'cherry', trunkTip, tip)
+    if (!individual.split('\n').some((line) => line.startsWith('+ '))) continue
+    const tree = taskBranchGit(repoRoot, 'rev-parse', '--verify', `${tip}^{tree}`)
+    const squash = taskBranchGit(
+      repoRoot, 'commit-tree', tree, '-p', mergeBase, '-m', `orch task branch ${launchKey}`,
+    )
+    const cherry = taskBranchGit(repoRoot, 'cherry', trunkTip, squash)
+    if (!cherry.split('\n').some((line) => line.startsWith('+ '))) continue
+
+    const path = checkedOutWorktree(repoRoot, branch)
+    const attachedRow = path ? branchRows.find((row) =>
+      row.worktree && realpathOrSpelled(row.worktree) === realpathOrSpelled(path),
+    ) : null
+    const source = attachedRow?.worktree_source
+    candidates.push({
+      branch, tip, commitCount, mergeBase,
+      projectId: project.id, projectName: project.name,
+      runIds: branchRows.map((row) => row.id),
+      worktree: path ? {
+        path, branch, base: tip, repoRoot,
+        source: source === 'recipe' || source === 'git' || source === 'readonly_recipe'
+          ? source
+          : undefined,
+        // Null records that this run attached; it did not mint the task branch.
+        mintedBranch: null,
+      } : null,
+    })
+  }
+
+  if (candidates.length === 0) return null
+  if (candidates.length === 1) return candidates[0]!
+  const detail = candidates.map((candidate) =>
+    `  ${candidate.branch} tip ${candidate.tip} commits ${candidate.commitCount}`,
+  ).join('\n')
+  const commands = candidates.map((kept) => {
+    const voidCommands = candidates.filter((candidate) => candidate !== kept)
+      .flatMap((candidate) => candidate.runIds)
+      .map((id) => `    orch score ${id} --void --note "not the live ${launchKey} branch"`)
+      .join('\n')
+    return `  To keep ${kept.branch}:\n${voidCommands}`
+  }).join('\n')
+  throw new Error(
+    `refusing task branch resolution for ${launchKey}: more than one branch carries content not on ${trunk}\n` +
+    `${detail}\n` +
+    `invariant: A task owns one branch.\n` +
+    `Clear the ambiguity by choosing one branch and voiding the candidate runs behind the others:\n${commands}`,
+  )
+}
+
 function reviewChangedPaths(cwd: string, base: string, inputTree: string): string[] {
   const args = ['diff', '--name-only', `${base}..${inputTree}`]
   const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
@@ -1853,7 +2003,7 @@ export function closeOutRun(
   if (!repoRoot) return { runId: row.root_id, worktree: treePath, outcome: 'failed', detail: 'repository root not found' }
 
   const liveRows = () => {
-    const sharers = evidenceOwningWorktreeSharers(db(), { id: row.root_id, worktree: treePath })
+    const sharers = liveWorktreeSharers(db(), { id: row.root_id, worktree: treePath })
     const conversation = db().query(
       `SELECT id,status FROM run
         WHERE status IN ('running','asking') AND (id=? OR parent_run_id=?) ORDER BY id`,
@@ -2636,6 +2786,7 @@ export async function run(opts: {
   let retargetDiagnostic: string | null = null
   let mcpSetupHeader: string | null = null
   let mcpTrustGranted = false
+  let taskBranchAttachment = false
   /**
    * Cutting the worktree can FAIL, and the row already exists by now.
    *
@@ -2648,6 +2799,21 @@ export async function run(opts: {
    */
   let cwd = callerCwd
   try {
+    const worktreeTool = repoJob ? toolFor(callerCwd) : null
+    let resolvedTaskBranch: TaskBranchCandidate | null = null
+    if (repoJob && writesJob && opts.job !== 'land' && !worktree && launchKey) {
+      resolvedTaskBranch = resolveTaskBranch(callerCwd, launchKey)
+      if (resolvedTaskBranch?.worktree) {
+        worktree = resolvedTaskBranch.worktree
+        taskBranchAttachment = true
+      } else if (resolvedTaskBranch && worktreeTool?.create) {
+        // A command-backed declaration owns Git creation and provisioning as
+        // one operation. Until the register has a declared attach operation,
+        // it cannot be handed an existing ref as though it created new branches
+        // that way. Preserve the former new-branch behavior for these projects.
+        resolvedTaskBranch = null
+      }
+    }
     const creating = repoJob && !worktree
     if (forbidsRepo) {
       // A self-contained job must not inherit the checkout it was launched
@@ -2665,7 +2831,7 @@ export async function run(opts: {
     } else if (repoJob) {
       // A job that reads the repository must have a worktree, so a repository
       // it cannot be cut from is a hard failure.
-      const tool = toolFor(callerCwd)
+      const tool = worktreeTool
       if (creating) {
         const repoRoot = repoRootOf(callerCwd)
         if (!repoRoot) throw new Error(`not a git repository: ${callerCwd}`)
@@ -2690,18 +2856,23 @@ export async function run(opts: {
             // produce a directory with no .env, no vendor and no database, in which
             // every test the worker runs is meaningless and green.
             created = createWithTool(
-              tool, callerCwd, claim.id, seed, opts.key, reviewTarget?.commit ?? opts.base, recordWorktree,
-              Boolean(reviewTarget),
+              tool, callerCwd, claim.id, seed, opts.key,
+              resolvedTaskBranch?.tip ?? reviewTarget?.commit ?? opts.base, recordWorktree,
+              Boolean(reviewTarget), resolvedTaskBranch?.branch,
             )
           } else {
             // INHERITED on a resume, and this is the point of the whole exercise:
             // the worker is mid-edit in that tree, and cutting a fresh one would
             // answer its question into an empty checkout and throw away everything
             // it had built.
-            created = createWorktree(
-              callerCwd, claim.id, reviewTarget?.commit ?? opts.base, recordWorktree,
-              Boolean(reviewTarget),
-            )
+            created = resolvedTaskBranch
+              ? createWorktreeForBranch(
+                  callerCwd, claim.id, resolvedTaskBranch.branch, recordWorktree,
+                )
+              : createWorktree(
+                  callerCwd, claim.id, reviewTarget?.commit ?? opts.base, recordWorktree,
+                  Boolean(reviewTarget),
+                )
           }
           const current = db().query('SELECT status FROM run WHERE id=?').get(claim.id) as
             { status: string }
@@ -2732,7 +2903,7 @@ export async function run(opts: {
             // need not descend from the caller. An overlay still comes only
             // from that branch's own checkout, where the ancestry guard remains
             // the protection against carrying reversions onto a newer tip.
-            if ((!reviewTarget || opts.carry) && !namesRecordedRunTree({
+            if (!resolvedTaskBranch && (!reviewTarget || opts.carry) && !namesRecordedRunTree({
               cwd: callerCwd, explicitCwd: opts.cwd !== undefined, base: opts.base, resume: opts.resume,
             })) {
               assertCallerAncestry(callerCwd, created)
@@ -2799,11 +2970,72 @@ export async function run(opts: {
           { session: sessionId(), what: `resume ${claim.id}` },
           () => withWorktreeCreateLock(inheritedWorktree.repoRoot, recordWorktree),
         )
+      } else if (taskBranchAttachment) {
+        try {
+          withWorktreeLease(
+            inheritedWorktree.repoRoot, inheritedWorktree.path,
+            { session: sessionId(), what: `attach task branch for run ${claim.id}` },
+            () => withWorktreeCreateLock(inheritedWorktree.repoRoot, () => {
+              const owner = db().query(
+                `SELECT id FROM run
+                  WHERE branch=? AND id<>? AND status IN ('running','asking')
+                    AND (project_id=? OR (project_id IS NULL AND repo=?))
+                  LIMIT 1`,
+              ).get(
+                inheritedWorktree.branch, claim.id,
+                resolvedTaskBranch!.projectId, resolvedTaskBranch!.projectName,
+              ) as { id: number } | null
+              if (owner) {
+                throw new Error(
+                  `refusing to attach run ${claim.id} to ${inheritedWorktree.path}: ` +
+                  `run ${owner.id} is still using the task branch\n` +
+                  `invariant: Two concurrent runs never share one task branch.\n` +
+                  `cleared by: wait for run ${owner.id} to finish, then repeat this dispatch`,
+                )
+              }
+              if (!existsSync(inheritedWorktree.path)) {
+                throw new Error(
+                  `refusing to attach run ${claim.id}: retained worktree ` +
+                  `${inheritedWorktree.path} no longer exists`,
+                )
+              }
+              const branch = branchOf(inheritedWorktree.path)
+              const tip = gitContext(inheritedWorktree.path, 'rev-parse', '--verify', 'HEAD^{commit}')
+              if (branch !== inheritedWorktree.branch || tip !== resolvedTaskBranch?.tip) {
+                throw new Error(
+                  `refusing to attach run ${claim.id}: ${inheritedWorktree.path} moved from ` +
+                  `${inheritedWorktree.branch} at ${resolvedTaskBranch?.tip}\n` +
+                  `invariant: Task branch resolution and attachment describe the same tree.\n` +
+                  `cleared by: repeat the dispatch to resolve the task branch again`,
+                )
+              }
+              recordWorktree()
+              appendRunEvent(claim.id, {
+                ts: nowIso(), type: 'text',
+                text: `attached existing task branch ${inheritedWorktree.branch} at ${inheritedWorktree.path}`,
+              })
+            }),
+            0,
+          )
+        } catch (error) {
+          const message = String((error as Error)?.message ?? error)
+          if (message.includes('waiting for this project')) {
+            throw new Error(
+              `${message}\n` +
+              `invariant: Two concurrent runs or a landing never share one task branch tree.\n` +
+              `cleared by: let the named holder finish, then repeat this dispatch`,
+            )
+          }
+          throw error
+        }
       } else {
         recordWorktree()
       }
       cwd = inheritedWorktree.path
-      if (!opts.resume) {
+      if (!opts.resume && !(
+        taskBranchAttachment &&
+        realpathOrSpelled(callerCwd) === realpathOrSpelled(worktree.path)
+      )) {
         const caller = checkoutAliases(callerCwd)
         if (!caller) throw new Error(`could not resolve caller checkout root: ${callerCwd}`)
         retargetDiagnostic = caller.diagnostic

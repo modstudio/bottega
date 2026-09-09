@@ -87,16 +87,48 @@ test('a running sibling sharing the tree wins over clean release', () => {
   } finally { rmSync(f.repo, { recursive: true, force: true }) }
 })
 
-test('a scored terminal sibling sharing the tree does not block close-out', () => {
+for (const siblingStatus of ['running', 'ok'] as const) {
+  for (const intent of ['terminal', 'explicit', 'sweep'] as const) {
+    for (const ascertainable of [true, false]) {
+      test(`finished-run composition: ${siblingStatus} sibling, ${intent} intent, ` +
+        `${ascertainable ? 'ascertainable' : 'unascertainable'} processes`, () => {
+        const f = fixture()
+        try {
+          const sibling = addRun({
+            agent: 'codex', job: 'understand', status: siblingStatus, repo: f.project,
+          })
+          db().query('UPDATE run SET worktree=? WHERE id=?').run(`${f.tree.path}/`, sibling)
+          installTestProcessInventory(ascertainable
+            ? { ascertainable: true, rows: [] }
+            : { ascertainable: false, reason: 'composition process inventory unavailable' })
+
+          const result = closeOutRun(f.id, { intent })
+          const releases = siblingStatus === 'ok' && ascertainable && intent !== 'sweep'
+          expect(result.outcome).toBe(releases ? 'released' : 'live')
+          expect(existsSync(f.tree.path)).toBe(!releases)
+          if (siblingStatus === 'running') expect(result.detail).toContain(`${sibling} (running)`)
+          if (!ascertainable && siblingStatus === 'ok') {
+            expect(result.detail).toContain('process liveness could not be established')
+          }
+          if (intent === 'sweep' && siblingStatus === 'ok' && ascertainable) {
+            expect(result.detail).toContain('two-hour liveness window')
+          }
+        } finally { rmSync(f.repo, { recursive: true, force: true }) }
+      })
+    }
+  }
+}
+
+test('sweep releases an aged finished tree despite a terminal sibling claim', () => {
   const f = fixture()
   try {
-    score(f.id, 'full', 'right', 'faithful')
-    const sibling = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: f.project })
-    score(sibling, 'full', 'right', 'faithful')
-    db().query('UPDATE run SET worktree=?, branch=? WHERE id=?')
-      .run(f.tree.path, f.tree.branch, sibling)
-
-    const result = closeOutRun(f.id, { intent: 'explicit' })
+    const sibling = addRun({ agent: 'codex', job: 'understand', status: 'ok', repo: f.project })
+    db().query('UPDATE run SET worktree=? WHERE id=?').run(`${f.tree.path}/`, sibling)
+    const old = new Date(Date.now() - 3 * 60 * 60 * 1000)
+    for (const name of git(f.tree.path, 'ls-files', '-co', '--exclude-standard').split('\n').filter(Boolean)) {
+      utimesSync(join(f.tree.path, name), old, old)
+    }
+    const result = closeOutRun(f.id, { intent: 'sweep' })
     expect(result.outcome).toBe('released')
     expect(existsSync(f.tree.path)).toBe(false)
   } finally { rmSync(f.repo, { recursive: true, force: true }) }

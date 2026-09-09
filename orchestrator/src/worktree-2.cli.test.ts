@@ -7,7 +7,7 @@ import { addRun, compoundCreate, createWithTool, createWorktree, db, declaredCre
 import { worktreeDescribeFixture } from '../test/fixture.ts'
 
 describe("a worktree is resolved against the main checkout, not the caller cwd", () => {
-  const { git, scratchRepo } = worktreeDescribeFixture()
+  const { git, scratchRepo, markScratchRepoOwner } = worktreeDescribeFixture()
   const ageWorktree = (tree: string) => {
     const old = new Date(Date.now() - 3 * 60 * 60 * 1000)
     for (const name of git(tree, 'ls-files', '-co', '--exclude-standard').split('\n').filter(Boolean)) {
@@ -453,7 +453,7 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
         env: cliEnv,
         stdout: 'pipe', stderr: 'pipe',
       })
-      expect(p.exitCode).toBe(0)
+      expect(p.exitCode, p.stderr.toString()).toBe(0)
       expect(p.stdout.toString()).toContain(`base: ${w.base}`)
       expect(p.stderr.toString()).toContain(`base:     ${w.base}`)
       const applyCheck = Bun.spawnSync(['git', 'apply', '--check', '-'], {
@@ -508,15 +508,17 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
     }
   })
 
-  test('discard ignores another terminal chain regardless of its score state', () => {
+  test('a sibling pointer blocks destructive discard regardless of terminal or score state', () => {
     const { repo, tree } = scratchRepo()
     const root = addRun({ agent: 'codex', job: 'implement', session: 'session-A' })
     const child = addRun({
       agent: 'codex', job: 'implement', parent: root, turn: 2, session: 'session-B',
     })
     const unscored = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id IN (?,?,?)')
-      .run(repo, tree, 'AB-2581', git(repo, 'rev-parse', 'main'), root, child, unscored)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id IN (?,?)')
+      .run(repo, tree, 'AB-2581', git(repo, 'rev-parse', 'main'), root, child)
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id=?')
+      .run(repo, `${tree}/`, 'AB-2581', git(repo, 'rev-parse', 'main'), unscored)
     try {
       const p = Bun.spawnSync([
         process.execPath, new URL('cli.ts', import.meta.url).pathname,
@@ -526,14 +528,130 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
           CLAUDE_CODE_SESSION_ID: 'session-A' },
         stdout: 'pipe', stderr: 'pipe',
       })
-      expect(p.exitCode).toBe(0)
-      expect(p.stderr.toString()).not.toContain('unscored')
-      expect(existsSync(tree)).toBe(false)
-      expect(db().query('SELECT COUNT(*) n FROM run WHERE worktree=?').get(tree)).toEqual({ n: 1 })
-      expect(db().query('SELECT COUNT(*) n FROM run_mutation_audit').get()).toEqual({ n: 1 })
+      expect(p.exitCode).toBe(1)
+      expect(p.stderr.toString()).toContain(`run ${unscored} is failed and unscored`)
+      expect(existsSync(tree)).toBe(true)
+      expect(db().query('SELECT id,worktree FROM run WHERE id IN (?,?,?) ORDER BY id')
+        .all(root, child, unscored)).toEqual([
+          { id: root, worktree: null },
+          { id: child, worktree: null },
+          { id: unscored, worktree: `${tree}/` },
+        ])
+      expect(db().query('SELECT run_id,root_id,action FROM run_mutation_audit').get())
+        .toEqual({ run_id: child, root_id: root, action: 'discard' })
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
+  })
+
+  test('discarding an attacher releases its pointer before the scored owner may remove the tree', () => {
+    const { repo, tree } = scratchRepo()
+    const project = `attacher-owner-${repo.split('/').pop()}`
+    const remove = join(repo, 'remove-attacher.sh')
+    writeFileSync(remove,
+      '#!/bin/sh\n' +
+      'git worktree remove --force "$1"\n' +
+      'git branch -D "$2"\n')
+    upsertProject({
+      name: project, path: realpathSync(repo),
+      settings: { trunk: 'main', worktree: { remove: `sh "${remove}" {path} {branch}` } },
+    })
+    const owner = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
+    const attacher = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
+    markScratchRepoOwner(repo, tree, owner)
+    db().query(
+      `INSERT INTO score (run_id, delivery, quality, fidelity, scored_at)
+       VALUES (?,'full','right','faithful',?)`,
+    ).run(owner, nowIso())
+    db().query(
+      `UPDATE run SET cwd=?,worktree=?,branch=?,minted_branch=?,base_commit=?,keep_tree=0,
+                      worktree_source='recipe' WHERE id=?`,
+    ).run(tree, tree, 'AB-2581', 'AB-2581', git(repo, 'rev-parse', 'main'), owner)
+    db().query(
+      `UPDATE run SET cwd=?,worktree=?,branch=?,minted_branch=NULL,base_commit=?,
+                      worktree_source='recipe' WHERE id=?`,
+    ).run(tree, tree, 'AB-2581', git(repo, 'rev-parse', 'main'), attacher)
+    try {
+      const discarded = Bun.spawnSync([
+        process.execPath, new URL('cli.ts', import.meta.url).pathname,
+        'discard', String(attacher), '--force',
+      ], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(discarded.exitCode).toBe(1)
+      expect(existsSync(tree)).toBe(true)
+      expect(discarded.stderr.toString()).toContain(`run ${owner}`)
+      expect(discarded.stderr.toString()).toContain(
+        `this conversation's pointer on ${tree} was released`,
+      )
+      expect(discarded.stderr.toString()).toContain(
+        'the tree will be collectable once the remaining pointers are released',
+      )
+      expect(git(repo, 'rev-parse', 'AB-2581')).toBe(git(repo, 'rev-parse', 'main'))
+      expect(db().query('SELECT id,worktree FROM run WHERE id IN (?,?) ORDER BY id')
+        .all(owner, attacher)).toEqual([
+          { id: owner, worktree: tree },
+          { id: attacher, worktree: null },
+        ])
+
+      const removed = Bun.spawnSync([
+        process.execPath, new URL('cli.ts', import.meta.url).pathname,
+        'discard', String(owner), '--force',
+      ], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(removed.exitCode).toBe(0)
+      expect(existsSync(tree)).toBe(false)
+      expect(git(repo, 'branch', '--list', 'AB-2581')).toBe('')
+      expect(db().query('SELECT id,worktree FROM run WHERE id IN (?,?) ORDER BY id')
+        .all(owner, attacher)).toEqual([
+          { id: owner, worktree: null },
+          { id: attacher, worktree: null },
+        ])
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('discarding an attacher never transfers the marker owner minted branch', () => {
+    const { repo, tree } = scratchRepo()
+    const project = `attacher-marker-${repo.split('/').pop()}`
+    const remove = join(repo, 'remove-attacher-marker.sh')
+    writeFileSync(remove,
+      '#!/bin/sh\n' +
+      'git worktree remove --force "$1"\n' +
+      'git branch -D "$2"\n')
+    upsertProject({
+      name: project, path: realpathSync(repo),
+      settings: { trunk: 'main', worktree: { remove: `sh "${remove}" {path} {branch}` } },
+    })
+    const owner = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
+    const attacher = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
+    db().query(
+      `INSERT INTO score (run_id, delivery, quality, fidelity, scored_at)
+       VALUES (?,'full','right','faithful',?)`,
+    ).run(owner, nowIso())
+    db().query(
+      `UPDATE run SET cwd=?,worktree=NULL,branch=?,minted_branch=?,base_commit=?,keep_tree=0,
+                      worktree_source='recipe' WHERE id=?`,
+    ).run(tree, 'AB-2581', 'AB-2581', git(repo, 'rev-parse', 'main'), owner)
+    db().query(
+      `UPDATE run SET cwd=?,worktree=?,branch=?,minted_branch=NULL,base_commit=?,
+                      worktree_source='recipe' WHERE id=?`,
+    ).run(tree, tree, 'AB-2581', git(repo, 'rev-parse', 'main'), attacher)
+    markScratchRepoOwner(repo, tree, owner)
+    try {
+      const discarded = Bun.spawnSync([
+        process.execPath, new URL('cli.ts', import.meta.url).pathname,
+        'discard', String(attacher), '--force',
+      ], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(git(repo, 'branch', '--list', 'AB-2581')).toBe('AB-2581')
+      expect(discarded.exitCode).toBe(1)
+      expect(discarded.stderr.toString()).toContain("branch '' not found")
+    } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
   test('a failed unscored run does not pin a branch whose patch is already on trunk', () => {
@@ -641,7 +759,7 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
     }
   })
 
-  test('discard does not treat a no-verdict void as unjudged shared evidence', () => {
+  test('discard treats a no-verdict void as a shared pointer until it is cleared', () => {
     const { repo } = scratchRepo()
     const target = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
     const voided = addRun({ agent: 'codex', job: 'understand', status: 'ok' })
@@ -651,6 +769,7 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
     db().query("UPDATE run SET cwd=?, worktree=?, branch=?, evidence_excluded=? WHERE id=?")
       .run(repo, tree.path, tree.branch, 'voided with orch score --void', voided)
     try {
+      expect(readFileSync(join(tree.path, '.orch-run'), 'utf8').split('\n')[0]).toBe(String(target))
       const CLI = new URL('cli.ts', import.meta.url).pathname
       const p = Bun.spawnSync(
         [process.execPath, CLI, 'discard', String(target), '--force'],
@@ -659,52 +778,26 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
           stdout: 'pipe', stderr: 'pipe',
         },
       )
-      expect(p.exitCode).toBe(0)
-      expect(p.stderr.toString()).not.toContain('and unscored')
-      expect(existsSync(tree.path)).toBe(false)
-      expect(db().query('SELECT worktree FROM run WHERE id=?').get(target))
-        .toEqual({ worktree: null })
-    } finally {
-      rmSync(repo, { recursive: true, force: true })
-    }
-  })
-
-  test('close-out holds a worktree whose uncommitted work exists nowhere else', () => {
-    const { repo } = scratchRepo()
-    const target = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
-    const owner = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
-    const tree = createWorktree(repo, target)
-    const evidence = join(tree.path, 'uncommitted-evidence.txt')
-    writeFileSync(evidence, 'review me\n')
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, target)
-    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
-      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, owner)
-    try {
-      ageWorktree(tree.path)
-      const CLI = new URL('cli.ts', import.meta.url).pathname
-      const p = Bun.spawnSync(
-        [process.execPath, CLI, 'close-out', String(target)],
-        {
-          env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
-          stdout: 'pipe', stderr: 'pipe',
-        },
+      expect(p.exitCode).toBe(1)
+      expect(p.stderr.toString()).toContain(`run ${voided} is ok`)
+      expect(p.stderr.toString()).toContain(
+        `this conversation's pointer on ${tree.path} was released`,
       )
-      expect(p.exitCode).not.toBe(0)
-      expect(p.stdout.toString()).toContain('held run')
-      expect(p.stdout.toString()).toContain('uncommitted or untracked')
-      expect(readFileSync(evidence, 'utf8')).toBe('review me\n')
-      expect(db().query('SELECT id, worktree FROM run WHERE id IN (?,?) ORDER BY id')
-        .all(target, owner)).toEqual([
-          { id: target, worktree: tree.path },
-          { id: owner, worktree: tree.path },
+      expect(p.stderr.toString()).toContain(
+        'the tree will be collectable once the remaining pointers are released',
+      )
+      expect(existsSync(tree.path)).toBe(true)
+      expect(db().query('SELECT id,worktree FROM run WHERE id IN (?,?) ORDER BY id')
+        .all(target, voided)).toEqual([
+          { id: target, worktree: null },
+          { id: voided, worktree: tree.path },
         ])
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
   })
 
-  for (const cleanup of ['discard', 'sweep'] as const) {
+  for (const cleanup of ['discard'] as const) {
     test(`${cleanup} reclaims one scored multi-turn conversation`, () => {
       const { repo } = scratchRepo()
       const project = `${cleanup}-conversation-${repo.split('/').pop()}`
@@ -728,21 +821,18 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
       }
       const docker = fakeDocker([], [])
       try {
-        if (cleanup === 'sweep') ageWorktree(tree.path)
         const CLI = new URL('cli.ts', import.meta.url).pathname
-        const args = cleanup === 'discard'
-          ? ['discard', String(root), '--force']
-          : ['sweep']
+        const args = ['discard', String(root), '--force']
         const p = Bun.spawnSync([process.execPath, CLI, ...args], {
           env: { ...process.env, ...docker.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
           stdout: 'pipe', stderr: 'pipe',
         })
-        expect(p.exitCode).toBe(0)
+        expect(p.exitCode, `${p.stdout.toString()}\n${p.stderr.toString()}`).toBe(0)
         expect(existsSync(tree.path)).toBe(false)
         expect(db().query('SELECT id, worktree FROM run WHERE id IN (?,?) ORDER BY id')
           .all(root, child)).toEqual([
-          { id: root, worktree: cleanup === 'discard' ? null : tree.path },
-          { id: child, worktree: cleanup === 'discard' ? null : tree.path },
+          { id: root, worktree: null },
+          { id: child, worktree: null },
         ])
       } finally {
         rmSync(repo, { recursive: true, force: true })
@@ -775,7 +865,7 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
           stdout: 'pipe', stderr: 'pipe',
         },
       )
-      expect(p.exitCode).not.toBe(0)
+      expect(p.exitCode, `${p.stdout.toString()}\n${p.stderr.toString()}`).not.toBe(0)
       expect(p.stderr.toString()).toContain(container)
       expect(p.stderr.toString()).toContain(`run ${root}`)
       expect(db().query('SELECT id, worktree FROM run WHERE id IN (?,?) ORDER BY id')
@@ -789,7 +879,7 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
     }
   })
 
-  test('automatic abandon keeps an unchanged branch for an already-gone tree', () => {
+  test('a successful project tool deletes an unchanged disposable branch for an already-gone tree', () => {
     const { repo } = scratchRepo()
     const project = `branch-postcondition-${repo.split('/').pop()}`
     const id = addRun({ agent: 'codex', job: 'implement', status: 'asking', repo: project })
@@ -809,16 +899,15 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
         stdout: 'pipe', stderr: 'pipe',
       })
       expect(p.exitCode).toBe(0)
-      expect(git(repo, 'branch', '--list', tree.branch)).toBe(tree.branch)
-      expect(db().query('SELECT worktree, branch_kept, branch_kept_tip FROM run WHERE id=?').get(id))
-        .toEqual({ worktree: tree.path, branch_kept: tree.branch, branch_kept_tip: tree.base })
+      expect(git(repo, 'branch', '--list', tree.branch)).toBe('')
+      expect(db().query('SELECT worktree FROM run WHERE id=?').get(id)).toEqual({ worktree: null })
     } finally {
       rmSync(repo, { recursive: true, force: true })
       rmSync(docker.dir, { recursive: true, force: true })
     }
   })
 
-  test('automatic abandon retains a uniquely-committed branch', () => {
+  test('a successful project tool retains and reports a uniquely-committed branch', () => {
     const { repo } = scratchRepo()
     const project = `unique-branch-postcondition-${repo.split('/').pop()}`
     const id = addRun({ agent: 'codex', job: 'implement', status: 'asking', repo: project })
@@ -843,15 +932,16 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
       })
       expect(p.exitCode).toBe(0)
       expect(git(repo, 'rev-parse', tree.branch)).toBe(tip)
-      expect(db().query('SELECT worktree, branch_kept, branch_kept_tip FROM run WHERE id=?').get(id))
-        .toEqual({ worktree: tree.path, branch_kept: tree.branch, branch_kept_tip: tip })
+      expect(p.stdout.toString()).toContain(`kept branch ${tree.branch}`)
+      expect(db().query('SELECT worktree, branch_kept FROM run WHERE id=?').get(id))
+        .toEqual({ worktree: null, branch_kept: tree.branch })
     } finally {
       rmSync(repo, { recursive: true, force: true })
       rmSync(docker.dir, { recursive: true, force: true })
     }
   })
 
-  test('automatic abandon of an absent tree does not run a branch-moving remover', () => {
+  test('a successful project tool refuses an unprotected branch moved during teardown', () => {
     const { repo } = scratchRepo()
     const project = `moved-branch-postcondition-${repo.split('/').pop()}`
     const id = addRun({ agent: 'codex', job: 'implement', status: 'asking', repo: project })
@@ -878,67 +968,15 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
         env: { ...process.env, ...docker.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
         stdout: 'pipe', stderr: 'pipe',
       })
-      expect(p.exitCode).toBe(0)
-      expect(p.stderr.toString()).not.toContain(`moved unprotected branch ${tree.branch}`)
-      expect(git(repo, 'rev-parse', tree.branch)).toBe(tree.base)
+      expect(p.exitCode).not.toBe(0)
+      expect(p.stderr.toString()).toContain(`moved unprotected branch ${tree.branch}`)
+      expect(p.stderr.toString()).toContain(later)
+      expect(git(repo, 'rev-parse', tree.branch)).toBe(later)
       expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
         .toEqual({ worktree: tree.path })
     } finally {
       rmSync(repo, { recursive: true, force: true })
       rmSync(docker.dir, { recursive: true, force: true })
-    }
-  })
-
-  test('sweep records the retained tip when a project teardown tool moves the branch', () => {
-    const { repo } = scratchRepo()
-    const project = `sweep-moved-unique-${repo.split('/').pop()}`
-    const id = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
-    const tree = createWorktree(repo, id)
-    writeFileSync(join(tree.path, 'unique.txt'), 'unique before cleanup\n')
-    git(tree.path, 'add', 'unique.txt')
-    git(tree.path, 'commit', '-m', 'unique before cleanup')
-    const first = git(tree.path, 'rev-parse', 'HEAD')
-    git(repo, 'checkout', '-b', 'fixture-sweep-later-tip', first)
-    writeFileSync(join(repo, 'later.txt'), 'later\n')
-    git(repo, 'add', 'later.txt')
-    git(repo, 'commit', '-m', 'later sweep tip')
-    const later = git(repo, 'rev-parse', 'HEAD')
-    git(repo, 'checkout', 'main')
-    git(repo, 'branch', '-D', 'fixture-sweep-later-tip')
-    const script = join(repo, 'move-unique-during-sweep.sh')
-    writeFileSync(script,
-      'git worktree remove --force "$1"\n' +
-      `git update-ref "refs/heads/$2" "${later}"\n`)
-    upsertProject({
-      name: project, path: realpathSync(repo),
-      settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
-    })
-    db().query(
-      `UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=?, started_at=?,
-                      worktree_source='recipe' WHERE id=?`,
-    ).run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, tree.base, '2020-01-01T00:00:00.000Z', id)
-    db().query(
-      `INSERT INTO score (run_id, delivery, quality, fidelity, scored_at)
-       VALUES (?,'full','right','faithful',?)`,
-    ).run(id, nowIso())
-    try {
-      ageWorktree(tree.path)
-      const CLI = new URL('cli.ts', import.meta.url).pathname
-      const p = Bun.spawnSync(
-        [process.execPath, CLI, 'sweep'],
-        {
-          env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
-          stdout: 'pipe', stderr: 'pipe',
-        },
-      )
-      expect(p.exitCode).not.toBe(0)
-      expect(p.stderr.toString()).toContain(`moved unique branch ${tree.branch}`)
-      expect(git(repo, 'rev-parse', tree.branch)).toBe(later)
-      expect(existsSync(tree.path)).toBe(false)
-      expect(db().query('SELECT worktree, branch_kept, branch_kept_tip FROM run WHERE id=?').get(id))
-        .toEqual({ worktree: tree.path, branch_kept: tree.branch, branch_kept_tip: first })
-    } finally {
-      rmSync(repo, { recursive: true, force: true })
     }
   })
 
@@ -989,7 +1027,7 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
     }
   })
 
-  for (const cleanup of ['discard', 'abandon', 'sweep'] as const) {
+  for (const cleanup of ['discard', 'abandon'] as const) {
     test(`${cleanup} refuses finalization when a run acquires the worktree during removal`, () => {
       const { repo } = scratchRepo()
       const project = `${cleanup}-acquired-tree-${repo.split('/').pop()}`
@@ -1018,25 +1056,25 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
                         worktree_source='recipe' WHERE id=?`,
       ).run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, tree.base, target)
       db().query('UPDATE run SET cwd=? WHERE id=?').run(repo, owner)
-      if (cleanup === 'sweep') {
-        db().query(
-          `INSERT INTO score (run_id, delivery, quality, fidelity, scored_at)
-           VALUES (?,'full','right','faithful',?)`,
-        ).run(target, nowIso())
-      }
       try {
-        if (cleanup === 'sweep') ageWorktree(tree.path)
         const CLI = new URL('cli.ts', import.meta.url).pathname
-        const args = cleanup === 'sweep'
-          ? ['sweep', '--force']
-          : [cleanup, String(target), '--force']
+        const args = [cleanup, String(target), '--force']
         const p = Bun.spawnSync([process.execPath, CLI, ...args], {
           env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
           stdout: 'pipe', stderr: 'pipe',
         })
-        expect(p.exitCode).not.toBe(0)
+        expect(p.exitCode, `${p.stdout.toString()}\n${p.stderr.toString()}`).not.toBe(0)
         const message = `${p.stdout.toString()}${p.stderr.toString()}`
         expect(message).toContain(String(owner))
+        expect(p.stderr.toString()).toContain(
+          `another conversation claimed ${tree.path} during cleanup`,
+        )
+        expect(p.stderr.toString()).toContain('the tree has already been removed')
+        expect(p.stderr.toString()).toContain("this conversation's pointer was not released")
+        expect(p.stderr.toString()).toContain(
+          "Resolve the listed conversations' stale pointers, then retry this cleanup.",
+        )
+        expect(p.stderr.toString()).not.toContain('the tree will be collectable')
         expect(existsSync(tree.path)).toBe(false)
         expect(db().query('SELECT worktree FROM run WHERE id=?').get(owner))
           .toEqual({ worktree: tree.path })

@@ -911,7 +911,7 @@ test('follows the job, not a project register entry', async () => {
     }
   })
 
-  test('worktree marker ownership wins over a resumed child cleanup fallback', () => {
+  test('resumed child cleanup removes only the discarding run guard, not the marker owner guard', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-guard-resumed-cleanup-'))
     const git = (args: string[]) => Bun.spawnSync(['git', ...args], {
       cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
@@ -930,8 +930,8 @@ test('follows the job, not a project register entry', async () => {
       mkdirSync(childGuard)
 
       expect(removeFor(tree, repo, false, false, resumedChild).removed).toBe(true)
-      expect(existsSync(rootGuard.GIT_CONFIG_VALUE_0)).toBe(false)
-      expect(existsSync(childGuard)).toBe(true)
+      expect(existsSync(rootGuard.GIT_CONFIG_VALUE_0)).toBe(true)
+      expect(existsSync(childGuard)).toBe(false)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }

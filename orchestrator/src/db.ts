@@ -816,9 +816,8 @@ export function chainScoreJoin(runAlias: string, scoreAlias: string): string {
 
 export type WorktreeSharerRow = { id: number; status: string; scored: number }
 
-/** Conversations actively using a tree, with resume turns collapsed to their root. */
-export function evidenceOwningWorktreeSharers(
-  database: Database, row: { id: number; worktree: string },
+function worktreeSharers(
+  database: Database, row: { id: number; worktree: string }, liveOnly: boolean,
 ): WorktreeSharerRow[] {
   // Match every recorded spelling of this tree, not one string. Two rows naming
   // the same worktree differently are one tree, and missing that releases a tree
@@ -832,7 +831,7 @@ export function evidenceOwningWorktreeSharers(
       WHERE r.worktree IN (${spellings.map(() => '?').join(',')})
         AND COALESCE(r.parent_run_id, r.id) <>
             COALESCE((SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?), ?)
-        AND r.status IN ('running','asking')
+        ${liveOnly ? "AND r.status IN ('running','asking')" : ''}
       ORDER BY r.id`,
   ).all(...spellings, row.id, row.id) as (WorktreeSharerRow & { root_id: number })[]
   const roots = new Set<number>()
@@ -841,6 +840,20 @@ export function evidenceOwningWorktreeSharers(
     roots.add(candidate.root_id)
     return [{ ...candidate, id: candidate.root_id }]
   })
+}
+
+/** Other conversations alive on this tree now, collapsed to one row per root. */
+export function liveWorktreeSharers(
+  database: Database, row: { id: number; worktree: string },
+): WorktreeSharerRow[] {
+  return worktreeSharers(database, row, true)
+}
+
+/** Every other conversation that still points at this tree, collapsed to one row per root. */
+export function otherConversationWorktreeSharers(
+  database: Database, row: { id: number; worktree: string },
+): WorktreeSharerRow[] {
+  return worktreeSharers(database, row, false)
 }
 
 /** Liveness is any live row on the tree, including another turn in this conversation. */
