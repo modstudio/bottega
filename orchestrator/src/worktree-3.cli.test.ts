@@ -307,7 +307,7 @@ test('discard inventories leaks after successfully restoring a shared branch', (
     }
   }, 15_000)
 
-  test('abandon retains an absent worktree identity without invoking project removal', () => {
+  test('abandon cleans an absent worktree identity through project removal', () => {
     const { repo } = scratchRepo()
     const id = addRun({
       agent: 'codex', job: 'implement', status: 'asking', repo: 'gone-tree-tool',
@@ -330,9 +330,9 @@ test('discard inventories leaks after successfully restoring a shared branch', (
         stdout: 'pipe', stderr: 'pipe',
       })
       expect(p.exitCode).toBe(0)
-      expect(existsSync(called)).toBe(false)
+      expect(existsSync(called)).toBe(true)
       expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
-        .toEqual({ worktree: gone })
+        .toEqual({ worktree: null })
     } finally {
       rmSync(repo, { recursive: true, force: true })
       rmSync(docker.dir, { recursive: true, force: true })
@@ -651,7 +651,13 @@ test('discard inventories leaks after successfully restoring a shared branch', (
         expect(git(repo, 'rev-parse', tree.branch)).toBe(tip)
         expect(db().query(
           'SELECT worktree, branch, branch_kept, branch_kept_tip, head_commit FROM run WHERE id=?',
-        ).get(id)).toEqual({
+        ).get(id)).toEqual(cleanup === 'abandon' ? {
+          worktree: null,
+          branch: tree.branch,
+          branch_kept: tree.branch,
+          branch_kept_tip: null,
+          head_commit: tip,
+        } : {
           worktree: tree.path,
           branch: tree.branch,
           branch_kept: tree.branch,
@@ -686,7 +692,7 @@ test('discard inventories leaks after successfully restoring a shared branch', (
     }
   })
 
-  test('automatic abandon without a configured trunk keeps its branch', () => {
+  test('automatic abandon without a configured trunk removes a disposable branch', () => {
     const { repo } = scratchRepo()
     const tree = createWorktree(repo, 888)
     upsertProject({ name: 'no-trunk-abandon', path: realpathSync(repo), settings: {} })
@@ -702,7 +708,7 @@ test('discard inventories leaks after successfully restoring a shared branch', (
       expect(p.exitCode).toBe(0)
       expect(p.stdout.toString()).not.toContain('kept branch')
       expect(existsSync(tree.path)).toBe(false)
-      expect(git(repo, 'branch', '--list', tree.branch)).toBe(tree.branch)
+      expect(git(repo, 'branch', '--list', tree.branch)).toBe('')
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }

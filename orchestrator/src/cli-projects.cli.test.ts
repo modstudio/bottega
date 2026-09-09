@@ -919,7 +919,7 @@ test('create commands must exist and be executable before dispatch', () => {
     }
   })
 
-  test('automatic abandon retains its branch independently of another repository', () => {
+  test('automatic abandon ignores a same-named branch in another repository', () => {
     const first = mkdtempSync(join(tmpdir(), 'orch-abandon-first-'))
     const second = mkdtempSync(join(tmpdir(), 'orch-abandon-second-'))
     const git = (repo: string, ...args: string[]) => {
@@ -951,7 +951,7 @@ test('create commands must exist and be executable before dispatch', () => {
       const r = orch('abandon', String(abandoned))
       expect(r.code).toBe(0)
       expect(r.out).not.toContain(`run ${otherRepository} records it`)
-      expect(git(first, 'branch', '--list', 'shared-branch')).toBe('shared-branch')
+      expect(git(first, 'branch', '--list', 'shared-branch')).toBe('')
       expect(git(second, 'branch', '--list', 'shared-branch')).toContain('shared-branch')
     } finally {
       rmSync(first, { recursive: true, force: true })
