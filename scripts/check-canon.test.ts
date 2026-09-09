@@ -144,11 +144,15 @@ describe('a bun run script', () => {
 })
 
 describe('an explicit exemption', () => {
-  test('is the three named paths, each with a reason', () => {
+  test('is the named paths, each with a reason', () => {
     expect(EXEMPTIONS.map((e) => e.path)).toEqual([
       'orchestrator/orch.db',
       'scripts/worktree',
       'scripts/sync/main',
+      'scripts/sync',
+      'scripts/sync/config.sh',
+      'scripts/new-instance.sh',
+      '.githooks/post-checkout',
     ])
     for (const e of EXEMPTIONS) expect(e.reason.length).toBeGreaterThan(10)
   })
@@ -157,6 +161,11 @@ describe('an explicit exemption', () => {
     expect(checkBody(DOC, 'store in `orchestrator/orch.db`', ctx).findings).toEqual([])
     expect(checkBody(DOC, 'asks `scripts/worktree resolve`', ctx).findings).toEqual([])
     expect(checkBody(DOC, 'its own `scripts/sync/main`', ctx).findings).toEqual([])
+    expect(checkBody(DOC, 'see `scripts/sync/main:326-335`', ctx).findings).toEqual([])
+  })
+
+  test('strips a source location before checking a tracked path', () => {
+    expect(checkBody(DOC, 'see `shared/brand.ts:12-20`', ctx).findings).toEqual([])
   })
 
   test('still fires on a cousin of an exempted path', () => {

@@ -2,6 +2,10 @@ import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { CONCERNS } from '../../shared/brand.ts'
+import {
+  CANON_REFERENCE_EXEMPTIONS,
+  canonReferencePath,
+} from '../../shared/canon-references.ts'
 import { isCliCommand } from './args.ts'
 import { db, linkedWorktreeReadOnly, nowIso, writeTransaction } from './db.ts'
 import { type Doc, docsForRun, docsMarkdown, listDocs } from './docs.ts'
@@ -13,6 +17,7 @@ export const BRIEF_BYTES = 64 * 1024
 const ROOT = new URL('../..', import.meta.url).pathname.replace(/\/$/, '')
 const PREFIXES = ['orchestrator/', 'ops/', 'hub/', 'local-stack/', 'shared/', 'scripts/', '.githooks/']
 const BUILT = /(^|\/)(?:dist|build)(?:\/|$)/
+const EXEMPT_PATHS = new Set(CANON_REFERENCE_EXEMPTIONS.map((exemption) => exemption.path))
 const trackedCache = new Map<string, Set<string>>()
 const scriptsCache = new Map<string, Set<string>>()
 
@@ -306,8 +311,10 @@ export function checkDoc(body: string, options: { repoRoot: string }): Finding[]
     for (const match of raw.matchAll(/`([^`]+)`/g)) {
       const token = match[1]!
       for (const piece of token.split(/\s+/)) {
-        if (!PREFIXES.some((prefix) => piece.startsWith(prefix)) || /[<>]/.test(piece) || BUILT.test(piece)) continue
-        const path = (piece.split('*')[0] ?? piece).replace(/\/$/, '')
+        if (!PREFIXES.some((prefix) => piece.startsWith(prefix)) || /[<>]/.test(piece)) continue
+        const referencePath = canonReferencePath(piece)
+        if (BUILT.test(referencePath) || EXEMPT_PATHS.has(referencePath)) continue
+        const path = (referencePath.split('*')[0] ?? referencePath).replace(/\/$/, '')
         if (!path || trackedPath(files, path)) continue
         findings.push({ kind: 'path', token: piece, line,
           message: `line ${line}: \`${piece}\` is not tracked in ${options.repoRoot}` })
