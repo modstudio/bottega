@@ -40,7 +40,7 @@ import {
   type WorktreeObjectEnvironment, validateSeedWithTool,
   checkoutAliases, checkoutWatchSet,
   prepareWorkerMcpConfig,
-  createIsolatedWorkerDirectory, removeIsolatedWorkerDirectory, worktreeExists,
+  createIsolatedWorkerDirectory, worktreeExists,
   prepareWorkerGitIsolation,
 } from './worktree.ts'
 export { checkoutAliases, checkoutCaseSensitivity, checkoutWatchSet } from './worktree.ts'
@@ -2624,6 +2624,7 @@ export async function run(opts: {
   let carried: import('./worktree.ts').CarriedWorkingState | null = null
   let changes: import('./worktree.ts').Changes | null = null
   let isolatedCwd: string | null = null
+  let removeIsolatedCwd: (() => void) | null = null
   let provisionedMcpConfig: ReturnType<typeof prepareWorkerMcpConfig> | null = null
   let retargetDiagnostic: string | null = null
   let mcpSetupHeader: string | null = null
@@ -2664,7 +2665,7 @@ export async function run(opts: {
       // it as part of an inline pack. An empty directory gives the process no
       // checkout at all, while launch_cwd retains project attribution.
       isolatedCwd = noRepoIsolatePath(claim.id, runsDir)
-      createIsolatedWorkerDirectory(isolatedCwd)
+      removeIsolatedCwd = createIsolatedWorkerDirectory(isolatedCwd)
       cwd = isolatedCwd
       db().query('UPDATE run SET cwd=? WHERE id=?').run(cwd, claim.id)
     } else if (repoJob) {
@@ -2957,7 +2958,7 @@ export async function run(opts: {
       db().query('UPDATE run SET mcp_error=? WHERE id=?').run(mcpConnection.error, claim.id)
     }
   } catch (e) {
-    if (isolatedCwd) removeIsolatedWorkerDirectory(isolatedCwd)
+    removeIsolatedCwd?.()
     const why = errorTail(String((e as Error)?.message ?? e))
     db().query(
       // 'harness': setting a worktree up is orch's job, and failing at it says
@@ -3743,7 +3744,7 @@ export async function run(opts: {
     // The directory contains no input and is useful only while the vendor is
     // alive. Remove it after readSession has had the chance to derive any
     // vendor-owned transcript location from cwd.
-    if (isolatedCwd) removeIsolatedWorkerDirectory(isolatedCwd)
+    removeIsolatedCwd?.()
 
     /**
      * The diff is read EVEN WHEN THE RUN FAILED, and that is the point.

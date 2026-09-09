@@ -141,6 +141,20 @@ export function checkoutCaseSensitivity(root: string): Omit<CheckoutAliases, 'ro
   return { caseInsensitive, diagnostic }
 }
 
+/**
+ * The checkouts a run is confined against: the registered main checkout of
+ * the run's OWN project, plus the caller checkout it was dispatched from.
+ *
+ * It used to be every registered project. Measured on 2026-09-07 with the
+ * harness-health surface: 25 runs escaped in one day, 4.9 hours of worker
+ * time, and sixteen of them were a THIRD project's checkout changing (a
+ * canon edit in adanim, a fixture removed in alephbeis, stopal's release step
+ * moving develop to master) while a bottega worker that never touched it was
+ * in flight. Every session on the machine was an unwitting adversary to every
+ * other session's writers. A change in another project is not this run's
+ * escape; `ownProject` null (no project resolved) keeps the wide set, since
+ * an unregistered caller has no narrower fact to stand on.
+ */
 export function checkoutWatchSet(
   additional: CheckoutToWatch[] = [], activeWorktree?: string,
   ownProject: string | null | undefined = undefined,
@@ -222,15 +236,11 @@ export function prepareWorkerMcpConfig(worktree: string, checkout: string, inher
 }
 
 /** Create a private working directory for a worker that must not see a repository. */
-export function createIsolatedWorkerDirectory(path: string): void {
+export function createIsolatedWorkerDirectory(path: string): () => void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
   chmodSync(dirname(path), 0o700)
   mkdirSync(path, { mode: 0o700 })
-}
-
-/** Remove the private working directory after the worker has stopped using it. */
-export function removeIsolatedWorkerDirectory(path: string): void {
-  rmSync(path, { recursive: true, force: true })
+  return () => rmSync(path, { recursive: true, force: true })
 }
 
 export function worktreeExists(path: string): boolean {
