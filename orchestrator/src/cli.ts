@@ -3103,11 +3103,16 @@ switch (cmd) {
       }
       if (flag('task') && flag('key')) throw new Error('--task and --key are aliases; supply only one')
       const { reviewYield, renderReviewYieldHuman } = await import('./review-yield.ts')
-      const report = reviewYield({
-        project: flag('project'), since, task: flag('task') ?? flag('key'),
-        lens: flag('lens'), agent: flag('agent'),
-      })
-      console.log(has('json') ? JSON.stringify(report) : renderReviewYieldHuman(report))
+      const database = new Database(DB_PATH, { readonly: true })
+      try {
+        const report = reviewYield({
+          project: flag('project'), since, task: flag('task') ?? flag('key'),
+          lens: flag('lens'), agent: flag('agent'),
+        }, database)
+        console.log(has('json') ? JSON.stringify(report) : renderReviewYieldHuman(report))
+      } finally {
+        database.close()
+      }
       break
     }
     if (sub === 'tier') {
