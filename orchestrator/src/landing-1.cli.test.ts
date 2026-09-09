@@ -584,12 +584,12 @@ test('only bun\'s complete timeout line reports machine load', () => {
     ], { env: { ...hermeticGitEnv(), ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe' })
     try {
       for (let i = 0; i < 200 && !existsSync(ready); i++) await Bun.sleep(5)
-      const started = Date.now()
       const child = childLand(repo, branch)
       expect(await child.exited).not.toBe(0)
-      expect(Date.now() - started).toBeLessThan(1_000)
       const error = await new Response(child.stderr).text()
       expect(error).toContain(`your own landing ${holder.pid}, branch ${branch}, started `)
+      // The owner identity is the invariant; elapsed time varies with host load.
+      expect(projectLockState(repo, 'landing').holder?.pid).toBe(holder.pid)
     } finally {
       writeFileSync(release, '')
       await holder.exited

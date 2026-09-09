@@ -566,23 +566,47 @@ test(caseName.migration, async () => {
 })
 
 test(caseName.landingGate, async () => {
-  const branches = ['gate-one', 'gate-two']; branches.forEach(addBranch)
-  const release = branches.map((branch) => join(fixture, `${branch}-release`))
-  release.forEach((path) => rmSync(path, { force: true }))
+  const { projectLockState } = await import('./worktree.ts')
+  const branch = 'gate-one'
+  addBranch(branch)
+  const gateRelease = join(fixture, 'gate-release')
+  const holderReady = join(fixture, 'gate-holder-ready')
+  const holderRelease = join(fixture, 'gate-holder-release')
+  ;[gateRelease, holderReady, holderRelease].forEach((path) => rmSync(path, { force: true }))
   const gate = join(fixture, 'barrier-gate.ts')
-  writeFileSync(gate, `#!/usr/bin/env bun\nimport{appendFileSync,existsSync}from'node:fs';import{resolve,join}from'node:path';const actor=Bun.spawnSync(['git','branch','--show-current'],{stdout:'pipe'}).stdout.toString().trim();const common=Bun.spawnSync(['git','rev-parse','--git-common-dir'],{stdout:'pipe'}).stdout.toString().trim();const base=resolve(process.cwd(),common,'orch','locks');const lock=join(base,'orch-landing.lock');const owner=join(base,'orch-landing.owner');appendFileSync('${join(timelines, 'gates.jsonl')}',JSON.stringify({at:new Date().toISOString(),event:'gate-start',actor,lock,pid:existsSync(owner)?JSON.parse(await Bun.file(owner).text()).pid:null})+'\\n');const release='${fixture}/'+actor+'-release';while(!existsSync(release))await Bun.sleep(5);appendFileSync('${join(timelines, 'gates.jsonl')}',JSON.stringify({at:new Date().toISOString(),event:'gate-end',actor,lock})+'\\n')\n`)
+  writeFileSync(gate, `#!/usr/bin/env bun\nimport{appendFileSync,existsSync}from'node:fs';import{resolve,join}from'node:path';const actor=Bun.spawnSync(['git','branch','--show-current'],{stdout:'pipe'}).stdout.toString().trim();const common=Bun.spawnSync(['git','rev-parse','--git-common-dir'],{stdout:'pipe'}).stdout.toString().trim();const base=resolve(process.cwd(),common,'orch','locks');const lock=join(base,'orch-landing.lock');const owner=join(base,'orch-landing.owner');appendFileSync('${join(timelines, 'gates.jsonl')}',JSON.stringify({at:new Date().toISOString(),event:'gate-start',actor,lock,pid:existsSync(owner)?JSON.parse(await Bun.file(owner).text()).pid:null})+'\\n');while(!existsSync('${gateRelease}'))await Bun.sleep(5);appendFileSync('${join(timelines, 'gates.jsonl')}',JSON.stringify({at:new Date().toISOString(),event:'gate-end',actor,lock})+'\\n')\n`)
   chmodSync(gate, 0o755); configure(gate)
-  const landers = branches.map((branch) => childLand(branch))
-  const landingResults = landers.map(result)
-  for (const branch of branches) while (!events('gates').some(e => e.actor === branch)) await Bun.sleep(5)
-  const order = rngFor(6).shuffle([0, 1]); writeFileSync(release[order[0]!]!, ''); await landingResults[order[0]!]!; writeFileSync(release[order[1]!]!, '')
-  const landed = await Promise.all(landingResults); expect(landed.every(x => x.code === 0), landed.map(x => x.err).join('\n')).toBe(true)
+  const lander = childLand(branch)
+  const landingResult = result(lander)
+  await waitFor(join(timelines, 'gates.jsonl'), 30_000)
   const gateStarts = events('gates').filter(e => e.event === 'gate-start')
-  expect(gateStarts.length).toBeGreaterThanOrEqual(2)
+  expect(gateStarts).toHaveLength(1)
   violation(caseName.landingGate, seedMessage(), () => {
     assertLandingLockNotHeldAtGate(gateStarts)
   })
-})
+  const holder = Bun.spawn([process.execPath, '-e',
+    `const{existsSync,writeFileSync}=await import('node:fs');const{withProjectLock}=await import(process.argv[1]);withProjectLock(process.argv[2],'landing',{session:'gate-contender',what:'gate-contender'},()=>{writeFileSync(process.argv[3],'');while(!existsSync(process.argv[4]))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,10)},30000,true)`,
+    worktreeModule, repo, holderReady, holderRelease], {
+    env: gitEnv({ ORCH_DB: storePath }), stdout: 'pipe', stderr: 'pipe',
+  })
+  try {
+    await waitFor(holderReady, 30_000)
+    expect(projectLockState(repo, 'landing').holder?.what).toBe('gate-contender')
+    writeFileSync(gateRelease, '')
+    while (!events('gates').some(e => e.event === 'gate-end')) await Bun.sleep(5)
+    expect(projectLockState(repo, 'landing').holder?.what).toBe('gate-contender')
+    // A gate completion cannot bypass reacquiring the lock for fast-forward.
+    expect(() => git(repo, 'merge-base', '--is-ancestor', branch, 'main')).toThrow()
+  } finally {
+    writeFileSync(gateRelease, '')
+    writeFileSync(holderRelease, '')
+    const held = await result(holder)
+    expect(held.code, held.err).toBe(0)
+  }
+  const landed = await landingResult
+  expect(landed.code, landed.err).toBe(0)
+  expect(git(repo, 'merge-base', '--is-ancestor', branch, 'main')).toBe('')
+}, 60_000)
 
 test('Landing gate assertion rejects a deliberately held landing lock', async () => {
   const { projectLockDir, withProjectLock } = await import('./worktree.ts')
