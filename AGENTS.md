@@ -353,6 +353,19 @@ fix lands, say what the surface shows afterwards. A fix without a measurement
 behind it is whack-a-mole, and the next instance arrives by a path nobody
 anticipated.
 
+## Docs and comments say what is, not what happened
+
+Canon, documentation and code comments state the CURRENT rule, constraint or
+behaviour, and what to do about it. They never narrate how it came to be.
+
+Never write what a thing used to be called, what was tried before, what changed
+and when, which approach was abandoned, or a dated account of a decision. Git
+holds that, and holds it better.
+
+A reason is not history. "Never do X, because Y" is a rule with a reason. "We
+used to do X until the day it cost us Y" is history wearing a rule's clothes,
+and it rots the moment the code moves.
+
 ## Tests are bought, not free
 
 A test is written once and paid for on every run, by every agent and every
