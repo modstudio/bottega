@@ -189,35 +189,39 @@ export function checkoutWatchSet(
   return { watched, failures }
 }
 
+type McpConfigPreflight = { header: string | null; error: string | null }
+
 /** Put cwd-discovered project MCP config at the address the vendor will inspect. */
+export function provisionMcpConfig(worktree: string, checkout: string): McpConfigPreflight {
+  const target = join(worktree, '.mcp.json')
+  if (existsSync(target)) return { header: null, error: null }
+  const source = join(checkout, '.mcp.json')
+  if (!existsSync(source)) {
+    return {
+      header: null,
+      error: `missing .mcp.json in worker cwd ${worktree}; registered checkout ${checkout} has no .mcp.json either`,
+    }
+  }
+  const link = relative(dirname(target), source)
+  symlinkSync(link, target)
+  return { header: `MCP preflight: linked .mcp.json -> ${link}`, error: null }
+}
+
 export function prepareWorkerMcpConfig(worktree: string, checkout: string, inherited: boolean) {
   const target = join(worktree, '.mcp.json')
   const expected = relative(dirname(target), join(checkout, '.mcp.json'))
-  let header: string | null = null
-  let error: string | null = null
   let link: string | null = null
-  if (existsSync(target)) {
-    if (inherited) {
-      try {
-        link = lstatSync(target).isSymbolicLink() && readlinkSync(target) === expected
-          ? expected
-          : null
-      } catch { /* the existing address is not orch's link */ }
-    }
-  } else {
-    const source = join(checkout, '.mcp.json')
-    if (!existsSync(source)) {
-      error = `missing .mcp.json in worker cwd ${worktree}; registered checkout ${checkout} has no .mcp.json either`
-    } else {
-      link = relative(dirname(target), source)
-      symlinkSync(link, target)
-      link = readlinkSync(target)
-      header = `MCP preflight: linked .mcp.json -> ${link}`
-    }
+  if (inherited) {
+    try {
+      link = lstatSync(target).isSymbolicLink() && readlinkSync(target) === expected
+        ? expected
+        : null
+    } catch { /* the target may not exist until provisioned below */ }
   }
+  const config = provisionMcpConfig(worktree, checkout)
+  if (config.header !== null) link = readlinkSync(target)
   return {
-    header,
-    error,
+    ...config,
     measure<T>(measure: () => T): T {
       if (link === null) return measure()
       try {

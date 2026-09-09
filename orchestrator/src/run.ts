@@ -43,7 +43,9 @@ import {
   createIsolatedWorkerDirectory, worktreeExists,
   prepareWorkerGitIsolation,
 } from './worktree.ts'
-export { checkoutAliases, checkoutCaseSensitivity, checkoutWatchSet } from './worktree.ts'
+export {
+  checkoutAliases, checkoutCaseSensitivity, checkoutWatchSet, provisionMcpConfig,
+} from './worktree.ts'
 import { recipeNotes } from './recipe.ts'
 import {
   workerPreamble, packResumePrompt, READONLY_PREAMBLE, NO_REPO_PREAMBLE, WORKER_SCHEMA, ISSUE_WORKER_SCHEMA, REVIEW_SCHEMA,
