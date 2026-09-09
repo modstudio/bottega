@@ -8,6 +8,21 @@ const checkStartedAt = performance.now()
 // The current measured runtime is 329.49s; the ceiling leaves a 30.51s margin.
 // The hosted-runner target is under 120_000ms. Lowering the budget is one edit.
 export const SUITE_RUNTIME_BUDGET_MS = 360_000
+const activeChildren = new Set<Bun.Subprocess>()
+const runtimeDeadline = setTimeout(async () => {
+  console.error(`suite runtime exceeded the ${(SUITE_RUNTIME_BUDGET_MS / 1000).toFixed(0)}s budget`)
+  for (const child of activeChildren) child.kill('SIGTERM')
+  await Bun.sleep(1_000)
+  for (const child of activeChildren) child.kill('SIGKILL')
+  process.exit(1)
+}, SUITE_RUNTIME_BUDGET_MS)
+
+function track(child: Bun.Subprocess) {
+  activeChildren.add(child)
+  void child.exited.finally(() => activeChildren.delete(child))
+  return child
+}
+
 const legs: Leg[] = [
   {
     name: 'orchestrator',
@@ -39,7 +54,7 @@ const legs: Leg[] = [
 ]
 
 async function inherit(argv: string[], cwd = root) {
-  const child = Bun.spawn(argv, { cwd, stdout: 'inherit', stderr: 'inherit' })
+  const child = track(Bun.spawn(argv, { cwd, stdout: 'inherit', stderr: 'inherit' }))
   return child.exited
 }
 
@@ -87,7 +102,7 @@ async function pump(
 async function runLeg(leg: Leg): Promise<LegResult> {
   const tail: string[] = []
   for (const command of leg.commands) {
-    const child = Bun.spawn(command.argv, { cwd: command.cwd, stdout: 'pipe', stderr: 'pipe' })
+    const child = track(Bun.spawn(command.argv, { cwd: command.cwd, stdout: 'pipe', stderr: 'pipe' }))
     const readers = [pump(child.stdout, leg.name, tail, false), pump(child.stderr, leg.name, tail, true)]
     const exitCode = await child.exited
     await Promise.all(readers)
@@ -126,9 +141,9 @@ const results = await Promise.all(legs.map((leg) => runLeg({
 refuseFailed(results)
 
 for (const script of ['check-boundaries.ts', 'check-brand.ts', 'check-canon.ts', '../orchestrator/scripts/check-pack-budget.ts']) {
-  const child = Bun.spawn(['bun', `${root}scripts/${script}`], {
+  const child = track(Bun.spawn(['bun', `${root}scripts/${script}`], {
     cwd: root, stdout: 'inherit', stderr: 'inherit',
-  })
+  }))
   if (await child.exited !== 0) process.exit(1)
 }
 
@@ -144,6 +159,7 @@ if (await inherit(['bun', `${root}scripts/quality/check-no-expect.ts`, qualityMo
 }
 
 const elapsedMs = performance.now() - checkStartedAt
+clearTimeout(runtimeDeadline)
 console.log(`suite runtime: ${(elapsedMs / 1000).toFixed(2)}s / ${(SUITE_RUNTIME_BUDGET_MS / 1000).toFixed(0)}s budget`)
 if (elapsedMs > SUITE_RUNTIME_BUDGET_MS) {
   console.error(`suite runtime budget exceeded by ${((elapsedMs - SUITE_RUNTIME_BUDGET_MS) / 1000).toFixed(2)}s`)
