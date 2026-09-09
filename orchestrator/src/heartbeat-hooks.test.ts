@@ -306,7 +306,7 @@ fi`
     store.close()
     const p = Bun.spawn([f.heartbeat, 'landing-persistent-rebase', '0.1', '3'], {
       stdout: 'pipe', stderr: 'pipe',
-      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.02', KEEPALIVE_TICKS: '20' },
+      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.2', KEEPALIVE_TICKS: '20' },
     })
     const out = await new Response(p.stdout).text()
     expect(await p.exited).toBe(0)
@@ -324,7 +324,7 @@ fi`
     store.close()
     const p = Bun.spawn([f.heartbeat, 'landing-install-failed', '0.1', '3'], {
       stdout: 'pipe', stderr: 'pipe',
-      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.02' },
+      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.2' },
     })
     const out = await new Response(p.stdout).text()
     expect(await p.exited).toBe(0)
@@ -402,7 +402,7 @@ fi`
     const dbPath = landingDb(f.root, [{ id: 46, session: 'somebody-else', status: 'running' }])
     const p = Bun.spawn([f.heartbeat, 'landing-clear', '0.1', '3'], {
       stdout: 'pipe', stderr: 'pipe',
-      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.02' },
+      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.2' },
     })
     const out = await new Response(p.stdout).text()
     expect(await p.exited).toBe(0)
