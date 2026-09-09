@@ -1044,7 +1044,7 @@ describe('orphan worktrees keep anything unique', () => {
     return p.stdout.toString().trim()
   }
 
-  test('only a clean worktree fully reachable from main is removable', () => {
+  test('a registered worktree is removable whether or not it is dirty', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-orphan-'))
     const tree = join(repo, '.claude', 'worktrees', 'orphan')
     try {
@@ -1056,15 +1056,15 @@ describe('orphan worktrees keep anything unique', () => {
       git(repo, 'commit', '-m', 'base')
       git(repo, 'worktree', 'add', '-b', 'orphan', tree, 'main')
 
-      expect(orphanSafety(tree, repo, 'main')).toMatchObject({ removable: true })
+      expect(orphanSafety(tree, repo, 'main')).toMatchObject({ removable: true, branch: 'orphan' })
       writeFileSync(join(tree, 'new.txt'), 'unique\n')
       expect(orphanSafety(tree, repo, 'main')).toMatchObject({
-        removable: false, detail: 'has uncommitted changes',
+        removable: true, branch: 'orphan',
       })
       git(tree, 'add', 'new.txt')
       git(tree, 'commit', '-m', 'unique')
       expect(orphanSafety(tree, repo, 'main')).toMatchObject({
-        removable: true, detail: 'clean; committed work is retained by its branch',
+        removable: true, branch: 'orphan',
       })
     } finally {
       rmSync(repo, { recursive: true, force: true })

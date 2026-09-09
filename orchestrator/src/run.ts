@@ -37,7 +37,7 @@ import {
   workerSharedGitRoots,
   contentTree,
   assertCallerAncestry, withWorktreeCreateLock, withWorktreeLease, withCleanupLock,
-  removeFor, worktreeDirty, worktreeLatestMtime, projectLockState,
+  removeFor, projectLockState,
   reclaimStaleProjectLock, worktreeLeaseName, type Worktree,
   branchTip, restoreBranch,
   type WorktreeObjectEnvironment, validateSeedWithTool,
@@ -1928,7 +1928,6 @@ export type CloseOutResult = {
 }
 
 const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
-export const WORKTREE_LIVE_MS = 2 * 60 * 60 * 1000
 
 /** One cleanup path for terminalisation, explicit close-out, and sweep. */
 export function closeOutRun(
@@ -2059,26 +2058,7 @@ export function closeOutRun(
           runId: row.root_id, worktree: treePath, outcome: 'live' as const,
           detail: `live run(s): ${lockedLive.map((owner) => `${owner.id} (${owner.status})`).join(', ')}`,
         }
-        const latest = options.intent === 'sweep' ? worktreeLatestMtime(treePath) : null
-        const threshold = Date.now() - WORKTREE_LIVE_MS
-        if (latest !== null && latest > threshold) return {
-          runId: row.root_id, worktree: treePath, outcome: 'live' as const,
-          detail: 'filesystem activity occurred inside the two-hour liveness window',
-        }
-        // Reader trees are scratch evidence. They can contain the carried
-        // subject under review and verification edits, neither of which is a
-        // deliverable. Only a writing job can own uncommitted work that must
-        // survive close-out.
-        if (JOBS[effective.job]?.needs.writesRepo) {
-          const dirty = worktreeDirty(treePath)
-          if (dirty.dirty) return {
-            runId: row.root_id, worktree: treePath, outcome: 'held' as const,
-            detail: `${dirty.detail}; commit or remove it, then run orch close-out ${row.root_id}`,
-          }
-        }
-        const reclaimProof = proveWorktreeReconstructible(treePath, {
-          allowDirty: !JOBS[effective.job]?.needs.writesRepo,
-        })
+        const reclaimProof = proveWorktreeReconstructible(treePath)
         if (!reclaimProof.ok) return {
           runId: row.root_id, worktree: treePath, outcome: 'held' as const,
           detail: reclaimProof.action,

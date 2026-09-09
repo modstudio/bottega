@@ -29,6 +29,7 @@ import { dlopen, FFIType } from 'bun:ffi'
 import { platform, tmpdir } from 'node:os'
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { db, pidAlive, ROOT, tryWriteContention } from './db.ts'
+import { resolveRunsDirectory } from './database-location.ts'
 import { projectAt, type WorktreeCreate, type WorktreeTool } from './projects.ts'
 import { runRecipe, teardownRecipe, dbNameFor, type Recipe } from './recipe.ts'
 import { mainCheckoutOf, scrubbedGitEnv } from '../../shared/git.ts'
@@ -161,6 +162,19 @@ function gitOk(args: string[], cwd: string): string | null {
     cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
   })
   return p.exitCode === 0 ? p.stdout.toString().trim() : null
+}
+
+/** Git's stdout with no trim, and an explicit failure rather than an empty string. */
+function gitResult(args: string[], cwd: string): { ok: boolean; stdout: string; stderr: string } {
+  if (cwdMissing(cwd)) return { ok: false, stdout: '', stderr: `${cwd} does not exist` }
+  const p = Bun.spawnSync(['git', ...args], {
+    cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
+  })
+  return {
+    ok: p.exitCode === 0,
+    stdout: p.stdout.toString(),
+    stderr: p.stderr.toString().trim() || (p.exitCode === 0 ? '' : `exit ${p.exitCode}`),
+  }
 }
 
 /** Measure the checkout's complete visible content without touching its index. */
@@ -1160,13 +1174,12 @@ export function isOrchWorktree(path: string, branchTemplate?: string): boolean {
 }
 
 /**
- * Prove that an unremembered tree contains no filesystem work that exists
- * nowhere else before sweep is allowed to remove it.
+ * Prove the directory is a registered git worktree of this repository.
  *
- * An absent database pointer means orch knows LESS about this directory, not
- * more. The branch retains committed work after the directory goes; tracked or
- * untracked filesystem changes do not. Every failed git query is therefore a
- * reason to keep the tree; uncertainty is not evidence that it is disposable.
+ * Dirty trees are recoverable: extractWorktree copies uncommitted and untracked
+ * work into the run record before removal. This predicate no longer inspects
+ * that work. It still refuses a path git does not list as a worktree, which is
+ * not a worktree at all.
  */
 export function orphanSafety(path: string, repoRoot: string, _trunk: string): OrphanSafety {
   const listed = gitOk(['worktree', 'list', '--porcelain'], repoRoot)
@@ -1179,12 +1192,8 @@ export function orphanSafety(path: string, repoRoot: string, _trunk: string): Or
     return { removable: false, branch: '', detail: 'not a registered git worktree' }
   }
 
-  const dirty = gitOk(['status', '--porcelain', '--untracked-files=all'], path)
-  if (dirty === null) return { removable: false, branch: '', detail: 'could not inspect changes' }
-  if (dirty) return { removable: false, branch: '', detail: 'has uncommitted changes' }
-
   const branch = gitOk(['symbolic-ref', '--quiet', '--short', 'HEAD'], path) ?? ''
-  return { removable: true, branch, detail: 'clean; committed work is retained by its branch' }
+  return { removable: true, branch, detail: 'committed work is retained by its branch' }
 }
 
 /** The one retention fact a checkout can hold that its branch cannot. */
@@ -1205,6 +1214,114 @@ export function worktreeLatestMtime(path: string): number | null {
     try { latest = Math.max(latest, statSync(join(path, name)).mtimeMs) } catch { /* raced */ }
   }
   return latest || null
+}
+
+export type WorktreeExtraction = {
+  runId: number | null
+  tree: string
+  headSha: string | null
+  branch: string | null
+  trackedBytes: number
+  untrackedCount: number
+  extractedAt: string
+  ok: boolean
+}
+
+function runRowExists(id: number): boolean {
+  try {
+    return db().query('SELECT 1 AS present FROM run WHERE id=?').get(id) != null
+  } catch { return false }
+}
+
+/** Filesystem-safe encoding of an absolute path for the orphan extraction dir. */
+export function sanitiseOrphanExtractionPath(path: string): string {
+  const real = existsSync(path) ? realpathOrSpelled(path) : resolve(path)
+  return real.replace(/^[\\/]+/, '').replace(/[^A-Za-z0-9._-]+/g, '--')
+}
+
+export function extractionDest(tree: string, runId: number | null, runsDir = resolveRunsDirectory()): string {
+  if (runId !== null && runRowExists(runId)) return join(runsDir, String(runId), 'artifacts')
+  return join(runsDir, 'orphans', sanitiseOrphanExtractionPath(tree))
+}
+
+function writeExtractionJson(dest: string, record: WorktreeExtraction): void {
+  writeFileSync(join(dest, 'extraction.json'), `${JSON.stringify(record)}\n`)
+}
+
+/**
+ * Copy a tree's uncommitted and untracked work into the run record.
+ *
+ * A clean tree writes only extraction.json with ok:true. A failed step refuses
+ * and names the step; the tree is left in place.
+ */
+export function extractWorktree(
+  tree: string, runId: number | null, runsDir = resolveRunsDirectory(),
+): { ok: true; dest: string; record: WorktreeExtraction } | { ok: false; detail: string } {
+  const recordedId = runId !== null && runRowExists(runId) ? runId : null
+  const dest = extractionDest(tree, runId, runsDir)
+  const record: WorktreeExtraction = {
+    runId: recordedId,
+    tree,
+    headSha: null,
+    branch: null,
+    trackedBytes: 0,
+    untrackedCount: 0,
+    extractedAt: new Date().toISOString(),
+    ok: false,
+  }
+  const failed = (step: string, why: string): { ok: false; detail: string } => ({
+    ok: false,
+    detail: `extraction failed at ${step}: ${why || 'unknown error'}`,
+  })
+  try {
+    mkdirSync(dest, { recursive: true })
+  } catch (error) {
+    return failed(`create ${dest}`, String(error))
+  }
+
+  const head = gitResult(['rev-parse', 'HEAD'], tree)
+  if (!head.ok) return failed('git rev-parse HEAD', head.stderr)
+  record.headSha = head.stdout.trim()
+  const named = gitResult(['symbolic-ref', '--quiet', '--short', 'HEAD'], tree)
+  record.branch = named.ok ? named.stdout.trim() : ''
+
+  const status = gitResult(['status', '--porcelain', '--untracked-files=all'], tree)
+  if (!status.ok) return failed('git status', status.stderr)
+  if (!status.stdout.trim()) {
+    record.ok = true
+    try { writeExtractionJson(dest, record) }
+    catch (error) { return failed('write extraction.json', String(error)) }
+    return { ok: true, dest, record }
+  }
+
+  const diff = gitResult(['diff', 'HEAD'], tree)
+  if (!diff.ok) return failed('git diff HEAD', diff.stderr)
+  if (diff.stdout.length) {
+    try { writeFileSync(join(dest, 'uncommitted.patch'), diff.stdout) }
+    catch (error) { return failed('write uncommitted.patch', String(error)) }
+    record.trackedBytes = Buffer.byteLength(diff.stdout)
+  }
+
+  const others = gitResult(['ls-files', '--others', '--exclude-standard', '-z'], tree)
+  if (!others.ok) return failed('git ls-files --others --exclude-standard', others.stderr)
+  const files = others.stdout.split('\0').filter(Boolean)
+  record.untrackedCount = files.length
+  if (files.length) {
+    try {
+      for (const rel of files) {
+        const to = join(dest, 'untracked', rel)
+        mkdirSync(dirname(to), { recursive: true })
+        cpSync(join(tree, rel), to)
+      }
+    } catch (error) {
+      return failed('copy untracked files', String(error))
+    }
+  }
+
+  record.ok = true
+  try { writeExtractionJson(dest, record) }
+  catch (error) { return failed('write extraction.json', String(error)) }
+  return { ok: true, dest, record }
 }
 
 /**
@@ -2267,6 +2384,10 @@ export function removeFor(
   // branch ownership to a later attacher. Cleanup names only the discarding
   // run's minted branch.
   const owningRunId = runId ?? markedWorktreeRunId(w.path)
+  if (existsSync(w.path)) {
+    const extracted = extractWorktree(w.path, owningRunId)
+    if (!extracted.ok) return { removed: false, detail: extracted.detail }
+  }
   const minted = mintedBranchOwnedBy(w, runId)
   // Unminted: the git branch is not ours to name to a project tool. Pass the
   // tree only. Minted: the tool receives that branch name, never ''.

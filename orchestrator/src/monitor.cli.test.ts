@@ -168,7 +168,9 @@ describe('operational monitor record', () => {
       const foreignSubject = realpathSync(foreignTree)
       const localCondition = result.conditions.find((row) => row.subject === localSubject)
       const foreignCondition = result.conditions.find((row) => row.subject === foreignSubject)
-      expect(localCondition?.action).toBe(`refused; no run row records worktree ${localSubject}`)
+      expect(localCondition?.action).toBe(
+        `refused; worktree safety could not be proved: not a registered git worktree`,
+      )
       expect(foreignCondition?.action).toBe(
         'reported; reclaim refused by monitor scope: monitor-foreign is outside invoked project monitor-local',
       )
