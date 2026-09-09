@@ -4,35 +4,23 @@
 # Read its result against a local run before wiring any check to it.
 name: ci
 
-# Only what can change the outcome of a test triggers a run. Documentation,
-# canon and task text cannot, and a run that cannot fail differently is minutes
-# spent to learn nothing.
+# MANUAL ONLY, deliberately. The suite is not fit to run here yet: 1,711 tests,
+# 874s serial, 84% of it in CLI subprocess tests. Running it on every push buys
+# a slow, flaky signal at the cost of the whole free-minute budget.
+#
+# Automatic triggers go back on when the suite is right-sized under DEV-450.
+# The path filters that belong here are kept below, commented, so restoring
+# them is one edit rather than a rewrite.
+#
+# on:
+#   pull_request:
+#     paths: ['**.ts', '**.tsx', '**/package.json', 'bun.lock',
+#             '**/bunfig.toml', '**/tsconfig.json', 'scripts/**',
+#             'orchestrator/test/**', '.githooks/**', '.github/workflows/ci.yml']
+#   push:
+#     branches: [main]
+#     paths: [ ...same... ]
 on:
-  pull_request:
-    paths:
-      - '**.ts'
-      - '**.tsx'
-      - '**/package.json'
-      - 'bun.lock'
-      - '**/bunfig.toml'
-      - '**/tsconfig.json'
-      - 'scripts/**'
-      - 'orchestrator/test/**'
-      - '.githooks/**'
-      - '.github/workflows/ci.yml'
-  push:
-    branches: [main]
-    paths:
-      - '**.ts'
-      - '**.tsx'
-      - '**/package.json'
-      - 'bun.lock'
-      - '**/bunfig.toml'
-      - '**/tsconfig.json'
-      - 'scripts/**'
-      - 'orchestrator/test/**'
-      - '.githooks/**'
-      - '.github/workflows/ci.yml'
   workflow_dispatch:
 
 jobs:
