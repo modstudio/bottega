@@ -122,6 +122,22 @@ provides no branch protection and no rulesets, so nothing mechanically blocks a
 direct push to trunk or a manual merge. Go through the PR regardless. Buy
 enforcement when a violation is observed, not before.
 
+**The local gate proves a commit; the remote admits it.** Run the gate before
+opening a pull request. Its green is evidence for the review, not entry to
+trunk.
+
+**A check that skips what it cannot provision is informational, not a gate.**
+Until every suite is known to run identically off this machine, treat a remote
+green as a report rather than a verdict. A runner that never started the suite
+reports success for having run nothing, which is worse than no report at all:
+no report prompts someone to look.
+
+**Attribute before you aggregate.** A count of failures is not a rate until
+each one has a cause. Attribution is a step, not a disposition, and the moment
+a number is most wanted is the moment it is least checked. A tally of
+unattributed instances is not a rate, however carefully each instance was
+recorded.
+
 ## Tasks
 
 Work here is tracked in `hub`, and every task carries a `DEV-` key:
@@ -329,6 +345,51 @@ first; when proposing a fix, cite the number a surface already shows; when a
 fix lands, say what the surface shows afterwards. A fix without a measurement
 behind it is whack-a-mole, and the next instance arrives by a path nobody
 anticipated.
+
+## Tests are bought, not free
+
+A test is written once and paid for on every run, by every agent and every
+gate, forever. The question is never "is this tested?" — it is whether this
+test earns what it costs.
+
+**Two gates. Both, on every test.**
+
+**Can it fail?** *If the production code were subtly wrong, would this exact
+assertion turn red?* If no: strengthen it or delete it. Three smells, flagged
+on sight:
+
+- **vacuous** — cannot fail whatever the code does.
+- **change-detector** — restates the implementation rather than its effect.
+- **over-isolated** — never reaches the real subject.
+
+Assert the observable effect, not the interaction.
+
+**Is it worth keeping?** Weigh the standing cost against the blast radius of
+the bug it catches. Write it where failure is SILENT and expensive. Skip it
+where the worst case announces itself, and say so in the commit or the task.
+
+**Coverage is a diagnostic, not a goal.** There is no percentage target, and no
+rule here requires a test for every change. Do not test what the type system
+already proves.
+
+**Must test:** destructive predicates — who owns this tree, is anyone alive on
+it, does this claim resolve; ref-guard and lock machinery; teardown and
+reclamation decisions; the routing algorithm and its evidence model; scoring
+and fidelity arithmetic; canon injection; anything whose failure destroys the
+only copy of something.
+
+**Don't test:** argv construction already proven one level down, help and
+formatting output, glue that only delegates, anything a typecheck settles.
+
+**Test one level up, once.** The CLI subprocess is the most expensive shape
+available and is RESERVED, not default. It earns its place only where the
+assertion is about the process boundary itself — real refs, real locks, real
+signals, real teardown. Spawning a subprocess to check a validation result pays
+end-to-end price for a unit answer.
+
+**Suite time is a shared budget**, and the budget is under two minutes on a
+hosted runner. A slow test guarding little makes every future change more
+expensive. Prefer deleting it to nursing it.
 
 ## Reasonable caution, and a measure for what escapes it
 
