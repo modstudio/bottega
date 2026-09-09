@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import {
   db, nowIso, REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP,
   REVIEW_SEVERITY,
+  voidedSql,
   type ReviewReproduced, type ReviewCoverage, type ReviewLimits, type ReviewOverlap,
   type ReviewSeverity, writableDb, writeTransaction,
 } from './db.ts'
@@ -31,6 +32,49 @@ export const MIN_REVIEW_TRIAGED = 10
 
 export const DISPOSITIONS = ['accepted', 'modified', 'rejected', 'skipped'] as const
 export type Disposition = typeof DISPOSITIONS[number]
+
+export type ReviewTriageBag = {
+  total: number
+  triaged: number
+  untriaged: number
+  accepted: number
+  modified: number
+  rejected: number
+  skipped: number
+  hits: number
+}
+
+export function reviewTriageBag(rows: readonly { disposition: string | null }[]): ReviewTriageBag {
+  const count = (disposition: Disposition) =>
+    rows.filter((row) => row.disposition === disposition).length
+  const accepted = count('accepted')
+  const modified = count('modified')
+  const rejected = count('rejected')
+  const skipped = count('skipped')
+  return {
+    total: rows.length,
+    triaged: accepted + modified + rejected + skipped,
+    untriaged: rows.filter((row) => row.disposition === null).length,
+    accepted, modified, rejected, skipped,
+    hits: accepted + modified,
+  }
+}
+
+/** A recorded lens run eligible to become review evidence. */
+export function reviewRunEvidenceSql(runAlias = 'run', lensAlias = 'rl'): string {
+  return `NOT (${voidedSql(runAlias)})
+    AND COALESCE(${runAlias}.probe, 0) = 0
+    AND NOT EXISTS (SELECT 1 FROM score review_score
+      WHERE review_score.run_id=${lensAlias}.run_id AND review_score.delivery='none')`
+}
+
+/** The complete-review boundary consumed by calibration and review reports. */
+export function completedReviewEvidenceSql(
+  reviewAlias = 'r', runAlias = 'run', lensAlias = 'rl',
+): string {
+  return `${reviewAlias}.completed_at IS NOT NULL
+    AND ${reviewRunEvidenceSql(runAlias, lensAlias)}`
+}
 
 export type ReviewListFilter = {
   state?: 'open' | 'complete'
@@ -840,9 +884,7 @@ function calibrationCell(
   const reviews = database.query(
     `SELECT DISTINCT r.id FROM review r JOIN review_lens rl ON rl.review_id=r.id
       JOIN run ON run.id=rl.run_id
-      WHERE rl.lens=? AND rl.agent=? AND r.completed_at IS NOT NULL ${modelClause}
-        AND run.evidence_excluded IS NULL
-        AND NOT EXISTS (SELECT 1 FROM score s WHERE s.run_id=rl.run_id AND s.delivery='none')
+      WHERE rl.lens=? AND rl.agent=? AND ${completedReviewEvidenceSql('r', 'run', 'rl')} ${modelClause}
       ORDER BY r.completed_at DESC, r.id DESC LIMIT ?`,
   ).all(...(model === undefined ? [lens, agent, REVIEW_WINDOW] : [lens, agent, model, REVIEW_WINDOW])) as { id: number }[]
   const emptyTiers = () => Object.fromEntries(['0', '1', '2', '3', 'unclassified'].map((key) =>

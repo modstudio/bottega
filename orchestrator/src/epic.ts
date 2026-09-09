@@ -62,9 +62,18 @@ type ReviewRow = {
   launch_key: string | null; branch: string | null; head_commit: string | null; project_id: number | null
 }
 
-const keyInBranch = (branch: string | null, keys: readonly string[]): string | null => {
+export const keyInBranch = (branch: string | null, keys: readonly string[]): string | null => {
   if (!branch) return null
   return keys.find((key) => new RegExp(`(^|[^A-Z0-9])${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^0-9]|$)`, 'i').test(branch)) ?? null
+}
+
+/** The task named by run attribution: an explicit launch key, then a key in its branch. */
+export function attributedTaskKey(launchKey: string | null, branch: string | null): string | null {
+  const launch = launchKey?.trim()
+  if (launch) return launch.toUpperCase()
+  const candidates = [...(branch?.matchAll(/(?:^|[^A-Z0-9])([A-Z][A-Z0-9]*-\d+)(?=[^0-9]|$)/gi) ?? [])]
+    .map((match) => match[1]!.toUpperCase())
+  return keyInBranch(branch, candidates)
 }
 
 /** SQLite stores ISO text without timezone semantics; an absent offset means UTC here. */
