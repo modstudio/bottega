@@ -9,13 +9,24 @@ const checkStartedAt = performance.now()
 // The hosted-runner target is under 120_000ms. Lowering the budget is one edit.
 export const SUITE_RUNTIME_BUDGET_MS = 360_000
 const activeChildren = new Set<Bun.Subprocess>()
-const runtimeDeadline = setTimeout(async () => {
+let excludedGateWaitMs = 0
+let runtimeDeadline: ReturnType<typeof setTimeout>
+
+async function expireRuntimeBudget() {
   console.error(`suite runtime exceeded the ${(SUITE_RUNTIME_BUDGET_MS / 1000).toFixed(0)}s budget`)
   for (const child of activeChildren) child.kill('SIGTERM')
   await Bun.sleep(1_000)
   for (const child of activeChildren) child.kill('SIGKILL')
   process.exit(1)
-}, SUITE_RUNTIME_BUDGET_MS)
+}
+
+function armRuntimeDeadline() {
+  clearTimeout(runtimeDeadline)
+  const deadline = checkStartedAt + SUITE_RUNTIME_BUDGET_MS + excludedGateWaitMs
+  runtimeDeadline = setTimeout(expireRuntimeBudget, Math.max(0, deadline - performance.now()))
+}
+
+armRuntimeDeadline()
 
 function track(child: Bun.Subprocess) {
   activeChildren.add(child)
@@ -84,6 +95,11 @@ async function pump(
     const lines = pending.split('\n')
     pending = lines.pop()!
     for (const line of lines) {
+      const gateWait = name === 'orchestrator' && line.match(/^held (\d+)ms for host load /)
+      if (gateWait) {
+        excludedGateWaitMs += Number(gateWait[1])
+        armRuntimeDeadline()
+      }
       const prefixed = `[${name}] ${line}`
       ;(error ? console.error : console.log)(prefixed)
       tail.push(prefixed)
@@ -158,9 +174,10 @@ if (await inherit(['bun', `${root}scripts/quality/check-no-expect.ts`, qualityMo
   process.exit(1)
 }
 
-const elapsedMs = performance.now() - checkStartedAt
+const elapsedMs = performance.now() - checkStartedAt - excludedGateWaitMs
 clearTimeout(runtimeDeadline)
 console.log(`suite runtime: ${(elapsedMs / 1000).toFixed(2)}s / ${(SUITE_RUNTIME_BUDGET_MS / 1000).toFixed(0)}s budget`)
+if (excludedGateWaitMs) console.log(`gate admission wait excluded: ${(excludedGateWaitMs / 1000).toFixed(2)}s`)
 if (elapsedMs > SUITE_RUNTIME_BUDGET_MS) {
   console.error(`suite runtime budget exceeded by ${((elapsedMs - SUITE_RUNTIME_BUDGET_MS) / 1000).toFixed(2)}s`)
   process.exit(1)
