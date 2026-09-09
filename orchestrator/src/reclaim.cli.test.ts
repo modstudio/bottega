@@ -2,7 +2,9 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addRun, db, hermeticGitEnv, score, upsertProject } from '../test/fixture.ts'
+import {
+  addRun, db, hermeticGitEnv, projectLockDir, score, upsertProject, worktreeLeaseName,
+} from '../test/fixture.ts'
 
 const CLI = new URL('cli.ts', import.meta.url).pathname
 const repos: string[] = []
@@ -46,6 +48,21 @@ function orch(cwd: string, args: string[], env: Record<string, string> = {}) {
     stdout: 'pipe', stderr: 'pipe',
   })
   return { code: result.exitCode, out: result.stdout.toString(), err: result.stderr.toString() }
+}
+
+async function waitFor(predicate: () => boolean, detail: string): Promise<void> {
+  const deadline = Date.now() + 5_000
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error(`timed out waiting for ${detail}`)
+    await Bun.sleep(5)
+  }
+}
+
+async function childResult(child: ReturnType<typeof Bun.spawn>) {
+  const [code, out, err] = await Promise.all([
+    child.exited, new Response(child.stdout).text(), new Response(child.stderr).text(),
+  ])
+  return { code, out, err }
 }
 
 afterEach(() => {
@@ -92,6 +109,46 @@ describe('proof-bearing reclaim verbs', () => {
     expect(removed.code, removed.err).toBe(0)
     expect(existsSync(f.tree)).toBe(false)
   })
+
+  test('worktree reclaim waits on its lease before taking the cleanup purpose lock', async () => {
+    const f = fixture()
+    const ready = join(f.repo, 'lease-ready')
+    const release = join(f.repo, 'lease-release')
+    const module = new URL('worktree.ts', import.meta.url).pathname
+    const holder = Bun.spawn([
+      process.execPath, '-e',
+      `const{existsSync,writeFileSync}=await import('node:fs');` +
+      `const{withWorktreeLease}=await import(process.argv[1]);` +
+      `const[repo,tree,ready,release]=process.argv.slice(2);` +
+      `withWorktreeLease(repo,tree,{session:'holder',what:'test holder'},()=>{` +
+      `writeFileSync(ready,'');while(!existsSync(release))` +
+      `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,5)},5000)`,
+      module, f.repo, f.tree, ready, release,
+    ], { env: { ...process.env, ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe' })
+    await waitFor(() => existsSync(ready), 'lease holder')
+
+    const reclaim = Bun.spawn([process.execPath, CLI, 'reclaim', 'worktree', f.tree], {
+      cwd: f.repo,
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    const locks = projectLockDir(f.repo)
+    const leaseWaiters = join(locks, `orch-${worktreeLeaseName(f.tree)}.waiters`, '.legacy')
+    await waitFor(
+      () => existsSync(leaseWaiters) && readdirSync(leaseWaiters).some((name) => !name.startsWith('.')),
+      'reclaim lease waiter',
+    )
+    const common = git(f.repo, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+    const createHeldWhileWaiting = existsSync(join(common, 'orch-create.lock'))
+    const cleanupHeldWhileWaiting = existsSync(join(common, 'orch-cleanup.lock'))
+    writeFileSync(release, '')
+    const [held, reclaimed] = await Promise.all([childResult(holder), childResult(reclaim)])
+    expect(held.code, held.err).toBe(0)
+    expect(reclaimed.code, reclaimed.err).toBe(0)
+    expect(createHeldWhileWaiting).toBe(false)
+    expect(cleanupHeldWhileWaiting).toBe(false)
+    expect(existsSync(f.tree)).toBe(false)
+  }, 10_000)
 
   test('worktree dry-run and reclaim require clean state and preserve its recorded identity', () => {
     const f = fixture()

@@ -201,7 +201,7 @@ export function reclaimWorktree(
   if (!preview.result.ok || options.dryRun) return preview.result
   const project = preview.project!
   const owner = { session: sessionId(), what: `reclaim worktree ${path}` }
-  return withWorktreeCreateLock(project.path, () => withWorktreeLease(project.path, path, owner, () =>
+  return withWorktreeLease(project.path, path, owner, () =>
     withCleanupLock(project.path, owner, () => {
       const proof = proveWorktree(path, options.clock ?? Date.now(), options.allowDirty)
       if (!proof.result.ok) return proof.result
@@ -238,7 +238,7 @@ export function reclaimWorktree(
         action: `reclaimed worktree ${path}; ${removed.detail}` +
           (minted && branchBefore ? `; kept branch ${minted}` : ''),
       }
-    }, 5 * 60_000), 5 * 60_000), 5 * 60_000)
+    }, 5 * 60_000), 5 * 60_000)
 }
 
 /** Reclaim one local branch only when its commits remain reachable or its exact kept tip is recorded. */
