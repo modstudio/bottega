@@ -47,7 +47,8 @@
         "src/run-1.cli.test.ts",
         "src/workflows.cli.test.ts",
         "src/evals.cli.test.ts",
-        "src/epic.cli.test.ts"
+        "src/epic.cli.test.ts",
+        "src/review-yield.cli.test.ts"
       ]
     },
     {
