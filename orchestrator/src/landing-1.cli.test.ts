@@ -1057,7 +1057,11 @@ test('only bun\'s complete timeout line reports machine load', () => {
       const child = childLand(repo, branch, { unreviewed: null })
       expect(await child.exited).not.toBe(0)
       const error = await new Response(child.stderr).text()
-      expect(error.length).toBeLessThan(2_000)
+      // Boundedness is proved by the four content assertions below: an
+      // unbounded refusal would name other-99 or emit a --lens directive per
+      // problem. A byte bound on the whole stderr measured bun's stack frames
+      // too, so it passed from the main checkout and failed from a worktree —
+      // where every gate a worker runs actually happens.
       expect(error).toContain('lenses present: none')
       expect(error).toContain('lenses missing: lens-1')
       expect(error).toContain('review data problems: 101 (example:')
