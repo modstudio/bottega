@@ -367,13 +367,23 @@ describe('main checkout cleanliness', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
-  test('an in-progress merge refuses and names merge --abort', () => {
+  test('a staged new file is tracked dirt, not an untracked warning', () => {
+    const repo = scratch()
+    try {
+      writeFileSync(join(repo, 'added.txt'), 'staged addition\n')
+      git(repo, 'add', 'added.txt')
+      expect(inspectMainCheckout(repo)).toEqual({
+        dirtyTracked: ['added.txt'], untracked: [], sequence: { status: 'none' },
+      })
+      expect(() => assertMainCheckoutClean(project(repo))).toThrow(MAIN_CHECKOUT_INVARIANT)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('an in-progress no-commit merge over a clean tree refuses and names merge --abort', () => {
     const repo = scratch()
     try {
       git(repo, 'checkout', '-b', 'topic')
-      writeFileSync(join(repo, 'tracked.txt'), 'topic\n')
-      git(repo, 'add', 'tracked.txt')
-      git(repo, 'commit', '-m', 'topic')
+      git(repo, 'commit', '--allow-empty', '-m', 'empty topic')
       git(repo, 'checkout', 'main')
       const merge = Bun.spawnSync(
         ['git', 'merge', '--no-ff', '--no-commit', 'topic'],
@@ -381,6 +391,7 @@ describe('main checkout cleanliness', () => {
       )
       expect(merge.exitCode, merge.stderr.toString()).toBe(0)
       const inspection = inspectMainCheckout(repo)
+      expect(inspection?.dirtyTracked).toEqual([])
       expect(inspection?.sequence).toEqual({ status: 'in-progress', kind: 'merge' })
       try {
         assertMainCheckoutClean(project(repo))
@@ -394,6 +405,33 @@ describe('main checkout cleanliness', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  test('an in-progress no-commit merge with a staged addition is still classified by git as a merge', () => {
+    const repo = scratch()
+    try {
+      git(repo, 'checkout', '-b', 'topic')
+      git(repo, 'commit', '--allow-empty', '-m', 'empty topic')
+      git(repo, 'checkout', 'main')
+      git(repo, 'merge', '--no-ff', '--no-commit', 'topic')
+      writeFileSync(join(repo, 'added.txt'), 'staged addition\n')
+      git(repo, 'add', 'added.txt')
+      expect(inspectMainCheckout(repo)).toEqual({
+        dirtyTracked: ['added.txt'], untracked: [], sequence: { status: 'in-progress', kind: 'merge' },
+      })
+      expect(() => assertMainCheckoutClean(project(repo))).toThrow('in-progress merge')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('revert --no-commit is in-progress', () => {
+    const repo = scratch()
+    try {
+      writeFileSync(join(repo, 'tracked.txt'), 'change to revert\n')
+      git(repo, 'commit', '-am', 'change')
+      git(repo, 'revert', '--no-commit', 'HEAD')
+      expect(inspectMainCheckout(repo)?.sequence).toEqual({ status: 'in-progress', kind: 'revert' })
+      expect(() => assertMainCheckoutClean(project(repo))).toThrow('revert --abort')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   test('a leftover CHERRY_PICK_HEAD over a clean tree is residue and does not refuse', () => {
     const repo = scratch()
     try {
@@ -403,17 +441,6 @@ describe('main checkout cleanliness', () => {
         dirtyTracked: [], untracked: [], sequence: { status: 'residue', kind: 'cherry-pick' },
       })
       expect(assertMainCheckoutClean(project(repo))).toBeNull()
-    } finally { rmSync(repo, { recursive: true, force: true }) }
-  })
-
-  test('CHERRY_PICK_HEAD plus a sequencer directory is in-progress, not residue', () => {
-    const repo = scratch()
-    try {
-      const sha = git(repo, 'rev-parse', 'HEAD')
-      writeFileSync(join(repo, '.git', 'CHERRY_PICK_HEAD'), `${sha}\n`)
-      mkdirSync(git(repo, 'rev-parse', '--path-format=absolute', '--git-path', 'sequencer'))
-      expect(inspectMainCheckout(repo)?.sequence).toEqual({ status: 'in-progress', kind: 'cherry-pick' })
-      expect(() => assertMainCheckoutClean(project(repo))).toThrow('cherry-pick --abort')
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 

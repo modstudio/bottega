@@ -34,12 +34,22 @@ function localEnvVarNames(): string[] {
     const result = Bun.spawnSync(['git', 'rev-parse', '--local-env-vars'], {
       stdout: 'pipe', stderr: 'pipe', env: localEnvVarQueryEnv(),
     })
-    if (result.exitCode !== 0) return []
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `refusing operational git: git rev-parse --local-env-vars failed with exit ${result.exitCode ?? 'unknown'}: ${result.stderr.toString().trim() || 'no error output'}`,
+      )
+    }
     const names = result.stdout.toString().split(/\s+/).filter(Boolean)
-    if (names.length) listedLocalEnvVars = names
+    // GIT_DIR is the minimum useful answer, not a fallback list. Without it,
+    // the query cannot establish that repository routing will be removed.
+    if (!names.includes('GIT_DIR')) {
+      throw new Error('refusing operational git: git rev-parse --local-env-vars did not list GIT_DIR')
+    }
+    listedLocalEnvVars = names
     return names
-  } catch {
-    return []
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('refusing operational git:')) throw error
+    throw new Error(`refusing operational git: could not run git rev-parse --local-env-vars: ${String(error)}`)
   }
 }
 
@@ -71,7 +81,7 @@ function gitAt(path: string, args: string[]): GitResult {
   if (!existsSync(path)) return { code: 128, stdout: '' }
   try {
     const result = Bun.spawnSync(['git', '-C', path, '--no-optional-locks', ...args], {
-      env: inspectionGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      env: { ...inspectionGitEnv(), LC_ALL: 'C', LANG: 'C' }, stdout: 'pipe', stderr: 'pipe',
     })
     return { code: result.exitCode ?? 128, stdout: result.stdout?.toString() ?? '' }
   } catch {
@@ -137,63 +147,47 @@ function parsePorcelain(stdout: string): { dirtyTracked: string[]; untracked: st
       if (path) dirtyTracked.push(path)
       continue
     }
+    // Porcelain v1's complete leading-code policy:
+    //   ?? is untracked and warns; !! is ignored and is neither (the status
+    //   invocation does not request ignored entries); every index/worktree
+    //   code M, T, A, D, R, C or U is tracked dirt and blocks. Spaces mean
+    //   that side is unchanged, not that the other side can be ignored.
     if (xy === '??') {
       if (path) untracked.push(path)
       continue
     }
+    if (xy === '!!') continue
     if (path) dirtyTracked.push(path)
   }
   return { dirtyTracked: uniquePaths(dirtyTracked), untracked }
 }
 
-function gitPathExists(cwd: string, name: string): boolean | null {
-  const result = gitAt(cwd, ['rev-parse', '--path-format=absolute', '--git-path', name])
-  if (result.code !== 0 || !result.stdout.trim()) return null
-  return existsSync(result.stdout.trim())
-}
-
-function refExists(cwd: string, name: string): boolean | null {
-  const result = gitAt(cwd, ['rev-parse', '--verify', '--quiet', name])
-  if (result.code === 0) return true
-  if (result.code === 1) return false
-  return null
-}
-
 /**
- * Sequencer directories have no porcelain. rebase-merge / rebase-apply /
- * BISECT_LOG are in-progress even on a clean tree. .git/sequencer is the
- * multi cherry-pick/revert stop: without it, CHERRY_PICK_HEAD over a clean
- * tree cannot be told from DEV-432 residue (a completed pick whose
- * pseudo-ref lingered). Pseudo-refs without a directory over a clean tree
- * are residue; the same refs over a dirty tree are in progress.
+ * Ask git whether an operation is in progress. This intentionally reads
+ * status's own operation diagnosis instead of reconstructing it from
+ * pseudo-refs, directories, or working-tree dirt. LC_ALL makes the stable git
+ * diagnostics below independent of the operator's locale.
+ *
+ * DEV-432's completed cherry-pick residue is the one exception git describes
+ * as "currently cherry-picking" even though its own conclusion is the generic
+ * clean-tree sentence. An actual empty stopped pick uses the distinct
+ * "previous cherry-pick is now empty" diagnosis, and remains in-progress.
  */
-function inspectSequence(cwd: string, dirty: boolean): SequenceState {
-  const rebaseMerge = gitPathExists(cwd, 'rebase-merge')
-  const rebaseApply = gitPathExists(cwd, 'rebase-apply')
-  const bisectLog = gitPathExists(cwd, 'BISECT_LOG')
-  const sequencer = gitPathExists(cwd, 'sequencer')
-  if (rebaseMerge === null || rebaseApply === null || bisectLog === null || sequencer === null) {
-    return INDETERMINATE
+function inspectSequence(cwd: string): SequenceState {
+  const status = gitAt(cwd, ['-c', 'color.status=false', 'status', '--untracked-files=no'])
+  if (status.code !== 0) return INDETERMINATE
+  const text = status.stdout
+  if (/still merging/i.test(text)) return { status: 'in-progress', kind: 'merge' }
+  if (/rebase in progress|currently rebasing/i.test(text)) return { status: 'in-progress', kind: 'rebase' }
+  if (/am session/i.test(text)) return { status: 'in-progress', kind: 'am' }
+  if (/currently bisecting/i.test(text)) return { status: 'in-progress', kind: 'bisect' }
+  if (/currently reverting/i.test(text)) return { status: 'in-progress', kind: 'revert' }
+  if (/currently cherry-picking/i.test(text)) {
+    if (/^nothing to commit\b/im.test(text) && !/previous cherry-pick is now empty/i.test(text)) {
+      return { status: 'residue', kind: 'cherry-pick' }
+    }
+    return { status: 'in-progress', kind: 'cherry-pick' }
   }
-  const merge = refExists(cwd, 'MERGE_HEAD')
-  const cherryPick = refExists(cwd, 'CHERRY_PICK_HEAD')
-  const rebase = refExists(cwd, 'REBASE_HEAD')
-  const revert = refExists(cwd, 'REVERT_HEAD')
-  if (merge === null || cherryPick === null || rebase === null || revert === null) {
-    return INDETERMINATE
-  }
-  if (bisectLog) return { status: 'in-progress', kind: 'bisect' }
-  if (rebaseMerge) return { status: 'in-progress', kind: 'rebase' }
-  if (rebaseApply) return { status: 'in-progress', kind: rebase ? 'rebase' : 'am' }
-  if (sequencer) {
-    return { status: 'in-progress', kind: revert ? 'revert' : 'cherry-pick' }
-  }
-  if (merge) return dirty ? { status: 'in-progress', kind: 'merge' } : { status: 'residue', kind: 'merge' }
-  if (cherryPick) {
-    return dirty ? { status: 'in-progress', kind: 'cherry-pick' } : { status: 'residue', kind: 'cherry-pick' }
-  }
-  if (rebase) return dirty ? { status: 'in-progress', kind: 'rebase' } : { status: 'residue', kind: 'rebase' }
-  if (revert) return dirty ? { status: 'in-progress', kind: 'revert' } : { status: 'residue', kind: 'revert' }
   return NONE
 }
 
@@ -217,7 +211,7 @@ export function inspectCheckout(path: string): CheckoutState {
   if (status.code !== 0) return indeterminate()
   const { dirtyTracked, untracked } = parsePorcelain(status.stdout)
   const dirty = dirtyTracked.length > 0
-  const sequence = inspectSequence(path, dirty)
+  const sequence = inspectSequence(path)
   return {
     cleanliness: dirty ? 'dirty' : 'clean',
     dirtyTracked,
