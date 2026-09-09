@@ -68,8 +68,7 @@ describe('heartbeat Stop guard', () => {
     expect(first.stderr.toString()).toBe('')
     const blocked = JSON.parse(first.stdout.toString())
     expect(blocked.decision).toBe('block')
-    expect(blocked.reason).toContain('2 live items')
-    expect(blocked.reason).toContain('orch runs and/or landings')
+    expect(blocked.reason).toContain('2 live orch runs')
     expect(blocked.reason).toContain(`${f.heartbeat} guard-live`)
 
     const second = invoke(f.guard, payload, env)
@@ -171,6 +170,51 @@ describe('heartbeat dispatch reminder', () => {
 describe('heartbeat landing visibility', () => {
   const noRuns = 'exit 0'
 
+  test('does NOT block a landing-only session, because no watcher can satisfy it', () => {
+    const f = fixture(noRuns)
+    const db = landingDb(f.root, [{ id: 11, session: 'land-only', status: 'running' }])
+    const result = invoke(f.guard, { session_id: 'land-only' }, {
+      TMPDIR: join(f.root, 'tmp'), ORCH_DB: db, ORCH_HEARTBEAT_PROCESS_LIST: '1 /sbin/launchd',
+    })
+    expect(result.exitCode).toBe(0)
+    const out = JSON.parse(result.stdout.toString())
+    expect(out.decision).toBeUndefined()
+    expect(out.systemMessage).toContain('No watcher covers landings')
+  })
+
+  test('reports the landing even when a heartbeat IS armed, since it cannot see it', () => {
+    const f = fixture(noRuns)
+    const db = landingDb(f.root, [{ id: 12, session: 'land-armed', status: 'running' }])
+    const result = invoke(f.guard, { session_id: 'land-armed' }, {
+      TMPDIR: join(f.root, 'tmp'), ORCH_DB: db,
+      ORCH_HEARTBEAT_PROCESS_LIST: `42 /bin/bash ${f.heartbeat} land-armed 60 60`,
+    })
+    expect(JSON.parse(result.stdout.toString()).systemMessage).toContain('landing')
+  })
+
+  test('a landing alongside live runs still blocks, and names both', () => {
+    const f = fixture(`echo '{"schema_version":1,"data":{"id":5,"session_id":"mixed","status":"running"}}'`)
+    const db = landingDb(f.root, [{ id: 13, session: 'mixed', status: 'queued' }])
+    const result = invoke(f.guard, { session_id: 'mixed' }, {
+      TMPDIR: join(f.root, 'tmp'), ORCH_DB: db, ORCH_HEARTBEAT_PROCESS_LIST: '1 /sbin/launchd',
+    })
+    const out = JSON.parse(result.stdout.toString())
+    expect(out.decision).toBe('block')
+    expect(out.reason).toContain('1 live orch run')
+    expect(out.reason).toContain('1 landing')
+  })
+
+  test('tells a landing dispatch NOT to arm the heartbeat', () => {
+    const result = invoke(remind, {
+      session_id: 'land-advice',
+      tool_input: { command: `${join(process.cwd(), 'bin', 'orch')} land DEV-405-branch` },
+    }, { ORCH_HEARTBEAT_PROCESS_LIST: '1 /sbin/launchd' })
+    const context = JSON.parse(result.stdout.toString()).hookSpecificOutput.additionalContext
+    expect(context).toContain('NO watcher covers it')
+    expect(context).toContain('orch land --status')
+    expect(context).not.toContain('Arm under Monitor')
+  })
+
   test('blocks when the session has a live landing and no runs at all', () => {
     const f = fixture(noRuns)
     const db = landingDb(f.root, [{ id: 7, session: 'land-live', status: 'running' }])
@@ -179,8 +223,8 @@ describe('heartbeat landing visibility', () => {
     })
     expect(result.exitCode).toBe(0)
     const decision = JSON.parse(result.stdout.toString())
-    expect(decision.decision).toBe('block')
-    expect(decision.reason).toContain('landings')
+    expect(decision.decision).toBeUndefined()
+    expect(decision.systemMessage).toContain('live landing')
   })
 
   test('a queued landing counts as live, not only a running one', () => {
@@ -189,7 +233,7 @@ describe('heartbeat landing visibility', () => {
     const result = invoke(f.guard, { session_id: 'land-queued' }, {
       TMPDIR: join(f.root, 'tmp'), ORCH_DB: db, ORCH_HEARTBEAT_PROCESS_LIST: '1 /sbin/launchd',
     })
-    expect(JSON.parse(result.stdout.toString()).decision).toBe('block')
+    expect(JSON.parse(result.stdout.toString()).systemMessage).toContain('live landing')
   })
 
   test('another session\'s landing is not this session\'s work', () => {
@@ -218,7 +262,7 @@ describe('heartbeat landing visibility', () => {
     const result = invoke(f.guard, { session_id: 'land-unknown' }, {
       TMPDIR: join(f.root, 'tmp'), ORCH_DB: corrupt, ORCH_HEARTBEAT_PROCESS_LIST: '1 /sbin/launchd',
     })
-    expect(JSON.parse(result.stdout.toString()).decision).toBe('block')
+    expect(JSON.parse(result.stdout.toString()).systemMessage).toContain('store unreadable')
   })
 
   test('an absent landing store is silence, not a block', () => {
@@ -238,7 +282,7 @@ describe('heartbeat landing visibility', () => {
       tool_input: { command: `${join(process.cwd(), 'bin', 'orch')} land DEV-405-branch` },
     }, { ORCH_HEARTBEAT_PROCESS_LIST: '1 /sbin/launchd' })
     expect(JSON.parse(result.stdout.toString()).hookSpecificOutput.additionalContext)
-      .toContain('Arm under Monitor')
+      .toContain('NO watcher covers it')
   })
 
   test('is silent for orch land --wait, --status and --drain', () => {
