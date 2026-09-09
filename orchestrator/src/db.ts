@@ -820,16 +820,21 @@ export type WorktreeSharerRow = { id: number; status: string; scored: number }
 export function evidenceOwningWorktreeSharers(
   database: Database, row: { id: number; worktree: string },
 ): WorktreeSharerRow[] {
+  // Match every recorded spelling of this tree, not one string. Two rows naming
+  // the same worktree differently are one tree, and missing that releases a tree
+  // another conversation still owns.
+  const spellings = worktreePathSpellings(database, row.worktree)
+  if (!spellings.length) return []
   const candidates = database.query(
     `SELECT r.id, COALESCE(r.parent_run_id, r.id) AS root_id,
             r.status, ${EVIDENCE_CLOSED_SQL} AS scored
        FROM run r ${chainScoreJoin('r', 's')}
-      WHERE r.worktree = ?
+      WHERE r.worktree IN (${spellings.map(() => '?').join(',')})
         AND COALESCE(r.parent_run_id, r.id) <>
             COALESCE((SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?), ?)
         AND r.status IN ('running','asking')
       ORDER BY r.id`,
-  ).all(row.worktree, row.id, row.id) as (WorktreeSharerRow & { root_id: number })[]
+  ).all(...spellings, row.id, row.id) as (WorktreeSharerRow & { root_id: number })[]
   const roots = new Set<number>()
   return candidates.flatMap((candidate) => {
     if (roots.has(candidate.root_id)) return []
@@ -850,8 +855,25 @@ type TerminalWorktreeSafety =
   | { safe: true; worktree: string; repoRoot: string }
   | { safe: false; reason: TerminalDockerRetentionReason }
 
-function worktreeIdentity(path: string): string {
+export function worktreeIdentity(path: string): string {
   return withoutTrailingSeparators(realpathOrSpelled(path))
+}
+
+/**
+ * Every recorded spelling of one worktree. run.worktree stores whatever the
+ * caller spelled, so a trailing separator or an unresolved symlink makes two
+ * rows for one tree; raw SQL equality then misses the other and releases a tree
+ * whose other owner is still running. A bounded DISTINCT set keeps one notion
+ * of tree ownership without normalising every run row.
+ */
+export function worktreePathSpellings(database: Database, worktree: string): string[] {
+  const identity = worktreeIdentity(worktree)
+  const rows = database.query(
+    'SELECT DISTINCT worktree FROM run WHERE worktree IS NOT NULL',
+  ).all() as { worktree: string }[]
+  return rows.map((row) => row.worktree).filter((path) => {
+    try { return worktreeIdentity(path) === identity } catch { return false }
+  })
 }
 
 function terminalWorktreeSafety(

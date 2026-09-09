@@ -22,6 +22,7 @@ import { pick } from './route.ts'
 import {
   db, nowIso, DB_PATH, sessionId, pidAlive, resolveRootFromLastTurn, tryWriteContention, writableDb, writeTransaction,
   enableSchemaReload, evidenceOwningWorktreeSharers, teardownTerminalRunResources,
+  worktreePathSpellings,
 } from './db.ts'
 import { CONNECTION_SCHEMA_INVARIANT } from './migrations.ts'
 import { reclaimWorktree } from './reclaim.ts'
@@ -1864,10 +1865,15 @@ export function closeOutRun(
     runId: row.root_id, worktree: treePath, outcome: 'live',
     detail: `live run(s): ${live.map((owner) => `${owner.id} (${owner.status})`).join(', ')}`,
   }
-  const agentPids = (db().query(
-    'SELECT agent_pid FROM run WHERE worktree=? ORDER BY id',
-  ).all(treePath) as { agent_pid: number | null }[])
-    .map((turn) => turn.agent_pid)
+  // Every recorded spelling of this tree, not one string: a trailing separator
+  // or an unresolved symlink makes two rows for one worktree, and matching only
+  // the spelling in hand releases a tree whose other owner is still running.
+  const spellings = worktreePathSpellings(db(), treePath)
+  const agentPids = spellings.length
+    ? (db().query(
+        `SELECT agent_pid FROM run WHERE worktree IN (${spellings.map(() => '?').join(',')}) ORDER BY id`,
+      ).all(...spellings) as { agent_pid: number | null }[]).map((turn) => turn.agent_pid)
+    : []
   const processInventory = processTable()
   if (!processInventory.ascertainable) return {
     runId: row.root_id, worktree: treePath, outcome: 'live',

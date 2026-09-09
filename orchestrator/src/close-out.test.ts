@@ -140,6 +140,28 @@ test('a live terminal process on another root sharing the worktree retains the t
   }
 })
 
+test('another root recording the same tree under a different spelling retains it', () => {
+  const f = fixture()
+  const sleeper = Bun.spawn(['sleep', '30'], { stdout: 'pipe', stderr: 'pipe' })
+  try {
+    // run.worktree stores whatever the caller spelled. A trailing separator is
+    // the same tree, and raw string equality misses it - which released a tree
+    // whose other owner was still running.
+    const sibling = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: f.project })
+    db().query('UPDATE run SET worktree=?, branch=?, agent_pid=? WHERE id=?')
+      .run(`${f.tree.path}/`, f.tree.branch, sleeper.pid, sibling)
+    installTestProcessInventory({ ascertainable: true, rows: [
+      { pid: sleeper.pid, ppid: process.pid, pgid: sleeper.pid, command: 'sleep 30' },
+    ] })
+    const result = closeOutRun(f.id, { intent: 'explicit' })
+    expect(result.outcome).toBe('live')
+    expect(existsSync(f.tree.path)).toBe(true)
+  } finally {
+    sleeper.kill()
+    rmSync(f.repo, { recursive: true, force: true })
+  }
+})
+
 test("the Stop hook's non-blocking close-out command parses and runs", () => {
   const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const orch = new URL('../../bin/orch', import.meta.url).pathname
