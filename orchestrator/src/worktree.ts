@@ -21,16 +21,17 @@
  * through `orch diff`; a land worker alone may fast-forward trunk from its
  * disposable worktree. No worker pushes.
  */
-import { accessSync, appendFileSync, closeSync, constants, cpSync, existsSync,
+import { accessSync, appendFileSync, chmodSync, closeSync, constants, cpSync, existsSync,
          fchmodSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync,
-         realpathSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+         readlinkSync, realpathSync, readdirSync, renameSync, rmSync, statSync,
+         symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { dlopen, FFIType } from 'bun:ffi'
 import { platform, tmpdir } from 'node:os'
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { db, pidAlive, ROOT, tryWriteContention } from './db.ts'
 import { resolveRunsDirectory } from './database-location.ts'
-import { projectAt, type WorktreeCreate, type WorktreeTool } from './projects.ts'
+import { projectAt, projects, type WorktreeCreate, type WorktreeTool } from './projects.ts'
 import { runRecipe, teardownRecipe, dbNameFor, type Recipe } from './recipe.ts'
 import { mainCheckoutOf, scrubbedGitEnv } from '../../shared/git.ts'
 export { inspectionGitEnv, scrubbedGitEnv } from '../../shared/git.ts'
@@ -60,6 +61,234 @@ export type Worktree = {
   source?: 'recipe' | 'git' | 'readonly_recipe'
   /** Branch this run minted. Null/absent means it must never delete row.branch. */
   mintedBranch?: string | null
+}
+
+export type CheckoutAliases = {
+  roots: string[]
+  caseInsensitive: boolean
+  diagnostic: string | null
+}
+
+export type CheckoutToWatch = { project: string; path: string; expectedHead?: string | null }
+export type CheckoutWatchFailure = CheckoutToWatch & { error: string }
+
+function checkoutRootAsAddressed(cwd: string): string | null {
+  try {
+    const p = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--show-prefix'], {
+      env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'ignore',
+    })
+    if (p.exitCode !== 0) return null
+    const prefix = new TextDecoder().decode(p.stdout).trim()
+    let root = cwd
+    for (const _segment of prefix.split('/').filter(Boolean)) root = dirname(root)
+    return root
+  } catch { return null }
+}
+
+function gitTopLevel(cwd: string): string | null {
+  try {
+    const p = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--show-toplevel'], {
+      env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'ignore',
+    })
+    if (p.exitCode !== 0) return null
+    return new TextDecoder().decode(p.stdout).trim() || null
+  } catch { return null }
+}
+
+function flipOneAsciiLetter(value: string): string | null {
+  let index = -1
+  for (let candidate = value.length - 1; candidate >= 0; candidate--) {
+    if (/[A-Za-z]/.test(value[candidate]!)) {
+      index = candidate
+      break
+    }
+  }
+  if (index === -1) return null
+  const letter = value[index]!
+  const flipped = letter === letter.toLowerCase() ? letter.toUpperCase() : letter.toLowerCase()
+  return value.slice(0, index) + flipped + value.slice(index + 1)
+}
+
+export function checkoutAliases(cwd: string): CheckoutAliases | null {
+  const addressed = checkoutRootAsAddressed(cwd)
+  const top = gitTopLevel(cwd)
+  if (!addressed || !top) return null
+  let canonical: string
+  try { canonical = realpathSync(addressed) } catch { canonical = top }
+  const roots = [...new Set([addressed, top, canonical])]
+  return { roots, ...checkoutCaseSensitivity(addressed) }
+}
+
+export function checkoutCaseSensitivity(root: string): Omit<CheckoutAliases, 'roots'> {
+  const variant = flipOneAsciiLetter(root)
+  let caseInsensitive = false
+  let diagnostic: string | null = null
+  const partialFoldLimit =
+    'path matching uses a partial Unicode case fold; filesystem-specific folding beyond it is a known limit'
+  if (!variant) {
+    diagnostic = `checkout case-sensitivity probe indeterminate: root has no alphabetic character ` +
+      `(${root}); ${partialFoldLimit}`
+  } else {
+    try {
+      const original = statSync(root)
+      const changed = statSync(variant)
+      caseInsensitive = original.dev === changed.dev && original.ino === changed.ino
+    } catch {
+      diagnostic = `checkout case-sensitivity probe indeterminate: could not stat case variant of ` +
+        `${root}; ${partialFoldLimit}`
+    }
+  }
+  return { caseInsensitive, diagnostic }
+}
+
+export function checkoutWatchSet(
+  additional: CheckoutToWatch[] = [], activeWorktree?: string,
+  ownProject: string | null | undefined = undefined,
+): { watched: CheckoutToWatch[]; failures: CheckoutWatchFailure[] } {
+  const active = activeWorktree ? realpathSync(activeWorktree) : null
+  const watched: CheckoutToWatch[] = []
+  const failures: CheckoutWatchFailure[] = []
+  const seen = new Set<string>()
+  const registered = projects()
+    .filter(({ name }) => ownProject === undefined || ownProject === null || name === ownProject)
+  for (const checkout of [
+    ...registered.map(({ name, path, settings }) => ({
+      project: name, path,
+      expectedHead: typeof settings.trunk === 'string' ? settings.trunk : null,
+    })),
+    ...additional,
+  ]) {
+    let canonical: string
+    try {
+      canonical = realpathSync(checkout.path)
+    } catch (error) {
+      failures.push({
+        ...checkout,
+        error: error instanceof Error ? error.message : String(error),
+      })
+      continue
+    }
+    if (canonical === active || seen.has(canonical)) continue
+    seen.add(canonical)
+    watched.push({ project: checkout.project, path: canonical, expectedHead: checkout.expectedHead ?? null })
+  }
+  return { watched, failures }
+}
+
+/** Put cwd-discovered project MCP config at the address the vendor will inspect. */
+export function prepareWorkerMcpConfig(worktree: string, checkout: string, inherited: boolean) {
+  const target = join(worktree, '.mcp.json')
+  const expected = relative(dirname(target), join(checkout, '.mcp.json'))
+  let header: string | null = null
+  let error: string | null = null
+  let link: string | null = null
+  if (existsSync(target)) {
+    if (inherited) {
+      try {
+        link = lstatSync(target).isSymbolicLink() && readlinkSync(target) === expected
+          ? expected
+          : null
+      } catch { /* the existing address is not orch's link */ }
+    }
+  } else {
+    const source = join(checkout, '.mcp.json')
+    if (!existsSync(source)) {
+      error = `missing .mcp.json in worker cwd ${worktree}; registered checkout ${checkout} has no .mcp.json either`
+    } else {
+      link = relative(dirname(target), source)
+      symlinkSync(link, target)
+      link = readlinkSync(target)
+      header = `MCP preflight: linked .mcp.json -> ${link}`
+    }
+  }
+  return {
+    header,
+    error,
+    measure<T>(measure: () => T): T {
+      if (link === null) return measure()
+      try {
+        if (!lstatSync(target).isSymbolicLink() || readlinkSync(target) !== link) return measure()
+      } catch {
+        return measure()
+      }
+      unlinkSync(target)
+      try {
+        return measure()
+      } finally {
+        symlinkSync(link, target)
+      }
+    },
+  }
+}
+
+/** Create a private working directory for a worker that must not see a repository. */
+export function createIsolatedWorkerDirectory(path: string): void {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+  chmodSync(dirname(path), 0o700)
+  mkdirSync(path, { mode: 0o700 })
+}
+
+/** Remove the private working directory after the worker has stopped using it. */
+export function removeIsolatedWorkerDirectory(path: string): void {
+  rmSync(path, { recursive: true, force: true })
+}
+
+export function worktreeExists(path: string): boolean {
+  return existsSync(path)
+}
+
+export function prepareWorkerGitIsolation(
+  worktree: Worktree,
+  writes: boolean,
+  guardedBranch: string | undefined,
+  additionalWritableRoots: string[],
+): { writableRoots: string[]; guardEnvironment: SharedRefGuardEnvironment } {
+  const writableRoots = [
+    ...additionalWritableRoots,
+    worktreeGitDir(worktree.path),
+    ...(writes ? workerSharedGitRoots(worktree.path, worktree.branch) : []),
+  ]
+  const guardEnvironment = prepareSharedRefGuard(worktree.path, guardedBranch)
+  assertSharedRefGuardOutsideWritableRoots(guardEnvironment.GIT_CONFIG_VALUE_0, writableRoots)
+  return { writableRoots, guardEnvironment }
+}
+
+export type CreateWorkerWorktreeOptions = {
+  tool: WorktreeTool | null
+  cwd: string
+  runId: number
+  writes: boolean
+  readOnlyBase: string
+  seed?: string
+  key?: string
+  baseRef?: string
+  record: RecordWorktree
+  detached: boolean
+  existingBranch?: string
+  existingBranchTip?: string
+}
+
+/** Create the worker tree through the project lifecycle or Git fallback. */
+export function createWorkerWorktree(options: CreateWorkerWorktreeOptions): Worktree {
+  if (!options.writes) {
+    return options.tool?.readonly_create
+      ? createReadOnlyWithTool(
+          options.tool, options.cwd, options.runId, options.readOnlyBase, options.record,
+        )
+      : createReadOnlyWorktree(options.cwd, options.runId, options.readOnlyBase, options.record)
+  }
+  if (options.tool) {
+    return createWithTool(
+      options.tool, options.cwd, options.runId, options.seed, options.key,
+      options.existingBranchTip ?? options.baseRef, options.record, options.detached,
+      options.existingBranch,
+    )
+  }
+  return options.existingBranch
+    ? createWorktreeForBranch(options.cwd, options.runId, options.existingBranch, options.record)
+    : createWorktree(
+        options.cwd, options.runId, options.baseRef, options.record, options.detached,
+      )
 }
 
 /**

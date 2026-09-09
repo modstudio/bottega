@@ -161,7 +161,10 @@ const results = await Promise.all(legs.map((leg) => runLeg({
 })))
 refuseFailed(results)
 
-for (const script of ['check-boundaries.ts', 'check-brand.ts', 'check-canon.ts', '../orchestrator/scripts/check-pack-budget.ts']) {
+for (const script of [
+  'check-boundaries.ts', 'check-isolation-boundary.ts', 'check-brand.ts', 'check-canon.ts',
+  '../orchestrator/scripts/check-pack-budget.ts',
+]) {
   const child = track(Bun.spawn(['bun', `${root}scripts/${script}`], {
     cwd: root, stdout: 'inherit', stderr: 'inherit',
   }))
