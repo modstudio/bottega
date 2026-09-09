@@ -351,6 +351,34 @@ echo '[]'
     expect(run.stderr.toString()).toContain('observation failed: docker volume inventory unavailable: inventory-offline')
   })
 
+  test('a timed-out run Docker inventory becomes a monitor condition, never a clean report', () => {
+    const hubDb = join(dir, 'monitor-docker-timeout-hub.db')
+    const binDir = join(dir, 'monitor-docker-timeout-bin')
+    mkdirSync(binDir)
+    writeFileSync(join(binDir, 'docker'), '#!/bin/sh\nsleep 1\n')
+    chmodSync(join(binDir, 'docker'), 0o755)
+    migrateHub(hubDb)
+    const cli = new URL('cli.ts', import.meta.url).pathname
+    const run = Bun.spawnSync([process.execPath, cli, 'monitor'], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0', HUB_DB: hubDb,
+        ORCH_DOCKER_INVENTORY_TIMEOUT_MS: '25', PATH: `${binDir}:${process.env.PATH ?? ''}` },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(run.exitCode).toBe(1)
+    expect(run.stdout.toString()).toContain('PARTIAL:')
+    expect(run.stderr.toString()).toContain(
+      'docker ps -a inventory unavailable: timed out after 25ms',
+    )
+    expect(run.stdout.toString()).not.toContain('docker orphans  0')
+    const invocation = db().query(
+      'SELECT id FROM monitor_invocation ORDER BY id DESC LIMIT 1',
+    ).get() as { id: number }
+    expect(db().query(
+      `SELECT count(*) n FROM monitor_condition WHERE invocation_id=? AND kind='observation-error'
+        AND detail LIKE '%docker ps -a inventory unavailable: timed out after 25ms%'`,
+    ).get(invocation.id)).toEqual({ n: 1 })
+  })
+
   test('does not mark a complete condition list partial when only issue filing fails', () => {
     const repo = realpathSync(mkdtempSync(join(tmpdir(), 'monitor-filing-failure-')))
     git(repo, 'init', '-b', 'main')

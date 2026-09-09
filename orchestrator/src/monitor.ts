@@ -287,8 +287,9 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
   conditions.push(...idleRunConditions(clock))
 
   const runDocker = dockerRunResources()
-  errors.push(...runDocker.errors)
-  const dockerOwnerIds = new Set(runDocker.resources.map(({ runId }) => runId))
+  if (!runDocker.ascertainable) errors.push(runDocker.reason)
+  const runDockerResources = runDocker.ascertainable ? runDocker.resources : []
+  const dockerOwnerIds = new Set(runDockerResources.map(({ runId }) => runId))
   const dockerOwners = (database.query(
     'SELECT id, repo, worktree, status FROM run',
   ).all() as { id: number; repo: string | null; worktree: string | null; status: string }[])
@@ -298,7 +299,7 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
         ? terminalDockerRetentionReasonForRun(database, owner.id)
         : null,
     }))
-  for (const item of classifiedDockerResources(runDocker.resources, dockerOwners)) {
+  for (const item of classifiedDockerResources(runDockerResources, dockerOwners)) {
     if (item.condition !== 'retained-worktree-resources') continue
     add({
       kind: 'retained-worktree-docker-resource', subject: item.resource.name, since: null,

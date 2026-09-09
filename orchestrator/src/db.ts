@@ -957,9 +957,9 @@ export function teardownTerminalRunResources(database: Database, runId: number):
       (SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?)`,
   ).all(runId) as { id: number }[]
   const inventory = resourcesForRuns(ids.map(({ id }) => id), dockerRunResources())
-  const failures = new Set(inventory.errors)
+  const failures = new Set(inventory.ascertainable ? [] : [inventory.reason])
   const containerRunIds = new Set(
-    inventory.resources.filter((resource) => resource.kind === 'container')
+    (inventory.ascertainable ? inventory.resources : []).filter((resource) => resource.kind === 'container')
       .map((resource) => resource.runId),
   )
   let removed = 0
@@ -993,8 +993,8 @@ export function teardownTerminalRunResources(database: Database, runId: number):
       retainedReason = 'cleanup lease or lock unavailable'
     }
   }
-  if (!inventory.resources.length && inventory.errors.length) {
-    for (const error of inventory.errors) console.error(`orch: ${error}`)
+  if (!inventory.ascertainable) {
+    console.error(`orch: ${inventory.reason}`)
   }
   if (failures.size) {
     try {

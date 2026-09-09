@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 
 export const DOCKER_INVENTORY_TIMEOUT_MS = 1_000
+export const DOCKER_INVENTORY_RETRY_TIMEOUT_MS = 10_000
 export const DOCKER_REMOVAL_TIMEOUT_MS = 10_000
 
 export function dockerInventoryTimeoutMs(
@@ -29,43 +30,44 @@ export type DockerResource = {
   runId: number
 }
 
-export type DockerInventory = {
-  resources: DockerResource[]
-  errors: string[]
-}
+export type DockerInventory =
+  | { ascertainable: true; resources: DockerResource[] }
+  | { ascertainable: false; reason: string }
 
-function list(kind: DockerResourceKind): { names: string[]; error: string | null } {
+function list(
+  kind: DockerResourceKind, timeout: number,
+): { ascertainable: true; names: string[] } | { ascertainable: false; reason: string } {
   const args = kind === 'container'
     ? ['docker', 'ps', '-a', '--format', '{{.Names}}']
     : ['docker', 'volume', 'ls', '--format', '{{.Name}}']
   let p: ReturnType<typeof Bun.spawnSync>
   try {
-    const timeout = dockerInventoryTimeoutMs()
     p = Bun.spawnSync(args, {
       stdout: 'pipe', stderr: 'pipe', timeout,
     })
   } catch (error) {
     return {
-      names: [],
-      error: `docker ${args.slice(1, 3).join(' ')} inventory unavailable: ${(error as Error).message}`,
+      ascertainable: false,
+      reason: `docker ${args.slice(1, 3).join(' ')} inventory unavailable: ${(error as Error).message}`,
     }
   }
   if (p.exitedDueToTimeout) {
     return {
-      names: [],
-      error: `docker ${args.slice(1, 3).join(' ')} inventory unavailable: ` +
-        `timed out after ${dockerInventoryTimeoutMs()}ms`,
+      ascertainable: false,
+      reason: `docker ${args.slice(1, 3).join(' ')} inventory unavailable: ` +
+        `timed out after ${timeout}ms`,
     }
   }
   if (p.exitCode !== 0) {
     const detail = p.stderr?.toString().trim() || `exit ${p.exitCode}`
     return {
-      names: [], error: `docker ${args.slice(1, 3).join(' ')} inventory unavailable: ${detail}`,
+      ascertainable: false,
+      reason: `docker ${args.slice(1, 3).join(' ')} inventory unavailable: ${detail}`,
     }
   }
   return {
+    ascertainable: true,
     names: (p.stdout?.toString() ?? '').split('\n').map((name) => name.trim()).filter(Boolean),
-    error: null,
   }
 }
 
@@ -84,16 +86,22 @@ export function dockerRunResource(name: string): { runId: number } | null {
 /** Inventory only resources created for orch run worktrees. Never mutates Docker. */
 export function dockerRunResources(): DockerInventory {
   const resources: DockerResource[] = []
-  const errors: string[] = []
+  const configuredTimeout = dockerInventoryTimeoutMs()
+  const explicitTimeout = process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS
   for (const kind of ['container', 'volume'] as const) {
-    const found = list(kind)
-    if (found.error) errors.push(found.error)
+    let found = list(kind, configuredTimeout)
+    // The idle-machine default gets one materially longer chance under load.
+    // An explicit bound remains exact for the test gate and other callers.
+    if (!found.ascertainable && !explicitTimeout && found.reason.includes('timed out')) {
+      found = list(kind, DOCKER_INVENTORY_RETRY_TIMEOUT_MS)
+    }
+    if (!found.ascertainable) return found
     for (const name of found.names) {
       const parsed = dockerRunResource(name)
       if (parsed) resources.push({ kind, name, runId: parsed.runId })
     }
   }
-  return { resources, errors }
+  return { ascertainable: true, resources }
 }
 
 export function resourcesForRun(
@@ -105,10 +113,11 @@ export function resourcesForRun(
 export function resourcesForRuns(
   runIds: number[], inventory = dockerRunResources(),
 ): DockerInventory {
+  if (!inventory.ascertainable) return inventory
   const owned = new Set(runIds)
   return {
+    ascertainable: true,
     resources: inventory.resources.filter((resource) => owned.has(resource.runId)),
-    errors: inventory.errors,
   }
 }
 
@@ -123,10 +132,13 @@ export type DockerTeardown = {
 export function teardownRunResources(
   runId: number, inventory = resourcesForRun(runId), canRemove: () => boolean = () => true,
 ): DockerTeardown {
-  const errors = [...inventory.errors]
+  const errors = inventory.ascertainable ? [] : [inventory.reason]
   let removed = 0
-  let skipped = false
-  for (const error of inventory.errors) console.error(`orch: ${error}`)
+  let skipped = !inventory.ascertainable
+  for (const error of errors) console.error(`orch: ${error}`)
+  if (!inventory.ascertainable) {
+    return { complete: false, errors, removed, skipped }
+  }
 
   // Volumes are durable evidence. The project's worktree removal owns their lifecycle.
   for (const resource of inventory.resources.filter((item) => item.kind === 'container')) {
