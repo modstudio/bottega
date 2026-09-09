@@ -117,9 +117,10 @@ function proveRunOwners(
 
 /**
  * Transitional until DEV-440 splits db.ts ownership into liveness and full-claim
- * predicates. Reclaim is destructive, so this must collapse into the full-claim
- * predicate (every other conversation, regardless of status, score, or keep_tree),
- * not the running/asking liveness predicate used by close-out and sweep.
+ * predicates. The destructive reclaim verb must use this full-claim predicate
+ * (every other conversation, regardless of status, score, or keep_tree). Close-out,
+ * sweep, and abandon use the separate reconstructibility proof below after their
+ * running/asking liveness check.
  */
 function fullClaimWorktreeSharers(path: string, runId: number): { id: number; status: string }[] {
   const spellings = worktreePathSpellings(db(), path)
@@ -167,8 +168,6 @@ function proveWorktree(path: string, clock: number, allowDirty = false): Worktre
       (!fromRoot || fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot))) {
     return { result: refuse(`worktree ${path} is not beneath project worktrees directory ${worktreesRoot}`) }
   }
-  const sharers = fullClaimRefusal(path, row.id)
-  if (sharers) return { result: sharers }
   const owners = proveRunOwners(rows, clock, false)
   if (owners) return { result: owners }
   for (const lockedRow of rows) {
@@ -192,13 +191,24 @@ function proveWorktree(path: string, clock: number, allowDirty = false): Worktre
   }
 }
 
+/** Prove containment, terminal ownership, retention, and git state without answering liveness or claim questions. */
+export function proveWorktreeReconstructible(
+  requestedPath: string, options: { clock?: number; allowDirty?: boolean } = {},
+): ReclaimResult {
+  const path = existsSync(requestedPath) ? realpathSync(requestedPath) : resolve(requestedPath)
+  return proveWorktree(path, options.clock ?? Date.now(), options.allowDirty).result
+}
+
 /** Reclaim one worktree only after its run rows and git state prove it reconstructible. */
 export function reclaimWorktree(
   requestedPath: string, options: { dryRun?: boolean; clock?: number; allowDirty?: boolean } = {},
 ): ReclaimResult {
   const path = existsSync(requestedPath) ? realpathSync(requestedPath) : resolve(requestedPath)
   const preview = proveWorktree(path, options.clock ?? Date.now(), options.allowDirty)
-  if (!preview.result.ok || options.dryRun) return preview.result
+  if (!preview.result.ok) return preview.result
+  const previewClaim = fullClaimRefusal(path, preview.rows![0]!.id)
+  if (previewClaim) return previewClaim
+  if (options.dryRun) return preview.result
   const project = preview.project!
   const owner = { session: sessionId(), what: `reclaim worktree ${path}` }
   return withWorktreeLease(project.path, path, owner, () =>
@@ -207,6 +217,8 @@ export function reclaimWorktree(
       if (!proof.result.ok) return proof.result
       const lockedRows = proof.rows!
       const lockedRow = lockedRows[0]!
+      const lockedClaim = fullClaimRefusal(path, lockedRow.id)
+      if (lockedClaim) return lockedClaim
 
       writableDb()
       const minted = lockedRow.minted_branch ?? ''

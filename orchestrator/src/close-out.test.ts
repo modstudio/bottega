@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import {
   addRun, closeOutRun, createWorktree, db, hermeticGitEnv, upsertProject,
   verifiedProcessTree, worktreeLeaseName, projectLockDir, monitor, fakeDocker,
-  installTestProcessInventory,
+  installTestProcessInventory, score,
 } from '../test/fixture.ts'
 
 beforeEach(() => installTestProcessInventory({ ascertainable: true, rows: [] }))
@@ -85,6 +85,66 @@ test('a running sibling sharing the tree wins over clean release', () => {
     expect(result.detail).toContain(`${sibling} (running)`)
     expect(existsSync(f.tree.path)).toBe(true)
   } finally { rmSync(f.repo, { recursive: true, force: true }) }
+})
+
+test('a scored terminal sibling sharing the tree does not block close-out', () => {
+  const f = fixture()
+  try {
+    score(f.id, 'full', 'right', 'faithful')
+    const sibling = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: f.project })
+    score(sibling, 'full', 'right', 'faithful')
+    db().query('UPDATE run SET worktree=?, branch=? WHERE id=?')
+      .run(f.tree.path, f.tree.branch, sibling)
+
+    const result = closeOutRun(f.id, { intent: 'explicit' })
+    expect(result.outcome).toBe('released')
+    expect(existsSync(f.tree.path)).toBe(false)
+  } finally { rmSync(f.repo, { recursive: true, force: true }) }
+})
+
+test('sweep and abandon ignore terminal claimants while closing out', () => {
+  for (const verb of ['sweep', 'abandon'] as const) {
+    const f = fixture(verb === 'abandon' ? 'asking' : 'ok')
+    try {
+      db().query('UPDATE run SET session_id=? WHERE id=?').run('close-out-test-session', f.id)
+      const sibling = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: f.project })
+      score(sibling, 'full', 'right', 'faithful')
+      db().query('UPDATE run SET worktree=?, branch=? WHERE id=?')
+        .run(f.tree.path, f.tree.branch, sibling)
+      const args = verb === 'sweep' ? ['sweep', '--dry-run'] : ['abandon', String(f.id)]
+      if (verb === 'sweep') {
+        score(f.id, 'full', 'right', 'faithful')
+        db().query('UPDATE run SET started_at=? WHERE id IN (?, ?)')
+          .run('2020-01-01T00:00:00.000Z', f.id, sibling)
+        const old = new Date(Date.now() - 3 * 60 * 60 * 1000)
+        utimesSync(join(f.tree.path, 'base.txt'), old, old)
+      }
+      const cli = new URL('cli.ts', import.meta.url).pathname
+      const commands = join(f.repo, 'test-bin')
+      mkdirSync(commands)
+      const ps = join(commands, 'ps')
+      writeFileSync(ps, '#!/bin/sh\nexit 0\n')
+      chmodSync(ps, 0o755)
+      const result = Bun.spawnSync([process.execPath, cli, ...args], {
+        env: {
+          ...process.env,
+          PATH: `${commands}:${process.env.PATH ?? ''}`,
+          CLAUDE_CODE_SESSION_ID: 'close-out-test-session',
+          ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+        },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+
+      expect(result.exitCode, result.stderr.toString()).toBe(0)
+      if (verb === 'sweep') {
+        expect(result.stdout.toString()).toContain(`would reclaim ${f.id}  ${f.tree.path}`)
+        expect(existsSync(f.tree.path)).toBe(true)
+      } else {
+        expect(result.stdout.toString()).toContain('released worktree:')
+        expect(existsSync(f.tree.path)).toBe(false)
+      }
+    } finally { rmSync(f.repo, { recursive: true, force: true }) }
+  }
 })
 
 test('a live process tree wins over database-only terminal liveness', () => {

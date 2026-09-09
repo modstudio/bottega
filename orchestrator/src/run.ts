@@ -25,7 +25,7 @@ import {
   worktreePathSpellings,
 } from './db.ts'
 import { CONNECTION_SCHEMA_INVARIANT } from './migrations.ts'
-import { reclaimWorktree } from './reclaim.ts'
+import { proveWorktreeReconstructible } from './reclaim.ts'
 import {
   createWorktree, createWithTool, createReadOnlyWorktree, createReadOnlyWithTool,
   toolFor, changesIn, repoRootOf, resolveBase, resolveReadOnlyBase, worktreeGitDir,
@@ -1926,8 +1926,7 @@ export function closeOutRun(
             detail: `${dirty.detail}; commit or remove it, then run orch close-out ${row.root_id}`,
           }
         }
-        const reclaimProof = reclaimWorktree(treePath, {
-          dryRun: true,
+        const reclaimProof = proveWorktreeReconstructible(treePath, {
           allowDirty: !JOBS[effective.job]?.needs.writesRepo,
         })
         if (!reclaimProof.ok) return {
