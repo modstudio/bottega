@@ -10,7 +10,8 @@ import { projectAt, projectByName, type Project } from './projects.ts'
 import { classifyReviewTier, diffNumstat } from './review-tier.ts'
 import {
   contentTree, prepareSharedRefGuard, projectLockState, repoRootOf, withProjectLock,
-  withWorktreeLease, targetGitEnvironment, scrubbedGitEnv, type SharedRefGuardEnvironment,
+  withWorktreeLease, targetGitEnvironment, inspectionGitEnv, scrubbedGitEnv,
+  type SharedRefGuardEnvironment,
 } from './worktree.ts'
 
 const LANDING_LOCK = 'landing'
@@ -51,10 +52,8 @@ function assertNotProductionBranch(project: Project, trunk: string, branch: stri
 }
 
 function inspectionGit(cwd: string, args: string[]): { ok: boolean; out: string; err: string } {
-  const env = scrubbedGitEnv()
-  delete env.GIT_INDEX_FILE
   const p = Bun.spawnSync(['git', ...args], {
-    cwd, env, stdout: 'pipe', stderr: 'pipe',
+    cwd, env: inspectionGitEnv(), stdout: 'pipe', stderr: 'pipe',
   })
   return {
     ok: p.exitCode === 0,

@@ -97,6 +97,31 @@ describe('architect-side main checkout edit hook', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  test('hostile GIT_DIR still denies a tracked edit in the named checkout', () => {
+    const repo = scratch()
+    const other = scratch()
+    const previousDir = process.env.GIT_DIR
+    const previousIndex = process.env.GIT_INDEX_FILE
+    try {
+      upsertProject({ name: 'hook-hostile', path: repo, canon: false, settings: {} })
+      writeFileSync(join(other, 'tracked.txt'), 'other\n')
+      process.env.GIT_DIR = git(other, 'rev-parse', '--path-format=absolute', '--git-dir')
+      process.env.GIT_INDEX_FILE = git(other, 'rev-parse', '--path-format=absolute', '--git-path', 'index')
+      const result = runHook(editor(repo, 'tracked.txt'))
+      expect(result.exitCode).toBe(0)
+      const body = JSON.parse(result.stdout.toString())
+      expect(body.hookSpecificOutput.permissionDecision).toBe('deny')
+      expect(body.hookSpecificOutput.permissionDecisionReason).toContain('tracked.txt')
+    } finally {
+      if (previousDir === undefined) delete process.env.GIT_DIR
+      else process.env.GIT_DIR = previousDir
+      if (previousIndex === undefined) delete process.env.GIT_INDEX_FILE
+      else process.env.GIT_INDEX_FILE = previousIndex
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(other, { recursive: true, force: true })
+    }
+  })
+
   test('does not gate Bash, so landings and builds are not blocked', () => {
     const repo = scratch()
     try {

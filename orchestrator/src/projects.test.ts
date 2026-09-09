@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, readFileSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, readFileSync, statSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { dbNameFor, hermeticGitEnv, recipeNotes, runRecipe } from '../test/fixture.ts'
@@ -9,6 +9,8 @@ import {
   MAIN_CHECKOUT_INVARIANT, assertMainCheckoutClean, inspectMainCheckout, mainCheckoutWorktreeHint,
   undeclaredCommitHooks, validateProjectSettings, validateStoredProjectSettings,
 } from './projects.ts'
+
+const CLEAN = { dirtyTracked: [] as string[], untracked: [] as string[], sequence: { status: 'none' as const } }
 
 describe('a project can declare a worktree instead of writing one', () => {
   test('MCP server and probe declarations have actionable narrow shapes', () => {
@@ -163,7 +165,7 @@ describe('main checkout cleanliness', () => {
   test('a clean checkout is silent', () => {
     const repo = scratch()
     try {
-      expect(inspectMainCheckout(repo)).toEqual({ dirtyTracked: [], untracked: [] })
+      expect(inspectMainCheckout(repo)).toEqual(CLEAN)
       expect(assertMainCheckoutClean(project(repo))).toBeNull()
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
@@ -172,7 +174,9 @@ describe('main checkout cleanliness', () => {
     const repo = scratch()
     try {
       writeFileSync(join(repo, 'tracked.txt'), 'dirty\n')
-      expect(inspectMainCheckout(repo)).toEqual({ dirtyTracked: ['tracked.txt'], untracked: [] })
+      expect(inspectMainCheckout(repo)).toEqual({
+        dirtyTracked: ['tracked.txt'], untracked: [], sequence: { status: 'none' },
+      })
       expect(() => assertMainCheckoutClean(project(repo))).toThrow(MAIN_CHECKOUT_INVARIANT)
       try {
         assertMainCheckoutClean(project(repo))
@@ -214,7 +218,9 @@ describe('main checkout cleanliness', () => {
     const repo = scratch()
     try {
       writeFileSync(join(repo, 'scratch.db'), 'untracked\n')
-      expect(inspectMainCheckout(repo)).toEqual({ dirtyTracked: [], untracked: ['scratch.db'] })
+      expect(inspectMainCheckout(repo)).toEqual({
+        dirtyTracked: [], untracked: ['scratch.db'], sequence: { status: 'none' },
+      })
       expect(assertMainCheckoutClean(project(repo))).toContain('scratch.db')
       expect(assertMainCheckoutClean(project(repo))).toContain('they do not block dispatch')
     } finally { rmSync(repo, { recursive: true, force: true }) }
@@ -224,7 +230,7 @@ describe('main checkout cleanliness', () => {
     const repo = scratch()
     try {
       writeFileSync(join(repo, 'ignored.txt'), 'ignored\n')
-      expect(inspectMainCheckout(repo)).toEqual({ dirtyTracked: [], untracked: [] })
+      expect(inspectMainCheckout(repo)).toEqual(CLEAN)
       expect(assertMainCheckoutClean(project(repo))).toBeNull()
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
@@ -247,7 +253,7 @@ describe('main checkout cleanliness', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
-  test('a stale index (touch without a content change) is clean only because refresh ran', () => {
+  test('a stale mtime without a content change reports clean', () => {
     const repo = scratch()
     try {
       utimesSync(join(repo, 'tracked.txt'), 1, 1)
@@ -256,7 +262,7 @@ describe('main checkout cleanliness', () => {
         { env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' },
       )
       expect(stale.exitCode).toBe(1)
-      expect(inspectMainCheckout(repo)).toEqual({ dirtyTracked: [], untracked: [] })
+      expect(inspectMainCheckout(repo)).toEqual(CLEAN)
       expect(assertMainCheckoutClean(project(repo))).toBeNull()
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
@@ -271,7 +277,7 @@ describe('main checkout cleanliness', () => {
       const before = createHash('sha256').update(readFileSync(siblingIndex)).digest('hex')
       utimesSync(join(repo, 'tracked.txt'), 1, 1)
       process.env.GIT_INDEX_FILE = siblingIndex
-      expect(inspectMainCheckout(repo)).toEqual({ dirtyTracked: [], untracked: [] })
+      expect(inspectMainCheckout(repo)).toEqual(CLEAN)
       expect(assertMainCheckoutClean(project(repo))).toBeNull()
       expect(createHash('sha256').update(readFileSync(siblingIndex)).digest('hex')).toBe(before)
     } finally {
@@ -322,18 +328,149 @@ describe('main checkout cleanliness', () => {
     }
   })
 
-  test('a contended index.lock is indeterminate and does not refuse', () => {
+  test('a dummy index.lock with a genuinely dirty file still reports dirty', () => {
+    const repo = scratch()
+    try {
+      writeFileSync(join(repo, 'tracked.txt'), 'dirty\n')
+      writeFileSync(join(repo, '.git', 'index.lock'), '')
+      expect(inspectMainCheckout(repo)).toEqual({
+        dirtyTracked: ['tracked.txt'], untracked: [], sequence: { status: 'none' },
+      })
+      expect(() => assertMainCheckoutClean(project(repo))).toThrow(MAIN_CHECKOUT_INVARIANT)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a cleanliness check does not write the index: the obvious command writes, and the fast command lies about stat', () => {
     const repo = scratch()
     try {
       utimesSync(join(repo, 'tracked.txt'), 1, 1)
-      writeFileSync(join(repo, '.git', 'index.lock'), '')
-      const stale = Bun.spawnSync(
-        ['git', '-C', repo, 'diff-index', '--quiet', 'HEAD', '--'],
-        { env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' },
+      const index = git(repo, 'rev-parse', '--path-format=absolute', '--git-path', 'index')
+      const before = createHash('sha256').update(readFileSync(index)).digest('hex')
+      const beforeStat = statSync(index)
+      expect(inspectMainCheckout(repo)).toEqual(CLEAN)
+      expect(createHash('sha256').update(readFileSync(index)).digest('hex')).toBe(before)
+      const afterStat = statSync(index)
+      expect(afterStat.mtimeMs).toBe(beforeStat.mtimeMs)
+      expect(afterStat.size).toBe(beforeStat.size)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a staged-only tracked change refuses', () => {
+    const repo = scratch()
+    try {
+      writeFileSync(join(repo, 'tracked.txt'), 'staged\n')
+      git(repo, 'add', 'tracked.txt')
+      expect(inspectMainCheckout(repo)).toEqual({
+        dirtyTracked: ['tracked.txt'], untracked: [], sequence: { status: 'none' },
+      })
+      expect(() => assertMainCheckoutClean(project(repo))).toThrow(MAIN_CHECKOUT_INVARIANT)
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('an in-progress merge refuses and names merge --abort', () => {
+    const repo = scratch()
+    try {
+      git(repo, 'checkout', '-b', 'topic')
+      writeFileSync(join(repo, 'tracked.txt'), 'topic\n')
+      git(repo, 'add', 'tracked.txt')
+      git(repo, 'commit', '-m', 'topic')
+      git(repo, 'checkout', 'main')
+      const merge = Bun.spawnSync(
+        ['git', 'merge', '--no-ff', '--no-commit', 'topic'],
+        { cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' },
       )
-      expect(stale.exitCode).toBe(1)
-      expect(inspectMainCheckout(repo)).toBeNull()
+      expect(merge.exitCode, merge.stderr.toString()).toBe(0)
+      const inspection = inspectMainCheckout(repo)
+      expect(inspection?.sequence).toEqual({ status: 'in-progress', kind: 'merge' })
+      try {
+        assertMainCheckoutClean(project(repo))
+        throw new Error('expected refusal')
+      } catch (error) {
+        const text = String(error)
+        expect(text).toContain('in-progress merge')
+        expect(text).toContain(`cleared by: git -C '${repo}' merge --abort`)
+        expect(text).not.toContain('cherry-pick --abort')
+      }
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a leftover CHERRY_PICK_HEAD over a clean tree is residue and does not refuse', () => {
+    const repo = scratch()
+    try {
+      const sha = git(repo, 'rev-parse', 'HEAD')
+      writeFileSync(join(repo, '.git', 'CHERRY_PICK_HEAD'), `${sha}\n`)
+      expect(inspectMainCheckout(repo)).toEqual({
+        dirtyTracked: [], untracked: [], sequence: { status: 'residue', kind: 'cherry-pick' },
+      })
       expect(assertMainCheckoutClean(project(repo))).toBeNull()
     } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('CHERRY_PICK_HEAD plus a sequencer directory is in-progress, not residue', () => {
+    const repo = scratch()
+    try {
+      const sha = git(repo, 'rev-parse', 'HEAD')
+      writeFileSync(join(repo, '.git', 'CHERRY_PICK_HEAD'), `${sha}\n`)
+      mkdirSync(git(repo, 'rev-parse', '--path-format=absolute', '--git-path', 'sequencer'))
+      expect(inspectMainCheckout(repo)?.sequence).toEqual({ status: 'in-progress', kind: 'cherry-pick' })
+      expect(() => assertMainCheckoutClean(project(repo))).toThrow('cherry-pick --abort')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a rebase-merge directory refuses and names rebase --abort', () => {
+    const repo = scratch()
+    try {
+      const dir = git(repo, 'rev-parse', '--path-format=absolute', '--git-path', 'rebase-merge')
+      mkdirSync(dir)
+      expect(inspectMainCheckout(repo)?.sequence).toEqual({ status: 'in-progress', kind: 'rebase' })
+      try {
+        assertMainCheckoutClean(project(repo))
+        throw new Error('expected refusal')
+      } catch (error) {
+        const text = String(error)
+        expect(text).toContain('in-progress rebase')
+        expect(text).toContain(`cleared by: git -C '${repo}' rebase --abort`)
+      }
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('bisect with a clean tree refuses and names bisect reset', () => {
+    const repo = scratch()
+    try {
+      git(repo, 'bisect', 'start')
+      expect(inspectMainCheckout(repo)?.sequence).toEqual({ status: 'in-progress', kind: 'bisect' })
+      try {
+        assertMainCheckoutClean(project(repo))
+        throw new Error('expected refusal')
+      } catch (error) {
+        const text = String(error)
+        expect(text).toContain('in-progress bisect')
+        expect(text).toContain(`cleared by: git -C '${repo}' bisect reset`)
+        expect(text).not.toContain('--abort')
+      }
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('hostile GIT_DIR and GIT_INDEX_FILE still answer about the named tree', () => {
+    const repo = scratch()
+    const other = scratch()
+    const previousDir = process.env.GIT_DIR
+    const previousIndex = process.env.GIT_INDEX_FILE
+    try {
+      writeFileSync(join(other, 'tracked.txt'), 'other-dirty\n')
+      git(other, 'add', 'tracked.txt')
+      git(other, 'commit', '-m', 'other')
+      process.env.GIT_DIR = git(other, 'rev-parse', '--path-format=absolute', '--git-dir')
+      process.env.GIT_INDEX_FILE = git(other, 'rev-parse', '--path-format=absolute', '--git-path', 'index')
+      expect(inspectMainCheckout(repo)).toEqual(CLEAN)
+      expect(inspectMainCheckout(other)).toEqual(CLEAN)
+    } finally {
+      if (previousDir === undefined) delete process.env.GIT_DIR
+      else process.env.GIT_DIR = previousDir
+      if (previousIndex === undefined) delete process.env.GIT_INDEX_FILE
+      else process.env.GIT_INDEX_FILE = previousIndex
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(other, { recursive: true, force: true })
+    }
   })
 })

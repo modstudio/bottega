@@ -18,6 +18,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { scrubbedGitEnv } from '../../shared/git.ts'
 
 const fixtureGlobal = globalThis as typeof globalThis & {
   __orchLifecycleFixture?: string
@@ -60,19 +61,13 @@ const landingModule = new URL('./landing.ts', import.meta.url).href
 const worktreeModule = new URL('./worktree.ts', import.meta.url).href
 const runModule = new URL('./run.ts', import.meta.url).href
 
-const gitEnv = (extra: Record<string, string> = {}) => {
-  const env = { ...process.env }
-  for (const name of Object.keys(env)) {
-    if (name === 'GIT_DIR' || name === 'GIT_WORK_TREE' || name === 'GIT_INDEX_FILE' ||
-        name === 'GIT_OBJECT_DIRECTORY' || name === 'GIT_ALTERNATE_OBJECT_DIRECTORIES' ||
-        name === 'GIT_CONFIG_COUNT' || /^GIT_CONFIG_(?:KEY|VALUE)_\d+$/.test(name) ||
-        name === 'GIT_CONFIG_GLOBAL' || name === 'GIT_CONFIG_SYSTEM' ||
-        name === 'GIT_CONFIG_NOSYSTEM' || name === 'ORCH_GUARDED_GIT_COMMON_DIR' ||
-        name === 'ORCH_ALLOWED_GIT_REF') delete env[name]
-  }
-  return { ...env, HOME: home, GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_SYSTEM: '/dev/null', ...extra }
-}
+const gitEnv = (extra: Record<string, string> = {}) => ({
+  ...scrubbedGitEnv(),
+  HOME: home,
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_CONFIG_SYSTEM: '/dev/null',
+  ...extra,
+})
 
 function git(cwd: string, ...args: string[]): string {
   const result = Bun.spawnSync(['git', ...args], {

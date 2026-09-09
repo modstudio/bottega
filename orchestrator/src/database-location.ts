@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
-import { scrubbedGitEnv } from '../../shared/git.ts'
+import { inspectionGitEnv } from '../../shared/git.ts'
 
 export type DatabaseResolutionMethod = 'ORCH_DB' | 'git-common-dir' | 'git-pointer' | 'binary-relative'
 
@@ -30,7 +30,7 @@ function repositoryRootFromGit(cwd: string): RepositoryRoot | null {
   try {
     const git = Bun.spawnSync(
       ['git', 'rev-parse', '--is-bare-repository', '--git-dir', '--git-common-dir'], {
-      cwd, env: scrubbedGitEnv(), stdout: 'pipe', stderr: 'ignore',
+      cwd, env: inspectionGitEnv(), stdout: 'pipe', stderr: 'ignore',
       },
     )
     if (git.exitCode !== 0) return null

@@ -7,13 +7,14 @@ import { AGENTS, candidates, checkoutAliases, checkoutCaseSensitivity, db, dir, 
 import { parseConfinement } from './confinement.ts'
 
 describe('production git environments', () => {
-  test('the shared scrub removes worker git routing and preserves unrelated variables', () => {
+  test('the shared scrub removes repository-location variables git lists and orch routing, not global-behaviour GIT_*', () => {
     const contaminated: NodeJS.ProcessEnv = {
       UNRELATED: 'preserved',
       GIT_DIR: '/worker/git-dir',
       GIT_WORK_TREE: '/worker/tree',
       GIT_OBJECT_DIRECTORY: '/worker/objects',
       GIT_ALTERNATE_OBJECT_DIRECTORIES: '/worker/alternates',
+      GIT_INDEX_FILE: '/worker/index',
       GIT_CONFIG_COUNT: '2',
       GIT_CONFIG_KEY_0: 'core.hooksPath',
       GIT_CONFIG_VALUE_0: '/worker/hooks',
@@ -27,9 +28,18 @@ describe('production git environments', () => {
     }
     const scrubbed = scrubbedGitEnv(contaminated)
     expect(scrubbed.UNRELATED).toBe('preserved')
-    for (const variable of Object.keys(contaminated).filter((key) => key !== 'UNRELATED')) {
+    for (const variable of [
+      'GIT_DIR', 'GIT_WORK_TREE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+      'GIT_INDEX_FILE', 'GIT_CONFIG_COUNT',
+      'ORCH_GUARDED_GIT_COMMON_DIR', 'ORCH_ALLOWED_GIT_REF',
+    ]) {
       expect(scrubbed[variable]).toBeUndefined()
     }
+    expect(scrubbed.GIT_CONFIG_GLOBAL).toBe('/worker/global-config')
+    expect(scrubbed.GIT_CONFIG_SYSTEM).toBe('/worker/system-config')
+    expect(scrubbed.GIT_CONFIG_NOSYSTEM).toBe('1')
+    expect(scrubbed.GIT_CONFIG_KEY_0).toBe('core.hooksPath')
+    expect(scrubbed.GIT_CONFIG_VALUE_0).toBe('/worker/hooks')
   })
 
   test('a guarded linked target receives its own object routing after inherited routing is scrubbed', () => {

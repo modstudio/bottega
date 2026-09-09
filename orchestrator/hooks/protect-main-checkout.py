@@ -20,14 +20,30 @@ def fail_open() -> int:
 
 
 def git(args, cwd):
+    """Hermetic git: ask git which GIT_* are local, rather than maintaining a list.
+
+    Duplicating this call (the same mechanism as shared/git.ts) is not a
+    defect; duplicating a list of variable names is. Git supplies the names.
+    This hook and dispatch ask different questions and share invocation, not
+    a cleanliness verdict.
+    """
     env = os.environ.copy()
-    for key in list(env):
-        if key == "GIT_DIR" or key == "GIT_WORK_TREE" or key == "GIT_OBJECT_DIRECTORY" \
-                or key == "GIT_ALTERNATE_OBJECT_DIRECTORIES" or key == "GIT_CONFIG_COUNT" \
-                or key.startswith("GIT_CONFIG_KEY_") or key.startswith("GIT_CONFIG_VALUE_") \
-                or key in ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM",
-                           "ORCH_GUARDED_GIT_COMMON_DIR", "ORCH_ALLOWED_GIT_REF"):
-            env.pop(key, None)
+    try:
+        listed = subprocess.run(
+            ["git", "rev-parse", "--local-env-vars"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if listed.returncode != 0:
+        return None
+    for key in listed.stdout.split():
+        env.pop(key, None)
+    env.pop("ORCH_GUARDED_GIT_COMMON_DIR", None)
+    env.pop("ORCH_ALLOWED_GIT_REF", None)
+    # Inspection must not pick up a worker GIT_CONFIG_GLOBAL; git excludes
+    # that name from --local-env-vars (it is global-behaviour).
+    env["GIT_CONFIG_GLOBAL"] = "/dev/null"
     try:
         return subprocess.run(
             ["git", "--no-optional-locks", *args],

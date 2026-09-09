@@ -32,7 +32,7 @@ import { db, pidAlive, ROOT, tryWriteContention } from './db.ts'
 import { projectAt, type WorktreeCreate, type WorktreeTool } from './projects.ts'
 import { runRecipe, teardownRecipe, dbNameFor, type Recipe } from './recipe.ts'
 import { mainCheckoutOf, scrubbedGitEnv } from '../../shared/git.ts'
-export { scrubbedGitEnv } from '../../shared/git.ts'
+export { inspectionGitEnv, scrubbedGitEnv } from '../../shared/git.ts'
 
 /** Preserve the root separator while removing spelling-only trailing separators. */
 export function withoutTrailingSeparators(path: string): string {
