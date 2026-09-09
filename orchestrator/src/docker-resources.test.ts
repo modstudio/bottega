@@ -287,7 +287,7 @@ test('reconcile tears down terminal snapshots but leaves asking snapshots untouc
     status, error: null, failureKind: null, output: status,
     outputPath: '/tmp/out', promptPath: '/tmp/prompt', exitCode: 0, latencyMs: 1,
     vendorTokens: null, vendorCostUsd: null, model: null, vendorSession: null,
-    preConfinement: null, filesChanged: null, changedPaths: null, linesAdded: null,
+    preConfinement: null, confinement: null, filesChanged: null, changedPaths: null, linesAdded: null,
     linesRemoved: null, testsRan: null, testsPassed: null, deviations: null, escalations: null,
   })
   persistTerminalSnapshot(terminal, snapshot('ok'))
