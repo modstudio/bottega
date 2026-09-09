@@ -321,7 +321,10 @@ except Exception:
 if not isinstance(rows, list):
     raise SystemExit(2)
 for row in rows:
-    if not isinstance(row, dict) or not isinstance(row.get("noticeId"), int):
+    if not isinstance(row, dict) or not isinstance(row.get("noticeId"), str):
+        raise SystemExit(2)
+    source, separator, identifier = row["noticeId"].partition(":")
+    if source not in ("condition", "landing") or separator != ":" or not identifier.isdigit() or int(identifier) < 1:
         raise SystemExit(2)
     if not all(isinstance(row.get(key), str) for key in ("kind", "subject", "detail")):
         raise SystemExit(2)

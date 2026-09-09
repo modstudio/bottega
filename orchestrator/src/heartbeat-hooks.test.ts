@@ -189,7 +189,7 @@ for i, branch, status, session, started_at, finished_at in rows:
     elapsed = max(0, round((finished - started).total_seconds()))
     duration = "%dm%02ds" % (elapsed // 60, elapsed % 60) if elapsed >= 60 else "%.1fs" % elapsed
     event = {"refused":"LANDING-REFUSED","rebase_required":"LANDING-REBASE-REQUIRED","install_failed":"LANDING-INSTALL-FAILED"}[status]
-    out.append({"noticeId":i,"kind":"landing-" + status.replace("_", "-"),"subject":"landing:" + str(i),"detail":event + " " + str(i) + "/" + branch + " " + duration + "; inspect with " + chr(39) + "orch land --status" + chr(39),"ownerSession":session})
+    out.append({"noticeId":"landing:" + str(i),"kind":"landing-" + status.replace("_", "-"),"subject":"landing:" + str(i),"detail":event + " " + str(i) + "/" + branch + " " + duration + "; inspect with " + chr(39) + "orch land --status" + chr(39),"ownerSession":session})
 print(json.dumps(out))
 '
   elif [ "$2" = "--ack-notices" ]; then
@@ -198,7 +198,9 @@ print(json.dumps(out))
 import datetime, os, sqlite3
 db = sqlite3.connect(os.environ["ORCH_DB"])
 for value in os.environ["IDS"].split(","):
-    db.execute("UPDATE landing SET heartbeat_delivered_at=? WHERE id=? AND session_id=? AND heartbeat_delivered_at IS NULL", (datetime.datetime.now(datetime.timezone.utc).isoformat(), int(value), os.environ["CLAUDE_CODE_SESSION_ID"]))
+    source, identifier = value.split(":", 1)
+    if source == "landing":
+        db.execute("UPDATE landing SET heartbeat_delivered_at=? WHERE id=? AND session_id=? AND heartbeat_delivered_at IS NULL", (datetime.datetime.now(datetime.timezone.utc).isoformat(), int(identifier), os.environ["CLAUDE_CODE_SESSION_ID"]))
 db.commit()
 '
   else
@@ -216,7 +218,7 @@ fi`
       ['DEV-423-landing-watch', new Date(Date.now() - 65_000).toISOString()])
     const p = Bun.spawn([f.heartbeat, 'landing-watch', '0.2', '5'], {
       stdout: 'pipe', stderr: 'pipe',
-      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.05' },
+      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.2' },
     })
     const output = new Response(p.stdout).text()
     await Bun.sleep(500)
@@ -243,7 +245,7 @@ fi`
     store.run('UPDATE landing SET branch=?, started_at=? WHERE id=32', ['DEV-423-still-live', started])
     const p = Bun.spawn([f.heartbeat, 'landing-refusal', '0.2', '4'], {
       stdout: 'pipe', stderr: 'pipe',
-      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.05' },
+      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.2' },
     })
     const output = new Response(p.stdout).text()
     await Bun.sleep(500)

@@ -3901,7 +3901,7 @@ switch (cmd) {
       const sid = sessionId()
       if (!sid) throw new Error('monitor notice acknowledgement requires CLAUDE_CODE_SESSION_ID')
       if (!monitorDeliveryAuthorized()) throw new Error('monitor notice acknowledgement requires a live delivery-hook capability')
-      const ids = flag('ack-notices')!.split(',').map((value) => Number(value))
+      const ids = flag('ack-notices')!.split(',') as import('./monitor.ts').MonitorNotice['noticeId'][]
       markMonitorNoticesDelivered(sid, ids)
       break
     }

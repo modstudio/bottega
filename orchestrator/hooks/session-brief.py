@@ -293,7 +293,11 @@ def main() -> int:
                         and isinstance(item.get("kind"), str)
                         and isinstance(item.get("subject"), str)
                         and isinstance(item.get("detail"), str)
-                        and isinstance(item.get("noticeId"), int)
+                        and isinstance(item.get("noticeId"), str)
+                        and item["noticeId"].partition(":")[0] in ("condition", "landing")
+                        and item["noticeId"].partition(":")[1] == ":"
+                        and item["noticeId"].partition(":")[2].isdigit()
+                        and int(item["noticeId"].partition(":")[2]) > 0
                         and item.get("ownerSession") == sid
                         for item in monitor_notices
                     ):

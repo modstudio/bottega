@@ -41,7 +41,7 @@ export type MonitorResult = {
 }
 
 export type MonitorNotice = Omit<MonitorCondition, 'detail' | 'action'> & {
-  noticeId: number
+  noticeId: `condition:${number}` | `landing:${number}`
   detail: string
 }
 
@@ -514,7 +514,7 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
       run_status: string | null; run_project: string | null
     }[]
   const conditions = rows.map((row) => ({
-      noticeId: row.id,
+      noticeId: `condition:${row.id}` as const,
       kind: row.kind, subject: row.subject, since: row.condition_since, ageMs: row.age_ms,
       detail: deliveredDetail(row), issueKey: row.issue_key,
       severity: row.severity, ownerSession: row.owner_session_id,
@@ -530,7 +530,7 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
     session_id: string
   }[]
   return [...conditions, ...landings.map((row): MonitorNotice => ({
-    noticeId: row.id,
+    noticeId: `landing:${row.id}`,
     kind: `landing-${row.status.replaceAll('_', '-')}`,
     subject: `landing:${row.id}`,
     since: row.finished_at ?? row.started_at,
@@ -541,24 +541,35 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
 }
 
 /** Acknowledge only rows the hook has already emitted to its consumer. */
-export function markMonitorNoticesDelivered(ownerSession: string, ids: number[], deliveredAt = nowIso()): void {
+export function markMonitorNoticesDelivered(
+  ownerSession: string,
+  ids: MonitorNotice['noticeId'][],
+  deliveredAt = nowIso(),
+): void {
   if (!ownerSession.trim()) throw new Error('monitor notice acknowledgement requires a session id')
-  if (!ids.length || ids.some((id) => !Number.isInteger(id) || id < 1)) {
-    throw new Error('monitor notice acknowledgement requires positive notice ids')
+  const parsed = ids.map((token) => {
+    const match = /^(condition|landing):([1-9]\d*)$/.exec(token)
+    if (!match) throw new Error('monitor notice acknowledgement requires source-qualified notice ids')
+    return { source: match[1] as 'condition' | 'landing', id: Number(match[2]) }
+  })
+  if (!parsed.length || parsed.some(({ id }) => !Number.isSafeInteger(id))) {
+    throw new Error('monitor notice acknowledgement requires source-qualified notice ids')
   }
   const database = writableDb()
   writeTransaction(() => {
     const mark = database.query(
       `UPDATE monitor_condition SET delivered_at=? WHERE id=? AND owner_session_id=? AND delivered_at IS NULL`,
     )
-    for (const id of new Set(ids)) mark.run(deliveredAt, id, ownerSession)
+    const conditions = new Set(parsed.filter(({ source }) => source === 'condition').map(({ id }) => id))
+    const landings = new Set(parsed.filter(({ source }) => source === 'landing').map(({ id }) => id))
+    // A receipt may stamp a landing only when that source-qualified landing token
+    // came from the claim that produced the emission. Equal ids in other sources do not qualify.
+    for (const id of conditions) mark.run(deliveredAt, id, ownerSession)
     const markLanding = database.query(
       `UPDATE landing SET heartbeat_delivered_at=?
         WHERE id=? AND session_id=? AND heartbeat_delivered_at IS NULL
           AND status IN ('refused','rebase_required','install_failed')`,
     )
-    // Notice ids are source-local. If a condition and landing share an integer,
-    // both were returned to this owner and the one acknowledgement receipts both.
-    for (const id of new Set(ids)) markLanding.run(deliveredAt, id, ownerSession)
+    for (const id of landings) markLanding.run(deliveredAt, id, ownerSession)
   }, database)
 }

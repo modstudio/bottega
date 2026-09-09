@@ -44,7 +44,7 @@ describe('operational monitor record', () => {
 
     const first = claimMonitorNotices('landing-owner')
     expect(first).toEqual([expect.objectContaining({
-      noticeId: landing,
+      noticeId: `landing:${landing}`,
       kind: 'landing-refused',
       subject: `landing:${landing}`,
       ownerSession: 'landing-owner',
@@ -53,10 +53,44 @@ describe('operational monitor record', () => {
     expect(claimMonitorNotices('landing-owner')).toEqual(first)
     expect(claimMonitorNotices('somebody-else')).toEqual([])
 
-    markMonitorNoticesDelivered('somebody-else', [landing], '2026-09-09T00:01:00.000Z')
+    markMonitorNoticesDelivered('somebody-else', [`landing:${landing}`], '2026-09-09T00:01:00.000Z')
     expect(claimMonitorNotices('landing-owner')).toEqual(first)
-    markMonitorNoticesDelivered('landing-owner', [landing], '2026-09-09T00:02:00.000Z')
+    markMonitorNoticesDelivered('landing-owner', [`landing:${landing}`], '2026-09-09T00:02:00.000Z')
     expect(claimMonitorNotices('landing-owner')).toEqual([])
+  })
+
+  test('a condition acknowledgement cannot receipt a same-numbered landing terminalised after claim', () => {
+    const nextId = (db().query(
+      `SELECT MAX(id) + 1 id FROM (
+         SELECT id FROM monitor_condition UNION ALL SELECT id FROM landing
+       )`,
+    ).get() as { id: number | null }).id ?? 1
+    const started = '2026-09-09T01:00:00.000Z'
+    db().query(
+      `INSERT INTO landing (id,project,branch,status,session_id,started_at)
+       VALUES (?,?,?,?,?,?)`,
+    ).run(nextId, PLATFORM_SLUG, 'DEV-438-collision', 'running', 'collision-owner', started)
+    const invocation = (db().query(
+      `INSERT INTO monitor_invocation (started_at,finished_at,trigger,findings,errors)
+       VALUES (?,?,?,?,?) RETURNING id`,
+    ).get(started, started, 'backstop', 1, 0) as { id: number }).id
+    db().query(
+      `INSERT INTO monitor_condition
+       (id,invocation_id,kind,subject,condition_since,age_ms,detail,action,owner_session_id)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+    ).run(nextId, invocation, 'stale-run', 'run:collision', started, 1,
+      'worker text', 'reported', 'collision-owner')
+
+    const claimed = claimMonitorNotices('collision-owner')
+    expect(claimed).toEqual([expect.objectContaining({ noticeId: `condition:${nextId}` })])
+    db().query("UPDATE landing SET status='refused', finished_at=? WHERE id=?").run(nowIso(), nextId)
+    markMonitorNoticesDelivered('collision-owner', claimed.map((notice) => notice.noticeId), nowIso())
+
+    expect(db().query('SELECT heartbeat_delivered_at FROM landing WHERE id=?').get(nextId))
+      .toEqual({ heartbeat_delivered_at: null })
+    expect(claimMonitorNotices('collision-owner')).toEqual([
+      expect.objectContaining({ noticeId: `landing:${nextId}`, kind: 'landing-refused' }),
+    ])
   })
 
   test('monitor previews owned reclaim candidates and ignores review subjects', async () => {
@@ -273,7 +307,7 @@ echo '[]'
       const database = new Database(process.env.ORCH_DB)
       database.exec('PRAGMA busy_timeout=5000; BEGIN IMMEDIATE')
       database.query('UPDATE monitor_condition SET delivered_at=? WHERE id=?').run(
-        new Date().toISOString(), Number(process.env.NOTICE_ID))
+        new Date().toISOString(), Number(process.env.NOTICE_ID!.split(':')[1]))
       console.log('marked')
       Bun.sleepSync(500)
       database.exec('COMMIT')
@@ -1560,7 +1594,7 @@ fi
       const started = Date.now()
       const p = Bun.spawnSync([f.heartbeat, 'owner', '0', '1'], {
         stdout: 'pipe', stderr: 'pipe',
-        env: { ...process.env, NOTICE_TIMEOUT_SECONDS: '0.05' },
+        env: { ...process.env, NOTICE_TIMEOUT_SECONDS: '0.2' },
       })
       expect(Date.now() - started).toBeLessThan(2_000)
       expect(p.exitCode).toBe(0)
@@ -1576,7 +1610,7 @@ fi
 
   test('a hanging notice acknowledgement is bounded after emitting BLOCKED', () => {
     const notice = JSON.stringify([{
-      noticeId: 9, kind: 'stale-run', subject: 'run:9',
+      noticeId: 'condition:9', kind: 'stale-run', subject: 'run:9',
       detail: 'Orch detected stale-run for run:9', ownerSession: 'owner',
     }])
     const f = fixture(`#!/bin/sh
@@ -1592,7 +1626,7 @@ fi
       const started = Date.now()
       const p = Bun.spawnSync([f.heartbeat, 'owner', '0', '1'], {
         stdout: 'pipe', stderr: 'pipe',
-        env: { ...process.env, NOTICE_TIMEOUT_SECONDS: '0.05' },
+        env: { ...process.env, NOTICE_TIMEOUT_SECONDS: '0.2' },
       })
       expect(Date.now() - started).toBeLessThan(2_000)
       expect(p.exitCode).toBe(0)
@@ -1608,7 +1642,7 @@ fi
 
   test('a failed capability mint degrades notices but still emits BLOCKED', () => {
     const notice = JSON.stringify([{
-      noticeId: 9, kind: 'stale-run', subject: 'run:9',
+      noticeId: 'condition:9', kind: 'stale-run', subject: 'run:9',
       detail: 'Orch detected stale-run for run:9', ownerSession: 'owner',
     }])
     const f = fixture(`#!/bin/sh
