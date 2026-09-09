@@ -78,6 +78,61 @@ describe('a writing worker must return evidence of completed work', () => {
     }
   }
 
+  test('a resumed no-repository job receives no worktree Git writable root', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-no-repo-resume-'))
+    const script = join(dir, `no-repo-resume-${Math.random().toString(16).slice(2)}.ts`)
+    const promptPath = join(dir, `no-repo-resume-${Math.random().toString(16).slice(2)}.prompt.txt`)
+    writeFileSync(join(repo, 'seed.txt'), 'seed\n')
+    for (const args of [['init'], ['add', 'seed.txt']]) {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+    }
+    const committed = Bun.spawnSync([
+      'git', '-c', 'user.name=Orch Test', '-c', 'user.email=orch@example.invalid',
+      'commit', '-m', 'seed',
+    ], { cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
+    if (committed.exitCode !== 0) throw new Error(committed.stderr.toString())
+    const tree = createWorktree(repo, 462)
+    writeFileSync(script, 'process.stdout.write("summary")\n')
+
+    const agent = AGENTS.codex!
+    const originalBin = agent.bin
+    const originalResume = agent.resumeArgv
+    const originalReadsOut = agent.readsOut
+    const priorDepth = process.env.ORCH_DEPTH
+    agent.bin = process.execPath
+    agent.resumeArgv = (options) => {
+      expect(options.writableRoots).toEqual([expect.stringMatching(/\/scratch$/)])
+      expect(options.writableRoots).not.toContain(worktreeGitDir(tree.path))
+      return [script]
+    }
+    agent.readsOut = false
+    process.env.ORCH_DEPTH = '0'
+    const parent = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
+    writeFileSync(promptPath, 'original implementation spec')
+    db().query('UPDATE run SET prompt_path=? WHERE id=?').run(promptPath, parent)
+    try {
+      await runJob({
+        job: 'summarize', prompt: 'summarize', cwd: tree.path, noFailover: true,
+        resume: {
+          parent, agent: 'codex', session: 'test-session', turn: 2,
+          sessionId: 'orch-test-session', worktree: tree,
+        },
+      })
+    } finally {
+      agent.bin = originalBin
+      agent.resumeArgv = originalResume
+      agent.readsOut = originalReadsOut
+      if (priorDepth === undefined) delete process.env.ORCH_DEPTH
+      else process.env.ORCH_DEPTH = priorDepth
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(script, { force: true })
+      rmSync(promptPath, { force: true })
+    }
+  })
+
   test('done with no claimed or measured change and no test run is failed', async () => {
     let failure: Error & { runId?: number } | null = null
     try {

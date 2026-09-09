@@ -2979,7 +2979,7 @@ export async function run(opts: {
   // read existing objects through a common-store alternate. Writing jobs use
   // the common store so commits survive removal of the disposable tree.
   const gitObjectEnvironment = gitObjectEnvironmentFor(name, requestedJob, worktree)
-  const preparedGitIsolation = worktree
+  const preparedGitIsolation = worktree && repoJob
     ? prepareWorkerGitIsolation(
         worktree, writesJob,
         writesJob && requestedJob.name !== 'land' ? `refs/heads/${worktree.branch}` : undefined,
