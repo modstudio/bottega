@@ -1646,7 +1646,7 @@ function usage(): never {
   orch close-out <id>           release a terminal run's clean worktree and resources; keep its branch
       --non-blocking            return immediately when a cleanup lock is contested
   orch abandon <id> [--note "..."] [--force] retire an asking run and clean up its worktree
-  orch sweep [--force] [--dry-run]
+  orch sweep [--project <name>] [--force] [--dry-run]
       backstop close-out for terminal trees; clean trees are released and branches kept.
       more than ten kept rows are summarised by reason; --dry-run lists every row
   orch reclassify-failures [--dry-run]
@@ -4696,8 +4696,12 @@ switch (cmd) {
   case 'sweep': {
     await Promise.all([loadJobs(), loadRun(), loadWorktree(), loadGrokTrust(), loadDockerResources()])
     const dry = has('dry-run')
+    const projectName = flag('project')
+    const selectedProject = projectName === undefined ? null : projectByName(projectName)
+    if (projectName !== undefined && !selectedProject) throw new Error(`unknown project ${projectName}`)
+    const sweepProjects = selectedProject ? [selectedProject] : projects()
     if (!dry) writableDb()
-    const rows = db().query(
+    const rows = (db().query(
       `SELECT r.id, COALESCE(r.parent_run_id, r.id) root_id,
               r.repo, r.worktree, r.branch, r.base_commit, r.worktree_source, r.status, r.job,
               r.keep_tree, r.pid, r.agent_pid, r.session_id, seen.last_seen AS session_last_seen,
@@ -4714,7 +4718,8 @@ switch (cmd) {
       job: string; keep_tree: number; age_days: number; scored: number
       pid: number | null; agent_pid: number | null; session_id: string | null
       session_last_seen: string | null
-    }[]
+    }[]).filter((row) => !selectedProject ||
+      projectAt(row.worktree)?.name === selectedProject.name)
 
     const { removeFor, sweepWithTool, orphanSafety,
             isOrchWorktree, markedWorktreeSource } =
@@ -4796,7 +4801,7 @@ switch (cmd) {
       (db().query('SELECT worktree FROM run WHERE worktree IS NOT NULL').all() as { worktree: string }[])
         .map((r) => existsSync(r.worktree) ? realpathSync(r.worktree) : r.worktree),
     )
-    for (const p of projects()) {
+    for (const p of sweepProjects) {
       const root = join(p.path, '.claude', 'worktrees')
       if (!existsSync(root)) continue
       for (const entry of readdirSync(root, { withFileTypes: true })) {
@@ -4929,7 +4934,7 @@ switch (cmd) {
      * reclaiming disk.
      */
     if (!dry) {
-      for (const p of (await import('./projects.ts')).projects()) {
+      for (const p of sweepProjects) {
         const tool = p.settings.worktree
         if (!tool?.sweep) continue
         let result: ReturnType<typeof sweepWithTool>
@@ -4979,6 +4984,8 @@ switch (cmd) {
     for (const heading of grokTrustHeadings()) {
       const path = grokTrustPathFromHeading(heading)
       if (!path || existsSync(path)) continue
+      if (selectedProject && path !== selectedProject.path &&
+          !path.startsWith(`${selectedProject.path}/`)) continue
       const runId = trustOwners.get(heading)
       console.log(
         `grok trust entry for absent path ${path}${runId ? ` (run ${runId})` : ''}; prune by hand`,
@@ -5003,6 +5010,7 @@ switch (cmd) {
         : null,
     }))
     const classified = classifiedDockerResources(inventoryResources, owners)
+      .filter((item) => !selectedProject || item.project === selectedProject.name)
     for (const { resource, project, condition } of classified) {
       if (condition === 'retained-worktree-resources') continue
       const key = `${resource.kind}:${resource.name}`

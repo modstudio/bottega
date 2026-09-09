@@ -70,12 +70,16 @@ export const run = sqliteTable('run', {
   reviewProvenance: text('review_provenance'),
   provenanceStatus: text('provenance_status'),
   workPreserved: integer('work_preserved').notNull().default(0),
+  closeOutOutcome: text('close_out_outcome'),
+  closeOutDetail: text('close_out_detail'),
+  closeOutAttemptedAt: text('close_out_attempted_at'),
 }, (t) => [
   check('run_status_check', sql`${t.status} in ('running','ok','failed','stale','asking','stopped')`),
   check('run_unreconciled_check', sql`${t.unreconciled} in (0,1)`),
   check('run_sandbox_check', sql`${t.sandbox} is null or ${t.sandbox} in ('host','srt')`),
   check('run_worktree_source_check', sql`${t.worktreeSource} is null or ${t.worktreeSource} in ('recipe','git','readonly_recipe')`),
   check('run_transport_check', sql`${t.transport} is null or ${t.transport} in ('cli','acp')`),
+  check('run_close_out_outcome_check', sql`${t.closeOutOutcome} is null or ${t.closeOutOutcome} in ('released','held','live','absent','failed')`),
   index('run_job_agent').on(t.job, t.agent),
 ])
 

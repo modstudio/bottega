@@ -1930,7 +1930,7 @@ export type CloseOutResult = {
 const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
 
 /** One cleanup path for terminalisation, explicit close-out, and sweep. */
-export function closeOutRun(
+function attemptCloseOutRun(
   runId: number, options: {
     intent: 'terminal' | 'explicit' | 'sweep'; dryRun?: boolean; lockTimeoutMs?: number
     extraPids?: number[]; pgid?: number | null
@@ -2144,6 +2144,24 @@ export function closeOutRun(
   } catch (error) {
     return { runId: row.root_id, worktree: treePath, outcome: 'failed', detail: String((error as Error).message ?? error) }
   }
+}
+
+/** Run one close-out attempt and retain its outcome for observation and retry. */
+export function closeOutRun(
+  runId: number, options: {
+    intent: 'terminal' | 'explicit' | 'sweep'; dryRun?: boolean; lockTimeoutMs?: number
+    extraPids?: number[]; pgid?: number | null
+  },
+): CloseOutResult {
+  const result = attemptCloseOutRun(runId, options)
+  if (!options.dryRun) {
+    writableDb().query(
+      `UPDATE run
+          SET close_out_outcome=?, close_out_detail=?, close_out_attempted_at=?
+        WHERE id=?`,
+    ).run(result.outcome, result.detail, nowIso(), result.runId)
+  }
+  return result
 }
 
 function reclaimTerminalTree(

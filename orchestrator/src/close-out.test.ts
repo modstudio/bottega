@@ -342,6 +342,61 @@ test('explicit close-out ignores recent filesystem activity', () => {
   } finally { rmSync(f.repo, { recursive: true, force: true }) }
 })
 
+test('held close-out persists its outcome and becomes a terminal monitor condition', async () => {
+  const f = fixture()
+  const docker = fakeDocker([], [])
+  const priorPath = process.env.PATH
+  try {
+    db().query('UPDATE run SET keep_tree=1 WHERE id=?').run(f.id)
+    const before = Date.now()
+    const result = closeOutRun(f.id, { intent: 'terminal' })
+    expect(result.outcome).toBe('held')
+    const stored = db().query(
+      `SELECT close_out_outcome, close_out_detail, close_out_attempted_at
+         FROM run WHERE id=?`,
+    ).get(f.id) as {
+      close_out_outcome: string; close_out_detail: string; close_out_attempted_at: string
+    }
+    expect(stored.close_out_outcome).toBe('held')
+    expect(stored.close_out_detail).toBe(result.detail)
+    expect(Date.parse(stored.close_out_attempted_at)).toBeGreaterThanOrEqual(before)
+
+    process.env.PATH = docker.env.PATH
+    const observed = await monitor('invoked')
+    expect(observed.conditions).toContainEqual(expect.objectContaining({
+      kind: 'terminal-close-out-held', subject: `run:${f.id}`, detail: result.detail,
+    }))
+  } finally {
+    if (priorPath === undefined) delete process.env.PATH
+    else process.env.PATH = priorPath
+    rmSync(docker.dir, { recursive: true, force: true })
+    rmSync(f.repo, { recursive: true, force: true })
+  }
+})
+
+test('live close-out persists without producing a monitor fault condition', async () => {
+  const f = fixture('running')
+  const docker = fakeDocker([], [])
+  const priorPath = process.env.PATH
+  try {
+    const result = closeOutRun(f.id, { intent: 'terminal' })
+    expect(result.outcome).toBe('live')
+    expect(db().query('SELECT close_out_outcome, close_out_detail FROM run WHERE id=?').get(f.id))
+      .toEqual({ close_out_outcome: 'live', close_out_detail: result.detail })
+
+    process.env.PATH = docker.env.PATH
+    const observed = await monitor('invoked')
+    expect(observed.conditions.some((condition) =>
+      condition.subject === `run:${f.id}` && condition.kind.startsWith('terminal-close-out-')))
+      .toBe(false)
+  } finally {
+    if (priorPath === undefined) delete process.env.PATH
+    else process.env.PATH = priorPath
+    rmSync(docker.dir, { recursive: true, force: true })
+    rmSync(f.repo, { recursive: true, force: true })
+  }
+})
+
 test('live worktree lease is handled conservatively', async () => {
   const f = fixture()
   const ready = join(f.repo, 'lease-ready')
