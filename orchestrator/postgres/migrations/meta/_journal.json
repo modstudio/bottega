@@ -8,6 +8,13 @@
       "when": 1788969600000,
       "tag": "0000_substrate",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788969601000,
+      "tag": "0001_project_import_shape",
+      "breakpoints": true
     }
   ]
 }

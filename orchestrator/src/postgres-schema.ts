@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm'
 import {
-  bigint, boolean, foreignKey, pgPolicy, pgTable, primaryKey, text, timestamp, unique, uuid,
+  bigint, boolean, foreignKey, jsonb, pgPolicy, pgTable, primaryKey, text, timestamp, unique, uuid,
 } from 'drizzle-orm/pg-core'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 
@@ -66,7 +66,12 @@ export const project = pgTable('project', {
   gate: text(),
   requireCleanMain: boolean('require_clean_main').notNull().default(true),
   color: text(),
+  colorDark: text('color_dark'),
+  envPrefix: text('env_prefix'),
   mcpServer: text('mcp_server'),
+  mcpProbeTool: text('mcp_probe_tool'),
+  tracker: jsonb(),
+  worktreeRecipe: jsonb('worktree_recipe'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
 }, (table) => [
   unique('project_space_name_unique').on(table.spaceId, table.name),
