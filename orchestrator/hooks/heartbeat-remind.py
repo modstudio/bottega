@@ -55,13 +55,23 @@ def detached_dispatch(command: object) -> bool:
     except ValueError:
         return False
     for index, word in enumerate(words[:-1]):
-        if (word == "orch" or os.path.basename(word) == "orch") and words[index + 1] == "do":
-            args = []
-            for arg in words[index + 2:]:
-                if arg in (";", "&", "|", "&&", "||"):
-                    break
-                args.append(arg)
+        if not (word == "orch" or os.path.basename(word) == "orch"):
+            continue
+        verb = words[index + 1]
+        if verb not in ("do", "land"):
+            continue
+        args = []
+        for arg in words[index + 2:]:
+            if arg in (";", "&", "|", "&&", "||"):
+                break
+            args.append(arg)
+        if verb == "do":
             return "--follow" not in args
+        # `orch land` enqueues and returns exactly as `orch do` detaches, and a
+        # landing is the work least visible to everything else: it has no row in
+        # the run table, so nothing but this reminder will mention it. --wait
+        # blocks and needs no watcher; --status and --drain dispatch nothing.
+        return not ({"--wait", "--status", "--drain"} & set(args))
     return False
 
 

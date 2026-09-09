@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
+import { Database } from 'bun:sqlite'
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -24,6 +25,19 @@ function fixture(orchBody: string) {
   writeFileSync(orch, `#!/bin/sh\n${orchBody}\n`)
   chmodSync(orch, 0o755)
   return { root, guard: join(hooks, 'heartbeat-guard.py'), heartbeat: join(hooks, 'orch-heartbeat.sh') }
+}
+
+
+function landingDb(root: string, rows: Array<{ id: number; session: string; status: string }>) {
+  const db = new Database(join(root, 'orchestrator', 'orch.db'))
+  db.run(`CREATE TABLE landing (id INTEGER PRIMARY KEY, project TEXT NOT NULL, branch TEXT NOT NULL,
+    status TEXT NOT NULL, session_id TEXT, started_at TEXT NOT NULL)`)
+  for (const row of rows) {
+    db.run('INSERT INTO landing (id, project, branch, status, session_id, started_at) VALUES (?,?,?,?,?,?)',
+      [row.id, 'bottega', 'b', row.status, row.session, '2026-09-08T00:00:00Z'])
+  }
+  db.close()
+  return join(root, 'orchestrator', 'orch.db')
 }
 
 function invoke(hook: string, payload: object, env: Record<string, string> = {}) {
@@ -54,7 +68,8 @@ describe('heartbeat Stop guard', () => {
     expect(first.stderr.toString()).toBe('')
     const blocked = JSON.parse(first.stdout.toString())
     expect(blocked.decision).toBe('block')
-    expect(blocked.reason).toContain('2 live orch runs')
+    expect(blocked.reason).toContain('2 live items')
+    expect(blocked.reason).toContain('orch runs and/or landings')
     expect(blocked.reason).toContain(`${f.heartbeat} guard-live`)
 
     const second = invoke(f.guard, payload, env)
@@ -150,5 +165,89 @@ describe('heartbeat dispatch reminder', () => {
     expect(result.exitCode).toBe(0)
     expect(result.stdout.toString()).toBe('')
     expect(result.stderr.toString()).toBe('')
+  })
+})
+
+describe('heartbeat landing visibility', () => {
+  const noRuns = 'exit 0'
+
+  test('blocks when the session has a live landing and no runs at all', () => {
+    const f = fixture(noRuns)
+    const db = landingDb(f.root, [{ id: 7, session: 'land-live', status: 'running' }])
+    const result = invoke(f.guard, { session_id: 'land-live' }, {
+      TMPDIR: join(f.root, 'tmp'), ORCH_DB: db, ORCH_HEARTBEAT_PROCESS_LIST: '1 /sbin/launchd',
+    })
+    expect(result.exitCode).toBe(0)
+    const decision = JSON.parse(result.stdout.toString())
+    expect(decision.decision).toBe('block')
+    expect(decision.reason).toContain('landings')
+  })
+
+  test('a queued landing counts as live, not only a running one', () => {
+    const f = fixture(noRuns)
+    const db = landingDb(f.root, [{ id: 8, session: 'land-queued', status: 'queued' }])
+    const result = invoke(f.guard, { session_id: 'land-queued' }, {
+      TMPDIR: join(f.root, 'tmp'), ORCH_DB: db, ORCH_HEARTBEAT_PROCESS_LIST: '1 /sbin/launchd',
+    })
+    expect(JSON.parse(result.stdout.toString()).decision).toBe('block')
+  })
+
+  test('another session\'s landing is not this session\'s work', () => {
+    const f = fixture(noRuns)
+    const db = landingDb(f.root, [{ id: 9, session: 'somebody-else', status: 'running' }])
+    const result = invoke(f.guard, { session_id: 'land-quiet' }, {
+      TMPDIR: join(f.root, 'tmp'), ORCH_DB: db, ORCH_HEARTBEAT_PROCESS_LIST: '1 /sbin/launchd',
+    })
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout.toString()).toBe('')
+  })
+
+  test('a finished landing is not live', () => {
+    const f = fixture(noRuns)
+    const db = landingDb(f.root, [{ id: 10, session: 'land-done', status: 'landed' }])
+    const result = invoke(f.guard, { session_id: 'land-done' }, {
+      TMPDIR: join(f.root, 'tmp'), ORCH_DB: db, ORCH_HEARTBEAT_PROCESS_LIST: '1 /sbin/launchd',
+    })
+    expect(result.stdout.toString()).toBe('')
+  })
+
+  test('an unreadable landing store fails toward live rather than reporting clear', () => {
+    const f = fixture(noRuns)
+    const corrupt = join(f.root, 'orchestrator', 'orch.db')
+    writeFileSync(corrupt, 'this is not a sqlite database')
+    const result = invoke(f.guard, { session_id: 'land-unknown' }, {
+      TMPDIR: join(f.root, 'tmp'), ORCH_DB: corrupt, ORCH_HEARTBEAT_PROCESS_LIST: '1 /sbin/launchd',
+    })
+    expect(JSON.parse(result.stdout.toString()).decision).toBe('block')
+  })
+
+  test('an absent landing store is silence, not a block', () => {
+    const f = fixture(noRuns)
+    const result = invoke(f.guard, { session_id: 'land-nodb' }, {
+      TMPDIR: join(f.root, 'tmp'),
+      ORCH_DB: join(f.root, 'orchestrator', 'nothing-here.db'),
+      ORCH_HEARTBEAT_PROCESS_LIST: '1 /sbin/launchd',
+    })
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout.toString()).toBe('')
+  })
+
+  test('reminds after a detached orch land', () => {
+    const result = invoke(remind, {
+      session_id: 'land-remind',
+      tool_input: { command: `${join(process.cwd(), 'bin', 'orch')} land DEV-405-branch` },
+    }, { ORCH_HEARTBEAT_PROCESS_LIST: '1 /sbin/launchd' })
+    expect(JSON.parse(result.stdout.toString()).hookSpecificOutput.additionalContext)
+      .toContain('Arm under Monitor')
+  })
+
+  test('is silent for orch land --wait, --status and --drain', () => {
+    for (const tail of ['DEV-405-branch --wait', '--status', '--drain']) {
+      const result = invoke(remind, {
+        session_id: 'land-remind',
+        tool_input: { command: `${join(process.cwd(), 'bin', 'orch')} land ${tail}` },
+      }, { ORCH_HEARTBEAT_PROCESS_LIST: '1 /sbin/launchd' })
+      expect(result.stdout.toString()).toBe('')
+    }
   })
 })
