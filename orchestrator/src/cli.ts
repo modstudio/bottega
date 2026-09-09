@@ -1040,10 +1040,10 @@ function discardWorktree(
     if (branchWarning) console.error(branchWarning)
     const project = row.repo ?? projectAt(repoRoot)?.name ?? 'unknown'
     const inventory = resourcesForConversation(row.id)
-    if (inventory.errors.length) {
+    if (!inventory.ascertainable) {
       throw new Error(
         `project ${project}'s cleanup could not be verified — inventory unavailable:\n` +
-        inventory.errors.map((error) => `  ${error}`).join('\n'),
+        `  ${inventory.reason}`,
       )
     }
     if (inventory.resources.length) {
@@ -4731,8 +4731,8 @@ switch (cmd) {
       if (current?.worktree !== r.worktree) continue
       if (!dry) {
         const before = resourcesForConversation(r.id)
-        for (const error of before.errors) inventoryErrors.add(error)
-        if (before.errors.length) {
+        if (!before.ascertainable) {
+          inventoryErrors.add(before.reason)
           cleanupFailed = true
           keep(`${r.id}  inventory unavailable`, 'inventory unavailable')
           console.error(`could not verify reclaim ${r.id}: inventory unavailable`)
@@ -4747,8 +4747,8 @@ switch (cmd) {
         } else {
           const project = r.repo ?? projectAt(r.worktree)?.name ?? 'unknown'
           const inventory = resourcesForConversation(r.id)
-          for (const error of inventory.errors) inventoryErrors.add(error)
-          if (inventory.errors.length) {
+          if (!inventory.ascertainable) {
+            inventoryErrors.add(inventory.reason)
             cleanupFailed = true
             keep(`${r.id}  inventory unavailable`, 'inventory unavailable')
             console.error(`could not verify reclaim ${r.id}: inventory unavailable`)
@@ -4884,10 +4884,10 @@ switch (cmd) {
             }
             if (res.removed) {
               const inventory = runId === null
-                ? { resources: [], errors: [] }
+                ? { ascertainable: true as const, resources: [] }
                 : resourcesForConversation(runId)
-              for (const error of inventory.errors) inventoryErrors.add(error)
-              if (inventory.errors.length) {
+              if (!inventory.ascertainable) {
+                inventoryErrors.add(inventory.reason)
                 cleanupFailed = true
                 keep(`${label}  inventory unavailable`, 'inventory unavailable')
                 return
@@ -4993,9 +4993,12 @@ switch (cmd) {
     // Inventory is a read, so dry-run performs it too. A preview that omits
     // already-leaked infrastructure is materially cleaner than the real run.
     const inventory = dockerRunResources()
-    for (const error of inventory.errors) inventoryErrors.add(error)
-    if (inventory.errors.length) cleanupFailed = true
-    const inventoryOwnerIds = new Set(inventory.resources.map(({ runId }) => runId))
+    if (!inventory.ascertainable) {
+      inventoryErrors.add(inventory.reason)
+      cleanupFailed = true
+    }
+    const inventoryResources = inventory.ascertainable ? inventory.resources : []
+    const inventoryOwnerIds = new Set(inventoryResources.map(({ runId }) => runId))
     const owners = (db().query('SELECT id, repo, worktree, status FROM run').all() as {
       id: number; repo: string | null; worktree: string | null; status: string
     }[]).map((owner) => ({
@@ -5004,7 +5007,7 @@ switch (cmd) {
         ? terminalDockerRetentionReasonForRun(db(), owner.id)
         : null,
     }))
-    const classified = classifiedDockerResources(inventory.resources, owners)
+    const classified = classifiedDockerResources(inventoryResources, owners)
     for (const { resource, project, condition } of classified) {
       if (condition === 'retained-worktree-resources') continue
       const key = `${resource.kind}:${resource.name}`
@@ -7119,7 +7122,8 @@ switch (cmd) {
       for (const question of registerQuestions) console.log(`  ${question}`)
     }
     const docker = dockerRunResources()
-    const dockerOwnerIds = new Set(docker.resources.map(({ runId }) => runId))
+    const dockerResources = docker.ascertainable ? docker.resources : []
+    const dockerOwnerIds = new Set(dockerResources.map(({ runId }) => runId))
     const owners = (db().query('SELECT id, repo, worktree, status FROM run').all() as {
       id: number; repo: string | null; worktree: string | null; status: string
     }[]).map((owner) => ({
@@ -7128,19 +7132,23 @@ switch (cmd) {
         ? terminalDockerRetentionReasonForRun(db(), owner.id)
         : null,
     }))
-    const classified = classifiedDockerResources(docker.resources, owners)
+    const classified = classifiedDockerResources(dockerResources, owners)
     const orphans = classified.filter(({ condition }) => condition === 'leaked')
     const retained = classified.filter(({ condition }) => condition === 'retained-worktree-resources')
-    console.log(`\ndocker orphans  ${orphans.length}`)
-    for (const { resource, project } of orphans) {
-      console.log(`  ${resource.kind} ${resource.name} — project ${project}, run ${resource.runId}`)
-      console.log(`    ${dockerRemovalCommand(resource)}`)
+    if (!docker.ascertainable) {
+      console.log(`\ndocker inventory unascertainable`)
+      console.log(`  ${docker.reason}`)
+    } else {
+      console.log(`\ndocker orphans  ${orphans.length}`)
+      for (const { resource, project } of orphans) {
+        console.log(`  ${resource.kind} ${resource.name} — project ${project}, run ${resource.runId}`)
+        console.log(`    ${dockerRemovalCommand(resource)}`)
+      }
+      console.log(`docker retained worktree resources  ${retained.length}`)
+      for (const { resource, project, reason } of retained) {
+        console.log(`  ${resource.kind} ${resource.name} — project ${project}, run ${resource.runId}; informational, ${reason ? `removal could not be ascertained: ${reason}; ` : ''}no removal suggested`)
+      }
     }
-    console.log(`docker retained worktree resources  ${retained.length}`)
-    for (const { resource, project, reason } of retained) {
-      console.log(`  ${resource.kind} ${resource.name} — project ${project}, run ${resource.runId}; informational, ${reason ? `removal could not be ascertained: ${reason}; ` : ''}no removal suggested`)
-    }
-    for (const error of docker.errors) console.log(`  inventory unavailable: ${error}`)
     for (const j of Object.keys(JOBS)) {
       try { const p = pick(j); console.log(`  ${j.padEnd(15)} -> ${p.agent}`) }
       catch (e) { console.log(`  ${j.padEnd(15)} -> none (${(e as Error).message})`) }

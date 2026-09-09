@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  classifiedDockerResources, dockerInventoryTimeoutMs, dockerRemovalTimeoutMs,
+  classifiedDockerResources, dockerInventoryTimeoutMs, dockerRemovalTimeoutMs, dockerRunResources,
   orphanedDockerResources, teardownRunResources,
   type DockerResource,
 } from './docker-resources.ts'
@@ -20,6 +20,44 @@ test('docker inventory timeout is configurable and defaults to 1s', () => {
   expect(dockerInventoryTimeoutMs({ ORCH_DOCKER_INVENTORY_TIMEOUT_MS: 'nope' })).toBe(1_000)
   expect(dockerRemovalTimeoutMs({})).toBe(10_000)
   expect(dockerRemovalTimeoutMs({ ORCH_DOCKER_REMOVAL_TIMEOUT_MS: '25000' })).toBe(25_000)
+})
+
+test('a timed-out Docker inventory is unascertainable and discards partial rows', () => {
+  const prior = process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS
+  process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS = '25'
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    if (args[1] === 'ps') return result('app-orch-41-web')
+    return { ...result(''), exitedDueToTimeout: true }
+  }) as typeof Bun.spawnSync)
+  try {
+    expect(dockerRunResources()).toEqual({
+      ascertainable: false,
+      reason: 'docker volume ls inventory unavailable: timed out after 25ms',
+    })
+  } finally {
+    if (prior === undefined) delete process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS
+    else process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS = prior
+  }
+})
+
+test('the default Docker inventory timeout retries once with the longer load bound', () => {
+  const prior = process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS
+  delete process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS
+  const timeouts: number[] = []
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[], options?: { timeout?: number }) => {
+    timeouts.push(options?.timeout ?? 0)
+    if (args[1] === 'ps' && timeouts.length === 1) {
+      return { ...result(''), exitedDueToTimeout: true }
+    }
+    return result('')
+  }) as typeof Bun.spawnSync)
+  try {
+    expect(dockerRunResources()).toEqual({ ascertainable: true, resources: [] })
+    expect(timeouts).toEqual([1_000, 10_000, 1_000])
+  } finally {
+    if (prior === undefined) delete process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS
+    else process.env.ORCH_DOCKER_INVENTORY_TIMEOUT_MS = prior
+  }
 })
 
 test('terminal resources are orphaned even while their worktree survives', () => {
@@ -340,7 +378,7 @@ test('reporting distinguishes leaked resources from terminal resources in a reta
   }
 })
 
-test('unavailable and failing Docker commands are logged without failing teardown', () => {
+test('an unavailable inventory prevents teardown of partially inventoried resources', () => {
   const errors: string[] = []
   spyOn(console, 'error').mockImplementation((value) => { errors.push(String(value)) })
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
@@ -352,11 +390,12 @@ test('unavailable and failing Docker commands are logged without failing teardow
     return result('', 1, 'Cannot connect to the Docker daemon')
   }) as typeof Bun.spawnSync)
 
-  expect(() => teardownRunResources(61)).not.toThrow()
-  expect(errors).toEqual(expect.arrayContaining([
+  expect(teardownRunResources(61)).toEqual(expect.objectContaining({
+    complete: false, removed: 0, skipped: true,
+  }))
+  expect(errors).toEqual([
     expect.stringContaining('inventory unavailable: Cannot connect to the Docker daemon'),
-    expect.stringContaining('docker rm -f app-orch-61-web failed: Cannot connect to the Docker daemon'),
-  ]))
+  ])
 })
 
 test('an already-removed resource is an idempotent success without an error log', () => {

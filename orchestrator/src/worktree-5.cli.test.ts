@@ -589,8 +589,9 @@ exec ${JSON.stringify(actualGit)} "$@"
       ageWorktree(tree)
       const r = orchWithEnv(docker.env, 'sweep', '--force')
       expect(r.code).not.toBe(0)
-      expect(r.err).toContain('inventory unavailable: 2')
+      expect(r.err).toContain('inventory unavailable: 1')
       expect(r.err).toContain('stub inventory failure')
+      expect(r.err).not.toContain('leaked Docker resources: 0')
       expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
         .toEqual({ worktree: tree })
     } finally {
