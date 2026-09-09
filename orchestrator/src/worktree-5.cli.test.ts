@@ -137,7 +137,7 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     const id = addRun({ agent: 'codex', job: 'file-question', status: 'ok', repo: project, startedAt: old })
     const kept = createReadOnlyWorktree(repo, id, git(repo, 'rev-parse', 'HEAD'))
     db().query(
-      `UPDATE run SET worktree=?, cwd=?, branch=NULL, base_commit=?, worktree_source='git' WHERE id=?`,
+      `UPDATE run SET worktree=?, cwd=?, branch=NULL, base_commit=?, worktree_source='git', keep_tree=1 WHERE id=?`,
     ).run(kept.path, kept.path, kept.base, id)
     const recipeOrphan = join(repo, '.claude', 'worktrees', 'recipe-orphan')
     git(repo, 'worktree', 'add', '--detach', recipeOrphan, 'HEAD')

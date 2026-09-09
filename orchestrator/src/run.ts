@@ -15,7 +15,7 @@ import {
   LOCAL_BASE_URL,
 } from './agents.ts'
 import {
-  JOBS, job, isReaderJob, jobIdleKillMs, reclaimsTreeByDefault, resolveJobTimeoutMs, jobBoundInstruction,
+  job, isReaderJob, jobIdleKillMs, reclaimsTreeByDefault, resolveJobTimeoutMs, jobBoundInstruction,
   type Job,
 } from './jobs.ts'
 import { pick } from './route.ts'
