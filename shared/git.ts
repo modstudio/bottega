@@ -80,8 +80,12 @@ type GitResult = { code: number; stdout: string }
 function gitAt(path: string, args: string[]): GitResult {
   if (!existsSync(path)) return { code: 128, stdout: '' }
   try {
+    const env = inspectionGitEnv()
+    delete env.LANGUAGE
+    env.LC_ALL = 'C'
+    env.LANG = 'C'
     const result = Bun.spawnSync(['git', '-C', path, '--no-optional-locks', ...args], {
-      env: { ...inspectionGitEnv(), LC_ALL: 'C', LANG: 'C' }, stdout: 'pipe', stderr: 'pipe',
+      env, stdout: 'pipe', stderr: 'pipe',
     })
     return { code: result.exitCode ?? 128, stdout: result.stdout?.toString() ?? '' }
   } catch {
@@ -168,26 +172,21 @@ function parsePorcelain(stdout: string): { dirtyTracked: string[]; untracked: st
  * pseudo-refs, directories, or working-tree dirt. LC_ALL makes the stable git
  * diagnostics below independent of the operator's locale.
  *
- * DEV-432's completed cherry-pick residue is the one exception git describes
- * as "currently cherry-picking" even though its own conclusion is the generic
- * clean-tree sentence. An actual empty stopped pick uses the distinct
- * "previous cherry-pick is now empty" diagnosis, and remains in-progress.
+ * Git status cannot distinguish a leftover CHERRY_PICK_HEAD over a clean tree
+ * from a live empty cherry-pick: both say "currently cherry-picking" and
+ * "nothing to commit". Refusing both is deliberate; dispatching during the
+ * live operation is worse than a false refusal on residue.
  */
 function inspectSequence(cwd: string): SequenceState {
   const status = gitAt(cwd, ['-c', 'color.status=false', 'status', '--untracked-files=no'])
   if (status.code !== 0) return INDETERMINATE
   const text = status.stdout
-  if (/still merging/i.test(text)) return { status: 'in-progress', kind: 'merge' }
+  if (/still merging|you have unmerged paths/i.test(text)) return { status: 'in-progress', kind: 'merge' }
   if (/rebase in progress|currently rebasing/i.test(text)) return { status: 'in-progress', kind: 'rebase' }
   if (/am session/i.test(text)) return { status: 'in-progress', kind: 'am' }
   if (/currently bisecting/i.test(text)) return { status: 'in-progress', kind: 'bisect' }
   if (/currently reverting/i.test(text)) return { status: 'in-progress', kind: 'revert' }
-  if (/currently cherry-picking/i.test(text)) {
-    if (/^nothing to commit\b/im.test(text) && !/previous cherry-pick is now empty/i.test(text)) {
-      return { status: 'residue', kind: 'cherry-pick' }
-    }
-    return { status: 'in-progress', kind: 'cherry-pick' }
-  }
+  if (/currently cherry-picking/i.test(text)) return { status: 'in-progress', kind: 'cherry-pick' }
   return NONE
 }
 

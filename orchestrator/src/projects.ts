@@ -566,6 +566,15 @@ export function mainCheckoutSequenceRefusal(
   project: Pick<Project, 'name' | 'path'>, kind: SequenceKind,
 ): string {
   const hint = mainCheckoutWorktreeHint(project.path)
+  if (kind === 'cherry-pick') {
+    return (
+      `${project.name}: main checkout ${project.path} has cherry-pick state; git status cannot distinguish ` +
+      `a live empty cherry-pick from a leftover CHERRY_PICK_HEAD\n` +
+      `work from a worktree under ${hint} instead\n` +
+      `invariant: ${MAIN_CHECKOUT_INVARIANT}\n` +
+      `inspect with: git -C ${shellQuote(project.path)} status`
+    )
+  }
   return (
     `${project.name}: main checkout ${project.path} has an in-progress ${kind}\n` +
     `work from a worktree under ${hint} instead\n` +

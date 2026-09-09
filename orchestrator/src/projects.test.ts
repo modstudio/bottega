@@ -328,6 +328,40 @@ describe('main checkout cleanliness', () => {
     }
   })
 
+  test('operational git unsets LANGUAGE while pinning diagnostic locale', () => {
+    const repo = scratch()
+    const bin = mkdtempSync(join(tmpdir(), 'orch-language-path-'))
+    const wrapper = join(bin, 'git')
+    const marker = join(bin, 'language-leaked')
+    const realGit = Bun.which('git')!
+    writeFileSync(wrapper, `#!/bin/sh
+if [ "$3" = "--no-optional-locks" ] && [ "\${LANGUAGE+x}" = x ]; then
+  printf present > ${JSON.stringify(marker)}
+  exit 99
+fi
+exec ${JSON.stringify(realGit)} "$@"
+`)
+    chmodSync(wrapper, 0o755)
+    try {
+      const child = Bun.spawnSync(
+        [process.execPath, '--eval', `
+          const { inspectMainCheckout } = await import(${JSON.stringify(new URL('./projects.ts', import.meta.url).href)});
+          process.stdout.write(JSON.stringify(inspectMainCheckout(${JSON.stringify(repo)})));
+        `],
+        {
+          stdout: 'pipe', stderr: 'pipe',
+          env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}`, LANGUAGE: 'de_DE' },
+        },
+      )
+      expect(child.exitCode, child.stderr.toString()).toBe(0)
+      expect(JSON.parse(child.stdout.toString())).toEqual(CLEAN)
+      expect(existsSync(marker)).toBe(false)
+    } finally {
+      rmSync(bin, { recursive: true, force: true })
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
   test('a dummy index.lock with a genuinely dirty file still reports dirty', () => {
     const repo = scratch()
     try {
@@ -421,6 +455,27 @@ describe('main checkout cleanliness', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  test('a conflicted no-commit merge is classified by git as a merge', () => {
+    const repo = scratch()
+    try {
+      git(repo, 'checkout', '-b', 'topic')
+      writeFileSync(join(repo, 'tracked.txt'), 'topic\n')
+      git(repo, 'commit', '-am', 'topic change')
+      git(repo, 'checkout', 'main')
+      writeFileSync(join(repo, 'tracked.txt'), 'main\n')
+      git(repo, 'commit', '-am', 'main change')
+      const merge = Bun.spawnSync(
+        ['git', 'merge', '--no-commit', 'topic'],
+        { cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' },
+      )
+      expect(merge.exitCode).not.toBe(0)
+      expect(inspectMainCheckout(repo)).toEqual({
+        dirtyTracked: ['tracked.txt'], untracked: [], sequence: { status: 'in-progress', kind: 'merge' },
+      })
+      expect(() => assertMainCheckoutClean(project(repo))).toThrow('in-progress merge')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   test('revert --no-commit is in-progress', () => {
     const repo = scratch()
     try {
@@ -432,15 +487,54 @@ describe('main checkout cleanliness', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
-  test('a leftover CHERRY_PICK_HEAD over a clean tree is residue and does not refuse', () => {
+  test('a live empty cherry-pick refuses without recommending a destructive command', () => {
+    const repo = scratch()
+    try {
+      git(repo, 'checkout', '-b', 'topic')
+      writeFileSync(join(repo, 'tracked.txt'), 'same result\n')
+      git(repo, 'commit', '-am', 'topic change')
+      const topic = git(repo, 'rev-parse', 'HEAD')
+      git(repo, 'checkout', 'main')
+      writeFileSync(join(repo, 'tracked.txt'), 'same result\n')
+      git(repo, 'commit', '-am', 'main change')
+      const pick = Bun.spawnSync(
+        ['git', 'cherry-pick', topic],
+        { cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' },
+      )
+      expect(pick.exitCode).not.toBe(0)
+      expect(inspectMainCheckout(repo)).toEqual({
+        dirtyTracked: [], untracked: [], sequence: { status: 'in-progress', kind: 'cherry-pick' },
+      })
+      expect(() => assertMainCheckoutClean(project(repo))).toThrow('cannot distinguish')
+      try {
+        assertMainCheckoutClean(project(repo))
+      } catch (error) {
+        const text = String(error)
+        expect(text).toContain(`inspect with: git -C '${repo}' status`)
+        expect(text).not.toContain('--abort')
+        expect(text).not.toContain('--continue')
+      }
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('a leftover CHERRY_PICK_HEAD over a clean tree refuses as indistinguishable state', () => {
     const repo = scratch()
     try {
       const sha = git(repo, 'rev-parse', 'HEAD')
       writeFileSync(join(repo, '.git', 'CHERRY_PICK_HEAD'), `${sha}\n`)
       expect(inspectMainCheckout(repo)).toEqual({
-        dirtyTracked: [], untracked: [], sequence: { status: 'residue', kind: 'cherry-pick' },
+        dirtyTracked: [], untracked: [], sequence: { status: 'in-progress', kind: 'cherry-pick' },
       })
-      expect(assertMainCheckoutClean(project(repo))).toBeNull()
+      expect(() => assertMainCheckoutClean(project(repo))).toThrow('cannot distinguish')
+      try {
+        assertMainCheckoutClean(project(repo))
+      } catch (error) {
+        const text = String(error)
+        expect(text).toContain('leftover CHERRY_PICK_HEAD')
+        expect(text).toContain(`inspect with: git -C '${repo}' status`)
+        expect(text).not.toContain('--abort')
+        expect(text).not.toContain('--continue')
+      }
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
