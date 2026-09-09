@@ -1,0 +1,31 @@
+#!/bin/sh
+# Refuse commits in a registered main checkout because writing work belongs in
+# a linked worktree.
+git_dir=$(git rev-parse --git-dir 2>/dev/null) || {
+  echo "pre-commit: allowing commit: git could not resolve the checkout" >&2
+  exit 0
+}
+common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || {
+  echo "pre-commit: allowing commit: git could not resolve the common directory" >&2
+  exit 0
+}
+[ "$git_dir" = "$common_dir" ] || exit 0
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) || {
+  echo "pre-commit: allowing commit: git could not resolve the repository root" >&2
+  exit 0
+}
+hook="$root/orchestrator/hooks/protect-main-checkout.py"
+
+# Fail open on a missing interpreter or hook. A guard that blocks every commit
+# because python3 is off the PATH costs more than the commits it would refuse.
+command -v python3 >/dev/null 2>&1 || {
+  echo "pre-commit: allowing commit: python3 is not available" >&2
+  exit 0
+}
+[ -f "$hook" ] || {
+  echo "pre-commit: allowing commit: $hook is missing" >&2
+  exit 0
+}
+
+exec python3 "$hook" --pre-commit

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""PreToolUse hook: refuse an edit to a TRACKED file in a registered main checkout.
+"""Refuse edits and commits in a registered main checkout.
 
-Landings, orch itself and ordinary builds are not gated — they do not go
-through the interactive editor tools this watches. A project opts out with
+The default PreToolUse mode watches tracked-file edits. The --pre-commit mode
+watches commits from the checkout itself. A project opts out with
 {"requireCleanMain": false} in its register settings.
 """
 import json
@@ -15,7 +15,9 @@ EDITOR_TOOLS = {"Write", "Edit", "NotebookEdit"}
 INVARIANT = "A registered main checkout stays clean; work happens in a worktree"
 
 
-def fail_open() -> int:
+def fail_open(message=None) -> int:
+    if message:
+        print(f"protect-main-checkout: allowing commit: {message}", file=sys.stderr)
     return 0
 
 
@@ -60,17 +62,17 @@ def real(path):
         return path
 
 
-def load_projects(db_path):
+def load_projects_result(db_path):
     if not db_path or not os.path.exists(db_path):
-        return []
+        return [], "project register is missing"
     try:
         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         try:
             rows = conn.execute("SELECT name, path, settings FROM project").fetchall()
         finally:
             conn.close()
-    except sqlite3.Error:
-        return []
+    except sqlite3.Error as error:
+        return [], f"project register is unreadable ({error})"
     projects = []
     for name, path, settings_raw in rows:
         settings = {}
@@ -83,7 +85,11 @@ def load_projects(db_path):
                 settings = {}
         projects.append({"name": name, "path": path, "settings": settings})
     projects.sort(key=lambda row: len(row["path"] or ""), reverse=True)
-    return projects
+    return projects, None
+
+
+def load_projects(db_path):
+    return load_projects_result(db_path)[0]
 
 
 def requires_clean_main(settings):
@@ -151,7 +157,41 @@ def deny(project, path):
     return 0
 
 
+def deny_commit(project):
+    hint = os.path.join(project["path"], ".claude", "worktrees")
+    print(
+        f"{project['name']}: refusing commit in registered main checkout {project['path']}",
+        file=sys.stderr,
+    )
+    print(f"invariant: {INVARIANT}", file=sys.stderr)
+    print(f"cleared by: commit from a worktree under {hint}", file=sys.stderr)
+    return 1
+
+
+def pre_commit() -> int:
+    cwd = os.getcwd()
+    db_path = os.environ.get("ORCH_DB") or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "orch.db"
+    )
+    projects, error = load_projects_result(db_path)
+    if error:
+        return fail_open(error)
+    top = toplevel(cwd)
+    if not top:
+        return fail_open("git could not resolve the checkout")
+    project, root = project_for(top, projects)
+    if project is None or root is None:
+        return fail_open()
+    if not requires_clean_main(project["settings"]):
+        return fail_open()
+    if real(top) != root:
+        return fail_open()
+    return deny_commit(project)
+
+
 def main() -> int:
+    if sys.argv[1:] == ["--pre-commit"]:
+        return pre_commit()
     try:
         payload = json.load(sys.stdin)
     except Exception:

@@ -146,7 +146,12 @@ const installs = await Promise.all(legs.map((leg) => runLeg({
 refuseFailed(installs)
 
 if (await inherit([
-  'bun', 'test', './.githooks/commit-msg.test.ts', './scripts/check-canon.test.ts',
+  // Every .githooks test must be named here. The list is explicit rather than a
+  // glob so this runs in a fixed order before the legs, and the cost of that is
+  // that an unnamed hook test is not gated at all - which reports safety it is
+  // not providing.
+  'bun', 'test', './.githooks/commit-msg.test.ts', './.githooks/post-merge.test.ts',
+  './.githooks/pre-commit.test.ts', './scripts/check-canon.test.ts',
   './scripts/quality/ratchet.test.ts',
 ]) !== 0) process.exit(1)
 
