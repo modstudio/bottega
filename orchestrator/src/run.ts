@@ -917,43 +917,59 @@ type LiveCheckpoint = {
 }
 const liveCheckpoints = new Map<LiveProcess, LiveCheckpoint>()
 
-type ProcessRow = { pid: number; ppid: number; command: string }
+type ProcessRow = { pid: number; ppid: number; pgid: number; command: string }
+type ProcessInventory =
+  | { ascertainable: true; rows: ProcessRow[] }
+  | { ascertainable: false; reason: string }
 
-function processTable(): ProcessRow[] {
+let testProcessInventory: ProcessInventory | null = null
+export function installTestProcessInventory(inventory: ProcessInventory | null): void {
+  testProcessInventory = inventory
+}
+
+function processTable(): ProcessInventory {
+  if (testProcessInventory) return testProcessInventory
   let p
   try {
-    p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,command='], {
+    p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,command='], {
       stdout: 'pipe', stderr: 'pipe', timeout: 1_000,
     })
   } catch (error) {
-    console.error(`orch: process inventory unavailable; nothing signalled: ${String((error as Error).message ?? error)}`)
-    return []
+    return {
+      ascertainable: false,
+      reason: `process inventory unavailable: ${String((error as Error).message ?? error)}`,
+    }
   }
   if (p.exitCode !== 0) {
     const stderr = p.stderr.length ? `: ${p.stderr.toString().trim()}` : ''
     if (p.exitCode === null && p.signalCode === 'SIGTERM') {
-      console.error(`orch: process inventory did not complete inside 1000ms; nothing signalled${stderr}`)
+      return { ascertainable: false, reason: `process inventory did not complete inside 1000ms${stderr}` }
     } else if (p.exitCode !== null) {
-      console.error(`orch: process inventory failed with exit ${p.exitCode}; nothing signalled${stderr}`)
-    } else {
-      console.error(`orch: process inventory ended on signal ${p.signalCode ?? 'unknown'}; nothing signalled${stderr}`)
+      return { ascertainable: false, reason: `process inventory failed with exit ${p.exitCode}${stderr}` }
     }
-    return []
+    return {
+      ascertainable: false,
+      reason: `process inventory ended on signal ${p.signalCode ?? 'unknown'}${stderr}`,
+    }
   }
-  return p.stdout.toString().split('\n').flatMap((line): ProcessRow[] => {
-    const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/)
-    return match ? [{ pid: Number(match[1]), ppid: Number(match[2]), command: match[3]! }] : []
-  })
+  return {
+    ascertainable: true,
+    rows: p.stdout.toString().split('\n').flatMap((line): ProcessRow[] => {
+      const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/)
+      return match
+        ? [{ pid: Number(match[1]), ppid: Number(match[2]), pgid: Number(match[3]), command: match[4]! }]
+        : []
+    }),
+  }
 }
 
 /** Terminate the verified whole descendant tree, youngest-first. */
 export function verifiedProcessTree(
   table: ProcessRow[], id: number, rootPid: number, exclude: number[] = [],
-  rootVerified = false,
 ): number[] {
   const root = table.find((candidate) => candidate.pid === rootPid)
   const identity = new RegExp(`(?:^|[/\\s])exec\\.ts\\s+${id}(?:\\s|$)`)
-  if (!root || (!rootVerified && !identity.test(root.command))) return []
+  if (!root || !identity.test(root.command)) return []
   const skipped = new Set(exclude)
   const depth = new Map<number, number>([[root.pid, 0]])
   let changed = true
@@ -977,17 +993,17 @@ export function terminateRunProcesses(id: number, exclude: number[] = []): numbe
     { pid: number | null; agent_pid: number | null } | null
   if (!row) throw new Error(`no run ${id}`)
   if (!row.pid) return []
-  const table = processTable()
+  const inventory = processTable()
+  if (!inventory.ascertainable) {
+    console.error(`orch: ${inventory.reason}; nothing signalled`)
+    return []
+  }
   // A stop command is itself a descendant of the coordinator it is stopping.
   // If the reaper signals itself, it can exit before reaching a sibling vendor
   // process and leave the caller waiting on that vendor forever.
-  // A synchronous stop launched by the coordinator has an equally strong
-  // identity proof: the recorded coordinator is this command's direct parent.
-  const pids = verifiedProcessTree(
-    table, id, row.pid, [...exclude, process.pid], row.pid === process.ppid,
-  )
+  const pids = verifiedProcessTree(inventory.rows, id, row.pid, [...exclude, process.pid])
   if (!pids.length) {
-    if (table.some((candidate) => candidate.pid === row.pid)) {
+    if (inventory.rows.some((candidate) => candidate.pid === row.pid)) {
       console.error(`orch: run ${id} pid ${row.pid} identity could not be confirmed; nothing signalled`)
     }
     return []
@@ -1766,9 +1782,9 @@ export const WORKTREE_LIVE_MS = 2 * 60 * 60 * 1000
 /** One cleanup path for terminalisation, explicit close-out, and sweep. */
 export function closeOutRun(
   runId: number, options: {
-    terminalAt?: number; sweep?: boolean; dryRun?: boolean
+    intent: 'terminal' | 'explicit' | 'sweep'; dryRun?: boolean; lockTimeoutMs?: number
     extraPids?: number[]; pgid?: number | null
-  } = {},
+  },
 ): CloseOutResult {
   const row = db().query(
     `SELECT id, COALESCE(parent_run_id,id) root_id, job, repo, cwd, worktree, branch,
@@ -1848,12 +1864,24 @@ export function closeOutRun(
     runId: row.root_id, worktree: treePath, outcome: 'live',
     detail: `live run(s): ${live.map((owner) => `${owner.id} (${owner.status})`).join(', ')}`,
   }
+  const agentPids = (db().query(
+    'SELECT agent_pid FROM run WHERE id=? OR parent_run_id=? ORDER BY id',
+  ).all(row.root_id, row.root_id) as { agent_pid: number | null }[])
+    .map((turn) => turn.agent_pid)
+  const processInventory = processTable()
+  if (!processInventory.ascertainable) return {
+    runId: row.root_id, worktree: treePath, outcome: 'live',
+    detail: `${processInventory.reason}; retained because process liveness could not be established`,
+  }
+  const processSamples = processInventory.rows.map((processRow) => ({
+    pid: processRow.pid, ppid: processRow.ppid, pgid: processRow.pgid, cpu: 0, state: '',
+  }))
   // A database row cannot observe a grandchild born after the T0 census and
   // reparented when its wrapper died. Re-sample the process table and retain
   // the tree when either the recorded vendor or that captured process group
   // still has a live descendant.
   if (runHasLiveDescendants(
-    [row.agent_pid], options.extraPids ?? [], {}, options.pgid ?? null,
+    agentPids, options.extraPids ?? [], { sample: () => processSamples }, options.pgid ?? null,
   )) return {
     runId: row.root_id, worktree: treePath, outcome: 'live',
     detail: 'process tree still alive',
@@ -1875,13 +1903,11 @@ export function closeOutRun(
           runId: row.root_id, worktree: treePath, outcome: 'live' as const,
           detail: `live run(s): ${lockedLive.map((owner) => `${owner.id} (${owner.status})`).join(', ')}`,
         }
-        const latest = worktreeLatestMtime(treePath)
-        const threshold = options.terminalAt ?? (Date.now() - WORKTREE_LIVE_MS)
+        const latest = options.intent === 'sweep' ? worktreeLatestMtime(treePath) : null
+        const threshold = Date.now() - WORKTREE_LIVE_MS
         if (latest !== null && latest > threshold) return {
           runId: row.root_id, worktree: treePath, outcome: 'live' as const,
-          detail: options.terminalAt
-            ? 'filesystem activity occurred after terminalisation'
-            : 'filesystem activity occurred inside the two-hour liveness window',
+          detail: 'filesystem activity occurred inside the two-hour liveness window',
         }
         // Reader trees are scratch evidence. They can contain the carried
         // subject under review and verification edits, neither of which is a
@@ -1907,14 +1933,27 @@ export function closeOutRun(
           detail: 'would release clean terminal worktree and keep its branch',
         }
         // The coordinator proves its own identity before descendants are signalled.
-        const processRow = db().query('SELECT pid FROM run WHERE id=?').get(row.id) as
-          { pid: number | null } | null
-        const processWasLive = Boolean(processRow?.pid && processRow.pid !== process.pid && pidAlive(processRow.pid))
-        const signalled = terminateRunProcesses(row.id, [process.pid])
-        const processWarning = processWasLive && !signalled.includes(processRow!.pid!)
-          ? `; process pid ${processRow!.pid} was not signalled because its identity could not be confirmed`
-          : ''
+        const liveCoordinator = (db().query(
+          'SELECT id,pid FROM run WHERE (id=? OR parent_run_id=?) AND pid IS NOT NULL ORDER BY id',
+        ).all(row.root_id, row.root_id) as { id: number; pid: number }[])
+          .find((turn) => turn.pid !== process.pid && pidAlive(turn.pid))
+        if (liveCoordinator) return {
+          runId: row.root_id, worktree: treePath, outcome: 'live' as const,
+          detail: `recorded coordinator pid ${liveCoordinator.pid} for run ${liveCoordinator.id} is still alive`,
+        }
+        terminateRunProcesses(row.id, [process.pid])
         const branchSnapshot = retainedBranch ? branchTip(repoRoot, retainedBranch) : null
+        const retainedRef = branchSnapshot ? `refs/orch/retained/${row.root_id}` : null
+        if (retainedRef && branchSnapshot) {
+          const pinned = Bun.spawnSync(['git', 'update-ref', retainedRef, branchSnapshot], {
+            cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
+          })
+          if (pinned.exitCode !== 0) return {
+            runId: row.root_id, worktree: treePath, outcome: 'failed' as const,
+            detail: `could not protect retained branch ${retainedBranch} at ${branchSnapshot}: ` +
+              (pinned.stderr.toString().trim() || `git update-ref exited ${pinned.exitCode}`),
+          }
+        }
         // Publish the recovery identity before a project-owned remover runs: a
         // remover may delete or move the ref before reporting its refusal.
         recordRetainedBranch(branchSnapshot)
@@ -1923,9 +1962,6 @@ export function closeOutRun(
           repoRoot, source: effective.worktree_source ?? undefined,
           mintedBranch: effective.minted_branch,
         }, repoRoot, false, true, row.root_id, false)
-        if (!result.removed) return {
-          runId: row.root_id, worktree: treePath, outcome: 'failed' as const, detail: result.detail,
-        }
         if (retainedBranch && branchSnapshot) {
           const branchAfter = branchTip(repoRoot, retainedBranch)
           if (branchAfter === null) {
@@ -1939,10 +1975,23 @@ export function closeOutRun(
             recordRetainedBranch(branchSnapshot)
             return {
               runId: row.root_id, worktree: treePath, outcome: 'failed' as const,
-              detail: `project remove tool moved retained branch ${retainedBranch} from ` +
+              detail: `project remove tool moved unique branch ${retainedBranch} from ` +
                 `${branchSnapshot} to ${branchAfter}; it was left at the new tip`,
             }
           }
+        }
+        if (retainedRef) {
+          const unpinned = Bun.spawnSync(['git', 'update-ref', '-d', retainedRef, branchSnapshot!], {
+            cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
+          })
+          if (unpinned.exitCode !== 0) return {
+            runId: row.root_id, worktree: treePath, outcome: 'failed' as const,
+            detail: `retained branch ${retainedBranch} was verified, but ${retainedRef} could not be removed: ` +
+              (unpinned.stderr.toString().trim() || `git update-ref exited ${unpinned.exitCode}`),
+          }
+        }
+        if (!result.removed) return {
+          runId: row.root_id, worktree: treePath, outcome: 'failed' as const, detail: result.detail,
         }
         const acquired = liveRows()
         if (acquired.length) {
@@ -1954,9 +2003,9 @@ export function closeOutRun(
         }
         return {
           runId: row.root_id, worktree: treePath, outcome: 'released' as const,
-          detail: (result.output ? `${result.detail}\n${result.output}` : result.detail) + processWarning,
+          detail: result.output ? `${result.detail}\n${result.output}` : result.detail,
         }
-      }), 5 * 60_000)
+      }, options.lockTimeoutMs), options.lockTimeoutMs)
   } catch (error) {
     return { runId: row.root_id, worktree: treePath, outcome: 'failed', detail: String((error as Error).message ?? error) }
   }
@@ -1966,7 +2015,7 @@ function reclaimTerminalTree(
   runId: number, worktree: Worktree, extraPids: number[] = [], pgid: number | null = null,
 ): void {
   try {
-    const result = closeOutRun(runId, { terminalAt: Date.now(), extraPids, pgid })
+    const result = closeOutRun(runId, { intent: 'terminal', extraPids, pgid })
     if (result.outcome !== 'released' && result.outcome !== 'absent') {
       console.error(`orch: close-out ${result.outcome} worktree for run ${runId}: ${result.detail}`)
     }

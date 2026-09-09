@@ -1,12 +1,16 @@
-import { expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import {
   addRun, closeOutRun, createWorktree, db, hermeticGitEnv, upsertProject,
   verifiedProcessTree, worktreeLeaseName, projectLockDir, monitor, fakeDocker,
+  installTestProcessInventory,
 } from '../test/fixture.ts'
+
+beforeEach(() => installTestProcessInventory({ ascertainable: true, rows: [] }))
+afterEach(() => installTestProcessInventory(null))
 
 function git(cwd: string, ...args: string[]): string {
   const p = Bun.spawnSync(['git', ...args], {
@@ -43,7 +47,7 @@ test('close-out releases a fully committed tree and keeps its branch', () => {
     git(f.tree.path, 'commit', '-m', 'DEV-410 work')
     const tip = git(f.tree.path, 'rev-parse', 'HEAD')
     db().query('UPDATE run SET head_commit=? WHERE id=?').run(tip, f.id)
-    const result = closeOutRun(f.id, { terminalAt: Date.now() + 1 })
+    const result = closeOutRun(f.id, { intent: 'terminal' })
     expect(result.outcome).toBe('released')
     expect(existsSync(f.tree.path)).toBe(false)
     expect(git(f.repo, 'rev-parse', f.tree.branch)).toBe(tip)
@@ -64,7 +68,7 @@ for (const kind of ['tracked', 'untracked'] as const) test(`close-out holds ${ki
   try {
     if (kind === 'tracked') writeFileSync(join(f.tree.path, 'base.txt'), 'changed\n')
     else writeFileSync(join(f.tree.path, 'new.txt'), 'new\n')
-    const result = closeOutRun(f.id, { terminalAt: Date.now() + 1 })
+    const result = closeOutRun(f.id, { intent: 'terminal' })
     expect(result.outcome).toBe('held')
     expect(result.detail).toContain('uncommitted or untracked')
     expect(existsSync(f.tree.path)).toBe(true)
@@ -76,7 +80,7 @@ test('a running sibling sharing the tree wins over clean release', () => {
   try {
     const sibling = addRun({ agent: 'codex', job: 'understand', status: 'running', repo: f.project })
     db().query('UPDATE run SET worktree=? WHERE id=?').run(f.tree.path, sibling)
-    const result = closeOutRun(f.id, { terminalAt: Date.now() + 1 })
+    const result = closeOutRun(f.id, { intent: 'terminal' })
     expect(result.outcome).toBe('live')
     expect(result.detail).toContain(`${sibling} (running)`)
     expect(existsSync(f.tree.path)).toBe(true)
@@ -87,7 +91,7 @@ test('a live process tree wins over database-only terminal liveness', () => {
   const f = fixture()
   try {
     const result = closeOutRun(f.id, {
-      terminalAt: Date.now() + 1,
+      intent: 'terminal',
       extraPids: [process.pid],
     })
     expect(result.outcome).toBe('live')
@@ -96,15 +100,84 @@ test('a live process tree wins over database-only terminal liveness', () => {
   } finally { rmSync(f.repo, { recursive: true, force: true }) }
 })
 
-test('post-terminal filesystem activity wins over clean release', () => {
+test('a live terminal sibling turn process retains the conversation tree', () => {
+  const f = fixture()
+  const sleeper = Bun.spawn(['sleep', '30'], { stdout: 'pipe', stderr: 'pipe' })
+  try {
+    const child = addRun({ agent: 'codex', job: 'implement', status: 'ok', parent: f.id, turn: 2 })
+    db().query('UPDATE run SET worktree=?, branch=?, agent_pid=? WHERE id=?')
+      .run(f.tree.path, f.tree.branch, sleeper.pid, child)
+    installTestProcessInventory({ ascertainable: true, rows: [
+      { pid: sleeper.pid, ppid: process.pid, pgid: sleeper.pid, command: 'sleep 30' },
+    ] })
+    const result = closeOutRun(f.id, { intent: 'explicit' })
+    expect(result.outcome).toBe('live')
+    expect(result.detail).toBe('process tree still alive')
+    expect(existsSync(f.tree.path)).toBe(true)
+  } finally {
+    sleeper.kill()
+    rmSync(f.repo, { recursive: true, force: true })
+  }
+})
+
+test('unascertainable process inventory retains the tree with the missing condition', () => {
   const f = fixture()
   try {
-    const terminalAt = Date.now() - 1_000
-    writeFileSync(join(f.tree.path, 'base.txt'), 'base\n')
-    const result = closeOutRun(f.id, { terminalAt })
+    installTestProcessInventory({ ascertainable: false, reason: 'process inventory unavailable: EPERM' })
+    const result = closeOutRun(f.id, { intent: 'explicit' })
     expect(result.outcome).toBe('live')
-    expect(result.detail).toContain('after terminalisation')
+    expect(result.detail).toContain('EPERM')
+    expect(result.detail).toContain('process liveness could not be established')
     expect(existsSync(f.tree.path)).toBe(true)
+  } finally { rmSync(f.repo, { recursive: true, force: true }) }
+})
+
+test('a live recorded coordinator retains the tree without relying on command identity', () => {
+  const f = fixture()
+  const coordinator = Bun.spawn(['sleep', '30'], { stdout: 'pipe', stderr: 'pipe' })
+  try {
+    db().query('UPDATE run SET pid=? WHERE id=?').run(coordinator.pid, f.id)
+    const result = closeOutRun(f.id, { intent: 'explicit' })
+    expect(result.outcome).toBe('live')
+    expect(result.detail).toBe(`recorded coordinator pid ${coordinator.pid} for run ${f.id} is still alive`)
+    expect(existsSync(f.tree.path)).toBe(true)
+  } finally {
+    coordinator.kill()
+    rmSync(f.repo, { recursive: true, force: true })
+  }
+})
+
+test('a retained git ref protects the tip while a project remover deletes its branch', () => {
+  const f = fixture()
+  const observed = join(f.repo, 'retained-tip')
+  try {
+    writeFileSync(join(f.tree.path, 'work.txt'), 'done\n')
+    git(f.tree.path, 'add', 'work.txt')
+    git(f.tree.path, 'commit', '-m', 'DEV-410 retained ref fixture')
+    const tip = git(f.tree.path, 'rev-parse', 'HEAD')
+    const remover = join(f.repo, 'remove-tree.sh')
+    writeFileSync(remover,
+      `git rev-parse refs/orch/retained/${f.id} > "${observed}"\n` +
+      'git worktree remove --force "$1"\n' +
+      'git branch -D "$2"\n')
+    upsertProject({
+      name: f.project, path: f.repo,
+      settings: { trunk: 'main', worktree: { remove: `sh "${remover}" {path} {branch}` } },
+    })
+    db().query("UPDATE run SET worktree_source='recipe' WHERE id=?").run(f.id)
+    const result = closeOutRun(f.id, { intent: 'explicit' })
+    expect(result.outcome).toBe('released')
+    expect(readFileSync(observed, 'utf8').trim()).toBe(tip)
+    expect(git(f.repo, 'rev-parse', f.tree.branch)).toBe(tip)
+  } finally { rmSync(f.repo, { recursive: true, force: true }) }
+})
+
+test('explicit close-out ignores recent filesystem activity', () => {
+  const f = fixture()
+  try {
+    const result = closeOutRun(f.id, { intent: 'explicit' })
+    expect(result.outcome).toBe('released')
+    expect(existsSync(f.tree.path)).toBe(false)
   } finally { rmSync(f.repo, { recursive: true, force: true }) }
 })
 
@@ -124,7 +197,7 @@ test('live worktree lease is handled conservatively', async () => {
   try {
     for (let i = 0; i < 200 && !existsSync(ready); i++) await Bun.sleep(5)
     expect(existsSync(ready)).toBe(true)
-    const result = closeOutRun(f.id, { terminalAt: Date.now() + 1 })
+    const result = closeOutRun(f.id, { intent: 'terminal' })
     expect(result.outcome).toBe('live')
     expect(existsSync(f.tree.path)).toBe(true)
   } finally {
@@ -144,7 +217,7 @@ test('dead-holder metadata does not confer worktree liveness', () => {
     startTime: null, incarnation: 'dead',
   }))
   try {
-    expect(closeOutRun(f.id, { terminalAt: Date.now() + 1 }).outcome).toBe('released')
+    expect(closeOutRun(f.id, { intent: 'terminal' }).outcome).toBe('released')
     expect(existsSync(f.tree.path)).toBe(false)
   } finally { rmSync(f.repo, { recursive: true, force: true }) }
 })
@@ -154,19 +227,19 @@ test('resume identity keeps the root tree while any turn is live', () => {
   try {
     const child = addRun({ agent: 'codex', job: 'implement', status: 'ok', parent: f.id, turn: 2 })
     db().query('UPDATE run SET worktree=?, branch=? WHERE id=?').run(f.tree.path, f.tree.branch, child)
-    expect(closeOutRun(child, { terminalAt: Date.now() + 1 }).outcome).toBe('live')
+    expect(closeOutRun(child, { intent: 'terminal' }).outcome).toBe('live')
     db().query("UPDATE run SET status='ok' WHERE id=?").run(f.id)
-    expect(closeOutRun(child, { terminalAt: Date.now() + 1 }).outcome).toBe('released')
+    expect(closeOutRun(child, { intent: 'terminal' }).outcome).toBe('released')
     expect(existsSync(f.tree.path)).toBe(false)
   } finally { rmSync(f.repo, { recursive: true, force: true }) }
 })
 
 test('process reaping selects the whole verified tree youngest-first and rejects pid reuse', () => {
   const rows = [
-    { pid: 10, ppid: 1, command: 'bun /repo/orchestrator/src/exec.ts 44 prompt implement' },
-    { pid: 11, ppid: 10, command: 'vendor' },
-    { pid: 12, ppid: 11, command: 'gateway' },
-    { pid: 99, ppid: 1, command: 'bun run dev' },
+    { pid: 10, ppid: 1, pgid: 10, command: 'bun /repo/orchestrator/src/exec.ts 44 prompt implement' },
+    { pid: 11, ppid: 10, pgid: 10, command: 'vendor' },
+    { pid: 12, ppid: 11, pgid: 10, command: 'gateway' },
+    { pid: 99, ppid: 1, pgid: 99, command: 'bun run dev' },
   ]
   expect(verifiedProcessTree(rows, 44, 10)).toEqual([12, 11, 10])
   expect(verifiedProcessTree(rows, 44, 99)).toEqual([])

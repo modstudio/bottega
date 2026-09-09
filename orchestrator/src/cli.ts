@@ -1631,6 +1631,7 @@ function usage(): never {
       --force                   also delete a protected branch; bypass a refusing project tool
                                 only for a tree marked as created by orch
   orch close-out <id>           release a terminal run's clean worktree and resources; keep its branch
+      --non-blocking            return immediately when a cleanup lock is contested
   orch abandon <id> [--note "..."] [--force] retire an asking run and clean up its worktree
   orch sweep [--force] [--dry-run]
       backstop close-out for terminal trees; clean trees are released and branches kept.
@@ -4725,7 +4726,7 @@ switch (cmd) {
           continue
         }
       }
-      const closed = closeOutRun(r.id, { sweep: true, dryRun: dry })
+      const closed = closeOutRun(r.id, { intent: 'sweep', dryRun: dry })
       if (closed.outcome === 'released' || closed.outcome === 'absent') {
         if (dry) {
           console.log(`would reclaim ${r.id}  ${r.worktree}`)
@@ -5118,7 +5119,9 @@ switch (cmd) {
     const id = Number(argv[1])
     if (!id) usage()
     writableDb()
-    const result = closeOutRun(id)
+    const result = closeOutRun(id, {
+      intent: 'explicit', lockTimeoutMs: has('non-blocking') ? 0 : undefined,
+    })
     console.log(`${result.outcome} run ${result.runId}${result.worktree ? ` ${result.worktree}` : ''}: ${result.detail}`)
     if (result.outcome === 'held' || result.outcome === 'failed') process.exitCode = 1
     break
@@ -5292,7 +5295,7 @@ switch (cmd) {
     const { row } = abandoned
     console.log(`abandoned run ${row.id}`)
 
-    const closed = closeOutRun(authority.rootId, { terminalAt: Date.now() })
+    const closed = closeOutRun(authority.rootId, { intent: 'explicit' })
     console.log(`${closed.outcome} worktree: ${closed.detail}`)
     if (closed.outcome === 'failed') process.exitCode = 1
     break

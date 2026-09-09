@@ -175,7 +175,7 @@ export const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePa
         retryModelForAgent, run: runJob, listRunArtifacts, runArtifactsDir, runScratchDir,
         noRepoIsolatePath,
         readDispatchState, persistTerminalSnapshot, reconcileRun, closeOutRun,
-        verifiedProcessTree, WORKTREE_LIVE_MS } = await import('../src/run.ts')
+        verifiedProcessTree, installTestProcessInventory, WORKTREE_LIVE_MS } = await import('../src/run.ts')
 export const run = runJob
 export const {
   CANON_EVALS, CANON_EVAL_LENS, TRACKED_EVAL_PATH, UNTRACKED_EVAL_PATH,

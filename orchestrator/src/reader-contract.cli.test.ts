@@ -307,7 +307,9 @@ process.stdout.write(${JSON.stringify(JSON.stringify({
   test('an artifact persistence failure cannot overwrite a concurrent operator stop', async () => {
     const repo = repository()
     const ready = join(dir, `reader-persist-stop-${randomUUID()}.ready`)
-    const restore = stubCodex(`
+    const binDir = join(dir, `reader-persist-stop-bin-${randomUUID()}`)
+    mkdirSync(binDir)
+    writeFileSync(join(binDir, 'grok'), `#!/usr/bin/env bun
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 mkdirSync(join(process.env.ORCH_SCRATCH, 'evidence.txt'))
@@ -318,33 +320,32 @@ process.stdout.write(${JSON.stringify(readerReply([
 writeFileSync(${JSON.stringify(ready)}, 'ready\\n')
 await new Promise(() => {})
 `)
-    // The dispatch below runs in-process under whatever session the ambient
-    // environment names, while the stop is a child that names
-    // orch-test-session; under a landing gate run from an architect session
-    // the two differed and ownership refused the stop. Pin both to the same.
-    const priorSession = process.env.CLAUDE_CODE_SESSION_ID
-    process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
+    chmodSync(join(binDir, 'grok'), 0o755)
     try {
-      const pending = runJob({
-        job: 'diagnose', prompt: 'measure', cwd: repo, agent: 'codex',
-        deliverables: ['x'], noFailover: true,
-      })
+      const launched = orch(
+        repo, binDir,
+        'do', 'diagnose', '--deliverable', 'x', 'measure',
+        '--agent', 'grok', '--no-failover', '--porcelain',
+      )
+      expect(launched.code, launched.err).toBe(0)
+      const runId = Number(launched.out.trim())
+      expect(runId).toBeGreaterThan(0)
       for (let i = 0; i < 500 && !existsSync(ready); i++) await Bun.sleep(10)
       expect(existsSync(ready)).toBe(true)
-      const running = db().query(
-        `SELECT id FROM run WHERE status='running' ORDER BY id DESC LIMIT 1`,
-      ).get() as { id: number }
-      const stopped = orch(repo, dir, 'stop', String(running.id))
+      const coordinator = db().query('SELECT pid FROM run WHERE id=?').get(runId) as { pid: number }
+      const stopped = orch(repo, binDir, 'stop', String(runId))
       expect(stopped.code, stopped.err).toBe(0)
-      try { await pending } catch { /* the stopped vendor did not complete */ }
-      expect(db().query('SELECT status, error, failure_kind FROM run WHERE id=?').get(running.id))
+      for (let i = 0; i < 500; i++) {
+        try { process.kill(coordinator.pid, 0) } catch { break }
+        await Bun.sleep(10)
+      }
+      expect(() => process.kill(coordinator.pid, 0)).toThrow()
+      expect(db().query('SELECT status, error, failure_kind FROM run WHERE id=?').get(runId))
         .toEqual({ status: 'stopped', error: 'stopped by architect', failure_kind: 'stopped' })
     } finally {
-      if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
-      else process.env.CLAUDE_CODE_SESSION_ID = priorSession
-      restore()
       rmSync(ready, { force: true })
       rmSync(repo, { recursive: true, force: true })
+      rmSync(binDir, { recursive: true, force: true })
     }
   }, 20_000)
 

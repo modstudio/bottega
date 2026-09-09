@@ -975,6 +975,18 @@ describe('the Stop hook and orch agree on what is unscored', () => {
     readFileSync(new URL('../hooks/score-reminder.py', import.meta.url).pathname, 'utf8'),
   )
 
+  test('Stop cleanup has one global budget and uses non-blocking close-out', () => {
+    const hook = readFileSync(
+      new URL('../hooks/score-reminder.py', import.meta.url).pathname, 'utf8',
+    )
+    expect(hook).toContain('GLOBAL_BUDGET_SECONDS = 20')
+    expect(hook).toContain('deadline = time.monotonic() + GLOBAL_BUDGET_SECONDS')
+    expect(hook).toContain('[orch_bin(), "close-out", str(root_id), "--non-blocking"]')
+    expect(hook).toContain('cleanup_roots[index:]')
+    expect(hook).toContain('for sweep')
+    expect(hook).not.toContain('timeout=300')
+  })
+
   const predicateDrift = (tsWhere: string, hookWhere: string) => {
     const ts = comparableConjuncts(tsWhere, false)
     const hook = comparableConjuncts(hookWhere, true)

@@ -9,7 +9,9 @@ unscored runs before it finishes.
 Only runs THIS session made are raised. Nobody else can judge them: nobody else
 read the output.
 """
-import json, os, sqlite3, subprocess, sys
+import json, os, sqlite3, subprocess, sys, time
+
+GLOBAL_BUDGET_SECONDS = 20
 
 DB = os.environ.get("ORCH_DB") or os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "orch.db"
@@ -27,6 +29,11 @@ def orch_bin():
 
 
 def main() -> int:
+    deadline = time.monotonic() + GLOBAL_BUDGET_SECONDS
+
+    def remaining_budget():
+        return max(0, deadline - time.monotonic())
+
     try:
         payload = json.load(sys.stdin)
     except Exception as e:
@@ -163,19 +170,37 @@ def main() -> int:
         return 0  # never block a session because of a database problem
 
     cleanup_holds = []
-    for (root_id,) in cleanup_roots:
+    cleanup_deferred = []
+    for index, (root_id,) in enumerate(cleanup_roots):
+        remaining = remaining_budget()
+        if remaining <= 0:
+            cleanup_deferred.extend(root for (root,) in cleanup_roots[index:])
+            break
         try:
             result = subprocess.run(
-                [orch_bin(), "close-out", str(root_id)], capture_output=True,
-                text=True, timeout=300,
+                [orch_bin(), "close-out", str(root_id), "--non-blocking"], capture_output=True,
+                text=True, timeout=remaining,
             )
             report = (result.stdout or result.stderr).strip()
             if report.startswith("held "):
                 cleanup_holds.append(report)
+            elif not (report.startswith("released ") or report.startswith("absent ")):
+                cleanup_deferred.append(root_id)
+        except subprocess.TimeoutExpired:
+            cleanup_deferred.extend(root for (root,) in cleanup_roots[index:])
+            break
         except Exception:
             # Close-out failures surface through monitor; Stop blocks only for
             # irreplaceable work that close-out positively classified HELD.
-            pass
+            cleanup_deferred.append(root_id)
+
+    if cleanup_deferred:
+        print(
+            "orch: Stop cleanup left run(s) {} for sweep".format(
+                ", ".join(str(root) for root in dict.fromkeys(cleanup_deferred))
+            ),
+            file=sys.stderr,
+        )
 
     notes = []
     try:
@@ -183,9 +208,12 @@ def main() -> int:
         for session_id in session_ids:
             note_args.extend(["--session", session_id])
         note_args.extend(["--actionable", "--json"])
+        remaining = remaining_budget()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(note_args, 0)
         result = subprocess.run(
             note_args,
-            capture_output=True, text=True, timeout=5, check=True,
+            capture_output=True, text=True, timeout=min(5, remaining), check=True,
         )
         notes = [(row["id"], row["project"], row["text"]) for row in json.loads(result.stdout)]
     except Exception:
