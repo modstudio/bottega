@@ -458,11 +458,23 @@ that case on the day the mechanism was designed.
 are gone: the `file:line` no longer exists, the run row aged out, the branch
 landed or was deleted, the commit range fell behind trunk. The scheduled job
 MARKS stale and may DELETE only what is stale and count-1 and untouched for
-thirty days and never promoted. Anything else is a human's call.
+thirty days and never promoted. Anything else is a human's call. That job is
+`hub note stale` (mark vanished anchors and reap eligible notes) and
+`hub note curate [--scheduled]`, switched by
+`hub note curator [--enable|--disable]` - named here because the paragraphs
+above describe its policy in detail while leaving a reader no way to find,
+run or disable it.
 
-**Promotion is a human act.** `orch note promote <id>` files the task carrying
+**Promotion is a human act.** `hub note promote <id>` files the task carrying
 the entry body and its sightings as evidence. The job never promotes, and the
 board never grows on its own.
+
+**Filing is `orch`, disposition is `hub`.** You file with `orch note "<text>"`
+and then keep, promote, drop or merge with `hub note keep|promote|drop|same`
+(`hub note list` shows what is outstanding). One noun, two binaries, and the
+split is not guessable - this line exists because canon named the wrong one and
+two sessions independently concluded the verb did not exist at all, each
+generalising from a command that failed for the reason canon had given them.
 
 **The guardrail:** if an entry needs fields beyond text, tags and sightings, it
 has stopped being a note and become a task. Promote it. Do not build a second
