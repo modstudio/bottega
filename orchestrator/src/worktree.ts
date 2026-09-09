@@ -251,22 +251,6 @@ export function worktreeExists(path: string): boolean {
   return existsSync(path)
 }
 
-export function prepareWorkerGitIsolation(
-  worktree: Worktree,
-  writes: boolean,
-  guardedBranch: string | undefined,
-  additionalWritableRoots: string[],
-): { writableRoots: string[]; guardEnvironment: SharedRefGuardEnvironment } {
-  const writableRoots = [
-    ...additionalWritableRoots,
-    worktreeGitDir(worktree.path),
-    ...(writes ? workerSharedGitRoots(worktree.path, worktree.branch) : []),
-  ]
-  const guardEnvironment = prepareSharedRefGuard(worktree.path, guardedBranch)
-  assertSharedRefGuardOutsideWritableRoots(guardEnvironment.GIT_CONFIG_VALUE_0, writableRoots)
-  return { writableRoots, guardEnvironment }
-}
-
 export type CreateWorkerWorktreeOptions = {
   tool: WorktreeTool | null
   cwd: string

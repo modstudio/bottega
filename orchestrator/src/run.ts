@@ -41,7 +41,8 @@ import {
   checkoutAliases, checkoutWatchSet,
   prepareWorkerMcpConfig,
   createIsolatedWorkerDirectory, worktreeExists,
-  prepareWorkerGitIsolation,
+  prepareSharedRefGuard, assertSharedRefGuardOutsideWritableRoots,
+  workerSharedGitRoots, worktreeGitDir,
 } from './worktree.ts'
 export {
   checkoutAliases, checkoutCaseSensitivity, checkoutWatchSet, provisionMcpConfig,
@@ -2979,15 +2980,24 @@ export async function run(opts: {
   // read existing objects through a common-store alternate. Writing jobs use
   // the common store so commits survive removal of the disposable tree.
   const gitObjectEnvironment = gitObjectEnvironmentFor(name, requestedJob, worktree)
-  const preparedGitIsolation = worktree && repoJob
-    ? prepareWorkerGitIsolation(
-        worktree, writesJob,
+  const writableRoots = [
+    scratchDir,
+    ...(repoJob && worktree
+      ? [
+          worktreeGitDir(worktree.path),
+          ...(writesJob ? workerSharedGitRoots(worktree.path, worktree.branch) : []),
+        ]
+      : []),
+  ]
+  const gitConfigEnvironment = worktree
+    ? prepareSharedRefGuard(
+        worktree.path,
         writesJob && requestedJob.name !== 'land' ? `refs/heads/${worktree.branch}` : undefined,
-        [scratchDir],
       )
-    : null
-  const writableRoots = preparedGitIsolation?.writableRoots ?? [scratchDir]
-  const gitConfigEnvironment = preparedGitIsolation?.guardEnvironment
+    : undefined
+  if (gitConfigEnvironment) {
+    assertSharedRefGuardOutsideWritableRoots(gitConfigEnvironment.GIT_CONFIG_VALUE_0, writableRoots)
+  }
   const sandboxRoot = (db().query(
     'SELECT COALESCE(parent_run_id,id) AS id FROM run WHERE id=?',
   ).get(claim.id) as { id: number }).id

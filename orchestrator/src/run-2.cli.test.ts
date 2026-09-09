@@ -78,7 +78,12 @@ describe('a writing worker must return evidence of completed work', () => {
     }
   }
 
-  test('a resumed no-repository job receives no worktree Git writable root', async () => {
+  async function runResumedNoRepositoryJob(
+    inspectOptions: (options: {
+      writableRoots?: string[]
+      gitConfigEnvironment?: Record<string, string>
+    }, tree: ReturnType<typeof createWorktree>) => void,
+  ): Promise<void> {
     const repo = mkdtempSync(join(tmpdir(), 'orch-no-repo-resume-'))
     const script = join(dir, `no-repo-resume-${Math.random().toString(16).slice(2)}.ts`)
     const promptPath = join(dir, `no-repo-resume-${Math.random().toString(16).slice(2)}.prompt.txt`)
@@ -104,8 +109,7 @@ describe('a writing worker must return evidence of completed work', () => {
     const priorDepth = process.env.ORCH_DEPTH
     agent.bin = process.execPath
     agent.resumeArgv = (options) => {
-      expect(options.writableRoots).toEqual([expect.stringMatching(/\/scratch$/)])
-      expect(options.writableRoots).not.toContain(worktreeGitDir(tree.path))
+      inspectOptions(options, tree)
       return [script]
     }
     agent.readsOut = false
@@ -131,6 +135,47 @@ describe('a writing worker must return evidence of completed work', () => {
       rmSync(script, { force: true })
       rmSync(promptPath, { force: true })
     }
+  }
+
+  test('a resumed no-repository job receives no worktree Git writable root', async () => {
+    await runResumedNoRepositoryJob((options, tree) => {
+      expect(options.writableRoots).toEqual([expect.stringMatching(/\/scratch$/)])
+      expect(options.writableRoots).not.toContain(worktreeGitDir(tree.path))
+    })
+  })
+
+  test('a resumed no-repository job still prepares the shared ref guard', async () => {
+    await runResumedNoRepositoryJob((options, tree) => {
+      expect(options.gitConfigEnvironment?.GIT_CONFIG_VALUE_0).toBeTruthy()
+      expect(existsSync(options.gitConfigEnvironment!.GIT_CONFIG_VALUE_0!)).toBe(true)
+      const privateObjects = mkdtempSync(join(tmpdir(), 'orch-private-objects-'))
+      const commonDir = Bun.spawnSync([
+        'git', 'rev-parse', '--path-format=absolute', '--git-common-dir',
+      ], { cwd: tree.path, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
+      expect(commonDir.exitCode).toBe(0)
+      const objectEnvironment = {
+        GIT_OBJECT_DIRECTORY: privateObjects,
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: join(commonDir.stdout.toString().trim(), 'objects'),
+      }
+      try {
+        const object = Bun.spawnSync(['git', 'commit-tree', 'HEAD^{tree}', '-m', 'private commit'], {
+          cwd: tree.path, env: { ...hermeticGitEnv(), ...objectEnvironment },
+          stdout: 'pipe', stderr: 'pipe',
+        })
+        expect(object.exitCode).toBe(0)
+        const update = Bun.spawnSync([
+          'git', 'update-ref', 'refs/heads/forbidden', object.stdout.toString().trim(),
+        ], {
+          cwd: tree.path,
+          env: { ...hermeticGitEnv(), ...objectEnvironment, ...options.gitConfigEnvironment },
+          stdout: 'pipe', stderr: 'pipe',
+        })
+        expect(update.exitCode).not.toBe(0)
+        expect(update.stderr.toString()).toContain('refusing shared ref update refs/heads/forbidden')
+      } finally {
+        rmSync(privateObjects, { recursive: true, force: true })
+      }
+    })
   })
 
   test('done with no claimed or measured change and no test run is failed', async () => {
