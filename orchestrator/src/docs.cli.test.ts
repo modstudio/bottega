@@ -1200,7 +1200,7 @@ describe('scoped operator docs', () => {
         name: 'file_issue',
         arguments: {
           kind: 'suggestion',
-          what_happened: 'The MCP server can file from a registered non-bottega cwd',
+          what_happened: `The MCP server can file from a registered non-${PLATFORM_SLUG} cwd`,
           expected: 'The write resolves the orch executable when the call is made',
           evidence: 'The server was created after changing cwd to a project with no bin/orch',
           not_established: 'No behavior outside executable resolution is asserted',
