@@ -458,7 +458,12 @@ that case on the day the mechanism was designed.
 are gone: the `file:line` no longer exists, the run row aged out, the branch
 landed or was deleted, the commit range fell behind trunk. The scheduled job
 MARKS stale and may DELETE only what is stale and count-1 and untouched for
-thirty days and never promoted. Anything else is a human's call.
+thirty days and never promoted. Anything else is a human's call. That job is
+`hub note stale` (mark vanished anchors and reap eligible notes) and
+`hub note curate [--scheduled]`, switched by
+`hub note curator [--enable|--disable]` - named here because the paragraphs
+above describe its policy in detail while leaving a reader no way to find,
+run or disable it.
 
 **Promotion is a human act.** `hub note promote <id>` files the task carrying
 the entry body and its sightings as evidence. The job never promotes, and the
