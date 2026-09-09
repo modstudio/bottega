@@ -3,6 +3,11 @@ type Leg = { name: string; commands: Command[] }
 type LegResult = { name: string; exitCode: number; tail: string[] }
 
 const root = new URL('..', import.meta.url).pathname
+const checkStartedAt = performance.now()
+
+// The current measured runtime is 329.49s; the ceiling leaves a 30.51s margin.
+// The hosted-runner target is under 120_000ms. Lowering the budget is one edit.
+export const SUITE_RUNTIME_BUDGET_MS = 360_000
 const legs: Leg[] = [
   {
     name: 'orchestrator',
@@ -36,6 +41,19 @@ const legs: Leg[] = [
 async function inherit(argv: string[], cwd = root) {
   const child = Bun.spawn(argv, { cwd, stdout: 'inherit', stderr: 'inherit' })
   return child.exited
+}
+
+function qualityBaseArgument() {
+  if (!process.env.CI) return '--staged'
+  const landingBranch = process.env.GITHUB_BASE_REF || 'main'
+  const result = Bun.spawnSync(['git', 'merge-base', `origin/${landingBranch}`, 'HEAD'], {
+    cwd: root, stdout: 'pipe', stderr: 'pipe',
+  })
+  if (result.exitCode !== 0) {
+    const detail = result.stderr.toString().trim()
+    throw new Error(`quality ratchet could not resolve CI merge base with origin/${landingBranch}${detail ? `: ${detail}` : ''}`)
+  }
+  return `--base=${result.stdout.toString().trim()}`
 }
 
 async function pump(
@@ -98,6 +116,7 @@ refuseFailed(installs)
 
 if (await inherit([
   'bun', 'test', './.githooks/commit-msg.test.ts', './scripts/check-canon.test.ts',
+  './scripts/quality/ratchet.test.ts',
 ]) !== 0) process.exit(1)
 
 const results = await Promise.all(legs.map((leg) => runLeg({
@@ -111,4 +130,22 @@ for (const script of ['check-boundaries.ts', 'check-brand.ts', 'check-canon.ts',
     cwd: root, stdout: 'inherit', stderr: 'inherit',
   })
   if (await child.exited !== 0) process.exit(1)
+}
+
+let qualityMode: string
+try {
+  qualityMode = qualityBaseArgument()
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error))
+  process.exit(1)
+}
+if (await inherit(['bun', `${root}scripts/quality/check-no-expect.ts`, qualityMode]) !== 0) {
+  process.exit(1)
+}
+
+const elapsedMs = performance.now() - checkStartedAt
+console.log(`suite runtime: ${(elapsedMs / 1000).toFixed(2)}s / ${(SUITE_RUNTIME_BUDGET_MS / 1000).toFixed(0)}s budget`)
+if (elapsedMs > SUITE_RUNTIME_BUDGET_MS) {
+  console.error(`suite runtime budget exceeded by ${((elapsedMs - SUITE_RUNTIME_BUDGET_MS) / 1000).toFixed(2)}s`)
+  process.exit(1)
 }
