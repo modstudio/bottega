@@ -3914,7 +3914,7 @@ export async function run(opts: {
       live.delete(proc)
       liveCheckpoints.delete(proc)
     }
-    if (proc?.pid) await terminateProcessGroup(proc.pid)
+    if (proc?.pid && proc.pid !== process.pid) await terminateProcessGroup(proc.pid)
     if (askLoopback) await askLoopback.close()
 
     const recordedState = db().query('SELECT status FROM run WHERE id=?').get(claim.id) as

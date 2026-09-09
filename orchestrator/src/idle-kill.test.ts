@@ -219,6 +219,22 @@ describe('process group termination', () => {
     expect(pgidOne.some((row) => row.pid === 100)).toBe(true)
   })
 
+  test('the calling process is not a vendor tree', async () => {
+    const signals: Array<{ pid: number; signal: NodeJS.Signals | number }> = []
+    const result = await terminateProcessGroup(process.pid, {
+      graceMs: 5, killConfirmMs: 5,
+      deps: {
+        kill(pid, signal) { signals.push({ pid, signal }) },
+        alive: () => true,
+        sample: () => [{ pid: process.pid, ppid: 1, pgid: process.pid, cpu: 0, state: 'S' }],
+        selfPgid: () => process.pid,
+        wait: async () => {},
+      },
+    })
+    expect(result).toEqual({ exited: true, unkillable: false, reason: null, pgid: null, pids: [] })
+    expect(signals).toEqual([])
+  })
+
   test("the caller's own process group is refused from group kill and survivor tracking", async () => {
     const alive = new Set([100, 999])
     const signals: Array<{ pid: number; signal: NodeJS.Signals | number }> = []
