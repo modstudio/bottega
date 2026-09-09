@@ -975,6 +975,12 @@ describe('the Stop hook and orch agree on what is unscored', () => {
     readFileSync(new URL('../hooks/score-reminder.py', import.meta.url).pathname, 'utf8'),
   )
 
+  const hookEnv = (session: string) => ({
+    ...process.env,
+    ORCH_DB: process.env.ORCH_DB!,
+    CLAUDE_CODE_SESSION_ID: session,
+  })
+
   test('Stop cleanup has one global budget and uses non-blocking close-out', () => {
     const hook = readFileSync(
       new URL('../hooks/score-reminder.py', import.meta.url).pathname, 'utf8',
@@ -1127,7 +1133,7 @@ describe('the Stop hook and orch agree on what is unscored', () => {
     const hook = Bun.spawnSync(
       ['python3', new URL('../hooks/score-reminder.py', import.meta.url).pathname],
       {
-        env: { ...process.env, ORCH_DB: process.env.ORCH_DB! },
+        env: hookEnv(session),
         stdin: new TextEncoder().encode(JSON.stringify({ session_id: session })),
         stdout: 'pipe', stderr: 'pipe',
       },
@@ -1156,7 +1162,7 @@ describe('the Stop hook and orch agree on what is unscored', () => {
     addRun({ agent: 'codex', job: 'craft', session: 'hook-once-session' })
     const hook = new URL('../hooks/score-reminder.py', import.meta.url).pathname
     const invoke = (payload: Record<string, unknown>) => Bun.spawnSync(['python3', hook], {
-      env: { ...process.env, ORCH_DB: process.env.ORCH_DB! },
+      env: hookEnv('hook-once-session'),
       stdin: new TextEncoder().encode(JSON.stringify(payload)),
       stdout: 'pipe', stderr: 'pipe',
     })
@@ -1180,7 +1186,7 @@ describe('the Stop hook and orch agree on what is unscored', () => {
     }
     const hook = new URL('../hooks/score-reminder.py', import.meta.url).pathname
     const invoke = () => Bun.spawnSync(['python3', hook], {
-      env: { ...process.env, ORCH_DB: process.env.ORCH_DB! },
+      env: hookEnv('hook-session'),
       stdin: new TextEncoder().encode(JSON.stringify({ session_id: 'hook-session' })),
       stdout: 'pipe', stderr: 'pipe',
     })
