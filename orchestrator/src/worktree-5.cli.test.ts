@@ -137,7 +137,7 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     const id = addRun({ agent: 'codex', job: 'file-question', status: 'ok', repo: project, startedAt: old })
     const kept = createReadOnlyWorktree(repo, id, git(repo, 'rev-parse', 'HEAD'))
     db().query(
-      `UPDATE run SET worktree=?, cwd=?, branch=NULL, base_commit=?, worktree_source='git' WHERE id=?`,
+      `UPDATE run SET worktree=?, cwd=?, branch=NULL, base_commit=?, worktree_source='git', keep_tree=1 WHERE id=?`,
     ).run(kept.path, kept.path, kept.base, id)
     const recipeOrphan = join(repo, '.claude', 'worktrees', 'recipe-orphan')
     git(repo, 'worktree', 'add', '--detach', recipeOrphan, 'HEAD')
@@ -205,21 +205,21 @@ exec ${JSON.stringify(actualGit)} "$@"
     }
   })
 
-  test('recent filesystem activity keeps an orch-named orphan', () => {
+  test('recent filesystem activity does not keep an orch-named orphan', () => {
     const repo = scratchRepo()
     const tree = join(repo, '.claude', 'worktrees', 'orch-900')
     try {
       git(repo, 'worktree', 'add', '-b', 'orch/900', tree, 'main')
       const r = orch('sweep', '--dry-run')
       expect(r.code).toBe(0)
-      expect(r.out).toContain(`orphan  ${tree}  live — files changed inside 2h`)
+      expect(r.out).toContain(`would reclaim orphan  ${tree}`)
       expect(existsSync(tree)).toBe(true)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
   })
 
-  test('run age does not override recent filesystem activity', () => {
+  test('a terminal named chain without a worktree pointer is reclaimed as an orphan', () => {
     const repo = scratchRepo()
     const project = `sweep-${repo.split('/').pop()}`
     const root = addRun({
@@ -240,8 +240,7 @@ exec ${JSON.stringify(actualGit)} "$@"
       git(repo, 'worktree', 'add', '-b', name, tree, 'main')
       const r = orch('sweep', '--dry-run')
       expect(r.code).toBe(0)
-      expect(r.out).toContain(`orphan  ${tree}  live — files changed inside 2h`)
-      expect(r.out).not.toContain(`would reclaim orphan  ${tree}`)
+      expect(r.out).toContain(`would reclaim orphan  ${tree}`)
       expect(existsSync(tree)).toBe(true)
     } finally {
       rmSync(repo, { recursive: true, force: true })
@@ -266,7 +265,7 @@ exec ${JSON.stringify(actualGit)} "$@"
     }
   })
 
-  test('a terminal named chain is retained while its filesystem is active', () => {
+  test('a terminal named chain with a lost worktree pointer is reclaimed', () => {
     const repo = scratchRepo()
     const project = `sweep-${repo.split('/').pop()}`
     const id = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
@@ -277,14 +276,14 @@ exec ${JSON.stringify(actualGit)} "$@"
 
       const r = orch('sweep', '--dry-run')
       expect(r.code).toBe(0)
-      expect(r.out).toContain(`orphan  ${tree}  live — files changed inside 2h`)
+      expect(r.out).toContain(`would reclaim orphan  ${tree}`)
       expect(existsSync(tree)).toBe(true)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
   })
 
-  test("a foreign project's colliding run id cannot override filesystem liveness", () => {
+  test("a foreign project's colliding run id does not keep a local orphan", () => {
     const repo = scratchRepo()
     const id = addRun({
       agent: 'codex', job: 'implement', status: 'ok', repo: 'foreign-project',
@@ -296,14 +295,14 @@ exec ${JSON.stringify(actualGit)} "$@"
 
       const r = orch('sweep', '--dry-run')
       expect(r.code).toBe(0)
-      expect(r.out).toContain(`orphan  ${tree}  live — files changed inside 2h`)
+      expect(r.out).toContain(`would reclaim orphan  ${tree}`)
       expect(existsSync(tree)).toBe(true)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
   })
 
-  test('filesystem liveness replaces branch reflog age', () => {
+  test('a marked orphan is reclaimed regardless of reflog age', () => {
     const repo = scratchRepo()
     const tree = join(repo, '.claude', 'worktrees', 'fresh-reflog-worker')
     try {
@@ -314,14 +313,14 @@ exec ${JSON.stringify(actualGit)} "$@"
 
       const r = orch('sweep', '--dry-run')
       expect(r.code).toBe(0)
-      expect(r.out).toContain(`orphan  ${tree}  live — files changed inside 2h`)
+      expect(r.out).toContain(`would reclaim orphan  ${tree}`)
       expect(existsSync(tree)).toBe(true)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
   })
 
-  test('a clean detached orphan still observes filesystem liveness', () => {
+  test('a clean detached orphan is reclaimed', () => {
     const repo = scratchRepo()
     const tree = join(repo, '.claude', 'worktrees', 'detached-worker')
     const fake = ageGit('detached', Math.floor((Date.now() - 2 * 86_400_000) / 1000))
@@ -333,8 +332,7 @@ exec ${JSON.stringify(actualGit)} "$@"
 
       const r = orchWithEnv(fake.env, 'sweep', '--dry-run')
       expect(r.code).toBe(0)
-      expect(r.out).toContain(`orphan  ${tree}  live — files changed inside 2h`)
-      expect(r.out).not.toContain(`would reclaim orphan  ${tree}`)
+      expect(r.out).toContain(`would reclaim orphan  ${tree}`)
       expect(existsSync(tree)).toBe(true)
     } finally {
       rmSync(fake.dir, { recursive: true, force: true })
@@ -353,8 +351,7 @@ exec ${JSON.stringify(actualGit)} "$@"
 
       const r = orchWithEnv(fake.env, 'sweep', '--dry-run')
       expect(r.code).toBe(0)
-      expect(r.out).toContain(`orphan  ${tree}  live — files changed inside 2h`)
-      expect(r.out).not.toContain(`would reclaim orphan  ${tree}`)
+      expect(r.out).toContain(`would reclaim orphan  ${tree}`)
       expect(existsSync(tree)).toBe(true)
     } finally {
       rmSync(fake.dir, { recursive: true, force: true })
@@ -362,7 +359,7 @@ exec ${JSON.stringify(actualGit)} "$@"
     }
   })
 
-  test('an orphan with unreadable git age still observes filesystem liveness', () => {
+  test('an orphan with unreadable git age is reclaimed', () => {
     const repo = scratchRepo()
     const tree = join(repo, '.claude', 'worktrees', 'unknown-worker')
     const fake = ageGit('unknown')
@@ -373,8 +370,7 @@ exec ${JSON.stringify(actualGit)} "$@"
 
       const r = orchWithEnv(fake.env, 'sweep', '--dry-run')
       expect(r.code).toBe(0)
-      expect(r.out).toContain(`orphan  ${tree}  live — files changed inside 2h`)
-      expect(r.out).not.toContain(`would reclaim orphan  ${tree}`)
+      expect(r.out).toContain(`would reclaim orphan  ${tree}`)
       expect(existsSync(tree)).toBe(true)
     } finally {
       rmSync(fake.dir, { recursive: true, force: true })

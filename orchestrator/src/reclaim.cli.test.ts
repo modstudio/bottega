@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -154,7 +154,7 @@ describe('proof-bearing reclaim verbs', () => {
     expect(existsSync(f.tree)).toBe(false)
   }, 10_000)
 
-  test('worktree dry-run and reclaim require clean state and preserve its recorded identity', () => {
+  test('worktree dry-run and reclaim preserve its recorded identity', () => {
     const f = fixture()
     const preview = orch(f.repo, ['reclaim', 'worktree', f.tree, '--dry-run'])
     expect(preview.code, preview.err).toBe(0)
@@ -168,14 +168,25 @@ describe('proof-bearing reclaim verbs', () => {
       .toEqual({ worktree: f.tree, branch_kept: f.branch, branch_kept_tip: git(f.repo, 'rev-parse', f.branch) })
   })
 
-  test('worktree refusal names every uncommitted path', () => {
+  test('worktree reclaim extracts uncommitted paths and removes the tree', () => {
     const f = fixture()
     writeFileSync(join(f.tree, 'one.txt'), 'one\n')
     writeFileSync(join(f.tree, 'two.txt'), 'two\n')
-    const result = orch(f.repo, ['reclaim', 'worktree', f.tree, '--dry-run'])
-    expect(result.code).not.toBe(0)
-    expect(result.err).toContain('uncommitted paths block reclaim: one.txt, two.txt')
+    const preview = orch(f.repo, ['reclaim', 'worktree', f.tree, '--dry-run'])
+    expect(preview.code, preview.err).toBe(0)
     expect(existsSync(f.tree)).toBe(true)
+
+    const removed = orch(f.repo, ['reclaim', 'worktree', f.tree])
+    expect(removed.code, removed.err).toBe(0)
+    expect(existsSync(f.tree)).toBe(false)
+    const artifacts = join(process.env.ORCH_RUNS!, String(f.run), 'artifacts')
+    const record = JSON.parse(readFileSync(join(artifacts, 'extraction.json'), 'utf8')) as {
+      ok: boolean; untrackedCount: number
+    }
+    expect(record.ok).toBe(true)
+    expect(record.untrackedCount).toBe(2)
+    expect(readFileSync(join(artifacts, 'untracked', 'one.txt'), 'utf8')).toBe('one\n')
+    expect(readFileSync(join(artifacts, 'untracked', 'two.txt'), 'utf8')).toBe('two\n')
   })
 
   test('worktree reclaim keeps commits absent from trunk on the retained branch', () => {

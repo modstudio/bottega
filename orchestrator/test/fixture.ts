@@ -176,7 +176,7 @@ export const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePa
         retryModelForAgent, run: runJob, listRunArtifacts, runArtifactsDir, runScratchDir,
         noRepoIsolatePath,
         readDispatchState, persistTerminalSnapshot, reconcileRun, closeOutRun,
-        verifiedProcessTree, installTestProcessInventory, WORKTREE_LIVE_MS } = await import('../src/run.ts')
+        verifiedProcessTree, installTestProcessInventory } = await import('../src/run.ts')
 export const run = runJob
 export const {
   CANON_EVALS, CANON_EVAL_LENS, TRACKED_EVAL_PATH, UNTRACKED_EVAL_PATH,
@@ -214,7 +214,8 @@ export const { orphanSafety, repoRootOf, createWorktree, createWorktreeForBranch
         reclaimStaleProjectLock, processStartTime, projectLockDir, staleProjectLockHolder,
         worktreeLeaseName,
         unmergedBranch, assertCallerAncestry, checkoutHasUncommittedWork, callerDrift,
-        changesIn, contentTree, removeFor, branchTip } = await import('../src/worktree.ts')
+        changesIn, contentTree, removeFor, branchTip, extractWorktree, extractionDest,
+        sanitiseOrphanExtractionPath } = await import('../src/worktree.ts')
 export const { drainQueue, gateFailureSummary, land, landingStatus, landingReviewCoverage, resolveLandingBranch,
         setPostLandMigrateForFixture, landingsWithPostStepError, allocateLandingJournals,
         cleanCompletedSequencerState } = await import('../src/landing.ts')

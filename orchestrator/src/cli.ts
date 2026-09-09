@@ -4690,7 +4690,8 @@ switch (cmd) {
    *
    * Terminal close-out is the normal release event. Sweep is the backstop for
    * a coordinator or session that died before the pairing ran. It applies the
-   * same liveness and dirty-work guards; scoring is not a retention signal.
+   * same liveness guards; scoring is not a retention signal. Uncommitted work
+   * is extracted before removal rather than used as a reason to keep the tree.
    */
   case 'sweep': {
     await Promise.all([loadJobs(), loadRun(), loadWorktree(), loadGrokTrust(), loadDockerResources()])
@@ -4716,7 +4717,7 @@ switch (cmd) {
     }[]
 
     const { removeFor, sweepWithTool, orphanSafety,
-            isOrchWorktree, markedWorktreeSource, worktreeLatestMtime } =
+            isOrchWorktree, markedWorktreeSource } =
       await import('./worktree.ts')
 
     let done = 0
@@ -4787,10 +4788,9 @@ switch (cmd) {
      *
      * A worktree whose row never acquired its path is invisible to the loop
      * above and would otherwise leak forever. Orphans are discovered from each
-     * registered project's conventional worktree root, then held to a stricter
-     * standard than remembered trees: their filesystem work must be committed
-     * to the branch. A failed proof keeps the directory, and a
-     * project's own removal refusal remains final through removeWithTool().
+     * registered project's conventional worktree root. A path git does not
+     * list as a worktree is kept; uncommitted work is extracted before removal.
+     * A project's own removal refusal remains final through removeWithTool().
      */
     const remembered = new Set(
       (db().query('SELECT worktree FROM run WHERE worktree IS NOT NULL').all() as { worktree: string }[])
@@ -4812,11 +4812,6 @@ switch (cmd) {
         const named = namedRun(entry.name, p.settings.worktree?.branch, p)
         if (named?.status === 'running' || named?.status === 'asking') {
           keep(`${label}  live — kept`, 'live — kept')
-          continue
-        }
-        const latest = worktreeLatestMtime(path)
-        if (latest !== null && latest > Date.now() - 2 * 60 * 60 * 1000) {
-          keep(`${label}  live — files changed inside 2h`, 'live — recent filesystem activity')
           continue
         }
         const trunk = typeof p.settings.trunk === 'string' && p.settings.trunk.trim()

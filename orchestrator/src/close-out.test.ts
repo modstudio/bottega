@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto'
 import {
   addRun, closeOutRun, createWorktree, db, hermeticGitEnv, upsertProject,
   verifiedProcessTree, worktreeLeaseName, projectLockDir, monitor, fakeDocker,
-  installTestProcessInventory, score,
+  installTestProcessInventory, score, runArtifactsDir,
 } from '../test/fixture.ts'
 
 beforeEach(() => installTestProcessInventory({ ascertainable: true, rows: [] }))
@@ -63,15 +63,26 @@ test('close-out releases a fully committed tree and keeps its branch', () => {
   } finally { rmSync(f.repo, { recursive: true, force: true }) }
 })
 
-for (const kind of ['tracked', 'untracked'] as const) test(`close-out holds ${kind} work`, () => {
+for (const kind of ['tracked', 'untracked'] as const) test(`close-out extracts and releases ${kind} work`, () => {
   const f = fixture()
   try {
     if (kind === 'tracked') writeFileSync(join(f.tree.path, 'base.txt'), 'changed\n')
     else writeFileSync(join(f.tree.path, 'new.txt'), 'new\n')
     const result = closeOutRun(f.id, { intent: 'terminal' })
-    expect(result.outcome).toBe('held')
-    expect(result.detail).toContain('uncommitted or untracked')
-    expect(existsSync(f.tree.path)).toBe(true)
+    expect(result.outcome).toBe('released')
+    expect(existsSync(f.tree.path)).toBe(false)
+    const artifacts = runArtifactsDir(f.id)
+    const record = JSON.parse(readFileSync(join(artifacts, 'extraction.json'), 'utf8')) as {
+      ok: boolean; trackedBytes: number; untrackedCount: number
+    }
+    expect(record.ok).toBe(true)
+    if (kind === 'tracked') {
+      expect(record.trackedBytes).toBeGreaterThan(0)
+      expect(existsSync(join(artifacts, 'uncommitted.patch'))).toBe(true)
+    } else {
+      expect(record.untrackedCount).toBe(1)
+      expect(readFileSync(join(artifacts, 'untracked', 'new.txt'), 'utf8')).toBe('new\n')
+    }
   } finally { rmSync(f.repo, { recursive: true, force: true }) }
 })
 
@@ -103,15 +114,12 @@ for (const siblingStatus of ['running', 'ok'] as const) {
             : { ascertainable: false, reason: 'composition process inventory unavailable' })
 
           const result = closeOutRun(f.id, { intent })
-          const releases = siblingStatus === 'ok' && ascertainable && intent !== 'sweep'
+          const releases = siblingStatus === 'ok' && ascertainable
           expect(result.outcome).toBe(releases ? 'released' : 'live')
           expect(existsSync(f.tree.path)).toBe(!releases)
           if (siblingStatus === 'running') expect(result.detail).toContain(`${sibling} (running)`)
           if (!ascertainable && siblingStatus === 'ok') {
             expect(result.detail).toContain('process liveness could not be established')
-          }
-          if (intent === 'sweep' && siblingStatus === 'ok' && ascertainable) {
-            expect(result.detail).toContain('two-hour liveness window')
           }
         } finally { rmSync(f.repo, { recursive: true, force: true }) }
       })

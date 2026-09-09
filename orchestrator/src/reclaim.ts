@@ -3,8 +3,8 @@ import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { db, EVIDENCE_CLOSED_SQL, chainScoreJoin, pidAlive, SESSION_LIVE_MS, sessionId, writableDb, writeTransaction, worktreePathSpellings } from './db.ts'
 import { projectAt, projectByName } from './projects.ts'
 import {
-  branchTip, removeFor, restoreBranch, targetGitEnvironment, withCleanupLock, withWorktreeCreateLock,
-  withWorktreeLease, orphanSafety,
+  branchTip, markedWorktreeSource, removeFor, restoreBranch, targetGitEnvironment, withCleanupLock,
+  withWorktreeCreateLock, withWorktreeLease, orphanSafety,
   type Worktree,
 } from './worktree.ts'
 
@@ -150,11 +150,10 @@ function fullClaimRefusal(path: string, runId: number): ReclaimResult | null {
   )
 }
 
-function proveWorktree(path: string, clock: number, allowDirty = false): WorktreeProof {
+function proveWorktree(path: string, clock: number, _allowDirty = false): WorktreeProof {
   const rows = runRows(path)
-  if (!rows.length) return { result: refuse(`no run row records worktree ${path}`) }
-  const row = rows[0]!
-  const project = row.repo ? projectByName(row.repo) : projectAt(path)
+  const row = rows[0]
+  const project = row?.repo ? projectByName(row.repo) : projectAt(path)
   if (!project) return { result: refuse(`worktree ${path} has no registered project`) }
   const registeredPath = realpathSync(project.path)
   if (path === registeredPath) {
@@ -168,21 +167,17 @@ function proveWorktree(path: string, clock: number, allowDirty = false): Worktre
       (!fromRoot || fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot))) {
     return { result: refuse(`worktree ${path} is not beneath project worktrees directory ${worktreesRoot}`) }
   }
-  const owners = proveRunOwners(rows, clock, false)
-  if (owners) return { result: owners }
-  for (const lockedRow of rows) {
-    if (lockedRow.keep_tree) return { result: refuse(`run ${lockedRow.id} records keep_tree; its worktree is protected`) }
+  if (rows.length) {
+    const owners = proveRunOwners(rows, clock, false)
+    if (owners) return { result: owners }
+    for (const lockedRow of rows) {
+      if (lockedRow.keep_tree) return { result: refuse(`run ${lockedRow.id} records keep_tree; its worktree is protected`) }
+    }
   }
   if (existsSync(path)) {
     const safety = orphanSafety(path, project.path, '')
-    if (!safety.removable && safety.detail === 'not a registered git worktree') {
+    if (!safety.removable) {
       return { result: refuse(`worktree safety could not be proved: ${safety.detail}`) }
-    }
-    const status = git(path, ['status', '--porcelain', '--untracked-files=all'])
-    if (!status.ok) return { result: refuse(`git status could not inspect ${path}: ${status.out || 'unknown error'}`) }
-    const dirty = status.out.split('\n').filter(Boolean).map((line) => line.slice(3))
-    if (dirty.length && !allowDirty) {
-      return { result: refuse(`uncommitted paths block reclaim: ${dirty.join(', ')}`) }
     }
   }
   return {
@@ -206,7 +201,8 @@ export function reclaimWorktree(
   const path = existsSync(requestedPath) ? realpathSync(requestedPath) : resolve(requestedPath)
   const preview = proveWorktree(path, options.clock ?? Date.now(), options.allowDirty)
   if (!preview.result.ok) return preview.result
-  const previewClaim = fullClaimRefusal(path, preview.rows![0]!.id)
+  const previewOwner = preview.rows?.[0]
+  const previewClaim = previewOwner ? fullClaimRefusal(path, previewOwner.id) : null
   if (previewClaim) return previewClaim
   if (options.dryRun) return preview.result
   const project = preview.project!
@@ -215,23 +211,31 @@ export function reclaimWorktree(
     withCleanupLock(project.path, owner, () => {
       const proof = proveWorktree(path, options.clock ?? Date.now(), options.allowDirty)
       if (!proof.result.ok) return proof.result
-      const lockedRows = proof.rows!
-      const lockedRow = lockedRows[0]!
-      const lockedClaim = fullClaimRefusal(path, lockedRow.id)
+      const lockedRows = proof.rows ?? []
+      const lockedRow = lockedRows[0]
+      const lockedClaim = lockedRow ? fullClaimRefusal(path, lockedRow.id) : null
       if (lockedClaim) return lockedClaim
 
       writableDb()
-      const minted = lockedRow.minted_branch ?? ''
+      const headRef = existsSync(path)
+        ? git(path, ['symbolic-ref', '--quiet', '--short', 'HEAD'])
+        : { ok: false, out: '' }
+      const headBranch = headRef.ok ? headRef.out : ''
+      const minted = lockedRow ? (lockedRow.minted_branch ?? '') : headBranch
+      const keepBranch = lockedRows.length > 0
       const branchBefore = minted ? branchTip(project.path, minted) : null
       const removed = removeFor({
-        path, branch: minted, mintedBranch: lockedRow.minted_branch,
-        base: lockedRow.base_commit ?? '', repoRoot: project.path,
-        source: lockedRow.worktree_source ?? undefined,
-      }, project.path, false, true, lockedRow.id)
+        path, branch: minted,
+        mintedBranch: lockedRow ? lockedRow.minted_branch : (minted || null),
+        base: lockedRow?.base_commit ?? '', repoRoot: project.path,
+        source: lockedRow?.worktree_source ?? markedWorktreeSource(path) ?? undefined,
+      }, project.path, false, keepBranch, lockedRow?.id)
       if (!removed.removed) return refuse(removed.detail)
-      const sharersAfter = fullClaimRefusal(path, lockedRow.id)
-      if (sharersAfter) return sharersAfter
-      if (minted && branchBefore) {
+      if (lockedRow) {
+        const sharersAfter = fullClaimRefusal(path, lockedRow.id)
+        if (sharersAfter) return sharersAfter
+      }
+      if (keepBranch && minted && branchBefore) {
         const branchAfter = branchTip(project.path, minted)
         if (branchAfter === null) {
           const restored = restoreBranch(project.path, minted, branchBefore)
@@ -242,13 +246,19 @@ export function reclaimWorktree(
           return refuse(`project remove tool moved unique branch ${minted} from ${branchBefore} to ${branchAfter}; it was left at ${branchAfter}`)
         }
       }
-      const clear = db().query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
-      writeTransaction(() => lockedRows.forEach((record) =>
-        clear.run(minted || null, branchBefore, record.id)))
+      if (lockedRows.length) {
+        const clear = db().query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
+        writeTransaction(() => lockedRows.forEach((record) =>
+          clear.run(minted || null, branchBefore, record.id)))
+      }
+      const kept = keepBranch && minted && branchBefore
+        ? `; kept branch ${minted}`
+        : !keepBranch && minted && branchTip(project.path, minted)
+          ? `; kept unique branch ${minted}`
+          : ''
       return {
         ok: true,
-        action: `reclaimed worktree ${path}; ${removed.detail}` +
-          (minted && branchBefore ? `; kept branch ${minted}` : ''),
+        action: `reclaimed worktree ${path}; ${removed.detail}` + kept,
       }
     }, 5 * 60_000), 5 * 60_000)
 }
