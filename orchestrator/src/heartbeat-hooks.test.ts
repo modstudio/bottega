@@ -3,6 +3,7 @@ import { Database } from 'bun:sqlite'
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../shared/brand.ts'
 
 const guard = new URL('../hooks/heartbeat-guard.py', import.meta.url).pathname
 const remind = new URL('../hooks/heartbeat-remind.py', import.meta.url).pathname
@@ -34,7 +35,7 @@ function landingDb(root: string, rows: Array<{ id: number; session: string; stat
     status TEXT NOT NULL, session_id TEXT, started_at TEXT NOT NULL)`)
   for (const row of rows) {
     db.run('INSERT INTO landing (id, project, branch, status, session_id, started_at) VALUES (?,?,?,?,?,?)',
-      [row.id, 'bottega', 'b', row.status, row.session, '2026-09-08T00:00:00Z'])
+      [row.id, PLATFORM_SLUG, 'b', row.status, row.session, '2026-09-08T00:00:00Z'])
   }
   db.close()
   return join(root, 'orchestrator', 'orch.db')
