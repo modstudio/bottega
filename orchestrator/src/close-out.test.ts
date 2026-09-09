@@ -134,7 +134,7 @@ test('sweep releases an aged finished tree despite a terminal sibling claim', ()
   } finally { rmSync(f.repo, { recursive: true, force: true }) }
 })
 
-test('sweep and abandon ignore terminal claimants while closing out', () => {
+test('sweep ignores terminal claimants while abandon refuses remaining claims', () => {
   for (const verb of ['sweep', 'abandon'] as const) {
     const f = fixture(verb === 'abandon' ? 'asking' : 'ok')
     try {
@@ -167,13 +167,20 @@ test('sweep and abandon ignore terminal claimants while closing out', () => {
         stdout: 'pipe', stderr: 'pipe',
       })
 
-      expect(result.exitCode, result.stderr.toString()).toBe(0)
+      if (verb === 'sweep') expect(result.exitCode, result.stderr.toString()).toBe(0)
       if (verb === 'sweep') {
         expect(result.stdout.toString()).toContain(`would reclaim ${f.id}  ${f.tree.path}`)
         expect(existsSync(f.tree.path)).toBe(true)
       } else {
-        expect(result.stdout.toString()).toContain('released worktree:')
-        expect(existsSync(f.tree.path)).toBe(false)
+        expect(result.stderr.toString()).toContain(`run ${sibling} is ok`)
+        expect(result.stderr.toString()).toContain(
+          `this conversation's pointer on ${f.tree.path} was released`,
+        )
+        expect(result.stderr.toString()).toContain(
+          'the tree will be collectable once the remaining pointers are released',
+        )
+        expect(result.exitCode).not.toBe(0)
+        expect(existsSync(f.tree.path)).toBe(true)
       }
     } finally { rmSync(f.repo, { recursive: true, force: true }) }
   }
