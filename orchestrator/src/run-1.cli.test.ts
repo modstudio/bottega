@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { AGENTS, COULD_NOT_VERIFY_INSTRUCTION, INFRASTRUCTURE_RECOVERY, ImportRefusalError, JOBS, NO_REPO_PREAMBLE, READER_DELIVERABLE_FIRST, READONLY_PREAMBLE, REVIEW_PROVENANCE_INSTRUCTION, REVIEW_SCHEMA, REVIEW_SEVERITY_INSTRUCTION, WORKER_PREAMBLE, addRun, applyImport, baselineForPair, candidates, checkMessages, contractConflicts, createWorktreeForBranch, db, dir, getDoc, hermeticGitEnv, inferredReadOnlyKey, jobBoundInstructionForContract, ledgerRef, listDocRevisions, listDocs, listDoctrineRules, listPairs, listSkips, messageArchitect, messagesForRun, planImport, preflight, projectAt, projects, resolveTaskBranch, runJob, runWithDelayedStdoutReader, score, setDoc, sourceCoverage, taskBranchCandidacySql, upsertProject, weigh } from '../test/fixture.ts'
+import { AGENTS, COULD_NOT_VERIFY_INSTRUCTION, INFRASTRUCTURE_RECOVERY, ImportRefusalError, JOBS, NO_REPO_PREAMBLE, READER_DELIVERABLE_FIRST, READONLY_PREAMBLE, REVIEW_PROVENANCE_INSTRUCTION, REVIEW_SCHEMA, REVIEW_SEVERITY_INSTRUCTION, WORKER_PREAMBLE, addRun, applyImport, baselineForPair, candidates, checkMessages, contractConflicts, createWorktreeForBranch, db, dir, getDoc, hermeticGitEnv, inferredReadOnlyKey, installTestProcessInventory, jobBoundInstructionForContract, ledgerRef, listDocRevisions, listDocs, listDoctrineRules, listPairs, listSkips, messageArchitect, messagesForRun, planImport, preflight, projectAt, projects, resolveTaskBranch, runJob, runWithDelayedStdoutReader, score, setDoc, sourceCoverage, taskBranchCandidacySql, upsertProject, weigh } from '../test/fixture.ts'
 
 describe('task branch resolution', () => {
   const git = (cwd: string, ...args: string[]) => {
@@ -148,6 +148,8 @@ describe('task branch resolution', () => {
   test('a writer attaches the sole retained task worktree and records that it minted no branch', async () => {
     const { repo, project } = repository()
     const tree = branchWithCommit(repo, 'DEV-440-existing', 'fix.txt', 'fixed\n')
+    const attachedTree = realpathSync(tree)
+    const attachedTip = git(tree, 'rev-parse', 'HEAD')
     candidate(repo, project.id, project.name, 'DEV-440-existing', 'DEV-440', { worktree: tree })
     const script = join(dir, `task-branch-agent-${randomUUID()}.ts`)
     writeFileSync(script, `
@@ -161,22 +163,28 @@ describe('task branch resolution', () => {
     agent.argv = () => [script]
     agent.readsOut = false
     process.env.ORCH_DEPTH = '0'
+    installTestProcessInventory({ ascertainable: true, rows: [] })
     try {
       const result = await runJob({
         job: 'implement', prompt: 'continue DEV-440', cwd: tree, base: 'DEV-440-existing',
         key: 'DEV-440', agent: 'codex', noFailover: true,
       })
       expect(db().query(
-        'SELECT worktree,branch,minted_branch,worktree_source,base_commit FROM run WHERE id=?',
+        `SELECT worktree,branch,minted_branch,worktree_source,base_commit,
+                branch_kept,branch_kept_tip FROM run WHERE id=?`,
       ).get(result.id)).toEqual({
-        worktree: realpathSync(tree), branch: 'DEV-440-existing',
-        minted_branch: null, worktree_source: 'git', base_commit: git(tree, 'rev-parse', 'HEAD'),
+        worktree: attachedTree, branch: 'DEV-440-existing',
+        minted_branch: null, worktree_source: 'git', base_commit: attachedTip,
+        branch_kept: 'DEV-440-existing', branch_kept_tip: attachedTip,
       })
+      expect(existsSync(tree)).toBe(false)
+      expect(git(repo, 'rev-parse', 'DEV-440-existing')).toBe(attachedTip)
       expect(git(repo, 'branch', '--list', `*${result.id}*`)).toBe('')
     } finally {
       agent.bin = original.bin
       agent.argv = original.argv
       agent.readsOut = original.readsOut
+      installTestProcessInventory(null)
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
       rmSync(script, { force: true })
