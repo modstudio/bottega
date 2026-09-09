@@ -1084,6 +1084,12 @@ export function reviewCoverageVerdict(
   if (JSON.stringify(reviewedPaths) !== JSON.stringify(candidatePaths)) {
     return { kind: 'invalid', reason: 'path set differs', resolution: resolved.resolution }
   }
+  const trunkPaths = changedPaths(runner, oldBase, newBase)
+  const overlap = [...changePaths].filter((path) => trunkPaths.has(path))
+  if (overlap.length) {
+    return { kind: 'invalid', reason: `overlapping paths: ${overlap.sort().join(', ')}`,
+      resolution: resolved.resolution }
+  }
   const messageResult = runner(['log', '--format=%B', `${newBase}..${tip}`])
   const message = messageResult.ok ? messageResult.out : ''
   return {
@@ -1132,12 +1138,12 @@ function reviewCoverageSummary(
     JSON.stringify(reviewPathSet(review)) === JSON.stringify(candidatePaths)
   // Branch metadata scopes stale diagnostics. Stable patch-id plus path set lets
   // the same reviewed diff survive a branch rename without admitting unrelated
-  // project reviews into the landing decision.
+  // project reviews into the landing decision. Every review that belongs to the
+  // candidate reaches the verdict so legacy tree-plus-base evidence can resolve
+  // its identity there.
   const relevant = reviews.filter((review) => reviewBelongsToCandidate(review, branch) || sameIdentity(review))
   const verdicts = relevant.map((review) => ({
-    review, verdict: sameIdentity(review) || newBase === null
-      ? reviewCoverageVerdict(repoRoot, review, tip, trunk)
-      : { kind: 'invalid', reason: 'patch-id differs' } as CoverageVerdict,
+    review, verdict: reviewCoverageVerdict(repoRoot, review, tip, trunk),
   }))
   const valid = verdicts.filter((item): item is {
     review: ReviewCoverageInput

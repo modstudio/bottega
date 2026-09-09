@@ -148,6 +148,51 @@ describe('DEV-370 landing queue and branch ownership', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  test('a reviewed merge-group member refuses when a sibling touched the same path', () => {
+    const { repo, trees } = repoWithBranches(['shared-first', 'shared-reviewed'])
+    const project = 'landing-group-review-overlap'
+    writeFileSync(join(repo, 'shared.txt'), Array.from({ length: 20 }, (_, i) => `line ${i}\n`).join(''))
+    g(repo, 'add', 'shared.txt')
+    g(repo, 'commit', '-m', 'shared base')
+    g(trees['shared-first']!, 'rebase', 'main')
+    g(trees['shared-reviewed']!, 'rebase', 'main')
+    const oldBase = g(repo, 'rev-parse', 'main')
+    const firstPath = join(trees['shared-first']!, 'shared.txt')
+    const firstLines = readFileSync(firstPath, 'utf8').split('\n')
+    firstLines[18] = 'first member line'
+    writeFileSync(firstPath, firstLines.join('\n'))
+    g(trees['shared-first']!, 'add', 'shared.txt')
+    g(trees['shared-first']!, 'commit', '-m', 'first member shared change')
+    const reviewedPath = join(trees['shared-reviewed']!, 'shared.txt')
+    const reviewedLines = readFileSync(reviewedPath, 'utf8').split('\n')
+    reviewedLines[1] = 'reviewed member line'
+    writeFileSync(reviewedPath, reviewedLines.join('\n'))
+    g(trees['shared-reviewed']!, 'add', 'shared.txt')
+    g(trees['shared-reviewed']!, 'commit', '-m', 'reviewed member shared change')
+    completedReview(project, [g(repo, 'rev-parse', 'shared-reviewed^{tree}')], {
+      branch: 'shared-reviewed', baseCommit: oldBase, launchCwd: trees['shared-reviewed']!,
+    })
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      enqueueGroup(project, repo, [
+        ['shared-first', 'first member fixture'],
+        ['shared-reviewed', ''],
+      ])
+      db().query(
+        `UPDATE landing SET steps=? WHERE project=? AND branch='shared-reviewed'`,
+      ).run(JSON.stringify([{ name: '_flags' }]), project)
+      drainQueue(repo)
+      expect(db().query(
+        'SELECT branch,status FROM landing WHERE project=? ORDER BY id',
+      ).all(project)).toEqual([
+        { branch: 'shared-first', status: 'landed' },
+        { branch: 'shared-reviewed', status: 'refused' },
+      ])
+      expect(readFileSync(join(repo, 'shared.txt'), 'utf8')).toContain('first member line')
+      expect(readFileSync(join(repo, 'shared.txt'), 'utf8')).not.toContain('reviewed member line')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   test('--unreviewed is scoped to one merge-group member', () => {
     const { repo, trees } = repoWithBranches(['override-one', 'reviewed-two'])
     const project = 'landing-group-member-flags'

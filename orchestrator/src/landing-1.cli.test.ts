@@ -1085,6 +1085,28 @@ test('only bun\'s complete timeout line reports machine load', () => {
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
+  test('a tree-plus-base-commit review counts as coverage without a stored patch identity', async () => {
+    const branch = 'legacy-tree-base-review'
+    const { repo, trees } = repoWithBranches([branch])
+    const project = 'landing-legacy-tree-base-review'
+    const reviewId = completedReview(project, [g(repo, 'rev-parse', `${branch}^{tree}`)], {
+      branch, baseCommit: g(repo, 'rev-parse', 'main'), launchCwd: trees[branch]!,
+    })
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      expect(db().query('SELECT patch_id, path_set FROM review WHERE id=?').get(reviewId))
+        .toEqual({ patch_id: null, path_set: null })
+      writeFileSync(join(repo, 'unrelated-trunk.txt'), 'trunk only\n')
+      g(repo, 'add', 'unrelated-trunk.txt')
+      g(repo, 'commit', '-m', 'unrelated trunk move')
+      g(trees[branch]!, 'rebase', 'main')
+      g(trees[branch]!, 'update-ref', '-d', 'AUTO_MERGE')
+      const child = childLand(repo, branch, { unreviewed: null })
+      expect(await child.exited).toBe(0)
+      expect(g(repo, 'rev-parse', 'main')).toBe(g(repo, 'rev-parse', branch))
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   test('carries a message-only amendment across an unrelated trunk move as no-code-change', async () => {
     const { repo, trees } = repoWithBranches(['carry-review'])
     const project = 'landing-carry-review'
@@ -1275,8 +1297,8 @@ test('only bun\'s complete timeout line reports machine load', () => {
     }
   })
 
-  test('carries current-patch coverage when unrelated reviews and trunk touch the same path', async () => {
-    const { repo, trees } = repoWithBranches(['overlap-review', 'unrelated-review'])
+  test('refuses a carry when trunk moved on a path touched by the change', async () => {
+    const { repo, trees } = repoWithBranches(['overlap-review'])
     const project = 'landing-overlap-review'
     upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
     try {
@@ -1284,17 +1306,7 @@ test('only bun\'s complete timeout line reports machine load', () => {
       g(repo, 'add', 'shared.txt')
       g(repo, 'commit', '-m', 'shared base')
       g(trees['overlap-review']!, 'rebase', 'main')
-      g(trees['unrelated-review']!, 'rebase', 'main')
       const oldBase = g(repo, 'rev-parse', 'main')
-      const unrelatedPath = join(trees['unrelated-review']!, 'shared.txt')
-      const unrelatedLines = readFileSync(unrelatedPath, 'utf8').split('\n')
-      unrelatedLines[5] = 'unrelated branch line'
-      writeFileSync(unrelatedPath, unrelatedLines.join('\n'))
-      g(trees['unrelated-review']!, 'add', 'shared.txt')
-      g(trees['unrelated-review']!, 'commit', '-m', 'unrelated shared change')
-      completedReview(project, [g(repo, 'rev-parse', 'unrelated-review^{tree}')], {
-        branch: 'unrelated-review', baseCommit: oldBase, launchCwd: trees['unrelated-review']!,
-      })
       const branchPath = join(trees['overlap-review']!, 'shared.txt')
       const branchLines = readFileSync(branchPath, 'utf8').split('\n')
       branchLines[1] = 'branch line'
@@ -1311,10 +1323,34 @@ test('only bun\'s complete timeout line reports machine load', () => {
       g(repo, 'add', 'shared.txt')
       g(repo, 'commit', '-m', 'trunk shared change')
       const child = childLand(repo, 'overlap-review', { unreviewed: null })
-      expect(await child.exited).toBe(0)
-      expect(g(repo, 'rev-parse', 'main')).toBe(g(repo, 'rev-parse', 'overlap-review'))
+      expect(await child.exited).not.toBe(0)
+      expect(await new Response(child.stderr).text()).toContain('overlapping paths: shared.txt')
       expect(db().query('SELECT outdated_at, outdated_reason FROM review ORDER BY id DESC LIMIT 1').get())
         .toEqual({ outdated_at: null, outdated_reason: null })
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('an unrelated branch review cannot invalidate otherwise-valid coverage', async () => {
+    const { repo, trees } = repoWithBranches(['candidate-review', 'unrelated-review'])
+    const project = 'landing-unrelated-review'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const oldBase = g(repo, 'rev-parse', 'main')
+      completedReview(project, [g(repo, 'rev-parse', 'unrelated-review^{tree}')], {
+        branch: 'unrelated-review', baseCommit: oldBase, launchCwd: trees['unrelated-review']!,
+      })
+      completedReview(project, [g(repo, 'rev-parse', 'candidate-review^{tree}')], {
+        branch: 'candidate-review', baseCommit: oldBase, launchCwd: trees['candidate-review']!,
+      })
+      writeFileSync(join(repo, 'trunk-only.txt'), 'trunk only\n')
+      g(repo, 'add', 'trunk-only.txt')
+      g(repo, 'commit', '-m', 'move trunk')
+      g(trees['candidate-review']!, 'rebase', 'main')
+      g(trees['candidate-review']!, 'update-ref', '-d', 'AUTO_MERGE')
+
+      const child = childLand(repo, 'candidate-review', { unreviewed: null })
+      expect(await child.exited).toBe(0)
+      expect(g(repo, 'rev-parse', 'main')).toBe(g(repo, 'rev-parse', 'candidate-review'))
     } finally { rmSync(repo, { recursive: true, force: true }) }
   })
 
