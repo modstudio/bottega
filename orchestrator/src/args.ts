@@ -383,6 +383,10 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
       if (sub === 'tier') return { args: argv.slice(2), shape: shape(
         'orch review tier <branch|run-id|from..to> [--json]', 1, [], ['--json'],
       ) }
+      if (sub === 'yield') return { args: argv.slice(2), shape: shape(
+        'orch review yield [--project P] [--since ISO] [--task KEY|--key KEY] [--lens L] [--agent A] [--json]', 0,
+        ['--project', '--since', '--task', '--key', '--lens', '--agent'], ['--json'],
+      ) }
       if (sub === 'triage') return { args: argv.slice(2), shape: shape(
         `orch review triage <review-id> <finding> <accepted|modified|rejected|skipped> [--category X] [--severity ${REVIEW_SEVERITY.join('|')}]`, 3,
         ['--category', '--severity'],

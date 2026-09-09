@@ -454,7 +454,7 @@ const cmd = argv[0]
 // turning the many read helpers below into competing writers.
 const readOnlyInvocation =
   (cmd === 'port' && argv[1] === 'import' && argv.includes('--dry-run')) ||
-  (cmd === 'review' && argv[1] === 'coverage-audit')
+  (cmd === 'review' && ['coverage-audit', 'yield'].includes(argv[1] ?? ''))
 if (!readOnlyInvocation && cmd !== 'init-db' && cmd !== 'migrate') recordSessionSeen()
 
 /** Human-readable duration: seconds under a minute, then m/s, then h/m. */
@@ -1597,6 +1597,8 @@ function usage(): never {
   orch retry <run-id>           re-send a run's exact prompt [--agent NAME] [--model MODEL]
       --agent <name>            ... or to a different one, deliberately
   orch review tier <branch|run-id|from..to> classify review breadth without writing
+  orch review yield [--project P] [--since ISO] [--task KEY|--key KEY] [--lens L] [--agent A] [--json]
+                                findings and cost by lens, round ordinal, agent and model
   orch review record <run-id>... record completed lens outputs before triage
   orch review triage <review-id> <finding> <accepted|modified|rejected|skipped>
       --category <name>         required rejection category for rejected findings
@@ -1809,6 +1811,7 @@ function reviewUsage(): never {
   orch review list [--open|--complete] [--project P] [--since ISO] [--json]
   orch review show <id> [--json]
   orch review tier <branch|run-id|from..to> [--json]
+  orch review yield [--project P] [--since ISO] [--task KEY|--key KEY] [--lens L] [--agent A] [--json]
   orch review record <run-id>...
   orch review triage <review-id> <finding> <accepted|modified|rejected|skipped>
   orch review complete <review-id>
@@ -3091,6 +3094,20 @@ switch (cmd) {
           console.log(`  correction: ${finding.proposed_correction}`)
         }
       }
+      break
+    }
+    if (sub === 'yield') {
+      const since = flag('since')
+      if (since && !z.iso.datetime().safeParse(since).success) {
+        throw new Error('--since must be an ISO datetime (for example 2026-01-01T00:00:00Z)')
+      }
+      if (flag('task') && flag('key')) throw new Error('--task and --key are aliases; supply only one')
+      const { reviewYield, renderReviewYieldHuman } = await import('./review-yield.ts')
+      const report = reviewYield({
+        project: flag('project'), since, task: flag('task') ?? flag('key'),
+        lens: flag('lens'), agent: flag('agent'),
+      })
+      console.log(has('json') ? JSON.stringify(report) : renderReviewYieldHuman(report))
       break
     }
     if (sub === 'tier') {
