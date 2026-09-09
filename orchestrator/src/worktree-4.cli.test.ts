@@ -1064,7 +1064,7 @@ describe('orphan worktrees keep anything unique', () => {
       git(tree, 'add', 'new.txt')
       git(tree, 'commit', '-m', 'unique')
       expect(orphanSafety(tree, repo, 'main')).toMatchObject({
-        removable: false, detail: 'has commits not reachable from main',
+        removable: true, detail: 'clean; committed work is retained by its branch',
       })
     } finally {
       rmSync(repo, { recursive: true, force: true })

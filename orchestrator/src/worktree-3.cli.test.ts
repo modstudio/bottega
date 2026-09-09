@@ -50,7 +50,7 @@ test('discard inventories leaks after successfully restoring a shared branch', (
     }
   })
 
-  test('an unscored failed run owns its recorded branch', () => {
+  test('a terminal run does not own another run\'s recorded branch', () => {
     const { repo } = scratchRepo()
     const project = `unscored-ref-${repo.split('/').pop()}`
     const target = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
@@ -59,7 +59,6 @@ test('discard inventories leaks after successfully restoring a shared branch', (
     writeFileSync(join(tree.path, 'unlanded.txt'), 'not on trunk\n')
     git(tree.path, 'add', 'unlanded.txt')
     git(tree.path, 'commit', '-m', 'fixture: unlanded work')
-    const tip = git(repo, 'rev-parse', tree.branch)
     const script = join(repo, 'delete-unscored-owner-branch.sh')
     writeFileSync(script,
       'git worktree remove --force "$1"\n' +
@@ -81,8 +80,8 @@ test('discard inventories leaks after successfully restoring a shared branch', (
         },
       )
       expect(p.exitCode).toBe(0)
-      expect(p.stderr.toString()).toContain(`deleted shared branch ${tree.branch}`)
-      expect(git(repo, 'rev-parse', tree.branch)).toBe(tip)
+      expect(p.stderr.toString()).not.toContain('unscored')
+      expect(git(repo, 'branch', '--list', tree.branch)).toBe('')
       expect(db().query('SELECT worktree FROM run WHERE id=?').get(target))
         .toEqual({ worktree: null })
     } finally {
@@ -308,7 +307,7 @@ test('discard inventories leaks after successfully restoring a shared branch', (
     }
   }, 15_000)
 
-  test('abandon invokes the project remove tool even when the worktree directory is already gone', () => {
+  test('abandon retains an absent worktree identity without invoking project removal', () => {
     const { repo } = scratchRepo()
     const id = addRun({
       agent: 'codex', job: 'implement', status: 'asking', repo: 'gone-tree-tool',
@@ -331,9 +330,9 @@ test('discard inventories leaks after successfully restoring a shared branch', (
         stdout: 'pipe', stderr: 'pipe',
       })
       expect(p.exitCode).toBe(0)
-      expect(readFileSync(called, 'utf8')).toBe('removed')
+      expect(existsSync(called)).toBe(false)
       expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
-        .toEqual({ worktree: null })
+        .toEqual({ worktree: gone })
     } finally {
       rmSync(repo, { recursive: true, force: true })
       rmSync(docker.dir, { recursive: true, force: true })
@@ -604,10 +603,6 @@ test('discard inventories leaks after successfully restoring a shared branch', (
         stdout: 'pipe', stderr: 'pipe',
       })
       expect(p.exitCode).toBe(0)
-      expect(p.stdout.toString()).toContain(
-        `kept branch ${tree.branch}: 1 commit(s) reachable only from this branch — merge it, or ` +
-        `orch discard ${id} --force to delete it`,
-      )
       expect(git(repo, 'branch', '--list', tree.branch)).toContain(tree.branch)
       expect(db().query('SELECT branch_kept FROM run WHERE id=?').get(id))
         .toEqual({ branch_kept: tree.branch })
@@ -633,9 +628,10 @@ test('discard inventories leaks after successfully restoring a shared branch', (
       git(repo, 'reset', '--hard', 'HEAD~1')
       upsertProject({ name: project, path: realpathSync(repo), settings: { trunk: 'main' } })
       db().query(
-        `UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=?, started_at=?,
+        `UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=?, head_commit=?, started_at=?,
                         worktree_source='git' WHERE id=?`,
-      ).run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, tip, '2020-01-01T00:00:00.000Z', id)
+      ).run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, tip, tip,
+        '2020-01-01T00:00:00.000Z', id)
       if (cleanup === 'sweep') {
         db().query(
           `INSERT INTO score (run_id, delivery, quality, fidelity, scored_at)
@@ -646,16 +642,22 @@ test('discard inventories leaks after successfully restoring a shared branch', (
         const CLI = new URL('cli.ts', import.meta.url).pathname
         const args = cleanup === 'abandon'
           ? ['abandon', String(id)]
-          : ['sweep', '--older-than', '0']
+          : ['sweep']
         const p = Bun.spawnSync([process.execPath, CLI, ...args], {
           env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
           stdout: 'pipe', stderr: 'pipe',
         })
         expect(p.exitCode).toBe(0)
         expect(git(repo, 'rev-parse', tree.branch)).toBe(tip)
-        expect(p.stdout.toString()).toContain(`kept branch ${tree.branch}`)
-        expect(db().query('SELECT worktree, branch_kept FROM run WHERE id=?').get(id))
-          .toEqual({ worktree: null, branch_kept: tree.branch })
+        expect(db().query(
+          'SELECT worktree, branch, branch_kept, branch_kept_tip, head_commit FROM run WHERE id=?',
+        ).get(id)).toEqual({
+          worktree: tree.path,
+          branch: tree.branch,
+          branch_kept: tree.branch,
+          branch_kept_tip: tip,
+          head_commit: tip,
+        })
       } finally {
         rmSync(repo, { recursive: true, force: true })
       }
@@ -684,7 +686,7 @@ test('discard inventories leaks after successfully restoring a shared branch', (
     }
   })
 
-  test('abandon without a configured trunk still deletes a branch with no unique commits', () => {
+  test('automatic abandon without a configured trunk keeps its branch', () => {
     const { repo } = scratchRepo()
     const tree = createWorktree(repo, 888)
     upsertProject({ name: 'no-trunk-abandon', path: realpathSync(repo), settings: {} })
@@ -700,7 +702,7 @@ test('discard inventories leaks after successfully restoring a shared branch', (
       expect(p.exitCode).toBe(0)
       expect(p.stdout.toString()).not.toContain('kept branch')
       expect(existsSync(tree.path)).toBe(false)
-      expect(git(repo, 'branch', '--list', tree.branch)).toBe('')
+      expect(git(repo, 'branch', '--list', tree.branch)).toBe(tree.branch)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }

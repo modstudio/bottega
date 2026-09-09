@@ -6,7 +6,7 @@ import { join, } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { OrchProjectListSchema } from '../../shared/orch-contract.ts'
 import type { WorktreeCreate } from './projects.ts'
-import { addRun, candidates, createWorktree, db, declaredCreate, dir, fakeDockerCommand, hermeticGitEnv, projectByName, projects, upsertProject } from '../test/fixture.ts'
+import { addRun, candidates, createWorktree, db, declaredCreate, dir, hermeticGitEnv, projectByName, projects, upsertProject } from '../test/fixture.ts'
 
 import { runCollectionDescribeFixture } from '../test/fixture.ts'
 
@@ -606,7 +606,7 @@ test('create commands must exist and be executable before dispatch', () => {
     )
   }, 20_000)
 
-  test('stop terminates a running vendor and keeps its recorded worktree', async () => {
+  test('stop does not signal an unverified agent pid and keeps its recorded worktree', () => {
     const vendor = Bun.spawn(['sleep', '30'])
     const id = insert('running', 'implement')
     const worktree = createWorktree(dir, id)
@@ -617,8 +617,7 @@ test('create commands must exist and be executable before dispatch', () => {
       const stopped = orch('stop', String(id))
       expect(stopped.code).toBe(0)
       expect(stopped.out).toContain(`stopped run ${id}`)
-      expect(stopped.out).toContain('found no Docker containers to reclaim')
-      expect(await vendor.exited).not.toBe(0)
+      expect(() => process.kill(vendor.pid, 0)).not.toThrow()
       expect(db().query('SELECT status, error, failure_kind, worktree FROM run WHERE id=?').get(id))
         .toEqual({
           status: 'stopped', error: 'stopped by architect', failure_kind: 'stopped', worktree: worktree.path,
@@ -633,33 +632,7 @@ test('create commands must exist and be executable before dispatch', () => {
     }
   })
 
-  test('stop reports Docker containers it reclaimed', async () => {
-    const vendor = Bun.spawn(['sleep', '30'])
-    const id = insert('running', 'implement')
-    const worktree = createWorktree(dir, id)
-    const docker = fakeDockerCommand(`
-case "$1 $2" in
-  "ps -a") printf '%s\\n' 'app-orch-${id}-web' ;;
-  "volume ls") exit 0 ;;
-  "rm -f") exit 0 ;;
-  *) exit 9 ;;
-esac`)
-    db().query('UPDATE run SET agent_pid=?, cwd=?, worktree=?, branch=? WHERE id=?')
-      .run(vendor.pid, worktree.path, worktree.path, worktree.branch, id)
-
-    try {
-      const stopped = orchInput(['stop', String(id)], undefined, docker.env)
-      expect(stopped.code).toBe(0)
-      expect(stopped.out).toContain('reclaimed Docker containers')
-      expect(await vendor.exited).not.toBe(0)
-    } finally {
-      try { vendor.kill() } catch { /* already stopped */ }
-      rmSync(docker.dir, { recursive: true, force: true })
-      if (existsSync(worktree.path)) rmSync(worktree.path, { recursive: true, force: true })
-    }
-  })
-
-  test('stop reports Docker containers left for a live worktree sibling', async () => {
+  test('stop keeps a shared worktree and reports its container retention', () => {
     const vendor = Bun.spawn(['sleep', '30'])
     const stopped = insert('running', 'implement')
     const owner = insert('asking', 'implement')
@@ -680,7 +653,7 @@ esac`)
       expect(result.out).toContain(
         'left Docker containers in place because another live run still owns the tree',
       )
-      expect(await vendor.exited).not.toBe(0)
+      expect(() => process.kill(vendor.pid, 0)).not.toThrow()
       expect(readFileSync(evidence, 'utf8')).toBe('unjudged work\n')
       expect(db().query('SELECT status, worktree FROM run WHERE id=?').get(stopped))
         .toEqual({ status: 'stopped', worktree })
@@ -911,7 +884,7 @@ esac`)
     ).all(root)).toEqual([{ run_id: root, root_id: root, action: 'abandon' }])
   })
 
-  test('abandon does not delete a branch recorded by another run', () => {
+  test('automatic abandon retains a branch recorded by another run', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-abandon-'))
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
@@ -939,14 +912,14 @@ esac`)
 
       const r = orch('abandon', String(abandoned))
       expect(r.code).toBe(0)
-      expect(r.out).toContain(`branch shared-branch left because run ${owner} records it`)
+      expect(r.out).not.toContain('unscored')
       expect(git('branch', '--list', 'shared-branch')).toContain('shared-branch')
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
   })
 
-  test('abandon does not treat a live same-named branch in another repository as an owner', () => {
+  test('automatic abandon retains its branch independently of another repository', () => {
     const first = mkdtempSync(join(tmpdir(), 'orch-abandon-first-'))
     const second = mkdtempSync(join(tmpdir(), 'orch-abandon-second-'))
     const git = (repo: string, ...args: string[]) => {
@@ -978,7 +951,7 @@ esac`)
       const r = orch('abandon', String(abandoned))
       expect(r.code).toBe(0)
       expect(r.out).not.toContain(`run ${otherRepository} records it`)
-      expect(git(first, 'branch', '--list', 'shared-branch')).toBe('')
+      expect(git(first, 'branch', '--list', 'shared-branch')).toBe('shared-branch')
       expect(git(second, 'branch', '--list', 'shared-branch')).toContain('shared-branch')
     } finally {
       rmSync(first, { recursive: true, force: true })

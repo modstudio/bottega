@@ -327,7 +327,7 @@ describe('vendor failure failover is one bounded unit of work', () => {
       expect(rows[1]).toMatchObject({
         agent: 'grok', status: 'ok', retry_of: rows[0]!.id, base_commit: originalBase,
       })
-      expect(rows.map((row) => row.worktree)).toEqual([null, null])
+      expect(rows.every((row) => row.worktree !== null && !existsSync(row.worktree))).toBe(true)
       expect(git(repo, 'rev-parse', 'main')).not.toBe(originalBase)
     } finally {
       codex.bin = priorCodex.bin; codex.argv = priorCodex.argv; codex.stdin = priorCodex.stdin

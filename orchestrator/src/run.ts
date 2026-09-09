@@ -15,15 +15,16 @@ import {
   LOCAL_BASE_URL,
 } from './agents.ts'
 import {
-  job, isReaderJob, jobIdleKillMs, reclaimsTreeByDefault, resolveJobTimeoutMs, jobBoundInstruction,
+  JOBS, job, isReaderJob, jobIdleKillMs, reclaimsTreeByDefault, resolveJobTimeoutMs, jobBoundInstruction,
   type Job,
 } from './jobs.ts'
 import { pick } from './route.ts'
 import {
-  db, nowIso, DB_PATH, sessionId, resolveRootFromLastTurn, tryWriteContention, writableDb, writeTransaction,
-  enableSchemaReload, teardownTerminalRunResources,
+  db, nowIso, DB_PATH, sessionId, pidAlive, resolveRootFromLastTurn, tryWriteContention, writableDb, writeTransaction,
+  enableSchemaReload, evidenceOwningWorktreeSharers, teardownTerminalRunResources,
 } from './db.ts'
 import { CONNECTION_SCHEMA_INVARIANT } from './migrations.ts'
+import { reclaimWorktree } from './reclaim.ts'
 import {
   createWorktree, createWithTool, createReadOnlyWorktree, createReadOnlyWithTool,
   toolFor, changesIn, repoRootOf, resolveBase, resolveReadOnlyBase, worktreeGitDir,
@@ -35,7 +36,9 @@ import {
   workerSharedGitRoots,
   contentTree,
   assertCallerAncestry, withWorktreeCreateLock, withWorktreeLease, withCleanupLock,
-  removeFor, type Worktree,
+  removeFor, worktreeDirty, worktreeLatestMtime, projectLockState,
+  reclaimStaleProjectLock, worktreeLeaseName, type Worktree,
+  branchTip, restoreBranch,
   type WorktreeObjectEnvironment, validateSeedWithTool,
 } from './worktree.ts'
 import { recipeNotes } from './recipe.ts'
@@ -914,14 +917,81 @@ type LiveCheckpoint = {
 }
 const liveCheckpoints = new Map<LiveProcess, LiveCheckpoint>()
 
-/** Terminate the process pair recorded for a run, while allowing its coordinator to survive. */
+type ProcessRow = { pid: number; ppid: number; command: string }
+
+function processTable(): ProcessRow[] {
+  let p
+  try {
+    p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,command='], {
+      stdout: 'pipe', stderr: 'pipe', timeout: 1_000,
+    })
+  } catch (error) {
+    console.error(`orch: process inventory unavailable; nothing signalled: ${String((error as Error).message ?? error)}`)
+    return []
+  }
+  if (p.exitCode !== 0) {
+    const stderr = p.stderr.length ? `: ${p.stderr.toString().trim()}` : ''
+    if (p.exitCode === null && p.signalCode === 'SIGTERM') {
+      console.error(`orch: process inventory did not complete inside 1000ms; nothing signalled${stderr}`)
+    } else if (p.exitCode !== null) {
+      console.error(`orch: process inventory failed with exit ${p.exitCode}; nothing signalled${stderr}`)
+    } else {
+      console.error(`orch: process inventory ended on signal ${p.signalCode ?? 'unknown'}; nothing signalled${stderr}`)
+    }
+    return []
+  }
+  return p.stdout.toString().split('\n').flatMap((line): ProcessRow[] => {
+    const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/)
+    return match ? [{ pid: Number(match[1]), ppid: Number(match[2]), command: match[3]! }] : []
+  })
+}
+
+/** Terminate the verified whole descendant tree, youngest-first. */
+export function verifiedProcessTree(
+  table: ProcessRow[], id: number, rootPid: number, exclude: number[] = [],
+  rootVerified = false,
+): number[] {
+  const root = table.find((candidate) => candidate.pid === rootPid)
+  const identity = new RegExp(`(?:^|[/\\s])exec\\.ts\\s+${id}(?:\\s|$)`)
+  if (!root || (!rootVerified && !identity.test(root.command))) return []
+  const skipped = new Set(exclude)
+  const depth = new Map<number, number>([[root.pid, 0]])
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const candidate of table) {
+      const parentDepth = depth.get(candidate.ppid)
+      if (parentDepth === undefined || depth.has(candidate.pid)) continue
+      depth.set(candidate.pid, parentDepth + 1)
+      changed = true
+    }
+  }
+  return [...depth.entries()]
+    .filter(([pid]) => !skipped.has(pid))
+    .sort((a, b) => b[1] - a[1])
+    .map(([pid]) => pid)
+}
+
 export function terminateRunProcesses(id: number, exclude: number[] = []): number[] {
   const row = db().query('SELECT pid, agent_pid FROM run WHERE id=?').get(id) as
     { pid: number | null; agent_pid: number | null } | null
   if (!row) throw new Error(`no run ${id}`)
-  const skipped = new Set(exclude)
-  const pids = [...new Set([row.agent_pid, row.pid]
-    .filter((pid): pid is number => Boolean(pid) && !skipped.has(pid!)))]
+  if (!row.pid) return []
+  const table = processTable()
+  // A stop command is itself a descendant of the coordinator it is stopping.
+  // If the reaper signals itself, it can exit before reaching a sibling vendor
+  // process and leave the caller waiting on that vendor forever.
+  // A synchronous stop launched by the coordinator has an equally strong
+  // identity proof: the recorded coordinator is this command's direct parent.
+  const pids = verifiedProcessTree(
+    table, id, row.pid, [...exclude, process.pid], row.pid === process.ppid,
+  )
+  if (!pids.length) {
+    if (table.some((candidate) => candidate.pid === row.pid)) {
+      console.error(`orch: run ${id} pid ${row.pid} identity could not be confirmed; nothing signalled`)
+    }
+    return []
+  }
   for (const pid of pids) {
     try { process.kill(pid, 'SIGTERM') } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e
@@ -1684,32 +1754,222 @@ function persistRunArtifacts(
   }
 }
 
+export type CloseOutResult = {
+  runId: number; worktree: string | null
+  outcome: 'released' | 'held' | 'live' | 'absent' | 'failed'
+  detail: string
+}
+
+const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
+export const WORKTREE_LIVE_MS = 2 * 60 * 60 * 1000
+
+/** One cleanup path for terminalisation, explicit close-out, and sweep. */
+export function closeOutRun(
+  runId: number, options: {
+    terminalAt?: number; sweep?: boolean; dryRun?: boolean
+    extraPids?: number[]; pgid?: number | null
+  } = {},
+): CloseOutResult {
+  const row = db().query(
+    `SELECT id, COALESCE(parent_run_id,id) root_id, job, repo, cwd, worktree, branch,
+            base_commit, worktree_source, minted_branch, keep_tree, status, agent_pid
+       FROM run WHERE id=?`,
+  ).get(runId) as {
+    id: number; root_id: number; job: string; repo: string | null; cwd: string | null
+    worktree: string | null; branch: string | null; base_commit: string | null
+    worktree_source: Worktree['source'] | null; minted_branch: string | null
+    keep_tree: number; status: string; agent_pid: number | null
+  } | null
+  if (!row) throw new Error(`no run ${runId}`)
+  const root = db().query(
+    `SELECT job,repo,cwd,worktree,branch,base_commit,worktree_source,minted_branch,keep_tree,status
+       FROM run WHERE id=?`,
+  ).get(row.root_id) as typeof row
+  const treePath = row.worktree ?? root?.worktree ?? null
+  if (!treePath) return { runId: row.root_id, worktree: null, outcome: 'absent', detail: 'no worktree' }
+  const held = db().query(
+    'SELECT MAX(keep_tree) held FROM run WHERE id=? OR parent_run_id=?',
+  ).get(row.root_id, row.root_id) as { held: number }
+  const effective = {
+    id: row.root_id,
+    job: root?.job ?? row.job,
+    repo: root?.repo ?? row.repo,
+    cwd: root?.cwd ?? row.cwd,
+    worktree: treePath,
+    branch: root?.branch ?? row.branch,
+    base_commit: root?.base_commit ?? row.base_commit,
+    worktree_source: root?.worktree_source ?? row.worktree_source,
+    minted_branch: root?.minted_branch ?? row.minted_branch,
+    status: root?.status ?? row.status,
+    keep_tree: held.held,
+  }
+  if (!TERMINAL.has(effective.status)) return {
+    runId: row.root_id, worktree: treePath, outcome: 'live',
+    detail: `conversation is ${effective.status}`,
+  }
+  if (effective.keep_tree) return {
+    runId: row.root_id, worktree: treePath, outcome: 'held',
+    detail: `held by explicit --keep-tree; clear with orch discard ${row.root_id}`,
+  }
+  const retainedBranch = effective.minted_branch ?? effective.branch
+  const recordRetainedBranch = (tip: string | null) => {
+    if (!retainedBranch || !tip) return
+    db().query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
+      .run(retainedBranch, tip, row.root_id)
+  }
+  if (!existsSync(treePath)) {
+    const repoRoot = (effective.repo ? projectByName(effective.repo)?.path : null) ??
+      repoRootOf(treePath) ?? effective.cwd
+    if (!options.dryRun && repoRoot && retainedBranch) {
+      recordRetainedBranch(branchTip(repoRoot, retainedBranch))
+    }
+    return {
+      runId: row.root_id, worktree: treePath,
+      outcome: options.dryRun ? 'released' : 'absent',
+      detail: options.dryRun
+        ? 'would retain the recorded identity for an absent worktree'
+        : 'worktree was already absent; recorded identity retained',
+    }
+  }
+  const repoRoot = (effective.repo ? projectByName(effective.repo)?.path : null) ??
+    repoRootOf(treePath) ?? effective.cwd
+  if (!repoRoot) return { runId: row.root_id, worktree: treePath, outcome: 'failed', detail: 'repository root not found' }
+
+  const liveRows = () => {
+    const sharers = evidenceOwningWorktreeSharers(db(), { id: row.root_id, worktree: treePath })
+    const conversation = db().query(
+      `SELECT id,status FROM run
+        WHERE status IN ('running','asking') AND (id=? OR parent_run_id=?) ORDER BY id`,
+    ).all(row.root_id, row.root_id) as { id: number; status: string }[]
+    return [...conversation, ...sharers]
+  }
+  const live = liveRows()
+  if (live.length) return {
+    runId: row.root_id, worktree: treePath, outcome: 'live',
+    detail: `live run(s): ${live.map((owner) => `${owner.id} (${owner.status})`).join(', ')}`,
+  }
+  // A database row cannot observe a grandchild born after the T0 census and
+  // reparented when its wrapper died. Re-sample the process table and retain
+  // the tree when either the recorded vendor or that captured process group
+  // still has a live descendant.
+  if (runHasLiveDescendants(
+    [row.agent_pid], options.extraPids ?? [], {}, options.pgid ?? null,
+  )) return {
+    runId: row.root_id, worktree: treePath, outcome: 'live',
+    detail: 'process tree still alive',
+  }
+  const lease = worktreeLeaseName(treePath)
+  reclaimStaleProjectLock(repoRoot, lease)
+  const holder = projectLockState(repoRoot, lease).holder
+  if (holder) return {
+    runId: row.root_id, worktree: treePath, outcome: 'live',
+    detail: `live worktree lease held by pid ${holder.pid}`,
+  }
+
+  try {
+    return withWorktreeLease(repoRoot, treePath,
+      { session: sessionId(), what: `close-out ${row.root_id}` }, () =>
+      withCleanupLock(repoRoot, { session: sessionId(), what: `close-out ${row.root_id}` }, () => {
+        const lockedLive = liveRows()
+        if (lockedLive.length) return {
+          runId: row.root_id, worktree: treePath, outcome: 'live' as const,
+          detail: `live run(s): ${lockedLive.map((owner) => `${owner.id} (${owner.status})`).join(', ')}`,
+        }
+        const latest = worktreeLatestMtime(treePath)
+        const threshold = options.terminalAt ?? (Date.now() - WORKTREE_LIVE_MS)
+        if (latest !== null && latest > threshold) return {
+          runId: row.root_id, worktree: treePath, outcome: 'live' as const,
+          detail: options.terminalAt
+            ? 'filesystem activity occurred after terminalisation'
+            : 'filesystem activity occurred inside the two-hour liveness window',
+        }
+        // Reader trees are scratch evidence. They can contain the carried
+        // subject under review and verification edits, neither of which is a
+        // deliverable. Only a writing job can own uncommitted work that must
+        // survive close-out.
+        if (JOBS[effective.job]?.needs.writesRepo) {
+          const dirty = worktreeDirty(treePath)
+          if (dirty.dirty) return {
+            runId: row.root_id, worktree: treePath, outcome: 'held' as const,
+            detail: `${dirty.detail}; commit or remove it, then run orch close-out ${row.root_id}`,
+          }
+        }
+        const reclaimProof = reclaimWorktree(treePath, {
+          dryRun: true,
+          allowDirty: !JOBS[effective.job]?.needs.writesRepo,
+        })
+        if (!reclaimProof.ok) return {
+          runId: row.root_id, worktree: treePath, outcome: 'held' as const,
+          detail: reclaimProof.action,
+        }
+        if (options.dryRun) return {
+          runId: row.root_id, worktree: treePath, outcome: 'released' as const,
+          detail: 'would release clean terminal worktree and keep its branch',
+        }
+        // The coordinator proves its own identity before descendants are signalled.
+        const processRow = db().query('SELECT pid FROM run WHERE id=?').get(row.id) as
+          { pid: number | null } | null
+        const processWasLive = Boolean(processRow?.pid && processRow.pid !== process.pid && pidAlive(processRow.pid))
+        const signalled = terminateRunProcesses(row.id, [process.pid])
+        const processWarning = processWasLive && !signalled.includes(processRow!.pid!)
+          ? `; process pid ${processRow!.pid} was not signalled because its identity could not be confirmed`
+          : ''
+        const branchSnapshot = retainedBranch ? branchTip(repoRoot, retainedBranch) : null
+        // Publish the recovery identity before a project-owned remover runs: a
+        // remover may delete or move the ref before reporting its refusal.
+        recordRetainedBranch(branchSnapshot)
+        const result = removeFor({
+          path: treePath, branch: effective.branch ?? '', base: effective.base_commit ?? '',
+          repoRoot, source: effective.worktree_source ?? undefined,
+          mintedBranch: effective.minted_branch,
+        }, repoRoot, false, true, row.root_id, false)
+        if (!result.removed) return {
+          runId: row.root_id, worktree: treePath, outcome: 'failed' as const, detail: result.detail,
+        }
+        if (retainedBranch && branchSnapshot) {
+          const branchAfter = branchTip(repoRoot, retainedBranch)
+          if (branchAfter === null) {
+            const restored = restoreBranch(repoRoot, retainedBranch, branchSnapshot)
+            if (!restored.ok) return {
+              runId: row.root_id, worktree: treePath, outcome: 'failed' as const,
+              detail: `project remove tool deleted retained branch ${retainedBranch} at ${branchSnapshot}, ` +
+                `and restoration failed: ${restored.error}`,
+            }
+          } else if (branchAfter !== branchSnapshot) {
+            recordRetainedBranch(branchSnapshot)
+            return {
+              runId: row.root_id, worktree: treePath, outcome: 'failed' as const,
+              detail: `project remove tool moved retained branch ${retainedBranch} from ` +
+                `${branchSnapshot} to ${branchAfter}; it was left at the new tip`,
+            }
+          }
+        }
+        const acquired = liveRows()
+        if (acquired.length) {
+          return {
+            runId: row.root_id, worktree: treePath, outcome: 'failed' as const,
+            detail: `worktree was acquired during cleanup by run(s): ` +
+              acquired.map((owner) => `${owner.id} (${owner.status})`).join(', '),
+          }
+        }
+        return {
+          runId: row.root_id, worktree: treePath, outcome: 'released' as const,
+          detail: (result.output ? `${result.detail}\n${result.output}` : result.detail) + processWarning,
+        }
+      }), 5 * 60_000)
+  } catch (error) {
+    return { runId: row.root_id, worktree: treePath, outcome: 'failed', detail: String((error as Error).message ?? error) }
+  }
+}
+
 function reclaimTerminalTree(
   runId: number, worktree: Worktree, extraPids: number[] = [], pgid: number | null = null,
 ): void {
-  const row = db().query('SELECT agent_pid FROM run WHERE id=?').get(runId) as
-    { agent_pid: number | null } | null
-  // agent_pid is the vendor. run.pid is this coordinator, which is still
-  // alive here by construction and must not block reclaim.
-  // Re-sample: a T0 census plus descendantPids(root) cannot see a grandchild
-  // born after the first sample and reparented when the wrapper died.
-  if (runHasLiveDescendants([row?.agent_pid], extraPids, {}, pgid)) {
-    console.error(`orch: could not reclaim worktree for run ${runId}: process tree still alive`)
-    return
-  }
   try {
-    const identity = { session: sessionId(), what: `terminal reclaim ${runId}` }
-    withWorktreeLease(worktree.repoRoot, worktree.path, identity, () => {
-      withCleanupLock(worktree.repoRoot, identity, () => {
-        const result = removeFor(worktree, worktree.repoRoot, true, false, runId, false)
-        if (!result.removed) {
-          console.error(`orch: could not reclaim worktree for run ${runId}: ${result.detail}`)
-          return
-        }
-        db().query('UPDATE run SET worktree=NULL WHERE id=? AND worktree=?')
-          .run(runId, worktree.path)
-      })
-    })
+    const result = closeOutRun(runId, { terminalAt: Date.now(), extraPids, pgid })
+    if (result.outcome !== 'released' && result.outcome !== 'absent') {
+      console.error(`orch: close-out ${result.outcome} worktree for run ${runId}: ${result.detail}`)
+    }
   } catch (e) {
     console.error(`orch: could not reclaim worktree for run ${runId}: ${e}`)
   }
@@ -3867,7 +4127,7 @@ export async function run(opts: {
         // The recursive successor has its own terminalisation path. Reclaim
         // this completed attempt before returning into it, otherwise this
         // frame never reaches the ordinary terminal reclaim below.
-        if (artifactsPersisted && worktree && reclaimsTreeByDefault(opts.job) && !keepTree) {
+        if (artifactsPersisted && worktree && reclaimsTreeByDefault(opts.job)) {
           reclaimTerminalTree(claim.id, worktree, idleTreePids, idleTreePgid)
         }
         return await run({
@@ -3920,8 +4180,8 @@ export async function run(opts: {
     }
   }
 
-  if (artifactsPersisted && worktree && reclaimsTreeByDefault(opts.job) && !keepTree &&
-      status !== 'asking' && status !== 'running') {
+  if (artifactsPersisted && worktree && reclaimsTreeByDefault(opts.job) &&
+      status !== 'asking' && status !== 'running' && status !== 'stopped') {
     reclaimTerminalTree(claim.id, worktree, idleTreePids, idleTreePgid)
   }
 

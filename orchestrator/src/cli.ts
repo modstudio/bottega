@@ -6,13 +6,14 @@ import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, nowIso,
          type ReviewReproduced, type ReviewCoverage, type ReviewLimits, type ReviewOverlap,
          reapStale, pidAlive, STALE_AFTER_MS, UNSCORED_WHERE, recordDuels, recordLosses, recordTies, duelMatrices,
          pairPartners, unrecordedPairsForSession, parseRunIds, recordSessionSeen, SESSION_LIVE_MS,
-         resolveRootFromLastTurn, chainScoreJoin, chainTerminationAt,
-         EVIDENCE_CLOSED_SQL, EVIDENCE_OPEN_SQL, voidedSql, activeSql, runTotals,
+         resolveRootFromLastTurn, chainScoreJoin,
+         EVIDENCE_CLOSED_SQL, voidedSql, activeSql, runTotals,
          authorizeRunMutation, runMutationActor,
          auditRunMutation, adoptRunMutation, writeTransaction, tryWriteContention,
-         evidenceOwningWorktreeSharers as sharedWorktreeSharers, teardownTerminalRunResources,
+         evidenceOwningWorktreeSharers,
+         teardownTerminalRunResources,
          terminalDockerRetentionReasonForRun,
-         type RootAuthority } from './db.ts'
+         type WorktreeSharerRow, type RootAuthority } from './db.ts'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync, unlinkSync, openSync, fstatSync, closeSync, constants } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, timingSafeEqual } from 'node:crypto'
@@ -119,8 +120,9 @@ let mcpRequestFromStored!: typeof import('./run.ts').mcpRequestFromStored
 let storedMcpRequest!: typeof import('./run.ts').storedMcpRequest
 let retryModelForAgent!: typeof import('./run.ts').retryModelForAgent
 let chainTransport!: typeof import('./run.ts').chainTransport
+let closeOutRun!: typeof import('./run.ts').closeOutRun
 let readDispatchState!: typeof import('./run.ts').readDispatchState
-async function loadRun() { runModule ??= await import('./run.ts'); ({ repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses, implicitReviewWarning, packedResumePrompt, mcpRequestFromStored, storedMcpRequest, retryModelForAgent, chainTransport, readDispatchState } = runModule) }
+async function loadRun() { runModule ??= await import('./run.ts'); ({ repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses, implicitReviewWarning, packedResumePrompt, mcpRequestFromStored, storedMcpRequest, retryModelForAgent, chainTransport, readDispatchState, closeOutRun } = runModule) }
 let transportModule: typeof import('./transport.ts')
 let assertAcpAllowed!: typeof import('./transport.ts').assertAcpAllowed
 let assertAcpReady!: typeof import('./transport.ts').assertAcpReady
@@ -143,7 +145,8 @@ let callerDrift!: typeof import('./worktree.ts').callerDrift
 let takeCleanupLock!: typeof import('./worktree.ts').withCleanupLock
 let withWorktreeLease!: typeof import('./worktree.ts').withWorktreeLease
 let targetGitEnvironment!: typeof import('./worktree.ts').targetGitEnvironment
-async function loadWorktree() { worktreeModule ??= await import('./worktree.ts'); ({ branchTip, contentTree, restoreBranch, resolveBase, repoRootOf, removeBranch, removeFor, unmergedBranch, checkoutHasUncommittedWork, callerDrift, withCleanupLock: takeCleanupLock, withWorktreeLease, targetGitEnvironment } = worktreeModule) }
+let worktreeDirty!: typeof import('./worktree.ts').worktreeDirty
+async function loadWorktree() { worktreeModule ??= await import('./worktree.ts'); ({ branchTip, contentTree, restoreBranch, resolveBase, repoRootOf, removeBranch, removeFor, unmergedBranch, checkoutHasUncommittedWork, callerDrift, withCleanupLock: takeCleanupLock, withWorktreeLease, targetGitEnvironment, worktreeDirty } = worktreeModule) }
 let WORKER_PREAMBLE!: typeof import('./contract.ts').WORKER_PREAMBLE
 let READONLY_PREAMBLE!: typeof import('./contract.ts').READONLY_PREAMBLE
 let NO_REPO_PREAMBLE!: typeof import('./contract.ts').NO_REPO_PREAMBLE
@@ -556,14 +559,11 @@ type BranchOwnerRow = {
   status: string; scored: number; evidence_excluded?: string | null
 }
 
-type WorktreeSharerRow = { id: number; status: string; scored: number }
-
 class SharedWorktreeEvidenceError extends Error {
   constructor(readonly worktree: string, readonly sharers: WorktreeSharerRow[]) {
     super(
-      `worktree ${worktree} is still evidence owned by other runs:\n` +
-      sharers.map((row) =>
-        `  run ${row.id} is ${row.status}${row.scored ? '' : ' and unscored'}`).join('\n'),
+      `worktree ${worktree} is actively used by other runs:\n` +
+      sharers.map((row) => `  run ${row.id} is ${row.status}`).join('\n'),
     )
   }
 }
@@ -668,11 +668,6 @@ function orphanKeepReason(detail: string): string {
     : detail
 }
 
-type OrphanAge =
-  | { kind: 'aged'; days: number; source: 'run row' | 'commit date' | 'branch reflog' }
-  | { kind: 'live' }
-  | { kind: 'unknown' }
-
 type NamedRun = { id: number; status: string }
 
 function templateRunId(name: string, branchTemplate?: string): number | null {
@@ -692,14 +687,6 @@ function templateRunId(name: string, branchTemplate?: string): number | null {
   }).join('')
   const match = name.match(new RegExp(`^${pattern}$`))
   return match?.[1] ? Number(match[1]) : null
-}
-
-function gitOutput(cwd: string, args: string[]): string | null {
-  const result = Bun.spawnSync(['git', ...args], {
-    cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
-  })
-  if (result.exitCode !== 0) return null
-  return result.stdout.toString().trim() || null
 }
 
 function pathIsUnder(path: string | null, root: string): boolean {
@@ -735,36 +722,6 @@ function namedRun(
   return { id: member.id, status: latest.status }
 }
 
-function orphanAge(
-  path: string, name: string, branchTemplate: string | undefined,
-  project: { name: string; path: string }, now = Date.now(),
-): OrphanAge {
-  const run = namedRun(name, branchTemplate, project)
-  if (run) {
-    if (run.status === 'running' || run.status === 'asking') return { kind: 'live' }
-    const terminatedAt = chainTerminationAt(db(), run.id)
-    if (!terminatedAt) return { kind: 'unknown' }
-    const terminalMs = Date.parse(terminatedAt)
-    if (!Number.isFinite(terminalMs)) return { kind: 'unknown' }
-    return { kind: 'aged', days: (now - terminalMs) / 86_400_000, source: 'run row' }
-  }
-
-  const ref = gitOutput(path, ['symbolic-ref', '--quiet', '--short', 'HEAD']) ?? 'HEAD'
-  const commitSeconds = Number(gitOutput(path, ['log', '-1', '--format=%ct', ref]))
-  const reflog = gitOutput(path, ['reflog', 'show', '-1', '--date=unix', '--format=%gd', ref])
-  const reflogSeconds = Number(reflog?.match(/@\{(\d+)\}$/)?.[1])
-  const candidates = [
-    Number.isFinite(commitSeconds) && commitSeconds > 0
-      ? { at: commitSeconds * 1000, source: 'commit date' as const } : null,
-    Number.isFinite(reflogSeconds) && reflogSeconds > 0
-      ? { at: reflogSeconds * 1000, source: 'branch reflog' as const } : null,
-  ].filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null)
-  const newest = candidates.sort((a, b) => b.at - a.at)[0]
-  return newest
-    ? { kind: 'aged', days: (now - newest.at) / 86_400_000, source: newest.source }
-    : { kind: 'unknown' }
-}
-
 function printSweepKept(
   done: number,
   kept: { line: string; reason: string }[],
@@ -788,8 +745,6 @@ function printSweepKept(
     for (const row of kept) console.log(`  ${row.line}`)
   } else {
     const parts = ['orch sweep --dry-run']
-    const older = flag('older-than')
-    if (older !== undefined) parts.push(`--older-than ${older}`)
     if (has('force')) parts.push('--force')
     console.log(`  ${parts.join(' ')} lists every kept row`)
   }
@@ -813,7 +768,7 @@ function samePath(a: string, b: string): boolean {
   return normalized(a) === normalized(b)
 }
 
-/** A branch is shared only inside one repository, and active or unjudged owners protect it. */
+/** A branch is shared only inside one repository, and active owners protect it. */
 function evidenceOwningBranchOwners(
   row: { id: number; repo?: string | null; branch: string | null }, repoRoot: string,
   branchTipBeforeRemoval?: string | null,
@@ -828,7 +783,7 @@ function evidenceOwningBranchOwners(
       WHERE r.branch=?
         AND COALESCE(r.parent_run_id, r.id) <>
             COALESCE((SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?), ?)
-        AND (r.status NOT IN ('ok','failed','stale','stopped') OR ${EVIDENCE_OPEN_SQL})
+        AND r.status IN ('running','asking')
       ORDER BY r.id`,
   ).all(row.branch, row.id, row.id) as (BranchOwnerRow & { root_id: number })[]
   const matching = candidates.filter((candidate) => {
@@ -869,13 +824,6 @@ function withCleanupLock<T>(
   return withWorktreeLease(
     repoRoot, worktreePath, { session: sessionId(), what: `tree ${what}` }, run, 5 * 60_000,
   )
-}
-
-/** A shared tree remains evidence while any other owner is active or unjudged. */
-function evidenceOwningWorktreeSharers(
-  row: { id: number; worktree: string },
-): WorktreeSharerRow[] {
-  return sharedWorktreeSharers(db(), row)
 }
 
 /** One removed tree clears every pointer held by the same conversation. */
@@ -979,10 +927,9 @@ function verifyBranchOwnershipAfterCleanup(
  * directory out from under run 669 mid-task. It was also that task's own
  * worktree, seeded, not a throwaway.
  *
- * So the tree goes only when no other pointer still owns evidence. A
- * non-terminal run may still be writing there, and an unscored terminal run's
- * diff is still awaiting judgement. Refusal keeps every pointer intact so a
- * later cleanup can retry after those owners finish or are scored.
+ * So the tree goes only when no other active conversation is using it. A
+ * non-terminal run may still be writing there. Refusal keeps every pointer
+ * intact so a later cleanup can retry after those owners finish.
  *
  * The repo root is resolved from the worktree when it still exists, and
  * from HERE when it does not — `repoRootOf` on a deleted directory can
@@ -1012,13 +959,13 @@ function discardWorktree(
   auditAuthority?: RootAuthority,
   forceBusy = false,
 ): void {
-  const preliminarySharers = evidenceOwningWorktreeSharers(row)
+  const preliminarySharers = evidenceOwningWorktreeSharers(db(), row)
   if (preliminarySharers.length) {
     throw new SharedWorktreeEvidenceError(row.worktree, preliminarySharers)
   }
   const repoRoot = cleanupRepoRoot(row) ?? process.cwd()
   withCleanupLock(repoRoot, `${row.id}`, row.worktree, () => {
-    const sharers = evidenceOwningWorktreeSharers(row)
+    const sharers = evidenceOwningWorktreeSharers(db(), row)
     if (sharers.length) {
       throw new SharedWorktreeEvidenceError(row.worktree, sharers)
     }
@@ -1043,7 +990,7 @@ function discardWorktree(
       source: row.worktree_source ?? undefined,
       mintedBranch: minted,
     }, repoRoot, force || forceBusy, ownersBefore.length > 0 || !minted, row.id, force && !forceBusy)
-    const sharersAfter = evidenceOwningWorktreeSharers(row)
+    const sharersAfter = evidenceOwningWorktreeSharers(db(), row)
     const ownersAfter = evidenceOwningBranchOwners(row, repoRoot, branchSnapshot)
     let branchWarning: string | null = null
     if (minted) {
@@ -1679,14 +1626,14 @@ function usage(): never {
   orch review show <id> [--json]
   orch review calibration [<lens> <agent> <model>] [--json]
   orch review pins [--prune]    list reviewed-commit keepalive refs; explicitly prune landed reviews
-  orch stop <id>                terminate a running run and reclaim its worktree
+  orch stop <id>                terminate a running run, reclaim its containers, and keep its worktree
   orch discard <id>             delete that run's worktree (the row stays)
       --force                   also delete a protected branch; bypass a refusing project tool
                                 only for a tree marked as created by orch
+  orch close-out <id>           release a terminal run's clean worktree and resources; keep its branch
   orch abandon <id> [--note "..."] [--force] retire an asking run and clean up its worktree
-  orch sweep [--older-than N] [--force] [--dry-run]
-      reclaim finished runs' worktrees AND the databases behind them; keeps
-      anything unscored, because its diff is the evidence you would judge from.
+  orch sweep [--force] [--dry-run]
+      backstop close-out for terminal trees; clean trees are released and branches kept.
       more than ten kept rows are summarised by reason; --dry-run lists every row
   orch reclassify-failures [--dry-run]
       reclassify stored unclassified vendor quota/auth failures from their error text;
@@ -4727,23 +4674,12 @@ switch (cmd) {
    * directory is the cheap part — so worktrees left behind do not merely
    * clutter, they fill the machine with databases nobody can name.
    *
-   * Nothing cleaned up automatically before this, and the reason was sound as
-   * far as it went: a failed run's half-finished tree is the most readable
-   * artefact this system produces, and removing it on failure would destroy the
-   * evidence exactly where it is most useful. That argues for a DELAY, not for
-   * never. A tree nobody has looked at in a day is not being read.
-   *
-   * So the rule is: terminal, old enough, and closed. A stored verdict or a
-   * void closes the evidence boundary — an unjudged run is one somebody still
-   * owes a verdict on, and its diff is the evidence they would judge it from.
-   * No flag overrides that boundary.
+   * Terminal close-out is the normal release event. Sweep is the backstop for
+   * a coordinator or session that died before the pairing ran. It applies the
+   * same liveness and dirty-work guards; scoring is not a retention signal.
    */
   case 'sweep': {
-    await Promise.all([loadJobs(), loadWorktree(), loadGrokTrust(), loadDockerResources()])
-    const days = Number(flag('older-than') ?? 1)
-    if (!Number.isFinite(days) || days < 0) {
-      throw new Error('--older-than must be a finite, non-negative number')
-    }
+    await Promise.all([loadJobs(), loadRun(), loadWorktree(), loadGrokTrust(), loadDockerResources()])
     const dry = has('dry-run')
     if (!dry) writableDb()
     const rows = db().query(
@@ -4766,9 +4702,8 @@ switch (cmd) {
     }[]
 
     const { removeFor, sweepWithTool, orphanSafety,
-            isOrchWorktree, markedWorktreeSource } =
+            isOrchWorktree, markedWorktreeSource, worktreeLatestMtime } =
       await import('./worktree.ts')
-    const { projectAt } = await import('./projects.ts')
 
     let done = 0
     let cleanupFailed = false
@@ -4780,121 +4715,56 @@ switch (cmd) {
       const current = db().query('SELECT worktree FROM run WHERE id=?').get(r.id) as
         { worktree: string | null } | null
       if (current?.worktree !== r.worktree) continue
-      if (r.keep_tree && !has('force')) {
-        keep(`${r.id}  kept on purpose (--keep-tree)`, 'kept on purpose (--keep-tree)')
-        continue
-      }
-      // Sweep is unattended, so age remains a backstop in addition to the
-      // proof-bearing reclaim verb's state, ownership and git guards.
-      if (r.age_days < days) {
-        keep(`${r.id}  too recent (${r.age_days.toFixed(1)}d)`, 'under the age threshold')
-        continue
-      }
-      if (r.pid && pidAlive(r.pid)) {
-        keep(`${r.id}  live worker pid ${r.pid} — kept`, 'live owner — kept')
-        continue
-      }
-      if (r.agent_pid && pidAlive(r.agent_pid)) {
-        keep(`${r.id}  live agent pid ${r.agent_pid} — kept`, 'live owner — kept')
-        continue
-      }
-      const sessionSeenAt = r.session_last_seen ? Date.parse(r.session_last_seen) : Number.NaN
-      if (r.session_id && Number.isFinite(sessionSeenAt) && Date.now() - sessionSeenAt <= SESSION_LIVE_MS) {
-        keep(`${r.id}  live session ${r.session_id} — kept`, 'live owner — kept')
-        continue
-      }
-      if (!r.scored && !has('force')) {
-        keep(`${r.id}  unscored — its diff is the evidence`, 'unscored — its diff is the evidence')
-        continue
-      }
-      // Never reclaim evidence another run still owns. A project's own script
-      // may name a directory by ticket key rather than by run, so a completed
-      // row can share it with active work or an unscored terminal result.
-      const sharers = evidenceOwningWorktreeSharers(r)
-      if (sharers.length) {
-        const owners = sharers.map((owner) =>
-          `${owner.id} (${owner.status}${owner.scored ? '' : ', unscored'})`).join(', ')
-        keep(
-          `${r.id}  shared with evidence-owning run(s): ${owners}`,
-          'shared with evidence-owning run(s)',
-        )
-        continue
-      }
-      const { reclaimWorktree } = await import('./reclaim.ts')
-      if (dry) {
-        const preview = reclaimWorktree(r.worktree, { dryRun: true })
-        if (preview.ok) {
-          console.log(`would reclaim ${r.id}  ${r.worktree}`)
-          done++
-        } else {
-          keep(`${r.id}  ${preview.action}`, preview.action)
-        }
-        continue
-      }
-
-      try {
+      if (!dry) {
         const before = resourcesForConversation(r.id)
         for (const error of before.errors) inventoryErrors.add(error)
         if (before.errors.length) {
           cleanupFailed = true
+          keep(`${r.id}  inventory unavailable`, 'inventory unavailable')
           console.error(`could not verify reclaim ${r.id}: inventory unavailable`)
           continue
         }
-        const pointerRows = db().query('SELECT id FROM run WHERE worktree=?').all(r.worktree) as
-          { id: number }[]
-        const restorePointers = () => writeTransaction(() => {
-          const restore = db().query('UPDATE run SET worktree=? WHERE id=?')
-          for (const row of pointerRows) restore.run(r.worktree, row.id)
-        })
-        const res = reclaimWorktree(r.worktree)
-        if (res.ok) {
-          const sharersAfter = evidenceOwningWorktreeSharers(r)
-          if (sharersAfter.length) {
-            cleanupFailed = true
-            restorePointers()
-            const owners = sharersAfter.map((owner) =>
-              `${owner.id} (${owner.status}${owner.scored ? '' : ', unscored'})`).join(', ')
-            console.error(
-              `could not reclaim ${r.id}: worktree ${r.worktree} was acquired during cleanup by run(s) ${owners}`,
-            )
-            continue
-          }
+      }
+      const closed = closeOutRun(r.id, { sweep: true, dryRun: dry })
+      if (closed.outcome === 'released' || closed.outcome === 'absent') {
+        if (dry) {
+          console.log(`would reclaim ${r.id}  ${r.worktree}`)
+          done++
+        } else {
           const project = r.repo ?? projectAt(r.worktree)?.name ?? 'unknown'
           const inventory = resourcesForConversation(r.id)
           for (const error of inventory.errors) inventoryErrors.add(error)
           if (inventory.errors.length) {
             cleanupFailed = true
-            restorePointers()
+            keep(`${r.id}  inventory unavailable`, 'inventory unavailable')
             console.error(`could not verify reclaim ${r.id}: inventory unavailable`)
+          } else if (inventory.resources.length) {
+            cleanupFailed = true
+            for (const resource of inventory.resources) leaked.set(`${resource.kind}:${resource.name}`, {
+              resource, project, runId: r.id,
+            })
+            keep(`${r.id}  leaked Docker resources`, 'leaked Docker resources')
+            console.error(`could not fully reclaim ${r.id}: project ${project}'s remove tool leaked Docker resources`)
           } else {
-            const left = inventory.resources
-            if (left.length) {
-              cleanupFailed = true
-              restorePointers()
-              for (const resource of left) leaked.set(`${resource.kind}:${resource.name}`, {
-                resource, project, runId: r.id,
-              })
-              console.error(`could not fully reclaim ${r.id}: project ${project}'s remove tool leaked Docker resources`)
-            } else {
-              writeTransaction(() => {
-                auditRunMutation(
-                  { runId: r.id, rootId: r.root_id, owner: null, actor: sessionId() },
-                  'sweep',
-                )
-              })
-              console.log(`reclaimed ${r.id}  ${res.action}`)
-              done++
-            }
+            writeTransaction(() => {
+              auditRunMutation(
+                { runId: r.id, rootId: r.root_id, owner: null, actor: sessionId() },
+                'sweep',
+              )
+            })
+            console.log(`reclaimed ${r.id}  ${r.worktree}`)
+            done++
           }
-        } else {
-          cleanupFailed = true
-          console.error(`could not reclaim ${r.id}: ${res.action}`)
         }
-      } catch (error) {
-        cleanupFailed = true
-        console.error(
-          `could not reclaim ${r.id}: ${error instanceof Error ? error.message : String(error)}`,
-        )
+      } else {
+        const reason = closed.detail.startsWith('held by explicit --keep-tree')
+          ? 'held by explicit --keep-tree; clear with orch discard <run-id>'
+          : closed.detail
+        keep(`${r.id}  ${closed.outcome}: ${closed.detail}`, reason)
+        if (closed.outcome === 'failed') {
+          cleanupFailed = true
+          console.error(`could not reclaim ${r.id}: ${closed.detail}`)
+        }
       }
     }
 
@@ -4904,8 +4774,8 @@ switch (cmd) {
      * A worktree whose row never acquired its path is invisible to the loop
      * above and would otherwise leak forever. Orphans are discovered from each
      * registered project's conventional worktree root, then held to a stricter
-     * standard than remembered trees: both the files and the commits must be
-     * reproducible from trunk. A failed proof keeps the directory, and a
+     * standard than remembered trees: their filesystem work must be committed
+     * to the branch. A failed proof keeps the directory, and a
      * project's own removal refusal remains final through removeWithTool().
      */
     const remembered = new Set(
@@ -4925,33 +4795,25 @@ switch (cmd) {
           keep(`${label}  kept: not created by orch`, 'not created by orch')
           continue
         }
-        const age = orphanAge(path, entry.name, p.settings.worktree?.branch, p)
-        if (age.kind === 'live') {
+        const named = namedRun(entry.name, p.settings.worktree?.branch, p)
+        if (named?.status === 'running' || named?.status === 'asking') {
           keep(`${label}  live — kept`, 'live — kept')
           continue
         }
-        if (age.kind === 'unknown') {
-          keep(`${label}  age unknown — kept`, 'age unknown — kept')
-          continue
-        }
-        const ageDetail = `${age.days.toFixed(1)}d by ${age.source}`
-        if (age.days < days) {
-          keep(`${label}  too recent (${ageDetail})`, 'under the age threshold')
+        const latest = worktreeLatestMtime(path)
+        if (latest !== null && latest > Date.now() - 2 * 60 * 60 * 1000) {
+          keep(`${label}  live — files changed inside 2h`, 'live — recent filesystem activity')
           continue
         }
         const trunk = typeof p.settings.trunk === 'string' && p.settings.trunk.trim()
-          ? p.settings.trunk : null
-        if (!trunk) {
-          keep(`${label}  no trunk configured — cannot prove reachability`, 'no trunk configured')
-          continue
-        }
+          ? p.settings.trunk : 'HEAD'
         const safe = orphanSafety(path, p.path, trunk)
         if (!safe.removable) {
           keep(`${label}  ${safe.detail}`, orphanKeepReason(safe.detail))
           continue
         }
         if (dry) {
-          console.log(`would reclaim ${label}  ${ageDetail}; ${safe.detail}`)
+          console.log(`would reclaim ${label}; ${safe.detail}`)
           done++
           continue
         }
@@ -4966,12 +4828,12 @@ switch (cmd) {
           withCleanupLock(p.path, `sweep ${label}`, path, () => {
             const ownerRow = { id: runId ?? -1, repo: p.name, branch: safe.branch }
             const worktreeRow = { id: runId ?? -1, worktree: path }
-            const sharersBefore = evidenceOwningWorktreeSharers(worktreeRow)
+            const sharersBefore = evidenceOwningWorktreeSharers(db(), worktreeRow)
             if (sharersBefore.length) {
               const owners = sharersBefore.map((owner) =>
-                `${owner.id} (${owner.status}${owner.scored ? '' : ', unscored'})`).join(', ')
+                `${owner.id} (${owner.status})`).join(', ')
               cleanupFailed = true
-              keep(`${label}  acquired by run(s): ${owners}`, 'shared with evidence-owning run(s)')
+              keep(`${label}  acquired by run(s): ${owners}`, 'shared with live run(s)')
               console.error(`could not reclaim ${label}: acquired by run(s) ${owners}`)
               return
             }
@@ -4983,7 +4845,7 @@ switch (cmd) {
               return
             }
             const res = removeFor(w, p.path, false, ownersBefore.length > 0, runId ?? undefined)
-            const sharersAfter = evidenceOwningWorktreeSharers(worktreeRow)
+            const sharersAfter = evidenceOwningWorktreeSharers(db(), worktreeRow)
             const ownersAfter = evidenceOwningBranchOwners(ownerRow, p.path, snapshot)
             if (safe.branch) {
               const outcome = verifyBranchOwnershipAfterCleanup(
@@ -4999,10 +4861,10 @@ switch (cmd) {
             }
             if (sharersAfter.length) {
               const owners = sharersAfter.map((owner) =>
-                `${owner.id} (${owner.status}${owner.scored ? '' : ', unscored'})`).join(', ')
+                `${owner.id} (${owner.status})`).join(', ')
               cleanupFailed = true
               keep(`${label}  acquired during cleanup by run(s): ${owners}`,
-                'shared with evidence-owning run(s)')
+                'shared with live run(s)')
               console.error(`could not reclaim ${label}: acquired during cleanup by run(s) ${owners}`)
               return
             }
@@ -5251,6 +5113,17 @@ switch (cmd) {
     break
   }
 
+  case 'close-out': {
+    await loadRun()
+    const id = Number(argv[1])
+    if (!id) usage()
+    writableDb()
+    const result = closeOutRun(id)
+    console.log(`${result.outcome} run ${result.runId}${result.worktree ? ` ${result.worktree}` : ''}: ${result.detail}`)
+    if (result.outcome === 'held' || result.outcome === 'failed') process.exitCode = 1
+    break
+  }
+
   case 'stop': {
     await Promise.all([loadRun(), loadWorktree(), loadDockerResources()])
     const id = Number(argv[1])
@@ -5323,7 +5196,8 @@ switch (cmd) {
     // The coordinator owns setup and final recording. Killing it inside the
     // creation window strands the project tool's directory before it can be
     // attributed or reclaimed. Stop the vendor, but let the coordinator see
-    // the stopped row and finish cleanup.
+    // the stopped row and finish recording. The tree remains the continuation
+    // substrate; only its recreatable containers are reclaimed at stop.
     terminateRunProcesses(row.id, row.pid ? [row.pid] : [])
     const dockerTeardown = teardownTerminalRunResources(db(), row.id)
     console.log(`stopped run ${row.id}`)
@@ -5340,7 +5214,7 @@ switch (cmd) {
               ? `left Docker containers in place because removal could not be ascertained: ${dockerTeardown.reason}`
             : 'found no Docker containers to reclaim'
       console.log(
-        `kept worktree ${cleanupRow.worktree} and branch ${cleanupRow.branch ?? '(unknown)'} as files; ` +
+        `kept worktree ${cleanupRow.worktree} and branch ${cleanupRow.branch ?? '(unknown)'} for continuation; ` +
         dockerMessage,
       )
     } else if (dockerTeardown.outcome === 'unascertainable') {
@@ -5352,7 +5226,7 @@ switch (cmd) {
   }
 
   case 'abandon': {
-    await Promise.all([loadWorktree(), loadDockerResources()])
+    await Promise.all([loadRun(), loadWorktree(), loadDockerResources()])
     const id = Number(argv[1])
     if (!id) usage()
     let authority = authorizeRunMutation(id, 'abandon')
@@ -5415,62 +5289,12 @@ switch (cmd) {
       auditRunMutation(authority, 'abandon', note ?? null)
       return { row, cleanupRow }
     })
-    const { row, cleanupRow } = abandoned
-    teardownTerminalRunResources(db(), row.id)
+    const { row } = abandoned
     console.log(`abandoned run ${row.id}`)
 
-    if (cleanupRow.worktree) {
-      await discardWorktree(
-        cleanupRow as CleanupRow, 'abandoned', has('force'),
-      )
-      break
-    }
-
-    console.log(cleanupRow.worktree
-      ? `worktree ${cleanupRow.worktree} was already gone`
-      : `worktree cleanup skipped: run ${id} has no worktree`)
-    if (!cleanupRow.branch) {
-      console.log(`branch cleanup skipped: run ${id} has no branch`)
-      break
-    }
-
-    const repoRoot = cleanupRepoRoot(cleanupRow)
-    if (!repoRoot) {
-      console.log(`branch ${cleanupRow.branch} cleanup skipped: repository root not found`)
-      break
-    }
-    withCleanupLock(repoRoot, `abandon run ${id}`, cleanupRow.worktree, () => {
-      const ownersBefore = evidenceOwningBranchOwners(cleanupRow, repoRoot)
-      if (ownersBefore.length) {
-        console.log(`branch ${cleanupRow.branch} left because run ${ownersBefore[0]!.id} records it`)
-        return
-      }
-      let protectedBranch: ReturnType<typeof unmergedBranch> = null
-      let afterCutCount: number | null = null
-      if (!has('force')) {
-        protectedBranch = unmergedBranch(repoRoot, cleanupRow.branch!, null)
-        afterCutCount = cleanupRow.base_commit
-          ? (unmergedBranch(repoRoot, cleanupRow.branch!, cleanupRow.base_commit)?.count ?? 0)
-          : null
-      }
-      if (protectedBranch) {
-        db().query('UPDATE run SET branch_kept=?, branch_kept_tip=NULL WHERE id=?')
-          .run(cleanupRow.branch, authority.rootId)
-        console.log(keptBranchLine(cleanupRow.branch!, protectedBranch.count, afterCutCount, authority.rootId))
-        return
-      }
-      const snapshot = branchTip(repoRoot, cleanupRow.branch!)
-      const removed = removeBranch(repoRoot, cleanupRow.branch!)
-      const ownersAfter = evidenceOwningBranchOwners(cleanupRow, repoRoot, snapshot)
-      const outcome = verifyBranchOwnershipAfterCleanup(
-        cleanupRow.id, repoRoot, cleanupRow.branch!, snapshot, ownersBefore, ownersAfter,
-      )
-      if (outcome.refusal) throw new Error(outcome.refusal)
-      if (outcome.warning) console.error(outcome.warning)
-      console.log(removed
-        ? `deleted branch ${cleanupRow.branch}`
-        : `branch ${cleanupRow.branch} cleanup skipped: branch does not exist`)
-    })
+    const closed = closeOutRun(authority.rootId, { terminalAt: Date.now() })
+    console.log(`${closed.outcome} worktree: ${closed.detail}`)
+    if (closed.outcome === 'failed') process.exitCode = 1
     break
   }
 
@@ -6964,7 +6788,7 @@ switch (cmd) {
   }
 
   case 'doctor': {
-    await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadAgreement(), loadDockerResources()])
+    await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadAgreement(), loadDockerResources(), loadWorktree()])
     await ensureLocalHealth()
     const { LOCAL_BASE_URL, LOCAL_MODEL, LOCAL_CONTEXT_TOKENS } =
       await import('./agents.ts')
@@ -7206,6 +7030,18 @@ switch (cmd) {
     // owing where `orch pending` — the command that actually tells you what
     // to do about it — reported none.
     console.log(`\nruns ${counts.runs}, scored ${counts.scored}, voided ${counts.voided}, unscored ${counts.unscored}`)
+    const heldCandidates = db().query(
+      `SELECT worktree, MAX(keep_tree) keep_tree FROM run
+        WHERE worktree IS NOT NULL AND status IN ('ok','failed','stale','stopped')
+        GROUP BY worktree`,
+    ).all() as { worktree: string; keep_tree: number }[]
+    let explicitHolds = 0
+    let dirtyHolds = 0
+    for (const held of heldCandidates) {
+      if (held.keep_tree) explicitHolds++
+      else if (existsSync(held.worktree) && worktreeDirty(held.worktree).dirty) dirtyHolds++
+    }
+    console.log(`held worktrees ${explicitHolds + dirtyHolds} (${dirtyHolds} dirty, ${explicitHolds} --keep-tree)`)
     const { projects: registeredProjects, undeclaredCommitHooks, registerBranchCheck } = await import('./projects.ts')
     const hookFlags = registeredProjects().map(undeclaredCommitHooks).filter(Boolean)
     if (hookFlags.length) {

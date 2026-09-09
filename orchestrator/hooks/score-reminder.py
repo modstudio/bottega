@@ -21,6 +21,11 @@ def hub_bin():
     return os.path.join(root, "bin", "hub")
 
 
+def orch_bin():
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+    return os.path.join(root, "bin", "orch")
+
+
 def main() -> int:
     try:
         payload = json.load(sys.stdin)
@@ -146,8 +151,31 @@ def main() -> int:
                     ORDER BY newer.id, older.id""",
                 (sid,),
             ).fetchall()
+        cleanup_roots = con.execute(
+            """SELECT MIN(id)
+                 FROM run
+                WHERE session_id IN ({}) AND worktree IS NOT NULL
+                  AND status IN ('ok','failed','stale','stopped')
+                GROUP BY worktree ORDER BY 1""".format(",".join("?" for _ in session_ids)),
+            session_ids,
+        ).fetchall()
     except sqlite3.Error:
         return 0  # never block a session because of a database problem
+
+    cleanup_holds = []
+    for (root_id,) in cleanup_roots:
+        try:
+            result = subprocess.run(
+                [orch_bin(), "close-out", str(root_id)], capture_output=True,
+                text=True, timeout=300,
+            )
+            report = (result.stdout or result.stderr).strip()
+            if report.startswith("held "):
+                cleanup_holds.append(report)
+        except Exception:
+            # Close-out failures surface through monitor; Stop blocks only for
+            # irreplaceable work that close-out positively classified HELD.
+            pass
 
     notes = []
     try:
@@ -163,7 +191,7 @@ def main() -> int:
     except Exception:
         notes = []
 
-    if not rows and not pairs and not notes:
+    if not rows and not pairs and not notes and not cleanup_holds:
         return 0
 
     # A writing job takes a THIRD axis, and printing the two-axis form for one
@@ -234,6 +262,11 @@ def main() -> int:
         lines.append(f"{len(notes)} notes filed; keep, drop or promote with hub note:")
         for note_id, project, note_text in notes:
             lines.append(f"  {note_id}  {project}  {note_text[:80]}")
+    if cleanup_holds:
+        if lines:
+            lines.append("")
+        lines.append(f"{len(cleanup_holds)} worktree{'s' if len(cleanup_holds) > 1 else ''} hold irreplaceable or explicitly retained work:")
+        lines.extend(f"  {hold}" for hold in cleanup_holds)
     if rows:
         needs_rescore = any(delivery is not None for _, _, _, _, delivery, _, _, _, _, _, _, _ in rows)
         intro = (
@@ -244,8 +277,10 @@ def main() -> int:
         )
     elif pairs:
         intro = f"{len(pairs)} scored pair{'s' if len(pairs) > 1 else ''} await comparison:"
-    else:
+    elif notes:
         intro = f"{len(notes)} note{'s' if len(notes) > 1 else ''} filed in this session:"
+    else:
+        intro = f"{len(cleanup_holds)} worktree{'s' if len(cleanup_holds) > 1 else ''} must be resolved before this session ends:"
     guidance = ""
     if rows:
         guidance += (

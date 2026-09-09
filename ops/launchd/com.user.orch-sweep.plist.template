@@ -12,25 +12,17 @@
          a container, a port, a queue worker - and nothing was ever removing
          those. Left alone, a machine fills with databases nobody can name.
 
-         DAILY, not hourly, and that is the whole design. `orch sweep` only
-         touches runs that are terminal, older than a day, and already scored,
-         because a failed run's half-finished tree is the most readable artefact
-         this system produces and an unscored run's diff is the evidence
-         somebody still owes a verdict on. A tighter clock would start deleting
-         work while it was still being read. -->
+         Sweep is the two-hour backstop for a close-out that did not run. Its
+         liveness and dirty-work guards protect active or irreplaceable work;
+         scoring is deliberately unrelated to tree retention. -->
     <key>ProgramArguments</key>
     <array>
         <string>__ROOT__/bin/orch</string>
         <string>sweep</string>
     </array>
 
-    <!-- 04:10: after the morning refresh has settled and long before anyone is
-         working, so a sweep never contends with a live worker for a database. -->
-    <key>StartCalendarInterval</key>
-    <dict>
-        <key>Hour</key><integer>4</integer>
-        <key>Minute</key><integer>10</integer>
-    </dict>
+    <key>StartInterval</key>
+    <integer>7200</integer>
 
     <!-- PATH is not inherited under launchd, and the sweep shells `git`, `bun`
          and each project's own worktree script. Without this it fails on every

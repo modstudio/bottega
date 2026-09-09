@@ -1160,16 +1160,15 @@ export function isOrchWorktree(path: string, branchTemplate?: string): boolean {
 }
 
 /**
- * Prove that an unremembered tree contains nothing the main checkout cannot
- * reproduce before sweep is allowed to remove it.
+ * Prove that an unremembered tree contains no filesystem work that exists
+ * nowhere else before sweep is allowed to remove it.
  *
  * An absent database pointer means orch knows LESS about this directory, not
- * more. Clean files alone are insufficient: the branch may carry commits that
- * have never reached trunk. Conversely, ancestry alone misses uncommitted and
- * untracked files. Every failed git query is therefore a reason to keep the
- * tree; uncertainty is not evidence that it is disposable.
+ * more. The branch retains committed work after the directory goes; tracked or
+ * untracked filesystem changes do not. Every failed git query is therefore a
+ * reason to keep the tree; uncertainty is not evidence that it is disposable.
  */
-export function orphanSafety(path: string, repoRoot: string, trunk: string): OrphanSafety {
+export function orphanSafety(path: string, repoRoot: string, _trunk: string): OrphanSafety {
   const listed = gitOk(['worktree', 'list', '--porcelain'], repoRoot)
   const actual = existsSync(path) ? realpathSync(path) : path
   const registered = listed?.split('\n')
@@ -1184,17 +1183,28 @@ export function orphanSafety(path: string, repoRoot: string, trunk: string): Orp
   if (dirty === null) return { removable: false, branch: '', detail: 'could not inspect changes' }
   if (dirty) return { removable: false, branch: '', detail: 'has uncommitted changes' }
 
-  const head = gitOk(['rev-parse', 'HEAD'], path)
-  if (!head) return { removable: false, branch: '', detail: 'could not identify HEAD' }
-  if (gitOk(['rev-parse', '--verify', trunk], repoRoot) === null) {
-    return { removable: false, branch: '', detail: `cannot prove reachability: ${trunk} is missing` }
-  }
-  if (gitOk(['merge-base', '--is-ancestor', head, trunk], repoRoot) === null) {
-    return { removable: false, branch: '', detail: `has commits not reachable from ${trunk}` }
-  }
-
   const branch = gitOk(['symbolic-ref', '--quiet', '--short', 'HEAD'], path) ?? ''
-  return { removable: true, branch, detail: `clean and HEAD is reachable from ${trunk}` }
+  return { removable: true, branch, detail: 'clean; committed work is retained by its branch' }
+}
+
+/** The one retention fact a checkout can hold that its branch cannot. */
+export function worktreeDirty(path: string): { dirty: boolean; detail: string } {
+  const status = gitOk(['status', '--porcelain', '--untracked-files=all'], path)
+  if (status === null) return { dirty: true, detail: 'could not inspect uncommitted or untracked work' }
+  return status
+    ? { dirty: true, detail: 'has uncommitted or untracked changes' }
+    : { dirty: false, detail: 'all work is committed' }
+}
+
+/** Latest activity among files owned by the checkout (tracked plus untracked). */
+export function worktreeLatestMtime(path: string): number | null {
+  const listed = gitOk(['ls-files', '-co', '--exclude-standard', '-z'], path)
+  if (listed === null) return null
+  let latest = 0
+  for (const name of listed.split('\0').filter(Boolean)) {
+    try { latest = Math.max(latest, statSync(join(path, name)).mtimeMs) } catch { /* raced */ }
+  }
+  return latest || null
 }
 
 /**

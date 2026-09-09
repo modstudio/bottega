@@ -100,10 +100,14 @@ type WorktreeProof = {
   project?: NonNullable<ReturnType<typeof projectByName>>
 }
 
-function proveRunOwners(rows: ReclaimRun[], clock: number): ReclaimResult | null {
+function proveRunOwners(
+  rows: ReclaimRun[], clock: number, includeRecordedProcessLiveness = true,
+): ReclaimResult | null {
   for (const row of rows) {
-    const live = liveOwner(row, clock)
-    if (live) return refuse(live)
+    if (includeRecordedProcessLiveness) {
+      const live = liveOwner(row, clock)
+      if (live) return refuse(live)
+    }
     if (!['ok', 'failed', 'stale', 'stopped'].includes(row.status)) {
       return refuse(`run ${row.id} status ${row.status} is not terminal`)
     }
@@ -111,7 +115,7 @@ function proveRunOwners(rows: ReclaimRun[], clock: number): ReclaimResult | null
   return null
 }
 
-function proveWorktree(path: string, clock: number): WorktreeProof {
+function proveWorktree(path: string, clock: number, allowDirty = false): WorktreeProof {
   const rows = runRows(path)
   if (!rows.length) return { result: refuse(`no run row records worktree ${path}`) }
   const row = rows[0]!
@@ -129,52 +133,41 @@ function proveWorktree(path: string, clock: number): WorktreeProof {
       (!fromRoot || fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot))) {
     return { result: refuse(`worktree ${path} is not beneath project worktrees directory ${worktreesRoot}`) }
   }
-  const owners = proveRunOwners(rows, clock)
+  const owners = proveRunOwners(rows, clock, false)
   if (owners) return { result: owners }
   for (const lockedRow of rows) {
-    if (!lockedRow.scored) return { result: refuse(`run ${lockedRow.root_id} is unscored; its diff is still evidence`) }
     if (lockedRow.keep_tree) return { result: refuse(`run ${lockedRow.id} records keep_tree; its worktree is protected`) }
-    if (!lockedRow.worktree_source) return { result: refuse(`run ${lockedRow.id} records no worktree creation source`) }
-    if (!lockedRow.base_commit) return { result: refuse(`run ${lockedRow.id} records no base commit`) }
-  }
-  const trunk = typeof project.settings.trunk === 'string' && project.settings.trunk.trim()
-    ? project.settings.trunk : null
-  if (!trunk) return { result: refuse(`project ${project.name} records no landing branch`) }
-  const base = git(project.path, ['cat-file', '-e', `${row.base_commit}^{commit}`])
-  if (!base.ok) {
-    return { result: refuse(`recorded base commit ${row.base_commit} could not be inspected: ${base.out || 'unknown error'}`) }
   }
   if (existsSync(path)) {
-    const safety = orphanSafety(path, project.path, trunk)
+    const safety = orphanSafety(path, project.path, '')
     if (!safety.removable && safety.detail === 'not a registered git worktree') {
       return { result: refuse(`worktree safety could not be proved: ${safety.detail}`) }
     }
     const status = git(path, ['status', '--porcelain', '--untracked-files=all'])
     if (!status.ok) return { result: refuse(`git status could not inspect ${path}: ${status.out || 'unknown error'}`) }
     const dirty = status.out.split('\n').filter(Boolean).map((line) => line.slice(3))
-    if (dirty.length) return { result: refuse(`uncommitted paths block reclaim: ${dirty.join(', ')}`) }
-    const absent = absentCommits(path, 'HEAD', trunk)
-    if (absent === null) return { result: refuse(`reachability from landing branch ${trunk} could not be inspected`) }
-    if (absent.length) return { result: refuse(`commits unreachable from landing branch ${trunk}: ${absent.join(', ')}`) }
+    if (dirty.length && !allowDirty) {
+      return { result: refuse(`uncommitted paths block reclaim: ${dirty.join(', ')}`) }
+    }
   }
   return {
-    result: { ok: true, action: `would reclaim worktree ${path}; run recipe/base and clean reachable git state proved reconstructibility` },
+    result: { ok: true, action: `would reclaim worktree ${path}; committed work is retained by its branch` },
     rows, project,
   }
 }
 
 /** Reclaim one worktree only after its run rows and git state prove it reconstructible. */
 export function reclaimWorktree(
-  requestedPath: string, options: { dryRun?: boolean; clock?: number } = {},
+  requestedPath: string, options: { dryRun?: boolean; clock?: number; allowDirty?: boolean } = {},
 ): ReclaimResult {
   const path = existsSync(requestedPath) ? realpathSync(requestedPath) : resolve(requestedPath)
-  const preview = proveWorktree(path, options.clock ?? Date.now())
+  const preview = proveWorktree(path, options.clock ?? Date.now(), options.allowDirty)
   if (!preview.result.ok || options.dryRun) return preview.result
   const project = preview.project!
   const owner = { session: sessionId(), what: `reclaim worktree ${path}` }
   return withWorktreeCreateLock(project.path, () => withWorktreeLease(project.path, path, owner, () =>
     withCleanupLock(project.path, owner, () => {
-      const proof = proveWorktree(path, options.clock ?? Date.now())
+      const proof = proveWorktree(path, options.clock ?? Date.now(), options.allowDirty)
       if (!proof.result.ok) return proof.result
       const lockedRows = proof.rows!
       const lockedRow = lockedRows[0]!
@@ -184,7 +177,7 @@ export function reclaimWorktree(
       const branchBefore = minted ? branchTip(project.path, minted) : null
       const removed = removeFor({
         path, branch: minted, mintedBranch: lockedRow.minted_branch,
-        base: lockedRow.base_commit!, repoRoot: project.path,
+        base: lockedRow.base_commit ?? '', repoRoot: project.path,
         source: lockedRow.worktree_source ?? undefined,
       }, project.path, false, true, lockedRow.id)
       if (!removed.removed) return refuse(removed.detail)
@@ -199,9 +192,7 @@ export function reclaimWorktree(
           return refuse(`project remove tool moved unique branch ${minted} from ${branchBefore} to ${branchAfter}; it was left at ${branchAfter}`)
         }
       }
-      const clear = db().query(
-        'UPDATE run SET worktree=NULL, branch_kept=?, branch_kept_tip=? WHERE id=?',
-      )
+      const clear = db().query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
       writeTransaction(() => lockedRows.forEach((record) =>
         clear.run(minted || null, branchBefore, record.id)))
       return {

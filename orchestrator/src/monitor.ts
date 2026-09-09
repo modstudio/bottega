@@ -9,7 +9,7 @@ import {
 import { fileIssue } from './mcp.ts'
 import { gitLocks } from './git-locks.ts'
 import { projectAt, projects } from './projects.ts'
-import { projectLockState, targetGitEnvironment } from './worktree.ts'
+import { projectLockState, targetGitEnvironment, worktreeDirty } from './worktree.ts'
 import { reclaimBranch, reclaimWorktree } from './reclaim.ts'
 import { allInjectChecks, storedPackDrift } from './canon.ts'
 import { idleLabel, idleMsSince, idleWarnMs } from './events.ts'
@@ -319,6 +319,16 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
     detail: run.error ?? `run ${run.id} is stale`, action: 'reported; disposition requires intent',
     ownerSession: run.session_id })
 
+  const terminalProcesses = database.query(
+    `SELECT id,started_at,pid FROM run
+      WHERE status IN ('ok','failed','stale','stopped') AND pid IS NOT NULL`,
+  ).all() as { id: number; started_at: string; pid: number }[]
+  for (const run of terminalProcesses) if (pidAlive(run.pid)) add({
+    kind: 'terminal-process-alive', subject: `run:${run.id}:pid:${run.pid}`, since: run.started_at,
+    detail: `terminal run ${run.id} still records live pid ${run.pid}; pid reuse means identity must be verified before signalling`,
+    action: `run orch close-out ${run.id}; an unverified process is reported and never killed`,
+  })
+
   const unscored = database.query(
     `SELECT r.id, r.started_at, r.session_id FROM run r LEFT JOIN score s ON s.run_id=r.id WHERE ${UNSCORED_WHERE}`,
   ).all() as { id: number; started_at: string; session_id: string | null }[]
@@ -375,6 +385,31 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
           detail: `${project.name} worktree has no running or asking run`, action,
           affectedProject: project.name })
       }
+    }
+
+    const heldTrees = database.query(
+      `SELECT MIN(id) id, worktree, MAX(keep_tree) keep_tree, MIN(started_at) started_at
+         FROM run WHERE repo=? AND worktree IS NOT NULL
+          AND status IN ('ok','failed','stale','stopped')
+        GROUP BY worktree`,
+    ).all(project.name) as { id: number; worktree: string; keep_tree: number; started_at: string }[]
+    for (const held of heldTrees) {
+      if (!existsSync(held.worktree)) continue
+      const dirty = held.keep_tree ? null : worktreeDirty(held.worktree)
+      if (!held.keep_tree && !dirty?.dirty) continue
+      const ageMs = age(held.started_at, clock)
+      const explicit = Boolean(held.keep_tree)
+      add({
+        kind: explicit ? 'explicitly-held-worktree' : 'held-worktree',
+        subject: held.worktree, since: held.started_at,
+        detail: explicit
+          ? `run ${held.id} retained by explicit --keep-tree`
+          : `run ${held.id} ${dirty!.detail}`,
+        action: explicit
+          ? `clear with orch discard ${held.id}`
+          : `commit or remove the work, then run orch close-out ${held.id}`,
+        severity: ageMs !== null && ageMs >= 48 * 60 * 60 * 1000 ? 'attention' : 'informational',
+      })
     }
 
     const worktreeRefs = new Set((git(project.path, ['worktree', 'list', '--porcelain']) ?? '')

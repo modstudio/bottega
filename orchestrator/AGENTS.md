@@ -835,11 +835,11 @@ operator ruling recorded on that task, or owned by another session's announced
 sequence. Follow the orch-status skill's `CLOSE OUT` section: discard each
 landed run's worktree, remove its branch, close every `LANDED` task still open,
 record the day's calibration observations on DEV-305, and offer a resume brief.
-A session with unscored runs, unclosed landed tasks, or unswept worktrees has
-paused; it has not ended.
-
-Nothing enforces these rules yet; the board-split readout arrives when two
-sessions have used the split twice.
+A session with unscored runs, unclosed landed tasks, or held worktrees has
+paused; it has not ended. The Stop hook closes out every terminal tree owned by
+the session: clean trees and their provisioned resources are released while
+branches survive; dirty trees and explicit `--keep-tree` holds are named with
+their resolving command.
 
 ## The lifecycle: states, locks and the invariants they protect
 

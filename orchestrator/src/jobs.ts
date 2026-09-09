@@ -128,10 +128,10 @@ export function isReaderJob(name: string): name is ReaderJob {
   return (READER_JOBS as readonly string[]).includes(name)
 }
 
-/** Lens and reader trees are reclaimed at terminalisation unless `--keep-tree`. */
+/** Every repository tree is closed out at terminalisation unless `--keep-tree`. */
 export function reclaimsTreeByDefault(name: string): boolean {
   const j = JOBS[name]
-  return Boolean(j && (isReaderJob(name) || (j.findings && j.needs.readsRepo)))
+  return Boolean(j?.needs.readsRepo)
 }
 
 export function jobTimeoutCeilingMs(j: Job): number {

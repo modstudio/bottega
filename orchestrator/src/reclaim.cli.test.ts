@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { addRun, db, hermeticGitEnv, score, upsertProject } from '../test/fixture.ts'
@@ -53,17 +53,18 @@ afterEach(() => {
 })
 
 describe('proof-bearing reclaim verbs', () => {
-  test('worktree dry-run and reclaim require clean reachable state and clear the pointer', () => {
+  test('worktree dry-run and reclaim require clean state and preserve its recorded identity', () => {
     const f = fixture()
     const preview = orch(f.repo, ['reclaim', 'worktree', f.tree, '--dry-run'])
     expect(preview.code, preview.err).toBe(0)
-    expect(preview.out).toContain('proved reconstructibility')
+    expect(preview.out).toContain('committed work is retained by its branch')
     expect(existsSync(f.tree)).toBe(true)
 
     const removed = orch(f.repo, ['reclaim', 'worktree', f.tree])
     expect(removed.code, removed.err).toBe(0)
     expect(existsSync(f.tree)).toBe(false)
-    expect(db().query('SELECT worktree FROM run WHERE id=?').get(f.run)).toEqual({ worktree: null })
+    expect(db().query('SELECT worktree, branch_kept, branch_kept_tip FROM run WHERE id=?').get(f.run))
+      .toEqual({ worktree: f.tree, branch_kept: f.branch, branch_kept_tip: git(f.repo, 'rev-parse', f.branch) })
   })
 
   test('worktree refusal names every uncommitted path', () => {
@@ -76,7 +77,7 @@ describe('proof-bearing reclaim verbs', () => {
     expect(existsSync(f.tree)).toBe(true)
   })
 
-  test('worktree refusal names commits reachable from its HEAD but absent from trunk', () => {
+  test('worktree reclaim keeps commits absent from trunk on the retained branch', () => {
     const f = fixture()
     writeFileSync(join(f.tree, 'unique.txt'), 'unique\n')
     git(f.tree, 'add', 'unique.txt')
@@ -86,10 +87,14 @@ describe('proof-bearing reclaim verbs', () => {
     expect(git(f.repo, 'rev-list', 'HEAD', '--not', 'main')).toBe('')
     expect(git(f.tree, 'rev-list', 'HEAD', '--not', 'main')).toBe(tip)
 
-    const refused = orch(f.repo, ['reclaim', 'worktree', f.tree, '--dry-run'])
-    expect(refused.code).not.toBe(0)
-    expect(refused.err).toContain(`commits unreachable from landing branch main: ${tip}`)
-    expect(existsSync(f.tree)).toBe(true)
+    const preview = orch(f.repo, ['reclaim', 'worktree', f.tree, '--dry-run'])
+    expect(preview.code, preview.err).toBe(0)
+    const removed = orch(f.repo, ['reclaim', 'worktree', f.tree])
+    expect(removed.code, removed.err).toBe(0)
+    expect(existsSync(f.tree)).toBe(false)
+    expect(git(f.repo, 'rev-parse', f.branch)).toBe(tip)
+    expect(db().query('SELECT worktree, branch_kept, branch_kept_tip FROM run WHERE id=?').get(f.run))
+      .toEqual({ worktree: f.tree, branch_kept: f.branch, branch_kept_tip: tip })
   })
 
   test('branch refusal names unreachable commits and exact kept-tip proof permits deletion', () => {
@@ -267,11 +272,15 @@ exec "${realGit}" "$@"
     db().query(
       "UPDATE run SET worktree=?, cwd=?, started_at=datetime('now', '-2 days') WHERE id=?",
     ).run(outsideTree, outsideTree, outside.run)
+    const old = new Date(Date.now() - 3 * 60 * 60 * 1000)
+    for (const path of git(outsideTree, 'ls-files', '-co', '--exclude-standard').split('\n').filter(Boolean)) {
+      utimesSync(join(outsideTree, path), old, old)
+    }
 
-    const swept = orch(outside.repo, ['sweep', '--older-than', '1'])
+    const swept = orch(outside.repo, ['sweep'])
     expect(existsSync(outsideTree)).toBe(true)
-    expect(swept.code).not.toBe(0)
-    expect(swept.err).toContain('is not beneath project worktrees directory')
+    expect(swept.code).toBe(0)
+    expect(swept.out).toContain('is not beneath project worktrees directory')
   })
 
   test('branch reclaim refuses live ownership and a branch no run minted', () => {

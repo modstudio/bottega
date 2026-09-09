@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync, utimesSync, chmodSync, statSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync, utimesSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -51,6 +51,12 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
       'commit', '--amend', '--no-edit', '--date', date,
     )
   }
+  const ageWorktree = (tree: string, hours = 3) => {
+    const old = new Date(Date.now() - hours * 60 * 60 * 1000)
+    for (const name of git(tree, 'ls-files', '-co', '--exclude-standard').split('\n').filter(Boolean)) {
+      utimesSync(join(tree, name), old, old)
+    }
+  }
 
   test('reports absent Grok trust paths in both heading quote styles without editing the store', () => {
     const grokHome = mkdtempSync(join(tmpdir(), 'orch-sweep-grok-home-'))
@@ -100,7 +106,8 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     })
     const docker = fakeDocker([], [])
     try {
-      const result = orchWithEnv(docker.env, 'sweep', '--older-than', '0')
+      ageWorktree(tree.path)
+      const result = orchWithEnv(docker.env, 'sweep')
       expect(result.code).toBe(0)
       expect(existsSync(tree.path)).toBe(false)
       expect(existsSync(removeSentinel)).toBe(false)
@@ -137,7 +144,7 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     const docker = fakeDocker([], [])
     try {
       expect(readFileSync(join(kept.path, '.orch-run'), 'utf8')).toContain('source: git')
-      const result = orchWithEnv(docker.env, 'sweep', '--older-than', '0')
+      const result = orchWithEnv(docker.env, 'sweep')
       expect(result.code).toBe(0)
       expect(existsSync(kept.path)).toBe(true)
       expect(existsSync(recipeOrphan)).toBe(false)
@@ -174,20 +181,12 @@ exec ${JSON.stringify(actualGit)} "$@"
     return repo
   }
 
-  test('invalid older-than values refuse before sweeping', () => {
-    for (const value of ['typo', '-1']) {
-      const r = orch('sweep', '--older-than', value)
-      expect(r.code).not.toBe(0)
-      expect(r.err).toContain('--older-than must be a finite, non-negative number')
-    }
-  })
-
   test('an unrecognised orphan is kept even with force', () => {
     const repo = scratchRepo()
     const tree = join(repo, '.claude', 'worktrees', 'reader')
     try {
       git(repo, 'worktree', 'add', '-b', 'reader', tree, 'main')
-      const r = orch('sweep', '--older-than', '0', '--force')
+      const r = orch('sweep', '--force')
       expect(r.code).toBe(0)
       expect(r.out).toContain(`orphan  ${tree}  kept: not created by orch`)
       expect(existsSync(tree)).toBe(true)
@@ -196,34 +195,21 @@ exec ${JSON.stringify(actualGit)} "$@"
     }
   })
 
-  test('a young orch-named orphan is kept until the threshold', () => {
+  test('recent filesystem activity keeps an orch-named orphan', () => {
     const repo = scratchRepo()
     const tree = join(repo, '.claude', 'worktrees', 'orch-900')
     try {
       git(repo, 'worktree', 'add', '-b', 'orch/900', tree, 'main')
-      const r = orch('sweep', '--older-than', '1', '--dry-run')
+      const r = orch('sweep', '--dry-run')
       expect(r.code).toBe(0)
-      expect(r.out).toContain(`orphan  ${tree}  too recent (0.0d by commit date)`)
+      expect(r.out).toContain(`orphan  ${tree}  live — files changed inside 2h`)
       expect(existsSync(tree)).toBe(true)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
   })
 
-  test('a young remembered worktree keeps the sweep age backstop', () => {
-    const recent = new Date().toISOString()
-    const id = addRun({ agent: 'codex', job: 'implement', status: 'ok', startedAt: recent })
-    score(id, 'full', 'right', 'faithful')
-    const tree = `/tmp/dev391-young-remembered-${id}`
-    db().query('UPDATE run SET worktree=? WHERE id=?').run(tree, id)
-
-    const r = orch('sweep', '--older-than', '1', '--dry-run')
-    expect(r.code).toBe(0)
-    expect(r.out).toContain(`${id}  too recent (0.0d)`)
-    expect(r.out).not.toContain(`would reclaim ${id}`)
-  })
-
-  test('a fresh directory is reclaimable by the latest turn in its named run chain', () => {
+  test('run age does not override recent filesystem activity', () => {
     const repo = scratchRepo()
     const project = `sweep-${repo.split('/').pop()}`
     const root = addRun({
@@ -242,14 +228,10 @@ exec ${JSON.stringify(actualGit)} "$@"
     })
     try {
       git(repo, 'worktree', 'add', '-b', name, tree, 'main')
-      const fresh = new Date()
-      utimesSync(tree, fresh, fresh)
-
-      const r = orch('sweep', '--older-than', '7', '--dry-run')
+      const r = orch('sweep', '--dry-run')
       expect(r.code).toBe(0)
-      expect(r.out).toContain(`would reclaim orphan  ${tree}`)
-      expect(r.out).toContain('14.0d by run row; clean and HEAD is reachable from main')
-      expect(Date.now() - statSync(tree).mtimeMs).toBeLessThan(10_000)
+      expect(r.out).toContain(`orphan  ${tree}  live — files changed inside 2h`)
+      expect(r.out).not.toContain(`would reclaim orphan  ${tree}`)
       expect(existsSync(tree)).toBe(true)
     } finally {
       rmSync(repo, { recursive: true, force: true })
@@ -264,7 +246,7 @@ exec ${JSON.stringify(actualGit)} "$@"
     try {
       git(repo, 'worktree', 'add', '-b', `orch/${id}`, tree, 'main')
 
-      const r = orch('sweep', '--older-than', '0')
+      const r = orch('sweep')
       expect(r.code).toBe(0)
       expect(r.out).toContain(`orphan  ${tree}  live — kept`)
       expect(r.out).not.toContain(`reclaimed orphan  ${tree}`)
@@ -274,7 +256,7 @@ exec ${JSON.stringify(actualGit)} "$@"
     }
   })
 
-  test('a terminal named chain without a supportable completion time has unknown age', () => {
+  test('a terminal named chain is retained while its filesystem is active', () => {
     const repo = scratchRepo()
     const project = `sweep-${repo.split('/').pop()}`
     const id = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
@@ -283,16 +265,16 @@ exec ${JSON.stringify(actualGit)} "$@"
     try {
       git(repo, 'worktree', 'add', '-b', `orch/${id}`, tree, 'main')
 
-      const r = orch('sweep', '--older-than', '0', '--dry-run')
+      const r = orch('sweep', '--dry-run')
       expect(r.code).toBe(0)
-      expect(r.out).toContain(`orphan  ${tree}  age unknown — kept`)
+      expect(r.out).toContain(`orphan  ${tree}  live — files changed inside 2h`)
       expect(existsSync(tree)).toBe(true)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
   })
 
-  test("a foreign project's colliding run id cannot decide an orphan's age", () => {
+  test("a foreign project's colliding run id cannot override filesystem liveness", () => {
     const repo = scratchRepo()
     const id = addRun({
       agent: 'codex', job: 'implement', status: 'ok', repo: 'foreign-project',
@@ -302,17 +284,16 @@ exec ${JSON.stringify(actualGit)} "$@"
     try {
       git(repo, 'worktree', 'add', '-b', `orch/${id}`, tree, 'main')
 
-      const r = orch('sweep', '--older-than', '1', '--dry-run')
+      const r = orch('sweep', '--dry-run')
       expect(r.code).toBe(0)
-      expect(r.out).toMatch(/too recent \(0\.0d by (commit date|branch reflog)\)/)
-      expect(r.out).not.toContain('by run row')
+      expect(r.out).toContain(`orphan  ${tree}  live — files changed inside 2h`)
       expect(existsSync(tree)).toBe(true)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
   })
 
-  test('a fresh branch reflog wins over an old tip commit', () => {
+  test('filesystem liveness replaces branch reflog age', () => {
     const repo = scratchRepo()
     const tree = join(repo, '.claude', 'worktrees', 'fresh-reflog-worker')
     try {
@@ -321,16 +302,16 @@ exec ${JSON.stringify(actualGit)} "$@"
       writeFileSync(join(tree, '.orch-run'), `996\n${repo}\n`)
       appendFileSync(resolve(tree, git(tree, 'rev-parse', '--git-path', 'info/exclude')), '.orch-run\n')
 
-      const r = orch('sweep', '--older-than', '1', '--dry-run')
+      const r = orch('sweep', '--dry-run')
       expect(r.code).toBe(0)
-      expect(r.out).toContain(`orphan  ${tree}  too recent (0.0d by branch reflog)`)
+      expect(r.out).toContain(`orphan  ${tree}  live — files changed inside 2h`)
       expect(existsSync(tree)).toBe(true)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
   })
 
-  test('a clean detached orphan uses its old HEAD and HEAD reflog timestamps', () => {
+  test('a clean detached orphan still observes filesystem liveness', () => {
     const repo = scratchRepo()
     const tree = join(repo, '.claude', 'worktrees', 'detached-worker')
     const fake = ageGit('detached', Math.floor((Date.now() - 2 * 86_400_000) / 1000))
@@ -340,10 +321,10 @@ exec ${JSON.stringify(actualGit)} "$@"
       writeFileSync(join(tree, '.orch-run'), `995\n${repo}\n`)
       appendFileSync(resolve(tree, git(tree, 'rev-parse', '--git-path', 'info/exclude')), '.orch-run\n')
 
-      const r = orchWithEnv(fake.env, 'sweep', '--older-than', '1', '--dry-run')
+      const r = orchWithEnv(fake.env, 'sweep', '--dry-run')
       expect(r.code).toBe(0)
-      expect(r.out).toContain(`would reclaim orphan  ${tree}`)
-      expect(r.out).toContain('2.0d by branch reflog; clean and HEAD is reachable from main')
+      expect(r.out).toContain(`orphan  ${tree}  live — files changed inside 2h`)
+      expect(r.out).not.toContain(`would reclaim orphan  ${tree}`)
       expect(existsSync(tree)).toBe(true)
     } finally {
       rmSync(fake.dir, { recursive: true, force: true })
@@ -351,7 +332,7 @@ exec ${JSON.stringify(actualGit)} "$@"
     }
   })
 
-  test('an orphan falls back from its commit date to its branch reflog', () => {
+  test('an orphan does not use commit or reflog age as retention', () => {
     const repo = scratchRepo()
     const tree = join(repo, '.claude', 'worktrees', 'reflog-worker')
     const fake = ageGit('reflog', Math.floor((Date.now() - 2 * 86_400_000) / 1000))
@@ -360,10 +341,10 @@ exec ${JSON.stringify(actualGit)} "$@"
       writeFileSync(join(tree, '.orch-run'), `997\n${repo}\n`)
       appendFileSync(resolve(tree, git(tree, 'rev-parse', '--git-path', 'info/exclude')), '.orch-run\n')
 
-      const r = orchWithEnv(fake.env, 'sweep', '--older-than', '1', '--dry-run')
+      const r = orchWithEnv(fake.env, 'sweep', '--dry-run')
       expect(r.code).toBe(0)
-      expect(r.out).toContain(`would reclaim orphan  ${tree}`)
-      expect(r.out).toContain('2.0d by branch reflog; clean and HEAD is reachable from main')
+      expect(r.out).toContain(`orphan  ${tree}  live — files changed inside 2h`)
+      expect(r.out).not.toContain(`would reclaim orphan  ${tree}`)
       expect(existsSync(tree)).toBe(true)
     } finally {
       rmSync(fake.dir, { recursive: true, force: true })
@@ -371,7 +352,7 @@ exec ${JSON.stringify(actualGit)} "$@"
     }
   })
 
-  test('an orphan with no run, commit, or reflog age is kept as unknown', () => {
+  test('an orphan with unreadable git age still observes filesystem liveness', () => {
     const repo = scratchRepo()
     const tree = join(repo, '.claude', 'worktrees', 'unknown-worker')
     const fake = ageGit('unknown')
@@ -380,9 +361,9 @@ exec ${JSON.stringify(actualGit)} "$@"
       writeFileSync(join(tree, '.orch-run'), `998\n${repo}\n`)
       appendFileSync(resolve(tree, git(tree, 'rev-parse', '--git-path', 'info/exclude')), '.orch-run\n')
 
-      const r = orchWithEnv(fake.env, 'sweep', '--older-than', '0', '--dry-run')
+      const r = orchWithEnv(fake.env, 'sweep', '--dry-run')
       expect(r.code).toBe(0)
-      expect(r.out).toContain(`orphan  ${tree}  age unknown — kept`)
+      expect(r.out).toContain(`orphan  ${tree}  live — files changed inside 2h`)
       expect(r.out).not.toContain(`would reclaim orphan  ${tree}`)
       expect(existsSync(tree)).toBe(true)
     } finally {
@@ -399,8 +380,9 @@ exec ${JSON.stringify(actualGit)} "$@"
       git(repo, 'worktree', 'add', '-b', 'old-worker', tree, 'main')
       writeFileSync(join(tree, '.orch-run'), `901\n${repo}\n`)
       appendFileSync(resolve(tree, git(tree, 'rev-parse', '--git-path', 'info/exclude')), '.orch-run\n')
+      ageWorktree(tree)
 
-      const r = orch('sweep', '--older-than', '0')
+      const r = orch('sweep')
       expect(r.code).toBe(0)
       expect(r.out).toContain(`reclaimed orphan  ${tree}`)
       expect(existsSync(tree)).toBe(false)
@@ -418,6 +400,7 @@ exec ${JSON.stringify(actualGit)} "$@"
       git(repo, 'worktree', 'add', '-b', 'old-worker', tree, 'main')
       writeFileSync(join(tree, '.orch-run'), `903\n${repo}\n`)
       appendFileSync(resolve(tree, git(tree, 'rev-parse', '--git-path', 'info/exclude')), '.orch-run\n')
+      ageWorktree(tree)
       upsertProject({
         name, path: repo,
         settings: {
@@ -431,7 +414,7 @@ exec ${JSON.stringify(actualGit)} "$@"
         },
       })
 
-      const r = orch('sweep', '--older-than', '0')
+      const r = orch('sweep')
       expect(r.code).toBe(0)
       expect(r.out).toContain(`${name} remove:`)
       expect(r.out).toContain('retained fixture resource')
@@ -442,7 +425,7 @@ exec ${JSON.stringify(actualGit)} "$@"
     }
   })
 
-  test('sweep preserves a branch recorded by another live run in the same project', () => {
+  test('sweep preserves its branch when a project remover deletes it', () => {
     const repo = scratchRepo()
     const workerRepo = scratchRepo()
     const worker = createWorktree(workerRepo, 1702)
@@ -476,12 +459,13 @@ exec ${JSON.stringify(actualGit)} "$@"
     ).run(repo, tree, branch, branch, git(repo, 'rev-parse', 'main'), id)
     db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, branch, owner)
     try {
-      const r = orchWithEnv(managedEnv, 'sweep', '--older-than', '0', '--force')
+      ageWorktree(tree)
+      const r = orchWithEnv(managedEnv, 'sweep', '--force')
       expect(r.code).toBe(0)
       expect(r.err).not.toContain(`project remove tool deleted shared branch ${branch}`)
       expect(git(repo, 'rev-parse', branch)).toBe(git(repo, 'rev-parse', 'main'))
       expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
-        .toEqual({ worktree: null })
+        .toEqual({ worktree: tree })
     } finally {
       rmSync(repo, { recursive: true, force: true })
       rmSync(workerRepo, { recursive: true, force: true })
@@ -500,7 +484,7 @@ exec ${JSON.stringify(actualGit)} "$@"
       },
     })
     try {
-      const r = orch('sweep', '--older-than', '0')
+      const r = orch('sweep')
       expect(r.code).not.toBe(0)
       expect(readFileSync(sentinel, 'utf8')).toBe('retained')
       expect(r.out).toContain(`${name} sweep:`)
@@ -516,7 +500,7 @@ exec ${JSON.stringify(actualGit)} "$@"
     const id = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: project })
     const docker = fakeDocker([`orch-${id}-booting`], [])
     try {
-      const r = orchWithEnv(docker.env, 'sweep', '--older-than', '0')
+      const r = orchWithEnv(docker.env, 'sweep')
       expect(r.code).toBe(0)
       expect(r.err).not.toContain(`orch-${id}-booting`)
       expect(r.err).not.toContain('leaked Docker resources')
@@ -554,7 +538,8 @@ exec ${JSON.stringify(actualGit)} "$@"
                       worktree_source='recipe' WHERE id=?`,
     ).run(tree, `orch/${id}`, `orch/${id}`, git(repo, 'rev-parse', 'main'), id)
     try {
-      const r = orch('sweep', '--older-than', '0', '--force')
+      ageWorktree(tree)
+      const r = orch('sweep', '--force')
       expect(r.code).not.toBe(0)
       expect(r.err).toContain(`could not reclaim ${id}`)
       expect(r.err).toContain('protected work')
@@ -565,7 +550,7 @@ exec ${JSON.stringify(actualGit)} "$@"
     }
   })
 
-  test('sweep reports unavailable Docker inventory, exits non-zero, and keeps the pointer', () => {
+  test('sweep reports unavailable Docker inventory after releasing the tree', () => {
     const repo = scratchRepo()
     const project = `sweep-${repo.split('/').pop()}`
     const id = addRun({
@@ -591,9 +576,9 @@ exec ${JSON.stringify(actualGit)} "$@"
     ).run(tree, `orch/${id}`, `orch/${id}`, git(repo, 'rev-parse', 'main'), id)
     const docker = fakeDockerCommand("echo 'stub inventory failure' >&2; exit 127")
     try {
-      const r = orchWithEnv(docker.env, 'sweep', '--older-than', '0', '--force')
+      ageWorktree(tree)
+      const r = orchWithEnv(docker.env, 'sweep', '--force')
       expect(r.code).not.toBe(0)
-      expect(r.err).toContain(`could not verify reclaim ${id}: inventory unavailable`)
       expect(r.err).toContain('inventory unavailable: 2')
       expect(r.err).toContain('stub inventory failure')
       expect(db().query('SELECT worktree FROM run WHERE id=?').get(id))
@@ -627,11 +612,12 @@ exec ${JSON.stringify(actualGit)} "$@"
     ).run(tree, `orch/${id}`, `orch/${id}`, git(repo, 'rev-parse', 'main'), id)
     const docker = fakeDocker([], [`orch-${id}_${project}-pgdata`])
     try {
-      const r = orchWithEnv(docker.env, 'sweep', '--older-than', '0', '--force')
+      ageWorktree(tree)
+      const r = orchWithEnv(docker.env, 'sweep', '--force')
       expect(r.code).not.toBe(0)
       expect(r.err).toContain('leaked Docker resources: 1')
       expect(r.err).toContain(`volume orch-${id}_${project}-pgdata leaked by project ${project}`)
-      expect(r.out).toContain('reclaimed 0, kept 0')
+      expect(r.out).toContain('reclaimed 0, kept 1')
       expect(db().query('SELECT worktree FROM run WHERE id=?').get(id)).toEqual({ worktree: tree })
     } finally {
       rmSync(repo, { recursive: true, force: true })
@@ -715,32 +701,32 @@ exec ${JSON.stringify(actualGit)} "$@"
     }
   })
 
-  test('an aged no-verdict void reaches reclaim proof rather than the unjudged-evidence guard', () => {
+  test('an aged no-verdict void with an absent tree is released without an evidence guard', () => {
     const old = new Date(Date.now() - 3 * 86_400_000).toISOString()
     const id = addRun({ agent: 'codex', job: 'understand', status: 'ok', startedAt: old })
     db().query("UPDATE run SET worktree=?, evidence_excluded=? WHERE id=?")
       .run(`/tmp/dev364-void-${id}`, 'voided with orch score --void', id)
 
-    const r = orch('sweep', '--dry-run', '--older-than', '1')
+    const r = orch('sweep', '--dry-run')
     expect(r.code).toBe(0)
-    expect(r.out).toContain(`${id}  refused; worktree /tmp/dev364-void-${id} has no registered project`)
-    expect(r.out).toContain('would reclaim 0, kept 1')
+    expect(r.out).toContain(`would reclaim ${id}  /tmp/dev364-void-${id}`)
+    expect(r.out).toContain('would reclaim 1, kept 0')
     expect(r.out).not.toContain('unscored — its diff is the evidence')
   })
 
-  test('an aged actually unscored run is still kept as unjudged evidence', () => {
+  test('an unscored terminal run is reclaimed when its tree is already absent', () => {
     const old = new Date(Date.now() - 3 * 86_400_000).toISOString()
     const id = addRun({ agent: 'codex', job: 'understand', status: 'ok', startedAt: old })
     db().query('UPDATE run SET worktree=? WHERE id=?').run(`/tmp/dev364-unscored-${id}`, id)
 
-    const r = orch('sweep', '--dry-run', '--older-than', '1')
+    const r = orch('sweep', '--dry-run')
     expect(r.code).toBe(0)
-    expect(r.out).toContain(`${id}  unscored — its diff is the evidence`)
-    expect(r.out).toContain('would reclaim 0, kept 1')
-    expect(r.out).not.toContain(`would reclaim ${id}`)
+    expect(r.out).toContain(`would reclaim ${id}  /tmp/dev364-unscored-${id}`)
+    expect(r.out).toContain('would reclaim 1, kept 0')
+    expect(r.out).not.toContain('unscored — its diff is the evidence')
   })
 
-  test('a no-verdict void does not block sweep of a shared tree; an unscored sharer still does', () => {
+  test('terminal sharers do not block sweep regardless of scoring or void state', () => {
     const old = new Date(Date.now() - 3 * 86_400_000).toISOString()
     const tree = '/tmp/dev364-shared-tree'
     const target = addRun({ agent: 'codex', job: 'implement', status: 'ok', startedAt: old })
@@ -752,48 +738,39 @@ exec ${JSON.stringify(actualGit)} "$@"
       .run(tree, 'voided with orch score --void', voided)
     db().query('UPDATE run SET worktree=? WHERE id=?').run(tree, unscored)
 
-    const blocked = orch('sweep', '--dry-run', '--older-than', '1')
-    expect(blocked.code).toBe(0)
-    expect(blocked.out).toContain('shared with evidence-owning run(s)')
-    expect(blocked.out).toContain(`${unscored} (failed, unscored)`)
-    expect(blocked.out).not.toContain(`${voided} (ok, unscored)`)
-    expect(blocked.out).not.toContain(`would reclaim ${target}`)
-
-    db().query('UPDATE run SET worktree=NULL WHERE id=?').run(unscored)
-    const released = orch('sweep', '--dry-run', '--older-than', '1')
+    const released = orch('sweep', '--dry-run')
     expect(released.code).toBe(0)
-    expect(released.out).toContain(`${target}  refused; worktree ${tree} has no registered project`)
-    expect(released.out).toContain(`${voided}  refused; worktree ${tree} has no registered project`)
-    expect(released.out).not.toContain('unscored — its diff is the evidence')
-    expect(released.out).not.toContain('shared with evidence-owning run(s)')
+    expect(released.out).toContain(`would reclaim ${target}  ${tree}`)
+    expect(released.out).toContain(`would reclaim ${voided}  ${tree}`)
+    expect(released.out).toContain(`would reclaim ${unscored}  ${tree}`)
+    expect(released.out).not.toContain('unscored')
+    expect(released.out).not.toContain('shared with')
   })
 
-  test('sweep age-protects recent scored rows while old unscored rows stay evidence', () => {
-    const recent: number[] = []
-    const unscored: number[] = []
-    const old = new Date(Date.now() - 3 * 86_400_000).toISOString()
-    for (let i = 0; i < 6; i++) {
+  test('more than ten kept rows are summarised by reason; --dry-run lists every row', () => {
+    const held: number[] = []
+    for (let i = 0; i < 11; i++) {
       const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
-      db().query('UPDATE run SET worktree=? WHERE id=?').run(`/tmp/dev148-recent-${i}`, id)
-      score(id, 'full', 'right')
-      recent.push(id)
+      db().query('UPDATE run SET worktree=?, keep_tree=1 WHERE id=?').run(`/tmp/dev148-held-${i}`, id)
+      held.push(id)
     }
-    for (let i = 0; i < 5; i++) {
-      const id = addRun({ agent: 'codex', job: 'implement', status: 'ok', startedAt: old })
-      db().query('UPDATE run SET worktree=? WHERE id=?').run(`/tmp/dev148-unscored-${i}`, id)
-      unscored.push(id)
-    }
+
+    const summarised = orch('sweep')
+    expect(summarised.code).toBe(0)
+    expect(summarised.out).toContain('reclaimed 0, kept 11')
+    expect(summarised.out).toContain('11  held by explicit --keep-tree; clear with orch discard <run-id>')
+    expect(summarised.out).toContain('orch sweep --dry-run lists every kept row')
+    for (const id of held) expect(summarised.out).not.toContain(`${id}  held:`)
 
     const listed = orch('sweep', '--dry-run')
     expect(listed.code).toBe(0)
     expect(listed.out).toContain('would reclaim 0, kept 11')
-    expect(listed.out).toContain('6  under the age threshold')
-    expect(listed.out).toContain('5  unscored — its diff is the evidence')
-    for (const id of recent) expect(listed.out).toContain(`${id}  too recent`)
-    for (const id of unscored) expect(listed.out).toContain(`${id}  unscored — its diff is the evidence`)
+    expect(listed.out).toContain('11  held by explicit --keep-tree; clear with orch discard <run-id>')
+    expect(listed.out).not.toContain('lists every kept row')
+    for (const id of held) expect(listed.out).toContain(`${id}  held:`)
   })
 
-  test('an old marked orphan is kept when the project has no trunk', () => {
+  test('a clean marked orphan is reclaimed without a configured trunk', () => {
     const repo = scratchRepo()
     const name = `sweep-${repo.split('/').pop()}`
     upsertProject({ name, path: repo, settings: {} })
@@ -803,12 +780,12 @@ exec ${JSON.stringify(actualGit)} "$@"
       git(repo, 'worktree', 'add', '-b', 'old-worker', tree, 'main')
       writeFileSync(join(tree, '.orch-run'), `902\n${repo}\n`)
       appendFileSync(resolve(tree, git(tree, 'rev-parse', '--git-path', 'info/exclude')), '.orch-run\n')
+      ageWorktree(tree)
 
-      const r = orch('sweep', '--older-than', '0')
+      const r = orch('sweep')
       expect(r.code).toBe(0)
-      expect(r.out).toContain(`orphan  ${tree}  no trunk configured — cannot prove reachability`)
-      expect(r.out).not.toContain(`reclaimed orphan  ${tree}`)
-      expect(existsSync(tree)).toBe(true)
+      expect(r.out).toContain(`reclaimed orphan  ${tree}`)
+      expect(existsSync(tree)).toBe(false)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }

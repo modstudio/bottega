@@ -816,7 +816,7 @@ export function chainScoreJoin(runAlias: string, scoreAlias: string): string {
 
 export type WorktreeSharerRow = { id: number; status: string; scored: number }
 
-/** The single evidence-owner rule used by cleanup and terminal resource teardown. */
+/** Conversations actively using a tree, with resume turns collapsed to their root. */
 export function evidenceOwningWorktreeSharers(
   database: Database, row: { id: number; worktree: string },
 ): WorktreeSharerRow[] {
@@ -827,7 +827,7 @@ export function evidenceOwningWorktreeSharers(
       WHERE r.worktree = ?
         AND COALESCE(r.parent_run_id, r.id) <>
             COALESCE((SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?), ?)
-        AND (r.status NOT IN ('ok','failed','stale','stopped') OR ${EVIDENCE_OPEN_SQL})
+        AND r.status IN ('running','asking')
       ORDER BY r.id`,
   ).all(row.worktree, row.id, row.id) as (WorktreeSharerRow & { root_id: number })[]
   const roots = new Set<number>()

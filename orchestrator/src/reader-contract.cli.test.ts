@@ -252,7 +252,8 @@ process.stdout.write(${JSON.stringify(JSON.stringify({
       expect(runId).toBeNumber()
       const row = db().query('SELECT worktree FROM run WHERE id=?').get(runId!) as
         { worktree: string | null }
-      expect(row.worktree).toBeNull()
+      expect(row.worktree).toContain('.claude/worktrees/orch-')
+      expect(existsSync(row.worktree!)).toBe(false)
       expect(existsSync(runArtifactsDir(runId!))).toBe(true)
       expect(listRunArtifacts(runId!).some((p) => p.endsWith('lens-note.txt'))).toBe(true)
     } finally {
