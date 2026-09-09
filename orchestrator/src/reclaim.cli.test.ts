@@ -58,7 +58,11 @@ async function waitFor(predicate: () => boolean, detail: string): Promise<void> 
   }
 }
 
-async function childResult(child: ReturnType<typeof Bun.spawn>) {
+async function childResult(child: {
+  exited: Promise<number>
+  stdout: ReadableStream<Uint8Array>
+  stderr: ReadableStream<Uint8Array>
+}) {
   const [code, out, err] = await Promise.all([
     child.exited, new Response(child.stdout).text(), new Response(child.stderr).text(),
   ])
