@@ -53,6 +53,46 @@ afterEach(() => {
 })
 
 describe('proof-bearing reclaim verbs', () => {
+  test('worktree reclaim refuses every claim from another terminal conversation', () => {
+    const f = fixture()
+    const sibling = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: f.project })
+    score(sibling, 'full', 'right', 'faithful')
+    db().query(
+      `UPDATE run SET worktree=?, cwd=?, branch=?, minted_branch=?, base_commit=?,
+                      worktree_source='git' WHERE id=?`,
+    ).run(`${f.tree}/`, f.tree, f.branch, f.branch, git(f.repo, 'rev-parse', 'main'), sibling)
+
+    const before = db().query('SELECT id, worktree FROM run WHERE id IN (?, ?) ORDER BY id')
+      .all(f.run, sibling)
+    const preview = orch(f.repo, ['reclaim', 'worktree', f.tree, '--dry-run'])
+    expect(preview.code).not.toBe(0)
+    expect(preview.err).toContain(
+      `refused; worktree ${realpathSync(f.tree)} is still claimed by other conversation(s): run ${sibling} (ok)`,
+    )
+
+    const refused = orch(f.repo, ['reclaim', 'worktree', f.tree])
+    expect(refused.code).not.toBe(0)
+    expect(refused.err).toContain(`still claimed by other conversation(s): run ${sibling} (ok)`)
+    expect(existsSync(f.tree)).toBe(true)
+    expect(db().query('SELECT id, worktree FROM run WHERE id IN (?, ?) ORDER BY id')
+      .all(f.run, sibling)).toEqual(before)
+  })
+
+  test('resume turns in the same conversation do not block worktree reclaim', () => {
+    const f = fixture()
+    const resumed = addRun({
+      agent: 'codex', job: 'implement', status: 'ok', repo: f.project, parent: f.run, turn: 2,
+    })
+    db().query(
+      `UPDATE run SET worktree=?, cwd=?, branch=?, minted_branch=?, base_commit=?,
+                      worktree_source='git' WHERE id=?`,
+    ).run(f.tree, f.tree, f.branch, f.branch, git(f.repo, 'rev-parse', 'main'), resumed)
+
+    const removed = orch(f.repo, ['reclaim', 'worktree', f.tree])
+    expect(removed.code, removed.err).toBe(0)
+    expect(existsSync(f.tree)).toBe(false)
+  })
+
   test('worktree dry-run and reclaim require clean state and preserve its recorded identity', () => {
     const f = fixture()
     const preview = orch(f.repo, ['reclaim', 'worktree', f.tree, '--dry-run'])

@@ -1,6 +1,6 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
-import { db, EVIDENCE_CLOSED_SQL, chainScoreJoin, pidAlive, SESSION_LIVE_MS, sessionId, writableDb, writeTransaction } from './db.ts'
+import { db, EVIDENCE_CLOSED_SQL, chainScoreJoin, pidAlive, SESSION_LIVE_MS, sessionId, writableDb, writeTransaction, worktreePathSpellings } from './db.ts'
 import { projectAt, projectByName } from './projects.ts'
 import {
   branchTip, removeFor, restoreBranch, targetGitEnvironment, withCleanupLock, withWorktreeCreateLock,
@@ -115,6 +115,40 @@ function proveRunOwners(
   return null
 }
 
+/**
+ * Transitional until DEV-440 splits db.ts ownership into liveness and full-claim
+ * predicates. Reclaim is destructive, so this must collapse into the full-claim
+ * predicate (every other conversation, regardless of status, score, or keep_tree),
+ * not the running/asking liveness predicate used by close-out and sweep.
+ */
+function fullClaimWorktreeSharers(path: string, runId: number): { id: number; status: string }[] {
+  const spellings = worktreePathSpellings(db(), path)
+  if (!spellings.length) return []
+  const candidates = db().query(
+    `SELECT r.id, COALESCE(r.parent_run_id, r.id) root_id, r.status
+       FROM run r
+      WHERE r.worktree IN (${spellings.map(() => '?').join(',')})
+        AND COALESCE(r.parent_run_id, r.id) <>
+            COALESCE((SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?), ?)
+      ORDER BY r.id`,
+  ).all(...spellings, runId, runId) as { id: number; root_id: number; status: string }[]
+  const roots = new Set<number>()
+  return candidates.flatMap((candidate) => {
+    if (roots.has(candidate.root_id)) return []
+    roots.add(candidate.root_id)
+    return [{ id: candidate.root_id, status: candidate.status }]
+  })
+}
+
+function fullClaimRefusal(path: string, runId: number): ReclaimResult | null {
+  const sharers = fullClaimWorktreeSharers(path, runId)
+  if (!sharers.length) return null
+  return refuse(
+    `worktree ${path} is still claimed by other conversation(s): ` +
+    sharers.map((row) => `run ${row.id} (${row.status})`).join(', '),
+  )
+}
+
 function proveWorktree(path: string, clock: number, allowDirty = false): WorktreeProof {
   const rows = runRows(path)
   if (!rows.length) return { result: refuse(`no run row records worktree ${path}`) }
@@ -133,6 +167,8 @@ function proveWorktree(path: string, clock: number, allowDirty = false): Worktre
       (!fromRoot || fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot))) {
     return { result: refuse(`worktree ${path} is not beneath project worktrees directory ${worktreesRoot}`) }
   }
+  const sharers = fullClaimRefusal(path, row.id)
+  if (sharers) return { result: sharers }
   const owners = proveRunOwners(rows, clock, false)
   if (owners) return { result: owners }
   for (const lockedRow of rows) {
@@ -181,6 +217,8 @@ export function reclaimWorktree(
         source: lockedRow.worktree_source ?? undefined,
       }, project.path, false, true, lockedRow.id)
       if (!removed.removed) return refuse(removed.detail)
+      const sharersAfter = fullClaimRefusal(path, lockedRow.id)
+      if (sharersAfter) return sharersAfter
       if (minted && branchBefore) {
         const branchAfter = branchTip(project.path, minted)
         if (branchAfter === null) {
