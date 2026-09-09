@@ -5,10 +5,10 @@
  * concerns quietly become one, which is the root canon's line and the reason
  * `orch` grew `--json` flags rather than hub growing a second connection.
  */
-import { accessSync, chmodSync, constants, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { accessSync, chmodSync, constants, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
-import { delimiter, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import type { DocScope } from '../../shared/docs.ts'
 import {
   HarnessHealthSchema, OrchBlockersSchema, OrchProjectListSchema, OrchProjectSchema, OrchRunDetailSchema,
@@ -26,25 +26,28 @@ let dashboardCapability: { dir: string; path: string; token: string } | null = n
 
 /** Resolve the executable for every call made by a long-lived hub process. */
 export function resolveOrchExecutable(): string {
-  const configured = process.env.HUB_ORCH?.trim()
-    || resolve(new URL('../..', import.meta.url).pathname, 'bin/orch')
-  if (existsSync(configured)) return configured
-  const found = process.env.PATH?.split(delimiter).find((directory) => {
-    try {
-      accessSync(resolve(directory || '.', 'orch'), constants.X_OK)
-      return true
-    } catch { return false }
-  })
-  const foundPath = found === undefined ? null : resolve(found || '.', 'orch')
-  if (foundPath) return foundPath
-  throw missingBinary(configured, foundPath)
+  const override = process.env.HUB_ORCH?.trim() || null
+  const checkout = resolve(new URL('../..', import.meta.url).pathname, 'bin/orch')
+  if (override && usableExecutable(override)) return override
+  if (usableExecutable(checkout)) return checkout
+  const found = Bun.which('orch', { PATH: process.env.PATH })
+  if (found) return found
+  throw missingBinary(override, checkout)
 }
 
-function missingBinary(configured: string, found: string | null): Error {
+function usableExecutable(candidate: string): boolean {
+  try {
+    if (!statSync(candidate).isFile()) return false
+    accessSync(candidate, constants.X_OK)
+    return true
+  } catch { return false }
+}
+
+function missingBinary(override: string | null, checkout: string): Error {
   return new Error(
-    `orch executable unavailable at call time: configured path ${configured}; ` +
-    `PATH found ${found ?? 'nothing'}. Correct HUB_ORCH or PATH, then restart the hub server ` +
-    `or the orch MCP server that launched it.`,
+    `orch executable unavailable: HUB_ORCH override ${override ?? 'unset'}; ` +
+    `checkout executable ${checkout}; PATH lookup found nothing. ` +
+    'Set HUB_ORCH to an executable file, restore the checkout executable, or add orch to PATH.',
   )
 }
 

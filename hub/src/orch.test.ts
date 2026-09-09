@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync,
+  chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync,
   symlinkSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
   decodeRunsJson, docArgv, docGet, docRemove, docSet, projectArgv,
-  resolveOrchExecutable, startDashboardCapability, stopDashboardCapability,
+  startDashboardCapability, stopDashboardCapability,
 } from './orch.ts'
 import { encodeOrchRunLine, OrchBlockersSchema } from '../../shared/orch-contract.ts'
 
@@ -90,25 +90,44 @@ test('only the orch client invokes bin/orch', () => {
   expect(violations).toEqual([])
 })
 
-test('orch resolution falls back from a stale configured path and reports both locations on failure', () => {
+test('orch resolution accepts only executable files from override, checkout, and PATH', async () => {
   const root = mkdtempSync(join(tmpdir(), 'hub-orch-resolution-'))
-  const bin = join(root, 'bin')
-  mkdirSync(bin)
-  const found = join(bin, 'orch')
+  const bundledRoot = join(root, 'checkout')
+  const outputDir = join(bundledRoot, 'hub', 'src')
+  mkdirSync(outputDir, { recursive: true })
+  const built = await Bun.build({
+    entrypoints: [new URL('orch.ts', import.meta.url).pathname],
+    outdir: outputDir,
+    target: 'bun',
+    format: 'esm',
+  })
+  expect(built.success).toBe(true)
+  const checkoutCandidate = join(bundledRoot, 'bin', 'orch')
+  mkdirSync(checkoutCandidate, { recursive: true })
+  const first = join(root, 'first-bin')
+  const second = join(root, 'second-bin')
+  mkdirSync(join(first, 'orch'), { recursive: true })
+  mkdirSync(second)
+  const found = join(second, 'orch')
   writeFileSync(found, '#!/bin/sh\nexit 0\n')
   chmodSync(found, 0o755)
+  const override = join(root, 'override-orch')
+  mkdirSync(override)
   const priorOrch = process.env.HUB_ORCH
   const priorPath = process.env.PATH
   try {
-    process.env.HUB_ORCH = join(root, 'stale', 'bin', 'orch')
-    process.env.PATH = bin
-    expect(resolveOrchExecutable()).toBe(found)
+    process.env.HUB_ORCH = override
+    process.env.PATH = `${first}:${second}`
+    const bundled = await import(`${built.outputs[0]!.path}?test=${Date.now()}`)
+    expect(bundled.resolveOrchExecutable()).toBe(found)
 
-    process.env.PATH = join(root, 'empty-bin')
-    expect(() => resolveOrchExecutable()).toThrow(
-      `configured path ${process.env.HUB_ORCH}; PATH found nothing`,
+    process.env.PATH = first
+    expect(() => bundled.resolveOrchExecutable()).toThrow(
+      `HUB_ORCH override ${override}; checkout executable ${realpathSync(checkoutCandidate)}; PATH lookup found nothing`,
     )
-    expect(() => resolveOrchExecutable()).not.toThrow(/moved|renamed/)
+    delete process.env.HUB_ORCH
+    expect(() => bundled.resolveOrchExecutable()).toThrow('HUB_ORCH override unset')
+    expect(() => bundled.resolveOrchExecutable()).not.toThrow(/at call time|restart|moved|renamed/)
   } finally {
     if (priorOrch === undefined) delete process.env.HUB_ORCH
     else process.env.HUB_ORCH = priorOrch

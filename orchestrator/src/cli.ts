@@ -3896,7 +3896,7 @@ switch (cmd) {
   }
 
   case 'monitor': {
-    const { claimMonitorNotices, markMonitorNoticesDelivered, monitor, monitorHistory } = await import('./monitor.ts')
+    const { claimMonitorNotices, formatMonitorPass, markMonitorNoticesDelivered, monitor, monitorHistory } = await import('./monitor.ts')
     if (flag('ack-notices') !== undefined) {
       const sid = sessionId()
       if (!sid) throw new Error('monitor notice acknowledgement requires CLAUDE_CODE_SESSION_ID')
@@ -3919,13 +3919,15 @@ switch (cmd) {
       const rows = monitorHistory(Number(flag('limit') ?? 20))
       if (has('json')) await writeStdout(`${JSON.stringify(rows)}\n`)
       else for (const row of rows as any[]) {
-        console.log(`monitor ${row.id}  ${row.started_at}  ${row.trigger}  ${row.findings} found, ${row.errors} errors`)
-        for (const condition of row.conditions) {
-          const old = condition.age_ms == null ? 'age unknown' : `${Math.round(condition.age_ms / 60_000)}m old`
-          const sev = condition.severity ? `  ${condition.severity}` : ''
-          const owner = condition.owner_session_id ? `  owner ${condition.owner_session_id}` : ''
-          console.log(`  ${condition.kind}${sev}  ${condition.subject}  ${old}${owner}  ${condition.action}`)
-        }
+        const conditions = row.conditions.map((condition: any) => ({
+          kind: condition.kind, subject: condition.subject, ageMs: condition.age_ms,
+          detail: condition.detail, action: condition.action, issueKey: condition.issue_key,
+          severity: condition.severity, ownerSession: condition.owner_session_id,
+        }))
+        console.log(formatMonitorPass(
+          `monitor ${row.id}  ${row.started_at}  ${row.trigger}  ${row.findings} found, ${row.errors} errors`,
+          conditions,
+        ).join('\n'))
       }
       break
     }
@@ -3939,16 +3941,10 @@ switch (cmd) {
         lines.push(`canon evals: ${failingEvals.length} failing (${failingEvals.join(', ')})`)
       }
       if (result.conditions.length || result.errors.length) {
-        lines.push(`monitor ${result.id}: ${result.conditions.length} condition(s), ${result.errors.length} observation error(s)`)
-        if (result.errors.length) {
-          lines.push('PARTIAL: the condition list is incomplete because one or more observations failed.')
-        }
-        for (const condition of result.conditions) {
-          const old = condition.ageMs == null ? 'age unknown' : `${Math.round(condition.ageMs / 60_000)}m old`
-          const sev = condition.severity ? `  ${condition.severity}` : ''
-          const owner = condition.ownerSession ? `  owner ${condition.ownerSession}` : ''
-          lines.push(`  ${condition.kind}${sev}  ${condition.subject}  ${old}${owner}\n    ${condition.detail}\n    ${condition.action}${condition.issueKey ? `; ${condition.issueKey}` : ''}`)
-        }
+        lines.push(...formatMonitorPass(
+          `monitor ${result.id}: ${result.conditions.length} condition(s), ${result.errors.length} observation error(s)`,
+          result.conditions,
+        ))
         for (const error of result.errors) console.error(`  observation failed: ${error}`)
       }
       await writeStdout(`${lines.join('\n')}\n`)

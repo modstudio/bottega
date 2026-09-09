@@ -351,6 +351,58 @@ echo '[]'
     expect(run.stderr.toString()).toContain('observation failed: docker volume inventory unavailable: inventory-offline')
   })
 
+  test('does not mark a complete condition list partial when only issue filing fails', () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'monitor-filing-failure-')))
+    git(repo, 'init', '-b', 'main')
+    writeFileSync(join(repo, '.git', 'index.lock'), '')
+    const project = `monitor-filing-${repo.split('/').pop()}`
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
+    const hubDb = join(dir, 'monitor-filing-failure-hub.db')
+    migrateHub(hubDb)
+    const cli = new URL('cli.ts', import.meta.url).pathname
+    try {
+      const run = Bun.spawnSync([process.execPath, cli, 'monitor'], {
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0', HUB_DB: hubDb },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      expect(run.exitCode).toBe(1)
+      expect(run.stdout.toString()).not.toContain('PARTIAL:')
+      expect(run.stderr.toString()).toContain(`could not file dead-lock issue: unknown project "${PLATFORM_SLUG}"`)
+      const invocation = db().query(
+        'SELECT id FROM monitor_invocation ORDER BY id DESC LIMIT 1',
+      ).get() as { id: number }
+      expect(db().query(
+        `SELECT count(*) n FROM monitor_condition WHERE invocation_id=? AND kind='observation-error'`,
+      ).get(invocation.id)).toEqual({ n: 0 })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('marks historical human output partial when that pass had an observation error', () => {
+    const invocation = (db().query(
+      `INSERT INTO monitor_invocation (started_at,finished_at,trigger,findings,errors)
+       VALUES ('2026-09-04T00:00:00Z','2026-09-04T00:00:01Z','backstop',1,1) RETURNING id`,
+    ).get() as { id: number }).id
+    db().query(
+      `INSERT INTO monitor_condition
+       (invocation_id,kind,subject,condition_since,age_ms,detail,action)
+       VALUES (?,?,?,?,?,?,?)`,
+    ).run(invocation, 'observation-error', `invocation:${invocation}:1`,
+      '2026-09-04T00:00:00Z', 0, 'docker inventory unavailable',
+      'reported; no state was inferred from the unavailable observation')
+    const cli = new URL('cli.ts', import.meta.url).pathname
+    const run = Bun.spawnSync([process.execPath, cli, 'monitor', '--history', '--limit', '1'], {
+      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+      stdout: 'pipe', stderr: 'pipe',
+    })
+    expect(run.exitCode).toBe(0)
+    expect(run.stdout.toString()).toContain(
+      'PARTIAL: the condition list is incomplete because one or more observations failed.',
+    )
+    expect(run.stdout.toString()).toContain('docker inventory unavailable')
+  })
+
   test('pipes a complete large human report before returning its condition status', async () => {
     const hubDb = join(dir, 'monitor-large-report-hub.db')
     const binDir = join(dir, 'monitor-large-report-bin')
@@ -398,7 +450,7 @@ echo '[]'
       `canon: ${canonFindings} stale references in ${canonDocs} docs`,
       `monitor ${record.id}: ${record.findings} condition(s), ${record.errors} observation error(s)`,
     ]
-    if (record.errors) {
+    if (conditions.some((condition) => condition.kind === 'observation-error')) {
       lines.push('PARTIAL: the condition list is incomplete because one or more observations failed.')
     }
     for (const condition of conditions) {

@@ -40,6 +40,35 @@ export type MonitorResult = {
   canon: { findings: number; docs: number }
 }
 
+type HumanMonitorCondition = {
+  kind: string
+  subject: string
+  ageMs: number | null
+  detail: string
+  action: string
+  issueKey?: string | null
+  severity?: MonitorSeverity | null
+  ownerSession?: string | null
+}
+
+/** Format one monitor pass identically wherever its human-readable history is printed. */
+export function formatMonitorPass(
+  heading: string,
+  conditions: HumanMonitorCondition[],
+): string[] {
+  const lines = [heading]
+  if (conditions.some((condition) => condition.kind === 'observation-error')) {
+    lines.push('PARTIAL: the condition list is incomplete because one or more observations failed.')
+  }
+  for (const condition of conditions) {
+    const old = condition.ageMs == null ? 'age unknown' : `${Math.round(condition.ageMs / 60_000)}m old`
+    const sev = condition.severity ? `  ${condition.severity}` : ''
+    const owner = condition.ownerSession ? `  owner ${condition.ownerSession}` : ''
+    lines.push(`  ${condition.kind}${sev}  ${condition.subject}  ${old}${owner}\n    ${condition.detail}\n    ${condition.action}${condition.issueKey ? `; ${condition.issueKey}` : ''}`)
+  }
+  return lines
+}
+
 export type MonitorNotice = Omit<MonitorCondition, 'detail' | 'action'> & {
   noticeId: `condition:${number}` | `landing:${number}`
   detail: string
