@@ -284,7 +284,9 @@ export async function terminateProcessGroup(
     deps?: Partial<TerminateDeps>
   } = {},
 ): Promise<TerminateResult> {
-  if (pid <= 0) return { exited: true, unkillable: false, reason: null, pgid: null, pids: [] }
+  if (pid <= 0 || pid === process.pid) {
+    return { exited: true, unkillable: false, reason: null, pgid: null, pids: [] }
+  }
   const deps: TerminateDeps = { ...defaultDeps, ...opts.deps }
   const graceMs = opts.graceMs ?? DEFAULT_IDLE_GRACE_MS
   const killConfirmMs = opts.killConfirmMs ?? DEFAULT_IDLE_KILL_CONFIRM_MS

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync, readdirSync, statSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { JOBS, changesIn, createWorktree, gitObjectEnvironmentFor, hermeticGitEnv, prepareSharedRefGuard, writingFailoverRefusal } from '../test/fixture.ts'
+import { JOBS, changesIn, createWorktree, gitObjectEnvironmentFor, hermeticGitEnv, prepareSharedRefGuard, reapTestProcess, writingFailoverRefusal } from '../test/fixture.ts'
 
 describe("the sandbox an agent is launched with", () => {
 test('shared-ref guard recognition is independent of the running checkout path', () => {
@@ -91,6 +91,7 @@ test('shared-ref guard recognition is independent of the running checkout path',
           }),
           stdout: 'pipe', stderr: 'pipe',
         })
+        try {
         // The loaded reproduction reached 4,983 ms. Three times that measured
         // worst case keeps this deadline a hang guard; the sentinel decides pass.
         const deadline = Date.now() + 3 * 4_983
@@ -99,6 +100,9 @@ test('shared-ref guard recognition is independent of the running checkout path',
         expect(existsSync(hookDir)).toBe(false)
         child.kill('SIGKILL')
         expect(await child.exited).not.toBe(0)
+        } finally {
+          await reapTestProcess(child.pid)
+        }
 
         const guardEnv = prepareSharedRefGuard(tree.path, `refs/heads/${tree.branch}`)
         const forbidden = git(tree.path, [
