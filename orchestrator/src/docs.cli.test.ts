@@ -275,6 +275,7 @@ describe('scoped operator docs', () => {
       })
       const findings = checkDoc([
         '`scripts/tracked.ts` `scripts/present.ts` `scripts/<x>.ts` `dist/generated.js`',
+        '`scripts/tracked.ts:1-2` `scripts/worktree`',
         '`orch doc` `orch nosuch` `orch do understand` `orch do fake-job`',
         '`bun run check` `bun run nosuch`',
       ].join('\n'), { repoRoot: repo })

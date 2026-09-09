@@ -28,6 +28,10 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { CONCERNS, PLATFORM_SLUG } from '../shared/brand.ts'
+import {
+  CANON_REFERENCE_EXEMPTIONS,
+  canonReferencePath,
+} from '../shared/canon-references.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 
@@ -56,22 +60,9 @@ const BUILT = /(^|\/)(?:dist|build)(?:\/|$)/
 
 /**
  * Named, with a reason, because a heuristic here is how the gate would stop
- * checking something and stay green. Adding a fourth means writing down why.
+ * checking something and stay green. Adding an entry means writing down why.
  */
-export const EXEMPTIONS: { path: string; reason: string }[] = [
-  {
-    path: 'orchestrator/orch.db',
-    reason: 'gitignored runtime store; canon must name it, and it is per-machine state rather than a repository artifact.',
-  },
-  {
-    path: 'scripts/worktree',
-    reason: "another project's CLI, referenced as an example of how those projects invoke their own worktree tooling.",
-  },
-  {
-    path: 'scripts/sync/main',
-    reason: "another project's sync fabric, same reason.",
-  },
-]
+export const EXEMPTIONS = CANON_REFERENCE_EXEMPTIONS
 
 const EXEMPT = new Set(EXEMPTIONS.map((e) => e.path))
 
@@ -127,8 +118,9 @@ export function checkBody(file: string, body: string, ctx: Ctx): CheckResult {
     for (const m of raw.matchAll(/`([^`]+)`/g)) {
       for (const claimed of claimedPaths(m[1]!)) {
         examined++
-        if (BUILT.test(claimed) || EXEMPT.has(claimed)) continue
-        const root = globRoot(claimed)
+        const referencePath = canonReferencePath(claimed)
+        if (BUILT.test(referencePath) || EXEMPT.has(referencePath)) continue
+        const root = globRoot(referencePath)
         if (!root || ctx.tracked(root)) continue
         findings.push({
           file,
