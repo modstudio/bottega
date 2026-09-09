@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from 'bun:test'
+import { afterAll, describe, expect, spyOn, test } from 'bun:test'
 import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync, utimesSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -8,9 +8,16 @@ const worktreeMod = await import('./worktree.ts')
 
 describe('sweep only reclaims old orch-owned orphan worktrees', () => {
   const CLI = new URL('cli.ts', import.meta.url).pathname
+  const processInventoryBin = mkdtempSync(join(tmpdir(), 'orch-empty-process-inventory-'))
+  writeFileSync(join(processInventoryBin, 'ps'), '#!/bin/sh\nexit 0\n')
+  chmodSync(join(processInventoryBin, 'ps'), 0o755)
+  afterAll(() => rmSync(processInventoryBin, { recursive: true, force: true }))
   const orch = (...args: string[]) => {
     const p = Bun.spawnSync([process.execPath, CLI, ...args], {
-      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+      env: {
+        ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+        PATH: `${processInventoryBin}:${process.env.PATH ?? ''}`,
+      },
       stdout: 'pipe', stderr: 'pipe',
     })
     return {
@@ -21,7 +28,10 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
   }
   const orchWithEnv = (env: Record<string, string>, ...args: string[]) => {
     const p = Bun.spawnSync([process.execPath, CLI, ...args], {
-      env: { ...process.env, ...env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+      env: {
+        ...process.env, ...env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+        PATH: `${processInventoryBin}:${env.PATH ?? process.env.PATH ?? ''}`,
+      },
       stdout: 'pipe', stderr: 'pipe',
     })
     return {

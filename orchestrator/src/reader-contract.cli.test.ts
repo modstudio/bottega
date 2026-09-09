@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import {
   AGENTS, JOBS, UNEVIDENCED_DELIVERABLE_ERROR, db, dir, hermeticGitEnv,
-  jobTimeoutCeilingMinutes, listRunArtifacts, resolveJobTimeoutMs, runArtifactsDir,
+  installTestProcessInventory, jobTimeoutCeilingMinutes, listRunArtifacts, resolveJobTimeoutMs, runArtifactsDir,
   readDispatchState, runJob, upsertProject,
 } from '../test/fixture.ts'
 
@@ -267,6 +267,7 @@ process.stdout.write(${JSON.stringify(JSON.stringify({
     const restore = stubCodex(`process.stdout.write(${JSON.stringify(readerReply([
       { name: 'x', status: 'delivered', content: 'named evidence' },
     ], ['missing-evidence.txt']))})\n`)
+    installTestProcessInventory({ ascertainable: true, rows: [] })
     try {
       let runId: number | undefined
       try {
@@ -299,6 +300,7 @@ process.stdout.write(${JSON.stringify(JSON.stringify({
       expect(shown.exitCode).toBe(1)
       expect(shown.stderr.toString()).toContain(runArtifactsDir(runId!))
     } finally {
+      installTestProcessInventory(null)
       restore()
       rmSync(repo, { recursive: true, force: true })
     }
