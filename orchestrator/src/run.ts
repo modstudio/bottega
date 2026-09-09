@@ -85,8 +85,8 @@ import {
 import { appendRunEvent, teeTransportEvents } from './events.ts'
 import { checkpointRun, DEFAULT_CHECKPOINT_MINUTES, latestCheckpoint, recordFailedIdlePreservation } from './checkpoint.ts'
 import {
-  formatIdleKillError, idleKillMayProceed, idlePollMs, runHasLiveDescendants, sampleProcesses,
-  shouldIdleKill, terminateProcessGroup,
+  formatIdleKillError, idleKillMayProceed, idlePollMs, isGroupKillablePgid, runHasLiveDescendants,
+  sampleProcesses, shouldIdleKill, terminateProcessGroup,
 } from './idle-kill.ts'
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
@@ -2037,14 +2037,25 @@ function attemptCloseOutRun(
     pid: processRow.pid, ppid: processRow.ppid, pgid: processRow.pgid, cpu: 0, state: '',
   }))
   const sample = () => processSamples
+  // The caller's own process group is never a vendor tree. A stub or CLI that
+  // did not setsid inherits the coordinator pgid; after it exits that group
+  // still has live members (this process). terminateProcessGroup already
+  // refuses that pgid; close-out must too, or every finished run retains.
+  const selfPgid = processSamples.find((row) => row.pid === process.pid)?.pgid ?? null
+  const vendorGroupAlive = (pgid: number | null | undefined): boolean => {
+    if (pgid == null || pgid <= 1) return false
+    if (selfPgid !== null && !isGroupKillablePgid(pgid, selfPgid)) return false
+    return runHasLiveDescendants([], [], { sample }, pgid)
+  }
   // A database row cannot observe a grandchild born after the T0 census and
   // reparented when its wrapper died. Re-sample the process table and retain
   // the tree when the recorded vendor, a captured process group, or a
   // persisted vendor pgid still has a live member. Close-out does not signal
   // unverified leftovers; the monitor reports them.
   const treeStillAlive = runHasLiveDescendants(
-    agentPids, options.extraPids ?? [], { sample }, options.pgid ?? null,
-  ) || recordedPgids.some((pgid) => runHasLiveDescendants([], [], { sample }, pgid))
+    agentPids, options.extraPids ?? [], { sample },
+    vendorGroupAlive(options.pgid) ? options.pgid : null,
+  ) || recordedPgids.some((pgid) => vendorGroupAlive(pgid))
   if (treeStillAlive) return {
     runId: row.root_id, worktree: treePath, outcome: 'live',
     detail: 'process tree still alive',

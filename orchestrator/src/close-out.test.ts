@@ -276,6 +276,7 @@ test('a recorded vendor pgid retains the tree after the vendor pid is gone', () 
     db().query('UPDATE run SET worktree=?, branch=?, agent_pid=?, agent_pgid=? WHERE id=?')
       .run(f.tree.path, f.tree.branch, 4_194_304, sleeper.pid, f.id)
     installTestProcessInventory({ ascertainable: true, rows: [
+      { pid: process.pid, ppid: 1, pgid: process.pid, command: 'bun test' },
       { pid: sleeper.pid, ppid: 1, pgid: sleeper.pid, command: 'sleep 30' },
     ] })
     const result = closeOutRun(f.id, { intent: 'explicit' })
@@ -287,6 +288,20 @@ test('a recorded vendor pgid retains the tree after the vendor pid is gone', () 
     sleeper.kill()
     rmSync(f.repo, { recursive: true, force: true })
   }
+})
+
+test("a recorded vendor pgid that is the coordinator's process group does not retain the tree", () => {
+  const f = fixture()
+  try {
+    db().query('UPDATE run SET worktree=?, branch=?, agent_pid=?, agent_pgid=? WHERE id=?')
+      .run(f.tree.path, f.tree.branch, 4_194_304, process.pid, f.id)
+    installTestProcessInventory({ ascertainable: true, rows: [
+      { pid: process.pid, ppid: 1, pgid: process.pid, command: 'bun test' },
+    ] })
+    const result = closeOutRun(f.id, { intent: 'explicit' })
+    expect(result.outcome).toBe('released')
+    expect(existsSync(f.tree.path)).toBe(false)
+  } finally { rmSync(f.repo, { recursive: true, force: true }) }
 })
 
 test("the Stop hook's non-blocking close-out command parses and runs", () => {
