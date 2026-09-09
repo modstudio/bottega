@@ -32,7 +32,7 @@ function fixture(orchBody: string) {
 function landingDb(root: string, rows: Array<{ id: number; session: string; status: string }>) {
   const db = new Database(join(root, 'orchestrator', 'orch.db'))
   db.run(`CREATE TABLE landing (id INTEGER PRIMARY KEY, project TEXT NOT NULL, branch TEXT NOT NULL,
-    status TEXT NOT NULL, session_id TEXT, started_at TEXT NOT NULL)`)
+    status TEXT NOT NULL, session_id TEXT, started_at TEXT NOT NULL, finished_at TEXT)`)
   for (const row of rows) {
     db.run('INSERT INTO landing (id, project, branch, status, session_id, started_at) VALUES (?,?,?,?,?,?)',
       [row.id, PLATFORM_SLUG, 'b', row.status, row.session, '2026-09-08T00:00:00Z'])
@@ -170,8 +170,155 @@ describe('heartbeat dispatch reminder', () => {
 
 describe('heartbeat landing visibility', () => {
   const noRuns = 'exit 0'
+  const heartbeatOrch = `
+if [ "$1" = "inbox" ]; then
+  echo '[]'
+elif [ "$1" = "runs" ]; then
+  echo '{"id":1,"job":"implement","agent":"codex","status":"ok","session_id":"other","started_at":"2026-09-08T00:00:00Z","latency_ms":1}'
+elif [ "$1" = "monitor" ]; then
+  echo '[]'
+else
+  exit 20
+fi`
 
-  test('does NOT block a landing-only session, because no watcher can satisfy it', () => {
+  test('heartbeat reports WAITING with the branch for landing-only work, then clears silently', async () => {
+    const f = fixture(heartbeatOrch)
+    const dbPath = landingDb(f.root, [{ id: 21, session: 'landing-watch', status: 'running' }])
+    const store = new Database(dbPath)
+    store.run('UPDATE landing SET branch=?, started_at=? WHERE id=21',
+      ['DEV-423-landing-watch', new Date(Date.now() - 65_000).toISOString()])
+    const p = Bun.spawn([f.heartbeat, 'landing-watch', '0.2', '5'], {
+      stdout: 'pipe', stderr: 'pipe',
+      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.05' },
+    })
+    const output = new Response(p.stdout).text()
+    await Bun.sleep(500)
+    store.run("UPDATE landing SET status='landed', finished_at=? WHERE id=21", [new Date().toISOString()])
+    store.close()
+    const out = await output
+    expect(await p.exited).toBe(0)
+    expect(out).toContain('WAITING - 0 run(s) and 1 landing(s)')
+    expect(out).toContain('21/DEV-423-landing-watch running 1m')
+    expect(out.match(/WAITING/g)).toHaveLength(1)
+    expect(out).not.toContain('CLEAR')
+    expect(out).not.toContain('HEARTBEAT ENDED')
+  })
+
+  test('heartbeat emits a landing refusal exactly once', async () => {
+    const f = fixture(heartbeatOrch)
+    const dbPath = landingDb(f.root, [
+      { id: 31, session: 'landing-refusal', status: 'running' },
+      { id: 32, session: 'landing-refusal', status: 'queued' },
+    ])
+    const store = new Database(dbPath)
+    const started = new Date(Date.now() - 2_000).toISOString()
+    store.run('UPDATE landing SET branch=?, started_at=? WHERE id=31', ['DEV-423-refused', started])
+    store.run('UPDATE landing SET branch=?, started_at=? WHERE id=32', ['DEV-423-still-live', started])
+    const p = Bun.spawn([f.heartbeat, 'landing-refusal', '0.2', '4'], {
+      stdout: 'pipe', stderr: 'pipe',
+      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.05' },
+    })
+    const output = new Response(p.stdout).text()
+    await Bun.sleep(500)
+    store.run("UPDATE landing SET status='refused', finished_at=? WHERE id=31", [new Date().toISOString()])
+    store.close()
+    const out = await output
+    expect(await p.exited).toBe(0)
+    expect(out.match(/LANDING-REFUSED 31\/DEV-423-refused/g)).toHaveLength(1)
+    expect(out).toContain("inspect with 'orch land --status'")
+  })
+
+  test('a queued landing becoming rebase-required emits once and then clears silently', async () => {
+    const f = fixture(heartbeatOrch)
+    const dbPath = landingDb(f.root, [{ id: 41, session: 'landing-rebase', status: 'queued' }])
+    const store = new Database(dbPath)
+    store.run('UPDATE landing SET branch=?, started_at=? WHERE id=41',
+      ['DEV-423-needs-rebase', new Date(Date.now() - 2_000).toISOString()])
+    const p = Bun.spawn([f.heartbeat, 'landing-rebase', '0.1', '8'], {
+      stdout: 'pipe', stderr: 'pipe',
+      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.02' },
+    })
+    const output = new Response(p.stdout).text()
+    await Bun.sleep(500)
+    store.run("UPDATE landing SET status='rebase_required' WHERE id=41")
+    store.close()
+    const out = await output
+    expect(await p.exited).toBe(0)
+    expect(out.match(/WAITING/g)).toHaveLength(1)
+    expect(out.match(/LANDING-REBASE-REQUIRED 41\/DEV-423-needs-rebase/g)).toHaveLength(1)
+    expect(out).not.toContain('CLEAR')
+    expect(out).not.toContain('HEARTBEAT ENDED')
+  })
+
+  test('arming against an already rebase-required landing emits once and exits', async () => {
+    const f = fixture(heartbeatOrch)
+    const dbPath = landingDb(f.root, [{ id: 42, session: 'landing-late-rebase', status: 'rebase_required' }])
+    const store = new Database(dbPath)
+    store.run('UPDATE landing SET branch=?, started_at=? WHERE id=42',
+      ['DEV-423-already-needs-rebase', new Date(Date.now() - 2_000).toISOString()])
+    store.close()
+    const p = Bun.spawn([f.heartbeat, 'landing-late-rebase', '0.1', '3'], {
+      stdout: 'pipe', stderr: 'pipe',
+      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.02' },
+    })
+    const out = await new Response(p.stdout).text()
+    expect(await p.exited).toBe(0)
+    expect(out.match(/LANDING-REBASE-REQUIRED 42\/DEV-423-already-needs-rebase/g)).toHaveLength(1)
+    expect(out).not.toContain('WAITING')
+    expect(out).not.toContain('HEARTBEAT ENDED')
+  })
+
+  test('a persistent rebase-required landing does not re-emit while other work remains live', async () => {
+    const f = fixture(heartbeatOrch)
+    const dbPath = landingDb(f.root, [
+      { id: 43, session: 'landing-persistent-rebase', status: 'rebase_required' },
+      { id: 44, session: 'landing-persistent-rebase', status: 'running' },
+    ])
+    const store = new Database(dbPath)
+    store.run('UPDATE landing SET branch=? WHERE id=43', ['DEV-423-persistent-rebase'])
+    store.close()
+    const p = Bun.spawn([f.heartbeat, 'landing-persistent-rebase', '0.1', '3'], {
+      stdout: 'pipe', stderr: 'pipe',
+      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.02', KEEPALIVE_TICKS: '20' },
+    })
+    const out = await new Response(p.stdout).text()
+    expect(await p.exited).toBe(0)
+    expect(out.match(/LANDING-REBASE-REQUIRED 43\/DEV-423-persistent-rebase/g)).toHaveLength(1)
+    expect(out.match(/WAITING/g)).toHaveLength(1)
+  })
+
+  test('an install-failed landing emits once as a terminal failure and exits', async () => {
+    const f = fixture(heartbeatOrch)
+    const dbPath = landingDb(f.root, [{ id: 45, session: 'landing-install-failed', status: 'install_failed' }])
+    const store = new Database(dbPath)
+    store.run('UPDATE landing SET branch=?, started_at=?, finished_at=? WHERE id=45', [
+      'DEV-423-install-failed', new Date(Date.now() - 2_000).toISOString(), new Date().toISOString(),
+    ])
+    store.close()
+    const p = Bun.spawn([f.heartbeat, 'landing-install-failed', '0.1', '3'], {
+      stdout: 'pipe', stderr: 'pipe',
+      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.02' },
+    })
+    const out = await new Response(p.stdout).text()
+    expect(await p.exited).toBe(0)
+    expect(out.match(/LANDING-INSTALL-FAILED 45\/DEV-423-install-failed/g)).toHaveLength(1)
+    expect(out).not.toContain('WAITING')
+    expect(out).not.toContain('HEARTBEAT ENDED')
+  })
+
+  test('heartbeat exits silently when this session has no runs or landings', async () => {
+    const f = fixture(heartbeatOrch)
+    const dbPath = landingDb(f.root, [{ id: 46, session: 'somebody-else', status: 'running' }])
+    const p = Bun.spawn([f.heartbeat, 'landing-clear', '0.1', '3'], {
+      stdout: 'pipe', stderr: 'pipe',
+      env: { ...process.env, ORCH_DB: dbPath, NOTICE_TIMEOUT_SECONDS: '0.02' },
+    })
+    const out = await new Response(p.stdout).text()
+    expect(await p.exited).toBe(0)
+    expect(out).toBe('')
+  })
+
+  test('blocks a landing-only session until its heartbeat is armed', () => {
     const f = fixture(noRuns)
     const db = landingDb(f.root, [{ id: 11, session: 'land-only', status: 'running' }])
     const result = invoke(f.guard, { session_id: 'land-only' }, {
@@ -179,18 +326,19 @@ describe('heartbeat landing visibility', () => {
     })
     expect(result.exitCode).toBe(0)
     const out = JSON.parse(result.stdout.toString())
-    expect(out.decision).toBeUndefined()
-    expect(out.systemMessage).toContain('No watcher covers landings')
+    expect(out.decision).toBe('block')
+    expect(out.reason).toContain('0 live orch runs and 1 landing')
+    expect(out.reason).toContain(`${f.heartbeat} land-only`)
   })
 
-  test('reports the landing even when a heartbeat IS armed, since it cannot see it', () => {
+  test('is silent for a landing-only session when its heartbeat is armed', () => {
     const f = fixture(noRuns)
     const db = landingDb(f.root, [{ id: 12, session: 'land-armed', status: 'running' }])
     const result = invoke(f.guard, { session_id: 'land-armed' }, {
       TMPDIR: join(f.root, 'tmp'), ORCH_DB: db,
       ORCH_HEARTBEAT_PROCESS_LIST: `42 /bin/bash ${f.heartbeat} land-armed 60 60`,
     })
-    expect(JSON.parse(result.stdout.toString()).systemMessage).toContain('landing')
+    expect(result.stdout.toString()).toBe('')
   })
 
   test('a landing alongside live runs still blocks, and names both', () => {
@@ -205,15 +353,13 @@ describe('heartbeat landing visibility', () => {
     expect(out.reason).toContain('1 landing')
   })
 
-  test('tells a landing dispatch NOT to arm the heartbeat', () => {
+  test('tells a detached landing dispatch to arm the heartbeat', () => {
     const result = invoke(remind, {
       session_id: 'land-advice',
       tool_input: { command: `${join(process.cwd(), 'bin', 'orch')} land DEV-405-branch` },
     }, { ORCH_HEARTBEAT_PROCESS_LIST: '1 /sbin/launchd' })
     const context = JSON.parse(result.stdout.toString()).hookSpecificOutput.additionalContext
-    expect(context).toContain('NO watcher covers it')
-    expect(context).toContain('orch land --status')
-    expect(context).not.toContain('Arm under Monitor')
+    expect(context).toContain(`Arm under Monitor from the main checkout: ${heartbeat} land-advice`)
   })
 
   test('blocks when the session has a live landing and no runs at all', () => {
@@ -224,8 +370,8 @@ describe('heartbeat landing visibility', () => {
     })
     expect(result.exitCode).toBe(0)
     const decision = JSON.parse(result.stdout.toString())
-    expect(decision.decision).toBeUndefined()
-    expect(decision.systemMessage).toContain('live landing')
+    expect(decision.decision).toBe('block')
+    expect(decision.reason).toContain('1 landing')
   })
 
   test('a queued landing counts as live, not only a running one', () => {
@@ -234,7 +380,7 @@ describe('heartbeat landing visibility', () => {
     const result = invoke(f.guard, { session_id: 'land-queued' }, {
       TMPDIR: join(f.root, 'tmp'), ORCH_DB: db, ORCH_HEARTBEAT_PROCESS_LIST: '1 /sbin/launchd',
     })
-    expect(JSON.parse(result.stdout.toString()).systemMessage).toContain('live landing')
+    expect(JSON.parse(result.stdout.toString()).decision).toBe('block')
   })
 
   test('another session\'s landing is not this session\'s work', () => {
@@ -263,7 +409,9 @@ describe('heartbeat landing visibility', () => {
     const result = invoke(f.guard, { session_id: 'land-unknown' }, {
       TMPDIR: join(f.root, 'tmp'), ORCH_DB: corrupt, ORCH_HEARTBEAT_PROCESS_LIST: '1 /sbin/launchd',
     })
-    expect(JSON.parse(result.stdout.toString()).systemMessage).toContain('store unreadable')
+    const out = JSON.parse(result.stdout.toString())
+    expect(out.decision).toBe('block')
+    expect(out.reason).toContain('store unreadable')
   })
 
   test('an absent landing store is silence, not a block', () => {
@@ -283,7 +431,7 @@ describe('heartbeat landing visibility', () => {
       tool_input: { command: `${join(process.cwd(), 'bin', 'orch')} land DEV-405-branch` },
     }, { ORCH_HEARTBEAT_PROCESS_LIST: '1 /sbin/launchd' })
     expect(JSON.parse(result.stdout.toString()).hookSpecificOutput.additionalContext)
-      .toContain('NO watcher covers it')
+      .toContain(`Arm under Monitor from the main checkout: ${heartbeat} land-remind`)
   })
 
   test('is silent for orch land --wait, --status and --drain', () => {

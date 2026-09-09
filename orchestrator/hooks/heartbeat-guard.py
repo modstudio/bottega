@@ -158,43 +158,27 @@ def main() -> int:
 
         arm = f"{heartbeat_path()} {sid}"
 
-        # Only RUNS are demandable. orch-heartbeat.sh computes its state from the
-        # run table alone, so against a landing-only session it finds nothing to
-        # watch and exits immediately -- arming it cannot satisfy a block, and
-        # demanding one asks for something no available watcher provides. Report
-        # the landings instead: the operator learns work is live and unwatched,
-        # which is the whole point, without being handed an instruction that
-        # cannot be carried out. Runs keep the block, because for those the
-        # heartbeat does work and staying armed is achievable.
-        if not run_ids:
-            count = len(landings)
-            sys.stdout.write(json.dumps({"systemMessage": (
-                f"{count} live landing{'s' if count != 1 else ''} for this session"
-                f"{'' if landing_ids is not None else ' (landing store unreadable; assuming live)'}"
-                ". No watcher covers landings -- orch-heartbeat.sh reads the run table only, so"
-                " arming it against a landing-only session exits at once. Track it with"
-                " `orch land --status` from the project root."
-            )}) + "\n")
-            return 0
-
         armed = heartbeat_armed(sid)
         if armed is not False:
             return 0
         count = len(run_ids)
-        trailer = (
-            f" {len(landings)} landing{'s' if len(landings) != 1 else ''} are also live and"
-            " unwatched by any heartbeat." if landings else ""
+        landing_count = len(landings)
+        work = (
+            f"{count} live orch run{'s' if count != 1 else ''}"
+            f" and {landing_count} landing{'s' if landing_count != 1 else ''}"
         )
-        if first_observation(sid, run_ids):
+        if landing_ids is None:
+            work += " (landing store unreadable; assuming live)"
+        if first_observation(sid, [*run_ids, *[f"landing:{item}" for item in landings]]):
             reason = (
-                f"{count} live orch run{'s' if count != 1 else ''} for this session have no "
-                f"heartbeat. Arm under Monitor from the main checkout: {arm}{trailer}"
+                f"{work} for this session have no heartbeat. "
+                f"Arm under Monitor from the main checkout: {arm}"
             )
             sys.stdout.write(json.dumps({"decision": "block", "reason": reason}) + "\n")
         else:
             warning = (
-                f"Allowing stop after the one-shot heartbeat guard: {count} live orch "
-                f"run{'s' if count != 1 else ''} remain unarmed. Arm under Monitor: {arm}{trailer}"
+                f"Allowing stop after the one-shot heartbeat guard: {work} remain unarmed. "
+                f"Arm under Monitor: {arm}"
             )
             sys.stdout.write(json.dumps({"systemMessage": warning}) + "\n")
     except Exception:

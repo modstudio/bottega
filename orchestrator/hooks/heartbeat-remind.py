@@ -68,9 +68,7 @@ def detached_dispatch(command: object):
             args.append(arg)
         if verb == "do":
             return "do" if "--follow" not in args else None
-        # `orch land` enqueues and returns exactly as `orch do` detaches, and a
-        # landing is the work least visible to everything else: it has no row in
-        # the run table, so nothing but this reminder will mention it. --wait
+        # `orch land` enqueues and returns exactly as `orch do` detaches. --wait
         # blocks and needs no watcher; --status and --drain dispatch nothing.
         return "land" if not ({"--wait", "--status", "--drain"} & set(args)) else None
     return None
@@ -83,23 +81,6 @@ def main() -> int:
         command = payload.get("tool_input", {}).get("command")
         kind = detached_dispatch(command)
         if not isinstance(sid, str) or not sid or kind is None:
-            return 0
-        if kind == "land":
-            # Deliberately NOT an instruction to arm the heartbeat. It reads the
-            # run table only, so against a landing it finds nothing and exits at
-            # once -- telling the model to arm it would be advice that cannot be
-            # carried out, and it would then face a stop guard it cannot satisfy.
-            sys.stdout.write(json.dumps({
-                "hookSpecificOutput": {
-                    "hookEventName": "PostToolUse",
-                    "additionalContext": (
-                        "This landing runs detached and NO watcher covers it: orch-heartbeat.sh"
-                        " reads the run table only, and a landing has no row there. Do not arm it"
-                        " for this; check `orch land --status` from the project root before ending"
-                        " the turn."
-                    ),
-                }
-            }) + "\n")
             return 0
         armed = heartbeat_armed(sid)
         if armed is not False:

@@ -9,8 +9,8 @@
 # reason this exists: it collapses to three states, one of which is actionable.
 #
 #   BLOCKED  a worker asked a question; the session must rule and resume it
-#   WAITING  runs still going, elapsed shown so a hung one is visible
-#   CLEAR    nothing running and nothing asked -> exits SILENTLY
+#   WAITING  runs or landings still going, elapsed shown so a hung one is visible
+#   CLEAR    no runs, no landings, and nothing asked -> exits SILENTLY
 #
 # EMITS ONLY ON STATE CHANGE, plus a keepalive every KEEPALIVE_TICKS.
 #
@@ -22,8 +22,9 @@
 # and a lower interval is what actually gets a blocked worker noticed sooner -
 # the poll can be frequent precisely because only transitions are expensive.
 #
-# The state key is (asking-count, run-count, sorted run ids). A run finishing or
-# a new question arriving changes it; time passing does not.
+# The state key is (asking-count, run-count, sorted run ids, landing-count,
+# sorted landing ids). Work appearing or terminalising changes it; time passing
+# does not.
 #
 # CLEAR is silent so this stays cheap to run often: the answer to "should this
 # session still be waiting" is only worth a notification when it is yes, or when
@@ -58,6 +59,7 @@ NOTICE_TIMEOUT_SECONDS="${NOTICE_TIMEOUT_SECONDS:-5}"
 prev_key=""
 since_emit=0
 reported_ids=""
+reported_landing_ids=""
 
 for ((i = 1; i <= MAX; i++)); do
   if [ ! -d "$ROOT" ]; then
@@ -186,13 +188,75 @@ for event in events:
     print("EVENT", *event, sep="\t")
 ') ; runs_parse_rc=$?
 
+  # A landing is deliberately not a run, but it is live work owned by the same
+  # session. Read only the small session slice directly from the store; this is
+  # part of health computation and therefore remains ahead of all supplemental
+  # monitor-notice work (DEV-390).
+  landings_observed=$(SID="$SID" ORCH_DB_PATH="${ORCH_DB:-$ROOT/orch.db}" python3 -c '
+import datetime, json, os, sqlite3, sys
+path = os.environ["ORCH_DB_PATH"]
+if not os.path.exists(path):
+    print("STATE", 0, "", "", sep="\t")
+    raise SystemExit(0)
+try:
+    connection = sqlite3.connect("file:" + path + "?mode=ro", uri=True, timeout=2)
+    rows = connection.execute(
+        "SELECT id, branch, status, started_at, finished_at FROM landing "
+        "WHERE session_id = ? AND status IN "
+        "(\"queued\",\"running\",\"refused\",\"rebase_required\",\"install_failed\") ORDER BY id",
+        (os.environ["SID"],),
+    ).fetchall()
+finally:
+    try:
+        connection.close()
+    except Exception:
+        pass
+now = datetime.datetime.now(datetime.timezone.utc)
+live, ids, events = [], [], []
+for landing_id, branch, status, started_at, finished_at in rows:
+    if not isinstance(landing_id, int) or not all(isinstance(v, str) for v in (branch, status, started_at)):
+        raise SystemExit(2)
+    branch = branch.replace("\t", " ").replace("\r", " ").replace("\n", " ")
+    try:
+        started = datetime.datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+    except Exception:
+        raise SystemExit(2)
+    if status in ("queued", "running"):
+        elapsed = max(0, int((now - started).total_seconds()))
+        age = "%dm%02ds" % (elapsed // 60, elapsed % 60)
+        ids.append(str(landing_id))
+        live.append("%s/%s %s %s" % (landing_id, branch, status, age))
+    elif status in ("refused", "rebase_required", "install_failed"):
+        # rebase_required deliberately has no finished_at. It is terminal for
+        # this watcher, though, so announce it once without putting it in the
+        # live state key (where it would remain forever). install_failed does
+        # have finished_at and, like refused, is a terminal failure the owning
+        # session must learn about.
+        terminal_at = finished_at if isinstance(finished_at, str) else (
+            now.isoformat() if status == "rebase_required" and finished_at is None else None
+        )
+        if terminal_at is None:
+            raise SystemExit(2)
+        try:
+            finished = datetime.datetime.fromisoformat(terminal_at.replace("Z", "+00:00"))
+            elapsed = max(0, round((finished - started).total_seconds()))
+            duration = "%dm%02ds" % (elapsed // 60, elapsed % 60) if elapsed >= 60 else "%.1fs" % elapsed
+        except Exception:
+            raise SystemExit(2)
+        events.append((str(landing_id), branch, status, duration))
+print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
+for event in events:
+    print("EVENT", *event, sep="\t")
+' 2>/dev/null); landings_parse_rc=$?
+
   if [ "$inbox_rc" -ne 0 ] || [ "$runs_rc" -ne 0 ] || \
-     [ "$inbox_parse_rc" -ne 0 ] || [ "$runs_parse_rc" -ne 0 ]; then
+     [ "$inbox_parse_rc" -ne 0 ] || [ "$runs_parse_rc" -ne 0 ] || \
+     [ "$landings_parse_rc" -ne 0 ]; then
     key="degraded"
     since_emit=$((since_emit + 1))
     if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
       prev_key="$key"; since_emit=0
-      echo "[$(date +%H:%M:%S)] DEGRADED - orch observation failed (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc). State unknown; NOT concluding clear. Inspect orch diagnostics directly."
+      echo "[$(date +%H:%M:%S)] DEGRADED - orch observation failed (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc, landings parse=$landings_parse_rc). State unknown; NOT concluding clear. Inspect orch diagnostics directly."
     fi
     sleep "$INTERVAL"; continue
   fi
@@ -203,6 +267,11 @@ for event in events:
   n=${state%%$'\t'*}; rest=${state#*$'\t'}
   detail=${rest%%$'\t'*}; ids=${rest#*$'\t'}
   n=${n:-0}
+  landing_state=${landings_observed%%$'\n'*}
+  landing_state=${landing_state#*$'\t'}
+  landing_n=${landing_state%%$'\t'*}; landing_rest=${landing_state#*$'\t'}
+  landing_detail=${landing_rest%%$'\t'*}; landing_ids=${landing_rest#*$'\t'}
+  landing_n=${landing_n:-0}
 
   while IFS=$'\t' read -r record id recent status job agent failure_kind latency; do
     [ "$record" = "EVENT" ] || continue
@@ -220,20 +289,40 @@ for event in events:
     fi
   done <<< "$observed"
 
-  key="$asking|$n|$ids"
+  while IFS=$'\t' read -r record id branch status duration; do
+    [ "$record" = "EVENT" ] || continue
+    case " $reported_landing_ids " in
+      *" $id "*) continue ;;
+    esac
+    reported_landing_ids="$reported_landing_ids $id"
+    case "$status" in
+      refused) event="LANDING-REFUSED" ;;
+      rebase_required) event="LANDING-REBASE-REQUIRED" ;;
+      install_failed) event="LANDING-INSTALL-FAILED" ;;
+      *) continue ;;
+    esac
+    echo "$event $id/$branch $duration; inspect with 'orch land --status'"
+  done <<< "$landings_observed"
+
+  key="$asking|$n|$ids|$landing_n|$landing_ids"
   since_emit=$((since_emit + 1))
   should_exit=0
   if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
     prev_key="$key"; since_emit=0
     ts=$(date +%H:%M:%S)
     if [ "$asking" -gt 0 ]; then
-      echo "[$ts] BLOCKED - $asking question(s) waiting on you: run 'orch inbox', then 'orch answer <id>'. $n run(s) live."
-    elif [ "$n" -gt 0 ]; then
-      echo "[$ts] WAITING - $n run(s), nothing needed from you: $detail"
+      echo "[$ts] BLOCKED - $asking question(s) waiting on you: run 'orch inbox', then 'orch answer <id>'. $n run(s) and $landing_n landing(s) live."
+    elif [ "$n" -gt 0 ] || [ "$landing_n" -gt 0 ]; then
+      combined_detail="$detail"
+      if [ -n "$landing_detail" ]; then
+        [ -z "$combined_detail" ] || combined_detail="$combined_detail | "
+        combined_detail="$combined_detail$landing_detail"
+      fi
+      echo "[$ts] WAITING - $n run(s) and $landing_n landing(s), nothing needed from you: $combined_detail"
     else
       should_exit=1
     fi
-  elif [ "$asking" -eq 0 ] && [ "$n" -eq 0 ]; then
+  elif [ "$asking" -eq 0 ] && [ "$n" -eq 0 ] && [ "$landing_n" -eq 0 ]; then
     should_exit=1
   fi
 
