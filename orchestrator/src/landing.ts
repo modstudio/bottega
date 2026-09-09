@@ -10,7 +10,7 @@ import { projectAt, projectByName, type Project } from './projects.ts'
 import { classifyReviewTier, diffNumstat } from './review-tier.ts'
 import {
   contentTree, prepareSharedRefGuard, projectLockState, repoRootOf, withProjectLock,
-  withWorktreeLease, targetGitEnvironment, inspectionGitEnv, scrubbedGitEnv,
+  withWorktreeLease, targetGitEnvironment, inspectionGitEnv,
   type SharedRefGuardEnvironment,
 } from './worktree.ts'
 
@@ -2146,11 +2146,11 @@ function rebaseBranchesOntoTrunk(
       .split('\n').filter(Boolean)
     for (const commit of commits) {
       const picked = Bun.spawnSync(['git', 'cherry-pick', commit], {
-        cwd: worktree, env: scrubbedGitEnv(), stdout: 'pipe', stderr: 'pipe',
+        cwd: worktree, env: targetGitEnvironment(worktree), stdout: 'pipe', stderr: 'pipe',
       })
       if (picked.exitCode !== 0) {
         Bun.spawnSync(['git', 'cherry-pick', '--abort'], {
-          cwd: worktree, env: scrubbedGitEnv(), stdout: 'pipe', stderr: 'pipe',
+          cwd: worktree, env: targetGitEnvironment(worktree), stdout: 'pipe', stderr: 'pipe',
         })
         throw new MergeGroupMemberFailure(branch, namedError(
           `merge-group cherry-pick of ${commit} from ${branch} failed: ${picked.stderr.toString().trim()}`,

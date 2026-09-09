@@ -133,6 +133,12 @@ export function worktreeGitEnvironment(cwd: string): WorktreeObjectEnvironment |
 /** Drop a worker's repository routing before deriving routing for the target checkout. */
 export function targetGitEnvironment(cwd: string): NodeJS.ProcessEnv {
   const env = scrubbedGitEnv()
+  // Operational git must not inherit a worker GIT_CONFIG_GLOBAL (hooksPath,
+  // worker identity). Delete rather than /dev/null: landing commits keep
+  // the user's ~/.gitconfig identity.
+  delete env.GIT_CONFIG_GLOBAL
+  delete env.GIT_CONFIG_SYSTEM
+  delete env.GIT_CONFIG_NOSYSTEM
   return { ...env, ...worktreeGitEnvironment(cwd) }
 }
 
