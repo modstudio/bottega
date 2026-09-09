@@ -286,6 +286,24 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
   conditions.push(...deadRunningProcessConditions(clock))
   conditions.push(...idleRunConditions(clock))
 
+  const closeOuts = database.query(
+    `SELECT id, close_out_outcome, close_out_detail, close_out_attempted_at, session_id
+       FROM run
+      WHERE status IN ('ok','failed','stale','stopped')
+        AND close_out_outcome IN ('held','failed')`,
+  ).all() as {
+    id: number; close_out_outcome: 'held' | 'failed'; close_out_detail: string | null
+    close_out_attempted_at: string | null; session_id: string | null
+  }[]
+  for (const run of closeOuts) add({
+    kind: `terminal-close-out-${run.close_out_outcome}`,
+    subject: `run:${run.id}`,
+    since: run.close_out_attempted_at,
+    detail: run.close_out_detail ?? `terminal run ${run.id} close-out ${run.close_out_outcome}`,
+    action: `run orch close-out ${run.id}`,
+    ownerSession: run.session_id,
+  })
+
   const runDocker = dockerRunResources()
   if (!runDocker.ascertainable) errors.push(runDocker.reason)
   const runDockerResources = runDocker.ascertainable ? runDocker.resources : []

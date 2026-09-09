@@ -50,6 +50,15 @@ function orch(cwd: string, args: string[], env: Record<string, string> = {}) {
   return { code: result.exitCode, out: result.stdout.toString(), err: result.stderr.toString() }
 }
 
+function emptyProcessInventory(repo: string): Record<string, string> {
+  const commands = join(repo, 'test-bin')
+  mkdirSync(commands, { recursive: true })
+  const ps = join(commands, 'ps')
+  writeFileSync(ps, '#!/bin/sh\nexit 0\n')
+  chmodSync(ps, 0o755)
+  return { PATH: `${commands}:${process.env.PATH ?? ''}` }
+}
+
 async function waitFor(predicate: () => boolean, detail: string): Promise<void> {
   const deadline = Date.now() + 5_000
   while (!predicate()) {
@@ -74,6 +83,33 @@ afterEach(() => {
 })
 
 describe('proof-bearing reclaim verbs', () => {
+  test('sweep project scope selects one registered project and refuses an unknown name', () => {
+    const selected = fixture()
+    const other = fixture()
+    const scoped = orch(selected.repo, ['sweep', '--project', selected.project, '--dry-run'],
+      emptyProcessInventory(selected.repo))
+    expect(scoped.code, scoped.err).toBe(0)
+    expect(scoped.out).toContain(`would reclaim ${selected.run}  ${selected.tree}`)
+    expect(scoped.out).not.toContain(other.tree)
+    expect(existsSync(selected.tree)).toBe(true)
+    expect(existsSync(other.tree)).toBe(true)
+
+    const unknown = orch(selected.repo, ['sweep', '--project', 'missing-project', '--dry-run'])
+    expect(unknown.code).not.toBe(0)
+    expect(unknown.err).toContain('unknown project missing-project')
+  })
+
+  test('sweep reclaims an orch orphan with no run row', () => {
+    const f = fixture()
+    db().query('DELETE FROM score WHERE run_id=?').run(f.run)
+    db().query('DELETE FROM run WHERE id=?').run(f.run)
+
+    const swept = orch(f.repo, ['sweep', '--project', f.project])
+    expect(swept.code, swept.err).toBe(0)
+    expect(swept.out).toContain(`reclaimed orphan  ${f.tree}`)
+    expect(existsSync(f.tree)).toBe(false)
+  })
+
   test('worktree reclaim refuses every claim from another terminal conversation', () => {
     const f = fixture()
     const sibling = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: f.project })
@@ -389,7 +425,7 @@ exec "${realGit}" "$@"
       utimesSync(join(outsideTree, path), old, old)
     }
 
-    const swept = orch(outside.repo, ['sweep'])
+    const swept = orch(outside.repo, ['sweep'], emptyProcessInventory(outside.repo))
     expect(existsSync(outsideTree)).toBe(true)
     expect(swept.code).toBe(0)
     expect(swept.out).toContain('is not beneath project worktrees directory')
