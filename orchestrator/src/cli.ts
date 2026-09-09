@@ -4718,7 +4718,7 @@ switch (cmd) {
       job: string; keep_tree: number; age_days: number; scored: number
       pid: number | null; agent_pid: number | null; session_id: string | null
       session_last_seen: string | null
-    }[]).filter((row) => !selectedProject || row.repo === selectedProject.name ||
+    }[]).filter((row) => !selectedProject ||
       projectAt(row.worktree)?.name === selectedProject.name)
 
     const { removeFor, sweepWithTool, orphanSafety,

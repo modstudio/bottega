@@ -86,6 +86,8 @@ describe('proof-bearing reclaim verbs', () => {
   test('sweep project scope selects one registered project and refuses an unknown name', () => {
     const selected = fixture()
     const other = fixture()
+    // Scope follows the registered path, not a stale or corrupt run.repo label.
+    db().query('UPDATE run SET repo=? WHERE id=?').run(selected.project, other.run)
     const scoped = orch(selected.repo, ['sweep', '--project', selected.project, '--dry-run'],
       emptyProcessInventory(selected.repo))
     expect(scoped.code, scoped.err).toBe(0)
