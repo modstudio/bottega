@@ -410,7 +410,7 @@ echo '[]'
     const lines = formatMonitorPass('heading', [
       {
         kind: 'stale-run', subject: 'run:7', ageMs: 120_000, detail: 'detail here',
-        action: 'do the thing', issueKey: 'DEV-1', severity: 'high', ownerSession: 'sess-9',
+        action: 'do the thing', issueKey: 'DEV-1', severity: 'attention', ownerSession: 'sess-9',
       },
       {
         kind: 'observation-error', subject: 'docker', ageMs: null, detail: 'inventory failed',
@@ -422,7 +422,7 @@ echo '[]'
       'PARTIAL: the condition list is incomplete because one or more observations failed.',
     )
     expect(lines[2]).toBe(
-      '  stale-run  high  run:7  2m old  owner sess-9\n    detail here\n    do the thing; DEV-1',
+      '  stale-run  attention  run:7  2m old  owner sess-9\n    detail here\n    do the thing; DEV-1',
     )
     // No owner, no severity, no issue key, and an unknown age: each segment absent
     // rather than rendered empty.
