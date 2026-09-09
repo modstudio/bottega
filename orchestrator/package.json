@@ -10,6 +10,8 @@
     "test:unit": "bun test --path-ignore-patterns '**/*.cli.test.ts' --path-ignore-patterns 'runs/**' --path-ignore-patterns '**/runs/**'",
     "test:cli": "bun test --timeout 30000 .cli.test.ts",
     "test:gate": "bun test/run-gate.ts",
+    "test:postgres": "bun scripts/test-postgres-rls.ts",
+    "test:postgres:falsify": "bun scripts/test-postgres-rls.ts --falsify",
     "test": "bun test/run-split.ts"
   },
   "devDependencies": {
