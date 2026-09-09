@@ -50,7 +50,7 @@ Three more separations that matter as much as the import graph:
 
 Bottega is the AI orchestration infrastructure for every project on this
 machine: agent management and the whole lifecycle — dispatch, review, scoring,
-routing, landing, tasks, docs, workflows, canon and the machine itself.
+routing, tasks, docs, workflows, canon and the machine itself.
 Anything workflow-related is resolved HERE, once, and offered to projects; it
 is not offloaded to them.
 
@@ -284,7 +284,14 @@ not reinvent.
 
 Build only what IS the product: the routing algorithm and the evidence model, the
 worker contract and its escalation, review tiers and reviewer calibration, canon,
-docs and the context injection that binds a prompt, and the attribution metric.
+docs and the context injection that binds a prompt, the attribution metric, and
+the task and workflow surfaces the other projects take from here.
+
+**Preserve the value proposition, not the machinery that currently holds it
+up.** Those two are easy to confuse once the machinery is written, because it
+is the part you can see. When a subsystem is neither the product nor bought,
+it is a liability carrying the product, and it is replaced rather than
+extended — however much of it exists.
 
 Buy everything else, and prefer what another project on this machine already runs
 in production: authentication and organisations, database access and migrations,
