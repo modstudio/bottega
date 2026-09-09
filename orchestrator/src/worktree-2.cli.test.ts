@@ -1,5 +1,5 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync, utimesSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { addRun, compoundCreate, createWithTool, createWorktree, db, declaredCreate, fakeDocker, hermeticGitCommand, hermeticGitEnv, nowIso, prepareSharedRefGuard, processStartTime, projectLockDir, reclaimStaleProjectLock, resolveBase, runJob, staleProjectLockHolder, upsertProject, withProjectLock, withWorktreeCreateLock } from '../test/fixture.ts'
@@ -8,13 +8,6 @@ import { worktreeDescribeFixture } from '../test/fixture.ts'
 
 describe("a worktree is resolved against the main checkout, not the caller cwd", () => {
   const { git, scratchRepo, markScratchRepoOwner } = worktreeDescribeFixture()
-  const ageWorktree = (tree: string) => {
-    const old = new Date(Date.now() - 3 * 60 * 60 * 1000)
-    for (const name of git(tree, 'ls-files', '-co', '--exclude-standard').split('\n').filter(Boolean)) {
-      utimesSync(join(tree, name), old, old)
-    }
-  }
-
 test('project lock state resolves under the shared git common directory regardless of environment', () => {
   const { repo } = scratchRepo()
   const priorXdg = process.env.XDG_RUNTIME_DIR
