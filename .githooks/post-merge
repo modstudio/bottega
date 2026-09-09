@@ -1,0 +1,41 @@
+#!/bin/sh
+
+# A linked worktree shares the main checkout's hooksPath. Only the main
+# checkout owns the long-lived stores and installed dependencies.
+git_dir=$(git rev-parse --git-dir 2>/dev/null) || exit 0
+common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || exit 0
+[ "$git_dir" = "$common_dir" ] || exit 0
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+git rev-parse --verify ORIG_HEAD >/dev/null 2>&1 || exit 0
+changed=$(git diff --name-only ORIG_HEAD HEAD 2>/dev/null) || exit 0
+[ -n "$changed" ] || exit 0
+
+case "$changed" in
+  *"orchestrator/migrations/"*|orchestrator/migrations/*|*"hub/migrations/"*|hub/migrations/*)
+    # A caller may carry the live-store override used by linked worktrees.
+    # The main checkout migrates the stores resolved by its own binaries.
+    unset ORCH_DB ORCH_DEPTH
+    if ! (cd "$root" && ./bin/orch migrate); then
+      echo "post-merge: orchestrator migration failed; run by hand: cd '$root' && ./bin/orch migrate" >&2
+    fi
+    if ! (cd "$root" && ./bin/hub migrate); then
+      echo "post-merge: hub migration failed; run by hand: cd '$root' && ./bin/hub migrate" >&2
+    fi
+    ;;
+esac
+
+printf '%s\n' "$changed" | while IFS= read -r manifest; do
+  case "$manifest" in
+    package.json) directory=. ;;
+    */package.json) directory=${manifest%/package.json} ;;
+    *) continue ;;
+  esac
+  if ! (cd "$root/$directory" && bun install --silent); then
+    echo "post-merge: package install failed; run by hand: cd '$root/$directory' && bun install --silent" >&2
+  fi
+done
+
+# The merge is already complete. Diagnostics above describe recovery, but a
+# post-merge failure cannot undo it and must not make git report that it could.
+exit 0
