@@ -47,6 +47,23 @@ function git(cwd: string, ...args: string[]): string {
   return p.stdout.toString().trim()
 }
 
+function expectOwnProcessGroup(pid: number): void {
+  const deadline = Date.now() + 1_000
+  let runnerPgid: number | null = null
+  let childPgid: number | null = null
+  while (Date.now() < deadline && (runnerPgid === null || childPgid === null)) {
+    const table = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,%cpu=,state='])
+    expect(table.exitCode).toBe(0)
+    const samples = parsePsTable(table.stdout.toString())
+    runnerPgid = samples.find((row) => row.pid === process.pid)?.pgid ?? null
+    childPgid = samples.find((row) => row.pid === pid)?.pgid ?? null
+    if (runnerPgid === null || childPgid === null) Bun.sleepSync(10)
+  }
+  expect(runnerPgid).not.toBeNull()
+  expect(childPgid).not.toBeNull()
+  expect(childPgid).not.toBe(runnerPgid)
+}
+
 describe('idle kill threshold', () => {
   test('default is 15m, from the measured gap distribution, not a round number', () => {
     // 90 completed runs with events.jsonl, ids 2874–2997, 17815 gaps.
@@ -202,6 +219,30 @@ describe('process group termination', () => {
     expect(pgidOne.some((row) => row.pid === 100)).toBe(true)
   })
 
+  test("the caller's own process group is refused from group kill and survivor tracking", async () => {
+    const alive = new Set([100, 999])
+    const signals: Array<{ pid: number; signal: NodeJS.Signals | number }> = []
+    await terminateProcessGroup(100, {
+      graceMs: 5, killConfirmMs: 5,
+      deps: {
+        kill(pid, signal) {
+          signals.push({ pid, signal })
+          if (pid === 100) alive.delete(100)
+        },
+        alive: (pid) => alive.has(pid),
+        sample: () => [
+          { pid: 100, ppid: 1, pgid: 50, cpu: 0, state: 'S' },
+          { pid: 999, ppid: 1, pgid: 50, cpu: 0, state: 'S' },
+        ],
+        selfPgid: () => 50,
+        wait: async () => {},
+      },
+    })
+    expect(signals.some((row) => row.pid === -50)).toBe(false)
+    expect(signals.some((row) => row.pid === 999)).toBe(false)
+    expect(signals.some((row) => row.pid === 100 && row.signal === 'SIGTERM')).toBe(true)
+  })
+
   test('SIGTERM then confirm, then SIGKILL; a process that will not die is bounded', async () => {
     const signals: Array<{ pid: number; signal: NodeJS.Signals | number }> = []
     let alive = true
@@ -316,8 +357,9 @@ describe('process group termination', () => {
   })
 
   test('a real sleeper is signalled and exits without looping', async () => {
-    const child = Bun.spawn(['sleep', '30'], { stdout: 'ignore', stderr: 'ignore' })
+    const child = Bun.spawn(['sleep', '30'], { detached: true, stdout: 'ignore', stderr: 'ignore' })
     expect(child.pid).toBeGreaterThan(0)
+    expectOwnProcessGroup(child.pid)
     const result = await terminateProcessGroup(child.pid, { graceMs: 500, killConfirmMs: 500 })
     expect(result.unkillable).toBe(false)
     expect(result.exited).toBe(true)
@@ -364,8 +406,9 @@ describe('live idle kill', () => {
           `git commit -m "DEV-389 worker commit" >/dev/null\necho dirty >> file.txt\nexec sleep 3600\n`)
         chmodSync(script, 0o755)
         const child = Bun.spawn([script], {
-          cwd: opts.cwd, env: opts.env, stdout: 'ignore', stderr: 'ignore',
+          cwd: opts.cwd, env: opts.env, detached: true, stdout: 'ignore', stderr: 'ignore',
         })
+        expectOwnProcessGroup(child.pid)
         const empty: TransportResult = {
           stdout: '', stderr: '', raw: '', parsed: null, output: '', tokens: null, costUsd: null,
           sessionId: null, stopReason: null, error: null, exitCode: 143, pid: child.pid,
@@ -452,8 +495,9 @@ describe('live idle kill', () => {
           `printf '%s\\n' ${JSON.stringify(reply)} > "$ORCH_SCRATCH/reply.json"\nexec sleep 3600\n`)
         chmodSync(script, 0o755)
         const child = Bun.spawn([script], {
-          cwd: opts.cwd, env: opts.env, stdout: 'ignore', stderr: 'ignore',
+          cwd: opts.cwd, env: opts.env, detached: true, stdout: 'ignore', stderr: 'ignore',
         })
+        expectOwnProcessGroup(child.pid)
         const empty: TransportResult = {
           stdout: '', stderr: '', raw: '', parsed: null, output: '', tokens: null, costUsd: null,
           sessionId: null, stopReason: null, error: null, exitCode: 143, pid: child.pid,
@@ -529,8 +573,9 @@ describe('live idle kill', () => {
           `chmod 000 .git\necho gone > .idle-git-gone\nexec sleep 3600\n`)
         chmodSync(script, 0o755)
         const child = Bun.spawn([script], {
-          cwd: opts.cwd, env: opts.env, stdout: 'ignore', stderr: 'ignore',
+          cwd: opts.cwd, env: opts.env, detached: true, stdout: 'ignore', stderr: 'ignore',
         })
+        expectOwnProcessGroup(child.pid)
         const empty: TransportResult = {
           stdout: '', stderr: '', raw: '', parsed: null, output: '', tokens: null, costUsd: null,
           sessionId: null, stopReason: null, error: null, exitCode: 0, pid: child.pid,
@@ -703,7 +748,10 @@ describe('live idle kill', () => {
     const transport: AgentTransport = {
       name: 'acp',
       async start() {
-        const child = Bun.spawn(['sleep', '3600'], { stdout: 'ignore', stderr: 'ignore' })
+        const child = Bun.spawn(['sleep', '3600'], {
+          detached: true, stdout: 'ignore', stderr: 'ignore',
+        })
+        expectOwnProcessGroup(child.pid)
         let cancelled = false
         return {
           pid: child.pid, kill(sig) { try { child.kill(sig === 9 ? 9 : 'SIGTERM') } catch { /* gone */ } },

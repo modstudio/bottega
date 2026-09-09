@@ -291,9 +291,14 @@ export async function terminateProcessGroup(
   const tracked = new Set<number>([pid])
   const first = deps.sample()
   const vendorPgid = first.find((row) => row.pid === pid)?.pgid ?? null
-  rememberTree(pid, tracked, first, vendorPgid)
+  const selfPgid = deps.selfPgid()
+  // The caller's own process group is never a vendor tree. Refuse it before
+  // group membership enters survivor tracking, which can signal tracked pids
+  // directly even when signalTree correctly declines kill(-pgid).
+  const trackedPgid = vendorPgid !== null && vendorPgid === selfPgid ? null : vendorPgid
+  rememberTree(pid, tracked, first, trackedPgid)
   const groupPgid = signalTree(pid, 'SIGTERM', deps, first)
-  const pgid = groupPgid ?? vendorPgid
+  const pgid = groupPgid ?? trackedPgid
   if (await waitUntilDead(pid, tracked, graceMs, deps, pgid)) {
     return { exited: true, unkillable: false, reason: null, pgid, pids: [...tracked] }
   }
