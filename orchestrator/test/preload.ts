@@ -2,6 +2,7 @@ import { afterAll, beforeEach } from 'bun:test'
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
+import { createTestHubDatabaseGuard } from '../../shared/test-hub-database.ts'
 
 const discoveryEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
   !key.startsWith('GIT_') && key !== 'ORCH_GUARDED_GIT_COMMON_DIR' && key !== 'ORCH_ALLOWED_GIT_REF'
@@ -33,6 +34,7 @@ const originalPath = process.env.PATH
 const store = join(dir, 'test.db')
 const template = join(dir, 'template.db')
 process.env.ORCH_DB = store
+process.env.HUB_DB = join(dir, 'hub.db')
 process.env.ORCH_RUNS = join(dir, 'runs')
 // A fixture landing runs a gate of its own. It must count only fixture gates:
 // with the machine's pid directory inherited, a landing spawned inside a gate
@@ -49,6 +51,8 @@ process.env.PATH = `${cleanDockerBin}:${originalPath ?? ''}`
 export const PRELOAD_STORE = process.env.ORCH_DB
 export const PRELOAD_RUNS = process.env.ORCH_RUNS
 mkdirSync(process.env.ORCH_RUNS)
+const assertTestHubDatabase = createTestHubDatabaseGuard(new URL('../..', import.meta.url).pathname)
+assertTestHubDatabase()
 
 const { DB_PATH, bootstrapFixtureStore, closeDatabaseForFixture } = await import('../src/db.ts')
 
@@ -104,6 +108,7 @@ const { db } = await import('../src/db.ts')
 let sequence: { name: string; seq: number }[] = []
 
 beforeEach(() => {
+  assertTestHubDatabase()
   if (process.env.ORCH_DB && resolve(process.env.ORCH_DB) === REGISTERED_LIVE_STORE) {
     throw new Error(`test process refuses registered live store: ${REGISTERED_LIVE_STORE}`)
   }
@@ -126,6 +131,7 @@ beforeEach(() => {
 afterAll(() => {
   closeDatabaseForFixture()
   delete process.env.ORCH_DB
+  delete process.env.HUB_DB
   delete process.env.ORCH_RUNS
   delete process.env.ORCH_GATE_PIDS
   if (originalPath === undefined) delete process.env.PATH
