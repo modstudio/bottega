@@ -241,7 +241,7 @@ export const { createDocsMcpServer, fileIssue } = await import('../src/mcp.ts')
 export const { setWorkflow, promoteWorkflow } = await import('../src/workflows.ts')
 export const { compilePack, compileBrief, checkDoc, CanonBudgetError, recordPack, diffPack,
         allInjectChecks, allNumericLiterals, numericLiteralReport } = await import('../src/canon.ts')
-export const { claimMonitorNotices, markMonitorNoticesDelivered, deadRunningProcessConditions, reconcileHub, rulingConditions, monitorHistory, monitor } =
+export const { claimMonitorNotices, markMonitorNoticesDelivered, deadRunningProcessConditions, reconcileHub, rulingConditions, monitorHistory, monitor, formatMonitorPass, displayConditions } =
   await import('../src/monitor.ts')
 export const { listPairs, addPair, baselineForPair, setBaseline, listSkips, addSkip,
         setLedgerRef, ledgerRef, listLedgerRefs, resolveLedgerRef,

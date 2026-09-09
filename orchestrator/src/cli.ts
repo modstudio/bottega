@@ -3896,7 +3896,7 @@ switch (cmd) {
   }
 
   case 'monitor': {
-    const { claimMonitorNotices, formatMonitorPass, markMonitorNoticesDelivered, monitor, monitorHistory } = await import('./monitor.ts')
+    const { claimMonitorNotices, displayConditions, formatMonitorPass, markMonitorNoticesDelivered, monitor, monitorHistory } = await import('./monitor.ts')
     if (flag('ack-notices') !== undefined) {
       const sid = sessionId()
       if (!sid) throw new Error('monitor notice acknowledgement requires CLAUDE_CODE_SESSION_ID')
@@ -3919,14 +3919,9 @@ switch (cmd) {
       const rows = monitorHistory(Number(flag('limit') ?? 20))
       if (has('json')) await writeStdout(`${JSON.stringify(rows)}\n`)
       else for (const row of rows as any[]) {
-        const conditions = row.conditions.map((condition: any) => ({
-          kind: condition.kind, subject: condition.subject, ageMs: condition.age_ms,
-          detail: condition.detail, action: condition.action, issueKey: condition.issue_key,
-          severity: condition.severity, ownerSession: condition.owner_session_id,
-        }))
         console.log(formatMonitorPass(
           `monitor ${row.id}  ${row.started_at}  ${row.trigger}  ${row.findings} found, ${row.errors} errors`,
-          conditions,
+          displayConditions(row.conditions),
         ).join('\n'))
       }
       break

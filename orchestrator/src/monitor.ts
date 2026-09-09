@@ -40,16 +40,11 @@ export type MonitorResult = {
   canon: { findings: number; docs: number }
 }
 
-type HumanMonitorCondition = {
-  kind: string
-  subject: string
-  ageMs: number | null
-  detail: string
-  action: string
-  issueKey?: string | null
-  severity?: MonitorSeverity | null
-  ownerSession?: string | null
-}
+/** Exactly the fields the human pass line prints, taken from the domain type. */
+export type HumanMonitorCondition = Pick<
+  MonitorCondition,
+  'kind' | 'subject' | 'ageMs' | 'detail' | 'action' | 'issueKey' | 'severity' | 'ownerSession'
+>
 
 /** Format one monitor pass identically wherever its human-readable history is printed. */
 export function formatMonitorPass(
@@ -492,6 +487,25 @@ export function monitorHistory(limit = 20): unknown[] {
      )) FROM monitor_condition c WHERE c.invocation_id=i.id) conditions
        FROM monitor_invocation i ORDER BY i.id DESC LIMIT ?`,
   ).all(limit).map((row: any) => ({ ...row, conditions: JSON.parse(row.conditions ?? '[]') }))
+}
+
+/**
+ * Map one stored history row's snake_case condition onto the printable shape.
+ * Lives beside monitorHistory so the persisted column names are normalised in
+ * one place rather than at each call site that wants to print them.
+ */
+export function displayConditions(conditions: unknown[]): HumanMonitorCondition[] {
+  return conditions.map((raw): HumanMonitorCondition => {
+    const condition = raw as {
+      kind: string; subject: string; age_ms: number | null; detail: string; action: string
+      issue_key?: string | null; severity?: MonitorSeverity | null; owner_session_id?: string | null
+    }
+    return {
+      kind: condition.kind, subject: condition.subject, ageMs: condition.age_ms,
+      detail: condition.detail, action: condition.action, issueKey: condition.issue_key,
+      severity: condition.severity, ownerSession: condition.owner_session_id,
+    }
+  })
 }
 
 function deliveredDetail(row: {

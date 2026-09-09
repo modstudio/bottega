@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { MONITOR_CAPABILITY_PATH_ENV, MONITOR_CAPABILITY_TOKEN_ENV } from '../../shared/monitor-capability.ts'
-import { addRun, allInjectChecks, claimMonitorNotices, markMonitorNoticesDelivered, db, deadRunningProcessConditions, dir, fileIssue, hermeticGitEnv, monitor, monitorHistory, nowIso, parseFiledIssue, reconcileHub, rulingConditions, runWithDelayedStdoutReader, score, setDoc, upsertProject } from '../test/fixture.ts'
+import { addRun, allInjectChecks, claimMonitorNotices, markMonitorNoticesDelivered, db, deadRunningProcessConditions, dir, displayConditions, fileIssue, formatMonitorPass, hermeticGitEnv, monitor, monitorHistory, nowIso, parseFiledIssue, reconcileHub, rulingConditions, runWithDelayedStdoutReader, score, setDoc, upsertProject } from '../test/fixture.ts'
 
 function git(cwd: string, ...args: string[]): string {
   const result = Bun.spawnSync(['git', ...args], {
@@ -403,6 +403,32 @@ echo '[]'
     expect(run.stdout.toString()).toContain('docker inventory unavailable')
   })
 
+  test('formats one human pass line, owner and severity included', () => {
+    // The byte-equality assertion in the large-report test builds its expectation
+    // from formatMonitorPass, so it cannot pin the line's shape. This test is
+    // where the shape is pinned: one implementation, one place that checks it.
+    const lines = formatMonitorPass('heading', [
+      {
+        kind: 'stale-run', subject: 'run:7', ageMs: 120_000, detail: 'detail here',
+        action: 'do the thing', issueKey: 'DEV-1', severity: 'high', ownerSession: 'sess-9',
+      },
+      {
+        kind: 'observation-error', subject: 'docker', ageMs: null, detail: 'inventory failed',
+        action: 'retry', issueKey: null, severity: null, ownerSession: null,
+      },
+    ])
+    expect(lines[0]).toBe('heading')
+    expect(lines[1]).toBe(
+      'PARTIAL: the condition list is incomplete because one or more observations failed.',
+    )
+    expect(lines[2]).toBe(
+      '  stale-run  high  run:7  2m old  owner sess-9\n    detail here\n    do the thing; DEV-1',
+    )
+    // No owner, no severity, no issue key, and an unknown age: each segment absent
+    // rather than rendered empty.
+    expect(lines[3]).toBe('  observation-error  docker  age unknown\n    inventory failed\n    retry')
+  })
+
   test('pipes a complete large human report before returning its condition status', async () => {
     const hubDb = join(dir, 'monitor-large-report-hub.db')
     const binDir = join(dir, 'monitor-large-report-bin')
@@ -424,6 +450,7 @@ echo '[]'
       lastRunId = addRun({
         agent: 'codex', job: 'implement', status: 'stale',
         startedAt: '2026-09-04T00:00:00Z',
+        session: `owner-session-${i}`,
       })
     }
 
@@ -446,20 +473,20 @@ echo '[]'
     const canonDocs = canonRows.filter(
       (row) => row.findings.some((finding) => finding.kind !== 'unchecked'),
     ).length
+    // Build the expectation from the SHARED formatter rather than a private copy
+    // of it: a second implementation here silently drifts from production and the
+    // byte-equality assertion below then pins the drift instead of catching it.
+    const display = displayConditions(conditions)
     const lines = [
       `canon: ${canonFindings} stale references in ${canonDocs} docs`,
-      `monitor ${record.id}: ${record.findings} condition(s), ${record.errors} observation error(s)`,
+      ...formatMonitorPass(
+        `monitor ${record.id}: ${record.findings} condition(s), ${record.errors} observation error(s)`,
+        display,
+      ),
     ]
-    if (conditions.some((condition) => condition.kind === 'observation-error')) {
-      lines.push('PARTIAL: the condition list is incomplete because one or more observations failed.')
-    }
-    for (const condition of conditions) {
-      const old = condition.age_ms == null
-        ? 'age unknown'
-        : `${Math.round(condition.age_ms / 60_000)}m old`
-      const sev = condition.severity ? `  ${condition.severity}` : ''
-      lines.push(`  ${condition.kind}${sev}  ${condition.subject}  ${old}\n    ${condition.detail}\n    ${condition.action}${condition.issue_key ? `; ${condition.issue_key}` : ''}`)
-    }
+    // The owner segment is part of that shared line, so at least one condition
+    // must carry a session or this test cannot see it drift.
+    expect(display.some((condition) => condition.ownerSession)).toBe(true)
     const expected = Buffer.from(`${lines.join('\n')}\n`)
     expect(expected.byteLength).toBeGreaterThan(65_536)
     expect(human.stdout.byteLength).toBe(expected.byteLength)
