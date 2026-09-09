@@ -1,7 +1,6 @@
 import {
   mkdirSync, readFileSync, existsSync, writeFileSync, readdirSync, rmSync,
-  realpathSync, statSync, unlinkSync, symlinkSync, readlinkSync, lstatSync,
-  copyFileSync, renameSync, chmodSync,
+  statSync, unlinkSync, copyFileSync, renameSync,
 } from 'node:fs'
 import { basename, dirname, join, relative } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
@@ -27,20 +26,26 @@ import {
 import { CONNECTION_SCHEMA_INVARIANT } from './migrations.ts'
 import { proveWorktreeReconstructible } from './reclaim.ts'
 import {
-  createWorktree, createWorktreeForBranch, createWithTool, createReadOnlyWorktree, createReadOnlyWithTool,
-  toolFor, changesIn, repoRootOf, resolveBase, resolveReadOnlyBase, worktreeGitDir,
+  createWorkerWorktree,
+  toolFor, changesIn, repoRootOf, resolveBase, resolveReadOnlyBase,
   realpathOrSpelled, withoutTrailingSeparators,
   createCommandExists,
-  prepareWorktreeObjects, prepareSharedRefGuard, carryWorkingState,
-  assertSharedRefGuardOutsideWritableRoots,
+  prepareWorktreeObjects, carryWorkingState,
   targetGitEnvironment,
-  workerSharedGitRoots,
   contentTree,
   assertCallerAncestry, withWorktreeCreateLock, withWorktreeLease, withCleanupLock,
   removeFor, projectLockState,
   reclaimStaleProjectLock, worktreeLeaseName, type Worktree,
   branchTip, restoreBranch, processStartTime,
   type WorktreeObjectEnvironment, validateSeedWithTool,
+  checkoutAliases, checkoutWatchSet,
+  prepareWorkerMcpConfig,
+  createIsolatedWorkerDirectory, worktreeExists,
+  prepareSharedRefGuard, assertSharedRefGuardOutsideWritableRoots,
+  workerSharedGitRoots, worktreeGitDir,
+} from './worktree.ts'
+export {
+  checkoutAliases, checkoutCaseSensitivity, checkoutWatchSet, provisionMcpConfig,
 } from './worktree.ts'
 import { recipeNotes } from './recipe.ts'
 import {
@@ -406,56 +411,6 @@ export function mcpRequestFromStored(
   if (stored === 2) return 'prefer'
   if (stored === 1) return error?.startsWith('mirror:') ? 'prefer' : 'require'
   return undefined
-}
-
-type McpConfigPreflight = { header: string | null; error: string | null }
-
-/** Put cwd-discovered project MCP config at the address the vendor will inspect. */
-export function provisionMcpConfig(worktree: string, checkout: string): McpConfigPreflight {
-  const target = join(worktree, '.mcp.json')
-  if (existsSync(target)) return { header: null, error: null }
-  const source = join(checkout, '.mcp.json')
-  if (!existsSync(source)) {
-    return {
-      header: null,
-      error: `missing .mcp.json in worker cwd ${worktree}; registered checkout ${checkout} has no .mcp.json either`,
-    }
-  }
-  const link = relative(dirname(target), source)
-  symlinkSync(link, target)
-  return { header: `MCP preflight: linked .mcp.json -> ${link}`, error: null }
-}
-
-/** Keep orch's cwd-discovery link outside trees and patches attributed to the worker. */
-function withoutProvisionedMcpConfig<T>(
-  worktree: string, link: string | null, measure: () => T,
-): T {
-  if (link === null) return measure()
-  const target = join(worktree, '.mcp.json')
-  try {
-    if (!lstatSync(target).isSymbolicLink() || readlinkSync(target) !== link) return measure()
-  } catch {
-    return measure()
-  }
-  unlinkSync(target)
-  try {
-    return measure()
-  } finally {
-    symlinkSync(link, target)
-  }
-}
-
-/** Recognise only the checkout link orch itself would provision in this worktree. */
-function existingProvisionedMcpConfigLink(worktree: string, checkout: string): string | null {
-  const target = join(worktree, '.mcp.json')
-  const expected = relative(dirname(target), join(checkout, '.mcp.json'))
-  try {
-    return lstatSync(target).isSymbolicLink() && readlinkSync(target) === expected
-      ? expected
-      : null
-  } catch {
-    return null
-  }
 }
 
 /** The provenance value orch can establish from this run's dispatch facts. */
@@ -1282,139 +1237,12 @@ function reviewChangedPaths(cwd: string, base: string, inputTree: string): strin
   return p.stdout.toString().trim().split('\n').filter(Boolean)
 }
 
-function checkoutRootAsAddressed(cwd: string): string | null {
-  try {
-    const p = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--show-prefix'], {
-      env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'ignore',
-    })
-    if (p.exitCode !== 0) return null
-    const prefix = new TextDecoder().decode(p.stdout).trim()
-    let root = cwd
-    for (const _segment of prefix.split('/').filter(Boolean)) root = dirname(root)
-    return root
-  } catch { return null }
-}
-
-type CheckoutAliases = {
-  roots: string[]
-  caseInsensitive: boolean
-  diagnostic: string | null
-}
-
-function gitTopLevel(cwd: string): string | null {
-  try {
-    const p = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--show-toplevel'], {
-      env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'ignore',
-    })
-    if (p.exitCode !== 0) return null
-    return new TextDecoder().decode(p.stdout).trim() || null
-  } catch { return null }
-}
-
-function flipOneAsciiLetter(value: string): string | null {
-  let index = -1
-  for (let candidate = value.length - 1; candidate >= 0; candidate--) {
-    if (/[A-Za-z]/.test(value[candidate]!)) {
-      index = candidate
-      break
-    }
-  }
-  if (index === -1) return null
-  const letter = value[index]!
-  const flipped = letter === letter.toLowerCase() ? letter.toUpperCase() : letter.toLowerCase()
-  return value.slice(0, index) + flipped + value.slice(index + 1)
-}
-
-export function checkoutAliases(cwd: string): CheckoutAliases | null {
-  const addressed = checkoutRootAsAddressed(cwd)
-  const top = gitTopLevel(cwd)
-  if (!addressed || !top) return null
-  let canonical: string
-  try { canonical = realpathSync(addressed) } catch { canonical = top }
-  const roots = [...new Set([addressed, top, canonical])]
-  return { roots, ...checkoutCaseSensitivity(addressed) }
-}
-
-export function checkoutCaseSensitivity(root: string): Omit<CheckoutAliases, 'roots'> {
-  const variant = flipOneAsciiLetter(root)
-  let caseInsensitive = false
-  let diagnostic: string | null = null
-  const partialFoldLimit =
-    'path matching uses a partial Unicode case fold; filesystem-specific folding beyond it is a known limit'
-  if (!variant) {
-    diagnostic = `checkout case-sensitivity probe indeterminate: root has no alphabetic character ` +
-      `(${root}); ${partialFoldLimit}`
-  } else {
-    try {
-      const original = statSync(root)
-      const changed = statSync(variant)
-      caseInsensitive = original.dev === changed.dev && original.ino === changed.ino
-    } catch {
-      diagnostic = `checkout case-sensitivity probe indeterminate: could not stat case variant of ` +
-        `${root}; ${partialFoldLimit}`
-    }
-  }
-  return { caseInsensitive, diagnostic }
-}
-
 export type CheckoutStatusSnapshot = {
   project: string
   path: string
   status: string
   head?: string | null
   expectedHead?: string | null
-}
-
-type CheckoutCandidates = {
-  watched: CheckoutToWatch[]
-  failures: FreezeFailure[]
-}
-
-/**
- * The checkouts a run is confined against: the registered main checkout of
- * the run's OWN project, plus the caller checkout it was dispatched from.
- *
- * It used to be every registered project. Measured on 2026-09-07 with the
- * harness-health surface: 25 runs escaped in one day, 4.9 hours of worker
- * time, and sixteen of them were a THIRD project's checkout changing (a
- * canon edit in adanim, a fixture removed in alephbeis, stopal's release step
- * moving develop to master) while a bottega worker that never touched it was
- * in flight. Every session on the machine was an unwitting adversary to every
- * other session's writers. A change in another project is not this run's
- * escape; `ownProject` null (no project resolved) keeps the wide set, since
- * an unregistered caller has no narrower fact to stand on.
- */
-export function checkoutWatchSet(
-  additional: CheckoutToWatch[] = [], activeWorktree?: string, ownProject: string | null | undefined = undefined,
-): CheckoutCandidates {
-  const active = activeWorktree ? realpathSync(activeWorktree) : null
-  const watched: CheckoutToWatch[] = []
-  const failures: FreezeFailure[] = []
-  const seen = new Set<string>()
-  const registered = projects()
-    .filter(({ name }) => ownProject === undefined || ownProject === null || name === ownProject)
-  for (const checkout of [
-    ...registered.map(({ name, path, settings }) => ({
-      project: name, path,
-      expectedHead: typeof settings.trunk === 'string' ? settings.trunk : null,
-    })),
-    ...additional,
-  ]) {
-    let canonical: string
-    try {
-      canonical = realpathSync(checkout.path)
-    } catch (error) {
-      failures.push({
-        ...checkout,
-        error: error instanceof Error ? error.message : String(error),
-      })
-      continue
-    }
-    if (canonical === active || seen.has(canonical)) continue
-    seen.add(canonical)
-    watched.push({ project: checkout.project, path: canonical, expectedHead: checkout.expectedHead ?? null })
-  }
-  return { watched, failures }
 }
 
 /**
@@ -1983,7 +1811,7 @@ function attemptCloseOutRun(
     db().query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
       .run(retainedBranch, tip, row.root_id)
   }
-  if (!existsSync(treePath)) {
+  if (!worktreeExists(treePath)) {
     const repoRoot = (effective.repo ? projectByName(effective.repo)?.path : null) ??
       repoRootOf(treePath) ?? effective.cwd
     if (!options.dryRun && repoRoot && retainedBranch) {
@@ -2799,7 +2627,8 @@ export async function run(opts: {
   let carried: import('./worktree.ts').CarriedWorkingState | null = null
   let changes: import('./worktree.ts').Changes | null = null
   let isolatedCwd: string | null = null
-  let provisionedMcpConfigLink: string | null = null
+  let removeIsolatedCwd: (() => void) | null = null
+  let provisionedMcpConfig: ReturnType<typeof prepareWorkerMcpConfig> | null = null
   let retargetDiagnostic: string | null = null
   let mcpSetupHeader: string | null = null
   let mcpTrustGranted = false
@@ -2838,11 +2667,8 @@ export async function run(opts: {
       // boundary closes was a reviewer reading the caller's HEAD and treating
       // it as part of an inline pack. An empty directory gives the process no
       // checkout at all, while launch_cwd retains project attribution.
-      const isolateRoot = join(runsDir, 'isolates')
-      mkdirSync(isolateRoot, { recursive: true, mode: 0o700 })
-      chmodSync(isolateRoot, 0o700)
       isolatedCwd = noRepoIsolatePath(claim.id, runsDir)
-      mkdirSync(isolatedCwd, { mode: 0o700 })
+      removeIsolatedCwd = createIsolatedWorkerDirectory(isolatedCwd)
       cwd = isolatedCwd
       db().query('UPDATE run SET cwd=? WHERE id=?').run(cwd, claim.id)
     } else if (repoJob) {
@@ -2863,34 +2689,18 @@ export async function run(opts: {
           if (result.changes !== 1) throw new Error(`run ${claim.id} could not record its worktree`)
         }
         worktree = withWorktreeCreateLock(repoRoot, () => {
-          let created: Worktree
-          if (!writesJob) {
-            created = tool?.readonly_create
-              ? createReadOnlyWithTool(tool, callerCwd, claim.id, readOnlyBase!, recordWorktree)
-              : createReadOnlyWorktree(callerCwd, claim.id, readOnlyBase!, recordWorktree)
-          } else if (tool) {
-            // The PROJECT owns its worktrees. A bare `git worktree add` here would
-            // produce a directory with no .env, no vendor and no database, in which
-            // every test the worker runs is meaningless and green.
-            created = createWithTool(
-              tool, callerCwd, claim.id, seed, opts.key,
-              resolvedTaskBranch?.tip ?? reviewTarget?.commit ?? opts.base, recordWorktree,
-              Boolean(reviewTarget), resolvedTaskBranch?.branch,
-            )
-          } else {
-            // INHERITED on a resume, and this is the point of the whole exercise:
-            // the worker is mid-edit in that tree, and cutting a fresh one would
-            // answer its question into an empty checkout and throw away everything
-            // it had built.
-            created = resolvedTaskBranch
-              ? createWorktreeForBranch(
-                  callerCwd, claim.id, resolvedTaskBranch.branch, recordWorktree,
-                )
-              : createWorktree(
-                  callerCwd, claim.id, reviewTarget?.commit ?? opts.base, recordWorktree,
-                  Boolean(reviewTarget),
-                )
-          }
+          // The PROJECT owns its worktrees. A bare `git worktree add` here would
+          // produce a directory with no .env, no vendor and no database, in which
+          // every test the worker runs is meaningless and green. The isolation
+          // module selects the declared lifecycle or Git fallback as one operation.
+          const created = createWorkerWorktree({
+            tool, cwd: callerCwd, runId: claim.id, writes: writesJob,
+            readOnlyBase: readOnlyBase!, seed, key: opts.key,
+            baseRef: reviewTarget?.commit ?? opts.base,
+            record: recordWorktree, detached: Boolean(reviewTarget),
+            existingBranch: resolvedTaskBranch?.branch,
+            existingBranchTip: resolvedTaskBranch?.tip,
+          })
           const current = db().query('SELECT status FROM run WHERE id=?').get(claim.id) as
             { status: string }
           if (current.status === 'stopped') {
@@ -2942,7 +2752,7 @@ export async function run(opts: {
     if (worktree) {
       const inheritedWorktree = worktree
       const recordWorktree = () => {
-        if (opts.resume && !existsSync(inheritedWorktree.path)) {
+        if (opts.resume && !worktreeExists(inheritedWorktree.path)) {
           throw new Error(
             `resumed worktree ${inheritedWorktree.path} no longer exists after waiting for ` +
             `the project lifecycle lock`,
@@ -3010,7 +2820,7 @@ export async function run(opts: {
                   `cleared by: wait for run ${owner.id} to finish, then repeat this dispatch`,
                 )
               }
-              if (!existsSync(inheritedWorktree.path)) {
+              if (!worktreeExists(inheritedWorktree.path)) {
                 throw new Error(
                   `refusing to attach run ${claim.id}: retained worktree ` +
                   `${inheritedWorktree.path} no longer exists`,
@@ -3061,10 +2871,7 @@ export async function run(opts: {
         // so a later turn cannot rebind an older sibling worktree beneath the
         // same root into the current destination.
         const declaredWorktreeRoot = dirname(worktree.path)
-        let canonicalWorktreeRoot = declaredWorktreeRoot
-        try { canonicalWorktreeRoot = realpathSync(declaredWorktreeRoot) } catch {
-          /* the tool's spelling remains a valid protected address */
-        }
+        const canonicalWorktreeRoot = realpathOrSpelled(declaredWorktreeRoot)
         try {
           prompt = retargetRepositoryPromptForDispatch(
             prompt, caller.roots, worktree.path, caller.caseInsensitive,
@@ -3087,14 +2894,9 @@ export async function run(opts: {
     if (deferredCwdMcpPreflight) {
       const project = projectAt(callerCwd)
       if (!project) throw new Error(`no registered project identifies MCP configuration for ${callerCwd}`)
-      const inheritedLink = opts.resume
-        ? existingProvisionedMcpConfigLink(cwd, project.path)
-        : null
-      const config = provisionMcpConfig(cwd, project.path)
+      const config = prepareWorkerMcpConfig(cwd, project.path, Boolean(opts.resume))
       mcpSetupHeader = config.header
-      provisionedMcpConfigLink = config.header === null
-        ? inheritedLink
-        : readlinkSync(join(cwd, '.mcp.json'))
+      provisionedMcpConfig = config
       const server = project.settings.mcpServer ?? project.name
       if (config.error) {
         mcpConnection = { server, connected: false, error: config.error }
@@ -3159,7 +2961,7 @@ export async function run(opts: {
       db().query('UPDATE run SET mcp_error=? WHERE id=?').run(mcpConnection.error, claim.id)
     }
   } catch (e) {
-    if (isolatedCwd) rmSync(isolatedCwd, { recursive: true, force: true })
+    removeIsolatedCwd?.()
     const why = errorTail(String((e as Error)?.message ?? e))
     db().query(
       // 'harness': setting a worktree up is orch's job, and failing at it says
@@ -3181,8 +2983,10 @@ export async function run(opts: {
   const writableRoots = [
     scratchDir,
     ...(repoJob && worktree
-      ? [worktreeGitDir(worktree.path),
-          ...(writesJob ? workerSharedGitRoots(worktree.path, worktree.branch) : [])]
+      ? [
+          worktreeGitDir(worktree.path),
+          ...(writesJob ? workerSharedGitRoots(worktree.path, worktree.branch) : []),
+        ]
       : []),
   ]
   const gitConfigEnvironment = worktree
@@ -3191,7 +2995,7 @@ export async function run(opts: {
         writesJob && requestedJob.name !== 'land' ? `refs/heads/${worktree.branch}` : undefined,
       )
     : undefined
-  if (gitConfigEnvironment && writableRoots) {
+  if (gitConfigEnvironment) {
     assertSharedRefGuardOutsideWritableRoots(gitConfigEnvironment.GIT_CONFIG_VALUE_0, writableRoots)
   }
   const sandboxRoot = (db().query(
@@ -3419,9 +3223,9 @@ export async function run(opts: {
   try {
     if (repoJob) {
       if (!worktree) throw new Error(`repository run ${claim.id} has no worktree to measure`)
-      const inputTree = withoutProvisionedMcpConfig(
-        worktree.path, provisionedMcpConfigLink, () => contentTree(worktree.path),
-      )
+      const inputTree = provisionedMcpConfig
+        ? provisionedMcpConfig.measure(() => contentTree(worktree.path))
+        : contentTree(worktree.path)
       const headCommit = gitContext(worktree.path, 'rev-parse', '--verify', 'HEAD^{commit}')
       const changedPaths = reviewTarget
         ? reviewChangedPaths(worktree.path, reviewTarget.base, inputTree)
@@ -3952,7 +3756,7 @@ export async function run(opts: {
     // The directory contains no input and is useful only while the vendor is
     // alive. Remove it after readSession has had the chance to derive any
     // vendor-owned transcript location from cwd.
-    if (isolatedCwd) rmSync(isolatedCwd, { recursive: true, force: true })
+    removeIsolatedCwd?.()
 
     /**
      * The diff is read EVEN WHEN THE RUN FAILED, and that is the point.
@@ -3969,9 +3773,9 @@ export async function run(opts: {
      */
     if (worktree) {
       try {
-        changes = withoutProvisionedMcpConfig(
-          worktree.path, provisionedMcpConfigLink, () => changesIn(worktree),
-        )
+        changes = provisionedMcpConfig
+          ? provisionedMcpConfig.measure(() => changesIn(worktree))
+          : changesIn(worktree)
       } catch (e) {
         changes = null
         console.error(`orch: could not read the diff for run ${claim.id}: ${e}`)
