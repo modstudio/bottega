@@ -645,10 +645,16 @@ describe('pid stays the worker for the whole run', () => {
       const reserved = addRun({ agent: '(pending)', job: 'file-question', status: 'running' })
       db().query('UPDATE run SET pid=? WHERE id=?').run(process.pid, reserved)
       await run({ job: 'file-question', prompt: 'hello', cwd: dir, agent: 'grok', reserveId: reserved })
-      const row = db().query('SELECT pid, agent_pid FROM run WHERE id=?')
-        .get(reserved) as { pid: number; agent_pid: number }
+      const row = db().query('SELECT pid, agent_pid, agent_pgid, agent_start_time FROM run WHERE id=?')
+        .get(reserved) as {
+          pid: number; agent_pid: number; agent_pgid: number | null; agent_start_time: string | null
+        }
       expect(row.pid).toBe(process.pid)
       expect(row.agent_pid).toBe(Number(readFileSync(pidFile, 'utf8').trim()))
+      expect(row.agent_pgid).toBeGreaterThan(1)
+      expect(row.agent_start_time).toMatch(
+        /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) /,
+      )
     } finally {
       grok.bin = previous
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH

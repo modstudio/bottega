@@ -9,7 +9,7 @@ import {
 import { fileIssue } from './mcp.ts'
 import { gitLocks } from './git-locks.ts'
 import { projectAt, projects } from './projects.ts'
-import { projectLockState, targetGitEnvironment, worktreeDirty } from './worktree.ts'
+import { pidRecordIdentity, projectLockState, targetGitEnvironment, worktreeDirty } from './worktree.ts'
 import { reclaimBranch, reclaimWorktree } from './reclaim.ts'
 import { allInjectChecks, storedPackDrift } from './canon.ts'
 import { idleLabel, idleMsSince, idleWarnMs } from './events.ts'
@@ -126,26 +126,42 @@ const TERMINAL_RUN_STATUSES = "('ok','failed','stale','stopped')"
 /** Report recorded pids and descendants that outlived a terminal run. Observation only. */
 export function terminalProcessAliveConditions(clock = Date.now()): MonitorCondition[] {
   const terminal = db().query(
-    `SELECT id, started_at, pid, agent_pid FROM run
+    `SELECT id, started_at, pid, agent_pid, agent_pgid, agent_start_time FROM run
       WHERE status IN ${TERMINAL_RUN_STATUSES}
-        AND (pid IS NOT NULL OR agent_pid IS NOT NULL)`,
-  ).all() as { id: number; started_at: string; pid: number | null; agent_pid: number | null }[]
+        AND (pid IS NOT NULL OR agent_pid IS NOT NULL OR agent_pgid IS NOT NULL)`,
+  ).all() as {
+    id: number; started_at: string; pid: number | null; agent_pid: number | null
+    agent_pgid: number | null; agent_start_time: string | null
+  }[]
   return terminal.flatMap((run): MonitorCondition[] => {
+    const vendorIdentity = pidRecordIdentity(run.agent_pid, run.agent_start_time)
+    const coordinatorLive = Boolean(run.pid && run.pid > 1 && pidAlive(run.pid))
+    const vendorLive = vendorIdentity === 'live' || vendorIdentity === 'unknown'
     const roots = [...new Set(
       [run.pid, run.agent_pid].filter((pid): pid is number => pid != null && pid > 1),
     )]
-    if (!roots.length) return []
-    const live = roots.filter((pid) => pidAlive(pid))
-    const descendantsLive = !live.length && runHasLiveDescendants(roots)
-    if (!live.length && !descendantsLive) return []
-    const reported = live[0] ?? roots[0]!
-    const who = live.length
-      ? live.map((pid) => pid === run.agent_pid && pid !== run.pid ? `agent pid ${pid}` : `pid ${pid}`).join(' and ')
-      : `a descendant of pid ${roots.join('/')}`
+    const descendantsLive = runHasLiveDescendants(
+      vendorIdentity === 'reused' ? [run.pid] : roots, [], {}, run.agent_pgid,
+    )
+    if (!coordinatorLive && !vendorLive && !descendantsLive) return []
+    const reported = (vendorLive && run.agent_pid) || (coordinatorLive && run.pid) ||
+      run.agent_pid || run.pid || run.agent_pgid!
+    const parts: string[] = []
+    if (coordinatorLive) parts.push(`pid ${run.pid}`)
+    if (vendorIdentity === 'live') parts.push(`agent pid ${run.agent_pid}`)
+    else if (vendorIdentity === 'unknown' && run.agent_pid) {
+      parts.push(`agent pid ${run.agent_pid} (identity unverified)`)
+    }
+    if (descendantsLive && !vendorLive && !coordinatorLive) {
+      parts.push(run.agent_pgid
+        ? `a descendant in pgid ${run.agent_pgid}`
+        : `a descendant of pid ${roots.join('/')}`)
+    }
+    const who = parts.join(' and ') || `a descendant of pid ${roots.join('/')}`
     return [{
       kind: 'terminal-process-alive', subject: `run:${run.id}:pid:${reported}`, since: run.started_at,
       ageMs: age(run.started_at, clock),
-      detail: `terminal run ${run.id} still has live ${who}; pid reuse means identity must be verified before signalling`,
+      detail: `terminal run ${run.id} still has live ${who}; an unverified process is reported and never killed`,
       action: `run orch close-out ${run.id}; an unverified process is reported and never killed`,
     }]
   })

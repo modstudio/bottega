@@ -39,7 +39,7 @@ import {
   assertCallerAncestry, withWorktreeCreateLock, withWorktreeLease, withCleanupLock,
   removeFor, projectLockState,
   reclaimStaleProjectLock, worktreeLeaseName, type Worktree,
-  branchTip, restoreBranch,
+  branchTip, restoreBranch, processStartTime,
   type WorktreeObjectEnvironment, validateSeedWithTool,
 } from './worktree.ts'
 import { recipeNotes } from './recipe.ts'
@@ -85,8 +85,8 @@ import {
 import { appendRunEvent, teeTransportEvents } from './events.ts'
 import { checkpointRun, DEFAULT_CHECKPOINT_MINUTES, latestCheckpoint, recordFailedIdlePreservation } from './checkpoint.ts'
 import {
-  formatIdleKillError, idleKillMayProceed, idlePollMs, runHasLiveDescendants, shouldIdleKill,
-  terminateProcessGroup,
+  formatIdleKillError, idleKillMayProceed, idlePollMs, runHasLiveDescendants, sampleProcesses,
+  shouldIdleKill, terminateProcessGroup,
 } from './idle-kill.ts'
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
@@ -2018,11 +2018,16 @@ function attemptCloseOutRun(
   // or an unresolved symlink makes two rows for one worktree, and matching only
   // the spelling in hand releases a tree whose other owner is still running.
   const spellings = worktreePathSpellings(db(), treePath)
-  const agentPids = spellings.length
+  const vendorRows = spellings.length
     ? (db().query(
-        `SELECT agent_pid FROM run WHERE worktree IN (${spellings.map(() => '?').join(',')}) ORDER BY id`,
-      ).all(...spellings) as { agent_pid: number | null }[]).map((turn) => turn.agent_pid)
+        `SELECT agent_pid, agent_pgid FROM run
+          WHERE worktree IN (${spellings.map(() => '?').join(',')}) ORDER BY id`,
+      ).all(...spellings) as { agent_pid: number | null; agent_pgid: number | null }[])
     : []
+  const agentPids = vendorRows.map((turn) => turn.agent_pid)
+  const recordedPgids = [...new Set(
+    vendorRows.map((turn) => turn.agent_pgid).filter((pgid): pgid is number => pgid != null && pgid > 1),
+  )]
   const processInventory = processTable()
   if (!processInventory.ascertainable) return {
     runId: row.root_id, worktree: treePath, outcome: 'live',
@@ -2031,13 +2036,16 @@ function attemptCloseOutRun(
   const processSamples = processInventory.rows.map((processRow) => ({
     pid: processRow.pid, ppid: processRow.ppid, pgid: processRow.pgid, cpu: 0, state: '',
   }))
+  const sample = () => processSamples
   // A database row cannot observe a grandchild born after the T0 census and
   // reparented when its wrapper died. Re-sample the process table and retain
-  // the tree when either the recorded vendor or that captured process group
-  // still has a live descendant.
-  if (runHasLiveDescendants(
-    agentPids, options.extraPids ?? [], { sample: () => processSamples }, options.pgid ?? null,
-  )) return {
+  // the tree when the recorded vendor, a captured process group, or a
+  // persisted vendor pgid still has a live member. Close-out does not signal
+  // unverified leftovers; the monitor reports them.
+  const treeStillAlive = runHasLiveDescendants(
+    agentPids, options.extraPids ?? [], { sample }, options.pgid ?? null,
+  ) || recordedPgids.some((pgid) => runHasLiveDescendants([], [], { sample }, pgid))
+  if (treeStillAlive) return {
     runId: row.root_id, worktree: treePath, outcome: 'live',
     detail: 'process tree still alive',
   }
@@ -3471,9 +3479,16 @@ export async function run(opts: {
     // and the reclaimed-wall clock both start here so a slow worktree cut
     // cannot burn either budget.
     const vendorStartedAt = Date.now()
+    const vendorPid = handle.pid ?? null
+    const vendorSample = vendorPid && vendorPid > 1
+      ? sampleProcesses().find((row) => row.pid === vendorPid)
+      : undefined
+    const vendorPgid = vendorSample && vendorSample.pgid > 1 ? vendorSample.pgid : null
+    const vendorStartTime = vendorPid && vendorPid > 1 ? processStartTime(vendorPid) : null
     db().query(
-      'UPDATE run SET agent_pid=?, last_event_at=COALESCE(last_event_at, ?) WHERE id=?',
-    ).run(handle.pid, nowIso(), claim.id)
+      `UPDATE run SET agent_pid=?, agent_pgid=?, agent_start_time=?,
+              last_event_at=COALESCE(last_event_at, ?) WHERE id=?`,
+    ).run(vendorPid, vendorPgid, vendorStartTime, nowIso(), claim.id)
 
     const createCheckpoint = (final = false) => {
       if (!writesJob || !worktree || !launchKey) return null

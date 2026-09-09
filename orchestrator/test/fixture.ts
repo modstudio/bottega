@@ -216,7 +216,7 @@ export const { orphanSafety, repoRootOf, createWorktree, createWorktreeForBranch
         assertSharedRefGuardOutsideWritableRoots, removeSharedRefGuard,
         workerSharedGitRoots,
         carryWorkingState, withWorktreeCreateLock, withProjectLock, projectLockState,
-        reclaimStaleProjectLock, processStartTime, projectLockDir, staleProjectLockHolder,
+        reclaimStaleProjectLock, processStartTime, pidRecordIdentity, projectLockDir, staleProjectLockHolder,
         worktreeLeaseName,
         unmergedBranch, assertCallerAncestry, checkoutHasUncommittedWork, callerDrift,
         changesIn, contentTree, removeFor, branchTip, extractWorktree, extractionDest,

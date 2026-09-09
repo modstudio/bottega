@@ -1228,8 +1228,10 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
   const cutoff = new Date(Date.now() - STALE_AFTER_MS).toISOString()
   const bootstrapCutoff = new Date(Date.now() - PENDING_BOOTSTRAP_MS).toISOString()
   const rows = d
-    .query(`SELECT id, pid, agent, started_at FROM run WHERE status='running'`)
-    .all() as { id: number; pid: number | null; agent: string; started_at: string }[]
+    .query(`SELECT id, pid, agent_pid, agent, started_at FROM run WHERE status='running'`)
+    .all() as {
+      id: number; pid: number | null; agent_pid: number | null; agent: string; started_at: string
+    }[]
 
   const dead: number[] = []
   const abandonedBootstrap: number[] = []
@@ -1290,17 +1292,20 @@ export function reapStale(d: Database = db()): number | ObservedDeadRun[] {
     // by the calling harness's command timeout and landed here - a fact about the
     // caller, charged until now to qwen-local.
     const update = d.query(
-      `UPDATE run SET status='stale', failure_kind='interrupted',
-              error='abandoned: process gone, no terminal state recorded'
+      `UPDATE run SET status='stale', failure_kind='interrupted', error=?
         WHERE id=? AND status='running'`,
     )
     for (const id of dead) {
       const row = rows.find((candidate) => candidate.id === id)!
+      const vendorAlive = row.agent_pid && pidAlive(row.agent_pid)
+      const surviving = vendorAlive ? `; vendor pid ${row.agent_pid} still alive` : ''
+      const error = `abandoned: process gone, no terminal state recorded${surviving}`
+      const reason = (row.pid ? `pid ${row.pid} is not alive` : `no pid after ${STALE_AFTER_MS}ms`) +
+        surviving
       writeTransaction(() => {
-        if (update.run(id).changes !== 1) return
+        if (update.run(error, id).changes !== 1) return
         const authority = runMutationAuthority(d, id)
-        auditRunMutation(authority, 'reap',
-          row.pid ? `pid ${row.pid} is not alive` : `no pid after ${STALE_AFTER_MS}ms`, d)
+        auditRunMutation(authority, 'reap', reason, d)
       }, d)
     }
   }

@@ -4,11 +4,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   addRun, databasesFromNames, hermeticGitEnv, installTestDatabaseInventory,
-  parseRefGuardRunId, parseRetainedRef, parseWorktreeDatabaseName,
+  parseRefGuardRunId, parseRetainedRef, parseWorktreeDatabaseName, pidRecordIdentity,
+  reapStale, reapTestProcess,
   refGuardInventory, retainedRefInventory, terminalProcessAliveConditions,
-  upsertProject, worktreeDatabaseConditions, worktreeDatabaseInventory, reapTestProcess, db,
+  upsertProject, worktreeDatabaseConditions, worktreeDatabaseInventory, db,
 } from '../test/fixture.ts'
 import { pidAlive } from './db.ts'
+import { sampleProcesses } from './idle-kill.ts'
 
 afterEach(() => { installTestDatabaseInventory(null) })
 
@@ -53,6 +55,47 @@ test('a terminal run whose recorded pids are dead produces none', () => {
   const id = addRun({ agent: 'grok', job: 'craft', status: 'ok' })
   db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(4_194_304, 4_194_305, id)
   expect(terminalProcessAliveConditions()).toEqual([])
+})
+
+test('a terminal run with a live descendant in the recorded pgid produces a condition', async () => {
+  const child = Bun.spawn(['sleep', '30'], { detached: true, stdout: 'ignore', stderr: 'ignore' })
+  try {
+    expect(child.pid).toBeGreaterThan(1)
+    const pgid = sampleProcesses().find((row) => row.pid === child.pid)?.pgid ?? child.pid
+    const id = addRun({ agent: 'grok', job: 'craft', status: 'failed' })
+    db().query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=? WHERE id=?')
+      .run(4_194_304, 4_194_305, pgid, id)
+    expect(terminalProcessAliveConditions()).toEqual([expect.objectContaining({
+      kind: 'terminal-process-alive',
+      detail: expect.stringContaining(`pgid ${pgid}`),
+    })])
+  } finally {
+    await reapTestProcess(child.pid)
+  }
+})
+
+test('a reused agent pid is not reported as a leftover of a terminal run', () => {
+  const id = addRun({ agent: 'grok', job: 'craft', status: 'ok' })
+  db().query('UPDATE run SET pid=?, agent_pid=?, agent_start_time=? WHERE id=?')
+    .run(4_194_304, process.pid, 'Sat Jan  1 00:00:00 2000', id)
+  expect(pidRecordIdentity(process.pid, 'Sat Jan  1 00:00:00 2000')).toBe('reused')
+  expect(terminalProcessAliveConditions()).toEqual([])
+})
+
+test('reapStale records a surviving vendor pid and does not signal it', async () => {
+  const vendor = Bun.spawn(['sleep', '30'], { stdout: 'ignore', stderr: 'ignore' })
+  try {
+    const id = addRun({ agent: 'grok', job: 'craft', status: 'running' })
+    db().query('UPDATE run SET pid=?, agent_pid=? WHERE id=?').run(4_194_304, vendor.pid, id)
+    expect(reapStale(db())).toBe(1)
+    const row = db().query('SELECT status, error FROM run WHERE id=?').get(id) as
+      { status: string; error: string }
+    expect(row.status).toBe('stale')
+    expect(row.error).toContain(`vendor pid ${vendor.pid} still alive`)
+    expect(pidAlive(vendor.pid)).toBe(true)
+  } finally {
+    await reapTestProcess(vendor.pid)
+  }
 })
 
 test('injected worktree databases keep only names derived from a run id', () => {
