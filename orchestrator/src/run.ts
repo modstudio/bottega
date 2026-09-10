@@ -3830,12 +3830,6 @@ export async function run(opts: {
     const otherProjectMcpServers = new Set(projects()
       .map((project) => project.settings.mcpServer ?? project.name)
       .filter((server) => server !== ownMcpServer && server !== 'orch' && server !== 'orch-ask'))
-    const provenanceWrongProjectTool = parsedReview?.provenance.mcp_tools.find((tool) => {
-      const claude = tool.match(/^mcp__(.+?)__/)
-      const qualified = tool.match(/^([^.:/]+)[.:/]/)
-      const server = claude?.[1] ?? qualified?.[1]
-      return Boolean(server && otherProjectMcpServers.has(server))
-    })
     const cleanReview = parsedReview && status === 'ok' &&
       confinementEvent?.classification !== 'overlapping'
       ? cleanReviewEvidence(claim.id, parsedReview)
@@ -3848,7 +3842,7 @@ export async function run(opts: {
         reviewReply: parsedReview,
         confinementClassification: confinementEvent?.classification ?? null,
         cleanReview,
-        provenanceWrongProjectTool: provenanceWrongProjectTool ?? null,
+        otherProjectMcpServers,
         ownMcpServer,
         readerJob: isReaderJob(opts.job),
         declaredDeliverables,
@@ -3860,6 +3854,7 @@ export async function run(opts: {
     status = evidenceAssessment.status
     error = evidenceAssessment.error
     failureKind = evidenceAssessment.failureKind
+    const provenanceWrongProjectTool = evidenceAssessment.provenanceWrongProjectTool
 
     /**
      * The questions are written in the SAME `finally` as the row, so a blocked
