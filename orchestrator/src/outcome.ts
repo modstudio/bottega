@@ -8,6 +8,78 @@ export type OutcomeRow = {
   quality?: unknown
 }
 
+export type OutcomeStatus = 'ok' | 'asking' | 'failed'
+
+export type OutcomeInputs<FailureKind extends string = string> = {
+  idleKilled: boolean
+  completedReply: boolean
+  collectedAsking: boolean
+  acceptedQuestions: boolean
+  acpVendorStop: boolean
+  acpFailureKind: FailureKind
+  replyFileError: boolean
+  replyFilePresent: boolean
+  outputCeilingReached: boolean
+  timedOut: boolean
+  completedReplyAtTimeout: boolean
+  replyError: boolean
+  replyErrorFailureKind: FailureKind
+  nonAnswer: boolean
+  nonAnswerFailureKind: FailureKind
+  contractStatus: 'done' | 'asking' | 'refused' | null
+  exitCode: number
+  completedContractFailureKind: FailureKind
+  missingRequiredContract: boolean
+  missingContractFailureKind: FailureKind
+  outputPresent: boolean
+  defaultFailureKind: FailureKind
+}
+
+/** Decide the provisional terminal outcome from facts gathered by the caller. */
+export function decideOutcome<FailureKind extends string>(
+  inputs: OutcomeInputs<FailureKind>,
+): {
+  status: OutcomeStatus
+  failureKind: FailureKind | 'idle' | 'contract' | 'other' | 'truncated' | 'timeout' | null
+} {
+  if (inputs.idleKilled && inputs.completedReply) {
+    return { status: inputs.acceptedQuestions ? 'asking' : 'ok', failureKind: null }
+  } else if (inputs.idleKilled && (inputs.collectedAsking || inputs.acceptedQuestions)) {
+    return { status: 'asking', failureKind: null }
+  } else if (inputs.idleKilled) {
+    return { status: 'failed', failureKind: 'idle' }
+  } else if (inputs.acpVendorStop) {
+    return { status: 'failed', failureKind: inputs.acpFailureKind }
+  } else if (inputs.replyFileError) {
+    return { status: 'failed', failureKind: inputs.replyFilePresent ? 'contract' : 'other' }
+  } else if (inputs.collectedAsking || inputs.acceptedQuestions) {
+    return { status: 'asking', failureKind: null }
+  } else if (inputs.outputCeilingReached) {
+    return { status: 'failed', failureKind: 'truncated' }
+  } else if (inputs.timedOut && inputs.completedReplyAtTimeout) {
+    return { status: inputs.acceptedQuestions ? 'asking' : 'ok', failureKind: null }
+  } else if (inputs.timedOut) {
+    return { status: 'failed', failureKind: 'timeout' }
+  } else if (inputs.replyError) {
+    return { status: 'failed', failureKind: inputs.replyErrorFailureKind }
+  } else if (inputs.exitCode === 0 && inputs.nonAnswer) {
+    return { status: 'failed', failureKind: inputs.nonAnswerFailureKind }
+  } else if (inputs.acceptedQuestions) {
+    return { status: 'asking', failureKind: null }
+  } else if (inputs.contractStatus === 'asking') {
+    return { status: 'failed', failureKind: 'contract' }
+  } else if (inputs.contractStatus === 'refused') {
+    return { status: inputs.exitCode === 0 ? 'ok' : 'failed', failureKind: null }
+  } else if (inputs.exitCode !== 0 && inputs.contractStatus === 'done') {
+    return { status: 'failed', failureKind: inputs.completedContractFailureKind }
+  } else if (inputs.missingRequiredContract) {
+    return { status: 'failed', failureKind: inputs.missingContractFailureKind }
+  }
+
+  const status = inputs.exitCode === 0 && inputs.outputPresent ? 'ok' : 'failed'
+  return { status, failureKind: status === 'failed' ? inputs.defaultFailureKind : null }
+}
+
 /** One short phrase for a column that has room for one. */
 export function label(
   delivery: 'none' | 'partial' | 'full' | null,
