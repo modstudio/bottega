@@ -29,8 +29,7 @@ export type OutcomeInputs<FailureKind extends string = string> = {
   contractStatus: 'done' | 'asking' | 'refused' | null
   exitCode: number
   completedContractFailureKind: FailureKind
-  writesJob: boolean
-  contractPresent: boolean
+  missingRequiredContract: boolean
   missingContractFailureKind: FailureKind
   outputPresent: boolean
   defaultFailureKind: FailureKind
@@ -73,7 +72,7 @@ export function decideOutcome<FailureKind extends string>(
     return { status: inputs.exitCode === 0 ? 'ok' : 'failed', failureKind: null }
   } else if (inputs.exitCode !== 0 && inputs.contractStatus === 'done') {
     return { status: 'failed', failureKind: inputs.completedContractFailureKind }
-  } else if (inputs.writesJob && !inputs.contractPresent) {
+  } else if (inputs.missingRequiredContract) {
     return { status: 'failed', failureKind: inputs.missingContractFailureKind }
   }
 
