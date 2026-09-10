@@ -152,7 +152,7 @@ if (await inherit([
   // not providing.
   'bun', 'test', './.githooks/commit-msg.test.ts', './.githooks/post-merge.test.ts',
   './.githooks/pre-commit.test.ts', './scripts/check-canon.test.ts',
-  './scripts/quality/ratchet.test.ts',
+  './scripts/import-scanner.test.ts', './scripts/quality/ratchet.test.ts',
 ]) !== 0) process.exit(1)
 
 const results = await Promise.all(legs.map((leg) => runLeg({
@@ -163,7 +163,7 @@ refuseFailed(results)
 
 for (const script of [
   'check-boundaries.ts', 'check-isolation-boundary.ts', 'check-review-boundary.ts',
-  'check-outcome-boundary.ts',
+  'check-outcome-boundary.ts', 'check-contract-boundary.ts',
   'check-brand.ts', 'check-canon.ts',
   '../orchestrator/scripts/check-pack-budget.ts',
 ]) {

@@ -1,5 +1,6 @@
 import { REVIEW_SEVERITY } from './db.ts'
 import { progressFileInstruction } from './checkpoint.ts'
+import { isReaderJob, type Job } from './jobs.ts'
 
 /**
  * What an implementation worker is told, and what it must hand back.
@@ -312,6 +313,69 @@ export type ReviewReply = {
     could_not_verify: string[]; substitutes: string[]
     canon_source: CanonSource
   }
+}
+
+const isStrings = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.every((x) => typeof x === 'string')
+const isCanonSource = (v: unknown): v is CanonSource =>
+  typeof v === 'string' && (CANON_SOURCE_SCHEMA.enum as readonly string[]).includes(v)
+const exactKeys = (value: object, expected: string[]) => {
+  const actual = Object.keys(value).sort()
+  return actual.length === expected.length && actual.every((key, i) => key === [...expected].sort()[i])
+}
+
+export function parseReviewReply(value: unknown): ReviewReply | null {
+  const v = value as Partial<ReviewReply> | null
+  if (!v || typeof v !== 'object' || Array.isArray(v) || !exactKeys(v, ['findings', 'provenance']) ||
+      !Array.isArray(v.findings)) return null
+  const p = v.provenance
+  // The three DEV-371 provenance lists are demanded by the schema, but an agent
+  // whose schema binding was dropped (codex with MCP tools active) follows the
+  // prose contract only; an absent list reads as empty rather than as a
+  // malformed reply, so a review is never lost to a missing empty array.
+  const provenanceKeys = [
+    'standards_read', 'model_used', 'files_covered', 'commands_run',
+    'could_not_verify', 'canon_source',
+  ]
+  const optionalLists = ['mcp_tools', 'docs_read', 'substitutes'] as const
+  if (p && typeof p === 'object' && !Array.isArray(p)) {
+    for (const key of optionalLists) {
+      if (!(key in p)) (p as Record<string, unknown>)[key] = []
+    }
+  }
+  const withLists = (keys: string[]) => [...keys, ...optionalLists]
+  if (!p || typeof p !== 'object' || Array.isArray(p) ||
+      !(exactKeys(p, withLists(provenanceKeys)) || exactKeys(p, withLists(['tree_inspected', ...provenanceKeys]))) ||
+      (p.tree_inspected !== undefined && p.tree_inspected !== null &&
+        typeof p.tree_inspected !== 'string') ||
+      typeof p.model_used !== 'string' ||
+      !isStrings(p.standards_read) || !isStrings(p.files_covered) ||
+      !isStrings(p.commands_run) || !isStrings(p.mcp_tools) || !isStrings(p.docs_read) ||
+      !isStrings(p.could_not_verify) || !isStrings(p.substitutes) ||
+      !isCanonSource(p.canon_source)) return null
+  if (!v.findings.every((f) => f && typeof f === 'object' && !Array.isArray(f) &&
+      exactKeys(f, ['severity', 'location', 'evidence', 'proposed_correction']) &&
+      typeof f.severity === 'string' && typeof f.location === 'string' &&
+      typeof f.evidence === 'string' && typeof f.proposed_correction === 'string')) return null
+  if (p.tree_inspected === null) delete (p as Record<string, unknown>).tree_inspected
+  return v as ReviewReply
+}
+
+export function parseReviewOutput(text: string): ReviewReply | null {
+  const candidates = [text.trim(), ...(text.match(/```(?:json)?\s*([\s\S]*?)```/gi) ?? [])
+    .map((x) => x.replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim())]
+  for (const candidate of candidates) {
+    try {
+      const parsed = parseReviewReply(JSON.parse(candidate))
+      if (parsed) return parsed
+    } catch { /* try an embedded object */ }
+  }
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start >= 0 && end > start) {
+    try { return parseReviewReply(JSON.parse(text.slice(start, end + 1))) } catch { /* invalid */ }
+  }
+  return null
 }
 
 export const READER_DELIVERABLE_STATUSES = ['delivered', 'blocked', 'not-applicable'] as const
@@ -693,7 +757,7 @@ export function packResumePrompt(
  * of failure rather than as `done`. Assuming success from an unreadable reply
  * is how a run that never touched the code gets recorded as a completed one.
  */
-type JsonSchema = {
+export type JsonSchema = {
   type?: string | readonly string[]
   properties?: { readonly [key: string]: JsonSchema }
   required?: readonly string[]
@@ -828,6 +892,65 @@ export function parseWorkerReplyWithCount(
 
 export function parseWorkerReply(text: string): WorkerReply | null {
   return parseWorkerReplyWithCount(text).reply as WorkerReply | null
+}
+
+export type DialectParseResult = { reply: unknown | null; contractObjects: number }
+export type ReplyDialect = {
+  schema: JsonSchema
+  schemaName: string
+  parse: (text: string) => DialectParseResult
+}
+
+function parseSchemaReply(text: string, schema: JsonSchema): DialectParseResult {
+  let value: unknown
+  try { value = JSON.parse(text) } catch { return { reply: null, contractObjects: 0 } }
+  return validatesSchema(value, schema)
+    ? { reply: value, contractObjects: 1 }
+    : { reply: null, contractObjects: 0 }
+}
+
+/** Resolve the complete syntactic reply contract for one registered job. */
+export function resolveReplyDialect(j: Job): ReplyDialect {
+  if (j.name === 'issue-worker') {
+    return {
+      schema: ISSUE_WORKER_SCHEMA,
+      schemaName: 'ISSUE_WORKER_SCHEMA',
+      parse: (text) => parseWorkerReplyWithCount(text, ISSUE_WORKER_SCHEMA),
+    }
+  }
+  if (j.needs.writesRepo) {
+    return {
+      schema: WORKER_SCHEMA,
+      schemaName: 'WORKER_SCHEMA',
+      parse: (text) => parseWorkerReplyWithCount(text, WORKER_SCHEMA),
+    }
+  }
+  if (j.findings) {
+    return {
+      schema: REVIEW_SCHEMA,
+      schemaName: 'REVIEW_SCHEMA',
+      parse: (text) => ({ reply: parseReviewOutput(text), contractObjects: 0 }),
+    }
+  }
+  if (j.name === 'verify-claim') {
+    return {
+      schema: VERIFY_CLAIM_SCHEMA,
+      schemaName: 'VERIFY_CLAIM_SCHEMA',
+      parse: (text) => parseSchemaReply(text, VERIFY_CLAIM_SCHEMA),
+    }
+  }
+  if (isReaderJob(j.name)) {
+    return {
+      schema: READER_SCHEMA,
+      schemaName: 'READER_SCHEMA',
+      parse: (text) => ({ reply: parseReaderOutput(text), contractObjects: 0 }),
+    }
+  }
+  return {
+    schema: TEXT_REPLY_SCHEMA,
+    schemaName: TEXT_REPLY_SCHEMA_NAME,
+    parse: (text) => parseSchemaReply(text, TEXT_REPLY_SCHEMA),
+  }
 }
 
 

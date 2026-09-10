@@ -9,10 +9,9 @@
 import { Glob } from 'bun'
 import { readFileSync } from 'node:fs'
 import { CONCERNS } from '../shared/brand.ts'
+import { importSpecifiers } from './import-scanner.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
-const IMPORT = /(?:from|import|require\()\s*['"]([^'"]+)['"]/g
-
 const violations: string[] = []
 
 for (const concern of CONCERNS) {
@@ -20,8 +19,8 @@ for (const concern of CONCERNS) {
     if (rel.includes('node_modules')) continue
     const file = `${concern}/${rel}`
     const src = readFileSync(`${ROOT}/${file}`, 'utf8')
-    for (const m of src.matchAll(IMPORT)) {
-      const spec = m[1]!
+    const imports = importSpecifiers(src)
+    for (const spec of imports.specifiers) {
       if (!spec.startsWith('.')) continue
       // Resolve the specifier against the importing file, then see which
       // top-level concern it lands in.
@@ -50,17 +49,23 @@ for (const concern of CONCERNS) {
         violations.push(`${file}\n    imports "${spec}" -> ${target}/  (cross-concern)`)
       }
     }
+    for (const expression of imports.unresolvedRelative) {
+      violations.push(`${file}\n    has an unresolved relative import at ${expression}`)
+    }
   }
 }
 
 // shared/ is shared because it depends on nobody.
 for (const rel of new Glob('**/*.{ts,tsx,js,mjs}').scanSync({ cwd: `${ROOT}/shared` })) {
   const src = readFileSync(`${ROOT}/shared/${rel}`, 'utf8')
-  for (const m of src.matchAll(IMPORT)) {
-    const spec = m[1]!
+  const imports = importSpecifiers(src)
+  for (const spec of imports.specifiers) {
     if (spec.startsWith('.') && spec.includes('..')) {
       violations.push(`shared/${rel}\n    imports "${spec}" — shared/ may not reach outside itself`)
     }
+  }
+  for (const expression of imports.unresolvedRelative) {
+    violations.push(`shared/${rel}\n    has an unresolved relative import at ${expression}`)
   }
 }
 

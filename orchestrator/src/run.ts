@@ -49,17 +49,17 @@ export {
 } from './worktree.ts'
 import { recipeNotes } from './recipe.ts'
 import {
-  workerPreamble, packResumePrompt, READONLY_PREAMBLE, NO_REPO_PREAMBLE, WORKER_SCHEMA, ISSUE_WORKER_SCHEMA, REVIEW_SCHEMA,
-  TEXT_REPLY_SCHEMA, TEXT_REPLY_SCHEMA_NAME, REPLY_FILE_NAME, replyFileInstruction,
+  workerPreamble, packResumePrompt, READONLY_PREAMBLE, NO_REPO_PREAMBLE,
+  TEXT_REPLY_SCHEMA, REPLY_FILE_NAME, replyFileInstruction,
   REVIEW_SEVERITY_INSTRUCTION,
-  VERIFY_CLAIM_SCHEMA, READER_SCHEMA, readerDeliverablesInstruction,
-  parseWorkerReplyWithCount, isAsking, realQuestions, validatesSchema,
+  readerDeliverablesInstruction, resolveReplyDialect,
+  isAsking, realQuestions, validatesSchema,
   parseReaderOutput, missingDeclaredDeliverables, UNEVIDENCED_DELIVERABLE_ERROR,
-  type CanonSource, type WorkerReply,
+  type CanonSource, type WorkerReply, type ReviewReply, type ReplyDialect,
 } from './contract.ts'
 import {
   CALIBRATION_SUFFIX_RESERVE_BYTES, calibrationLine, cleanReviewEvidence,
-  parseReviewOutput, recordReview, reviewCalibration, reviewRunEvidenceSql,
+  recordReview, reviewCalibration, reviewRunEvidenceSql,
 } from './review.ts'
 import { assertMainCheckoutClean, assertRegisterBranches, createHasPlaceholder, projectAt, projectByName, projects, stackAt,
          validateStoredProjectSettings } from './projects.ts'
@@ -1693,10 +1693,7 @@ function presentReplyFileMatches(opts: {
   text: string
   schema: unknown
   customSchema: boolean
-  writesJob: boolean
-  issueWorker: boolean
-  findings: boolean
-  reader: boolean
+  dialect: ReplyDialect
 }): boolean {
   const schema = opts.schema as Parameters<typeof validatesSchema>[1]
   if (opts.customSchema) {
@@ -1704,16 +1701,7 @@ function presentReplyFileMatches(opts: {
     try { value = JSON.parse(opts.text) } catch { return false }
     return validatesSchema(value, schema)
   }
-  if (opts.writesJob) {
-    return parseWorkerReplyWithCount(
-      opts.text, opts.issueWorker ? ISSUE_WORKER_SCHEMA : WORKER_SCHEMA,
-    ).reply !== null
-  }
-  if (opts.findings) return parseReviewOutput(opts.text) !== null
-  if (opts.reader) return parseReaderOutput(opts.text) !== null
-  let value: unknown
-  try { value = JSON.parse(opts.text) } catch { return false }
-  return validatesSchema(value, schema)
+  return opts.dialect.parse(opts.text).reply !== null
 }
 
 function persistRunArtifacts(
@@ -2252,19 +2240,11 @@ export async function run(opts: {
     return [tool.notes ?? '', generated].filter(Boolean).join('\n\n')
   })()
   const originalPrompt = opts.prompt
-  const generatedSchema = requestedJob.name === 'issue-worker'
-    ? ISSUE_WORKER_SCHEMA
-    : writesJob ? WORKER_SCHEMA
-      : requestedJob.findings ? REVIEW_SCHEMA
-        : requestedJob.name === 'verify-claim' ? VERIFY_CLAIM_SCHEMA
-          : isReaderJob(opts.job) ? READER_SCHEMA : TEXT_REPLY_SCHEMA
+  const resolvedDialect = resolveReplyDialect(requestedJob)
+  const generatedSchema = resolvedDialect.schema
   const replySchemaName = opts.schemaPath
     ? basename(opts.schemaPath)
-    : requestedJob.name === 'issue-worker' ? 'ISSUE_WORKER_SCHEMA'
-      : writesJob ? 'WORKER_SCHEMA'
-        : requestedJob.findings ? 'REVIEW_SCHEMA'
-          : requestedJob.name === 'verify-claim' ? 'VERIFY_CLAIM_SCHEMA'
-            : isReaderJob(opts.job) ? 'READER_SCHEMA' : TEXT_REPLY_SCHEMA_NAME
+    : resolvedDialect.schemaName
   const runProjectName = opts.repo ?? repoOf(callerCwd)
   const runProjectId = runProjectName ? projectByName(runProjectName)?.id ?? null : null
   let pack: ReturnType<typeof compilePack> | null = null
@@ -3461,10 +3441,7 @@ export async function run(opts: {
         text: fileOutput,
         schema: validationSchema,
         customSchema: Boolean(opts.schemaPath),
-        writesJob,
-        issueWorker: requestedJob.name === 'issue-worker',
-        findings: Boolean(requestedJob.findings),
-        reader: isReaderJob(opts.job),
+        dialect: resolvedDialect,
       })) {
         replyFileError = `${REPLY_FILE_NAME} did not match the worker contract:\n${fileOutput}`
       } else if (textReplyContract) {
@@ -3534,9 +3511,7 @@ export async function run(opts: {
       mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${header}` : header
     }
     if (writesJob && output) {
-      const parsed = parseWorkerReplyWithCount(
-        output, requestedJob.name === 'issue-worker' ? ISSUE_WORKER_SCHEMA : WORKER_SCHEMA,
-      )
+      const parsed = resolvedDialect.parse(output)
       contract = parsed.reply as WorkerReply | null
       contractObjects = parsed.contractObjects
     }
@@ -3838,9 +3813,9 @@ export async function run(opts: {
       failureKind = 'truncated'
       acceptedQuestions = []
     }
-    let parsedReview: ReturnType<typeof parseReviewOutput> = null
+    let parsedReview: ReviewReply | null = null
     if (requestedJob.findings && output && (status === 'ok' || confinementEvent)) {
-      parsedReview = parseReviewOutput(output)
+      parsedReview = resolvedDialect.parse(output).reply as ReviewReply | null
       if (!parsedReview && status === 'ok') {
         status = 'failed'
         error = 'reply did not match the review contract: mandatory PROVENANCE section missing or malformed'

@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
 /** Keep outcome decisions and interpretation independent of lifecycle concerns. */
 import { readFileSync } from 'node:fs'
+import { importSpecifiers } from './import-scanner.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const FILE = 'orchestrator/src/outcome.ts'
 const source = readFileSync(`${ROOT}/${FILE}`, 'utf8')
 const violations: string[] = []
-const IMPORT = /(?:from|import|require\()\s*['"]([^'"]+)['"]/g
 const FORBIDDEN: [RegExp, string][] = [
   [/^\.\/agents(?:[.-]|$)/, 'agents'],
   [/^\.\/jobs(?:[.-]|$)/, 'jobs'],
@@ -21,10 +21,13 @@ const FORBIDDEN: [RegExp, string][] = [
   [/^\.\/run(?:[.-]|$)/, 'the run state machine'],
 ]
 
-for (const match of source.matchAll(IMPORT)) {
-  const specifier = match[1]!
+const imports = importSpecifiers(source)
+for (const specifier of imports.specifiers) {
   const concern = FORBIDDEN.find(([pattern]) => pattern.test(specifier))?.[1]
   if (concern) violations.push(`${FILE} imports "${specifier}" (${concern})`)
+}
+for (const expression of imports.unresolvedRelative) {
+  violations.push(`${FILE} has an unresolved relative import at ${expression}`)
 }
 
 const FORBIDDEN_CALLS: [RegExp, string][] = [

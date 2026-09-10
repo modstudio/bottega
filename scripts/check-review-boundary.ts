@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 /** Keep review verdicts independent of landing policy and run-chain ownership. */
 import { readFileSync } from 'node:fs'
+import { importSpecifiers } from './import-scanner.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const FILE = 'orchestrator/src/review.ts'
@@ -11,12 +12,14 @@ if (/\btryWriteContention\s*\(/.test(source)) {
   violations.push(`${FILE} calls tryWriteContention (machine-local coordination policy)`)
 }
 
-const IMPORT = /(?:from|import|require\()\s*['"]([^'"]+)['"]/g
-for (const match of source.matchAll(IMPORT)) {
-  const specifier = match[1]!
+const imports = importSpecifiers(source)
+for (const specifier of imports.specifiers) {
   if (/^\.\/landing(?:[.-]|$)/.test(specifier)) {
     violations.push(`${FILE} imports "${specifier}" (landing policy)`)
   }
+}
+for (const expression of imports.unresolvedRelative) {
+  violations.push(`${FILE} has an unresolved relative import at ${expression}`)
 }
 
 const RUN_POLICY_COLUMNS = ['parent_run_id', 'worktree', 'branch_kept', 'failure_kind'] as const
