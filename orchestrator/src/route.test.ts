@@ -572,7 +572,7 @@ describe('routing exploration', () => {
     }
     const calibrate = (agent: string, n: number) => {
       const runId = addRun({ agent, job: 'review-lens', lens: 'correctness' })
-      const reviewId = recordReview(runId, reviewReply(n))
+      const reviewId = recordReview(runId, reviewReply(n), db())
       for (let i = 1; i <= n; i++) triageFinding(reviewId, i, 'accepted')
       completeReview(reviewId)
     }
@@ -591,7 +591,7 @@ describe('routing exploration', () => {
       score(addRun({ agent: 'grok', job: 'review-lens' }), 'full', 'wrong')
     }
     const runId = addRun({ agent: 'grok', job: 'review-lens', lens: 'correctness' })
-    const reviewId = recordReview(runId, reviewReply(MIN_REVIEW_TRIAGED))
+    const reviewId = recordReview(runId, reviewReply(MIN_REVIEW_TRIAGED), db())
     for (let i = 1; i <= MIN_REVIEW_TRIAGED; i++) triageFinding(reviewId, i, 'accepted')
     completeReview(reviewId)
     const routed = pick('review-lens', undefined, 0, false, null, {}, false, 'correctness')

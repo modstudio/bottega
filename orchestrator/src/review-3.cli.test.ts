@@ -744,7 +744,7 @@ describe('findings routing narrows to a lens only when that buys a comparison', 
     agent: string, lens: string, quality: 'wrong' | 'mixed' | 'right', recorded = true,
   ) => {
     const runId = addRun({ agent, job: 'review-lens', lens })
-    if (recorded) recordReview(runId, reviewReply(0))
+    if (recorded) recordReview(runId, reviewReply(0), db())
     score(runId, 'full', quality)
     return runId
   }

@@ -1087,7 +1087,7 @@ export function reviewPins(prune = false, database: Database = db()): ReviewPin[
   return pins
 }
 
-export function recordReview(runId: number, output: ReviewReply, database: Database = writableDb()): number {
+export function recordReview(runId: number, output: ReviewReply, database: Database): number {
   return recordReviews([{ runId, output }], database)
 }
 

@@ -7,6 +7,14 @@ import { changeIdentity } from './change-identity.ts'
 import { AGENTS, JOBS, MIN_REVIEW_TRIAGED, REVIEW_SCHEMA, VERIFY_CLAIM_SCHEMA, addRun, calibrationLine, cleanReviewEvidence, completeReview, contentTree, coverageAudit, db, dir, getReview, gradeReviewLens, hermeticGitEnv, listReviews, parseReviewReply, preflight, recordReview, recordReviews, removeProject, reviewCalibration, reviewCalibrationFleet, reviewReply, runJob, score, state, strictCodexSchema, triageFinding, upsertProject } from '../test/fixture.ts'
 
 describe('review discipline', () => {
+  test('recordReview requires an explicit database handle', () => {
+    if (false) {
+      // @ts-expect-error The persistence handle is mandatory at this boundary.
+      recordReview(0, reviewReply(0))
+    }
+    expect(recordReview.length).toBe(3)
+  })
+
   test('clean review evidence must name work and intersect the measured change', () => {
     const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-review-evidence-')))
     const gg = (...args: string[]) => {
@@ -149,7 +157,7 @@ describe('review discipline', () => {
     })
     db().query('UPDATE run SET base_commit=?, changed_paths=? WHERE id=?')
       .run(gg('rev-parse', 'HEAD~1'), JSON.stringify(['kept.ts']), runId)
-    const reviewId = recordReview(runId, reviewReply(1, 'high'))
+    const reviewId = recordReview(runId, reviewReply(1, 'high'), db())
     db().query('UPDATE review SET path_set=? WHERE id=?').run(JSON.stringify(['recorded.ts']), reviewId)
     try {
       const reply = reviewReply(0) as any
@@ -183,7 +191,7 @@ describe('review discipline', () => {
         const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'model-a', lens, repo: project,
           inputTree: gg('rev-parse', 'reviewed^{tree}'), headCommit: gg('rev-parse', 'reviewed') })
         db().query('UPDATE run SET branch=?, base_commit=? WHERE id=?').run('reviewed', gg('rev-parse', 'main'), runId)
-        return { runId, reviewId: recordReview(runId, reviewReply(findings)) }
+        return { runId, reviewId: recordReview(runId, reviewReply(findings), db()) }
       }
       const open = make('read-open', 1)
       gradeReviewLens(open.runId, null, { reproduced: 'all', coverage: 'adequate', limits: 'named', overlap: 'alone' })
@@ -248,17 +256,17 @@ describe('review discipline', () => {
 
   test('fleet calibration groups graded models and emits null-model empty record pairs', () => {
     const graded = addRun({ agent: 'codex', job: 'review-lens', model: 'm1', lens: 'fleet-a' })
-    const gradedReview = recordReview(graded, reviewReply(MIN_REVIEW_TRIAGED))
+    const gradedReview = recordReview(graded, reviewReply(MIN_REVIEW_TRIAGED), db())
     gradeReviewLens(graded, null, { reproduced: 'all', coverage: 'adequate', limits: 'named', overlap: 'alone' })
     for (let i = 1; i <= MIN_REVIEW_TRIAGED; i++) triageFinding(gradedReview, i, 'accepted')
     completeReview(gradedReview)
     db().query("INSERT INTO score (run_id,delivery,quality,scored_at) VALUES (?,'full','right',?)")
       .run(graded, '2026-02-03T00:00:00.000Z')
     const ungraded = addRun({ agent: 'grok', job: 'review-lens', model: 'm2', lens: 'fleet-b' })
-    const ungradedReview = recordReview(ungraded, reviewReply(0)); completeReview(ungradedReview)
+    const ungradedReview = recordReview(ungraded, reviewReply(0), db()); completeReview(ungradedReview)
     for (const model of ['m3', 'm4']) {
       const runId = addRun({ agent: 'codex', job: 'review-lens', model, lens: 'fleet-c' })
-      const reviewId = recordReview(runId, reviewReply(MIN_REVIEW_TRIAGED / 2))
+      const reviewId = recordReview(runId, reviewReply(MIN_REVIEW_TRIAGED / 2), db())
       gradeReviewLens(runId, null, { reproduced: 'all', coverage: 'adequate', limits: 'named', overlap: 'alone' })
       for (let i = 1; i <= MIN_REVIEW_TRIAGED / 2; i++) triageFinding(reviewId, i, 'accepted')
       completeReview(reviewId)
@@ -266,7 +274,7 @@ describe('review discipline', () => {
         .run(runId, model === 'm3' ? '2026-02-04T00:00:00.000Z' : '2026-02-05T00:00:00.000Z')
     }
     const legacy = addRun({ agent: 'legacy', job: 'review-lens', model: 'legacy-model', lens: 'fleet-d' })
-    const legacyReview = recordReview(legacy, reviewReply(MIN_REVIEW_TRIAGED))
+    const legacyReview = recordReview(legacy, reviewReply(MIN_REVIEW_TRIAGED), db())
     db().query('UPDATE review_lens SET model=NULL WHERE run_id=?').run(legacy)
     gradeReviewLens(legacy, null, { reproduced: 'all', coverage: 'adequate', limits: 'named', overlap: 'alone' })
     for (let i = 1; i <= MIN_REVIEW_TRIAGED; i++) triageFinding(legacyReview, i, 'accepted')
@@ -494,8 +502,8 @@ describe('review discipline', () => {
       for (const runId of [trunkRun, branchRun, mixedTrunkRun, mixedBranchRun]) {
         db().query('UPDATE run SET base_commit=? WHERE id=?').run(trunkCommit, runId)
       }
-      const trunkReview = recordReview(trunkRun, reviewReply(0))
-      const branchReview = recordReview(branchRun, reviewReply(0))
+      const trunkReview = recordReview(trunkRun, reviewReply(0), db())
+      const branchReview = recordReview(branchRun, reviewReply(0), db())
       const partialReview = recordReviews([
         { runId: mixedTrunkRun, output: reviewReply(0) },
         { runId: mixedBranchRun, output: reviewReply(0) },
@@ -614,7 +622,7 @@ describe('review discipline', () => {
     })
     const stderr = spyOn(console, 'error').mockImplementation(() => {})
     try {
-      const reviewId = recordReview(runId, reviewReply(0))
+      const reviewId = recordReview(runId, reviewReply(0), db())
       expect(reviewId).toBeGreaterThan(0)
       expect(stderr).toHaveBeenCalledWith(expect.stringContaining(
         `refs/orch/reviewed/${runId} was not created: project not-registered is not registered`,
@@ -653,7 +661,7 @@ describe('review discipline', () => {
     writeFileSync(join(refDir, `${runId}.lock`), 'held\n')
     const stderr = spyOn(console, 'error').mockImplementation(() => {})
     try {
-      const reviewId = recordReview(runId, reviewReply(0))
+      const reviewId = recordReview(runId, reviewReply(0), db())
       expect(reviewId).toBeGreaterThan(0)
       expect(stderr).toHaveBeenCalledWith(expect.stringContaining(
         `refs/orch/reviewed/${runId} was not created: git update-ref failed:`,
@@ -703,7 +711,7 @@ describe('review discipline', () => {
   test('a completed review scored full right --void is not reviewer-precision evidence', () => {
     const make = (voided: boolean) => {
       const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'void-cal', lens: 'void-cal' })
-      const reviewId = recordReview(runId, reviewReply(1))
+      const reviewId = recordReview(runId, reviewReply(1), db())
       triageFinding(reviewId, 1, 'accepted')
       completeReview(reviewId)
       score(runId, 'full', 'right')
@@ -720,7 +728,7 @@ describe('review discipline', () => {
   test('precision counts accepted and modified as hits, rejects as misses, and skips nothing', () => {
     const make = (model: string, disposition: 'accepted' | 'modified' | 'rejected' | 'skipped', n: number) => {
       const runId = addRun({ agent: 'codex', job: 'review-lens', model, lens: 'correctness' })
-      const reviewId = recordReview(runId, reviewReply(n))
+      const reviewId = recordReview(runId, reviewReply(n), db())
       for (let i = 1; i <= n; i++) triageFinding(reviewId, i, disposition,
         disposition === 'rejected' ? 'not-a-defect' : undefined)
       completeReview(reviewId)
@@ -747,7 +755,7 @@ describe('review discipline', () => {
 
   test('below-floor and untriaged evidence report null, never zero', () => {
     const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'efficiency' })
-    const reviewId = recordReview(runId, reviewReply(1))
+    const reviewId = recordReview(runId, reviewReply(1), db())
     triageFinding(reviewId, 1, 'rejected', 'false-positive')
     expect(reviewCalibration('efficiency', 'codex', 'm').precision).toBeNull()
     completeReview(reviewId)
@@ -762,7 +770,7 @@ describe('review discipline', () => {
       `UPDATE run SET mcp=1, mcp_server='fixture-project', mcp_connected=0,
                       mcp_error='mirror: attachment failed' WHERE id=?`,
     ).run(runId)
-    const reviewId = recordReview(runId, reviewReply(0))
+    const reviewId = recordReview(runId, reviewReply(0), db())
     completeReview(reviewId)
     const calibration = reviewCalibration('mirror-mode', 'codex', 'm')
     expect(calibration.mirror_lenses).toBe(1)
@@ -795,7 +803,7 @@ describe('review discipline', () => {
         const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'rounds' })
         db().query('UPDATE run SET branch=?, launch_key=? WHERE id=?')
           .run(`${branch}-worker-${round}`, branch, runId)
-        const reviewId = recordReview(runId, reviewReply(0))
+        const reviewId = recordReview(runId, reviewReply(0), db())
         db().query("UPDATE review SET tier=2, tier_risk=2, tier_size=0, tier_reason='risk 2: fixture' WHERE id=?")
           .run(reviewId)
         completeReview(reviewId)
@@ -808,7 +816,7 @@ describe('review discipline', () => {
 
   test('triage records explicit severity agreement and leaves omission unassessed', () => {
     const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'severity' })
-    const reviewId = recordReview(runId, reviewReply(2))
+    const reviewId = recordReview(runId, reviewReply(2), db())
     db().query("UPDATE review_finding SET severity='high' WHERE review_id=? AND ordinal=2")
       .run(reviewId)
     triageFinding(reviewId, 1, 'accepted', undefined, 'critical')
@@ -827,7 +835,7 @@ describe('review discipline', () => {
 
   test('calibration and state count graded values and preserve historical null grades', () => {
     const gradedRun = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'graded' })
-    const gradedReview = recordReview(gradedRun, reviewReply(MIN_REVIEW_TRIAGED))
+    const gradedReview = recordReview(gradedRun, reviewReply(MIN_REVIEW_TRIAGED), db())
     gradeReviewLens(gradedRun, null, {
       reproduced: 'all', coverage: 'adequate', limits: 'named', overlap: 'alone',
     })
@@ -835,7 +843,7 @@ describe('review discipline', () => {
     completeReview(gradedReview)
 
     const historicalRun = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'graded' })
-    const historicalReview = recordReview(historicalRun, reviewReply(1))
+    const historicalReview = recordReview(historicalRun, reviewReply(1), db())
     triageFinding(historicalReview, 1, 'accepted')
     completeReview(historicalReview)
 
@@ -861,7 +869,7 @@ describe('review discipline', () => {
 
   test('grade shares use graded rows independently of the finding precision floor', () => {
     const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'clean-grade' })
-    const reviewId = recordReview(runId, reviewReply(0))
+    const reviewId = recordReview(runId, reviewReply(0), db())
     gradeReviewLens(runId, null, {
       reproduced: 'none', coverage: 'adequate', limits: 'absent', overlap: 'none',
     })
@@ -877,7 +885,7 @@ describe('review discipline', () => {
 
   test('severity calibration separates agreement, changes, and off-scale lens claims', () => {
     const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'severity-cell' })
-    const reviewId = recordReview(runId, reviewReply(3, 'high'))
+    const reviewId = recordReview(runId, reviewReply(3, 'high'), db())
     db().query("UPDATE review_finding SET severity='major' WHERE review_id=? AND ordinal=3").run(reviewId)
     triageFinding(reviewId, 1, 'accepted', undefined, 'high')
     triageFinding(reviewId, 2, 'accepted', undefined, 'critical')
@@ -892,7 +900,7 @@ describe('review discipline', () => {
   test('uses only the most recent fifty complete reviews', () => {
     const add = (disposition: 'accepted' | 'rejected') => {
       const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'window' })
-      const reviewId = recordReview(runId, reviewReply(1))
+      const reviewId = recordReview(runId, reviewReply(1), db())
       triageFinding(reviewId, 1, disposition,
         disposition === 'rejected' ? 'false-positive' : undefined)
       completeReview(reviewId)
@@ -914,7 +922,7 @@ describe('review discipline', () => {
       // Qualifying evidence exists for the selected agent and nowhere else.
       const evidenceRun = addRun({ agent: 'codex', job: 'review-lens-inline',
         model: agent.model, lens: 'bound-prompt' })
-      const evidenceReview = recordReview(evidenceRun, reviewReply(MIN_REVIEW_TRIAGED))
+      const evidenceReview = recordReview(evidenceRun, reviewReply(MIN_REVIEW_TRIAGED), db())
       for (let i = 1; i <= MIN_REVIEW_TRIAGED; i++) triageFinding(evidenceReview, i, 'accepted')
       completeReview(evidenceReview)
 

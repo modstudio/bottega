@@ -1189,7 +1189,7 @@ test('record-only closes the question, marks the chain stranded, and retry resta
   test('lens scoring updates an already-recorded review row instead of creating another review', () => {
     const id = addRun({ agent: 'codex', job: 'safety', model: 'm', lens: 'existing',
       session: 'orch-test-session' })
-    const reviewId = recordReview(id, reviewReply(1))
+    const reviewId = recordReview(id, reviewReply(1), db())
     const before = (db().query('SELECT COUNT(*) AS n FROM review').get() as { n: number }).n
     const r = orch('score', String(id), 'partial', 'mixed',
       '--reproduced', 'some', '--coverage', 'partial', '--limits', 'named', '--overlap', 'shared')
@@ -1306,7 +1306,7 @@ test('record-only closes the question, marks the chain stranded, and retry resta
 
   test('review triage --severity stores explicit agreement and omission stores null', () => {
     const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'triage-cli' })
-    const reviewId = recordReview(runId, reviewReply(2, 'high'))
+    const reviewId = recordReview(runId, reviewReply(2, 'high'), db())
     expect(orch('review', 'triage', String(reviewId), '1', 'accepted', '--severity', 'high').code).toBe(0)
     expect(orch('review', 'triage', String(reviewId), '2', 'accepted').code).toBe(0)
     expect(db().query(
@@ -1322,7 +1322,7 @@ test('record-only closes the question, marks the chain stranded, and retry resta
 
   test('duplicate triage severity is refused without changing the finding', () => {
     const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'triage-duplicate' })
-    const reviewId = recordReview(runId, reviewReply(1))
+    const reviewId = recordReview(runId, reviewReply(1), db())
     const r = orch('review', 'triage', String(reviewId), '1', 'accepted',
       '--severity', 'critical', '--severity', 'banana')
     expect(r.code).toBe(1)
@@ -1600,7 +1600,7 @@ test('record-only closes the question, marks the chain stranded, and retry resta
       agent: 'grok', job: 'review-lens', session: 'orch-test-session',
       inputTree: 'judge-tree', lens: 'correctness', promptSha: 'bound-grok', specSha: 'same-task',
     })
-    const reviewId = recordReview(subject, reviewReply(2, 'high'))
+    const reviewId = recordReview(subject, reviewReply(2, 'high'), db())
 
     const judged = orch(
       'judge', String(subject), 'full', 'right',
@@ -1631,7 +1631,7 @@ test('record-only closes the question, marks the chain stranded, and retry resta
       agent: 'grok', job: 'review-lens', session: 'orch-test-session',
       lens: 'rollback', promptSha: 'rollback-task',
     })
-    const reviewId = recordReview(subject, reviewReply(2, 'high'))
+    const reviewId = recordReview(subject, reviewReply(2, 'high'), db())
     const judged = orch(
       'judge', String(subject), 'full', 'right',
       '--reproduced', 'all', '--coverage', 'adequate', '--limits', 'named',
@@ -1664,7 +1664,7 @@ test('record-only closes the question, marks the chain stranded, and retry resta
       agent: 'grok', job: 'review-lens', session: 'none-review-session',
       lens: 'none-delivery', model: 'none-model',
     })
-    const reviewId = recordReview(subject, reviewReply(2, 'high'))
+    const reviewId = recordReview(subject, reviewReply(2, 'high'), db())
     const before = reviewCalibration('none-delivery', 'grok', 'none-model')
     expect(orchInput(['pending'], undefined, { CLAUDE_CODE_SESSION_ID: 'none-review-session' }).out)
       .toContain(String(subject))
@@ -1724,7 +1724,7 @@ test('record-only closes the question, marks the chain stranded, and retry resta
     const subject = addRun({
       agent: 'grok', job: 'review-lens', session: 'judge-hook-session', lens: 'correctness',
     })
-    recordReview(subject, reviewReply(2, 'high'))
+    recordReview(subject, reviewReply(2, 'high'), db())
     const reminder = scoreReminder('judge-hook-session').stdout.toString()
     expect(reminder).toContain(`orch judge ${subject}`)
     for (const flag of ['--reproduced', '--coverage', '--limits', '--overlap', '--finding 1=', '--finding 2=']) {
@@ -1734,7 +1734,7 @@ test('record-only closes the question, marks the chain stranded, and retry resta
 
   test('same task-prompt pairs key on recorded change identity and matching lenses', () => {
     const stamp = (runId: number, patchId: string, paths: string[]) => {
-      recordReview(runId, reviewReply(1, 'high'))
+      recordReview(runId, reviewReply(1, 'high'), db())
       db().query(
         `UPDATE review SET patch_id=?, path_set=?
           WHERE id=(SELECT review_id FROM review_lens WHERE run_id=?)`,
