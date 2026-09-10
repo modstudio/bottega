@@ -361,7 +361,7 @@ function reviewCoverageSummary(
   }
 }
 
-function coverageText(
+export function coverageText(
   project: string, repoRoot: string, branch: string, tip: string, trunk: string,
   summary = reviewCoverageSummary(project, repoRoot, branch, tip, trunk),
 ): string {
@@ -396,7 +396,7 @@ function coverageText(
 export class ReviewCoverageRefusal extends Error {
   constructor(
     message: string,
-    readonly clearingCommand: string,
+    readonly missing: string[],
     readonly reviewRework: { id: number; reason: string }[],
   ) {
     super(message)
@@ -427,11 +427,11 @@ export function requireReviewCoverage(
     verdict.kind === 'invalid' && ['patch-id differs', 'path set differs'].includes(verdict.reason)
       && reviewBelongsToCandidate(review, branch)
       ? [{ id: review.id, reason: verdict.reason }] : [])
-  const firstMissing = summary.missing[0]
-  const clearingCommand = firstMissing
-    ? `orch do review-lens --review ${branch} --lens ${firstMissing}`
-    : `orch do review-lens --review ${branch} --lens correctness`
-  throw new ReviewCoverageRefusal(coverageText(project, repoRoot, branch, tip, trunk, summary), clearingCommand, reworked)
+  throw new ReviewCoverageRefusal(
+    coverageText(project, repoRoot, branch, tip, trunk, summary),
+    summary.missing,
+    reworked,
+  )
 }
 
 export function recordReviewCarry(carry: ReviewCarry | null): void {

@@ -8,7 +8,7 @@ import { reviewInvalidationsSince } from './contention.ts'
 import { projectAt, projectByName, type Project } from './projects.ts'
 import { classifyReviewTier, diffNumstat } from './review-tier.ts'
 import {
-  recordReviewCarry, recordReviewInvalidations, requireReviewCoverage,
+  coverageText, recordReviewCarry, recordReviewInvalidations, requireReviewCoverage,
   ReviewCoverageRefusal, type ReviewCarry,
 } from './review.ts'
 import {
@@ -964,10 +964,14 @@ function authorizeLanding(
     return { override: null, carry: coverage.carry, validReviewIds: coverage.validReviewIds }
   } catch (error) {
     if (!(error instanceof ReviewCoverageRefusal)) throw error
+    const firstMissing = error.missing[0]
+    const clearingCommand = firstMissing
+      ? `orch do review-lens --review ${branch} --lens ${firstMissing}`
+      : `orch do review-lens --review ${branch} --lens correctness`
     throw Object.assign(namedError(
       `refusing to land unreviewed content\n${error.message}`,
       INVARIANT_LOCK_SCOPE,
-      error.clearingCommand,
+      clearingCommand,
     ), {
       reviewRework: error.reviewRework,
     })
