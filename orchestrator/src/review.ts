@@ -1,7 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import {
   db, nowIso, REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP,
-  REVIEW_SEVERITY, sessionId, tryWriteContention,
+  REVIEW_SEVERITY, sessionId,
   voidedSql,
   type ReviewReproduced, type ReviewCoverage, type ReviewLimits, type ReviewOverlap,
   type ReviewSeverity, writableDb, writeTransaction,
@@ -82,7 +82,6 @@ export type ReviewCoverageInput = {
   outdatedReason?: string | null
   lenses: {
     lens: string
-    runId: number
     tree: string | null
     inputTree: string | null
     branch: string | null
@@ -95,7 +94,7 @@ export type ReviewCoverageInput = {
 function completedReviews(project: string): ReviewCoverageInput[] {
   const rows = db().query(
     `SELECT r.id, r.patch_id, r.path_set, r.commit_message, r.outdated_reason,
-            rl.lens, rl.run_id, rl.reviewed_tree, run.input_tree,
+            rl.lens, rl.reviewed_tree, run.input_tree,
             run.branch, run.base_commit, run.launch_cwd, run.head_commit
        FROM review r
        JOIN review_lens rl ON rl.review_id=r.id
@@ -108,7 +107,7 @@ function completedReviews(project: string): ReviewCoverageInput[] {
       ORDER BY r.id, rl.id`,
   ).all(project) as {
     id: number; patch_id: string | null; path_set: string | null; commit_message: string | null
-    outdated_reason: string | null; lens: string; run_id: number; reviewed_tree: string | null
+    outdated_reason: string | null; lens: string; reviewed_tree: string | null
     input_tree: string | null; branch: string | null; base_commit: string | null
     launch_cwd: string | null; head_commit: string | null
   }[]
@@ -117,7 +116,7 @@ function completedReviews(project: string): ReviewCoverageInput[] {
     const review = grouped.get(row.id) ?? { id: row.id, patchId: row.patch_id, pathSet: row.path_set,
       commitMessage: row.commit_message, outdatedReason: row.outdated_reason, lenses: [] }
     review.lenses.push({
-      lens: row.lens, runId: row.run_id, tree: row.reviewed_tree,
+      lens: row.lens, tree: row.reviewed_tree,
       inputTree: row.input_tree, branch: row.branch, baseCommit: row.base_commit,
       launchCwd: row.launch_cwd, headCommit: row.head_commit,
     })
@@ -453,8 +452,9 @@ export function recordReviewCarry(carry: ReviewCarry | null): void {
 }
 
 export function recordReviewInvalidations(
-  project: Project, repoRoot: string, trunkOid: string, landedBranch: string, landingId: number,
-): void {
+  project: Project, repoRoot: string, trunkOid: string, landedBranch: string,
+): { branch: string; reviewId: number }[] {
+  const invalidations: { branch: string; reviewId: number }[] = []
   for (const review of completedReviews(project.name)) {
     const branch = review.lenses.find((lens) => lens.branch)?.branch
     if (!branch || branch === landedBranch) continue
@@ -479,12 +479,10 @@ export function recordReviewInvalidations(
         gitCwd, review, synthetic, trunkOid, runner, { skipExact: true },
       )
       if (verdict.kind !== 'invalid') continue
-      tryWriteContention({
-        resourceKind: 'review', resourceKey: branch, eventKind: 'invalidation',
-        cause: `review ${review.id}`, landingId,
-      })
+      invalidations.push({ branch, reviewId: review.id })
     } catch { /* a missing path or tree is not this landing's invalidation */ }
   }
+  return invalidations
 }
 
 export type ReviewListFilter = {
@@ -508,7 +506,7 @@ export type ReviewListRow = {
 }
 
 type ReviewReadLens = ReviewCoverageInput['lenses'][number] & {
-  id: number; agent: string; model: string | null; treeInspected: string | null
+  id: number; runId: number; agent: string; model: string | null; treeInspected: string | null
   reviewRef: string; reproduced: ReviewReproduced | null; coverageGrade: ReviewCoverage | null
   limits: ReviewLimits | null; overlap: ReviewOverlap | null
 }

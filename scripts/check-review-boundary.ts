@@ -7,6 +7,10 @@ const FILE = 'orchestrator/src/review.ts'
 const source = readFileSync(`${ROOT}/${FILE}`, 'utf8')
 const violations: string[] = []
 
+if (/\btryWriteContention\s*\(/.test(source)) {
+  violations.push(`${FILE} calls tryWriteContention (machine-local coordination policy)`)
+}
+
 const IMPORT = /(?:from|import|require\()\s*['"]([^'"]+)['"]/g
 for (const match of source.matchAll(IMPORT)) {
   const specifier = match[1]!

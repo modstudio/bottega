@@ -1672,7 +1672,15 @@ function recordOverlapInvalidations(
     })
     console.log(`rebase required for ${row.branch} (overlaps landing ${landingId})`)
   }
-  recordReviewInvalidations(project, repoRoot, git(repoRoot, ['rev-parse', 'HEAD']), landedBranch, landingId)
+  const reviewInvalidations = recordReviewInvalidations(
+    project, repoRoot, git(repoRoot, ['rev-parse', 'HEAD']), landedBranch,
+  )
+  for (const invalidation of reviewInvalidations) {
+    tryWriteContention({
+      resourceKind: 'review', resourceKey: invalidation.branch, eventKind: 'invalidation',
+      cause: `review ${invalidation.reviewId}`, landingId,
+    })
+  }
 }
 
 function finishLanded(
