@@ -163,6 +163,7 @@ refuseFailed(results)
 
 for (const script of [
   'check-boundaries.ts', 'check-isolation-boundary.ts', 'check-review-boundary.ts',
+  'check-outcome-boundary.ts',
   'check-brand.ts', 'check-canon.ts',
   '../orchestrator/scripts/check-pack-budget.ts',
 ]) {
