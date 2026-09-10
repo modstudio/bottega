@@ -1623,6 +1623,13 @@ export function reconcileRun(id: number): string {
   const row = db().query('SELECT id, unreconciled, status FROM run WHERE id=?').get(id) as
     { id: number; unreconciled: number; status: string } | null
   if (!row) throw new Error(`no run ${id}`)
+  /**
+   * Reconciliation can restore an `asking` status only because question rows
+   * are inserted before the journalled terminal write. The snapshot carries no
+   * question payload. Making those inserts part of the terminal transaction
+   * therefore requires first making questions recoverable from this journal,
+   * or a failed transaction could reconcile to `asking` with nothing to answer.
+   */
   writeTransaction(() => {
     db().query(
       `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
@@ -3857,11 +3864,17 @@ export async function run(opts: {
     const provenanceWrongProjectTool = evidenceAssessment.provenanceWrongProjectTool
 
     /**
-     * The questions are written in the SAME `finally` as the row, so a blocked
-     * run cannot exist without them. Split across two statements, a crash in
-     * between would leave a run marked `blocked` with nothing to answer — which
-     * looks identical to a run waiting on a ruling nobody has given, and would
-     * sit in the inbox for ever.
+     * Questions are deliberately inserted BEFORE the terminal row is written.
+     * This is ordering, not a transaction: a lost terminal write can leave the
+     * run reading `running` with an open question. That half-state is
+     * recoverable because the escalation survived. The reverse — terminal
+     * `asking` with nothing to answer — is not, and would sit in the inbox for
+     * ever.
+     *
+     * Making the inserts atomic with the terminal write requires first making
+     * questions recoverable from the terminal journal. `TerminalSnapshot`
+     * carries no question payload, so reconciliation could otherwise restore
+     * `asking` without its questions after a failed terminal transaction.
      */
     if (acceptedQuestions.length) {
       /**
