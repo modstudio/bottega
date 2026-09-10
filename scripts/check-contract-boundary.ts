@@ -1,12 +1,12 @@
 #!/usr/bin/env bun
 /** Keep reply dialect resolution independent of lifecycle and impure transport concerns. */
 import { readFileSync } from 'node:fs'
+import { importSpecifiers } from './import-scanner.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const FILE = 'orchestrator/src/contract.ts'
 const source = readFileSync(`${ROOT}/${FILE}`, 'utf8')
 const violations: string[] = []
-const IMPORT = /(?:from|import|require\()\s*['"]([^'"]+)['"]/g
 const FORBIDDEN: [RegExp, string][] = [
   [/^\.\/run(?:[.-]|$)/, 'the run state machine'],
   [/^\.\/landing(?:[.-]|$)/, 'landing'],
@@ -16,8 +16,7 @@ const FORBIDDEN: [RegExp, string][] = [
   [/^\.\/canon(?:[.-]|$)/, 'canon'],
 ]
 
-for (const match of source.matchAll(IMPORT)) {
-  const specifier = match[1]!
+for (const specifier of importSpecifiers(source)) {
   const concern = FORBIDDEN.find(([pattern]) => pattern.test(specifier))?.[1]
   if (concern) violations.push(`${FILE} imports "${specifier}" (${concern})`)
 }

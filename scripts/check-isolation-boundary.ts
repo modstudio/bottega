@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
 /** Keep the isolation module independent of run policy and lifecycle concerns. */
 import { readFileSync } from 'node:fs'
+import { importSpecifiers } from './import-scanner.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const FILE = 'orchestrator/src/worktree.ts'
-const IMPORT = /(?:from|import|require\()\s*['"]([^'"]+)['"]/g
 const FORBIDDEN: [RegExp, string][] = [
   [/^\.\/agents(?:[.-]|$)/, 'agents'],
   [/^\.\/jobs(?:[.-]|$)/, 'jobs'],
@@ -18,8 +18,7 @@ const FORBIDDEN: [RegExp, string][] = [
 
 const source = readFileSync(`${ROOT}/${FILE}`, 'utf8')
 const violations: string[] = []
-for (const match of source.matchAll(IMPORT)) {
-  const specifier = match[1]!
+for (const specifier of importSpecifiers(source)) {
   const concern = FORBIDDEN.find(([pattern]) => pattern.test(specifier))?.[1]
   if (concern) violations.push(`${FILE} imports "${specifier}" (${concern})`)
 }
