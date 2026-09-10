@@ -44,6 +44,58 @@ export type MonitorResult = {
   canon: { findings: number; docs: number }
 }
 
+const ASKING_RUN_WHERE =
+  `status='asking'
+   AND NOT EXISTS (
+     SELECT 1 FROM question q WHERE q.run_id = run.id AND q.answered_at IS NULL
+   )`
+
+const APPEND_ONLY_DELIVERY_KINDS = new Set([
+  'ghost-open-interval',
+  'observation-error',
+  'stale-run',
+])
+
+const REVALIDATED_DELIVERY_KINDS = new Set([
+  'asking-run',
+  'dead-running-process',
+  'idle',
+  'task-waiting-on-ruling',
+  'terminal-close-out-held',
+  'terminal-close-out-failed',
+  'unscored-run',
+])
+
+type AddressedRun = { id: number; started_at: string; session_id: string | null }
+
+function askingRuns(database = db()): AddressedRun[] {
+  return database.query(
+    `SELECT id, started_at, session_id FROM run WHERE ${ASKING_RUN_WHERE}`,
+  ).all() as AddressedRun[]
+}
+
+type TerminalCloseOutRun = AddressedRun & {
+  close_out_outcome: 'held' | 'failed'
+  close_out_detail: string | null
+  close_out_attempted_at: string | null
+}
+
+function terminalCloseOutRuns(database = db()): TerminalCloseOutRun[] {
+  return database.query(
+    `SELECT id, started_at, close_out_outcome, close_out_detail, close_out_attempted_at, session_id
+       FROM run
+      WHERE status IN ('ok','failed','stale','stopped')
+        AND close_out_outcome IN ('held','failed')`,
+  ).all() as TerminalCloseOutRun[]
+}
+
+function unscoredRuns(database = db()): AddressedRun[] {
+  return database.query(
+    `SELECT r.id, r.started_at, r.session_id
+       FROM run r LEFT JOIN score s ON s.run_id=r.id WHERE ${UNSCORED_WHERE}`,
+  ).all() as AddressedRun[]
+}
+
 /** Exactly the fields the human pass line prints, taken from the domain type. */
 export type HumanMonitorCondition = Pick<
   MonitorCondition,
@@ -387,12 +439,7 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
     conditions.push({ ...condition, ageMs: condition.ageMs ?? age(condition.since, clock) })
   const reclaimProject = projectAt(process.cwd())
 
-  const asking = database.query(
-    `SELECT id, started_at, session_id FROM run WHERE status='asking'
-      AND NOT EXISTS (
-        SELECT 1 FROM question q WHERE q.run_id = run.id AND q.answered_at IS NULL
-      )`,
-  ).all() as { id: number; started_at: string; session_id: string | null }[]
+  const asking = askingRuns(database)
   for (const run of asking) add({ kind: 'asking-run', subject: `run:${run.id}`, since: run.started_at,
     detail: `run ${run.id} is waiting on a ruling; session ${run.session_id ?? 'unknown'}`,
     action: 'reported; abandoning or resuming is an intent decision', ownerSession: run.session_id })
@@ -400,15 +447,7 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
   conditions.push(...deadRunningProcessConditions(clock))
   conditions.push(...idleRunConditions(clock))
 
-  const closeOuts = database.query(
-    `SELECT id, close_out_outcome, close_out_detail, close_out_attempted_at, session_id
-       FROM run
-      WHERE status IN ('ok','failed','stale','stopped')
-        AND close_out_outcome IN ('held','failed')`,
-  ).all() as {
-    id: number; close_out_outcome: 'held' | 'failed'; close_out_detail: string | null
-    close_out_attempted_at: string | null; session_id: string | null
-  }[]
+  const closeOuts = terminalCloseOutRuns(database)
   for (const run of closeOuts) add({
     kind: `terminal-close-out-${run.close_out_outcome}`,
     subject: `run:${run.id}`,
@@ -454,9 +493,7 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
 
   conditions.push(...terminalProcessAliveConditions(clock))
 
-  const unscored = database.query(
-    `SELECT r.id, r.started_at, r.session_id FROM run r LEFT JOIN score s ON s.run_id=r.id WHERE ${UNSCORED_WHERE}`,
-  ).all() as { id: number; started_at: string; session_id: string | null }[]
+  const unscored = unscoredRuns(database)
   for (const run of unscored) add({ kind: 'unscored-run', subject: `run:${run.id}`, since: run.started_at,
     detail: `completed run ${run.id} has no score`, action: 'reported; only its owning reader may score it',
     ownerSession: run.session_id })
@@ -703,6 +740,43 @@ function landingNoticeDetail(row: {
   return `${event} ${row.id}/${branch} ${duration}; inspect with 'orch land --status'`
 }
 
+function currentAddressedSubjects(kinds: Set<string>): Map<string, Set<string>> {
+  for (const kind of kinds) {
+    if (!APPEND_ONLY_DELIVERY_KINDS.has(kind) && !REVALIDATED_DELIVERY_KINDS.has(kind)) {
+      throw new Error(`monitor notice kind ${kind} has no delivery-currentness policy`)
+    }
+  }
+
+  const current = new Map<string, Set<string>>()
+  const record = (kind: string, subjects: string[]) => current.set(kind, new Set(subjects))
+  if (kinds.has('asking-run')) {
+    record('asking-run', askingRuns().map((run) => `run:${run.id}`))
+  }
+  if (kinds.has('dead-running-process')) {
+    record('dead-running-process', deadRunningProcessConditions().map((condition) => condition.subject))
+  }
+  if (kinds.has('idle')) {
+    record('idle', idleRunConditions().map((condition) => condition.subject))
+  }
+  if (kinds.has('task-waiting-on-ruling')) {
+    record('task-waiting-on-ruling', rulingConditions().conditions.map((condition) => condition.subject))
+  }
+  if (kinds.has('terminal-close-out-held') || kinds.has('terminal-close-out-failed')) {
+    const closeOuts = terminalCloseOutRuns()
+    for (const outcome of ['held', 'failed'] as const) {
+      const kind = `terminal-close-out-${outcome}`
+      if (kinds.has(kind)) {
+        record(kind, closeOuts.filter((run) => run.close_out_outcome === outcome)
+          .map((run) => `run:${run.id}`))
+      }
+    }
+  }
+  if (kinds.has('unscored-run')) {
+    record('unscored-run', unscoredRuns().map((run) => `run:${run.id}`))
+  }
+  return current
+}
+
 /** Read addressed findings without consuming them. A failed consumer gets them again. */
 export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
   if (!ownerSession.trim()) throw new Error('monitor notices require a session id')
@@ -725,7 +799,11 @@ export function claimMonitorNotices(ownerSession: string): MonitorNotice[] {
       issue_key: string | null; severity: MonitorSeverity | null; owner_session_id: string
       run_status: string | null; run_project: string | null
     }[]
-  const conditions = rows.map((row) => ({
+  const kinds = new Set(rows.map((row) => row.kind))
+  const current = currentAddressedSubjects(kinds)
+  const conditions = rows.filter((row) =>
+    APPEND_ONLY_DELIVERY_KINDS.has(row.kind) || current.get(row.kind)?.has(row.subject),
+  ).map((row) => ({
       noticeId: `condition:${row.id}` as const,
       kind: row.kind, subject: row.subject, since: row.condition_since, ageMs: row.age_ms,
       detail: deliveredDetail(row), issueKey: row.issue_key,

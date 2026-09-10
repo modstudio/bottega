@@ -33,6 +33,23 @@ function migrateHub(path: string): void {
   expect(result.exitCode, result.stderr.toString()).toBe(0)
 }
 
+function persistAddressedCondition(
+  kind: string,
+  subject: string,
+  ownerSession: string,
+  since = nowIso(),
+): number {
+  const invocation = (db().query(
+    `INSERT INTO monitor_invocation (started_at,finished_at,trigger,findings,errors)
+     VALUES (?,?, 'backstop', 1, 0) RETURNING id`,
+  ).get(since, since) as { id: number }).id
+  return (db().query(
+    `INSERT INTO monitor_condition
+       (invocation_id,kind,subject,condition_since,age_ms,detail,action,owner_session_id)
+     VALUES (?,?,?,?,0,'recorded condition','reported',?) RETURNING id`,
+  ).get(invocation, kind, subject, since, ownerSession) as { id: number }).id
+}
+
 describe('operational monitor record', () => {
   test('landing notices are read without consuming and acknowledged only for their owner', () => {
     const started = '2026-09-09T00:00:00.000Z'
@@ -797,6 +814,47 @@ echo '[]'
         .toEqual([`run:${stale}`, `run:${unscored}`].sort())
       expect(claimMonitorNotices('somebody-else')).toEqual([])
     } finally { spawn.mockRestore() }
+  })
+
+  test('does not deliver an asking-run condition after the run resumes', () => {
+    const owner = 'resolved-asking-owner'
+    const runId = addRun({ agent: 'codex', job: 'implement', status: 'asking', session: owner })
+    persistAddressedCondition('asking-run', `run:${runId}`, owner)
+
+    db().query("UPDATE run SET status='ok' WHERE id=?").run(runId)
+
+    expect(claimMonitorNotices(owner)).toEqual([])
+  })
+
+  test('does not deliver an unscored-run condition after the run is scored', () => {
+    const owner = 'resolved-unscored-owner'
+    const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: owner })
+    persistAddressedCondition('unscored-run', `run:${runId}`, owner)
+
+    score(runId, 'full', 'right', 'faithful')
+
+    expect(claimMonitorNotices(owner)).toEqual([])
+  })
+
+  // Residual, untested here: claimMonitorNotices re-validates and returns synchronously,
+  // so a condition that resolves AFTER the claim and BEFORE the heartbeat emits it is
+  // still delivered. That window lives at the heartbeat emission boundary, not inside
+  // the claim, and no assertion on the claim's returned array can observe it.
+
+  test('append-only event and terminal-fact notices still deliver after current state moves on', () => {
+    const owner = 'append-only-owner'
+    const runId = addRun({ agent: 'codex', job: 'implement', status: 'stale', session: owner })
+    persistAddressedCondition('ghost-open-interval', 'interval:already-closed', owner)
+    persistAddressedCondition('observation-error', 'invocation:recovered-observer', owner)
+    persistAddressedCondition('stale-run', `run:${runId}`, owner)
+
+    db().query("UPDATE run SET status='ok' WHERE id=?").run(runId)
+
+    expect(claimMonitorNotices(owner).map((notice) => notice.kind).sort()).toEqual([
+      'ghost-open-interval',
+      'observation-error',
+      'stale-run',
+    ])
   })
 
   test('a missing hub rulings document is an observation error, not emptiness', () => {
