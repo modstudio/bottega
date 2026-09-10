@@ -12,10 +12,14 @@ if (/\btryWriteContention\s*\(/.test(source)) {
   violations.push(`${FILE} calls tryWriteContention (machine-local coordination policy)`)
 }
 
-for (const specifier of importSpecifiers(source)) {
+const imports = importSpecifiers(source)
+for (const specifier of imports.specifiers) {
   if (/^\.\/landing(?:[.-]|$)/.test(specifier)) {
     violations.push(`${FILE} imports "${specifier}" (landing policy)`)
   }
+}
+for (const expression of imports.unresolvedRelative) {
+  violations.push(`${FILE} has an unresolved relative import at ${expression}`)
 }
 
 const RUN_POLICY_COLUMNS = ['parent_run_id', 'worktree', 'branch_kept', 'failure_kind'] as const

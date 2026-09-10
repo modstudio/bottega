@@ -18,9 +18,13 @@ const FORBIDDEN: [RegExp, string][] = [
 
 const source = readFileSync(`${ROOT}/${FILE}`, 'utf8')
 const violations: string[] = []
-for (const specifier of importSpecifiers(source)) {
+const imports = importSpecifiers(source)
+for (const specifier of imports.specifiers) {
   const concern = FORBIDDEN.find(([pattern]) => pattern.test(specifier))?.[1]
   if (concern) violations.push(`${FILE} imports "${specifier}" (${concern})`)
+}
+for (const expression of imports.unresolvedRelative) {
+  violations.push(`${FILE} has an unresolved relative import at ${expression}`)
 }
 
 if (violations.length) {

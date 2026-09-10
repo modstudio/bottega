@@ -74,7 +74,9 @@ describe('reply dialect resolution', () => {
 
     for (const { job, schema, valid } of dialects) {
       const dialect = resolveReplyDialect(job)
-      const incompatible = schema === TEXT_REPLY_SCHEMA ? workerReply : { answer: 'wrong dialect' }
+      const incompatible = schema === TEXT_REPLY_SCHEMA
+        ? workerReply
+        : schema === ISSUE_WORKER_SCHEMA ? workerReply : { answer: 'wrong dialect' }
       expect(dialect.schema).toBe(schema)
       expect(dialect.parse(JSON.stringify(valid)).reply).not.toBeNull()
       expect(dialect.parse(JSON.stringify(incompatible)).reply).toBeNull()
