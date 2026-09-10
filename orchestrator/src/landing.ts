@@ -8,6 +8,7 @@ import { reviewInvalidationsSince } from './contention.ts'
 import { changeIdentity, type ChangeIdentityGitResult, type ChangeIdentityGitRunner } from './change-identity.ts'
 import { projectAt, projectByName, type Project } from './projects.ts'
 import { classifyReviewTier, diffNumstat } from './review-tier.ts'
+import { completedReviewEvidenceSql } from './review.ts'
 import {
   contentTree, prepareSharedRefGuard, projectLockState, repoRootOf, withProjectLock,
   withWorktreeLease, targetGitEnvironment, inspectionGitEnv,
@@ -908,7 +909,7 @@ function completedReviews(project: string): ReviewCoverageInput[] {
        FROM review r
        JOIN review_lens rl ON rl.review_id=r.id
        JOIN run ON run.id=rl.run_id
-      WHERE r.completed_at IS NOT NULL AND EXISTS (
+      WHERE ${completedReviewEvidenceSql('r', 'run', 'rl')} AND EXISTS (
         SELECT 1 FROM review_lens project_lens
         JOIN run project_run ON project_run.id=project_lens.run_id
         WHERE project_lens.review_id=r.id AND project_run.repo=?

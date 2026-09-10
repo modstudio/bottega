@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { rmSync, readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync, readdirSync, rmdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { addRun, cleanCompletedSequencerState, completeReview, contentTree, db, gateFailureSummary, getReview, hermeticGitEnv, land, landingReviewCoverage, listReviews, prepareSharedRefGuard, projectLockState, recordReviews, reviewPins, reviewReply, upsertProject, withProjectLock } from '../test/fixture.ts'
+import { addRun, cleanCompletedSequencerState, completeReview, contentTree, db, gateFailureSummary, getReview, hermeticGitEnv, land, landingReviewCoverage, listReviews, prepareSharedRefGuard, projectLockState, recordReviews, reviewPins, reviewReply, score, upsertProject, withProjectLock } from '../test/fixture.ts'
 
 import { landingDescribeFixture } from '../test/fixture.ts'
 import shards from '../test/shards.json'
@@ -1087,6 +1087,53 @@ test('only bun\'s complete timeout line reports machine load', () => {
         'SELECT id FROM landing_review_carry WHERE branch=?',
       ).get('reviewed')).toBeNull()
     } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
+  test('only admissible completed lens runs satisfy the merge gate', () => {
+    const cases = [
+      {
+        name: 'voided',
+        exclude: (runId: number) => db().query(
+          "UPDATE run SET evidence_excluded='voided fixture' WHERE id=?",
+        ).run(runId),
+        admitted: false,
+      },
+      {
+        name: 'probe',
+        exclude: (runId: number) => db().query('UPDATE run SET probe=1 WHERE id=?').run(runId),
+        admitted: false,
+      },
+      {
+        name: 'delivery-none',
+        exclude: (runId: number) => score(runId, 'none'),
+        admitted: false,
+      },
+      { name: 'admissible', exclude: (_runId: number) => {}, admitted: true },
+    ]
+
+    for (const fixture of cases) {
+      const branch = `review-${fixture.name}`
+      const project = `landing-review-${fixture.name}`
+      const { repo, trees } = repoWithBranches([branch])
+      upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+      try {
+        const trunk = g(repo, 'rev-parse', 'main')
+        const reviewId = completedReview(project, [g(repo, 'rev-parse', `${branch}^{tree}`)], {
+          branch, baseCommit: trunk, launchCwd: trees[branch]!,
+        })
+        const lens = db().query('SELECT run_id FROM review_lens WHERE review_id=?').get(reviewId) as
+          { run_id: number }
+        fixture.exclude(lens.run_id)
+
+        if (fixture.admitted) {
+          expect(() => land(repo, branch)).not.toThrow()
+          expect(g(repo, 'rev-parse', 'main')).toBe(g(repo, 'rev-parse', branch))
+        } else {
+          expect(() => land(repo, branch)).toThrow('refusing to land unreviewed content')
+          expect(g(repo, 'rev-parse', 'main')).toBe(trunk)
+        }
+      } finally { rmSync(repo, { recursive: true, force: true }) }
+    }
   })
 
   test('a tree-plus-base-commit review counts as coverage without a stored patch identity', async () => {
