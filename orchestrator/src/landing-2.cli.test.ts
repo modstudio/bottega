@@ -213,6 +213,35 @@ test('an explicit non-empty override lands and records the measured tree and rea
   // not widened to hide a load failure; each child still exits on its own.
   }, 60_000)
 
+  test('ownership and confinement refuse independently of review coverage', async () => {
+    const { repo, trees } = repoWithBranches(['unresolved-owner', 'unsafe-chain'])
+    const project = 'landing-authorization-arms'
+    upsertProject({ name: project, path: repo, settings: { trunk: 'main', gate: 'true' } })
+    try {
+      const staleOwner = addRun({ agent: 'grok', job: 'implement', repo: project })
+      db().query('UPDATE run SET branch=?, worktree=? WHERE id=?')
+        .run('unresolved-owner', '/missing/owner-worktree', staleOwner)
+      const unresolved = childLand(trees['unresolved-owner']!, 'unresolved-owner', { unreviewed: null })
+      expect(await unresolved.exited).not.toBe(0)
+      const ownershipError = await new Response(unresolved.stderr).text()
+      expect(ownershipError).toContain('cannot resolve the owning chain of unresolved-owner')
+      expect(ownershipError).not.toContain('refusing to land unreviewed content')
+
+      const unsafe = addRun({
+        agent: 'grok', job: 'implement', status: 'failed', kind: 'confinement_unverified', repo: project,
+      })
+      db().query('UPDATE run SET branch=?, worktree=? WHERE id=?')
+        .run('unsafe-chain', trees['unsafe-chain']!, unsafe)
+      const confined = childLand(trees['unsafe-chain']!, 'unsafe-chain', {
+        runId: unsafe, unreviewed: null,
+      })
+      expect(await confined.exited).not.toBe(0)
+      const confinementError = await new Response(confined.stderr).text()
+      expect(confinementError).toContain(`run ${unsafe} is confinement_unverified`)
+      expect(confinementError).not.toContain('refusing to land unreviewed content')
+    } finally { rmSync(repo, { recursive: true, force: true }) }
+  })
+
   test('status reports a stale ref lock with age, recoverable contents, resolved ref, and no live owner', () => {
     const { repo } = repoWithBranches(['lock-source'])
     upsertProject({ name: 'landing-git-lock', path: repo,
