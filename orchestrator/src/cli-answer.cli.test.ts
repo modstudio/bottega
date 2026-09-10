@@ -196,7 +196,7 @@ test('answer refuses six individually-legal --file rulings whose packed resume e
       agent: 'codex', job: 'review-lens', status: 'ok', lens: 'correctness',
       session: 'orch-test-session',
     })
-    const reviewId = recordReview(root, reviewReply(1, 'high'))
+    const reviewId = recordReview(root, reviewReply(1, 'high'), db())
     const before = db().query(
       `SELECT r.id, r.completed_at, rl.id lens_id, rl.run_id
          FROM review r JOIN review_lens rl ON rl.review_id=r.id WHERE r.id=?`,

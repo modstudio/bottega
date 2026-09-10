@@ -550,7 +550,7 @@ describe('scoped operator docs', () => {
 
   test('MCP list_reviews and get_review round-trip through linked in-memory transports', async () => {
     const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'mcp-model', lens: 'mcp-review' })
-    const reviewId = recordReview(runId, reviewReply(1))
+    const reviewId = recordReview(runId, reviewReply(1), db())
     const server = createDocsMcpServer()
     const client = new Client({ name: 'orch-test', version: '1.0.0' })
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()

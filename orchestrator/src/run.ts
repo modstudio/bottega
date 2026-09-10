@@ -52,14 +52,14 @@ import {
   workerPreamble, packResumePrompt, READONLY_PREAMBLE, NO_REPO_PREAMBLE,
   TEXT_REPLY_SCHEMA, REPLY_FILE_NAME, replyFileInstruction,
   REVIEW_SEVERITY_INSTRUCTION,
-  readerDeliverablesInstruction, resolveReplyDialect,
+  resolveReplyDialect,
   isAsking, realQuestions, validatesSchema,
-  parseReaderOutput, missingDeclaredDeliverables, UNEVIDENCED_DELIVERABLE_ERROR,
+  parseReaderOutput,
   type CanonSource, type WorkerReply, type ReviewReply, type ReplyDialect,
 } from './contract.ts'
 import {
   CALIBRATION_SUFFIX_RESERVE_BYTES, calibrationLine, cleanReviewEvidence,
-  recordReview, reviewCalibration, reviewRunEvidenceSql,
+  reviewCalibration, reviewRunEvidenceSql,
 } from './review.ts'
 import { assertMainCheckoutClean, assertRegisterBranches, createHasPlaceholder, projectAt, projectByName, projects, stackAt,
          validateStoredProjectSettings } from './projects.ts'
@@ -90,6 +90,7 @@ import {
 import { appendRunEvent, teeTransportEvents } from './events.ts'
 import { checkpointRun, DEFAULT_CHECKPOINT_MINUTES, latestCheckpoint, recordFailedIdlePreservation } from './checkpoint.ts'
 import { decideOutcome } from './outcome.ts'
+import { assessEvidence, assessEvidencePrompt, recordEvidence } from './evidence.ts'
 import {
   formatIdleKillError, idleKillMayProceed, idlePollMs, isGroupKillablePgid, runHasLiveDescendants,
   sampleProcesses, shouldIdleKill, terminateProcessGroup,
@@ -2292,12 +2293,18 @@ export async function run(opts: {
     if (resolvedLens) prompt += `\n\n${resolvedLens.body}`
     else console.error(`lens ${opts.lens}: no catalogue row; dispatching the free-form lens unchanged`)
   }
-  if (isReaderJob(opts.job) && (!opts.resume || opts.resume.fresh)) {
-    prompt = `${readerDeliverablesInstruction(declaredDeliverables)}\n\n${prompt}`
+  const evidencePrompt = assessEvidencePrompt({
+    findingsJob: Boolean(requestedJob.findings),
+    verifyClaimJob: opts.job === 'verify-claim',
+    readerJob: isReaderJob(opts.job),
+    declaredDeliverables,
+  })
+  if (evidencePrompt.readerInstruction && (!opts.resume || opts.resume.fresh)) {
+    prompt = `${evidencePrompt.readerInstruction}\n\n${prompt}`
   }
   prompt = `${replyFileInstruction(replySchemaName)}\n\n${prompt}`
 
-  const requiresCanonSource = requestedJob.findings || opts.job === 'verify-claim'
+  const requiresCanonSource = evidencePrompt.requiresCanonSource
 
   // A resumed turn is NOT routed. The conversation lives inside one vendor's
   // session, so "which agent is best at this job" is not a question that can be
@@ -3816,21 +3823,6 @@ export async function run(opts: {
     let parsedReview: ReviewReply | null = null
     if (requestedJob.findings && output && (status === 'ok' || confinementEvent)) {
       parsedReview = resolvedDialect.parse(output).reply as ReviewReply | null
-      if (!parsedReview && status === 'ok') {
-        status = 'failed'
-        error = 'reply did not match the review contract: mandatory PROVENANCE section missing or malformed'
-        failureKind = 'contract'
-      }
-      if (parsedReview && status === 'ok' && confinementEvent?.classification !== 'overlapping') {
-        const evidence = cleanReviewEvidence(claim.id, parsedReview)
-        if (evidence.failure !== null) {
-          status = 'failed'
-          error = evidence.failure
-          failureKind = evidence.kind
-        } else if (evidence.note) {
-          error = error ? `${error}\n${evidence.note}` : evidence.note
-        }
-      }
     }
     const ownProject = runProjectName ? projectByName(runProjectName) : undefined
     const ownMcpServer = mcpConnection?.server ??
@@ -3838,26 +3830,31 @@ export async function run(opts: {
     const otherProjectMcpServers = new Set(projects()
       .map((project) => project.settings.mcpServer ?? project.name)
       .filter((server) => server !== ownMcpServer && server !== 'orch' && server !== 'orch-ask'))
-    const provenanceWrongProjectTool = parsedReview?.provenance.mcp_tools.find((tool) => {
-      const claude = tool.match(/^mcp__(.+?)__/)
-      const qualified = tool.match(/^([^.:/]+)[.:/]/)
-      const server = claude?.[1] ?? qualified?.[1]
-      return Boolean(server && otherProjectMcpServers.has(server))
-    })
-    if (parsedReview && provenanceWrongProjectTool && status === 'ok') {
-      status = 'failed'
-      error = `wrong project: provenance names ${provenanceWrongProjectTool}, expected ${ownMcpServer}`
-      failureKind = 'contract'
-    }
-    if (status === 'ok' && isReaderJob(opts.job) && declaredDeliverables.length) {
-      const reader = parseReaderOutput(output)
-      const missing = missingDeclaredDeliverables(declaredDeliverables, reader)
-      if (missing.length) {
-        status = 'failed'
-        error = `${UNEVIDENCED_DELIVERABLE_ERROR}: ${missing.join(', ')}`
-        failureKind = 'unevidenced'
-      }
-    }
+    const cleanReview = parsedReview && status === 'ok' &&
+      confinementEvent?.classification !== 'overlapping'
+      ? cleanReviewEvidence(claim.id, parsedReview)
+      : null
+    const evidenceAssessment = assessEvidence(
+      { status, error, failureKind },
+      {
+        findingsJob: Boolean(requestedJob.findings),
+        outputPresent: Boolean(output),
+        reviewReply: parsedReview,
+        confinementClassification: confinementEvent?.classification ?? null,
+        cleanReview,
+        otherProjectMcpServers,
+        ownMcpServer,
+        readerJob: isReaderJob(opts.job),
+        declaredDeliverables,
+        readerReply: status === 'ok' && isReaderJob(opts.job) && declaredDeliverables.length
+          ? parseReaderOutput(output)
+          : null,
+      },
+    )
+    status = evidenceAssessment.status
+    error = evidenceAssessment.error
+    failureKind = evidenceAssessment.failureKind
+    const provenanceWrongProjectTool = evidenceAssessment.provenanceWrongProjectTool
 
     /**
      * The questions are written in the SAME `finally` as the row, so a blocked
@@ -4079,7 +4076,7 @@ export async function run(opts: {
       // between "ran" and "recorded". Manual `orch review record` remains the
       // recovery path for historical or otherwise uncaptured outputs.
       if (parsedReview && (status === 'ok' || failureKind === 'escaped')) {
-        recordReview(opts.resume?.parent ?? claim.id, parsedReview)
+        recordEvidence(db(), opts.resume?.parent ?? claim.id, parsedReview)
       }
     })
     try {
