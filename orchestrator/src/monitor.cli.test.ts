@@ -836,18 +836,10 @@ echo '[]'
     expect(claimMonitorNotices(owner)).toEqual([])
   })
 
-  test('a notice claimed while current is not revoked if the condition resolves before emission', () => {
-    const owner = 'claim-emit-race-owner'
-    const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: owner })
-    const conditionId = persistAddressedCondition('unscored-run', `run:${runId}`, owner)
-
-    const claimed = claimMonitorNotices(owner)
-    score(runId, 'full', 'right', 'faithful')
-
-    expect(claimed).toEqual([
-      expect.objectContaining({ noticeId: `condition:${conditionId}`, kind: 'unscored-run' }),
-    ])
-  })
+  // Residual, untested here: claimMonitorNotices re-validates and returns synchronously,
+  // so a condition that resolves AFTER the claim and BEFORE the heartbeat emits it is
+  // still delivered. That window lives at the heartbeat emission boundary, not inside
+  // the claim, and no assertion on the claim's returned array can observe it.
 
   test('append-only event and terminal-fact notices still deliver after current state moves on', () => {
     const owner = 'append-only-owner'
