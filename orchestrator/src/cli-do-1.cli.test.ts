@@ -333,6 +333,57 @@ test('every --json surface has an enumerated and pinned output contract', () => 
     }
   }, 15_000)
 
+  test('--follow names the branch minted by a writing run', () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-follow-branch-')))
+    const binDir = mkdtempSync(join(tmpdir(), 'orch-follow-branch-bin-'))
+    const git = (cwd: string, ...args: string[]) => {
+      const p = Bun.spawnSync(['git', ...args], {
+        cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+      })
+      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      return p.stdout.toString().trim()
+    }
+    try {
+      git(repo, 'init', '-b', 'main')
+      git(repo, 'config', 'user.email', 'orch-test@example.invalid')
+      git(repo, 'config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'tracked.txt'), 'base\n')
+      git(repo, 'add', '.')
+      git(repo, 'commit', '-m', 'fixture base')
+      writeFileSync(
+        join(binDir, 'codex'),
+        '#!/bin/sh\nprintf \'%s\\n\' \'{"status":"done","summary":"proof","files_changed":[],"questions":null,"deviations":null,"blockers":null,"tests":null}\'\n',
+      )
+      chmodSync(join(binDir, 'codex'), 0o755)
+      upsertProject({
+        name: 'follow-branch', path: repo, canon: false,
+        settings: { worktree: { recipe: {}, branch: '{key}-orch-{id}' } },
+      })
+
+      const followed = Bun.spawnSync([
+        process.execPath, CLI, 'do', 'fix', 'report the branch', '--agent', 'codex',
+        '--key', 'DEV-436', '--base', 'main', '--follow',
+      ], {
+        cwd: repo, stdout: 'pipe', stderr: 'pipe', env: {
+          ...hermeticGitEnv(), PATH: `${binDir}:${process.env.PATH ?? ''}`,
+          ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
+          CLAUDE_CODE_SESSION_ID: 'orch-test-session',
+        },
+      })
+      const recorded = db().query(
+        "SELECT minted_branch FROM run WHERE job='fix' ORDER BY id DESC LIMIT 1",
+      ).get() as
+        { minted_branch: string }
+
+      expect(followed.exitCode, followed.stderr.toString()).toBe(0)
+      expect(recorded.minted_branch).toBeTruthy()
+      expect(followed.stderr.toString()).toContain(recorded.minted_branch)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+      rmSync(binDir, { recursive: true, force: true })
+    }
+  }, 15_000)
+
   test('do help names every job and every supported flag', () => {
     for (const help of ['--help', '-h']) {
       const r = orch('do', help)
@@ -844,6 +895,62 @@ test('every --json surface has an enumerated and pinned output contract', () => 
     expect(r.err).toContain(`orch score ${root}`)
     expect(r.err).not.toContain(`orch score ${turn} <`)
     expect(r.err).toContain(`not turn ${turn}`)
+  })
+
+  test('result and wait name the branch actually minted for a writing run', () => {
+    const id = insert('ok', 'implement')
+    const minted = `DEV-436-orch-${id}`
+    db().query('UPDATE run SET branch=?, minted_branch=? WHERE id=?')
+      .run('stale-dispatch-branch', minted, id)
+    const recorded = db().query('SELECT minted_branch FROM run WHERE id=?').get(id) as
+      { minted_branch: string }
+
+    const result = orch('result', String(id))
+    const wait = orch('wait', String(id))
+
+    expect(result.code).toBe(0)
+    expect(wait.code).toBe(0)
+    expect(result.err).toContain(recorded.minted_branch)
+    expect(wait.out).toContain(recorded.minted_branch)
+    expect(result.err).not.toContain('stale-dispatch-branch')
+    expect(wait.out).not.toContain('stale-dispatch-branch')
+  })
+
+  test('result and wait add no branch detail when the run minted no branch', () => {
+    const id = insert('ok', 'file-question')
+    db().query('UPDATE run SET branch=?, minted_branch=NULL WHERE id=?')
+      .run('read-only-caller-branch', id)
+
+    const result = orch('result', String(id))
+    const wait = orch('wait', String(id))
+
+    expect(result.code).toBe(0)
+    expect(wait.code).toBe(0)
+    expect(result.err).not.toMatch(/^\s*branch:/m)
+    expect(wait.out).not.toMatch(/^\s*branch:/m)
+    expect(result.err).not.toContain('read-only-caller-branch')
+    expect(wait.out).not.toContain('read-only-caller-branch')
+  })
+
+  test('a resumed chain reports its owned branch, not the turn branch', () => {
+    const root = insert('ok', 'implement')
+    const turn = insert('ok', 'implement')
+    const owned = `DEV-436-orch-${root}`
+    db().query('UPDATE run SET branch=?, minted_branch=? WHERE id=?')
+      .run('pre-fix-branch', owned, root)
+    db().query(
+      'UPDATE run SET parent_run_id=?, turn=2, branch=?, minted_branch=NULL WHERE id=?',
+    ).run(root, 'stale-turn-branch', turn)
+
+    const result = orch('result', String(turn))
+    const wait = orch('wait', String(root))
+
+    expect(result.code).toBe(0)
+    expect(wait.code).toBe(0)
+    expect(result.err).toContain(owned)
+    expect(wait.out).toContain(owned)
+    expect(result.err).not.toContain('stale-turn-branch')
+    expect(wait.out).not.toContain('stale-turn-branch')
   })
 
   test('a leaf id scores the root of its conversation', () => {

@@ -124,6 +124,30 @@ function evidenceNote(row: { evidence_excluded: string | null }): string {
     : ''
 }
 
+/** The branch created for this run or for the conversation it belongs to. */
+export function mintedBranchForRun(database: Database, runId: number): string | null {
+  const run = database.query(
+    'SELECT id, parent_run_id, minted_branch FROM run WHERE id=?',
+  ).get(runId) as {
+    id: number; parent_run_id: number | null; minted_branch: string | null
+  } | null
+  if (!run) return null
+  if (run.minted_branch) return run.minted_branch
+
+  const rootId = run.parent_run_id ?? run.id
+  const chained = database.query(
+    `SELECT minted_branch FROM run
+      WHERE minted_branch IS NOT NULL AND (id=? OR parent_run_id=?)
+      ORDER BY id LIMIT 1`,
+  ).get(rootId, rootId) as { minted_branch: string | null } | null
+  return chained?.minted_branch ?? null
+}
+
+function branchNote(database: Database, runId: number): string {
+  const branch = mintedBranchForRun(database, runId)
+  return branch ? `\n  branch:    ${branch}` : ''
+}
+
 function shellArg(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`
 }
@@ -283,7 +307,7 @@ export function collectResult(
           ? ` · ${row.vendor_tokens.toLocaleString()} vendor tokens`
           : ' · vendor tokens not reported') +
         `\n  score it:  ${scoreHint(row.id, row.job, row.parent_run_id, scoreSuffix)}` +
-        baseNote + mcpNote(row) + evidenceNote(row),
+        branchNote(database, row.id) + baseNote + mcpNote(row) + evidenceNote(row),
     )
   }
 }
@@ -361,6 +385,8 @@ export async function collectWait(
         const note = failoverSummary(chain.attempts)
         if (note) console.log(`  ${note}`)
         if (!outcome.ok) console.log(`  ${failureReason(row)}`)
+        const branch = mintedBranchForRun(database, row.id)
+        if (branch) console.log(`  branch:    ${branch}`)
       }
       if (observedTerminal.size || outcomes.some(({ outcome }) => !outcome.ok)) process.exit(1)
       return

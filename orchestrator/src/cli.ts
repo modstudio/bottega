@@ -22,7 +22,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
 import { projectAt, projectByName, projects, renameProject } from './projects.ts'
 import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
-import { collectResult, collectWait, resolveFailover, failoverSummary } from './collect.ts'
+import { collectResult, collectWait, resolveFailover, failoverSummary, mintedBranchForRun } from './collect.ts'
 import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
 import {
   ANSWER_WORKING_FORMS, CONTINUE_WORKING_FORMS, TELL_WORKING_FORMS,
@@ -422,12 +422,14 @@ async function follow(id: number, quiet: boolean, exitOnFailure = true): Promise
         return row.status
       }
       if (quiet) return row.status
+      const mintedBranch = mintedBranchForRun(db(), row.id)
       console.error(
         `\n— run ${row.id} · ${row.agent}` +
           (row.route_reason ? ` (${row.route_reason})` : '') +
           ` · ${dur(row.latency_ms ?? 0)}` +
           (row.vendor_tokens ? ` · ${row.vendor_tokens.toLocaleString()} vendor tokens` : '') +
           `\n  score it:  ${scoreHint(chain.finalId, row.job, row.parent_run_id)}` +
+          (mintedBranch ? `\n  branch:    ${mintedBranch}` : '') +
           evidenceNote(row),
       )
       return row.status
