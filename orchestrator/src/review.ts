@@ -6,7 +6,8 @@ import {
   type ReviewReproduced, type ReviewCoverage, type ReviewLimits, type ReviewOverlap,
   type ReviewSeverity, writableDb, writeTransaction,
 } from './db.ts'
-import { CANON_SOURCE_SCHEMA, REVIEW_SCHEMA, type CanonSource, type ReviewReply } from './contract.ts'
+import { REVIEW_SCHEMA, type ReviewReply } from './contract.ts'
+export { parseReviewOutput, parseReviewReply } from './contract.ts'
 import { job } from './jobs.ts'
 import type { ReviewTier } from './review-tier.ts'
 import { median } from './route.ts'
@@ -516,69 +517,6 @@ export type ReviewGrades = {
   coverage: ReviewCoverage
   limits: ReviewLimits
   overlap: ReviewOverlap
-}
-
-const isStrings = (v: unknown): v is string[] =>
-  Array.isArray(v) && v.every((x) => typeof x === 'string')
-const isCanonSource = (v: unknown): v is CanonSource =>
-  typeof v === 'string' && (CANON_SOURCE_SCHEMA.enum as readonly string[]).includes(v)
-const exactKeys = (value: object, expected: string[]) => {
-  const actual = Object.keys(value).sort()
-  return actual.length === expected.length && actual.every((key, i) => key === [...expected].sort()[i])
-}
-
-export function parseReviewReply(value: unknown): ReviewReply | null {
-  const v = value as Partial<ReviewReply> | null
-  if (!v || typeof v !== 'object' || Array.isArray(v) || !exactKeys(v, ['findings', 'provenance']) ||
-      !Array.isArray(v.findings)) return null
-  const p = v.provenance
-  // The three DEV-371 provenance lists are demanded by the schema, but an agent
-  // whose schema binding was dropped (codex with MCP tools active) follows the
-  // prose contract only; an absent list reads as empty rather than as a
-  // malformed reply, so a review is never lost to a missing empty array.
-  const provenanceKeys = [
-    'standards_read', 'model_used', 'files_covered', 'commands_run',
-    'could_not_verify', 'canon_source',
-  ]
-  const optionalLists = ['mcp_tools', 'docs_read', 'substitutes'] as const
-  if (p && typeof p === 'object' && !Array.isArray(p)) {
-    for (const key of optionalLists) {
-      if (!(key in p)) (p as Record<string, unknown>)[key] = []
-    }
-  }
-  const withLists = (keys: string[]) => [...keys, ...optionalLists]
-  if (!p || typeof p !== 'object' || Array.isArray(p) ||
-      !(exactKeys(p, withLists(provenanceKeys)) || exactKeys(p, withLists(['tree_inspected', ...provenanceKeys]))) ||
-      (p.tree_inspected !== undefined && p.tree_inspected !== null &&
-        typeof p.tree_inspected !== 'string') ||
-      typeof p.model_used !== 'string' ||
-      !isStrings(p.standards_read) || !isStrings(p.files_covered) ||
-      !isStrings(p.commands_run) || !isStrings(p.mcp_tools) || !isStrings(p.docs_read) ||
-      !isStrings(p.could_not_verify) || !isStrings(p.substitutes) ||
-      !isCanonSource(p.canon_source)) return null
-  if (!v.findings.every((f) => f && typeof f === 'object' && !Array.isArray(f) &&
-      exactKeys(f, ['severity', 'location', 'evidence', 'proposed_correction']) &&
-      typeof f.severity === 'string' && typeof f.location === 'string' &&
-      typeof f.evidence === 'string' && typeof f.proposed_correction === 'string')) return null
-  if (p.tree_inspected === null) delete (p as Record<string, unknown>).tree_inspected
-  return v as ReviewReply
-}
-
-export function parseReviewOutput(text: string): ReviewReply | null {
-  const candidates = [text.trim(), ...(text.match(/```(?:json)?\s*([\s\S]*?)```/gi) ?? [])
-    .map((x) => x.replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim())]
-  for (const candidate of candidates) {
-    try {
-      const parsed = parseReviewReply(JSON.parse(candidate))
-      if (parsed) return parsed
-    } catch { /* try an embedded object */ }
-  }
-  const start = text.indexOf('{')
-  const end = text.lastIndexOf('}')
-  if (start >= 0 && end > start) {
-    try { return parseReviewReply(JSON.parse(text.slice(start, end + 1))) } catch { /* invalid */ }
-  }
-  return null
 }
 
 export const UNEVIDENCED_REVIEW_ERROR =
