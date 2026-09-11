@@ -170,12 +170,12 @@ export const {
 export const { runDetail, runList, state } = await import('../src/serve.ts')
 export const { classify, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOT_EVIDENCE, COOLS_DOWN, FAILS_OVER,
         isNonAnswer, detectBlockers } = await import('../src/failure.ts')
-export const { runFilePaths, pruneRuns, KEEP_RUN_FILES_DAYS,
-        RUNS_DIR, resolveRootFromLastTurn, gitObjectEnvironmentFor,
+export const { resolveRootFromLastTurn, gitObjectEnvironmentFor,
         checkoutAliases, checkoutCaseSensitivity,
-        packedResumePrompt, run: runJob, listRunArtifacts, runArtifactsDir, runScratchDir,
-        noRepoIsolatePath,
-        readDispatchState, persistTerminalSnapshot, reconcileRun, closeOutRun } = await import('../src/run.ts')
+        packedResumePrompt, run: runJob } = await import('../src/run.ts')
+export const { runFilePaths, pruneRuns, KEEP_RUN_FILES_DAYS,
+        RUNS_DIR, listRunArtifacts, runArtifactsDir, runScratchDir, noRepoIsolatePath,
+        readDispatchState, persistTerminalSnapshot, reconcileRun } = await import('../src/run-artifacts.ts'); export const { closeOutRun } = await import('../src/close-out.ts')
 export const { detachedRunOptions, writingFailoverRefusal, resolveSupersededTurn, retryModelForAgent } = await import('../src/failover.ts')
 export const { errorTail, verifiedProcessTree, installTestProcessInventory } = await import('../src/run-process.ts'); export const { resolveTaskBranch, taskBranchCandidacySql } = await import('../src/task-branch.ts')
 export const { snapshotRegisteredCheckouts, retargetRepositoryPrompt, retargetRepositoryPromptForDispatch } = await import('../src/prompt-retarget.ts')

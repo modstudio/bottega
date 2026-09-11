@@ -12,7 +12,7 @@ import { formatIdleKillError, idleKillMayProceed, idleKillMs, installTestProcess
   DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS, DEFAULT_IDLE_KILL_MS } from './idle-kill.ts'
 import { PRESERVATION_FAILED_FILE } from './checkpoint.ts'
 import { CPU_LOCAL_JOBS, IDLE_BELOW_WALL_MS, JOB_TIMEOUTS, jobDeclaredWallMs, jobIdleKillMs } from './jobs.ts'
-import { runScratchDir } from './run.ts'
+import { runScratchDir } from './run-artifacts.ts'
 import { isRoutingEvidence } from './route.ts'
 import { harnessHealth } from './health.ts'
 import { installTestTransport, type AgentTransport, type TransportResult } from './transport.ts'

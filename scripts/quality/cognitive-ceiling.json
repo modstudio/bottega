@@ -222,6 +222,18 @@
     "score": 16
   },
   {
+    "file": "orchestrator/src/close-out.ts",
+    "function": "attemptCloseOutRun",
+    "line": 27,
+    "score": 23
+  },
+  {
+    "file": "orchestrator/src/close-out.ts",
+    "function": "withCleanupLock callback",
+    "line": 168,
+    "score": 24
+  },
+  {
     "file": "orchestrator/src/collect.ts",
     "function": "mcpNote",
     "line": 155,
@@ -468,12 +480,6 @@
     "score": 32
   },
   {
-    "file": "orchestrator/src/prompt-retarget.ts",
-    "function": "retargetRepositoryPrompt",
-    "line": 127,
-    "score": 19
-  },
-  {
     "file": "orchestrator/src/porting-import.ts",
     "function": "parseRefs",
     "line": 328,
@@ -508,6 +514,12 @@
     "function": "shellTokens",
     "line": 790,
     "score": 28
+  },
+  {
+    "file": "orchestrator/src/prompt-retarget.ts",
+    "function": "retargetRepositoryPrompt",
+    "line": 127,
+    "score": 19
   },
   {
     "file": "orchestrator/src/recipe.ts",
@@ -630,6 +642,18 @@
     "score": 29
   },
   {
+    "file": "orchestrator/src/run-artifacts.ts",
+    "function": "persistRunArtifacts",
+    "line": 222,
+    "score": 18
+  },
+  {
+    "file": "orchestrator/src/run.ts",
+    "function": "writeTransaction callback",
+    "line": 2233,
+    "score": 20
+  },
+  {
     "file": "orchestrator/src/run.ts",
     "function": "run",
     "line": 854,
@@ -637,40 +661,16 @@
     "key": "orchestrator/src/run.ts\u0000run"
   },
   {
-    "file": "orchestrator/src/run.ts",
-    "function": "persistRunArtifacts",
-    "line": 1715,
-    "score": 18
-  },
-  {
-    "file": "orchestrator/src/run.ts",
-    "function": "attemptCloseOutRun",
-    "line": 1758,
+    "file": "orchestrator/src/task-branch.ts",
+    "function": "resolveTaskBranch",
+    "line": 51,
     "score": 23
-  },
-  {
-    "file": "orchestrator/src/run.ts",
-    "function": "withCleanupLock callback",
-    "line": 1899,
-    "score": 24
-  },
-  {
-    "file": "orchestrator/src/run.ts",
-    "function": "writeTransaction callback#2",
-    "line": 4010,
-    "score": 20
   },
   {
     "file": "orchestrator/src/transport-acp.ts",
     "function": "normalizeAcpTurn",
     "line": 117,
     "score": 81
-  },
-  {
-    "file": "orchestrator/src/task-branch.ts",
-    "function": "resolveTaskBranch",
-    "line": 51,
-    "score": 23
   },
   {
     "file": "orchestrator/src/transport-acp.ts",

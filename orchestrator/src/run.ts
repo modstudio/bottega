@@ -1,8 +1,7 @@
 import {
-  mkdirSync, readFileSync, existsSync, writeFileSync, readdirSync, rmSync,
-  statSync, unlinkSync, copyFileSync, renameSync,
+  mkdirSync, readFileSync, existsSync, writeFileSync,
 } from 'node:fs'
-import { basename, dirname, join, relative } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import {
   classify, notify, isNonAnswer, hasVendorTerminationMarker, detectBlockers, NEEDS_HUMAN, NEEDS_HUMAN_TITLE,
@@ -28,12 +27,9 @@ import {
   implicitReviewCoverageBase, inferredReadOnlyKey, resolveReviewTarget,
 } from './review-target.ts'
 import {
-  db, nowIso, sessionId, pidAlive, resolveRootFromLastTurn, tryWriteContention, writableDb, writeTransaction,
-  enableSchemaReload, liveWorktreeSharers, teardownTerminalRunResources,
-  worktreePathSpellings,
+  db, nowIso, sessionId, resolveRootFromLastTurn, tryWriteContention, writableDb, writeTransaction,
+  enableSchemaReload, teardownTerminalRunResources,
 } from './db.ts'
-import { CONNECTION_SCHEMA_INVARIANT } from './migrations.ts'
-import { proveWorktreeReconstructible } from './reclaim.ts'
 import {
   createWorkerWorktree,
   toolFor, changesIn, repoRootOf, resolveBase, resolveReadOnlyBase,
@@ -41,10 +37,9 @@ import {
   prepareWorktreeObjects, carryWorkingState,
   targetGitEnvironment,
   contentTree,
-  assertCallerAncestry, withWorktreeCreateLock, withWorktreeLease, withCleanupLock,
-  removeFor, projectLockState,
-  reclaimStaleProjectLock, worktreeLeaseName, type Worktree,
-  branchTip, restoreBranch, processStartTime,
+  assertCallerAncestry, withWorktreeCreateLock, withWorktreeLease, removeFor,
+  type Worktree,
+  processStartTime,
   type WorktreeObjectEnvironment,
   checkoutAliases, checkoutWatchSet,
   prepareWorkerMcpConfig,
@@ -71,7 +66,6 @@ import {
 } from './review.ts'
 import { projectAt, projectByName, projects, stackAt } from './projects.ts'
 import { compilePack, recordPack } from './canon.ts'
-import { resolveRunsDirectory } from './database-location.ts'
 import { resolveBranchRef } from './projects.ts'
 import { resolveLens } from './lenses.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES } from './result-output.ts'
@@ -98,7 +92,7 @@ import { checkpointRun, DEFAULT_CHECKPOINT_MINUTES, latestCheckpoint, recordFail
 import { decideOutcome } from './outcome.ts'
 import { assessEvidence, assessEvidencePrompt, recordEvidence } from './evidence.ts'
 import {
-  formatIdleKillError, idleKillMayProceed, idlePollMs, isGroupKillablePgid, runHasLiveDescendants,
+  formatIdleKillError, idleKillMayProceed, idlePollMs,
   sampleProcesses, shouldIdleKill, terminateProcessGroup,
 } from './idle-kill.ts'
 import {
@@ -106,10 +100,16 @@ import {
   MAX_FAILOVER_ATTEMPTS, resolveSupersededTurn,
 } from './failover.ts'
 import {
-  bindSignals, childEnv, errorTail, live, liveCheckpoints, processTable, sha, terminateRunProcesses,
+  bindSignals, childEnv, errorTail, live, liveCheckpoints, sha, terminateRunProcesses,
 } from './run-process.ts'
 import { resolveTaskBranch, type TaskBranchCandidate } from './task-branch.ts'
 import { retargetRepositoryPromptForDispatch } from './prompt-retarget.ts'
+import {
+  RUNS_DIR, noRepoIsolatePath, persistRunArtifacts, persistTerminalSnapshot, pruneRuns,
+  readDispatchState, runArtifactsDir, runFilePaths, runScratchDir, runTerminalReplyPath,
+  writeDispatchState, type TerminalSnapshot,
+} from './run-artifacts.ts'
+import { reclaimTerminalTree } from './close-out.ts'
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
 
@@ -224,210 +224,6 @@ function confinementUnverifiedError(failures: FreezeFailure[]): string {
   )
 }
 
-/**
- * How long a run's prompt and reply are kept on disk.
- *
- * These files are the whole text of every pack sent and every answer returned —
- * private repo contents, quoted at length — and nothing had ever deleted one.
- * The dashboard reads them to show a run in full, which is worth having while
- * the run is recent enough for anyone to care; a pack from two months ago is
- * just a copy of source code sitting outside the repo that governs it.
- *
- * The database keeps the row either way, so history and scoring are untouched:
- * only the verbatim text ages out, and `runDetail` already copes with a path
- * that no longer exists.
- */
-export const KEEP_RUN_FILES_DAYS = 30
-
-/**
- * Where prompt and output files live. By default they sit beside the resolved
- * database, so a worktree cannot strand its evidence when it is swept.
- * ORCH_RUNS remains the deliberate override used by the suite.
- */
-export const RUNS_DIR = resolveRunsDirectory()
-
-/** The names owned by one run; `unique` is its id once a row has been claimed. */
-export function runFilePaths(
-  dir: string, clock: number, unique: number | string, agent: string, jobName: string,
-) {
-  const stamp = `${clock}-${unique}-${agent}-${jobName}`
-  return {
-    output: join(dir, `${stamp}.txt`),
-    prompt: join(dir, `${stamp}.prompt.txt`),
-  }
-}
-
-/** Opportunistic, on the way past: cheap, and no cron has to remember. */
-export function pruneRuns(dir: string): void {
-  const cutoff = Date.now() - KEEP_RUN_FILES_DAYS * 86_400_000
-  try {
-    for (const name of readdirSync(dir)) {
-      const p = join(dir, name)
-      try {
-        const st = statSync(p)
-        if (st.mtimeMs < cutoff) {
-          if (st.isDirectory()) rmSync(p, { recursive: true, force: true })
-          else unlinkSync(p)
-          db().query('UPDATE run SET prompt_path=NULL WHERE prompt_path=?').run(p)
-          db().query('UPDATE run SET output_path=NULL WHERE output_path=?').run(p)
-        }
-      } catch { /* raced, or busy */ }
-    }
-  } catch { /* no directory yet; nothing to prune */ }
-}
-
-export function runScratchDir(id: number, runsDir = RUNS_DIR): string {
-  return join(runsDir, String(id), 'scratch')
-}
-
-export function noRepoIsolatePath(id: number, runsDir = RUNS_DIR): string {
-  return join(runsDir, 'isolates', String(id))
-}
-
-export function runArtifactsDir(id: number, runsDir = RUNS_DIR): string {
-  return join(runsDir, String(id), 'artifacts')
-}
-
-export function declaredDeliverablesPath(id: number, runsDir = RUNS_DIR): string {
-  return join(runsDir, String(id), 'deliverables.json')
-}
-
-export function runTerminalResultPath(id: number, runsDir = RUNS_DIR): string {
-  return join(runsDir, String(id), 'result.json')
-}
-
-export function runTerminalReplyPath(id: number, runsDir = RUNS_DIR): string {
-  return join(runsDir, String(id), 'reply.txt')
-}
-
-export type TerminalSnapshot = {
-  status: string
-  error: string | null
-  failureKind: string | null
-  output: string
-  outputPath: string
-  promptPath: string
-  exitCode: number | null
-  latencyMs: number
-  vendorTokens: number | null
-  vendorCostUsd: number | null
-  model: string | null
-  vendorSession: string | null
-  preConfinement: string | null
-  confinement: string | null
-  filesChanged: number | null
-  changedPaths: string | null
-  linesAdded: number | null
-  linesRemoved: number | null
-  testsRan: number | null
-  testsPassed: number | null
-  deviations: number | null
-  escalations: number | null
-}
-
-export function persistTerminalSnapshot(id: number, snapshot: TerminalSnapshot): void {
-  mkdirSync(join(RUNS_DIR, String(id)), { recursive: true })
-  writeFileSync(runTerminalReplyPath(id), snapshot.output)
-  writeFileSync(runTerminalResultPath(id), JSON.stringify(snapshot))
-}
-
-export function readTerminalSnapshot(id: number): TerminalSnapshot | null {
-  const path = runTerminalResultPath(id)
-  if (!existsSync(path)) return null
-  try {
-    return JSON.parse(readFileSync(path, 'utf8')) as TerminalSnapshot
-  } catch {
-    return null
-  }
-}
-
-/** Record a terminal row from the run directory after a schema-reload failure. */
-export function reconcileRun(id: number): string {
-  writableDb()
-  const snapshot = readTerminalSnapshot(id)
-  if (!snapshot) {
-    throw new Error(
-      `run ${id} has no persisted terminal snapshot\n` +
-      `invariant: ${CONNECTION_SCHEMA_INVARIANT}\n` +
-      `cleared by: the worker must persist reply.txt and result.json before the row write`,
-    )
-  }
-  const row = db().query('SELECT id, unreconciled, status FROM run WHERE id=?').get(id) as
-    { id: number; unreconciled: number; status: string } | null
-  if (!row) throw new Error(`no run ${id}`)
-  /**
-   * Reconciliation can restore an `asking` status only because question rows
-   * are inserted before the journalled terminal write. The snapshot carries no
-   * question payload. Making those inserts part of the terminal transaction
-   * therefore requires first making questions recoverable from this journal,
-   * or a failed transaction could reconcile to `asking` with nothing to answer.
-   */
-  writeTransaction(() => {
-    db().query(
-      `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
-                      vendor_tokens=?, vendor_cost_usd=?, model=COALESCE(?, model),
-                      status=?, error=?, failure_kind=?, vendor_session=COALESCE(?, vendor_session),
-                      pre_confinement=?, confinement=?, unreconciled=0,
-                      files_changed=?, changed_paths=?, lines_added=?, lines_removed=?,
-                      tests_ran=?, tests_passed=?, deviations=?, escalations=?
-        WHERE id=?`,
-    ).run(
-      snapshot.latencyMs, snapshot.exitCode,
-      new TextEncoder().encode(snapshot.output).byteLength,
-      snapshot.outputPath, snapshot.promptPath,
-      snapshot.vendorTokens, snapshot.vendorCostUsd, snapshot.model,
-      snapshot.status, snapshot.error, snapshot.failureKind, snapshot.vendorSession,
-      snapshot.preConfinement, snapshot.confinement,
-      snapshot.filesChanged, snapshot.changedPaths, snapshot.linesAdded, snapshot.linesRemoved,
-      snapshot.testsRan, snapshot.testsPassed, snapshot.deviations, snapshot.escalations,
-      id,
-    )
-  })
-  teardownTerminalRunResources(db(), id)
-  return `reconciled run ${id} as ${snapshot.status}`
-}
-
-export function listRunArtifacts(id: number, runsDir = RUNS_DIR): string[] {
-  const dir = runArtifactsDir(id, runsDir)
-  if (!existsSync(dir)) return []
-  const names = readdirSync(dir, { recursive: true })
-  const files: string[] = []
-  for (const name of names) {
-    const p = join(dir, String(name))
-    try { if (statSync(p).isFile()) files.push(p) } catch { /* raced */ }
-  }
-  return files.sort()
-}
-
-type DispatchState = { deliverables: string[]; timeoutMinutes: number | null }
-
-function writeDispatchState(id: number, state: DispatchState): void {
-  mkdirSync(join(RUNS_DIR, String(id)), { recursive: true })
-  writeFileSync(declaredDeliverablesPath(id), JSON.stringify(state))
-}
-
-export function readDispatchState(id: number): DispatchState {
-  const p = declaredDeliverablesPath(id)
-  if (!existsSync(p)) return { deliverables: [], timeoutMinutes: null }
-  try {
-    const value = JSON.parse(readFileSync(p, 'utf8')) as Partial<DispatchState> | string[]
-    if (Array.isArray(value)) {
-      return {
-        deliverables: value.every((item) => typeof item === 'string') ? value : [],
-        timeoutMinutes: null,
-      }
-    }
-    const deliverables = Array.isArray(value.deliverables) &&
-      value.deliverables.every((item) => typeof item === 'string') ? value.deliverables : []
-    const timeoutMinutes = typeof value.timeoutMinutes === 'number' ? value.timeoutMinutes : null
-    return { deliverables, timeoutMinutes }
-  } catch { return { deliverables: [], timeoutMinutes: null } }
-}
-
-export function readDeclaredDeliverables(id: number): string[] {
-  return readDispatchState(id).deliverables
-}
-
 /** Present reply.json is accepted by the same lenient parsers as a missing-file fallback. */
 function presentReplyFileMatches(opts: {
   text: string
@@ -442,315 +238,6 @@ function presentReplyFileMatches(opts: {
     return validatesSchema(value, schema)
   }
   return opts.dialect.parse(opts.text).reply !== null
-}
-
-function persistRunArtifacts(
-  id: number,
-  filesWritten: string[] | null,
-  worktree: Worktree | null,
-  changes: import('./worktree.ts').Changes | null,
-): void {
-  const scratch = runScratchDir(id)
-  const artifacts = runArtifactsDir(id)
-  mkdirSync(join(RUNS_DIR, String(id)), { recursive: true })
-  if (existsSync(scratch)) {
-    if (existsSync(artifacts)) rmSync(artifacts, { recursive: true, force: true })
-    renameSync(scratch, artifacts)
-  } else {
-    mkdirSync(artifacts, { recursive: true })
-  }
-  if (changes?.diff) writeFileSync(join(artifacts, 'worktree.diff'), changes.diff)
-  for (const named of filesWritten ?? []) {
-    const source = named.startsWith('/') ? named
-      : worktree ? join(worktree.path, named) : named
-    const destination = join(artifacts, basename(named))
-    // Scratch was renamed onto artifacts above. A files_written path that still
-    // names the old scratch location (reply.json is the usual case) already
-    // lives at the destination.
-    const from = source === scratch || source.startsWith(`${scratch}/`)
-      ? join(artifacts, relative(scratch, source))
-      : source
-    if (from === destination && existsSync(destination) && statSync(destination).isFile()) continue
-    if (!existsSync(from) || !statSync(from).isFile()) {
-      throw new Error(`could not copy named file ${source} to ${destination}: source is not a file`)
-    }
-    copyFileSync(from, destination)
-  }
-}
-
-export type CloseOutResult = {
-  runId: number; worktree: string | null
-  outcome: 'released' | 'held' | 'live' | 'absent' | 'failed'
-  detail: string
-}
-
-const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
-
-/** One cleanup path for terminalisation, explicit close-out, and sweep. */
-function attemptCloseOutRun(
-  runId: number, options: {
-    intent: 'terminal' | 'explicit' | 'sweep'; dryRun?: boolean; lockTimeoutMs?: number
-    extraPids?: number[]; pgid?: number | null
-  },
-): CloseOutResult {
-  const row = db().query(
-    `SELECT id, COALESCE(parent_run_id,id) root_id, job, repo, cwd, worktree, branch,
-            base_commit, worktree_source, minted_branch, keep_tree, status, agent_pid
-       FROM run WHERE id=?`,
-  ).get(runId) as {
-    id: number; root_id: number; job: string; repo: string | null; cwd: string | null
-    worktree: string | null; branch: string | null; base_commit: string | null
-    worktree_source: Worktree['source'] | null; minted_branch: string | null
-    keep_tree: number; status: string; agent_pid: number | null
-  } | null
-  if (!row) throw new Error(`no run ${runId}`)
-  const root = db().query(
-    `SELECT job,repo,cwd,worktree,branch,base_commit,worktree_source,minted_branch,keep_tree,status
-       FROM run WHERE id=?`,
-  ).get(row.root_id) as typeof row
-  const treePath = row.worktree ?? root?.worktree ?? null
-  if (!treePath) return { runId: row.root_id, worktree: null, outcome: 'absent', detail: 'no worktree' }
-  const held = db().query(
-    'SELECT MAX(keep_tree) held FROM run WHERE id=? OR parent_run_id=?',
-  ).get(row.root_id, row.root_id) as { held: number }
-  const effective = {
-    id: row.root_id,
-    job: root?.job ?? row.job,
-    repo: root?.repo ?? row.repo,
-    cwd: root?.cwd ?? row.cwd,
-    worktree: treePath,
-    branch: root?.branch ?? row.branch,
-    base_commit: root?.base_commit ?? row.base_commit,
-    worktree_source: root?.worktree_source ?? row.worktree_source,
-    minted_branch: root?.minted_branch ?? row.minted_branch,
-    status: root?.status ?? row.status,
-    keep_tree: held.held,
-  }
-  if (!TERMINAL.has(effective.status)) return {
-    runId: row.root_id, worktree: treePath, outcome: 'live',
-    detail: `conversation is ${effective.status}`,
-  }
-  if (effective.keep_tree) return {
-    runId: row.root_id, worktree: treePath, outcome: 'held',
-    detail: `held by explicit --keep-tree; clear with orch discard ${row.root_id}`,
-  }
-  const retainedBranch = effective.minted_branch ?? effective.branch
-  const recordRetainedBranch = (tip: string | null) => {
-    if (!retainedBranch || !tip) return
-    db().query('UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE id=?')
-      .run(retainedBranch, tip, row.root_id)
-  }
-  if (!worktreeExists(treePath)) {
-    const repoRoot = (effective.repo ? projectByName(effective.repo)?.path : null) ??
-      repoRootOf(treePath) ?? effective.cwd
-    if (!options.dryRun && repoRoot && retainedBranch) {
-      recordRetainedBranch(branchTip(repoRoot, retainedBranch))
-    }
-    return {
-      runId: row.root_id, worktree: treePath,
-      outcome: options.dryRun ? 'released' : 'absent',
-      detail: options.dryRun
-        ? 'would retain the recorded identity for an absent worktree'
-        : 'worktree was already absent; recorded identity retained',
-    }
-  }
-  const repoRoot = (effective.repo ? projectByName(effective.repo)?.path : null) ??
-    repoRootOf(treePath) ?? effective.cwd
-  if (!repoRoot) return { runId: row.root_id, worktree: treePath, outcome: 'failed', detail: 'repository root not found' }
-
-  const liveRows = () => {
-    const sharers = liveWorktreeSharers(db(), { id: row.root_id, worktree: treePath })
-    const conversation = db().query(
-      `SELECT id,status FROM run
-        WHERE status IN ('running','asking') AND (id=? OR parent_run_id=?) ORDER BY id`,
-    ).all(row.root_id, row.root_id) as { id: number; status: string }[]
-    return [...conversation, ...sharers]
-  }
-  const live = liveRows()
-  if (live.length) return {
-    runId: row.root_id, worktree: treePath, outcome: 'live',
-    detail: `live run(s): ${live.map((owner) => `${owner.id} (${owner.status})`).join(', ')}`,
-  }
-  // Every recorded spelling of this tree, not one string: a trailing separator
-  // or an unresolved symlink makes two rows for one worktree, and matching only
-  // the spelling in hand releases a tree whose other owner is still running.
-  const spellings = worktreePathSpellings(db(), treePath)
-  const vendorRows = spellings.length
-    ? (db().query(
-        `SELECT agent_pid, agent_pgid FROM run
-          WHERE worktree IN (${spellings.map(() => '?').join(',')}) ORDER BY id`,
-      ).all(...spellings) as { agent_pid: number | null; agent_pgid: number | null }[])
-    : []
-  const agentPids = vendorRows.map((turn) => turn.agent_pid)
-  const recordedPgids = [...new Set(
-    vendorRows.map((turn) => turn.agent_pgid).filter((pgid): pgid is number => pgid != null && pgid > 1),
-  )]
-  const processInventory = processTable()
-  if (!processInventory.ascertainable) return {
-    runId: row.root_id, worktree: treePath, outcome: 'live',
-    detail: `${processInventory.reason}; retained because process liveness could not be established`,
-  }
-  const processSamples = processInventory.rows.map((processRow) => ({
-    pid: processRow.pid, ppid: processRow.ppid, pgid: processRow.pgid, cpu: 0, state: '',
-  }))
-  const sample = () => processSamples
-  // The caller's own process group is never a vendor tree. A stub or CLI that
-  // did not setsid inherits the coordinator pgid; after it exits that group
-  // still has live members (this process). terminateProcessGroup already
-  // refuses that pgid; close-out must too, or every finished run retains.
-  const selfPgid = processSamples.find((row) => row.pid === process.pid)?.pgid ?? null
-  const vendorGroupAlive = (pgid: number | null | undefined): boolean => {
-    if (pgid == null || pgid <= 1) return false
-    if (selfPgid !== null && !isGroupKillablePgid(pgid, selfPgid)) return false
-    return runHasLiveDescendants([], [], { sample }, pgid)
-  }
-  // A database row cannot observe a grandchild born after the T0 census and
-  // reparented when its wrapper died. Re-sample the process table and retain
-  // the tree when the recorded vendor, a captured process group, or a
-  // persisted vendor pgid still has a live member. Close-out does not signal
-  // unverified leftovers; the monitor reports them.
-  const treeStillAlive = runHasLiveDescendants(
-    agentPids, options.extraPids ?? [], { sample },
-    vendorGroupAlive(options.pgid) ? options.pgid : null,
-  ) || recordedPgids.some((pgid) => vendorGroupAlive(pgid))
-  if (treeStillAlive) return {
-    runId: row.root_id, worktree: treePath, outcome: 'live',
-    detail: 'process tree still alive',
-  }
-  const lease = worktreeLeaseName(treePath)
-  reclaimStaleProjectLock(repoRoot, lease)
-  const holder = projectLockState(repoRoot, lease).holder
-  if (holder) return {
-    runId: row.root_id, worktree: treePath, outcome: 'live',
-    detail: `live worktree lease held by pid ${holder.pid}`,
-  }
-
-  try {
-    return withWorktreeLease(repoRoot, treePath,
-      { session: sessionId(), what: `close-out ${row.root_id}` }, () =>
-      withCleanupLock(repoRoot, { session: sessionId(), what: `close-out ${row.root_id}` }, () => {
-        const lockedLive = liveRows()
-        if (lockedLive.length) return {
-          runId: row.root_id, worktree: treePath, outcome: 'live' as const,
-          detail: `live run(s): ${lockedLive.map((owner) => `${owner.id} (${owner.status})`).join(', ')}`,
-        }
-        const reclaimProof = proveWorktreeReconstructible(treePath)
-        if (!reclaimProof.ok) return {
-          runId: row.root_id, worktree: treePath, outcome: 'held' as const,
-          detail: reclaimProof.action,
-        }
-        if (options.dryRun) return {
-          runId: row.root_id, worktree: treePath, outcome: 'released' as const,
-          detail: 'would release clean terminal worktree and keep its branch',
-        }
-        // The coordinator proves its own identity before descendants are signalled.
-        const liveCoordinator = (db().query(
-          'SELECT id,pid FROM run WHERE (id=? OR parent_run_id=?) AND pid IS NOT NULL ORDER BY id',
-        ).all(row.root_id, row.root_id) as { id: number; pid: number }[])
-          .find((turn) => turn.pid !== process.pid && pidAlive(turn.pid))
-        if (liveCoordinator) return {
-          runId: row.root_id, worktree: treePath, outcome: 'live' as const,
-          detail: `recorded coordinator pid ${liveCoordinator.pid} for run ${liveCoordinator.id} is still alive`,
-        }
-        terminateRunProcesses(row.id, [process.pid])
-        const branchSnapshot = retainedBranch ? branchTip(repoRoot, retainedBranch) : null
-        const retainedRef = branchSnapshot ? `refs/orch/retained/${row.root_id}` : null
-        if (retainedRef && branchSnapshot) {
-          const pinned = Bun.spawnSync(['git', 'update-ref', retainedRef, branchSnapshot], {
-            cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
-          })
-          if (pinned.exitCode !== 0) return {
-            runId: row.root_id, worktree: treePath, outcome: 'failed' as const,
-            detail: `could not protect retained branch ${retainedBranch} at ${branchSnapshot}: ` +
-              (pinned.stderr.toString().trim() || `git update-ref exited ${pinned.exitCode}`),
-          }
-        }
-        // Publish the recovery identity before a project-owned remover runs: a
-        // remover may delete or move the ref before reporting its refusal.
-        recordRetainedBranch(branchSnapshot)
-        const result = removeFor({
-          path: treePath, branch: effective.branch ?? '', base: effective.base_commit ?? '',
-          repoRoot, source: effective.worktree_source ?? undefined,
-          mintedBranch: effective.minted_branch,
-        }, repoRoot, false, true, row.root_id, false)
-        if (retainedBranch && branchSnapshot) {
-          const branchAfter = branchTip(repoRoot, retainedBranch)
-          if (branchAfter === null) {
-            const restored = restoreBranch(repoRoot, retainedBranch, branchSnapshot)
-            if (!restored.ok) return {
-              runId: row.root_id, worktree: treePath, outcome: 'failed' as const,
-              detail: `project remove tool deleted retained branch ${retainedBranch} at ${branchSnapshot}, ` +
-                `and restoration failed: ${restored.error}`,
-            }
-          } else if (branchAfter !== branchSnapshot) {
-            recordRetainedBranch(branchSnapshot)
-            return {
-              runId: row.root_id, worktree: treePath, outcome: 'failed' as const,
-              detail: `project remove tool moved unique branch ${retainedBranch} from ` +
-                `${branchSnapshot} to ${branchAfter}; it was left at the new tip`,
-            }
-          }
-        }
-        if (retainedRef) {
-          const unpinned = Bun.spawnSync(['git', 'update-ref', '-d', retainedRef, branchSnapshot!], {
-            cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
-          })
-          if (unpinned.exitCode !== 0) return {
-            runId: row.root_id, worktree: treePath, outcome: 'failed' as const,
-            detail: `retained branch ${retainedBranch} was verified, but ${retainedRef} could not be removed: ` +
-              (unpinned.stderr.toString().trim() || `git update-ref exited ${unpinned.exitCode}`),
-          }
-        }
-        if (!result.removed) return {
-          runId: row.root_id, worktree: treePath, outcome: 'failed' as const, detail: result.detail,
-        }
-        const acquired = liveRows()
-        if (acquired.length) {
-          return {
-            runId: row.root_id, worktree: treePath, outcome: 'failed' as const,
-            detail: `worktree was acquired during cleanup by run(s): ` +
-              acquired.map((owner) => `${owner.id} (${owner.status})`).join(', '),
-          }
-        }
-        return {
-          runId: row.root_id, worktree: treePath, outcome: 'released' as const,
-          detail: result.output ? `${result.detail}\n${result.output}` : result.detail,
-        }
-      }, options.lockTimeoutMs), options.lockTimeoutMs)
-  } catch (error) {
-    return { runId: row.root_id, worktree: treePath, outcome: 'failed', detail: String((error as Error).message ?? error) }
-  }
-}
-
-/** Run one close-out attempt and retain its outcome for observation and retry. */
-export function closeOutRun(
-  runId: number, options: {
-    intent: 'terminal' | 'explicit' | 'sweep'; dryRun?: boolean; lockTimeoutMs?: number
-    extraPids?: number[]; pgid?: number | null
-  },
-): CloseOutResult {
-  const result = attemptCloseOutRun(runId, options)
-  if (!options.dryRun) {
-    writableDb().query(
-      `UPDATE run
-          SET close_out_outcome=?, close_out_detail=?, close_out_attempted_at=?
-        WHERE id=?`,
-    ).run(result.outcome, result.detail, nowIso(), result.runId)
-  }
-  return result
-}
-
-function reclaimTerminalTree(
-  runId: number, worktree: Worktree, extraPids: number[] = [], pgid: number | null = null,
-): void {
-  try {
-    const result = closeOutRun(runId, { intent: 'terminal', extraPids, pgid })
-    if (result.outcome !== 'released' && result.outcome !== 'absent') {
-      console.error(`orch: close-out ${result.outcome} worktree for run ${runId}: ${result.detail}`)
-    }
-  } catch (e) {
-    console.error(`orch: could not reclaim worktree for run ${runId}: ${e}`)
-  }
 }
 
 /**

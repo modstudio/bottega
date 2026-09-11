@@ -49,7 +49,7 @@ let jobsModule: typeof import('./jobs.ts')
 let agentsModule: typeof import('./agents.ts')
 let routeModule: typeof import('./route.ts')
 let guideModule: typeof import('./guide.ts')
-let runModule: typeof import('./run.ts')
+let runModule: typeof import('./run.ts'); let runArtifactsModule: typeof import('./run-artifacts.ts'); let closeOutModule: typeof import('./close-out.ts')
 let mcpPreflightModule: typeof import('./mcp-preflight.ts'); let dispatchPreflightModule: typeof import('./dispatch-preflight.ts'); let reviewTargetModule: typeof import('./review-target.ts')
 let mcpRequestFromStored!: typeof import('./mcp-preflight.ts').mcpRequestFromStored; let storedMcpRequest!: typeof import('./mcp-preflight.ts').storedMcpRequest; let preflight!: typeof import('./dispatch-preflight.ts').preflight; let implicitReviewWarning!: typeof import('./review-target.ts').implicitReviewWarning
 let worktreeModule!: typeof import('./worktree.ts')
@@ -110,19 +110,17 @@ let guide!: typeof import('./guide.ts').guide
 async function loadGuide() { guideModule ??= await import('./guide.ts'); ({ guide } = guideModule) }
 let repoOf!: typeof import('./run.ts').repoOf
 let preflightMcp!: typeof import('./mcp-preflight.ts').preflightMcp
-let KEEP_RUN_FILES_DAYS!: typeof import('./run.ts').KEEP_RUN_FILES_DAYS
-let RUNS_DIR!: typeof import('./run.ts').RUNS_DIR
-let runFilePaths!: typeof import('./run.ts').runFilePaths
+let KEEP_RUN_FILES_DAYS!: typeof import('./run-artifacts.ts').KEEP_RUN_FILES_DAYS; let RUNS_DIR!: typeof import('./run-artifacts.ts').RUNS_DIR; let runFilePaths!: typeof import('./run-artifacts.ts').runFilePaths
 let terminateRunProcesses!: typeof import('./run-process.ts').terminateRunProcesses
 let packedResumePrompt!: typeof import('./run.ts').packedResumePrompt
 let retryModelForAgent!: typeof import('./failover.ts').retryModelForAgent
 let chainTransport!: typeof import('./failover.ts').chainTransport
-let closeOutRun!: typeof import('./run.ts').closeOutRun
-let readDispatchState!: typeof import('./run.ts').readDispatchState
-async function loadRun() { runModule ??= await import('./run.ts')
+let closeOutRun!: typeof import('./close-out.ts').closeOutRun; let readDispatchState!: typeof import('./run-artifacts.ts').readDispatchState
+async function loadRun() { runModule ??= await import('./run.ts'); runArtifactsModule ??= await import('./run-artifacts.ts'); closeOutModule ??= await import('./close-out.ts')
   mcpPreflightModule ??= await import('./mcp-preflight.ts'); dispatchPreflightModule ??= await import('./dispatch-preflight.ts'); reviewTargetModule ??= await import('./review-target.ts'); ({ mcpRequestFromStored, storedMcpRequest } = mcpPreflightModule); ({ preflight } = dispatchPreflightModule); ({ implicitReviewWarning } = reviewTargetModule)
   ;({ preflightMcp } = mcpPreflightModule)
-  ;({ repoOf, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, packedResumePrompt, readDispatchState, closeOutRun } = runModule)
+  ;({ repoOf, packedResumePrompt } = runModule)
+  ;({ KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, readDispatchState } = runArtifactsModule); ({ closeOutRun } = closeOutModule)
   ;({ terminateRunProcesses } = await import('./run-process.ts')); ({ retryModelForAgent, chainTransport } = await import('./failover.ts'))
 }
 let transportModule: typeof import('./transport.ts')
@@ -1978,7 +1976,7 @@ switch (cmd) {
   }
 
   case 'reconcile': {
-    const { reconcileRun } = await import('./run.ts')
+    const { reconcileRun } = await import('./run-artifacts.ts')
     const id = Number(argv[1])
     if (!id) throw new Error('orch reconcile <id>')
     console.log(reconcileRun(id))
