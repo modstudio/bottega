@@ -35,7 +35,6 @@
   "orchestrator/src/run.ts": 2491,
   "orchestrator/src/transport-acp.ts": 620,
   "orchestrator/src/transport.test.ts": 796,
-  "orchestrator/src/worktree-5.cli.test.ts": 929,
   "orchestrator/src/worktree.ts": 1996,
   "orchestrator/test/fixture.ts": 524
 }

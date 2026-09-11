@@ -72,8 +72,21 @@
     "test/process-boundary/run-git.test.ts": {
       "size": "short"
     },
-    "src/worktree-5.cli.test.ts": {
+    "src/cleanup-sweep-orphans.test.ts": {
       "size": "short"
+    },
+    "src/cleanup-sweep-resources.test.ts": {
+      "size": "short"
+    },
+    "src/git-environment-content-tree.test.ts": {
+      "size": "short"
+    },
+    "src/run-content-measurement.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/sweep.test.ts": {
+      "size": "short",
+      "exclusive": true
     },
     "test/process-boundary/review-target-evidence.test.ts": {
       "size": "short"
@@ -115,7 +128,11 @@
       "files": [
         "src/lifecycle-harness.cli.test.ts",
         "src/monitor.cli.test.ts",
-        "src/worktree-5.cli.test.ts",
+        "src/cleanup-sweep-orphans.test.ts",
+        "src/cleanup-sweep-resources.test.ts",
+        "src/git-environment-content-tree.test.ts",
+        "src/run-content-measurement.test.ts",
+        "test/process-boundary/sweep.test.ts",
         "src/route.cli.test.ts",
         "src/catalog.cli.test.ts",
         "test/process-boundary/discard.test.ts"
