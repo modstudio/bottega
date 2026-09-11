@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ARGV_PROMPT_BYTES, addRun, db, dir, packedResumePrompt, rulingPrompt } from '../test/fixture.ts'
@@ -23,10 +23,19 @@ function insert(status: string, job = 'file-question'): number {
   ).get(new Date().toISOString(), job, status) as { id: number }).id
 }
 
+const priorEnv: Record<string, string | undefined> = {}
 beforeEach(() => {
+  priorEnv.CLAUDE_CODE_SESSION_ID = process.env.CLAUDE_CODE_SESSION_ID
+  priorEnv.ORCH_DEPTH = process.env.ORCH_DEPTH
+  priorEnv.ORCH_EXEC_PATH = process.env.ORCH_EXEC_PATH
   process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
   process.env.ORCH_DEPTH = '0'
   process.env.ORCH_EXEC_PATH = '/usr/bin/true'
+})
+afterEach(() => {
+  if (priorEnv.CLAUDE_CODE_SESSION_ID === undefined) delete process.env.CLAUDE_CODE_SESSION_ID; else process.env.CLAUDE_CODE_SESSION_ID = priorEnv.CLAUDE_CODE_SESSION_ID
+  if (priorEnv.ORCH_DEPTH === undefined) delete process.env.ORCH_DEPTH; else process.env.ORCH_DEPTH = priorEnv.ORCH_DEPTH
+  if (priorEnv.ORCH_EXEC_PATH === undefined) delete process.env.ORCH_EXEC_PATH; else process.env.ORCH_EXEC_PATH = priorEnv.ORCH_EXEC_PATH
 })
 
 describe('run answers', () => {
