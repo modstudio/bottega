@@ -58,7 +58,7 @@ process.env.CLAUDE_CODE_SESSION_ID = 'lifecycle-harness'
 const sourceRoot = join(dirname(new URL(import.meta.url).pathname), '../..')
 const cli = join(sourceRoot, 'orchestrator', 'src', 'cli.ts')
 const worktreeModule = new URL('./worktree.ts', import.meta.url).href
-const runModule = new URL('./run.ts', import.meta.url).href
+const dispatchPreflightModule = new URL('./dispatch-preflight.ts', import.meta.url).href
 
 const gitEnv = (extra: Record<string, string> = {}) => ({
   ...scrubbedGitEnv(),
@@ -258,7 +258,7 @@ function namesRecordedRunTreeInChild(opts: {
 }): boolean {
   const r = Bun.spawnSync([process.execPath, '-e',
     `const{namesRecordedRunTree}=await import(process.argv[1]);console.log(JSON.stringify(namesRecordedRunTree(JSON.parse(process.argv[2]))))`,
-    runModule, JSON.stringify(opts)], {
+    dispatchPreflightModule, JSON.stringify(opts)], {
     cwd: repo, env: gitEnv({ ORCH_DB: storePath }), stdout: 'pipe', stderr: 'pipe',
   })
   if (r.exitCode !== 0) throw new Error(r.stderr.toString())

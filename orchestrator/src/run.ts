@@ -18,6 +18,15 @@ import {
   type Job,
 } from './jobs.ts'
 import { pick } from './route.ts'
+import { branchOf, gitContext } from './git-environment.ts'
+import {
+  canonSourceFor, canonSourceInstruction, grokMcpConnection, mcpRequestFromStored,
+  requestedMcpMode, storedMcpRequest, type McpConnection, type McpRequest,
+} from './mcp-preflight.ts'
+import { depth, namesRecordedRunTree, preflight } from './dispatch-preflight.ts'
+import {
+  implicitReviewCoverageBase, inferredReadOnlyKey, resolveReviewTarget,
+} from './review-target.ts'
 import {
   db, nowIso, DB_PATH, sessionId, pidAlive, resolveRootFromLastTurn, tryWriteContention, writableDb, writeTransaction,
   enableSchemaReload, liveWorktreeSharers, teardownTerminalRunResources,
@@ -29,7 +38,6 @@ import {
   createWorkerWorktree,
   toolFor, changesIn, repoRootOf, resolveBase, resolveReadOnlyBase,
   realpathOrSpelled, withoutTrailingSeparators,
-  createCommandExists,
   prepareWorktreeObjects, carryWorkingState,
   targetGitEnvironment,
   contentTree,
@@ -37,7 +45,7 @@ import {
   removeFor, projectLockState,
   reclaimStaleProjectLock, worktreeLeaseName, type Worktree,
   branchTip, restoreBranch, processStartTime,
-  type WorktreeObjectEnvironment, validateSeedWithTool,
+  type WorktreeObjectEnvironment,
   checkoutAliases, checkoutWatchSet,
   prepareWorkerMcpConfig,
   createIsolatedWorkerDirectory, worktreeExists,
@@ -61,10 +69,9 @@ import {
   CALIBRATION_SUFFIX_RESERVE_BYTES, calibrationLine, cleanReviewEvidence,
   reviewCalibration, reviewRunEvidenceSql,
 } from './review.ts'
-import { assertMainCheckoutClean, assertRegisterBranches, createHasPlaceholder, projectAt, projectByName, projects, stackAt,
+import { projectAt, projectByName, projects, stackAt,
          validateStoredProjectSettings } from './projects.ts'
 import { compilePack, recordPack } from './canon.ts'
-import { seedGuidance } from './args.ts'
 import { resolveRunsDirectory } from './database-location.ts'
 import { resolveBranchRef } from './projects.ts'
 import { resolveLens } from './lenses.ts'
@@ -232,77 +239,6 @@ export function detachedRunOptions(
   }
 }
 
-const EXPLICIT_REVIEW_JOBS = new Set(['review-lens', 'safety', 'craft'])
-
-/** Trunk merge-base of a reviewed commit. Same resolution for --review and implicit lenses. */
-function resolveReviewMergeBase(cwd: string, commit: string, trunk: string): string | null {
-  const trunkCommit = resolveBase(cwd, `${trunk}^{commit}`)
-  return gitContext(cwd, 'merge-base', commit, trunkCommit)
-}
-
-/** Coverage base for a findings job dispatched without --review. Null if unmeasurable. */
-function implicitReviewCoverageBase(cwd: string): string | null {
-  const trunk = projectAt(cwd)?.settings.trunk?.trim()
-  if (!trunk) return null
-  try {
-    const commit = resolveBase(cwd, 'HEAD')
-    return resolveReviewMergeBase(cwd, commit, trunk)
-  } catch {
-    return null
-  }
-}
-
-export function resolveReviewTarget(
-  jobName: string, cwd: string, reviewRef?: string, carry = false,
-): { branch: string; commit: string; base: string } | null {
-  if (reviewRef === undefined) return null
-  if (!EXPLICIT_REVIEW_JOBS.has(jobName)) {
-    throw new Error('--review is only valid for review-lens, safety, and craft')
-  }
-  const project = projectAt(cwd)
-  const tool = project?.settings.worktree
-  if (tool?.create && !createHasPlaceholder(tool.create, 'base')) {
-    throw new Error(
-      `project ${project!.name}: worktree.create has no {base} placeholder; --review needs one`,
-    )
-  }
-  if (tool?.create && tool.detached !== true) {
-    throw new Error(
-      `project ${project!.name}: worktree.create does not declare detached review support.\n` +
-      `  orch project set ${project!.name} --settings '{"worktree":{"detached":true}}'`,
-    )
-  }
-  const { branch } = resolveBranchRef(reviewRef)
-  if (carry && branchOf(cwd) !== branch) {
-    throw new Error(
-      `--review ${reviewRef} resolves to branch ${branch}, but --carry was requested from ` +
-      `${branchOf(cwd) ?? '(detached HEAD)'}; run --carry from that branch's own worktree`,
-    )
-  }
-  const trunk = project?.settings.trunk?.trim()
-  if (!trunk) {
-    throw new Error(
-      `project ${project?.name ?? '(unregistered)'} has no trunk configured; ` +
-      '--review needs one to measure the reviewed change',
-    )
-  }
-  const commit = resolveBase(cwd, `${branch}^{commit}`)
-  const base = resolveReviewMergeBase(cwd, commit, trunk)
-  if (!base) {
-    throw new Error(`cannot find merge-base between review target ${branch} and trunk ${trunk}`)
-  }
-  return { branch, commit, base }
-}
-
-export function implicitReviewWarning(cwd: string): string {
-  const branch = branchOf(cwd) ?? '(detached HEAD)'
-  const p = Bun.spawnSync(['git', '-C', cwd, 'rev-parse', '--verify', 'HEAD^{commit}'], {
-    env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'ignore',
-  })
-  const commit = p.exitCode === 0 ? p.stdout.toString().trim() : null
-  return `reviewing ${branch} at ${commit?.slice(0, 8) ?? 'unknown'}; pass --review <branch> to be explicit`
-}
-
 /**
  * How deep a chain of delegations may go. One means: this session may delegate,
  * and what it delegates to may not delegate again.
@@ -313,10 +249,7 @@ export function implicitReviewWarning(cwd: string): string {
  * routing evidence. Delegation has to bottom out somewhere, and the agent doing
  * the work is not the place to decide where.
  */
-export const MAX_DEPTH = 1
 export const MAX_FAILOVER_ATTEMPTS = 3
-
-export const depth = () => Number(process.env.ORCH_DEPTH ?? 0)
 
 export { resolveRootFromLastTurn }
 
@@ -385,109 +318,10 @@ export function writingFailoverRefusal(
   return `writing run has ${detail}; preserving worktree ${worktree} so two agents never share one diff`
 }
 
-export type McpConnection = {
-  server: string
-  connected: boolean | null
-  error: string | null
-  namesSeen?: string[]
-}
-
-export type McpMode = 'require' | 'prefer'
-export type McpRequest = boolean | McpMode
-
-export function requestedMcpMode(request: McpRequest | undefined): McpMode | null {
-  if (request === 'prefer') return 'prefer'
-  return request ? 'require' : null
-}
-
-/** Existing run.mcp stores none=0, require=1, and prefer=2. */
-export function storedMcpRequest(request: McpRequest | undefined): number {
-  const mode = requestedMcpMode(request)
-  return mode === 'prefer' ? 2 : mode === 'require' ? 1 : 0
-}
-
-/** Read the tri-state request while preserving compatibility with older mirror rows. */
-export function mcpRequestFromStored(
-  stored: number | null, error: string | null = null,
-): McpMode | undefined {
-  if (stored === 2) return 'prefer'
-  if (stored === 1) return error?.startsWith('mirror:') ? 'prefer' : 'require'
-  return undefined
-}
-
-/** The provenance value orch can establish from this run's dispatch facts. */
-export function canonSourceFor(
-  mcpRequested: boolean,
-  connection: McpConnection | null,
-  mirrorAvailable: boolean,
-): CanonSource {
-  if (!mcpRequested) return mirrorAvailable ? 'mirror' : 'unknown'
-  if (connection?.connected === true) return 'live database'
-  if (connection?.connected === false) return 'mirror'
-  return 'unknown'
-}
-
-export function canonSourceInstruction(source: CanonSource): string {
-  return (
-    `Canon source provenance: set provenance.canon_source to "${source}" in your reply. ` +
-    'This reports the canon source available to this run, whether or not you consulted canon.'
-  )
-}
-
 const CANON_SOURCE_PROMPT_RESERVE_BYTES = Math.max(
   ...(['live database', 'mirror', 'unknown'] as CanonSource[])
     .map((source) => Buffer.byteLength(canonSourceInstruction(source))),
 ) + 2
-
-/**
- * Ask the same client that will run the lens whether its project MCP can start.
- * Grok gates repo-local MCP behind folder trust separately from permission
- * mode. The deferred orch-worktree path passes trust; caller-checkout probes do not.
- */
-export function grokMcpConnection(
-  bin: string, cwd: string, server: string, env: Record<string, string>, trust = false,
-): McpConnection {
-  const p = Bun.spawnSync([
-    bin, ...(trust ? ['--cwd', cwd, '--trust'] : []), 'mcp', 'doctor', server, '--json',
-  ], {
-    cwd, env, stdout: 'pipe', stderr: 'pipe',
-  })
-  const stdout = p.stdout.toString().trim()
-  const stderr = p.stderr.toString().trim()
-  try {
-    const report = JSON.parse(stdout) as {
-      servers?: { name?: string; healthy?: boolean; checks?: {
-        passed?: boolean; label?: string; detail?: string; hint?: string
-      }[] }[]
-    }
-    const found = report.servers?.find((candidate) => candidate.name === server)
-    const available = (report.servers ?? [])
-      .map((candidate) => candidate.name)
-      .filter((name): name is string => Boolean(name))
-    if (found) {
-      const error = (found.checks ?? [])
-        .filter((check) => check.passed === false)
-        .map((check) => [check.label, check.detail, check.hint].filter(Boolean).join(': '))
-        .join('; ')
-      return { server, connected: found.healthy === true, error: error || null, namesSeen: available }
-    }
-    const listed = available.length ? available.join(', ') : '(none)'
-    return {
-      server,
-      connected: false,
-      namesSeen: available,
-      error: [
-        stderr, stdout,
-        `MCP server '${server}' was not reported. Available: ${listed}`,
-      ].filter(Boolean).join('\n'),
-    }
-  } catch { /* preserve the client's actual diagnostic below */ }
-  return {
-    server,
-    connected: false,
-    error: [stderr, stdout].filter(Boolean).join('\n') || `MCP server '${server}' was not reported`,
-  }
-}
 
 /**
  * Who can prove attachment, and what they proved.
@@ -589,190 +423,6 @@ export function preflightMcp(opts: {
   if (!connection) return
   const why = mcpAttachRefusal(connection)
   if (why && mode === 'require') throw new Error(why)
-}
-
-const warnedMainCheckouts = new Set<string>()
-
-function warnMainCheckoutUntracked(path: string, warning: string): void {
-  if (warnedMainCheckouts.has(path)) return
-  warnedMainCheckouts.add(path)
-  console.error(warning)
-}
-
-/**
- * Everything knowable BEFORE a row exists, checked where no row exists yet.
- *
- * Shared with `detach()`, which claims its placeholder row before the worker
- * process starts — so a precondition checked only inside `run()` still leaves a
- * row behind, and routing reads it as a failure. That happened twice: a
- * forgotten `--seed` was charged to codex as an implementation it could not
- * manage, and a depth refusal left two `(pending)` rows that later went stale.
- *
- * The rule this restores is already written at the top of `run()`: a run that
- * should not exist should not leave a row behind.
- */
-export function preflight(
-  jobName: string,
-  cwd: string,
-  seed?: string,
-  key?: string,
-  baseRef?: string,
-  reusesWorktree = false,
-  seedAlreadyValidated = false,
-  lens?: string,
-  reviewRef?: string,
-  carry = false,
-  repo?: string,
-): string | undefined {
-  if (depth() >= MAX_DEPTH) {
-    throw new Error(
-      `refusing to delegate at depth ${depth()}: this process is itself a delegated agent. ` +
-        'Answer the question with the tools you have, or hand it back to the caller.',
-    )
-  }
-  if (!reusesWorktree) {
-    const named = repo?.trim() ? projectByName(repo) : projectAt(cwd)
-    if (named) {
-      const warning = assertMainCheckoutClean(named)
-      if (warning) warnMainCheckoutUntracked(named.path, warning)
-    }
-  }
-  const j = job(jobName)
-  resolveReviewTarget(jobName, cwd, reviewRef, carry)
-  const writesJob = Boolean(j.needs.writesRepo)
-  if (j.findings && !lens?.trim()) {
-    throw new Error(`${jobName} produces review findings and requires a stable lens identity.\n  --lens <id>`)
-  }
-  if (!j.findings && lens !== undefined) {
-    throw new Error('--lens is only valid for jobs whose output is review findings')
-  }
-  if (lens && !/^[a-z0-9][a-z0-9-]{0,63}$/.test(lens)) {
-    throw new Error(`lens "${lens}" must be a lowercase stable id of at most 64 characters`)
-  }
-  if (lens) {
-    resolveLens(lens, repo ?? projectAt(cwd)?.name ?? null)
-  }
-  const repoRoot = repoRootOf(cwd)
-  if (jobName === 'review-lens' && repoRoot === null) {
-    throw new Error(
-      `a review lens reads a change, and ${cwd} is not inside a git checkout, so there is no change to read.\n` +
-      `Run it from the checkout that holds the change.`,
-    )
-  }
-  // The key belongs to the branch of a newly cut worktree. Inline jobs never
-  // create that branch, so a project's branch template cannot require a key.
-  const cutsWorktree = Boolean(j.needs.readsRepo)
-  if (!cutsWorktree) return seed
-  if (repoRoot === null) {
-    throw new Error(`${jobName} reads a repository and ${cwd} is not a git checkout`)
-  }
-  if (!writesJob && seed !== undefined) {
-    throw new Error('--seed is only valid for writing runs; seeds belong to writing runs')
-  }
-  // A key is required only when a writing worktree's branch template names it,
-  // and a seed belongs only to a writing worktree. Read-only jobs bypass both
-  // declarations. A resumed turn works in the tree its parent already has, so
-  // demanding either again blocks every ruling.
-  if (reusesWorktree) return seed
-  const project = projectAt(cwd)
-  if (project?.settings.worktree) assertRegisterBranches(project)
-  const tool = project?.settings.worktree ?? null
-  if (project) {
-    const malformed = validateStoredProjectSettings(project.settings)
-    if (malformed.length) throw new Error(malformed.join('\n'))
-  }
-  const effectiveSeed = seed
-  const keyPattern = tool?.keyPattern ?? '^[A-Z][A-Z0-9]+-[0-9]+$'
-  const problems: string[] = []
-  if (key && !new RegExp(keyPattern).test(key)) {
-    problems.push(`key "${key}" does not match ${keyPattern}`)
-  }
-  if (writesJob && tool?.create && !tool.branch) {
-    problems.push(
-      `this project's worktree create command has no branch template.\n` +
-      `Set the worktree branch key with:\n` +
-      `  orch project set ${project!.name} --settings '{"worktree":{"branch":"<template>"}}'`,
-    )
-  }
-  if (writesJob && tool?.branch?.includes('{key}') && !key) {
-    problems.push(
-      `this project's branch names must carry a ticket key (${tool.branch}), and orch will ` +
-      `not invent one.\n  --key <KEY-123>`,
-    )
-  }
-  if (writesJob && tool?.seeds?.length && !effectiveSeed) {
-    problems.push(
-      `this project requires a database size for a new worktree, and has no default.\n` +
-      `${seedGuidance(tool.seeds)}\n\n` +
-      `Choosing is the architect's call: it depends on what the task touches.`,
-    )
-  } else if (writesJob && createHasPlaceholder(tool?.create, 'seed') && !effectiveSeed) {
-    problems.push(
-      `this project's worktree create arguments contain {seed}, so a seed is required.\n` +
-      `  --seed <value>`,
-    )
-  }
-  if (problems.length) throw new Error(problems.join('\n'))
-  const selectedCreate = writesJob ? tool?.create : tool?.readonly_create
-  if (project && selectedCreate && !createCommandExists(selectedCreate, project.path)) {
-    const command = typeof selectedCreate === 'object' && 'command' in selectedCreate
-      ? selectedCreate.command
-      : 'sh'
-    throw new Error(
-      `project ${project.name} worktree create command ${command} is absent or not executable`,
-    )
-  }
-  if (writesJob && tool?.create && !seedAlreadyValidated) validateSeedWithTool(cwd, effectiveSeed)
-  return effectiveSeed
-}
-
-/**
- * Chain roots, not rows: every turn of a resumed chain records the same
- * worktree (eleven rows for one tree in the live store), and the exemption
- * asks whether ONE chain owns the tree.
- */
-function recordedChainRootsForWorktree(path: string): number[] {
-  const real = realpathOrSpelled(path)
-  const rows = real === path
-    ? db().query('SELECT COALESCE(parent_run_id, id) AS root FROM run WHERE worktree = ?')
-        .all(path) as { root: number }[]
-    : db().query('SELECT COALESCE(parent_run_id, id) AS root FROM run WHERE worktree = ? OR worktree = ?')
-        .all(path, real) as { root: number }[]
-  return [...new Set(rows.map((row) => row.root))]
-}
-
-/**
- * The caller-at-trunk exemption is granted from explicit resume identity only:
- * the chain being resumed, or a --base / --cwd that resolves to exactly one
- * recorded run's worktree path or branch tip. Equality is realpath or commit,
- * never a suffix, and never a table scan (DEV-318).
- */
-export function namesRecordedRunTree(opts: {
-  cwd: string
-  explicitCwd?: boolean
-  base?: string
-  resume?: { parent: number; worktree: { path: string } | null }
-}): boolean {
-  if (opts.resume) {
-    const row = db().query('SELECT worktree FROM run WHERE id = ?').get(opts.resume.parent) as
-      { worktree: string | null } | null
-    const recorded = row?.worktree ?? opts.resume.worktree?.path
-    if (!recorded) return false
-    return realpathOrSpelled(recorded) === realpathOrSpelled(opts.cwd)
-  }
-  if (opts.explicitCwd) return recordedChainRootsForWorktree(opts.cwd).length === 1
-  if (!opts.base) return false
-  const roots = new Set(
-    (db().query('SELECT COALESCE(parent_run_id, id) AS root FROM run WHERE branch = ?')
-      .all(opts.base) as { root: number }[]).map((row) => row.root),
-  )
-  try {
-    const oid = resolveBase(opts.cwd, opts.base)
-    const byCommit = db().query('SELECT COALESCE(parent_run_id, id) AS root FROM run WHERE head_commit = ?')
-      .all(oid) as { root: number }[]
-    for (const row of byCommit) roots.add(row.root)
-  } catch { /* --base is not a commit here */ }
-  return roots.size === 1
 }
 
 /**
@@ -1065,16 +715,6 @@ export function repoOf(cwd: string): string | null {
  * Read once, at claim time, and never allowed to fail a run: a directory that
  * is not a git repo, or a git that is slow, must cost nothing.
  */
-function gitContext(cwd: string, ...args: string[]): string | null {
-  try {
-    const p = Bun.spawnSync(['git', '-C', cwd, ...args],
-      { env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'ignore' })
-    if (p.exitCode !== 0) return null
-    const value = new TextDecoder().decode(p.stdout).trim()
-    return value ? value.slice(0, 200) : null
-  } catch { return null }
-}
-
 type TaskBranchCandidate = {
   branch: string
   tip: string
@@ -1456,40 +1096,6 @@ function confinementUnverifiedError(failures: FreezeFailure[]): string {
       `registered checkout ${failure.project} at ${failure.path}: ${failure.error}`,
     ).join('\n'),
   )
-}
-
-function branchOf(cwd: string): string | null {
-  const branch = gitContext(cwd, 'rev-parse', '--abbrev-ref', 'HEAD')
-  return branch && branch !== 'HEAD' ? branch : null
-}
-
-/**
- * Find one recorded ticket key in a deliberate context name.
- *
- * A name with no matching key is silent. A name with two is silent too: choosing
- * between two real-looking addresses would be guessing, and a wrong attribution
- * is worse than null. Project prefixes narrow the candidates where the register
- * declares them; the worktree key pattern remains the final validity check.
- */
-function keyIn(name: string, cwd: string): string | null {
-  const project = projectAt(cwd)
-  const prefixes = project?.settings.keyPrefixes
-  const prefix = prefixes?.length
-    ? `(?:${prefixes.map((value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`
-    : '[A-Z][A-Z0-9]+'
-  const candidates = name.match(new RegExp(`(?:^|[^A-Z0-9])(${prefix}-[0-9]+)(?=$|[^A-Z0-9])`, 'g'))
-    ?.map((candidate) => candidate.match(new RegExp(`(${prefix}-[0-9]+)`))?.[1])
-    .filter((candidate): candidate is string => Boolean(candidate)) ?? []
-  const keyPattern = project?.settings.worktree?.keyPattern ?? '^[A-Z][A-Z0-9]+-[0-9]+$'
-  const valid = [...new Set(candidates.filter((candidate) => new RegExp(keyPattern).test(candidate)))]
-  return valid.length === 1 ? valid[0]! : null
-}
-
-/** Attribution for a read-only root: worktree name first, then branch. */
-export function inferredReadOnlyKey(cwd: string): string | null {
-  const top = gitContext(cwd, 'rev-parse', '--show-toplevel')
-  const fromWorktree = top ? keyIn(basename(top), cwd) : null
-  return fromWorktree ?? keyIn(branchOf(cwd) ?? '', cwd)
 }
 
 /**

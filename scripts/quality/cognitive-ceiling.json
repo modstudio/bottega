@@ -1,5 +1,11 @@
 [
   {
+    "file": "orchestrator/src/dispatch-preflight.ts",
+    "function": "preflight",
+    "line": 42,
+    "score": 46
+  },
+  {
     "file": "hub/src/cli.ts",
     "function": "task",
     "line": 233,
@@ -616,12 +622,6 @@
     "function": "replay",
     "line": 227,
     "score": 29
-  },
-  {
-    "file": "orchestrator/src/run.ts",
-    "function": "preflight",
-    "line": 614,
-    "score": 46
   },
   {
     "file": "orchestrator/src/run.ts",

@@ -39,8 +39,7 @@ import {
 } from '../../shared/monitor-capability.ts'
 
 type DetachSpec = import('./run.ts').DetachSpec
-type McpRequest = import('./run.ts').McpRequest
-type Worktree = import('./worktree.ts').Worktree
+type McpRequest = import('./mcp-preflight.ts').McpRequest; type Worktree = import('./worktree.ts').Worktree
 type Disposition = import('./review.ts').Disposition
 type ReviewGrades = import('./review.ts').ReviewGrades
 type RoutingBacktest = import('./routing-backtest.ts').RoutingBacktest
@@ -51,6 +50,8 @@ let agentsModule: typeof import('./agents.ts')
 let routeModule: typeof import('./route.ts')
 let guideModule: typeof import('./guide.ts')
 let runModule: typeof import('./run.ts')
+let mcpPreflightModule: typeof import('./mcp-preflight.ts'); let dispatchPreflightModule: typeof import('./dispatch-preflight.ts'); let reviewTargetModule: typeof import('./review-target.ts')
+let mcpRequestFromStored!: typeof import('./mcp-preflight.ts').mcpRequestFromStored; let storedMcpRequest!: typeof import('./mcp-preflight.ts').storedMcpRequest; let preflight!: typeof import('./dispatch-preflight.ts').preflight; let implicitReviewWarning!: typeof import('./review-target.ts').implicitReviewWarning
 let worktreeModule!: typeof import('./worktree.ts')
 let contractModule!: typeof import('./contract.ts')
 let grokTrustModule!: typeof import('./grok-trust.ts')
@@ -108,21 +109,20 @@ async function loadRoute() { routeModule ??= await import('./route.ts'); ({ cand
 let guide!: typeof import('./guide.ts').guide
 async function loadGuide() { guideModule ??= await import('./guide.ts'); ({ guide } = guideModule) }
 let repoOf!: typeof import('./run.ts').repoOf
-let preflight!: typeof import('./run.ts').preflight
 let preflightMcp!: typeof import('./run.ts').preflightMcp
 let KEEP_RUN_FILES_DAYS!: typeof import('./run.ts').KEEP_RUN_FILES_DAYS
 let RUNS_DIR!: typeof import('./run.ts').RUNS_DIR
 let runFilePaths!: typeof import('./run.ts').runFilePaths
 let terminateRunProcesses!: typeof import('./run.ts').terminateRunProcesses
-let implicitReviewWarning!: typeof import('./run.ts').implicitReviewWarning
 let packedResumePrompt!: typeof import('./run.ts').packedResumePrompt
-let mcpRequestFromStored!: typeof import('./run.ts').mcpRequestFromStored
-let storedMcpRequest!: typeof import('./run.ts').storedMcpRequest
 let retryModelForAgent!: typeof import('./run.ts').retryModelForAgent
 let chainTransport!: typeof import('./run.ts').chainTransport
 let closeOutRun!: typeof import('./run.ts').closeOutRun
 let readDispatchState!: typeof import('./run.ts').readDispatchState
-async function loadRun() { runModule ??= await import('./run.ts'); ({ repoOf, preflight, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses, implicitReviewWarning, packedResumePrompt, mcpRequestFromStored, storedMcpRequest, retryModelForAgent, chainTransport, readDispatchState, closeOutRun } = runModule) }
+async function loadRun() { runModule ??= await import('./run.ts')
+  mcpPreflightModule ??= await import('./mcp-preflight.ts'); dispatchPreflightModule ??= await import('./dispatch-preflight.ts'); reviewTargetModule ??= await import('./review-target.ts'); ({ mcpRequestFromStored, storedMcpRequest } = mcpPreflightModule); ({ preflight } = dispatchPreflightModule); ({ implicitReviewWarning } = reviewTargetModule)
+  ;({ repoOf, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses, packedResumePrompt, retryModelForAgent, chainTransport, readDispatchState, closeOutRun } = runModule)
+}
 let transportModule: typeof import('./transport.ts')
 let assertAcpAllowed!: typeof import('./transport.ts').assertAcpAllowed
 let assertAcpReady!: typeof import('./transport.ts').assertAcpReady
