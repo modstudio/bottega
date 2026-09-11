@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { db } from '../test/fixture.ts'
 import {
   DOCKER_INVENTORY_TIMEOUT_BY_SIZE,
@@ -9,6 +12,8 @@ import {
   elapsedLockTimeoutMs,
   failingTests,
   formatFlakyLine,
+  flakeCommand,
+  mainCheckoutFlakeStore,
   namedFailureSignal,
   recordTestFlake,
   runWithRetry,
@@ -20,6 +25,84 @@ import {
   type FilePolicy,
   type HostLoad,
 } from './gate-policy.ts'
+
+const load: HostLoad = { gates: 2, loadavg: 1.5, ncpu: 8, freeMem: 1_000_000 }
+
+describe('flake command', () => {
+  test('record writes a row which count reads', () => {
+    expect(flakeCommand([
+      'record', 'flake command test', 'src/flake.test.ts', 'timeout', '--load', JSON.stringify(load),
+    ], db())).toBe('recorded flake flake command test (src/flake.test.ts)')
+    expect(flakeCommand(['count', 'flake command test', 'src/flake.test.ts'], db())).toBe('1')
+  })
+
+  test('malformed requests name the problem and both working forms', () => {
+    const failures = [
+      { argv: ['record', 'test', 'file', 'unknown', '--load', JSON.stringify(load)], problem: 'invalid flake signal' },
+      { argv: ['record', 'test', 'file', 'timeout', '--load', '{'], problem: 'invalid flake load JSON' },
+      { argv: ['record', 'test'], problem: 'missing or invalid flake record argument' },
+      { argv: ['remove'], problem: 'unknown flake subcommand' },
+    ]
+    for (const failure of failures) {
+      expect(() => flakeCommand(failure.argv, db())).toThrow(failure.problem)
+      expect(() => flakeCommand(failure.argv, db())).toThrow('orch flake record')
+      expect(() => flakeCommand(failure.argv, db())).toThrow('orch flake count')
+    }
+  })
+})
+
+describe('main checkout flake store', () => {
+  test('count and record invoke the main checkout binary', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-flake-main-'))
+    const linked = `${repo}-linked`
+    try {
+      for (const argv of [
+        ['git', 'init', '-b', 'main'],
+        ['git', 'config', 'user.email', 'orch-test@example.invalid'],
+        ['git', 'config', 'user.name', 'Orch Test'],
+        ['git', 'commit', '--allow-empty', '-m', 'fixture'],
+        ['git', 'worktree', 'add', '-b', 'linked', linked],
+      ]) {
+        const result = Bun.spawnSync(argv, { cwd: repo, stdout: 'pipe', stderr: 'pipe' })
+        if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+      }
+      const calls: string[][] = []
+      const run = (argv: string[]) => {
+        calls.push(argv)
+        return { exitCode: 0, stdout: argv[2] === 'count' ? '3\n' : '', stderr: '' }
+      }
+      const store = mainCheckoutFlakeStore(linked, run)
+      const binary = join(realpathSync(repo), 'bin', 'orch')
+      expect(store.count('a test', 'src/a.test.ts')).toBe(3)
+      store.record({ test: 'a test', file: 'src/a.test.ts', signal: 'timeout', load })
+      expect(calls).toEqual([
+        [binary, 'flake', 'count', 'a test', 'src/a.test.ts'],
+        [binary, 'flake', 'record', 'a test', 'src/a.test.ts', 'timeout', '--load', JSON.stringify(load)],
+      ])
+    } finally {
+      rmSync(linked, { recursive: true, force: true })
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('failed and non-integer counts return zero and log the binary; failed records log', () => {
+    const logs: string[] = []
+    const results = [
+      { exitCode: 1, stdout: '', stderr: 'count broke' },
+      { exitCode: 0, stdout: 'not a number', stderr: '' },
+      { exitCode: 1, stdout: '', stderr: 'record broke' },
+    ]
+    const store = mainCheckoutFlakeStore(process.cwd(), () => results.shift()!, (line) => logs.push(line))
+    expect(store.count('test', 'file')).toBe(0)
+    expect(store.count('test', 'file')).toBe(0)
+    store.record({ test: 'test', file: 'file', signal: 'lock-wait', load })
+    expect(logs).toHaveLength(3)
+    expect(logs.every((line) => line.includes(join('bin', 'orch')))).toBe(true)
+    expect(logs[0]).toContain('count broke')
+    expect(logs[1]).toContain('non-integer')
+    expect(logs[2]).toContain('record broke')
+  })
+})
 
 describe('test size classes', () => {
   test('a size-class change moves a bound', () => {

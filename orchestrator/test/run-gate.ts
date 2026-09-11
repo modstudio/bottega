@@ -4,12 +4,14 @@ import shards from './shards.json'
 import {
   dockerInventoryTimeoutForSize,
   exclusiveShareViolations,
+  mainCheckoutFlakeStore,
   parseShardMap,
   recordTestFlake,
   runWithRetry,
   shardSize,
   shardTimeoutMs,
   weeklyFlakeCount,
+  type FlakeStore,
 } from '../src/gate-policy.ts'
 import { measureHostLoad, withGateSlot } from '../src/gate-load.ts'
 
@@ -81,11 +83,15 @@ async function spawnTest(
   return { name, exitCode: await child.exited, files, output: sink.join('\n') }
 }
 
-async function flakeStore(): Promise<Database | null> {
+async function flakeStore(): Promise<FlakeStore | null> {
   try {
     const dbMod = await import('../src/db.ts')
-    if (dbMod.linkedWorktreeReadOnly) return null
-    return dbMod.writableDb()
+    if (dbMod.linkedWorktreeReadOnly) return mainCheckoutFlakeStore(process.cwd())
+    const database: Database = dbMod.writableDb()
+    return {
+      count: (test, file) => weeklyFlakeCount(database, test, file),
+      record: (row) => recordTestFlake(database, row),
+    }
   } catch {
     return null
   }
@@ -108,14 +114,13 @@ await withGateSlot(async () => {
       name,
       files,
       run: async () => spawnTest(name, argv, files, env),
-      weeklyCount: (test, file) => store ? weeklyFlakeCount(store, test, file) : 0,
+      weeklyCount: (test, file) => store ? store.count(test, file) : 0,
       recordFlake: (row) => {
         if (!store) {
-          console.error(`FLAKY ${row.file} ${row.test} (${row.signal}); `
-            + 'linked worktree cannot persist the flake table')
+          console.error(`FLAKY ${row.file} ${row.test} (${row.signal}); flake store is unavailable`)
           return
         }
-        recordTestFlake(store, {
+        store.record({
           test: row.test, file: row.file, load: measureHostLoad(), signal: row.signal,
         })
       },

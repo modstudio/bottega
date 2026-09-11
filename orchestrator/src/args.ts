@@ -487,7 +487,7 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
     case 'stats': return { args: argv.slice(1), shape: shape('orch stats [--job X]', 0, ['--job']) }
     case 'pick': return { args: argv.slice(1), shape: shape('orch pick <job> [--agent NAME] [--avoid NAME] [--distinct-from IDS] [--stack STACK] [--lens LENS]', 1, ['--agent', '--avoid', '--distinct-from', '--stack', '--lens']) }
     case 'pending': return { args: argv.slice(1), shape: shape('orch pending', 0) }
-    case 'metric': return { args: argv.slice(1), shape: shape('orch metric [collect] [--days N] [--window N]', 1, ['--days', '--window'], [], { allowedPositionals: ['collect'] }) }
+    case 'flake': return { args: argv.slice(1), shape: shape('orch flake record <test> <file> <signal> --load <json> | orch flake count <test> <file>', 4, ['--load']) }; case 'metric': return { args: argv.slice(1), shape: shape('orch metric [collect] [--days N] [--window N]', 1, ['--days', '--window'], [], { allowedPositionals: ['collect'] }) }
     case 'serve': return { args: argv.slice(1), shape: shape('orch serve', 0) }
     case 'reclassify-failures': return { args: argv.slice(1), shape: shape('orch reclassify-failures [--dry-run]', 0, [], ['--dry-run']) }
     case 'health': return { args: argv.slice(1), shape: shape('orch health [--days N] [--json]', 0, ['--days'], ['--json']) }
