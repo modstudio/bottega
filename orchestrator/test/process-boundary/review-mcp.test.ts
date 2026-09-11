@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS, canonSourceInstruction, db, dir, hermeticGitEnv, reviewReply, runJob, upsertProject } from '../fixture.ts'
 import { stubWorker } from "../stub-worker.ts"
+import './review-mcp.test-residue.ts'
 
 const GROK_REVIEW_EVENT = JSON.stringify({
   type: 'result', subtype: 'success', result: JSON.stringify(reviewReply(1)),
