@@ -1,5 +1,5 @@
 import { REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_REPRODUCED, REVIEW_SEVERITY } from './review-vocabulary.ts'
-
+import { readFileSync } from 'node:fs'
 const REVIEW_GRADE_USAGE = `[--reproduced ${REVIEW_REPRODUCED.join('|')}] [--coverage ${REVIEW_COVERAGE.join('|')}] [--limits ${REVIEW_LIMITS.join('|')}] [--overlap ${REVIEW_OVERLAP.join('|')}]`
 
 type CommandShape = {
@@ -51,22 +51,14 @@ function shellValue(value: string): string {
   return `"${value.replace(/[\\"$`]/g, '\\$&')}"`
 }
 
-export const ANSWER_WORKING_FORMS =
-  `  orch answer <id> --q<id> "<ruling>"\n` +
-  `  orch answer <id> --q<id> --file <path>\n` +
-  `  orch answer <id> --file <path>\n` +
+export const ANSWER_WORKING_FORMS = `  orch answer <id> --q<id> "<ruling>"\n` +
+  `  orch answer <id> --q<id> --file <path>\n  orch answer <id> --file <path>\n` +
   `  orch answer <id> "<ruling>"`
-
-export const TELL_WORKING_FORMS =
-  `  orch tell <id> "<message>"\n` +
-  `  orch tell <id> --file <path>\n` +
-  `  orch tell <id> --ping "<message>"\n` +
+export const TELL_WORKING_FORMS = `  orch tell <id> "<message>"\n` +
+  `  orch tell <id> --file <path>\n  orch tell <id> --ping "<message>"\n` +
   `  orch tell <id>  (message on stdin)`
-
-export const CONTINUE_WORKING_FORMS =
-  `  orch continue <id> "<what next>"\n` +
-  `  orch continue <id> --file <path>\n` +
-  `  orch continue <id>  (message on stdin)`
+export const CONTINUE_WORKING_FORMS = `  orch continue <id> "<what next>"\n` +
+  `  orch continue <id> --file <path>\n  orch continue <id>  (message on stdin)`
 
 /** Empty, whitespace-only, or a single token beginning with `--` is a mis-parse. */
 export function misparsedMessage(text: string): 'empty' | 'dash-token' | null {
@@ -149,19 +141,26 @@ export function invalidUtf8Offset(bytes: Uint8Array): number | null {
   return null
 }
 
-export function nulByteOffset(text: string): number | null {
-  const at = text.indexOf('\0')
-  if (at < 0) return null
-  return Buffer.byteLength(text.slice(0, at), 'utf8')
+export function nulByteOffset(text: string): number | null { const at = text.indexOf('\0'); return at < 0 ? null : Buffer.byteLength(text.slice(0, at), 'utf8') }
+function decodeWorkerBytes(bytes: Uint8Array, source: string): string { const at = invalidUtf8Offset(bytes); if (at !== null) throw new Error(`invalid UTF-8 in ${source} at byte offset ${at}`); return new TextDecoder('utf-8', { fatal: true }).decode(bytes) }
+export function readWorkerFile(path: string): string { return decodeWorkerBytes(readFileSync(path), path) }
+export function assertWorkerText(text: string, noun: string, forms: string, limit?: number): void {
+  refuseMisparsedMessage(text, noun, forms); const nul = nulByteOffset(text)
+  if (nul !== null) throw new Error(`${noun} contains a NUL at byte offset ${nul}\nworking forms:\n${forms}`)
+  const bytes = Buffer.byteLength(text, 'utf8'); if (limit !== undefined && bytes > limit) throw new Error(`${noun} is ${bytes} bytes; this agent's resume transport is bounded at ${limit} bytes\nworking forms:\n${forms}`)
 }
-
+type MessageTextOptions = { missing: string; exclusive?: string; optional?: boolean; sources: { commandFile?: string; positionals: string[] } }
+export async function readMessageText(opts: MessageTextOptions, stdin: { isTTY?: boolean; bytes(): Promise<Uint8Array> } = Bun.stdin): Promise<string | undefined> {
+  const commandFile = opts.sources.commandFile; const positional = opts.sources.positionals
+  if (commandFile && positional.length && opts.exclusive) throw new Error(opts.exclusive)
+  if (commandFile) return readWorkerFile(commandFile); if (positional.length) return positional.join(' ')
+  if (!stdin.isTTY) return decodeWorkerBytes(new Uint8Array(await stdin.bytes()), 'stdin')
+  if (opts.optional) return undefined
+  throw new Error(opts.missing)
+}
 export type QuestionTextSource = { id: number; file?: string; text?: string }
 
-export type AnswerTextSources = {
-  byId: QuestionTextSource[]
-  commandFile: string | undefined
-  positionals: string[]
-}
+export type AnswerTextSources = { byId: QuestionTextSource[]; commandFile: string | undefined; positionals: string[] }
 
 function takeFilePath(args: string[], index: number, usage: string): { path: string; next: number } {
   const arg = args[index]!

@@ -1,9 +1,16 @@
-import { describe, expect, test } from 'bun:test'
+import { afterAll, describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
-  ANSWER_WORKING_FORMS, invalidUtf8Offset, misparsedMessage, parseAnswerTextSources,
-  parseWorkerMessageArgs, refuseMisparsedMessage, flagValue, flagValues, isCliCommand, seedGuidance,
+  ANSWER_WORKING_FORMS, CONTINUE_WORKING_FORMS, assertWorkerText, invalidUtf8Offset,
+  misparsedMessage, parseAnswerTextSources, parseWorkerMessageArgs, readMessageText,
+  readWorkerFile, refuseMisparsedMessage, flagValue, flagValues, isCliCommand, seedGuidance,
   validateCliArgs,
 } from './args.ts'
+
+const messageDir = mkdtempSync(join(tmpdir(), 'orch-args-test-'))
+afterAll(() => rmSync(messageDir, { recursive: true, force: true }))
 
 describe('CLI argument recognition', () => {
   test('every parser top-level command is recognised as canon, including nested commands', () => {
@@ -263,5 +270,75 @@ describe('a message that is not a ruling is refused', () => {
       .toThrow(ANSWER_WORKING_FORMS)
     expect(() => refuseMisparsedMessage('  ', 'ruling', ANSWER_WORKING_FORMS))
       .toThrow('empty ruling: received "  "')
+  })
+})
+
+describe('continue message grammar', () => {
+  test('continue --file reads the follow-up without shell interpolation', async () => {
+    const path = join(messageDir, 'literal.txt')
+    const body = 'Next: keep `literal` and $(hostname) byte-for-byte.\n'
+    writeFileSync(path, body)
+    const sources = parseWorkerMessageArgs(['--file', path])
+    expect(await readMessageText({ missing: 'missing', sources })).toBe(body)
+  })
+
+  test('continue refuses a follow-up that is only --file', async () => {
+    const path = join(messageDir, 'dash.txt')
+    writeFileSync(path, '--file')
+    const text = readWorkerFile(path)
+    expect(() => assertWorkerText(text, 'message', CONTINUE_WORKING_FORMS))
+      .toThrow('received "--file" as a message')
+  })
+
+  test('continue accepts a two-word follow-up beginning with --', async () => {
+    const sources = parseWorkerMessageArgs(['--literal is intended'])
+    const text = await readMessageText({ missing: 'missing', sources })
+    expect(text).toBe('--literal is intended')
+    expect(() => assertWorkerText(text!, 'message', CONTINUE_WORKING_FORMS)).not.toThrow()
+  })
+
+  test('continue --file refuses a NUL and names the byte offset', () => {
+    const path = join(messageDir, 'nul.bin')
+    writeFileSync(path, Buffer.from('A\0B'))
+    expect(() => assertWorkerText(readWorkerFile(path), 'message', CONTINUE_WORKING_FORMS))
+      .toThrow('NUL at byte offset 1')
+  })
+
+  test('continue --file refuses a prompt above the argv resume bound', () => {
+    const path = join(messageDir, 'large.txt')
+    const bytes = 1024 * 1024
+    writeFileSync(path, 'A'.repeat(bytes))
+    expect(() => assertWorkerText(readWorkerFile(path), 'message', CONTINUE_WORKING_FORMS, bytes - 1))
+      .toThrow(`message is ${bytes} bytes`)
+  })
+
+  test('continue --file refuses invalid UTF-8 at the byte offset', () => {
+    const path = join(messageDir, 'utf8.bin')
+    writeFileSync(path, Buffer.from([0x66, 0x80, 0xff, 0x67]))
+    expect(() => readWorkerFile(path)).toThrow('invalid UTF-8')
+    expect(() => readWorkerFile(path)).toThrow('byte offset 1')
+  })
+
+  test('continue stdin refuses invalid UTF-8 at the byte offset', async () => {
+    const stdin = { isTTY: false, async bytes() { return Buffer.from([0x66, 0x80, 0xff, 0x67]) } }
+    await expect(readMessageText({ missing: 'missing', sources: { positionals: [] } }, stdin))
+      .rejects.toThrow('invalid UTF-8 in stdin at byte offset 1')
+  })
+
+  test('continue stdin refuses whitespace-only input instead of substituting the canned prompt', async () => {
+    const stdin = { isTTY: false, async bytes() { return Buffer.from([0x20, 0x09, 0x0d, 0x0a]) } }
+    const text = await readMessageText({ missing: 'missing', sources: { positionals: [] } }, stdin)
+    expect(() => assertWorkerText(text!, 'message', CONTINUE_WORKING_FORMS)).toThrow('empty message')
+  })
+
+  test('continue stdin refuses an empty pipe instead of substituting the canned prompt', async () => {
+    const stdin = { isTTY: false, async bytes() { return Buffer.alloc(0) } }
+    const text = await readMessageText({ missing: 'missing', sources: { positionals: [] } }, stdin)
+    expect(() => assertWorkerText(text!, 'message', CONTINUE_WORKING_FORMS)).toThrow('empty message')
+  })
+
+  test('continue keeps flag-shaped words after the message starts', async () => {
+    const sources = parseWorkerMessageArgs(['use', '--quiet', 'mode'], { booleans: ['--quiet'] })
+    expect(await readMessageText({ missing: 'missing', sources })).toBe('use --quiet mode')
   })
 })

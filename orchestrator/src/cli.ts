@@ -36,8 +36,8 @@ import { NOT_EVIDENCE } from './failure.ts'
 import { collectResult, collectWait, resolveFailover } from './collect.ts'
 import {
   CONTINUE_WORKING_FORMS, TELL_WORKING_FORMS,
-  flagValue, flagValues, invalidUtf8Offset, nulByteOffset,
-  parseWorkerMessageArgs, refuseMisparsedMessage, validateCliArgs,
+  flagValue, flagValues, parseWorkerMessageArgs, validateCliArgs,
+  assertWorkerText, readMessageText, readWorkerFile,
 } from './args.ts'
 import {
   DASHBOARD_CAPABILITY_PATH_ENV, DASHBOARD_CAPABILITY_TOKEN_ENV,
@@ -858,39 +858,6 @@ function positionalMessage(rest: string[], allowDashPositionals = false): string
   })
 }
 
-function decodeWorkerBytes(bytes: Uint8Array, source: string): string {
-  const utf8At = invalidUtf8Offset(bytes)
-  if (utf8At !== null) {
-    throw new Error(`invalid UTF-8 in ${source} at byte offset ${utf8At}`)
-  }
-  return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
-}
-
-function readWorkerFile(path: string): string {
-  return decodeWorkerBytes(readFileSync(path), path)
-}
-
-function assertWorkerText(
-  text: string, noun: string, workingForms: string, argvLimit?: number,
-): void {
-  refuseMisparsedMessage(text, noun, workingForms)
-  const nulAt = nulByteOffset(text)
-  if (nulAt !== null) {
-    throw new Error(
-      `${noun} contains a NUL at byte offset ${nulAt}\nworking forms:\n${workingForms}`,
-    )
-  }
-  if (argvLimit !== undefined) {
-    const n = Buffer.byteLength(text, 'utf8')
-    if (n > argvLimit) {
-      throw new Error(
-        `${noun} is ${n} bytes; this agent's resume transport is bounded at ${argvLimit} bytes\n` +
-        `working forms:\n${workingForms}`,
-      )
-    }
-  }
-}
-
 function argvResumeLimit(agentName: string): number | undefined {
   const agent = AGENTS[agentName]
   if (!agent?.resumeArgv) return undefined
@@ -901,26 +868,6 @@ function argvResumeLimit(agentName: string): number | undefined {
  * One reader for the free-text body that reaches a worker: positional text,
  * or --file PATH, or stdin when neither is given and stdin is not a TTY.
  */
-async function readMessageText(opts: {
-  missing: string
-  exclusive?: string
-  optional?: boolean
-  allowDashPositionals?: boolean
-  sources?: { commandFile?: string; positionals: string[] }
-}): Promise<string | undefined> {
-  const commandFile = opts.sources?.commandFile ?? flag('file')
-  const positional = opts.sources
-    ? opts.sources.positionals
-    : positionalMessage(argv.slice(2), opts.allowDashPositionals)
-  if (commandFile && positional.length && opts.exclusive) throw new Error(opts.exclusive)
-  if (commandFile) return readWorkerFile(commandFile); if (positional.length) return positional.join(' ')
-  if (!process.stdin.isTTY) {
-    return decodeWorkerBytes(new Uint8Array(await Bun.stdin.bytes()), 'stdin')
-  }
-  if (opts.optional) return undefined
-  throw new Error(opts.missing)
-}
-
 const runAnswerHelpers = {
   argvResumeLimit, assertWorkerText, readWorkerFile, readMessageText,
   presentation: { dur, scoreHint, argvResumeLimit, printRunId },
@@ -929,6 +876,7 @@ const runAnswerHelpers = {
 async function readPrompt(): Promise<string> {
   return (await readMessageText({
     missing: 'no prompt: pass it as an argument, via --file, or on stdin',
+    sources: { commandFile: flag('file'), positionals: positionalMessage(argv.slice(2)) },
   }))!
 }
 
