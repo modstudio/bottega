@@ -407,6 +407,16 @@ assertion is about the process boundary itself — real refs, real locks, real
 signals, real teardown. Spawning a subprocess to check a validation result pays
 end-to-end price for a unit answer.
 
+**A test lives beside what it tests.** A unit test is `<module>.test.ts` in the
+same directory as its module, so the two are read, reviewed, renamed and moved
+together, and a restructure that splits a module carries its tests in the same
+commit. A test whose assertion is about the process boundary itself - exit
+codes, signals, a real subprocess - belongs to no single module and lives under
+its concern's `test/process-boundary/`. A concern's `test/` holds infrastructure
+only: fixtures, the preload, the gate runner, fakes. There is no mirrored
+`tests/` tree, because a second tree drifts from the source on every rename and
+nothing reports the drift.
+
 **Suite time is a shared budget**, and the budget is under two minutes on a
 hosted runner. A slow test guarding little makes every future change more
 expensive. Prefer deleting it to nursing it.
