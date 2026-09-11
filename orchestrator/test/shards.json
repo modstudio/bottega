@@ -19,7 +19,7 @@
     "src/route.cli.test.ts": { "size": "short" },
     "src/run-1.cli.test.ts": { "size": "short" },
     "src/workflows.cli.test.ts": { "size": "short" },
-    "src/worktree-1.cli.test.ts": { "size": "short" },
+    "test/process-boundary/worktree-create.test.ts": { "size": "short" },
     "test/process-boundary/worktree.test.ts": { "size": "short", "exclusive": true },
     "test/process-boundary/idle-kill.test.ts": { "size": "moderate", "exclusive": true },
     "test/process-boundary/run.test.ts": { "size": "short" },
@@ -71,7 +71,7 @@
     {
       "measuredSeconds": 75.42,
       "files": [
-        "src/worktree-1.cli.test.ts",
+        "test/process-boundary/worktree-create.test.ts",
         "src/review-3.cli.test.ts",
         "src/issue.cli.test.ts",
         "src/linked-worktree-database.cli.test.ts",
