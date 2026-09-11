@@ -187,7 +187,7 @@ for (const script of [
   'check-doctor-boundary.ts', 'check-port-commands-boundary.ts', 'check-review-commands-boundary.ts',
   'check-dispatch-commands-boundary.ts', 'check-canon-commands-boundary.ts', 'check-routing-commands-boundary.ts',
   'check-failure-commands-boundary.ts', 'check-health-commands-boundary.ts',
-  'check-run-listing-boundary.ts', 'check-run-inbox-boundary.ts', 'check-run-diff-boundary.ts',
+  'check-run-listing-boundary.ts', 'check-run-inbox-boundary.ts', 'check-run-diff-boundary.ts', 'check-cli-boundary.ts',
   'check-database-boundary.ts', 'check-store-hooks-boundary.ts', 'check-review-vocabulary-boundary.ts', 'check-process-liveness-boundary.ts', 'check-clock-boundary.ts',
   'check-run-authority-boundary.ts', 'check-evidence-query-boundary.ts',
   'check-resource-ownership-boundary.ts', 'check-run-liveness-boundary.ts',
