@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
-import { db, REVIEW_OVERLAP, REVIEW_SEVERITY, type ReviewOverlap, type ReviewSeverity } from './db.ts'
+import { db } from './db.ts'
+import { REVIEW_OVERLAP, REVIEW_SEVERITY, type ReviewOverlap, type ReviewSeverity } from './review-vocabulary.ts'
 import { attributedTaskKey } from './epic.ts'
 import { median } from './route.ts'
 import { reviewRunEvidenceSql, reviewTriageBag } from './review.ts'

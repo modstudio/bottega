@@ -12,8 +12,7 @@ function check(source: string) {
   cpSync(join(root, 'scripts/check-evidence-boundary.ts'), join(fixture, 'scripts/check-evidence-boundary.ts'))
   writeFileSync(join(fixture, 'orchestrator/src/evidence.ts'), source)
   const result = Bun.spawnSync(['bun', join(fixture, 'scripts/check-evidence-boundary.ts')], {
-    cwd: fixture, stdout: 'pipe', stderr: 'pipe',
-  })
+    cwd: fixture, stdout: 'pipe', stderr: 'pipe', })
   rmSync(fixture, { recursive: true, force: true })
   return { exitCode: result.exitCode, stderr: result.stderr.toString() }
 }

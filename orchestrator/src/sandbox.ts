@@ -1,7 +1,4 @@
-import {
-  existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, symlinkSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync, } from 'node:fs'
 import { delimiter, isAbsolute, join, relative, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { ROOT } from './db.ts'

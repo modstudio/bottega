@@ -14,8 +14,7 @@ import {
 import { namesRecordedRunTree, preflight } from './dispatch-preflight.ts'
 import {
   implicitReviewCoverageBase, inferredReadOnlyKey, resolveReviewTarget, } from './review-target.ts'
-import {
-  db, nowIso, sessionId, resolveRootFromLastTurn, tryWriteContention, writableDb, writeTransaction, enableSchemaReload, teardownTerminalRunResources, } from './db.ts'
+import { db, nowIso, sessionId, tryWriteContention, writableDb, writeTransaction, enableSchemaReload } from './db.ts'; import { resolveRootFromLastTurn } from './run-liveness.ts'; import { teardownTerminalRunResources } from './resource-ownership.ts'
 import {
   createWorkerWorktree, toolFor, changesIn, resolveBase, resolveReadOnlyBase, carryWorkingState, assertCallerAncestry, withWorktreeCreateLock, withWorktreeLease, removeFor, type Worktree, processStartTime, worktreeExists, prepareSharedRefGuard, assertSharedRefGuardOutsideWritableRoots, workerSharedGitRoots } from './worktree.ts'
 import { repoRootOf, prepareWorktreeObjects, targetGitEnvironment, contentTree, type WorktreeObjectEnvironment } from './git-environment.ts'

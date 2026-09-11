@@ -289,15 +289,15 @@
     "score": 25
   },
   {
-    "file": "orchestrator/src/db.ts",
+    "file": "orchestrator/src/resource-ownership.ts",
     "function": "teardownTerminalRunResources",
-    "line": 954,
+    "line": 153,
     "score": 19
   },
   {
-    "file": "orchestrator/src/db.ts",
+    "file": "orchestrator/src/run-liveness.ts",
     "function": "reapStale",
-    "line": 1227,
+    "line": 172,
     "score": 30
   },
   {
@@ -493,28 +493,10 @@
     "score": 18
   },
   {
-    "file": "orchestrator/src/worktree-template.ts",
-    "function": "scanPipelineOperators",
-    "line": 354,
-    "score": 25
-  },
-  {
     "file": "orchestrator/src/projects.ts",
     "function": "validateProjectSettings",
     "line": 392,
     "score": 25
-  },
-  {
-    "file": "orchestrator/src/worktree-template.ts",
-    "function": "validateCreate",
-    "line": 640,
-    "score": 33
-  },
-  {
-    "file": "orchestrator/src/worktree-template.ts",
-    "function": "shellTokens",
-    "line": 790,
-    "score": 28
   },
   {
     "file": "orchestrator/src/prompt-retarget.ts",
@@ -698,6 +680,36 @@
     "score": 100
   },
   {
+    "file": "orchestrator/src/worktree-attribution.ts",
+    "function": "extractWorktree",
+    "line": 1502,
+    "score": 20
+  },
+  {
+    "file": "orchestrator/src/worktree-template.ts",
+    "function": "scanPipelineOperators",
+    "line": 354,
+    "score": 25
+  },
+  {
+    "file": "orchestrator/src/worktree-template.ts",
+    "function": "validateCreate",
+    "line": 640,
+    "score": 33
+  },
+  {
+    "file": "orchestrator/src/worktree-template.ts",
+    "function": "shellTokens",
+    "line": 790,
+    "score": 28
+  },
+  {
+    "file": "orchestrator/src/worktree-template.ts",
+    "function": "shellWords",
+    "line": 1683,
+    "score": 27
+  },
+  {
     "file": "orchestrator/src/worktree.ts",
     "function": "nextWaiterTicket",
     "line": 687,
@@ -726,18 +738,6 @@
     "function": "prepareSharedRefGuard",
     "line": 1191,
     "score": 45
-  },
-  {
-    "file": "orchestrator/src/worktree-attribution.ts",
-    "function": "extractWorktree",
-    "line": 1502,
-    "score": 20
-  },
-  {
-    "file": "orchestrator/src/worktree-template.ts",
-    "function": "shellWords",
-    "line": 1683,
-    "score": 27
   },
   {
     "file": "orchestrator/src/worktree.ts",

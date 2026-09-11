@@ -1,5 +1,7 @@
 import { AGENTS } from './agents.ts'
-import { chainTerminationAt, db, weigh } from './db.ts'
+import { db } from './db.ts'
+import { chainTerminationAt } from './run-liveness.ts'
+import { weigh } from './score.ts'
 import { COOLS_DOWN } from './failure.ts'
 import { JOBS } from './jobs.ts'
 import {

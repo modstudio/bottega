@@ -1,4 +1,4 @@
-import { db, WEIGHT, FIDELITY_PENALTY, weigh } from './db.ts'
+import { db } from './db.ts'; import { WEIGHT, FIDELITY_PENALTY, weigh } from './score.ts'
 import { AGENTS, fileContractProbeReason, predatesFileContract, unavailableReason } from './agents.ts'
 import { job, JOBS } from './jobs.ts'
 import { COOLS_DOWN, NOT_EVIDENCE } from './failure.ts'

@@ -1,7 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import {
-  AttributionKindSchema, emptyAttribution, HarnessHealthSchema, HostLoadSchema, type HarnessHealth,
-} from '../../shared/orch-contract.ts'
+  AttributionKindSchema, emptyAttribution, HarnessHealthSchema, HostLoadSchema, type HarnessHealth, } from '../../shared/orch-contract.ts'
 import { db } from './db.ts'
 import { clusterErrorText, FAILURE_KINDS, type FailureKind } from './failure.ts'
 import { parseIdleReclaimedMs } from './idle-kill.ts'

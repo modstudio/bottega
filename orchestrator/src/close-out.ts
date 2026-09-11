@@ -4,7 +4,9 @@
  * and reclamation. Must not know routing, contracts, transports, reviews, or
  * the CLI.
  */
-import { nowIso, db, liveWorktreeSharers, pidAlive, sessionId, writableDb, worktreePathSpellings } from './db.ts'
+import { nowIso, db, sessionId, writableDb } from './db.ts'
+import { liveWorktreeSharers, worktreePathSpellings } from './resource-ownership.ts'
+import { pidAlive } from './process-liveness.ts'
 import { projectByName } from './projects.ts'
 import { proveWorktreeReconstructible } from './reclaim.ts'
 import { processTable, terminateRunProcesses } from './run-process.ts'

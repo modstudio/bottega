@@ -133,7 +133,7 @@ describe('degraded collection import graph', () => {
   })
 
   test('type-only and dynamic relative imports are not followed', () => {
-    expect(staticRelativeSpecifiers("import type { ObservedDeadRun } from './db.ts'\n")).toEqual([])
+    expect(staticRelativeSpecifiers("import type { ObservedDeadRun } from './run-liveness.ts'\n")).toEqual([])
     expect(staticRelativeSpecifiers("import { FAILS_OVER } from './failure.ts'\n")).toEqual(['./failure.ts'])
     expect(staticRelativeSpecifiers("await import('./cli.ts')\n")).toEqual([])
     expect(staticRelativeSpecifiers("const { initializeDatabase } = await import('./db.ts')\n")).toEqual([])

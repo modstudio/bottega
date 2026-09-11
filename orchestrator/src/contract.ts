@@ -1,7 +1,8 @@
 // concern: contract
-import { REVIEW_SEVERITY } from './db.ts'
+import { REVIEW_SEVERITY } from './review-vocabulary.ts'
 import { progressFileInstruction } from './checkpoint.ts'
 import { isReaderJob, type Job } from './jobs.ts'
+/** Words that name a question-shaped field without asking a question. */ export const GENERIC_QUESTION_TOKENS = ['placeholder', 'tbd', 'question', 'todo'] as const
 
 /**
  * What an implementation worker is told, and what it must hand back.
@@ -28,7 +29,6 @@ import { isReaderJob, type Job } from './jobs.ts'
  * recovers a fenced or embedded object, because the alternative is losing a
  * completed implementation to a stray prose sentence.
  */
-import { GENERIC_QUESTION_TOKENS } from './db.ts'
 
 /**
  * The shape a worker's final message must take.

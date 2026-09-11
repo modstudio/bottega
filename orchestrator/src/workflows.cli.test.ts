@@ -3,8 +3,8 @@ import { Database } from 'bun:sqlite'
 import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { applySchema, bootstrapFixtureStore, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP,
-  REVIEW_REPRODUCED } from './db.ts'
+import { applySchema, bootstrapFixtureStore } from './db.ts'
+import { REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_REPRODUCED } from './review-vocabulary.ts'
 import { composeWorkflow, exportWorkflows, forkWorkflow, getWorkflowStep, importWorkflows,
   listWorkflows, promoteWorkflow, retireWorkflow, setWorkflow, showWorkflow,
   validateWorkflowDefinition, workflowVersions, type WorkflowDefinition } from './workflows.ts'

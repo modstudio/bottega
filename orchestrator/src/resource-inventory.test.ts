@@ -3,13 +3,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  addRun, databasesFromNames, hermeticGitEnv, installTestDatabaseInventory,
-  parseRefGuardRunId, parseRetainedRef, parseWorktreeDatabaseName, pidRecordIdentity,
-  reapStale, reapTestProcess,
-  refGuardInventory, retainedRefInventory, terminalProcessAliveConditions,
-  upsertProject, worktreeDatabaseConditions, worktreeDatabaseInventory, db,
-} from '../test/fixture.ts'
-import { pidAlive } from './db.ts'
+  addRun, databasesFromNames, hermeticGitEnv, installTestDatabaseInventory, parseRefGuardRunId, parseRetainedRef, parseWorktreeDatabaseName, pidRecordIdentity, reapTestProcess, refGuardInventory, retainedRefInventory, terminalProcessAliveConditions, upsertProject, worktreeDatabaseConditions, worktreeDatabaseInventory, db, } from '../test/fixture.ts'
+import { pidAlive } from './process-liveness.ts'
+import { reapStale } from './run-liveness.ts'
 import { sampleProcesses } from './idle-kill.ts'
 
 afterEach(() => { installTestDatabaseInventory(null) })

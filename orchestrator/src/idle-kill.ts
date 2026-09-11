@@ -6,7 +6,7 @@
  * timeout beside its overall cap. We do the same shape, with a stricter idle
  * test (silence AND no CPU) and a failure kind that is not routing evidence.
  */
-import { pidAlive } from './db.ts'
+import { pidAlive } from './process-liveness.ts'
 import { idleMsSince } from './events.ts'
 
 /**

@@ -24,9 +24,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import {
-  gitToplevel, inspectCheckout, inspectionGitEnv, resolvedPathsEqual,
-  type SequenceKind, type SequenceState,
-} from '../../shared/git.ts'
+  gitToplevel, inspectCheckout, inspectionGitEnv, resolvedPathsEqual, type SequenceKind, type SequenceState, } from '../../shared/git.ts'
 import { db, writableDb, writeTransaction } from './db.ts'
 import { CREATE_VARS, createHasPlaceholder, placeholders, validateCreate, type WorktreeCreate } from './worktree-template.ts'
 export { migrateCreate, type WorktreeCreate, type WorktreeCreateArg } from './worktree-template.ts'

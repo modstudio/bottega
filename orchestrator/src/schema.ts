@@ -1,12 +1,10 @@
 import { sql } from 'drizzle-orm'
 import {
-  check, foreignKey, index, integer, primaryKey, real, sqliteTable, text, unique, uniqueIndex,
-} from 'drizzle-orm/sqlite-core'
+  check, foreignKey, index, integer, primaryKey, real, sqliteTable, text, unique, uniqueIndex, } from 'drizzle-orm/sqlite-core'
 import { DOC_SCOPES, DOC_SCOPE_SUBJECT_KIND } from '../../shared/docs.ts'
-import {
-  DELIVERY, FIDELITY, MONITOR_SEVERITY, QUALITY, REVIEW_COVERAGE, REVIEW_LIMITS,
-  REVIEW_OVERLAP, REVIEW_REPRODUCED, REVIEW_SEVERITY, RUN_MUTATION_ACTIONS,
-} from './db.ts'
+import { DELIVERY, FIDELITY, QUALITY } from './score.ts'
+import { MONITOR_SEVERITY, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_REPRODUCED, REVIEW_SEVERITY } from './review-vocabulary.ts'
+import { RUN_MUTATION_ACTIONS } from './run-authority.ts'
 import { EVENT_KINDS, RESOURCE_KINDS } from './contention.ts'
 
 const values = (items: readonly string[]) => sql.raw(items.map((item) => `'${item}'`).join(','))

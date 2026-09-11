@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync,
-} from 'node:fs'
+  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, } from 'node:fs'
 import { homedir } from 'node:os'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

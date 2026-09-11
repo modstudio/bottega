@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { FIDELITY_PENALTY, addRun, candidates, score, weigh } from '../test/fixture.ts'
+import { FIDELITY_PENALTY, addRun, candidates, judgeability, score, weigh } from '../test/fixture.ts'
 
 describe('fidelity: did it build what it was asked to build', () => {
   test('correct code that solved the wrong problem is not a perfect run', () => {
@@ -79,5 +79,47 @@ describe('the fidelity penalty cannot sink below "nothing arrived"', () => {
     // that predates the column. Silently scoring it as faithful would flatter
     // the run and diverge from the SQL, which treats it as zero.
     expect(() => weigh('full', 'right', 'faithfull' as never)).toThrow()
+  })
+})
+
+
+describe('who may judge a run', () => {
+  // The rule was already written in AGENTS.md and did not hold: on 2026-08-31 two
+  // concurrent sessions each scored the other's runs within an hour, both having
+  // inferred their ids from their own previous block rather than reading them
+  // back. These pin the guard that turns that prose into a refusal.
+
+  test('the session that made a run may score it', () => {
+    expect(judgeability('session-A', 'session-A')).toEqual({ verdict: 'own' })
+  })
+
+  test('another session may NOT — it never read the output', () => {
+    expect(judgeability('session-A', 'session-B')).toEqual({
+      verdict: 'foreign',
+      owner: 'session-A',
+    })
+  })
+
+  test('the owner travels with the refusal, so the error can name who to ask', () => {
+    // Without this the message could only say "not yours", which does not tell
+    // anyone what to do next. Naming the session is what makes SendMessage the
+    // obvious move rather than --force.
+    const v = judgeability('session-A', 'session-B')
+    expect(v.verdict === 'foreign' && v.owner).toBe('session-A')
+  })
+
+  test('a run recorded before session ids is scoreable by anyone', () => {
+    // Refusing these would strand every run made before session_id existed.
+    // Missing evidence is not evidence of wrongdoing.
+    expect(judgeability(null, 'session-A')).toEqual({ verdict: 'unattributed' })
+    expect(judgeability(null, null)).toEqual({ verdict: 'unattributed' })
+  })
+
+  test('a caller with no session id is warned, not blocked', () => {
+    // Scoring from a plain shell is legitimate; it just cannot be verified.
+    expect(judgeability('session-A', null)).toEqual({
+      verdict: 'anonymous',
+      owner: 'session-A',
+    })
   })
 })
