@@ -1,0 +1,191 @@
+import { describe, expect, test } from 'bun:test'
+import { AGENTS, EVIDENCE_WINDOW, MIN_SAMPLE, PROMPT_SIZE_BOUNDARY, addRun, candidates, guide, pick, promptSizeBucket, score, scoreboard } from '../test/fixture.ts'
+
+describe('one score, reported the same everywhere', () => {
+  function judged(agent: string, rights: number, wrongs: number) {
+    for (let i = 0; i < rights; i++) {
+      score(addRun({ agent, job: 'review-lens-inline' }), 'full', 'right')
+    }
+    for (let i = 0; i < wrongs; i++) {
+      score(addRun({ agent, job: 'review-lens-inline' }), 'full', 'wrong')
+    }
+  }
+
+  test('candidates shrink scores toward the mean of the proven field', () => {
+    judged('codex', 4, 1)
+    judged('grok', 31, 9)
+    judged('agy', 0, 40)
+
+    const cs = candidates('review-lens-inline')
+    const codex = cs.find((c) => c.agent === 'codex')!
+    const grok = cs.find((c) => c.agent === 'grok')!
+    const agy = cs.find((c) => c.agent === 'agy')!
+    const prior = (codex.score! + grok.score! + agy.score!) / 3
+
+    expect(codex.score).toBeCloseTo(0.8)
+    expect(codex.shrunk).toBeCloseTo((4 + MIN_SAMPLE * prior) / (5 + MIN_SAMPLE))
+    expect(grok.shrunk).toBeCloseTo((31 + MIN_SAMPLE * prior) / (40 + MIN_SAMPLE))
+    expect(agy.shrunk).toBeCloseTo((MIN_SAMPLE * prior) / (40 + MIN_SAMPLE))
+  })
+
+  test('shrinkage uses a 0.5 prior when the job has no proven agent', () => {
+    judged('codex', 1, 0)
+    const codex = candidates('review-lens-inline').find((c) => c.agent === 'codex')!
+    expect(codex.score).toBe(1)
+    expect(codex.shrunk).toBeCloseTo((1 + MIN_SAMPLE * 0.5) / (1 + MIN_SAMPLE))
+  })
+
+  test('pick and guide rank proven agents by shrunk score and report both means', () => {
+    judged('codex', 4, 1)
+    judged('grok', 31, 9)
+    judged('agy', 0, 40)
+
+    const routed = pick('review-lens-inline', undefined, 0, false)
+    expect(routed.agent).toBe('grok')
+    expect(routed.reason).toContain('78% (shrunk 75%) over 40 judged')
+
+    const g = guide('review-lens-inline')[0]!
+    expect(g.best!.agent).toBe('grok')
+    expect(g.best!.score).toBeCloseTo(0.775)
+    expect(g.best!.shrunk).toBeCloseTo(0.747222)
+  })
+
+  test('the scoreboard is the router, not a second opinion', () => {
+    // agy on review-lens: one good answer and two headless denials. The old
+    // report filtered status='ok' and called that 100%; the router called it 0%.
+    score(addRun({ agent: 'agy', job: 'review-lens' }), 'full', 'right')
+    addRun({ agent: 'agy', job: 'review-lens', status: 'failed' })
+    addRun({ agent: 'agy', job: 'review-lens', status: 'failed' })
+
+    const fromRouter = candidates('review-lens').find((c) => c.agent === 'agy')!
+    const fromBoard = scoreboard('review-lens').find((c) => c.agent === 'agy')!
+    expect(fromBoard.score).toBe(fromRouter.score)
+    expect(fromBoard.shrunk).toBe(fromRouter.shrunk)
+    expect(fromBoard.evidence).toBe(fromRouter.evidence)
+    expect(fromBoard.failures).toBe(2)
+    // The number the report used to show, and the one it shows now.
+    expect(fromBoard.score).toBe(0)
+  })
+
+  test('every cell in the scoreboard matches candidates() for its job', () => {
+    score(addRun({ agent: 'grok', job: 'craft' }), 'full', 'right')
+    addRun({ agent: 'codex', job: 'craft', status: 'stale' })
+    score(addRun({ agent: 'grok', job: 'safety' }), 'full', 'mixed' )
+    for (const cell of scoreboard()) {
+      const promptBytes = cell.promptBucket === 'small' ? 0 : PROMPT_SIZE_BOUNDARY
+      const c = candidates(cell.job, promptBytes).find((x) => x.agent === cell.agent)!
+      expect(cell.score).toBe(c.score)
+      expect(cell.shrunk).toBe(c.shrunk)
+      expect(cell.evidence).toBe(c.evidence)
+      expect(cell.runs).toBe(c.runs)
+    }
+  })
+
+  test('a job filter narrows the rows without changing any of them', () => {
+    score(addRun({ agent: 'grok', job: 'craft' }), 'full', 'right')
+    addRun({ agent: 'grok', job: 'safety', status: 'failed' })
+    const all = scoreboard()
+    const one = scoreboard('craft')
+    expect(one.every((r) => r.job === 'craft')).toBe(true)
+    for (const r of one) {
+      expect(all.find((x) => x.job === r.job && x.agent === r.agent)!.score).toBe(r.score)
+    }
+  })
+
+  test('an agent with no history for a job is not a row at all', () => {
+    // Absent, rather than present at zero — never asked is not the same as bad.
+    expect(scoreboard('craft').find((r) => r.agent === 'agy')).toBeUndefined()
+  })
+})
+
+describe('routing evidence scope', () => {
+  test('prompt evidence is partitioned at the provisional 16 KiB boundary', () => {
+    expect(promptSizeBucket(PROMPT_SIZE_BOUNDARY - 1)).toBe('small')
+    expect(promptSizeBucket(PROMPT_SIZE_BOUNDARY)).toBe('large')
+
+    for (let i = 0; i < 2; i++) {
+      addRun({
+        agent: 'qwen-local', job: 'file-question', promptBytes: 119 * 1024,
+        latency: 945_000, status: 'failed', kind: 'timeout', startedAt: '2026-01-01T00:00:00Z',
+      })
+    }
+    for (let i = 0; i < 7; i++) {
+      score(addRun({
+        agent: 'qwen-local', job: 'file-question', promptBytes: 672, latency: 9_000,
+      }), 'full', 'right')
+      score(addRun({
+        agent: 'grok', job: 'file-question', promptBytes: 25 * 1024, latency: 163_000,
+      }), 'full', 'right')
+    }
+    for (let i = 0; i < 2; i++) {
+      score(addRun({
+        agent: 'qwen-local', job: 'file-question', promptBytes: 25 * 1024, latency: 653_000,
+      }), 'full', 'right')
+    }
+
+    const small = candidates('file-question', 672)
+    const large = candidates('file-question', 25 * 1024)
+    expect(small.find((c) => c.agent === 'qwen-local')).toMatchObject({
+      evidence: 7, latencyMs: 9_000,
+    })
+    expect(large.find((c) => c.agent === 'qwen-local')).toMatchObject({
+      evidence: 4, latencyMs: 653_000,
+    })
+    expect(large.find((c) => c.agent === 'grok')).toMatchObject({
+      evidence: 7, latencyMs: 163_000,
+    })
+    expect(pick('file-question', undefined, 25 * 1024, false).agent).toBe('grok')
+  })
+
+  test('guide defaults to every populated bucket and can narrow to one input size', () => {
+    score(addRun({
+      agent: 'codex', job: 'file-question', promptBytes: 672, latency: 18_300,
+    }), 'full', 'right')
+    score(addRun({
+      agent: 'grok', job: 'file-question', promptBytes: 25 * 1024, latency: 163_000,
+    }), 'full', 'right')
+
+    expect(guide('file-question').map((row) => row.promptBucket)).toEqual(['small', 'large'])
+    expect(guide('file-question', 25 * 1024).map((row) => row.promptBucket)).toEqual(['large'])
+
+  })
+
+  test('only the most recent evidence window counts in candidates and the scoreboard', () => {
+    for (let i = 0; i < 5; i++) {
+      score(addRun({ agent: 'codex', job: 'review-lens' }), 'full', 'wrong')
+    }
+    for (let i = 0; i < EVIDENCE_WINDOW; i++) {
+      score(addRun({ agent: 'codex', job: 'review-lens' }), 'full', 'right')
+    }
+
+    const candidate = candidates('review-lens').find((c) => c.agent === 'codex')!
+    const cell = scoreboard('review-lens').find((c) => c.agent === 'codex')!
+    expect(candidate.evidence).toBe(EVIDENCE_WINDOW)
+    expect(candidate.score).toBe(1)
+    expect(cell.evidence).toBe(EVIDENCE_WINDOW)
+    expect(cell.score).toBe(candidate.score)
+  })
+
+  test('a swapped model starts a fresh posterior and does not inherit older-model evidence', () => {
+    const current = AGENTS.codex!.model
+    for (let i = 0; i < MIN_SAMPLE; i++) {
+      score(addRun({ agent: 'codex', job: 'review-lens', model: 'older-model' }), 'full', 'wrong')
+    }
+    for (let i = 0; i < MIN_SAMPLE - 1; i++) {
+      score(addRun({ agent: 'codex', job: 'review-lens', model: current }), 'full', 'right')
+    }
+
+    let candidate = candidates('review-lens').find((c) => c.agent === 'codex')!
+    expect(candidate.evidence).toBe(MIN_SAMPLE - 1)
+    expect(candidate.evidenceModel).toBe(current)
+    expect(candidate.score).toBe(1)
+    expect(pick('review-lens', undefined, 0, false).reason).not.toContain('across models')
+
+    score(addRun({ agent: 'codex', job: 'review-lens', model: current }), 'full', 'right')
+    candidate = candidates('review-lens').find((c) => c.agent === 'codex')!
+    expect(candidate.evidence).toBe(MIN_SAMPLE)
+    expect(candidate.score).toBe(1)
+    expect(candidate.evidenceModel).toBe(current)
+    expect(pick('review-lens', undefined, 0, false).reason).toContain(`on model ${current}`)
+  })
+})

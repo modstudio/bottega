@@ -196,7 +196,7 @@ for (const script of [
   'check-calibration-port-boundary.ts', 'check-standard-calibration-boundary.ts',
   'check-standard-transports-boundary.ts', 'check-runtime-registration-boundary.ts',
   'check-module-boundaries.ts', 'check-inversion-boundaries.ts',
-  'check-git-environment-spawn.ts', 'check-write-transaction-site.ts',
+  'check-git-environment-spawn.ts', 'check-launchd-templates.ts', 'check-write-transaction-site.ts',
   'check-file-ceiling.ts', 'check-cognitive-ceiling.ts',
   'check-brand.ts', 'check-canon.ts',
   '../orchestrator/scripts/check-pack-budget.ts',

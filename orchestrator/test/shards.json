@@ -1,18 +1,9 @@
 {
   "files": {
-    "src/catalog.cli.test.ts": {
-      "size": "short"
-    },
     "src/docs.cli.test.ts": {
       "size": "short"
     },
-    "src/epic.cli.test.ts": {
-      "size": "short"
-    },
-    "src/review-yield.cli.test.ts": {
-      "size": "short"
-    },
-    "src/evals.cli.test.ts": {
+    "test/process-boundary/evals.test.ts": {
       "size": "short"
     },
     "test/process-boundary/lifecycle-harness.test.ts": {
@@ -31,12 +22,6 @@
     "test/process-boundary/reclaim.test.ts": {
       "size": "short",
       "exclusive": true
-    },
-    "src/route.cli.test.ts": {
-      "size": "short"
-    },
-    "src/workflows.cli.test.ts": {
-      "size": "short"
     },
     "test/process-boundary/worktree-create.test.ts": {
       "size": "short"
@@ -105,10 +90,7 @@
         "test/process-boundary/task-branch-run.test.ts",
         "test/process-boundary/database-port-import.test.ts",
         "test/process-boundary/hooks.test.ts",
-        "src/workflows.cli.test.ts",
-        "src/evals.cli.test.ts",
-        "src/epic.cli.test.ts",
-        "src/review-yield.cli.test.ts",
+        "test/process-boundary/evals.test.ts",
         "test/process-boundary/sweep.test.ts",
         "test/process-boundary/discard-resources.test.ts"
       ]
@@ -118,8 +100,6 @@
       "files": [
         "test/process-boundary/lifecycle-harness.test.ts",
         "src/monitor.cli.test.ts",
-        "src/route.cli.test.ts",
-        "src/catalog.cli.test.ts",
         "test/process-boundary/discard.test.ts"
       ]
     },
