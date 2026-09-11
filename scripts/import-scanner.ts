@@ -2,6 +2,7 @@ import ts from 'typescript'
 
 export type ImportScan = {
   specifiers: string[]
+  typeOnlySpecifiers: string[]
   unresolvedRelative: string[]
 }
 
@@ -68,6 +69,7 @@ export function importSpecifiers(source: string): ImportScan {
     'source.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX,
   )
   const specifiers: string[] = []
+  const typeOnlySpecifiers: string[] = []
   const unresolvedRelative: string[] = []
   const createRequireNames = new Set(['createRequire'])
   const requireNames = new Set(['require'])
@@ -112,9 +114,17 @@ export function importSpecifiers(source: string): ImportScan {
     else if (beginsRelative(argument, constants)) unresolvedRelative.push(location(sourceFile, call))
   }
 
+  function recordDeclaration(node: ts.ImportDeclaration | ts.ExportDeclaration): void {
+    if (!node.moduleSpecifier || !ts.isStringLiteral(node.moduleSpecifier)) return
+    const typeOnly = ts.isImportDeclaration(node)
+      ? node.importClause?.isTypeOnly === true
+      : node.isTypeOnly
+    ;(typeOnly ? typeOnlySpecifiers : specifiers).push(node.moduleSpecifier.text)
+  }
+
   function visit(node: ts.Node): void {
-    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier) {
-      if (ts.isStringLiteral(node.moduleSpecifier)) specifiers.push(node.moduleSpecifier.text)
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      recordDeclaration(node)
     } else if (ts.isCallExpression(node) && node.arguments.length === 1) {
       if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
         record(node.arguments[0]!, node)
@@ -129,5 +139,5 @@ export function importSpecifiers(source: string): ImportScan {
     ts.forEachChild(node, visit)
   }
   visit(sourceFile)
-  return { specifiers, unresolvedRelative }
+  return { specifiers, typeOnlySpecifiers, unresolvedRelative }
 }

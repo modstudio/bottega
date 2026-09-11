@@ -170,18 +170,18 @@ export const {
 export const { runDetail, runList, state } = await import('../src/serve.ts')
 export const { classify, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOT_EVIDENCE, COOLS_DOWN, FAILS_OVER,
         isNonAnswer, detectBlockers } = await import('../src/failure.ts')
-export const { errorTail, preflight, preflightMcp, detachedRunOptions, runFilePaths, pruneRuns, KEEP_RUN_FILES_DAYS,
-        RUNS_DIR, grokMcpConnection, assertGrokTrustEligible, writingFailoverRefusal, resolveSupersededTurn,
-        resolveRootFromLastTurn, gitObjectEnvironmentFor, inferredReadOnlyKey,
-        canonSourceFor, canonSourceInstruction, snapshotRegisteredCheckouts,
+export const { errorTail, preflightMcp, detachedRunOptions, runFilePaths, pruneRuns, KEEP_RUN_FILES_DAYS,
+        RUNS_DIR, assertGrokTrustEligible, writingFailoverRefusal, resolveSupersededTurn,
+        resolveRootFromLastTurn, gitObjectEnvironmentFor, snapshotRegisteredCheckouts,
         checkoutAliases, checkoutCaseSensitivity,
         resolveTaskBranch, taskBranchCandidacySql,
         retargetRepositoryPrompt, retargetRepositoryPromptForDispatch,
-        packedResumePrompt, resolveReviewTarget, implicitReviewWarning, mcpRequestFromStored,
-        retryModelForAgent, run: runJob, listRunArtifacts, runArtifactsDir, runScratchDir,
+        packedResumePrompt, retryModelForAgent, run: runJob, listRunArtifacts, runArtifactsDir, runScratchDir,
         noRepoIsolatePath,
-        readDispatchState, persistTerminalSnapshot, reconcileRun, closeOutRun,
-        verifiedProcessTree, installTestProcessInventory } = await import('../src/run.ts')
+        readDispatchState, persistTerminalSnapshot, reconcileRun, closeOutRun, verifiedProcessTree, installTestProcessInventory } = await import('../src/run.ts')
+export const { preflight, namesRecordedRunTree } = await import('../src/dispatch-preflight.ts')
+export const { inferredReadOnlyKey, resolveReviewTarget, implicitReviewWarning } = await import('../src/review-target.ts')
+export const { canonSourceFor, canonSourceInstruction, grokMcpConnection, mcpRequestFromStored } = await import('../src/mcp-preflight.ts')
 export const run = runJob
 export const {
   CANON_EVALS, CANON_EVAL_LENS, TRACKED_EVAL_PATH, UNTRACKED_EVAL_PATH,

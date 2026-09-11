@@ -44,7 +44,7 @@
   "orchestrator/src/run-1.cli.test.ts": 1478,
   "orchestrator/src/run-2.cli.test.ts": 1049,
   "orchestrator/src/run.test.ts": 1252,
-  "orchestrator/src/run.ts": 4298,
+  "orchestrator/src/run.ts": 3904,
   "orchestrator/src/transport-acp.ts": 620,
   "orchestrator/src/transport.test.ts": 796,
   "orchestrator/src/worktree-1.cli.test.ts": 1123,

@@ -19,7 +19,7 @@ const cases = [
 describe('import scanner', () => {
   for (const [name, source, expected] of cases) {
     test(name, () => {
-      expect(importSpecifiers(source)).toEqual({ specifiers: [expected], unresolvedRelative: [] })
+      expect(importSpecifiers(source)).toEqual({ specifiers: [expected], typeOnlySpecifiers: [], unresolvedRelative: [] })
     })
   }
 
