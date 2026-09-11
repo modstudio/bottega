@@ -253,6 +253,10 @@ export function seedGuidance(seeds: string[]): string {
     `  --seed="--bundle=catalog --budget-mb=700"`
 }
 
+const RECLAIM_FORMS: Record<string, CommandShape> = { worktree: shape('orch reclaim worktree <path> [--dry-run]', 1, [], ['--dry-run']),
+  branch: shape('orch reclaim branch <project>:<branch> [--dry-run]', 1, [], ['--dry-run']) }
+/** A missing kind has no shape to validate; an unknown one is refused rather than routed to branch reclaim. */
+const unknownReclaimKind = (sub?: string): null => { if (sub) throw new Error(`unknown reclaim kind ${JSON.stringify(sub)}: use ${Object.values(RECLAIM_FORMS).map((form) => form.usage).join(' or ')}`); return null }
 /** Every word the human-facing CLI understands. */
 export function commandShape(argv: string[], topLevelOnly = false): { args: string[]; shape: CommandShape } | null {
   const command = argv[0]
@@ -436,12 +440,8 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
     ) }
     case 'reclaim': {
       if (topLevelOnly) return { args: [], shape: shape('orch reclaim', 0) }
-      const forms: Record<string, CommandShape> = {
-        worktree: shape('orch reclaim worktree <path> [--dry-run]', 1, [], ['--dry-run']),
-        branch: shape('orch reclaim branch <project>:<branch> [--dry-run]', 1, [], ['--dry-run']),
-      }
-      if (!sub || !forms[sub]) { if (sub) throw new Error(`unknown reclaim kind ${JSON.stringify(sub)}: use ${Object.values(forms).map((form) => form.usage).join(' or ')}`); return null }
-      return { args: argv.slice(2), shape: forms[sub] }
+      if (!sub || !RECLAIM_FORMS[sub]) return unknownReclaimKind(sub)
+      return { args: argv.slice(2), shape: RECLAIM_FORMS[sub] }
     }
     case 'inbox': return { args: argv.slice(1), shape: shape('orch inbox [--all] [--json]', 0, [], ['--all', '--json']) }
     case 'peek': return { args: argv.slice(1), shape: shape(
