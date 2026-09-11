@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, resolve, sep } from 'node:path'
 import { pidAlive } from './db.ts'
-import { targetGitEnvironment } from './worktree.ts'
+import { targetGitEnvironment } from './git-environment.ts'
 
 export type GitLock = {
   path: string

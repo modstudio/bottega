@@ -493,7 +493,7 @@
     "score": 18
   },
   {
-    "file": "orchestrator/src/projects.ts",
+    "file": "orchestrator/src/worktree-template.ts",
     "function": "scanPipelineOperators",
     "line": 354,
     "score": 25
@@ -505,13 +505,13 @@
     "score": 25
   },
   {
-    "file": "orchestrator/src/projects.ts",
+    "file": "orchestrator/src/worktree-template.ts",
     "function": "validateCreate",
     "line": 640,
     "score": 33
   },
   {
-    "file": "orchestrator/src/projects.ts",
+    "file": "orchestrator/src/worktree-template.ts",
     "function": "shellTokens",
     "line": 790,
     "score": 28
@@ -728,13 +728,13 @@
     "score": 45
   },
   {
-    "file": "orchestrator/src/worktree.ts",
+    "file": "orchestrator/src/worktree-attribution.ts",
     "function": "extractWorktree",
     "line": 1502,
     "score": 20
   },
   {
-    "file": "orchestrator/src/worktree.ts",
+    "file": "orchestrator/src/worktree-template.ts",
     "function": "shellWords",
     "line": 1683,
     "score": 27

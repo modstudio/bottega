@@ -3,15 +3,13 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { CONCERNS } from '../../shared/brand.ts'
 import {
-  CANON_REFERENCE_EXEMPTIONS,
-  canonReferencePath,
-} from '../../shared/canon-references.ts'
+  CANON_REFERENCE_EXEMPTIONS, canonReferencePath, } from '../../shared/canon-references.ts'
 import { isCliCommand } from './args.ts'
 import { db, linkedWorktreeReadOnly, nowIso, writeTransaction } from './db.ts'
 import { type Doc, docsForRun, docsMarkdown, listDocs } from './docs.ts'
 import { DEFAULT_PACK_BYTES, JOBS, job as getJob } from './jobs.ts'
 import { projectAt, projectByName, projects } from './projects.ts'
-import { targetGitEnvironment } from './worktree.ts'
+import { targetGitEnvironment } from './git-environment.ts'
 
 export const BRIEF_BYTES = 64 * 1024
 const ROOT = new URL('../..', import.meta.url).pathname.replace(/\/$/, '')

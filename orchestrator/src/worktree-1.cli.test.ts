@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import type { WorktreeCreate } from './projects.ts'
+import type { WorktreeCreate } from './worktree-template.ts'
 import { AGENTS, addRun, branchTip, compoundCreate, createArgv, createReadOnlyWithTool, createReadOnlyWorktree, createWithTool, createWorktree, db, declaredCreate, fill, fillTool, hermeticGitCommand, hermeticGitEnv, preflight, prepareSharedRefGuard, removeFor, repoRootOf, resolveReviewTarget, runJob, seedArgv, upsertProject } from '../test/fixture.ts'
 
 import { worktreeDescribeFixture } from '../test/fixture.ts'

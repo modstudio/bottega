@@ -7,8 +7,9 @@ import { db } from './db.ts'
 import { projectAt, projects } from './projects.ts'
 import { reviewRunEvidenceSql } from './review.ts'
 import {
-  realpathOrSpelled, repoRootOf, targetGitEnvironment, type Worktree,
-} from './worktree.ts'
+  type Worktree } from './worktree.ts'
+import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
+import { realpathOrSpelled } from './checkout-identity.ts'
 
 export type TaskBranchCandidate = {
   branch: string

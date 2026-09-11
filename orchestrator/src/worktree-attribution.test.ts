@@ -4,9 +4,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import {
-  addRun, createWorktree, db, extractWorktree, extractionDest, hermeticGitEnv,
-  removeFor, sanitiseOrphanExtractionPath, upsertProject,
+  addRun, createWorktree, db, hermeticGitEnv, removeFor, upsertProject,
 } from '../test/fixture.ts'
+import {
+  extractWorktree, extractionDest, sanitiseOrphanExtractionPath,
+} from './worktree-attribution.ts'
 import { reclaimWorktree } from './reclaim.ts'
 
 const repos: string[] = []
