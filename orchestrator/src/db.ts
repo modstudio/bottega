@@ -10,16 +10,17 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { DATABASE_RESOLUTION, DB_PATH, missingDatabaseMessage, registeredRepositoryMissingDatabase } from './database-location.ts'
 import { applyMigrations, migrationRefusal, readUserVersion, staleWriteRefusal } from './migrations.ts'
 import { contentionTableExists, insertContention } from './contention.ts'
-import { REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_REPRODUCED } from './review-vocabulary.ts'
 export { label } from './outcome.ts'
 export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
 
-/** Open-time hooks retained until entrypoints register them in a later slice.
+/** Three open-time hooks retained until entrypoints register them in a later slice.
  * These are the only delayed upward dependencies owned by the database core. */
 const excludeSharedOutputRuns: typeof import('./evidence-query.ts').excludeSharedOutputRuns = (...args) =>
   (require('./evidence-query.ts') as typeof import('./evidence-query.ts')).excludeSharedOutputRuns(...args)
 const reapStale: typeof import('./run-liveness.ts').reapStale = (...args) =>
   (require('./run-liveness.ts') as typeof import('./run-liveness.ts')).reapStale(...args)
+const seedWorkflows: typeof import('./workflow-seeds.ts').seedWorkflows = (...args) =>
+  (require('./workflow-seeds.ts') as typeof import('./workflow-seeds.ts')).seedWorkflows(...args)
 
 let handle: Database | null = null
 let connectionWritable: boolean | null = null
@@ -363,68 +364,6 @@ export function backfillSpecSha(): { updated: number; missing: number } {
     }
   }, database)
   return { updated, missing }
-}
-
-const seedDefinition = (definition: unknown) => JSON.stringify(definition)
-
-function seedWorkflows(d: Database): void {
-  const seeds = [
-    {
-      slug: 'ship',
-      definition: {
-        title: 'Ship a task', description: 'Rebase, independently review, triage, fix, land, and close a task.',
-        arguments: [
-          { name: 'key', required: true, description: 'The task key.' },
-          { name: 'branch', required: true, description: 'The branch ref to land.' },
-          { name: 'worktree', required: true, description: "The branch's worktree path." },
-        ],
-        modes: [{ slug: 'default', title: 'Ship', default: true,
-          steps: ['rebase','lens','score','triage','complete','fix','land','close'] }],
-        steps: [
-          { slug: 'rebase', title: 'Rebase and verify', job: null, autonomy: 'auto', gate: 'bun run check', body: 'In `{{worktree}}`, run `git rebase main`, then run `bun run check`.' },
-          { slug: 'lens', title: 'Run independent review lenses', job: 'review-lens', autonomy: 'auto', gate: null, body: "Use `/absolute/path/to/main-checkout/bin/orch` from the main checkout, never a worktree's ./bin/orch, which writes to an empty per-worktree orch.db. Dispatch each named lens against the branch worktree. Always run correctness. Also run migration-safety when the change touches orchestrator/src/db.ts. Also run craft when the change adds a new module.\n\n`/absolute/path/to/main-checkout/bin/orch do review-lens --cwd {{worktree}} --carry --key {{key}} --lens correctness`\n\nRepeat with --lens migration-safety and --lens craft when those apply." },
-          { slug: 'score', title: 'Score the lenses', job: null, autonomy: 'auto', gate: null, body: `Read every lens result and run \`orch score <run-id> <delivery> <quality> --reproduced <${REVIEW_REPRODUCED.join('|')}> --coverage <${REVIEW_COVERAGE.join('|')}> --limits <${REVIEW_LIMITS.join('|')}> --overlap <${REVIEW_OVERLAP.join('|')}> --note "..."\` honestly for each. Grading records the lens on the review; there is no separate record step.` },
-          { slug: 'triage', title: 'Triage every finding', job: null, autonomy: 'ask', gate: null, body: 'The architect must mark every finding accepted, modified, rejected, or skipped with `orch review triage <review-id> <finding> <disposition>`.' },
-          { slug: 'complete', title: 'Complete the review', job: null, autonomy: 'auto', gate: null, body: 'After every finding is triaged, run `orch review complete <review-id>`.' },
-          { slug: 'fix', title: 'Fix accepted findings', job: 'implement', autonomy: 'ask', gate: null, body: 'Only if findings were accepted or modified, run `orch continue <original-run-id> "Fix the accepted review findings."`. Then loop back to `lens`, because the tree changed.' },
-          { slug: 'land', title: 'Land the branch', job: null, autonomy: 'ask', gate: null, body: 'Notify the other session first, then run `orch land {{branch}}`.' },
-          { slug: 'close', title: 'Close the task', job: null, autonomy: 'auto', gate: null, body: 'Run `hub task comment {{key}} "Shipped."`, then `hub task close {{key}}`. Do not push; `orch land` never pushes, and pushing origin is a separate deliberate act.' },
-        ],
-      },
-    },
-    {
-      slug: 'filed-issue',
-      definition: {
-        title: 'Resolve a filed issue', description: "A projection of issue.ts's coordinator for inspection.",
-        arguments: [{ name: 'key', required: true, description: 'The filed task key.' }],
-        modes: [{ slug: 'default', title: 'Resolve', default: true,
-          steps: ['diagnose','fix','verify','blast-radius','triage','land'] }],
-        steps: [
-          { slug: 'diagnose', title: 'Diagnose', job: 'diagnose', autonomy: 'auto', gate: null, body: 'Dispatch `orch do diagnose --key {{key}}` and establish the cause before editing.' },
-          { slug: 'fix', title: 'Fix', job: 'issue-worker', autonomy: 'auto', gate: null, body: 'Dispatch `orch do issue-worker --key {{key}}` with the diagnosis.' },
-          { slug: 'verify', title: 'Verify', job: null, autonomy: 'auto', gate: 'bun run check', body: 'Reproduce the original condition before and after the fix, then run the registered project gate.' },
-          { slug: 'blast-radius', title: 'Review blast radius', job: 'review-lens', autonomy: 'auto', gate: null, body: "Use `/absolute/path/to/main-checkout/bin/orch` from the main checkout, never a worktree's ./bin/orch, which writes to an empty per-worktree orch.db. Run `/absolute/path/to/main-checkout/bin/orch do review-lens --carry --key {{key}} --lens issue-blast-radius` from the fix worktree." },
-          { slug: 'triage', title: 'Triage findings', job: null, autonomy: 'ask', gate: null, body: 'The architect triages every recorded finding before the issue can land.' },
-          { slug: 'land', title: 'Land', job: null, autonomy: 'ask', gate: null, body: 'Run the mechanical `orch land <branch>` gate only after verification and review are complete.' },
-        ],
-      },
-    },
-  ]
-  const now = nowIso()
-  writeTransaction(() => {
-    for (const seed of seeds) {
-      if (d.query('SELECT id FROM workflow WHERE slug=?').get(seed.slug)) continue
-      const workflow = d.query('INSERT INTO workflow (slug, created_at) VALUES (?, ?) RETURNING id')
-        .get(seed.slug, now) as { id: number }
-      d.query(`INSERT INTO workflow_version
-        (workflow_id,n,status,definition,author,reason,created_at,promoted_at)
-        VALUES (?,1,'production',?,'seed','DEV-257 seed',?,?)`)
-        .run(workflow.id, seedDefinition(seed.definition), now, now)
-      d.query(`INSERT INTO workflow_event
-        (workflow_id,version_n,event,author,reason,session_id,at)
-        VALUES (?,1,'set','seed','DEV-257 seed',NULL,?)`).run(workflow.id, now)
-    }
-  }, d)
 }
 
 export const nowIso = () => new Date().toISOString()

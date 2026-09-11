@@ -14,14 +14,15 @@ const FORBIDDEN: [RegExp, string][] = [
   [/^\.\/transport(?:[.-]|$)/, 'transports'],
   [/^\.\/cli(?:[.-]|$)/, 'CLI'],
   [/^\.\/docker-resources(?:[.-]|$)/, 'Docker resources'],
+  [/^\.\/workflow-seeds(?:[.-]|$)/, 'workflow seeds'],
 ]
 
-// evidence-query.ts and run-liveness.ts are the two bounded open-time hooks.
+// evidence-query.ts, run-liveness.ts, and workflow-seeds.ts are the three bounded open-time hooks.
 // A later slice inverts exactly these delayed dependencies into entrypoint registration.
 const imports = importSpecifiers(readFileSync(`${ROOT}/${FILE}`, 'utf8'))
 const violations: string[] = []
 for (const specifier of [...imports.specifiers, ...imports.typeOnlySpecifiers]) {
-  if (specifier === './evidence-query.ts' || specifier === './run-liveness.ts') continue
+  if (specifier === './evidence-query.ts' || specifier === './run-liveness.ts' || specifier === './workflow-seeds.ts') continue
   const concern = FORBIDDEN.find(([pattern]) => pattern.test(specifier))?.[1]
   if (concern) violations.push(`${FILE} imports "${specifier}" (${concern})`)
 }
