@@ -869,5 +869,47 @@
     "function": "fetch#2",
     "line": 275,
     "score": 16
+  },
+  {
+    "file": "orchestrator/src/canon-commands.ts",
+    "function": "canonCommand",
+    "line": 9,
+    "score": 67
+  },
+  {
+    "file": "orchestrator/src/cli.ts",
+    "function": "map callback#8",
+    "line": 1937,
+    "score": 16
+  },
+  {
+    "file": "orchestrator/src/dispatch-commands.ts",
+    "function": "dispatchCommand",
+    "line": 44,
+    "score": 44
+  },
+  {
+    "file": "orchestrator/src/health-commands.ts",
+    "function": "healthCommand",
+    "line": 88,
+    "score": 21
+  },
+  {
+    "file": "orchestrator/src/routing-commands.ts",
+    "function": "guideCommand",
+    "line": 151,
+    "score": 58
+  },
+  {
+    "file": "orchestrator/src/routing-commands.ts",
+    "function": "statsCommand",
+    "line": 238,
+    "score": 25
+  },
+  {
+    "file": "orchestrator/src/routing-commands.ts",
+    "function": "pickCommand",
+    "line": 298,
+    "score": 25
   }
 ]
