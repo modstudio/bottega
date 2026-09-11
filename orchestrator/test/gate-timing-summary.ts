@@ -67,31 +67,48 @@ export function summaryRows(files: FileRow[]): CommittedTestTiming[] {
 export function publishTimingSummary(files: FileRow[], reporter: Reporter = console): boolean {
   const current = summaryRows(files)
   const committed = readCommittedTimingSummary()
-  writeFileSync(TIMING_SUMMARY_PATH, `${JSON.stringify(current, null, 2)}\n`)
   const currentTotals = totals(current)
   const committedTotals = committed ? totals(committed) : new Map<string, number>()
-  let passed = true
+  const ci = Boolean(process.env.CI)
+  const keepCommitted = new Set<string>()
+  let baselineChanged = false
+  let fatal = false
   for (const [packageName, currentMs] of currentTotals) {
     const committedMs = committedTotals.get(packageName)
     const decision = decideTestTiming({ currentMs, committedMs, growthLimit: GROWTH_LIMIT })
-    if (decision === 'pass') continue
-    passed = false
     if (decision === 'initial') {
+      baselineChanged = true
       reporter.error(`${TIMING_SUMMARY_LABEL}: ${packageName} recorded initial total ${currentMs}ms`)
       continue
     }
     if (decision === 'tighten') {
+      baselineChanged = true
       reporter.error(`${TIMING_SUMMARY_LABEL}: ${packageName} tightened ${committedMs}ms -> ${currentMs}ms`)
       continue
     }
+    // The baseline only moves down: a package that held or grew keeps its committed rows.
+    keepCommitted.add(packageName)
+    if (decision === 'pass') continue
     const limitMs = Math.floor(committedMs! * (1 + GROWTH_LIMIT))
     reporter.error(`${TIMING_SUMMARY_LABEL}: ${packageName} total ${currentMs}ms exceeds 5% growth limit ${limitMs}ms (committed ${committedMs}ms)`)
     reporter.error(`${TIMING_SUMMARY_LABEL}: largest file growth: ${largestGrowth(current, committed!, packageName)}`)
+    // Wall clock cannot separate a slower suite from a busier machine, so growth
+    // is informational here and fatal only where the runner is the only load.
+    if (ci) fatal = true
+    else reporter.error(`${TIMING_SUMMARY_LABEL}: growth is informational locally and fails on CI`)
   }
-  if (!passed) {
+  const next = committed
+    ? [
+        ...current.filter((row) => !keepCommitted.has(packageOf(row.path))),
+        ...committed.filter((row) => keepCommitted.has(packageOf(row.path))),
+      ].sort((a, b) => a.path.localeCompare(b.path))
+    : current
+  if (baselineChanged) {
+    writeFileSync(TIMING_SUMMARY_PATH, `${JSON.stringify(next, null, 2)}\n`)
     reporter.error(`test timing baseline changed; commit ${TIMING_SUMMARY_LABEL} and re-run`)
     return false
   }
+  if (fatal) return false
   reporter.log(`test timing ratchet: ok (${current.length} files)`)
   return true
 }
