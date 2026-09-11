@@ -121,7 +121,7 @@ test('CLI dry-run refuses a nonexistent database without creating any SQLite fil
         env: { ...process.env, ORCH_DB: absent, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
       })
       expect(run.exitCode).toBe(1)
-      expect(run.stdout.toString()).toContain('orchestrator database does not exist')
+      expect(run.stderr.toString()).toContain('orchestrator database does not exist')
       expect(existsSync(absent)).toBe(false)
       expect(existsSync(`${absent}-wal`)).toBe(false)
       expect(existsSync(`${absent}-shm`)).toBe(false)
