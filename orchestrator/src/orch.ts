@@ -9,8 +9,8 @@ if (argv[0] === 'init-db') {
     process.exit(1)
   }
   try {
-    const { registerStandardHooks } = await import('./store-hooks.ts')
-    registerStandardHooks()
+    const { registerStandardRuntime } = await import('./runtime-registration.ts')
+    registerStandardRuntime()
     const { initializeDatabase } = await import('./db.ts')
     console.log(`created orchestrator database: ${initializeDatabase()}`)
   } catch (error) {
@@ -24,8 +24,8 @@ try {
   const { DB_PATH, missingDatabaseMessage } = await import('./database-location.ts')
   const { existsSync } = await import('node:fs')
   if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
-  const { registerStandardHooks } = await import('./store-hooks.ts')
-  registerStandardHooks()
+  const { registerStandardRuntime } = await import('./runtime-registration.ts')
+  registerStandardRuntime()
   await import('./cli.ts')
 } catch (error) {
   if (!COLLECTION_COMMANDS.has(argv[0] ?? '')) throw error

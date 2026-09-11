@@ -8,7 +8,7 @@
  * failures, was using 69%. One page, one scoreboard.
  */
 import { db } from './db.ts'
-import { registerStandardHooks } from './store-hooks.ts'
+import { registerStandardRuntime } from './runtime-registration.ts'
 import { reapStale } from './run-liveness.ts'
 import { runTotals } from './evidence-query.ts'
 import { AGENTS, refreshAgents } from './agents.ts'
@@ -22,7 +22,7 @@ import { projectAt } from './projects.ts'
 import { reviewCalibration } from './review.ts'
 import { messagesForRun, receiptMessagesForArchitect } from './mailbox.ts'
 
-registerStandardHooks()
+registerStandardRuntime()
 
 /** Full detail for one run: the whole prompt and the whole reply, read from disk. */
 export function runDetail(id: number, receipt = false) {

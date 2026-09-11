@@ -3,7 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { resolve } from 'node:path'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { db, enableSchemaReload, sessionId } from './db.ts'; import { registerStandardHooks } from './store-hooks.ts'; registerStandardHooks()
+import { db, enableSchemaReload, sessionId } from './db.ts'; import { registerStandardRuntime } from './runtime-registration.ts'; registerStandardRuntime()
 import {
   consumeDoc, docsMarkdown, getDoc, getDocRevision, listDocMetadata, listDocRevisions, listDocs, setDoc,
 } from './docs.ts'

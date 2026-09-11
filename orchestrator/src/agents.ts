@@ -4,38 +4,12 @@ import { existsSync, readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { DB_PATH, ROOT, db as dbForAgents, writableDb, nowIso } from './db.ts'
-import { MIGRATED_AGENT_NAMES, type Caps } from './capabilities.ts'
-import type { ArgvOpts, SandboxLevel } from './transport.ts'
+import type { Caps } from './capabilities.ts'
+import type { ArgvOpts } from './transport.ts'
+export { MIGRATED_AGENT_NAMES } from './capabilities.ts'
 export type { Caps } from './capabilities.ts'
 export type { ArgvOpts, SandboxLevel } from './transport.ts'
 
-/**
- * Everything an agent needs to build a command line, for a first turn or a
- * resumed one.
- *
- * `write` is separate from every other flag here because it is the only one
- * that can change the caller's disk. It defaults to false and each agent must
- * opt a sandbox open for it explicitly, so a job that never asked to write
- * cannot acquire the ability by inheriting a flag.
- */
-/**
- * How much of the machine an agent may use.
- *
- * `exec` remains available to non-repository jobs. Repository jobs never use
- * it: their boundary is workspace-write in their own disposable worktree.
- *
- * The case for it is measured rather than argued. Four review runs in a single
- * session reported, unprompted, that they could execute nothing: the Docker
- * socket was denied, PHP was not on the host, a native binding was missing. One
- * downgraded its entire test verdict to "static review" and still found two
- * real defects. `orch blockers` now counts these — nine runs across two
- * projects losing their build to one missing binding — which is what turned it
- * from an anecdote into a decision worth making.
- *
- * The boundary is the JOB. A repository job gets workspace-write in a
- * disposable worktree; a job that does not read a repository stays read-only.
- * Isolation is the worktree, not a per-project vendor-sandbox knob.
- */
 /**
  * What `exec` means to codex.
  *

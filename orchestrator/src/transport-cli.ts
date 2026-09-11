@@ -1,10 +1,9 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import type { ArgvOpts } from './agents.ts'
 import { eventsFromVendorLine } from './events.ts'
 import { terminateProcessGroup } from './idle-kill.ts'
 import { srtLaunchArgv } from './sandbox.ts'
 import {
-  outcomeFromTransport, type AgentTransport, type NormalizedEvent, type TransportHandle,
+  outcomeFromTransport, registerTransport, type AgentTransport, type ArgvOpts, type NormalizedEvent, type TransportHandle,
   type TransportResult, type TransportStartOpts,
 } from './transport.ts'
 
@@ -181,3 +180,9 @@ export const cliTransport: AgentTransport = {
   cancel(handle) { return handle.cancel() },
   resume(opts) { return Promise.resolve(spawnCli({ ...opts, resume: true })) },
 }
+
+export function registerCliTransport(): void {
+  registerTransport('cli', () => cliTransport)
+}
+
+registerCliTransport()

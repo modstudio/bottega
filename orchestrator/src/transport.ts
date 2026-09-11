@@ -2,10 +2,8 @@ import { createRequire } from 'node:module'
 import { existsSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Agent, ArgvOpts, SandboxLevel } from './agents.ts'
 import { job } from './jobs.ts'
 import type { FailureKind } from './failure.ts'
-import { cliTransport } from './transport-cli.ts'
 import type { SandboxRuntimeConfig } from './sandbox.ts'
 
 const requireTransport = createRequire(import.meta.url)
@@ -19,6 +17,91 @@ export const ACP_PILOT_JOBS = ['understand', 'file-question', 'verify-claim', 's
 export type AcpPilotJob = (typeof ACP_PILOT_JOBS)[number]
 
 export type TransportName = 'cli' | 'acp'
+
+/**
+ * How much of the machine an agent may use.
+ *
+ * `exec` remains available to non-repository jobs. Repository jobs never use
+ * it: their boundary is workspace-write in their own disposable worktree.
+ *
+ * The case for it is measured rather than argued. Four review runs in a single
+ * session reported, unprompted, that they could execute nothing: the Docker
+ * socket was denied, PHP was not on the host, a native binding was missing. One
+ * downgraded its entire test verdict to "static review" and still found two
+ * real defects. `orch blockers` now counts these — nine runs across two
+ * projects losing their build to one missing binding — which is what turned it
+ * from an anecdote into a decision worth making.
+ *
+ * The boundary is the JOB. A repository job gets workspace-write in a
+ * disposable worktree; a job that does not read a repository stays read-only.
+ * Isolation is the worktree, not a per-project vendor-sandbox knob.
+ */
+export type SandboxLevel = 'read-only' | 'workspace-write' | 'exec'
+
+/**
+ * Everything an agent needs to build a command line, for a first turn or a
+ * resumed one.
+ *
+ * `write` is separate from every other flag here because it is the only one
+ * that can change the caller's disk. It defaults to false and each agent must
+ * opt a sandbox open for it explicitly, so a job that never asked to write
+ * cannot acquire the ability by inheriting a flag.
+ */
+export type ArgvOpts = {
+  prompt: string
+  out: string
+  schema?: string
+  mcp?: boolean
+  /** Grok-only scoped trust for the disposable cwd orch created. */
+  trustCwd?: string
+  model?: string
+  /** Open the sandbox for editing. True for every job that reads a repository. */
+  write?: boolean
+  /**
+   * How much of the machine this run may use.
+   *
+   * Repository jobs get workspace-write in their disposable worktree. Anything
+   * else is read-only. `exec` remains available when a non-repository job
+   * passes it explicitly.
+   */
+  sandbox?: SandboxLevel
+  /** Exact extra paths made writable inside Codex's workspace-write sandbox. */
+  writableRoots?: string[]
+  /** Object-store override used to isolate scratch objects for read-only repository jobs. */
+  gitObjectEnvironment?: {
+    GIT_OBJECT_DIRECTORY: string
+    GIT_ALTERNATE_OBJECT_DIRECTORIES: string
+  }
+  /** Command-scoped git configuration enforced inside the worker's shell. */
+  gitConfigEnvironment?: Record<string, string>
+  /**
+   * The conversation this turn belongs to.
+   *
+   * On a first turn it is the id we MINTED for an agent that lets us choose one
+   * (grok), and absent for an agent that names its own (codex). On a resumed
+   * turn it is required and identifies what to resume.
+   */
+  session?: string
+}
+
+export type TransportAgent = {
+  name: string
+  harness?: string
+  baseUrl?: string | null
+  bin: string
+  defaultTransport: TransportName
+  argv(opts: ArgvOpts): string[]
+  resumeArgv?(opts: ArgvOpts & { session: string }): string[]
+  readSession?(ctx: {
+    stdout: string; cwd: string; prompt: string; startedAt: number; home?: string
+  }): string | null
+  stdin: boolean
+  readsOut: boolean
+  parseReply?(stdout: string): {
+    text: string; tokens: number | null; costUsd: number | null
+    stopReason?: string | null; error?: string
+  }
+}
 
 export type NormalizedEvent =
   | { kind: 'text'; text: string }
@@ -80,7 +163,7 @@ export type TransportResult = {
 }
 
 export type TransportStartOpts = {
-  agent: Agent
+  agent: TransportAgent
   cwd: string
   env: Record<string, string>
   prompt: string
@@ -131,6 +214,19 @@ export type AgentTransport = {
   resume(opts: TransportStartOpts & { session: string }): Promise<TransportHandle>
 }
 
+export type TransportFactory = () => AgentTransport
+
+const transports = new Map<TransportName, TransportFactory>()
+
+export function registerTransport(name: TransportName, factory: TransportFactory): void {
+  transports.set(name, factory)
+}
+
+/** Test-only reset for proving the unregistered refusal. */
+export function clearRegisteredTransportsForTest(): void {
+  transports.clear()
+}
+
 /** Test-only override so run() can be driven without a vendor binary. */
 let testTransport: AgentTransport | null = null
 
@@ -171,8 +267,9 @@ export function selectAgentForTransport(
  * allow-list are refused too — the spec listed four read-only jobs, not
  * every job that happens not to write.
  */
-export function assertAcpAllowed(jobName: string, agentName: string | undefined): void {
-  const registered = agentName ? registeredAgent(agentName) : null
+export function assertAcpAllowed(
+  jobName: string, agentName: string | undefined, registered?: TransportAgent,
+): void {
   if (agentName && !['codex', 'grok'].includes(agentName) && registered?.defaultTransport !== 'acp') {
     throw new Error(
       `ACP transport is a ${ACP_PILOT_TASK} pilot and is only available for registered ACP agents`,
@@ -200,11 +297,12 @@ export function acpRuntimeGaps(opts?: {
   binPath?: string
   binExists?: (path: string) => boolean
   agentName?: string
+  agent?: TransportAgent
 }): string | null {
   const sdkResolve = opts?.sdkResolve ?? (() => requireTransport.resolve('@agentclientprotocol/sdk'))
   const ajvResolve = opts?.ajvResolve ?? (() => requireTransport.resolve('ajv/dist/2020.js'))
   const agentName = opts?.agentName ?? 'codex'
-  const registered = agentName ? registeredAgent(agentName) : null
+  const registered = opts?.agent
   const registeredBin = registered ? Bun.which(registered.bin) : null
   const binPath = opts?.binPath ?? (agentName === 'grok' ? (Bun.which('grok') ?? 'grok') : registeredBin ?? resolveCodexAcpBin())
   const binExists = opts?.binExists ?? existsSync
@@ -224,26 +322,22 @@ export function acpRuntimeGaps(opts?: {
   return null
 }
 
-function registeredAgent(name: string): Agent | null {
-  try {
-    const { AGENTS } = requireTransport('./agents.ts') as typeof import('./agents.ts')
-    return AGENTS[name] ?? null
-  } catch { return null }
-}
-
-export function assertAcpReady(agentName = 'codex'): void {
-  const gap = acpRuntimeGaps({ agentName })
+export function assertAcpReady(agentName = 'codex', agent?: TransportAgent): void {
+  const gap = acpRuntimeGaps({ agentName, agent })
   if (gap) throw new Error(gap)
 }
 
 export function transportFor(name: TransportName): AgentTransport {
   if (testTransport) return testTransport
-  if (name === 'acp') {
-    // Loaded only on the ACP opt-in so a source-only fixture without the
-    // SDK still boots the default CLI path (linked-worktree-database.test).
-    return (requireTransport('./transport-acp.ts') as typeof import('./transport-acp.ts')).acpTransport
+  const factory = transports.get(name)
+  if (!factory) {
+    throw new Error(
+      `refusing transport selection: transport "${name}" is not registered\n` +
+      'invariant: Entrypoints register the standard transport adapters before selection.\n' +
+      'cleared by: call registerStandardTransports() before selecting a transport',
+    )
   }
-  return cliTransport
+  return factory()
 }
 
 export function failureKindFromStop(stopReason: string | null, error: string | null): FailureKind {
