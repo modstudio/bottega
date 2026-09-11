@@ -8,10 +8,10 @@ import { ask } from './ask.ts'
 import {
   installTestTransport, type AgentTransport, type TransportHandle, type TransportResult,
 } from './transport.ts'
+import './transport.test-residue.ts'
 
 describe('ACP transport through run', () => {
-  const priorTransportEnv = process.env.ORCH_TRANSPORT
-  afterEach(() => {
+  const priorTransportEnv = process.env.ORCH_TRANSPORT; afterEach(() => {
     installTestTransport(null)
     if (priorTransportEnv === undefined) delete process.env.ORCH_TRANSPORT
     else process.env.ORCH_TRANSPORT = priorTransportEnv
