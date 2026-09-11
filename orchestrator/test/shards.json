@@ -28,8 +28,12 @@
     "src/projects.cli.test.ts": {
       "size": "short"
     },
-    "src/reclaim.cli.test.ts": {
+    "src/reclaim.test.ts": {
       "size": "short"
+    },
+    "test/process-boundary/reclaim.test.ts": {
+      "size": "short",
+      "exclusive": true
     },
     "src/route.cli.test.ts": {
       "size": "short"
@@ -162,7 +166,8 @@
     {
       "measuredSeconds": 15,
       "files": [
-        "src/reclaim.cli.test.ts",
+        "src/reclaim.test.ts",
+        "test/process-boundary/reclaim.test.ts",
         "test/process-boundary/database.test.ts",
         "test/process-boundary/idle-kill.test.ts"
       ]
