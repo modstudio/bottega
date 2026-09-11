@@ -26,7 +26,7 @@
   "orchestrator/src/heartbeat-hooks.test.ts": 539,
   "orchestrator/src/idle-kill.test.ts": 877,
   "orchestrator/src/issue.ts": 503,
-  "orchestrator/src/mcp-probe.test.ts": 686,
+  "orchestrator/src/mcp-probe.test.ts": 772,
   "orchestrator/src/mcp.ts": 595,
   "orchestrator/src/migrations.ts": 545,
   "orchestrator/src/monitor.cli.test.ts": 2049,

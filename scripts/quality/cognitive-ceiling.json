@@ -410,8 +410,8 @@
   {
     "file": "orchestrator/src/mcp-probe.ts",
     "function": "probeMcpServer",
-    "line": 248,
-    "score": 20
+    "line": 266,
+    "score": 22
   },
   {
     "file": "orchestrator/src/mcp.ts",
