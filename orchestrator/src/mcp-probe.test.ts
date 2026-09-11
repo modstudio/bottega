@@ -218,9 +218,13 @@ process.stdout.write(JSON.stringify({
   })
 
   test('HTTP tools/list succeeds against a local stand-in and wrap can refuse it', async () => {
+    const authorization = 'Bearer obviously-fake-test-token'
     const server = Bun.serve({
       port: 0,
       fetch: async (request) => {
+        if (request.headers.get('authorization') !== authorization) {
+          return Response.json({ message: 'Unauthenticated.' }, { status: 401 })
+        }
         const body = await request.json() as { id: number; method: string }
         if (body.method === 'initialize') {
           return Response.json({ jsonrpc: '2.0', id: body.id, result: { protocolVersion: '2024-11-05', capabilities: {}, serverInfo: { name: 'http' } } })
@@ -233,7 +237,10 @@ process.stdout.write(JSON.stringify({
     })
     const reachable = await probeMcpServer({
       server: 'fixture-project',
-      config: { name: 'fixture-project', url: `http://127.0.0.1:${server.port}/mcp` },
+      config: {
+        name: 'fixture-project', url: `http://127.0.0.1:${server.port}/mcp`,
+        headers: { Authorization: authorization },
+      },
       cwd: tmpdir(),
       env: { ...process.env } as Record<string, string>,
     })
@@ -241,7 +248,10 @@ process.stdout.write(JSON.stringify({
     expect(reachable.detail).toBe('listed: 1 tools')
     const refused = await probeMcpServer({
       server: 'fixture-project',
-      config: { name: 'fixture-project', url: `http://127.0.0.1:${server.port}/mcp` },
+      config: {
+        name: 'fixture-project', url: `http://127.0.0.1:${server.port}/mcp`,
+        headers: { Authorization: authorization },
+      },
       cwd: tmpdir(),
       env: { ...process.env } as Record<string, string>,
       wrap: () => ['false'],
@@ -656,14 +666,21 @@ cat ${JSON.stringify(reply)}
 })
 
 describe('mcp config parse', () => {
-  test('reads mcpServers url and command', () => {
+  test('reads mcpServers url, command, and headers while omitting absent headers', () => {
     const parsed = parseMcpConfig(JSON.stringify({
       mcpServers: {
-        starship: { url: 'https://starship.example/mcp' },
+        starship: {
+          url: 'https://starship.example/mcp',
+          headers: { Authorization: 'Bearer obviously-fake-test-token' },
+        },
         local: { command: 'bun', args: ['server.ts'] },
       },
     }))
     expect(parsed.starship?.url).toBe('https://starship.example/mcp')
+    expect(parsed.starship?.headers).toEqual({
+      Authorization: 'Bearer obviously-fake-test-token',
+    })
     expect(parsed.local?.command).toBe('bun')
+    expect(parsed.local).not.toHaveProperty('headers')
   })
 })

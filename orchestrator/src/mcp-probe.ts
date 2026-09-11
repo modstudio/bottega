@@ -59,6 +59,7 @@ export type McpServerConfig = {
   command?: string
   args?: string[]
   env?: Record<string, string>
+  headers?: Record<string, string>
 }
 
 const ALLOWED_EXTRA_SERVERS = new Set(['orch-ask', 'orch'])
@@ -77,6 +78,10 @@ export function parseMcpConfig(source: string): Record<string, McpServerConfig> 
   for (const [name, value] of Object.entries(servers)) {
     if (!value || typeof value !== 'object') continue
     const entry = value as Record<string, unknown>
+    const headers = entry.headers && typeof entry.headers === 'object' && !Array.isArray(entry.headers)
+      ? Object.fromEntries(Object.entries(entry.headers as Record<string, unknown>)
+        .filter((item): item is [string, string] => typeof item[1] === 'string'))
+      : undefined
     out[name] = {
       name,
       url: typeof entry.url === 'string' ? entry.url : undefined,
@@ -86,6 +91,7 @@ export function parseMcpConfig(source: string): Record<string, McpServerConfig> 
         ? Object.fromEntries(Object.entries(entry.env as Record<string, unknown>)
           .filter((item): item is [string, string] => typeof item[1] === 'string'))
         : undefined,
+      ...(headers === undefined ? {} : { headers }),
     }
   }
   return out
@@ -190,12 +196,16 @@ async function stdioRpc(
 }
 
 async function httpRpc(
-  url: string, messages: unknown[], cwd: string, env: Record<string, string>,
+  url: string, messages: unknown[], headers: Record<string, string> | undefined,
+  cwd: string, env: Record<string, string>,
   wrap?: (command: string, args: string[]) => string[], timeoutMs = 8_000,
 ): Promise<{ ok: boolean; messages: unknown[]; error: string | null }> {
   const replies: unknown[] = []
   const script = `const url=process.argv[1], body=process.argv[2];
-const res=await fetch(url,{method:'POST',headers:{'content-type':'application/json',accept:'application/json, text/event-stream'},body});
+const configured=JSON.parse(await Bun.stdin.text());
+const headers=new Headers({'content-type':'application/json',accept:'application/json, text/event-stream'});
+for(const [name,value] of Object.entries(configured))headers.set(name,value);
+const res=await fetch(url,{method:'POST',headers,body});
 const text=await res.text(); process.stdout.write(text); process.exit(res.ok?0:1)`
   for (const message of messages) {
     if (typeof message === 'object' && message && 'method' in message
@@ -204,7 +214,9 @@ const text=await res.text(); process.stdout.write(text); process.exit(res.ok?0:1
     }
     const raw = [process.execPath, '-e', script, url, JSON.stringify(message)]
     const argv = wrap ? wrap(raw[0]!, raw.slice(1)) : raw
-    const proc = Bun.spawn(argv, { cwd, env, stdout: 'pipe', stderr: 'pipe' })
+    const proc = Bun.spawn(argv, { cwd, env, stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' })
+    proc.stdin.write(JSON.stringify(headers ?? {}))
+    proc.stdin.end()
     const timer = setTimeout(() => { try { proc.kill() } catch { /* gone */ } }, timeoutMs)
     const [stdout, stderr, exit] = await Promise.all([
       new Response(proc.stdout).text(),
@@ -260,7 +272,10 @@ export async function probeMcpServer(input: {
   const list = { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }
   let rpc: { ok: boolean; messages: unknown[]; error: string | null }
   if (input.config.url) {
-    rpc = await httpRpc(input.config.url, [initialize, initialized, list], input.cwd, input.env, input.wrap)
+    rpc = await httpRpc(
+      input.config.url, [initialize, initialized, list], input.config.headers,
+      input.cwd, input.env, input.wrap,
+    )
   } else if (input.config.command) {
     const raw = [input.config.command, ...(input.config.args ?? [])]
     const command = input.wrap ? input.wrap(raw[0]!, raw.slice(1)) : raw
@@ -299,7 +314,10 @@ export async function probeMcpServer(input: {
       : [input.config.command, ...(input.config.args ?? [])])
     : null
   const called = input.config.url
-    ? await httpRpc(input.config.url, [call], input.cwd, input.env, input.wrap)
+    ? await httpRpc(
+        input.config.url, [call], input.config.headers,
+        input.cwd, input.env, input.wrap,
+      )
     : stdioArgv
       ? await stdioRpc(
           stdioArgv[0]!, stdioArgv.slice(1),
