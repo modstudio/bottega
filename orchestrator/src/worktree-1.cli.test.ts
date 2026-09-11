@@ -144,10 +144,10 @@ exit 17
     }
   })
 
-  test('explicit review names a command recipe that cannot accept its base', () => {
+  test('explicit review ignores a writing recipe with no {base} and no detached support', () => {
     const { repo } = scratchRepo()
     upsertProject({
-      name: 'adanim-fixture', path: repo,
+      name: 'writing-recipe-review-fixture', path: repo,
       settings: {
         trunk: 'main',
         worktree: {
@@ -156,35 +156,15 @@ exit 17
         },
       },
     })
-    expect(() => fromRoot(() => preflight(
-      'review-lens', repo, undefined, undefined, undefined, false, false,
-      'correctness', 'feature/reviewed',
-    ))).toThrow(
-      'project adanim-fixture: worktree.create has no {base} placeholder; --review needs one',
-    )
-    rmSync(repo, { recursive: true, force: true })
-  })
-
-  test('explicit review refuses a command recipe without declared detached support', () => {
-    const { repo } = scratchRepo()
-    upsertProject({
-      name: 'attached-review-fixture', path: repo,
-      settings: {
-        trunk: 'main',
-        worktree: {
-          create: declaredCreate('worktree-create', ['{branch}', '{base}']),
-          branch: 'review/{id}', seeds: [],
-        },
-      },
-    })
-    expect(() => fromRoot(() => preflight(
-      'review-lens', repo, undefined, undefined, undefined, false, false,
-      'correctness', 'feature/reviewed',
-    ))).toThrow(
-      `project attached-review-fixture: worktree.create does not declare detached review support.\n` +
-      `  orch project set attached-review-fixture --settings '{"worktree":{"detached":true}}'`,
-    )
-    rmSync(repo, { recursive: true, force: true })
+    try {
+      const tip = Bun.spawnSync(['git', '-C', repo, 'rev-parse', 'AB-2581^{commit}'], {
+        env: hermeticGitEnv(), stdout: 'pipe',
+      }).stdout.toString().trim()
+      expect(fromRoot(() => resolveReviewTarget('review-lens', repo, 'AB-2581')))
+        .toEqual({ branch: 'AB-2581', commit: tip, base: tip })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
   })
 
   test('preflight refuses shell metacharacters in a key', () => {

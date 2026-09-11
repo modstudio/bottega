@@ -5,7 +5,7 @@
  */
 import { basename } from 'node:path'
 import { gitContext, branchOf } from './git-environment.ts'
-import { createHasPlaceholder, projectAt, resolveBranchRef } from './projects.ts'
+import { projectAt, resolveBranchRef } from './projects.ts'
 import { resolveBase, targetGitEnvironment } from './worktree.ts'
 
 const EXPLICIT_REVIEW_JOBS = new Set(['review-lens', 'safety', 'craft'])
@@ -35,19 +35,10 @@ export function resolveReviewTarget(
   if (!EXPLICIT_REVIEW_JOBS.has(jobName)) {
     throw new Error('--review is only valid for review-lens, safety, and craft')
   }
+  // Review jobs never write, so their tree is the detached read-only one
+  // (readonly_create or plain git), never worktree.create: the writing recipe's
+  // placeholders and detached support are irrelevant here.
   const project = projectAt(cwd)
-  const tool = project?.settings.worktree
-  if (tool?.create && !createHasPlaceholder(tool.create, 'base')) {
-    throw new Error(
-      `project ${project!.name}: worktree.create has no {base} placeholder; --review needs one`,
-    )
-  }
-  if (tool?.create && tool.detached !== true) {
-    throw new Error(
-      `project ${project!.name}: worktree.create does not declare detached review support.\n` +
-      `  orch project set ${project!.name} --settings '{"worktree":{"detached":true}}'`,
-    )
-  }
   const { branch } = resolveBranchRef(reviewRef)
   if (carry && branchOf(cwd) !== branch) {
     throw new Error(
