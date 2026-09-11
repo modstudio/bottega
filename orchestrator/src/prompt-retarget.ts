@@ -4,7 +4,8 @@
  * not know the database, transports, contracts, or routing.
  */
 import { freezeCheckouts, type CheckoutToWatch } from './confinement.ts'
-import { checkoutWatchSet, withoutTrailingSeparators } from './worktree.ts'
+import { checkoutWatchSet } from './checkout-identity.ts'
+import { withoutTrailingSeparators } from './checkout-identity.ts'
 
 export type CheckoutStatusSnapshot = {
   project: string

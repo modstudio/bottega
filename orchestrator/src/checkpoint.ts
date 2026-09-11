@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path'
 import type { Database } from 'bun:sqlite'
 import { nowIso } from './db.ts'
 import { appendRunEvent } from './events.ts'
-import { targetGitEnvironment } from './worktree.ts'
+import { targetGitEnvironment } from './git-environment.ts'
 
 /**
  * A checkpoint is a delta folded into the next authored commit at landing.

@@ -8,13 +8,13 @@ import { db } from './db.ts'
 import { job } from './jobs.ts'
 import { resolveLens } from './lenses.ts'
 import {
-  assertMainCheckoutClean, assertRegisterBranches, createHasPlaceholder,
-  projectAt, projectByName, validateStoredProjectSettings,
-} from './projects.ts'
+  assertMainCheckoutClean, assertRegisterBranches, projectAt, projectByName, validateStoredProjectSettings, } from './projects.ts'
+import { createHasPlaceholder } from './worktree-template.ts'
 import { resolveReviewTarget } from './review-target.ts'
 import {
-  createCommandExists, realpathOrSpelled, repoRootOf, resolveBase, validateSeedWithTool,
-} from './worktree.ts'
+  createCommandExists, resolveBase, validateSeedWithTool } from './worktree.ts'
+import { realpathOrSpelled } from './checkout-identity.ts'
+import { repoRootOf } from './git-environment.ts'
 
 export const MAX_DEPTH = 1
 export const depth = () => Number(process.env.ORCH_DEPTH ?? 0)

@@ -5,15 +5,14 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
-  DATABASE_RESOLUTION, DB_PATH, missingDatabaseMessage, registeredRepositoryMissingDatabase,
-  resolveRunsDirectory,
-} from './database-location.ts'
+  DATABASE_RESOLUTION, DB_PATH, missingDatabaseMessage, registeredRepositoryMissingDatabase, resolveRunsDirectory, } from './database-location.ts'
 import {
-  dockerRunResources, resourcesForRuns, teardownRunResources, type DockerTeardown,
-} from './docker-resources.ts'
+  dockerRunResources, resourcesForRuns, teardownRunResources, type DockerTeardown, } from './docker-resources.ts'
 import {
-  realpathOrSpelled, repoRootOf, withoutTrailingSeparators, withCleanupLock, withWorktreeLease,
-} from './worktree.ts'
+  withCleanupLock, withWorktreeLease } from './worktree.ts'
+import { repoRootOf } from './git-environment.ts'
+import { realpathOrSpelled } from './checkout-identity.ts'
+import { withoutTrailingSeparators } from './checkout-identity.ts'
 import {
   applyMigrations, migrationRefusal, readUserVersion, staleWriteRefusal,
 } from './migrations.ts'

@@ -3,10 +3,9 @@ import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { db, EVIDENCE_CLOSED_SQL, chainScoreJoin, pidAlive, SESSION_LIVE_MS, sessionId, writableDb, writeTransaction, worktreePathSpellings } from './db.ts'
 import { projectAt, projectByName } from './projects.ts'
 import {
-  branchTip, markedWorktreeSource, removeFor, restoreBranch, targetGitEnvironment, withCleanupLock,
-  withWorktreeCreateLock, withWorktreeLease, orphanSafety,
-  type Worktree,
-} from './worktree.ts'
+  branchTip, removeFor, restoreBranch, withCleanupLock, withWorktreeCreateLock, withWorktreeLease, type Worktree } from './worktree.ts'
+import { markedWorktreeSource, orphanSafety } from './worktree-attribution.ts'
+import { targetGitEnvironment } from './git-environment.ts'
 
 export type ReclaimResult = { ok: boolean; action: string }
 

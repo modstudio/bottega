@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { DATABASE_RESOLUTION, resolveRunsDirectory } from './database-location.ts'
 import { db, nowIso, writableDb } from './db.ts'
-import { targetGitEnvironment } from './worktree.ts'
+import { targetGitEnvironment } from './git-environment.ts'
 
 /** The live-stream subset the JSONL log records. Wider transport events are ignored. */
 export type StreamEvent =

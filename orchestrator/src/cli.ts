@@ -21,6 +21,8 @@ import { z } from 'zod'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
 import { projectAt, projectByName, projects, renameProject } from './projects.ts'
+import { contentTree, repoRootOf, targetGitEnvironment } from './git-environment.ts'
+import { isOrchWorktree, markedWorktreeSource, orphanSafety, worktreeDirty } from './worktree-attribution.ts'
 import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
 import { collectResult, collectWait, resolveFailover, failoverSummary, branchNote } from './collect.ts'
 import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
@@ -133,10 +135,8 @@ async function loadTransport() {
   ;({ assertAcpAllowed, assertAcpReady, resolveTransportName, selectAgentForTransport } = transportModule)
 }
 let branchTip!: typeof import('./worktree.ts').branchTip
-let contentTree!: typeof import('./worktree.ts').contentTree
 let restoreBranch!: typeof import('./worktree.ts').restoreBranch
 let resolveBase!: typeof import('./worktree.ts').resolveBase
-let repoRootOf!: typeof import('./worktree.ts').repoRootOf
 let removeBranch!: typeof import('./worktree.ts').removeBranch
 let removeFor!: typeof import('./worktree.ts').removeFor
 let unmergedBranch!: typeof import('./worktree.ts').unmergedBranch
@@ -144,9 +144,7 @@ let checkoutHasUncommittedWork!: typeof import('./worktree.ts').checkoutHasUncom
 let callerDrift!: typeof import('./worktree.ts').callerDrift
 let takeCleanupLock!: typeof import('./worktree.ts').withCleanupLock
 let withWorktreeLease!: typeof import('./worktree.ts').withWorktreeLease
-let targetGitEnvironment!: typeof import('./worktree.ts').targetGitEnvironment
-let worktreeDirty!: typeof import('./worktree.ts').worktreeDirty
-async function loadWorktree() { worktreeModule ??= await import('./worktree.ts'); ({ branchTip, contentTree, restoreBranch, resolveBase, repoRootOf, removeBranch, removeFor, unmergedBranch, checkoutHasUncommittedWork, callerDrift, withCleanupLock: takeCleanupLock, withWorktreeLease, targetGitEnvironment, worktreeDirty } = worktreeModule) }
+async function loadWorktree() { worktreeModule ??= await import('./worktree.ts'); ({ branchTip, restoreBranch, resolveBase, removeBranch, removeFor, unmergedBranch, checkoutHasUncommittedWork, callerDrift, withCleanupLock: takeCleanupLock, withWorktreeLease } = worktreeModule) }
 let WORKER_PREAMBLE!: typeof import('./contract.ts').WORKER_PREAMBLE
 let READONLY_PREAMBLE!: typeof import('./contract.ts').READONLY_PREAMBLE
 let NO_REPO_PREAMBLE!: typeof import('./contract.ts').NO_REPO_PREAMBLE
@@ -1438,7 +1436,7 @@ async function continueRun(id: number, message?: string): Promise<{ childId: num
             path: latest.worktree,
             branch: latest.branch ?? '',
             base: latest.base_commit ?? '',
-            repoRoot: (await import('./worktree.ts')).repoRootOf(latest.worktree) ?? process.cwd(),
+            repoRoot: (await import('./git-environment.ts')).repoRootOf(latest.worktree) ?? process.cwd(),
             source: latest.worktree_source ?? undefined,
           }
         : null,
@@ -3456,7 +3454,8 @@ switch (cmd) {
    */
   case 'project': {
     const { projects, upsertProject, removeProject, sniffStack, projectByName,
-            worktreeWarnings, validateProjectSettings, migrateCreate, assertRegisterBranches } = await import('./projects.ts')
+            worktreeWarnings, validateProjectSettings, assertRegisterBranches } = await import('./projects.ts')
+    const { migrateCreate } = await import('./worktree-template.ts')
     const sub = argv[1] ?? 'list'
 
     if (sub === 'list') {
@@ -4373,7 +4372,7 @@ switch (cmd) {
                 path: worktreePath,
                 branch: latest.branch ?? row.branch ?? '',
                 base: latest.base_commit ?? row.base_commit ?? '',
-                repoRoot: (await import('./worktree.ts')).repoRootOf(worktreePath) ?? process.cwd(),
+                repoRoot: (await import('./git-environment.ts')).repoRootOf(worktreePath) ?? process.cwd(),
                 source: latest.worktree_source ?? row.worktree_source ?? undefined,
               }
             : null,
@@ -4668,9 +4667,7 @@ switch (cmd) {
     }[]).filter((row) => !selectedProject ||
       projectAt(row.worktree)?.name === selectedProject.name)
 
-    const { removeFor, sweepWithTool, orphanSafety,
-            isOrchWorktree, markedWorktreeSource } =
-      await import('./worktree.ts')
+    const { removeFor, sweepWithTool } = await import('./worktree.ts')
 
     let done = 0
     let cleanupFailed = false

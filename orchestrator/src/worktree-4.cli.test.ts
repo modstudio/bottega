@@ -70,7 +70,7 @@ describe('production git environments', () => {
       writeFileSync(wrapper, `#!/bin/sh\nif [ "$1 $2" = "rev-parse --local-env-vars" ]; then\n  echo rejected >&2\n  exit 129\nfi\nexec ${JSON.stringify(realGit)} "$@"\n`)
       chmodSync(wrapper, 0o755)
       const child = Bun.spawnSync([process.execPath, '--eval', `
-        const { targetGitEnvironment } = await import(${JSON.stringify(new URL('./worktree.ts', import.meta.url).href)});
+        const { targetGitEnvironment } = await import(${JSON.stringify(new URL('./git-environment.ts', import.meta.url).href)});
         const { inspectCheckout } = await import(${JSON.stringify(new URL('../../shared/git.ts', import.meta.url).href)});
         const inspection = inspectCheckout(${JSON.stringify(repoA)});
         try {
@@ -306,7 +306,7 @@ describe('outside-worktree write observation', () => {
   }
 
   test('the watch set is the run\'s own project plus the caller checkout, never a third project', async () => {
-    const { checkoutWatchSet } = await import('./run.ts')
+    const { checkoutWatchSet } = await import('./checkout-identity.ts')
     const one = repository()
     const two = repository()
     upsertProject({ name: 'own-project', path: one })

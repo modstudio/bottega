@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { OrchRunEnvelopeSchema } from '../../shared/orch-contract.ts'
-import type { WorktreeCreate, WorktreeCreateArg } from '../src/projects.ts'
+import type { WorktreeCreate, WorktreeCreateArg } from '../src/worktree-template.ts'
 import { PRELOAD_RUNS, PRELOAD_STORE, REGISTERED_LIVE_STORE } from './preload.ts'
 /**
  * Everything below treats the store's directory as scratch: a git repository is
@@ -105,7 +105,8 @@ export const originalTestSandbox = process.env.ORCH_SANDBOX
 process.env.ORCH_SANDBOX = 'host'
 export const hermeticHome = join(dir, 'home')
 mkdirSync(hermeticHome)
-export const { scrubbedGitEnv, targetGitEnvironment } = await import('../src/worktree.ts')
+import { scrubbedGitEnv } from '../../shared/git.ts'; export { scrubbedGitEnv }
+export const { targetGitEnvironment } = await import('../src/git-environment.ts')
 export const { mainCheckoutOf } = await import('../../shared/git.ts')
 
 // A worker routes git objects and ref hooks into its own linked-worktree metadata.
@@ -171,8 +172,7 @@ export const { runDetail, runList, state } = await import('../src/serve.ts')
 export const { classify, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOT_EVIDENCE, COOLS_DOWN, FAILS_OVER,
         isNonAnswer, detectBlockers } = await import('../src/failure.ts')
 export const { resolveRootFromLastTurn, gitObjectEnvironmentFor,
-        checkoutAliases, checkoutCaseSensitivity,
-        packedResumePrompt, run: runJob } = await import('../src/run.ts')
+        packedResumePrompt, run: runJob } = await import('../src/run.ts'); export const { checkoutAliases, checkoutCaseSensitivity } = await import('../src/checkout-identity.ts')
 export const { runFilePaths, pruneRuns, KEEP_RUN_FILES_DAYS,
         RUNS_DIR, listRunArtifacts, runArtifactsDir, runScratchDir, noRepoIsolatePath,
         readDispatchState, persistTerminalSnapshot, reconcileRun } = await import('../src/run-artifacts.ts'); export const { closeOutRun } = await import('../src/close-out.ts')
@@ -210,17 +210,17 @@ export const { cleanReviewEvidence, parseReviewReply, recordReview, recordReview
         MIN_REVIEW_TRIAGED } = await import('../src/review.ts')
 export const { ask } = await import('../src/ask.ts')
 export const { checkMessages, messageArchitect, messagesForRun } = await import('../src/mailbox.ts')
-export const { orphanSafety, repoRootOf, createWorktree, createWorktreeForBranch, createWithTool, createReadOnlyWorktree,
-        createReadOnlyWithTool, resolveBase, fillTool,
-        seedArgv, createArgv, worktreeGitDir, prepareWorktreeObjects, prepareSharedRefGuard,
+export const { createWorktree, createWorktreeForBranch, createWithTool, createReadOnlyWorktree,
+        createReadOnlyWithTool, resolveBase, prepareSharedRefGuard,
         assertSharedRefGuardOutsideWritableRoots, removeSharedRefGuard,
         workerSharedGitRoots,
         carryWorkingState, withWorktreeCreateLock, withProjectLock, projectLockState,
         reclaimStaleProjectLock, processStartTime, pidRecordIdentity, projectLockDir, staleProjectLockHolder,
         worktreeLeaseName,
         unmergedBranch, assertCallerAncestry, checkoutHasUncommittedWork, callerDrift,
-        changesIn, contentTree, removeFor, branchTip, extractWorktree, extractionDest,
-        sanitiseOrphanExtractionPath } = await import('../src/worktree.ts')
+        changesIn, removeFor, branchTip } = await import('../src/worktree.ts')
+export const { repoRootOf, worktreeGitDir, prepareWorktreeObjects, contentTree } = await import('../src/git-environment.ts')
+export const { fillTool, seedArgv, createArgv } = await import('../src/worktree-template.ts'); export const { orphanSafety, extractWorktree, extractionDest, sanitiseOrphanExtractionPath } = await import('../src/worktree-attribution.ts')
 export const { gitLocks, formatGitLocks } = await import('../src/git-locks.ts')
 export const { AGENTS, ARGV_PROMPT_BYTES, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,

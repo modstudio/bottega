@@ -16,7 +16,7 @@ import { changeIdentity, type ChangeIdentityGitResult, type ChangeIdentityGitRun
 import { projectByName, type Project } from './projects.ts'
 
 const targetGitEnvironment = (repo: string) =>
-  (require('./worktree.ts') as typeof import('./worktree.ts')).targetGitEnvironment(repo)
+  (require('./git-environment.ts') as typeof import('./git-environment.ts')).targetGitEnvironment(repo)
 const classifyReviewTier: typeof import('./review-tier.ts').classifyReviewTier = (...args) =>
   (require('./review-tier.ts') as typeof import('./review-tier.ts')).classifyReviewTier(...args)
 const diffNumstat: typeof import('./review-tier.ts').diffNumstat = (...args) =>

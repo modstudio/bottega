@@ -5,7 +5,7 @@ import { db, nowIso, writableDb } from './db.ts'
 import { projects, projectAt } from './projects.ts'
 
 const targetGitEnvironment = (repo: string) =>
-  (require('./worktree.ts') as typeof import('./worktree.ts')).targetGitEnvironment(repo)
+  (require('./git-environment.ts') as typeof import('./git-environment.ts')).targetGitEnvironment(repo)
 
 const PROJECTS = `${process.env.HOME}/.claude/projects`
 /**

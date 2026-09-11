@@ -1,55 +1,28 @@
-import {
-  mkdirSync, readFileSync, existsSync, writeFileSync,
-} from 'node:fs'
+import { mkdirSync, readFileSync, existsSync, writeFileSync, } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import {
-  classify, notify, isNonAnswer, hasVendorTerminationMarker, detectBlockers, NEEDS_HUMAN, NEEDS_HUMAN_TITLE,
-  FAILS_OVER,
-} from './failure.ts'
+  classify, notify, isNonAnswer, hasVendorTerminationMarker, detectBlockers, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, FAILS_OVER, } from './failure.ts'
 import {
-  AGENTS, ensureLocalHealth, tryWake, readStrictCodexSchema, minimumCliVersionRefusal,
-  LOCAL_BASE_URL,
-} from './agents.ts'
+  AGENTS, ensureLocalHealth, tryWake, readStrictCodexSchema, minimumCliVersionRefusal, LOCAL_BASE_URL, } from './agents.ts'
 import {
-  job, isReaderJob, jobIdleKillMs, reclaimsTreeByDefault, resolveJobTimeoutMs, jobBoundInstruction,
-  type Job,
-} from './jobs.ts'
+  job, isReaderJob, jobIdleKillMs, reclaimsTreeByDefault, resolveJobTimeoutMs, jobBoundInstruction, type Job, } from './jobs.ts'
 import { pick } from './route.ts'
 import { branchOf, gitContext } from './git-environment.ts'
 import {
-  assertGrokTrustEligible, canonSourceFor, canonSourceInstruction, mcpAttachRefusal, mcpConnectionFor,
-  mcpRequestFromStored, requestedMcpMode, storedMcpRequest, type McpRequest,
-  probeRequestedMcp,
-} from './mcp-preflight.ts'
+  assertGrokTrustEligible, canonSourceFor, canonSourceInstruction, mcpAttachRefusal, mcpConnectionFor, mcpRequestFromStored, requestedMcpMode, storedMcpRequest, type McpRequest, probeRequestedMcp, } from './mcp-preflight.ts'
 import { namesRecordedRunTree, preflight } from './dispatch-preflight.ts'
 import {
-  implicitReviewCoverageBase, inferredReadOnlyKey, resolveReviewTarget,
-} from './review-target.ts'
+  implicitReviewCoverageBase, inferredReadOnlyKey, resolveReviewTarget, } from './review-target.ts'
 import {
-  db, nowIso, sessionId, resolveRootFromLastTurn, tryWriteContention, writableDb, writeTransaction,
-  enableSchemaReload, teardownTerminalRunResources,
-} from './db.ts'
+  db, nowIso, sessionId, resolveRootFromLastTurn, tryWriteContention, writableDb, writeTransaction, enableSchemaReload, teardownTerminalRunResources, } from './db.ts'
 import {
-  createWorkerWorktree,
-  toolFor, changesIn, repoRootOf, resolveBase, resolveReadOnlyBase,
-  realpathOrSpelled,
-  prepareWorktreeObjects, carryWorkingState,
-  targetGitEnvironment,
-  contentTree,
-  assertCallerAncestry, withWorktreeCreateLock, withWorktreeLease, removeFor,
-  type Worktree,
-  processStartTime,
-  type WorktreeObjectEnvironment,
-  checkoutAliases, checkoutWatchSet,
-  prepareWorkerMcpConfig,
-  createIsolatedWorkerDirectory, worktreeExists,
-  prepareSharedRefGuard, assertSharedRefGuardOutsideWritableRoots,
-  workerSharedGitRoots, worktreeGitDir,
-} from './worktree.ts'
-export {
-  checkoutAliases, checkoutCaseSensitivity, checkoutWatchSet, provisionMcpConfig,
-} from './worktree.ts'
+  createWorkerWorktree, toolFor, changesIn, resolveBase, resolveReadOnlyBase, carryWorkingState, assertCallerAncestry, withWorktreeCreateLock, withWorktreeLease, removeFor, type Worktree, processStartTime, worktreeExists, prepareSharedRefGuard, assertSharedRefGuardOutsideWritableRoots, workerSharedGitRoots } from './worktree.ts'
+import { repoRootOf, prepareWorktreeObjects, targetGitEnvironment, contentTree, type WorktreeObjectEnvironment } from './git-environment.ts'
+import { worktreeGitDir } from './git-environment.ts'
+import { realpathOrSpelled } from './checkout-identity.ts'
+import { prepareWorkerMcpConfig, createIsolatedWorkerDirectory } from './worktree-mcp.ts'
+import { checkoutAliases, checkoutWatchSet } from './checkout-identity.ts'
 import { recipeNotes } from './recipe.ts'
 import {
   workerPreamble, packResumePrompt, READONLY_PREAMBLE, NO_REPO_PREAMBLE,

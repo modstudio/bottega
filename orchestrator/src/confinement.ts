@@ -3,10 +3,8 @@ import { existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Database } from 'bun:sqlite'
 import {
-  AttributionKindSchema, ConfinementClassSchema, emptyAttribution,
-  type AttributionKind, type ConfinementClass,
-} from '../../shared/orch-contract.ts'
-import { targetGitEnvironment } from './worktree.ts'
+  AttributionKindSchema, ConfinementClassSchema, emptyAttribution, type AttributionKind, type ConfinementClass, } from '../../shared/orch-contract.ts'
+import { targetGitEnvironment } from './git-environment.ts'
 
 export const UNTRUSTED_INDEX_WINDOW_MS = 1000
 export const UNTRUSTED_RETRY_WAIT_MS = 1100

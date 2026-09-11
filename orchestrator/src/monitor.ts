@@ -2,14 +2,13 @@ import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
-  db, liveRuns, nowIso, pidAlive, terminalDockerRetentionReasonForRun, UNSCORED_WHERE, writableDb,
-  writeTransaction,
-  type MonitorSeverity,
-} from './db.ts'
+  db, liveRuns, nowIso, pidAlive, terminalDockerRetentionReasonForRun, UNSCORED_WHERE, writableDb, writeTransaction, type MonitorSeverity, } from './db.ts'
 import { fileIssue } from './mcp.ts'
 import { gitLocks } from './git-locks.ts'
 import { projectAt, projects } from './projects.ts'
-import { pidRecordIdentity, projectLockState, targetGitEnvironment, worktreeDirty } from './worktree.ts'
+import { pidRecordIdentity, projectLockState } from './worktree.ts'
+import { targetGitEnvironment } from './git-environment.ts'
+import { worktreeDirty } from './worktree-attribution.ts'
 import { reclaimBranch, reclaimWorktree } from './reclaim.ts'
 import { allInjectChecks, storedPackDrift } from './canon.ts'
 import { idleLabel, idleMsSince, idleWarnMs } from './events.ts'

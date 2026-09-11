@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join, } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { OrchProjectListSchema } from '../../shared/orch-contract.ts'
-import type { WorktreeCreate } from './projects.ts'
+import type { WorktreeCreate } from './worktree-template.ts'
 import { addRun, candidates, createWorktree, db, declaredCreate, dir, hermeticGitEnv, projectByName, projects, upsertProject } from '../test/fixture.ts'
 
 import { runCollectionDescribeFixture } from '../test/fixture.ts'

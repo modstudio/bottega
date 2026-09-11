@@ -10,10 +10,8 @@ import { proveWorktreeReconstructible } from './reclaim.ts'
 import { processTable, terminateRunProcesses } from './run-process.ts'
 import { isGroupKillablePgid, runHasLiveDescendants } from './idle-kill.ts'
 import {
-  branchTip, projectLockState, reclaimStaleProjectLock, removeFor, repoRootOf,
-  restoreBranch, withCleanupLock, withWorktreeLease, worktreeExists,
-  worktreeLeaseName, targetGitEnvironment, type Worktree,
-} from './worktree.ts'
+  branchTip, projectLockState, reclaimStaleProjectLock, removeFor, restoreBranch, withCleanupLock, withWorktreeLease, worktreeExists, worktreeLeaseName, type Worktree } from './worktree.ts'
+import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
 
 export type CloseOutResult = {
   runId: number; worktree: string | null
