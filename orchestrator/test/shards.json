@@ -28,7 +28,8 @@
     "test/process-boundary/discard.test.ts": { "size": "short" },
     "test/process-boundary/abandon.test.ts": { "size": "short" },
     "test/process-boundary/ref-guard.test.ts": { "size": "short" },
-    "src/worktree-4.cli.test.ts": { "size": "short" },
+    "test/process-boundary/git-environment.test.ts": { "size": "short" },
+    "test/process-boundary/run-git.test.ts": { "size": "short" },
     "src/worktree-5.cli.test.ts": { "size": "short" }
   },
   "shards": [
@@ -63,7 +64,8 @@
         "test/process-boundary/worktree.test.ts",
         "src/agents-sandbox-2.cli.test.ts",
         "src/canon.cli.test.ts",
-        "src/worktree-4.cli.test.ts",
+        "test/process-boundary/git-environment.test.ts",
+        "test/process-boundary/run-git.test.ts",
         "src/projects.cli.test.ts"
         ,"test/process-boundary/abandon.test.ts"
       ]

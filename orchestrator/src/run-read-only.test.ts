@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { rmSync, writeFileSync, existsSync } from "node:fs"
 import { join } from "node:path"
-import { AGENTS, db, declaredCreate, removeFor, runJob, upsertProject, worktreeDescribeFixture } from "../test/fixture.ts"
+import { db, declaredCreate, removeFor, runJob, upsertProject, worktreeDescribeFixture } from "../test/fixture.ts"
+import { scriptedTransport } from "../test/fake-transport.ts"
 describe('read-only run worktrees', () => {
 const { git, scratchRepo } = worktreeDescribeFixture()
 test('a recipe-project read-only run records git source and warns that infrastructure is absent', async () => {
@@ -19,16 +20,9 @@ test('a recipe-project read-only run records git source and warns that infrastru
         remove: `printf removed`, branch: '{key}-orch-{id}', seeds: ['full'],
       } },
     })
-    const agent = AGENTS.codex!
-    const original = { bin: agent.bin, argv: agent.argv, readsOut: agent.readsOut }
-    let sent = ''
+    const transport = scriptedTransport([{ kind: 'completed', output: 'inspected' }])
+    transport.install()
     try {
-      agent.bin = process.execPath
-      agent.readsOut = false
-      agent.argv = ({ prompt }) => {
-        sent = prompt
-        return ['-e', 'console.log("inspected")']
-      }
       process.env.ORCH_DEPTH = '0'
       const result = await runJob({
         job: 'file-question', prompt: 'inspect', cwd: tree, agent: 'codex', keepTree: true,
@@ -40,15 +34,12 @@ test('a recipe-project read-only run records git source and warns that infrastru
       expect(Bun.spawnSync(['git', 'symbolic-ref', '-q', 'HEAD'], { cwd: result.worktree!.path }).exitCode).not.toBe(0)
       expect(db().query('SELECT worktree_source, branch FROM run WHERE id=?').get(result.id))
         .toEqual({ worktree_source: 'git', branch: null })
-      expect(sent).toContain('NO provisioned infrastructure')
-      expect(sent).toContain(`project's files at ${featureHead}`)
-      expect(sent).toContain('no databases, no generated env, no vendor tree')
-      expect(sent).toContain('could_not_verify')
+      expect(transport.prompts.join('\n')).toContain('NO provisioned infrastructure')
+      expect(transport.prompts.join('\n')).toContain(`project's files at ${featureHead}`)
+      expect(transport.prompts.join('\n')).toContain('no databases, no generated env, no vendor tree')
+      expect(transport.prompts.join('\n')).toContain('could_not_verify')
       expect(removeFor(result.worktree!, repo).removed).toBe(true)
     } finally {
-      agent.bin = original.bin
-      agent.argv = original.argv
-      agent.readsOut = original.readsOut
       rmSync(repo, { recursive: true, force: true })
     }
   })
@@ -60,28 +51,18 @@ test('a read-only run uses the project\'s declared infrastructure note', async (
       name: 'read-only-run-notes', path: repo,
       settings: { worktree: { recipe: {}, readonly_notes: note } },
     })
-    const agent = AGENTS.codex!
-    const original = { bin: agent.bin, argv: agent.argv, readsOut: agent.readsOut }
-    let sent = ''
+    const transport = scriptedTransport([{ kind: 'completed', output: 'inspected' }])
+    transport.install()
     try {
-      agent.bin = process.execPath
-      agent.readsOut = false
-      agent.argv = ({ prompt }) => {
-        sent = prompt
-        return ['-e', 'console.log("inspected")']
-      }
       process.env.ORCH_DEPTH = '0'
       const result = await runJob({
         job: 'file-question', prompt: 'inspect', cwd: tree, agent: 'codex', keepTree: true,
       })
-      expect(sent).toContain(`This read-only run has the project's files at ${result.worktree!.base}. ${note}`)
-      expect(sent).not.toContain('NO provisioned infrastructure')
-      expect(sent).toContain('record what you could not run in could_not_verify')
+      expect(transport.prompts.join('\n')).toContain(`This read-only run has the project's files at ${result.worktree!.base}. ${note}`)
+      expect(transport.prompts.join('\n')).not.toContain('NO provisioned infrastructure')
+      expect(transport.prompts.join('\n')).toContain('record what you could not run in could_not_verify')
       expect(removeFor(result.worktree!, repo).removed).toBe(true)
     } finally {
-      agent.bin = original.bin
-      agent.argv = original.argv
-      agent.readsOut = original.readsOut
       rmSync(repo, { recursive: true, force: true })
     }
   })
