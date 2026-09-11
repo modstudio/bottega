@@ -180,6 +180,7 @@ await withGateSlot(async () => {
   const unit = await spawnTest('orchestrator unit', [
     'bun', 'test', '--path-ignore-patterns', '**/*.cli.test.ts',
     '--path-ignore-patterns', 'runs/**', '--path-ignore-patterns', '**/runs/**',
+    ...declaredBoundaryTests.flatMap((file) => ['--path-ignore-patterns', file]),
   ], [], process.env, 'unit')
   const shards = balancedShards(readCommittedTimingSummary())
   const cli = await Promise.all(shards.map(async (files, index) => {
