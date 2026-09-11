@@ -7,7 +7,7 @@ import { REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVI
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation, runMutationActor, type RootAuthority } from './run-authority.ts'
 import { DELIVERY, FIDELITY, QUALITY, judgeability, weigh, type Delivery, type Fidelity, type Quality } from './score.ts'
 type JudgementFlags = { has(name: string): boolean; flag(name: string): string | undefined; values(name: string): string[] }
-type JudgementOptions = { words: string[]; note: string | null; auditReason: string | null; dashboardAuthorized: boolean; notEvidence: readonly string[] }
+type JudgeOptions = { words: string[]; note: string | null; auditReason: string | null; notEvidence: readonly string[] }; type ScoreOptions = JudgeOptions & { dashboardAuthorized: boolean }
 type JudgementPresentation = { log(...values: unknown[]): void; error(...values: unknown[]): void; pairHint(partner: { id: number; agent: string }): string }
 function recordScoreVerdict(id: number, delivery: Delivery, quality: Quality | null, fidelity: Fidelity | null, note: string | null, scoredAt: string, scorer: string): void {
   db().query(
@@ -26,7 +26,7 @@ function recordScoreVerdict(id: number, delivery: Delivery, quality: Quality | n
                                        scored_at=excluded.scored_at`,
   ).run(id, delivery, quality, fidelity, note, scoredAt, scorer)
 }
-export function judgeRun(requestedId: number, flags: JudgementFlags, options: JudgementOptions, presentation: JudgementPresentation) {
+export function judgeRun(requestedId: number, flags: JudgementFlags, options: JudgeOptions, presentation: JudgementPresentation) {
 const row = db().query(
   `SELECT root.id, root.agent, root.job, root.status, root.session_id, root.failure_kind,
           root.output_path, root.repo, root.cwd, root.worktree, root.branch, root.base_commit,
@@ -230,7 +230,7 @@ presentation.log(`judged run ${id}: score${reviewId ? `, completed review ${revi
   `${comparison ? ', pair recorded' : ''}`)
 return { id, row, reviewId, comparison }
 }
-export function scoreRun(requestedId: number, flags: JudgementFlags, options: JudgementOptions, presentation: JudgementPresentation): void {
+export function scoreRun(requestedId: number, flags: JudgementFlags, options: ScoreOptions, presentation: JudgementPresentation): void {
 const row = db().query(
   `SELECT root.id, root.agent, root.job, root.session_id, root.parent_run_id,
           root.failure_kind, root.output_path

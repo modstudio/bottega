@@ -3278,7 +3278,7 @@ switch (cmd) {
     const requestedId = Number(argv[1]); if (!requestedId) usage()
     const judgementFlags = { has, flag, values: flags }
     const words = argv.slice(2).filter((a, i) => !a.startsWith('--') && !VALUE_FLAGS.has(argv.slice(2)[i - 1] ?? ''))
-    const options = { words, note: scoreNote(), auditReason: auditReason(), dashboardAuthorized: false, notEvidence: NOT_EVIDENCE }
+    const options = { words, note: scoreNote(), auditReason: auditReason(), notEvidence: NOT_EVIDENCE }
     const result = judgeRun(requestedId, judgementFlags, options, judgementPresentation)
     // The CLI adapter deliberately composes judgement then cleanup for judge --discard.
     if (has('discard')) {
