@@ -10,6 +10,7 @@ const allowed = new Set([
     './resource-ownership.ts',
     './run-control.ts', './run-dispatch.ts', './run-answer.ts', './cleanup.ts', './cleanup-sweep.ts', './run-stop.ts',
     './judgement.ts', './recalibration.ts',
+    './confinement-ruling.ts', './doc-commands.ts', './project-commands.ts',
 ])
 
 function offendingImports(source: string): string[] {
