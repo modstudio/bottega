@@ -11,6 +11,9 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@typescript-eslint/parser": "8.70.0",
+    "eslint": "^10.10.0",
+    "eslint-plugin-sonarjs": "4.2.0",
     "typescript": "^5"
   },
   "dependencies": {

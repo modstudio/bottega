@@ -1,3 +1,4 @@
+// concern: contract
 import { REVIEW_SEVERITY } from './db.ts'
 import { progressFileInstruction } from './checkpoint.ts'
 import { isReaderJob, type Job } from './jobs.ts'
