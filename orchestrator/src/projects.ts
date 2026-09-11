@@ -120,6 +120,15 @@ export type ProjectSettings = {
   [k: string]: unknown
 }
 
+export function resolveBranchRef(value: string): { branch: string; runId: number | null } {
+  if (!/^\d+$/.test(value)) return { branch: value, runId: null }
+  const runId = Number(value)
+  const row = db().query('SELECT branch FROM run WHERE id=?').get(runId) as { branch: string | null } | null
+  if (!row) throw new Error(`no run ${runId}`)
+  if (!row.branch) throw new Error(`run ${runId} has no branch and cannot be landed`)
+  return { branch: row.branch, runId }
+}
+
 /**
  * One argument in a project's create command.
  *

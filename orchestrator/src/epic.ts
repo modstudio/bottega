@@ -1,7 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { engagedMs } from '../../shared/interval.ts'
 import { db, STALE_AFTER_MS } from './db.ts'
-import { flagsOf } from './landing.ts'
 import { targetGitEnvironment } from './worktree.ts'
 
 const HUB = new URL('../../bin/hub', import.meta.url).pathname
@@ -56,6 +55,33 @@ type RunRow = {
 type LandingRow = {
   id: number; branch: string; status: string; error: string | null; steps: string | null
   project_id: number | null; tip: string | null
+}
+type LandingStep = {
+  name: string
+  unreviewed?: string
+  strandLive?: string
+  message?: string
+  keepCheckpoints?: boolean
+}
+
+function flagsOf(row: Pick<LandingRow, 'steps'>): {
+  unreviewed?: string; strandLive?: string; message?: string; keepCheckpoints?: boolean
+} {
+  let steps: LandingStep[] = []
+  if (row.steps) {
+    try {
+      const parsed = JSON.parse(row.steps) as unknown
+      steps = Array.isArray(parsed) ? parsed as LandingStep[] : []
+    } catch { /* malformed historical steps carry no flags */ }
+  }
+  const flags = steps.find((step) => step.name === '_flags')
+  if (!flags) return {}
+  return {
+    ...(flags.unreviewed ? { unreviewed: flags.unreviewed } : {}),
+    ...(flags.strandLive ? { strandLive: flags.strandLive } : {}),
+    ...(flags.message ? { message: flags.message } : {}),
+    ...(flags.keepCheckpoints ? { keepCheckpoints: true } : {}),
+  }
 }
 type ReviewRow = {
   id: number; completed_at: string | null; outdated_at: string | null; patch_id: string | null

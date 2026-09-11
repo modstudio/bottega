@@ -1500,7 +1500,7 @@ function usage(): never {
       --transport cli|acp       driver seam; default cli. acp covers codex/grok read-only jobs
       --avoid <agent>[,...]     route to any other agent when possible
       --distinct-from <id>[,...] avoid models used by earlier fan-out runs
-      --base <ref>              ${baseHelp('base an implement, fix or land worktree on this git commit')}
+      --base <ref>              ${baseHelp('base an implement or fix worktree on this git commit')}
       --review <branch|run-id>  review that branch tip explicitly (review-lens, safety, craft)
       --carry                   carry this checkout's uncommitted work into the worker (off by default)
       --file <path>             read the prompt from a file
@@ -1626,14 +1626,6 @@ function usage(): never {
       several questions: orch answer <id> --q<qid> "<ruling>" --q<qid> "<ruling>"
   orch diff <id>                inspect a run's worktree diff (review diffs are scratch)
       --since-base              compare with the recorded base instead of current trunk
-  orch land <branch|run-id>     enqueue a landing; a per-project queue owns rebase, gate, fast-forward and migrate
-      --wait                    block until this landing terminals (default is enqueue and return)
-      --message TEXT            amend the branch tip's message, then gate that commit
-      --file PATH               same, reading the message from a file
-      --unreviewed REASON       land without matching review coverage and record why
-      --strand-live REASON      land a journal-carrying diff while runs are live, naming why
-      --status                  print queued and in-review branches, path sets, and locks
-      --drain                   process the project's queue until empty (started by enqueue when needed)
   orch reconcile <id>           write a terminal run row from the persisted reply after a schema move
   orch confinement clear <run-id> --writer TEXT --note TEXT [--tip OID]
       clear a spurious escaped classification, attributing the outside edit and auditing the ruling
@@ -1739,7 +1731,7 @@ function doUsage(): never {
   --transport cli|acp  driver seam; default cli. acp covers codex/grok read-only jobs
   --avoid <name,...> exclude agents while routing, unless none remain
   --distinct-from <id,...> exclude models used by earlier runs, unless none remain
-  --base <ref>     ${baseHelp('base an implement, fix or land worktree on this verified git commit')}
+  --base <ref>     ${baseHelp('base an implement or fix worktree on this verified git commit')}
   --review <ref>   review this branch or run id (review-lens, safety, craft)
   --carry          carry this checkout's uncommitted work into the worker (off by default)
   --schema <path>  require JSON schema; Codex normalizes it to OpenAI strict mode
@@ -1982,50 +1974,6 @@ switch (cmd) {
     }
     const backfilled = backfillSpecSha()
     console.log(`spec_sha backfill: ${backfilled.updated} updated, ${backfilled.missing} prompt files missing`)
-    break
-  }
-
-  case 'land': {
-    const { drainQueue, land, landingStatus, resolveLandingBranch } = await import('./landing.ts')
-    if (has('status')) {
-      console.log(landingStatus(process.cwd()))
-      break
-    }
-    if (has('drain')) {
-      drainQueue(process.cwd())
-      break
-    }
-    const value = argv[1]
-    if (!value || value.startsWith('--')) {
-      throw new Error('orch land <branch|run-id> [--message TEXT] [--file PATH] [--unreviewed REASON] [--keep-checkpoints] [--wait] | orch land --status')
-    }
-    const fromMessage = flag('message')
-    const fromFile = flag('file')
-    if (fromMessage !== undefined && fromFile !== undefined) {
-      throw new Error(
-        'pass --message or --file, not both\nworking form: orch land <branch|run-id> [--message TEXT] [--file PATH]',
-      )
-    }
-    const message = fromFile !== undefined ? readFileSync(fromFile, 'utf8') : fromMessage
-    const target = resolveLandingBranch(value)
-    if (target.runId !== null) console.log(`run ${target.runId} resolves to branch ${target.branch}`)
-    const unreviewed = flag('unreviewed')
-    const strandLive = flag('strand-live')
-    if (unreviewed !== undefined && !unreviewed.trim()) {
-      throw new Error('--unreviewed requires a non-empty reason')
-    }
-    if (strandLive !== undefined && !strandLive.trim()) {
-      throw new Error('--strand-live requires a non-empty reason')
-    }
-    const result = land(process.cwd(), target.branch, {
-      ...(target.runId === null ? {} : { runId: target.runId }),
-      ...(message === undefined ? {} : { message }),
-      ...(unreviewed === undefined ? {} : { unreviewed }),
-      ...(strandLive === undefined ? {} : { strandLive }),
-      keepCheckpoints: has('keep-checkpoints'),
-      wait: has('wait'),
-    })
-    if (result) console.log(result)
     break
   }
 
@@ -2880,8 +2828,8 @@ switch (cmd) {
     const base = flag('base')
     const reviewRef = flag('review')
     if (base) {
-      if (jobName !== 'implement' && jobName !== 'fix' && jobName !== 'land') {
-        throw new Error('--base is only valid for the implement, fix and land jobs')
+      if (jobName !== 'implement' && jobName !== 'fix') {
+        throw new Error('--base is only valid for the implement and fix jobs')
       }
       resolveBase(callerCwd, base)
     }
@@ -6812,7 +6760,7 @@ switch (cmd) {
       console.log(`mcp unverified ${row.agent}`.padEnd(25) + String(row.count).padStart(7) +
         '      -        -')
     }
-    const { landingsWithPostStepError } = await import('./landing.ts')
+    const { landingsWithPostStepError } = await import('./health.ts')
     for (const row of landingsWithPostStepError()) {
       console.log(`landed with post-step error`.padEnd(25) + `${row.project} ${row.branch}`)
       console.log(`  ${row.error}`)

@@ -100,7 +100,6 @@ export const JOB_TIMEOUTS = {
   implement: { defaultMinutes: 45, ceilingMinutes: 90 },
   'issue-worker': { defaultMinutes: 45, ceilingMinutes: 90 },
   fix: { defaultMinutes: 30, ceilingMinutes: 60 },
-  land: { defaultMinutes: 30, ceilingMinutes: 60 },
   diagnose: { defaultMinutes: 40, ceilingMinutes: 60 },
   understand: { defaultMinutes: 40, ceilingMinutes: 60 },
   'review-lens': { defaultMinutes: 30, ceilingMinutes: 45 },
@@ -357,20 +356,6 @@ export const JOBS: Record<string, Job> = {
     contextTokens: ERRAND,
     // Narrower than `implement` by design, but still a build-and-verify cycle.
     // Bound in JOB_TIMEOUTS.
-  },
-  /**
-   * Apply an already-produced run to a named branch and prove it passes before
-   * committing it. This is intentionally not `fix`: there is no code change to
-   * design or make, only an approved diff to transfer and verify. It still
-   * needs resumability because a missing or ambiguous source run or target
-   * branch must go back to the architect rather than be guessed.
-   */
-  land: {
-    name: 'land',
-    what: 'Rebase a named branch onto current trunk, apply one run’s diff, run its gates, commit it, and fast-forward trunk. Never push.',
-    needs: { readsRepo: true, writesRepo: true, resumable: true },
-    prefer: ['codex'],
-    contextTokens: ERRAND,
   },
   'mcp-query': {
     name: 'mcp-query',

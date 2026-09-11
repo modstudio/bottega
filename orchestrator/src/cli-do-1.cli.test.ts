@@ -674,7 +674,7 @@ test('every --json surface has an enumerated and pinned output contract', () => 
     const r = orch('do', '--help')
     expect(r.code).toBe(0)
     expect(r.out).toContain(
-      '--base <ref>     base an implement, fix or land worktree on this verified git commit',
+      '--base <ref>     base an implement or fix worktree on this verified git commit',
     )
     expect(r.out).not.toContain('unsupported for this project')
   })
@@ -691,7 +691,7 @@ test('every --json surface has an enumerated and pinned output contract', () => 
 
     const r = orch('do', '--help')
     expect(r.code).toBe(0)
-    expect(r.out).toContain('--base <ref>     base an implement, fix or land worktree on this verified git commit')
+    expect(r.out).toContain('--base <ref>     base an implement or fix worktree on this verified git commit')
     expect(r.out).not.toContain('unsupported for this project')
   })
 

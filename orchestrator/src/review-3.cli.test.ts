@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { landingReviewCoverage, AGENTS, MIN_SAMPLE, addRun, completeReview, contentTree, coverageAudit, db, dir, evidenceFor, guide, hermeticGitEnv, implicitReviewWarning, noRepoIsolatePath, pick, recordReview, resolveReviewTarget, reviewReply, runJob, score, upsertProject } from '../test/fixture.ts'
+import { AGENTS, MIN_SAMPLE, addRun, completeReview, contentTree, coverageAudit, db, dir, evidenceFor, guide, hermeticGitEnv, implicitReviewWarning, noRepoIsolatePath, pick, recordReview, resolveReviewTarget, reviewReply, runJob, score, upsertProject } from '../test/fixture.ts'
 
 describe('review-lens-inline has no checkout', () => {
   test('the no-repo isolate is deterministically named below an owned runs directory', () => {
@@ -554,12 +554,6 @@ describe('review-lens-inline has no checkout', () => {
         else process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES = oldAlternates
       }
 
-      writeFileSync(join(repo, 'unrelated.txt'), 'trunk moved independently\n')
-      git(repo, 'add', 'unrelated.txt')
-      git(repo, 'commit', '-m', 'unrelated trunk move')
-      git(branchTree, 'rebase', 'main')
-      const coverage = landingReviewCoverage(branchTree)
-      expect(coverage).toContain(`review ${explicitReview}: carried (patch-id `)
     } finally {
       agent.bin = original.bin
       agent.argv = original.argv

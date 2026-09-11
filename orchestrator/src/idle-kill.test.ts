@@ -98,7 +98,6 @@ describe('idle kill threshold', () => {
     expect(jobIdleKillMs('review-lens', {})).toBe(30 * 60_000 - IDLE_BELOW_WALL_MS)
     expect(jobIdleKillMs('safety', {})).toBe(30 * 60_000 - IDLE_BELOW_WALL_MS)
     expect(jobIdleKillMs('craft', {})).toBe(30 * 60_000 - IDLE_BELOW_WALL_MS)
-    expect(jobIdleKillMs('land', {})).toBe(30 * 60_000 - IDLE_BELOW_WALL_MS)
     expect(jobIdleKillMs('summarize', {})).toBe(20 * 60_000 - IDLE_BELOW_WALL_MS)
     expect(jobIdleKillMs('verify-claim', {})).toBe(20 * 60_000 - IDLE_BELOW_WALL_MS)
     expect(jobIdleKillMs('review-lens-inline', {})).toBe(20 * 60_000 - IDLE_BELOW_WALL_MS)

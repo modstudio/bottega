@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { rmSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
-import { AGENTS, GENERIC_QUESTION_TOKENS, JOBS, LAND_PREAMBLE, NEEDS_HEALTH, OUTPUT_RESERVE, STALE_AFTER_MS, WAKE_COOLDOWN_MS, WORKER_PREAMBLE, addRun, available, candidates, classify, db, detectBlockers, dir, ensureLocalHealth, guide, isNonAnswer, jobTimeoutCeilingMinutes, localReachable, pick, replyFileInstruction, resetLocalHealth, runJob, score, strictCodexSchema, unavailableReason, upsertProject, wakeDecision, workerPreamble, workerResumeGuard } from '../test/fixture.ts'
+import { AGENTS, GENERIC_QUESTION_TOKENS, JOBS, NEEDS_HEALTH, OUTPUT_RESERVE, STALE_AFTER_MS, WAKE_COOLDOWN_MS, WORKER_PREAMBLE, addRun, available, candidates, classify, db, detectBlockers, dir, ensureLocalHealth, guide, isNonAnswer, jobTimeoutCeilingMinutes, localReachable, pick, replyFileInstruction, resetLocalHealth, runJob, score, strictCodexSchema, unavailableReason, upsertProject, wakeDecision, workerPreamble, workerResumeGuard } from '../test/fixture.ts'
 import { addAgent, agentRows, recordAgentProbe, refreshAgents, registrationProbeReadsRepo, removeAgent, setAgent } from './agents.ts'
 
 describe('agent registry', () => {
@@ -978,7 +978,7 @@ describe('only an agent that can be resumed may be asked to escalate', () => {
     expect(j.needs.resumable).toBe(true)
   })
 
-  test('the two hand-rolled job shapes declare their actual bounds', () => {
+  test('the hand-rolled diagnosis job shape declares its actual bounds', () => {
     const diagnose = JOBS.diagnose!
     expect(diagnose.needs).toEqual({ readsRepo: true })
     expect(diagnose.prefer).toEqual(['codex', 'grok'])
@@ -986,11 +986,6 @@ describe('only an agent that can be resumed may be asked to escalate', () => {
     expect(diagnose.timeoutMs).toBe(40 * 60_000)
     expect(JOBS.understand!.timeoutMs).toBe(40 * 60_000)
 
-    const land = JOBS.land!
-    expect(land.needs).toEqual({ readsRepo: true, writesRepo: true, resumable: true })
-    expect(land.prefer).toEqual(['codex'])
-    expect(land.contextTokens).toBe(JOBS.fix!.contextTokens)
-    expect(land.timeoutMs).toBe(30 * 60_000)
   })
 
   test('every job timeout ceiling stays below the stale cutoff', () => {
@@ -1006,20 +1001,7 @@ describe('only an agent that can be resumed may be asked to escalate', () => {
     expect(JOBS['review-lens']!.needs).toEqual({ readsRepo: true })
   })
 
-  test('writing workers may commit only land may merge into trunk', () => {
-    expect(workerPreamble('land')).toBe(LAND_PREAMBLE)
-    expect(LAND_PREAMBLE).toContain('DIFFERENT contract from implement')
-    expect(LAND_PREAMBLE).toContain('You MAY retrieve the named source run')
-    expect(LAND_PREAMBLE).toContain('create the\nrequested commit')
-    expect(LAND_PREAMBLE).toContain('fast-forward trunk to it')
-    expect(LAND_PREAMBLE).toContain('Run the gates after rebasing')
-    expect(LAND_PREAMBLE).toContain('Merge fast-forward only')
-    expect(LAND_PREAMBLE).toContain('Do NOT push')
-    expect(LAND_PREAMBLE).not.toContain('Do NOT merge')
-    expect(LAND_PREAMBLE).toContain('one source run number')
-    expect(LAND_PREAMBLE).toContain('one named target branch')
-    expect(LAND_PREAMBLE).not.toContain('Do NOT commit')
-
+  test('writing workers may commit without changing trunk history', () => {
     for (const name of ['implement', 'fix']) {
       expect(workerPreamble(name)).toBe(WORKER_PREAMBLE)
       expect(workerPreamble(name)).toContain('MAY commit changes to your own throwaway branch')
@@ -1032,8 +1014,6 @@ describe('only an agent that can be resumed may be asked to escalate', () => {
       expect(workerResumeGuard(name)).toContain('may commit to your own throwaway branch')
       expect(workerResumeGuard(name)).toContain('Do not push, merge into trunk, or rewrite history')
     }
-    expect(workerResumeGuard('land')).toContain('merge it into trunk fast-forward only')
-    expect(workerResumeGuard('land')).toContain('Do not push')
   })
 
   test('every agent claiming resumable can actually be resumed', () => {

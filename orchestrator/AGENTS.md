@@ -143,9 +143,8 @@ A review agent may edit and execute tests to verify a hypothesis. Those edits
 are scratch evidence, never a proposed patch: the review's findings are its
 product, and a review worktree diff must not be landed. Implement and fix agents
 may commit to their own run branch; they may not push, merge into trunk, or
-rewrite history. Review agents do not commit, push or merge. A land agent alone
-may fast-forward trunk from its disposable worktree, after rebasing onto current
-trunk and running the gates there. It never pushes.
+rewrite history. Review agents do not commit, push or merge. Admission to trunk
+is a GitHub pull request, merged on GitHub after the local gate passes.
 
 ## Review lenses and reviewer calibration
 
@@ -752,14 +751,14 @@ calibration as evidence accumulates. Nothing enforces them yet.
 A drain loop starts from a `hub task list` snapshot. The sessions working it
 split that board by cluster, give every task one owner, and send the split;
 ownership assumed rather than announced produced collisions. Dispatch stays
-within the lens and landing capacity available to drain it. About eight runs
-per session was the ceiling before landing gates began losing to load. Read
+within the lens and local-gate capacity available to drain it. About eight runs
+per session was the ceiling before gates began losing to load. Read
 every branch's tier from `orch review tier` before dispatching any lens, because
 the tier sets the review budget rather than ratifying it afterwards.
 
 ### FILING
 
-A finding becomes a task only when it blocks a landing or was observed in a
+A finding becomes a task only when it blocks admission or was observed in a
 real run that cost real time. Fix anything smaller inline on the branch that
 surfaced it, or reject it in triage as `below-bar` and put the reason on the
 review row; filing every observation is a loop that cannot end. A mechanism gap
@@ -771,8 +770,8 @@ session finds while working, not only to review findings. An issue that fits in
 one commit the architect can read in a minute — a wrong name in canon, a stale
 sentence, a fixture the trunk moved under, a missing column in a statement, a
 one-line guard — is fixed on the branch at hand, or on a fresh branch cut at trunk
-and landed the same hour at tier 0 or 1, with no task; the landing reason names
-what was fixed and why, so the record carries it without a row on the board. The
+and submitted the same hour at tier 0 or 1, with no task; the commit or task note
+names what was fixed and why, so the record carries it without a row on the board. The
 gate still runs. Two limits: an inline fix never touches a path under a freeze,
 and an inline fix that grows past one readable commit was a task all along —
 stop and file it. Today's evidence: a claim statement missing a column, two
@@ -782,7 +781,7 @@ worth a row, and each would have sat unaddressed as one.
 
 ### TRIPPED
 
-When an agent or landing trips — a harness refusal, lockout, dead resume, or unrelated gate failure — ask one bounded question, answered within a minute and not studied:
+When an agent or gate trips — a harness refusal, lockout, dead resume, or unrelated gate failure — ask one bounded question, answered within a minute and not studied:
 **Has this class tripped before today, or did two checks collide?** If no, patch it now:
 one worker, one round, the violated invariant named in the spec, no task, then move on;
 treating a small issue as a design problem made it big. If yes, step back: name the
@@ -802,31 +801,22 @@ DEV-318 was named only when search found DEV-239's ruling under it after the thi
 ### REVIEW
 
 Tier decides the lens count as above. The architect reads an inline fix round
-after a lens; do not re-lens it except at tier 3 when the fix itself touched the
+after a lens and before opening the pull request; do not re-lens it except at tier 3 when the fix itself touched the
 hot path. The per-tier round ceilings are hard: reaching one means stop and ask,
 not dispatch round four. Read both lenses in a tier-3 pair before writing their
 single fix round, because acting on half the review defeats the pair.
 
-### LANDING
+### ADMISSION
 
-One queue per project owns the cycle: enqueue, rebase, gate, fast-forward,
-migrate. `orch land <branch|run>` records a queued landing row and returns the
-queue position unless `--wait`. A drain process (started by enqueue when no
-queue lock holder exists, exiting when the queue is empty) takes the head,
-rebases it onto current trunk, runs the gate on the commit that will become
-trunk, fast-forwards, then runs install and migrate. The landing lock stays
-fast-forward-only and is never held across a gate. When two or more entries
-are queued, the drain rebases them in order onto trunk in a throwaway
-worktree, gates that tip, fast-forwards trunk to it on green, and bisects on
-red so only the culprit is refused. After each landing, queued or reviewed
-branches whose path set overlaps the landed diff are marked rebase-required;
-disjoint reviews carry by patch-id. `orch land --status` prints the queue,
-path sets, sessions, and locks. Do not announce LANDING/LANDED by message.
-Carry a lens from an older tree manually with DEV-270's four facts instead of
-re-lensing it. Rebase a branch that has fallen behind trunk in the same breath
-as its resume or lens dispatch; the harness refuses a stale caller. Retry a
-landing once when a ceiling flake stops it, then record the flake on DEV-315
-rather than opening another task.
+Run the local gate on the reviewed branch, push it, and open a GitHub pull
+request. GitHub is the admission queue and squash-merge folds checkpoint
+commits. Merge conflicts, including migration-journal collisions, are resolved
+in the branch and gated again. Merge on GitHub; afterwards the main checkout
+pulls the landing branch and runs migrations. Carry a lens from an older tree
+manually with DEV-270's four facts instead of re-lensing it. Rebase a branch
+that has fallen behind trunk in the same breath as its resume or lens dispatch;
+the harness refuses a stale caller. Retry a gate once when a ceiling flake
+stops it, then record the flake on DEV-315 rather than opening another task.
 
 ### END
 
@@ -845,25 +835,22 @@ their resolving command.
 
 A run: `reserved → attached → running → asking → ok | failed | stopped | stale`; a chain inherits its last turn's state.
 
-A branch: `cut → built → reviewed → rebased → landed | abandoned`; review follows a patch-preserving rebase over disjoint paths, while rework outdates it.
+A branch: `cut → built → reviewed → pull-requested → merged | abandoned`; rework outdates its review.
 
-Trunk: `free | locked-by-landing`.
+Trunk moves through a GitHub pull request merged on GitHub.
 
-There are three lock purposes, and three lock files. Worktree creation
+There are two lock purposes, and two lock files. Worktree creation
 and resume attachment take `worktree.ts:withWorktreeCreateLock` (`orch-create.lock`),
-landing takes `landing.ts:land` (`orch-landing.lock`), and cleanup from discard,
-abandon, stop and sweep takes `cli.ts:withCleanupLock` (`orch-cleanup.lock`).
-Creation protects a new tree through provisioning and attribution; landing
-protects the trunk decision and ref update; cleanup protects ownership checks
-and removal. **One lock per purpose.** Creation, landing and cleanup are three
-purposes. Their sharing was the cause of DEV-316, closed in chunk 3 (`5cb76a2`).
+and cleanup from discard, abandon, stop and sweep takes
+`cli.ts:withCleanupLock` (`orch-cleanup.lock`). Creation protects a new tree
+through provisioning and attribution; cleanup protects ownership checks and
+removal. **One lock per purpose.**
 
-Attachment, landing and cleanup of the **same** worktree also take a
+Attachment and cleanup of the **same** worktree also take a
 per-artifact lease named `tree-<hash>` of that path
 (`worktree.ts:withWorktreeLease`). The lease is always first and the purpose
-lock second, so the three purposes cannot interleave on one tree and cannot
-deadlock. Landing holds the lease for its whole critical path, including the
-gate that sits outside `orch-landing.lock`.
+lock second, so these operations cannot interleave on one tree and cannot
+deadlock.
 
 The invariants are:
 
@@ -888,16 +875,15 @@ The invariants are:
   A sample taken within one second of the checkout's index
   mtime is untrusted and re-taken. A HEAD that moved with a clean tree is an
   edit-commit cycle by someone else. Attribution is the index.lock holder pid
-  and its session, or the landing session that moved HEAD, or unattributed.
-  "The main checkout must be on trunk" still belongs to landing
-  (`landing.ts:assertMainCheckoutOnTrunk`).
+  and its session, a historical landing row that moved HEAD, or unattributed.
+  The project register declares the landing branch that the main checkout pulls.
 - **The watch set is the run's own project plus the caller checkout, never a
   third project.** Measured 2026-09-07: 25 escapes in a day, 4.9 hours, sixteen
   of them another project's checkout changing under a worker that never touched
   it. A change elsewhere is not this run's escape.
-- **Only an overlapping outside change blocks a landing.** If the run's own
+- **Only an overlapping outside change blocks admission.** If the run's own
   diff overlaps the divergent paths the run is `escaped` (`confinement:
-  overlapping outside change`) and landing refuses until the architect rules;
+  overlapping outside change`) and no pull request opens until the architect rules;
   otherwise the run completes with the attributed event on its row. Evidence is
   never dropped by the detector: findings stay in `orch result`, the run stays
   scoreable, and a review records itself. The chain root and trip-time tip are
@@ -932,8 +918,8 @@ The invariants are:
   DDL only so a backfill can evolve. `spec_sha` is backfilled in TypeScript on
   every migrate. The ahead ceiling keys on idx (applied count vs journal
   length), not the last entry's `when`; a when-unordered journal is still
-  refused at load. `orch land` runs `orch migrate` and `hub migrate` when the
-  landed diff carries a journal path.
+  refused at load. After a GitHub merge, the main checkout pulls and runs
+  `orch migrate` and `hub migrate`.
   `schema.ts` is the typed declaration, but Drizzle Kit's generator is not
   authoritative for this SQLite store: it cannot preserve table UNIQUE
   constraints or COALESCE expression indexes, so migrations are hand-written
@@ -965,13 +951,6 @@ The invariants are:
   damage is guarded (the preload and `test/fixture.ts` each refuse a store the
   preload did not mint under the temporary directory), and the vector stays honest (the register's worktree
   note says the live path is read-only from a tree's binary).
-- **One queue per project owns the cycle.** Enqueue is the default; a drain
-  process holds `orch-queue.lock` while it rebases, gates, fast-forwards and
-  migrates, then exits. The landing lock remains fast-forward-only.
-- **Landing holds its lock only for the trunk re-check, guard verification and
-  fast-forward, never for a gate.** A gate is long and proves a commit without
-  owning trunk. A moved trunk releases the lock, re-gates, and re-acquires.
-  A merge-group gate runs on the exact commit that becomes trunk.
 - **A lock waiter is served in arrival order.** Otherwise a stream of short
   holders can starve a long waiter. `worktree.ts:withProjectLock` records waiters
   whose names start with a monotonic ticket taken under mkdir-atomic discipline
@@ -981,41 +960,25 @@ The invariants are:
   the stores, CPU, vendor quotas and walls, review evidence, the register, and
   the purpose locks. `contention` is the ledger: each site writes its row in the
   same transaction as its own record. `orch health` prices the class per
-  resource per session; `orch land --status` prints today's queue from those
-  rows. Never inferred later, and never routing evidence.
+  resource per session. Never inferred later, and never routing evidence.
 - **Every refusal names the invariant it protects and the command that clears
   it.** A refusal without both leaves an operator unable to distinguish safety
   from mechanism or to recover without reading source.
-- **The guard on disk is verified against HEAD, not the index, before any
-  fast-forward.** The index may already contain the disabling bytes.
-  `landing.ts:sharedGuardResidue` and `restoreSharedGuard` compare with and
-  restore from HEAD under a hermetic git environment.
 - **A reclaim removes exactly the acquisition it classified as stale, never a
   replacement.** A reusable pathname is not identity. Reclaim fences by an
   incarnation id written into the lock owner record and checked after rename
   before removal. Liveness classification parses process identity strictly and
   treats malformed or locale-dependent output as unknown, never stale.
-- **A failed landing leaves the branch worktree as it found it.** Failure must
-  not turn a retry into recovery work. Landing refuses before any rebase when
-  the branch worktree has uncommitted tracked changes or a rebase in progress,
-  naming this invariant and `git -C <tree> stash` / `git -C <tree> rebase --abort`.
-  `landing.ts:rebaseAndGate` then records the branch tip and index before it
-  rebases and restores HEAD, the branch ref and the index without `--force`
-  when the gate or the rebase fails, so restore only ever runs on a clean tree.
 
 | gap | invariant violated | code path (file:function) | what chunk 3 changes |
 |---|---|---|---|
 | DEV-348 live-store lifecycle rows | a linked-worktree binary cannot write run or project rows to the registered main store unless `ORCH_DB_WRITE=1` explicitly authorises it | `db.ts:db`, `db.ts:writableDb` | linked-worktree reads remain available; an explicit scratch `ORCH_DB` remains writable; naming the registered store is location, not write authority. |
 | DEV-314 | only the main-checkout binary migrates | `database-location.ts:resolveDatabase`; `db.ts:applySchema`, `rebuildTable`, `initializeDatabase`, `migrateDatabase` | closed in chunk 3 (`5cb76a2`, round 2): location is `ORCH_DB`; `initializeDatabase` refuses a linked-worktree binary regardless of path; `orch migrate` is the operator command; fixtures call `applySchemaForFixture`. |
-| DEV-316 | one lock per purpose; FIFO waiters; per-artifact lease | `worktree.ts:withWorktreeCreateLock`, `withProjectLock`, `withWorktreeLease`; `cli.ts:withCleanupLock`; `landing.ts:land` | closed in chunk 3 (`5cb76a2`, round 2): three purpose locks; lease first, purpose lock second; waiter names start with a monotonic ticket. |
+| DEV-316 | one lock per purpose; FIFO waiters; per-artifact lease | `worktree.ts:withWorktreeCreateLock`, `withProjectLock`, `withWorktreeLease`; `cli.ts:withCleanupLock` | creation and cleanup use separate purpose locks; lease first, purpose lock second; waiter names start with a monotonic ticket. |
 | DEV-318 | a chain resumes in its own stale checkout | `cli.ts:continueRun`, `detach`; `run.ts:preflight`, `run`, `namesRecordedRunTree`; `worktree.ts:assertCallerAncestry` | closed in chunk 3 (`5cb76a2`, round 2): exemption from explicit resume identity only; query by the identity in hand; stale new dispatch from a recorded cwd is not exempt. |
 | DEV-224 review 142/143: replacement race | reclaim only the classified acquisition | `worktree.ts:reclaimStaleProjectLock` | closed in chunk 3 (`5cb76a2`, round 2): incarnation id fenced after rename; env-driven pause after classification before removal. |
 | DEV-224 review 142: locale-dependent birth time | a live holder is never classified stale by observer locale | `worktree.ts:processStartTime`, `staleProjectLockHolder` | closed in chunk 3 (`5cb76a2`): `LC_ALL=C` birth string; legacy null startTime is liveness-only. |
 | DEV-224 review 143: malformed process output | indeterminate liveness cannot prove staleness | `worktree.ts:processStartTime`, `staleProjectLockHolder` | closed in chunk 3 (`5cb76a2`): strict parse; malformed output is unknown, never stale. |
-| DEV-224 review 142/143: staged guard stub | guard bytes and mode equal HEAD before fast-forward | `landing.ts:sharedGuardResidue`, `restoreSharedGuard`, `land` | closed in chunk 3 (`5cb76a2`): compare and restore from HEAD, then verify before the ref update. |
-| DEV-224 review 143: inherited Git environment | guard repair addresses the source repository's objects | `landing.ts:inspectionGit`, `restoreSharedGuard` | closed in chunk 3 (`5cb76a2`): hermetic `scrubbedGitEnv` for inspection and repair. |
-| failed landing residue | a failed landing leaves the branch worktree as it found it | `landing.ts:rebaseAndGate`, `assertLandingWorktreeReady` | closed in chunk 3 (`5cb76a2`, round 2): refuse dirty tracked / rebase-in-progress before rebase; restore HEAD, ref and index without `--force`. |
-| `orch land --status` hang | status answers without a lock and without scanning refs | `landing.ts:landingStatus` | closed in chunk 3 (`5cb76a2`): lock-state only; coverage and git-lock scans are separate. |
 
 Chunk 3 landed the candidates from DEV-224-orch-2185 (reviews 142/143), taking the helper names and the conservative null-startTime fallback, and rejecting the classify-before-rename reclaim, index-based guard diff/restore, and locale-dependent `ps` parse.
 
@@ -1116,10 +1079,8 @@ rewrite history. The branch diff is still the thing the architect judges.
 The harness checkpoints staged and modified tracked work every ten minutes and
 at every limit or stop. A worker may rely on that safety net, and records the
 last completed item in `$ORCH_SCRATCH/progress.json` after each item so a new
-turn resumes from an explicit task pointer rather than inferred prose. Landing
-folds each checkpoint into the authored commit that follows it; a trailing
-checkpoint remains visible, and `orch land --keep-checkpoints` preserves the
-checkpoint history verbatim.
+turn resumes from an explicit task pointer rather than inferred prose. GitHub
+squash-merge folds checkpoint commits into the pull request's merged commit.
 
 This is an authorship boundary, not ceremony. A run once returned with four
 thousand lines of another session's uncommitted work carried into its tree, and
@@ -1130,24 +1091,9 @@ rather than a matter of recognition. `changesIn` stages everything and diffs
 against the immutable run base, so committed and uncommitted work still appear
 together in `orch diff` while their authorship remains visible in history.
 
-A land worker has a different contract because transfer is its whole job. It
-rebases its named branch onto current trunk, applies the approved diff, runs the
-gates after that rebase, commits it, and fast-forwards trunk to the commit. The
-merge is fast-forward only, and it never pushes.
-
-The landing lock serializes concurrent landings' fast-forward of trunk. It does
-not cover installation or replacement of the shared `reference-transaction`
-guard: guard preparation happens before the lock is acquired. DEV-225 exposed
-that boundary when two landings clobbered the tracked shared guard; DEV-248
-showed that the guard's placement is a separate protection boundary, not one the
-landing lock supplies.
-
-Trunk moves under a landing run, because sessions land concurrently: whoever is
-second finds a green gate that ran before the rebase the merge now needs. So a
-refused fast-forward is a lost race, not a verdict — rebase onto the new trunk,
-gate again, and retry, up to three attempts in total. Three losses in a row are
-no longer a race, and that is when the work needs judgement and comes back. A
-conflict is never resolved unsupervised.
+The architect runs the gate on the reviewed branch, pushes it, opens a pull
+request, and merges it on GitHub. The main checkout pulls afterwards and runs
+migrations.
 
 **An architect session with files to commit while workers are running uses a
 worktree, not a branch in the shared checkout.** This is the same rule as the one
@@ -1198,8 +1144,8 @@ the explicit instruction to delete it anyway. The refusal names both the commit
 count and that command. A run that committed nothing still discards routinely.
 Once worker commits land anywhere else they stop being unique, so their run
 branch also discards routinely. Abandoned unique commits remain because they
-are real, judgeable work, not worker debris. A land worker's commit is expected
-and must already be on trunk before its worktree is discarded.
+are real, judgeable work, not worker debris. A merged branch is recoverable
+from the GitHub pull request before its worktree is discarded.
 
 ## You file it, you fix it
 
@@ -1710,7 +1656,7 @@ markdown beside 34 live task keys belonging to other projects.
 registration.** The first costs a worktree, a vendor clone and someone's
 afternoon. The second costs a sentence when the project is set up. Registration
 checks the declared landing branch against HEAD and any canon integration-branch
-rule; landings never fast-forward a configured production branch.
+rule; pull requests target the landing branch, never a configured production branch.
 
 The reverse mistake is still the same defect. A fact that does not vary by
 project must not be copied into project settings: five copies go stale in four
@@ -1861,8 +1807,8 @@ were raised by hand; this paragraph is the policy.
 
 Every CLI test file declares a size in `orchestrator/test/shards.json`: **short**
 (30 s), **moderate** (120 s) or **long** (600 s). The shard runner passes that
-bound; the unit leg keeps 5 s. Files that hold project locks or spawn landings
-are **exclusive** and never share a shard with each other.
+bound; the unit leg keeps 5 s. Files that hold project locks are **exclusive**
+and never share a shard with each other.
 
 The gate retries a failed shard **once**, and only when the failure matches a
 named signal: a timeout, exit 143, a lock wait, or a listen EPERM. A pass after
@@ -1873,8 +1819,8 @@ again. There is no blanket retry.
 
 The shard runner measures host load — running gates, CPU, memory — and holds a
 shard while more than two gates are running, or while loadavg is at or above
-ncpu, or while free RAM is under 1 GiB. `gate-load.ts` is the same limit the
-landing queue consults. Sub-second product bounds that tests exercise (the
+ncpu, or while free RAM is under 1 GiB. `gate-load.ts` defines that shared
+limit. Sub-second product bounds that tests exercise (the
 sweep's docker inventory 1 s, and elapsed assertions that must stay well under
 a lock wait) are set from the file's size class: docker via
 `ORCH_DOCKER_INVENTORY_TIMEOUT_MS` when the shard runs; elapsed via
@@ -2112,7 +2058,7 @@ Enable the git side once per clone with `git config core.hooksPath .githooks`.
 `hooks/protect-main-checkout.py` is a Claude Code `PreToolUse` hook on `Write`,
 `Edit` and `NotebookEdit` only. It denies a tracked-file edit inside any
 registered main checkout and names the worktree to use instead (both anchored
-lines). It does not run on Bash, so landings, orch and ordinary builds are not
+lines). It does not run on Bash, so orch commands and ordinary builds are not
 blocked. A project that declared `{"requireCleanMain": false}` is exempt, same
 as dispatch. Fail-open on a missing database, a malformed payload, or git
 failure. This is harness-specific and lives here, not in the root `AGENTS.md`.
