@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { READONLY_PREAMBLE, db, dir, replyFileInstruction, runCollectionDescribeFixture, upsertProject } from '../fixture.ts'
+import { READONLY_PREAMBLE, db, dir, replyFileInstruction, runCollectionDescribeFixture, stubWorker, upsertProject } from '../fixture.ts'
 
 // Retry delivery crosses the detach: the observable effect is the replacement
 // child's prompt on disk after a real orch child ran. That is the process
@@ -31,11 +31,10 @@ describe('retry process boundary', () => {
       .toEqual({ delivery_pending_at: expect.any(String) })
 
     const binDir = mkdtempSync(join(tmpdir(), 'orch-failed-stranded-retry-'))
-    writeFileSync(join(binDir, 'grok'), '#!/bin/sh\necho ok\n')
-    chmodSync(join(binDir, 'grok'), 0o755)
+    symlinkSync(stubWorker(), join(binDir, 'grok'))
     try {
       const retried = orchInput(['retry', String(child), '--agent', 'grok'], undefined, {
-        PATH: `${binDir}:${process.env.PATH ?? ''}`,
+        PATH: `${binDir}:${process.env.PATH ?? ''}`, ORCH_STUB_OUTPUT: 'ok',
       })
       expect(retried.code, retried.err).toBe(0)
       const replacement = db().query('SELECT prompt_path FROM run WHERE retry_of=?').get(child) as
@@ -65,8 +64,7 @@ describe('retry process boundary', () => {
     expect(orch('answer', String(id), '--record-only', 'use the existing shape').code).toBe(0)
 
     const binDir = mkdtempSync(join(tmpdir(), 'orch-writing-warning-retry-'))
-    writeFileSync(join(binDir, 'codex'), '#!/bin/sh\nexit 99\n')
-    chmodSync(join(binDir, 'codex'), 0o755)
+    symlinkSync(stubWorker({ exitCode: 99 }), join(binDir, 'codex'))
     try {
       const retried = orchInput(['retry', String(id)], undefined, {
         PATH: `${binDir}:${process.env.PATH ?? ''}`,
@@ -89,9 +87,9 @@ describe('retry process boundary', () => {
     const original = 'What does bar.ts do?'; const promptPath = join(dir, 'retry-original.prompt.txt'); writeFileSync(promptPath, original)
     const schemaPath = join(dir, 'retry-schema.json'); writeFileSync(schemaPath, JSON.stringify({ type: 'object', properties: { answer: { type: 'string' } }, required: ['answer'], additionalProperties: false }))
     const id = insert('failed', 'file-question'); db().query("UPDATE run SET agent='grok',prompt_path=?,mcp=2,mcp_error='mirror: original attach failed',schema_path=?,model='retry-model',cwd=? WHERE id=?").run(promptPath, schemaPath, dir, id)
-    const binDir = mkdtempSync(join(tmpdir(), 'orch-fake-grok-retry-')); writeFileSync(join(binDir, 'grok'), '#!/bin/sh\necho \'{"answer":"ok"}\' > "$ORCH_SCRATCH/reply.json"\necho ok\n'); chmodSync(join(binDir, 'grok'), 0o755)
+    const binDir = mkdtempSync(join(tmpdir(), 'orch-fake-grok-retry-')); symlinkSync(stubWorker(), join(binDir, 'grok'))
     try {
-      const result = orchInput(['retry', String(id)], undefined, { PATH: `${binDir}:${process.env.PATH ?? ''}` }); expect(result.code, result.err).toBe(0)
+      const result = orchInput(['retry', String(id)], undefined, { PATH: `${binDir}:${process.env.PATH ?? ''}`, ORCH_STUB_REPLY: '{"answer":"ok"}', ORCH_STUB_OUTPUT: 'ok' }); expect(result.code, result.err).toBe(0)
       const child = db().query('SELECT prompt_path,mcp,schema_path,model,retry_of,agent FROM run WHERE retry_of=?').get(id) as { prompt_path: string; mcp: number; schema_path: string; model: string; retry_of: number; agent: string }
       expect(child).toMatchObject({ mcp: 2, schema_path: schemaPath, model: 'retry-model', retry_of: id, agent: 'grok' }); expect(readFileSync(child.prompt_path, 'utf8')).toBe(original)
       const bound = readFileSync(child.prompt_path.replace(/\.prompt\.txt$/, '.bound.txt'), 'utf8'); expect(bound.split(READONLY_PREAMBLE)).toHaveLength(2); expect(bound.startsWith(replyFileInstruction('retry-schema.json'))).toBe(true); expect(bound.endsWith(original)).toBe(true)
@@ -99,7 +97,7 @@ describe('retry process boundary', () => {
   })
 
   test('retry of an implement run continues its session detached and prints the child id', () => {
-    const binDir = mkdtempSync(join(tmpdir(), 'orch-fake-codex-retry-')); writeFileSync(join(binDir, 'codex'), '#!/bin/sh\nexit 0\n'); chmodSync(join(binDir, 'codex'), 0o755)
+    const binDir = mkdtempSync(join(tmpdir(), 'orch-fake-codex-retry-')); symlinkSync(stubWorker(), join(binDir, 'codex'))
     const id = insert('failed', 'implement'); db().query("UPDATE run SET vendor_session='retry-session',cwd=? WHERE id=?").run(dir, id)
     try {
       const result = orchInput(['retry', String(id)], undefined, { PATH: `${binDir}:${process.env.PATH ?? ''}`, FORCE_COLOR: '1' }); expect(result.code, result.err).toBe(0)

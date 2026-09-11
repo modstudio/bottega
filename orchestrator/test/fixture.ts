@@ -131,6 +131,8 @@ export function stubWorker(opts: {
   const lines = ['#!/bin/sh', 'set -e']
   lines.push(
     '[ -z "$ORCH_STUB_PID_FILE" ] || echo "$$" > "$ORCH_STUB_PID_FILE"',
+    'case " $* " in *" mcp doctor "*) [ -z "$ORCH_STUB_MCP_DOCTOR_OUTPUT" ] || { printf "%s" "$ORCH_STUB_MCP_DOCTOR_OUTPUT"; exit 0; } ;; esac',
+    '[ -z "$ORCH_STUB_REPLY" ] || printf "%s" "$ORCH_STUB_REPLY" > "$ORCH_SCRATCH/reply.json"',
     '[ -z "$ORCH_STUB_OUTPUT" ] || printf "%s\\n" "$ORCH_STUB_OUTPUT"',
     '[ -z "$ORCH_STUB_READY_FILE" ] || printf "ready\\n" > "$ORCH_STUB_READY_FILE"',
   )
