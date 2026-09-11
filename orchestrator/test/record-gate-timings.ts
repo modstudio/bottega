@@ -84,8 +84,10 @@ function parseJunit(xml: string): {
     const timeS = Number(attrs.match(/\btime="([^"]+)"/)?.[1] ?? 0)
     if (file) {
       fileWall.set(file, Math.max(fileWall.get(file) ?? 0, timeS * 1000))
-      suiteTests.set(file, Number(attrs.match(/\btests="([^"]+)"/)?.[1] ?? 0))
-      suiteFailures.set(file, Number(attrs.match(/\bfailures="([^"]+)"/)?.[1] ?? 0))
+      const tests = Number(attrs.match(/\btests="([^"]+)"/)?.[1] ?? 0)
+      const failures = Number(attrs.match(/\bfailures="([^"]+)"/)?.[1] ?? 0)
+      suiteTests.set(file, Math.max(suiteTests.get(file) ?? 0, tests))
+      suiteFailures.set(file, Math.max(suiteFailures.get(file) ?? 0, failures))
     }
   }
   const tests: TestRow[] = []

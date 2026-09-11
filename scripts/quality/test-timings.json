@@ -1,133 +1,91 @@
 [
   {
-    "path": "orchestrator/(process)",
-    "wallMs": 0,
-    "tests": 0,
-    "cliShaped": false,
-    "spawns": 969
-  },
-  {
-    "path": "orchestrator/(process)",
-    "wallMs": 0,
-    "tests": 0,
-    "cliShaped": false,
-    "spawns": 226
-  },
-  {
-    "path": "orchestrator/(process)",
-    "wallMs": 0,
-    "tests": 0,
-    "cliShaped": false,
-    "spawns": 144
-  },
-  {
-    "path": "orchestrator/(process)",
-    "wallMs": 0,
-    "tests": 0,
-    "cliShaped": false,
-    "spawns": 56
-  },
-  {
-    "path": "orchestrator/(process)",
-    "wallMs": 0,
-    "tests": 0,
-    "cliShaped": false,
-    "spawns": 276
-  },
-  {
-    "path": "orchestrator/(process)",
-    "wallMs": 0,
-    "tests": 0,
-    "cliShaped": false,
-    "spawns": 307
-  },
-  {
     "path": "orchestrator/scripts/acp-parity.test.ts",
-    "wallMs": 52,
+    "wallMs": 45,
     "tests": 1,
     "cliShaped": false,
     "spawns": 0
   },
   {
     "path": "orchestrator/src/agents-sandbox-1.cli.test.ts",
-    "wallMs": 16486,
+    "wallMs": 16503,
     "tests": 23,
     "cliShaped": true,
     "spawns": 750
   },
   {
     "path": "orchestrator/src/agents-sandbox-2.cli.test.ts",
-    "wallMs": 7617,
-    "tests": 0,
+    "wallMs": 7784,
+    "tests": 5,
     "cliShaped": true,
     "spawns": 294
   },
   {
     "path": "orchestrator/src/agents.cli.test.ts",
-    "wallMs": 16283,
+    "wallMs": 16191,
     "tests": 25,
     "cliShaped": true,
     "spawns": 735
   },
   {
     "path": "orchestrator/src/agents.test.ts",
-    "wallMs": 4821,
+    "wallMs": 1941,
     "tests": 1,
     "cliShaped": false,
     "spawns": 162
   },
   {
     "path": "orchestrator/src/args.test.ts",
-    "wallMs": 92,
-    "tests": 0,
+    "wallMs": 90,
+    "tests": 3,
     "cliShaped": false,
     "spawns": 0
   },
   {
     "path": "orchestrator/src/ask-loopback.test.ts",
-    "wallMs": 13,
-    "tests": 0,
+    "wallMs": 12,
+    "tests": 1,
     "cliShaped": false,
     "spawns": 0
   },
   {
     "path": "orchestrator/src/canon.cli.test.ts",
-    "wallMs": 6756,
+    "wallMs": 6956,
     "tests": 5,
     "cliShaped": true,
-    "spawns": 67
+    "spawns": 53
   },
   {
     "path": "orchestrator/src/canon.test.ts",
-    "wallMs": 3802,
-    "tests": 0,
+    "wallMs": 3842,
+    "tests": 1,
     "cliShaped": false,
     "spawns": 7
   },
   {
     "path": "orchestrator/src/catalog.cli.test.ts",
-    "wallMs": 437,
+    "wallMs": 454,
     "tests": 2,
     "cliShaped": true,
     "spawns": 3
   },
   {
     "path": "orchestrator/src/checkpoint.test.ts",
-    "wallMs": 5479,
-    "tests": 0,
+    "wallMs": 5543,
+    "tests": 7,
     "cliShaped": false,
     "spawns": 202
   },
   {
     "path": "orchestrator/src/cli-answer.cli.test.ts",
-    "wallMs": 24056,
-    "tests": 0,
+    "wallMs": 24138,
+    "tests": 24,
     "cliShaped": true,
     "spawns": 39
   },
   {
     "path": "orchestrator/src/cli-do-1.cli.test.ts",
-    "wallMs": 29430,
+    "wallMs": 30018,
     "tests": 55,
     "cliShaped": true,
     "spawns": 235
@@ -135,112 +93,112 @@
   {
     "path": "orchestrator/src/cli-imports.test.ts",
     "wallMs": 17,
-    "tests": 0,
+    "tests": 2,
     "cliShaped": false,
     "spawns": 0
   },
   {
     "path": "orchestrator/src/cli-projects.cli.test.ts",
-    "wallMs": 22424,
+    "wallMs": 22739,
     "tests": 63,
     "cliShaped": true,
     "spawns": 212
   },
   {
     "path": "orchestrator/src/cli-runs.cli.test.ts",
-    "wallMs": 37711,
-    "tests": 81,
+    "wallMs": 37687,
+    "tests": 1,
     "cliShaped": true,
     "spawns": 357
   },
   {
     "path": "orchestrator/src/close-out.test.ts",
-    "wallMs": 12954,
-    "tests": 0,
+    "wallMs": 12882,
+    "tests": 35,
     "cliShaped": false,
     "spawns": 647
   },
   {
     "path": "orchestrator/src/collect.test.ts",
-    "wallMs": 65,
-    "tests": 0,
+    "wallMs": 49,
+    "tests": 6,
     "cliShaped": false,
     "spawns": 0
   },
   {
     "path": "orchestrator/src/confinement.test.ts",
-    "wallMs": 207,
+    "wallMs": 213,
     "tests": 11,
     "cliShaped": false,
     "spawns": 31
   },
   {
     "path": "orchestrator/src/contention.test.ts",
-    "wallMs": 1263,
-    "tests": 0,
+    "wallMs": 1285,
+    "tests": 1,
     "cliShaped": false,
     "spawns": 20
   },
   {
     "path": "orchestrator/src/contract.test.ts",
-    "wallMs": 14,
-    "tests": 0,
+    "wallMs": 10,
+    "tests": 2,
     "cliShaped": false,
     "spawns": 0
   },
   {
     "path": "orchestrator/src/db.test.ts",
-    "wallMs": 39,
-    "tests": 0,
+    "wallMs": 38,
+    "tests": 2,
     "cliShaped": false,
     "spawns": 0
   },
   {
     "path": "orchestrator/src/dispatch-preflight.test.ts",
-    "wallMs": 22,
-    "tests": 0,
+    "wallMs": 32,
+    "tests": 1,
     "cliShaped": false,
     "spawns": 1
   },
   {
     "path": "orchestrator/src/docker-resources.test.ts",
-    "wallMs": 209,
-    "tests": 0,
+    "wallMs": 266,
+    "tests": 12,
     "cliShaped": false,
     "spawns": 15
   },
   {
     "path": "orchestrator/src/docs.cli.test.ts",
-    "wallMs": 23277,
+    "wallMs": 23418,
     "tests": 69,
     "cliShaped": true,
     "spawns": 207
   },
   {
     "path": "orchestrator/src/duel.test.ts",
-    "wallMs": 51,
-    "tests": 0,
+    "wallMs": 55,
+    "tests": 5,
     "cliShaped": false,
     "spawns": 0
   },
   {
     "path": "orchestrator/src/epic.cli.test.ts",
-    "wallMs": 1325,
+    "wallMs": 1319,
     "tests": 11,
     "cliShaped": true,
     "spawns": 7
   },
   {
     "path": "orchestrator/src/evals.cli.test.ts",
-    "wallMs": 224,
+    "wallMs": 204,
     "tests": 2,
     "cliShaped": true,
     "spawns": 14
   },
   {
     "path": "orchestrator/src/events.test.ts",
-    "wallMs": 2014,
-    "tests": 0,
+    "wallMs": 2008,
+    "tests": 1,
     "cliShaped": false,
     "spawns": 10
   },
@@ -253,8 +211,8 @@
   },
   {
     "path": "orchestrator/src/evidence.test.ts",
-    "wallMs": 85,
-    "tests": 0,
+    "wallMs": 102,
+    "tests": 9,
     "cliShaped": false,
     "spawns": 0
   },
@@ -267,113 +225,113 @@
   },
   {
     "path": "orchestrator/src/failure.test.ts",
-    "wallMs": 20,
-    "tests": 0,
+    "wallMs": 18,
+    "tests": 2,
     "cliShaped": false,
     "spawns": 0
   },
   {
     "path": "orchestrator/src/gate-load.test.ts",
-    "wallMs": 356,
-    "tests": 0,
+    "wallMs": 348,
+    "tests": 1,
     "cliShaped": false,
     "spawns": 3
   },
   {
     "path": "orchestrator/src/gate-policy.test.ts",
-    "wallMs": 380,
-    "tests": 0,
+    "wallMs": 256,
+    "tests": 5,
     "cliShaped": false,
     "spawns": 7
   },
   {
     "path": "orchestrator/src/git-environment-regression.cli.test.ts",
-    "wallMs": 5254,
+    "wallMs": 5658,
     "tests": 2,
     "cliShaped": true,
     "spawns": 2
   },
   {
     "path": "orchestrator/src/health.test.ts",
-    "wallMs": 631,
+    "wallMs": 640,
     "tests": 8,
     "cliShaped": false,
     "spawns": 4
   },
   {
     "path": "orchestrator/src/heartbeat-hooks.test.ts",
-    "wallMs": 9477,
-    "tests": 0,
+    "wallMs": 9488,
+    "tests": 21,
     "cliShaped": false,
     "spawns": 36
   },
   {
     "path": "orchestrator/src/idle-kill.test.ts",
-    "wallMs": 47072,
+    "wallMs": 47069,
     "tests": 6,
     "cliShaped": false,
     "spawns": 175
   },
   {
     "path": "orchestrator/src/issue.cli.test.ts",
-    "wallMs": 2443,
+    "wallMs": 2445,
     "tests": 1,
     "cliShaped": true,
-    "spawns": 163
+    "spawns": 156
   },
   {
     "path": "orchestrator/src/issue.test.ts",
-    "wallMs": 63,
-    "tests": 0,
+    "wallMs": 55,
+    "tests": 7,
     "cliShaped": false,
     "spawns": 0
   },
   {
     "path": "orchestrator/src/lenses.test.ts",
-    "wallMs": 56,
-    "tests": 0,
+    "wallMs": 42,
+    "tests": 5,
     "cliShaped": false,
     "spawns": 0
   },
   {
     "path": "orchestrator/src/lifecycle-harness.cli.test.ts",
-    "wallMs": 3053,
+    "wallMs": 3036,
     "tests": 6,
     "cliShaped": true,
     "spawns": 78
   },
   {
     "path": "orchestrator/src/linked-worktree-database.cli.test.ts",
-    "wallMs": 2640,
+    "wallMs": 2576,
     "tests": 8,
     "cliShaped": true,
     "spawns": 20
   },
   {
     "path": "orchestrator/src/mcp-probe.test.ts",
-    "wallMs": 5405,
+    "wallMs": 5475,
     "tests": 4,
     "cliShaped": false,
     "spawns": 281
   },
   {
     "path": "orchestrator/src/monitor.cli.test.ts",
-    "wallMs": 28450,
-    "tests": 0,
+    "wallMs": 28407,
+    "tests": 15,
     "cliShaped": true,
     "spawns": 135
   },
   {
     "path": "orchestrator/src/outcome.test.ts",
-    "wallMs": 23,
+    "wallMs": 28,
     "tests": 3,
     "cliShaped": false,
     "spawns": 0
   },
   {
     "path": "orchestrator/src/pack-budget.test.ts",
-    "wallMs": 366,
-    "tests": 0,
+    "wallMs": 389,
+    "tests": 6,
     "cliShaped": false,
     "spawns": 3
   },
@@ -386,259 +344,259 @@
   },
   {
     "path": "orchestrator/src/postgres-rls.test.ts",
-    "wallMs": 37,
+    "wallMs": 41,
     "tests": 7,
     "cliShaped": false,
     "spawns": 0
   },
   {
     "path": "orchestrator/src/projects.cli.test.ts",
-    "wallMs": 1680,
-    "tests": 0,
+    "wallMs": 1886,
+    "tests": 16,
     "cliShaped": true,
     "spawns": 72
   },
   {
     "path": "orchestrator/src/projects.test.ts",
-    "wallMs": 4285,
-    "tests": 0,
+    "wallMs": 4264,
+    "tests": 25,
     "cliShaped": false,
     "spawns": 290
   },
   {
     "path": "orchestrator/src/protect-main-checkout.test.ts",
-    "wallMs": 892,
+    "wallMs": 928,
     "tests": 1,
     "cliShaped": false,
     "spawns": 44
   },
   {
     "path": "orchestrator/src/reader-contract.cli.test.ts",
-    "wallMs": 18171,
+    "wallMs": 17775,
     "tests": 2,
     "cliShaped": true,
     "spawns": 450
   },
   {
     "path": "orchestrator/src/reclaim.cli.test.ts",
-    "wallMs": 11000,
+    "wallMs": 10911,
     "tests": 20,
     "cliShaped": true,
     "spawns": 231
   },
   {
     "path": "orchestrator/src/resource-inventory.test.ts",
-    "wallMs": 385,
+    "wallMs": 386,
     "tests": 2,
     "cliShaped": false,
     "spawns": 33
   },
   {
     "path": "orchestrator/src/resource-ownership.test.ts",
-    "wallMs": 106,
-    "tests": 0,
+    "wallMs": 104,
+    "tests": 7,
     "cliShaped": false,
     "spawns": 7
   },
   {
     "path": "orchestrator/src/review-1.cli.test.ts",
-    "wallMs": 6470,
-    "tests": 0,
+    "wallMs": 6635,
+    "tests": 30,
     "cliShaped": true,
-    "spawns": 302
+    "spawns": 362
   },
   {
     "path": "orchestrator/src/review-2.cli.test.ts",
-    "wallMs": 28447,
-    "tests": 1,
+    "wallMs": 30123,
+    "tests": 38,
     "cliShaped": true,
-    "spawns": 1358
+    "spawns": 1468
   },
   {
     "path": "orchestrator/src/review-3.cli.test.ts",
-    "wallMs": 14251,
+    "wallMs": 14365,
     "tests": 11,
     "cliShaped": true,
-    "spawns": 877
+    "spawns": 878
   },
   {
     "path": "orchestrator/src/review-tier.test.ts",
-    "wallMs": 81,
-    "tests": 0,
+    "wallMs": 69,
+    "tests": 8,
     "cliShaped": false,
     "spawns": 0
   },
   {
     "path": "orchestrator/src/review-yield.cli.test.ts",
-    "wallMs": 349,
+    "wallMs": 348,
     "tests": 6,
     "cliShaped": true,
     "spawns": 2
   },
   {
     "path": "orchestrator/src/route.cli.test.ts",
-    "wallMs": 661,
+    "wallMs": 628,
     "tests": 1,
     "cliShaped": true,
     "spawns": 11
   },
   {
     "path": "orchestrator/src/route.test.ts",
-    "wallMs": 1125,
-    "tests": 0,
+    "wallMs": 1056,
+    "tests": 14,
     "cliShaped": false,
     "spawns": 8
   },
   {
     "path": "orchestrator/src/run-1.cli.test.ts",
-    "wallMs": 9410,
+    "wallMs": 9743,
     "tests": 84,
     "cliShaped": true,
     "spawns": 932
   },
   {
     "path": "orchestrator/src/run-2.cli.test.ts",
-    "wallMs": 15108,
-    "tests": 38,
+    "wallMs": 14114,
+    "tests": 1,
     "cliShaped": true,
-    "spawns": 1219
+    "spawns": 1198
   },
   {
     "path": "orchestrator/src/run-artifacts.test.ts",
-    "wallMs": 24,
-    "tests": 0,
+    "wallMs": 15,
+    "tests": 1,
     "cliShaped": false,
     "spawns": 0
   },
   {
     "path": "orchestrator/src/run-authority.test.ts",
-    "wallMs": 28,
-    "tests": 0,
+    "wallMs": 26,
+    "tests": 2,
     "cliShaped": false,
     "spawns": 0
   },
   {
     "path": "orchestrator/src/run-inbox.test.ts",
-    "wallMs": 8,
-    "tests": 0,
+    "wallMs": 6,
+    "tests": 1,
     "cliShaped": false,
     "spawns": 0
   },
   {
     "path": "orchestrator/src/run-liveness.test.ts",
-    "wallMs": 62,
+    "wallMs": 59,
     "tests": 1,
     "cliShaped": false,
     "spawns": 0
   },
   {
     "path": "orchestrator/src/run-process.test.ts",
-    "wallMs": 1390,
-    "tests": 0,
+    "wallMs": 1401,
+    "tests": 3,
     "cliShaped": false,
     "spawns": 115
   },
   {
     "path": "orchestrator/src/run.test.ts",
-    "wallMs": 21686,
+    "wallMs": 21799,
     "tests": 1,
     "cliShaped": false,
     "spawns": 863
   },
   {
     "path": "orchestrator/src/sandbox.test.ts",
-    "wallMs": 452,
+    "wallMs": 286,
     "tests": 2,
     "cliShaped": false,
     "spawns": 2
   },
   {
     "path": "orchestrator/src/score.test.ts",
-    "wallMs": 48,
-    "tests": 0,
+    "wallMs": 44,
+    "tests": 5,
     "cliShaped": false,
     "spawns": 0
   },
   {
     "path": "orchestrator/src/search.test.ts",
-    "wallMs": 44,
-    "tests": 0,
+    "wallMs": 52,
+    "tests": 5,
     "cliShaped": false,
     "spawns": 0
   },
   {
     "path": "orchestrator/src/transport-acp.test.ts",
-    "wallMs": 125,
-    "tests": 0,
+    "wallMs": 137,
+    "tests": 2,
     "cliShaped": false,
     "spawns": 0
   },
   {
     "path": "orchestrator/src/transport-registry.test.ts",
-    "wallMs": 13,
-    "tests": 0,
+    "wallMs": 8,
+    "tests": 1,
     "cliShaped": false,
     "spawns": 0
   },
   {
     "path": "orchestrator/src/transport.test.ts",
-    "wallMs": 5206,
-    "tests": 0,
+    "wallMs": 5220,
+    "tests": 25,
     "cliShaped": false,
     "spawns": 221
   },
   {
     "path": "orchestrator/src/workflows.cli.test.ts",
-    "wallMs": 930,
-    "tests": 0,
+    "wallMs": 932,
+    "tests": 1,
     "cliShaped": true,
     "spawns": 6
   },
   {
     "path": "orchestrator/src/worktree-1.cli.test.ts",
-    "wallMs": 14468,
+    "wallMs": 14354,
     "tests": 42,
     "cliShaped": true,
     "spawns": 662
   },
   {
     "path": "orchestrator/src/worktree-2.cli.test.ts",
-    "wallMs": 20319,
-    "tests": 0,
+    "wallMs": 19932,
+    "tests": 39,
     "cliShaped": true,
     "spawns": 607
   },
   {
     "path": "orchestrator/src/worktree-3.cli.test.ts",
-    "wallMs": 18385,
+    "wallMs": 19526,
     "tests": 24,
     "cliShaped": true,
     "spawns": 486
   },
   {
     "path": "orchestrator/src/worktree-4.cli.test.ts",
-    "wallMs": 14839,
+    "wallMs": 14889,
     "tests": 25,
     "cliShaped": true,
-    "spawns": 850
+    "spawns": 877
   },
   {
     "path": "orchestrator/src/worktree-5.cli.test.ts",
-    "wallMs": 14269,
+    "wallMs": 14755,
     "tests": 31,
     "cliShaped": true,
     "spawns": 268
   },
   {
     "path": "orchestrator/src/worktree-attribution.test.ts",
-    "wallMs": 2046,
+    "wallMs": 2062,
     "tests": 8,
     "cliShaped": false,
     "spawns": 134
   },
   {
     "path": "orchestrator/test/preload.test.ts",
-    "wallMs": 77,
+    "wallMs": 75,
     "tests": 4,
     "cliShaped": false,
     "spawns": 4
