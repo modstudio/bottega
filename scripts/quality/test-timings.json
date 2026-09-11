@@ -499,7 +499,7 @@
   {
     "path": "orchestrator/src/run-answer.test.ts",
     "wallMs": 79,
-    "tests": 10,
+    "tests": 8,
     "cliShaped": false,
     "spawns": 3
   },
