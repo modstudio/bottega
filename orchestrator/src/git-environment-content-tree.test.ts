@@ -1,8 +1,7 @@
-import { afterAll, describe, expect, spyOn, test } from 'bun:test'
-import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync, utimesSync, chmodSync } from 'node:fs'
+import { describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { join } from 'node:path'
 import { contentTree, hermeticGitEnv } from '../test/fixture.ts'
 describe('content tree measurement', () => {
   test('keeps tracked ignored files, includes visible dirt, and measures tracked deletions', () => {

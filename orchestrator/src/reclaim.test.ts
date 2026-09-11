@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  addRun, db, hermeticGitEnv, projectLockDir, score, upsertProject, worktreeLeaseName,
+  addRun, db, hermeticGitEnv, score, upsertProject,
 } from '../test/fixture.ts'
 import { runSweep } from '../test/fake-sweep.ts'
 import { reclaimBranch, reclaimWorktree } from './reclaim.ts'
@@ -67,25 +67,6 @@ function emptyProcessInventory(repo: string): Record<string, string> {
   writeFileSync(ps, '#!/bin/sh\nexit 0\n')
   chmodSync(ps, 0o755)
   return { PATH: `${commands}:${process.env.PATH ?? ''}` }
-}
-
-async function waitFor(predicate: () => boolean, detail: string): Promise<void> {
-  const deadline = Date.now() + 5_000
-  while (!predicate()) {
-    if (Date.now() >= deadline) throw new Error(`timed out waiting for ${detail}`)
-    await Bun.sleep(5)
-  }
-}
-
-async function childResult(child: {
-  exited: Promise<number>
-  stdout: ReadableStream<Uint8Array>
-  stderr: ReadableStream<Uint8Array>
-}) {
-  const [code, out, err] = await Promise.all([
-    child.exited, new Response(child.stdout).text(), new Response(child.stderr).text(),
-  ])
-  return { code, out, err }
 }
 
 afterEach(() => {

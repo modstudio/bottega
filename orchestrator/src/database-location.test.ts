@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
-import { mkdtempSync, rmSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync, symlinkSync, cpSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { bootstrapFixtureStore, dir, hermeticGitEnv, missingDatabaseMessage, projectAt, registeredRepositoryMissingDatabase, resolveDatabase, resolveRunsDirectory, stackAt, upsertProject } from '../test/fixture.ts'
+import { bootstrapFixtureStore, dir, hermeticGitEnv, missingDatabaseMessage, registeredRepositoryMissingDatabase, resolveDatabase, resolveRunsDirectory } from '../test/fixture.ts'
 describe('projects are data, not code', () => {
   test('database resolution honors an explicit override', () => {
     const path = join(dir, 'explicit-resolution.db')

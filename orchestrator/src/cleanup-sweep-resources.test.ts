@@ -1,11 +1,10 @@
-import { afterAll, describe, expect, spyOn, test } from 'bun:test'
+import { afterAll, describe, expect, test } from 'bun:test'
 import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync, utimesSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { AGENTS, addRun, contentTree, createReadOnlyWorktree, createWorktree, db, declaredCreate, fakeDocker, fakeDockerCommand, hermeticGitCommand, hermeticGitEnv, prepareSharedRefGuard, prepareWorktreeObjects, runJob, score, upsertProject, worktreeGitDir } from '../test/fixture.ts'
+import { addRun, db, fakeDocker, fakeDockerCommand, hermeticGitCommand, hermeticGitEnv, score, upsertProject } from '../test/fixture.ts'
 import { runSweep } from '../test/fake-sweep.ts'
-const worktreeMod = await import('./worktree.ts')
 describe('sweep only reclaims old orch-owned orphan worktrees', () => {
   const processInventoryBin = mkdtempSync(join(tmpdir(), 'orch-empty-process-inventory-'))
   writeFileSync(join(processInventoryBin, 'ps'), '#!/bin/sh\nexit 0\n')
@@ -43,19 +42,6 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     for (const name of git(tree, 'ls-files', '-co', '--exclude-standard').split('\n').filter(Boolean)) {
       utimesSync(join(tree, name), old, old)
     }
-  }
-  const ageGit = (mode: 'reflog' | 'unknown' | 'detached', reflogSeconds = 0) => {
-    const dir = mkdtempSync(join(tmpdir(), 'orch-age-git-'))
-    const script = join(dir, 'git')
-    const actualGit = Bun.which('git')!
-    writeFileSync(script, `#!/bin/sh
-if [ "$1" = "log" ] && [ "${mode}" != "detached" ]; then exit 1; fi
-if [ "$1" = "symbolic-ref" ] && [ "${mode}" = "unknown" ]; then exit 1; fi
-if [ "$1" = "reflog" ]; then printf '%s\\n' "branch@{${reflogSeconds}}"; exit 0; fi
-exec ${JSON.stringify(actualGit)} "$@"
-`)
-    chmodSync(script, 0o755)
-    return { dir, env: { PATH: `${dir}:${process.env.PATH ?? ''}` } }
   }
   const scratchRepo = () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-sweep-'))

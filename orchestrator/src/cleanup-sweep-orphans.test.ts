@@ -1,11 +1,9 @@
-import { afterAll, describe, expect, spyOn, test } from 'bun:test'
-import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync, utimesSync, chmodSync } from 'node:fs'
+import { afterAll, describe, expect, test } from 'bun:test'
+import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { randomUUID } from 'node:crypto'
-import { AGENTS, addRun, contentTree, createReadOnlyWorktree, createWorktree, db, declaredCreate, fakeDocker, fakeDockerCommand, hermeticGitCommand, hermeticGitEnv, prepareSharedRefGuard, prepareWorktreeObjects, runJob, score, upsertProject, worktreeGitDir } from '../test/fixture.ts'
+import { addRun, db, fakeDocker, hermeticGitEnv, upsertProject } from '../test/fixture.ts'
 import { runSweep } from '../test/fake-sweep.ts'
-const worktreeMod = await import('./worktree.ts')
 describe('sweep only reclaims old orch-owned orphan worktrees', () => {
   const processInventoryBin = mkdtempSync(join(tmpdir(), 'orch-empty-process-inventory-'))
   writeFileSync(join(processInventoryBin, 'ps'), '#!/bin/sh\nexit 0\n')
@@ -23,26 +21,6 @@ describe('sweep only reclaims old orch-owned orphan worktrees', () => {
     })
     if (p.exitCode !== 0) throw new Error(p.stderr.toString())
     return p.stdout.toString().trim()
-  }
-  const gitWithEnv = (cwd: string, env: Record<string, string>, ...args: string[]) => {
-    const p = Bun.spawnSync(['git', ...args], {
-      cwd, env: hermeticGitEnv(env), stdout: 'pipe', stderr: 'pipe',
-    })
-    if (p.exitCode !== 0) throw new Error(p.stderr.toString())
-    return p.stdout.toString().trim()
-  }
-  const ageHead = (repo: string, days: number) => {
-    const date = new Date(Date.now() - days * 86_400_000).toISOString()
-    gitWithEnv(
-      repo, { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
-      'commit', '--amend', '--no-edit', '--date', date,
-    )
-  }
-  const ageWorktree = (tree: string, hours = 3) => {
-    const old = new Date(Date.now() - hours * 60 * 60 * 1000)
-    for (const name of git(tree, 'ls-files', '-co', '--exclude-standard').split('\n').filter(Boolean)) {
-      utimesSync(join(tree, name), old, old)
-    }
   }
 
   test('reports absent Grok trust paths in both heading quote styles without editing the store', async () => {

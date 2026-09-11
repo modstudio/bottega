@@ -25,16 +25,7 @@
     "src/monitor.cli.test.ts": {
       "size": "short"
     },
-    "src/database-location.test.ts": {
-      "size": "short"
-    },
-    "src/projects-resolution.test.ts": {
-      "size": "short"
-    },
     "test/process-boundary/database-initialize.test.ts": {
-      "size": "short"
-    },
-    "src/reclaim.test.ts": {
       "size": "short"
     },
     "test/process-boundary/reclaim.test.ts": {
@@ -82,18 +73,6 @@
     "test/process-boundary/run-git.test.ts": {
       "size": "short"
     },
-    "src/cleanup-sweep-orphans.test.ts": {
-      "size": "short"
-    },
-    "src/cleanup-sweep-resources.test.ts": {
-      "size": "short"
-    },
-    "src/git-environment-content-tree.test.ts": {
-      "size": "short"
-    },
-    "src/run-content-measurement.test.ts": {
-      "size": "short"
-    },
     "test/process-boundary/sweep.test.ts": {
       "size": "short",
       "exclusive": true
@@ -130,6 +109,7 @@
         "src/evals.cli.test.ts",
         "src/epic.cli.test.ts",
         "src/review-yield.cli.test.ts",
+        "test/process-boundary/sweep.test.ts",
         "test/process-boundary/discard-resources.test.ts"
       ]
     },
@@ -138,11 +118,6 @@
       "files": [
         "test/process-boundary/lifecycle-harness.test.ts",
         "src/monitor.cli.test.ts",
-        "src/cleanup-sweep-orphans.test.ts",
-        "src/cleanup-sweep-resources.test.ts",
-        "src/git-environment-content-tree.test.ts",
-        "src/run-content-measurement.test.ts",
-        "test/process-boundary/sweep.test.ts",
         "src/route.cli.test.ts",
         "src/catalog.cli.test.ts",
         "test/process-boundary/discard.test.ts"
@@ -154,8 +129,6 @@
         "test/process-boundary/worktree.test.ts",
         "test/process-boundary/git-environment.test.ts",
         "test/process-boundary/run-git.test.ts",
-        "src/database-location.test.ts",
-        "src/projects-resolution.test.ts",
         "test/process-boundary/database-initialize.test.ts",
         "test/process-boundary/abandon.test.ts"
       ]
@@ -174,10 +147,14 @@
     {
       "measuredSeconds": 15,
       "files": [
-        "src/reclaim.test.ts",
-        "test/process-boundary/reclaim.test.ts",
         "test/process-boundary/database.test.ts",
         "test/process-boundary/idle-kill.test.ts"
+      ]
+    },
+    {
+      "measuredSeconds": 5.47,
+      "files": [
+        "test/process-boundary/reclaim.test.ts"
       ]
     }
   ]

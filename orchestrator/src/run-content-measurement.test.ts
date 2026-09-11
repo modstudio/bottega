@@ -1,8 +1,7 @@
-import { afterAll, describe, expect, spyOn, test } from 'bun:test'
-import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync, utimesSync, chmodSync } from 'node:fs'
+import { describe, expect, spyOn, test } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { join } from 'node:path'
 import { db, hermeticGitEnv, runJob, worktreeGitDir } from '../test/fixture.ts'
 import { scriptedTransport } from '../test/fake-transport.ts'
 const worktreeMod = await import('./worktree.ts')

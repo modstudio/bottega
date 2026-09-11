@@ -1,9 +1,4 @@
 import { describe, expect, test } from 'bun:test'
-import { Database } from 'bun:sqlite'
-import { mkdtempSync, rmSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync, symlinkSync, cpSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { projectAt, stackAt, upsertProject } from '../test/fixture.ts'
 describe('projects are data, not code', () => {
 
