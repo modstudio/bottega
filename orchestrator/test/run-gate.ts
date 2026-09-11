@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import type { Database } from 'bun:sqlite'
 import shards from './shards.json'
 import {
@@ -14,12 +14,23 @@ import {
   type FlakeStore,
 } from '../src/gate-policy.ts'
 import { measureHostLoad, withGateSlot } from '../src/gate-load.ts'
+import { mergeTimings, type GateTimings } from './record-gate-timings.ts'
+import {
+  publishTimingSummary,
+  readCommittedTimingSummary,
+  type CommittedTestTiming,
+} from './gate-timing-summary.ts'
 
 type Result = { name: string; exitCode: number; files: string[]; flaky?: boolean }
 
 const orchRoot = new URL('..', import.meta.url).pathname
 const map = parseShardMap(shards, new URL('./shards.json', import.meta.url).pathname)
 const configured = map.shards.flatMap((shard) => shard.files)
+const timingStamp = new Date().toISOString().replace(/[:.]/g, '-')
+const timingDir = new URL('../runs/gate-timings/', import.meta.url).pathname
+const timingPath = `${timingDir}${timingStamp}.json`
+mkdirSync(timingDir, { recursive: true })
+const invocationTimings = new Map<string, GateTimings>()
 const present = readdirSync(new URL('../src', import.meta.url))
   .filter((file) => file.endsWith('.cli.test.ts'))
   .map((file) => `src/${file}`)
@@ -72,15 +83,79 @@ async function pump(
 }
 
 async function spawnTest(
-  name: string, argv: string[], files: string[], env: NodeJS.ProcessEnv,
+  name: string, argv: string[], files: string[], env: NodeJS.ProcessEnv, timingKey: string,
 ): Promise<Result & { output: string }> {
-  const child = Bun.spawn(argv, { cwd: orchRoot, stdout: 'pipe', stderr: 'pipe', env })
+  const junitPath = `${timingDir}${timingStamp}.${timingKey}.junit.xml`
+  const sidecarBase = `${timingDir}${timingStamp}.${timingKey}.json`
+  const command = [...argv, '--reporter=junit', `--reporter-outfile=${junitPath}`]
+  const started = Date.now()
+  const child = Bun.spawn(command, {
+    cwd: orchRoot,
+    stdout: 'pipe',
+    stderr: 'pipe',
+    env: { ...env, ORCH_GATE_TIMINGS: sidecarBase },
+  })
   const sink: string[] = []
   await Promise.all([
     pump(child.stdout, name, false, sink),
     pump(child.stderr, name, true, sink),
   ])
-  return { name, exitCode: await child.exited, files, output: sink.join('\n') }
+  const exitCode = await child.exited
+  const elapsedMs = Date.now() - started
+  const sidecarPath = `${sidecarBase}.spawn.json`
+  const sidecar = JSON.parse(readFileSync(sidecarPath, 'utf8'))
+  const timing = mergeTimings(sidecar, readFileSync(junitPath, 'utf8'), {
+    stamp: timingStamp,
+    command,
+    elapsedMs,
+    exitCode,
+  })
+  invocationTimings.set(timingKey, timing)
+  unlinkSync(junitPath)
+  unlinkSync(sidecarPath)
+  return { name, exitCode, files, output: sink.join('\n') }
+}
+
+function balancedShards(summary: CommittedTestTiming[] | undefined): string[][] {
+  const recorded = new Map(summary?.map((row) => [row.path, row.wallMs]) ?? [])
+  const fallback = new Map<string, number>()
+  for (const shard of map.shards) {
+    const perFile = ((shard.measuredSeconds ?? shard.files.length) * 1_000) / shard.files.length
+    for (const file of shard.files) fallback.set(file, perFile)
+  }
+  const ranked = [...configured].sort((a, b) =>
+    (recorded.get(`orchestrator/${b}`) ?? fallback.get(b) ?? 0)
+      - (recorded.get(`orchestrator/${a}`) ?? fallback.get(a) ?? 0))
+  const balanced = map.shards.map(() => ({ files: [] as string[], wallMs: 0, exclusive: false }))
+  for (const file of ranked) {
+    const candidates = map.files[file]?.exclusive
+      ? balanced.filter((shard) => !shard.exclusive)
+      : balanced
+    const target = candidates.reduce((lightest, shard) => shard.wallMs < lightest.wallMs ? shard : lightest)
+    target.files.push(file)
+    target.wallMs += recorded.get(`orchestrator/${file}`) ?? fallback.get(file) ?? 0
+    if (map.files[file]?.exclusive) target.exclusive = true
+  }
+  return balanced.map((shard) => shard.files)
+}
+
+function aggregateTimings(exitCode: number, elapsedMs: number): GateTimings {
+  const timings = [...invocationTimings.values()]
+  return {
+    stamp: timingStamp,
+    command: ['bun', 'run', 'test:gate'],
+    elapsedMs,
+    exitCode,
+    tests: timings.flatMap((timing) => timing.tests),
+    files: timings.flatMap((timing) => timing.files),
+  }
+}
+
+function printTopTen(timing: GateTimings) {
+  console.log('orchestrator test wall time top ten:')
+  for (const file of [...timing.files].sort((a, b) => b.wallMs - a.wallMs).slice(0, 10)) {
+    console.log(`${file.file} ${Math.round(file.wallMs)}ms`)
+  }
 }
 
 async function flakeStore(): Promise<FlakeStore | null> {
@@ -98,11 +173,15 @@ async function flakeStore(): Promise<FlakeStore | null> {
 }
 
 await withGateSlot(async () => {
+  const gateStarted = Date.now()
   const store = await flakeStore()
-  const unit = await spawnTest('orchestrator unit', ['bun', 'run', 'test:unit'], [], process.env)
-  const cli = await Promise.all(map.shards.map(async (shard, index) => {
+  const unit = await spawnTest('orchestrator unit', [
+    'bun', 'test', '--path-ignore-patterns', '**/*.cli.test.ts',
+    '--path-ignore-patterns', 'runs/**', '--path-ignore-patterns', '**/runs/**',
+  ], [], process.env, 'unit')
+  const shards = balancedShards(readCommittedTimingSummary())
+  const cli = await Promise.all(shards.map(async (files, index) => {
     const name = `orchestrator CLI shard ${index + 1}/${map.shards.length}`
-    const files = shard.files
     const timeout = shardTimeoutMs(map.files, files)
     const size = shardSize(map.files, files)
     const env = {
@@ -113,7 +192,7 @@ await withGateSlot(async () => {
     const result = await runWithRetry({
       name,
       files,
-      run: async () => spawnTest(name, argv, files, env),
+      run: async () => spawnTest(name, argv, files, env, `cli-${index + 1}`),
       weeklyCount: (test, file) => store ? store.count(test, file) : 0,
       recordFlake: (row) => {
         if (!store) {
@@ -137,5 +216,11 @@ await withGateSlot(async () => {
     if (result.files.length) console.error(`failing shard files: ${result.files.join(', ')}`)
     console.error(`the prefixed Bun failure above names the failing test`)
   }
-  process.exit(results.some((result) => result.exitCode !== 0) ? 1 : 0)
+  const testFailed = results.some((result) => result.exitCode !== 0)
+  const timing = aggregateTimings(testFailed ? 1 : 0, Date.now() - gateStarted)
+  writeFileSync(timingPath, `${JSON.stringify(timing, null, 2)}\n`)
+  console.log(`wrote ${timingPath}`)
+  printTopTen(timing)
+  const timingPassed = publishTimingSummary(timing.files)
+  process.exit(testFailed || !timingPassed ? 1 : 0)
 })
