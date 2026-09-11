@@ -10,7 +10,7 @@ import {
 import { pick } from './route.ts'
 import { branchOf, gitContext } from './git-environment.ts'
 import {
-  assertGrokTrustEligible, canonSourceFor, canonSourceInstruction, mcpAttachRefusal, mcpConnectionFor, mcpRequestFromStored, requestedMcpMode, storedMcpRequest, type McpRequest, probeRequestedMcp, } from './mcp-preflight.ts'
+  assertGrokTrustEligible, canonSourceFor, canonSourceInstruction, effectiveMcpRequest, mcpAttachRefusal, mcpConnectionFor, mcpRequestFromStored, requestedMcpMode, storedMcpRequest, type McpRequest, probeRequestedMcp, } from './mcp-preflight.ts'
 import { namesRecordedRunTree, preflight } from './dispatch-preflight.ts'
 import {
   implicitReviewCoverageBase, inferredReadOnlyKey, resolveReviewTarget, } from './review-target.ts'
@@ -323,7 +323,7 @@ export async function run(opts: {
   writableDb()
   enableSchemaReload(() => {})
 
-  const requestedJob = job(opts.job)
+  const requestedJob = job(opts.job), mcpRequest = effectiveMcpRequest(opts.mcp, requestedJob)
   const inheritedDispatch = opts.resume ? readDispatchState(opts.resume.parent) : null
   const declaredDeliverables = opts.deliverables ?? inheritedDispatch?.deliverables ?? []
   const timeoutMinutes = opts.timeoutMinutes ?? inheritedDispatch?.timeoutMinutes ?? undefined
@@ -463,7 +463,7 @@ export async function run(opts: {
          VALUES (?,'(pending)',?,?,?,?,?,?,?,?,'failed',?,'harness',?,0,?) RETURNING id`,
       ).get(nowIso(), opts.job, runProjectName, runProjectId, callerCwd, sha(originalPrompt), sha(originalPrompt),
         Buffer.byteLength(originalPrompt), originalPrompt.slice(0, 200).replace(/\s+/g, ' '),
-        opts.ownerSession ?? sessionId(), message, storedMcpRequest(opts.mcp)) as { id: number }).id
+        opts.ownerSession ?? sessionId(), message, storedMcpRequest(mcpRequest)) as { id: number }).id
       throw Object.assign(new Error(`run ${failedId} could not start: ${message}`), { runId: failedId })
     }
   }
@@ -583,13 +583,13 @@ export async function run(opts: {
    * routing here disagrees and grok cannot attach, delete that placeholder
    * rather than converting a non-event into a failed row.
    */
-  const mcpMode = requestedMcpMode(opts.mcp)
+  const mcpMode = requestedMcpMode(mcpRequest)
   const deferredCwdMcpPreflight = Boolean(
     mcpMode && projectAt(callerCwd) && (forbidsRepo || (repoJob && a.caps.discoversMcpFromCwd)),
   )
   let mcpConnection = deferredCwdMcpPreflight
     ? null
-    : probeRequestedMcp(opts.mcp, name, callerCwd)
+    : probeRequestedMcp(mcpRequest, name, callerCwd)
   const mcpWhy = mcpConnection ? mcpAttachRefusal(mcpConnection) : null
   if (mcpWhy && mcpMode === 'require') {
     if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
@@ -728,7 +728,7 @@ export async function run(opts: {
         pack?.docs.length ?? 0, pack ? JSON.stringify(pack.docs.map((doc) => doc.revisionId)) : null,
         pack?.sha256 ?? null,
         launchCwd, launchSeed, launchKey, launchBase, noFailover ? 1 : 0,
-        opts.automaticFailover ? 1 : 0, opts.review ?? null, process.pid, storedMcpRequest(opts.mcp),
+        opts.automaticFailover ? 1 : 0, opts.review ?? null, process.pid, storedMcpRequest(mcpRequest),
         transportName,
         opts.reserveId,
       ) as { id: number })
@@ -752,7 +752,7 @@ export async function run(opts: {
         pack?.docs.length ?? 0, pack ? JSON.stringify(pack.docs.map((doc) => doc.revisionId)) : null,
         pack?.sha256 ?? null,
         launchCwd, launchSeed, launchKey, launchBase, noFailover ? 1 : 0,
-        opts.automaticFailover ? 1 : 0, opts.review ?? null, process.pid, storedMcpRequest(opts.mcp),
+        opts.automaticFailover ? 1 : 0, opts.review ?? null, process.pid, storedMcpRequest(mcpRequest),
         transportName,
       ) as { id: number })
 
@@ -788,7 +788,7 @@ export async function run(opts: {
   )
     .run(
       stackAt(callerCwd), opts.model ?? a.model, runToken,
-      storedMcpRequest(opts.mcp), mcpConnection?.server ?? null,
+      storedMcpRequest(mcpRequest), mcpConnection?.server ?? null,
       mcpConnection?.connected == null ? null : mcpConnection.connected ? 1 : 0,
       mcpConnection?.error ?? (mcpMode ? 'no registered project identifies the canonical MCP server' : null),
       opts.schemaPath ?? null, opts.lens ?? null, keepTree ? 1 : 0, claim.id,
