@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { addRun, db, dir, pairPartners, recordReview, reviewReply, score as seedScore } from '../test/fixture.ts'
 import { NOT_EVIDENCE } from './failure.ts'
 import { judgeRun, scoreRun } from './judgement.ts'
+import './judgement.test-residue.ts'
 
 type FlagInput = Record<string, string | string[] | boolean>
 const flags = (input: FlagInput = {}) => ({
