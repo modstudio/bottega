@@ -1,10 +1,9 @@
-import { describe, expect, spyOn, test } from 'bun:test'
-import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync, mkdirSync, chmodSync, copyFileSync, readdirSync, symlinkSync } from 'node:fs'
+import { describe,expect,test } from 'bun:test'
+import { existsSync,mkdirSync,mkdtempSync,realpathSync,rmSync,writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { MONITOR_CAPABILITY_PATH_ENV, MONITOR_CAPABILITY_TOKEN_ENV } from '../../shared/monitor-capability.ts'
-import { addRun, allInjectChecks, claimMonitorNotices, markMonitorNoticesDelivered, db, deadRunningProcessConditions, dir, displayConditions, fileIssue, formatMonitorPass, hermeticGitEnv, monitor, monitorHistory, nowIso, parseFiledIssue, reconcileHub, rulingConditions, runWithDelayedStdoutReader, score, setDoc, upsertProject } from '../test/fixture.ts'
+import { addRun,claimMonitorNotices,db,hermeticGitEnv,markMonitorNoticesDelivered,monitor,nowIso,score,upsertProject } from '../test/fixture.ts'
 
 function git(cwd: string, ...args: string[]): string {
   const result = Bun.spawnSync(['git', ...args], {
@@ -12,42 +11,6 @@ function git(cwd: string, ...args: string[]): string {
   })
   if (result.exitCode !== 0) throw new Error(result.stderr.toString())
   return result.stdout.toString().trim()
-}
-
-const PROCESS_INSPECTION_AVAILABLE = (() => {
-  try {
-    return Bun.spawnSync(
-      ['/bin/ps', '-p', String(process.pid), '-o', 'command='],
-      { stdout: 'ignore', stderr: 'ignore' },
-    ).exitCode === 0
-  } catch {
-    return false
-  }
-})()
-
-function migrateHub(path: string): void {
-  const result = Bun.spawnSync([process.execPath,
-    new URL('../../hub/src/cli.ts', import.meta.url).pathname, 'migrate'], {
-    env: { ...process.env, HUB_DB: path }, stdout: 'pipe', stderr: 'pipe',
-  })
-  expect(result.exitCode, result.stderr.toString()).toBe(0)
-}
-
-function persistAddressedCondition(
-  kind: string,
-  subject: string,
-  ownerSession: string,
-  since = nowIso(),
-): number {
-  const invocation = (db().query(
-    `INSERT INTO monitor_invocation (started_at,finished_at,trigger,findings,errors)
-     VALUES (?,?, 'backstop', 1, 0) RETURNING id`,
-  ).get(since, since) as { id: number }).id
-  return (db().query(
-    `INSERT INTO monitor_condition
-       (invocation_id,kind,subject,condition_since,age_ms,detail,action,owner_session_id)
-     VALUES (?,?,?,?,0,'recorded condition','reported',?) RETURNING id`,
-  ).get(invocation, kind, subject, since, ownerSession) as { id: number }).id
 }
 
 describe('operational monitor record', () => {

@@ -1,6 +1,6 @@
 {
   "files": {
-    "src/docs.cli.test.ts": {
+    "test/process-boundary/hooks-notes.test.ts": {
       "size": "short"
     },
     "test/process-boundary/evals.test.ts": {
@@ -97,7 +97,7 @@
     {
       "measuredSeconds": 76.86,
       "files": [
-        "src/docs.cli.test.ts",
+        "test/process-boundary/hooks-notes.test.ts",
         "test/process-boundary/task-branch.test.ts",
         "test/process-boundary/task-branch-run.test.ts",
         "test/process-boundary/database-port-import.test.ts",

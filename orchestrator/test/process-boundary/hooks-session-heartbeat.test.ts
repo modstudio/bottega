@@ -1,10 +1,8 @@
-import { describe, expect, spyOn, test } from 'bun:test'
-import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync, mkdirSync, chmodSync, copyFileSync, readdirSync, symlinkSync } from 'node:fs'
+import { describe,expect,test } from 'bun:test'
+import { chmodSync,copyFileSync,mkdirSync,mkdtempSync,rmSync,writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { MONITOR_CAPABILITY_PATH_ENV, MONITOR_CAPABILITY_TOKEN_ENV } from '../../../shared/monitor-capability.ts'
-import { addRun, allInjectChecks, claimMonitorNotices, markMonitorNoticesDelivered, db, deadRunningProcessConditions, dir, displayConditions, fileIssue, formatMonitorPass, hermeticGitEnv, monitor, monitorHistory, nowIso, parseFiledIssue, reconcileHub, rulingConditions, runWithDelayedStdoutReader, score, setDoc, upsertProject } from '../fixture.ts'
+import { db,setDoc } from '../fixture.ts'
 
   const hook = new URL('../../hooks/session-brief.py', import.meta.url).pathname
   const heartbeat = new URL('../../hooks/orch-heartbeat.sh', import.meta.url).pathname

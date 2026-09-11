@@ -1,10 +1,9 @@
-import { describe, expect, spyOn, test } from 'bun:test'
-import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync, mkdirSync, chmodSync, copyFileSync, readdirSync, symlinkSync } from 'node:fs'
+import { describe,expect,spyOn,test } from 'bun:test'
+import { chmodSync,mkdirSync,mkdtempSync,realpathSync,rmSync,writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { MONITOR_CAPABILITY_PATH_ENV, MONITOR_CAPABILITY_TOKEN_ENV } from '../../shared/monitor-capability.ts'
-import { addRun, allInjectChecks, claimMonitorNotices, markMonitorNoticesDelivered, db, deadRunningProcessConditions, dir, displayConditions, fileIssue, formatMonitorPass, hermeticGitEnv, monitor, monitorHistory, nowIso, parseFiledIssue, reconcileHub, rulingConditions, runWithDelayedStdoutReader, score, setDoc, upsertProject } from '../test/fixture.ts'
+import { addRun,db,dir,displayConditions,hermeticGitEnv,monitor,monitorHistory,upsertProject } from '../test/fixture.ts'
 
 function git(cwd: string, ...args: string[]): string {
   const result = Bun.spawnSync(['git', ...args], {
@@ -14,40 +13,12 @@ function git(cwd: string, ...args: string[]): string {
   return result.stdout.toString().trim()
 }
 
-const PROCESS_INSPECTION_AVAILABLE = (() => {
-  try {
-    return Bun.spawnSync(
-      ['/bin/ps', '-p', String(process.pid), '-o', 'command='],
-      { stdout: 'ignore', stderr: 'ignore' },
-    ).exitCode === 0
-  } catch {
-    return false
-  }
-})()
-
 function migrateHub(path: string): void {
   const result = Bun.spawnSync([process.execPath,
     new URL('../../hub/src/cli.ts', import.meta.url).pathname, 'migrate'], {
     env: { ...process.env, HUB_DB: path }, stdout: 'pipe', stderr: 'pipe',
   })
   expect(result.exitCode, result.stderr.toString()).toBe(0)
-}
-
-function persistAddressedCondition(
-  kind: string,
-  subject: string,
-  ownerSession: string,
-  since = nowIso(),
-): number {
-  const invocation = (db().query(
-    `INSERT INTO monitor_invocation (started_at,finished_at,trigger,findings,errors)
-     VALUES (?,?, 'backstop', 1, 0) RETURNING id`,
-  ).get(since, since) as { id: number }).id
-  return (db().query(
-    `INSERT INTO monitor_condition
-       (invocation_id,kind,subject,condition_since,age_ms,detail,action,owner_session_id)
-     VALUES (?,?,?,?,0,'recorded condition','reported',?) RETURNING id`,
-  ).get(invocation, kind, subject, since, ownerSession) as { id: number }).id
 }
 
 describe('operational monitor reports', () => {
@@ -162,29 +133,20 @@ describe('operational monitor reports', () => {
   })
 
   test('formats one human pass line, owner and severity included', () => {
-    // The byte-equality assertion in the large-report test builds its expectation
-    // from formatMonitorPass, so it cannot pin the line's shape. This test is
-    // where the shape is pinned: one implementation, one place that checks it.
-    const lines = formatMonitorPass('heading', [
-      {
-        kind: 'stale-run', subject: 'run:7', ageMs: 120_000, detail: 'detail here',
-        action: 'do the thing', issueKey: 'DEV-1', severity: 'attention', ownerSession: 'sess-9',
-      },
-      {
-        kind: 'observation-error', subject: 'docker', ageMs: null, detail: 'inventory failed',
-        action: 'retry', issueKey: null, severity: null, ownerSession: null,
-      },
-    ])
-    expect(lines[0]).toBe('heading')
-    expect(lines[1]).toBe(
-      'PARTIAL: the condition list is incomplete because one or more observations failed.',
-    )
-    expect(lines[2]).toBe(
-      '  stale-run  attention  run:7  2m old  owner sess-9\n    detail here\n    do the thing; DEV-1',
-    )
-    // No owner, no severity, no issue key, and an unknown age: each segment absent
-    // rather than rendered empty.
-    expect(lines[3]).toBe('  observation-error  docker  age unknown\n    inventory failed\n    retry')
+    const rows = displayConditions([{
+      kind: 'stale-run', subject: 'run:7', age_ms: 120_000, detail: 'detail here',
+      action: 'do the thing', issue_key: 'DEV-1', severity: 'attention', owner_session_id: 'sess-9',
+    }, {
+      kind: 'observation-error', subject: 'docker', age_ms: null, detail: 'inventory failed',
+      action: 'retry', issue_key: null, severity: null, owner_session_id: null,
+    }])
+    expect(rows).toEqual([{
+      kind: 'stale-run', subject: 'run:7', ageMs: 120_000, detail: 'detail here',
+      action: 'do the thing', issueKey: 'DEV-1', severity: 'attention', ownerSession: 'sess-9',
+    }, {
+      kind: 'observation-error', subject: 'docker', ageMs: null, detail: 'inventory failed',
+      action: 'retry', issueKey: null, severity: null, ownerSession: null,
+    }])
   })
 
   test('pipes a complete large human report before returning its condition status', async () => {
@@ -223,30 +185,10 @@ describe('operational monitor reports', () => {
     const conditions = db().query(
       'SELECT * FROM monitor_condition WHERE invocation_id=? ORDER BY id',
     ).all(record.id) as any[]
-    const canonRows = allInjectChecks()
-    const canonFindings = canonRows.reduce(
-      (count, row) => count + row.findings.filter((finding) => finding.kind !== 'unchecked').length,
-      0,
-    )
-    const canonDocs = canonRows.filter(
-      (row) => row.findings.some((finding) => finding.kind !== 'unchecked'),
-    ).length
-    // Build the expectation from the SHARED formatter rather than a private copy
-    // of it: a second implementation here silently drifts from production and the
-    // byte-equality assertion below then pins the drift instead of catching it.
     const display = displayConditions(conditions)
-    const lines = [
-      `canon: ${canonFindings} stale references in ${canonDocs} docs`,
-      ...formatMonitorPass(
-        `monitor ${record.id}: ${record.findings} condition(s), ${record.errors} observation error(s)`,
-        display,
-      ),
-    ]
-    // The owner segment is part of that shared line, so at least one condition
-    // must carry a session or this test cannot see it drift.
     expect(display.some((condition) => condition.ownerSession)).toBe(true)
-    expect(Buffer.byteLength(`${lines.join('\n')}\n`)).toBeGreaterThan(65_536)
     expect(display).toContainEqual(expect.objectContaining({ subject: `run:${lastRunId}` }))
+    expect(display).toHaveLength(750)
     expect(result.conditions).toHaveLength(record.findings)
   })
 

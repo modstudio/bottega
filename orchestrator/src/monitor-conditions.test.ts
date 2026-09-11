@@ -1,29 +1,8 @@
-import { describe, expect, spyOn, test } from 'bun:test'
-import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync, mkdirSync, chmodSync, copyFileSync, readdirSync, symlinkSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { describe,expect,spyOn,test } from 'bun:test'
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { MONITOR_CAPABILITY_PATH_ENV, MONITOR_CAPABILITY_TOKEN_ENV } from '../../shared/monitor-capability.ts'
-import { addRun, allInjectChecks, claimMonitorNotices, markMonitorNoticesDelivered, db, deadRunningProcessConditions, dir, displayConditions, fileIssue, formatMonitorPass, hermeticGitEnv, monitor, monitorHistory, nowIso, parseFiledIssue, reconcileHub, rulingConditions, runWithDelayedStdoutReader, score, setDoc, upsertProject } from '../test/fixture.ts'
-
-function git(cwd: string, ...args: string[]): string {
-  const result = Bun.spawnSync(['git', ...args], {
-    cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
-  })
-  if (result.exitCode !== 0) throw new Error(result.stderr.toString())
-  return result.stdout.toString().trim()
-}
-
-const PROCESS_INSPECTION_AVAILABLE = (() => {
-  try {
-    return Bun.spawnSync(
-      ['/bin/ps', '-p', String(process.pid), '-o', 'command='],
-      { stdout: 'ignore', stderr: 'ignore' },
-    ).exitCode === 0
-  } catch {
-    return false
-  }
-})()
+import { addRun,claimMonitorNotices,db,deadRunningProcessConditions,dir,fileIssue,markMonitorNoticesDelivered,monitor,monitorHistory,nowIso,parseFiledIssue,reconcileHub,rulingConditions,score,upsertProject } from '../test/fixture.ts'
 
 function migrateHub(path: string): void {
   const result = Bun.spawnSync([process.execPath,
