@@ -1,8 +1,5 @@
 {
   "files": {
-    "src/catalog.cli.test.ts": {
-      "size": "short"
-    },
     "src/docs.cli.test.ts": {
       "size": "short"
     },
@@ -119,7 +116,6 @@
         "test/process-boundary/lifecycle-harness.test.ts",
         "src/monitor.cli.test.ts",
         "src/route-routing.test.ts",
-        "src/catalog.cli.test.ts",
         "test/process-boundary/discard.test.ts"
       ]
     },
