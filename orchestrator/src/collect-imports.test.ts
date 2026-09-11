@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 
-const DEGRADED_COLLECTION_GRAPH = ['collect.ts', 'failure.ts', 'mcp-probe.ts', 'orch.ts', 'outcome.ts', 'result-output.ts'] as const
+const DEGRADED_COLLECTION_GRAPH = ['clock.ts', 'collect.ts', 'failure.ts', 'mcp-probe.ts', 'orch.ts', 'outcome.ts', 'result-output.ts'] as const
 const DEGRADED_HEAVY_MODULES = ['agents.ts', 'cli.ts', 'route.ts', 'run.ts', 'worktree.ts'] as const
 const SRC_DIR = dirname(new URL(import.meta.url).pathname)
 

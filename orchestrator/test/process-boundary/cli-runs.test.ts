@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { addRun, db, dir, recordReview, reviewReply, runCollectionDescribeFixture } from '../fixture.ts'
 
-const GRAPH = ['collect.ts', 'failure.ts', 'mcp-probe.ts', 'orch.ts', 'outcome.ts', 'result-output.ts']
+const GRAPH = ['clock.ts', 'collect.ts', 'failure.ts', 'mcp-probe.ts', 'orch.ts', 'outcome.ts', 'result-output.ts']
 const SRC = resolve(dirname(new URL(import.meta.url).pathname), '../../src')
 function specs(source: string) {
   const found: string[] = []
