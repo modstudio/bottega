@@ -7,6 +7,7 @@ import { OrchProjectListSchema } from '../../shared/orch-contract.ts'
 import { db, declaredCreate, dir, hermeticGitEnv, projectByName, projects, upsertProject } from '../test/fixture.ts'
 import { flagValue } from './args.ts'
 import { projectCommand } from './project-commands.ts'
+import type { WorktreeCreate } from './worktree-template.ts'
 
 function invoke(...argv: string[]) {
   const lines: string[] = []

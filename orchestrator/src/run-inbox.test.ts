@@ -1,6 +1,8 @@
 import { beforeEach, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import { VOIDED_SQL, activeSql, voidedSql } from './evidence-query.ts'\nimport { addRun, db, upsertProject } from '../test/fixture.ts'\nimport { runInboxCommand } from './run-inbox.ts'
+import { addRun, db, upsertProject } from '../test/fixture.ts'
+import { VOIDED_SQL, activeSql, voidedSql } from './evidence-query.ts'
+import { runInboxCommand } from './run-inbox.ts'
 
 const normalize = (sql: string) => sql.replace(/\s+/g, ' ').trim()
 
@@ -37,7 +39,7 @@ const question = (run: number, text: string) =>
 
 test('inbox names the canonical root in its answer footer', async () => {
   const root = addRun({ agent: 'codex', job: 'implement', status: 'asking', session: 'orch-test-session' })
-  const child = addRun({ agent: 'codex', job: 'implement', status: 'asking', parent: root, turn: 2 })
+  const child = addRun({ agent: 'codex', job: 'implement', status: 'asking', session: 'orch-test-session', parent: root, turn: 2 })
   question(child, 'which?'); expect(await inbox()).toContain(`orch answer ${root}`)
 })
 test('inbox keeps own questions in their existing format outside a registered project', async () => {
@@ -89,4 +91,3 @@ test('inbox and continue refuse recovery while a later chain turn is running', a
   addRun({ agent: 'codex', job: 'implement', status: 'running', parent: root, turn: 2 })
   expect(await inbox()).not.toContain(`recoverable: orch continue ${root}`)
 })
-

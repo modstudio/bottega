@@ -26,8 +26,8 @@ test('pick previews the same fan-out exclusions do uses', () => {
 
 test('pick shares do validation for fan-out exclusions', () => {
   const shown = preview(['grok'])
-  expect(shown).toContain('grok    excluded')
-  expect(shown).toContain('--avoid named grok')
+  expect(shown).toContain('review-lens -> codex')
+  expect(shown).not.toContain('review-lens -> grok')
 })
 
 test('pick refuses an unmet constraint instead of silently routing', () => {

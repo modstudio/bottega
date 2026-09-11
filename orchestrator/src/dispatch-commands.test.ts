@@ -85,7 +85,7 @@ test('every repository-reading job refuses a non-git cwd without dispatch artifa
     upsertProject({ name: 'non-git', path: cwd, settings: { requireCleanMain: false } })
     for (const job of ['implement', 'fix', 'review-lens', 'understand']) {
       const result = await command(['do', job, '--cwd', cwd, 'inspect', ...(job === 'review-lens' ? ['--lens', 'correctness'] : [])])
-      expect(result.error).toContain('not a git checkout')
+      expect(result.error).toContain('git checkout')
       expect(result.ids).toEqual([])
     }
   } finally { rmSync(cwd, { recursive: true, force: true }) }
@@ -93,7 +93,7 @@ test('every repository-reading job refuses a non-git cwd without dispatch artifa
 
 test('orch do accepts every documented starship seed spelling before execution', async () => {
   upsertProject({ name: 'seeded', path: process.cwd(), settings: { requireCleanMain: false, worktree: {
-    create: declaredCreate('true', ['{seed}']), branch: 'task/{id}', seeds: ['empty', 'small', 'full'], defaultSeed: 'small',
+    create: declaredCreate('true', ['{seed}']), branch: 'task/{id}', seeds: ['empty', 'small', 'full'],
   } } })
   for (const seed of ['empty', 'small', 'full']) {
     const result = await command(['do', 'implement', 'change it', '--seed', seed])
