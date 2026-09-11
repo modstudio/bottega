@@ -205,8 +205,8 @@
   },
   {
     "file": "orchestrator/src/cli.ts",
-    "function": "map callback#51",
-    "line": 4075,
+    "function": "map callback#25",
+    "line": 2670,
     "score": 16
   },
   {
@@ -282,16 +282,22 @@
     "score": 46
   },
   {
-    "file": "orchestrator/src/docker-resources.ts",
-    "function": "teardownRunResources",
-    "line": 132,
-    "score": 17
-  },
-  {
     "file": "orchestrator/src/doc-commands.ts",
     "function": "docCommand",
     "line": 23,
     "score": 111
+  },
+  {
+    "file": "orchestrator/src/doctor.ts",
+    "function": "doctorCommand",
+    "line": 27,
+    "score": 122
+  },
+  {
+    "file": "orchestrator/src/docker-resources.ts",
+    "function": "teardownRunResources",
+    "line": 132,
+    "score": 17
   },
   {
     "file": "orchestrator/src/docs.ts",
@@ -492,6 +498,12 @@
     "score": 18
   },
   {
+    "file": "orchestrator/src/port-commands.ts",
+    "function": "portCommand",
+    "line": 17,
+    "score": 137
+  },
+  {
     "file": "orchestrator/src/project-commands.ts",
     "function": "projectCommand",
     "line": 19,
@@ -570,6 +582,12 @@
     "score": 21
   },
   {
+    "file": "orchestrator/src/review-commands.ts",
+    "function": "reviewCommand",
+    "line": 22,
+    "score": 177
+  },
+  {
     "file": "orchestrator/src/review.ts",
     "function": "coverageAudit",
     "line": 975,
@@ -622,6 +640,24 @@
     "function": "evidenceFor",
     "line": 710,
     "score": 20
+  },
+  {
+    "file": "orchestrator/src/run-diff.ts",
+    "function": "runDiffCommand",
+    "line": 19,
+    "score": 45
+  },
+  {
+    "file": "orchestrator/src/run-inbox.ts",
+    "function": "runInboxCommand",
+    "line": 15,
+    "score": 85
+  },
+  {
+    "file": "orchestrator/src/run-listing.ts",
+    "function": "runListingCommand",
+    "line": 17,
+    "score": 46
   },
   {
     "file": "orchestrator/src/route.ts",
