@@ -8,7 +8,7 @@ const allowed = new Set([
     '../../shared/monitor-capability.ts', './score.ts', './evidence-query.ts',
     './review-vocabulary.ts', './run-liveness.ts', './process-liveness.ts', './duel.ts', './run-authority.ts',
     './resource-ownership.ts',
-    './run-control.ts', './run-dispatch.ts', './run-answer.ts',
+    './run-control.ts', './run-dispatch.ts', './run-answer.ts', './cleanup.ts', './cleanup-sweep.ts', './run-stop.ts',
 ])
 
 function offendingImports(source: string): string[] {
