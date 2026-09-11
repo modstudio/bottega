@@ -1,38 +1,14 @@
 import { describe, expect, test } from 'bun:test'
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-describe('ops launchd plists', () => {
-  test('every ops launchd template lints after placeholder substitution', () => {
-    const root = new URL('../../ops/launchd', import.meta.url).pathname
-    const templates = readdirSync(root).filter((name) => name.endsWith('.plist.template'))
-    expect(templates).toContain('com.user.orch-canon-eval.plist.template')
-    const dir = mkdtempSync(join(tmpdir(), 'orch-plist-'))
-    try {
-      for (const name of templates) {
-        const rendered = readFileSync(join(root, name), 'utf8')
-          .replaceAll('__ROOT__', '/tmp/repo')
-          .replaceAll('__REPO__', '/tmp/repo/ops')
-          .replaceAll('__HOME__', '/tmp')
-          .replaceAll('__MONITOR_BACKSTOP_SECONDS__', '14400')
-          .replaceAll('__MODEL_HOST__', 'example')
-        const path = join(dir, name.replace(/\.template$/, ''))
-        writeFileSync(path, rendered)
-        const lint = Bun.spawnSync(['plutil', '-lint', path], { stdout: 'pipe', stderr: 'pipe' })
-        expect(lint.exitCode, name).toBe(0)
-        expect(lint.stdout.toString() + lint.stderr.toString()).toContain('OK')
-      }
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
-  })
-
+describe('ops launchd install process boundary', () => {
   test('install refuses to render launchd agents from a linked worktree', () => {
     const fixture = mkdtempSync(join(tmpdir(), 'orch-ops-install-'))
     const main = join(fixture, 'main')
     const linked = join(fixture, 'linked')
-    const source = new URL('../../ops/install.sh', import.meta.url).pathname
+    const source = new URL('../../../ops/install.sh', import.meta.url).pathname
     try {
       mkdirSync(join(main, 'ops'), { recursive: true })
       copyFileSync(source, join(main, 'ops/install.sh'))
