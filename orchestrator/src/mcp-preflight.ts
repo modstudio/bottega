@@ -4,6 +4,10 @@
  * Must not know run state, transports, routing, or database mutation.
  */
 import type { CanonSource } from './contract.ts'
+import { AGENTS } from './agents.ts'
+import { job } from './jobs.ts'
+import { projectAt, validateStoredProjectSettings } from './projects.ts'
+import { childEnv } from './run-process.ts'
 
 export type McpConnection = {
   server: string
@@ -102,4 +106,74 @@ export function grokMcpConnection(
     connected: false,
     error: [stderr, stdout].filter(Boolean).join('\n') || `MCP server '${server}' was not reported`,
   }
+}
+
+export function mcpConnectionFor(
+  name: string, cwd: string, server: string, trust = false, includeStore = true,
+): McpConnection {
+  if (name === 'grok') {
+    const grok = AGENTS.grok!
+    return grokMcpConnection(grok.bin, cwd, server, childEnv(grok, undefined, undefined, {}, includeStore), trust)
+  }
+  return {
+    server,
+    connected: null,
+    error: `${name} does not expose an MCP connection diagnostic`,
+  }
+}
+
+export function mcpAttachRefusal(connection: McpConnection): string | null {
+  if (connection.connected !== false) return null
+  return (
+    `MCP was requested, but server '${connection.server}' could not be attached` +
+    `${connection.error ? `: ${connection.error}` : '.'} The agent was not started.`
+  )
+}
+
+export function assertGrokTrustEligible(
+  cwd: string,
+  recorded: {
+    id?: number
+    cwd?: string | null
+    worktree: string | null
+    worktree_source: string | null
+  } | null,
+  isolatePath: string,
+): void {
+  const orchCut = recorded?.worktree === cwd &&
+    ['recipe', 'git', 'readonly_recipe'].includes(recorded.worktree_source ?? '')
+  const orchIsolate = recorded?.worktree === null && recorded.id !== undefined &&
+    recorded.cwd === cwd && isolatePath === cwd
+  if (orchCut || orchIsolate) return
+  throw new Error(
+    `refusing Grok trust for ${cwd}: trust is granted only to trees orch cut; ` +
+    'removed tree paths never recur',
+  )
+}
+
+export function probeRequestedMcp(mcp: McpRequest | undefined, agent: string, cwd: string): McpConnection | null {
+  if (!requestedMcpMode(mcp)) return null
+  const project = projectAt(cwd)
+  if (!project) return null
+  return mcpConnectionFor(agent, cwd, project.settings.mcpServer ?? project.name)
+}
+
+export function preflightMcp(opts: {
+  mcp?: McpRequest
+  cwd: string
+  job: string
+  selectedAgent: string
+}): void {
+  const mode = requestedMcpMode(opts.mcp)
+  if (!mode) return
+  const project = projectAt(opts.cwd)
+  if (!project) return
+  const malformed = validateStoredProjectSettings(project.settings)
+  if (malformed.length) throw new Error(malformed.join('\n'))
+  const selected = AGENTS[opts.selectedAgent]!
+  if (!job(opts.job).needs.readsRepo || selected.caps.discoversMcpFromCwd) return
+  const connection = probeRequestedMcp(mode, opts.selectedAgent, opts.cwd)
+  if (!connection) return
+  const why = mcpAttachRefusal(connection)
+  if (why && mode === 'require') throw new Error(why)
 }

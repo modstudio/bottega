@@ -38,7 +38,7 @@ import {
   type MonitorCapability,
 } from '../../shared/monitor-capability.ts'
 
-type DetachSpec = import('./run.ts').DetachSpec
+type DetachSpec = import('./failover.ts').DetachSpec
 type McpRequest = import('./mcp-preflight.ts').McpRequest; type Worktree = import('./worktree.ts').Worktree
 type Disposition = import('./review.ts').Disposition
 type ReviewGrades = import('./review.ts').ReviewGrades
@@ -109,19 +109,22 @@ async function loadRoute() { routeModule ??= await import('./route.ts'); ({ cand
 let guide!: typeof import('./guide.ts').guide
 async function loadGuide() { guideModule ??= await import('./guide.ts'); ({ guide } = guideModule) }
 let repoOf!: typeof import('./run.ts').repoOf
-let preflightMcp!: typeof import('./run.ts').preflightMcp
+let preflightMcp!: typeof import('./mcp-preflight.ts').preflightMcp
 let KEEP_RUN_FILES_DAYS!: typeof import('./run.ts').KEEP_RUN_FILES_DAYS
 let RUNS_DIR!: typeof import('./run.ts').RUNS_DIR
 let runFilePaths!: typeof import('./run.ts').runFilePaths
-let terminateRunProcesses!: typeof import('./run.ts').terminateRunProcesses
+let terminateRunProcesses!: typeof import('./run-process.ts').terminateRunProcesses
 let packedResumePrompt!: typeof import('./run.ts').packedResumePrompt
-let retryModelForAgent!: typeof import('./run.ts').retryModelForAgent
-let chainTransport!: typeof import('./run.ts').chainTransport
+let retryModelForAgent!: typeof import('./failover.ts').retryModelForAgent
+let chainTransport!: typeof import('./failover.ts').chainTransport
 let closeOutRun!: typeof import('./run.ts').closeOutRun
 let readDispatchState!: typeof import('./run.ts').readDispatchState
 async function loadRun() { runModule ??= await import('./run.ts')
   mcpPreflightModule ??= await import('./mcp-preflight.ts'); dispatchPreflightModule ??= await import('./dispatch-preflight.ts'); reviewTargetModule ??= await import('./review-target.ts'); ({ mcpRequestFromStored, storedMcpRequest } = mcpPreflightModule); ({ preflight } = dispatchPreflightModule); ({ implicitReviewWarning } = reviewTargetModule)
-  ;({ repoOf, preflightMcp, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, terminateRunProcesses, packedResumePrompt, retryModelForAgent, chainTransport, readDispatchState, closeOutRun } = runModule)
+  ;({ preflightMcp } = mcpPreflightModule)
+  ;({ repoOf, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, packedResumePrompt, readDispatchState, closeOutRun } = runModule)
+  ;({ terminateRunProcesses } = await import('./run-process.ts'))
+  ;({ retryModelForAgent, chainTransport } = await import('./failover.ts'))
 }
 let transportModule: typeof import('./transport.ts')
 let assertAcpAllowed!: typeof import('./transport.ts').assertAcpAllowed
@@ -1119,12 +1122,11 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
     // Who will run is knowable here, and a proven-failed grok attach must not
     // leave a placeholder for the child to fail. Resume keeps the agent that
     // already started; it is not a new dispatch.
-    preflightMcp({
-      mcp: spec.mcp, cwd, job: jobName, prompt,
-      agent: spec.agent, avoid: spec.avoid,
-      distinctModels: spec.distinctModels, model: spec.model, probe: spec.probe,
-      lens: spec.lens,
-    })
+    await loadRoute()
+    const { stackAt } = await import('./projects.ts')
+    const { agent: selectedAgent } = pick(jobName, spec.agent, prompt.length, true, stackAt(cwd),
+      { agents: spec.avoid, models: spec.distinctModels, model: spec.model }, spec.probe, spec.lens)
+    preflightMcp({ mcp: spec.mcp, cwd, job: jobName, selectedAgent })
   }
   const runsDir = RUNS_DIR
   mkdirSync(runsDir, { recursive: true })

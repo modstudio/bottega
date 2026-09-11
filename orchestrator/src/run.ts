@@ -3,8 +3,7 @@ import {
   statSync, unlinkSync, copyFileSync, renameSync,
 } from 'node:fs'
 import { basename, dirname, join, relative } from 'node:path'
-import { createHash, randomUUID } from 'node:crypto'
-import type { Database } from 'bun:sqlite'
+import { randomUUID } from 'node:crypto'
 import {
   classify, notify, isNonAnswer, hasVendorTerminationMarker, detectBlockers, NEEDS_HUMAN, NEEDS_HUMAN_TITLE,
   FAILS_OVER,
@@ -20,15 +19,16 @@ import {
 import { pick } from './route.ts'
 import { branchOf, gitContext } from './git-environment.ts'
 import {
-  canonSourceFor, canonSourceInstruction, grokMcpConnection, mcpRequestFromStored,
-  requestedMcpMode, storedMcpRequest, type McpConnection, type McpRequest,
+  assertGrokTrustEligible, canonSourceFor, canonSourceInstruction, mcpAttachRefusal, mcpConnectionFor,
+  mcpRequestFromStored, requestedMcpMode, storedMcpRequest, type McpRequest,
+  probeRequestedMcp,
 } from './mcp-preflight.ts'
-import { depth, namesRecordedRunTree, preflight } from './dispatch-preflight.ts'
+import { namesRecordedRunTree, preflight } from './dispatch-preflight.ts'
 import {
   implicitReviewCoverageBase, inferredReadOnlyKey, resolveReviewTarget,
 } from './review-target.ts'
 import {
-  db, nowIso, DB_PATH, sessionId, pidAlive, resolveRootFromLastTurn, tryWriteContention, writableDb, writeTransaction,
+  db, nowIso, sessionId, pidAlive, resolveRootFromLastTurn, tryWriteContention, writableDb, writeTransaction,
   enableSchemaReload, liveWorktreeSharers, teardownTerminalRunResources,
   worktreePathSpellings,
 } from './db.ts'
@@ -37,7 +37,7 @@ import { proveWorktreeReconstructible } from './reclaim.ts'
 import {
   createWorkerWorktree,
   toolFor, changesIn, repoRootOf, resolveBase, resolveReadOnlyBase,
-  realpathOrSpelled, withoutTrailingSeparators,
+  realpathOrSpelled,
   prepareWorktreeObjects, carryWorkingState,
   targetGitEnvironment,
   contentTree,
@@ -67,10 +67,9 @@ import {
 } from './contract.ts'
 import {
   CALIBRATION_SUFFIX_RESERVE_BYTES, calibrationLine, cleanReviewEvidence,
-  reviewCalibration, reviewRunEvidenceSql,
+  reviewCalibration,
 } from './review.ts'
-import { projectAt, projectByName, projects, stackAt,
-         validateStoredProjectSettings } from './projects.ts'
+import { projectAt, projectByName, projects, stackAt } from './projects.ts'
 import { compilePack, recordPack } from './canon.ts'
 import { resolveRunsDirectory } from './database-location.ts'
 import { resolveBranchRef } from './projects.ts'
@@ -79,7 +78,7 @@ import { TRUNCATED_TRANSCRIPT_BYTES } from './result-output.ts'
 import { addedGrokTrustHeadings, grokTrustHeadings } from './grok-trust.ts'
 import { prepareSandboxHome, selectReadonlySandbox, srtLaunchArgv } from './sandbox.ts'
 import {
-  classifyDivergence, freezeCheckouts, overlappingError, type CheckoutToWatch,
+  classifyDivergence, freezeCheckouts, overlappingError,
   type ConfinementEvent, type FreezeFailure,
 } from './confinement.ts'
 import {
@@ -102,6 +101,28 @@ import {
   formatIdleKillError, idleKillMayProceed, idlePollMs, isGroupKillablePgid, runHasLiveDescendants,
   sampleProcesses, shouldIdleKill, terminateProcessGroup,
 } from './idle-kill.ts'
+import {
+  chainTransport, decideFailover, detachedRunOptions, failoverAttempts,
+  MAX_FAILOVER_ATTEMPTS, resolveSupersededTurn, retryModelForAgent,
+  writingFailoverRefusal, type DetachSpec,
+} from './failover.ts'
+import {
+  bindSignals, childEnv, errorTail, installTestProcessInventory, live, liveCheckpoints, processTable, sha,
+  terminateRunProcesses, verifiedProcessTree,
+} from './run-process.ts'
+import { resolveTaskBranch, taskBranchCandidacySql, type TaskBranchCandidate } from './task-branch.ts'
+import {
+  retargetRepositoryPrompt, retargetRepositoryPromptForDispatch, snapshotRegisteredCheckouts,
+} from './prompt-retarget.ts'
+
+export {
+  assertGrokTrustEligible, chainTransport, detachedRunOptions, errorTail,
+  installTestProcessInventory, resolveSupersededTurn, resolveTaskBranch,
+  retargetRepositoryPrompt, retargetRepositoryPromptForDispatch, retryModelForAgent,
+  snapshotRegisteredCheckouts, taskBranchCandidacySql, terminateRunProcesses,
+  verifiedProcessTree, writingFailoverRefusal,
+}
+export type { DetachSpec }
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
 
@@ -137,73 +158,6 @@ export function gitObjectEnvironmentFor(
     : undefined
 }
 
-export type DetachSpec = {
-  agent?: string; schema?: string; mcp?: McpRequest; model?: string; probe?: boolean
-  /** Selectable seam. Default stays `cli`; `acp` covers paid agents on read-only jobs. */
-  transport?: TransportName
-  label?: string
-  lens?: string
-  /** How much database the worktree gets, where the project asks for a choice. */
-  seed?: string
-  /** A ticket key, where the project's branch convention requires one. */
-  key?: string
-  /** Explicit project attribution; it does not change the directory the worker uses. */
-  repo?: string
-  base?: string
-  avoid?: string[]
-  distinctModels?: string[]
-  /** Retry only: the run this replaces, and the directory it ran in. */
-  retryOf?: number; cwd?: string
-  /** Disable automatic vendor-failure failover for this whole chain. */
-  noFailover?: boolean
-  /** Take the next eligible agent when the preferred row is at its concurrency cap. */
-  noWaitCapacity?: boolean
-  /** Carry the caller's uncommitted work into a newly cut worktree. Opt-in. */
-  carry?: boolean
-  /** Branch or run id whose recorded branch a findings job reviews. */
-  review?: string
-  /** Preserve the session that owns a successor root. */
-  ownerSession?: string | null
-  /** Declared reader deliverable names, from repeated `--deliverable`. */
-  deliverables?: string[]
-  /** `orch do --timeout` in minutes. */
-  timeoutMinutes?: number
-  /** Opt out of reclaim-at-terminalisation for lens and reader jobs. */
-  keepTree?: boolean
-  /** Resume only: everything needed to continue a worker where it stopped. */
-  resume?: {
-    parent: number; agent: string; session?: string; turn: number
-    /** Continue the chain and retained tree in a new vendor conversation. */
-    fresh?: boolean
-    sessionId: string | null
-    worktree: Worktree | null
-  }
-}
-
-/** Resolve retry model affinity when the caller keeps or changes the agent. */
-export function retryModelForAgent(
-  originalAgent: string,
-  originalModel: string | null,
-  retryAgent: string,
-  explicitModel?: string,
-): string | undefined {
-  if (explicitModel !== undefined) return explicitModel
-  if (retryAgent === originalAgent) return originalModel ?? undefined
-  const pin = AGENTS[retryAgent]
-  if (!pin) throw new Error(`unknown agent "${retryAgent}"`)
-  return pin.model
-}
-
-/** Latest stored transport on a chain. ORCH_TRANSPORT is not consulted. */
-export function chainTransport(rootId: number): TransportName | null {
-  const row = db().query(
-    `SELECT transport FROM run
-      WHERE (id = ? OR parent_run_id = ?) AND transport IS NOT NULL
-      ORDER BY turn DESC, id DESC LIMIT 1`,
-  ).get(rootId, rootId) as { transport: string } | null
-  return row?.transport === 'cli' || row?.transport === 'acp' ? row.transport : null
-}
-
 function resolveRunTransport(opts: {
   transport?: TransportName
   resume?: { parent: number }
@@ -215,85 +169,7 @@ function resolveRunTransport(opts: {
   return resolveTransportName(opts.transport)
 }
 
-/** Translate the detached wire format into the names run() consumes. */
-export function detachedRunOptions(
-  jobName: string, prompt: string, reserveId: number, spec: DetachSpec,
-) {
-  const {
-    agent, schema, mcp, model, probe, transport, label, lens, seed, key, repo, base, avoid,
-    distinctModels, retryOf, cwd, noFailover, noWaitCapacity, carry, review, ownerSession, resume,
-    deliverables, timeoutMinutes, keepTree,
-  } = spec
-  // Adding a field to DetachSpec must fail typechecking until it is handled here.
-  const consumed: Required<Record<keyof DetachSpec, unknown>> = {
-    agent, schema, mcp, model, probe, transport, label, lens, seed, key, repo, base, avoid,
-    distinctModels, retryOf, cwd, noFailover, noWaitCapacity, carry, review, ownerSession, resume,
-    deliverables, timeoutMinutes, keepTree,
-  }
-  void consumed
-  return {
-    job: jobName, prompt, reserveId,
-    agent, schemaPath: schema, mcp, model, probe, transport, label, lens, seed, key, repo, base, avoid,
-    distinctModels, retryOf, cwd, noFailover, noWaitCapacity, carry, review, ownerSession, resume,
-    deliverables, timeoutMinutes, keepTree,
-  }
-}
-
-/**
- * How deep a chain of delegations may go. One means: this session may delegate,
- * and what it delegates to may not delegate again.
- *
- * A delegated agent gets a shell in the caller's checkout, so it can and does
- * run `orch` itself — one review-lens here fanned out to a second agent that
- * nobody asked for, under the caller's session id, and that run then counted as
- * routing evidence. Delegation has to bottom out somewhere, and the agent doing
- * the work is not the place to decide where.
- */
-export const MAX_FAILOVER_ATTEMPTS = 3
-
 export { resolveRootFromLastTurn }
-
-/** Mark only an answered child turn that now has a successor as completed. */
-export function resolveSupersededTurn(database: Database, rootId: number, turn: number): number {
-  return database.query(
-    `UPDATE run AS prior SET status='ok'
-      WHERE prior.parent_run_id=? AND prior.turn=? AND prior.status='asking'
-        AND EXISTS (
-          SELECT 1 FROM question q
-           WHERE q.run_id=prior.id AND q.answered_at IS NOT NULL
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM question q
-           WHERE q.run_id=prior.id AND q.answered_at IS NULL
-        )
-        AND EXISTS (
-          SELECT 1 FROM run later
-           WHERE later.parent_run_id=prior.parent_run_id AND later.turn>prior.turn
-        )`,
-  ).run(rootId, turn).changes
-}
-
-type FailoverAttempt = { id: number; agent: string }
-
-/** Walk retry_of backward; parent_run_id is only the conversation axis within an attempt. */
-function failoverAttempts(id: number): FailoverAttempt[] {
-  const attempts: FailoverAttempt[] = []
-  let memberId: number | null = id
-  while (memberId) {
-    const member = db().query(
-      'SELECT id, agent, parent_run_id FROM run WHERE id=?',
-    ).get(memberId) as { id: number; agent: string; parent_run_id: number | null } | null
-    if (!member) break
-    const rootId = member.parent_run_id ?? member.id
-    const root = db().query(
-      'SELECT id, agent, retry_of, automatic_failover FROM run WHERE id=?',
-    ).get(rootId) as
-      { id: number; agent: string; retry_of: number | null; automatic_failover: number }
-    attempts.unshift({ id: root.id, agent: root.agent })
-    memberId = root.automatic_failover ? root.retry_of : null
-  }
-  return attempts
-}
 
 function appendFailoverRefusal(id: number, reason: string): void {
   db().query(
@@ -301,129 +177,11 @@ function appendFailoverRefusal(id: number, reason: string): void {
   ).run(`Failover refused: ${reason}`, id)
 }
 
-export function writingFailoverRefusal(
-  writesJob: boolean,
-  changes: import('./worktree.ts').Changes | null,
-  worktree: string,
-): string | null {
-  // "Clean" means no change from this run's immutable base, not an empty
-  // porcelain status. A worker may commit normally now; changesIn includes
-  // those commits, and handing that branch to a second agent would mix two
-  // authors' work in the one diff this guard exists to protect.
-  if (!writesJob) return null
-  if (changes && changes.files.length === 0) return null
-  const detail = changes
-    ? `${changes.files.length} changed file(s)`
-    : 'the worktree diff could not be read'
-  return `writing run has ${detail}; preserving worktree ${worktree} so two agents never share one diff`
-}
 
 const CANON_SOURCE_PROMPT_RESERVE_BYTES = Math.max(
   ...(['live database', 'mirror', 'unknown'] as CanonSource[])
     .map((source) => Buffer.byteLength(canonSourceInstruction(source))),
 ) + 2
-
-/**
- * Who can prove attachment, and what they proved.
- *
- * A red grok probe is evidence about grok, not about the machine. Codex has no
- * diagnostic, so it cannot prove failure and cannot prove success — that is
- * unverified, not connected:false. Routing around grok's attach failure is
- * DEV-194 and is not done here.
- */
-function mcpConnectionFor(
-  name: string, cwd: string, server: string, trust = false, includeStore = true,
-): McpConnection {
-  if (name === 'grok') {
-    const grok = AGENTS.grok!
-    return grokMcpConnection(grok.bin, cwd, server, childEnv(grok, undefined, undefined, {}, includeStore), trust)
-  }
-  return {
-    server,
-    connected: null,
-    error: `${name} does not expose an MCP connection diagnostic`,
-  }
-}
-
-function mcpAttachRefusal(connection: McpConnection): string | null {
-  if (connection.connected !== false) return null
-  return (
-    `MCP was requested, but server '${connection.server}' could not be attached` +
-    `${connection.error ? `: ${connection.error}` : '.'} The agent was not started.`
-  )
-}
-
-export function assertGrokTrustEligible(
-  cwd: string,
-  recorded: {
-    id?: number
-    cwd?: string | null
-    worktree: string | null
-    worktree_source: string | null
-  } | null,
-  runsDir = RUNS_DIR,
-): void {
-  const orchCut = recorded?.worktree === cwd &&
-    ['recipe', 'git', 'readonly_recipe'].includes(recorded.worktree_source ?? '')
-  const orchIsolate = recorded?.worktree === null && recorded.id !== undefined &&
-    recorded.cwd === cwd && noRepoIsolatePath(recorded.id, runsDir) === cwd
-  if (orchCut || orchIsolate) return
-  throw new Error(
-    `refusing Grok trust for ${cwd}: trust is granted only to trees orch cut; ` +
-    'removed tree paths never recur',
-  )
-}
-
-function probeRequestedMcp(mcp: McpRequest | undefined, agent: string, cwd: string): McpConnection | null {
-  if (!requestedMcpMode(mcp)) return null
-  const project = projectAt(cwd)
-  if (!project) return null
-  return mcpConnectionFor(agent, cwd, project.settings.mcpServer ?? project.name)
-}
-
-/**
- * Refuse a --mcp dispatch that routing would send to an agent whose attach
- * we can prove failed. No-repo MCP and cwd-discovered repository MCP are
- * deferred until the isolate exists, but the vendor process still never
- * starts on refusal.
- *
- * Consults pick() for who will actually run. An unpinned job that prefers
- * Codex is not refused because grok happens to be eligible; a pinned Codex
- * dispatch is not refused because grok's doctor is red.
- */
-export function preflightMcp(opts: {
-  mcp?: McpRequest
-  cwd: string
-  job: string
-  prompt: string
-  agent?: string
-  avoid?: string[]
-  distinctModels?: string[]
-  model?: string
-  probe?: boolean
-  lens?: string
-}): void {
-  const mode = requestedMcpMode(opts.mcp)
-  if (!mode) return
-  const project = projectAt(opts.cwd)
-  if (!project) return
-  const malformed = validateStoredProjectSettings(project.settings)
-  if (malformed.length) throw new Error(malformed.join('\n'))
-  const { agent: name } = pick(
-    opts.job, opts.agent, opts.prompt.length, true, stackAt(opts.cwd),
-    { agents: opts.avoid, models: opts.distinctModels, model: opts.model },
-    opts.probe,
-    opts.lens,
-  )
-  const selected = AGENTS[name]!
-  if (!job(opts.job).needs.readsRepo || selected.caps.discoversMcpFromCwd) {
-    return
-  }
-  const connection = probeRequestedMcp(mode, name, opts.cwd)
-  if (!connection) return
-  const why = mcpAttachRefusal(connection)
-  if (why && mode === 'require') throw new Error(why)
-}
 
 /**
  * Variables that may reach a vendor's CLI: an allowlist, not a denylist.
@@ -455,56 +213,6 @@ export function preflightMcp(opts: {
  * Residual exposure: HOME on the allowlist means a full-access worker can
  * still read that file.
  */
-const ALLOW_ENV_EXACT = new Set([
-  'PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'TERM', 'TMPDIR', 'SSH_AUTH_SOCK',
-])
-const ALLOW_ENV_PREFIX =
-  /^(LC_|XDG_|OPENAI_|XAI_|GROK_|GEMINI_|GOOGLE_|CODEX_|QWEN_|ORCH_)/
-
-function childEnv(
-  a: (typeof AGENTS)[string], runId?: number, runToken?: string,
-  extra: Record<string, string> = {}, includeStore = true,
-): Record<string, string> {
-  const env: Record<string, string> = {}
-  for (const [k, v] of Object.entries(process.env)) {
-    if (v === undefined || !(ALLOW_ENV_EXACT.has(k) || ALLOW_ENV_PREFIX.test(k))) continue
-    env[k] = v
-  }
-  env.ORCH_DEPTH = String(depth() + 1)
-  /**
-   * Which run is asking, for the ask-server the child may call back into.
-   *
-   * Set HERE, by the process that spawned the agent, because that is the only
-   * party that actually knows. A worker naming its own run id would be guessing,
-   * and in a fan-out several are alive at once — so the guess would sometimes
-   * attach a question to another worker's run, and the ruling would be delivered
-   * to whichever of them happened to be waiting.
-   */
-  if (runId) env.ORCH_RUN_ID = String(runId)
-  // The credential half. The id says which run; this says the caller is
-  // actually that run, and the environment of a child process is the one place
-  // an unrelated process cannot read it from.
-  if (runToken) env.ORCH_RUN_TOKEN = runToken
-  /**
-   * THE REAL DATABASE, not the one beside whatever checkout the worker is in.
-   *
-   * The parent has already resolved the one database through ORCH_DB, git's
-   * common directory, or the main binary. Passing the absolute result keeps a
-   * detached worker on that same file even after its cwd changes to a worktree.
-   *
-   * Reported by a worker that checked the command before building on it, which
-   * is exactly the behaviour the contract asks for and exactly how this was
-   * found.
-   *
-   * Residual exposure: the canon accepts that a worktree worker reads the real
-   * register.
-   */
-  if (includeStore) env.ORCH_DB = DB_PATH
-  const child = { ...env, ...(a.env?.() ?? {}), ...extra }
-  if (!includeStore) delete child.ORCH_DB
-  return child
-}
-
 /**
  * Children alive right now, so a signal can take them down with us.
  *
@@ -512,154 +220,7 @@ function childEnv(
  * nobody left to record what it did: the row claims to be running for ever, and
  * a subscription keeps being spent on an answer no one will read.
  */
-const live = new Set<{ kill(sig?: number | string): void }>()
-type LiveProcess = { kill(sig?: number | string): void }
-type LiveCheckpoint = {
-  runId: number
-  rootId: number
-  worktree: string
-  branch: string
-  taskKey: string
-  scratchDir: string
-  guardEnvironment: NodeJS.ProcessEnv
-}
-const liveCheckpoints = new Map<LiveProcess, LiveCheckpoint>()
-
-type ProcessRow = { pid: number; ppid: number; pgid: number; command: string }
-type ProcessInventory =
-  | { ascertainable: true; rows: ProcessRow[] }
-  | { ascertainable: false; reason: string }
-
-let testProcessInventory: ProcessInventory | null = null
-export function installTestProcessInventory(inventory: ProcessInventory | null): void {
-  testProcessInventory = inventory
-}
-
-function processTable(): ProcessInventory {
-  if (testProcessInventory) return testProcessInventory
-  let p
-  try {
-    p = Bun.spawnSync(['ps', '-axo', 'pid=,ppid=,pgid=,command='], {
-      stdout: 'pipe', stderr: 'pipe', timeout: 1_000,
-    })
-  } catch (error) {
-    return {
-      ascertainable: false,
-      reason: `process inventory unavailable: ${String((error as Error).message ?? error)}`,
-    }
-  }
-  if (p.exitCode !== 0) {
-    const stderr = p.stderr.length ? `: ${p.stderr.toString().trim()}` : ''
-    if (p.exitCode === null && p.signalCode === 'SIGTERM') {
-      return { ascertainable: false, reason: `process inventory did not complete inside 1000ms${stderr}` }
-    } else if (p.exitCode !== null) {
-      return { ascertainable: false, reason: `process inventory failed with exit ${p.exitCode}${stderr}` }
-    }
-    return {
-      ascertainable: false,
-      reason: `process inventory ended on signal ${p.signalCode ?? 'unknown'}${stderr}`,
-    }
-  }
-  return {
-    ascertainable: true,
-    rows: p.stdout.toString().split('\n').flatMap((line): ProcessRow[] => {
-      const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/)
-      return match
-        ? [{ pid: Number(match[1]), ppid: Number(match[2]), pgid: Number(match[3]), command: match[4]! }]
-        : []
-    }),
-  }
-}
-
 /** Terminate the verified whole descendant tree, youngest-first. */
-export function verifiedProcessTree(
-  table: ProcessRow[], id: number, rootPid: number, exclude: number[] = [],
-): number[] {
-  const root = table.find((candidate) => candidate.pid === rootPid)
-  const identity = new RegExp(`(?:^|[/\\s])exec\\.ts\\s+${id}(?:\\s|$)`)
-  if (!root || !identity.test(root.command)) return []
-  const skipped = new Set(exclude)
-  const depth = new Map<number, number>([[root.pid, 0]])
-  let changed = true
-  while (changed) {
-    changed = false
-    for (const candidate of table) {
-      const parentDepth = depth.get(candidate.ppid)
-      if (parentDepth === undefined || depth.has(candidate.pid)) continue
-      depth.set(candidate.pid, parentDepth + 1)
-      changed = true
-    }
-  }
-  return [...depth.entries()]
-    .filter(([pid]) => !skipped.has(pid))
-    .sort((a, b) => b[1] - a[1])
-    .map(([pid]) => pid)
-}
-
-export function terminateRunProcesses(id: number, exclude: number[] = []): number[] {
-  const row = db().query('SELECT pid, agent_pid FROM run WHERE id=?').get(id) as
-    { pid: number | null; agent_pid: number | null } | null
-  if (!row) throw new Error(`no run ${id}`)
-  if (!row.pid) return []
-  const inventory = processTable()
-  if (!inventory.ascertainable) {
-    console.error(`orch: ${inventory.reason}; nothing signalled`)
-    return []
-  }
-  // A stop command is itself a descendant of the coordinator it is stopping.
-  // If the reaper signals itself, it can exit before reaching a sibling vendor
-  // process and leave the caller waiting on that vendor forever.
-  const pids = verifiedProcessTree(inventory.rows, id, row.pid, [...exclude, process.pid])
-  if (!pids.length) {
-    if (inventory.rows.some((candidate) => candidate.pid === row.pid)) {
-      console.error(`orch: run ${id} pid ${row.pid} identity could not be confirmed; nothing signalled`)
-    }
-    return []
-  }
-  for (const pid of pids) {
-    try { process.kill(pid, 'SIGTERM') } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e
-    }
-  }
-  return pids
-}
-let signalsBound = false
-let terminating = false
-
-function bindSignals() {
-  if (signalsBound) return
-  signalsBound = true
-  for (const sig of ['SIGINT', 'SIGTERM'] as const) {
-    process.on(sig, () => {
-      if (terminating) return
-      terminating = true
-      // Preserve the old delayed exit as the hard fallback, widened to the
-      // coordinator's five-second shutdown bound while final checkpoints run.
-      setTimeout(() => process.exit(130), 5_000)
-      for (const p of live) { try { p.kill('SIGTERM') } catch { /* already gone */ } }
-      for (const checkpoint of liveCheckpoints.values()) {
-        const result = checkpointRun({
-          database: db(), runId: checkpoint.runId, worktree: checkpoint.worktree,
-          branch: checkpoint.branch, taskKey: checkpoint.taskKey,
-          scratchDir: checkpoint.scratchDir,
-          guardEnvironment: checkpoint.guardEnvironment, final: true,
-        })
-        if (result.created || latestCheckpoint(db(), checkpoint.rootId)) {
-          db().query('UPDATE run SET work_preserved=1 WHERE id=?').run(checkpoint.runId)
-        }
-        if (result.error) {
-          console.error(`orch: run ${checkpoint.runId} final checkpoint failed: ${result.error}`)
-        }
-      }
-      // The `finally` in run() writes the terminal row; give it the turn it
-      // needs before the process goes away.
-      setTimeout(() => process.exit(130), 250)
-    })
-  }
-}
-
-const sha = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 16)
-
 /**
  * Keep BOTH ENDS of a failing agent's output.
  *
@@ -675,14 +236,6 @@ const sha = (s: string) => createHash('sha256').update(s).digest('hex').slice(0,
  * prompt is stored separately anyway, which is what makes the echoed copy in
  * the middle the right thing to drop.
  */
-export function errorTail(blob: string, limit = 2000): string {
-  const t = blob.trim()
-  if (t.length <= limit) return t
-  const head = Math.floor(limit / 4)
-  const tail = limit - head
-  return `${t.slice(0, head)}\n… [${t.length - limit} characters omitted] …\n${t.slice(t.length - tail)}`
-}
-
 /**
  * Which project a directory belongs to, ASKED rather than inferred.
  *
@@ -715,156 +268,6 @@ export function repoOf(cwd: string): string | null {
  * Read once, at claim time, and never allowed to fail a run: a directory that
  * is not a git repo, or a git that is slow, must cost nothing.
  */
-type TaskBranchCandidate = {
-  branch: string
-  tip: string
-  commitCount: number
-  mergeBase: string
-  projectId: number
-  projectName: string
-  runIds: number[]
-  worktree: Worktree | null
-}
-
-/** Branch state is a separate question from whether a run's review is admissible evidence. */
-export function taskBranchCandidacySql(runAlias = 'candidate'): string {
-  return `${runAlias}.status <> 'stopped'`
-}
-
-function taskBranchGit(cwd: string, ...args: string[]): string {
-  const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
-    env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
-  })
-  if (p.exitCode !== 0) {
-    throw new Error(
-      `git ${args.join(' ')} failed while resolving the task branch: ` +
-      (p.stderr.toString().trim() || `exit ${p.exitCode}`),
-    )
-  }
-  return p.stdout.toString().trim()
-}
-
-function checkedOutWorktree(repoRoot: string, branch: string): string | null {
-  let path: string | null = null
-  for (const line of taskBranchGit(repoRoot, 'worktree', 'list', '--porcelain').split('\n')) {
-    if (line.startsWith('worktree ')) path = line.slice('worktree '.length)
-    else if (line === `branch refs/heads/${branch}`) return path
-    else if (!line) path = null
-  }
-  return null
-}
-
-/**
- * Resolve one task branch by evidence and patch content, never by run order or ancestry alone.
- *
- * The CTE gives the shared review boundary its expected `run_id` address without
- * copying that predicate. The stopped condition is deliberately layered beside
- * it: calibration consumes `reviewRunEvidenceSql`, and branch liveness is a
- * different question from review admissibility.
- */
-export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCandidate | null {
-  const repoRoot = repoRootOf(cwd)
-  const project = projectAt(cwd) ?? (repoRoot
-    ? projects().find((candidate) =>
-        realpathOrSpelled(candidate.path) === realpathOrSpelled(repoRoot)) ?? null
-    : null)
-  if (!project || !repoRoot) return null
-  const rows = db().query(
-    `WITH candidate AS (SELECT run.*, run.id AS run_id FROM run)
-     SELECT candidate.id, candidate.branch, candidate.worktree,
-            candidate.worktree_source
-       FROM candidate
-      WHERE candidate.launch_key=?
-        AND (candidate.project_id=? OR (candidate.project_id IS NULL AND candidate.repo=?))
-        AND candidate.branch IS NOT NULL
-        AND ${taskBranchCandidacySql('candidate')}
-        AND ${reviewRunEvidenceSql('candidate', 'candidate')}
-      ORDER BY candidate.id`,
-  ).all(launchKey, project.id, project.name) as {
-    id: number
-    branch: string
-    worktree: string | null
-    worktree_source: string | null
-  }[]
-  if (rows.length === 0) return null
-
-  const trunk = project.settings.trunk?.trim()
-  if (!trunk) {
-    throw new Error(
-      `project ${project.name} has no trunk configured; task branch content cannot be resolved`,
-    )
-  }
-
-  const byBranch = new Map<string, typeof rows>()
-  for (const row of rows) byBranch.set(row.branch, [...(byBranch.get(row.branch) ?? []), row])
-  const trunkTip = taskBranchGit(repoRoot, 'rev-parse', '--verify', '--end-of-options', `${trunk}^{commit}`)
-  const candidates: TaskBranchCandidate[] = []
-  for (const [branch, branchRows] of byBranch) {
-    let tip: string
-    try {
-      tip = taskBranchGit(
-        repoRoot, 'rev-parse', '--verify', '--end-of-options', `refs/heads/${branch}^{commit}`,
-      )
-    } catch {
-      continue
-    }
-    const mergeBase = taskBranchGit(repoRoot, 'merge-base', trunkTip, tip)
-    const commitCount = Number(taskBranchGit(repoRoot, 'rev-list', '--count', `${mergeBase}..${tip}`))
-    if (!Number.isSafeInteger(commitCount) || commitCount < 1) continue
-
-    // The two supported landing shapes leave different patch-id evidence.
-    // Preserve the original commits for a multi-commit cherry-pick, then also
-    // compare the net patch for a squash landing. An ancestry-only merged check
-    // cannot see either and must not decide task ownership.
-    const individual = taskBranchGit(repoRoot, 'cherry', trunkTip, tip)
-    if (!individual.split('\n').some((line) => line.startsWith('+ '))) continue
-    const tree = taskBranchGit(repoRoot, 'rev-parse', '--verify', `${tip}^{tree}`)
-    const squash = taskBranchGit(
-      repoRoot, 'commit-tree', tree, '-p', mergeBase, '-m', `orch task branch ${launchKey}`,
-    )
-    const cherry = taskBranchGit(repoRoot, 'cherry', trunkTip, squash)
-    if (!cherry.split('\n').some((line) => line.startsWith('+ '))) continue
-
-    const path = checkedOutWorktree(repoRoot, branch)
-    const attachedRow = path ? branchRows.find((row) =>
-      row.worktree && realpathOrSpelled(row.worktree) === realpathOrSpelled(path),
-    ) : null
-    const source = attachedRow?.worktree_source
-    candidates.push({
-      branch, tip, commitCount, mergeBase,
-      projectId: project.id, projectName: project.name,
-      runIds: branchRows.map((row) => row.id),
-      worktree: path ? {
-        path, branch, base: tip, repoRoot,
-        source: source === 'recipe' || source === 'git' || source === 'readonly_recipe'
-          ? source
-          : undefined,
-        // Null records that this run attached; it did not mint the task branch.
-        mintedBranch: null,
-      } : null,
-    })
-  }
-
-  if (candidates.length === 0) return null
-  if (candidates.length === 1) return candidates[0]!
-  const detail = candidates.map((candidate) =>
-    `  ${candidate.branch} tip ${candidate.tip} commits ${candidate.commitCount}`,
-  ).join('\n')
-  const commands = candidates.map((kept) => {
-    const voidCommands = candidates.filter((candidate) => candidate !== kept)
-      .flatMap((candidate) => candidate.runIds)
-      .map((id) => `    orch score ${id} --void --note "not the live ${launchKey} branch"`)
-      .join('\n')
-    return `  To keep ${kept.branch}:\n${voidCommands}`
-  }).join('\n')
-  throw new Error(
-    `refusing task branch resolution for ${launchKey}: more than one branch carries content not on ${trunk}\n` +
-    `${detail}\n` +
-    `invariant: A task owns one branch.\n` +
-    `Clear the ambiguity by choosing one branch and voiding the candidate runs behind the others:\n${commands}`,
-  )
-}
-
 function reviewChangedPaths(cwd: string, base: string, inputTree: string): string[] {
   const args = ['diff', '--name-only', `${base}..${inputTree}`]
   const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
@@ -879,209 +282,12 @@ function reviewChangedPaths(cwd: string, base: string, inputTree: string): strin
   return p.stdout.toString().trim().split('\n').filter(Boolean)
 }
 
-export type CheckoutStatusSnapshot = {
-  project: string
-  path: string
-  status: string
-  head?: string | null
-  expectedHead?: string | null
-}
-
-/**
- * Cheap observation of registered main checkouts, outside a run's worktree.
- *
- * The freeze is the observer: porcelain, tree hashes and HEAD together. The
- * exported surface stays snapshots-only for callers that only need porcelain.
- */
-export function snapshotRegisteredCheckouts(
-  additional: CheckoutToWatch[] = [],
-): CheckoutStatusSnapshot[] {
-  return freezeCheckouts(checkoutWatchSet(additional).watched).snapshots.map((snapshot) => ({
-    project: snapshot.project,
-    path: snapshot.path,
-    status: snapshot.status,
-    head: snapshot.head,
-    expectedHead: snapshot.expectedHead,
-  }))
-}
-
 /**
  * A pack is written before its disposable worktree exists, so callers naturally
  * name the checkout they are standing in. That path is an address, not review
  * content: once the tree has been copied, every occurrence must point at the
  * copy or an agent following the pack escapes the isolation boundary.
  */
-const UNICODE_ALPHANUMERIC_OR_MARK = /[\p{L}\p{N}\p{M}]/u
-const PATH_NAME_CHARACTER = /[\p{L}\p{N}\p{M}_.-]/u
-const SHELL_PATH_BOUNDARY = /[;&|<>()`$]/
-
-/**
- * A deliberately partial subset of Unicode CaseFolding.txt's full (`F`)
- * mappings: dotted I, sharp S, and the Latin Alphabetic Presentation Forms.
- * JavaScript exposes no full case-fold operation. These cover the observed
- * length-changing filesystem folds without adding generated data or a runtime
- * dependency. Filesystem-specific folding beyond this table is a known limit.
- */
-const PARTIAL_FULL_CASE_FOLD = new Map([
-  ['İ', 'i\u0307'], ['ß', 'ss'], ['ẞ', 'ss'],
-  ['ﬀ', 'ff'], ['ﬁ', 'fi'], ['ﬂ', 'fl'], ['ﬃ', 'ffi'], ['ﬄ', 'ffl'],
-  ['ﬅ', 'st'], ['ﬆ', 'st'],
-])
-
-function partialUnicodeCaseFold(value: string): string {
-  return [...value.normalize('NFC')]
-    .map((character) => PARTIAL_FULL_CASE_FOLD.get(character) ?? character.toLowerCase())
-    .join('').normalize('NFC')
-}
-
-function characterAt(value: string, offset: number): string | undefined {
-  const point = value.codePointAt(offset)
-  return point === undefined ? undefined : String.fromCodePoint(point)
-}
-
-function characterBefore(value: string, offset: number): string | undefined {
-  if (offset <= 0) return undefined
-  const last = value.charCodeAt(offset - 1)
-  const start = last >= 0xDC00 && last <= 0xDFFF ? offset - 2 : offset - 1
-  return value.slice(Math.max(0, start), offset)
-}
-
-function hasPathEndBoundary(prompt: string, offset: number): boolean {
-  const after = characterAt(prompt, offset)
-  if (after === undefined || after === '/' || /\s/.test(after)) return true
-  if (SHELL_PATH_BOUNDARY.test(after)) return true
-  if (UNICODE_ALPHANUMERIC_OR_MARK.test(after)) return false
-  const next = characterAt(prompt, offset + after.length)
-  return next === undefined || /\s/.test(next)
-}
-
-function pathRootMatchLength(
-  prompt: string, offset: number, root: string, caseInsensitive: boolean,
-): number | null {
-  if (!caseInsensitive) {
-    if (prompt.slice(offset, offset + root.length) !== root) return null
-    return hasPathEndBoundary(prompt, offset + root.length) ? root.length : null
-  }
-  const foldedRoot = partialUnicodeCaseFold(root)
-  let end = offset
-  while (end < prompt.length) {
-    const character = characterAt(prompt, end)!
-    end += character.length
-    const foldedCandidate = partialUnicodeCaseFold(prompt.slice(offset, end))
-    if (foldedCandidate === foldedRoot) {
-      return hasPathEndBoundary(prompt, end) ? end - offset : null
-    }
-    const following = characterAt(prompt, end)
-    if (foldedCandidate.length >= foldedRoot.length &&
-        !(following && /\p{M}/u.test(following))) return null
-  }
-  return null
-}
-
-function hasPathStartBoundary(prompt: string, offset: number): boolean {
-  if (offset === 0) return true
-  const before = characterBefore(prompt, offset)!
-  return before !== '/' && !PATH_NAME_CHARACTER.test(before)
-}
-
-type RetargetResult = { prompt: string; diagnostic: string | null }
-type RetargetAlias = { root: string; role: 'source' | 'target' }
-
-function aliasKey(root: string, caseInsensitive: boolean): string {
-  return caseInsensitive ? partialUnicodeCaseFold(root) : root
-}
-
-function invalidRetargeting(
-  callers: string[], targets: string[], caseInsensitive: boolean,
-): string | null {
-  if (targets[0] === '') return 'review path retargeting indeterminate: destination is empty'
-  const malformed = [...callers, ...targets].find((root) => root.startsWith('//'))
-  if (malformed) return `review path retargeting indeterminate: unsupported alias ${malformed}`
-  const normalizedCallers = callers.map(withoutTrailingSeparators)
-  const normalizedTargets = targets.filter(Boolean).map(withoutTrailingSeparators)
-  if (normalizedCallers.some((root) => root === '/')) {
-    return 'review path retargeting indeterminate: caller alias is filesystem root (/)'
-  }
-  const sourceKeys = new Set(normalizedCallers.map((root) => aliasKey(root, caseInsensitive)))
-  const collision = normalizedTargets.find((root) => sourceKeys.has(aliasKey(root, caseInsensitive)))
-  return collision
-    ? `review path retargeting indeterminate: alias has both source and target roles (${collision})`
-    : null
-}
-
-function uriAuthorityEnd(prompt: string, offset: number): number | null {
-  const scheme = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//.exec(prompt.slice(offset))
-  if (!scheme) return null
-  let end = offset + scheme[0].length
-  while (end < prompt.length && !/[\/?#\s'"`)\]}>]/.test(prompt[end]!)) end++
-  return end
-}
-
-export function retargetRepositoryPrompt(
-  prompt: string, callers: string | string[], worktree: string,
-  caseInsensitive: boolean, protectedWorktreeRoots: string[],
-): RetargetResult {
-  const callerList = (Array.isArray(callers) ? callers : [callers])
-  if (callerList.every((root) => root === '')) return { prompt, diagnostic: null }
-  const rawTargets = [worktree, ...protectedWorktreeRoots]
-  const invalid = invalidRetargeting(callerList, rawTargets, caseInsensitive)
-  if (invalid) return { prompt, diagnostic: invalid }
-  const aliases: RetargetAlias[] = [
-    ...callerList.filter(Boolean).map((root) =>
-      ({ root: withoutTrailingSeparators(root), role: 'source' as const })),
-    ...rawTargets.filter(Boolean).map((root) =>
-      ({ root: withoutTrailingSeparators(root), role: 'target' as const })),
-  ].filter((alias, index, all) => all.findIndex((other) =>
-    other.role === alias.role &&
-    aliasKey(other.root, caseInsensitive) === aliasKey(alias.root, caseInsensitive)) === index)
-    .sort((a, b) => aliasKey(b.root, caseInsensitive).length -
-      aliasKey(a.root, caseInsensitive).length)
-  const destination = withoutTrailingSeparators(worktree)
-  let rewritten = ''
-  let cursor = 0
-  let authorityPathStart: number | null = null
-  while (cursor < prompt.length) {
-    const uriEnd = uriAuthorityEnd(prompt, cursor)
-    if (uriEnd !== null) {
-      rewritten += prompt.slice(cursor, uriEnd)
-      cursor = uriEnd
-      authorityPathStart = uriEnd
-      continue
-    }
-    if (cursor !== authorityPathStart && !hasPathStartBoundary(prompt, cursor)) {
-      rewritten += prompt[cursor++]
-      continue
-    }
-    authorityPathStart = null
-    const matched = aliases.map((alias) => ({
-      alias,
-      length: pathRootMatchLength(prompt, cursor, alias.root, caseInsensitive),
-    })).find(({ length }) => length !== null)
-    if (matched) {
-      const { alias, length } = matched
-      rewritten += alias.role === 'source'
-        ? (destination === '/' && prompt[cursor + length!] === '/' ? '' : destination)
-        : prompt.slice(cursor, cursor + length!)
-      cursor += length!
-      continue
-    }
-    rewritten += prompt[cursor++]
-  }
-  return { prompt: rewritten, diagnostic: null }
-}
-
-/** A dispatch may consume only a determinate retargeting result. */
-export function retargetRepositoryPromptForDispatch(
-  prompt: string, callers: string | string[], worktree: string,
-  caseInsensitive: boolean, protectedWorktreeRoots: string[],
-): string {
-  const result = retargetRepositoryPrompt(
-    prompt, callers, worktree, caseInsensitive, protectedWorktreeRoots,
-  )
-  if (result.diagnostic) throw new Error(result.diagnostic)
-  return result.prompt
-}
-
 function boundedConfinementError(message: string): string {
   const bytes = Buffer.from(message)
   if (bytes.length <= 1500) return message
@@ -2508,7 +1714,11 @@ export async function run(opts: {
         ).get(claim.id) as {
           id: number; cwd: string | null; worktree: string | null; worktree_source: string | null
         } | null
-        if (grokTrust) assertGrokTrustEligible(cwd, recorded, runsDir)
+        if (grokTrust) {
+          assertGrokTrustEligible(
+            cwd, recorded, noRepoIsolatePath(recorded?.id ?? claim.id, runsDir),
+          )
+        }
         const beforeTrust = grokTrust ? grokTrustHeadings() : []
         mcpTrustGranted = grokTrust
         // Record the attempt before doctor: the trusted invocation may write its
@@ -3804,24 +3014,21 @@ export async function run(opts: {
       transport: TransportName | null
     }
     const treeName = worktree?.path ?? '(none — read-only job)'
-    if (first.no_failover || opts.noFailover) {
-      appendFailoverRefusal(claim.id, `disabled by --no-failover; worktree ${treeName}`)
-    } else if (writingFailoverRefusal(writesJob, changes, treeName)) {
-      appendFailoverRefusal(claim.id, writingFailoverRefusal(writesJob, changes, treeName)!)
-    } else if (attempts.length >= MAX_FAILOVER_ATTEMPTS) {
-      appendFailoverRefusal(
-        claim.id,
-        `the ${MAX_FAILOVER_ATTEMPTS}-attempt budget was spent; tried ${tried.join(', ')}; worktree ${treeName}`,
-      )
-    } else if (!first.prompt_path || !existsSync(first.prompt_path)) {
-      appendFailoverRefusal(
-        claim.id,
-        `the original prompt is no longer on disk; tried ${tried.join(', ')}; worktree ${treeName}`,
-      )
-    } else {
+    const failoverFacts = {
+      status, failureKind, failoverKinds: FAILS_OVER,
+      noFailover: Boolean(first.no_failover || opts.noFailover),
+      writesJob, changes, worktree: treeName,
+      attemptCount: attempts.length, maxAttempts: MAX_FAILOVER_ATTEMPTS,
+      agentsTried: tried,
+      originalPromptAvailable: Boolean(first.prompt_path && existsSync(first.prompt_path)),
+    }
+    const decision = decideFailover(failoverFacts)
+    if (decision.kind === 'refusal') {
+      appendFailoverRefusal(claim.id, decision.reason)
+    } else if (decision.kind === 'select') {
       try {
-        const originalPrompt = readFileSync(first.prompt_path, 'utf8')
-        const next = pick(
+        const originalPrompt = readFileSync(first.prompt_path!, 'utf8')
+        const selected = pick(
           opts.job, undefined,
           Buffer.byteLength(originalPrompt) + (requestedJob.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0), true,
           stackAt(first.launch_cwd ?? callerCwd),
@@ -3829,9 +3036,11 @@ export async function run(opts: {
           false,
           first.lens ?? undefined,
         )
+        const successor = decideFailover({ ...failoverFacts, successor: selected })
+        if (successor.kind !== 'successor') throw new Error('failover successor was not selected')
         console.error(
           `orch: run ${claim.id} failed over after ${name} ${failureKind}; ` +
-          `starting the same prompt on ${next.agent}`,
+          `starting the same prompt on ${successor.agent}`,
         )
         // The recursive successor has its own terminalisation path. Reclaim
         // this completed attempt before returning into it, otherwise this
@@ -3842,7 +3051,7 @@ export async function run(opts: {
         return await run({
           job: opts.job,
           prompt: originalPrompt,
-          agent: next.agent,
+          agent: successor.agent,
           transport: first.transport === 'cli' || first.transport === 'acp'
             ? first.transport : undefined,
           schemaPath: first.schema_path ?? undefined,
@@ -3880,11 +3089,10 @@ export async function run(opts: {
         const successor = db().query('SELECT id FROM run WHERE retry_of=?').get(claim.id)
         // Once a successor exists its own terminal row is the explanation.
         if (successor) throw e
-        appendFailoverRefusal(
-          claim.id,
-          `no eligible agent remains after trying ${tried.join(', ')}: ` +
-          `${String((e as Error)?.message ?? e)}; worktree ${treeName}`,
-        )
+        const refusal = decideFailover({
+          ...failoverFacts, selectionError: String((e as Error)?.message ?? e),
+        })
+        if (refusal.kind === 'refusal') appendFailoverRefusal(claim.id, refusal.reason)
       }
     }
   }

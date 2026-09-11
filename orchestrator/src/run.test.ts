@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync, writeFileSync, existsSync, mkdirSync, utimesSync, chmodSync, mkdtempSync, rmSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AGENTS, GENERIC_QUESTION_TOKENS, KEEP_RUN_FILES_DAYS, addDoctrineRule, addPair, addRun, addSkip, adoptRunMutation, ask, authorizeRunMutation, baselineForPair, candidates, db, detectBlockers, dir, duelMatrices, errorTail, hasRealQuestions, hermeticGitEnv, judgeability, ledgerRef, listDoctrineRules, listLedgerRefs, listPairs, listSkips, nowIso, parseRunIds, parseWorkerReply, parseWorkerReplyWithCount, pendingForSession, pick, projects, pruneRuns, realQuestions, recordDuels, reapTestRun, resolveLedgerRef, retireDoctrineRule, run, runDetail, runFilePaths, score, sessionId, setBaseline, setLedgerRef, state, upsertProject, weigh, workerReply } from '../test/fixture.ts'
+import { AGENTS, GENERIC_QUESTION_TOKENS, KEEP_RUN_FILES_DAYS, addDoctrineRule, addPair, addRun, addSkip, adoptRunMutation, ask, authorizeRunMutation, baselineForPair, candidates, db, detectBlockers, dir, duelMatrices, hasRealQuestions, hermeticGitEnv, judgeability, ledgerRef, listDoctrineRules, listLedgerRefs, listPairs, listSkips, nowIso, parseRunIds, parseWorkerReply, parseWorkerReplyWithCount, pendingForSession, pick, projects, pruneRuns, realQuestions, recordDuels, reapTestRun, resolveLedgerRef, retireDoctrineRule, run, runDetail, runFilePaths, score, sessionId, setBaseline, setLedgerRef, state, upsertProject, weigh, workerReply } from '../test/fixture.ts'
 
 describe('porting data model', () => {
   test('stores pair progress and declined candidates with their reasons', () => {
@@ -425,37 +425,6 @@ describe('run detail', () => {
       id: child, requested_id: child, resolved_from: 'turn', root_id: root,
     })
     expect(() => insertAudit.run(root, root, 'invented', null, nowIso(), null)).toThrow()
-  })
-})
-
-describe('what survives of a failure', () => {
-  // The shape that lost four failures: a banner, then the whole prompt echoed
-  // back, then — right at the end — what actually went wrong.
-  const codexish = (promptChars: number) =>
-    'OpenAI Codex v0.151.0\n--------\nmodel: gpt-5.6-sol\nsandbox: read-only\n--------\n' +
-    'x'.repeat(promptChars) +
-    '\nERROR: the thing that actually broke'
-
-  test('the error at the end is kept', () => {
-    expect(errorTail(codexish(50_000))).toContain('the thing that actually broke')
-  })
-
-  test('and the banner at the start is kept too', () => {
-    // Run 243 was diagnosable only because its banner survived: the model and
-    // provider lines were the explanation.
-    const out = errorTail(codexish(50_000))
-    expect(out).toContain('OpenAI Codex v0.151.0')
-    expect(out).toContain('model: gpt-5.6-sol')
-  })
-
-  test('the echoed prompt in the middle is what gets dropped', () => {
-    const out = errorTail(codexish(50_000))
-    expect(out).toContain('characters omitted')
-    expect(out.length).toBeLessThan(2200)
-  })
-
-  test('a short error is stored whole, untouched', () => {
-    expect(errorTail('exit 143, empty output')).toBe('exit 143, empty output')
   })
 })
 

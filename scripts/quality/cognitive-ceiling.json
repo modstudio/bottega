@@ -1,11 +1,5 @@
 [
   {
-    "file": "orchestrator/src/dispatch-preflight.ts",
-    "function": "preflight",
-    "line": 42,
-    "score": 46
-  },
-  {
     "file": "hub/src/cli.ts",
     "function": "task",
     "line": 233,
@@ -292,6 +286,12 @@
     "function": "reapStale",
     "line": 1227,
     "score": 30
+  },
+  {
+    "file": "orchestrator/src/dispatch-preflight.ts",
+    "function": "preflight",
+    "line": 42,
+    "score": 46
   },
   {
     "file": "orchestrator/src/docker-resources.ts",
@@ -622,18 +622,6 @@
     "function": "replay",
     "line": 227,
     "score": 29
-  },
-  {
-    "file": "orchestrator/src/run.ts",
-    "function": "resolveTaskBranch",
-    "line": 1125,
-    "score": 23
-  },
-  {
-    "file": "orchestrator/src/run.ts",
-    "function": "retargetRepositoryPrompt",
-    "line": 1380,
-    "score": 19
   },
   {
     "file": "orchestrator/src/run.ts",

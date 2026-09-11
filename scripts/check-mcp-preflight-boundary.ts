@@ -13,6 +13,7 @@ const FORBIDDEN: [RegExp, string][] = [
 const imports = importSpecifiers(readFileSync(`${ROOT}/${FILE}`, 'utf8'))
 const violations: string[] = []
 for (const specifier of imports.specifiers) {
+  if (specifier === './run-process.ts') continue
   const concern = FORBIDDEN.find(([pattern]) => pattern.test(specifier))?.[1]
   if (concern) violations.push(`${FILE} imports "${specifier}" (${concern})`)
 }

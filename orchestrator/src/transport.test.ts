@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { AGENTS, db, dir, replyFileInstruction, run } from '../test/fixture.ts'
 import { addAgent, recordAgentProbe, removeAgent, setAgent } from './agents.ts'
-import { chainTransport } from './run.ts'
+import { chainTransport } from './failover.ts'
 import { ask } from './ask.ts'
 import {
   installTestTransport, type AgentTransport, type TransportHandle, type TransportResult,
