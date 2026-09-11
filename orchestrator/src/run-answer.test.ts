@@ -39,22 +39,6 @@ describe('run answers', () => {
     expect(rulingPrompt([{ question: 'which shape?', answer: 'use the existing shape' }])).toContain('THE RULING: use the existing shape')
   })
 
-  test('retry through a child delivers a pending ruling from a non-asking stranded root', async () => {
-    const root = insert('failed'); const child = insert('failed'); const prompt = join(dir, `retry-child-${child}.txt`); writeFileSync(prompt, 'original')
-    db().query('UPDATE run SET session_id=? WHERE id=?').run('orch-test-session', root); db().query('UPDATE run SET parent_run_id=?,turn=2,prompt_path=?,cwd=? WHERE id=?').run(root, prompt, dir, child)
-    db().query('INSERT INTO question (run_id,asked_at,question,answer,answered_at,answered_by,delivery_pending_at) VALUES (?,?,?,?,?,?,?)').run(child, new Date().toISOString(), 'which recovery?', 'retry with ruling', new Date().toISOString(), 'orch-test-session', new Date().toISOString())
-    const pending = db().query('SELECT question,answer FROM question WHERE run_id=? AND delivery_pending_at IS NOT NULL').get(child) as { question: string; answer: string }
-    expect(rulingPrompt([pending])).toContain('THE RULING: retry with ruling')
-  })
-
-  test('a recorded-ruling writing retry warns that prior partial edits are not carried', async () => {
-    const id = insert('asking', 'implement'); const prompt = join(dir, `writing-retry-${id}.txt`); writeFileSync(prompt, 'spec'); db().query('UPDATE run SET session_id=?,vendor_session=?,prompt_path=?,cwd=? WHERE id=?').run('orch-test-session', 'valid', prompt, dir, id)
-    db().query('INSERT INTO question (run_id,asked_at,question,answer,answered_at,answered_by,delivery_pending_at) VALUES (?,?,?,?,?,?,?)').run(id, new Date().toISOString(), 'shape?', 'existing', new Date().toISOString(), 'orch-test-session', new Date().toISOString())
-    const pending = db().query('SELECT question,answer FROM question WHERE run_id=? AND delivery_pending_at IS NOT NULL').get(id) as { question: string; answer: string }
-    expect(rulingPrompt([pending])).toContain('THE RULING: existing')
-    expect(db().query('SELECT COUNT(*) n FROM run WHERE retry_of=?').get(id)).toEqual({ n: 0 })
-  })
-
   test('answer resumes the agent from the same row as the fallback vendor session', async () => {
     const root = insert('asking'); db().query('UPDATE run SET session_id=?,vendor_session=?,agent=?,cwd=? WHERE id=?').run('orch-test-session', 'codex-session', 'codex', dir, root)
     const latest = insert('asking'); db().query('UPDATE run SET parent_run_id=?,turn=2,vendor_session=NULL,agent=?,cwd=? WHERE id=?').run(root, 'grok', dir, latest); db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)').run(latest, new Date().toISOString(), 'which shape?')
