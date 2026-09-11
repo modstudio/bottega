@@ -48,23 +48,27 @@ describe('run files are named by their run, not by the clock', () => {
 describe('run file pruning', () => {
   test('deleting expired files nulls their matching database paths', () => {
     const files = join(dir, 'prune-files')
-    mkdirSync(files)
-    const prompt = join(files, 'old.prompt.txt')
-    const output = join(files, 'old.txt')
-    writeFileSync(prompt, 'prompt')
-    writeFileSync(output, 'output')
-    const old = new Date(Date.now() - (KEEP_RUN_FILES_DAYS + 1) * 86_400_000)
-    utimesSync(prompt, old, old)
-    utimesSync(output, old, old)
-    const id = addRun({ agent: 'codex', job: 'file-question' })
-    db().query('UPDATE run SET prompt_path=?, output_path=? WHERE id=?').run(prompt, output, id)
+    try {
+      mkdirSync(files)
+      const prompt = join(files, 'old.prompt.txt')
+      const output = join(files, 'old.txt')
+      writeFileSync(prompt, 'prompt')
+      writeFileSync(output, 'output')
+      const old = new Date(Date.now() - (KEEP_RUN_FILES_DAYS + 1) * 86_400_000)
+      utimesSync(prompt, old, old)
+      utimesSync(output, old, old)
+      const id = addRun({ agent: 'codex', job: 'file-question' })
+      db().query('UPDATE run SET prompt_path=?, output_path=? WHERE id=?').run(prompt, output, id)
 
-    pruneRuns(files)
+      pruneRuns(files)
 
-    expect(existsSync(prompt)).toBe(false)
-    expect(existsSync(output)).toBe(false)
-    expect(db().query('SELECT prompt_path, output_path FROM run WHERE id=?').get(id))
-      .toEqual({ prompt_path: null, output_path: null })
+      expect(existsSync(prompt)).toBe(false)
+      expect(existsSync(output)).toBe(false)
+      expect(db().query('SELECT prompt_path, output_path FROM run WHERE id=?').get(id))
+        .toEqual({ prompt_path: null, output_path: null })
+    } finally {
+      rmSync(files, { recursive: true, force: true })
+    }
   })
 })
 
