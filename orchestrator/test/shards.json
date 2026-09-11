@@ -13,7 +13,19 @@
     "test/process-boundary/database-linked-worktree.test.ts": {
       "size": "short"
     },
-    "src/monitor.cli.test.ts": {
+    "test/process-boundary/monitor-notices.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/hooks-session-brief.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/hooks-session-resumes.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/hooks-session-heartbeat.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/hooks-heartbeat.test.ts": {
       "size": "short"
     },
     "test/process-boundary/database-initialize.test.ts": {
@@ -99,7 +111,11 @@
       "measuredSeconds": 76.89,
       "files": [
         "test/process-boundary/lifecycle-harness.test.ts",
-        "src/monitor.cli.test.ts",
+        "test/process-boundary/monitor-notices.test.ts",
+        "test/process-boundary/hooks-session-brief.test.ts",
+        "test/process-boundary/hooks-session-resumes.test.ts",
+        "test/process-boundary/hooks-session-heartbeat.test.ts",
+        "test/process-boundary/hooks-heartbeat.test.ts",
         "test/process-boundary/discard.test.ts"
       ]
     },
