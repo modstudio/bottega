@@ -3,23 +3,28 @@ import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, nowIso,
 import { judgeability, weigh, DELIVERY, QUALITY, FIDELITY, type Delivery, type Quality, type Fidelity } from './score.ts'
 import { pendingForSession, UNSCORED_WHERE, chainScoreJoin, EVIDENCE_CLOSED_SQL, voidedSql, activeSql, runTotals } from './evidence-query.ts'
 import { REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_SEVERITY, type ReviewReproduced, type ReviewCoverage, type ReviewLimits, type ReviewOverlap } from './review-vocabulary.ts'
-import { reapStale, STALE_AFTER_MS, resolveRootFromLastTurn } from './run-liveness.ts'; import { pidAlive } from './process-liveness.ts'
+import { reapStale, resolveRootFromLastTurn } from './run-liveness.ts'; import { pidAlive } from './process-liveness.ts'
 import { recordDuels, recordLosses, recordTies, duelMatrices, pairPartners, unrecordedPairsForSession, parseRunIds } from './duel.ts'
 import { authorizeRunMutation, runMutationActor, auditRunMutation, adoptRunMutation, type RootAuthority } from './run-authority.ts'
 import { liveWorktreeSharers, otherConversationWorktreeSharers, teardownTerminalRunResources, terminalDockerRetentionReasonForRun, type WorktreeSharerRow } from './resource-ownership.ts'
+import { detach as dispatchDetached } from './run-dispatch.ts'
+import {
+  continueRun as continueControlledRun, follow as followRun,
+  reportContinuedRun as reportControlledRun,
+} from './run-control.ts'
+import { answerRun, retryRun } from './run-answer.ts'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync, unlinkSync, openSync, fstatSync, closeSync, constants } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
-import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
 import { projectAt, projectByName, projects, renameProject } from './projects.ts'
 import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
-import { collectResult, collectWait, resolveFailover, failoverSummary, branchNote } from './collect.ts'
+import { collectResult, collectWait, resolveFailover } from './collect.ts'
 import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
 import {
-  ANSWER_WORKING_FORMS, CONTINUE_WORKING_FORMS, TELL_WORKING_FORMS,
-  flagValue, flagValues, invalidUtf8Offset, nulByteOffset, parseAnswerTextSources,
+  CONTINUE_WORKING_FORMS, TELL_WORKING_FORMS,
+  flagValue, flagValues, invalidUtf8Offset, nulByteOffset,
   parseWorkerMessageArgs, refuseMisparsedMessage, validateCliArgs,
 } from './args.ts'
 import {
@@ -42,9 +47,9 @@ let jobsModule: typeof import('./jobs.ts')
 let agentsModule: typeof import('./agents.ts')
 let routeModule: typeof import('./route.ts')
 let guideModule: typeof import('./guide.ts')
-let runModule: typeof import('./run.ts'); let runArtifactsModule: typeof import('./run-artifacts.ts'); let closeOutModule: typeof import('./close-out.ts')
-let mcpPreflightModule: typeof import('./mcp-preflight.ts'); let dispatchPreflightModule: typeof import('./dispatch-preflight.ts'); let reviewTargetModule: typeof import('./review-target.ts')
-let mcpRequestFromStored!: typeof import('./mcp-preflight.ts').mcpRequestFromStored; let storedMcpRequest!: typeof import('./mcp-preflight.ts').storedMcpRequest; let preflight!: typeof import('./dispatch-preflight.ts').preflight; let implicitReviewWarning!: typeof import('./review-target.ts').implicitReviewWarning
+let runArtifactsModule: typeof import('./run-artifacts.ts'); let closeOutModule: typeof import('./close-out.ts')
+let dispatchPreflightModule: typeof import('./dispatch-preflight.ts'); let reviewTargetModule: typeof import('./review-target.ts')
+let preflight!: typeof import('./dispatch-preflight.ts').preflight; let implicitReviewWarning!: typeof import('./review-target.ts').implicitReviewWarning
 let worktreeModule!: typeof import('./worktree.ts'); let gitEnvironmentModule!: typeof import('./git-environment.ts'); let worktreeAttributionModule!: typeof import('./worktree-attribution.ts')
 let contractModule!: typeof import('./contract.ts')
 let grokTrustModule!: typeof import('./grok-trust.ts')
@@ -101,20 +106,13 @@ let promptSizeBucketLabel!: typeof import('./route.ts').promptSizeBucketLabel
 async function loadRoute() { routeModule ??= await import('./route.ts'); ({ candidates, pick, scoreboard, MIN_SAMPLE, promptSizeBucketLabel } = routeModule) }
 let guide!: typeof import('./guide.ts').guide
 async function loadGuide() { guideModule ??= await import('./guide.ts'); ({ guide } = guideModule) }
-let repoOf!: typeof import('./run.ts').repoOf
-let preflightMcp!: typeof import('./mcp-preflight.ts').preflightMcp
-let KEEP_RUN_FILES_DAYS!: typeof import('./run-artifacts.ts').KEEP_RUN_FILES_DAYS; let RUNS_DIR!: typeof import('./run-artifacts.ts').RUNS_DIR; let runFilePaths!: typeof import('./run-artifacts.ts').runFilePaths
+let RUNS_DIR!: typeof import('./run-artifacts.ts').RUNS_DIR
 let terminateRunProcesses!: typeof import('./run-process.ts').terminateRunProcesses
-let packedResumePrompt!: typeof import('./run.ts').packedResumePrompt
-let retryModelForAgent!: typeof import('./failover.ts').retryModelForAgent
-let chainTransport!: typeof import('./failover.ts').chainTransport
-let closeOutRun!: typeof import('./close-out.ts').closeOutRun; let readDispatchState!: typeof import('./run-artifacts.ts').readDispatchState
-async function loadRun() { runModule ??= await import('./run.ts'); runArtifactsModule ??= await import('./run-artifacts.ts'); closeOutModule ??= await import('./close-out.ts')
-  mcpPreflightModule ??= await import('./mcp-preflight.ts'); dispatchPreflightModule ??= await import('./dispatch-preflight.ts'); reviewTargetModule ??= await import('./review-target.ts'); ({ mcpRequestFromStored, storedMcpRequest } = mcpPreflightModule); ({ preflight } = dispatchPreflightModule); ({ implicitReviewWarning } = reviewTargetModule)
-  ;({ preflightMcp } = mcpPreflightModule)
-  ;({ repoOf, packedResumePrompt } = runModule)
-  ;({ KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, readDispatchState } = runArtifactsModule); ({ closeOutRun } = closeOutModule)
-  ;({ terminateRunProcesses } = await import('./run-process.ts')); ({ retryModelForAgent, chainTransport } = await import('./failover.ts'))
+let closeOutRun!: typeof import('./close-out.ts').closeOutRun
+async function loadRun() { runArtifactsModule ??= await import('./run-artifacts.ts'); closeOutModule ??= await import('./close-out.ts')
+  dispatchPreflightModule ??= await import('./dispatch-preflight.ts'); reviewTargetModule ??= await import('./review-target.ts'); ({ preflight } = dispatchPreflightModule); ({ implicitReviewWarning } = reviewTargetModule)
+  ;({ RUNS_DIR } = runArtifactsModule); ({ closeOutRun } = closeOutModule)
+  ;({ terminateRunProcesses } = await import('./run-process.ts'))
 }
 let transportModule: typeof import('./transport.ts')
 let assertAcpAllowed!: typeof import('./transport.ts').assertAcpAllowed
@@ -140,8 +138,7 @@ let READONLY_PREAMBLE!: typeof import('./contract.ts').READONLY_PREAMBLE
 let NO_REPO_PREAMBLE!: typeof import('./contract.ts').NO_REPO_PREAMBLE
 let REVIEW_SEVERITY_INSTRUCTION!: typeof import('./contract.ts').REVIEW_SEVERITY_INSTRUCTION
 let contractConflicts!: typeof import('./contract.ts').contractConflicts
-let rulingPrompt!: typeof import('./contract.ts').rulingPrompt
-async function loadContract() { contractModule ??= await import('./contract.ts'); ({ WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE, REVIEW_SEVERITY_INSTRUCTION, contractConflicts, rulingPrompt } = contractModule) }
+async function loadContract() { contractModule ??= await import('./contract.ts'); ({ WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE, REVIEW_SEVERITY_INSTRUCTION, contractConflicts } = contractModule) }
 let grokTrustHeadings!: typeof import('./grok-trust.ts').grokTrustHeadings
 let grokTrustPathFromHeading!: typeof import('./grok-trust.ts').grokTrustPathFromHeading
 async function loadGrokTrust() { grokTrustModule ??= await import('./grok-trust.ts'); ({ grokTrustHeadings, grokTrustPathFromHeading } = grokTrustModule) }
@@ -199,7 +196,6 @@ async function loadDockerResources() { dockerResourcesModule ??= await import('.
  * always reached a terminal state by then. The extra minute is for the reaper's
  * own poll to land.
  */
-const FOLLOW_TIMEOUT_MS = STALE_AFTER_MS + 60_000
 
 /** Test-only ordering seam for database interleavings at lifecycle boundaries. */
 function lifecycleCheckpoint(name: string): void {
@@ -213,13 +209,6 @@ function lifecycleCheckpoint(name: string): void {
   }
 }
 
-/**
- * Watch a detached run to its terminal state and report it as the caller expects.
- *
- * Shared by `do` and `retry` because they have the same exposure: whichever
- * process is holding the agent as a child is the process whose death destroys
- * the work. Neither holds it any more.
- */
 /**
  * How to score THIS run — the right id and the right axes.
  *
@@ -260,12 +249,6 @@ function pairHint(partner: { id: number; agent: string }): string {
  * is how colliding output files taught the router a lie. The reason is
  * the column's own text; NULL means nothing to say.
  */
-function evidenceNote(row: { evidence_excluded: string | null }): string {
-  return row.evidence_excluded
-    ? `\n  not routing evidence: ${row.evidence_excluded}`
-    : ''
-}
-
 const THIN_OUTPUT_BYTES = 1024
 const THIN_OUTPUT_LATENCY_MS = 5 * 60_000
 
@@ -356,88 +339,8 @@ function warnImplementContractConflicts(
 }
 
 async function follow(id: number, quiet: boolean, exitOnFailure = true): Promise<string> {
-  const deadline = Date.now() + FOLLOW_TIMEOUT_MS
-  const q = db().query(
-    `SELECT id, status, agent, job, parent_run_id, latency_ms, vendor_tokens,
-            output_path, error, route_reason, evidence_excluded
-       FROM run WHERE id = ?`)
-  for (;;) {
-    const chain = resolveFailover(db(), id)
-    const row = q.get(chain.finalId) as {
-      id: number; status: string; agent: string; job: string; parent_run_id: number | null
-      latency_ms: number | null; vendor_tokens: number | null
-      output_path: string | null; error: string | null; route_reason: string | null
-      evidence_excluded: string | null
-    } | null
-    const outcome = row ? outcomeOf(row) : null
-    if (row && outcome?.terminal && !chain.settling) {
-      const out = row.output_path && existsSync(row.output_path)
-        ? readFileSync(row.output_path, 'utf8') : ''
-      if (out) console.log(out)
-      const failover = failoverSummary(chain.attempts)
-      if (failover) console.error(`\n— ${failover}`)
-      /**
-       * ASKING IS NOT A FAILURE, and printing it as one undoes the rename.
-       *
-       * A worker that stopped to get a decision did exactly what it was told
-       * to. This branch reported it as `asking: no output` and exited 1 — the
-       * same shape as a crash, on the one outcome the whole escalation design
-       * exists to produce. Its questions are the output; they are simply not in
-       * the file this was looking at.
-       */
-      if (row.status === 'asking') {
-        const open = db().query(
-          `SELECT q.question FROM question q JOIN run r ON r.id = q.run_id
-            WHERE (r.id = ? OR r.parent_run_id = ?) AND q.answered_at IS NULL
-            ORDER BY q.id`,
-        ).all(row.parent_run_id ?? chain.finalId, row.parent_run_id ?? chain.finalId) as { question: string }[]
-        console.error(
-          `\n— run ${row.id} · ${row.agent} · stopped to ask` +
-          (row.latency_ms ? ` after ${dur(row.latency_ms)}` : '') + '\n' +
-          open.map((q) => `  · ${q.question}`).join('\n') +
-          `\n\n  ${outcome.line}` +
-          `\n  orch inbox              the questions in full` +
-          `\n  orch answer ${row.parent_run_id ?? chain.finalId} ...   rule, and it resumes where it stopped` +
-          `\n  orch diff ${row.parent_run_id ?? chain.finalId}          what it changed before it asked`,
-        )
-        return row.status
-      }
-      if (!outcome.ok) {
-        if (exitOnFailure) {
-          console.error(`\n— run ${row.id} · ${row.agent} · ${row.status}: ${row.error ?? 'no output'}`)
-          process.exit(1)
-        }
-        return row.status
-      }
-      if (quiet) return row.status
-      console.error(
-        `\n— run ${row.id} · ${row.agent}` +
-          (row.route_reason ? ` (${row.route_reason})` : '') +
-          ` · ${dur(row.latency_ms ?? 0)}` +
-          (row.vendor_tokens ? ` · ${row.vendor_tokens.toLocaleString()} vendor tokens` : '') +
-          `\n  score it:  ${scoreHint(chain.finalId, row.job, row.parent_run_id)}` +
-          branchNote(db(), row.id) +
-          evidenceNote(row),
-      )
-      return row.status
-    }
-    if (Date.now() >= deadline) {
-      // Deliberately NOT a kill. The worker is detached and may still be
-      // working; saying where to look for it is more use than destroying it.
-      console.error(`— run ${id} still going after ${Math.round(FOLLOW_TIMEOUT_MS / 60_000)}m.`
-        + ` It is detached and will finish on its own:  orch run ${id}`)
-      process.exit(2)
-    }
-    const observed = reapStale()
-    if (Array.isArray(observed) && observed.some((dead) => dead.id === chain.finalId)) {
-      console.error(`run ${chain.finalId}: process gone, not terminalised (read-only linked worktree)`)
-      if (exitOnFailure) process.exitCode = 1
-      return row?.status ?? 'running'
-    }
-    await new Promise((r) => setTimeout(r, 1000))
-  }
+  return followRun(id, quiet, exitOnFailure, { dur, scoreHint, argvResumeLimit, printRunId })
 }
-
 
 const argv = process.argv.slice(2)
 const cmd = argv[0]
@@ -1061,397 +964,26 @@ function discardWorktree(
   })
 }
 
-/**
- * Claim a run id, hand the work to a process that outlives this one, and return.
- *
- * The id has to exist BEFORE the agent is picked, because the whole point is to
- * print it and exit — so a placeholder row is claimed here and `run()` fills it
- * in once it has routed. Until then the row reads agent `(pending)`, which is
- * true: nothing has been chosen yet.
- *
- * The child is spawned with no stdio and unref'd, so this process's event loop
- * can drain and exit while the child keeps going. That is the part every
- * caller-side workaround got wrong — a shell wrapper dies and takes the agent
- * with it, and `setsid` does not exist on macOS.
- */
 async function detach(jobName: string, prompt: string, spec: DetachSpec): Promise<number> {
-  writableDb()
-  /**
-   * The depth check happens HERE TOO, before a row exists.
-   *
-   * run() already refuses to delegate from inside a delegated agent, but by
-   * then this function has inserted a placeholder row — so a worker that tries
-   * to hire someone leaves a `(pending)` row behind that nobody ever fills in
-   * and the stale sweep later marks `interrupted`. Observed: a grok worker read
-   * the `orch do` instructions in AGENTS.md, tried twice, and left two abandoned
-   * rows in the run table.
-   *
-   * They cost routing nothing, because `(pending)` is not an agent any query
-   * groups by — but they are litter in the one table that is supposed to be
-   * evidence, and "a run that should not exist should not leave a row behind"
-   * is already the rule three lines into run().
-   */
-  // A retry names the directory the original ran in; everything else is here.
-  const cwd = spec.cwd ?? process.cwd()
-  // A RESUME skips preflight: its agent was chosen long ago, its worktree
-  // exists, and its seed was settled when that worktree was cut. Re-checking
-  // would demand a `--seed` for a database that is already there.
-  const seed = spec.resume
-    ? spec.seed
-    : preflight(
-        jobName, cwd, spec.seed, spec.key, spec.base, false, false, spec.lens,
-        spec.review, spec.carry, spec.repo,
-      )
+  let selectedAgent: string | undefined
   if (!spec.resume && spec.mcp) {
-    // Who will run is knowable here, and a proven-failed grok attach must not
-    // leave a placeholder for the child to fail. Resume keeps the agent that
-    // already started; it is not a new dispatch.
-    await loadRoute(); const { stackAt } = await import('./projects.ts')
-    const { agent: selectedAgent } = pick(jobName, spec.agent, prompt.length, true, stackAt(cwd),
-      { agents: spec.avoid, models: spec.distinctModels, model: spec.model }, spec.probe, spec.lens)
-    preflightMcp({ mcp: spec.mcp, cwd, job: jobName, selectedAgent })
+    await loadRoute()
+    const { stackAt } = await import('./projects.ts')
+    selectedAgent = pick(jobName, spec.agent, prompt.length, true, stackAt(spec.cwd ?? process.cwd()),
+      { agents: spec.avoid, models: spec.distinctModels, model: spec.model }, spec.probe, spec.lens).agent
   }
-  const runsDir = RUNS_DIR
-  mkdirSync(runsDir, { recursive: true })
-  // Named by the clock alone, this collided: concurrent `orch do` calls for the
-  // same job inside one millisecond wrote the SAME prompt file, and every one of
-  // them then read whichever prompt was written last. Six review lenses fired at
-  // once produced three runs sharing one file and answering one question. The id
-  // is not known until the row below is inserted, so a random suffix carries the
-  // uniqueness here; run.ts uses the reserved id once there is one.
-  // The repo is known HERE, from the cwd, and was being written as NULL - so
-  // every detached run showed a blank project in "running now" until its child
-  // got far enough to fill the row in. There is no reason to make the page wait
-  // for a fact this function already has.
-  // A resume is claimed as a chain member in this same INSERT. Previously the
-  // placeholder became visible as a running root and run() attached its parent
-  // later, leaving inbox a real window in which the old asking root looked
-  // recoverable. One SQLite statement is the claim boundary: readers now see
-  // either no new turn or a running turn already linked to its chain.
-  const claimed = writeTransaction(() => {
-    const projectName = spec.repo ?? repoOf(cwd)
-    const projectId = projectName ? projectByName(projectName)?.id ?? null : null
-    const inserted = db().query(
-      `INSERT INTO run (started_at, agent, job, repo, project_id, cwd, prompt_sha, spec_sha, prompt_bytes,
-                      prompt_head, label, status, session_id, probe, parent_run_id, turn, mcp,
-                      vendor_session)
-       SELECT ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?
-        WHERE ? IS NULL OR (
-          EXISTS (SELECT 1 FROM run root WHERE root.id = ? AND root.status <> 'stale')
-          AND NOT EXISTS (
-            SELECT 1 FROM run
-             WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
-          )
-        )
-       RETURNING id`,
-    ).get(
-      nowIso(), jobName, projectName, projectId, null,
-      createHash('sha256').update(prompt).digest('hex').slice(0, 16),
-      createHash('sha256').update(prompt).digest('hex').slice(0, 16),
-      prompt.length, prompt.slice(0, 200).replace(/\s+/g, ' '), spec.label ?? null,
-      sessionId(), spec.probe ? 1 : 0, spec.resume?.parent ?? null,
-      spec.resume?.turn ?? 1, storedMcpRequest(spec.mcp), spec.resume?.session ?? null,
-      spec.resume?.parent ?? null, spec.resume?.parent ?? null,
-      spec.resume?.parent ?? null, spec.resume?.parent ?? null,
-    ) as { id: number } | null
-    const deliveryRoot = spec.resume?.parent ?? (spec.retryOf
-      ? (db().query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
-          .get(spec.retryOf) as { root_id: number } | null)?.root_id
-      : undefined)
-    if (inserted && deliveryRoot) {
-      db().query(
-        `UPDATE question SET delivery_pending_at=NULL
-          WHERE delivery_pending_at IS NOT NULL AND run_id IN
-            (SELECT id FROM run WHERE id=? OR parent_run_id=?)`,
-      ).run(deliveryRoot, deliveryRoot)
-    }
-    return inserted
-  })
-  if (!claimed) {
-    const root = db().query('SELECT status FROM run WHERE id=?').get(spec.resume!.parent) as
-      { status: string } | null
-    if (root?.status === 'stale') {
-      throw new Error(`run ${spec.resume!.parent} is ${root.status} and cannot be continued`)
-    }
-    const running = db().query(
-      `SELECT id, turn FROM run
-        WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
-        ORDER BY turn DESC, id DESC LIMIT 1`,
-    ).get(spec.resume!.parent, spec.resume!.parent) as { id: number; turn: number }
-    throw new Error(
-      `run ${spec.resume!.parent} already has running turn ${running.id} (turn ${running.turn})`,
-    )
-  }
-  const { id } = claimed
-  // The row now exists, so its id replaces that temporary random name and is
-  // also stored on the row for run() to reuse rather than creating a second file.
-  const promptPath = runFilePaths(runsDir, Date.now(), id, 'detach', jobName).prompt
-  writeFileSync(promptPath, prompt)
-  db().query('UPDATE run SET prompt_path=? WHERE id=?').run(promptPath, id)
-
-  /**
-   * Spawned into its OWN SESSION, which is the whole point and was missing.
-   *
-   * `Bun.spawn` has no `detached`, and `unref()` only frees this process's event
-   * loop - it does not move the child out of the process group. A harness
-   * command timeout does not kill a pid, it kills the GROUP, so the worker died
-   * with its caller exactly as the in-process agent had, and detaching bought
-   * nothing. Verified the wrong way first: killing the parent PID alone let the
-   * run finish, which proved nothing about the case that actually happens.
-   * Under `kill -TERM -<pgid>` the run came back `stale`/`interrupted`.
-   *
-   * node:child_process does have it, and `detached: true` is setsid(2): a new
-   * session, a new process group, out of reach of the group kill.
-   */
-  const execPath = process.env.ORCH_EXEC_PATH ?? process.execPath
-  const spawnArgs = [
-    /**
-     * `exec.ts`, NOT `cli.ts`, and that is the whole point of it.
-     *
-     * A detached worker is a fresh process that imports this concern's source
-     * at spawn time, so an edit anywhere in the graph kills every run launched
-     * during it — the child dies on import, before it can fill in the row this
-     * function already claimed. Three of another session's runs were lost that
-     * way this morning and reported only as "orch was dropping runs".
-     *
-     * `cli.ts` imports everything statically, so no `try` inside it can catch
-     * that. `exec.ts` imports almost nothing and pulls the rest in inside a
-     * catch, turning a broken sibling into a recorded failure with a reason.
-     */
-    new URL('exec.ts', import.meta.url).pathname,
-    String(id), promptPath, jobName, JSON.stringify({ ...spec, seed }),
-  ]
-  const spawnOpts = {
-    cwd,
-    // The child must not inherit this process's session id: the run row
-    // already records the session that ASKED for the work, and run() would
-    // otherwise re-stamp it from the child's environment.
-    env: { ...process.env, ORCH_DETACHED: '1' },
-    stdio: 'ignore' as const,
-    detached: true,
-  }
-
-  const failSpawn = (err: unknown): never => {
-    const why = `spawn failed: ${String((err as Error)?.message ?? err)}`
-    db().query(
-      `UPDATE run SET status='failed', failure_kind='harness', error=? WHERE id=?`,
-    ).run(why, id)
-    throw err
-  }
-
-  const spawnWorker = (): ChildProcess => {
-    try {
-      return spawn(execPath, spawnArgs, spawnOpts)
-    } catch (err) {
-      return failSpawn(err)
-    }
-  }
-  const child = spawnWorker()
-  try {
-    await new Promise<void>((resolve, reject) => {
-      let onError: (err: Error) => void
-      let onSpawn: () => void
-      onError = (err) => {
-        child.off('spawn', onSpawn)
-        reject(err)
-      }
-      onSpawn = () => {
-        child.off('error', onError)
-        resolve()
-      }
-      child.once('error', onError)
-      child.once('spawn', onSpawn)
-    })
-  } catch (err) {
-    failSpawn(err)
-  }
-
-  // The WORKER's pid, recorded now rather than left to run() to overwrite with
-  // the agent's. Without one, reapStale skips its liveness check entirely - the
-  // check is guarded on `if (r.pid)` - so a worker that dies before it spawns
-  // an agent leaves a row claiming to run for the full thirty-minute cutoff.
-  // Four such rows were sitting on the dashboard as `(pending)`, one of them
-  // for fifteen minutes.
-  if (child.pid) db().query('UPDATE run SET pid=? WHERE id=?').run(child.pid, id)
-  child.unref()
-  return id
+  return dispatchDetached(jobName, prompt, spec, selectedAgent)
 }
 
-function refuseEscapedChain(id: number): void {
-  const root = db().query('SELECT COALESCE(parent_run_id,id) root_id FROM run WHERE id=?')
-    .get(id) as { root_id: number } | null
-  const rows = root ? db().query(
-    `SELECT id, failure_kind, pre_confinement FROM run
-      WHERE (id=? OR parent_run_id=?) AND failure_kind IN ('escaped','confinement_unverified')
-      ORDER BY id DESC`,
-  ).all(root.root_id, root.root_id) as {
-    id: number; failure_kind: string; pre_confinement: string | null
-  }[] : []
-  if (!rows.length) return
-  const kind = rows[0]!.failure_kind
-  const recovery = rows.some((row) => !row.pre_confinement)
-    ? 'snapshot missing in this chain: clear uses the available snapshots and moves missing outcomes forward'
-    : 'snapshots available: clear restores the pre-confinement outcomes'
-  throw new Error(
-    `run ${id} is ${kind} (${recovery})\n` +
-    'invariant: an escaped or confinement-unverified chain is not resumed until the classification is cleared\n' +
-    `cleared by: orch confinement clear ${id} --writer TEXT --note TEXT`,
-  )
-}
-
-/** Resume a root run through the one path shared by `continue` and writing retries. */
 async function continueRun(id: number, message?: string): Promise<{ childId: number; job: string }> {
-  let authority = authorizeRunMutation(id, 'continue')
-  const row = db().query(
-    'SELECT id, job, parent_run_id, status FROM run WHERE id = ?',
-  ).get(id) as
-    { id: number; job: string; parent_run_id: number | null; status: string } | null
-  if (!row) throw new Error(`no run ${id}`)
-  refuseEscapedChain(id)
-  if (row.parent_run_id) {
-    throw new Error(`run ${id} is a turn of run ${row.parent_run_id}; continue that one`)
-  }
-  if (row.status === 'stale') {
-    throw new Error(`run ${id} is ${row.status} and cannot be continued`)
-  }
-  const recordedReview = db().query(
-    'SELECT review_id FROM review_lens WHERE run_id=?',
-  ).get(row.id) as { review_id: number } | null
-  if (recordedReview) {
-    throw new Error(
-      `run ${id} has a recorded review and cannot be continued\n` +
-      "invariant: a recorded review is the run's product and is not re-terminalised\n" +
-      'cleared by: dispatch a new review run',
-    )
-  }
-  const running = db().query(
-    `SELECT id, turn FROM run
-      WHERE (id = ? OR parent_run_id = ?) AND status = 'running'
-      ORDER BY turn, id LIMIT 1`,
-  ).get(id, id) as { id: number; turn: number } | null
-  if (running) {
-    throw new Error(`run ${id} already has running turn ${running.id} (turn ${running.turn})`)
-  }
-  const open = db().query(
-    `SELECT COUNT(*) n FROM question q JOIN run r ON r.id = q.run_id
-      WHERE (r.id = ? OR r.parent_run_id = ?) AND q.answered_at IS NULL`,
-  ).get(id, id) as { n: number }
-  // A worker waiting on a ruling must be RULED ON, not talked past. Continuing
-  // one would resume it with its question unanswered, and a worker resumed
-  // with an open question guesses — the single thing this design exists to
-  // prevent.
-  if (open.n) throw new Error(`run ${id} is waiting on ${open.n} question(s): orch answer ${id} ...`)
-  const latest = db().query(
-    `SELECT id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source
-       FROM run WHERE id = ? OR parent_run_id = ?
-      ORDER BY turn DESC LIMIT 1`,
-  ).get(id, id) as {
-    id: number; agent: string; vendor_session: string | null; turn: number
-    cwd: string | null; worktree: string | null; branch: string | null; base_commit: string | null
-    worktree_source: Worktree['source'] | null
-  }
-  const checkpointContext = (await import('./checkpoint.ts'))
-    .checkpointResumeContext(db(), id, latest.worktree)
-  const sessionFrom = checkpointContext ? null : latest.vendor_session
-    ? latest
-    : db().query(
-        `SELECT id, agent, vendor_session, turn
-           FROM run WHERE (id = ? OR parent_run_id = ?) AND vendor_session IS NOT NULL
-          ORDER BY turn DESC LIMIT 1`,
-      ).get(id, id) as { id: number; agent: string; vendor_session: string; turn: number } | null
-  if (!checkpointContext && !sessionFrom?.vendor_session) {
-    throw new Error(`run ${id} recorded no session id, so ${latest.agent} cannot be resumed`)
-  }
-  if (!checkpointContext && !latest.vendor_session) {
-    console.error(
-      `run ${id}: newest turn ${latest.id} recorded no session id; ` +
-      `resuming ${sessionFrom!.agent} with the session from run ${sessionFrom!.id} (turn ${sessionFrom!.turn})`,
-    )
-  }
-  let prompt: string
-  if (checkpointContext) {
-    const rootPrompt = db().query('SELECT prompt_path FROM run WHERE id=?').get(id) as
-      { prompt_path: string | null }
-    if (!rootPrompt.prompt_path || !existsSync(rootPrompt.prompt_path)) {
-      throw new Error(`run ${id} checkpoint cannot continue: its original prompt file is unavailable`)
-    }
-    prompt = [checkpointContext, readFileSync(rootPrompt.prompt_path, 'utf8'), message]
-      .filter((part): part is string => Boolean(part)).join('\n\n')
-  } else {
-    prompt = message
-      ?? 'Continue from where you stopped and finish the spec. If you reached a ' +
-         'decision that is not yours, stop and ask as before.'
-  }
-  const assembledLimit = checkpointContext ? undefined : argvResumeLimit(sessionFrom!.agent)
-  if (assembledLimit !== undefined) {
-    const packed = packedResumePrompt(row.job, prompt, id)
-    const assembled = Buffer.byteLength(packed, 'utf8')
-    if (assembled > assembledLimit) {
-      throw new Error(
-        `assembled resume prompt is ${assembled} bytes; this agent's resume transport is bounded at ${assembledLimit} bytes\n` +
-        `nothing was stored\nworking forms:\n${CONTINUE_WORKING_FORMS}`,
-      )
-    }
-  }
-  const launch = db().query(
-    `SELECT launch_cwd, launch_seed, launch_key, launch_base, no_failover, mcp, mcp_error, lens
-       FROM run WHERE id=?`,
-  ).get(id) as {
-    launch_cwd: string | null; launch_seed: string | null; launch_key: string | null
-    launch_base: string | null; no_failover: number; mcp: number | null; mcp_error: string | null
-    lens: string | null
-  }
-  authority = writeTransaction(() => {
-    const adopted = adoptRunMutation(authority, 'continue')
-    // Stop preserves the artifact specifically so this transition can reopen it.
-    db().query("UPDATE run SET status='failed' WHERE id=? AND status='stopped'").run(id)
-    return adopted
-  })
-  const childId = await detach(row.job, prompt, {
-    cwd: latest.cwd ?? process.cwd(),
-    seed: launch.launch_seed ?? undefined,
-    key: launch.launch_key ?? undefined,
-    base: launch.launch_base ?? undefined,
-    noFailover: !!launch.no_failover,
-    mcp: mcpRequestFromStored(launch.mcp, launch.mcp_error),
-    lens: launch.lens ?? undefined,
-    transport: chainTransport(id) ?? undefined,
-    resume: {
-      parent: id, agent: checkpointContext ? latest.agent : sessionFrom!.agent,
-      session: checkpointContext ? undefined : sessionFrom!.vendor_session ?? undefined,
-      fresh: Boolean(checkpointContext),
-      turn: latest.turn + 1, sessionId: authority.owner,
-      worktree: latest.worktree
-        ? {
-            path: latest.worktree,
-            branch: latest.branch ?? '',
-            base: latest.base_commit ?? '',
-            repoRoot: (await import('./git-environment.ts')).repoRootOf(latest.worktree) ?? process.cwd(),
-            source: latest.worktree_source ?? undefined,
-          }
-        : null,
-    },
-  })
-  auditRunMutation(authority, 'continue', message ?? null)
-  return { childId, job: row.job }
+  return continueControlledRun(id, message, argvResumeLimit)
 }
 
 async function reportContinuedRun(childId: number, jobName: string): Promise<void> {
-  if (has('detach') || !has('follow')) {
-    printRunId(childId)
-    if (!has('quiet')) {
-      console.error(
-        `\n— ${jobName} runs detached; a foreground one dies with its shell.` +
-        `\n  orch wait ${childId}      then:  orch result ${childId}` +
-        `\n  orch inbox          if it stops to ask` +
-        `\n  --follow            to watch it here instead`,
-      )
-    }
-    return
-  }
-  await follow(childId, has('quiet'))
+  return reportControlledRun(childId, jobName, {
+    detach: has('detach'), follow: has('follow'), quiet: has('quiet'),
+  }, { dur, scoreHint, argvResumeLimit, printRunId })
 }
-
 function chainHasPendingDelivery(rootId: number): boolean {
   return Boolean(db().query(
     `SELECT 1 FROM question q JOIN run owner ON owner.id=q.run_id
@@ -1893,6 +1425,11 @@ async function readMessageText(opts: {
   }
   if (opts.optional) return undefined
   throw new Error(opts.missing)
+}
+
+const runAnswerHelpers = {
+  argvResumeLimit, assertWorkerText, readWorkerFile, readMessageText,
+  presentation: { dur, scoreHint, argvResumeLimit, printRunId },
 }
 
 async function readPrompt(): Promise<string> {
@@ -3315,93 +2852,11 @@ switch (cmd) {
     await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadRun(), loadWorktree(), loadContract()])
     const id = Number(argv[1])
     if (!id) usage()
-    let retryAuthority = authorizeRunMutation(id, 'retry')
-    const row = db().query(
-      `SELECT id, COALESCE(parent_run_id,id) root_id, agent, job, cwd, prompt_path,
-              probe, status, failure_kind, mcp, mcp_error,
-              schema_path, model, lens, launch_cwd, launch_seed, launch_key, launch_base, no_failover,
-              keep_tree
-         FROM run WHERE id = ?`,
-    ).get(id) as {
-      id: number; root_id: number; agent: string; job: string; cwd: string | null
-      prompt_path: string | null; probe: number; status: string; failure_kind: string | null
-      mcp: number | null; mcp_error: string | null; schema_path: string | null; model: string | null; lens: string | null
-      launch_cwd: string | null; launch_seed: string | null; launch_key: string | null; launch_base: string | null
-      no_failover: number; keep_tree: number
-    } | null
-    if (!row) throw new Error(`no run ${id}`)
-    // A writing job already has a worktree and a vendor session. Retry would
-    // wrap the prompt again and cut a fresh tree beside the one holding the
-    // partial edit. Continue the same conversation in the same tree instead.
-    const recordedRulings = db().query(
-      `SELECT q.question, q.answer
-         FROM question q JOIN run owner ON owner.id = q.run_id
-        WHERE (owner.id = ? OR owner.parent_run_id = ?)
-          AND q.delivery_pending_at IS NOT NULL AND q.answer IS NOT NULL
-        ORDER BY q.id`,
-    ).all(row.root_id, row.root_id) as { question: string; answer: string }[]
-    if (job(row.job).needs.writesRepo && !recordedRulings.length) {
-      const requested = flag('agent')
-      if (requested && requested !== row.agent) {
-        throw new Error(
-          `a writing run continues on its own agent (${row.agent}); to start over on ${requested}: ` +
-          `orch do ${row.job} --agent ${requested} ...`,
-        )
-      }
-      const resumed = await continueRun(id)
-      auditRunMutation(retryAuthority, 'retry', `continued as run ${resumed.childId}`)
-      await reportContinuedRun(resumed.childId, resumed.job)
-      break
-    }
-    if (!row.prompt_path || !existsSync(row.prompt_path)) {
-      throw new Error(
-        `run ${id} has no prompt on disk — it predates prompt capture, or the file has aged out ` +
-          `after ${KEEP_RUN_FILES_DAYS} days. Nothing to re-send.`,
-      )
-    }
-    // The SAME agent by default, which is the whole point. A quota limit or a
-    // dropped connection is a fact about the moment, not about the agent, and
-    // routing around it starts a different agent from scratch on work the first
-    // one had already partly done.
-    const agent = flag('agent') ?? row.agent
-    if (recordedRulings.length && job(row.job).needs.writesRepo) {
-      console.error(
-        `— recorded rulings require a fresh worktree; retry will not carry the previous partial edit`,
-      )
-    }
-    console.error(
-      `— retrying run ${id} (${row.agent}/${row.job}` +
-        (row.failure_kind ? `, ${row.failure_kind}` : '') + `) on ${agent}`,
-    )
-    retryAuthority = writeTransaction(() => adoptRunMutation(retryAuthority, 'retry'))
-    // Detached and followed, exactly like `do`. A retry is usually started
-    // BECAUSE the first attempt died; running it as a child of this process
-    // would leave it dying the same way.
-    const originalPrompt = readFileSync(row.prompt_path, 'utf8')
-    const retryPrompt = recordedRulings.length
-      ? `${originalPrompt}\n\n---\n\n${rulingPrompt(recordedRulings)}`
-      : originalPrompt
-    const dispatch = readDispatchState(row.root_id)
-    const newId = await detach(row.job, retryPrompt, {
-      agent,
-      schema: row.schema_path ?? undefined,
-      mcp: mcpRequestFromStored(row.mcp, row.mcp_error),
-      model: retryModelForAgent(row.agent, row.model, agent, flag('model')),
-      lens: row.lens ?? undefined,
-      probe: !!row.probe, retryOf: id, cwd: row.launch_cwd ?? row.cwd ?? undefined,
-      seed: row.launch_seed ?? undefined, key: row.launch_key ?? undefined,
-      base: row.launch_base ?? undefined, noFailover: !!row.no_failover,
-      transport: chainTransport(row.root_id) ?? undefined,
-      keepTree: !!row.keep_tree,
-      deliverables: dispatch.deliverables,
-      timeoutMinutes: dispatch.timeoutMinutes ?? undefined,
-    })
-    auditRunMutation(retryAuthority, 'retry', `retried as run ${newId}`)
-    console.error(`— run ${newId} is retry of ${id}`)
-    await follow(newId, has('quiet'))
+    await retryRun(id, { agent: flag('agent'), model: flag('model'), flags: {
+      detach: has('detach'), follow: has('follow'), quiet: has('quiet'),
+    } }, runAnswerHelpers)
     break
   }
-
   /**
    * The deliverable of a writing run, which is the DIFF and not the prose.
    *
@@ -4041,381 +3496,15 @@ switch (cmd) {
     break
   }
 
-  /**
-   * Rule on what a worker asked, and set it going again.
-   *
-   * The ruling RESUMES the worker's own session rather than starting a new run,
-   * which is the entire reason escalation is affordable here: everything the
-   * worker had read is still in its head, so a design question costs one short
-   * turn instead of a second full survey of the code. Starting fresh would make
-   * asking more expensive than guessing, and a channel that costs more than
-   * guessing does not get used.
-   */
   case 'answer': {
     await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadRun(), loadWorktree(), loadContract()])
     const requestedId = Number(argv[1])
     if (!requestedId) usage()
-    const row = db().query(
-      `SELECT root.id, root.agent, root.job, root.cwd, root.worktree, root.branch,
-              root.base_commit, root.vendor_session, root.status, root.session_id,
-              root.turn, root.parent_run_id, root.worktree_source, root.evidence_excluded
-         FROM run requested
-         JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
-        WHERE requested.id = ?`,
-    ).get(requestedId) as {
-      id: number; agent: string; job: string; cwd: string | null
-      worktree: string | null; branch: string | null; base_commit: string | null
-      vendor_session: string | null; status: string; session_id: string | null
-      turn: number; parent_run_id: number | null
-      worktree_source: Worktree['source'] | null
-      evidence_excluded: string | null
-    } | null
-    if (!row) throw new Error(`no run ${requestedId}`)
-    const id = row.id
-    refuseEscapedChain(id)
-    let answerAuthority = authorizeRunMutation(requestedId, 'answer')
-
-    /**
-     * Questions are collected ACROSS THE WHOLE CHAIN, not just off the root.
-     *
-     * A worker that blocks on turn two records its questions against the CHILD
-     * row while the roll-up marks the ROOT blocked. Looking only at the root
-     * found nothing to answer and looking at the child was refused as
-     * non-root — so a conversation that asked twice could not be continued at
-     * all. Found in review, and it is the shape every multi-turn escalation
-     * takes after the first.
-     */
-    const open = db().query(
-      `SELECT q.id, q.question, r.id owner_id, r.status owner_status, r.pid owner_pid
-         FROM question q JOIN run r ON r.id = q.run_id
-        WHERE (r.id = ? OR r.parent_run_id = ?) AND q.answered_at IS NULL
-        ORDER BY q.id`,
-    ).all(id, id) as {
-      id: number; question: string; owner_id: number
-      owner_status: string; owner_pid: number | null
-    }[]
-    if (!open.length) {
-      const asked = db().query(
-        `SELECT COUNT(*) n FROM question q JOIN run r ON r.id = q.run_id
-          WHERE r.id = ? OR r.parent_run_id = ?`,
-      ).get(id, id) as { n: number }
-      throw new Error(
-        asked.n
-          ? `run ${id} has already been ruled on; its current status is ${row.status}`
-          : `run ${id} has no questions to answer; its current status is ${row.status}`,
-      )
-    }
-
-    // A ruling resumes a live chain. Stopped, failed, stale and voided roots
-    // used to record the answer and spawn a new turn, which is retry's job.
-    if (row.evidence_excluded !== null ||
-        (row.status !== 'running' && row.status !== 'asking')) {
-      throw new Error(
-        `run ${id} is ${row.evidence_excluded !== null ? 'voided' : row.status}. ` +
-        'invariant: a ruling resumes a live chain; a terminal chain is retried or abandoned. ' +
-        `orch retry ${id} --agent <name> (carries the recorded ruling) or orch abandon ${id}`,
-      )
-    }
-
-    // A last-seen timeout used to make a question appear adoptable, and this
-    // command then accepted the adoption. Only the architect session that
-    // dispatched the conversation has standing to change its specification.
-    const callerSession = answerAuthority.actor
-    if (!row.session_id && callerSession) {
-      console.error(
-        `run ${id} is unowned; session ${callerSession} may rule and will adopt the chain, ` +
-        'and that answering identity will be recorded',
-      )
-    }
-
-    /**
-     * TWO WAYS A QUESTION ARRIVES, and they are answered differently.
-     *
-     * `blocked` means the worker ended its turn and is waiting to be resumed —
-     * the ruling has to start it again. `running` means the worker is ALIVE and
-     * sitting inside an `ask_orchestrator` tool call, so writing the answer is
-     * the entire delivery: it is polling for exactly that row, and resuming a
-     * process that never stopped would start a second worker on the same
-     * worktree.
-     *
-     * This is the defect the live channel shipped with. Questions asked through
-     * MCP land against a `running` run, and this command accepted nothing but
-     * `blocked` — so the tool could never be answered and every live question
-     * ran to its timeout. The headline feature did not work end to end, and the
-     * test that "proved" it wrote the answer with raw SQL, bypassing the very
-     * guard that was refusing it.
-     */
-    const live = open.filter((q) =>
-      (q.owner_status === 'running' || q.owner_status === 'asking') && pidAlive(q.owner_pid))
-    const stopped = open.filter((q) => !live.includes(q))
-    if (live.length && stopped.length) {
-      const list = (questions: typeof open) => questions
-        .map((q) => `q${q.id} (run ${q.owner_id}, ${q.owner_status})`).join(', ')
-      throw new Error(
-        `run ${id} has questions owned by both live and stopped turns. ` +
-        `Live: ${list(live)}. Stopped: ${list(stopped)}. Refusing to rule; inspect the run chain.`,
-      )
-    }
-    const ownersLive = live.length > 0
-    const recordOnly = has('record-only')
-    const skipResume = recordOnly && !ownersLive
-    if (!ownersLive && !stopped.every((q) =>
-      q.owner_status === 'asking' || q.owner_status === 'running')) {
-      const states = stopped.map((q) => `q${q.id} (run ${q.owner_id}, ${q.owner_status})`).join(', ')
-      throw new Error(`run ${id} has questions whose owners are not waiting: ${states}`)
-    }
-
-    const latest = db().query(
-      `SELECT id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source
-         FROM run WHERE id = ? OR parent_run_id = ?
-        ORDER BY turn DESC LIMIT 1`,
-    ).get(id, id) as {
-      id: number; agent: string; vendor_session: string | null; turn: number
-      cwd: string | null; worktree: string | null; branch: string | null; base_commit: string | null
-      worktree_source: Worktree['source'] | null
-    }
-    const sessionFrom = latest.vendor_session
-      ? latest
-      : db().query(
-          `SELECT id, agent, vendor_session, turn
-             FROM run WHERE (id = ? OR parent_run_id = ?) AND vendor_session IS NOT NULL
-            ORDER BY turn DESC LIMIT 1`,
-        ).get(id, id) as {
-          id: number; agent: string; vendor_session: string; turn: number
-        } | null
-    const resumeAgent = sessionFrom?.agent ?? latest.agent
-
-    // Two ways to rule: one joined positional / --file / stdin message, or
-    // by question id when there are several. `--q<id> --file PATH` binds that
-    // file to that question; a command-level `--file` is the single-ruling form.
-    const answers: { id: number; question: string; answer: string }[] = []
-    const parsed = parseAnswerTextSources(argv.slice(2))
-    const argvLimit = ownersLive ? undefined : argvResumeLimit(resumeAgent)
-    const rulingFrom = (text: string): string => {
-      assertWorkerText(text, 'ruling', ANSWER_WORKING_FORMS, argvLimit)
-      return text
-    }
-    if (parsed.byId.length) {
-      if (parsed.commandFile !== undefined || parsed.positionals.length) {
-        throw new Error(
-          'pass --file next to each --q<id>, not as a command-level flag or positional alongside --q\n' +
-          `working forms:\n${ANSWER_WORKING_FORMS}`,
-        )
-      }
-      const invalid: string[] = []
-      const seen = new Set<number>()
-      for (const src of parsed.byId) {
-        if (seen.has(src.id)) invalid.push(`--q${src.id} given more than once`)
-        seen.add(src.id)
-        if (open.some((q) => q.id === src.id)) continue
-        const named = db().query(
-          `SELECT q.id, q.answered_at, r.id AS run_id,
-                  COALESCE(r.parent_run_id, r.id) AS root_id
-             FROM question q JOIN run r ON r.id = q.run_id WHERE q.id = ?`,
-        ).get(src.id) as
-          { id: number; answered_at: string | null; run_id: number; root_id: number } | null
-        if (!named) {
-          invalid.push(`--q${src.id} names no question`)
-        } else if (named.root_id !== id) {
-          invalid.push(`--q${src.id} belongs to run ${named.root_id}, not this chain`)
-        } else if (named.answered_at) {
-          invalid.push(`--q${src.id} on run ${named.run_id} is already closed`)
-        } else {
-          invalid.push(`--q${src.id} is not open on this chain`)
-        }
-      }
-      if (invalid.length) {
-        throw new Error(
-          `refusing the whole ruling: ${invalid.join('; ')}\n` +
-          `nothing was stored\nworking forms:\n${ANSWER_WORKING_FORMS}`,
-        )
-      }
-      for (const q of open) {
-        const src = parsed.byId.find((item) => item.id === q.id)
-        if (!src) continue
-        const given = src.file !== undefined ? readWorkerFile(src.file) : src.text!
-        answers.push({ id: q.id, question: q.question, answer: rulingFrom(given) })
-      }
-    } else {
-      const positional = parsed.positionals
-      if (parsed.commandFile !== undefined || (!positional.length && !process.stdin.isTTY)) {
-        const given = await readMessageText({
-          missing: 'no ruling: pass it as an argument, via --file, or on stdin',
-          exclusive: 'pass the ruling either positionally or with --file, not both',
-          sources: parsed,
-        })
-        answers.push({ id: open[0]!.id, question: open[0]!.question, answer: rulingFrom(given!) })
-      } else if (!positional.length) {
-        throw new Error(
-          `run ${id} is waiting on ${open.length} question(s). ` +
-          `Rule with: orch answer ${id} --q${open[0]!.id} "<ruling>", ` +
-          'or pass a ruling via --file or stdin.',
-        )
-      } else {
-        // One reader: positional words join into one message, never one-per-question.
-        answers.push({
-          id: open[0]!.id,
-          question: open[0]!.question,
-          answer: rulingFrom(positional.join(' ')),
-        })
-      }
-    }
-    if (answers.length !== open.length) {
-      throw new Error(
-        `${open.length} question(s) open but ${answers.length} ruling(s) given. ` +
-        'For multiple questions, pass every --q<id> in a single command. ' +
-        'A worker resumed with a question unanswered will guess, which is the ' +
-        'one thing this is here to prevent.',
-      )
-    }
-
-    if (!ownersLive && !skipResume &&
-        (!sessionFrom?.vendor_session || AGENTS[resumeAgent]?.caps.resumable === false)) {
-      throw new Error(
-        `run ${id} cannot be resumed: no vendor session (agent ${resumeAgent}); ` +
-        `the ruling was NOT recorded; options: \`orch retry ${id} --agent …\` to ` +
-        `re-dispatch with the ruling appended to the spec, or \`orch abandon ${id}\``,
-      )
-    }
-    if (!ownersLive) {
-      const assembledLimit = argvResumeLimit(resumeAgent)
-      if (assembledLimit !== undefined) {
-        const turnPrompt = rulingPrompt(answers)
-        const packed = packedResumePrompt(row.job, turnPrompt, id)
-        const assembled = Buffer.byteLength(packed, 'utf8')
-        if (assembled > assembledLimit) {
-          const shrink = [...answers]
-            .map((a) => ({ id: a.id, bytes: Buffer.byteLength(a.answer, 'utf8') }))
-            .sort((a, b) => b.bytes - a.bytes || a.id - b.id)
-            .map((a) => `--q${a.id} (${a.bytes} bytes)`)
-            .join(', ')
-          throw new Error(
-            `assembled resume prompt is ${assembled} bytes; this agent's resume transport is bounded at ${assembledLimit} bytes\n` +
-            `rulings that would need to shrink: ${shrink}\n` +
-            `nothing was stored\nworking forms:\n${ANSWER_WORKING_FORMS}`,
-          )
-        }
-      }
-    }
-
-    const now = nowIso()
-    const upd = db().query(
-      `UPDATE question
-          SET answer=?, answered_at=?, answered_by=?, delivery_pending_at=?
-        WHERE id=?`,
-    )
-    const answeredBy = callerSession ?? 'anonymous (no session id)'
-    writeTransaction(() => {
-      answerAuthority = adoptRunMutation(answerAuthority, 'answer')
-      open.forEach((q, i) => upd.run(
-        answers[i]!.answer, now, answeredBy, ownersLive ? null : now, q.id,
-      ))
-      if (skipResume) db().query("UPDATE run SET status='asking' WHERE id=?").run(id)
-      auditRunMutation(answerAuthority, 'answer')
-    })
-
-    if (skipResume) {
-      console.log(
-        `recorded ${answers.length} ruling(s) for run ${id}; resume was skipped by --record-only. ` +
-        `The run remains asking; use orch retry ${id} --agent … to re-dispatch with the ruling appended to the spec, ` +
-        `or orch abandon ${id}.`,
-      )
-      break
-    }
-
-    if (ownersLive) {
-      // Delivered. The worker's own tool call is polling this row and will
-      // return with it inside a second; there is nothing else to do, and
-      // starting a new turn here would put two workers in one worktree.
-      console.log(
-        `ruled on ${answers.length} question(s) — the owning turn is still working and will ` +
-        `pick this up from its ask_orchestrator call.`,
-      )
-      break
-    }
-
-    const worktreePath = latest.worktree ?? row.worktree
-    /**
-     * DETACHED, for the reason `orch do` already is.
-     *
-     * A resumed turn is a full agent run — minutes, not seconds — and run in
-     * the foreground it outlives an agent harness's command timeout, which
-     * kills the whole process group and takes the worker down with it. That is
-     * not hypothetical: it happened on the first multi-turn ruling of real
-     * work, and the worker had finished and written its reply when the group
-     * was killed. This command was the last place still doing what the canon's
-     * own section says loses the work.
-     */
-    let childId: number
-    try {
-      childId = await detach(row.job, rulingPrompt(answers), {
-        cwd: latest.cwd ?? row.cwd ?? process.cwd(),
-        transport: chainTransport(id) ?? undefined,
-        resume: {
-          parent: id,
-          agent: resumeAgent,
-          session: sessionFrom!.vendor_session!,
-          turn: latest.turn + 1,
-          sessionId: row.session_id,
-          worktree: worktreePath
-            ? {
-                path: worktreePath,
-                branch: latest.branch ?? row.branch ?? '',
-                base: latest.base_commit ?? row.base_commit ?? '',
-                repoRoot: (await import('./git-environment.ts')).repoRootOf(worktreePath) ?? process.cwd(),
-                source: latest.worktree_source ?? row.worktree_source ?? undefined,
-              }
-            : null,
-        },
-      })
-    } catch (e) {
-      writeTransaction(() => {
-        for (const q of open) {
-          db().query(
-            `UPDATE question
-                SET answer=NULL, answered_at=NULL, answered_by=NULL, delivery_pending_at=NULL
-              WHERE id=?`,
-          ).run(q.id)
-        }
-      })
-      throw new Error(
-        `Resume failed: ${(e as Error).message}\n` +
-        `The ruling was rolled back and the question is still open.`,
-      )
-    }
-    console.log(`ruled on ${answers.length} question(s); resumed run ${id} as run ${childId}`)
-    if (has('detach') || !has('follow')) {
-      if (!has('quiet')) {
-        console.error(
-          `\n— ${row.job} runs detached; a foreground one dies with its shell.` +
-          `\n  orch wait ${childId}      then:  orch result ${childId}` +
-          `\n  orch inbox          if it stops to ask` +
-          `\n  --follow            to watch it here instead`,
-        )
-      }
-      break
-    }
-    const resumedStatus = await follow(childId, has('quiet'), false)
-    if (resumedStatus !== 'ok' && resumedStatus !== 'asking') {
-      const failed = db().query(
-        `SELECT status, error, failure_kind, exit_code FROM run WHERE id=?`,
-      ).get(childId) as {
-        status: string; error: string | null; failure_kind: string | null; exit_code: number | null
-      }
-      throw new Error(
-        `the rulings ARE recorded and were not lost, but resumed run ${childId} failed: ` +
-        `${failureReason(failed)}\nRetry it with: orch continue ${id}`,
-      )
-    }
-    const done = db().query('SELECT status FROM run WHERE id = ?').get(id) as { status: string }
-    console.error(
-      done.status === 'asking'
-        ? `\n  STILL ASKING — orch inbox`
-        : `\n  orch diff ${id}    then score it: ${scoreHint(id, row.job, null)}`,
-    )
+    await answerRun(requestedId, { argv: argv.slice(2), recordOnly: has('record-only'), flags: {
+      detach: has('detach'), follow: has('follow'), quiet: has('quiet'),
+    } }, runAnswerHelpers)
     break
   }
-
   /**
    * Carry on a conversation that has no open question.
    *

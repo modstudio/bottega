@@ -137,8 +137,7 @@ test('every --json surface has an enumerated and pinned output contract', () => 
   })
 
   test('detach spawns exec.ts as its child entry point', () => {
-    const cli = readFileSync(new URL('./cli.ts', import.meta.url).pathname, 'utf8')
-    const detachSource = cli.slice(cli.indexOf('function detach('), cli.indexOf('function usage('))
+    const detachSource = readFileSync(new URL('./run-dispatch.ts', import.meta.url).pathname, 'utf8')
     expect(detachSource).toContain("new URL('exec.ts', import.meta.url).pathname")
     expect(detachSource).not.toContain("new URL('cli.ts', import.meta.url).pathname")
   })
