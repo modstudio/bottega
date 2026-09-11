@@ -6,7 +6,8 @@ import { isReaderJob, type Job } from './jobs.ts'
 /**
  * What an implementation worker is told, and what it must hand back.
  *
- * The premise of delegating implementation is narrow and worth stating exactly, * because everything here follows from it. The standing objection to fanning
+ * The premise of delegating implementation is narrow and worth stating exactly,
+ * because everything here follows from it. The standing objection to fanning
  * out code-writing is that parallel workers make conflicting IMPLICIT
  * decisions — a background in one style, a sprite in another, and nothing
  * merges. The load-bearing word is *implicit*. A worker that must stop and ask
