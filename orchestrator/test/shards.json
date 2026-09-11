@@ -15,7 +15,7 @@
     "src/evals.cli.test.ts": {
       "size": "short"
     },
-    "src/lifecycle-harness.cli.test.ts": {
+    "test/process-boundary/lifecycle-harness.test.ts": {
       "size": "moderate",
       "exclusive": true
     },
@@ -130,7 +130,7 @@
     {
       "measuredSeconds": 76.89,
       "files": [
-        "src/lifecycle-harness.cli.test.ts",
+        "test/process-boundary/lifecycle-harness.test.ts",
         "src/monitor.cli.test.ts",
         "src/cleanup-sweep-orphans.test.ts",
         "src/cleanup-sweep-resources.test.ts",
