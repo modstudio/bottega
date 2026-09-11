@@ -177,8 +177,7 @@ export const { runFilePaths, pruneRuns, KEEP_RUN_FILES_DAYS,
         noRepoIsolatePath,
         readDispatchState, persistTerminalSnapshot, reconcileRun, closeOutRun } = await import('../src/run.ts')
 export const { detachedRunOptions, writingFailoverRefusal, resolveSupersededTurn, retryModelForAgent } = await import('../src/failover.ts')
-export const { errorTail, verifiedProcessTree, installTestProcessInventory } = await import('../src/run-process.ts')
-export const { resolveTaskBranch, taskBranchCandidacySql } = await import('../src/task-branch.ts')
+export const { errorTail, verifiedProcessTree, installTestProcessInventory } = await import('../src/run-process.ts'); export const { resolveTaskBranch, taskBranchCandidacySql } = await import('../src/task-branch.ts')
 export const { snapshotRegisteredCheckouts, retargetRepositoryPrompt, retargetRepositoryPromptForDispatch } = await import('../src/prompt-retarget.ts')
 export const { preflight, namesRecordedRunTree } = await import('../src/dispatch-preflight.ts')
 export const { inferredReadOnlyKey, resolveReviewTarget, implicitReviewWarning } = await import('../src/review-target.ts')

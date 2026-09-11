@@ -152,6 +152,15 @@ export type FailoverDecision =
   | { kind: 'select' }
   | { kind: 'successor'; agent: string }
 
+export function failoverRefusalReason(decision: FailoverDecision): string | null {
+  return decision.kind === 'refusal' ? decision.reason : null
+}
+
+export function failoverSuccessorAgent(decision: FailoverDecision): string {
+  if (decision.kind !== 'successor') throw new Error('failover successor was not selected')
+  return decision.agent
+}
+
 export function decideFailover(facts: {
   status: string
   failureKind: string | null

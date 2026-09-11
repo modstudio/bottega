@@ -123,8 +123,7 @@ async function loadRun() { runModule ??= await import('./run.ts')
   mcpPreflightModule ??= await import('./mcp-preflight.ts'); dispatchPreflightModule ??= await import('./dispatch-preflight.ts'); reviewTargetModule ??= await import('./review-target.ts'); ({ mcpRequestFromStored, storedMcpRequest } = mcpPreflightModule); ({ preflight } = dispatchPreflightModule); ({ implicitReviewWarning } = reviewTargetModule)
   ;({ preflightMcp } = mcpPreflightModule)
   ;({ repoOf, KEEP_RUN_FILES_DAYS, RUNS_DIR, runFilePaths, packedResumePrompt, readDispatchState, closeOutRun } = runModule)
-  ;({ terminateRunProcesses } = await import('./run-process.ts'))
-  ;({ retryModelForAgent, chainTransport } = await import('./failover.ts'))
+  ;({ terminateRunProcesses } = await import('./run-process.ts')); ({ retryModelForAgent, chainTransport } = await import('./failover.ts'))
 }
 let transportModule: typeof import('./transport.ts')
 let assertAcpAllowed!: typeof import('./transport.ts').assertAcpAllowed
@@ -1122,8 +1121,7 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
     // Who will run is knowable here, and a proven-failed grok attach must not
     // leave a placeholder for the child to fail. Resume keeps the agent that
     // already started; it is not a new dispatch.
-    await loadRoute()
-    const { stackAt } = await import('./projects.ts')
+    await loadRoute(); const { stackAt } = await import('./projects.ts')
     const { agent: selectedAgent } = pick(jobName, spec.agent, prompt.length, true, stackAt(cwd),
       { agents: spec.avoid, models: spec.distinctModels, model: spec.model }, spec.probe, spec.lens)
     preflightMcp({ mcp: spec.mcp, cwd, job: jobName, selectedAgent })

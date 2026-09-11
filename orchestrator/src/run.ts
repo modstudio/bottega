@@ -102,27 +102,14 @@ import {
   sampleProcesses, shouldIdleKill, terminateProcessGroup,
 } from './idle-kill.ts'
 import {
-  chainTransport, decideFailover, detachedRunOptions, failoverAttempts,
-  MAX_FAILOVER_ATTEMPTS, resolveSupersededTurn, retryModelForAgent,
-  writingFailoverRefusal, type DetachSpec,
+  chainTransport, decideFailover, failoverAttempts, failoverRefusalReason, failoverSuccessorAgent,
+  MAX_FAILOVER_ATTEMPTS, resolveSupersededTurn,
 } from './failover.ts'
 import {
-  bindSignals, childEnv, errorTail, installTestProcessInventory, live, liveCheckpoints, processTable, sha,
-  terminateRunProcesses, verifiedProcessTree,
+  bindSignals, childEnv, errorTail, live, liveCheckpoints, processTable, sha, terminateRunProcesses,
 } from './run-process.ts'
-import { resolveTaskBranch, taskBranchCandidacySql, type TaskBranchCandidate } from './task-branch.ts'
-import {
-  retargetRepositoryPrompt, retargetRepositoryPromptForDispatch, snapshotRegisteredCheckouts,
-} from './prompt-retarget.ts'
-
-export {
-  assertGrokTrustEligible, chainTransport, detachedRunOptions, errorTail,
-  installTestProcessInventory, resolveSupersededTurn, resolveTaskBranch,
-  retargetRepositoryPrompt, retargetRepositoryPromptForDispatch, retryModelForAgent,
-  snapshotRegisteredCheckouts, taskBranchCandidacySql, terminateRunProcesses,
-  verifiedProcessTree, writingFailoverRefusal,
-}
-export type { DetachSpec }
+import { resolveTaskBranch, type TaskBranchCandidate } from './task-branch.ts'
+import { retargetRepositoryPromptForDispatch } from './prompt-retarget.ts'
 
 export { TRUNCATED_TRANSCRIPT_BYTES }
 
@@ -184,59 +171,6 @@ const CANON_SOURCE_PROMPT_RESERVE_BYTES = Math.max(
 ) + 2
 
 /**
- * Variables that may reach a vendor's CLI: an allowlist, not a denylist.
- *
- * childEnv() used to copy the whole environment minus CLAUDE_* and ANTHROPIC_*,
- * so a danger-full-access worker inherited every unrelated credential in the
- * session. CLAUDE_* and ANTHROPIC_* stay off the list for two reasons, both
- * load-bearing:
- *
- * IDENTITY. The child inherits this session's id, so an `orch` call it makes on
- * its own initiative is recorded as ours. The Stop hook then demands a score for
- * a run nobody in this session read — and an agent, told it is blocking, will
- * eventually score it. That is precisely the dishonest evidence the whole
- * scoring design exists to keep out, arriving through the door marked "never let
- * anyone else judge your runs".
- *
- * CREDENTIALS. An Anthropic key is metered billing — the one cost this layer
- * exists to avoid — and no external agent has any use for it. Handing it to a
- * third-party binary with a network connection of its own is a leak with no
- * upside.
- *
- * Allowed through: PATH, HOME, USER, SHELL, LANG, LC_*, TERM, TMPDIR, XDG_*,
- * SSH_AUTH_SOCK, the vendor prefixes each CLI needs (OPENAI_*, XAI_*, GROK_*,
- * GEMINI_*, GOOGLE_*, CODEX_*, QWEN_*), and ORCH_*. Project envPrefix vars are
- * not: recipes and project tools run in orch's own process with its env, and
- * the vendor CLI needs none of the project's tokens. MCP servers read their
- * own tokens from ~/.claude/.env inside mcp-run.
- *
- * Residual exposure: HOME on the allowlist means a full-access worker can
- * still read that file.
- */
-/**
- * Children alive right now, so a signal can take them down with us.
- *
- * Without this, SIGTERM to `orch do` leaves the agent reparented to init with
- * nobody left to record what it did: the row claims to be running for ever, and
- * a subscription keeps being spent on an answer no one will read.
- */
-/** Terminate the verified whole descendant tree, youngest-first. */
-/**
- * Keep BOTH ENDS of a failing agent's output.
- *
- * Neither end alone is enough, and each was tried. A head-side cut stored the
- * banner and the echoed prompt and threw the error away: runs 24, 26, 27 and 32
- * are 2000 characters of a review prompt with no indication of what went wrong,
- * and are permanently undiagnosable. A tail-side cut loses the other half — the
- * banner an agent prints before it does anything names the version, the model,
- * the provider, the sandbox and the approval mode, and that is frequently the
- * whole explanation. Run 243 is diagnosable only because its banner survived.
- *
- * So the head gets a quarter and the tail the rest, with the gap marked. The
- * prompt is stored separately anyway, which is what makes the echoed copy in
- * the middle the right thing to drop.
- */
-/**
  * Which project a directory belongs to, ASKED rather than inferred.
  *
  * This was `/Users/<someone>/Projects/<name>`, which is a fact about one
@@ -254,20 +188,6 @@ export function repoOf(cwd: string): string | null {
   return projectAt(cwd)?.name ?? null
 }
 
-/**
- * The branch the work was on, recorded because it is free evidence about WHAT
- * the run was for and it was being thrown away.
- *
- * 53 of this estate's 60 branches carry a ticket key, and a branch name is a
- * declaration in exactly the way a worktree path is - somebody named it before
- * the work started. It is not a general answer: three main checkouts all sit on
- * `develop`, and a run from a main checkout is
- * precisely the one that has no key today. So this helps where the checkout is
- * on a ticket branch and is honestly silent otherwise.
- *
- * Read once, at claim time, and never allowed to fail a run: a directory that
- * is not a git repo, or a git that is slow, must cost nothing.
- */
 function reviewChangedPaths(cwd: string, base: string, inputTree: string): string[] {
   const args = ['diff', '--name-only', `${base}..${inputTree}`]
   const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
@@ -3022,10 +2942,10 @@ export async function run(opts: {
       agentsTried: tried,
       originalPromptAvailable: Boolean(first.prompt_path && existsSync(first.prompt_path)),
     }
-    const decision = decideFailover(failoverFacts)
-    if (decision.kind === 'refusal') {
-      appendFailoverRefusal(claim.id, decision.reason)
-    } else if (decision.kind === 'select') {
+    const refusalReason = failoverRefusalReason(decideFailover(failoverFacts))
+    if (refusalReason) {
+      appendFailoverRefusal(claim.id, refusalReason)
+    } else {
       try {
         const originalPrompt = readFileSync(first.prompt_path!, 'utf8')
         const selected = pick(
@@ -3036,11 +2956,12 @@ export async function run(opts: {
           false,
           first.lens ?? undefined,
         )
-        const successor = decideFailover({ ...failoverFacts, successor: selected })
-        if (successor.kind !== 'successor') throw new Error('failover successor was not selected')
+        const successorAgent = failoverSuccessorAgent(
+          decideFailover({ ...failoverFacts, successor: selected }),
+        )
         console.error(
           `orch: run ${claim.id} failed over after ${name} ${failureKind}; ` +
-          `starting the same prompt on ${successor.agent}`,
+          `starting the same prompt on ${successorAgent}`,
         )
         // The recursive successor has its own terminalisation path. Reclaim
         // this completed attempt before returning into it, otherwise this
@@ -3051,7 +2972,7 @@ export async function run(opts: {
         return await run({
           job: opts.job,
           prompt: originalPrompt,
-          agent: successor.agent,
+          agent: successorAgent,
           transport: first.transport === 'cli' || first.transport === 'acp'
             ? first.transport : undefined,
           schemaPath: first.schema_path ?? undefined,
@@ -3089,10 +3010,9 @@ export async function run(opts: {
         const successor = db().query('SELECT id FROM run WHERE retry_of=?').get(claim.id)
         // Once a successor exists its own terminal row is the explanation.
         if (successor) throw e
-        const refusal = decideFailover({
+        appendFailoverRefusal(claim.id, failoverRefusalReason(decideFailover({
           ...failoverFacts, selectionError: String((e as Error)?.message ?? e),
-        })
-        if (refusal.kind === 'refusal') appendFailoverRefusal(claim.id, refusal.reason)
+        }))!)
       }
     }
   }

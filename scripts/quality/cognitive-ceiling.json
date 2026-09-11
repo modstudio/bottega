@@ -468,6 +468,12 @@
     "score": 32
   },
   {
+    "file": "orchestrator/src/prompt-retarget.ts",
+    "function": "retargetRepositoryPrompt",
+    "line": 127,
+    "score": 19
+  },
+  {
     "file": "orchestrator/src/porting-import.ts",
     "function": "parseRefs",
     "line": 328,
@@ -625,6 +631,13 @@
   },
   {
     "file": "orchestrator/src/run.ts",
+    "function": "run",
+    "line": 854,
+    "score": 672,
+    "key": "orchestrator/src/run.ts\u0000run"
+  },
+  {
+    "file": "orchestrator/src/run.ts",
     "function": "persistRunArtifacts",
     "line": 1715,
     "score": 18
@@ -643,12 +656,6 @@
   },
   {
     "file": "orchestrator/src/run.ts",
-    "function": "run",
-    "line": 2041,
-    "score": 674
-  },
-  {
-    "file": "orchestrator/src/run.ts",
     "function": "writeTransaction callback#2",
     "line": 4010,
     "score": 20
@@ -658,6 +665,12 @@
     "function": "normalizeAcpTurn",
     "line": 117,
     "score": 81
+  },
+  {
+    "file": "orchestrator/src/task-branch.ts",
+    "function": "resolveTaskBranch",
+    "line": 51,
+    "score": 23
   },
   {
     "file": "orchestrator/src/transport-acp.ts",

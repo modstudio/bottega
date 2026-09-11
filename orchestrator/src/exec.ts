@@ -65,7 +65,7 @@ try {
   const { readFileSync } = await import('node:fs')
   const { run } = await import('./run.ts')
   const { detachedRunOptions } = await import('./failover.ts')
-  const spec = JSON.parse(specJson ?? '{}') as import('./run.ts').DetachSpec
+  const spec = JSON.parse(specJson ?? '{}') as import('./failover.ts').DetachSpec
   await run(detachedRunOptions(jobName, readFileSync(promptPath, 'utf8'), id, spec))
 } catch (e) {
   const why = String((e as Error)?.stack ?? e)
