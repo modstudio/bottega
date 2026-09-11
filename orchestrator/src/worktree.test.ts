@@ -1,8 +1,8 @@
 import { describe, expect, spyOn, test } from 'bun:test'
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addRun, compoundCreate, createWithTool, createWorktree, db, declaredCreate, hermeticGitCommand, hermeticGitEnv, processStartTime, projectLockDir, reclaimStaleProjectLock, resolveBase, staleProjectLockHolder, upsertProject, withProjectLock, withWorktreeCreateLock, worktreeDescribeFixture } from '../test/fixture.ts'
+import { compoundCreate, createWithTool, createWorktree, declaredCreate, hermeticGitCommand, hermeticGitEnv, processStartTime, projectLockDir, reclaimStaleProjectLock, resolveBase, staleProjectLockHolder, withWorktreeCreateLock, worktreeDescribeFixture } from '../test/fixture.ts'
 
 function repo() {
   const path = mkdtempSync(join(tmpdir(), 'orch-base-test-'))
@@ -37,7 +37,7 @@ test('fix --base creates its worktree at the requested commit', () => {
   } finally { rmSync(fixture.path, { recursive: true, force: true }) }
 })
 describe("worktree lifecycle decisions", () => {
-  const { git, scratchRepo, markScratchRepoOwner } = worktreeDescribeFixture()
+  const { git, scratchRepo } = worktreeDescribeFixture()
 test('project lock state resolves under the shared git common directory regardless of environment', () => {
   const { repo } = scratchRepo()
   const priorXdg = process.env.XDG_RUNTIME_DIR

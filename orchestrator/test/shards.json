@@ -23,7 +23,7 @@
     "src/run-2.cli.test.ts": { "size": "short" },
     "src/workflows.cli.test.ts": { "size": "short" },
     "src/worktree-1.cli.test.ts": { "size": "short" },
-    "src/worktree-2.cli.test.ts": { "size": "short", "exclusive": true },
+    "test/process-boundary/worktree.test.ts": { "size": "short", "exclusive": true },
     "src/worktree-3.cli.test.ts": { "size": "short" },
     "src/worktree-4.cli.test.ts": { "size": "short" },
     "src/worktree-5.cli.test.ts": { "size": "short" }
@@ -57,7 +57,7 @@
     {
       "measuredSeconds": 76.25,
       "files": [
-        "src/worktree-2.cli.test.ts",
+        "test/process-boundary/worktree.test.ts",
         "src/agents-sandbox-2.cli.test.ts",
         "src/run-2.cli.test.ts",
         "src/canon.cli.test.ts",
