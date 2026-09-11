@@ -19,6 +19,25 @@ export type McpConnection = {
 export type McpMode = 'require' | 'prefer'
 export type McpRequest = boolean | McpMode
 
+export function provenanceServer(entry: string, knownServers: ReadonlySet<string>): string | null {
+  const claude = entry.match(/^mcp__(.+?)__/)
+  if (claude) return claude[1] ?? null
+
+  const codexApps = entry.match(/^codex_apps\.(.+)$/)
+  if (codexApps) {
+    const rest = codexApps[1]!
+    let match: string | null = null
+    for (const server of knownServers) {
+      if (rest.startsWith(`${server}_mcp_`) && (match === null || server.length > match.length)) {
+        match = server
+      }
+    }
+    return match ?? 'codex_apps'
+  }
+
+  return entry.match(/^([^.:/]+)[.:/]/)?.[1] ?? null
+}
+
 export function requestedMcpMode(request: McpRequest | undefined): McpMode | null {
   if (request === 'prefer') return 'prefer'
   return request ? 'require' : null
