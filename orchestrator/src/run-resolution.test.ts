@@ -2,6 +2,7 @@
 import { describe, expect, test } from 'bun:test'
 import { MIN_SAMPLE, addRun, candidates, db, dir, nowIso, pendingForSession, resolveRootFromLastTurn, resolveSupersededTurn, runJob, score, unscoredCount, weigh } from '../test/fixture.ts'
 import { scriptedTransportSequence } from '../test/fake-transport.ts'
+import './run-resolution.test-residue.ts'
 describe('a conversation is one unit of work, not one per turn', () => {
   const routingEvidenceIds = () => (db().query(
     `SELECT r.id FROM run r LEFT JOIN score s ON s.run_id=r.id
