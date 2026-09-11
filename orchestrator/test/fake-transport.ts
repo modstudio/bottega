@@ -12,7 +12,7 @@ export type ScriptedTransportEvent =
   | { kind: 'ask'; question: string; why: string }
   | { kind: 'resume'; ruling?: string }
   | { kind: 'completed'; output?: string; parsedText?: string; exitCode?: number; stopReason?: string | null }
-  | { kind: 'failed'; error: string }
+  | { kind: 'failed'; error: string; stopReason?: string }
   | { kind: 'cancelled'; reason: string }
 
 export type ScriptedTransport = {
@@ -24,7 +24,10 @@ export type ScriptedTransport = {
 }
 
 /** Installs one deterministic script per transport start, in call order. */
-export function scriptedTransportSequence(scripts: ScriptedTransportEvent[][]): {
+export function scriptedTransportSequence(
+  scripts: ScriptedTransportEvent[][],
+  inspectStart?: (options: TransportStartOpts) => void,
+): {
   install(): void
   prompts: string[]
   injectRuling(ruling: string): void
@@ -44,6 +47,7 @@ export function scriptedTransportSequence(scripts: ScriptedTransportEvent[][]): 
     name: 'cli',
     async start(opts) {
       options.push(opts)
+      inspectStart?.(opts)
       const scripted = scriptedTransport(scripts[index++] ?? []); activate(scripted)
       const handle = await scripted.transport.start(opts)
       prompts.push(...scripted.prompts)
@@ -54,6 +58,7 @@ export function scriptedTransportSequence(scripts: ScriptedTransportEvent[][]): 
     cancel(handle) { return handle.cancel() },
     async resume(opts) {
       options.push(opts)
+      inspectStart?.(opts)
       const scripted = scriptedTransport(scripts[index++] ?? []); activate(scripted)
       const handle = await scripted.transport.resume(opts)
       prompts.push(...scripted.prompts)
@@ -137,7 +142,7 @@ async function applyEvent(
     if (!state.output) state.output = state.stdout
     state.error = event.error
     state.exitCode = 1
-    state.stopReason = null
+    state.stopReason = event.stopReason ?? null
     emit({ kind: 'error', error: event.error })
   } else if (event.kind === 'cancelled') {
     state.cancelled = true

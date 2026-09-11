@@ -18,12 +18,12 @@
     "src/review-3.cli.test.ts": { "size": "short" },
     "src/route.cli.test.ts": { "size": "short" },
     "src/run-1.cli.test.ts": { "size": "short" },
-    "src/run-2.cli.test.ts": { "size": "short" },
     "src/workflows.cli.test.ts": { "size": "short" },
     "src/worktree-1.cli.test.ts": { "size": "short" },
     "test/process-boundary/worktree.test.ts": { "size": "short", "exclusive": true },
     "test/process-boundary/idle-kill.test.ts": { "size": "moderate", "exclusive": true },
     "test/process-boundary/run.test.ts": { "size": "short" },
+    "test/process-boundary/database.test.ts": { "size": "short" },
     "src/worktree-4.cli.test.ts": { "size": "short" },
     "src/worktree-5.cli.test.ts": { "size": "short" }
   },
@@ -56,7 +56,6 @@
       "files": [
         "test/process-boundary/worktree.test.ts",
         "src/agents-sandbox-2.cli.test.ts",
-        "src/run-2.cli.test.ts",
         "src/canon.cli.test.ts",
         "src/worktree-4.cli.test.ts",
         "src/projects.cli.test.ts"
@@ -76,6 +75,7 @@
       "measuredSeconds": 15,
       "files": [
         "src/reclaim.cli.test.ts",
+        "test/process-boundary/database.test.ts",
         "test/process-boundary/idle-kill.test.ts"
       ]
     }

@@ -4,6 +4,7 @@ import {
   ISSUE_WORKER_SCHEMA, READER_SCHEMA, REVIEW_SCHEMA, TEXT_REPLY_SCHEMA,
   VERIFY_CLAIM_SCHEMA, WORKER_SCHEMA, resolveReplyDialect,
   missingDeclaredDeliverables, parseReaderReply, readerDeliverablesInstruction,
+  parseWorkerReplyWithCount,
 } from './contract.ts'
 
 const workerReply = {
@@ -102,4 +103,13 @@ test('files_written naming scratch/reply.json survives the scratch-to-artifacts 
 })
 test('orch do diagnose --deliverable x returns unevidenced when x is missing', () => {
   expect(missingDeclaredDeliverables(['x'], parseReaderReply({ deliverables: [], narrative: 'prose', files_written: null }))).toEqual(['x'])
+})
+
+test('multiple contracts leave a visible note on an otherwise successful run', () => {
+  const parsed = parseWorkerReplyWithCount([
+    { ...workerReply, summary: 'real reply' },
+    { ...workerReply, summary: 'quoted contract-shaped object' },
+  ].map((value) => JSON.stringify(value)).join('\n'))
+  expect(parsed.reply?.summary).toBe('quoted contract-shaped object')
+  expect(parsed.contractObjects).toBe(2)
 })
