@@ -129,10 +129,8 @@ export function mergeTimings(
     return {
       file,
       wallMs: fileWall.get(file) ?? fileTests.reduce((sum, t) => sum + t.wallMs, 0),
-      tests: fileTests.length || suiteTests.get(file) || 0,
-      failed: fileTests.length
-        ? fileTests.filter((t) => !t.pass).length
-        : suiteFailures.get(file) || 0,
+      tests: Math.max(fileTests.length, suiteTests.get(file) ?? 0),
+      failed: Math.max(fileTests.filter((t) => !t.pass).length, suiteFailures.get(file) ?? 0),
       ...spawn,
       argv0: { ...spawn.argv0 },
     }
