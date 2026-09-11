@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from 'bun:test'
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { db, declaredCreate, upsertProject } from '../test/fixture.ts'
@@ -58,10 +58,20 @@ test('an explicit repo is validated before the prompt is read', async () => {
 })
 
 test('dispatch preflight enforces a clean registered main checkout', async () => {
-  upsertProject({ name: 'dirty-main', path: process.cwd(), settings: { requireCleanMain: true } })
-  const result = await command(['do', 'implement', 'change it'])
-  expect(result.error).toContain('has tracked modifications')
-  expect(result.ids).toEqual([])
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'orch-dirty-main-')))
+  try {
+    Bun.spawnSync(['git', 'init', '-q', '-b', 'main'], { cwd })
+    Bun.spawnSync(['git', 'config', 'user.email', 'test@example.com'], { cwd })
+    Bun.spawnSync(['git', 'config', 'user.name', 'Test'], { cwd })
+    writeFileSync(join(cwd, 'tracked.txt'), 'before\n')
+    Bun.spawnSync(['git', 'add', 'tracked.txt'], { cwd })
+    Bun.spawnSync(['git', 'commit', '-qm', 'fixture'], { cwd })
+    writeFileSync(join(cwd, 'tracked.txt'), 'after\n')
+    upsertProject({ name: 'dirty-main', path: cwd, settings: { requireCleanMain: true } })
+    const result = await command(['do', 'implement', '--cwd', cwd, 'change it'])
+    expect(result.error).toContain('has tracked modifications')
+    expect(result.ids).toEqual([])
+  } finally { rmSync(cwd, { recursive: true, force: true }) }
 })
 
 test('a missing required dispatch flag exits non-zero without claiming a run', async () => {
