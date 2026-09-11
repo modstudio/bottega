@@ -159,7 +159,7 @@ test('sweep ignores terminal claimants while abandon refuses remaining claims', 
         const old = new Date(Date.now() - 3 * 60 * 60 * 1000)
         utimesSync(join(f.tree.path, 'base.txt'), old, old)
       }
-      const cli = new URL('cli.ts', import.meta.url).pathname
+      const cli = new URL('orch.ts', import.meta.url).pathname
       const commands = join(f.repo, 'test-bin')
       mkdirSync(commands)
       const ps = join(commands, 'ps')

@@ -1119,7 +1119,7 @@ describe('the Stop hook and orch agree on what is unscored', () => {
     expect(pendingForSession(session).map((row) => row.id)).toEqual([id])
     expect(unscoredCount()).toBe(1)
 
-    const CLI = new URL('cli.ts', import.meta.url).pathname
+    const CLI = new URL('orch.ts', import.meta.url).pathname
     const env = {
       ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
       CLAUDE_CODE_SESSION_ID: session,
