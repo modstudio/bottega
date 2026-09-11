@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import {
   AGENTS, addRun, candidates, classify, db, declaredCreate, dir, hermeticGitEnv, JOBS, NEEDS_HUMAN, NOT_EVIDENCE, reapTestProcess, reapTestRun, run, upsertProject, } from '../fixture.ts'
 import { stubWorker } from "../stub-worker.ts"
+import { trackedTestResidue } from '../residue.ts'
+const trackResidue = trackedTestResidue()
 import { pidAlive } from '../../src/process-liveness.ts'
 import { formatIdleKillError, idleKillMayProceed, idleKillMs, installTestProcessSampler, isGroupKillablePgid, isUninterruptible, isWorkerCpuIdle,
   parseIdleReclaimedMs, parsePsTable, runHasLiveDescendants, shouldIdleKill, terminateProcessGroup,
@@ -389,7 +391,7 @@ describe('idle kill process boundary', () => {
     const previousBin = grok.bin
     const previousTimeout = grok.timeoutMs
     const script = stubWorker({ sleepSeconds: 3_600 })
-    const childPidFile = join(dir, 'fork-sleep.child')
+    const childPidFile = trackResidue(join(dir, 'fork-sleep.child'))
     process.env.ORCH_STUB_CHILD_PID_FILE = childPidFile
     process.env.ORCH_IDLE_KILL_MS = '60000'
     process.env.ORCH_DEPTH = '0'
