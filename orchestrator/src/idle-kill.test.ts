@@ -3,9 +3,9 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  AGENTS, addRun, candidates, classify, db, declaredCreate, dir, hermeticGitEnv, JOBS, NEEDS_HUMAN, NOT_EVIDENCE, reapTestProcess, reapTestRun, run, upsertProject, } from '../test/fixture.ts'
+  addRun, candidates, classify, db, declaredCreate, hermeticGitEnv, JOBS, NEEDS_HUMAN, NOT_EVIDENCE, reapTestProcess, reapTestRun, run, upsertProject, } from '../test/fixture.ts'
 import { pidAlive } from './process-liveness.ts'
-import { formatIdleKillError, idleKillMayProceed, idleKillMs, installTestProcessSampler, isGroupKillablePgid, isUninterruptible, isWorkerCpuIdle,
+import { formatIdleKillError, idleKillMayProceed, idleKillMs, installTestProcessSampler, isGroupKillablePgid, isWorkerCpuIdle,
   parseIdleReclaimedMs, parsePsTable, runHasLiveDescendants, shouldIdleKill, terminateProcessGroup,
   DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS, DEFAULT_IDLE_KILL_MS } from './idle-kill.ts'
 import { PRESERVATION_FAILED_FILE } from './checkpoint.ts'
@@ -37,12 +37,6 @@ function repo(): string {
   writeFileSync(join(root, 'file.txt'), 'base\n')
   g('add', 'file.txt'); g('commit', '-m', 'DEV-389 base')
   return root
-}
-
-function git(cwd: string, ...args: string[]): string {
-  const p = Bun.spawnSync(['git', ...args], { cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
-  if (p.exitCode !== 0) throw new Error(p.stderr.toString())
-  return p.stdout.toString().trim()
 }
 
 function expectOwnProcessGroup(pid: number): void {

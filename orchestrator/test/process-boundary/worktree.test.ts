@@ -2,7 +2,7 @@ import { describe, expect, spyOn, test } from 'bun:test'
 import { appendFileSync, chmodSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { addRun, compoundCreate, createWithTool, createWorktree, db, declaredCreate, fakeDocker, fakeDockerCommand, hermeticGitCommand, hermeticGitEnv, nowIso, prepareSharedRefGuard, prepareWorktreeObjects, processStartTime, projectLockDir, reclaimStaleProjectLock, resolveBase, runJob, staleProjectLockHolder, upsertProject, withProjectLock, withWorktreeCreateLock, worktreeDescribeFixture } from '../fixture.ts'
+import { addRun, compoundCreate, createWithTool, createWorktree, db, declaredCreate, fakeDocker, fakeDockerCommand, hermeticGitCommand, hermeticGitEnv, nowIso, prepareSharedRefGuard, prepareWorktreeObjects, processStartTime, projectLockDir, reclaimStaleProjectLock, removeFor, resolveBase, runJob, staleProjectLockHolder, upsertProject, withProjectLock, withWorktreeCreateLock, worktreeDescribeFixture } from '../fixture.ts'
 
 
 describe("a worktree is resolved against the main checkout, not the caller cwd", () => {
@@ -920,6 +920,32 @@ test('discard inventories leaks after successfully restoring a shared branch', (
       expect(git(repo, 'rev-parse', tree.branch)).toBe(tip)
       expect(db().query('SELECT branch_kept FROM run WHERE id=?').get(id))
         .toEqual({ branch_kept: tree.branch })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('resumed child cleanup removes only the discarding run guard, not the marker owner guard', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-guard-resumed-cleanup-'))
+    const git = (args: string[]) => Bun.spawnSync(['git', ...args], {
+      cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    try {
+      expect(git(['init', '-b', 'main']).exitCode).toBe(0)
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      expect(git(['add', 'base.txt']).exitCode).toBe(0)
+      expect(git(['-c', 'user.email=orch-test@example.invalid', '-c', 'user.name=Orch Test',
+        'commit', '-m', 'base']).exitCode).toBe(0)
+      const root = 251
+      const resumedChild = 252
+      const tree = createWorktree(repo, root)
+      const rootGuard = prepareSharedRefGuard(tree.path)
+      const childGuard = join(realpathSync(repo), '.git', 'orch-guards', String(resumedChild))
+      mkdirSync(childGuard)
+
+      expect(removeFor(tree, repo, false, false, resumedChild).removed).toBe(true)
+      expect(existsSync(rootGuard.GIT_CONFIG_VALUE_0)).toBe(true)
+      expect(existsSync(childGuard)).toBe(false)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }

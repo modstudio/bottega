@@ -1,6 +1,5 @@
 {
   "files": {
-    "src/agents-sandbox-1.cli.test.ts": { "size": "short" },
     "src/agents-sandbox-2.cli.test.ts": { "size": "short" },
     "src/canon.cli.test.ts": { "size": "short" },
     "src/catalog.cli.test.ts": { "size": "short" },
@@ -45,7 +44,6 @@
       "files": [
         "src/lifecycle-harness.cli.test.ts",
         "src/monitor.cli.test.ts",
-        "src/agents-sandbox-1.cli.test.ts",
         "src/worktree-5.cli.test.ts",
         "src/git-environment-regression.cli.test.ts",
         "src/review-1.cli.test.ts",

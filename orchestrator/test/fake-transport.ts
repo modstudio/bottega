@@ -29,11 +29,13 @@ export function scriptedTransportSequence(scripts: ScriptedTransportEvent[][]): 
   prompts: string[]
   injectRuling(ruling: string): void
   starts(): number
+  startOptions(): TransportStartOpts[]
 } {
   const prompts: string[] = []
   let index = 0
   let active: ScriptedTransport | null = null
   let queuedRuling: string | null = null
+  const options: TransportStartOpts[] = []
   const activate = (scripted: ScriptedTransport) => {
     active = scripted
     if (queuedRuling !== null) { scripted.injectRuling(queuedRuling); queuedRuling = null }
@@ -41,6 +43,7 @@ export function scriptedTransportSequence(scripts: ScriptedTransportEvent[][]): 
   const transport: AgentTransport = {
     name: 'cli',
     async start(opts) {
+      options.push(opts)
       const scripted = scriptedTransport(scripts[index++] ?? []); activate(scripted)
       const handle = await scripted.transport.start(opts)
       prompts.push(...scripted.prompts)
@@ -50,13 +53,14 @@ export function scriptedTransportSequence(scripts: ScriptedTransportEvent[][]): 
     events(handle) { return handle.events() },
     cancel(handle) { return handle.cancel() },
     async resume(opts) {
+      options.push(opts)
       const scripted = scriptedTransport(scripts[index++] ?? []); activate(scripted)
       const handle = await scripted.transport.resume(opts)
       prompts.push(...scripted.prompts)
       return handle
     },
   }
-  return { prompts, starts: () => index, install: () => installTestTransport(transport), injectRuling: (ruling) => {
+  return { prompts, starts: () => index, startOptions: () => options, install: () => installTestTransport(transport), injectRuling: (ruling) => {
     if (active) active.injectRuling(ruling); else queuedRuling = ruling
   } }
 }
