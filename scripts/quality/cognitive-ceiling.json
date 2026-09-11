@@ -189,7 +189,8 @@
     "file": "orchestrator/src/cli.ts",
     "function": "follow",
     "line": 370,
-    "score": 50
+    "score": 47,
+    "key": "orchestrator/src/cli.ts\u0000follow"
   },
   {
     "file": "orchestrator/src/cli.ts",
@@ -649,16 +650,16 @@
   },
   {
     "file": "orchestrator/src/run.ts",
-    "function": "writeTransaction callback",
-    "line": 2233,
-    "score": 20
-  },
-  {
-    "file": "orchestrator/src/run.ts",
     "function": "run",
     "line": 854,
     "score": 672,
     "key": "orchestrator/src/run.ts\u0000run"
+  },
+  {
+    "file": "orchestrator/src/run.ts",
+    "function": "writeTransaction callback",
+    "line": 2233,
+    "score": 20
   },
   {
     "file": "orchestrator/src/task-branch.ts",

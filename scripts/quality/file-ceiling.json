@@ -17,7 +17,7 @@
   "orchestrator/src/cli-do-1.cli.test.ts": 1337,
   "orchestrator/src/cli-projects.cli.test.ts": 1302,
   "orchestrator/src/cli-runs.cli.test.ts": 1898,
-  "orchestrator/src/cli.ts": 7266,
+  "orchestrator/src/cli.ts": 7265,
   "orchestrator/src/close-out.test.ts": 516,
   "orchestrator/src/contract.ts": 1087,
   "orchestrator/src/db.ts": 1723,
