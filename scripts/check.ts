@@ -173,6 +173,7 @@ for (const script of [
   'check-git-environment-boundary.ts', 'check-review-target-boundary.ts',
   'check-checkout-identity-boundary.ts', 'check-worktree-mcp-boundary.ts',
   'check-worktree-template-boundary.ts', 'check-worktree-attribution-boundary.ts',
+  'check-workflows-boundary.ts',
   'check-mcp-preflight-boundary.ts', 'check-dispatch-preflight-boundary.ts',
   'check-failover-boundary.ts', 'check-run-process-boundary.ts',
   'check-task-branch-boundary.ts', 'check-prompt-retarget-boundary.ts',
