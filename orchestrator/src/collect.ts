@@ -6,7 +6,6 @@ import { failureReason, outcomeOf } from './outcome.ts'
 import type { ObservedDeadRun } from './db.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES, visibleTranscriptText } from './result-output.ts'
 import { parseMcpProbe } from './mcp-probe.ts'
-import { runArtifactsDir } from './run-artifacts.ts'
 
 export const COLLECTION_COMMANDS = new Set(['result', 'wait'])
 
@@ -151,17 +150,18 @@ export function mintedBranchForRun(database: Database, runId: number): string | 
  */
 export function noCommitNote(
   facts: { base_commit: string | null; branch_kept_tip: string | null; changed_paths: string | null },
-  artifactsDir: string,
+  artifactsDir: string | null,
 ): string {
   if (!facts.branch_kept_tip || facts.branch_kept_tip !== facts.base_commit) return ''
   let changed: unknown = null
   try { changed = JSON.parse(facts.changed_paths ?? 'null') } catch { /* unreadable is not evidence */ }
   if (!Array.isArray(changed) || !changed.length) return ''
-  const copies = ['uncommitted.patch', 'untracked']
-    .map((name) => join(artifactsDir, name))
-    .filter((path) => existsSync(path))
+  const copies = artifactsDir
+    ? ['uncommitted.patch', 'untracked'].map((name) => join(artifactsDir, name)).filter((path) => existsSync(path))
+    : []
   return `\n  no commit authored: the branch is at its base; the work exists only in ` +
-    (copies.length ? copies.join(' and ') : `no extracted artifact (checked ${artifactsDir})`)
+    (copies.length ? copies.join(' and ')
+      : `no extracted artifact (checked ${artifactsDir ?? 'nothing: the run records no runs directory'})`)
 }
 
 /** Branch footer shared by result, wait and follow. */
@@ -172,9 +172,12 @@ export function branchNote(database: Database, runId: number): string {
     'SELECT COALESCE(parent_run_id, id) root_id FROM run WHERE id=?',
   ).get(runId) as { root_id: number } | null
   const root = row ? database.query(
-    'SELECT base_commit, branch_kept_tip, changed_paths FROM run WHERE id=?',
-  ).get(row.root_id) as Parameters<typeof noCommitNote>[0] | null : null
-  return `\n  branch:    ${branch}` + (root ? noCommitNote(root, runArtifactsDir(row!.root_id)) : '')
+    'SELECT base_commit, branch_kept_tip, changed_paths, prompt_path FROM run WHERE id=?',
+  ).get(row.root_id) as Parameters<typeof noCommitNote>[0] & { prompt_path: string | null } | null : null
+  // Prompts and per-run artifacts share the runs directory; derive it from the
+  // row rather than importing the artifact module into the degraded graph.
+  const artifacts = root?.prompt_path ? join(dirname(root.prompt_path), String(row!.root_id), 'artifacts') : null
+  return `\n  branch:    ${branch}` + (root ? noCommitNote(root, artifacts) : '')
 }
 
 function shellArg(value: string): string {

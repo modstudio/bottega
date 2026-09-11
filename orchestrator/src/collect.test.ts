@@ -30,6 +30,12 @@ describe('no-commit report', () => {
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 
+  test('a run with no recorded runs directory still says no commit was authored', () => {
+    const note = noCommitNote({ base_commit: base, branch_kept_tip: base, changed_paths: changed }, null)
+    expect(note).toContain('no commit authored')
+    expect(note).toContain('the run records no runs directory')
+  })
+
   test.each([
     ['an authored commit', { base_commit: base, branch_kept_tip: 'f'.repeat(40), changed_paths: changed }],
     ['no retained tip', { base_commit: base, branch_kept_tip: null, changed_paths: changed }],
