@@ -2,7 +2,6 @@
   "files": {
     "src/agents-sandbox-1.cli.test.ts": { "size": "short" },
     "src/agents-sandbox-2.cli.test.ts": { "size": "short" },
-    "src/agents.cli.test.ts": { "size": "short" },
     "src/canon.cli.test.ts": { "size": "short" },
     "src/catalog.cli.test.ts": { "size": "short" },
     "src/docs.cli.test.ts": { "size": "short" },
@@ -16,16 +15,14 @@
     "src/monitor.cli.test.ts": { "size": "short" },
     "src/projects.cli.test.ts": { "size": "short" },
     "src/reclaim.cli.test.ts": { "size": "short" },
-    "src/reader-contract.cli.test.ts": { "size": "short" },
     "src/review-1.cli.test.ts": { "size": "short" },
-    "src/review-2.cli.test.ts": { "size": "short" },
     "src/review-3.cli.test.ts": { "size": "short" },
     "src/route.cli.test.ts": { "size": "short" },
     "src/run-1.cli.test.ts": { "size": "short" },
     "src/run-2.cli.test.ts": { "size": "short" },
     "src/workflows.cli.test.ts": { "size": "short" },
     "src/worktree-1.cli.test.ts": { "size": "short" },
-    "src/worktree-2.cli.test.ts": { "size": "short", "exclusive": true },
+    "test/process-boundary/worktree.test.ts": { "size": "short", "exclusive": true },
     "src/worktree-3.cli.test.ts": { "size": "short" },
     "src/worktree-4.cli.test.ts": { "size": "short" },
     "src/worktree-5.cli.test.ts": { "size": "short" }
@@ -34,7 +31,6 @@
     {
       "measuredSeconds": 76.86,
       "files": [
-        "src/agents.cli.test.ts",
         "src/docs.cli.test.ts",
         "src/run-1.cli.test.ts",
         "src/workflows.cli.test.ts",
@@ -60,8 +56,7 @@
     {
       "measuredSeconds": 76.25,
       "files": [
-        "src/worktree-2.cli.test.ts",
-        "src/review-2.cli.test.ts",
+        "test/process-boundary/worktree.test.ts",
         "src/agents-sandbox-2.cli.test.ts",
         "src/run-2.cli.test.ts",
         "src/canon.cli.test.ts",
@@ -74,7 +69,6 @@
       "files": [
         "src/worktree-1.cli.test.ts",
         "src/review-3.cli.test.ts",
-        "src/reader-contract.cli.test.ts",
         "src/issue.cli.test.ts",
         "src/linked-worktree-database.cli.test.ts"
       ]

@@ -267,8 +267,21 @@ function utf8Tail(text: string, bytes: number): string {
   return encoded.subarray(start).toString('utf8')
 }
 
+export type CollectResultPresentation = {
+  log(...values: unknown[]): void
+  error(...values: unknown[]): void
+  exit(code: number): never
+}
+
+const consoleCollectResultPresentation: CollectResultPresentation = {
+  log: (...values) => console.log(...values),
+  error: (...values) => console.error(...values),
+  exit: (code) => process.exit(code),
+}
+
 export function collectResult(
   database: Database, argv: string[], scoreSuffix: (job: string) => string = () => '',
+  presentation: CollectResultPresentation = consoleCollectResultPresentation,
 ): void {
   const unknown = argv.slice(2).find((arg) => arg !== '--quiet' && arg !== '--artifacts')
   if (unknown) {
@@ -305,16 +318,16 @@ export function collectResult(
         try { if (statSync(p).isFile()) files.push(p) } catch { /* raced */ }
       }
     }
-    if (!files.length) console.log('no artifacts')
-    else for (const file of files.sort()) console.log(file)
+    if (!files.length) presentation.log('no artifacts')
+    else for (const file of files.sort()) presentation.log(file)
   }
 
   const asking = row.status === 'asking' ? resolveAsking(database, row.id) : null
   const outcome = outcomeOf(row)
   const baseNote = row.base_commit ? `\n  base:      ${row.base_commit}` : ''
   if (!outcome.terminal || chain.settling) {
-    console.error(`run ${id} (${row.agent}/${row.job}) is still running`)
-    process.exit(2)
+    presentation.error(`run ${id} (${row.agent}/${row.job}) is still running`)
+    presentation.exit(2)
   }
   const output = row.output_path && existsSync(row.output_path)
     ? readFileSync(row.output_path, 'utf8')
@@ -322,28 +335,28 @@ export function collectResult(
   if (row.review_provenance) {
     try {
       const provenance = JSON.parse(row.review_provenance) as { could_not_verify?: string[]; substitutes?: string[] }
-      console.error(`PROVENANCE${row.provenance_status ? ` (${row.provenance_status})` : ''}`)
-      console.error(`  could not verify: ${provenance.could_not_verify?.join('; ') || 'none'}`)
-      console.error(`  substitutes: ${provenance.substitutes?.join('; ') || 'none'}`)
+      presentation.error(`PROVENANCE${row.provenance_status ? ` (${row.provenance_status})` : ''}`)
+      presentation.error(`  could not verify: ${provenance.could_not_verify?.join('; ') || 'none'}`)
+      presentation.error(`  substitutes: ${provenance.substitutes?.join('; ') || 'none'}`)
     } catch { /* a legacy malformed value remains visible in the raw output */ }
   }
   if (!outcome.ok) {
     if (output !== null) {
       if (row.failure_kind === 'truncated') {
-        console.log('TRUNCATED at the output ceiling — this is the transcript, not a result')
-        console.log(utf8Tail(visibleTranscriptText(row.agent, output), TRUNCATED_TRANSCRIPT_BYTES))
+        presentation.log('TRUNCATED at the output ceiling — this is the transcript, not a result')
+        presentation.log(utf8Tail(visibleTranscriptText(row.agent, output), TRUNCATED_TRANSCRIPT_BYTES))
       } else {
-        console.error(`\n— INCOMPLETE partial output from run ${row.id} (${row.status}) follows`)
-        console.log(partialOutputDocument(row, output))
+        presentation.error(`\n— INCOMPLETE partial output from run ${row.id} (${row.status}) follows`)
+        presentation.log(partialOutputDocument(row, output))
       }
     }
   } else if (output !== null) {
-    console.log(output)
+    presentation.log(output)
   }
   const chainNote = failoverSummary(chain.attempts)
-  if (chainNote) console.error(`\n— ${chainNote}`)
+  if (chainNote) presentation.error(`\n— ${chainNote}`)
   if (asking) {
-    console.error(
+    presentation.error(
       (asking.state === 'open'
         ? `\n— run ${id} asking — waiting on a ruling: orch answer ${asking.rootId} ...`
         : asking.state === 'running'
@@ -354,13 +367,13 @@ export function collectResult(
     return
   }
   if (!outcome.ok) {
-    console.error(
+    presentation.error(
       `\n— run ${id} ${row.status}: ${failureReason(row)}` + baseNote + mcpNote(row) + evidenceNote(row),
     )
-    process.exit(1)
+    presentation.exit(1)
   }
   if (!argv.includes('--quiet')) {
-    console.error(
+    presentation.error(
       `\n— run ${row.id} · ${row.agent} · ${dur(row.latency_ms)}` +
         (row.vendor_tokens !== null
           ? ` · ${row.vendor_tokens.toLocaleString()} vendor tokens`

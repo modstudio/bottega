@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { addRun, db, pendingForSession, runList, score, state } from '../test/fixture.ts'
+import { SHARED_OUTPUT_REASON, addRun, candidates, db, dir, excludeSharedOutputRuns, pendingForSession, runList, score, state, weigh } from '../test/fixture.ts'
+import { join } from 'node:path'
 import { runTotals } from './evidence-query.ts'
 
 test('runs --unscored uses the shared definition of an owed judgement', () => {
@@ -147,4 +148,38 @@ describe('session scoping', () => {
     score(id, 'full', 'right')
     expect(pendingForSession('s')).toHaveLength(0)
   })
+})
+
+test('a quota failure is retained but its successful retry is the only evidence', () => {
+  const first = addRun({ agent: 'codex', job: 'craft', status: 'failed', kind: 'quota' }); const second = addRun({ agent: 'codex', job: 'craft' })
+  db().query('UPDATE run SET retry_of=? WHERE id=?').run(first, second); score(second, 'full', 'right')
+  expect(candidates('craft').find((row) => row.agent === 'codex')).toMatchObject({ failures: 0, scored: 1, evidence: 1 })
+})
+
+test('a retry is linked to what it re-attempts', () => {
+  const first = addRun({ agent: 'codex', job: 'review-lens', status: 'failed' }); const second = addRun({ agent: 'codex', job: 'review-lens' })
+  db().query('UPDATE run SET retry_of=? WHERE id=?').run(first, second)
+  expect(db().query('SELECT retry_of FROM run WHERE id=?').get(second)).toEqual({ retry_of: first })
+})
+
+test('a scored collision is kept as a verdict and dropped from routing', () => {
+  const kept = addRun({ agent: 'codex', job: 'review-lens' }); score(kept, 'full', 'right')
+  const a = addRun({ agent: 'codex', job: 'review-lens' }); const b = addRun({ agent: 'codex', job: 'review-lens' }); score(a, 'none'); score(b, 'none')
+  db().query("UPDATE run SET evidence_excluded='shared an output file' WHERE id IN (?,?)").run(a, b)
+  expect(candidates('review-lens').find((row) => row.agent === 'codex')).toMatchObject({ scored: 1, evidence: 1, score: weigh('full', 'right') })
+  expect(db().query('SELECT COUNT(*) n FROM score').get()).toEqual({ n: 3 })
+})
+
+test('the backfill stamps every member of a colliding group, and no unique path', () => {
+  const shared = join(dir, 'collided.txt'); const unique = join(dir, 'alone.txt')
+  const a = addRun({ agent: 'codex', job: 'review-lens' }); const b = addRun({ agent: 'codex', job: 'review-lens' }); const c = addRun({ agent: 'codex', job: 'review-lens' })
+  db().query('UPDATE run SET output_path=? WHERE id IN (?,?)').run(shared, a, b); db().query('UPDATE run SET output_path=? WHERE id=?').run(unique, c)
+  expect(excludeSharedOutputRuns(db())).toBe(2)
+  expect(db().query('SELECT id,evidence_excluded why FROM run WHERE id IN (?,?,?) ORDER BY id').all(a, b, c)).toEqual([{ id: a, why: SHARED_OUTPUT_REASON }, { id: b, why: SHARED_OUTPUT_REASON }, { id: c, why: null }])
+})
+
+test('a reason already written is left alone', () => {
+  const shared = join(dir, 'already.txt'); const a = addRun({ agent: 'codex', job: 'review-lens' }); const b = addRun({ agent: 'codex', job: 'review-lens' })
+  db().query('UPDATE run SET output_path=? WHERE id IN (?,?)').run(shared, a, b); db().query("UPDATE run SET evidence_excluded='already set' WHERE id=?").run(a)
+  expect(excludeSharedOutputRuns(db())).toBe(1); expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(a)).toEqual({ evidence_excluded: 'already set' })
 })

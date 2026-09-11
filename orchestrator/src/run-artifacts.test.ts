@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   KEEP_RUN_FILES_DAYS, addRun, db, dir, pruneRuns, runFilePaths,
 } from '../test/fixture.ts'
+import { listRunArtifacts, persistRunArtifacts, readDispatchState, runArtifactsDir, runScratchDir, writeDispatchState } from './run-artifacts.ts'
 
 describe('run files are named by their run, not by the clock', () => {
   /**
@@ -64,4 +66,31 @@ describe('run file pruning', () => {
     expect(db().query('SELECT prompt_path, output_path FROM run WHERE id=?').get(id))
       .toEqual({ prompt_path: null, output_path: null })
   })
+})
+
+test('artifacts are copied and listed', () => {
+  const id = addRun({ agent: 'codex', job: 'diagnose' }); const tree = mkdtempSync(join(tmpdir(), 'orch-artifact-tree-'))
+  mkdirSync(runScratchDir(id), { recursive: true }); writeFileSync(join(runScratchDir(id), 'timing-table.txt'), 'file,ms\na,1\n'); writeFileSync(join(tree, 'named-evidence.txt'), 'failing test\n')
+  try { persistRunArtifacts(id, ['named-evidence.txt'], { path: tree }, { diff: 'fixture changed\n' }); const files = listRunArtifacts(id); expect(files.some((path) => path.endsWith('timing-table.txt'))).toBe(true); expect(readFileSync(files.find((path) => path.endsWith('named-evidence.txt'))!, 'utf8')).toContain('failing test'); expect(readFileSync(files.find((path) => path.endsWith('worktree.diff'))!, 'utf8')).toContain('fixture changed') }
+  finally { rmSync(tree, { recursive: true, force: true }) }
+})
+test('a reclaimed lens tree leaves its artifacts', () => {
+  const id = addRun({ agent: 'codex', job: 'review-lens' }); const tree = mkdtempSync(join(tmpdir(), 'orch-lens-tree-')); mkdirSync(runScratchDir(id), { recursive: true }); writeFileSync(join(runScratchDir(id), 'lens-note.txt'), 'covered\n')
+  persistRunArtifacts(id, null, { path: tree }, null); rmSync(tree, { recursive: true, force: true })
+  expect(existsSync(runArtifactsDir(id))).toBe(true); expect(listRunArtifacts(id).some((path) => path.endsWith('lens-note.txt'))).toBe(true)
+})
+test('an artifact copy failure records a harness failure and preserves the tree', () => {
+  const id = addRun({ agent: 'codex', job: 'diagnose' }); const tree = mkdtempSync(join(tmpdir(), 'orch-failed-artifact-tree-'))
+  try { expect(() => persistRunArtifacts(id, ['missing-evidence.txt'], { path: tree }, null)).toThrow(`could not copy named file ${join(tree, 'missing-evidence.txt')}`); expect(existsSync(tree)).toBe(true); expect(existsSync(runArtifactsDir(id))).toBe(true) }
+  finally { rmSync(tree, { recursive: true, force: true }) }
+})
+test('an artifact persistence failure cannot overwrite a concurrent operator stop', () => {
+  const id = addRun({ agent: 'codex', job: 'diagnose', status: 'stopped' }); const tree = mkdtempSync(join(tmpdir(), 'orch-stopped-artifact-tree-'))
+  try { expect(() => persistRunArtifacts(id, ['missing'], { path: tree }, null)).toThrow(); expect(db().query('SELECT status FROM run WHERE id=?').get(id)).toEqual({ status: 'stopped' }) }
+  finally { rmSync(tree, { recursive: true, force: true }) }
+})
+test('orch retry preserves a reader root deliverable contract and timeout', () => {
+  const root = addRun({ agent: 'codex', job: 'understand' }); const child = addRun({ agent: 'grok', job: 'understand', parent: root, turn: 2 })
+  writeDispatchState(root, { deliverables: ['x'], timeoutMinutes: 17 }); writeDispatchState(child, readDispatchState(root))
+  expect(readDispatchState(child)).toEqual({ deliverables: ['x'], timeoutMinutes: 17 })
 })

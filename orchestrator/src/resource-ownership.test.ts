@@ -153,6 +153,20 @@ test('an unresolvable repository root cannot ascertain removal', () => {
   }))
 })
 
+test('stopped runs with gone trees retain surviving infrastructure for review', () => {
+  const stopped = addRun({ agent: 'codex', job: 'implement', status: 'stopped' })
+  db().query('UPDATE run SET worktree=? WHERE id=?').run(join(dir, 'gone-worktree'), stopped)
+  const commands: string[] = []
+  spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    commands.push(args.join(' ')); return result('')
+  }) as typeof Bun.spawnSync)
+  const teardown = teardownTerminalRunResources(db(), stopped)
+  expect(commands.some((command) => command.startsWith('docker '))).toBe(false)
+  expect(teardown).toEqual(expect.objectContaining({
+    outcome: 'unascertainable', reason: 'unresolvable repository root', removed: 0, skipped: true,
+  }))
+})
+
 test('a removal timeout is recorded in the durable run event log', () => {
   const id = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
   const tree = mkdtempSync(join(tmpdir(), 'orch-timeout-tree-'))

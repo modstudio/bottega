@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { decideFailover, detachedRunOptions } from './failover.ts'
+import { AGENTS } from '../test/fixture.ts'
+import { decideFailover, detachedRunOptions, retryModelForAgent, writingFailoverRefusal } from './failover.ts'
 
 const base = {
   status: 'failed', failureKind: 'quota', failoverKinds: ['quota'],
@@ -84,3 +85,17 @@ test('the detached spec mapping forwards every field to run', () => {
   })
 })
 
+test('a changed retry agent uses its pin unless an explicit model overrides it', () => {
+  expect(retryModelForAgent('grok', 'grok-4.6', 'grok')).toBe('grok-4.6')
+  expect(retryModelForAgent('grok', 'grok-4.6', 'codex')).toBe(AGENTS.codex!.model)
+  expect(retryModelForAgent('grok', 'grok-4.6', 'codex', 'explicit-model')).toBe('explicit-model')
+})
+
+test('a writing run with edits names and preserves its tree instead of failing over', () => {
+  const changed = { files: ['partial.ts'], diff: 'diff', insertions: 1, deletions: 0, since: 'base', trunk: 'main', trunkConfigured: true }
+  expect(writingFailoverRefusal(true, changed, '/tmp/orch-42')).toBe(
+    'writing run has 1 changed file(s); preserving worktree /tmp/orch-42 so two agents never share one diff',
+  )
+  expect(writingFailoverRefusal(true, { ...changed, files: [], diff: '', insertions: 0 }, '/tmp/orch-42')).toBeNull()
+  expect(writingFailoverRefusal(true, null, '/tmp/orch-42')).toContain('worktree diff could not be read')
+})

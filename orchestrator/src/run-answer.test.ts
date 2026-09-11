@@ -3,7 +3,8 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ARGV_PROMPT_BYTES, addRun, db, dir, packedResumePrompt, rulingPrompt } from '../test/fixture.ts'
 import { assertWorkerText, readMessageText, readWorkerFile } from './args.ts'
-import { answerRun } from './run-answer.ts'
+import { answerRun, retryRun } from './run-answer.ts'
+import { continueRun } from './run-control.ts'
 
 const presentation = {
   dur: (ms: number | null | undefined) => String(ms ?? 0),
@@ -15,6 +16,7 @@ const helpers = {
   assertWorkerText, readWorkerFile, readMessageText, presentation,
 }
 const flags = { detach: true, follow: false, quiet: true }
+const retry = (id: number, options: { agent?: string; model?: string } = {}) => retryRun(id, { ...options, flags }, helpers)
 
 function insert(status: string, job = 'file-question'): number {
   return (db().query(
@@ -333,4 +335,34 @@ test('answer refuses an asking run with no vendor session without recording the 
   db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)').run(id, new Date().toISOString(), 'which?')
   await expect(answerRun(id, { argv: ['use the existing shape'], recordOnly: false, flags }, helpers)).rejects.toThrow('cannot be resumed: no vendor session')
   expect(db().query('SELECT answer FROM question WHERE run_id=?').get(id)).toEqual({ answer: null })
+})
+
+describe('retry command', () => {
+  const failed = (job = 'file-question') => {
+    const id = addRun({ agent: 'grok', job, status: 'failed' }); const prompt = join(dir, `retry-${id}.prompt.txt`)
+    writeFileSync(prompt, 'What does bar.ts do?'); db().query('UPDATE run SET prompt_path=?,cwd=?,session_id=? WHERE id=?').run(prompt, dir, 'orch-test-session', id); return id
+  }
+
+  test('bridge-only identity cannot retry an unowned read-only run', async () => {
+    const id = failed(); db().query('UPDATE run SET session_id=NULL WHERE id=?').run(id); delete process.env.CLAUDE_CODE_SESSION_ID; process.env.CLAUDE_CODE_BRIDGE_SESSION_ID = 'shared-bridge'
+    await expect(retry(id)).rejects.toThrow(`run ${id} is unowned; CLAUDE_CODE_SESSION_ID is not set`); expect(db().query('SELECT COUNT(*) n FROM run WHERE retry_of=?').get(id)).toEqual({ n: 0 })
+  })
+
+  test('retry refuses a foreign owner before either job shape launches', async () => {
+    for (const job of ['file-question', 'implement']) { const id = failed(job); db().query('UPDATE run SET session_id=? WHERE id=?').run('owner-session', id); process.env.CLAUDE_CODE_SESSION_ID = 'foreign-session'; await expect(retry(id)).rejects.toThrow(`run ${id} is owned by session owner-session`); expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=? OR retry_of=?').get(id, id)).toEqual({ n: 0 }) }
+  })
+
+  test('a writing retry refuses to change agents and directs a fresh start', async () => {
+    const id = failed('implement'); db().query("UPDATE run SET vendor_session='retry-session' WHERE id=?").run(id)
+    await expect(retry(id, { agent: 'codex' })).rejects.toThrow('a writing run continues on its own agent (grok); to start over on codex: orch do implement --agent codex ...')
+    expect(db().query('SELECT COUNT(*) n FROM run WHERE parent_run_id=?').get(id)).toEqual({ n: 0 })
+  })
+
+  test('retry and continue give the same refusal when the chain has no session', async () => {
+    for (const command of ['retry', 'continue'] as const) {
+      const id = addRun({ agent: 'codex', job: 'implement', status: 'failed' }); const prompt = join(dir, `no-session-${id}.prompt.txt`); writeFileSync(prompt, 'continue'); db().query('UPDATE run SET prompt_path=?,cwd=?,session_id=?,vendor_session=NULL WHERE id=?').run(prompt, dir, 'orch-test-session', id)
+      const action = command === 'retry' ? retry(id) : continueRun(id, 'go', helpers.argvResumeLimit)
+      await expect(action).rejects.toThrow(`run ${id} recorded no session id, so codex cannot be resumed`)
+    }
+  })
 })

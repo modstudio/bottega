@@ -2,6 +2,7 @@ import {
   installTestTransport, type AgentTransport, type NormalizedEvent,
   type TransportHandle, type TransportResult, type TransportStartOpts,
 } from '../src/transport.ts'
+import { writeFileSync } from 'node:fs'
 
 export type ScriptedTransportEvent =
   | { kind: 'started'; pid?: number | null; session?: string | null }
@@ -10,7 +11,7 @@ export type ScriptedTransportEvent =
   | { kind: 'checkpoint'; reply: string }
   | { kind: 'ask'; question: string; why: string }
   | { kind: 'resume'; ruling?: string }
-  | { kind: 'completed'; output?: string; exitCode?: number; stopReason?: string | null }
+  | { kind: 'completed'; output?: string; parsedText?: string; exitCode?: number; stopReason?: string | null }
   | { kind: 'failed'; error: string }
   | { kind: 'cancelled'; reason: string }
 
@@ -22,8 +23,46 @@ export type ScriptedTransport = {
   injectRuling(ruling: string): void
 }
 
+/** Installs one deterministic script per transport start, in call order. */
+export function scriptedTransportSequence(scripts: ScriptedTransportEvent[][]): {
+  install(): void
+  prompts: string[]
+  injectRuling(ruling: string): void
+  starts(): number
+} {
+  const prompts: string[] = []
+  let index = 0
+  let active: ScriptedTransport | null = null
+  let queuedRuling: string | null = null
+  const activate = (scripted: ScriptedTransport) => {
+    active = scripted
+    if (queuedRuling !== null) { scripted.injectRuling(queuedRuling); queuedRuling = null }
+  }
+  const transport: AgentTransport = {
+    name: 'cli',
+    async start(opts) {
+      const scripted = scriptedTransport(scripts[index++] ?? []); activate(scripted)
+      const handle = await scripted.transport.start(opts)
+      prompts.push(...scripted.prompts)
+      return handle
+    },
+    prompt(handle, value) { return handle.prompt(value) },
+    events(handle) { return handle.events() },
+    cancel(handle) { return handle.cancel() },
+    async resume(opts) {
+      const scripted = scriptedTransport(scripts[index++] ?? []); activate(scripted)
+      const handle = await scripted.transport.resume(opts)
+      prompts.push(...scripted.prompts)
+      return handle
+    },
+  }
+  return { prompts, starts: () => index, install: () => installTestTransport(transport), injectRuling: (ruling) => {
+    if (active) active.injectRuling(ruling); else queuedRuling = ruling
+  } }
+}
+
 const result = (state: {
-  stdout: string; stderr: string; output: string; session: string | null
+  stdout: string; stderr: string; output: string; parsedText: string | null; session: string | null
   pid: number | null
   exitCode: number; stopReason: string | null; error: string | null
   events: NormalizedEvent[]; cancelled: boolean
@@ -32,7 +71,7 @@ const result = (state: {
   stderr: state.stderr,
   raw: state.stdout + state.stderr,
   parsed: {
-    text: state.output, tokens: null, costUsd: null,
+    text: state.parsedText ?? state.output, tokens: null, costUsd: null,
     stopReason: state.stopReason, error: state.error ?? undefined,
   },
   output: state.output,
@@ -57,6 +96,7 @@ type ScriptState = {
   stdout: string
   stderr: string
   output: string
+  parsedText: string | null
   exitCode: number
   stopReason: string | null
   error: string | null
@@ -86,9 +126,11 @@ async function applyEvent(
     if (event.ruling !== undefined) prompts.push(event.ruling)
   } else if (event.kind === 'completed') {
     state.output = event.output ?? state.stdout
+    state.parsedText = event.parsedText ?? null
     state.exitCode = event.exitCode ?? 0
     state.stopReason = event.stopReason ?? 'end_turn'
   } else if (event.kind === 'failed') {
+    if (!state.output) state.output = state.stdout
     state.error = event.error
     state.exitCode = 1
     state.stopReason = null
@@ -124,14 +166,15 @@ export function scriptedTransport(script: ScriptedTransportEvent[]): ScriptedTra
     const emit = (event: NormalizedEvent) => { normalized.push(event); eventWake?.(); eventWake = null }
     const state: ScriptState = {
       cancelled: false, pid: 0, session: opts.session ?? null, stdout: '', stderr: '',
-      output: '', exitCode: 0, stopReason: 'end_turn', error: null,
+      output: '', parsedText: null, exitCode: 0, stopReason: 'end_turn', error: null,
     }
     const collected = (async () => {
       for (const event of script) {
         seen.push(event)
         await applyEvent(event, state, emit, waitForRuling, seen, prompts)
       }
-      eventsDone = true; eventWake?.(); eventWake = null
+      eventsDone = true; (eventWake as (() => void) | null)?.(); eventWake = null
+      writeFileSync(opts.outPath, state.stdout + state.stderr)
       return result({ ...state, events: normalized })
     })()
     return {

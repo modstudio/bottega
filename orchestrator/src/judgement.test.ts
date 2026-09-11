@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { addRun, db, dir, pairPartners, recordReview, reviewReply, score as seedScore } from '../test/fixture.ts'
 import { NOT_EVIDENCE } from './failure.ts'
@@ -214,5 +214,41 @@ describe('judge ruling', () => {
     const id = insert('ok', 'review-lens'); db().query('UPDATE run SET lens=?,model=? WHERE id=?').run('correctness', 'm', id); const reviewId = recordReview(id, reviewReply(1), db()); db().query("UPDATE run SET status='failed' WHERE id=?").run(id); judge(id, ['none'])
     expect(db().query('SELECT completed_at FROM review WHERE id=?').get(reviewId)).toEqual({ completed_at: expect.any(String) })
     expect(db().query('SELECT disposition FROM review_finding WHERE review_id=?').get(reviewId)).toEqual({ disposition: null })
+  })
+})
+
+describe('voided output evidence', () => {
+  test('score --void records its verdict but removes routing and duel evidence', () => {
+    const outputPath = join(dir, 'voided-output.txt'); writeFileSync(outputPath, 'the retained answer')
+    const id = insert('ok', 'review-lens'); const partner = addRun({ agent: 'grok', job: 'review-lens', session: 'orch-test-session', inputTree: 'voided-tree', specSha: 'voided-spec' })
+    db().query("UPDATE run SET output_path=?,input_tree='voided-tree',spec_sha='voided-spec' WHERE id=?").run(outputPath, id); seedScore(partner, 'full', 'right')
+    score(id, ['none'], { void: true, 'better-than': String(partner) })
+    expect(readFileSync(outputPath, 'utf8')).toBe('the retained answer')
+    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id)).toEqual({ evidence_excluded: 'voided with orch score --void' })
+    expect(db().query('SELECT delivery,quality FROM score WHERE run_id=?').get(id)).toEqual({ delivery: 'none', quality: null })
+    expect(db().query('SELECT COUNT(*) n FROM duel WHERE winner_run_id=? OR loser_run_id=?').get(id, id)).toEqual({ n: 0 })
+    expect(db().query('SELECT action,actor_session FROM run_mutation_audit WHERE run_id=?').get(id)).toEqual({ action: 'void', actor_session: 'orch-test-session' })
+  })
+
+  test('score --void rolls back the exclusion when recording the verdict fails', () => {
+    const id = insert('ok', 'understand'); db().exec(`CREATE TRIGGER reject_void_score BEFORE INSERT ON score WHEN NEW.run_id=${id} BEGIN SELECT RAISE(ABORT,'fixture score refusal'); END`)
+    try { expect(() => score(id, ['none'], { void: true })).toThrow('fixture score refusal') } finally { db().exec('DROP TRIGGER reject_void_score') }
+    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id)).toEqual({ evidence_excluded: null })
+    expect(db().query('SELECT COUNT(*) n FROM score WHERE run_id=?').get(id)).toEqual({ n: 0 })
+  })
+
+  test('score --void says why a NOT_EVIDENCE failure verdict was not recorded', () => {
+    const id = insert('failed', 'understand'); db().query("UPDATE run SET failure_kind='quota' WHERE id=?").run(id)
+    const lines: string[] = []; scoreRun(id, flags({ void: true }), { words: ['none'], note: null, auditReason: null, notEvidence: NOT_EVIDENCE, dashboardAuthorized: false }, { ...presentation, log: (...values) => lines.push(values.join(' ')) })
+    expect(lines.join('\n')).toContain("verdict was not recorded: failure kind 'quota' is not evidence")
+    expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(id)).toEqual({ evidence_excluded: 'voided with orch score --void' })
+    expect(db().query('SELECT COUNT(*) n FROM score WHERE run_id=?').get(id)).toEqual({ n: 0 })
+  })
+
+  test('score --void refuses a foreign owner and permits an attributed unowned run', () => {
+    const owned = insert('ok', 'review-lens'); db().query('UPDATE run SET session_id=? WHERE id=?').run('owner-session', owned); process.env.CLAUDE_CODE_SESSION_ID = 'foreign-session'
+    expect(() => score(owned, [], { void: true })).toThrow('owner-session'); expect(db().query('SELECT evidence_excluded FROM run WHERE id=?').get(owned)).toEqual({ evidence_excluded: null })
+    const unowned = insert('ok', 'review-lens'); db().query('UPDATE run SET session_id=NULL WHERE id=?').run(unowned); process.env.CLAUDE_CODE_SESSION_ID = 'acting-session'; score(unowned, [], { void: true })
+    expect(db().query('SELECT action,actor_session,reason FROM run_mutation_audit WHERE run_id=? ORDER BY rowid').all(unowned)).toEqual([{ action: 'adopt', actor_session: 'acting-session', reason: 'before void' }, { action: 'void', actor_session: 'acting-session', reason: null }])
   })
 })
