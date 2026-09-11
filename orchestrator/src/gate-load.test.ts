@@ -3,6 +3,7 @@ import {
   GATE_CONCURRENCY_LIMIT, holdForGateCapacity, shouldHoldShard, withGateSlot,
 } from './gate-load.ts'
 import type { HostLoad } from './gate-policy.ts'
+import './gate-load.test-residue.ts'
 
 const idle = (over: Partial<HostLoad> = {}): HostLoad => ({
   gates: 1, loadavg: 0.2, ncpu: 8, freeMem: 8 * 1024 * 1024 * 1024, ...over,
