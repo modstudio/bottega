@@ -19,7 +19,7 @@
       "size": "moderate",
       "exclusive": true
     },
-    "src/linked-worktree-database.cli.test.ts": {
+    "test/process-boundary/database-linked-worktree.test.ts": {
       "size": "short"
     },
     "src/monitor.cli.test.ts": {
@@ -158,7 +158,7 @@
         "test/process-boundary/worktree-create.test.ts",
         "test/process-boundary/review-target-evidence.test.ts",
         "test/process-boundary/review-target-selection.test.ts",
-        "src/linked-worktree-database.cli.test.ts",
+        "test/process-boundary/database-linked-worktree.test.ts",
         "test/process-boundary/run.test.ts",
         "test/process-boundary/ref-guard.test.ts"
       ]
