@@ -112,8 +112,9 @@ let resolveBase!: typeof import('./worktree.ts').resolveBase
 let checkoutHasUncommittedWork!: typeof import('./worktree.ts').checkoutHasUncommittedWork; let callerDrift!: typeof import('./worktree.ts').callerDrift
 async function loadWorktree() { worktreeModule ??= await import('./worktree.ts'); ({ resolveBase, checkoutHasUncommittedWork, callerDrift } = worktreeModule) }
 let contractConflicts!: typeof import('./contract.ts').contractConflicts
-let contractText!: typeof import('./contract.ts').contractText
-async function loadContract() { contractModule ??= await import('./contract.ts'); ({ contractConflicts, contractText } = contractModule) }
+async function loadContract() { contractModule ??= await import('./contract.ts'); ({ contractConflicts } = contractModule) }
+let contractText!: typeof import('./contract-text.ts').contractText
+async function loadContractText() { ({ contractText } = await import('./contract-text.ts')) }
 let grokTrustHeadings!: typeof import('./grok-trust.ts').grokTrustHeadings
 let grokTrustPathFromHeading!: typeof import('./grok-trust.ts').grokTrustPathFromHeading
 async function loadGrokTrust() { grokTrustModule ??= await import('./grok-trust.ts'); ({ grokTrustHeadings, grokTrustPathFromHeading } = grokTrustModule) }
@@ -926,7 +927,7 @@ switch (cmd) {
     break
   }
   case 'contract': {
-    await Promise.all([loadJobs(), loadContract()])
+    await loadContractText()
     const jobName = argv[1]
     if (!jobName) throw new Error('orch contract <job>')
     process.stdout.write(contractText(jobName))

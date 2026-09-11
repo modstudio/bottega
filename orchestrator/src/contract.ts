@@ -1,7 +1,7 @@
 // concern: contract
 import { REVIEW_SEVERITY } from './review-vocabulary.ts'
 import { progressFileInstruction } from './checkpoint.ts'
-import { isReaderJob, job, jobBoundInstructionForContract, type Job } from './jobs.ts'
+import { isReaderJob, type Job } from './jobs.ts'
 /** Words that name a question-shaped field without asking a question. */ export const GENERIC_QUESTION_TOKENS = ['placeholder', 'tbd', 'question', 'todo'] as const
 
 /**
@@ -1060,16 +1060,6 @@ function isGitSense(clause: string): boolean {
     || GIT_PREFIXED.test(clause)
     || GIT_OBJECT.test(clause)
     || hasActionRelativeObject(clause)
-}
-
-/** The exact contract presented for a named job. */
-export function contractText(jobName: string): string {
-  const selected = job(jobName)
-  const preamble = selected.needs.writesRepo
-    ? WORKER_PREAMBLE
-    : selected.needs.readsRepo ? READONLY_PREAMBLE : NO_REPO_PREAMBLE
-  return (selected.findings ? `${REVIEW_SEVERITY_INSTRUCTION}\n\n` : '') +
-    preamble + '\n\n' + jobBoundInstructionForContract(selected) + '\n'
 }
 
 export function contractConflicts(spec: string): ContractConflict[] {
