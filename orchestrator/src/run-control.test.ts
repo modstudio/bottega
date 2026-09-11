@@ -6,6 +6,7 @@ import {
   recordReview, reviewReply,
 } from '../test/fixture.ts'
 import { continueRun } from './run-control.ts'
+import './run-control.test-residue.ts'
 
 const limit = () => ARGV_PROMPT_BYTES
 
