@@ -4,13 +4,25 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS, db, dir, hermeticGitEnv, reviewReply, runJob, upsertProject } from '../test/fixture.ts'
 import {
-  mcpCallEvidence, mcpEndpointAllowlist, namesSeenAt, parseMcpConfig, parseMcpProbe, probeMcpServer, storedMcpProbe,
+  mcpCallEvidence, mcpEndpointAllowlist, namesSeenAt, parseMcpConfig, parseMcpProbe, probeMcpServer,
+  sanitizeProbeError, storedMcpProbe,
   wrongProjectReason,
 } from './mcp-probe.ts'
 import { readonlyLensProfile } from './sandbox.ts'
 
 const fixtureProject = {
   id: 1, name: 'fixture', path: '/projects/fixture', stack: 'node', canon: true, settings: {},
+}
+
+const probeSentinel = 'sentinel-secret-value-7f3a'
+const probeAuthorization = `Bearer ${probeSentinel}`
+
+function expectSanitizedProbeError(result: Awaited<ReturnType<typeof probeMcpServer>>): void {
+  expect(result.error).not.toContain(probeSentinel)
+  expect(result.error).not.toContain(probeSentinel.slice(0, 8))
+  expect(result.error).toContain('[redacted]')
+  expect(result.error?.length).toBeLessThanOrEqual(400)
+  expect(storedMcpProbe(result)).not.toContain(probeSentinel)
 }
 
 function writeMintedStdioServer(dir: string): string {
@@ -59,6 +71,27 @@ describe('MCP endpoint allowlist', () => {
       agent: 'grok', path: '/usr/bin', nodeModuleLinks: [],
     })
     expect(without.network.allowedDomains).not.toContain('mcp.example.test')
+  })
+})
+
+describe('MCP probe error sanitising', () => {
+  test('redacts whole header values and their bare tokens', () => {
+    expect(sanitizeProbeError(
+      `whole=${probeAuthorization}; token=${probeSentinel}`,
+      [probeAuthorization, probeSentinel],
+    )).toBe('whole=[redacted]; token=[redacted]')
+  })
+
+  test('treats regex metacharacters as plain secret text and redacts overlapping secrets longest first', () => {
+    expect(sanitizeProbeError('before a+b*c?.[value] after', ['a+b*c?.[value]']))
+      .toBe('before [redacted] after')
+    expect(sanitizeProbeError('secret-value', ['secret', 'secret-value']))
+      .toBe('[redacted]')
+  })
+
+  test('bounds output and leaves short environment values alone when they are not secrets', () => {
+    expect(sanitizeProbeError('x'.repeat(500), [])).toHaveLength(400)
+    expect(sanitizeProbeError('retry=1 enabled=true', [])).toBe('retry=1 enabled=true')
   })
 })
 
@@ -258,6 +291,59 @@ process.stdout.write(JSON.stringify({
     })
     expect(refused.ok).toBe(false)
     server.stop()
+  })
+
+  for (const response of ['non-2xx', 'non-JSON', 'JSON-RPC error'] as const) {
+    test(`redacts and bounds configured secrets in an HTTP ${response}`, async () => {
+      const server = Bun.serve({
+        port: 0,
+        fetch: () => {
+          // The sentinel straddles the 400-character bound: a cut before redaction would leak its prefix.
+          if (response === 'non-2xx') return new Response(`${'d'.repeat(390)}${probeSentinel}`, { status: 401 })
+          if (response === 'non-JSON') return new Response(`not json ${probeSentinel}`)
+          return Response.json({
+            jsonrpc: '2.0', id: 1,
+            error: { message: `${probeSentinel} ${'remote detail '.repeat(50)}` },
+          })
+        },
+      })
+      try {
+        const result = await probeMcpServer({
+          server: 'fixture-project',
+          config: {
+            name: 'fixture-project', url: `http://127.0.0.1:${server.port}/mcp`,
+            headers: { Authorization: probeAuthorization },
+          },
+          cwd: tmpdir(),
+          env: { ...process.env } as Record<string, string>,
+        })
+        expect(result.ok).toBe(false)
+        expectSanitizedProbeError(result)
+      } finally {
+        server.stop()
+      }
+    })
+  }
+
+  test('redacts a configured environment secret echoed by a failing stdio server', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orch-mcp-secret-stderr-'))
+    const server = join(dir, 'failing-mcp-server.ts')
+    writeFileSync(server, `process.stderr.write(process.env.PROBE_SECRET ?? ''); process.exit(1)\n`)
+    try {
+      const result = await probeMcpServer({
+        server: 'fixture-project',
+        config: {
+          name: 'fixture-project', command: process.execPath, args: [server],
+          env: { PROBE_SECRET: probeSentinel, RETRY_COUNT: '1', ENABLED: 'true' },
+        },
+        cwd: dir,
+        env: { ...process.env } as Record<string, string>,
+      })
+      expect(result.ok).toBe(false)
+      expectSanitizedProbeError(result)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 

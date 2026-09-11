@@ -63,6 +63,23 @@ export type McpServerConfig = {
 }
 
 const ALLOWED_EXTRA_SERVERS = new Set(['orch-ask', 'orch'])
+const MCP_PROBE_ERROR_LIMIT = 400
+
+/** Remove configured credentials from probe errors before they become durable evidence. */
+export function sanitizeProbeError(text: string, secrets: string[]): string {
+  let sanitized = text
+  const longestFirst = [...new Set(secrets.filter(Boolean))]
+    .sort((left, right) => right.length - left.length)
+  for (const secret of longestFirst) sanitized = sanitized.replaceAll(secret, '[redacted]')
+  return sanitized.slice(0, MCP_PROBE_ERROR_LIMIT)
+}
+
+function probeSecrets(config: McpServerConfig | undefined): string[] {
+  const headers = Object.values(config?.headers ?? {})
+  const headerTokens = headers.flatMap((value) => value.split(/\s+/).filter((token) => token.length >= 8))
+  const env = Object.values(config?.env ?? {}).filter((value) => value.length >= 8)
+  return [...headers.filter(Boolean), ...headerTokens, ...env]
+}
 
 export function namesSeenAt(cwd: string): string[] {
   return [...new Set([...Object.keys(readMcpConfig(cwd)), ...ALLOWED_EXTRA_SERVERS])]
@@ -226,10 +243,11 @@ const text=await res.text(); process.stdout.write(text); process.exit(res.ok?0:1
     clearTimeout(timer)
     if (exit !== 0) {
       const combined = [stderr.trim(), stdout.trim()].filter(Boolean).join('\n')
-      return { ok: false, messages: replies, error: combined.slice(0, 400) || `HTTP probe exited ${exit}` }
+      // Unbounded here: sanitizeProbeError bounds after redacting, so no cut can split a secret.
+      return { ok: false, messages: replies, error: combined || `HTTP probe exited ${exit}` }
     }
     try { replies.push(JSON.parse(stdout)) } catch {
-      return { ok: false, messages: replies, error: stdout.slice(0, 400) || 'HTTP probe returned non-JSON' }
+      return { ok: false, messages: replies, error: stdout || 'HTTP probe returned non-JSON' }
     }
   }
   return { ok: true, messages: replies, error: null }
@@ -255,8 +273,9 @@ export async function probeMcpServer(input: {
 }): Promise<McpProbeResult> {
   const started = Date.now()
   const namesSeen = namesSeenAt(input.cwd)
+  const secrets = probeSecrets(input.config)
   const fail = (error: string, tool = 'tools/list'): McpProbeResult => ({
-    server: input.server, tool, ok: false, error, durationMs: Date.now() - started,
+    server: input.server, tool, ok: false, error: sanitizeProbeError(error, secrets), durationMs: Date.now() - started,
     detail: null, namesSeen,
   })
   if (!input.config) return fail(`MCP server '${input.server}' is not in .mcp.json`)
@@ -329,7 +348,7 @@ export async function probeMcpServer(input: {
   result.durationMs = Date.now() - started
   if (!called.ok) {
     result.ok = false
-    result.error = called.error
+    result.error = called.error === null ? null : sanitizeProbeError(called.error, secrets)
     return result
   }
   const callError = called.messages.map((message) => {
@@ -338,7 +357,7 @@ export async function probeMcpServer(input: {
   }).find(Boolean)
   if (callError) {
     result.ok = false
-    result.error = callError
+    result.error = sanitizeProbeError(callError, secrets)
     return result
   }
   result.detail = `listed: ${listed.length} tools; called ${input.probeTool}`
