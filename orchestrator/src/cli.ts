@@ -210,13 +210,6 @@ function lifecycleCheckpoint(name: string): void {
 }
 
 /**
- * Watch a detached run to its terminal state and report it as the caller expects.
- *
- * Shared by `do` and `retry` because they have the same exposure: whichever
- * process is holding the agent as a child is the process whose death destroys
- * the work. Neither holds it any more.
- */
-/**
  * How to score THIS run — the right id and the right axes.
  *
  * Both halves were wrong and both misled a session today. A child turn's line
@@ -3503,16 +3496,6 @@ switch (cmd) {
     break
   }
 
-  /**
-   * Rule on what a worker asked, and set it going again.
-   *
-   * The ruling RESUMES the worker's own session rather than starting a new run,
-   * which is the entire reason escalation is affordable here: everything the
-   * worker had read is still in its head, so a design question costs one short
-   * turn instead of a second full survey of the code. Starting fresh would make
-   * asking more expensive than guessing, and a channel that costs more than
-   * guessing does not get used.
-   */
   case 'answer': {
     await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadRun(), loadWorktree(), loadContract()])
     const requestedId = Number(argv[1])

@@ -187,22 +187,15 @@
   },
   {
     "file": "orchestrator/src/cli.ts",
-    "function": "follow",
-    "line": 370,
-    "score": 47,
-    "key": "orchestrator/src/cli.ts\u0000follow"
-  },
-  {
-    "file": "orchestrator/src/cli.ts",
     "function": "withCleanupLock callback#1",
     "line": 967,
     "score": 35
   },
   {
     "file": "orchestrator/src/cli.ts",
-    "function": "continueRun",
-    "line": 1318,
-    "score": 24
+    "function": "writeTransaction callback#10",
+    "line": 4588,
+    "score": 17
   },
   {
     "file": "orchestrator/src/cli.ts",
@@ -212,14 +205,8 @@
   },
   {
     "file": "orchestrator/src/cli.ts",
-    "function": "writeTransaction callback#15",
-    "line": 5498,
-    "score": 17
-  },
-  {
-    "file": "orchestrator/src/cli.ts",
-    "function": "map callback#87",
-    "line": 7197,
+    "function": "map callback#82",
+    "line": 6287,
     "score": 16
   },
   {
@@ -287,18 +274,6 @@
     "function": "db",
     "line": 174,
     "score": 25
-  },
-  {
-    "file": "orchestrator/src/resource-ownership.ts",
-    "function": "teardownTerminalRunResources",
-    "line": 153,
-    "score": 19
-  },
-  {
-    "file": "orchestrator/src/run-liveness.ts",
-    "function": "reapStale",
-    "line": 172,
-    "score": 30
   },
   {
     "file": "orchestrator/src/dispatch-preflight.ts",
@@ -529,6 +504,12 @@
     "score": 24
   },
   {
+    "file": "orchestrator/src/resource-ownership.ts",
+    "function": "teardownTerminalRunResources",
+    "line": 153,
+    "score": 19
+  },
+  {
     "file": "orchestrator/src/review-tier.ts",
     "function": "classifyReviewTier",
     "line": 42,
@@ -629,6 +610,30 @@
     "function": "persistRunArtifacts",
     "line": 222,
     "score": 18
+  },
+  {
+    "file": "orchestrator/src/run-liveness.ts",
+    "function": "reapStale",
+    "line": 172,
+    "score": 30
+  },
+  {
+    "file": "orchestrator/src/run-answer.ts",
+    "function": "answerRun",
+    "line": 128,
+    "score": 69
+  },
+  {
+    "file": "orchestrator/src/run-control.ts",
+    "function": "follow",
+    "line": 31,
+    "score": 47
+  },
+  {
+    "file": "orchestrator/src/run-control.ts",
+    "function": "continueRun",
+    "line": 137,
+    "score": 24
   },
   {
     "file": "orchestrator/src/run.ts",
