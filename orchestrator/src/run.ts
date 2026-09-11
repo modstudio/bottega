@@ -882,7 +882,7 @@ export async function run(opts: {
           const created = createWorkerWorktree({
             tool, cwd: callerCwd, runId: claim.id, writes: writesJob,
             readOnlyBase: readOnlyBase!, seed, key: opts.key,
-            baseRef: reviewTarget?.commit ?? opts.base,
+            baseRef: reviewTarget?.commit ?? opts.base ?? (writesJob && !resolvedTaskBranch ? resolveReadOnlyBase(callerCwd, 'HEAD') : undefined),
             record: recordWorktree, detached: Boolean(reviewTarget),
             existingBranch: resolvedTaskBranch?.branch,
             existingBranchTip: resolvedTaskBranch?.tip,
