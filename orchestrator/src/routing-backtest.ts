@@ -6,8 +6,9 @@ import { COOLS_DOWN } from './failure.ts'
 import { JOBS } from './jobs.ts'
 import {
   COOLDOWN_MIN, MIN_SAMPLE, OUTPUT_RESERVE, PROMPT_SIZE_BOUNDARY,
-  currentPolicySelection, isRoutingEvidence, median, routingEvidenceWindow, thompsonRank,
+  currentPolicySelection, isRoutingEvidence, routingEvidenceWindow, thompsonRank,
 } from './route.ts'
+import { median } from './statistics.ts'
 
 export const ROUTING_BACKTEST_SEED = 287
 export const ROUTING_BACKTEST_SEEDS = Object.freeze(Array.from({ length: 20 }, (_, i) => i + 1))

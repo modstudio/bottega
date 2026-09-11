@@ -2,7 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { db } from './db.ts'
 import { REVIEW_OVERLAP, REVIEW_SEVERITY, type ReviewOverlap, type ReviewSeverity } from './review-vocabulary.ts'
 import { attributedTaskKey } from './epic.ts'
-import { median } from './route.ts'
+import { median } from './statistics.ts'
 import { reviewRunEvidenceSql, reviewTriageBag } from './review.ts'
 
 export type ReviewYieldFilters = {

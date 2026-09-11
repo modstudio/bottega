@@ -2,8 +2,10 @@ import { db } from './db.ts'; import { WEIGHT, FIDELITY_PENALTY, weigh } from '.
 import { AGENTS, fileContractProbeReason, predatesFileContract, unavailableReason } from './agents.ts'
 import { job, JOBS } from './jobs.ts'
 import { COOLS_DOWN, NOT_EVIDENCE } from './failure.ts'
-import { reviewCalibration } from './review.ts'
+import { calibrationFor } from './calibration-port.ts'
 import { failingDefaultCanonEvals } from './canon-eval-status.ts'
+import { median } from './statistics.ts'
+export { median } from './statistics.ts'
 
 export type Candidate = {
   agent: string
@@ -358,20 +360,6 @@ export function weightCase(): string {
   // two clamps that disagree is the drift this file already has a section about.
   const floor = WEIGHT.none as number
   return `MAX((CASE ${arms.join(' ')} ELSE 0 END) + (CASE ${pen} ELSE 0 END), ${floor})`
-}
-
-/**
- * Median, exported because the guide needs the same one.
- *
- * Median rather than mean throughout: one call that hung should not decide
- * anything. There were two identical copies of this; identical today is how a
- * pair of copies always starts.
- */
-export function median(xs: number[]): number | null {
-  if (xs.length === 0) return null
-  const v = [...xs].sort((a, b) => a - b)
-  const mid = v.length >> 1
-  return v.length % 2 ? v[mid]! : (v[mid - 1]! + v[mid]!) / 2
 }
 
 /**
@@ -933,7 +921,7 @@ export function pick(
   if (j.findings && lens?.trim()) {
     eligible = eligible.map((candidate) => ({
       ...candidate,
-      precision: reviewCalibration(
+      precision: calibrationFor(
         lens.trim(), candidate.agent, avoid.model ?? AGENTS[candidate.agent]!.model,
       ).precision,
     }))

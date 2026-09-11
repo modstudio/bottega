@@ -1,9 +1,10 @@
 import { db } from './db.ts'
 import { JOBS } from './jobs.ts'
 import {
-  candidates, evidenceFor, pick, median, MIN_SAMPLE, PROMPT_SIZE_BOUNDARY,
+  candidates, evidenceFor, pick, MIN_SAMPLE, PROMPT_SIZE_BOUNDARY,
   promptBucketsForJob, promptSizeBucket, type PromptSizeBucket,
 } from './route.ts'
+import { median } from './statistics.ts'
 
 export type AgentOnJob = {
   agent: string
