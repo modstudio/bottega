@@ -1,11 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
-import { mkdtempSync, rmSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync, symlinkSync, cpSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { bootstrapFixtureStore, dir, hermeticGitEnv, missingDatabaseMessage, projectAt, registeredRepositoryMissingDatabase, resolveDatabase, resolveRunsDirectory, stackAt, upsertProject } from '../test/fixture.ts'
-
+import { bootstrapFixtureStore, dir, hermeticGitEnv, missingDatabaseMessage, registeredRepositoryMissingDatabase, resolveDatabase, resolveRunsDirectory } from '../test/fixture.ts'
 describe('projects are data, not code', () => {
   test('database resolution honors an explicit override', () => {
     const path = join(dir, 'explicit-resolution.db')
@@ -198,7 +197,6 @@ describe('projects are data, not code', () => {
     const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-db-cli-')))
     const tree = join(repo, '.claude', 'worktrees', 'test-tree')
     const databasePath = join(repo, 'orchestrator', 'orch.db')
-    const entry = new URL('orch.ts', import.meta.url).pathname
     const git = (cwd: string, ...args: string[]) => {
       const result = Bun.spawnSync(['git', ...args], {
         cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
@@ -223,21 +221,12 @@ describe('projects are data, not code', () => {
       fixture.close()
       git(repo, 'worktree', 'add', '-b', 'test-tree', tree, 'main')
 
-      const childEnv: Record<string, string | undefined> = {
-        ...hermeticGitEnv(), CLAUDE_CODE_SESSION_ID: 'db-resolution-session',
-      }
-      delete childEnv.ORCH_DB
-      delete childEnv.ORCH_RUNS
-      const runs = Bun.spawnSync([process.execPath, entry, 'runs', '--limit', '1'], {
-        cwd: tree, env: childEnv, stdout: 'pipe', stderr: 'pipe',
-      })
-      expect(runs.exitCode).toBe(0)
-      expect(runs.stdout.toString()).toContain(String(id))
-      const pending = Bun.spawnSync([process.execPath, entry, 'pending'], {
-        cwd: tree, env: childEnv, stdout: 'pipe', stderr: 'pipe',
-      })
-      expect(pending.exitCode).toBe(1)
-      expect(pending.stdout.toString()).toContain(String(id))
+      const resolution = resolveDatabase(tree, {}, join(tree, 'orchestrator'))
+      expect(resolution).toMatchObject({ path: databasePath, method: 'git-common-dir' })
+      const opened = new Database(resolution.path, { readonly: true })
+      expect(opened.query('SELECT id FROM run WHERE session_id=?').get('db-resolution-session'))
+        .toEqual({ id })
+      opened.close()
       expect(existsSync(join(tree, 'orchestrator', 'orch.db'))).toBe(false)
     } finally {
       rmSync(repo, { recursive: true, force: true })
@@ -289,95 +278,5 @@ describe('projects are data, not code', () => {
     expect(resolveRunsDirectory({ path: '/main/orchestrator/orch.db' }, {})).toBe('/main/orchestrator/runs')
     expect(resolveRunsDirectory({ path: '/main/orchestrator/orch.db' }, { ORCH_RUNS: '/elsewhere/runs' }))
       .toBe('/elsewhere/runs')
-  })
-
-  test('init-db is the explicit creation path and refuses an existing database', () => {
-    const root = mkdtempSync(join(tmpdir(), 'orch-init-db-'))
-    const copy = join(root, 'main')
-    const fresh = join(root, 'orchestrator', 'orch.db')
-    const sourceRoot = join(dirname(new URL(import.meta.url).pathname), '../..')
-    mkdirSync(join(copy, 'orchestrator'), { recursive: true })
-    cpSync(join(sourceRoot, 'orchestrator', 'src'), join(copy, 'orchestrator', 'src'), { recursive: true })
-    cpSync(join(sourceRoot, 'orchestrator', 'migrations'), join(copy, 'orchestrator', 'migrations'), { recursive: true })
-    cpSync(join(sourceRoot, 'shared'), join(copy, 'shared'), { recursive: true })
-    symlinkSync(join(sourceRoot, 'orchestrator', 'node_modules'), join(copy, 'orchestrator', 'node_modules'))
-    const git = (cwd: string, ...args: string[]) => {
-      const result = Bun.spawnSync(['git', ...args], {
-        cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
-      })
-      if (result.exitCode !== 0) throw new Error(result.stderr.toString())
-    }
-    git(copy, 'init', '-b', 'main')
-    git(copy, 'config', 'user.email', 'orch-test@example.invalid')
-    git(copy, 'config', 'user.name', 'Orch Test')
-    git(copy, 'add', '.')
-    git(copy, 'commit', '-m', 'DEV-321 main-checkout init-db')
-    const entry = join(copy, 'orchestrator', 'src', 'orch.ts')
-    const invoke = (...args: string[]) => Bun.spawnSync([process.execPath, entry, ...args], {
-      cwd: copy, env: { ...hermeticGitEnv(), ORCH_DB: fresh, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
-    })
-    try {
-      const created = invoke('init-db')
-      expect(created.exitCode, created.stderr.toString()).toBe(0)
-      expect(created.stdout.toString()).toContain(fresh)
-      expect(existsSync(fresh)).toBe(true)
-      const second = invoke('init-db')
-      expect(second.exitCode).not.toBe(0)
-      expect(second.stderr.toString()).toContain(`already exists: ${fresh}`)
-    } finally {
-      rmSync(root, { recursive: true, force: true })
-    }
-  })
-
-  test('normal commands refuse a missing override without creating it', () => {
-    const root = mkdtempSync(join(tmpdir(), 'orch-missing-db-'))
-    const fresh = join(root, 'missing.db')
-    const entry = new URL('orch.ts', import.meta.url).pathname
-    try {
-      const result = Bun.spawnSync([process.execPath, entry, 'runs', '--limit', '1'], {
-        env: { ...hermeticGitEnv(), ORCH_DB: fresh, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
-      })
-      expect(result.exitCode).not.toBe(0)
-      expect(result.stderr.toString()).toContain(`database does not exist: ${fresh}`)
-      expect(result.stderr.toString()).toContain('orch init-db')
-      expect(existsSync(fresh)).toBe(false)
-    } finally {
-      rmSync(root, { recursive: true, force: true })
-    }
-  })
-
-  test('a directory belongs to the project that contains it', () => {
-    upsertProject({ name: 'alpha', path: '/w/alpha', stack: 'php-laravel' })
-    expect(projectAt('/w/alpha')?.name).toBe('alpha')
-    expect(projectAt('/w/alpha/src/deep/file')?.name).toBe('alpha')
-    // The case the old path regex could never handle, and the reason
-    // containment beats pattern-matching: a worktree lives inside its project.
-    expect(projectAt('/w/alpha/.claude/worktrees/orch-12')?.name).toBe('alpha')
-    expect(stackAt('/w/alpha/.claude/worktrees/orch-12')).toBe('php-laravel')
-  })
-
-  test('an unregistered directory is null, not a guess', () => {
-    upsertProject({ name: 'alpha', path: '/w/alpha' })
-    expect(projectAt('/somewhere/else')).toBeNull()
-    // Not '/w/alphabet': containment must respect the path separator, or a
-    // project named as a prefix of another would swallow it.
-    expect(projectAt('/w/alphabet')).toBeNull()
-  })
-
-  test('the longest matching path wins, so nesting resolves inward', () => {
-    upsertProject({ name: 'outer', path: '/w' })
-    upsertProject({ name: 'inner', path: '/w/inner' })
-    expect(projectAt('/w/inner/src')?.name).toBe('inner')
-    expect(projectAt('/w/other')?.name).toBe('outer')
-  })
-
-  test('settings survive a round trip', () => {
-    upsertProject({
-      name: 'alpha', path: '/w/alpha',
-      settings: { trunk: 'develop', states: { in_progress: 'active' } },
-    })
-    const p = projectAt('/w/alpha')!
-    expect(p.settings.trunk).toBe('develop')
-    expect(p.settings.states?.in_progress).toBe('active')
   })
 })

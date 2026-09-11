@@ -5,10 +5,6 @@
  *   invariant: <the invariant's bolded phrase from orchestrator/AGENTS.md>
  *   cleared by: <a literal orch, git, or residue-removal invocation>
  *
- * Every expected failure records evidence only when its invariant expectation
- * fails. Chunk 3 removes a repaired case from failingCaseNames, changes it to
- * plain test(), and leaves violation() around its now-passing assertion; that
- * produces no record, so the final evidence test remains an exact inventory.
  */
 import { afterAll, beforeEach, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
@@ -18,7 +14,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { scrubbedGitEnv } from '../../shared/git.ts'
+import { scrubbedGitEnv } from '../../../shared/git.ts'
 
 const fixtureGlobal = globalThis as typeof globalThis & {
   __orchLifecycleFixture?: string
@@ -55,10 +51,10 @@ process.env.PATH = `${bin}:${process.env.PATH ?? ''}`
 process.env.ORCH_DEPTH = '0'
 process.env.CLAUDE_CODE_SESSION_ID = 'lifecycle-harness'
 
-const sourceRoot = join(dirname(new URL(import.meta.url).pathname), '../..')
+const sourceRoot = join(dirname(new URL(import.meta.url).pathname), '../../..')
 const cli = join(sourceRoot, 'orchestrator', 'src', 'cli.ts')
-const worktreeModule = new URL('./worktree.ts', import.meta.url).href
-const dispatchPreflightModule = new URL('./dispatch-preflight.ts', import.meta.url).href
+const worktreeModule = new URL('../../src/worktree.ts', import.meta.url).href
+const dispatchPreflightModule = new URL('../../src/dispatch-preflight.ts', import.meta.url).href
 
 const gitEnv = (extra: Record<string, string> = {}) => ({
   ...scrubbedGitEnv(),
@@ -109,8 +105,6 @@ const clearingLine = /^cleared by: (?:orch|git|rmdir) .+$/m
 
 const refusalCaseName = (site: string) =>
   `Every refusal names the invariant it protects and the command that clears it: ${site}`
-const failingCaseNames = [] as const
-
 const caseName = {
   migration: 'Only the main checkout binary migrates the store',
   linkedRefusal: refusalCaseName('linked-worktree write boundary'),
@@ -225,7 +219,7 @@ test('Every write transaction is IMMEDIATE; a deferred transaction that later wr
     rmSync(scratch, { force: true })
     rmSync(scratchRuns, { recursive: true, force: true })
     const env = { ORCH_DB: scratch, ORCH_RUNS: scratchRuns, ORCH_EXEC_PATH: '/usr/bin/true' }
-    const { bootstrapFixtureStore } = await import('./db.ts')
+    const { bootstrapFixtureStore } = await import('../../src/db.ts')
     bootstrapFixtureStore(scratch)
     const n = 3 + rng.int(5)
     const seed = new Database(scratch)
@@ -336,22 +330,10 @@ test(caseName.migration, async () => {
 })
 
 test(caseName.linkedRefusal, async () => {
-  const { LINKED_WORKTREE_WRITE_REFUSAL } = await import('./db.ts')
+  const { LINKED_WORKTREE_WRITE_REFUSAL } = await import('../../src/db.ts')
   expect(LINKED_WORKTREE_WRITE_REFUSAL.length).toBeGreaterThan(0)
   violation(caseName.linkedRefusal, seedMessage(), () => {
     expect(LINKED_WORKTREE_WRITE_REFUSAL).toMatch(invariantLine)
     expect(LINKED_WORKTREE_WRITE_REFUSAL).toMatch(clearingLine)
   })
-}, 15_000)
-
-test('every failing case failed on its invariant, not on its setup', () => {
-  const records = existsSync(violationsFile)
-    ? readFileSync(violationsFile, 'utf8').trim().split('\n').filter(Boolean)
-      .map((line) => JSON.parse(line) as { case: string })
-    : []
-  for (const name of failingCaseNames) {
-    expect(records.filter((record) => record.case === name), name).toHaveLength(1)
-  }
-  expect([...new Set(records.map((record) => record.case))].sort())
-    .toEqual([...failingCaseNames].sort())
 }, 15_000)

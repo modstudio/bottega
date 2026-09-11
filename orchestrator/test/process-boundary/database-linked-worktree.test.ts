@@ -4,16 +4,16 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync,
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
-const sourceRoot = join(dirname(new URL(import.meta.url).pathname), '../..')
+const sourceRoot = join(dirname(new URL(import.meta.url).pathname), '../../..')
 const fixtureRoot = mkdtempSync(join(tmpdir(), 'orch-linked-database-'))
 const main = join(fixtureRoot, 'main')
 const linked = join(fixtureRoot, 'linked')
 const liveStore = join(main, 'orchestrator', 'orch.db')
 const hermeticHome = join(fixtureRoot, 'home')
 mkdirSync(hermeticHome)
-const { scrubbedGitEnv } = await import('./worktree.ts')
+const { scrubbedGitEnv } = await import('../../src/worktree.ts')
 
 const hermeticGitEnv = () => ({
   ...scrubbedGitEnv(),

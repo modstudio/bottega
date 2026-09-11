@@ -3,12 +3,14 @@ import { existsSync,mkdirSync,mkdtempSync,readFileSync,rmSync,writeFileSync } fr
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS,addRun,completeReview,contentTree,coverageAudit,db,dir,hermeticGitEnv,implicitReviewWarning,resolveReviewTarget,reviewReply,runJob,upsertProject } from '../fixture.ts'
+import { stubWorker } from '../stub-worker.ts'
 
 describe('review-lens-inline has no checkout', () => {
 test('explicit review refs select and record the reviewed branch tip', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-explicit-review-'))
     const branchTree = join(repo, 'feature-tree')
-    const script = join(dir, 'report-explicit-review.ts')
+    const cwdCapture = join(dir, 'report-explicit-review.cwd')
+    const script = stubWorker({ captureCwd: true })
     const agent = AGENTS.codex!
     const original = {
       bin: agent.bin, argv: agent.argv, stdin: agent.stdin,
@@ -36,19 +38,16 @@ test('explicit review refs select and record the reviewed branch tip', async () 
       const tip = git(repo, 'rev-parse', 'feature/reviewed^{commit}')
       const tree = git(repo, 'rev-parse', 'feature/reviewed^{tree}')
       upsertProject({ name: 'explicit-review-fixture', path: repo, settings: { trunk: 'main' } })
-      writeFileSync(script, [
-        "const view = { cwd: process.cwd(), text: await Bun.file('subject.txt').text() }",
-        `const reply = ${JSON.stringify(reviewReply(0))}`,
-        "reply.provenance.files_covered = ['subject.txt']",
-        "reply.provenance.docs_read = [JSON.stringify(view)]",
-        "console.log(JSON.stringify(reply))",
-      ].join('\n'))
-      agent.bin = process.execPath
-      agent.argv = () => [script]
+      agent.bin = script
+      agent.argv = () => []
       agent.stdin = false
       agent.readsOut = false
       agent.parseReply = undefined
       process.env.ORCH_DEPTH = '0'
+      process.env.ORCH_STUB_CWD_FILE = cwdCapture
+      const cleanReply = reviewReply(0)
+      cleanReply.provenance.files_covered = ['subject.txt']
+      process.env.ORCH_STUB_OUTPUT = JSON.stringify(cleanReply)
 
       const byBranch = await runJob({
         job: 'review-lens', prompt: 'inspect', cwd: repo, agent: 'codex',
@@ -58,7 +57,7 @@ test('explicit review refs select and record the reviewed branch tip', async () 
       expect(Bun.spawnSync(['git', 'symbolic-ref', '-q', 'HEAD'], {
         cwd: byBranch.worktree!.path, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
       }).exitCode).not.toBe(0)
-      expect(JSON.parse(JSON.parse(byBranch.output).provenance.docs_read[0]).text).toBe('branch\n')
+      expect(readFileSync(join(readFileSync(cwdCapture, 'utf8').trim(), 'subject.txt'), 'utf8')).toBe('branch\n')
       expect(db().query(
         'SELECT branch, base_commit, input_tree, head_commit, review_ref FROM run WHERE id=?',
       ).get(byBranch.id)).toEqual({
@@ -115,13 +114,23 @@ test('explicit review refs select and record the reviewed branch tip', async () 
       agent.parseReply = original.parseReply
       if (oldDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = oldDepth
+      delete process.env.ORCH_STUB_CWD_FILE
+      delete process.env.ORCH_STUB_OUTPUT
       rmSync(repo, { recursive: true, force: true })
-      rmSync(script, { force: true })
     }
   })
 test('runs from an empty directory while review-lens still receives the project tree', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-inline-boundary-'))
-    const script = join(dir, 'report-worker-cwd.ts')
+    const cwdCapture = join(dir, 'report-worker-cwd.cwd')
+    const stdinCapture = join(dir, 'report-worker-cwd.stdin')
+    const factsCapture = join(dir, 'report-worker-cwd.facts')
+    const script = stubWorker({
+      captureCwd: true,
+      captureStdin: true,
+      commands: [
+        '[ -z "$ORCH_STUB_FACTS_FILE" ] || { [ -e .git ] && checkout=true || checkout=false; [ -e project-only.txt ] && project=true || project=false; [ -e .mcp.json ] && grep -q STALE_TRUST .mcp.json && planted=true || planted=false; printf "%s %s %s %s %s\\n" "$checkout" "$project" "$planted" "$(stat -f %Lp .)" "$(stat -f %Lp ..)" > "$ORCH_STUB_FACTS_FILE"; }',
+      ],
+    })
     const agent = AGENTS.codex!
     const original = {
       bin: agent.bin, argv: agent.argv, stdin: agent.stdin,
@@ -145,39 +154,27 @@ test('runs from an empty directory while review-lens still receives the project 
       writeFileSync(join(repo, 'subdir', 'subject.txt'), 'nested evidence\n')
       runGit('add', '.gitignore', 'project-only.txt', 'subdir/subject.txt')
       runGit('commit', '-m', 'fixture')
-      writeFileSync(script, [
-        "import { existsSync, readFileSync, statSync } from 'node:fs'",
-        "const prompt = await Bun.stdin.text()",
-        "let plantedMcp = false",
-        "try { plantedMcp = readFileSync('.mcp.json', 'utf8').includes('STALE_TRUST') } catch {}",
-        "const view = {",
-        "  cwd: process.cwd(),",
-        "  prompt,",
-        "  checkout: existsSync('.git'),",
-        "  projectFile: existsSync('project-only.txt'),",
-        "  plantedMcp,",
-        "  mode: statSync('.').mode & 0o777,",
-        "  parentMode: statSync('..').mode & 0o777,",
-        "  receivedPack: prompt.includes('SELF_CONTAINED_FACT'),",
-        "}",
-        "if (prompt.includes('CAPTURE_NO_REPO')) { console.log(JSON.stringify(view)); process.exit(0) }",
-        `const reply = ${JSON.stringify(reviewReply(1))}`,
-        "reply.findings[0].evidence = JSON.stringify(view)",
-        "console.log(JSON.stringify(reply))",
-      ].join('\n'))
-      agent.bin = process.execPath
-      agent.argv = () => [script]
+      agent.bin = script
+      agent.argv = () => []
       agent.stdin = true
       agent.readsOut = false
       agent.parseReply = undefined
       process.env.ORCH_DEPTH = '0'
+      process.env.ORCH_STUB_CWD_FILE = cwdCapture
+      process.env.ORCH_STUB_STDIN_FILE = stdinCapture
+      process.env.ORCH_STUB_FACTS_FILE = factsCapture
+      process.env.ORCH_STUB_OUTPUT = JSON.stringify(reviewReply(1))
 
       const inline = await runJob({
         job: 'review-lens-inline', prompt: 'SELF_CONTAINED_FACT', cwd: repo, agent: 'codex', lens: 'inline',
       })
-      const inlineView = JSON.parse(JSON.parse(inline.output).findings[0].evidence) as {
-        cwd: string; prompt: string; checkout: boolean; projectFile: boolean
-        mode: number; parentMode: number; receivedPack: boolean
+      const [checkout, projectFile, , mode, parentMode] = readFileSync(factsCapture, 'utf8').trim().split(' ')
+      const inlineView = {
+        cwd: readFileSync(cwdCapture, 'utf8').trim(),
+        prompt: readFileSync(stdinCapture, 'utf8'),
+        checkout: checkout === 'true', projectFile: projectFile === 'true',
+        mode: Number.parseInt(mode!, 8), parentMode: Number.parseInt(parentMode!, 8),
+        receivedPack: readFileSync(stdinCapture, 'utf8').includes('SELF_CONTAINED_FACT'),
       }
       expect(inlineView.checkout).toBe(false)
       expect(inlineView.projectFile).toBe(false)
@@ -198,12 +195,16 @@ test('runs from an empty directory while review-lens still receives the project 
 
       const isolatePaths = new Set([inlineView.cwd])
       for (const job of ['summarize', 'mcp-query'] as const) {
+        process.env.ORCH_STUB_OUTPUT = '{}'
         const isolated = await runJob({
           job, prompt: 'CAPTURE_NO_REPO', cwd: repo, agent: 'codex', noFailover: true,
         })
-        const view = JSON.parse(isolated.output) as {
-          cwd: string; checkout: boolean; projectFile: boolean
-          plantedMcp: boolean; mode: number; parentMode: number
+        const [isolatedCheckout, isolatedProject, plantedMcp, isolatedMode, isolatedParentMode] =
+          readFileSync(factsCapture, 'utf8').trim().split(' ')
+        const view = {
+          cwd: readFileSync(cwdCapture, 'utf8').trim(), checkout: isolatedCheckout === 'true',
+          projectFile: isolatedProject === 'true', plantedMcp: plantedMcp === 'true',
+          mode: Number.parseInt(isolatedMode!, 8), parentMode: Number.parseInt(isolatedParentMode!, 8),
         }
         expect(view.cwd).toContain(`/isolates/${isolated.id}`)
         expect(view.cwd).not.toBe(inlineView.cwd)
@@ -224,13 +225,14 @@ test('runs from an empty directory while review-lens still receives the project 
       }
       expect(isolatePaths.size).toBe(3)
 
+      process.env.ORCH_STUB_OUTPUT = JSON.stringify(reviewReply(1))
       const repository = await runJob({
         job: 'review-lens', prompt: `inspect ${repo}/project-only.txt`,
         cwd: repo, agent: 'codex', lens: 'project', keepTree: true,
       })
-      const repositoryView = JSON.parse(JSON.parse(repository.output).findings[0].evidence) as {
-        prompt: string; checkout: boolean; projectFile: boolean
-      }
+      const repositoryFacts = readFileSync(factsCapture, 'utf8').trim().split(' ')
+      const repositoryView = { prompt: readFileSync(stdinCapture, 'utf8'),
+        checkout: repositoryFacts[0] === 'true', projectFile: repositoryFacts[1] === 'true' }
       expect(repositoryView.checkout).toBe(true)
       expect(repositoryView.projectFile).toBe(true)
       expect(repository.worktree?.path).toBeTruthy()
@@ -246,7 +248,7 @@ test('runs from an empty directory while review-lens still receives the project 
         job: 'review-lens', prompt: `inspect ${repo}/subdir/subject.txt`,
         cwd: join(repo, 'subdir'), agent: 'codex', lens: 'nested', keepTree: true,
       })
-      const nestedView = JSON.parse(JSON.parse(nested.output).findings[0].evidence) as { prompt: string }
+      const nestedView = { prompt: readFileSync(stdinCapture, 'utf8') }
       expect(nestedView.prompt).toContain(`${nested.worktree!.path}/subdir/subject.txt`)
       expect(nestedView.prompt).not.toContain(`${nested.worktree!.path}/subject.txt`)
 
@@ -275,13 +277,15 @@ test('runs from an empty directory while review-lens still receives the project 
       agent.parseReply = original.parseReply
       if (oldDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = oldDepth
+      delete process.env.ORCH_STUB_CWD_FILE
+      delete process.env.ORCH_STUB_STDIN_FILE
+      delete process.env.ORCH_STUB_FACTS_FILE
+      delete process.env.ORCH_STUB_OUTPUT
       rmSync(repo, { recursive: true, force: true })
       const inlineRows = db().query(
         "SELECT cwd FROM run WHERE job IN ('review-lens-inline', 'summarize', 'mcp-query') AND cwd LIKE '%/isolates/%'",
       ).all() as { cwd: string }[]
       for (const row of inlineRows) rmSync(row.cwd, { recursive: true, force: true })
-      rmSync(script, { force: true })
     }
   })
 })
-

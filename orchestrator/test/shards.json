@@ -15,21 +15,22 @@
     "src/evals.cli.test.ts": {
       "size": "short"
     },
-    "src/lifecycle-harness.cli.test.ts": {
+    "test/process-boundary/lifecycle-harness.test.ts": {
       "size": "moderate",
       "exclusive": true
     },
-    "src/linked-worktree-database.cli.test.ts": {
+    "test/process-boundary/database-linked-worktree.test.ts": {
       "size": "short"
     },
     "src/monitor.cli.test.ts": {
       "size": "short"
     },
-    "src/projects.cli.test.ts": {
+    "test/process-boundary/database-initialize.test.ts": {
       "size": "short"
     },
-    "src/reclaim.cli.test.ts": {
-      "size": "short"
+    "test/process-boundary/reclaim.test.ts": {
+      "size": "short",
+      "exclusive": true
     },
     "src/route.cli.test.ts": {
       "size": "short"
@@ -72,8 +73,9 @@
     "test/process-boundary/run-git.test.ts": {
       "size": "short"
     },
-    "src/worktree-5.cli.test.ts": {
-      "size": "short"
+    "test/process-boundary/sweep.test.ts": {
+      "size": "short",
+      "exclusive": true
     },
     "test/process-boundary/review-target-evidence.test.ts": {
       "size": "short"
@@ -107,15 +109,15 @@
         "src/evals.cli.test.ts",
         "src/epic.cli.test.ts",
         "src/review-yield.cli.test.ts",
+        "test/process-boundary/sweep.test.ts",
         "test/process-boundary/discard-resources.test.ts"
       ]
     },
     {
       "measuredSeconds": 76.89,
       "files": [
-        "src/lifecycle-harness.cli.test.ts",
+        "test/process-boundary/lifecycle-harness.test.ts",
         "src/monitor.cli.test.ts",
-        "src/worktree-5.cli.test.ts",
         "src/route.cli.test.ts",
         "src/catalog.cli.test.ts",
         "test/process-boundary/discard.test.ts"
@@ -127,7 +129,7 @@
         "test/process-boundary/worktree.test.ts",
         "test/process-boundary/git-environment.test.ts",
         "test/process-boundary/run-git.test.ts",
-        "src/projects.cli.test.ts",
+        "test/process-boundary/database-initialize.test.ts",
         "test/process-boundary/abandon.test.ts"
       ]
     },
@@ -137,7 +139,7 @@
         "test/process-boundary/worktree-create.test.ts",
         "test/process-boundary/review-target-evidence.test.ts",
         "test/process-boundary/review-target-selection.test.ts",
-        "src/linked-worktree-database.cli.test.ts",
+        "test/process-boundary/database-linked-worktree.test.ts",
         "test/process-boundary/run.test.ts",
         "test/process-boundary/ref-guard.test.ts"
       ]
@@ -145,9 +147,14 @@
     {
       "measuredSeconds": 15,
       "files": [
-        "src/reclaim.cli.test.ts",
         "test/process-boundary/database.test.ts",
         "test/process-boundary/idle-kill.test.ts"
+      ]
+    },
+    {
+      "measuredSeconds": 5.47,
+      "files": [
+        "test/process-boundary/reclaim.test.ts"
       ]
     }
   ]
