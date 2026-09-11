@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS,addRun,completeReview,contentTree,coverageAudit,db,dir,hermeticGitEnv,implicitReviewWarning,resolveReviewTarget,reviewReply,runJob,upsertProject } from '../fixture.ts'
 import { stubWorker } from '../stub-worker.ts'
+import './review-target-selection.test-residue.ts'
 
 describe('review-lens-inline has no checkout', () => {
 test('explicit review refs select and record the reviewed branch tip', async () => {
