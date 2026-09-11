@@ -14,6 +14,7 @@ import { mcpRequestFromStored } from './mcp-preflight.ts'
 import { chainTransport } from './failover.ts'
 import { detach } from './run-dispatch.ts'
 import { CONTINUE_WORKING_FORMS } from './args.ts'
+import { clock } from './clock.ts'
 
 export type RunControlPresentation = {
   dur(ms: number | null | undefined): string
@@ -36,7 +37,7 @@ function runEvidenceNote(row: { evidence_excluded: string | null }): string {
  * the work. Neither holds it any more.
  */
 export async function follow(id: number, quiet: boolean, exitOnFailure = true, presentation: RunControlPresentation): Promise<string> {
-  const deadline = Date.now() + FOLLOW_TIMEOUT_MS
+  const deadline = clock().now() + FOLLOW_TIMEOUT_MS
   const q = db().query(
     `SELECT id, status, agent, job, parent_run_id, latency_ms, vendor_tokens,
             output_path, error, route_reason, evidence_excluded
@@ -101,7 +102,7 @@ export async function follow(id: number, quiet: boolean, exitOnFailure = true, p
       )
       return row.status
     }
-    if (Date.now() >= deadline) {
+    if (clock().now() >= deadline) {
       // Deliberately NOT a kill. The worker is detached and may still be
       // working; saying where to look for it is more use than destroying it.
       console.error(`— run ${id} still going after ${Math.round(FOLLOW_TIMEOUT_MS / 60_000)}m.`
@@ -114,7 +115,7 @@ export async function follow(id: number, quiet: boolean, exitOnFailure = true, p
       if (exitOnFailure) process.exitCode = 1
       return row?.status ?? 'running'
     }
-    await new Promise((r) => setTimeout(r, 1000))
+    await new Promise<void>((resolve) => clock().setTimeout(() => resolve(), 1000))
   }
 }
 

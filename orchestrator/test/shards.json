@@ -5,7 +5,6 @@
     "src/agents.cli.test.ts": { "size": "short" },
     "src/canon.cli.test.ts": { "size": "short" },
     "src/catalog.cli.test.ts": { "size": "short" },
-    "src/cli-answer.cli.test.ts": { "size": "short" },
     "src/cli-do-1.cli.test.ts": { "size": "short" },
     "src/cli-projects.cli.test.ts": { "size": "short" },
     "src/cli-runs.cli.test.ts": { "size": "short" },
@@ -77,7 +76,6 @@
     {
       "measuredSeconds": 75.42,
       "files": [
-        "src/cli-answer.cli.test.ts",
         "src/cli-do-1.cli.test.ts",
         "src/cli-projects.cli.test.ts",
         "src/worktree-1.cli.test.ts",

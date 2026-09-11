@@ -7,7 +7,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { AGENTS } from './agents.ts'
 import { ANSWER_WORKING_FORMS, parseAnswerTextSources } from './args.ts'
 import { rulingPrompt } from './contract.ts'
-import { db, nowIso, writeTransaction } from './db.ts'
+import { db, writeTransaction } from './db.ts'
+import { clock } from './clock.ts'
 import { chainTransport, retryModelForAgent } from './failover.ts'
 import { failureReason } from './outcome.ts'
 import { pidAlive } from './process-liveness.ts'
@@ -371,7 +372,7 @@ if (!ownersLive) {
   }
 }
 
-const now = nowIso()
+const now = new Date(clock().now()).toISOString()
 const upd = db().query(
   `UPDATE question
       SET answer=?, answered_at=?, answered_by=?, delivery_pending_at=?

@@ -8,6 +8,7 @@
  */
 import { pidAlive } from './process-liveness.ts'
 import { idleMsSince } from './events.ts'
+import { clock } from './clock.ts'
 
 /**
  * Default 15 minutes. Measured 2026-09-08 against the live store's completed
@@ -196,7 +197,7 @@ const defaultDeps: TerminateDeps = {
     const mine = sampleProcesses().find((row) => row.pid === process.pid)
     return mine?.pgid ?? null
   },
-  wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  wait: (ms) => new Promise((resolve) => clock().setTimeout(resolve, ms)),
 }
 
 function signalTree(
@@ -252,10 +253,10 @@ function liveTreePids(
 async function waitUntilDead(
   root: number, tracked: Set<number>, budgetMs: number, deps: TerminateDeps, pgid: number | null,
 ): Promise<boolean> {
-  const started = Date.now()
-  while (Date.now() - started < budgetMs) {
+  const started = clock().now()
+  while (clock().now() - started < budgetMs) {
     if (liveTreePids(root, tracked, deps, pgid).length === 0) return true
-    const remaining = budgetMs - (Date.now() - started)
+    const remaining = budgetMs - (clock().now() - started)
     if (remaining <= 0) break
     await deps.wait(Math.min(50, remaining))
   }
