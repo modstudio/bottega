@@ -1,14 +1,16 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { writeFileSync } from 'node:fs'
+import { rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PassThrough, Writable } from 'node:stream'
 import { addRun, db, dir } from '../test/fixture.ts'
 import { recalibrate } from './recalibration.ts'
 
 const priorCalibrationSession = process.env.CLAUDE_CODE_SESSION_ID
+const outputs: string[] = []
 afterEach(() => {
   if (priorCalibrationSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
   else process.env.CLAUDE_CODE_SESSION_ID = priorCalibrationSession
+  for (const output of outputs.splice(0)) rmSync(output, { force: true })
 })
 
 describe('recalibrating the scorer', () => {
@@ -44,6 +46,7 @@ describe('recalibrating the scorer', () => {
     for (const [i, original] of originals.entries()) {
       const id = addRun({ agent: 'codex', job: 'implement' })
       const output = join(dir, `calibration-${i}.txt`)
+      outputs.push(output)
       writeFileSync(output, `answer ${i}`)
       db().query('UPDATE run SET output_path=? WHERE id=?').run(output, id)
       oldScore(id, original[0], original[1], original[2])
@@ -70,12 +73,14 @@ describe('recalibrating the scorer', () => {
   test('age and scorer identity filter the sample, while force skips only identity', async () => {
     const foreign = addRun({ agent: 'codex', job: 'file-question' })
     const foreignOut = join(dir, 'calibration-foreign.txt')
+    outputs.push(foreignOut)
     writeFileSync(foreignOut, 'foreign output')
     db().query('UPDATE run SET output_path=? WHERE id=?').run(foreignOut, foreign)
     oldScore(foreign, 'full', 'right', null, 'someone-else')
 
     const recent = addRun({ agent: 'codex', job: 'file-question' })
     const recentOut = join(dir, 'calibration-recent.txt')
+    outputs.push(recentOut)
     writeFileSync(recentOut, 'recent output')
     db().query('UPDATE run SET output_path=? WHERE id=?').run(recentOut, recent)
     oldScore(recent, 'full', 'right', null, 'claude', new Date().toISOString())
