@@ -54,6 +54,8 @@ mkdirSync(process.env.ORCH_RUNS)
 const assertTestHubDatabase = createTestHubDatabaseGuard(new URL('../..', import.meta.url).pathname)
 assertTestHubDatabase()
 
+const { registerStandardHooks } = await import('../src/store-hooks.ts')
+registerStandardHooks()
 const { DB_PATH, bootstrapFixtureStore, closeDatabaseForFixture } = await import('../src/db.ts')
 
 /**

@@ -1,22 +1,17 @@
 #!/usr/bin/env bun
-/** Enforce the database concern boundary. */
+/** Enforce the store-hooks concern boundary. */
 import { readFileSync } from 'node:fs'
 import { importSpecifiers } from './import-scanner.ts'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
-const FILE = 'orchestrator/src/db.ts'
+const FILE = 'orchestrator/src/store-hooks.ts'
 const FORBIDDEN: [RegExp, string][] = [
-  [/^\.\/worktree(?:[.-]|$)/, 'worktrees'],
-  [/^\.\/run(?:[.-]|$)/, 'runs'],
-  [/^\.\/route(?:[.-]|$)/, 'routing'],
-  [/^\.\/review\.ts$/, 'reviews'],
-  [/^\.\/contract(?:[.-]|$)/, 'contracts'],
+  [/^\.\/cli\.ts$/, 'CLI'],
+  [/^\.\/run\.ts$/, 'runs'],
   [/^\.\/transport(?:[.-]|$)/, 'transports'],
-  [/^\.\/cli(?:[.-]|$)/, 'CLI'],
-  [/^\.\/docker-resources(?:[.-]|$)/, 'Docker resources'],
-  [/^\.\/workflow-seeds(?:[.-]|$)/, 'workflow seeds'],
+  [/^\.\/route\.ts$/, 'routing'],
+  [/^\.\/worktree\.ts$/, 'worktrees'],
 ]
-
 const imports = importSpecifiers(readFileSync(`${ROOT}/${FILE}`, 'utf8'))
 const violations: string[] = []
 for (const specifier of [...imports.specifiers, ...imports.typeOnlySpecifiers]) {
@@ -25,8 +20,8 @@ for (const specifier of [...imports.specifiers, ...imports.typeOnlySpecifiers]) 
 }
 for (const expression of imports.unresolvedRelative) violations.push(`${FILE} has an unresolved relative import at ${expression}`)
 if (violations.length) {
-  console.error(`check-database-boundary: ${violations.length} violation(s)\n`)
+  console.error(`check-store-hooks-boundary: ${violations.length} violation(s)\n`)
   for (const violation of violations) console.error(`  ${violation}\n`)
   process.exit(1)
 }
-console.log('check-database-boundary: ok')
+console.log('check-store-hooks-boundary: ok')

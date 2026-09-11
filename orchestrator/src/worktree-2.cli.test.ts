@@ -163,7 +163,7 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
     const overlap = join(repo, '.git', 'creation-overlap')
     const module = new URL('worktree.ts', import.meta.url).href
     const child = `
-      const { createWithTool } = await import(process.argv[1])
+      const { registerStandardHooks } = await import(new URL('./store-hooks.ts', process.argv[1])); registerStandardHooks(); const { createWithTool } = await import(process.argv[1])
       createWithTool({ create: JSON.parse(process.argv[4]), branch: 'orch/{id}' }, process.argv[2], Number(process.argv[3]))
     `
     const create = compoundCreate(
