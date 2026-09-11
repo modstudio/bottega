@@ -1,6 +1,8 @@
 import type { Database } from 'bun:sqlite'
+import { join } from 'node:path'
 import type { z } from 'zod'
 import { HostLoadSchema } from '../../shared/orch-contract.ts'
+import { mainCheckoutOf } from '../../shared/git.ts'
 
 export const TEST_SIZES = ['short', 'moderate', 'long'] as const
 export type TestSize = (typeof TEST_SIZES)[number]
@@ -218,6 +220,102 @@ export function recordTestFlake(
     row.signal,
     row.at ?? new Date().toISOString(),
   )
+}
+
+const FLAKE_WORKING_FORMS =
+  'working forms: orch flake record <test> <file> <exit-143|timeout|lock-wait|listen-eperm> --load <json>; '
+  + 'orch flake count <test> <file>'
+
+function flakeError(problem: string): Error {
+  return new Error(`${problem}\n${FLAKE_WORKING_FORMS}`)
+}
+
+export function flakeCommand(argv: string[], database: Database): string {
+  const [command, test, file] = argv
+  if (command === 'count') {
+    if (!test || !file || argv.length !== 3) throw flakeError('invalid flake count arguments')
+    return String(weeklyFlakeCount(database, test, file))
+  }
+  if (command !== 'record') {
+    throw flakeError(command ? `unknown flake subcommand ${JSON.stringify(command)}` : 'missing flake subcommand')
+  }
+  const signal = argv[3]
+  if (!test || !file || !signal || argv[4] !== '--load' || argv[5] === undefined || argv.length !== 6) {
+    throw flakeError('missing or invalid flake record argument')
+  }
+  if (!RETRY_SIGNALS.some((row) => row.signal === signal)) {
+    throw flakeError(`invalid flake signal ${JSON.stringify(signal)}`)
+  }
+  let rawLoad: unknown
+  try {
+    rawLoad = JSON.parse(argv[5])
+  } catch {
+    throw flakeError('invalid flake load JSON')
+  }
+  const parsedLoad = HostLoadSchema.safeParse(rawLoad)
+  if (!parsedLoad.success) throw flakeError(`invalid flake load: ${parsedLoad.error.message}`)
+  recordTestFlake(database, {
+    test, file, signal: signal as RetrySignal, load: parsedLoad.data,
+  })
+  return `recorded flake ${test} (${file})`
+}
+
+export type FlakeStore = {
+  count(test: string, file: string): number
+  record(row: { test: string; file: string; signal: RetrySignal; load: HostLoad }): void
+}
+
+type FlakeCommandResult = { exitCode: number; stdout: string; stderr: string }
+
+function runFlakeCommand(argv: string[]): FlakeCommandResult {
+  const result = Bun.spawnSync(argv, { stdout: 'pipe', stderr: 'pipe' })
+  return {
+    exitCode: result.exitCode ?? 1,
+    stdout: result.stdout.toString(),
+    stderr: result.stderr.toString(),
+  }
+}
+
+export function mainCheckoutFlakeStore(
+  cwd: string,
+  run: (argv: string[]) => FlakeCommandResult = runFlakeCommand,
+  log: (line: string) => void = console.error,
+): FlakeStore {
+  const main = mainCheckoutOf(cwd)
+  if (!main) throw new Error(`cannot resolve main checkout for flake store from ${cwd}`)
+  const binary = join(main, 'bin', 'orch')
+  const oneLine = (value: unknown) => String(value).replace(/\s+/g, ' ').trim()
+  const failure = (operation: string, result: FlakeCommandResult) =>
+    `${binary}: flake ${operation} failed: ${oneLine(result.stderr) || `exit ${result.exitCode}`}`
+  return {
+    count(test, file) {
+      let result: FlakeCommandResult
+      try {
+        result = run([binary, 'flake', 'count', test, file])
+      } catch (error) {
+        log(`${binary}: flake count failed: ${oneLine(error)}`)
+        return 0
+      }
+      const output = result.stdout.trim()
+      if (result.exitCode !== 0 || !/^-?\d+$/.test(output)) {
+        log(result.exitCode !== 0 ? failure('count', result) : `${binary}: flake count returned non-integer ${JSON.stringify(output)}`)
+        return 0
+      }
+      return Number.parseInt(output, 10)
+    },
+    record(row) {
+      let result: FlakeCommandResult
+      try {
+        result = run([
+          binary, 'flake', 'record', row.test, row.file, row.signal, '--load', JSON.stringify(row.load),
+        ])
+      } catch (error) {
+        log(`${binary}: flake record failed: ${oneLine(error)}`)
+        return
+      }
+      if (result.exitCode !== 0) log(failure('record', result))
+    },
+  }
 }
 
 export async function runWithRetry(opts: {

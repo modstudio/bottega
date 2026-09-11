@@ -1418,8 +1418,7 @@ async function readMessageText(opts: {
     ? opts.sources.positionals
     : positionalMessage(argv.slice(2), opts.allowDashPositionals)
   if (commandFile && positional.length && opts.exclusive) throw new Error(opts.exclusive)
-  if (commandFile) return readWorkerFile(commandFile)
-  if (positional.length) return positional.join(' ')
+  if (commandFile) return readWorkerFile(commandFile); if (positional.length) return positional.join(' ')
   if (!process.stdin.isTTY) {
     return decodeWorkerBytes(new Uint8Array(await Bun.stdin.bytes()), 'stdin')
   }
@@ -1479,6 +1478,7 @@ if ((argv.includes('--help') || argv.includes('-h')) && cmd && cmd !== '--help' 
 }
 
 switch (cmd) {
+  case 'flake': console.log((await import('./gate-policy.ts')).flakeCommand(argv.slice(1), writableDb())); break
   case 'init-db': {
     const { initializeDatabase } = await import('./db.ts')
     console.log(`initialized ${initializeDatabase()}`)
