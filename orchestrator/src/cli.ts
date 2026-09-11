@@ -29,11 +29,11 @@ import { dispatchCommand } from './dispatch-commands.ts'
 import { reclassifyFailuresCommand } from './failure-commands.ts'
 import { blockersCommand, healthCommand } from './health-commands.ts'
 import { guideCommand, pickCommand, routingBacktestCommand, statsCommand } from './routing-commands.ts'
-import { readFileSync, existsSync, writeFileSync, mkdirSync, realpathSync, statSync, lstatSync, unlinkSync, openSync, fstatSync, closeSync, constants } from 'node:fs'
+import { readFileSync, existsSync, writeFileSync, mkdirSync, realpathSync, lstatSync, openSync, fstatSync, closeSync, constants } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { NOT_EVIDENCE } from './failure.ts'
-import { collectResult, collectWait, resolveFailover } from './collect.ts'
+import { collectResult, collectWait, resolveFailover, thinOutputWarning } from './collect.ts'
 import {
   CONTINUE_WORKING_FORMS, TELL_WORKING_FORMS,
   flagValue, flagValues, parseWorkerMessageArgs, validateCliArgs,
@@ -188,40 +188,6 @@ function pairHint(partner: { id: number; agent: string }): string {
   const reason = 'reason' in partner ? String(partner.reason) : 'same task'
   return `pair: run ${partner.id} (${partner.agent}) is comparable (${reason}) — record with ` +
     `--better-than ${partner.id} | --worse-than ${partner.id} | --same-as ${partner.id}`
-}
-
-/**
- * A run whose output is not evidence about the agent must say so on the
- * record a person reads — otherwise they score another run's work, which
- * is how colliding output files taught the router a lie. The reason is
- * the column's own text; NULL means nothing to say.
- */
-const THIN_OUTPUT_BYTES = 1024
-const THIN_OUTPUT_LATENCY_MS = 5 * 60_000
-
-/** A reader-facing suspicion only: this never enters status, scoring, or routing. */
-function thinOutputWarning(row: {
-  job: string; status: string; latency_ms: number | null; probe: number
-  output_path: string | null
-}): string | null {
-  if (row.status !== 'ok' || row.probe || row.latency_ms === null ||
-      row.latency_ms <= THIN_OUTPUT_LATENCY_MS || job(row.job).needs.writesRepo ||
-      !row.output_path || !existsSync(row.output_path)) return null
-  // Test-only race seam: production never sets this. It deterministically
-  // exercises expiry between the existence check above and the stat below.
-  if (process.env.ORCH_TEST_THIN_OUTPUT_UNLINK_BEFORE_STAT === row.output_path) {
-    unlinkSync(row.output_path)
-  }
-  let bytes: number
-  try {
-    bytes = statSync(row.output_path).size
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw error
-  }
-  if (bytes >= THIN_OUTPUT_BYTES) return null
-  return `thin: ${bytes} B after ${dur(row.latency_ms).replaceAll(' ', '')} — ` +
-    'check whether the run stopped at a blocker'
 }
 
 /** A run id is a machine interface: callers feed it back to wait/result. */

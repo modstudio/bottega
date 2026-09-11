@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { addRun, db, pendingForSession, runList, score, state } from '../test/fixture.ts'
+import { runTotals } from './evidence-query.ts'
 
 describe('the activity window', () => {
   /** A run backdated by `days`, so the window has something to exclude. */
@@ -88,6 +89,28 @@ describe('the activity window', () => {
     agedRun(0, { agent: 'grok', job: 'craft' })
     expect(state(1).allTimeRuns).toBe(2)
     expect((state(1).totals as { runs: number }).runs).toBe(1)
+  })
+})
+
+describe('evidence totals', () => {
+  test('doctor excludes scores on not-evidence runs from its scored count', () => {
+    score(addRun({ agent: 'codex', job: 'file-question' }), 'full', 'right'); const excluded = addRun({ agent: 'codex', job: 'file-question', status: 'failed' }); db().query("UPDATE run SET failure_kind='interrupted' WHERE id=?").run(excluded); score(excluded, 'none')
+    expect(runTotals()).toMatchObject({ runs: 2, scored: 1, voided: 0, unscored: 0 })
+  })
+  test('doctor reports a voided verdict separately from scored routing evidence', () => {
+    const kept = addRun({ agent: 'codex', job: 'file-question' }); const voided = addRun({ agent: 'codex', job: 'file-question' }); score(kept, 'full', 'right'); score(voided, 'full', 'right'); db().query("UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?").run(voided)
+    expect(runTotals()).toMatchObject({ runs: 2, scored: 1, voided: 1, unscored: 0 })
+  })
+  test('a no-verdict void is accounted for by doctor and state totals, which agree', () => {
+    const kept = addRun({ agent: 'codex', job: 'file-question' }); const voided = addRun({ agent: 'codex', job: 'file-question' }); score(kept, 'full', 'right'); db().query("UPDATE run SET evidence_excluded='voided with orch score --void' WHERE id=?").run(voided)
+    expect(runTotals()).toMatchObject({ runs: 2, scored: 1, voided: 1, unscored: 0 }); expect(state(null).totals).toMatchObject({ runs: 2, scored: 1, voided: 1 })
+  })
+  test('a voided not-evidence run is voided, not dropped from every bucket', () => {
+    const id = addRun({ agent: 'codex', job: 'file-question', status: 'failed' }); db().query("UPDATE run SET failure_kind='interrupted',evidence_excluded='voided with orch score --void' WHERE id=?").run(id)
+    expect(runTotals()).toMatchObject({ runs: 1, scored: 0, voided: 1, unscored: 0 })
+  })
+  test('pending says rescore when a later turn moved a judged chain', () => {
+    const root = addRun({ agent: 'codex', job: 'file-question', session: 's' }); score(root, 'full', 'right'); const child = addRun({ agent: 'codex', job: 'file-question', parent: root, turn: 2, session: 's' }); expect(pendingForSession('s')).toEqual([expect.objectContaining({ id: root, reason: expect.stringContaining('rescore') })]); expect(child).toBeGreaterThan(root)
   })
 })
 

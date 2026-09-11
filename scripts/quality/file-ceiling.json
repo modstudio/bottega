@@ -15,7 +15,6 @@
   "orchestrator/src/canon.test.ts": 677,
   "orchestrator/src/cli-do-1.cli.test.ts": 1336,
   "orchestrator/src/cli-projects.cli.test.ts": 1302,
-  "orchestrator/src/cli-runs.cli.test.ts": 1898,
   "orchestrator/src/cli.ts": 1956,
   "orchestrator/src/close-out.test.ts": 516,
   "orchestrator/src/contract.ts": 1087,

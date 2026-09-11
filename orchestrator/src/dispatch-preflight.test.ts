@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { upsertProject } from '../test/fixture.ts'
+import { declaredCreate, upsertProject } from '../test/fixture.ts'
 import { selectProjectProfile, setProfile } from './lenses.ts'
 import { preflight } from './dispatch-preflight.ts'
 
@@ -24,4 +24,18 @@ test('--repo makes preflight resolve the dispatch project in both directions',()
     if(priorDepth===undefined) delete process.env.ORCH_DEPTH
     else process.env.ORCH_DEPTH=priorDepth
   }
+})
+
+test('required project flags are rejected before the prompt file is read', () => {
+  upsertProject({ name: 'needs-key', path: process.cwd(), settings: { worktree: { branch: 'feature/{key}-{id}' } } })
+  expect(() => preflight('implement', process.cwd())).toThrow('--key <KEY-123>')
+})
+
+test('an explicit base without a {base} slot is not refused at preflight', () => {
+  upsertProject({ name: 'cannot-base', path: process.cwd(), settings: { worktree: { create: declaredCreate('scripts/worktree', ['create', '{branch}']), branch: 'feature/{id}' } } })
+  expect(() => preflight('implement', process.cwd(), undefined, undefined, 'HEAD')).not.toThrow()
+})
+
+test('non-commit bases are refused before every dispatch artifact', () => {
+  expect(() => preflight('implement', process.cwd(), undefined, undefined, '0123456789012345678901234567890123456789')).toThrow(/single revision|commit/)
 })
