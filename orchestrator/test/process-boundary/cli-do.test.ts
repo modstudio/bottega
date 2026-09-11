@@ -8,15 +8,19 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { OrchRunEnvelopeSchema } from '../../../shared/orch-contract.ts'
 import { runJson, AGENTS, JOBS, RUNS_DIR, addRun, bootstrapFixtureStore, callerDrift, db, declaredCreate, detachedRunOptions, dir, hermeticGitEnv, setDoc, upsertProject } from '../fixture.ts'
 import { MAIN_CHECKOUT_INVARIANT, mainCheckoutWorktreeHint } from '../../src/projects.ts'
+import { trackedTestResidue } from '../residue.ts'
 
 import { runCollectionDescribeFixture } from '../fixture.ts'
+const trackResidue = trackedTestResidue()
 
 describe("detached run collection", () => {
   const { CLI, orchInput, orch, orchFrom, insert, dispatchArtifacts, expectNoDispatchArtifacts, conflictingImplement } = runCollectionDescribeFixture()
 test('every --json surface has an enumerated and pinned output contract', () => {
-    const monitorDb = join(dir, 'json-contract-orch.db')
-    const hubDb = join(dir, 'json-contract-hub.db')
-    const binDir = join(dir, 'json-contract-bin')
+    const monitorDb = trackResidue(join(dir, 'json-contract-orch.db'))
+    trackResidue(`${monitorDb}-shm`); trackResidue(`${monitorDb}-wal`)
+    const hubDb = trackResidue(join(dir, 'json-contract-hub.db'))
+    trackResidue(`${hubDb}-shm`); trackResidue(`${hubDb}-wal`)
+    const binDir = trackResidue(join(dir, 'json-contract-bin'))
     mkdirSync(binDir)
     writeFileSync(join(binDir, 'docker'), '#!/bin/sh\nexit 0\n')
     chmodSync(join(binDir, 'docker'), 0o755)
@@ -119,8 +123,8 @@ test('every --json surface has an enumerated and pinned output contract', () => 
   }, 20_000)
 
   test('detach spawns exec.ts as its child entry point', async () => {
-    const bin = join(dir, `entry-${randomUUID()}.sh`)
-    const marker = join(dir, `entry-${randomUUID()}.txt`)
+    const bin = trackResidue(join(dir, `entry-${randomUUID()}.sh`))
+    const marker = trackResidue(join(dir, `entry-${randomUUID()}.txt`))
     writeFileSync(bin, '#!/bin/sh\nprintf "%s" "$1" > "$ORCH_ENTRY_MARKER"\n')
     chmodSync(bin, 0o755)
     const result = orchInput(['do', 'file-question', 'entry point', '--agent', 'codex'], undefined, {
@@ -132,8 +136,9 @@ test('every --json surface has an enumerated and pinned output contract', () => 
   })
 
   test('three concurrent detached dispatches all claim rows in one store', async () => {
-    const store = join(dir, `concurrent-detach-${randomUUID()}.db`)
-    const runs = join(dir, `concurrent-detach-runs-${randomUUID()}`)
+    const store = trackResidue(join(dir, `concurrent-detach-${randomUUID()}.db`))
+    trackResidue(`${store}-shm`); trackResidue(`${store}-wal`)
+    const runs = trackResidue(join(dir, `concurrent-detach-runs-${randomUUID()}`))
     const env = {
       ...process.env,
       ORCH_DB: store,
