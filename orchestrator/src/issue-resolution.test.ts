@@ -68,6 +68,8 @@ describe('scoped operator docs', () => {
       else process.env.CLAUDE_CODE_SESSION_ID = priorSession
       await client.close()
       await server.close()
+      rmSync(foreignCwd, { recursive: true, force: true })
+      for (const suffix of ['', '-shm', '-wal']) rmSync(`${hubDb}${suffix}`, { force: true })
     }
   })
 

@@ -163,8 +163,10 @@ describe('collection records', () => {
     writeFileSync(output, 'partial answer'); db().query('UPDATE run SET output_path=? WHERE id=?').run(output, id)
     db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)').run(id, new Date().toISOString(), 'which?')
     const logs: string[] = []; const errors: string[] = []; const log = spyOn(console, 'log').mockImplementation((...parts) => { logs.push(parts.join(' ')) }); const error = spyOn(console, 'error').mockImplementation((...parts) => { errors.push(parts.join(' ')) })
-    try { collectResult(db(), ['result', String(id)]) } finally { log.mockRestore(); error.mockRestore() }
-    expect(logs.join('\n')).toContain('partial answer'); expect(errors.join('\n')).toContain(`orch answer ${id}`)
+    try {
+      collectResult(db(), ['result', String(id)])
+      expect(logs.join('\n')).toContain('partial answer'); expect(errors.join('\n')).toContain(`orch answer ${id}`)
+    } finally { log.mockRestore(); error.mockRestore(); rmSync(output, { force: true }) }
   })
 
   test('result surfaces the recorded base commit for a writing run', () => {
@@ -177,8 +179,10 @@ describe('collection records', () => {
   test('a failed run wraps partial JSON so it cannot parse as a completed review', () => {
     const id = addRun({ agent: 'codex', job: 'review-lens', status: 'failed' }); const output = join(dir, `failed-partial-${id}.txt`); const partial = { findings: [], provenance: { tree_inspected: 'two invalidators' } }; writeFileSync(output, JSON.stringify(partial)); db().query("UPDATE run SET output_path=?,error='agent died',failure_kind='interrupted',exit_code=1 WHERE id=?").run(output, id)
     const logs: string[] = []; const log = spyOn(console, 'log').mockImplementation((...parts) => { logs.push(parts.join(' ')) }); const exit = spyOn(process, 'exit').mockImplementation(((code?: number) => { throw new Error(`EXIT:${code}`) }) as never)
-    try { expect(() => collectResult(db(), ['result', String(id)])).toThrow('EXIT:1') } finally { log.mockRestore(); exit.mockRestore() }
-    const shown = JSON.parse(logs.join('\n')); expect(shown.run).toMatchObject({ id, status: 'failed', complete: false }); expect(shown.findings).toBeUndefined(); expect(JSON.parse(readFileSync(output, 'utf8'))).toEqual(partial)
+    try {
+      expect(() => collectResult(db(), ['result', String(id)])).toThrow('EXIT:1')
+      const shown = JSON.parse(logs.join('\n')); expect(shown.run).toMatchObject({ id, status: 'failed', complete: false }); expect(shown.findings).toBeUndefined(); expect(JSON.parse(readFileSync(output, 'utf8'))).toEqual(partial)
+    } finally { log.mockRestore(); exit.mockRestore(); rmSync(output, { force: true }) }
   })
 
   test('waiting on a failed run exits non-zero', async () => {

@@ -96,6 +96,7 @@ afterAll(() => {
     if (value === undefined) delete process.env[name]
     else process.env[name] = value
   }
+  rmSync(fixture, { recursive: true, force: true })
 })
 
 const defaultSeed = Number(process.env.ORCH_HARNESS_SEED ?? '1') >>> 0

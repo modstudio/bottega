@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { mkdtempSync, rmSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync, appendFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { AGENTS, db, dir, hermeticGitEnv, run, upsertProject, workerReply } from "../fixture.ts"
 import { stubWorker } from '../stub-worker.ts'
 import { parseConfinement } from "../../src/confinement.ts"
@@ -60,6 +60,7 @@ test('own-checkout git pull from a worktree completes and is classified unattrib
       else process.env.ORCH_TEST_MAIN = priorMain
       if (priorOutput === undefined) delete process.env.ORCH_STUB_OUTPUT
       else process.env.ORCH_STUB_OUTPUT = priorOutput
+      rmSync(dirname(script), { recursive: true, force: true })
       rmSync(repo, { recursive: true, force: true })
     }
   })
@@ -92,6 +93,7 @@ test('worker commits skip project commit-msg hooks for implement and fix', async
         else process.env.ORCH_DEPTH = priorDepth
         if (priorOutput === undefined) delete process.env.ORCH_STUB_OUTPUT
         else process.env.ORCH_STUB_OUTPUT = priorOutput
+        rmSync(dirname(script), { recursive: true, force: true })
         rmSync(repo, { recursive: true, force: true })
       }
     }

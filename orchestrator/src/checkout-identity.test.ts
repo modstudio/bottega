@@ -1,12 +1,14 @@
-import { describe, expect, test } from 'bun:test'
-import { mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
+import { afterEach, describe, expect, test } from 'bun:test'
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { hermeticGitEnv, upsertProject } from '../test/fixture.ts'
 
 describe('checkout watch selection',()=>{
+const repositories:string[]=[]
+afterEach(()=>{for(const repo of repositories.splice(0))rmSync(repo,{recursive:true,force:true})})
 const git=(cwd:string,...args:string[])=>{const p=Bun.spawnSync(['git',...args],{cwd,env:hermeticGitEnv(),stdout:'pipe',stderr:'pipe'});if(p.exitCode!==0)throw new Error(p.stderr.toString());return p.stdout.toString().trim()}
-const repository=()=>{const repo=realpathSync(mkdtempSync(join(tmpdir(),'orch-outside-write-')));git(repo,'init','-b','main');git(repo,'config','user.email','orch-test@example.invalid');git(repo,'config','user.name','Orch Test');writeFileSync(join(repo,'tracked.txt'),'base\n');git(repo,'add','tracked.txt');git(repo,'commit','-m','fixture');return repo}
+const repository=()=>{const repo=realpathSync(mkdtempSync(join(tmpdir(),'orch-outside-write-')));repositories.push(repo);git(repo,'init','-b','main');git(repo,'config','user.email','orch-test@example.invalid');git(repo,'config','user.name','Orch Test');writeFileSync(join(repo,'tracked.txt'),'base\n');git(repo,'add','tracked.txt');git(repo,'commit','-m','fixture');return repo}
 test('the watch set is the run\'s own project plus the caller checkout, never a third project', async () => {
     const { checkoutWatchSet } = await import('./checkout-identity.ts')
     const one = repository()

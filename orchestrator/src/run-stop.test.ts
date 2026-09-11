@@ -55,7 +55,11 @@ test('stop does not signal an unverified agent pid and keeps its recorded worktr
     expect(() => process.kill(vendor.pid, 0)).not.toThrow()
     expect(db().query('SELECT status,error,failure_kind,worktree FROM run WHERE id=?').get(id))
       .toEqual({ status: 'stopped', error: 'stopped by architect', failure_kind: 'stopped', worktree: worktree.path })
-  } finally { vendor.kill(); if (existsSync(worktree.path)) rmSync(worktree.path, { recursive: true, force: true }) }
+  } finally {
+    vendor.kill()
+    if (existsSync(worktree.path)) rmSync(worktree.path, { recursive: true, force: true })
+    rmSync(join(dir, '.claude'), { recursive: true, force: true })
+  }
 })
 
 test('stop keeps a shared worktree and reports its container retention', async () => {

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync, existsSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -6,6 +6,9 @@ import { AGENTS, candidates, db, dir, hermeticGitEnv, removeFor, reviewReply, ru
 import { parseConfinement } from "./confinement.ts"
 import { scriptedTransportSequence } from "../test/fake-transport.ts"
 describe('outside-worktree write observation', () => {
+const scripts: string[] = []
+const agentScript = (name: string) => { const path = join(dir, name); scripts.push(path); return path }
+afterEach(() => { for (const script of scripts) rmSync(script, { force: true }); scripts.length = 0; rmSync(join(dir, '.claude'), { recursive: true, force: true }) })
 const git = (cwd: string, ...args: string[]) => { const p = Bun.spawnSync(['git', ...args], { cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' }); if (p.exitCode !== 0) throw new Error(p.stderr.toString()); return p.stdout.toString().trim() }
 const repository = () => { const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-outside-write-'))); git(repo, 'init', '-b', 'main'); git(repo, 'config', 'user.email', 'orch-test@example.invalid'); git(repo, 'config', 'user.name', 'Orch Test'); writeFileSync(join(repo, 'tracked.txt'), 'base\n'); git(repo, 'add', 'tracked.txt'); git(repo, 'commit', '-m', 'fixture'); return repo }
 const installConfinementTransport = (outputs: string[]) => scriptedTransportSequence(
@@ -24,7 +27,7 @@ const installConfinementTransport = (outputs: string[]) => scriptedTransportSequ
 ).install()
 test('a real run records an external write and a clean run records none', async () => {
     const watched = repository()
-    const script = join(dir, 'outside-write-agent.sh')
+    const script = agentScript('outside-write-agent.sh')
     writeFileSync(script, `#!/bin/sh
 if [ -n "$ORCH_TEST_EXTERNAL_WRITE" ]; then printf 'outside\\n' > "$ORCH_TEST_EXTERNAL_WRITE"; fi
 if [ -n "$ORCH_TEST_INSIDE_WRITE" ]; then printf 'inside\\n' > "$ORCH_TEST_INSIDE_WRITE"; fi
@@ -127,7 +130,7 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
 test('no-worktree and resumed runs watch registered caller checkouts', async () => {
     const repo = repository()
     const caller = join(repo, '.claude', 'worktrees', 'distinct-caller')
-    const script = join(dir, 'DEV-372-identity-watch-agent.sh')
+    const script = agentScript('DEV-372-identity-watch-agent.sh')
     writeFileSync(script, `#!/bin/sh
 if [ -n "$ORCH_TEST_EXTERNAL_WRITE" ]; then printf 'outside\\n' > "$ORCH_TEST_EXTERNAL_WRITE"; fi
 printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"answer"}'
@@ -197,7 +200,7 @@ printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"
 test('a checkout that cannot be sampled after launch fails confinement verification', async () => {
     const watched = repository()
     const hiddenGit = join(watched, '.git-hidden')
-    const script = join(dir, 'hide-watched-git-agent.sh')
+    const script = agentScript('hide-watched-git-agent.sh')
     writeFileSync(script, `#!/bin/sh
 mv "$ORCH_TEST_HIDE_GIT/.git" "$ORCH_TEST_HIDE_GIT/.git-hidden"
 printf '%s\\n' '{"type":"system","subtype":"init"}' '{"type":"result","result":"answer"}'
@@ -264,7 +267,7 @@ test('an overlapping outside edit blocks with attribution and a contention row',
       cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
     })
     if (added.exitCode !== 0) throw new Error(added.stderr.toString())
-    const script = join(dir, 'DEV-372-overlap-agent.sh')
+    const script = agentScript('DEV-372-overlap-agent.sh')
     writeFileSync(script, `#!/bin/sh
 printf 'outside\\n' > "$ORCH_TEST_EXTERNAL_WRITE"
 printf 'inside\\n' > overlap.txt
@@ -321,7 +324,7 @@ printf '%s\\n' '${JSON.stringify(workerReply({ files_changed: ['overlap.txt'] })
 
 test('a diverged lens keeps its findings and records the review', async () => {
     const repo = repository()
-    const script = join(dir, 'DEV-372-lens-agent.sh')
+    const script = agentScript('DEV-372-lens-agent.sh')
     writeFileSync(script, `#!/bin/sh
 printf 'stray\\n' > "$ORCH_TEST_EXTERNAL_WRITE"
 printf '%s\\n' '{"type":"system","subtype":"init"}'

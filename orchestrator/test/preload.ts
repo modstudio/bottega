@@ -1,5 +1,5 @@
-import { afterAll, beforeEach } from 'bun:test'
-import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { afterAll, afterEach, beforeEach } from 'bun:test'
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createTestHubDatabaseGuard } from '../../shared/test-hub-database.ts'
@@ -109,6 +109,7 @@ const { db } = await import('../src/db.ts')
  * previous test's. The sequence is the one thing carried from store to store.
  */
 let sequence: { name: string; seq: number }[] = []
+let childrenBeforeTest = new Set<string>()
 
 beforeEach(() => {
   installTestTransport(null)
@@ -123,13 +124,25 @@ beforeEach(() => {
   closeDatabaseForFixture()
   for (const sidecar of ['', '-wal', '-shm', '-journal']) rmSync(`${store}${sidecar}`, { force: true })
   copyFileSync(template, store)
-  if (sequence.length === 0) return
-  const fresh = db()
-  // sqlite_sequence carries no unique constraint, so an upsert is refused.
-  for (const { name, seq } of sequence) {
-    const bumped = fresh.query('UPDATE sqlite_sequence SET seq = ? WHERE name = ?').run(seq, name)
-    if (bumped.changes === 0) fresh.query('INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)').run(name, seq)
+  if (sequence.length > 0) {
+    const fresh = db()
+    // sqlite_sequence carries no unique constraint, so an upsert is refused.
+    for (const { name, seq } of sequence) {
+      const bumped = fresh.query('UPDATE sqlite_sequence SET seq = ? WHERE name = ?').run(seq, name)
+      if (bumped.changes === 0) fresh.query('INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)').run(name, seq)
+    }
   }
+  childrenBeforeTest = new Set(readdirSync(dir))
+})
+
+afterEach(() => {
+  const residue = readdirSync(dir).filter((name) => !childrenBeforeTest.has(name))
+  if (residue.length === 0) return
+  const message = residue.map((name) =>
+    `test ${Bun.main} left fixture residue: ${join(dir, name)}`,
+  ).join('\n')
+  if (process.env.CI) throw new Error(message)
+  console.warn(message)
 })
 
 afterAll(() => {

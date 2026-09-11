@@ -3,7 +3,7 @@ import { chmodSync,mkdirSync,mkdtempSync,readdirSync,rmSync,symlinkSync,writeFil
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MONITOR_CAPABILITY_PATH_ENV,MONITOR_CAPABILITY_TOKEN_ENV } from '../../../shared/monitor-capability.ts'
-import { addRun,claimMonitorNotices,db,monitor,nowIso } from '../fixture.ts'
+import { addRun,claimMonitorNotices,db,monitor,nowIso,reapTestProcess } from '../fixture.ts'
 
 function persistAddressedCondition(
   kind: string,
@@ -122,28 +122,31 @@ process.exit(result.exitCode)
 
     const cli = new URL('../../src/cli.ts', import.meta.url).pathname
     const syncDir = mkdtempSync(join(tmpdir(), 'monitor-concurrency-'))
-    const syncBin = join(syncDir, 'bin')
-    mkdirSync(syncBin)
-    writeFileSync(join(syncBin, 'docker'), `#!/bin/sh
+    const children: ReturnType<typeof Bun.spawn>[] = []
+    let marker: ReturnType<typeof Bun.spawn> | undefined
+    try {
+      const syncBin = join(syncDir, 'bin')
+      mkdirSync(syncBin)
+      writeFileSync(join(syncBin, 'docker'), `#!/bin/sh
 touch "$SYNC_DIR/ready-$$"
 while [ ! -f "$SYNC_DIR/release" ]; do sleep 0.01; done
 echo '[]'
 `)
-    chmodSync(join(syncBin, 'docker'), 0o755)
-    const env = {
-      ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0', SYNC_DIR: syncDir,
-      PATH: `${syncBin}:${process.env.PATH ?? ''}`,
-    }
-    const children = [Bun.spawn([process.execPath, cli, 'monitor'], {
-      env, stdout: 'ignore', stderr: 'ignore',
-    }), Bun.spawn([process.execPath, cli, 'monitor'], {
-      env, stdout: 'ignore', stderr: 'ignore',
-    })]
-    const readyDeadline = Date.now() + 5_000
-    while (readdirSync(syncDir).filter((name) => name.startsWith('ready-')).length < 2 &&
-           Date.now() < readyDeadline) await Bun.sleep(10)
-    expect(readdirSync(syncDir).filter((name) => name.startsWith('ready-'))).toHaveLength(2)
-    const marker = Bun.spawn([process.execPath, '-e', `
+      chmodSync(join(syncBin, 'docker'), 0o755)
+      const env = {
+        ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0', SYNC_DIR: syncDir,
+        PATH: `${syncBin}:${process.env.PATH ?? ''}`,
+      }
+      children.push(Bun.spawn([process.execPath, cli, 'monitor'], {
+        env, stdout: 'ignore', stderr: 'ignore',
+      }), Bun.spawn([process.execPath, cli, 'monitor'], {
+        env, stdout: 'ignore', stderr: 'ignore',
+      }))
+      const readyDeadline = Date.now() + 5_000
+      while (readdirSync(syncDir).filter((name) => name.startsWith('ready-')).length < 2 &&
+             Date.now() < readyDeadline) await Bun.sleep(10)
+      expect(readdirSync(syncDir).filter((name) => name.startsWith('ready-'))).toHaveLength(2)
+      marker = Bun.spawn([process.execPath, '-e', `
       import { Database } from 'bun:sqlite'
       const database = new Database(process.env.ORCH_DB)
       database.exec('PRAGMA busy_timeout=5000; BEGIN IMMEDIATE')
@@ -152,23 +155,28 @@ echo '[]'
       console.log('marked')
       Bun.sleepSync(500)
       database.exec('COMMIT')
-    `], { env: { ...env, NOTICE_ID: String(notice.noticeId) }, stdout: 'pipe', stderr: 'pipe' })
-    const markerReader = marker.stdout.getReader()
-    let markerOutput = ''
-    while (!markerOutput.includes('marked')) {
-      const chunk = await markerReader.read()
-      if (chunk.done) break
-      markerOutput += new TextDecoder().decode(chunk.value)
+      `], { env: { ...env, NOTICE_ID: String(notice.noticeId) }, stdout: 'pipe', stderr: 'pipe' })
+      const markerReader = marker.stdout.getReader()
+      let markerOutput = ''
+      while (!markerOutput.includes('marked')) {
+        const chunk = await markerReader.read()
+        if (chunk.done) break
+        markerOutput += new TextDecoder().decode(chunk.value)
+      }
+      expect(markerOutput).toContain('marked')
+      writeFileSync(join(syncDir, 'release'), '')
+      await Promise.all([marker.exited, ...children.map((child) => child.exited)])
+      const rows = db().query(
+        `SELECT delivered_at FROM monitor_condition
+          WHERE kind='stale-run' AND subject=? AND invocation_id>?`,
+      ).all(`run:${runId}`, first.id) as { delivered_at: string | null }[]
+      expect(rows.length).toBeGreaterThanOrEqual(1)
+      expect(rows.every((row) => row.delivered_at !== null)).toBe(true)
+    } finally {
+      writeFileSync(join(syncDir, 'release'), '')
+      await reapTestProcess(marker?.pid)
+      for (const child of children) await reapTestProcess(child.pid)
+      rmSync(syncDir, { recursive: true, force: true })
     }
-    expect(markerOutput).toContain('marked')
-    writeFileSync(join(syncDir, 'release'), '')
-    await Promise.all([marker.exited, ...children.map((child) => child.exited)])
-    const rows = db().query(
-      `SELECT delivered_at FROM monitor_condition
-        WHERE kind='stale-run' AND subject=? AND invocation_id>?`,
-    ).all(`run:${runId}`, first.id) as { delivered_at: string | null }[]
-    expect(rows.length).toBeGreaterThanOrEqual(1)
-    expect(rows.every((row) => row.delivered_at !== null)).toBe(true)
-    rmSync(syncDir, { recursive: true, force: true })
   }, 20_000)
 })

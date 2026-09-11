@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
+import { afterEach, describe, expect, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS } from './agents.ts'
@@ -255,6 +255,11 @@ describe('ACP defaults Codex and preflight names the missing piece', () => {
 })
 
 describe('ACP client-served fs is confined to the worktree', () => {
+  const roots: string[] = []
+  afterEach(() => {
+    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+  })
+
   test('the grok leader socket is the only socket added to the srt profile', () => {
     const profile = {
       network: { allowedDomains: [], deniedDomains: [], allowUnixSockets: [], allowLocalBinding: true },
@@ -269,6 +274,7 @@ describe('ACP client-served fs is confined to the worktree', () => {
   })
   test('a path inside the worktree is allowed; a path outside is refused by name', () => {
     const root = mkdtempSync(join(tmpdir(), 'orch-acp-fs-'))
+    roots.push(root)
     const inside = join(root, 'notes.txt')
     writeFileSync(inside, 'ok')
     expect(confineFsPath(inside, root)).toBe(realpathSync(inside))
@@ -279,6 +285,7 @@ describe('ACP client-served fs is confined to the worktree', () => {
 
   test('a missing path is still confined by its resolved parent', () => {
     const root = mkdtempSync(join(tmpdir(), 'orch-acp-fs-missing-'))
+    roots.push(root)
     mkdirSync(join(root, 'src'))
     expect(confineFsPath(join(root, 'src', 'nope.ts'), root))
       .toBe(join(realpathSync(join(root, 'src')), 'nope.ts'))

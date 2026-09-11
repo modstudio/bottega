@@ -5,9 +5,9 @@ import { join } from "node:path"
 import { mainCheckoutOf, scrubbedGitEnv } from "./git.ts"
 
 /** A git environment that reads no user or system configuration; shared/ imports from nobody, so it is built here. */
-const hermeticGitEnv = (): NodeJS.ProcessEnv => ({
+const hermeticGitEnv = (home: string): NodeJS.ProcessEnv => ({
   ...scrubbedGitEnv(),
-  HOME: mkdtempSync(join(tmpdir(), 'shared-git-home-')),
+  HOME: home,
   GIT_CONFIG_GLOBAL: '/dev/null',
   GIT_CONFIG_SYSTEM: '/dev/null',
 })
@@ -50,18 +50,20 @@ test('the shared scrub removes repository-location variables git lists and orch 
 
 test('main checkout resolution does not merge inherited object routing into a supplied environment', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-main-checkout-env-'))
+    const home = mkdtempSync(join(tmpdir(), 'shared-git-home-'))
     const previous = process.env.GIT_OBJECT_DIRECTORY
     try {
       const initialized = Bun.spawnSync(['git', 'init', '-b', 'main'], {
-        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+        cwd: repo, env: hermeticGitEnv(home), stdout: 'pipe', stderr: 'pipe',
       })
       if (initialized.exitCode !== 0) throw new Error(initialized.stderr.toString())
       process.env.GIT_OBJECT_DIRECTORY = '/nonexistent/worker/objects'
-      expect(mainCheckoutOf(repo, hermeticGitEnv())).toBe(realpathSync(repo))
+      expect(mainCheckoutOf(repo, hermeticGitEnv(home))).toBe(realpathSync(repo))
     } finally {
       if (previous === undefined) delete process.env.GIT_OBJECT_DIRECTORY
       else process.env.GIT_OBJECT_DIRECTORY = previous
       rmSync(repo, { recursive: true, force: true })
+      rmSync(home, { recursive: true, force: true })
     }
   })
 
