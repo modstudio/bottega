@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { AGENTS, addRun, db, dir, run } from '../test/fixture.ts'
 import {
@@ -92,6 +92,7 @@ emit('{"type":"result","subtype":"success","result":"done","usage":{"input_token
     const grok = AGENTS.grok!
     const previous = grok.bin
     const priorDepth = process.env.ORCH_DEPTH
+    let elsewhere: string | undefined
     process.env.ORCH_DEPTH = '0'
     try {
       grok.bin = script
@@ -121,7 +122,7 @@ emit('{"type":"result","subtype":"success","result":"done","usage":{"input_token
       expect(peeked.code, peeked.err).toBe(0)
       expect(peeked.out).toContain(`run ${reserved}`)
       expect(peeked.out).toContain('working on it')
-      const elsewhere = join(dir, `peek-cwd-${reserved}`)
+      elsewhere = join(dir, `peek-cwd-${reserved}`)
       mkdirSync(elsewhere)
       const fromElsewhere = cli(['peek', String(reserved), '--json'], {}, elsewhere)
       expect(fromElsewhere.code, fromElsewhere.err).toBe(0)
@@ -132,6 +133,8 @@ emit('{"type":"result","subtype":"success","result":"done","usage":{"input_token
       grok.bin = previous
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
+      rmSync(script, { force: true })
+      if (elsewhere) rmSync(elsewhere, { recursive: true, force: true })
     }
   })
 
