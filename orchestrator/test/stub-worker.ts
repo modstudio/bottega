@@ -5,6 +5,7 @@ import { dir } from './fixture.ts'
 
 export function stubWorker(opts: {
   commits?: boolean
+  commands?: string[]
   sleepSeconds?: number
   burnCpu?: boolean
   exitCode?: number
@@ -19,6 +20,7 @@ export function stubWorker(opts: {
     '[ -z "$ORCH_STUB_OUTPUT" ] || printf "%s\\n" "$ORCH_STUB_OUTPUT"',
     '[ -z "$ORCH_STUB_READY_FILE" ] || printf "ready\\n" > "$ORCH_STUB_READY_FILE"',
   )
+  if (opts.commands) lines.push(...opts.commands)
   if (opts.commits) {
     lines.push(
       'echo worker > worker.txt',
