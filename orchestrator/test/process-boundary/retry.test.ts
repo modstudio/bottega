@@ -1,10 +1,12 @@
-import { describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { READONLY_PREAMBLE, db, dir, replyFileInstruction, runCollectionDescribeFixture, upsertProject } from '../fixture.ts'
 import { stubWorker } from "../stub-worker.ts"
+import { trackedTestResidue } from '../residue.ts'
+const trackResidue = trackedTestResidue(); beforeEach(() => { trackResidue(join(dir, '.claude')) })
 
 // Retry delivery crosses the detach: the observable effect is the replacement
 // child's prompt on disk after a real orch child ran. That is the process
@@ -15,7 +17,7 @@ describe('retry process boundary', () => {
   test('retry through a child delivers a pending ruling from a non-asking stranded root', () => {
     const root = insert('failed', 'file-question')
     const child = insert('failed', 'file-question')
-    const prompt = join(dir, `failed-stranded-${child}.prompt.txt`)
+    const prompt = trackResidue(join(dir, `failed-stranded-${child}.prompt.txt`))
     writeFileSync(prompt, 'original failed fixture spec')
     db().query('UPDATE run SET session_id=? WHERE id=?').run('orch-test-session', root)
     db().query('UPDATE run SET parent_run_id=?, turn=2, prompt_path=?, cwd=? WHERE id=?')
@@ -52,7 +54,7 @@ describe('retry process boundary', () => {
 
   test('a recorded-ruling writing retry warns that prior partial edits are not carried', () => {
     const id = insert('asking', 'implement')
-    const prompt = join(dir, `record-only-writing-${id}.prompt.txt`)
+    const prompt = trackResidue(join(dir, `record-only-writing-${id}.prompt.txt`))
     writeFileSync(prompt, 'original implementation spec')
     upsertProject({
       name: PLATFORM_SLUG, path: process.cwd(),
@@ -85,8 +87,8 @@ describe('retry process boundary', () => {
   })
 
   test('prefer persists through read-only retry and the bound prompt contains the preamble once', () => {
-    const original = 'What does bar.ts do?'; const promptPath = join(dir, 'retry-original.prompt.txt'); writeFileSync(promptPath, original)
-    const schemaPath = join(dir, 'retry-schema.json'); writeFileSync(schemaPath, JSON.stringify({ type: 'object', properties: { answer: { type: 'string' } }, required: ['answer'], additionalProperties: false }))
+    const original = 'What does bar.ts do?'; const promptPath = trackResidue(join(dir, 'retry-original.prompt.txt')); writeFileSync(promptPath, original)
+    const schemaPath = trackResidue(join(dir, 'retry-schema.json')); writeFileSync(schemaPath, JSON.stringify({ type: 'object', properties: { answer: { type: 'string' } }, required: ['answer'], additionalProperties: false }))
     const id = insert('failed', 'file-question'); db().query("UPDATE run SET agent='grok',prompt_path=?,mcp=2,mcp_error='mirror: original attach failed',schema_path=?,model='retry-model',cwd=? WHERE id=?").run(promptPath, schemaPath, dir, id)
     const binDir = mkdtempSync(join(tmpdir(), 'orch-fake-grok-retry-')); symlinkSync(stubWorker(), join(binDir, 'grok'))
     try {
