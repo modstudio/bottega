@@ -1,6 +1,7 @@
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../shared/brand.ts'
 
 const plutil = Bun.which('plutil')
 if (!plutil) {
@@ -10,7 +11,7 @@ if (!plutil) {
 
 const root = new URL('../ops/launchd', import.meta.url).pathname
 const templates = readdirSync(root).filter((name) => name.endsWith('.plist.template')).sort()
-const renderedDirectory = mkdtempSync(join(tmpdir(), 'bottega-launchd-lint-'))
+const renderedDirectory = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-launchd-lint-`))
 let failed = false
 
 try {
