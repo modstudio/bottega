@@ -19,6 +19,7 @@ const probeAuthorization = `Bearer ${probeSentinel}`
 
 function expectSanitizedProbeError(result: Awaited<ReturnType<typeof probeMcpServer>>): void {
   expect(result.error).not.toContain(probeSentinel)
+  expect(result.error).not.toContain(probeSentinel.slice(0, 8))
   expect(result.error).toContain('[redacted]')
   expect(result.error?.length).toBeLessThanOrEqual(400)
   expect(storedMcpProbe(result)).not.toContain(probeSentinel)
@@ -297,7 +298,8 @@ process.stdout.write(JSON.stringify({
       const server = Bun.serve({
         port: 0,
         fetch: () => {
-          if (response === 'non-2xx') return new Response(`denied ${probeSentinel}`, { status: 401 })
+          // The sentinel straddles the 400-character bound: a cut before redaction would leak its prefix.
+          if (response === 'non-2xx') return new Response(`${'d'.repeat(390)}${probeSentinel}`, { status: 401 })
           if (response === 'non-JSON') return new Response(`not json ${probeSentinel}`)
           return Response.json({
             jsonrpc: '2.0', id: 1,

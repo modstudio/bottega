@@ -243,10 +243,11 @@ const text=await res.text(); process.stdout.write(text); process.exit(res.ok?0:1
     clearTimeout(timer)
     if (exit !== 0) {
       const combined = [stderr.trim(), stdout.trim()].filter(Boolean).join('\n')
-      return { ok: false, messages: replies, error: combined.slice(0, MCP_PROBE_ERROR_LIMIT) || `HTTP probe exited ${exit}` }
+      // Unbounded here: sanitizeProbeError bounds after redacting, so no cut can split a secret.
+      return { ok: false, messages: replies, error: combined || `HTTP probe exited ${exit}` }
     }
     try { replies.push(JSON.parse(stdout)) } catch {
-      return { ok: false, messages: replies, error: stdout.slice(0, MCP_PROBE_ERROR_LIMIT) || 'HTTP probe returned non-JSON' }
+      return { ok: false, messages: replies, error: stdout || 'HTTP probe returned non-JSON' }
     }
   }
   return { ok: true, messages: replies, error: null }
