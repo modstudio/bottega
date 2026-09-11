@@ -57,6 +57,7 @@ assertTestHubDatabase()
 const { registerStandardRuntime } = await import('../src/runtime-registration.ts')
 registerStandardRuntime()
 const { DB_PATH, bootstrapFixtureStore, closeDatabaseForFixture } = await import('../src/db.ts')
+const { installTestTransport } = await import('../src/transport.ts')
 
 /**
  * The store db.ts resolved must be the one minted above, inside a directory
@@ -110,6 +111,7 @@ const { db } = await import('../src/db.ts')
 let sequence: { name: string; seq: number }[] = []
 
 beforeEach(() => {
+  installTestTransport(null)
   assertTestHubDatabase()
   if (process.env.ORCH_DB && resolve(process.env.ORCH_DB) === REGISTERED_LIVE_STORE) {
     throw new Error(`test process refuses registered live store: ${REGISTERED_LIVE_STORE}`)

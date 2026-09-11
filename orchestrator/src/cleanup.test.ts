@@ -227,3 +227,64 @@ test.each(['discard', 'abandon'] as const)('%s refuses finalization when a run a
   try { const result = await discard(target); expect(result.ok).toBe(false); expect(result.error?.message).toContain(String(owner)); expect(result.error?.message).toContain(`another conversation claimed ${tree.path} during cleanup`); expect(existsSync(tree.path)).toBe(false); expect(db().query('SELECT worktree FROM run WHERE id=?').get(owner)).toEqual({ worktree: tree.path }); expect(db().query('SELECT worktree FROM run WHERE id=?').get(target)).toEqual({ worktree: tree.path }) }
   finally { rmSync(repo, { recursive: true, force: true }) }
 })
+
+test('a terminal run does not own another run\'s recorded branch', async () => {
+    const { repo } = scratchRepo()
+    const project = `unscored-ref-${repo.split('/').pop()}`
+    const target = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
+    const owner = addRun({ agent: 'codex', job: 'implement', status: 'failed', repo: project })
+    const tree = createWorktree(repo, target)
+    writeFileSync(join(tree.path, 'unlanded.txt'), 'not on trunk\n')
+    git(tree.path, 'add', 'unlanded.txt')
+    git(tree.path, 'commit', '-m', 'fixture: unlanded work')
+    const script = join(repo, 'delete-unscored-owner-branch.sh')
+    writeFileSync(script,
+      'git worktree remove --force "$1"\n' +
+      'git branch -D "$2"\n')
+    upsertProject({
+      name: project, path: realpathSync(repo),
+      settings: { trunk: 'main', worktree: { remove: `sh "${script}" {path} {branch}` } },
+    })
+    db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
+      .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, target)
+    db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, tree.branch, owner)
+    try {
+      const result = await discard(target, true)
+      expect(result.ok, result.error?.message).toBe(true)
+      expect(result.errors.join('\n')).not.toContain('unscored')
+      expect(git(repo, 'branch', '--list', tree.branch)).toBe('')
+      expect(db().query('SELECT worktree FROM run WHERE id=?').get(target))
+        .toEqual({ worktree: null })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+test('abandon keeps a cut commit after trunk is rewound away from it', async () => {
+  const { repo } = scratchRepo()
+  const project = `rewound-cut-abandon-${repo.split('/').pop()}`
+  writeFileSync(join(repo, 'cut.txt'), 'recorded cut\n')
+  git(repo, 'add', 'cut.txt'); git(repo, 'commit', '-m', 'recorded cut')
+  const id = addRun({ agent: 'codex', job: 'implement', status: 'asking', repo: project })
+  const tree = createWorktree(repo, id)
+  const tip = git(repo, 'rev-parse', tree.branch)
+  git(repo, 'worktree', 'remove', '--force', tree.path)
+  git(repo, 'reset', '--hard', 'HEAD~1')
+  upsertProject({ name: project, path: realpathSync(repo), settings: { trunk: 'main' } })
+  db().query(
+    `UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=?, head_commit=?,
+                    started_at=?, worktree_source='git' WHERE id=?`,
+  ).run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, tip, tip,
+    '2020-01-01T00:00:00.000Z', id)
+  try {
+    const result = await discard(id, false)
+    expect(result.ok, result.error?.message).toBe(true)
+    expect(git(repo, 'rev-parse', tree.branch)).toBe(tip)
+    expect(db().query(
+      'SELECT worktree, branch, branch_kept, branch_kept_tip, head_commit FROM run WHERE id=?',
+    ).get(id)).toEqual({
+      worktree: null, branch: tree.branch, branch_kept: tree.branch,
+      branch_kept_tip: null, head_commit: tip,
+    })
+  } finally { rmSync(repo, { recursive: true, force: true }) }
+})

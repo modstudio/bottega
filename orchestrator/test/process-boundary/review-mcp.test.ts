@@ -1,32 +1,33 @@
 import { afterEach, expect, test } from 'bun:test'
-import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS, canonSourceInstruction, db, dir, hermeticGitEnv, reviewReply, runJob, upsertProject } from '../fixture.ts'
+import { stubWorker } from "../stub-worker.ts"
 
 const GROK_REVIEW_EVENT = JSON.stringify({
   type: 'result', subtype: 'success', result: JSON.stringify(reviewReply(1)),
+})
+const GROK_DOCTOR_OUTPUT = JSON.stringify({
+  servers: [{
+    name: 'fixture-project', healthy: false,
+    checks: [{ label: 'unavailable', passed: false, detail: 'server down' }],
+  }],
 })
 
 const roots: string[] = []
 afterEach(() => { while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true }); rmSync(join(dir, '.mcp.json'), { force: true }) })
 const fakeGrok = () => {
   const binDir = mkdtempSync(join(tmpdir(), 'orch-mcp-boundary-')); roots.push(binDir)
-  writeFileSync(join(binDir, 'grok'), `#!/bin/sh
-if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
-  printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"label":"unavailable","passed":false,"detail":"server down"}]}]}'
-  exit 0
-fi
-echo should-not-launch >&2
-exit 99
-`)
-  chmodSync(join(binDir, 'grok'), 0o755)
+  symlinkSync(stubWorker({ exitCode: 99 }), join(binDir, 'grok'))
   return binDir
 }
 const invoke = (args: string[], binDir: string) => Bun.spawnSync(
   [process.execPath, new URL('../../src/cli.ts', import.meta.url).pathname, ...args],
   { cwd: realpathSync(dir), env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
-    CLAUDE_CODE_SESSION_ID: 'orch-test-session', PATH: `${binDir}:${process.env.PATH ?? ''}` },
+    CLAUDE_CODE_SESSION_ID: 'orch-test-session', PATH: `${binDir}:${process.env.PATH ?? ''}`,
+    ORCH_STUB_MCP_DOCTOR_OUTPUT: GROK_DOCTOR_OUTPUT,
+    ORCH_STUB_OUTPUT: GROK_REVIEW_EVENT },
     stdout: 'pipe', stderr: 'pipe' },
 )
 async function terminalRows(afterId: number, count: number) {
@@ -78,18 +79,13 @@ test('continue without parent output inherits prefer, re-probes, and keeps MIRRO
   writeFileSync(join(repo, 'tracked.txt'), 'base\n'); git('add', 'tracked.txt'); git('commit', '-m', 'base')
   writeFileSync(join(repo, '.mcp.json'), '{}\n'); upsertProject({ name: 'fixture-project', path: repo, settings: {} })
   const binDir = mkdtempSync(join(tmpdir(), 'orch-grok-prefer-continue-')); roots.push(binDir)
-  const script = join(binDir, 'grok')
-  writeFileSync(script, `#!/bin/sh
-if case " $* " in *" mcp doctor "*) true ;; *) false ;; esac; then
-  printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"label":"unavailable","passed":false,"detail":"server down"}]}]}'
-else
-  printf '%s\n' '${GROK_REVIEW_EVENT}'
-fi
-`)
-  chmodSync(script, 0o755)
+  const script = stubWorker()
+  symlinkSync(script, join(binDir, 'grok'))
   const agent = AGENTS.grok!; const original = { bin: agent.bin, argv: agent.argv }
   const priorDepth = process.env.ORCH_DEPTH; const priorSession = process.env.CLAUDE_CODE_SESSION_ID
+  const priorDoctor = process.env.ORCH_STUB_MCP_DOCTOR_OUTPUT; const priorOutput = process.env.ORCH_STUB_OUTPUT
   agent.bin = script; agent.argv = () => []; process.env.ORCH_DEPTH = '0'; process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
+  process.env.ORCH_STUB_MCP_DOCTOR_OUTPUT = GROK_DOCTOR_OUTPUT; process.env.ORCH_STUB_OUTPUT = GROK_REVIEW_EVENT
   try {
     const root = await runJob({ job: 'review-lens', prompt: 'review this', cwd: repo, agent: 'grok', mcp: 'prefer', lens: 'mcp-cwd', keepTree: true })
     expect((db().query('SELECT mcp FROM run WHERE id=?').get(root.id) as { mcp: number }).mcp).toBe(2)
@@ -113,5 +109,7 @@ fi
     agent.bin = original.bin; agent.argv = original.argv
     if (priorDepth === undefined) delete process.env.ORCH_DEPTH; else process.env.ORCH_DEPTH = priorDepth
     if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID; else process.env.CLAUDE_CODE_SESSION_ID = priorSession
+    if (priorDoctor === undefined) delete process.env.ORCH_STUB_MCP_DOCTOR_OUTPUT; else process.env.ORCH_STUB_MCP_DOCTOR_OUTPUT = priorDoctor
+    if (priorOutput === undefined) delete process.env.ORCH_STUB_OUTPUT; else process.env.ORCH_STUB_OUTPUT = priorOutput
   }
 }, 20_000)

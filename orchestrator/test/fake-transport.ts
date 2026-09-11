@@ -12,7 +12,7 @@ export type ScriptedTransportEvent =
   | { kind: 'ask'; question: string; why: string }
   | { kind: 'resume'; ruling?: string }
   | { kind: 'completed'; output?: string; parsedText?: string; exitCode?: number; stopReason?: string | null }
-  | { kind: 'failed'; error: string }
+  | { kind: 'failed'; error: string; stopReason?: string }
   | { kind: 'cancelled'; reason: string }
 
 export type ScriptedTransport = {
@@ -24,16 +24,21 @@ export type ScriptedTransport = {
 }
 
 /** Installs one deterministic script per transport start, in call order. */
-export function scriptedTransportSequence(scripts: ScriptedTransportEvent[][]): {
+export function scriptedTransportSequence(
+  scripts: ScriptedTransportEvent[][],
+  inspectStart?: (options: TransportStartOpts) => void,
+): {
   install(): void
   prompts: string[]
   injectRuling(ruling: string): void
   starts(): number
+  startOptions(): TransportStartOpts[]
 } {
   const prompts: string[] = []
   let index = 0
   let active: ScriptedTransport | null = null
   let queuedRuling: string | null = null
+  const options: TransportStartOpts[] = []
   const activate = (scripted: ScriptedTransport) => {
     active = scripted
     if (queuedRuling !== null) { scripted.injectRuling(queuedRuling); queuedRuling = null }
@@ -41,6 +46,8 @@ export function scriptedTransportSequence(scripts: ScriptedTransportEvent[][]): 
   const transport: AgentTransport = {
     name: 'cli',
     async start(opts) {
+      options.push(opts)
+      inspectStart?.(opts)
       const scripted = scriptedTransport(scripts[index++] ?? []); activate(scripted)
       const handle = await scripted.transport.start(opts)
       prompts.push(...scripted.prompts)
@@ -50,13 +57,15 @@ export function scriptedTransportSequence(scripts: ScriptedTransportEvent[][]): 
     events(handle) { return handle.events() },
     cancel(handle) { return handle.cancel() },
     async resume(opts) {
+      options.push(opts)
+      inspectStart?.(opts)
       const scripted = scriptedTransport(scripts[index++] ?? []); activate(scripted)
       const handle = await scripted.transport.resume(opts)
       prompts.push(...scripted.prompts)
       return handle
     },
   }
-  return { prompts, starts: () => index, install: () => installTestTransport(transport), injectRuling: (ruling) => {
+  return { prompts, starts: () => index, startOptions: () => options, install: () => installTestTransport(transport), injectRuling: (ruling) => {
     if (active) active.injectRuling(ruling); else queuedRuling = ruling
   } }
 }
@@ -133,7 +142,7 @@ async function applyEvent(
     if (!state.output) state.output = state.stdout
     state.error = event.error
     state.exitCode = 1
-    state.stopReason = null
+    state.stopReason = event.stopReason ?? null
     emit({ kind: 'error', error: event.error })
   } else if (event.kind === 'cancelled') {
     state.cancelled = true
