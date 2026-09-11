@@ -1,11 +1,11 @@
 import { Database } from 'bun:sqlite'
-import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, sessionId, recordSessionSeen, SESSION_LIVE_MS, writeTransaction, tryWriteContention } from './db.ts'; import { registerStandardHooks } from './store-hooks.ts'; registerStandardHooks()
+import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, sessionId, recordSessionSeen, SESSION_LIVE_MS, writeTransaction } from './db.ts'; import { registerStandardHooks } from './store-hooks.ts'; registerStandardHooks()
 import { DELIVERY, QUALITY, FIDELITY } from './score.ts'
 import { pendingForSession, UNSCORED_WHERE, voidedSql, activeSql, runTotals } from './evidence-query.ts'
 import { REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_SEVERITY } from './review-vocabulary.ts'
-import { reapStale, resolveRootFromLastTurn } from './run-liveness.ts'; import { pidAlive } from './process-liveness.ts'
+import { reapStale } from './run-liveness.ts'; import { pidAlive } from './process-liveness.ts'
 import { duelMatrices, unrecordedPairsForSession } from './duel.ts'
-import { authorizeRunMutation, runMutationActor, auditRunMutation, adoptRunMutation } from './run-authority.ts'
+import { authorizeRunMutation, runMutationActor, auditRunMutation } from './run-authority.ts'
 import { terminalDockerRetentionReasonForRun } from './resource-ownership.ts'
 import { detach as dispatchDetached } from './run-dispatch.ts'
 import {
@@ -18,11 +18,14 @@ import { sweepRuns } from './cleanup-sweep.ts'
 import { abandonRun, stopRun } from './run-stop.ts'
 import { judgeRun, scoreRun } from './judgement.ts'
 import { recalibrate } from './recalibration.ts'
+import { clearConfinement } from './confinement-ruling.ts'
+import { docCommand } from './doc-commands.ts'
+import { projectCommand } from './project-commands.ts'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync, unlinkSync, openSync, fstatSync, closeSync, constants } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
-import { projectAt, projectByName, projects, renameProject } from './projects.ts'
+import { projectAt, projectByName, projects } from './projects.ts'
 import { classify, NOT_EVIDENCE } from './failure.ts'
 import { collectResult, collectWait, resolveFailover } from './collect.ts'
 import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
@@ -125,11 +128,10 @@ async function loadTransport() {
   transportModule ??= await import('./transport.ts')
   ;({ assertAcpAllowed, assertAcpReady, resolveTransportName, selectAgentForTransport } = transportModule)
 }
-let contentTree!: typeof import('./git-environment.ts').contentTree
 let resolveBase!: typeof import('./worktree.ts').resolveBase
 let checkoutHasUncommittedWork!: typeof import('./worktree.ts').checkoutHasUncommittedWork; let callerDrift!: typeof import('./worktree.ts').callerDrift
 let targetGitEnvironment!: typeof import('./git-environment.ts').targetGitEnvironment; let worktreeDirty!: typeof import('./worktree-attribution.ts').worktreeDirty
-async function loadWorktree() { worktreeModule ??= await import('./worktree.ts'); gitEnvironmentModule ??= await import('./git-environment.ts'); worktreeAttributionModule ??= await import('./worktree-attribution.ts'); ({ resolveBase, checkoutHasUncommittedWork, callerDrift } = worktreeModule); ({ contentTree, targetGitEnvironment } = gitEnvironmentModule); ({ worktreeDirty } = worktreeAttributionModule) }
+async function loadWorktree() { worktreeModule ??= await import('./worktree.ts'); gitEnvironmentModule ??= await import('./git-environment.ts'); worktreeAttributionModule ??= await import('./worktree-attribution.ts'); ({ resolveBase, checkoutHasUncommittedWork, callerDrift } = worktreeModule); ({ targetGitEnvironment } = gitEnvironmentModule); ({ worktreeDirty } = worktreeAttributionModule) }
 let WORKER_PREAMBLE!: typeof import('./contract.ts').WORKER_PREAMBLE
 let READONLY_PREAMBLE!: typeof import('./contract.ts').READONLY_PREAMBLE
 let NO_REPO_PREAMBLE!: typeof import('./contract.ts').NO_REPO_PREAMBLE
@@ -1059,140 +1061,9 @@ switch (cmd) {
     if (!id || !writer || !note) {
       throw new Error('orch confinement clear <run-id> --writer <text> --note <text> [--tip <current-tip>]')
     }
-    await loadWorktree()
-    const { parseConfinement } = await import('./confinement.ts')
-    let authority = authorizeRunMutation(id, 'reclassify')
-    const rows = db().query(
-      `SELECT id, failure_kind, error, pre_confinement, confinement FROM run
-        WHERE (id=? OR parent_run_id=?)
-          AND failure_kind IN ('escaped','confinement_unverified') ORDER BY turn,id`,
-    ).all(authority.rootId, authority.rootId) as {
-      id: number; failure_kind: string; error: string | null
-      pre_confinement: string | null; confinement: string | null
-    }[]
-    if (!rows.length) throw new Error(`run ${id}'s chain has no confinement classification to clear`)
-    const chain = db().query(
-      `SELECT repo, worktree, branch, head_commit, input_tree FROM run
-        WHERE id=? OR parent_run_id=? ORDER BY turn DESC,id DESC`,
-    ).all(authority.rootId, authority.rootId) as {
-      repo: string | null; worktree: string | null; branch: string | null
-      head_commit: string | null; input_tree: string | null
-    }[]
-    const recorded = <K extends keyof typeof chain[number]>(key: K) =>
-      chain.find((row) => row[key] !== null)?.[key] ?? null
-    const repo = recorded('repo')
-    const worktree = recorded('worktree')
-    const branch = recorded('branch')
-    const recordedTip = recorded('head_commit')
-    const recordedTree = recorded('input_tree')
-    if (!repo || !worktree || !branch || !recordedTip || !recordedTree) {
-      throw new Error(`run ${id}'s chain lacks a recorded repository, worktree, branch tip, or measured tree`)
-    }
-    const project = projectByName(repo)
-    if (!project) throw new Error(`run ${id}'s recorded project ${repo} is not registered`)
-    const inspect = (cwd: string, args: string[]) => {
-      const child = Bun.spawnSync(['git', ...args], {
-        cwd, env: targetGitEnvironment(cwd), stdout: 'pipe', stderr: 'pipe',
-      })
-      return child.exitCode === 0 ? child.stdout.toString().trim() : null
-    }
-    const currentTip = inspect(project.path, ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`])
-    if (!currentTip) throw new Error(`recorded branch ${branch} no longer exists in ${project.path}`)
-    const worktreeMissing = !existsSync(worktree)
-    const currentTree = worktreeMissing
-      ? inspect(project.path, ['rev-parse', '--verify', `${currentTip}^{tree}`])
-      : contentTree(worktree)
-    const suppliedTip = flag('tip')?.trim() ?? null
-    const snapshotted = rows.map((row) => parseConfinement(row.confinement))
-      .find((value) => value?.tripTip || value?.chainRoot)
-    const divergence = currentTip !== recordedTip
-    const recoveryCommand = `git worktree add ${worktree} ${branch}`
-    const audit = {
-      writer, note, recordedTip, currentTip, recordedTree, currentTree,
-      worktree, branch, divergence, suppliedTip, cleared: false,
-      tripTip: snapshotted?.tripTip ?? null, chainRoot: snapshotted?.chainRoot ?? null,
-    }
-    const auditOnly = () => writeTransaction(() => {
-      authority = adoptRunMutation(authority, 'receipt')
-      auditRunMutation(authority, 'reclassify', JSON.stringify(audit))
-    })
-    if (divergence && !suppliedTip && !snapshotted?.tripTip && !snapshotted?.chainRoot) {
-      auditOnly()
-      throw new Error(
-        `refusing to clear confinement: ${branch} moved from recorded tip ${recordedTip} to ${currentTip}; ` +
-        `pass --tip ${currentTip} to acknowledge the current artifact`,
-      )
-    }
-    if (suppliedTip && suppliedTip !== currentTip) {
-      auditOnly()
-      throw new Error(`refusing --tip ${suppliedTip}: ${branch}'s current tip is ${currentTip}`)
-    }
-    const transitions = rows.map((row) => {
-      const mode = row.pre_confinement ? 'restored' : 'forward'
-      const value = (row.pre_confinement ? JSON.parse(row.pre_confinement) : {
-        status: 'failed', failureKind: null,
-        error: `confinement cleared forward by ${writer}: ${note}; pre-confinement outcome unavailable`,
-      }) as {
-        status?: string; failureKind?: string | null; error?: string | null
-        landingBlock?: { detail: string; invariant: string; command: string; worktree: string } | null
-        clearMode?: 'restored' | 'forward'
-      }
-      if (!['ok', 'failed', 'asking', 'stopped', 'stale'].includes(value.status ?? '')) {
-        throw new Error(`run ${row.id} has invalid pre-confinement status`)
-      }
-      if (worktreeMissing) {
-        value.landingBlock = {
-          detail: `recorded worktree ${worktree} is missing for branch ${branch}`,
-          invariant: 'A cleared confinement chain needs its recorded worktree before landing.',
-          command: recoveryCommand,
-          worktree,
-        }
-      } else delete value.landingBlock
-      value.clearMode = mode
-      return { row, value, mode }
-    })
-    writeTransaction(() => {
-      authority = adoptRunMutation(authority, 'receipt')
-      const current = db().query(
-        `SELECT id FROM run WHERE (id=? OR parent_run_id=?)
-          AND failure_kind IN ('escaped','confinement_unverified') ORDER BY turn,id`,
-      ).all(authority.rootId, authority.rootId) as { id: number }[]
-      if (current.length !== rows.length || current.some(({ id }, index) => id !== rows[index]!.id)) {
-        throw new Error(`run ${id}'s confinement classification changed before it could be cleared`)
-      }
-      const update = db().query(
-        `UPDATE run SET status=?, failure_kind=?, error=?, pre_confinement=? WHERE id=?
-          AND failure_kind IN ('escaped','confinement_unverified')`,
-      )
-      for (const { row, value } of transitions) {
-        const changed = update.run(
-          value.status!, value.failureKind ?? null, value.error ?? null, JSON.stringify(value), row.id,
-        )
-        if (changed.changes !== 1) {
-          throw new Error(`run ${row.id}'s confinement classification changed before it could be cleared`)
-        }
-      }
-      resolveRootFromLastTurn(db(), authority.rootId)
-      auditRunMutation(authority, 'reclassify', JSON.stringify({ ...audit, cleared: true,
-        transitions: transitions.map(({ row, mode }) => ({ runId: row.id, mode })),
-        priorOutcomes: rows.map((row) => ({
-          runId: row.id, failureKind: row.failure_kind, error: row.error,
-        })),
-        landingBlock: worktreeMissing ? recoveryCommand : null }))
-    })
-    console.log(
-      `cleared confinement for chain ${authority.rootId}; ruling by ${writer}: ${note}`,
-    )
-    if (worktreeMissing) {
-      console.log(
-        `landing remains blocked: recorded worktree ${worktree} is missing\n` +
-        `invariant: A cleared confinement chain needs its recorded worktree before landing.\n` +
-        `cleared by: ${recoveryCommand}`,
-      )
-    }
+    clearConfinement(id, { writer, note, tip: flag('tip')?.trim() ?? null }, { log: console.log })
     break
   }
-
   case 'contract': {
     await Promise.all([loadJobs(), loadContract()])
     const jobName = argv[1]
@@ -1209,158 +1080,12 @@ switch (cmd) {
   }
 
   case 'doc': {
-    const { listDocs, getDoc, setDoc, consumeDoc, removeDoc, exportDocs, importDocs, brief, docSubjects,
-            listOpenResumes, listDocRevisions, diffDocRevisions, restoreDoc } =
-      await import('./docs.ts')
-    const sub = argv[1] ?? 'list'
-    const scope = flag('scope')
-    const subject = flag('subject') ?? null
-    if (sub === 'list') {
-      const rows = listDocs({ scope, ...(has('subject') ? { subject } : {}) })
-      if (has('json')) { console.log(JSON.stringify(rows)); break }
-      if (!rows.length) break
-      console.log('scope    subject          slug                     title                    delivery  bytes  updated')
-      for (const d of rows) {
-        console.log(
-          `${d.scope.padEnd(8)} ${(d.subject ?? '-').padEnd(16)} ${d.slug.padEnd(24)} ` +
-          `${d.title.padEnd(24)} ${d.delivery.padEnd(8)} ${String(Buffer.byteLength(d.body)).padStart(6)}  ${d.updated_at}`,
-        )
-      }
-      break
-    }
-    if (sub === 'show') {
-      const slug = argv[2]
-      if (!slug || !scope) throw new Error('orch doc show <slug> --scope S [--subject X]')
-      const doc = getDoc(scope, subject, slug)
-      if (!doc) throw new Error(`no ${scope} doc "${slug}"; use orch doc list --scope ${scope}`)
-      if (has('json')) { console.log(JSON.stringify(doc)); break }
-      process.stdout.write(doc.body)
-      break
-    }
-    if (sub === 'set') {
-      const slug = argv[2]
-      const title = flag('title')
-      const reason = flag('reason')
-      if (!slug || !scope || title === undefined || !reason?.trim()) {
-        throw new Error('orch doc set <slug> --scope S [--subject X] --title T --reason TEXT (--file F | body on stdin)')
-      }
-      const body = flag('file') ? readFileSync(flag('file')!, 'utf8')
-        : !process.stdin.isTTY ? await Bun.stdin.text()
-        : (() => { throw new Error('no body: pass --file F or pipe markdown on stdin') })()
-      const delivery = flag('delivery')
-      if (delivery !== undefined && delivery !== 'inject' && delivery !== 'demand') {
-        throw new Error('--delivery must be inject or demand')
-      }
-      const forceInject = flag('force-inject')
-      if (has('force-inject') && !forceInject?.trim()) throw new Error('--force-inject requires a non-empty reason')
-      const doc = setDoc({ scope, subject, slug, title, body, reason, author: flag('author'), forceInject,
-        delivery: delivery as 'inject' | 'demand' | undefined })
-      const { checkDoc, repoRootForDoc } = await import('./canon.ts')
-      const root = repoRootForDoc(doc)
-      const warnings = root ? checkDoc(body, { repoRoot: root }) : []
-      if (has('json')) console.log(JSON.stringify({ ...doc, warnings }))
-      else {
-        console.log(`set ${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`)
-        for (const warning of warnings) console.error(`warning: ${warning.message}`)
-      }
-      break
-    }
-    if (sub === 'consume') {
-      const slug = argv[2]
-      if (!slug || !scope) throw new Error('orch doc consume <slug> --scope S [--subject X]')
-      const result = consumeDoc(scope, subject, slug, {
-        reason: flag('reason') ?? 'consumed by session', author: flag('author'),
-      })
-      if (has('json')) { console.log(JSON.stringify(result)); break }
-      console.log(result.already_consumed
-        ? `already consumed ${result.scope}/${result.subject ?? '_'}/${result.slug}`
-        : `consumed ${result.scope}/${result.subject ?? '_'}/${result.slug}`)
-      break
-    }
-    if (sub === 'rm') {
-      const slug = argv[2]
-      const reason = flag('reason')
-      if (!slug || !scope || !reason?.trim()) throw new Error('orch doc rm <slug> --scope S [--subject X] --reason TEXT')
-      const removed = removeDoc(scope, subject, slug, { reason, author: flag('author') })
-      if (has('json')) { console.log(JSON.stringify({ removed })); break }
-      console.log(removed ? `removed ${scope}/${subject ?? '_'}/${slug}` : `no ${scope} doc "${slug}"`)
-      break
-    }
-    if (sub === 'subjects') {
-      const subjects = docSubjects()
-      if (has('json')) { console.log(JSON.stringify(subjects)); break }
-      for (const [name, names] of Object.entries(subjects)) {
-        console.log(`${name.padEnd(8)} ${names.join(', ') || '(none)'}`)
-      }
-      break
-    }
-    if (sub === 'export' || sub === 'import') {
-      const dir = argv[2]
-      if (!dir) throw new Error(`orch doc ${sub} <dir>`)
-      const reason = flag('reason')
-      if (sub === 'import' && !reason?.trim()) throw new Error('orch doc import <dir> --reason TEXT [--author NAME]')
-      const count = sub === 'export' ? exportDocs(dir) : importDocs(dir, { reason: reason!, author: flag('author') })
-      console.log(`${sub === 'export' ? 'exported' : 'imported'} ${count} docs`)
-      break
-    }
-    if (sub === 'history' || sub === 'diff' || sub === 'restore') {
-      const addressScope = argv[2]
-      const addressSubject = argv[3] === '-' ? null : argv[3]
-      const slug = argv[4]
-      if (!addressScope || argv[3] === undefined || !slug) {
-        throw new Error(`orch doc ${sub} <scope> <subject|-> <slug>${sub === 'restore' ? ' <rev> --reason TEXT' : ''}`)
-      }
-      const revisions = listDocRevisions(addressScope, addressSubject, slug)
-      if (sub === 'history') {
-        if (has('json')) console.log(JSON.stringify(revisions))
-        else for (const revision of revisions) {
-          console.log(`${revision.id}  ${revision.op.padEnd(8)} ${revision.author}  ${revision.at}  ${revision.bytes} bytes  ${revision.reason}`)
-        }
-        break
-      }
-      if (sub === 'diff') {
-        const a = argv[5] ? Number(argv[5]) : revisions[1]?.id
-        const b = argv[6] ? Number(argv[6]) : revisions[0]?.id
-        if (!a || !b) throw new Error('doc diff needs two revisions; this address has fewer than two')
-        const addressIds = new Set(revisions.map((revision) => revision.id))
-        if (!addressIds.has(a) || !addressIds.has(b)) {
-          throw new Error(`doc diff revisions must belong to ${addressScope}/${addressSubject ?? '_'}/${slug}`)
-        }
-        process.stdout.write(diffDocRevisions(a, b))
-        break
-      }
-      const revisionId = Number(argv[5])
-      const reason = flag('reason')
-      if (!revisionId || !reason?.trim()) {
-        throw new Error('orch doc restore <scope> <subject|-> <slug> <rev> --reason TEXT')
-      }
-      const restored = restoreDoc(addressScope, addressSubject, slug, revisionId, {
-        reason, author: flag('author'),
-      })
-      console.log(has('json') ? JSON.stringify(restored) : `restored ${addressScope}/${addressSubject ?? '_'}/${slug}`)
-      break
-    }
-    if (sub === 'brief') {
-      process.stdout.write(brief(flag('cwd') ?? process.cwd()))
-      break
-    }
-    if (sub === 'resumes') {
-      const result = listOpenResumes(flag('cwd') ?? process.cwd())
-      if (has('json')) {
-        console.log(JSON.stringify(result))
-        break
-      }
-      for (const r of result.open) {
-        console.log(`${r.slug.padEnd(24)} ${r.title.padEnd(24)} ${r.age}`)
-      }
-      for (const r of result.unreadable) {
-        console.error(`unreadable resume brief ${r.slug}: ${r.reason}`)
-      }
-      break
-    }
-    throw new Error(`unknown: orch doc ${sub}. Try list | show | set | consume | rm | history | diff | restore | subjects | export | import | brief | resumes`)
+    const sub = argv[1] ?? 'list'; await docCommand(sub, argv, { has, flag }, {
+      log: console.log, error: console.error, write: (value) => process.stdout.write(value),
+      stdinText: () => Bun.stdin.text(), stdinIsTTY: process.stdin.isTTY, cwd: process.cwd,
+    })
+    break
   }
-
   case 'canon': {
     await loadJobs()
     const { allInjectChecks, allNumericLiterals, compilePack, diffPack, findingsForPack } = await import('./canon.ts')
@@ -2440,230 +2165,9 @@ switch (cmd) {
    * makes a tool unadoptable by anyone else.
    */
   case 'project': {
-    const { projects, upsertProject, removeProject, sniffStack, projectByName,
-            worktreeWarnings, validateProjectSettings, assertRegisterBranches } = await import('./projects.ts')
-    const { migrateCreate } = await import('./worktree-template.ts')
-    const sub = argv[1] ?? 'list'
-
-    if (sub === 'list') {
-      const all = projects()
-      /**
-       * PUBLISHED, because hub cannot import this concern and must not open
-       * `orch.db`.
-       *
-       * The boundary check forbids the import and a shared database would make
-       * two concerns one, so what another concern needs is emitted here — the
-       * same contract `orch state` already serves the dashboard under. A
-       * project's identity, stack and settings are exactly the facts hub needs
-       * to stop knowing four repository names of its own.
-       */
-      if (has('json')) {
-        console.log(JSON.stringify(all.map((project) => ({
-          ...project,
-          problems: validateProjectSettings(project.settings),
-          commit_hooks_skipped: true,
-          gate: typeof project.settings.gate === 'string' ? project.settings.gate : null,
-        }))))
-        break
-      }
-      if (!all.length) {
-        console.log(
-          'no projects registered.\n\n' +
-          '  orch project add <path> [--name X] [--stack Y] [--no-canon] [--json]\n\n' +
-          'The stack is what lets routing tell "good at PHP" from "good at Vue";\n' +
-          'two projects sharing one stack pool their evidence.',
-        )
-        break
-      }
-      for (const p of all) {
-        console.log(
-          `${p.name.padEnd(14)} ${(p.stack ?? '—').padEnd(22)} ` +
-          `${p.canon ? 'canon' : '     '}  ${p.path}`,
-        )
-        const keys = Object.keys(p.settings)
-        if (keys.length) console.log(`${' '.repeat(14)} settings: ${keys.join(', ')}`)
-        for (const problem of validateProjectSettings(p.settings)) {
-          console.log(`${p.name}: ${problem}`)
-        }
-        // Reported, not enforced: a half-configured project should say so and
-        // keep working. Every one of these is a state that has actually
-        // happened rather than one imagined here.
-        for (const w of worktreeWarnings(p)) {
-          console.log(`${' '.repeat(14)} ! ${w}`)
-        }
-      }
-      break
-    }
-
-    if (sub === 'add') {
-      const path = (argv[2] ?? process.cwd()).replace(/\/$/, '')
-      if (!existsSync(path)) throw new Error(`no such directory: ${path}`)
-      const name = flag('name') ?? path.split('/').filter(Boolean).pop()!
-      // Sniffed only as a SUGGESTION, at the one moment a person is looking
-      // straight at the project and can correct it. A guess that reruns on
-      // every routing decision is a guess nobody ever reviews.
-      const stack = flag('stack') ?? sniffStack(path)
-      let settings = {} as import('./projects.ts').ProjectSettings
-      if (flag('settings')) {
-        try { settings = JSON.parse(flag('settings')!) as typeof settings }
-        catch (e) { throw new Error(`--settings must be JSON: ${e}`) }
-        const malformed = validateProjectSettings(settings)
-        if (malformed.length) throw new Error(malformed.join('\n'))
-      }
-      const candidate = { id: 0, name, path, stack, canon: !has('no-canon'), settings }
-      const incomplete = worktreeWarnings(candidate).filter((w) =>
-        w.startsWith('has a create command but no branch template') ||
-        w.startsWith('has a create command with a {seed} placeholder but no seeds list'))
-      if (incomplete.length && !has('allow-incomplete')) throw new Error(incomplete.join('\n'))
-      assertRegisterBranches(candidate)
-      upsertProject(candidate)
-      if (has('json')) {
-        console.log(JSON.stringify(projectByName(name)))
-        break
-      }
-      console.log(`registered ${name}  ${stack ?? '(no stack — orch project set ' + name + ' --stack ...)'}  ${path}`)
-      for (const w of worktreeWarnings(projectByName(name)!)) {
-        console.log(`${' '.repeat(14)} ! ${w}`)
-      }
-      break
-    }
-
-    if (sub === 'set') {
-      const name = argv[2]
-      if (!name) throw new Error('orch project set <name> [--stack X] [--path P] [--canon|--no-canon] [--settings JSON] [--json]')
-      const p = projectByName(name)
-      if (!p) throw new Error(`no project "${name}"`)
-      /**
-       * Merged DEEPLY, because one level was not enough.
-       *
-       * A settings blob holds unrelated concerns written at different times —
-       * tracker vocabulary, trunk name, colour, the whole worktree lifecycle —
-       * and replacing it wholesale to change one drops the others. A shallow
-       * merge only moved the problem down a level: updating `worktree.notes`
-       * replaced the entire `worktree` object and silently discarded its
-       * create, remove, sweep and branch template. Which happened to one project,
-       * minutes after the comment above was written promising it would not.
-       *
-       * Objects merge; JSON null deletes; anything else replaces. An array is
-       * a value someone meant to set, not a thing to append to.
-       */
-      const deepMerge = (a: Record<string, unknown>, b: Record<string, unknown>) => {
-        const out: Record<string, unknown> = { ...a }
-        for (const [k, v] of Object.entries(b)) {
-          if (v === null) {
-            delete out[k]
-            continue
-          }
-          const prev = out[k]
-          out[k] = v && typeof v === 'object' && !Array.isArray(v)
-                && prev && typeof prev === 'object' && !Array.isArray(prev)
-            ? deepMerge(prev as Record<string, unknown>, v as Record<string, unknown>)
-            : v
-        }
-        return out
-      }
-      let settings = p.settings
-      if (flag('settings')) {
-        try { settings = deepMerge(settings, JSON.parse(flag('settings')!)) as typeof settings }
-        catch (e) { throw new Error(`--settings must be JSON: ${e}`) }
-      }
-      const nextName = flag('name') ?? name
-      const candidate = {
-        id: p.id,
-        name: nextName,
-        path: flag('path') ?? p.path,
-        stack: flag('stack') ?? p.stack,
-        canon: has('no-canon') ? false : has('canon') ? true : p.canon,
-        settings,
-      }
-      const malformed = validateProjectSettings(candidate.settings).filter((problem) =>
-        !(typeof p.settings.worktree?.create === 'string' &&
-          candidate.settings.worktree?.create === p.settings.worktree.create &&
-          problem === 'worktree.create is a shell string; migrate it (DEV-308)'))
-      if (malformed.length) throw new Error(malformed.join('\n'))
-      const incomplete = worktreeWarnings(candidate).filter((w) =>
-        w.startsWith('has a create command but no branch template') ||
-        w.startsWith('has a create command with a {seed} placeholder but no seeds list'))
-      if (incomplete.length && !has('allow-incomplete')) throw new Error(incomplete.join('\n'))
-      assertRegisterBranches(candidate)
-      if (nextName !== name) renameProject(name,nextName)
-      const previousTrunk = typeof p.settings.trunk === 'string' ? p.settings.trunk : null
-      const nextTrunk = typeof candidate.settings.trunk === 'string' ? candidate.settings.trunk : null
-      writeTransaction(() => {
-        upsertProject(candidate)
-      })
-      if (previousTrunk !== nextTrunk) {
-        tryWriteContention({
-          resourceKind: 'register', resourceKey: nextName, eventKind: 'invalidation',
-          cause: `trunk ${previousTrunk ?? '(unset)'} -> ${nextTrunk ?? '(unset)'}`,
-        })
-      }
-      if (has('json')) {
-        console.log(JSON.stringify(projectByName(nextName)))
-        break
-      }
-      console.log(`updated ${nextName}`)
-      for (const w of worktreeWarnings(projectByName(nextName)!)) {
-        console.log(`${' '.repeat(14)} ! ${w}`)
-      }
-      break
-    }
-
-    if (sub === 'select-profile') {
-      const { selectProjectProfile }=await import('./lenses.ts')
-      const name=argv[2],axis=flag('axis'),profile=flag('name'),reason=flag('reason'),versionText=flag('version')
-      if(!name||!axis||!profile||!reason?.trim())throw new Error('orch project select-profile <project> --axis A --name N [--lens ID] [--version N] --reason TEXT')
-      const version=versionText===undefined?undefined:Number(versionText)
-      const result=selectProjectProfile({project:name,axis,name:profile,lensId:flag('lens'),version,reason})
-      console.log(has('json')?JSON.stringify(result):`selected ${axis}/${profile} for ${name}${flag('lens')?` lens ${flag('lens')}`:' all lenses'}`)
-      break
-    }
-
-    if (sub === 'migrate-create') {
-      const name = argv[2]
-      if (!name) throw new Error('orch project migrate-create <name> [--apply]')
-      const p = projectByName(name)
-      if (!p) throw new Error(`no project "${name}"`)
-      const create = p.settings.worktree?.create
-      if (create === undefined && p.settings.worktree?.recipe) {
-        console.log(`${name}: worktree.create is a recipe; nothing to migrate`)
-        break
-      }
-      if (typeof create !== 'string') {
-        console.log(`${name}: worktree.create is already structured; nothing to migrate`)
-        break
-      }
-      console.log(`${name}: before ${JSON.stringify(create)}`)
-      const migration = migrateCreate(create)
-      if (migration.kind === 'refused') {
-        console.log(`${name}: ${migration.message}`)
-        break
-      }
-      console.log(`${name}: after  ${JSON.stringify(migration.after)}`)
-      if (has('apply')) {
-        upsertProject({
-          ...p,
-          settings: {
-            ...p.settings,
-            worktree: { ...p.settings.worktree!, create: migration.after },
-          },
-        })
-      }
-      break
-    }
-
-    if (sub === 'remove') {
-      const name = argv[2]
-      if (!name) throw new Error('orch project remove <name>')
-      // The RUNS stay. They are evidence about agents, and that evidence did
-      // not stop being true because the project was deregistered.
-      console.log(removeProject(name) ? `removed ${name}` : `no project "${name}"`)
-      break
-    }
-
-    throw new Error(`unknown: orch project ${sub}. Try list | add | set | remove`)
+    const sub = argv[1] ?? 'list'; projectCommand(sub, argv, { has, flag }, { log: console.log, cwd: process.cwd })
+    break
   }
-
   case 'ask-server': {
     const { serveAsk } = await import('./ask.ts')
     await serveAsk()
