@@ -25,7 +25,13 @@
     "src/monitor.cli.test.ts": {
       "size": "short"
     },
-    "src/projects.cli.test.ts": {
+    "src/database-location.test.ts": {
+      "size": "short"
+    },
+    "src/projects-resolution.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/database-initialize.test.ts": {
       "size": "short"
     },
     "src/reclaim.test.ts": {
@@ -148,7 +154,9 @@
         "test/process-boundary/worktree.test.ts",
         "test/process-boundary/git-environment.test.ts",
         "test/process-boundary/run-git.test.ts",
-        "src/projects.cli.test.ts",
+        "src/database-location.test.ts",
+        "src/projects-resolution.test.ts",
+        "test/process-boundary/database-initialize.test.ts",
         "test/process-boundary/abandon.test.ts"
       ]
     },
