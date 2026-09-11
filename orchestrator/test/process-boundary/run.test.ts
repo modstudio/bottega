@@ -113,13 +113,14 @@ describe('issue blast-radius review tree', () => {
 test('a carried review launched from the fix worktree receives the committed fix tree', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-issue-review-tree-'))
     const fixTree = mkdtempSync(join(tmpdir(), 'orch-issue-fix-tree-'))
-    const script = join(dir, 'report-review-tree.ts')
+    const script = stubWorker()
     const agent = AGENTS.codex!
     const original = {
       bin: agent.bin, argv: agent.argv, stdin: agent.stdin,
       readsOut: agent.readsOut, parseReply: agent.parseReply,
     }
     const oldDepth = process.env.ORCH_DEPTH
+    const oldOutput = process.env.ORCH_STUB_OUTPUT
     const runGit = (cwd: string, ...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
@@ -142,23 +143,23 @@ test('a carried review launched from the fix worktree receives the committed fix
       const fixHead = runGit(fixTree, 'rev-parse', 'HEAD')
       upsertProject({ name: 'issue-project-tree', path: repo, settings: { trunk: 'main' } })
       upsertProject({ name: 'issue-fix-tree', path: fixTree, settings: { trunk: 'main' } })
-      writeFileSync(script, [
-        "const git = (...args: string[]) => Bun.spawnSync(['git', ...args], { stdout: 'pipe' }).stdout.toString().trim()",
-        "const inspected = { head: git('rev-parse', 'HEAD'), diff: git('diff', 'HEAD', '--', 'reviewed.txt') }",
-        "const findings = git('show', 'HEAD:reviewed.txt') === 'fix' ? [] : [{ severity: 'major', location: 'reviewed.txt:1', evidence: JSON.stringify(inspected), proposed_correction: 'fixture correction' }]",
-        "console.log(JSON.stringify({ findings, provenance: { tree_inspected: inspected.head, standards_read: ['AGENTS.md'], model_used: 'fixture', files_covered: ['reviewed.txt'], commands_run: ['git rev-parse HEAD', 'git diff HEAD -- reviewed.txt'], mcp_tools: [], docs_read: [], could_not_verify: [], substitutes: [], canon_source: 'unknown' } }))",
-      ].join('\n'))
-      agent.bin = process.execPath
-      agent.argv = () => [script]
+      agent.bin = script
+      agent.argv = () => []
       agent.stdin = true
       agent.readsOut = false
       agent.parseReply = undefined
       process.env.ORCH_DEPTH = '0'
+      const provenance = (tree: string) => ({ tree_inspected: tree, standards_read: ['AGENTS.md'], model_used: 'fixture', files_covered: ['reviewed.txt'], commands_run: ['git rev-parse HEAD', 'git diff HEAD -- reviewed.txt'], mcp_tools: [], docs_read: [], could_not_verify: [], substitutes: [], canon_source: 'unknown' })
+      process.env.ORCH_STUB_OUTPUT = JSON.stringify({
+        findings: [{ severity: 'major', location: 'reviewed.txt:1', evidence: JSON.stringify({ head: trunkHead, diff: '' }), proposed_correction: 'fixture correction' }],
+        provenance: provenance(trunkHead),
+      })
 
       const fromProject = await runJob({
         job: 'review-lens', prompt: 'inspect the fix', cwd: repo,
         agent: 'codex', lens: 'issue-blast-radius', key: 'DEV-261',
       })
+      process.env.ORCH_STUB_OUTPUT = JSON.stringify({ findings: [], provenance: provenance(fixHead) })
       const review = await runJob({
         job: 'review-lens', prompt: 'inspect the fix', cwd: fixTree,
         agent: 'codex', lens: 'issue-blast-radius', key: 'DEV-261',
@@ -192,9 +193,10 @@ test('a carried review launched from the fix worktree receives the committed fix
       agent.parseReply = original.parseReply
       if (oldDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = oldDepth
+      if (oldOutput === undefined) delete process.env.ORCH_STUB_OUTPUT
+      else process.env.ORCH_STUB_OUTPUT = oldOutput
       rmSync(repo, { recursive: true, force: true })
       rmSync(fixTree, { recursive: true, force: true })
-      rmSync(script, { force: true })
     }
   })
 
