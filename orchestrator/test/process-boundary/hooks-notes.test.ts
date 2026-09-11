@@ -2,6 +2,7 @@ import { describe,expect,test } from 'bun:test'
 import { mkdirSync,realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { dir,upsertProject } from '../fixture.ts'
+import './hooks-notes.test-residue.ts'
 
 const hubCli = new URL('../../../hub/src/cli.ts', import.meta.url).pathname
 function migrateHub(path: string): void {
