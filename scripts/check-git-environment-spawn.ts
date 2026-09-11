@@ -49,4 +49,3 @@ if (violations.length) {
   for (const violation of violations) console.error(`${violation}: production git spawn must supply a scrubbed environment`)
   process.exit(1)
 }
-

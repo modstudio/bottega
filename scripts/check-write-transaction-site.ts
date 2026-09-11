@@ -47,4 +47,3 @@ if (violations.length) {
   for (const violation of violations) console.error(`${violation}: only orchestrator/src/db.ts:writeTransaction may open a production transaction`)
   process.exit(1)
 }
-
