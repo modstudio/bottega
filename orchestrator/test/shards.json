@@ -1,6 +1,5 @@
 {
   "files": {
-    "src/agents-sandbox-2.cli.test.ts": { "size": "short" },
     "src/canon.cli.test.ts": { "size": "short" },
     "src/catalog.cli.test.ts": { "size": "short" },
     "src/docs.cli.test.ts": { "size": "short" },
@@ -62,7 +61,6 @@
       "measuredSeconds": 76.25,
       "files": [
         "test/process-boundary/worktree.test.ts",
-        "src/agents-sandbox-2.cli.test.ts",
         "src/canon.cli.test.ts",
         "test/process-boundary/git-environment.test.ts",
         "test/process-boundary/run-git.test.ts",

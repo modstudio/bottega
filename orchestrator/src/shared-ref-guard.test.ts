@@ -1,12 +1,9 @@
-// Tests worktree.ts: shared ref guard lifecycle functions.
-import { expect, test } from 'bun:test'
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync, readdirSync, symlinkSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { addRun, assertSharedRefGuardOutsideWritableRoots, createWorktree, hermeticGitEnv, prepareSharedRefGuard, prepareWorktreeObjects, removeFor, removeSharedRefGuard } from '../test/fixture.ts'
-
-
-  test('the shared-ref guard does not run project hooks in a scratch repository', () => {
+import { expect, test, describe } from "bun:test"
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync, chmodSync, readdirSync, symlinkSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { addRun, assertSharedRefGuardOutsideWritableRoots, createWorktree, hermeticGitEnv, prepareSharedRefGuard, prepareWorktreeObjects, removeFor, removeSharedRefGuard } from "../test/fixture.ts"
+test('the shared-ref guard does not run project hooks in a scratch repository', () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-project-hooks-'))
     const scratch = mkdtempSync(join(tmpdir(), 'orch-unrelated-scratch-'))
     const cleanConfig = { GIT_CONFIG_COUNT: '0' }
@@ -280,3 +277,57 @@ import { addRun, assertSharedRefGuardOutsideWritableRoots, createWorktree, herme
       rmSync(repo, { recursive: true, force: true })
     }
   })
+
+describe('shared ref guard path decisions', () => {
+test('shared-ref guard recognition is independent of the running checkout path', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-guard-other-checkout-'))
+    const git = (cwd: string, args: string[]) => Bun.spawnSync(['git', ...args], {
+      cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+    })
+    try {
+      expect(git(repo, ['init', '-b', 'main']).exitCode).toBe(0)
+      writeFileSync(join(repo, 'base.txt'), 'base\n')
+      expect(git(repo, ['add', 'base.txt']).exitCode).toBe(0)
+      expect(git(repo, ['-c', 'user.email=orch-test@example.invalid',
+        '-c', 'user.name=Orch Test', 'commit', '-m', 'base']).exitCode).toBe(0)
+      const tree = createWorktree(repo, 230)
+      const hookDir = join(realpathSync(repo), '.git', 'orch-guards', '230')
+      const installed = join(hookDir, 'reference-transaction')
+      const otherCheckoutGuard = join(repo, 'other-checkout', 'orchestrator', 'hooks',
+        'reference-transaction')
+      mkdirSync(join(repo, 'other-checkout', 'orchestrator', 'hooks'), { recursive: true })
+      writeFileSync(otherCheckoutGuard, readFileSync(
+        new URL('../hooks/reference-transaction', import.meta.url).pathname,
+      ))
+      chmodSync(otherCheckoutGuard, 0o755)
+      mkdirSync(hookDir, { recursive: true })
+      symlinkSync(otherCheckoutGuard, installed)
+
+      const guardEnv = prepareSharedRefGuard(tree.path)
+      expect(guardEnv.GIT_CONFIG_VALUE_0).toBe(hookDir)
+      expect(realpathSync(installed)).toBe(realpathSync(otherCheckoutGuard))
+
+      rmSync(installed)
+      const projectHooks = join(repo, 'project-hooks')
+      mkdirSync(projectHooks)
+      const projectHook = join(projectHooks, 'reference-transaction')
+      writeFileSync(projectHook, '#!/bin/sh\nexit 0\n')
+      chmodSync(projectHook, 0o755)
+      expect(git(repo, ['config', 'core.hooksPath', projectHooks]).exitCode).toBe(0)
+      prepareSharedRefGuard(tree.path)
+      const runningGuard = realpathSync(new URL('../hooks/reference-transaction', import.meta.url).pathname)
+      const otherWrapper = readFileSync(installed, 'utf8')
+        .replace(Buffer.from(runningGuard).toString('base64'),
+          Buffer.from(realpathSync(otherCheckoutGuard)).toString('base64'))
+        .replace(`'${runningGuard}' "$@"`, `'${realpathSync(otherCheckoutGuard)}' "$@"`)
+      writeFileSync(installed, otherWrapper)
+      chmodSync(installed, 0o755)
+
+      expect(prepareSharedRefGuard(tree.path)).toEqual(guardEnv)
+      expect(readFileSync(installed, 'utf8')).toBe(otherWrapper)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+})
