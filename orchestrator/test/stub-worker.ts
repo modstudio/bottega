@@ -18,6 +18,9 @@ export function stubWorker(opts: {
   lines.push(
     '[ -z "$ORCH_STUB_PID_FILE" ] || echo "$$" > "$ORCH_STUB_PID_FILE"',
     'case " $* " in *" mcp doctor "*) [ -z "$ORCH_STUB_MCP_DOCTOR_OUTPUT" ] || { printf "%s" "$ORCH_STUB_MCP_DOCTOR_OUTPUT"; exit 0; } ;; esac',
+    // The harness also spawns the agent binary for a version probe, from its own cwd; that call
+    // must never run the worker commands or they land in the checkout the tests live in.
+    'case " $* " in *" --version "*) printf "stub 999.0.0\\n"; exit 0 ;; esac',
     '[ -z "$ORCH_STUB_REPLY" ] || printf "%s" "$ORCH_STUB_REPLY" > "$ORCH_SCRATCH/reply.json"',
     '[ -z "$ORCH_STUB_OUTPUT" ] || printf "%s\\n" "$ORCH_STUB_OUTPUT"',
     '[ -z "$ORCH_STUB_READY_FILE" ] || printf "ready\\n" > "$ORCH_STUB_READY_FILE"',
