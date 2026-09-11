@@ -51,6 +51,6 @@
   "orchestrator/src/worktree-3.cli.test.ts": 830,
   "orchestrator/src/worktree-4.cli.test.ts": 1072,
   "orchestrator/src/worktree-5.cli.test.ts": 929,
-  "orchestrator/src/worktree.ts": 1998,
+  "orchestrator/src/worktree.ts": 1996,
   "orchestrator/test/fixture.ts": 524
 }
