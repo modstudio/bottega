@@ -1,6 +1,5 @@
 // concern: database
-/** Knows store location, connection authority, schema lifecycle, transactions, and fixture seeding.
- * Must not know worktrees, runs, routing, reviews, contracts, transports, CLI adapters, or Docker resources. */
+/** Knows store location, connection authority, schema lifecycle, transactions, and fixture seeding. Must not know worktrees, runs, routing, reviews, contracts, transports, CLI adapters, or Docker resources. */
 import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -12,26 +11,27 @@ import { applyMigrations, migrationRefusal, readUserVersion, staleWriteRefusal }
 import { contentionTableExists, insertContention } from './contention.ts'
 export { label } from './outcome.ts'
 export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
-
-/** Three open-time hooks retained until entrypoints register them in a later slice.
- * These are the only delayed upward dependencies owned by the database core. */
-const excludeSharedOutputRuns: typeof import('./evidence-query.ts').excludeSharedOutputRuns = (...args) =>
-  (require('./evidence-query.ts') as typeof import('./evidence-query.ts')).excludeSharedOutputRuns(...args)
-const reapStale: typeof import('./run-liveness.ts').reapStale = (...args) =>
-  (require('./run-liveness.ts') as typeof import('./run-liveness.ts')).reapStale(...args)
-const seedWorkflows: typeof import('./workflow-seeds.ts').seedWorkflows = (...args) =>
-  (require('./workflow-seeds.ts') as typeof import('./workflow-seeds.ts')).seedWorkflows(...args)
-
 let handle: Database | null = null
 let connectionWritable: boolean | null = null
 let openedUserVersion: number | null = null
 let schemaReload: ((from: number, to: number) => void) | null = null
-
+type OpenHook = (database: Database) => void
+export type OpenHooks = { afterWritableOpen?: OpenHook[]; afterInitialize?: OpenHook[]; afterSchemaApply?: OpenHook[] }
+let openHooks: OpenHooks | null = null
+export function registerOpenHooks(hooks: OpenHooks): () => void {
+  const previous = openHooks; openHooks = hooks
+  return () => { openHooks = previous }
+}
+function registeredOpenHooks(): OpenHooks {
+  if (openHooks && Object.values(openHooks).some((hooks) => hooks?.length)) return openHooks
+  throw new Error('refusing writable database open: standard store hooks are not registered\n' + 'invariant: Writable stores run evidence hygiene, liveness reaping, and workflow seeding.\n' + 'cleared by: call registerStandardHooks() before opening the store')
+}
+function requireOpenHooksForWritableMode(): void { if (!linkedWorktreeReadOnly) registeredOpenHooks() }
+function runOpenHooks(moment: keyof OpenHooks, database: Database): void { for (const hook of registeredOpenHooks()[moment] ?? []) hook(database) }
 export const LINKED_WORKTREE_WRITE_REFUSAL =
   'refusing to write run or project rows to the registered main store from a linked worktree\n' +
   'invariant: A linked-worktree binary cannot write lifecycle rows to the registered main store.\n' +
   'cleared by: orch <command> with ORCH_DB_WRITE=1, or set ORCH_DB to a scratch copy'
-
 export const LINKED_WORKTREE_SCHEMA_REFUSAL =
   'refusing to migrate the store from a linked-worktree binary; run it from the main checkout\n' +
   'invariant: Only the main checkout\'s binary migrates the store.\n' +
@@ -151,6 +151,7 @@ export function db(writable = false): Database {
     return refuseOrReloadStaleSchema(handle, writable)
   }
   if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
+  requireOpenHooksForWritableMode()
   const sidecarsExist = existsSync(`${DB_PATH}-wal`) || existsSync(`${DB_PATH}-shm`)
   const readOnlyPath = linkedWorktreeReadOnly && !sidecarsExist
     ? `${pathToFileURL(DB_PATH).href}?immutable=1`
@@ -205,12 +206,11 @@ export function db(writable = false): Database {
       PRAGMA wal_autocheckpoint = 100;
       PRAGMA journal_size_limit = 1048576;
     `)
-    excludeSharedOutputRuns(d)
     seedProjects(d)
   }
   handle = d
   openedUserVersion = readUserVersion(d)
-  if (connectionWritable) reapStale(d)
+  if (connectionWritable) runOpenHooks('afterWritableOpen', d)
   if (writable && registeredStoreWriteProtected) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
   return d
 }
@@ -264,14 +264,14 @@ export function initializeDatabase(): string {
   if (!DATABASE_RESOLUTION.initializable) {
     throw new Error(`refusing to initialize from a worktree binary: ${DB_PATH}\nrun orch init-db from the main checkout`)
   }
+  registeredOpenHooks()
   mkdirSync(dirname(DB_PATH), { recursive: true })
   const d = new Database(DB_PATH, { create: true })
   try {
     d.exec('PRAGMA foreign_keys = ON;')
     applyMigrations(d)
-    excludeSharedOutputRuns(d)
     seedProjects(d)
-    seedWorkflows(d)
+    runOpenHooks('afterInitialize', d)
   } finally {
     d.close()
   }
@@ -281,7 +281,7 @@ export function initializeDatabase(): string {
 /** Fixture-only: build scratch stores through the same migration journal as production. */
 export function applySchemaForFixture(d: Database): void {
   applyMigrations(d)
-  seedWorkflows(d)
+  runOpenHooks('afterSchemaApply', d)
 }
 export const applySchema = applySchemaForFixture
 
@@ -309,14 +309,14 @@ function seedProjects(d: Database): void {
 
 /** Fixture-only: create or open a scratch store through the migrator. */
 export function bootstrapFixtureStore(path: string): string {
+  registeredOpenHooks()
   mkdirSync(dirname(path), { recursive: true })
   const d = new Database(path, { create: true })
   try {
     d.exec('PRAGMA foreign_keys = ON;')
     applyMigrations(d)
-    excludeSharedOutputRuns(d)
     seedProjects(d)
-    seedWorkflows(d)
+    runOpenHooks('afterInitialize', d)
   } finally {
     d.close()
   }
@@ -327,13 +327,13 @@ export function bootstrapFixtureStore(path: string): string {
 export function migrateDatabase(): { path: string; versions: string[] } {
   if (DATABASE_RESOLUTION.linkedWorktreeBinary) throw new Error(LINKED_WORKTREE_SCHEMA_REFUSAL)
   if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
+  registeredOpenHooks()
   const d = new Database(DB_PATH, { readwrite: true, create: false })
   try {
     d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
     const versions = applyMigrations(d)
-    excludeSharedOutputRuns(d)
     seedProjects(d)
-    seedWorkflows(d)
+    runOpenHooks('afterInitialize', d)
     return { path: DB_PATH, versions }
   } finally {
     d.close()

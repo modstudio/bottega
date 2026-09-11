@@ -52,7 +52,9 @@ describe('contention ledger', () => {
       const dbModule = new URL('./db.ts', import.meta.url).href
       const waiter = Bun.spawn([
         process.execPath, '-e',
-        `const { db } = await import(process.argv[1]);
+        `const { registerStandardHooks } = await import(new URL('./store-hooks.ts', process.argv[1]));
+         registerStandardHooks();
+         const { db } = await import(process.argv[1]);
          const { withProjectLock } = await import(process.argv[2]);
          db();
          withProjectLock(process.argv[3], 'landing', { session: 'queued', what: 'queued' }, () => 'ok', 20_000, true)`,

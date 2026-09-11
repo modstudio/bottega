@@ -257,7 +257,7 @@ function namesRecordedRunTreeInChild(opts: {
   resume?: { parent: number; worktree: { path: string } | null }
 }): boolean {
   const r = Bun.spawnSync([process.execPath, '-e',
-    `const{namesRecordedRunTree}=await import(process.argv[1]);console.log(JSON.stringify(namesRecordedRunTree(JSON.parse(process.argv[2]))))`,
+    `const{registerStandardHooks}=await import(new URL('./store-hooks.ts',process.argv[1]));registerStandardHooks();const{namesRecordedRunTree}=await import(process.argv[1]);console.log(JSON.stringify(namesRecordedRunTree(JSON.parse(process.argv[2]))))`,
     dispatchPreflightModule, JSON.stringify(opts)], {
     cwd: repo, env: gitEnv({ ORCH_DB: storePath }), stdout: 'pipe', stderr: 'pipe',
   })

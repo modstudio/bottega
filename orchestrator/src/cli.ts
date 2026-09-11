@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, sessionId, recordSessionSeen, SESSION_LIVE_MS, writeTransaction, tryWriteContention } from './db.ts'
+import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, sessionId, recordSessionSeen, SESSION_LIVE_MS, writeTransaction, tryWriteContention } from './db.ts'; import { registerStandardHooks } from './store-hooks.ts'; registerStandardHooks()
 import { DELIVERY, QUALITY, FIDELITY } from './score.ts'
 import { pendingForSession, UNSCORED_WHERE, voidedSql, activeSql, runTotals } from './evidence-query.ts'
 import { REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_SEVERITY } from './review-vocabulary.ts'
