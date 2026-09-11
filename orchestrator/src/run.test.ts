@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { readFileSync, writeFileSync, existsSync, chmodSync, mkdtempSync, rmSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -6,7 +6,13 @@ import { AGENTS, GENERIC_QUESTION_TOKENS, addDoctrineRule, addPair, addRun, addS
 import { scriptedTransport, scriptedTransportSequence } from '../test/fake-transport.ts'
 import { installTestTransport } from './transport.ts'
 import { collectResult } from './collect.ts'
-afterEach(() => installTestTransport(null))
+let priorOrchDepth: string | undefined
+beforeEach(() => { priorOrchDepth = process.env.ORCH_DEPTH })
+afterEach(() => {
+  installTestTransport(null)
+  if (priorOrchDepth === undefined) delete process.env.ORCH_DEPTH
+  else process.env.ORCH_DEPTH = priorOrchDepth
+})
 describe('porting data model', () => {
   test('stores pair progress and declined candidates with their reasons', () => {
     upsertProject({ name: 'source-invented', path: '/w/source-invented',
@@ -142,6 +148,37 @@ describe('agent retry and failover records', () => {
     const recovered = logs.join('\n'); expect(recovered).toStartWith('TRUNCATED at the output ceiling'); expect(recovered).toContain('RECOVERED-END'); expect(recovered).not.toContain('DROP-ME')
   })
 })
+describe('review MCP recording', () => {
+  test('silent provenance requires requested MCP degradation', async () => {
+    const reply = reviewReply(1)
+    scriptedTransportSequence([
+      [{ kind: 'completed', output: JSON.stringify(reply) }],
+      [{ kind: 'completed', output: JSON.stringify(reply) }],
+    ]).install(); process.env.ORCH_DEPTH = '0'
+    upsertProject({ name: 'fixture-project', path: dir, settings: {} })
+    const plain = await run({ job: 'review-lens', prompt: 'review', cwd: dir, agent: 'codex', mcp: false, lens: 'plain', noFailover: true })
+    const requested = await run({ job: 'review-lens', prompt: 'review', cwd: dir, agent: 'codex', mcp: true, lens: 'requested', noFailover: true })
+    expect(db().query('SELECT provenance_status FROM run WHERE id=?').get(plain.id)).toEqual({ provenance_status: null })
+    expect(db().query('SELECT provenance_status FROM run WHERE id=?').get(requested.id)).toEqual({ provenance_status: 'silent' })
+  })
+  test('records a trust attempt before a doctor spawn throws', async () => {
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-trust-attempt-')))
+    const git = (...args: string[]) => Bun.spawnSync(['git', ...args], { cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
+    git('init', '-b', 'main'); git('config', 'user.email', 'orch-test@example.invalid'); git('config', 'user.name', 'Orch Test')
+    writeFileSync(join(repo, 'tracked'), 'base\n'); writeFileSync(join(repo, '.mcp.json'), '{}\n'); git('add', '.'); git('commit', '-m', 'base')
+    const grok = AGENTS.grok!; const original = grok.bin; const fake = join(dir, 'grok-removed-before-doctor')
+    writeFileSync(fake, '#!/bin/sh\nprintf "grok 1.0.13\\n"\n'); chmodSync(fake, 0o755)
+    const create = join(dir, 'remove-grok-while-cutting.sh')
+    writeFileSync(create, `#!/bin/sh\ngit worktree add --detach "$1" "$2" >/dev/null\nrm ${JSON.stringify(fake)}\necho "$1"\n`); chmodSync(create, 0o755)
+    upsertProject({ name: 'trust-attempt-project', path: repo, settings: { worktree: { branch: 'orch/{id}', readonly_create: declaredCreate(create, ['{path}', '{base}']) } } })
+    grok.bin = fake; process.env.ORCH_DEPTH = '0'
+    const before = (db().query('SELECT MAX(id) id FROM run').get() as { id: number | null }).id ?? 0
+    try {
+      await expect(run({ job: 'review-lens', prompt: 'review', cwd: repo, agent: 'grok', mcp: true, lens: 'trust', noFailover: true })).rejects.toThrow()
+      expect(db().query('SELECT mcp_trust_granted,mcp_trust_path FROM run WHERE id>? ORDER BY id LIMIT 1').get(before)).toEqual({ mcp_trust_granted: 1, mcp_trust_path: null })
+    } finally { grok.bin = original; rmSync(repo, { recursive: true, force: true }); rmSync(fake, { force: true }); rmSync(create, { force: true }) }
+  })
+})
 describe('reading the verdict off the command line', () => {
   // Mirrors the filter in cli.ts. `orch score 279 none --note "..."` read
   // --note as the quality and rejected the whole thing as incoherent, which is
@@ -249,7 +286,6 @@ describe('a repository-reading job gets a disposable writable disk', () => {
   test('the same agent remains fine without tools', () => {; expect(pick('review-lens', 'codex', 0, false, null).agent).toBe('codex')
   })
 })
-
 describe('a worker that stops to ask is not a worker that failed', () => {
   test('an unparseable reply is rejected rather than read as a status', () => {
     // The dangerous direction: treating "no structured reply" as success would
@@ -718,18 +754,6 @@ describe('the live ask channel always answers', () => {
     }; expect(row.status).toBe('running'); expect(Date.parse(row.last_event_at)).toBeGreaterThan(Date.parse(stale))
   })
   test('a live question is answerable through the command, not only in SQL', () => {
-    /**
-     * The test above writes the answer with raw SQL, and a review pointed out
-     * that this proved a path nobody can execute: `orch answer` rejected every
-     * status except `blocked`, while MCP questions belong to a `running` run.
-     * The live channel could therefore never be answered and every question
-     * ran to its timeout — the headline feature, broken end to end, with a
-     * green test beside it.
-     *
-     * So the CLI's own precondition is asserted here rather than assumed. A
-     * run that is `running` WITH an open question must be answerable, and one
-     * with no open question must not be.
-     */
     const live = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     db().query(
       'INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)',
@@ -745,10 +769,6 @@ describe('the live ask channel always answers', () => {
     }; expect(answerable(live)).toBe(true); expect(answerable(addRun({ agent: 'codex', job: 'implement', status: 'running' }))).toBe(false)
   })
   test('a question asked on turn two is answerable from the root', () => {
-    // The chain shape every escalation after the first one takes. Questions
-    // land on the CHILD row while the roll-up marks the ROOT blocked, so
-    // looking only at the root found nothing and the child was refused as
-    // non-root — a conversation that asked twice could not be continued.
     const root = addRun({ agent: 'codex', job: 'implement', status: 'asking' })
     const child = addRun({ agent: 'codex', job: 'implement', parent: root, turn: 2 })
     db().query('INSERT INTO question (run_id, asked_at, question) VALUES (?,?,?)')
@@ -759,17 +779,11 @@ describe('the live ask channel always answers', () => {
     ).all(root, root) as { id: number }[]; expect(open.length).toBe(1)
   })
   test('a question nobody answers falls back rather than hanging', async () => {
-    // The whole reason this is bounded: a tool that can wait for ever leaves a
-    // worker holding a session with nothing to wait for, and the run's own
-    // timeout eventually kills work that was finished but for one question.
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const r = await ask({ runId: run, question: 'nobody is listening', timeoutMs: 50 }); expect(r.answered).toBe(false)
-    // It must tell the worker to escalate rather than to decide.
     if (!r.answered) expect(r.reason).toContain('blocked')
   })
   test('an unanswered question survives the timeout', async () => {
-    // The architect still has to make the decision; withdrawing it on timeout
-    // would lose the record of one that is still outstanding.
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     await ask({ runId: run, question: 'still open', timeoutMs: 50 })
     const open = db().query(
@@ -779,11 +793,6 @@ describe('the live ask channel always answers', () => {
 })
 describe('a worker asking is not a worker blocked', () => {
   test('the old word is accepted and normalised', () => {
-    // `blocked` was renamed because a "blocker" in this system means the
-    // opposite — an environment problem, not a worker behaving correctly. But
-    // an agent whose schema was dropped, or echoing older instructions, will
-    // still say it, and rejecting a reply over a synonym would throw away a
-    // finished implementation.
     const r = parseWorkerReply(JSON.stringify(workerReply({
       status: 'blocked', summary: 'x', questions: [{
         question: 'q?', options: null, recommendation: null, why: null,
@@ -791,28 +800,14 @@ describe('a worker asking is not a worker blocked', () => {
     }))); expect(r?.status).toBe('asking')
   })
   test('the two vocabularies do not overlap', () => {
-    // The whole point of the rename: on a page, a run that is `asking` is
-    // healthy and a `blocker` is not, and they must not read as the same red.
     const asking = parseWorkerReply(JSON.stringify(workerReply({ status: 'asking', summary: 'x' }))); expect(asking?.status).toBe('asking'); expect(detectBlockers('Docker access was denied, so I could not run the suite.')).not.toEqual([])
   })
 })
 describe('asking is a first-class outcome, not a failure', () => {
   test('every status check uses the current vocabulary', () => {
-    /**
-     * The rename from `blocked` to `asking` left four checks behind, and the
-     * cost was immediate: `orch answer` refused every asking run with "is
-     * asking, not waiting on a ruling", which is the escalation path refusing
-     * the exact state it exists to serve.
-     *
-     * Asserted against the SOURCE rather than behaviour, because these are
-     * scattered guards rather than one function — and a guard comparing against
-     * a value the database can no longer hold fails silently and permanently.
-     */
     const cli = readFileSync(new URL('./cli.ts', import.meta.url).pathname, 'utf8')
     const wt = readFileSync(new URL('./worktree.ts', import.meta.url).pathname, 'utf8')
     for (const [name, src] of [['cli.ts', cli], ['worktree.ts', wt]] as const) {
-      // The only legitimate mention left is the parser normalising the old word
-      // from an agent that still says it.
       const bad = src.split('\n').filter((l) =>
         ["'blocked'", '"blocked"'].some((quoted) => l.includes(quoted))
         && !l.includes('o.status') && !l.trim().startsWith('*')
@@ -822,20 +817,12 @@ describe('asking is a first-class outcome, not a failure', () => {
 })
 describe('a worker that narrates in its own reply shape', () => {
   test('the LAST object wins, not the first and not the span', () => {
-    // A worker under a schema narrates in the shape it was told to reply in.
-    // One opened with a `done` carrying no files and emitted its real reply
-    // afterwards; spanning both parsed as neither, so three files and 150
-    // lines were recorded as "reply did not match the worker contract".
-    // Believing the FIRST would be worse: a confident report of finishing
-    // nothing.
     const r = parseWorkerReply([
       workerReply({ summary: 'Starting by reading the canon', files_changed: [] }),
       workerReply({ summary: 'Added the section', files_changed: ['a.ts', 'b.ts'] }),
     ].map((value) => JSON.stringify(value)).join('\n')); expect(r?.summary).toBe('Added the section'); expect(r?.files_changed).toEqual(['a.ts', 'b.ts'])
   })
   test('a brace inside a string is not a brace', () => {
-    // Depth-scanned rather than regexed, because a JSON object nests and a
-    // summary may talk about braces.
     expect(parseWorkerReply(JSON.stringify(workerReply({ summary: 'uses {curly} braces' })))?.summary).toBe('uses {curly} braces')
   })
   test('a later object that does not validate does not shadow a good one', () => {

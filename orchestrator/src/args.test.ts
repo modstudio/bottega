@@ -194,6 +194,12 @@ describe('CLI argument recognition', () => {
   })
 })
 
+test('the MCP flag accepts required and prefer modes only', () => {
+  expect(() => validateCliArgs(['do', 'review-lens', 'review', '--mcp'])).not.toThrow()
+  expect(() => validateCliArgs(['do', 'review-lens', 'review', '--mcp=prefer'])).not.toThrow()
+  expect(() => validateCliArgs(['do', 'review-lens', 'review', '--mcp=optional'])).toThrow('--mcp=prefer')
+})
+
 test('project set refuses positional settings, names the first extra, and shows the working form', () => {
   expect(() => validateCliArgs(['project', 'set', 'positional-settings', 'gate', 'bun run check']))
     .toThrow('unrecognised argument: gate')

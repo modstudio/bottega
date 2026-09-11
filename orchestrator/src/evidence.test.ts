@@ -37,6 +37,22 @@ describe('evidence prompt assessment', () => {
 })
 
 describe('terminal evidence assessment', () => {
+  test('provenance rejects only another registered project MCP prefix', () => {
+    const assess = (tools: string[]) => assessEvidence(
+      { status: 'ok', error: null, failureKind: null },
+      { ...base, reviewReply: { ...reviewReply!, provenance: {
+        ...reviewReply!.provenance, mcp_tools: tools,
+      } }, otherProjectMcpServers: new Set(['other-server']), ownMcpServer: 'fixture-project' },
+    )
+    for (const tool of ['get_doc', 'mcp__fixture-project__get_doc', 'orch-ask.get_doc']) {
+      expect(assess([tool]).status).toBe('ok')
+    }
+    expect(assess(['other-server.get_doc'])).toMatchObject({
+      status: 'failed', failureKind: 'contract',
+      error: 'wrong project: provenance names other-server.get_doc, expected fixture-project',
+    })
+  })
+
   test.each([
     ['findings admissibility', {
       findingsJob: true,

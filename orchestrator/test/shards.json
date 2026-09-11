@@ -2,7 +2,6 @@
   "files": {
     "src/agents-sandbox-1.cli.test.ts": { "size": "short" },
     "src/agents-sandbox-2.cli.test.ts": { "size": "short" },
-    "src/agents.cli.test.ts": { "size": "short" },
     "src/canon.cli.test.ts": { "size": "short" },
     "src/catalog.cli.test.ts": { "size": "short" },
     "src/docs.cli.test.ts": { "size": "short" },
@@ -18,7 +17,6 @@
     "src/reclaim.cli.test.ts": { "size": "short" },
     "src/reader-contract.cli.test.ts": { "size": "short" },
     "src/review-1.cli.test.ts": { "size": "short" },
-    "src/review-2.cli.test.ts": { "size": "short" },
     "src/review-3.cli.test.ts": { "size": "short" },
     "src/route.cli.test.ts": { "size": "short" },
     "src/run-1.cli.test.ts": { "size": "short" },
@@ -60,7 +58,6 @@
       "measuredSeconds": 76.25,
       "files": [
         "src/worktree-2.cli.test.ts",
-        "src/review-2.cli.test.ts",
         "src/agents-sandbox-2.cli.test.ts",
         "src/run-2.cli.test.ts",
         "src/canon.cli.test.ts",
