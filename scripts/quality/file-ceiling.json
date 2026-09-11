@@ -28,10 +28,10 @@
   "orchestrator/src/review.ts": 1443,
   "orchestrator/src/route.test.ts": 1219,
   "orchestrator/src/route.ts": 981,
-  "orchestrator/src/run.test.ts": 752,
+  "orchestrator/src/run.test.ts": 751,
   "orchestrator/src/run.ts": 2491,
   "orchestrator/src/transport-acp.ts": 620,
-  "orchestrator/src/transport.test.ts": 796,
+  "orchestrator/src/transport.test.ts": 795,
   "orchestrator/src/worktree.ts": 1996,
   "orchestrator/test/fixture.ts": 524
 }
