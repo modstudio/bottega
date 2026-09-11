@@ -69,13 +69,24 @@ function decodeXml(value: string): string {
   return value.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&')
 }
 
-function parseJunit(xml: string): { tests: TestRow[]; fileWall: Map<string, number> } {
+function parseJunit(xml: string): {
+  tests: TestRow[]
+  fileWall: Map<string, number>
+  suiteTests: Map<string, number>
+  suiteFailures: Map<string, number>
+} {
   const fileWall = new Map<string, number>()
+  const suiteTests = new Map<string, number>()
+  const suiteFailures = new Map<string, number>()
   for (const suite of xml.matchAll(/<testsuite\b([^>]*)>/g)) {
     const attrs = suite[1]!
     const file = rel(attrs.match(/\bfile="([^"]+)"/)?.[1] ?? '')
     const timeS = Number(attrs.match(/\btime="([^"]+)"/)?.[1] ?? 0)
-    if (file) fileWall.set(file, Math.max(fileWall.get(file) ?? 0, timeS * 1000))
+    if (file) {
+      fileWall.set(file, Math.max(fileWall.get(file) ?? 0, timeS * 1000))
+      suiteTests.set(file, Number(attrs.match(/\btests="([^"]+)"/)?.[1] ?? 0))
+      suiteFailures.set(file, Number(attrs.match(/\bfailures="([^"]+)"/)?.[1] ?? 0))
+    }
   }
   const tests: TestRow[] = []
   for (const node of xml.matchAll(/<testcase\b([^>]*)(?:\/>|>([\s\S]*?)<\/testcase>)/g)) {
@@ -95,7 +106,7 @@ function parseJunit(xml: string): { tests: TestRow[]; fileWall: Map<string, numb
       failure: failure ? decodeXml(failure).trim() : undefined,
     })
   }
-  return { tests, fileWall }
+  return { tests, fileWall, suiteTests, suiteFailures }
 }
 
 function emptySpawn(): SpawnCounts {
@@ -107,7 +118,7 @@ export function mergeTimings(
   xml: string,
   meta: { stamp: string; command: string[]; elapsedMs: number; exitCode: number },
 ): GateTimings {
-  const { tests, fileWall } = parseJunit(xml)
+  const { tests, fileWall, suiteTests, suiteFailures } = parseJunit(xml)
   const spawnFiles = sidecar.files ?? {}
   const names = new Set([...Object.keys(spawnFiles), ...fileWall.keys(), ...tests.map((t) => t.file)])
   const files: FileRow[] = [...names].filter(Boolean).sort().map((file) => {
@@ -116,8 +127,10 @@ export function mergeTimings(
     return {
       file,
       wallMs: fileWall.get(file) ?? fileTests.reduce((sum, t) => sum + t.wallMs, 0),
-      tests: fileTests.length,
-      failed: fileTests.filter((t) => !t.pass).length,
+      tests: fileTests.length || suiteTests.get(file) || 0,
+      failed: fileTests.length
+        ? fileTests.filter((t) => !t.pass).length
+        : suiteFailures.get(file) || 0,
       ...spawn,
       argv0: { ...spawn.argv0 },
     }
