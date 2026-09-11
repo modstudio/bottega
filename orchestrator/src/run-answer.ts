@@ -487,4 +487,3 @@ console.error(
     : `\n  orch diff ${id}    then score it: ${helpers.presentation.scoreHint(id, row.job, null)}`,
 )
 }
-
