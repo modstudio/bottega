@@ -1,11 +1,11 @@
 import { Database } from 'bun:sqlite'
-import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, nowIso, sessionId, recordSessionSeen, SESSION_LIVE_MS, writeTransaction, tryWriteContention } from './db.ts'
-import { judgeability, weigh, DELIVERY, QUALITY, FIDELITY, type Delivery, type Quality, type Fidelity } from './score.ts'
+import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, sessionId, recordSessionSeen, SESSION_LIVE_MS, writeTransaction, tryWriteContention } from './db.ts'
+import { DELIVERY, QUALITY, FIDELITY } from './score.ts'
 import { pendingForSession, UNSCORED_WHERE, voidedSql, activeSql, runTotals } from './evidence-query.ts'
-import { REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_SEVERITY, type ReviewReproduced, type ReviewCoverage, type ReviewLimits, type ReviewOverlap } from './review-vocabulary.ts'
+import { REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_SEVERITY } from './review-vocabulary.ts'
 import { reapStale, resolveRootFromLastTurn } from './run-liveness.ts'; import { pidAlive } from './process-liveness.ts'
-import { recordDuels, recordLosses, recordTies, duelMatrices, pairPartners, unrecordedPairsForSession, parseRunIds } from './duel.ts'
-import { authorizeRunMutation, runMutationActor, auditRunMutation, adoptRunMutation, type RootAuthority } from './run-authority.ts'
+import { duelMatrices, unrecordedPairsForSession } from './duel.ts'
+import { authorizeRunMutation, runMutationActor, auditRunMutation, adoptRunMutation } from './run-authority.ts'
 import { terminalDockerRetentionReasonForRun } from './resource-ownership.ts'
 import { detach as dispatchDetached } from './run-dispatch.ts'
 import {
@@ -16,13 +16,14 @@ import { answerRun, retryRun } from './run-answer.ts'
 import { cleanupRepoRoot, discardRun, discardWorktree, type CleanupRow } from './cleanup.ts'
 import { sweepRuns } from './cleanup-sweep.ts'
 import { abandonRun, stopRun } from './run-stop.ts'
+import { judgeRun, scoreRun } from './judgement.ts'
+import { recalibrate } from './recalibration.ts'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync, unlinkSync, openSync, fstatSync, closeSync, constants } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { z } from 'zod'
-import { createInterface } from 'node:readline/promises'
 import { projectAt, projectByName, projects, renameProject } from './projects.ts'
-import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
+import { classify, NOT_EVIDENCE } from './failure.ts'
 import { collectResult, collectWait, resolveFailover } from './collect.ts'
 import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
 import {
@@ -40,9 +41,8 @@ import {
 } from '../../shared/monitor-capability.ts'
 
 type DetachSpec = import('./failover.ts').DetachSpec
-type McpRequest = import('./mcp-preflight.ts').McpRequest; type Worktree = import('./worktree.ts').Worktree
+type McpRequest = import('./mcp-preflight.ts').McpRequest
 type Disposition = import('./review.ts').Disposition
-type ReviewGrades = import('./review.ts').ReviewGrades
 type RoutingBacktest = import('./routing-backtest.ts').RoutingBacktest
 
 let jobsModule: typeof import('./jobs.ts')
@@ -139,11 +139,9 @@ async function loadContract() { contractModule ??= await import('./contract.ts')
 let grokTrustHeadings!: typeof import('./grok-trust.ts').grokTrustHeadings
 let grokTrustPathFromHeading!: typeof import('./grok-trust.ts').grokTrustPathFromHeading
 async function loadGrokTrust() { grokTrustModule ??= await import('./grok-trust.ts'); ({ grokTrustHeadings, grokTrustPathFromHeading } = grokTrustModule) }
-let cleanReviewEvidence!: typeof import('./review.ts').cleanReviewEvidence
 let completeReview!: typeof import('./review.ts').completeReview
 let coverageAudit!: typeof import('./review.ts').coverageAudit
 let DISPOSITIONS!: typeof import('./review.ts').DISPOSITIONS
-let gradeReviewLens!: typeof import('./review.ts').gradeReviewLens
 let parseReviewOutput!: typeof import('./review.ts').parseReviewOutput
 let recordReviews!: typeof import('./review.ts').recordReviews
 let getReview!: typeof import('./review.ts').getReview
@@ -154,7 +152,7 @@ let reviewCalibration!: typeof import('./review.ts').reviewCalibration
 let reviewCalibrationFleet!: typeof import('./review.ts').reviewCalibrationFleet
 let reviewPins!: typeof import('./review.ts').reviewPins
 let triageFinding!: typeof import('./review.ts').triageFinding
-async function loadReview() { reviewModule ??= await import('./review.ts'); ({ cleanReviewEvidence, completeReview, coverageAudit, DISPOSITIONS, gradeReviewLens, parseReviewOutput, recordReviews, getReview, listReviews, MIN_REVIEW_TRIAGED, REVIEW_WINDOW, reviewCalibration, reviewCalibrationFleet, reviewPins, triageFinding } = reviewModule) }
+async function loadReview() { reviewModule ??= await import('./review.ts'); ({ completeReview, coverageAudit, DISPOSITIONS, parseReviewOutput, recordReviews, getReview, listReviews, MIN_REVIEW_TRIAGED, REVIEW_WINDOW, reviewCalibration, reviewCalibrationFleet, reviewPins, triageFinding } = reviewModule) }
 let classifyReviewTier!: typeof import('./review-tier.ts').classifyReviewTier
 let diffNumstat!: typeof import('./review-tier.ts').diffNumstat
 async function loadReviewTier() { reviewTierModule ??= await import('./review-tier.ts'); ({ classifyReviewTier, diffNumstat } = reviewTierModule) }
@@ -394,27 +392,6 @@ function scoreNote(): string | null {
   return note
 }
 
-function recordScoreVerdict(
-  id: number, delivery: Delivery, quality: Quality | null, fidelity: Fidelity | null,
-  note: string | null, scoredAt: string, scorer: string,
-): void {
-  db().query(
-    `INSERT INTO score (run_id, delivery, quality, fidelity, note, scored_at, scored_by)
-     VALUES (?,?,?,?,?,?,?)
-     ON CONFLICT(run_id) DO UPDATE SET delivery=excluded.delivery, quality=excluded.quality,
-                                       fidelity=excluded.fidelity,
-                                       note=CASE
-                                         WHEN score.note IS NULL OR trim(score.note) = ''
-                                           THEN excluded.note
-                                         WHEN excluded.note IS NULL OR trim(excluded.note) = ''
-                                           THEN score.note
-                                         ELSE score.note || '\n\n--- re-scored ' ||
-                                           excluded.scored_at || ' ---\n' || excluded.note
-                                       END,
-                                       scored_at=excluded.scored_at`,
-  ).run(id, delivery, quality, fidelity, note, scoredAt, scorer)
-}
-
 function requestedMcp(): McpRequest | undefined {
   const values = argv.filter((arg) => arg === '--mcp' || arg.startsWith('--mcp='))
   if (values.length > 1) throw new Error('--mcp may be supplied only once')
@@ -445,6 +422,7 @@ function keptBranchLine(
 }
 
 const cleanupPresentation = { log: (...v: unknown[]) => console.log(...v), error: (...v: unknown[]) => console.error(...v), setExitCode: (code: number) => { process.exitCode = code }, keptBranchLine }
+const judgementPresentation = { log: (...v: unknown[]) => console.log(...v), error: (...v: unknown[]) => console.error(...v), pairHint }
 function auditReason(): string | null {
   const scorer = flag('scorer')
   if (scorer) return `--scorer ${scorer}`
@@ -3297,225 +3275,16 @@ switch (cmd) {
   case 'judge': {
     await Promise.all([loadJobs(), loadReview(), loadWorktree(), loadDockerResources()])
     writableDb()
-    const requestedId = Number(argv[1])
-    if (!requestedId) usage()
-    const row = db().query(
-      `SELECT root.id, root.agent, root.job, root.status, root.session_id, root.failure_kind,
-              root.output_path, root.repo, root.cwd, root.worktree, root.branch, root.base_commit,
-              root.worktree_source
-         FROM run requested
-         JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
-        WHERE requested.id=?`,
-    ).get(requestedId) as {
-      id: number; agent: string; job: string; status: string; session_id: string | null
-      failure_kind: FailureKind | null; output_path: string | null; repo: string | null
-      cwd: string | null; worktree: string | null; branch: string | null
-      base_commit: string | null; worktree_source: Worktree['source'] | null
-    } | null
-    if (!row) throw new Error(`no run ${requestedId}`)
-    const id = row.id
-    if (['running', 'asking'].includes(row.status)) {
-      throw new Error(`run ${id} is ${row.status}, not terminal`)
-    }
-    if (row.agent === '(pending)') throw new Error(`run ${id} cannot be judged: no agent was selected`)
-    if (row.failure_kind === 'unevidenced' ||
-        (row.failure_kind && NOT_EVIDENCE.includes(row.failure_kind))) {
-      throw new Error(`run ${id} cannot be judged: failure kind '${row.failure_kind}' is not evidence`)
-    }
-    const owner = judgeability(row.session_id, sessionId())
-    if (!has('force') && owner.verdict === 'foreign') {
-      throw new Error(`run ${id} was made by another session (${owner.owner}); --force overrides`)
-    }
-    if (!has('force') && owner.verdict === 'anonymous') {
-      throw new Error(`run ${id} belongs to session ${owner.owner}, but no session identity is present; --force overrides`)
-    }
-    if (!has('force') && owner.verdict === 'unattributed' && !sessionId()) {
-      throw new Error(`run ${id} is unowned; CLAUDE_CODE_SESSION_ID is not set`)
-    }
-
-    const words = argv.slice(2).filter(
-      (a, i) => !a.startsWith('--') && !VALUE_FLAGS.has(argv.slice(2)[i - 1] ?? ''),
-    )
-    const delivery = words[0] as Delivery | undefined
-    const quality = words[1] as Quality | undefined
-    const fidelity = words[2] as Fidelity | undefined
-    const missing: string[] = []
-    if (!delivery) missing.push(`<${DELIVERY.join('|')}>`)
-    else if (!DELIVERY.includes(delivery)) {
-      throw new Error(`delivery must be: ${DELIVERY.join(' | ')}`)
-    }
-    if (delivery === 'none' && quality) throw new Error("delivery 'none' takes no quality")
-    if (delivery !== 'none' && !quality) missing.push(`<${QUALITY.join('|')}>`)
-    else if (quality && !QUALITY.includes(quality)) {
-      throw new Error(`quality must be: ${QUALITY.join(' | ')}`)
-    }
-    const writes = Boolean(JOBS[row.job]?.needs.writesRepo)
-    if (writes && delivery !== 'none' && !fidelity) missing.push(`<${FIDELITY.join('|')}>`)
-    else if (fidelity && !FIDELITY.includes(fidelity)) {
-      throw new Error(`fidelity must be: ${FIDELITY.join(' | ')}`)
-    }
-    if (!writes && fidelity) throw new Error(`${row.job} is judged on two axes only`)
-
-    const findingsJob = Boolean(job(row.job).findings)
-    const gradeNames = ['reproduced', 'coverage', 'limits', 'overlap'] as const
-    const suppliedGrades = {
-      reproduced: flag('reproduced'), coverage: flag('coverage'),
-      limits: flag('limits'), overlap: flag('overlap'),
-    }
-    const validGrades = {
-      reproduced: REVIEW_REPRODUCED, coverage: REVIEW_COVERAGE,
-      limits: REVIEW_LIMITS, overlap: REVIEW_OVERLAP,
-    } as const
-    for (const name of gradeNames) {
-      const value = suppliedGrades[name]
-      if (value !== undefined && !(validGrades[name] as readonly string[]).includes(value)) {
-        throw new Error(`--${name} must be: ${validGrades[name].join(' | ')}`)
-      }
-    }
-    let parsedOutput: ReturnType<typeof parseReviewOutput> = null
-    let reviewId: number | null = null
-    let storedGrades: Partial<Record<typeof gradeNames[number], string>> = {}
-    let reviewFindings: { ordinal: number; disposition: string | null }[] = []
-    if (findingsJob) {
-      const lens = db().query(
-        'SELECT review_id, reproduced, coverage, limits, overlap FROM review_lens WHERE run_id=?',
-      ).get(id) as ({ review_id: number } & Record<typeof gradeNames[number], string | null>) | null
-      reviewId = lens?.review_id ?? null
-      if (delivery !== 'none' && !reviewId) {
-        if (row.output_path && existsSync(row.output_path)) {
-          parsedOutput = parseReviewOutput(readFileSync(row.output_path, 'utf8'))
-        }
-        if (!parsedOutput) throw new Error(`run ${id} has no recorded review; recover it with orch review record ${id}`)
-      } else if (delivery !== 'none') {
-        storedGrades = Object.fromEntries(
-          gradeNames.flatMap((name) => lens?.[name] ? [[name, lens[name]]] : []),
-        )
-        reviewFindings = db().query(
-          'SELECT ordinal, disposition FROM review_finding WHERE review_id=? ORDER BY ordinal',
-        ).all(reviewId) as { ordinal: number; disposition: string | null }[]
-      }
-    }
-    const gradeValues = Object.fromEntries(gradeNames.map((name) => [
-      name, suppliedGrades[name] ?? storedGrades[name],
-    ])) as Record<typeof gradeNames[number], string | undefined>
-
-    const parsedFindings = flags('finding').map((value) => {
-      const matched = value.match(/^(\d+)=(accepted|modified|rejected|skipped):(.+)$/)
-      if (!matched) {
-        throw new Error(
-          `bad --finding ${JSON.stringify(value)}; use N=accepted:high or N=rejected:below-bar`,
-        )
-      }
-      const ordinal = Number(matched[1])
-      const disposition = matched[2] as Disposition
-      const detail = matched[3]!
-      if (disposition !== 'rejected' && !REVIEW_SEVERITY.includes(detail as any)) {
-        throw new Error(`finding ${ordinal} severity must be: ${REVIEW_SEVERITY.join(' | ')}`)
-      }
-      return {
-        ordinal, disposition,
-        category: disposition === 'rejected' ? detail : undefined,
-        severity: disposition === 'rejected' ? undefined : detail,
-      }
-    })
-    if (new Set(parsedFindings.map((finding) => finding.ordinal)).size !== parsedFindings.length) {
-      throw new Error('--finding names the same finding more than once')
-    }
-
-    const partners = pairPartners(id, sessionId())
-    const comparisonNames = ['better-than', 'worse-than', 'same-as'] as const
-    const suppliedComparisons = comparisonNames.filter((name) => flag(name) !== undefined)
-    if (suppliedComparisons.length > 1) {
-      throw new Error('--better-than, --worse-than, and --same-as are mutually exclusive')
-    }
-    const comparison = suppliedComparisons[0]
-    const comparisonIds = comparison ? parseRunIds(flag(comparison)!, `--${comparison}`) : []
-
-    if (findingsJob && delivery !== 'none') {
-      for (const name of gradeNames) if (!gradeValues[name]) missing.push(`--${name}`)
-      const allowed = reviewId ? reviewFindings.map((finding) => finding.ordinal)
-        : parsedOutput!.findings.map((_, index) => index + 1)
-      const expected = reviewId ? reviewFindings.filter((finding) => finding.disposition === null)
-        .map((finding) => finding.ordinal) : allowed
-      for (const ordinal of expected) {
-        if (!parsedFindings.some((finding) => finding.ordinal === ordinal)) {
-          missing.push(`--finding ${ordinal}=<disposition>:<severity-or-category>`)
-        }
-      }
-      const unexpected = parsedFindings.find((finding) => !allowed.includes(finding.ordinal))
-      if (unexpected) throw new Error(`review for run ${id} has no finding ${unexpected.ordinal}`)
-    } else if (parsedFindings.length || gradeNames.some((name) => suppliedGrades[name])) {
-      throw new Error(`${row.job} does not take findings close-out flags`)
-    }
-    if (partners.length && !comparison) {
-      missing.push(
-        `--better-than ${partners.map((partner) => partner.id).join(',')} | ` +
-        `--worse-than ${partners.map((partner) => partner.id).join(',')} | ` +
-        `--same-as ${partners.map((partner) => partner.id).join(',')}`,
-      )
-    }
-    if (comparison) {
-      const expected = partners.map((partner) => partner.id).sort((a, b) => a - b)
-      const actual = [...comparisonIds].sort((a, b) => a - b)
-      if (expected.length !== actual.length || expected.some((value, index) => value !== actual[index])) {
-        throw new Error(
-          `pair verdict must name every comparable partner: ${expected.join(', ') || 'none'}`,
-        )
-      }
-    }
-    if (missing.length) {
-      throw new Error(`orch judge ${id} is missing:\n${missing.map((item) => `  ${item}`).join('\n')}`)
-    }
-
-    const note = scoreNote()
-    let authority = runMutationActor(id)
-    const scoredAt = nowIso()
-    const wasScored = Boolean(db().query('SELECT 1 FROM score WHERE run_id=?').get(id))
-    writeTransaction(() => {
-      if (!(has('force') && !authority.actor)) authority = adoptRunMutation(authority, 'score')
-      if (findingsJob && delivery !== 'none') {
-        reviewId = gradeReviewLens(id, parsedOutput, gradeValues as ReviewGrades)
-      }
-      db().query(
-        `INSERT INTO score (run_id, delivery, quality, fidelity, note, scored_at, scored_by)
-         VALUES (?,?,?,?,?,?,?)
-         ON CONFLICT(run_id) DO UPDATE SET delivery=excluded.delivery, quality=excluded.quality,
-           fidelity=excluded.fidelity,
-           note=CASE
-             WHEN score.note IS NULL OR trim(score.note) = '' THEN excluded.note
-             WHEN excluded.note IS NULL OR trim(excluded.note) = '' THEN score.note
-             ELSE score.note || '\n\n--- re-scored ' || excluded.scored_at || ' ---\n' || excluded.note
-           END,
-           scored_at=excluded.scored_at`,
-      ).run(id, delivery!, quality ?? null,
-        writes && delivery !== 'none' ? fidelity ?? null : null, note, scoredAt,
-        process.env.ORCH_SCORER ?? 'claude')
-      if (reviewId) {
-        if (delivery === 'none') {
-          db().query('UPDATE review SET completed_at=? WHERE id=?').run(scoredAt, reviewId)
-        } else {
-          for (const finding of parsedFindings) {
-            triageFinding(
-              reviewId, finding.ordinal, finding.disposition, finding.category, finding.severity,
-            )
-          }
-          completeReview(reviewId)
-        }
-      }
-      if (comparison === 'better-than') recordDuels(id, comparisonIds, sessionId(), scoredAt, has('force'))
-      if (comparison === 'worse-than') recordLosses(id, comparisonIds, sessionId(), scoredAt, has('force'))
-      if (comparison === 'same-as') recordTies(id, comparisonIds, sessionId(), scoredAt, has('force'))
-      auditRunMutation(authority, wasScored ? 'rescore' : 'score', auditReason())
-    })
-    console.log(`judged run ${id}: score${reviewId ? `, completed review ${reviewId}` : ''}` +
-      `${comparison ? ', pair recorded' : ''}`)
-
+    const requestedId = Number(argv[1]); if (!requestedId) usage()
+    const judgementFlags = { has, flag, values: flags }
+    const words = argv.slice(2).filter((a, i) => !a.startsWith('--') && !VALUE_FLAGS.has(argv.slice(2)[i - 1] ?? ''))
+    const options = { words, note: scoreNote(), auditReason: auditReason(), notEvidence: NOT_EVIDENCE }
+    const result = judgeRun(requestedId, judgementFlags, options, judgementPresentation)
+    // The CLI adapter deliberately composes judgement then cleanup for judge --discard.
     if (has('discard')) {
-      if (!row.worktree) throw new Error(`run ${id} has no worktree to discard`)
-      const discardAuthority = authorizeRunMutation(id, 'discard')
-      discardWorktree(row as CleanupRow, 'discarded', false, discardAuthority, {
-        force: false, auditReason: auditReason(), presentation: cleanupPresentation,
-      })
+      if (!result.row.worktree) throw new Error(`run ${result.id} has no worktree to discard`)
+      const discardAuthority = authorizeRunMutation(result.id, 'discard')
+      discardWorktree(result.row as CleanupRow, 'discarded', false, discardAuthority, { force: false, auditReason: auditReason(), presentation: cleanupPresentation })
     }
     break
   }
@@ -3523,390 +3292,17 @@ switch (cmd) {
   case 'score': {
     await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadReview()])
     writableDb()
-    const note = scoreNote()
-    const requestedId = Number(argv[1])
-    if (!requestedId) usage()
-    const row = db().query(
-      `SELECT root.id, root.agent, root.job, root.session_id, root.parent_run_id,
-              root.failure_kind, root.output_path
-         FROM run requested
-         JOIN run root ON root.id = COALESCE(requested.parent_run_id, requested.id)
-        WHERE requested.id = ?`,
-    ).get(requestedId) as
-      | { id: number; agent: string; job: string; session_id: string | null
-          parent_run_id: number | null; failure_kind: FailureKind | null; output_path: string | null } | null
-    if (!row) throw new Error(`no run ${requestedId}`)
-    const id = row.id
-    // A pick-time harness refusal never selected an agent, but it is still a
-    // real failed row the owning session must be able to clear from its ledger.
-    // Voiding that one shape records the note without manufacturing evidence.
-    if (row.agent === '(pending)' && !(has('void') && row.failure_kind === 'harness')) {
-      throw new Error(`run ${id} cannot be scored: its agent is the placeholder '(pending)'`)
-    }
-    const scorer = flag('scorer')
-    const dashboardAuthorized = dashboardScoreAuthorized(scorer)
-    let scoreAuthority = runMutationActor(id)
-    const owner = judgeability(row.session_id, sessionId())
-    let voidAuthority: RootAuthority | null = null
-    if (has('void')) {
-      voidAuthority = authorizeRunMutation(id, 'void')
-    } else if (!dashboardAuthorized && !has('force') && !sessionId() && owner.verdict === 'unattributed') {
-      throw new Error(`run ${id} is unowned; CLAUDE_CODE_SESSION_ID is not set`)
-    } else if ((owner.verdict === 'foreign' || owner.verdict === 'anonymous') &&
-               !has('force') && !dashboardAuthorized) {
-      throw new Error(
-        `run ${id} was made by another session — ownership is not established.\n` +
-          `  its session:   ${owner.owner}\n` +
-          `  your session:  ${sessionId() ?? 'no session identity is present'}\n\n` +
-          `Scoring it teaches the router something you cannot know. Ask the session\n` +
-          `that ran it to score it — on this machine that is a SendMessage away.\n` +
-          `If you are certain (correcting a score you know to be wrong), --force.`,
-      )
-    }
-    const words = argv.slice(2).filter(
-      (a, i) => !a.startsWith('--') && !VALUE_FLAGS.has(argv.slice(2)[i - 1] ?? ''),
-    )
-    const delivery = words[0] as Delivery | undefined
-    const quality = words[1] as Quality | undefined
-    const fidelity = words[2] as Fidelity | undefined
-    if (has('void')) {
-      const cannotRecord = row.failure_kind === 'unevidenced'
-        ? `${row.failure_kind} review`
-        : row.failure_kind && NOT_EVIDENCE.includes(row.failure_kind)
-          ? `failure kind '${row.failure_kind}' is not evidence`
-          : null
-      let scoredFidelity: Fidelity | undefined
-      if (!cannotRecord && delivery) {
-        if (!DELIVERY.includes(delivery)) {
-          throw new Error(`delivery must be one of: ${DELIVERY.join(' | ')}`)
-        }
-        if (delivery === 'none' && quality) {
-          throw new Error("delivery 'none' takes no quality: there was nothing to judge")
-        }
-        if (delivery !== 'none' && (!quality || !QUALITY.includes(quality))) {
-          throw new Error(`delivery '${delivery}' needs a quality: ${QUALITY.join(' | ')}`)
-        }
-        const needsFidelity = Boolean(JOBS[row.job]?.needs.writesRepo) && delivery !== 'none'
-        if (needsFidelity && (!fidelity || !FIDELITY.includes(fidelity))) {
-          throw new Error(`${row.job} writes code, so verdicts require a fidelity axis`)
-        }
-        scoredFidelity = needsFidelity ? fidelity : undefined
-      }
-      const scoredAt = nowIso()
-      writeTransaction(() => {
-        voidAuthority = adoptRunMutation(voidAuthority!, 'void')
-        db().query('UPDATE run SET evidence_excluded=? WHERE id=?')
-          .run('voided with orch score --void', id)
-        if (!cannotRecord && delivery) {
-          recordScoreVerdict(
-            id, delivery, quality ?? null, scoredFidelity ?? null, note, scoredAt,
-            scorer ?? process.env.ORCH_SCORER ?? 'claude',
-          )
-        }
-        auditRunMutation(voidAuthority!, 'void', auditReason())
-      })
-      const verdictResult = cannotRecord
-        ? `verdict was not recorded: ${cannotRecord}`
-        : delivery
-          ? `verdict recorded: ${[delivery, quality, scoredFidelity].filter(Boolean).join(' ')}`
-          : 'no verdict was provided; existing verdict unchanged'
-      console.log(
-        `voided run ${id}: retained run and output; excluded from routing evidence; ${verdictResult}`,
-      )
-      break
-    }
-    if (row.failure_kind === 'unevidenced') {
-      throw new Error(`run ${id} cannot be scored: ${row.failure_kind} review`)
-    }
-    if (row.failure_kind && NOT_EVIDENCE.includes(row.failure_kind)) {
-      throw new Error(
-        `run ${id} cannot be scored: failure kind '${row.failure_kind}' is not evidence`,
-      )
-    }
-    // A conversation is one unit of work and takes one verdict. Any turn id
-    // resolves to the root, which is what routing reads and where the score is
-    // recorded.
-    // Only the session that read the output may judge it. Enforced here because
-    // stating it in AGENTS.md did not hold: see judgeability() for the two
-    // sessions that each scored the other's runs inside an hour, both believing
-    // the ids were their own.
-    // A PERSON scoring from the local dashboard is the gate's one legitimate
-    // exception, proven by the dashboard process capability rather than by a
-    // caller-controlled scorer label.
-    //
-    // The gate exists because an AGENT judging a run it did not read teaches
-    // the router something false. Someone clicking a verdict has the output on
-    // screen. The orchestrator's own dashboard used to bypass this by writing
-    // the score table directly, which is the same exception made invisible;
-    // `--scorer` records WHO judged it but grants no authority on its own.
-    // `orch score 279 none` and `orch score 279 full right` are both complete
-    // judgements; quality is meaningless without something to judge.
-    //
-    // Read positionally past the flags, not by index: `orch score 279 none
-    // --note "..."` put `--note` in the quality slot and was rejected as an
-    // incoherent judgement, which is a confusing way to be told about a typo
-    // you did not make.
-    /**
-     * A writing job is judged on a third axis, and is REQUIRED to be.
-     *
-     * Optional, it would go unused: the two-axis habit is years old on this
-     * machine and a run that looks complete and correct invites `full right`
-     * without further thought — which is precisely the reading that cannot see
-     * drift. Demanding the word forces the question to be asked, and the
-     * question is the whole point of the axis.
-     */
-    const needsFidelity = Boolean(JOBS[row.job]?.needs.writesRepo) && delivery !== 'none'
-    if (!delivery || !DELIVERY.includes(delivery)) {
-      throw new Error(
-        `first word is delivery — did an answer arrive?\n` +
-          `  none      nothing usable came back (a vendor error, an empty reply, a denial)\n` +
-          `  partial   an answer, but cut off or missing part of the ask\n` +
-          `  full      a complete answer\n\n` +
-          `then, unless delivery is 'none', quality — was it right?\n` +
-          `  wrong     confidently incorrect, or answered a different question\n` +
-          `  mixed     some of it right, some not\n` +
-          `  right     correct and usable as it stands\n\n` +
-          `  orch score ${id} full right --note "..."\n` +
-          `  orch score ${id} none --note "..."`,
-      )
-    }
-    if (delivery === 'none' && quality) {
-      throw new Error("delivery 'none' takes no quality: there was nothing to judge")
-    }
-    if (delivery !== 'none' && (!quality || !QUALITY.includes(quality))) {
-      throw new Error(`delivery '${delivery}' needs a quality: ${QUALITY.join(' | ')}`)
-    }
-    const reviewGradeFlags = ['reproduced', 'coverage', 'limits', 'overlap'] as const
-    const suppliedReviewGradeFlags = reviewGradeFlags.filter((name) => flag(name) !== undefined)
-    const findingsJob = Boolean(job(row.job).findings)
-    if (suppliedReviewGradeFlags.length && !findingsJob) {
-      throw new Error(
-        `${row.job} is not a findings-producing lens; review grade flags are not valid for this job`,
-      )
-    }
-    if (suppliedReviewGradeFlags.length && delivery === 'none') {
-      throw new Error("delivery 'none' takes no review grades: there was no lens output to judge")
-    }
-    if (needsFidelity && (!fidelity || !FIDELITY.includes(fidelity))) {
-      throw new Error(
-        `${row.job} writes code, so it needs a third word — fidelity: did it build what\n` +
-          `you asked for, or something it decided on instead?\n` +
-          `  drifted   solved a different problem, or redesigned as it went\n` +
-          `  partial   mostly the spec, with decisions taken that were not its to take\n` +
-          `  faithful  built the spec, and ASKED wherever the spec ran out\n\n` +
-          `Asking is faithful. A worker that stopped, asked, and built what it was told\n` +
-          `did exactly the right thing and must not be marked down for it — read\n` +
-          `'orch diff ${id}' against the spec rather than the summary it wrote itself.\n\n` +
-          `  orch score ${id} ${delivery} ${quality} faithful --note "..."`,
-      )
-    }
-    if (!needsFidelity && fidelity) {
-      console.error(
-        `${row.job} has no spec to be faithful to, so it is judged on two axes only`,
-      )
-    }
-    const scoredFidelity = needsFidelity ? fidelity : undefined
-
-    let reviewGrade: { output: ReturnType<typeof parseReviewOutput>; grades: ReviewGrades } | null = null
-    if (findingsJob && delivery !== 'none') {
-      const existing = db().query(
-        `SELECT rl.id, COUNT(rf.id) AS findings
-           FROM review_lens rl LEFT JOIN review_finding rf ON rf.review_lens_id=rl.id
-          WHERE rl.run_id=? GROUP BY rl.id`,
-      ).get(id) as { id: number; findings: number } | null
-      let output: ReturnType<typeof parseReviewOutput> = null
-      if (!existing) {
-        if (!row.output_path || !existsSync(row.output_path)) {
-          throw new Error(`run ${id} has no recorded output to capture as a review`)
-        }
-        output = parseReviewOutput(readFileSync(row.output_path, 'utf8'))
-        if (!output) throw new Error(`run ${id} output does not satisfy the review contract`)
-        const evidence = cleanReviewEvidence(id, output)
-        if (evidence.failure) {
-          throw new Error(`run ${id} cannot be scored: ${evidence.failure}`)
-        }
-      }
-      const findings = existing?.findings ?? output!.findings.length
-      const raw: Record<keyof ReviewGrades, string | undefined> = {
-        reproduced: flag('reproduced'), coverage: flag('coverage'),
-        limits: flag('limits'), overlap: flag('overlap'),
-      }
-      if (findings === 0) {
-        raw.reproduced ??= 'none'
-        raw.overlap ??= 'none'
-        if (raw.reproduced !== 'none' || raw.overlap !== 'none') {
-          throw new Error("a lens with findings:[] has --reproduced none and --overlap none")
-        }
-      }
-      const valid =
-        raw.reproduced && REVIEW_REPRODUCED.includes(raw.reproduced as ReviewReproduced) &&
-        raw.coverage && REVIEW_COVERAGE.includes(raw.coverage as ReviewCoverage) &&
-        raw.limits && REVIEW_LIMITS.includes(raw.limits as ReviewLimits) &&
-        raw.overlap && REVIEW_OVERLAP.includes(raw.overlap as ReviewOverlap)
-      if (!valid) {
-        throw new Error(
-          `${row.job} grading requires architect review fields:\n` +
-          `  --reproduced ${REVIEW_REPRODUCED.join(' | ')}\n` +
-          `  --coverage   ${REVIEW_COVERAGE.join(' | ')}\n` +
-          `  --limits     ${REVIEW_LIMITS.join(' | ')}\n` +
-          `  --overlap    ${REVIEW_OVERLAP.join(' | ')}`,
-        )
-      }
-      reviewGrade = { output, grades: raw as ReviewGrades }
-    }
-
-    const comparisonFlags = ['better-than', 'worse-than', 'same-as'] as const
-    const suppliedComparisons = comparisonFlags.filter((name) => flag(name) !== undefined)
-    if (suppliedComparisons.length > 1) {
-      throw new Error('--better-than, --worse-than, and --same-as are mutually exclusive')
-    }
-    const comparison = suppliedComparisons[0]
-    if (comparison) {
-      const otherIds = parseRunIds(flag(comparison)!, `--${comparison}`)
-      const comparedAt = nowIso()
-      if (comparison === 'better-than') {
-        recordDuels(id, otherIds, sessionId(), comparedAt, has('force'))
-      } else if (comparison === 'worse-than') {
-        recordLosses(id, otherIds, sessionId(), comparedAt, has('force'))
-      } else {
-        recordTies(id, otherIds, sessionId(), comparedAt, has('force'))
-      }
-    }
-
-    const wasScored = Boolean(db().query('SELECT 1 FROM score WHERE run_id=?').get(id))
-    const scoredAt = nowIso()
-    writeTransaction(() => {
-      if (!dashboardAuthorized && !(has('force') && !scoreAuthority.actor)) {
-        scoreAuthority = adoptRunMutation(scoreAuthority, 'score')
-      }
-      if (reviewGrade) gradeReviewLens(id, reviewGrade.output, reviewGrade.grades)
-      recordScoreVerdict(
-        id, delivery, quality ?? null, scoredFidelity ?? null, note, scoredAt,
-        scorer ?? process.env.ORCH_SCORER ?? 'claude',
-      )
-      auditRunMutation(
-        scoreAuthority, wasScored ? 'rescore' : 'score', auditReason(),
-      )
-    })
-    const w = weigh(delivery, quality ?? null, scoredFidelity ?? null)
-    const axes = [delivery, quality, scoredFidelity].filter(Boolean).join(' ')
-    console.log(
-      `run ${id} (${row.agent}/${row.job}) scored ${axes}  [${w}]`,
-    )
-    if (!comparison) {
-      for (const partner of pairPartners(id, sessionId())) console.log(pairHint(partner))
-    }
+    const requestedId = Number(argv[1]); if (!requestedId) usage()
+    const words = argv.slice(2).filter((a, i) => !a.startsWith('--') && !VALUE_FLAGS.has(argv.slice(2)[i - 1] ?? ''))
+    scoreRun(requestedId, { has, flag, values: flags }, { words, note: scoreNote(), auditReason: auditReason(), dashboardAuthorized: dashboardScoreAuthorized(flag('scorer')), notEvidence: NOT_EVIDENCE }, judgementPresentation)
     break
   }
 
   case 'recalibrate': {
     await Promise.all([loadJobs(), loadAgreement()])
-    const rawN = flag('n') ?? '12'
-    const n = Number(rawN)
-    if (!/^\d+$/.test(rawN) || !Number.isInteger(n) || n < 1) {
-      throw new Error('--n must be a positive integer')
-    }
-    const scorer = flag('scorer') ?? process.env.ORCH_SCORER ?? 'claude'
-    const rows = db().query(
-      `SELECT r.id, r.job, r.output_path,
-              s.delivery AS original_delivery, s.quality AS original_quality,
-              s.fidelity AS original_fidelity
-         FROM score s JOIN run r ON r.id = s.run_id
-        WHERE datetime(s.scored_at) < datetime('now', '-7 days')
-          AND (? = 1 OR s.scored_by = ?)
-        ORDER BY random()`,
-    ).all(has('force') ? 1 : 0, scorer) as {
-      id: number; job: string; output_path: string | null
-      original_delivery: Delivery; original_quality: Quality | null
-      original_fidelity: Fidelity | null
-    }[]
-    const sample = rows.filter((row) => row.output_path && existsSync(row.output_path)).slice(0, n)
-    if (!sample.length) {
-      console.log('no scored runs older than 7 days with output still on disk')
-      break
-    }
-
-    const rl = createInterface({ input: process.stdin, output: process.stdout })
-    const verdicts = rl[Symbol.asyncIterator]()
-    const results: {
-      original: [Delivery, Quality | null, Fidelity | null]
-      fresh: [Delivery, Quality | null, Fidelity | null]
-    }[] = []
-    const calibrationAt = nowIso()
-    try {
-      for (const row of sample) {
-        const output = readFileSync(row.output_path!, 'utf8')
-        const excerpt = output.length <= 6000
-          ? output
-          : `${output.slice(0, 4000)}\n\n... output middle hidden ...\n\n${output.slice(-2000)}`
-        const writes = Boolean(JOBS[row.job]?.needs.writesRepo)
-        console.log(`\nrun ${row.id} / ${row.job}`)
-        console.log(`axes: delivery quality${writes ? ' fidelity' : ''}`)
-        console.log(excerpt)
-        const hint = writes
-          ? '<none | partial/full wrong/mixed/right drifted/partial/faithful>'
-          : '<none | partial/full wrong/mixed/right>'
-        process.stdout.write(`verdict ${hint}: `)
-        const line = await verdicts.next()
-        if (line.done) throw new Error('stdin ended before every sampled run was judged')
-        const answer = line.value.trim().split(/\s+/)
-        const delivery = answer[0] as Delivery | undefined
-        const quality = answer[1] as Quality | undefined
-        const fidelity = answer[2] as Fidelity | undefined
-        if (!delivery || !DELIVERY.includes(delivery)) {
-          throw new Error(`delivery must be one of: ${DELIVERY.join(' | ')}`)
-        }
-        if (delivery === 'none' && quality) {
-          throw new Error("delivery 'none' takes no quality: there was nothing to judge")
-        }
-        if (delivery !== 'none' && (!quality || !QUALITY.includes(quality))) {
-          throw new Error(`delivery '${delivery}' needs a quality: ${QUALITY.join(' | ')}`)
-        }
-        const needsFidelity = writes && delivery !== 'none'
-        if (needsFidelity && (!fidelity || !FIDELITY.includes(fidelity))) {
-          throw new Error(`this writing job needs fidelity: ${FIDELITY.join(' | ')}`)
-        }
-        if ((!needsFidelity && fidelity) || answer.length > (needsFidelity ? 3 : delivery === 'none' ? 1 : 2)) {
-          throw new Error('too many verdict words for this run')
-        }
-        const fresh: [Delivery, Quality | null, Fidelity | null] = [
-          delivery, quality ?? null, needsFidelity ? fidelity! : null,
-        ]
-        db().query(
-          `INSERT INTO calibration (run_id, delivery, quality, fidelity, at, session_id)
-           VALUES (?,?,?,?,?,?)`,
-        ).run(row.id, ...fresh, calibrationAt, sessionId())
-        results.push({
-          original: [row.original_delivery, row.original_quality, row.original_fidelity], fresh,
-        })
-      }
-    } finally {
-      rl.close()
-    }
-
-    const axes = [
-      { name: 'delivery', levels: DELIVERY as readonly string[], at: 0 },
-      { name: 'quality', levels: QUALITY as readonly string[], at: 1 },
-      { name: 'fidelity', levels: FIDELITY as readonly string[], at: 2 },
-    ]
-    const reading = (k: number) => k < 0.4 ? 'ambiguous rubric'
-      : k <= 0.6 ? 'weak' : k <= 0.8 ? 'usable' : 'strong'
-    for (const axis of axes) {
-      const pairs = results.map((r) => [r.original[axis.at], r.fresh[axis.at]] as const)
-        .filter((p) => p[0] != null && p[1] != null) as [string, string][]
-      if (!pairs.length) continue
-      const kappa = quadraticWeightedKappa(pairs, axis.levels)
-      if (kappa === null) {
-        const ac1 = gwetAc1(pairs, axis.levels)
-        console.log(`${axis.name}: n=${pairs.length} kappa=n/a ac1=${ac1 === null ? 'n/a' : ac1.toFixed(3)} reading=not measurable`)
-      } else {
-        const ac1 = gwetAc1(pairs, axis.levels)
-        console.log(`${axis.name}: n=${pairs.length} kappa=${kappa.toFixed(3)} ac1=${ac1 === null ? 'n/a' : ac1.toFixed(3)} reading=${reading(kappa)}`)
-      }
-    }
+    await recalibrate({ has, flag }, { log: (...values) => console.log(...values), write: (value) => process.stdout.write(value), input: process.stdin, output: process.stdout })
     break
   }
-
   case 'routing-backtest': {
     await Promise.all([loadJobs(), loadAgents(), loadRoutingBacktest()])
     const jobFilter = flag('job')

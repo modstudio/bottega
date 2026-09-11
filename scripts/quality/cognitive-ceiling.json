@@ -180,12 +180,6 @@
     "score": 23
   },
   {
-    "file": "orchestrator/src/cli-runs.cli.test.ts",
-    "function": "test callback#6",
-    "line": 247,
-    "score": 24
-  },
-  {
     "file": "orchestrator/src/cleanup-sweep.ts",
     "function": "sweepRuns",
     "line": 123,
@@ -204,16 +198,40 @@
     "score": 35
   },
   {
-    "file": "orchestrator/src/cli.ts",
-    "function": "writeTransaction callback#4",
-    "line": 3474,
-    "score": 17
+    "file": "orchestrator/src/cli-runs.cli.test.ts",
+    "function": "test callback#6",
+    "line": 247,
+    "score": 24
   },
   {
     "file": "orchestrator/src/cli.ts",
-    "function": "map callback#69",
-    "line": 5175,
+    "function": "map callback#57",
+    "line": 4571,
     "score": 16
+  },
+  {
+    "file": "orchestrator/src/judgement.ts",
+    "function": "judgeRun",
+    "line": 29,
+    "score": 71
+  },
+  {
+    "file": "orchestrator/src/judgement.ts",
+    "function": "writeTransaction callback#1",
+    "line": 193,
+    "score": 17
+  },
+  {
+    "file": "orchestrator/src/judgement.ts",
+    "function": "scoreRun",
+    "line": 233,
+    "score": 91
+  },
+  {
+    "file": "orchestrator/src/recalibration.ts",
+    "function": "recalibrate",
+    "line": 18,
+    "score": 46
   },
   {
     "file": "orchestrator/src/close-out.ts",

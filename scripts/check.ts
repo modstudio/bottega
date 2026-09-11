@@ -180,6 +180,7 @@ for (const script of [
   'check-run-artifacts-boundary.ts', 'check-close-out-boundary.ts',
   'check-run-control-boundary.ts', 'check-run-dispatch-boundary.ts', 'check-run-answer-boundary.ts',
   'check-cleanup-boundary.ts', 'check-cleanup-sweep-boundary.ts', 'check-run-stop-boundary.ts',
+  'check-judgement-boundary.ts', 'check-recalibration-boundary.ts',
   'check-database-boundary.ts', 'check-review-vocabulary-boundary.ts', 'check-process-liveness-boundary.ts',
   'check-run-authority-boundary.ts', 'check-evidence-query-boundary.ts',
   'check-resource-ownership-boundary.ts', 'check-run-liveness-boundary.ts',
