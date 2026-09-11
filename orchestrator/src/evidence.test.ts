@@ -51,6 +51,46 @@ describe('terminal evidence assessment', () => {
       },
       otherProjectMcpServers: new Set(['other']),
     }, { failureKind: 'contract', error: 'wrong project' }],
+    ['dotted wrong-project provenance', {
+      reviewReply: {
+        ...reviewReply!, provenance: { ...reviewReply!.provenance, mcp_tools: ['other.read'] },
+      },
+      otherProjectMcpServers: new Set(['other']),
+    }, { failureKind: 'contract', error: 'wrong project' }],
+    ['run 3382 Codex Apps provenance', {
+      reviewReply: {
+        ...reviewReply!, provenance: {
+          ...reviewReply!.provenance,
+          mcp_tools: [
+            'codex_apps.alephbeis_mcp_get_workflow_step_tool',
+            'codex_apps.alephbeis_mcp_get_rule_tool',
+            'starship.get_task_tool',
+            'starship.list_task_documents_tool',
+          ],
+        },
+      },
+      otherProjectMcpServers: new Set(['alephbeis', 'stopal']),
+      ownMcpServer: 'starship',
+    }, {
+      failureKind: 'contract',
+      error: 'wrong project: provenance names codex_apps.alephbeis_mcp_get_workflow_step_tool, expected starship',
+    }],
+    ['run 3385 Codex Apps provenance', {
+      reviewReply: {
+        ...reviewReply!, provenance: {
+          ...reviewReply!.provenance,
+          mcp_tools: [
+            'codex_apps.alephbeis_mcp_get_workflow_step_tool',
+            'codex_apps.alephbeis_mcp_get_rule_tool',
+          ],
+        },
+      },
+      otherProjectMcpServers: new Set(['alephbeis', 'stopal']),
+      ownMcpServer: 'starship',
+    }, {
+      failureKind: 'contract',
+      error: 'wrong project: provenance names codex_apps.alephbeis_mcp_get_workflow_step_tool, expected starship',
+    }],
     ['reader deliverable completeness', {
       readerJob: true, declaredDeliverables: ['table'], readerReply: { deliverables: [], narrative: null, files_written: null },
     }, { failureKind: 'unevidenced', error: 'missing declared deliverable' }],
@@ -62,5 +102,24 @@ describe('terminal evidence assessment', () => {
     expect(assessment.status).toBe('failed')
     expect(assessment.failureKind).toBe(expected.failureKind)
     expect(assessment.error).toContain(expected.error)
+  })
+
+  test.each([
+    ['own server through Codex Apps', 'codex_apps.starship_mcp_get_task_tool'],
+    ['unregistered server through Codex Apps', 'codex_apps.github_mcp_search'],
+  ])('%s stays ok', (_name, tool) => {
+    const assessment = assessEvidence(
+      { status: 'ok', error: null, failureKind: null },
+      {
+        ...base,
+        reviewReply: {
+          ...reviewReply!, provenance: { ...reviewReply!.provenance, mcp_tools: [tool] },
+        },
+        otherProjectMcpServers: new Set(['alephbeis', 'stopal']),
+        ownMcpServer: 'starship',
+      },
+    )
+    expect(assessment.status).toBe('ok')
+    expect(assessment.provenanceWrongProjectTool).toBeNull()
   })
 })

@@ -7,6 +7,7 @@ import {
   type ReaderReply,
   type ReviewReply,
 } from './contract.ts'
+import { provenanceServer } from './mcp-preflight.ts'
 import { recordReview, type CleanReviewEvidence } from './review.ts'
 
 export type EvidencePromptFacts = {
@@ -93,9 +94,7 @@ export function assessEvidence<FailureKind extends string>(
   }
 
   const provenanceWrongProjectTool = facts.reviewReply?.provenance.mcp_tools.find((tool) => {
-    const claude = tool.match(/^mcp__(.+?)__/)
-    const qualified = tool.match(/^([^.:/]+)[.:/]/)
-    const server = claude?.[1] ?? qualified?.[1]
+    const server = provenanceServer(tool, facts.otherProjectMcpServers)
     return Boolean(server && facts.otherProjectMcpServers.has(server))
   }) ?? null
   if (facts.reviewReply && provenanceWrongProjectTool && outcome.status === 'ok') {
