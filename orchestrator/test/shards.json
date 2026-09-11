@@ -6,7 +6,6 @@
     "src/epic.cli.test.ts": { "size": "short" },
     "src/review-yield.cli.test.ts": { "size": "short" },
     "src/evals.cli.test.ts": { "size": "short" },
-    "src/issue.cli.test.ts": { "size": "short" },
     "src/lifecycle-harness.cli.test.ts": { "size": "moderate", "exclusive": true },
     "src/linked-worktree-database.cli.test.ts": { "size": "short" },
     "src/monitor.cli.test.ts": { "size": "short" },
@@ -71,7 +70,6 @@
       "files": [
         "test/process-boundary/worktree-create.test.ts",
         "src/review-3.cli.test.ts",
-        "src/issue.cli.test.ts",
         "src/linked-worktree-database.cli.test.ts",
         "test/process-boundary/run.test.ts"
         ,"test/process-boundary/ref-guard.test.ts"
