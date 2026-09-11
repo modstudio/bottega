@@ -40,9 +40,9 @@ describe("worktree lifecycle decisions", () => {
   const { git, scratchRepo } = worktreeDescribeFixture()
 test('project lock state resolves under the shared git common directory regardless of environment', () => {
   const { repo } = scratchRepo()
+  const xdg = mkdtempSync(join(tmpdir(), 'orch-xdg-'))
   const priorXdg = process.env.XDG_RUNTIME_DIR
   try {
-    const xdg = mkdtempSync(join(tmpdir(), 'orch-xdg-'))
     const expected = realpathSync(join(repo, '.git'))
     expect(projectLockDir(repo)).toBe(join(expected, 'orch', 'locks'))
     process.env.XDG_RUNTIME_DIR = xdg
@@ -53,6 +53,7 @@ test('project lock state resolves under the shared git common directory regardle
     if (priorXdg === undefined) delete process.env.XDG_RUNTIME_DIR
     else process.env.XDG_RUNTIME_DIR = priorXdg
     rmSync(repo, { recursive: true, force: true })
+    rmSync(xdg, { recursive: true, force: true })
   }
 })
 
