@@ -273,63 +273,63 @@ test('every --json surface has an enumerated and pinned output contract', () => 
     } finally { rmSync(repo,{recursive:true,force:true});rmSync(binDir,{recursive:true,force:true}) }
   }, 15_000)
 
-  test('fix --base creates its worktree at the requested commit', () => {
-    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-fix-base-')))
-    const binDir = mkdtempSync(join(tmpdir(), 'orch-fix-base-bin-'))
-    const git = (cwd: string, ...args: string[]) => {
-      const p = Bun.spawnSync(['git', ...args], {
-        cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+  test("an implicit writing base is the caller's HEAD", () => {
+    const repo=realpathSync(mkdtempSync(join(tmpdir(),'orch-cwd-base-')))
+    const linked=join(repo,'.claude','worktrees','caller'), binDir=mkdtempSync(join(tmpdir(),'orch-cwd-base-bin-'))
+    const git=(cwd:string,...args:string[])=>{
+      const p=Bun.spawnSync(['git',...args],{
+        cwd,env:hermeticGitEnv(),stdout:'pipe',stderr:'pipe',
       })
-      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+      if(p.exitCode!==0)throw new Error(p.stderr.toString())
       return p.stdout.toString().trim()
     }
     try {
-      git(repo, 'init', '-b', 'main')
-      git(repo, 'config', 'user.email', 'orch-test@example.invalid')
-      git(repo, 'config', 'user.name', 'Orch Test')
-      writeFileSync(join(repo, 'tracked.txt'), 'base\n')
-      git(repo, 'add', '.')
-      git(repo, 'commit', '-m', 'fixture base')
-      const requested = git(repo, 'rev-parse', 'HEAD')
-      git(repo, 'tag', '-a', 'requested-tag', '-m', 'fixture tag', requested)
-      writeFileSync(join(repo, 'tracked.txt'), 'later\n')
-      git(repo, 'commit', '-am', 'fixture later')
-      writeFileSync(join(binDir, 'codex'), '#!/bin/sh\nprintf answer\n')
-      chmodSync(join(binDir, 'codex'), 0o755)
-      upsertProject({
-        name: 'fix-base', path: repo, canon: false,
-        settings: { worktree: { recipe: {}, branch: '{key}-orch-{id}' } },
-      })
+      git(repo,'init','-b','main');git(repo,'config','user.email','orch-test@example.invalid')
+      git(repo,'config','user.name','Orch Test');writeFileSync(join(repo,'tracked.txt'),'A\n')
+      git(repo,'add','.');git(repo,'commit','-m','fixture A')
+      const commitA=git(repo,'rev-parse','HEAD')
+      mkdirSync(join(repo,'.claude','worktrees'),{recursive:true})
+      git(repo,'worktree','add','-b','caller',linked,'main');writeFileSync(join(linked,'tracked.txt'),'B\n')
+      git(linked,'commit','-am','fixture B');const commitB=git(linked,'rev-parse','HEAD')
 
-      const launched = Bun.spawnSync([
-        process.execPath, CLI, 'do', 'fix', 'apply the correction', '--agent', 'codex',
-        '--key', 'DEV-173', '--base', 'requested-tag', '--porcelain',
-      ], {
-        cwd: repo, stdout: 'pipe', stderr: 'pipe', env: {
-          ...hermeticGitEnv(), PATH: `${binDir}:${process.env.PATH ?? ''}`,
-          ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
-          CLAUDE_CODE_SESSION_ID: 'orch-test-session',
-        },
-      })
-      expect(launched.exitCode, launched.stderr.toString()).toBe(0)
-      const id = Number(launched.stdout.toString().trim())
-      expect(id).toBeGreaterThan(0)
-      const deadline = Date.now() + 5_000
-      let row: { status: string; worktree: string | null; base_commit: string | null } | undefined
-      while (Date.now() < deadline) {
-        row = db().query(
-          'SELECT status, worktree, base_commit FROM run WHERE id=?',
-        ).get(id) as typeof row
-        if (row?.worktree && row.status !== 'running') break
-        Bun.sleepSync(20)
+      const createPath=join(repo,'create.cjs');writeFileSync(createPath,`const {spawnSync}=require('child_process');const {mkdirSync}=require('fs');const {join}=require('path');const [branch,base]=process.argv.slice(-2);const root=${JSON.stringify(repo)},path=join(root,'.worker-trees',branch);mkdirSync(join(root,'.worker-trees'),{recursive:true});const p=spawnSync('git',['worktree','add','-b',branch,path,base],{cwd:root,stdio:['ignore','ignore','inherit']});if(p.status)process.exit(p.status);process.stdout.write(path+'\\n')`)
+      writeFileSync(join(binDir,'codex'),'#!/bin/sh\nprintf answer\n')
+      chmodSync(join(binDir,'codex'),0o755)
+      upsertProject({name:'cwd-base',path:repo,canon:false,settings:{worktree:{
+        create:declaredCreate(process.execPath,[createPath,'{branch}','{base}']),
+        branch:'orch/{id}',
+      }}})
+      const dispatch = (cwd: string, explicitCwd?: string) => {
+        const p=Bun.spawnSync([process.execPath,CLI,'do','implement','inspect','--agent','codex','--porcelain',...(explicitCwd?['--cwd',explicitCwd]:[])],{
+          cwd,stdout:'pipe',stderr:'pipe',env:{...hermeticGitEnv(),PATH:`${binDir}:${process.env.PATH ?? ''}`,ORCH_DB:process.env.ORCH_DB!,ORCH_DEPTH:'0',CLAUDE_CODE_SESSION_ID:'orch-test-session'},
+        })
+        expect(p.exitCode,p.stderr.toString()).toBe(0)
+        const id=Number(p.stdout.toString().trim()), deadline=Date.now()+5_000
+        let row: { base_commit: string | null; worktree: string | null } | undefined
+        while(Date.now()<deadline){row=db().query('SELECT base_commit, worktree FROM run WHERE id=?').get(id) as typeof row;if(row?.worktree)break;Bun.sleepSync(20)}
+        expect(row?.worktree).toBeTruthy();return row as {base_commit:string;worktree:string}
       }
-      expect(row?.worktree).toBeTruthy()
-      expect(row?.base_commit).toBe(requested)
-      expect(git(row!.worktree!, 'rev-parse', 'HEAD')).toBe(requested)
-    } finally {
-      rmSync(repo, { recursive: true, force: true })
-      rmSync(binDir, { recursive: true, force: true })
-    }
+      const fromLinked=dispatch(repo,linked);expect(fromLinked.base_commit).toBe(commitB);expect(git(fromLinked.worktree,'rev-parse','HEAD')).toBe(commitB)
+      expect(Bun.spawnSync(['git','merge-base','--is-ancestor',commitB,'HEAD'],{cwd:fromLinked.worktree,env:hermeticGitEnv(),stdout:'pipe',stderr:'pipe'}).exitCode).toBe(0)
+      expect(dispatch(repo).base_commit).toBe(commitA)
+    } finally {rmSync(repo,{recursive:true,force:true});rmSync(binDir,{recursive:true,force:true})}
+  }, 20_000)
+
+  test('fix --base creates its worktree at the requested commit', () => {
+    const repo=realpathSync(mkdtempSync(join(tmpdir(),'orch-fix-base-'))), binDir=mkdtempSync(join(tmpdir(),'orch-fix-base-bin-'))
+    const git=(cwd:string,...args:string[])=>{const p=Bun.spawnSync(['git',...args],{cwd,env:hermeticGitEnv(),stdout:'pipe',stderr:'pipe'});if(p.exitCode!==0)throw new Error(p.stderr.toString());return p.stdout.toString().trim()}
+    try {
+      git(repo,'init','-b','main');git(repo,'config','user.email','orch-test@example.invalid');git(repo,'config','user.name','Orch Test');writeFileSync(join(repo,'tracked.txt'),'base\n');git(repo,'add','.');git(repo,'commit','-m','fixture base')
+      const requested=git(repo,'rev-parse','HEAD');git(repo,'tag','-a','requested-tag','-m','fixture tag',requested);writeFileSync(join(repo,'tracked.txt'),'later\n');git(repo,'commit','-am','fixture later')
+      writeFileSync(join(binDir,'codex'),'#!/bin/sh\nprintf answer\n');chmodSync(join(binDir,'codex'),0o755);upsertProject({name:'fix-base',path:repo,canon:false,settings:{worktree:{recipe:{},branch:'{key}-orch-{id}'}}})
+      const launched = Bun.spawnSync([
+        process.execPath,CLI,'do','fix','apply the correction','--agent','codex','--key','DEV-173','--base','requested-tag','--porcelain',
+      ],{cwd:repo,stdout:'pipe',stderr:'pipe',env:{...hermeticGitEnv(),PATH:`${binDir}:${process.env.PATH ?? ''}`,ORCH_DB:process.env.ORCH_DB!,ORCH_DEPTH:'0',CLAUDE_CODE_SESSION_ID:'orch-test-session'}})
+      expect(launched.exitCode,launched.stderr.toString()).toBe(0);const id=Number(launched.stdout.toString().trim());expect(id).toBeGreaterThan(0);const deadline=Date.now()+5_000
+      let row: { status: string; worktree: string | null; base_commit: string | null } | undefined
+      while(Date.now()<deadline){row=db().query('SELECT status, worktree, base_commit FROM run WHERE id=?').get(id) as typeof row;if(row?.worktree&&row.status!=='running')break;Bun.sleepSync(20)}
+      expect(row?.worktree).toBeTruthy();expect(row?.base_commit).toBe(requested);expect(git(row!.worktree!,'rev-parse','HEAD')).toBe(requested)
+    } finally {rmSync(repo,{recursive:true,force:true});rmSync(binDir,{recursive:true,force:true})}
   }, 15_000)
 
   test('--follow names the branch minted by a writing run', () => {
