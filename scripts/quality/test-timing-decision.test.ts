@@ -12,8 +12,13 @@ describe('test timing decision', () => {
       .toBe('pass')
   })
 
-  test('tightens a lower measurement', () => {
-    expect(decideTestTiming({ currentMs: 99, committedMs: 100, growthLimit: 0.05 }))
+  test('passes a drop within the allowance instead of rewriting the baseline', () => {
+    expect(decideTestTiming({ currentMs: 96, committedMs: 100, growthLimit: 0.05 }))
+      .toBe('pass')
+  })
+
+  test('tightens a measurement below the allowance band', () => {
+    expect(decideTestTiming({ currentMs: 94, committedMs: 100, growthLimit: 0.05 }))
       .toBe('tighten')
   })
 
