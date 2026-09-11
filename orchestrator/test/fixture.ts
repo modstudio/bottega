@@ -140,7 +140,7 @@ for (const args of [
 
 export const { db, DB_PATH, nowIso, label, applySchema, recordSessionSeen, bootstrapFixtureStore, sessionId } = await import('../src/db.ts'); export const { reapStale, STALE_AFTER_MS, PENDING_BOOTSTRAP_MS } = await import('../src/run-liveness.ts')
 export const { pendingForSession, unscoredCount, UNSCORED_WHERE, EVIDENCE_CLOSED_SQL, EVIDENCE_OPEN_SQL, VOIDED_SQL, voidedSql, activeSql, SCORED_EVIDENCE_SQL, runTotals, excludeSharedOutputRuns, SHARED_OUTPUT_REASON } = await import('../src/evidence-query.ts')
-export const { judgeability, WEIGHT, weigh, FIDELITY_PENALTY, GENERIC_QUESTION_TOKENS } = await import('../src/score.ts'); export const { recordDuels, duelMatrices, pairPartners, unrecordedPairsForSession, parseRunIds } = await import('../src/duel.ts'); export const { authorizeRunMutation, adoptRunMutation } = await import('../src/run-authority.ts')
+export const { judgeability, WEIGHT, weigh, FIDELITY_PENALTY } = await import('../src/score.ts'); export const { GENERIC_QUESTION_TOKENS } = await import('../src/contract.ts'); export const { recordDuels, duelMatrices, pairPartners, unrecordedPairsForSession, parseRunIds } = await import('../src/duel.ts'); export const { authorizeRunMutation, adoptRunMutation } = await import('../src/run-authority.ts')
 export const { candidates, weightCase, scoreboard, median, evidenceFor, pick,
         NOISE_BAND, QUALITY_STEP, MIN_SAMPLE, OUTPUT_RESERVE, EVIDENCE_WINDOW,
         STANDING_EXPLORE_RATE, STANDING_EXPLORE_FLOOR, standingExploreRate,

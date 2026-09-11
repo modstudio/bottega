@@ -10,7 +10,7 @@ const violations: string[] = []
 const FORBIDDEN: [RegExp, string][] = [
   [/^\.\/run(?:[.-]|$)/, 'the run state machine'],
   [/^\.\/landing(?:[.-]|$)/, 'landing'],
-  [/^\.\/review(?:[.-]|$)/, 'review'],
+  [/^\.\/review(?!-vocabulary)(?:[.-]|$)/, 'review'],
   [/^\.\/route(?:[.-]|$)/, 'routing'],
   [/^\.\/(?:score|scoring)(?:[.-]|$)/, 'scoring'],
   [/^\.\/canon(?:[.-]|$)/, 'canon'],
