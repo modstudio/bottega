@@ -46,4 +46,4 @@ test('orch canon eval writes probe rows with canon_sha; skip honours last pass u
   } finally {
     if (priorDepth === undefined) delete process.env.ORCH_DEPTH; else process.env.ORCH_DEPTH = priorDepth
   }
-})
+}, 30_000) // five eval runs each cut a real worktree; the unit leg's 5s bound is for pure decisions
