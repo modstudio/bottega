@@ -160,6 +160,7 @@ if (await inherit([
   './scripts/import-scanner.test.ts', './scripts/check-import-cycles.test.ts',
   './scripts/quality/ratchet.test.ts',
   './scripts/quality/ceiling-decision.test.ts',
+  './scripts/quality/test-timing-decision.test.ts',
 ]) !== 0) process.exit(1)
 
 const results = await Promise.all(legs.map((leg) => runLeg({
