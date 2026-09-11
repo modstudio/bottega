@@ -21,8 +21,6 @@ import { z } from 'zod'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
 import { projectAt, projectByName, projects, renameProject } from './projects.ts'
-import { contentTree, repoRootOf, targetGitEnvironment } from './git-environment.ts'
-import { isOrchWorktree, markedWorktreeSource, orphanSafety, worktreeDirty } from './worktree-attribution.ts'
 import { classify, NOT_EVIDENCE, type FailureKind } from './failure.ts'
 import { collectResult, collectWait, resolveFailover, failoverSummary, branchNote } from './collect.ts'
 import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
@@ -54,7 +52,7 @@ let guideModule: typeof import('./guide.ts')
 let runModule: typeof import('./run.ts'); let runArtifactsModule: typeof import('./run-artifacts.ts'); let closeOutModule: typeof import('./close-out.ts')
 let mcpPreflightModule: typeof import('./mcp-preflight.ts'); let dispatchPreflightModule: typeof import('./dispatch-preflight.ts'); let reviewTargetModule: typeof import('./review-target.ts')
 let mcpRequestFromStored!: typeof import('./mcp-preflight.ts').mcpRequestFromStored; let storedMcpRequest!: typeof import('./mcp-preflight.ts').storedMcpRequest; let preflight!: typeof import('./dispatch-preflight.ts').preflight; let implicitReviewWarning!: typeof import('./review-target.ts').implicitReviewWarning
-let worktreeModule!: typeof import('./worktree.ts')
+let worktreeModule!: typeof import('./worktree.ts'); let gitEnvironmentModule!: typeof import('./git-environment.ts'); let worktreeAttributionModule!: typeof import('./worktree-attribution.ts')
 let contractModule!: typeof import('./contract.ts')
 let grokTrustModule!: typeof import('./grok-trust.ts')
 let reviewModule!: typeof import('./review.ts')
@@ -134,17 +132,16 @@ async function loadTransport() {
   transportModule ??= await import('./transport.ts')
   ;({ assertAcpAllowed, assertAcpReady, resolveTransportName, selectAgentForTransport } = transportModule)
 }
-let branchTip!: typeof import('./worktree.ts').branchTip
+let branchTip!: typeof import('./worktree.ts').branchTip; let contentTree!: typeof import('./git-environment.ts').contentTree
 let restoreBranch!: typeof import('./worktree.ts').restoreBranch
 let resolveBase!: typeof import('./worktree.ts').resolveBase
+let repoRootOf!: typeof import('./git-environment.ts').repoRootOf
 let removeBranch!: typeof import('./worktree.ts').removeBranch
 let removeFor!: typeof import('./worktree.ts').removeFor
 let unmergedBranch!: typeof import('./worktree.ts').unmergedBranch
-let checkoutHasUncommittedWork!: typeof import('./worktree.ts').checkoutHasUncommittedWork
-let callerDrift!: typeof import('./worktree.ts').callerDrift
-let takeCleanupLock!: typeof import('./worktree.ts').withCleanupLock
-let withWorktreeLease!: typeof import('./worktree.ts').withWorktreeLease
-async function loadWorktree() { worktreeModule ??= await import('./worktree.ts'); ({ branchTip, restoreBranch, resolveBase, removeBranch, removeFor, unmergedBranch, checkoutHasUncommittedWork, callerDrift, withCleanupLock: takeCleanupLock, withWorktreeLease } = worktreeModule) }
+let checkoutHasUncommittedWork!: typeof import('./worktree.ts').checkoutHasUncommittedWork; let callerDrift!: typeof import('./worktree.ts').callerDrift; let takeCleanupLock!: typeof import('./worktree.ts').withCleanupLock; let withWorktreeLease!: typeof import('./worktree.ts').withWorktreeLease
+let targetGitEnvironment!: typeof import('./git-environment.ts').targetGitEnvironment; let isOrchWorktree!: typeof import('./worktree-attribution.ts').isOrchWorktree; let markedWorktreeSource!: typeof import('./worktree-attribution.ts').markedWorktreeSource; let orphanSafety!: typeof import('./worktree-attribution.ts').orphanSafety; let worktreeDirty!: typeof import('./worktree-attribution.ts').worktreeDirty
+async function loadWorktree() { worktreeModule ??= await import('./worktree.ts'); gitEnvironmentModule ??= await import('./git-environment.ts'); worktreeAttributionModule ??= await import('./worktree-attribution.ts'); ({ branchTip, restoreBranch, resolveBase, removeBranch, removeFor, unmergedBranch, checkoutHasUncommittedWork, callerDrift, withCleanupLock: takeCleanupLock, withWorktreeLease } = worktreeModule); ({ contentTree, repoRootOf, targetGitEnvironment } = gitEnvironmentModule); ({ isOrchWorktree, markedWorktreeSource, orphanSafety, worktreeDirty } = worktreeAttributionModule) }
 let WORKER_PREAMBLE!: typeof import('./contract.ts').WORKER_PREAMBLE
 let READONLY_PREAMBLE!: typeof import('./contract.ts').READONLY_PREAMBLE
 let NO_REPO_PREAMBLE!: typeof import('./contract.ts').NO_REPO_PREAMBLE
