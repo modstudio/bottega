@@ -5,6 +5,7 @@ import { decideCeiling } from './quality/ceiling-decision'
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const STATE_FILE = `${ROOT}/scripts/quality/file-ceiling.json`
+const STATE_LABEL = 'scripts/quality/file-ceiling.json'
 const CEILING = 500
 const SOURCE_ROOTS = [
   'orchestrator/src', 'orchestrator/test', 'hub/src', 'hub/web/src', 'shared', 'scripts',
@@ -36,43 +37,79 @@ function newlineTerminatedLines(content: string) {
   return content.match(/\n/g)?.length ?? 0
 }
 
-function readState(): Record<string, number> {
-  if (!existsSync(STATE_FILE)) return {}
-  return JSON.parse(readFileSync(STATE_FILE, 'utf8')) as Record<string, number>
+type FileMeasurement = { path: string; lines: number }
+type Reporter = Pick<Console, 'error' | 'log'>
+
+type FileCeilingOptions = {
+  exists?: (path: string) => boolean
+  measure?: () => FileMeasurement[]
+  reporter?: Reporter
+  stateFile?: string
 }
 
-function writeState(state: Record<string, number>) {
+function readState(stateFile: string): Record<string, number> {
+  if (!existsSync(stateFile)) return {}
+  return JSON.parse(readFileSync(stateFile, 'utf8')) as Record<string, number>
+}
+
+function writeState(stateFile: string, state: Record<string, number>) {
   const ordered = Object.fromEntries(Object.entries(state).sort(([a], [b]) => a.localeCompare(b)))
-  writeFileSync(STATE_FILE, `${JSON.stringify(ordered, null, 2)}\n`)
+  writeFileSync(stateFile, `${JSON.stringify(ordered, null, 2)}\n`)
 }
 
-export function checkFileCeiling() {
-  const frozen = readState()
+function measureFiles(): FileMeasurement[] {
+  return measuredSourceFiles().map((file) => ({
+    path: file.path,
+    lines: newlineTerminatedLines(readFileSync(file.absolute, 'utf8')),
+  }))
+}
+
+export function checkFileCeiling(options: FileCeilingOptions = {}) {
+  const stateFile = options.stateFile ?? STATE_FILE
+  const reporter = options.reporter ?? console
+  const measured = (options.measure ?? measureFiles)()
+  const pathExists = options.exists ?? ((path: string) => existsSync(resolve(ROOT, path)))
+  const frozen = readState(stateFile)
   const next = { ...frozen }
   const violations: string[] = []
-  for (const file of measuredSourceFiles()) {
-    const lines = newlineTerminatedLines(readFileSync(file.absolute, 'utf8'))
+  const tightenings: string[] = []
+  for (const { path, lines } of measured) {
     const decision = decideCeiling({
-      key: file.path, value: lines, frozen: frozen[file.path], ceiling: CEILING,
+      key: path, value: lines, frozen: frozen[path], ceiling: CEILING,
     })
-    if (decision === 'lower') next[file.path] = lines
-    if (decision === 'remove') delete next[file.path]
+    if (decision === 'lower') {
+      next[path] = lines
+      tightenings.push(`${STATE_LABEL}: ${path} tightened ${frozen[path]} -> ${lines}`)
+    }
+    if (decision === 'remove') {
+      delete next[path]
+      tightenings.push(`${STATE_LABEL}: ${path} tightened ${frozen[path]} -> ${lines}`)
+    }
     if (decision === 'fail') {
       violations.push(
-        `${file.path}: ${lines} lines, frozen at ${frozen[file.path] ?? CEILING}; ` +
+        `${path}: ${lines} lines, frozen at ${frozen[path] ?? CEILING}; ` +
         'split a concern out (architecture-rules 15)',
       )
     }
   }
   for (const path of Object.keys(next)) {
-    if (!existsSync(resolve(ROOT, path))) delete next[path]
+    if (!pathExists(path)) {
+      delete next[path]
+      tightenings.push(`${STATE_LABEL}: ${path} tightened ${frozen[path]} -> removed`)
+    }
   }
-  if (JSON.stringify(next) !== JSON.stringify(frozen)) writeState(next)
-  if (violations.length) {
-    for (const violation of violations) console.error(violation)
+  if (JSON.stringify(next) !== JSON.stringify(frozen)) writeState(stateFile, next)
+  for (const tightening of tightenings) reporter.error(tightening)
+  for (const violation of violations) reporter.error(violation)
+  if (tightenings.length) {
+    reporter.error(
+      `baseline tightened; commit ${STATE_LABEL} and re-run (architecture-rules 15)`,
+    )
+  }
+  if (violations.length || tightenings.length) {
     return false
   }
-  console.log(`check-file-ceiling: ok (${measuredSourceFiles().length} files)`)
+  reporter.log(`check-file-ceiling: ok (${measured.length} files)`)
   return true
 }
 

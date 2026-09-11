@@ -11,7 +11,15 @@ type MeasuredFunction = FrozenFunction & { key: string }
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
 const STATE_FILE = `${ROOT}/scripts/quality/cognitive-ceiling.json`
+const STATE_LABEL = 'scripts/quality/cognitive-ceiling.json'
 const CEILING = 15
+
+type Reporter = Pick<Console, 'error' | 'log'>
+type CognitiveCeilingOptions = {
+  measure?: () => Promise<MeasuredFunction[]>
+  reporter?: Reporter
+  stateFile?: string
+}
 
 function functionBaseName(node: ts.FunctionLikeDeclaration): string {
   if (node.name) return node.name.getText()
@@ -61,18 +69,18 @@ function functionAt(file: string, line: number, column: number): string {
   return containing.at(-1)?.name ?? '<anonymous>'
 }
 
-function readState(): FrozenFunction[] {
-  if (!existsSync(STATE_FILE)) return []
-  return JSON.parse(readFileSync(STATE_FILE, 'utf8')) as FrozenFunction[]
+function readState(stateFile: string): FrozenFunction[] {
+  if (!existsSync(stateFile)) return []
+  return JSON.parse(readFileSync(stateFile, 'utf8')) as FrozenFunction[]
 }
 
 function keyOf(entry: Pick<FrozenFunction, 'file' | 'function'>) {
   return `${entry.file}\0${entry.function}`
 }
 
-function writeState(entries: FrozenFunction[]) {
+function writeState(stateFile: string, entries: FrozenFunction[]) {
   entries.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line)
-  writeFileSync(STATE_FILE, `${JSON.stringify(entries, null, 2)}\n`)
+  writeFileSync(stateFile, `${JSON.stringify(entries, null, 2)}\n`)
 }
 
 export async function measureCognitiveComplexity(): Promise<MeasuredFunction[]> {
@@ -88,33 +96,74 @@ export async function measureCognitiveComplexity(): Promise<MeasuredFunction[]> 
   }))
 }
 
-export async function checkCognitiveCeiling() {
-  const frozen = readState()
+function assessMeasurement(
+  current: MeasuredFunction,
+  prior: FrozenFunction | undefined,
+  next: FrozenFunction[],
+) {
+  const decision = decideCeiling({
+    key: current.key, value: current.score, frozen: prior?.score, ceiling: CEILING,
+  })
+  if (decision === 'lower') {
+    Object.assign(next.find((entry) => keyOf(entry) === current.key)!, current)
+    return {
+      tightening: `${STATE_LABEL}: ${current.file}:${current.line} ${current.function} ` +
+        `tightened ${prior?.score} -> ${current.score}`,
+    }
+  }
+  if (decision === 'remove') {
+    const index = next.findIndex((entry) => keyOf(entry) === current.key)
+    if (index >= 0) next.splice(index, 1)
+    return {
+      tightening: `${STATE_LABEL}: ${current.file}:${current.line} ${current.function} ` +
+        `tightened ${prior?.score} -> ${current.score}`,
+    }
+  }
+  if (decision === 'fail') {
+    return {
+      violation: `${current.file}:${current.line} ${current.function}: complexity ${current.score}, ` +
+        `frozen at ${prior?.score ?? CEILING}; extract a decision (architecture-rules 16)`,
+    }
+  }
+  return {}
+}
+
+export async function checkCognitiveCeiling(options: CognitiveCeilingOptions = {}) {
+  const stateFile = options.stateFile ?? STATE_FILE
+  const reporter = options.reporter ?? console
+  const frozen = readState(stateFile)
   const frozenByKey = new Map(frozen.map((entry) => [keyOf(entry), entry]))
-  const measured = await measureCognitiveComplexity()
+  const measured = await (options.measure ?? measureCognitiveComplexity)()
   const measuredKeys = new Set(measured.map(({ key }) => key))
   const next = frozen.filter((entry) => measuredKeys.has(keyOf(entry))).map((entry) => ({ ...entry }))
-  const nextByKey = new Map(next.map((entry) => [keyOf(entry), entry]))
   const violations: string[] = []
+  const tightenings: string[] = []
   for (const current of measured) {
     const prior = frozenByKey.get(current.key)
-    const decision = decideCeiling({
-      key: current.key, value: current.score, frozen: prior?.score, ceiling: CEILING,
-    })
-    if (decision === 'lower') Object.assign(nextByKey.get(current.key)!, current)
-    if (decision === 'fail') {
-      violations.push(
-        `${current.file}:${current.line} ${current.function}: complexity ${current.score}, ` +
-        `frozen at ${prior?.score ?? CEILING}; extract a decision (architecture-rules 16)`,
+    const result = assessMeasurement(current, prior, next)
+    if (result.tightening) tightenings.push(result.tightening)
+    if (result.violation) violations.push(result.violation)
+  }
+  for (const prior of frozen) {
+    if (!measuredKeys.has(keyOf(prior))) {
+      tightenings.push(
+        `${STATE_LABEL}: ${prior.file}:${prior.line} ${prior.function} ` +
+        `tightened ${prior.score} -> removed`,
       )
     }
   }
-  if (JSON.stringify(next) !== JSON.stringify(frozen)) writeState(next)
-  if (violations.length) {
-    for (const violation of violations) console.error(violation)
+  if (JSON.stringify(next) !== JSON.stringify(frozen)) writeState(stateFile, next)
+  for (const tightening of tightenings) reporter.error(tightening)
+  for (const violation of violations) reporter.error(violation)
+  if (tightenings.length) {
+    reporter.error(
+      `baseline tightened; commit ${STATE_LABEL} and re-run (architecture-rules 16)`,
+    )
+  }
+  if (violations.length || tightenings.length) {
     return false
   }
-  console.log(`check-cognitive-ceiling: ok (${measured.length} frozen functions)`)
+  reporter.log(`check-cognitive-ceiling: ok (${measured.length} frozen functions)`)
   return true
 }
 
