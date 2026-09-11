@@ -131,10 +131,7 @@ export function scriptedTransport(script: ScriptedTransportEvent[]): ScriptedTra
         seen.push(event)
         await applyEvent(event, state, emit, waitForRuling, seen, prompts)
       }
-      eventsDone = true
-      const wake = eventWake as (() => void) | null
-      if (wake) wake()
-      eventWake = null
+      eventsDone = true; eventWake?.(); eventWake = null
       return result({ ...state, events: normalized })
     })()
     return {
