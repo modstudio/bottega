@@ -343,7 +343,7 @@ describe("detached run collection", () => {
     // The 120s bound leaves 5.8x margin over the 20,517ms measured worst case.
   }, 120_000)
 
-  test('confinement clear records a missing worktree block and its recovery', () => {
+  test('confinement clear records a missing worktree block', () => {
     const fixture = confinementArtifact()
     try {
       fixture.git(fixture.repo, 'worktree', 'remove', fixture.worktree)
