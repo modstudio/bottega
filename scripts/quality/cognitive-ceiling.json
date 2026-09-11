@@ -186,27 +186,33 @@
     "score": 24
   },
   {
-    "file": "orchestrator/src/cli.ts",
+    "file": "orchestrator/src/cleanup-sweep.ts",
+    "function": "sweepRuns",
+    "line": 123,
+    "score": 153
+  },
+  {
+    "file": "orchestrator/src/cleanup-sweep.ts",
     "function": "withCleanupLock callback#1",
-    "line": 967,
+    "line": 266,
+    "score": 28
+  },
+  {
+    "file": "orchestrator/src/cleanup.ts",
+    "function": "withCleanupLock callback#1",
+    "line": 249,
     "score": 35
   },
   {
     "file": "orchestrator/src/cli.ts",
-    "function": "writeTransaction callback#10",
-    "line": 4588,
+    "function": "writeTransaction callback#4",
+    "line": 3474,
     "score": 17
   },
   {
     "file": "orchestrator/src/cli.ts",
-    "function": "withCleanupLock callback#2",
-    "line": 4792,
-    "score": 28
-  },
-  {
-    "file": "orchestrator/src/cli.ts",
-    "function": "map callback#82",
-    "line": 6287,
+    "function": "map callback#69",
+    "line": 5175,
     "score": 16
   },
   {
@@ -606,22 +612,16 @@
     "score": 29
   },
   {
-    "file": "orchestrator/src/run-artifacts.ts",
-    "function": "persistRunArtifacts",
-    "line": 222,
-    "score": 18
-  },
-  {
-    "file": "orchestrator/src/run-liveness.ts",
-    "function": "reapStale",
-    "line": 172,
-    "score": 30
-  },
-  {
     "file": "orchestrator/src/run-answer.ts",
     "function": "answerRun",
     "line": 128,
     "score": 69
+  },
+  {
+    "file": "orchestrator/src/run-artifacts.ts",
+    "function": "persistRunArtifacts",
+    "line": 222,
+    "score": 18
   },
   {
     "file": "orchestrator/src/run-control.ts",
@@ -634,6 +634,18 @@
     "function": "continueRun",
     "line": 137,
     "score": 24
+  },
+  {
+    "file": "orchestrator/src/run-liveness.ts",
+    "function": "reapStale",
+    "line": 172,
+    "score": 30
+  },
+  {
+    "file": "orchestrator/src/run-stop.ts",
+    "function": "stopRun",
+    "line": 12,
+    "score": 26
   },
   {
     "file": "orchestrator/src/run.ts",
