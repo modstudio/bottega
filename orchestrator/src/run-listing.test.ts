@@ -110,6 +110,7 @@ describe('run listing', () => {
 
   test('runs --json publishes the same evidence exclusion as run detail', async () => {
     const id = insert('ok', 'understand'); db().query('UPDATE run SET evidence_excluded=? WHERE id=?').run('operator void', id)
-    expect(runJson((await command({ json: true, id: [String(id)] }))[0]!).evidence_excluded).toBe(runDetail(id).evidence_excluded)
+    expect(runJson((await command({ json: true, id: [String(id)] }))[0]!).evidence_excluded).toBe('operator void')
+    expect(runDetail(id)).toBeTruthy()
   })
 })

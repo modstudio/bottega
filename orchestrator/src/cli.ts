@@ -1224,7 +1224,7 @@ switch (cmd) {
       job: string; status: string; latency_ms: number | null; probe: number
       output_path: string | null
     }
-    const warning = thinOutputWarning(row)
+    const warning = thinOutputWarning({ ...row, writesRepo: Boolean(job(row.job).needs.writesRepo) })
     if (warning) console.error(warning)
     break
   }
@@ -1568,7 +1568,9 @@ switch (cmd) {
     const options = { jsonV1: argv.includes('--json=v1') }
     const commandFlags = { has, flag, values: flags }
     const presentation = {
-      log: console.log, dur, chainIsStranded, strandedRecovery, thinOutputWarning,
+      log: console.log, dur, chainIsStranded, strandedRecovery,
+      thinOutputWarning: (row: { job: string; status: string; latency_ms: number | null; probe: number; output_path: string | null }) =>
+        thinOutputWarning({ ...row, writesRepo: Boolean(job(row.job).needs.writesRepo) }),
     }
     await runListingCommand(options, commandFlags, presentation)
     break

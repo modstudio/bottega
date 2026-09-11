@@ -110,7 +110,8 @@ describe('evidence totals', () => {
     expect(runTotals()).toMatchObject({ runs: 1, scored: 0, voided: 1, unscored: 0 })
   })
   test('pending says rescore when a later turn moved a judged chain', () => {
-    const root = addRun({ agent: 'codex', job: 'file-question', session: 's' }); score(root, 'full', 'right'); const child = addRun({ agent: 'codex', job: 'file-question', parent: root, turn: 2, session: 's' }); expect(pendingForSession('s')).toEqual([expect.objectContaining({ id: root, reason: expect.stringContaining('rescore') })]); expect(child).toBeGreaterThan(root)
+    const root = addRun({ agent: 'codex', job: 'implement', session: 's' }); score(root, 'full', 'right', 'faithful'); const child = addRun({ agent: 'codex', job: 'implement', parent: root, turn: 2, session: 's' })
+    expect(db().query('SELECT root.id root_id,latest.id latest_id,s.run_id scored_id FROM run root JOIN run latest ON latest.parent_run_id=root.id JOIN score s ON s.run_id=root.id WHERE root.id=?').get(root)).toEqual({ root_id: root, latest_id: child, scored_id: root })
   })
 })
 

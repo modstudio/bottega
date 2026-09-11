@@ -6,7 +6,6 @@ import { failureReason, outcomeOf } from './outcome.ts'
 import type { ObservedDeadRun } from './run-liveness.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES, visibleTranscriptText } from './result-output.ts'
 import { parseMcpProbe } from './mcp-probe.ts'
-import { job } from './jobs.ts'
 
 export const COLLECTION_COMMANDS = new Set(['result', 'wait'])
 
@@ -15,11 +14,11 @@ const THIN_OUTPUT_LATENCY_MS = 5 * 60_000
 
 /** A reader-facing suspicion only: this never enters status, scoring, or routing. */
 export function thinOutputWarning(row: {
-  job: string; status: string; latency_ms: number | null; probe: number
+  job: string; status: string; latency_ms: number | null; probe: number; writesRepo: boolean
   output_path: string | null
 }): string | null {
   if (row.status !== 'ok' || row.probe || row.latency_ms === null ||
-      row.latency_ms <= THIN_OUTPUT_LATENCY_MS || job(row.job).needs.writesRepo ||
+      row.latency_ms <= THIN_OUTPUT_LATENCY_MS || row.writesRepo ||
       !row.output_path || !existsSync(row.output_path)) return null
   if (process.env.ORCH_TEST_THIN_OUTPUT_UNLINK_BEFORE_STAT === row.output_path) {
     unlinkSync(row.output_path)

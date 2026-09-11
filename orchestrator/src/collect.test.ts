@@ -50,7 +50,7 @@ describe('thin output warning', () => {
   test('result and runs flag only slow, thin, non-probe answer output', () => {
     const output = join(mkdtempSync(join(tmpdir(), 'orch-thin-output-')), 'answer.txt')
     writeFileSync(output, 'x'.repeat(600))
-    const row = { job: 'diagnose', status: 'ok', latency_ms: 400_000, probe: 0, output_path: output }
+    const row = { job: 'diagnose', status: 'ok', latency_ms: 400_000, probe: 0, output_path: output, writesRepo: false }
     expect(thinOutputWarning(row)).toBe('thin: 600 B after 6m40s — check whether the run stopped at a blocker')
     expect(thinOutputWarning({ ...row, latency_ms: 300_000 })).toBeNull()
     expect(thinOutputWarning({ ...row, probe: 1 })).toBeNull()
@@ -63,7 +63,7 @@ describe('thin output warning', () => {
     writeFileSync(output, 'x'.repeat(600))
     process.env.ORCH_TEST_THIN_OUTPUT_UNLINK_BEFORE_STAT = output
     try {
-      expect(thinOutputWarning({ job: 'diagnose', status: 'ok', latency_ms: 400_000, probe: 0, output_path: output })).toBeNull()
+      expect(thinOutputWarning({ job: 'diagnose', status: 'ok', latency_ms: 400_000, probe: 0, output_path: output, writesRepo: false })).toBeNull()
       expect(existsSync(output)).toBe(false)
     } finally {
       delete process.env.ORCH_TEST_THIN_OUTPUT_UNLINK_BEFORE_STAT
@@ -91,6 +91,6 @@ describe('collection records', () => {
     const id = addRun({ agent: 'codex', job: 'implement', status: 'failed' }); db().query("UPDATE run SET error='worktree creation failed',failure_kind='harness',exit_code=17 WHERE id=?").run(id)
     const logs: string[] = []; const log = spyOn(console, 'log').mockImplementation((...parts) => { logs.push(parts.join(' ')) }); const exit = spyOn(process, 'exit').mockImplementation(((code?: number) => { throw new Error(`EXIT:${code}`) }) as never)
     try { await expect(collectWait(db(), ['wait', String(id)])).rejects.toThrow('EXIT:1') } finally { log.mockRestore(); exit.mockRestore() }
-    expect(logs.join('\n')).toContain(`${id}\tfailed`); expect(logs.join('\n')).toContain('harness: worktree creation failed')
+    expect(logs.join('\n')).toContain(`${id}\tfailed`); expect(logs.join('\n')).toContain('harness, exit 17: worktree creation failed')
   })
 })

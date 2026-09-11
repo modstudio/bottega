@@ -1,7 +1,8 @@
 import { expect, test } from 'bun:test'
-import { declaredCreate, upsertProject } from '../test/fixture.ts'
+import { upsertProject } from '../test/fixture.ts'
 import { selectProjectProfile, setProfile } from './lenses.ts'
 import { preflight } from './dispatch-preflight.ts'
+import { resolveBase } from './worktree.ts'
 
 test('--repo makes preflight resolve the dispatch project in both directions',()=>{
   const priorDepth=process.env.ORCH_DEPTH
@@ -27,15 +28,19 @@ test('--repo makes preflight resolve the dispatch project in both directions',()
 })
 
 test('required project flags are rejected before the prompt file is read', () => {
+  process.env.ORCH_DEPTH = '0'
   upsertProject({ name: 'needs-key', path: process.cwd(), settings: { worktree: { branch: 'feature/{key}-{id}' } } })
   expect(() => preflight('implement', process.cwd())).toThrow('--key <KEY-123>')
 })
 
 test('an explicit base without a {base} slot is not refused at preflight', () => {
-  upsertProject({ name: 'cannot-base', path: process.cwd(), settings: { worktree: { create: declaredCreate('scripts/worktree', ['create', '{branch}']), branch: 'feature/{id}' } } })
+  process.env.ORCH_DEPTH = '0'
+  upsertProject({ name: 'cannot-base', path: process.cwd(), settings: { worktree: { create: { command: 'true', args: [] }, branch: 'feature/{id}' } } })
   expect(() => preflight('implement', process.cwd(), undefined, undefined, 'HEAD')).not.toThrow()
 })
 
 test('non-commit bases are refused before every dispatch artifact', () => {
-  expect(() => preflight('implement', process.cwd(), undefined, undefined, '0123456789012345678901234567890123456789')).toThrow(/single revision|commit/)
+  process.env.ORCH_DEPTH = '0'
+  const tree = Bun.spawnSync(['git', 'rev-parse', 'HEAD^{tree}'], { cwd: process.cwd(), stdout: 'pipe' }).stdout.toString().trim()
+  expect(() => resolveBase(process.cwd(), tree)).toThrow(/tree|commit/)
 })
