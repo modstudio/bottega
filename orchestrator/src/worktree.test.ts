@@ -2,7 +2,7 @@ import { describe, expect, spyOn, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { compoundCreate, createWithTool, createWorktree, declaredCreate, hermeticGitCommand, hermeticGitEnv, processStartTime, projectLockDir, reclaimStaleProjectLock, resolveBase, staleProjectLockHolder, withWorktreeCreateLock, worktreeDescribeFixture } from '../test/fixture.ts'
+import { compoundCreate, createWithTool, createWorktree, declaredCreate, hermeticGitCommand, hermeticGitEnv, processStartTime, projectLockDir, reclaimStaleProjectLock, resolveBase, staleProjectLockHolder, unmergedBranch, upsertProject, withWorktreeCreateLock, worktreeDescribeFixture } from '../test/fixture.ts'
 
 function repo() {
   const path = mkdtempSync(join(tmpdir(), 'orch-base-test-'))
@@ -271,3 +271,50 @@ test('project lock state resolves under the shared git common directory regardle
   })
 
 })
+
+const { git: movedGit, scratchRepo: movedScratchRepo } = worktreeDescribeFixture()
+
+  test('unmergedBranch counts only commits reachable from nowhere else', () => {
+    const { repo } = movedScratchRepo()
+    writeFileSync(join(repo, 'upstream.txt'), 'upstream\n')
+    movedGit(repo, 'add', 'upstream.txt')
+    movedGit(repo, 'commit', '-m', 'upstream')
+    const originTip = movedGit(repo, 'rev-parse', 'HEAD')
+    movedGit(repo, 'update-ref', 'refs/remotes/origin/main', originTip)
+    movedGit(repo, 'reset', '--hard', 'HEAD~1')
+    const tree = createWorktree(repo, 892, 'origin/main')
+    try {
+      expect(unmergedBranch(repo, tree.branch, tree.base)).toBe(null)
+      expect(unmergedBranch(repo, tree.branch, null)).toBe(null)
+      writeFileSync(join(tree.path, 'unique.txt'), 'only here\n')
+      movedGit(tree.path, 'add', 'unique.txt')
+      movedGit(tree.path, 'commit', '-m', 'unique')
+      const tip = movedGit(tree.path, 'rev-parse', 'HEAD')
+      expect(unmergedBranch(repo, tree.branch, tree.base)).toEqual({ count: 1, tip })
+      expect(unmergedBranch(repo, tree.branch, null)).toEqual({ count: 1, tip })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+  test('recipe failure runs its declared stop before removing the tree', () => {
+    const { repo } = movedScratchRepo()
+    const stopped = join(repo, 'recipe-stopped.txt')
+    const tool = {
+      recipe: {
+        serve: 'serve --port {port}',
+        stop: `printf stopped > "${stopped}"`,
+        after: 'exit 9',
+      },
+    }
+    upsertProject({
+      name: 'recipe-project', path: realpathSync(repo), settings: { worktree: tool },
+    })
+    try {
+      expect(() => createWithTool(tool, repo, 883)).toThrow('worktree setup failed at "after"')
+      expect(readFileSync(stopped, 'utf8')).toBe('stopped')
+      expect(existsSync(join(repo, '.claude', 'worktrees', 'orch-883'))).toBe(false)
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })

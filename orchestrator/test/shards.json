@@ -24,7 +24,6 @@
     "src/worktree-1.cli.test.ts": { "size": "short" },
     "test/process-boundary/worktree.test.ts": { "size": "short", "exclusive": true },
     "test/process-boundary/idle-kill.test.ts": { "size": "moderate", "exclusive": true },
-    "src/worktree-3.cli.test.ts": { "size": "short" },
     "src/worktree-4.cli.test.ts": { "size": "short" },
     "src/worktree-5.cli.test.ts": { "size": "short" }
   },
@@ -45,7 +44,6 @@
       "files": [
         "src/lifecycle-harness.cli.test.ts",
         "src/monitor.cli.test.ts",
-        "src/worktree-3.cli.test.ts",
         "src/agents-sandbox-1.cli.test.ts",
         "src/worktree-5.cli.test.ts",
         "src/git-environment-regression.cli.test.ts",
