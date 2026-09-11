@@ -35,16 +35,16 @@ type DispatchPresentation = {
   checkoutHasUncommittedWork(cwd: string): boolean
   resolveBase(cwd: string, base: string): unknown
   implicitReviewWarning(cwd: string): string
+  resolveDispatchOptions(jobName: string): Promise<DispatchOptions>
   detach(jobName: string, prompt: string, spec: DetachSpec): Promise<number>
   follow(id: number, quiet: boolean): Promise<unknown>
 }
 
 const projectNames = () => projects().map((p) => p.name).join(', ') || '(none)'
 
-export async function dispatchCommand(options: DispatchOptions, argv: string[], flags: DispatchFlags, presentation: DispatchPresentation): Promise<void> {
+export async function dispatchCommand(argv: string[], flags: DispatchFlags, presentation: DispatchPresentation): Promise<void> {
   const { has, flag, values } = flags
-  const { usage, doUsage, error, printRunId, readPrompt, validateSchema, warnCallerDrift, contractConflicts, warnImplementContractConflicts, checkoutHasUncommittedWork, resolveBase, implicitReviewWarning, detach, follow } = presentation
-  const { agent, transport, transportExplicit, avoid, distinctModels, mcp } = options
+  const { usage, doUsage, error, printRunId, readPrompt, validateSchema, warnCallerDrift, contractConflicts, warnImplementContractConflicts, checkoutHasUncommittedWork, resolveBase, implicitReviewWarning, resolveDispatchOptions, detach, follow } = presentation
   const jobName = argv[1]
   if (!jobName) usage()
   if (jobName === '--help' || jobName === '-h') doUsage()
@@ -53,6 +53,7 @@ export async function dispatchCommand(options: DispatchOptions, argv: string[], 
     throw new Error('--porcelain cannot be combined with --follow')
   }
   const requested = job(jobName)
+  const { agent, transport, transportExplicit, avoid, distinctModels, mcp } = await resolveDispatchOptions(jobName)
   const requestedCwd = flag('cwd')
   if (requestedCwd && !existsSync(requestedCwd)) throw new Error(`--cwd does not exist: ${requestedCwd}`)
   const callerCwd = requestedCwd ? realpathSync(requestedCwd) : process.cwd()

@@ -1166,30 +1166,30 @@ switch (cmd) {
   case 'do': {
     await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadRun(), loadWorktree(), loadContract(), loadTransport()])
     await ensureLocalHealth()
-    const jobName = argv[1]
-    if (!jobName) usage()
-    const selectedRow = flag('agent') ? AGENTS[flag('agent')!] : undefined
-    const transportFlag = flag('transport')
-    const transportExplicit = transportFlag !== undefined || Boolean(process.env.ORCH_TRANSPORT)
-    const transport = !transportExplicit && selectedRow
-      ? selectedRow.defaultTransport
-      : resolveTransportName(transportFlag)
-    if (transport === 'acp') {
-      assertAcpAllowed(jobName, flag('agent'))
-      assertAcpReady(flag('agent') ?? 'codex')
-    }
-    const agent = selectAgentForTransport(transport, flag('agent'))
-    // Dispatch composes the routing pick and transport eligibility at the CLI adapter.
-    const { avoid, distinctModels } = await routeConstraints(flag('agent'))
     await dispatchCommand(
-      { agent, transport, transportExplicit, avoid, distinctModels, mcp: requestedMcp() },
       argv,
       { has, flag, values: flags },
       {
         usage, doUsage, error: console.error, printRunId, readPrompt,
         validateSchema: readStrictCodexSchema, warnCallerDrift, contractConflicts,
         warnImplementContractConflicts, checkoutHasUncommittedWork, resolveBase,
-        implicitReviewWarning, detach, follow,
+        implicitReviewWarning,
+        // Dispatch composes the routing pick and transport eligibility at the CLI adapter.
+        resolveDispatchOptions: async (jobName) => {
+          const selectedRow = flag('agent') ? AGENTS[flag('agent')!] : undefined; const transportFlag = flag('transport')
+          const transportExplicit = transportFlag !== undefined || Boolean(process.env.ORCH_TRANSPORT)
+          const transport = !transportExplicit && selectedRow
+            ? selectedRow.defaultTransport
+            : resolveTransportName(transportFlag)
+          if (transport === 'acp') {
+            assertAcpAllowed(jobName, flag('agent'))
+            assertAcpReady(flag('agent') ?? 'codex')
+          }
+          const agent = selectAgentForTransport(transport, flag('agent'))
+          const { avoid, distinctModels } = await routeConstraints(flag('agent'))
+          return { agent, transport, transportExplicit, avoid, distinctModels, mcp: requestedMcp() }
+        },
+        detach, follow,
       },
     )
     break
