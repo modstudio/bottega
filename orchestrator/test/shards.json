@@ -1,14 +1,11 @@
 {
   "files": {
-    "src/agents-sandbox-2.cli.test.ts": { "size": "short" },
     "src/canon.cli.test.ts": { "size": "short" },
     "src/catalog.cli.test.ts": { "size": "short" },
     "src/docs.cli.test.ts": { "size": "short" },
     "src/epic.cli.test.ts": { "size": "short" },
     "src/review-yield.cli.test.ts": { "size": "short" },
     "src/evals.cli.test.ts": { "size": "short" },
-    "src/git-environment-regression.cli.test.ts": { "size": "short" },
-    "src/issue.cli.test.ts": { "size": "short" },
     "src/lifecycle-harness.cli.test.ts": { "size": "moderate", "exclusive": true },
     "src/linked-worktree-database.cli.test.ts": { "size": "short" },
     "src/monitor.cli.test.ts": { "size": "short" },
@@ -19,7 +16,7 @@
     "src/route.cli.test.ts": { "size": "short" },
     "src/run-1.cli.test.ts": { "size": "short" },
     "src/workflows.cli.test.ts": { "size": "short" },
-    "src/worktree-1.cli.test.ts": { "size": "short" },
+    "test/process-boundary/worktree-create.test.ts": { "size": "short" },
     "test/process-boundary/worktree.test.ts": { "size": "short", "exclusive": true },
     "test/process-boundary/idle-kill.test.ts": { "size": "moderate", "exclusive": true },
     "test/process-boundary/run.test.ts": { "size": "short" },
@@ -28,7 +25,8 @@
     "test/process-boundary/discard.test.ts": { "size": "short" },
     "test/process-boundary/abandon.test.ts": { "size": "short" },
     "test/process-boundary/ref-guard.test.ts": { "size": "short" },
-    "src/worktree-4.cli.test.ts": { "size": "short" },
+    "test/process-boundary/git-environment.test.ts": { "size": "short" },
+    "test/process-boundary/run-git.test.ts": { "size": "short" },
     "src/worktree-5.cli.test.ts": { "size": "short" }
   },
   "shards": [
@@ -50,7 +48,6 @@
         "src/lifecycle-harness.cli.test.ts",
         "src/monitor.cli.test.ts",
         "src/worktree-5.cli.test.ts",
-        "src/git-environment-regression.cli.test.ts",
         "src/review-1.cli.test.ts",
         "src/route.cli.test.ts",
         "src/catalog.cli.test.ts"
@@ -61,9 +58,9 @@
       "measuredSeconds": 76.25,
       "files": [
         "test/process-boundary/worktree.test.ts",
-        "src/agents-sandbox-2.cli.test.ts",
         "src/canon.cli.test.ts",
-        "src/worktree-4.cli.test.ts",
+        "test/process-boundary/git-environment.test.ts",
+        "test/process-boundary/run-git.test.ts",
         "src/projects.cli.test.ts"
         ,"test/process-boundary/abandon.test.ts"
       ]
@@ -71,9 +68,8 @@
     {
       "measuredSeconds": 75.42,
       "files": [
-        "src/worktree-1.cli.test.ts",
+        "test/process-boundary/worktree-create.test.ts",
         "src/review-3.cli.test.ts",
-        "src/issue.cli.test.ts",
         "src/linked-worktree-database.cli.test.ts",
         "test/process-boundary/run.test.ts"
         ,"test/process-boundary/ref-guard.test.ts"

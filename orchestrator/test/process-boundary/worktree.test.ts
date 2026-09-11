@@ -1,10 +1,8 @@
-import { describe, expect, spyOn, test } from 'bun:test'
-import { appendFileSync, mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, realpathSync, mkdirSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { addRun, compoundCreate, createWithTool, createWorktree, db, declaredCreate, fakeDocker, hermeticGitCommand, hermeticGitEnv, nowIso, prepareSharedRefGuard, processStartTime, projectLockDir, reclaimStaleProjectLock, resolveBase, runJob, staleProjectLockHolder, upsertProject, withProjectLock, withWorktreeCreateLock, worktreeDescribeFixture } from '../fixture.ts'
-
-
+import { describe, expect, test } from "bun:test"
+import { mkdtempSync, rmSync, writeFileSync, existsSync, realpathSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { addRun, compoundCreate, createWorktree, db, hermeticGitCommand, hermeticGitEnv, runJob, upsertProject, withProjectLock, withWorktreeCreateLock, worktreeDescribeFixture, orphanSafety, run } from "../fixture.ts"
 describe("a worktree is resolved against the main checkout, not the caller cwd", () => {
   const { git, scratchRepo, markScratchRepoOwner } = worktreeDescribeFixture()
 test('two environment bases contend on the shared checkout lock', async () => {
@@ -242,6 +240,41 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
       expect(git(repo, 'rev-parse', branch)).toBe(before)
       expect(db().query('SELECT worktree FROM run WHERE id=?').get(target))
         .toEqual({ worktree: null })
+    } finally {
+      rmSync(repo, { recursive: true, force: true })
+    }
+  })
+
+})
+
+describe('registered worktree teardown boundary', () => {
+const git = (cwd: string, ...args: string[]) => {
+  const p = Bun.spawnSync(['git', ...args], { cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe' })
+  if (p.exitCode !== 0) throw new Error(p.stderr.toString())
+  return p.stdout.toString().trim()
+}
+test('a registered worktree is removable whether or not it is dirty', () => {
+    const repo = mkdtempSync(join(tmpdir(), 'orch-orphan-'))
+    const tree = join(repo, '.claude', 'worktrees', 'orphan')
+    try {
+      git(repo, 'init', '-b', 'main')
+      git(repo, 'config', 'user.email', 'orch-test@example.invalid')
+      git(repo, 'config', 'user.name', 'Orch Test')
+      writeFileSync(join(repo, 'kept.txt'), 'base\n')
+      git(repo, 'add', 'kept.txt')
+      git(repo, 'commit', '-m', 'base')
+      git(repo, 'worktree', 'add', '-b', 'orphan', tree, 'main')
+
+      expect(orphanSafety(tree, repo, 'main')).toMatchObject({ removable: true, branch: 'orphan' })
+      writeFileSync(join(tree, 'new.txt'), 'unique\n')
+      expect(orphanSafety(tree, repo, 'main')).toMatchObject({
+        removable: true, branch: 'orphan',
+      })
+      git(tree, 'add', 'new.txt')
+      git(tree, 'commit', '-m', 'unique')
+      expect(orphanSafety(tree, repo, 'main')).toMatchObject({
+        removable: true, branch: 'orphan',
+      })
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }
