@@ -81,8 +81,7 @@ export function blockersCommand(flags: CommandFlags, presentation: CommandPresen
     `\ncarried on and said so. Each is capping what every run in that project can` +
     `\nverify, which is why they are ranked by how often they recur.`,
   )
-  return
-  }
+}
 
 
 export function healthCommand(flags: CommandFlags, presentation: CommandPresentation): void {
@@ -169,6 +168,4 @@ export function healthCommand(flags: CommandFlags, presentation: CommandPresenta
       + ` signal=${row.signal ?? '-'}`,
     )
   }
-  return
-  }
-
+}

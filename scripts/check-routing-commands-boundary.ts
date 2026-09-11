@@ -19,4 +19,3 @@ const violations = [...imports.specifiers, ...imports.typeOnlySpecifiers].flatMa
 for (const expression of imports.unresolvedRelative) violations.push(`${FILE} has an unresolved relative import at ${expression}`)
 if (violations.length) { console.error(`check-routing-commands-boundary: ${violations.length} violation(s)\n${violations.map((v) => `  ${v}`).join('\n')}\n`); process.exit(1) }
 console.log('check-routing-commands-boundary: ok')
-

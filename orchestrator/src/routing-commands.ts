@@ -144,8 +144,7 @@ export function routingBacktestCommand(flags: RoutingFlags, presentation: Routin
       `Thompson=[${distribution(included?.thompsonSelections ?? {})}]`,
     )
   }
-  return
-  }
+}
 
 
 export function guideCommand(flags: RoutingFlags, presentation: RoutingPresentation): void {
@@ -231,8 +230,7 @@ export function guideCommand(flags: RoutingFlags, presentation: RoutingPresentat
     `\n  ${decided} bucket(s) decided by evidence, ${provisional} provisional, ${blank} with no runs.` +
     `\n  Routing and latency evidence are separated at the provisional 16 KiB prompt boundary.`,
   )
-  return
-  }
+}
 
 
 export function statsCommand(flags: RoutingFlags, presentation: RoutingPresentation): void {
@@ -291,8 +289,7 @@ export function statsCommand(flags: RoutingFlags, presentation: RoutingPresentat
       log(`${agent.padEnd(width)} ${cells}`)
     }
   }
-  return
-  }
+}
 
 
 export function pickCommand(options: PickOptions, flags: RoutingFlags, presentation: PickPresentation): void {
@@ -340,5 +337,4 @@ export function pickCommand(options: PickOptions, flags: RoutingFlags, presentat
     )
   }
   log(`\n  (a rate steers routing only at ${MIN_SAMPLE}+ scored runs)`)
-  return
-  }
+}

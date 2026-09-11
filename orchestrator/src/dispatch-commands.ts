@@ -193,5 +193,4 @@ export async function dispatchCommand(options: DispatchOptions, argv: string[], 
   warnImplementContractConflicts(conflicts, id)
 
   await follow(id, has('quiet'))
-  return
-  }
+}
