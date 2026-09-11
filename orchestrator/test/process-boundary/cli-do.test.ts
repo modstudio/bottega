@@ -7,6 +7,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { OrchRunEnvelopeSchema } from '../../../shared/orch-contract.ts'
 import { runJson, AGENTS, JOBS, RUNS_DIR, addRun, bootstrapFixtureStore, callerDrift, db, declaredCreate, detachedRunOptions, dir, hermeticGitEnv, setDoc, upsertProject } from '../fixture.ts'
+import './cli-do.test-residue.ts'
 import { MAIN_CHECKOUT_INVARIANT, mainCheckoutWorktreeHint } from '../../src/projects.ts'
 
 import { runCollectionDescribeFixture } from '../fixture.ts'
