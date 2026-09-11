@@ -15,6 +15,24 @@ async function doctor() {
 beforeEach(() => { process.env.ORCH_LOCAL_BASE_URL = '' })
 
 describe('doctor presentation', () => {
+  test('doctor reports a checkout off its landing branch as a register question, not a failure', async () => {
+    const repo = join(dir, 'doctor-off-trunk')
+    mkdirSync(repo, { recursive: true })
+    const git = (...args: string[]) => Bun.spawnSync(['git', ...args], { cwd: repo, stdout: 'pipe', stderr: 'pipe' })
+    expect(git('init', '-b', 'main').exitCode).toBe(0)
+    expect(git('config', 'user.email', 'orch-test@example.invalid').exitCode).toBe(0)
+    expect(git('config', 'user.name', 'Orch Test').exitCode).toBe(0)
+    writeFileSync(join(repo, 'tracked.txt'), 'fixture\n')
+    expect(git('add', '.').exitCode).toBe(0)
+    expect(git('commit', '-m', 'fixture').exitCode).toBe(0)
+    expect(git('checkout', '-b', 'topic').exitCode).toBe(0)
+    upsertProject({ name: 'off-trunk', path: repo, settings: { trunk: 'main' } })
+    const result = await doctor()
+    expect(result.exit).toBe(0)
+    expect(result.text).toContain('register questions (not run failures):')
+    expect(result.text).toContain('off-trunk: checkout HEAD is topic, not landing branch main')
+  })
+
   test('doctor retains resources whose repository root is unresolvable', async () => {
     const id = addRun({ agent: 'codex', job: 'implement', repo: 'adanim' }); db().query('UPDATE run SET worktree=? WHERE id=?').run(`/tmp/missing/orch-${id}`, id)
     const classified = classifiedDockerResources([{ kind: 'container', name: `orch-${id}-postgres-1`, runId: id }, { kind: 'volume', name: `orch-${id}_adanim-pgdata`, runId: id }], [{ id, repo: 'adanim', worktree: `/tmp/missing/orch-${id}`, status: 'ok', retentionReason: 'unresolvable repository root' }])
