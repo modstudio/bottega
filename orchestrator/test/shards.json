@@ -34,7 +34,6 @@
     {
       "measuredSeconds": 76.86,
       "files": [
-        "src/agents.cli.test.ts",
         "src/docs.cli.test.ts",
         "src/run-1.cli.test.ts",
         "src/workflows.cli.test.ts",

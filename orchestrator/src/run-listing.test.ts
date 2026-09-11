@@ -113,4 +113,37 @@ describe('run listing', () => {
     expect(runJson((await command({ json: true, id: [String(id)] }))[0]!).evidence_excluded).toBe('operator void')
     expect(runDetail(id)).toBeTruthy()
   })
+
+  test('runs, runs --json, and --follow report the same failover chain', async () => {
+    const root = addRun({ agent: 'codex', job: 'understand', status: 'failed', kind: 'quota' })
+    const successor = addRun({ agent: 'grok', job: 'understand' })
+    db().query('UPDATE run SET retry_of=?,automatic_failover=1,vendor_tokens=222,vendor_cost_usd=0.22 WHERE id=?').run(root, successor)
+    db().query('UPDATE run SET vendor_tokens=111,vendor_cost_usd=0.11 WHERE id=?').run(root)
+    const human = (await command()).join('\n'); expect(human.match(new RegExp(`\\b${root}\\s+codex→grok`, 'g'))).toHaveLength(1); expect(human).not.toMatch(new RegExp(`\\b${successor}\\s+`))
+    const rows = (await command({ json: true })).map(runJson) as { id: number; retry_of: number | null; failover_chain: string[]; vendor_tokens: number; vendor_cost_usd: number }[]
+    expect(rows.map((row) => [row.id, row.retry_of, row.vendor_tokens, row.vendor_cost_usd])).toEqual([[successor, root, 222, 0.22], [root, null, 111, 0.11]])
+    expect(rows.every((row) => JSON.stringify(row.failover_chain) === JSON.stringify(['codex', 'grok']))).toBe(true)
+  })
+
+  test('runs --json publishes every question on the root, including child turns', async () => {
+    const root = insert('asking'); const child = insert('asking'); db().query('UPDATE run SET parent_run_id=?,turn=2 WHERE id=?').run(root, child)
+    db().query('INSERT INTO question (run_id,asked_at,question,answered_at) VALUES (?,?,?,?)').run(root, '2026-09-04T10:00:00.000Z', 'root q', '2026-09-04T10:05:00.000Z')
+    db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)').run(child, '2026-09-04T10:10:00.000Z', 'child q')
+    const row = runJson((await command({ json: true, id: [String(root)] }))[0]!)
+    expect(row.questions).toEqual([expect.objectContaining({ run_id: root, answered_at: '2026-09-04T10:05:00.000Z' }), expect.objectContaining({ run_id: child, answered_at: null })])
+    expect(row.questions.every((question: object) => Object.keys(question).sort().join() === 'answered_at,asked_at,id,run_id')).toBe(true)
+  })
+
+  test('a deliberate retry remains separate from an automatic failover chain', async () => {
+    const first = addRun({ agent: 'codex', job: 'understand', status: 'failed', kind: 'quota' }); const retry = addRun({ agent: 'grok', job: 'understand' })
+    db().query('UPDATE run SET retry_of=? WHERE id=?').run(first, retry)
+    const human = (await command()).join('\n'); expect(human).toMatch(new RegExp(`\\b${first}\\s+codex\\s+`)); expect(human).toMatch(new RegExp(`\\b${retry}\\s+grok\\s+`)); expect(human).not.toContain('codex→grok')
+  })
+
+  test('a resumed turn can also fail over forward without confusing the two axes', async () => {
+    const root = addRun({ agent: 'codex', job: 'understand', status: 'failed' }); const turn = addRun({ agent: 'codex', job: 'understand', status: 'failed', kind: 'quota', parent: root, turn: 2 }); const successor = addRun({ agent: 'grok', job: 'understand' })
+    db().query('UPDATE run SET retry_of=?,automatic_failover=1 WHERE id=?').run(turn, successor)
+    const human = (await command()).join('\n'); expect(human.match(new RegExp(`\\b${root}\\s+codex→grok`, 'g'))).toHaveLength(1); expect(human).not.toMatch(new RegExp(`\\b${successor}\\s+`))
+    const rows = (await command({ json: true })).map(runJson); expect(rows.find((row) => row.id === root)?.failover_chain).toEqual(['codex', 'grok']); expect(rows.find((row) => row.id === successor)?.retry_of).toBe(turn)
+  })
 })

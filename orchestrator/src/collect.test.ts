@@ -6,6 +6,15 @@ import { branchNote, collectResult, collectWait, mintedBranchForRun, noCommitNot
 import { addRun, db, dir } from '../test/fixture.ts'
 import { fakeClock, registerClock, systemClock } from './clock.ts'
 
+const recordedResult = (id: number) => {
+  const logs: string[] = []; const errors: string[] = []
+  collectResult(db(), ['result', String(id)], () => '', {
+    log: (...values) => logs.push(values.join(' ')), error: (...values) => errors.push(values.join(' ')),
+    exit: (code): never => { throw new Error(`EXIT:${code}`) },
+  })
+  return { logs, errors }
+}
+
 const base = '3646a62f6abd4486aeb2c27744d2f69ba7210828'
 const changed = JSON.stringify(['.githooks/pre-commit'])
 
@@ -177,5 +186,22 @@ describe('collection records', () => {
     const logs: string[] = []; const log = spyOn(console, 'log').mockImplementation((...parts) => { logs.push(parts.join(' ')) }); const exit = spyOn(process, 'exit').mockImplementation(((code?: number) => { throw new Error(`EXIT:${code}`) }) as never)
     try { await expect(collectWait(db(), ['wait', String(id)])).rejects.toThrow('EXIT:1') } finally { log.mockRestore(); exit.mockRestore() }
     expect(logs.join('\n')).toContain(`${id}\tfailed`); expect(logs.join('\n')).toContain('harness, exit 17: worktree creation failed')
+  })
+
+  test('orch result says so on the record a person would score from', () => {
+    const id = addRun({ agent: 'codex', job: 'review-lens' }); db().query("UPDATE run SET evidence_excluded='shared an output file' WHERE id=?").run(id)
+    expect(recordedResult(id).errors.join('\n')).toContain('not routing evidence: shared an output file')
+  })
+
+  test('orch result exposes degradation and the explicit trust command', () => {
+    const id = addRun({ agent: 'grok', job: 'review-lens' }); db().query("UPDATE run SET cwd='/tmp/a lens tree',mcp=1,mcp_server='starship',mcp_connected=0,mcp_error='folder untrusted: repo-local server not started' WHERE id=?").run(id)
+    const shown = recordedResult(id).errors.join('\n'); expect(shown).toContain('mcp:       starship NOT CONNECTED'); expect(shown).toContain("trust:     grok --cwd '/tmp/a lens tree' --trust")
+  })
+
+  test('orch result names an unverified attach distinctly from a confirmed one', () => {
+    const unverified = addRun({ agent: 'codex', job: 'review-lens' }); db().query("UPDATE run SET mcp=1,mcp_server='fixture-project',mcp_connected=NULL,mcp_error='codex does not expose an MCP connection diagnostic' WHERE id=?").run(unverified)
+    const confirmed = addRun({ agent: 'grok', job: 'review-lens' }); db().query("UPDATE run SET mcp=1,mcp_server='fixture-project',mcp_connected=1 WHERE id=?").run(confirmed)
+    const unknown = recordedResult(unverified).errors.join('\n'); const known = recordedResult(confirmed).errors.join('\n')
+    expect(unknown).toContain('mcp:       fixture-project UNVERIFIED'); expect(unknown).not.toContain('connected'); expect(known).toContain('mcp:       fixture-project connected'); expect(known).not.toContain('UNVERIFIED')
   })
 })

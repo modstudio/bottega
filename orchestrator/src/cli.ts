@@ -1215,7 +1215,7 @@ switch (cmd) {
 
   case 'result': {
     await loadJobs()
-    collectResult(db(), argv, scoreSuffix)
+    collectResult(db(), argv, scoreSuffix, { log: (...values) => console.log(...values), error: (...values) => console.error(...values), exit: (code): never => process.exit(code) })
     const id = Number(argv[1])
     const chain = resolveFailover(db(), id)
     const row = db().query(
