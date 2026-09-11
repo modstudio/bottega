@@ -82,7 +82,7 @@ export async function stopRun(id: number, options: RunStopOptions, helpers: RunS
     // substrate; only its recreatable containers are reclaimed at stop.
     helpers.terminateRunProcesses(row.id, row.pid ? [row.pid] : [])
     const dockerTeardown = teardownTerminalRunResources(db(), row.id)
-    console.log(`stopped run ${row.id}`)
+    options.presentation.log(`stopped run ${row.id}`)
     if (cleanupRow.worktree) {
       const dockerMessage = !dockerTeardown.complete
         ? dockerTeardown.removed
@@ -95,12 +95,12 @@ export async function stopRun(id: number, options: RunStopOptions, helpers: RunS
             : dockerTeardown.outcome === 'unascertainable'
               ? `left Docker containers in place because removal could not be ascertained: ${dockerTeardown.reason}`
             : 'found no Docker containers to reclaim'
-      console.log(
+      options.presentation.log(
         `kept worktree ${cleanupRow.worktree} and branch ${cleanupRow.branch ?? '(unknown)'} for continuation; ` +
         dockerMessage,
       )
     } else if (dockerTeardown.outcome === 'unascertainable') {
-      console.log(
+      options.presentation.log(
         `left Docker containers in place because removal could not be ascertained: ${dockerTeardown.reason}`,
       )
     }
@@ -170,28 +170,28 @@ export async function abandonRun(id: number, options: RunStopOptions, helpers: R
     })
     const { row, cleanupRow } = abandoned
     teardownTerminalRunResources(db(), row.id)
-    console.log(`abandoned run ${row.id}`)
+    options.presentation.log(`abandoned run ${row.id}`)
 
     if (cleanupRow.worktree) {
       await discardWorktree(cleanupRow as CleanupRow, 'abandoned', options.force, undefined, options)
       return
     }
 
-    console.log(`worktree cleanup skipped: run ${id} has no worktree`)
+    options.presentation.log(`worktree cleanup skipped: run ${id} has no worktree`)
     if (!cleanupRow.branch) {
-      console.log(`branch cleanup skipped: run ${id} has no branch`)
+      options.presentation.log(`branch cleanup skipped: run ${id} has no branch`)
       return
     }
 
     const repoRoot = cleanupRepoRoot(cleanupRow)
     if (!repoRoot) {
-      console.log(`branch ${cleanupRow.branch} cleanup skipped: repository root not found`)
+      options.presentation.log(`branch ${cleanupRow.branch} cleanup skipped: repository root not found`)
       return
     }
     withCleanupLock(repoRoot, `abandon run ${id}`, cleanupRow.worktree, () => {
       const ownersBefore = evidenceOwningBranchOwners(cleanupRow, repoRoot)
       if (ownersBefore.length) {
-        console.log(`branch ${cleanupRow.branch} left because run ${ownersBefore[0]!.id} records it`)
+        options.presentation.log(`branch ${cleanupRow.branch} left because run ${ownersBefore[0]!.id} records it`)
         return
       }
       let protectedBranch: ReturnType<typeof unmergedBranch> = null
@@ -205,7 +205,7 @@ export async function abandonRun(id: number, options: RunStopOptions, helpers: R
       if (protectedBranch) {
         db().query('UPDATE run SET branch_kept=?, branch_kept_tip=NULL WHERE id=?')
           .run(cleanupRow.branch, authority.rootId)
-        console.log(options.keptBranchLine(
+        options.presentation.log(options.presentation.keptBranchLine(
           cleanupRow.branch!, protectedBranch.count, afterCutCount, authority.rootId,
         ))
         return
@@ -217,8 +217,8 @@ export async function abandonRun(id: number, options: RunStopOptions, helpers: R
         cleanupRow.id, repoRoot, cleanupRow.branch!, snapshot, ownersBefore, ownersAfter,
       )
       if (outcome.refusal) throw new Error(outcome.refusal)
-      if (outcome.warning) console.error(outcome.warning)
-      console.log(removed
+      if (outcome.warning) options.presentation.error(outcome.warning)
+      options.presentation.log(removed
         ? `deleted branch ${cleanupRow.branch}`
         : `branch ${cleanupRow.branch} cleanup skipped: branch does not exist`)
     })

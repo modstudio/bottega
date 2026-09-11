@@ -444,6 +444,7 @@ function keptBranchLine(
     `merge it, or orch discard ${id} --force to delete it after checking no other run owns it`
 }
 
+const cleanupPresentation = { log: (...v: unknown[]) => console.log(...v), error: (...v: unknown[]) => console.error(...v), setExitCode: (code: number) => { process.exitCode = code }, keptBranchLine }
 function auditReason(): string | null {
   const scorer = flag('scorer')
   if (scorer) return `--scorer ${scorer}`
@@ -3257,13 +3258,12 @@ switch (cmd) {
 
   case 'sweep': {
     await loadGrokTrust()
-    await sweepRuns({ dryRun: has('dry-run'), project: flag('project'), force: has('force') }, { grokTrustHeadings, grokTrustPathFromHeading })
+    await sweepRuns({ dryRun: has('dry-run'), project: flag('project'), force: has('force'), presentation: cleanupPresentation }, { grokTrustHeadings, grokTrustPathFromHeading })
     break
   }
-
   case 'discard': {
     const id = Number(argv[1]); if (!id) usage()
-    await discardRun(id, { force: has('force'), auditReason: auditReason(), keptBranchLine })
+    await discardRun(id, { force: has('force'), auditReason: auditReason(), presentation: cleanupPresentation })
     break
   }
 
@@ -3283,14 +3283,14 @@ switch (cmd) {
   case 'stop': {
     await loadRun()
     const id = Number(argv[1]); if (!id) usage()
-    await stopRun(id, { force: has('force'), auditReason: auditReason(), keptBranchLine }, { lifecycleCheckpoint, terminateRunProcesses })
+    await stopRun(id, { force: has('force'), auditReason: auditReason(), presentation: cleanupPresentation }, { lifecycleCheckpoint, terminateRunProcesses })
     break
   }
 
   case 'abandon': {
     await loadRun()
     const id = Number(argv[1]); if (!id) usage()
-    await abandonRun(id, { force: has('force'), note: flag('note'), auditReason: auditReason(), keptBranchLine }, { lifecycleCheckpoint, terminateRunProcesses })
+    await abandonRun(id, { force: has('force'), note: flag('note'), auditReason: auditReason(), presentation: cleanupPresentation }, { lifecycleCheckpoint, terminateRunProcesses })
     break
   }
 
@@ -3514,7 +3514,7 @@ switch (cmd) {
       if (!row.worktree) throw new Error(`run ${id} has no worktree to discard`)
       const discardAuthority = authorizeRunMutation(id, 'discard')
       discardWorktree(row as CleanupRow, 'discarded', false, discardAuthority, {
-        force: false, auditReason: auditReason(), keptBranchLine,
+        force: false, auditReason: auditReason(), presentation: cleanupPresentation,
       })
     }
     break

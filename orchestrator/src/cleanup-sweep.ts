@@ -10,9 +10,14 @@ import { closeOutRun } from './close-out.ts'
 import { isOrchWorktree, markedWorktreeSource, orphanSafety } from './worktree-attribution.ts'
 import { branchTip, type Worktree } from './worktree.ts'
 import { classifiedDockerResources, dockerRunResources, leakedResourceLines, orchRunId, type DockerResource } from './docker-resources.ts'
-import { evidenceOwningBranchOwners, resourcesForConversation, verifyBranchOwnershipAfterCleanup, withCleanupLock } from './cleanup.ts'
+import { evidenceOwningBranchOwners, resourcesForConversation, verifyBranchOwnershipAfterCleanup, withCleanupLock, type CleanupPresentation } from './cleanup.ts'
 
-export type SweepOptions = { dryRun: boolean; project?: string; force: boolean }
+export type SweepOptions = {
+  dryRun: boolean
+  project?: string
+  force: boolean
+  presentation: CleanupPresentation
+}
 export type SweepHelpers = { grokTrustHeadings: () => string[]; grokTrustPathFromHeading: (heading: string) => string | null }
 
 const KEPT_ROW_LIMIT = 10
@@ -82,8 +87,9 @@ function printSweepKept(
   kept: { line: string; reason: string }[],
   dry: boolean,
   force: boolean,
+  presentation: CleanupPresentation,
 ): void {
-  console.log(`\n${dry ? 'would reclaim' : 'reclaimed'} ${done}, kept ${kept.length}`)
+  presentation.log(`\n${dry ? 'would reclaim' : 'reclaimed'} ${done}, kept ${kept.length}`)
   const listAll = dry
   const fits = kept.length <= KEPT_ROW_LIMIT
   const showSummary = listAll || !fits
@@ -94,15 +100,15 @@ function printSweepKept(
     const grouped = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     const width = String(grouped[0]![1]).length
     for (const [reason, n] of grouped) {
-      console.log(`  ${String(n).padStart(width)}  ${reason}`)
+      presentation.log(`  ${String(n).padStart(width)}  ${reason}`)
     }
   }
   if (showRows) {
-    for (const row of kept) console.log(`  ${row.line}`)
+    for (const row of kept) presentation.log(`  ${row.line}`)
   } else {
     const parts = ['orch sweep --dry-run']
     if (force) parts.push('--force')
-    console.log(`  ${parts.join(' ')} lists every kept row`)
+    presentation.log(`  ${parts.join(' ')} lists every kept row`)
   }
 }
 
@@ -165,14 +171,14 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
           inventoryErrors.add(before.reason)
           cleanupFailed = true
           keep(`${r.id}  inventory unavailable`, 'inventory unavailable')
-          console.error(`could not verify reclaim ${r.id}: inventory unavailable`)
+          options.presentation.error(`could not verify reclaim ${r.id}: inventory unavailable`)
           continue
         }
       }
       const closed = closeOutRun(r.id, { intent: 'sweep', dryRun: dry })
       if (closed.outcome === 'released' || closed.outcome === 'absent') {
         if (dry) {
-          console.log(`would reclaim ${r.id}  ${r.worktree}`)
+          options.presentation.log(`would reclaim ${r.id}  ${r.worktree}`)
           done++
         } else {
           const project = r.repo ?? projectAt(r.worktree)?.name ?? 'unknown'
@@ -181,14 +187,14 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
             inventoryErrors.add(inventory.reason)
             cleanupFailed = true
             keep(`${r.id}  inventory unavailable`, 'inventory unavailable')
-            console.error(`could not verify reclaim ${r.id}: inventory unavailable`)
+            options.presentation.error(`could not verify reclaim ${r.id}: inventory unavailable`)
           } else if (inventory.resources.length) {
             cleanupFailed = true
             for (const resource of inventory.resources) leaked.set(`${resource.kind}:${resource.name}`, {
               resource, project, runId: r.id,
             })
             keep(`${r.id}  leaked Docker resources`, 'leaked Docker resources')
-            console.error(`could not fully reclaim ${r.id}: project ${project}'s remove tool leaked Docker resources`)
+            options.presentation.error(`could not fully reclaim ${r.id}: project ${project}'s remove tool leaked Docker resources`)
           } else {
             writeTransaction(() => {
               auditRunMutation(
@@ -196,7 +202,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
                 'sweep',
               )
             })
-            console.log(`reclaimed ${r.id}  ${r.worktree}`)
+            options.presentation.log(`reclaimed ${r.id}  ${r.worktree}`)
             done++
           }
         }
@@ -207,7 +213,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
         keep(`${r.id}  ${closed.outcome}: ${closed.detail}`, reason)
         if (closed.outcome === 'failed') {
           cleanupFailed = true
-          console.error(`could not reclaim ${r.id}: ${closed.detail}`)
+          options.presentation.error(`could not reclaim ${r.id}: ${closed.detail}`)
         }
       }
     }
@@ -251,7 +257,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
           continue
         }
         if (dry) {
-          console.log(`would reclaim ${label}; ${safe.detail}`)
+          options.presentation.log(`would reclaim ${label}; ${safe.detail}`)
           done++
           continue
         }
@@ -272,7 +278,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
                 `${owner.id} (${owner.status})`).join(', ')
               cleanupFailed = true
               keep(`${label}  acquired by run(s): ${owners}`, 'shared with live run(s)')
-              console.error(`could not reclaim ${label}: acquired by run(s) ${owners}`)
+              options.presentation.error(`could not reclaim ${label}: acquired by run(s) ${owners}`)
               return
             }
             const ownersBefore = evidenceOwningBranchOwners(ownerRow, p.path)
@@ -289,11 +295,11 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
               const outcome = verifyBranchOwnershipAfterCleanup(
                 runId ?? -1, p.path, safe.branch, snapshot, ownersBefore, ownersAfter,
               )
-              if (outcome.warning) console.error(`${label}: ${outcome.warning}`)
+              if (outcome.warning) options.presentation.error(`${label}: ${outcome.warning}`)
               if (outcome.refusal) {
                 cleanupFailed = true
                 keep(`${label}  removal refused`, 'removal refused')
-                console.error(`could not reclaim ${label}: ${outcome.refusal}`)
+                options.presentation.error(`could not reclaim ${label}: ${outcome.refusal}`)
                 return
               }
             }
@@ -303,7 +309,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
               cleanupFailed = true
               keep(`${label}  acquired during cleanup by run(s): ${owners}`,
                 'shared with live run(s)')
-              console.error(`could not reclaim ${label}: acquired during cleanup by run(s) ${owners}`)
+              options.presentation.error(`could not reclaim ${label}: acquired during cleanup by run(s) ${owners}`)
               return
             }
             if (res.removed) {
@@ -324,24 +330,24 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
                 })
                 keep(`${label}  leaked Docker resources`, 'leaked Docker resources')
               } else {
-                console.log(`reclaimed ${label}  ${res.detail}`)
-                if (res.output) console.log(res.output)
+                options.presentation.log(`reclaimed ${label}  ${res.detail}`)
+                if (res.output) options.presentation.log(res.output)
                 const owner = ownersAfter[0] ?? ownersBefore[0] ?? null
                 if (owner && safe.branch) {
-                  console.log(`branch ${safe.branch} left because run ${owner.id} records it`)
+                  options.presentation.log(`branch ${safe.branch} left because run ${owner.id} records it`)
                 }
                 done++
               }
             } else {
               cleanupFailed = true
               keep(`${label}  removal refused`, 'removal refused')
-              console.error(`could not reclaim ${label}: ${res.detail}`)
+              options.presentation.error(`could not reclaim ${label}: ${res.detail}`)
             }
           })
         } catch (error) {
           cleanupFailed = true
           keep(`${label}  removal refused`, 'removal refused')
-          console.error(
+          options.presentation.error(
             `could not reclaim ${label}: ${error instanceof Error ? error.message : String(error)}`,
           )
         }
@@ -367,7 +373,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
             sweepWithTool(tool, p.path))
         } catch (error) {
           cleanupFailed = true
-          console.error(
+          options.presentation.error(
             `project ${p.name} sweep failed: ${error instanceof Error ? error.message : String(error)}`,
           )
           continue
@@ -376,14 +382,14 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
         if (result.out.trim()) {
           const lines = result.out.trim().split('\n')
           const omitted = Math.max(0, lines.length - 8)
-          console.log(`\n${p.name} sweep:\n${lines.slice(-8).join('\n')}`)
+          options.presentation.log(`\n${p.name} sweep:\n${lines.slice(-8).join('\n')}`)
           if (omitted) {
-            console.log(`  (${omitted} earlier line${omitted === 1 ? '' : 's'} omitted)`)
+            options.presentation.log(`  (${omitted} earlier line${omitted === 1 ? '' : 's'} omitted)`)
           }
         }
         if (!result.ok) {
           cleanupFailed = true
-          console.error(
+          options.presentation.error(
             `project ${p.name} sweep failed with exit status ${result.exitCode ?? 'unknown'}`,
           )
         }
@@ -411,7 +417,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       if (selectedProject && path !== selectedProject.path &&
           !path.startsWith(`${selectedProject.path}/`)) continue
       const runId = trustOwners.get(heading)
-      console.log(
+      options.presentation.log(
         `grok trust entry for absent path ${path}${runId ? ` (run ${runId})` : ''}; prune by hand`,
       )
     }
@@ -442,24 +448,24 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     }
     const retained = classified.filter(({ condition }) => condition === 'retained-worktree-resources')
     if (retained.length) {
-      console.error(`\n${dry ? 'would report ' : ''}retained worktree Docker resources: ${retained.length}`)
+      options.presentation.error(`\n${dry ? 'would report ' : ''}retained worktree Docker resources: ${retained.length}`)
       for (const { resource, project, reason } of retained) {
-        console.error(`  ${resource.kind} ${resource.name} re-served or retained by project ${project} (run ${resource.runId}); ${reason ? `removal could not be ascertained: ${reason}; ` : ''}no removal suggested`)
+        options.presentation.error(`  ${resource.kind} ${resource.name} re-served or retained by project ${project} (run ${resource.runId}); ${reason ? `removal could not be ascertained: ${reason}; ` : ''}no removal suggested`)
       }
     }
     if (leaked.size) {
       cleanupFailed = true
-      console.error(`\n${dry ? 'would report ' : ''}leaked Docker resources: ${leaked.size}`)
+      options.presentation.error(`\n${dry ? 'would report ' : ''}leaked Docker resources: ${leaked.size}`)
       for (const { resource, project } of leaked.values()) {
-        console.error(`  ${dry ? 'would report ' : ''}${leakedResourceLines([resource], project)[0]}`)
+        options.presentation.error(`  ${dry ? 'would report ' : ''}${leakedResourceLines([resource], project)[0]}`)
       }
     }
     if (inventoryErrors.size) {
-      console.error(`\n${dry ? 'would report ' : ''}inventory unavailable: ${inventoryErrors.size}`)
-      for (const error of inventoryErrors) console.error(`  ${dry ? 'would report ' : ''}${error}`)
+      options.presentation.error(`\n${dry ? 'would report ' : ''}inventory unavailable: ${inventoryErrors.size}`)
+      for (const error of inventoryErrors) options.presentation.error(`  ${dry ? 'would report ' : ''}${error}`)
     }
 
-    printSweepKept(done, kept, dry, options.force)
-    if (cleanupFailed) process.exitCode = 1
+    printSweepKept(done, kept, dry, options.force, options.presentation)
+    if (cleanupFailed) options.presentation.setExitCode(1)
     return
 }

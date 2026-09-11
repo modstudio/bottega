@@ -10,7 +10,17 @@ import { repoRootOf, targetGitEnvironment } from './git-environment.ts'
 import { branchTip, removeBranch, removeFor, restoreBranch, unmergedBranch, withCleanupLock as takeCleanupLock, withWorktreeLease, type Worktree } from './worktree.ts'
 import { resourcesForRuns, leakedResourceLines } from './docker-resources.ts'
 
-export type CleanupOptions = { force: boolean; auditReason: string | null; keptBranchLine: (branch: string, uniqueCount: number, afterCutCount: number | null, id: number) => string }
+export type CleanupPresentation = {
+  log: (...values: unknown[]) => void
+  error: (...values: unknown[]) => void
+  setExitCode: (code: number) => void
+  keptBranchLine: (branch: string, uniqueCount: number, afterCutCount: number | null, id: number) => string
+}
+export type CleanupOptions = {
+  force: boolean
+  auditReason: string | null
+  presentation: CleanupPresentation
+}
 
 export type CleanupRow = {
   id: number; repo?: string | null; cwd?: string | null
@@ -319,9 +329,9 @@ export function discardWorktree(
     }
     if (!r.removed) throw new Error(r.detail)
     if (!minted && row.branch) {
-      console.log(`branch ${row.branch} kept (review subject, not owned by run ${row.id})`)
+      options.presentation.log(`branch ${row.branch} kept (review subject, not owned by run ${row.id})`)
     }
-    if (branchWarning) console.error(branchWarning)
+    if (branchWarning) options.presentation.error(branchWarning)
     const project = row.repo ?? projectAt(repoRoot)?.name ?? 'unknown'
     const inventory = resourcesForConversation(row.id)
     if (!inventory.ascertainable) {
@@ -342,16 +352,16 @@ export function discardWorktree(
       clearConversationWorktree(row.id, row.worktree, keptProtectedBranch)
       if (auditAuthority) auditRunMutation(auditAuthority, 'discard', options.auditReason)
     })
-    console.log(`${verb} run ${row.id}'s worktree`)
-    if (r.output) console.log(r.output)
+    options.presentation.log(`${verb} run ${row.id}'s worktree`)
+    if (r.output) options.presentation.log(r.output)
     if (protectedBranch && keptProtectedBranch) {
-      console.log(options.keptBranchLine(
+      options.presentation.log(options.presentation.keptBranchLine(
         keptProtectedBranch, protectedBranch.count, afterCutCount, row.id,
       ))
     }
     const branchOwner = ownersAfter[0] ?? ownersBefore[0] ?? null
     if (branchOwner && row.branch) {
-      console.log(`branch ${row.branch} left because run ${branchOwner.id} records it`)
+      options.presentation.log(`branch ${row.branch} left because run ${branchOwner.id} records it`)
     }
   })
 }
@@ -441,7 +451,7 @@ export async function discardRun(id: number, options: CleanupOptions): Promise<v
           row.id, repoRoot, row.branch_kept!, snapshot, ownersBefore, ownersAfter,
         )
         if (outcome.refusal) throw new Error(outcome.refusal)
-        if (outcome.warning) console.error(outcome.warning)
+        if (outcome.warning) options.presentation.error(outcome.warning)
         if (removed) {
           writeTransaction(() => {
             db().query('UPDATE run SET branch_kept=NULL, branch_kept_tip=NULL WHERE id=?')
@@ -449,7 +459,7 @@ export async function discardRun(id: number, options: CleanupOptions): Promise<v
             auditRunMutation(authority, 'discard', options.auditReason)
           })
         }
-        console.log(removed
+        options.presentation.log(removed
           ? `deleted branch ${row.branch_kept}`
           : `branch ${row.branch_kept} cleanup skipped: branch does not exist`)
       })
