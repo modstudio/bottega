@@ -440,13 +440,7 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
         worktree: shape('orch reclaim worktree <path> [--dry-run]', 1, [], ['--dry-run']),
         branch: shape('orch reclaim branch <project>:<branch> [--dry-run]', 1, [], ['--dry-run']),
       }
-      if (!sub) return null
-      if (!forms[sub]) {
-        throw new Error(
-          `unknown reclaim kind ${JSON.stringify(sub)}: use orch reclaim worktree <path> [--dry-run] ` +
-          `or orch reclaim branch <project>:<branch> [--dry-run]`,
-        )
-      }
+      if (!sub || !forms[sub]) { if (sub) throw new Error(`unknown reclaim kind ${JSON.stringify(sub)}: use ${Object.values(forms).map((form) => form.usage).join(' or ')}`); return null }
       return { args: argv.slice(2), shape: forms[sub] }
     }
     case 'inbox': return { args: argv.slice(1), shape: shape('orch inbox [--all] [--json]', 0, [], ['--all', '--json']) }
