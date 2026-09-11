@@ -1,8 +1,10 @@
-import { describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, test } from 'bun:test'
 import { rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { AGENTS, addRun, db, dir, runJob, upsertProject } from '../test/fixture.ts'
 import { errorTail, verifiedProcessTree } from './run-process.ts'
+import { trackedTestResidue } from '../test/residue.ts'
+const trackResidue = trackedTestResidue(); beforeEach(() => { trackResidue(join(dir, '.claude')) })
 
 describe('what survives of a failure', () => {
   const codexish = (promptChars: number) =>
@@ -45,7 +47,7 @@ test('process reaping selects the whole verified tree youngest-first and rejects
 
 describe('childEnv allowlists the vendor CLI environment', () => {
   test('a spawned agent does not inherit unrelated credentials', async () => {
-    const script = join(dir, 'dump-env-dev89.ts')
+    const script = trackResidue(join(dir, 'dump-env-dev89.ts'))
     writeFileSync(script, 'process.stdout.write(JSON.stringify(process.env))\n')
     const agent = AGENTS.codex!
     const origBin = agent.bin
