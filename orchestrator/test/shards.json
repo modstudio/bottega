@@ -1,45 +1,181 @@
 {
   "files": {
-    "src/canon.cli.test.ts": { "size": "short" },
-    "src/catalog.cli.test.ts": { "size": "short" },
-    "src/docs.cli.test.ts": { "size": "short" },
-    "src/epic.cli.test.ts": { "size": "short" },
-    "src/review-yield.cli.test.ts": { "size": "short" },
-    "src/evals.cli.test.ts": { "size": "short" },
-    "src/lifecycle-harness.cli.test.ts": { "size": "moderate", "exclusive": true },
-    "src/linked-worktree-database.cli.test.ts": { "size": "short" },
-    "src/monitor.cli.test.ts": { "size": "short" },
-    "src/projects.cli.test.ts": { "size": "short" },
-    "src/reclaim.cli.test.ts": { "size": "short" },
-    "src/review-1.cli.test.ts": { "size": "short" },
-    "src/review-3.cli.test.ts": { "size": "short" },
-    "src/route.cli.test.ts": { "size": "short" },
-    "src/run-1.cli.test.ts": { "size": "short" },
-    "src/workflows.cli.test.ts": { "size": "short" },
-    "test/process-boundary/worktree-create.test.ts": { "size": "short" },
-    "test/process-boundary/worktree.test.ts": { "size": "short", "exclusive": true },
-    "test/process-boundary/idle-kill.test.ts": { "size": "moderate", "exclusive": true },
-    "test/process-boundary/run.test.ts": { "size": "short" },
-    "test/process-boundary/database.test.ts": { "size": "short" },
-    "test/process-boundary/discard-resources.test.ts": { "size": "short" },
-    "test/process-boundary/discard.test.ts": { "size": "short" },
-    "test/process-boundary/abandon.test.ts": { "size": "short" },
-    "test/process-boundary/ref-guard.test.ts": { "size": "short" },
-    "test/process-boundary/git-environment.test.ts": { "size": "short" },
-    "test/process-boundary/run-git.test.ts": { "size": "short" },
-    "src/worktree-5.cli.test.ts": { "size": "short" }
+    "src/catalog.cli.test.ts": {
+      "size": "short"
+    },
+    "src/docs.cli.test.ts": {
+      "size": "short"
+    },
+    "src/epic.cli.test.ts": {
+      "size": "short"
+    },
+    "src/review-yield.cli.test.ts": {
+      "size": "short"
+    },
+    "src/evals.cli.test.ts": {
+      "size": "short"
+    },
+    "src/lifecycle-harness.cli.test.ts": {
+      "size": "moderate",
+      "exclusive": true
+    },
+    "src/linked-worktree-database.cli.test.ts": {
+      "size": "short"
+    },
+    "src/monitor.cli.test.ts": {
+      "size": "short"
+    },
+    "src/projects.cli.test.ts": {
+      "size": "short"
+    },
+    "src/reclaim.cli.test.ts": {
+      "size": "short"
+    },
+    "src/route.cli.test.ts": {
+      "size": "short"
+    },
+    "src/workflows.cli.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/worktree-create.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/worktree.test.ts": {
+      "size": "short",
+      "exclusive": true
+    },
+    "test/process-boundary/idle-kill.test.ts": {
+      "size": "moderate",
+      "exclusive": true
+    },
+    "test/process-boundary/run.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/database.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/discard-resources.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/discard.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/abandon.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/ref-guard.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/git-environment.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/run-git.test.ts": {
+      "size": "short"
+    },
+    "src/worktree-5.cli.test.ts": {
+      "size": "short"
+    },
+    "src/run-artifacts-no-repo.test.ts": {
+      "size": "short"
+    },
+    "src/run-review.test.ts": {
+      "size": "short"
+    },
+    "src/route-lens.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/review-target-evidence.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/review-target-selection.test.ts": {
+      "size": "short"
+    },
+    "src/review-target-attribution.test.ts": {
+      "size": "short"
+    },
+    "src/mailbox-message.test.ts": {
+      "size": "short"
+    },
+    "src/args-tell.test.ts": {
+      "size": "short"
+    },
+    "src/porting-import-apply.test.ts": {
+      "size": "short"
+    },
+    "src/porting-import-coverage.test.ts": {
+      "size": "short"
+    },
+    "src/failure-commands.test.ts": {
+      "size": "short"
+    },
+    "src/contract-preamble.test.ts": {
+      "size": "short"
+    },
+    "src/contract-conflicts.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/task-branch.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/task-branch-run.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/database-port-import.test.ts": {
+      "size": "short"
+    },
+    "test/process-boundary/hooks.test.ts": {
+      "size": "short"
+    },
+    "src/review-evidence.test.ts": {
+      "size": "short"
+    },
+    "src/review-recording.test.ts": {
+      "size": "short"
+    },
+    "src/jobs-identity.test.ts": {
+      "size": "short"
+    },
+    "src/contract-review-reply.test.ts": {
+      "size": "short"
+    },
+    "src/review-recording-lens.test.ts": {
+      "size": "short"
+    },
+    "src/review-calibration.test.ts": {
+      "size": "short"
+    },
+    "src/evals-report.test.ts": {
+      "size": "short"
+    },
+    "src/metric-summary.test.ts": {
+      "size": "short"
+    },
+    "src/evals-run.test.ts": {
+      "size": "short"
+    }
   },
   "shards": [
     {
       "measuredSeconds": 76.86,
       "files": [
         "src/docs.cli.test.ts",
-        "src/run-1.cli.test.ts",
+        "src/review-target-attribution.test.ts",
+        "src/mailbox-message.test.ts",
+        "src/args-tell.test.ts",
+        "src/porting-import-apply.test.ts",
+        "src/porting-import-coverage.test.ts",
+        "src/failure-commands.test.ts",
+        "src/contract-preamble.test.ts",
+        "src/contract-conflicts.test.ts",
+        "test/process-boundary/task-branch.test.ts",
+        "test/process-boundary/task-branch-run.test.ts",
+        "test/process-boundary/database-port-import.test.ts",
+        "test/process-boundary/hooks.test.ts",
         "src/workflows.cli.test.ts",
         "src/evals.cli.test.ts",
         "src/epic.cli.test.ts",
-        "src/review-yield.cli.test.ts"
-        ,"test/process-boundary/discard-resources.test.ts"
+        "src/review-yield.cli.test.ts",
+        "test/process-boundary/discard-resources.test.ts"
       ]
     },
     {
@@ -48,31 +184,42 @@
         "src/lifecycle-harness.cli.test.ts",
         "src/monitor.cli.test.ts",
         "src/worktree-5.cli.test.ts",
-        "src/review-1.cli.test.ts",
+        "src/review-evidence.test.ts",
+        "src/review-recording.test.ts",
+        "src/jobs-identity.test.ts",
+        "src/contract-review-reply.test.ts",
+        "src/review-recording-lens.test.ts",
+        "src/review-calibration.test.ts",
         "src/route.cli.test.ts",
-        "src/catalog.cli.test.ts"
-        ,"test/process-boundary/discard.test.ts"
+        "src/catalog.cli.test.ts",
+        "test/process-boundary/discard.test.ts"
       ]
     },
     {
       "measuredSeconds": 76.25,
       "files": [
         "test/process-boundary/worktree.test.ts",
-        "src/canon.cli.test.ts",
+        "src/evals-report.test.ts",
+        "src/metric-summary.test.ts",
+        "src/evals-run.test.ts",
         "test/process-boundary/git-environment.test.ts",
         "test/process-boundary/run-git.test.ts",
-        "src/projects.cli.test.ts"
-        ,"test/process-boundary/abandon.test.ts"
+        "src/projects.cli.test.ts",
+        "test/process-boundary/abandon.test.ts"
       ]
     },
     {
       "measuredSeconds": 75.42,
       "files": [
         "test/process-boundary/worktree-create.test.ts",
-        "src/review-3.cli.test.ts",
+        "src/run-artifacts-no-repo.test.ts",
+        "src/run-review.test.ts",
+        "src/route-lens.test.ts",
+        "test/process-boundary/review-target-evidence.test.ts",
+        "test/process-boundary/review-target-selection.test.ts",
         "src/linked-worktree-database.cli.test.ts",
-        "test/process-boundary/run.test.ts"
-        ,"test/process-boundary/ref-guard.test.ts"
+        "test/process-boundary/run.test.ts",
+        "test/process-boundary/ref-guard.test.ts"
       ]
     },
     {
