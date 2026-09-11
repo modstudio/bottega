@@ -22,14 +22,13 @@
  * through `orch diff`; a land worker alone may fast-forward trunk from its
  * disposable worktree. No worker pushes.
  */
-import { accessSync, appendFileSync, closeSync, constants, cpSync, existsSync,
-         fchmodSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync,
-         realpathSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { accessSync, appendFileSync, closeSync, constants, cpSync, existsSync, fchmodSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { dlopen, FFIType } from 'bun:ffi'
 import { platform } from 'node:os'
 import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { db, pidAlive, ROOT, tryWriteContention } from './db.ts'
+import { db, ROOT, tryWriteContention } from './db.ts'
+import { pidAlive } from './run-liveness.ts'
 import { projectAt, type WorktreeTool } from './projects.ts'
 import { runRecipe, teardownRecipe, dbNameFor, type Recipe } from './recipe.ts'
 import { scrubbedGitEnv } from '../../shared/git.ts'

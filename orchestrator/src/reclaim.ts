@@ -1,6 +1,9 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
-import { db, EVIDENCE_CLOSED_SQL, chainScoreJoin, pidAlive, SESSION_LIVE_MS, sessionId, writableDb, writeTransaction, worktreePathSpellings } from './db.ts'
+import { db, SESSION_LIVE_MS, sessionId, writableDb, writeTransaction } from './db.ts'
+import { EVIDENCE_CLOSED_SQL, chainScoreJoin } from './evidence-query.ts'
+import { pidAlive } from './run-liveness.ts'
+import { worktreePathSpellings } from './resource-ownership.ts'
 import { projectAt, projectByName } from './projects.ts'
 import {
   branchTip, removeFor, restoreBranch, withCleanupLock, withWorktreeCreateLock, withWorktreeLease, type Worktree } from './worktree.ts'

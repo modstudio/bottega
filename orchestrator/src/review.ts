@@ -1,12 +1,11 @@
 // concern: review
 import type { Database } from 'bun:sqlite'
 import {
-  db, nowIso, REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP,
-  REVIEW_SEVERITY, sessionId,
-  voidedSql,
-  type ReviewReproduced, type ReviewCoverage, type ReviewLimits, type ReviewOverlap,
-  type ReviewSeverity, writableDb, writeTransaction,
-} from './db.ts'
+  db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
+import { REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_SEVERITY, type ReviewReproduced, type ReviewCoverage, type ReviewLimits, type ReviewOverlap, type ReviewSeverity } from './review-vocabulary.ts'
+import { voidedSql } from './evidence-query.ts'
+export { REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_SEVERITY } from './review-vocabulary.ts'
+export type { ReviewReproduced, ReviewCoverage, ReviewLimits, ReviewOverlap, ReviewSeverity } from './review-vocabulary.ts'
 import { REVIEW_SCHEMA, type ReviewReply } from './contract.ts'
 export { parseReviewOutput, parseReviewReply } from './contract.ts'
 import { job } from './jobs.ts'

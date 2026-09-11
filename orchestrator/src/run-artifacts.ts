@@ -4,15 +4,12 @@
  * snapshot-versus-database reconciliation protocol. Must not know routing,
  * contracts, transports, reviews, or worktree isolation.
  */
-import {
-  mkdirSync, readFileSync, existsSync, writeFileSync, readdirSync, rmSync,
-  statSync, unlinkSync, copyFileSync, renameSync,
-} from 'node:fs'
+import { mkdirSync, readFileSync, existsSync, writeFileSync, readdirSync, rmSync, statSync, unlinkSync, copyFileSync, renameSync, } from 'node:fs'
 import { basename, join, relative } from 'node:path'
 import { resolveRunsDirectory } from './database-location.ts'
 import {
-  db, teardownTerminalRunResources, writableDb, writeTransaction,
-} from './db.ts'
+  db, writableDb, writeTransaction } from './db.ts'
+import { teardownTerminalRunResources } from './resource-ownership.ts'
 import { CONNECTION_SCHEMA_INVARIANT } from './migrations.ts'
 
 /**

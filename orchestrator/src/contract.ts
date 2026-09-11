@@ -1,13 +1,12 @@
 // concern: contract
-import { REVIEW_SEVERITY } from './db.ts'
+import { REVIEW_SEVERITY } from './review-vocabulary.ts'
 import { progressFileInstruction } from './checkpoint.ts'
 import { isReaderJob, type Job } from './jobs.ts'
 
 /**
  * What an implementation worker is told, and what it must hand back.
  *
- * The premise of delegating implementation is narrow and worth stating exactly,
- * because everything here follows from it. The standing objection to fanning
+ * The premise of delegating implementation is narrow and worth stating exactly, * because everything here follows from it. The standing objection to fanning
  * out code-writing is that parallel workers make conflicting IMPLICIT
  * decisions — a background in one style, a sprite in another, and nothing
  * merges. The load-bearing word is *implicit*. A worker that must stop and ask
@@ -28,7 +27,7 @@ import { isReaderJob, type Job } from './jobs.ts'
  * recovers a fenced or embedded object, because the alternative is losing a
  * completed implementation to a stray prose sentence.
  */
-import { GENERIC_QUESTION_TOKENS } from './db.ts'
+import { GENERIC_QUESTION_TOKENS } from './score.ts'
 
 /**
  * The shape a worker's final message must take.

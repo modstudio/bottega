@@ -7,7 +7,9 @@
  * command and its dashboard read 96% on review-lens while the router, counting
  * failures, was using 69%. One page, one scoreboard.
  */
-import { db, reapStale, runTotals } from './db.ts'
+import { db } from './db.ts'
+import { reapStale } from './run-liveness.ts'
+import { runTotals } from './evidence-query.ts'
 import { AGENTS, refreshAgents } from './agents.ts'
 import { JOBS } from './jobs.ts'
 import { scoreboard } from './route.ts'

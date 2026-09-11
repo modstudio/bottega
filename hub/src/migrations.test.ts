@@ -5,12 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { mainCheckoutOf } from '../../shared/git.ts'
 import {
-  applyMigrations, BASELINE_SCHEMA_HASH, baselineSchemaHash, canonicalSchemaHash,
-  CONNECTION_SCHEMA_INVARIANT, expectedSchemaHash, JOURNAL_WHEN_ORDER, journalLength,
-  MIGRATIONS_FOLDER, MIGRATIONS_TABLE, migrationJournal, migrationRefusal, readUserVersion,
-  SCHEMA_LOCK_TABLE,
-  schemaVersionLabel, splitMigrationSource,
-} from './migrations.ts'
+  applyMigrations, BASELINE_SCHEMA_HASH, baselineSchemaHash, canonicalSchemaHash, CONNECTION_SCHEMA_INVARIANT, expectedSchemaHash, JOURNAL_WHEN_ORDER, journalLength, MIGRATIONS_FOLDER, MIGRATIONS_TABLE, migrationJournal, migrationRefusal, readUserVersion, SCHEMA_LOCK_TABLE, schemaVersionLabel, splitMigrationSource, } from './migrations.ts'
 import { closeDatabaseForFixture, db, enableSchemaReload, writeTransaction } from './db.ts'
 
 const fresh = () => {

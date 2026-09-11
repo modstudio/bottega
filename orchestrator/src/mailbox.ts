@@ -1,8 +1,6 @@
 /** Durable, non-authoritative messages attached to a run conversation. */
-import {
-  adoptRunMutation, auditRunMutation, authorizeRunMutation, db, linkedWorktreeReadOnly, nowIso,
-  writableDb, writeTransaction,
-} from './db.ts'
+import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from './run-authority.ts'
+import { db, linkedWorktreeReadOnly, nowIso, writableDb, writeTransaction } from './db.ts'
 
 export type RunMessage = {
   id: number

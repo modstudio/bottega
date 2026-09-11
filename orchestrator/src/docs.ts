@@ -10,8 +10,7 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
-  DOC_SCOPES, DOC_SCOPE_SUBJECT_KIND, type DocScope,
-} from '../../shared/docs.ts'
+  DOC_SCOPES, DOC_SCOPE_SUBJECT_KIND, type DocScope, } from '../../shared/docs.ts'
 import { AGENTS } from './agents.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
 import { JOBS } from './jobs.ts'

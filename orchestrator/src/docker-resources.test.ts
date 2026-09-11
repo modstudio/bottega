@@ -3,12 +3,9 @@ import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  classifiedDockerResources, dockerInventoryTimeoutMs, dockerRemovalTimeoutMs, dockerRunResources,
-  orphanedDockerResources, teardownRunResources,
-  type DockerResource,
-} from './docker-resources.ts'
+  classifiedDockerResources, dockerInventoryTimeoutMs, dockerRemovalTimeoutMs, dockerRunResources, orphanedDockerResources, teardownRunResources, type DockerResource, } from './docker-resources.ts'
 import { addRun, AGENTS, db, dir, persistTerminalSnapshot, reconcileRun, runJob } from '../test/fixture.ts'
-import { teardownTerminalRunResources } from './db.ts'
+import { teardownTerminalRunResources } from './resource-ownership.ts'
 import { runEventsPath } from './events.ts'
 
 afterEach(() => { mock.restore() })

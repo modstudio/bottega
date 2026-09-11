@@ -14,11 +14,7 @@ import { getTableName } from 'drizzle-orm'
 import { getTableConfig, type SQLiteTable } from 'drizzle-orm/sqlite-core'
 import * as declared from './schema.ts'
 import {
-  applyMigrations, BASELINE_SCHEMA_HASH, baselineSchemaHash, canonicalSchemaHash,
-  CONNECTION_SCHEMA_INVARIANT, expectedSchemaHash, JOURNAL_WHEN_ORDER, journalLength,
-  MIGRATIONS_FOLDER, migrationJournal, migrationRefusal, readUserVersion,
-  SCHEMA_LOCK_TABLE, schemaVersionLabel, splitMigrationSource,
-} from './migrations.ts'
+  applyMigrations, BASELINE_SCHEMA_HASH, baselineSchemaHash, canonicalSchemaHash, CONNECTION_SCHEMA_INVARIANT, expectedSchemaHash, JOURNAL_WHEN_ORDER, journalLength, MIGRATIONS_FOLDER, migrationJournal, migrationRefusal, readUserVersion, SCHEMA_LOCK_TABLE, schemaVersionLabel, splitMigrationSource, } from './migrations.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db, enableSchemaReload, writeTransaction } from './db.ts'
 

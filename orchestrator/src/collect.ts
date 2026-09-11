@@ -3,7 +3,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { FAILS_OVER } from './failure.ts'
 import { failureReason, outcomeOf } from './outcome.ts'
-import type { ObservedDeadRun } from './db.ts'
+import type { ObservedDeadRun } from './run-liveness.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES, visibleTranscriptText } from './result-output.ts'
 import { parseMcpProbe } from './mcp-probe.ts'
 

@@ -138,13 +138,9 @@ for (const args of [
   if (p.exitCode !== 0) throw new Error(p.stderr.toString())
 }
 
-export const { db, DB_PATH, nowIso, reapStale, pendingForSession, unscoredCount, judgeability, STALE_AFTER_MS,
-        PENDING_BOOTSTRAP_MS, WEIGHT, weigh, label, FIDELITY_PENALTY, UNSCORED_WHERE,
-        EVIDENCE_CLOSED_SQL, EVIDENCE_OPEN_SQL, VOIDED_SQL, voidedSql, activeSql, SCORED_EVIDENCE_SQL, runTotals,
-        excludeSharedOutputRuns, SHARED_OUTPUT_REASON, applySchema, recordDuels, duelMatrices,
-        pairPartners, unrecordedPairsForSession,
-        parseRunIds, recordSessionSeen, GENERIC_QUESTION_TOKENS,
-        bootstrapFixtureStore, authorizeRunMutation, adoptRunMutation, sessionId } = await import('../src/db.ts')
+export const { db, DB_PATH, nowIso, label, applySchema, recordSessionSeen, bootstrapFixtureStore, sessionId } = await import('../src/db.ts'); export const { reapStale, STALE_AFTER_MS, PENDING_BOOTSTRAP_MS } = await import('../src/run-liveness.ts')
+export const { pendingForSession, unscoredCount, UNSCORED_WHERE, EVIDENCE_CLOSED_SQL, EVIDENCE_OPEN_SQL, VOIDED_SQL, voidedSql, activeSql, SCORED_EVIDENCE_SQL, runTotals, excludeSharedOutputRuns, SHARED_OUTPUT_REASON } = await import('../src/evidence-query.ts')
+export const { judgeability, WEIGHT, weigh, FIDELITY_PENALTY, GENERIC_QUESTION_TOKENS } = await import('../src/score.ts'); export const { recordDuels, duelMatrices, pairPartners, unrecordedPairsForSession, parseRunIds } = await import('../src/duel.ts'); export const { authorizeRunMutation, adoptRunMutation } = await import('../src/run-authority.ts')
 export const { candidates, weightCase, scoreboard, median, evidenceFor, pick,
         NOISE_BAND, QUALITY_STEP, MIN_SAMPLE, OUTPUT_RESERVE, EVIDENCE_WINDOW,
         STANDING_EXPLORE_RATE, STANDING_EXPLORE_FLOOR, standingExploreRate,
@@ -171,7 +167,8 @@ export const {
 export const { runDetail, runList, state } = await import('../src/serve.ts')
 export const { classify, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, NOT_EVIDENCE, COOLS_DOWN, FAILS_OVER,
         isNonAnswer, detectBlockers } = await import('../src/failure.ts')
-export const { resolveRootFromLastTurn, gitObjectEnvironmentFor,
+export const { resolveRootFromLastTurn } = await import('../src/run-liveness.ts')
+export const { gitObjectEnvironmentFor,
         packedResumePrompt, run: runJob } = await import('../src/run.ts'); export const { checkoutAliases, checkoutCaseSensitivity } = await import('../src/checkout-identity.ts')
 export const { runFilePaths, pruneRuns, KEEP_RUN_FILES_DAYS,
         RUNS_DIR, listRunArtifacts, runArtifactsDir, runScratchDir, noRepoIsolatePath,

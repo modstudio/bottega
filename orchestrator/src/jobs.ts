@@ -1,5 +1,5 @@
 import { MIGRATED_AGENT_NAMES, type Caps } from './agents.ts'
-import { STALE_AFTER_MS } from './db.ts'
+import { STALE_AFTER_MS } from './run-liveness.ts'
 import { DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS, DEFAULT_IDLE_KILL_MS, idleKillMs } from './idle-kill.ts'
 
 export type Job = {
