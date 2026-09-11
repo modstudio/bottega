@@ -3,12 +3,6 @@
     "src/docs.cli.test.ts": {
       "size": "short"
     },
-    "src/epic.test.ts": {
-      "size": "short"
-    },
-    "src/review-yield.test.ts": {
-      "size": "short"
-    },
     "test/process-boundary/evals.test.ts": {
       "size": "short"
     },
@@ -28,24 +22,6 @@
     "test/process-boundary/reclaim.test.ts": {
       "size": "short",
       "exclusive": true
-    },
-    "src/route-routing.test.ts": {
-      "size": "short"
-    },
-    "src/recalibration.test.ts": {
-      "size": "short"
-    },
-    "src/agreement.test.ts": {
-      "size": "short"
-    },
-    "src/routing-backtest.test.ts": {
-      "size": "short"
-    },
-    "src/workflows.test.ts": {
-      "size": "short"
-    },
-    "src/workflow-seeds.test.ts": {
-      "size": "short"
     },
     "test/process-boundary/worktree-create.test.ts": {
       "size": "short"
@@ -114,11 +90,7 @@
         "test/process-boundary/task-branch-run.test.ts",
         "test/process-boundary/database-port-import.test.ts",
         "test/process-boundary/hooks.test.ts",
-        "src/workflows.test.ts",
-        "src/workflow-seeds.test.ts",
         "test/process-boundary/evals.test.ts",
-        "src/epic.test.ts",
-        "src/review-yield.test.ts",
         "test/process-boundary/sweep.test.ts",
         "test/process-boundary/discard-resources.test.ts"
       ]
@@ -128,10 +100,6 @@
       "files": [
         "test/process-boundary/lifecycle-harness.test.ts",
         "src/monitor.cli.test.ts",
-        "src/route-routing.test.ts",
-        "src/recalibration.test.ts",
-        "src/agreement.test.ts",
-        "src/routing-backtest.test.ts",
         "test/process-boundary/discard.test.ts"
       ]
     },
