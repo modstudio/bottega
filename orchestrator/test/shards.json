@@ -15,7 +15,6 @@
     "src/monitor.cli.test.ts": { "size": "short" },
     "src/projects.cli.test.ts": { "size": "short" },
     "src/reclaim.cli.test.ts": { "size": "short" },
-    "src/reader-contract.cli.test.ts": { "size": "short" },
     "src/review-1.cli.test.ts": { "size": "short" },
     "src/review-3.cli.test.ts": { "size": "short" },
     "src/route.cli.test.ts": { "size": "short" },
@@ -70,7 +69,6 @@
       "files": [
         "src/worktree-1.cli.test.ts",
         "src/review-3.cli.test.ts",
-        "src/reader-contract.cli.test.ts",
         "src/issue.cli.test.ts",
         "src/linked-worktree-database.cli.test.ts"
       ]

@@ -3,6 +3,7 @@ import { JOBS } from './jobs.ts'
 import {
   ISSUE_WORKER_SCHEMA, READER_SCHEMA, REVIEW_SCHEMA, TEXT_REPLY_SCHEMA,
   VERIFY_CLAIM_SCHEMA, WORKER_SCHEMA, resolveReplyDialect,
+  missingDeclaredDeliverables, parseReaderReply, readerDeliverablesInstruction,
 } from './contract.ts'
 
 const workerReply = {
@@ -81,4 +82,24 @@ describe('reply dialect resolution', () => {
       expect(dialect.parse(JSON.stringify(incompatible)).reply).toBeNull()
     }
   })
+})
+
+test('the reader receives and echoes its ordered declared deliverables', () => {
+  const names = ['per-file timing table', 'failing test name']
+  expect(readerDeliverablesInstruction(names)).toContain(JSON.stringify(names))
+  const reply = parseReaderReply({ deliverables: names.map((name) => ({ name, status: 'delivered', content: 'echoed' })), narrative: null, files_written: null })
+  expect(reply?.deliverables.map(({ name }) => name)).toEqual(names)
+  expect(missingDeclaredDeliverables(names, reply)).toEqual([])
+})
+test('a diagnose reply missing a deliverable is unevidenced', () => {
+  expect(missingDeclaredDeliverables(['x'], { deliverables: [], narrative: null, files_written: null })).toEqual(['x'])
+})
+test('a blocked deliverable with a reason is accepted', () => {
+  expect(missingDeclaredDeliverables(['x'], { deliverables: [{ name: 'x', status: 'blocked', content: 'docker.sock denied' }], narrative: null, files_written: null })).toEqual([])
+})
+test('files_written naming scratch/reply.json survives the scratch-to-artifacts rename', () => {
+  expect(parseReaderReply({ deliverables: [{ name: 'answer', status: 'delivered', content: 'done' }], narrative: null, files_written: ['/tmp/scratch/reply.json'] })?.files_written).toEqual(['/tmp/scratch/reply.json'])
+})
+test('orch do diagnose --deliverable x returns unevidenced when x is missing', () => {
+  expect(missingDeclaredDeliverables(['x'], parseReaderReply({ deliverables: [], narrative: 'prose', files_written: null }))).toEqual(['x'])
 })
