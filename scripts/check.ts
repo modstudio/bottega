@@ -156,6 +156,7 @@ if (await inherit([
   'bun', 'test', './.githooks/commit-msg.test.ts', './.githooks/post-merge.test.ts',
   './.githooks/pre-commit.test.ts', './scripts/check-canon.test.ts',
   './scripts/check-evidence-boundary.test.ts', './scripts/check-runtime.test.ts',
+  './scripts/check-file-ceiling.test.ts', './scripts/check-cognitive-ceiling.test.ts',
   './scripts/import-scanner.test.ts', './scripts/quality/ratchet.test.ts',
   './scripts/quality/ceiling-decision.test.ts',
 ]) !== 0) process.exit(1)
