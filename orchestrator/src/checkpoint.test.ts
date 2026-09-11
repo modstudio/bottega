@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { addRun, db, declaredCreate, hermeticGitEnv, prepareSharedRefGuard, run, upsertProject } from '../test/fixture.ts'
+import { addRun, db, declaredCreate, hermeticGitEnv, prepareSharedRefGuard, reapTestProcess, run, upsertProject } from '../test/fixture.ts'
 import {
   checkpointResumeContext, checkpointRun, PRESERVATION_FAILED_FILE, readTaskPointer,
   recordFailedIdlePreservation,
@@ -235,25 +235,29 @@ describe('harness-owned checkpoints', () => {
       cwd: main, env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
       stdout: 'pipe', stderr: 'pipe',
     })
-    let row: { id: number; worktree: string; branch: string } | null = null
-    for (let i = 0; i < 200; i++) {
-      row = db().query(
-        `SELECT id,worktree,branch FROM run WHERE repo=? AND status='running' AND worktree IS NOT NULL
-          AND agent_pid IS NOT NULL ORDER BY id DESC LIMIT 1`,
-      ).get(project) as typeof row
-      if (row) break
-      await Bun.sleep(10)
+    try {
+      let row: { id: number; worktree: string; branch: string } | null = null
+      for (let i = 0; i < 200; i++) {
+        row = db().query(
+          `SELECT id,worktree,branch FROM run WHERE repo=? AND status='running' AND worktree IS NOT NULL
+            AND agent_pid IS NOT NULL ORDER BY id DESC LIMIT 1`,
+        ).get(project) as typeof row
+        if (row) break
+        await Bun.sleep(10)
+      }
+      expect(row).not.toBeNull()
+      await Bun.sleep(100)
+      child.kill('SIGTERM')
+      expect(await child.exited).toBe(130)
+      const checkpoint = db().query(
+        'SELECT commit_sha,final FROM run_checkpoint WHERE run_id=? ORDER BY checkpoint_no DESC LIMIT 1',
+      ).get(row!.id) as { commit_sha: string; final: number } | null
+      expect(checkpoint?.final).toBe(1)
+      expect(git(row!.worktree, 'rev-parse', 'HEAD')).toBe(checkpoint!.commit_sha)
+      expect((db().query('SELECT work_preserved FROM run WHERE id=?').get(row!.id) as
+        { work_preserved: number }).work_preserved).toBe(1)
+    } finally {
+      await reapTestProcess(child.pid)
     }
-    expect(row).not.toBeNull()
-    await Bun.sleep(100)
-    child.kill('SIGTERM')
-    expect(await child.exited).toBe(130)
-    const checkpoint = db().query(
-      'SELECT commit_sha,final FROM run_checkpoint WHERE run_id=? ORDER BY checkpoint_no DESC LIMIT 1',
-    ).get(row!.id) as { commit_sha: string; final: number } | null
-    expect(checkpoint?.final).toBe(1)
-    expect(git(row!.worktree, 'rev-parse', 'HEAD')).toBe(checkpoint!.commit_sha)
-    expect((db().query('SELECT work_preserved FROM run WHERE id=?').get(row!.id) as
-      { work_preserved: number }).work_preserved).toBe(1)
   }, 30_000)
 })
