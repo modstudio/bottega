@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  addRun, db, hermeticGitEnv, projectLockDir, score, upsertProject, worktreeLeaseName,
+  addRun, db, hermeticGitEnv, projectLockDir, reapTestProcess, score, upsertProject, worktreeLeaseName,
 } from '../fixture.ts'
 
 const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
@@ -124,29 +124,36 @@ describe('proof-bearing reclaim verbs', () => {
       `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,5)},5000)`,
       module, f.repo, f.tree, ready, release,
     ], { env: { ...process.env, ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe' })
-    await waitFor(() => existsSync(ready), 'lease holder')
+    let reclaim: ReturnType<typeof Bun.spawn> | undefined
+    try {
+      await waitFor(() => existsSync(ready), 'lease holder')
 
-    const reclaim = Bun.spawn([process.execPath, CLI, 'reclaim', 'worktree', f.tree], {
-      cwd: f.repo,
-      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
-      stdout: 'pipe', stderr: 'pipe',
-    })
-    const locks = projectLockDir(f.repo)
-    const leaseWaiters = join(locks, `orch-${worktreeLeaseName(f.tree)}.waiters`, '.legacy')
-    await waitFor(
-      () => existsSync(leaseWaiters) && readdirSync(leaseWaiters).some((name) => !name.startsWith('.')),
-      'reclaim lease waiter',
-    )
-    const common = git(f.repo, 'rev-parse', '--path-format=absolute', '--git-common-dir')
-    const createHeldWhileWaiting = existsSync(join(common, 'orch-create.lock'))
-    const cleanupHeldWhileWaiting = existsSync(join(common, 'orch-cleanup.lock'))
-    writeFileSync(release, '')
-    const [held, reclaimed] = await Promise.all([childResult(holder), childResult(reclaim)])
-    expect(held.code, held.err).toBe(0)
-    expect(reclaimed.code, reclaimed.err).toBe(0)
-    expect(createHeldWhileWaiting).toBe(false)
-    expect(cleanupHeldWhileWaiting).toBe(false)
-    expect(existsSync(f.tree)).toBe(false)
+      reclaim = Bun.spawn([process.execPath, CLI, 'reclaim', 'worktree', f.tree], {
+        cwd: f.repo,
+        env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
+        stdout: 'pipe', stderr: 'pipe',
+      })
+      const locks = projectLockDir(f.repo)
+      const leaseWaiters = join(locks, `orch-${worktreeLeaseName(f.tree)}.waiters`, '.legacy')
+      await waitFor(
+        () => existsSync(leaseWaiters) && readdirSync(leaseWaiters).some((name) => !name.startsWith('.')),
+        'reclaim lease waiter',
+      )
+      const common = git(f.repo, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+      const createHeldWhileWaiting = existsSync(join(common, 'orch-create.lock'))
+      const cleanupHeldWhileWaiting = existsSync(join(common, 'orch-cleanup.lock'))
+      writeFileSync(release, '')
+      const [held, reclaimed] = await Promise.all([childResult(holder), childResult(reclaim)])
+      expect(held.code, held.err).toBe(0)
+      expect(reclaimed.code, reclaimed.err).toBe(0)
+      expect(createHeldWhileWaiting).toBe(false)
+      expect(cleanupHeldWhileWaiting).toBe(false)
+      expect(existsSync(f.tree)).toBe(false)
+    } finally {
+      writeFileSync(release, '')
+      await reapTestProcess(holder.pid)
+      await reapTestProcess(reclaim?.pid)
+    }
   }, 10_000)
 
   test('worktree dry-run and reclaim preserve its recorded identity', () => {
