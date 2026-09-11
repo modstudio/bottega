@@ -134,23 +134,22 @@ describe('review-lens MCP provenance', () => {
   test('grants only an orch-cut tree and names the invariant for a caller checkout', () => {
     expect(() => assertGrokTrustEligible('/tmp/orch-tree', {
       worktree: '/tmp/orch-tree', worktree_source: 'git',
-    })).not.toThrow()
+    }, '/tmp/orch-runs/isolates/42')).not.toThrow()
     expect(() => assertGrokTrustEligible('/tmp/caller-checkout', {
       worktree: '/tmp/orch-tree', worktree_source: 'git',
-    })).toThrow(
+    }, '/tmp/orch-runs/isolates/42')).toThrow(
       'refusing Grok trust for /tmp/caller-checkout: trust is granted only to trees orch cut; ' +
       'removed tree paths never recur',
     )
   })
 
   test('grants trust to an orch-created no-repo isolate but not its caller checkout', () => {
-    const runs = '/tmp/orch-runs'
     const isolate = '/tmp/orch-runs/isolates/42'
     const recorded = {
       id: 42, cwd: isolate, worktree: null, worktree_source: null,
     }
-    expect(() => assertGrokTrustEligible(isolate, recorded, runs)).not.toThrow()
-    expect(() => assertGrokTrustEligible('/tmp/caller-checkout', recorded, runs)).toThrow(
+    expect(() => assertGrokTrustEligible(isolate, recorded, isolate)).not.toThrow()
+    expect(() => assertGrokTrustEligible('/tmp/caller-checkout', recorded, isolate)).toThrow(
       'refusing Grok trust for /tmp/caller-checkout',
     )
   })
@@ -635,13 +634,13 @@ printf '%s' '{"servers":[{"name":"fixture-project","healthy":false,"checks":[{"l
     chmodSync(grok.bin, 0o755)
     try {
       expect(() => preflightMcp({
-        mcp: true, cwd, job: 'review-lens', prompt: 'review this', agent: 'codex',
+        mcp: true, cwd, job: 'review-lens', selectedAgent: 'codex',
       })).not.toThrow()
       expect(() => preflightMcp({
-        mcp: true, cwd, job: 'review-lens', prompt: 'review this', agent: 'grok',
+        mcp: true, cwd, job: 'review-lens', selectedAgent: 'grok',
       })).not.toThrow()
       expect(() => preflightMcp({
-        mcp: false, cwd, job: 'review-lens', prompt: 'review this', agent: 'grok',
+        mcp: false, cwd, job: 'review-lens', selectedAgent: 'grok',
       })).not.toThrow()
     } finally {
       grok.bin = originalBin
@@ -689,7 +688,7 @@ exit 99
       },
     })
     expect(() => preflightMcp({
-      mcp: true, cwd, job: 'mcp-query', prompt: 'read the task', agent: 'codex',
+      mcp: true, cwd, job: 'mcp-query', selectedAgent: 'codex',
     })).not.toThrow()
   })
 
@@ -705,11 +704,11 @@ printf '%s' '{"servers":[{"name":"orch","healthy":false,"checks":[{"label":"unav
     chmodSync(grok.bin, 0o755)
     try {
       expect(() => preflightMcp({
-        mcp: true, cwd, job: 'review-lens', prompt: 'review this', agent: 'grok',
+        mcp: true, cwd, job: 'review-lens', selectedAgent: 'grok',
       })).not.toThrow()
       rmSync(join(cwd, '.mcp.json'), { force: true })
       expect(() => preflightMcp({
-        mcp: true, cwd, job: 'review-lens', prompt: 'review this', agent: 'grok',
+        mcp: true, cwd, job: 'review-lens', selectedAgent: 'grok',
       })).not.toThrow()
     } finally {
       grok.bin = originalBin

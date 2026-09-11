@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import {
   addRun, closeOutRun, createWorktree, db, hermeticGitEnv, upsertProject,
-  verifiedProcessTree, worktreeLeaseName, projectLockDir, monitor, fakeDocker,
+  worktreeLeaseName, projectLockDir, monitor, fakeDocker,
   installTestProcessInventory, score, runArtifactsDir,
 } from '../test/fixture.ts'
 
@@ -483,18 +483,6 @@ test('resume identity keeps the root tree while any turn is live', () => {
     expect(closeOutRun(child, { intent: 'terminal' }).outcome).toBe('released')
     expect(existsSync(f.tree.path)).toBe(false)
   } finally { rmSync(f.repo, { recursive: true, force: true }) }
-})
-
-test('process reaping selects the whole verified tree youngest-first and rejects pid reuse', () => {
-  const rows = [
-    { pid: 10, ppid: 1, pgid: 10, command: 'bun /repo/orchestrator/src/exec.ts 44 prompt implement' },
-    { pid: 11, ppid: 10, pgid: 10, command: 'vendor' },
-    { pid: 12, ppid: 11, pgid: 10, command: 'gateway' },
-    { pid: 99, ppid: 1, pgid: 99, command: 'bun run dev' },
-  ]
-  expect(verifiedProcessTree(rows, 44, 10)).toEqual([12, 11, 10])
-  expect(verifiedProcessTree(rows, 44, 99)).toEqual([])
-  expect(verifiedProcessTree(rows, 45, 10)).toEqual([])
 })
 
 test('monitor reports dirty and explicit holds and escalates them at 48h', async () => {

@@ -1127,7 +1127,7 @@ export function chainTerminationAt(database: Database, memberId: number): string
 /**
  * A root inherits the terminal status of the last turn of its chain.
  *
- * Counterpart of `resolveSupersededTurn` in run.ts, which is child-only and
+ * Counterpart of `resolveSupersededTurn` in failover.ts, which is child-only and
  * cannot touch a root: the root is routing evidence, and giving it a terminal
  * status inserts a judgement. That is the point here, not an accident. A chain
  * that ended stale is a real outcome of a real agent; hiding it would make the

@@ -171,6 +171,8 @@ for (const script of [
   'check-outcome-boundary.ts', 'check-contract-boundary.ts', 'check-evidence-boundary.ts',
   'check-git-environment-boundary.ts', 'check-review-target-boundary.ts',
   'check-mcp-preflight-boundary.ts', 'check-dispatch-preflight-boundary.ts',
+  'check-failover-boundary.ts', 'check-run-process-boundary.ts',
+  'check-task-branch-boundary.ts', 'check-prompt-retarget-boundary.ts',
   'check-module-boundaries.ts', 'check-file-ceiling.ts', 'check-cognitive-ceiling.ts',
   'check-brand.ts', 'check-canon.ts',
   '../orchestrator/scripts/check-pack-budget.ts',

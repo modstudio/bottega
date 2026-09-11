@@ -1,11 +1,5 @@
 [
   {
-    "file": "orchestrator/src/dispatch-preflight.ts",
-    "function": "preflight",
-    "line": 42,
-    "score": 46
-  },
-  {
     "file": "hub/src/cli.ts",
     "function": "task",
     "line": 233,
@@ -294,6 +288,12 @@
     "score": 30
   },
   {
+    "file": "orchestrator/src/dispatch-preflight.ts",
+    "function": "preflight",
+    "line": 42,
+    "score": 46
+  },
+  {
     "file": "orchestrator/src/docker-resources.ts",
     "function": "teardownRunResources",
     "line": 132,
@@ -468,6 +468,12 @@
     "score": 32
   },
   {
+    "file": "orchestrator/src/prompt-retarget.ts",
+    "function": "retargetRepositoryPrompt",
+    "line": 127,
+    "score": 19
+  },
+  {
     "file": "orchestrator/src/porting-import.ts",
     "function": "parseRefs",
     "line": 328,
@@ -625,15 +631,10 @@
   },
   {
     "file": "orchestrator/src/run.ts",
-    "function": "resolveTaskBranch",
-    "line": 1125,
-    "score": 23
-  },
-  {
-    "file": "orchestrator/src/run.ts",
-    "function": "retargetRepositoryPrompt",
-    "line": 1380,
-    "score": 19
+    "function": "run",
+    "line": 854,
+    "score": 672,
+    "key": "orchestrator/src/run.ts\u0000run"
   },
   {
     "file": "orchestrator/src/run.ts",
@@ -655,12 +656,6 @@
   },
   {
     "file": "orchestrator/src/run.ts",
-    "function": "run",
-    "line": 2041,
-    "score": 674
-  },
-  {
-    "file": "orchestrator/src/run.ts",
     "function": "writeTransaction callback#2",
     "line": 4010,
     "score": 20
@@ -670,6 +665,12 @@
     "function": "normalizeAcpTurn",
     "line": 117,
     "score": 81
+  },
+  {
+    "file": "orchestrator/src/task-branch.ts",
+    "function": "resolveTaskBranch",
+    "line": 51,
+    "score": 23
   },
   {
     "file": "orchestrator/src/transport-acp.ts",
