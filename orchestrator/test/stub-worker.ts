@@ -1,7 +1,11 @@
 /** Vendor stand-in scripts shared by process-boundary tests. */
-import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { afterEach } from 'bun:test'
 import { dir } from './fixture.ts'
+
+const roots: string[] = []
+afterEach(() => { while (roots.length > 0) rmSync(roots.pop()!, { recursive: true, force: true }) })
 
 export function stubWorker(opts: {
   commits?: boolean
@@ -13,6 +17,7 @@ export function stubWorker(opts: {
   exitCode?: number
 } = {}): string {
   const root = mkdtempSync(join(dir, 'stub-worker-'))
+  roots.push(root)
   const script = join(root, 'worker.sh')
   const lines = ['#!/bin/sh', 'set -e']
   lines.push(

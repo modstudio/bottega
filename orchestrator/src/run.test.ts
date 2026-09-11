@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS, GENERIC_QUESTION_TOKENS, addDoctrineRule, addPair, addRun, addSkip, ask, baselineForPair, candidates, db, declaredCreate, detectBlockers, dir, hasRealQuestions, hermeticGitEnv, ledgerRef, listDoctrineRules, listLedgerRefs, listPairs, listSkips, nowIso, parseWorkerReply, parseWorkerReplyWithCount, pick, projects, realQuestions, reapTestRun, removeProject, resolveLedgerRef, retireDoctrineRule, reviewReply, run, runDetail, score, setBaseline, setLedgerRef, state, upsertProject, weigh, workerReply } from '../test/fixture.ts'
 import { scriptedTransport, scriptedTransportSequence } from '../test/fake-transport.ts'
-import './run.test-residue.ts'
 import { installTestTransport } from './transport.ts'
 import { collectResult } from './collect.ts'
 let priorOrchDepth: string | undefined; beforeEach(() => { priorOrchDepth = process.env.ORCH_DEPTH })
