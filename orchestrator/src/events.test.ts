@@ -8,7 +8,7 @@ import {
 import { idleRunConditions } from './monitor.ts'
 
 const cli = (args: string[], env: Record<string, string> = {}, cwd = dir) => {
-  const p = Bun.spawnSync([process.execPath, join(import.meta.dir, 'cli.ts'), ...args], {
+  const p = Bun.spawnSync([process.execPath, join(import.meta.dir, 'orch.ts'), ...args], {
     cwd,
     env: {
       ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',

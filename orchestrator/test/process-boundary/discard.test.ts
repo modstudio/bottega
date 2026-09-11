@@ -22,7 +22,7 @@ describe("a worktree is resolved against the main checkout, not the caller cwd",
     db().query('UPDATE run SET worktree=?, branch=? WHERE id=?')
       .run(path, 'operator-tree', id)
     try {
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id), '--force'], {
         env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
         stdout: 'pipe', stderr: 'pipe',
@@ -53,7 +53,7 @@ describe("a worktree is resolved against the main checkout, not the caller cwd",
     db().query('UPDATE run SET worktree=?, branch=?, minted_branch=? WHERE id=?')
       .run(tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     try {
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id), '--force'], {
         env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
         stdout: 'pipe', stderr: 'pipe',
@@ -75,7 +75,7 @@ describe("a worktree is resolved against the main checkout, not the caller cwd",
     db().query('UPDATE run SET worktree=?, branch=?, minted_branch=? WHERE id=?')
       .run(tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     try {
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const env = { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
         CLAUDE_CODE_SESSION_ID: 'discard-actor' }
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
@@ -114,7 +114,7 @@ describe("a worktree is resolved against the main checkout, not the caller cwd",
     db().query('UPDATE run SET repo=?, cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
       .run('protected-tool', repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     try {
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
         env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
         stdout: 'pipe', stderr: 'pipe',
@@ -173,7 +173,7 @@ describe("a worktree is resolved against the main checkout, not the caller cwd",
     db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
       .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     try {
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id), '--force'], {
         env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
         stdout: 'pipe', stderr: 'pipe',
@@ -214,7 +214,7 @@ describe("a worktree is resolved against the main checkout, not the caller cwd",
     db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
       .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     try {
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
         env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
         stdout: 'pipe', stderr: 'pipe',
@@ -244,7 +244,7 @@ describe("a worktree is resolved against the main checkout, not the caller cwd",
     db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
       .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     try {
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
         env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
         stdout: 'pipe', stderr: 'pipe',
@@ -264,7 +264,7 @@ describe("a worktree is resolved against the main checkout, not the caller cwd",
     db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
       .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     try {
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
         env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
         stdout: 'pipe', stderr: 'pipe',
@@ -295,7 +295,7 @@ describe("a worktree is resolved against the main checkout, not the caller cwd",
       .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, tree.base, id)
     try {
       expect(git(repo, 'rev-list', '--count', `main..${tree.branch}`)).not.toBe('0')
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
         env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
         stdout: 'pipe', stderr: 'pipe',
@@ -329,7 +329,7 @@ describe("a worktree is resolved against the main checkout, not the caller cwd",
     db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=?, base_commit=? WHERE id=?')
       .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, tree.base, id)
     try {
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
         env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
         stdout: 'pipe', stderr: 'pipe',

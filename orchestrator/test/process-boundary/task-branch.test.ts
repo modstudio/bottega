@@ -93,7 +93,7 @@ test('refuses multiple content-bearing branches with tips, counts, and commands 
         const command = message.match(/orch score (\d+) --void --note "([^"]+)"/)
         expect(command).not.toBeNull()
         const executed = Bun.spawnSync([
-          process.execPath, new URL('../../src/cli.ts', import.meta.url).pathname,
+          process.execPath, new URL('../../src/orch.ts', import.meta.url).pathname,
           'score', command![1]!, '--void', '--note', command![2]!,
         ], {
           env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',

@@ -26,7 +26,7 @@ describe("a worktree is resolved against the main checkout, not the caller cwd",
       .run(repo, gone, `orch/${id}`, `orch/${id}`, id)
     const docker = fakeDocker([], [])
     try {
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'abandon', String(id)], {
         env: { ...process.env, ...docker.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
         stdout: 'pipe', stderr: 'pipe',
@@ -52,7 +52,7 @@ describe("a worktree is resolved against the main checkout, not the caller cwd",
     db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
       .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     try {
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'abandon', String(id)], {
         env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
         stdout: 'pipe', stderr: 'pipe',
@@ -74,7 +74,7 @@ describe("a worktree is resolved against the main checkout, not the caller cwd",
     db().query('UPDATE run SET cwd=?, worktree=?, branch=?, minted_branch=? WHERE id=?')
       .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     try {
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'abandon', String(id)], {
         env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
         stdout: 'pipe', stderr: 'pipe',

@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { AGENTS, addRun, contentTree, createReadOnlyWorktree, createWorktree, db, declaredCreate, fakeDocker, fakeDockerCommand, hermeticGitCommand, hermeticGitEnv, prepareSharedRefGuard, prepareWorktreeObjects, runJob, score, upsertProject, worktreeGitDir } from '../fixture.ts'
 const worktreeMod = await import('../../src/worktree.ts')
 describe('sweep only reclaims old orch-owned orphan worktrees', () => {
-  const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+  const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
   const processInventoryBin = mkdtempSync(join(tmpdir(), 'orch-empty-process-inventory-'))
   writeFileSync(join(processInventoryBin, 'ps'), '#!/bin/sh\nexit 0\n')
   chmodSync(join(processInventoryBin, 'ps'), 0o755)

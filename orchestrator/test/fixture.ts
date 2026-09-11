@@ -353,7 +353,7 @@ export function workerReply(overrides: Record<string, unknown> = {}): Record<str
 }
 
 export function runCollectionDescribeFixture() {
-const CLI = new URL('../src/cli.ts', import.meta.url).pathname
+const CLI = new URL('../src/orch.ts', import.meta.url).pathname
   const orchInput = (args: string[], stdin?: string | Uint8Array, extraEnv: Record<string, string> = {}) => {
     const p = testSpawnSync([process.execPath, CLI, ...args], {
       // The suite may itself be run by an orch worker. CLI behavior under test

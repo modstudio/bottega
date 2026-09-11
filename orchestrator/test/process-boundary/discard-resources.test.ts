@@ -29,7 +29,7 @@ test('discard inventories leaks after successfully restoring a shared branch', (
     db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, tree.branch, owner)
     const docker = fakeDocker([`orch-${target}-leaked`], [])
     try {
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const p = Bun.spawnSync(
         [process.execPath, CLI, 'discard', String(target), '--force'],
         {
@@ -79,7 +79,7 @@ test('discard inventories leaks after successfully restoring a shared branch', (
       .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, target)
     db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, tree.branch, owner)
     try {
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const p = Bun.spawnSync(
         [process.execPath, CLI, 'discard', String(target), '--force'],
         {
@@ -128,7 +128,7 @@ test('discard inventories leaks after successfully restoring a shared branch', (
       .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, target)
     db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, tree.branch, owner)
     try {
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const p = Bun.spawnSync(
         [process.execPath, CLI, 'discard', String(target), '--force'],
         {
@@ -182,7 +182,7 @@ test('discard inventories leaks after successfully restoring a shared branch', (
       [`orch-${id}_adanim-pgdata`, 'unrelated-volume'],
     )
     try {
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
         env: { ...process.env, ...docker.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
         stdout: 'pipe', stderr: 'pipe',
@@ -216,7 +216,7 @@ test('discard inventories leaks after successfully restoring a shared branch', (
       .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     const docker = fakeDockerCommand("echo 'docker unavailable' >&2; exit 127")
     try {
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
         env: { ...process.env, ...docker.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
         stdout: 'pipe', stderr: 'pipe',
@@ -247,7 +247,7 @@ test('discard inventories leaks after successfully restoring a shared branch', (
       .run(repo, tree.path, tree.branch, tree.mintedBranch ?? tree.branch, id)
     const docker = fakeDockerCommand('sleep 5')
     try {
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const started = Date.now()
       const p = Bun.spawnSync([process.execPath, CLI, 'discard', String(id)], {
         env: { ...process.env, ...docker.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },

@@ -309,7 +309,7 @@ test(caseName.migration, async () => {
   const scratch = join(fixture, 'linked-migration.db')
   rmSync(scratch, { force: true })
   const empty = new Database(scratch); empty.close()
-  const read = Bun.spawnSync([process.execPath, join(linked, 'orchestrator/src/cli.ts'), 'runs'], { cwd: linked, env: gitEnv({ ORCH_DB: scratch, ORCH_DEPTH: '0' }), stdout: 'pipe', stderr: 'pipe' })
+  const read = Bun.spawnSync([process.execPath, join(linked, 'orchestrator/src/orch.ts'), 'runs'], { cwd: linked, env: gitEnv({ ORCH_DB: scratch, ORCH_DEPTH: '0' }), stdout: 'pipe', stderr: 'pipe' })
   const checked = new Database(scratch, { readonly: true })
   const columns = checked.query('PRAGMA table_info(run)').all() as { name: string }[]; checked.close()
   violation(caseName.migration, seedMessage(), () => {
