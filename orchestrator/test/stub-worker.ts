@@ -6,6 +6,8 @@ import { dir } from './fixture.ts'
 export function stubWorker(opts: {
   commits?: boolean
   commands?: string[]
+  captureCwd?: boolean
+  captureStdin?: boolean
   sleepSeconds?: number
   burnCpu?: boolean
   exitCode?: number
@@ -20,6 +22,8 @@ export function stubWorker(opts: {
     '[ -z "$ORCH_STUB_OUTPUT" ] || printf "%s\\n" "$ORCH_STUB_OUTPUT"',
     '[ -z "$ORCH_STUB_READY_FILE" ] || printf "ready\\n" > "$ORCH_STUB_READY_FILE"',
   )
+  if (opts.captureCwd) lines.push('[ -z "$ORCH_STUB_CWD_FILE" ] || pwd > "$ORCH_STUB_CWD_FILE"')
+  if (opts.captureStdin) lines.push('[ -z "$ORCH_STUB_STDIN_FILE" ] || cat > "$ORCH_STUB_STDIN_FILE"')
   if (opts.commands) lines.push(...opts.commands)
   if (opts.commits) {
     lines.push(

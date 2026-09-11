@@ -4,6 +4,7 @@ import { existsSync,mkdirSync,mkdtempSync,realpathSync,rmSync,writeFileSync } fr
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS,addRun,createWorktreeForBranch,db,dir,hermeticGitEnv,installTestProcessInventory,projectAt,resolveTaskBranch,runJob,taskBranchCandidacySql,upsertProject } from '../fixture.ts'
+import { stubWorker } from '../stub-worker.ts'
 
 describe('task branch resolution', () => {
 const git = (cwd: string, ...args: string[]) => {
@@ -142,18 +143,15 @@ test('a writer attaches the sole retained task worktree and records that it mint
     const attachedTree = realpathSync(tree)
     const attachedTip = git(tree, 'rev-parse', 'HEAD')
     candidate(repo, project.id, project.name, 'DEV-440-existing', 'DEV-440', { worktree: tree })
-    const script = join(dir, `task-branch-agent-${randomUUID()}.ts`)
-    writeFileSync(script, `
-      const reply = {status:'done',summary:'attached',files_changed:[],questions:null,deviations:null,blockers:null,tests:{command:null,ran:false,passed:null,detail:null}}
-      require('node:fs').writeFileSync(process.env.ORCH_SCRATCH + '/reply.json', JSON.stringify(reply))
-    `)
+    const script = stubWorker()
     const agent = AGENTS.codex!
     const original = { bin: agent.bin, argv: agent.argv, readsOut: agent.readsOut }
     const priorDepth = process.env.ORCH_DEPTH
-    agent.bin = process.execPath
-    agent.argv = () => [script]
+    agent.bin = script
+    agent.argv = () => []
     agent.readsOut = false
     process.env.ORCH_DEPTH = '0'
+    process.env.ORCH_STUB_REPLY = JSON.stringify({status:'done',summary:'attached',files_changed:[],questions:null,deviations:null,blockers:null,tests:{command:null,ran:false,passed:null,detail:null}})
     installTestProcessInventory({ ascertainable: true, rows: [] })
     try {
       const result = await runJob({
@@ -178,7 +176,7 @@ test('a writer attaches the sole retained task worktree and records that it mint
       installTestProcessInventory(null)
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
-      rmSync(script, { force: true })
+      delete process.env.ORCH_STUB_REPLY
       rmSync(repo, { recursive: true, force: true })
     }
   })
@@ -187,18 +185,15 @@ test('recreates a resolved task branch from trunk without suggesting a landing b
     const oldTree = branchWithCommit(repo, 'DEV-440-recreate', 'fix.txt', 'fixed\n')
     candidate(repo, project.id, project.name, 'DEV-440-recreate', 'DEV-440')
     git(repo, 'worktree', 'remove', oldTree)
-    const script = join(dir, `task-branch-recreate-${randomUUID()}.ts`)
-    writeFileSync(script, `
-      const reply = {status:'done',summary:'recreated',files_changed:[],questions:null,deviations:null,blockers:null,tests:{command:null,ran:false,passed:null,detail:null}}
-      require('node:fs').writeFileSync(process.env.ORCH_SCRATCH + '/reply.json', JSON.stringify(reply))
-    `)
+    const script = stubWorker()
     const agent = AGENTS.codex!
     const original = { bin: agent.bin, argv: agent.argv, readsOut: agent.readsOut }
     const priorDepth = process.env.ORCH_DEPTH
-    agent.bin = process.execPath
-    agent.argv = () => [script]
+    agent.bin = script
+    agent.argv = () => []
     agent.readsOut = false
     process.env.ORCH_DEPTH = '0'
+    process.env.ORCH_STUB_REPLY = JSON.stringify({status:'done',summary:'recreated',files_changed:[],questions:null,deviations:null,blockers:null,tests:{command:null,ran:false,passed:null,detail:null}})
     try {
       const result = await runJob({
         job: 'implement', prompt: 'continue DEV-440', cwd: repo,
@@ -212,7 +207,7 @@ test('recreates a resolved task branch from trunk without suggesting a landing b
       agent.readsOut = original.readsOut
       if (priorDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = priorDepth
-      rmSync(script, { force: true })
+      delete process.env.ORCH_STUB_REPLY
       rmSync(repo, { recursive: true, force: true })
     }
   })
@@ -238,17 +233,11 @@ test('command-backed tooling falls back to creating a new branch', async () => {
         create: { command: 'sh', args: [tool, '{branch}', '{name}'] }, branch: 'task/{id}',
       } },
     })
-    const script = join(dir, `task-branch-command-${randomUUID()}.ts`)
-    writeFileSync(script, `
-      const fs = require('node:fs')
-      fs.writeFileSync('continued.txt', 'continued\\n')
-      for (const args of [['add', 'continued.txt'], ['commit', '-m', 'continued']]) {
-        const git = Bun.spawnSync(['git', ...args], {stdout:'pipe', stderr:'pipe'})
-        if (git.exitCode !== 0) throw new Error(git.stderr.toString())
-      }
-      const reply = {status:'done',summary:'new branch',files_changed:['continued.txt'],questions:null,deviations:null,blockers:null,tests:{command:null,ran:false,passed:null,detail:null}}
-      fs.writeFileSync(process.env.ORCH_SCRATCH + '/reply.json', JSON.stringify(reply))
-    `)
+    const script = stubWorker({ commands: [
+      'printf "continued\\n" > continued.txt',
+      'git add continued.txt',
+      'git commit -m continued >/dev/null',
+    ] })
     const agent = AGENTS.codex!
     const original = { bin: agent.bin, argv: agent.argv, readsOut: agent.readsOut }
     const priorDepth = process.env.ORCH_DEPTH
@@ -257,13 +246,14 @@ test('command-backed tooling falls back to creating a new branch', async () => {
       alternates: process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES,
       index: process.env.GIT_INDEX_FILE,
     }
-    agent.bin = process.execPath
-    agent.argv = () => [script]
+    agent.bin = script
+    agent.argv = () => []
     agent.readsOut = false
     process.env.ORCH_DEPTH = '0'
     process.env.GIT_OBJECT_DIRECTORY = foreignObjects
     process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES = foreignObjects
     process.env.GIT_INDEX_FILE = join(foreignObjects, 'index')
+    process.env.ORCH_STUB_REPLY = JSON.stringify({status:'done',summary:'new branch',files_changed:['continued.txt'],questions:null,deviations:null,blockers:null,tests:{command:null,ran:false,passed:null,detail:null}})
     try {
       const result = await runJob({
         job: 'implement', prompt: 'continue DEV-440', cwd: repo,
@@ -283,10 +273,9 @@ test('command-backed tooling falls back to creating a new branch', async () => {
       else process.env.GIT_ALTERNATE_OBJECT_DIRECTORIES = inheritedGit.alternates
       if (inheritedGit.index === undefined) delete process.env.GIT_INDEX_FILE
       else process.env.GIT_INDEX_FILE = inheritedGit.index
-      rmSync(script, { force: true })
+      delete process.env.ORCH_STUB_REPLY
       rmSync(repo, { recursive: true, force: true })
       rmSync(foreignObjects, { recursive: true, force: true })
     }
   })
 })
-
