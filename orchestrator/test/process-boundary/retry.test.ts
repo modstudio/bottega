@@ -3,7 +3,8 @@ import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { READONLY_PREAMBLE, db, dir, replyFileInstruction, runCollectionDescribeFixture, stubWorker, upsertProject } from '../fixture.ts'
+import { READONLY_PREAMBLE, db, dir, replyFileInstruction, runCollectionDescribeFixture, upsertProject } from '../fixture.ts'
+import { stubWorker } from "../stub-worker.ts"
 
 // Retry delivery crosses the detach: the observable effect is the replacement
 // child's prompt on disk after a real orch child ran. That is the process

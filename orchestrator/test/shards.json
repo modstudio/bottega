@@ -24,6 +24,10 @@
     "test/process-boundary/idle-kill.test.ts": { "size": "moderate", "exclusive": true },
     "test/process-boundary/run.test.ts": { "size": "short" },
     "test/process-boundary/database.test.ts": { "size": "short" },
+    "test/process-boundary/discard-resources.test.ts": { "size": "short" },
+    "test/process-boundary/discard.test.ts": { "size": "short" },
+    "test/process-boundary/abandon.test.ts": { "size": "short" },
+    "test/process-boundary/ref-guard.test.ts": { "size": "short" },
     "src/worktree-4.cli.test.ts": { "size": "short" },
     "src/worktree-5.cli.test.ts": { "size": "short" }
   },
@@ -37,6 +41,7 @@
         "src/evals.cli.test.ts",
         "src/epic.cli.test.ts",
         "src/review-yield.cli.test.ts"
+        ,"test/process-boundary/discard-resources.test.ts"
       ]
     },
     {
@@ -49,6 +54,7 @@
         "src/review-1.cli.test.ts",
         "src/route.cli.test.ts",
         "src/catalog.cli.test.ts"
+        ,"test/process-boundary/discard.test.ts"
       ]
     },
     {
@@ -59,6 +65,7 @@
         "src/canon.cli.test.ts",
         "src/worktree-4.cli.test.ts",
         "src/projects.cli.test.ts"
+        ,"test/process-boundary/abandon.test.ts"
       ]
     },
     {
@@ -69,6 +76,7 @@
         "src/issue.cli.test.ts",
         "src/linked-worktree-database.cli.test.ts",
         "test/process-boundary/run.test.ts"
+        ,"test/process-boundary/ref-guard.test.ts"
       ]
     },
     {
