@@ -1,9 +1,10 @@
-import { afterEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { AGENTS, canonSourceInstruction, db, dir, hermeticGitEnv, reviewReply, runJob, upsertProject } from '../fixture.ts'
 import { stubWorker } from "../stub-worker.ts"
+import { trackedTestResidue } from '../residue.ts'
 
 const GROK_REVIEW_EVENT = JSON.stringify({
   type: 'result', subtype: 'success', result: JSON.stringify(reviewReply(1)),
@@ -16,10 +17,13 @@ const GROK_DOCTOR_OUTPUT = JSON.stringify({
 })
 
 const roots: string[] = []
+const trackResidue = trackedTestResidue()
+const worker = (opts?: Parameters<typeof stubWorker>[0]) => { const script = stubWorker(opts); trackResidue(dirname(script)); return script }
+beforeEach(() => { trackResidue(join(dir, '.claude')) })
 afterEach(() => { while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true }); rmSync(join(dir, '.mcp.json'), { force: true }) })
 const fakeGrok = () => {
   const binDir = mkdtempSync(join(tmpdir(), 'orch-mcp-boundary-')); roots.push(binDir)
-  symlinkSync(stubWorker({ exitCode: 99 }), join(binDir, 'grok'))
+  symlinkSync(worker({ exitCode: 99 }), join(binDir, 'grok'))
   return binDir
 }
 const invoke = (args: string[], binDir: string) => Bun.spawnSync(
@@ -79,7 +83,7 @@ test('continue without parent output inherits prefer, re-probes, and keeps MIRRO
   writeFileSync(join(repo, 'tracked.txt'), 'base\n'); git('add', 'tracked.txt'); git('commit', '-m', 'base')
   writeFileSync(join(repo, '.mcp.json'), '{}\n'); upsertProject({ name: 'fixture-project', path: repo, settings: {} })
   const binDir = mkdtempSync(join(tmpdir(), 'orch-grok-prefer-continue-')); roots.push(binDir)
-  const script = stubWorker()
+  const script = worker()
   symlinkSync(script, join(binDir, 'grok'))
   const agent = AGENTS.grok!; const original = { bin: agent.bin, argv: agent.argv }
   const priorDepth = process.env.ORCH_DEPTH; const priorSession = process.env.CLAUDE_CODE_SESSION_ID
