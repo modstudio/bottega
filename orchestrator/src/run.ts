@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import {
   classify, notify, isNonAnswer, hasVendorTerminationMarker, detectBlockers, NEEDS_HUMAN, NEEDS_HUMAN_TITLE, FAILS_OVER, } from './failure.ts'
 import {
-  AGENTS, ensureLocalHealth, tryWake, readStrictCodexSchema, minimumCliVersionRefusal, LOCAL_BASE_URL, } from './agents.ts'
+  requireAgent, ensureLocalHealth, tryWake, readStrictCodexSchema, minimumCliVersionRefusal, LOCAL_BASE_URL, } from './agents.ts'
 import {
   job, isReaderJob, jobIdleKillMs, reclaimsTreeByDefault, resolveJobTimeoutMs, jobBoundInstruction, type Job, } from './jobs.ts'
 import { pick } from './route.ts'
@@ -524,7 +524,7 @@ export async function run(opts: {
            { agents: opts.avoid, models: opts.distinctModels, model: opts.model,
              noWaitCapacity: opts.noWaitCapacity },
            opts.probe, opts.lens)
-  const a = AGENTS[name]!
+  const a = requireAgent(name)
   let boundMs: number
   try {
     // A durable historical row can name an agent that is no longer registered.

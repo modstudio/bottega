@@ -2,10 +2,17 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { rmSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
-import { AGENTS, GENERIC_QUESTION_TOKENS, JOBS, NEEDS_HEALTH, OUTPUT_RESERVE, STALE_AFTER_MS, WAKE_COOLDOWN_MS, WORKER_PREAMBLE, addRun, available, candidates, classify, db, detectBlockers, dir, ensureLocalHealth, guide, isNonAnswer, jobTimeoutCeilingMinutes, localReachable, pick, replyFileInstruction, resetLocalHealth, runJob, score, strictCodexSchema, unavailableReason, wakeDecision, workerPreamble, workerResumeGuard } from '../test/fixture.ts'
-import { addAgent, agentRows, recordAgentProbe, refreshAgents, registrationProbeReadsRepo, removeAgent, setAgent } from './agents.ts'
+import { AGENTS, DB_PATH, GENERIC_QUESTION_TOKENS, JOBS, NEEDS_HEALTH, OUTPUT_RESERVE, STALE_AFTER_MS, WAKE_COOLDOWN_MS, WORKER_PREAMBLE, addRun, available, candidates, classify, db, detectBlockers, dir, ensureLocalHealth, guide, isNonAnswer, jobTimeoutCeilingMinutes, localReachable, pick, replyFileInstruction, resetLocalHealth, runJob, score, strictCodexSchema, unavailableReason, wakeDecision, workerPreamble, workerResumeGuard } from '../test/fixture.ts'
+import { addAgent, agentRows, recordAgentProbe, refreshAgents, registrationProbeReadsRepo, removeAgent, requireAgent, setAgent } from './agents.ts'
 
 describe('agent registry', () => {
+  test('requires an exact key from this process registry with diagnostic evidence', () => {
+    expect(requireAgent('codex')).toBe(AGENTS.codex!)
+    for (const name of [' codex ', 'no-such-agent']) {
+      expect(() => requireAgent(name)).toThrow(JSON.stringify(name)); expect(() => requireAgent(name)).toThrow(DB_PATH)
+      expect(() => requireAgent(name)).toThrow('codex'); expect(() => requireAgent(name)).not.toThrow('not registered')
+    }
+  })
   test('migration preserves the four historical names and capabilities', () => {
     expect(agentRows().map((row) => row.name)).toEqual(['agy', 'codex', 'grok', 'qwen-local'])
     expect(AGENTS.codex!.caps).toMatchObject({ readsRepo: true, schema: true, writesRepo: true })
@@ -29,9 +36,7 @@ describe('agent registry', () => {
       contextTokens: 131072,
       contextSource: 'harness',
     })
-    expect(AGENTS['local-acp']!.caps).toMatchObject({
-      readsRepo: true, schema: true, replyFile: true, mcp: true,
-    })
+    expect(AGENTS['local-acp']!.caps).toMatchObject({ readsRepo: true, schema: true, replyFile: true, mcp: true })
     expect(AGENTS['local-acp']!.contextTokens).toBe(131072)
     expect(AGENTS['qwen-local']!.enabled).toBe(false)
   })
@@ -51,8 +56,7 @@ describe('agent registry', () => {
       contextTokens: 65536, contextSource: 'declared',
     })
     expect(AGENTS['summarize-probe']!.caps.mcp).toBe(false)
-    expect(JSON.parse(agentRows().find((row) => row.name === 'summarize-probe')!.probe_result!).mcp)
-      .toEqual({ verifiable: null, output: 'skipped' })
+    expect(JSON.parse(agentRows().find((row) => row.name === 'summarize-probe')!.probe_result!).mcp).toEqual({ verifiable: null, output: 'skipped' })
     removeAgent('summarize-probe')
   })
 
@@ -70,11 +74,8 @@ describe('agent registry', () => {
       jobs: { summarize: { reply: true } },
       contextTokens: 65536, contextSource: 'declared',
     })
-    expect(AGENTS['unobserved-probe']!.caps).toMatchObject({
-      readsRepo: false, schema: false, replyFile: false,
-    })
-    expect(JSON.parse(agentRows().find((row) => row.name === 'unobserved-probe')!.probe_result!))
-      .toMatchObject({ tool: { ok: null }, schema: { ok: null }, file: { ok: null } })
+    expect(AGENTS['unobserved-probe']!.caps).toMatchObject({ readsRepo: false, schema: false, replyFile: false })
+    expect(JSON.parse(agentRows().find((row) => row.name === 'unobserved-probe')!.probe_result!)).toMatchObject({ tool: { ok: null }, schema: { ok: null }, file: { ok: null } })
     removeAgent('unobserved-probe')
   })
 
@@ -99,8 +100,7 @@ describe('agent registry', () => {
     const changed = setAgent('widened-probe', { jobs: ['summarize', 'implement'] })
     expect(changed.probed_at).toBeNull()
     expect(AGENTS['widened-probe']!.probePassed).toBeNull()
-    expect(candidates('implement').find((row) => row.agent === 'widened-probe')!.why)
-      .toBe('registration probe incomplete; run orch agent probe widened-probe')
+    expect(candidates('implement').find((row) => row.agent === 'widened-probe')!.why).toBe('registration probe incomplete; run orch agent probe widened-probe')
     removeAgent('widened-probe')
   })
 
