@@ -11,6 +11,8 @@ const allowed = new Set([
     './run-control.ts', './run-dispatch.ts', './run-answer.ts', './cleanup.ts', './cleanup-sweep.ts', './run-stop.ts',
     './judgement.ts', './recalibration.ts',
     './confinement-ruling.ts', './doc-commands.ts', './project-commands.ts',
+    './doctor.ts', './port-commands.ts', './review-commands.ts',
+    './run-listing.ts', './run-inbox.ts', './run-diff.ts',
 ])
 
 function offendingImports(source: string): string[] {

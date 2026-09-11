@@ -1,12 +1,9 @@
-import { Database } from 'bun:sqlite'
-import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, sessionId, recordSessionSeen, SESSION_LIVE_MS, writeTransaction } from './db.ts'; import { registerStandardHooks } from './store-hooks.ts'; registerStandardHooks()
-import { DELIVERY, QUALITY, FIDELITY } from './score.ts'
-import { pendingForSession, UNSCORED_WHERE, voidedSql, activeSql, runTotals } from './evidence-query.ts'
+import { db, writableDb, sessionId, recordSessionSeen, writeTransaction } from './db.ts'; import { registerStandardHooks } from './store-hooks.ts'; registerStandardHooks()
+import { pendingForSession } from './evidence-query.ts'
 import { REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_SEVERITY } from './review-vocabulary.ts'
 import { reapStale } from './run-liveness.ts'; import { pidAlive } from './process-liveness.ts'
 import { duelMatrices, unrecordedPairsForSession } from './duel.ts'
 import { authorizeRunMutation, runMutationActor, auditRunMutation } from './run-authority.ts'
-import { terminalDockerRetentionReasonForRun } from './resource-ownership.ts'
 import { detach as dispatchDetached } from './run-dispatch.ts'
 import {
   continueRun as continueControlledRun, follow as followRun,
@@ -21,14 +18,18 @@ import { recalibrate } from './recalibration.ts'
 import { clearConfinement } from './confinement-ruling.ts'
 import { docCommand } from './doc-commands.ts'
 import { projectCommand } from './project-commands.ts'
-import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, realpathSync, statSync, lstatSync, unlinkSync, openSync, fstatSync, closeSync, constants } from 'node:fs'
+import { doctorCommand } from './doctor.ts'
+import { portCommand } from './port-commands.ts'
+import { reviewCommand } from './review-commands.ts'
+import { runListingCommand } from './run-listing.ts'
+import { runInboxCommand } from './run-inbox.ts'
+import { runDiffCommand } from './run-diff.ts'
+import { readFileSync, existsSync, writeFileSync, mkdirSync, realpathSync, statSync, lstatSync, unlinkSync, openSync, fstatSync, closeSync, constants } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { z } from 'zod'
 import { projectAt, projectByName, projects } from './projects.ts'
 import { classify, NOT_EVIDENCE } from './failure.ts'
 import { collectResult, collectWait, resolveFailover } from './collect.ts'
-import { failureReason, outcomeOf, type OutcomeRow } from './outcome.ts'
 import {
   CONTINUE_WORKING_FORMS, TELL_WORKING_FORMS,
   flagValue, flagValues, invalidUtf8Offset, nulByteOffset,
@@ -45,7 +46,6 @@ import {
 
 type DetachSpec = import('./failover.ts').DetachSpec
 type McpRequest = import('./mcp-preflight.ts').McpRequest
-type Disposition = import('./review.ts').Disposition
 type RoutingBacktest = import('./routing-backtest.ts').RoutingBacktest
 
 let jobsModule: typeof import('./jobs.ts')
@@ -55,15 +55,12 @@ let guideModule: typeof import('./guide.ts')
 let runArtifactsModule: typeof import('./run-artifacts.ts'); let closeOutModule: typeof import('./close-out.ts')
 let dispatchPreflightModule: typeof import('./dispatch-preflight.ts'); let reviewTargetModule: typeof import('./review-target.ts')
 let preflight!: typeof import('./dispatch-preflight.ts').preflight; let implicitReviewWarning!: typeof import('./review-target.ts').implicitReviewWarning
-let worktreeModule!: typeof import('./worktree.ts'); let gitEnvironmentModule!: typeof import('./git-environment.ts'); let worktreeAttributionModule!: typeof import('./worktree-attribution.ts')
+let worktreeModule!: typeof import('./worktree.ts')
 let contractModule!: typeof import('./contract.ts')
 let grokTrustModule!: typeof import('./grok-trust.ts')
-let reviewModule!: typeof import('./review.ts')
-let reviewTierModule!: typeof import('./review-tier.ts')
 let workflowsModule!: typeof import('./workflows.ts')
 let agreementModule!: typeof import('./agreement.ts')
 let routingBacktestModule!: typeof import('./routing-backtest.ts')
-let dockerResourcesModule!: typeof import('./docker-resources.ts')
 
 let JOBS!: typeof import('./jobs.ts').JOBS
 let job!: typeof import('./jobs.ts').job
@@ -82,26 +79,18 @@ let available!: typeof import('./agents.ts').available
 let installed!: typeof import('./agents.ts').installed
 let ensureLocalHealth!: typeof import('./agents.ts').ensureLocalHealth
 let unavailableReason!: typeof import('./agents.ts').unavailableReason
-let tryWake!: typeof import('./agents.ts').tryWake
-let wakeStatus!: typeof import('./agents.ts').wakeStatus
-let lastWakeAttempt!: typeof import('./agents.ts').lastWakeAttempt
 let readStrictCodexSchema!: typeof import('./agents.ts').readStrictCodexSchema
 let resumePromptByteLimit!: typeof import('./agents.ts').resumePromptByteLimit
-let cliVersion!: typeof import('./agents.ts').cliVersion
-let versionBelow!: typeof import('./agents.ts').versionBelow
 let agentRows!: typeof import('./agents.ts').agentRows
 let addAgent!: typeof import('./agents.ts').addAgent
 let setAgent!: typeof import('./agents.ts').setAgent
 let removeAgent!: typeof import('./agents.ts').removeAgent
 let probeAgent!: typeof import('./agents.ts').probeAgent
-let fileContractProbeReason!: typeof import('./agents.ts').fileContractProbeReason
-let predatesFileContract!: typeof import('./agents.ts').predatesFileContract
 async function loadAgents() {
   agentsModule ??= await import('./agents.ts')
-  ;({ AGENTS, available, installed, ensureLocalHealth, unavailableReason, tryWake,
-      wakeStatus, lastWakeAttempt, readStrictCodexSchema, resumePromptByteLimit,
-      cliVersion, versionBelow, agentRows, addAgent, setAgent, removeAgent, probeAgent,
-      fileContractProbeReason, predatesFileContract } = agentsModule)
+  ;({ AGENTS, available, installed, ensureLocalHealth, unavailableReason,
+      readStrictCodexSchema, resumePromptByteLimit,
+      agentRows, addAgent, setAgent, removeAgent, probeAgent } = agentsModule)
 }
 let candidates!: typeof import('./route.ts').candidates
 let pick!: typeof import('./route.ts').pick
@@ -130,8 +119,7 @@ async function loadTransport() {
 }
 let resolveBase!: typeof import('./worktree.ts').resolveBase
 let checkoutHasUncommittedWork!: typeof import('./worktree.ts').checkoutHasUncommittedWork; let callerDrift!: typeof import('./worktree.ts').callerDrift
-let targetGitEnvironment!: typeof import('./git-environment.ts').targetGitEnvironment; let worktreeDirty!: typeof import('./worktree-attribution.ts').worktreeDirty
-async function loadWorktree() { worktreeModule ??= await import('./worktree.ts'); gitEnvironmentModule ??= await import('./git-environment.ts'); worktreeAttributionModule ??= await import('./worktree-attribution.ts'); ({ resolveBase, checkoutHasUncommittedWork, callerDrift } = worktreeModule); ({ targetGitEnvironment } = gitEnvironmentModule); ({ worktreeDirty } = worktreeAttributionModule) }
+async function loadWorktree() { worktreeModule ??= await import('./worktree.ts'); ({ resolveBase, checkoutHasUncommittedWork, callerDrift } = worktreeModule) }
 let WORKER_PREAMBLE!: typeof import('./contract.ts').WORKER_PREAMBLE
 let READONLY_PREAMBLE!: typeof import('./contract.ts').READONLY_PREAMBLE
 let NO_REPO_PREAMBLE!: typeof import('./contract.ts').NO_REPO_PREAMBLE
@@ -141,23 +129,6 @@ async function loadContract() { contractModule ??= await import('./contract.ts')
 let grokTrustHeadings!: typeof import('./grok-trust.ts').grokTrustHeadings
 let grokTrustPathFromHeading!: typeof import('./grok-trust.ts').grokTrustPathFromHeading
 async function loadGrokTrust() { grokTrustModule ??= await import('./grok-trust.ts'); ({ grokTrustHeadings, grokTrustPathFromHeading } = grokTrustModule) }
-let completeReview!: typeof import('./review.ts').completeReview
-let coverageAudit!: typeof import('./review.ts').coverageAudit
-let DISPOSITIONS!: typeof import('./review.ts').DISPOSITIONS
-let parseReviewOutput!: typeof import('./review.ts').parseReviewOutput
-let recordReviews!: typeof import('./review.ts').recordReviews
-let getReview!: typeof import('./review.ts').getReview
-let listReviews!: typeof import('./review.ts').listReviews
-let MIN_REVIEW_TRIAGED!: typeof import('./review.ts').MIN_REVIEW_TRIAGED
-let REVIEW_WINDOW!: typeof import('./review.ts').REVIEW_WINDOW
-let reviewCalibration!: typeof import('./review.ts').reviewCalibration
-let reviewCalibrationFleet!: typeof import('./review.ts').reviewCalibrationFleet
-let reviewPins!: typeof import('./review.ts').reviewPins
-let triageFinding!: typeof import('./review.ts').triageFinding
-async function loadReview() { reviewModule ??= await import('./review.ts'); ({ completeReview, coverageAudit, DISPOSITIONS, parseReviewOutput, recordReviews, getReview, listReviews, MIN_REVIEW_TRIAGED, REVIEW_WINDOW, reviewCalibration, reviewCalibrationFleet, reviewPins, triageFinding } = reviewModule) }
-let classifyReviewTier!: typeof import('./review-tier.ts').classifyReviewTier
-let diffNumstat!: typeof import('./review-tier.ts').diffNumstat
-async function loadReviewTier() { reviewTierModule ??= await import('./review-tier.ts'); ({ classifyReviewTier, diffNumstat } = reviewTierModule) }
 let composeWorkflow!: typeof import('./workflows.ts').composeWorkflow
 let exportWorkflows!: typeof import('./workflows.ts').exportWorkflows
 let forkWorkflow!: typeof import('./workflows.ts').forkWorkflow
@@ -171,16 +142,10 @@ let showWorkflow!: typeof import('./workflows.ts').showWorkflow
 let workflowVersions!: typeof import('./workflows.ts').workflowVersions
 async function loadWorkflows() { workflowsModule ??= await import('./workflows.ts'); ({ composeWorkflow, exportWorkflows, forkWorkflow, getWorkflowStep, importWorkflows, listWorkflows, promoteWorkflow, retireWorkflow, setWorkflow, showWorkflow, workflowVersions } = workflowsModule) }
 let bradleyTerry!: typeof import('./agreement.ts').bradleyTerry
-let gwetAc1!: typeof import('./agreement.ts').gwetAc1
-let quadraticWeightedKappa!: typeof import('./agreement.ts').quadraticWeightedKappa
-async function loadAgreement() { agreementModule ??= await import('./agreement.ts'); ({ bradleyTerry, gwetAc1, quadraticWeightedKappa } = agreementModule) }
+async function loadAgreement() { agreementModule ??= await import('./agreement.ts'); ({ bradleyTerry } = agreementModule) }
 let routingBacktest!: typeof import('./routing-backtest.ts').routingBacktest
 let routingBacktestEnsemble!: typeof import('./routing-backtest.ts').routingBacktestEnsemble
 async function loadRoutingBacktest() { routingBacktestModule ??= await import('./routing-backtest.ts'); ({ routingBacktest, routingBacktestEnsemble } = routingBacktestModule) }
-let dockerRemovalCommand!: typeof import('./docker-resources.ts').dockerRemovalCommand
-let dockerRunResources!: typeof import('./docker-resources.ts').dockerRunResources
-let classifiedDockerResources!: typeof import('./docker-resources.ts').classifiedDockerResources
-async function loadDockerResources() { dockerResourcesModule ??= await import('./docker-resources.ts'); ({ classifiedDockerResources, dockerRemovalCommand, dockerRunResources } = dockerResourcesModule) }
 
 /**
  * How long `orch do` watches a detached run before handing it back.
@@ -1163,314 +1128,14 @@ switch (cmd) {
   }
 
   case 'port': {
-    const {
-      addDoctrineRule, addPair, addSkip, baselineForPair, ledgerRef, listDoctrineRules,
-      listLedgerRefs, listSkips, pairByProjects, removeLedgerRef, resolveLedgerRef,
-      retireDoctrineRule, setBaseline, setLedgerRef,
-    } = await import('./porting.ts')
     const group = argv[1]
     const action = argv[2]
-    const namedProject = (name: string) => {
-      const project = projectByName(name)
-      if (!project) throw new Error(`unknown project "${name}". Registered: ${projectNames()}`)
-      return project
+    const commandFlags = { has, flag }
+    const presentation = {
+      log: console.log, writeStdout, exitCode: (code: number) => { process.exitCode = code },
     }
-    const namedPair = (sourceName: string, targetName: string, create = false) => {
-      const source = namedProject(sourceName)
-      const target = namedProject(targetName)
-      if (source.id === target.id) throw new Error('a port source and target must be different projects')
-      const pair = pairByProjects(source.id, target.id) ?? (create ? addPair(source.id, target.id) : null)
-      return { pair, source, target }
-    }
-    const output = (value: unknown, line: string) =>
-      console.log(has('json') ? JSON.stringify(value) : line)
-
-    if (group === 'import') {
-      const dir = argv[2]
-      if (!dir) throw new Error('orch port import <dir> [--dry-run] [--replace] [--json]')
-      const { applyImport, ImportRefusalError, planImport, projectsForDryRun, sourceCoverage } =
-        await import('./porting-import.ts')
-      const names = {
-        doctrine: 'doctrine.md', differences: 'differences.md', backports: 'backports.md',
-        refs: 'refs.json', state: 'state.json', projects: 'projects.md',
-      } as const
-      const files = {} as Record<keyof typeof names, string>
-      const ioRefusals: { kind: 'refusal'; what: string; where: string; why: string }[] = []
-      try {
-        if (!statSync(dir).isDirectory()) throw new Error('not a directory')
-        readdirSync(dir)
-      } catch (error) {
-        ioRefusals.push({ kind: 'refusal', what: 'source directory', where: dir, why: String(error) })
-      }
-      for (const [key, name] of Object.entries(names) as [keyof typeof names, string][]) {
-        const path = join(dir, name)
-        try { files[key] = readFileSync(path, 'utf8') }
-        catch (error) {
-          files[key] = ''
-          ioRefusals.push({ kind: 'refusal', what: `source file "${name}"`, where: path, why: String(error) })
-        }
-      }
-      let plan
-      if (ioRefusals.length) {
-        plan = {
-          pairs: [], baselines: [], skips: [], refs: [], doctrine: [], docs: [],
-          refusals: ioRefusals, exclusions: [],
-        }
-      } else {
-        let registered: ReturnType<typeof projects>
-        try { registered = has('dry-run') ? projectsForDryRun(DB_PATH) : projects() }
-        catch (error) {
-          ioRefusals.push({ kind: 'refusal', what: 'project register', where: DB_PATH, why: String(error) })
-          registered = []
-        }
-        plan = ioRefusals.length
-          ? { pairs: [], baselines: [], skips: [], refs: [], doctrine: [], docs: [],
-              refusals: ioRefusals, exclusions: [] }
-          : planImport(files, registered)
-      }
-      const visiblePlan = () => {
-        const uncoveredSpans = sourceCoverage(plan, files)
-        return {
-          ...plan,
-          doctrine: plan.doctrine.map((row) => ({ ...row, bodyLength: row.body.length })),
-          docs: plan.docs.map((row) => ({ ...row, bodyLength: row.body.length })),
-          uncoveredSpans,
-        }
-      }
-      const printPlan = async () => {
-        const visible = visiblePlan()
-        const uncoveredSpans = visible.uncoveredSpans
-        if (has('json')) { await writeStdout(`${JSON.stringify(visible, null, 2)}\n`); return }
-        console.log(`pairs (${plan.pairs.length})`)
-        for (const row of plan.pairs) console.log(`  ${row.source} -> ${row.target}  ids ${row.sourceId}->${row.targetId}`)
-        console.log(`baselines (${plan.baselines.length})`)
-        for (const row of plan.baselines) console.log(`  ${row.pairKey}  ${row.sourceCommit ?? 'null'}  ${row.scannedAt ?? 'null'}`)
-        console.log(`skips (${plan.skips.length})`)
-        for (const row of plan.skips) console.log(`  ${row.pairKey}  ${row.candidate}  reason=${row.reason}`)
-        console.log(`refs (${plan.refs.length})`)
-        for (const row of plan.refs) {
-          console.log(`  ${row.taskKey}  note=${JSON.stringify(row.note)}`)
-          for (const source of row.sources) {
-            console.log(`    source_project_id=${source.source_project_id} commits=${JSON.stringify(source.commits)} paths=${JSON.stringify(source.paths)} note=${JSON.stringify(source.note)}`)
-          }
-        }
-        console.log(`doctrine (${plan.doctrine.length})`)
-        for (const row of plan.doctrine) console.log(`  ${row.number}  ${row.title}  body length=${row.body.length}`)
-        console.log(`docs (${plan.docs.length})`)
-        for (const row of plan.docs) {
-          console.log(`  ${row.scope}/${row.subject ?? '_'}/${row.slug}  ${row.title}  body length=${row.body.length}`)
-        }
-        console.log(`refusals (${plan.refusals.length})`)
-        for (const refusal of plan.refusals) {
-          console.log(`  ${refusal.what} / ${refusal.where} / ${refusal.why}`)
-        }
-        console.log(`exclusions (${plan.exclusions.length})`)
-        for (const exclusion of plan.exclusions) {
-          console.log(`  ${exclusion.what} / ${exclusion.where} / ${exclusion.why}`)
-          if (exclusion.value !== undefined) console.log(`    original value: ${exclusion.value}`)
-        }
-        console.log(`uncovered spans (${uncoveredSpans.length})`)
-        for (const span of uncoveredSpans) {
-          console.log(`  ${span.file} offset ${span.offset} / ${JSON.stringify(span.text)}`)
-        }
-      }
-      if (has('dry-run')) {
-        await printPlan()
-        if (plan.refusals.length) process.exitCode = 1
-        break
-      }
-      try {
-        applyImport(plan, { replace: has('replace'), sourceLabel: dir })
-      } catch (error) {
-        if (!(error instanceof ImportRefusalError)) throw error
-        plan.refusals.push(...error.refusals.filter((refusal) => !plan.refusals.includes(refusal)))
-        await printPlan()
-        process.exitCode = 1
-        break
-      }
-      if (has('json')) console.log(JSON.stringify(visiblePlan(), null, 2))
-      else console.log(`imported ${plan.pairs.length} pairs, ${plan.refs.length} refs, ${plan.doctrine.length} doctrine rules, and ${plan.docs.length} docs`)
-      break
-    }
-
-    if (group === 'baseline' && action === 'show') {
-      const sourceName = argv[3]
-      const targetName = argv[4]
-      if (!sourceName || !targetName) throw new Error('orch port baseline show <source> <target> [--json]')
-      const { pair } = namedPair(sourceName, targetName)
-      if (!pair) {
-        output(null, `no port pair from "${sourceName}" to "${targetName}"`)
-        break
-      }
-      const value = { pair, baseline: baselineForPair(pair.id) }
-      output(value, value.baseline?.source_commit
-        ? `${sourceName} -> ${targetName}  ${value.baseline.source_commit}  ${value.baseline.scanned_at}`
-        : `${sourceName} -> ${targetName}  no baseline`)
-      break
-    }
-
-    if (group === 'baseline' && action === 'set') {
-      const sourceName = argv[3]
-      const targetName = argv[4]
-      const commit = has('clear') ? null : argv[5]
-      if (!sourceName || !targetName || (!has('clear') && !commit)) {
-        throw new Error('orch port baseline set <source> <target> <commit> [--json] | --clear')
-      }
-      const { pair } = namedPair(sourceName, targetName, true)
-      const baseline = setBaseline(pair!.id, commit)
-      output({ pair, baseline }, commit
-        ? `set ${sourceName} -> ${targetName} baseline to ${commit}`
-        : `cleared ${sourceName} -> ${targetName} baseline`)
-      break
-    }
-
-    if (group === 'skip' && action === 'list') {
-      const sourceName = argv[3]
-      const targetName = argv[4]
-      if (!sourceName || !targetName) throw new Error('orch port skip list <source> <target> [--json]')
-      const { pair } = namedPair(sourceName, targetName)
-      const rows = pair ? listSkips(pair.id) : []
-      if (has('json')) { console.log(JSON.stringify(rows)); break }
-      for (const row of rows) console.log(`${row.candidate}  ${row.reason}  ${row.skipped_at}`)
-      break
-    }
-
-    if (group === 'skip' && action === 'add') {
-      const sourceName = argv[3]
-      const targetName = argv[4]
-      const candidate = argv[5]
-      const reason = flag('reason')
-      if (!sourceName || !targetName || !candidate || reason === undefined) {
-        throw new Error('orch port skip add <source> <target> <candidate> --reason TEXT [--json]')
-      }
-      const { pair } = namedPair(sourceName, targetName)
-      if (!pair) throw new Error(`no port pair from "${sourceName}" to "${targetName}"; set its baseline first`)
-      const row = addSkip(pair.id, candidate, reason)
-      output(row, `skipped ${candidate}: ${reason}`)
-      break
-    }
-
-    if (group === 'ref' && action === 'list') {
-      const rows = listLedgerRefs(has('all'))
-      if (has('json')) { console.log(JSON.stringify(rows)); break }
-      for (const row of rows) {
-        console.log(`${row.task_key}  ${row.sources.length} source(s)  ${row.resolved_at ?? 'unresolved'}  ${row.note}`)
-      }
-      break
-    }
-
-    if (group === 'ref' && action === 'show') {
-      const taskKey = argv[3]
-      if (!taskKey) throw new Error('orch port ref show <task-key> [--json]')
-      const ref = ledgerRef(taskKey)
-      if (!ref) throw new Error(`no port ledger ref for task "${taskKey}"`)
-      if (has('json')) { console.log(JSON.stringify(ref)); break }
-      console.log(`${ref.task_key}  ${ref.resolved_at ?? 'unresolved'}\n${ref.note}`)
-      for (const source of ref.sources) {
-        const project = projects().find((candidate) => candidate.id === source.source_project_id)
-        if (!project) throw new Error(`ledger ref ${taskKey} names unregistered project id ${source.source_project_id}`)
-        console.log(`  ${project.name}  commits=${source.commits.join(',')}  paths=${source.paths.join(',')}  ${source.note}`)
-      }
-      break
-    }
-
-    if (group === 'ref' && action === 'set') {
-      const taskKey = argv[3]
-      const sourceJson = flag('sources')
-      const note = flag('note')
-      if (!taskKey || sourceJson === undefined || note === undefined) {
-        throw new Error('orch port ref set <task-key> --sources JSON --note TEXT [--json]')
-      }
-      let raw: unknown
-      try { raw = JSON.parse(sourceJson) } catch (error) {
-        throw new Error(`--sources must be JSON: ${error}`)
-      }
-      if (!Array.isArray(raw) || raw.length === 0) {
-        throw new Error('--sources must be a non-empty JSON array')
-      }
-      const sources = raw.map((value, index) => {
-        if (!value || typeof value !== 'object' || Array.isArray(value)) {
-          throw new Error(`--sources[${index}] must be an object`)
-        }
-        const source = value as Record<string, unknown>
-        if (typeof source.project !== 'string' || !Array.isArray(source.commits) ||
-            !source.commits.every((item) => typeof item === 'string') ||
-            !Array.isArray(source.paths) || !source.paths.every((item) => typeof item === 'string') ||
-            typeof source.note !== 'string') {
-          throw new Error(`--sources[${index}] needs project, string-array commits, string-array paths, and note`)
-        }
-        return {
-          source_project_id: namedProject(source.project).id,
-          commits: source.commits as string[], paths: source.paths as string[], note: source.note,
-        }
-      })
-      const ref = setLedgerRef({ taskKey, note, sources })
-      output(ref, `recorded provenance for ${taskKey} from ${sources.length} source project(s)`)
-      break
-    }
-
-    if (group === 'ref' && action === 'resolve') {
-      const taskKey = argv[3]
-      if (!taskKey) throw new Error('orch port ref resolve <task-key> [--json]')
-      const ref = resolveLedgerRef(taskKey)
-      if (!ref) throw new Error(`no port ledger ref for task "${taskKey}"`)
-      output(ref, `resolved ${taskKey} at ${ref.resolved_at}`)
-      break
-    }
-
-    if (group === 'ref' && action === 'delete-error') {
-      const taskKey = argv[3]
-      if (!taskKey) throw new Error('orch port ref delete-error <task-key> [--json]')
-      const removed = removeLedgerRef(taskKey)
-      output({ removed }, removed
-        ? `permanently deleted erroneous ledger ref ${taskKey}`
-        : `no port ledger ref for task "${taskKey}"`)
-      break
-    }
-
-    if (group === 'doctrine' && action === 'list') {
-      const rows = listDoctrineRules(has('all'))
-      if (has('json')) { console.log(JSON.stringify(rows)); break }
-      for (const row of rows) {
-        console.log(`${String(row.number).padStart(3)}  ${row.retired_at ? `retired ${row.retired_at}` : 'active'}  ${row.title}`)
-      }
-      break
-    }
-
-    if (group === 'doctrine' && action === 'add') {
-      const number = Number(argv[3])
-      const title = flag('title')
-      if (!Number.isInteger(number) || number <= 0 || title === undefined) {
-        throw new Error('orch port doctrine add <number> --title TEXT (--file F | body on stdin) [--json]')
-      }
-      const body = flag('file') ? readFileSync(flag('file')!, 'utf8')
-        : !process.stdin.isTTY ? await Bun.stdin.text()
-        : (() => { throw new Error('no body: pass --file F or pipe text on stdin') })()
-      const rule = addDoctrineRule(number, title, body)
-      output(rule, `added doctrine ${number}: ${title}`)
-      break
-    }
-
-    if (group === 'doctrine' && action === 'retire') {
-      const number = Number(argv[3])
-      if (!Number.isInteger(number) || number <= 0) {
-        throw new Error('orch port doctrine retire <number> [--json]')
-      }
-      const retired = retireDoctrineRule(number)
-      output({ retired }, retired ? `retired doctrine ${number}` : `no active doctrine ${number}`)
-      break
-    }
-
-    const portVerbs: Record<string, string> = {
-      baseline: 'show | set',
-      skip: 'list | add',
-      ref: 'list | show | set | resolve | delete-error',
-      doctrine: 'list | add | retire',
-    }
-    if (group && portVerbs[group]) {
-      throw new Error(`unknown: orch port ${group}${action ? ` ${action}` : ''}. Try ${portVerbs[group]}`)
-    }
-    throw new Error('unknown: orch port. Try import | baseline | skip | ref | doctrine')
+    await portCommand(group, action, argv, commandFlags, presentation)
+    break
   }
 
   case 'mcp': {
@@ -1749,255 +1414,13 @@ switch (cmd) {
   }
 
   case 'review': {
-    await Promise.all([loadJobs(), loadWorktree(), loadReview(), loadReviewTier()])
     const sub = argv[1]
-    if (sub === '--help' || sub === '-h') reviewUsage()
-    if (sub === 'list') {
-      if (has('open') && has('complete')) throw new Error('--open and --complete are mutually exclusive')
-      const since = flag('since')
-      if (since && !z.iso.datetime().safeParse(since).success) {
-        throw new Error('--since must be an ISO datetime (for example 2026-01-01T00:00:00Z)')
-      }
-      const rows = listReviews({
-        state: has('open') ? 'open' : has('complete') ? 'complete' : undefined,
-        project: flag('project'), since,
-      })
-      if (has('json')) console.log(JSON.stringify(rows))
-      else if (!rows.length) console.log('no reviews')
-      else {
-        console.log('id  recorded_at               completed  project  branches  tier/risk/size  lenses  findings t/tr/a/m/r/s  coverage')
-        for (const row of rows) console.log(
-          `${String(row.id).padEnd(3)} ${row.recorded_at.padEnd(25)} ${row.completed_at ? 'yes' : 'no '}        ` +
-          `${(row.project ?? '—').padEnd(8)} ${(row.branches.join(',') || '—').padEnd(9)} ` +
-          `${`${row.tier ?? '—'}/${row.risk ?? '—'}/${row.size ?? '—'}`.padEnd(14)} ${String(row.lens_count).padEnd(7)} ` +
-          `${row.findings.total}/${row.findings.triaged}/${row.findings.accepted}/${row.findings.modified}/${row.findings.rejected}/${row.findings.skipped}              ${row.coverage ?? '—'}`,
-        )
-      }
-      break
+    const commandFlags = { has, flag }
+    const presentation = {
+      log: console.log, usage: reviewUsage,
     }
-    if (sub === 'show') {
-      const reviewId = Number(argv[2])
-      if (!Number.isInteger(reviewId) || reviewId <= 0) throw new Error('orch review show <id> [--json]')
-      const review = getReview(reviewId)
-      if (has('json')) console.log(JSON.stringify(review))
-      else {
-        console.log(`review ${review.id} recorded=${review.recorded_at} completed=${review.completed_at ?? '—'} projects=${review.projects.join(',') || '—'} tier/risk/size=${review.tier ?? '—'}/${review.risk ?? '—'}/${review.size ?? '—'} current=${review.current_class ?? '—'}`)
-        if (review.outdated_reason) console.log(`outdated ${review.outdated_at}: ${review.outdated_reason}`)
-        for (const lens of review.lenses) {
-          console.log(`lens run ${lens.run_id}: ${lens.lens} ${lens.agent}/${lens.model ?? '—'} tree=${lens.reviewed_tree ?? '—'} head=${lens.head_commit ?? '—'}`)
-          console.log(`  ref ${lens.review_ref}: ${lens.pin.resolves ? lens.pin.commit : 'unresolved'}`)
-          console.log(`  grading ${Object.entries(lens.grading).map(([key, value]) => `${key}=${value ?? '—'}`).join(' ')}`)
-        }
-        for (const finding of review.findings as any[]) {
-          console.log(`finding ${finding.ordinal} ${finding.severity} ${finding.location} disposition=${finding.disposition ?? 'untriaged'} category=${finding.rejection_category ?? '—'}`)
-          console.log(`  evidence: ${finding.evidence}`)
-          console.log(`  correction: ${finding.proposed_correction}`)
-        }
-      }
-      break
-    }
-    if (sub === 'yield') {
-      const since = flag('since')
-      if (since && !z.iso.datetime().safeParse(since).success) {
-        throw new Error('--since must be an ISO datetime (for example 2026-01-01T00:00:00Z)')
-      }
-      if (flag('task') && flag('key')) throw new Error('--task and --key are aliases; supply only one')
-      const { reviewYield, renderReviewYieldHuman } = await import('./review-yield.ts')
-      const database = new Database(DB_PATH, { readonly: true })
-      try {
-        const report = reviewYield({
-          project: flag('project'), since, task: flag('task') ?? flag('key'),
-          lens: flag('lens'), agent: flag('agent'),
-        }, database)
-        console.log(has('json') ? JSON.stringify(report) : renderReviewYieldHuman(report))
-      } finally {
-        database.close()
-      }
-      break
-    }
-    if (sub === 'tier') {
-      const value = argv[2]
-      if (!value) throw new Error('orch review tier <branch|run-id|from..to> [--json]')
-      let repo: string
-      let from: string
-      let to: string
-      if (/^\d+$/.test(value)) {
-        const runId = Number(value)
-        const row = db().query(
-          'SELECT repo, job, branch, base_commit, input_tree, head_commit FROM run WHERE id=?',
-        ).get(runId) as {
-          repo: string | null; job: string; branch: string | null; base_commit: string | null
-          input_tree: string | null; head_commit: string | null
-        } | null
-        if (!row) throw new Error(`no run ${runId}`)
-        const project = row.repo ? projectByName(row.repo) : null
-        if (!project) throw new Error(`run ${runId} has no registered project`)
-        if (!row.base_commit) throw new Error(`run ${runId} has no recorded base commit`)
-        // A writer run's input tree IS its base: what it built lives on its
-        // branch. Measure the branch tip when the branch still exists. A
-        // reader's input tree is the artifact it reviewed, so a reader keeps
-        // it even when a branch is recorded (DEV-323).
-        const writer = (() => { try { return job(row.job).needs.writesRepo } catch { return false } })()
-        const branchLive = writer && row.branch && Bun.spawnSync(
-          ['git', 'show-ref', '--verify', '--quiet', `refs/heads/${row.branch}`],
-          { cwd: project.path, env: targetGitEnvironment(project.path), stdout: 'pipe', stderr: 'pipe' },
-        ).exitCode === 0
-        const reviewed = branchLive ? `refs/heads/${row.branch}` : (row.input_tree ?? row.head_commit)
-        if (!reviewed) throw new Error(`run ${runId} has no recorded input tree or head commit`)
-        repo = project.path; from = row.base_commit; to = reviewed
-      } else {
-        const project = projectAt(process.cwd())
-        if (!project) throw new Error('review tier target is not inside a registered project')
-        repo = project.path
-        const range = value.match(/^(.+)\.\.(.+)$/)
-        if (range) {
-          from = range[1]!; to = range[2]!
-        } else {
-          const branch = Bun.spawnSync(['git', 'show-ref', '--verify', '--quiet', `refs/heads/${value}`], {
-            cwd: repo, env: targetGitEnvironment(repo), stdout: 'pipe', stderr: 'pipe',
-          })
-          if (branch.exitCode !== 0) {
-            throw new Error('review tier accepts a branch, run id, or explicit <from>..<to> range')
-          }
-          const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
-          if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
-          const base = Bun.spawnSync(['git', 'merge-base', trunk, value], {
-            cwd: repo, env: targetGitEnvironment(repo), stdout: 'pipe', stderr: 'pipe',
-          })
-          if (base.exitCode !== 0) throw new Error(base.stderr.toString().trim() || 'git merge-base failed')
-          from = base.stdout.toString().trim(); to = value
-        }
-      }
-      const tier = classifyReviewTier({ files: diffNumstat(repo, from, to) })
-      if (has('json')) console.log(JSON.stringify(tier))
-      else {
-        console.log(`tier ${tier.tier}`)
-        console.log(`risk ${tier.risk}`)
-        console.log(`size ${tier.size}`)
-        for (const reason of tier.reasons) console.log(reason)
-      }
-      break
-    }
-    if (sub === 'coverage-audit') {
-      const database = new Database(DB_PATH, { readonly: true })
-      try {
-        const audit = coverageAudit(database)
-        if (has('json')) console.log(JSON.stringify(audit))
-        else console.log(
-          `${audit.count} completed review${audit.count === 1 ? '' : 's'} reviewed trunk` +
-          (audit.review_ids.length ? `: ${audit.review_ids.join(', ')}` : '') +
-          `\npartial reviews: ${audit.partial_review_ids.length
-            ? audit.partial_review_ids.join(', ') : 'none'}`,
-        )
-      } finally {
-        database.close()
-      }
-      break
-    }
-    if (sub === 'record') {
-      const runIds = argv.slice(2).map(Number)
-      if (!runIds.length || runIds.some((id) => !Number.isInteger(id) || id <= 0)) {
-        throw new Error('orch review record <run-id>...')
-      }
-      const entries = runIds.map((runId) => {
-        const row = db().query('SELECT output_path FROM run WHERE id=?').get(runId) as
-          { output_path: string | null } | null
-        if (!row?.output_path || !existsSync(row.output_path)) {
-          throw new Error(`run ${runId} has no recorded output`)
-        }
-        const output = parseReviewOutput(readFileSync(row.output_path, 'utf8'))
-        if (!output) throw new Error(`run ${runId} output does not satisfy the review contract`)
-        return { runId, output }
-      })
-      const reviewId = recordReviews(entries)
-      const mirrorRuns = entries.filter(({ runId }) => {
-        const row = db().query(
-          `SELECT mcp_connected, mcp_error FROM run WHERE id=?`,
-        ).get(runId) as { mcp_connected: number | null; mcp_error: string | null }
-        return row.mcp_connected === 0 && row.mcp_error?.startsWith('mirror:')
-      }).map(({ runId }) => runId)
-      console.log(
-        `recorded review ${reviewId}` +
-        (mirrorRuns.length ? ` — MIRROR lens run${mirrorRuns.length === 1 ? '' : 's'} ${mirrorRuns.join(', ')}` : ''),
-      )
-      break
-    }
-    if (sub === 'triage') {
-      const reviewId = Number(argv[2])
-      const finding = Number(argv[3])
-      const disposition = argv[4] as Disposition
-      if (!reviewId || !finding || !DISPOSITIONS.includes(disposition)) {
-        throw new Error(`orch review triage <review-id> <finding> <accepted|modified|rejected|skipped> [--category X] [--severity ${REVIEW_SEVERITY.join('|')}]`)
-      }
-      triageFinding(reviewId, finding, disposition, flag('category'), flag('severity'))
-      console.log(`triaged review ${reviewId} finding ${finding}: ${disposition}`)
-      break
-    }
-    if (sub === 'complete') {
-      const reviewId = Number(argv[2])
-      if (!reviewId) throw new Error('orch review complete <review-id>')
-      completeReview(reviewId)
-      console.log(`completed review ${reviewId}`)
-      break
-    }
-    if (sub === 'pins') {
-      const pins = reviewPins(has('prune'))
-      if (!pins.length) {
-        console.log('no review pins')
-        break
-      }
-      for (const pin of pins) {
-        console.log(
-          `${pin.project} review ${pin.reviewId} run ${pin.runId} ${pin.commit} ` +
-          `completed=${pin.completed} superseded=${pin.superseded} landed=${pin.landed}` +
-          (pin.deleted ? ' deleted' : ''),
-        )
-      }
-      break
-    }
-    if (sub === 'calibration') {
-      const [lens, agent, model] = argv.slice(2).filter((value) => value !== '--json')
-      if (!lens && !agent && !model) {
-        const fleet = reviewCalibrationFleet()
-        if (has('json')) console.log(JSON.stringify(fleet))
-        else {
-          console.log(`review calibration fleet (last ${REVIEW_WINDOW} completed reviews; precision floor ${MIN_REVIEW_TRIAGED} triaged)`)
-          if (!fleet.length) console.log('no review calibration evidence')
-          for (const cell of fleet) console.log(
-            `${cell.lens}/${cell.agent}/${cell.model ?? '—'} n=${cell.n} ` +
-            (cell.n < MIN_REVIEW_TRIAGED ? `below floor (${cell.n}/${MIN_REVIEW_TRIAGED} triaged)` : `precision=${cell.precision!.toFixed(2)}`) +
-            ` basis=${cell.basis ?? '—'} last_graded_at=${cell.last_graded_at ?? '—'}`,
-          )
-        }
-        break
-      }
-      if (!lens || !agent || !model) throw new Error('orch review calibration [<lens> <agent> <model>] [--json]')
-      const calibration = reviewCalibration(lens, agent, model)
-      if (has('json')) {
-        console.log(JSON.stringify(calibration))
-      } else {
-        console.log(calibration.precision === null
-          ? `${lens}/${agent}: insufficient evidence (${calibration.triaged} triaged)`
-          : `${lens}/${agent}: ${calibration.precision.toFixed(2)} (${calibration.hits}/${calibration.triaged}, ${calibration.basis})`)
-        console.log(`  MCP: MIRROR=${calibration.mirror_lenses}`)
-        for (const name of ['reproduced', 'coverage', 'limits', 'overlap'] as const) {
-          const distribution = calibration[name]
-          const cells = Object.keys(distribution.counts).map((value) => {
-            const count = distribution.counts[value as keyof typeof distribution.counts]
-            const share = distribution.shares[value as keyof typeof distribution.shares]
-            return `${value}=${count}` + (share === null ? '' : ` (${(share * 100).toFixed(0)}%)`)
-          })
-          console.log(`  ${name}: ${cells.join(', ')}, ungraded=${distribution.ungraded}`)
-        }
-        const severity = calibration.severity
-        console.log(`  severity: agreed=${severity.counts.agreed}, changed=${severity.counts.changed}, not-comparable=${severity.counts.not_comparable}, not-assessed=${severity.counts.not_assessed}`)
-        for (const [tier, counts] of Object.entries(calibration.tiers)) {
-          console.log(`  tier ${tier}: reviews=${counts.reviews}, lenses=${counts.lenses}, accepted=${counts.findings_accepted}, rejected=${counts.findings_rejected}, rounds=${counts.rounds.min ?? '—'}/${counts.rounds.median ?? '—'}/${counts.rounds.max ?? '—'} min/median/max`)
-        }
-      }
-      break
-    }
-    throw new Error(`unknown: orch review${sub ? ` ${sub}` : ''}. Try tier | record | triage | complete | calibration`)
+    await reviewCommand(sub, argv, commandFlags, presentation)
+    break
   }
 
   // The dashboard surface, published for hub to render.
@@ -2361,184 +1784,11 @@ switch (cmd) {
   }
 
   case 'inbox': {
-    await loadJobs()
-    const sid = sessionId()
-    const mine = !has('all')
-    const project = mine ? projectAt(process.cwd()) : null
-    const cutoff = new Date(Date.now() - SESSION_LIVE_MS).toISOString()
-    const hasSessionSeen = Boolean(db().query(
-      `SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_seen'`,
-    ).get())
-    const seenJoin = hasSessionSeen
-      ? 'LEFT JOIN session_seen seen ON seen.session_id = r.session_id'
-      : ''
-    const sessionRecent = hasSessionSeen
-      ? 'CASE WHEN r.session_id IS NOT NULL AND seen.last_seen >= ? THEN 1 ELSE 0 END'
-      : '0'
-    const allRows = db().query(
-      `SELECT q.id, q.run_id, q.asked_at, q.question, q.options, q.recommendation, q.why,
-              r.agent, r.job, r.repo, r.status, r.session_id,
-              root.status root_status,
-              ${activeSql('root')} root_active,
-              ${voidedSql('root')} root_voided,
-              COALESCE(r.parent_run_id, r.id) root_id,
-              ${sessionRecent} session_recent
-         FROM question q JOIN run r ON r.id = q.run_id
-         JOIN run root ON root.id = COALESCE(r.parent_run_id, r.id)
-         ${seenJoin}
-        WHERE ${mine
-          ? `q.answered_at IS NULL AND ${activeSql('root')}`
-          : `q.answered_at IS NULL OR NOT (${activeSql('root')})`}
-        ORDER BY q.run_id, q.id`,
-    ).all(...(hasSessionSeen ? [cutoff] : [])) as {
-      id: number; run_id: number; asked_at: string; question: string; options: string | null
-      recommendation: string | null; why: string | null
-      agent: string; job: string; repo: string | null; status: string; session_id: string | null
-      root_status: string; root_active: number; root_voided: number
-      root_id: number; session_recent: number
-    }[]
-    // The default is a VIEW of the project containing cwd. Ownership remains
-    // the session that dispatched the run; choosing what is visible must never
-    // silently make it answerable. Outside a registered project, retain the
-    // old session-scoped fallback rather than guessing a project from the path.
-    const rows = mine
-      ? project
-        ? allRows.filter((q) => q.repo === project.name)
-        : allRows.filter((q) => sid !== null && q.session_id === sid)
-      : allRows
-    const canAnswer = (owner: string | null) => owner === null || (sid !== null && owner === sid)
-    const active = rows.filter((q) => q.root_active)
-    const terminal = rows.filter((q) => !active.includes(q))
-    const answerable = active.filter((q) => canAnswer(q.session_id))
-    const visible = active.filter((q) => !canAnswer(q.session_id))
-
-    if (has('json')) {
-      console.log(JSON.stringify(rows.map((q) => ({
-        question_id: q.id,
-        run_id: q.run_id,
-        answer_id: q.root_id,
-        job: q.job,
-        agent: q.agent,
-        repo: q.repo,
-        asked_at: q.asked_at,
-        // Kept as a nullable compatibility field: false used to assert death,
-        // which a last-seen timestamp cannot establish.
-        session_live: q.session_recent ? true : null,
-        session_liveness: q.session_recent ? 'live' : 'unknown',
-        can_answer: Boolean(q.root_active) && canAnswer(q.session_id),
-        question: q.question,
-        options: q.options ? JSON.parse(q.options) as string[] : [],
-        recommendation: q.recommendation,
-        why: q.why,
-        status: q.root_voided ? 'voided' : q.root_status,
-      }))))
-      break
+    const commandFlags = { has }
+    const presentation = {
+      log: console.log, dur, chainHasPendingDelivery, strandedRecovery,
     }
-
-    const recoverable = db().query(
-      `SELECT root.id, root.agent, root.job, root.repo, root.session_id
-         FROM run root
-        WHERE root.parent_run_id IS NULL
-          AND (root.status = 'asking' OR EXISTS (
-            SELECT 1 FROM question pending JOIN run owner ON owner.id=pending.run_id
-             WHERE (owner.id=root.id OR owner.parent_run_id=root.id)
-               AND pending.answered_at IS NOT NULL
-               AND pending.delivery_pending_at IS NOT NULL
-          ))
-          ${mine
-            ? project
-              ? 'AND root.repo = ?'
-              : 'AND root.session_id = ?'
-            : ''}
-          AND NOT EXISTS (
-            SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
-             WHERE (owner.id = root.id OR owner.parent_run_id = root.id)
-               AND q.answered_at IS NULL
-          )
-          AND NOT EXISTS (
-            SELECT 1 FROM run active
-             WHERE active.parent_run_id = root.id AND active.status = 'running'
-          )
-        ORDER BY root.id`,
-    ).all(...(mine ? project ? [project.name] : [sid] : [])) as {
-      id: number; agent: string; job: string; repo: string | null; session_id: string | null
-    }[]
-
-    if (!rows.length && !recoverable.length) {
-      console.log(mine && project ? `no open questions for ${project.name}`
-        : mine ? 'no questions waiting on you' : 'no open questions')
-      break
-    }
-    let lastRun = -1
-    let lastRoot = -1
-    for (const q of answerable) {
-      if (q.run_id !== lastRun) {
-        console.log(`\nrun ${q.run_id} · ${q.agent}/${q.job}${q.repo ? ` · ${q.repo}` : ''} · ${q.status}`)
-        lastRun = q.run_id
-      }
-      lastRoot = q.root_id
-      console.log(`  [q${q.id}] ${q.question}`)
-      if (q.why) console.log(`        why: ${q.why}`)
-      const opts = q.options ? (JSON.parse(q.options) as string[]) : []
-      for (const o of opts) console.log(`        - ${o}`)
-      if (q.recommendation) console.log(`        it would: ${q.recommendation}`)
-      if (q.session_id === null) {
-        console.log('        unowned — any session may rule, and the answering identity is recorded')
-      }
-    }
-    if (answerable.length) {
-      console.log(
-        `\nrule on them:  orch answer ${lastRoot} "<ruling>"    (one per question, in order)` +
-        `\n               orch answer ${lastRoot} --q<id> "<ruling>"`,
-      )
-    }
-    for (const r of recoverable) {
-      const stranded = chainHasPendingDelivery(r.id)
-      if (canAnswer(r.session_id)) {
-        console.log(
-          `\nrun ${r.id} · ${r.agent}/${r.job}${r.repo ? ` · ${r.repo}` : ''} · ` +
-          (stranded
-            ? `asking, but no ruling is open — ${strandedRecovery(r.id)}`
-            : `asking, but no ruling is open — recoverable: orch continue ${r.id}`),
-        )
-        if (r.session_id === null) {
-          console.log('        unowned — any session may continue it')
-        }
-      } else {
-        console.log(
-          `\nrun ${r.id} · ${r.agent}/${r.job}${r.repo ? ` · ${r.repo}` : ''} · ` +
-          `asking, but no ruling is open · owner ${r.session_id} · visible only; ` +
-          (stranded
-            ? `stranded — only the owning session may use orch retry ${r.id} --agent … or orch abandon ${r.id}`
-            : 'only the owning session may continue it'),
-        )
-      }
-    }
-    if (visible.length) {
-      console.log('\nvisible here, but owned by another session:')
-    for (const q of visible) {
-        const liveness = q.session_recent ? 'live' : 'unknown'
-        console.log(
-          `\n  [q${q.id}] run ${q.run_id} · ${q.job} · ${q.agent}` +
-          `${q.repo ? ` · ${q.repo}` : ''} · owner ${q.session_id ?? 'unknown'} · ` +
-          `liveness ${liveness} · waiting ${dur(Date.now() - Date.parse(q.asked_at))}`,
-        )
-        console.log(`        ${q.question}`)
-        if (q.why) console.log(`        why: ${q.why}`)
-        const opts = q.options ? (JSON.parse(q.options) as string[]) : []
-        for (const o of opts) console.log(`        - ${o}`)
-        if (q.recommendation) console.log(`        recommendation: ${q.recommendation}`)
-        console.log('        only the owning session may rule; visibility does not transfer authority')
-      }
-    }
-    for (const q of terminal) {
-      const status = q.root_voided ? 'voided' : q.root_status
-      console.log(
-        `\nrun ${q.root_id} · ${q.agent}/${q.job}${q.repo ? ` · ${q.repo}` : ''} · ` +
-        `${status} (terminal)`,
-      )
-      console.log(`  [q${q.id}] ${q.question}`)
-    }
+    await runInboxCommand(commandFlags, presentation)
     break
   }
 
@@ -2601,140 +1851,14 @@ switch (cmd) {
   case 'diff': {
     await Promise.all([loadJobs(), loadWorktree()])
     const id = Number(argv[1])
-    if (!id) usage()
-    const row = db().query(
-      `SELECT id, repo, cwd, worktree, branch, branch_kept, base_commit,
-              parent_run_id, carry_happened,
-              carry_base_commit, carry_tracked_paths, carry_untracked_paths
-         FROM run WHERE id = ?`,
-    ).get(id) as
-      { id: number; repo: string | null; cwd: string | null
-        worktree: string | null; branch: string | null
-        branch_kept: string | null; base_commit: string | null
-        parent_run_id: number | null; carry_happened: number | null
-        carry_base_commit: string | null; carry_tracked_paths: string | null
-        carry_untracked_paths: string | null } | null
-    if (!row) throw new Error(`no run ${id}`)
-    if (!row.base_commit) throw new Error(`run ${id} recorded no base commit to diff against`)
-    const { changesIn } = await import('./worktree.ts')
-    const repoRoot = cleanupRepoRoot(row)
-    if (!repoRoot) throw new Error(`run ${id}'s repository root was not found`)
-    const worktreePresent = Boolean(row.worktree && existsSync(row.worktree))
-    const evidenceBranch = row.branch_kept ?? row.branch
-    const branchPresent = Boolean(evidenceBranch && Bun.spawnSync(
-      ['git', 'show-ref', '--verify', '--quiet', `refs/heads/${evidenceBranch}`],
-      { cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'ignore', stderr: 'ignore' },
-    ).exitCode === 0)
-    const discarded = !worktreePresent
-    let c: ReturnType<typeof changesIn>
-    let commits = ''
-    let sinceNote: string
-    if (discarded) {
-      if (!branchPresent || !evidenceBranch) {
-        throw new Error(`run ${id}'s worktree and evidence branch are gone`)
-      }
-      const project = row.repo ? projectByName(row.repo) : null
-      const configuredTrunk = project?.settings.trunk?.trim()
-      const trunk = configuredTrunk || 'main'
-      let since = row.base_commit
-      let usedRecordedFallback = has('since-base')
-      if (!has('since-base')) {
-        const mergeBase = Bun.spawnSync(['git', 'merge-base', evidenceBranch, trunk], {
-          cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
-        })
-        if (mergeBase.exitCode === 0) {
-          since = mergeBase.stdout.toString().trim()
-          usedRecordedFallback = false
-        } else if (configuredTrunk) {
-          throw new Error(`cannot find merge-base between the run tip and trunk ${trunk}`)
-        } else {
-          usedRecordedFallback = true
-        }
-      }
-      const diff = Bun.spawnSync(['git', 'diff', '--no-ext-diff', '--binary', since, evidenceBranch], {
-        cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
-      })
-      if (diff.exitCode !== 0) throw new Error(diff.stderr.toString().trim())
-      const names = Bun.spawnSync(['git', 'diff', '--name-only', since, evidenceBranch], {
-        cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
-      }).stdout.toString().trim()
-      const stat = Bun.spawnSync(['git', 'diff', '--numstat', since, evidenceBranch], {
-        cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
-      }).stdout.toString().trim()
-      let insertions = 0
-      let deletions = 0
-      for (const line of stat.split('\n')) {
-        const [add, del] = line.split('\t')
-        insertions += Number(add) || 0
-        deletions += Number(del) || 0
-      }
-      c = {
-        diff: diff.stdout.toString(), files: names ? names.split('\n') : [], insertions, deletions,
-        since, trunk, trunkConfigured: Boolean(configuredTrunk),
-      }
-      const logged = Bun.spawnSync(['git', 'log', '--oneline', `${since}..${evidenceBranch}`], {
-        cwd: repoRoot, env: targetGitEnvironment(repoRoot), stdout: 'pipe', stderr: 'pipe',
-      })
-      commits = logged.exitCode === 0 ? logged.stdout.toString() : ''
-      sinceNote = usedRecordedFallback
-        ? `${has('since-base') ? 'recorded; --since-base' : 'recorded fallback'}; worktree discarded`
-        : `trunk ${trunk}; worktree discarded`
-    } else {
-      c = changesIn({
-        path: row.worktree!,
-        branch: row.branch ?? `orch/${id}`,
-        base: row.base_commit,
-        repoRoot,
-      }, has('since-base'))
-      const logged = Bun.spawnSync(['git', 'log', '--oneline', `${c.since}..HEAD`], {
-        cwd: row.worktree!, env: targetGitEnvironment(row.worktree!), stdout: 'pipe', stderr: 'pipe',
-      })
-      if (logged.exitCode !== 0) throw new Error(logged.stderr.toString().trim())
-      commits = logged.stdout.toString()
-      sinceNote = has('since-base')
-        ? 'recorded; --since-base'
-        : `trunk ${c.trunk}${c.trunkConfigured ? '' : '; register fallback'}`
+    const commandFlags = { has }
+    const presentation = {
+      error: console.error, write: (value: string) => { process.stdout.write(value) }, usage,
+      cleanupRepoRoot,
+      changesIn: worktreeModule.changesIn,
+      writesRepo: (jobName: string) => Boolean(JOBS[jobName]?.needs.writesRepo),
     }
-    const runKind = db().query('SELECT job FROM run WHERE id=?').get(id) as { job: string }
-    if (!JOBS[runKind.job]?.needs.writesRepo) {
-      console.error(
-        `WARNING: run ${id} is a review/read job. Its findings are the product; this diff ` +
-        `contains review input and scratch experiments and must not be landed.`,
-      )
-    }
-    // A patch preamble is ignored by `git apply`, while keeping the base in the
-    // stdout artefact even under --quiet or when stderr is not captured.
-    process.stdout.write(`base: ${row.base_commit} (recorded)\n`)
-    process.stdout.write(`since: ${c.since} (${sinceNote})\n`)
-    process.stdout.write('commits:\n')
-    process.stdout.write(commits || '(none)\n')
-    if (row.carry_happened !== null && row.carry_base_commit &&
-        row.carry_tracked_paths !== null && row.carry_untracked_paths !== null) {
-      const tracked = JSON.parse(row.carry_tracked_paths) as string[]
-      const untracked = JSON.parse(row.carry_untracked_paths) as string[]
-      process.stdout.write(
-        row.carry_happened
-          ? `carry: ${tracked.length} tracked path(s), ${untracked.length} untracked path(s)\n` +
-            `carry base: ${row.carry_base_commit}\n` +
-            tracked.map((path) => `carry tracked: ${JSON.stringify(path)}\n`).join('') +
-            untracked.map((path) => `carry untracked: ${JSON.stringify(path)}\n`).join('')
-          : `carry: none (0 tracked paths, 0 untracked paths)\ncarry base: ${row.carry_base_commit}\n`,
-      )
-    }
-    // write(), not console.log(): this output is piped into `git apply`, and a
-    // newline added to the diff for readability is a byte the patch did not have.
-    process.stdout.write(c.diff)
-    if (!has('quiet')) {
-      console.error(
-        `\n— run ${id} · ${c.files.length} file(s) · +${c.insertions}/-${c.deletions}` +
-        `\n  base:     ${row.base_commit}` +
-        `\n  worktree: ${row.worktree}` +
-        // The ROOT owns the worktree. Discarding a child would clear that one
-        // row's pointer and leave the root still naming a directory that had
-        // just been deleted.
-        `\n  discard:  orch discard ${row.parent_run_id ?? id}`,
-      )
-    }
+    await runDiffCommand(id, commandFlags, presentation)
     break
   }
 
@@ -2777,7 +1901,7 @@ switch (cmd) {
   }
 
   case 'judge': {
-    await Promise.all([loadJobs(), loadReview(), loadWorktree(), loadDockerResources()])
+    await Promise.all([loadJobs(), loadWorktree()])
     writableDb()
     const requestedId = Number(argv[1]); if (!requestedId) usage()
     const judgementFlags = { has, flag, values: flags }
@@ -2794,7 +1918,7 @@ switch (cmd) {
   }
 
   case 'score': {
-    await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadReview()])
+    await Promise.all([loadJobs(), loadAgents(), loadRoute()])
     writableDb()
     const requestedId = Number(argv[1]); if (!requestedId) usage()
     const words = argv.slice(2).filter((a, i) => !a.startsWith('--') && !VALUE_FLAGS.has(argv.slice(2)[i - 1] ?? ''))
@@ -2925,252 +2049,12 @@ switch (cmd) {
 
   case 'runs': {
     await loadJobs()
-    const { idleLabel, idleMsSince } = await import('./events.ts')
-    const { parseIdleReclaimedMs } = await import('./idle-kill.ts')
-    const jsonV1 = argv.includes('--json=v1')
-    const json = has('json') || jsonV1
-    const where: string[] = ['r.parent_run_id IS NULL']
-    if (!json) where.push('r.automatic_failover = 0')
-    // Typed as the bindings SQLite actually accepts: `unknown[]` does not
-    // satisfy the query signature, which is why this file never typechecked.
-    const args: (string | number)[] = []
-    const jobFlag = flag('job')
-    if (jobFlag) { where.push('r.job = ?'); args.push(jobFlag) }
-    const agentFlag = flag('agent')
-    if (agentFlag) { where.push('r.agent = ?'); args.push(agentFlag) }
-    const onlyUnscored = has('unscored')
-    const unscoredCte = onlyUnscored ? `WITH RECURSIVE failover_chain(origin_id, root_id) AS (
-      SELECT root.id, root.id FROM run root WHERE root.parent_run_id IS NULL
-      UNION ALL
-      SELECT chain.origin_id, successor.id
-        FROM failover_chain chain
-        JOIN run successor ON successor.id = (
-          SELECT next.id FROM run next
-           WHERE next.automatic_failover = 1
-             AND next.retry_of IN (
-               SELECT member.id FROM run member
-                WHERE member.id = chain.root_id OR member.parent_run_id = chain.root_id
-             )
-           ORDER BY next.id LIMIT 1
-        )
-    ), final_failover(origin_id, root_id) AS (
-      SELECT chain.origin_id, chain.root_id
-        FROM failover_chain chain
-       WHERE NOT EXISTS (
-         SELECT 1 FROM run next
-          WHERE next.automatic_failover = 1
-            AND next.retry_of IN (
-              SELECT member.id FROM run member
-               WHERE member.id = chain.root_id OR member.parent_run_id = chain.root_id
-            )
-       )
-    )` : ''
-    const unscoredJoin = onlyUnscored ? 'JOIN final_failover final ON final.origin_id = r.id' : ''
-    if (onlyUnscored) {
-      const owedWhere = UNSCORED_WHERE.replaceAll('r.', 'owed.').replaceAll('s.', 'owed_score.')
-      where.push(`EXISTS (
-        SELECT 1 FROM run owed
-        LEFT JOIN score owed_score ON owed_score.run_id = owed.id
-        WHERE owed.id = final.root_id AND ${owedWhere}
-      )`)
+    const options = { jsonV1: argv.includes('--json=v1') }
+    const commandFlags = { has, flag, values: flags }
+    const presentation = {
+      log: console.log, dur, chainIsStranded, strandedRecovery, thinOutputWarning,
     }
-    const sinceFlag = flag('since')
-    const requestedIds = [...new Set(flags('id').map((value) => {
-      const id = Number(value)
-      if (!Number.isInteger(id) || id <= 0) throw new Error(`invalid run id: ${value}`)
-      return id
-    }))]
-    if (requestedIds.length && sinceFlag) {
-      throw new Error('orch runs --id and --since cannot be combined')
-    }
-    if (requestedIds.length) {
-      const marks = requestedIds.map(() => '?').join(',')
-      // Runs normally presents one canonical row per resumed conversation. If
-      // a caller names a child turn, return that conversation rather than
-      // falsely reporting an existing run id as unknown.
-      where.push(`(r.id IN (${marks}) OR EXISTS (
-        SELECT 1 FROM run requested_turn
-         WHERE requested_turn.parent_run_id = r.id
-           AND requested_turn.id IN (${marks})
-      ))`)
-      args.push(...requestedIds, ...requestedIds)
-    }
-    if (sinceFlag) {
-      // A chain belongs in the window when any turn started there, any
-      // question was asked or answered there, or any question is still
-      // unanswered — an open ruling is current whatever its age.
-      where.push(`(
-        EXISTS (
-          SELECT 1 FROM run turn
-           WHERE (turn.id = r.id OR turn.parent_run_id = r.id)
-             AND turn.started_at >= ?
-        ) OR EXISTS (
-          SELECT 1 FROM question q JOIN run owner ON owner.id = q.run_id
-           WHERE (owner.id = r.id OR owner.parent_run_id = r.id)
-             AND (q.answered_at IS NULL OR q.asked_at >= ? OR q.answered_at >= ?)
-        )
-      )`)
-      args.push(sinceFlag, sinceFlag, sinceFlag)
-    }
-    const limit = Number(flag('limit') ?? (json ? 100000 : 20))
-    let rows = db().query(
-      `${unscoredCte}
-       SELECT r.id, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
-              current_run.status, current_run.failure_kind, current_run.error,
-              current_run.last_event_at, current_run.started_at AS current_started_at,
-              s.delivery, s.quality,
-              COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason, r.sandbox
-              ${json ? ', r.cwd, r.session_id, r.vendor_cost_usd, r.probe, r.exit_code, r.input_tree, r.head_commit, r.review_ref,'
-                        + ' r.prompt_path, r.branch, r.branch_kept, r.branch_kept_tip, r.retry_of, r.launch_key, r.evidence_excluded' : ''}
-         FROM run r
-         ${unscoredJoin}
-         JOIN run current_run ON current_run.id = (
-           SELECT member.id FROM run member
-            WHERE member.id = r.id OR member.parent_run_id = r.id
-            ORDER BY member.turn DESC, member.id DESC LIMIT 1
-         )
-         LEFT JOIN score s ON s.run_id = r.id
-        ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-        ORDER BY r.id DESC LIMIT ?`,
-    ).all(...args, limit) as Record<string, unknown>[]
-
-    rows = rows.flatMap((r) => {
-      const chain = resolveFailover(db(), Number(r.id))
-      const final = chain.attempts.at(-1)!
-      const current = json ? {} : db().query(
-        `SELECT status, latency_ms, vendor_tokens, route_reason, probe, output_path
-           FROM run WHERE id=?`,
-      ).get(final.id) as {
-        status: string; latency_ms: number | null; vendor_tokens: number | null
-        route_reason: string | null; probe: number; output_path: string | null
-      }
-      const turns = json ? db().query(
-        `SELECT id, started_at, latency_ms, vendor_tokens, vendor_cost_usd, status, turn, input_tree, sandbox
-           FROM run WHERE id = ? OR parent_run_id = ?
-          ORDER BY turn, id`,
-      ).all(Number(r.id), Number(r.id)) : undefined
-      const questions = json ? (db().query(
-        `SELECT q.id, q.run_id, q.asked_at, q.answered_at
-           FROM question q JOIN run owner ON owner.id = q.run_id
-          WHERE owner.id = ? OR owner.parent_run_id = ?
-          ORDER BY q.id`,
-      ).all(Number(r.id), Number(r.id)) as {
-        id: number; run_id: number; asked_at: string; answered_at: string | null
-      }[]).map((q) => ({
-        id: q.id, run_id: q.run_id, asked_at: q.asked_at, answered_at: q.answered_at ?? null,
-      })) : undefined
-      return [{
-        ...r, ...current,
-        ...(turns ? { turns } : {}),
-        ...(questions ? { questions } : {}),
-        answer_agent: final.agent,
-        failover_chain: chain.attempts.map((attempt) => attempt.agent),
-        ...(chainIsStranded(Number(r.id)) ? {
-          status: 'stranded', stranded: true,
-          recovery_hint: strandedRecovery(Number(r.id)),
-        } : {}),
-      }]
-    })
-
-    // Unknown means absent from orch, not merely absent from this presentation
-    // (for example because an id names a child turn or another filter excludes
-    // it). Omission and non-existence are different facts for machine callers.
-    const knownIds = requestedIds.length ? new Set(
-      (db().query(
-        `SELECT id FROM run WHERE id IN (${requestedIds.map(() => '?').join(',')})`,
-      ).all(...requestedIds) as { id: number }[]).map((row) => row.id),
-    ) : new Set<number>()
-    const unknownIds = requestedIds.filter((id) => !knownIds.has(id))
-
-    if (requestedIds.length) {
-      const rootByRequested = new Map((db().query(
-        `SELECT id requested_id, COALESCE(parent_run_id, id) root_id
-           FROM run WHERE id IN (${requestedIds.map(() => '?').join(',')})`,
-      ).all(...requestedIds) as { requested_id: number; root_id: number }[])
-        .map((requested) => [requested.requested_id, requested.root_id]))
-      const requestedRoots = requestedIds.flatMap((requested_id) => {
-        const root_id = rootByRequested.get(requested_id)
-        return root_id === undefined ? [] : [{ requested_id, root_id }]
-      })
-      rows = rows.flatMap((row) => requestedRoots
-        .filter((requested) => requested.root_id === Number(row.id))
-        .map((requested) => ({
-          ...row,
-          requested_id: requested.requested_id,
-          resolved_from: requested.requested_id === Number(row.id) ? 'root' : 'turn',
-        })))
-    }
-
-    rows = rows.map((r) => {
-      const live = r.status === 'running'
-      const lastEventAt = (r.last_event_at as string | null) ?? null
-      const startedAt = String(r.current_started_at ?? r.started_at)
-      const idle = live ? idleLabel(lastEventAt, startedAt)
-        : r.failure_kind === 'idle' ? 'idle-killed' : null
-      const since = live ? idleMsSince(lastEventAt, startedAt) : null
-      const { current_started_at: _currentStartedAt, ...rest } = r
-      const reclaimed = r.failure_kind === 'idle'
-        ? parseIdleReclaimedMs(String(r.error ?? ''))
-        : null
-      return {
-        ...rest, idle, idle_ms: since,
-        reclaimed_ms: reclaimed,
-      }
-    })
-
-    // JSON Lines, so a consumer can stream it and a truncated read loses only
-    // the last record. This is a published interface: `hub` reads it rather
-    // than opening orch.db, because a database shared between two concerns is
-    // how two concerns quietly become one.
-    if (json) {
-      const publish = (data: unknown) => JSON.stringify(
-        jsonV1 ? data : { schema_version: 2, kind: 'run', data },
-      )
-      for (const r of rows) console.log(publish(r))
-      for (const id of unknownIds) {
-        console.log(publish({ id, status: 'unknown', unknown: true }))
-      }
-      break
-    }
-
-    if (!rows.length && !unknownIds.length) { console.log('no runs'); break }
-    for (const r of rows) {
-      const outcome = outcomeOf(r as OutcomeRow)
-      const stranded = r.stranded === true
-      const status = stranded ? 'stranded' : outcome.line.split(' - ', 1)[0]!
-      const identity = r.resolved_from === 'turn'
-        ? `${r.id} (asked as turn ${r.requested_id})`
-        : String(r.id)
-      console.log(
-        `${identity.padStart(4)}  ${String((r.failover_chain as string[]).join('→')).padEnd(6)} ${String(r.job).padEnd(14)}` +
-          // 'running' is not a failure, and a null latency is not zero seconds.
-          ` ${String(r.status === 'failed' ? status.toUpperCase() : status).padEnd(10)}` +
-          ` ${dur(r.latency_ms as number | null).padStart(8)}  ${String(r.prompt_head).slice(0, 60)}` +
-          (r.idle ? `  ${r.idle}` : ''),
-      )
-      if (stranded) console.log(`      ${r.recovery_hint}`)
-      else if (r.status === 'asking') console.log(`      ${outcome.line.slice(status.length + 3)}`)
-      if (r.failure_kind === 'contract' || r.failure_kind === 'unevidenced') {
-        console.log(`      ${failureReason(r as {
-          status: string; error: string | null; failure_kind: string | null; exit_code: number | null
-        })}`)
-      }
-      if (r.failure_kind === 'idle') {
-        const reclaimed = r.reclaimed_ms as number | null
-        console.log(`      idle-killed` +
-          (reclaimed != null ? `; reclaimed ${dur(reclaimed)} of wall` : ''))
-      }
-      // The reason is where a fan-out says its exclusions ran out. Hiding it
-      // here would leave the database honest and the human-facing command not.
-      if (r.route_reason) console.log(`      route: ${String(r.route_reason)}`)
-      const warning = thinOutputWarning({
-        job: String(r.job), status: String(r.status),
-        latency_ms: r.latency_ms as number | null,
-        probe: Number(r.probe), output_path: r.output_path as string | null,
-      })
-      if (warning) console.log(`      ${warning}`)
-    }
-    for (const id of unknownIds) console.log(`${String(id).padStart(4)}  unknown run id`)
+    await runListingCommand(options, commandFlags, presentation)
     break
   }
 
@@ -3686,304 +2570,15 @@ switch (cmd) {
   }
 
   case 'doctor': {
-    await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadAgreement(), loadDockerResources(), loadWorktree()])
-    await ensureLocalHealth()
-    const { LOCAL_BASE_URL, LOCAL_MODEL, LOCAL_CONTEXT_TOKENS } =
-      await import('./agents.ts')
-    // Probed BEFORE the agent list is printed, not after it. Doctor used to
-    // report `qwen-local ready` and `reachable NO` four lines apart and mean
-    // both: the roster asked whether it was configured and the probe asked
-    // whether it answered. Now the roster is told the answer first, so the
-    // status column and the routing table below it cannot contradict
-    // each other.
-    const r = await ensureLocalHealth()
-    const { CanonBudgetError, compilePack, findingsForPack } = await import('./canon.ts')
-    const { listDocs } = await import('./docs.ts')
-    const { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } = await import('./pack-budget.ts')
-    let doctorPack
-    try { doctorPack = compilePack({ job: 'understand', cwd: process.cwd() }) }
-    catch (error) {
-      if (!(error instanceof CanonBudgetError)) throw error
-      doctorPack = error.pack
-    }
-    const doctorFindings = findingsForPack(doctorPack).reduce((n, row) => n + row.findings.length, 0)
-    const packHeadroom = doctorPack.budgetBytes - doctorPack.bytes
-    const { CANON_EVALS, currentCanonEvalSha, latestCanonEvals } = await import('./evals.ts')
-    const latestEvals = latestCanonEvals()
-    const { isReadonlySandboxCandidate, srtInstalled, SRT_BIN } = await import('./sandbox.ts')
-    console.log(`canon          ${doctorFindings} finding(s) in ${doctorPack.bytes}/${doctorPack.budgetBytes} bytes (${packHeadroom} bytes headroom; ceiling ${DEFAULT_PACK_BYTES})`)
-    const oversized = listDocs().filter((doc) =>
-      doc.delivery === 'inject' && Buffer.byteLength(doc.body) > MAX_INJECT_DOC_BYTES)
-      .sort((a, b) => Buffer.byteLength(b.body) - Buffer.byteLength(a.body))
-    if (oversized.length) {
-      console.log('canon oversize')
-      for (const doc of oversized) {
-        console.log(`  ${Buffer.byteLength(doc.body)}  ${doc.scope}/${doc.subject ?? '_'}/${doc.slug}`)
-      }
-    }
-    console.log('canon evals')
-    for (const ev of CANON_EVALS) {
-      const rows = latestEvals.filter((row) => row.slug === ev.slug)
-      if (!rows.length) {
-        console.log(`  ${ev.slug.padEnd(30)} skipped  —  never run`)
-        continue
-      }
-      const currentSha = currentCanonEvalSha(ev)
-      for (const row of rows) {
-        const result = row.pass
-          ? row.canon_sha === currentSha ? 'pass (current canon)' : 'pass'
-          : 'FAIL'
-        console.log(
-          `  ${ev.slug.padEnd(30)} ${result.padEnd(20)} ${row.agent}  ${row.at}`,
-        )
-      }
-    }
-    const failingEvalSlugs = [...new Set(latestEvals.filter((row) => !row.pass).map((row) => row.slug))]
-    if (failingEvalSlugs.length) {
-      console.log(`FAILING CANON EVALS: ${failingEvalSlugs.join(', ')}`)
-    }
-    db()
-    console.log(`database       ${DB_PATH}`)
-    console.log(`open mode      ${databaseOpenMode()}`)
-    const { expectedSchemaHash, canonicalSchemaHash, schemaVersionLabel } = await import('./migrations.ts')
-    console.log(`schema hash    ${canonicalSchemaHash(db()) === expectedSchemaHash() ? 'match' : 'DRIFT'}`)
-    console.log(`schema version ${schemaVersionLabel(db())}`)
-    console.log(`resolved by    ${DATABASE_RESOLUTION.method}`)
-    if (DATABASE_RESOLUTION.registeredPath && DATABASE_RESOLUTION.registeredPath !== DB_PATH) {
-      console.log(`registered     ${DATABASE_RESOLUTION.registeredPath}  (resolved path won)`)
-    }
-    const { harnessHealth } = await import('./health.ts')
-    const costlyFailures = harnessHealth().classes.filter((row) => row.count > 0)
-      .sort((a, b) => b.totalTimeMs - a.totalTimeMs || a.kind.localeCompare(b.kind)).slice(0, 2)
-    console.log('harness health top live classes by total time (14 days; never routing evidence)')
-    for (const row of costlyFailures) {
-      console.log(`  ${row.kind.padEnd(24)} ${(row.totalTimeMs / 60_000).toFixed(1)}m  last ${row.lastSeen}`)
-    }
-    const latestCalibration = db().query(
-      'SELECT MAX(at) AS at FROM calibration',
-    ).get() as { at: string | null }
-    if (latestCalibration.at) {
-      const calibrationRows = db().query(
-        `SELECT s.delivery original_delivery, c.delivery fresh_delivery,
-                s.quality original_quality, c.quality fresh_quality,
-                s.fidelity original_fidelity, c.fidelity fresh_fidelity
-           FROM calibration c JOIN score s ON s.run_id = c.run_id
-          WHERE c.at = ?`,
-      ).all(latestCalibration.at) as Record<string, string | null>[]
-      console.log(`scorer calibration  ${latestCalibration.at}`)
-      const calibrationAxes = [
-        { name: 'delivery', levels: DELIVERY as readonly string[] },
-        { name: 'quality', levels: QUALITY as readonly string[] },
-        { name: 'fidelity', levels: FIDELITY as readonly string[] },
-      ]
-      for (const axis of calibrationAxes) {
-        const pairs = calibrationRows.map((row) => [
-          row[`original_${axis.name}`], row[`fresh_${axis.name}`],
-        ] as const).filter((pair) => pair[0] !== null && pair[1] !== null) as [string, string][]
-        if (!pairs.length) continue
-        const kappa = quadraticWeightedKappa(pairs, axis.levels)
-        const ac1 = gwetAc1(pairs, axis.levels)
-        console.log(
-          `  ${axis.name.padEnd(8)} n=${pairs.length} ` +
-          `kappa=${kappa === null ? 'n/a' : kappa.toFixed(3)} ` +
-          `ac1=${ac1 === null ? 'n/a' : ac1.toFixed(3)}`,
-        )
-      }
-    } else {
-      console.log('scorer calibration  never')
-    }
-    const scoresSinceCalibration = (db().query(
-      `SELECT COUNT(*) n FROM score
-        WHERE ? IS NULL OR datetime(scored_at) > datetime(?)`,
-    ).get(latestCalibration.at, latestCalibration.at) as { n: number }).n
-    const calibrationStale = !latestCalibration.at ||
-      Date.now() - new Date(latestCalibration.at).getTime() >= 30 * 86_400_000 ||
-      scoresSinceCalibration >= 100
-    if (calibrationStale) {
-      console.log(
-        `recalibrate: ${scoresSinceCalibration} scores since last blind check; ` +
-        'run orch recalibrate --n 12',
-      )
-    }
-    console.log('agents')
-    for (const a of Object.values(AGENTS)) {
-      const cool = candidates('summarize').find((c) => c.agent === a.name)?.cooling
-      const why = unavailableReason(a.name)
-      const version = why === 'not installed' ? null : cliVersion(a.bin)
-      const old = version?.parsed && versionBelow(version.parsed, a.minimumCliVersion)
-      console.log(
-        `  ${a.name.padEnd(12)} ${why ? 'absent ' : 'ready  '} ${a.billing.padEnd(13)}` +
-          (why ? `  ${why}` : '') +
-          (version ? `  version ${version.display}` : '  version unavailable') +
-          (cool ? `  COOLING: ${cool}` : ''),
-      )
-      if (old) {
-        console.log(
-          `  WARNING: ${a.name} ${version.parsed} is below minimum ${a.minimumCliVersion}`,
-        )
-      }
-      if (predatesFileContract(a)) {
-        console.log(`  ${fileContractProbeReason(a.name)}`)
-      }
-    }
-    for (const row of agentRows()) {
-      if (row.billing !== 'local') continue
-      const probedAt = row.probed_at ? Date.parse(row.probed_at) : NaN
-      const ageDays = Number.isFinite(probedAt) ? (Date.now() - probedAt) / 86_400_000 : null
-      const probe = row.probe_result ? JSON.parse(row.probe_result) as { ok?: boolean } : null
-      const stale = ageDays !== null && ageDays > 7
-      const failed = probe?.ok === false
-      const age = ageDays === null ? 'never' : `${ageDays.toFixed(1)}d`
-      if (stale || failed) {
-        console.log(`local probe     ${row.name} FAIL ${age}${failed ? ' probe failed' : ' exceeds 7 days'}`)
-        process.exitCode = 1
-      } else {
-        console.log(`local probe     ${row.name} ${age}`)
-      }
-    }
-    const srtAgents = Object.values(AGENTS)
-      .filter((agent) => isReadonlySandboxCandidate({
-        agent: agent.name,
-        readsRepo: agent.caps.readsRepo,
-        writesRepo: false,
-      }))
-      .map((agent) => agent.name)
-    console.log(
-      `sandbox        srt ${srtInstalled() ? 'installed' : 'NOT INSTALLED'} at ${SRT_BIN}`,
-    )
-    console.log(`sandbox agents ${srtAgents.join(', ') || '(none)'} (read-only repository jobs)`)
+    await Promise.all([loadJobs(), loadAgents(), loadRoute()])
+    // Doctor composes transport health into machine diagnosis at the CLI adapter.
     const { acpRuntimeGaps } = await import('./transport.ts')
-    const acpGap = acpRuntimeGaps()
-    console.log(`acp            ${acpGap ?? 'ready'}`)
-    console.log(`\nlocal endpoint  ${LOCAL_BASE_URL || '(ORCH_LOCAL_BASE_URL unset)'}`)
-    console.log(`local model     ${LOCAL_MODEL}`)
-    console.log(`reachable       ${r.ok ? 'yes' : 'NO'} — ${r.detail}`)
-    const localRegistered = LOCAL_BASE_URL && agentRows().some((row) =>
-      Boolean(row.enabled) && row.transport === 'acp' && row.base_url === LOCAL_BASE_URL)
-    if (LOCAL_BASE_URL && !localRegistered) {
-      const configuredModel = process.env.ORCH_LOCAL_MODEL
-      console.log(configuredModel
-        ? `register        orch agent add local-acp --harness goose --backend vllm --model ${configuredModel} --base-url ${LOCAL_BASE_URL}`
-        : 'register        ORCH_LOCAL_MODEL is required before registering local-acp')
+    const commandFlags = { has }
+    const presentation = {
+      log: console.log, exitCode: (code: number) => { process.exitCode = code },
+      candidates, pick, jobs: () => Object.keys(JOBS), acpRuntimeGaps,
     }
-    if (!r.ok && LOCAL_BASE_URL) {
-      // Reporting commands do not have side effects, so doctor only sends a
-      // packet when asked in as many words. `orch do` wakes on its own; a
-      // status check that silently powered on a shared machine would be a
-      // surprise, and the surprise would land on a colleague.
-      if (has('wake')) {
-        const w = tryWake()
-        console.log(`\nwake            ${w.sent ? 'SENT' : 'not sent'} — ${w.detail}`)
-      } else {
-        const d = wakeStatus()
-        const last = lastWakeAttempt()
-        console.log(
-          `\nwake            ${d.send ? 'available — orch doctor --wake' : d.detail}` +
-            (last ? `  (last attempt ${last.toISOString()})` : ''),
-        )
-      }
-    }
-    if (!r.ok && LOCAL_BASE_URL) {
-      // The endpoint is a tunnel to another machine, so "not reachable" has a
-      // short list of causes and they are checked in a fixed order. Printed
-      // here because this is where somebody looks when the local model goes
-      // quiet, and the alternative is rediscovering the list each time.
-      console.log(
-        '\nthe local model is out of routing until this clears. In order:\n' +
-        '  1. is the box up?      ping <host-alias>\n' +
-        '  2. is the tunnel up?   launchctl list com.user.local-model-tunnel\n' +
-        '     and its log:        ~/Library/Logs/local-model-tunnel/launchd.err.log\n' +
-        '  3. is the server up?   ssh <host-alias> \'docker ps\'\n' +
-        'Routing has already excluded it, so nothing is being sent at it meanwhile.',
-      )
-    }
-    // Where someone looks when an agent has gone quiet, so it is where the way
-    // out belongs. A cooldown clears on the agent's next success, and routing
-    // will not send it one while anything else can take the work — so without
-    // this the only options are waiting out the hour or reading route.ts.
-    if (candidates('summarize').some((c) => c.cooling)) {
-      console.log(
-        '\nan agent is cooling. If you have fixed the cause — topped up a quota,\n' +
-        'logged back in — prove it and the cooldown clears immediately:\n' +
-        '  orch do file-question --agent <name> --probe "Reply with exactly: OK"\n' +
-        'A probe never counts as routing evidence, but it does count as being alive.',
-      )
-    }
-    // The served window decides which jobs the local model is eligible for, so
-    // a silent drift between what is declared and what is running would route
-    // work at an agent that cannot hold it — which is how it came to be handed
-    // four review-lenses and an `understand` it could never have finished.
-    if (r.contextTokens) {
-      const agree = r.contextTokens === LOCAL_CONTEXT_TOKENS
-      console.log(
-        `context         ${(r.contextTokens / 1024).toFixed(0)}K served` +
-          (agree ? ' (matches what routing assumes)'
-                 : `  MISMATCH — routing assumes ${(LOCAL_CONTEXT_TOKENS / 1024).toFixed(0)}K.` +
-                   ` Set ORCH_LOCAL_CONTEXT=${r.contextTokens} or re-serve.`),
-      )
-    }
-    const counts = runTotals()
-    // runTotals().unscored, not runs - scored: that subtraction counts probes,
-    // in-flight runs, failures and abandoned rows as debt, and reported 28
-    // owing where `orch pending` — the command that actually tells you what
-    // to do about it — reported none.
-    console.log(`\nruns ${counts.runs}, scored ${counts.scored}, voided ${counts.voided}, unscored ${counts.unscored}`)
-    const heldCandidates = db().query(
-      `SELECT worktree, MAX(keep_tree) keep_tree FROM run
-        WHERE worktree IS NOT NULL AND status IN ('ok','failed','stale','stopped')
-        GROUP BY worktree`,
-    ).all() as { worktree: string; keep_tree: number }[]
-    let explicitHolds = 0
-    let dirtyHolds = 0
-    for (const held of heldCandidates) {
-      if (held.keep_tree) explicitHolds++
-      else if (existsSync(held.worktree) && worktreeDirty(held.worktree).dirty) dirtyHolds++
-    }
-    console.log(`held worktrees ${explicitHolds + dirtyHolds} (${dirtyHolds} dirty, ${explicitHolds} --keep-tree)`)
-    const { projects: registeredProjects, undeclaredCommitHooks, registerBranchCheck } = await import('./projects.ts')
-    const hookFlags = registeredProjects().map(undeclaredCommitHooks).filter(Boolean)
-    if (hookFlags.length) {
-      console.log('\ncommit hooks skipped in worker trees; landing gate must declare the checks:')
-      for (const line of hookFlags) console.log(`  ${line}`)
-    }
-    const registerQuestions = registeredProjects().flatMap((project) =>
-      registerBranchCheck(project).problems.map((problem) => `${project.name}: ${problem}`))
-    if (registerQuestions.length) {
-      console.log('\nregister questions (not run failures):')
-      for (const question of registerQuestions) console.log(`  ${question}`)
-    }
-    const docker = dockerRunResources()
-    const dockerResources = docker.ascertainable ? docker.resources : []
-    const dockerOwnerIds = new Set(dockerResources.map(({ runId }) => runId))
-    const owners = (db().query('SELECT id, repo, worktree, status FROM run').all() as {
-      id: number; repo: string | null; worktree: string | null; status: string
-    }[]).map((owner) => ({
-      ...owner,
-      retentionReason: dockerOwnerIds.has(owner.id)
-        ? terminalDockerRetentionReasonForRun(db(), owner.id)
-        : null,
-    }))
-    const classified = classifiedDockerResources(dockerResources, owners)
-    const orphans = classified.filter(({ condition }) => condition === 'leaked')
-    const retained = classified.filter(({ condition }) => condition === 'retained-worktree-resources')
-    if (!docker.ascertainable) {
-      console.log(`\ndocker inventory unascertainable`)
-      console.log(`  ${docker.reason}`)
-    } else {
-      console.log(`\ndocker orphans  ${orphans.length}`)
-      for (const { resource, project } of orphans) {
-        console.log(`  ${resource.kind} ${resource.name} — project ${project}, run ${resource.runId}`)
-        console.log(`    ${dockerRemovalCommand(resource)}`)
-      }
-      console.log(`docker retained worktree resources  ${retained.length}`)
-      for (const { resource, project, reason } of retained) {
-        console.log(`  ${resource.kind} ${resource.name} — project ${project}, run ${resource.runId}; informational, ${reason ? `removal could not be ascertained: ${reason}; ` : ''}no removal suggested`)
-      }
-    }
-    for (const j of Object.keys(JOBS)) {
-      try { const p = pick(j); console.log(`  ${j.padEnd(15)} -> ${p.agent}`) }
-      catch (e) { console.log(`  ${j.padEnd(15)} -> none (${(e as Error).message})`) }
-    }
+    await doctorCommand(commandFlags, presentation)
     break
   }
 
