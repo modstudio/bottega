@@ -9,7 +9,7 @@
     "src/epic.test.ts": {
       "size": "short"
     },
-    "src/review-yield.cli.test.ts": {
+    "src/review-yield.test.ts": {
       "size": "short"
     },
     "src/evals.cli.test.ts": {
@@ -108,7 +108,7 @@
         "src/workflows.test.ts",
         "src/evals.cli.test.ts",
         "src/epic.test.ts",
-        "src/review-yield.cli.test.ts",
+        "src/review-yield.test.ts",
         "test/process-boundary/sweep.test.ts",
         "test/process-boundary/discard-resources.test.ts"
       ]

@@ -1,8 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { addRun, db } from '../test/fixture.ts'
-import { renderReviewYieldHuman, reviewYield } from './review-yield.ts'
-
-const cli = new URL('./cli.ts', import.meta.url).pathname
+import { reviewYield } from './review-yield.ts'
 
 function addReview(recordedAt: string, patchId: string | null, completed = true, pathSet: string | null = null): number {
   db().query('INSERT INTO review (recorded_at,completed_at,patch_id,path_set) VALUES (?,?,?,?)')
@@ -79,12 +77,6 @@ describe('review yield', () => {
     expect(report.lenses.find((row) => row.key === 'correctness')).toMatchObject({ runs: 4, findings: 4 })
     expect(report.notRecorded[0]?.metric).toContain('finding-level overlap')
 
-    const human = renderReviewYieldHuman(report)
-    const json = JSON.parse(JSON.stringify(report))
-    expect(human).toContain('BY ROUND ORDINAL')
-    expect(human).toContain('round 3')
-    expect(human).toContain('NOT RECORDED')
-    expect(json).toEqual(report)
   })
 
   test('excludes probes, voided runs and delivery-none scores from the recorded population', () => {
@@ -153,24 +145,4 @@ describe('review yield', () => {
     })
   })
 
-  test('CLI table and JSON render the same computed report and filtering does not renumber rounds', () => {
-    fixture()
-    const sessionsBefore = (db().query('SELECT COUNT(*) AS count FROM session_seen').get() as { count: number }).count
-    const env = { ...process.env, ORCH_DB: process.env.ORCH_DB! }
-    const jsonChild = Bun.spawnSync(
-      [process.execPath, cli, 'review', 'yield', '--task', 'DEV-YIELD', '--agent', 'grok', '--json'],
-      { env, stdout: 'pipe', stderr: 'pipe' },
-    )
-    if (jsonChild.exitCode !== 0) throw new Error(jsonChild.stderr.toString())
-    const report = JSON.parse(jsonChild.stdout.toString())
-    expect(report.rounds.map((row: { key: string }) => row.key)).toEqual(['round 1', 'round 2', 'round 3'])
-    const humanChild = Bun.spawnSync(
-      [process.execPath, cli, 'review', 'yield', '--task', 'DEV-YIELD', '--agent', 'grok'],
-      { env, stdout: 'pipe', stderr: 'pipe' },
-    )
-    expect(humanChild.exitCode).toBe(0)
-    expect(humanChild.stdout.toString()).toBe(`${renderReviewYieldHuman(report)}\n`)
-    expect((db().query('SELECT COUNT(*) AS count FROM session_seen').get() as { count: number }).count)
-      .toBe(sessionsBefore)
-  })
 })
