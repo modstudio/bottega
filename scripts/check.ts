@@ -173,6 +173,7 @@ for (const script of [
   'check-mcp-preflight-boundary.ts', 'check-dispatch-preflight-boundary.ts',
   'check-failover-boundary.ts', 'check-run-process-boundary.ts',
   'check-task-branch-boundary.ts', 'check-prompt-retarget-boundary.ts',
+  'check-run-artifacts-boundary.ts', 'check-close-out-boundary.ts',
   'check-module-boundaries.ts', 'check-file-ceiling.ts', 'check-cognitive-ceiling.ts',
   'check-brand.ts', 'check-canon.ts',
   '../orchestrator/scripts/check-pack-budget.ts',
