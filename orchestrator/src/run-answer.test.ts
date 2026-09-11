@@ -302,3 +302,35 @@ test('answer resumes a durable root question when no child is running', async ()
   expect(db().query('SELECT parent_run_id,turn FROM run WHERE parent_run_id=?').get(id))
     .toEqual({ parent_run_id: id, turn: 2 })
 })
+
+test('a leaf id answers the open question in its conversation', async () => {
+  const root = insert('running', 'implement'); const child = insert('running', 'implement')
+  db().query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?').run('orch-test-session', 'vendor', root)
+  db().query('UPDATE run SET parent_run_id=?,turn=2,pid=? WHERE id=?').run(root, process.pid, child)
+  db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)').run(child, new Date().toISOString(), 'which?')
+  await answerRun(child, { argv: ['the existing shape'], recordOnly: false, flags }, helpers)
+  expect(db().query('SELECT answer FROM question WHERE run_id=?').get(child)).toEqual({ answer: 'the existing shape' })
+})
+
+test('answer rejects a fixture ruling from a non-owning session without writing it', async () => {
+  const id = insert('asking', 'implement'); db().query('UPDATE run SET session_id=? WHERE id=?').run('owning-session', id)
+  db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)').run(id, new Date().toISOString(), 'which?')
+  await expect(answerRun(id, { argv: ['foreign ruling'], recordOnly: false, flags }, helpers)).rejects.toThrow('owned by session owning-session')
+  expect(db().query('SELECT answer FROM question WHERE run_id=?').get(id)).toEqual({ answer: null })
+})
+
+test('answer permits an unowned question, warns, and records the answering session', async () => {
+  const id = insert('running', 'implement'); db().query('UPDATE run SET session_id=NULL,pid=? WHERE id=?').run(process.pid, id)
+  db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)').run(id, new Date().toISOString(), 'which?')
+  await answerRun(id, { argv: ['the existing shape'], recordOnly: false, flags }, helpers)
+  expect(db().query('SELECT answer,answered_by FROM question WHERE run_id=?').get(id))
+    .toEqual({ answer: 'the existing shape', answered_by: 'orch-test-session' })
+  expect(db().query('SELECT session_id FROM run WHERE id=?').get(id)).toEqual({ session_id: 'orch-test-session' })
+})
+
+test('answer refuses an asking run with no vendor session without recording the ruling', async () => {
+  const id = insert('asking', 'implement'); db().query('UPDATE run SET session_id=? WHERE id=?').run('orch-test-session', id)
+  db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)').run(id, new Date().toISOString(), 'which?')
+  await expect(answerRun(id, { argv: ['use the existing shape'], recordOnly: false, flags }, helpers)).rejects.toThrow('cannot be resumed: no vendor session')
+  expect(db().query('SELECT answer FROM question WHERE run_id=?').get(id)).toEqual({ answer: null })
+})
