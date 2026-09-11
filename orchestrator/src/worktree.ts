@@ -1911,11 +1911,12 @@ export function sweepWithTool(
 
 export function removeWorktree(w: Worktree, keepBranch = false): { removed: boolean; detail: string } {
   const deleteBranch = Boolean(w.branch) && !keepBranch
+  // Never prune the repository; remove only this worktree's own record.
   // Already gone is a SUCCESS, not an error. A worktree deleted by hand, or one
   // in a scratch repository that has since been cleaned up, leaves a database
   // pointer that ought to be clearable — refusing would strand it for ever.
   if (!existsSync(w.path)) {
-    gitOk(['worktree', 'prune'], w.repoRoot)
+    gitOk(['worktree', 'remove', '--force', w.path], w.repoRoot)
     if (deleteBranch) gitOk(['branch', '-D', w.branch], w.repoRoot)
     const branch = deleteBranch ? branchTip(w.repoRoot, w.branch) : null
     return branch !== null
@@ -1930,9 +1931,6 @@ export function removeWorktree(w: Worktree, keepBranch = false): { removed: bool
   // as a success.
   const gone = gitOk(['worktree', 'remove', '--force', w.path], w.repoRoot) !== null
   if (deleteBranch) gitOk(['branch', '-D', w.branch], w.repoRoot)
-  // Prunes the administrative record if the directory went missing by other
-  // means, so `git worktree list` does not accumulate ghosts.
-  gitOk(['worktree', 'prune'], w.repoRoot)
   const branch = deleteBranch ? branchTip(w.repoRoot, w.branch) : null
   return (gone || !existsSync(w.path)) && (!deleteBranch || branch === null)
     ? { removed: true, detail: w.path }
