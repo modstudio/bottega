@@ -227,4 +227,3 @@ export async function detach(jobName: string, prompt: string, spec: DetachSpec, 
   child.unref()
   return id
 }
-

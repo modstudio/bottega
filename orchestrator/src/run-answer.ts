@@ -114,7 +114,6 @@ auditRunMutation(retryAuthority, 'retry', `retried as run ${newId}`)
 console.error(`— run ${newId} is retry of ${id}`)
 await follow(newId, options.flags.quiet, true, helpers.presentation)
 }
-
 /**
  * Rule on what a worker asked, and set it going again.
  *
@@ -488,5 +487,4 @@ console.error(
     : `\n  orch diff ${id}    then score it: ${helpers.presentation.scoreHint(id, row.job, null)}`,
 )
 }
-
 
