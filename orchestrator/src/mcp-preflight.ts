@@ -19,6 +19,13 @@ export type McpConnection = {
 export type McpMode = 'require' | 'prefer'
 export type McpRequest = boolean | McpMode
 
+export function effectiveMcpRequest(
+  request: McpRequest | undefined,
+  declaredJob: { needs: { mcp?: boolean } },
+): McpRequest | undefined {
+  return request ?? (declaredJob.needs.mcp ? true : undefined)
+}
+
 export function provenanceServer(entry: string, knownServers: ReadonlySet<string>): string | null {
   const claude = entry.match(/^mcp__(.+?)__/)
   if (claude) return claude[1] ?? null

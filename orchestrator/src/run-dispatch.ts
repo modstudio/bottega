@@ -9,7 +9,8 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from './db.ts'
 import { preflight } from './dispatch-preflight.ts'
 import type { DetachSpec } from './failover.ts'
-import { preflightMcp, storedMcpRequest } from './mcp-preflight.ts'
+import { job } from './jobs.ts'
+import { effectiveMcpRequest, preflightMcp, storedMcpRequest } from './mcp-preflight.ts'
 import { projectByName } from './projects.ts'
 import { RUNS_DIR, runFilePaths } from './run-artifacts.ts'
 import { repoOf } from './run.ts'
@@ -46,6 +47,7 @@ export async function detach(jobName: string, prompt: string, spec: DetachSpec, 
    */
   // A retry names the directory the original ran in; everything else is here.
   const cwd = spec.cwd ?? process.cwd()
+  const mcpRequest = effectiveMcpRequest(spec.mcp, job(jobName))
   // A RESUME skips preflight: its agent was chosen long ago, its worktree
   // exists, and its seed was settled when that worktree was cut. Re-checking
   // would demand a `--seed` for a database that is already there.
@@ -55,12 +57,12 @@ export async function detach(jobName: string, prompt: string, spec: DetachSpec, 
         jobName, cwd, spec.seed, spec.key, spec.base, false, false, spec.lens,
         spec.review, spec.carry, spec.repo,
       )
-  if (!spec.resume && spec.mcp) {
+  if (!spec.resume && mcpRequest) {
     // Who will run is knowable here, and a proven-failed grok attach must not
     // leave a placeholder for the child to fail. Resume keeps the agent that
     // already started; it is not a new dispatch.
     if (!selectedAgent) throw new Error('MCP preflight requires the selected agent')
-    preflightMcp({ mcp: spec.mcp, cwd, job: jobName, selectedAgent })
+    preflightMcp({ mcp: mcpRequest, cwd, job: jobName, selectedAgent })
   }
   const runsDir = RUNS_DIR
   mkdirSync(runsDir, { recursive: true })
@@ -101,7 +103,7 @@ export async function detach(jobName: string, prompt: string, spec: DetachSpec, 
       createHash('sha256').update(prompt).digest('hex').slice(0, 16),
       prompt.length, prompt.slice(0, 200).replace(/\s+/g, ' '), spec.label ?? null,
       sessionId(), spec.probe ? 1 : 0, spec.resume?.parent ?? null,
-      spec.resume?.turn ?? 1, storedMcpRequest(spec.mcp), spec.resume?.session ?? null,
+      spec.resume?.turn ?? 1, storedMcpRequest(mcpRequest), spec.resume?.session ?? null,
       spec.resume?.parent ?? null, spec.resume?.parent ?? null,
       spec.resume?.parent ?? null, spec.resume?.parent ?? null,
     ) as { id: number } | null
