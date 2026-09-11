@@ -104,6 +104,16 @@ describe('CLI argument recognition', () => {
       .toThrow('unrecognised argument: --jobs\nworking form: orch runs')
   })
 
+  test('an unknown reclaim kind names the kind and both working forms', () => {
+    expect(() => validateCliArgs(['reclaim', 'nonsense', 'x'])).toThrow(
+      'unknown reclaim kind "nonsense": use orch reclaim worktree <path> [--dry-run] ' +
+      'or orch reclaim branch <project>:<branch> [--dry-run]',
+    )
+    expect(() => validateCliArgs(['reclaim', 'worktree', '/p'])).not.toThrow()
+    expect(() => validateCliArgs(['reclaim', 'branch', 'proj:b'])).not.toThrow()
+    expect(() => validateCliArgs(['reclaim'])).not.toThrow()
+  })
+
   test('a value flag without its value is refused before execution', () => {
     expect(() => validateCliArgs(['project', 'set', 'registered', '--settings']))
       .toThrow('argument --settings needs a value\nworking form: orch project set <name>')

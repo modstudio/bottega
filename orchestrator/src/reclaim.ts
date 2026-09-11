@@ -3,7 +3,7 @@ import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { db, SESSION_LIVE_MS, sessionId, writableDb, writeTransaction } from './db.ts'
 import { EVIDENCE_CLOSED_SQL, chainScoreJoin } from './evidence-query.ts'
 import { pidAlive } from './process-liveness.ts'
-import { worktreePathSpellings } from './resource-ownership.ts'
+import { otherConversationWorktreeSharers } from './resource-ownership.ts'
 import { projectAt, projectByName } from './projects.ts'
 import {
   branchTip, removeFor, restoreBranch, withCleanupLock, withWorktreeCreateLock, withWorktreeLease, type Worktree } from './worktree.ts'
@@ -117,34 +117,8 @@ function proveRunOwners(
   return null
 }
 
-/**
- * Transitional until DEV-440 splits db.ts ownership into liveness and full-claim
- * predicates. The destructive reclaim verb must use this full-claim predicate
- * (every other conversation, regardless of status, score, or keep_tree). Close-out,
- * sweep, and abandon use the separate reconstructibility proof below after their
- * running/asking liveness check.
- */
-function fullClaimWorktreeSharers(path: string, runId: number): { id: number; status: string }[] {
-  const spellings = worktreePathSpellings(db(), path)
-  if (!spellings.length) return []
-  const candidates = db().query(
-    `SELECT r.id, COALESCE(r.parent_run_id, r.id) root_id, r.status
-       FROM run r
-      WHERE r.worktree IN (${spellings.map(() => '?').join(',')})
-        AND COALESCE(r.parent_run_id, r.id) <>
-            COALESCE((SELECT COALESCE(parent_run_id, id) FROM run WHERE id=?), ?)
-      ORDER BY r.id`,
-  ).all(...spellings, runId, runId) as { id: number; root_id: number; status: string }[]
-  const roots = new Set<number>()
-  return candidates.flatMap((candidate) => {
-    if (roots.has(candidate.root_id)) return []
-    roots.add(candidate.root_id)
-    return [{ id: candidate.root_id, status: candidate.status }]
-  })
-}
-
 function fullClaimRefusal(path: string, runId: number): ReclaimResult | null {
-  const sharers = fullClaimWorktreeSharers(path, runId)
+  const sharers = otherConversationWorktreeSharers(db(), { id: runId, worktree: path })
   if (!sharers.length) return null
   return refuse(
     `worktree ${path} is still claimed by other conversation(s): ` +
