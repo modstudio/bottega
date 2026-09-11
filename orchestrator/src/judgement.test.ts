@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import { addRun, db, dir, pairPartners, recordReview, reviewReply, score as seedScore } from '../test/fixture.ts'
 import { NOT_EVIDENCE } from './failure.ts'
 import { judgeRun, scoreRun } from './judgement.ts'
+import { trackedTestResidue } from '../test/residue.ts'
+const trackResidue = trackedTestResidue()
 
 type FlagInput = Record<string, string | string[] | boolean>
 const flags = (input: FlagInput = {}) => ({
@@ -145,14 +147,14 @@ describe('score ruling', () => {
 
 describe('judge ruling', () => {
   test('score drops a habitual fidelity word for a review lens and records two axes', () => {
-    const id = insert('ok', 'review-lens'); const output = join(dir, `graded-${id}.json`); writeFileSync(output, JSON.stringify(reviewReply(1)))
+    const id = insert('ok', 'review-lens'); const output = trackResidue(join(dir, `graded-${id}.json`)); writeFileSync(output, JSON.stringify(reviewReply(1)))
     db().query('UPDATE run SET lens=?,model=?,output_path=? WHERE id=?').run('correctness', 'm', output, id)
     score(id, ['full', 'right'], { reproduced: 'all', coverage: 'adequate', limits: 'absent', overlap: 'alone' })
     expect(db().query('SELECT delivery,quality,fidelity FROM score WHERE run_id=?').get(id)).toEqual({ delivery: 'full', quality: 'right', fidelity: null })
   })
 
   test('lens scoring refuses missing grades with the canonical vocabulary and writes nothing', () => {
-    const id = insert('ok', 'review-lens'); const output = join(dir, `ungraded-${id}.json`); writeFileSync(output, JSON.stringify(reviewReply(1))); db().query('UPDATE run SET lens=?,model=?,output_path=? WHERE id=?').run('safety', 'm', output, id)
+    const id = insert('ok', 'review-lens'); const output = trackResidue(join(dir, `ungraded-${id}.json`)); writeFileSync(output, JSON.stringify(reviewReply(1))); db().query('UPDATE run SET lens=?,model=?,output_path=? WHERE id=?').run('safety', 'm', output, id)
     expect(() => score(id, ['full', 'right'])).toThrow(/reproduced/); expect(db().query('SELECT id FROM score WHERE run_id=?').get(id)).toBeNull()
   })
 
@@ -172,7 +174,7 @@ describe('judge ruling', () => {
   })
 
   test('duplicate singleton review grades are refused without recording a score or review', () => {
-    const id = insert('ok', 'review-lens'); const output = join(dir, `duplicate-${id}.json`); writeFileSync(output, JSON.stringify(reviewReply(1))); db().query('UPDATE run SET lens=?,model=?,output_path=? WHERE id=?').run('duplicate', 'm', output, id)
+    const id = insert('ok', 'review-lens'); const output = trackResidue(join(dir, `duplicate-${id}.json`)); writeFileSync(output, JSON.stringify(reviewReply(1))); db().query('UPDATE run SET lens=?,model=?,output_path=? WHERE id=?').run('duplicate', 'm', output, id)
     expect(() => score(id, ['full', 'right'], { reproduced: 'banana', coverage: 'adequate', limits: 'named', overlap: 'unique' })).toThrow('--reproduced')
   })
 
@@ -219,7 +221,7 @@ describe('judge ruling', () => {
 
 describe('voided output evidence', () => {
   test('score --void records its verdict but removes routing and duel evidence', () => {
-    const outputPath = join(dir, 'voided-output.txt'); writeFileSync(outputPath, 'the retained answer')
+    const outputPath = trackResidue(join(dir, 'voided-output.txt')); writeFileSync(outputPath, 'the retained answer')
     const id = insert('ok', 'review-lens'); const partner = addRun({ agent: 'grok', job: 'review-lens', session: 'orch-test-session', inputTree: 'voided-tree', specSha: 'voided-spec' })
     db().query("UPDATE run SET output_path=?,input_tree='voided-tree',spec_sha='voided-spec' WHERE id=?").run(outputPath, id); seedScore(partner, 'full', 'right')
     score(id, ['none'], { void: true, 'better-than': String(partner) })
