@@ -215,11 +215,14 @@ describe('harness-owned checkpoints', () => {
     const runner = join(main, 'signal-runner.ts')
     const runModule = new URL('./run.ts', import.meta.url).href
     const transportModule = new URL('./transport.ts', import.meta.url).href
+    const hooksModule = new URL('./store-hooks.ts', import.meta.url).href
     writeFileSync(runner, `
       import { writeFileSync } from 'node:fs'
       import { join } from 'node:path'
       import { run } from ${JSON.stringify(runModule)}
       import { installTestTransport } from ${JSON.stringify(transportModule)}
+      import { registerStandardHooks } from ${JSON.stringify(hooksModule)}
+      registerStandardHooks()
       installTestTransport({ name: 'cli', async start(opts) {
         writeFileSync(join(opts.cwd, 'file.txt'), 'signal dirty\\n')
         return { pid: 0, kill() {}, async prompt() {}, async *events() {}, async cancel() {},

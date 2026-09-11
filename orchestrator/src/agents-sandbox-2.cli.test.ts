@@ -81,7 +81,8 @@ test('shared-ref guard recognition is independent of the running checkout path',
         const hookDir = join(repo, '.git', 'orch-guards', String(231 + index))
         const ready = join(repo, `checkpoint-${checkpoint}`)
         const child = Bun.spawn([process.execPath, '-e',
-          `const { prepareSharedRefGuard } = await import(process.argv[1]);
+          `const { registerStandardHooks } = await import(new URL('./store-hooks.ts', process.argv[1])); registerStandardHooks();
+           const { prepareSharedRefGuard } = await import(process.argv[1]);
            prepareSharedRefGuard(process.argv[2], process.argv[3]);`,
           module, tree.path, `refs/heads/${tree.branch}`], {
           cwd: tree.path,
