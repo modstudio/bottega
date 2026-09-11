@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ARGV_PROMPT_BYTES, addRun, db, dir, packedResumePrompt, rulingPrompt } from '../test/fixture.ts'
@@ -23,13 +23,44 @@ function insert(status: string, job = 'file-question'): number {
   ).get(new Date().toISOString(), job, status) as { id: number }).id
 }
 
+const priorEnv: Record<string, string | undefined> = {}
 beforeEach(() => {
+  priorEnv.CLAUDE_CODE_SESSION_ID = process.env.CLAUDE_CODE_SESSION_ID
+  priorEnv.ORCH_DEPTH = process.env.ORCH_DEPTH
+  priorEnv.ORCH_EXEC_PATH = process.env.ORCH_EXEC_PATH
   process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
   process.env.ORCH_DEPTH = '0'
   process.env.ORCH_EXEC_PATH = '/usr/bin/true'
 })
+afterEach(() => {
+  if (priorEnv.CLAUDE_CODE_SESSION_ID === undefined) delete process.env.CLAUDE_CODE_SESSION_ID; else process.env.CLAUDE_CODE_SESSION_ID = priorEnv.CLAUDE_CODE_SESSION_ID
+  if (priorEnv.ORCH_DEPTH === undefined) delete process.env.ORCH_DEPTH; else process.env.ORCH_DEPTH = priorEnv.ORCH_DEPTH
+  if (priorEnv.ORCH_EXEC_PATH === undefined) delete process.env.ORCH_EXEC_PATH; else process.env.ORCH_EXEC_PATH = priorEnv.ORCH_EXEC_PATH
+})
 
 describe('run answers', () => {
+  test('record-only closes the question, marks the chain stranded, and retry restates the ruling', async () => {
+    const id = insert('asking'); const prompt = join(dir, `record-only-${id}.txt`); writeFileSync(prompt, 'original fixture spec')
+    db().query('UPDATE run SET session_id=?,vendor_session=?,prompt_path=?,cwd=? WHERE id=?').run('orch-test-session', 'valid-session', prompt, dir, id)
+    db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)').run(id, new Date().toISOString(), 'which shape?')
+    await answerRun(id, { argv: ['use the existing shape'], recordOnly: true, flags }, helpers)
+    expect(db().query('SELECT answer,delivery_pending_at FROM question WHERE run_id=?').get(id)).toEqual({ answer: 'use the existing shape', delivery_pending_at: expect.any(String) })
+    expect(rulingPrompt([{ question: 'which shape?', answer: 'use the existing shape' }])).toContain('THE RULING: use the existing shape')
+  })
+
+  test('answer resumes the agent from the same row as the fallback vendor session', async () => {
+    const root = insert('asking'); db().query('UPDATE run SET session_id=?,vendor_session=?,agent=?,cwd=? WHERE id=?').run('orch-test-session', 'codex-session', 'codex', dir, root)
+    const latest = insert('asking'); db().query('UPDATE run SET parent_run_id=?,turn=2,vendor_session=NULL,agent=?,cwd=? WHERE id=?').run(root, 'grok', dir, latest); db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)').run(latest, new Date().toISOString(), 'which shape?')
+    await answerRun(root, { argv: ['existing'], recordOnly: false, flags }, helpers)
+    expect(db().query('SELECT vendor_session FROM run WHERE parent_run_id=? AND turn=3').get(root)).toEqual({ vendor_session: 'codex-session' })
+  })
+
+  test('a resume spawn failure rolls the ruling back and leaves the question open', async () => {
+    const id = insert('asking', 'implement'); db().query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?').run('orch-test-session', 'vendor', id); db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)').run(id, new Date().toISOString(), 'which shape?')
+    process.env.ORCH_EXEC_PATH = join(dir, 'definitely-missing-exec')
+    await expect(answerRun(id, { argv: ['existing'], recordOnly: false, flags }, helpers)).rejects.toThrow()
+    expect(db().query('SELECT answer,answered_at FROM question WHERE run_id=?').get(id)).toEqual({ answer: null, answered_at: null })
+  })
   test('answer refuses six individually-legal --file rulings whose packed resume exceeds argv', async () => {
     const id = insert('asking', 'implement')
     const spec = join(dir, `answer-six-large-${id}.prompt.txt`)

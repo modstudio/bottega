@@ -11,7 +11,7 @@ type RunListingPresentation = {
   dur(ms: number | null | undefined): string
   chainIsStranded(rootId: number): boolean
   strandedRecovery(rootId: number): string
-  thinOutputWarning(row: { job: string; status: string; latency_ms: number | null; probe: number; output_path: string | null }): string | null
+  thinOutputWarning(row: { job: string; status: string; latency_ms: number | null; probe: number; output_path: string | null; writesRepo: boolean }): string | null
 }
 
 export async function runListingCommand(options: { jsonV1: boolean }, flags: RunListingFlags, presentation: RunListingPresentation): Promise<void> {
@@ -259,6 +259,7 @@ export async function runListingCommand(options: { jsonV1: boolean }, flags: Run
       job: String(r.job), status: String(r.status),
       latency_ms: r.latency_ms as number | null,
       probe: Number(r.probe), output_path: r.output_path as string | null,
+      writesRepo: false,
     })
     if (warning) log(`      ${warning}`)
   }

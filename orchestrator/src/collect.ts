@@ -1,5 +1,5 @@
 import type { Database } from 'bun:sqlite'
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { FAILS_OVER } from './failure.ts'
 import { failureReason, outcomeOf } from './outcome.ts'
@@ -8,6 +8,32 @@ import { TRUNCATED_TRANSCRIPT_BYTES, visibleTranscriptText } from './result-outp
 import { parseMcpProbe } from './mcp-probe.ts'
 
 export const COLLECTION_COMMANDS = new Set(['result', 'wait'])
+
+const THIN_OUTPUT_BYTES = 1024
+const THIN_OUTPUT_LATENCY_MS = 5 * 60_000
+
+/** A reader-facing suspicion only: this never enters status, scoring, or routing. */
+export function thinOutputWarning(row: {
+  job: string; status: string; latency_ms: number | null; probe: number; writesRepo: boolean
+  output_path: string | null
+}): string | null {
+  if (row.status !== 'ok' || row.probe || row.latency_ms === null ||
+      row.latency_ms <= THIN_OUTPUT_LATENCY_MS || row.writesRepo ||
+      !row.output_path || !existsSync(row.output_path)) return null
+  if (process.env.ORCH_TEST_THIN_OUTPUT_UNLINK_BEFORE_STAT === row.output_path) {
+    unlinkSync(row.output_path)
+  }
+  let bytes: number
+  try {
+    bytes = statSync(row.output_path).size
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
+  }
+  if (bytes >= THIN_OUTPUT_BYTES) return null
+  return `thin: ${bytes} B after ${dur(row.latency_ms).replaceAll(' ', '')} — ` +
+    'check whether the run stopped at a blocker'
+}
 
 export type FailoverAttempt = {
   rootId: number; id: number; agent: string; status: string

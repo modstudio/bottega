@@ -7,7 +7,6 @@
     "src/catalog.cli.test.ts": { "size": "short" },
     "src/cli-do-1.cli.test.ts": { "size": "short" },
     "src/cli-projects.cli.test.ts": { "size": "short" },
-    "src/cli-runs.cli.test.ts": { "size": "short" },
     "src/docs.cli.test.ts": { "size": "short" },
     "src/epic.cli.test.ts": { "size": "short" },
     "src/review-yield.cli.test.ts": { "size": "short" },
@@ -64,7 +63,6 @@
       "measuredSeconds": 76.25,
       "files": [
         "src/worktree-2.cli.test.ts",
-        "src/cli-runs.cli.test.ts",
         "src/review-2.cli.test.ts",
         "src/agents-sandbox-2.cli.test.ts",
         "src/run-2.cli.test.ts",
