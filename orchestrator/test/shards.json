@@ -32,7 +32,7 @@
       "size": "short",
       "exclusive": true
     },
-    "src/route.cli.test.ts": {
+    "src/route-routing.test.ts": {
       "size": "short"
     },
     "src/workflows.cli.test.ts": {
@@ -118,7 +118,7 @@
       "files": [
         "test/process-boundary/lifecycle-harness.test.ts",
         "src/monitor.cli.test.ts",
-        "src/route.cli.test.ts",
+        "src/route-routing.test.ts",
         "src/catalog.cli.test.ts",
         "test/process-boundary/discard.test.ts"
       ]

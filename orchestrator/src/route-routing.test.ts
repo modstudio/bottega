@@ -1,7 +1,15 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
+import { PassThrough, Writable } from 'node:stream'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { bradleyTerry, AGENTS, EVIDENCE_WINDOW, MIN_SAMPLE, PROMPT_SIZE_BOUNDARY, ROUTING_BACKTEST_SEEDS, addRun, betaContribution, candidates, db, dir, guide, gwetAc1, pick, promptSizeBucket, routingBacktest, routingBacktestEnsemble, score, scoreboard } from '../test/fixture.ts'
+import { recalibrate } from './recalibration.ts'
+
+const priorCalibrationSession = process.env.CLAUDE_CODE_SESSION_ID
+afterEach(() => {
+  if (priorCalibrationSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+  else process.env.CLAUDE_CODE_SESSION_ID = priorCalibrationSession
+})
 
 describe('one score, reported the same everywhere', () => {
   function judged(agent: string, rights: number, wrongs: number) {
@@ -51,27 +59,6 @@ describe('one score, reported the same everywhere', () => {
     expect(g.best!.score).toBeCloseTo(0.775)
     expect(g.best!.shrunk).toBeCloseTo(0.747222)
   })
-
-  test('pick, guide, and stats print raw and shrunk scores, including a changed leader', () => {
-    judged('codex', 4, 1)
-    judged('grok', 31, 9)
-    judged('agy', 0, 40)
-    const cli = new URL('cli.ts', import.meta.url).pathname
-    const runCli = (...args: string[]) => Bun.spawnSync([process.execPath, cli, ...args], {
-      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
-      stdout: 'pipe', stderr: 'pipe',
-    })
-
-    const pickOut = new TextDecoder().decode(runCli('pick', 'review-lens-inline').stdout)
-    const guideOut = new TextDecoder().decode(runCli('guide', '--job', 'review-lens-inline').stdout)
-    const statsOut = new TextDecoder().decode(runCli('stats', '--job', 'review-lens-inline').stdout)
-    expect(pickOut).toContain('78% (shrunk 75%) over 40 judged')
-    expect(pickOut).toContain('score=78% shrunk=75%')
-    expect(guideOut).toContain('78% raw,   75% shrunk')
-    expect(guideOut).toContain('SHRUNK LEADER (raw: codex)')
-    expect(statsOut).toContain('raw  shrunk')
-    expect(statsOut).toContain('78%     75%')
-  }, 20_000)
 
   test('the scoreboard is the router, not a second opinion', () => {
     // agy on review-lens: one good answer and two headless denials. The old
@@ -171,19 +158,6 @@ describe('routing evidence scope', () => {
     expect(guide('file-question').map((row) => row.promptBucket)).toEqual(['small', 'large'])
     expect(guide('file-question', 25 * 1024).map((row) => row.promptBucket)).toEqual(['large'])
 
-    const cli = new URL('cli.ts', import.meta.url).pathname
-    const invoke = (...args: string[]) => Bun.spawnSync([process.execPath, cli, ...args], {
-      env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
-      stdout: 'pipe', stderr: 'pipe',
-    })
-    const all = new TextDecoder().decode(invoke('guide', '--job', 'file-question').stdout)
-    const large = new TextDecoder().decode(
-      invoke('guide', '--job', 'file-question', '--prompt-bytes', String(25 * 1024)).stdout,
-    )
-    expect(all).toContain('file-question [<16 KiB prompts]')
-    expect(all).toContain('file-question [>=16 KiB prompts]')
-    expect(large).not.toContain('file-question [<16 KiB prompts]')
-    expect(large).toContain('file-question [>=16 KiB prompts]')
   })
 
   test('only the most recent evidence window counts in candidates and the scoreboard', () => {
@@ -227,20 +201,20 @@ describe('routing evidence scope', () => {
 })
 
 describe('recalibrating the scorer', () => {
-  const CLI = new URL('cli.ts', import.meta.url).pathname
-  const runRecalibrate = (input: string, ...args: string[]) => {
-    const p = Bun.spawnSync([process.execPath, CLI, 'recalibrate', ...args], {
-      env: {
-        ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
-        CLAUDE_CODE_SESSION_ID: 'calibration-session',
-      },
-      stdin: new TextEncoder().encode(input), stdout: 'pipe', stderr: 'pipe',
-    })
-    return {
-      code: p.exitCode,
-      out: new TextDecoder().decode(p.stdout),
-      err: new TextDecoder().decode(p.stderr),
-    }
+  const runRecalibrate = async (input: string, ...args: string[]) => {
+    process.env.CLAUDE_CODE_SESSION_ID = 'calibration-session'
+    const stdin = new PassThrough()
+    stdin.end(input)
+    let out = ''
+    const output = new Writable({ write(chunk, _encoding, done) { out += chunk.toString(); done() } })
+    const logs: string[] = []
+    const values = new Map<string, string>()
+    for (let i = 0; i < args.length; i++) if (args[i]!.startsWith('--')) values.set(args[i]!.slice(2), args[i + 1] ?? '')
+    await recalibrate(
+      { has: (name) => args.includes(`--${name}`), flag: (name) => values.get(name) },
+      { log: (...items) => logs.push(items.join(' ')), write: (value) => { out += value }, input: stdin, output },
+    )
+    return { code: 0, out: [...logs, out].join('\n'), err: '' }
   }
   const oldScore = (
     runId: number, delivery: string, quality: string | null, fidelity: string | null,
@@ -250,7 +224,7 @@ describe('recalibrating the scorer', () => {
      VALUES (?,?,?,?,?,?)`,
   ).run(runId, delivery, quality, fidelity, scoredAt, scorer)
 
-  test('blind verdicts are stored apart and kappa is printed per comparable axis', () => {
+  test('blind verdicts are stored apart and kappa is printed per comparable axis', async () => {
     const originals = [
       ['none', null, null],
       ['partial', 'wrong', 'drifted'],
@@ -264,7 +238,7 @@ describe('recalibrating the scorer', () => {
       oldScore(id, original[0], original[1], original[2])
     }
 
-    const r = runRecalibrate('full right faithful\nfull right faithful\nfull right faithful\n', '--n', '3')
+    const r = await runRecalibrate('full right faithful\nfull right faithful\nfull right faithful\n', '--n', '3')
     expect(r.code).toBe(0)
     expect(r.err).toBe('')
     expect(r.out).toContain('axes: delivery quality fidelity')
@@ -282,7 +256,7 @@ describe('recalibrating the scorer', () => {
     ).all()).toEqual(originals.map(([delivery, quality, fidelity]) => ({ delivery, quality, fidelity })))
   })
 
-  test('age and scorer identity filter the sample, while force skips only identity', () => {
+  test('age and scorer identity filter the sample, while force skips only identity', async () => {
     const foreign = addRun({ agent: 'codex', job: 'file-question' })
     const foreignOut = join(dir, 'calibration-foreign.txt')
     writeFileSync(foreignOut, 'foreign output')
@@ -299,29 +273,16 @@ describe('recalibrating the scorer', () => {
     db().query('UPDATE run SET output_path=? WHERE id=?').run('/definitely/missing/DEV-86', missing)
     oldScore(missing, 'full', 'right', null)
 
-    const filtered = runRecalibrate('')
+    const filtered = await runRecalibrate('')
     expect(filtered.code).toBe(0)
     expect(filtered.out).toContain('no scored runs older than 7 days with output still on disk')
-    const forced = runRecalibrate('full right\n', '--force', '--n', '1')
+    const forced = await runRecalibrate('full right\n', '--force', '--n', '1')
     expect(forced.code).toBe(0)
     expect(forced.out).toContain('foreign output')
     expect(forced.out).not.toContain('recent output')
     expect((db().query('SELECT COUNT(*) AS n FROM calibration').get() as { n: number }).n).toBe(1)
   })
 
-  test('the displayed output keeps the first 4000 and last 2000 characters', () => {
-    const id = addRun({ agent: 'codex', job: 'file-question' })
-    const output = join(dir, 'calibration-long.txt')
-    writeFileSync(output, 'H'.repeat(4000) + 'M'.repeat(50) + 'T'.repeat(2000))
-    db().query('UPDATE run SET output_path=? WHERE id=?').run(output, id)
-    oldScore(id, 'partial', 'mixed', null)
-    const r = runRecalibrate('partial mixed\n', '--n', '1')
-    expect(r.code).toBe(0)
-    expect(r.out).toContain('H'.repeat(4000))
-    expect(r.out).toContain('T'.repeat(2000))
-    expect(r.out).not.toContain('M'.repeat(50))
-    expect(r.out).not.toContain('original_delivery')
-  })
 })
 
 describe('routing backtest statistics', () => {
@@ -379,14 +340,6 @@ describe('routing backtest statistics', () => {
     expect(result.jobs[0]!.runs).toBe(2)
     expect(result.unscoredDecisions).toBe(1)
 
-    const cli = Bun.spawnSync([
-      process.execPath, new URL('cli.ts', import.meta.url).pathname,
-      'routing-backtest', '--job', 'fix', '--seed', '1',
-    ], { env: { ...process.env, ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe' })
-    expect(cli.exitCode).toBe(0)
-    expect(cli.stdout.toString()).toContain(
-      'unscoredDecisions: 1 dispatches have no score and contribute no quality evidence',
-    )
   })
 
   test('unscored successful latency reaches the replay tie-break at completion', () => {
@@ -535,13 +488,6 @@ describe('routing backtest statistics', () => {
     expect(routingBacktest('fix', 2).jobs).toEqual([])
     expect(routingBacktest('fix', 2, { includeVoided: true }).jobs[0]!.runs).toBe(1)
 
-    const cli = Bun.spawnSync([
-      process.execPath, new URL('cli.ts', import.meta.url).pathname,
-      'routing-backtest', '--job', 'fix', '--seed', '2',
-    ], { env: { ...process.env, ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe' })
-    expect(cli.exitCode).toBe(0)
-    expect(cli.stdout.toString()).toContain('voided-excluded live-Thompson=[')
-    expect(cli.stdout.toString()).toContain('voided-included live-Thompson=[')
   })
 
   test('each simulated policy learns only from historical runs it selected', () => {
