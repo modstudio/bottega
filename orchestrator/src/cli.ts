@@ -1117,7 +1117,7 @@ async function detach(jobName: string, prompt: string, spec: DetachSpec): Promis
         jobName, cwd, spec.seed, spec.key, spec.base, false, false, spec.lens,
         spec.review, spec.carry, spec.repo,
       )
-  if (!spec.resume) {
+  if (!spec.resume && spec.mcp) {
     // Who will run is knowable here, and a proven-failed grok attach must not
     // leave a placeholder for the child to fail. Resume keeps the agent that
     // already started; it is not a new dispatch.
