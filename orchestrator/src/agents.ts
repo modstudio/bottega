@@ -814,25 +814,25 @@ let agentCache: Record<string, Agent> | null = null
 function loadedAgents(): Record<string, Agent> {
   if (agentCache) return agentCache
   try {
-    const rows = agentRows()
-    const loaded = Object.fromEntries(rows.map((row) => [row.name, rowAgent(row)]))
+    const rows = agentRows(); const loaded = Object.fromEntries(rows.map((row) => [row.name, rowAgent(row)]))
     for (const [name, agent] of Object.entries(loaded)) assertResumableAgent(name, agent, false)
     return agentCache = loaded
   } catch (error) {
-    if (String((error as Error).message).includes('database does not exist')) return FALLBACK_AGENTS
-    throw error
+    if (String((error as Error).message).includes('database does not exist')) return FALLBACK_AGENTS; throw error
   }
 }
 /** Reload registry rows at a mutation or long-lived reporting boundary. */
 export function refreshAgents(): void { agentCache = null }
 export const AGENTS: Record<string, Agent> = new Proxy({}, {
-  get: (_target, property) => loadedAgents()[property as string],
-  ownKeys: () => Reflect.ownKeys(loadedAgents()),
-  has: (_target, property) => property in loadedAgents(),
-  getOwnPropertyDescriptor: (_target, property) => property in loadedAgents()
-    ? { enumerable: true, configurable: true, value: loadedAgents()[property as string] }
-    : undefined,
+  get: (_target, property) => loadedAgents()[property as string], ownKeys: () => Reflect.ownKeys(loadedAgents()),
+  has: (_target, property) => property in loadedAgents(), getOwnPropertyDescriptor: (_target, property) =>
+    property in loadedAgents() ? { enumerable: true, configurable: true, value: loadedAgents()[property as string] } : undefined,
 })
+export function requireAgent(name: string): Agent {
+  const agent = AGENTS[name]; if (agent) return agent
+  const source = existsSync(DB_PATH) ? `store path ${JSON.stringify(DB_PATH)}` : 'the built-in fallback was used because the database file does not exist'
+  throw new Error(`this process's agent registry lacks requested key ${JSON.stringify(name)}; ${source}; loaded keys ${JSON.stringify(Object.keys(AGENTS))}.`)
+}
 
 export type AgentMutation = {
   harness?: Harness; backend?: Backend; model?: string; baseUrl?: string | null
