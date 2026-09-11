@@ -6,7 +6,6 @@
     "src/epic.cli.test.ts": { "size": "short" },
     "src/review-yield.cli.test.ts": { "size": "short" },
     "src/evals.cli.test.ts": { "size": "short" },
-    "src/git-environment-regression.cli.test.ts": { "size": "short" },
     "src/issue.cli.test.ts": { "size": "short" },
     "src/lifecycle-harness.cli.test.ts": { "size": "moderate", "exclusive": true },
     "src/linked-worktree-database.cli.test.ts": { "size": "short" },
@@ -50,7 +49,6 @@
         "src/lifecycle-harness.cli.test.ts",
         "src/monitor.cli.test.ts",
         "src/worktree-5.cli.test.ts",
-        "src/git-environment-regression.cli.test.ts",
         "src/review-1.cli.test.ts",
         "src/route.cli.test.ts",
         "src/catalog.cli.test.ts"
