@@ -2,7 +2,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { db, SESSION_LIVE_MS, sessionId, writableDb, writeTransaction } from './db.ts'
 import { EVIDENCE_CLOSED_SQL, chainScoreJoin } from './evidence-query.ts'
-import { pidAlive } from './run-liveness.ts'
+import { pidAlive } from './process-liveness.ts'
 import { worktreePathSpellings } from './resource-ownership.ts'
 import { projectAt, projectByName } from './projects.ts'
 import {

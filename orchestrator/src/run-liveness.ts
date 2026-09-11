@@ -2,6 +2,7 @@
 /**
  * Knows process and chain liveness, stale transition, audit, and root roll-up. Must not know routing, transports, reviews, or CLI adapters.
  */
+import { pidAlive } from './process-liveness.ts'
 import type { Database } from 'bun:sqlite'
 import { db, linkedWorktreeReadOnly, writeTransaction } from './db.ts'
 import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
@@ -25,17 +26,6 @@ import { teardownTerminalRunResources } from './resource-ownership.ts'
  * recycled, and those are the cases where waiting longer is the safer error.
  */
 export const STALE_AFTER_MS = 60 * 60 * 1000
-
-/** Test whether a recorded worker process still exists without touching it. */
-export function pidAlive(pid: number | null): boolean {
-  if (!pid) return false
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
-  }
-}
 
 /**
  * How long a pid-less `(pending)` row may sit before it is abandoned bootstrap.

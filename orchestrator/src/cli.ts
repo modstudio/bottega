@@ -3,7 +3,7 @@ import { DATABASE_RESOLUTION, DB_PATH, db, writableDb, databaseOpenMode, nowIso,
 import { judgeability, weigh, DELIVERY, QUALITY, FIDELITY, type Delivery, type Quality, type Fidelity } from './score.ts'
 import { pendingForSession, UNSCORED_WHERE, chainScoreJoin, EVIDENCE_CLOSED_SQL, voidedSql, activeSql, runTotals } from './evidence-query.ts'
 import { REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_SEVERITY, type ReviewReproduced, type ReviewCoverage, type ReviewLimits, type ReviewOverlap } from './review-vocabulary.ts'
-import { reapStale, pidAlive, STALE_AFTER_MS, resolveRootFromLastTurn } from './run-liveness.ts'
+import { reapStale, STALE_AFTER_MS, resolveRootFromLastTurn } from './run-liveness.ts'; import { pidAlive } from './process-liveness.ts'
 import { recordDuels, recordLosses, recordTies, duelMatrices, pairPartners, unrecordedPairsForSession, parseRunIds } from './duel.ts'
 import { authorizeRunMutation, runMutationActor, auditRunMutation, adoptRunMutation, type RootAuthority } from './run-authority.ts'
 import { liveWorktreeSharers, otherConversationWorktreeSharers, teardownTerminalRunResources, terminalDockerRetentionReasonForRun, type WorktreeSharerRow } from './resource-ownership.ts'

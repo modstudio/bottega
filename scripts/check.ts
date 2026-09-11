@@ -177,7 +177,7 @@ for (const script of [
   'check-failover-boundary.ts', 'check-run-process-boundary.ts',
   'check-task-branch-boundary.ts', 'check-prompt-retarget-boundary.ts',
   'check-run-artifacts-boundary.ts', 'check-close-out-boundary.ts',
-  'check-database-boundary.ts', 'check-review-vocabulary-boundary.ts',
+  'check-database-boundary.ts', 'check-review-vocabulary-boundary.ts', 'check-process-liveness-boundary.ts',
   'check-run-authority-boundary.ts', 'check-evidence-query-boundary.ts',
   'check-resource-ownership-boundary.ts', 'check-run-liveness-boundary.ts',
   'check-score-boundary.ts', 'check-duel-boundary.ts',
