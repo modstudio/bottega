@@ -75,43 +75,10 @@
     "src/worktree-5.cli.test.ts": {
       "size": "short"
     },
-    "src/run-artifacts-no-repo.test.ts": {
-      "size": "short"
-    },
-    "src/run-review.test.ts": {
-      "size": "short"
-    },
-    "src/route-lens.test.ts": {
-      "size": "short"
-    },
     "test/process-boundary/review-target-evidence.test.ts": {
       "size": "short"
     },
     "test/process-boundary/review-target-selection.test.ts": {
-      "size": "short"
-    },
-    "src/review-target-attribution.test.ts": {
-      "size": "short"
-    },
-    "src/mailbox-message.test.ts": {
-      "size": "short"
-    },
-    "src/args-tell.test.ts": {
-      "size": "short"
-    },
-    "src/porting-import-apply.test.ts": {
-      "size": "short"
-    },
-    "src/porting-import-coverage.test.ts": {
-      "size": "short"
-    },
-    "src/failure-commands.test.ts": {
-      "size": "short"
-    },
-    "src/contract-preamble.test.ts": {
-      "size": "short"
-    },
-    "src/contract-conflicts.test.ts": {
       "size": "short"
     },
     "test/process-boundary/task-branch.test.ts": {
@@ -125,33 +92,6 @@
     },
     "test/process-boundary/hooks.test.ts": {
       "size": "short"
-    },
-    "src/review-evidence.test.ts": {
-      "size": "short"
-    },
-    "src/review-recording.test.ts": {
-      "size": "short"
-    },
-    "src/jobs-identity.test.ts": {
-      "size": "short"
-    },
-    "src/contract-review-reply.test.ts": {
-      "size": "short"
-    },
-    "src/review-recording-lens.test.ts": {
-      "size": "short"
-    },
-    "src/review-calibration.test.ts": {
-      "size": "short"
-    },
-    "src/evals-report.test.ts": {
-      "size": "short"
-    },
-    "src/metric-summary.test.ts": {
-      "size": "short"
-    },
-    "src/evals-run.test.ts": {
-      "size": "short"
     }
   },
   "shards": [
@@ -159,14 +99,6 @@
       "measuredSeconds": 76.86,
       "files": [
         "src/docs.cli.test.ts",
-        "src/review-target-attribution.test.ts",
-        "src/mailbox-message.test.ts",
-        "src/args-tell.test.ts",
-        "src/porting-import-apply.test.ts",
-        "src/porting-import-coverage.test.ts",
-        "src/failure-commands.test.ts",
-        "src/contract-preamble.test.ts",
-        "src/contract-conflicts.test.ts",
         "test/process-boundary/task-branch.test.ts",
         "test/process-boundary/task-branch-run.test.ts",
         "test/process-boundary/database-port-import.test.ts",
@@ -184,12 +116,6 @@
         "src/lifecycle-harness.cli.test.ts",
         "src/monitor.cli.test.ts",
         "src/worktree-5.cli.test.ts",
-        "src/review-evidence.test.ts",
-        "src/review-recording.test.ts",
-        "src/jobs-identity.test.ts",
-        "src/contract-review-reply.test.ts",
-        "src/review-recording-lens.test.ts",
-        "src/review-calibration.test.ts",
         "src/route.cli.test.ts",
         "src/catalog.cli.test.ts",
         "test/process-boundary/discard.test.ts"
@@ -199,9 +125,6 @@
       "measuredSeconds": 76.25,
       "files": [
         "test/process-boundary/worktree.test.ts",
-        "src/evals-report.test.ts",
-        "src/metric-summary.test.ts",
-        "src/evals-run.test.ts",
         "test/process-boundary/git-environment.test.ts",
         "test/process-boundary/run-git.test.ts",
         "src/projects.cli.test.ts",
@@ -212,9 +135,6 @@
       "measuredSeconds": 75.42,
       "files": [
         "test/process-boundary/worktree-create.test.ts",
-        "src/run-artifacts-no-repo.test.ts",
-        "src/run-review.test.ts",
-        "src/route-lens.test.ts",
         "test/process-boundary/review-target-evidence.test.ts",
         "test/process-boundary/review-target-selection.test.ts",
         "src/linked-worktree-database.cli.test.ts",

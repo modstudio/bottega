@@ -2,18 +2,20 @@ import { describe,expect,test } from 'bun:test'
 import { mkdtempSync,rmSync,writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AGENTS,db,dir,hermeticGitEnv,reviewReply,runJob,upsertProject } from '../fixture.ts'
+import { AGENTS,db,hermeticGitEnv,reviewReply,runJob,upsertProject } from '../fixture.ts'
+import { stubWorker } from '../stub-worker.ts'
 
 describe('review-lens-inline has no checkout', () => {
 test('explicit review records the trunk merge-base for clean-review evidence', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-explicit-review-evidence-'))
-    const script = join(dir, 'report-explicit-review-evidence.ts')
+    const script = stubWorker()
     const agent = AGENTS.codex!
     const original = {
       bin: agent.bin, argv: agent.argv, stdin: agent.stdin,
       readsOut: agent.readsOut, parseReply: agent.parseReply,
     }
     const oldDepth = process.env.ORCH_DEPTH
+    const oldOutput = process.env.ORCH_STUB_OUTPUT
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
@@ -25,7 +27,7 @@ test('explicit review records the trunk merge-base for clean-review evidence', a
       const reply = reviewReply(0)
       reply.provenance.files_covered = [covered]
       reply.provenance.commands_run = [`git diff main...feature/evidence -- ${covered}`]
-      writeFileSync(script, `console.log(${JSON.stringify(JSON.stringify(reply))})\n`)
+      process.env.ORCH_STUB_OUTPUT = JSON.stringify(reply)
       return reply
     }
     try {
@@ -55,8 +57,8 @@ test('explicit review records the trunk merge-base for clean-review evidence', a
       upsertProject({
         name: 'explicit-review-evidence-fixture', path: repo, settings: { trunk: 'main' },
       })
-      agent.bin = process.execPath
-      agent.argv = () => [script]
+      agent.bin = script
+      agent.argv = () => []
       agent.stdin = false
       agent.readsOut = false
       agent.parseReply = undefined
@@ -126,18 +128,21 @@ test('explicit review records the trunk merge-base for clean-review evidence', a
       agent.parseReply = original.parseReply
       if (oldDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = oldDepth
+      if (oldOutput === undefined) delete process.env.ORCH_STUB_OUTPUT
+      else process.env.ORCH_STUB_OUTPUT = oldOutput
       rmSync(repo, { recursive: true, force: true })
     }
   })
 test('implicit review measures from the constructed trunk merge-base', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-implicit-review-evidence-'))
-    const script = join(dir, 'report-implicit-review-evidence.ts')
+    const script = stubWorker()
     const agent = AGENTS.codex!
     const original = {
       bin: agent.bin, argv: agent.argv, stdin: agent.stdin,
       readsOut: agent.readsOut, parseReply: agent.parseReply,
     }
     const oldDepth = process.env.ORCH_DEPTH
+    const oldOutput = process.env.ORCH_STUB_OUTPUT
     const git = (...args: string[]) => {
       const p = Bun.spawnSync(['git', ...args], {
         cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
@@ -149,7 +154,7 @@ test('implicit review measures from the constructed trunk merge-base', async () 
       const reply = reviewReply(0)
       reply.provenance.files_covered = [covered]
       reply.provenance.commands_run = [`git diff develop...HEAD -- ${covered}`]
-      writeFileSync(script, `console.log(${JSON.stringify(JSON.stringify(reply))})\n`)
+      process.env.ORCH_STUB_OUTPUT = JSON.stringify(reply)
       return reply
     }
     try {
@@ -174,8 +179,8 @@ test('implicit review measures from the constructed trunk merge-base', async () 
       upsertProject({
         name: 'implicit-review-evidence-fixture', path: repo, settings: { trunk: 'develop' },
       })
-      agent.bin = process.execPath
-      agent.argv = () => [script]
+      agent.bin = script
+      agent.argv = () => []
       agent.stdin = false
       agent.readsOut = false
       agent.parseReply = undefined
@@ -222,8 +227,9 @@ test('implicit review measures from the constructed trunk merge-base', async () 
       agent.parseReply = original.parseReply
       if (oldDepth === undefined) delete process.env.ORCH_DEPTH
       else process.env.ORCH_DEPTH = oldDepth
+      if (oldOutput === undefined) delete process.env.ORCH_STUB_OUTPUT
+      else process.env.ORCH_STUB_OUTPUT = oldOutput
       rmSync(repo, { recursive: true, force: true })
     }
   })
 })
-
