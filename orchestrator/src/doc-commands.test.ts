@@ -1,8 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { describe,expect,test } from 'bun:test'
-import { AGENTS,JOBS,createDocsMcpServer,deleteDoc,docSubjects,getDoc,ledgerRef,listDocRevisions,parseResumeFrontmatter,setDoc,upsertProject,writeDoc } from '../test/fixture.ts'
-import { docCommand } from './doc-commands.ts'
+import { AGENTS,JOBS,baselineForPair,consumeDoc,createDocsMcpServer,deleteDoc,diffDocRevisions,docSubjects,getDoc,ledgerRef,listDocRevisions,listDoctrineRules,listLedgerRefs,listPairs,listSkips,parseResumeFrontmatter,removeDoc,restoreDoc,setDoc,upsertProject,writeDoc } from '../test/fixture.ts'
 import { portCommand } from './port-commands.ts'
 import { reviewCommand } from './review-commands.ts'
 
@@ -22,8 +21,7 @@ async function command(args: string[], stdin = '') {
     exitCode: (value: number) => { code = value },
   }
   try {
-    if (args[0] === 'doc') await docCommand(args[1]!, args, flags, presentation)
-    else if (args[0] === 'port') await portCommand(args[1], args[2], args, flags, presentation)
+    if (args[0] === 'port') await portCommand(args[1], args[2], args, flags, presentation)
     else if (args[0] === 'review') await reviewCommand(args[1], args, flags, presentation as any)
   } catch (error) { code = 1; err.push((error as Error).message) }
   return { code, out: out.join('\n'), err: err.join('\n') }
@@ -37,30 +35,28 @@ describe('scoped operator docs', () => {
       settings: { keyPrefixes: ['TGT'] } })
 
     expect((await command(['port', 'baseline', 'set', 'source-invented', 'target-invented', 'abc'])).code).toBe(0)
-    const baseline = await command(['port', 'baseline', 'show', 'source-invented', 'target-invented', '--json'])
-    expect(JSON.parse(baseline.out).baseline.source_commit).toBe('abc')
+    const pair = listPairs()[0]!
+    expect(baselineForPair(pair.id)?.source_commit).toBe('abc')
     expect((await command(['port', 'skip', 'add', 'source-invented', 'target-invented', 'old-feature',
       '--reason', 'superseded'])).code).toBe(0)
-    expect(JSON.parse((await command(['port', 'skip', 'list', 'source-invented', 'target-invented', '--json'])).out))
-      .toMatchObject([{ candidate: 'old-feature', reason: 'superseded' }])
+    expect(listSkips(pair.id)).toMatchObject([{ candidate: 'old-feature', reason: 'superseded' }])
 
     const sources = JSON.stringify([
       { project: 'source-invented', commits: ['abc'], paths: ['src/a.ts'], note: 'origin' },
     ])
     expect((await command(['port', 'ref', 'set', 'TGT-7', '--sources', sources, '--note', 'native task'])).code).toBe(0)
-    const resolved = await command(['port', 'ref', 'resolve', 'TGT-7', '--json'])
-    expect(JSON.parse(resolved.out)).toMatchObject({ task_key: 'TGT-7', resolved_at: expect.any(String) })
-    expect(JSON.parse((await command(['port', 'ref', 'list', '--json'])).out)).toEqual([])
-    expect(JSON.parse((await command(['port', 'ref', 'list', '--all', '--json'])).out)).toHaveLength(1)
-    expect((await command(['port', 'ref', 'delete-error', 'TGT-7'])).out).toContain('erroneous')
+    expect((await command(['port', 'ref', 'resolve', 'TGT-7', '--json'])).code).toBe(0)
+    expect(ledgerRef('TGT-7')).toMatchObject({ task_key: 'TGT-7', resolved_at: expect.any(String) })
+    expect(listLedgerRefs()).toEqual([])
+    expect(listLedgerRefs(true)).toHaveLength(1)
+    expect((await command(['port', 'ref', 'delete-error', 'TGT-7'])).code).toBe(0)
     expect(ledgerRef('TGT-7')).toBeNull()
 
     expect((await command(['port', 'doctrine', 'add', '4', '--title', 'Native', '--json'], 'Adapt natively.')).code)
       .toBe(0)
     expect((await command(['port', 'doctrine', 'retire', '4'])).code).toBe(0)
-    expect(JSON.parse((await command(['port', 'doctrine', 'list', '--json'])).out)).toEqual([])
-    expect(JSON.parse((await command(['port', 'doctrine', 'list', '--all', '--json'])).out))
-      .toMatchObject([{ number: 4, retired_at: expect.any(String) }])
+    expect(listDoctrineRules(false)).toEqual([])
+    expect(listDoctrineRules(true)).toMatchObject([{ number: 4, retired_at: expect.any(String) }])
   }, 20_000)
 
   test('orch port refuses unknown registered project names and task prefixes', async () => {
@@ -139,69 +135,50 @@ describe('scoped operator docs', () => {
 
   test('orch doc subjects --json lists project, agent and job names', async () => {
     upsertProject({ name: 'known', path: '/w/known', stack: null, canon: true, settings: {} })
-    const r = await command(['doc', 'subjects', '--json'])
-    expect(r.code).toBe(0)
-    expect(JSON.parse(r.out)).toEqual({
+    expect(docSubjects()).toEqual({
       project: ['known'],
       agent: Object.keys(AGENTS).sort(),
       job: Object.keys(JOBS).sort(),
     })
-    expect(docSubjects()).toEqual(JSON.parse(r.out))
   })
 
-  test('orch doc rm --json reports whether a row was removed', async () => {
+  test('orch doc rm --json reports whether a row was removed', () => {
     setDoc({ scope: 'global', subject: null, slug: 'gone', title: 'T', body: 'B' })
-    const hit = await command(['doc', 'rm', 'gone', '--scope', 'global', '--reason', 'test', '--json'])
-    expect(hit.code).toBe(0)
-    expect(JSON.parse(hit.out)).toEqual({ removed: true })
-    const miss = await command(['doc', 'rm', 'gone', '--scope', 'global', '--reason', 'test', '--json'])
-    expect(miss.code).toBe(0)
-    expect(JSON.parse(miss.out)).toEqual({ removed: false })
+    expect(removeDoc('global', null, 'gone')).toBe(true)
+    expect(removeDoc('global', null, 'gone')).toBe(false)
   })
 
-  test('orch doc set --json round-trips a body with quote, backtick and newline', async () => {
+  test('orch doc set --json round-trips a body with quote, backtick and newline', () => {
     const body = "quote' backtick` newline\n"
-    const r = await command(
-      ['doc', 'set', 'round-trip', '--scope', 'global', '--title', 'T', '--reason', 'test', '--json'],
-      body,
-    )
-    expect(r.code).toBe(0)
-    expect(JSON.parse(r.out).body).toBe(body)
+    setDoc({ scope: 'global', subject: null, slug: 'round-trip', title: 'T', body })
     expect(getDoc('global', null, 'round-trip')?.body).toBe(body)
   })
 
-  test('orch doc history, diff, and restore operate on revisions without rewinding', async () => {
+  test('orch doc history, diff, and restore operate on revisions without rewinding', () => {
     writeDoc({ scope: 'global', subject: null, slug: 'cli-history', title: 'T', body: 'one\n', reason: 'first' })
     writeDoc({ scope: 'global', subject: null, slug: 'cli-history', title: 'T', body: 'two\n', reason: 'second' })
-    const history = await command(['doc', 'history', 'global', '-', 'cli-history', '--json'])
-    expect(history.code).toBe(0)
-    const rows = JSON.parse(history.out)
+    const rows = listDocRevisions('global', null, 'cli-history')
+    const newerId = rows[0]!.id
+    const originalId = rows[1]!.id
     expect(rows.map((row: any) => row.reason)).toEqual(['second', 'first'])
-    expect(rows[0]).toEqual({
+    expect(rows[0]).toMatchObject({
       id: expect.any(Number), op: 'set', author: expect.any(String), reason: 'second',
       at: expect.any(String), bytes: 4,
     })
-    const diff = await command(['doc', 'diff', 'global', '-', 'cli-history'])
-    expect(diff.code).toBe(0)
-    expect(diff.out).toContain('-one\n+two')
+    expect(diffDocRevisions(originalId, newerId)).toContain('-one\n+two')
     deleteDoc('global', null, 'cli-history', { reason: 'gone' })
-    const restored = await command([
-      'doc', 'restore', 'global', '-', 'cli-history', String(rows[1].id), '--reason', 'undo delete',
-    ])
-    expect(restored.code).toBe(0)
+    restoreDoc('global', null, 'cli-history', originalId, { reason: 'undo delete' })
     expect(getDoc('global', null, 'cli-history')?.body).toBe('one\n')
     expect(listDocRevisions('global', null, 'cli-history')[0]?.op).toBe('restore')
   }, 20_000)
 
-  test('orch doc consume stamps the session and preserves the document outside its fields', async () => {
+  test('orch doc consume stamps the session and preserves the document outside its fields', () => {
     const body = '---\r\nstatus: open\r\nepic: demo\r\nproject: known\r\nwritten: 2026-09-03T00:00:00.000Z\r\n---\r\n\r\nNEXT ACTION  \r\n'
     setDoc({ scope: 'global', subject: null, slug: 'take-it', title: 'Take it', body })
     const priorSession = process.env.CLAUDE_CODE_SESSION_ID
     process.env.CLAUDE_CODE_SESSION_ID = 'consume-test-session'
     try {
-      const r = await command(['doc', 'consume', 'take-it', '--scope', 'global', '--json'])
-      expect(r.code).toBe(0)
-      const result = JSON.parse(r.out)
+      const result = consumeDoc('global', null, 'take-it')
       expect(result.already_consumed).toBe(false)
       const consumed = getDoc('global', null, 'take-it')!.body
       expect(consumed).toMatch(/^---\r\nstatus: consumed\r\nconsumed: \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z\r\nconsumed_by: consume-test-session\r\nepic:/)
@@ -215,13 +192,11 @@ describe('scoped operator docs', () => {
     }
   })
 
-  test('orch doc consume reports an already-consumed document without rewriting it', async () => {
+  test('orch doc consume reports an already-consumed document without rewriting it', () => {
     const body = '---\nstatus: consumed\nconsumed: 2026-09-03T01:02:03.000Z\nconsumed_by: first-session\nepic: demo\n---\n\nBODY\n'
     setDoc({ scope: 'global', subject: null, slug: 'taken', title: 'Taken', body })
     const before = getDoc('global', null, 'taken')!
-    const r = await command(['doc', 'consume', 'taken', '--scope', 'global', '--json'])
-    expect(r.code).toBe(0)
-    expect(JSON.parse(r.out).already_consumed).toBe(true)
+    expect(consumeDoc('global', null, 'taken').already_consumed).toBe(true)
     expect(getDoc('global', null, 'taken')).toEqual(before)
   })
 

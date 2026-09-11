@@ -1,11 +1,11 @@
 /**
- * Run the orchestrator CLI test leg (or a supplied file list) with the
+ * Run the orchestrator process-boundary test leg (or a supplied file list) with the
  * gate-timings reporter, merge bun's junit per-test times, and write
  * orchestrator/runs/gate-timings/<stamp>.json plus a markdown summary.
  *
  * Usage:
  *   bun test/record-gate-timings.ts
- *   bun test/record-gate-timings.ts src/route.cli.test.ts src/route.test.ts
+ *   bun test/record-gate-timings.ts test/process-boundary/cli-answer.test.ts
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
@@ -18,7 +18,7 @@ mkdirSync(outDir, { recursive: true })
 const jsonPath = join(outDir, `${stamp}.json`)
 const junitPath = join(outDir, `${stamp}.junit.xml`)
 const files = Bun.argv.slice(2)
-const testArgs = files.length ? files : ['.cli.test.ts']
+const testArgs = files.length ? files : ['test/process-boundary']
 
 export type SpawnCounts = {
   spawn: number
@@ -195,6 +195,6 @@ if (recorder) {
   const data = mergeTimings(sidecar, xml, { stamp, command: ['bun', 'test', ...testArgs], elapsedMs, exitCode })
   writeFileSync(jsonPath, JSON.stringify(data, null, 2))
   console.log(`\nwrote ${jsonPath}`)
-  console.log(markdownSummary(data, 'CLI leg'))
+  console.log(markdownSummary(data, 'Process-boundary leg'))
   process.exit(exitCode)
 }

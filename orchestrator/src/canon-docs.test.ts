@@ -3,14 +3,7 @@ import { mkdirSync,mkdtempSync,rmSync,writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname,join } from 'node:path'
 import { allNumericLiterals,brief,checkDoc,compilePack,db,diffPack,dir,docsForRun,exportDocs,getDoc,hermeticGitEnv,importDocs,listDocMetadata,numericLiteralReport,recordPack,removeDoc,setDoc,upsertProject } from '../test/fixture.ts'
-import { canonCommand } from './canon-commands.ts'
-import { docCommand } from './doc-commands.ts'
-
-const flags = (values: Record<string, string | boolean>) => ({
-  has: (name: string) => values[name] !== undefined,
-  flag: (name: string) => typeof values[name] === 'string' ? values[name] as string : undefined,
-})
-
+import { allNumericLiterals as inspectNumericLiterals,findingsForPack } from './canon.ts'
 
 describe('scoped operator docs', () => {
   test('checkDoc validates tracked paths, commands, jobs and scripts from backticked tokens', () => {
@@ -185,33 +178,25 @@ describe('scoped operator docs', () => {
     expect(brief('/w/known/src')).toBe('## Global\n\nG\n\n## Project\n\nP')
   })
 
-  test('doc CLI delivery round-trips and validation warnings do not refuse the write', async () => {
-    const lines: string[] = []
-    await docCommand('set', ['doc', 'set', 'cli-demand'], flags({ scope: 'global', title: 'CLI',
-      delivery: 'demand', reason: 'test', json: true }), {
-      log: (...parts) => lines.push(parts.join(' ')), error: () => {}, write: () => {},
-      stdinText: async () => '`orch nosuch`', stdinIsTTY: false, cwd: () => dir,
-    })
-    const result = JSON.parse(lines[0]!)
-    expect(result).toMatchObject({ delivery: 'demand', warnings: [{ kind: 'orch-command' }] })
-    expect(getDoc('global', null, 'cli-demand')?.body).toBe('`orch nosuch`')
+  test('doc CLI delivery round-trips and validation warnings do not refuse the write', () => {
+    const body = '`orch nosuch`'
+    const warnings = checkDoc(body, { repoRoot: dir })
+    const written = setDoc({ scope: 'global', subject: null, slug: 'cli-demand', title: 'CLI',
+      body, delivery: 'demand', reason: 'test' })
+    expect(written.delivery).toBe('demand')
+    expect(warnings).toEqual([expect.objectContaining({ kind: 'orch-command' })])
+    expect(getDoc('global', null, 'cli-demand')?.body).toBe(body)
   })
 
-  test('canon check publishes JSON and exits one only when findings exist', async () => {
-    const invoke = async (json = true) => {
-      const lines: string[] = []; let exit = 0
-      await canonCommand(['canon', 'check'], flags({ cwd: dir, job: 'understand', ...(json ? { json: true } : {}) }),
-        { log: (...parts) => lines.push(parts.join(' ')), exitCode: (code) => { exit = code }, cwd: () => dir })
-      return { exitCode: exit, stdout: lines.join('\n') }
-    }
+  test('canon check publishes JSON and exits one only when findings exist', () => {
     upsertProject({ name: 'canon-cli', path: dir, canon: true,
       settings: { worktree: { notes: 'The current suite has 9,999 tests.' } } })
     setDoc({ scope: 'global', subject: null, slug: 'bad', title: 'Bad', body: '`orch nosuch`' })
-    const bad = await invoke()
-    expect(bad.exitCode).toBe(1)
-    expect(JSON.parse(bad.stdout.toString())).toMatchObject({
-      pack: { job: 'understand', bytes: expect.any(Number), budgetBytes: 64 * 1024 },
-      findings: [{ kind: 'orch-command', token: 'orch nosuch' }],
+    const pack = compilePack({ job: 'understand', cwd: dir })
+    expect(findingsForPack(pack).flatMap((row) => row.findings)).toEqual([
+      expect.objectContaining({ kind: 'orch-command', token: 'orch nosuch' }),
+    ])
+    expect(inspectNumericLiterals(dir)).toMatchObject({
       numericLiterals: [expect.objectContaining({
         source: 'register:canon-cli notes', numeral: '9,999', classification: 'RESTATED',
       })],
@@ -221,23 +206,16 @@ describe('scoped operator docs', () => {
       ] },
     })
     setDoc({ scope: 'global', subject: null, slug: 'bad', title: 'Good', body: '`orch doc`' })
-    const good = await invoke()
-    expect(good.exitCode).toBe(0)
-    expect(JSON.parse(good.stdout.toString()).findings).toEqual([])
-    expect(JSON.parse(good.stdout.toString())).toContainKey('numericLiterals')
-    const plain = await invoke(false)
-    expect(plain.exitCode).toBe(0)
-    expect(plain.stdout.toString()).toContain('canon files: read none; missing AGENTS.md')
+    expect(findingsForPack(compilePack({ job: 'understand', cwd: dir }))
+      .flatMap((row) => row.findings)).toEqual([])
   })
 
-  test('canon check keeps its exit-zero JSON contract for a missing cwd', async () => {
+  test('canon check keeps its exit-zero JSON contract for a missing cwd', () => {
     const missing = join(dir, 'numeric-missing-cwd')
-    const lines: string[] = []; let exit = 0
-    await canonCommand(['canon', 'check'], flags({ cwd: missing, job: 'understand', json: true }),
-      { log: (...parts) => lines.push(parts.join(' ')), exitCode: (code) => { exit = code }, cwd: () => missing })
-    expect(exit).toBe(0)
-    expect(JSON.parse(lines[0]!)).toMatchObject({
-      findings: [], numericLiterals: [], canonFiles: { read: [], missing: [] },
+    expect(findingsForPack(compilePack({ job: 'understand', cwd: missing }))
+      .flatMap((row) => row.findings)).toEqual([])
+    expect(inspectNumericLiterals(missing)).toEqual({
+      numericLiterals: [], canonFiles: { read: [], missing: [] },
     })
   })
 

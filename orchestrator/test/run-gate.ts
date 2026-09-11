@@ -31,12 +31,9 @@ const timingDir = new URL('../runs/gate-timings/', import.meta.url).pathname
 const timingPath = `${timingDir}${timingStamp}.json`
 mkdirSync(timingDir, { recursive: true })
 const invocationTimings = new Map<string, GateTimings>()
-const cliTests = readdirSync(new URL('../src', import.meta.url))
-  .filter((file) => file.endsWith('.cli.test.ts'))
-  .map((file) => `src/${file}`)
 const declaredBoundaryTests = configured.filter((file) =>
   file.startsWith('test/process-boundary/') && existsSync(new URL(`../${file}`, import.meta.url)))
-const present = [...cliTests, ...declaredBoundaryTests].sort()
+const present = [...declaredBoundaryTests].sort()
 
 const declared = Object.keys(map.files).sort()
 const duplicates = configured.filter((file, index) => configured.indexOf(file) !== index)
@@ -47,7 +44,7 @@ const extraDeclared = declared.filter((file) => !present.includes(file))
 const exclusiveViolations = exclusiveShareViolations(map)
 if (duplicates.length || missing.length || stale.length || undeclared.length || extraDeclared.length
   || exclusiveViolations.length) {
-  console.error('CLI shard table does not cover each CLI test file exactly once')
+  console.error('process-boundary shard table does not cover each boundary test file exactly once')
   if (duplicates.length) console.error(`duplicates: ${[...new Set(duplicates)].join(', ')}`)
   if (missing.length) console.error(`missing: ${missing.join(', ')}`)
   if (stale.length) console.error(`not found: ${stale.join(', ')}`)
@@ -178,13 +175,12 @@ await withGateSlot(async () => {
   const gateStarted = Date.now()
   const store = await flakeStore()
   const unit = await spawnTest('orchestrator unit', [
-    'bun', 'test', '--path-ignore-patterns', '**/*.cli.test.ts',
-    '--path-ignore-patterns', 'runs/**', '--path-ignore-patterns', '**/runs/**',
+    'bun', 'test', '--path-ignore-patterns', 'runs/**', '--path-ignore-patterns', '**/runs/**',
     ...declaredBoundaryTests.flatMap((file) => ['--path-ignore-patterns', file]),
   ], [], process.env, 'unit')
   const shards = balancedShards(readCommittedTimingSummary())
-  const cli = await Promise.all(shards.map(async (files, index) => {
-    const name = `orchestrator CLI shard ${index + 1}/${map.shards.length}`
+  const boundary = await Promise.all(shards.map(async (files, index) => {
+    const name = `orchestrator process-boundary shard ${index + 1}/${map.shards.length}`
     const timeout = shardTimeoutMs(map.files, files)
     const size = shardSize(map.files, files)
     const env = {
@@ -212,7 +208,7 @@ await withGateSlot(async () => {
     return result
   }))
 
-  const results: Result[] = [unit, ...cli]
+  const results: Result[] = [unit, ...boundary]
   for (const result of results) {
     if (result.exitCode === 0) continue
     console.error(`${result.name} failed with exit ${result.exitCode}`)
