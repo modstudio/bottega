@@ -65,11 +65,10 @@ let agreementModule!: typeof import('./agreement.ts')
 
 let JOBS!: typeof import('./jobs.ts').JOBS
 let job!: typeof import('./jobs.ts').job
-let jobBoundInstructionForContract!: typeof import('./jobs.ts').jobBoundInstructionForContract
 let jobTimeoutHelp!: typeof import('./jobs.ts').jobTimeoutHelp
 async function loadJobs() {
   jobsModule ??= await import('./jobs.ts')
-  ;({ JOBS, job, jobBoundInstructionForContract, jobTimeoutHelp } = jobsModule)
+  ;({ JOBS, job, jobTimeoutHelp } = jobsModule)
 }
 let AGENTS!: typeof import('./agents.ts').AGENTS
 let available!: typeof import('./agents.ts').available
@@ -112,12 +111,10 @@ async function loadTransport() {
 let resolveBase!: typeof import('./worktree.ts').resolveBase
 let checkoutHasUncommittedWork!: typeof import('./worktree.ts').checkoutHasUncommittedWork; let callerDrift!: typeof import('./worktree.ts').callerDrift
 async function loadWorktree() { worktreeModule ??= await import('./worktree.ts'); ({ resolveBase, checkoutHasUncommittedWork, callerDrift } = worktreeModule) }
-let WORKER_PREAMBLE!: typeof import('./contract.ts').WORKER_PREAMBLE
-let READONLY_PREAMBLE!: typeof import('./contract.ts').READONLY_PREAMBLE
-let NO_REPO_PREAMBLE!: typeof import('./contract.ts').NO_REPO_PREAMBLE
-let REVIEW_SEVERITY_INSTRUCTION!: typeof import('./contract.ts').REVIEW_SEVERITY_INSTRUCTION
 let contractConflicts!: typeof import('./contract.ts').contractConflicts
-async function loadContract() { contractModule ??= await import('./contract.ts'); ({ WORKER_PREAMBLE, READONLY_PREAMBLE, NO_REPO_PREAMBLE, REVIEW_SEVERITY_INSTRUCTION, contractConflicts } = contractModule) }
+async function loadContract() { contractModule ??= await import('./contract.ts'); ({ contractConflicts } = contractModule) }
+let contractText!: typeof import('./contract-text.ts').contractText
+async function loadContractText() { ({ contractText } = await import('./contract-text.ts')) }
 let grokTrustHeadings!: typeof import('./grok-trust.ts').grokTrustHeadings
 let grokTrustPathFromHeading!: typeof import('./grok-trust.ts').grokTrustPathFromHeading
 async function loadGrokTrust() { grokTrustModule ??= await import('./grok-trust.ts'); ({ grokTrustHeadings, grokTrustPathFromHeading } = grokTrustModule) }
@@ -930,17 +927,10 @@ switch (cmd) {
     break
   }
   case 'contract': {
-    await Promise.all([loadJobs(), loadContract()])
+    await loadContractText()
     const jobName = argv[1]
     if (!jobName) throw new Error('orch contract <job>')
-    const selected = job(jobName)
-    const preamble = selected.needs.writesRepo
-      ? WORKER_PREAMBLE
-      : selected.needs.readsRepo ? READONLY_PREAMBLE : NO_REPO_PREAMBLE
-    process.stdout.write(
-      (selected.findings ? `${REVIEW_SEVERITY_INSTRUCTION}\n\n` : '') +
-      preamble + '\n\n' + jobBoundInstructionForContract(selected) + '\n',
-    )
+    process.stdout.write(contractText(jobName))
     break
   }
 
