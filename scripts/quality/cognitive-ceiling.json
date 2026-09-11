@@ -204,12 +204,6 @@
     "score": 24
   },
   {
-    "file": "orchestrator/src/cli.ts",
-    "function": "map callback#25",
-    "line": 2670,
-    "score": 16
-  },
-  {
     "file": "orchestrator/src/close-out.ts",
     "function": "attemptCloseOutRun",
     "line": 27,
@@ -288,12 +282,6 @@
     "score": 111
   },
   {
-    "file": "orchestrator/src/doctor.ts",
-    "function": "doctorCommand",
-    "line": 27,
-    "score": 122
-  },
-  {
     "file": "orchestrator/src/docker-resources.ts",
     "function": "teardownRunResources",
     "line": 132,
@@ -310,6 +298,12 @@
     "function": "importDocs",
     "line": 574,
     "score": 30
+  },
+  {
+    "file": "orchestrator/src/doctor.ts",
+    "function": "doctorCommand",
+    "line": 27,
+    "score": 122
   },
   {
     "file": "orchestrator/src/evals.ts",
@@ -480,6 +474,12 @@
     "score": 32
   },
   {
+    "file": "orchestrator/src/port-commands.ts",
+    "function": "portCommand",
+    "line": 17,
+    "score": 137
+  },
+  {
     "file": "orchestrator/src/porting-import.ts",
     "function": "parseState",
     "line": 233,
@@ -496,12 +496,6 @@
     "function": "writeTransaction callback",
     "line": 686,
     "score": 18
-  },
-  {
-    "file": "orchestrator/src/port-commands.ts",
-    "function": "portCommand",
-    "line": 17,
-    "score": 137
   },
   {
     "file": "orchestrator/src/project-commands.ts",
@@ -558,6 +552,12 @@
     "score": 19
   },
   {
+    "file": "orchestrator/src/review-commands.ts",
+    "function": "reviewCommand",
+    "line": 22,
+    "score": 177
+  },
+  {
     "file": "orchestrator/src/review-tier.ts",
     "function": "classifyReviewTier",
     "line": 42,
@@ -580,12 +580,6 @@
     "function": "cleanReviewEvidence",
     "line": 539,
     "score": 21
-  },
-  {
-    "file": "orchestrator/src/review-commands.ts",
-    "function": "reviewCommand",
-    "line": 22,
-    "score": 177
   },
   {
     "file": "orchestrator/src/review.ts",
@@ -642,24 +636,6 @@
     "score": 20
   },
   {
-    "file": "orchestrator/src/run-diff.ts",
-    "function": "runDiffCommand",
-    "line": 19,
-    "score": 45
-  },
-  {
-    "file": "orchestrator/src/run-inbox.ts",
-    "function": "runInboxCommand",
-    "line": 15,
-    "score": 85
-  },
-  {
-    "file": "orchestrator/src/run-listing.ts",
-    "function": "runListingCommand",
-    "line": 17,
-    "score": 46
-  },
-  {
     "file": "orchestrator/src/route.ts",
     "function": "currentPolicySelection",
     "line": 803,
@@ -700,6 +676,24 @@
     "function": "continueRun",
     "line": 137,
     "score": 24
+  },
+  {
+    "file": "orchestrator/src/run-diff.ts",
+    "function": "runDiffCommand",
+    "line": 19,
+    "score": 45
+  },
+  {
+    "file": "orchestrator/src/run-inbox.ts",
+    "function": "runInboxCommand",
+    "line": 15,
+    "score": 85
+  },
+  {
+    "file": "orchestrator/src/run-listing.ts",
+    "function": "runListingCommand",
+    "line": 17,
+    "score": 46
   },
   {
     "file": "orchestrator/src/run-liveness.ts",
@@ -875,5 +869,47 @@
     "function": "fetch#2",
     "line": 275,
     "score": 16
+  },
+  {
+    "file": "orchestrator/src/canon-commands.ts",
+    "function": "canonCommand",
+    "line": 9,
+    "score": 67
+  },
+  {
+    "file": "orchestrator/src/cli.ts",
+    "function": "map callback#8",
+    "line": 1937,
+    "score": 16
+  },
+  {
+    "file": "orchestrator/src/dispatch-commands.ts",
+    "function": "dispatchCommand",
+    "line": 44,
+    "score": 44
+  },
+  {
+    "file": "orchestrator/src/health-commands.ts",
+    "function": "healthCommand",
+    "line": 88,
+    "score": 21
+  },
+  {
+    "file": "orchestrator/src/routing-commands.ts",
+    "function": "guideCommand",
+    "line": 151,
+    "score": 58
+  },
+  {
+    "file": "orchestrator/src/routing-commands.ts",
+    "function": "statsCommand",
+    "line": 238,
+    "score": 25
+  },
+  {
+    "file": "orchestrator/src/routing-commands.ts",
+    "function": "pickCommand",
+    "line": 298,
+    "score": 25
   }
 ]

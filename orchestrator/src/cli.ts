@@ -1,9 +1,9 @@
-import { db, writableDb, sessionId, recordSessionSeen, writeTransaction } from './db.ts'; import { registerStandardHooks } from './store-hooks.ts'; registerStandardHooks()
+import { db, writableDb, sessionId, recordSessionSeen } from './db.ts'; import { registerStandardHooks } from './store-hooks.ts'; registerStandardHooks()
 import { pendingForSession } from './evidence-query.ts'
 import { REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_SEVERITY } from './review-vocabulary.ts'
 import { reapStale } from './run-liveness.ts'; import { pidAlive } from './process-liveness.ts'
-import { duelMatrices, unrecordedPairsForSession } from './duel.ts'
-import { authorizeRunMutation, runMutationActor, auditRunMutation } from './run-authority.ts'
+import { unrecordedPairsForSession } from './duel.ts'
+import { authorizeRunMutation } from './run-authority.ts'
 import { detach as dispatchDetached } from './run-dispatch.ts'
 import {
   continueRun as continueControlledRun, follow as followRun,
@@ -24,11 +24,15 @@ import { reviewCommand } from './review-commands.ts'
 import { runListingCommand } from './run-listing.ts'
 import { runInboxCommand } from './run-inbox.ts'
 import { runDiffCommand } from './run-diff.ts'
+import { canonCommand } from './canon-commands.ts'
+import { dispatchCommand } from './dispatch-commands.ts'
+import { reclassifyFailuresCommand } from './failure-commands.ts'
+import { blockersCommand, healthCommand } from './health-commands.ts'
+import { guideCommand, pickCommand, routingBacktestCommand, statsCommand } from './routing-commands.ts'
 import { readFileSync, existsSync, writeFileSync, mkdirSync, realpathSync, statSync, lstatSync, unlinkSync, openSync, fstatSync, closeSync, constants } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { projectAt, projectByName, projects } from './projects.ts'
-import { classify, NOT_EVIDENCE } from './failure.ts'
+import { NOT_EVIDENCE } from './failure.ts'
 import { collectResult, collectWait, resolveFailover } from './collect.ts'
 import {
   CONTINUE_WORKING_FORMS, TELL_WORKING_FORMS,
@@ -46,33 +50,26 @@ import {
 
 type DetachSpec = import('./failover.ts').DetachSpec
 type McpRequest = import('./mcp-preflight.ts').McpRequest
-type RoutingBacktest = import('./routing-backtest.ts').RoutingBacktest
 
 let jobsModule: typeof import('./jobs.ts')
 let agentsModule: typeof import('./agents.ts')
 let routeModule: typeof import('./route.ts')
-let guideModule: typeof import('./guide.ts')
 let runArtifactsModule: typeof import('./run-artifacts.ts'); let closeOutModule: typeof import('./close-out.ts')
-let dispatchPreflightModule: typeof import('./dispatch-preflight.ts'); let reviewTargetModule: typeof import('./review-target.ts')
-let preflight!: typeof import('./dispatch-preflight.ts').preflight; let implicitReviewWarning!: typeof import('./review-target.ts').implicitReviewWarning
+let reviewTargetModule: typeof import('./review-target.ts')
+let implicitReviewWarning!: typeof import('./review-target.ts').implicitReviewWarning
 let worktreeModule!: typeof import('./worktree.ts')
 let contractModule!: typeof import('./contract.ts')
 let grokTrustModule!: typeof import('./grok-trust.ts')
 let workflowsModule!: typeof import('./workflows.ts')
 let agreementModule!: typeof import('./agreement.ts')
-let routingBacktestModule!: typeof import('./routing-backtest.ts')
 
 let JOBS!: typeof import('./jobs.ts').JOBS
 let job!: typeof import('./jobs.ts').job
-let isReaderJob!: typeof import('./jobs.ts').isReaderJob
-let reclaimsTreeByDefault!: typeof import('./jobs.ts').reclaimsTreeByDefault
-let resolveJobTimeoutMs!: typeof import('./jobs.ts').resolveJobTimeoutMs
 let jobBoundInstructionForContract!: typeof import('./jobs.ts').jobBoundInstructionForContract
 let jobTimeoutHelp!: typeof import('./jobs.ts').jobTimeoutHelp
 async function loadJobs() {
   jobsModule ??= await import('./jobs.ts')
-  ;({ JOBS, job, isReaderJob, reclaimsTreeByDefault, resolveJobTimeoutMs,
-      jobBoundInstructionForContract, jobTimeoutHelp } = jobsModule)
+  ;({ JOBS, job, jobBoundInstructionForContract, jobTimeoutHelp } = jobsModule)
 }
 let AGENTS!: typeof import('./agents.ts').AGENTS
 let available!: typeof import('./agents.ts').available
@@ -94,17 +91,12 @@ async function loadAgents() {
 }
 let candidates!: typeof import('./route.ts').candidates
 let pick!: typeof import('./route.ts').pick
-let scoreboard!: typeof import('./route.ts').scoreboard
-let MIN_SAMPLE!: typeof import('./route.ts').MIN_SAMPLE
-let promptSizeBucketLabel!: typeof import('./route.ts').promptSizeBucketLabel
-async function loadRoute() { routeModule ??= await import('./route.ts'); ({ candidates, pick, scoreboard, MIN_SAMPLE, promptSizeBucketLabel } = routeModule) }
-let guide!: typeof import('./guide.ts').guide
-async function loadGuide() { guideModule ??= await import('./guide.ts'); ({ guide } = guideModule) }
+async function loadRoute() { routeModule ??= await import('./route.ts'); ({ candidates, pick } = routeModule) }
 let RUNS_DIR!: typeof import('./run-artifacts.ts').RUNS_DIR
 let terminateRunProcesses!: typeof import('./run-process.ts').terminateRunProcesses
 let closeOutRun!: typeof import('./close-out.ts').closeOutRun
 async function loadRun() { runArtifactsModule ??= await import('./run-artifacts.ts'); closeOutModule ??= await import('./close-out.ts')
-  dispatchPreflightModule ??= await import('./dispatch-preflight.ts'); reviewTargetModule ??= await import('./review-target.ts'); ({ preflight } = dispatchPreflightModule); ({ implicitReviewWarning } = reviewTargetModule)
+  reviewTargetModule ??= await import('./review-target.ts'); ({ implicitReviewWarning } = reviewTargetModule)
   ;({ RUNS_DIR } = runArtifactsModule); ({ closeOutRun } = closeOutModule)
   ;({ terminateRunProcesses } = await import('./run-process.ts'))
 }
@@ -141,11 +133,7 @@ let setWorkflow!: typeof import('./workflows.ts').setWorkflow
 let showWorkflow!: typeof import('./workflows.ts').showWorkflow
 let workflowVersions!: typeof import('./workflows.ts').workflowVersions
 async function loadWorkflows() { workflowsModule ??= await import('./workflows.ts'); ({ composeWorkflow, exportWorkflows, forkWorkflow, getWorkflowStep, importWorkflows, listWorkflows, promoteWorkflow, retireWorkflow, setWorkflow, showWorkflow, workflowVersions } = workflowsModule) }
-let bradleyTerry!: typeof import('./agreement.ts').bradleyTerry
-async function loadAgreement() { agreementModule ??= await import('./agreement.ts'); ({ bradleyTerry } = agreementModule) }
-let routingBacktest!: typeof import('./routing-backtest.ts').routingBacktest
-let routingBacktestEnsemble!: typeof import('./routing-backtest.ts').routingBacktestEnsemble
-async function loadRoutingBacktest() { routingBacktestModule ??= await import('./routing-backtest.ts'); ({ routingBacktest, routingBacktestEnsemble } = routingBacktestModule) }
+async function loadAgreement() { agreementModule ??= await import('./agreement.ts') }
 
 /**
  * How long `orch do` watches a detached run before handing it back.
@@ -802,8 +790,6 @@ function reviewUsage(): never {
   process.exit(0)
 }
 
-const projectNames = () => projects().map((p) => p.name).join(', ') || '(none)'
-
 /**
  * A detached command prints its id before its child has necessarily routed.
  * Fan-out launches immediately feed that id into the next command, so briefly
@@ -1053,78 +1039,8 @@ switch (cmd) {
   }
   case 'canon': {
     await loadJobs()
-    const { allInjectChecks, allNumericLiterals, compilePack, diffPack, findingsForPack } = await import('./canon.ts')
-    const sub = argv[1]
-    const cwd = flag('cwd') ?? process.cwd()
-    const jobName = flag('job') ?? 'understand'
-    if (sub === 'eval') {
-      const { runCanonEvals } = await import('./evals.ts')
-      const rows = await runCanonEvals({
-        slug: flag('slug'), agent: flag('agent'), force: has('force'),
-      })
-      if (has('json')) console.log(JSON.stringify(rows))
-      else {
-        for (const row of rows) {
-          const verdict = row.skipped ? 'skip' : row.pass ? 'pass' : 'fail'
-          console.log(`${row.slug}  ${row.agent}  ${verdict}  ${row.why}  ${row.canonSha}`)
-        }
-      }
-      if (rows.some((row) => !row.skipped && row.pass === false)) process.exitCode = 1
-      break
-    }
-    if (sub === 'evals') {
-      const { canonEvalsReport } = await import('./evals.ts')
-      const report = canonEvalsReport()
-      if (has('json')) console.log(JSON.stringify(report))
-      else {
-        for (const row of report.latest) {
-          const good = report.last_known_good.find((item) => item.slug === row.slug && item.agent === row.agent)
-          console.log(
-            `${row.slug}  ${row.agent}  ${row.pass ? 'pass' : 'fail'}  ${row.why}  ${row.canon_sha}` +
-            (good ? `  last-pass ${good.canon_sha}` : '  last-pass none'),
-          )
-        }
-      }
-      break
-    }
-    if (sub === 'check') {
-      const pack = compilePack({ job: jobName, cwd })
-      const rows = has('all') ? allInjectChecks() : findingsForPack(pack)
-      const findings = rows.flatMap((row) => row.findings.map((finding) => ({ doc: row.doc, ...finding })))
-      const numericReport = allNumericLiterals(cwd)
-      const numericLiterals = numericReport.numericLiterals.filter((hit) => hit.classification === 'RESTATED')
-      const result = { pack: { job: pack.job, project: pack.project, bytes: pack.bytes,
-        budgetBytes: pack.budgetBytes, sha256: pack.sha256 }, docs: rows, findings,
-        numericLiterals, canonFiles: numericReport.canonFiles }
-      if (has('json')) console.log(JSON.stringify(result))
-      else {
-        console.log(`canon: ${pack.bytes}/${pack.budgetBytes} bytes`)
-        for (const row of rows.filter((row) => row.findings.length)) {
-          console.log(`${row.doc.scope}/${row.doc.subject ?? '_'}/${row.doc.slug} revision ${row.doc.revisionId}`)
-          for (const finding of row.findings) console.log(`  ${finding.kind}: ${finding.message}`)
-        }
-        console.log(`canon files: read ${numericReport.canonFiles.read.join(', ') || 'none'}` +
-          `; missing ${numericReport.canonFiles.missing.join(', ') || 'none'}`)
-        console.log('numeric literals')
-        for (const hit of numericLiterals) {
-          console.log(`  ${hit.source}  ${hit.numeral}  ${hit.sentence}`)
-        }
-      }
-      if (findings.length) process.exitCode = 1
-      break
-    }
-    if (sub === 'diff') {
-      const result = diffPack({ job: jobName, cwd })
-      if (has('json')) console.log(JSON.stringify(result))
-      else {
-        console.log(`canon ${result.job}/${result.project ?? '_'}: ${result.bytesDelta >= 0 ? '+' : ''}${result.bytesDelta} bytes`)
-        for (const doc of result.added) console.log(`  added ${doc.scope}/${doc.subject ?? '_'}/${doc.slug} revision ${doc.revisionId}`)
-        for (const doc of result.removed) console.log(`  removed ${doc.scope}/${doc.subject ?? '_'}/${doc.slug} revision ${doc.revisionId}`)
-        for (const doc of result.changed) console.log(`  changed ${doc.slug} revision ${doc.fromRevision} -> ${doc.toRevision}`)
-      }
-      break
-    }
-    throw new Error('unknown: orch canon. Try check | diff | eval | evals')
+    await canonCommand(argv, { has, flag }, { log: console.log, exitCode: (code) => { process.exitCode = code }, cwd: process.cwd })
+    break
   }
 
   case 'port': {
@@ -1250,166 +1166,32 @@ switch (cmd) {
   case 'do': {
     await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadRun(), loadWorktree(), loadContract(), loadTransport()])
     await ensureLocalHealth()
-    const jobName = argv[1]
-    if (!jobName) usage()
-    if (jobName === '--help' || jobName === '-h') doUsage()
-    const porcelain = has('porcelain')
-    if (porcelain && has('follow')) {
-      throw new Error('--porcelain cannot be combined with --follow')
-    }
-    const requested = job(jobName)
-    const selectedRow = flag('agent') ? AGENTS[flag('agent')!] : undefined
-    const transportFlag = flag('transport')
-    const transportExplicit = transportFlag !== undefined || Boolean(process.env.ORCH_TRANSPORT)
-    const transport = !transportExplicit && selectedRow
-      ? selectedRow.defaultTransport
-      : resolveTransportName(transportFlag)
-    if (transport === 'acp') {
-      assertAcpAllowed(jobName, flag('agent'))
-      assertAcpReady(flag('agent') ?? 'codex')
-    }
-    const agent = selectAgentForTransport(transport, flag('agent'))
-    const requestedCwd = flag('cwd')
-    if (requestedCwd && !existsSync(requestedCwd)) throw new Error(`--cwd does not exist: ${requestedCwd}`)
-    const callerCwd = requestedCwd ? realpathSync(requestedCwd) : process.cwd()
-    if (requestedCwd && !projectAt(callerCwd)) throw new Error(`--cwd is not inside a registered project: ${callerCwd}`)
-    const explicitRepo = flag('repo')
-    if (explicitRepo && !projectByName(explicitRepo)) {
-      throw new Error(`unknown repo "${explicitRepo}". Registered: ${projectNames()}`)
-    }
-    // Project-required inputs are knowable before the prompt is read. Checking
-    // them afterwards made a missing key pay for stdin and run setup first.
-    const base = flag('base')
-    const reviewRef = flag('review')
-    if (base) {
-      if (jobName !== 'implement' && jobName !== 'fix') {
-        throw new Error('--base is only valid for the implement and fix jobs')
-      }
-      resolveBase(callerCwd, base)
-    }
-    const seed = preflight(
-      jobName, callerCwd, flag('seed'), flag('key'), base, false, false, flag('lens'),
-      reviewRef, has('carry'), explicitRepo,
+    await dispatchCommand(
+      argv,
+      { has, flag, values: flags },
+      {
+        usage, doUsage, error: console.error, printRunId, readPrompt,
+        validateSchema: readStrictCodexSchema, warnCallerDrift, contractConflicts,
+        warnImplementContractConflicts, checkoutHasUncommittedWork, resolveBase,
+        implicitReviewWarning,
+        // Dispatch composes the routing pick and transport eligibility at the CLI adapter.
+        resolveDispatchOptions: async (jobName) => {
+          const selectedRow = flag('agent') ? AGENTS[flag('agent')!] : undefined; const transportFlag = flag('transport')
+          const transportExplicit = transportFlag !== undefined || Boolean(process.env.ORCH_TRANSPORT)
+          const transport = !transportExplicit && selectedRow
+            ? selectedRow.defaultTransport
+            : resolveTransportName(transportFlag)
+          if (transport === 'acp') {
+            assertAcpAllowed(jobName, flag('agent'))
+            assertAcpReady(flag('agent') ?? 'codex')
+          }
+          const agent = selectAgentForTransport(transport, flag('agent'))
+          const { avoid, distinctModels } = await routeConstraints(flag('agent'))
+          return { agent, transport, transportExplicit, avoid, distinctModels, mcp: requestedMcp() }
+        },
+        detach, follow,
+      },
     )
-    if (requested.needs.readsRepo) warnCallerDrift(callerCwd, base)
-    if (requested.findings && requested.needs.readsRepo && !reviewRef) {
-      console.error(`! ${implicitReviewWarning(callerCwd)}`)
-    }
-    const schema = flag('schema')
-    // An unpinned run may route to Codex, so its schema has to be suitable
-    // before detach() claims a row. An explicitly pinned non-Codex agent keeps
-    // its own schema dialect and reads the caller's original file unchanged.
-    if (schema && (!flag('agent') || flag('agent') === 'codex')) readStrictCodexSchema(schema)
-    const deliverables = flags('deliverable')
-    if (deliverables.length && !isReaderJob(jobName)) {
-      throw new Error('--deliverable is only valid for diagnose, understand, and file-question')
-    }
-    const timeoutRaw = flag('timeout')
-    const timeoutMinutes = timeoutRaw === undefined ? undefined : Number(timeoutRaw)
-    if (timeoutMinutes !== undefined) resolveJobTimeoutMs(requested, 1, timeoutMinutes)
-    if (has('keep-tree') && !reclaimsTreeByDefault(jobName)) {
-      throw new Error('--keep-tree is only valid for lens and reader jobs')
-    }
-    const keepTree = has('keep-tree')
-    const { avoid, distinctModels } = await routeConstraints(flag('agent'))
-    if (!porcelain && !explicitRepo && !projectAt(callerCwd)) {
-      console.error(
-        `! this run will not be attributed to any project; use --repo <name> ` +
-        `(registered: ${projectNames()})`,
-      )
-    }
-    if (!porcelain && !has('carry') && requested.needs.readsRepo &&
-        checkoutHasUncommittedWork(callerCwd)) {
-      console.error(
-        '! this checkout has uncommitted work that will not be carried into the worker.\n' +
-        '  pass --carry to send it with the run.',
-      )
-    }
-    const prompt = await readPrompt()
-    if (!prompt.trim()) throw new Error('empty prompt')
-    const conflicts = jobName === 'implement' ? contractConflicts(prompt) : []
-
-    // A fan-out cannot be run synchronously, and that is not a caller's problem
-    // to solve.
-    //
-    // Seven review lenses is the NORMAL shape of a review here, and each takes
-    // about six minutes. Run in the foreground they outlive an agent harness's
-    // command timeout and the whole process group is killed; detached by the
-    // caller they die with the wrapper shell, because a spawned agent has no
-    // way to outlive the shell that started it. Both were tried, in a real
-    // review, and both lost the work.
-    //
-    /**
-     * EVERY JOB DETACHES BY DEFAULT.
-     *
-     * In the seven days through 2026-09-02, 59 foreground runs died as
-     * "interrupted, exit 143, empty output" when the caller's shell was killed:
-     * 24 review-lens, 24 understand, 6 file-question, and 5 other runs. Only 2
-     * were writing jobs, which already detached by default. The same deaths
-     * left another 35 runs stale. Claude's harness bounds foreground commands
-     * at 120 or 600 seconds, while review-lens allows 30 minutes and cannot fit
-     * inside that shell; one affected session had to relaunch it with its own
-     * backgrounding.
-     *
-     * `--follow` keeps the existing foreground experience for someone who
-     * wants to watch: the run still detaches underneath, and this process waits.
-     */
-    const detachByDefault = !has('follow')
-    if (has('detach') || detachByDefault) {
-      const id = await detach(jobName, prompt, {
-        agent, schema, label: flag('label'), lens: flag('lens'),
-        mcp: requestedMcp(), model: flag('model'), probe: has('probe'), seed, key: flag('key'),
-        repo: explicitRepo, base, avoid, distinctModels,
-        ...(transportExplicit ? { transport } : {}),
-        noFailover: has('no-failover'), noWaitCapacity: has('no-wait-capacity'),
-        carry: has('carry'), review: reviewRef, cwd: callerCwd,
-        deliverables, timeoutMinutes, keepTree,
-      })
-      if (!porcelain) warnImplementContractConflicts(conflicts, id)
-      printRunId(id)
-      if (!has('quiet') && !porcelain) {
-        console.error(`detached as run ${id}: orch wait ${id}, then orch result ${id}`)
-      }
-      if (detachByDefault && !has('detach') && !has('quiet') && !porcelain) {
-        console.error(
-          `\n— ${jobName} detached by default; collect it when it finishes.` +
-          `\n  orch wait ${id}      then:  orch result ${id}` +
-          `\n  orch inbox          if it stops to ask` +
-          `\n  --follow            to watch it here instead`,
-        )
-      }
-      break
-    }
-
-    /**
-     * The foreground path runs DETACHED too, and then watches the row.
-     *
-     * It used to spawn the agent as a child of this process, which meant the
-     * work died with the caller. That is not hypothetical: an `orch do` left in
-     * the foreground outlives an agent harness's command timeout, the harness
-     * kills the process group, run()'s signal handler forwards SIGTERM to the
-     * agent, and a run that was minutes from an answer is destroyed having
-     * written nothing. 26 runs in this database - 8% of every run ever made -
-     * died exactly that way, and the same kill was reproduced twice while this
-     * was being written.
-     *
-     * Detaching first means the worker owns the row and finishes regardless. A
-     * killed caller now loses only its own view of the output: the run
-     * completes, records its verdict, and `orch run <id>` still has the answer.
-     * The wait is bounded by the agent's own timeout plus a margin, so a
-     * genuinely stuck run still returns control rather than hanging for ever.
-     */
-    const id = await detach(jobName, prompt, {
-      agent, schema, label: flag('label'), lens: flag('lens'),
-      mcp: requestedMcp(), model: flag('model'), probe: has('probe'), seed, key: flag('key'),
-      repo: explicitRepo, base, avoid, distinctModels,
-      ...(transportExplicit ? { transport } : {}),
-      noFailover: has('no-failover'), carry: has('carry'), review: reviewRef, cwd: callerCwd,
-      deliverables, timeoutMinutes, keepTree,
-    })
-    warnImplementContractConflicts(conflicts, id)
-
-    await follow(id, has('quiet'))
     break
   }
 
@@ -1641,78 +1423,8 @@ switch (cmd) {
     break
   }
 
-  /**
-   * What is stopping agents doing their work, counted.
-   *
-   * The counterpart to `orch inbox`: that raises decisions only the architect
-   * can make, this raises conditions only the ENVIRONMENT can fix. Both were
-   * arriving already and neither was visible — a blocker turns up alongside a
-   * run that otherwise succeeded, so nothing about the run looked wrong.
-   *
-   * Ordered by RECURRENCE rather than recency, because that is the number that
-   * decides anything: one denied Docker socket is an anecdote and forty is a
-   * machine to fix, and the whole reason these went unaddressed is that each
-   * worker met the problem once, worked around it, and moved on.
-   */
   case 'blockers': {
-    const days = Number(flag('days') ?? 14)
-    const since = new Date(Date.now() - days * 86_400_000).toISOString()
-    const rows = db().query(
-      `SELECT COALESCE(b.kind, b.what) AS kind, b.source,
-              COUNT(*) AS n, COUNT(DISTINCT r.repo) AS repos,
-              MAX(b.at) AS last_at,
-              MIN(b.why) AS example,
-              GROUP_CONCAT(DISTINCT r.agent) AS agents
-         FROM blocker b JOIN run r ON r.id = b.run_id
-        WHERE b.at >= ?
-        GROUP BY 1, 2
-        ORDER BY n DESC`,
-    ).all(since) as {
-      kind: string; source: string; n: number; repos: number
-      last_at: string; example: string | null; agents: string | null
-    }[]
-
-    /**
-     * PUBLISHED, because hub cannot import this concern or open orch.db.
-     *
-     * The same contract `orch state` and `orch project list --json` already
-     * serve: what another concern needs is emitted here rather than reached
-     * for. Field names are the query's, so a reader of this command and a
-     * reader of the table see the same words.
-     */
-    if (has('json')) {
-      console.log(JSON.stringify({
-        days,
-        blockers: rows.map((r) => ({
-          kind: r.kind,
-          source: r.source,
-          runs: r.n,
-          projects: r.repos,
-          agents: r.agents ? r.agents.split(',') : [],
-          lastAt: r.last_at,
-          example: r.example,
-        })),
-      }))
-      break
-    }
-
-    if (!rows.length) {
-      console.log(`nothing reported in ${days} days`)
-      break
-    }
-    console.log(`what stopped agents working, last ${days} days:\n`)
-    for (const r of rows) {
-      console.log(
-        `${String(r.n).padStart(4)}x  ${r.kind}` +
-        `  (${r.source}, ${r.repos} project${r.repos === 1 ? '' : 's'}, ${r.agents ?? '—'})`,
-      )
-      if (r.example) console.log(`        ${r.example.slice(0, 150)}`)
-    }
-    console.log(
-      `\nThese are environment problems, not agent failures — an agent that hit one` +
-      `\ncarried on and said so. Each is capping what every run in that project can` +
-      `\nverify, which is why they are ranked by how often they recur.`,
-    )
+    blockersCommand({ has, flag }, { log: console.log })
     break
   }
 
@@ -1932,118 +1644,8 @@ switch (cmd) {
     break
   }
   case 'routing-backtest': {
-    await Promise.all([loadJobs(), loadAgents(), loadRoutingBacktest()])
-    const jobFilter = flag('job')
-    const seedFlag = flag('seed')
-    const seed = seedFlag === undefined ? undefined : Number(seedFlag)
-    if (seedFlag !== undefined && (!/^\d+$/.test(seedFlag) || !Number.isSafeInteger(seed))) {
-      throw new Error('--seed must be a non-negative integer')
-    }
-    const assumptions = {
-      outcomeComparison: 'not identifiable: agreements have the same logged outcome, while disagreements have no counterfactual outcome for the agent not run',
-      policyLearning: 'each simulated policy updates only from logged runs where it chose the historical agent',
-      latency: 'a matched successful run enters tie-break latency at chain completion whether or not it was scored',
-      eligibility: 'current static capability, metered, prompt-size and context rules',
-      cooldowns: 'reconstructed from the full terminal operational stream, including quota/auth failures and successful probes; these events do not become scoring evidence',
-      reachability: 'present-day reachability ignored',
-      evidence: 'every non-probe root dispatch is a decision; default distributions omit voided/evidence-excluded rows, while NOT_EVIDENCE runs remain decisions but never enter policy evidence',
-      causalAvailability: 'scored evidence enters at scored_at; eligible unjudged failures enter at the terminating chain member time; dispatch sees only earlier available evidence',
-      ties: 'inside the noise band Thompson ties use reviewer precision when available, then unmetered and median latency',
-      betaMapping: 'successes += (w + 0.5) / 1.5; failures += 1 - successes',
-      exploration: 'choice differs from deterministic expected leader',
-      scope: jobFilter ? `only job ${jobFilter}` : 'all displayed jobs',
-    }
-    const distribution = (values: Record<string, number>) => Object.entries(values)
-      .sort(([a], [b]) => a.localeCompare(b)).map(([agent, count]) => `${agent}=${count}`).join(', ') || 'none'
-    const movedSelections = (baseline: RoutingBacktest, comparison: RoutingBacktest) => {
-      const moved = (key: 'currentSelections' | 'thompsonSelections') => baseline.jobs.reduce((total, row) => {
-        const other = comparison.jobs.find((candidate) => candidate.job === row.job)
-        const agents = new Set([...Object.keys(row[key]), ...Object.keys(other?.[key] ?? {})])
-        return total + [...agents].reduce(
-          (sum, agent) => sum + Math.abs((row[key][agent] ?? 0) - (other?.[key][agent] ?? 0)), 0,
-        ) / 2
-      }, 0)
-      return { current: moved('currentSelections'), thompson: moved('thompsonSelections') }
-    }
-    const printTrajectory = (result: RoutingBacktest, voided: RoutingBacktest, indent = '') => {
-      console.log(`${indent}seed ${result.seed}: causal exclusions ${result.causalExcludedJudgements}; unscored decisions ${result.unscoredDecisions}`)
-      const jobs = [...new Set([...result.jobs, ...voided.jobs].map((row) => row.job))]
-      for (const job of jobs) {
-        const row = result.jobs.find((candidate) => candidate.job === job)
-        const included = voided.jobs.find((candidate) => candidate.job === job)
-        console.log(
-          `${indent}  ${job}: runs=${row?.runs ?? 0} agreements=${row?.agreements ?? 0} ` +
-          `agreement=${((row?.agreementShare ?? 0) * 100).toFixed(1)}% ` +
-          `Thompson-exploration=${((row?.thompsonExplorationShare ?? 0) * 100).toFixed(1)}% ` +
-          `voided-excluded live-Thompson=[${distribution(row?.currentSelections ?? {})}] comparison-Thompson=[${distribution(row?.thompsonSelections ?? {})}]; ` +
-          `voided-included live-Thompson=[${distribution(included?.currentSelections ?? {})}] ` +
-          `Thompson=[${distribution(included?.thompsonSelections ?? {})}]`,
-        )
-      }
-    }
-    if (seed !== undefined) {
-      const result = routingBacktest(jobFilter, seed)
-      const voidedIncluded = routingBacktest(jobFilter, seed, { includeVoided: true })
-      const cooldownDisabled = routingBacktest(jobFilter, seed, { cooldowns: false })
-      const cooldownMoves = movedSelections(result, cooldownDisabled)
-      const outputAssumptions = {
-        ...assumptions,
-        causalExclusions: `${result.causalExcludedJudgements} earlier judgement/dispatch pairs excluded`,
-        unscoredDecisions: `${result.unscoredDecisions} dispatches have no score and contribute no quality evidence`,
-        cooldownSensitivity: `disabling cooldown redistributes ${cooldownMoves.current} current-policy and ${cooldownMoves.thompson} Thompson selections`,
-      }
-      if (has('json')) {
-        console.log(JSON.stringify({
-          mode: 'single-seed-reproduction', assumptions: outputAssumptions, ...result,
-          sensitivities: { voidedIncluded, cooldownDisabled: { selectionMoves: cooldownMoves } },
-        }))
-        break
-      }
-      console.log(`routing replay diagnostic (seed ${seed}; descriptive only)`)
-      console.log('assumptions:')
-      for (const [key, value] of Object.entries(outputAssumptions)) console.log(`  ${key}: ${value}`)
-      printTrajectory(result, voidedIncluded)
-      break
-    }
-    const result = routingBacktestEnsemble(jobFilter)
-    const voidedIncluded = routingBacktestEnsemble(jobFilter, { includeVoided: true })
-    const cooldownDisabled = routingBacktestEnsemble(jobFilter, { cooldowns: false })
-    const cooldownMoves = movedSelections(
-      { seed: 0, causalExcludedJudgements: 0, unscoredDecisions: 0, jobs: result.jobs },
-      { seed: 0, causalExcludedJudgements: 0, unscoredDecisions: 0, jobs: cooldownDisabled.jobs },
-    )
-    const causalExcludedJudgements = result.trajectories[0]?.causalExcludedJudgements ?? 0
-    const unscoredDecisions = result.trajectories[0]?.unscoredDecisions ?? 0
-    const outputAssumptions = {
-      ...assumptions,
-      causalExclusions: `${causalExcludedJudgements} earlier judgement/dispatch pairs excluded per trajectory`,
-      unscoredDecisions: `${unscoredDecisions} dispatches have no score and contribute no quality evidence`,
-      cooldownSensitivity: `disabling cooldown redistributes ${cooldownMoves.current} current-policy and ${cooldownMoves.thompson} Thompson selections across all seeds`,
-    }
-    if (has('json')) {
-      console.log(JSON.stringify({
-        mode: 'ensemble', assumptions: outputAssumptions, ...result,
-        sensitivities: { voidedIncluded, cooldownDisabled: { selectionMoves: cooldownMoves } },
-      }))
-      break
-    }
-    console.log(`routing replay diagnostic (seeds ${result.seeds.join(', ')}; descriptive only)`)
-    console.log('assumptions:')
-    for (const [key, value] of Object.entries(outputAssumptions)) console.log(`  ${key}: ${value}`)
-    console.log('aggregate across seeds:')
-    const jobs = [...new Set([...result.jobs, ...voidedIncluded.jobs].map((row) => row.job))]
-    for (const job of jobs) {
-      const row = result.jobs.find((candidate) => candidate.job === job)
-      const included = voidedIncluded.jobs.find((candidate) => candidate.job === job)
-      console.log(
-        `  ${job}: decisions=${row?.runs ?? 0} agreements=${row?.agreements ?? 0} ` +
-        `agreement=${((row?.agreementShare ?? 0) * 100).toFixed(1)}% ` +
-        `Thompson-exploration=${((row?.thompsonExplorationShare ?? 0) * 100).toFixed(1)}% ` +
-        `voided-excluded live-Thompson=[${distribution(row?.currentSelections ?? {})}] comparison-Thompson=[${distribution(row?.thompsonSelections ?? {})}]; ` +
-        `voided-included live-Thompson=[${distribution(included?.currentSelections ?? {})}] ` +
-        `Thompson=[${distribution(included?.thompsonSelections ?? {})}]`,
-      )
-    }
+    await Promise.all([loadJobs(), loadAgents()])
+    routingBacktestCommand({ has, flag }, { log: console.log, dur })
     break
   }
 
@@ -2059,88 +1661,9 @@ switch (cmd) {
   }
 
   case 'guide': {
-    await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadGuide()])
+    await Promise.all([loadJobs(), loadAgents(), loadRoute()])
     await ensureLocalHealth()
-    const rawPromptBytes = flag('prompt-bytes')
-    const promptBytes = rawPromptBytes === undefined ? undefined : Number(rawPromptBytes)
-    if (promptBytes !== undefined &&
-        (!/^\d+$/.test(rawPromptBytes!) || !Number.isSafeInteger(promptBytes))) {
-      throw new Error('--prompt-bytes must be a non-negative integer')
-    }
-    const gs = guide(flag('job'), promptBytes, flag('lens'))
-    if (flag('lens')) {
-      const { resolveLens }=await import('./lenses.ts'); const p=projectAt(process.cwd())
-      const resolved=resolveLens(flag('lens')!,p?.name??null)
-      console.log(`lens profiles: ${resolved ? resolved.profiles.map(x=>`${x.axis}=${x.name}@${x.version}`).join(', ') : 'free-form (no catalogue row)'}`)
-    }
-    const size = (b: number) => (b >= 1024 ? `${Math.round(b / 1024)}KB` : `${Math.round(b)}B`)
-    const tradeoffs: string[] = []
-    let decided = 0, provisional = 0, blank = 0
-
-    for (const g of gs) {
-      const bucket = g.promptBucket === null
-        ? ''
-        : ` [${promptSizeBucketLabel(g.promptBucket)} prompts]`
-      console.log(`\n${g.job}${bucket}  ${g.what}`)
-      if (!g.tried.length) {
-        blank++
-        console.log('  no runs yet - nothing to compare')
-      } else {
-        if (g.decided) decided++
-        else if (g.best) provisional++
-        if (g.best) {
-          const rawBest = [...g.tried]
-            .filter((candidate) => candidate.score !== null)
-            .sort((a, b) => b.score! - a.score! || b.evidence - a.evidence)[0]
-          console.log(
-            `  best     ${g.best.agent.padEnd(11)} ${((g.best.score! * 100).toFixed(0) + '%').padStart(5)}` +
-            ` raw, ${((g.best.shrunk! * 100).toFixed(0) + '%').padStart(5)} shrunk` +
-            // "judged", not "scored": the percentage now includes failed runs
-            // at the `unusable` weight, so labelling it with the verdict count
-            // alone described a smaller denominator than the number came from.
-            `  over ${g.best.evidence} judged` +
-            (g.best.failures ? ` (incl. ${g.best.failures} failed)` : '') +
-            (rawBest && rawBest.agent !== g.best.agent ? `   SHRUNK LEADER (raw: ${rawBest.agent})` : '') +
-            (g.decided ? '' : `   PROVISIONAL - needs ${MIN_SAMPLE}`),
-          )
-        } else console.log('  best     - nothing scored yet')
-
-        // With one agent tried there is no quickest, only a measurement.
-        const q = g.quickest ?? g.tried[0]!
-        const solo = !g.quickest
-        console.log(
-          `  ${solo ? 'speed   ' : 'quickest'} ${q.agent.padEnd(11)} ${dur(q.latencyMs).padStart(5)}` +
-          `  median over ${q.runs} run${q.runs === 1 ? '' : 's'}, ~${size(q.promptBytes)} prompts` +
-          (solo ? '   (only agent tried)' : ''),
-        )
-        if (g.best && g.quickest && g.best.agent !== g.quickest.agent) {
-          tradeoffs.push(
-            `${g.job}${bucket}: ${g.best.agent} judges best, ${g.quickest.agent} is ` +
-            `${dur(g.quickest.latencyMs)} vs ${dur(g.best.latencyMs)}`,
-          )
-        }
-      }
-      if (g.untried.length) console.log(`  untried  ${g.untried.join(', ')}`)
-      for (const e of g.excluded) console.log(`  excluded ${e.agent}: ${e.why}`)
-      for (const cell of g.evidenceCells) {
-        console.log(
-          `  evidence ${cell.name}: ` +
-          (cell.counts.length
-            ? cell.counts.map((row) => `${row.agent}=${row.evidence}`).join(', ')
-            : 'no judgements'),
-        )
-      }
-      console.log(`  routes to ${g.routesTo}   (${g.reason})`)
-    }
-
-    if (tradeoffs.length) {
-      console.log('\n  Best and quickest disagree - pick on what the job needs:')
-      for (const t of tradeoffs) console.log(`    ${t}`)
-    }
-    console.log(
-      `\n  ${decided} bucket(s) decided by evidence, ${provisional} provisional, ${blank} with no runs.` +
-      `\n  Routing and latency evidence are separated at the provisional 16 KiB prompt boundary.`,
-    )
+    guideCommand({ has, flag }, { log: console.log, dur })
     break
   }
 
@@ -2181,116 +1704,29 @@ switch (cmd) {
 
   case 'stats': {
     await Promise.all([loadJobs(), loadRoute(), loadAgreement()])
-    // scoreboard(), not a query of its own. The comment that used to sit here
-    // claimed exactly that and had stopped being true: this filtered
-    // status='ok' after the router stopped, so grok on review-lens read 96%
-    // here and 69% to the thing actually choosing an agent. A report that
-    // disagrees with the decision it describes is worse than no report.
-    const rows = scoreboard(flag('job'))
-      .sort((a, b) => a.job.localeCompare(b.job) || (b.shrunk ?? -9) - (a.shrunk ?? -9))
-    const matrices = duelMatrices(flag('job'))
-    if (!rows.length && !matrices.length) { console.log('no runs yet'); break }
-    if (rows.length) {
-      console.log('job / prompt bucket            agent        runs  judged    raw  shrunk  median    vendor tokens      cost')
-      for (const r of rows) {
-        const score = r.score === null ? '—' : `${(r.score * 100).toFixed(0)}%`
-        const shrunk = r.shrunk === null ? '—' : `${(r.shrunk * 100).toFixed(0)}%`
-        const cost = r.costUsd > 0 ? `$${r.costUsd.toFixed(4)}` : '—'
-        // Failures are part of the score, so they are shown beside it rather than
-        // left for someone to wonder why the percentage looks low.
-        const judged = r.failures ? `${r.evidence}(${r.failures}f)` : String(r.evidence)
-        console.log(
-          `${`${r.job} [${promptSizeBucketLabel(r.promptBucket)}]`.padEnd(30)} ` +
-            `${r.agent.padEnd(11)} ${String(r.runs).padStart(5)} ${judged.padStart(7)}` +
-            ` ${score.padStart(6)} ${shrunk.padStart(7)} ${dur(r.latencyMs).padStart(8)} ${r.tokens.toLocaleString().padStart(17)}` +
-            ` ${cost.padStart(9)}`,
-        )
-      }
-    }
-    for (const matrix of matrices) {
-      const duelCount = matrix.agents.reduce((sum, agent) => sum +
-        matrix.agents.reduce((agentSum, opponent) => agentSum + matrix.cells[agent]![opponent]!.wins, 0), 0)
-      if (duelCount >= MIN_SAMPLE) {
-        const strengths = bradleyTerry(
-          matrix.agents,
-          (winner, loser) => matrix.cells[winner]![loser]!.wins,
-        )
-        console.log(`\n${matrix.job} Bradley-Terry strengths (${duelCount} duels)`)
-        console.log('agent        strength')
-        for (const row of strengths) {
-          console.log(`${row.agent.padEnd(12)} ${row.strength.toFixed(3).padStart(8)}`)
-        }
-        continue
-      }
-      const width = Math.max(7, ...matrix.agents.map((agent) => agent.length))
-      console.log(`\n${matrix.job} duels (wins-losses)`)
-      console.log(`${'agent'.padEnd(width)} ${matrix.agents.map((a) => a.padStart(width)).join(' ')}`)
-      for (const agent of matrix.agents) {
-        const cells = matrix.agents.map((opponent) => {
-          if (opponent === agent) return '-'.padStart(width)
-          const cell = matrix.cells[agent]![opponent]!
-          return `${cell.wins}-${cell.losses}`.padStart(width)
-        }).join(' ')
-        console.log(`${agent.padEnd(width)} ${cells}`)
-      }
-    }
+    statsCommand({ has, flag }, { log: console.log, dur })
     break
   }
 
   case 'pick': {
     await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadRun(), loadWorktree(), loadTransport()])
     await ensureLocalHealth()
-    // --stack, or the stack of wherever you are standing. A route is a claim
-    // about a job IN A CONTEXT, and reporting it without the context invites
-    // reading a php verdict as a node one.
     const jobName = argv[1]
     if (!jobName) usage()
     if (job(jobName).needs.readsRepo) warnCallerDrift(process.cwd())
     const { stackAt } = await import('./projects.ts')
-    const { evidenceFor } = await import('./route.ts')
     const stack = flag('stack') ?? stackAt(process.cwd())
+    // Pick composes transport eligibility with routing at the CLI adapter.
     const { avoid, distinctModels } = await routeConstraints(flag('agent'))
-    // explore=false: a report that spent the exploration coin would name a
-    // different agent each time it was read.
     const lens = flag('lens')
     const transport = resolveTransportName(flag('transport'))
     if (transport === 'acp') assertAcpAllowed(jobName, flag('agent'))
-    const p = pick(jobName, selectAgentForTransport(transport, flag('agent')), 0, false, stack,
-      { agents: avoid, models: distinctModels }, false, lens)
-    const ev = evidenceFor(jobName, 0, stack, undefined, lens)
-    if (lens) {
-      const { resolveLens }=await import('./lenses.ts'); const resolved=resolveLens(lens,projectAt(process.cwd())?.name??null)
-      console.log(`selected profiles: ${resolved ? resolved.profiles.map(x=>`${x.axis}=${x.name}@${x.version}`).join(', ') : 'free-form (no catalogue row)'}`)
-    }
-    const counts = (rows: typeof ev.cands) => rows
-      .filter((candidate) => candidate.evidence > 0)
-      .map((candidate) => `${candidate.agent}=${candidate.evidence}`)
-      .join(', ') || 'no judgements'
-    console.log(
-      `${jobName} -> ${p.agent}   (${p.reason})\n` +
-      `  deciding cell: ${ev.level === 'lens' ? `lens ${ev.lens}` : ev.level === 'stack' ? `stack ${ev.stack}` : 'job-wide'}\n` +
-      (ev.scoped && ev.lens
-        ? `  lens ${ev.lens} evidence: ${counts(ev.scoped)}\n  job-wide evidence: ${counts(ev.job)}\n`
-        : `  evidence: ${ev.level === 'stack' ? `${ev.stack} only` : 'all stacks'}` +
-          `${stack && ev.level === 'job' ? ` (too little on ${stack} to compare agents there)` : ''}\n`),
+    const selectedAgent = selectAgentForTransport(transport, flag('agent'))
+    pickCommand(
+      { jobName, stack, avoid, distinctModels, lens, selectedAgent },
+      { has, flag },
+      { log: console.log, agents: AGENTS },
     )
-    const listed = [...ev.cands].sort((a, b) => {
-      const rank = (candidate: typeof a) =>
-        AGENTS[candidate.agent]?.billing === 'local' && candidate.preferred ? 0 : 1
-      return rank(a) - rank(b)
-    })
-    for (const c of listed) {
-      const probe = AGENTS[c.agent]?.probeResult as { mcp?: { verifiable?: boolean } } | null
-      const mcpNote = probe?.mcp && probe.mcp.verifiable === false ? ' mcp: unverifiable' : ''
-      console.log(
-        `  ${c.agent.padEnd(7)} ${c.eligible ? 'eligible' : 'excluded'.padEnd(8)}` +
-          ` declared=${c.declared?.join(',') ?? 'any'} preferred=${c.preferred ? 'yes' : 'no'}` +
-          ` runs=${String(c.runs).padStart(3)} judged=${String(c.evidence).padStart(3)}` +
-          ` score=${c.score === null ? "—" : (c.score * 100).toFixed(0) + "%"}` +
-          ` shrunk=${c.shrunk === null ? "—" : (c.shrunk * 100).toFixed(0) + "%"}  ${c.why}${mcpNote}`,
-      )
-    }
-    console.log(`\n  (a rate steers routing only at ${MIN_SAMPLE}+ scored runs)`)
     break
   }
 
@@ -2380,183 +1816,14 @@ switch (cmd) {
     console.error('the dashboard moved: run `hub serve` (http://127.0.0.1:7778)')
     process.exit(1)
 
-  /**
-   * Re-run only the DEV-122 quota/auth signatures over old, unclassified
-   * failures. This is deliberately not a general reclassification: a stored
-   * failure is evidence, and changing its meaning on anything less than that
-   * row's own vendor error would rewrite the agent's record.
-   */
   case 'reclassify-failures': {
     await loadJobs()
-    type FailureRow = {
-      id: number; agent: string; job: string; status: string
-      failure_kind: string | null; error: string
-    }
-    type CountRow = { agent: string; failure_kind: string | null; count: number }
-
-    const all = db().query(
-      `SELECT id, agent, job, status, failure_kind, error
-         FROM run
-        WHERE status IN ('failed', 'stale')
-        ORDER BY id`,
-    ).all() as FailureRow[]
-    const matched = all.flatMap((row) => {
-      if ((row.failure_kind !== 'other' && row.failure_kind !== null) || !row.error) return []
-      const kind = classify(row.error)
-      return kind === 'quota' || kind === 'auth' ? [{ row, kind }] : []
-    })
-
-    const counts = (rows: { agent: string; failure_kind: string | null }[]): CountRow[] => {
-      const grouped = new Map<string, CountRow>()
-      for (const row of rows) {
-        const key = JSON.stringify([row.agent, row.failure_kind])
-        const existing = grouped.get(key)
-        if (existing) existing.count++
-        else grouped.set(key, { agent: row.agent, failure_kind: row.failure_kind, count: 1 })
-      }
-      return [...grouped.values()].sort((a, b) =>
-        a.agent.localeCompare(b.agent) || (a.failure_kind ?? '').localeCompare(b.failure_kind ?? ''))
-    }
-    const printCounts = (label: string, rows: CountRow[]) => {
-      console.log(`${label} (all failed/stale rows)`)
-      if (!rows.length) console.log('  (none)')
-      for (const row of rows) {
-        console.log(`  ${row.agent}  ${row.failure_kind ?? 'null'}  ${row.count}`)
-      }
-    }
-
-    const before = counts(all)
-    const replacement = new Map(matched.map(({ row, kind }) => [row.id, kind]))
-    const projected = counts(all.map((row) => ({
-      agent: row.agent,
-      failure_kind: replacement.get(row.id) ?? row.failure_kind,
-    })))
-
-    printCounts('BEFORE', before)
-    console.log(`\nPLAN (${matched.length} matched row${matched.length === 1 ? '' : 's'})`)
-    for (const { row, kind } of matched) {
-      console.log(`run ${row.id}  ${row.agent}/${row.job}  [${row.status}]  ${row.failure_kind ?? 'null'} -> ${kind}`)
-      console.log(row.error)
-    }
-    console.log('')
-    printCounts('AFTER', projected)
-
-    if (has('dry-run')) {
-      console.log(`\n${matched.length} row${matched.length === 1 ? '' : 's'} would be reclassified — dry run, no writes.`)
-      break
-    }
-
-    writableDb()
-
-    const update = db().query(
-      `UPDATE run SET failure_kind = ?
-        WHERE id = ? AND status IN ('failed', 'stale')
-          AND (failure_kind = 'other' OR failure_kind IS NULL) AND error = ?`,
-    )
-    const apply = writeTransaction(() => {
-      let changed = 0
-      for (const { row, kind } of matched) {
-        const result = update.run(kind, row.id, row.error)
-        changed += result.changes
-        if (result.changes) {
-          auditRunMutation(
-            runMutationActor(row.id), 'reclassify',
-            `${row.failure_kind ?? 'null'} -> ${kind}`,
-          )
-        }
-      }
-      return changed
-    })
-    const changed = apply
-    console.log(`\n${changed} row${changed === 1 ? '' : 's'} reclassified.`)
+    reclassifyFailuresCommand({ has }, { log: console.log })
     break
   }
 
   case 'health': {
-    const { harnessHealth } = await import('./health.ts')
-    const { AttributionKindSchema } = await import('../../shared/orch-contract.ts')
-    const report = harnessHealth(flag('days') ? Number(flag('days')) : undefined)
-    if (has('json')) {
-      console.log(JSON.stringify(report))
-      break
-    }
-    const duration = (ms: number) => ms < 60_000
-      ? `${(ms / 1000).toFixed(1)}s`
-      : ms < 3_600_000 ? `${(ms / 60_000).toFixed(1)}m` : `${(ms / 3_600_000).toFixed(1)}h`
-    console.log(report.header)
-    console.log(`window: ${report.days} days from ${report.from}`)
-    console.log('\nFAILURE CLASS'.padEnd(25) + 'COUNT'.padStart(7) + 'TOTAL'.padStart(10) +
-      'MEAN'.padStart(10) + 'PRESERVED'.padStart(11) + '  FIRST SEEN'.padEnd(27) + 'LAST SEEN')
-    for (const row of report.classes) {
-      console.log(row.kind.padEnd(25) + String(row.count).padStart(7) +
-        duration(row.totalTimeMs).padStart(10) + duration(row.meanTimeMs).padStart(10) +
-        String(row.workPreserved).padStart(11) + '  ' +
-        (row.firstSeen ?? '-').padEnd(25) + (row.lastSeen ?? '-') +
-        (row.kind === 'idle' && row.reclaimedMs
-          ? `  reclaimed ${duration(row.reclaimedMs)}`
-          : ''))
-      for (const cluster of row.clusters) {
-        console.log(`  ${cluster.count}x [run ${cluster.exampleRunId}] ${cluster.text}`)
-      }
-      if (row.kind === 'escaped' && row.attribution) {
-        console.log(
-          '  attribution  ' + AttributionKindSchema.options
-            .map((kind) => `${kind}=${row.attribution![kind]}`)
-            .join(' '),
-        )
-      }
-    }
-    console.log('\nFALSE HARNESS VERDICTS')
-    console.log('KIND'.padEnd(25) + 'FALSE'.padStart(7) + 'TOTAL'.padStart(7) + 'RATE'.padStart(9))
-    for (const row of report.falseVerdicts.filter((row) => row.verdicts || row.falseVerdicts)) {
-      console.log(row.kind.padEnd(25) + String(row.falseVerdicts).padStart(7) +
-        String(row.verdicts).padStart(7) + `${(row.rate * 100).toFixed(1)}%`.padStart(9))
-    }
-    console.log(`landing refused`.padEnd(25) + String(report.landingRefusals).padStart(7) +
-      '      -        -')
-    console.log(`mcp probe failures`.padEnd(25) + String(report.mcpProbeFailures).padStart(7) +
-      '      -        -')
-    console.log(`mcp unprobed`.padEnd(25) + String(report.mcpUnprobed).padStart(7) +
-      '      -        -')
-    for (const row of report.mcpUnverifiedByAgent ?? []) {
-      console.log(`mcp unverified ${row.agent}`.padEnd(25) + String(row.count).padStart(7) +
-        '      -        -')
-    }
-    const { landingsWithPostStepError } = await import('./health.ts')
-    for (const row of landingsWithPostStepError()) {
-      console.log(`landed with post-step error`.padEnd(25) + `${row.project} ${row.branch}`)
-      console.log(`  ${row.error}`)
-    }
-    console.log('\nCONTENTION (never routing evidence)')
-    console.log('KIND'.padEnd(25) + 'COUNT'.padStart(7) + 'TOTAL'.padStart(10) +
-      'MEAN'.padStart(10) + '  TOP KEYS')
-    for (const row of report.contention.resources) {
-      const keys = row.topKeys.length
-        ? row.topKeys.map((key) => `${key.key} (${key.count})`).join(', ')
-        : '-'
-      console.log(row.kind.padEnd(25) + String(row.count).padStart(7) +
-        duration(row.totalDurationMs).padStart(10) + duration(row.meanDurationMs).padStart(10) +
-        '  ' + keys)
-    }
-    console.log('SESSION'.padEnd(25) + 'WAITS'.padStart(7) + 'INVALIDATIONS CAUSED'.padStart(22))
-    for (const row of report.contention.sessions) {
-      console.log(row.sessionId.padEnd(25) + String(row.waitsSuffered).padStart(7) +
-        String(row.invalidationsCaused).padStart(22))
-    }
-    if (!report.contention.sessions.length) console.log('(none)')
-    console.log('\nFLAKES')
-    console.log('TEST'.padEnd(36) + 'FILE'.padEnd(36) + 'COUNT'.padStart(7) + '  LOAD')
-    if (!report.flakes?.length) console.log('(none)')
-    for (const row of report.flakes ?? []) {
-      const load = row.loadAtFailure
-      console.log(
-        row.test.slice(0, 35).padEnd(36)
-        + row.file.slice(0, 35).padEnd(36)
-        + String(row.count).padStart(7)
-        + `  gates=${load.gates} loadavg=${load.loadavg} ncpu=${load.ncpu} mem=${load.freeMem}`
-        + ` signal=${row.signal ?? '-'}`,
-      )
-    }
+    healthCommand({ has, flag }, { log: console.log })
     break
   }
 
