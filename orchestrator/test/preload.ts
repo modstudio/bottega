@@ -135,12 +135,19 @@ beforeEach(() => {
   childrenBeforeTest = new Set(readdirSync(dir))
 })
 
+/**
+ * The preload provisions the suite root, so it owns the root's teardown: what a
+ * test left is measured first (a warning here, a failure on CI, so the fixture
+ * that should have released it is named), then released so nothing accumulates
+ * across the file.
+ */
 afterEach(() => {
   const residue = readdirSync(dir).filter((name) => !childrenBeforeTest.has(name))
   if (residue.length === 0) return
   const message = residue.map((name) =>
     `test ${Bun.main} left fixture residue: ${join(dir, name)}`,
   ).join('\n')
+  for (const name of residue) rmSync(join(dir, name), { recursive: true, force: true })
   if (process.env.CI) throw new Error(message)
   console.warn(message)
 })

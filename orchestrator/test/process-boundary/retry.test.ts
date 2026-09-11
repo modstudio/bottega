@@ -5,7 +5,6 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { READONLY_PREAMBLE, db, dir, replyFileInstruction, runCollectionDescribeFixture, upsertProject } from '../fixture.ts'
 import { stubWorker } from "../stub-worker.ts"
-import './retry.test-residue.ts'
 
 // Retry delivery crosses the detach: the observable effect is the replacement
 // child's prompt on disk after a real orch child ran. That is the process

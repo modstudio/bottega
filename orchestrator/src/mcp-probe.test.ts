@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'; import './mcp-probe.test-residue.ts'
+import { describe, expect, test } from 'bun:test'
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'

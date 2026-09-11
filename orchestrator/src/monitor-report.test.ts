@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { addRun,db,dir,displayConditions,hermeticGitEnv,monitor,monitorHistory,upsertProject } from '../test/fixture.ts'
-import './monitor-report.test-residue.ts'
 
 function git(cwd: string, ...args: string[]): string {
   const result = Bun.spawnSync(['git', ...args], {

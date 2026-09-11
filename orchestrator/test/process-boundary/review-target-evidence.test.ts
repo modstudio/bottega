@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS,db,hermeticGitEnv,reviewReply,runJob,upsertProject } from '../fixture.ts'
 import { stubWorker } from '../stub-worker.ts'
-import './review-target-evidence.test-residue.ts'
 
 describe('review-lens-inline has no checkout', () => {
 test('explicit review records the trunk merge-base for clean-review evidence', async () => {

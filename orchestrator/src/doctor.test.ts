@@ -6,7 +6,6 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { doctorCommand } from './doctor.ts'
 import { cliVersion, versionBelow } from './agents.ts'
 import { classifiedDockerResources } from './docker-resources.ts'
-import './doctor.test-residue.ts'
 
 async function doctor() {
   const lines: string[] = []; let exit = 0

@@ -3,7 +3,6 @@ import { rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { AGENTS, addRun, db, dir, runJob, upsertProject } from '../test/fixture.ts'
 import { errorTail, verifiedProcessTree } from './run-process.ts'
-import './run-process.test-residue.ts'
 
 describe('what survives of a failure', () => {
   const codexish = (promptChars: number) =>

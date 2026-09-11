@@ -5,7 +5,6 @@ import { ARGV_PROMPT_BYTES, addRun, db, dir, packedResumePrompt, rulingPrompt } 
 import { assertWorkerText, readMessageText, readWorkerFile } from './args.ts'
 import { answerRun, retryRun } from './run-answer.ts'
 import { continueRun } from './run-control.ts'
-import './run-answer.test-residue.ts'
 
 const presentation = {
   dur: (ms: number | null | undefined) => String(ms ?? 0),

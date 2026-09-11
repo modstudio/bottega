@@ -5,7 +5,6 @@ import { join } from 'node:path'
 import {
   AGENTS, addRun, candidates, classify, db, declaredCreate, dir, hermeticGitEnv, JOBS, NEEDS_HUMAN, NOT_EVIDENCE, reapTestProcess, reapTestRun, run, upsertProject, } from '../fixture.ts'
 import { stubWorker } from "../stub-worker.ts"
-import './idle-kill.test-residue.ts'
 import { pidAlive } from '../../src/process-liveness.ts'
 import { formatIdleKillError, idleKillMayProceed, idleKillMs, installTestProcessSampler, isGroupKillablePgid, isUninterruptible, isWorkerCpuIdle,
   parseIdleReclaimedMs, parsePsTable, runHasLiveDescendants, shouldIdleKill, terminateProcessGroup,

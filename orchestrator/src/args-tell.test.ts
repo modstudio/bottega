@@ -3,7 +3,6 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { dir } from '../test/fixture.ts'
 import { TELL_WORKING_FORMS, assertWorkerText, parseWorkerMessageArgs, readMessageText } from './args.ts'
-import './args-tell.test-residue.ts'
 
 test('tell reads long context from a file without shell interpretation', async () => {
   const path = join(dir, 'mailbox-long-note.txt'); const body = 'keep `literal` and $VALUE\nsecond paragraph\n'

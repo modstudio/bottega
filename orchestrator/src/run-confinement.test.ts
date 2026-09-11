@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { db, dir, removeFor, run, upsertProject } from '../test/fixture.ts'
 import { scriptedTransportSequence } from '../test/fake-transport.ts'
-import './run-confinement.test-residue.ts'
 
 describe('run confinement warnings',()=>{
 test('a moved registered checkout is warned and excluded from the frozen watch set', async () => {

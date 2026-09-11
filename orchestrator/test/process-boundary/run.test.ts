@@ -5,7 +5,6 @@ import { join } from "node:path"
 import { AGENTS, addRun, ask, candidates, db, dir, hermeticGitEnv, reapTestRun, reviewReply, run, score, upsertProject, weigh, runJob } from "../fixture.ts"
 import { stubWorker } from "../stub-worker.ts"
 import { installTestTransport } from "../../src/transport.ts"
-import './run.test-residue.ts'
 let priorOrchDepth: string | undefined
 beforeEach(() => { priorOrchDepth = process.env.ORCH_DEPTH })
 afterEach(() => {

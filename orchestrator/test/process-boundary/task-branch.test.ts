@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS,addRun,createWorktreeForBranch,db,dir,hermeticGitEnv,installTestProcessInventory,projectAt,resolveTaskBranch,runJob,taskBranchCandidacySql,upsertProject } from '../fixture.ts'
 import { stubWorker } from '../stub-worker.ts'
-import './task-branch.test-residue.ts'
 
 describe('task branch resolution', () => {
 const git = (cwd: string, ...args: string[]) => {
