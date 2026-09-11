@@ -3,15 +3,17 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { dir } from '../test/fixture.ts'
 import { TELL_WORKING_FORMS, assertWorkerText, parseWorkerMessageArgs, readMessageText } from './args.ts'
+import { trackedTestResidue } from '../test/residue.ts'
+const trackResidue = trackedTestResidue()
 
 test('tell reads long context from a file without shell interpretation', async () => {
-  const path = join(dir, 'mailbox-long-note.txt'); const body = 'keep `literal` and $VALUE\nsecond paragraph\n'
+  const path = trackResidue(join(dir, 'mailbox-long-note.txt')); const body = 'keep `literal` and $VALUE\nsecond paragraph\n'
   writeFileSync(path, body)
   const source = parseWorkerMessageArgs(['--file', path])
   expect(await readMessageText({ missing: 'no message', sources: source })).toBe(body)
 })
 test('tell refuses a message that is only --file', async () => {
-  const path = join(dir, 'mailbox-dash-token.txt'); writeFileSync(path, '--file')
+  const path = trackResidue(join(dir, 'mailbox-dash-token.txt')); writeFileSync(path, '--file')
   const text = await readMessageText({ missing: 'no message', sources: parseWorkerMessageArgs(['--file', path]) })
   expect(() => assertWorkerText(text!, 'message', TELL_WORKING_FORMS)).toThrow('received "--file" as a message')
 })
@@ -20,7 +22,7 @@ test('tell accepts a two-word message beginning with --', async () => {
   expect(await readMessageText({ missing: 'no message', sources: source })).toBe('--literal is intended')
 })
 test('tell --file refuses invalid UTF-8 at the byte offset', async () => {
-  const path = join(dir, 'mailbox-bad-utf8.bin'); writeFileSync(path, Buffer.from([0x66, 0x80, 0xff, 0x67]))
+  const path = trackResidue(join(dir, 'mailbox-bad-utf8.bin')); writeFileSync(path, Buffer.from([0x66, 0x80, 0xff, 0x67]))
   expect(readMessageText({ missing: 'no message', sources: parseWorkerMessageArgs(['--file', path]) })).rejects.toThrow('invalid UTF-8 in')
   expect(readMessageText({ missing: 'no message', sources: parseWorkerMessageArgs(['--file', path]) })).rejects.toThrow('byte offset 1')
 })
