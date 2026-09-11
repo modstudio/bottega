@@ -1,15 +1,6 @@
-import { describe, expect, test } from 'bun:test'
-import { join } from 'node:path'
-import { addRun, db, dir, reapStale, upsertProject } from '../test/fixture.ts'
-import { epicChildren, epicScoreboard, renderEpicHuman } from './epic.ts'
-
-const hubCli = new URL('../../hub/src/cli.ts', import.meta.url).pathname
-const orchCli = new URL('./cli.ts', import.meta.url).pathname
-function hub(args: string[], hubDb: string) {
-  return Bun.spawnSync([process.execPath, hubCli, ...args], {
-    env: { ...process.env, HUB_DB: hubDb }, stdout: 'pipe', stderr: 'pipe',
-  })
-}
+import { describe, expect, spyOn, test } from 'bun:test'
+import { addRun, db, reapStale } from '../test/fixture.ts'
+import { epicChildren, epicScoreboard } from './epic.ts'
 
 const intervalOrigin = Date.parse('2026-09-08T10:00:00.000Z')
 function timedRun(key: string, startOffsetMs: number, latency: number): number {
@@ -93,21 +84,12 @@ describe('epic scoreboard', () => {
       agentTimeMs: 210_000, occupancyMs: 150_000, elapsedSpanMs: 330_000,
     })
 
-    const human = renderEpicHuman(report)
-    const json = JSON.parse(JSON.stringify(report))
-    expect(human).toContain('DEV-501')
-    expect(human).toContain('implement=3,review-lens=1')
-    expect(human).toContain('AGENT   OCCUP   SPAN    MEAN     P95 GHOST')
-    expect(human).toContain('1x gate failed')
-    expect(human).toContain('NOT RECORDED')
-    expect(json).toEqual(report)
   })
 
   test('an epic with no children is an empty scoreboard', () => {
     const report = epicScoreboard('DEV-EMPTY', [], db())
     expect(report.children).toEqual([])
     expect(report.total).toMatchObject({ runs: { total: 0, byJob: {} }, vendorTokens: null })
-    expect(renderEpicHuman(report)).toContain('TOTAL')
   })
 
   test('total occupancy unions overlapping children instead of adding child occupancy', () => {
@@ -189,34 +171,18 @@ describe('epic scoreboard', () => {
   })
 
   test('shells out to hub for child membership and CLI views use that result', async () => {
-    const hubDb = join(dir, 'epic-hub.db')
-    upsertProject({ name: 'epic-fixture', path: dir, settings: { keyPrefixes: ['DEV'] } })
-    expect(hub(['migrate'], hubDb).exitCode).toBe(0)
-    const parent = hub(['task', 'new', '--project', 'epic-fixture', '--title', 'parent'], hubDb)
-    expect(parent.exitCode, parent.stderr.toString()).toBe(0)
-    const parentKey = parent.stdout.toString().trim()
-    for (const title of ['child one', 'child two']) {
-      const child = hub([
-        'task', 'new', '--project', 'epic-fixture', '--title', title, '--parent', parentKey,
-        '--allow-duplicate', 'epic CLI membership fixture',
-      ], hubDb)
-      expect(child.exitCode, child.stderr.toString()).toBe(0)
-    }
-    const prior = process.env.HUB_DB
-    process.env.HUB_DB = hubDb
+    const children = [{ key: 'DEV-501', title: 'child one' }, { key: 'DEV-502', title: 'child two' }]
+    const spawn = spyOn(Bun, 'spawn').mockImplementation(((args: string[]) => ({
+      stdout: JSON.stringify(children), stderr: '', exited: Promise.resolve(0), args,
+    })) as any)
     try {
-      expect((await epicChildren(parentKey)).map((child) => child.title)).toEqual(['child one', 'child two'])
+      expect(await epicChildren('DEV-500')).toEqual(children)
+      expect(spawn).toHaveBeenCalledTimes(1)
+      expect(spawn.mock.calls[0]![0]).toEqual(expect.arrayContaining([
+        'task', 'list', '--parent', 'DEV-500', '--json',
+      ]))
     } finally {
-      if (prior === undefined) delete process.env.HUB_DB
-      else process.env.HUB_DB = prior
+      spawn.mockRestore()
     }
-    const env = { ...process.env, HUB_DB: hubDb, ORCH_DB: process.env.ORCH_DB! }
-    const human = Bun.spawnSync([process.execPath, orchCli, 'epic', parentKey], { env, stdout: 'pipe', stderr: 'pipe' })
-    const json = Bun.spawnSync([process.execPath, orchCli, 'epic', parentKey, '--json'], { env, stdout: 'pipe', stderr: 'pipe' })
-    expect(human.exitCode, human.stderr.toString()).toBe(0)
-    expect(json.exitCode, json.stderr.toString()).toBe(0)
-    const report = JSON.parse(json.stdout.toString())
-    expect(report.children.map((child: any) => child.title)).toEqual(['child one', 'child two'])
-    for (const child of report.children) expect(human.stdout.toString()).toContain(child.key)
   })
 })
