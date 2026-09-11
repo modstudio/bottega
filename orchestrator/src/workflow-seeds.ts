@@ -11,10 +11,10 @@ const seeds = [
   {
     slug: 'ship', revision: 2,
     definition: {
-      title: 'Ship a task', description: 'Rebase, independently review, triage, fix, land, and close a task.',
+      title: 'Ship a task', description: 'Rebase, independently review, triage, fix, merge by pull request, and close a task.',
       arguments: [
         { name: 'key', required: true, description: 'The task key.' },
-        { name: 'branch', required: true, description: 'The branch ref to land.' },
+        { name: 'branch', required: true, description: 'The branch to ship.' },
         { name: 'worktree', required: true, description: "The branch's worktree path." },
       ],
       modes: [{ slug: 'default', title: 'Ship', default: true,
@@ -80,16 +80,19 @@ export function seedWorkflows(d: Database): void {
         continue
       }
       if (seed.revision <= storedSeedRevision(d, workflow.id)) continue
-      const { n: priorN } = d.query("SELECT n FROM workflow_version WHERE workflow_id=? AND status='production'")
-        .get(workflow.id) as { n: number }
+      // A workflow may have no production version (a draft never promoted); then there is nothing to retire.
+      const prior = d.query("SELECT n FROM workflow_version WHERE workflow_id=? AND status='production'")
+        .get(workflow.id) as { n: number } | null
       const { n: maxN } = d.query('SELECT COALESCE(MAX(n),0) AS n FROM workflow_version WHERE workflow_id=?')
         .get(workflow.id) as { n: number }
       const n = maxN + 1
-      d.query("UPDATE workflow_version SET status='retired',retired_at=? WHERE workflow_id=? AND status='production'")
-        .run(now, workflow.id)
-      d.query(`INSERT INTO workflow_event
-        (workflow_id,version_n,event,author,reason,session_id,at)
-        VALUES (?,?,'retire','seed',?,NULL,?)`).run(workflow.id, priorN, reason, now)
+      if (prior) {
+        d.query("UPDATE workflow_version SET status='retired',retired_at=? WHERE workflow_id=? AND status='production'")
+          .run(now, workflow.id)
+        d.query(`INSERT INTO workflow_event
+          (workflow_id,version_n,event,author,reason,session_id,at)
+          VALUES (?,?,'retire','seed',?,NULL,?)`).run(workflow.id, prior.n, reason, now)
+      }
       d.query(`INSERT INTO workflow_version
         (workflow_id,n,status,definition,author,reason,created_at,promoted_at)
         VALUES (?,?,'production',?,'seed',?,?,?)`)
