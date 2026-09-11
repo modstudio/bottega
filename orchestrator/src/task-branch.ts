@@ -98,6 +98,10 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
     const commitCount = Number(taskBranchGit(repoRoot, 'rev-list', '--count', `${mergeBase}..${tip}`))
     if (!Number.isSafeInteger(commitCount) || commitCount < 1) continue
 
+    // The two supported landing shapes leave different patch-id evidence.
+    // Preserve the original commits for a multi-commit cherry-pick, then also
+    // compare the net patch for a squash landing. An ancestry-only merged check
+    // cannot see either and must not decide task ownership.
     const individual = taskBranchGit(repoRoot, 'cherry', trunkTip, tip)
     if (!individual.split('\n').some((line) => line.startsWith('+ '))) continue
     const tree = taskBranchGit(repoRoot, 'rev-parse', '--verify', `${tip}^{tree}`)
@@ -121,6 +125,7 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
         source: source === 'recipe' || source === 'git' || source === 'readonly_recipe'
           ? source
           : undefined,
+        // Null records that this run attached; it did not mint the task branch.
         mintedBranch: null,
       } : null,
     })

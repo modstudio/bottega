@@ -25,8 +25,34 @@ export function childEnv(
     env[k] = v
   }
   env.ORCH_DEPTH = String(depth() + 1)
+  /**
+   * Which run is asking, for the ask-server the child may call back into.
+   *
+   * Set HERE, by the process that spawned the agent, because that is the only
+   * party that actually knows. A worker naming its own run id would be guessing,
+   * and in a fan-out several are alive at once — so the guess would sometimes
+   * attach a question to another worker's run, and the ruling would be delivered
+   * to whichever of them happened to be waiting.
+   */
   if (runId) env.ORCH_RUN_ID = String(runId)
+  // The credential half. The id says which run; this says the caller is
+  // actually that run, and the environment of a child process is the one place
+  // an unrelated process cannot read it from.
   if (runToken) env.ORCH_RUN_TOKEN = runToken
+  /**
+   * THE REAL DATABASE, not the one beside whatever checkout the worker is in.
+   *
+   * The parent has already resolved the one database through ORCH_DB, git's
+   * common directory, or the main binary. Passing the absolute result keeps a
+   * detached worker on that same file even after its cwd changes to a worktree.
+   *
+   * Reported by a worker that checked the command before building on it, which
+   * is exactly the behaviour the contract asks for and exactly how this was
+   * found.
+   *
+   * Residual exposure: the canon accepts that a worktree worker reads the real
+   * register.
+   */
   if (includeStore) env.ORCH_DB = DB_PATH
   const child = { ...env, ...(a.env?.() ?? {}), ...extra }
   if (!includeStore) delete child.ORCH_DB
@@ -126,6 +152,9 @@ export function terminateRunProcesses(id: number, exclude: number[] = []): numbe
     console.error(`orch: ${inventory.reason}; nothing signalled`)
     return []
   }
+  // A stop command is itself a descendant of the coordinator it is stopping.
+  // If the reaper signals itself, it can exit before reaching a sibling vendor
+  // process and leave the caller waiting on that vendor forever.
   const pids = verifiedProcessTree(inventory.rows, id, row.pid, [...exclude, process.pid])
   if (!pids.length) {
     if (inventory.rows.some((candidate) => candidate.pid === row.pid)) {

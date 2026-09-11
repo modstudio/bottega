@@ -77,6 +77,7 @@ export function detachedRunOptions(
     distinctModels, retryOf, cwd, noFailover, noWaitCapacity, carry, review, ownerSession, resume,
     deliverables, timeoutMinutes, keepTree,
   } = spec
+  // Adding a field to DetachSpec must fail typechecking until it is handled here.
   const consumed: Required<Record<keyof DetachSpec, unknown>> = {
     agent, schema, mcp, model, probe, transport, label, lens, seed, key, repo, base, avoid,
     distinctModels, retryOf, cwd, noFailover, noWaitCapacity, carry, review, ownerSession, resume,
@@ -138,6 +139,10 @@ export function writingFailoverRefusal(
   changes: ({ files: string[] } & Record<string, unknown>) | null,
   worktree: string,
 ): string | null {
+  // "Clean" means no change from this run's immutable base, not an empty
+  // porcelain status. A worker may commit normally now; changesIn includes
+  // those commits, and handing that branch to a second agent would mix two
+  // authors' work in the one diff this guard exists to protect.
   if (!writesJob) return null
   if (changes && changes.files.length === 0) return null
   const detail = changes
