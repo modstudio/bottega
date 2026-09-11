@@ -129,6 +129,11 @@ export function stubWorker(opts: {
   const root = mkdtempSync(join(dir, 'stub-worker-'))
   const script = join(root, 'worker.sh')
   const lines = ['#!/bin/sh', 'set -e']
+  lines.push(
+    '[ -z "$ORCH_STUB_PID_FILE" ] || echo "$$" > "$ORCH_STUB_PID_FILE"',
+    '[ -z "$ORCH_STUB_OUTPUT" ] || printf "%s\\n" "$ORCH_STUB_OUTPUT"',
+    '[ -z "$ORCH_STUB_READY_FILE" ] || printf "ready\\n" > "$ORCH_STUB_READY_FILE"',
+  )
   if (opts.commits) {
     lines.push(
       'echo worker > worker.txt',

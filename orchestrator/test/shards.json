@@ -24,6 +24,7 @@
     "src/worktree-1.cli.test.ts": { "size": "short" },
     "test/process-boundary/worktree.test.ts": { "size": "short", "exclusive": true },
     "test/process-boundary/idle-kill.test.ts": { "size": "moderate", "exclusive": true },
+    "test/process-boundary/run.test.ts": { "size": "short" },
     "src/worktree-4.cli.test.ts": { "size": "short" },
     "src/worktree-5.cli.test.ts": { "size": "short" }
   },
@@ -69,7 +70,8 @@
         "src/worktree-1.cli.test.ts",
         "src/review-3.cli.test.ts",
         "src/issue.cli.test.ts",
-        "src/linked-worktree-database.cli.test.ts"
+        "src/linked-worktree-database.cli.test.ts",
+        "test/process-boundary/run.test.ts"
       ]
     },
     {
