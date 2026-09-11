@@ -1,10 +1,18 @@
 import { describe, expect, test } from "bun:test"
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, realpathSync, mkdirSync } from "node:fs"
+import { mkdtempSync, rmSync, realpathSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
-import { hermeticGitEnv, mainCheckoutOf, scrubbedGitEnv, targetGitEnvironment, worktreeDescribeFixture } from "../orchestrator/test/fixture.ts"
+import { join } from "node:path"
+import { mainCheckoutOf, scrubbedGitEnv } from "./git.ts"
+
+/** A git environment that reads no user or system configuration; shared/ imports from nobody, so it is built here. */
+const hermeticGitEnv = (): NodeJS.ProcessEnv => ({
+  ...scrubbedGitEnv(),
+  HOME: mkdtempSync(join(tmpdir(), 'shared-git-home-')),
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_CONFIG_SYSTEM: '/dev/null',
+})
+
 describe('shared git environment decisions', () => {
-const { fromRoot, git, scratchRepo } = worktreeDescribeFixture()
 test('the shared scrub removes repository-location variables git lists and orch routing, not global-behaviour GIT_*', () => {
     const contaminated: NodeJS.ProcessEnv = {
       UNRELATED: 'preserved',
@@ -38,53 +46,6 @@ test('the shared scrub removes repository-location variables git lists and orch 
     expect(scrubbed.GIT_CONFIG_NOSYSTEM).toBe('1')
     expect(scrubbed.GIT_CONFIG_KEY_0).toBe('core.hooksPath')
     expect(scrubbed.GIT_CONFIG_VALUE_0).toBe('/worker/hooks')
-  })
-
-test('a guarded linked target receives its own object routing after inherited routing is scrubbed', () => {
-    const repo = mkdtempSync(join(tmpdir(), 'orch-target-git-env-'))
-    const linked = join(repo, 'linked')
-    const previous = Object.fromEntries([
-      'GIT_DIR', 'GIT_WORK_TREE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-      'GIT_CONFIG_COUNT', 'GIT_CONFIG_KEY_0', 'GIT_CONFIG_VALUE_0',
-      'ORCH_GUARDED_GIT_COMMON_DIR', 'ORCH_ALLOWED_GIT_REF',
-    ].map((key) => [key, process.env[key]]))
-    const fixtureGit = (...args: string[]) => {
-      const p = Bun.spawnSync(['git', ...args], {
-        cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
-      })
-      if (p.exitCode !== 0) throw new Error(p.stderr.toString())
-    }
-    try {
-      fixtureGit('init', '-b', 'main')
-      fixtureGit('config', 'user.email', 'orch-test@example.invalid')
-      fixtureGit('config', 'user.name', 'Orch Test')
-      writeFileSync(join(repo, 'tracked'), 'fixture\n')
-      fixtureGit('add', 'tracked')
-      fixtureGit('commit', '-m', 'fixture')
-      fixtureGit('worktree', 'add', '-b', 'guarded-target', linked)
-      const pointer = readFileSync(join(linked, '.git'), 'utf8').trim().slice('gitdir: '.length)
-      const linkedGitDir = realpathSync(resolve(linked, pointer))
-      mkdirSync(join(linkedGitDir, 'objects'))
-      Object.assign(process.env, {
-        GIT_DIR: '/worker/git-dir', GIT_WORK_TREE: '/worker/tree',
-        GIT_OBJECT_DIRECTORY: '/worker/objects', GIT_ALTERNATE_OBJECT_DIRECTORIES: '/worker/alternates',
-        GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.hooksPath', GIT_CONFIG_VALUE_0: '/worker/hooks',
-        ORCH_GUARDED_GIT_COMMON_DIR: '/worker/common', ORCH_ALLOWED_GIT_REF: 'refs/heads/worker',
-      })
-      const target = targetGitEnvironment(linked)
-      expect(target.GIT_OBJECT_DIRECTORY).toBe(join(linkedGitDir, 'objects'))
-      expect(target.GIT_ALTERNATE_OBJECT_DIRECTORIES).toBe(realpathSync(join(repo, '.git', 'objects')))
-      expect(target.GIT_DIR).toBeUndefined()
-      expect(target.GIT_CONFIG_COUNT).toBeUndefined()
-      expect(target.ORCH_GUARDED_GIT_COMMON_DIR).toBeUndefined()
-      expect(target.ORCH_ALLOWED_GIT_REF).toBeUndefined()
-    } finally {
-      for (const [key, value] of Object.entries(previous)) {
-        if (value === undefined) delete process.env[key]
-        else process.env[key] = value
-      }
-      rmSync(repo, { recursive: true, force: true })
-    }
   })
 
 test('main checkout resolution does not merge inherited object routing into a supplied environment', () => {
