@@ -6,6 +6,7 @@ import { failureReason, outcomeOf } from './outcome.ts'
 import type { ObservedDeadRun } from './db.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES, visibleTranscriptText } from './result-output.ts'
 import { parseMcpProbe } from './mcp-probe.ts'
+import { runArtifactsDir } from './run-artifacts.ts'
 
 export const COLLECTION_COMMANDS = new Set(['result', 'wait'])
 
@@ -143,9 +144,37 @@ export function mintedBranchForRun(database: Database, runId: number): string | 
   return chained?.minted_branch ?? null
 }
 
-function branchNote(database: Database, runId: number): string {
+/**
+ * A writer that changed files but authored no commit leaves its branch at the
+ * base; close-out then reclaims the tree and the work survives only in the
+ * extracted artifacts. Say so, naming only the artifact paths that exist.
+ */
+export function noCommitNote(
+  facts: { base_commit: string | null; branch_kept_tip: string | null; changed_paths: string | null },
+  artifactsDir: string,
+): string {
+  if (!facts.branch_kept_tip || facts.branch_kept_tip !== facts.base_commit) return ''
+  let changed: unknown = null
+  try { changed = JSON.parse(facts.changed_paths ?? 'null') } catch { /* unreadable is not evidence */ }
+  if (!Array.isArray(changed) || !changed.length) return ''
+  const copies = ['uncommitted.patch', 'untracked']
+    .map((name) => join(artifactsDir, name))
+    .filter((path) => existsSync(path))
+  return `\n  no commit authored: the branch is at its base; the work exists only in ` +
+    (copies.length ? copies.join(' and ') : `no extracted artifact (checked ${artifactsDir})`)
+}
+
+/** Branch footer shared by result, wait and follow. */
+export function branchNote(database: Database, runId: number): string {
   const branch = mintedBranchForRun(database, runId)
-  return branch ? `\n  branch:    ${branch}` : ''
+  if (!branch) return ''
+  const row = database.query(
+    'SELECT COALESCE(parent_run_id, id) root_id FROM run WHERE id=?',
+  ).get(runId) as { root_id: number } | null
+  const root = row ? database.query(
+    'SELECT base_commit, branch_kept_tip, changed_paths FROM run WHERE id=?',
+  ).get(row.root_id) as Parameters<typeof noCommitNote>[0] | null : null
+  return `\n  branch:    ${branch}` + (root ? noCommitNote(root, runArtifactsDir(row!.root_id)) : '')
 }
 
 function shellArg(value: string): string {
@@ -385,8 +414,8 @@ export async function collectWait(
         const note = failoverSummary(chain.attempts)
         if (note) console.log(`  ${note}`)
         if (!outcome.ok) console.log(`  ${failureReason(row)}`)
-        const branch = mintedBranchForRun(database, row.id)
-        if (branch) console.log(`  branch:    ${branch}`)
+        const branch = branchNote(database, row.id)
+        if (branch) console.log(branch.slice(1))
       }
       if (observedTerminal.size || outcomes.some(({ outcome }) => !outcome.ok)) process.exit(1)
       return
