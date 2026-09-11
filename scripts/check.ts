@@ -157,7 +157,8 @@ if (await inherit([
   './.githooks/pre-commit.test.ts', './scripts/check-canon.test.ts',
   './scripts/check-evidence-boundary.test.ts', './scripts/check-runtime.test.ts',
   './scripts/check-file-ceiling.test.ts', './scripts/check-cognitive-ceiling.test.ts',
-  './scripts/import-scanner.test.ts', './scripts/quality/ratchet.test.ts',
+  './scripts/import-scanner.test.ts', './scripts/check-import-cycles.test.ts',
+  './scripts/quality/ratchet.test.ts',
   './scripts/quality/ceiling-decision.test.ts',
 ]) !== 0) process.exit(1)
 
@@ -190,9 +191,14 @@ for (const script of [
   'check-run-authority-boundary.ts', 'check-evidence-query-boundary.ts',
   'check-resource-ownership-boundary.ts', 'check-run-liveness-boundary.ts',
   'check-score-boundary.ts', 'check-duel-boundary.ts',
-  'check-module-boundaries.ts', 'check-file-ceiling.ts', 'check-cognitive-ceiling.ts',
+  'check-capabilities-boundary.ts', 'check-statistics-boundary.ts',
+  'check-calibration-port-boundary.ts', 'check-standard-calibration-boundary.ts',
+  'check-standard-transports-boundary.ts', 'check-runtime-registration-boundary.ts',
+  'check-module-boundaries.ts', 'check-inversion-boundaries.ts',
+  'check-file-ceiling.ts', 'check-cognitive-ceiling.ts',
   'check-brand.ts', 'check-canon.ts',
   '../orchestrator/scripts/check-pack-budget.ts',
+  'check-import-cycles.ts',
 ]) {
   const child = track(Bun.spawn(['bun', `${root}scripts/${script}`], {
     cwd: root, stdout: 'inherit', stderr: 'inherit',

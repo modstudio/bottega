@@ -8,7 +8,7 @@ import { REVIEW_SCHEMA, type ReviewReply } from './contract.ts'
 export { parseReviewOutput, parseReviewReply } from './contract.ts'
 import { job } from './jobs.ts'
 import type { ReviewTier } from './review-tier.ts'
-import { median } from './route.ts'
+import { median } from './statistics.ts'
 import { changeIdentity, type ChangeIdentityGitResult, type ChangeIdentityGitRunner } from './change-identity.ts'
 import { projectByName, type Project } from './projects.ts'
 

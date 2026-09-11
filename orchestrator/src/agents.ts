@@ -4,79 +4,11 @@ import { existsSync, readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { DB_PATH, ROOT, db as dbForAgents, writableDb, nowIso } from './db.ts'
-
-export type Caps = {
-  /** Can navigate a repo on its own (find files, grep) without being handed them. */
-  readsRepo: boolean
-  /** Can call MCP tools from this machine's server config. */
-  mcp: boolean
-  /** Discovers project MCP configuration from the process working directory. */
-  discoversMcpFromCwd: boolean
-  /** Can be bound to a JSON schema for its final message. */
-  schema: boolean
-  /** Proved by registration: writes the universal structured reply artifact. */
-  replyFile?: boolean
-  /**
-   * Can EDIT the checkout it is pointed at, headlessly, without a prompt.
-   *
-   * Strictly stronger than `readsRepo`, and not implied by it: every agent here
-   * that reads a repo does so under a read-only sandbox, and lifting that is a
-   * separate flag on every one of them. It is declared per agent rather than
-   * inferred because the failure is silent — an agent that cannot write does
-   * not error, it reports success having changed nothing, and the empty diff
-   * arrives looking exactly like a job that needed no changes.
-   *
-   * VERIFIED, not assumed, and each agent's own comment records how. codex and
-   * grok have both been watched creating a requested file and exiting 0; grok's
-   * first attempt had been killed at a two-minute bound with nothing written,
-   * which was a question about the bound rather than an answer about grok, and
-   * a later round-trip settled it.
-   *
-   * The two that are false are false for reasons, not for want of trying: agy
-   * cannot open a file, so it certainly cannot edit one, and qwen's write path
-   * is unverified rather than absent.
-   */
-  writesRepo: boolean
-  /**
-   * Can be resumed later, carrying the whole conversation, from an id.
-   *
-   * This is what makes an escalation cheap rather than ruinous. Without it, a
-   * worker that stops to ask a design question has to be restarted from the
-   * prompt and re-read every file it had already read, so asking would cost
-   * more than guessing — and an escalation channel that costs more than
-   * guessing does not get used.
-   */
-  resumable: boolean
-}
-
-/**
- * Everything an agent needs to build a command line, for a first turn or a
- * resumed one.
- *
- * `write` is separate from every other flag here because it is the only one
- * that can change the caller's disk. It defaults to false and each agent must
- * opt a sandbox open for it explicitly, so a job that never asked to write
- * cannot acquire the ability by inheriting a flag.
- */
-/**
- * How much of the machine an agent may use.
- *
- * `exec` remains available to non-repository jobs. Repository jobs never use
- * it: their boundary is workspace-write in their own disposable worktree.
- *
- * The case for it is measured rather than argued. Four review runs in a single
- * session reported, unprompted, that they could execute nothing: the Docker
- * socket was denied, PHP was not on the host, a native binding was missing. One
- * downgraded its entire test verdict to "static review" and still found two
- * real defects. `orch blockers` now counts these — nine runs across two
- * projects losing their build to one missing binding — which is what turned it
- * from an anecdote into a decision worth making.
- *
- * The boundary is the JOB. A repository job gets workspace-write in a
- * disposable worktree; a job that does not read a repository stays read-only.
- * Isolation is the worktree, not a per-project vendor-sandbox knob.
- */
-export type SandboxLevel = 'read-only' | 'workspace-write' | 'exec'
+import type { Caps } from './capabilities.ts'
+import type { ArgvOpts } from './transport.ts'
+export { MIGRATED_AGENT_NAMES } from './capabilities.ts'
+export type { Caps } from './capabilities.ts'
+export type { ArgvOpts, SandboxLevel } from './transport.ts'
 
 /**
  * What `exec` means to codex.
@@ -98,43 +30,6 @@ export const CODEX_EXEC_SANDBOX = 'danger-full-access'
  * list; the overlay is per spawn so concurrent runs keep their own values.
  */
 export const CODEX_ASK_ENV_VARS = ['ORCH_RUN_ID', 'ORCH_RUN_TOKEN', 'ORCH_DB'] as const
-
-export type ArgvOpts = {
-  prompt: string
-  out: string
-  schema?: string
-  mcp?: boolean
-  /** Grok-only scoped trust for the disposable cwd orch created. */
-  trustCwd?: string
-  model?: string
-  /** Open the sandbox for editing. True for every job that reads a repository. */
-  write?: boolean
-  /**
-   * How much of the machine this run may use.
-   *
-   * Repository jobs get workspace-write in their disposable worktree. Anything
-   * else is read-only. `exec` remains available when a non-repository job
-   * passes it explicitly.
-   */
-  sandbox?: SandboxLevel
-  /** Exact extra paths made writable inside Codex's workspace-write sandbox. */
-  writableRoots?: string[]
-  /** Object-store override used to isolate scratch objects for read-only repository jobs. */
-  gitObjectEnvironment?: {
-    GIT_OBJECT_DIRECTORY: string
-    GIT_ALTERNATE_OBJECT_DIRECTORIES: string
-  }
-  /** Command-scoped git configuration enforced inside the worker's shell. */
-  gitConfigEnvironment?: Record<string, string>
-  /**
-   * The conversation this turn belongs to.
-   *
-   * On a first turn it is the id we MINTED for an agent that lets us choose one
-   * (grok), and absent for an agent that names its own (codex). On a resumed
-   * turn it is required and identifies what to resume.
-   */
-  session?: string
-}
 
 type JSONSchema = Record<string, unknown>
 
@@ -801,9 +696,6 @@ const BUILTIN_AGENTS: Record<string, Agent> = {
     },
   },
 }
-
-/** Names seeded by the registry migration and therefore valid in job preferences. */
-export const MIGRATED_AGENT_NAMES = ['agy', 'codex', 'grok', 'qwen-local', 'local-acp'] as const
 
 export const HARNESSES = ['codex', 'grok', 'opencode', 'goose', 'claude-code'] as const
 export const BACKENDS = ['vllm', 'ollama', 'lmstudio', 'vendor'] as const

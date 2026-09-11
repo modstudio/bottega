@@ -1,4 +1,4 @@
-import { db, writableDb, sessionId, recordSessionSeen } from './db.ts'; import { registerStandardHooks } from './store-hooks.ts'; registerStandardHooks()
+import { db, writableDb, sessionId, recordSessionSeen } from './db.ts'; import { registerStandardRuntime } from './runtime-registration.ts'; registerStandardRuntime()
 import { pendingForSession } from './evidence-query.ts'
 import { REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_SEVERITY } from './review-vocabulary.ts'
 import { reapStale } from './run-liveness.ts'; import { pidAlive } from './process-liveness.ts'
@@ -1182,8 +1182,8 @@ switch (cmd) {
             ? selectedRow.defaultTransport
             : resolveTransportName(transportFlag)
           if (transport === 'acp') {
-            assertAcpAllowed(jobName, flag('agent'))
-            assertAcpReady(flag('agent') ?? 'codex')
+            assertAcpAllowed(jobName, flag('agent'), selectedRow)
+            assertAcpReady(flag('agent') ?? 'codex', selectedRow)
           }
           const agent = selectAgentForTransport(transport, flag('agent'))
           const { avoid, distinctModels } = await routeConstraints(flag('agent'))
@@ -1720,7 +1720,7 @@ switch (cmd) {
     const { avoid, distinctModels } = await routeConstraints(flag('agent'))
     const lens = flag('lens')
     const transport = resolveTransportName(flag('transport'))
-    if (transport === 'acp') assertAcpAllowed(jobName, flag('agent'))
+    if (transport === 'acp') assertAcpAllowed(jobName, flag('agent'), flag('agent') ? AGENTS[flag('agent')!] : undefined)
     const selectedAgent = selectAgentForTransport(transport, flag('agent'))
     pickCommand(
       { jobName, stack, avoid, distinctModels, lens, selectedAgent },

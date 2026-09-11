@@ -549,8 +549,8 @@ export async function run(opts: {
     : a.defaultTransport
   if (transportName === 'acp') {
     try {
-      assertAcpAllowed(opts.job, name)
-      if (!isTestTransportInstalled()) assertAcpReady(name)
+      assertAcpAllowed(opts.job, name, a)
+      if (!isTestTransportInstalled()) assertAcpReady(name, a)
     } catch (e) {
       if (opts.reserveId) db().query('DELETE FROM run WHERE id=?').run(opts.reserveId)
       throw e

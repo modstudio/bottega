@@ -7,7 +7,7 @@ import { terminateProcessGroup } from './idle-kill.ts'
 import { srtLaunchArgv } from './sandbox.ts'
 import type { SandboxRuntimeConfig } from './sandbox.ts'
 import {
-  ACP_PILOT_TASK, confineFsPath, decideAcpPermission, outcomeFromTransport, resolveCodexAcpBin,
+  ACP_PILOT_TASK, confineFsPath, decideAcpPermission, outcomeFromTransport, registerTransport, resolveCodexAcpBin,
   stopErrorMessage,
   type AgentTransport, type NormalizedEvent, type TransportHandle, type TransportResult,
   type TransportStartOpts,
@@ -26,7 +26,6 @@ type AcpUpdate = {
   rawInput?: unknown
   rawOutput?: unknown
 }
-
 type AcpTurnInput = {
   sessionId?: string | null
   updates: unknown[]
@@ -37,7 +36,6 @@ type AcpTurnInput = {
   permissionEvents?: Extract<NormalizedEvent, { kind: 'permission' }>[]
   usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number; costUsd?: number } | null
 }
-
 type GrokSessionResponse = {
   models?: { currentModelId?: unknown; availableModels?: unknown }
   _meta?: Record<string, unknown> | null
@@ -618,3 +616,5 @@ export const acpTransport: AgentTransport = {
   cancel(handle) { return handle.cancel() },
   resume(opts) { return openAcp({ ...opts, resume: true }) },
 }
+export function registerAcpTransport(): void { registerTransport('acp', () => acpTransport) }
+registerAcpTransport()
