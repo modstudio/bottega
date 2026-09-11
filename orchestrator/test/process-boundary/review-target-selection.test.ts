@@ -4,12 +4,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AGENTS,addRun,completeReview,contentTree,coverageAudit,db,dir,hermeticGitEnv,implicitReviewWarning,resolveReviewTarget,reviewReply,runJob,upsertProject } from '../fixture.ts'
 import { stubWorker } from '../stub-worker.ts'
+import { trackedTestResidue } from '../residue.ts'
+const trackResidue = trackedTestResidue()
 
 describe('review-lens-inline has no checkout', () => {
 test('explicit review refs select and record the reviewed branch tip', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-explicit-review-'))
     const branchTree = join(repo, 'feature-tree')
-    const cwdCapture = join(dir, 'report-explicit-review.cwd')
+    const cwdCapture = trackResidue(join(dir, 'report-explicit-review.cwd'))
     const script = stubWorker({ captureCwd: true })
     const agent = AGENTS.codex!
     const original = {
@@ -121,9 +123,9 @@ test('explicit review refs select and record the reviewed branch tip', async () 
   })
 test('runs from an empty directory while review-lens still receives the project tree', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-inline-boundary-'))
-    const cwdCapture = join(dir, 'report-worker-cwd.cwd')
-    const stdinCapture = join(dir, 'report-worker-cwd.stdin')
-    const factsCapture = join(dir, 'report-worker-cwd.facts')
+    const cwdCapture = trackResidue(join(dir, 'report-worker-cwd.cwd'))
+    const stdinCapture = trackResidue(join(dir, 'report-worker-cwd.stdin'))
+    const factsCapture = trackResidue(join(dir, 'report-worker-cwd.facts'))
     const script = stubWorker({
       captureCwd: true,
       captureStdin: true,
