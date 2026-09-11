@@ -43,28 +43,39 @@ registerRouting(program)
 
 program.addHelpText('after', `\nLegacy commands (migrate in later slices):\n  ${legacyVerbs.join(', ')}\n`)
 
+/** Verbs that only read the store must not stamp the session as seen. */
+function isReadOnlyInvocation(argv: string[]): boolean {
+  if (argv[0] === 'port') return argv[1] === 'import' && argv.includes('--dry-run')
+  if (argv[0] === 'review') return ['coverage-audit', 'yield'].includes(argv[1] ?? '')
+  return false
+}
+
+const INFORMATIONAL = new Set(['--help', '-h', '--version', '-V'])
+
+/** The exit code for a failure that escaped a command: Commander's own signals map to 0 or 2, everything else is 1. */
+function exitCodeFor(error: unknown): number {
+  if (!(error instanceof CommanderError)) return 1
+  return error.code === 'commander.helpDisplayed' || error.code === 'commander.version' ? 0 : 2
+}
+
+/** The retained grammar validator's refusal text, or null when argv is acceptable or only asks for help. */
+function usageRefusal(argv: string[]): string | null {
+  if (argv.some((word) => INFORMATIONAL.has(word))) return null
+  try { validateCliArgs(argv); return null }
+  catch (error) { return error instanceof Error ? error.message : String(error) }
+}
+
 export async function run(argv: string[]): Promise<number> {
   setRawArgv(argv)
-  const readOnly =
-    (argv[0] === 'port' && argv[1] === 'import' && argv.includes('--dry-run')) ||
-    (argv[0] === 'review' && ['coverage-audit', 'yield'].includes(argv[1] ?? ''))
-  if (!readOnly) recordSessionSeen()
+  if (!isReadOnlyInvocation(argv)) recordSessionSeen()
+  const refusal = usageRefusal(argv)
+  if (refusal !== null) { console.error(refusal); return 2 }
   try {
-    if (!argv.includes('--help') && !argv.includes('-h') && !argv.includes('--version') && !argv.includes('-V')) {
-      try { validateCliArgs(argv) }
-      catch (error) {
-        console.error(error instanceof Error ? error.message : String(error))
-        return 2
-      }
-    }
     await program.parseAsync(['bun', 'orch', ...argv])
     return Number(process.exitCode ?? 0)
   } catch (error) {
-    if (error instanceof CommanderError) {
-      if (error.code === 'commander.helpDisplayed' || error.code === 'commander.version') return 0
-      return 2
-    }
-    console.error(error instanceof Error ? error.message : String(error))
-    return 1
+    const code = exitCodeFor(error)
+    if (!(error instanceof CommanderError)) console.error(error instanceof Error ? error.message : String(error))
+    return code
   }
 }
