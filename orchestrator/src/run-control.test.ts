@@ -6,6 +6,8 @@ import {
   recordReview, reviewReply,
 } from '../test/fixture.ts'
 import { continueRun } from './run-control.ts'
+import { trackedTestResidue } from '../test/residue.ts'
+const trackResidue = trackedTestResidue()
 
 const limit = () => ARGV_PROMPT_BYTES
 
@@ -70,7 +72,7 @@ describe('run continuation', () => {
 
   test("continue falls back to the chain's newest session when the latest turn has none", async () => {
     const root = insert('ok')
-    const prompt = join(dir, `continue-root-${root}.prompt.txt`)
+    const prompt = trackResidue(join(dir, `continue-root-${root}.prompt.txt`))
     writeFileSync(prompt, 'original research spec')
     db().query('UPDATE run SET vendor_session=?,agent=?,prompt_path=?,session_id=? WHERE id=?')
       .run('parent-session', 'codex', prompt, 'orch-test-session', root)
@@ -88,7 +90,7 @@ describe('run continuation', () => {
   test('a checkpoint continues in a fresh vendor turn with or without a recorded session', async () => {
     for (const vendorSession of [null, 'old-session']) {
       const root = insert('ok')
-      const prompt = join(dir, `checkpoint-root-${root}.prompt.txt`)
+      const prompt = trackResidue(join(dir, `checkpoint-root-${root}.prompt.txt`))
       writeFileSync(prompt, 'the root checkpoint spec')
       db().query('UPDATE run SET vendor_session=?,agent=?,prompt_path=?,session_id=? WHERE id=?')
         .run(vendorSession, 'codex', prompt, 'orch-test-session', root)
@@ -113,7 +115,7 @@ describe('run continuation', () => {
     const longSpec = 's'.repeat(600)
     const shortOverhead = Buffer.byteLength(packResumePrompt('file-question', '', 'x'))
     const body = 'A'.repeat(ARGV_PROMPT_BYTES - shortOverhead)
-    const spec = join(dir, `continue-long-${root}.prompt.txt`)
+    const spec = trackResidue(join(dir, `continue-long-${root}.prompt.txt`))
     writeFileSync(spec, longSpec)
     db().query('UPDATE run SET vendor_session=?,agent=?,prompt_path=?,session_id=? WHERE id=?')
       .run('parent-session', 'codex', spec, 'orch-test-session', root)
@@ -126,7 +128,7 @@ describe('run continuation', () => {
     const root = insert('ok')
     const shortOverhead = Buffer.byteLength(packResumePrompt('file-question', '', 'x'))
     const body = 'A'.repeat(ARGV_PROMPT_BYTES - shortOverhead)
-    const spec = join(dir, `continue-short-${root}.prompt.txt`)
+    const spec = trackResidue(join(dir, `continue-short-${root}.prompt.txt`))
     writeFileSync(spec, 'x')
     db().query('UPDATE run SET vendor_session=?,agent=?,prompt_path=?,session_id=? WHERE id=?')
       .run('parent-session', 'codex', spec, 'orch-test-session', root)
