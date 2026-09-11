@@ -35,7 +35,7 @@
     "src/route-routing.test.ts": {
       "size": "short"
     },
-    "src/workflows.cli.test.ts": {
+    "src/workflows.test.ts": {
       "size": "short"
     },
     "test/process-boundary/worktree-create.test.ts": {
@@ -105,7 +105,7 @@
         "test/process-boundary/task-branch-run.test.ts",
         "test/process-boundary/database-port-import.test.ts",
         "test/process-boundary/hooks.test.ts",
-        "src/workflows.cli.test.ts",
+        "src/workflows.test.ts",
         "src/evals.cli.test.ts",
         "src/epic.cli.test.ts",
         "src/review-yield.cli.test.ts",

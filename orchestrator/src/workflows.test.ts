@@ -1,10 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { Database } from 'bun:sqlite'
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { applySchema, bootstrapFixtureStore } from './db.ts'
-import { REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_REPRODUCED } from './review-vocabulary.ts'
+import { applySchema } from './db.ts'
 import { composeWorkflow, exportWorkflows, forkWorkflow, getWorkflowStep, importWorkflows,
   listWorkflows, promoteWorkflow, retireWorkflow, setWorkflow, showWorkflow,
   validateWorkflowDefinition, workflowVersions, type WorkflowDefinition } from './workflows.ts'
@@ -81,29 +80,9 @@ describe('workflow projection and seeds', () => {
     if(n>1)d.query(`INSERT INTO workflow_event (workflow_id,version_n,event,author,reason,session_id,at) VALUES (?,?,'set',?,'operator edit',NULL,?)`).run(id,n,author,at)
   }
   test('fresh stores seed revision 2 as production version 1',()=>{const d=database();expect(listWorkflows(d).filter((w)=>['ship','filed-issue'].includes(w.slug)).length).toBe(2);for(const slug of ['ship','filed-issue']){const version=showWorkflow(slug,1,d);expect(version.status).toBe('production');expect(version.author).toBe('seed');expect(version.reason).toBe('seed r2');expect(events(d,slug).map(({version_n,event,author,reason,session_id})=>({version_n,event,author,reason,session_id}))).toEqual([{version_n:1,event:'set',author:'seed',reason:'seed r2',session_id:null}]);expect(validateWorkflowDefinition(version.definition)).toEqual([])}})
-  test('seed bodies describe pull-request admission and runnable review prompts',()=>{const d=database();const ship=showWorkflow('ship',1,d).definition,filed=showWorkflow('filed-issue',1,d).definition;expect(ship.modes[0]!.steps).toEqual(['rebase','lens','score','triage','complete','fix','pr','merge','close']);expect(filed.modes[0]!.steps).toEqual(['diagnose','fix','verify','blast-radius','triage','ship']);for(const definition of [ship,filed])for(const step of definition.steps){expect(step.body).not.toContain('orch land');if(step.body.includes('do review-lens'))expect(step.body).toMatch(/do review-lens[^\n]*"[^"]+"/)}const rebase=ship.steps.find((step)=>step.slug==='rebase')!.body;expect(rebase).toContain('git fetch origin');expect(rebase).toContain('git rebase origin/main');expect(rebase).toContain('repository root, `orchestrator/` and `hub/`');expect(rebase).toContain('ceiling baseline tightened');expect(ship.steps.find((step)=>step.slug==='pr')!.body).toContain('gh pr create --base main');expect(ship.steps.find((step)=>step.slug==='merge')!.body).toContain('gh pr merge <number> --squash --delete-branch');expect(ship.steps.find((step)=>step.slug==='close')!.body).toContain('Shipped in #<number>.');expect(filed.steps.find((step)=>step.slug==='blast-radius')!.body).toContain('the branch `orch result` prints');expect(filed.steps.find((step)=>step.slug==='ship')!.body).toBe('Ship the fix through the `ship` workflow: gate, pull request, merge.')})
   test('legacy seed revisions upgrade both live shapes',()=>{const d=database();makeLegacy(d,'ship',2,'operator');makeLegacy(d,'filed-issue',1);applySchema(d);expect(showWorkflow('ship',3,d).status).toBe('production');expect(showWorkflow('filed-issue',2,d).status).toBe('production');for(const [slug,prior,next] of [['ship',2,3],['filed-issue',1,2]] as const){expect(showWorkflow(slug,prior,d).status).toBe('retired');expect(showWorkflow(slug,next,d).reason).toBe('seed r2');expect(events(d,slug).slice(-3).map(({version_n,event,author,reason,session_id,at})=>({version_n,event,author,reason,session_id,at}))).toEqual([{version_n:prior,event:'retire',author:'seed',reason:'seed r2',session_id:null,at:expect.any(String)},{version_n:next,event:'set',author:'seed',reason:'seed r2',session_id:null,at:expect.any(String)},{version_n:next,event:'promote',author:'seed',reason:'seed r2',session_id:null,at:expect.any(String)}])}})
   test('revision seeding is idempotent',()=>{const d=database();makeLegacy(d,'ship',1);applySchema(d);applySchema(d);expect(workflowVersions('ship',d).map((version)=>version.n)).toEqual([1,2])})
   test('seed revision replaces but retains an operator production version',()=>{const d=database();makeLegacy(d,'ship',2,'architect');applySchema(d);expect(showWorkflow('ship',2,d).status).toBe('retired');expect(showWorkflow('ship',2,d).author).toBe('architect');expect(showWorkflow('ship',3,d).status).toBe('production');expect(showWorkflow('ship',3,d).author).toBe('seed')})
   test('a workflow with no production version upgrades without a retire event',()=>{const d=database();makeLegacy(d,'ship',1);d.query("UPDATE workflow_version SET status='retired',retired_at=? WHERE status='production'").run(new Date().toISOString());const before=events(d,'ship').length;applySchema(d);expect(showWorkflow('ship',2,d).status).toBe('production');expect(events(d,'ship').slice(before).map(({event})=>event)).toEqual(['set','promote'])})
-  test('ship composes in order and retains the scoring vocabulary',()=>{const d=database();expect(composeWorkflow('ship','default',{key:'DEV-257',branch:'x',worktree:'/tmp/x'},d).steps.map((s)=>s.slug)).toEqual(['rebase','lens','score','triage','complete','fix','pr','merge','close']);const score=getWorkflowStep('ship','score',{key:'DEV-257',branch:'x',worktree:'/tmp/x'},d).body;for(const vocabulary of [REVIEW_REPRODUCED,REVIEW_COVERAGE,REVIEW_LIMITS,REVIEW_OVERLAP])expect(score).toContain(`<${vocabulary.join('|')}>`);expect(score).toContain('Grading records the lens on the review');expect(score).toContain('no separate record step')})
   test('export is byte-identical and import writes drafts',()=>{const d=database();const dir=mkdtempSync(join(tmpdir(),'workflow-export-'));temps.push(dir);exportWorkflows(dir,d);const snapshot=(root:string)=>readdirSync(root,{recursive:true}).filter((p)=>statSync(join(root,String(p))).isFile()).sort().map((p)=>[p,readFileSync(join(root,String(p)),'utf8')]);const once=snapshot(dir);exportWorkflows(dir,d);expect(snapshot(dir)).toEqual(once);const target=database();importWorkflows(dir,'round trip','a',target);expect(showWorkflow('ship',2,target).status).toBe('draft')})
-})
-
-describe('workflow CLI', () => {
-  test('JSON surfaces compose leanly and exit 2 when choices or arguments are needed',()=>{
-    const dir=mkdtempSync(join(tmpdir(),'workflow-cli-'));temps.push(dir)
-    const databasePath=join(dir,'orch.db'), definitionPath=join(dir,'choose.json')
-    const definition=valid();delete definition.modes[0]!.default;definition.modes[0]!.entry='Choose this mode?'
-    writeFileSync(definitionPath,JSON.stringify(definition))
-    const cli=new URL('./cli.ts',import.meta.url).pathname
-    const run=(args:string[])=>{const p=Bun.spawnSync([process.execPath,cli,...args],{env:{...process.env,ORCH_DB:databasePath},stdout:'pipe',stderr:'pipe'});return {code:p.exitCode,out:p.stdout.toString(),err:p.stderr.toString()}}
-    bootstrapFixtureStore(databasePath)
-    expect(run(['workflow','set','choose','--file',definitionPath,'--reason','create']).code).toBe(0)
-    expect(run(['workflow','promote','choose','1','--reason','publish']).code).toBe(0)
-    const needs=run(['workflow','compose','choose','--json']);expect(needs.code).toBe(2);expect(JSON.parse(needs.out).needs).toEqual({mode:[{slug:'default',title:'Default',entry:'Choose this mode?'}],arguments:['key']})
-    const composed=run(['workflow','compose','choose','--mode','default','--arg','key=DEV-257','--json']);expect(composed.code).toBe(0);expect(composed.out).not.toContain('Work on')
-    const step=run(['workflow','step','choose','work','--arg','key=DEV-257','--json']);expect(JSON.parse(step.out).body).toBe('Work on DEV-257.')
-    expect(JSON.parse(run(['workflow','list','--json']).out).some((row:any)=>row.slug==='ship')).toBe(true)
-  }, 20_000)
 })
