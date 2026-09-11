@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { addRun, db, dir, upsertProject } from '../test/fixture.ts'
+import { addRun, db, dir, setDoc, upsertProject } from '../test/fixture.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { doctorCommand } from './doctor.ts'
 import { cliVersion, versionBelow } from './agents.ts'
@@ -50,5 +50,17 @@ describe('doctor presentation', () => {
   test('doctor prints latest calibration axes and reminds at age and score thresholds', async () => {
     const id = addRun({ agent: 'codex', job: 'file-question' }); db().query("INSERT INTO score (run_id,delivery,quality,scored_at,scored_by) VALUES (?,'full','right',?,'claude')").run(id, '2026-01-01T00:00:00.000Z'); db().query("INSERT INTO calibration (run_id,delivery,quality,fidelity,at,session_id) VALUES (?,'full','right',NULL,?,'calibration-session')").run(id, '2026-01-02T00:00:00.000Z')
     const result = await doctor(); expect(result.text).toContain('delivery n=1'); expect(result.text).toContain('quality  n=1'); expect(result.text).toContain('recalibrate:')
+  })
+
+  test('doctor lists inject docs over the write threshold on a canon oversize line', async () => {
+    setDoc({
+      scope: 'global', subject: null, slug: 'oversize-inject', title: 'Oversize inject',
+      body: 'z'.repeat(9 * 1024), delivery: 'inject', forceInject: 'keep for doctor listing',
+    })
+    const result = await doctor()
+    expect(result.exit).toBe(0)
+    expect(result.text).toContain('canon oversize')
+    expect(result.text).toContain('global/_/oversize-inject')
+    expect(result.text).toMatch(/headroom/)
   })
 })

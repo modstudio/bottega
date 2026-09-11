@@ -15,6 +15,35 @@ const scratch = mkdtempSync(join(tmpdir(), 'hub-note-'))
 afterAll(() => rmSync(scratch, { recursive: true, force: true }))
 
 describe('suggestion notes', () => {
+  test('orch note files through hub with cwd and session anchors', () => {
+    const text = `CLI suggestion ${crypto.randomUUID()}`
+    const prior = process.env.CLAUDE_CODE_SESSION_ID
+    try {
+      process.env.CLAUDE_CODE_SESSION_ID = 'note-cli-session'
+      const note = createNote({ text, cwd: '/fixtures/repos/workshop', forceNew: true }).note
+      expect(note).toMatchObject({ project: 'workshop', text })
+      expect(note.anchors[0]).toMatchObject({
+        cwd: '/fixtures/repos/workshop', session_id: 'note-cli-session',
+      })
+    } finally {
+      if (prior === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+      else process.env.CLAUDE_CODE_SESSION_ID = prior
+    }
+  })
+
+  test('orch note without a duplicate choice returns candidates and files nothing', () => {
+    const unique = crypto.randomUUID()
+    const first = createNote({
+      text: `Collector ${unique} loses active run intervals`, cwd: '/fixtures/repos/workshop', forceNew: true,
+    }).note
+    const before = listNotes().length
+    const offered = createNote({
+      text: `Collector ${unique} loses the active run interval`, cwd: '/fixtures/repos/workshop',
+    })
+    expect(offered.candidates[0]?.id).toBe(first.id)
+    expect(listNotes()).toHaveLength(before)
+  })
+
   test('note curate --help prints usage without running curate', () => {
     const hub = new URL('./cli.ts', import.meta.url).pathname
     const result = Bun.spawnSync([process.execPath, hub, 'note', 'curate', '--help'], {

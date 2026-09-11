@@ -33,17 +33,12 @@ test('bun test excludes run artifacts from discovery', () => {
   mkdirSync(nestedDir, { recursive: true })
   writeFileSync(join(fixture, 'bunfig.toml'), `[test]\npathIgnorePatterns = ${JSON.stringify(bunfig.test?.pathIgnorePatterns ?? [])}\n`)
   writeFileSync(join(fixture, 'control.test.ts'), "import { test } from 'bun:test'; test('control', () => {})\n")
-  writeFileSync(join(fixture, 'control.cli.test.ts'), "import { test } from 'bun:test'; test('CLI control', () => {})\n")
-  for (const suffix of ['test.ts', 'cli.test.ts']) {
-    writeFileSync(join(runs, `${marker}.${suffix}`), source)
-    writeFileSync(join(nestedDir, `${marker}.${suffix}`), source)
-  }
+  writeFileSync(join(runs, `${marker}.test.ts`), source)
+  writeFileSync(join(nestedDir, `${marker}.test.ts`), source)
   try {
     const commands = {
       unit: ['test', ...unitExclusions.flatMap((pattern) => ['--path-ignore-patterns', pattern])],
-      cli: ['test', '--timeout', '30000', '.cli.test.ts'],
       shard: ['test', '--timeout', '30000'],
-      recorder: ['test', '.cli.test.ts', '--reporter=junit', '--reporter-outfile=ratchet.junit.xml'],
     }
     for (const [name, args] of Object.entries(commands)) {
       const result = Bun.spawnSync([process.execPath, ...args], {
