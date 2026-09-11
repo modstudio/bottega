@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs'
 import type { Database } from 'bun:sqlite'
 import shards from './shards.json'
 import {
@@ -31,10 +31,12 @@ const timingDir = new URL('../runs/gate-timings/', import.meta.url).pathname
 const timingPath = `${timingDir}${timingStamp}.json`
 mkdirSync(timingDir, { recursive: true })
 const invocationTimings = new Map<string, GateTimings>()
-const present = readdirSync(new URL('../src', import.meta.url))
+const cliTests = readdirSync(new URL('../src', import.meta.url))
   .filter((file) => file.endsWith('.cli.test.ts'))
   .map((file) => `src/${file}`)
-  .sort()
+const declaredBoundaryTests = configured.filter((file) =>
+  file.startsWith('test/process-boundary/') && existsSync(new URL(`../${file}`, import.meta.url)))
+const present = [...cliTests, ...declaredBoundaryTests].sort()
 
 const declared = Object.keys(map.files).sort()
 const duplicates = configured.filter((file, index) => configured.indexOf(file) !== index)
