@@ -9,7 +9,7 @@
   "hub/src/task-cli.test.ts": 704,
   "orchestrator/src/agents-sandbox-1.cli.test.ts": 1081,
   "orchestrator/src/agents.cli.test.ts": 1215,
-  "orchestrator/src/agents.test.ts": 1142,
+  "orchestrator/src/agents.test.ts": 1009,
   "orchestrator/src/agents.ts": 1585,
   "orchestrator/src/args.ts": 580,
   "orchestrator/src/canon.test.ts": 681,
