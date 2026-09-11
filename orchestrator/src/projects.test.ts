@@ -3,16 +3,24 @@ import { createHash } from 'node:crypto'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, readFileSync, statSync, utimesSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { dbNameFor, hermeticGitEnv, recipeNotes, runRecipe } from '../test/fixture.ts'
+import { addRun, db, dbNameFor, hermeticGitEnv, recipeNotes, runRecipe } from '../test/fixture.ts'
 import { provisionDb } from './recipe.ts'
 import {
   MAIN_CHECKOUT_INVARIANT, assertMainCheckoutClean, inspectMainCheckout, mainCheckoutWorktreeHint,
-  undeclaredCommitHooks, validateProjectSettings, validateStoredProjectSettings,
+  resolveBranchRef, undeclaredCommitHooks, validateProjectSettings, validateStoredProjectSettings,
 } from './projects.ts'
 
 const CLEAN = { dirtyTracked: [] as string[], untracked: [] as string[], sequence: { status: 'none' as const } }
 
 describe('a project can declare a worktree instead of writing one', () => {
+  test('a branch ref resolves a branch name or numeric run id', () => {
+    expect(resolveBranchRef('feature/DEV-475')).toEqual({ branch: 'feature/DEV-475', runId: null })
+    const runId = addRun({ agent: 'codex', job: 'implement' })
+    db().query('UPDATE run SET branch=? WHERE id=?').run('feature/DEV-475', runId)
+    expect(resolveBranchRef(String(runId))).toEqual({ branch: 'feature/DEV-475', runId })
+    expect(() => resolveBranchRef('999999999')).toThrow('no run 999999999')
+  })
+
   test('MCP server and probe declarations have actionable narrow shapes', () => {
     expect(validateProjectSettings({ mcpServer: 'project', mcp: { probe_tool: 'task.list' } }))
       .toEqual([])

@@ -36,7 +36,6 @@ const DEGRADED_COLLECTION_GRAPH = [
 const DEGRADED_HEAVY_MODULES = [
   'agents.ts',
   'cli.ts',
-  'landing.ts',
   'route.ts',
   'run.ts',
   'worktree.ts',
@@ -344,7 +343,7 @@ describe("detached run collection", () => {
     // The 120s bound leaves 5.8x margin over the 20,517ms measured worst case.
   }, 120_000)
 
-  test('confinement clear records a missing worktree block and landing names its recovery', () => {
+  test('confinement clear records a missing worktree block and its recovery', () => {
     const fixture = confinementArtifact()
     try {
       fixture.git(fixture.repo, 'worktree', 'remove', fixture.worktree)
@@ -357,12 +356,6 @@ describe("detached run collection", () => {
       const pre = JSON.parse((db().query('SELECT pre_confinement FROM run WHERE id=?').get(fixture.id) as
         { pre_confinement: string }).pre_confinement)
       expect(pre.landingBlock).toMatchObject({ worktree: fixture.worktree })
-      const landing = orchFrom(fixture.repo, 'orch-test-session',
-        'land', String(fixture.id), '--unreviewed', 'fixture')
-      expect(landing.code).not.toBe(0)
-      expect(landing.err).toContain(`recorded worktree ${fixture.worktree} is missing`)
-      expect(landing.err).toContain('invariant:')
-      expect(landing.err).toContain(`cleared by: git worktree add ${fixture.worktree} ${fixture.branch}`)
     } finally { rmSync(fixture.repo, { recursive: true, force: true }) }
   })
 

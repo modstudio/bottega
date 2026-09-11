@@ -392,16 +392,6 @@ test('shared-ref guard recognition is independent of the running checkout path',
       git(repo, ['worktree', 'remove', '--force', isolatedTree.path])
       git(repo, ['update-ref', '-d', `refs/heads/${isolatedTree.branch}`])
 
-      const landingTree = createWorktree(repo, 1491)
-      const landingEnv = gitObjectEnvironmentFor('codex', JOBS.land!, landingTree)
-      expect(landingEnv).toBeUndefined()
-      writeFileSync(join(landingTree.path, 'landed.txt'), 'shared\n')
-      git(landingTree.path, ['add', 'landed.txt'], landingEnv)
-      git(landingTree.path, ['commit', '-m', 'shared commit'], landingEnv)
-      const landingCommit = git(landingTree.path, ['rev-parse', 'HEAD'], landingEnv)
-
-      expect(git(repo, ['cat-file', '-t', landingCommit])).toBe('commit')
-
       const workerTree = createWorktree(repo, 1492)
       expect(gitObjectEnvironmentFor('codex', JOBS.implement!, workerTree)).toBeUndefined()
       writeFileSync(join(workerTree.path, 'worker.txt'), 'committed\n')
@@ -434,18 +424,8 @@ test('shared-ref guard recognition is independent of the running checkout path',
       git(repo, ['worktree', 'remove', '--force', workerTree.path])
       expect(git(repo, ['rev-parse', workerTree.branch])).toBe(workerCommit)
       expect(git(repo, ['cat-file', '-t', workerCommit])).toBe('commit')
-      expect(existsSync(join(
-        repo, '.git', 'objects', landingCommit.slice(0, 2), landingCommit.slice(2),
-      ))).toBe(true)
-      expect(existsSync(join(
-        repo, '.git', 'worktrees', landingTree.branch, 'objects',
-        landingCommit.slice(0, 2), landingCommit.slice(2),
-      ))).toBe(false)
-
-      git(repo, ['update-ref', 'refs/heads/main', landingCommit])
-      expect(git(repo, ['log', '--oneline', '-1'])).toContain(landingCommit.slice(0, 7))
       expect(() => git(repo, ['status', '--short'])).not.toThrow()
-      expect(git(repo, ['fsck', '--connectivity-only'])).not.toContain(landingCommit)
+      expect(git(repo, ['fsck', '--connectivity-only'])).not.toContain(workerCommit)
     } finally {
       rmSync(repo, { recursive: true, force: true })
     }

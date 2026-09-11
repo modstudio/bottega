@@ -114,8 +114,8 @@ more than it fixed. `ops/` refreshes main checkouts only.
 **Landing is a pull request.** Push the branch, open a PR, let the checks run,
 merge on GitHub. Trunk moves on GitHub and this checkout is DOWNSTREAM of it:
 after a merge it pulls and runs migrations, the way a deployment does. Never
-fast-forward local trunk and call that landed. `orch land` and its local queue
-are retired under DEV-450.
+fast-forward local trunk and call that landed. Local admission commands and
+queues do not exist.
 
 **The gate is a workflow rule, not an enforced one.** This repository's plan
 provides no branch protection and no rulesets, so nothing mechanically blocks a
@@ -151,8 +151,8 @@ per-project notes and on which concerns a project keeps for itself (see above) â
 `orch project add` and `orch project set` verify a declared landing branch against
 the checkout's HEAD and, where canon names an integration branch, against that;
 a mismatch refuses with both anchored lines. The register distinguishes the
-landing branch from an optional production branch, and `orch land` refuses to
-touch production. `orch doctor` reports a main checkout whose HEAD is not its
+landing branch from an optional production branch; pull requests target the
+landing branch, never production. `orch doctor` reports a main checkout whose HEAD is not its
 landing branch as a register question, never a run failure.
 
 ## What this is for

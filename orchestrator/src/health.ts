@@ -16,6 +16,15 @@ export type HealthClass = FailureKind | 'stale' | 'stopped'
 type HealthClassRow = HarnessHealth['classes'][number] & { kind: HealthClass }
 type HealthVerdictRow = HarnessHealth['falseVerdicts'][number]
 
+export function landingsWithPostStepError(database: Database = db()): {
+  project: string; branch: string; error: string
+}[] {
+  return database.query(
+    `SELECT project, branch, error FROM landing
+      WHERE status='install_failed' AND error IS NOT NULL ORDER BY id`,
+  ).all() as { project: string; branch: string; error: string }[]
+}
+
 type RunRow = {
   id: number; started_at: string; latency_ms: number | null
   failure_kind: FailureKind | null; status: string; error: string | null

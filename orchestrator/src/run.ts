@@ -66,7 +66,7 @@ import { assertMainCheckoutClean, assertRegisterBranches, createHasPlaceholder, 
 import { compilePack, recordPack } from './canon.ts'
 import { seedGuidance } from './args.ts'
 import { resolveRunsDirectory } from './database-location.ts'
-import { resolveLandingBranch } from './landing.ts'
+import { resolveBranchRef } from './projects.ts'
 import { resolveLens } from './lenses.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES } from './result-output.ts'
 import { addedGrokTrustHeadings, grokTrustHeadings } from './grok-trust.ts'
@@ -272,7 +272,7 @@ export function resolveReviewTarget(
       `  orch project set ${project!.name} --settings '{"worktree":{"detached":true}}'`,
     )
   }
-  const { branch } = resolveLandingBranch(reviewRef)
+  const { branch } = resolveBranchRef(reviewRef)
   if (carry && branchOf(cwd) !== branch) {
     throw new Error(
       `--review ${reviewRef} resolves to branch ${branch}, but --carry was requested from ` +
@@ -2158,8 +2158,8 @@ export async function run(opts: {
   // ref is refused before a run row or worktree exists.
   if (opts.base) {
     const internalRepositoryFailover = opts.automaticFailover && requestedJob.needs.readsRepo
-    if (opts.job !== 'implement' && opts.job !== 'fix' && opts.job !== 'land' && !internalRepositoryFailover) {
-      throw new Error('--base is only valid for the implement, fix and land jobs')
+    if (opts.job !== 'implement' && opts.job !== 'fix' && !internalRepositoryFailover) {
+      throw new Error('--base is only valid for the implement and fix jobs')
     }
   }
   const readOnlyBase = repoJob && !writesJob && !opts.resume?.worktree
@@ -2642,7 +2642,7 @@ export async function run(opts: {
   try {
     const worktreeTool = repoJob ? toolFor(callerCwd) : null
     let resolvedTaskBranch: TaskBranchCandidate | null = null
-    if (repoJob && writesJob && opts.job !== 'land' && !worktree && launchKey) {
+    if (repoJob && writesJob && !worktree && launchKey) {
       resolvedTaskBranch = resolveTaskBranch(callerCwd, launchKey)
       if (resolvedTaskBranch?.worktree) {
         worktree = resolvedTaskBranch.worktree
@@ -4264,7 +4264,7 @@ export async function run(opts: {
           keepTree,
           resolvedReviewTarget: first.review_ref && first.base_commit && first.head_commit
             ? {
-                branch: resolveLandingBranch(first.review_ref).branch,
+                branch: resolveBranchRef(first.review_ref).branch,
                 commit: first.head_commit,
                 base: first.base_commit,
               }

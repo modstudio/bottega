@@ -15,9 +15,6 @@
     "src/evals.cli.test.ts": { "size": "short" },
     "src/git-environment-regression.cli.test.ts": { "size": "short" },
     "src/issue.cli.test.ts": { "size": "short" },
-    "src/landing-1.cli.test.ts": { "size": "moderate", "exclusive": true },
-    "src/landing-2.cli.test.ts": { "size": "short", "exclusive": true },
-    "src/landing-3.cli.test.ts": { "size": "short", "exclusive": true },
     "src/lifecycle-harness.cli.test.ts": { "size": "moderate", "exclusive": true },
     "src/linked-worktree-database.cli.test.ts": { "size": "short" },
     "src/monitor.cli.test.ts": { "size": "short" },
@@ -41,7 +38,6 @@
     {
       "measuredSeconds": 76.86,
       "files": [
-        "src/landing-1.cli.test.ts",
         "src/agents.cli.test.ts",
         "src/docs.cli.test.ts",
         "src/run-1.cli.test.ts",
@@ -83,7 +79,6 @@
       "files": [
         "src/cli-answer.cli.test.ts",
         "src/cli-do-1.cli.test.ts",
-        "src/landing-2.cli.test.ts",
         "src/cli-projects.cli.test.ts",
         "src/worktree-1.cli.test.ts",
         "src/review-3.cli.test.ts",
@@ -95,7 +90,6 @@
     {
       "measuredSeconds": 15,
       "files": [
-        "src/landing-3.cli.test.ts",
         "src/reclaim.cli.test.ts"
       ]
     }

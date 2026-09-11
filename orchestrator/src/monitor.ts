@@ -499,7 +499,7 @@ export async function monitor(trigger: 'invoked' | 'backstop' = 'invoked', clock
     ownerSession: run.session_id })
 
   for (const project of projects()) {
-    for (const lockName of ['create', 'landing', 'cleanup']) {
+    for (const lockName of ['create', 'cleanup']) {
       try {
         const state = projectLockState(project.path, lockName)
         if (state.holder && !pidAlive(state.holder.pid)) add({ kind: 'dead-lock',

@@ -53,7 +53,6 @@ describe('reply dialect resolution', () => {
       summarize: 'text-reply',
       implement: 'WORKER_SCHEMA',
       fix: 'WORKER_SCHEMA',
-      land: 'WORKER_SCHEMA',
       'mcp-query': 'text-reply',
     } as const
 

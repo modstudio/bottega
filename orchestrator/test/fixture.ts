@@ -195,7 +195,7 @@ export const retargetedPrompt = (
 ).prompt
 export const { summary } = await import('../src/metric.ts')
 export const { parseWorkerReply, parseWorkerReplyWithCount, READONLY_PREAMBLE,
-        NO_REPO_PREAMBLE, WORKER_PREAMBLE, LAND_PREAMBLE, REVIEW_SCHEMA,
+        NO_REPO_PREAMBLE, WORKER_PREAMBLE, REVIEW_SCHEMA,
         READER_SCHEMA, parseReaderOutput, missingDeclaredDeliverables, UNEVIDENCED_DELIVERABLE_ERROR,
         READER_DELIVERABLE_FIRST, readerDeliverablesInstruction,
         REVIEW_SEVERITY_INSTRUCTION, REVIEW_PROVENANCE_INSTRUCTION,
@@ -221,9 +221,6 @@ export const { orphanSafety, repoRootOf, createWorktree, createWorktreeForBranch
         unmergedBranch, assertCallerAncestry, checkoutHasUncommittedWork, callerDrift,
         changesIn, contentTree, removeFor, branchTip, extractWorktree, extractionDest,
         sanitiseOrphanExtractionPath } = await import('../src/worktree.ts')
-export const { drainQueue, gateFailureSummary, land, landingStatus, landingReviewCoverage, resolveLandingBranch,
-        setPostLandMigrateForFixture, landingsWithPostStepError, allocateLandingJournals,
-        cleanCompletedSequencerState } = await import('../src/landing.ts')
 export const { gitLocks, formatGitLocks } = await import('../src/git-locks.ts')
 export const { AGENTS, ARGV_PROMPT_BYTES, localReachable, ensureLocalHealth, resetLocalHealth,
         unavailableReason, available, NEEDS_HEALTH, wakeDecision,
@@ -356,118 +353,6 @@ export function workerReply(overrides: Record<string, unknown> = {}): Record<str
     deviations: null, tests: { command: 'bun test', ran: true, passed: true, detail: null },
     blockers: null, ...overrides,
   }
-}
-
-export function landingDescribeFixture() {
-let landingFixtureRunId = 50_000
-  const landingModule = new URL('../src/landing.ts', import.meta.url).href
-  const gitLocksModule = new URL('../src/git-locks.ts', import.meta.url).href
-  const worktreeModule = new URL('../src/worktree.ts', import.meta.url).href
-  const g = (cwd: string, ...args: string[]) => {
-    const p = testSpawnSync(['git', ...args], {
-      cwd, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
-    })
-    if (p.exitCode !== 0) throw new Error(p.stderr.toString())
-    return p.stdout.toString().trim()
-  }
-  const repoWithBranches = (branches: string[]) => {
-    const repo = realpathSync(mkdtempSync(join(tmpdir(), 'orch-land-')))
-    g(repo, 'init', '-b', 'main')
-    g(repo, 'config', 'user.email', 'orch-test@example.invalid')
-    g(repo, 'config', 'user.name', 'Orch Test')
-    appendFileSync(join(repo, '.git', 'info', 'exclude'), 'trees/\n.orch-run\n')
-    writeFileSync(join(repo, 'base.txt'), 'base\n')
-    g(repo, 'add', 'base.txt')
-    g(repo, 'commit', '-m', 'base')
-    const trees: Record<string, string> = {}
-    for (const branch of branches) {
-      const tree = join(repo, 'trees', branch)
-      mkdirSync(join(repo, 'trees'), { recursive: true })
-      g(repo, 'worktree', 'add', '-b', branch, tree, 'main')
-      writeFileSync(join(tree, '.orch-run'), `${landingFixtureRunId++}\n${repo}\nsource: git\n`)
-      writeFileSync(join(tree, `${branch}.txt`), `${branch}\n`)
-      g(tree, 'add', `${branch}.txt`)
-      g(tree, 'commit', '-m', branch)
-      trees[branch] = tree
-    }
-    return { repo, trees }
-  }
-  const childLand = (
-    repo: string, branch: string,
-    options: { message?: string; unreviewed?: string | null; runId?: number } = {},
-    extraEnv: Record<string, string | undefined> = {},
-  ) => {
-    const env: Record<string, string | undefined> = {
-      ...hermeticGitEnv(), ...extraEnv,
-      ORCH_DB: process.env.ORCH_DB!, CLAUDE_CODE_SESSION_ID: branch,
-    }
-    for (const [name, value] of Object.entries(env)) {
-      if (value === undefined) delete env[name]
-    }
-    return testSpawn(
-      [process.execPath, '-e',
-        `const { land } = await import(process.argv[1]); land(process.argv[2], process.argv[3], JSON.parse(process.argv[4]))`,
-        landingModule, repo, branch, JSON.stringify(options.unreviewed === null
-          ? { ...options, unreviewed: undefined }
-          : { unreviewed: 'existing landing fixture', ...options })],
-      { env, stdout: 'pipe', stderr: 'pipe' },
-    )
-  }
-  const observeGitLocks = (repo: string) => {
-    // Bun's implicit spawn environment is the process launch environment, even
-    // after process.env entries are deleted. Run the production observers in a
-    // scrubbed child so an orch worker's private object store cannot replace the
-    // scratch repository's object store.
-    const child = testSpawnSync(
-      [process.execPath, '-e', [
-        'const { landingStatus } = await import(process.argv[1])',
-        'const { gitLocks } = await import(process.argv[2])',
-        'console.log(JSON.stringify({ status: landingStatus(process.argv[3]), locks: gitLocks(process.argv[3]) }))',
-      ].join(';'), landingModule, gitLocksModule, repo],
-      { cwd: repo, env: hermeticGitEnv({ ORCH_DB: process.env.ORCH_DB! }),
-        stdout: 'pipe', stderr: 'pipe' },
-    )
-    if (child.exitCode !== 0) throw new Error(child.stderr.toString())
-    return JSON.parse(child.stdout.toString()) as {
-      status: string
-      locks: ReturnType<typeof gitLocks>
-    }
-  }
-  const completedReview = (
-    project: string, trees: (string | null)[],
-    source?: { branch: string; baseCommit: string; launchCwd: string },
-  ) => {
-    const entries = trees.map((tree, i) => ({
-      runId: addRun({ agent: 'codex', job: 'review-lens', model: 'test',
-        lens: `lens-${i + 1}`, repo: project, ...(tree ? { inputTree: tree } : {}) }),
-      output: reviewReply(0),
-    }))
-    if (source) {
-      const update = db().query(
-        'UPDATE run SET branch=?, base_commit=?, launch_cwd=?, head_commit=? WHERE id=?',
-      )
-      const headCommit = g(source.launchCwd, 'rev-parse', 'HEAD^{commit}')
-      for (const entry of entries) {
-        update.run(source.branch, source.baseCommit, source.launchCwd, headCommit, entry.runId)
-      }
-    }
-    const id = recordReviews(entries)
-    completeReview(id)
-    return id
-  }
-
-  const realTimeoutGate = (name: string) => {
-    const fixture = mkdtempSync(join(tmpdir(), 'orch-real-timeout-gate-'))
-    const testFile = join(fixture, 'buried-timeout.test.ts')
-    const quote = (value: string) => `'${value.replace(/'/g, "'\\''")}'`
-    writeFileSync(testFile, [
-      "import { test } from 'bun:test'",
-      `test(${JSON.stringify(name)}, async () => { await Bun.sleep(50) }, 1)`,
-      "for (let i = 1; i <= 900; i++) test(`later test ${i}`, () => {})",
-    ].join('\n') + '\n')
-    return { fixture, gate: `${quote(process.execPath)} test ${quote(testFile)}` }
-  }
-  return { landingFixtureRunId, landingModule, gitLocksModule, worktreeModule, g, repoWithBranches, childLand, observeGitLocks, completedReview, realTimeoutGate }
 }
 
 export function runCollectionDescribeFixture() {

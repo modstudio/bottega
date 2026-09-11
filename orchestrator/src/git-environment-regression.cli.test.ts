@@ -37,10 +37,6 @@ describe('representative production git paths ignore inherited worker routing', 
     expect(p.exitCode, `${p.stdout.toString()}\n${p.stderr.toString()}`).toBe(0)
   }
 
-  test('landing pins resolve in a fixture repository', () => {
-    rerun('landing-1.cli.test.ts', 'lands when every lens in a completed review measured the candidate tree')
-  })
-
   test('run checkout observation resolves fixture HEAD', () => {
     rerun('worktree-4.cli.test.ts', 'a real run records an external write and a clean run records none')
   })

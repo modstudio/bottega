@@ -21,7 +21,6 @@ import {
 } from './migrations.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db, enableSchemaReload, writeTransaction } from './db.ts'
-import { diffCarriesMigrationJournal } from './landing.ts'
 
 const fresh = () => {
   const d = new Database(':memory:')
@@ -643,12 +642,6 @@ describe('schema coexistence', () => {
     expect(readUserVersion(d)).toBe(2)
     d.close()
     rmSync(dir, { recursive: true, force: true })
-  })
-
-  test('diffCarriesMigrationJournal is true only for concern journal paths', () => {
-    expect(diffCarriesMigrationJournal(['orchestrator/src/db.ts'])).toBe(false)
-    expect(diffCarriesMigrationJournal(['orchestrator/migrations/0006_project_id_backfill.sql'])).toBe(true)
-    expect(diffCarriesMigrationJournal(['hub/migrations/meta/_journal.json'])).toBe(true)
   })
 
   test('reload mode re-prepares instead of refusing a write after user_version changes', () => {

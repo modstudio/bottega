@@ -2,13 +2,12 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { existsSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { addRun, db, declaredCreate, hermeticGitEnv, prepareSharedRefGuard, run, upsertProject, validateCliArgs } from '../test/fixture.ts'
+import { addRun, db, declaredCreate, hermeticGitEnv, prepareSharedRefGuard, run, upsertProject } from '../test/fixture.ts'
 import {
   checkpointResumeContext, checkpointRun, PRESERVATION_FAILED_FILE, readTaskPointer,
   recordFailedIdlePreservation,
 } from './checkpoint.ts'
 import { runEventsPath } from './events.ts'
-import { squashCheckpointCommits } from './landing.ts'
 import { installTestTransport, type AgentTransport, type TransportResult } from './transport.ts'
 
 const roots: string[] = []
@@ -128,36 +127,6 @@ describe('harness-owned checkpoints', () => {
     expect(result.error).toContain('index.lock')
     expect(git(root, 'rev-parse', 'HEAD')).toBe(before)
     expect(readFileSync(runEventsPath(runId), 'utf8')).toContain('index.lock')
-  })
-
-  test('landing folds checkpoints into the following worker commit and can preserve them', () => {
-    for (const preserve of [false, true]) {
-      const root = repo()
-      const base = git(root, 'rev-parse', 'main')
-      writeFileSync(join(root, 'file.txt'), 'checkpoint\n')
-      git(root, 'add', '-u'); git(root, 'commit', '-m', 'DEV-374 checkpoint run 99 #1')
-      writeFileSync(join(root, 'worker.txt'), 'worker\n')
-      git(root, 'add', 'worker.txt'); git(root, 'commit', '-m', 'DEV-374 worker item')
-      if (!preserve) squashCheckpointCommits(root, base)
-      const subjects = git(root, 'log', '--format=%s', `${base}..HEAD`).split('\n')
-      expect(subjects).toEqual(preserve
-        ? ['DEV-374 worker item', 'DEV-374 checkpoint run 99 #1']
-        : ['DEV-374 worker item'])
-      expect(git(root, 'show', 'HEAD:file.txt')).toBe('checkpoint')
-    }
-  })
-
-  test('a trailing checkpoint stays visible after landing normalization', () => {
-    const root = repo()
-    const base = git(root, 'rev-parse', 'main')
-    writeFileSync(join(root, 'file.txt'), 'trailing\n')
-    git(root, 'add', '-u'); git(root, 'commit', '-m', 'DEV-374 checkpoint run 99 #1')
-    squashCheckpointCommits(root, base)
-    expect(git(root, 'show', '-s', '--format=%s')).toBe('DEV-374 checkpoint run 99 #1')
-  })
-
-  test('landing accepts the exact checkpoint preservation flag', () => {
-    expect(() => validateCliArgs(['land', 'DEV-374-checkpoint', '--keep-checkpoints'])).not.toThrow()
   })
 
   for (const failure of [

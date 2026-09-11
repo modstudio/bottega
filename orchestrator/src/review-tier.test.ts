@@ -4,7 +4,6 @@ import { classifyReviewTier } from './review-tier.ts'
 describe('review tier classification', () => {
   const cases = [
     { name: 'docs only', files: [{ path: 'docs/readme.md', insertions: 900, deletions: 0 }], tier: 0, risk: 0, size: 0 },
-    { name: 'five lines in landing', files: [{ path: 'orchestrator/src/landing.ts', insertions: 5, deletions: 0 }], tier: 3, risk: 3, size: 0 },
     { name: 'large web change', files: [{ path: 'hub/web/src/app.tsx', insertions: 600, deletions: 0 }], tier: 3, risk: 1, size: 3 },
     { name: 'nine small product files', files: Array.from({ length: 9 }, (_, i) => ({ path: `hub/web/src/${i}.tsx`, insertions: 3, deletions: 0 })), tier: 2, risk: 1, size: 2 },
     { name: 'tests only', files: [{ path: 'orchestrator/src/run.test.ts', insertions: 700, deletions: 0 }], tier: 0, risk: 0, size: 0 },

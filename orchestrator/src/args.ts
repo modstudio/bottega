@@ -27,8 +27,6 @@ const shape = (
   ...extra,
 })
 
-const hasArg = (argv: string[], arg: string) => argv.includes(arg)
-
 export function flagValue(argv: string[], name: string): string | undefined {
   const values = flagValues(argv, name)
   if (values.length > 1) {
@@ -268,11 +266,6 @@ export function commandShape(argv: string[], topLevelOnly = false): { args: stri
     case 'issue': return { args: argv.slice(1), shape: shape('orch issue <TASK-KEY>', 1) }
     case 'note': return { args: argv.slice(1), shape: shape(
       'orch note <text> [--same-as ID|--new]', 1, ['--same-as'], ['--new'],
-    ) }
-    case 'land': return { args: argv.slice(1), shape: shape(
-      'orch land <branch|run-id> [--message TEXT] [--file PATH] [--unreviewed REASON] [--wait] [--strand-live REASON] [--keep-checkpoints] | orch land --status | orch land --drain',
-      hasArg(argv, '--status') || hasArg(argv, '--drain') ? 0 : 1,
-      ['--message', '--file', '--unreviewed', '--strand-live'], ['--status', '--queue', '--wait', '--drain', '--keep-checkpoints'],
     ) }
     case 'reconcile': return { args: argv.slice(1), shape: shape('orch reconcile <id>', 1) }
     case 'contract': return { args: argv.slice(1), shape: shape('orch contract <job>', 1) }

@@ -8,7 +8,7 @@ import {
 describe('CLI argument recognition', () => {
   test('every parser top-level command is recognised as canon, including nested commands', () => {
     const commands = [
-      'init-db', 'migrate', 'issue', 'land', 'contract', 'doc', 'canon', 'port', 'mcp', 'do', 'review', 'state', 'run',
+      'init-db', 'migrate', 'issue', 'contract', 'doc', 'canon', 'port', 'mcp', 'do', 'review', 'state', 'run',
       'search', 'result', 'wait', 'retry', 'project', 'ask-server', 'setup-ask', 'blockers', 'monitor', 'reclaim',
       'inbox', 'peek', 'answer', 'tell', 'continue', 'diff', 'sweep', 'discard', 'stop', 'abandon', 'score',
       'recalibrate', 'routing-backtest', 'runs', 'guide', 'spawns', 'stats', 'pick', 'pending', 'metric', 'serve',
@@ -20,8 +20,6 @@ describe('CLI argument recognition', () => {
 
   test('every command with legitimate positionals still accepts its documented shape', () => {
     const commands = [
-      ['land', 'feature/DEV-185'], ['land', '--status'],
-      ['land', '12', '--message', 'fuller reasoning'], ['land', '12', '--file', 'msg.txt'],
       ['issue', 'DEV-175'], ['contract', 'implement'],
       ['reclaim', 'worktree', '/tmp/orch-12', '--dry-run'],
       ['reclaim', 'branch', 'demo:technical/DEV-391-orch-3035', '--dry-run'],
