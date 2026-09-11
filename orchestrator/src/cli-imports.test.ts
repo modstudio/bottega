@@ -6,7 +6,7 @@ const allowed = new Set([
     'node:readline/promises', 'zod', './db.ts', './projects.ts', './failure.ts',
     './collect.ts', './outcome.ts', './args.ts', '../../shared/dashboard-capability.ts',
     '../../shared/monitor-capability.ts', './score.ts', './evidence-query.ts',
-    './review-vocabulary.ts', './run-liveness.ts', './duel.ts', './run-authority.ts',
+    './review-vocabulary.ts', './run-liveness.ts', './process-liveness.ts', './duel.ts', './run-authority.ts',
     './resource-ownership.ts',
 ])
 
