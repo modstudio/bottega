@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
-import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CanonBudgetError, JOBS, compilePack, dir, setDoc, upsertProject } from '../test/fixture.ts'
@@ -127,24 +127,28 @@ describe('canon pack budget', () => {
 
   test('the CLI copies a behind live store, migrates the copy, and checks packs there', () => {
     const folder = mkdtempSync(join(tmpdir(), 'orch-pack-behind-journal-'))
-    mkdirSync(join(folder, 'meta'))
-    const prefix = migrationJournal().slice(0, -1)
-    for (const entry of prefix) {
-      copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
+    try {
+      mkdirSync(join(folder, 'meta'))
+      const prefix = migrationJournal().slice(0, -1)
+      for (const entry of prefix) {
+        copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
+      }
+      writeFileSync(join(folder, 'meta', '_journal.json'), JSON.stringify({
+        version: '7', dialect: 'sqlite', entries: prefix,
+      }))
+      const store = join(folder, 'behind.db')
+      const d = new Database(store)
+      d.exec('PRAGMA foreign_keys=ON')
+      applyMigrations(d, folder)
+      d.close()
+      const result = runBudget(store)
+      expect(result.exitCode, result.stderr.toString()).toBe(0)
+      expect(result.stdout.toString()).toContain(
+        'canon pack budget: copied live store, migrated the copy, checking packs there',
+      )
+      expect(result.stdout.toString()).toContain('canon pack budget ok')
+    } finally {
+      rmSync(folder, { recursive: true, force: true })
     }
-    writeFileSync(join(folder, 'meta', '_journal.json'), JSON.stringify({
-      version: '7', dialect: 'sqlite', entries: prefix,
-    }))
-    const store = join(folder, 'behind.db')
-    const d = new Database(store)
-    d.exec('PRAGMA foreign_keys=ON')
-    applyMigrations(d, folder)
-    d.close()
-    const result = runBudget(store)
-    expect(result.exitCode, result.stderr.toString()).toBe(0)
-    expect(result.stdout.toString()).toContain(
-      'canon pack budget: copied live store, migrated the copy, checking packs there',
-    )
-    expect(result.stdout.toString()).toContain('canon pack budget ok')
   })
 })
