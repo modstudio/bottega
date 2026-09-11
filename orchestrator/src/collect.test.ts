@@ -2,8 +2,9 @@ import { describe, expect, spyOn, test } from 'bun:test'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { collectResult, collectWait, noCommitNote, thinOutputWarning } from './collect.ts'
+import { branchNote, collectResult, collectWait, mintedBranchForRun, noCommitNote, thinOutputWarning } from './collect.ts'
 import { addRun, db, dir } from '../test/fixture.ts'
+import { fakeClock, registerClock, systemClock } from './clock.ts'
 
 const base = '3646a62f6abd4486aeb2c27744d2f69ba7210828'
 const changed = JSON.stringify(['.githooks/pre-commit'])
@@ -73,6 +74,90 @@ describe('thin output warning', () => {
 })
 
 describe('collection records', () => {
+  test('--follow names the branch minted by a writing run', () => {
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    db().query('UPDATE run SET minted_branch=? WHERE id=?').run('feature/DEV-498', id)
+    expect(branchNote(db(), id)).toContain('feature/DEV-498')
+  })
+
+  test('every score hint names the ROOT, never the turn it printed after', () => {
+    const root = addRun({ agent: 'codex', job: 'implement' }); const child = addRun({ agent: 'codex', job: 'implement', parent: root, turn: 2 })
+    const errors: string[] = []; const spy = spyOn(console, 'error').mockImplementation((...parts) => { errors.push(parts.join(' ')) })
+    try { collectResult(db(), ['result', String(child)]) } finally { spy.mockRestore() }
+    expect(errors.join('\n')).toContain(`score it:  orch score ${root}`)
+    expect(errors.join('\n')).not.toContain(`score it:  orch score ${child}`)
+  })
+
+  test('result and wait name the branch actually minted for a writing run', () => {
+    const id = addRun({ agent: 'codex', job: 'implement' }); db().query('UPDATE run SET minted_branch=? WHERE id=?').run('feature/minted', id)
+    expect(mintedBranchForRun(db(), id)).toBe('feature/minted')
+    expect(branchNote(db(), id)).toContain('feature/minted')
+  })
+
+  test('result and wait add no branch detail when the run minted no branch', () => {
+    const id = addRun({ agent: 'codex', job: 'file-question' })
+    expect(mintedBranchForRun(db(), id)).toBeNull(); expect(branchNote(db(), id)).toBe('')
+  })
+
+  test('a resumed chain reports its owned branch, not the turn branch', () => {
+    const root = addRun({ agent: 'codex', job: 'implement' }); const child = addRun({ agent: 'codex', job: 'implement', parent: root, turn: 2 })
+    db().query('UPDATE run SET minted_branch=? WHERE id=?').run('root-owned', root)
+    db().query('UPDATE run SET branch=?,minted_branch=NULL WHERE id=?').run('turn-branch', child)
+    expect(mintedBranchForRun(db(), child)).toBe('root-owned')
+  })
+
+  test('waiting on ok and asking runs succeeds and points to the inbox', async () => {
+    const ok = addRun({ agent: 'codex', job: 'file-question' }); const asking = addRun({ agent: 'codex', job: 'file-question', status: 'asking' })
+    db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)').run(asking, new Date().toISOString(), 'which?')
+    const logs: string[] = []; const spy = spyOn(console, 'log').mockImplementation((...parts) => { logs.push(parts.join(' ')) })
+    try { await collectWait(db(), ['wait', String(ok), String(asking)]) } finally { spy.mockRestore() }
+    expect(logs.join('\n')).toContain(`${asking}\tasking - orch inbox`)
+  })
+
+  test('a flag value is not mistaken for a run id', async () => {
+    const id = addRun({ agent: 'codex', job: 'file-question' })
+    const logs: string[] = []; const spy = spyOn(console, 'log').mockImplementation((...parts) => { logs.push(parts.join(' ')) })
+    try { await collectWait(db(), ['wait', String(id), '--timeout', '300']) } finally { spy.mockRestore() }
+    expect(logs.join('\n')).toContain(`${id}\tok`)
+    expect(logs.join('\n')).not.toContain('300\t')
+  })
+
+  test('wait names the root, not the asking tip, when a question is open', async () => {
+    const root = addRun({ agent: 'codex', job: 'file-question', status: 'asking' }); const child = addRun({ agent: 'codex', job: 'file-question', status: 'asking', parent: root, turn: 2 })
+    db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)').run(child, new Date().toISOString(), 'which?')
+    const logs: string[] = []; const spy = spyOn(console, 'log').mockImplementation((...parts) => { logs.push(parts.join(' ')) })
+    try { await collectWait(db(), ['wait', String(child)]) } finally { spy.mockRestore() }
+    expect(logs.join('\n')).toContain(`orch answer ${root}`)
+  })
+
+  test('wait keeps waiting when an asking tip has no open question but its root is running', async () => {
+    const root = addRun({ agent: 'codex', job: 'file-question', status: 'running' }); const child = addRun({ agent: 'codex', job: 'file-question', status: 'asking', parent: root, turn: 2 })
+    let polls = 0
+    const logs: string[] = []; const spy = spyOn(console, 'log').mockImplementation((...parts) => { logs.push(parts.join(' ')) })
+    const time = fakeClock(Date.now()); registerClock(time)
+    try {
+      const waiting = collectWait(db(), ['wait', String(child)], () => { if (++polls === 2) db().query("UPDATE run SET status='ok' WHERE id=?").run(root) })
+      await Promise.resolve(); time.advance(2000); await waiting
+    } finally { registerClock(systemClock); spy.mockRestore() }
+    expect(polls).toBeGreaterThan(1)
+  })
+
+  test('wait exposes an asking chain with no open question or running turn as recoverable', async () => {
+    const root = addRun({ agent: 'codex', job: 'file-question', status: 'asking' })
+    const logs: string[] = []; const spy = spyOn(console, 'log').mockImplementation((...parts) => { logs.push(parts.join(' ')) })
+    try { await collectWait(db(), ['wait', String(root)]) } finally { spy.mockRestore() }
+    expect(logs.join('\n')).toContain(`recoverable: orch continue ${root}`)
+  })
+
+  test('result on an asking run succeeds, prints its reply, and points to the inbox', () => {
+    const id = addRun({ agent: 'codex', job: 'file-question', status: 'asking' }); const output = join(dir, `asking-${id}.txt`)
+    writeFileSync(output, 'partial answer'); db().query('UPDATE run SET output_path=? WHERE id=?').run(output, id)
+    db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)').run(id, new Date().toISOString(), 'which?')
+    const logs: string[] = []; const errors: string[] = []; const log = spyOn(console, 'log').mockImplementation((...parts) => { logs.push(parts.join(' ')) }); const error = spyOn(console, 'error').mockImplementation((...parts) => { errors.push(parts.join(' ')) })
+    try { collectResult(db(), ['result', String(id)]) } finally { log.mockRestore(); error.mockRestore() }
+    expect(logs.join('\n')).toContain('partial answer'); expect(errors.join('\n')).toContain(`orch answer ${id}`)
+  })
+
   test('result surfaces the recorded base commit for a writing run', () => {
     const id = addRun({ agent: 'codex', job: 'implement' }); db().query('UPDATE run SET base_commit=? WHERE id=?').run('base-commit-123', id)
     const errors: string[] = []; const error = spyOn(console, 'error').mockImplementation((...parts) => { errors.push(parts.join(' ')) })

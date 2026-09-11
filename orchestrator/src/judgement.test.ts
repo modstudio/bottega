@@ -21,6 +21,13 @@ const insert = (status = 'ok', job = 'file-question') => addRun({ agent: 'codex'
 beforeEach(() => { process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'; delete process.env.CLAUDE_CODE_BRIDGE_SESSION_ID })
 
 describe('score ruling', () => {
+  test('a leaf id scores the root of its conversation', () => {
+    const root = insert(); const child = insert()
+    db().query('UPDATE run SET parent_run_id=?,turn=2 WHERE id=?').run(root, child)
+    score(child, ['full', 'right'])
+    expect(db().query('SELECT run_id FROM score').all()).toEqual([{ run_id: root }])
+  })
+
   test('score refuses a harness-failed run even with force', () => {
     const id = insert('failed'); db().query("UPDATE run SET failure_kind='harness' WHERE id=?").run(id)
     expect(() => score(id, ['none'], { force: true })).toThrow("failure kind 'harness' is not evidence")

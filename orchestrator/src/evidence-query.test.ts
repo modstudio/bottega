@@ -2,6 +2,16 @@ import { describe, expect, test } from 'bun:test'
 import { addRun, db, pendingForSession, runList, score, state } from '../test/fixture.ts'
 import { runTotals } from './evidence-query.ts'
 
+test('runs --unscored uses the shared definition of an owed judgement', () => {
+  const wanted = addRun({ agent: 'grok', job: 'craft', session: 'owed-session' })
+  addRun({ agent: 'grok', job: 'craft', probe: 1, session: 'owed-session' })
+  addRun({ agent: 'grok', job: 'craft', status: 'failed', session: 'owed-session' })
+  addRun({ agent: 'grok', job: 'craft', status: 'running', session: 'owed-session' })
+  const parent = addRun({ agent: 'grok', job: 'craft', status: 'failed', session: 'owed-session' })
+  addRun({ agent: 'grok', job: 'craft', parent, turn: 2, session: 'owed-session' })
+  expect(pendingForSession('owed-session').map((row) => row.id)).toEqual([wanted])
+})
+
 describe('the activity window', () => {
   /** A run backdated by `days`, so the window has something to exclude. */
   function agedRun(days: number, o: { agent: string; job: string; status?: string }) {

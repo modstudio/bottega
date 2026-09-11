@@ -194,6 +194,13 @@ describe('CLI argument recognition', () => {
   })
 })
 
+test('project set refuses positional settings, names the first extra, and shows the working form', () => {
+  expect(() => validateCliArgs(['project', 'set', 'positional-settings', 'gate', 'bun run check']))
+    .toThrow('unrecognised argument: gate')
+  expect(() => validateCliArgs(['project', 'set', 'positional-settings', 'gate', 'bun run check']))
+    .toThrow('working form: orch project set <name>')
+})
+
 describe('answer text sources', () => {
   test('--q<id> --file PATH binds that file to that question', () => {
     expect(parseAnswerTextSources(['--q264', '--file', 'a.txt', '--q265', '--file', 'b.txt']))

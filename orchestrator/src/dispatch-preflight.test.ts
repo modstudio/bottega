@@ -1,4 +1,7 @@
 import { expect, test } from 'bun:test'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { upsertProject } from '../test/fixture.ts'
 import { selectProjectProfile, setProfile } from './lenses.ts'
 import { preflight } from './dispatch-preflight.ts'
@@ -43,4 +46,28 @@ test('non-commit bases are refused before every dispatch artifact', () => {
   process.env.ORCH_DEPTH = '0'
   const tree = Bun.spawnSync(['git', 'rev-parse', 'HEAD^{tree}'], { cwd: process.cwd(), stdout: 'pipe' }).stdout.toString().trim()
   expect(() => resolveBase(process.cwd(), tree)).toThrow(/tree|commit/)
+})
+
+test('create commands must exist and be executable before dispatch', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'orch-create-command-'))
+  try {
+    const git = (...args: string[]) => Bun.spawnSync(['git', ...args], { cwd: repo, stdout: 'pipe', stderr: 'pipe' })
+    git('init', '-b', 'main'); git('config', 'user.email', 'orch-test@example.invalid')
+    git('config', 'user.name', 'Orch Test'); writeFileSync(join(repo, 'tracked.txt'), 'fixture\n')
+    git('add', '.'); git('commit', '-m', 'fixture')
+    upsertProject({ name: 'create-command', path: repo, settings: {
+      worktree: { create: { command: 'scripts/missing-worktree', args: ['{branch}'] }, branch: 'task/{id}' },
+      requireCleanMain: false,
+    } })
+    expect(() => preflight('implement', repo)).toThrow(
+      'project create-command worktree create command scripts/missing-worktree is absent or not executable',
+    )
+    const command = join(repo, 'present-worktree')
+    writeFileSync(command, '#!/bin/sh\nexit 0\n'); chmodSync(command, 0o755)
+    upsertProject({ name: 'create-command', path: repo, settings: {
+      worktree: { create: { command, args: ['{branch}'] }, branch: 'task/{id}' },
+      requireCleanMain: false,
+    } })
+    expect(() => preflight('implement', repo)).not.toThrow()
+  } finally { rmSync(repo, { recursive: true, force: true }) }
 })

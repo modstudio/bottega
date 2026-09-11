@@ -6,6 +6,7 @@ import { failureReason, outcomeOf } from './outcome.ts'
 import type { ObservedDeadRun } from './run-liveness.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES, visibleTranscriptText } from './result-output.ts'
 import { parseMcpProbe } from './mcp-probe.ts'
+import { clock } from './clock.ts'
 
 export const COLLECTION_COMMANDS = new Set(['result', 'wait'])
 
@@ -402,7 +403,7 @@ export async function collectWait(
   if (!ids.length) throw new Error('orch wait <run-id>...')
   const timeoutAt = argv.indexOf('--timeout')
   const timeoutMs = Number(timeoutAt >= 0 ? argv[timeoutAt + 1] : 1800) * 1000
-  const deadline = Date.now() + timeoutMs
+  const deadline = clock().now() + timeoutMs
   const observedTerminal = new Set<number>()
   for (;;) {
     const observation = beforePoll()
@@ -449,12 +450,12 @@ export async function collectWait(
       if (observedTerminal.size || outcomes.some(({ outcome }) => !outcome.ok)) process.exit(1)
       return
     }
-    if (Date.now() >= deadline) {
+    if (clock().now() >= deadline) {
       console.error(`still running after ${Math.round(timeoutMs / 1000)}s: ` +
         running.map(({ row }) => row.id).join(', '))
       process.exit(2)
     }
-    await new Promise((resolve) => setTimeout(resolve, 2000))
+    await new Promise<void>((resolve) => { clock().setTimeout(resolve, 2000) })
   }
 }
 

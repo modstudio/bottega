@@ -5,8 +5,6 @@
     "src/agents.cli.test.ts": { "size": "short" },
     "src/canon.cli.test.ts": { "size": "short" },
     "src/catalog.cli.test.ts": { "size": "short" },
-    "src/cli-do-1.cli.test.ts": { "size": "short" },
-    "src/cli-projects.cli.test.ts": { "size": "short" },
     "src/docs.cli.test.ts": { "size": "short" },
     "src/epic.cli.test.ts": { "size": "short" },
     "src/review-yield.cli.test.ts": { "size": "short" },
@@ -74,8 +72,6 @@
     {
       "measuredSeconds": 75.42,
       "files": [
-        "src/cli-do-1.cli.test.ts",
-        "src/cli-projects.cli.test.ts",
         "src/worktree-1.cli.test.ts",
         "src/review-3.cli.test.ts",
         "src/reader-contract.cli.test.ts",
