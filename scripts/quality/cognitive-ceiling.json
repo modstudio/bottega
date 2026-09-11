@@ -1,0 +1,794 @@
+[
+  {
+    "file": "hub/src/cli.ts",
+    "function": "task",
+    "line": 233,
+    "score": 176
+  },
+  {
+    "file": "hub/src/cli.ts",
+    "function": "note",
+    "line": 475,
+    "score": 72
+  },
+  {
+    "file": "hub/src/cli.ts",
+    "function": "sendReport",
+    "line": 574,
+    "score": 19
+  },
+  {
+    "file": "hub/src/ingest/git.ts",
+    "function": "scanGit",
+    "line": 58,
+    "score": 47
+  },
+  {
+    "file": "hub/src/ingest/runs.ts",
+    "function": "transaction callback",
+    "line": 94,
+    "score": 34
+  },
+  {
+    "file": "hub/src/ingest/trackers.ts",
+    "function": "map callback#5",
+    "line": 163,
+    "score": 23
+  },
+  {
+    "file": "hub/src/ingest/transcripts.ts",
+    "function": "legsOf",
+    "line": 62,
+    "score": 25
+  },
+  {
+    "file": "hub/src/migrations.ts",
+    "function": "checkExpressions",
+    "line": 196,
+    "score": 19
+  },
+  {
+    "file": "hub/src/migrations.ts",
+    "function": "stripSqlComments",
+    "line": 318,
+    "score": 25
+  },
+  {
+    "file": "hub/src/note.ts",
+    "function": "map callback#7",
+    "line": 239,
+    "score": 17
+  },
+  {
+    "file": "hub/src/orch.ts",
+    "function": "decodeRunsJson",
+    "line": 113,
+    "score": 37
+  },
+  {
+    "file": "hub/src/serve.ts",
+    "function": "view",
+    "line": 290,
+    "score": 25
+  },
+  {
+    "file": "hub/web/src/components/task-sheet.tsx",
+    "function": "TaskSheet",
+    "line": 49,
+    "score": 49
+  },
+  {
+    "file": "hub/web/src/components/work-view.tsx",
+    "function": "render#1",
+    "line": 111,
+    "score": 51
+  },
+  {
+    "file": "hub/web/src/components/work-view.tsx",
+    "function": "TaskContent",
+    "line": 149,
+    "score": 17
+  },
+  {
+    "file": "hub/web/src/routes/docs.$scope.$subject.$slug.tsx",
+    "function": "DocPage",
+    "line": 26,
+    "score": 20
+  },
+  {
+    "file": "hub/web/src/routes/projects.$name.tsx",
+    "function": "submit",
+    "line": 81,
+    "score": 18
+  },
+  {
+    "file": "hub/web/src/routes/runs.$id.tsx",
+    "function": "RunDetailPage",
+    "line": 30,
+    "score": 29
+  },
+  {
+    "file": "hub/web/src/routes/runs.tsx",
+    "function": "RunsList",
+    "line": 58,
+    "score": 17
+  },
+  {
+    "file": "orchestrator/src/agents.ts",
+    "function": "visit",
+    "line": 190,
+    "score": 25
+  },
+  {
+    "file": "orchestrator/src/agents.ts",
+    "function": "parseReply#3",
+    "line": 744,
+    "score": 29
+  },
+  {
+    "file": "orchestrator/src/agents.ts",
+    "function": "assertAgentMutation",
+    "line": 952,
+    "score": 22
+  },
+  {
+    "file": "orchestrator/src/agents.ts",
+    "function": "setAgent",
+    "line": 999,
+    "score": 40
+  },
+  {
+    "file": "orchestrator/src/agents.ts",
+    "function": "probeAgent",
+    "line": 1151,
+    "score": 40
+  },
+  {
+    "file": "orchestrator/src/args.ts",
+    "function": "invalidUtf8Offset",
+    "line": 94,
+    "score": 46
+  },
+  {
+    "file": "orchestrator/src/args.ts",
+    "function": "parseWorkerMessageArgs",
+    "line": 185,
+    "score": 23
+  },
+  {
+    "file": "orchestrator/src/args.ts",
+    "function": "commandShape",
+    "line": 257,
+    "score": 70
+  },
+  {
+    "file": "orchestrator/src/args.ts",
+    "function": "validateCliArgs",
+    "line": 507,
+    "score": 56
+  },
+  {
+    "file": "orchestrator/src/ask.ts",
+    "function": "serveAskChannel",
+    "line": 139,
+    "score": 41
+  },
+  {
+    "file": "orchestrator/src/canon.ts",
+    "function": "forEach callback#2",
+    "line": 309,
+    "score": 23
+  },
+  {
+    "file": "orchestrator/src/cli-runs.cli.test.ts",
+    "function": "test callback#6",
+    "line": 247,
+    "score": 24
+  },
+  {
+    "file": "orchestrator/src/cli.ts",
+    "function": "follow",
+    "line": 370,
+    "score": 50
+  },
+  {
+    "file": "orchestrator/src/cli.ts",
+    "function": "withCleanupLock callback#1",
+    "line": 967,
+    "score": 35
+  },
+  {
+    "file": "orchestrator/src/cli.ts",
+    "function": "continueRun",
+    "line": 1318,
+    "score": 24
+  },
+  {
+    "file": "orchestrator/src/cli.ts",
+    "function": "withCleanupLock callback#2",
+    "line": 4792,
+    "score": 28
+  },
+  {
+    "file": "orchestrator/src/cli.ts",
+    "function": "writeTransaction callback#15",
+    "line": 5498,
+    "score": 17
+  },
+  {
+    "file": "orchestrator/src/cli.ts",
+    "function": "map callback#87",
+    "line": 7197,
+    "score": 16
+  },
+  {
+    "file": "orchestrator/src/collect.ts",
+    "function": "mcpNote",
+    "line": 155,
+    "score": 20
+  },
+  {
+    "file": "orchestrator/src/collect.ts",
+    "function": "collectResult",
+    "line": 211,
+    "score": 56
+  },
+  {
+    "file": "orchestrator/src/collect.ts",
+    "function": "collectWait",
+    "line": 317,
+    "score": 46
+  },
+  {
+    "file": "orchestrator/src/confinement.ts",
+    "function": "classifyDivergence",
+    "line": 262,
+    "score": 24
+  },
+  {
+    "file": "orchestrator/src/contract.ts",
+    "function": "validatesSchema",
+    "line": 714,
+    "score": 24
+  },
+  {
+    "file": "orchestrator/src/contract.ts",
+    "function": "parseWorkerReplyWithCount#3",
+    "line": 756,
+    "score": 29
+  },
+  {
+    "file": "orchestrator/src/database-location.ts",
+    "function": "repositoryRootFromDotGit",
+    "line": 56,
+    "score": 22
+  },
+  {
+    "file": "orchestrator/src/database-location.ts",
+    "function": "resolveDatabase",
+    "line": 85,
+    "score": 19
+  },
+  {
+    "file": "orchestrator/src/db.ts",
+    "function": "db",
+    "line": 174,
+    "score": 25
+  },
+  {
+    "file": "orchestrator/src/db.ts",
+    "function": "teardownTerminalRunResources",
+    "line": 954,
+    "score": 19
+  },
+  {
+    "file": "orchestrator/src/db.ts",
+    "function": "reapStale",
+    "line": 1227,
+    "score": 30
+  },
+  {
+    "file": "orchestrator/src/docker-resources.ts",
+    "function": "teardownRunResources",
+    "line": 132,
+    "score": 17
+  },
+  {
+    "file": "orchestrator/src/docs.ts",
+    "function": "listDocMetadata",
+    "line": 191,
+    "score": 20
+  },
+  {
+    "file": "orchestrator/src/docs.ts",
+    "function": "importDocs",
+    "line": 574,
+    "score": 30
+  },
+  {
+    "file": "orchestrator/src/evals.ts",
+    "function": "withHermeticGitEnv callback",
+    "line": 383,
+    "score": 17
+  },
+  {
+    "file": "orchestrator/src/events.ts",
+    "function": "observe#2",
+    "line": 124,
+    "score": 18
+  },
+  {
+    "file": "orchestrator/src/events.ts",
+    "function": "toolUseEvents",
+    "line": 210,
+    "score": 16
+  },
+  {
+    "file": "orchestrator/src/events.ts",
+    "function": "eventsFromCodexItem",
+    "line": 251,
+    "score": 18
+  },
+  {
+    "file": "orchestrator/src/events.ts",
+    "function": "eventsFromVendorLine",
+    "line": 283,
+    "score": 30
+  },
+  {
+    "file": "orchestrator/src/events.ts",
+    "function": "formatPeek",
+    "line": 418,
+    "score": 30
+  },
+  {
+    "file": "orchestrator/src/evidence.ts",
+    "function": "assessEvidence",
+    "line": 62,
+    "score": 22
+  },
+  {
+    "file": "orchestrator/src/failure.ts",
+    "function": "detectBlockers",
+    "line": 396,
+    "score": 16
+  },
+  {
+    "file": "orchestrator/src/gate-policy.ts",
+    "function": "parseShardMap",
+    "line": 67,
+    "score": 25
+  },
+  {
+    "file": "orchestrator/src/git-locks.ts",
+    "function": "gitLocks",
+    "line": 75,
+    "score": 16
+  },
+  {
+    "file": "orchestrator/src/health.ts",
+    "function": "harnessHealth",
+    "line": 39,
+    "score": 20
+  },
+  {
+    "file": "orchestrator/src/issue.ts",
+    "function": "parseFiledIssue",
+    "line": 92,
+    "score": 16
+  },
+  {
+    "file": "orchestrator/src/issue.ts",
+    "function": "jsonObjects",
+    "line": 174,
+    "score": 18
+  },
+  {
+    "file": "orchestrator/src/issue.ts",
+    "function": "workIssue",
+    "line": 317,
+    "score": 65
+  },
+  {
+    "file": "orchestrator/src/lenses.ts",
+    "function": "selectProjectProfile",
+    "line": 115,
+    "score": 16
+  },
+  {
+    "file": "orchestrator/src/lenses.ts",
+    "function": "resolveLens",
+    "line": 142,
+    "score": 16
+  },
+  {
+    "file": "orchestrator/src/mcp-probe.ts",
+    "function": "parseMcpConfig",
+    "line": 71,
+    "score": 19
+  },
+  {
+    "file": "orchestrator/src/mcp-probe.ts",
+    "function": "probeMcpServer",
+    "line": 266,
+    "score": 22
+  },
+  {
+    "file": "orchestrator/src/mcp.ts",
+    "function": "fileIssue",
+    "line": 162,
+    "score": 34
+  },
+  {
+    "file": "orchestrator/src/metric.ts",
+    "function": "claudeTokensByDay",
+    "line": 101,
+    "score": 26
+  },
+  {
+    "file": "orchestrator/src/metric.ts",
+    "function": "activityByDay",
+    "line": 208,
+    "score": 27
+  },
+  {
+    "file": "orchestrator/src/migrations.ts",
+    "function": "stripSqlComments",
+    "line": 179,
+    "score": 25
+  },
+  {
+    "file": "orchestrator/src/migrations.ts",
+    "function": "checkExpressions",
+    "line": 230,
+    "score": 19
+  },
+  {
+    "file": "orchestrator/src/monitor.ts",
+    "function": "monitor",
+    "line": 424,
+    "score": 110
+  },
+  {
+    "file": "orchestrator/src/outcome.ts",
+    "function": "decideOutcome",
+    "line": 40,
+    "score": 32
+  },
+  {
+    "file": "orchestrator/src/porting-import.ts",
+    "function": "parseState",
+    "line": 233,
+    "score": 32
+  },
+  {
+    "file": "orchestrator/src/porting-import.ts",
+    "function": "parseRefs",
+    "line": 328,
+    "score": 33
+  },
+  {
+    "file": "orchestrator/src/porting-import.ts",
+    "function": "writeTransaction callback",
+    "line": 686,
+    "score": 18
+  },
+  {
+    "file": "orchestrator/src/projects.ts",
+    "function": "scanPipelineOperators",
+    "line": 354,
+    "score": 25
+  },
+  {
+    "file": "orchestrator/src/projects.ts",
+    "function": "validateProjectSettings",
+    "line": 392,
+    "score": 25
+  },
+  {
+    "file": "orchestrator/src/projects.ts",
+    "function": "validateCreate",
+    "line": 640,
+    "score": 33
+  },
+  {
+    "file": "orchestrator/src/projects.ts",
+    "function": "shellTokens",
+    "line": 790,
+    "score": 28
+  },
+  {
+    "file": "orchestrator/src/recipe.ts",
+    "function": "replace callback#2",
+    "line": 123,
+    "score": 16
+  },
+  {
+    "file": "orchestrator/src/reclaim.ts",
+    "function": "proveWorktree",
+    "line": 153,
+    "score": 16
+  },
+  {
+    "file": "orchestrator/src/reclaim.ts",
+    "function": "withCleanupLock callback#1",
+    "line": 211,
+    "score": 26
+  },
+  {
+    "file": "orchestrator/src/resource-inventory.ts",
+    "function": "refGuardInventory",
+    "line": 172,
+    "score": 24
+  },
+  {
+    "file": "orchestrator/src/review-tier.ts",
+    "function": "classifyReviewTier",
+    "line": 42,
+    "score": 21
+  },
+  {
+    "file": "orchestrator/src/review.ts",
+    "function": "commitForTree",
+    "line": 171,
+    "score": 20
+  },
+  {
+    "file": "orchestrator/src/review.ts",
+    "function": "reviewCoverageVerdict",
+    "line": 220,
+    "score": 17
+  },
+  {
+    "file": "orchestrator/src/review.ts",
+    "function": "cleanReviewEvidence",
+    "line": 539,
+    "score": 21
+  },
+  {
+    "file": "orchestrator/src/review.ts",
+    "function": "coverageAudit",
+    "line": 975,
+    "score": 29
+  },
+  {
+    "file": "orchestrator/src/review.ts",
+    "function": "reviewPins",
+    "line": 1036,
+    "score": 17
+  },
+  {
+    "file": "orchestrator/src/review.ts",
+    "function": "calibrationCell",
+    "line": 1228,
+    "score": 30
+  },
+  {
+    "file": "orchestrator/src/review.ts",
+    "function": "reviewCalibrationFleet",
+    "line": 1365,
+    "score": 18
+  },
+  {
+    "file": "orchestrator/src/route.test.ts",
+    "function": "splitTopLevel",
+    "line": 873,
+    "score": 20
+  },
+  {
+    "file": "orchestrator/src/route.test.ts",
+    "function": "unwrapOneOuter",
+    "line": 906,
+    "score": 24
+  },
+  {
+    "file": "orchestrator/src/route.ts",
+    "function": "candidates",
+    "line": 392,
+    "score": 17
+  },
+  {
+    "file": "orchestrator/src/route.ts",
+    "function": "map callback#9",
+    "line": 543,
+    "score": 23
+  },
+  {
+    "file": "orchestrator/src/route.ts",
+    "function": "evidenceFor",
+    "line": 710,
+    "score": 20
+  },
+  {
+    "file": "orchestrator/src/route.ts",
+    "function": "currentPolicySelection",
+    "line": 803,
+    "score": 18
+  },
+  {
+    "file": "orchestrator/src/route.ts",
+    "function": "pick",
+    "line": 844,
+    "score": 46
+  },
+  {
+    "file": "orchestrator/src/routing-backtest.ts",
+    "function": "replay",
+    "line": 227,
+    "score": 29
+  },
+  {
+    "file": "orchestrator/src/run.ts",
+    "function": "preflight",
+    "line": 614,
+    "score": 46
+  },
+  {
+    "file": "orchestrator/src/run.ts",
+    "function": "resolveTaskBranch",
+    "line": 1125,
+    "score": 23
+  },
+  {
+    "file": "orchestrator/src/run.ts",
+    "function": "retargetRepositoryPrompt",
+    "line": 1380,
+    "score": 19
+  },
+  {
+    "file": "orchestrator/src/run.ts",
+    "function": "persistRunArtifacts",
+    "line": 1715,
+    "score": 18
+  },
+  {
+    "file": "orchestrator/src/run.ts",
+    "function": "attemptCloseOutRun",
+    "line": 1758,
+    "score": 23
+  },
+  {
+    "file": "orchestrator/src/run.ts",
+    "function": "withCleanupLock callback",
+    "line": 1899,
+    "score": 24
+  },
+  {
+    "file": "orchestrator/src/run.ts",
+    "function": "run",
+    "line": 2041,
+    "score": 674
+  },
+  {
+    "file": "orchestrator/src/run.ts",
+    "function": "writeTransaction callback#2",
+    "line": 4010,
+    "score": 20
+  },
+  {
+    "file": "orchestrator/src/transport-acp.ts",
+    "function": "normalizeAcpTurn",
+    "line": 117,
+    "score": 81
+  },
+  {
+    "file": "orchestrator/src/transport-acp.ts",
+    "function": "openAcp",
+    "line": 295,
+    "score": 31
+  },
+  {
+    "file": "orchestrator/src/transport-acp.ts",
+    "function": "onRequest callback#2",
+    "line": 372,
+    "score": 18
+  },
+  {
+    "file": "orchestrator/src/transport-acp.ts",
+    "function": "IIFE",
+    "line": 532,
+    "score": 20
+  },
+  {
+    "file": "orchestrator/src/workflows.ts",
+    "function": "validateWorkflowDefinition",
+    "line": 30,
+    "score": 100
+  },
+  {
+    "file": "orchestrator/src/worktree.ts",
+    "function": "nextWaiterTicket",
+    "line": 687,
+    "score": 25
+  },
+  {
+    "file": "orchestrator/src/worktree.ts",
+    "function": "withKernelProjectLock",
+    "line": 761,
+    "score": 20
+  },
+  {
+    "file": "orchestrator/src/worktree.ts",
+    "function": "withProjectLock",
+    "line": 871,
+    "score": 32
+  },
+  {
+    "file": "orchestrator/src/worktree.ts",
+    "function": "cleanupRefGuardLitter",
+    "line": 1118,
+    "score": 18
+  },
+  {
+    "file": "orchestrator/src/worktree.ts",
+    "function": "prepareSharedRefGuard",
+    "line": 1191,
+    "score": 45
+  },
+  {
+    "file": "orchestrator/src/worktree.ts",
+    "function": "extractWorktree",
+    "line": 1502,
+    "score": 20
+  },
+  {
+    "file": "orchestrator/src/worktree.ts",
+    "function": "shellWords",
+    "line": 1683,
+    "score": 27
+  },
+  {
+    "file": "orchestrator/src/worktree.ts",
+    "function": "createWithToolUnlocked",
+    "line": 1884,
+    "score": 23
+  },
+  {
+    "file": "orchestrator/src/worktree.ts",
+    "function": "createReadOnlyWithTool",
+    "line": 2118,
+    "score": 21
+  },
+  {
+    "file": "orchestrator/src/worktree.ts",
+    "function": "removeWithTool",
+    "line": 2506,
+    "score": 39
+  },
+  {
+    "file": "orchestrator/src/worktree.ts",
+    "function": "removeFor",
+    "line": 2624,
+    "score": 16
+  },
+  {
+    "file": "scripts/check.ts",
+    "function": "pump",
+    "line": 88,
+    "score": 20
+  },
+  {
+    "file": "scripts/import-scanner.ts",
+    "function": "staticString",
+    "line": 8,
+    "score": 16
+  },
+  {
+    "file": "scripts/quality/no-expect.ts",
+    "function": "visit#1",
+    "line": 35,
+    "score": 21
+  },
+  {
+    "file": "shared/git.ts",
+    "function": "parsePorcelain",
+    "line": 140,
+    "score": 22
+  },
+  {
+    "file": "shared/trackers.ts",
+    "function": "fetch#2",
+    "line": 275,
+    "score": 16
+  }
+]

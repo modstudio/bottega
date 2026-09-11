@@ -1,3 +1,4 @@
+// concern: isolation
 /**
  * A throwaway checkout for a worker that writes.
  *

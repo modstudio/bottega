@@ -1,3 +1,4 @@
+// concern: outcome
 export type OutcomeRow = {
   id: number
   status: string
