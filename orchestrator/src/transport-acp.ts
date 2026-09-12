@@ -297,8 +297,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const leaderSocket = grok ? acpLeaderSocketPath(opts.outPath, opts.srt?.settingsPath) : null
   const agentArgv = acpHarnessArgv(opts.agent.harness ?? opts.agent.name, leaderSocket)
   const profile = opts.srt ? acpSandboxProfile(opts.srt.profile, leaderSocket) : null
-  const launch = profile && opts.srt
-    ? srtLaunchArgv(profile, opts.srt.settingsPath, bin, agentArgv)
+  const launch = profile && opts.srt ? srtLaunchArgv(profile, opts.srt.settingsPath, bin, agentArgv)
     : [bin, ...agentArgv]
   const child = execa(launch[0]!, launch.slice(1), {
     cwd: opts.cwd, env: {
@@ -326,7 +325,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       } : {}),
     },
     stdin: 'pipe', stdout: 'pipe', stderr: 'pipe',
-    detached: true, cleanup: true, killSignal: 'SIGTERM',
+    detached: true, cleanup: true, killSignal: 'SIGTERM', extendEnv: false,
     forceKillAfterDelay: DEFAULT_IDLE_GRACE_MS, reject: false,
   })
 

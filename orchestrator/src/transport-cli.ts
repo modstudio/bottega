@@ -69,7 +69,7 @@ function spawnCli(opts: TransportStartOpts): TransportHandle {
     env: opts.env,
     stdin: stdinPrompt !== undefined ? 'pipe' : 'ignore', input: stdinPrompt,
     stdout: 'pipe', stderr: 'pipe',
-    detached: true, cleanup: true, killSignal: 'SIGTERM',
+    detached: true, cleanup: true, killSignal: 'SIGTERM', extendEnv: false,
     forceKillAfterDelay: DEFAULT_IDLE_GRACE_MS, reject: false,
   })
 
