@@ -1,6 +1,7 @@
 import { readdirSync, statSync, createReadStream } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
+import { clock } from './clock.ts'
 import { db, nowIso, writableDb } from './db.ts'
 import { projects, projectAt } from './projects.ts'
 
@@ -40,8 +41,8 @@ function keyPattern(prefixes: string[] | undefined): RegExp | null {
   return new RegExp(`\\b(?:${alternatives.join('|')})-\\d+`, 'g')
 }
 
-/** A calendar day in this machine's local timezone. */
-export function localDay(value: string | number | Date): string {
+/** The metric's calendar day in this machine's local timezone. */
+export function metricCalendarDay(value: string | number | Date): string {
   const d = value instanceof Date ? value : new Date(value)
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -49,11 +50,13 @@ export function localDay(value: string | number | Date): string {
   return `${y}-${m}-${day}`
 }
 
-function localDaysAgo(days: number): Date {
-  const d = new Date()
+export const localDay = metricCalendarDay
+
+function metricDaysAgo(days: number, now: number): string {
+  const d = new Date(now)
   d.setHours(12, 0, 0, 0)
   d.setDate(d.getDate() - days)
-  return d
+  return metricCalendarDay(d)
 }
 
 /** Every .jsonl transcript under ~/.claude/projects. */
@@ -105,13 +108,13 @@ async function claudeTokensByDay(since: string) {
   }>()
   for (const file of transcripts(PROJECTS)) {
     // Skip files untouched since the window opened — the cheap 90% of the work.
-    try { if (statSync(file).mtime.toISOString().slice(0, 10) < since) continue } catch { continue }
+    try { if (metricCalendarDay(statSync(file).mtime) < since) continue } catch { continue }
     const rl = createInterface({ input: createReadStream(file), crlfDelay: Infinity })
     for await (const line of rl) {
       if (!line.includes('"cache_read_input_tokens"')) continue
       let d: any
       try { d = JSON.parse(line) } catch { continue }
-      const day = d.timestamp ? localDay(d.timestamp) : ''
+      const day = d.timestamp ? metricCalendarDay(d.timestamp) : ''
       if (!day || day < since) continue
       const u = d.message?.usage
       if (!u) continue
@@ -226,7 +229,7 @@ function activityByDay(since: string) {
       if (line.startsWith('\u0000')) {
         const [d, , subject] = line.slice(1).split('\t')
         if (!d) { day = null; continue }
-        day = localDay(d)
+        day = metricCalendarDay(d)
         const row = get(day)
         row.commits++
         for (const k of key ? (subject ?? '').match(key) ?? [] : []) row.tasks.add(`${repo}:${k}`)
@@ -248,7 +251,7 @@ function activityByDay(since: string) {
 
 export async function collect(windowDays = 30) {
   writableDb()
-  const since = localDay(localDaysAgo(windowDays))
+  const since = metricDaysAgo(windowDays, clock().now())
   const [tok, act] = [await claudeTokensByDay(since), activityByDay(since)]
   const d = db()
   const stmt = d.query(
@@ -325,7 +328,8 @@ export const LENSES = [
 
 /** Rolling ratio: a single day is too noisy — tasks land in bursts. */
 export function summary(windowDays = 14) {
-  const since = localDay(localDaysAgo(windowDays))
+  const now = clock().now()
+  const since = metricDaysAgo(windowDays, now)
   const rows = db().query(
     `SELECT day, claude_tokens, cache_read, messages, tasks, canon_tokens, other_tokens,
             commits, files, lines_product, lines_test, lines_docs, lines_config, lines_generated
@@ -353,7 +357,7 @@ export function summary(windowDays = 14) {
   const isGap = (r: { tasks: number; canon_tokens: number }) =>
     r.tasks > 0 && medianDay > 0 && r.canon_tokens < medianDay * GAP_SHARE
 
-  const today = localDay(new Date())
+  const today = metricCalendarDay(now)
   const usable = rows.filter((r) => r.day !== today && !isGap(r))
   const excluded = rows.length - usable.length
 
@@ -382,7 +386,7 @@ export function summary(windowDays = 14) {
   // the answer is `unknown` and says so: with few tasks the denominator moves
   // more than the thing being measured.
   const MIN_TASKS = 5
-  const midpoint = localDay(localDaysAgo(Math.floor(windowDays / 2)))
+  const midpoint = metricDaysAgo(Math.floor(windowDays / 2), now)
   const half = (rs: typeof rows) => {
     const t = rs.reduce((a, r) => a + r.canon_tokens, 0)
     const k = rs.reduce((a, r) => a + r.tasks, 0)
