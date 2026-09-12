@@ -119,7 +119,7 @@ exit 17
     })
     const before = (db().query('SELECT COUNT(*) AS n FROM run').get() as { n: number }).n
     const r = Bun.spawnSync([
-      process.execPath, new URL('cli.ts', import.meta.url).pathname,
+      process.execPath, new URL('orch.ts', import.meta.url).pathname,
       'do', 'implement', 'inspect', '--follow',
     ], {
       cwd: repo,
@@ -152,7 +152,7 @@ test('preflight refuses a structured create missing args before any run row exis
     })
     const before = (db().query('SELECT COUNT(*) AS n FROM run').get() as { n: number }).n
     const r = Bun.spawnSync([
-      process.execPath, new URL('cli.ts', import.meta.url).pathname, 'do', 'implement', 'inspect',
+      process.execPath, new URL('orch.ts', import.meta.url).pathname, 'do', 'implement', 'inspect',
     ], {
       cwd: repo,
       env: {
