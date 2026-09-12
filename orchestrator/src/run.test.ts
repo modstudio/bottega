@@ -717,9 +717,8 @@ describe('a worker asking is not a worker blocked', () => {
 })
 describe('asking is a first-class outcome, not a failure', () => {
   test('every status check uses the current vocabulary', () => {
-    const cli = readFileSync(new URL('./cli.ts', import.meta.url).pathname, 'utf8')
     const wt = readFileSync(new URL('./worktree.ts', import.meta.url).pathname, 'utf8')
-    for (const [name, src] of [['cli.ts', cli], ['worktree.ts', wt]] as const) {
+    for (const [name, src] of [['worktree.ts', wt]] as const) {
       const bad = src.split('\n').filter((l) =>
         ["'blocked'", '"blocked"'].some((quoted) => l.includes(quoted))
         && !l.includes('o.status') && !l.trim().startsWith('*')

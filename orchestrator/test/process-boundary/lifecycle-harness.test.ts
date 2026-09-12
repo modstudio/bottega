@@ -52,7 +52,7 @@ process.env.ORCH_DEPTH = '0'
 process.env.CLAUDE_CODE_SESSION_ID = 'lifecycle-harness'
 
 const sourceRoot = join(dirname(new URL(import.meta.url).pathname), '../../..')
-const cli = join(sourceRoot, 'orchestrator', 'src', 'cli.ts')
+const cli = join(sourceRoot, 'orchestrator', 'src', 'orch.ts')
 const worktreeModule = new URL('../../src/worktree.ts', import.meta.url).href
 const dispatchPreflightModule = new URL('../../src/dispatch-preflight.ts', import.meta.url).href
 
@@ -319,7 +319,7 @@ test(caseName.migration, async () => {
     expect(read.stderr.toString()).toMatch(/cleared by: orch migrate/)
     expect(read.stderr.toString()).not.toContain('no such column: r.label')
   })
-  const migrated = Bun.spawnSync([process.execPath, join(copy, 'orchestrator/src/cli.ts'), 'migrate'], {
+  const migrated = Bun.spawnSync([process.execPath, join(copy, 'orchestrator/src/orch.ts'), 'migrate'], {
     cwd: copy, env: gitEnv({ ORCH_DB: scratch, ORCH_DEPTH: '0' }), stdout: 'pipe', stderr: 'pipe',
   })
   expect(migrated.exitCode, migrated.stderr.toString()).toBe(0)

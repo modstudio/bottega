@@ -24,7 +24,7 @@ describe('run files are named by their run, not by the clock', () => {
     // reproducing a millisecond collision on demand is a race the test would
     // lose more often than the bug did.
     const dir = new URL('.', import.meta.url).pathname
-    for (const file of ['run-artifacts.ts', 'cli.ts']) {
+    for (const file of ['run-artifacts.ts']) {
       // Comments quote the OLD pattern on purpose, to record what went wrong.
       const code = readFileSync(join(dir, file), 'utf8')
         .split('\n')

@@ -1314,7 +1314,7 @@ export function tryWake(now = Date.now()): { sent: boolean; detail: string } {
  * Commands that must know whether an agent can be reached before they answer.
  *
  * Anything that ROUTES (`do`) or REPORTS A ROUTE (`pick`, `guide`, `doctor`,
- * `agents`). Exported rather than left in cli.ts so it can be asserted against:
+ * `agents`). Exported rather than left in the command adapter so it can be asserted against:
  * a command added to the switch that prints eligibility and is missing here
  * reports a route that `orch do` would not take, which is exactly what
  * happened to `pick` and `guide`.

@@ -46,9 +46,18 @@ test('the no-seed guidance spells exactly the accepted forms', () => {
     `  --seed="--bundle=catalog --budget-mb=700"`,
   )
   for (const seed of seeds) {
-    expect(flagValue(['do', 'implement', '--seed', seed], 'seed')).toBe(seed)
-    expect(flagValue(['do', 'implement', `--seed=${seed}`], 'seed')).toBe(seed)
+    for (const args of [['--seed', seed], [`--seed=${seed}`]]) {
+      expect(flagValue(['do', 'implement', ...args, 'make the change'], 'seed')).toBe(seed)
+    }
   }
+  const multiToken = '--bundle=catalog --budget-mb=700'
+  for (const args of [['--seed', multiToken], [`--seed=${multiToken}`]]) {
+    expect(flagValue(['do', 'implement', ...args, 'make the change'], 'seed')).toBe(multiToken)
+  }
+})
+
+test('a --q flag followed by another control flag needs a value', () => {
+  expect(() => parseAnswerTextSources(['--q31', '--follow'])).toThrow('argument --q31 needs a value')
 })
 
 
