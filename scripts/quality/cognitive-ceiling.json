@@ -728,8 +728,8 @@
   {
     "file": "orchestrator/src/run.ts",
     "function": "run",
-    "line": 854,
-    "score": 672,
+    "line": 232,
+    "score": 669,
     "key": "orchestrator/src/run.ts\u0000run"
   },
   {
@@ -753,8 +753,9 @@
   {
     "file": "orchestrator/src/transport-acp.ts",
     "function": "openAcp",
-    "line": 295,
-    "score": 31
+    "line": 293,
+    "score": 25,
+    "key": "orchestrator/src/transport-acp.ts\u0000openAcp"
   },
   {
     "file": "orchestrator/src/transport-acp.ts",

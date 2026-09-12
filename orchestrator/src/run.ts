@@ -42,7 +42,7 @@ import { resolveBranchRef } from './projects.ts'
 import { resolveLens } from './lenses.ts'
 import { TRUNCATED_TRANSCRIPT_BYTES } from './result-output.ts'
 import { addedGrokTrustHeadings, grokTrustHeadings } from './grok-trust.ts'
-import { prepareSandboxHome, selectReadonlySandbox, srtLaunchArgv } from './sandbox.ts'
+import { prepareSandboxHome, resetSandbox, sandboxLaunchArgv, selectReadonlySandbox } from './sandbox.ts'
 import {
   classifyDivergence, freezeCheckouts, overlappingError,
   type ConfinementEvent, type FreezeFailure,
@@ -1222,9 +1222,6 @@ export async function run(opts: {
     teardownTerminalRunResources(db(), claim.id)
     throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
   }
-  const srtSettingsPath = sandboxSelection.profile
-    ? join(sandboxRunDir, 'settings.json')
-    : null
   const sandboxEnvironment = sandboxSelection.profile
     ? prepareSandboxHome(name, sandboxRunDir)
     : {}
@@ -1246,10 +1243,8 @@ export async function run(opts: {
         const projectSettings = projectAt(callerCwd)?.settings as
           { mcp?: { probe_tool?: string } } | undefined
         const probeTool = projectSettings?.mcp?.probe_tool ?? null
-        const wrap = sandboxSelection.profile && srtSettingsPath
-          ? (bin: string, args: string[]) => srtLaunchArgv(
-              sandboxSelection.profile!, srtSettingsPath, bin, args,
-            )
+        const wrap = sandboxSelection.profile
+          ? (bin: string, args: string[]) => sandboxLaunchArgv(sandboxSelection.profile!, bin, args)
           : undefined
         const probe = await probeMcpServer({
           server: mcpServerName,
@@ -1277,6 +1272,7 @@ export async function run(opts: {
           db().query(
             `UPDATE run SET status='failed', error=?, failure_kind='mcp_unverified', latency_ms=? WHERE id=?`,
           ).run(why, Date.now() - started, claim.id)
+          await resetSandbox()
           teardownTerminalRunResources(db(), claim.id)
           throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
         }
@@ -1296,6 +1292,7 @@ export async function run(opts: {
         db().query(
           `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=? WHERE id=?`,
         ).run(why, Date.now() - started, claim.id)
+        await resetSandbox()
         teardownTerminalRunResources(db(), claim.id)
         throw Object.assign(new Error(`run ${claim.id} could not start: ${why}`), { runId: claim.id })
       }
@@ -1456,8 +1453,8 @@ export async function run(opts: {
       writableRoots,
       gitObjectEnvironment,
       gitConfigEnvironment,
-      srt: sandboxSelection.profile && srtSettingsPath
-        ? { profile: sandboxSelection.profile, settingsPath: srtSettingsPath }
+      srt: sandboxSelection.profile
+        ? { profile: sandboxSelection.profile, runtimeDir: sandboxRunDir }
         : undefined,
       resume: Boolean(opts.resume && !opts.resume.fresh),
       env: childEnv(a, claim.id, runToken, {
@@ -1909,6 +1906,7 @@ export async function run(opts: {
     }
     if (proc?.pid && proc.pid !== process.pid) await terminateProcessGroup(proc.pid, { direct: proc })
     if (askLoopback) await askLoopback.close()
+    await resetSandbox()
 
     const recordedState = db().query('SELECT status FROM run WHERE id=?').get(claim.id) as
       { status: string } | null

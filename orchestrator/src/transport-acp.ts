@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import * as acp from '@agentclientprotocol/sdk'
 import { execa, type ResultPromise } from 'execa'
 import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from './idle-kill.ts'
-import { srtLaunchArgv } from './sandbox.ts'
+import { sandboxLaunchArgv } from './sandbox.ts'
 import type { SandboxRuntimeConfig } from './sandbox.ts'
 import {
   ACP_PILOT_TASK, confineFsPath, decideAcpPermission, outcomeFromTransport, registerTransport, resolveCodexAcpBin,
@@ -284,9 +284,9 @@ export function acpSandboxProfile(
 }
 
 /** Grok must create its leader inside the directory the run may write. */
-export function acpLeaderSocketPath(outPath: string, settingsPath?: string): string {
-  return settingsPath
-    ? join(dirname(settingsPath), 'grok-leader.sock')
+export function acpLeaderSocketPath(outPath: string, runtimeDir?: string): string {
+  return runtimeDir
+    ? join(runtimeDir, 'grok-leader.sock')
     : `${outPath}.leader.sock`
 }
 
@@ -294,10 +294,10 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const grok = opts.agent.name === 'grok'
   const genericHarness = opts.agent.harness === 'opencode' || opts.agent.harness === 'goose'
   const bin = opts.bin ?? (grok || genericHarness ? opts.agent.bin : resolveCodexAcpBin())
-  const leaderSocket = grok ? acpLeaderSocketPath(opts.outPath, opts.srt?.settingsPath) : null
+  const leaderSocket = grok ? acpLeaderSocketPath(opts.outPath, opts.srt?.runtimeDir) : null
   const agentArgv = acpHarnessArgv(opts.agent.harness ?? opts.agent.name, leaderSocket)
   const profile = opts.srt ? acpSandboxProfile(opts.srt.profile, leaderSocket) : null
-  const launch = profile && opts.srt ? srtLaunchArgv(profile, opts.srt.settingsPath, bin, agentArgv)
+  const launch = profile && opts.srt ? await sandboxLaunchArgv(profile, bin, agentArgv)
     : [bin, ...agentArgv]
   const child = execa(launch[0]!, launch.slice(1), {
     cwd: opts.cwd, env: {
@@ -319,9 +319,9 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
         }),
       } : {}),
       ...(opts.agent.harness === 'goose' ? {
-        XDG_STATE_HOME: opts.srt ? dirname(opts.srt.settingsPath) : dirname(opts.outPath),
-        XDG_DATA_HOME: opts.srt ? dirname(opts.srt.settingsPath) : dirname(opts.outPath),
-        XDG_CONFIG_HOME: opts.srt ? dirname(opts.srt.settingsPath) : dirname(opts.outPath),
+        XDG_STATE_HOME: opts.srt?.runtimeDir ?? dirname(opts.outPath),
+        XDG_DATA_HOME: opts.srt?.runtimeDir ?? dirname(opts.outPath),
+        XDG_CONFIG_HOME: opts.srt?.runtimeDir ?? dirname(opts.outPath),
       } : {}),
     },
     stdin: 'pipe', stdout: 'pipe', stderr: 'pipe',
