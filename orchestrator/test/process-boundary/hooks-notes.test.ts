@@ -27,7 +27,7 @@ describe('note hook process boundary', () => {
     const env = { ...process.env, HUB_DB: hubDb, ORCH_DB: process.env.ORCH_DB!,
       HUB_ORCH: new URL('../../../bin/orch', import.meta.url).pathname,
       CLAUDE_CODE_SESSION_ID: session }
-    const orchCli = new URL('../../src/cli.ts', import.meta.url).pathname
+    const orchCli = new URL('../../src/orch.ts', import.meta.url).pathname
     for (const text of ['Promoted hook note', 'Dropped hook note', 'Actionable hook note']) {
       const filed = Bun.spawnSync([process.execPath, orchCli, 'note', text, '--new'], {
         cwd, env, stdout: 'pipe', stderr: 'pipe',

@@ -26,13 +26,8 @@ try {
   if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
   const { registerStandardRuntime } = await import('./runtime-registration.ts')
   registerStandardRuntime()
-  const { program, run } = await import('./program.ts')
-  if (argv[0] === '--help' || argv[0] === '-h' || argv[0] === '--version' || argv[0] === '-V' ||
-      program.commands.some((command) => command.name() === argv[0] || command.aliases().includes(argv[0]!))) {
-    process.exitCode = await run(argv)
-  } else {
-    await import('./cli.ts')
-  }
+  const { run } = await import('./program.ts')
+  process.exitCode = await run(argv)
 } catch (error) {
   if (!COLLECTION_COMMANDS.has(argv[0] ?? '')) throw error
 

@@ -5,7 +5,7 @@ import { db } from '../db.ts'
 import { job } from '../jobs.ts'
 import { thinOutputWarning } from '../collect.ts'
 import { runListingCommand } from '../run-listing.ts'
-import { booleanOptions, cliFlags, duration, log, rawArgv, valueOptions } from './support.ts'
+import { collect, duration, log, optionFlags } from './support.ts'
 
 function chainHasPendingDelivery(rootId: number): boolean {
   return Boolean(db().query(
@@ -19,17 +19,18 @@ const strandedRecovery = (id: number) =>
   `stranded — orch retry ${id} --agent … with the recorded ruling, or orch abandon ${id}`
 
 export function register(program: Command): void {
-  booleanOptions(program.command('run <run-id>'), ['receipt']).action(async (id, _options, command) => {
+  program.command('run <run-id>').option('--receipt').allowExcessArguments(false).action(async (id, options) => {
     const { runDetail } = await import('../serve.ts')
-    const detail = runDetail(Number(id), cliFlags(rawArgv(command)).has('receipt'))
+    const detail = runDetail(Number(id), Boolean(options.receipt))
     if (!detail) throw new Error(`no run ${Number(id)}`)
     log(JSON.stringify(detail))
   })
 
-  const runs = valueOptions(program.command('runs'), ['id', 'job', 'agent', 'limit', 'since'])
-  runs.option('--json [version]').option('--unscored').action(async (_options, command) => {
-    const argv = rawArgv(command); const flags = cliFlags(argv)
-    await runListingCommand({ jsonV1: argv.includes('--json=v1') }, flags, {
+  program.command('runs').option('--id <value>', '', collect, []).option('--job <value>')
+    .option('--agent <value>').option('--limit <value>').option('--since <value>')
+    .option('--json [version]').option('--unscored').allowExcessArguments(false).action(async (options) => {
+    const flags = optionFlags(options)
+    await runListingCommand({ jsonV1: options.json === 'v1' }, flags, {
       log, dur: duration, chainIsStranded: chainHasPendingDelivery, strandedRecovery,
       thinOutputWarning: (row) => thinOutputWarning({ ...row, writesRepo: Boolean(job(row.job).needs.writesRepo) }),
     })

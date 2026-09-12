@@ -34,7 +34,7 @@ describe('monitor process boundary', () => {
        VALUES (?,?,?,?,?,?,?,?) RETURNING id`,
     ).get(invocation, 'stale-run', 'run:authority', nowIso(), 1,
       'worker text', 'reported', 'published-session') as { id: number }).id
-    const cli = new URL('../../src/cli.ts', import.meta.url).pathname
+    const cli = new URL('../../src/orch.ts', import.meta.url).pathname
     const result = Bun.spawnSync(
       [process.execPath, cli, 'monitor', '--ack-notices', String(notice)],
       { env: { ...process.env, CLAUDE_CODE_SESSION_ID: 'published-session' },
@@ -62,7 +62,7 @@ describe('monitor process boundary', () => {
     const capabilityPath = join(capabilityDir, 'capability.json')
     const forgedParent = join(capabilityDir, 'forged-parent.ts')
     const token = 'valid-test-token'
-    const cli = new URL('../../src/cli.ts', import.meta.url).pathname
+    const cli = new URL('../../src/orch.ts', import.meta.url).pathname
     const hookArgument = new URL('../hooks/session-brief.py', import.meta.url).pathname
     writeFileSync(forgedParent, `import { chmodSync, writeFileSync } from 'node:fs'
 writeFileSync(process.env.CAPABILITY_PATH!, JSON.stringify({
@@ -120,7 +120,7 @@ process.exit(result.exitCode)
     const notice = claimMonitorNotices('atomic-owner').find((row) => row.subject === `run:${runId}`)!
     expect(notice).toBeDefined()
 
-    const cli = new URL('../../src/cli.ts', import.meta.url).pathname
+    const cli = new URL('../../src/orch.ts', import.meta.url).pathname
     const syncDir = mkdtempSync(join(tmpdir(), 'monitor-concurrency-'))
     const children: ReturnType<typeof Bun.spawn>[] = []
     let marker: ReturnType<typeof Bun.spawn> | undefined

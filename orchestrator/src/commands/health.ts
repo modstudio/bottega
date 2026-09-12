@@ -7,21 +7,21 @@ import { acpRuntimeGaps } from '../transport.ts'
 import { blockersCommand, healthCommand } from '../health-commands.ts'
 import { doctorCommand } from '../doctor.ts'
 import { reclassifyFailuresCommand } from '../failure-commands.ts'
-import { booleanOptions, cliFlags, log, rawArgv, valueOptions } from './support.ts'
+import { log, optionFlags } from './support.ts'
 
 export function register(program: Command): void {
-  const blockers = valueOptions(program.command('blockers'), ['days'])
-  booleanOptions(blockers, ['json']).action((_options, command) => blockersCommand(cliFlags(rawArgv(command)), { log }))
+  program.command('blockers').option('--days <value>').option('--json').allowExcessArguments(false)
+    .action((options) => blockersCommand(optionFlags(options), { log }))
 
-  const health = valueOptions(program.command('health'), ['days'])
-  booleanOptions(health, ['json']).action((_options, command) => healthCommand(cliFlags(rawArgv(command)), { log }))
+  program.command('health').option('--days <value>').option('--json').allowExcessArguments(false)
+    .action((options) => healthCommand(optionFlags(options), { log }))
 
-  booleanOptions(program.command('reclassify-failures'), ['dry-run']).action((_options, command) => {
-    reclassifyFailuresCommand(cliFlags(rawArgv(command)), { log })
+  program.command('reclassify-failures').option('--dry-run').allowExcessArguments(false).action((options) => {
+    reclassifyFailuresCommand(optionFlags(options), { log })
   })
 
-  booleanOptions(program.command('doctor'), ['wake']).action(async (_options, command) => {
-    await doctorCommand(cliFlags(rawArgv(command)), {
+  program.command('doctor').option('--wake').allowExcessArguments(false).action(async (options) => {
+    await doctorCommand(optionFlags(options), {
       log, exitCode: (code) => { process.exitCode = code }, candidates, pick,
       jobs: () => Object.keys(JOBS), acpRuntimeGaps,
     })

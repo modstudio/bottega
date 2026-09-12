@@ -103,7 +103,7 @@ const PATTERNS: [FailureKind, RegExp][] = [
    * is never our own timer, which sets its own message and its own kind. 143 is
    * 128+15, SIGTERM; 130 and 137 are the SIGINT and SIGKILL of the same event.
    *
-   * The cause is named in cli.ts beside --detach: a foreground `orch do` that
+   * The cause is named in the do command beside --detach: a foreground `orch do` that
    * outlives the calling harness's command timeout has its whole process group
    * killed, run.ts's signal handler forwards SIGTERM to the child, and the
    * child dies having written nothing. Sixteen grok review-lens runs in this

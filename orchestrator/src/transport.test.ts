@@ -118,7 +118,7 @@ describe('ACP transport through run', () => {
       expect(result.status).toBe('ok')
       expect(JSON.parse(result.output).deliverables[0].content).toBe('from file')
       const printed = Bun.spawnSync([
-        process.execPath, new URL('cli.ts', import.meta.url).pathname, 'result', String(result.id),
+        process.execPath, new URL('orch.ts', import.meta.url).pathname, 'result', String(result.id),
       ], {
         cwd: dir,
         env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
@@ -236,7 +236,7 @@ describe('ACP transport through run', () => {
       expect(result.output).toBe('plain answer')
       expect(readFileSync(result.outPath, 'utf8')).toBe('plain answer')
       const printed = Bun.spawnSync([
-        process.execPath, new URL('cli.ts', import.meta.url).pathname, 'result', String(result.id),
+        process.execPath, new URL('orch.ts', import.meta.url).pathname, 'result', String(result.id),
       ], {
         cwd: dir,
         env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
@@ -427,7 +427,7 @@ describe('ACP transport through run', () => {
     const priorSession = process.env.CLAUDE_CODE_SESSION_ID
     process.env.ORCH_DEPTH = '0'
     process.env.CLAUDE_CODE_SESSION_ID = 'acp-answer-test'
-    const CLI = join(import.meta.dir, 'cli.ts')
+    const CLI = join(import.meta.dir, 'orch.ts')
     try {
       const transport: AgentTransport = {
         name: 'acp',

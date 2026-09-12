@@ -27,7 +27,7 @@ const fakeGrok = () => {
   return binDir
 }
 const invoke = (args: string[], binDir: string) => Bun.spawnSync(
-  [process.execPath, new URL('../../src/cli.ts', import.meta.url).pathname, ...args],
+  [process.execPath, new URL('../../src/orch.ts', import.meta.url).pathname, ...args],
   { cwd: realpathSync(dir), env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
     CLAUDE_CODE_SESSION_ID: 'orch-test-session', PATH: `${binDir}:${process.env.PATH ?? ''}`,
     ORCH_STUB_MCP_DOCTOR_OUTPUT: GROK_DOCTOR_OUTPUT,

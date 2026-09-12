@@ -3,20 +3,20 @@
 import type { Command } from 'commander'
 import { ensureLocalHealth } from '../agents.ts'
 import { guideCommand, routingBacktestCommand, statsCommand } from '../routing-commands.ts'
-import { booleanOptions, cliFlags, duration, log, rawArgv, valueOptions } from './support.ts'
+import { duration, log, optionFlags } from './support.ts'
 
 export function register(program: Command): void {
-  const guide = valueOptions(program.command('guide'), ['job', 'prompt-bytes', 'lens'])
-  guide.action(async (_options, command) => {
+  program.command('guide').option('--job <value>').option('--prompt-bytes <value>').option('--lens <value>')
+    .allowExcessArguments(false).action(async (options) => {
     await ensureLocalHealth()
-    guideCommand(cliFlags(rawArgv(command)), { log, dur: duration })
+    guideCommand(optionFlags(options), { log, dur: duration })
   })
 
-  const stats = valueOptions(program.command('stats'), ['job'])
-  stats.action((_options, command) => statsCommand(cliFlags(rawArgv(command)), { log, dur: duration }))
+  program.command('stats').option('--job <value>').allowExcessArguments(false)
+    .action((options) => statsCommand(optionFlags(options), { log, dur: duration }))
 
-  const backtest = valueOptions(program.command('routing-backtest'), ['job', 'seed'])
-  booleanOptions(backtest, ['json']).action((_options, command) => {
-    routingBacktestCommand(cliFlags(rawArgv(command)), { log, dur: duration })
+  program.command('routing-backtest').option('--job <value>').option('--seed <value>').option('--json')
+    .allowExcessArguments(false).action((options) => {
+    routingBacktestCommand(optionFlags(options), { log, dur: duration })
   })
 }

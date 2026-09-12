@@ -7,7 +7,7 @@ import { sweepRuns } from '../cleanup-sweep.ts'
 import { abandonRun, stopRun } from '../run-stop.ts'
 import { terminateRunProcesses } from '../run-process.ts'
 import { grokTrustHeadings, grokTrustPathFromHeading } from '../grok-trust.ts'
-import { booleanOptions, cliFlags, log, rawArgv, valueOptions } from './support.ts'
+import { log, optionFlags } from './support.ts'
 
 function keptBranchLine(branch: string, uniqueCount: number, afterCutCount: number | null, id: number): string {
   const reason = afterCutCount === null
@@ -21,8 +21,7 @@ const presentation: CleanupPresentation = {
   setExitCode: (code) => { process.exitCode = code }, keptBranchLine,
 }
 
-function auditReason(argv: string[]): string | null {
-  const flags = cliFlags(argv)
+function auditReason(flags: ReturnType<typeof optionFlags>): string | null {
   const scorer = flags.flag('scorer')
   if (scorer) return `--scorer ${scorer}`
   if (flags.has('force')) return '--force'
@@ -38,24 +37,24 @@ function lifecycleCheckpoint(name: string): void {
 }
 
 export function register(program: Command): void {
-  const sweep = valueOptions(program.command('sweep'), ['project'])
-  booleanOptions(sweep, ['force', 'dry-run']).action(async (_options, command) => {
-    const argv = rawArgv(command); const flags = cliFlags(argv)
+  program.command('sweep').option('--project <value>').option('--force').option('--dry-run')
+    .allowExcessArguments(false).action(async (options) => {
+    const flags = optionFlags(options)
     await sweepRuns({ dryRun: flags.has('dry-run'), project: flags.flag('project'), force: flags.has('force'), presentation }, { grokTrustHeadings, grokTrustPathFromHeading })
   })
 
-  booleanOptions(program.command('discard <id>'), ['force']).action(async (id, _options, command) => {
-    const argv = rawArgv(command)
-    await discardRun(Number(id), { force: cliFlags(argv).has('force'), auditReason: auditReason(argv), presentation })
+  program.command('discard <id>').option('--force').allowExcessArguments(false).action(async (id, options) => {
+    const flags = optionFlags(options)
+    await discardRun(Number(id), { force: flags.has('force'), auditReason: auditReason(flags), presentation })
   })
 
-  program.command('stop <id>').action(async (id) => {
+  program.command('stop <id>').allowExcessArguments(false).action(async (id) => {
     await stopRun(Number(id), { force: false, auditReason: null, presentation }, { lifecycleCheckpoint, terminateRunProcesses })
   })
 
-  const abandon = valueOptions(program.command('abandon <id>'), ['note'])
-  booleanOptions(abandon, ['force']).action(async (id, _options, command) => {
-    const argv = rawArgv(command); const flags = cliFlags(argv)
-    await abandonRun(Number(id), { force: flags.has('force'), note: flags.flag('note'), auditReason: auditReason(argv), presentation }, { lifecycleCheckpoint, terminateRunProcesses })
+  program.command('abandon <id>').option('--note <value>').option('--force').allowExcessArguments(false)
+    .action(async (id, options) => {
+    const flags = optionFlags(options)
+    await abandonRun(Number(id), { force: flags.has('force'), note: flags.flag('note'), auditReason: auditReason(flags), presentation }, { lifecycleCheckpoint, terminateRunProcesses })
   })
 }

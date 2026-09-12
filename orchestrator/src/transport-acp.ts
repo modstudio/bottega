@@ -456,7 +456,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
       ? [{
           name: 'orch-ask',
           command: process.execPath,
-          args: [join(dirname(import.meta.path), 'cli.ts'), 'ask-server'],
+          args: [join(dirname(import.meta.path), 'orch.ts'), 'ask-server'],
           env: ['ORCH_ASK_URL', 'ORCH_RUN_ID', 'ORCH_RUN_TOKEN', 'ORCH_DB']
             .flatMap((name) => opts.env[name] ? [{ name, value: opts.env[name]! }] : []),
         }]

@@ -7,7 +7,7 @@ import { cleanupRepoRoot } from '../cleanup.ts'
 import { changesIn } from '../worktree.ts'
 import { runDiffCommand } from '../run-diff.ts'
 import { runInboxCommand } from '../run-inbox.ts'
-import { booleanOptions, cliFlags, duration, log, rawArgv, write } from './support.ts'
+import { duration, log, optionFlags, write } from './support.ts'
 
 function chainHasPendingDelivery(rootId: number): boolean {
   return Boolean(db().query(
@@ -21,14 +21,15 @@ const strandedRecovery = (id: number) =>
   `stranded — orch retry ${id} --agent … with the recorded ruling, or orch abandon ${id}`
 
 export function register(program: Command): void {
-  booleanOptions(program.command('inbox'), ['all', 'json']).action(async (_options, command) => {
-    await runInboxCommand(cliFlags(rawArgv(command)), {
+  program.command('inbox').option('--all').option('--json').allowExcessArguments(false).action(async (options) => {
+    await runInboxCommand(optionFlags(options), {
       log, dur: duration, chainHasPendingDelivery, strandedRecovery,
     })
   })
 
-  booleanOptions(program.command('diff <id>'), ['quiet', 'since-base']).action(async (id, _options, command) => {
-    await runDiffCommand(Number(id), cliFlags(rawArgv(command)), {
+  program.command('diff <id>').option('--quiet').option('--since-base').allowExcessArguments(false)
+    .action(async (id, options) => {
+    await runDiffCommand(Number(id), optionFlags(options), {
       error: console.error, write,
       usage: (): never => { throw new Error('orch diff <id> [--quiet] [--since-base]') },
       cleanupRepoRoot, changesIn,

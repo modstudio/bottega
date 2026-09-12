@@ -17,7 +17,7 @@
  * `interrupted` is already excluded from evidence — but the work was gone and
  * the cause was invisible.
  *
- * WHY THIS FILE IS SEPARATE. `cli.ts` statically imports the whole graph, so a
+ * WHY THIS FILE IS SEPARATE. `program.ts` statically imports the whole graph, so a
  * syntax error anywhere in it takes the process down before `main()` is
  * reached and no `try` inside `main()` can help. This entry imports almost
  * nothing statically and pulls the rest in dynamically, INSIDE a catch — so a

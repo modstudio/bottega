@@ -159,7 +159,7 @@ export async function detach(jobName: string, prompt: string, spec: DetachSpec, 
   const execPath = process.env.ORCH_EXEC_PATH ?? process.execPath
   const spawnArgs = [
     /**
-     * `exec.ts`, NOT `cli.ts`, and that is the whole point of it.
+     * `exec.ts`, not the `orch.ts` process entry point, and that is the whole point of it.
      *
      * A detached worker is a fresh process that imports this concern's source
      * at spawn time, so an edit anywhere in the graph kills every run launched
@@ -167,7 +167,7 @@ export async function detach(jobName: string, prompt: string, spec: DetachSpec, 
      * function already claimed. Three of another session's runs were lost that
      * way this morning and reported only as "orch was dropping runs".
      *
-     * `cli.ts` imports everything statically, so no `try` inside it can catch
+     * `program.ts` imports the full command graph, so no `try` inside it can catch
      * that. `exec.ts` imports almost nothing and pulls the rest in inside a
      * catch, turning a broken sibling into a recorded failure with a reason.
      */
