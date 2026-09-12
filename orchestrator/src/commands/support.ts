@@ -1,6 +1,7 @@
 // concern: cli
 /** Commander-only argv plumbing. Must not know any application concern. */
 import type { Command } from 'commander'
+import { format } from 'node:util'
 import { flagValue, flagValues } from '../args.ts'
 
 export type CliFlags = {
@@ -44,4 +45,22 @@ export function writeStdout(value: string): Promise<void> {
   return new Promise((resolve, reject) => {
     process.stdout.write(value, (error) => error ? reject(error) : resolve())
   })
+}
+
+/**
+ * Every adapter writes stdout through here and the program awaits the queue
+ * before it returns. Under Bun a bare console.log to a slow pipe is cut at the
+ * pipe buffer once node:process is loaded (Commander loads it), so a large JSON
+ * document reached a shell capture as a 65,536-byte fragment; a write with a
+ * completion callback is delivered whole. A closed reader is not an error here.
+ */
+const pending: Promise<void>[] = []
+export function log(...values: unknown[]): void {
+  pending.push(writeStdout(`${format(...values)}\n`).catch(() => undefined))
+}
+export function write(value: string): void {
+  pending.push(writeStdout(value).catch(() => undefined))
+}
+export async function drainStdout(): Promise<void> {
+  while (pending.length) await Promise.all(pending.splice(0))
 }

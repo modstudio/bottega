@@ -7,7 +7,7 @@ import { sweepRuns } from '../cleanup-sweep.ts'
 import { abandonRun, stopRun } from '../run-stop.ts'
 import { terminateRunProcesses } from '../run-process.ts'
 import { grokTrustHeadings, grokTrustPathFromHeading } from '../grok-trust.ts'
-import { booleanOptions, cliFlags, rawArgv, valueOptions } from './support.ts'
+import { booleanOptions, cliFlags, log, rawArgv, valueOptions } from './support.ts'
 
 function keptBranchLine(branch: string, uniqueCount: number, afterCutCount: number | null, id: number): string {
   const reason = afterCutCount === null
@@ -17,7 +17,7 @@ function keptBranchLine(branch: string, uniqueCount: number, afterCutCount: numb
 }
 
 const presentation: CleanupPresentation = {
-  log: (...values) => console.log(...values), error: (...values) => console.error(...values),
+  log: log, error: (...values) => console.error(...values),
   setExitCode: (code) => { process.exitCode = code }, keptBranchLine,
 }
 

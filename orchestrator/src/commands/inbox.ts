@@ -7,7 +7,7 @@ import { cleanupRepoRoot } from '../cleanup.ts'
 import { changesIn } from '../worktree.ts'
 import { runDiffCommand } from '../run-diff.ts'
 import { runInboxCommand } from '../run-inbox.ts'
-import { booleanOptions, cliFlags, duration, rawArgv } from './support.ts'
+import { booleanOptions, cliFlags, duration, log, rawArgv, write } from './support.ts'
 
 function chainHasPendingDelivery(rootId: number): boolean {
   return Boolean(db().query(
@@ -23,13 +23,13 @@ const strandedRecovery = (id: number) =>
 export function register(program: Command): void {
   booleanOptions(program.command('inbox'), ['all', 'json']).action(async (_options, command) => {
     await runInboxCommand(cliFlags(rawArgv(command)), {
-      log: console.log, dur: duration, chainHasPendingDelivery, strandedRecovery,
+      log, dur: duration, chainHasPendingDelivery, strandedRecovery,
     })
   })
 
   booleanOptions(program.command('diff <id>'), ['quiet', 'since-base']).action(async (id, _options, command) => {
     await runDiffCommand(Number(id), cliFlags(rawArgv(command)), {
-      error: console.error, write: (value) => { process.stdout.write(value) },
+      error: console.error, write,
       usage: (): never => { throw new Error('orch diff <id> [--quiet] [--since-base]') },
       cleanupRepoRoot, changesIn,
       writesRepo: (jobName) => Boolean(JOBS[jobName]?.needs.writesRepo),

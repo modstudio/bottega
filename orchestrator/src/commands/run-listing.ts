@@ -5,7 +5,7 @@ import { db } from '../db.ts'
 import { job } from '../jobs.ts'
 import { thinOutputWarning } from '../collect.ts'
 import { runListingCommand } from '../run-listing.ts'
-import { booleanOptions, cliFlags, duration, rawArgv, valueOptions } from './support.ts'
+import { booleanOptions, cliFlags, duration, log, rawArgv, valueOptions } from './support.ts'
 
 function chainHasPendingDelivery(rootId: number): boolean {
   return Boolean(db().query(
@@ -23,14 +23,14 @@ export function register(program: Command): void {
     const { runDetail } = await import('../serve.ts')
     const detail = runDetail(Number(id), cliFlags(rawArgv(command)).has('receipt'))
     if (!detail) throw new Error(`no run ${Number(id)}`)
-    console.log(JSON.stringify(detail))
+    log(JSON.stringify(detail))
   })
 
   const runs = valueOptions(program.command('runs'), ['id', 'job', 'agent', 'limit', 'since'])
   runs.option('--json [version]').option('--unscored').action(async (_options, command) => {
     const argv = rawArgv(command); const flags = cliFlags(argv)
     await runListingCommand({ jsonV1: argv.includes('--json=v1') }, flags, {
-      log: console.log, dur: duration, chainIsStranded: chainHasPendingDelivery, strandedRecovery,
+      log, dur: duration, chainIsStranded: chainHasPendingDelivery, strandedRecovery,
       thinOutputWarning: (row) => thinOutputWarning({ ...row, writesRepo: Boolean(job(row.job).needs.writesRepo) }),
     })
   })

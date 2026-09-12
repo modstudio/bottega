@@ -52,6 +52,9 @@
     "test/process-boundary/database.test.ts": {
       "size": "short"
     },
+    "test/process-boundary/stdout-drain.test.ts": {
+      "size": "short"
+    },
     "test/process-boundary/discard-resources.test.ts": {
       "size": "short"
     },
@@ -144,6 +147,7 @@
       "measuredSeconds": 15,
       "files": [
         "test/process-boundary/database.test.ts",
+        "test/process-boundary/stdout-drain.test.ts",
         "test/process-boundary/idle-kill.test.ts"
       ]
     },
