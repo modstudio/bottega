@@ -30,7 +30,7 @@
   {
     "path": "orchestrator/src/args.test.ts",
     "wallMs": 105,
-    "tests": 31,
+    "tests": 22,
     "cliShaped": false,
     "spawns": 0
   },
@@ -89,13 +89,6 @@
     "tests": 21,
     "cliShaped": false,
     "spawns": 761
-  },
-  {
-    "path": "orchestrator/src/cli-imports.test.ts",
-    "wallMs": 17,
-    "tests": 2,
-    "cliShaped": false,
-    "spawns": 0
   },
   {
     "path": "orchestrator/src/clock.test.ts",
@@ -402,6 +395,13 @@
     "path": "orchestrator/src/postgres-rls.test.ts",
     "wallMs": 33,
     "tests": 12,
+    "cliShaped": false,
+    "spawns": 0
+  },
+  {
+    "path": "orchestrator/src/program.test.ts",
+    "wallMs": 12,
+    "tests": 1,
     "cliShaped": false,
     "spawns": 0
   },

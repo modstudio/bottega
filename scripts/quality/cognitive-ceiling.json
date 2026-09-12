@@ -156,18 +156,6 @@
     "score": 23
   },
   {
-    "file": "orchestrator/src/args.ts",
-    "function": "commandShape",
-    "line": 257,
-    "score": 70
-  },
-  {
-    "file": "orchestrator/src/args.ts",
-    "function": "validateCliArgs",
-    "line": 507,
-    "score": 56
-  },
-  {
     "file": "orchestrator/src/ask.ts",
     "function": "serveAskChannel",
     "line": 139,
