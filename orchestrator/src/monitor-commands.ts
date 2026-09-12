@@ -1,4 +1,4 @@
-// concern: monitor
+// concern: monitor-commands
 /** Owns monitor invocation, notice delivery authority, reporting, and exit mapping. Must not know CLI grammar. */
 import { basename, dirname } from 'node:path'
 import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync } from 'node:fs'

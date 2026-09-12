@@ -1,4 +1,4 @@
-// concern: health
+// concern: health-commands
 /** Owns spawn-gate reporting. Must not know CLI grammar. */
 import { db } from './db.ts'
 

@@ -1,4 +1,4 @@
-// concern: epic
+// concern: epic-commands
 /** Owns epic scoreboard presentation. Must not know CLI grammar. */
 import { epicChildren, epicScoreboard, renderEpicHuman } from './epic.ts'
 

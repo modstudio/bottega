@@ -1,4 +1,4 @@
-// concern: mcp
+// concern: mcp-commands
 /** Owns MCP server entry and configuration presentation. Must not know CLI grammar. */
 import { serveDocsMcp } from './mcp.ts'
 

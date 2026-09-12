@@ -26,16 +26,16 @@ import { doCommand, pickPreviewCommand } from '../dispatch-cli-service.ts'
 import { answerCommand, continueCommand, retryCommand } from '../run-message-commands.ts'
 import { JOBS } from '../jobs.ts'
 import { REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_REPRODUCED } from '../review-vocabulary.ts'
-import { booleanOptions, cliFlags, rawArgv, valueOptions } from './support.ts'
+import { booleanOptions, cliFlags, log, rawArgv, valueOptions, write } from './support.ts'
 
-const presentation = { log: (...values: unknown[]) => console.log(...values), error: (...values: unknown[]) => console.error(...values), setExitCode: (code: number) => { process.exitCode = code }, exit: (code: number): never => process.exit(code), now: Date.now, printRunId: (id: number) => process.stdout.write(`${id}\n`) }
+const presentation = { log, error: (...values: unknown[]) => console.error(...values), setExitCode: (code: number) => { process.exitCode = code }, exit: (code: number): never => process.exit(code), now: Date.now, printRunId: (id: number) => process.stdout.write(`${id}\n`) }
 const scoreSuffix = (jobName: string) => (JOBS[jobName]?.needs.writesRepo ? ' [drifted|partial|faithful]' : '') + (JOBS[jobName]?.findings ? ` [--reproduced ${REVIEW_REPRODUCED.join('|')}] [--coverage ${REVIEW_COVERAGE.join('|')}] [--limits ${REVIEW_LIMITS.join('|')}] [--overlap ${REVIEW_OVERLAP.join('|')}]` : '')
 const pairHint = (partner: { id: number; agent: string; reason?: string }) => `pair: run ${partner.id} (${partner.agent}) is comparable (${partner.reason ?? 'same task'}) — record with --better-than ${partner.id} | --worse-than ${partner.id} | --same-as ${partner.id}`
 
 export function register(program: Command): void {
   booleanOptions(program.command('migrate'), ['backfill-spec-sha']).action(() => migrateCommand(presentation))
   program.command('reconcile <id>').action((id) => reconcileCommand(Number(id), presentation))
-  program.command('contract <job>').action((job) => contractCommand(job, { write: (value) => process.stdout.write(value) }))
+  program.command('contract <job>').action((job) => contractCommand(job, { write }))
   booleanOptions(program.command('mcp'), ['config']).action((_options, command) => mcpCommand(cliFlags(rawArgv(command)).has('config'), resolve(new URL('../../../bin/orch', import.meta.url).pathname), presentation))
 
   const workflow = valueOptions(program.command('workflow [args...]'), ['version', 'file', 'reason', 'author', 'from', 'mode', 'arg'])
@@ -55,8 +55,8 @@ export function register(program: Command): void {
   const answer = valueOptions(program.command('answer <id> [message...]').allowUnknownOption(true), ['file']); booleanOptions(answer, ['follow', 'detach', 'quiet', 'record-only']).action((id, _message, _options, command) => { const argv = rawArgv(command); return answerCommand(Number(id), argv.slice(2), cliFlags(argv).has('record-only'), runFlags(argv), presentation) })
   const continuation = valueOptions(program.command('continue <id> [message...]').allowUnknownOption(true), ['file']); booleanOptions(continuation, ['follow', 'detach', 'quiet']).action((id, _message, _options, command) => { const argv = rawArgv(command); return continueCommand(Number(id), argv.slice(2), runFlags(argv), presentation) })
   const dispatch = valueOptions(program.command('do <job> [prompt...]'), ['agent', 'avoid', 'distinct-from', 'base', 'review', 'file', 'schema', 'model', 'transport', 'label', 'lens', 'seed', 'key', 'repo', 'cwd', 'deliverable', 'timeout'])
-  booleanOptions(dispatch, ['carry', 'quiet', 'probe', 'follow', 'detach', 'porcelain', 'no-failover', 'keep-tree', 'no-wait-capacity']).option('--mcp [mode]').action((_job, _prompt, _options, command) => doCommand(rawArgv(command), { error: console.error, printRunId: (id) => process.stdout.write(`${id}\n`), cwd: process.cwd }))
-  const pick = valueOptions(program.command('pick <job>'), ['agent', 'avoid', 'distinct-from', 'stack', 'lens']); pick.action((_job, _options, command) => pickPreviewCommand(rawArgv(command), { error: console.error, log: console.log, printRunId: (id) => process.stdout.write(`${id}\n`), cwd: process.cwd }))
+  booleanOptions(dispatch, ['carry', 'quiet', 'probe', 'follow', 'detach', 'porcelain', 'no-failover', 'keep-tree', 'no-wait-capacity']).option('--mcp [mode]').action((_job, _prompt, _options, command) => doCommand(rawArgv(command), { error: console.error, printRunId: (id) => write(`${id}\n`), cwd: process.cwd }))
+  const pick = valueOptions(program.command('pick <job>'), ['agent', 'avoid', 'distinct-from', 'stack', 'lens']); pick.action((_job, _options, command) => pickPreviewCommand(rawArgv(command), { error: console.error, log, printRunId: (id) => write(`${id}\n`), cwd: process.cwd }))
   program.command('ask-server').action(() => serveAsk())
   program.command('setup-ask').action(() => setupAskCommand([process.execPath, new URL('../orch.ts', import.meta.url).pathname, 'ask-server'], presentation))
   const monitor = valueOptions(program.command('monitor'), ['limit', 'ack-notices']); booleanOptions(monitor, ['backstop', 'history', 'notices', 'json']).action((_options, command) => { const flags = cliFlags(rawArgv(command)); return monitorCommand({ ackNotices: flags.flag('ack-notices'), notices: flags.has('notices'), history: flags.has('history'), backstop: flags.has('backstop'), limit: Number(flags.flag('limit') ?? 20), json: flags.has('json') }, { ...presentation, write: (value) => new Promise((resolve, reject) => process.stdout.write(value, (error) => error ? reject(error) : resolve())) }) })

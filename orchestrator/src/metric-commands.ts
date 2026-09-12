@@ -1,4 +1,4 @@
-// concern: metrics
+// concern: metric-commands
 /** Owns metric collection and reporting. Must not know CLI grammar. */
 import { collect, summary } from './metric.ts'
 

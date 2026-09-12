@@ -1,4 +1,4 @@
-// concern: agent-registry
+// concern: agent-commands
 /** Owns agent registry mutations and catalogue presentation. Must not know CLI grammar. */
 import { db } from './db.ts'
 import { AGENTS, addAgent, agentRows, available, ensureLocalHealth, installed, probeAgent, removeAgent, setAgent, unavailableReason } from './agents.ts'

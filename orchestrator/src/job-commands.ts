@@ -1,4 +1,4 @@
-// concern: jobs
+// concern: job-commands
 /** Owns job catalogue presentation. Must not know CLI grammar. */
 import { JOBS } from './jobs.ts'
 
