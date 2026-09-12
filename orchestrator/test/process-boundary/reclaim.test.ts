@@ -83,6 +83,17 @@ afterEach(() => {
 })
 describe('proof-bearing reclaim verbs', () => {
 
+  test('an unknown reclaim kind cannot reach branch reclamation', () => {
+    const f = fixture()
+    const before = git(f.repo, 'rev-parse', f.branch)
+    const refused = orch(f.repo, ['reclaim', 'nonsense', `${f.project}:${f.branch}`])
+    expect(refused.code).not.toBe(0)
+    expect(refused.err).toContain('unknown reclaim kind "nonsense"')
+    expect(refused.err).toContain('orch reclaim worktree <path> [--dry-run]')
+    expect(refused.err).toContain('orch reclaim branch <project>:<branch> [--dry-run]')
+    expect(git(f.repo, 'rev-parse', f.branch)).toBe(before)
+  })
+
   test('sweep reclaims an orch orphan with no run row', () => {
     const f = fixture()
     db().query('DELETE FROM score WHERE run_id=?').run(f.run)
