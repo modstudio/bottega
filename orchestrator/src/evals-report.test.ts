@@ -3,16 +3,25 @@ import { mkdirSync,rmSync,writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { CANON_EVALS,TRACKED_EVAL_PATH,UNTRACKED_EVAL_PATH,addRun,currentCanonEvalSha,db,dir,failingCanonEvalSlugs,hermeticGitEnv,lastCanonEvalAt,nowIso,upsertProject,workerReply } from '../test/fixture.ts'
 import type { ReviewReply,WorkerReply } from './contract.ts'
+import { fakeClock, registerClock, systemClock } from './clock.ts'
 import { collect } from './metric.ts'
 
 describe('metric canon headline and calendar halves', () => {
 test('counts each canon project only by all of its declared key prefixes', async () => {
+    const now = Date.parse('2026-09-12T00:30:00Z')
+    registerClock(fakeClock(now))
     const fixture = (name: string, subjects: string[], keyPrefixes?: string[]) => {
       const repo = join(dir, `metric-${name}`)
       mkdirSync(repo)
       const git = (...args: string[]) => {
         const p = Bun.spawnSync(['git', ...args], {
-          cwd: repo, env: hermeticGitEnv(), stdout: 'pipe', stderr: 'pipe',
+          cwd: repo,
+          env: {
+            ...hermeticGitEnv(),
+            GIT_AUTHOR_DATE: new Date(now).toISOString(),
+            GIT_COMMITTER_DATE: new Date(now).toISOString(),
+          },
+          stdout: 'pipe', stderr: 'pipe',
         })
         if (p.exitCode !== 0) throw new Error(p.stderr.toString())
       }
@@ -39,6 +48,7 @@ test('counts each canon project only by all of its declared key prefixes', async
       const total = db().query('SELECT SUM(tasks) AS tasks FROM metric').get() as { tasks: number }
       expect(total.tasks).toBe(3)
     } finally {
+      registerClock(systemClock)
       db().exec('DELETE FROM metric')
       for (const repo of repos) rmSync(repo, { recursive: true, force: true })
     }
