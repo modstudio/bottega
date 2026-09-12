@@ -1527,7 +1527,7 @@ export async function run(opts: {
       void t.cancel(handle)
       // Descendant-aware SIGTERM, bounded grace, then SIGKILL. A CLI that
       // ignores SIGTERM would otherwise keep the caller waiting for ever.
-      void terminateProcessGroup(handle.pid ?? 0)
+      void terminateProcessGroup(handle.pid ?? 0, { direct: handle })
     }, boundMs)
 
     let forceCollect: ((result: TransportResult) => void) | null = null
@@ -1590,7 +1590,7 @@ export async function run(opts: {
         db().query('UPDATE run SET work_preserved=1 WHERE id=?').run(claim.id)
       }
       void t.cancel(handle)
-      const terminated = await terminateProcessGroup(handle.pid ?? 0)
+      const terminated = await terminateProcessGroup(handle.pid ?? 0, { direct: handle })
       idleTreePids = terminated.pids
       idleTreePgid = terminated.pgid
       idleUnkillable = terminated.unkillable
@@ -1907,7 +1907,7 @@ export async function run(opts: {
       live.delete(proc)
       liveCheckpoints.delete(proc)
     }
-    if (proc?.pid && proc.pid !== process.pid) await terminateProcessGroup(proc.pid)
+    if (proc?.pid && proc.pid !== process.pid) await terminateProcessGroup(proc.pid, { direct: proc })
     if (askLoopback) await askLoopback.close()
 
     const recordedState = db().query('SELECT status FROM run WHERE id=?').get(claim.id) as

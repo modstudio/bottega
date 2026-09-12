@@ -8,6 +8,7 @@ import { AGENTS } from './agents.ts'
 import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
 import { DB_PATH, db } from './db.ts'
 import { depth } from './dispatch-preflight.ts'
+import { terminateProcessGroup } from './idle-kill.ts'
 
 const ALLOW_ENV_EXACT = new Set([
   'PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'TERM', 'TMPDIR', 'SSH_AUTH_SOCK',
@@ -58,9 +59,8 @@ export function childEnv(
   if (!includeStore) delete child.ORCH_DB
   return child
 }
-
-export const live = new Set<{ kill(sig?: number | string): void }>()
-export type LiveProcess = { kill(sig?: number | string): void }
+export type LiveProcess = { pid?: number | null; kill(sig?: number | string): void }
+export const live = new Set<LiveProcess>()
 export type LiveCheckpoint = {
   runId: number
   rootId: number
@@ -181,7 +181,7 @@ export function bindSignals() {
       if (terminating) return
       terminating = true
       setTimeout(() => process.exit(130), 5_000)
-      for (const p of live) { try { p.kill('SIGTERM') } catch { /* already gone */ } }
+      for (const p of live) void terminateProcessGroup(p.pid ?? 0, { direct: p })
       for (const checkpoint of liveCheckpoints.values()) {
         const result = checkpointRun({
           database: db(), runId: checkpoint.runId, worktree: checkpoint.worktree,

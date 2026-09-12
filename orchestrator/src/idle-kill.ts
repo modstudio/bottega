@@ -176,7 +176,6 @@ export type TerminateDeps = {
   selfPgid: () => number | null
   wait: (ms: number) => Promise<void>
 }
-
 export type TerminateResult = {
   exited: boolean
   unkillable: boolean
@@ -184,7 +183,6 @@ export type TerminateResult = {
   pgid: number | null
   pids: number[]
 }
-
 const defaultDeps: TerminateDeps = {
   kill(pid, signal) {
     try { process.kill(pid, signal) } catch (e) {
@@ -201,7 +199,7 @@ const defaultDeps: TerminateDeps = {
 }
 
 function signalTree(
-  pid: number, signal: NodeJS.Signals | number, deps: TerminateDeps, samples: ProcessSample[],
+  pid: number, signal: NodeJS.Signals | number, deps: TerminateDeps, samples: ProcessSample[], skipRoot = false,
 ): number | null {
   const self = samples.find((row) => row.pid === pid)
   const pgid = self?.pgid ?? null
@@ -212,12 +210,22 @@ function signalTree(
   // the grace period, and is SIGKILLed with no cleanup.
   // Unknown coordinator pgid means walk descendants — never group-kill on an
   // unproven assumption.
-  if (isGroupKillablePgid(pgid, selfPgid) && pgid != null) {
-    deps.kill(-pgid, signal)
-    return pgid
-  }
-  for (const child of descendantPids(pid, samples)) deps.kill(child, signal)
+  if (isGroupKillablePgid(pgid, selfPgid) && pgid != null && signalGroup(pgid, signal, deps)) return pgid
+  for (const child of descendantPids(pid, samples)) if (!skipRoot || child !== pid) deps.kill(child, signal)
   return null
+}
+
+/**
+ * macOS answers EPERM, not ESRCH, to killpg once the group leader has been
+ * reaped, even while a descendant is alive in the group; the direct child is
+ * reaped the moment it exits now that execa owns it. The group signal is then
+ * unavailable and the walk over sampled descendants is the delivery path.
+ */
+function signalGroup(pgid: number, signal: NodeJS.Signals | number, deps: TerminateDeps): boolean {
+  try { deps.kill(-pgid, signal); return true } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'EPERM') return false
+    throw e
+  }
 }
 
 function pidsSharingPgid(pgid: number | null | undefined, samples: ProcessSample[]): number[] {
@@ -264,10 +272,10 @@ async function waitUntilDead(
 }
 
 function signalSurvivors(
-  tracked: Iterable<number>, signal: NodeJS.Signals | number, deps: TerminateDeps,
+  tracked: Iterable<number>, signal: NodeJS.Signals | number, deps: TerminateDeps, excluded?: number,
 ): void {
   for (const pid of tracked) {
-    if (pid > 1 && deps.alive(pid)) deps.kill(pid, signal)
+    if (pid > 1 && pid !== excluded && deps.alive(pid)) deps.kill(pid, signal)
   }
 }
 
@@ -283,6 +291,7 @@ export async function terminateProcessGroup(
     graceMs?: number
     killConfirmMs?: number
     deps?: Partial<TerminateDeps>
+    direct?: { kill(signal?: NodeJS.Signals | number): boolean | void }
   } = {},
 ): Promise<TerminateResult> {
   if (pid <= 0 || pid === process.pid) {
@@ -300,7 +309,8 @@ export async function terminateProcessGroup(
   // directly even when signalTree correctly declines kill(-pgid).
   const trackedPgid = vendorPgid !== null && vendorPgid === selfPgid ? null : vendorPgid
   rememberTree(pid, tracked, first, trackedPgid)
-  const groupPgid = signalTree(pid, 'SIGTERM', deps, first)
+  const groupPgid = signalTree(pid, 'SIGTERM', deps, first, Boolean(opts.direct))
+  opts.direct?.kill('SIGTERM') // execa owns the direct child's escalation.
   const pgid = groupPgid ?? trackedPgid
   if (await waitUntilDead(pid, tracked, graceMs, deps, pgid)) {
     return { exited: true, unkillable: false, reason: null, pgid, pids: [...tracked] }
@@ -310,8 +320,8 @@ export async function terminateProcessGroup(
   // reparented once the wrapper died.
   const beforeKill = deps.sample()
   rememberTree(pid, tracked, beforeKill, pgid)
-  signalTree(pid, 'SIGKILL', deps, beforeKill)
-  signalSurvivors(tracked, 'SIGKILL', deps)
+  signalTree(pid, 'SIGKILL', deps, beforeKill, Boolean(opts.direct))
+  signalSurvivors(tracked, 'SIGKILL', deps, opts.direct ? pid : undefined)
   if (await waitUntilDead(pid, tracked, killConfirmMs, deps, pgid)) {
     return { exited: true, unkillable: false, reason: null, pgid, pids: [...tracked] }
   }
