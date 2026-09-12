@@ -8,18 +8,12 @@ import { register as registerGate } from './commands/gate.ts'
 import { register as registerHealth } from './commands/health.ts'
 import { register as registerInbox } from './commands/inbox.ts'
 import { register as registerJudgement } from './commands/judgement.ts'
+import { register as registerLogic } from './commands/logic.ts'
 import { register as registerReview } from './commands/review.ts'
 import { register as registerRouting } from './commands/routing.ts'
 import { register as registerRunListing } from './commands/run-listing.ts'
 import { drainStdout, setRawArgv, write } from './commands/support.ts'
 import { validateCliArgs } from './args.ts'
-
-const legacyVerbs = [
-  'init-db', 'migrate', 'reconcile', 'contract', 'mcp', 'workflow', 'lens', 'issue',
-  'note', 'do', 'state', 'search', 'tell', 'peek', 'result', 'wait', 'retry',
-  'ask-server', 'setup-ask', 'monitor', 'reclaim', 'answer', 'continue', 'close-out',
-  'spawns', 'pick', 'pending', 'metric', 'serve', 'epic', 'jobs', 'agent', 'agents',
-] as const
 
 export const program = new Command()
   .name('orch')
@@ -40,11 +34,11 @@ registerInbox(program)
 registerCleanup(program)
 registerJudgement(program)
 registerRouting(program)
-
-program.addHelpText('after', `\nLegacy commands (migrate in later slices):\n  ${legacyVerbs.join(', ')}\n`)
+registerLogic(program)
 
 /** Verbs that only read the store must not stamp the session as seen. */
 function isReadOnlyInvocation(argv: string[]): boolean {
+  if (argv[0] === 'migrate') return true
   if (argv[0] === 'port') return argv[1] === 'import' && argv.includes('--dry-run')
   if (argv[0] === 'review') return ['coverage-audit', 'yield'].includes(argv[1] ?? '')
   return false
