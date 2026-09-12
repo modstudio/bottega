@@ -210,12 +210,22 @@ function signalTree(
   // the grace period, and is SIGKILLed with no cleanup.
   // Unknown coordinator pgid means walk descendants — never group-kill on an
   // unproven assumption.
-  if (isGroupKillablePgid(pgid, selfPgid) && pgid != null) {
-    deps.kill(-pgid, signal)
-    return pgid
-  }
+  if (isGroupKillablePgid(pgid, selfPgid) && pgid != null && signalGroup(pgid, signal, deps)) return pgid
   for (const child of descendantPids(pid, samples)) if (!skipRoot || child !== pid) deps.kill(child, signal)
   return null
+}
+
+/**
+ * macOS answers EPERM, not ESRCH, to killpg once the group leader has been
+ * reaped, even while a descendant is alive in the group; the direct child is
+ * reaped the moment it exits now that execa owns it. The group signal is then
+ * unavailable and the walk over sampled descendants is the delivery path.
+ */
+function signalGroup(pgid: number, signal: NodeJS.Signals | number, deps: TerminateDeps): boolean {
+  try { deps.kill(-pgid, signal); return true } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'EPERM') return false
+    throw e
+  }
 }
 
 function pidsSharingPgid(pgid: number | null | undefined, samples: ProcessSample[]): number[] {
