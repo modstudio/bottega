@@ -28,7 +28,7 @@ import { JOBS } from '../jobs.ts'
 import { REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_REPRODUCED } from '../review-vocabulary.ts'
 import { booleanOptions, cliFlags, rawArgv, valueOptions } from './support.ts'
 
-const presentation = { log: (value: string) => console.log(value), error: (...values: unknown[]) => console.error(...values), setExitCode: (code: number) => { process.exitCode = code }, exit: (code: number): never => process.exit(code), now: Date.now, printRunId: (id: number) => process.stdout.write(`${id}\n`) }
+const presentation = { log: (...values: unknown[]) => console.log(...values), error: (...values: unknown[]) => console.error(...values), setExitCode: (code: number) => { process.exitCode = code }, exit: (code: number): never => process.exit(code), now: Date.now, printRunId: (id: number) => process.stdout.write(`${id}\n`) }
 const scoreSuffix = (jobName: string) => (JOBS[jobName]?.needs.writesRepo ? ' [drifted|partial|faithful]' : '') + (JOBS[jobName]?.findings ? ` [--reproduced ${REVIEW_REPRODUCED.join('|')}] [--coverage ${REVIEW_COVERAGE.join('|')}] [--limits ${REVIEW_LIMITS.join('|')}] [--overlap ${REVIEW_OVERLAP.join('|')}]` : '')
 const pairHint = (partner: { id: number; agent: string; reason?: string }) => `pair: run ${partner.id} (${partner.agent}) is comparable (${partner.reason ?? 'same task'}) — record with --better-than ${partner.id} | --worse-than ${partner.id} | --same-as ${partner.id}`
 
