@@ -404,7 +404,7 @@ test('a stop between recording and marking leaves no project-created orphan', ()
             db().query('UPDATE run SET cwd=?, worktree=?, branch=?, base_commit=? WHERE id=?')
               .run(created.path, created.path, created.branch, created.base, id)
             const p = Bun.spawnSync(
-              [process.execPath, new URL('../../src/cli.ts', import.meta.url).pathname, 'stop', String(id)],
+              [process.execPath, new URL('../../src/orch.ts', import.meta.url).pathname, 'stop', String(id)],
               {
                 env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
                 stdout: 'pipe', stderr: 'pipe',

@@ -108,7 +108,7 @@ test('explicit review records the trunk merge-base for clean-review evidence', a
         })
       expect(db().query('SELECT id FROM review_lens WHERE run_id=?').get(emptyRunId!)).toBeNull()
       const scored = Bun.spawnSync([
-        process.execPath, new URL('../../src/cli.ts', import.meta.url).pathname,
+        process.execPath, new URL('../../src/orch.ts', import.meta.url).pathname,
         'score', String(emptyRunId), 'full', 'right', '--force',
       ], {
         env: {

@@ -49,7 +49,7 @@ describe('harness health', () => {
     expect(report.contention.resources.every((row) => row.count === 0)).toBe(true)
 
     const cli = Bun.spawnSync([
-      process.execPath, new URL('./cli.ts', import.meta.url).pathname, 'health', '--days', '14', '--json',
+      process.execPath, new URL('./orch.ts', import.meta.url).pathname, 'health', '--days', '14', '--json',
     ], { env: process.env, stdout: 'pipe', stderr: 'pipe' })
     expect(cli.exitCode, cli.stderr.toString()).toBe(0)
     const output = JSON.parse(cli.stdout.toString())
@@ -107,7 +107,7 @@ describe('harness health', () => {
       },
     ])
     const cli = Bun.spawnSync([
-      process.execPath, new URL('./cli.ts', import.meta.url).pathname, 'health', '--days', '14',
+      process.execPath, new URL('./orch.ts', import.meta.url).pathname, 'health', '--days', '14',
     ], { env: process.env, stdout: 'pipe', stderr: 'pipe' })
     expect(cli.exitCode, cli.stderr.toString()).toBe(0)
     const text = cli.stdout.toString()
@@ -137,7 +137,7 @@ describe('harness health', () => {
        VALUES ('fixture', 'DEV-373', 'install_failed', ?, ?)`,
     ).run('2026-09-07T10:00:00.000Z', 'landing reached trunk at abc, but hub migrate failed: stub-fail')
     const cli = Bun.spawnSync([
-      process.execPath, new URL('./cli.ts', import.meta.url).pathname, 'health', '--days', '14',
+      process.execPath, new URL('./orch.ts', import.meta.url).pathname, 'health', '--days', '14',
     ], { env: process.env, stdout: 'pipe', stderr: 'pipe' })
     expect(cli.exitCode, cli.stderr.toString()).toBe(0)
     expect(cli.stdout.toString()).toContain('landed with post-step error')
@@ -180,7 +180,7 @@ describe('harness health', () => {
       { agent: 'grok', count: 2 }, { agent: 'codex', count: 1 },
     ])
     const cli = Bun.spawnSync([
-      process.execPath, new URL('./cli.ts', import.meta.url).pathname, 'health', '--days', '14',
+      process.execPath, new URL('./orch.ts', import.meta.url).pathname, 'health', '--days', '14',
     ], { env: process.env, stdout: 'pipe', stderr: 'pipe' })
     expect(cli.exitCode, cli.stderr.toString()).toBe(0)
     expect(cli.stdout.toString()).toContain('mcp probe failures')

@@ -6,7 +6,7 @@ import {
   addRun, db, hermeticGitEnv, projectLockDir, reapTestProcess, score, upsertProject, worktreeLeaseName,
 } from '../fixture.ts'
 
-const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
 const repos: string[] = []
 
 function git(cwd: string, ...args: string[]): string {

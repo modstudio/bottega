@@ -29,7 +29,7 @@ test('CLI dry-run shows body lengths, writes nothing, and names a missing file',
       for (const name of ['doctrine', 'differences', 'backports', 'projects'] as const) {
         writeFileSync(join(source, `${name}.md`), fixture()[name])
       }
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const run = (path: string) => Bun.spawnSync([process.execPath, CLI, 'port', 'import', path, '--dry-run', '--json'], {
         env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
       })
@@ -90,7 +90,7 @@ test('CLI dry-run pipes a complete large JSON refusal plan', async () => {
         docs: planned.docs.map((row) => ({ ...row, bodyLength: row.body.length })),
         uncoveredSpans: sourceCoverage(planned, contents),
       }, null, 2)}\n`)
-      const cli = new URL('../../src/cli.ts', import.meta.url).pathname
+      const cli = new URL('../../src/orch.ts', import.meta.url).pathname
       const run = await runWithDelayedStdoutReader(
         [process.execPath, cli, 'port', 'import', source, '--dry-run', '--json'],
         { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
@@ -116,12 +116,12 @@ test('CLI dry-run refuses a nonexistent database without creating any SQLite fil
         'backports.md': contents.backports, 'refs.json': contents.refs,
         'state.json': contents.state, 'projects.md': contents.projects,
       })) writeFileSync(join(source, name), body)
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const run = Bun.spawnSync([process.execPath, CLI, 'port', 'import', source, '--dry-run', '--json'], {
         env: { ...process.env, ORCH_DB: absent, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
       })
       expect(run.exitCode).toBe(1)
-      expect(run.stdout.toString()).toContain('orchestrator database does not exist')
+      expect(run.stderr.toString()).toContain('orchestrator database does not exist')
       expect(existsSync(absent)).toBe(false)
       expect(existsSync(`${absent}-wal`)).toBe(false)
       expect(existsSync(`${absent}-shm`)).toBe(false)
@@ -151,7 +151,7 @@ test('CLI dry-run explains a WAL database whose shared-memory sidecar is absent'
       rmSync(`${walPath}-wal`, { force: true })
       expect(existsSync(`${walPath}-shm`)).toBe(false)
 
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const run = Bun.spawnSync([process.execPath, CLI, 'port', 'import', source, '--dry-run', '--json'], {
         env: { ...process.env, ORCH_DB: walPath, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
       })
@@ -165,4 +165,3 @@ test('CLI dry-run explains a WAL database whose shared-memory sidecar is absent'
     } finally { rmSync(source, { recursive: true, force: true }) }
   })
 })
-

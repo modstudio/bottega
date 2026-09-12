@@ -19,7 +19,7 @@ afterEach(() => {
   }
 })
 describe('read-only orchestrator database', () => {
-  const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+  const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
 
   const fixture = (withHeartbeat = true) => {
     const fixtureDir = mkdtempSync(join(tmpdir(), 'orch-readonly-'))

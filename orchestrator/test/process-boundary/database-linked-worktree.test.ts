@@ -57,7 +57,7 @@ git(main, 'config', 'user.name', 'Linked Test')
 git(main, 'add', '.')
 git(main, 'commit', '-m', 'DEV-306 linked database fixture')
 
-const mainCli = join(main, 'orchestrator', 'src', 'cli.ts')
+const mainCli = join(main, 'orchestrator', 'src', 'orch.ts')
 const initialized = invoke(mainCli, main, ['init-db'], liveStore)
 if (initialized.exitCode !== 0) throw new Error(initialized.stderr.toString())
 const register = new Database(liveStore)
@@ -66,7 +66,7 @@ register.query('INSERT INTO project (name,path,stack,canon,settings) VALUES (?,?
 register.close()
 
 git(main, 'worktree', 'add', '-b', 'technical/DEV-306-linked-test', linked)
-const linkedCli = join(linked, 'orchestrator', 'src', 'cli.ts')
+const linkedCli = join(linked, 'orchestrator', 'src', 'orch.ts')
 
 afterAll(() => rmSync(fixtureRoot, { recursive: true, force: true }))
 

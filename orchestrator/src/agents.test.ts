@@ -128,7 +128,7 @@ describe('agent registry', () => {
     expect(excluded.why).toBe(
       'registration probe predates the file contract; run orch agent probe migrated-file',
     )
-    const cli = new URL('cli.ts', import.meta.url).pathname
+    const cli = new URL('orch.ts', import.meta.url).pathname
     const doctor = Bun.spawnSync([process.execPath, cli, 'doctor'], {
       env: { ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0' },
       stdout: 'pipe', stderr: 'pipe',
@@ -173,7 +173,7 @@ describe('agent registry', () => {
     expect(AGENTS['cache-new']).toBeUndefined()
   })
   test('CLI registration reads the local model and doctor prints the per-machine command', () => {
-    const cli = new URL('cli.ts', import.meta.url).pathname
+    const cli = new URL('orch.ts', import.meta.url).pathname
     const env = {
       ...process.env, ORCH_DB: process.env.ORCH_DB!, ORCH_DEPTH: '0',
       ORCH_LOCAL_BASE_URL: 'http://127.0.0.1:1/v1', ORCH_LOCAL_MODEL: 'served/model',

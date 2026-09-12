@@ -146,7 +146,7 @@ describe('contention ledger', () => {
       .toBeDefined()
     seed.close()
     const opened = Bun.spawnSync([
-      process.execPath, new URL('./cli.ts', import.meta.url).pathname, 'runs',
+      process.execPath, new URL('./orch.ts', import.meta.url).pathname, 'runs',
     ], { env: { ...process.env, ORCH_DB: path, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe' })
     expect(opened.exitCode).not.toBe(0)
     expect(opened.stderr.toString()).toContain('cleared by: orch migrate')

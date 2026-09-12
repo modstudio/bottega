@@ -55,7 +55,7 @@ describe('Drizzle migration journal', () => {
     const current = new Database(currentPath)
     applyMigrations(current)
     current.close()
-    const doctor = Bun.spawnSync([process.execPath, join(import.meta.dir, 'cli.ts'), 'doctor'], {
+    const doctor = Bun.spawnSync([process.execPath, join(import.meta.dir, 'orch.ts'), 'doctor'], {
       env: { ...process.env, ORCH_DB: currentPath, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
     })
     expect(doctor.exitCode, doctor.stderr.toString()).toBe(0)
@@ -116,7 +116,7 @@ describe('Drizzle migration journal', () => {
     const dir = mkdtempSync(join(tmpdir(), 'orch-behind-journal-'))
     const path = join(dir, 'behind.db')
     const empty = new Database(path); empty.close()
-    const opened = Bun.spawnSync([process.execPath, join(import.meta.dir, 'cli.ts'), 'runs'], {
+    const opened = Bun.spawnSync([process.execPath, join(import.meta.dir, 'orch.ts'), 'runs'], {
       env: { ...process.env, ORCH_DB: path, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
     })
     expect(opened.exitCode).not.toBe(0)
@@ -182,7 +182,7 @@ describe('Drizzle migration journal', () => {
     applyMigrations(doctorStore)
     doctorStore.exec('ALTER TABLE run ADD COLUMN x TEXT')
     doctorStore.close()
-    const doctor = Bun.spawnSync([process.execPath, join(import.meta.dir, 'cli.ts'), 'doctor'], {
+    const doctor = Bun.spawnSync([process.execPath, join(import.meta.dir, 'orch.ts'), 'doctor'], {
       env: { ...process.env, ORCH_DB: doctorPath, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
     })
     expect(doctor.exitCode, doctor.stderr.toString()).toBe(0)
@@ -228,7 +228,7 @@ describe('Drizzle migration journal', () => {
     doctorStore.exec(`DROP INDEX run_job_agent;
       CREATE INDEX run_job_agent ON run(job DESC, agent)`)
     doctorStore.close()
-    const doctor = Bun.spawnSync([process.execPath, join(import.meta.dir, 'cli.ts'), 'doctor'], {
+    const doctor = Bun.spawnSync([process.execPath, join(import.meta.dir, 'orch.ts'), 'doctor'], {
       env: { ...process.env, ORCH_DB: doctorPath, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
     })
     expect(doctor.exitCode, doctor.stderr.toString()).toBe(0)
@@ -278,7 +278,7 @@ describe('Drizzle migration journal', () => {
     applyMigrations(doctorStore)
     doctorStore.exec(`CREATE TRIGGER project_shadow AFTER INSERT ON project BEGIN SELECT 1; END`)
     doctorStore.close()
-    const doctor = Bun.spawnSync([process.execPath, join(import.meta.dir, 'cli.ts'), 'doctor'], {
+    const doctor = Bun.spawnSync([process.execPath, join(import.meta.dir, 'orch.ts'), 'doctor'], {
       env: { ...process.env, ORCH_DB: doctorPath, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
     })
     expect(doctor.exitCode, doctor.stderr.toString()).toBe(0)
@@ -308,7 +308,7 @@ describe('Drizzle migration journal', () => {
     applyMigrations(doctorStore)
     doctorStore.exec(`CREATE VIEW project_names AS SELECT name FROM project`)
     doctorStore.close()
-    const doctor = Bun.spawnSync([process.execPath, join(import.meta.dir, 'cli.ts'), 'doctor'], {
+    const doctor = Bun.spawnSync([process.execPath, join(import.meta.dir, 'orch.ts'), 'doctor'], {
       env: { ...process.env, ORCH_DB: doctorPath, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
     })
     expect(doctor.exitCode, doctor.stderr.toString()).toBe(0)
@@ -498,7 +498,7 @@ describe('schema coexistence', () => {
     d.exec('PRAGMA user_version = 0')
     expect(schemaVersionLabel(d)).toBe('unstamped')
     d.close()
-    const doctor = Bun.spawnSync([process.execPath, join(import.meta.dir, 'cli.ts'), 'doctor'], {
+    const doctor = Bun.spawnSync([process.execPath, join(import.meta.dir, 'orch.ts'), 'doctor'], {
       env: { ...process.env, ORCH_DB: path, ORCH_DEPTH: '0' }, stdout: 'pipe', stderr: 'pipe',
     })
     expect(doctor.exitCode, doctor.stderr.toString()).toBe(0)

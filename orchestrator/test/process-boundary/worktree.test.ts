@@ -223,7 +223,7 @@ test('a resumed turn waits for cleanup and refuses a worktree removed under the 
       .run(repo, treePath, branch, branch, target)
     db().query('UPDATE run SET cwd=?, branch=? WHERE id=?').run(repo, branch, owner)
     try {
-      const CLI = new URL('../../src/cli.ts', import.meta.url).pathname
+      const CLI = new URL('../../src/orch.ts', import.meta.url).pathname
       const p = Bun.spawnSync(
         [process.execPath, CLI, 'discard', String(target), '--force'],
         {

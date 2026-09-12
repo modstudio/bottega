@@ -3,46 +3,23 @@ import { pendingForSession } from './evidence-query.ts'
 import { REVIEW_REPRODUCED, REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_SEVERITY } from './review-vocabulary.ts'
 import { reapStale } from './run-liveness.ts'; import { pidAlive } from './process-liveness.ts'
 import { unrecordedPairsForSession } from './duel.ts'
-import { authorizeRunMutation } from './run-authority.ts'
 import { detach as dispatchDetached } from './run-dispatch.ts'
 import {
   continueRun as continueControlledRun, follow as followRun,
   reportContinuedRun as reportControlledRun,
 } from './run-control.ts'
 import { answerRun, retryRun } from './run-answer.ts'
-import { cleanupRepoRoot, discardRun, discardWorktree, type CleanupRow } from './cleanup.ts'
-import { sweepRuns } from './cleanup-sweep.ts'
-import { abandonRun, stopRun } from './run-stop.ts'
-import { judgeRun, scoreRun } from './judgement.ts'
-import { recalibrate } from './recalibration.ts'
-import { clearConfinement } from './confinement-ruling.ts'
-import { docCommand } from './doc-commands.ts'
-import { projectCommand } from './project-commands.ts'
-import { doctorCommand } from './doctor.ts'
-import { portCommand } from './port-commands.ts'
-import { reviewCommand } from './review-commands.ts'
-import { runListingCommand } from './run-listing.ts'
-import { runInboxCommand } from './run-inbox.ts'
-import { runDiffCommand } from './run-diff.ts'
-import { canonCommand } from './canon-commands.ts'
 import { dispatchCommand } from './dispatch-commands.ts'
-import { reclassifyFailuresCommand } from './failure-commands.ts'
-import { blockersCommand, healthCommand } from './health-commands.ts'
-import { guideCommand, pickCommand, routingBacktestCommand, statsCommand } from './routing-commands.ts'
-import { readFileSync, existsSync, writeFileSync, mkdirSync, realpathSync, lstatSync, openSync, fstatSync, closeSync, constants } from 'node:fs'
+import { pickCommand } from './routing-commands.ts'
+import { readFileSync, writeFileSync, mkdirSync, realpathSync, lstatSync, openSync, fstatSync, closeSync, constants } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { NOT_EVIDENCE } from './failure.ts'
 import { collectResult, collectWait, resolveFailover, thinOutputWarning } from './collect.ts'
 import {
   CONTINUE_WORKING_FORMS, TELL_WORKING_FORMS,
   flagValue, flagValues, parseWorkerMessageArgs, validateCliArgs,
   assertWorkerText, readMessageText, readWorkerFile,
 } from './args.ts'
-import {
-  DASHBOARD_CAPABILITY_PATH_ENV, DASHBOARD_CAPABILITY_TOKEN_ENV,
-  type DashboardCapability,
-} from '../../shared/dashboard-capability.ts'
 import {
   MONITOR_CAPABILITY_PATH_ENV, MONITOR_CAPABILITY_TOKEN_ENV,
   type MonitorCapability,
@@ -59,9 +36,7 @@ let reviewTargetModule: typeof import('./review-target.ts')
 let implicitReviewWarning!: typeof import('./review-target.ts').implicitReviewWarning
 let worktreeModule!: typeof import('./worktree.ts')
 let contractModule!: typeof import('./contract.ts')
-let grokTrustModule!: typeof import('./grok-trust.ts')
 let workflowsModule!: typeof import('./workflows.ts')
-let agreementModule!: typeof import('./agreement.ts')
 
 let JOBS!: typeof import('./jobs.ts').JOBS
 let job!: typeof import('./jobs.ts').job
@@ -88,16 +63,13 @@ async function loadAgents() {
       readStrictCodexSchema, resumePromptByteLimit,
       agentRows, addAgent, setAgent, removeAgent, probeAgent } = agentsModule)
 }
-let candidates!: typeof import('./route.ts').candidates
 let pick!: typeof import('./route.ts').pick
-async function loadRoute() { routeModule ??= await import('./route.ts'); ({ candidates, pick } = routeModule) }
+async function loadRoute() { routeModule ??= await import('./route.ts'); ({ pick } = routeModule) }
 let RUNS_DIR!: typeof import('./run-artifacts.ts').RUNS_DIR
-let terminateRunProcesses!: typeof import('./run-process.ts').terminateRunProcesses
 let closeOutRun!: typeof import('./close-out.ts').closeOutRun
 async function loadRun() { runArtifactsModule ??= await import('./run-artifacts.ts'); closeOutModule ??= await import('./close-out.ts')
   reviewTargetModule ??= await import('./review-target.ts'); ({ implicitReviewWarning } = reviewTargetModule)
   ;({ RUNS_DIR } = runArtifactsModule); ({ closeOutRun } = closeOutModule)
-  ;({ terminateRunProcesses } = await import('./run-process.ts'))
 }
 let transportModule: typeof import('./transport.ts')
 let assertAcpAllowed!: typeof import('./transport.ts').assertAcpAllowed
@@ -115,9 +87,6 @@ let contractConflicts!: typeof import('./contract.ts').contractConflicts
 async function loadContract() { contractModule ??= await import('./contract.ts'); ({ contractConflicts } = contractModule) }
 let contractText!: typeof import('./contract-text.ts').contractText
 async function loadContractText() { ({ contractText } = await import('./contract-text.ts')) }
-let grokTrustHeadings!: typeof import('./grok-trust.ts').grokTrustHeadings
-let grokTrustPathFromHeading!: typeof import('./grok-trust.ts').grokTrustPathFromHeading
-async function loadGrokTrust() { grokTrustModule ??= await import('./grok-trust.ts'); ({ grokTrustHeadings, grokTrustPathFromHeading } = grokTrustModule) }
 let composeWorkflow!: typeof import('./workflows.ts').composeWorkflow
 let exportWorkflows!: typeof import('./workflows.ts').exportWorkflows
 let forkWorkflow!: typeof import('./workflows.ts').forkWorkflow
@@ -130,7 +99,6 @@ let setWorkflow!: typeof import('./workflows.ts').setWorkflow
 let showWorkflow!: typeof import('./workflows.ts').showWorkflow
 let workflowVersions!: typeof import('./workflows.ts').workflowVersions
 async function loadWorkflows() { workflowsModule ??= await import('./workflows.ts'); ({ composeWorkflow, exportWorkflows, forkWorkflow, getWorkflowStep, importWorkflows, listWorkflows, promoteWorkflow, retireWorkflow, setWorkflow, showWorkflow, workflowVersions } = workflowsModule) }
-async function loadAgreement() { agreementModule ??= await import('./agreement.ts') }
 
 /**
  * How long `orch do` watches a detached run before handing it back.
@@ -140,18 +108,6 @@ async function loadAgreement() { agreementModule ??= await import('./agreement.t
  * always reached a terminal state by then. The extra minute is for the reaper's
  * own poll to land.
  */
-
-/** Test-only ordering seam for database interleavings at lifecycle boundaries. */
-function lifecycleCheckpoint(name: string): void {
-  if (process.env.ORCH_TEST_LIFECYCLE_CHECKPOINT !== name) return
-  const ready = process.env.ORCH_TEST_LIFECYCLE_READY
-  const release = process.env.ORCH_TEST_LIFECYCLE_RELEASE
-  if (!ready || !release) return
-  writeFileSync(ready, `${name}\n`)
-  while (!existsSync(release)) {
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10)
-  }
-}
 
 /**
  * How to score THIS run — the right id and the right axes.
@@ -280,36 +236,6 @@ function flags(name: string): string[] {
 }
 const has = (n: string) => argv.includes(`--${n}`)
 
-function scoreNote(): string | null {
-  const inline = flag('note')
-  const file = flag('note-file')
-  if (inline !== undefined && file !== undefined) {
-    throw new Error('pass a score note with either --note or --note-file, not both')
-  }
-  const note = file === undefined ? inline : readFileSync(file, 'utf8')
-  if (note === undefined) return null
-  const unescaped = (quote: string) => {
-    let count = 0
-    for (let i = 0; i < note.length; i++) {
-      if (note[i] !== quote) continue
-      // Apostrophes inside words are prose, not shell quoting.
-      if (quote === "'" && /[\p{L}\p{N}]/u.test(note[i - 1] ?? '') &&
-          /[\p{L}\p{N}]/u.test(note[i + 1] ?? '')) continue
-      let slashes = 0
-      for (let j = i - 1; j >= 0 && note[j] === '\\'; j--) slashes++
-      if (slashes % 2 === 0) count++
-    }
-    return count
-  }
-  if (note.trim() === '``' || ['"', "'", '`'].some((quote) => unescaped(quote) % 2 !== 0)) {
-    throw new Error(
-      'score note looks like an unexpanded shell fragment (a lone backtick pair or an unbalanced quote); ' +
-      'put the note in a file and pass --note-file <path>',
-    )
-  }
-  return note
-}
-
 function requestedMcp(): McpRequest | undefined {
   const values = argv.filter((arg) => arg === '--mcp' || arg.startsWith('--mcp='))
   if (values.length > 1) throw new Error('--mcp may be supplied only once')
@@ -327,59 +253,6 @@ const VALUE_FLAGS = new Set(['--agent', '--file', '--schema', '--model', '--tran
                              '--scope', '--subject', '--title', '--cwd', '--question', '--excludes', '--slots', '--slots-file',
                              '--enabled', '--reason', '--axis', '--name', '--body', '--body-file', '--version'])
 
-
-function keptBranchLine(
-  branch: string, uniqueCount: number, afterCutCount: number | null, id: number,
-): string {
-  const reason = afterCutCount === null
-    ? `${uniqueCount} commit(s) reachable only from this branch`
-    : `deleting it would lose commits reachable from no other ref; ` +
-      `${afterCutCount} commit(s) after the cut`
-  return `kept branch ${branch}: ${reason} — ` +
-    `merge it, or orch discard ${id} --force to delete it after checking no other run owns it`
-}
-
-const cleanupPresentation = { log: (...v: unknown[]) => console.log(...v), error: (...v: unknown[]) => console.error(...v), setExitCode: (code: number) => { process.exitCode = code }, keptBranchLine }
-const judgementPresentation = { log: (...v: unknown[]) => console.log(...v), error: (...v: unknown[]) => console.error(...v), pairHint }
-function auditReason(): string | null {
-  const scorer = flag('scorer')
-  if (scorer) return `--scorer ${scorer}`
-  if (has('force')) return '--force'
-  return flag('unreviewed') ?? flag('note') ?? null
-}
-
-function dashboardScoreAuthorized(scorer: string | undefined): boolean {
-  if (scorer !== 'hub-dashboard') return false
-  const path = process.env[DASHBOARD_CAPABILITY_PATH_ENV]
-  const presented = process.env[DASHBOARD_CAPABILITY_TOKEN_ENV]
-  if (!path || !presented || typeof process.getuid !== 'function') return false
-  try {
-    const uid = process.getuid()
-    const file = lstatSync(path)
-    const dir = lstatSync(dirname(path))
-    if (!file.isFile() || file.isSymbolicLink() || !dir.isDirectory() || dir.isSymbolicLink()) return false
-    if (file.uid !== uid || dir.uid !== uid || (file.mode & 0o777) !== 0o600 || (dir.mode & 0o777) !== 0o700) {
-      return false
-    }
-    const capability = JSON.parse(readFileSync(path, 'utf8')) as DashboardCapability
-    if (!Number.isInteger(capability.pid) || capability.pid < 1 || typeof capability.token !== 'string') return false
-    const expected = Buffer.from(capability.token)
-    const actual = Buffer.from(presented)
-    if (expected.length !== actual.length || !timingSafeEqual(expected, actual) || !pidAlive(capability.pid)) {
-      return false
-    }
-    const observed = Bun.spawnSync(['ps', '-p', String(capability.pid), '-o', 'command='], {
-      stdout: 'pipe', stderr: 'pipe',
-    })
-    if (observed.exitCode !== 0) return false
-    const words = new TextDecoder().decode(observed.stdout).trim().split(/\s+/)
-    return words.some((word, index) =>
-      (word === 'hub' || word.endsWith('/bin/hub') || word.endsWith('/hub/src/cli.ts')) &&
-      words[index + 1] === 'serve')
-  } catch {
-    return false
-  }
-}
 
 function monitorDeliveryAuthorized(): boolean {
   const path = process.env[MONITOR_CAPABILITY_PATH_ENV]
@@ -444,23 +317,6 @@ async function reportContinuedRun(childId: number, jobName: string): Promise<voi
     detach: has('detach'), follow: has('follow'), quiet: has('quiet'),
   }, { dur, scoreHint, argvResumeLimit, printRunId })
 }
-function chainHasPendingDelivery(rootId: number): boolean {
-  return Boolean(db().query(
-    `SELECT 1 FROM question q JOIN run owner ON owner.id=q.run_id
-      WHERE (owner.id=? OR owner.parent_run_id=?)
-        AND q.answered_at IS NOT NULL AND q.delivery_pending_at IS NOT NULL
-      LIMIT 1`,
-  ).get(rootId, rootId))
-}
-
-function chainIsStranded(rootId: number): boolean {
-  return chainHasPendingDelivery(rootId)
-}
-
-function strandedRecovery(rootId: number): string {
-  return `stranded — orch retry ${rootId} --agent … with the recorded ruling, or orch abandon ${rootId}`
-}
-
 function baseHelp(description: string): string {
   return description
 }
@@ -884,7 +740,6 @@ if ((argv.includes('--help') || argv.includes('-h')) && cmd && cmd !== '--help' 
 }
 
 switch (cmd) {
-  case 'flake': console.log((await import('./gate-policy.ts')).flakeCommand(argv.slice(1), writableDb())); break
   case 'init-db': {
     const { initializeDatabase } = await import('./db.ts')
     console.log(`initialized ${initializeDatabase()}`)
@@ -913,19 +768,6 @@ switch (cmd) {
     break
   }
 
-  case 'confinement': {
-    if (argv[1] !== 'clear') {
-      throw new Error('orch confinement clear <run-id> --writer <text> --note <text> [--tip <current-tip>]')
-    }
-    const id = Number(argv[2])
-    const writer = flag('writer')?.trim()
-    const note = flag('note')?.trim()
-    if (!id || !writer || !note) {
-      throw new Error('orch confinement clear <run-id> --writer <text> --note <text> [--tip <current-tip>]')
-    }
-    clearConfinement(id, { writer, note, tip: flag('tip')?.trim() ?? null }, { log: console.log })
-    break
-  }
   case 'contract': {
     await loadContractText()
     const jobName = argv[1]
@@ -934,29 +776,6 @@ switch (cmd) {
     break
   }
 
-  case 'doc': {
-    const sub = argv[1] ?? 'list'; await docCommand(sub, argv, { has, flag }, {
-      log: console.log, error: console.error, write: (value) => process.stdout.write(value),
-      stdinText: () => Bun.stdin.text(), stdinIsTTY: process.stdin.isTTY, cwd: process.cwd,
-    })
-    break
-  }
-  case 'canon': {
-    await loadJobs()
-    await canonCommand(argv, { has, flag }, { log: console.log, exitCode: (code) => { process.exitCode = code }, cwd: process.cwd })
-    break
-  }
-
-  case 'port': {
-    const group = argv[1]
-    const action = argv[2]
-    const commandFlags = { has, flag }
-    const presentation = {
-      log: console.log, writeStdout, exitCode: (code: number) => { process.exitCode = code },
-    }
-    await portCommand(group, action, argv, commandFlags, presentation)
-    break
-  }
 
   case 'mcp': {
     if (has('config')) {
@@ -1099,15 +918,6 @@ switch (cmd) {
     break
   }
 
-  case 'review': {
-    const sub = argv[1]
-    const commandFlags = { has, flag }
-    const presentation = {
-      log: console.log, usage: reviewUsage,
-    }
-    await reviewCommand(sub, argv, commandFlags, presentation)
-    break
-  }
 
   // The dashboard surface, published for hub to render.
   //
@@ -1121,15 +931,6 @@ switch (cmd) {
     break
   }
 
-  case 'run': {
-    const id = Number(argv[1])
-    if (!id) usage()
-    const { runDetail } = await import('./serve.ts')
-    const d = runDetail(id, has('receipt'))
-    if (!d) throw new Error(`no run ${id}`)
-    console.log(JSON.stringify(d))
-    break
-  }
 
   case 'search': {
     const query = argv[1]
@@ -1273,10 +1074,6 @@ switch (cmd) {
    * person's home directory, which is fine for one machine and is exactly what
    * makes a tool unadoptable by anyone else.
    */
-  case 'project': {
-    const sub = argv[1] ?? 'list'; projectCommand(sub, argv, { has, flag }, { log: console.log, cwd: process.cwd })
-    break
-  }
   case 'ask-server': {
     const { serveAsk } = await import('./ask.ts')
     await serveAsk()
@@ -1327,10 +1124,6 @@ switch (cmd) {
     break
   }
 
-  case 'blockers': {
-    blockersCommand({ has, flag }, { log: console.log })
-    break
-  }
 
   case 'monitor': {
     const { claimMonitorNotices, displayConditions, formatMonitorPass, markMonitorNoticesDelivered, monitor, monitorHistory } = await import('./monitor.ts')
@@ -1399,14 +1192,6 @@ switch (cmd) {
     break
   }
 
-  case 'inbox': {
-    const commandFlags = { has }
-    const presentation = {
-      log: console.log, dur, chainHasPendingDelivery, strandedRecovery,
-    }
-    await runInboxCommand(commandFlags, presentation)
-    break
-  }
 
   case 'answer': {
     await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadRun(), loadWorktree(), loadContract()])
@@ -1464,30 +1249,6 @@ switch (cmd) {
     break
   }
 
-  case 'diff': {
-    await Promise.all([loadJobs(), loadWorktree()])
-    const id = Number(argv[1])
-    const commandFlags = { has }
-    const presentation = {
-      error: console.error, write: (value: string) => { process.stdout.write(value) }, usage,
-      cleanupRepoRoot,
-      changesIn: worktreeModule.changesIn,
-      writesRepo: (jobName: string) => Boolean(JOBS[jobName]?.needs.writesRepo),
-    }
-    await runDiffCommand(id, commandFlags, presentation)
-    break
-  }
-
-  case 'sweep': {
-    await loadGrokTrust()
-    await sweepRuns({ dryRun: has('dry-run'), project: flag('project'), force: has('force'), presentation: cleanupPresentation }, { grokTrustHeadings, grokTrustPathFromHeading })
-    break
-  }
-  case 'discard': {
-    const id = Number(argv[1]); if (!id) usage()
-    await discardRun(id, { force: has('force'), auditReason: auditReason(), presentation: cleanupPresentation })
-    break
-  }
 
   case 'close-out': {
     await loadRun()
@@ -1502,76 +1263,6 @@ switch (cmd) {
     break
   }
 
-  case 'stop': {
-    await loadRun()
-    const id = Number(argv[1]); if (!id) usage()
-    await stopRun(id, { force: has('force'), auditReason: auditReason(), presentation: cleanupPresentation }, { lifecycleCheckpoint, terminateRunProcesses })
-    break
-  }
-
-  case 'abandon': {
-    await loadRun()
-    const id = Number(argv[1]); if (!id) usage()
-    await abandonRun(id, { force: has('force'), note: flag('note'), auditReason: auditReason(), presentation: cleanupPresentation }, { lifecycleCheckpoint, terminateRunProcesses })
-    break
-  }
-
-  case 'judge': {
-    await Promise.all([loadJobs(), loadWorktree()])
-    writableDb()
-    const requestedId = Number(argv[1]); if (!requestedId) usage()
-    const judgementFlags = { has, flag, values: flags }
-    const words = argv.slice(2).filter((a, i) => !a.startsWith('--') && !VALUE_FLAGS.has(argv.slice(2)[i - 1] ?? ''))
-    const options = { words, note: scoreNote(), auditReason: auditReason(), notEvidence: NOT_EVIDENCE }
-    const result = judgeRun(requestedId, judgementFlags, options, judgementPresentation)
-    // The CLI adapter deliberately composes judgement then cleanup for judge --discard.
-    if (has('discard')) {
-      if (!result.row.worktree) throw new Error(`run ${result.id} has no worktree to discard`)
-      const discardAuthority = authorizeRunMutation(result.id, 'discard')
-      discardWorktree(result.row as CleanupRow, 'discarded', false, discardAuthority, { force: false, auditReason: auditReason(), presentation: cleanupPresentation })
-    }
-    break
-  }
-
-  case 'score': {
-    await Promise.all([loadJobs(), loadAgents(), loadRoute()])
-    writableDb()
-    const requestedId = Number(argv[1]); if (!requestedId) usage()
-    const words = argv.slice(2).filter((a, i) => !a.startsWith('--') && !VALUE_FLAGS.has(argv.slice(2)[i - 1] ?? ''))
-    scoreRun(requestedId, { has, flag, values: flags }, { words, note: scoreNote(), auditReason: auditReason(), dashboardAuthorized: dashboardScoreAuthorized(flag('scorer')), notEvidence: NOT_EVIDENCE }, judgementPresentation)
-    break
-  }
-
-  case 'recalibrate': {
-    await Promise.all([loadJobs(), loadAgreement()])
-    await recalibrate({ has, flag }, { log: (...values) => console.log(...values), write: (value) => process.stdout.write(value), input: process.stdin, output: process.stdout })
-    break
-  }
-  case 'routing-backtest': {
-    await Promise.all([loadJobs(), loadAgents()])
-    routingBacktestCommand({ has, flag }, { log: console.log, dur })
-    break
-  }
-
-  case 'runs': {
-    await loadJobs()
-    const options = { jsonV1: argv.includes('--json=v1') }
-    const commandFlags = { has, flag, values: flags }
-    const presentation = {
-      log: console.log, dur, chainIsStranded, strandedRecovery,
-      thinOutputWarning: (row: { job: string; status: string; latency_ms: number | null; probe: number; output_path: string | null }) =>
-        thinOutputWarning({ ...row, writesRepo: Boolean(job(row.job).needs.writesRepo) }),
-    }
-    await runListingCommand(options, commandFlags, presentation)
-    break
-  }
-
-  case 'guide': {
-    await Promise.all([loadJobs(), loadAgents(), loadRoute()])
-    await ensureLocalHealth()
-    guideCommand({ has, flag }, { log: console.log, dur })
-    break
-  }
 
   case 'spawns': {
     // What the subagent gate actually did. Denials are work that should have
@@ -1608,11 +1299,6 @@ switch (cmd) {
     break
   }
 
-  case 'stats': {
-    await Promise.all([loadJobs(), loadRoute(), loadAgreement()])
-    statsCommand({ has, flag }, { log: console.log, dur })
-    break
-  }
 
   case 'pick': {
     await Promise.all([loadJobs(), loadAgents(), loadRoute(), loadRun(), loadWorktree(), loadTransport()])
@@ -1722,16 +1408,6 @@ switch (cmd) {
     console.error('the dashboard moved: run `hub serve` (http://127.0.0.1:7778)')
     process.exit(1)
 
-  case 'reclassify-failures': {
-    await loadJobs()
-    reclassifyFailuresCommand({ has }, { log: console.log })
-    break
-  }
-
-  case 'health': {
-    healthCommand({ has, flag }, { log: console.log })
-    break
-  }
 
   case 'epic': {
     const { epicChildren, epicScoreboard, renderEpicHuman } = await import('./epic.ts')
@@ -1742,18 +1418,6 @@ switch (cmd) {
     break
   }
 
-  case 'doctor': {
-    await Promise.all([loadJobs(), loadAgents(), loadRoute()])
-    // Doctor composes transport health into machine diagnosis at the CLI adapter.
-    const { acpRuntimeGaps } = await import('./transport.ts')
-    const commandFlags = { has }
-    const presentation = {
-      log: console.log, exitCode: (code: number) => { process.exitCode = code },
-      candidates, pick, jobs: () => Object.keys(JOBS), acpRuntimeGaps,
-    }
-    await doctorCommand(commandFlags, presentation)
-    break
-  }
 
   case 'jobs':
     await loadJobs()

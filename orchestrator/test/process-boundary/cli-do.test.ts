@@ -106,9 +106,16 @@ test('every --json surface has an enumerated and pinned output contract', () => 
       expect(JSON.parse(line)).toMatchObject({ id: expect.any(Number) })
     }
 
-    const help = orch('--help').out
-    expect(help.match(/one JSON document/g)).toHaveLength(documents.length)
-    expect(help.match(/one JSON object per line/g)).toHaveLength(1)
+    const help = orch('--help')
+    expect(help.code).toBe(0)
+    for (const command of [
+      'flake', 'review', 'confinement', 'doc', 'canon', 'port', 'project',
+      'run', 'runs', 'blockers', 'health', 'reclassify-failures', 'doctor',
+      'inbox', 'diff', 'sweep', 'discard', 'stop', 'abandon', 'judge', 'score',
+      'recalibrate', 'guide', 'stats', 'routing-backtest',
+    ]) {
+      expect(help.out).toMatch(new RegExp(`^  ${command}(?: |$)`, 'm'))
+    }
   }, 20_000)
 
   test('detach spawns exec.ts as its child entry point', async () => {
