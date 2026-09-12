@@ -204,12 +204,6 @@
     "score": 35
   },
   {
-    "file": "orchestrator/src/cli.ts",
-    "function": "map callback#8",
-    "line": 1937,
-    "score": 16
-  },
-  {
     "file": "orchestrator/src/close-out.ts",
     "function": "attemptCloseOutRun",
     "line": 27,

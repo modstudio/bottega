@@ -2,19 +2,7 @@ import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 
 const allowed = new Set([
-    'bun:sqlite', 'node:fs', 'node:path', 'node:crypto', 'node:child_process',
-    'node:readline/promises', 'zod', './db.ts', './store-hooks.ts', './projects.ts', './failure.ts',
-    './collect.ts', './outcome.ts', './args.ts', '../../shared/dashboard-capability.ts',
-    '../../shared/monitor-capability.ts', './score.ts', './evidence-query.ts',
-    './review-vocabulary.ts', './run-liveness.ts', './process-liveness.ts', './duel.ts', './run-authority.ts',
-    './resource-ownership.ts',
-    './run-control.ts', './run-dispatch.ts', './run-answer.ts', './cleanup.ts', './cleanup-sweep.ts', './run-stop.ts',
-    './judgement.ts', './recalibration.ts',
-    './confinement-ruling.ts', './doc-commands.ts', './project-commands.ts',
-    './doctor.ts', './port-commands.ts', './review-commands.ts',
-    './run-listing.ts', './run-inbox.ts', './run-diff.ts',
-    './canon-commands.ts', './dispatch-commands.ts', './failure-commands.ts',
-    './health-commands.ts', './routing-commands.ts',
+    './review-vocabulary.ts',
 ])
 
 function offendingImports(source: string): string[] {
