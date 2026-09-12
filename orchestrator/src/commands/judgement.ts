@@ -12,12 +12,11 @@ import { judgeRun, scoreRun } from '../judgement.ts'
 import { pidAlive } from '../process-liveness.ts'
 import { recalibrate } from '../recalibration.ts'
 import { DASHBOARD_CAPABILITY_PATH_ENV, DASHBOARD_CAPABILITY_TOKEN_ENV, type DashboardCapability } from '../../../shared/dashboard-capability.ts'
-import { booleanOptions, cliFlags, log, rawArgv, valueOptions, write } from './support.ts'
+import { collect, log, optionFlags, write } from './support.ts'
 
 const commonValueFlags = ['--finding', '--note', '--note-file', '--better-than', '--worse-than', '--same-as', '--reproduced', '--coverage', '--limits', '--overlap'] as const
-const valueFlags = new Set([...commonValueFlags, '--scorer'])
 
-function scoreNote(flags: ReturnType<typeof cliFlags>): string | null {
+function scoreNote(flags: ReturnType<typeof optionFlags>): string | null {
   const inline = flags.flag('note'); const file = flags.flag('note-file')
   if (inline !== undefined && file !== undefined) throw new Error('pass a score note with either --note or --note-file, not both')
   const note = file === undefined ? inline : readFileSync(file, 'utf8')
@@ -39,7 +38,7 @@ function scoreNote(flags: ReturnType<typeof cliFlags>): string | null {
   return note
 }
 
-function auditReason(flags: ReturnType<typeof cliFlags>): string | null {
+function auditReason(flags: ReturnType<typeof optionFlags>): string | null {
   const scorer = flags.flag('scorer')
   if (scorer) return `--scorer ${scorer}`
   if (flags.has('force')) return '--force'
@@ -77,15 +76,16 @@ const cleanupPresentation: CleanupPresentation = {
 }
 
 function addJudgementOptions(command: Command, judge: boolean): Command {
-  const names = judge ? commonValueFlags : [...commonValueFlags, '--scorer']
-  valueOptions(command, names.map((name) => name.slice(2)))
-  return booleanOptions(command, judge ? ['discard', 'force'] : ['force', 'void'])
+  command.option('--finding <value>', '', collect, [])
+  for (const name of commonValueFlags.filter((name) => name !== '--finding')) command.option(`${name} <value>`)
+  if (!judge) command.option('--scorer <value>')
+  command.option('--force').allowExcessArguments(false)
+  return judge ? command.option('--discard') : command.option('--void')
 }
 
 export function register(program: Command): void {
-  addJudgementOptions(program.command('judge <run-id> [words...]'), true).action((id, _words, _options, command) => {
-    const argv = rawArgv(command); const flags = cliFlags(argv); writableDb()
-    const words = argv.slice(2).filter((arg, index, rest) => !arg.startsWith('--') && !valueFlags.has(rest[index - 1] ?? ''))
+  addJudgementOptions(program.command('judge <run-id> [words...]'), true).action((id, words, options) => {
+    const flags = optionFlags(options); writableDb()
     const result = judgeRun(Number(id), flags, { words, note: scoreNote(flags), auditReason: auditReason(flags), notEvidence: NOT_EVIDENCE }, { log, error: console.error, pairHint })
     if (flags.has('discard')) {
       if (!result.row.worktree) throw new Error(`run ${result.id} has no worktree to discard`)
@@ -93,14 +93,13 @@ export function register(program: Command): void {
     }
   })
 
-  addJudgementOptions(program.command('score <run-id> [words...]'), false).action((id, _words, _options, command) => {
-    const argv = rawArgv(command); const flags = cliFlags(argv); writableDb()
-    const words = argv.slice(2).filter((arg, index, rest) => !arg.startsWith('--') && !valueFlags.has(rest[index - 1] ?? ''))
+  addJudgementOptions(program.command('score <run-id> [words...]'), false).action((id, words, options) => {
+    const flags = optionFlags(options); writableDb()
     scoreRun(Number(id), flags, { words, note: scoreNote(flags), auditReason: auditReason(flags), dashboardAuthorized: dashboardScoreAuthorized(flags.flag('scorer')), notEvidence: NOT_EVIDENCE }, { log, error: console.error, pairHint })
   })
 
-  const recalibration = valueOptions(program.command('recalibrate'), ['n', 'scorer'])
-  booleanOptions(recalibration, ['force']).action(async (_options, command) => {
-    await recalibrate(cliFlags(rawArgv(command)), { log, write, input: process.stdin, output: process.stdout })
+  program.command('recalibrate').option('--n <value>').option('--scorer <value>').option('--force')
+    .allowExcessArguments(false).action(async (options) => {
+    await recalibrate(optionFlags(options), { log, write, input: process.stdin, output: process.stdout })
   })
 }

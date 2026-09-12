@@ -13,7 +13,6 @@ import { register as registerReview } from './commands/review.ts'
 import { register as registerRouting } from './commands/routing.ts'
 import { register as registerRunListing } from './commands/run-listing.ts'
 import { drainStdout, setRawArgv, write } from './commands/support.ts'
-import { validateCliArgs } from './args.ts'
 
 export const program = new Command()
   .name('orch')
@@ -24,6 +23,8 @@ export const program = new Command()
     writeErr: (value) => process.stderr.write(value),
   })
   .allowUnknownOption(false)
+  .allowExcessArguments(false)
+  .showSuggestionAfterError()
 
 registerGate(program)
 registerReview(program)
@@ -44,19 +45,10 @@ function isReadOnlyInvocation(argv: string[]): boolean {
   return false
 }
 
-const INFORMATIONAL = new Set(['--help', '-h', '--version', '-V'])
-
 /** The exit code for a failure that escaped a command: Commander's own signals map to 0 or 2, everything else is 1. */
 function exitCodeFor(error: unknown): number {
   if (!(error instanceof CommanderError)) return 1
   return error.code === 'commander.helpDisplayed' || error.code === 'commander.version' ? 0 : 2
-}
-
-/** The retained grammar validator's refusal text, or null when argv is acceptable or only asks for help. */
-function usageRefusal(argv: string[]): string | null {
-  if (argv.some((word) => INFORMATIONAL.has(word))) return null
-  try { validateCliArgs(argv); return null }
-  catch (error) { return error instanceof Error ? error.message : String(error) }
 }
 
 /**
@@ -68,10 +60,8 @@ function usageRefusal(argv: string[]): string | null {
 export async function run(argv: string[]): Promise<number> {
   setRawArgv(argv)
   if (!isReadOnlyInvocation(argv)) recordSessionSeen()
-  const refusal = usageRefusal(argv)
-  if (refusal !== null) { console.error(refusal); return 2 }
   try {
-    await program.parseAsync(['bun', 'orch', ...argv])
+    await program.parseAsync(['bun', 'orch', ...(argv.length ? argv : ['--help'])])
     await drainStdout()
     return Number(process.exitCode ?? 0)
   } catch (error) {

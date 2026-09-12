@@ -147,7 +147,6 @@ export const { candidates, weightCase, scoreboard, median, evidenceFor, pick,
         PROMPT_SIZE_BOUNDARY, promptSizeBucket, betaContribution,
         BETA_SCALE, POSTERIOR_NOISE_BAND, currentPolicySelection } = await import('../src/route.ts')
 export const { guide } = await import('../src/guide.ts')
-export const { validateCliArgs } = await import('../src/args.ts')
 export const { bradleyTerry, gwetAc1 } = await import('../src/agreement.ts')
 export const { routingBacktest, routingBacktestEnsemble, ROUTING_BACKTEST_SEEDS } = await import('../src/routing-backtest.ts')
 export const { projects, projectAt, projectByName, stackAt, upsertProject, removeProject } = await import('../src/projects.ts')
