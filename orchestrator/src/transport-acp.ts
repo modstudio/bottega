@@ -1,9 +1,9 @@
-import { spawn, type ChildProcess } from 'node:child_process'
 import { Readable, Writable } from 'node:stream'
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import * as acp from '@agentclientprotocol/sdk'
-import { terminateProcessGroup } from './idle-kill.ts'
+import { execa, type ResultPromise } from 'execa'
+import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from './idle-kill.ts'
 import { srtLaunchArgv } from './sandbox.ts'
 import type { SandboxRuntimeConfig } from './sandbox.ts'
 import {
@@ -247,7 +247,7 @@ export function acpOutcome(result: TransportResult): 'ok' | 'asking' | 'failed' 
   return result.status
 }
 
-function webStream(child: ChildProcess): ReturnType<typeof acp.ndJsonStream> {
+function webStream(child: ResultPromise): ReturnType<typeof acp.ndJsonStream> {
   if (!child.stdin || !child.stdout) throw new Error('ACP agent stdio is not a pipe')
   const input = Writable.toWeb(child.stdin)
   const output = Readable.toWeb(child.stdout) as unknown as ReadableStream<Uint8Array>
@@ -300,9 +300,8 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const launch = profile && opts.srt
     ? srtLaunchArgv(profile, opts.srt.settingsPath, bin, agentArgv)
     : [bin, ...agentArgv]
-  const child = spawn(launch[0]!, launch.slice(1), {
-    cwd: opts.cwd,
-    env: {
+  const child = execa(launch[0]!, launch.slice(1), {
+    cwd: opts.cwd, env: {
       ...opts.env,
       NO_BROWSER: '1',
       INITIAL_AGENT_MODE: 'read-only',
@@ -326,7 +325,9 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
         XDG_CONFIG_HOME: opts.srt ? dirname(opts.srt.settingsPath) : dirname(opts.outPath),
       } : {}),
     },
-    stdio: ['pipe', 'pipe', 'pipe'],
+    stdin: 'pipe', stdout: 'pipe', stderr: 'pipe',
+    detached: true, cleanup: true, killSignal: 'SIGTERM',
+    forceKillAfterDelay: DEFAULT_IDLE_GRACE_MS, reject: false,
   })
 
   const stderrChunks: Buffer[] = []
@@ -507,7 +508,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     pid: child.pid ?? null,
     effectiveModel,
     kill(_sig) {
-      void terminateProcessGroup(child.pid ?? 0)
+      void terminateProcessGroup(child.pid ?? 0, { direct: child })
     },
     async prompt(text) {
       if (!ctx || !sessionId) throw new Error('ACP session is not open')
@@ -596,7 +597,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
           await ctx.notify(acp.methods.agent.session.cancel, { sessionId })
         } catch { /* agent may already be gone */ }
       }
-      void terminateProcessGroup(child.pid ?? 0)
+      void terminateProcessGroup(child.pid ?? 0, { direct: child })
       if (leaderSocket) rmSync(leaderSocket, { force: true })
     },
     async collect() {

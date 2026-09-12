@@ -283,6 +283,7 @@ export async function terminateProcessGroup(
     graceMs?: number
     killConfirmMs?: number
     deps?: Partial<TerminateDeps>
+    direct?: { kill(signal?: NodeJS.Signals | number): boolean | void }
   } = {},
 ): Promise<TerminateResult> {
   if (pid <= 0 || pid === process.pid) {
@@ -301,6 +302,8 @@ export async function terminateProcessGroup(
   const trackedPgid = vendorPgid !== null && vendorPgid === selfPgid ? null : vendorPgid
   rememberTree(pid, tracked, first, trackedPgid)
   const groupPgid = signalTree(pid, 'SIGTERM', deps, first)
+  // Signal the group while its leader exists; execa owns the direct child's escalation.
+  opts.direct?.kill('SIGTERM')
   const pgid = groupPgid ?? trackedPgid
   if (await waitUntilDead(pid, tracked, graceMs, deps, pgid)) {
     return { exited: true, unkillable: false, reason: null, pgid, pids: [...tracked] }

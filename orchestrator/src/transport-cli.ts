@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { constants as osConstants } from 'node:os'
+import { execa } from 'execa'
 import { eventsFromVendorLine } from './events.ts'
-import { terminateProcessGroup } from './idle-kill.ts'
+import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from './idle-kill.ts'
 import { srtLaunchArgv } from './sandbox.ts'
 import {
   outcomeFromTransport, registerTransport, type AgentTransport, type ArgvOpts, type NormalizedEvent, type TransportHandle,
@@ -14,17 +16,14 @@ function parseVendorTokens(blob: string): number | null {
 }
 
 async function readStdoutLines(
-  stream: ReadableStream<Uint8Array>,
+  stream: AsyncIterable<string | Uint8Array>,
   onLine: (line: string) => void,
 ): Promise<string> {
   const decoder = new TextDecoder()
   let buf = ''
   let stdout = ''
-  const reader = stream.getReader()
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buf += decoder.decode(value, { stream: true })
+  for await (const value of stream) {
+    buf += typeof value === 'string' ? value : decoder.decode(value, { stream: true })
     let nl = buf.indexOf('\n')
     while (nl >= 0) {
       const line = buf.slice(0, nl)
@@ -65,12 +64,13 @@ function spawnCli(opts: TransportStartOpts): TransportHandle {
     ? srtLaunchArgv(opts.srt.profile, opts.srt.settingsPath, bin, argv)
     : [bin, ...argv]
   const stdinPrompt = opts.agent.stdin && !opts.resume ? opts.prompt : undefined
-  const p = Bun.spawn(launchArgv, {
+  const p = execa(launchArgv[0]!, launchArgv.slice(1), {
     cwd: opts.cwd,
     env: opts.env,
-    stdin: stdinPrompt !== undefined ? new TextEncoder().encode(stdinPrompt) : 'ignore',
-    stdout: 'pipe',
-    stderr: 'pipe',
+    stdin: stdinPrompt !== undefined ? 'pipe' : 'ignore', input: stdinPrompt,
+    stdout: 'pipe', stderr: 'pipe',
+    detached: true, cleanup: true, killSignal: 'SIGTERM',
+    forceKillAfterDelay: DEFAULT_IDLE_GRACE_MS, reject: false,
   })
 
   let cancelled = false
@@ -84,10 +84,9 @@ function spawnCli(opts: TransportStartOpts): TransportHandle {
     eventWaiters.shift()?.()
   }
 
-  const stdoutTask = readStdoutLines(p.stdout, (line) => {
+  const stdoutTask = readStdoutLines(p.stdout!, (line) => {
     for (const event of eventsFromVendorLine(line)) pushEvent(event)
   })
-  const stderrTask = new Response(p.stderr).text()
 
   const finishEvents = () => {
     closed = true
@@ -99,8 +98,10 @@ function spawnCli(opts: TransportStartOpts): TransportHandle {
     if (collected) return collected
     collected = (async () => {
      try {
-      const [stdout, stderr] = await Promise.all([stdoutTask, stderrTask])
-      const exitCode = await p.exited
+      const [stdout, processResult] = await Promise.all([stdoutTask, p])
+      const stderr = processResult.stderr
+      const exitCode = processResult.exitCode ??
+        (processResult.signal ? 128 + (osConstants.signals[processResult.signal] ?? 0) : 1)
       const reply = opts.agent.parseReply?.(stdout)
       const replyError = reply?.error ?? null
       const tokens = reply?.tokens ?? parseVendorTokens(stderr) ?? parseVendorTokens(stdout)
@@ -136,7 +137,7 @@ function spawnCli(opts: TransportStartOpts): TransportHandle {
         output, stdout, stderr, raw: stdout,
         parsed: reply ?? null,
         tokens, costUsd, sessionId, stopReason, error: replyError,
-        exitCode, pid: p.pid, events, asking: false,
+        exitCode, pid: p.pid ?? null, events, asking: false,
         failureKind: folded.failureKind, status: folded.status, questions: [],
       }
      } finally {
@@ -149,8 +150,9 @@ function spawnCli(opts: TransportStartOpts): TransportHandle {
   }
 
   const handle: TransportHandle = {
-    pid: p.pid,
-    kill(_sig) { void terminateProcessGroup(p.pid) },
+    pid: p.pid ?? null, kill(sig) {
+      p.kill(typeof sig === 'number' ? sig : (sig ?? 'SIGTERM') as NodeJS.Signals)
+    },
     async prompt() { /* first-turn prompt is on argv / stdin */ },
     async *events() {
       let i = 0
@@ -165,7 +167,7 @@ function spawnCli(opts: TransportStartOpts): TransportHandle {
     },
     async cancel() {
       cancelled = true
-      void terminateProcessGroup(p.pid)
+      void terminateProcessGroup(p.pid ?? 0, { direct: p })
     },
     collect,
   }
