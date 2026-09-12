@@ -265,7 +265,7 @@ export function sandboxRuntimeConfig(
   } }
 }
 
-/** Quote argv into the command input that sandbox-runtime wraps behind an argv shell launch. */
+/** Quote argv into the command input that sandbox-runtime wraps behind an argv shell launch; mirrors the runtime's unexported utils/shell-quote so the srt CLI and this adapter re-parse identically. */
 function shellCommand(argv: string[]): string {
   return argv.map((arg) => {
     if (arg === '') return "''"
