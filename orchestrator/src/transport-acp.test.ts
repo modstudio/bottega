@@ -268,7 +268,7 @@ describe('ACP client-served fs is confined to the worktree', () => {
     const confined = acpSandboxProfile(profile, '/run/grok.leader.sock')
     expect(confined.network.allowUnixSockets).toEqual(['/run/grok.leader.sock'])
     expect(confined.filesystem).toEqual(profile.filesystem)
-    expect(acpLeaderSocketPath('/evidence/out.txt', '/run/settings.json'))
+    expect(acpLeaderSocketPath('/evidence/out.txt', '/run'))
       .toBe('/run/grok-leader.sock')
     expect(acpLeaderSocketPath('/evidence/out.txt')).toBe('/evidence/out.txt.leader.sock')
   })

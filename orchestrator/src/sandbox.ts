@@ -1,6 +1,11 @@
+// concern: readonly sandbox policy and its sandbox-runtime adapter; must not know run control, worktrees, or CLI grammar.
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, symlinkSync, writeFileSync, } from 'node:fs'
 import { delimiter, isAbsolute, join, relative, resolve } from 'node:path'
 import { homedir } from 'node:os'
+import {
+  SandboxManager,
+  type SandboxRuntimeConfig as LibrarySandboxRuntimeConfig,
+} from '@anthropic-ai/sandbox-runtime'
 import { ROOT } from './db.ts'
 import { mcpEndpointAllowlist } from './mcp-probe.ts'
 import type { Project } from './projects.ts'
@@ -39,7 +44,8 @@ export const READONLY_LENS_DENY_SOCKETS = [
   '/run/docker.sock',
 ] as const
 
-export const SRT_BIN = join(ROOT, 'node_modules', '.bin', 'srt')
+export const SRT_LIBRARY = join(ROOT, 'node_modules', '@anthropic-ai', 'sandbox-runtime', 'dist', 'index.js')
+let sandboxInitialized = false
 
 function expandHome(path: string): string {
   if (path === '~') return homedir()
@@ -243,28 +249,51 @@ export function selectReadonlySandbox(input: {
 }
 
 export function srtInstalled(): boolean {
-  return existsSync(SRT_BIN)
+  return existsSync(SRT_LIBRARY)
 }
 
-/** Persist one profile and wrap a vendor argv without leaking srt's CLI grammar into run.ts. */
-export function srtLaunchArgv(
+/** Translate orch's policy vocabulary to the maintained runtime's configuration. */
+export function sandboxRuntimeConfig(
   profile: SandboxRuntimeConfig,
-  settingsPath: string,
-  bin: string,
-  argv: string[],
-): string[] {
+): LibrarySandboxRuntimeConfig {
   const { allowWithinDeny, ...filesystem } = profile.filesystem
-  // `allowRead` is SRT's external name for exceptions to denyRead. Keep the
-  // emitted settings byte-for-byte equivalent while the orch profile names
-  // the field for what it actually does.
-  const settings = { ...profile, filesystem: {
+  return { ...profile, filesystem: {
     denyRead: filesystem.denyRead,
     allowRead: allowWithinDeny,
     allowWrite: filesystem.allowWrite,
     denyWrite: filesystem.denyWrite,
   } }
-  writeFileSync(settingsPath, JSON.stringify(settings, null, 2))
-  return [SRT_BIN, '--settings', settingsPath, '--', bin, ...argv]
+}
+
+/** Quote argv into the command input that sandbox-runtime wraps behind an argv shell launch. */
+function shellCommand(argv: string[]): string {
+  return argv.map((arg) => {
+    if (arg === '') return "''"
+    if (/^[A-Za-z0-9_./:@+,-][A-Za-z0-9_./:=@+,-]*$/.test(arg)) return arg
+    return `'${arg.replaceAll("'", `'\"'\"'`)}'`
+  }).join(' ')
+}
+
+/** Initialise the run-scoped manager and return an argv-safe sandbox launch. */
+export async function sandboxLaunchArgv(
+  profile: SandboxRuntimeConfig,
+  bin: string,
+  argv: string[],
+): Promise<string[]> {
+  const config = sandboxRuntimeConfig(profile)
+  if (sandboxInitialized) SandboxManager.updateConfig(config)
+  else {
+    await SandboxManager.initialize(config)
+    sandboxInitialized = true
+  }
+  return (await SandboxManager.wrapWithSandboxArgv(shellCommand([bin, ...argv]))).argv
+}
+
+/** Release the process-scoped runtime resources provisioned for this run. */
+export async function resetSandbox(): Promise<void> {
+  if (!sandboxInitialized) return
+  await SandboxManager.reset()
+  sandboxInitialized = false
 }
 
 /** Keep Grok's registered stdio shape while making a linked-worktree build test its own proxy. */

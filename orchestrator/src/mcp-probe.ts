@@ -215,7 +215,7 @@ async function stdioRpc(
 async function httpRpc(
   url: string, messages: unknown[], headers: Record<string, string> | undefined,
   cwd: string, env: Record<string, string>,
-  wrap?: (command: string, args: string[]) => string[], timeoutMs = 8_000,
+  wrap?: (command: string, args: string[]) => string[] | Promise<string[]>, timeoutMs = 8_000,
 ): Promise<{ ok: boolean; messages: unknown[]; error: string | null }> {
   const replies: unknown[] = []
   const script = `const url=process.argv[1], body=process.argv[2];
@@ -230,7 +230,7 @@ const text=await res.text(); process.stdout.write(text); process.exit(res.ok?0:1
       continue
     }
     const raw = [process.execPath, '-e', script, url, JSON.stringify(message)]
-    const argv = wrap ? wrap(raw[0]!, raw.slice(1)) : raw
+    const argv = wrap ? await wrap(raw[0]!, raw.slice(1)) : raw
     const proc = Bun.spawn(argv, { cwd, env, stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' })
     proc.stdin.write(JSON.stringify(headers ?? {}))
     proc.stdin.end()
@@ -269,7 +269,7 @@ export async function probeMcpServer(input: {
   cwd: string
   env: Record<string, string>
   probeTool?: string | null
-  wrap?: (command: string, args: string[]) => string[]
+  wrap?: (command: string, args: string[]) => string[] | Promise<string[]>
 }): Promise<McpProbeResult> {
   const started = Date.now()
   const namesSeen = namesSeenAt(input.cwd)
@@ -297,7 +297,7 @@ export async function probeMcpServer(input: {
     )
   } else if (input.config.command) {
     const raw = [input.config.command, ...(input.config.args ?? [])]
-    const command = input.wrap ? input.wrap(raw[0]!, raw.slice(1)) : raw
+    const command = input.wrap ? await input.wrap(raw[0]!, raw.slice(1)) : raw
     const bin = command[0]!
     const args = command.slice(1)
     const resolved = isAbsolute(bin) || bin.includes('/') ? bin : (Bun.which(bin) ?? bin)
@@ -329,7 +329,7 @@ export async function probeMcpServer(input: {
   }
   const stdioArgv = input.config.command
     ? (input.wrap
-      ? input.wrap(input.config.command, input.config.args ?? [])
+      ? await input.wrap(input.config.command, input.config.args ?? [])
       : [input.config.command, ...(input.config.args ?? [])])
     : null
   const called = input.config.url

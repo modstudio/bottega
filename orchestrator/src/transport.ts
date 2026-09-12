@@ -182,7 +182,7 @@ export type TransportStartOpts = {
   writableRoots?: ArgvOpts['writableRoots']
   gitObjectEnvironment?: ArgvOpts['gitObjectEnvironment']
   gitConfigEnvironment?: ArgvOpts['gitConfigEnvironment']
-  srt?: { profile: SandboxRuntimeConfig; settingsPath: string }
+  srt?: { profile: SandboxRuntimeConfig; runtimeDir: string }
   /** ACP binary. CLI uses `agent.bin`. */
   bin?: string
   /** First turn vs resumeArgv. Session may exist on a first grok turn too. */

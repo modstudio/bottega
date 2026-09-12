@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import {
   existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, } from 'node:fs'
 import { homedir } from 'node:os'
@@ -9,7 +9,7 @@ import { ROOT } from './db.ts'
 import {
   grokSandboxConfig,
   READONLY_LENS_DENY_PATHS, readonlyLensProfile, readonlyNeedsDocker, selectReadonlySandbox,
-  SRT_BIN, srtLaunchArgv,
+  resetSandbox, sandboxLaunchArgv, sandboxRuntimeConfig, SRT_LIBRARY,
 } from './sandbox.ts'
 import { classify, NOT_EVIDENCE } from './failure.ts'
 
@@ -23,6 +23,7 @@ const fixtureProject = (settings: Project['settings'] = {}): Project => ({
 })
 
 describe('readonly-lens sandbox profile', () => {
+  afterEach(resetSandbox)
   test('keeps the registered Grok stdio entry but points it at this checkout', () => {
     const config = '[mcp_servers.orch-ask]\ncommand = "bun"\nargs = ["/main/orchestrator/src/cli.ts", "ask-server"]\n'
     const rewritten = grokSandboxConfig(config)
@@ -103,16 +104,13 @@ describe('readonly-lens sandbox profile', () => {
     })).toThrow('a registered secret path cannot be inside the run directory')
   })
 
-  test('the srt argv helper owns settings persistence and wrapper grammar', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'orch-srt-profile-'))
-    const path = join(dir, 'settings.json')
+  test('maps every profile rule to the sandbox-runtime config', () => {
     const profile = readonlyLensProfile({
       worktree: '/runs/tree', runsDir: '/runs/evidence', agent: 'grok',
       project: fixtureProject(), path: '/usr/bin', nodeModuleLinks: [],
     })
-    const argv = srtLaunchArgv(profile, path, 'grok', ['--flag'])
-    expect(argv.slice(-3)).toEqual(['--', 'grok', '--flag'])
-    expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({
+    profile.network.allowUnixSockets.push('/runs/evidence/grok-leader.sock')
+    expect(sandboxRuntimeConfig(profile)).toEqual({
       ...profile,
       filesystem: {
         denyRead: profile.filesystem.denyRead,
@@ -121,7 +119,6 @@ describe('readonly-lens sandbox profile', () => {
         denyWrite: profile.filesystem.denyWrite,
       },
     })
-    rmSync(dir, { recursive: true, force: true })
   })
 
   test('falls back to host when readonly notes need Docker', () => {
@@ -183,7 +180,7 @@ describe('readonly-lens sandbox profile', () => {
     }).sandbox).toBe('srt')
   })
 
-  test('an srt profile allows reads outside the isolate unless the path is explicitly denied', () => {
+  test('an srt profile allows reads outside the isolate unless the path is explicitly denied', async () => {
     const parent = mkdtempSync(join(tmpdir(), 'orch-no-repo-boundary-'))
     const isolate = join(parent, 'isolate')
     const evidence = join(parent, 'evidence')
@@ -200,15 +197,15 @@ describe('readonly-lens sandbox profile', () => {
         project: fixtureProject(),
         path: '/bin:/usr/bin', nodeModuleLinks: [],
       })
-      const readableConfig = Bun.spawnSync(srtLaunchArgv(
-        profile, join(evidence, 'settings.json'), '/bin/cat', [join(isolate, '.mcp.json')],
+      const readableConfig = Bun.spawnSync(await sandboxLaunchArgv(
+        profile, '/bin/cat', [join(isolate, '.mcp.json')],
       ), { stdout: 'pipe', stderr: 'pipe' })
       expect(readableConfig.exitCode, readableConfig.stderr.toString()).toBe(0)
       expect(readableConfig.stdout.toString()).toBe('{"mcpServers":{}}')
-      const launched = Bun.spawnSync(srtLaunchArgv(
-        profile, join(evidence, 'settings.json'), '/bin/sh', ['-c', `cat ${JSON.stringify(outside)}`],
+      const launched = Bun.spawnSync(await sandboxLaunchArgv(
+        profile, '/bin/sh', ['-c', `cat ${JSON.stringify(outside)}`],
       ), { stdout: 'pipe', stderr: 'pipe' })
-      expect(existsSync(SRT_BIN)).toBe(true)
+      expect(existsSync(SRT_LIBRARY)).toBe(true)
       expect(launched.exitCode, launched.stderr.toString()).toBe(0)
       expect(launched.stdout.toString()).toContain('secret outside the isolate')
     } finally {
@@ -216,7 +213,7 @@ describe('readonly-lens sandbox profile', () => {
     }
   })
 
-  test('an srt profile lets a run write its contracted scratch reply', () => {
+  test('an srt profile lets a run write its contracted scratch reply', async () => {
     const parent = mkdtempSync(join(tmpdir(), 'orch-srt-reply-'))
     const isolate = join(parent, 'isolate')
     const evidence = join(parent, 'sandbox')
@@ -231,11 +228,11 @@ describe('readonly-lens sandbox profile', () => {
       })
       expect(profile.filesystem.allowWrite).toContain(scratch)
       const reply = join(scratch, 'reply.json')
-      const launched = Bun.spawnSync(srtLaunchArgv(
-        profile, join(evidence, 'settings.json'), '/bin/sh',
+      const launched = Bun.spawnSync(await sandboxLaunchArgv(
+        profile, '/bin/sh',
         ['-c', `printf '{"status":"done"}' > ${JSON.stringify(reply)}`],
       ), { stdout: 'pipe', stderr: 'pipe' })
-      expect(existsSync(SRT_BIN)).toBe(true)
+      expect(existsSync(SRT_LIBRARY)).toBe(true)
       expect(launched.exitCode, launched.stderr.toString()).toBe(0)
       expect(readFileSync(reply, 'utf8')).toBe('{"status":"done"}')
     } finally {

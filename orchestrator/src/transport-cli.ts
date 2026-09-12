@@ -3,7 +3,7 @@ import { constants as osConstants } from 'node:os'
 import { execa } from 'execa'
 import { eventsFromVendorLine } from './events.ts'
 import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from './idle-kill.ts'
-import { srtLaunchArgv } from './sandbox.ts'
+import { sandboxLaunchArgv } from './sandbox.ts'
 import {
   outcomeFromTransport, registerTransport, type AgentTransport, type ArgvOpts, type NormalizedEvent, type TransportHandle,
   type TransportResult, type TransportStartOpts,
@@ -41,7 +41,7 @@ async function readStdoutLines(
   return stdout
 }
 
-function spawnCli(opts: TransportStartOpts): TransportHandle {
+async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
   const argvOpts: ArgvOpts = {
     prompt: opts.prompt,
     out: opts.outPath,
@@ -61,7 +61,7 @@ function spawnCli(opts: TransportStartOpts): TransportHandle {
     : opts.agent.argv(argvOpts)
   const bin = opts.bin ?? opts.agent.bin
   const launchArgv = opts.srt
-    ? srtLaunchArgv(opts.srt.profile, opts.srt.settingsPath, bin, argv)
+    ? await sandboxLaunchArgv(opts.srt.profile, bin, argv)
     : [bin, ...argv]
   const stdinPrompt = opts.agent.stdin && !opts.resume ? opts.prompt : undefined
   const p = execa(launchArgv[0]!, launchArgv.slice(1), {
@@ -176,11 +176,11 @@ function spawnCli(opts: TransportStartOpts): TransportHandle {
 
 export const cliTransport: AgentTransport = {
   name: 'cli',
-  start(opts) { return Promise.resolve(spawnCli(opts)) },
+  start(opts) { return spawnCli(opts) },
   prompt(handle, text) { return handle.prompt(text) },
   events(handle) { return handle.events() },
   cancel(handle) { return handle.cancel() },
-  resume(opts) { return Promise.resolve(spawnCli({ ...opts, resume: true })) },
+  resume(opts) { return spawnCli({ ...opts, resume: true }) },
 }
 
 export function registerCliTransport(): void {
