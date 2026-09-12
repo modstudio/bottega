@@ -3,14 +3,14 @@
 import type { Command } from 'commander'
 import { clearConfinement } from '../confinement-ruling.ts'
 import { reviewCommand } from '../review-commands.ts'
-import { booleanOptions, cliFlags, rawArgv, valueOptions } from './support.ts'
+import { booleanOptions, cliFlags, log, rawArgv, valueOptions } from './support.ts'
 
 export function register(program: Command): void {
   const review = valueOptions(program.command('review [args...]'), ['project', 'since', 'task', 'key', 'lens', 'agent', 'category', 'severity'])
   booleanOptions(review, ['open', 'complete', 'json', 'prune']).action(async (_args, _options, command) => {
     const argv = rawArgv(command)
     await reviewCommand(argv[1], argv, cliFlags(argv), {
-      log: console.log,
+      log,
       usage: (): never => { throw new Error('orch review --help') },
     })
   })
@@ -22,6 +22,6 @@ export function register(program: Command): void {
     if (argv[1] !== 'clear') throw new Error(usage)
     const id = Number(argv[2]); const writer = flags.flag('writer')?.trim(); const note = flags.flag('note')?.trim()
     if (!id || !writer || !note) throw new Error(usage)
-    clearConfinement(id, { writer, note, tip: flags.flag('tip')?.trim() ?? null }, { log: console.log })
+    clearConfinement(id, { writer, note, tip: flags.flag('tip')?.trim() ?? null }, { log })
   })
 }

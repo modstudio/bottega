@@ -11,7 +11,7 @@ import { register as registerJudgement } from './commands/judgement.ts'
 import { register as registerReview } from './commands/review.ts'
 import { register as registerRouting } from './commands/routing.ts'
 import { register as registerRunListing } from './commands/run-listing.ts'
-import { setRawArgv } from './commands/support.ts'
+import { drainStdout, setRawArgv, write } from './commands/support.ts'
 import { validateCliArgs } from './args.ts'
 
 const legacyVerbs = [
@@ -26,7 +26,7 @@ export const program = new Command()
   .version('0.1.0')
   .exitOverride()
   .configureOutput({
-    writeOut: (value) => process.stdout.write(value),
+    writeOut: (value) => write(value),
     writeErr: (value) => process.stderr.write(value),
   })
   .allowUnknownOption(false)
@@ -65,6 +65,12 @@ function usageRefusal(argv: string[]): string | null {
   catch (error) { return error instanceof Error ? error.message : String(error) }
 }
 
+/**
+ * A reader on a pipe may still be behind when the last write is queued; the
+ * process must not end before that write lands, or a large JSON document is
+ * cut at the pipe buffer and the caller parses a fragment as the answer.
+ */
+
 export async function run(argv: string[]): Promise<number> {
   setRawArgv(argv)
   if (!isReadOnlyInvocation(argv)) recordSessionSeen()
@@ -72,6 +78,7 @@ export async function run(argv: string[]): Promise<number> {
   if (refusal !== null) { console.error(refusal); return 2 }
   try {
     await program.parseAsync(['bun', 'orch', ...argv])
+    await drainStdout()
     return Number(process.exitCode ?? 0)
   } catch (error) {
     const code = exitCodeFor(error)

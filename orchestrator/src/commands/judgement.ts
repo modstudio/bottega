@@ -12,7 +12,7 @@ import { judgeRun, scoreRun } from '../judgement.ts'
 import { pidAlive } from '../process-liveness.ts'
 import { recalibrate } from '../recalibration.ts'
 import { DASHBOARD_CAPABILITY_PATH_ENV, DASHBOARD_CAPABILITY_TOKEN_ENV, type DashboardCapability } from '../../../shared/dashboard-capability.ts'
-import { booleanOptions, cliFlags, rawArgv, valueOptions } from './support.ts'
+import { booleanOptions, cliFlags, log, rawArgv, valueOptions, write } from './support.ts'
 
 const commonValueFlags = ['--finding', '--note', '--note-file', '--better-than', '--worse-than', '--same-as', '--reproduced', '--coverage', '--limits', '--overlap'] as const
 const valueFlags = new Set([...commonValueFlags, '--scorer'])
@@ -71,7 +71,7 @@ function pairHint(partner: { id: number; agent: string }): string {
 }
 
 const cleanupPresentation: CleanupPresentation = {
-  log: (...values) => console.log(...values), error: (...values) => console.error(...values),
+  log: log, error: (...values) => console.error(...values),
   setExitCode: (code) => { process.exitCode = code },
   keptBranchLine: (branch, unique, after, id) => `kept branch ${branch}: ${after === null ? `${unique} commit(s) reachable only from this branch` : `deleting it would lose commits reachable from no other ref; ${after} commit(s) after the cut`} — merge it, or orch discard ${id} --force to delete it after checking no other run owns it`,
 }
@@ -86,7 +86,7 @@ export function register(program: Command): void {
   addJudgementOptions(program.command('judge <run-id> [words...]'), true).action((id, _words, _options, command) => {
     const argv = rawArgv(command); const flags = cliFlags(argv); writableDb()
     const words = argv.slice(2).filter((arg, index, rest) => !arg.startsWith('--') && !valueFlags.has(rest[index - 1] ?? ''))
-    const result = judgeRun(Number(id), flags, { words, note: scoreNote(flags), auditReason: auditReason(flags), notEvidence: NOT_EVIDENCE }, { log: console.log, error: console.error, pairHint })
+    const result = judgeRun(Number(id), flags, { words, note: scoreNote(flags), auditReason: auditReason(flags), notEvidence: NOT_EVIDENCE }, { log, error: console.error, pairHint })
     if (flags.has('discard')) {
       if (!result.row.worktree) throw new Error(`run ${result.id} has no worktree to discard`)
       discardWorktree(result.row as CleanupRow, 'discarded', false, authorizeRunMutation(result.id, 'discard'), { force: false, auditReason: auditReason(flags), presentation: cleanupPresentation })
@@ -96,11 +96,11 @@ export function register(program: Command): void {
   addJudgementOptions(program.command('score <run-id> [words...]'), false).action((id, _words, _options, command) => {
     const argv = rawArgv(command); const flags = cliFlags(argv); writableDb()
     const words = argv.slice(2).filter((arg, index, rest) => !arg.startsWith('--') && !valueFlags.has(rest[index - 1] ?? ''))
-    scoreRun(Number(id), flags, { words, note: scoreNote(flags), auditReason: auditReason(flags), dashboardAuthorized: dashboardScoreAuthorized(flags.flag('scorer')), notEvidence: NOT_EVIDENCE }, { log: console.log, error: console.error, pairHint })
+    scoreRun(Number(id), flags, { words, note: scoreNote(flags), auditReason: auditReason(flags), dashboardAuthorized: dashboardScoreAuthorized(flags.flag('scorer')), notEvidence: NOT_EVIDENCE }, { log, error: console.error, pairHint })
   })
 
   const recalibration = valueOptions(program.command('recalibrate'), ['n', 'scorer'])
   booleanOptions(recalibration, ['force']).action(async (_options, command) => {
-    await recalibrate(cliFlags(rawArgv(command)), { log: console.log, write: (value) => process.stdout.write(value), input: process.stdin, output: process.stdout })
+    await recalibrate(cliFlags(rawArgv(command)), { log, write, input: process.stdin, output: process.stdout })
   })
 }
