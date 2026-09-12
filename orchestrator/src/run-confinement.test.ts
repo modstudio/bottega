@@ -1,9 +1,11 @@
-import { describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { db, dir, removeFor, run, upsertProject } from '../test/fixture.ts'
 import { scriptedTransportSequence } from '../test/fake-transport.ts'
+import { trackedTestResidue } from '../test/residue.ts'
+const trackResidue = trackedTestResidue(); beforeEach(() => { trackResidue(join(dir, '.claude')) })
 
 describe('run confinement warnings',()=>{
 test('a moved registered checkout is warned and excluded from the frozen watch set', async () => {

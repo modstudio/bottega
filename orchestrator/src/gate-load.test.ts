@@ -1,8 +1,13 @@
-import { describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, test } from 'bun:test'
 import {
   GATE_CONCURRENCY_LIMIT, holdForGateCapacity, shouldHoldShard, withGateSlot,
 } from './gate-load.ts'
 import type { HostLoad } from './gate-policy.ts'
+import { join } from 'node:path'
+import { dir as suiteDir } from '../test/fixture.ts'
+import { trackedTestResidue } from '../test/residue.ts'
+const trackResidue = trackedTestResidue()
+beforeEach(() => { trackResidue(join(suiteDir, 'gates')) })
 
 const idle = (over: Partial<HostLoad> = {}): HostLoad => ({
   gates: 1, loadavg: 0.2, ncpu: 8, freeMem: 8 * 1024 * 1024 * 1024, ...over,
@@ -66,7 +71,6 @@ describe('gate slots under concurrency', () => {
   test('waiters do not count as runners: the third starter waits until one finishes', async () => {
     const { existsSync, mkdtempSync, rmSync, writeFileSync } = await import('node:fs')
     const { tmpdir } = await import('node:os')
-    const { join } = await import('node:path')
     const dir = mkdtempSync(join(tmpdir(), 'orch-gate-slots-'))
     const pids = join(dir, 'pids')
     const module = new URL('./gate-load.ts', import.meta.url).href

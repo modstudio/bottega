@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { addRun, db, dir, recordReview, reviewReply, runCollectionDescribeFixture } from '../fixture.ts'
+import { trackedTestResidue } from '../residue.ts'
+const trackResidue = trackedTestResidue()
 
 const GRAPH = ['clock.ts', 'collect.ts', 'failure.ts', 'mcp-probe.ts', 'orch.ts', 'outcome.ts', 'result-output.ts']
 const SRC = resolve(dirname(new URL(import.meta.url).pathname), '../../src')
@@ -31,15 +33,15 @@ describe('degraded collection process boundary', () => {
   const { insert, scoreReminder } = runCollectionDescribeFixture()
 
   test('result falls back to the run row and output when the full CLI cannot parse', () => {
-    const id = insert('ok'); const output = join(dir, `degraded-result-${id}.txt`); writeFileSync(output, 'already-paid-for answer'); db().query('UPDATE run SET output_path=? WHERE id=?').run(output, id)
-    const copy = join(dir, `degraded-result-cli-${id}`); shadow(copy)
+    const id = insert('ok'); const output = trackResidue(join(dir, `degraded-result-${id}.txt`)); writeFileSync(output, 'already-paid-for answer'); db().query('UPDATE run SET output_path=? WHERE id=?').run(output, id)
+    const copy = trackResidue(join(dir, `degraded-result-cli-${id}`)); shadow(copy)
     const result = Bun.spawnSync([process.execPath, join(copy, 'orch.ts'), 'result', String(id), '--quiet'], { env: { ...process.env, ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe' })
     expect(result.exitCode).toBe(0); expect(result.stdout.toString()).toContain('already-paid-for answer'); expect(result.stderr.toString()).toContain('degraded collection mode'); expect(result.stderr.toString()).toContain('full CLI could not load')
   })
 
   test('wait falls back without loading the broken CLI graph', () => {
     const ok = insert('ok'); const failed = insert('failed'); db().query("UPDATE run SET failure_kind='harness',error='agent stopped' WHERE id=?").run(failed)
-    const copy = join(dir, `degraded-wait-cli-${failed}`); shadow(copy)
+    const copy = trackResidue(join(dir, `degraded-wait-cli-${failed}`)); shadow(copy)
     const result = Bun.spawnSync([process.execPath, join(copy, 'orch.ts'), 'wait', String(ok), String(failed)], { env: { ...process.env, ORCH_DB: process.env.ORCH_DB! }, stdout: 'pipe', stderr: 'pipe' })
     expect(result.exitCode).toBe(1); expect(result.stdout.toString()).toContain(`${ok}\tok`); expect(result.stdout.toString()).toContain(`${failed}\tfailed`); expect(result.stderr.toString()).toContain('degraded collection mode')
   })

@@ -9,11 +9,11 @@ import {
   wrongProjectReason,
 } from './mcp-probe.ts'
 import { readonlyLensProfile } from './sandbox.ts'
-
+import { trackedTestResidue } from '../test/residue.ts'
+const trackResidue = trackedTestResidue()
 const fixtureProject = {
   id: 1, name: 'fixture', path: '/projects/fixture', stack: 'node', canon: true, settings: {},
 }
-
 const probeSentinel = 'sentinel-secret-value-7f3a'
 const probeAuthorization = `Bearer ${probeSentinel}`
 
@@ -367,7 +367,7 @@ describe('strict probe refuses before the agent starts', () => {
     git('add', '.mcp.json')
     git('commit', '-m', 'base')
     upsertProject({ name: 'fixture-project', path: repo, settings: { mcpServer: 'fixture-project' } })
-    const script = join(dir, 'DEV-372-must-not-start.sh')
+    const script = trackResidue(join(dir, 'DEV-372-must-not-start.sh'))
     writeFileSync(script, `#!/bin/sh
 for arg in "$@"; do
   if [ "$arg" = "doctor" ]; then
@@ -438,9 +438,9 @@ exit 0
       name: 'fixture-project', path: repo,
       settings: { mcpServer: 'fixture-project', mcp: { probe_tool: 'ping' } },
     })
-    const reply = join(dir, 'DEV-372-reachable-reply.json')
+    const reply = trackResidue(join(dir, 'DEV-372-reachable-reply.json'))
     writeFileSync(reply, JSON.stringify(reviewReply(0)))
-    const script = join(dir, 'DEV-372-reachable-start.sh')
+    const script = trackResidue(join(dir, 'DEV-372-reachable-start.sh'))
     writeFileSync(script, `#!/bin/sh
 for arg in "$@"; do
   if [ "$arg" = "doctor" ]; then
@@ -505,7 +505,7 @@ cat ${JSON.stringify(reply)}
     git('add', '.mcp.json')
     git('commit', '-m', 'base')
     upsertProject({ name: 'fixture-project', path: repo, settings: { mcpServer: 'fixture-project' } })
-    const script = join(dir, 'DEV-372-wrong-project.sh')
+    const script = trackResidue(join(dir, 'DEV-372-wrong-project.sh'))
     writeFileSync(script, `#!/bin/sh
 for arg in "$@"; do
   if [ "$arg" = "doctor" ]; then
@@ -566,7 +566,7 @@ exit 0
     git('add', 'tracked.txt', '.mcp.json')
     git('commit', '-m', 'base')
     upsertProject({ name: 'fixture-project', path: repo, settings: { mcpServer: 'fixture-project' } })
-    const script = join(dir, 'DEV-372-codex-wrong-project.sh')
+    const script = trackResidue(join(dir, 'DEV-372-codex-wrong-project.sh'))
     writeFileSync(script, `#!/bin/sh
 if [ "$1" = "--version" ]; then printf '%s\\n' 'codex-cli 0.153.4'; exit 0; fi
 printf started > "${join(repo, 'started')}"
@@ -635,7 +635,7 @@ exit 0
     git('add', '.mcp.json')
     git('commit', '-m', 'base')
     upsertProject({ name: 'fixture-project', path: repo, settings: { mcpServer: 'fixture-project' } })
-    const script = join(dir, 'DEV-372-probe-wrong-project.sh')
+    const script = trackResidue(join(dir, 'DEV-372-probe-wrong-project.sh'))
     writeFileSync(script, `#!/bin/sh
 for arg in "$@"; do
   if [ "$arg" = "doctor" ]; then
@@ -707,9 +707,9 @@ exit 0
     git('add', '.mcp.json')
     git('commit', '-m', 'base')
     upsertProject({ name: 'fixture-project', path: repo, settings: { mcpServer: 'fixture-project' } })
-    const reply = join(dir, 'DEV-372-prefer-reply.json')
+    const reply = trackResidue(join(dir, 'DEV-372-prefer-reply.json'))
     writeFileSync(reply, JSON.stringify(reviewReply(0)))
-    const script = join(dir, 'DEV-372-prefer-start.sh')
+    const script = trackResidue(join(dir, 'DEV-372-prefer-start.sh'))
     writeFileSync(script, `#!/bin/sh
 for arg in "$@"; do
   if [ "$arg" = "doctor" ]; then

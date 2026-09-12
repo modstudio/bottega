@@ -1,14 +1,17 @@
 import { describe,expect,test } from 'bun:test'
 import { mkdtempSync,rmSync,writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { AGENTS,db,hermeticGitEnv,reviewReply,runJob,upsertProject } from '../fixture.ts'
 import { stubWorker } from '../stub-worker.ts'
+import { trackedTestResidue } from '../residue.ts'
+const trackResidue = trackedTestResidue()
+const worker = () => { const script = stubWorker(); trackResidue(dirname(script)); return script }
 
 describe('review-lens-inline has no checkout', () => {
 test('explicit review records the trunk merge-base for clean-review evidence', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-explicit-review-evidence-'))
-    const script = stubWorker()
+    const script = worker()
     const agent = AGENTS.codex!
     const original = {
       bin: agent.bin, argv: agent.argv, stdin: agent.stdin,
@@ -135,7 +138,7 @@ test('explicit review records the trunk merge-base for clean-review evidence', a
   })
 test('implicit review measures from the constructed trunk merge-base', async () => {
     const repo = mkdtempSync(join(tmpdir(), 'orch-implicit-review-evidence-'))
-    const script = stubWorker()
+    const script = worker()
     const agent = AGENTS.codex!
     const original = {
       bin: agent.bin, argv: agent.argv, stdin: agent.stdin,

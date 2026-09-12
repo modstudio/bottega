@@ -5,6 +5,9 @@ import { ARGV_PROMPT_BYTES, addRun, db, dir, packedResumePrompt, rulingPrompt } 
 import { assertWorkerText, readMessageText, readWorkerFile } from './args.ts'
 import { answerRun, retryRun } from './run-answer.ts'
 import { continueRun } from './run-control.ts'
+import { trackedTestResidue } from '../test/residue.ts'
+
+const trackResidue = trackedTestResidue()
 
 const presentation = {
   dur: (ms: number | null | undefined) => String(ms ?? 0),
@@ -42,7 +45,7 @@ afterEach(() => {
 
 describe('run answers', () => {
   test('record-only closes the question, marks the chain stranded, and retry restates the ruling', async () => {
-    const id = insert('asking'); const prompt = join(dir, `record-only-${id}.txt`); writeFileSync(prompt, 'original fixture spec')
+    const id = insert('asking'); const prompt = trackResidue(join(dir, `record-only-${id}.txt`)); writeFileSync(prompt, 'original fixture spec')
     db().query('UPDATE run SET session_id=?,vendor_session=?,prompt_path=?,cwd=? WHERE id=?').run('orch-test-session', 'valid-session', prompt, dir, id)
     db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)').run(id, new Date().toISOString(), 'which shape?')
     await answerRun(id, { argv: ['use the existing shape'], recordOnly: true, flags }, helpers)
@@ -65,7 +68,7 @@ describe('run answers', () => {
   })
   test('answer refuses six individually-legal --file rulings whose packed resume exceeds argv', async () => {
     const id = insert('asking', 'implement')
-    const spec = join(dir, `answer-six-large-${id}.prompt.txt`)
+    const spec = trackResidue(join(dir, `answer-six-large-${id}.prompt.txt`))
     writeFileSync(spec, 'original implementation spec')
     db().query('UPDATE run SET vendor_session=?, prompt_path=?, session_id=? WHERE id=?')
       .run('parent-session', spec, 'orch-test-session', id)
@@ -77,7 +80,7 @@ describe('run answers', () => {
       .all(id) as { id: number; question: string }[]
     const argv: string[] = []
     for (const question of questions) {
-      const path = join(dir, `answer-large-${question.id}.txt`)
+      const path = trackResidue(join(dir, `answer-large-${question.id}.txt`))
       writeFileSync(path, body)
       argv.push(`--q${question.id}`, '--file', path)
     }
@@ -102,7 +105,7 @@ describe('run answers', () => {
     const questions = db().query('SELECT id FROM question WHERE run_id=? ORDER BY id').all(id) as { id: number }[]
     const argv: string[] = []
     for (const question of questions) {
-      const path = join(dir, `answer-small-${question.id}.txt`)
+      const path = trackResidue(join(dir, `answer-small-${question.id}.txt`))
       writeFileSync(path, `yes ${question.id}`)
       argv.push(`--q${question.id}`, '--file', path)
     }
@@ -177,7 +180,7 @@ test('answer delivers a child turn live ruling without resuming the root', async
 })
 
 test('answer reads a ruling from a file without shell interpretation', async () => {
-  const id = insert('asking'); const path = join(dir, `ruling-${id}.txt`); writeFileSync(path, 'use $(literal) exactly')
+  const id = insert('asking'); const path = trackResidue(join(dir, `ruling-${id}.txt`)); writeFileSync(path, 'use $(literal) exactly')
   db().query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?').run('orch-test-session', 'vendor', id)
   db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)').run(id, new Date().toISOString(), 'which?')
   await answerRun(id, { argv: ['--file', path], recordOnly: true, flags }, helpers)
@@ -196,7 +199,7 @@ test('answer reads a ruling from stdin without shell interpretation', async () =
 test('answer --q<id> --file reads the file and never stores the flag name', async () => {
   const id = insert('asking'); db().query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?').run('orch-test-session', 'vendor', id)
   const q = (db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?) RETURNING id').get(id, new Date().toISOString(), 'which?') as { id: number }).id
-  const path = join(dir, `q-${q}.txt`); writeFileSync(path, 'file ruling')
+  const path = trackResidue(join(dir, `q-${q}.txt`)); writeFileSync(path, 'file ruling')
   await answerRun(id, { argv: [`--q${q}`, '--file', path], recordOnly: true, flags }, helpers)
   expect(db().query('SELECT answer FROM question WHERE id=?').get(q)).toEqual({ answer: 'file ruling' })
 })
@@ -211,7 +214,7 @@ test('a ruling of --file alone is refused and not stored', async () => {
 test('a ruling containing backticks and command substitution is stored byte-for-byte from --file', async () => {
   const id = insert('asking'); db().query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?').run('orch-test-session', 'vendor', id)
   db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)').run(id, new Date().toISOString(), 'which?')
-  const path = join(dir, `shell-${id}.txt`); const ruling = '`echo literal` and $(still literal)'
+  const path = trackResidue(join(dir, `shell-${id}.txt`)); const ruling = '`echo literal` and $(still literal)'
   writeFileSync(path, ruling)
   await answerRun(id, { argv: ['--file', path], recordOnly: true, flags }, helpers)
   expect(db().query('SELECT answer FROM question WHERE run_id=?').get(id)).toEqual({ answer: ruling })
@@ -222,7 +225,7 @@ test('multi-question answer mixes positional --q text with per-question --file',
   const add = db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?) RETURNING id')
   const first = (add.get(id, new Date().toISOString(), 'one?') as { id: number }).id
   const second = (add.get(id, new Date().toISOString(), 'two?') as { id: number }).id
-  const path = join(dir, `multi-${id}.txt`); writeFileSync(path, 'second ruling')
+  const path = trackResidue(join(dir, `multi-${id}.txt`)); writeFileSync(path, 'second ruling')
   await answerRun(id, { argv: [`--q${first}`, 'first ruling', `--q${second}`, '--file', path], recordOnly: true, flags }, helpers)
   expect(db().query('SELECT answer FROM question WHERE run_id=? ORDER BY id').all(id))
     .toEqual([{ answer: 'first ruling' }, { answer: 'second ruling' }])
@@ -261,7 +264,7 @@ test('a closed or duplicate --q refuses the whole command', async () => {
 test('answer --file refuses invalid UTF-8 at the byte offset', async () => {
   const id = insert('asking'); db().query('UPDATE run SET session_id=?,vendor_session=? WHERE id=?').run('orch-test-session', 'vendor', id)
   db().query('INSERT INTO question (run_id,asked_at,question) VALUES (?,?,?)').run(id, new Date().toISOString(), 'which?')
-  const path = join(dir, `invalid-${id}.txt`); writeFileSync(path, new Uint8Array([0x61, 0xff]))
+  const path = trackResidue(join(dir, `invalid-${id}.txt`)); writeFileSync(path, new Uint8Array([0x61, 0xff]))
   await expect(answerRun(id, { argv: ['--file', path], recordOnly: true, flags }, helpers)).rejects.toThrow('byte offset 1')
 })
 
@@ -339,7 +342,7 @@ test('answer refuses an asking run with no vendor session without recording the 
 
 describe('retry command', () => {
   const failed = (job = 'file-question') => {
-    const id = addRun({ agent: 'grok', job, status: 'failed' }); const prompt = join(dir, `retry-${id}.prompt.txt`)
+    const id = addRun({ agent: 'grok', job, status: 'failed' }); const prompt = trackResidue(join(dir, `retry-${id}.prompt.txt`))
     writeFileSync(prompt, 'What does bar.ts do?'); db().query('UPDATE run SET prompt_path=?,cwd=?,session_id=? WHERE id=?').run(prompt, dir, 'orch-test-session', id); return id
   }
 
@@ -360,7 +363,7 @@ describe('retry command', () => {
 
   test('retry and continue give the same refusal when the chain has no session', async () => {
     for (const command of ['retry', 'continue'] as const) {
-      const id = addRun({ agent: 'codex', job: 'implement', status: 'failed' }); const prompt = join(dir, `no-session-${id}.prompt.txt`); writeFileSync(prompt, 'continue'); db().query('UPDATE run SET prompt_path=?,cwd=?,session_id=?,vendor_session=NULL WHERE id=?').run(prompt, dir, 'orch-test-session', id)
+      const id = addRun({ agent: 'codex', job: 'implement', status: 'failed' }); const prompt = trackResidue(join(dir, `no-session-${id}.prompt.txt`)); writeFileSync(prompt, 'continue'); db().query('UPDATE run SET prompt_path=?,cwd=?,session_id=?,vendor_session=NULL WHERE id=?').run(prompt, dir, 'orch-test-session', id)
       const action = command === 'retry' ? retry(id) : continueRun(id, 'go', helpers.argvResumeLimit)
       await expect(action).rejects.toThrow(`run ${id} recorded no session id, so codex cannot be resumed`)
     }

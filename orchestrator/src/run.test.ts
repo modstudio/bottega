@@ -5,8 +5,8 @@ import { join } from 'node:path'
 import { AGENTS, GENERIC_QUESTION_TOKENS, addDoctrineRule, addPair, addRun, addSkip, ask, baselineForPair, candidates, db, declaredCreate, detectBlockers, dir, hasRealQuestions, hermeticGitEnv, ledgerRef, listDoctrineRules, listLedgerRefs, listPairs, listSkips, nowIso, parseWorkerReply, parseWorkerReplyWithCount, pick, projects, realQuestions, reapTestRun, removeProject, resolveLedgerRef, retireDoctrineRule, reviewReply, run, runDetail, score, setBaseline, setLedgerRef, state, upsertProject, weigh, workerReply } from '../test/fixture.ts'
 import { scriptedTransport, scriptedTransportSequence } from '../test/fake-transport.ts'
 import { installTestTransport } from './transport.ts'
-import { collectResult } from './collect.ts'
-let priorOrchDepth: string | undefined; beforeEach(() => { priorOrchDepth = process.env.ORCH_DEPTH })
+import { collectResult } from './collect.ts'; import { trackedTestResidue } from '../test/residue.ts'
+const trackResidue = trackedTestResidue(); let priorOrchDepth: string | undefined; beforeEach(() => { priorOrchDepth = process.env.ORCH_DEPTH; trackResidue(join(dir, '.claude')) })
 afterEach(() => {
   installTestTransport(null)
   if (priorOrchDepth === undefined) delete process.env.ORCH_DEPTH
@@ -227,8 +227,8 @@ describe('probes are excluded from every query that reports', () => {
 describe('run detail', () => {
   test('publishes every field hub reads without publishing the ask credential', () => {
     const id = addRun({ agent: 'grok', job: 'craft', status: 'failed', latency: 1234, probe: 1 })
-    const promptPath = join(dir, 'detail-prompt.txt')
-    const outputPath = join(dir, 'detail-output.txt')
+    const promptPath = trackResidue(join(dir, 'detail-prompt.txt'))
+    const outputPath = trackResidue(join(dir, 'detail-output.txt'))
     writeFileSync(promptPath, 'the whole prompt')
     writeFileSync(outputPath, 'the whole reply')
     db().query(
@@ -353,8 +353,8 @@ describe('pid stays the worker for the whole run', () => {
 })
 describe('a wall kill does not erase a read-only answer', () => {
   test('substantive output is judgeable and routing does not count it as delivery-none', async () => {
-    const script = join(dir, 'DEV-235-readonly-agent.ts')
-    const ready = join(dir, 'DEV-235-readonly-agent-ready')
+    const script = trackResidue(join(dir, 'DEV-235-readonly-agent.ts'))
+    const ready = trackResidue(join(dir, 'DEV-235-readonly-agent-ready'))
     writeFileSync(script, `#!/usr/bin/env bun
 process.on('SIGTERM', () => process.exit(143))
 process.stdout.write('The requested implementation is in orchestrator/src/run.ts:1542.\\n')
@@ -402,7 +402,7 @@ setInterval(() => {}, 1_000)
 describe('vendor termination markers', () => {
   const grokStream = (...lines: string[]) => `${lines.join('\n')}\n`
   async function withGrokBin<T>(output: string, exitCode: number, fn: () => Promise<T>): Promise<T> {
-    const script = join(dir, `DEV-361-agent-${Bun.hash(`${output}:${exitCode}`).toString(16)}.ts`)
+    const script = trackResidue(join(dir, `DEV-361-agent-${Bun.hash(`${output}:${exitCode}`).toString(16)}.ts`))
     writeFileSync(script,
       `#!/usr/bin/env bun\nprocess.stdout.write(${JSON.stringify(output)})\nprocess.exit(${exitCode})\n`)
     chmodSync(script, 0o755)
@@ -487,8 +487,8 @@ describe('vendor termination markers', () => {
     })
   })
   async function withHangingGrokBin<T>(output: string, fn: (ready: string) => Promise<T>): Promise<T> {
-    const script = join(dir, `DEV-361-hang-${Bun.hash(output).toString(16)}.ts`)
-    const ready = `${script}.ready`
+    const script = trackResidue(join(dir, `DEV-361-hang-${Bun.hash(output).toString(16)}.ts`))
+    const ready = trackResidue(`${script}.ready`)
     writeFileSync(script, `#!/usr/bin/env bun
 process.on('SIGTERM', () => process.exit(143))
 process.stdout.write(${JSON.stringify(output)})
@@ -634,7 +634,7 @@ setInterval(() => {}, 1_000)
     writeFileSync(join(watched, 'tracked.txt'), 'base\n')
     git('add', 'tracked.txt')
     git('commit', '-m', 'fixture')
-    const script = join(dir, 'DEV-361-escape-marker.sh')
+    const script = trackResidue(join(dir, 'DEV-361-escape-marker.sh'))
     writeFileSync(script, `#!/bin/sh
 if [ -n "$ORCH_TEST_EXTERNAL_WRITE" ]; then printf 'outside\\n' > "$ORCH_TEST_EXTERNAL_WRITE"; fi
 printf 'inside\\n' > tracked.txt

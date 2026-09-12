@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { addRun,db,dir,displayConditions,hermeticGitEnv,monitor,monitorHistory,upsertProject } from '../test/fixture.ts'
+import { trackedTestResidue } from '../test/residue.ts'
+const trackResidue = trackedTestResidue()
 
 function git(cwd: string, ...args: string[]): string {
   const result = Bun.spawnSync(['git', ...args], {
@@ -23,8 +25,8 @@ function migrateHub(path: string): void {
 
 describe('operational monitor reports', () => {
   test('marks the human condition list partial when an observation fails', async () => {
-    const hubDb = join(dir, 'monitor-partial-hub.db')
-    const binDir = join(dir, 'monitor-partial-bin')
+    const hubDb = trackResidue(join(dir, 'monitor-partial-hub.db'))
+    const binDir = trackResidue(join(dir, 'monitor-partial-bin'))
     mkdirSync(binDir)
     writeFileSync(join(binDir, 'docker'), '#!/bin/sh\necho inventory-offline >&2\nexit 17\n')
     chmodSync(join(binDir, 'docker'), 0o755)
@@ -50,8 +52,8 @@ describe('operational monitor reports', () => {
   })
 
   test('a timed-out run Docker inventory becomes a monitor condition, never a clean report', async () => {
-    const hubDb = join(dir, 'monitor-docker-timeout-hub.db')
-    const binDir = join(dir, 'monitor-docker-timeout-bin')
+    const hubDb = trackResidue(join(dir, 'monitor-docker-timeout-hub.db'))
+    const binDir = trackResidue(join(dir, 'monitor-docker-timeout-bin'))
     mkdirSync(binDir)
     writeFileSync(join(binDir, 'docker'), '#!/bin/sh\nsleep 1\n')
     chmodSync(join(binDir, 'docker'), 0o755)
@@ -90,7 +92,7 @@ describe('operational monitor reports', () => {
     writeFileSync(join(repo, '.git', 'index.lock'), '')
     const project = `monitor-filing-${repo.split('/').pop()}`
     upsertProject({ name: project, path: repo, settings: { trunk: 'main' } })
-    const hubDb = join(dir, 'monitor-filing-failure-hub.db')
+    const hubDb = trackResidue(join(dir, 'monitor-filing-failure-hub.db'))
     migrateHub(hubDb)
     const priorHub = process.env.HUB_DB
     const realSpawn = Bun.spawnSync.bind(Bun)
@@ -151,7 +153,7 @@ describe('operational monitor reports', () => {
 
   test('pipes a complete large human report before returning its condition status', async () => {
     const hubDb = join(dir, 'monitor-large-report-hub.db')
-    const binDir = join(dir, 'monitor-large-report-bin')
+    const binDir = trackResidue(join(dir, 'monitor-large-report-bin'))
     mkdirSync(binDir)
     writeFileSync(join(binDir, 'docker'), '#!/bin/sh\nexit 0\n')
     chmodSync(join(binDir, 'docker'), 0o755)

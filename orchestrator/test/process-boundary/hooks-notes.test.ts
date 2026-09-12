@@ -2,6 +2,8 @@ import { describe,expect,test } from 'bun:test'
 import { mkdirSync,realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { dir,upsertProject } from '../fixture.ts'
+import { trackedTestResidue } from '../residue.ts'
+const trackResidue = trackedTestResidue()
 
 const hubCli = new URL('../../../hub/src/cli.ts', import.meta.url).pathname
 function migrateHub(path: string): void {
@@ -14,11 +16,12 @@ function migrateHub(path: string): void {
 
 describe('note hook process boundary', () => {
   test('the Stop hook lists only actionable notes through hub', () => {
-    mkdirSync(join(dir, 'note-hook-project'), { recursive: true })
+    trackResidue(join(dir, 'note-hook-project')); mkdirSync(join(dir, 'note-hook-project'), { recursive: true })
     const cwd = realpathSync(join(dir, 'note-hook-project'))
     upsertProject({ name: 'note-hook-project', path: cwd, stack: 'typescript', canon: true,
       settings: { keyPrefixes: ['NHP'], trunk: 'main' } })
-    const hubDb = join(dir, 'note-hook-hub.db')
+    const hubDb = trackResidue(join(dir, 'note-hook-hub.db'))
+    trackResidue(`${hubDb}-shm`); trackResidue(`${hubDb}-wal`)
     migrateHub(hubDb)
     const session = 'actionable-note-hook-session'
     const env = { ...process.env, HUB_DB: hubDb, ORCH_DB: process.env.ORCH_DB!,

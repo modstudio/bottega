@@ -5,8 +5,10 @@ import { join } from "node:path"
 import { AGENTS, addRun, ask, candidates, db, dir, hermeticGitEnv, reapTestRun, reviewReply, run, score, upsertProject, weigh, runJob } from "../fixture.ts"
 import { stubWorker } from "../stub-worker.ts"
 import { installTestTransport } from "../../src/transport.ts"
+import { trackedTestResidue } from '../residue.ts'
+const trackResidue = trackedTestResidue()
 let priorOrchDepth: string | undefined
-beforeEach(() => { priorOrchDepth = process.env.ORCH_DEPTH })
+beforeEach(() => { priorOrchDepth = process.env.ORCH_DEPTH; trackResidue(join(dir, '.claude')) })
 afterEach(() => {
   installTestTransport(null)
   if (priorOrchDepth === undefined) delete process.env.ORCH_DEPTH
@@ -16,7 +18,7 @@ afterEach(() => {
 // These assertions cross a real child, timeout, or live ask boundary.
 describe('run process boundary', () => {
   test('after a run, pid is the worker pid and agent_pid is the agent\'s', async () => {
-    const pidFile = join(dir, 'fake-agent.pid')
+    const pidFile = trackResidue(join(dir, 'fake-agent.pid'))
     const script = stubWorker()
     const grok = AGENTS.grok!
     const previous = grok.bin

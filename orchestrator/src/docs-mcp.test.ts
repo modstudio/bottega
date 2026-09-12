@@ -1,10 +1,13 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { Database } from 'bun:sqlite'
-import { describe,expect,spyOn,test } from 'bun:test'
+import { beforeEach,describe,expect,spyOn,test } from 'bun:test'
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { scriptedTransportSequence } from '../test/fake-transport.ts'
 import { addRun,createDocsMcpServer,db,dir,docsForRun,getDoc,promoteWorkflow,recordReview,reviewReply,runJob,setDoc,setWorkflow,upsertProject } from '../test/fixture.ts'
+import { trackedTestResidue } from '../test/residue.ts'
+const trackResidue = trackedTestResidue(); beforeEach(() => { trackResidue(join(dir, '.claude')) })
 
 
 describe('scoped operator docs', () => {

@@ -1,15 +1,15 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { AGENTS, db, dir, replyFileInstruction, run } from '../test/fixture.ts'
+import { AGENTS, db, dir, replyFileInstruction, run } from '../test/fixture.ts'; import { trackedTestResidue } from '../test/residue.ts'
 import { addAgent, recordAgentProbe, removeAgent, setAgent } from './agents.ts'
 import { chainTransport } from './failover.ts'
 import { ask } from './ask.ts'
 import {
   installTestTransport, type AgentTransport, type TransportHandle, type TransportResult,
 } from './transport.ts'
-
 describe('ACP transport through run', () => {
+  const trackResidue = trackedTestResidue(); beforeEach(() => { trackResidue(join(dir, '.claude')) })
   const priorTransportEnv = process.env.ORCH_TRANSPORT; afterEach(() => {
     installTestTransport(null)
     if (priorTransportEnv === undefined) delete process.env.ORCH_TRANSPORT
@@ -607,7 +607,7 @@ describe('ACP transport through run', () => {
   test('a malformed schema reply is the CLI unmatched-contract failure', async () => {
     const priorDepth = process.env.ORCH_DEPTH
     process.env.ORCH_DEPTH = '0'
-    const schemaPath = join(dir, 'acp-schema.json')
+    const schemaPath = trackResidue(join(dir, 'acp-schema.json'))
     writeFileSync(schemaPath, JSON.stringify({
       type: 'object', additionalProperties: false, required: ['verdict'],
       properties: { verdict: { type: 'string', enum: ['true', 'false', 'undecidable'] } },
@@ -637,7 +637,7 @@ describe('ACP transport through run', () => {
   test('ACP schema mismatch with a trailing vendor marker is truncated, not other', async () => {
     const priorDepth = process.env.ORCH_DEPTH
     process.env.ORCH_DEPTH = '0'
-    const schemaPath = join(dir, 'acp-schema-marker.json')
+    const schemaPath = trackResidue(join(dir, 'acp-schema-marker.json'))
     writeFileSync(schemaPath, JSON.stringify({
       type: 'object', additionalProperties: false, required: ['verdict'],
       properties: { verdict: { type: 'string', enum: ['true', 'false', 'undecidable'] } },
@@ -668,7 +668,7 @@ describe('ACP transport through run', () => {
   test('grok ACP accepts an original-schema reply that omits an optional property', async () => {
     const priorDepth = process.env.ORCH_DEPTH
     process.env.ORCH_DEPTH = '0'
-    const schemaPath = join(dir, 'acp-grok-optional-schema.json')
+    const schemaPath = trackResidue(join(dir, 'acp-grok-optional-schema.json'))
     writeFileSync(schemaPath, JSON.stringify({
       type: 'object', additionalProperties: false, required: ['answer'],
       properties: { answer: { type: 'string' }, note: { type: 'string' } },
@@ -732,7 +732,7 @@ describe('ACP transport through run', () => {
   test('a syntactically valid reply that misses the verdict enum is the CLI unmatched-contract failure', async () => {
     const priorDepth = process.env.ORCH_DEPTH
     process.env.ORCH_DEPTH = '0'
-    const schemaPath = join(dir, 'acp-enum-schema.json')
+    const schemaPath = trackResidue(join(dir, 'acp-enum-schema.json'))
     writeFileSync(schemaPath, JSON.stringify({
       type: 'object', additionalProperties: false, required: ['verdict'],
       properties: { verdict: { type: 'string', enum: ['true', 'false', 'undecidable'] } },
@@ -764,7 +764,7 @@ describe('ACP transport through run', () => {
   test('an integer field given a float is the CLI unmatched-contract failure', async () => {
     const priorDepth = process.env.ORCH_DEPTH
     process.env.ORCH_DEPTH = '0'
-    const schemaPath = join(dir, 'acp-integer-schema.json')
+    const schemaPath = trackResidue(join(dir, 'acp-integer-schema.json'))
     writeFileSync(schemaPath, JSON.stringify({
       type: 'object', additionalProperties: false, required: ['count'],
       properties: { count: { type: 'integer' } },

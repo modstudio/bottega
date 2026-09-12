@@ -6,6 +6,8 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { doctorCommand } from './doctor.ts'
 import { cliVersion, versionBelow } from './agents.ts'
 import { classifiedDockerResources } from './docker-resources.ts'
+import { trackedTestResidue } from '../test/residue.ts'
+const trackResidue = trackedTestResidue()
 
 async function doctor() {
   const lines: string[] = []; let exit = 0
@@ -17,7 +19,7 @@ beforeEach(() => { process.env.ORCH_LOCAL_BASE_URL = '' })
 
 describe('doctor presentation', () => {
   test('doctor reports a checkout off its landing branch as a register question, not a failure', async () => {
-    const repo = join(dir, 'doctor-off-trunk')
+    const repo = trackResidue(join(dir, 'doctor-off-trunk'))
     mkdirSync(repo, { recursive: true })
     const git = (...args: string[]) => Bun.spawnSync(['git', ...args], { cwd: repo, stdout: 'pipe', stderr: 'pipe' })
     expect(git('init', '-b', 'main').exitCode).toBe(0)
@@ -41,7 +43,7 @@ describe('doctor presentation', () => {
   })
 
   test('doctor prints every CLI version and warns below its recorded minimum', async () => {
-    upsertProject({ name: PLATFORM_SLUG, path: '/registered/platform' }); const bin = join(dir, 'doctor-bin'); mkdirSync(bin, { recursive: true }); const versions = { codex: 'codex-cli 0.150.0', grok: 'grok 1.0.13 (build)', agy: '1.1.24', qwen: '0.7.1' }
+    upsertProject({ name: PLATFORM_SLUG, path: '/registered/platform' }); const bin = trackResidue(join(dir, 'doctor-bin')); mkdirSync(bin, { recursive: true }); const versions = { codex: 'codex-cli 0.150.0', grok: 'grok 1.0.13 (build)', agy: '1.1.24', qwen: '0.7.1' }
     for (const [name, version] of Object.entries(versions)) { writeFileSync(join(bin, name), `#!/bin/sh\necho '${version}'\n`); chmodSync(join(bin, name), 0o755) }
     for (const [name, version] of Object.entries(versions)) expect(cliVersion(join(bin, name)).display).toBe(version)
     expect(versionBelow('0.150.0', '0.153.4')).toBe(true); expect(versionBelow('1.0.13', '1.0.13')).toBe(false)

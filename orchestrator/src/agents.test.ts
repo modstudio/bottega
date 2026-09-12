@@ -1,9 +1,9 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { rmSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { AGENTS, DB_PATH, GENERIC_QUESTION_TOKENS, JOBS, NEEDS_HEALTH, OUTPUT_RESERVE, STALE_AFTER_MS, WAKE_COOLDOWN_MS, WORKER_PREAMBLE, addRun, available, candidates, classify, db, detectBlockers, dir, ensureLocalHealth, guide, isNonAnswer, jobTimeoutCeilingMinutes, localReachable, pick, replyFileInstruction, resetLocalHealth, runJob, score, strictCodexSchema, unavailableReason, wakeDecision, workerPreamble, workerResumeGuard } from '../test/fixture.ts'
-import { addAgent, agentRows, recordAgentProbe, refreshAgents, registrationProbeReadsRepo, removeAgent, requireAgent, setAgent } from './agents.ts'
+import { addAgent, agentRows, recordAgentProbe, refreshAgents, registrationProbeReadsRepo, removeAgent, requireAgent, setAgent } from './agents.ts'; import { trackedTestResidue } from '../test/residue.ts'; const trackResidue = trackedTestResidue(); beforeEach(() => { trackResidue(join(dir, '.claude')) })
 describe('agent registry', () => {
   test('requires an exact key from this process registry with diagnostic evidence', () => {
     expect(requireAgent('codex')).toBe(AGENTS.codex!)
@@ -342,7 +342,7 @@ describe('grok reply parsing contract', () => {
   })
   test('uses the clean stream for plain and schema-constrained replies', () => {
     const out = join(dir, 'grok-out.txt'); expect(AGENTS.grok!.argv({ prompt: 'x', out, model: 'grok-4.6' })).toContain('streaming-messages-json')
-    const schema = join(dir, 'grok-schema.json'); writeFileSync(schema, '{}'); const args = AGENTS.grok!.argv({ prompt: 'x', out, model: 'grok-4.6', schema })
+    const schema = trackResidue(join(dir, 'grok-schema.json')); writeFileSync(schema, '{}'); const args = AGENTS.grok!.argv({ prompt: 'x', out, model: 'grok-4.6', schema })
     expect(args).toContain('streaming-messages-json'); expect(args.indexOf('--json-schema')).toBeLessThan(args.indexOf('--output-format'))
   })
   test('a terminal result without errors or final text is a parse failure', () => {
@@ -742,7 +742,7 @@ describe('vendor_session is recorded before the agent runs', () => {
     }
   })
   test('a resume claim stores the inherited session before the agent runs', async () => {
-    const script = join(dir, 'read-own-session.ts')
+    const script = trackResidue(join(dir, 'read-own-session.ts'))
     writeFileSync(script, `
 import { Database } from 'bun:sqlite'
 const row = new Database(process.env.ORCH_DB!).query(
