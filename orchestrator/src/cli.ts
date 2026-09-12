@@ -4,6 +4,13 @@ import { REVIEW_COVERAGE, REVIEW_LIMITS, REVIEW_OVERLAP, REVIEW_REPRODUCED, REVI
 
 const argv = process.argv.slice(2)
 
+const { registerStandardRuntime } = await import('./runtime-registration.ts')
+registerStandardRuntime()
+const { program, run } = await import('./program.ts')
+if (program.commands.some((command) => command.name() === argv[0] || command.aliases().includes(argv[0]!))) {
+  process.exit(await run(argv))
+}
+
 function baseHelp(description: string): string {
   return description
 }
