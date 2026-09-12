@@ -52,12 +52,15 @@ export function metricCalendarDay(value: string | number | Date): string {
 
 export const localDay = metricCalendarDay
 
-function metricDaysAgo(days: number, now: number): string {
+function metricDayStart(days: number, now: number): Date {
   const d = new Date(now)
-  d.setHours(12, 0, 0, 0)
+  d.setHours(0, 0, 0, 0)
   d.setDate(d.getDate() - days)
-  return metricCalendarDay(d)
+  return d
 }
+
+const metricDaysAgo = (days: number, now: number): string =>
+  metricCalendarDay(metricDayStart(days, now))
 
 /** Every .jsonl transcript under ~/.claude/projects. */
 function transcripts(dir: string, out: string[] = []): string[] {
@@ -251,8 +254,9 @@ function activityByDay(since: string) {
 
 export async function collect(windowDays = 30) {
   writableDb()
-  const since = metricDaysAgo(windowDays, clock().now())
-  const [tok, act] = [await claudeTokensByDay(since), activityByDay(since)]
+  const start = metricDayStart(windowDays, clock().now())
+  const since = metricCalendarDay(start)
+  const [tok, act] = [await claudeTokensByDay(since), activityByDay(start.toISOString())]
   const d = db()
   const stmt = d.query(
     `INSERT INTO metric (day, claude_tokens, cache_read, messages, tasks,
